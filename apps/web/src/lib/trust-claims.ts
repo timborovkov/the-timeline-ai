@@ -9,7 +9,7 @@ import {
 
 export const TRUST_AI_PRIVACY_LABELS = {
   zdr_required: 'ZDR required',
-  retained_no_training_exception: 'Retained, no-training quality exception',
+  retained_no_training_exception: 'Retained transcription; no training',
 } as const satisfies Record<ModelPrivacyMode, string>;
 
 type PublicTranscriptionModel = Pick<
@@ -57,25 +57,24 @@ export function buildPublicTranscriptionPrivacyClaims(
       model: model.id,
       privacyMode: model.privacyMode,
       privacyLabel: TRUST_AI_PRIVACY_LABELS[model.privacyMode],
-      routeSelection:
-        'Quality-approved speech-to-text with a required ZDR route and no weaker-retention fallback.',
-      privacySummary: `Non-meeting voice transcription uses ${model.id} after passing the documented broad-multilingual quality gate. It requires an eligible ZDR endpoint and fails closed instead of using a weaker-retention route.`,
+      routeSelection: 'Speech-to-text with a required ZDR route and no weaker-retention fallback.',
+      privacySummary: `Non-meeting voice transcription uses ${model.id}. It requires an eligible ZDR endpoint and fails closed instead of using a weaker-retention route.`,
       privacyZdrRoleList:
         'generation, extraction, summarization, media text extraction, embeddings, and non-meeting voice transcription',
       trustSignalValue: 'ZDR for every AI role',
       trustSignalDetail:
-        'Every code-owned AI role, including voice-note transcription, requires eligible ZDR routing and fails closed.',
+        'Every AI role, including voice-note transcription, requires eligible ZDR routing and fails closed.',
       trustIntro:
         'Core AI roles, including non-meeting voice transcription, require zero-data-retention routes.',
       trustDataPath:
         'Only the content needed for a feature leaves Timeline. Every AI role requires an eligible ZDR route and stops rather than request weaker retention.',
-      trustDetail: `Voice-note transcription uses ${model.id} after passing the documented broad-multilingual quality gate. It requires an eligible ZDR endpoint and cannot fall back to weaker retention.`,
-      trustChecklist: 'Voice-note transcription is pinned to a quality-approved ZDR route',
-      privacyDetail: `Non-meeting voice-note transcription uses ${model.id} after passing the documented broad-multilingual quality gate. It requires an eligible ZDR endpoint, carries the supported no-collection and cache-disable controls, and fails closed instead of using weaker retention.`,
+      trustDetail: `Voice-note transcription uses ${model.id}. It requires an eligible ZDR endpoint and cannot fall back to weaker retention.`,
+      trustChecklist: 'Voice-note transcription requires a ZDR route',
+      privacyDetail: `Non-meeting voice-note transcription uses ${model.id}. It requires an eligible ZDR endpoint, carries the supported no-collection and cache-disable controls, and fails closed instead of using weaker retention.`,
       privacyProviderPurpose:
         'Zero-data-retention-required routing for generation, extraction, media processing, embeddings, and non-meeting voice-note transcription; and non-content usage metadata.',
       privacyRetentionDetail: `${model.id} is classified as ZDR required. Timeline requires an eligible zero-data-retention endpoint and fails rather than use a weaker-retention transcription route.`,
-      termsDetail: `Non-meeting voice transcription uses ${model.id} as a quality-approved ZDR route after passing the documented broad-multilingual quality gate. It may not downgrade to weaker retention during an outage.`,
+      termsDetail: `Non-meeting voice transcription uses ${model.id} with a required ZDR route. It may not downgrade to weaker retention during an outage.`,
       retentionSources: [],
     };
   }
@@ -93,24 +92,25 @@ export function buildPublicTranscriptionPrivacyClaims(
     privacyMode: model.privacyMode,
     privacyLabel: TRUST_AI_PRIVACY_LABELS[model.privacyMode],
     routeSelection:
-      'Quality baseline while multilingual ZDR candidates are evaluated against a non-inferiority gate.',
-    privacySummary: `Non-meeting voice transcription currently uses ${model.id} as a disclosed quality exception while multilingual ZDR candidates are evaluated. ${retentionDisclosure}`,
+      'Speech-to-text with provider retention; provider policies prohibit training on prompts.',
+    privacySummary: `Non-meeting voice transcription currently uses ${model.id} with provider retention and no training under provider policies. ${retentionDisclosure}`,
     privacyZdrRoleList:
       'generation, extraction, summarization, media text extraction, and embeddings',
     trustSignalValue: 'ZDR by role',
     trustSignalDetail:
-      'Core AI roles fail closed on ZDR; voice transcription is a disclosed quality exception.',
+      'Core AI roles fail closed on ZDR; voice transcription has different retention terms.',
     trustIntro:
-      'Core AI roles require zero-data-retention routes. Non-meeting voice transcription is currently a retained, no-training quality exception, published below instead of hidden behind a blanket claim.',
+      'Core AI roles require zero-data-retention routes. Non-meeting voice transcription has provider retention, with no training under provider policies.',
     trustDataPath:
-      'Only the content needed for a feature leaves Timeline. ZDR-required roles stop rather than request a weaker route. Voice-note transcription remains a clearly disclosed retained, no-training quality exception while alternatives are tested.',
-    trustDetail: `Voice-note transcription currently uses ${model.id} while multilingual ZDR candidates face a strict quality gate. ${retentionDisclosure} This does not weaken ZDR requirements for any other role.`,
-    trustChecklist: 'The voice-transcription retention exception is explicit and quality-gated',
-    privacyDetail: `Non-meeting voice-note transcription currently uses ${model.id} as a quality-preserving exception. ${retentionDisclosure} Timeline will move this role to ZDR only if a reproducible broad-multilingual evaluation shows no material quality, reliability, format, or latency regression. This exception does not permit any ZDR-required role to downgrade during an outage.`,
+      'Only the content needed for a feature leaves Timeline. ZDR-required roles stop rather than request a weaker route. Voice-note transcription has provider retention, with no training under provider policies.',
+    trustDetail: `Voice-note transcription currently uses ${model.id} with different retention terms. ${retentionDisclosure} This does not weaken ZDR requirements for any other role.`,
+    trustChecklist:
+      'Voice transcription has provider retention, with no training under provider policies',
+    privacyDetail: `Non-meeting voice-note transcription currently uses ${model.id} with provider retention and no training under provider policies. ${retentionDisclosure} Any move to zero-data-retention transcription must preserve quality across supported languages, reliability, output compatibility, and response time without material regression. This exception does not permit any ZDR-required role to downgrade during an outage.`,
     privacyProviderPurpose:
       'Zero-data-retention-required routing for generation, extraction, media processing, and embeddings; a disclosed retained, no-training exception for non-meeting voice-note transcription; and non-content usage metadata.',
-    privacyRetentionDetail: `The current quality exception uses ${model.id}. ${retentionDisclosure}`,
-    termsDetail: `Non-meeting voice transcription currently uses ${model.id} as the retained, no-training quality exception described in the Privacy Policy. A ZDR replacement will be adopted only after it passes the documented broad-multilingual quality gate.`,
+    privacyRetentionDetail: `Voice-note transcription uses ${model.id}. ${retentionDisclosure}`,
+    termsDetail: `Non-meeting voice transcription currently uses ${model.id} with the provider retention and no-training terms described in the Privacy Policy. Any move to zero-data-retention transcription must meet the quality and reliability requirements described there.`,
     retentionSources: [disclosure.openRouter, disclosure.upstream],
   };
 }
@@ -158,7 +158,7 @@ const TRUST_AI_ROUTE_DEFINITIONS = [
   {
     job: 'Semantic search vectors',
     roles: ['embedding'],
-    selection: 'The established retrieval model; changing it would require a measured re-index.',
+    selection: 'Creates embeddings used to retrieve relevant workspace content.',
   },
   {
     job: 'Non-meeting voice-note speech-to-text',
@@ -174,4 +174,4 @@ export const TRUST_AI_MODEL_ITEMS = TRUST_AI_ROUTES.map(
     `${route.job}: ${route.model}. ${TRUST_AI_PRIVACY_LABELS[route.privacyMode]}. ${route.selection}`,
 );
 
-export const TRUST_AI_PRIVACY_SUMMARY = `Hosted Timeline sends necessary feature input through OpenRouter under privacy policy ${TIMELINE_AI_PRIVACY_POLICY_VERSION}. Text, multimodal, and embedding roles require eligible zero-data-retention endpoints and fail closed instead of falling back to weaker retention. Their supported requests carry no-collection, ZDR, and cache-disable controls. OpenRouter may choose among eligible ZDR upstreams. ${PUBLIC_TRANSCRIPTION_PRIVACY_CLAIMS.privacySummary} Timeline does not train or fine-tune models on Customer Content. Deployment policy also requires the matching key/account attestation with prompt logging, input/output sharing, Broadcast, and persistent response caching disabled; the deployed account evidence remains pending and must be captured before that configuration is described as verified.`;
+export const TRUST_AI_PRIVACY_SUMMARY = `Hosted Timeline sends necessary feature input through OpenRouter under privacy policy ${TIMELINE_AI_PRIVACY_POLICY_VERSION}. Text, multimodal, and embedding roles require eligible zero-data-retention endpoints and fail closed instead of falling back to weaker retention. Their supported requests carry no-collection, ZDR, and cache-disable controls. OpenRouter may choose among eligible ZDR upstreams. ${PUBLIC_TRANSCRIPTION_PRIVACY_CLAIMS.privacySummary} Timeline does not train or fine-tune models on Customer Content. These request controls do not independently verify provider-account settings or provider deletion.`;

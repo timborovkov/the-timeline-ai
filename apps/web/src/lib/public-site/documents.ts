@@ -88,19 +88,19 @@ const TRUST_SECTIONS = [
   },
   {
     title: 'Storage and workspace boundaries',
-    body: 'Railway hosts the application, workers, PostgreSQL and Redis services, plus Qdrant vector search and RustFS object storage. Server traffic uses Railway private networking; RustFS also exposes HTTPS for authorized, short-lived signed browser transfers while buckets remain non-public. Team scope and per-record visibility apply to relational, vector, and file access. Integration secrets use authenticated encryption at rest.',
+    body: 'Railway hosts the application, workers, PostgreSQL and Redis services, plus Qdrant vector search and RustFS object storage. Application file transfers use team authorization and short-lived signed URLs. Team scope and per-record visibility apply to relational, vector, and file access. Integration secrets use authenticated encryption at rest.',
   },
   {
     title: 'Human access',
-    body: 'Timeline personnel do not routinely browse customer workspaces. Authorized access is reserved for user-requested support, reliability, security response, legal compliance, or another documented operational need and must be minimum-necessary. Team administrators do not receive a general product bypass for private items.',
+    body: 'Timeline staff access policy prohibits routine browsing of customer workspaces. The policy permits access only for user-requested support, reliability, security response, legal compliance, or another documented operational need and requires access to be limited to what the task needs. Team administrators do not receive a general product bypass for private items.',
   },
   {
     title: 'Meetings and files',
-    body: 'Recall.ai processes meeting media to produce transcripts. Hosted Timeline requests one-hour provider media retention and does not copy raw meeting audio or video into Timeline storage; deployed request/account evidence and deletion-failure handling must still be verified. Transcripts remain workspace content. Uploaded voice notes and documents remain stored until deleted under applicable workspace handling.',
+    body: 'Recall.ai processes meeting media to produce transcripts. Hosted Timeline requests one-hour provider media retention and does not copy raw meeting audio or video into Timeline storage. The requested setting is not confirmation of completed provider deletion. Transcripts remain workspace content. Uploaded voice notes and documents remain stored until deleted under applicable workspace handling.',
   },
   {
     title: 'Analytics and third parties',
-    body: 'Timeline does not use behavioral advertising trackers. PostHog browser analytics may run only on reviewed public pages after affirmative consent, never in private workspace routes, with autocapture, heatmaps, and session replay off. Separate server-to-server events count allowlisted public and app surfaces through two fixed non-visitor streams, while content-free product actions use pseudonymous server identifiers. Sentry error monitoring is separate from every PostHog path. Provider account, retention, and deployed-production evidence remain pending.',
+    body: 'Timeline does not use behavioral advertising trackers. PostHog browser analytics may run only on reviewed public pages after affirmative consent, never in private workspace routes, with autocapture, heatmaps, and session replay off. Separate server-to-server events count allowlisted public and app surfaces through two fixed non-visitor streams, while content-free product actions use pseudonymous server identifiers. Sentry error monitoring is separate from every PostHog path.',
     links: [
       {
         label: 'Read the cookies and browser-storage notice',
@@ -110,7 +110,7 @@ const TRUST_SECTIONS = [
   },
   {
     title: 'Current assurance status',
-    body: 'Timeline does not currently claim SOC 2 or ISO 27001 certification or HIPAA compliance. GDPR is a legal framework, not a certificate. Verified assurance reports and certifications will be published only after they are actually obtained.',
+    body: 'Timeline does not currently claim a SOC 2 report, ISO 27001 certification, or HIPAA compliance. Do not submit highly regulated or special-category data without Timeline’s express prior written approval for your use case.',
   },
   {
     title: 'Inspect or control the deployment',

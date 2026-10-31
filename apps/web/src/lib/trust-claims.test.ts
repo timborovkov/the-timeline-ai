@@ -49,12 +49,14 @@ describe('public AI trust claims', () => {
     }
   });
 
-  it('publishes the versioned quality exception instead of a blanket ZDR claim', () => {
+  it('publishes the versioned retention exception instead of a blanket ZDR claim', () => {
     expect(TRUST_AI_PRIVACY_SUMMARY).toContain(TIMELINE_AI_PRIVACY_POLICY_VERSION);
     expect(TRUST_AI_PRIVACY_SUMMARY).toContain(TIMELINE_MODELS.transcription.id);
     expect(TRUST_AI_PRIVACY_SUMMARY).toContain('up to 30 days');
     expect(TRUST_AI_PRIVACY_SUMMARY).toContain('fail closed');
-    expect(TRUST_AI_PRIVACY_LABELS.retained_no_training_exception).toContain('quality exception');
+    expect(TRUST_AI_PRIVACY_LABELS.retained_no_training_exception).toContain(
+      'Retained transcription; no training',
+    );
     expect(TRUST_AI_PRIVACY_SUMMARY).not.toContain('every model group Timeline uses');
   });
 
@@ -65,7 +67,7 @@ describe('public AI trust claims', () => {
     expect(claims).toMatchObject({
       model: 'openai/gpt-4o-transcribe',
       privacyMode: 'retained_no_training_exception',
-      privacyLabel: 'Retained, no-training quality exception',
+      privacyLabel: 'Retained transcription; no training',
       trustSignalValue: 'ZDR by role',
       retentionSources: [
         { href: 'https://openrouter.ai/providers' },
@@ -78,6 +80,11 @@ describe('public AI trust claims', () => {
     expect(publishedCopy).toContain('openai/gpt-4o-transcribe');
     expect(publishedCopy).toContain('not training on prompts but retaining them');
     expect(publishedCopy).toContain('up to 30 days');
+    expect(claims.privacyDetail).toContain('without material regression');
+    expect(claims.termsDetail).toContain('quality and reliability requirements described there');
+    expect(publishedCopy).not.toMatch(
+      /quality gate|non-inferiority|candidates are evaluated|evidence.*pending/iu,
+    );
     expect(TRUST_AI_ROUTES.at(-1)).toEqual({
       job: 'Non-meeting voice-note speech-to-text',
       roles: ['transcription'],
@@ -97,30 +104,29 @@ describe('public AI trust claims', () => {
       model: 'google/chirp-3',
       privacyMode: 'zdr_required',
       privacyLabel: 'ZDR required',
-      routeSelection:
-        'Quality-approved speech-to-text with a required ZDR route and no weaker-retention fallback.',
+      routeSelection: 'Speech-to-text with a required ZDR route and no weaker-retention fallback.',
       privacySummary:
-        'Non-meeting voice transcription uses google/chirp-3 after passing the documented broad-multilingual quality gate. It requires an eligible ZDR endpoint and fails closed instead of using a weaker-retention route.',
+        'Non-meeting voice transcription uses google/chirp-3. It requires an eligible ZDR endpoint and fails closed instead of using a weaker-retention route.',
       privacyZdrRoleList:
         'generation, extraction, summarization, media text extraction, embeddings, and non-meeting voice transcription',
       trustSignalValue: 'ZDR for every AI role',
       trustSignalDetail:
-        'Every code-owned AI role, including voice-note transcription, requires eligible ZDR routing and fails closed.',
+        'Every AI role, including voice-note transcription, requires eligible ZDR routing and fails closed.',
       trustIntro:
         'Core AI roles, including non-meeting voice transcription, require zero-data-retention routes.',
       trustDataPath:
         'Only the content needed for a feature leaves Timeline. Every AI role requires an eligible ZDR route and stops rather than request weaker retention.',
       trustDetail:
-        'Voice-note transcription uses google/chirp-3 after passing the documented broad-multilingual quality gate. It requires an eligible ZDR endpoint and cannot fall back to weaker retention.',
-      trustChecklist: 'Voice-note transcription is pinned to a quality-approved ZDR route',
+        'Voice-note transcription uses google/chirp-3. It requires an eligible ZDR endpoint and cannot fall back to weaker retention.',
+      trustChecklist: 'Voice-note transcription requires a ZDR route',
       privacyDetail:
-        'Non-meeting voice-note transcription uses google/chirp-3 after passing the documented broad-multilingual quality gate. It requires an eligible ZDR endpoint, carries the supported no-collection and cache-disable controls, and fails closed instead of using weaker retention.',
+        'Non-meeting voice-note transcription uses google/chirp-3. It requires an eligible ZDR endpoint, carries the supported no-collection and cache-disable controls, and fails closed instead of using weaker retention.',
       privacyProviderPurpose:
         'Zero-data-retention-required routing for generation, extraction, media processing, embeddings, and non-meeting voice-note transcription; and non-content usage metadata.',
       privacyRetentionDetail:
         'google/chirp-3 is classified as ZDR required. Timeline requires an eligible zero-data-retention endpoint and fails rather than use a weaker-retention transcription route.',
       termsDetail:
-        'Non-meeting voice transcription uses google/chirp-3 as a quality-approved ZDR route after passing the documented broad-multilingual quality gate. It may not downgrade to weaker retention during an outage.',
+        'Non-meeting voice transcription uses google/chirp-3 with a required ZDR route. It may not downgrade to weaker retention during an outage.',
       retentionSources: [],
     });
 

@@ -50,11 +50,10 @@ function PrivacyOverviewSections({ legalContactEmail }: { legalContactEmail: Leg
       <p>
         This Privacy Policy explains how {LEGAL_PROVIDER} (“Timeline”, “we”, “us”, or “our”)
         processes personal data when you visit our websites, create an account, join a team, contact
-        us, or use The Timeline service. Our plain-language <Link href="/trust">Trust page</Link>{' '}
+        us, or use The Timeline service. Our technical <Link href="/trust">Trust page</Link>{' '}
         summarizes the same operating model, and our{' '}
         <Link href="/cookies">Cookies and similar technologies notice</Link> lists current browser
-        storage and the release conditions for optional analytics. This Policy controls if those
-        pages differ.
+        storage and your choices for optional analytics. This Policy controls if those pages differ.
       </p>
 
       <h2>1. Who is responsible for the data?</h2>
@@ -121,10 +120,6 @@ function PrivacyOverviewSections({ legalContactEmail }: { legalContactEmail: Leg
       </p>
 
       <h2>4. Purposes and legal bases</h2>
-      <p>
-        The analytics bases below are our current intended positions and remain subject to qualified
-        privacy and legal review before this version is published in production.
-      </p>
       <table>
         <thead>
           <tr>
@@ -205,13 +200,11 @@ function PrivacyAiAndProviderSections() {
         {PUBLIC_TRANSCRIPTION_PRIVACY_CLAIMS.privacyZdrRoleList} as zero-data-retention required.
         Supported requests send <code>data_collection: deny</code>, <code>zdr: true</code>, and an
         explicit cache-disable control. OpenRouter may select among eligible ZDR upstreams, but
-        these roles fail closed instead of falling back to an endpoint with weaker retention. The
-        production key must be restricted to the code-owned model catalog and attested to this exact
-        policy version. Prompt logging, input/output sharing, Broadcast, and persistent response
-        caching must remain disabled. Repository code cannot independently prove those account
-        settings, so the deployment evidence must be captured before publication of a verified
-        hosted guarantee. OpenRouter may retain non-content request metadata such as model, token
-        count, cost, latency, and account identifiers for operations and billing.
+        these roles fail closed instead of falling back to an endpoint with weaker retention. Our
+        policy requires prompt logging, input/output sharing, Broadcast, and persistent response
+        caching to remain disabled. Request controls do not independently verify provider-account
+        settings or provider deletion. OpenRouter may retain non-content request metadata such as
+        model, token count, cost, latency, and account identifiers for operations and billing.
       </p>
       <p>
         {PUBLIC_TRANSCRIPTION_PRIVACY_CLAIMS.privacyDetail}
@@ -235,12 +228,11 @@ function PrivacyAiAndProviderSections() {
       <p>
         Timeline does not copy raw meeting audio or video into its object storage. Hosted Timeline
         requests Recall.ai&apos;s one-hour media-retention setting for each bot. Recall.ai documents
-        that setting as deleting provider media after one hour, but the deployed account,
-        request-level setting, and deletion-failure handling must be verified before relying on
-        completed deletion. The resulting transcript, timestamps, speakers, and derived Timeline
-        records remain in the workspace until an authorized user deletes them or a valid deletion
-        request applies. Recall.ai separately documents seven-day retention for operational logs and
-        removal of meeting URLs 14 days after a bot terminates.
+        that setting as deleting provider media after one hour. The requested setting is not
+        confirmation of completed provider deletion. The resulting transcript, timestamps, speakers,
+        and derived Timeline records remain in the workspace until an authorized user deletes them
+        or a valid deletion request applies. Recall.ai separately documents seven-day retention for
+        operational logs and removal of meeting URLs 14 days after a bot terminates.
       </p>
 
       <h2>7. Service providers</h2>
@@ -261,10 +253,8 @@ function PrivacyAiAndProviderSections() {
             <td>Railway</td>
             <td>
               Application and worker hosting; PostgreSQL and Redis services; and persistent volumes
-              for Qdrant and RustFS. The deployment design requires private-network server traffic,
-              non-public buckets, and an external HTTPS endpoint limited to authorized, short-lived
-              signed RustFS browser transfers. Current production exposure still requires
-              verification.
+              for Qdrant and RustFS. Application file transfers use team authorization and
+              short-lived signed URLs.
             </td>
           </tr>
           <tr>
@@ -310,8 +300,8 @@ function PrivacyAiAndProviderSections() {
               initialize only after affirmative consent on an eligible public page and is never
               identified or grouped to an account, user, or team. Autocapture, heatmaps, session
               replay, DOM capture, automatic page views, and client-side feature flags are disabled.
-              Project region, retention, DPA, deletion, access, and deployed account settings still
-              require dated provider evidence.
+              PostHog documents seven-year product-event retention on its pay-as-you-go plan;
+              Timeline does not promise a shorter provider retention period.
             </td>
           </tr>
           <tr>
@@ -395,8 +385,8 @@ function PrivacyDisclosureAndSecuritySections() {
         persistent browser and session identifiers and send full URLs, referrers, campaign
         parameters, language, screen dimensions, scroll depth, and time on page. The current source
         removes that script and guards the root layout against another hard-coded remote tracker.
-        The separate Convex deployment, historical data, and live production release still require
-        verification before we treat that incident as closed.
+        Removing browser storage does not establish deletion of data previously received by the
+        provider.
       </p>
       <p>
         Browser PostHog is limited to eligible public pages after a separate affirmative choice and
@@ -414,31 +404,29 @@ function PrivacyDisclosureAndSecuritySections() {
         prevention are separate processing, not PostHog analytics.
       </p>
       <p>
-        The source includes the public-route consent and withdrawal controls, but browser capture
-        remains disabled when its public project key is absent. Provider account settings,
-        retention, processing region, access, and the production deployment remain separate evidence
-        items. We do not use behavioral advertising trackers.
+        Cookie settings lets you accept, reject, or withdraw optional public-browser analytics.
+        Browser capture remains disabled when its public project key is absent. We do not use
+        behavioral advertising trackers.
       </p>
 
       <h2>11. Human access to Customer Content</h2>
       <p>
-        Timeline&apos;s operating standard prohibits routine browsing of team workspaces and permits
-        production access only for user-requested support, service reliability, security response,
-        legal compliance, or another documented operational purpose. It requires minimum-necessary,
-        time-bounded access where practicable and confidentiality. Production access inventory,
-        enforcement, and audit evidence are still being completed. Product roles do not give a team
-        administrator a general bypass into another member&apos;s private items.
+        Timeline&apos;s staff access policy prohibits routine browsing of team workspaces and
+        permits production access only for user-requested support, service reliability, security
+        response, legal compliance, or another documented operational purpose. The policy requires
+        access limited to what the task needs, time-bounded access where practicable, and
+        confidentiality. Product roles do not give a team administrator a general bypass into
+        another member&apos;s private items.
       </p>
 
       <h2>12. Security</h2>
       <p>
-        Repository controls and the hosted deployment design include encrypted external transport,
-        private-network traffic required between hosted services, team-scoped database and vector
-        queries, per-record visibility checks, encrypted integration secrets using authenticated
-        encryption, signed or authenticated webhooks, short-lived or controlled file access, audit
-        records for security-relevant product actions, and review of external content before it
-        reaches the agent. Current service networking and public exposure still require deployment
-        verification. No system can be guaranteed completely secure. See the{' '}
+        Application controls include team-scoped database and vector queries, per-record visibility
+        checks, encrypted integration secrets using authenticated encryption, signed or
+        authenticated webhooks, short-lived or controlled file access, audit records for
+        security-relevant product actions, and review of external content before it reaches the
+        agent. Our hosting policy requires encrypted external transport and private networking
+        between hosted services. No system can be guaranteed completely secure. See the{' '}
         <Link href="/trust">Trust page</Link> for a concise explanation.
       </p>
     </>
@@ -476,8 +464,8 @@ function PrivacyRetentionSections() {
             <td>
               Timeline requests one-hour retention; raw media is not copied into Timeline object
               storage. Recall.ai documents seven-day operational-log retention and removal of
-              meeting URLs 14 days after bot termination. Production request/account evidence and
-              deletion-failure handling remain subject to verification.
+              meeting URLs 14 days after bot termination. The requested setting is not confirmation
+              of completed provider deletion.
             </td>
           </tr>
           <tr>
@@ -517,8 +505,9 @@ function PrivacyRetentionSections() {
         Deletion from an active system may not immediately remove data from backup or recovery
         copies where those copies are configured, or from immutable security records. The existence,
         schedule, retention, and deletion behavior of deployed backups depends on the production
-        configuration and must be verified. Law may also require preservation. We may retain
-        de-identified information that cannot reasonably be linked back to an individual.
+        configuration. Deleting active records does not guarantee immediate deletion from those
+        copies. Law may also require preservation. We may retain de-identified information that
+        cannot reasonably be linked back to an individual.
       </p>
 
       <h2>14. International transfers</h2>

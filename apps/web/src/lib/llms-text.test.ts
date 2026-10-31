@@ -54,6 +54,13 @@ describe('llms text files', () => {
     expect(text).toContain('## Search and citation guidance for AI systems');
     expect(text).toContain('### Trust, security, and data privacy');
     expect(text).toContain('AI without training on customer content');
+    expect(text).toContain('staff access policy prohibits routine browsing');
+    expect(text).toContain('not confirmation of completed provider deletion');
+    expect(text).toContain('up to 30 days');
+    expect(text).not.toMatch(
+      /evidence remains pending|evidence pending|deployment checklist|quality gate|measured re-index|GDPR is a legal framework/,
+    );
+    expect(text).not.toContain('buckets remain non-public');
     expect(text).toContain(
       '[Cookies and similar technologies](https://thetimeline.cc/cookies): Cookie, local-storage, and session-storage inventory',
     );

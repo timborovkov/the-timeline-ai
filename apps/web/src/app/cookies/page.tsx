@@ -4,7 +4,7 @@ import type { Metadata } from 'next';
 
 import { LegalPage } from '@/components/legal-page';
 import { CookieSettingsButton } from '@/components/public-analytics';
-import { getLegalContactEmail } from '@/lib/legal-versions';
+import { COOKIES_REVIEW_DATE, getLegalContactEmail } from '@/lib/legal-versions';
 import { publicMetadata } from '@/lib/public-metadata';
 
 export const metadata: Metadata = publicMetadata({
@@ -15,8 +15,6 @@ export const metadata: Metadata = publicMetadata({
 });
 
 export const dynamic = 'force-dynamic';
-
-const REVIEW_DATE = '24 October 2026';
 
 function CurrentBrowserStorage() {
   return (
@@ -162,8 +160,8 @@ function CurrentBrowserStorage() {
             </td>
             <td>
               Current source no longer writes or sends these values. Rejecting or withdrawing in
-              Cookie settings clears them. Historical provider data and the old deployment still
-              require an operator review before any deletion claim.
+              Cookie settings clears them. Clearing browser storage does not erase data previously
+              received by the provider.
             </td>
           </tr>
         </tbody>
@@ -187,18 +185,16 @@ function AnalyticsStatusAndTarget() {
         Consented pageviews also measure referring sites and popular pages using reviewed public
         paths and referring website origins. Query strings, fragments, referrer paths, and page
         titles are excluded. Consent format version 2 asks again before enabling these fields; an
-        earlier choice does not authorize them. Recording remains off. Pay-as-you-go currently
-        documents seven-year product-event retention, which exceeds Timeline&apos;s 90-day target.
-        The source-controlled Cookie settings control records that choice. Reading this notice alone
-        does not accept analytics. If this deployment has no reviewed PostHog browser key, the
-        control reports analytics as unavailable and cannot record an acceptance that silently
-        activates later.
+        earlier choice does not authorize them. Recording remains off. Cookie settings records your
+        analytics choice. Reading this notice alone does not accept analytics. If optional analytics
+        is not configured, the control reports analytics as unavailable and cannot record an
+        acceptance that silently activates later.
       </p>
       <p>When optional analytics is configured and accepted:</p>
       <ul>
         <li>
-          PostHog loads only on source-allowlisted public marketing, help-article, Trust, and legal
-          pages after a separate affirmative choice.
+          PostHog loads only on eligible public marketing, help-article, Trust, and legal pages
+          after a separate affirmative choice.
         </li>
         <li>
           PostHog must not initialize in signed-in or private workspace routes and must never
@@ -220,66 +216,22 @@ function AnalyticsStatusAndTarget() {
           analytics rejection does not disable this separate count.
         </li>
       </ul>
-      <p>
-        A public PostHog identity is pseudonymous, not anonymous. Production region, retention,
-        account access, contract, deletion, and configuration evidence must still be verified before
-        stronger deployment claims are made.
-      </p>
+      <p>A public PostHog identity is pseudonymous, not anonymous.</p>
 
-      <h2>3. Implementation and deployment status</h2>
+      <h2>3. Analytics data and retention</h2>
       <p>
-        Repository controls can enforce the browser boundary, but they cannot prove provider-account
-        or production settings. The analytics owner must verify the remaining deployment values.
+        Optional browser analytics sends selected page-view and action events to PostHog. Events use
+        fixed page categories and action names; pageviews can also include reviewed public paths and
+        referring website origins. They exclude query strings, fragments, referrer paths, page
+        titles, and workspace content.
       </p>
-      <table>
-        <thead>
-          <tr>
-            <th scope="col">Required deployment value</th>
-            <th scope="col">Current status</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td>Consent-choice storage name, scope, and lifetime</td>
-            <td>tl_analytics_consent; first party; service-wide path; up to 180 days.</td>
-          </tr>
-          <tr>
-            <td>PostHog browser storage</td>
-            <td>
-              Local-storage-only persistence named ph_timeline_public_analytics_v1; exact provider
-              retention remains unverified.
-            </td>
-          </tr>
-          <tr>
-            <td>PostHog project host, processing region, and account access</td>
-            <td>
-              EU Cloud project reviewed 26 August 2026. Production access and deployment evidence
-              remain incomplete — do not enable optional browser analytics yet.
-            </td>
-          </tr>
-          <tr>
-            <td>Event and property allowlist</td>
-            <td>
-              Manual public_page_viewed and public_cta_clicked events with fixed surface and action
-              values, plus manual $pageview events with reviewed public paths and referring website
-              origins/hostnames. Project-level client IP discard is enabled; production payload
-              evidence remains open.
-            </td>
-          </tr>
-          <tr>
-            <td>Provider retention, deletion workflow, DPA, and transfer safeguard</td>
-            <td>
-              Pay-as-you-go currently documents seven-year product-event retention, which exceeds
-              Timeline's 90-day target. Legacy deletion is queued; completion, DPA, and transfer
-              evidence remain open — do not enable optional browser analytics yet.
-            </td>
-          </tr>
-          <tr>
-            <td>Deployed date, responsible owner, and production canary</td>
-            <td>Not yet recorded — repository implementation is not production evidence.</td>
-          </tr>
-        </tbody>
-      </table>
+      <p>
+        PostHog documents seven-year product-event retention on its pay-as-you-go plan. Timeline
+        does not promise a shorter provider retention period. Withdrawing consent stops future
+        browser collection and clears the browser storage listed above. It does not automatically
+        delete events already held by PostHog. For requests about previously collected personal
+        data, see the <Link href="/privacy">Privacy Policy</Link>.
+      </p>
     </>
   );
 }
@@ -311,7 +263,8 @@ function ChoicesAndOtherServices() {
           protect and debug the service. It is separate from PostHog analytics and is not switched
           on by an analytics choice. Default PII collection is disabled and known cookies,
           credentials, and token-bearing URLs are scrubbed, but unexpected error or breadcrumb text
-          can still contain personal data. Project region and retention remain to be verified.
+          can still contain personal data. No specific processing region or retention period is
+          promised here.
         </li>
         <li>
           <strong>Cloudflare Turnstile:</strong> in production, signup and support forms can load a
@@ -326,8 +279,7 @@ function ChoicesAndOtherServices() {
         <li>
           <strong>Static repository documentation:</strong> some separately served documentation
           currently requests font assets from Fontshare and jsDelivr. Those providers can receive
-          ordinary request metadata. This is an open provider-inventory item, not a claim that those
-          pages are third-party-free.
+          ordinary request metadata, including your IP address and browser information.
         </li>
       </ul>
     </>
@@ -339,12 +291,12 @@ export default function CookiesPage() {
 
   return (
     <LegalPage
-      eyebrow={`Notice · Last reviewed ${REVIEW_DATE}`}
+      eyebrow={`Notice · Last reviewed ${COOKIES_REVIEW_DATE}`}
       title="Cookies and similar technologies"
       description="What The Timeline stores in your browser, what is necessary for the service, and how to control optional public analytics."
     >
       <p>
-        This notice supplements our <Link href="/privacy">Privacy Policy</Link> and the concise{' '}
+        This notice supplements our <Link href="/privacy">Privacy Policy</Link> and the technical{' '}
         <Link href="/trust">Trust page</Link>. It covers cookies, local storage, session storage,
         browser analytics, and closely related browser processing in the hosted service. If this
         notice conflicts with the Privacy Policy, the Privacy Policy controls.

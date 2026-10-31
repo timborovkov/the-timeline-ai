@@ -752,6 +752,9 @@
   "apps/web/src/components/legal-page.test.tsx": {
     "group": "unit"
   },
+  "apps/web/src/components/legal-route-state.test.tsx": {
+    "group": "unit"
+  },
   "apps/web/src/components/loading-states.test.tsx": {
     "group": "dom"
   },

@@ -54,6 +54,22 @@ or successful deletion from backups. A checkbox or environment variable that
 attests to an external setting is a deployment gate, not independent proof that
 the setting remains correct.
 
+### Public-copy maintenance
+
+Public pages and machine-readable summaries describe customer-relevant behavior,
+policy, and limitations. Keep deployment checklists, evaluation plans, and evidence
+collection tasks in this standard and its evidence register rather than public copy.
+Removing an internal note does not close its gap or permit a stronger assurance.
+Preserve provider retention exceptions, consent choices, regulated-use limits, and
+the distinction between requested retention and confirmed deletion.
+
+The October 2026 editorial cleanup preserves legal versions, processing purposes,
+rights, and contractual commitments as instructed by the site owner. G-02, G-03,
+G-05 through G-14, G-18, G-19, and G-20 remain unchanged; analytics legal-basis
+review, account settings, historical deletion, and staff-access evidence remain
+operator responsibilities. This copy review does not constitute counsel approval
+or production verification.
+
 ## 2. Scope, roles, and responsibility
 
 This standard covers:

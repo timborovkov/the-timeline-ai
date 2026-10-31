@@ -23,6 +23,7 @@ const PUBLIC_NAVIGATION_ITEMS = [
     label: 'How it works',
     analyticsCta: 'view_how_it_works',
   },
+  { section: 'trust', href: '/trust', label: 'Trust' },
   { section: 'help', href: '/help', label: 'Help' },
 ] as const;
 

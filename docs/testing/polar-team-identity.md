@@ -101,9 +101,11 @@ The new handler validates external-ID UUID syntax before database access and
 ignores unrelated event types. A regression test makes any database access fail
 and verifies malformed/string/object fixture IDs are acknowledged without queries.
 An isolated, schema-free hotfix is prepared as commit `707bb5de` on local branch
-`codex/polar-webhook-uuid-guard`. The user confirmed that pushing the Polar branch
-auto-deploys; the earlier no-deploy restriction therefore prevents a push without
-new approval. No global webhook or environment configuration was changed.
+`codex/polar-webhook-uuid-guard`. The user confirmed that pushing the Polar branch auto-deploys. On 2026-10-31,
+the user authorized syncing with main and pushing the full PR, including that
+automatic deployment. The integrated implementation includes the webhook guard;
+the isolated hotfix does not need a separate rollout. No global webhook or
+environment configuration was changed.
 
 Fixture cleanup is pending the guard deployment: canceling/deleting these exact
 fixtures can generate more deliveries to the same old handler. Further sandbox
@@ -121,7 +123,17 @@ configured webhook destinations.
   scripts. The final full `bun run build` passed (all four build tasks).
 - `bun run test:dist-imports` passed for compiled shared-package boundaries.
 - The schema-free hotfix separately passed its no-database-access regression,
-  shared TypeScript check and focused lint. No push or deployment has occurred.
+  shared TypeScript check and focused lint. The original implementation checks preceded any push or deployment.
 - Invoice generation/retrieval was verified; inbox delivery and real deployed
   Timeline webhook-to-entitlement processing were not verified. The sandbox
   consumer isolation issue prevents claiming that end-to-end rollout check.
+
+
+## Main synchronization (2026-10-31)
+
+Merged main's public trust/navigation update, retaining both Pricing and Trust.
+Resolved the design documentation conflict and updated the navigation assertion
+to the combined six-item menu. The merged navigation, legal-state, trust-claim,
+LLMs text and malformed-webhook tests pass. The push is authorized with awareness
+of branch auto-deployment; fixture cleanup follows confirmation that the guard
+is deployed. The manual documentation handoff audit was refreshed for this merge.
