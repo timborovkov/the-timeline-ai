@@ -1,6 +1,6 @@
-import { expect } from '@timeline/test-support';
-import { vi } from '@timeline/test-support';
+import { expect, vi } from '@timeline/test-support';
 import { beforeEach, describe, it } from 'bun:test';
+
 /**
  * Server-action tests for invite acceptance. These pin the user-visible
  * contracts around auth redirects, recipient email checks, durable
@@ -80,6 +80,14 @@ await vi.mock(
   import.meta.resolve('@/lib/pending-invite'),
   () => ({ clearPendingInvite: fakes.fakeClearPendingInvite }),
   () => import('@/lib/pending-invite'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/billing'),
+  () => ({
+    assertTeamMemberSeatCapacity: vi.fn().mockResolvedValue(undefined),
+    isBillingAdmissionError: () => false,
+  }),
+  () => import('@timeline/shared/billing'),
 );
 await vi.mock(
   import.meta.resolve('@timeline/shared/logger'),
@@ -248,6 +256,34 @@ describe('acceptInviteAction', () => {
       'timeline_active_team',
       `v2:${TEAM_ID}`,
       expect.objectContaining({ httpOnly: true, path: '/' }),
+    );
+  });
+
+  it('appends prior membership intervals when a removed member is re-accepted', async () => {
+    const started = new Date('2026-01-01T00:00:00.000Z');
+    const ended = new Date('2026-01-15T00:00:00.000Z');
+    const membership = {
+      role: 'member' as const,
+      removedAt: ended,
+      createdAt: started,
+      priorIntervals: [],
+    };
+    const { tx, inserts, updates } = makeTx([[invite()], [membership], [membership]]);
+    fakes.fakeTransaction.mockImplementation((fn: (arg: unknown) => unknown) =>
+      Promise.resolve(fn(tx)),
+    );
+
+    await expect(acceptInviteAction(form({ token: TOKEN }))).rejects.toThrow(
+      'NEXT_REDIRECT:/app/timeline',
+    );
+
+    expect(inserts).toEqual([]);
+    expect(updates[0]).toEqual(
+      expect.objectContaining({
+        role: 'member',
+        removedAt: null,
+        priorIntervals: [{ startedAt: started.toISOString(), endedAt: ended.toISOString() }],
+      }),
     );
   });
 

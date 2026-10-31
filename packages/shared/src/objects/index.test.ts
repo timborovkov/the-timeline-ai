@@ -80,6 +80,7 @@ const {
   objectNotes,
   objectNoteMentions,
   objectSummaries,
+  objectSummaryRuns,
   notifications,
   rawEvents,
   reconciliationEvidence,
@@ -93,6 +94,7 @@ const { drizzle } = await import('drizzle-orm/pglite');
 const { acceptDirectAgentTurn } = await import('#src/conversation-surfaces/runtime.js');
 const { resetEnvForTests } = await import('#src/env.js');
 const { chatStructured } = await import('#src/llm/chat.js');
+const { BillingAdmissionError } = await import('#src/billing/errors.js');
 const { TimelineAiError } = await import('#src/llm/errors.js');
 const { TIMELINE_MODELS } = await import('#src/llm/models.js');
 const { buildObjectDirectWriteSourceContext } = await import('#src/objects/index.js');
@@ -5274,6 +5276,75 @@ describe('object scope — merge cleanup', () => {
       'invalid_source_ref:timeline_event:99999999-9999-4999-8999-999999999999',
     );
     expect(enqueueObjectEmbedJob).not.toHaveBeenCalled();
+  });
+
+  it('rethrows billing admission instead of storing a failed object summary', async () => {
+    const scope = withTeam(db, TEAM_A, USER_OWNER);
+    const object = await scope.objects.createObject({
+      type: 'company',
+      canonicalName: 'Busy Slot Co',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    const [event] = await db
+      .insert(rawEvents)
+      .values({
+        teamId: TEAM_A,
+        authorUserId: USER_OWNER,
+        source: 'web',
+        contentText: 'Busy Slot Co team-visible planning.',
+        occurredAt: new Date('2026-06-02T10:00:00.000Z'),
+        visibility: 'team',
+      })
+      .returning({ id: rawEvents.id });
+    if (!event) throw new Error('failed to insert event');
+    const [fact] = await db
+      .insert(facts)
+      .values({
+        teamId: TEAM_A,
+        rawEventId: event.id,
+        statement: 'Busy Slot Co has enough source-backed planning context.',
+        confidence: 1,
+        modelVersion: 'test',
+      })
+      .returning({ id: facts.id });
+    if (!fact) throw new Error('failed to insert fact');
+    await db.insert(factEntities).values({
+      factId: fact.id,
+      entityId: object.id,
+      role: 'subject',
+    });
+    await scope.objects.createNote({
+      entityId: object.id,
+      authorUserId: USER_OWNER,
+      body: 'Busy Slot Co summary note with enough human-authored context for generation.',
+    });
+
+    const admission = new BillingAdmissionError('costly_worker_busy');
+    await expect(
+      generateAndStoreObjectSummary(
+        db,
+        scope,
+        object.id,
+        { trigger: 'manual' },
+        {
+          chatStructured: <TSchema extends z.ZodType>(
+            _input: ChatStructuredInput<TSchema>,
+          ): Promise<ChatStructuredResult<TSchema>> => Promise.reject(admission),
+          enqueueObjectEmbedJob: vi.fn().mockResolvedValue(undefined),
+        },
+      ),
+    ).rejects.toBe(admission);
+
+    const summaries = await db
+      .select({ status: objectSummaries.status })
+      .from(objectSummaries)
+      .where(eq(objectSummaries.entityId, object.id));
+    expect(summaries.some((row) => row.status === 'failed')).toBe(false);
+    const [run] = await db
+      .select({ status: objectSummaryRuns.status })
+      .from(objectSummaryRuns)
+      .where(eq(objectSummaryRuns.entityId, object.id));
+    expect(run?.status).toBe('pending');
   });
 
   it('does not retry a structured-output validation error whose constraint contains 500', async () => {

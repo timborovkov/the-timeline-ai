@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 
 import { rawEvents } from '@timeline/db';
+import { admitAcceptedSourceEnrichment } from '@timeline/shared/billing';
 import { sourceMetadataWithConversationArtifacts } from '@timeline/shared/conversational/contact-artifacts';
 import { reconcileLinkArtifactsForRawEvent } from '@timeline/shared/conversational/link-artifacts';
 import * as ingestWebhooks from '@timeline/shared/ingest-webhooks';
@@ -338,6 +339,12 @@ async function enqueueProcessing(
   event: { id: string; teamId: string },
   proposalGenerationEnabled: boolean,
 ): Promise<void> {
+  const admitted = await admitAcceptedSourceEnrichment({
+    db,
+    teamId: event.teamId,
+    rawEventId: event.id,
+  });
+  if (!admitted) return;
   let queueModule: Awaited<ReturnType<typeof requireRedisQueue>>;
   try {
     queueModule = await requireRedisQueue();

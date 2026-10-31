@@ -31,6 +31,8 @@
     "canary:integrations:strict": "bun --conditions=development scripts/check-live-integrations.ts --strict",
     "openrouter:attestation": "bun --conditions=development scripts/print-openrouter-privacy-attestation.ts",
     "repair:monday": "bun --conditions=development scripts/repair-monday-helper-boards.ts",
+    "billing:operator": "bun --conditions=development scripts/billing-operator.ts",
+    "billing:polar-setup": "bun --conditions=development scripts/billing-polar-setup.ts",
     "e2e:setup": "bun scripts/run-e2e-command.ts bun e2e/setup.ts",
     "e2e:cleanup": "bun scripts/run-e2e-command.ts bun e2e/cleanup.ts",
     "knip": "DATABASE_URL=${DATABASE_URL:-postgres://placeholder@localhost:5432/placeholder} bun x --bun --no-install knip",
@@ -49,7 +51,8 @@
     "db:generate": "bun run --filter @timeline/db generate",
     "db:studio": "bun run --filter @timeline/db studio",
     "doctor": "bun scripts/run-react-doctor.mjs",
-    "test:runtime": "bun --no-env-file apps/worker/scripts/runtime-smoke.ts"
+    "test:runtime": "bun --no-env-file apps/worker/scripts/runtime-smoke.ts",
+    "billing:polar-convert": "bun --no-env-file --conditions=development scripts/billing-polar-convert.ts"
   },
   "devDependencies": {
     "@happy-dom/global-registrator": "21.0.4",

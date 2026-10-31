@@ -66,6 +66,7 @@ describe('Trust navigation', () => {
     expect(links.map((link) => link.textContent)).toEqual([
       'Product',
       'Integrations',
+      'Pricing',
       'How it works',
       'Trust',
       'Help',

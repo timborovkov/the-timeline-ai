@@ -9,6 +9,10 @@ import {
   reconciliationEvidence,
   savedMeetings,
 } from '@timeline/db';
+import {
+  BillingAdmissionError,
+  insertRestrictedFreeBillingAccount,
+} from '@timeline/shared/billing';
 import { TimelineAiError } from '@timeline/shared/llm';
 import { expect } from '@timeline/test-support';
 import { vi } from '@timeline/test-support';
@@ -430,6 +434,32 @@ describe('processMeetingFinalizeJob', () => {
     });
   });
 
+  it('keeps the meeting transcript and skips enrichment when the source is not admitted', async () => {
+    await insertRestrictedFreeBillingAccount({ db: db as never, teamId: TEAM_ID });
+    await seedMeeting(db as never);
+    await seedChunk(db as never, 0, 'Hello, this is Alice.', 'Alice');
+    const enqueueExtractJob = vi.fn().mockResolvedValue(undefined);
+    const enqueueEmbedJob = vi.fn().mockResolvedValue(undefined);
+    try {
+      await processMeetingFinalizeJob(
+        { db: db as never },
+        { meetingId: MEETING_ID, teamId: TEAM_ID },
+        {
+          chatStructured: makeChatStub() as never,
+          enqueueExtractJob: enqueueExtractJob as never,
+          enqueueEmbedJob: enqueueEmbedJob as never,
+        },
+      );
+    } catch (err) {
+      expect(err).toBeInstanceOf(BillingAdmissionError);
+    }
+    expect(enqueueExtractJob).not.toHaveBeenCalled();
+    expect(enqueueEmbedJob).not.toHaveBeenCalled();
+    const [event] = await db.select().from(rawEvents).where(eq(rawEvents.source, 'meeting'));
+    expect(event?.contentText).toContain('Hello, this is Alice.');
+    expect(event?.sourceMetadata).toMatchObject({ billing_enrichment_deferred: true });
+  });
+
   it('idempotent: re-running on a completed meeting is a no-op', async () => {
     await seedMeeting(db as never, {
       status: 'completed',
@@ -448,6 +478,30 @@ describe('processMeetingFinalizeJob', () => {
     expect(chat).not.toHaveBeenCalled();
     const row = (await db.select().from(meetingsTable).where(eq(meetingsTable.id, MEETING_ID)))[0];
     expect((row?.metadata as Record<string, unknown>).summary).toBe('original summary');
+  });
+
+  it('settles completed-meeting retries after the creator leaves the team', async () => {
+    await seedMeeting(db as never, {
+      status: 'completed',
+      metadata: { summary: 'original summary', finalized_at: '2026-05-25T10:35:00Z' },
+    });
+    await db.insert(meetingUsage).values({
+      teamId: TEAM_ID,
+      meetingId: MEETING_ID,
+      minutes: 12,
+    });
+    await pg.exec(`
+      UPDATE team_members SET removed_at = now()
+      WHERE team_id = '${TEAM_ID}' AND user_id = '${USER_ID}';
+    `);
+
+    await expect(
+      processMeetingFinalizeJob(
+        { db: db as never },
+        { meetingId: MEETING_ID, teamId: TEAM_ID },
+        { chatStructured: makeChatStub() as never },
+      ),
+    ).resolves.toMatchObject({ skipped: 'already_completed' });
   });
 
   it('does not finalize or overwrite a failed meeting', async () => {
@@ -561,6 +615,27 @@ describe('processMeetingFinalizeJob', () => {
       summary_error: 'model returned no structured object',
       summary_error_cause: 'AI_NoObjectGeneratedError',
     });
+  });
+
+  it('keeps billing admission retryable instead of completing transcript-only', async () => {
+    await seedMeeting(db as never);
+    await seedChunk(db as never, 0, 'We should follow up on the launch plan.', 'Alice');
+    const chat = vi.fn().mockRejectedValue(new BillingAdmissionError('costly_worker_busy'));
+
+    await expect(
+      processMeetingFinalizeJob(
+        { db: db as never },
+        { meetingId: MEETING_ID, teamId: TEAM_ID },
+        { chatStructured: chat as never },
+      ),
+    ).rejects.toBeInstanceOf(BillingAdmissionError);
+
+    const meeting = (
+      await db.select().from(meetingsTable).where(eq(meetingsTable.id, MEETING_ID))
+    )[0];
+    expect(meeting?.status).toBe('processing');
+    const events = await db.select().from(rawEvents).where(eq(rawEvents.source, 'meeting'));
+    expect(events).toHaveLength(0);
   });
 
   it('keeps transient summary failures retryable instead of completing transcript-only', async () => {

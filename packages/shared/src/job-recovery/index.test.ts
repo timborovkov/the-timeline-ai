@@ -515,6 +515,98 @@ describe('job recovery scope', () => {
     expect(stuckIds).toEqual([RAW_ID]);
   });
 
+  it('leaves billing-deferred rows for the billing flush', async () => {
+    const deferredTextId = '15151515-1515-4515-8515-151515151515';
+    const clearedTextId = '17171717-1717-4717-8717-171717171717';
+    const deferredAudioId = '16161616-1616-4616-8616-161616161616';
+    const oldDeferredTextId = '18181818-1818-4818-8818-181818181818';
+    await seedTextRawEvent(pg, deferredTextId, {
+      sourceMetadata:
+        '{"billing_enrichment_deferred":true,"extraction_failed_at":"2026-05-27T10:00:00.000Z"}',
+    });
+    await seedTextRawEvent(pg, clearedTextId, {
+      sourceMetadata: '{"billing_enrichment_deferred":false}',
+    });
+    await pg.exec(`
+      INSERT INTO raw_events (
+        id, team_id, author_user_id, source, content_audio_url, occurred_at, created_at, visibility, source_metadata
+      ) VALUES (
+        '${deferredAudioId}',
+        '${TEAM_ID}',
+        '${ADMIN_ID}',
+        'email',
+        'audio/deferred.m4a',
+        now() - interval '1 hour',
+        now() - interval '1 hour',
+        'team',
+        '{"transcription_deferred":true}'::jsonb
+      );
+    `);
+    await pg.exec(`
+      INSERT INTO raw_events (
+        id, team_id, author_user_id, source, content_text, occurred_at, created_at, visibility, source_metadata
+      ) VALUES (
+        '${oldDeferredTextId}',
+        '${TEAM_ID}',
+        '${ADMIN_ID}',
+        'web',
+        'Old deferred',
+        now() - interval '10 days',
+        now() - interval '10 days',
+        'team',
+        '{"billing_enrichment_deferred":true}'::jsonb
+      );
+    `);
+    const enqueueExtractJob = vi.fn().mockResolvedValue(undefined);
+    const enqueueEmbedJob = vi.fn().mockResolvedValue(undefined);
+    const enqueueTranscribeJob = vi.fn().mockResolvedValue(undefined);
+    const scope = scopeFor(ADMIN_ID, 'admin', {
+      enqueueExtractJob,
+      enqueueEmbedJob,
+      enqueueTranscribeJob,
+    });
+
+    const items = await scope.listRecoverableJobs();
+    expect(items.map((item) => item.artifactId)).toContain(clearedTextId);
+    expect(items.map((item) => item.artifactId)).not.toContain(deferredTextId);
+    expect(items.map((item) => item.artifactId)).not.toContain(deferredAudioId);
+    const older = await scope.listRecoverableJobs({ window: 'older' });
+    expect(older.map((item) => item.artifactId)).not.toContain(oldDeferredTextId);
+    const queue = await scope.getRecoverableJobQueue();
+    expect(queue.olderCount).toBe(0);
+
+    const extractionId = Buffer.from(
+      JSON.stringify({
+        kind: 'extraction',
+        artifactKind: 'raw_event',
+        artifactId: deferredTextId,
+      }),
+      'utf8',
+    ).toString('base64url');
+    const embeddingId = Buffer.from(
+      JSON.stringify({
+        kind: 'embedding',
+        artifactKind: 'raw_event',
+        artifactId: deferredTextId,
+      }),
+      'utf8',
+    ).toString('base64url');
+    const transcriptionId = Buffer.from(
+      JSON.stringify({
+        kind: 'transcription',
+        artifactKind: 'raw_event',
+        artifactId: deferredAudioId,
+      }),
+      'utf8',
+    ).toString('base64url');
+    await expect(scope.retryRecoverableJob(extractionId)).rejects.toThrow('not_retryable');
+    await expect(scope.retryRecoverableJob(embeddingId)).rejects.toThrow('not_retryable');
+    await expect(scope.retryRecoverableJob(transcriptionId)).rejects.toThrow('not_retryable');
+    expect(enqueueExtractJob).not.toHaveBeenCalled();
+    expect(enqueueEmbedJob).not.toHaveBeenCalled();
+    expect(enqueueTranscribeJob).not.toHaveBeenCalled();
+  });
+
   it('retries object embedding with the original queue scope', async () => {
     await pg.exec(`
       INSERT INTO entities (id, team_id, type, canonical_name)

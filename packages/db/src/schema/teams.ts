@@ -13,6 +13,12 @@ import {
 import { users } from '#src/schema/users.js';
 
 export const teamRole = pgEnum('team_role', ['owner', 'admin', 'member']);
+
+/** Closed membership windows preserved when a removed member is re-accepted. */
+export interface TeamMemberPriorInterval {
+  startedAt: string;
+  endedAt: string;
+}
 export const teamInviteSendStatus = pgEnum('team_invite_send_status', [
   'pending',
   'sent',
@@ -49,6 +55,10 @@ export const teamMembers = pgTable(
     role: teamRole('role').notNull().default('member'),
     authorizationEpoch: uuid('authorization_epoch').defaultRandom().notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    priorIntervals: jsonb('prior_intervals')
+      .$type<TeamMemberPriorInterval[]>()
+      .notNull()
+      .default([]),
     removedAt: timestamp('removed_at', { withTimezone: true }),
     removedByUserId: uuid('removed_by_user_id').references(() => users.id, {
       onDelete: 'set null',

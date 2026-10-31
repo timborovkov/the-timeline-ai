@@ -1,5 +1,6 @@
 import { expect } from '@timeline/test-support';
 import { vi } from '@timeline/test-support';
+import { MockEmbeddingModelV3 } from 'ai/test';
 import { afterEach, beforeEach, describe, it } from 'bun:test';
 
 import type { SearchHit, SearchOpts } from '#src/qdrant/client.js';
@@ -20,6 +21,7 @@ const {
   auditLog,
   artifactClusters,
   artifactEvidenceAssociations,
+  billingUsageLedger,
   calendarEvents,
   connectionAttention,
   documents,
@@ -45,8 +47,12 @@ const {
 } = await import('@timeline/db');
 const { eq } = await import('drizzle-orm');
 const { drizzle } = await import('drizzle-orm/pglite');
+const { BillingAdmissionError } = await import('#src/billing/errors.js');
+const { getBillingContext, runWithBillingContext } = await import('#src/billing/context.js');
+const { periodYm } = await import('#src/billing/runtime.js');
 const { resetSecretsKeyCacheForTests } = await import('#src/crypto/secrets.js');
 const { resetEnvForTests } = await import('#src/env.js');
+const { embed } = await import('#src/llm/embed.js');
 const {
   adminCommitIntegrationSyncCheckpoint,
   adminDecryptIntegrationTokens,
@@ -192,6 +198,8 @@ describe('withTeam namespaced port', () => {
     expect(scope.calendar).toBeDefined();
     expect(scope.integrations).toBeDefined();
     expect(scope.mcp).toBeDefined();
+    expect(scope.billing).toBeDefined();
+    expect(scope.billingOperator).toBeDefined();
 
     expect(scope).not.toHaveProperty('listEvents');
     expect(scope).not.toHaveProperty('getEventWithFacts');
@@ -1168,6 +1176,149 @@ describe('withTeam namespaced port', () => {
     );
   });
 
+  function meteringEmbed(calls: string[]) {
+    const model = new MockEmbeddingModelV3({
+      doEmbed: (() => {
+        calls.push('provider');
+        return Promise.resolve({ embeddings: [[0.2]] });
+      }) as never,
+    });
+    return ({ text }: { text: string }) => embed({ text }, { model, maxRetries: 0 });
+  }
+
+  it('meters object-note search embeddings under the search billing context', async () => {
+    const calls: string[] = [];
+    const contexts: ReturnType<typeof getBillingContext>[] = [];
+    const scope = withTeam(db as never, TEAM_A, USER_A, {
+      embed: async (input) => {
+        contexts.push(getBillingContext());
+        return meteringEmbed(calls)(input);
+      },
+      qdrantSearch: () => Promise.resolve([]),
+    });
+    await scope.billing.getAccount();
+
+    await expect(scope.timeline.searchObjectNotes({ query: 'refund routing' })).resolves.toEqual(
+      [],
+    );
+    await expect(scope.timeline.embedEventQuery('refund routing')).resolves.toEqual([0.2]);
+    await expect(scope.timeline.searchEvents({ query: 'refund routing' })).resolves.toEqual([]);
+
+    expect(calls).toEqual(['provider', 'provider', 'provider']);
+    expect(contexts).toEqual([
+      expect.objectContaining({
+        teamId: TEAM_A,
+        userId: USER_A,
+        operationClass: 'embedding',
+        source: 'search',
+      }),
+      expect.objectContaining({ source: 'search', operationClass: 'embedding' }),
+      expect.objectContaining({ source: 'search', operationClass: 'embedding' }),
+    ]);
+    const ledger = await db
+      .select({ source: billingUsageLedger.source, meterId: billingUsageLedger.meterId })
+      .from(billingUsageLedger)
+      .where(eq(billingUsageLedger.teamId, TEAM_A));
+    expect(ledger).toHaveLength(3);
+    expect(ledger.every((row) => row.source === 'search' && row.meterId === 'ai')).toBe(true);
+  });
+
+  it('keeps an outer billing context when object-note search embeds', async () => {
+    const calls: string[] = [];
+    let seen: ReturnType<typeof getBillingContext> | undefined;
+    const scope = withTeam(db as never, TEAM_A, USER_A, {
+      embed: async (input) => {
+        seen = getBillingContext();
+        return meteringEmbed(calls)(input);
+      },
+      qdrantSearch: () => Promise.resolve([]),
+    });
+    await scope.billing.getAccount();
+
+    await runWithBillingContext(
+      {
+        db: db as never,
+        teamId: TEAM_A,
+        userId: USER_A,
+        operationClass: 'embedding',
+        source: 'worker',
+        operationId: 'embedding:outer-job',
+      },
+      () => scope.timeline.searchObjectNotes({ query: 'refund routing' }),
+    );
+
+    expect(calls).toEqual(['provider']);
+    expect(seen).toMatchObject({ source: 'worker', operationId: 'embedding:outer-job' });
+    const ledger = await db
+      .select({ source: billingUsageLedger.source, operationId: billingUsageLedger.operationId })
+      .from(billingUsageLedger)
+      .where(eq(billingUsageLedger.teamId, TEAM_A));
+    expect(ledger).toHaveLength(1);
+    const row = ledger[0];
+    if (!row) throw new Error('missing search embedding ledger row');
+    expect(row.source).toBe('worker');
+    expect(row.operationId.startsWith('embedding:outer-job:')).toBe(true);
+  });
+
+  it('does not call the embedding provider for object-note search after the Free AI allowance is spent', async () => {
+    const calls: string[] = [];
+    const scope = withTeam(db as never, TEAM_A, USER_A, {
+      embed: meteringEmbed(calls),
+      qdrantSearch: () => Promise.resolve([]),
+    });
+    await scope.billing.getAccount();
+    await pg.exec(`
+      INSERT INTO billing_usage_counters (team_id, period_ym, meter_id, native_units, customer_charge_cents)
+      VALUES ('${TEAM_A}', '${periodYm()}', 'ai', 500, 500);
+    `);
+
+    const denied = await scope.timeline
+      .searchObjectNotes({ query: 'refund routing' })
+      .then(() => null)
+      .catch((error: unknown) => error);
+    expect(denied).toBeInstanceOf(BillingAdmissionError);
+    expect(denied).toMatchObject({ code: 'free_allowance_reached' });
+    expect(calls).toEqual([]);
+    const ledger = await db
+      .select({ id: billingUsageLedger.id })
+      .from(billingUsageLedger)
+      .where(eq(billingUsageLedger.teamId, TEAM_A));
+    expect(ledger).toEqual([]);
+  });
+
+  it('does not call the embedding provider for object-note search past a paid spend cap', async () => {
+    const previousCharges = process.env.BILLING_CHARGES_ENABLED;
+    process.env.BILLING_CHARGES_ENABLED = 'true';
+    resetEnvForTests();
+    try {
+      const calls: string[] = [];
+      const scope = withTeam(db as never, TEAM_A, USER_A, {
+        embed: meteringEmbed(calls),
+        qdrantSearch: () => Promise.resolve([]),
+      });
+      await scope.billing.getAccount();
+      await pg.exec(`
+        UPDATE team_billing_accounts
+        SET plan_id = 'payg', billing_state = 'payg_active', spend_cap_cents = 0, shadow_billing = false
+        WHERE team_id = '${TEAM_A}';
+        INSERT INTO billing_usage_counters (team_id, period_ym, meter_id, native_units, customer_charge_cents)
+        VALUES ('${TEAM_A}', '${periodYm()}', 'ai', 500, 0);
+      `);
+
+      const denied = await scope.timeline
+        .searchObjectNotes({ query: 'refund routing' })
+        .then(() => null)
+        .catch((error: unknown) => error);
+      expect(denied).toBeInstanceOf(BillingAdmissionError);
+      expect(denied).toMatchObject({ code: 'spend_cap_reached' });
+      expect(calls).toEqual([]);
+    } finally {
+      if (previousCharges === undefined) delete process.env.BILLING_CHARGES_ENABLED;
+      else process.env.BILLING_CHARGES_ENABLED = previousCharges;
+      resetEnvForTests();
+    }
+  });
+
   it('searches every SQL sender-filtered event id batch before ranking semantic results', async () => {
     const firstId = '00000000-0000-0000-0000-000000000122';
     const secondId = '00000000-0000-0000-0000-000000000123';
@@ -1521,6 +1672,36 @@ describe('withTeam namespaced port', () => {
 
     const [row] = await db.select().from(rawEvents).where(eq(rawEvents.id, event.id));
     expect(row?.visibility).toBe('team');
+  });
+
+  it('does not embed a billing-deferred event when it becomes team-visible', async () => {
+    const enqueueRawEventEmbed = vi.fn().mockResolvedValue(undefined);
+    const ownerScope = withTeam(db as never, TEAM_A, USER_A, { enqueueRawEventEmbed });
+    const deferred = await ownerScope.timeline.createEvent({
+      authorUserId: null,
+      visibilityOwnerUserId: USER_A,
+      source: 'email',
+      contentText: 'deferred parent',
+      visibility: 'private',
+      sourceMetadata: { billing_enrichment_deferred: true },
+    });
+    const admitted = await ownerScope.timeline.createEvent({
+      authorUserId: null,
+      visibilityOwnerUserId: USER_A,
+      source: 'email',
+      contentText: 'admitted parent',
+      visibility: 'private',
+      sourceMetadata: { billing_enrichment_deferred: false },
+    });
+
+    await ownerScope.timeline.setEventVisibility(deferred.id, { visibility: 'team' });
+    await ownerScope.timeline.setEventVisibility(admitted.id, { visibility: 'team' });
+
+    expect(enqueueRawEventEmbed).toHaveBeenCalledTimes(1);
+    expect(enqueueRawEventEmbed).toHaveBeenCalledWith({
+      teamId: TEAM_A,
+      rawEventId: admitted.id,
+    });
   });
 
   it('audits source-owned private event detail reads against the visibility owner', async () => {

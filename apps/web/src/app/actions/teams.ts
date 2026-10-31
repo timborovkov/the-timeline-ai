@@ -20,6 +20,22 @@ import {
   telegramUserTeams,
   users,
 } from '@timeline/db';
+import {
+  completePolarMembershipChange,
+  lockTeamBillingIdentity,
+  PolarIdentityError,
+  synchronizePolarBillingUser,
+  preparePolarMembershipChange,
+  createPolarBillingProvider,
+} from '@timeline/shared/billing';
+import {
+  applyOwnedTeamFreeGrant,
+  assertTeamMemberSeatCapacity,
+  expiredInviteNeedsSeat,
+  insertRestrictedFreeBillingAccount,
+  isBillingAdmissionError,
+  releaseFreeGrantIfOwnerLeaves,
+} from '@timeline/shared/billing';
 import { resetSurfaceSessionsForTeamUserInTransaction } from '@timeline/shared/conversation-surfaces';
 import { getEnv } from '@timeline/shared/env';
 import * as integrationsLib from '@timeline/shared/integrations';
@@ -40,6 +56,8 @@ import { revalidatePath } from 'next/cache';
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { z } from 'zod';
+
+import type { Db } from '@timeline/db';
 
 import {
   ACTIVE_TEAM_COOKIE,
@@ -102,6 +120,7 @@ export async function createTeamAction(
           .returning({ id: teams.id });
         const id = inserted[0]?.id;
         if (!id) throw new Error('insert teams returned nothing');
+        // react-doctor-disable-next-line react-doctor/async-parallel -- Restricted billing insert must precede the Free grant on this transaction client.
         await tx.insert(teamMembers).values({
           teamId: id,
           userId: session.user.id,
@@ -112,6 +131,12 @@ export async function createTeamAction(
           defaultTimezone,
         });
         await insertDefaultDigestDestination(tx, id);
+        await insertRestrictedFreeBillingAccount({ db: tx, teamId: id });
+        await applyOwnedTeamFreeGrant({
+          db: tx,
+          teamId: id,
+          userId: session.user.id,
+        });
         return id;
       });
     } catch (err) {
@@ -769,7 +794,11 @@ export async function inviteMemberAction(
         if (activeMembers[0]) throw new Error('already-member');
 
         const openInvites = await tx
-          .select({ id: teamInvites.id, role: teamInvites.role })
+          .select({
+            id: teamInvites.id,
+            role: teamInvites.role,
+            expiresAt: teamInvites.expiresAt,
+          })
           .from(teamInvites)
           .where(
             and(
@@ -785,6 +814,11 @@ export async function inviteMemberAction(
         if (existing?.role === 'admin' && callerRole !== 'owner') {
           throw new Error('admin-invite-owned-by-owner');
         }
+        await assertTeamMemberSeatCapacity({
+          db: tx as unknown as typeof db,
+          teamId: active.teamId,
+          additionalSeats: !existing || expiredInviteNeedsSeat(existing.expiresAt) ? 1 : 0,
+        });
         const rows = existing
           ? await tx
               .update(teamInvites)
@@ -847,6 +881,12 @@ export async function inviteMemberAction(
       if (err instanceof Error && err.message === 'admin-invite-owned-by-owner') {
         return { error: 'Only owners can change an admin invite for this email.' };
       }
+      if (isBillingAdmissionError(err)) {
+        return {
+          error:
+            'This plan’s member limit is reached. Add a payment method or choose a larger plan to invite more people.',
+        };
+      }
       reportCaughtError(err, { surface: 'server_action', operation: 'invite_member' });
       return { error: 'Failed to create invite' };
     }
@@ -876,51 +916,68 @@ export async function resendInviteAction(formData: FormData): Promise<TeamMutati
     const token = randomToken(24);
     const expiresAt = new Date(Date.now() + INVITE_TTL_MS);
     const inviterName = session.user.name ?? session.user.email ?? 'A teammate';
-    const delivery = await db.transaction(
-      async (tx): Promise<{ ok: true; input: InviteDeliveryInput } | TeamMutationResult> => {
-        const rows = await tx
-          .select({
-            id: teamInvites.id,
-            email: teamInvites.email,
-            role: teamInvites.role,
-          })
-          .from(teamInvites)
-          .where(
-            and(
-              eq(teamInvites.id, inviteId),
-              eq(teamInvites.teamId, active.teamId),
-              isNull(teamInvites.acceptedAt),
-              isNull(teamInvites.revokedAt),
-            ),
-          )
-          .limit(1)
-          .for('update');
-        const invite = rows[0];
-        if (!invite) return { error: 'Invite is no longer available' };
-        if (invite.role === 'owner') return { error: 'This invite cannot be resent' };
-        if (invite.role === 'admin' && callerRole !== 'owner') {
-          return { error: 'Only owners can resend admin invites' };
-        }
-        await tx
-          .update(teamInvites)
-          .set({ token, expiresAt, sendStatus: 'pending', sendError: null, lastSentAt: null })
-          .where(eq(teamInvites.id, invite.id));
-        return {
-          ok: true,
-          input: {
-            id: invite.id,
+    let delivery: { ok: true; input: InviteDeliveryInput } | TeamMutationResult;
+    try {
+      delivery = await db.transaction(
+        async (tx): Promise<{ ok: true; input: InviteDeliveryInput } | TeamMutationResult> => {
+          const rows = await tx
+            .select({
+              id: teamInvites.id,
+              email: teamInvites.email,
+              role: teamInvites.role,
+              expiresAt: teamInvites.expiresAt,
+            })
+            .from(teamInvites)
+            .where(
+              and(
+                eq(teamInvites.id, inviteId),
+                eq(teamInvites.teamId, active.teamId),
+                isNull(teamInvites.acceptedAt),
+                isNull(teamInvites.revokedAt),
+              ),
+            )
+            .limit(1)
+            .for('update');
+          const invite = rows[0];
+          if (!invite) return { error: 'Invite is no longer available' };
+          if (invite.role === 'owner') return { error: 'This invite cannot be resent' };
+          if (invite.role === 'admin' && callerRole !== 'owner') {
+            return { error: 'Only owners can resend admin invites' };
+          }
+          await assertTeamMemberSeatCapacity({
+            db: tx as unknown as typeof db,
             teamId: active.teamId,
-            inviterUserId: session.user.id,
-            email: invite.email,
-            role: invite.role,
-            token,
-            expiresAt,
-            teamName: active.teamName,
-            inviterName,
-          },
+            additionalSeats: expiredInviteNeedsSeat(invite.expiresAt) ? 1 : 0,
+          });
+          await tx
+            .update(teamInvites)
+            .set({ token, expiresAt, sendStatus: 'pending', sendError: null, lastSentAt: null })
+            .where(eq(teamInvites.id, invite.id));
+          return {
+            ok: true,
+            input: {
+              id: invite.id,
+              teamId: active.teamId,
+              inviterUserId: session.user.id,
+              email: invite.email,
+              role: invite.role,
+              token,
+              expiresAt,
+              teamName: active.teamName,
+              inviterName,
+            },
+          };
+        },
+      );
+    } catch (err) {
+      if (isBillingAdmissionError(err)) {
+        return {
+          error:
+            'This plan’s member limit is reached. Add a payment method or choose a larger plan to invite more people.',
         };
-      },
-    );
+      }
+      throw err;
+    }
     if (!('input' in delivery)) return { error: delivery.error ?? 'Couldn’t resend invite' };
     await deliverInviteEmail(delivery.input);
     revalidatePath('/app/team');
@@ -1006,8 +1063,17 @@ export async function changeMemberRoleAction(formData: FormData): Promise<TeamMu
     }
 
     try {
+      await preparePolarMembershipChange({
+        db,
+        teamId: active.teamId,
+        actorUserId: session.user.id,
+        userId: memberUserId,
+        targetRole: role,
+        provider: createPolarBillingProvider(),
+      });
       const outcome = await db.transaction(
         async (tx): Promise<TeamMutationResult & { changed?: boolean }> => {
+          await lockTeamBillingIdentity(tx as unknown as Db, active.teamId);
           const targetRows = await tx
             .select({ role: teamMembers.role })
             .from(teamMembers)
@@ -1026,12 +1092,25 @@ export async function changeMemberRoleAction(formData: FormData): Promise<TeamMu
           if (target.role === 'owner' && role !== 'owner') {
             await assertNotLastOwner(tx, active.teamId, memberUserId);
           }
+          await completePolarMembershipChange(
+            tx as unknown as Db,
+            active.teamId,
+            memberUserId,
+            role,
+          );
           await tx
             .update(teamMembers)
             .set({ role })
             .where(
               and(eq(teamMembers.teamId, active.teamId), eq(teamMembers.userId, memberUserId)),
             );
+          if (target.role === 'owner' && role !== 'owner') {
+            await releaseFreeGrantIfOwnerLeaves({
+              db: tx,
+              teamId: active.teamId,
+              userId: memberUserId,
+            });
+          }
           await tx.insert(auditLog).values({
             teamId: active.teamId,
             actorUserId: session.user.id,
@@ -1051,7 +1130,21 @@ export async function changeMemberRoleAction(formData: FormData): Promise<TeamMu
       );
       if (outcome.error) return outcome;
       if (!outcome.changed) return { ok: true };
+      if (role === 'owner' || role === 'admin') {
+        try {
+          await synchronizePolarBillingUser({
+            db,
+            userId: memberUserId,
+            provider: createPolarBillingProvider(),
+          });
+        } catch {
+          return {
+            error: 'Role saved. Billing access is pending a provider sync; retry from Billing.',
+          };
+        }
+      }
     } catch (e) {
+      if (e instanceof PolarIdentityError) return { error: e.message };
       if (e instanceof Error && e.message === 'last_owner') {
         reportCaughtError(e, { surface: 'server_action', operation: 'change_member_role' });
         return { error: 'The team needs at least one owner' };
@@ -1086,7 +1179,16 @@ export async function removeMemberAction(formData: FormData): Promise<TeamMutati
     }[] = [];
 
     try {
+      await preparePolarMembershipChange({
+        db,
+        teamId: active.teamId,
+        actorUserId: session.user.id,
+        userId: memberUserId,
+        targetRole: 'removed',
+        provider: createPolarBillingProvider(),
+      });
       const outcome = await db.transaction(async (tx): Promise<TeamMutationResult> => {
+        await lockTeamBillingIdentity(tx as unknown as Db, active.teamId);
         const targetRows = await tx
           .select({ role: teamMembers.role })
           .from(teamMembers)
@@ -1112,6 +1214,12 @@ export async function removeMemberAction(formData: FormData): Promise<TeamMutati
         if (targetRole === 'owner') {
           await assertNotLastOwner(tx, active.teamId, memberUserId);
         }
+        await completePolarMembershipChange(
+          tx as unknown as Db,
+          active.teamId,
+          memberUserId,
+          'removed',
+        );
         await resetSurfaceSessionsForTeamUserInTransaction(tx, {
           teamId: active.teamId,
           userId: memberUserId,
@@ -1120,6 +1228,13 @@ export async function removeMemberAction(formData: FormData): Promise<TeamMutati
           .update(teamMembers)
           .set({ removedAt: new Date(), removedByUserId: session.user.id })
           .where(and(eq(teamMembers.teamId, active.teamId), eq(teamMembers.userId, memberUserId)));
+        if (targetRole === 'owner') {
+          await releaseFreeGrantIfOwnerLeaves({
+            db: tx,
+            teamId: active.teamId,
+            userId: memberUserId,
+          });
+        }
         await tx
           .delete(teamCalendarSubscriptions)
           .where(
@@ -1440,6 +1555,7 @@ export async function removeMemberAction(formData: FormData): Promise<TeamMutati
       });
       if (outcome.error) return outcome;
     } catch (e) {
+      if (e instanceof PolarIdentityError) return { error: e.message };
       if (e instanceof Error && e.message === 'last_owner') {
         reportCaughtError(e, { surface: 'server_action', operation: 'remove_member' });
         return { error: 'The team needs at least one owner' };

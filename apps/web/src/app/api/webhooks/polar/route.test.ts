@@ -1,0 +1,150 @@
+import { createHmac } from 'node:crypto';
+
+import { expect, vi } from '@timeline/test-support';
+import { beforeEach, describe, it } from 'bun:test';
+
+const verifyPolarWebhookSignature = vi.fn();
+const handlePolarWebhookEvent = vi.fn();
+const configuredProvider = { id: 'synthetic-provider' };
+const createPolarBillingProvider = vi.fn<() => typeof configuredProvider | null>(
+  () => configuredProvider,
+);
+
+await vi.mock(
+  import.meta.resolve('@timeline/shared/env'),
+  () => ({
+    getEnv: () => ({
+      POLAR_WEBHOOK_SECRET: 'whsec_dGVzdC1zZWNyZXQ=',
+      POLAR_PRODUCT_ID_PAYG: 'prod_payg',
+      POLAR_PRODUCT_ID_TEAM: 'prod_team',
+      POLAR_PRODUCT_ID_BUSINESS: 'prod_business',
+      BILLING_CHARGES_ENABLED: false,
+    }),
+  }),
+  () => import('@timeline/shared/env'),
+);
+
+await vi.mock(
+  import.meta.resolve('@timeline/shared/billing'),
+  () => ({
+    verifyPolarWebhookSignature: (...args: unknown[]) =>
+      verifyPolarWebhookSignature(...args) as boolean,
+    handlePolarWebhookEvent: (...args: unknown[]) => handlePolarWebhookEvent(...args) as unknown,
+    createPolarBillingProvider: () => createPolarBillingProvider(),
+  }),
+  () => import('@timeline/shared/billing'),
+);
+
+await vi.mock(
+  import.meta.resolve('@/lib/db'),
+  () => ({
+    db: { id: 'db' },
+  }),
+  () => import('@/lib/db'),
+);
+
+describe('POST /api/webhooks/polar', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    createPolarBillingProvider.mockReturnValue(configuredProvider);
+    verifyPolarWebhookSignature.mockReturnValue(true);
+    handlePolarWebhookEvent.mockResolvedValue({ ok: true });
+  });
+
+  it('rejects invalid signatures', async () => {
+    verifyPolarWebhookSignature.mockReturnValue(false);
+    const { POST } = await import('./route');
+    const res = await POST(
+      new Request('http://localhost/api/webhooks/polar', {
+        method: 'POST',
+        body: '{}',
+      }),
+    );
+    expect(res.status).toBe(401);
+  });
+
+  it('forwards a verified payload to the Polar webhook handler', async () => {
+    const { POST } = await import('./route');
+    const body = JSON.stringify({
+      type: 'subscription.active',
+      data: {
+        id: 'sub_1',
+        product_id: 'prod_team',
+        customer: { id: 'cus_1', external_id: 'team-uuid' },
+      },
+    });
+    const res = await POST(
+      new Request('http://localhost/api/webhooks/polar', {
+        method: 'POST',
+        body,
+        headers: { 'content-type': 'application/json' },
+      }),
+    );
+    expect(res.status).toBe(200);
+    expect(handlePolarWebhookEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        chargesEnabled: false,
+        products: {
+          payg: 'prod_payg',
+          team: 'prod_team',
+          business: 'prod_business',
+        },
+        provider: configuredProvider,
+      }),
+    );
+    expect(createPolarBillingProvider).toHaveBeenCalled();
+  });
+
+  it('fails closed without a configured identity provider', async () => {
+    createPolarBillingProvider.mockReturnValue(null);
+    const { POST } = await import('./route');
+    const res = await POST(
+      new Request('http://localhost/api/webhooks/polar', {
+        method: 'POST',
+        body: '{}',
+      }),
+    );
+    expect(res.status).toBe(503);
+    expect(handlePolarWebhookEvent).not.toHaveBeenCalled();
+  });
+
+  it('rejects invalid JSON after a valid signature', async () => {
+    const { POST } = await import('./route');
+    const res = await POST(
+      new Request('http://localhost/api/webhooks/polar', {
+        method: 'POST',
+        body: '{',
+      }),
+    );
+    expect(res.status).toBe(400);
+    expect(handlePolarWebhookEvent).not.toHaveBeenCalled();
+  });
+
+  it('rejects an oversized body before signature verify or parse', async () => {
+    const { POST } = await import('./route');
+    const res = await POST(
+      new Request('http://localhost/api/webhooks/polar', {
+        method: 'POST',
+        headers: { 'content-length': String(1024 * 1024 + 1) },
+        body: '{}',
+      }),
+    );
+    expect(res.status).toBe(413);
+    await expect(res.json()).resolves.toMatchObject({ reason: 'payload_too_large' });
+    expect(verifyPolarWebhookSignature).not.toHaveBeenCalled();
+    expect(handlePolarWebhookEvent).not.toHaveBeenCalled();
+  });
+});
+
+describe('signature helper wiring', () => {
+  it('documents expected header names for fixtures', () => {
+    const secretRaw = Buffer.from('test-secret');
+    const body = '{}';
+    const webhookId = 'msg_1';
+    const timestamp = '1';
+    const signature = createHmac('sha256', secretRaw)
+      .update(`${webhookId}.${timestamp}.${body}`)
+      .digest('base64');
+    expect(signature.length).toBeGreaterThan(10);
+  });
+});

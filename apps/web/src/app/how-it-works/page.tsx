@@ -134,6 +134,15 @@ export default function HowItWorksPage() {
               Try one real project
               <ArrowRight aria-hidden="true" className="size-4" />
             </Link>
+            <p className="max-w-xs text-sm leading-6 text-fg-muted lg:text-right">
+              Free to start · no card required ·{' '}
+              <Link
+                href="/pricing"
+                className="underline decoration-border-strong underline-offset-4 hover:decoration-fg"
+              >
+                See pricing
+              </Link>
+            </p>
             <Link
               href={featuredGuide.route}
               className="rounded-sm text-sm font-semibold text-fg underline decoration-border-strong underline-offset-4 outline-none hover:decoration-fg focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface"

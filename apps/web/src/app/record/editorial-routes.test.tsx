@@ -144,7 +144,7 @@ describe('how-it-works and guide routes', () => {
     expect(guideShell).toContain('href="/help"');
     expect(recordShell).toContain('data-public-header="true"');
     expect(recordShell).toContain('How it works');
-    expect(guideShell).toContain('>Try one project</a>');
+    expect(guideShell).toContain('>Start free</a>');
     expect(guideShell).not.toMatch(
       /href="(?:\/(?:app\/)?demo|\/workspace\/demo|https?:\/\/t\.me\/)/u,
     );

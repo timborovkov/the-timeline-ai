@@ -23,6 +23,7 @@ const { rawEvents, reconciliationEvidence, reconciliationEvidenceAnchors } =
   await import('@timeline/db');
 const { eq } = await import('drizzle-orm');
 const { drizzle } = await import('drizzle-orm/pglite');
+const { insertRestrictedFreeBillingAccount } = await import('#src/billing/capacity.js');
 const { recordMcpToolResultEvidence } = await import('#src/reconciliation/mcp-capture.js');
 const { applyDbMigrations } = await import('#src/test/pglite.js');
 
@@ -154,6 +155,34 @@ describe('MCP reconciliation capture', () => {
         ['mcp_call', metadata.mcp_call_id, 'hard'],
       ]),
     );
+  });
+
+  it('stores MCP evidence and skips embed when the accepted-source meter denies it', async () => {
+    await insertRestrictedFreeBillingAccount({ db: db as never, teamId: TEAM_ID });
+    const result = await recordMcpToolResultEvidence({
+      db: db as never,
+      teamId: TEAM_ID,
+      actorUserId: USER_ID,
+      visibility: 'team',
+      visibilityOwnerUserId: null,
+      serverId: SERVER_ID,
+      serverName: 'Research MCP',
+      toolName: TOOL_NAME,
+      namespacedToolName: NAMESPACED_TOOL_NAME,
+      args: { q: 'Acme rollout' },
+      result: { content: [{ type: 'text', text: 'Still stored as evidence.' }] },
+      occurredAt: new Date('2026-07-02T08:05:00.000Z'),
+    });
+
+    expect(result.evidenceIds).toHaveLength(1);
+    expect(queueMocks.enqueueEmbedJob).not.toHaveBeenCalled();
+    const [raw] = await db.select().from(rawEvents).where(eq(rawEvents.id, result.rawEventId));
+    expect(raw?.sourceMetadata).toMatchObject({ billing_enrichment_deferred: true });
+    const evidence = await db
+      .select()
+      .from(reconciliationEvidence)
+      .where(eq(reconciliationEvidence.rawEventId, result.rawEventId));
+    expect(evidence).toHaveLength(1);
   });
 
   it('dedupes repeated MCP tool result captures by server, tool, args, and result', async () => {

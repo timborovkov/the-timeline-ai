@@ -22,6 +22,21 @@ This file now tracks only remaining work and recurring operating obligations.
 Use the repository history, release notes, and phase PRs for shipped
 implementation detail.
 
+## Billing identity follow-up
+
+- Polar sandbox currently ignores `CustomerUpdate.email = null`; track provider
+  support before declaring converted customer email cleanup complete. Do not
+  reset customers or reassign unrelated identities as a workaround.
+- Before using another environment, apply `0091_polar_team_identity.sql` and
+  review the per-team conversion dry-run. The user's 2026-10-31 read-only SQL
+  results confirmed the identity table/columns in the inspected deployed database.
+  The three inspected teams had no stored mappings, and exact sandbox external-ID
+  lookups found no customers: normal team checkout can create them without a reset.
+- The Polar branch auto-deploys on push. Review follow-up evidence and thread
+  dispositions: [PR review audit](docs/testing/polar-review-audit.md).
+- Sandbox evidence and remaining verification limits:
+  [Polar team identity](docs/testing/polar-team-identity.md).
+
 ## Product North Star
 
 Reframe remaining work around the path from passive capture to self-maintaining
@@ -637,7 +652,179 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       return cited answers from the correct document version.
 - [ ] Iterate on extraction prompts based on misses, then re-extract historical
       events as prompts improve.
-- [ ] Decide pricing model: per seat, per team, usage-based, or hybrid.
+- [x] Decide pricing model: per seat, per team, usage-based, or hybrid.
+      V1: Free + PAYG (€0 platform) with native meters; optional Team (€49) /
+      Business (€199) commitments; Enterprise custom. Polar MoR + shadow ledger.
+- [x] Billing foundation: entitlements catalog, Polar products/meters (sandbox),
+      `team_billing_*` ledger, `/pricing`, team Billing settings, webhook verify,
+      shadow mode (`BILLING_CHARGES_ENABLED=false`). See ADR 0018.
+- [x] Pricing UX: self-serve plan grid (no Enterprise column); gray Enterprise
+      contact nudge; `/app/usage` is a meter, amount, and cost table (infrastructure limits stay
+      folded); team Billing shows remaining benefits, recorded charges, the separate plan fee and spend cap, and
+      one action; members only see a cap or allowance notice; Home keeps a one-line admin nudge.
+      Free hard-stop + spend-cap admission in billing scope (`release` included).
+- [x] Wire native v1 meters at production call sites: Ask + Recall (existing),
+      background LLM workers via ALS (`withAiMetering` in the OpenRouter wrappers),
+      accepted unique sources at ingest, inbound/outbound email units, daily
+      storage GB-month + member-day janitor, document write capacity.
+      Agent turns, concurrent Recall bots, custom MCP servers, indexed chunks, and active-member
+      ceilings are catalog capacity — not extra billed Polar meters. Extra
+      owned workspaces claim at most one person-level Free grant after the owner
+      email is verified.
+- [x] PAYG, Team, and Business collect on a Polar subscription. PAYG is the €0
+      product; checkout saves the card. Usage above the Free floor and above the
+      included invoice discount is ingested and invoiced monthly in arrears.
+      The spend cap is the hard stop (alerts at 50/75/90/100). `past_due` pauses
+      costly work and emails owners. No prepaid wallet, top-up, or auto-reload.
+      Cheapest-plan preview from gross native
+      usage (informational, never auto-switch; hidden unless another plan saves at
+      least €5 and 10% of the current projected bill), platform-admin comped plans
+      (assigning a comp revokes the current Polar subscription, and is refused when Polar is not configured; an open Enterprise checkout is closed first, and a checkout that is still payable or already paid blocks the comp; a later subscription webhook on a comped workspace is revoked and stored until that revoke succeeds) and
+      per-team price overrides (<code>PLATFORM_ADMIN_EMAILS</code>, audited, spend cap still
+      applies; raising a positive cap clears a spend-cap freeze and leaves
+      <code>past_due</code> paused), <code>bun run billing:polar-setup</code> archives a sandbox Timeline Top-up
+      product and ensures the Timeline webhook. Daily member facts persist included seats,
+      rate and percentage discount under the account lock, so override expiry or replacement
+      cannot retroactively bill old days; legacy stamps recover operator audit history.
+      Completed provider results replay through billing pauses after membership/security checks,
+      while incomplete and new work still require admission. Promo codes resolve through Polar's organization-scoped
+      catalog; active team assignments override codes, expired assignments do not, and failed
+      discount application cannot continue at full price. Setup leaves campaigns untouched.
+      Team/Business included-discount
+      period reset (webhook + janitor advancing the stored Polar window; not
+      every Polar retry). Paid-plan changes update the existing Polar subscription.
+      Included-discount collection is not ingested. Polar receives the payable
+      remainder for PAYG, Team, Business, and Enterprise only when the active
+      subscription product matches the plan and that product's priced meters include
+      the event. A product id match alone does not prove the meter is priced. A payable
+      charge with no matching price stays local and opens an operator unbilled-usage alert.
+      Sub-cent rounds stay local until they become a cent, and that cent is ingested as the
+      catalog units that price it. Percentage discounts settle from the cumulative total.
+      A Team webhook does not downgrade Enterprise. Enterprise checkout keeps one
+      outstanding Polar session. An earlier session is expired when Polar reports it
+      expired, failed, or missing; a session that stays open blocks another link. The
+      paid Enterprise subscription webhook applies only the checkout that was paid. A
+      second live subscription is revoked, or alerted when revoke fails. An expired Enterprise
+      comp uses the Free allowance. Plan preview applies a metered percentage before
+      included credit. Replayed member-days keep the historical plan's extra-member rate. Comped plans are not overwritten. Clearing a comp refuses
+      while a Polar subscription id remains, then chooses Free or restricted from the grant.
+      Live charging follows `BILLING_CHARGES_ENABLED` without waiting for webhooks.
+      Stale Polar activations are ignored against `polar_event_modified_at`; a cancel that
+      has taken effect makes a paid plan restricted unless the team holds the Free grant.
+      A period-end cancel keeps the paid plan until `subscription.revoked` or
+      `cancel_effective_at`. Embedding meter cost is read from the raw OpenRouter response
+      body. `order.paid` does not
+      credit a local balance. Polar usage ingest retries from a claimed ledger outbox
+      after local settlement. A paid spend cap of €0 is a hard stop and is preserved across Polar
+      subscription updates. Extra member-days skip included
+      usage discount, accrue members added after the first daily tick, and ingest
+      as <code>timeline_extra_member_days</code> member-month fractions at the €2
+      catalog price (custom extra-member price scales the units). Pay as you go,
+      Team, Business, and Enterprise carry that metered price. Enterprise is the
+      Timeline Enterprise Polar product: a per-team custom platform fee opened by
+      a platform operator, plus the six metered prices. Opening that checkout stores
+      pending terms for that checkout only and retires any earlier outstanding checkout
+      Polar will expire. A checkout Polar leaves open is not replaced. A second link
+      that is created before the first one is saved keeps both checkout ids.
+      Self-serve checkout accepts only payg, team, and business at runtime.
+      Platform-admin actions require a verified email on the allowlisted user.
+      Main's journal entries through `0076_integration_health_pause` stay in place, and
+      billing migrations are appended after them with strictly increasing
+      timestamps, so a database that already applied #438 runs the billing
+      foundation before the free-grant backfill and still runs operator
+      controls before the Enterprise platform-fee migration. Object-summary
+      billing ids include the job timestamp, so a refresh is a new operation
+      and a retry of that job reuses it. An empty Ask settles recorded provider
+      cost. Opening that Enterprise checkout does not grant entitlements, clear
+      the current subscription id, or revive an expired price override. Paying that checkout
+      activates its terms and stores the contracted platform fee apart from the
+      removable usage override. A second live subscription is revoked or alerted,
+      and is not dropped. Spend
+      caps follow the locally metered charge for comps and paid plans even when
+      Polar will not invoice that charge. Standard Free stays on the allowance,
+      and a contractual Enterprise subscription does not freeze on the cap.
+      <code>bun run billing:polar-setup</code> creates or reuses the six meters and four
+      monthly products, fixes a wrong immutable price by adding the correct one and
+      archiving the old one, and prints the ids instead of writing <code>.env</code>.
+      Null included members stay unlimited.
+      Polar webhooks bound the request body before signature verify and lock the billing account
+      before applying Polar `modified_at`. Settlement above the current UTC period's paid
+      spend cap freezes the workspace. A prior month is recorded on that month and does not
+      freeze against the live cap. A positive spend-cap raise restores
+      `read_only` / `balance_exhausted`. It does not clear `past_due`. Extra member-days persist denied charges. Terminal Recall no-shows settle
+      waiting-room minutes. Cancelling a joining/active meeting with no chunks settles elapsed
+      minutes. Postmark success is recorded before email settlement. A delivered
+      message whose settlement fails stays reserved for the janitor and is not resent.
+      Reservation expiry locks the billing account before the reservation row. Meeting-finalize
+      billing uses the system actor. Free-grant inserts do not abort the caller transaction; the
+      post-verify backfill prefers oldest restricted Free workspaces. Scheduled join billing denials
+      do not pause auto-join as consecutive failures. Document writes require a reservable billing state.
+      Free-grant claims skip removed owners; storage admission converts aggregated bytes before
+      adding a new upload. Janitor included-discount resets lock the billing account against a
+      newer Polar plan/period. Ask streams that abort after work starts settle the reserved
+      customer charge. Document-extract allowlists `BILLING_CHARGES_ENABLED`. Deferred
+      accepted-source flush rotates past still-blocked rows. Document restore rechecks capacity;
+      document create serializes the Free count under lock key 1. Failed structured-output
+      attempts still contribute OpenRouter `usage.cost`. Recall minutes that span UTC months
+      split across those periods. Background AI metering keeps the reservation if settle fails
+      after a successful provider call and reuses the BullMQ job id. A thrown call that already
+      reported usage stores that attempt before settle and releases only after the ledger row
+      commits. Transcription chunks use distinct
+      operation ids. Ask and web chat save the completed cost before settle and the janitor retries
+      a failed settlement. Storage replay uses the plan effective that day, counts that day in its
+      own month, does not apply that month's spend to the live cap, and skips closed document
+      absence intervals. A missed renewal advances by calendar
+      months from the subscription anchor. A short month keeps the stored bounds, and the anchor
+      day is the later boundary day. Settled reservations are recognized before a new funding
+      check, and billing admission errors stay intact through the LLM wrapper. Enterprise settlement does not freeze on the spend cap. Member-day janitor ticks
+      retry unsettled facts across the full 31-day lookback, including the previous calendar month.
+      Aborting a Recall join after provider accept keeps the reservation when leave fails.
+      Terminal Recall settlement errors propagate for webhook retry. Remaining Free grants keep
+      the leftover team unrestricted. A retained Polar subscription id does not keep a Free
+      workspace unrestricted. Re-accepting a removed member stamps a new `createdAt`.
+      Replay included discount follows the subscription renewal window that contains the usage day, including a calendar-month window that has a persisted <code>usage_at</code>. Reserve and settle refill an elapsed included-discount window under the account lock before pricing current-period usage. A settlement whose usage instant is earlier than that window uses the earlier window's remaining discount, read inside that locked settlement, and leaves the refilled balance unchanged. Pending reservations count toward Free allowance, PAYG overage, and the spend cap only in the UTC month they occupy. A Recall reservation splits across the month boundary. Recovered settlements keep the plan that admitted the usage, so a PAYG overage settled after a Free downgrade stays on the invoice. A Free plan-history baseline is stored at account creation and backfilled ahead of the first paid row. The janitor rechecks <code>cancel_effective_at</code> under the account lock before downgrading. Deferred enrichment clears its
+      marker only after Redis enqueue succeeds.
+      Storage snapshots backfill missed days. A missed storage day, or one priced on another plan or month, settles without today's allowance or billing-state admission. Suspended and terminated workspaces still block that recovery. Today's live-plan snapshot still reserves. Missed member-days with no stamp use the
+      plan effective that day before the current plan. Reactivating a reservation resets `createdAt`.
+      Restore takes advisory lock 1 then 2. Worker AI concurrency follows
+      `costlyWorkerConcurrency` and delays a busy job. Paid-plan changes reuse the Polar
+      subscription in non-active paid states. Extra-member plan preview prorates from period
+      member-days, including person-days when the current plan has no extras. Inbound email audio skipped for a
+      denied email meter is recovered by a janitor transcription flush. Seat claims are blocked
+      while billing is paused. Enterprise settlement does not freeze on the spend cap. Interactive search
+      embeddings run under billing ALS. The Free grant unassigns when its owner leaves or is
+      demoted. A retained Polar subscription id does not keep that Free workspace unrestricted.
+      Member-day janitor ticks backfill missed days. Deleted documents are excluded
+      from indexed-chunk capacity; restore counts those chunks. Accepted-source replay meters
+      existing dedup rows. Web chat settles known compression cost when the answer stream fails.
+      Completed Ask tool rounds accumulate per step and settle when a later model step errors.
+      Live settlements stamp <code>usage_at</code>, and a renewal replay uses that instant instead of the month midpoint.
+      Deferred email audio stays deferred while its parent email is still billing-deferred.
+      Standard Free allowance use stays on native-unit counters and is omitted from the spend cap.
+      A cancelled no-transcript meeting stamps pending Recall settlement before the status commit,
+      and a no-show retry settles the first attempt on an attempt-specific operation id before the
+      next reserve.
+      `BILLING_CHARGES_ENABLED=false` shadows every reservation and settlement.
+      Enterprise has no self-serve checkout. `withAiMetering` skips OpenRouter when the durable operation already
+      completed, and stamps `worker_settlement_pending` so the janitor can settle a
+      finished call before the reservation TTL. An active Polar subscription update
+      does not clear a local `read_only` or `balance_exhausted` spend-cap freeze;
+      raising the spend cap still restores it. `past_due` still clears when Polar
+      reports a newer active status. A confirmed subscription cancel clears the Polar subscription
+      id and the contracted Enterprise fee once access has ended. A period-end cancel waits
+      for <code>subscription.revoked</code> or <code>cancel_effective_at</code>. Plan preview discounts extra-member cents. Recall
+      reservations and included-discount refills follow the effective plan after a comp expires.
+      Member-day ticks reuse the `plan_id` stamped on that day. A missed day with no stamp uses one helper for plan history, comp expiry, and Enterprise contracts: Free after `comp_expires_at`, and the comped plan's price before that. Storage replay uses the same helper. Re-accept appends `prior_intervals`. Denied inbound email
+      enrichment is recoverable via `billing_enrichment_deferred`, which stays set until each pending attachment is stored and linked. Orphan reconcile, job recovery, and operator replay leave that marker and `transcription_deferred` for the janitor flushes. A schema-invalid `json_object` fallback still settles its OpenRouter cost. Metered AI callbacks cache plain JSON values. Each model call in a worker job bills its own stage and input digest. A partial meeting cancel stays `processing`. Storage-cap
+      finalization deletes the rejected object. Captured chat attachments enforce
+      document/storage limits. Free in-allowance usage is not invoiced under
+      live charging. Recall leave retries run before reservation expiry.
+- [x] Owner email reminders at spend-cap 50/75/90/100% and Free near-limit /
+      exhaustion (once per threshold/period via `billing_usage_alert` Postmark
+      template; in-app nudges remain).
+- [ ] Enable Polar webhook with a real public URL; one shadow-billing month
+      before `BILLING_CHARGES_ENABLED`. Auto-reload emails a Polar checkout URL
+      (Polar has no silent saved-PM charge in v1).
 
 ## Standing Items
 
@@ -667,3 +854,5 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       changes, documents, document chunks, meeting transcript chunks, meeting
       summaries, integration events, calendar events, and optionally chat
       messages. Verify with periodic row-count vs. Qdrant payload audits.
+
+- [x] Team setup includes optional-on-Free billing setup, inferred from active billing arrangements; restricted Free banners explain email verification or a grant elsewhere with resolution actions.

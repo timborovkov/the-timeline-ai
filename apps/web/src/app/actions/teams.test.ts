@@ -1,6 +1,6 @@
-import { expect } from '@timeline/test-support';
-import { vi } from '@timeline/test-support';
+import { expect, vi } from '@timeline/test-support';
 import { beforeEach, describe, it } from 'bun:test';
+
 /**
  * Server-action tests for team management. These pin the action-level contract
  * for auth, validation, owner/admin permissions, invite delivery status,
@@ -55,6 +55,22 @@ await vi.mock(
     },
   }),
   () => import('@/lib/db'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/billing'),
+  async () => ({
+    ...(await import('@timeline/shared/billing')),
+    preparePolarMembershipChange: vi.fn().mockResolvedValue(undefined),
+    completePolarMembershipChange: vi.fn().mockResolvedValue(undefined),
+    lockTeamBillingIdentity: vi.fn().mockResolvedValue(undefined),
+    synchronizePolarBillingUser: vi.fn().mockResolvedValue(undefined),
+    createPolarBillingProvider: vi.fn().mockReturnValue(null),
+    applyOwnedTeamFreeGrant: vi.fn().mockResolvedValue({ ok: true }),
+    insertRestrictedFreeBillingAccount: vi.fn().mockResolvedValue(undefined),
+    assertTeamMemberSeatCapacity: vi.fn().mockResolvedValue(undefined),
+    releaseFreeGrantIfOwnerLeaves: vi.fn().mockResolvedValue(undefined),
+  }),
+  () => import('@timeline/shared/billing'),
 );
 await vi.mock(
   import.meta.resolve('@/lib/analytics'),
@@ -158,6 +174,9 @@ await vi.mock(
   () => import('@timeline/shared/slug'),
 );
 
+const { assertTeamMemberSeatCapacity, BillingAdmissionError, releaseFreeGrantIfOwnerLeaves } =
+  await import('@timeline/shared/billing');
+const { db } = await import('@/lib/db');
 const {
   changeMemberRoleAction,
   createTeamAction,
@@ -793,6 +812,52 @@ describe('inviteMemberAction', () => {
     });
     expect(fakes.fakeDbUpdate).not.toHaveBeenCalled();
   });
+
+  it('reserves a seat when an expired invite is reactivated', async () => {
+    const { tx } = makeTx([
+      [],
+      [
+        {
+          id: INVITE_ID,
+          role: 'member',
+          expiresAt: new Date(Date.now() - 86_400_000),
+        },
+      ],
+    ]);
+    mockTransactionWithTx(tx);
+
+    const reactivated = await inviteMemberAction(
+      {},
+      form({ email: 'expired@example.test', role: 'member' }),
+    );
+    expect(reactivated.inviteUrl).toContain('/accept-invite/');
+    expect(assertTeamMemberSeatCapacity).toHaveBeenCalledWith(
+      expect.objectContaining({ teamId: TEAM_ID, additionalSeats: 1 }),
+    );
+  });
+
+  it('does not reserve another seat for a still-open invite', async () => {
+    const { tx } = makeTx([
+      [],
+      [
+        {
+          id: INVITE_ID,
+          role: 'member',
+          expiresAt: new Date(Date.now() + 86_400_000),
+        },
+      ],
+    ]);
+    mockTransactionWithTx(tx);
+
+    const refreshed = await inviteMemberAction(
+      {},
+      form({ email: 'open@example.test', role: 'member' }),
+    );
+    expect(refreshed.inviteUrl).toContain('/accept-invite/');
+    expect(assertTeamMemberSeatCapacity).toHaveBeenCalledWith(
+      expect.objectContaining({ teamId: TEAM_ID, additionalSeats: 0 }),
+    );
+  });
 });
 
 describe('resendInviteAction', () => {
@@ -817,11 +882,21 @@ describe('resendInviteAction', () => {
 
   it('resets token state, sends email, records delivery, and revalidates', async () => {
     const { tx, updates } = makeTx([
-      [{ id: INVITE_ID, email: 'new@example.test', role: 'member' }],
+      [
+        {
+          id: INVITE_ID,
+          email: 'new@example.test',
+          role: 'member',
+          expiresAt: new Date(Date.now() + 86_400_000),
+        },
+      ],
     ]);
     mockTransactionWithTx(tx);
 
     await expect(resendInviteAction(form({ inviteId: INVITE_ID }))).resolves.toEqual({ ok: true });
+    expect(assertTeamMemberSeatCapacity).toHaveBeenCalledWith(
+      expect.objectContaining({ teamId: TEAM_ID, additionalSeats: 0 }),
+    );
 
     expect(updates).toEqual([
       expect.objectContaining({ token: 'invite-token', sendStatus: 'pending' }),
@@ -839,6 +914,51 @@ describe('resendInviteAction', () => {
     );
     expect(fakes.fakeDbUpdate).toHaveBeenCalledOnce();
     expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/team');
+  });
+
+  it('reserves a seat when resending an expired invite', async () => {
+    const { tx } = makeTx([
+      [
+        {
+          id: INVITE_ID,
+          email: 'new@example.test',
+          role: 'member',
+          expiresAt: new Date(Date.now() - 86_400_000),
+        },
+      ],
+    ]);
+    mockTransactionWithTx(tx);
+
+    await expect(resendInviteAction(form({ inviteId: INVITE_ID }))).resolves.toEqual({ ok: true });
+    expect(assertTeamMemberSeatCapacity).toHaveBeenCalledWith(
+      expect.objectContaining({ teamId: TEAM_ID, additionalSeats: 1 }),
+    );
+  });
+
+  it('refuses to reactivate an expired invite when the member cap is full', async () => {
+    vi.mocked(assertTeamMemberSeatCapacity).mockRejectedValueOnce(
+      new BillingAdmissionError(
+        'free_allowance_reached',
+        'Active member limit reached for this plan',
+      ),
+    );
+    const { tx } = makeTx([
+      [
+        {
+          id: INVITE_ID,
+          email: 'new@example.test',
+          role: 'member',
+          expiresAt: new Date(Date.now() - 86_400_000),
+        },
+      ],
+    ]);
+    mockTransactionWithTx(tx);
+
+    await expect(resendInviteAction(form({ inviteId: INVITE_ID }))).resolves.toEqual({
+      error:
+        'This plan’s member limit is reached. Add a payment method or choose a larger plan to invite more people.',
+    });
+    expect(fakes.fakeSendMessage).not.toHaveBeenCalled();
   });
 
   it('prevents admins from resending admin invites', async () => {
@@ -1086,6 +1206,11 @@ describe('removeMemberAction', () => {
 
     await expect(removeMemberAction(form({ userId: MEMBER_ID }))).resolves.toEqual({ ok: true });
 
+    expect(releaseFreeGrantIfOwnerLeaves).toHaveBeenCalledWith({
+      db: tx,
+      teamId: TEAM_ID,
+      userId: MEMBER_ID,
+    });
     expect(fakes.fakeAssertNotLastOwner).toHaveBeenCalledWith(
       expect.anything(),
       TEAM_ID,
@@ -1142,20 +1267,12 @@ describe('removeMemberAction', () => {
         },
       }),
     );
-    const attentionDb = fakes.fakeAdminRecordConnectionAttention.mock.calls[0]?.[0] as
-      { select: unknown } | undefined;
-    expect(attentionDb?.select).toBe(fakes.fakeDbSelect);
-    expect(attentionDb?.select).not.toBe(tx.select);
-    expect(fakes.fakeAdminRecordConnectionAttention).toHaveBeenCalledWith(
-      expect.anything(),
-      TEAM_ID,
-      {
-        providerConnectionId: 'provider-connection-id',
-        integrationId: 'integration-id',
-        category: 'needs_new_owner',
-        summary: 'Connection owner left team — choose a replacement connection',
-      },
-    );
+    expect(fakes.fakeAdminRecordConnectionAttention).toHaveBeenCalledWith(db, TEAM_ID, {
+      providerConnectionId: 'provider-connection-id',
+      integrationId: 'integration-id',
+      category: 'needs_new_owner',
+      summary: 'Connection owner left team — choose a replacement connection',
+    });
     expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/team');
   });
 });

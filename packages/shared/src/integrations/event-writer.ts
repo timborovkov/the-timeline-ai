@@ -1,8 +1,11 @@
 import {
   artifactEvidenceAssociations,
+  calendarEvents,
   type Db,
+  documentVersions,
   entities,
   integrations,
+  meetingTranscriptChunks,
   mondayConversationTombstoneInvalidations,
   mondayConversationTombstones,
   rawEvents,
@@ -12,7 +15,7 @@ import {
   slackConversationBindings,
   slackWorkspaces,
 } from '@timeline/db';
-import { and, eq, inArray, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNotNull, sql } from 'drizzle-orm';
 
 import type { IntegrationEvent, IntegrationRow, ObjectMapping } from '#src/integrations/types.js';
 
@@ -24,6 +27,9 @@ import {
   type EvidenceRole,
   type EvidenceStrength,
 } from '#src/artifacts/index.js';
+import { BILLING_SYSTEM_USER_ID } from '#src/billing/context.js';
+import { meterAcceptedSourceOperation, meterAcceptedSources } from '#src/billing/runtime.js';
+import { createBillingScope } from '#src/billing/scope.js';
 import { sourceMetadataWithConversationArtifacts } from '#src/conversational/contact-artifacts.js';
 import {
   reconcileLinkArtifactsForRawEvent,
@@ -41,7 +47,13 @@ import {
 import { compactObjectMap, resolveSignalClassForEvent } from '#src/integrations/signal-class.js';
 import { childLogger } from '#src/logger.js';
 import { invalidateObjectSummariesForRawEvent } from '#src/objects/summaries.js';
-import { enqueueEmbedJob, enqueueExtractJob } from '#src/queue/queues.js';
+import {
+  enqueueDocumentExtractJob,
+  enqueueEmbedJob,
+  enqueueExtractJob,
+  enqueueSuggestionJob,
+  enqueueTranscribeJob,
+} from '#src/queue/queues.js';
 import {
   AUTHORITY_POLICY_VERSION,
   authorityDecisionPayload,
@@ -62,6 +74,11 @@ import {
 import { withTeam } from '#src/team-scope.js';
 
 const log = childLogger('integrations:event-writer');
+
+const BILLING_ENRICHMENT_DEFERRED = 'billing_enrichment_deferred';
+const BILLING_ENRICHMENT_CHECKED_AT = 'billing_enrichment_checked_at';
+const TRANSCRIPTION_DEFERRED = 'transcription_deferred';
+const TRANSCRIPTION_DEFERRED_CHECKED_AT = 'transcription_deferred_checked_at';
 
 // Phase 11 — Persist normalized integration events into raw_events with
 // source='integration' + dedup_key. The partial unique index
@@ -335,13 +352,83 @@ export async function writeIntegrationEvents(deps: {
 
   const { inserted } = writeResult;
 
+  const insertedDedupKeys = new Set(inserted.map((row) => row.dedupKey));
+  const missingDedupKeys = writableEvents
+    .map((event) => event.dedupKey)
+    .filter((key) => !insertedDedupKeys.has(key));
+  let recoveredExisting: typeof inserted = [];
+  if (missingDedupKeys.length > 0) {
+    const existingByDedup = await loadRawEventIdsByDedupKey(deps.db, teamId, missingDedupKeys);
+    const existingIds = [...existingByDedup.values()];
+    if (existingIds.length > 0) {
+      recoveredExisting = await deps.db
+        .select({
+          id: rawEvents.id,
+          dedupKey: sql<string>`${rawEvents.sourceMetadata} ->> 'dedup_key'`,
+          sourceMetadata: rawEvents.sourceMetadata,
+        })
+        .from(rawEvents)
+        .where(inArray(rawEvents.id, existingIds));
+    }
+  }
+
   const activeInserted = inserted.filter(
     (row) => (row.sourceMetadata as { deleted?: unknown }).deleted !== true,
   );
-
+  const activeExisting = recoveredExisting.filter(
+    (row) => (row.sourceMetadata as { deleted?: unknown }).deleted !== true,
+  );
   const eventByDedupKey = new Map(writableEvents.map((event) => [event.dedupKey, event]));
+  const billableInserted: typeof activeInserted = [];
+  for (const row of activeInserted) {
+    const metered = await meterAcceptedSources({
+      db: deps.db,
+      teamId,
+      ...(authorUserId ? { userId: authorUserId } : {}),
+      rawEventIds: [row.id],
+    });
+    if (!metered.ok) {
+      log.warn(
+        { teamId, code: metered.code, rawEventId: row.id },
+        'accepted-source billing admission failed; storing raw event without AI enrichment',
+      );
+      const patch = JSON.stringify({ [BILLING_ENRICHMENT_DEFERRED]: true });
+      await deps.db
+        .update(rawEvents)
+        .set({
+          sourceMetadata: sql`COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) || ${patch}::jsonb`,
+        })
+        .where(eq(rawEvents.id, row.id));
+      continue;
+    }
+    billableInserted.push(row);
+  }
+  for (const row of activeExisting) {
+    const metered = await meterAcceptedSources({
+      db: deps.db,
+      teamId,
+      ...(authorUserId ? { userId: authorUserId } : {}),
+      rawEventIds: [row.id],
+    });
+    if (!metered.ok) {
+      const patch = JSON.stringify({ [BILLING_ENRICHMENT_DEFERRED]: true });
+      await deps.db
+        .update(rawEvents)
+        .set({
+          sourceMetadata: sql`COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) || ${patch}::jsonb`,
+        })
+        .where(eq(rawEvents.id, row.id));
+      continue;
+    }
+    // Replay of an already-metered row is a no-op. A crash after insert and
+    // before metering has no ledger yet, so enqueue enrichment on first recover.
+    if (!metered.duplicate) {
+      billableInserted.push(row);
+    }
+  }
+
   await Promise.all(
-    activeInserted.flatMap((row) => {
+    billableInserted.flatMap((row) => {
       const matchingEvent = eventByDedupKey.get(row.dedupKey);
       const jobs = [
         enqueueIntegrationProcessingJob(deps.db, row.id, 'embedding', () =>
@@ -750,14 +837,375 @@ function tombstoneMetadataForFutureConversationEvent(
   return target ? tombstoneRawEventMetadata(target) : {};
 }
 
+export async function flushDeferredAcceptedSourceEnrichment(db: Db, limit = 50): Promise<number> {
+  let flushed = 0;
+  const maxScan = Math.max(limit * 20, 200);
+  let scanned = 0;
+  while (flushed < limit && scanned < maxScan) {
+    const rows = await db
+      .select({
+        id: rawEvents.id,
+        teamId: rawEvents.teamId,
+        source: rawEvents.source,
+        contentText: rawEvents.contentText,
+        sourceMetadata: rawEvents.sourceMetadata,
+      })
+      .from(rawEvents)
+      .where(
+        and(
+          sql`${rawEvents.source} <> 'email'`,
+          sql`${rawEvents.sourceMetadata}->>'billing_enrichment_deferred' = 'true'`,
+          sql`COALESCE(${rawEvents.sourceMetadata}->>'deleted', 'false') <> 'true'`,
+        ),
+      )
+      .orderBy(
+        sql`COALESCE(${rawEvents.sourceMetadata}->>'billing_enrichment_checked_at', '')`,
+        asc(rawEvents.id),
+      )
+      .limit(Math.min(limit, maxScan - scanned));
+    if (rows.length === 0) break;
+    let progressed = false;
+    for (const row of rows) {
+      scanned += 1;
+      const meetingId = meetingIdFromMetadata(row.sourceMetadata);
+      const metered =
+        row.source === 'meeting' && meetingId
+          ? await meterAcceptedSourceOperation({
+              db,
+              teamId: row.teamId,
+              operationId: `accepted_source:meeting:${meetingId}`,
+            })
+          : await meterAcceptedSources({
+              db,
+              teamId: row.teamId,
+              rawEventIds: [row.id],
+            });
+      if (!metered.ok) {
+        const stamp = JSON.stringify({
+          [BILLING_ENRICHMENT_CHECKED_AT]: new Date().toISOString(),
+        });
+        await db
+          .update(rawEvents)
+          .set({
+            sourceMetadata: sql`COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) || ${stamp}::jsonb`,
+          })
+          .where(eq(rawEvents.id, row.id));
+        continue;
+      }
+      const jobs = [
+        enqueueIntegrationProcessingJob(db, row.id, 'embedding', () =>
+          enqueueEmbedJob({ scope: 'raw_event', teamId: row.teamId, rawEventId: row.id }),
+        ),
+      ];
+      if (!integrationSkipsExtract({ sourceMetadata: row.sourceMetadata })) {
+        jobs.unshift(
+          enqueueIntegrationProcessingJob(db, row.id, 'extraction', () =>
+            enqueueExtractJob({ teamId: row.teamId, rawEventId: row.id }),
+          ),
+        );
+      }
+      if (deferredFlushIncludesSuggestions(row)) {
+        jobs.push(
+          enqueueIntegrationProcessingJob(db, row.id, 'suggestions', () =>
+            enqueueSuggestionJob({ teamId: row.teamId, rawEventId: row.id }),
+          ),
+        );
+      }
+      if (row.source === 'meeting') {
+        const chunks = await db
+          .select({ id: meetingTranscriptChunks.id })
+          .from(meetingTranscriptChunks)
+          .where(
+            and(
+              eq(meetingTranscriptChunks.teamId, row.teamId),
+              eq(meetingTranscriptChunks.rawEventId, row.id),
+            ),
+          );
+        for (const chunk of chunks) {
+          jobs.push(
+            enqueueIntegrationProcessingJob(db, row.id, 'embedding', () =>
+              enqueueEmbedJob({
+                scope: 'meeting_chunk',
+                teamId: row.teamId,
+                meetingChunkId: chunk.id,
+              }),
+            ),
+          );
+        }
+        if (meetingId) {
+          const [calendar] = await db
+            .select({ id: calendarEvents.id })
+            .from(calendarEvents)
+            .where(
+              and(
+                eq(calendarEvents.teamId, row.teamId),
+                sql`(${calendarEvents.metadata} ->> 'meeting_id') = ${meetingId}`,
+              ),
+            )
+            .limit(1);
+          if (calendar) {
+            jobs.push(
+              enqueueIntegrationProcessingJob(db, row.id, 'embedding', () =>
+                enqueueEmbedJob({
+                  scope: 'calendar_event',
+                  teamId: row.teamId,
+                  calendarEventId: calendar.id,
+                }),
+              ),
+            );
+          }
+        }
+      }
+      const pendingDocuments = await db
+        .select({ id: documentVersions.id })
+        .from(documentVersions)
+        .where(
+          and(
+            eq(documentVersions.teamId, row.teamId),
+            eq(documentVersions.sourceEventId, row.id),
+            eq(documentVersions.processingStatus, 'pending'),
+          ),
+        );
+      let documentsQueued = true;
+      for (const version of pendingDocuments) {
+        try {
+          await enqueueDocumentExtractJob({ documentVersionId: version.id, teamId: row.teamId });
+        } catch (err) {
+          documentsQueued = false;
+          log.warn(
+            { err, rawEventId: row.id, documentVersionId: version.id },
+            'deferred document extract enqueue failed',
+          );
+        }
+      }
+      const enqueued = await Promise.all(jobs);
+      if (!documentsQueued) {
+        const stamp = JSON.stringify({
+          [BILLING_ENRICHMENT_CHECKED_AT]: new Date().toISOString(),
+        });
+        await db
+          .update(rawEvents)
+          .set({
+            sourceMetadata: sql`COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) || ${stamp}::jsonb`,
+          })
+          .where(eq(rawEvents.id, row.id));
+        continue;
+      }
+      if (enqueued.some((ok) => !ok)) {
+        const stamp = JSON.stringify({
+          [BILLING_ENRICHMENT_CHECKED_AT]: new Date().toISOString(),
+        });
+        await db
+          .update(rawEvents)
+          .set({
+            sourceMetadata: sql`COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) || ${stamp}::jsonb`,
+          })
+          .where(eq(rawEvents.id, row.id));
+        continue;
+      }
+      const clear = JSON.stringify({
+        [BILLING_ENRICHMENT_DEFERRED]: false,
+        [BILLING_ENRICHMENT_CHECKED_AT]: new Date().toISOString(),
+      });
+      await db
+        .update(rawEvents)
+        .set({
+          sourceMetadata: sql`COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) || ${clear}::jsonb`,
+        })
+        .where(eq(rawEvents.id, row.id));
+      flushed += 1;
+      progressed = true;
+      if (flushed >= limit) break;
+    }
+    if (!progressed && rows.length < limit) break;
+  }
+  return flushed;
+}
+
+const PARENT_EVENT_ID_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
+
+function metadataRecord(metadata: unknown): Record<string, unknown> {
+  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) return {};
+  return metadata as Record<string, unknown>;
+}
+
+function metadataFlagIsTrue(metadata: unknown, key: string): boolean {
+  const value = metadataRecord(metadata)[key];
+  return value === true || value === 'true';
+}
+
+function meetingIdFromMetadata(metadata: unknown): string | null {
+  const meetingId = metadataRecord(metadata).meeting_id;
+  return typeof meetingId === 'string' && meetingId.length > 0 ? meetingId : null;
+}
+
+function deferredFlushIncludesSuggestions(row: {
+  source: string;
+  contentText: string | null;
+  sourceMetadata: unknown;
+}): boolean {
+  if (!row.contentText?.trim()) return false;
+  if (row.source === 'slack' || row.source === 'telegram' || row.source === 'web') return true;
+  return (
+    row.source === 'ingest_webhook' &&
+    metadataFlagIsTrue(row.sourceMetadata, 'proposal_generation_enabled')
+  );
+}
+
+/**
+ * Email audio is a child of the inbound message. Releasing it while that
+ * parent is still `billing_enrichment_deferred` spends AI allowance without
+ * an admitted email unit.
+ */
+async function deferredEmailParentBlocksAudio(
+  db: Db,
+  teamId: string,
+  metadata: unknown,
+): Promise<boolean> {
+  const parentId = metadataRecord(metadata).parent_event_id;
+  if (typeof parentId !== 'string' || !PARENT_EVENT_ID_UUID.test(parentId)) return false;
+  const [parent] = await db
+    .select({ teamId: rawEvents.teamId, sourceMetadata: rawEvents.sourceMetadata })
+    .from(rawEvents)
+    .where(eq(rawEvents.id, parentId))
+    .limit(1);
+  if (parent?.teamId !== teamId) return false;
+  return metadataFlagIsTrue(parent.sourceMetadata, BILLING_ENRICHMENT_DEFERRED);
+}
+
+export async function flushDeferredAudioTranscription(db: Db, limit = 50): Promise<number> {
+  let flushed = 0;
+  const maxScan = Math.max(limit * 20, 200);
+  let scanned = 0;
+  while (flushed < limit && scanned < maxScan) {
+    const rows = await db
+      .select({
+        id: rawEvents.id,
+        teamId: rawEvents.teamId,
+        source: rawEvents.source,
+        contentAudioUrl: rawEvents.contentAudioUrl,
+        sourceMetadata: rawEvents.sourceMetadata,
+      })
+      .from(rawEvents)
+      .where(
+        and(
+          sql`${rawEvents.sourceMetadata}->>'transcription_deferred' = 'true'`,
+          isNotNull(rawEvents.contentAudioUrl),
+          sql`COALESCE(${rawEvents.sourceMetadata}->>'deleted', 'false') <> 'true'`,
+        ),
+      )
+      .orderBy(
+        sql`COALESCE(${rawEvents.sourceMetadata}->>'transcription_deferred_checked_at', '')`,
+        asc(rawEvents.id),
+      )
+      .limit(Math.min(limit, maxScan - scanned));
+    if (rows.length === 0) break;
+    let progressed = false;
+    for (const row of rows) {
+      scanned += 1;
+      const audioKey = row.contentAudioUrl;
+      if (!audioKey) {
+        continue;
+      }
+      if (row.source !== 'email') {
+        const metered = await meterAcceptedSources({
+          db,
+          teamId: row.teamId,
+          rawEventIds: [row.id],
+        });
+        if (!metered.ok) {
+          const stamp = JSON.stringify({
+            [TRANSCRIPTION_DEFERRED_CHECKED_AT]: new Date().toISOString(),
+          });
+          await db
+            .update(rawEvents)
+            .set({
+              sourceMetadata: sql`COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) || ${stamp}::jsonb`,
+            })
+            .where(eq(rawEvents.id, row.id));
+          continue;
+        }
+      }
+      if (await deferredEmailParentBlocksAudio(db, row.teamId, row.sourceMetadata)) {
+        const stamp = JSON.stringify({
+          [TRANSCRIPTION_DEFERRED_CHECKED_AT]: new Date().toISOString(),
+        });
+        await db
+          .update(rawEvents)
+          .set({
+            sourceMetadata: sql`COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) || ${stamp}::jsonb`,
+          })
+          .where(eq(rawEvents.id, row.id));
+        continue;
+      }
+      const billing = createBillingScope({
+        db,
+        teamId: row.teamId,
+        userId: BILLING_SYSTEM_USER_ID,
+        ensureMember: () => Promise.resolve('owner'),
+      });
+      const dashboard = await billing.getDashboard();
+      if (dashboard.costBearingPaused) {
+        const stamp = JSON.stringify({
+          [TRANSCRIPTION_DEFERRED_CHECKED_AT]: new Date().toISOString(),
+        });
+        await db
+          .update(rawEvents)
+          .set({
+            sourceMetadata: sql`COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) || ${stamp}::jsonb`,
+          })
+          .where(eq(rawEvents.id, row.id));
+        continue;
+      }
+      try {
+        await enqueueTranscribeJob({
+          rawEventId: row.id,
+          teamId: row.teamId,
+          audioKey,
+        });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        const failurePatch = JSON.stringify({
+          [TRANSCRIPTION_DEFERRED_CHECKED_AT]: new Date().toISOString(),
+          transcription_failed_at: new Date().toISOString(),
+          transcription_error: `enqueue failed: ${message.slice(0, 480)}`,
+        });
+        await db
+          .update(rawEvents)
+          .set({
+            sourceMetadata: sql`COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) || ${failurePatch}::jsonb`,
+          })
+          .where(eq(rawEvents.id, row.id));
+        continue;
+      }
+      const clear = JSON.stringify({
+        [TRANSCRIPTION_DEFERRED]: false,
+        [TRANSCRIPTION_DEFERRED_CHECKED_AT]: new Date().toISOString(),
+      });
+      await db
+        .update(rawEvents)
+        .set({
+          sourceMetadata: sql`COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) || ${clear}::jsonb`,
+        })
+        .where(eq(rawEvents.id, row.id));
+      flushed += 1;
+      progressed = true;
+      if (flushed >= limit) break;
+    }
+    if (!progressed && rows.length < limit) break;
+  }
+  return flushed;
+}
+
 async function enqueueIntegrationProcessingJob(
   db: Db,
   rawEventId: string,
-  stage: 'extraction' | 'embedding',
+  stage: 'extraction' | 'embedding' | 'suggestions',
   enqueue: () => Promise<unknown>,
-): Promise<void> {
+): Promise<boolean> {
   try {
     await enqueue();
+    return true;
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     const patch = JSON.stringify({
@@ -770,6 +1218,7 @@ async function enqueueIntegrationProcessingJob(
         sourceMetadata: sql`COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) || ${patch}::jsonb`,
       })
       .where(eq(rawEvents.id, rawEventId));
+    return false;
   }
 }
 

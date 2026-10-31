@@ -132,6 +132,11 @@ bun run dev:seed:heavy         # optional extra volume for infinite-scroll / vir
         the worker; Next.js reads the same values through <code>apps/web/.env</code>.
       </p>
       <p>
+        After updating the billing branch with main, run <code>bun run db:migrate</code> before
+        restarting workers. A catch-up migration adds MCP health scheduling columns to databases
+        that already ran the billing migrations; existing columns and billing data are preserved.
+      </p>
+      <p>
         <code>bun run demo:seed</code> runs the idempotent dev seed, indexes every fixture-version
         raw event, fact, document chunk, and meeting chunk through the production embed worker path,
         and then runs <code>bun run demo:verify</code>. The commands refuse production and only use

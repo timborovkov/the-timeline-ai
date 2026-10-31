@@ -1,0 +1,401 @@
+import { cleanup, fireEvent, render, waitFor } from '@testing-library/react';
+import { expect, vi } from '@timeline/test-support';
+import { afterEach, describe, it } from 'bun:test';
+import { renderToStaticMarkup } from 'react-dom/server';
+
+import type { BillingSettingsPanelProps } from '@/components/billing-settings-panel';
+import type { CheapestPlanPreview } from '@timeline/shared/billing/preview';
+
+import { customerBillingState } from '@/components/billing-customer-state';
+
+await vi.mock(
+  import.meta.resolve('@/app/actions/auth'),
+  () => ({ resendEmailVerificationAction: vi.fn() }),
+  () => import('@/app/actions/auth'),
+);
+
+await vi.mock(
+  import.meta.resolve('next/navigation'),
+  async () => ({
+    ...(await import('next/navigation')),
+    useRouter: () => ({ refresh: vi.fn() }),
+  }),
+  () => import('next/navigation'),
+);
+
+await vi.mock(
+  import.meta.resolve('@/app/actions/billing'),
+  () => ({
+    startBillingCheckout: vi.fn(),
+    startBillingPortal: vi.fn(),
+    updateBillingSpendCap: vi.fn(),
+  }),
+  () => import('@/app/actions/billing'),
+);
+
+const { BillingSettingsPanel } = await import('@/components/billing-settings-panel');
+const { startBillingCheckout } = await import('@/app/actions/billing');
+afterEach(cleanup);
+
+const planPreview: CheapestPlanPreview = {
+  recommended: 'payg',
+  bills: {
+    payg: {
+      planId: 'payg',
+      platformFeeCents: 0,
+      extraMemberCents: 0,
+      meteredAfterDiscountCents: 0,
+      totalCents: 0,
+    },
+    team: {
+      planId: 'team',
+      platformFeeCents: 4900,
+      extraMemberCents: 0,
+      meteredAfterDiscountCents: 0,
+      totalCents: 4900,
+    },
+    business: {
+      planId: 'business',
+      platformFeeCents: 19900,
+      extraMemberCents: 0,
+      meteredAfterDiscountCents: 0,
+      totalCents: 19900,
+    },
+  },
+};
+
+function panelElement(overrides: Partial<BillingSettingsPanelProps> = {}) {
+  return (
+    <BillingSettingsPanel
+      planId="free"
+      planName="Free"
+      billingState="free"
+      spendCapCents={0}
+      meteredSpendCents={0}
+      utilization={{
+        spendCapCents: 0,
+        meteredSpendCents: 0,
+        percent: null,
+        warnLevel: null,
+      }}
+      freeRemaining={{
+        aiChargeCents: 500,
+        recallMinutes: 60,
+        emailUnits: 500,
+        storageGb: 1,
+        acceptedSources: 1000,
+      }}
+      costBearingPaused={false}
+      polarConfigured
+      hasPolarSubscription={false}
+      canManage
+      planPreview={planPreview}
+      comp={null}
+      showOperatorLink={false}
+      {...overrides}
+    />
+  );
+}
+
+function panel(overrides: Partial<BillingSettingsPanelProps> = {}): string {
+  return renderToStaticMarkup(panelElement(overrides));
+}
+
+function planButton(html: string, label: string): string {
+  const escaped = label.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
+  const match = new RegExp(`<button[^>]*>${escaped}</button>`, 'u').exec(html);
+  return match?.[0] ?? '';
+}
+
+describe('BillingSettingsPanel', () => {
+  it('submits the promo field with the selected plan and displays server errors', async () => {
+    vi.mocked(startBillingCheckout).mockResolvedValueOnce({
+      ok: false,
+      error: 'That discount is not eligible.',
+    });
+    const view = render(panelElement());
+    fireEvent.change(view.getByLabelText('Promo code'), { target: { value: 'SYNTHETIC' } });
+    fireEvent.click(view.getByText('Team · €49/mo'));
+    await waitFor(() => {
+      expect(startBillingCheckout).toHaveBeenCalledWith({
+        plan: 'team',
+        discountCode: 'SYNTHETIC',
+      });
+      expect(view.getByRole('alert').textContent).toBe('That discount is not eligible.');
+    });
+  });
+
+  it('shows a promo field and explains that assigned team discounts take priority', () => {
+    expect(panel()).toContain('id="billing-promo-code"');
+    expect(panel()).toContain('discounts do not stack');
+    expect(panel({ hasPolarSubscription: true })).toContain('from the next billing cycle');
+    const assigned = panel({ hasActiveTeamDiscount: true });
+    expect(assigned).toContain('Your assigned team discount takes priority');
+    expect(/<input[^>]*id="billing-promo-code"[^>]*>/u.exec(assigned)?.[0]).toContain('disabled');
+    expect(panel({ canManage: false })).not.toContain('id="billing-promo-code"');
+  });
+
+  it('offers a plan change without collection essays', () => {
+    const html = panel();
+    expect(html).toContain('Change plan');
+    expect(html).toContain('Pay as you go');
+    expect(html).toContain('Charges recorded so far');
+    expect(html).not.toContain('Next invoice');
+    expect(html).toContain('href="/pricing"');
+    expect(html).not.toContain('€0 Polar subscription');
+    expect(html).not.toContain('Shadow billing');
+    expect(html).not.toContain('Billing state');
+    expect(html).not.toContain('Top up');
+    expect(html).not.toContain('Auto-reload');
+    expect(html).not.toContain('Wallet');
+  });
+
+  it('keeps checkout available for the current plan until a Polar subscription exists', () => {
+    const open = panel({ planId: 'payg', planName: 'Pay as you go', hasPolarSubscription: false });
+    expect(planButton(open, 'Pay as you go')).not.toContain('disabled=""');
+    const subscribed = panel({
+      planId: 'payg',
+      planName: 'Pay as you go',
+      hasPolarSubscription: true,
+    });
+    expect(planButton(subscribed, 'Pay as you go')).toContain('disabled=""');
+    expect(planButton(subscribed, 'Team · €49/mo')).not.toContain('disabled=""');
+    expect(subscribed).toContain('Manage payment');
+  });
+
+  it('turns checkout off on a comp', () => {
+    const html = panel({
+      planId: 'team',
+      planName: 'Team',
+      comp: {
+        planName: 'Team',
+        expired: false,
+        reason: 'internal',
+        expiresOn: null,
+      },
+    });
+    expect(html).toContain('Comped');
+    expect(html).toContain('No charge');
+    expect(html).not.toContain('Next invoice');
+    expect(html).not.toContain('would save');
+    expect(html).not.toContain('>Pay as you go<');
+    expect(html).not.toContain('Change plan');
+    expect(html).not.toContain('Assign comp');
+
+    const enterprise = panel({
+      planId: 'enterprise',
+      planName: 'Enterprise',
+      billingState: 'enterprise_active',
+      platformFeeCents: 250_000,
+      meteredSpendCents: 1_200,
+      comp: {
+        planName: 'Enterprise',
+        expired: false,
+        reason: 'internal',
+        expiresOn: null,
+      },
+    });
+    expect(enterprise).toContain('No charge');
+    expect(enterprise).not.toContain('Next invoice');
+  });
+
+  it('shows a pending Enterprise subscription and the negotiated price', () => {
+    const html = panel({
+      planId: 'enterprise',
+      planName: 'Enterprise',
+      billingState: 'enterprise_active',
+      hasPolarSubscription: false,
+      platformFeeCents: 250_000,
+      meteredSpendCents: 0,
+    });
+    expect(html).toContain('data-enterprise-subscription="pending"');
+    expect(html).toContain('Subscription pending');
+    expect(html).toContain('€2,500');
+    expect(html).toContain('Charges recorded so far');
+    expect(html).not.toContain('Next invoice');
+    expect(html).not.toContain('>Pay as you go<');
+    expect(html).not.toContain('Negotiated platform fee');
+    expect(html).not.toContain('enterprise_active');
+  });
+
+  it('shows the past_due banner and a payment-method update', () => {
+    const html = panel({
+      planId: 'payg',
+      planName: 'Pay as you go',
+      billingState: 'past_due',
+      costBearingPaused: true,
+    });
+    expect(html).toContain('Payment failed.');
+    expect(html).toContain('Update payment method');
+    expect(html).not.toContain('bg-signal');
+    expect(html).not.toContain('Top up');
+    expect(html).not.toContain('Auto-reload');
+  });
+
+  it('shows one spend-cap banner when the cap is reached', () => {
+    const html = panel({
+      planId: 'payg',
+      planName: 'Pay as you go',
+      billingState: 'payg_active',
+      spendCapCents: 2500,
+      meteredSpendCents: 2500,
+      utilization: {
+        spendCapCents: 2500,
+        meteredSpendCents: 2500,
+        percent: 100,
+        warnLevel: 100,
+      },
+    });
+    expect(html).toContain('Spend cap reached.');
+    expect(html).toContain('Raise cap');
+    expect(html).toContain('€25 of');
+    expect(html).toContain('€25');
+  });
+});
+
+describe('billing restriction banners', () => {
+  const remaining = {
+    aiChargeCents: 100,
+    recallMinutes: 10,
+    emailUnits: 10,
+    storageGb: 1,
+    acceptedSources: 10,
+  };
+  const input = {
+    planId: 'free',
+    billingState: 'free',
+    costBearingPaused: false,
+    spendCapCents: 0,
+    meteredSpendCents: 0,
+    warnPercent: null,
+    freeRemaining: remaining,
+  };
+  it('does not warn for an unused Free allowance', () => {
+    expect(customerBillingState(input)).toBeNull();
+  });
+  it('distinguishes restrictions from exhausted usage at zero spend', () => {
+    for (const billingState of ['read_only', 'balance_exhausted', 'canceled']) {
+      expect(customerBillingState({ ...input, billingState, costBearingPaused: true })).toBe(
+        'paused',
+      );
+    }
+    const html = renderToStaticMarkup(
+      panelElement({
+        planId: 'free',
+        billingState: 'read_only',
+        costBearingPaused: true,
+        meteredSpendCents: 0,
+        freeRemaining: remaining,
+      }),
+    );
+    expect(html).toContain('Metered work is paused for this workspace.');
+    expect(html).toContain('Contact support');
+    expect(html).not.toContain('Free allowance used up.');
+    expect(html).not.toContain('Raise cap');
+  });
+  it('requires exhausted counters for the Free allowance banner', () => {
+    expect(
+      customerBillingState({
+        ...input,
+        costBearingPaused: true,
+        freeRemaining: {
+          aiChargeCents: 0,
+          recallMinutes: 0,
+          emailUnits: 0,
+          storageGb: 0,
+          acceptedSources: 0,
+        },
+      }),
+    ).toBe('allowance');
+    expect(customerBillingState({ ...input, costBearingPaused: true })).toBe('paused');
+  });
+  it('keeps payment failure specific and does not label a paid restriction as a cap', () => {
+    expect(customerBillingState({ ...input, billingState: 'past_due' })).toBe('payment_failed');
+    expect(customerBillingState({ ...input, billingState: 'payment_retry' })).toBe(
+      'payment_failed',
+    );
+    expect(
+      customerBillingState({
+        ...input,
+        planId: 'team',
+        billingState: 'read_only',
+        costBearingPaused: true,
+      }),
+    ).toBe('paused');
+    expect(
+      customerBillingState({
+        ...input,
+        planId: 'team',
+        billingState: 'team_active',
+        spendCapCents: 100,
+        meteredSpendCents: 100,
+        warnPercent: 100,
+      }),
+    ).toBe('spend_cap');
+  });
+});
+
+describe('specific billing setup guidance', () => {
+  it('offers email verification for an unverified owner', () => {
+    const html = renderToStaticMarkup(
+      panelElement({ restrictionReason: 'email_unverified', billingState: 'restricted' }),
+    );
+    expect(html).toContain('Send verification email');
+    expect(html).not.toContain('Contact support');
+  });
+  it('explains a Free grant elsewhere and opens plan selection', () => {
+    const html = renderToStaticMarkup(
+      panelElement({ restrictionReason: 'free_grant_elsewhere', billingState: 'restricted' }),
+    );
+    expect(html).toContain('Your Free allowance is assigned to another team');
+    expect(html).toContain('Choose a plan');
+    expect(html).toContain('id="change-plan" open=""');
+  });
+});
+
+it('sends a verification request and shows confirmation', async () => {
+  const { resendEmailVerificationAction } = await import('@/app/actions/auth');
+  vi.mocked(resendEmailVerificationAction).mockResolvedValueOnce({ ok: true });
+  const view = render(
+    panelElement({ restrictionReason: 'email_unverified', billingState: 'restricted' }),
+  );
+  fireEvent.click(view.getByRole('button', { name: 'Send verification email' }));
+  await waitFor(() => {
+    expect(view.getByRole('status').textContent).toContain('Verification email sent');
+  });
+  expect(resendEmailVerificationAction).toHaveBeenCalledTimes(1);
+});
+
+it('does not treat a checkout return hint as activation or offer another checkout', () => {
+  const view = render(panelElement({ checkoutReturned: true, checkoutPlan: 'payg' }));
+  expect(view.getByRole('status').textContent).toContain('Waiting for your plan');
+  expect(view.getByRole('button', { name: 'Pay as you go' }).hasAttribute('disabled')).toBe(true);
+});
+
+it('confirms the requested plan only after its active subscription is persisted', () => {
+  const html = panel({
+    checkoutReturned: true,
+    checkoutPlan: 'payg',
+    planId: 'payg',
+    planName: 'Pay as you go',
+    hasPolarSubscription: true,
+    billingState: 'payg_active',
+  });
+  expect(html).toContain('Pay as you go is active for this team.');
+  expect(
+    panel({
+      checkoutReturned: true,
+      checkoutPlan: 'business',
+      planId: 'payg',
+      hasPolarSubscription: true,
+      billingState: 'payg_active',
+    }),
+  ).toContain('Waiting for your plan');
+});
+
+it('explains the PAYG spend cap separately from its Free allowances', () => {
+  const html = panel({ planId: 'payg', planName: 'Pay as you go', spendCapCents: 2500 });
+  expect(html).toContain('€25 spend cap');
+  expect(html).toContain('not included credit or an upfront charge');
+  expect(html).toContain('View allowances and usage');
+});

@@ -57,8 +57,9 @@ export function PublicHeader({
             href={isSignedIn ? '/app' : '/sign-up'}
             data-public-analytics-cta={isSignedIn ? 'open_dashboard' : 'try_project'}
             className={styles.navCta}
+            title={isSignedIn ? undefined : 'Free to start — no card required'}
           >
-            {isSignedIn ? 'Dashboard' : 'Try one project'}
+            {isSignedIn ? 'Dashboard' : 'Start free'}
           </Link>
         ) : null}
       </div>

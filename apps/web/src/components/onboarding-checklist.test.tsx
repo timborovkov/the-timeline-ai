@@ -40,6 +40,7 @@ afterEach(() => {
 
 function renderChecklist(
   data: {
+    canManageBilling?: boolean;
     dismissed: boolean;
     items: { key: string; label: string; completed: boolean }[];
   } | null,
@@ -626,4 +627,58 @@ describe('OnboardingChecklist', () => {
       screen.getByRole('button', { name: 'Team setup checklist' }),
     );
   });
+});
+
+it('offers billing setup without manual completion and directs members to owners', () => {
+  const items = [
+    { key: 'billing_setup', label: 'Set up billing (optional on Free)', completed: false },
+  ];
+  renderChecklist({ dismissed: false, canManageBilling: true, items });
+  expect(screen.getByRole('link', { name: 'Set up billing' }).getAttribute('href')).toBe(
+    '/app/team?section=billing#change-plan',
+  );
+  expect(screen.queryByText('Mark complete')).toBeNull();
+  cleanup();
+  renderChecklist({ dismissed: false, canManageBilling: false, items });
+  expect(screen.getByRole('link', { name: 'View team owners' }).getAttribute('href')).toBe(
+    '/app/team?section=members',
+  );
+});
+
+it('keeps optional billing visible without blocking product onboarding progression', () => {
+  const billing = {
+    key: 'billing_setup',
+    label: 'Set up billing (optional on Free)',
+    completed: false,
+  };
+  renderChecklist({
+    dismissed: false,
+    canManageBilling: true,
+    items: [
+      billing,
+      { key: 'first_note', label: 'Capture one timeline event', completed: false },
+      { key: 'invite_teammate', label: 'Invite a teammate', completed: false },
+    ],
+  });
+  expect(screen.getByRole('link', { name: 'Set up billing' })).toBeDefined();
+  expect(screen.getByRole('button', { name: 'Capture' })).toBeDefined();
+  expect(
+    screen.getByRole('button', { name: 'Mark Capture one timeline event complete' }),
+  ).toBeDefined();
+  expect(
+    screen.queryByRole('button', { name: 'Mark Set up billing (optional on Free) complete' }),
+  ).toBeNull();
+  cleanup();
+  renderChecklist({
+    dismissed: false,
+    canManageBilling: true,
+    items: [
+      billing,
+      { key: 'first_note', label: 'Capture one timeline event', completed: true },
+      { key: 'invite_teammate', label: 'Invite a teammate', completed: false },
+    ],
+  });
+  expect(screen.getByRole('link', { name: 'Set up billing' })).toBeDefined();
+  expect(screen.getByRole('link', { name: 'Invite' })).toBeDefined();
+  expect(screen.getByRole('button', { name: 'Mark Invite a teammate complete' })).toBeDefined();
 });

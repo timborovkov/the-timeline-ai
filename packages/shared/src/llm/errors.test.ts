@@ -1,9 +1,19 @@
 import { expect } from '@timeline/test-support';
 import { describe, it } from 'bun:test';
 
+import { BillingAdmissionError } from '#src/billing/errors.js';
 import { TimelineAiError, wrapAiFailure } from '#src/llm/errors.js';
 import { TIMELINE_MODELS } from '#src/llm/models.js';
 describe('TimelineAiError', () => {
+  it('lets billing admission errors reach the worker delay handler', async () => {
+    const admission = new BillingAdmissionError('costly_worker_busy');
+    await expect(
+      wrapAiFailure({ operation: 'llm.embed', model: TIMELINE_MODELS.embedding.id }, () => {
+        throw admission;
+      }),
+    ).rejects.toBe(admission);
+  });
+
   it('wraps provider failures with safe operation and model metadata', async () => {
     const cause = new Error('provider unavailable');
 

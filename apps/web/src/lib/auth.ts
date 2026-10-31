@@ -8,6 +8,7 @@ import {
   users,
   verificationTokens,
 } from '@timeline/db';
+import { createPolarBillingProvider, synchronizePolarBillingUser } from '@timeline/shared/billing';
 import { childLogger } from '@timeline/shared/logger';
 import { sendMessage } from '@timeline/shared/messaging';
 import { verifyPassword } from '@timeline/shared/passwords';
@@ -139,6 +140,22 @@ const nextAuth = NextAuth({
     },
   },
   events: {
+    async updateUser({ user }) {
+      if (!user.id) return;
+      try {
+        // The resolver rechecks database email verification and active roles.
+        await synchronizePolarBillingUser({
+          db,
+          userId: user.id,
+          provider: createPolarBillingProvider(),
+        });
+      } catch {
+        log.warn(
+          { operation: 'billing_member_email_sync', userId: user.id },
+          'Billing member sync pending; billing access will retry',
+        );
+      }
+    },
     signIn({ user, account }) {
       if (!user.id) return;
       trackProductEventBestEffort({ kind: 'user', userId: user.id }, 'authentication_succeeded', {

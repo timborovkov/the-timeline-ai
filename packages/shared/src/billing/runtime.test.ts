@@ -1,0 +1,2337 @@
+import { PGlite } from '@electric-sql/pglite';
+import {
+  billingMemberDayLedger,
+  billingOperatorAudit,
+  billingUsageCounters,
+  billingUsageLedger,
+  billingUsageReservations,
+  teamBillingAccounts,
+  type Db,
+} from '@timeline/db';
+import { expect, vi } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
+import { and, eq } from 'drizzle-orm';
+import { drizzle } from 'drizzle-orm/pglite';
+
+import { reserveAskAi } from '#src/billing/admission.js';
+import { scopedAiOperationId } from '#src/billing/ai-call.js';
+import {
+  daysInPeriodYm,
+  memberDayChargeDelta,
+  periodYmUtc,
+  polarMemberMonthUnits,
+} from '#src/billing/charge.js';
+import { runWithBillingContext } from '#src/billing/context.js';
+import { expireStaleBillingReservations } from '#src/billing/reservations.js';
+import {
+  accrueTeamMemberDays,
+  meterAcceptedSources,
+  meterEmailUnits,
+  periodYm,
+  resetIncludedDiscountIfPeriodElapsed,
+  runWorkerBilling,
+  settlePendingBillingReservations,
+  snapshotTeamStorageGbMonth,
+  utcDay,
+  withAiMetering,
+} from '#src/billing/runtime.js';
+import * as billingScopeMod from '#src/billing/scope.js';
+import { resetEnvForTests } from '#src/env.js';
+import { applyDbMigrations } from '#src/test/pglite.js';
+
+const TEAM_ID = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
+const USER_ID = '11111111-2222-4333-8444-555555555555';
+
+function utcDayOffset(days: number): string {
+  const date = new Date(`${utcDay()}T00:00:00.000Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return utcDay(date);
+}
+
+let pg: PGlite;
+let db: Db;
+
+beforeEach(async () => {
+  pg = new PGlite();
+  await applyDbMigrations(pg);
+  await pg.exec(`
+    INSERT INTO teams (id, slug, name)
+    VALUES ('${TEAM_ID}', 'billing-runtime', 'Billing Runtime');
+    INSERT INTO users (id, email)
+    VALUES ('${USER_ID}', 'owner@example.test');
+    INSERT INTO team_members (team_id, user_id, role)
+    VALUES ('${TEAM_ID}', '${USER_ID}', 'owner');
+  `);
+  db = drizzle(pg) as unknown as Db;
+});
+
+afterEach(async () => {
+  delete process.env.BILLING_CHARGES_ENABLED;
+  resetEnvForTests();
+  await pg.close();
+});
+
+describe('billing runtime', () => {
+  it('no-ops AI metering without ALS and settles when context is set', async () => {
+    const unmetered = await withAiMetering({ operationClass: 'embedding' }, () =>
+      Promise.resolve({
+        value: 7,
+        finish: { usage: { cost: 0 } },
+      }),
+    );
+    expect(unmetered).toBe(7);
+
+    const scoped = await runWorkerBilling(db, TEAM_ID, 'embedding', () =>
+      withAiMetering({ operationClass: 'embedding' }, () =>
+        Promise.resolve({
+          value: 9,
+          finish: { usage: { cost: 0 } },
+        }),
+      ),
+    );
+    expect(scoped).toBe(9);
+    const billing = billingScopeMod.createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    const dash = await billing.getDashboard();
+    expect(dash.meters.ai).toBeDefined();
+  });
+
+  it('keeps the AI reservation when settle fails after the provider call', async () => {
+    const originalCreate = billingScopeMod.createBillingScope;
+    const settleError = new Error('settle failed after OpenRouter');
+    const spy = vi.spyOn(billingScopeMod, 'createBillingScope').mockImplementation((deps) => {
+      const scope = originalCreate(deps);
+      return {
+        ...scope,
+        settle: () => Promise.reject(settleError),
+      };
+    });
+    try {
+      await expect(
+        runWorkerBilling(
+          db,
+          TEAM_ID,
+          'embedding',
+          () =>
+            withAiMetering({ operationClass: 'embedding', callMaterial: ['durable-call'] }, () =>
+              Promise.resolve({
+                value: 3,
+                finish: { usage: { cost: 0.01 } },
+              }),
+            ),
+          { operationId: 'embedding:job-durable' },
+        ),
+      ).rejects.toThrow('settle failed after OpenRouter');
+      const [row] = await db
+        .select()
+        .from(billingUsageReservations)
+        .where(eq(billingUsageReservations.teamId, TEAM_ID));
+      expect(row?.state).toBe('reserved');
+      expect(row?.operationId).toBe(
+        scopedAiOperationId({
+          parentOperationId: 'embedding:job-durable',
+          stage: 'embedding',
+          material: ['durable-call'],
+        }),
+      );
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('skips the OpenRouter call when a durable AI operation already completed', async () => {
+    const originalCreate = billingScopeMod.createBillingScope;
+    const settleError = new Error('settle failed after OpenRouter');
+    let settleCalls = 0;
+    const spy = vi.spyOn(billingScopeMod, 'createBillingScope').mockImplementation((deps) => {
+      const scope = originalCreate(deps);
+      return {
+        ...scope,
+        settle: (...args: Parameters<typeof scope.settle>) => {
+          settleCalls += 1;
+          if (settleCalls === 1) return Promise.reject(settleError);
+          return scope.settle(...args);
+        },
+      };
+    });
+    let providerCalls = 0;
+    const run = () =>
+      runWorkerBilling(
+        db,
+        TEAM_ID,
+        'embedding',
+        () =>
+          withAiMetering({ operationClass: 'embedding', callMaterial: ['skip-provider'] }, () => {
+            providerCalls += 1;
+            return Promise.resolve({
+              value: { text: 'cached-embedding' },
+              finish: { usage: { cost: 0.01 } },
+            });
+          }),
+        { operationId: 'embedding:skip-provider' },
+      );
+    try {
+      await expect(run()).rejects.toThrow('settle failed after OpenRouter');
+      expect(providerCalls).toBe(1);
+      const retried = await run();
+      expect(retried).toEqual({ text: 'cached-embedding' });
+      expect(providerCalls).toBe(1);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('meters email units idempotently', async () => {
+    const first = await meterEmailUnits({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      operationId: 'email_in:msg-1',
+      units: 2,
+      operationClass: 'email_inbound',
+    });
+    expect(first.ok).toBe(true);
+    const second = await meterEmailUnits({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      operationId: 'email_in:msg-1',
+      units: 2,
+      operationClass: 'email_inbound',
+    });
+    expect(second.ok).toBe(true);
+    const billing = billingScopeMod.createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    const dash = await billing.getDashboard();
+    expect(dash.meters.email_units?.nativeUnits).toBe(2);
+  });
+
+  it('settles accepted sources on the cumulative cent boundary', async () => {
+    const ids = Array.from(
+      { length: 10 },
+      (_, index) => `00000000-0000-4000-8000-${String(index).padStart(12, '0')}`,
+    );
+    const result = await meterAcceptedSources({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      rawEventIds: ids,
+    });
+    expect(result.ok).toBe(true);
+    const billing = billingScopeMod.createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    const dash = await billing.getDashboard();
+    expect(dash.meters.accepted_sources?.nativeUnits).toBe(10);
+    expect(dash.meters.accepted_sources?.customerChargeCents).toBe(1);
+  });
+
+  it('accrues extra member-days on paid plans and resets included discount', async () => {
+    const billing = billingScopeMod.createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await billing.getAccount();
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET plan_id = 'team', billing_state = 'team_active', included_discount_remaining_cents = 0,
+          period_started_at = '2020-01-01T00:00:00Z', period_ends_at = '2020-02-01T00:00:00Z'
+      WHERE team_id = '${TEAM_ID}';
+      INSERT INTO users (id, email) VALUES
+        ('21111111-2222-4333-8444-555555555555', 'm2@example.test'),
+        ('31111111-2222-4333-8444-555555555555', 'm3@example.test');
+      INSERT INTO team_members (team_id, user_id, role) VALUES
+        ('${TEAM_ID}', '21111111-2222-4333-8444-555555555555', 'member'),
+        ('${TEAM_ID}', '31111111-2222-4333-8444-555555555555', 'member');
+    `);
+    const reset = await resetIncludedDiscountIfPeriodElapsed({ db, teamId: TEAM_ID });
+    expect(reset).toBe(true);
+    const afterReset = await billing.getAccount();
+    expect(afterReset.includedDiscountRemainingCents).toBe(6_000);
+
+    const accrued = await accrueTeamMemberDays({ db, teamId: TEAM_ID, day: '2026-08-22' });
+    expect(accrued.extraMembers).toBe(0);
+    const dash = await billing.getDashboard();
+    expect(dash.activeMemberCount).toBe(3);
+    expect(dash.planPreview.recommended).toBe('payg');
+  });
+
+  it('accrues a member added after the first daily settlement', async () => {
+    const billing = billingScopeMod.createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await billing.getAccount();
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET plan_id = 'payg', billing_state = 'payg_active', wallet_balance_cents = 5000
+      WHERE team_id = '${TEAM_ID}';
+      INSERT INTO users (id, email) VALUES
+        ('21111111-2222-4333-8444-555555555555', 'm2@example.test'),
+        ('31111111-2222-4333-8444-555555555555', 'm3@example.test'),
+        ('41111111-2222-4333-8444-555555555555', 'm4@example.test');
+      INSERT INTO team_members (team_id, user_id, role) VALUES
+        ('${TEAM_ID}', '21111111-2222-4333-8444-555555555555', 'member'),
+        ('${TEAM_ID}', '31111111-2222-4333-8444-555555555555', 'member'),
+        ('${TEAM_ID}', '41111111-2222-4333-8444-555555555555', 'member');
+    `);
+    const first = await accrueTeamMemberDays({ db, teamId: TEAM_ID, day: '2026-08-26' });
+    expect(first.extraMembers).toBe(1);
+    expect(first.chargeCents).toBeGreaterThan(0);
+    await pg.exec(`
+      INSERT INTO users (id, email)
+      VALUES ('51111111-2222-4333-8444-555555555555', 'm5@example.test');
+      INSERT INTO team_members (team_id, user_id, role)
+      VALUES ('${TEAM_ID}', '51111111-2222-4333-8444-555555555555', 'member');
+      UPDATE team_billing_accounts SET price_override = '{"includedActiveMembers":100,"additionalMemberCents":600}'
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    const second = await accrueTeamMemberDays({ db, teamId: TEAM_ID, day: '2026-08-26' });
+    expect(second.extraMembers).toBe(2);
+    expect(second.chargeCents).toBeGreaterThan(0);
+    const third = await accrueTeamMemberDays({ db, teamId: TEAM_ID, day: '2026-08-26' });
+    expect(third.extraMembers).toBe(2);
+    expect(third.chargeCents).toBe(0);
+  });
+
+  it('keeps historical included seats after an override expires or is cleared', async () => {
+    const billing = billingScopeMod.createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await billing.getAccount();
+    const day = utcDayOffset(-2);
+    const expiry = `${utcDayOffset(-1)}T00:00:00Z`;
+    await pg.exec(`
+      UPDATE team_billing_accounts SET plan_id = 'team', billing_state = 'team_active',
+        price_override = '{"includedActiveMembers":50}', price_override_expires_at = '${expiry}'
+      WHERE team_id = '${TEAM_ID}';
+      UPDATE billing_plan_history SET plan_id = 'team' WHERE team_id = '${TEAM_ID}';
+      INSERT INTO users (id, email)
+        SELECT ('22222222-2222-4222-8222-' || lpad(i::text, 12, '0'))::uuid, 'seat-' || i || '@example.test'
+        FROM generate_series(1, 39) AS i;
+      INSERT INTO team_members (team_id, user_id, role)
+        SELECT '${TEAM_ID}', id, 'member' FROM users WHERE email LIKE 'seat-%';
+    `);
+    expect(await accrueTeamMemberDays({ db, teamId: TEAM_ID, day })).toEqual({
+      extraMembers: 0,
+      chargeCents: 0,
+    });
+    expect(await accrueTeamMemberDays({ db, teamId: TEAM_ID, day })).toEqual({
+      extraMembers: 0,
+      chargeCents: 0,
+    });
+    await db.insert(billingOperatorAudit).values({
+      teamId: TEAM_ID,
+      actorEmail: 'operator@example.test',
+      action: 'price_override_cleared',
+      before: {
+        planId: 'team',
+        priceOverride: { includedActiveMembers: 50 },
+        priceOverrideExpiresAt: expiry,
+      },
+      after: { planId: 'team', priceOverride: null, priceOverrideExpiresAt: null },
+      createdAt: new Date(`${utcDayOffset(-1)}T12:00:00Z`),
+    });
+    await db
+      .update(teamBillingAccounts)
+      .set({ priceOverride: null, priceOverrideExpiresAt: null })
+      .where(eq(teamBillingAccounts.teamId, TEAM_ID));
+    expect(await accrueTeamMemberDays({ db, teamId: TEAM_ID, day })).toEqual({
+      extraMembers: 0,
+      chargeCents: 0,
+    });
+    // A missed day also resolves the historical override from the audit's before snapshot.
+    expect(await accrueTeamMemberDays({ db, teamId: TEAM_ID, day: utcDayOffset(-3) })).toEqual({
+      extraMembers: 0,
+      chargeCents: 0,
+    });
+    const facts = await db
+      .select()
+      .from(billingMemberDayLedger)
+      .where(and(eq(billingMemberDayLedger.teamId, TEAM_ID), eq(billingMemberDayLedger.day, day)));
+    expect(facts).toHaveLength(40);
+    expect(facts.every((fact) => fact.pricingTerms?.includedActiveMembers === 50)).toBe(true);
+    const today = await accrueTeamMemberDays({ db, teamId: TEAM_ID, day: utcDay() });
+    expect(today.extraMembers).toBe(15);
+    expect(today.chargeCents).toBeGreaterThan(0);
+  });
+
+  it('recovers unpaid member facts at their historical rate and percentage after replacement', async () => {
+    const billing = billingScopeMod.createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await billing.getAccount();
+    const day = utcDayOffset(-2);
+    const oldOverride = {
+      includedActiveMembers: 1,
+      additionalMemberCents: 620,
+      meteredDiscountPercent: 50,
+    };
+    const newOverride = {
+      includedActiveMembers: 0,
+      additionalMemberCents: 400,
+      meteredDiscountPercent: 0,
+    };
+    await pg.exec(`
+      UPDATE team_billing_accounts SET plan_id = 'payg', billing_state = 'past_due',
+        price_override = '${JSON.stringify(oldOverride)}'::jsonb WHERE team_id = '${TEAM_ID}';
+      INSERT INTO users (id, email) VALUES ('21111111-2222-4333-8444-555555555555', 'historical-seat@example.test');
+      INSERT INTO team_members (team_id, user_id, role) VALUES ('${TEAM_ID}', '21111111-2222-4333-8444-555555555555', 'member');
+    `);
+    const denied = await accrueTeamMemberDays({ db, teamId: TEAM_ID, day });
+    expect(denied.extraMembers).toBe(1);
+    expect(denied.chargeCents).toBe(0);
+    await db.insert(billingOperatorAudit).values({
+      teamId: TEAM_ID,
+      actorEmail: 'operator@example.test',
+      action: 'price_override_set',
+      before: { planId: 'payg', priceOverride: oldOverride, priceOverrideExpiresAt: null },
+      after: { planId: 'payg', priceOverride: newOverride, priceOverrideExpiresAt: null },
+      createdAt: new Date(`${utcDayOffset(-1)}T12:00:00Z`),
+    });
+    await db
+      .update(teamBillingAccounts)
+      .set({ billingState: 'payg_active', priceOverride: newOverride })
+      .where(eq(teamBillingAccounts.teamId, TEAM_ID));
+    // Simulate a pre-migration fact: terms are recovered from its audit history once.
+    await db
+      .update(billingMemberDayLedger)
+      .set({ pricingTerms: null })
+      .where(eq(billingMemberDayLedger.teamId, TEAM_ID));
+    const recovered = await accrueTeamMemberDays({ db, teamId: TEAM_ID, day });
+    expect(recovered.extraMembers).toBe(1);
+    const [ledger] = await db
+      .select()
+      .from(billingUsageLedger)
+      .where(eq(billingUsageLedger.teamId, TEAM_ID));
+    const list = memberDayChargeDelta({
+      previousNativeUnits: 0,
+      nextNativeUnits: 1,
+      centsPerMemberMonth: 620,
+      daysInMonth: daysInPeriodYm(day.slice(0, 7)),
+    });
+    expect(ledger?.customerChargeCents).toBe(Math.round(list * 0.5));
+    expect((await accrueTeamMemberDays({ db, teamId: TEAM_ID, day })).chargeCents).toBe(0);
+  });
+
+  it('replays a paid embedding after a downstream failure even when billing is paused', async () => {
+    const operationId = 'embedding:downstream-retry';
+    let calls = 0;
+    const run = () =>
+      runWorkerBilling(
+        db,
+        TEAM_ID,
+        'embedding',
+        () =>
+          withAiMetering({ operationClass: 'embedding', operationId }, () => {
+            calls += 1;
+            return Promise.resolve({ value: [0.1, 0.2], finish: { usage: { cost: 0.01 } } });
+          }),
+        { operationId },
+      );
+    expect(await run()).toEqual([0.1, 0.2]);
+    for (const state of ['read_only', 'past_due'] as const) {
+      await db
+        .update(teamBillingAccounts)
+        .set({ billingState: state })
+        .where(eq(teamBillingAccounts.teamId, TEAM_ID));
+      expect(await run()).toEqual([0.1, 0.2]);
+    }
+    expect(calls).toBe(1);
+    expect(
+      await db.select().from(billingUsageLedger).where(eq(billingUsageLedger.teamId, TEAM_ID)),
+    ).toHaveLength(1);
+  });
+
+  it('charges members past a custom included count at the custom extra-member price', async () => {
+    const billing = billingScopeMod.createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await billing.getAccount();
+    const previousPolarToken = process.env.POLAR_ACCESS_TOKEN;
+    process.env.BILLING_CHARGES_ENABLED = 'true';
+    delete process.env.POLAR_ACCESS_TOKEN;
+    resetEnvForTests();
+    try {
+      await pg.exec(`
+      UPDATE team_billing_accounts
+      SET plan_id = 'payg', billing_state = 'payg_active', shadow_billing = false,
+          wallet_balance_cents = 5000, spend_cap_cents = 2500,
+          polar_customer_id = 'cus_custom_members',
+          price_override = '{"includedActiveMembers":1,"additionalMemberCents":400}'::jsonb
+      WHERE team_id = '${TEAM_ID}';
+      INSERT INTO users (id, email)
+      VALUES ('21111111-2222-4333-8444-555555555555', 'm2@example.test');
+      INSERT INTO team_members (team_id, user_id, role)
+      VALUES ('${TEAM_ID}', '21111111-2222-4333-8444-555555555555', 'member');
+    `);
+      const accrued = await accrueTeamMemberDays({ db, teamId: TEAM_ID, day: '2026-10-02' });
+      const expected = memberDayChargeDelta({
+        previousNativeUnits: 0,
+        nextNativeUnits: 1,
+        centsPerMemberMonth: 400,
+        daysInMonth: daysInPeriodYm(periodYmUtc()),
+      });
+      expect(accrued.extraMembers).toBe(1);
+      expect(accrued.chargeCents).toBe(expected);
+      const ledger = await db
+        .select()
+        .from(billingUsageLedger)
+        .where(eq(billingUsageLedger.teamId, TEAM_ID));
+      const row = ledger.find((entry) => entry.operationId.includes('member_days:'));
+      expect(row?.customerChargeCents).toBe(expected);
+      expect(row?.metadata).toMatchObject({
+        polar_ingest_name: 'timeline_extra_member_days',
+        polar_ingest_units: polarMemberMonthUnits(expected),
+        polar_ingest_status: 'pending',
+      });
+    } finally {
+      if (previousPolarToken === undefined) delete process.env.POLAR_ACCESS_TOKEN;
+      else process.env.POLAR_ACCESS_TOKEN = previousPolarToken;
+      resetEnvForTests();
+    }
+  });
+
+  it('does not bill extra members when Enterprise included members are unlimited', async () => {
+    const billing = billingScopeMod.createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await billing.getAccount();
+    process.env.BILLING_CHARGES_ENABLED = 'true';
+    resetEnvForTests();
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET plan_id = 'enterprise', billing_state = 'enterprise_active', shadow_billing = false,
+          spend_cap_cents = 0,
+          price_override = '{"additionalMemberCents":500}'::jsonb
+      WHERE team_id = '${TEAM_ID}';
+      INSERT INTO users (id, email)
+      VALUES ('21111111-2222-4333-8444-555555555555', 'm2@example.test');
+      INSERT INTO team_members (team_id, user_id, role)
+      VALUES ('${TEAM_ID}', '21111111-2222-4333-8444-555555555555', 'member');
+    `);
+    const accrued = await accrueTeamMemberDays({ db, teamId: TEAM_ID, day: '2026-10-02' });
+    expect(accrued.extraMembers).toBe(0);
+    expect(accrued.chargeCents).toBe(0);
+  });
+
+  it('persists extra member-day charges when the spend cap is already exhausted', async () => {
+    const billing = billingScopeMod.createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await billing.getAccount();
+    process.env.BILLING_CHARGES_ENABLED = 'true';
+    resetEnvForTests();
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET plan_id = 'payg', billing_state = 'payg_active', wallet_balance_cents = 0,
+          spend_cap_cents = 0, shadow_billing = false
+      WHERE team_id = '${TEAM_ID}';
+      INSERT INTO billing_plan_history (team_id, plan_id, effective_at)
+      VALUES ('${TEAM_ID}', 'payg', clock_timestamp() + INTERVAL '1 millisecond');
+      INSERT INTO users (id, email) VALUES
+        ('21111111-2222-4333-8444-555555555555', 'm2@example.test'),
+        ('31111111-2222-4333-8444-555555555555', 'm3@example.test'),
+        ('41111111-2222-4333-8444-555555555555', 'm4@example.test');
+      INSERT INTO team_members (team_id, user_id, role) VALUES
+        ('${TEAM_ID}', '21111111-2222-4333-8444-555555555555', 'member'),
+        ('${TEAM_ID}', '31111111-2222-4333-8444-555555555555', 'member'),
+        ('${TEAM_ID}', '41111111-2222-4333-8444-555555555555', 'member');
+    `);
+    const accrued = await accrueTeamMemberDays({ db, teamId: TEAM_ID, day: utcDay() });
+    expect(accrued.extraMembers).toBe(1);
+    expect(accrued.chargeCents).toBeGreaterThan(0);
+    const after = await billing.getAccount();
+    expect(after.billingState).toBe('read_only');
+    const ledger = await db
+      .select()
+      .from(billingUsageLedger)
+      .where(eq(billingUsageLedger.teamId, TEAM_ID));
+    expect(ledger.some((row) => row.operationId.includes('member_days:'))).toBe(true);
+  });
+
+  it('backfills member-days missed between janitor snapshots', async () => {
+    const billing = billingScopeMod.createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await billing.getAccount();
+    const today = utcDay();
+    const todayDate = new Date(`${today}T00:00:00.000Z`);
+    const twoDaysAgo = utcDay(
+      new Date(
+        Date.UTC(todayDate.getUTCFullYear(), todayDate.getUTCMonth(), todayDate.getUTCDate() - 2),
+      ),
+    );
+    const yesterday = utcDay(
+      new Date(
+        Date.UTC(todayDate.getUTCFullYear(), todayDate.getUTCMonth(), todayDate.getUTCDate() - 1),
+      ),
+    );
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET plan_id = 'payg', billing_state = 'payg_active', wallet_balance_cents = 5000
+      WHERE team_id = '${TEAM_ID}';
+      UPDATE team_members SET created_at = '${twoDaysAgo}T00:00:00Z'
+      WHERE team_id = '${TEAM_ID}';
+      INSERT INTO billing_member_day_ledger (team_id, user_id, day, role, billable, charge_cents, plan_id)
+      VALUES ('${TEAM_ID}', '${USER_ID}', '${twoDaysAgo}', 'owner', true, 0, 'payg');
+    `);
+    const accrued = await accrueTeamMemberDays({ db, teamId: TEAM_ID });
+    expect(accrued.extraMembers).toBe(0);
+    const days = (
+      await db
+        .select({ day: billingMemberDayLedger.day })
+        .from(billingMemberDayLedger)
+        .where(eq(billingMemberDayLedger.teamId, TEAM_ID))
+    ).map((row) => row.day);
+    expect(days).toEqual(expect.arrayContaining([twoDaysAgo, yesterday, today]));
+  });
+
+  it('settles historical member-days with the plan stamped on that day', async () => {
+    const billing = billingScopeMod.createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await billing.getAccount();
+    const extraIds = [
+      '21111111-2222-4333-8444-555555555555',
+      '31111111-2222-4333-8444-555555555555',
+      '41111111-2222-4333-8444-555555555555',
+      '51111111-2222-4333-8444-555555555555',
+      '61111111-2222-4333-8444-555555555555',
+      '71111111-2222-4333-8444-555555555555',
+      '81111111-2222-4333-8444-555555555555',
+    ];
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET plan_id = 'team', billing_state = 'team_active', included_discount_remaining_cents = 0,
+          wallet_balance_cents = 5000
+      WHERE team_id = '${TEAM_ID}';
+      INSERT INTO users (id, email) VALUES
+        ${extraIds.map((id, i) => `('${id}', 'm${i + 2}@example.test')`).join(',\n        ')};
+      INSERT INTO team_members (team_id, user_id, role) VALUES
+        ${extraIds.map((id) => `('${TEAM_ID}', '${id}', 'member')`).join(',\n        ')};
+    `);
+    const teamDay = await accrueTeamMemberDays({ db, teamId: TEAM_ID, day: '2026-08-10' });
+    expect(teamDay.extraMembers).toBe(0);
+    const stamped = await db
+      .select({ planId: billingMemberDayLedger.planId })
+      .from(billingMemberDayLedger)
+      .where(eq(billingMemberDayLedger.teamId, TEAM_ID));
+    expect(stamped.every((row) => row.planId === 'team')).toBe(true);
+
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET plan_id = 'payg', billing_state = 'payg_active', wallet_balance_cents = 5000
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    const revisited = await accrueTeamMemberDays({ db, teamId: TEAM_ID, day: '2026-08-10' });
+    expect(revisited.extraMembers).toBe(0);
+    expect(revisited.chargeCents).toBe(0);
+    const after = await db
+      .select({ planId: billingMemberDayLedger.planId })
+      .from(billingMemberDayLedger)
+      .where(eq(billingMemberDayLedger.teamId, TEAM_ID));
+    expect(after.every((row) => row.planId === 'team')).toBe(true);
+  });
+
+  it('bills unsettled member-days at the paid plan rate after a move to Enterprise', async () => {
+    const billing = billingScopeMod.createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await billing.getAccount();
+    process.env.BILLING_CHARGES_ENABLED = 'true';
+    resetEnvForTests();
+    const day = '2026-02-10';
+    const extraIds = [
+      '21111111-2222-4333-8444-555555555555',
+      '31111111-2222-4333-8444-555555555555',
+      '41111111-2222-4333-8444-555555555555',
+    ];
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET plan_id = 'payg', billing_state = 'past_due', shadow_billing = false,
+          spend_cap_cents = 2500
+      WHERE team_id = '${TEAM_ID}';
+      INSERT INTO users (id, email) VALUES
+        ${extraIds.map((id, i) => `('${id}', 'extra${i + 2}@example.test')`).join(',\n        ')};
+      INSERT INTO team_members (team_id, user_id, role) VALUES
+        ${extraIds.map((id) => `('${TEAM_ID}', '${id}', 'member')`).join(',\n        ')};
+    `);
+    const denied = await accrueTeamMemberDays({ db, teamId: TEAM_ID, day });
+    expect(denied.chargeCents).toBe(0);
+
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET plan_id = 'enterprise', billing_state = 'enterprise_active', price_override = NULL
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    const replayed = await accrueTeamMemberDays({ db, teamId: TEAM_ID, day });
+    const expected = memberDayChargeDelta({
+      previousNativeUnits: 0,
+      nextNativeUnits: 1,
+      centsPerMemberMonth: 200,
+      daysInMonth: daysInPeriodYm('2026-02'),
+    });
+    expect(replayed.extraMembers).toBe(1);
+    expect(replayed.chargeCents).toBe(expected);
+    expect(expected).toBe(7);
+    const ledger = await db
+      .select()
+      .from(billingUsageLedger)
+      .where(eq(billingUsageLedger.teamId, TEAM_ID));
+    const row = ledger.find((entry) => entry.operationId.includes('member_days:'));
+    expect(row?.customerChargeCents).toBe(expected);
+  });
+
+  it('prices a missed member-day from plan history before the current plan', async () => {
+    const billing = billingScopeMod.createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await billing.getAccount();
+    process.env.BILLING_CHARGES_ENABLED = 'true';
+    resetEnvForTests();
+    const day = '2026-08-10';
+    const extraIds = [
+      '21111111-2222-4333-8444-555555555555',
+      '31111111-2222-4333-8444-555555555555',
+      '41111111-2222-4333-8444-555555555555',
+      '51111111-2222-4333-8444-555555555555',
+      '61111111-2222-4333-8444-555555555555',
+      '71111111-2222-4333-8444-555555555555',
+      '81111111-2222-4333-8444-555555555555',
+      '91111111-2222-4333-8444-555555555555',
+      'a1111111-2222-4333-8444-555555555555',
+    ];
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET plan_id = 'payg', billing_state = 'payg_active', shadow_billing = false,
+          wallet_balance_cents = 5000, spend_cap_cents = 100000
+      WHERE team_id = '${TEAM_ID}';
+      INSERT INTO billing_plan_history (team_id, plan_id, effective_at) VALUES
+        ('${TEAM_ID}', 'team', '${day}T00:00:00Z'),
+        ('${TEAM_ID}', 'payg', '2026-08-11T00:00:00Z');
+      INSERT INTO users (id, email) VALUES
+        ${extraIds.map((id, i) => `('${id}', 'seat${i + 2}@example.test')`).join(',\n        ')};
+      INSERT INTO team_members (team_id, user_id, role) VALUES
+        ${extraIds.map((id) => `('${TEAM_ID}', '${id}', 'member')`).join(',\n        ')};
+    `);
+    const accrued = await accrueTeamMemberDays({ db, teamId: TEAM_ID, day });
+    expect(accrued.extraMembers).toBe(0);
+    expect(accrued.chargeCents).toBe(0);
+    const stamped = await db
+      .select({ planId: billingMemberDayLedger.planId })
+      .from(billingMemberDayLedger)
+      .where(eq(billingMemberDayLedger.teamId, TEAM_ID));
+    expect(stamped).toHaveLength(10);
+    expect(stamped.every((row) => row.planId === 'team')).toBe(true);
+    const ledger = await db
+      .select({ operationId: billingUsageLedger.operationId })
+      .from(billingUsageLedger)
+      .where(eq(billingUsageLedger.teamId, TEAM_ID));
+    expect(ledger.some((row) => row.operationId.includes('member_days:'))).toBe(false);
+    const [account] = await db
+      .select({ wallet: teamBillingAccounts.walletBalanceCents })
+      .from(teamBillingAccounts)
+      .where(eq(teamBillingAccounts.teamId, TEAM_ID));
+    expect(account?.wallet).toBe(5000);
+  });
+
+  it('prices member-days before comp expiry and Free after it', async () => {
+    const billing = billingScopeMod.createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await billing.getAccount();
+    process.env.BILLING_CHARGES_ENABLED = 'true';
+    resetEnvForTests();
+    const before = '2026-08-10';
+    const after = '2026-08-20';
+    const extraIds = Array.from({ length: 25 }, (_, index) => {
+      const n = (index + 2).toString(16).padStart(8, '0');
+      return `${n}-2222-4333-8444-555555555555`;
+    });
+    const paidDayCharge = memberDayChargeDelta({
+      previousNativeUnits: 0,
+      nextNativeUnits: 1,
+      centsPerMemberMonth: 200,
+      daysInMonth: daysInPeriodYm(before.slice(0, 7)),
+    });
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET plan_id = 'team', billing_state = 'team_active', arrangement = 'comped',
+          comp_expires_at = '2026-08-15T00:00:00Z', shadow_billing = false,
+          included_discount_remaining_cents = 0, spend_cap_cents = 100000
+      WHERE team_id = '${TEAM_ID}';
+      INSERT INTO billing_plan_history (team_id, plan_id, effective_at)
+      VALUES ('${TEAM_ID}', 'team', '2026-08-01T00:00:00Z');
+      INSERT INTO users (id, email) VALUES
+        ${extraIds.map((id, i) => `('${id}', 'comp${i + 2}@example.test')`).join(',\n        ')};
+      INSERT INTO team_members (team_id, user_id, role) VALUES
+        ${extraIds.map((id) => `('${TEAM_ID}', '${id}', 'member')`).join(',\n        ')};
+    `);
+    const paid = await accrueTeamMemberDays({ db, teamId: TEAM_ID, day: before });
+    expect(paid.extraMembers).toBe(1);
+    expect(paid.chargeCents).toBe(paidDayCharge);
+    const freeDay = await accrueTeamMemberDays({ db, teamId: TEAM_ID, day: after });
+    expect(freeDay.extraMembers).toBe(0);
+    expect(freeDay.chargeCents).toBe(0);
+    const stamped = await db
+      .select({ day: billingMemberDayLedger.day, planId: billingMemberDayLedger.planId })
+      .from(billingMemberDayLedger)
+      .where(eq(billingMemberDayLedger.teamId, TEAM_ID));
+    expect(stamped.filter((row) => row.day === before).every((row) => row.planId === 'team')).toBe(
+      true,
+    );
+    expect(stamped.filter((row) => row.day === after).every((row) => row.planId === 'free')).toBe(
+      true,
+    );
+  });
+
+  it('keeps a stamped member-day on its plan after the comp expires', async () => {
+    const billing = billingScopeMod.createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await billing.getAccount();
+    process.env.BILLING_CHARGES_ENABLED = 'true';
+    resetEnvForTests();
+    const day = '2026-08-20';
+    const extraIds = Array.from({ length: 25 }, (_, index) => {
+      const n = (index + 2).toString(16).padStart(8, '0');
+      return `${n}-2222-4333-8444-555555555555`;
+    });
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET plan_id = 'team', billing_state = 'team_active', arrangement = 'comped',
+          comp_expires_at = '2026-08-15T00:00:00Z', shadow_billing = false,
+          included_discount_remaining_cents = 0, spend_cap_cents = 100000
+      WHERE team_id = '${TEAM_ID}';
+      INSERT INTO users (id, email) VALUES
+        ${extraIds.map((id, i) => `('${id}', 'stamp${i + 2}@example.test')`).join(',\n        ')};
+      INSERT INTO team_members (team_id, user_id, role) VALUES
+        ${extraIds.map((id) => `('${TEAM_ID}', '${id}', 'member')`).join(',\n        ')};
+      INSERT INTO billing_member_day_ledger (team_id, user_id, day, plan_id, role, billable)
+      VALUES ('${TEAM_ID}', '${USER_ID}', '${day}', 'team', 'owner', true);
+    `);
+    const accrued = await accrueTeamMemberDays({ db, teamId: TEAM_ID, day });
+    expect(accrued.extraMembers).toBe(1);
+    expect(accrued.chargeCents).toBeGreaterThan(0);
+    const stamped = await db
+      .select({ planId: billingMemberDayLedger.planId })
+      .from(billingMemberDayLedger)
+      .where(eq(billingMemberDayLedger.teamId, TEAM_ID));
+    expect(stamped).toHaveLength(26);
+    expect(stamped.every((row) => row.planId === 'team')).toBe(true);
+  });
+
+  it('keeps a contractual Enterprise day on Enterprise', async () => {
+    const billing = billingScopeMod.createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await billing.getAccount();
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET plan_id = 'enterprise', billing_state = 'enterprise_active', arrangement = 'standard',
+          spend_cap_cents = 0
+      WHERE team_id = '${TEAM_ID}';
+      INSERT INTO billing_plan_history (team_id, plan_id, effective_at)
+      VALUES ('${TEAM_ID}', 'enterprise', '2026-08-01T00:00:00Z');
+    `);
+    const accrued = await accrueTeamMemberDays({ db, teamId: TEAM_ID, day: '2026-08-20' });
+    expect(accrued.extraMembers).toBe(0);
+    expect(accrued.chargeCents).toBe(0);
+    const [stamped] = await db
+      .select({ planId: billingMemberDayLedger.planId })
+      .from(billingMemberDayLedger)
+      .where(eq(billingMemberDayLedger.teamId, TEAM_ID));
+    expect(stamped?.planId).toBe('enterprise');
+  });
+
+  it('backfills member-days from preserved prior membership intervals', async () => {
+    const billing = billingScopeMod.createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await billing.getAccount();
+    const today = utcDay();
+    const todayDate = new Date(`${today}T00:00:00.000Z`);
+    const twoDaysAgo = utcDay(
+      new Date(
+        Date.UTC(todayDate.getUTCFullYear(), todayDate.getUTCMonth(), todayDate.getUTCDate() - 2),
+      ),
+    );
+    const yesterday = utcDay(
+      new Date(
+        Date.UTC(todayDate.getUTCFullYear(), todayDate.getUTCMonth(), todayDate.getUTCDate() - 1),
+      ),
+    );
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET plan_id = 'payg', billing_state = 'payg_active', wallet_balance_cents = 5000
+      WHERE team_id = '${TEAM_ID}';
+      UPDATE team_members
+      SET created_at = '${today}T12:00:00Z',
+          prior_intervals = '[{"startedAt":"${twoDaysAgo}T00:00:00.000Z","endedAt":"${yesterday}T12:00:00.000Z"}]'::jsonb
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    const accrued = await accrueTeamMemberDays({ db, teamId: TEAM_ID });
+    expect(accrued.extraMembers).toBe(0);
+    const days = (
+      await db
+        .select({ day: billingMemberDayLedger.day })
+        .from(billingMemberDayLedger)
+        .where(eq(billingMemberDayLedger.teamId, TEAM_ID))
+    ).map((row) => row.day);
+    expect(days).toEqual(expect.arrayContaining([twoDaysAgo, yesterday, today]));
+  });
+
+  it('retries unsettled member-day facts after past_due recovery', async () => {
+    const billing = billingScopeMod.createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await billing.getAccount();
+    process.env.BILLING_CHARGES_ENABLED = 'true';
+    resetEnvForTests();
+    const extraUserId = '41111111-2222-4333-8444-555555555555';
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET plan_id = 'payg', billing_state = 'past_due', wallet_balance_cents = 5000,
+          spend_cap_cents = 2500, shadow_billing = false
+      WHERE team_id = '${TEAM_ID}';
+      INSERT INTO billing_plan_history (team_id, plan_id, effective_at)
+      VALUES ('${TEAM_ID}', 'payg', clock_timestamp() + INTERVAL '1 millisecond');
+      INSERT INTO users (id, email) VALUES
+        ('21111111-2222-4333-8444-555555555555', 'm2@example.test'),
+        ('31111111-2222-4333-8444-555555555555', 'm3@example.test'),
+        ('${extraUserId}', 'm4@example.test');
+      INSERT INTO team_members (team_id, user_id, role) VALUES
+        ('${TEAM_ID}', '21111111-2222-4333-8444-555555555555', 'member'),
+        ('${TEAM_ID}', '31111111-2222-4333-8444-555555555555', 'member'),
+        ('${TEAM_ID}', '${extraUserId}', 'member');
+    `);
+    const denied = await accrueTeamMemberDays({ db, teamId: TEAM_ID });
+    expect(denied.chargeCents).toBe(0);
+    const before = await db
+      .select()
+      .from(billingUsageLedger)
+      .where(eq(billingUsageLedger.teamId, TEAM_ID));
+    expect(before.some((row) => row.operationId.includes('member_days:'))).toBe(false);
+
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET billing_state = 'payg_active'
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    const recovered = await accrueTeamMemberDays({ db, teamId: TEAM_ID });
+    expect(recovered.extraMembers).toBe(1);
+    expect(recovered.chargeCents).toBeGreaterThan(0);
+    const after = await db
+      .select()
+      .from(billingUsageLedger)
+      .where(eq(billingUsageLedger.teamId, TEAM_ID));
+    expect(after.some((row) => row.operationId.includes(`member_days:${TEAM_ID}:`))).toBe(true);
+  });
+
+  it('does not bill gap days after a membership createdAt reset', async () => {
+    const billing = billingScopeMod.createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await billing.getAccount();
+    const today = utcDay();
+    const todayDate = new Date(`${today}T00:00:00.000Z`);
+    const twoDaysAgo = utcDay(
+      new Date(
+        Date.UTC(todayDate.getUTCFullYear(), todayDate.getUTCMonth(), todayDate.getUTCDate() - 2),
+      ),
+    );
+    const yesterday = utcDay(
+      new Date(
+        Date.UTC(todayDate.getUTCFullYear(), todayDate.getUTCMonth(), todayDate.getUTCDate() - 1),
+      ),
+    );
+    const extraUserId = '41111111-2222-4333-8444-555555555555';
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET plan_id = 'payg', billing_state = 'payg_active', wallet_balance_cents = 5000
+      WHERE team_id = '${TEAM_ID}';
+      INSERT INTO billing_plan_history (team_id, plan_id, effective_at)
+      VALUES ('${TEAM_ID}', 'payg', clock_timestamp() + INTERVAL '1 millisecond');
+      UPDATE team_members SET created_at = '${twoDaysAgo}T00:00:00Z'
+      WHERE team_id = '${TEAM_ID}' AND user_id = '${USER_ID}';
+      INSERT INTO users (id, email) VALUES
+        ('21111111-2222-4333-8444-555555555555', 'm2@example.test'),
+        ('31111111-2222-4333-8444-555555555555', 'm3@example.test'),
+        ('${extraUserId}', 'm4@example.test');
+      INSERT INTO team_members (team_id, user_id, role, created_at) VALUES
+        ('${TEAM_ID}', '21111111-2222-4333-8444-555555555555', 'member', '${today}T00:00:00Z'),
+        ('${TEAM_ID}', '31111111-2222-4333-8444-555555555555', 'member', '${today}T00:00:00Z'),
+        ('${TEAM_ID}', '${extraUserId}', 'member', '${today}T00:00:00Z');
+    `);
+    const accrued = await accrueTeamMemberDays({ db, teamId: TEAM_ID });
+    expect(accrued.extraMembers).toBe(1);
+    const extraOps = (
+      await db
+        .select({ operationId: billingUsageLedger.operationId })
+        .from(billingUsageLedger)
+        .where(eq(billingUsageLedger.teamId, TEAM_ID))
+    )
+      .map((row) => row.operationId)
+      .filter((id) => id.includes(extraUserId));
+    expect(extraOps.some((id) => id.includes(`:${today}:`))).toBe(true);
+    expect(extraOps.some((id) => id.includes(`:${yesterday}:`))).toBe(false);
+  });
+
+  it('backfills missed storage snapshot days', async () => {
+    const billing = billingScopeMod.createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await billing.getAccount();
+    const today = utcDay();
+    const todayDate = new Date(`${today}T00:00:00.000Z`);
+    const twoDaysAgo = utcDay(
+      new Date(
+        Date.UTC(todayDate.getUTCFullYear(), todayDate.getUTCMonth(), todayDate.getUTCDate() - 2),
+      ),
+    );
+    const yesterday = utcDay(
+      new Date(
+        Date.UTC(todayDate.getUTCFullYear(), todayDate.getUTCMonth(), todayDate.getUTCDate() - 1),
+      ),
+    );
+    await pg.exec(`
+      INSERT INTO documents (id, team_id, name)
+      VALUES ('cccccccc-dddd-4eee-8fff-000000000001', '${TEAM_ID}', 'store.bin');
+      INSERT INTO document_versions (id, team_id, document_id, version, object_key, byte_size, created_at)
+      VALUES (
+        'cccccccc-dddd-4eee-8fff-000000000002',
+        '${TEAM_ID}',
+        'cccccccc-dddd-4eee-8fff-000000000001',
+        1,
+        'team/docs/store.bin',
+        1073741824,
+        '${twoDaysAgo}T00:00:00Z'
+      );
+    `);
+    const result = await snapshotTeamStorageGbMonth({ db, teamId: TEAM_ID });
+    expect(result.settled).toBe(true);
+    const ops = (
+      await db
+        .select({ operationId: billingUsageLedger.operationId })
+        .from(billingUsageLedger)
+        .where(eq(billingUsageLedger.teamId, TEAM_ID))
+    ).map((row) => row.operationId);
+    expect(ops).toEqual(
+      expect.arrayContaining([
+        `storage_gb:${TEAM_ID}:${twoDaysAgo}`,
+        `storage_gb:${TEAM_ID}:${yesterday}`,
+        `storage_gb:${TEAM_ID}:${today}`,
+      ]),
+    );
+  });
+
+  it('skips AI metering when the caller already reserved the meter', async () => {
+    const value = await runWithBillingContext(
+      {
+        db,
+        teamId: TEAM_ID,
+        userId: USER_ID,
+        operationClass: 'agent_ask',
+        skipMeters: new Set(['ai']),
+      },
+      () =>
+        withAiMetering({ operationClass: 'agent_ask' }, () =>
+          Promise.resolve({
+            value: 1,
+            finish: { usage: { cost: 1 } },
+          }),
+        ),
+    );
+    expect(value).toBe(1);
+    const billing = billingScopeMod.createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    const dash = await billing.getDashboard();
+    expect(dash.meters.ai).toBeUndefined();
+  });
+
+  it('preserves the Polar renewal boundary when the janitor refills included discount', async () => {
+    const billing = billingScopeMod.createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await billing.getAccount();
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET plan_id = 'team', billing_state = 'team_active', included_discount_remaining_cents = 0,
+          period_started_at = '2026-07-15T00:00:00Z', period_ends_at = '2026-08-15T00:00:00Z'
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    const reset = await resetIncludedDiscountIfPeriodElapsed({
+      db,
+      teamId: TEAM_ID,
+      now: new Date('2026-08-20T12:00:00Z'),
+    });
+    expect(reset).toBe(true);
+    const after = await billing.getAccount();
+    expect(after.includedDiscountRemainingCents).toBe(6_000);
+    expect(after.periodStartedAt?.toISOString()).toBe('2026-08-15T00:00:00.000Z');
+    expect(after.periodEndsAt?.toISOString()).toBe('2026-09-15T00:00:00.000Z');
+  });
+
+  it('refills an expired comp from the Free allowance, not the stored plan', async () => {
+    const billing = billingScopeMod.createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await billing.getAccount();
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET arrangement = 'comped', plan_id = 'team', billing_state = 'team_active',
+          comp_reason = 'trial', comp_expires_at = '2020-01-01T00:00:00Z',
+          included_discount_remaining_cents = 0,
+          period_started_at = '2026-07-15T00:00:00Z', period_ends_at = '2026-08-15T00:00:00Z'
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    const reset = await resetIncludedDiscountIfPeriodElapsed({
+      db,
+      teamId: TEAM_ID,
+      now: new Date('2026-08-20T12:00:00Z'),
+    });
+    expect(reset).toBe(true);
+    expect((await billing.getAccount()).includedDiscountRemainingCents).toBe(0);
+  });
+
+  it('does not overwrite a newer Polar plan or period already on the locked row', async () => {
+    const billing = billingScopeMod.createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await billing.getAccount();
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET plan_id = 'business', billing_state = 'business_active',
+          included_discount_remaining_cents = 25000,
+          period_started_at = '2026-08-20T00:00:00Z', period_ends_at = '2026-09-20T00:00:00Z'
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    const reset = await resetIncludedDiscountIfPeriodElapsed({
+      db,
+      teamId: TEAM_ID,
+      now: new Date('2026-08-26T12:00:00Z'),
+    });
+    expect(reset).toBe(false);
+    const after = await billing.getAccount();
+    expect(after.planId).toBe('business');
+    expect(after.includedDiscountRemainingCents).toBe(25_000);
+    expect(after.periodStartedAt?.toISOString()).toBe('2026-08-20T00:00:00.000Z');
+    expect(after.periodEndsAt?.toISOString()).toBe('2026-09-20T00:00:00.000Z');
+  });
+
+  it('replays storage and member-days from the previous calendar month', async () => {
+    const billing = billingScopeMod.createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await billing.getAccount();
+    const missed = utcDayOffset(-31);
+    await pg.exec(`
+      UPDATE team_members SET created_at = '${missed}T00:00:00Z'
+      WHERE team_id = '${TEAM_ID}' AND user_id = '${USER_ID}';
+      INSERT INTO documents (id, team_id, name)
+      VALUES ('cccccccc-dddd-4eee-8fff-000000000011', '${TEAM_ID}', 'old.bin');
+      INSERT INTO document_versions (id, team_id, document_id, version, object_key, byte_size, created_at)
+      VALUES (
+        'cccccccc-dddd-4eee-8fff-000000000012',
+        '${TEAM_ID}',
+        'cccccccc-dddd-4eee-8fff-000000000011',
+        1,
+        'team/docs/old.bin',
+        1048576,
+        '${missed}T00:00:00Z'
+      );
+    `);
+    await snapshotTeamStorageGbMonth({ db, teamId: TEAM_ID });
+    await accrueTeamMemberDays({ db, teamId: TEAM_ID });
+    const storage = await db
+      .select({ operationId: billingUsageLedger.operationId })
+      .from(billingUsageLedger)
+      .where(eq(billingUsageLedger.teamId, TEAM_ID));
+    expect(storage.map((row) => row.operationId)).toContain(`storage_gb:${TEAM_ID}:${missed}`);
+    const [storageCounter] = await db
+      .select()
+      .from(billingUsageCounters)
+      .where(
+        and(
+          eq(billingUsageCounters.teamId, TEAM_ID),
+          eq(billingUsageCounters.meterId, 'storage_gb_month'),
+          eq(billingUsageCounters.periodYm, missed.slice(0, 7)),
+        ),
+      );
+    expect(Number(storageCounter?.nativeUnits ?? 0)).toBeGreaterThan(0);
+    const memberDays = await db
+      .select({ day: billingMemberDayLedger.day })
+      .from(billingMemberDayLedger)
+      .where(eq(billingMemberDayLedger.teamId, TEAM_ID));
+    expect(memberDays.map((row) => row.day)).toContain(missed);
+  });
+
+  it('settles reported usage from a failed AI call and releases the work reservation', async () => {
+    const operationId = 'embedding:failed-attempt';
+    await expect(
+      runWorkerBilling(
+        db,
+        TEAM_ID,
+        'embedding',
+        () =>
+          withAiMetering({ operationClass: 'embedding', operationId }, () =>
+            Promise.reject(Object.assign(new Error('bad json'), { openRouterUsd: 0.02 })),
+          ),
+        { operationId },
+      ),
+    ).rejects.toThrow('bad json');
+    const ledger = await db
+      .select()
+      .from(billingUsageLedger)
+      .where(eq(billingUsageLedger.teamId, TEAM_ID));
+    const attempt = ledger.find((row) => row.operationId === `${operationId}:failed:1`);
+    expect(attempt?.customerChargeCents).toBeGreaterThan(0);
+    expect(attempt?.metadata).toMatchObject({
+      failed_attempt_for: operationId,
+      openrouter_usd: 0.02,
+    });
+    const [reservation] = await db
+      .select()
+      .from(billingUsageReservations)
+      .where(eq(billingUsageReservations.operationId, operationId));
+    expect(reservation?.state).toBe('released');
+  });
+
+  for (const scenario of [
+    { name: 'expires', initial: 50, next: 50, expired: true, invoice: 118 },
+    { name: 'changes', initial: 50, next: 10, expired: false, invoice: 118 },
+    { name: 'starts later', initial: 0, next: 50, expired: false, invoice: 236 },
+  ]) {
+    it(`keeps a failed attempt discount when the override ${scenario.name}`, async () => {
+      process.env.BILLING_CHARGES_ENABLED = 'true';
+      resetEnvForTests();
+      const billing = billingScopeMod.createBillingScope({
+        db,
+        teamId: TEAM_ID,
+        userId: USER_ID,
+        ensureMember: () => Promise.resolve('owner'),
+      });
+      await billing.getAccount();
+      await db
+        .update(teamBillingAccounts)
+        .set({
+          planId: 'payg',
+          billingState: 'payg_active',
+          shadowBilling: false,
+          includedDiscountRemainingCents: 0,
+          spendCapCents: 100000,
+          priceOverride: { meteredDiscountPercent: scenario.initial },
+        })
+        .where(eq(teamBillingAccounts.teamId, TEAM_ID));
+      await pg.exec(`
+        CREATE FUNCTION fail_attempt_settlement() RETURNS trigger AS $$
+        BEGIN RAISE EXCEPTION 'settlement unavailable'; END;
+        $$ LANGUAGE plpgsql;
+        CREATE TRIGGER fail_attempt_settlement BEFORE INSERT ON billing_usage_ledger
+        FOR EACH ROW EXECUTE FUNCTION fail_attempt_settlement();
+      `);
+      const operationId = 'embedding:discounted-failure';
+      let calls = 0;
+      await expect(
+        runWorkerBilling(
+          db,
+          TEAM_ID,
+          'embedding',
+          () =>
+            withAiMetering({ operationClass: 'embedding', operationId }, () => {
+              calls++;
+              return Promise.reject(
+                Object.assign(new Error('provider failed'), { openRouterUsd: 2 }),
+              );
+            }),
+          { operationId },
+        ),
+      ).rejects.toThrow('provider failed');
+      const [reservation] = await db
+        .select()
+        .from(billingUsageReservations)
+        .where(eq(billingUsageReservations.operationId, operationId));
+      expect(reservation?.metadata.pending_failed_attempts).toMatchObject([
+        { admitted_metered_discount_percent: scenario.initial },
+      ]);
+      await db
+        .update(teamBillingAccounts)
+        .set({
+          priceOverride: { meteredDiscountPercent: scenario.next },
+          priceOverrideExpiresAt: scenario.expired ? new Date(Date.now() - 1000) : null,
+        })
+        .where(eq(teamBillingAccounts.teamId, TEAM_ID));
+      // The attempt must retain its own terms even if parent metadata changes.
+      await billing.patchReservationMetadata(operationId, {
+        admitted_metered_discount_percent: scenario.next,
+      });
+      await pg.exec('DROP TRIGGER fail_attempt_settlement ON billing_usage_ledger');
+      expect(await settlePendingBillingReservations(db)).toBe(1);
+      expect(await settlePendingBillingReservations(db)).toBe(0);
+      const rows = await db
+        .select()
+        .from(billingUsageLedger)
+        .where(eq(billingUsageLedger.operationId, operationId + ':failed:1'));
+      expect(rows).toHaveLength(1);
+      expect(rows[0]?.metadata.invoice_cents).toBe(scenario.invoice);
+      const [counter] = await db
+        .select()
+        .from(billingUsageCounters)
+        .where(
+          and(eq(billingUsageCounters.teamId, TEAM_ID), eq(billingUsageCounters.meterId, 'ai')),
+        );
+      expect(counter?.capEligibleChargeCents).toBe(scenario.invoice);
+      expect(calls).toBe(1);
+    });
+  }
+
+  it('recovers a failed provider attempt when settlement cannot commit', async () => {
+    await pg.exec(`
+      CREATE OR REPLACE FUNCTION fail_billing_settlement() RETURNS trigger AS $$
+      BEGIN
+        IF NEW.kind = 'settlement' THEN
+          RAISE EXCEPTION 'settlement down';
+        END IF;
+        RETURN NEW;
+      END;
+      $$ LANGUAGE plpgsql;
+      CREATE TRIGGER fail_billing_settlement
+      BEFORE INSERT ON billing_usage_ledger
+      FOR EACH ROW EXECUTE FUNCTION fail_billing_settlement();
+    `);
+    const operationId = 'embedding:failed-attempt-retry';
+    let calls = 0;
+    const fail = () =>
+      runWorkerBilling(
+        db,
+        TEAM_ID,
+        'embedding',
+        () =>
+          withAiMetering({ operationClass: 'embedding', operationId, model: 'embed-test' }, () => {
+            calls += 1;
+            return Promise.reject(Object.assign(new Error('bad json'), { openRouterUsd: 0.03 }));
+          }),
+        { operationId },
+      );
+    await expect(fail()).rejects.toThrow('bad json');
+    expect(calls).toBe(1);
+    const [pending] = await db
+      .select()
+      .from(billingUsageReservations)
+      .where(eq(billingUsageReservations.operationId, operationId));
+    expect(pending?.state).toBe('reserved');
+    expect(pending?.metadata).toMatchObject({
+      pending_failed_attempt_settlement: true,
+      pending_failed_attempts: [
+        {
+          operation_id: `${operationId}:failed:1`,
+          operation_class: 'embedding',
+          model: 'embed-test',
+          openrouter_usd: 0.03,
+        },
+      ],
+    });
+    const usageAt = /"usage_at":"([^"]+)"/.exec(JSON.stringify(pending?.metadata))?.[1] ?? '';
+    expect(usageAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    const ledgerBefore = await db
+      .select({ operationId: billingUsageLedger.operationId })
+      .from(billingUsageLedger)
+      .where(eq(billingUsageLedger.teamId, TEAM_ID));
+    expect(ledgerBefore).toHaveLength(0);
+    await pg.exec(`
+      UPDATE billing_usage_reservations
+      SET expires_at = NOW() - INTERVAL '1 hour'
+      WHERE team_id = '${TEAM_ID}' AND operation_id = '${operationId}';
+    `);
+    expect(await expireStaleBillingReservations({ db, teamId: TEAM_ID })).toBe(0);
+    await expect(fail()).rejects.toThrow(/billing_usage_ledger/);
+    expect(calls).toBe(1);
+    await pg.exec('DROP TRIGGER fail_billing_settlement ON billing_usage_ledger;');
+    expect(await settlePendingBillingReservations(db)).toBe(1);
+    const [attemptLedger] = await db
+      .select()
+      .from(billingUsageLedger)
+      .where(eq(billingUsageLedger.operationId, `${operationId}:failed:1`));
+    expect(attemptLedger?.metadata).toMatchObject({
+      failed_attempt_for: operationId,
+      usage_at: usageAt,
+    });
+    const ledgerUsd = attemptLedger?.metadata.openrouter_usd;
+    expect(typeof ledgerUsd).toBe('number');
+    if (typeof ledgerUsd === 'number') expect(ledgerUsd).toBeCloseTo(0.03);
+    const [released] = await db
+      .select()
+      .from(billingUsageReservations)
+      .where(eq(billingUsageReservations.operationId, operationId));
+    expect(released?.state).toBe('released');
+    const recovered = await runWorkerBilling(
+      db,
+      TEAM_ID,
+      'embedding',
+      () =>
+        withAiMetering({ operationClass: 'embedding', operationId, model: 'embed-test' }, () => {
+          calls += 1;
+          return Promise.resolve({
+            value: { text: 'second' },
+            finish: { usage: { cost: 0.01 } },
+          });
+        }),
+      { operationId },
+    );
+    expect(recovered).toEqual({ text: 'second' });
+    expect(calls).toBe(2);
+    const operationIds = (
+      await db
+        .select({ operationId: billingUsageLedger.operationId })
+        .from(billingUsageLedger)
+        .where(eq(billingUsageLedger.teamId, TEAM_ID))
+    ).map((row) => row.operationId);
+    expect(operationIds).toEqual(expect.arrayContaining([operationId, `${operationId}:failed:1`]));
+    expect(operationIds).not.toContain(`${operationId}:failed:2`);
+  });
+
+  it('refuses a job operation id that has no per-call material', async () => {
+    await expect(
+      runWorkerBilling(
+        db,
+        TEAM_ID,
+        'chat_structured',
+        () =>
+          withAiMetering({ operationClass: 'chat_structured' }, () =>
+            Promise.resolve({
+              value: { kind: 'extract' },
+              finish: { usage: { cost: 0 } },
+            }),
+          ),
+        { operationId: 'suggestions:job-shared' },
+      ),
+    ).rejects.toThrow(/callMaterial/);
+  });
+
+  it('does not replay one call in a job as the result of a different call', async () => {
+    let calls = 0;
+    const run = (material: string) =>
+      runWorkerBilling(
+        db,
+        TEAM_ID,
+        'chat_structured',
+        () =>
+          withAiMetering(
+            {
+              operationClass: 'chat_structured',
+              stage: 'chat_structured',
+              callMaterial: [material],
+            },
+            () => {
+              calls += 1;
+              return Promise.resolve({
+                value: { kind: material },
+                finish: { usage: { cost: 0.01 } },
+              });
+            },
+          ),
+        { operationId: 'suggestions:job-shared' },
+      );
+
+    const extracted = await run('extract');
+    const classified = await run('classify');
+    const replayed = await run('extract');
+
+    expect(extracted).toEqual({ kind: 'extract' });
+    expect(classified).toEqual({ kind: 'classify' });
+    expect(replayed).toEqual(extracted);
+    expect(calls).toBe(2);
+    const operationIds = (
+      await db
+        .select({ operationId: billingUsageLedger.operationId })
+        .from(billingUsageLedger)
+        .where(eq(billingUsageLedger.teamId, TEAM_ID))
+    ).map((row) => row.operationId);
+    expect(operationIds).toHaveLength(2);
+    expect(
+      operationIds.every((operationId) =>
+        operationId.startsWith('suggestions:job-shared:chat_structured:'),
+      ),
+    ).toBe(true);
+    expect(new Set(operationIds).size).toBe(2);
+  });
+
+  it('calls the provider again for a different transcription chunk id', async () => {
+    let calls = 0;
+    await runWorkerBilling(
+      db,
+      TEAM_ID,
+      'transcription',
+      async () => {
+        await withAiMetering(
+          { operationClass: 'transcription', operationId: 'transcription:job-9:0' },
+          () => {
+            calls += 1;
+            return Promise.resolve({ value: { text: 'a' }, finish: { usage: { cost: 0.01 } } });
+          },
+        );
+        await withAiMetering(
+          { operationClass: 'transcription', operationId: 'transcription:job-9:1' },
+          () => {
+            calls += 1;
+            return Promise.resolve({ value: { text: 'b' }, finish: { usage: { cost: 0.01 } } });
+          },
+        );
+      },
+      { operationId: 'transcription:job-9' },
+    );
+    expect(calls).toBe(2);
+    const ops = (
+      await db
+        .select({ operationId: billingUsageLedger.operationId })
+        .from(billingUsageLedger)
+        .where(eq(billingUsageLedger.teamId, TEAM_ID))
+    ).map((row) => row.operationId);
+    expect(ops).toEqual(expect.arrayContaining(['transcription:job-9:0', 'transcription:job-9:1']));
+  });
+
+  it('recovers a completed worker call without calling the provider again', async () => {
+    await pg.exec(`
+      CREATE OR REPLACE FUNCTION fail_billing_settlement() RETURNS trigger AS $$
+      BEGIN
+        IF NEW.kind = 'settlement' THEN
+          RAISE EXCEPTION 'settlement down';
+        END IF;
+        RETURN NEW;
+      END;
+      $$ LANGUAGE plpgsql;
+      CREATE TRIGGER fail_billing_settlement
+      BEFORE INSERT ON billing_usage_ledger
+      FOR EACH ROW EXECUTE FUNCTION fail_billing_settlement();
+    `);
+    const operationId = 'embedding:worker-retry';
+    let calls = 0;
+    const run = () =>
+      runWorkerBilling(
+        db,
+        TEAM_ID,
+        'embedding',
+        () =>
+          withAiMetering({ operationClass: 'embedding', operationId, model: 'embed-test' }, () => {
+            calls += 1;
+            return Promise.resolve({
+              value: { text: 'kept' },
+              finish: { usage: { cost: 0.04 } },
+            });
+          }),
+        { operationId },
+      );
+    await expect(run()).rejects.toThrow(/billing_usage_ledger/);
+    expect(calls).toBe(1);
+    const [pending] = await db
+      .select()
+      .from(billingUsageReservations)
+      .where(eq(billingUsageReservations.operationId, operationId));
+    expect(pending?.state).toBe('reserved');
+    expect(pending?.metadata).toMatchObject({
+      provider_completed: true,
+      worker_settlement_pending: true,
+      openrouter_usd: 0.04,
+      provider_value: { text: 'kept' },
+      operation_class: 'embedding',
+      model: 'embed-test',
+    });
+    await pg.exec(`
+      UPDATE billing_usage_reservations
+      SET expires_at = NOW() - INTERVAL '1 hour'
+      WHERE team_id = '${TEAM_ID}' AND operation_id = '${operationId}';
+      DROP TRIGGER fail_billing_settlement ON billing_usage_ledger;
+    `);
+    expect(await expireStaleBillingReservations({ db, teamId: TEAM_ID })).toBe(0);
+    expect(await settlePendingBillingReservations(db)).toBe(1);
+    const [settledReservation] = await db
+      .select()
+      .from(billingUsageReservations)
+      .where(eq(billingUsageReservations.operationId, operationId));
+    expect(settledReservation?.state).toBe('settled');
+    const [ledger] = await db
+      .select()
+      .from(billingUsageLedger)
+      .where(eq(billingUsageLedger.operationId, operationId));
+    expect(ledger?.customerChargeCents).toBeGreaterThan(0);
+    expect(ledger?.metadata).toMatchObject({ openrouter_usd: 0.04 });
+    await pg.exec(`
+      UPDATE billing_usage_reservations
+      SET state = 'expired', expires_at = NOW() - INTERVAL '1 hour'
+      WHERE team_id = '${TEAM_ID}' AND operation_id = '${operationId}';
+      DELETE FROM billing_usage_ledger
+      WHERE team_id = '${TEAM_ID}' AND operation_id = '${operationId}';
+    `);
+    await db
+      .update(teamBillingAccounts)
+      .set({ billingState: 'past_due' })
+      .where(eq(teamBillingAccounts.teamId, TEAM_ID));
+    const retried = await run();
+    expect(retried).toEqual({ text: 'kept' });
+    expect(calls).toBe(1);
+    const [afterRetry] = await db
+      .select()
+      .from(billingUsageReservations)
+      .where(eq(billingUsageReservations.operationId, operationId));
+    expect(afterRetry?.state).toBe('settled');
+    expect(afterRetry?.metadata).toMatchObject({
+      provider_completed: true,
+      provider_value: { text: 'kept' },
+    });
+  });
+
+  it('settles a recovered worker call against the window the reservation started in', async () => {
+    process.env.BILLING_CHARGES_ENABLED = 'true';
+    resetEnvForTests();
+    const billing = billingScopeMod.createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await billing.getAccount();
+    const ended = new Date(Date.now() - 60 * 60 * 1000);
+    const started = new Date(ended);
+    started.setUTCMonth(started.getUTCMonth() - 1);
+    const usageAt = new Date(started.getTime() + 24 * 60 * 60 * 1000);
+    const operationId = 'embedding:recovered-after-renewal';
+    await db.insert(billingUsageLedger).values({
+      teamId: TEAM_ID,
+      operationId: 'ai:old-window-spent',
+      kind: 'settlement',
+      meterId: 'ai',
+      nativeUnits: '6000',
+      customerChargeCents: 6_000,
+      metadata: { discount_cents: 6_000, usage_at: usageAt.toISOString() },
+      occurredAt: new Date(),
+    });
+    await db.insert(billingUsageReservations).values({
+      teamId: TEAM_ID,
+      operationId,
+      meterId: 'ai',
+      reservedNativeUnits: '100',
+      reservedChargeCents: 100,
+      state: 'reserved',
+      expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+      metadata: {
+        provider_completed: true,
+        worker_settlement_pending: true,
+        openrouter_usd: 0.03,
+        operation_class: 'embedding',
+        source: 'worker',
+      },
+      createdAt: usageAt,
+    });
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET shadow_billing = false, plan_id = 'team', billing_state = 'team_active',
+          included_discount_remaining_cents = 0, spend_cap_cents = 100000,
+          period_started_at = '${started.toISOString()}',
+          period_ends_at = '${ended.toISOString()}'
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    expect(await settlePendingBillingReservations(db)).toBe(1);
+    const [ledger] = await db
+      .select()
+      .from(billingUsageLedger)
+      .where(eq(billingUsageLedger.operationId, operationId));
+    expect(ledger?.metadata).toMatchObject({ discount_cents: 0 });
+    expect(ledger?.customerChargeCents).toBeGreaterThan(0);
+    const [account] = await db
+      .select({ included: teamBillingAccounts.includedDiscountRemainingCents })
+      .from(teamBillingAccounts)
+      .where(eq(teamBillingAccounts.teamId, TEAM_ID));
+    expect(account?.included).toBe(6_000);
+  });
+
+  for (const scenario of [
+    { name: 'expired', admitted: 50, current: 50, expired: true, invoice: 118 },
+    { name: 'replaced', admitted: 50, current: 10, expired: false, invoice: 118 },
+    { name: 'newly added', admitted: null, current: 50, expired: false, invoice: 236 },
+  ]) {
+    it(`preserves the admitted AI discount when the override is ${scenario.name}`, async () => {
+      process.env.BILLING_CHARGES_ENABLED = 'true';
+      resetEnvForTests();
+      const billing = billingScopeMod.createBillingScope({
+        db,
+        teamId: TEAM_ID,
+        userId: USER_ID,
+        ensureMember: () => Promise.resolve('owner'),
+      });
+      await billing.getAccount();
+      await db
+        .update(teamBillingAccounts)
+        .set({
+          planId: 'payg',
+          billingState: 'payg_active',
+          shadowBilling: false,
+          includedDiscountRemainingCents: 0,
+          spendCapCents: 100000,
+          priceOverride:
+            scenario.admitted === null ? null : { meteredDiscountPercent: scenario.admitted },
+        })
+        .where(eq(teamBillingAccounts.teamId, TEAM_ID));
+      const operationId = 'embedding:historical-discount';
+      const reserved = await billing.reserve({
+        operationId,
+        meterId: 'ai',
+        reservedNativeUnits: 800,
+        reservedChargeCents: 800,
+        metadata: {
+          source: 'worker',
+          operation_class: 'embedding',
+          admitted_metered_discount_percent: 99,
+        },
+      });
+      expect(reserved.ok).toBe(true);
+      if (reserved.ok)
+        expect(reserved.reservation.metadata.admitted_metered_discount_percent).toBe(
+          scenario.admitted ?? 0,
+        );
+      await billing.patchReservationMetadata(operationId, {
+        provider_completed: true,
+        worker_settlement_pending: true,
+        openrouter_usd: 2,
+      });
+      await db
+        .update(teamBillingAccounts)
+        .set({
+          priceOverride: { meteredDiscountPercent: scenario.current },
+          priceOverrideExpiresAt: scenario.expired ? new Date(Date.now() - 1000) : null,
+        })
+        .where(eq(teamBillingAccounts.teamId, TEAM_ID));
+      expect(await settlePendingBillingReservations(db)).toBe(1);
+      expect(await settlePendingBillingReservations(db)).toBe(0);
+      const [ledger] = await db
+        .select()
+        .from(billingUsageLedger)
+        .where(eq(billingUsageLedger.operationId, operationId));
+      expect(ledger?.metadata.invoice_cents).toBe(scenario.invoice);
+      const [counter] = await db
+        .select()
+        .from(billingUsageCounters)
+        .where(
+          and(eq(billingUsageCounters.teamId, TEAM_ID), eq(billingUsageCounters.meterId, 'ai')),
+        );
+      expect(counter?.capEligibleChargeCents).toBe(scenario.invoice);
+    });
+  }
+
+  it('settles a recovered PAYG worker call on the plan that admitted it', async () => {
+    process.env.BILLING_CHARGES_ENABLED = 'true';
+    resetEnvForTests();
+    const billing = billingScopeMod.createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await billing.getAccount();
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET shadow_billing = false, plan_id = 'payg', billing_state = 'payg_active',
+          included_discount_remaining_cents = 0, spend_cap_cents = 100000
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    const operationId = 'embedding:recovered-after-downgrade';
+    const reserved = await billing.reserve({
+      operationId,
+      meterId: 'ai',
+      reservedNativeUnits: 800,
+      reservedChargeCents: 800,
+      metadata: { source: 'worker', operation_class: 'embedding' },
+    });
+    expect(reserved.ok).toBe(true);
+    if (reserved.ok) expect(reserved.reservation.admittedPlanId).toBe('payg');
+    await billing.patchReservationMetadata(operationId, {
+      provider_completed: true,
+      worker_settlement_pending: true,
+      openrouter_usd: 2,
+    });
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET plan_id = 'free', billing_state = 'free',
+          included_discount_remaining_cents = 6000, spend_cap_cents = 100000
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    expect(await settlePendingBillingReservations(db)).toBe(1);
+    const [ledger] = await db
+      .select()
+      .from(billingUsageLedger)
+      .where(eq(billingUsageLedger.operationId, operationId));
+    expect(ledger?.metadata).toMatchObject({
+      pricing_plan_id: 'payg',
+      discount_cents: 0,
+      invoice_cents: 236,
+    });
+    const [account] = await db
+      .select({
+        included: teamBillingAccounts.includedDiscountRemainingCents,
+        state: teamBillingAccounts.billingState,
+      })
+      .from(teamBillingAccounts)
+      .where(eq(teamBillingAccounts.teamId, TEAM_ID));
+    expect(account?.included).toBe(6_000);
+    expect(account?.state).toBe('free');
+  });
+
+  it('retries an Ask settlement saved on the reservation', async () => {
+    const billing = billingScopeMod.createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    const operationId = 'ask:web:pending-1';
+    expect((await reserveAskAi(billing, { operationId, deliverySurface: 'web' })).ok).toBe(true);
+    await billing.patchReservationMetadata(operationId, {
+      pending_settlement: true,
+      pending_openrouter_usd: 0.05,
+      pending_delivery_surface: 'web',
+    });
+    expect(await settlePendingBillingReservations(db)).toBe(1);
+    const [reservation] = await db
+      .select()
+      .from(billingUsageReservations)
+      .where(eq(billingUsageReservations.operationId, operationId));
+    expect(reservation?.state).toBe('settled');
+    const [ledger] = await db
+      .select()
+      .from(billingUsageLedger)
+      .where(eq(billingUsageLedger.operationId, operationId));
+    expect(ledger?.customerChargeCents).toBeGreaterThan(0);
+  });
+
+  it('settles a delivered email from the reservation without sending it again', async () => {
+    const billing = billingScopeMod.createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await billing.getAccount();
+    const operationId = 'email_out:digest:retry';
+    const reserved = await billing.reserve({
+      operationId,
+      meterId: 'email_units',
+      reservedNativeUnits: 2,
+      reservedChargeCents: 1,
+    });
+    expect(reserved.ok).toBe(true);
+    await billing.patchReservationMetadata(operationId, {
+      pending_settlement: true,
+      pending_meter: 'email_units',
+      pending_email_units: 2,
+      pending_operation_class: 'email_outbound:daily_digest',
+    });
+    expect(await settlePendingBillingReservations(db)).toBe(1);
+    const [reservation] = await db
+      .select()
+      .from(billingUsageReservations)
+      .where(eq(billingUsageReservations.operationId, operationId));
+    expect(reservation?.state).toBe('settled');
+    const [ledger] = await db
+      .select()
+      .from(billingUsageLedger)
+      .where(eq(billingUsageLedger.operationId, operationId));
+    expect(ledger?.meterId).toBe('email_units');
+    expect(Number(ledger?.nativeUnits)).toBe(2);
+  });
+
+  it('settles pending Recall and failed attempts when current admission is closed', async () => {
+    process.env.BILLING_CHARGES_ENABLED = 'true';
+    resetEnvForTests();
+    const billing = billingScopeMod.createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await billing.getAccount();
+    const ym = periodYm();
+    const recallOperationId = 'recall:meet-closed:attempt:bot1';
+    const failedOperationId = 'embedding:closed-admission';
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET plan_id = 'free', billing_state = 'restricted', shadow_billing = false
+      WHERE team_id = '${TEAM_ID}';
+      INSERT INTO billing_usage_counters (team_id, period_ym, meter_id, native_units, customer_charge_cents)
+      VALUES
+        ('${TEAM_ID}', '${ym}', 'recall_minutes', 60, 0),
+        ('${TEAM_ID}', '${ym}', 'ai', 500, 500);
+      INSERT INTO billing_usage_reservations (
+        team_id, operation_id, meter_id, reserved_native_units, reserved_charge_cents,
+        state, expires_at, metadata
+      ) VALUES (
+        '${TEAM_ID}', '${recallOperationId}', 'recall_minutes', 60, 180,
+        'reserved', NOW() + INTERVAL '1 hour',
+        '{"pending_settlement":true,"pending_meter":"recall_minutes","pending_recall_minutes":10,"meeting_id":"meet-closed","pending_source":"meeting_recall"}'::jsonb
+      ), (
+        '${TEAM_ID}', '${failedOperationId}', 'ai', 1, 1,
+        'reserved', NOW() + INTERVAL '1 hour',
+        '{"pending_failed_attempt_settlement":true,"pending_failed_attempts":[{"operation_id":"${failedOperationId}:failed:1","openrouter_usd":0.02,"usage_at":"2026-08-10T12:00:00.000Z","operation_class":"embedding"}]}'::jsonb
+      );
+    `);
+    expect(await settlePendingBillingReservations(db)).toBe(2);
+    const [recallLedger] = await db
+      .select()
+      .from(billingUsageLedger)
+      .where(eq(billingUsageLedger.operationId, recallOperationId));
+    expect(Number(recallLedger?.nativeUnits)).toBe(10);
+    const [attemptLedger] = await db
+      .select()
+      .from(billingUsageLedger)
+      .where(eq(billingUsageLedger.operationId, `${failedOperationId}:failed:1`));
+    expect(attemptLedger?.metadata).toMatchObject({
+      failed_attempt_for: failedOperationId,
+      openrouter_usd: 0.02,
+    });
+  });
+
+  it('does not expire an Ask reservation that still needs settlement', async () => {
+    const billing = billingScopeMod.createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    const operationId = 'ask:web:pending-expire';
+    expect((await reserveAskAi(billing, { operationId, deliverySurface: 'web' })).ok).toBe(true);
+    await pg.exec(`
+      UPDATE billing_usage_reservations
+      SET metadata = COALESCE(metadata, '{}'::jsonb) || '{"pending_settlement":true}'::jsonb,
+          expires_at = NOW() - INTERVAL '2 hours'
+      WHERE team_id = '${TEAM_ID}' AND operation_id = '${operationId}';
+    `);
+    expect(await expireStaleBillingReservations({ db, teamId: TEAM_ID })).toBe(0);
+    const [reservation] = await db
+      .select()
+      .from(billingUsageReservations)
+      .where(eq(billingUsageReservations.operationId, operationId));
+    expect(reservation?.state).toBe('reserved');
+  });
+
+  it('prices a replayed storage day on the plan in force that day', async () => {
+    process.env.BILLING_CHARGES_ENABLED = 'true';
+    resetEnvForTests();
+    const billing = billingScopeMod.createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await billing.getAccount();
+    const yesterday = utcDayOffset(-1);
+    const today = utcDay();
+    const ym = periodYm();
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET plan_id = 'payg', billing_state = 'payg_active', shadow_billing = false,
+          included_discount_remaining_cents = 400, spend_cap_cents = 100000
+      WHERE team_id = '${TEAM_ID}';
+      INSERT INTO billing_usage_counters (team_id, period_ym, meter_id, native_units, customer_charge_cents)
+      VALUES ('${TEAM_ID}', '${ym}', 'storage_gb_month', 1, 0);
+      INSERT INTO billing_plan_history (team_id, plan_id, effective_at) VALUES
+        ('${TEAM_ID}', 'team', '${yesterday}T00:00:00Z'),
+        ('${TEAM_ID}', 'payg', '${today}T00:00:00Z');
+      INSERT INTO documents (id, team_id, name, deleted_at)
+      VALUES (
+        'cccccccc-dddd-4eee-8fff-000000000021',
+        '${TEAM_ID}',
+        'huge.bin',
+        '${yesterday}T23:00:00Z'
+      );
+      INSERT INTO document_versions (id, team_id, document_id, version, object_key, byte_size, created_at)
+      VALUES (
+        'cccccccc-dddd-4eee-8fff-000000000022',
+        '${TEAM_ID}',
+        'cccccccc-dddd-4eee-8fff-000000000021',
+        1,
+        'team/docs/huge.bin',
+        10737418240,
+        '${yesterday}T00:00:00Z'
+      );
+    `);
+    await snapshotTeamStorageGbMonth({ db, teamId: TEAM_ID });
+    const [ledger] = await db
+      .select()
+      .from(billingUsageLedger)
+      .where(eq(billingUsageLedger.operationId, `storage_gb:${TEAM_ID}:${yesterday}`));
+    expect(ledger?.metadata).toMatchObject({
+      pricing_plan_id: 'team',
+      pricing_period_ym: yesterday.slice(0, 7),
+      invoice_cents: 0,
+    });
+    const discount = ledger?.metadata.discount_cents;
+    expect(typeof discount).toBe('number');
+    expect(discount).toBeGreaterThan(0);
+    const [account] = await db
+      .select({ included: teamBillingAccounts.includedDiscountRemainingCents })
+      .from(teamBillingAccounts)
+      .where(eq(teamBillingAccounts.teamId, TEAM_ID));
+    expect(account?.included).toBe(400);
+  });
+
+  it('records a missed Team storage day after a downgrade to Free', async () => {
+    process.env.BILLING_CHARGES_ENABLED = 'true';
+    resetEnvForTests();
+    const billing = billingScopeMod.createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await billing.getAccount();
+    const yesterday = utcDayOffset(-1);
+    const today = utcDay();
+    const bytes = 50 * 1024 ** 3;
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET plan_id = 'free', billing_state = 'free', shadow_billing = false,
+          included_discount_remaining_cents = 0, spend_cap_cents = 0
+      WHERE team_id = '${TEAM_ID}';
+      INSERT INTO billing_plan_history (team_id, plan_id, effective_at) VALUES
+        ('${TEAM_ID}', 'team', '${yesterday}T00:00:00Z'),
+        ('${TEAM_ID}', 'free', '${today}T00:00:00Z');
+      INSERT INTO documents (id, team_id, name)
+      VALUES ('cccccccc-dddd-4eee-8fff-000000000061', '${TEAM_ID}', 'team-day.bin');
+      INSERT INTO document_versions (id, team_id, document_id, version, object_key, byte_size, created_at)
+      VALUES (
+        'cccccccc-dddd-4eee-8fff-000000000062',
+        '${TEAM_ID}',
+        'cccccccc-dddd-4eee-8fff-000000000061',
+        1,
+        'team/docs/team-day.bin',
+        ${bytes},
+        '${yesterday}T00:00:00Z'
+      );
+    `);
+    const missed = await snapshotTeamStorageGbMonth({ db, teamId: TEAM_ID, day: yesterday });
+    expect(missed.settled).toBe(true);
+    const [ledger] = await db
+      .select()
+      .from(billingUsageLedger)
+      .where(eq(billingUsageLedger.operationId, `storage_gb:${TEAM_ID}:${yesterday}`));
+    expect(Number(ledger?.nativeUnits)).toBeGreaterThan(1);
+    expect(ledger?.reservationId).toBeNull();
+    expect(ledger?.metadata).toMatchObject({
+      pricing_plan_id: 'team',
+      pricing_period_ym: yesterday.slice(0, 7),
+    });
+    const live = await snapshotTeamStorageGbMonth({ db, teamId: TEAM_ID, day: today });
+    expect(live.settled).toBe(false);
+    const todayRows = await db
+      .select({ operationId: billingUsageLedger.operationId })
+      .from(billingUsageLedger)
+      .where(eq(billingUsageLedger.operationId, `storage_gb:${TEAM_ID}:${today}`));
+    expect(todayRows).toHaveLength(0);
+  });
+
+  it('records a missed Team storage day while Free admission is restricted', async () => {
+    process.env.BILLING_CHARGES_ENABLED = 'true';
+    resetEnvForTests();
+    const billing = billingScopeMod.createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await billing.getAccount();
+    const yesterday = utcDayOffset(-1);
+    const today = utcDay();
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET plan_id = 'free', billing_state = 'restricted', shadow_billing = false
+      WHERE team_id = '${TEAM_ID}';
+      INSERT INTO billing_plan_history (team_id, plan_id, effective_at) VALUES
+        ('${TEAM_ID}', 'team', '${yesterday}T00:00:00Z'),
+        ('${TEAM_ID}', 'free', '${today}T00:00:00Z');
+      INSERT INTO documents (id, team_id, name)
+      VALUES ('cccccccc-dddd-4eee-8fff-000000000081', '${TEAM_ID}', 'restricted.bin');
+      INSERT INTO document_versions (id, team_id, document_id, version, object_key, byte_size, created_at)
+      VALUES (
+        'cccccccc-dddd-4eee-8fff-000000000082',
+        '${TEAM_ID}',
+        'cccccccc-dddd-4eee-8fff-000000000081',
+        1,
+        'team/docs/restricted.bin',
+        ${50 * 1024 ** 3},
+        '${yesterday}T00:00:00Z'
+      );
+    `);
+    const missed = await snapshotTeamStorageGbMonth({ db, teamId: TEAM_ID, day: yesterday });
+    expect(missed.settled).toBe(true);
+    const [ledger] = await db
+      .select()
+      .from(billingUsageLedger)
+      .where(eq(billingUsageLedger.operationId, `storage_gb:${TEAM_ID}:${yesterday}`));
+    expect(ledger?.metadata).toMatchObject({ pricing_plan_id: 'team' });
+    expect(Number(ledger?.nativeUnits)).toBeGreaterThan(1);
+  });
+
+  it('does not recover missed storage for a suspended workspace', async () => {
+    process.env.BILLING_CHARGES_ENABLED = 'true';
+    resetEnvForTests();
+    const billing = billingScopeMod.createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await billing.getAccount();
+    const yesterday = utcDayOffset(-1);
+    const today = utcDay();
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET plan_id = 'free', billing_state = 'free', security_state = 'suspended',
+          shadow_billing = false
+      WHERE team_id = '${TEAM_ID}';
+      INSERT INTO billing_plan_history (team_id, plan_id, effective_at) VALUES
+        ('${TEAM_ID}', 'team', '${yesterday}T00:00:00Z'),
+        ('${TEAM_ID}', 'free', '${today}T00:00:00Z');
+      INSERT INTO documents (id, team_id, name)
+      VALUES ('cccccccc-dddd-4eee-8fff-000000000071', '${TEAM_ID}', 'suspended.bin');
+      INSERT INTO document_versions (id, team_id, document_id, version, object_key, byte_size, created_at)
+      VALUES (
+        'cccccccc-dddd-4eee-8fff-000000000072',
+        '${TEAM_ID}',
+        'cccccccc-dddd-4eee-8fff-000000000071',
+        1,
+        'team/docs/suspended.bin',
+        ${50 * 1024 ** 3},
+        '${yesterday}T00:00:00Z'
+      );
+    `);
+    const missed = await snapshotTeamStorageGbMonth({ db, teamId: TEAM_ID, day: yesterday });
+    expect(missed.settled).toBe(false);
+    const rows = await db
+      .select({ operationId: billingUsageLedger.operationId })
+      .from(billingUsageLedger)
+      .where(eq(billingUsageLedger.teamId, TEAM_ID));
+    expect(rows).toHaveLength(0);
+  });
+
+  it('invoices same-plan PAYG storage recovered in a prior month', async () => {
+    process.env.BILLING_CHARGES_ENABLED = 'true';
+    resetEnvForTests();
+    const billing = billingScopeMod.createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await billing.getAccount();
+    const day = '2026-09-15';
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET plan_id = 'payg', billing_state = 'payg_active', shadow_billing = false,
+          included_discount_remaining_cents = 100, spend_cap_cents = 100000
+      WHERE team_id = '${TEAM_ID}';
+      INSERT INTO billing_usage_counters (team_id, period_ym, meter_id, native_units, customer_charge_cents)
+      VALUES ('${TEAM_ID}', '2026-09', 'storage_gb_month', 1, 0);
+      INSERT INTO documents (id, team_id, name)
+      VALUES ('cccccccc-dddd-4eee-8fff-000000000041', '${TEAM_ID}', 'prior.bin');
+      INSERT INTO document_versions (id, team_id, document_id, version, object_key, byte_size, created_at)
+      VALUES (
+        'cccccccc-dddd-4eee-8fff-000000000042',
+        '${TEAM_ID}',
+        'cccccccc-dddd-4eee-8fff-000000000041',
+        1,
+        'team/docs/prior.bin',
+        1073741824,
+        '${day}T00:00:00Z'
+      );
+    `);
+    await snapshotTeamStorageGbMonth({ db, teamId: TEAM_ID, day });
+    const [ledger] = await db
+      .select()
+      .from(billingUsageLedger)
+      .where(eq(billingUsageLedger.operationId, `storage_gb:${TEAM_ID}:${day}`));
+    const invoiceCents = ledger?.metadata.invoice_cents;
+    expect(typeof invoiceCents).toBe('number');
+    expect(invoiceCents).toBeGreaterThan(0);
+    expect(ledger?.metadata.polar_ingest_status).not.toBe('not_required');
+    const [account] = await db
+      .select({
+        included: teamBillingAccounts.includedDiscountRemainingCents,
+        billingState: teamBillingAccounts.billingState,
+      })
+      .from(teamBillingAccounts)
+      .where(eq(teamBillingAccounts.teamId, TEAM_ID));
+    expect(account?.included).toBe(100);
+    expect(account?.billingState).toBe('payg_active');
+  });
+
+  it('prices storage before comp expiry on the comp plan and Free after it', async () => {
+    process.env.BILLING_CHARGES_ENABLED = 'true';
+    resetEnvForTests();
+    const billing = billingScopeMod.createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await billing.getAccount();
+    const before = '2026-08-20';
+    const after = '2026-09-15';
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET plan_id = 'team', billing_state = 'team_active', arrangement = 'comped',
+          comp_expires_at = '2026-09-01T00:00:00Z', shadow_billing = false,
+          included_discount_remaining_cents = 0, spend_cap_cents = 100000
+      WHERE team_id = '${TEAM_ID}';
+      INSERT INTO billing_plan_history (team_id, plan_id, effective_at)
+      VALUES ('${TEAM_ID}', 'team', '2026-08-01T00:00:00Z');
+      INSERT INTO documents (id, team_id, name)
+      VALUES ('cccccccc-dddd-4eee-8fff-000000000051', '${TEAM_ID}', 'comp.bin');
+      INSERT INTO document_versions (id, team_id, document_id, version, object_key, byte_size, created_at)
+      VALUES (
+        'cccccccc-dddd-4eee-8fff-000000000052',
+        '${TEAM_ID}',
+        'cccccccc-dddd-4eee-8fff-000000000051',
+        1,
+        'team/docs/comp.bin',
+        10737418240,
+        '${before}T00:00:00Z'
+      );
+    `);
+    await snapshotTeamStorageGbMonth({ db, teamId: TEAM_ID, day: before });
+    await snapshotTeamStorageGbMonth({ db, teamId: TEAM_ID, day: after });
+    const rows = await db
+      .select()
+      .from(billingUsageLedger)
+      .where(eq(billingUsageLedger.teamId, TEAM_ID));
+    const beforeRow = rows.find((row) => row.operationId === `storage_gb:${TEAM_ID}:${before}`);
+    const afterRow = rows.find((row) => row.operationId === `storage_gb:${TEAM_ID}:${after}`);
+    expect(beforeRow?.metadata).toMatchObject({ pricing_plan_id: 'team' });
+    expect(afterRow?.metadata.pricing_plan_id).toBeUndefined();
+    expect(afterRow?.metadata.discount_cents).toBe(0);
+    const [account] = await db
+      .select({ billingState: teamBillingAccounts.billingState })
+      .from(teamBillingAccounts)
+      .where(eq(teamBillingAccounts.teamId, TEAM_ID));
+    expect(account?.billingState).toBe('team_active');
+  });
+
+  it('skips storage days covered by a closed document absence interval', async () => {
+    const billing = billingScopeMod.createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await billing.getAccount();
+    const today = utcDay();
+    const twoDaysAgo = utcDayOffset(-2);
+    const yesterday = utcDayOffset(-1);
+    await pg.exec(`
+      INSERT INTO documents (id, team_id, name, metadata)
+      VALUES (
+        'cccccccc-dddd-4eee-8fff-000000000031',
+        '${TEAM_ID}',
+        'gone.bin',
+        '{"absence_intervals":[{"startedAt":"${twoDaysAgo}T12:00:00.000Z","endedAt":"${today}T00:00:00.000Z"}]}'::jsonb
+      );
+      INSERT INTO document_versions (id, team_id, document_id, version, object_key, byte_size, created_at)
+      VALUES (
+        'cccccccc-dddd-4eee-8fff-000000000032',
+        '${TEAM_ID}',
+        'cccccccc-dddd-4eee-8fff-000000000031',
+        1,
+        'team/docs/gone.bin',
+        1073741824,
+        '${twoDaysAgo}T00:00:00Z'
+      );
+    `);
+    await snapshotTeamStorageGbMonth({ db, teamId: TEAM_ID });
+    const ops = (
+      await db
+        .select({ operationId: billingUsageLedger.operationId })
+        .from(billingUsageLedger)
+        .where(eq(billingUsageLedger.teamId, TEAM_ID))
+    ).map((row) => row.operationId);
+    expect(ops).toContain(`storage_gb:${TEAM_ID}:${twoDaysAgo}`);
+    expect(ops).toContain(`storage_gb:${TEAM_ID}:${today}`);
+    expect(ops).not.toContain(`storage_gb:${TEAM_ID}:${yesterday}`);
+  });
+});

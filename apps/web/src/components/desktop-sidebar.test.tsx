@@ -82,6 +82,17 @@ describe('DesktopSidebar', () => {
         memberships={[active]}
         recipientInvites={[]}
         initialExpanded={false}
+        billingSummary={{
+          planId: 'free',
+          planName: 'Free',
+          progressPercent: 20,
+          atLimit: false,
+          detailLabel: '20% of Free',
+          overageLabel: null,
+          overageCents: 0,
+          href: '/app/team?section=billing',
+          canManageBilling: true,
+        }}
       />,
     );
 
@@ -91,6 +102,7 @@ describe('DesktopSidebar', () => {
     expect(html).toContain('aria-label="The Timeline home"');
     expect(html).toContain('aria-expanded="false"');
     expect(html).toContain('>rail</button>');
+    expect(html).toContain('data-sidebar-billing');
     expect(html).not.toContain('min-w-0 flex-1 truncate font-mono');
   });
 

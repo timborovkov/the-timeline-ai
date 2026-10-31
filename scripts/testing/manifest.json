@@ -17,6 +17,9 @@
   "apps/web/src/app/actions/auth.test.ts": {
     "group": "unit"
   },
+  "apps/web/src/app/actions/billing.test.ts": {
+    "group": "unit"
+  },
   "apps/web/src/app/actions/boards.test.ts": {
     "group": "unit"
   },
@@ -228,6 +231,9 @@
     "group": "unit"
   },
   "apps/web/src/app/api/webhooks/monday/route.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/app/api/webhooks/polar/route.test.ts": {
     "group": "unit"
   },
   "apps/web/src/app/api/webhooks/recall/status/route.test.ts": {
@@ -530,6 +536,24 @@
   "apps/web/src/components/auth-shell.test.tsx": {
     "group": "unit"
   },
+  "apps/web/src/components/billing-benefits-summary.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/billing-checkout-status.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/billing-comp-notice.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/billing-plan-preview.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/billing-settings-panel.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/billing-usage-summary.test.tsx": {
+    "group": "dom"
+  },
   "apps/web/src/components/boards/board-add-item-form.test.tsx": {
     "group": "dom"
   },
@@ -770,6 +794,9 @@
   "apps/web/src/components/marketing/integrations/records-to-answer.test.ts": {
     "group": "unit"
   },
+  "apps/web/src/components/marketing/pricing-blocks.test.tsx": {
+    "group": "dom"
+  },
   "apps/web/src/components/marketing/solutions/content.test.ts": {
     "group": "unit"
   },
@@ -866,6 +893,9 @@
   "apps/web/src/components/settings-nav.test.tsx": {
     "group": "dom"
   },
+  "apps/web/src/components/sidebar-billing-usage.test.tsx": {
+    "group": "dom"
+  },
   "apps/web/src/components/skip-link.test.tsx": {
     "group": "dom"
   },
@@ -939,6 +969,9 @@
     "group": "dom"
   },
   "apps/web/src/components/ui/undo-toast-button.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/user-menu.test.tsx": {
     "group": "dom"
   },
   "apps/web/src/components/work-filter-bar.test.tsx": {
@@ -1214,6 +1247,9 @@
   "apps/web/src/sentry.shared.test.ts": {
     "group": "unit"
   },
+  "apps/worker/src/billing-context.test.ts": {
+    "group": "unit"
+  },
   "apps/worker/src/document-ingestion/daytona.test.ts": {
     "group": "unit"
   },
@@ -1358,6 +1394,9 @@
   "packages/db/src/client.test.ts": {
     "group": "unit"
   },
+  "packages/db/src/journal-order.test.ts": {
+    "group": "integration"
+  },
   "packages/db/src/schema-contracts.test.ts": {
     "group": "unit"
   },
@@ -1410,6 +1449,75 @@
     "group": "integration"
   },
   "packages/shared/src/audit/scope.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/billing/admission-propagation.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/billing/admission.test.ts": {
+    "group": "integration"
+  },
+  "packages/shared/src/billing/alerts.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/billing/capacity.test.ts": {
+    "group": "integration"
+  },
+  "packages/shared/src/billing/catalog.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/billing/charge.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/billing/customer-identity.test.ts": {
+    "group": "pglite"
+  },
+  "packages/shared/src/billing/openrouter-usage.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/billing/operator-store.test.ts": {
+    "group": "integration"
+  },
+  "packages/shared/src/billing/operator.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/billing/plan-history.test.ts": {
+    "group": "integration"
+  },
+  "packages/shared/src/billing/polar-checkout.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/billing/polar-identity-api.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/billing/polar-sandbox.integration.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/billing/polar-setup.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/billing/polar-webhook-identity.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/billing/polar-webhook.test.ts": {
+    "group": "integration"
+  },
+  "packages/shared/src/billing/presentation.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/billing/preview.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/billing/recall-leave.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/billing/runtime.test.ts": {
+    "group": "integration"
+  },
+  "packages/shared/src/billing/scope.test.ts": {
+    "group": "integration"
+  },
+  "packages/shared/src/billing/status.test.ts": {
     "group": "unit"
   },
   "packages/shared/src/boards/index.test.ts": {
@@ -1607,8 +1715,14 @@
   "packages/shared/src/job-recovery/index.test.ts": {
     "group": "integration"
   },
+  "packages/shared/src/llm/chat-billing.test.ts": {
+    "group": "integration"
+  },
   "packages/shared/src/llm/chat.test.ts": {
     "group": "unit"
+  },
+  "packages/shared/src/llm/embed-billing.test.ts": {
+    "group": "integration"
   },
   "packages/shared/src/llm/embed.test.ts": {
     "group": "unit"

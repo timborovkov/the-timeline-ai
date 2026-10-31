@@ -22,10 +22,21 @@ const fakes = vi.hoisted(() => ({
   fakeEnqueueEmbedJob: vi.fn(),
   fakeEnqueueSuggestionJob: vi.fn(),
   fakeEnqueueTranscribeJob: vi.fn(),
+  fakeAdmitSource: vi.fn(),
+  fakeAdmitAudio: vi.fn(),
   fakeDbUpdate: vi.fn(),
   fakeDbSet: vi.fn(),
 }));
 
+await vi.mock(
+  import.meta.resolve('@timeline/shared/billing'),
+  async () => ({
+    ...(await import('@timeline/shared/billing')),
+    admitAcceptedSourceEnrichment: fakes.fakeAdmitSource,
+    admitAudioTranscription: fakes.fakeAdmitAudio,
+  }),
+  () => import('@timeline/shared/billing'),
+);
 await vi.mock(
   import.meta.resolve('@/lib/auth'),
   () => ({ auth: fakes.fakeAuth }),
@@ -140,6 +151,8 @@ beforeEach(() => {
   fakes.fakeEnqueueEmbedJob.mockResolvedValue(undefined);
   fakes.fakeEnqueueSuggestionJob.mockResolvedValue(undefined);
   fakes.fakeEnqueueTranscribeJob.mockResolvedValue(undefined);
+  fakes.fakeAdmitSource.mockResolvedValue(true);
+  fakes.fakeAdmitAudio.mockResolvedValue(true);
   fakes.fakeDeleteCacheKey.mockResolvedValue(undefined);
   fakes.fakeSafeMarkOnboardingStep.mockResolvedValue(undefined);
   mockDbUpdateSuccess();
@@ -208,6 +221,18 @@ describe('createTextEventAction', () => {
     );
     expect(fakes.fakeDbUpdate).toHaveBeenCalledTimes(3);
     expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/timeline');
+  });
+
+  it('stores the note without enrichment when accepted-source admission is denied', async () => {
+    fakes.fakeAdmitSource.mockResolvedValue(false);
+
+    const result = await createTextEventAction({}, form({ text: 'Still save this' }));
+
+    expect(result.ok).toBe(true);
+    expect(result.warning).toContain('accepted-source allowance');
+    expect(fakes.fakeEnqueueExtractJob).not.toHaveBeenCalled();
+    expect(fakes.fakeEnqueueEmbedJob).not.toHaveBeenCalled();
+    expect(fakes.fakeEnqueueSuggestionJob).not.toHaveBeenCalled();
   });
 });
 
@@ -333,10 +358,32 @@ describe('audio event actions', () => {
         },
       }),
     );
+    expect(fakes.fakeAdmitAudio).toHaveBeenCalledWith(
+      expect.objectContaining({
+        teamId: TEAM_ID,
+        userId: USER_ID,
+        rawEventId: RAW_EVENT_ID,
+      }),
+    );
     expect(fakes.fakeEnqueueTranscribeJob).toHaveBeenCalledWith({
       rawEventId: RAW_EVENT_ID,
       teamId: TEAM_ID,
       audioKey: key,
     });
+  });
+
+  it('stores the audio without transcription when accepted-source admission is denied', async () => {
+    fakes.fakeAdmitAudio.mockResolvedValue(false);
+    const key = `teams/${TEAM_ID}/web/${USER_ID}/audio.webm`;
+
+    const result = await createAudioEventAction({
+      key,
+      mimeType: 'audio/webm',
+      visibility: 'team',
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.warning).toContain('accepted-source allowance');
+    expect(fakes.fakeEnqueueTranscribeJob).not.toHaveBeenCalled();
   });
 });

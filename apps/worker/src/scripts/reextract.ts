@@ -82,6 +82,9 @@ async function main(): Promise<void> {
     const currentVersionValues = modelVersions.map((version) => sql`${version}`);
     const stampCondition = sql`COALESCE(${rawEvents.sourceMetadata} ->> 'extraction_model_version', '') NOT IN (${sql.join(currentVersionValues, sql`, `)})`;
     conditions.push(stampCondition);
+    conditions.push(
+      sql`COALESCE(${rawEvents.sourceMetadata} ->> 'billing_enrichment_deferred', '') <> 'true'`,
+    );
 
     const page: { id: string; occurredAt: Date }[] = await db
       .select({ id: rawEvents.id, occurredAt: rawEvents.occurredAt })

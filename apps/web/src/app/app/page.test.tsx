@@ -1,14 +1,16 @@
-import { expect } from '@timeline/test-support';
-import { vi } from '@timeline/test-support';
+import { expect, vi } from '@timeline/test-support';
 import { beforeEach, describe, it } from 'bun:test';
+import { renderToStaticMarkup } from 'react-dom/server';
 
 import type { ReactNode } from 'react';
+
 // Home must compose only actionable attention with deliberately bounded, static previews.
 const fakes = vi.hoisted(() => ({
   auth: vi.fn(),
   buildTimelineMoments: vi.fn(),
   captureVisibility: null as 'private' | 'team' | null,
   getCalendarSettings: vi.fn(),
+  getDashboard: vi.fn(),
   getWorkAttentionSummary: vi.fn(),
   getHomeOpenObjectCounts: vi.fn(),
   isPinnedMany: vi.fn(),
@@ -74,6 +76,7 @@ await vi.mock(
   () => ({
     withTeam: () => ({
       requireMembership: vi.fn().mockImplementation(() => Promise.resolve(fakes.role)),
+      billing: { getDashboard: fakes.getDashboard },
       calendar: { getCalendarSettings: fakes.getCalendarSettings },
       integrations: { listConnectionAttention: fakes.listConnectionAttention },
       jobRecovery: { listRecoverableJobs: fakes.listRecoverableJobs },
@@ -227,8 +230,6 @@ await vi.mock(
   () => import('@/lib/timeline-moments'),
 );
 
-const { renderToStaticMarkup } = await import('react-dom/server');
-
 const { default: HomeDashboardPage } = await import('@/app/app/page');
 
 beforeEach(() => {
@@ -239,6 +240,7 @@ beforeEach(() => {
   fakes.auth.mockResolvedValue({ user: { id: 'user-1', name: 'Ada', email: 'ada@example.com' } });
   fakes.resolveActiveTeam.mockResolvedValue({ active: { teamId: 'team-1' } });
   fakes.getCalendarSettings.mockResolvedValue({ defaultTimezone: 'UTC' });
+  fakes.getDashboard.mockResolvedValue({ nudge: null });
   fakes.getWorkAttentionSummary.mockResolvedValue({
     attention: 0,
     overdueTasks: 0,
@@ -403,6 +405,60 @@ describe('HomeDashboardPage', () => {
     expect(fakes.reportCaughtError).toHaveBeenCalledWith(expect.any(Error), {
       surface: 'render',
       operation: 'onboarding_checklist',
+    });
+  });
+
+  it('hides billing nudges from members', async () => {
+    fakes.getDashboard.mockResolvedValue({
+      nudge: {
+        kind: 'free_near_limit',
+        title: 'You are close to the Free allowance',
+        body: 'Add a payment method before the next Ask.',
+        href: '/app/team?section=billing',
+        ctaLabel: 'Review billing',
+      },
+    });
+
+    const html = renderToStaticMarkup(await HomeDashboardPage());
+
+    expect(html).not.toContain('data-billing-nudge');
+    expect(html).not.toContain('You are close to the Free allowance');
+    expect(fakes.getDashboard).toHaveBeenCalledWith({ canManageBilling: false });
+  });
+
+  it('shows admins a one-line billing nudge', async () => {
+    fakes.role = 'owner';
+    fakes.getDashboard.mockResolvedValue({
+      nudge: {
+        kind: 'free_near_limit',
+        title: 'You are close to the Free allowance',
+        body: 'Add a payment method before the next Ask.',
+        href: '/app/team?section=billing',
+        ctaLabel: 'Review billing',
+      },
+    });
+
+    const html = renderToStaticMarkup(await HomeDashboardPage());
+
+    expect(html).toContain('data-billing-nudge="free_near_limit"');
+    expect(html).toContain('You are close to the Free allowance');
+    expect(html).toContain('Review billing');
+    expect(html).toContain('href="/app/team?section=billing"');
+    expect(html).not.toContain('Add a payment method before the next Ask.');
+    expect(html).not.toContain('See pricing');
+    expect(fakes.getDashboard).toHaveBeenCalledWith({ canManageBilling: true });
+  });
+
+  it('still renders Home when the billing dashboard fails to load', async () => {
+    fakes.getDashboard.mockRejectedValue(new Error('billing unavailable'));
+
+    const html = renderToStaticMarkup(await HomeDashboardPage());
+
+    expect(html).toContain('<h1 class="sr-only">Home</h1>');
+    expect(html).not.toContain('data-billing-nudge');
+    expect(fakes.reportCaughtError).toHaveBeenCalledWith(expect.any(Error), {
+      surface: 'render',
+      operation: 'billing_dashboard',
     });
   });
 });

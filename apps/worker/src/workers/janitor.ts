@@ -8,7 +8,13 @@ import {
   userPins,
 } from '@timeline/db';
 import { childLogger, queue } from '@timeline/shared';
+import { runBillingMaintenanceTick } from '@timeline/shared/billing';
+import { flushDeferredEmailEnrichment } from '@timeline/shared/email';
 import { getEnv } from '@timeline/shared/env';
+import {
+  flushDeferredAcceptedSourceEnrichment,
+  flushDeferredAudioTranscription,
+} from '@timeline/shared/integrations';
 import { MCP_TEAM_ACTOR_USER_ID } from '@timeline/shared/mcp-server';
 import { withTeam } from '@timeline/shared/team-scope';
 import { Worker, type Job } from 'bullmq';
@@ -412,6 +418,14 @@ export function startJanitorWorker(deps: { db: Db }): Worker<queue.JanitorJobDat
     async (job: Job<queue.JanitorJobData>) => {
       const startedAt = Date.now();
       const result = await processJanitorTick({ db: deps.db });
+      try {
+        await runBillingMaintenanceTick(deps.db);
+        await flushDeferredAcceptedSourceEnrichment(deps.db);
+        await flushDeferredEmailEnrichment(deps.db);
+        await flushDeferredAudioTranscription(deps.db);
+      } catch (err: unknown) {
+        log.warn({ err }, 'janitor: billing maintenance tick failed');
+      }
       const durationMs = Date.now() - startedAt;
       if (janitorTickIsIdle(result)) {
         log.info({ jobId: job.id, durationMs }, 'janitor: nothing stuck');

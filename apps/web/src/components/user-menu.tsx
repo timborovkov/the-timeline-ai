@@ -5,7 +5,6 @@ import { useActionState } from 'react';
 
 import { resendEmailVerificationAction, type EmailVerificationState } from '@/app/actions/auth';
 import { reopenOnboardingChecklistAction } from '@/app/actions/onboarding';
-import { FormActionToast } from '@/components/form-action-toast';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -15,6 +14,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { useFormActionToast } from '@/lib/form-action-toast';
 import { signOutAfterClearingLocalSession } from '@/lib/sign-out-session';
 
 interface Props {
@@ -22,11 +22,18 @@ interface Props {
 }
 
 export function UserMenu({ user }: Props) {
-  const [verificationState, resendVerification] = useActionState<EmailVerificationState, FormData>(
-    resendEmailVerificationAction,
-    {},
-  );
+  const [verificationState, resendVerification, verificationPending] = useActionState<
+    EmailVerificationState,
+    FormData
+  >(resendEmailVerificationAction, {});
   const isUnverified = Boolean(user.email && !user.emailVerified);
+  useFormActionToast({
+    id: 'account:resend-verification',
+    pending: verificationPending,
+    error: verificationState.error,
+    success: verificationState.ok ? 'Verification email sent' : undefined,
+    loading: 'Sending verification email…',
+  });
 
   return (
     <DropdownMenu>
@@ -55,16 +62,20 @@ export function UserMenu({ user }: Props) {
           <>
             <DropdownMenuSeparator />
             <form action={resendVerification}>
-              <FormActionToast
-                id="account:resend-verification"
-                error={verificationState.error}
-                success={verificationState.ok ? 'Verification email sent' : undefined}
-                loading="Sending verification email…"
-              />
-              <DropdownMenuItem asChild>
-                <button type="submit" className="flex w-full items-center gap-2">
+              <DropdownMenuItem
+                asChild
+                onSelect={(event) => {
+                  event.preventDefault();
+                }}
+                disabled={verificationPending}
+              >
+                <button
+                  type="submit"
+                  disabled={verificationPending}
+                  className="flex w-full items-center gap-2"
+                >
                   <MailWarning className="size-4" />
-                  Resend verification
+                  {verificationPending ? 'Sending verification…' : 'Resend verification'}
                 </button>
               </DropdownMenuItem>
             </form>

@@ -152,3 +152,9 @@ describe('/api/onboarding/checklist', () => {
     expect(fakes.markStepComplete).not.toHaveBeenCalled();
   });
 });
+
+it('rejects manual billing completion without emitting completion analytics', async () => {
+  expect((await PATCH(patch({ action: 'complete', key: 'billing_setup' }))).status).toBe(400);
+  expect(fakes.markStepComplete).not.toHaveBeenCalled();
+  expect(fakes.track).not.toHaveBeenCalled();
+});

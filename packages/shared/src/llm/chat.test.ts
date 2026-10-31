@@ -1,11 +1,10 @@
-import { expect } from '@timeline/test-support';
-import { vi } from '@timeline/test-support';
+import { expect, vi } from '@timeline/test-support';
+import { tool, type LanguageModel, type StreamTextOnErrorCallback } from 'ai';
 import { MockLanguageModelV3 } from 'ai/test';
 import { afterEach, beforeEach, describe, it } from 'bun:test';
 import { z } from 'zod';
 
-import type { LanguageModel, StreamTextOnErrorCallback } from 'ai';
-
+import { openRouterUsdCostFromFinishEvent } from '#src/billing/openrouter-usage.js';
 import { resetEnvForTests } from '#src/env.js';
 import { EXTRACTION_SYSTEM_PROMPT } from '#src/extract/prompt.js';
 import { extractionResultSchema } from '#src/extract/schema.js';
@@ -16,6 +15,11 @@ import {
   streamChat,
 } from '#src/llm/chat.js';
 import { TIMELINE_MODELS } from '#src/llm/models.js';
+
+type ProviderFetch = (
+  ...args: Parameters<typeof globalThis.fetch>
+) => ReturnType<typeof globalThis.fetch>;
+
 const aiSdkGlobal = globalThis as typeof globalThis & {
   AI_SDK_LOG_WARNINGS?: boolean;
 };
@@ -95,9 +99,7 @@ describe('chatStructured', () => {
 
   it('allows per-call maxOutputTokens overrides for bulk structured callers', async () => {
     const requests: unknown[] = [];
-    const fetchStub: (
-      ...args: Parameters<typeof globalThis.fetch>
-    ) => ReturnType<typeof globalThis.fetch> = (_url, init) => {
+    const fetchStub: ProviderFetch = (_url, init) => {
       if (typeof init?.body !== 'string') throw new Error('expected request body');
       requests.push(JSON.parse(init.body));
       return Promise.resolve(
@@ -149,6 +151,10 @@ describe('chatStructured', () => {
     );
     expect(result.object).toEqual({ name: 'Apple', type: 'company' });
     expect(result.model).toBe(TIMELINE_MODELS.extraction.id);
+    expect(JSON.parse(JSON.stringify(result))).toEqual({
+      object: { name: 'Apple', type: 'company' },
+      model: TIMELINE_MODELS.extraction.id,
+    });
   });
 
   it('uses the predefined extraction model catalog entry', async () => {
@@ -162,9 +168,7 @@ describe('chatStructured', () => {
   it('passes abortSignal through to provider fetches', async () => {
     const controller = new AbortController();
     const seenSignals: unknown[] = [];
-    const fetchStub: (
-      ...args: Parameters<typeof globalThis.fetch>
-    ) => ReturnType<typeof globalThis.fetch> = (_url, init) => {
+    const fetchStub: ProviderFetch = (_url, init) => {
       seenSignals.push(init?.signal);
       return Promise.resolve(
         new Response(
@@ -337,9 +341,7 @@ describe('chatStructured', () => {
   it('requests OpenRouter json_schema structured output for extraction', async () => {
     const requests: unknown[] = [];
     const requestHeaders: Headers[] = [];
-    const fetchStub: (
-      ...args: Parameters<typeof globalThis.fetch>
-    ) => ReturnType<typeof globalThis.fetch> = (_url, init) => {
+    const fetchStub: ProviderFetch = (_url, init) => {
       requestHeaders.push(new Headers(init?.headers));
       if (typeof init?.body === 'string') {
         const parsed: unknown = JSON.parse(init.body);
@@ -421,9 +423,7 @@ describe('chatStructured', () => {
   });
 
   it('normalizes wrapped task-category JSON before accepting the object', async () => {
-    const fetchStub: (
-      ...args: Parameters<typeof globalThis.fetch>
-    ) => ReturnType<typeof globalThis.fetch> = () =>
+    const fetchStub: ProviderFetch = () =>
       Promise.resolve(
         new Response(
           JSON.stringify({
@@ -473,9 +473,7 @@ describe('chatStructured', () => {
 
   it('falls back to json_object mode when OpenRouter rejects strict json_schema', async () => {
     const requests: unknown[] = [];
-    const fetchStub: (
-      ...args: Parameters<typeof globalThis.fetch>
-    ) => ReturnType<typeof globalThis.fetch> = (_url, init) => {
+    const fetchStub: ProviderFetch = (_url, init) => {
       if (typeof init?.body !== 'string') throw new Error('expected request body');
       const parsed: unknown = JSON.parse(init.body);
       requests.push(parsed);
@@ -568,9 +566,7 @@ describe('chatStructured', () => {
 
   it('falls back to json_object mode when structured generation returns no object', async () => {
     const requests: unknown[] = [];
-    const fetchStub: (
-      ...args: Parameters<typeof globalThis.fetch>
-    ) => ReturnType<typeof globalThis.fetch> = (_url, init) => {
+    const fetchStub: ProviderFetch = (_url, init) => {
       if (typeof init?.body !== 'string') throw new Error('expected request body');
       const parsed: unknown = JSON.parse(init.body);
       requests.push(parsed);
@@ -589,7 +585,12 @@ describe('chatStructured', () => {
                   finish_reason: 'stop',
                 },
               ],
-              usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+              usage: {
+                prompt_tokens: 1,
+                completion_tokens: 1,
+                total_tokens: 2,
+                cost: 0.04,
+              },
             }),
             { status: 200, headers: { 'Content-Type': 'application/json' } },
           ),
@@ -609,7 +610,12 @@ describe('chatStructured', () => {
                 finish_reason: 'stop',
               },
             ],
-            usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+            usage: {
+              prompt_tokens: 1,
+              completion_tokens: 1,
+              total_tokens: 2,
+              cost: 0.02,
+            },
           }),
           { status: 200, headers: { 'Content-Type': 'application/json' } },
         ),
@@ -625,7 +631,11 @@ describe('chatStructured', () => {
       { fetch: fetchStub },
     );
 
-    expect(result).toEqual({ object: { facts: [] }, model: TIMELINE_MODELS.extraction.id });
+    expect(result).toMatchObject({
+      object: { facts: [] },
+      model: TIMELINE_MODELS.extraction.id,
+    });
+    expect(result.openRouterUsd).toBeCloseTo(0.06);
     expect(requests).toHaveLength(2);
     const summaries = requests.map((request) =>
       z
@@ -643,9 +653,7 @@ describe('chatStructured', () => {
 
   it('does not retry with a fallback model for auth failures', async () => {
     const requests: unknown[] = [];
-    const fetchStub: (
-      ...args: Parameters<typeof globalThis.fetch>
-    ) => ReturnType<typeof globalThis.fetch> = (_url, init) => {
+    const fetchStub: ProviderFetch = (_url, init) => {
       if (typeof init?.body !== 'string') throw new Error('expected request body');
       requests.push(JSON.parse(init.body));
       return Promise.resolve(
@@ -674,9 +682,7 @@ describe('chatStructured', () => {
 
   it('retries retryable provider failures on the structured fallback model', async () => {
     const requests: unknown[] = [];
-    const fetchStub: (
-      ...args: Parameters<typeof globalThis.fetch>
-    ) => ReturnType<typeof globalThis.fetch> = (_url, init) => {
+    const fetchStub: ProviderFetch = (_url, init) => {
       if (typeof init?.body !== 'string') throw new Error('expected request body');
       const parsed: unknown = JSON.parse(init.body);
       requests.push(parsed);
@@ -743,9 +749,7 @@ describe('chatStructured', () => {
 
   it('retries request timeouts on the structured fallback model', async () => {
     const requests: unknown[] = [];
-    const fetchStub: (
-      ...args: Parameters<typeof globalThis.fetch>
-    ) => ReturnType<typeof globalThis.fetch> = (_url, init) => {
+    const fetchStub: ProviderFetch = (_url, init) => {
       if (typeof init?.body !== 'string') throw new Error('expected request body');
       const parsed: unknown = JSON.parse(init.body);
       requests.push(parsed);
@@ -797,9 +801,7 @@ describe('chatStructured', () => {
 
   it('retries the structured fallback model when json_object fallback hits a retryable provider failure', async () => {
     const requests: unknown[] = [];
-    const fetchStub: (
-      ...args: Parameters<typeof globalThis.fetch>
-    ) => ReturnType<typeof globalThis.fetch> = (_url, init) => {
+    const fetchStub: ProviderFetch = (_url, init) => {
       if (typeof init?.body !== 'string') throw new Error('expected request body');
       const parsed: unknown = JSON.parse(init.body);
       requests.push(parsed);
@@ -887,9 +889,7 @@ describe('chatStructured', () => {
 
   it('retries the structured fallback model when json_object fallback also returns no object', async () => {
     const requests: unknown[] = [];
-    const fetchStub: (
-      ...args: Parameters<typeof globalThis.fetch>
-    ) => ReturnType<typeof globalThis.fetch> = (_url, init) => {
+    const fetchStub: ProviderFetch = (_url, init) => {
       if (typeof init?.body !== 'string') throw new Error('expected request body');
       const parsed: unknown = JSON.parse(init.body);
       requests.push(parsed);
@@ -969,9 +969,7 @@ describe('chatStructured', () => {
 
   it('retries the structured fallback model when json_object fallback returns schema-invalid JSON', async () => {
     const requests: unknown[] = [];
-    const fetchStub: (
-      ...args: Parameters<typeof globalThis.fetch>
-    ) => ReturnType<typeof globalThis.fetch> = (_url, init) => {
+    const fetchStub: ProviderFetch = (_url, init) => {
       if (typeof init?.body !== 'string') throw new Error('expected request body');
       const parsed: unknown = JSON.parse(init.body);
       requests.push(parsed);
@@ -1063,11 +1061,105 @@ describe('chatStructured', () => {
     ]);
   });
 
+  it('bills a schema-invalid json_object fallback when a later model succeeds', async () => {
+    const requests: unknown[] = [];
+    const fetchStub: ProviderFetch = (_url, init) => {
+      if (typeof init?.body !== 'string') throw new Error('expected request body');
+      const parsed: unknown = JSON.parse(init.body);
+      requests.push(parsed);
+      const request = z
+        .object({
+          model: z.string(),
+          response_format: z.object({ type: z.string() }),
+        })
+        .parse(parsed);
+      if (
+        request.model === TIMELINE_MODELS.extraction.id &&
+        request.response_format.type === 'json_schema'
+      ) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              id: 'chatcmpl-schema-cost-primary',
+              object: 'chat.completion',
+              created: 0,
+              model: TIMELINE_MODELS.extraction.id,
+              choices: [
+                {
+                  index: 0,
+                  message: { role: 'assistant', content: 'I cannot produce structured JSON.' },
+                  finish_reason: 'stop',
+                },
+              ],
+              usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2, cost: 0.04 },
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } },
+          ),
+        );
+      }
+      if (request.model === TIMELINE_MODELS.extraction.id) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              id: 'chatcmpl-schema-cost-fallback',
+              object: 'chat.completion',
+              created: 0,
+              model: TIMELINE_MODELS.extraction.id,
+              choices: [
+                {
+                  index: 0,
+                  message: {
+                    role: 'assistant',
+                    content: JSON.stringify({ facts: [{ text: 42 }] }),
+                  },
+                  finish_reason: 'stop',
+                },
+              ],
+              usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2, cost: 0.03 },
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } },
+          ),
+        );
+      }
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({
+            id: 'chatcmpl-schema-cost-recovery',
+            object: 'chat.completion',
+            created: 0,
+            model: TIMELINE_MODELS.structuredFallback.id,
+            choices: [
+              {
+                index: 0,
+                message: { role: 'assistant', content: JSON.stringify({ facts: [] }) },
+                finish_reason: 'stop',
+              },
+            ],
+            usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2, cost: 0.05 },
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+      );
+    };
+
+    const result = await chatStructured(
+      {
+        schema: extractionResultSchema,
+        prompt: 'Extract facts from: Heading out for lunch.',
+        instructions: EXTRACTION_SYSTEM_PROMPT,
+      },
+      { fetch: fetchStub },
+    );
+
+    expect(result.object).toEqual({ facts: [] });
+    expect(result.model).toBe(TIMELINE_MODELS.structuredFallback.id);
+    expect(result.openRouterUsd).toBeCloseTo(0.12);
+    expect(requests).toHaveLength(3);
+  });
+
   it('retries the structured fallback model when json_object fallback returns invalid JSON text', async () => {
     const requests: unknown[] = [];
-    const fetchStub: (
-      ...args: Parameters<typeof globalThis.fetch>
-    ) => ReturnType<typeof globalThis.fetch> = (_url, init) => {
+    const fetchStub: ProviderFetch = (_url, init) => {
       if (typeof init?.body !== 'string') throw new Error('expected request body');
       const parsed: unknown = JSON.parse(init.body);
       requests.push(parsed);
@@ -1161,9 +1253,7 @@ describe('chatStructured', () => {
 
   it('does not try the structured fallback model when json_object fallback fails with auth error', async () => {
     const requests: unknown[] = [];
-    const fetchStub: (
-      ...args: Parameters<typeof globalThis.fetch>
-    ) => ReturnType<typeof globalThis.fetch> = (_url, init) => {
+    const fetchStub: ProviderFetch = (_url, init) => {
       if (typeof init?.body !== 'string') throw new Error('expected request body');
       const parsed: unknown = JSON.parse(init.body);
       requests.push(parsed);
@@ -1397,5 +1487,77 @@ describe('streamChat', () => {
       causeName: 'Error',
     });
     expect(event?.error).not.toHaveProperty('cause');
+  });
+
+  it('reports completed step usage when a later model step fails', async () => {
+    let call = 0;
+    const sequence: string[] = [];
+    const stepCosts: number[] = [];
+    let finishCost = -1;
+    const onError = vi.fn<StreamTextOnErrorCallback>(() => {
+      sequence.push('error');
+    });
+    const model = new MockLanguageModelV3({
+      doStream: (() => {
+        call += 1;
+        if (call > 2) return Promise.reject(new Error('later step failed'));
+        const cost = call === 1 ? 0.11 : 0.13;
+        return Promise.resolve({
+          stream: new ReadableStream({
+            start(controller) {
+              controller.enqueue({
+                type: 'tool-call',
+                toolCallId: `call-${call}`,
+                toolName: 'lookup',
+                input: '{}',
+              });
+              controller.enqueue({
+                type: 'finish',
+                finishReason: { unified: 'tool-calls', raw: undefined },
+                usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+                providerMetadata: { openrouter: { usage: { cost } } },
+              });
+              controller.close();
+            },
+          }),
+        });
+      }) as never,
+    });
+
+    const result = streamChat(
+      {
+        instructions: 'sys',
+        messages: [{ role: 'user', content: 'hi' }],
+        tools: {
+          lookup: tool({
+            description: 'Look up a fact.',
+            inputSchema: z.object({}),
+            execute: () => Promise.resolve('ok'),
+          }),
+        },
+        onStepEnd: (step) => {
+          sequence.push('step');
+          stepCosts.push(openRouterUsdCostFromFinishEvent(step));
+        },
+        onEnd: (event) => {
+          sequence.push('end');
+          finishCost = openRouterUsdCostFromFinishEvent(event);
+        },
+        onError,
+      },
+      { model },
+    );
+
+    try {
+      await result.text;
+    } catch {
+      // The failed step rejects after onError and onEnd have already run.
+    }
+    expect(sequence).toEqual(['step', 'step', 'error', 'end']);
+    expect(stepCosts).toEqual([0.11, 0.13]);
+    // The finish payload repeats only the last step's provider cost, and it
+    // arrives after onError. Callers that bill from onEnd alone miss the
+    // earlier tool round and finalize before this callback.
+    expect(finishCost).toBeCloseTo(0.13);
   });
 });

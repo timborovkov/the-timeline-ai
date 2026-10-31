@@ -21,6 +21,10 @@ import {
   resolveAgentPresentation,
 } from '#src/agent/presentation.js';
 import { type AgentToolErrorReporter } from '#src/agent/tools.js';
+import { askBillingUserMessage } from '#src/billing/admission.js';
+import { assertTeamWriteCapacity } from '#src/billing/capacity.js';
+import { isBillingAdmissionError } from '#src/billing/errors.js';
+import { admitAcceptedSourceEnrichment, admitAudioTranscription } from '#src/billing/runtime.js';
 import { redactConversationError } from '#src/conversation-surfaces/privacy.js';
 import { acceptDirectAgentTurn } from '#src/conversation-surfaces/runtime.js';
 import { resetSurfaceSessionInTransaction } from '#src/conversation-surfaces/scope.js';
@@ -388,11 +392,7 @@ async function handleDm(ctx: DmContext, isEdit: boolean): Promise<void> {
       sourceUnverified: ctx.tgUserRow.userId === null,
       isEdit: false,
     });
-    if (text.trim()) {
-      await maybeEnqueueExtract(ctx, inserted);
-      await maybeEnqueueEmbed(ctx, inserted);
-      await maybeEnqueueSuggestion(ctx, inserted);
-    }
+    if (text.trim()) await enqueueAdmittedTextPipelines(ctx, inserted);
     await ingestTelegramDocumentAttachment(
       ctx,
       fileAttachment,
@@ -1063,7 +1063,12 @@ async function runAskInner(input: RunAskInput): Promise<void> {
             ? 'Your linked workspace user is no longer a member of this team. Ask a teammate to re-invite you.'
             : result.error === 'no_team'
               ? 'Could not load that team. Try /whereami and /team to confirm the active team.'
-              : "Couldn't answer that — try again.";
+              : result.error === 'security_blocked' ||
+                  result.error === 'free_allowance_reached' ||
+                  result.error === 'usage_limit_reached' ||
+                  result.error === 'spend_cap_reached'
+                ? askBillingUserMessage(result.error)
+                : "Couldn't answer that — try again.";
       await sendWithRetry(input.tg, { chat_id: input.chatId, text });
       return;
     }
@@ -1240,9 +1245,7 @@ async function ingestDmText(ctx: DmContext, text: string, isEdit: boolean): Prom
     sourceUnverified: ctx.tgUserRow.userId === null,
     isEdit,
   });
-  await maybeEnqueueExtract(ctx, inserted);
-  await maybeEnqueueEmbed(ctx, inserted);
-  await maybeEnqueueSuggestion(ctx, inserted);
+  await enqueueAdmittedTextPipelines(ctx, inserted);
   if (inserted && !isEdit) {
     await ackReaction(ctx.tg, ctx.message.chat.id, ctx.message.message_id);
   }
@@ -1274,6 +1277,28 @@ async function ackReaction(tg: TelegramApi, chatId: number, messageId: number): 
  * Telegram ingest would leave no durable signal that extraction was
  * skipped.
  */
+async function enqueueAdmittedTextPipelines(
+  ctx: {
+    db: Db;
+    extract?: ExtractEnqueueDeps;
+    embed?: EmbedEnqueueDeps;
+    suggestions?: SuggestionEnqueueDeps;
+  },
+  inserted: { id: string; teamId: string; authorUserId?: string | null } | null,
+): Promise<void> {
+  if (!inserted) return;
+  const admitted = await admitAcceptedSourceEnrichment({
+    db: ctx.db,
+    teamId: inserted.teamId,
+    ...(inserted.authorUserId ? { userId: inserted.authorUserId } : {}),
+    rawEventId: inserted.id,
+  });
+  if (!admitted) return;
+  await maybeEnqueueExtract(ctx, inserted);
+  await maybeEnqueueEmbed(ctx, inserted);
+  await maybeEnqueueSuggestion(ctx, inserted);
+}
+
 async function maybeEnqueueExtract(
   ctx: { db: Db; extract?: ExtractEnqueueDeps },
   inserted: { id: string; teamId: string } | null,
@@ -1432,11 +1457,7 @@ async function handleGroup(ctx: GroupContext, isEdit: boolean): Promise<void> {
       sourceUnverified: !ctx.tgUserRow?.userId,
       isEdit: false,
     });
-    if (text.trim()) {
-      await maybeEnqueueExtract(ctx, inserted);
-      await maybeEnqueueEmbed(ctx, inserted);
-      await maybeEnqueueSuggestion(ctx, inserted);
-    }
+    if (text.trim()) await enqueueAdmittedTextPipelines(ctx, inserted);
     await ingestTelegramDocumentAttachment(
       ctx,
       fileAttachment,
@@ -1456,9 +1477,7 @@ async function handleGroup(ctx: GroupContext, isEdit: boolean): Promise<void> {
       sourceUnverified: !ctx.tgUserRow?.userId,
       isEdit,
     });
-    await maybeEnqueueExtract(ctx, inserted);
-    await maybeEnqueueEmbed(ctx, inserted);
-    await maybeEnqueueSuggestion(ctx, inserted);
+    await enqueueAdmittedTextPipelines(ctx, inserted);
   }
 }
 
@@ -2421,6 +2440,14 @@ async function ingestAudio(
   const target = inserted ?? (await findEventByUpdateId(ctx.db, ctx.updateId));
   if (!target) return false;
 
+  const transcribe = await admitAudioTranscription({
+    db: ctx.db,
+    teamId: target.teamId,
+    ...(ctx.authorUserId ? { userId: ctx.authorUserId } : {}),
+    rawEventId: target.id,
+  });
+  if (!transcribe) return true;
+
   try {
     await ctx.audio.enqueueTranscribe({
       rawEventId: target.id,
@@ -2508,6 +2535,12 @@ async function ingestTelegramDocumentAttachment(
     return;
   }
   if (!ctx.documents) return;
+  const parentAdmitted = await admitAcceptedSourceEnrichment({
+    db: ctx.db,
+    teamId: parent.teamId,
+    ...(parent.authorUserId ? { userId: parent.authorUserId } : {}),
+    rawEventId: parent.id,
+  });
   const documentDeps = ctx.documents;
   if (decision.kind !== 'document') {
     const patch = JSON.stringify({
@@ -2544,55 +2577,77 @@ async function ingestTelegramDocumentAttachment(
   }
 
   const contentType = attachment.contentType ?? 'application/octet-stream';
-  await ctx.db.transaction(async (tx) => {
-    const docRows = await tx
-      .insert(documents)
-      .values({
+  try {
+    await ctx.db.transaction(async (tx) => {
+      await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${parent.teamId}, 1))`);
+      await assertTeamWriteCapacity({
+        db: tx as unknown as typeof ctx.db,
         teamId: parent.teamId,
-        fileKind: 'captured',
-        name: attachment.filename,
-        ownerUserId: parent.authorUserId ?? parent.visibilityOwnerUserId,
-        visibility: parent.visibility,
-        visibilityUserIds: parent.visibilityUserIds,
-        sourceRawEventId: parent.id,
-        metadata: {
-          source: 'telegram',
-          tg_file_id: attachment.payload.file_id,
-          parent_raw_event_id: parent.id,
-        },
-      })
-      .returning({ id: documents.id });
-    const doc = docRows[0];
-    if (!doc) throw new Error('telegram_document_insert_failed');
-    const key = buildDocumentObjectKey({
-      teamId: parent.teamId,
-      documentId: doc.id,
-      version: 1,
-      filename: attachment.filename,
-    });
-    const versionRows = await tx
-      .insert(documentVersions)
-      .values({
+        additionalDocuments: 1,
+        additionalBytes: bytes.length,
+      });
+      const docRows = await tx
+        .insert(documents)
+        .values({
+          teamId: parent.teamId,
+          fileKind: 'captured',
+          name: attachment.filename,
+          ownerUserId: parent.authorUserId ?? parent.visibilityOwnerUserId,
+          visibility: parent.visibility,
+          visibilityUserIds: parent.visibilityUserIds,
+          sourceRawEventId: parent.id,
+          metadata: {
+            source: 'telegram',
+            tg_file_id: attachment.payload.file_id,
+            parent_raw_event_id: parent.id,
+          },
+        })
+        .returning({ id: documents.id });
+      const doc = docRows[0];
+      if (!doc) throw new Error('telegram_document_insert_failed');
+      const key = buildDocumentObjectKey({
         teamId: parent.teamId,
         documentId: doc.id,
         version: 1,
-        objectKey: key,
-        byteSize: bytes.length,
-        contentType,
-        uploadedByUserId: parent.authorUserId,
-        sourceEventId: parent.id,
-        processingStatus: 'pending',
-      })
-      .returning({ id: documentVersions.id });
-    const version = versionRows[0];
-    if (!version) throw new Error('telegram_document_version_insert_failed');
-    await tx
-      .update(documents)
-      .set({ currentVersionId: version.id })
-      .where(eq(documents.id, doc.id));
-    await documentDeps.upload({ key, body: bytes, contentType });
-    await documentDeps.enqueueExtract({ documentVersionId: version.id, teamId: parent.teamId });
-  });
+        filename: attachment.filename,
+      });
+      const versionRows = await tx
+        .insert(documentVersions)
+        .values({
+          teamId: parent.teamId,
+          documentId: doc.id,
+          version: 1,
+          objectKey: key,
+          byteSize: bytes.length,
+          contentType,
+          uploadedByUserId: parent.authorUserId,
+          sourceEventId: parent.id,
+          processingStatus: 'pending',
+        })
+        .returning({ id: documentVersions.id });
+      const version = versionRows[0];
+      if (!version) throw new Error('telegram_document_version_insert_failed');
+      await tx
+        .update(documents)
+        .set({ currentVersionId: version.id })
+        .where(eq(documents.id, doc.id));
+      await documentDeps.upload({ key, body: bytes, contentType });
+      if (parentAdmitted) {
+        await documentDeps.enqueueExtract({ documentVersionId: version.id, teamId: parent.teamId });
+      }
+    });
+  } catch (err) {
+    if (isBillingAdmissionError(err)) {
+      await recordTelegramAttachmentSkip(ctx.db, parent.id, {
+        source: 'telegram',
+        file_id: attachment.payload.file_id,
+        filename: attachment.filename,
+        reason: 'billing_capacity',
+      });
+      return;
+    }
+    throw err;
+  }
 }
 
 async function ingestTelegramDocumentAudioAttachment(
@@ -2674,6 +2729,13 @@ async function ingestTelegramDocumentAudioAttachment(
   const row = rows[0];
   if (!row) return;
   await normalizeRawEventEvidence(ctx.db, row);
+  const transcribe = await admitAudioTranscription({
+    db: ctx.db,
+    teamId: row.teamId,
+    ...(parent.authorUserId ? { userId: parent.authorUserId } : {}),
+    rawEventId: row.id,
+  });
+  if (!transcribe) return;
 
   try {
     await ctx.audio.enqueueTranscribe({

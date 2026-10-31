@@ -1,4 +1,13 @@
 'use server';
+import {
+  abortRecallJoinAfterProviderAccept,
+  claimMeetingJoinUnderRecallCap,
+  isBillingAdmissionError,
+  recallBillingUserMessage,
+  reserveRecallMeetingMinutes,
+  settleElapsedRecallMeetingMinutes,
+  stampPendingRecallSettlement,
+} from '@timeline/shared/billing';
 import { childLogger } from '@timeline/shared/logger';
 import * as meetingBots from '@timeline/shared/meeting-bots';
 import { detectMeetingPlatform } from '@timeline/shared/meetings';
@@ -112,7 +121,23 @@ async function startMeetingBot(input: {
   platform: 'meet' | 'teams' | 'zoom';
   provider?: string;
 }): Promise<Result> {
-  const claimed = await input.scope.meetings.claimMeetingForJoin(input.meetingId);
+  const live = await input.scope.meetings.findActiveMeetingForUrl(input.meetingUrl);
+  if (live && (live.status === 'joining' || live.status === 'active')) {
+    return { ok: true, meetingId: live.id };
+  }
+  let claimed;
+  try {
+    claimed = await claimMeetingJoinUnderRecallCap({
+      db,
+      teamId: input.teamId,
+      meetingId: input.meetingId,
+    });
+  } catch (err) {
+    if (isBillingAdmissionError(err)) {
+      return { ok: false, meetingId: input.meetingId, error: err.message };
+    }
+    throw err;
+  }
   if (!claimed) {
     const active = await input.scope.meetings.findActiveMeetingForUrl(input.meetingUrl);
     if (active && (active.status === 'joining' || active.status === 'active')) {
@@ -120,13 +145,32 @@ async function startMeetingBot(input: {
     }
     return { ok: false, meetingId: input.meetingId, error: 'Meeting is no longer joinable.' };
   }
+  const admission = await reserveRecallMeetingMinutes(input.scope.billing, {
+    meetingId: claimed.id,
+  });
+  if (!admission.ok) {
+    await input.scope.meetings.updateMeetingStatus(claimed.id, 'failed', {
+      metadata: {
+        join_failed_at: new Date().toISOString(),
+        join_error: admission.code,
+      },
+    });
+    return {
+      ok: false,
+      meetingId: claimed.id,
+      error: recallBillingUserMessage(admission.code),
+    };
+  }
   const transcriptWebhookUrl = meetingBots.resolveTranscriptWebhookUrl();
+  let joinedBotId: string | undefined;
+  let leaveMeeting: ((botId: string) => Promise<void>) | undefined;
   try {
     // react-doctor-disable-next-line react-doctor/async-parallel -- Provider lookup and team load already run together; the later status update depends on the join result.
     const [provider, team] = await Promise.all([
       Promise.resolve(meetingBots.getMeetingBotProvider(claimed.provider)),
       input.scope.timeline.team(),
     ]);
+    leaveMeeting = (botId) => provider.leaveMeeting(botId);
     const join = await provider.joinMeeting({
       meetingId: claimed.id,
       teamId: input.teamId,
@@ -134,14 +178,27 @@ async function startMeetingBot(input: {
       platform: claimed.platform,
       botName: meetingBots.meetingBotDisplayName(team?.name),
       transcriptWebhookUrl,
+      maxRecordingDurationSeconds: admission.reservedMinutes * 60,
     });
+    joinedBotId = join.botId;
     await input.scope.meetings.updateMeetingStatus(claimed.id, 'joining', {
       providerBotId: join.botId,
+      metadata: {
+        billing_operation_id: admission.operationId,
+        reserved_recall_minutes: admission.reservedMinutes,
+        reserved_recall_started_at: new Date().toISOString(),
+      },
     });
     return { ok: true, meetingId: claimed.id };
   } catch (err) {
     const joinErrorCode = meetingBots.meetingBotErrorCode(err);
     log.error({ joinErrorCode, meetingId: claimed.id }, 'recall_join_failed');
+    await abortRecallJoinAfterProviderAccept({
+      billing: input.scope.billing,
+      operationId: admission.operationId,
+      ...(leaveMeeting ? { leaveMeeting } : {}),
+      ...(joinedBotId ? { botId: joinedBotId } : {}),
+    });
     await input.scope.meetings.updateMeetingStatus(claimed.id, 'failed', {
       metadata: {
         join_failed_at: new Date().toISOString(),
@@ -416,6 +473,15 @@ export async function skipScheduledMeetingAction(meetingId: string): Promise<Res
   });
 }
 
+function isPartialMeetingCapture(metadata: unknown): boolean {
+  return (
+    metadata !== null &&
+    typeof metadata === 'object' &&
+    !Array.isArray(metadata) &&
+    (metadata as { partial_capture?: unknown }).partial_capture === true
+  );
+}
+
 export async function cancelMeetingBotAction(meetingId: string): Promise<Result> {
   return runSentryServerAction('cancel_meeting_bot', async () => {
     if (!UUID_RE.test(meetingId)) return { ok: false, error: 'Invalid meeting id' };
@@ -506,15 +572,80 @@ export async function cancelMeetingBotAction(meetingId: string): Promise<Result>
         };
       }
     }
-    if (cancellation?.outcome === 'processing' && finalizeQueue) {
+    const partialCapture =
+      cancellation?.outcome === 'processing' ||
+      isPartialMeetingCapture(meeting.metadata) ||
+      (transcriptAlreadyClosed && meeting.status === 'processing');
+    if (partialCapture) {
+      // A partial transcript must stay `processing`. The janitor only
+      // re-enqueues finalize for that status, and finalize skips cancelled
+      // meetings. Redis being down, or a later leave retry, is not a reason
+      // to drop the capture.
+      let queue = finalizeQueue;
+      if (!queue) {
+        try {
+          queue = await requireRedisQueue();
+        } catch (err) {
+          log.warn({ err, meetingId }, 'partial_cancel_finalize_queue_unavailable');
+          reportCaughtError(err, {
+            surface: 'server_action',
+            operation: 'partial_cancel_finalize_queue_unavailable',
+          });
+        }
+      }
+      if (queue) {
+        try {
+          await queue.enqueueMeetingFinalizeJob({ meetingId, teamId: meeting.teamId });
+        } catch (err) {
+          log.warn({ err, meetingId }, 'partial_cancel_finalize_enqueue_failed');
+          reportCaughtError(err, {
+            surface: 'server_action',
+            operation: 'partial_cancel_finalize_enqueue',
+          });
+        }
+      }
+    } else {
+      const endedAt = new Date();
       try {
-        await finalizeQueue.enqueueMeetingFinalizeJob({ meetingId, teamId: meeting.teamId });
+        await stampPendingRecallSettlement(scope.billing, {
+          meetingId,
+          startedAt: meeting.startedAt,
+          endedAt,
+          metadata: meeting.metadata,
+          source: 'meeting_cancel',
+        });
       } catch (err) {
-        log.warn({ err, meetingId }, 'partial_cancel_finalize_enqueue_failed');
+        log.warn({ err, meetingId }, 'recall_cancel_settlement_stamp_failed');
         reportCaughtError(err, {
           surface: 'server_action',
-          operation: 'partial_cancel_finalize_enqueue',
+          operation: 'recall_cancel_settlement_stamp',
         });
+        return {
+          ok: false,
+          error: 'Could not record meeting usage before cancelling.',
+        };
+      }
+      await scope.meetings.updateMeetingStatus(meetingId, 'cancelled', {
+        metadata: { cancelled_at: endedAt.toISOString(), capture_status: 'cancelled' },
+      });
+      try {
+        await settleElapsedRecallMeetingMinutes(scope.billing, {
+          meetingId,
+          startedAt: meeting.startedAt,
+          endedAt,
+          metadata: meeting.metadata,
+          source: 'meeting_cancel',
+        });
+      } catch (err) {
+        log.warn({ err, meetingId }, 'recall_cancel_settlement_pending');
+        reportCaughtError(err, {
+          surface: 'server_action',
+          operation: 'recall_cancel_settlement',
+        });
+        return {
+          ok: false,
+          error: 'The notetaker was cancelled. Usage recording will retry.',
+        };
       }
     }
     revalidatePath('/app/meetings');

@@ -1,6 +1,7 @@
 import { type Db, auditLog, mcpOauthTokens, mcpServers } from '@timeline/db';
-import { and, desc, eq, isNull, or } from 'drizzle-orm';
+import { and, desc, eq, isNull, or, sql } from 'drizzle-orm';
 
+import { assertTeamCustomMcpCapacity } from '#src/billing/capacity.js';
 import { decryptJson, encryptJson } from '#src/crypto/secrets.js';
 import { validateMcpUrl, type McpAuthConfig } from '#src/mcp/auth.js';
 import { getMcpManager } from '#src/mcp/client.js';
@@ -92,6 +93,8 @@ export function createMcpScope(deps: {
     // OAuth servers start disabled — the callback flips them on once tokens land.
     const enabled = input.authType !== 'oauth';
     const row = await db.transaction(async (tx) => {
+      await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${teamId}, 3))`);
+      await assertTeamCustomMcpCapacity({ db: tx as unknown as Db, teamId });
       const rows = await tx
         .insert(mcpServers)
         .values({

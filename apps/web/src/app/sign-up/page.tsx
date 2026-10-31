@@ -42,7 +42,7 @@ export default async function SignUpPage({ searchParams }: Props) {
             ? 'You’ve been invited to a team. Sign up to accept.'
             : 'New accounts are paused while our legal publication review is completed.'
           : legalPublicationReady
-            ? 'We’ll create your first team automatically.'
+            ? 'Free for small teams — no card required. We’ll create your first team automatically.'
             : 'New accounts are paused while our legal publication review is completed.'
       }
       secondaryPrefix="Already have an account?"

@@ -16,6 +16,7 @@ const PUBLIC_NAVIGATION_ITEMS = [
     label: 'Integrations',
     analyticsCta: 'view_integrations',
   },
+  { section: 'pricing', href: '/pricing', label: 'Pricing', analyticsCta: 'view_pricing' },
   {
     section: 'how-it-works',
     href: '/how-it-works',

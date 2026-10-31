@@ -1,9 +1,8 @@
-import { expect } from '@timeline/test-support';
-import { vi } from '@timeline/test-support';
+import { PGlite } from '@electric-sql/pglite';
+import { expect, vi } from '@timeline/test-support';
 import { afterEach, beforeEach, describe, it } from 'bun:test';
-
-import type { PGlite as PGliteType } from '@electric-sql/pglite';
-type PGlite = PGliteType;
+import { eq } from 'drizzle-orm';
+import { drizzle } from 'drizzle-orm/pglite';
 
 const joinMeetingMock = vi.hoisted(() => vi.fn());
 
@@ -14,7 +13,11 @@ await vi.mock(
     return {
       ...actual,
       isMeetingBotConfigured: vi.fn(() => true),
-      getMeetingBotProvider: vi.fn(() => ({ name: 'recall', joinMeeting: joinMeetingMock })),
+      getMeetingBotProvider: vi.fn(() => ({
+        name: 'recall',
+        joinMeeting: joinMeetingMock,
+        leaveMeeting: vi.fn().mockResolvedValue(undefined),
+      })),
       resolveTranscriptWebhookUrl: vi.fn(
         () => 'https://timeline.test/api/webhooks/recall/transcript',
       ),
@@ -23,10 +26,7 @@ await vi.mock(
   () => import('#src/meeting-bots/index.js'),
 );
 
-const { PGlite } = await import('@electric-sql/pglite');
 const { meetingCaptureConfirmations, meetings, teamMeetingSettings } = await import('@timeline/db');
-const { eq } = await import('drizzle-orm');
-const { drizzle } = await import('drizzle-orm/pglite');
 const { confirmRawUrlQuickJoin, createRawUrlQuickJoinConfirmation } =
   await import('#src/meetings/quick-capture.js');
 const { withTeam } = await import('#src/team-scope.js');
@@ -144,6 +144,36 @@ describe('quick meeting capture', () => {
       .where(eq(meetingCaptureConfirmations.id, confirmationId));
     expect(confirmation?.status).toBe('pending');
     expect(confirmation?.meetingId).toBeNull();
+  });
+
+  it('rejects a new join when another Recall bot is already live on Free', async () => {
+    await pg.exec(`
+      INSERT INTO meetings (team_id, platform, meeting_url, status)
+      VALUES ('${TEAM_ID}', 'meet', 'https://meet.google.com/already-live', 'active');
+    `);
+
+    const prompt = await createRawUrlQuickJoinConfirmation({
+      db: db as never,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      source: 'slack',
+      meetingUrl: 'https://meet.google.com/second-bot',
+    });
+    const confirmationId = prompt.confirmationId;
+    if (!confirmationId) throw new Error('expected confirmation id');
+
+    const result = await confirmRawUrlQuickJoin({
+      db: db as never,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      confirmationId,
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      error: 'Concurrent meeting notetaker limit reached for this plan',
+    });
+    expect(joinMeetingMock).not.toHaveBeenCalled();
   });
 
   it('marks the capture failed and links the confirmation when the provider join fails', async () => {

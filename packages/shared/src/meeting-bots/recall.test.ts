@@ -79,6 +79,7 @@ describe('createRecallProvider', () => {
       platform: 'meet',
       botName: "Acme's thetimeline.cc bot",
       transcriptWebhookUrl: 'https://example.com/webhook',
+      maxRecordingDurationSeconds: 3600,
     });
     expect(result).toEqual({ botId: 'bot-123' });
     expect(calls).toHaveLength(1);
@@ -96,6 +97,7 @@ describe('createRecallProvider', () => {
       noone_joined_timeout: 550,
       everyone_left_timeout: { timeout: 2, activate_after: 1 },
       recording_permission_denied_timeout: 30,
+      in_call_recording_timeout: 3600,
     });
     expect(body.metadata).toBeUndefined();
     expect(body.recording_config).toMatchObject({

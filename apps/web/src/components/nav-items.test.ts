@@ -19,6 +19,7 @@ describe('nav items', () => {
       'Documents',
       'Meetings',
       'Connections',
+      'Usage',
       'Team',
     ]);
   });
@@ -32,7 +33,7 @@ describe('nav items', () => {
     ).toEqual([
       { label: 'Overview', items: ['Home', 'Timeline', 'Ask'] },
       { label: 'Workspace', items: ['Work', 'Documents', 'Meetings'] },
-      { label: 'Manage', items: ['Connections', 'Team'] },
+      { label: 'Manage', items: ['Connections', 'Usage', 'Team'] },
     ]);
   });
 

@@ -9,8 +9,23 @@ import {
   rawEvents,
   savedMeetings,
 } from '@timeline/db';
-import { childLogger, formatMeetingTranscript, getEnv, llm, queue } from '@timeline/shared';
+import {
+  childLogger,
+  formatMeetingTranscript,
+  getEnv,
+  llm,
+  queue,
+  withTeam,
+} from '@timeline/shared';
 import { bucketAnalyticsCount, bucketMeetingDuration } from '@timeline/shared/analytics';
+import {
+  admitMeetingSourceEnrichment,
+  BILLING_SYSTEM_USER_ID,
+  isBillingAdmissionError,
+  recallBillableMinutes,
+  settleElapsedRecallMeetingMinutes,
+  settleRecallMeetingMinutes,
+} from '@timeline/shared/billing';
 import { buildCalendarSourcePayloadMetadata } from '@timeline/shared/calendar';
 import { sourceMetadataWithConversationArtifacts } from '@timeline/shared/conversational/contact-artifacts';
 import { reconcileLinkArtifactsForRawEvent } from '@timeline/shared/conversational/link-artifacts';
@@ -23,6 +38,7 @@ import { and, asc, eq, sql } from 'drizzle-orm';
 import { z } from 'zod';
 
 import { trackProductEventBestEffort } from '#src/analytics.js';
+import { withWorkerAiBilling, workerBillingJobOptions } from '#src/billing-context.js';
 import { captureWorkerJobFailure } from '#src/monitoring.js';
 
 const log = childLogger('worker:meeting-finalize');
@@ -163,6 +179,33 @@ async function enqueueRawEventPipeline(
   await Promise.all([
     enqueueExtractJob({ rawEventId, teamId }),
     enqueueEmbedJob({ scope: 'raw_event', rawEventId, teamId }),
+  ]);
+}
+
+async function enqueueAdmittedMeetingEnrichment(input: {
+  env: ReturnType<typeof getEnv>;
+  io: MeetingFinalizeIO;
+  db: Db;
+  teamId: string;
+  meetingId: string;
+  rawEventId: string;
+  meetingChunkIds: string[];
+  calendarEventId: string | null | undefined;
+  embedCalendar: boolean;
+}): Promise<void> {
+  const admitted = await admitMeetingSourceEnrichment({
+    db: input.db,
+    teamId: input.teamId,
+    meetingId: input.meetingId,
+    rawEventId: input.rawEventId,
+  });
+  if (!admitted) return;
+  await Promise.all([
+    enqueueRawEventPipeline(input.env, input.io, input.rawEventId, input.teamId),
+    enqueueMeetingChunkEmbeds(input.env, input.io, input.meetingChunkIds, input.teamId),
+    input.embedCalendar
+      ? enqueueCalendarEventPipeline(input.env, input.io, input.calendarEventId, input.teamId)
+      : Promise.resolve(),
   ]);
 }
 
@@ -606,6 +649,9 @@ async function summarizeTranscript(
       summaryFailure: null,
     };
   } catch (err) {
+    // Admission must leave the job. A transcript-only completion is permanent:
+    // the retry sees already_completed and never summarizes again.
+    if (isBillingAdmissionError(err)) throw err;
     if (isRetryableSummaryError(err)) throw err;
     log.warn({ err, meetingId: meeting.id }, 'meeting_summary_failed_transcript_only');
     return {
@@ -617,6 +663,21 @@ async function summarizeTranscript(
       summaryFailure: summaryFailureFromError(err, modelId),
     };
   }
+}
+
+async function settleRecallForFinalizedMeeting(input: {
+  db: Db;
+  teamId: string;
+  meetingId: string;
+  minutes: number;
+}): Promise<void> {
+  const billingScope = withTeam(input.db, input.teamId, BILLING_SYSTEM_USER_ID, {
+    skipMembershipCheck: true,
+  });
+  await settleRecallMeetingMinutes(billingScope.billing, {
+    meetingId: input.meetingId,
+    minutes: input.minutes,
+  });
 }
 
 /**
@@ -647,27 +708,55 @@ export async function processMeetingFinalizeJob(
     // Already finalised. A previous attempt may have committed the DB
     // transaction and then died before enqueueing the post-commit pipeline,
     // so recover the consolidated event and enqueue again. Extract/embed are
-    // worker-idempotent.
+    // worker-idempotent. Billing settle is also retried here because a
+    // transient settle failure after completion would otherwise skip forever.
     const rawEventId = await findFinalizedRawEventId(deps.db, meetingId, teamId);
     const calendarEventId = await findMeetingCalendarEventId(deps.db, meetingId, teamId);
     if (rawEventId) {
       const chunks = await loadMeetingChunks(deps.db, meetingId, teamId);
-      await Promise.all([
-        enqueueRawEventPipeline(env, io, rawEventId, teamId),
-        enqueueMeetingChunkEmbeds(
-          env,
-          io,
-          chunks.map((c) => c.id),
-          teamId,
-        ),
-        meeting.defaultVisibility === 'team'
-          ? enqueueCalendarEventPipeline(env, io, calendarEventId, teamId)
-          : Promise.resolve(),
-      ]);
+      await enqueueAdmittedMeetingEnrichment({
+        env,
+        io,
+        db: deps.db,
+        teamId,
+        meetingId,
+        rawEventId,
+        meetingChunkIds: chunks.map((c) => c.id),
+        calendarEventId,
+        embedCalendar: meeting.defaultVisibility === 'team',
+      });
     }
+    const [usage] = await deps.db
+      .select({ minutes: meetingUsage.minutes })
+      .from(meetingUsage)
+      .where(eq(meetingUsage.meetingId, meetingId))
+      .limit(1);
+    await settleRecallForFinalizedMeeting({
+      db: deps.db,
+      teamId,
+      meetingId,
+      minutes: usage?.minutes ?? 0,
+    });
     return { skipped: 'already_completed', meetingId };
   }
-  if (['failed', 'cancelled', 'skipped', 'no_show'].includes(meeting.status)) {
+  if (meeting.status === 'skipped') {
+    const billingScope = withTeam(deps.db, teamId, BILLING_SYSTEM_USER_ID, {
+      skipMembershipCheck: true,
+    });
+    await billingScope.billing.release(`recall:${meetingId}`).catch(() => undefined);
+    return { skipped: 'terminal', meetingId };
+  }
+  if (['failed', 'cancelled', 'no_show'].includes(meeting.status)) {
+    const billingScope = withTeam(deps.db, teamId, BILLING_SYSTEM_USER_ID, {
+      skipMembershipCheck: true,
+    });
+    await settleElapsedRecallMeetingMinutes(billingScope.billing, {
+      meetingId,
+      startedAt: meeting.startedAt,
+      endedAt: meeting.endedAt ?? new Date(),
+      metadata: meeting.metadata,
+      source: 'meeting_finalize_terminal',
+    });
     return { skipped: 'terminal', meetingId };
   }
 
@@ -708,18 +797,23 @@ export async function processMeetingFinalizeJob(
           return { retryChunks: finalChunks };
         }
 
-        // Compute minutes used from the freshest chunk set. Use meeting
-        // duration if available, else fall back to last chunk end_ms.
-        let minutes = 0;
-        if (meeting.startedAt && meeting.endedAt) {
-          minutes = Math.max(
-            1,
-            Math.ceil((meeting.endedAt.getTime() - meeting.startedAt.getTime()) / 60000),
-          );
-        } else if (finalChunks.length > 0) {
-          const last = finalChunks[finalChunks.length - 1];
-          if (last) minutes = Math.max(1, Math.ceil(last.endMs / 60000));
-        }
+        // Compute minutes from join stamp (includes joining time), then
+        // startedAt, then last chunk end_ms. Cap at the reserved duration.
+        const metadata = (meeting.metadata ?? {}) as Record<string, unknown>;
+        const lastChunk = finalChunks[finalChunks.length - 1];
+        const minutes = recallBillableMinutes({
+          joinStartedAt:
+            typeof metadata.reserved_recall_started_at === 'string'
+              ? metadata.reserved_recall_started_at
+              : null,
+          startedAt: meeting.startedAt,
+          endedAt: meeting.endedAt,
+          chunkEndMs: lastChunk?.endMs ?? null,
+          reservedMinutes:
+            typeof metadata.reserved_recall_minutes === 'number'
+              ? metadata.reserved_recall_minutes
+              : null,
+        });
 
         // Patch meeting metadata first, but do NOT flip status yet. Status
         // only moves to 'completed' after the raw_event + backfill succeed so
@@ -915,13 +1009,17 @@ export async function processMeetingFinalizeJob(
           teamId,
           rawEventIds: [finalized.rawEventId],
         });
-        await Promise.all([
-          enqueueRawEventPipeline(env, io, finalized.rawEventId, teamId),
-          enqueueMeetingChunkEmbeds(env, io, finalized.meetingChunkIds, teamId),
-          meeting.defaultVisibility === 'team'
-            ? enqueueCalendarEventPipeline(env, io, finalized.calendarEventId, teamId)
-            : Promise.resolve(),
-        ]);
+        await enqueueAdmittedMeetingEnrichment({
+          env,
+          io,
+          db: deps.db,
+          teamId,
+          meetingId,
+          rawEventId: finalized.rawEventId,
+          meetingChunkIds: finalized.meetingChunkIds,
+          calendarEventId: finalized.calendarEventId,
+          embedCalendar: meeting.defaultVisibility === 'team',
+        });
       }
 
       trackProductEventBestEffort(
@@ -934,6 +1032,19 @@ export async function processMeetingFinalizeJob(
           actionItemCountBucket: bucketAnalyticsCount(summarized.actionItems.length),
         },
       );
+
+      try {
+        const billingScope = withTeam(deps.db, teamId, BILLING_SYSTEM_USER_ID, {
+          skipMembershipCheck: true,
+        });
+        await settleRecallMeetingMinutes(billingScope.billing, {
+          meetingId,
+          minutes: finalized.minutes,
+        });
+      } catch (err) {
+        log.warn({ err, meetingId, teamId }, 'meeting_billing_settle_failed');
+        throw err;
+      }
 
       return {
         meetingId,
@@ -954,7 +1065,14 @@ export function startMeetingFinalizeWorker(
 ): Worker<queue.MeetingFinalizeJobData> {
   const worker = new Worker<queue.MeetingFinalizeJobData>(
     queue.QUEUE_NAMES.meetingFinalize,
-    async (job: Job<queue.MeetingFinalizeJobData>) => processMeetingFinalizeJob(deps, job.data),
+    async (job: Job<queue.MeetingFinalizeJobData>, token?: string) =>
+      withWorkerAiBilling(
+        deps.db,
+        job.data.teamId,
+        'meeting_finalize',
+        () => processMeetingFinalizeJob(deps, job.data),
+        workerBillingJobOptions(job, token),
+      ),
     {
       connection: queue.getRedisConnection(),
       // Single concurrency per process — meeting summarisation is rare

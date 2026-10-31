@@ -55,6 +55,7 @@ const {
 const { eq } = await import('drizzle-orm');
 const { drizzle } = await import('drizzle-orm/pglite');
 const { encryptJson, resetSecretsKeyCacheForTests } = await import('#src/crypto/secrets.js');
+const { insertRestrictedFreeBillingAccount } = await import('#src/billing/capacity.js');
 const { resetEnvForTests } = await import('#src/env.js');
 const { resetMeetingBotProviderForTests } = await import('#src/meeting-bots/index.js');
 const {
@@ -546,6 +547,32 @@ describe('Slack dispatcher routing', () => {
       rawEventId: rows[0]?.id,
       teamId: TEAM_A,
     });
+  });
+
+  it('keeps a Slack capture and skips enrichment when the accepted-source meter denies it', async () => {
+    await seedBoundSlackUser(db);
+    await insertRestrictedFreeBillingAccount({ db: db as never, teamId: TEAM_A });
+    const queues = textQueueDeps();
+
+    await handleSlackEnvelope(
+      { db: db as never, ...queues },
+      slackEnvelope('EvChannelDeferred', {
+        type: 'message',
+        channel: 'C_DOCS',
+        channel_type: 'channel',
+        user: 'U_SLACK',
+        text: 'Slack capture should wait for accepted-source allowance',
+        ts: '1700000000.000600',
+      }),
+    );
+
+    const rows = await db.select().from(rawEvents).where(eq(rawEvents.source, 'slack'));
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.contentText).toBe('Slack capture should wait for accepted-source allowance');
+    expect(rows[0]?.sourceMetadata).toMatchObject({ billing_enrichment_deferred: true });
+    expect(queues.extract.enqueueExtract).not.toHaveBeenCalled();
+    expect(queues.embed.enqueueEmbed).not.toHaveBeenCalled();
+    expect(queues.suggestions.enqueueSuggestion).not.toHaveBeenCalled();
   });
 
   it('captures Slack shared links as metadata and provider-matchable artifact evidence', async () => {

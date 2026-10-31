@@ -6,6 +6,15 @@ import { embed as aiEmbed, embedMany as aiEmbedMany, type EmbeddingModel } from 
 
 import type * as Cl100kBaseTokenizer from 'gpt-tokenizer/encoding/cl100k_base';
 
+import { isBillingAdmissionError } from '#src/billing/errors.js';
+import {
+  attachOpenRouterFinish,
+  openRouterFinishFromAiResult,
+  openRouterFinishFromUsdCost,
+  openRouterUsdCostFromFinishEvent,
+  type OpenRouterFinishEvent,
+} from '#src/billing/openrouter-usage.js';
+import { withAiMetering } from '#src/billing/runtime.js';
 import { getEnv } from '#src/env.js';
 import { asBunFetch } from '#src/http/fetch.js';
 import { wrapAiFailure } from '#src/llm/errors.js';
@@ -183,6 +192,125 @@ function deterministicEmbeddingVector(text: string): number[] {
   return vector;
 }
 
+function embeddingResponseBody(body: unknown): Record<string, unknown> | null {
+  if (isJsonObject(body)) return body;
+  if (typeof body !== 'string') return null;
+  try {
+    const parsed: unknown = JSON.parse(body);
+    return isJsonObject(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+/** OpenRouter reports `usage.cost` on the raw body. The compatible adapter keeps only `{ tokens }`. */
+function embeddingBodyCost(body: unknown): number {
+  const usage = embeddingResponseBody(body)?.usage;
+  if (!isJsonObject(usage)) return 0;
+  const cost = usage.cost;
+  return typeof cost === 'number' && Number.isFinite(cost) && cost >= 0 ? cost : 0;
+}
+
+function embeddingMeterFinish(input: {
+  usage: unknown;
+  providerMetadata: unknown;
+  bodies: readonly unknown[];
+}): OpenRouterFinishEvent {
+  const finish = openRouterFinishFromAiResult({
+    usage: input.usage,
+    providerMetadata: input.providerMetadata,
+    totalUsage: undefined,
+  });
+  if (openRouterUsdCostFromFinishEvent(finish) > 0) return finish;
+  const cost = input.bodies.reduce<number>((sum, body) => sum + embeddingBodyCost(body), 0);
+  if (cost <= 0) return finish;
+  const usage = isJsonObject(input.usage) ? input.usage : {};
+  return openRouterFinishFromAiResult({
+    usage: { ...usage, raw: { cost } },
+    providerMetadata: input.providerMetadata,
+    totalUsage: undefined,
+  });
+}
+
+interface CapturedEmbeddingCall {
+  usage: unknown;
+  providerMetadata: unknown;
+  body: unknown;
+}
+
+function embeddingFinishFromCalls(calls: readonly CapturedEmbeddingCall[]): OpenRouterFinishEvent {
+  const usd = calls.reduce(
+    (sum, call) =>
+      sum +
+      openRouterUsdCostFromFinishEvent(
+        embeddingMeterFinish({
+          usage: call.usage,
+          providerMetadata: call.providerMetadata,
+          bodies: [call.body],
+        }),
+      ),
+    0,
+  );
+  return openRouterFinishFromUsdCost(usd);
+}
+
+function embeddingFinishWithCalls(
+  finish: OpenRouterFinishEvent,
+  calls: readonly CapturedEmbeddingCall[],
+): OpenRouterFinishEvent {
+  const captured = embeddingFinishFromCalls(calls);
+  return openRouterUsdCostFromFinishEvent(captured) > openRouterUsdCostFromFinishEvent(finish)
+    ? captured
+    : finish;
+}
+
+function rethrowWithEmbeddingFinish(err: unknown, finish: OpenRouterFinishEvent): never {
+  if (isBillingAdmissionError(err)) throw err;
+  attachOpenRouterFinish(err, finish);
+  throw err;
+}
+
+/**
+ * The SDK validates a `doEmbed` payload before it returns that payload to us.
+ * Record each call so a count or empty-vector rejection still carries its cost.
+ */
+function captureEmbeddingModel(
+  model: EmbeddingModel,
+  calls: CapturedEmbeddingCall[],
+): EmbeddingModel {
+  if (typeof model !== 'object' || !('doEmbed' in model)) return model;
+  const target = model;
+  return new Proxy(target, {
+    get(receiverTarget, property, receiver) {
+      if (property !== 'doEmbed') {
+        const value: unknown = Reflect.get(receiverTarget, property, receiver);
+        return typeof value === 'function'
+          ? (value as (...args: never[]) => unknown).bind(receiverTarget)
+          : value;
+      }
+      return (options: never) => {
+        const embed = Reflect.get(receiverTarget, 'doEmbed', receiver);
+        if (typeof embed !== 'function') {
+          return Promise.reject(new Error('Embedding model is missing doEmbed'));
+        }
+        const pending = Reflect.apply(embed, receiverTarget, [options]) as unknown as PromiseLike<{
+          providerMetadata?: unknown;
+          response?: { body?: unknown };
+          usage?: unknown;
+        }>;
+        return Promise.resolve(pending).then((result) => {
+          calls.push({
+            usage: result.usage,
+            providerMetadata: result.providerMetadata,
+            body: result.response?.body,
+          });
+          return result;
+        });
+      };
+    },
+  });
+}
+
 function assertEmbeddingCount(inputCount: number, outputCount: number): void {
   if (outputCount !== inputCount) {
     throw new Error(
@@ -227,12 +355,32 @@ export async function embed(input: EmbedInput, deps: EmbedDeps = {}): Promise<Em
       return { vector: deterministicEmbeddingVector(text), model: modelId };
     }
     const model = deps.model ?? buildDefaultModel(modelId, deps.fetch);
-    const result = await aiEmbed({
-      model,
-      value: text,
-      maxRetries: deps.maxRetries ?? 2,
-    });
-    return { vector: Array.from(result.embedding), model: modelId };
+    return withAiMetering(
+      {
+        operationClass: 'embedding',
+        model: modelId,
+        stage: 'embed',
+        callMaterial: [modelId, text],
+      },
+      async () => {
+        const captured: CapturedEmbeddingCall[] = [];
+        const result = await aiEmbed({
+          model: captureEmbeddingModel(model, captured),
+          value: text,
+          maxRetries: deps.maxRetries ?? 2,
+        }).catch((err: unknown) => {
+          rethrowWithEmbeddingFinish(err, embeddingFinishFromCalls(captured));
+        });
+        return {
+          value: { vector: Array.from(result.embedding), model: modelId },
+          finish: embeddingMeterFinish({
+            usage: result.usage,
+            providerMetadata: result.providerMetadata,
+            bodies: [result.response?.body],
+          }),
+        };
+      },
+    );
   });
 }
 
@@ -250,15 +398,48 @@ export async function embedMany(
       return { vectors: texts.map(deterministicEmbeddingVector), model: modelId };
     }
     const model = deps.model ?? buildDefaultModel(modelId, deps.fetch);
-    const result = await aiEmbedMany({
-      model,
-      values: texts,
-      maxRetries: deps.maxRetries ?? 2,
-    });
-    assertEmbeddingCount(texts.length, result.embeddings.length);
-    result.embeddings.forEach((embedding, index) => {
-      assertEmbeddingVector(embedding, index);
-    });
-    return { vectors: result.embeddings.map((embedding) => Array.from(embedding)), model: modelId };
+    return withAiMetering(
+      {
+        operationClass: 'embedding',
+        model: modelId,
+        stage: 'embed_many',
+        callMaterial: [modelId, String(texts.length), ...texts],
+      },
+      async () => {
+        const captured: CapturedEmbeddingCall[] = [];
+        const result = await aiEmbedMany({
+          model: captureEmbeddingModel(model, captured),
+          values: texts,
+          maxRetries: deps.maxRetries ?? 2,
+        }).catch((err: unknown) => {
+          rethrowWithEmbeddingFinish(err, embeddingFinishFromCalls(captured));
+        });
+        // Read provider cost before rejecting the payload. A validation throw
+        // otherwise settles as zero, and the retry pays OpenRouter again.
+        const finish = embeddingFinishWithCalls(
+          embeddingMeterFinish({
+            usage: result.usage,
+            providerMetadata: result.providerMetadata,
+            bodies: (result.responses ?? []).map((response) => response?.body),
+          }),
+          captured,
+        );
+        try {
+          assertEmbeddingCount(texts.length, result.embeddings.length);
+          result.embeddings.forEach((embedding, index) => {
+            assertEmbeddingVector(embedding, index);
+          });
+        } catch (err) {
+          rethrowWithEmbeddingFinish(err, finish);
+        }
+        return {
+          value: {
+            vectors: result.embeddings.map((embedding) => Array.from(embedding)),
+            model: modelId,
+          },
+          finish,
+        };
+      },
+    );
   });
 }

@@ -1,3 +1,4 @@
+import { admitMeetingSourceEnrichment } from '@timeline/shared/billing';
 import * as email from '@timeline/shared/email';
 import { getEnv } from '@timeline/shared/env';
 import { childLogger } from '@timeline/shared/logger';
@@ -266,7 +267,20 @@ export async function POST(req: Request): Promise<Response> {
     }
     // Embed the chunk for utterance-granular search. No per-chunk
     // raw_event — a single consolidated event is created by the
-    // meeting-finalize worker when the call ends.
+    // meeting-finalize worker when the call ends. Live embeds and that
+    // consolidated row share one accepted-source settlement.
+    const admitted = await admitMeetingSourceEnrichment({
+      db,
+      teamId: meeting.teamId,
+      meetingId: meeting.id,
+      ...(meeting.createdByUserId ? { userId: meeting.createdByUserId } : {}),
+    });
+    if (!admitted) {
+      return Response.json(
+        { ok: true, chunkId: result.chunkId, enrichment: 'deferred' },
+        { status: 200 },
+      );
+    }
     if (env.REDIS_URL) {
       const queue = await requireRedisQueue();
       await queue.enqueueMeetingChunkEmbedJob(meeting.teamId, result.chunkId);

@@ -15,6 +15,10 @@ import { and, asc, desc, eq, isNull, ne, sql } from 'drizzle-orm';
 
 import { askAgent, TEAM_BOT_ACTOR_USER_ID, type AskAgentDeps } from '#src/agent/ask.js';
 import { type AgentToolErrorReporter } from '#src/agent/tools.js';
+import { askBillingUserMessage } from '#src/billing/admission.js';
+import { assertTeamWriteCapacity } from '#src/billing/capacity.js';
+import { isBillingAdmissionError } from '#src/billing/errors.js';
+import { admitAcceptedSourceEnrichment, admitAudioTranscription } from '#src/billing/runtime.js';
 import { redactConversationError } from '#src/conversation-surfaces/privacy.js';
 import { acceptDirectAgentTurn } from '#src/conversation-surfaces/runtime.js';
 import { resetSurfaceSessionInTransaction } from '#src/conversation-surfaces/scope.js';
@@ -141,6 +145,7 @@ export async function handleSlackEnvelope(
     }
     await handleMessageEvent(deps, api, workspace, envelope.event_id, event);
   } catch (err) {
+    if (isBillingAdmissionError(err)) throw err;
     log.error({ err: redactConversationError(err) }, 'slack dispatch failed');
     return { ok: false };
   }
@@ -201,6 +206,7 @@ export async function handleSlackSlashCommand(
       const answer = handleSlackAskCommand(deps, api, workspace.id, input);
       if (options.deferStatelessAsk) {
         void answer.catch((err: unknown) => {
+          if (isBillingAdmissionError(err)) throw err;
           const safeError = redactConversationError(err);
           log.error({ err: safeError }, 'slack slash command background answer failed');
           deps.onAgentError?.(safeError);
@@ -331,9 +337,17 @@ async function handleSlackAskCommand(
     await replyToSlackCommand(
       api,
       input,
-      result.ok ? result.answer : 'Timeline could not answer that right now.',
+      result.ok
+        ? result.answer
+        : result.error === 'security_blocked' ||
+            result.error === 'free_allowance_reached' ||
+            result.error === 'usage_limit_reached' ||
+            result.error === 'spend_cap_reached'
+          ? askBillingUserMessage(result.error)
+          : 'Timeline could not answer that right now.',
     );
   } catch (err) {
+    if (isBillingAdmissionError(err)) throw err;
     log.error({ err: redactConversationError(err) }, 'slack slash command answer failed');
     await replyToSlackCommand(api, input, 'Timeline could not answer that right now.').catch(
       (postErr: unknown) => {
@@ -1011,9 +1025,17 @@ async function handleAppMention(
     await api.postMessage({
       channel: event.channel,
       thread_ts: event.thread_ts ?? event.ts,
-      text: result.ok ? result.answer : 'Timeline could not answer that right now.',
+      text: result.ok
+        ? result.answer
+        : result.error === 'security_blocked' ||
+            result.error === 'free_allowance_reached' ||
+            result.error === 'usage_limit_reached' ||
+            result.error === 'spend_cap_reached'
+          ? askBillingUserMessage(result.error)
+          : 'Timeline could not answer that right now.',
     });
   } catch (err) {
+    if (isBillingAdmissionError(err)) throw err;
     log.error({ err: redactConversationError(err) }, 'slack app mention answer failed');
     await api
       .postMessage({
@@ -1447,6 +1469,18 @@ async function processSlackAttachments(
     sourceOwnerUserId: string | null;
   },
 ): Promise<void> {
+  if (input.files.length === 0) return;
+  let parentAdmitted: boolean | null = null;
+  const parentIsAdmitted = async (): Promise<boolean> => {
+    if (parentAdmitted !== null) return parentAdmitted;
+    parentAdmitted = await admitAcceptedSourceEnrichment({
+      db: deps.db,
+      teamId: input.teamId,
+      ...(input.parentAuthorUserId ? { userId: input.parentAuthorUserId } : {}),
+      rawEventId: input.parentRawEventId,
+    });
+    return parentAdmitted;
+  };
   let processed = 0;
   const skipped: Record<string, unknown>[] = [];
   for (const file of input.files) {
@@ -1535,11 +1569,19 @@ async function processSlackAttachments(
       const row = rows[0];
       if (row) {
         await normalizeRawEventEvidence(deps.db, row);
-        await deps.audio.enqueueTranscribe({
-          rawEventId: row.id,
+        const transcribe = await admitAudioTranscription({
+          db: deps.db,
           teamId: row.teamId,
-          audioKey: key,
+          ...(input.parentAuthorUserId ? { userId: input.parentAuthorUserId } : {}),
+          rawEventId: row.id,
         });
+        if (transcribe) {
+          await deps.audio.enqueueTranscribe({
+            rawEventId: row.id,
+            teamId: row.teamId,
+            audioKey: key,
+          });
+        }
       }
     } else {
       if (!deps.documents) continue;
@@ -1549,6 +1591,7 @@ async function processSlackAttachments(
         filename,
         bytes,
         contentType,
+        enqueueExtract: await parentIsAdmitted(),
       });
     }
   }
@@ -1679,72 +1722,100 @@ async function createSlackDocumentAttachment(
     filename: string;
     bytes: Buffer;
     contentType: string;
+    enqueueExtract: boolean;
   },
 ): Promise<void> {
   const documentDeps = deps.documents;
   if (!documentDeps) return;
-  const created = await deps.db.transaction(async (tx) => {
-    const docRows = await tx
-      .insert(documents)
-      .values({
+  let created: { key: string; versionId: string };
+  try {
+    created = await deps.db.transaction(async (tx) => {
+      await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${input.teamId}, 1))`);
+      await assertTeamWriteCapacity({
+        db: tx as unknown as typeof deps.db,
         teamId: input.teamId,
-        fileKind: 'captured',
-        name: input.filename,
-        ownerUserId: input.parentAuthorUserId ?? input.sourceOwnerUserId,
-        visibility: input.visibility,
-        sourceRawEventId: input.parentRawEventId,
-        metadata: {
-          source: 'slack',
-          slack_file_id: input.file.id,
-          slack_workspace_id: input.workspace.id,
-          slack_channel_id: input.channelId,
-          slack_message_ts: input.messageTs,
-          parent_raw_event_id: input.parentRawEventId,
-        },
-      })
-      .returning({ id: documents.id });
-    const doc = docRows[0];
-    if (!doc) throw new Error('slack_document_insert_failed');
-    const key = buildDocumentObjectKey({
-      teamId: input.teamId,
-      documentId: doc.id,
-      version: 1,
-      filename: input.filename,
-    });
-    const versionRows = await tx
-      .insert(documentVersions)
-      .values({
+        additionalDocuments: 1,
+        additionalBytes: input.bytes.length,
+      });
+      const docRows = await tx
+        .insert(documents)
+        .values({
+          teamId: input.teamId,
+          fileKind: 'captured',
+          name: input.filename,
+          ownerUserId: input.parentAuthorUserId ?? input.sourceOwnerUserId,
+          visibility: input.visibility,
+          sourceRawEventId: input.parentRawEventId,
+          metadata: {
+            source: 'slack',
+            slack_file_id: input.file.id,
+            slack_workspace_id: input.workspace.id,
+            slack_channel_id: input.channelId,
+            slack_message_ts: input.messageTs,
+            parent_raw_event_id: input.parentRawEventId,
+          },
+        })
+        .returning({ id: documents.id });
+      const doc = docRows[0];
+      if (!doc) throw new Error('slack_document_insert_failed');
+      const key = buildDocumentObjectKey({
         teamId: input.teamId,
         documentId: doc.id,
         version: 1,
-        objectKey: key,
-        byteSize: input.bytes.length,
-        contentType: input.contentType,
-        uploadedByUserId: input.parentAuthorUserId,
-        sourceEventId: input.parentRawEventId,
-        processingStatus: 'pending',
-      })
-      .returning({ id: documentVersions.id, objectKey: documentVersions.objectKey });
-    const version = versionRows[0];
-    if (!version) throw new Error('slack_document_version_insert_failed');
-    await tx
-      .update(documents)
-      .set({ currentVersionId: version.id })
-      .where(eq(documents.id, doc.id));
-    return { key, versionId: version.id };
-  });
+        filename: input.filename,
+      });
+      const versionRows = await tx
+        .insert(documentVersions)
+        .values({
+          teamId: input.teamId,
+          documentId: doc.id,
+          version: 1,
+          objectKey: key,
+          byteSize: input.bytes.length,
+          contentType: input.contentType,
+          uploadedByUserId: input.parentAuthorUserId,
+          sourceEventId: input.parentRawEventId,
+          processingStatus: 'pending',
+        })
+        .returning({ id: documentVersions.id, objectKey: documentVersions.objectKey });
+      const version = versionRows[0];
+      if (!version) throw new Error('slack_document_version_insert_failed');
+      await tx
+        .update(documents)
+        .set({ currentVersionId: version.id })
+        .where(eq(documents.id, doc.id));
+      return { key, versionId: version.id };
+    });
+  } catch (err) {
+    if (isBillingAdmissionError(err)) {
+      log.warn(
+        { teamId: input.teamId, code: err.code, filename: input.filename },
+        'slack document attachment skipped; write capacity denied',
+      );
+      return;
+    }
+    throw err;
+  }
   await documentDeps.upload({
     key: created.key,
     body: input.bytes,
     contentType: input.contentType,
   });
+  if (!input.enqueueExtract) return;
   await documentDeps.enqueueExtract({ documentVersionId: created.versionId, teamId: input.teamId });
 }
 
 async function enqueueTextPipelines(
   deps: SlackIngestDeps,
-  row: { id: string; teamId: string },
+  row: { id: string; teamId: string; authorUserId?: string | null },
 ): Promise<void> {
+  const admitted = await admitAcceptedSourceEnrichment({
+    db: deps.db,
+    teamId: row.teamId,
+    ...(row.authorUserId ? { userId: row.authorUserId } : {}),
+    rawEventId: row.id,
+  });
+  if (!admitted) return;
   await deps.extract
     ?.enqueueExtract({ rawEventId: row.id, teamId: row.teamId })
     .catch((err: unknown) => {

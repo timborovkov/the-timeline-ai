@@ -34,6 +34,7 @@ import {
   time,
   withTeam,
 } from '@timeline/shared';
+import { isBillingAdmissionError } from '@timeline/shared/billing';
 import {
   RECONCILIATION_PLANNER_PROMPT_VERSION,
   planReconciliation,
@@ -46,6 +47,7 @@ import { and, count, desc, eq, inArray, isNull, lt, ne, or, sql } from 'drizzle-
 import { alias } from 'drizzle-orm/pg-core';
 import { z } from 'zod';
 
+import { withWorkerAiBilling, workerBillingJobOptions } from '#src/billing-context.js';
 import { captureWorkerJobFailure } from '#src/monitoring.js';
 
 const log = childLogger('worker:suggestions');
@@ -3346,7 +3348,7 @@ async function runSuggestionExtraction(
       prompt,
     });
   } catch (err) {
-    if (evidencePackEnforced) throw err;
+    if (isBillingAdmissionError(err) || evidencePackEnforced) throw err;
     log.warn(
       { err, rawEventId, teamId },
       'suggestion extraction failed; using commitment fallback',
@@ -4052,6 +4054,7 @@ async function proposalPlannerMetadataFor(args: {
       reconciliation_planner_result: result,
     };
   } catch (err) {
+    if (isBillingAdmissionError(err)) throw err;
     return {
       reconciliation_planner_version: RECONCILIATION_PLANNER_PROMPT_VERSION,
       reconciliation_planner_status: 'failed',
@@ -4540,7 +4543,13 @@ export function startSuggestionWorker(deps: SuggestionWorkerDeps): Worker<queue.
   const worker = new Worker<queue.SuggestionJobData>(
     queue.QUEUE_NAMES.suggestions,
     async (job: Job<queue.SuggestionJobData>, token?: string) => {
-      const result = await processSuggestionJobForTests(deps, job.data);
+      const result = await withWorkerAiBilling(
+        deps.db,
+        job.data.teamId,
+        'suggestion',
+        () => processSuggestionJobForTests(deps, job.data),
+        workerBillingJobOptions(job, token),
+      );
       if (integrations.isDelayedIngestResult(result)) {
         await job.moveToDelayed(Date.now() + result.retryAfterMs, token);
         throw new DelayedError();

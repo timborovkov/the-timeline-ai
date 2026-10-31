@@ -1,0 +1,138 @@
+import Link from 'next/link';
+
+import type { SidebarBillingSummary } from '@timeline/shared/billing/status';
+
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { cn } from '@/lib/utils';
+
+function UsageBar({
+  percent,
+  atLimit,
+  className,
+}: {
+  percent: number;
+  atLimit: boolean;
+  className?: string;
+}) {
+  const width = Math.max(0, Math.min(100, percent));
+  return (
+    <div
+      className={cn('h-1 w-full overflow-hidden rounded-sm bg-border', className)}
+      aria-hidden="true"
+    >
+      <div
+        className={cn('h-full rounded-sm', atLimit ? 'bg-danger' : 'bg-fg-muted')}
+        style={{ width: `${width}%` }}
+      />
+    </div>
+  );
+}
+
+function memberLimitLabel(planId: SidebarBillingSummary['planId']): string {
+  return planId === 'free' ? 'Allowance used up' : 'Spend cap reached';
+}
+
+/**
+ * Compact plan + usage meter for admins. Members only see a limit notice.
+ */
+export function SidebarBillingUsage({
+  summary,
+  expanded,
+  className,
+}: {
+  summary: SidebarBillingSummary;
+  expanded: boolean;
+  className?: string;
+}) {
+  if (!summary.canManageBilling) {
+    if (!summary.atLimit) return null;
+    const label = memberLimitLabel(summary.planId);
+    return (
+      <Link
+        href={summary.href}
+        data-sidebar-billing
+        data-plan={summary.planId}
+        aria-label={`${label}. Open usage.`}
+        className={cn(
+          'block rounded-sm border border-border bg-bg text-sm text-fg hover:bg-surface-2',
+          'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong focus-visible:ring-offset-1 focus-visible:ring-offset-bg',
+          expanded ? 'w-full px-3 py-2' : 'grid size-9 place-items-center',
+          className,
+        )}
+      >
+        {expanded ? label : <span className="size-2 rounded-full bg-danger" aria-hidden="true" />}
+      </Link>
+    );
+  }
+
+  const tooltip = [
+    summary.planName,
+    summary.detailLabel,
+    summary.secondaryLabel,
+    summary.resetLabel,
+    summary.warningLabel,
+  ]
+    .filter(Boolean)
+    .join(' · ');
+
+  if (!expanded) {
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Link
+            href={summary.href}
+            aria-label={`${tooltip}. Open billing.`}
+            data-sidebar-billing
+            data-plan={summary.planId}
+            className={cn(
+              'grid size-9 place-items-center rounded-sm text-fg-muted transition-colors hover:bg-surface-2 hover:text-fg',
+              'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong focus-visible:ring-offset-1 focus-visible:ring-offset-bg',
+              className,
+            )}
+          >
+            <span className="relative block size-5">
+              <span className="absolute inset-0 rounded-full border border-border" />
+              <span
+                className={cn(
+                  'absolute inset-[3px] rounded-full',
+                  summary.atLimit ? 'bg-danger/80' : 'bg-fg-muted/70',
+                )}
+                style={{
+                  clipPath: `inset(${100 - Math.max(8, summary.progressPercent)}% 0 0 0)`,
+                }}
+              />
+            </span>
+          </Link>
+        </TooltipTrigger>
+        <TooltipContent side="right">{tooltip}</TooltipContent>
+      </Tooltip>
+    );
+  }
+
+  return (
+    <Link
+      href={summary.href}
+      data-sidebar-billing
+      data-plan={summary.planId}
+      aria-label={`${tooltip}. Open billing.`}
+      className={cn(
+        'block w-full rounded-sm border border-border bg-bg px-3 py-2.5 transition-colors hover:bg-surface-2',
+        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong focus-visible:ring-offset-1 focus-visible:ring-offset-bg',
+        className,
+      )}
+    >
+      <p className="truncate text-xs font-medium text-fg">{summary.planName}</p>
+      <UsageBar percent={summary.progressPercent} atLimit={summary.atLimit} className="mt-2" />
+      <p className="mt-1.5 truncate text-[0.7rem] leading-4 text-fg-muted">{summary.detailLabel}</p>
+      {summary.resetLabel ? (
+        <p className="mt-1 text-[0.7rem] leading-4 text-fg-muted">{summary.resetLabel}</p>
+      ) : null}
+      {summary.warningLabel ? (
+        <p className="mt-1 text-xs text-danger">{summary.warningLabel}</p>
+      ) : null}
+      {summary.secondaryLabel ? (
+        <p className="mt-1 text-[0.7rem] leading-4 text-fg-muted">{summary.secondaryLabel}</p>
+      ) : null}
+    </Link>
+  );
+}

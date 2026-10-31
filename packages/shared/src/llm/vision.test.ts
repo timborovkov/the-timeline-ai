@@ -1,12 +1,27 @@
-import { expect } from '@timeline/test-support';
+import { expect, vi } from '@timeline/test-support';
 import { MockLanguageModelV3 } from 'ai/test';
 import { afterEach, beforeEach, describe, it } from 'bun:test';
 
 import type { LanguageModel } from 'ai';
 
-import { resetEnvForTests } from '#src/env.js';
-import { TIMELINE_MODELS } from '#src/llm/models.js';
-import { extractTextFromMedia, resolveVisionModelId } from '#src/llm/vision.js';
+await vi.mock(
+  import.meta.resolve('#src/billing/runtime.js'),
+  () => ({
+    withAiMetering: async (
+      _input: unknown,
+      fn: () => Promise<{ value: { text: string } }>,
+    ): Promise<{ text: string }> => {
+      const { value } = await fn();
+      return JSON.parse(JSON.stringify(value)) as { text: string };
+    },
+  }),
+  () => import('#src/billing/runtime.js'),
+);
+
+const { resetEnvForTests } = await import('#src/env.js');
+const { TIMELINE_MODELS } = await import('#src/llm/models.js');
+const { extractTextFromMedia, resolveVisionModelId } = await import('#src/llm/vision.js');
+
 // The v3 model layer in `ai` doesn't re-export its call-options type from
 // the package root. We only need the prompt + maxOutputTokens fields for
 // our assertions, so type the captured call narrowly.
@@ -67,6 +82,20 @@ afterEach(() => {
 });
 
 describe('extractTextFromMedia', () => {
+  it('recovers OCR text when billing replays a JSON-cached vision result', async () => {
+    const { model, calls } = makeCapturingModel(
+      'SUGGESTED_TITLE:\nScan\n\nSOURCE_TEXT:\nkept ocr\n\nVISUAL_DESCRIPTION:\nA page.',
+    );
+    const result = await extractTextFromMedia(
+      { body: Buffer.from([0xff, 0xd8, 0xff]), mediaType: 'image/jpeg' },
+      { model },
+    );
+    expect(result.text).toBe('kept ocr');
+    expect(result.suggestedTitle).toBe('Scan');
+    expect(result.visualDescription).toBe('A page.');
+    expect(calls).toHaveLength(1);
+  });
+
   it('sends an image content part for image/* media types', async () => {
     const { model, calls } = makeCapturingModel(
       'SUGGESTED_TITLE:\nCRM export screenshot\n\nSOURCE_TEXT:\nalt text from screenshot\n\nVISUAL_DESCRIPTION:\nA screenshot of a web app.',

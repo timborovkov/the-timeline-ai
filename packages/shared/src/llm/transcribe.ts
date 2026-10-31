@@ -1,5 +1,11 @@
 import { type TranscriptionModel } from 'ai';
 
+import { digestAiBytes } from '#src/billing/ai-call.js';
+import {
+  attachOpenRouterFinish,
+  openRouterFinishFromAiResult,
+} from '#src/billing/openrouter-usage.js';
+import { withAiMetering } from '#src/billing/runtime.js';
 import { getEnv } from '#src/env.js';
 import { wrapAiFailure } from '#src/llm/errors.js';
 import { TIMELINE_MODELS } from '#src/llm/models.js';
@@ -16,6 +22,8 @@ export interface TranscribeInput {
   /** ISO-639-1 language hint (e.g. 'fi', 'en', 'de'). Improves accuracy
    *  for non-English audio. Omit for auto-detection. */
   language?: string;
+  /** Stable billing id for this chunk. A retry of the same chunk reuses it. */
+  operationId?: string;
   /** Eval bake-off override. Production callers omit this and use the pin. */
   modelId?: string;
   timeoutMs?: number;
@@ -61,7 +69,7 @@ function finiteNonNegative(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : undefined;
 }
 
-function resolveOpenRouterTranscriptionConfig(deps: TranscribeDeps): {
+function resolveOpenRouterTranscriptionConfig(deps: { apiKey?: string; baseURL?: string }): {
   apiKey: string;
   baseURL: string;
 } {
@@ -105,7 +113,10 @@ async function transcribeWithOpenRouterJson(
     apiKey?: string;
     baseURL?: string;
   },
-): Promise<TranscribeResult> {
+): Promise<{
+  value: TranscribeResult;
+  finish: ReturnType<typeof openRouterFinishFromAiResult>;
+}> {
   const { apiKey, baseURL } = resolveOpenRouterTranscriptionConfig(opts);
   const response = await opts.fetch(`${baseURL}/audio/transcriptions`, {
     method: 'POST',
@@ -130,11 +141,6 @@ async function transcribeWithOpenRouterJson(
     throw new OpenRouterTranscriptionHttpError(response.status);
   }
   const json: unknown = await response.json();
-  const text =
-    json && typeof json === 'object' && 'text' in json && typeof json.text === 'string'
-      ? json.text
-      : null;
-  if (text === null) throw new Error('OpenRouter transcription response did not include text');
   const usage =
     json &&
     typeof json === 'object' &&
@@ -144,13 +150,36 @@ async function transcribeWithOpenRouterJson(
     !Array.isArray(json.usage)
       ? (json.usage as Record<string, unknown>)
       : null;
+  const text =
+    json && typeof json === 'object' && 'text' in json && typeof json.text === 'string'
+      ? json.text
+      : null;
+  if (text === null) {
+    const err = new Error('OpenRouter transcription response did not include text');
+    attachOpenRouterFinish(
+      err,
+      openRouterFinishFromAiResult({
+        usage,
+        providerMetadata: undefined,
+        totalUsage: undefined,
+      }),
+    );
+    throw err;
+  }
   const costUsd = finiteNonNegative(usage?.cost);
   const generationId = response.headers.get('x-generation-id');
   return {
-    text,
-    model: opts.modelId,
-    ...(generationId ? { generationId } : {}),
-    ...(costUsd === undefined ? {} : { costUsd }),
+    value: {
+      text,
+      model: opts.modelId,
+      ...(generationId ? { generationId } : {}),
+      ...(costUsd === undefined ? {} : { costUsd }),
+    },
+    finish: openRouterFinishFromAiResult({
+      usage,
+      providerMetadata: json,
+      totalUsage: undefined,
+    }),
   };
 }
 
@@ -170,31 +199,56 @@ export async function transcribeAudio(
 ): Promise<TranscribeResult> {
   const modelId = resolveModelId(input.modelId);
   return wrapAiFailure({ operation: 'llm.transcribeAudio', model: modelId }, async () => {
-    if (!deps.model) {
-      return transcribeWithOpenRouterJson(input, {
-        modelId,
-        fetch: deps.fetch ?? globalThis.fetch.bind(globalThis),
-        ...(deps.apiKey ? { apiKey: deps.apiKey } : {}),
-        ...(deps.baseURL ? { baseURL: deps.baseURL } : {}),
-      });
-    }
-    const model = deps.model;
-    const result = await tracedTranscribe(
+    return withAiMetering(
       {
-        model,
-        audio: input.audio,
-        ...(input.language ? { providerOptions: { openai: { language: input.language } } } : {}),
-      },
-      {
-        name: 'llm.transcribeAudio',
+        operationClass: 'transcription',
         model: modelId,
-        metadata: {
-          operation: 'transcribe_audio',
-          audio_bytes: input.audio.byteLength,
-          language_hint: Boolean(input.language),
-        },
+        stage: 'transcription',
+        callMaterial: [
+          modelId,
+          input.format ?? '',
+          input.language ?? '',
+          digestAiBytes(input.audio),
+        ],
+        ...(input.operationId ? { operationId: input.operationId } : {}),
+      },
+      async () => {
+        if (!deps.model) {
+          return transcribeWithOpenRouterJson(input, {
+            modelId,
+            fetch: deps.fetch ?? globalThis.fetch.bind(globalThis),
+            ...(deps.apiKey ? { apiKey: deps.apiKey } : {}),
+            ...(deps.baseURL ? { baseURL: deps.baseURL } : {}),
+          });
+        }
+        const model = deps.model;
+        const result = await tracedTranscribe(
+          {
+            model,
+            audio: input.audio,
+            ...(input.language
+              ? { providerOptions: { openai: { language: input.language } } }
+              : {}),
+          },
+          {
+            name: 'llm.transcribeAudio',
+            model: modelId,
+            metadata: {
+              operation: 'transcribe_audio',
+              audio_bytes: input.audio.byteLength,
+              language_hint: Boolean(input.language),
+            },
+          },
+        );
+        return {
+          value: { text: result.text, model: modelId },
+          finish: openRouterFinishFromAiResult({
+            usage: undefined,
+            providerMetadata: result.providerMetadata,
+            totalUsage: undefined,
+          }),
+        };
       },
     );
-    return { text: result.text, model: modelId };
   });
 }

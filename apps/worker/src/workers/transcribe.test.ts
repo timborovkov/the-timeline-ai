@@ -306,6 +306,36 @@ describe('processTranscribeJobForTests', () => {
     expect(row?.contentText).toBe('First part.\n\nSecond part.');
   });
 
+  it('gives each transcription chunk its own billing operation id', async () => {
+    await seedAudioEvent(db as never);
+    const transcribeAudio = vi
+      .fn()
+      .mockResolvedValueOnce({ text: 'First part.', model: 'test-whisper' })
+      .mockResolvedValueOnce({ text: 'Second part.', model: 'test-whisper' });
+    const io = makeIO({
+      headObject: vi.fn().mockResolvedValue({ contentLength: 30_462_530 }),
+      getObjectBuffer: vi.fn().mockResolvedValue({ body: Buffer.alloc(30_462_530) }),
+      splitAudio: vi.fn().mockResolvedValue([Buffer.from('chunk-one'), Buffer.from('chunk-two')]),
+      transcribeAudio,
+    });
+
+    await processTranscribeJobForTests(
+      { db: db as never },
+      { rawEventId: RAW_EVENT_ID, teamId: TEAM_ID, audioKey: AUDIO_KEY },
+      io,
+      { billingOperationId: 'transcription:job-9' },
+    );
+
+    expect(transcribeAudio).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ operationId: 'transcription:job-9:0' }),
+    );
+    expect(transcribeAudio).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ operationId: 'transcription:job-9:1' }),
+    );
+  });
+
   it('treats missing content length and truly oversize source audio as unrecoverable', async () => {
     await seedAudioEvent(db as never);
     await expect(

@@ -1,6 +1,7 @@
 import { type Db, rawEvents } from '@timeline/db';
 import { and, eq, sql } from 'drizzle-orm';
 
+import { admitAcceptedSourceEnrichment } from '#src/billing/runtime.js';
 import { enqueueEmbedJob } from '#src/queue/queues.js';
 import { normalizeRawEventsToEvidence } from '#src/reconciliation/normalization.js';
 import { stableSha256Digest } from '#src/reconciliation/stable-digest.js';
@@ -125,7 +126,15 @@ export async function recordMcpToolResultEvidence(
     )[0]?.id;
   if (!rawEventId) throw new Error('Failed to record MCP tool result raw event');
   if (inserted) {
-    await enqueueEmbedJob({ scope: 'raw_event', teamId: input.teamId, rawEventId });
+    const admitted = await admitAcceptedSourceEnrichment({
+      db: input.db as Db,
+      teamId: input.teamId,
+      ...(input.actorUserId ? { userId: input.actorUserId } : {}),
+      rawEventId,
+    });
+    if (admitted) {
+      await enqueueEmbedJob({ scope: 'raw_event', teamId: input.teamId, rawEventId });
+    }
   }
 
   const evidenceIds = await normalizeRawEventsToEvidence({

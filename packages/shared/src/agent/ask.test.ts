@@ -1,10 +1,10 @@
-import { expect } from '@timeline/test-support';
-import { vi } from '@timeline/test-support';
+import { PGlite } from '@electric-sql/pglite';
+import { expect, vi } from '@timeline/test-support';
+import { MockLanguageModelV3 } from 'ai/test';
 import { afterEach, beforeEach, describe, it } from 'bun:test';
+import { drizzle } from 'drizzle-orm/pglite';
 
-import type { PGlite as PGliteType } from '@electric-sql/pglite';
 import type * as TimelineDb from '@timeline/db';
-type PGlite = PGliteType;
 
 // askAgent is the non-browser entry point for Slack/Telegram/email-style asks.
 // These tests keep the wrapper honest while deeper agent behavior stays in the
@@ -65,9 +65,7 @@ await vi.mock(
   () => import('#src/queue/queues.js'),
 );
 
-const { PGlite } = await import('@electric-sql/pglite');
 const { rawEvents } = await import('@timeline/db');
-const { drizzle } = await import('drizzle-orm/pglite');
 const {
   askAgent,
   formatBotPlainTextAnswer,
@@ -452,6 +450,174 @@ describe('askAgent', () => {
         { model: makeAskAgentTextModel('should not run') },
       ),
     ).resolves.toEqual({ ok: false, error: 'not_a_member' });
+  });
+
+  it('rejects Ask when Free AI allowance is exhausted', async () => {
+    const { withTeam } = await import('#src/team-scope.js');
+    const billing = withTeam(db as never, TEAM_ID, USER_ID).billing;
+    await billing.settle({
+      operationId: 'fill-ai',
+      meterId: 'ai',
+      nativeUnits: 500,
+      customerChargeCents: 500,
+    });
+
+    await expect(
+      askAgent(
+        {
+          db: db as never,
+          teamId: TEAM_ID,
+          userId: USER_ID,
+          deliverySurface: 'telegram',
+          question: 'should not run',
+        },
+        { model: makeAskAgentTextModel('should not run') },
+      ),
+    ).resolves.toEqual({ ok: false, error: 'free_allowance_reached' });
+  });
+
+  it('settles recorded provider cost when tool rounds end in an empty answer', async () => {
+    let call = 0;
+    const model = new MockLanguageModelV3({
+      doStream: (() => {
+        call += 1;
+        return Promise.resolve({
+          stream: new ReadableStream({
+            start(controller) {
+              if (call === 1) {
+                controller.enqueue({
+                  type: 'tool-call',
+                  toolCallId: 'call-empty-1',
+                  toolName: 'list_team_members',
+                  input: '{}',
+                });
+                controller.enqueue({
+                  type: 'finish',
+                  finishReason: { unified: 'tool-calls', raw: undefined },
+                  usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+                  providerMetadata: { openrouter: { usage: { cost: 0.25 } } },
+                });
+              } else {
+                controller.enqueue({ type: 'text-start', id: 'answer-1' });
+                controller.enqueue({ type: 'text-end', id: 'answer-1' });
+                controller.enqueue({
+                  type: 'finish',
+                  finishReason: { unified: 'stop', raw: undefined },
+                  usage: { inputTokens: 2, outputTokens: 1, totalTokens: 3 },
+                });
+              }
+              controller.close();
+            },
+          }),
+        });
+      }) as never,
+    });
+
+    await expect(
+      askAgent(
+        {
+          db: db as never,
+          teamId: TEAM_ID,
+          userId: USER_ID,
+          deliverySurface: 'telegram',
+          question: 'Who is on the team?',
+        },
+        { model },
+      ),
+    ).resolves.toEqual({ ok: false, error: 'failed' });
+
+    const settled = await pg.query<{ state: string; metadata: { openrouter_usd?: number } | null }>(
+      `
+        SELECT r.state, l.metadata
+        FROM billing_usage_reservations r
+        LEFT JOIN billing_usage_ledger l
+          ON l.team_id = r.team_id AND l.operation_id = r.operation_id
+        WHERE r.team_id = '${TEAM_ID}'
+      `,
+    );
+    expect(settled.rows).toHaveLength(1);
+    expect(settled.rows[0]?.state).toBe('settled');
+    expect(settled.rows[0]?.metadata?.openrouter_usd).toBe(0.25);
+  });
+
+  it('settles completed tool-round cost when a later model step fails', async () => {
+    let call = 0;
+    const model = new MockLanguageModelV3({
+      doStream: (() => {
+        call += 1;
+        if (call > 2) return Promise.reject(new Error('later step failed'));
+        const cost = call === 1 ? 0.11 : 0.13;
+        return Promise.resolve({
+          stream: new ReadableStream({
+            start(controller) {
+              controller.enqueue({
+                type: 'tool-call',
+                toolCallId: `call-fail-${call}`,
+                toolName: 'list_team_members',
+                input: '{}',
+              });
+              controller.enqueue({
+                type: 'finish',
+                finishReason: { unified: 'tool-calls', raw: undefined },
+                usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+                providerMetadata: { openrouter: { usage: { cost } } },
+              });
+              controller.close();
+            },
+          }),
+        });
+      }) as never,
+    });
+
+    await expect(
+      askAgent(
+        {
+          db: db as never,
+          teamId: TEAM_ID,
+          userId: USER_ID,
+          deliverySurface: 'telegram',
+          question: 'Who is on the team?',
+        },
+        { model },
+      ),
+    ).resolves.toEqual({ ok: false, error: 'failed' });
+
+    const settled = await pg.query<{ state: string; metadata: { openrouter_usd?: number } | null }>(
+      `
+        SELECT r.state, l.metadata
+        FROM billing_usage_reservations r
+        LEFT JOIN billing_usage_ledger l
+          ON l.team_id = r.team_id AND l.operation_id = r.operation_id
+        WHERE r.team_id = '${TEAM_ID}'
+      `,
+    );
+    expect(settled.rows).toHaveLength(1);
+    expect(settled.rows[0]?.state).toBe('settled');
+    expect(settled.rows[0]?.metadata?.openrouter_usd).toBeCloseTo(0.24);
+  });
+
+  it('releases an empty answer that recorded no provider cost', async () => {
+    await expect(
+      askAgent(
+        {
+          db: db as never,
+          teamId: TEAM_ID,
+          userId: USER_ID,
+          deliverySurface: 'telegram',
+          question: 'empty?',
+        },
+        { model: makeAskAgentTextModel('   ') },
+      ),
+    ).resolves.toEqual({ ok: false, error: 'failed' });
+
+    const reservations = await pg.query<{ state: string }>(
+      `SELECT state FROM billing_usage_reservations WHERE team_id = '${TEAM_ID}'`,
+    );
+    const ledger = await pg.query<{ id: string }>(
+      `SELECT id FROM billing_usage_ledger WHERE team_id = '${TEAM_ID}'`,
+    );
+    expect(reservations.rows).toEqual([{ state: 'released' }]);
+    expect(ledger.rows).toEqual([]);
   });
 
   it('maps empty model output and thrown model failures to failed', async () => {

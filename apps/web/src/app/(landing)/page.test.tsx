@@ -12,7 +12,10 @@ await vi.mock(
 );
 await vi.mock(
   import.meta.resolve('@timeline/shared/integrations/registry'),
-  () => ({ listCatalog: fakes.listCatalog }),
+  async () => ({
+    ...(await import('@timeline/shared/integrations/registry')),
+    listCatalog: fakes.listCatalog,
+  }),
   () => import('@timeline/shared/integrations/registry'),
 );
 
@@ -64,7 +67,7 @@ describe('LandingPage', () => {
     expect(html).toContain(
       'aria-label="Work events stream from six sources into The Timeline, where project history becomes working records and cited answers."',
     );
-    expect(html).toContain('Fictional Acme example, not customer data.');
+    expect(html).not.toContain('Fictional Acme example, not customer data.');
     expect(html).toContain('The Timeline');
     expect(html).toContain('Project history');
     expect(html).toContain('Working records');

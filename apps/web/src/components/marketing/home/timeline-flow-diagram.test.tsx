@@ -11,12 +11,7 @@ describe('TimelineFlowDiagram', () => {
   afterEach(cleanup);
 
   it('restores the compact observatory and keeps every packet on its visible path', () => {
-    const { container } = render(
-      <TimelineFlowDiagram
-        variant="hero"
-        disclosure="Fictional Acme example, not customer data."
-      />,
-    );
+    const { container } = render(<TimelineFlowDiagram variant="hero" />);
 
     const figure = screen.getByRole('figure');
     expect(figure.getAttribute('aria-label')).toBe(
@@ -26,7 +21,7 @@ describe('TimelineFlowDiagram', () => {
     expect(within(figure).getByText('Project history')).toBeTruthy();
     expect(within(figure).getByText('Working records')).toBeTruthy();
     expect(within(figure).getByText('Cited answers')).toBeTruthy();
-    expect(within(figure).getByText('Fictional Acme example, not customer data.')).toBeTruthy();
+    expect(within(figure).queryByText(/Fictional Acme example/i)).toBeNull();
     expect(within(figure).queryByText(/not used in this answer/i)).toBeNull();
 
     const sourceList = within(figure).getByRole('list', {

@@ -1,6 +1,11 @@
 import { createHash, randomBytes } from 'node:crypto';
 
 import { type Db, users, verificationTokens } from '@timeline/db';
+import {
+  claimOwnedTeamFreeGrantsForVerifiedUser,
+  synchronizePolarBillingUser,
+  createPolarBillingProvider,
+} from '@timeline/shared/billing';
 import { sendMessage } from '@timeline/shared/messaging';
 import { and, eq, lt, sql } from 'drizzle-orm';
 
@@ -52,6 +57,15 @@ export async function sendEmailVerification(input: {
   return result.ok ? { ok: true } : { ok: false, error: result.error };
 }
 
+export async function retryOwnedTeamFreeGrantsAfterSignIn(input: {
+  db: Db;
+  userId: string;
+  emailVerified: Date | string | null | undefined;
+}): Promise<void> {
+  if (!input.emailVerified) return;
+  await claimOwnedTeamFreeGrantsForVerifiedUser({ db: input.db, userId: input.userId });
+}
+
 export async function verifyEmailToken(input: {
   db: Db;
   email: string;
@@ -84,7 +98,23 @@ export async function verifyEmailToken(input: {
     await tx
       .delete(verificationTokens)
       .where(and(eq(verificationTokens.identifier, email), eq(verificationTokens.token, digest)));
-    return updatedUsers.length > 0;
+    return updatedUsers;
   });
-  return updated ? 'verified' : 'invalid';
+  const userId = updated[0]?.id;
+  if (!userId) return 'invalid';
+  try {
+    await claimOwnedTeamFreeGrantsForVerifiedUser({ db: input.db, userId });
+  } catch {
+    // Email is already verified; grant claim retries on the next signed-in load.
+  }
+  try {
+    await synchronizePolarBillingUser({
+      db: input.db,
+      userId,
+      provider: createPolarBillingProvider(),
+    });
+  } catch {
+    // Billing access retries verification + member sync before any new portal session.
+  }
+  return 'verified';
 }

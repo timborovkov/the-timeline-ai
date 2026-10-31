@@ -42,6 +42,10 @@ import type { chatStructured } from '#src/llm/chat.js';
 import type { TimelineMomentLookupPlan } from '#src/timeline-moments/index.js';
 
 import { createAuditScope } from '#src/audit/scope.js';
+import { getBillingContext, runWithBillingContext } from '#src/billing/context.js';
+import { createBillingOperatorScope } from '#src/billing/operator-store.js';
+import { createPolarBillingProvider } from '#src/billing/polar.js';
+import { createBillingScope } from '#src/billing/scope.js';
 import { createBoardScope } from '#src/boards/index.js';
 import { createCalendarScope } from '#src/calendar/scope.js';
 import { createConversationSurfaceScope } from '#src/conversation-surfaces/scope.js';
@@ -158,6 +162,12 @@ function webTextSourceMetadata(input: {
 async function enqueueRawEventEmbed(input: { teamId: string; rawEventId: string }): Promise<void> {
   const { enqueueEmbedJob } = await import(/* webpackIgnore: true */ '#src/queue/queues.js');
   await enqueueEmbedJob({ scope: 'raw_event', teamId: input.teamId, rawEventId: input.rawEventId });
+}
+
+function billingEnrichmentDeferred(metadata: unknown): boolean {
+  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) return false;
+  const value = (metadata as Record<string, unknown>).billing_enrichment_deferred;
+  return value === true || value === 'true';
 }
 
 async function normalizeRawEventEvidence(input: {
@@ -1700,6 +1710,29 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
     ensureMember,
   });
 
+  const billingProvider = createPolarBillingProvider() ?? undefined;
+  const billingScope = createBillingScope({
+    db,
+    teamId,
+    userId,
+    ensureMember,
+    ...(billingProvider ? { provider: billingProvider } : {}),
+  });
+
+  async function withSearchEmbeddingBilling<T>(fn: () => Promise<T>): Promise<T> {
+    if (getBillingContext()) return fn();
+    return runWithBillingContext(
+      {
+        db,
+        teamId,
+        userId,
+        operationClass: 'embedding',
+        source: 'search',
+      },
+      fn,
+    );
+  }
+
   const jobRecoveryScope = createJobRecoveryScope({
     db,
     teamId,
@@ -2900,13 +2933,18 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
           await invalidateObjectSummariesForRawEvent(db, core, id, {
             trigger: 'raw_event_visibility_hidden',
           });
-        } else if (existing.visibility !== 'team' && updated.visibility === 'team') {
+        } else if (
+          existing.visibility !== 'team' &&
+          updated.visibility === 'team' &&
+          !billingEnrichmentDeferred(updated.sourceMetadata)
+        ) {
           await (deps.enqueueRawEventEmbed ?? enqueueRawEventEmbed)({
             teamId,
             rawEventId: id,
           }).catch(() => {
-            // The row is already visible in Postgres; janitor/retry paths can
-            // reconcile the embedding if Redis is temporarily unavailable.
+            // The row is already visible in Postgres; the accepted-source flush
+            // embeds it after admission. A Redis miss on an already-admitted
+            // row is recovered by the orphan reconciler.
           });
           await invalidateObjectSummariesForRawEvent(
             db,
@@ -3772,7 +3810,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
       async embedEventQuery(query: string): Promise<number[]> {
         await ensureMember();
         const embedFn = deps.embed ?? defaultEmbed;
-        const { vector } = await embedFn({ text: query });
+        const { vector } = await withSearchEmbeddingBilling(() => embedFn({ text: query }));
         return vector;
       },
 
@@ -3786,7 +3824,11 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
             return client.search(tId, uId, vector, opts);
           });
 
-        const vector = input.queryVector ?? (await embedFn({ text: input.query })).vector;
+        const vector =
+          input.queryVector ??
+          (await withSearchEmbeddingBilling(
+            async () => (await embedFn({ text: input.query })).vector,
+          ));
         if (input.source && input.senderSource && input.source !== input.senderSource) return [];
         if (input.eventIds?.length === 0) return [];
 
@@ -4036,7 +4078,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
           });
 
         const limit = Math.min(Math.max(input.limit ?? 10, 1), 20);
-        const { vector } = await embedFn({ text: input.query });
+        const { vector } = await withSearchEmbeddingBilling(() => embedFn({ text: input.query }));
         const hits = await searchFn(teamId, userId, vector, {
           limit: limit * 3,
           sourceKind: 'object_note',
@@ -4173,6 +4215,8 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
     mcp: mcpScope,
     mcpOAuth: mcpOAuthScope,
     onboarding: onboardingScope,
+    billing: billingScope,
+    billingOperator: createBillingOperatorScope({ db, teamId }),
     calendar: calendarScope,
     jobRecovery: jobRecoveryScope,
     audit: auditScope,

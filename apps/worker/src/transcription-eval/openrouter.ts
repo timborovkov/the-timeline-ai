@@ -1,5 +1,6 @@
 import { setTimeout as delay } from 'node:timers/promises';
 
+import { isBillingAdmissionError } from '@timeline/shared/billing';
 import {
   OpenRouterTranscriptionHttpError,
   TimelineAiError,
@@ -330,6 +331,7 @@ export function createOpenRouterTranscriptionEvalTransport(
           },
         );
       } catch (error) {
+        if (isBillingAdmissionError(error)) throw error;
         throw new TranscriptionEvalRequestError(
           categoryFromTranscriptionFailure(error),
           elapsedMs(startedAt, nowMs),

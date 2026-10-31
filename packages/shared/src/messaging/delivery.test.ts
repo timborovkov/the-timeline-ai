@@ -1,10 +1,28 @@
-import { expect } from '@timeline/test-support';
-import { vi } from '@timeline/test-support';
+import { expect, vi } from '@timeline/test-support';
 import { afterEach, beforeEach, describe, it } from 'bun:test';
 
-import { resetEnvForTests } from '#src/env.js';
-import { messagingInternals, sendDailyDigest, sendMessage } from '#src/messaging/delivery.js';
-import { renderMessage } from '#src/messaging/templates.js';
+const billingFakes = vi.hoisted(() => ({
+  reserveEmailUnits: vi.fn(),
+  releaseEmailUnits: vi.fn(),
+  settleEmailUnits: vi.fn(),
+}));
+
+await vi.mock(
+  import.meta.resolve('#src/billing/runtime.js'),
+  async () => ({
+    ...(await import('#src/billing/runtime.js')),
+    reserveEmailUnits: billingFakes.reserveEmailUnits,
+    releaseEmailUnits: billingFakes.releaseEmailUnits,
+    settleEmailUnits: billingFakes.settleEmailUnits,
+  }),
+  () => import('#src/billing/runtime.js'),
+);
+
+const { resetEnvForTests } = await import('#src/env.js');
+const { messagingInternals, sendDailyDigest, sendMessage, shouldMeterWorkspaceEmail } =
+  await import('#src/messaging/delivery.js');
+const { renderMessage } = await import('#src/messaging/templates.js');
+
 function fakeDeliveryDb(
   existing: { id: string; status: string; dedupeKey: string } | null,
   opts: { claimFailed?: boolean; claimPending?: boolean } = {},
@@ -140,6 +158,12 @@ const OLD_ENV = process.env;
 describe('Postmark messaging adapter', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
+    billingFakes.reserveEmailUnits.mockReset();
+    billingFakes.releaseEmailUnits.mockReset();
+    billingFakes.settleEmailUnits.mockReset();
+    billingFakes.reserveEmailUnits.mockResolvedValue({ ok: true });
+    billingFakes.releaseEmailUnits.mockResolvedValue(undefined);
+    billingFakes.settleEmailUnits.mockResolvedValue({ ok: true });
     process.env = { ...OLD_ENV };
     resetEnvForTests();
   });
@@ -524,6 +548,81 @@ describe('Postmark messaging adapter', () => {
     expect(updates).toEqual([]);
   });
 
+  it('records Postmark success before billing settlement and does not resend', async () => {
+    process.env.POSTMARK_SERVER_TOKEN = 'server-token';
+    process.env.TRANSACTIONAL_EMAIL_FROM = 'Timeline <hello@example.test>';
+    billingFakes.settleEmailUnits.mockRejectedValue(new Error('ledger down'));
+    const fetchMock = vi.fn(() =>
+      Promise.resolve(
+        new Response(JSON.stringify({ MessageID: 'sent-id' }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        }),
+      ),
+    );
+    const first = fakeDeliveryDb({
+      id: 'delivery-1',
+      status: 'failed',
+      dedupeKey: 'welcome:user-1',
+    });
+
+    await expect(
+      sendMessage(
+        'welcome',
+        {
+          to: 'tim@example.test',
+          name: 'Tim',
+          teamName: 'Timeline',
+          dashboardUrl: 'https://timeline.test/app',
+        },
+        {
+          db: first.db as never,
+          teamId: 'team-1',
+          dedupeKey: 'welcome:user-1',
+          fetch: fetchMock,
+        },
+      ),
+    ).resolves.toMatchObject({
+      ok: true,
+      deliveryId: 'delivery-1',
+      providerMessageId: 'sent-id',
+    });
+    expect(first.updates).toContainEqual(
+      expect.objectContaining({ status: 'sent', providerMessageId: 'sent-id' }),
+    );
+    expect(fetchMock).toHaveBeenCalledOnce();
+
+    const second = fakeDeliveryDb({
+      id: 'delivery-1',
+      status: 'sent',
+      dedupeKey: 'welcome:user-1',
+    });
+    await expect(
+      sendMessage(
+        'welcome',
+        {
+          to: 'tim@example.test',
+          name: 'Tim',
+          teamName: 'Timeline',
+          dashboardUrl: 'https://timeline.test/app',
+        },
+        {
+          db: second.db as never,
+          teamId: 'team-1',
+          dedupeKey: 'welcome:user-1',
+          fetch: fetchMock,
+        },
+      ),
+    ).resolves.toMatchObject({
+      ok: true,
+      deliveryId: 'delivery-1',
+      skipped: true,
+      skippedStatus: 'sent',
+    });
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(billingFakes.settleEmailUnits).toHaveBeenCalledTimes(2);
+  });
+
   it('does not mark a digest sent when its delivery is skipped because another send is pending', async () => {
     process.env.POSTMARK_SERVER_TOKEN = 'server-token';
     process.env.TRANSACTIONAL_EMAIL_FROM = 'Timeline <hello@example.test>';
@@ -693,5 +792,19 @@ describe('Postmark messaging adapter', () => {
         error: 'Digest window expired before send.',
       }),
     );
+  });
+});
+
+describe('workspace email metering', () => {
+  it('exempts verification mail, billing alerts, and support requests', () => {
+    expect(shouldMeterWorkspaceEmail('email_verification', { db: {}, teamId: 'team-1' })).toBe(
+      false,
+    );
+    expect(shouldMeterWorkspaceEmail('billing_usage_alert', { db: {}, teamId: 'team-1' })).toBe(
+      false,
+    );
+    expect(shouldMeterWorkspaceEmail('support_request', { db: {}, teamId: 'team-1' })).toBe(false);
+    expect(shouldMeterWorkspaceEmail('welcome', { db: {}, teamId: 'team-1' })).toBe(true);
+    expect(shouldMeterWorkspaceEmail('email_verification', { db: {}, teamId: null })).toBe(false);
   });
 });

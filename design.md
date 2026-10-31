@@ -1,7 +1,7 @@
 # The Timeline — Design System
 
-**Version:** v3.28 · Privacy-conscious analytics and support (2026-08-26).
-Replaces v3.27 Installed-app splash.
+**Version:** v3.30 · Privacy-conscious analytics and usage billing (2026-10-24).
+Replaces v3.29 Installed-app splash.
 
 This is the visual and interaction contract for the product. If a screen
 disagrees with it, fix the screen. If the language intentionally changes,
@@ -139,11 +139,11 @@ for long-form prose. Article text is limited to 65–70ch.
 ## Layout and navigation
 
 The authenticated product keeps eight primary destinations: Home, Timeline,
-Ask, Work, Documents, Meetings, Connections, and Team.
+Ask, Work, Documents, Meetings, Connections, Usage, and Team.
 
 - Desktop and mobile primary navigation keep that destination order in three
   labeled groups: Overview (Home, Timeline, Ask), Workspace (Work, Documents,
-  Meetings), and Manage (Connections, Team). Collapsed rails retain the same
+  Meetings), and Manage (Connections, Usage, Team). Collapsed rails retain the same
   order and expose every destination through its icon label and tooltip.
 - Expanded sidebar: 240px. Collapsed rail: 56px. The product mark uses the
   same 12px inset as primary destinations and links to Home (`/app`). Fold and
@@ -474,7 +474,16 @@ the remaining count. Off Home, a matching quiet header chip returns to the
 panel until the member hides it or every step is done. The account menu also
 reopens it. The checklist teaches the product loop (capture, people, sources,
 ask, meetings, trust memory, stay in the loop) rather than enumerating every
-work surface. Attention has no visible heading; the region is named for
+work surface.
+
+Billing setup is an optional-on-Free checklist item linking owners/admins to plan
+selection; other members are directed to team owners. It completes from an active
+subscription or active comp arrangement, without a manual checkoff. Its guidance
+and CTA remain visible independently of the next incomplete product step; it never
+blocks product onboarding progression. Restricted
+Free teams see the specific verification or grant issue with its resolution action.
+
+Attention has no visible heading; the region is named for
 assistive tech only.
 It shows only non-zero groups: pending approvals, overdue work, open tasks,
 open objects, recoverable jobs, and connection issues. Overdue work stays the
@@ -988,15 +997,15 @@ measure instead of being squeezed by a proportional sidebar.
 Every public shell uses the landing masthead as one full-width chrome component,
 with the same warm public palette, wordmark position, active state, GitHub and
 theme controls, and lime account CTA. Signed-in visitors see `Dashboard`;
-signed-out visitors see `Sign in` and `Try one project`. The shared public canvas
+signed-out visitors see `Sign in` and `Start free` (free / no-card). The shared public canvas
 inherits that warm paper palette in light mode and the landing's warm near-black
 palette in dark mode, while each page group keeps its own content structure.
 Auth-neutral loading and error boundaries keep the same masthead but omit
 account actions rather than guessing the visitor's session state.
-The masthead exposes the same five primary destinations in the same order:
-Product (`/`), Integrations (`/integrations`), How it works (`/how-it-works`),
-Trust (`/trust`), and Help (`/help`). Desktop headers show them directly, compact
-widths use a native menu disclosure, and footers repeat them for recovery at the end of a page. The
+The masthead exposes the same six primary destinations in the same order:
+Product (`/`), Integrations (`/integrations`), Pricing (`/pricing`), How it works (`/how-it-works`),
+Trust (`/trust`), and Help (`/help`). Desktop headers show them directly, compact widths use a native
+menu disclosure, and footers repeat them for recovery at the end of a page. The
 current destination uses `aria-current="page"`. At phone widths, sign-in and
 theme controls move into the disclosure instead of disappearing, and the
 disclosure closes after link activation or a persisted-layout route change.
@@ -1006,6 +1015,8 @@ provider truth. The landing hero and public navigation also link directly to
 the project's source on GitHub; the
 public help shell and developer docs repeat that path. Legal pages use the
 shared public shell at reading width (65–70ch).
+Public pricing copy explains plans, usage costs, and billing terms in customer language. Keep sandbox rollout status, implementation terminology, and internal launch assumptions in setup documentation rather than the pricing page.
+
 Help uses the same public shell at wide width with a sidebar nav. Its overview
 is one searchable, single-column guide directory rather than repeating the
 same destinations in category lists and card grids. Guide and support pages
@@ -1273,12 +1284,42 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-08-21 | Evidence-flow acquisition story | Reframes Timeline as AI team memory, introduces the reusable evidence-to-workspace-to-assistant explainer, and adds three substantive outcome-led solution pages. |
 | 2026-08-21 | Restored compact observatory | Restores the six-source orbit and official center mark, makes packets reuse their drawn curves, and adds only working-record and cited-answer outcomes after the core. |
 | 2026-08-21 | Dedicated animated platform flow | Keeps the compact observatory on home, moves the grouped full-loop explainer to `/how-it-works`, and uses exact-track signal packets plus per-stage viewport activation to make causality visible without excessive cards or page height. |
-| 2026-08-21 | Evidence-gated Trust and legal acceptance | Adds a candid public Trust center, detailed legal surfaces, and a blocking per-user versioned acceptance path without presenting external account settings or future certifications as verified. |
-| 2026-08-21 | Privacy and analytics boundary | Adds an exact Cookies and similar technologies notice, separates notice from consent, and defines a narrow public-only browser-analytics boundary without extending it into private workspace routes. |
+| 2026-08-21 | Usage nav and billing nudges | Adds Manage → Usage, keeps Enterprise off the public plan grid as a gray contact nudge, and surfaces quiet spend-cap / Free-allowance nudges on Home, Usage, and Billing. |
+| 2026-08-21 | Sidebar plan usage meter | Puts plan name, usage progress, and overage under Help in the app sidebar (and mobile nav), linking to Billing or Usage. |
+| 2026-08-21 | Free CTA honesty | Header CTA is `Start free`; landing and sign-up say free / no card; upgrade nudges link to `/pricing`. |
 | 2026-08-21 | Privacy-conscious analytics and support | Implements equal-choice public analytics consent and withdrawal, personless surface-request totals, HMAC-pseudonymous product events, a private support-context boundary, safe public bug routing, and aligned desktop/mobile help actions. |
+| 2026-08-22 | Usage plan limits | Usage and Billing show live used/limit for Ask turns, concurrent meeting notetakers, custom MCP servers, documents, storage, indexed chunks, and member seats — not Polar meters. |
+| 2026-08-24 | Folded infrastructure limits | Usage, Billing, and `/pricing` keep billed meters in the default view. Plan capacity ceilings sit in a closed **Infrastructure limits** disclosure. |
 | 2026-08-26 | Installed-app splash | Adds per-device iOS startup images of the existing mark on `#0a0e0d`, matching the Android Chrome splash from the web app manifest. |
 | 2026-08-28 | Home team email field | Surfaces the inbound address on Home below pinned work as one readonly copyable field (`#team-email`), and keeps the same control on Team → Email for every member. |
 | 2026-10-24 | Inbound placeholder notice | Team → Email flags leftover `@inbound.invalid` addresses in muted helper copy so operators can see mail will not be captured until inbound email is configured. |
 | 2026-08-28 | Object Properties rail polish | Widens the object rail to `20rem`, shares one labeled field chrome across Contact/Details/Properties, keeps status icons toned with quiet value text, and drops empty contact chrome plus boxed add forms. |
 | 2026-08-28 | Object detail list folds | Evidence, Facts, Documents, and other Connected work lists preview three rows then fold behind `Show N more`, with hairline dividers and tighter evidence clamps. |
 | 2026-08-28 | Object detail typography | Shares `object-detail-type` roles: 13px semibold section titles, medium 14px row titles, Commit Mono counts/timestamps, and medium rail labels. |
+| 2026-10-30 | Polar promo codes | Change plan includes an optional promo field with inline eligibility/provider errors. An active assigned team discount disables the field and explains precedence; discounts never stack. Invoice previews remain local estimates before Polar campaign savings. |
+| 2026-10-23 | Quiet customer billing | Team Billing separates remaining benefits, recorded usage charges, recurring fee, and monthly spend cap. Usage is a meter table. Cap, payment, and comp states are one banner each. Members only see a limit notice. Platform admin billing stays dense. |
+
+
+### Billing benefits and recorded charges (2026-10-31)
+
+Usage and Billing share the same typed billing summary. Free/PAYG show each
+calendar-month allowance with used, included and remaining units, plus the UTC
+reset date. Team/Business instead show pooled included credit, used and remaining
+amounts, and the subscription-period dates. Extra members are separate from that
+credit. Every meter remains visible even at zero usage.
+
+“Charges recorded so far” uses settlement records; it is not a forecast or final
+invoice. The recurring plan fee is separate. Unknown attribution is Unavailable;
+stale credit periods say Updating billing period. No view silently resets credit.
+Monthly caps show their own dates and include metered usage before plan credit
+plus extra members, excluding fees and tax. PAYG's native allowances are deducted
+before its cap is counted. A cap is never presented as free credit.
+
+Sidebar: Free labels the most-used allowance; PAYG labels its monthly cap;
+Team/Business lead with credit remaining and a separate cap line. Keep the credit
+renewal date distinct from the calendar cap reset. Financial details remain for
+owners/admins; members retain the existing limited warning view.
+
+Contractual Enterprise displays agreement-based limits instead of a local cap
+warning/editor. Cap warnings follow enforcement applicability; comped Enterprise
+keeps its enforced cap. Disabled enforcement is labeled as informational tracking.

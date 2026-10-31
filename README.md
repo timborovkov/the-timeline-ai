@@ -187,6 +187,21 @@ Run the nearest targeted test for your change. Changes to shared exports,
 agent behavior, or reconciliation have additional gates documented in
 [AGENTS.md](./AGENTS.md).
 
+`bun run billing:polar-convert --team-id=<uuid> --actor-email=<verified-platform-admin>`
+preflights an existing team's Polar customer; add `--apply` for in-place team/member
+conversion. Apply migration `0091_polar_team_identity.sql` first. Conversion currently
+reports Polar's unsupported customer-email clearing step explicitly. Legacy
+customer-level access must be cleared before member revocation can complete; the
+required owner member email remains present. Interrupted conversions can recover
+an unambiguous verified owner mapping on retry. See
+[identity evidence and limitations](docs/testing/polar-team-identity.md).
+
+`bun run billing:polar-setup` creates or reuses the sandbox Polar meters and monthly
+products Timeline billing needs. It prints the ids to copy into the web and worker
+environment and does not write `.env`. `bun run billing:polar-setup -- --dry-run`
+prints the plan. Production requires `--allow-production` after `--`. The command only changes Polar objects identified
+as Timeline's. Details: [docs/setup/polar.html](./docs/setup/polar.html).
+
 ## Documentation
 
 - [Public Trust center](https://thetimeline.cc/trust)

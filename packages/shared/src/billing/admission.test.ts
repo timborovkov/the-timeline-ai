@@ -1,0 +1,334 @@
+import { PGlite } from '@electric-sql/pglite';
+import { billingUsageLedger, billingUsageReservations, type Db } from '@timeline/db';
+import { expect, vi } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
+import { eq } from 'drizzle-orm';
+import { drizzle } from 'drizzle-orm/pglite';
+
+import {
+  abortRecallJoinAfterProviderAccept,
+  askOperationId,
+  meetingReserveMinutesForPlan,
+  recallAttemptOperationId,
+  recallBillableMinutes,
+  recallOperationId,
+  reserveAskAi,
+  reserveRecallMeetingMinutes,
+  settleAskAiFromOpenRouterUsd,
+  settleElapsedRecallMeetingMinutes,
+  settleRecallMeetingMinutes,
+} from '#src/billing/admission.js';
+import { ASK_AI_RESERVE_CUSTOMER_CHARGE_CENTS, FREE_ALLOWANCES } from '#src/billing/catalog.js';
+import { settlePendingBillingReservations } from '#src/billing/runtime.js';
+import { createBillingScope } from '#src/billing/scope.js';
+import { applyDbMigrations } from '#src/test/pglite.js';
+
+const TEAM_ID = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
+const USER_ID = '11111111-2222-4333-8444-555555555555';
+
+let pg: PGlite;
+let db: Db;
+
+beforeEach(async () => {
+  pg = new PGlite();
+  await applyDbMigrations(pg);
+  await pg.exec(`
+    INSERT INTO teams (id, slug, name)
+    VALUES ('${TEAM_ID}', 'admission-test', 'Admission Test');
+    INSERT INTO users (id, email)
+    VALUES ('${USER_ID}', 'owner@example.test');
+    INSERT INTO team_members (team_id, user_id, role)
+    VALUES ('${TEAM_ID}', '${USER_ID}', 'owner');
+  `);
+  db = drizzle(pg) as unknown as Db;
+});
+
+afterEach(async () => {
+  await pg.close();
+});
+
+describe('billing admission helpers', () => {
+  it('builds stable Ask and Recall operation ids', () => {
+    expect(askOperationId('web', 'turn-1')).toBe('ask:web:turn-1');
+    expect(recallOperationId('meet-1')).toBe('recall:meet-1');
+  });
+
+  it('reserves and settles Ask AI from OpenRouter USD', async () => {
+    const billing = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    const operationId = askOperationId('telegram', 'op-1');
+    const reserved = await reserveAskAi(billing, {
+      operationId,
+      deliverySurface: 'telegram',
+    });
+    expect(reserved.ok).toBe(true);
+
+    await settleAskAiFromOpenRouterUsd(billing, {
+      operationId,
+      openRouterUsd: 0.1,
+      deliverySurface: 'telegram',
+      model: 'test-model',
+    });
+
+    const dash = await billing.getDashboard();
+    expect(dash.meters.ai?.customerChargeCents).toBeGreaterThan(0);
+    expect(ASK_AI_RESERVE_CUSTOMER_CHARGE_CENTS).toBe(250);
+  });
+
+  it('settles aborted Ask usage at the reserved customer floor', async () => {
+    const billing = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    const operationId = askOperationId('web', 'abort-1');
+    const reserved = await reserveAskAi(billing, {
+      operationId,
+      deliverySurface: 'web',
+    });
+    expect(reserved.ok).toBe(true);
+    await settleAskAiFromOpenRouterUsd(billing, {
+      operationId,
+      openRouterUsd: 0,
+      deliverySurface: 'web',
+      minCustomerChargeCents: ASK_AI_RESERVE_CUSTOMER_CHARGE_CENTS,
+    });
+    const dash = await billing.getDashboard();
+    expect(dash.meters.ai?.customerChargeCents).toBe(ASK_AI_RESERVE_CUSTOMER_CHARGE_CENTS);
+    expect(dash.meters.ai?.nativeUnits).toBe(ASK_AI_RESERVE_CUSTOMER_CHARGE_CENTS);
+  });
+
+  it('records Ask usage on the reservation before settlement', async () => {
+    const billing = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    const operationId = askOperationId('web', 'settle-fail');
+    expect((await reserveAskAi(billing, { operationId, deliverySurface: 'web' })).ok).toBe(true);
+    await expect(
+      settleAskAiFromOpenRouterUsd(
+        {
+          ...billing,
+          settle: () => Promise.reject(new Error('ledger down')),
+        },
+        {
+          operationId,
+          openRouterUsd: 0.05,
+          deliverySurface: 'web',
+        },
+      ),
+    ).rejects.toThrow('ledger down');
+    const [row] = await db
+      .select()
+      .from(billingUsageReservations)
+      .where(eq(billingUsageReservations.operationId, operationId));
+    expect(row?.state).toBe('reserved');
+    expect(row?.metadata).toMatchObject({
+      pending_settlement: true,
+      pending_openrouter_usd: 0.05,
+      pending_delivery_surface: 'web',
+    });
+  });
+
+  it('caps Free Recall reservation to remaining minutes', () => {
+    expect(
+      meetingReserveMinutesForPlan('free', {
+        aiChargeCents: FREE_ALLOWANCES.aiChargeCents,
+        recallMinutes: 15,
+        emailUnits: FREE_ALLOWANCES.emailUnits,
+        storageGb: FREE_ALLOWANCES.storageGb,
+        acceptedSources: FREE_ALLOWANCES.acceptedSources,
+      }),
+    ).toBe(15);
+    expect(
+      meetingReserveMinutesForPlan('payg', {
+        aiChargeCents: 0,
+        recallMinutes: 0,
+        emailUnits: 0,
+        storageGb: 0,
+        acceptedSources: 0,
+      }),
+    ).toBe(240);
+  });
+
+  it('reserves and settles Recall minutes for a meeting', async () => {
+    const billing = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    const meetingId = 'cccccccc-dddd-4eee-8fff-000000000001';
+    const reserved = await reserveRecallMeetingMinutes(billing, { meetingId });
+    expect(reserved.ok).toBe(true);
+    if (!reserved.ok) return;
+    expect(reserved.reservedMinutes).toBe(FREE_ALLOWANCES.recallMinutes);
+
+    await settleRecallMeetingMinutes(billing, { meetingId, minutes: 12 });
+    const dash = await billing.getDashboard();
+    expect(dash.meters.recall_minutes?.nativeUnits).toBe(12);
+    expect(dash.meters.recall_minutes?.customerChargeCents).toBe(36);
+  });
+
+  it('reserves Free minutes after a Team comp expires', async () => {
+    const billing = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await billing.getAccount();
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET arrangement = 'comped', plan_id = 'team', billing_state = 'team_active',
+          comp_reason = 'trial', comp_expires_at = '2020-01-01T00:00:00Z'
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    const reserved = await reserveRecallMeetingMinutes(billing, {
+      meetingId: 'cccccccc-dddd-4eee-8fff-000000000099',
+    });
+    expect(reserved.ok).toBe(true);
+    if (!reserved.ok) return;
+    expect(reserved.reservedMinutes).toBe(FREE_ALLOWANCES.recallMinutes);
+    expect(reserved.reservedMinutes).not.toBe(360);
+  });
+
+  it('settles elapsed waiting-room minutes and releases when none elapsed', async () => {
+    const billing = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    const billedMeetingId = 'cccccccc-dddd-4eee-8fff-000000000001';
+    const unusedMeetingId = 'cccccccc-dddd-4eee-8fff-000000000002';
+    expect((await reserveRecallMeetingMinutes(billing, { meetingId: billedMeetingId })).ok).toBe(
+      true,
+    );
+    await settleElapsedRecallMeetingMinutes(billing, {
+      meetingId: billedMeetingId,
+      joinStartedAt: '2026-08-26T12:00:00.000Z',
+      endedAt: new Date('2026-08-26T12:04:00.000Z'),
+      reservedMinutes: 120,
+    });
+    expect((await reserveRecallMeetingMinutes(billing, { meetingId: unusedMeetingId })).ok).toBe(
+      true,
+    );
+    await settleElapsedRecallMeetingMinutes(billing, {
+      meetingId: unusedMeetingId,
+      endedAt: new Date('2026-08-26T12:04:00.000Z'),
+    });
+
+    const dash = await billing.getDashboard();
+    expect(dash.meters.recall_minutes?.nativeUnits).toBe(4);
+    const unused = await billing.release(`recall:${unusedMeetingId}`);
+    expect(unused.alreadyFinal).toBe(true);
+  });
+
+  it('keeps the Recall reservation when bot leave fails after provider accept', async () => {
+    const billing = {
+      patchReservationMetadata: vi.fn().mockResolvedValue(undefined),
+      release: vi.fn().mockResolvedValue({ ok: true, missing: false }),
+    };
+    const leaveMeeting = vi.fn().mockRejectedValue(new Error('recall leave failed'));
+    await abortRecallJoinAfterProviderAccept({
+      billing: billing as never,
+      operationId: 'recall:meeting-keep',
+      botId: 'bot-keep',
+      leaveMeeting,
+    });
+    expect(leaveMeeting).toHaveBeenCalledWith('bot-keep');
+    expect(billing.patchReservationMetadata).toHaveBeenCalledWith(
+      'recall:meeting-keep',
+      expect.objectContaining({
+        pending_recall_leave_bot_id: 'bot-keep',
+      }),
+    );
+    expect(billing.release).not.toHaveBeenCalled();
+  });
+
+  it('keeps Recall minutes when settlement fails and maintenance retries them', async () => {
+    const billing = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    const meetingId = 'cccccccc-dddd-4eee-8fff-000000000010';
+    expect((await reserveRecallMeetingMinutes(billing, { meetingId })).ok).toBe(true);
+    const realSettle = billing.settle.bind(billing);
+    let calls = 0;
+    billing.settle = (input) => {
+      calls += 1;
+      if (calls === 1) return Promise.reject(new Error('db timeout'));
+      return realSettle(input);
+    };
+    await expect(
+      settleElapsedRecallMeetingMinutes(billing, {
+        meetingId,
+        joinStartedAt: '2026-08-26T12:00:00.000Z',
+        endedAt: new Date('2026-08-26T12:04:00.000Z'),
+        reservedMinutes: 120,
+        source: 'meeting_cancel',
+      }),
+    ).rejects.toThrow('db timeout');
+    const [pending] = await db
+      .select()
+      .from(billingUsageReservations)
+      .where(eq(billingUsageReservations.operationId, recallOperationId(meetingId)));
+    expect(pending?.state).toBe('reserved');
+    expect(pending?.metadata).toMatchObject({
+      pending_settlement: true,
+      pending_meter: 'recall_minutes',
+      pending_recall_minutes: 4,
+      pending_source: 'meeting_cancel',
+      meeting_id: meetingId,
+    });
+    const kept = await billing.release(recallOperationId(meetingId));
+    expect(kept.alreadyFinal).toBe(true);
+    expect(
+      pending &&
+        (
+          await db
+            .select()
+            .from(billingUsageReservations)
+            .where(eq(billingUsageReservations.id, pending.id))
+        )[0]?.state,
+    ).toBe('reserved');
+    expect(await settlePendingBillingReservations(db)).toBe(1);
+    const [settled] = await db
+      .select()
+      .from(billingUsageReservations)
+      .where(eq(billingUsageReservations.operationId, recallOperationId(meetingId)));
+    expect(settled?.state).toBe('settled');
+    const [ledger] = await db
+      .select()
+      .from(billingUsageLedger)
+      .where(eq(billingUsageLedger.operationId, recallOperationId(meetingId)));
+    expect(Number(ledger?.nativeUnits)).toBe(4);
+  });
+
+  it('builds an attempt operation id that leaves the canonical Recall id free', () => {
+    expect(recallAttemptOperationId('meet-1', 'bot/1')).toBe('recall:meet-1:attempt:bot1');
+  });
+});
+
+describe('recallBillableMinutes', () => {
+  it('includes joining time from the reservation stamp', () => {
+    expect(
+      recallBillableMinutes({
+        joinStartedAt: '2026-08-26T12:00:00.000Z',
+        startedAt: new Date('2026-08-26T12:05:00.000Z'),
+        endedAt: new Date('2026-08-26T12:20:00.000Z'),
+        reservedMinutes: 120,
+      }),
+    ).toBe(20);
+  });
+});

@@ -1,10 +1,26 @@
 import { createHash } from 'node:crypto';
 
-import { expect } from '@timeline/test-support';
-import { vi } from '@timeline/test-support';
-import { describe, it } from 'bun:test';
+import { expect, vi } from '@timeline/test-support';
+import { beforeEach, describe, it } from 'bun:test';
 
-import { verifyEmailToken } from '@/lib/email-verification';
+await vi.mock(
+  import.meta.resolve('@timeline/shared/billing'),
+  () => ({
+    synchronizePolarBillingUser: vi.fn().mockResolvedValue(undefined),
+    createPolarBillingProvider: vi.fn().mockReturnValue(null),
+    claimOwnedTeamFreeGrantsForVerifiedUser: vi.fn().mockResolvedValue(undefined),
+  }),
+  () => import('@timeline/shared/billing'),
+);
+
+const { claimOwnedTeamFreeGrantsForVerifiedUser } = await import('@timeline/shared/billing');
+const { retryOwnedTeamFreeGrantsAfterSignIn, verifyEmailToken } =
+  await import('@/lib/email-verification');
+
+beforeEach(() => {
+  vi.clearAllMocks();
+});
+
 function digest(token: string): string {
   return createHash('sha256').update(token).digest('hex');
 }
@@ -92,6 +108,10 @@ describe('verifyEmailToken', () => {
 
     expect(updates).toEqual([expect.objectContaining({ emailVerified: now, updatedAt: now })]);
     expect(deletes).toHaveLength(1);
+    expect(claimOwnedTeamFreeGrantsForVerifiedUser).toHaveBeenCalledWith({
+      db,
+      userId: 'user-1',
+    });
   });
 
   it('does not report success when the token exists but no user row is updated', async () => {
@@ -115,5 +135,27 @@ describe('verifyEmailToken', () => {
         now,
       }),
     ).resolves.toBe('invalid');
+    expect(claimOwnedTeamFreeGrantsForVerifiedUser).not.toHaveBeenCalled();
+  });
+
+  it('retries Free-grant claims on signed-in load after verification', async () => {
+    await retryOwnedTeamFreeGrantsAfterSignIn({
+      db: {} as never,
+      userId: 'user-1',
+      emailVerified: new Date('2026-08-26T00:00:00.000Z'),
+    });
+    expect(claimOwnedTeamFreeGrantsForVerifiedUser).toHaveBeenCalledWith({
+      db: {},
+      userId: 'user-1',
+    });
+  });
+
+  it('skips grant retry when the signed-in email is unverified', async () => {
+    await retryOwnedTeamFreeGrantsAfterSignIn({
+      db: {} as never,
+      userId: 'user-1',
+      emailVerified: null,
+    });
+    expect(claimOwnedTeamFreeGrantsForVerifiedUser).not.toHaveBeenCalled();
   });
 });

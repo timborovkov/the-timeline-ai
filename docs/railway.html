@@ -39,6 +39,13 @@
         The Timeline runs as a set of Railway services in one project, all built from this monorepo.
       </p>
 
+      <p>
+        Polar billing setup and required variables are documented in
+        <a href="setup/polar.html">Polar setup</a>. Campaigns are managed in Polar; no global
+        discount variables are required. Per-team assignments remain in Timeline's admin panel.
+        Cleanup of obsolete deployment variables is a separate operator task.
+      </p>
+
       <h2 id="services">Services</h2>
       <table>
         <thead>
@@ -159,9 +166,10 @@
         the generation command. Set <code>DAYTONA_SNAPSHOT=auto</code> to resolve the content hash
         from <code>document-extract-sandbox/</code> for each deployed revision. Do
         <strong>not</strong> set <code>SECRETS_ENCRYPTION_KEY</code>, Auth secrets, or
-        Telegram/Slack/integration OAuth tokens on <code>document-extract-orchestrator</code>.
-        Snapshot lifecycle (CI ensure, manual deployed-hash-aware retention, sandbox-aware pruning,
-        and optional boot create-once): ADR 0013 and
+        Telegram/Slack/integration OAuth tokens on <code>document-extract-orchestrator</code>. Copy
+        <code>BILLING_CHARGES_ENABLED</code> (non-secret) when live charging should apply to extract
+        AI metering. Snapshot lifecycle (CI ensure, manual deployed-hash-aware retention,
+        sandbox-aware pruning, and optional boot create-once): ADR 0013 and
         <code>bun run --filter @timeline/worker create-document-extract-snapshot</code>.
       </p>
       <p>
@@ -325,6 +333,7 @@ S3_BUCKET_DOCUMENTS=timeline-documents
 NODE_ENV=production
 TIMELINE_DEPLOYMENT_MODE=hosted
 LOG_LEVEL=info
+BILLING_CHARGES_ENABLED=false
 </code></pre>
       <p>
         <code>AUTH_URL</code> is also the canonical public origin. Requests that arrive through

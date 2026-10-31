@@ -6,6 +6,15 @@ import {
   teams,
   users,
 } from '@timeline/db';
+import {
+  describeTeamComp,
+  activePolarDiscountId,
+  effectiveBillingPlanId,
+  resolveTeamCommercialTerms,
+  isPlatformAdminEmail,
+  isPolarBillingConfigured,
+  PLAN_CATALOG,
+} from '@timeline/shared/billing';
 import { getEnv } from '@timeline/shared/env';
 import { listTeamDigestDestinations, getDigestPreference } from '@timeline/shared/messaging';
 import { hasSlackInstallForTeam, listSlackConversationsForTeam } from '@timeline/shared/slack';
@@ -17,6 +26,7 @@ import type { Metadata } from 'next';
 import type { ComponentProps } from 'react';
 
 import { ActionChip } from '@/components/action-chip';
+import { BillingSettingsPanel } from '@/components/billing-settings-panel';
 import { CopyableTextField } from '@/components/copyable-text-field';
 import {
   DigestDestinationsForm,
@@ -55,6 +65,7 @@ const SETTINGS_ITEMS = [
   { value: 'preferences', label: 'Preferences' },
   { value: 'visibility', label: 'Visibility' },
   { value: 'email', label: 'Email' },
+  { value: 'billing', label: 'Billing', adminOnly: true },
   { value: 'exports', label: 'Exports' },
   { value: 'advanced', label: 'Advanced', adminOnly: true },
 ] as const;
@@ -62,7 +73,13 @@ const SETTINGS_ITEMS = [
 export default async function TeamSettingsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ section?: string; exportError?: string }>;
+  searchParams: Promise<{
+    section?: string;
+    exportError?: string;
+    checkout?: string;
+    checkoutTeam?: string;
+    checkoutPlan?: string;
+  }>;
 }) {
   const session = await auth();
   if (!session?.user) redirect('/sign-in');
@@ -187,7 +204,12 @@ export default async function TeamSettingsPage({
   const userInfo =
     userIds.length > 0
       ? await db
-          .select({ id: users.id, name: users.name, email: users.email })
+          .select({
+            id: users.id,
+            name: users.name,
+            email: users.email,
+            emailVerified: users.emailVerified,
+          })
           .from(users)
           .where(inArray(users.id, userIds))
       : [];
@@ -201,6 +223,18 @@ export default async function TeamSettingsPage({
     return { id: m.userId, label: displayMemberLabel(u) };
   });
   const destinationOptions = isAdmin ? await digestDestinationOptions(active.teamId) : [];
+  const billingDashboard = isAdmin
+    ? await scope.billing.getDashboard({ canManageBilling: true })
+    : null;
+  const entitlementsPlanId = billingDashboard
+    ? effectiveBillingPlanId(billingDashboard.account)
+    : 'free';
+  const comp = billingDashboard ? describeTeamComp(billingDashboard.account) : null;
+  const commercial = billingDashboard ? resolveTeamCommercialTerms(billingDashboard.account) : null;
+  const currentSettingsUser = userMap.get(session.user.id);
+  const showOperatorLink =
+    Boolean(currentSettingsUser?.emailVerified) &&
+    isPlatformAdminEmail(currentSettingsUser?.email ?? '', getEnv().PLATFORM_ADMIN_EMAILS);
 
   return (
     <div className="space-y-4">
@@ -300,6 +334,33 @@ export default async function TeamSettingsPage({
                 </div>
               )}
             </SettingsSection>
+          ) : null}
+          {section === 'billing' && isAdmin && billingDashboard ? (
+            <BillingSettingsPanel
+              presentation={billingDashboard.presentation}
+              checkoutReturned={
+                query.checkout === 'success' &&
+                (!query.checkoutTeam || query.checkoutTeam === active.teamId)
+              }
+              checkoutPlan={query.checkoutPlan}
+              planId={entitlementsPlanId}
+              planName={PLAN_CATALOG[entitlementsPlanId].name}
+              billingState={billingDashboard.account.billingState}
+              spendCapCents={billingDashboard.account.spendCapCents}
+              meteredSpendCents={billingDashboard.meteredSpendCents}
+              utilization={billingDashboard.utilization}
+              freeRemaining={billingDashboard.freeRemaining}
+              restrictionReason={billingDashboard.restrictionReason}
+              costBearingPaused={billingDashboard.costBearingPaused}
+              polarConfigured={isPolarBillingConfigured()}
+              hasActiveTeamDiscount={Boolean(activePolarDiscountId(billingDashboard.account))}
+              hasPolarSubscription={Boolean(billingDashboard.account.polarSubscriptionId)}
+              canManage={isAdmin}
+              planPreview={billingDashboard.planPreview}
+              comp={comp}
+              showOperatorLink={showOperatorLink}
+              platformFeeCents={commercial?.platformFeeCents}
+            />
           ) : null}
           {section === 'exports' ? (
             <SettingsSection title="Team export">

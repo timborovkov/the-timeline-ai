@@ -184,7 +184,7 @@ export function OnboardingChecklist({
       </>
     );
   }
-  const nextItem = data.items.find((item) => !item.completed);
+  const nextItem = data.items.find((item) => !item.completed && item.key !== 'billing_setup');
 
   return (
     <>
@@ -223,7 +223,15 @@ export function OnboardingChecklist({
         </div>
         <ol className="mt-3 divide-y divide-border border-t border-border">
           {data.items.map((item, index) => {
-            const meta = onboardingMeta(item.key);
+            const meta =
+              item.key === 'billing_setup' && data.canManageBilling === false
+                ? {
+                    href: '/app/team?section=members',
+                    cta: 'View team owners',
+                    description:
+                      'Ask a team owner or admin to set up billing. Eligible teams can continue on Free.',
+                  }
+                : onboardingMeta(item.key);
             const isNext = nextItem?.key === item.key;
             return (
               <li key={item.key} className="flex items-start gap-3 py-3">
@@ -255,7 +263,7 @@ export function OnboardingChecklist({
                       </Link>
                     </p>
                   )}
-                  {isNext ? (
+                  {isNext || (item.key === 'billing_setup' && !item.completed) ? (
                     <>
                       <p className="mt-0.5 text-xs text-fg-muted">{meta.description}</p>
                       <div className="mt-2 flex flex-wrap items-center gap-2">
@@ -275,18 +283,20 @@ export function OnboardingChecklist({
                             <Link href={meta.href}>{meta.cta}</Link>
                           </Button>
                         )}
-                        <QuietTextButton
-                          ref={nextActionRef}
-                          disabled={checklistPending}
-                          aria-label={`Mark ${item.label} complete`}
-                          onClick={() => {
-                            lastMutationKind.current = 'complete';
-                            pendingFocusTarget.current = 'next-action';
-                            mutateChecklist({ action: 'complete', key: item.key });
-                          }}
-                        >
-                          Mark complete
-                        </QuietTextButton>
+                        {item.key !== 'billing_setup' ? (
+                          <QuietTextButton
+                            ref={nextActionRef}
+                            disabled={checklistPending}
+                            aria-label={`Mark ${item.label} complete`}
+                            onClick={() => {
+                              lastMutationKind.current = 'complete';
+                              pendingFocusTarget.current = 'next-action';
+                              mutateChecklist({ action: 'complete', key: item.key });
+                            }}
+                          >
+                            Mark complete
+                          </QuietTextButton>
+                        ) : null}
                       </div>
                     </>
                   ) : null}
@@ -357,6 +367,13 @@ function ChecklistMutationFailure({
 
 function onboardingMeta(key: string): { href: string; cta: string; description: string } {
   switch (key) {
+    case 'billing_setup':
+      return {
+        href: '/app/team?section=billing#change-plan',
+        cta: 'Set up billing',
+        description:
+          'An owner or admin can add a payment method with Pay as you go, or choose another plan. Eligible teams can continue on Free.',
+      };
     case 'first_note':
       return {
         href: '/app#capture',

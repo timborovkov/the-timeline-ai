@@ -1,14 +1,35 @@
-import { expect } from '@timeline/test-support';
-import { vi } from '@timeline/test-support';
+import { expect, vi } from '@timeline/test-support';
 import { MockEmbeddingModelV3 } from 'ai/test';
 import { afterEach, beforeEach, describe, it } from 'bun:test';
 import { encode } from 'gpt-tokenizer/encoding/cl100k_base';
 
+import type { OpenRouterFinishEvent } from '#src/billing/openrouter-usage.js';
 import type { EmbeddingModel } from 'ai';
 
-import { resetEnvForTests } from '#src/env.js';
-import { embed, embedMany, truncateEmbeddingTextToTokenBudget } from '#src/llm/embed.js';
-import { TIMELINE_MODELS } from '#src/llm/models.js';
+const { embeddingFinishes } = vi.hoisted(() => ({
+  embeddingFinishes: [] as unknown[],
+}));
+
+await vi.mock(
+  import.meta.resolve('#src/billing/runtime.js'),
+  () => ({
+    withAiMetering: async (
+      _input: unknown,
+      fn: () => Promise<{ value: unknown; finish?: unknown }>,
+    ): Promise<unknown> => {
+      const result = await fn();
+      embeddingFinishes.push(result.finish);
+      return JSON.parse(JSON.stringify(result.value)) as unknown;
+    },
+  }),
+  () => import('#src/billing/runtime.js'),
+);
+
+const { openRouterUsdCostFromFinishEvent } = await import('#src/billing/openrouter-usage.js');
+const { resetEnvForTests } = await import('#src/env.js');
+const { embed, embedMany, truncateEmbeddingTextToTokenBudget } = await import('#src/llm/embed.js');
+const { TIMELINE_MODELS } = await import('#src/llm/models.js');
+
 const ENV_BACKUP = { ...process.env };
 
 function embeddingVector(seed: number): number[] {
@@ -30,6 +51,7 @@ function makeMockModel(vectors: number[][]): EmbeddingModel {
 }
 
 beforeEach(() => {
+  embeddingFinishes.length = 0;
   process.env = {
     ...ENV_BACKUP,
     AUTH_SECRET: 'a'.repeat(32),
@@ -49,6 +71,10 @@ describe('llm.embed', () => {
     const result = await embed({ text: 'hello' }, { model: makeMockModel([[0.1, 0.2, 0.3, 0.4]]) });
     expect(result.vector).toEqual([0.1, 0.2, 0.3, 0.4]);
     expect(result.model).toBe(TIMELINE_MODELS.embedding.id);
+    expect(JSON.parse(JSON.stringify(result))).toMatchObject({
+      vector: [0.1, 0.2, 0.3, 0.4],
+      model: TIMELINE_MODELS.embedding.id,
+    });
   });
 
   it('uses the predefined embedding model catalog entry', async () => {
@@ -87,6 +113,64 @@ describe('llm.embed', () => {
       provider: { allow_fallbacks: true, data_collection: 'deny', zdr: true },
     });
     expect(requestHeaders?.get('X-OpenRouter-Cache')).toBe('false');
+  });
+
+  it('meters OpenRouter embedding cost from the raw response body', async () => {
+    const vector = embeddingVector(1);
+    const fetch = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >(() =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify({
+            data: [{ embedding: vector, index: 0 }],
+            usage: { prompt_tokens: 8, total_tokens: 8, cost: 0.000021 },
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+      ),
+    );
+
+    await embed({ text: 'synthetic' }, { fetch, maxRetries: 0 });
+
+    const finish = embeddingFinishes[0];
+    expect(finish).toMatchObject({ usage: { tokens: 8, raw: { cost: 0.000021 } } });
+    expect(
+      openRouterUsdCostFromFinishEvent(
+        finish && typeof finish === 'object' ? (finish as OpenRouterFinishEvent) : {},
+      ),
+    ).toBe(0.000021);
+  });
+
+  it('sums OpenRouter embedding cost across a batch response body', async () => {
+    const first = embeddingVector(1);
+    const second = embeddingVector(2);
+    const fetch = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >(() =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify({
+            data: [
+              { embedding: first, index: 0 },
+              { embedding: second, index: 1 },
+            ],
+            usage: { prompt_tokens: 16, total_tokens: 16, cost: 0.00004 },
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+      ),
+    );
+
+    const result = await embedMany({ texts: ['first', 'second'] }, { fetch, maxRetries: 0 });
+
+    expect(result.vectors).toEqual([first, second]);
+    const finish = embeddingFinishes[0];
+    expect(
+      openRouterUsdCostFromFinishEvent(
+        finish && typeof finish === 'object' ? (finish as OpenRouterFinishEvent) : {},
+      ),
+    ).toBe(0.00004);
   });
 
   it('truncates text before sending it to the embedding model budget', async () => {

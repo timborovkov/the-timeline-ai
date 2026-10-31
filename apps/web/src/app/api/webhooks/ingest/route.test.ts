@@ -72,6 +72,7 @@ const {
   rawEvents,
   reconciliationEvidence,
 } = await import('@timeline/db');
+const { insertRestrictedFreeBillingAccount } = await import('@timeline/shared/billing');
 const { hashCredential } = await import('@timeline/shared/ingest-webhooks');
 const rateLimit = await import('@timeline/shared/rate-limit');
 const { applyDbMigrations } = await import('@timeline/shared/test/pglite');
@@ -241,6 +242,19 @@ describe('/api/webhooks/ingest', () => {
     });
     expect(vi.mocked(rateLimit.checkRateLimit)).toHaveBeenCalledTimes(1);
     expect(vi.mocked(rateLimit.checkRateLimit).mock.calls[0]?.[0]?.key).toContain('credential');
+  });
+
+  it('stores the webhook and skips processing when the accepted-source meter denies it', async () => {
+    await insertRestrictedFreeBillingAccount({ db: db as never, teamId: TEAM_ID });
+    const response = await POST(request('{"event":"deal.updated","actor":"Maya"}'));
+
+    expect(response.status).toBe(202);
+    const rows = await db.select().from(rawEvents);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.sourceMetadata).toMatchObject({ billing_enrichment_deferred: true });
+    expect(fakes.enqueueExtractJob).not.toHaveBeenCalled();
+    expect(fakes.enqueueEmbedJob).not.toHaveBeenCalled();
+    expect(fakes.enqueueSuggestionJob).not.toHaveBeenCalled();
   });
 
   it('falls back ownerless private webhooks to team-visible evidence', async () => {

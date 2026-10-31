@@ -1,9 +1,18 @@
-import { expect } from '@timeline/test-support';
-import { vi } from '@timeline/test-support';
+import { expect, vi } from '@timeline/test-support';
 import { beforeEach, describe, it } from 'bun:test';
 const fakes = vi.hoisted(() => ({
   generateAndStoreObjectSummary: vi.fn(),
   withTeam: vi.fn(),
+  withWorkerAiBilling: vi.fn(
+    async (
+      _db: unknown,
+      _teamId: string,
+      _operationClass: string,
+      fn: () => Promise<unknown>,
+      _options?: { jobId?: string },
+    ) => fn(),
+  ),
+  Worker: vi.fn((..._args: unknown[]) => ({ on: vi.fn() })),
 }));
 
 await vi.mock(
@@ -35,7 +44,10 @@ await vi.mock(
 
 await vi.mock(
   import.meta.resolve('bullmq'),
-  () => ({ Worker: vi.fn() }),
+  () => ({
+    Queue: vi.fn(),
+    Worker: fakes.Worker,
+  }),
   () => import('bullmq'),
 );
 await vi.mock(
@@ -43,8 +55,23 @@ await vi.mock(
   () => ({ captureWorkerJobFailure: vi.fn() }),
   () => import('#src/monitoring.js'),
 );
+await vi.mock(
+  import.meta.resolve('#src/billing-context.js'),
+  () => ({
+    withWorkerAiBilling: fakes.withWorkerAiBilling,
+    workerBillingJobOptions: (
+      job: { id?: string; moveToDelayed: (timestamp: number, token?: string) => Promise<void> },
+      token?: string,
+    ) => ({
+      ...(job.id ? { jobId: job.id } : {}),
+      delayJob: (delayMs: number) => job.moveToDelayed(Date.now() + delayMs, token),
+    }),
+  }),
+  () => import('#src/billing-context.js'),
+);
 
-const { processObjectSummaryJobForTests } = await import('#src/workers/objectSummary.js');
+const { objectSummaryBillingJobId, processObjectSummaryJobForTests, startObjectSummaryWorker } =
+  await import('#src/workers/objectSummary.js');
 
 describe('object summary worker', () => {
   beforeEach(() => {
@@ -89,6 +116,77 @@ describe('object summary worker', () => {
         { teamId: 'team-1', objectId: 'object-1' },
       ),
     ).resolves.toEqual({ status: 'failed', reason: 'invalid_source_ref', retryable: false });
+  });
+
+  it('bills each object-summary generation separately and reuses that id on retry', async () => {
+    const stableId = 'object-summary|team-1|object-1';
+    const firstGeneration = 1_700_000_000_000;
+    const refreshGeneration = 1_700_000_111_000;
+    expect(objectSummaryBillingJobId({ id: stableId, timestamp: firstGeneration })).toBe(
+      `${stableId}:${String(firstGeneration)}`,
+    );
+    expect(objectSummaryBillingJobId({ id: stableId, timestamp: firstGeneration })).toBe(
+      objectSummaryBillingJobId({ id: stableId, timestamp: firstGeneration }),
+    );
+    expect(objectSummaryBillingJobId({ id: stableId, timestamp: refreshGeneration })).toBe(
+      `${stableId}:${String(refreshGeneration)}`,
+    );
+
+    fakes.generateAndStoreObjectSummary.mockResolvedValue({ status: 'ready' });
+    startObjectSummaryWorker({ db: {} as never });
+    const processor = fakes.Worker.mock.calls[0]?.[1] as
+      | ((
+          job: {
+            id: string;
+            timestamp: number;
+            attemptsMade: number;
+            data: { teamId: string; objectId: string };
+            moveToDelayed: (timestamp: number, token?: string) => Promise<void>;
+          },
+          token?: string,
+        ) => Promise<unknown>)
+      | undefined;
+    if (!processor) throw new Error('object summary worker did not register a processor');
+    const moveToDelayed = vi.fn(() => Promise.resolve());
+    await processor(
+      {
+        id: stableId,
+        timestamp: firstGeneration,
+        attemptsMade: 1,
+        data: { teamId: 'team-1', objectId: 'object-1' },
+        moveToDelayed,
+      },
+      'retry-token',
+    );
+    await processor(
+      {
+        id: stableId,
+        timestamp: refreshGeneration,
+        attemptsMade: 0,
+        data: { teamId: 'team-1', objectId: 'object-1' },
+        moveToDelayed,
+      },
+      'refresh-token',
+    );
+
+    const billedIds = fakes.withWorkerAiBilling.mock.calls.map((call) => call[4]?.jobId);
+    expect(billedIds).toEqual([
+      `${stableId}:${String(firstGeneration)}`,
+      `${stableId}:${String(refreshGeneration)}`,
+    ]);
+  });
+
+  it('propagates billing admission so a busy costly-worker slot can delay the job', async () => {
+    const { BillingAdmissionError } = await import('@timeline/shared/billing');
+    const admission = new BillingAdmissionError('costly_worker_busy');
+    fakes.generateAndStoreObjectSummary.mockRejectedValue(admission);
+
+    await expect(
+      processObjectSummaryJobForTests(
+        { db: {} as never },
+        { teamId: 'team-1', objectId: 'object-1' },
+      ),
+    ).rejects.toBe(admission);
   });
 
   it('throws retryable failed generations so BullMQ can retry transient failures', async () => {
