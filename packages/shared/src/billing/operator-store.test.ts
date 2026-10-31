@@ -418,6 +418,32 @@ describe('billing operator store', () => {
     });
   });
 
+  it('rechecks a comp applied after Enterprise preparation before creating a payable checkout', async () => {
+    await pg.exec(
+      `INSERT INTO team_members (team_id, user_id, role) VALUES ('${TEAM_ID}', '${OWNER_ID}', 'owner')`,
+    );
+    const provider = createFakeBillingProvider({ teamIdentity: true });
+    const input = {
+      db,
+      actor: { userId: ADMIN_ID, email: 'ops@example.test' },
+      teamId: TEAM_ID,
+      platformFeeCents: 100_000,
+      productId: 'prod_enterprise',
+      successUrl: 'https://thetimeline.cc/app/team?section=billing',
+      provider,
+    };
+    await startEnterpriseCheckout(input);
+    provider.expireCheckout = async () => {
+      await db
+        .update(teamBillingAccounts)
+        .set({ arrangement: 'comped', planId: 'team', billingState: 'team_active' })
+        .where(eq(teamBillingAccounts.teamId, TEAM_ID));
+      return 'expired';
+    };
+    await expect(startEnterpriseCheckout(input)).rejects.toThrow('Clear the comp');
+    expect(provider.checkouts).toHaveLength(1);
+  });
+
   it('expires the earlier Enterprise checkout before storing a replacement link', async () => {
     await pg.exec(`
       INSERT INTO team_members (team_id, user_id, role)

@@ -482,3 +482,11 @@ preflight and execution share unique owner recovery for interrupted conversions,
 without overriding an existing member binding.
 Do not erase/reassign customers to bypass that limitation. See
 [setup](../setup/polar.html) and [evidence](../testing/polar-team-identity.md).
+
+Provisioning commits the organization/environment binding before external writes,
+so an unlinked row can still represent recoverable remote work. Revocation writes
+`revoke:<target-role>` before lookup, including on unlinked teams; a successful
+exact-external-ID check and remote revocation advance it to the target role for
+local completion. Unknown provider state never counts as confirmed revocation.
+Session callbacks receive the current locked billing account, and checkout/portal
+commercial decisions are repeated against that row instead of an earlier snapshot.

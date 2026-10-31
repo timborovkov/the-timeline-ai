@@ -80,28 +80,42 @@ export async function startBillingCheckout(input: {
       return { ok: false, error: 'Enter a valid promo code.' };
     }
     try {
-      const discountId = await checkoutDiscountId({
-        account,
-        submittedCode: input.discountCode,
-        provider,
-        productId,
-      });
-      const checkout = await withTeamBillingIdentity(
+      return await withTeamBillingIdentity(
         { db, provider, teamId: gate.active.teamId, userId: gate.userId },
-        (identity) =>
-          createPlanChangeSession({
+        async (identity, { account: current }) => {
+          if (compSuppressesPolarCharges(current)) {
+            return {
+              ok: false as const,
+              error: 'This workspace is on a comped internal plan. Polar checkout is turned off.',
+            };
+          }
+          if (current.planId === 'enterprise') {
+            return {
+              ok: false as const,
+              error:
+                'Enterprise checkout is opened by a platform operator. Plan changes are not self-serve.',
+            };
+          }
+          const discountId = await checkoutDiscountId({
+            account: current,
+            submittedCode: input.discountCode,
+            provider,
+            productId,
+          });
+          const checkout = await createPlanChangeSession({
             ...identity,
             provider,
-            account,
+            account: current,
             productId,
             externalCustomerId: gate.active.teamId,
             customerEmail: gate.email,
             successUrl: `${env.AUTH_URL}/app/team?section=billing&checkout=success`,
             portalReturnUrl: `${env.AUTH_URL}/app/team?section=billing`,
             ...(discountId ? { discountId } : {}),
-          }),
+          });
+          return { ok: true as const, url: checkout.url };
+        },
       );
-      return { ok: true, url: checkout.url };
     } catch (error) {
       return {
         ok: false,
@@ -152,15 +166,22 @@ export async function startBillingPortal(): Promise<
     }
     const env = getEnv();
     try {
-      const portal = await withTeamBillingIdentity(
+      return await withTeamBillingIdentity(
         { db, provider, teamId: gate.active.teamId, userId: gate.userId },
-        (identity) =>
-          provider.createCustomerPortalSession({
+        async (identity, { account: current }) => {
+          if (compSuppressesPolarCharges(current)) {
+            return {
+              ok: false as const,
+              error: 'This workspace is on a comped internal plan. Polar checkout is turned off.',
+            };
+          }
+          const portal = await provider.createCustomerPortalSession({
             ...identity,
             returnUrl: `${env.AUTH_URL}/app/team?section=billing`,
-          }),
+          });
+          return { ok: true as const, url: portal.url };
+        },
       );
-      return { ok: true, url: portal.url };
     } catch (error) {
       return {
         ok: false,

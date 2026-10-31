@@ -7,7 +7,17 @@ const auth = vi.fn();
 const resolveActiveTeam = vi.fn();
 const requireMembership = vi.fn();
 const getAccount = vi.fn();
-const withTeam = vi.fn(() => ({ requireMembership, billing: { getAccount } }));
+let preflightAccount: unknown;
+let lockedAccount: unknown;
+const withTeam = vi.fn(() => ({
+  requireMembership,
+  billing: {
+    getAccount: async () => {
+      preflightAccount = await getAccount();
+      return preflightAccount;
+    },
+  },
+}));
 const resolveDiscount = vi.fn();
 provider.resolveDiscount = resolveDiscount;
 await vi.mock(
@@ -41,24 +51,30 @@ await vi.mock(
     ...(await import('@timeline/shared/billing')),
     withTeamBillingIdentity: async (
       input: { teamId: string },
-      action: (identity: {
-        customerId: string;
-        memberId: string;
-        externalCustomerId: string;
-      }) => Promise<unknown>,
+      action: (
+        identity: {
+          customerId: string;
+          memberId: string;
+          externalCustomerId: string;
+        },
+        context: { account: unknown },
+      ) => Promise<unknown>,
     ) =>
-      action({
-        customerId: 'cus-synthetic',
-        memberId: 'member-synthetic',
-        externalCustomerId: input.teamId,
-      }),
+      action(
+        {
+          customerId: 'cus-synthetic',
+          memberId: 'member-synthetic',
+          externalCustomerId: input.teamId,
+        },
+        { account: lockedAccount ?? preflightAccount },
+      ),
     createPolarBillingProvider: () => provider,
     isPolarBillingConfigured: () => true,
     polarProductIdForPlan: () => 'product-synthetic',
   }),
   () => import('@timeline/shared/billing'),
 );
-const { startBillingCheckout } = await import('./billing');
+const { startBillingCheckout, startBillingPortal } = await import('./billing');
 const account = {
   planId: 'free',
   billingState: 'free',
@@ -68,6 +84,8 @@ const account = {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  lockedAccount = undefined;
+  preflightAccount = undefined;
   provider.checkouts.length = 0;
   provider.customers.clear();
   provider.subscriptionUpdates.length = 0;
@@ -100,14 +118,13 @@ describe('promo checkout action', () => {
     expect(provider.checkouts[0]?.amount).toBeUndefined();
   });
 
-  it('returns distinct eligibility and provider errors without creating checkout or customer', async () => {
+  it('returns distinct eligibility and provider errors without creating a checkout', async () => {
     for (const code of ['ineligible', 'unavailable'] as const) {
       resolveDiscount.mockRejectedValueOnce(new PolarDiscountError(code));
       const result = await startBillingCheckout({ plan: 'team', discountCode: 'CODE' });
       expect(result).toEqual({ ok: false, error: new PolarDiscountError(code).message });
     }
     expect(provider.checkouts).toHaveLength(0);
-    expect(provider.customers.size).toBe(0);
   });
 
   it('uses active team assignments, then customer codes after assignment expiry', async () => {
@@ -129,6 +146,41 @@ describe('promo checkout action', () => {
     });
   });
 
+  it('uses the subscription activated before the final account lock instead of opening another checkout', async () => {
+    lockedAccount = {
+      ...account,
+      planId: 'team',
+      billingState: 'team_active',
+      polarSubscriptionId: 'sub-activated',
+    };
+    expect((await startBillingCheckout({ plan: 'business' })).ok).toBe(true);
+    expect(provider.checkouts).toHaveLength(0);
+    expect(provider.subscriptionUpdates).toHaveLength(1);
+    expect(provider.subscriptionUpdates[0]).toMatchObject({ subscriptionId: 'sub-activated' });
+  });
+  it('rechecks comp, Enterprise and assigned discount terms under the final lock', async () => {
+    for (const change of [{ arrangement: 'comped' }, { planId: 'enterprise' }]) {
+      lockedAccount = { ...account, ...change };
+      expect((await startBillingCheckout({ plan: 'team', discountCode: 'CODE' })).ok).toBe(false);
+    }
+    expect(provider.checkouts).toHaveLength(0);
+    expect(resolveDiscount).not.toHaveBeenCalled();
+    lockedAccount = { ...account, polarDiscountId: 'new-assignment' };
+    expect((await startBillingCheckout({ plan: 'team', discountCode: 'CODE' })).ok).toBe(true);
+    expect(resolveDiscount).toHaveBeenCalledWith({
+      discountId: 'new-assignment',
+      productId: 'product-synthetic',
+    });
+  });
+  it('rechecks a newly comped account before issuing a portal session', async () => {
+    lockedAccount = { ...account, arrangement: 'comped' };
+    const blocked = await startBillingPortal();
+    expect(blocked.ok).toBe(false);
+    if (blocked.ok) throw new Error('comped portal unexpectedly opened');
+    expect(blocked.error).toContain('comped');
+    lockedAccount = account;
+    expect((await startBillingPortal()).ok).toBe(true);
+  });
   it('skips discount lookup on no-code checkout and blocks members, comped and Enterprise workspaces', async () => {
     expect((await startBillingCheckout({ plan: 'team' })).ok).toBe(true);
     expect(resolveDiscount).not.toHaveBeenCalled();

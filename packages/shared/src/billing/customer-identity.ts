@@ -62,7 +62,9 @@ export function resolvePolarOwnerUserId(
   const recovered = owners.filter(
     (person) => person.verified && person.email.toLowerCase() === remoteOwner.email.toLowerCase(),
   );
-  if (allowRecovery && bindings.length === 0 && recovered.length === 1) return recovered[0]!.userId;
+  const recoveredOwner = recovered[0];
+  if (allowRecovery && bindings.length === 0 && recovered.length === 1 && recoveredOwner)
+    return recoveredOwner.userId;
   throw new PolarIdentityError('identity_conflict', 'owner_mapping');
 }
 
@@ -75,9 +77,52 @@ export async function withTeamBillingIdentity<T>(
     provider: BillingProvider;
     convert?: boolean;
   },
-  action: (identity: TeamBillingIdentity) => Promise<T>,
+  action: (
+    identity: TeamBillingIdentity,
+    context: { db: Db; account: typeof teamBillingAccounts.$inferSelect },
+  ) => Promise<T>,
 ): Promise<T> {
   const api = identityApi(input.provider);
+  // Commit the environment binding as provisioning intent before any remote
+  // write. It survives a later rollback and requires provider reconciliation
+  // before role removal, even if customer/member IDs never committed.
+  await input.db.transaction(async (tx) => {
+    const [account] = await tx
+      .select()
+      .from(teamBillingAccounts)
+      .where(eq(teamBillingAccounts.teamId, input.teamId))
+      .for('update');
+    if (!account) throw new PolarIdentityError('configuration', 'billing_account');
+    const [actor] = await tx
+      .select({ role: teamMembers.role, verified: users.emailVerified })
+      .from(teamMembers)
+      .innerJoin(users, eq(users.id, teamMembers.userId))
+      .where(
+        and(
+          eq(teamMembers.teamId, input.teamId),
+          eq(teamMembers.userId, input.userId),
+          isNull(teamMembers.removedAt),
+        ),
+      );
+    if (!actor || !['owner', 'admin'].includes(actor.role) || !actor.verified)
+      throw new PolarIdentityError('forbidden', 'billing_member');
+    if (
+      (account.polarServer && account.polarServer !== api.server) ||
+      (account.polarOrganizationId && account.polarOrganizationId !== api.organizationId)
+    )
+      throw new PolarIdentityError('identity_conflict', 'environment');
+    // Existing mappings without a binding still require explicit conversion.
+    if (
+      account.polarCustomerId &&
+      !input.convert &&
+      (!account.polarServer || !account.polarOrganizationId)
+    )
+      throw new PolarIdentityError('identity_conflict', 'environment');
+    await tx
+      .update(teamBillingAccounts)
+      .set({ polarServer: api.server, polarOrganizationId: api.organizationId })
+      .where(eq(teamBillingAccounts.teamId, input.teamId));
+  });
   return input.db
     .transaction(async (tx) => {
       const db = tx as unknown as Db;
@@ -160,7 +205,7 @@ export async function withTeamBillingIdentity<T>(
         );
         if (!existing && input.convert)
           existing = members.find(
-            (member) => member.id === remoteOwner?.id && person.userId === ownerId,
+            (member) => member.id === remoteOwner.id && person.userId === ownerId,
           );
         if (saved?.memberId && existing?.id !== saved.memberId)
           throw new PolarIdentityError('identity_conflict', 'member_mapping');
@@ -168,7 +213,7 @@ export async function withTeamBillingIdentity<T>(
           existing &&
           existing.external_id !== person.userId &&
           !(saved?.memberId === existing.id && saved.externalId === existing.external_id) &&
-          !(input.convert && existing.id === remoteOwner?.id && person.userId === ownerId)
+          !(input.convert && existing.id === remoteOwner.id && person.userId === ownerId)
         )
           throw new PolarIdentityError('identity_conflict', 'member_external_id');
         const role = person.userId === ownerId ? 'owner' : 'billing_manager';
@@ -217,11 +262,12 @@ export async function withTeamBillingIdentity<T>(
     .then(async ({ identity }) =>
       input.db.transaction(async (tx) => {
         const db = tx as unknown as Db;
-        await db
+        const [account] = await db
           .select()
           .from(teamBillingAccounts)
           .where(eq(teamBillingAccounts.teamId, input.teamId))
           .for('update');
+        if (!account) throw new PolarIdentityError('configuration', 'billing_account');
         const [member] = await db
           .select()
           .from(teamMembers)
@@ -242,7 +288,7 @@ export async function withTeamBillingIdentity<T>(
           pending.some((row) => row.pendingRole !== null)
         )
           throw new PolarIdentityError('forbidden', 'billing_member');
-        return action(identity);
+        return action(identity, { db, account });
       }),
     );
 }
@@ -263,7 +309,7 @@ export async function preparePolarMembershipChange(input: {
       .from(teamBillingAccounts)
       .where(eq(teamBillingAccounts.teamId, input.teamId))
       .for('update');
-    if (!account?.polarCustomerId) return;
+    if (!account) return;
     const [actor] = await db
       .select()
       .from(teamMembers)
@@ -324,14 +370,22 @@ export async function preparePolarMembershipChange(input: {
           eq(billingPolarMembers.userId, input.userId),
         ),
       );
-    if (saved?.pendingRole && saved.pendingRole !== input.targetRole)
+    if (
+      saved?.pendingRole &&
+      saved.pendingRole !== input.targetRole &&
+      saved.pendingRole !== `revoke:${input.targetRole}`
+    )
       throw new PolarIdentityError('identity_conflict', 'pending_membership_change');
     await db
       .insert(billingPolarMembers)
-      .values({ teamId: input.teamId, userId: input.userId, pendingRole: input.targetRole })
+      .values({
+        teamId: input.teamId,
+        userId: input.userId,
+        pendingRole: `revoke:${input.targetRole}`,
+      })
       .onConflictDoUpdate({
         target: [billingPolarMembers.teamId, billingPolarMembers.userId],
-        set: { pendingRole: input.targetRole, updatedAt: new Date() },
+        set: { pendingRole: `revoke:${input.targetRole}`, updatedAt: new Date() },
       });
   });
   await input.db.transaction(async (tx) => {
@@ -350,10 +404,52 @@ export async function preparePolarMembershipChange(input: {
           eq(billingPolarMembers.userId, input.userId),
         ),
       );
-    if (!saved?.pendingRole || !account?.polarCustomerId) return;
-    if (!input.provider) throw new PolarIdentityError('configuration', 'provider');
+    if (!saved?.pendingRole || !account) return;
+    const confirmRevocation = () =>
+      db
+        .update(billingPolarMembers)
+        .set({ memberId: null, role: null, pendingRole: input.targetRole })
+        .where(eq(billingPolarMembers.id, saved.id));
+    if (!input.provider?.identity) {
+      if (
+        account.polarCustomerId ||
+        account.polarServer ||
+        account.polarOrganizationId ||
+        saved.memberId
+      )
+        throw new PolarIdentityError('configuration', 'provider');
+      await confirmRevocation();
+      return;
+    }
     const api = identityApi(input.provider);
-    const customerId = await assertStoredPolarIdentity(db, input.teamId, input.provider);
+    if (
+      (account.polarServer && account.polarServer !== api.server) ||
+      (account.polarOrganizationId && account.polarOrganizationId !== api.organizationId)
+    )
+      throw new PolarIdentityError('identity_conflict', 'environment');
+    let customerId = account.polarCustomerId;
+    if (customerId) {
+      await assertStoredPolarIdentity(db, input.teamId, input.provider);
+    } else {
+      // Provisioning can have succeeded remotely while its local transaction
+      // rolled back. Only the exact external ID can recover that customer.
+      const recovered = await api.customer(input.teamId);
+      if (!recovered) {
+        await confirmRevocation();
+        return;
+      }
+      if (recovered.type !== 'team')
+        throw new PolarIdentityError('configuration', 'conversion_required');
+      customerId = recovered.id;
+      await db
+        .update(teamBillingAccounts)
+        .set({
+          polarCustomerId: customerId,
+          polarServer: api.server,
+          polarOrganizationId: api.organizationId,
+        })
+        .where(eq(teamBillingAccounts.teamId, input.teamId));
+    }
     // Customer-level email can receive customer-scoped access links independently
     // of member sessions. Revoking only the member cannot revoke that access.
     const customer = await api.customer(input.teamId, customerId);
@@ -417,10 +513,7 @@ export async function preparePolarMembershipChange(input: {
         });
     }
     if (target) await api.removeMember(customerId, target.id);
-    await db
-      .update(billingPolarMembers)
-      .set({ memberId: null, role: null })
-      .where(eq(billingPolarMembers.id, saved.id));
+    await confirmRevocation();
   });
 }
 /** Shared lock order for local role mutations and provider session issuance. */
@@ -447,9 +540,8 @@ export async function completePolarMembershipChange(
     .select()
     .from(billingPolarMembers)
     .where(and(eq(billingPolarMembers.teamId, teamId), eq(billingPolarMembers.userId, userId)));
-  // Preparation may have observed an unlinked account before concurrent setup
-  // created a remote member. Fail the local mutation; retry runs preparation
-  // against the now-linked customer and revokes access before completing.
+  // Defense in depth: local role mutation must not finish while its mapped
+  // provider member still grants access, even if a caller skipped preparation.
   if (
     saved?.memberId &&
     targetRole !== 'owner' &&

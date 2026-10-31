@@ -51,6 +51,14 @@
         existing mappings; every new checkout/portal access retries the full authorized member sync.
         A failed refresh never issues a session.
       </p>
+      <p>
+        An organization/environment binding without a customer ID can be provisioning intent from an
+        interrupted remote setup. Do not clear it manually. Role removal checks the exact team
+        external ID and revokes surviving remote members before completion. Unconfirmed operations
+        use <code>revoke:&lt;role&gt;</code>; only a successful provider check advances them to the
+        target role. Missing provider configuration or an outage keeps removal blocked. Checkout and
+        portal decisions recheck commercial terms under the session-issuance lock.
+      </p>
       <h3>Existing customer conversion</h3>
       <pre><code>bun run billing:polar-convert --team-id=&lt;team-uuid&gt; --actor-email=&lt;verified-platform-admin&gt;
 # Review the dry-run, then explicitly apply:

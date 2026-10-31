@@ -703,7 +703,6 @@ export async function startEnterpriseCheckout(input: {
     return {
       email: owner.email,
       ownerUserId: owner.userId,
-      discountId: activePolarDiscountId(existing, now),
       terms,
       outstandingCheckoutIds: Object.keys(
         readPendingEnterpriseTerms(existing.pendingEnterpriseTerms).byCheckoutId,
@@ -729,15 +728,28 @@ export async function startEnterpriseCheckout(input: {
         userId: prepared.ownerUserId,
         provider: input.provider,
       },
-      (identity) =>
-        input.provider.createCheckoutSession({
+      async (identity, { db, account: current }) => {
+        await requirePlatformAdmin(db, input.actor);
+        assertEnterpriseCheckoutAllowed(current);
+        const merged = assertPriceOverride({
+          ...(activePriceOverride(current, now) ?? {}),
+          ...override,
+        });
+        prepared.terms = {
+          ...merged,
+          platformFeeCents: merged.platformFeeCents ?? input.platformFeeCents,
+          ...(input.spendCapCents !== undefined ? { spendCapCents: input.spendCapCents } : {}),
+        };
+        const discountId = activePolarDiscountId(current, now);
+        return input.provider.createCheckoutSession({
           ...identity,
           customerEmail: prepared.email,
           productId: input.productId,
           successUrl: input.successUrl,
           amount: input.platformFeeCents,
-          ...(prepared.discountId ? { discountId: prepared.discountId } : {}),
-        }),
+          ...(discountId ? { discountId } : {}),
+        });
+      },
     );
     const url = polarCheckoutUrl(checkout.url);
     if (!url || checkout.id.trim().length === 0) {

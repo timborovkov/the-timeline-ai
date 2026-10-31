@@ -130,18 +130,60 @@ describe('Polar team identity and revocation', () => {
     await expect(resolve(admin)).rejects.toMatchObject({ code: 'forbidden' });
     expect(await resolve()).toBeDefined();
   });
-  it('rejects a demotion when first billing setup happened after preparation', async () => {
-    await revoke(); // No customer existed during preparation.
+  it('blocks first billing setup while an unlinked member removal is pending', async () => {
+    await revoke();
+    await expect(resolve(admin)).rejects.toMatchObject({ operation: 'pending_membership_change' });
+    await finish();
+    const identity = await resolve();
+    expect(
+      (await api().members(identity.customerId)).some((row) => row.external_id === admin),
+    ).toBe(false);
+  });
+  it('rejects local demotion without completed revocation of a newly mapped member', async () => {
     const identity = await resolve(admin);
     await expect(finish()).rejects.toMatchObject({ operation: 'revocation_incomplete' });
-    expect(
-      (await db.select().from(teamMembers).where(eq(teamMembers.userId, admin)))[0]?.role,
-    ).toBe('admin');
     await revoke();
     await finish();
     expect(
       (await api().members(identity.customerId)).some((row) => row.id === identity.memberId),
     ).toBe(false);
+    await expect(resolve(admin)).rejects.toMatchObject({ code: 'forbidden' });
+  });
+  it('recovers and revokes remote members after provisioning rolled back locally', async () => {
+    const save = api().saveMember.bind(api());
+    api().saveMember = async (...args) => {
+      const result = await save(...args);
+      if (args[1].userId === admin)
+        throw new PolarIdentityError('unavailable', 'after_remote_write');
+      return result;
+    };
+    await expect(resolve()).rejects.toMatchObject({ operation: 'after_remote_write' });
+    const account = (
+      await db.select().from(teamBillingAccounts).where(eq(teamBillingAccounts.teamId, teamId))
+    )[0];
+    expect(account?.polarCustomerId).toBeNull();
+    expect(account?.polarOrganizationId).toBe(api().organizationId);
+    expect(await db.select().from(billingPolarMembers)).toHaveLength(0);
+    const remote = await api().customer(teamId);
+    if (!remote) throw new Error('remote provisioning was lost');
+    expect((await api().members(remote.id)).some((row) => row.external_id === admin)).toBe(true);
+    api().saveMember = save;
+    await expect(
+      preparePolarMembershipChange({
+        db,
+        teamId,
+        actorUserId: owner,
+        userId: admin,
+        targetRole: 'member',
+        provider: null,
+      }),
+    ).rejects.toMatchObject({ operation: 'provider' });
+    await expect(finish()).rejects.toMatchObject({ operation: 'revocation_incomplete' });
+    await revoke();
+    await finish();
+    const recovered = await resolve();
+    expect(recovered.customerId).toBe(remote.id);
+    expect((await api().members(remote.id)).some((row) => row.external_id === admin)).toBe(false);
     await expect(resolve(admin)).rejects.toMatchObject({ code: 'forbidden' });
   });
   it('blocks revocation while a legacy customer email still grants independent access', async () => {
@@ -236,7 +278,12 @@ describe('Polar team identity and revocation', () => {
     expect(resolvePolarOwnerUserId(owners, [], remoteOwner, true)).toBe(owner);
     expect(() => resolvePolarOwnerUserId(owners, [], remoteOwner)).toThrow();
     expect(() =>
-      resolvePolarOwnerUserId([...owners, { ...owners[0]!, userId: admin }], [], remoteOwner, true),
+      resolvePolarOwnerUserId(
+        [...owners, { userId: admin, email: remoteOwner.email, verified: true }],
+        [],
+        remoteOwner,
+        true,
+      ),
     ).toThrow();
     expect(() =>
       resolvePolarOwnerUserId(

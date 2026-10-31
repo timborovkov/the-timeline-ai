@@ -203,3 +203,20 @@ Threads: [4429557164](https://github.com/timborovkov/the-timeline-ai/pull/384#di
 - GitHub Actions run `41153070163` did not start its static job: GitHub reports the repository account is locked due to a billing issue. This is separate from the passing local checks.
 - `/document-release` is not installed in this environment. Manual handoff checked README, TODO, setup, ADR, trust/evidence documentation and audit links against the final diff.
 - No real purchases, database resets, environment edits, or PR merge were performed in this follow-up.
+
+## Second review cycle: provisioning rollback and locked checkout state
+
+Codex reviewed `3026c6b1` and identified two further races:
+
+- [Uncommitted remote identities](https://github.com/timborovkov/the-timeline-ai/pull/384#discussion_r4429818309): organization/environment binding now commits as provisioning intent before remote writes. Removal persists pending intent even without a customer ID, resolves the exact external ID, and revokes surviving remote members before local completion. The `revoke:<role>` phase cannot complete locally; only confirmed revocation changes it to the target role. Provider/configuration failures leave it blocked. No schema change or email-based customer discovery is used.
+- [Stale checkout account](https://github.com/timborovkov/the-timeline-ai/pull/384#discussion_r4429818314): the identity wrapper passes its locked current account to session callbacks. Self-service checkout resolves discounts and chooses subscription update versus checkout using that row, with renewed comp/Enterprise checks. Portal and Enterprise/operator checkout also recheck current arrangements and authorization; Enterprise discounts and inherited terms use the locked row.
+
+Regressions cover a successful remote admin write followed by local rollback,
+provider loss before recovery, removal pending before first setup, subscription
+activation between preflight and issuance, changed comp/Enterprise/discount terms,
+and a comp applied while an operator closes a previous checkout. Follow-up
+validation includes the identity, billing-action, team-action and operator-store
+suites. Lint also identified and removed non-null assertions and redundant optional
+chains in owner recovery; static checks are rerun on the final code.
+
+Second-cycle validation: 88 distinct affected tests passed; the full build, scoped lint/formatting, conversion-script typecheck, compiled-import checks, and diff checks passed on the follow-up.

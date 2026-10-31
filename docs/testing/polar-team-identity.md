@@ -159,3 +159,8 @@ is deployed. The manual documentation handoff audit was refreshed for this merge
   refusal/retry. No real customer reset, subscription, or payment is involved.
 
 The [PR review audit](polar-review-audit.md) records the disposition and implementation/test evidence for the historical billing review backlog.
+
+The second review cycle additionally covers remote provisioning surviving a local
+rollback, missing-provider recovery, and checkout decisions using the final locked
+account. Organization/environment intent is durable before external writes; local
+removal cannot complete from an unconfirmed revocation phase.
