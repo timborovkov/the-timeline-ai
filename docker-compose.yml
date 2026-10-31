@@ -11,7 +11,7 @@ name: timeline
 services:
   # ---- Postgres ----
   postgres:
-    image: postgres:16-alpine
+    image: postgres:18-alpine
     restart: unless-stopped
     environment:
       POSTGRES_USER: timeline
@@ -20,9 +20,11 @@ services:
     ports:
       - '5432:5432'
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      # Keep the old logical volume by default: PG18 refuses PG16 data rather
+      # than silently starting an empty database. See docs/setup/postgres18.md.
+      - ${POSTGRES_DATA_VOLUME:-postgres_data}:/var/lib/postgresql
     healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U timeline -d timeline']
+      test: ['CMD-SHELL', 'pg_isready -h 127.0.0.1 -U timeline -d timeline']
       interval: 5s
       timeout: 5s
       retries: 10
@@ -211,6 +213,7 @@ services:
 
 volumes:
   postgres_data:
+  postgres18_data:
   redis_data:
   qdrant_data:
   rustfs_data:
