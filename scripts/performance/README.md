@@ -1,7 +1,7 @@
 # Local runtime comparison
 
 These harnesses preserve the workloads used in
-[the local migration measurements](../../docs/research/bun-local-performance.md). They compare the
+[the recorded comparison samples](../../docs/research/bun-local-performance-review.json). They compare the
 same compiled application/dependencies under an explicitly selected Node baseline and Bun. They do
 not measure a historical Node build or replace staging acceptance. Node is used only as a benchmark
 baseline.

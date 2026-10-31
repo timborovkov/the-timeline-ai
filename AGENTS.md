@@ -389,7 +389,7 @@ Phased build plan and current state: [todo.md](todo.md). Product vision:
 
 ### Non-obvious env / startup gotchas
 
-- **Use Bun 1.4.4 from `.bun-version`.** Keep `engines.bun`, `packageManager`, CI, and every Docker stage aligned with that pin. Run `bun --version` before checks. Application execution and tests must not fall back to Node; record any required build/analysis exception in `docs/bun-migration.md`.
+- **Use Bun 1.4.4 from `.bun-version`.** Keep `engines.bun`, `packageManager`, CI, and every Docker stage aligned with that pin. Run `bun --version` before checks. Application execution and tests must not fall back to Node; record any required build/analysis exception in `README.md`.
 - **The repository disables Bun’s automatic `.env` loading with `bunfig.toml` (`env = false`); offline tests also use `--no-env-file` and an environment allowlist. Production commands use `--no-env-file`.** Next.js loads `apps/web/.env` (symlink to `../../.env`). Before `bun run db:migrate`, `bun run demo:seed`, or running the worker, export the root env into the shell, e.g. `set -a; . ./.env; set +a`. Quote any values that contain spaces (for example `RECALL_BOT_DISPLAY_NAME="Timeline Bot"`) or bash will try to execute the trailing words when sourcing.
 - **The root `bun run dev` script must keep `--env-mode=loose`.** Turbo's strict default strips unlisted env vars from the worker task even after sourcing `.env`. Alternatively run packages separately with env already exported: `bun run --filter @timeline/web dev` and `bun run --filter @timeline/worker dev`.
 - Optional URL keys left blank in `.env.example` must use `emptyStringAsUnset` in the shared env schema so the documented shell export flow remains valid.

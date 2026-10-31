@@ -30,10 +30,10 @@
       <h2 id="first-time-setup">First-time setup</h2>
       <pre><code>curl -fsSL https://bun.com/install | bash -s "bun-v1.4.4"</code></pre>
       <p>
-        Open a new shell after installing Bun. For a checkout previously installed with pnpm, remove
-        generated root and workspace <code>node_modules</code> directories before running
-        <code>bun run deps --frozen-lockfile</code>. Preserve <code>.env</code> and Docker volumes.
-        Stop old Node development processes before starting the Bun app and workers.
+        Open a new shell after installing Bun. For a checkout previously installed with another
+        package manager, remove generated root and workspace <code>node_modules</code> directories
+        before running <code>bun run deps --frozen-lockfile</code>. Preserve <code>.env</code> and
+        Docker volumes. Stop old Node development processes before starting the Bun app and workers.
       </p>
       <pre><code>bun --version # must match .bun-version
 cp .env.example .env
@@ -268,7 +268,7 @@ RECONCILIATION_LIVE_ENV_FILE=/path/.env bun run test:reconciliation-eval:live
 # optional: RECONCILIATION_LIVE_MAX_ATTEMPTS=3 retries transient planner,
 # judge, and judge-consistency failures
 bun run test:e2e-env                     # deterministic E2E env/port contract check
-bun run test:dist-imports                # build db/shared and import compiled runtime modules with Node
+bun run test:dist-imports                # build db/shared and import compiled runtime modules with Bun
 bun run --filter @timeline/worker reconciliation-evidence -- --team=&lt;uuid&gt; --mode=audit
 bun run --filter @timeline/worker reconciliation-evidence -- --team=&lt;uuid&gt; --mode=audit --fail-on-release-gate
 # optional: repeat --allow-degraded-source=&lt;event_source&gt; for known historical degraded replay rows
