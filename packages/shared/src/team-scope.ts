@@ -553,6 +553,8 @@ export interface TeamScopeDeps {
    * `specific_users` events stay invisible.
    */
   skipMembershipCheck?: boolean;
+  /** Internal email-ingest recovery only; requires the zero-UUID system principal. */
+  emailIngestRecovery?: true;
 }
 
 export interface TeamScopeCore {
@@ -2804,6 +2806,30 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
   return {
     ...core,
     timeline: {
+      /** Internal recovery metadata, never a user-visible event read. */
+      async getEmailIngestRecoveryState(id: string) {
+        if (!deps.emailIngestRecovery || userId !== '00000000-0000-0000-0000-000000000000') {
+          throw new Error('Email ingest recovery requires the system principal');
+        }
+        const [row] = await db
+          .select({
+            visibility: rawEvents.visibility,
+            owner: rawEvents.visibilityOwnerUserId,
+            metadata: rawEvents.sourceMetadata,
+          })
+          .from(rawEvents)
+          .where(
+            and(
+              eq(rawEvents.teamId, teamId),
+              eq(rawEvents.id, id),
+              eq(rawEvents.source, 'email'),
+              activeRawEventFilter,
+            ),
+          )
+          .limit(1);
+        return row ?? null;
+      },
+
       async team() {
         await ensureMember();
         const rows = await db.select().from(teams).where(eq(teams.id, teamId)).limit(1);

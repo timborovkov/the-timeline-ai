@@ -470,6 +470,9 @@ async function ingestForTeam(
     return false;
   }
   const scope = withTeam(deps.db, team.id, callerUserId);
+  const recoveryScope = withTeam(deps.db, team.id, '00000000-0000-0000-0000-000000000000', {
+    emailIngestRecovery: true,
+  });
   const emailDefault = await scope.timeline.resolveVisibilityDefault('email');
   let visibilityOwnerUserId = senderUnverified
     ? null
@@ -631,21 +634,18 @@ async function ingestForTeam(
   // Run the same replay-safe downstream path for first delivery and recovery.
   const parentEventId = createResult.id;
   if (createResult.deduplicated) {
-    const [stored] = await deps.db
-      .select({
-        visibility: rawEvents.visibility,
-        owner: rawEvents.visibilityOwnerUserId,
-        metadata: rawEvents.sourceMetadata,
-      })
-      .from(rawEvents)
-      .where(and(eq(rawEvents.id, parentEventId), eq(rawEvents.teamId, team.id)))
-      .limit(1);
+    const stored = await recoveryScope.timeline.getEmailIngestRecoveryState(parentEventId);
     if (!stored) throw new Error('email_parent_missing');
     // A different provider delivery with the same RFC ID cannot append content
     // to the original immutable capture. Its own job remains responsible for recovery.
     const storedMetadata = (stored.metadata ?? {}) as Record<string, unknown>;
     if (storedMetadata.resend_message_id !== payload.providerId) return false;
-    resolvedEmailVisibility = stored.visibility === 'private' ? 'private' : 'team';
+    // Attachment recovery currently supports binary visibility only. Never widen
+    // an owner's later restriction while creating derived documents/audio.
+    if (stored.visibility === 'specific_users') {
+      throw new Error('email_recovery_specific_users_requires_operator');
+    }
+    resolvedEmailVisibility = stored.visibility;
     visibilityOwnerUserId = stored.owner;
   }
 
@@ -734,12 +734,9 @@ async function ingestForTeam(
       parentAttachmentsDirty = true;
 
       try {
-        const [storedChild] = await deps.db
-          .select({ metadata: rawEvents.sourceMetadata })
-          .from(rawEvents)
-          .where(and(eq(rawEvents.id, child.id), eq(rawEvents.teamId, team.id)))
-          .limit(1);
-        const childMetadata = (storedChild?.metadata ?? {}) as Record<string, unknown>;
+        const storedChild = await recoveryScope.timeline.getEmailIngestRecoveryState(child.id);
+        if (!storedChild) throw new Error('email_audio_child_missing');
+        const childMetadata = (storedChild.metadata ?? {}) as Record<string, unknown>;
         if (allowEnrichment && typeof childMetadata.transcribed_at !== 'string') {
           await deps.attachments.enqueueTranscribe({
             rawEventId: child.id,

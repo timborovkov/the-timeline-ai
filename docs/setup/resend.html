@@ -90,7 +90,12 @@ INBOUND_EMAIL_DOMAIN=</code></pre>
       <p>
         Run replay with the intended Redis configuration already exported. It can create captured
         events and resumes failed/completed jobs. Database deduplication and stable child identities
-        prevent duplicate evidence and billing.
+        prevent duplicate evidence and billing. Recovery metadata is read through the team scope
+        using an explicit internal ingest principal. If an owner has restricted a captured parent to
+        specific people, replay fails closed with
+        <code>email_recovery_specific_users_requires_operator</code> before creating derived
+        documents or audio children. The failed job remains operator-visible; recovery must not
+        broaden the parent’s visibility.
       </p>
       <h2>Outbound mail</h2>
       <p>

@@ -25,6 +25,7 @@ import {
   handleInbound,
   type EmailAttachmentDeps,
 } from '#src/email/dispatcher.js';
+import { withTeam } from '#src/team-scope.js';
 import { applyDbMigrations } from '#src/test/pglite.js';
 import { textQueueDeps } from '#src/test/queue-deps.js';
 const TEAM_ID = '11111111-1111-1111-1111-111111111111';
@@ -1195,6 +1196,72 @@ describe('email dispatcher', () => {
     expect(row?.visibility).toBe('team');
     expect(row?.visibilityUserIds).toBeNull();
   });
+  it('limits recovery reads to the explicit ingest principal and matching team/email', async () => {
+    await handleInbound(
+      { db: db as never, inboundDomain: 'inbound.test' },
+      inboundPayload('scoped-recovery'),
+    );
+    const [parent] = await db.select().from(rawEvents).where(eq(rawEvents.teamId, TEAM_ID));
+    if (!parent) throw new Error('Expected parent');
+    const system = '00000000-0000-0000-0000-000000000000';
+    await expect(
+      withTeam(db as never, TEAM_ID, USER_ID).timeline.getEmailIngestRecoveryState(parent.id),
+    ).rejects.toThrow('system principal');
+    await expect(
+      withTeam(db as never, TEAM_ID, USER_ID, {
+        emailIngestRecovery: true,
+      }).timeline.getEmailIngestRecoveryState(parent.id),
+    ).rejects.toThrow('system principal');
+    await expect(
+      withTeam(db as never, TEAM_ID, system).timeline.getEmailIngestRecoveryState(parent.id),
+    ).rejects.toThrow('system principal');
+    await expect(
+      withTeam(db as never, OTHER_TEAM_ID, system, {
+        emailIngestRecovery: true,
+      }).timeline.getEmailIngestRecoveryState(parent.id),
+    ).resolves.toBeNull();
+    const scope = withTeam(db as never, TEAM_ID, system, { emailIngestRecovery: true });
+    await expect(scope.timeline.getEmailIngestRecoveryState(parent.id)).resolves.toMatchObject({
+      visibility: 'team',
+    });
+    await db.update(rawEvents).set({ source: 'web' }).where(eq(rawEvents.id, parent.id));
+    await expect(scope.timeline.getEmailIngestRecoveryState(parent.id)).resolves.toBeNull();
+    await db
+      .update(rawEvents)
+      .set({ source: 'email', sourceMetadata: { deleted: true } })
+      .where(eq(rawEvents.id, parent.id));
+    await expect(scope.timeline.getEmailIngestRecoveryState(parent.id)).resolves.toBeNull();
+  });
+
+  it('fails closed when a parent is restricted before missing audio recovery', async () => {
+    const payload = inboundPayload('restricted-audio-recovery');
+    payload.from = 'member@example.com';
+    payload.fromAddress = { email: payload.from, name: 'Member' };
+    payload.attachments = [attachment('memo.m4a', 'audio/mp4')];
+    const attachments = attachmentDeps();
+    attachments.uploadAudio.mockRejectedValueOnce(new Error('storage unavailable'));
+    const deps = {
+      db: db as never,
+      inboundDomain: 'inbound.test',
+      attachments,
+      ...textQueueDeps(),
+    };
+    await expect(handleInbound(deps, payload)).resolves.toMatchObject({ ok: false });
+    const [parent] = await db.select().from(rawEvents).where(eq(rawEvents.teamId, TEAM_ID));
+    if (!parent) throw new Error('Expected parent');
+    await withTeam(db as never, TEAM_ID, USER_ID).timeline.setEventVisibility(parent.id, {
+      visibility: 'specific_users',
+      visibilityUserIds: [USER_ID],
+    });
+    await expect(handleInbound(deps, payload)).resolves.toMatchObject({ ok: false });
+    const rows = await db.select().from(rawEvents).where(eq(rawEvents.teamId, TEAM_ID));
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.visibility).toBe('specific_users');
+    expect(rows[0]?.visibilityUserIds).toEqual([USER_ID]);
+    expect(attachments.uploadAudio).toHaveBeenCalledTimes(1);
+    expect(attachments.enqueueTranscribe).not.toHaveBeenCalled();
+  });
+
   it('does not enqueue a completed audio child when the inbound parent is replayed', async () => {
     const payload = inboundPayload('completed-audio-replay');
     payload.attachments = [attachment('memo.m4a', 'audio/mp4')];
