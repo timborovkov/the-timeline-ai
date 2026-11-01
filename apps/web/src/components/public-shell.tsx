@@ -15,6 +15,7 @@ import { cn } from '@/lib/utils';
 interface PublicShellProps {
   children: ReactNode;
   isSignedIn?: boolean;
+  showAccountActions?: boolean;
   width?: 'reading' | 'wide' | 'expanded';
   footerLabel?: string;
   currentSection?: PublicNavigationSection;
@@ -23,6 +24,7 @@ interface PublicShellProps {
 export function PublicShell({
   children,
   isSignedIn = false,
+  showAccountActions = true,
   width = 'wide',
   footerLabel = 'The Timeline',
   currentSection,
@@ -32,7 +34,11 @@ export function PublicShell({
   return (
     <div className={cn(publicSiteStyles.canvas, 'min-h-dvh overflow-x-hidden text-fg')}>
       <SkipLink />
-      <PublicHeader isSignedIn={isSignedIn} currentSection={currentSection} />
+      <PublicHeader
+        isSignedIn={isSignedIn}
+        currentSection={currentSection}
+        showAccountActions={showAccountActions}
+      />
       {children}
       <footer className="border-t border-border">
         <div

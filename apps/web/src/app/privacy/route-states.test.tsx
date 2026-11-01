@@ -81,6 +81,9 @@ describe('Legal route states', () => {
       expect(screen.getByLabelText(`${title} loading placeholder`).getAttribute('aria-busy')).toBe(
         'true',
       );
+      expect(screen.queryByRole('link', { name: 'Sign in' })).toBeNull();
+      expect(screen.queryByRole('link', { name: 'Start free' })).toBeNull();
+      expect(screen.queryByRole('link', { name: 'Dashboard' })).toBeNull();
     },
   );
 
@@ -99,6 +102,9 @@ describe('Legal route states', () => {
     expect(
       screen.getByLabelText('Trust center loading placeholder').getAttribute('aria-busy'),
     ).toBe('true');
+    expect(screen.queryByRole('link', { name: 'Sign in' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Start free' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Dashboard' })).toBeNull();
   });
 
   it.each([

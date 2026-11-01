@@ -113,7 +113,19 @@ describe('Landing route states', () => {
     expect(html).toContain('aria-label="Public navigation"');
     expect(html).toContain('aria-label="Public navigation menu"');
     expect(html).toContain('href="/help/support"');
-    expect(html).toContain('href="/sign-in"');
-    expect(html).toContain('href="/sign-up"');
+    expect(html).not.toContain('href="/sign-in"');
+    expect(html).not.toContain('href="/sign-up"');
+    expect(html).not.toContain('>Start free</a>');
+    expect(html).not.toContain('>Dashboard</a>');
+  });
+
+  it('keeps the landing loading masthead auth-neutral instead of guessing session state', () => {
+    render(<LandingLoading />);
+
+    expect(screen.queryByRole('link', { name: 'Sign in' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Start free' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Dashboard' })).toBeNull();
+    expect(screen.getByRole('navigation', { name: 'Public navigation' })).toBeTruthy();
+    expect(screen.getByLabelText('The Timeline source code on GitHub')).toBeTruthy();
   });
 });

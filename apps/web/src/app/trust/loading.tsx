@@ -10,7 +10,12 @@ const AI_ROUTE_ROWS = 4;
 
 export default function TrustLoading() {
   return (
-    <PublicShell width="expanded" currentSection="trust" footerLabel="The Timeline trust center">
+    <PublicShell
+      width="expanded"
+      currentSection="trust"
+      footerLabel="The Timeline trust center"
+      showAccountActions={false}
+    >
       <main id="main" tabIndex={-1}>
         <output className="sr-only" aria-live="polite">
           Loading The Timeline trust center

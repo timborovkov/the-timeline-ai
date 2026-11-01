@@ -46,6 +46,9 @@ describe('legal route dates', () => {
     expect(html).toContain('max-w-[82rem]');
     expect(html).toContain('xl:grid-cols-4');
     expect(html).toContain('Data path');
+    expect(html).not.toContain('href="/sign-in"');
+    expect(html).not.toContain('href="/sign-up"');
+    expect(html).not.toContain('>Start free</a>');
     expect(html).not.toContain(`Trust · Last reviewed ${TRUST_REVIEW_DATE}`);
     expect(errorHtml).toContain(`Trust · Last reviewed ${TRUST_REVIEW_DATE}`);
   });

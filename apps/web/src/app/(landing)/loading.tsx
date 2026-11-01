@@ -22,7 +22,7 @@ export default function LandingLoading() {
       <div className={styles.progress} aria-hidden="true">
         <span />
       </div>
-      <PublicHeader currentSection="product" />
+      <PublicHeader currentSection="product" showAccountActions={false} />
       <main id="main" tabIndex={-1}>
         <output className="sr-only" aria-live="polite">
           Loading The Timeline

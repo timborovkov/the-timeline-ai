@@ -63,4 +63,20 @@ describe('PublicShell', () => {
     expect(html).not.toContain('href="/sign-in"');
     expect(html).not.toContain('>Open app</a>');
   });
+
+  it('can omit account actions from auth-neutral loading and error chrome', () => {
+    const html = renderToStaticMarkup(
+      <PublicShell showAccountActions={false}>
+        <main id="main">Public content</main>
+      </PublicShell>,
+    );
+
+    expect(html).not.toContain('href="/sign-in"');
+    expect(html).not.toContain('href="/sign-up"');
+    expect(html).not.toContain('>Start free</a>');
+    expect(html).not.toContain('>Dashboard</a>');
+    expect(html).toContain('data-public-header="true"');
+    expect(html).toContain('aria-label="The Timeline source code on GitHub"');
+    expect(html.match(/aria-label="Toggle theme"/g)).toHaveLength(2);
+  });
 });

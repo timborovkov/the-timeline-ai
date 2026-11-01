@@ -27,7 +27,12 @@ function LegalRouteFrame({
   children,
 }: LegalRouteStateProps & { children: ReactNode }) {
   return (
-    <PublicShell width="reading" footerLabel={footerLabel} currentSection={currentSection}>
+    <PublicShell
+      width="reading"
+      footerLabel={footerLabel}
+      currentSection={currentSection}
+      showAccountActions={false}
+    >
       <main id="main" className="mx-auto max-w-4xl px-4 py-12 sm:px-6 sm:py-16">
         <p className="text-xs font-medium text-fg-muted">{eyebrow}</p>
         <h1 className="mt-3 text-3xl font-semibold tracking-tight text-fg sm:text-4xl">{title}</h1>
