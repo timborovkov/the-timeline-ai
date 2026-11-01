@@ -1,6 +1,6 @@
 import {
-  CollectionRowsSkeleton,
-  CollectionToolbarSkeleton,
+  ChipNavSkeleton,
+  CollectionGroupSkeleton,
   PageHeaderSkeleton,
 } from '@/components/loading-states';
 import { WorkSubnav } from '@/components/work-subnav';
@@ -19,8 +19,12 @@ export default function ApprovalsLoading() {
         <WorkSubnav current="/app/approvals" />
         <div aria-hidden="true" className="motion-reduce:[&_.animate-pulse]:animate-none">
           <section aria-label="Approvals loading placeholder">
-            <CollectionToolbarSkeleton search={false} viewSegments={4} />
-            <CollectionRowsSkeleton count={6} />
+            <div className="border-b border-border bg-bg">
+              <div className="flex min-h-11 min-w-0 flex-wrap items-center gap-1.5 px-2 sm:px-3">
+                <ChipNavSkeleton count={4} widths={['w-16', 'w-14', 'w-16', 'w-10']} />
+              </div>
+            </div>
+            <CollectionGroupSkeleton groups={1} rows={5} leading={false} subtitle />
           </section>
         </div>
       </div>

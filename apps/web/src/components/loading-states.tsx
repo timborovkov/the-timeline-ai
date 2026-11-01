@@ -72,11 +72,13 @@ export function CollectionToolbarSkeleton({
   action = false,
   search = true,
   count = true,
+  filters = true,
 }: {
   viewSegments?: number;
   action?: boolean;
   search?: boolean;
   count?: boolean;
+  filters?: boolean;
 }) {
   return (
     <div className="border-b border-border bg-bg" data-loading-toolbar="collection">
@@ -87,7 +89,7 @@ export function CollectionToolbarSkeleton({
           </div>
         ) : null}
         {count ? <Skeleton className="h-3 w-14" /> : null}
-        <Skeleton className="h-9 w-16" />
+        {filters ? <Skeleton className="h-9 w-16" /> : null}
         {viewSegments > 0 ? (
           <div className="ml-auto flex min-h-10 items-center">
             <div className="inline-flex overflow-hidden rounded-sm bg-surface">
@@ -104,6 +106,76 @@ export function CollectionToolbarSkeleton({
         ) : null}
       </div>
     </div>
+  );
+}
+
+export function HistoryBackLinkSkeleton() {
+  return <Skeleton className="h-8 w-24" />;
+}
+
+export function AuthProviderDividerSkeleton() {
+  return (
+    <>
+      <Skeleton className="h-9 w-full motion-reduce:animate-none" />
+      <div className="flex items-center gap-3">
+        <Skeleton className="h-px flex-1 motion-reduce:animate-none" />
+        <Skeleton className="h-3 w-6 motion-reduce:animate-none" />
+        <Skeleton className="h-px flex-1 motion-reduce:animate-none" />
+      </div>
+    </>
+  );
+}
+
+export function ChipNavSkeleton({ count, widths }: { count: number; widths?: readonly string[] }) {
+  return (
+    <div className="flex flex-wrap items-center gap-1">
+      {Array.from({ length: count }).map((_, index) => (
+        <Skeleton key={index} className={cn('h-9 rounded-sm', widths?.[index] ?? 'w-16')} />
+      ))}
+    </div>
+  );
+}
+
+export function DigestTableSkeleton({ rows = 6 }: { rows?: number }) {
+  return (
+    <div>
+      <div className="grid grid-cols-[8rem_minmax(0,1fr)_6rem] gap-4 border-b border-border text-xs">
+        <Skeleton className="my-2 h-3 w-8" />
+        <Skeleton className="my-2 h-3 w-16" />
+        <Skeleton className="my-2 h-3 w-12" />
+      </div>
+      {Array.from({ length: rows }).map((_, index) => (
+        <div
+          key={index}
+          className="grid min-h-11 grid-cols-[8rem_minmax(0,1fr)_6rem] items-center gap-4 border-b border-border py-2"
+        >
+          <Skeleton className="h-3 w-16" />
+          <Skeleton className="h-4 w-3/5 max-w-full" />
+          <Skeleton className="h-3 w-14" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+export function SettingsSectionSkeleton({
+  lines = 2,
+  action = false,
+}: {
+  lines?: number;
+  action?: boolean;
+}) {
+  return (
+    <section className="space-y-2.5 border-t border-border pt-4 first:border-t-0 first:pt-0">
+      <Skeleton className="h-5 w-40" />
+      {Array.from({ length: lines }).map((_, index) => (
+        <Skeleton
+          key={index}
+          className={index === 0 ? 'h-4 w-full max-w-xl' : 'h-3 w-2/3 max-w-lg'}
+        />
+      ))}
+      {action ? <Skeleton className="h-9 w-32" /> : null}
+    </section>
   );
 }
 

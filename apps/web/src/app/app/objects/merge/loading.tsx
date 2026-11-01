@@ -1,4 +1,4 @@
-import { PageHeaderSkeleton } from '@/components/loading-states';
+import { HistoryBackLinkSkeleton, PageHeaderSkeleton } from '@/components/loading-states';
 import { MergeObjectRowsSkeleton } from '@/components/objects/merge-object-rows-skeleton';
 import { Skeleton } from '@/components/ui/skeleton';
 import { WorkSubnav } from '@/components/work-subnav';
@@ -15,7 +15,8 @@ export default function MergeObjectsLoading() {
         aria-label="Loading merge objects"
       >
         <h1 className="sr-only">Merge objects</h1>
-        <div aria-hidden="true" inert>
+        <div aria-hidden="true" inert className="space-y-2">
+          <HistoryBackLinkSkeleton />
           <PageHeaderSkeleton />
         </div>
         <WorkSubnav current="/app/objects/merge" />

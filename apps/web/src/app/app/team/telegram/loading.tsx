@@ -1,5 +1,9 @@
 import { ChatBindingsSkeleton } from '@/components/integrations/chat-bindings-skeleton';
-import { PageHeaderSkeleton } from '@/components/loading-states';
+import {
+  HistoryBackLinkSkeleton,
+  PageHeaderSkeleton,
+  SettingsSectionSkeleton,
+} from '@/components/loading-states';
 import { Skeleton } from '@/components/ui/skeleton';
 
 export default function TelegramLoading() {
@@ -10,38 +14,22 @@ export default function TelegramLoading() {
       </output>
       <h1 className="sr-only">Telegram</h1>
       <div
-        className="space-y-6 motion-reduce:[&_.animate-pulse]:animate-none"
+        className="space-y-4 motion-reduce:[&_.animate-pulse]:animate-none"
         aria-busy="true"
         aria-label="Loading Telegram settings"
       >
-        <div aria-hidden="true" className="space-y-6">
-          <PageHeaderSkeleton />
-          <section className="space-y-4">
-            <TelegramSetupSkeleton />
-            <TelegramSetupSkeleton />
-            <TelegramListSkeleton />
+        <div aria-hidden="true" className="space-y-4">
+          <HistoryBackLinkSkeleton />
+          <PageHeaderSkeleton variant="collection" />
+          <SettingsSectionSkeleton action />
+          <SettingsSectionSkeleton action />
+          <section className="space-y-2.5 border-t border-border pt-4">
+            <Skeleton className="h-5 w-40" />
+            <ChatBindingsSkeleton />
           </section>
+          <SettingsSectionSkeleton />
         </div>
       </div>
     </>
-  );
-}
-
-function TelegramSetupSkeleton() {
-  return (
-    <div className="space-y-3 border-y border-border py-4">
-      <Skeleton className="h-5 w-44 max-w-full" />
-      <Skeleton className="h-4 w-full max-w-xl" />
-      <Skeleton className="h-9 w-40 max-w-full" />
-    </div>
-  );
-}
-
-function TelegramListSkeleton() {
-  return (
-    <div className="space-y-3 border-y border-border py-4">
-      <Skeleton className="h-5 w-48 max-w-full" />
-      <ChatBindingsSkeleton />
-    </div>
   );
 }

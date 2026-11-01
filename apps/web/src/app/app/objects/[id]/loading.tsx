@@ -1,6 +1,5 @@
-import { PageHeaderSkeleton } from '@/components/loading-states';
+import { HistoryBackLinkSkeleton, PageHeaderSkeleton } from '@/components/loading-states';
 import { ObjectDetailSkeleton } from '@/components/objects/object-detail-skeleton';
-import { WorkSubnav } from '@/components/work-subnav';
 
 export default function ObjectDetailLoading() {
   return (
@@ -9,16 +8,16 @@ export default function ObjectDetailLoading() {
         Loading object
       </output>
       <div
-        className="space-y-6 motion-reduce:[&_.animate-pulse]:animate-none"
+        className="space-y-2 motion-reduce:[&_.animate-pulse]:animate-none"
         aria-busy="true"
         aria-label="Loading object"
       >
         <h1 className="sr-only">Object</h1>
-        <div aria-hidden="true" inert>
-          <PageHeaderSkeleton />
+        <div aria-hidden="true" inert className="space-y-2">
+          <HistoryBackLinkSkeleton />
+          <PageHeaderSkeleton action />
+          <ObjectDetailSkeleton />
         </div>
-        <WorkSubnav current="/app/objects" />
-        <ObjectDetailSkeleton />
       </div>
     </>
   );

@@ -1,4 +1,4 @@
-import { PageHeaderSkeleton } from '@/components/loading-states';
+import { HistoryBackLinkSkeleton, PageHeaderSkeleton } from '@/components/loading-states';
 import { Skeleton } from '@/components/ui/skeleton';
 import { WorkSubnav } from '@/components/work-subnav';
 
@@ -14,7 +14,8 @@ export default function NewObjectLoading() {
         aria-label="Loading new object"
       >
         <h1 className="sr-only">New object</h1>
-        <div aria-hidden="true" inert>
+        <div aria-hidden="true" inert className="space-y-2">
+          <HistoryBackLinkSkeleton />
           <PageHeaderSkeleton />
         </div>
         <WorkSubnav current="/app/objects/new" />

@@ -6,9 +6,7 @@ export default function PrivacyLoading() {
     <LegalRouteLoading
       eyebrow={`Version ${PRIVACY_VERSION} · Effective ${PRIVACY_EFFECTIVE_DATE}`}
       title="Privacy Policy"
-      description={
-        'This policy explains how The Timeline processes personal data for team memory, capture, search, and AI-assisted workflows.'
-      }
+      description="How The Timeline collects, uses, shares, protects, and retains personal data—including content processed by AI and connected services."
     />
   );
 }

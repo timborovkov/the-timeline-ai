@@ -55,7 +55,7 @@ describe('Object detail route states', () => {
     expect(loading.getAttribute('aria-busy')).toBe('true');
     expect(loading.className).toContain('motion-reduce:[&_.animate-pulse]:animate-none');
     expect(screen.getAllByRole('heading', { level: 1, name: 'Object' })).toHaveLength(1);
-    expect(screen.getByRole('link', { name: 'Objects' }).getAttribute('aria-current')).toBe('page');
+    expect(screen.queryByRole('navigation', { name: 'Work' })).toBeNull();
     expect(screen.queryByRole('region')).toBeNull();
     expect(screen.queryByRole('complementary')).toBeNull();
 

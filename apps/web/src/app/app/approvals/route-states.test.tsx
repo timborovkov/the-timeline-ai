@@ -84,8 +84,8 @@ describe('Approvals route states', () => {
       expect(skeleton.className).toContain('motion-reduce:animate-none');
     }
     expect(
-      [...visualPlaceholders].some((placeholder) =>
-        placeholder.querySelector('[data-loading-toolbar="collection"]'),
+      [...visualPlaceholders].some(
+        (placeholder) => placeholder.querySelectorAll('.h-9').length >= 4,
       ),
     ).toBe(true);
   });

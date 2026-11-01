@@ -3,7 +3,10 @@ import { vi } from '@timeline/test-support';
 import { afterEach, describe, it } from 'bun:test';
 // Test environment: happy-dom
 
-const fakes = vi.hoisted(() => ({ reportCaughtError: vi.fn() }));
+const fakes = vi.hoisted(() => ({
+  reportCaughtError: vi.fn(),
+  reportHandledEvent: vi.fn(),
+}));
 
 await vi.mock(
   import.meta.resolve('@/components/theme-toggle'),
@@ -14,7 +17,10 @@ await vi.mock(
 );
 await vi.mock(
   import.meta.resolve('@/lib/sentry-report'),
-  () => ({ reportCaughtError: fakes.reportCaughtError }),
+  () => ({
+    reportCaughtError: fakes.reportCaughtError,
+    reportHandledEvent: fakes.reportHandledEvent,
+  }),
   () => import('@/lib/sentry-report'),
 );
 
@@ -52,7 +58,8 @@ const authRoutes = [
     errorTitle: 'Unable to load account creation',
     loadingLabel: 'Account creation loading placeholder',
     loadingText: 'Loading account creation',
-    subtitle: 'We’ll create your first team automatically.',
+    subtitle:
+      'Free for small teams — no card required. We’ll create your first team automatically.',
     title: 'Create your account',
   },
 ] as const;

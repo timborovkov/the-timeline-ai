@@ -38,9 +38,8 @@ describe('Meeting detail route states', () => {
     expect(announcement.parentElement?.getAttribute('aria-busy')).toBeNull();
     expect(screen.getByLabelText('Loading meeting').getAttribute('aria-busy')).toBe('true');
     expect(screen.getAllByRole('heading', { level: 1, name: 'Meeting' })).toHaveLength(1);
-    expect(screen.getByRole('link', { name: 'Meetings' }).getAttribute('href')).toBe(
-      '/app/meetings',
-    );
+    expect(screen.queryByRole('link', { name: 'Meetings' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Back' })).toBeNull();
     expect(screen.getByRole('region', { name: 'Meeting loading placeholder' })).toBeTruthy();
     expect(screen.queryByRole('button')).toBeNull();
   });

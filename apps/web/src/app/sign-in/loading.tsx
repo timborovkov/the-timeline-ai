@@ -1,5 +1,7 @@
 import { AuthShell } from '@/components/auth-shell';
+import { AuthProviderDividerSkeleton } from '@/components/loading-states';
 import { Skeleton } from '@/components/ui/skeleton';
+import { hasGitHubAuth } from '@/lib/auth';
 
 export default function SignInLoading() {
   return (
@@ -15,6 +17,7 @@ export default function SignInLoading() {
       </output>
       <section aria-busy="true" aria-label="Sign-in loading placeholder" className="space-y-4">
         <div aria-hidden="true" className="space-y-4">
+          {hasGitHubAuth ? <AuthProviderDividerSkeleton /> : null}
           <div className="space-y-2">
             <Skeleton className="h-4 w-12 motion-reduce:animate-none" />
             <Skeleton className="h-9 w-full motion-reduce:animate-none" />
