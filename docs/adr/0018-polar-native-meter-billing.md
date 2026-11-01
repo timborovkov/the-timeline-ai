@@ -37,7 +37,7 @@ credit hides margin and confuses prospects.
      `automatic_leave.in_call_recording_timeout` and stamped as
      `reserved_recall_started_at` so the janitor cannot treat a scheduled
      meeting's `createdAt` as the recording clock.
-   - `email_units` — inbound unique messages and outbound Postmark recipients.
+   - `email_units` — inbound unique messages and outbound Resend recipients.
    - `accepted_sources` — unique ingested source items (raw row is kept; AI
      enrichment pauses when the meter is exhausted). Slack, Telegram, team web
      notes, MCP tool results, ingest webhooks, and meetings admit this meter
@@ -219,7 +219,7 @@ credit hides margin and confuses prospects.
    Re-accepting a removed member stamps a new membership `createdAt` so gap days
    are not billed as continuous, preserving earlier intervals on `prior_intervals`. Janitor member-days backfill missed calendar days, restore rechecks indexed
    chunks (deleted documents do not count), and accepted-source replay meters
-   existing dedup rows after an insert-then-crash. Postmark success is recorded before email
+   existing dedup rows after an insert-then-crash. Resend success is recorded before email
    settlement so a later settle failure does not resend. Meeting-finalize billing
    uses the system actor so a departed creator cannot skip settlement. Free-grant
    inserts use `ON CONFLICT DO NOTHING` so a unique race cannot abort team-create.
@@ -380,7 +380,7 @@ credit hides margin and confuses prospects.
   org is shared with other products.
 - Team and Business “included usage” is an invoice discount entitlement, not
   transferable customer credits.
-- Usage-alert email requires Postmark + `message_intent` value
+- Usage-alert email requires Resend + `message_intent` value
   `billing_usage_alert` (migration `0074_billing_usage_alert_intent`).
 - Drizzle runs a migration only when its journal timestamp is greater than the
   newest stored migration timestamp. Main's journal entries through

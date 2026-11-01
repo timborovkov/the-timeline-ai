@@ -15,11 +15,11 @@ import { SupportForm } from '@/components/help/support-form';
 import { auth } from '@/lib/auth';
 import { publicMetadata } from '@/lib/public-metadata';
 import { parseErrorReference, parseSupportSurface } from '@/lib/support-context';
+import { getSupportEmail } from '@/lib/support-email';
 import {
   GITHUB_BUG_REPORT_URL,
   GITHUB_CONTRIBUTING_URL,
   GITHUB_SECURITY_URL,
-  PUBLIC_SUPPORT_EMAIL,
 } from '@/lib/support-links';
 
 export const metadata: Metadata = publicMetadata({
@@ -71,8 +71,8 @@ export default async function SupportPage({ searchParams }: SupportPageProps) {
           icon={Mail}
           title="Private support"
           body="Send account-specific questions, sensitive bugs, sales requests, or billing questions privately."
-          href={`mailto:${PUBLIC_SUPPORT_EMAIL}`}
-          label={`Email ${PUBLIC_SUPPORT_EMAIL}`}
+          href={`mailto:${getSupportEmail()}`}
+          label={`Email ${getSupportEmail()}`}
         />
         <SupportChannel
           icon={Bug}
@@ -113,9 +113,9 @@ export default async function SupportPage({ searchParams }: SupportPageProps) {
             email{' '}
             <a
               className="rounded-sm text-fg underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-              href={`mailto:${PUBLIC_SUPPORT_EMAIL}`}
+              href={`mailto:${getSupportEmail()}`}
             >
-              {PUBLIC_SUPPORT_EMAIL}
+              {getSupportEmail()}
             </a>
             .
           </p>

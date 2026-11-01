@@ -83,11 +83,8 @@ export interface RunOpenRouterZdrCanariesInput {
   now?: () => number;
 }
 
-export interface PostmarkInboundCaptureCanaryPayloadInput {
-  messageId: string;
-  to: string;
-  from: string;
-  date: Date;
+export interface ResendInboundCaptureCanaryPayloadInput {
+  emailId: string;
 }
 
 export interface SlackEventCaptureCanaryPayloadInput {
@@ -482,7 +479,7 @@ const TRANSCRIPTION_SPEECH_CANARY_MP3_BASE64 = [
   'VVVVVVVVVVVV',
 ].join('');
 
-export type PostmarkInboundCaptureCanaryUrlValidation =
+export type ResendInboundCaptureCanaryUrlValidation =
   { ok: true; url: URL } | { ok: false; reason: string };
 
 export type SlackEventCaptureCanaryUrlValidation =
@@ -514,7 +511,7 @@ export function redactLiveIntegrationCanaryText(
   }
   output = output.replace(/\b(Basic|Bearer|Token)\s+[A-Za-z0-9._~+/=-]{12,}/giu, '$1 [redacted]');
   output = output.replace(
-    /\b(x-postmark-server-token|authorization)(["'\s:=]+)[^"',\s]+/giu,
+    /\b(x-resend-server-token|authorization)(["'\s:=]+)[^"',\s]+/giu,
     '$1$2[redacted]',
   );
   return output;
@@ -565,37 +562,10 @@ export function formatLiveIntegrationCanaryReport(input: LiveIntegrationCanaryRe
   return lines.join('\n');
 }
 
-export function buildPostmarkInboundCaptureCanaryPayload(
-  input: PostmarkInboundCaptureCanaryPayloadInput,
+export function buildResendInboundCaptureCanaryPayload(
+  input: ResendInboundCaptureCanaryPayloadInput,
 ): Record<string, unknown> {
-  const subject = `Timeline inbound canary ${input.date.toISOString()}`;
-  return {
-    MessageID: input.messageId,
-    Date: input.date.toISOString(),
-    Subject: subject,
-    From: `Timeline Canary <${input.from}>`,
-    FromName: 'Timeline Canary',
-    FromFull: { Email: input.from, Name: 'Timeline Canary', MailboxHash: '' },
-    To: input.to,
-    ToFull: [{ Email: input.to, Name: 'Timeline Canary Team', MailboxHash: '' }],
-    Cc: '',
-    CcFull: [],
-    Bcc: '',
-    BccFull: [],
-    OriginalRecipient: input.to,
-    ReplyTo: input.from,
-    MailboxHash: '',
-    TextBody: [
-      'Timeline inbound canary.',
-      `Message: ${input.messageId}`,
-      'This synthetic Postmark-shaped payload verifies capture into raw_events.',
-    ].join('\n'),
-    HtmlBody: '',
-    StrippedTextReply: '',
-    Tag: 'timeline-canary',
-    Headers: [{ Name: 'Message-ID', Value: `<${input.messageId}>` }],
-    Attachments: [],
-  };
+  return { type: 'email.received', data: { email_id: input.emailId } };
 }
 
 export function buildSlackEventCaptureCanaryPayload(
@@ -696,10 +666,10 @@ function isLoopbackHostname(hostname: string): boolean {
   return normalized === 'localhost' || normalized === '127.0.0.1' || normalized === '[::1]';
 }
 
-export function validatePostmarkInboundCaptureCanaryUrl(
+export function validateResendInboundCaptureCanaryUrl(
   baseUrl: string | undefined,
   allowedOrigin: string | undefined,
-): PostmarkInboundCaptureCanaryUrlValidation {
+): ResendInboundCaptureCanaryUrlValidation {
   if (!baseUrl?.trim()) return { ok: false, reason: 'AUTH_URL missing' };
   let url: URL;
   try {
@@ -712,7 +682,7 @@ export function validatePostmarkInboundCaptureCanaryUrl(
     if (!allowedOrigin?.trim()) {
       return {
         ok: false,
-        reason: 'POSTMARK_INBOUND_CANARY_ALLOWED_ORIGIN must match AUTH_URL origin',
+        reason: 'RESEND_INBOUND_CANARY_ALLOWED_ORIGIN must match AUTH_URL origin',
       };
     }
     let expected: URL;
@@ -721,13 +691,13 @@ export function validatePostmarkInboundCaptureCanaryUrl(
     } catch {
       return {
         ok: false,
-        reason: 'POSTMARK_INBOUND_CANARY_ALLOWED_ORIGIN is not a valid URL',
+        reason: 'RESEND_INBOUND_CANARY_ALLOWED_ORIGIN is not a valid URL',
       };
     }
     if (expected.origin !== url.origin) {
       return {
         ok: false,
-        reason: 'POSTMARK_INBOUND_CANARY_ALLOWED_ORIGIN does not match AUTH_URL origin',
+        reason: 'RESEND_INBOUND_CANARY_ALLOWED_ORIGIN does not match AUTH_URL origin',
       };
     }
     return { ok: true, url };

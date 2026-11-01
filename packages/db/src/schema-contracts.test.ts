@@ -106,6 +106,20 @@ describe('database schema contracts', () => {
     expect(rows.rows).toEqual([{ provider: 'monday' }]);
   });
 
+  it('enables inbound restrictions for existing and new teams without losing extra senders', async () => {
+    await pg.exec(`UPDATE teams SET inbound_sender_whitelist_enabled = false,
+      inbound_sender_whitelist = '["partner@example.test"]'::jsonb WHERE id = '${TEAM_ID}'`);
+    await applyMigrationFile(pg, '0092_inbound_members_default.sql');
+    const existing = await pg.query<{ enabled: boolean; senders: string[] }>(`
+      SELECT inbound_sender_whitelist_enabled AS enabled, inbound_sender_whitelist AS senders
+      FROM teams WHERE id = '${TEAM_ID}'`);
+    expect(existing.rows).toEqual([{ enabled: true, senders: ['partner@example.test'] }]);
+    const created = await pg.query<{ enabled: boolean; senders: string[] }>(`
+      INSERT INTO teams (slug, name) VALUES ('default-inbound', 'Default inbound')
+      RETURNING inbound_sender_whitelist_enabled AS enabled, inbound_sender_whitelist AS senders`);
+    expect(created.rows).toEqual([{ enabled: true, senders: [] }]);
+  });
+
   it('applies every migration to an empty database and exposes critical tables', async () => {
     const tables = await pg.query<{ tablename: string }>(`
       SELECT tablename

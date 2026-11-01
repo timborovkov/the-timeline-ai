@@ -117,7 +117,7 @@ describe('InboundEmailWhitelistForm', () => {
     expect(
       screen.getByRole<HTMLInputElement>('checkbox', { name: 'Enable sender whitelist' }).checked,
     ).toBe(true);
-    expect(screen.getByLabelText<HTMLTextAreaElement>('Allowed senders').value).toBe(
+    expect(screen.getByLabelText<HTMLTextAreaElement>('Additional allowed senders').value).toBe(
       'ada@example.com, vendor@example.net',
     );
     expect(screen.queryByText(/placeholder \(@inbound\.invalid\)/)).toBeNull();
@@ -232,7 +232,7 @@ describe('Team form field hover treatment', () => {
       </>,
     );
 
-    expect(screen.getByLabelText('Allowed senders').className).toContain(
+    expect(screen.getByLabelText('Additional allowed senders').className).toContain(
       'hover:border-border-strong',
     );
     expect(screen.getByLabelText('Email').className).toContain('hover:border-border-strong');
@@ -273,7 +273,7 @@ describe('InviteMemberForm', () => {
       {
         inviteUrl: 'https://timeline.test/invite/token-2',
         sendStatus: 'failed',
-        sendError: 'Postmark rejected the recipient',
+        sendError: 'Resend rejected the recipient',
       },
       fakes.action,
     ]);
@@ -281,7 +281,7 @@ describe('InviteMemberForm', () => {
 
     expect(screen.getByText('https://timeline.test/invite/token-2')).toBeTruthy();
     expect(screen.getByRole('alert').textContent).toBe(
-      'Invite created, but the email was not sent: Postmark rejected the recipient. The link is ready to share.',
+      'Invite created, but the email was not sent: Resend rejected the recipient. The link is ready to share.',
     );
   });
 

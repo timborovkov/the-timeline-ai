@@ -1,6 +1,6 @@
 -- Phase 13.7 — Public support/contact requests.
 --
--- Public help pages send support requests through Postmark and also store
+-- Public help pages send support requests through Resend and also store
 -- every request in Postgres so operators can inspect the audit trail even if
 -- email delivery fails. User/team foreign keys are nullable because anonymous
 -- visitors can submit the same form.

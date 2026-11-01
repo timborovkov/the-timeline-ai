@@ -505,7 +505,7 @@ describe('withTeam namespaced port', () => {
     const retry = await scope.timeline.createEmailEvent({
       authorUserId: USER_A,
       messageId: 'link-retry@example.com',
-      contentText: 'Please review https://docs.example.com/runbook?step=1&utm_campaign=launch',
+      contentText: 'Substituted content https://attacker.example.com/injected',
       occurredAt: new Date('2026-06-20T11:00:00Z'),
       sourceMetadata: {},
     });
@@ -2952,10 +2952,10 @@ describe('withTeam namespaced port', () => {
   });
 
   it('throttles connection-attention email per target and category', async () => {
-    process.env.POSTMARK_SERVER_TOKEN = 'server-token';
+    process.env.RESEND_API_KEY = 'server-token';
     process.env.TRANSACTIONAL_EMAIL_FROM = 'Timeline <timeline@example.test>';
     process.env.AUTH_URL = 'https://timeline.example.test';
-    const fetchMock = vi.fn(() => Promise.resolve(new Response('{}', { status: 200 })));
+    const fetchMock = vi.fn(() => Promise.resolve(Response.json({ id: 'resend-attention-email' })));
     vi.stubGlobal('fetch', fetchMock);
 
     try {
@@ -3009,7 +3009,7 @@ describe('withTeam namespaced port', () => {
       expect(fetchMock).toHaveBeenCalledTimes(5);
     } finally {
       vi.unstubAllGlobals();
-      delete process.env.POSTMARK_SERVER_TOKEN;
+      delete process.env.RESEND_API_KEY;
       delete process.env.TRANSACTIONAL_EMAIL_FROM;
       delete process.env.AUTH_URL;
     }

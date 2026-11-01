@@ -82,5 +82,5 @@ bun run --filter @timeline/shared test
 - Provider strategy and pinning: [docs/setup/openrouter.html](../../docs/setup/openrouter.html).
 - Native integration setup and provider connections:
   [docs/setup/integrations.html](../../docs/setup/integrations.html).
-- Telegram dispatch, `/` command-menu registration, and Postmark-backed messaging: [docs/setup/telegram.html](../../docs/setup/telegram.html), [docs/setup/postmark.html](../../docs/setup/postmark.html).
+- Telegram dispatch, `/` command-menu registration, and Resend-backed messaging: [docs/setup/telegram.html](../../docs/setup/telegram.html), [docs/setup/resend.html](../../docs/setup/resend.html).
 - Meeting bots (Phase 10): [docs/setup/meeting-bots.html](../../docs/setup/meeting-bots.html).

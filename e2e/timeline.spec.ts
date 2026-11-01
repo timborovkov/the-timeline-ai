@@ -1,5 +1,5 @@
 import { Buffer } from 'node:buffer';
-import { randomUUID } from 'node:crypto';
+import { createHmac, randomUUID } from 'node:crypto';
 
 import { expect, type Page, test } from '@playwright/test';
 import { getDb, getDbClient } from '@timeline/db';
@@ -513,29 +513,77 @@ async function postInboundEmail(
     text: string;
   },
 ): Promise<{ inserted: number; ok: boolean }> {
-  const fromName = input.fromName ?? input.fromEmail;
+  const { getEmailInboundQueue, getRedisConnection, QUEUE_NAMES } =
+    await import('@timeline/shared/queue');
+  const { Worker, QueueEvents } = await import('bullmq');
+  const { processEmailInboundJob, retrieveInboundEmailMetadata } =
+    await import('@timeline/shared/email');
+  const { getDb } = await import('@timeline/db');
+  const emailId = randomUUID();
+  const body = JSON.stringify({ type: 'email.received', data: { email_id: emailId } });
+  const timestamp = String(Math.floor(Date.now() / 1000));
+  const signature = createHmac('sha256', Buffer.alloc(32, 7))
+    .update(`e2e-${emailId}.${timestamp}.${body}`)
+    .digest('base64');
   const response = await page.request.post('/api/email/inbound', {
     headers: {
-      authorization: `Basic ${Buffer.from('postmark:e2e-postmark-secret').toString('base64')}`,
       'content-type': 'application/json',
+      'svix-id': `e2e-${emailId}`,
+      'svix-timestamp': timestamp,
+      'svix-signature': `v1,${signature}`,
     },
-    data: {
-      MessageID: `postmark-${input.messageId}`,
-      Date: new Date().toUTCString(),
-      Subject: input.subject,
-      From: `${fromName} <${input.fromEmail}>`,
-      FromName: fromName,
-      FromFull: { Email: input.fromEmail, Name: fromName },
-      To: e2eTeam.inboundEmail,
-      ToFull: [{ Email: e2eTeam.inboundEmail, Name: e2eTeam.name }],
-      OriginalRecipient: e2eTeam.inboundEmail,
-      TextBody: input.text,
-      Headers: [{ Name: 'Message-ID', Value: `<${input.messageId}@example.test>` }],
-      Attachments: [],
-    },
+    data: body,
   });
   expect(response.status()).toBe(200);
-  return (await response.json()) as { inserted: number; ok: boolean };
+  const queue = getEmailInboundQueue();
+  const job = await queue.getJob(`resend-${emailId}`);
+  expect(job?.data).toEqual({ emailId });
+  if (!job) throw new Error('Inbound job was not queued');
+  // Execute the production worker processor with a synthetic provider transport.
+  // No real Resend request or model-enrichment job is made by this browser fixture.
+  const events = new QueueEvents(QUEUE_NAMES.emailInbound, { connection: getRedisConnection() });
+  await events.waitUntilReady();
+  const worker = new Worker<{ emailId: string }>(
+    QUEUE_NAMES.emailInbound,
+    (queued) =>
+      processEmailInboundJob(
+        {
+          dispatcher: { db: getDb(), inboundDomain: e2eTeam.inboundEmail.split('@')[1] },
+          hydrate: (email) => Promise.resolve(email),
+          retrieve: (id) =>
+            retrieveInboundEmailMetadata(id, (async (url: string | URL | Request) => {
+              if (String(url).includes('/attachments'))
+                return Response.json({ data: [], has_more: false });
+              return Response.json({
+                id,
+                from: input.fromEmail,
+                to: [e2eTeam.inboundEmail],
+                cc: [],
+                bcc: [],
+                subject: input.subject,
+                text: input.text,
+                html: null,
+                created_at: new Date().toISOString(),
+                message_id: `<${input.messageId}@example.test>`,
+                headers: { from: `${input.fromName ?? input.fromEmail} <${input.fromEmail}>` },
+                authentication: { spf: 'pass', dkim: 'pass', dmarc: 'pass' },
+              });
+            }) as typeof fetch),
+        },
+        queued.data,
+      ),
+    { connection: getRedisConnection(), concurrency: 2 },
+  );
+  try {
+    await job.waitUntilFinished(events, 30_000);
+  } finally {
+    await worker.close();
+    await events.close();
+    await job.remove();
+  }
+  const rows =
+    await getDbClient()`SELECT id FROM raw_events WHERE team_id = ${e2eTeam.id} AND source_metadata ->> 'resend_message_id' = ${emailId}`;
+  return { ok: true, inserted: rows.length };
 }
 
 interface JobRecoverySeed {
@@ -1359,7 +1407,7 @@ test('timeline inspector edits visibility and removes conversational events', as
   }
 });
 
-test('Postmark inbound email lands as a cited team timeline event', async ({ page }) => {
+test('Resend inbound email lands as a cited team timeline event', async ({ page }) => {
   const stamp = Date.now();
   const emailText = `E2E inbound email customer renewal note ${stamp}`;
   const messageId = `timeline-e2e-inbound-${stamp}`;
@@ -1392,7 +1440,7 @@ test('Postmark inbound email lands as a cited team timeline event', async ({ pag
   await expect(page.getByText(emailText).first()).toBeVisible();
 });
 
-test('inbound email sender whitelist blocks and allows Postmark capture from the browser', async ({
+test('inbound email sender whitelist blocks and allows Resend capture from the browser', async ({
   browser,
 }) => {
   const page = await newSignedInPage(browser, 'owner');
@@ -1405,10 +1453,10 @@ test('inbound email sender whitelist blocks and allows Postmark capture from the
   try {
     await page.goto('/app/team?section=email');
 
-    const whitelistForm = page.locator('form').filter({ hasText: 'Allowed senders' });
+    const whitelistForm = page.locator('form').filter({ hasText: 'Additional allowed senders' });
     await expect(whitelistForm).toBeVisible();
     await whitelistForm.getByRole('checkbox', { name: 'Enable sender whitelist' }).check();
-    await whitelistForm.getByLabel('Allowed senders').fill(allowedSender);
+    await whitelistForm.getByLabel('Additional allowed senders').fill(allowedSender);
     await waitForPost(page, '/app/team', async () => {
       await whitelistForm.getByRole('button', { name: 'Save email settings' }).click();
     });
@@ -1421,7 +1469,7 @@ test('inbound email sender whitelist blocks and allows Postmark capture from the
         subject: `E2E blocked sender ${stamp}`,
         text: blockedText,
       }),
-    ).resolves.toEqual({ ok: false, inserted: 0 });
+    ).resolves.toEqual({ ok: true, inserted: 0 });
     await expect.poll(() => countRawEventsByText(blockedText)).toBe(0);
 
     await expect(
@@ -2388,6 +2436,13 @@ test.describe.serial('team admin invite, role, and removal journeys enforce perm
   let inviteePage: Page;
 
   test.beforeAll(async ({ browser }) => {
+    // Membership journeys need room beyond the three seeded Free-plan seats.
+    await getDbClient()`
+      INSERT INTO team_billing_accounts (team_id, plan_id, billing_state, arrangement, comp_reason)
+      VALUES (${e2eTeam.id}, 'team', 'team_active', 'comped', 'E2E membership fixture')
+      ON CONFLICT (team_id) DO UPDATE SET
+        plan_id = 'team', billing_state = 'team_active', arrangement = 'comped', comp_reason = 'E2E membership fixture'
+    `;
     ownerPage = await newSignedInPage(browser, 'owner');
     adminPage = await newSignedInPage(browser, 'admin');
     memberPage = await newSignedInPage(browser, 'member');
@@ -2398,6 +2453,7 @@ test.describe.serial('team admin invite, role, and removal journeys enforce perm
     await adminPage?.context().close();
     await memberPage?.context().close();
     await inviteePage?.context().close();
+    await getDbClient()`UPDATE team_billing_accounts SET plan_id = 'free', billing_state = 'free', arrangement = 'standard', comp_reason = NULL WHERE team_id = ${e2eTeam.id}`;
   });
   test('owner can access team settings sections', async () => {
     await ownerPage.goto('/app/team?section=general');

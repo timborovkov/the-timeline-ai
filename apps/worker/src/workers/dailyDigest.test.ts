@@ -264,17 +264,17 @@ describe('daily digest worker', () => {
   });
 
   it('throws on digest send failure so BullMQ retries the job', async () => {
-    fakes.sendDailyDigest.mockResolvedValue({ ok: false, error: 'Postmark timeout' });
+    fakes.sendDailyDigest.mockResolvedValue({ ok: false, error: 'Resend timeout' });
 
     await expect(
       processDailyDigestJob(
         { db: {} as never },
         { kind: 'send', digestId: 'digest-1', email: 'a@example.test' },
       ),
-    ).rejects.toThrow('Postmark timeout');
+    ).rejects.toThrow('Resend timeout');
   });
 
-  it('completes without throwing when Postmark marks the recipient inactive', async () => {
+  it('completes without throwing when Resend marks the recipient inactive', async () => {
     fakes.sendDailyDigest.mockResolvedValue({
       ok: false,
       error:

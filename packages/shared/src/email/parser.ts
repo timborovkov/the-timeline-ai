@@ -1,4 +1,4 @@
-import type { PostmarkAddress, PostmarkInbound } from '#src/email/postmark-schema.js';
+import type { InboundAddress, InboundEmail } from '#src/email/inbound-schema.js';
 
 export const MAX_EMAIL_REFERENCES = 50;
 const MAX_REFERENCE_ID_LENGTH = 998;
@@ -6,7 +6,7 @@ const MAX_REFERENCE_ID_LENGTH = 998;
 /**
  * Parsed address pair shaped for storage in `source_metadata`. Stable JSON
  * keys (snake-friendly) so downstream consumers (UI, agent) don't need a
- * Postmark-specific mapping.
+ * Resend-specific mapping.
  */
 export interface ParsedAddress {
   email: string;
@@ -27,10 +27,10 @@ export interface ForwardedMessage {
  * practice (Mail clients shotgun "Message-ID", "Message-Id", "MESSAGE-ID").
  * Returns the first match.
  */
-export function getHeader(headers: PostmarkInbound['Headers'], name: string): string | undefined {
+export function getHeader(headers: InboundEmail['headers'], name: string): string | undefined {
   const lower = name.toLowerCase();
   for (const h of headers) {
-    if (h.Name.toLowerCase() === lower) return h.Value;
+    if (h.name.toLowerCase() === lower) return h.value;
   }
   return undefined;
 }
@@ -86,7 +86,7 @@ function boundReferences(ids: string[]): string[] {
 }
 
 /**
- * Lower-case + trim an email for equality comparisons. Email local-parts are
+ * Lower-case + trim an email for equality comparisons. email local-parts are
  * technically case-sensitive by RFC, but no mainstream provider treats them
  * that way; folding to lower preserves the matching we want for sender
  * verification against `users.email` (also stored lower-cased).
@@ -95,15 +95,15 @@ export function normalizeEmail(raw: string | undefined): string {
   return (raw ?? '').trim().toLowerCase();
 }
 
-export function toParsed(addr: PostmarkAddress | undefined): ParsedAddress | null {
+export function toParsed(addr: InboundAddress | undefined): ParsedAddress | null {
   if (!addr) return null;
-  const email = normalizeEmail(addr.Email);
+  const email = normalizeEmail(addr.email);
   if (!email) return null;
-  const name = addr.Name.trim();
+  const name = addr.name.trim();
   return name ? { email, name } : { email };
 }
 
-export function toParsedList(addrs: PostmarkAddress[] | undefined): ParsedAddress[] {
+export function toParsedList(addrs: InboundAddress[] | undefined): ParsedAddress[] {
   if (!addrs) return [];
   const out: ParsedAddress[] = [];
   for (const a of addrs) {
@@ -114,12 +114,12 @@ export function toParsedList(addrs: PostmarkAddress[] | undefined): ParsedAddres
 }
 
 /**
- * Best-effort detection of audio attachments. We trust Postmark's
- * `ContentType` first (sender-controlled but at least parsed from MIME
+ * Best-effort detection of audio attachments. We trust Resend's
+ * `contentType` first (sender-controlled but at least parsed from MIME
  * headers, not the filename); the filename extension is only consulted when
- * the content-type is the generic `application/octet-stream` Postmark falls
+ * the content-type is the generic `application/octet-stream` Resend falls
  * back to for unknown parts. A file literally named `evil.mp3` carrying
- * `ContentType: application/zip` is NOT treated as audio.
+ * `contentType: application/zip` is NOT treated as audio.
  *
  * The audio-MIME check is a single `startsWith('audio/')` because every
  * IANA-registered audio type (and every vendor prefix we care about —
@@ -139,14 +139,7 @@ export function isAudioAttachment(filename: string, contentType: string): boolea
   return false;
 }
 
-/**
- * Strip quoted-reply chains from a plain-text email body. Postmark already
- * does most of this via `StrippedTextReply`; this is the fallback for cases
- * where the field is absent or empty (Postmark doesn't ship it for every
- * sender's quoting style). The implementation is intentionally conservative:
- * cut at the first reliably-recognized "On <date>, <sender> wrote:" line or
- * a long run of leading-`>` quoted lines.
- */
+/** Strip quoted replies locally; original bodies remain available in source metadata. */
 export function stripQuotedReply(text: string): string {
   if (!text) return '';
   const lines = text.split(/\r?\n/);
@@ -215,26 +208,26 @@ export function parseForwardedFrom(opts: {
 
   // Outlook fallback: only consider it a forward when the subject has the
   // forward prefix. Otherwise a normal reply with the user's signature
-  // ("From: …") would false-positive.
+  // ("from: …") would false-positive.
   const subjectLooksForwarded = /^(?:fw|fwd):/i.test(subject.trim());
   if (subjectLooksForwarded && candidates.length === 0) {
-    const outlookFromRe = /^\s*From:\s*.+$/im;
+    const outlookFromRe = /^\s*from:\s*.+$/im;
     const om = outlookFromRe.exec(textBody);
     if (om) candidates.push({ start: om.index });
   }
 
   if (candidates.length === 0) return null;
 
-  // Pick the earliest candidate and scan forward for the first "From:" line.
+  // Pick the earliest candidate and scan forward for the first "from:" line.
   candidates.sort((a, b) => a.start - b.start);
   const start = candidates[0]?.start ?? 0;
   const tail = textBody.slice(start);
-  const fromLineRe = /^\s*From:\s*(.+)$/im;
+  const fromLineRe = /^\s*from:\s*(.+)$/im;
   const fromMatch = fromLineRe.exec(tail);
   if (!fromMatch?.[1]) return null;
 
   const rawFrom = fromMatch[1].trim();
-  // Try "Name <email>" first.
+  // Try "name <email>" first.
   const named = NAME_AND_ADDR_RE.exec(rawFrom);
   if (named?.[1] && named[2]) {
     return { email: normalizeEmail(named[2]), name: named[1].trim() };
@@ -491,89 +484,26 @@ function parseAddressList(raw: string | undefined): ParsedAddress[] {
   return out;
 }
 
-/**
- * Parse a trusted `Authentication-Results` header into a small struct.
- * RFC 8601 format: `<authserv-id>; spf=pass ...; dkim=pass ...`.
- *
- * SECURITY: every header in `Postmark.Headers[]` is sender-controllable —
- * including ones named `Authentication-Results`. An attacker can inject
- * `Authentication-Results: anything; spf=pass; dkim=pass` into the email
- * body and Postmark passes the raw MIME headers through verbatim. RFC 8601
- * §5 requires the receiver to validate the `authserv-id` (the token before
- * the first `;`) against an allowlist of verifying hosts and ignore headers
- * from anyone else. Without this check the From-spoof defense is a no-op.
- *
- * `allowedAuthservIds` is the trust allowlist. Walk every AR header in the
- * payload (not just the first — first-match would let an attacker shadow
- * Postmark's header by appearing earlier in the array), keep only ones
- * whose authserv-id matches the allowlist case-insensitively. Returns the
- * first match or null. When the allowlist is empty (e.g. dev / staging
- * without `POSTMARK_AUTHSERV_ID` configured), returns null and callers
- * fall back to From-match — preserving the dev workflow without granting
- * trust on every email.
- */
+/** Receiver-computed results, never parsed from message headers. */
 export interface AuthResults {
   spf: string | null;
   dkim: string | null;
   dmarc: string | null;
-  authservId: string;
-}
-
-export function parseAuthenticationResults(
-  headers: { Name: string; Value: string }[],
-  allowedAuthservIds: string[],
-): AuthResults | null {
-  const allowed = new Set(
-    allowedAuthservIds.map((s) => s.trim().toLowerCase()).filter((s) => s.length > 0),
-  );
-  if (allowed.size === 0) return null;
-  for (const h of headers) {
-    if (h.Name.toLowerCase() !== 'authentication-results') continue;
-    const value = h.Value.trim();
-    if (!value) continue;
-    // authserv-id is the token before the first `;`. Strip RFC-5322
-    // `(...)` comments some implementations include, then take the first
-    // whitespace-bounded token.
-    const idEnd = value.indexOf(';');
-    const idPart = (idEnd === -1 ? value : value.slice(0, idEnd))
-      .replace(/\(.*?\)/g, '')
-      .trim()
-      .split(/\s+/)[0];
-    if (!idPart) continue;
-    if (!allowed.has(idPart.toLowerCase())) continue;
-    const rest = (idEnd === -1 ? '' : value.slice(idEnd + 1)).toLowerCase();
-    return {
-      authservId: idPart.toLowerCase(),
-      spf: matchAuthVerb(rest, 'spf'),
-      dkim: matchAuthVerb(rest, 'dkim'),
-      dmarc: matchAuthVerb(rest, 'dmarc'),
-    };
-  }
-  return null;
-}
-
-function matchAuthVerb(header: string, key: string): string | null {
-  // Permissive: match `<key>=<verb>` with optional whitespace and stop at
-  // the next semicolon, space, or end-of-string. The verb is the first
-  // RFC 8601 atom after `=`.
-  const re = new RegExp(`(?:^|[;\\s])${key}\\s*=\\s*([a-z]+)`);
-  const m = re.exec(header);
-  return m?.[1] ?? null;
 }
 
 /**
  * Sender-authentication decision: did this email pass enough authentication
- * checks for us to trust the From header? Returns:
+ * checks for us to trust the from header? Returns:
  *   - `'absent'`  when no Authentication-Results header is present
  *     (e.g. dev / staging without DKIM signing on the receiving side).
- *     Callers preserve current behavior — From-match still wins.
+ *     Callers preserve current behavior — from-match still wins.
  *   - `'pass'`    when at least one of SPF or DKIM passes. DMARC is not
  *     required because legitimate forwards from Gmail can fail SPF (the
  *     forwarding MTA is not in the original-domain SPF record) but DKIM
  *     usually survives the forward.
  *   - `'fail'`    when Authentication-Results is present but neither SPF
  *     nor DKIM passed. Caller must treat the sender as unverified
- *     regardless of From-match. This is the From-spoofing defense.
+ *     regardless of from-match. This is the from-spoofing defense.
  *
  * Why SPF-or-DKIM (not AND): a forwarded email is the dominant Phase 7
  * use case. SPF breaks on forward, DKIM usually doesn't. Requiring both
@@ -587,61 +517,25 @@ export function senderAuthVerdict(results: AuthResults | null): 'absent' | 'pass
   return 'fail';
 }
 
-/**
- * Decide which content to write to `content_text`. Strategy:
- *   1. Prefer `StrippedTextReply` from Postmark if present and non-empty;
- *      it's their tuned reply-stripper and beats our regex.
- *   2. Otherwise run `stripQuotedReply` on `TextBody`.
- *   3. If both are empty, fall back to a simple HTML-to-text strip on
- *      `HtmlBody` so an HTML-only email isn't reduced to a blank event.
- *
- * The original `TextBody` and `HtmlBody` are preserved in `source_metadata`
- * so re-extraction (Phase 4 pattern) can replay against the unstripped
- * content.
- */
-export function chooseContentText(payload: PostmarkInbound): string {
-  // Each candidate must produce non-empty content to win. The TextBody case
-  // can strip to '' when the entire body is a quoted reply chain (every
-  // visible line gets cut by `stripQuotedReply`) — without falling through,
-  // such emails land with empty content_text even though the HtmlBody might
-  // carry the actual message the sender pasted in. The chain is:
-  //   StrippedTextReply (Postmark's tuned stripper) → stripQuotedReply(TextBody)
-  //   → htmlToText(HtmlBody) → ''.
+/** Strip replies locally while preserving forwarded chains and original bodies. */
+export function chooseContentText(payload: InboundEmail): string {
   const forwarded = parseForwardedChain({
-    subject: payload.Subject,
-    textBody: payload.TextBody,
+    subject: payload.subject,
+    textBody: payload.text,
   });
   if (forwarded.length > 0) {
-    const intro =
-      strippedForwardedIntro({
-        subject: payload.Subject,
-        textBody: payload.StrippedTextReply,
-      }) ||
-      forwardedIntro({
-        subject: payload.Subject,
-        textBody: payload.TextBody,
-      });
+    const intro = forwardedIntro({ subject: payload.subject, textBody: payload.text });
     return [intro, renderForwardedMessages(forwarded)].filter(Boolean).join('\n\n').trim();
   }
-  const stripped = payload.StrippedTextReply.trim();
-  if (stripped) return stripped;
-  if (payload.TextBody.trim()) {
-    const out = stripQuotedReply(payload.TextBody);
+  if (payload.text.trim()) {
+    const out = stripQuotedReply(payload.text);
     if (out) return out;
   }
-  if (payload.HtmlBody.trim()) {
-    const out = htmlToText(payload.HtmlBody);
+  if (payload.html.trim()) {
+    const out = htmlToText(payload.html);
     if (out) return out;
   }
   return '';
-}
-
-function strippedForwardedIntro(opts: { subject: string; textBody: string }): string {
-  const stripped = opts.textBody.trim();
-  if (!stripped) return '';
-  const forwarded = parseForwardedChain(opts);
-  if (forwarded.length === 0) return stripped;
-  return forwardedIntro(opts);
 }
 
 function forwardedIntro(opts: { subject: string; textBody: string }): string {

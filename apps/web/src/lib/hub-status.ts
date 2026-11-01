@@ -5,7 +5,6 @@ import {
   type meetingStatus,
   type mcpServers,
 } from '@timeline/db';
-import { composePostmarkHashAddress } from '@timeline/shared/slug';
 import { withTeam } from '@timeline/shared/team-scope';
 import { workspaceDueDateBoundaries } from '@timeline/shared/time';
 import { and, eq, isNull, lt, or, sql } from 'drizzle-orm';
@@ -64,8 +63,7 @@ export function isPlaceholderInboundEmail(inboundEmail: string | null | undefine
 
 /**
  * Warn only when the stored placeholder is also the address users would send
- * to. A configured POSTMARK_INBOUND_ADDRESS hash mailbox is a real capture
- * path even if the team row still holds `@inbound.invalid`.
+ * to. A placeholder address cannot receive email.
  */
 export function shouldWarnPlaceholderInboundEmail(
   storedInboundEmail: string | null | undefined,
@@ -79,12 +77,11 @@ export function shouldWarnPlaceholderInboundEmail(
 
 export function displayInboundEmail(
   team: { slug: string; inboundEmail: string | null } | null,
-  postmarkInboundAddress: string | undefined,
 ): string | null {
   if (!team) return null;
   const configuredAddress =
     team.inboundEmail && !isPlaceholderInboundEmail(team.inboundEmail) ? team.inboundEmail : null;
-  return configuredAddress ?? composePostmarkHashAddress(team.slug, postmarkInboundAddress);
+  return configuredAddress;
 }
 
 export function workAttentionCount({
@@ -318,7 +315,7 @@ export async function getSourcesStatusSummary(
   ]);
   const integrationErrors = countIntegrationErrors(integrations);
   const mcpErrors = countMcpErrors(mcpServerRows);
-  const inboundEmail = displayInboundEmail(team, process.env.POSTMARK_INBOUND_ADDRESS);
+  const inboundEmail = displayInboundEmail(team);
   const emailAttention =
     inboundEmail &&
     !onboarding.steps.some((step) => step.step === 'email_forwarding' && step.completed)

@@ -17,7 +17,7 @@ import {
 import { sourcePayloadRefFromMetadata } from '@timeline/shared/reconciliation';
 import { normalizeRawEventsToEvidence } from '@timeline/shared/reconciliation/normalization';
 import { UnrecoverableError, Worker, type Job } from 'bullmq';
-import { eq, sql } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import ffmpegPath from 'ffmpeg-static';
 
 import { withWorkerAiBilling, workerBillingJobOptions } from '#src/billing-context.js';
@@ -97,6 +97,27 @@ export async function processTranscribeJobForTests(
   options?: { billingOperationId?: string },
 ): Promise<{ rawEventId: string; model?: string }> {
   const { rawEventId, audioKey } = data;
+  const current = await deps.db
+    .select({ source: rawEvents.source, sourceMetadata: rawEvents.sourceMetadata })
+    .from(rawEvents)
+    .where(and(eq(rawEvents.id, rawEventId), eq(rawEvents.teamId, data.teamId)))
+    .limit(1);
+  if (!current[0]) return { rawEventId };
+  const sourceMetadata =
+    typeof current[0].sourceMetadata === 'object' &&
+    current[0].sourceMetadata !== null &&
+    !Array.isArray(current[0].sourceMetadata)
+      ? (current[0].sourceMetadata as Record<string, unknown>)
+      : {};
+  const emailChild =
+    current[0].source === 'email' && typeof sourceMetadata.parent_event_id === 'string';
+  if (emailChild && typeof sourceMetadata.transcribed_at === 'string') {
+    await finishTranscription(deps, io, rawEventId, data.teamId);
+    return { rawEventId };
+  }
+  const billingOperationId = emailChild
+    ? `transcription:email:${data.teamId}:${rawEventId}`
+    : options?.billingOperationId;
   const head = await io.headObject({ audioKey });
   if (head.contentLength === undefined) {
     throw new UnrecoverableError(
@@ -115,17 +136,6 @@ export async function processTranscribeJobForTests(
       : [body];
   const format =
     body.byteLength > MAX_TRANSCRIPTION_CHUNK_BYTES ? 'mp3' : audioFormatFromAudioKey(audioKey);
-  const current = await deps.db
-    .select({ sourceMetadata: rawEvents.sourceMetadata })
-    .from(rawEvents)
-    .where(eq(rawEvents.id, rawEventId))
-    .limit(1);
-  const sourceMetadata =
-    typeof current[0]?.sourceMetadata === 'object' &&
-    current[0].sourceMetadata !== null &&
-    !Array.isArray(current[0].sourceMetadata)
-      ? (current[0].sourceMetadata as Record<string, unknown>)
-      : {};
   const noteText =
     typeof sourceMetadata.audio_note_text === 'string' ? sourceMetadata.audio_note_text.trim() : '';
   const languageHint = transcriptionLanguageHint(sourceMetadata);
@@ -136,9 +146,7 @@ export async function processTranscribeJobForTests(
         audio,
         ...(format ? { format } : {}),
         ...(languageHint ? { language: languageHint } : {}),
-        ...(options?.billingOperationId
-          ? { operationId: `${options.billingOperationId}:${index}` }
-          : {}),
+        ...(billingOperationId ? { operationId: `${billingOperationId}:${index}` } : {}),
       }),
     );
   }
@@ -178,22 +186,29 @@ export async function processTranscribeJobForTests(
       contentText,
       sourceMetadata: sql`(COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) - 'transcription_failed_at' - 'transcription_error') || ${patch}::jsonb`,
     })
-    .where(eq(rawEvents.id, rawEventId))
+    .where(and(eq(rawEvents.id, rawEventId), eq(rawEvents.teamId, data.teamId)))
     .returning({ id: rawEvents.id, teamId: rawEvents.teamId });
   if (update.length === 0) {
     log.warn({ rawEventId }, 'raw event not found at update');
     return { rawEventId, model: result.model };
   }
 
+  await finishTranscription(deps, io, rawEventId, data.teamId);
+  return { rawEventId, model: result.model };
+}
+
+async function finishTranscription(
+  deps: TranscribeWorkerDeps,
+  io: TranscribeWorkerIO,
+  rawEventId: string,
+  teamId: string,
+): Promise<void> {
   try {
-    const row = update[0];
-    if (row) {
-      await normalizeRawEventsToEvidence({
-        db: deps.db,
-        teamId: row.teamId,
-        rawEventIds: [row.id],
-      });
-    }
+    await normalizeRawEventsToEvidence({
+      db: deps.db,
+      teamId,
+      rawEventIds: [rawEventId],
+    });
   } catch (normalizationErr) {
     log.warn(
       { err: normalizationErr, rawEventId },
@@ -202,10 +217,7 @@ export async function processTranscribeJobForTests(
   }
 
   try {
-    const row = update[0];
-    if (row) {
-      await io.enqueueExtract({ rawEventId: row.id, teamId: row.teamId });
-    }
+    await io.enqueueExtract({ rawEventId, teamId });
   } catch (enqueueErr) {
     log.error({ err: enqueueErr }, 'failed to enqueue extract job');
     captureWorkerException(enqueueErr, {
@@ -235,10 +247,7 @@ export async function processTranscribeJobForTests(
   }
 
   try {
-    const row = update[0];
-    if (row) {
-      await io.enqueueEmbed({ rawEventId: row.id, teamId: row.teamId });
-    }
+    await io.enqueueEmbed({ rawEventId, teamId });
   } catch (enqueueErr) {
     log.error({ err: enqueueErr }, 'failed to enqueue embed job');
     captureWorkerException(enqueueErr, {
@@ -268,10 +277,7 @@ export async function processTranscribeJobForTests(
   }
 
   try {
-    const row = update[0];
-    if (row) {
-      await io.enqueueSuggestion({ rawEventId: row.id, teamId: row.teamId });
-    }
+    await io.enqueueSuggestion({ rawEventId, teamId });
   } catch (enqueueErr) {
     log.error({ err: enqueueErr }, 'failed to enqueue suggestion job');
     captureWorkerException(enqueueErr, {
@@ -299,7 +305,6 @@ export async function processTranscribeJobForTests(
         });
       });
   }
-  return { rawEventId, model: result.model };
 }
 
 function audioKeyExtension(audioKey: string): string {

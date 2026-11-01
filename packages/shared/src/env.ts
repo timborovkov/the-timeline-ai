@@ -387,47 +387,18 @@ const baseSchema = z.object({
   TELEGRAM_WEBHOOK_SECRET: z.string().optional(),
   TELEGRAM_BOT_USERNAME: z.string().optional(),
 
-  // Postmark (Phase 7)
-  POSTMARK_SERVER_TOKEN: z.string().optional(),
+  // Resend (Phase 7)
+  RESEND_API_KEY: z.string().optional(),
   TRANSACTIONAL_EMAIL_FROM: z.string().optional(),
-  INVITE_EMAIL_FROM: z.string().optional(),
-  POSTMARK_WEBHOOK_SECRET: z.string().optional(),
+  RESEND_WEBHOOK_SECRET: z.string().optional(),
   /**
    * Public support/contact form destination. In production, support
-   * submissions are sent through Postmark to this address. Leave unset in
+   * submissions are sent through Resend to this address. Leave unset in
    * local/dev environments where the public form should show a config error
    * instead of silently dropping messages.
    */
   SUPPORT_EMAIL: z.preprocess(emptyStringAsUnset, z.email().optional()),
   INBOUND_EMAIL_DOMAIN: z.string().optional(),
-  /**
-   * Dev / no-own-domain fallback. When set to a Postmark-default inbound
-   * address (e.g. `<hex>@inbound.postmarkapp.com`), the dispatcher routes
-   * by MailboxHash instead of by full recipient address. The hash IS the
-   * team slug — users send to `<hex>+<slug>@inbound.postmarkapp.com`.
-   *
-   * Set EITHER this OR `INBOUND_EMAIL_DOMAIN`. When both are set,
-   * MailboxHash routing wins (the explicit hash beats inferring from
-   * domain).
-   */
-  POSTMARK_INBOUND_ADDRESS: z.string().optional(),
-  /**
-   * RFC 8601 authserv-id allowlist for trusted `Authentication-Results`
-   * headers. Comma-separated; empty / unset means no AR header is trusted
-   * (From-match path falls back to dev behavior). For Postmark production,
-   * set to whatever Postmark stamps on the AR headers they generate (check
-   * a real inbound payload in the dashboard — usually a domain like
-   * `pm-inbound.postmarkapp.com` or your own MTA's hostname).
-   */
-  POSTMARK_AUTHSERV_IDS: z.string().optional(),
-  /**
-   * Source-IP allowlist for `/api/email/inbound`. Comma-separated CIDRs
-   * (IPv4). When unset, IP-based filtering is skipped (dev / staging).
-   * For Postmark production, populate with their published webhook source
-   * IPs. Requests from outside the allowlist are rejected pre-auth with
-   * 403 so attackers don't see auth-failure feedback.
-   */
-  POSTMARK_INBOUND_IPS: z.string().optional(),
   // Cloudflare Turnstile (Phase 13 abuse controls). Only public/anonymous
   // forms use it: email/password registration and public support/contact.
   TURNSTILE_SITE_KEY: z.string().optional(),

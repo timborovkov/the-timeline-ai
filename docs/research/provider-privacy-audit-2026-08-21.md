@@ -47,9 +47,9 @@ The evidence supports narrower statements:
   zero seconds. Recall states that it does not train or fine-tune AI on Customer
   Data. Timeline does not copy raw meeting media to its own object storage, but it
   does persist transcript text.
-- Postmark necessarily holds email message content. Its default retention is 45
-  days, configurable to 7–365 days, and its security page says message content is
-  not encrypted at rest.
+- Resend processes email message content and delivery metadata. Its account
+  retention, tracking, deletion, and contractual settings remain unverified;
+  the November 1 superseding assessment below records this evidence gap.
 - Daytona receives supported document bytes for extraction. The repo uses
   ephemeral, network-blocked sandboxes and deletes them, but Daytona separately
   documents three-day observability retention. Its standard DPA says customers
@@ -61,7 +61,7 @@ The evidence supports narrower statements:
   referrers and persistent visitor/session identifiers. This can disclose invite,
   verification, callback and in-app resource identifiers. Its presence is not
   represented by the repository's PostHog analytics documentation.
-- Railway, PostHog, Sentry, LangSmith, Cloudflare Turnstile, Postmark, Recall and
+- Railway, PostHog, Sentry, LangSmith, Cloudflare Turnstile, Resend, Recall and
   other enabled services retain at least metadata, logs, messages, traces or
   challenge data for service operation. “Private” must never be used as a synonym
   for “no training.”
@@ -123,7 +123,7 @@ vendor due diligence, not certificates Timeline may display as its own.
 | OpenRouter + selected model provider | Required for AI | Prompts, retrieved team evidence, document/image/audio inputs, outputs and embeddings | OpenRouter says prompt logging and model-improvement sharing are opt-in, but downstream endpoint policy controls retention/training. Committed code permits collecting endpoints. | OpenRouter enterprise terms describe GCP US, SOC 2 Type II framework, DPA and subprocessors; contract tier is unknown. | **Confirmed code and public policy; account unknown.** Enforce ZDR/no-collection, disable logging/sharing, bind guardrail to key, capture DPA/subprocessors. |
 | Recall.ai | Meeting-bot provider | Meeting URL, participants/metadata, audio/video, transcript and bot diagnostics | Timeline default is one-hour media retention. Recall says no Customer Data training. Accuracy mode is incompatible with Recall ZDR. Logs remain 7 days; meeting URL clears 14 days after termination. | Repo defaults to US West. Recall also offers EU Frankfurt and Tokyo. | **Confirmed.** Disclose one hour, not “immediate”; choose region; decide accuracy versus ZDR. |
 | Daytona | Optional document-extraction sandbox, required for supported complex files when configured | Document bytes, filename/type, extractor process output/errors | Ephemeral sandboxes discard state on stop; repo also deletes. Daytona documents 3-day logs/traces/metrics. Standard DPA says no sensitive/special-category data. | Repo defaults to target `us`; exact host/region/subprocessors unknown. | **Confirmed path; account unknown. Critical contractual review.** Resolve special-category mismatch before accepting unrestricted documents. |
-| Postmark | Outbound email and inbound-email capture | Recipient/sender, subject/body, attachments, delivery/open/click metadata | 45-day default message retention; custom 7–365 days. Message content is not encrypted at rest. Aggregate stats and suppression data can last longer. | DPA/SCC mechanism exists; account DPA version and retention configuration unknown. | **Confirmed path; account unknown.** Set minimum viable retention, inspect tracking, sign current DPA, disclose inbound/outbound processing. |
+| Resend | Outbound email and inbound-email capture | Sender/recipient, bodies, attachments and delivery metadata | Account retention, tracking and deletion unverified. | Current contract and transfer evidence pending. | **Code path implemented; account evidence pending (G-09).** |
 | PostHog | Optional product analytics and feature flags | Pseudonymous user ID, team ID and typed product-event properties | Repo disables autocapture, pageviews, pageleave and replay, but persists analytics identifiers in cookie/localStorage. Project retention is unknown. | Default host is EU ingestion; an EU hostname alone is not proof of project residency. | **Conditional.** Verify project region, retention, DPA, subprocessors, IP handling, consent/legal basis and property allowlist. |
 | Convex-hosted custom analytics | Unconditional root-layout script at audited commit | Full URL/path/query, referrer, UTM values, screen, language, scroll/time and persistent visitor/session IDs | Custom backend schema, retention, access and downstream export are not in this repo. | Convex offers US East and EU West deployments; this endpoint's region is unknown. Convex advertises SOC 2 Type II and AWS controls. | **Confirmed and high risk.** Remove or explicitly own, sanitize and consent-gate it; inventory the external backend before policy publication. |
 | Sentry | Optional error monitoring plus optional native data-source integration | Exceptions, stack traces, breadcrumbs, runtime metadata, source maps; connected team issue/release data | `sendDefaultPii` is false and repo scrubs known secrets, but unexpected error strings can still contain customer data. Actual retention and AI/Seer settings unknown. | Sentry supports US or Germany data location. DSN/account decides; repo does not. | **Conditional.** Verify region, retention, DPA, subprocessors, scrubbing, Seer/AI opt-ins and sampling. |
@@ -354,36 +354,17 @@ the account was affected and whether credential rotation was completed. The
 repo's no-secrets-in-sandbox design materially reduces, but does not eliminate,
 that risk.
 
-## 5. Postmark email
+## 5. Resend email — superseding update, 2026-11-01
 
-Timeline uses Postmark for transactional/support email and can receive inbound
-email webhooks. Inbound payloads can include full message bodies and attachments,
-which Timeline then persists as evidence. Postmark is therefore a content
-processor, not merely an SMTP pipe.
+Resend processes outbound transactional/support mail and inbound email capture.
+The receiving webhook contains identifiers and metadata; Timeline's worker fetches
+message bodies and attachments and persists accepted evidence in its own stores.
+This entry supersedes the earlier email-provider assessment. It does not claim
+that Resend account settings or contracts were reviewed in August.
 
-Postmark's current first-party material says:
-
-- Message content is kept for the configured message-retention period: 45 days
-  by default, with 7–365-day custom retention. Seven days is the minimum; message
-  retention cannot be fully disabled.
-- When short retention is selected, deletion may take up to 24 hours; longer
-  retention configurations can take up to seven days to clear. Aggregate
-  statistics remain after message content expires.
-- Bounce/spam suppression information can be retained indefinitely to protect
-  deliverability.
-- API and SMTP connections use TLS, but email **message content is not encrypted
-  at rest**.
-- Staff access to messages is described as limited to account-owner permission
-  or compliance review. Postmark itself says it has not undergone a SOC audit;
-  its data-center provider has SOC 2 controls.
-- Postmark offers a DPA/SCC mechanism and publishes subprocessors including AWS
-  and Deft, with Zendesk used for support transparency.
-
-Unknown account facts: retention setting, open/click tracking, DPA version (the
-current DPA distinguishes accounts by signup timing), sender-domain settings,
-support access history and deletion behavior. Set the shortest retention that
-still permits delivery investigation, disable tracking unless necessary, and
-describe both Postmark and Timeline retention.
+Account retention, tracking, DPA/transfer coverage, support access, and provider
+deletion behavior remain unverified (G-09). Review current terms and account
+settings before production use; do not infer them from another provider's policy.
 
 ## 6. Analytics and telemetry
 
@@ -606,7 +587,7 @@ that a real deployment sends data there.
   error payloads still require monitoring.
 - A separately licensed customer deployment can move many hosted-provider and
   staff-access choices into the customer's control boundary. Self-hosting does
-  not automatically remove OpenRouter, Recall, Postmark, Daytona or connected
+  not automatically remove OpenRouter, Recall, Resend, Daytona or connected
   services; the operator must configure or replace them. No general self-hosting
   right exists in the audited repository today.
 
@@ -640,7 +621,7 @@ that a real deployment sends data there.
 6. Resolve the Railway and Daytona DPA “no special-category data” mismatch.
 7. Decide Recall posture: one-hour accurate transcription versus low-latency ZDR,
    and select/verify region.
-8. Set Postmark retention/tracking and sign the applicable DPA.
+8. Set Resend retention/tracking and sign the applicable DPA.
 9. Decide whether LangSmith is allowed in production. If yes, select region,
    sampling, retention and access; if no, enforce it off at deployment policy.
 
@@ -652,7 +633,7 @@ that a real deployment sends data there.
   annual review date.
 - Residency screenshot/export for Railway, PostHog, Sentry, Recall, LangSmith,
   Daytona and Convex.
-- Retention screenshot/export for backups/logs, Postmark, analytics, Sentry,
+- Retention screenshot/export for backups/logs, Resend, analytics, Sentry,
   LangSmith and Recall.
 - OpenRouter key-to-guardrail mapping and automated ZDR route canary.
 - Incident notification periods and deletion/return obligations from each DPA.
@@ -725,13 +706,12 @@ date is noted.
 - [Daytona DPA, last updated 2025-08-22](https://www.daytona.io/dpa)
 - [Daytona Trust Center](https://trust.daytona.io/)
 
-### Postmark
+### Resend
 
-- [Postmark message retention API](https://postmarkapp.com/developer/api/messages-api)
-- [Postmark retention add-on, updated 2025-12-08](https://postmarkapp.com/support/article/how-does-the-retention-add-on-work)
-- [Postmark security and redundancy, updated 2025-10-27](https://postmarkapp.com/support/article/is-postmark-secure-and-redundant)
-- [Postmark DPA, effective 2025-11-17](https://postmarkapp.com/dpa)
-- [Postmark EU privacy and subprocessors](https://postmarkapp.com/eu-privacy)
+- [Receiving API](https://resend.com/docs/api-reference/emails/retrieve-received-email)
+- [Webhook verification](https://resend.com/docs/webhooks/verify-webhooks-requests)
+
+API documentation establishes transport behavior, not account or contractual assurance.
 
 ### Analytics, monitoring and anti-abuse
 
@@ -806,7 +786,7 @@ date is noted.
 | Railway regions, volume controls, backups/logs and executed DPA | Railway dashboard + contract | Blocks residency, retention and sensitive-data claims. |
 | Recall production region/account retention/DPA | Recall dashboard + bot request logs + contract | Blocks meeting retention/residency wording. |
 | Daytona host/region/log payloads/DPA coverage | Daytona dashboard/support + contract | Blocks unrestricted sensitive-document processing. |
-| Postmark retention, tracking, DPA and support access | Postmark dashboard + contract | Blocks email retention/security wording. |
+| Resend retention, tracking, DPA and support access | Resend dashboard + contract | Blocks email retention/security wording. |
 | PostHog project region, retention, DPA, identifiers and consent basis | PostHog dashboard + counsel | Blocks analytics/cookie wording. |
 | Convex analytics backend owner, schema, region, retention and logs already collected | Convex project access + incident review | Blocks “minimal analytics”; may require credential/incident response. |
 | Sentry account region/retention/Seer/scrubbing | Sentry dashboard + sample event audit | Blocks monitoring retention and AI claims. |
@@ -815,3 +795,5 @@ date is noted.
 | Operator access audit and break-glass review cadence | Production audit-log export + named reviewer | Blocks claims that staff access is rare, approved and auditable. |
 | Data-subject deletion across vectors, objects, backups and vendors | End-to-end deletion test | Blocks deletion SLA. |
 | Customer-selected integration roles and deletion propagation | Counsel + product test per provider | Blocks precise controller/processor wording. |
+
+Resend implementation references (2026-11-01): [Receiving](https://resend.com/docs/dashboard/receiving/introduction), [webhook verification](https://resend.com/docs/webhooks/verify-webhooks-requests). These establish API behavior, not account or contractual assurance.

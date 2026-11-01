@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import {
   type Db,
   documentVersions,
@@ -10,15 +12,20 @@ import {
 import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm';
 
 import { assertTeamWriteCapacity } from '#src/billing/capacity.js';
+import { BillingAdmissionError } from '#src/billing/errors.js';
 import { meterEmailUnits } from '#src/billing/runtime.js';
 import { buildDocumentObjectKey } from '#src/documents/object-key.js';
+import {
+  inboundEmailSchema,
+  type InboundAttachment,
+  type InboundEmail,
+} from '#src/email/inbound-schema.js';
 import {
   chooseContentText,
   getHeader,
   isAudioAttachment,
   normalizeEmail,
   normalizeMessageId,
-  parseAuthenticationResults,
   parseForwardedChain,
   parseForwardedFrom,
   parseReferences,
@@ -27,11 +34,6 @@ import {
   toParsedList,
   type ParsedAddress,
 } from '#src/email/parser.js';
-import {
-  postmarkInboundSchema,
-  type PostmarkAttachment,
-  type PostmarkInbound,
-} from '#src/email/postmark-schema.js';
 import { childLogger } from '#src/logger.js';
 import { inlineSourceSnapshotMetadata } from '#src/reconciliation/source-snapshot.js';
 import { withTeam } from '#src/team-scope.js';
@@ -48,7 +50,7 @@ const BILLING_ENRICHMENT_CHECKED_AT = 'billing_enrichment_checked_at';
  * dropped with a log line and a `attachments_dropped` flag in metadata.
  */
 export interface EmailAttachmentDeps {
-  /** Upload bytes (decoded from base64) into the attachments bucket. */
+  /** Upload downloaded bytes into the attachments bucket. */
   uploadAttachment(input: { key: string; body: Buffer; contentType: string }): Promise<void>;
   /** Upload audio bytes into the audio bucket. Mirrors the Telegram audio path
    *  so an `.m4a` voice memo forwarded as an email attachment lands in the
@@ -79,24 +81,8 @@ export interface SuggestionEnqueueDeps {
 
 export interface DispatcherDeps {
   db: Db;
-  /** Per-team inbound address suffix (e.g. `in.thetimeline.cc`). Used as
-   *  a last-resort filter so the dispatcher cannot route a stray recipient
-   *  that happens to share another team's slug-on-some-other-domain.
-   *
-   *  Optional in dev: when only `postmarkInboundAddress` is set, recipient
-   *  matching is skipped entirely and routing relies on `MailboxHash`. */
+  /** Exact receiving domain; shared by custom and Resend-managed domains. */
   inboundDomain?: string;
-  /** Dev / no-own-domain mode. When set, the dispatcher routes by
-   *  MailboxHash → team slug instead of (or in addition to) recipient
-   *  address matching. Mutually compatible with `inboundDomain` — both
-   *  paths are tried; first match wins. */
-  postmarkInboundAddress?: string;
-  /** RFC 8601 authserv-id allowlist for trusted Authentication-Results
-   *  headers. Defense against header-injection spoofing where the email
-   *  body itself contains a forged AR header. Empty / undefined means
-   *  no AR header is trusted; dispatcher falls back to From-match (dev
-   *  behavior). */
-  trustedAuthservIds?: string[];
   attachments?: EmailAttachmentDeps;
   documents?: EmailDocumentDeps;
   extract?: ExtractEnqueueDeps;
@@ -114,12 +100,11 @@ export interface HandleInboundResult {
 }
 
 /**
- * Log-safe recipient summary: domains plus team slugs (MailboxHash / inbound
+ * Log-safe recipient summary: domains plus team slugs (inbound
  * local-part). Never includes a full address or message body.
  */
 export function inboundRecipientLogHints(
   recipients: readonly string[],
-  mailboxHash = '',
   inboundDomain?: string,
 ): { domains: string[]; slugs: string[] } {
   const domains: string[] = [];
@@ -139,9 +124,6 @@ export function inboundRecipientLogHints(
     seenSlugs.add(slug);
     slugs.push(slug);
   };
-
-  const hash = mailboxHash.trim().toLowerCase();
-  if (hash) addSlug(hash);
 
   const configuredDomain = inboundDomain?.trim().toLowerCase();
   const domainSuffix = configuredDomain ? `@${configuredDomain}` : undefined;
@@ -166,19 +148,12 @@ function inboundDropMessage(
   return `inbound email dropped: ${reason} domain=${domain} slug=${slug}`;
 }
 
-/**
- * Entry point: parse a Postmark inbound payload, resolve which teams the
- * mail was addressed to, and write one raw_event per match. Never throws —
- * any failure is logged and surfaced as `{ ok: false, reason }`. The route
- * handler always returns 200 to Postmark so retries are driven by our own
- * idempotency layer (the partial unique index on Message-ID), not by HTTP
- * status drift between deployments.
- */
+/** Route a hydrated email into scoped events; any failed team requests a worker retry. */
 export async function handleInbound(
   deps: DispatcherDeps,
   rawPayload: unknown,
 ): Promise<HandleInboundResult> {
-  const parsed = postmarkInboundSchema.safeParse(rawPayload);
+  const parsed = inboundEmailSchema.safeParse(rawPayload);
   if (!parsed.success) {
     log.warn({ issues: parsed.error.issues.slice(0, 3) }, 'payload failed schema validation');
     return { ok: false, inserted: 0, reason: 'invalid_payload' };
@@ -187,34 +162,15 @@ export async function handleInbound(
 
   const recipients = collectRecipients(payload);
 
-  // Resolve matching teams from BOTH the MailboxHash and the recipient
-  // list, then dedup by team id. A single email can address multiple
-  // teams via different mechanisms:
-  //   - Plus-addressed to team A (MailboxHash=team-a), CC'd to team B's
-  //     real `<slug>@<domain>` address. Both teams need the event.
-  //   - To: team-a@<domain>, Cc: team-b@<domain>. Both via recipient.
-  //   - Hash-only routing in dev (no inbound domain configured).
-  // Skipping the recipient pass when the hash matches would silently drop
-  // legitimate CC's to other teams — the "implicit opt-in via CC" pattern
-  // the brief calls load-bearing.
-  const hashSlug = payload.MailboxHash.trim().toLowerCase();
-  const matchedTeams: MatchedTeam[] = [];
-  if (hashSlug) {
-    const byHash = await resolveTeamBySlug(deps.db, hashSlug);
-    if (byHash) matchedTeams.push(byHash);
-  }
-  if (deps.inboundDomain && recipients.length > 0) {
-    const byRecipient = await resolveTeams(deps.db, recipients, deps.inboundDomain);
-    for (const t of byRecipient) {
-      if (!matchedTeams.some((m) => m.id === t.id)) matchedTeams.push(t);
-    }
-  }
-  if (recipients.length === 0 && !hashSlug) {
+  const matchedTeams = deps.inboundDomain
+    ? await resolveTeams(deps.db, recipients, deps.inboundDomain)
+    : [];
+  if (recipients.length === 0) {
     log.info('inbound email dropped: no_recipients');
     return { ok: false, inserted: 0, reason: 'no_recipients' };
   }
   if (matchedTeams.length === 0) {
-    const hints = inboundRecipientLogHints(recipients, hashSlug, deps.inboundDomain);
+    const hints = inboundRecipientLogHints(recipients, deps.inboundDomain);
     log.info(
       { recipientDomains: hints.domains, slugs: hints.slugs },
       inboundDropMessage('no_matching_team', hints),
@@ -223,39 +179,48 @@ export async function handleInbound(
   }
 
   const senderEmail = inboundSenderEmail(payload);
-  const allowedTeams = matchedTeams.filter((team) => {
-    if (!team.inboundSenderWhitelistEnabled) return true;
-    if (senderEmail && team.inboundSenderWhitelist.includes(senderEmail)) return true;
+  const allowedTeams: MatchedTeam[] = [];
+  for (const team of matchedTeams) {
+    let allowed = !team.inboundSenderWhitelistEnabled;
+    if (
+      !allowed &&
+      senderEmail &&
+      payload.authentication?.dmarc !== 'fail' &&
+      senderAuthVerdict(payload.authentication) !== 'fail'
+    ) {
+      allowed = team.inboundSenderWhitelist.includes(senderEmail);
+      if (!allowed) {
+        // Verified webhook routing establishes the team; this system scope only reads
+        // current membership, so joins, removals, and email changes take effect immediately.
+        const members = await withTeam(deps.db, team.id, '00000000-0000-0000-0000-000000000000', {
+          skipMembershipCheck: true,
+        }).timeline.listMembers();
+        allowed = members.some((member) => normalizeEmail(member.email) === senderEmail);
+      }
+    }
+    if (allowed) {
+      allowedTeams.push(team);
+      continue;
+    }
     log.warn(
       {
         teamId: team.id,
         from: senderEmail,
         messageId:
-          normalizeMessageId(getHeader(payload.Headers, 'Message-ID')) ?? payload.MessageID,
+          normalizeMessageId(getHeader(payload.headers, 'Message-ID')) ?? payload.providerId,
       },
       'inbound sender blocked by whitelist',
     );
-    return false;
-  });
+  }
   if (allowedTeams.length === 0) {
     return { ok: false, inserted: 0, reason: 'blocked_sender' };
   }
 
-  // Pre-decode each attachment once. Decoding inside the per-team loop would
-  // re-parse the base64 N times when an email is CC'd to multiple team
-  // addresses (rare but legitimate).
-  const { decoded, dropped } = decodeAttachments(payload.Attachments);
+  // Validate the hydrated attachment bytes once before per-team processing.
+  const { decoded, dropped } = decodeAttachments(payload.attachments);
+  dropped.push(...payload.attachmentsDropped);
 
-  // Per-team failure tracking. We distinguish two failure modes:
-  //   - THROWN: an infrastructure exception bubbled up (DB connection drop,
-  //     S3 timeout, transaction abort). The original delivery was NOT
-  //     durably accepted; Postmark should retry. Mapped to 5xx by the route.
-  //   - RETURNED FALSE: ingestForTeam decided not to land a row for a soft
-  //     reason (no members, missing Message-ID, createEmailEvent returned
-  //     null). Retry won't help; stays 200.
-  // If EVERY matched team threw, we report ok:false so the route surfaces
-  // a 5xx to Postmark. Earlier versions returned ok:true unconditionally
-  // and silently dropped the inbound during a total DB outage.
+  // Retry partial failures too. Successful teams deduplicate and resume downstream work.
   let inserted = 0;
   let threwCount = 0;
   for (const team of allowedTeams) {
@@ -267,31 +232,30 @@ export async function handleInbound(
       log.error({ teamId: team.id, err }, 'team ingest failed');
     }
   }
-  if (threwCount > 0 && threwCount === allowedTeams.length) {
-    return { ok: false, inserted: 0, reason: 'all_teams_failed' };
+  if (threwCount > 0) {
+    return { ok: false, inserted: 0, reason: 'team_ingest_failed' };
   }
   return { ok: true, inserted };
 }
 
-function collectRecipients(payload: PostmarkInbound): string[] {
+function collectRecipients(payload: InboundEmail): string[] {
   const out: string[] = [];
-  for (const addr of payload.ToFull) {
-    const e = normalizeEmail(addr.Email);
+  for (const addr of payload.toAddresses) {
+    const e = normalizeEmail(addr.email);
     if (e) out.push(e);
   }
-  for (const addr of payload.CcFull) {
-    const e = normalizeEmail(addr.Email);
+  for (const addr of payload.ccAddresses) {
+    const e = normalizeEmail(addr.email);
     if (e) out.push(e);
   }
-  for (const addr of payload.BccFull) {
-    const e = normalizeEmail(addr.Email);
+  for (const addr of payload.bccAddresses) {
+    const e = normalizeEmail(addr.email);
     if (e) out.push(e);
   }
-  // OriginalRecipient surfaces the actual delivery address when Postmark
-  // forwards via an alias chain — it might be present when To/Cc only show
-  // a list address. Belt-and-braces.
-  const orig = normalizeEmail(payload.OriginalRecipient);
-  if (orig && !out.includes(orig)) out.push(orig);
+  for (const recipient of payload.receivedFor) {
+    const address = normalizeEmail(recipient);
+    if (address) out.push(address);
+  }
   return Array.from(new Set(out));
 }
 
@@ -302,38 +266,6 @@ interface MatchedTeam {
   inboundSenderWhitelist: string[];
 }
 
-/**
- * Look up a team by case-insensitive slug match. Used by MailboxHash
- * routing: `<hex>+<slug>@inbound.postmarkapp.com` arrives with
- * `MailboxHash="<slug>"`, and we resolve to the team that owns that slug.
- * Returns null on miss so the dispatcher can fall through to recipient-
- * based resolution.
- */
-async function resolveTeamBySlug(db: Db, slug: string): Promise<MatchedTeam | null> {
-  const rows = await db
-    .select({
-      id: teams.id,
-      inboundEmail: teams.inboundEmail,
-      inboundSenderWhitelistEnabled: teams.inboundSenderWhitelistEnabled,
-      inboundSenderWhitelist: teams.inboundSenderWhitelist,
-    })
-    .from(teams)
-    .where(sql`lower(${teams.slug}) = ${slug}`)
-    .limit(1);
-  const r = rows[0];
-  if (!r) return null;
-  // `teams.inbound_email` is nullable in schema but set on every Phase 7+
-  // team — fall back to a synthetic local string when somehow missing so
-  // downstream MatchedTeam.inboundEmail is never undefined (it's only used
-  // for logging in this path).
-  return {
-    id: r.id,
-    inboundEmail: r.inboundEmail ?? `${slug}@mailbox-hash`,
-    inboundSenderWhitelistEnabled: r.inboundSenderWhitelistEnabled,
-    inboundSenderWhitelist: normalizeSenderWhitelist(r.inboundSenderWhitelist),
-  };
-}
-
 async function resolveTeams(
   db: Db,
   recipients: string[],
@@ -341,7 +273,7 @@ async function resolveTeams(
 ): Promise<MatchedTeam[]> {
   if (recipients.length === 0) return [];
   // Only consider recipients whose domain matches the configured inbound
-  // domain. Stops a stray `someone@gmail.com` in To/Cc from ever colliding
+  // domain. Stops a stray `someone@gmail.com` in to/cc from ever colliding
   // with a team's address that happens to be `someone@gmail.com` (it can't
   // happen with our slug format, but defense in depth is cheap).
   const domainSuffix = '@' + inboundDomain.toLowerCase();
@@ -366,8 +298,8 @@ async function resolveTeams(
     }));
 }
 
-function inboundSenderEmail(payload: PostmarkInbound): string {
-  return toParsed(payload.FromFull)?.email ?? normalizeEmail(payload.From);
+function inboundSenderEmail(payload: InboundEmail): string {
+  return toParsed(payload.fromAddress)?.email ?? normalizeEmail(payload.from);
 }
 
 function normalizeSenderWhitelist(value: unknown): string[] {
@@ -382,11 +314,24 @@ function normalizeSenderWhitelist(value: unknown): string[] {
 }
 
 interface DecodedAttachment {
+  id?: string;
   filename: string;
   contentType: string;
   size: number;
   body: Buffer;
   contentId?: string;
+}
+
+/** Logical identity survives provider redelivery and attachment order changes. */
+function attachmentIdentity(attachment: {
+  filename: string;
+  contentType: string;
+  body: Buffer;
+}): string {
+  return createHash('sha256')
+    .update(JSON.stringify([attachment.filename, attachment.contentType]))
+    .update(attachment.body)
+    .digest('hex');
 }
 
 interface DecodeResult {
@@ -397,65 +342,32 @@ interface DecodeResult {
   dropped: { filename: string; reason: string }[];
 }
 
-/**
- * Per-payload decoded-bytes cap. Postmark's inbound size limit is 35 MB
- * (base64 encoded → ~46 MB on the wire); the dispatcher decodes everything
- * into Node Buffers in the webhook handler before deciding what to upload.
- * Without a cap, a single 30 MB-attachment email × N parallel webhook hits
- * can OOM the pod. The cap rejects attachments cumulatively: once we cross
- * the threshold, remaining items are dropped with a reason and surface on
- * `source_metadata.attachments_dropped`.
- *
- * Tuned to 25 MB for webhook memory pressure. The transcribe worker can accept
- * larger already-stored audio from S3 and split it before provider upload, but
- * inbound email still decodes attachments in the request path.
- */
+/** Cumulative byte cap, also enforced while downloading in the receiving client. */
 const MAX_INBOUND_DECODED_BYTES = 25 * 1024 * 1024;
 
-function decodeAttachments(items: PostmarkAttachment[]): DecodeResult {
+function decodeAttachments(items: InboundAttachment[]): DecodeResult {
   const decoded: DecodedAttachment[] = [];
   const dropped: { filename: string; reason: string }[] = [];
   let totalBytes = 0;
   for (const a of items) {
-    // Sanity-check the claimed `ContentLength` against the base64 payload
-    // size BEFORE decoding. base64 ≈ 4/3 × raw bytes, so an honest payload
-    // satisfies `Content.length ≈ ContentLength × 4 / 3`. A malicious
-    // payload that claims `ContentLength: 100` but ships a 500 MB base64
-    // string would still allocate the full 500 MB if we trusted `Buffer.from`.
-    // We reject when the encoded size > 1.4 × the claimed size × 4/3.
-    const expectedEncoded = Math.ceil((a.ContentLength * 4) / 3);
-    if (a.Content.length > expectedEncoded * 1.4 + 64) {
-      dropped.push({ filename: a.Name, reason: 'content_length_mismatch' });
+    const buf = a.content;
+    if (buf.length !== a.size) {
+      dropped.push({ filename: a.name, reason: 'content_length_mismatch' });
       continue;
     }
-    if (totalBytes + a.ContentLength > MAX_INBOUND_DECODED_BYTES) {
-      dropped.push({ filename: a.Name, reason: 'total_size_cap_exceeded' });
-      continue;
-    }
-    let buf: Buffer;
-    try {
-      buf = Buffer.from(a.Content, 'base64');
-    } catch (err) {
-      const reason = err instanceof Error ? err.message.slice(0, 200) : 'decode_failed';
-      log.warn({ name: a.Name, err }, 'attachment base64 decode failed');
-      dropped.push({ filename: a.Name, reason });
-      continue;
-    }
-    // Post-decode cross-check: the actual buffer length must roughly match
-    // the claimed ContentLength. Catches the same attack from a different
-    // angle in case base64 alphabet padding fooled the pre-check.
-    if (buf.length > a.ContentLength * 1.1 + 64) {
-      dropped.push({ filename: a.Name, reason: 'decoded_size_mismatch' });
+    if (totalBytes + buf.length > MAX_INBOUND_DECODED_BYTES) {
+      dropped.push({ filename: a.name, reason: 'total_size_cap_exceeded' });
       continue;
     }
     totalBytes += buf.length;
     const item: DecodedAttachment = {
-      filename: a.Name,
-      contentType: a.ContentType,
-      size: a.ContentLength,
+      id: attachmentIdentity({ filename: a.name, contentType: a.contentType, body: buf }),
+      filename: a.name,
+      contentType: a.contentType,
+      size: a.size,
       body: buf,
     };
-    if (a.ContentID) item.contentId = a.ContentID;
+    if (a.contentId) item.contentId = a.contentId;
     decoded.push(item);
   }
   return { decoded, dropped };
@@ -463,54 +375,49 @@ function decodeAttachments(items: PostmarkAttachment[]): DecodeResult {
 
 /**
  * Ingest a single payload against one matched team. Returns true when a new
- * row landed (false on Postmark retry / dedup so the caller can count
+ * row landed (false on Resend retry / dedup so the caller can count
  * accurately). Never throws — captures errors with team context.
  */
 async function ingestForTeam(
   deps: DispatcherDeps,
-  payload: PostmarkInbound,
+  payload: InboundEmail,
   team: MatchedTeam,
   attachments: DecodedAttachment[],
   droppedAttachments: { filename: string; reason: string }[],
 ): Promise<boolean> {
   // Two distinct identifiers travel with every inbound email:
   //   - The RFC 5322 `Message-ID:` header — the value sending MUAs reference
-  //     in `In-Reply-To:` and `References:` for threading. Stable across
+  //     in `In-Reply-to:` and `References:` for threading. Stable across
   //     forwards, replies, and inbound delivery retries.
-  //   - Postmark's `MessageID` field — their own UUID for the delivery
+  //   - Resend's `providerId` field — their own UUID for the delivery
   //     event. Useful as a secondary dedup signal but irrelevant to RFC
   //     threading (no other MUA ever sees it).
   // We MUST store the RFC value as our `message_id` for thread linking to
-  // work; otherwise subsequent replies' `In-Reply-To` headers never match
-  // anything we've ingested. The Postmark UUID is kept alongside for audit
+  // work; otherwise subsequent replies' `In-Reply-to` headers never match
+  // anything we've ingested. The Resend UUID is kept alongside for audit
   // and as a fallback when the source email omitted Message-ID entirely
   // (RFC SHOULD, not MUST — rare in practice but happens for some
   // transactional senders).
-  const rfcMessageId = normalizeMessageId(getHeader(payload.Headers, 'Message-ID'));
-  const postmarkMessageId = normalizeMessageId(payload.MessageID);
-  const messageId = rfcMessageId ?? postmarkMessageId;
+  const rfcMessageId = normalizeMessageId(getHeader(payload.headers, 'Message-ID'));
+  const resendMessageId = normalizeMessageId(payload.providerId);
+  const messageId = rfcMessageId ?? (resendMessageId ? `resend:${resendMessageId}` : null);
   if (!messageId) {
     log.warn({ teamId: team.id }, 'dropping payload with no Message-ID');
     return false;
   }
-  const headersInReplyTo = normalizeMessageId(getHeader(payload.Headers, 'In-Reply-To'));
-  const referencesRaw = getHeader(payload.Headers, 'References');
+  const headersInReplyTo = normalizeMessageId(getHeader(payload.headers, 'In-Reply-to'));
+  const referencesRaw = getHeader(payload.headers, 'References');
   const references = parseReferences(referencesRaw);
 
   // Sender resolution: first member of the matched team whose primary email
-  // matches the From address. Domain-allowlist is a Phase 8 carryover; today
+  // matches the from address. Domain-allowlist is a Phase 8 carryover; today
   // we require exact email match.
   //
-  // From-spoofing defense: when Postmark (or upstream MTA) passed an
-  // `Authentication-Results` header through, we read it. If SPF and DKIM
-  // both failed, treat the message as unverified even when From matches a
-  // member's email — an attacker forging `From: tim@example.com` can't
-  // forge SPF+DKIM for example.com from their own IP. When the header is
-  // absent (dev environments, upstream that doesn't sign), preserve the
-  // From-match behavior so we don't reject legitimate test traffic.
-  const authResults = parseAuthenticationResults(payload.Headers, deps.trustedAuthservIds ?? []);
+  // Only receiver-computed authentication is trusted. Unknown results preserve
+  // the existing member-match policy and remain explicit in the audit metadata.
+  const authResults = payload.authentication;
   const authVerdict = senderAuthVerdict(authResults);
-  const fromAddr = toParsed(payload.FromFull) ?? bareFrom(payload);
+  const fromAddr = toParsed(payload.fromAddress) ?? bareFrom(payload);
   let authorUserId: string | null = null;
   let senderUnverified = true;
   if (fromAddr && authVerdict !== 'fail') {
@@ -563,8 +470,11 @@ async function ingestForTeam(
     return false;
   }
   const scope = withTeam(deps.db, team.id, callerUserId);
+  const recoveryScope = withTeam(deps.db, team.id, '00000000-0000-0000-0000-000000000000', {
+    emailIngestRecovery: true,
+  });
   const emailDefault = await scope.timeline.resolveVisibilityDefault('email');
-  const visibilityOwnerUserId = senderUnverified
+  let visibilityOwnerUserId = senderUnverified
     ? null
     : (authorUserId ?? emailDefault.sourceOwnerUserId ?? null);
   let resolvedEmailVisibility: 'private' | 'team' = 'team';
@@ -578,7 +488,7 @@ async function ingestForTeam(
   }
 
   const contentText = chooseContentText(payload);
-  const occurredAt = parseDateHeader(payload.Date) ?? new Date();
+  const occurredAt = parseDateHeader(payload.sentAt) ?? new Date();
 
   // Attachment routing: audio attachments are promoted to their own
   // raw_event with content_audio_url + a transcribe job, mirroring the
@@ -605,24 +515,17 @@ async function ingestForTeam(
     else nonAudio.push(att);
   }
 
-  // Upload non-audio attachments first (cheap, no enqueue) so the parent
-  // email row can carry the metadata. Failures are recorded but don't block
-  // ingest — the user can always re-forward the email or fetch attachments
-  // from Postmark archives.
+  // Upload before recording metadata; transient storage failures request a retry.
   if (deps.attachments) {
     for (let i = 0; i < nonAudio.length; i++) {
       const att = nonAudio[i];
       if (!att) continue;
-      // Filename sanitization collapses unsafe characters to `_`, so
-      // `evil.txt` and `evil!txt` both become `evil_txt`. Prefix every key
-      // with the attachment index to disambiguate collisions within a
-      // single email payload — without the prefix the second upload
-      // overwrites the first in S3 and the parent's attachments[] points
-      // two records at one blob.
+      // The content-derived identity prevents filename collisions and is stable
+      // when the same RFC message arrives under another provider delivery ID.
       const key = deps.attachments.buildAttachmentKey({
         teamId: team.id,
         messageId,
-        filename: `${i}-${att.filename}`,
+        filename: `${att.id ?? i}-${att.filename}`,
       });
       try {
         await deps.attachments.uploadAttachment({
@@ -640,17 +543,7 @@ async function ingestForTeam(
         const record = attachmentsRecords[attachmentsRecords.length - 1];
         if (record) documentCandidates.push({ attachment: att, record });
       } catch (err) {
-        log.error({ teamId: team.id, key, err }, 'attachment upload failed');
-        attachmentsRecords.push({
-          filename: att.filename,
-          content_type: att.contentType,
-          size_bytes: att.size,
-          bucket: 'attachments',
-          key,
-          upload_failed: true,
-        });
-        const record = attachmentsRecords[attachmentsRecords.length - 1];
-        if (record) documentCandidates.push({ attachment: att, record });
+        throw err;
       }
     }
   } else if (nonAudio.length > 0) {
@@ -675,30 +568,30 @@ async function ingestForTeam(
   // Build the email event's source_metadata. Thread fields are added by
   // team-scope.createEmailEvent inside the transaction.
   const forwardedFrom = parseForwardedFrom({
-    subject: payload.Subject,
-    textBody: payload.TextBody,
+    subject: payload.subject,
+    textBody: payload.text,
   });
   const forwardedChain = parseForwardedChain({
-    subject: payload.Subject,
-    textBody: payload.TextBody,
+    subject: payload.subject,
+    textBody: payload.text,
   });
 
   const baseMetadata: Record<string, unknown> = {
-    subject: payload.Subject,
+    subject: payload.subject,
     from: fromAddr,
-    to: toParsedList(payload.ToFull),
-    cc: toParsedList(payload.CcFull),
-    bcc: toParsedList(payload.BccFull),
-    html_body: payload.HtmlBody || null,
+    to: toParsedList(payload.toAddresses),
+    cc: toParsedList(payload.ccAddresses),
+    bcc: toParsedList(payload.bccAddresses),
+    html_body: payload.html || null,
     attachments: attachmentsRecords,
-    raw_postmark: stripRawForStorage(payload),
+    raw_resend: stripRawForStorage(payload),
   };
   Object.assign(
     baseMetadata,
     emailSourcePayloadMetadata({
       payload,
       messageId,
-      postmarkMessageId,
+      resendMessageId,
       contentText,
       attachments: attachmentsRecords,
     }),
@@ -713,12 +606,12 @@ async function ingestForTeam(
   baseMetadata.auth_verdict = authVerdict;
   if (authResults) baseMetadata.auth_results = authResults;
   if (droppedAttachments.length > 0) baseMetadata.attachments_dropped = droppedAttachments;
-  // Audit trail: store Postmark's own delivery UUID separately from the RFC
-  // Message-ID. Lets us correlate raw_events back to Postmark dashboard
+  // Audit trail: store Resend's own delivery UUID separately from the RFC
+  // Message-ID. Lets us correlate raw_events back to Resend dashboard
   // entries even when an email is missing the RFC header (we fell back to
-  // the Postmark UUID for `message_id`).
-  if (postmarkMessageId && postmarkMessageId !== messageId) {
-    baseMetadata.postmark_message_id = postmarkMessageId;
+  // the Resend UUID for `message_id`).
+  if (resendMessageId && resendMessageId !== messageId) {
+    baseMetadata.resend_message_id = resendMessageId;
   }
 
   const createResult = await scope.timeline.createEmailEvent({
@@ -737,55 +630,25 @@ async function ingestForTeam(
     return false;
   }
 
+  if (createResult.deduplicated) log.debug({ teamId: team.id }, 'inbound email dropped: dedup hit');
+  // Run the same replay-safe downstream path for first delivery and recovery.
+  const parentEventId = createResult.id;
   if (createResult.deduplicated) {
-    log.debug({ teamId: team.id }, 'inbound email dropped: dedup hit');
-    // Postmark retry path. The parent raw_event already exists, but we
-    // cannot assume the original delivery completed every downstream
-    // step — the handler may have crashed AFTER inserting the parent and
-    // BEFORE enqueueing extract/embed or uploading attachments. Mirror the
-    // Phase 2 Telegram self-heal pattern: idempotently redo the work that
-    // is safe to redo. Extract + embed enqueues are worker-side idempotent
-    // (the workers skip if facts/embeddings for this event already exist),
-    // so re-enqueueing on every retry is a no-op when nothing was missed
-    // and a recovery when something was.
-    //
-    // Attachment re-upload and audio-child creation are NOT redone here:
-    // S3 PUT to the same key is idempotent, but creating a second child
-    // raw_event for an audio attachment would duplicate the timeline row.
-    // The reconciler ticket in todo.md covers the rare "parent landed,
-    // children missing" case via a periodic scan.
-    const replayMeter = await meterEmailUnits({
-      db: deps.db,
-      teamId: team.id,
-      ...(authorUserId ? { userId: authorUserId } : {}),
-      operationId: `email_in:${messageId}`,
-      units: 1,
-      operationClass: 'email_inbound',
-    });
-    if (replayMeter.ok) {
-      await maybeEnqueueExtract(deps, createResult.id, team.id);
-      await maybeEnqueueEmbed(deps, createResult.id, team.id);
-      if (contentText.trim()) await maybeEnqueueSuggestion(deps, createResult.id, team.id);
-      if (
-        await processEmailDocumentCandidates(deps, {
-          teamId: team.id,
-          parentRawEventId: createResult.id,
-          parentAuthorUserId: authorUserId,
-          visibility: resolvedEmailVisibility,
-          visibilityOwnerUserId,
-          messageId,
-          candidates: documentCandidates,
-        })
-      ) {
-        await patchEmailParentAttachments(deps.db, createResult.id, attachmentsRecords);
-      }
-    } else {
-      await stampEmailBillingEnrichmentDeferred(deps.db, createResult.id);
+    const stored = await recoveryScope.timeline.getEmailIngestRecoveryState(parentEventId);
+    if (!stored) throw new Error('email_parent_missing');
+    // A different provider delivery with the same RFC ID cannot append content
+    // to the original immutable capture. Its own job remains responsible for recovery.
+    const storedMetadata = (stored.metadata ?? {}) as Record<string, unknown>;
+    if (storedMetadata.resend_message_id !== payload.providerId) return false;
+    // Attachment recovery currently supports binary visibility only. Never widen
+    // an owner's later restriction while creating derived documents/audio.
+    if (stored.visibility === 'specific_users') {
+      throw new Error('email_recovery_specific_users_requires_operator');
     }
-    return false;
+    resolvedEmailVisibility = stored.visibility;
+    visibilityOwnerUserId = stored.owner;
   }
 
-  const parentEventId = createResult.id;
   const emailMeter = await meterEmailUnits({
     db: deps.db,
     teamId: team.id,
@@ -830,7 +693,7 @@ async function ingestForTeam(
       const key = deps.attachments.buildAudioKey({
         teamId: team.id,
         messageId,
-        filename: `${i}-${att.filename}`,
+        filename: `${att.id ?? i}-${att.filename}`,
       });
       try {
         await deps.attachments.uploadAudio({
@@ -839,10 +702,10 @@ async function ingestForTeam(
           contentType: att.contentType,
         });
       } catch (err) {
-        log.error({ teamId: team.id, key, err }, 'audio attachment upload failed');
-        continue;
+        throw err;
       }
       const child = await scope.timeline.createEvent({
+        idempotencyKey: `email-audio:${messageId}:${att.id ?? i}`,
         authorUserId,
         source: 'email',
         contentAudioUrl: key,
@@ -871,7 +734,10 @@ async function ingestForTeam(
       parentAttachmentsDirty = true;
 
       try {
-        if (allowEnrichment) {
+        const storedChild = await recoveryScope.timeline.getEmailIngestRecoveryState(child.id);
+        if (!storedChild) throw new Error('email_audio_child_missing');
+        const childMetadata = (storedChild.metadata ?? {}) as Record<string, unknown>;
+        if (allowEnrichment && typeof childMetadata.transcribed_at !== 'string') {
           await deps.attachments.enqueueTranscribe({
             rawEventId: child.id,
             teamId: team.id,
@@ -895,6 +761,7 @@ async function ingestForTeam(
           .catch((markErr: unknown) => {
             log.error({ err: markErr }, 'failed to mark transcribe failure');
           });
+        throw err;
       }
     }
     // Persist the updated attachments[] back onto the parent (the original
@@ -909,7 +776,7 @@ async function ingestForTeam(
       })
       .where(eq(rawEvents.id, parentEventId))
       .catch((err: unknown) => {
-        log.error({ err }, 'failed to update parent attachments[]');
+        throw err;
       });
   } else if (audioAttachments.length > 0) {
     log.warn(
@@ -918,19 +785,23 @@ async function ingestForTeam(
     );
   }
   if (parentAttachmentsDirty) {
-    await patchEmailParentAttachments(deps.db, parentEventId, attachmentsRecords);
+    if (!(await patchEmailParentAttachments(deps.db, parentEventId, attachmentsRecords)))
+      throw new Error('email_attachment_link_failed');
   }
 
   // Enqueue extract + embed for the parent email event. Audio children's
   // extract/embed runs after the transcribe worker completes (Phase 3
   // cascade), so we don't enqueue them here.
   if (allowEnrichment) {
-    await maybeEnqueueExtract(deps, parentEventId, team.id);
-    await maybeEnqueueEmbed(deps, parentEventId, team.id);
-    if (contentText.trim()) await maybeEnqueueSuggestion(deps, parentEventId, team.id);
+    if (!(await maybeEnqueueExtract(deps, parentEventId, team.id)))
+      throw new Error('email_extract_enqueue_failed');
+    if (!(await maybeEnqueueEmbed(deps, parentEventId, team.id)))
+      throw new Error('email_embed_enqueue_failed');
+    if (contentText.trim() && !(await maybeEnqueueSuggestion(deps, parentEventId, team.id)))
+      throw new Error('email_suggestion_enqueue_failed');
   }
 
-  return true;
+  return !createResult.deduplicated;
 }
 
 async function processEmailDocumentCandidates(
@@ -967,6 +838,7 @@ async function processEmailDocumentCandidates(
         { teamId: input.teamId, parentRawEventId: input.parentRawEventId, err },
         'email document attachment failed',
       );
+      if (!(err instanceof BillingAdmissionError)) throw err;
       candidate.record.document_failed = true;
       dirty = true;
     }
@@ -1012,7 +884,7 @@ async function createEmailDocumentAttachment(
         eq(documents.teamId, input.teamId),
         eq(documents.sourceRawEventId, input.parentRawEventId),
         sql`${documents.metadata} ->> 'email_message_id' = ${input.messageId}`,
-        sql`${documents.metadata} ->> 'filename' = ${input.attachment.filename}`,
+        sql`${documents.metadata} ->> 'attachment_id' = ${attachmentIdentity(input.attachment)}`,
       ),
     )
     .limit(1);
@@ -1027,6 +899,29 @@ async function createEmailDocumentAttachment(
 
   const created = await db.transaction(async (tx) => {
     await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${input.teamId}, 1))`);
+    const [raced] = await tx
+      .select({ documentId: documents.id, versionId: documents.currentVersionId })
+      .from(documents)
+      .where(
+        and(
+          eq(documents.teamId, input.teamId),
+          eq(documents.sourceRawEventId, input.parentRawEventId),
+          sql`${documents.metadata} ->> 'attachment_id' = ${attachmentIdentity(input.attachment)}`,
+        ),
+      )
+      .limit(1);
+    if (raced?.versionId)
+      return {
+        documentId: raced.documentId,
+        versionId: raced.versionId,
+        objectKey: buildDocumentObjectKey({
+          teamId: input.teamId,
+          documentId: raced.documentId,
+          version: 1,
+          filename: input.attachment.filename,
+        }),
+      };
+
     await assertTeamWriteCapacity({
       db: tx as unknown as typeof db,
       teamId: input.teamId,
@@ -1046,6 +941,7 @@ async function createEmailDocumentAttachment(
           source: 'email',
           email_message_id: input.messageId,
           filename: input.attachment.filename,
+          attachment_id: attachmentIdentity(input.attachment),
           parent_raw_event_id: input.parentRawEventId,
         },
       })
@@ -1246,10 +1142,10 @@ function attachmentKey(input: {
   return `${input.bucket}\0${input.key}\0${input.filename}\0${input.content_type}`;
 }
 
-function bareFrom(payload: PostmarkInbound): ParsedAddress | null {
-  const email = normalizeEmail(payload.From);
+function bareFrom(payload: InboundEmail): ParsedAddress | null {
+  const email = normalizeEmail(payload.from);
   if (!email) return null;
-  const name = payload.FromName.trim();
+  const name = payload.fromName.trim();
   return name ? { email, name } : { email };
 }
 
@@ -1260,52 +1156,52 @@ function parseDateHeader(s: string | undefined): Date | null {
 }
 
 function emailSourcePayloadMetadata(input: {
-  payload: PostmarkInbound;
+  payload: InboundEmail;
   messageId: string;
-  postmarkMessageId: string | null;
+  resendMessageId: string | null;
   contentText: string;
   attachments: AttachmentRecordForDocument[];
 }): Record<string, unknown> {
   const snapshot = {
-    provider: 'postmark',
+    provider: 'resend',
     source: 'email',
     message_id: input.messageId,
-    postmark_message_id: input.postmarkMessageId,
-    subject: input.payload.Subject,
-    from: input.payload.FromFull,
-    to: input.payload.ToFull,
-    cc: input.payload.CcFull,
-    bcc: input.payload.BccFull,
-    date: input.payload.Date,
-    text_body: input.payload.TextBody,
-    html_body: input.payload.HtmlBody || null,
+    resend_message_id: input.resendMessageId,
+    subject: input.payload.subject,
+    from: input.payload.fromAddress,
+    to: input.payload.toAddresses,
+    cc: input.payload.ccAddresses,
+    bcc: input.payload.bccAddresses,
+    date: input.payload.sentAt,
+    text_body: input.payload.text,
+    html_body: input.payload.html || null,
     content_text: input.contentText,
-    raw_postmark: stripRawForStorage(input.payload),
+    raw_resend: stripRawForStorage(input.payload),
     attachments: input.attachments,
   };
   return inlineSourceSnapshotMetadata({
     snapshot,
-    kind: 'postmark_inbound_email',
+    kind: 'resend_inbound_email',
     version: EMAIL_SOURCE_SNAPSHOT_VERSION,
     ref: (digest) => `inline://timeline/email/${digest.slice('sha256:'.length)}`,
   });
 }
 
 /**
- * Drop attachment Content (base64) from the snapshot stored on
- * `source_metadata.raw_postmark`. The bytes already live in S3; re-storing
+ * Drop attachment bytes from the snapshot stored on
+ * `source_metadata.raw_resend`. The bytes already live in S3; re-storing
  * them inline would balloon the JSONB column and make `select *` queries
- * slow. Everything else from Postmark survives so a re-extraction can
- * replay against the full payload.
+ * slow. Normalized source fields remain available for previews and reconciliation.
  */
-function stripRawForStorage(payload: PostmarkInbound): Record<string, unknown> {
+function stripRawForStorage(payload: InboundEmail): Record<string, unknown> {
   const clone: Record<string, unknown> = { ...payload };
-  if (Array.isArray(payload.Attachments)) {
-    clone.Attachments = payload.Attachments.map((a) => ({
-      Name: a.Name,
-      ContentType: a.ContentType,
-      ContentLength: a.ContentLength,
-      ContentID: a.ContentID,
+  if (Array.isArray(payload.attachments)) {
+    clone.attachments = payload.attachments.map((a) => ({
+      ...(a.id ? { id: a.id } : {}),
+      name: a.name,
+      contentType: a.contentType,
+      size: a.size,
+      contentId: a.contentId,
     }));
   }
   return clone;

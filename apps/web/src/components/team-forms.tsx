@@ -298,11 +298,7 @@ export function InboundEmailWhitelistForm({
     updateInboundEmailWhitelistAction,
     {},
   );
-  const sendersError =
-    state.error === 'Enter valid email addresses only' ||
-    state.error === 'Add at least one sender before enabling the whitelist'
-      ? state.error
-      : undefined;
+  const sendersError = state.error === 'Enter valid email addresses only' ? state.error : undefined;
   return (
     <form action={action} className="space-y-3">
       <CopyableTextField
@@ -322,9 +318,13 @@ export function InboundEmailWhitelistForm({
         />
         Enable sender whitelist
       </label>
+      <p className="text-sm text-fg-muted">
+        Enabled by default. Active team members can send from their account email addresses. Add any
+        additional allowed senders below. Disable to accept mail from anyone.
+      </p>
       <div className="space-y-1.5">
         <Label htmlFor="inbound-email-senders" size="sm">
-          Allowed senders
+          Additional allowed senders
         </Label>
         <FieldError error={sendersError}>
           {(activeSendersError) => (

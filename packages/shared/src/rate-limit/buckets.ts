@@ -32,10 +32,8 @@ export const RATE_LIMITS = {
   slackWebhookActor: { capacity: 120, refillPerSec: 120 / 60 },
   /** Slack /ask slash command: 10/min per Slack user because it invokes the agent. */
   slackAsk: { capacity: 10, refillPerSec: 10 / 60 },
-  /** Postmark inbound: 120/min per From address. */
+  /** Resend inbound: 120/min per From address. */
   emailInbound: { capacity: 120, refillPerSec: 120 / 60 },
-  /** 401 lockout for Postmark inbound: 30/min per source IP. */
-  emailInboundAuth: { capacity: 30, refillPerSec: 30 / 60 },
   /** Recall.ai transcript webhook: 600/min per bot. Bots stream many small
    *  utterance groups; the cap is high to avoid clipping legitimate meetings
    *  but low enough to choke a replay storm. */

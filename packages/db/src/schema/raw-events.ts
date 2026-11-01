@@ -90,7 +90,7 @@ export const rawEvents = pgTable(
     uniqueIndex('raw_events_telegram_update_id_unq')
       .on(sql`((${table.sourceMetadata} ->> 'tg_update_id'))`)
       .where(sql`${table.source} = 'telegram' AND ${table.sourceMetadata} ? 'tg_update_id'`),
-    // Phase 7: email idempotency. Postmark retries on 5xx (and silent timeouts);
+    // Phase 7: email idempotency. Resend retries on 5xx (and silent timeouts);
     // a forged Message-ID also lets one team's payload collide with another's,
     // so the uniqueness is scoped per team — both teams can hold a row keyed on
     // the same Message-ID, and ON CONFLICT DO NOTHING dedups within a team.

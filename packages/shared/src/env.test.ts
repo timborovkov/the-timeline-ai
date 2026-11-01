@@ -389,16 +389,6 @@ describe('getEnv', () => {
     expect(getEnv().MONDAY_CLIENT_ID).toBeUndefined();
   });
 
-  it('keeps the legacy invite sender env var available for transactional email fallback', () => {
-    setBaseEnv({
-      INVITE_EMAIL_FROM: 'Timeline <invites@example.test>',
-      TRANSACTIONAL_EMAIL_FROM: undefined,
-    });
-
-    expect(getEnv().INVITE_EMAIL_FROM).toBe('Timeline <invites@example.test>');
-    expect(getEnv().TRANSACTIONAL_EMAIL_FROM).toBeUndefined();
-  });
-
   it('defaults LangSmith tracing off with an environment-specific project', () => {
     setBaseEnv({ NODE_ENV: 'test' });
 

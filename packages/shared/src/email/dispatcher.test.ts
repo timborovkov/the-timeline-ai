@@ -1,5 +1,6 @@
 import { PGlite } from '@electric-sql/pglite';
 import {
+  billingUsageLedger,
   documentVersions,
   documents,
   rawEvents,
@@ -15,51 +16,56 @@ import { afterEach, beforeEach, describe, it } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 
-import type { PostmarkInbound } from '#src/email/postmark-schema.js';
+import type { InboundEmail } from '#src/email/inbound-schema.js';
 
 import { insertRestrictedFreeBillingAccount } from '#src/billing/capacity.js';
 import { createBillingScope } from '#src/billing/scope.js';
-import { flushDeferredEmailEnrichment, handleInbound } from '#src/email/dispatcher.js';
+import {
+  flushDeferredEmailEnrichment,
+  handleInbound,
+  type EmailAttachmentDeps,
+} from '#src/email/dispatcher.js';
+import { withTeam } from '#src/team-scope.js';
 import { applyDbMigrations } from '#src/test/pglite.js';
 import { textQueueDeps } from '#src/test/queue-deps.js';
 const TEAM_ID = '11111111-1111-1111-1111-111111111111';
 const OTHER_TEAM_ID = '22222222-2222-2222-2222-222222222222';
 const USER_ID = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
 
-function inboundPayload(messageId: string): PostmarkInbound {
+function inboundPayload(messageId: string): InboundEmail {
   return {
-    MessageID: `postmark-${messageId}`,
-    Date: '2026-05-27T09:00:00Z',
-    Subject: 'Vendor note',
-    From: 'vendor@example.net',
-    FromName: 'Vendor',
-    FromFull: { Email: 'vendor@example.net', Name: 'Vendor', MailboxHash: '' },
-    To: 'team-a@inbound.test',
-    ToFull: [{ Email: 'team-a@inbound.test', Name: 'Team A', MailboxHash: '' }],
-    Cc: '',
-    CcFull: [],
-    Bcc: '',
-    BccFull: [],
-    OriginalRecipient: '',
-    ReplyTo: '',
-    MailboxHash: 'team-a',
-    TextBody: 'Please review this.',
-    HtmlBody: '',
-    StrippedTextReply: '',
-    Tag: '',
-    Headers: [{ Name: 'Message-ID', Value: `<${messageId}@example.net>` }],
-    Attachments: [],
+    providerId: `resend-${messageId}`,
+    sentAt: '2026-05-27T09:00:00Z',
+    subject: 'Vendor note',
+    from: 'vendor@example.net',
+    fromName: 'Vendor',
+    fromAddress: { email: 'vendor@example.net', name: 'Vendor' },
+
+    toAddresses: [{ email: 'team-a@inbound.test', name: 'Team A' }],
+
+    ccAddresses: [],
+
+    bccAddresses: [],
+
+    text: 'Please review this.',
+    html: '',
+
+    headers: [{ name: 'Message-ID', value: `<${messageId}@example.net>` }],
+    attachments: [],
+    receivedFor: [],
+    authentication: null,
+    attachmentsDropped: [],
   };
 }
 
 function attachment(name: string, contentType: string, body = 'hello') {
   const bytes = Buffer.from(body);
   return {
-    Name: name,
-    Content: bytes.toString('base64'),
-    ContentType: contentType,
-    ContentLength: bytes.length,
-    ContentID: '',
+    name: name,
+    content: bytes,
+    contentType: contentType,
+    size: bytes.length,
+    contentId: '',
   };
 }
 
@@ -67,7 +73,9 @@ function attachmentDeps() {
   return {
     uploadAttachment: vi.fn().mockResolvedValue(undefined),
     uploadAudio: vi.fn().mockResolvedValue(undefined),
-    enqueueTranscribe: vi.fn().mockResolvedValue(undefined),
+    enqueueTranscribe: vi
+      .fn<EmailAttachmentDeps['enqueueTranscribe']>()
+      .mockResolvedValue(undefined),
     buildAttachmentKey: vi.fn(({ teamId, messageId, filename }) => {
       return `attachments/${teamId}/${messageId}/${filename}`;
     }),
@@ -98,6 +106,7 @@ describe('email dispatcher', () => {
       slug: 'team-a',
       name: 'Team A',
       inboundEmail: 'team-a@inbound.test',
+      inboundSenderWhitelistEnabled: false,
     });
     await db.insert(users).values({ id: USER_ID, email: 'member@example.com' });
     await db.insert(teamMembers).values({
@@ -136,7 +145,7 @@ describe('email dispatcher', () => {
       message_id: 'vendor-note@example.net',
       auth_verdict: 'absent',
       sender_unverified: true,
-      source_snapshot_kind: 'postmark_inbound_email',
+      source_snapshot_kind: 'resend_inbound_email',
       source_snapshot_version: 'email-source-snapshot-2026-07',
     });
     const metadata = row?.sourceMetadata as Record<string, unknown>;
@@ -150,14 +159,14 @@ describe('email dispatcher', () => {
     expect(sourcePayloadRef).toMatch(/^inline:\/\/timeline\/email\/[0-9a-f]{64}$/);
     expect(payloadDigest).toMatch(/^sha256:[0-9a-f]{64}$/);
     expect(metadata.source_snapshot).toMatchObject({
-      provider: 'postmark',
+      provider: 'resend',
       source: 'email',
       message_id: 'vendor-note@example.net',
       subject: 'Vendor note',
       content_text: 'Please review this.',
-      raw_postmark: {
-        MessageID: 'postmark-vendor-note',
-        Subject: 'Vendor note',
+      raw_resend: {
+        providerId: 'resend-vendor-note',
+        subject: 'Vendor note',
       },
     });
     const [evidence] = await db
@@ -193,24 +202,24 @@ describe('email dispatcher', () => {
   it('stores forwarded chains as structured metadata and extraction-visible text', async () => {
     const queues = textQueueDeps();
     const payload = inboundPayload('forwarded-chain');
-    payload.Subject = 'Fwd: Launch checklist';
-    payload.StrippedTextReply = 'Team, see the customer thread below.';
-    payload.TextBody = [
+    payload.subject = 'Fwd: Launch checklist';
+
+    payload.text = [
       'Team, see the customer thread below.',
       '',
       '---------- Forwarded message ---------',
-      'From: Ada Lovelace <ada@example.com>',
+      'from: Ada Lovelace <ada@example.com>',
       'Date: Wed, Jun 17, 2026 at 2:15 PM',
-      'Subject: Re: Launch checklist',
-      'To: Tim <tim@team.example>',
+      'subject: Re: Launch checklist',
+      'to: Tim <tim@team.example>',
       '',
       'The launch checklist is approved.',
       '',
       '---------- Forwarded message ---------',
-      'From: Grace Hopper <grace@example.com>',
+      'from: Grace Hopper <grace@example.com>',
       'Date: Wed, Jun 17, 2026 at 1:03 PM',
-      'Subject: Launch checklist',
-      'To: Ada <ada@example.com>',
+      'subject: Launch checklist',
+      'to: Ada <ada@example.com>',
       '',
       'Please confirm the rollout window.',
     ].join('\n');
@@ -239,6 +248,66 @@ describe('email dispatcher', () => {
         }),
       ],
     });
+  });
+
+  it('defaults to current members, follows membership and email changes, and isolates teams', async () => {
+    await db.insert(teams).values({
+      id: OTHER_TEAM_ID,
+      slug: 'team-b',
+      name: 'Team B',
+      inboundEmail: 'team-b@inbound.test',
+    });
+    const [team] = await db.select().from(teams).where(eq(teams.id, OTHER_TEAM_ID));
+    expect(team?.inboundSenderWhitelistEnabled).toBe(true);
+    const queues = textQueueDeps();
+    const send = (id: string, email: string) =>
+      handleInbound(
+        { db: db as never, inboundDomain: 'inbound.test', ...queues },
+        {
+          ...inboundPayload(id),
+          toAddresses: [{ email: 'team-b@inbound.test', name: '' }],
+          from: email,
+          fromAddress: { email, name: '' },
+        },
+      );
+    await expect(send('other-team-member', 'member@example.com')).resolves.toMatchObject({
+      reason: 'blocked_sender',
+    });
+    await db.insert(teamMembers).values({ teamId: OTHER_TEAM_ID, userId: USER_ID, role: 'owner' });
+    await expect(send('joined-member', 'MEMBER@example.com')).resolves.toMatchObject({
+      inserted: 1,
+    });
+    await db.update(users).set({ email: 'new@example.com' }).where(eq(users.id, USER_ID));
+    await expect(send('old-email', 'member@example.com')).resolves.toMatchObject({
+      reason: 'blocked_sender',
+    });
+    await expect(send('new-email', 'new@example.com')).resolves.toMatchObject({ inserted: 1 });
+    await db
+      .update(teamMembers)
+      .set({ removedAt: new Date() })
+      .where(eq(teamMembers.teamId, OTHER_TEAM_ID));
+    await expect(send('removed-member', 'new@example.com')).resolves.toMatchObject({
+      reason: 'blocked_sender',
+    });
+  });
+
+  it('blocks failed authentication even for an explicitly allowed sender', async () => {
+    await db
+      .update(teams)
+      .set({ inboundSenderWhitelistEnabled: true, inboundSenderWhitelist: ['vendor@example.net'] })
+      .where(eq(teams.id, TEAM_ID));
+    const queues = textQueueDeps();
+    await expect(
+      handleInbound(
+        { db: db as never, inboundDomain: 'inbound.test', ...queues },
+        {
+          ...inboundPayload('spoofed-allowlisted'),
+          authentication: { spf: 'pass', dkim: 'pass', dmarc: 'fail' },
+        },
+      ),
+    ).resolves.toMatchObject({ reason: 'blocked_sender', inserted: 0 });
+    expect(await db.select().from(rawEvents)).toHaveLength(0);
+    expect(queues.extract.enqueueExtract).not.toHaveBeenCalled();
   });
 
   it('allows whitelisted senders case-insensitively when the whitelist is enabled', async () => {
@@ -309,8 +378,8 @@ describe('email dispatcher', () => {
       })
       .where(eq(teams.id, TEAM_ID));
     const payload = inboundPayload('cc-two-teams');
-    payload.MailboxHash = '';
-    payload.CcFull = [{ Email: 'team-b@inbound.test', Name: 'Team B', MailboxHash: '' }];
+
+    payload.ccAddresses = [{ email: 'team-b@inbound.test', name: 'Team B' }];
     const queues = textQueueDeps();
 
     await expect(
@@ -331,23 +400,16 @@ describe('email dispatcher', () => {
       sourceOwnerUserId: USER_ID,
     });
     const payload = inboundPayload('member-note');
-    payload.From = 'member@example.com';
-    payload.FromName = 'Timeline Member';
-    payload.FromFull = {
-      Email: 'member@example.com',
-      Name: 'Timeline Member',
-      MailboxHash: '',
+    payload.from = 'member@example.com';
+    payload.fromName = 'Timeline Member';
+    payload.fromAddress = {
+      email: 'member@example.com',
+      name: 'Timeline Member',
     };
-    payload.Headers.push({
-      Name: 'Authentication-Results',
-      Value: 'mx.test; spf=pass smtp.mailfrom=example.com; dkim=fail',
-    });
+    payload.authentication = { spf: 'pass', dkim: 'fail', dmarc: 'pass' };
 
     await expect(
-      handleInbound(
-        { db: db as never, inboundDomain: 'inbound.test', trustedAuthservIds: ['mx.test'] },
-        payload,
-      ),
+      handleInbound({ db: db as never, inboundDomain: 'inbound.test' }, payload),
     ).resolves.toMatchObject({ ok: true, inserted: 1 });
 
     const [row] = await db.select().from(rawEvents).where(eq(rawEvents.teamId, TEAM_ID));
@@ -368,23 +430,20 @@ describe('email dispatcher', () => {
       sourceOwnerUserId: USER_ID,
     });
     const payload = inboundPayload('spoofed-member');
-    payload.From = 'member@example.com';
-    payload.FromName = 'Timeline Member';
-    payload.FromFull = {
-      Email: 'member@example.com',
-      Name: 'Timeline Member',
-      MailboxHash: '',
+    payload.from = 'member@example.com';
+    payload.fromName = 'Timeline Member';
+    payload.fromAddress = {
+      email: 'member@example.com',
+      name: 'Timeline Member',
     };
-    payload.Headers.push({
-      Name: 'Authentication-Results',
-      Value: 'mx.test; spf=fail smtp.mailfrom=bad.test; dkim=fail',
+    payload.authentication = { spf: 'fail', dkim: 'fail', dmarc: 'fail' };
+    payload.headers.push({
+      name: 'Authentication-Results',
+      value: 'attacker; spf=pass; dkim=pass',
     });
 
     await expect(
-      handleInbound(
-        { db: db as never, inboundDomain: 'inbound.test', trustedAuthservIds: ['mx.test'] },
-        payload,
-      ),
+      handleInbound({ db: db as never, inboundDomain: 'inbound.test' }, payload),
     ).resolves.toMatchObject({ ok: true, inserted: 1 });
 
     const [row] = await db.select().from(rawEvents).where(eq(rawEvents.teamId, TEAM_ID));
@@ -421,8 +480,8 @@ describe('email dispatcher', () => {
     const queues = textQueueDeps();
     const attachments = attachmentDeps();
     const payload = inboundPayload('attachment-only');
-    payload.TextBody = '';
-    payload.Attachments = [attachment('proposal.pdf', 'application/pdf', '%PDF-1.7')];
+    payload.text = '';
+    payload.attachments = [attachment('proposal.pdf', 'application/pdf', '%PDF-1.7')];
 
     await expect(
       handleInbound(
@@ -450,8 +509,8 @@ describe('email dispatcher', () => {
     const attachments = attachmentDeps();
     const document = documentDeps();
     const payload = inboundPayload('customer-doc');
-    payload.TextBody = 'Customer forwarded the signed rollout plan.';
-    payload.Attachments = [attachment('rollout-plan.pdf', 'application/pdf', '%PDF-1.7')];
+    payload.text = 'Customer forwarded the signed rollout plan.';
+    payload.attachments = [attachment('rollout-plan.pdf', 'application/pdf', '%PDF-1.7')];
 
     await expect(
       handleInbound(
@@ -541,7 +600,7 @@ describe('email dispatcher', () => {
     const attachments = attachmentDeps();
     const document = documentDeps();
     const payload = inboundPayload('over-cap-doc');
-    payload.Attachments = [attachment('rollout-plan.pdf', 'application/pdf', '%PDF-1.7')];
+    payload.attachments = [attachment('rollout-plan.pdf', 'application/pdf', '%PDF-1.7')];
 
     await expect(
       handleInbound(
@@ -633,7 +692,7 @@ describe('email dispatcher', () => {
     const attachments = attachmentDeps();
     const documents = documentDeps();
     const payload = inboundPayload('deferred-attachment-read');
-    payload.Attachments = [attachment('notes.pdf', 'application/pdf', '%PDF-1.7')];
+    payload.attachments = [attachment('notes.pdf', 'application/pdf', '%PDF-1.7')];
     await expect(
       handleInbound(
         { db: db as never, inboundDomain: 'inbound.test', attachments, ...queues },
@@ -694,7 +753,7 @@ describe('email dispatcher', () => {
     const documents = documentDeps();
     documents.upload.mockRejectedValueOnce(new Error('s3 put failed'));
     const payload = inboundPayload('deferred-attachment-create');
-    payload.Attachments = [attachment('notes.pdf', 'application/pdf', '%PDF-1.7')];
+    payload.attachments = [attachment('notes.pdf', 'application/pdf', '%PDF-1.7')];
     await handleInbound(
       { db: db as never, inboundDomain: 'inbound.test', attachments, ...queues },
       payload,
@@ -744,7 +803,7 @@ describe('email dispatcher', () => {
     const attachments = attachmentDeps();
     const documents = documentDeps();
     const payload = inboundPayload('deferred-partial-attachments');
-    payload.Attachments = [
+    payload.attachments = [
       attachment('a.pdf', 'application/pdf', '%PDF-a'),
       attachment('b.pdf', 'application/pdf', '%PDF-b'),
     ];
@@ -805,7 +864,7 @@ describe('email dispatcher', () => {
     const documents = documentDeps();
     documents.enqueueExtract.mockRejectedValueOnce(new Error('redis down'));
     const payload = inboundPayload('deferred-extract-enqueue');
-    payload.Attachments = [attachment('notes.pdf', 'application/pdf', '%PDF-1.7')];
+    payload.attachments = [attachment('notes.pdf', 'application/pdf', '%PDF-1.7')];
     await handleInbound(
       { db: db as never, inboundDomain: 'inbound.test', attachments, ...queues },
       payload,
@@ -842,7 +901,7 @@ describe('email dispatcher', () => {
     const attachments = attachmentDeps();
     const documents = documentDeps();
     const payload = inboundPayload('deferred-link-patch');
-    payload.Attachments = [attachment('notes.pdf', 'application/pdf', '%PDF-1.7')];
+    payload.attachments = [attachment('notes.pdf', 'application/pdf', '%PDF-1.7')];
     await handleInbound(
       { db: db as never, inboundDomain: 'inbound.test', attachments, ...queues },
       payload,
@@ -912,7 +971,7 @@ describe('email dispatcher', () => {
     const attachments = attachmentDeps();
     const document = documentDeps();
     const payload = inboundPayload('over-doc-cap');
-    payload.Attachments = [attachment('rollout-plan.pdf', 'application/pdf', '%PDF-1.7')];
+    payload.attachments = [attachment('rollout-plan.pdf', 'application/pdf', '%PDF-1.7')];
 
     await expect(
       handleInbound(
@@ -944,8 +1003,8 @@ describe('email dispatcher', () => {
     const attachments = attachmentDeps();
     const document = documentDeps();
     const payload = inboundPayload('customer-doc-replay');
-    payload.TextBody = 'Customer forwarded the implementation notes.';
-    payload.Attachments = [attachment('implementation-notes.pdf', 'application/pdf', '%PDF-1.7')];
+    payload.text = 'Customer forwarded the implementation notes.';
+    payload.attachments = [attachment('implementation-notes.pdf', 'application/pdf', '%PDF-1.7')];
 
     await handleInbound(
       { db: db as never, inboundDomain: 'inbound.test', attachments, ...queues },
@@ -1001,8 +1060,8 @@ describe('email dispatcher', () => {
     const queues = textQueueDeps();
     const attachments = attachmentDeps();
     const payload = inboundPayload('audio-note');
-    payload.TextBody = 'Voice memo context';
-    payload.Attachments = [attachment('memo.m4a', 'audio/mp4', 'audio-bytes')];
+    payload.text = 'Voice memo context';
+    payload.attachments = [attachment('memo.m4a', 'audio/mp4', 'audio-bytes')];
 
     await expect(
       handleInbound(
@@ -1045,8 +1104,8 @@ describe('email dispatcher', () => {
     const queues = textQueueDeps();
     const attachments = attachmentDeps();
     const payload = inboundPayload('audio-deferred');
-    payload.TextBody = 'Voice memo context';
-    payload.Attachments = [attachment('memo.m4a', 'audio/mp4', 'audio-bytes')];
+    payload.text = 'Voice memo context';
+    payload.attachments = [attachment('memo.m4a', 'audio/mp4', 'audio-bytes')];
 
     await expect(
       handleInbound(
@@ -1076,8 +1135,8 @@ describe('email dispatcher', () => {
         { db: db as never, inboundDomain: 'inbound.test', ...queues },
         {
           ...inboundPayload('unknown-team'),
-          MailboxHash: '',
-          ToFull: [{ Email: 'missing@inbound.test', Name: '', MailboxHash: '' }],
+
+          toAddresses: [{ email: 'missing@inbound.test', name: '' }],
         },
       ),
     ).resolves.toMatchObject({ ok: false, inserted: 0, reason: 'no_matching_team' });
@@ -1136,5 +1195,170 @@ describe('email dispatcher', () => {
     const [row] = await db.select().from(rawEvents).where(eq(rawEvents.teamId, TEAM_ID));
     expect(row?.visibility).toBe('team');
     expect(row?.visibilityUserIds).toBeNull();
+  });
+  it('limits recovery reads to the explicit ingest principal and matching team/email', async () => {
+    await handleInbound(
+      { db: db as never, inboundDomain: 'inbound.test' },
+      inboundPayload('scoped-recovery'),
+    );
+    const [parent] = await db.select().from(rawEvents).where(eq(rawEvents.teamId, TEAM_ID));
+    if (!parent) throw new Error('Expected parent');
+    const system = '00000000-0000-0000-0000-000000000000';
+    await expect(
+      withTeam(db as never, TEAM_ID, USER_ID).timeline.getEmailIngestRecoveryState(parent.id),
+    ).rejects.toThrow('system principal');
+    await expect(
+      withTeam(db as never, TEAM_ID, USER_ID, {
+        emailIngestRecovery: true,
+      }).timeline.getEmailIngestRecoveryState(parent.id),
+    ).rejects.toThrow('system principal');
+    await expect(
+      withTeam(db as never, TEAM_ID, system).timeline.getEmailIngestRecoveryState(parent.id),
+    ).rejects.toThrow('system principal');
+    await expect(
+      withTeam(db as never, OTHER_TEAM_ID, system, {
+        emailIngestRecovery: true,
+      }).timeline.getEmailIngestRecoveryState(parent.id),
+    ).resolves.toBeNull();
+    const scope = withTeam(db as never, TEAM_ID, system, { emailIngestRecovery: true });
+    await expect(scope.timeline.getEmailIngestRecoveryState(parent.id)).resolves.toMatchObject({
+      visibility: 'team',
+    });
+    await db.update(rawEvents).set({ source: 'web' }).where(eq(rawEvents.id, parent.id));
+    await expect(scope.timeline.getEmailIngestRecoveryState(parent.id)).resolves.toBeNull();
+    await db
+      .update(rawEvents)
+      .set({ source: 'email', sourceMetadata: { deleted: true } })
+      .where(eq(rawEvents.id, parent.id));
+    await expect(scope.timeline.getEmailIngestRecoveryState(parent.id)).resolves.toBeNull();
+  });
+
+  it('fails closed when a parent is restricted before missing audio recovery', async () => {
+    const payload = inboundPayload('restricted-audio-recovery');
+    payload.from = 'member@example.com';
+    payload.fromAddress = { email: payload.from, name: 'Member' };
+    payload.attachments = [attachment('memo.m4a', 'audio/mp4')];
+    const attachments = attachmentDeps();
+    attachments.uploadAudio.mockRejectedValueOnce(new Error('storage unavailable'));
+    const deps = {
+      db: db as never,
+      inboundDomain: 'inbound.test',
+      attachments,
+      ...textQueueDeps(),
+    };
+    await expect(handleInbound(deps, payload)).resolves.toMatchObject({ ok: false });
+    const [parent] = await db.select().from(rawEvents).where(eq(rawEvents.teamId, TEAM_ID));
+    if (!parent) throw new Error('Expected parent');
+    await withTeam(db as never, TEAM_ID, USER_ID).timeline.setEventVisibility(parent.id, {
+      visibility: 'specific_users',
+      visibilityUserIds: [USER_ID],
+    });
+    await expect(handleInbound(deps, payload)).resolves.toMatchObject({ ok: false });
+    const rows = await db.select().from(rawEvents).where(eq(rawEvents.teamId, TEAM_ID));
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.visibility).toBe('specific_users');
+    expect(rows[0]?.visibilityUserIds).toEqual([USER_ID]);
+    expect(attachments.uploadAudio).toHaveBeenCalledTimes(1);
+    expect(attachments.enqueueTranscribe).not.toHaveBeenCalled();
+  });
+
+  it('does not enqueue a completed audio child when the inbound parent is replayed', async () => {
+    const payload = inboundPayload('completed-audio-replay');
+    payload.attachments = [attachment('memo.m4a', 'audio/mp4')];
+    const attachments = attachmentDeps();
+    const deps = {
+      db: db as never,
+      inboundDomain: 'inbound.test',
+      attachments,
+      ...textQueueDeps(),
+    };
+    await handleInbound(deps, payload);
+    const childId = attachments.enqueueTranscribe.mock.calls[0]?.[0]?.rawEventId;
+    if (!childId) throw new Error('Expected an audio child to be queued');
+    await db
+      .update(rawEvents)
+      .set({ sourceMetadata: { transcribed_at: new Date().toISOString() } })
+      .where(eq(rawEvents.id, childId));
+    await handleInbound(deps, payload);
+    expect(attachments.enqueueTranscribe).toHaveBeenCalledOnce();
+  });
+
+  it('resumes a crash after audio-child creation without duplicating children or documents', async () => {
+    const payload = inboundPayload('retry-audio-and-document');
+    payload.attachments = [
+      { ...attachment('memo.m4a', 'audio/mp4'), id: 'audio-1' },
+      { ...attachment('notes.pdf', 'application/pdf'), id: 'doc-1' },
+    ];
+    const attachments = attachmentDeps();
+    const document = documentDeps();
+    attachments.enqueueTranscribe.mockRejectedValueOnce(new Error('queue offline'));
+    const deps = {
+      db: db as never,
+      inboundDomain: 'inbound.test',
+      attachments,
+      documents: document,
+      ...textQueueDeps(),
+    };
+    expect(await handleInbound(deps, payload)).toMatchObject({
+      ok: false,
+      reason: 'team_ingest_failed',
+    });
+    payload.attachments = payload.attachments
+      .slice()
+      .reverse()
+      .map((item) => ({ ...item, id: `resent-${item.id ?? item.name}` }));
+    expect(await handleInbound(deps, payload)).toMatchObject({ ok: true, inserted: 0 });
+    payload.providerId = 'another-provider-delivery';
+    expect(await handleInbound(deps, payload)).toMatchObject({ ok: true, inserted: 0 });
+    const events = await db.select().from(rawEvents).where(eq(rawEvents.teamId, TEAM_ID));
+    expect(events).toHaveLength(2);
+    expect(await db.select().from(documents).where(eq(documents.teamId, TEAM_ID))).toHaveLength(1);
+    expect(await db.select().from(documentVersions)).toHaveLength(1);
+    expect(attachments.enqueueTranscribe).toHaveBeenCalledTimes(2);
+    expect(document.enqueueExtract).toHaveBeenCalledTimes(1);
+    const charges = await db
+      .select()
+      .from(billingUsageLedger)
+      .where(eq(billingUsageLedger.meterId, 'email_units'));
+    expect(charges).toHaveLength(1);
+    expect(Number(charges[0]?.nativeUnits)).toBe(1);
+  });
+
+  it('retries partial multi-team failure and preserves successful team deduplication', async () => {
+    await db.insert(teams).values({
+      id: OTHER_TEAM_ID,
+      slug: 'team-b',
+      name: 'Team B',
+      inboundEmail: 'team-b@inbound.test',
+      inboundSenderWhitelistEnabled: false,
+    });
+    await db.insert(teamMembers).values({ teamId: OTHER_TEAM_ID, userId: USER_ID, role: 'owner' });
+    const payload = inboundPayload('partial-teams');
+    payload.ccAddresses = [{ email: 'team-b@inbound.test', name: '' }];
+    const queues = textQueueDeps();
+    queues.extract.enqueueExtract
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(new Error('queue offline'));
+    const deps = { db: db as never, inboundDomain: 'inbound.test', ...queues };
+    expect(await handleInbound(deps, payload)).toMatchObject({
+      ok: false,
+      reason: 'team_ingest_failed',
+    });
+    expect(await handleInbound(deps, payload)).toMatchObject({ ok: true, inserted: 0 });
+    const events = await db.select().from(rawEvents).where(eq(rawEvents.source, 'email'));
+    expect(events).toHaveLength(2);
+    expect(new Set(events.map((event) => event.teamId)).size).toBe(2);
+  });
+
+  it('routes forwarded recipient candidates only within the receiving domain', async () => {
+    const payload = inboundPayload('forward-routing');
+    payload.toAddresses = [{ email: 'team-a@evil.test', name: '' }];
+    expect(
+      await handleInbound({ db: db as never, inboundDomain: 'inbound.test' }, payload),
+    ).toMatchObject({ reason: 'no_matching_team' });
+    payload.receivedFor = ['team-a@inbound.test'];
+    expect(
+      await handleInbound({ db: db as never, inboundDomain: 'inbound.test' }, payload),
+    ).toMatchObject({ ok: true, inserted: 1 });
   });
 });

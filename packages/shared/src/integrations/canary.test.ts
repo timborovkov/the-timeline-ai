@@ -6,7 +6,7 @@ import {
   buildOpenRouterZdrCanaryRequest,
   buildOpenRouterZdrCanaryTargets,
   buildSpeechTranscriptionCanaryMp3,
-  buildPostmarkInboundCaptureCanaryPayload,
+  buildResendInboundCaptureCanaryPayload,
   buildSlackEventCaptureCanaryPayload,
   buildTelegramCaptureCanaryPayload,
   buildTranscriptionCanaryWav,
@@ -17,7 +17,7 @@ import {
   redactLiveIntegrationCanaryText,
   runOpenRouterZdrCanaries,
   signSlackCanaryRequest,
-  validatePostmarkInboundCaptureCanaryUrl,
+  validateResendInboundCaptureCanaryUrl,
   validateSlackEventCaptureCanaryUrl,
   validateTelegramCaptureCanaryUrl,
 } from '#src/integrations/canary.js';
@@ -311,7 +311,7 @@ describe('live integration canary report formatting', () => {
           docs: 'docs/setup/sentry.html',
         },
         {
-          name: 'Postmark API',
+          name: 'Resend API',
           status: 'ok',
           detail: 'server lookup succeeded',
         },
@@ -320,7 +320,7 @@ describe('live integration canary report formatting', () => {
 
     expect(report).toContain('Live integration canary (/path/to/.env, strict)');
     expect(report).toContain('OK   OpenRouter: shared structured LLM path succeeded');
-    expect(report).toContain('OK   Postmark API: server lookup succeeded');
+    expect(report).toContain('OK   Resend API: server lookup succeeded');
     expect(report).toContain('SKIP GitHub App: GITHUB_APP_ID or GITHUB_APP_PRIVATE_KEY missing');
     expect(report).toContain('WARN Sentry API: status 403: You do not have permission');
     expect(report).toContain('Next steps:');
@@ -332,7 +332,7 @@ describe('live integration canary report formatting', () => {
     );
     expect(report).not.toContain('ghp_');
     expect(report).not.toContain('secret=');
-    expect(report).not.toContain('POSTMARK_SERVER_TOKEN=');
+    expect(report).not.toContain('RESEND_API_KEY=');
   });
 
   it('omits the next-steps section when every check is ok', () => {
@@ -351,7 +351,7 @@ describe('live integration canary report formatting', () => {
       redactions: [secret],
       results: [
         {
-          name: 'Postmark API',
+          name: 'Resend API',
           status: 'warn',
           detail: `status 401: token ${secret} rejected`,
         },
@@ -398,35 +398,21 @@ describe('redactLiveIntegrationCanaryText', () => {
   it('redacts encoded secret values and sensitive headers', () => {
     expect(
       redactLiveIntegrationCanaryText(
-        'x-postmark-server-token: pm-token-1234567890 and token%2Fwith%2Fslash',
+        'x-resend-server-token: pm-token-1234567890 and token%2Fwith%2Fslash',
         ['token/with/slash'],
       ),
-    ).toBe('x-postmark-server-token: [redacted] and [redacted]');
+    ).toBe('x-resend-server-token: [redacted] and [redacted]');
   });
 });
 
-describe('buildPostmarkInboundCaptureCanaryPayload', () => {
-  it('builds a Postmark-shaped payload for the inbound capture route', () => {
-    const payload = buildPostmarkInboundCaptureCanaryPayload({
-      messageId: 'timeline-canary@example.test',
-      to: 'team-a@inbound.test',
-      from: 'canary@example.test',
-      date: new Date('2026-07-01T12:00:00.000Z'),
+describe('buildResendInboundCaptureCanaryPayload', () => {
+  it('replays a received email by id without embedding content', () => {
+    expect(
+      buildResendInboundCaptureCanaryPayload({ emailId: '11111111-1111-4111-8111-111111111111' }),
+    ).toEqual({
+      type: 'email.received',
+      data: { email_id: '11111111-1111-4111-8111-111111111111' },
     });
-
-    expect(payload).toMatchObject({
-      MessageID: 'timeline-canary@example.test',
-      Subject: 'Timeline inbound canary 2026-07-01T12:00:00.000Z',
-      FromFull: { Email: 'canary@example.test', Name: 'Timeline Canary' },
-      ToFull: [{ Email: 'team-a@inbound.test', Name: 'Timeline Canary Team' }],
-      OriginalRecipient: 'team-a@inbound.test',
-      Tag: 'timeline-canary',
-      Attachments: [],
-    });
-    expect(payload.TextBody).toContain('timeline-canary@example.test');
-    expect(payload.Headers).toEqual([
-      { Name: 'Message-ID', Value: '<timeline-canary@example.test>' },
-    ]);
   });
 });
 
@@ -542,10 +528,10 @@ describe('signSlackCanaryRequest', () => {
   });
 });
 
-describe('validatePostmarkInboundCaptureCanaryUrl', () => {
+describe('validateResendInboundCaptureCanaryUrl', () => {
   it('allows explicitly confirmed HTTPS app origins and localhost HTTP development origins', () => {
     expect(
-      validatePostmarkInboundCaptureCanaryUrl(
+      validateResendInboundCaptureCanaryUrl(
         'https://timeline.example/app',
         'https://timeline.example',
       ),
@@ -553,38 +539,36 @@ describe('validatePostmarkInboundCaptureCanaryUrl', () => {
       ok: true,
       url: new URL('https://timeline.example/api/email/inbound'),
     });
-    expect(
-      validatePostmarkInboundCaptureCanaryUrl('http://localhost:3000', undefined),
-    ).toMatchObject({
-      ok: true,
-      url: new URL('http://localhost:3000/api/email/inbound'),
-    });
+    expect(validateResendInboundCaptureCanaryUrl('http://localhost:3000', undefined)).toMatchObject(
+      {
+        ok: true,
+        url: new URL('http://localhost:3000/api/email/inbound'),
+      },
+    );
   });
 
   it('rejects missing, malformed, and non-local HTTP origins before secrets are sent', () => {
-    expect(validatePostmarkInboundCaptureCanaryUrl(undefined, undefined)).toEqual({
+    expect(validateResendInboundCaptureCanaryUrl(undefined, undefined)).toEqual({
       ok: false,
       reason: 'AUTH_URL missing',
     });
-    expect(
-      validatePostmarkInboundCaptureCanaryUrl('not a url', 'https://timeline.example'),
-    ).toEqual({
+    expect(validateResendInboundCaptureCanaryUrl('not a url', 'https://timeline.example')).toEqual({
       ok: false,
       reason: 'AUTH_URL is not a valid URL',
     });
-    expect(validatePostmarkInboundCaptureCanaryUrl('http://timeline.example', undefined)).toEqual({
+    expect(validateResendInboundCaptureCanaryUrl('http://timeline.example', undefined)).toEqual({
       ok: false,
       reason: 'AUTH_URL must be HTTPS, except localhost HTTP for development',
     });
-    expect(validatePostmarkInboundCaptureCanaryUrl('https://timeline.example', undefined)).toEqual({
+    expect(validateResendInboundCaptureCanaryUrl('https://timeline.example', undefined)).toEqual({
       ok: false,
-      reason: 'POSTMARK_INBOUND_CANARY_ALLOWED_ORIGIN must match AUTH_URL origin',
+      reason: 'RESEND_INBOUND_CANARY_ALLOWED_ORIGIN must match AUTH_URL origin',
     });
     expect(
-      validatePostmarkInboundCaptureCanaryUrl('https://timeline.example', 'https://other.example'),
+      validateResendInboundCaptureCanaryUrl('https://timeline.example', 'https://other.example'),
     ).toEqual({
       ok: false,
-      reason: 'POSTMARK_INBOUND_CANARY_ALLOWED_ORIGIN does not match AUTH_URL origin',
+      reason: 'RESEND_INBOUND_CANARY_ALLOWED_ORIGIN does not match AUTH_URL origin',
     });
   });
 });

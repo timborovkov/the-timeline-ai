@@ -274,11 +274,11 @@ function PrivacyAiAndProviderSections() {
             </td>
           </tr>
           <tr>
-            <td>Postmark</td>
+            <td>Resend</td>
             <td>
-              Transactional and inbound email, invitations, and support messages. Postmark retains
-              message content according to the configured account period (seven-day minimum; 45-day
-              default) and states that stored message content is not encrypted at rest.
+              Transactional and inbound email, invitations, and support messages. Resend retains
+              message content and delivery metadata under its service terms and account settings.
+              Account-specific retention, tracking, and deletion settings remain to be verified.
             </td>
           </tr>
           <tr>

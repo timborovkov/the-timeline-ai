@@ -98,13 +98,13 @@ Ask “what did the team achieve last week?” as Avery to walk the cited recap.
 | Meetings | Weekly standups from 14 July through 11 August, importer incident review, Northwind partner meeting, Brightline scoping, Maya Chen interview; saved weekly standup with auto-join and a scheduled 18 August occurrence |
 | Ask | Eight historic sessions, including last-week recap, Northstar status, dealflow, hiring, webinar blockers, and the code of conduct |
 | Approvals | Fourteen pending proposals plus one already-accepted CSV-replay decision |
-| Digests | Twenty weekdays of Avery’s daily digest history. Live digest send stays off so the worker can run without Postmark, Slack, or Telegram delivery. Team settings still show the default email destination plus disabled Slack `#product` and Telegram “Acme leadership” destinations. |
+| Digests | Twenty weekdays of Avery’s daily digest history. Live digest send stays off so the worker can run without Resend, Slack, or Telegram delivery. Team settings still show the default email destination plus disabled Slack `#product` and Telegram “Acme leadership” destinations. |
 | Setup | Team checklist completed and dismissed for Avery |
 | Capture | Slack `#product` `#gtm` `#eng` `#hiring`, Telegram “Acme leadership”, inbound email whitelist, Ledger webhook (Timeline type: status pulse) |
 
 Native GitHub, Linear, Monday.com, Sentry, and Google Drive connections are fake,
 encrypted, and **disabled for sync** so local workers do not call real providers.
-Seeded emails include Postmark-shaped `html_body` so the inspector original-source
+Seeded emails include Resend-shaped `html_body` so the inspector original-source
 viewer can expand a readable preview.
 
 ## Fake credentials

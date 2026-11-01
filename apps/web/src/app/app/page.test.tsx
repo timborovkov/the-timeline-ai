@@ -187,10 +187,7 @@ await vi.mock(
 await vi.mock(
   import.meta.resolve('@/lib/hub-status'),
   () => ({
-    displayInboundEmail: (
-      team: { slug: string; inboundEmail: string | null } | null,
-      _postmarkInboundAddress: string | undefined,
-    ) =>
+    displayInboundEmail: (team: { slug: string; inboundEmail: string | null } | null) =>
       team?.inboundEmail && !team.inboundEmail.endsWith('@inbound.invalid')
         ? team.inboundEmail
         : null,

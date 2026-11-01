@@ -482,12 +482,18 @@ describe('updateInboundEmailWhitelistAction', () => {
     );
   });
 
-  it('requires at least one sender when enabling the whitelist', async () => {
+  it('allows a members-only whitelist without additional senders', async () => {
+    const { tx, updates } = makeTx([]);
+    mockTransactionWithTx(tx);
     await expect(
       updateInboundEmailWhitelistAction({}, form({ enabled: 'on', senders: '  ' })),
-    ).resolves.toEqual({ error: 'Add at least one sender before enabling the whitelist' });
-
-    expect(fakes.fakeTransaction).not.toHaveBeenCalled();
+    ).resolves.toEqual({ ok: true });
+    expect(updates).toEqual([
+      {
+        inboundSenderWhitelistEnabled: true,
+        inboundSenderWhitelist: [],
+      },
+    ]);
   });
 
   it('normalizes, dedupes, audits, and revalidates updates', async () => {
@@ -775,14 +781,14 @@ describe('inviteMemberAction', () => {
       teamName: 'Timeline E2E',
       inviterName: 'Tim',
     });
-    fakes.fakeSendMessage.mockResolvedValue({ ok: false, error: 'postmark down' });
+    fakes.fakeSendMessage.mockResolvedValue({ ok: false, error: 'resend down' });
 
     await expect(
       inviteMemberAction({}, form({ email: 'new@example.test', role: 'member' })),
     ).resolves.toEqual({
       inviteUrl: 'https://timeline.test/accept-invite/invite-token',
       sendStatus: 'failed',
-      sendError: 'postmark down',
+      sendError: 'resend down',
     });
     expect(fakes.trackProductEventBestEffort).toHaveBeenCalledWith(
       { kind: 'user', teamId: TEAM_ID, userId: USER_ID },

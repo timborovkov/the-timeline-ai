@@ -660,7 +660,7 @@ async function main(): Promise<void> {
               html_body:
                 '<p>Vendor contract review is due Friday, and the <b>security appendix</b> still needs approval.</p>',
               source_snapshot: {
-                provider: 'postmark',
+                provider: 'resend',
                 subject: 'Vendor contract review',
                 html_body:
                   '<p>Vendor contract review is due Friday, and the <b>security appendix</b> still needs approval.</p>',
@@ -849,7 +849,7 @@ async function main(): Promise<void> {
               attachment_name: 'Northstar pilot handoff brief.txt',
               html_body: `<p>${DEMO_EVENTS[1].contentText}</p>`,
               source_snapshot: {
-                provider: 'postmark',
+                provider: 'resend',
                 subject: 'Northstar pilot export commitment',
                 html_body: `<p>${DEMO_EVENTS[1].contentText}</p>`,
                 text_body: DEMO_EVENTS[1].contentText,

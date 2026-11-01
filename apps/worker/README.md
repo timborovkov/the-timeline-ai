@@ -1,10 +1,10 @@
 # @timeline/worker
 
 BullMQ workers for the async processing pipeline: durable direct conversation
-agents, transcribe, extract, embed, document-extract (also as a dedicated
+agents, email-inbound, transcribe, extract, embed, document-extract (also as a dedicated
 `WORKER_MODE=document-extract` / Daytona sandbox service — ADR 0013), meeting-finalize,
 task-category classification, overdue-scan, integrations, maintenance, and
-exports. One Node entry point starts the queue workers from the same codebase.
+exports. One Bun entry point starts the queue workers from the same codebase.
 
 ## Why it exists
 
@@ -29,6 +29,13 @@ references removed. The 900-token generation ceiling applies only to the
 no-tool final-answer pass, leaving tool-call arguments uncapped. New delivery
 adapters inherit that policy through the shared conversation runtime and must
 not add provider-specific answer prompts or citation sanitizers.
+
+The `email-inbound` worker retrieves Resend email content and attachments from ID-only
+jobs accepted by the signed web endpoint. It runs at concurrency two with eight
+attempts, exponential backoff starting at 30 seconds, and provider Retry-After
+handling. Failed global ingestion jobs stay operator-visible rather than appearing
+in team job screens. See [email setup and replay](../../docs/setup/resend.html) for
+configuration, retention, and `bun run email:replay -- <received-email-uuid>`.
 
 ## How to use
 

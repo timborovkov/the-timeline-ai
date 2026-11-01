@@ -38,6 +38,11 @@ class FakeJob {
     }
     return Promise.resolve(this.queue.jobStates.get(this.id) ?? 'waiting');
   });
+  retry = vi.fn((_state: string, _options: unknown) => {
+    this.queue.retriedJobs.push(this.id);
+    this.queue.jobStates.set(this.id, 'waiting');
+    return Promise.resolve();
+  });
   remove = vi.fn(() => {
     if (this.queue.removeFailures.has(this.id)) {
       return Promise.reject(new Error('remove failed'));
@@ -52,6 +57,7 @@ class FakeQueue {
   name: string;
   options: Record<string, unknown>;
   jobs = new Set<string>();
+  retriedJobs: string[] = [];
   jobStates = new Map<string, string>();
   stateReadFailures = new Set<string>();
   removeFailures = new Set<string>();
@@ -132,6 +138,66 @@ afterEach(() => {
 });
 
 describe('queue wrappers', () => {
+  it.each(['waiting', 'active', 'delayed', 'completed'])(
+    'keeps %s email audio jobs instead of creating replacements',
+    async (state) => {
+      const queues = await importQueues();
+      const data = { rawEventId: 'event-1', teamId: 'team-1', audioKey: 'audio' };
+      await queues.enqueueTranscribeJob(data, { deduplicate: true });
+      const queue = queues.getTranscribeQueue() as unknown as FakeQueue;
+      queue.jobStates.set('email-audio-team-1-event-1', state);
+      await queues.enqueueTranscribeJob(data, { deduplicate: true });
+      expect(queue.addCalls).toHaveLength(1);
+      expect(queue.retriedJobs).toEqual([]);
+    },
+  );
+  it('deduplicates email audio across lost acknowledgements and retries only failed jobs', async () => {
+    const queues = await importQueues();
+    const data = { rawEventId: 'event-1', teamId: 'team-1', audioKey: 'audio' };
+    const queue = queues.getTranscribeQueue() as unknown as FakeQueue;
+    queue.failAfterAcceptOnce = true;
+    await expect(queues.enqueueTranscribeJob(data, { deduplicate: true })).rejects.toThrow(
+      'Redis connection',
+    );
+    const jobId = 'email-audio-team-1-event-1';
+    await queues.enqueueTranscribeJob(data, { deduplicate: true });
+    expect(queue.addCalls).toHaveLength(1);
+    expect(queue.retriedJobs).toEqual([]);
+    queue.jobStates.set(jobId, 'failed');
+    await queues.enqueueTranscribeJob(data, { deduplicate: true });
+    expect(queue.retriedJobs).toEqual([jobId]);
+    expect(queue.addCalls).toHaveLength(1);
+    queue.jobs.delete(jobId);
+    await queues.enqueueTranscribeJob(data, { deduplicate: true });
+    expect(queue.addCalls).toHaveLength(2);
+    expect(queue.addCalls[1]?.opts).toEqual({ jobId });
+  });
+
+  it('deduplicates inbound email IDs with bounded retries and operator retention', async () => {
+    const queues = await importQueues();
+    const emailId = '11111111-1111-4111-8111-111111111111';
+    await queues.enqueueEmailInboundJob({ emailId });
+    await queues.enqueueEmailInboundJob({ emailId });
+    const queue = fakes.queues[0];
+    expect(queue?.name).toBe('email-inbound');
+    expect(queue?.options).toMatchObject({
+      defaultJobOptions: {
+        attempts: 8,
+        backoff: { type: 'exponential', delay: 30_000 },
+        removeOnComplete: { age: 86400 },
+        removeOnFail: { age: 604800 },
+      },
+    });
+    expect(queue?.jobs.size).toBe(1);
+    expect(queue?.addCalls[0]).toEqual({
+      name: 'receive',
+      data: { emailId },
+      opts: { jobId: `resend-${emailId}` },
+    });
+    await queues.closeEmailInboundQueue();
+    expect(queue?.close).toHaveBeenCalledOnce();
+  });
+
   it('constructs core queues with stable names and retry/backoff defaults', async () => {
     const queues = await importQueues();
 

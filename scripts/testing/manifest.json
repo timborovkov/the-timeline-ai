@@ -1187,6 +1187,9 @@
   "apps/web/src/lib/suggestions.test.ts": {
     "group": "unit"
   },
+  "apps/web/src/lib/support-email.test.ts": {
+    "group": "unit"
+  },
   "apps/web/src/lib/support-context.test.ts": {
     "group": "unit"
   },
@@ -1586,19 +1589,25 @@
   "packages/shared/src/documents/scope.test.ts": {
     "group": "integration"
   },
+  "packages/shared/src/email/client-ip.test.ts": {
+    "group": "unit"
+  },
   "packages/shared/src/email/dispatcher-logging.test.ts": {
     "group": "integration"
   },
   "packages/shared/src/email/dispatcher.test.ts": {
     "group": "integration"
   },
-  "packages/shared/src/email/ip-allowlist.test.ts": {
-    "group": "unit"
-  },
   "packages/shared/src/email/package-export.test.ts": {
     "group": "unit"
   },
   "packages/shared/src/email/parser.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/email/processor.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/email/resend-client.test.ts": {
     "group": "unit"
   },
   "packages/shared/src/embedding/sources.test.ts": {
@@ -2008,5 +2017,8 @@
   },
   "scripts/testing/runner.test.ts": {
     "group": "script"
+  },
+  "apps/worker/src/workers/emailInbound.test.ts": {
+    "group": "unit"
   }
 }

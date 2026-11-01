@@ -502,11 +502,11 @@ async function loadTeamSettingsPage({
       .from(teams)
       .where(eq(teams.id, active.teamId))
       .limit(1)
-  )[0] ?? { inboundEmail: null, enabled: false, senders: [] };
-  const inboundEmail = displayInboundEmail(
-    { slug: active.teamSlug, inboundEmail: inboundEmailSettings.inboundEmail },
-    process.env.POSTMARK_INBOUND_ADDRESS,
-  );
+  )[0] ?? { inboundEmail: null, enabled: true, senders: [] };
+  const inboundEmail = displayInboundEmail({
+    slug: active.teamSlug,
+    inboundEmail: inboundEmailSettings.inboundEmail,
+  });
   const placeholderInbound = shouldWarnPlaceholderInboundEmail(
     inboundEmailSettings.inboundEmail,
     inboundEmail,

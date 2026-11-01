@@ -280,9 +280,6 @@ export async function updateInboundEmailWhitelistAction(
       ? parseSenderWhitelist(rawSenders)
       : parseDisabledSenderWhitelist(rawSenders);
     if (!whitelist) return { error: 'Enter valid email addresses only' };
-    if (enabled && whitelist.length === 0) {
-      return { error: 'Add at least one sender before enabling the whitelist' };
-    }
 
     const scope = withTeam(db, active.teamId, session.user.id);
     try {

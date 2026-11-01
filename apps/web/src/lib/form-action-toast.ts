@@ -32,9 +32,11 @@ export function useFormActionToast({
 }): void {
   const lastError = useRef<string | null>(null);
   const lastSuccess = useRef<string | null>(null);
+  const hadPending = useRef(false);
 
   useEffect(() => {
     if (pending) {
+      hadPending.current = true;
       lastError.current = null;
       lastSuccess.current = null;
       const timer = window.setTimeout(() => {
@@ -42,6 +44,9 @@ export function useFormActionToast({
       }, ACTION_TOAST_LOADING_DELAY_MS);
       return () => {
         window.clearTimeout(timer);
+        // Redirects and error boundaries can unmount the form before pending
+        // becomes false. Do not leave its loading toast alive indefinitely.
+        toast.dismiss(id);
       };
     }
 
@@ -52,10 +57,11 @@ export function useFormActionToast({
       });
     } else if (success && !error && success !== lastSuccess.current) {
       toast.success(success, { id, duration: ACTION_TOAST_SUCCESS_MS });
-    } else {
+    } else if (hadPending.current && !success) {
       toast.dismiss(id);
     }
 
+    hadPending.current = false;
     lastError.current = error ?? null;
     lastSuccess.current = success ?? null;
     return undefined;

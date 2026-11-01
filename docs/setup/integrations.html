@@ -1059,7 +1059,7 @@ bun run repair:monday -- --env-file=/path/to/.env \
           Run
           <code>bun run canary:integrations -- --env-file=/path/to/.env</code>. The canary prints
           only <code>OK</code>, <code>WARN</code>, or <code>SKIP</code> rows for OpenRouter, GitHub
-          App auth, Sentry API access, Postmark API access, native OAuth authorize endpoints, and
+          App auth, Sentry API access, Resend API access, native OAuth authorize endpoints, and
           native webhook/signing secrets, followed by secret-safe next steps for any non-OK row. Use
           <code>bun run canary:integrations:strict -- --env-file=/path/to/.env</code> when every row
           must be <code>OK</code>. Configured GitHub, Google Drive, Linear, Monday.com, Slack, and
@@ -1068,13 +1068,13 @@ bun run repair:monday -- --env-file=/path/to/.env \
           provider-side non-5xx responses as proof that the app registration is reachable. The
           Sentry API row uses <code>SENTRY_AUTH_TOKEN</code>, <code>SENTRY_ORG</code>, and
           <code>SENTRY_PROJECT</code> and expects the token to have project read access; the Sentry
-          webhook-signature row uses <code>SENTRY_INTEGRATION_CLIENT_SECRET</code>. The Postmark API
-          row uses <code>POSTMARK_SERVER_TOKEN</code> for a read-only server lookup; the inbound
-          webhook row checks <code>POSTMARK_WEBHOOK_SECRET</code>. When
-          <code>POSTMARK_INBOUND_CANARY_TO</code> and <code>POSTMARK_INBOUND_CANARY_FROM</code> are
-          also configured, along with <code>POSTMARK_INBOUND_CANARY_ALLOWED_ORIGIN</code> matching
-          the app origin, the canary posts a synthetic Postmark-shaped payload to
-          <code>/api/email/inbound</code> and expects one raw event insert.
+          webhook-signature row uses <code>SENTRY_INTEGRATION_CLIENT_SECRET</code>. The Resend API
+          row uses <code>RESEND_API_KEY</code> for a read-only received-email lookup; the inbound
+          webhook row checks <code>RESEND_WEBHOOK_SECRET</code>. An optional
+          <code>RESEND_INBOUND_CANARY_EMAIL_ID</code> identifies an existing synthetic received
+          email. With <code>RESEND_INBOUND_CANARY_ALLOWED_ORIGIN</code> matching the app origin, the
+          canary sends a signed replay to <code>/api/email/inbound</code> and verifies a captured
+          event. It may find an existing event and does not prove new SMTP delivery.
         </dd>
         <dt>Need to exercise the Monday board contract against a dedicated canary board</dt>
         <dd>

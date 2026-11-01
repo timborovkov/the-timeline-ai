@@ -1,7 +1,7 @@
 'use client';
 
 import { ErrorState } from '@/components/error-state';
-import { PUBLIC_SUPPORT_EMAIL } from '@/lib/support-links';
+import { useSupportEmail } from '@/components/support-email-provider';
 
 interface HelpRouteErrorProps {
   description: string;
@@ -12,6 +12,7 @@ interface HelpRouteErrorProps {
 }
 
 export function HelpRouteError({ description, error, title, variant, reset }: HelpRouteErrorProps) {
+  const supportEmail = useSupportEmail();
   const unchangedMessage =
     variant === 'guide'
       ? 'This error did not change the guide content. Check your connection, then try again.'
@@ -31,7 +32,7 @@ export function HelpRouteError({ description, error, title, variant, reset }: He
         description={unchangedMessage}
         error={error}
         reset={reset}
-        supportHref={variant === 'support' ? `mailto:${PUBLIC_SUPPORT_EMAIL}` : undefined}
+        supportHref={variant === 'support' ? `mailto:${supportEmail}` : undefined}
       />
     </article>
   );

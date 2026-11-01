@@ -123,7 +123,7 @@ export default async function HomeDashboardPage() {
       .limit(1)
       .then((rows) => rows[0] ?? null),
   ]);
-  const inboundEmail = displayInboundEmail(teamRow, process.env.POSTMARK_INBOUND_ADDRESS);
+  const inboundEmail = displayInboundEmail(teamRow);
   const events = eventPage.items;
   const pendingApprovals = workAttention.pendingApprovals;
   const urgentWorkCount = homeWorkNeedingAttentionCount(workAttention);
