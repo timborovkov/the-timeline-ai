@@ -185,94 +185,14 @@ function ArtifactPreviewDialog({
           <DialogDescription>{description}</DialogDescription>
         </DialogHeader>
 
-        <div className="min-h-0 space-y-4 overflow-y-auto overscroll-contain py-4 pr-1 sm:pr-2">
-          {loading ? (
-            <div className="rounded-sm border border-border bg-surface p-4 text-sm text-muted-foreground">
-              Loading reference…
-            </div>
-          ) : error ? (
-            <div className="rounded-sm border border-border bg-surface p-4 text-sm text-danger">
-              {error}
-            </div>
-          ) : preview ? (
-            <>
-              {preview.badges?.length ? (
-                <div className="flex flex-wrap gap-1.5">
-                  {preview.badges.map((badge) => (
-                    <span
-                      key={`${refLabel}:badge:${badge}`}
-                      className="rounded-sm border border-border bg-surface px-1.5 py-0.5 text-[11px] text-fg-dim"
-                    >
-                      {badge}
-                    </span>
-                  ))}
-                </div>
-              ) : null}
-
-              <div className="rounded-sm border border-border bg-surface p-4">
-                {preview.body ? (
-                  <p className="whitespace-pre-wrap text-sm leading-6 text-fg">{preview.body}</p>
-                ) : (
-                  <p className="text-sm text-muted-foreground">
-                    This reference has no text preview.
-                  </p>
-                )}
-                {preview.media?.kind === 'audio' ? (
-                  <audio
-                    aria-label={preview.media.label ?? `Audio for ${refLabel}`}
-                    controls
-                    className="mt-3 w-full"
-                    src={preview.media.url}
-                  >
-                    <track kind="captions" />
-                  </audio>
-                ) : null}
-                {preview.original ? (
-                  <SourceOriginalDetails
-                    className="mt-3"
-                    original={{
-                      label: preview.original.label,
-                      text: preview.original.text ?? null,
-                      html: preview.original.html ?? null,
-                      json: preview.original.json ?? null,
-                    }}
-                  />
-                ) : null}
-              </div>
-
-              {preview.sections?.map((section) => (
-                <section key={`${refLabel}:section:${section.title}`} className="space-y-2">
-                  <h3 className="text-base font-semibold text-fg">{section.title}</h3>
-                  {section.body ? (
-                    <p className="whitespace-pre-wrap text-sm leading-6 text-fg">{section.body}</p>
-                  ) : null}
-                  {section.items?.length ? (
-                    <dl className="divide-y divide-border rounded-sm border border-border bg-surface">
-                      {section.items.map((item) => (
-                        <div
-                          key={`${refLabel}:section:${section.title}:${item.label}:${item.value}`}
-                          className="grid gap-1 px-3 py-2 sm:grid-cols-[120px_1fr]"
-                        >
-                          <dt className="text-xs text-fg-dim">{item.label}</dt>
-                          <dd className="text-sm leading-5 text-fg">{item.value}</dd>
-                        </div>
-                      ))}
-                    </dl>
-                  ) : null}
-                </section>
-              ))}
-            </>
-          ) : (
-            <div className="rounded-sm border border-border bg-surface p-4 text-sm text-muted-foreground">
-              Open this reference to load its preview.
-            </div>
-          )}
-
-          <div className="flex items-center gap-2 font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
-            <Link2 className="size-3.5" />
-            <span>{refLabel}</span>
-          </div>
-        </div>
+        {
+          <ArtifactPreviewContent
+            loading={loading}
+            error={error}
+            preview={preview}
+            refLabel={refLabel}
+          />
+        }
 
         {actions.length > 0 ? (
           <DialogFooter className="flex-wrap border-t border-border pt-4">
@@ -296,6 +216,117 @@ function ArtifactPreviewDialog({
   );
 }
 
+function ArtifactPreviewContent({
+  loading,
+  error,
+  preview,
+  refLabel,
+}: {
+  loading: boolean;
+  error: string | null;
+  preview: ArtifactPreview | null;
+  refLabel: string;
+}) {
+  return (
+    <div className="min-h-0 space-y-4 overflow-y-auto overscroll-contain py-4 pr-1 sm:pr-2">
+      {loading ? (
+        <div className="rounded-sm border border-border bg-surface p-4 text-sm text-muted-foreground">
+          Loading reference…
+        </div>
+      ) : error ? (
+        <div className="rounded-sm border border-border bg-surface p-4 text-sm text-danger">
+          {error}
+        </div>
+      ) : preview ? (
+        <LoadedArtifactPreview preview={preview} refLabel={refLabel} />
+      ) : (
+        <div className="rounded-sm border border-border bg-surface p-4 text-sm text-muted-foreground">
+          Open this reference to load its preview.
+        </div>
+      )}
+
+      <div className="flex items-center gap-2 font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
+        <Link2 className="size-3.5" />
+        <span>{refLabel}</span>
+      </div>
+    </div>
+  );
+}
+function LoadedArtifactPreview({
+  preview,
+  refLabel,
+}: {
+  preview: ArtifactPreview;
+  refLabel: string;
+}) {
+  return (
+    <>
+      {preview.badges?.length ? (
+        <div className="flex flex-wrap gap-1.5">
+          {preview.badges.map((badge) => (
+            <span
+              key={`${refLabel}:badge:${badge}`}
+              className="rounded-sm border border-border bg-surface px-1.5 py-0.5 text-[11px] text-fg-dim"
+            >
+              {badge}
+            </span>
+          ))}
+        </div>
+      ) : null}
+
+      <div className="rounded-sm border border-border bg-surface p-4">
+        {preview.body ? (
+          <p className="whitespace-pre-wrap text-sm leading-6 text-fg">{preview.body}</p>
+        ) : (
+          <p className="text-sm text-muted-foreground">This reference has no text preview.</p>
+        )}
+        {preview.media?.kind === 'audio' ? (
+          <audio
+            aria-label={preview.media.label ?? `Audio for ${refLabel}`}
+            controls
+            className="mt-3 w-full"
+            src={preview.media.url}
+          >
+            <track kind="captions" />
+          </audio>
+        ) : null}
+        {preview.original ? (
+          <SourceOriginalDetails
+            className="mt-3"
+            original={{
+              label: preview.original.label,
+              text: preview.original.text ?? null,
+              html: preview.original.html ?? null,
+              json: preview.original.json ?? null,
+            }}
+          />
+        ) : null}
+      </div>
+
+      {preview.sections?.map((section) => (
+        <section key={`${refLabel}:section:${section.title}`} className="space-y-2">
+          <h3 className="text-base font-semibold text-fg">{section.title}</h3>
+          {section.body ? (
+            <p className="whitespace-pre-wrap text-sm leading-6 text-fg">{section.body}</p>
+          ) : null}
+          {section.items?.length ? (
+            <dl className="divide-y divide-border rounded-sm border border-border bg-surface">
+              {section.items.map((item) => (
+                <div
+                  key={`${refLabel}:section:${section.title}:${item.label}:${item.value}`}
+                  className="grid gap-1 px-3 py-2 sm:grid-cols-[120px_1fr]"
+                >
+                  <dt className="text-xs text-fg-dim">{item.label}</dt>
+                  <dd className="text-sm leading-5 text-fg">{item.value}</dd>
+                </div>
+              ))}
+            </dl>
+          ) : null}
+        </section>
+      ))}
+    </>
+  );
+}
 function PreviewActionLink({
   action,
   className,

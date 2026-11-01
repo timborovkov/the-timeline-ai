@@ -5,6 +5,8 @@ import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { useMemo, useReducer, useState } from 'react';
 
+import type { ActionDispatch } from 'react';
+
 import { CollectionRow } from '@/components/collections/collection-row';
 import { EmptyState } from '@/components/empty-state';
 import { Button } from '@/components/ui/button';
@@ -175,18 +177,7 @@ function CatalogCard({
   localConnectionsEnabled: boolean;
 }) {
   const router = useRouter();
-  const isConnectable =
-    (entry.status === 'mcp_available' ||
-      (entry.status === 'mcp_local' && localConnectionsEnabled)) &&
-    entry.authType !== null;
-  const statusLabel =
-    entry.status === 'coming_soon'
-      ? 'Coming soon'
-      : entry.status === 'mcp_local'
-        ? 'Local desktop only'
-        : entry.ingestStatus === 'coming_soon'
-          ? 'MCP now'
-          : 'Available';
+  const { isConnectable, statusLabel } = catalogPresentation(entry, localConnectionsEnabled);
   const [{ open, bearer, headerName, headerValue, busy, fieldError }, setCardState] = useReducer(
     patchCardState,
     INITIAL_CARD_STATE,
@@ -289,49 +280,15 @@ function CatalogCard({
           </>
         </CollectionRow.Metadata>
         <CollectionRow.Actions>
-          {open && (entry.authType === 'bearer' || entry.authType === 'header') ? (
-            <div className="flex items-center gap-2">
-              <Button
-                size="sm"
-                disabled={busy}
-                onClick={() => {
-                  void submitToken();
-                }}
-              >
-                {busy ? 'Connecting…' : 'Connect'}
-              </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => {
-                  setCardState({ open: false, fieldError: null });
-                }}
-              >
-                Cancel
-              </Button>
-            </div>
-          ) : (
-            <Button
-              size="sm"
-              variant={isConnectable ? 'default' : 'outline'}
-              disabled={busy || !isConnectable}
-              onClick={() => {
-                void onClickConnect();
-              }}
-            >
-              {!isConnectable
-                ? entry.status === 'mcp_local'
-                  ? 'Local setup only'
-                  : 'Coming soon'
-                : busy
-                  ? 'Connecting…'
-                  : entry.authType === 'oauth'
-                    ? 'Connect with OAuth'
-                    : entry.authType === 'none'
-                      ? 'Connect'
-                      : 'Connect with token'}
-            </Button>
-          )}
+          <CatalogConnectionControls
+            open={open}
+            entry={entry}
+            busy={busy}
+            submitToken={submitToken}
+            setCardState={setCardState}
+            isConnectable={isConnectable}
+            onClickConnect={onClickConnect}
+          />
         </CollectionRow.Actions>
       </CollectionRow>
       {entry.authHint && isConnectable ? (
@@ -391,4 +348,87 @@ function CatalogCard({
       ) : null}
     </div>
   );
+}
+
+function CatalogConnectionControls({
+  open,
+  entry,
+  busy,
+  submitToken,
+  setCardState,
+  isConnectable,
+  onClickConnect,
+}: {
+  open: boolean;
+  entry: CatalogEntryProps;
+  busy: boolean;
+  submitToken: () => Promise<void>;
+  setCardState: ActionDispatch<[patch: Partial<CatalogCardState>]>;
+  isConnectable: boolean;
+  onClickConnect: () => Promise<void>;
+}) {
+  return (
+    <>
+      {open && (entry.authType === 'bearer' || entry.authType === 'header') ? (
+        <div className="flex items-center gap-2">
+          <Button
+            size="sm"
+            disabled={busy}
+            onClick={() => {
+              void submitToken();
+            }}
+          >
+            {busy ? 'Connecting…' : 'Connect'}
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => {
+              setCardState({ open: false, fieldError: null });
+            }}
+          >
+            Cancel
+          </Button>
+        </div>
+      ) : (
+        <Button
+          size="sm"
+          variant={isConnectable ? 'default' : 'outline'}
+          disabled={busy || !isConnectable}
+          onClick={() => {
+            void onClickConnect();
+          }}
+        >
+          {catalogConnectLabel(entry, isConnectable, busy)}
+        </Button>
+      )}
+    </>
+  );
+}
+
+function catalogConnectLabel(
+  entry: CatalogEntryProps,
+  isConnectable: boolean,
+  busy: boolean,
+): string {
+  if (!isConnectable) return entry.status === 'mcp_local' ? 'Local setup only' : 'Coming soon';
+  if (busy) return 'Connecting…';
+  if (entry.authType === 'oauth') return 'Connect with OAuth';
+  return entry.authType === 'none' ? 'Connect' : 'Connect with token';
+}
+
+function catalogPresentation(entry: CatalogEntryProps, localConnectionsEnabled: boolean) {
+  const isConnectable =
+    (entry.status === 'mcp_available' ||
+      (entry.status === 'mcp_local' && localConnectionsEnabled)) &&
+    entry.authType !== null;
+  const statusLabel =
+    entry.status === 'coming_soon'
+      ? 'Coming soon'
+      : entry.status === 'mcp_local'
+        ? 'Local desktop only'
+        : entry.ingestStatus === 'coming_soon'
+          ? 'MCP now'
+          : 'Available';
+  return { isConnectable, statusLabel };
 }

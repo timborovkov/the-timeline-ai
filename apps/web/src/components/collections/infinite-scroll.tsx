@@ -4,6 +4,7 @@ import { useEffect, useRef, type ReactNode } from 'react';
 
 import { InlineError } from '@/components/inline-error';
 import { getAppMainScrollElement } from '@/lib/app-scroll';
+import { useCommittedRef } from '@/lib/use-committed-ref';
 import { cn } from '@/lib/utils';
 
 interface InfiniteScrollProps {
@@ -40,10 +41,8 @@ export function InfiniteScroll({
   loadingContent,
 }: InfiniteScrollProps) {
   const sentinelRef = useRef<HTMLButtonElement | null>(null);
-  const onLoadMoreRef = useRef(onLoadMore);
-  const loadingRef = useRef(loading);
-  onLoadMoreRef.current = onLoadMore;
-  loadingRef.current = loading;
+  const onLoadMoreRef = useCommittedRef(onLoadMore);
+  const loadingRef = useCommittedRef(loading);
 
   function requestMore(): void {
     if (disabled || loadingRef.current || !hasMore) return;

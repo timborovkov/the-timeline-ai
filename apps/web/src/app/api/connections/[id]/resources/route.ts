@@ -100,8 +100,7 @@ export async function GET(
 ): Promise<Response> {
   const session = await auth();
   if (!session?.user.id) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
-  const { id } = await ctx.params;
-  const resolved = await resolveScope(session.user.id);
+  const [{ id }, resolved] = await Promise.all([ctx.params, resolveScope(session.user.id)]);
   if (!resolved) return NextResponse.json({ error: 'no_team' }, { status: 400 });
   const { scope } = resolved;
   const connection = await scope.integrations.getOwnedProviderConnection(id);
@@ -149,8 +148,7 @@ export async function PUT(
 ): Promise<Response> {
   const session = await auth();
   if (!session?.user.id) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
-  const { id } = await ctx.params;
-  const resolved = await resolveScope(session.user.id);
+  const [{ id }, resolved] = await Promise.all([ctx.params, resolveScope(session.user.id)]);
   if (!resolved) return NextResponse.json({ error: 'no_team' }, { status: 400 });
   const { scope } = resolved;
   const connection = await scope.integrations.getOwnedProviderConnection(id);

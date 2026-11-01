@@ -20,25 +20,32 @@ export function PinTargetIcon({
   kind: PinnedItem['iconKind'];
   className?: string;
 }) {
-  const Icon =
-    kind === 'board'
-      ? KanbanSquare
-      : kind === 'document'
-        ? FileText
-        : kind === 'meeting' || kind === 'saved_meeting'
-          ? Mic
-          : kind === 'calendar_event'
-            ? CalendarDays
-            : kind === 'person'
-              ? UserRound
-              : kind === 'company'
-                ? UsersRound
-                : kind === 'deal' || kind === 'vendor'
-                  ? BriefcaseBusiness
-                  : kind.startsWith('timeline_')
-                    ? Activity
-                    : kind === 'task' || kind === 'follow_up'
-                      ? CircleDot
-                      : Pin;
+  const Icon = pinIcon(kind);
   return <Icon aria-hidden="true" className={className} />;
+}
+
+function pinIcon(kind: PinnedItem['iconKind']) {
+  switch (kind) {
+    case 'board':
+      return KanbanSquare;
+    case 'document':
+      return FileText;
+    case 'meeting':
+    case 'saved_meeting':
+      return Mic;
+    case 'calendar_event':
+      return CalendarDays;
+    case 'person':
+      return UserRound;
+    case 'company':
+      return UsersRound;
+    case 'deal':
+    case 'vendor':
+      return BriefcaseBusiness;
+    case 'task':
+    case 'follow_up':
+      return CircleDot;
+    default:
+      return kind.startsWith('timeline_') ? Activity : Pin;
+  }
 }

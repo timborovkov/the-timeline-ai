@@ -449,6 +449,7 @@ function NewObjectFields({
   return (
     <div className="grid gap-2 sm:grid-cols-[0.75fr_1.5fr]">
       <select
+        aria-label="Object type"
         value={type}
         onChange={(e) => {
           dispatch({

@@ -81,8 +81,7 @@ export function CuratedKanbanBoard({
   const activeDragItem = activeDragId
     ? (optimisticItems.find((item) => item.id === activeDragId) ?? null)
     : null;
-  const savingRef = useRef<Set<string> | null>(null);
-  savingRef.current ??= new Set<string>();
+  const savingRef = useRef(new Set<string>());
 
   const laneIdSet = useMemo(() => new Set(lanes.map((lane) => lane.id)), [lanes]);
   const byLane = new Map<string | null, boards.BoardItemRow[]>();
@@ -143,20 +142,15 @@ export function CuratedKanbanBoard({
     [cardLabel, laneLabel],
   );
 
-  function savingSet(): Set<string> {
-    savingRef.current ??= new Set<string>();
-    return savingRef.current;
-  }
-
   function markSaving(id: string, saving: boolean) {
-    const currentSaving = savingSet();
+    const currentSaving = savingRef.current;
     if (saving) currentSaving.add(id);
     else currentSaving.delete(id);
     setSavingIds(new Set(currentSaving));
   }
 
   function moveItem(id: string, laneId: string | null): void {
-    if (savingSet().has(id)) return;
+    if (savingRef.current.has(id)) return;
     const item = optimisticItems.find((candidate) => candidate.id === id);
     if (!item || item.laneId === laneId) return;
     markSaving(id, true);
@@ -187,7 +181,7 @@ export function CuratedKanbanBoard({
   }
 
   function updateItem(id: string, patch: BoardItemOptimisticPatch): void {
-    if (savingSet().has(id)) return;
+    if (savingRef.current.has(id)) return;
     const item = optimisticItems.find((candidate) => candidate.id === id);
     if (!item) return;
     const baseline = Object.fromEntries(
@@ -428,103 +422,134 @@ function KanbanCard({
           <GripVertical aria-hidden="true" className="size-3.5" />
         </button>
       </div>
-      <div className="mt-1 flex min-w-0 flex-nowrap items-center gap-0.5 overflow-hidden text-[11px] leading-4">
-        <span className="shrink-0 text-fg-dim">{statusLabel(item.object.type)}</span>
-        {item.object.type === 'task' ? (
-          <LiveTaskCategoryBadge
-            taskId={item.object.id}
-            category={item.object.taskCategory}
-            status={item.object.taskCategoryStatus}
-            updatedAt={item.object.taskCategoryUpdatedAt}
-          />
-        ) : null}
-        {blocked ? <span className="shrink-0 text-danger">Blocked</span> : null}
-        <EditableMetadata
-          label={`Responsible person for ${titleText}`}
-          pending={saving}
-          disabled={optimistic}
-          density="compact"
-        >
-          <EditableMetadata.Value>
-            {ownerLabel(item.responsibleUserId, members)}
-          </EditableMetadata.Value>
-          <EditableMetadata.Editor>
-            <select
-              value={item.responsibleUserId ?? ''}
-              onChange={(event) => {
-                onUpdateItem(item.id, { responsibleUserId: event.currentTarget.value || null });
-              }}
-              className="h-10 w-full rounded-sm border border-border bg-bg px-2 text-xs"
-              aria-label="Responsible person"
-            >
-              <option value="">Unassigned</option>
-              {members.map((member) => (
-                <option key={member.id} value={member.id}>
-                  {member.label}
-                </option>
-              ))}
-            </select>
-          </EditableMetadata.Editor>
-        </EditableMetadata>
-        <EditableMetadata
-          label={`Due date for ${titleText}`}
-          pending={saving}
-          disabled={optimistic}
-          density="compact"
-        >
-          <EditableMetadata.Value>
-            <DueDateDisplay value={item.dueAt} variant="compact" />
-          </EditableMetadata.Value>
-          <EditableMetadata.Editor>
-            <MetadataDateEditor
-              defaultValue={item.dueAt ? item.dueAt.toISOString().slice(0, 10) : ''}
-              onApply={(value) => {
-                onUpdateItem(item.id, {
-                  dueAt: value ? new Date(`${value}T00:00:00.000Z`) : null,
-                });
-              }}
-            />
-          </EditableMetadata.Editor>
-        </EditableMetadata>
-        <EditableMetadata
-          label={`Priority for ${titleText}`}
-          pending={saving}
-          disabled={optimistic}
-          density="compact"
-        >
-          <EditableMetadata.Value>
-            <CollectionStatus
-              value={item.priority ? `p${item.priority}` : 'none'}
-              tone={priorityTone(item.priority)}
-              label={item.priority ? `P${item.priority}` : 'No priority'}
-              showIcon={false}
-            />
-          </EditableMetadata.Value>
-          <EditableMetadata.Editor>
-            <select
-              value={item.priority ?? ''}
-              onChange={(event) => {
-                onUpdateItem(item.id, {
-                  priority: event.currentTarget.value ? Number(event.currentTarget.value) : null,
-                });
-              }}
-              className="h-10 w-full rounded-sm border border-border bg-bg px-2 text-xs"
-              aria-label="Priority"
-            >
-              <option value="">None</option>
-              {[1, 2, 3, 4].map((priority) => (
-                <option key={priority} value={priority}>
-                  P{priority}
-                </option>
-              ))}
-            </select>
-          </EditableMetadata.Editor>
-        </EditableMetadata>
-      </div>
+      {
+        <KanbanCardMetadata
+          item={item}
+          blocked={blocked}
+          titleText={titleText}
+          saving={saving}
+          optimistic={optimistic}
+          members={members}
+          onUpdateItem={onUpdateItem}
+        />
+      }
     </article>
   );
 }
 
+function KanbanCardMetadata({
+  item,
+  blocked,
+  titleText,
+  saving,
+  optimistic,
+  members,
+  onUpdateItem,
+}: {
+  item: boards.BoardItemRow;
+  blocked: boolean;
+  titleText: string;
+  saving: boolean;
+  optimistic: boolean;
+  members: BoardMemberOption[];
+  onUpdateItem: (id: string, patch: BoardItemOptimisticPatch) => void;
+}) {
+  return (
+    <div className="mt-1 flex min-w-0 flex-nowrap items-center gap-0.5 overflow-hidden text-[11px] leading-4">
+      <span className="shrink-0 text-fg-dim">{statusLabel(item.object.type)}</span>
+      {item.object.type === 'task' ? (
+        <LiveTaskCategoryBadge
+          taskId={item.object.id}
+          category={item.object.taskCategory}
+          status={item.object.taskCategoryStatus}
+          updatedAt={item.object.taskCategoryUpdatedAt}
+        />
+      ) : null}
+      {blocked ? <span className="shrink-0 text-danger">Blocked</span> : null}
+      <EditableMetadata
+        label={`Responsible person for ${titleText}`}
+        pending={saving}
+        disabled={optimistic}
+        density="compact"
+      >
+        <EditableMetadata.Value>
+          {ownerLabel(item.responsibleUserId, members)}
+        </EditableMetadata.Value>
+        <EditableMetadata.Editor>
+          <select
+            value={item.responsibleUserId ?? ''}
+            onChange={(event) => {
+              onUpdateItem(item.id, { responsibleUserId: event.currentTarget.value || null });
+            }}
+            className="h-10 w-full rounded-sm border border-border bg-bg px-2 text-xs"
+            aria-label="Responsible person"
+          >
+            <option value="">Unassigned</option>
+            {members.map((member) => (
+              <option key={member.id} value={member.id}>
+                {member.label}
+              </option>
+            ))}
+          </select>
+        </EditableMetadata.Editor>
+      </EditableMetadata>
+      <EditableMetadata
+        label={`Due date for ${titleText}`}
+        pending={saving}
+        disabled={optimistic}
+        density="compact"
+      >
+        <EditableMetadata.Value>
+          <DueDateDisplay value={item.dueAt} variant="compact" />
+        </EditableMetadata.Value>
+        <EditableMetadata.Editor>
+          <MetadataDateEditor
+            defaultValue={item.dueAt ? item.dueAt.toISOString().slice(0, 10) : ''}
+            onApply={(value) => {
+              onUpdateItem(item.id, {
+                dueAt: value ? new Date(`${value}T00:00:00.000Z`) : null,
+              });
+            }}
+          />
+        </EditableMetadata.Editor>
+      </EditableMetadata>
+      <EditableMetadata
+        label={`Priority for ${titleText}`}
+        pending={saving}
+        disabled={optimistic}
+        density="compact"
+      >
+        <EditableMetadata.Value>
+          <CollectionStatus
+            value={item.priority ? `p${item.priority}` : 'none'}
+            tone={priorityTone(item.priority)}
+            label={item.priority ? `P${item.priority}` : 'No priority'}
+            showIcon={false}
+          />
+        </EditableMetadata.Value>
+        <EditableMetadata.Editor>
+          <select
+            value={item.priority ?? ''}
+            onChange={(event) => {
+              onUpdateItem(item.id, {
+                priority: event.currentTarget.value ? Number(event.currentTarget.value) : null,
+              });
+            }}
+            className="h-10 w-full rounded-sm border border-border bg-bg px-2 text-xs"
+            aria-label="Priority"
+          >
+            <option value="">None</option>
+            {[1, 2, 3, 4].map((priority) => (
+              <option key={priority} value={priority}>
+                P{priority}
+              </option>
+            ))}
+          </select>
+        </EditableMetadata.Editor>
+      </EditableMetadata>
+    </div>
+  );
+}
 function ownerLabel(userId: string | null, members: BoardMemberOption[]): string {
   if (!userId) return 'Unassigned';
   return members.find((member) => member.id === userId)?.label ?? 'Assigned';

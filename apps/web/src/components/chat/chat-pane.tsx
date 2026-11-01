@@ -24,6 +24,7 @@ import { ToolStep } from '@/components/chat/tool-step';
 import { InlineSpinner } from '@/components/loading-states';
 import { consumeChatHandoffEntry } from '@/lib/chat-handoff';
 import { displayObjectLabel } from '@/lib/display-labels';
+import { notifyError } from '@/lib/notify';
 import { cn } from '@/lib/utils';
 import { chatErrorMessage } from '@/lib/ux-errors';
 
@@ -370,7 +371,11 @@ function PinnedEntityBanner({
           type="button"
           aria-label={`Remove ${label}`}
           onClick={() => {
-            void unpinChatSessionAction({ sessionId }).then(onUnpinned);
+            void unpinChatSessionAction({ sessionId })
+              .then(onUnpinned)
+              .catch(() => {
+                notifyError('chat:unpin', 'Couldn’t remove the pinned chat');
+              });
           }}
           className="flex size-6 items-center justify-center rounded-full text-fg-muted transition-colors hover:bg-signal-soft hover:text-signal focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
         >

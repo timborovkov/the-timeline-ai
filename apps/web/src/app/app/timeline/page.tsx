@@ -117,195 +117,36 @@ function toDateInputValue(input: string | undefined): string {
 }
 
 export default async function TimelinePage({ searchParams }: Props) {
-  const session = await auth();
-  if (!session?.user) redirect('/sign-in');
-
-  const { active } = await resolveActiveTeam(session.user.id);
-  if (!active) redirect('/sign-in');
-
-  const sp = await searchParams;
-  if (sp.q?.trim()) {
-    const next = new URLSearchParams({ q: sp.q.trim() });
-    if (sp.source) next.set('source', sp.source);
-    if (sp.from) next.set('from', sp.from);
-    if (sp.to) next.set('to', sp.to);
-    redirect(`/app/search?${next.toString()}`);
-  }
-
-  const scope = withTeam(db, active.teamId, session.user.id);
-  const role = await scope.requireMembership();
-  const isAdmin = role === 'owner' || role === 'admin';
-  const calendarSettings = await scope.calendar.getCalendarSettings();
-  const timezone = calendarSettings.defaultTimezone;
-
-  const authorFilters = parseUuids(sp.author);
-  const authorFilterValue = authorFilters.join(',');
-  const sourceFilters = parseTimelineSources(sp.source);
-  const sourceFilterValue = sourceFilters.join(',');
-  const originFilters = parseTimelineOrigins(sp.origin);
-  const originFilterValue = originFilters.map(timelineOriginValue).join(',');
-  if (originFilters.length > 0 && sourceFilters.length > 0) {
-    redirect(timelineHref({ ...sp, source: null }, { origin: originFilterValue }));
-  }
-  const sourceValues = originFilters.length > 0 ? undefined : timelineSourceValues(sourceFilters);
-  const impactFilters = parseTimelineImpacts(sp.impact);
-  const impactFilterValue = impactFilters.join(',');
-  const focusEventId = parseUuid(sp.event);
-  const focusMomentId = parseMomentId(sp.moment);
-  const mode = parseTimelineMode(sp.mode);
-  const dateWindow = resolveTimelineDateWindow(sp, timezone);
-  if (dateWindow.wasUpcomingClamped) {
-    redirect(timelineHref(sp, { to: dateWindow.effectiveToInput }));
-  }
-  const fromFilter = dateWindow.from;
-  const toQueryFilter = dateWindow.to;
-
-  const [timelinePage, members, sourceFacets] = await Promise.all([
-    collectTimelinePage({
-      impact: impactFilters,
-      focusEventId,
-      focusMomentId,
-      mode,
-      timezone,
-      fetchPage: async ({ cursor, limit }) => {
-        const page = await scope.timeline.listEventsPage({
-          authorUserId: authorFilters.length > 0 ? authorFilters : undefined,
-          from: fromFilter,
-          to: toQueryFilter,
-          source: sourceValues,
-          origins: originFilters,
-          cursor: cursor ?? undefined,
-          limit,
-        });
-        return {
-          items: page.items.map(serializeTimelineEvent),
-          nextCursor: page.nextCursor,
-        };
-      },
-      fetchEventsByIds: async (eventIds) =>
-        (await scope.timeline.getEventsByIds(eventIds)).map(serializeTimelineEvent),
-      fetchRelatedEventsForFocus: async (focusedEvent) => {
-        const window = focusedRelatedEventWindow(focusedEvent);
-        const events = await scope.timeline.listEvents({
-          from: window.from,
-          to: window.to,
-          source: focusedEvent.source,
-          limit: 100,
-        });
-        return events.map(serializeTimelineEvent);
-      },
-      fetchEventsForMoment: async (momentId) => {
-        const plan = timelineMomentLookupPlan(momentId);
-        if (!plan) return [];
-        const events = await scope.timeline.listEventsForMomentLookup(plan);
-        return events.map(serializeTimelineEvent);
-      },
-      hydrateImpact: (eventIds) => scope.timeline.listImpactItems(eventIds),
-    }),
-    scope.timeline.listMembers(),
-    scope.timeline.listSourceFacets(),
-  ]);
-  const events = timelinePage.items;
-  const eventIds = events.map((event) => event.id);
-
-  const userIds = Array.from(
-    new Set([
-      ...events.map((e) => e.authorUserId).filter((v): v is string => v !== null),
-      ...members.map((m) => m.userId),
-    ]),
-  );
-  const userRows =
-    userIds.length > 0
-      ? await db
-          .select({ id: users.id, name: users.name, email: users.email })
-          .from(users)
-          .where(inArray(users.id, userIds))
-      : [];
-  const userMap = new Map(userRows.map((m) => [m.id, m] as const));
-
-  const audioEvents = events.filter((e) => e.contentAudioUrl);
-  const audioUrlMap = new Map<string, string>();
-  if (audioEvents.length > 0) {
-    try {
-      const s3 = getS3PresignClient();
-      const bucket = getAudioBucket();
-      const pairs = await Promise.all(
-        audioEvents.map(async (e) => {
-          try {
-            const url = await getSignedGetObjectUrl(s3, bucket, e.contentAudioUrl ?? '', 3600);
-            return [e.id, url] as const;
-          } catch {
-            return [e.id, ''] as const;
-          }
-        }),
-      );
-      for (const [id, url] of pairs) if (url) audioUrlMap.set(id, url);
-    } catch (err) {
-      console.error('[timeline] audio playback unavailable; S3 is not configured', err);
-    }
-  }
-  const [capturedFiles, artifactClusters] = await Promise.all([
-    listTimelineCapturedFilesByEventId({
-      db,
-      teamId: active.teamId,
-      userId: session.user.id,
-      eventIds,
-    }),
-    scope.timeline.listArtifactClusters(eventIds),
-  ]);
-
-  const hasPanelFilters =
-    authorFilters.length > 0 ||
-    fromFilter !== undefined ||
-    Boolean(dateWindow.effectiveToInput) ||
-    sourceFilters.length > 0 ||
-    originFilters.length > 0 ||
-    impactFilters.length > 0;
-  const hasFilters = hasPanelFilters;
-  const originOptions = timelineOriginOptions(sourceFacets);
-  const initialMoments =
-    mode === 'moments'
-      ? (
-          await applyCachedTimelineMomentPresentations(
-            buildTimelineMoments(events, userMap, {
-              impactItemsByEventId: timelinePage.impactItems,
-              artifactClustersByEventId: artifactClusters,
-              timezone,
-            }),
-            {
-              teamId: active.teamId,
-              listMomentPresentations: (cacheKeys) =>
-                scope.timeline.listMomentPresentations(cacheKeys),
-              enqueueMissingPresentation: async ({ cacheKey, rawEventIds }) => {
-                const q = await requireRedisQueue();
-                await q.enqueueTimelineMomentPresentationJob({
-                  teamId: active.teamId,
-                  userId: session.user.id,
-                  cacheKey,
-                  rawEventIds,
-                });
-              },
-            },
-          )
-        ).map(toTimelineMomentDto)
-      : [];
-  const momentPinState = await scope.pins.isPinnedMany(
-    initialMoments.map((moment) => ({ kind: 'timeline_moment' as const, key: moment.id })),
-  );
-  const pinnedMomentIds = initialMoments.flatMap((moment) =>
-    momentPinState[`timeline_moment:${moment.id}`] ? [moment.id] : [],
-  );
-  const baseParams = {
-    author: authorFilterValue || null,
-    from: sp.from ?? null,
-    impact: impactFilterValue || null,
-    source: sourceFilterValue || null,
-    to: sp.to ?? null,
-    event: focusEventId ?? null,
-    moment: focusMomentId ?? null,
-    mode: mode === 'events' ? 'events' : null,
-    origin: originFilterValue || null,
-  };
+  const {
+    sp,
+    members,
+    userMap,
+    baseParams,
+    hasFilters,
+    hasPanelFilters,
+    sourceFilters,
+    sourceFilterValue,
+    originFilterValue,
+    originOptions,
+    impactFilters,
+    impactFilterValue,
+    focusEventId,
+    focusMomentId,
+    authorFilterValue,
+    events,
+    initialMoments,
+    pinnedMomentIds,
+    timelinePage,
+    userRows,
+    audioUrlMap,
+    artifactClusters,
+    capturedFiles,
+    session,
+    isAdmin,
+    timezone,
+    mode,
+    dateWindow,
+  } = await loadTimelinePage({ searchParams });
   return (
     <div data-app-layout="flush-top" className="relative">
       <h1 className="sr-only">Timeline</h1>
@@ -471,24 +312,7 @@ function TimelineBrowserSection({
         focusMomentId={focusMomentId ?? null}
         timezone={timezone}
         mode={mode}
-        emptyLabel={
-          hasFilters
-            ? mode === 'events'
-              ? 'No events match this view'
-              : 'No moments match this view'
-            : mode === 'events'
-              ? 'No events yet'
-              : 'No moments yet'
-        }
-        emptyAction={{
-          href: hasFilters ? '/app/timeline' : '/app#capture',
-          label: hasFilters ? 'Clear timeline filters' : 'Capture first event',
-          body: hasFilters
-            ? mode === 'events'
-              ? 'The archive is still intact. Clear the filters or broaden your search to see more events.'
-              : 'The archive is still intact. Clear the filters or broaden your search to see more moments.'
-            : 'Start from Home with one raw note, decision, or follow-up.',
-        }}
+        {...timelineEmptyState(hasFilters, mode)}
       />
     </section>
   );
@@ -732,4 +556,248 @@ function TimelineDateField({
       />
     </label>
   );
+}
+
+async function loadTimelinePage({ searchParams }: Props) {
+  const session = await auth();
+  if (!session?.user) redirect('/sign-in');
+
+  const { active } = await resolveActiveTeam(session.user.id);
+  if (!active) redirect('/sign-in');
+
+  const sp = await searchParams;
+  if (sp.q?.trim()) {
+    const next = new URLSearchParams({ q: sp.q.trim() });
+    if (sp.source) next.set('source', sp.source);
+    if (sp.from) next.set('from', sp.from);
+    if (sp.to) next.set('to', sp.to);
+    redirect(`/app/search?${next.toString()}`);
+  }
+
+  const scope = withTeam(db, active.teamId, session.user.id);
+  const role = await scope.requireMembership();
+  const isAdmin = role === 'owner' || role === 'admin';
+  const calendarSettings = await scope.calendar.getCalendarSettings();
+  const timezone = calendarSettings.defaultTimezone;
+
+  const authorFilters = parseUuids(sp.author);
+  const authorFilterValue = authorFilters.join(',');
+  const sourceFilters = parseTimelineSources(sp.source);
+  const sourceFilterValue = sourceFilters.join(',');
+  const originFilters = parseTimelineOrigins(sp.origin);
+  const originFilterValue = originFilters.map(timelineOriginValue).join(',');
+  if (originFilters.length > 0 && sourceFilters.length > 0) {
+    redirect(timelineHref({ ...sp, source: null }, { origin: originFilterValue }));
+  }
+  const sourceValues = originFilters.length > 0 ? undefined : timelineSourceValues(sourceFilters);
+  const impactFilters = parseTimelineImpacts(sp.impact);
+  const impactFilterValue = impactFilters.join(',');
+  const focusEventId = parseUuid(sp.event);
+  const focusMomentId = parseMomentId(sp.moment);
+  const mode = parseTimelineMode(sp.mode);
+  const dateWindow = resolveTimelineDateWindow(sp, timezone);
+  if (dateWindow.wasUpcomingClamped) {
+    redirect(timelineHref(sp, { to: dateWindow.effectiveToInput }));
+  }
+  const fromFilter = dateWindow.from;
+  const toQueryFilter = dateWindow.to;
+
+  const [timelinePage, members, sourceFacets] = await Promise.all([
+    collectTimelinePage({
+      impact: impactFilters,
+      focusEventId,
+      focusMomentId,
+      mode,
+      timezone,
+      fetchPage: async ({ cursor, limit }) => {
+        const page = await scope.timeline.listEventsPage({
+          authorUserId: authorFilters.length > 0 ? authorFilters : undefined,
+          from: fromFilter,
+          to: toQueryFilter,
+          source: sourceValues,
+          origins: originFilters,
+          cursor: cursor ?? undefined,
+          limit,
+        });
+        return {
+          items: page.items.map(serializeTimelineEvent),
+          nextCursor: page.nextCursor,
+        };
+      },
+      fetchEventsByIds: async (eventIds) =>
+        (await scope.timeline.getEventsByIds(eventIds)).map(serializeTimelineEvent),
+      fetchRelatedEventsForFocus: async (focusedEvent) => {
+        const window = focusedRelatedEventWindow(focusedEvent);
+        const events = await scope.timeline.listEvents({
+          from: window.from,
+          to: window.to,
+          source: focusedEvent.source,
+          limit: 100,
+        });
+        return events.map(serializeTimelineEvent);
+      },
+      fetchEventsForMoment: async (momentId) => {
+        const plan = timelineMomentLookupPlan(momentId);
+        if (!plan) return [];
+        const events = await scope.timeline.listEventsForMomentLookup(plan);
+        return events.map(serializeTimelineEvent);
+      },
+      hydrateImpact: (eventIds) => scope.timeline.listImpactItems(eventIds),
+    }),
+    scope.timeline.listMembers(),
+    scope.timeline.listSourceFacets(),
+  ]);
+  const events = timelinePage.items;
+  const eventIds = events.map((event) => event.id);
+
+  const userIds = Array.from(
+    new Set([
+      ...events.map((e) => e.authorUserId).filter((v): v is string => v !== null),
+      ...members.map((m) => m.userId),
+    ]),
+  );
+  const userRows =
+    userIds.length > 0
+      ? await db
+          .select({ id: users.id, name: users.name, email: users.email })
+          .from(users)
+          .where(inArray(users.id, userIds))
+      : [];
+  const userMap = new Map(userRows.map((m) => [m.id, m] as const));
+
+  const audioEvents = events.filter((e) => e.contentAudioUrl);
+  const audioUrlMap = new Map<string, string>();
+  if (audioEvents.length > 0) {
+    try {
+      const s3 = getS3PresignClient();
+      const bucket = getAudioBucket();
+      const pairs = await Promise.all(
+        audioEvents.map(async (e) => {
+          try {
+            const url = await getSignedGetObjectUrl(s3, bucket, e.contentAudioUrl ?? '', 3600);
+            return [e.id, url] as const;
+          } catch {
+            return [e.id, ''] as const;
+          }
+        }),
+      );
+      for (const [id, url] of pairs) if (url) audioUrlMap.set(id, url);
+    } catch (err) {
+      console.error('[timeline] audio playback unavailable; S3 is not configured', err);
+    }
+  }
+  const [capturedFiles, artifactClusters] = await Promise.all([
+    listTimelineCapturedFilesByEventId({
+      db,
+      teamId: active.teamId,
+      userId: session.user.id,
+      eventIds,
+    }),
+    scope.timeline.listArtifactClusters(eventIds),
+  ]);
+
+  const hasPanelFilters =
+    authorFilters.length > 0 ||
+    fromFilter !== undefined ||
+    Boolean(dateWindow.effectiveToInput) ||
+    sourceFilters.length > 0 ||
+    originFilters.length > 0 ||
+    impactFilters.length > 0;
+  const hasFilters = hasPanelFilters;
+  const originOptions = timelineOriginOptions(sourceFacets);
+  const initialMoments =
+    mode === 'moments'
+      ? (
+          await applyCachedTimelineMomentPresentations(
+            buildTimelineMoments(events, userMap, {
+              impactItemsByEventId: timelinePage.impactItems,
+              artifactClustersByEventId: artifactClusters,
+              timezone,
+            }),
+            {
+              teamId: active.teamId,
+              listMomentPresentations: (cacheKeys) =>
+                scope.timeline.listMomentPresentations(cacheKeys),
+              enqueueMissingPresentation: async ({ cacheKey, rawEventIds }) => {
+                const q = await requireRedisQueue();
+                await q.enqueueTimelineMomentPresentationJob({
+                  teamId: active.teamId,
+                  userId: session.user.id,
+                  cacheKey,
+                  rawEventIds,
+                });
+              },
+            },
+          )
+        ).map(toTimelineMomentDto)
+      : [];
+  const momentPinState = await scope.pins.isPinnedMany(
+    initialMoments.map((moment) => ({ kind: 'timeline_moment' as const, key: moment.id })),
+  );
+  const pinnedMomentIds = initialMoments.flatMap((moment) =>
+    momentPinState[`timeline_moment:${moment.id}`] ? [moment.id] : [],
+  );
+  const baseParams = {
+    author: authorFilterValue || null,
+    from: sp.from ?? null,
+    impact: impactFilterValue || null,
+    source: sourceFilterValue || null,
+    to: sp.to ?? null,
+    event: focusEventId ?? null,
+    moment: focusMomentId ?? null,
+    mode: mode === 'events' ? 'events' : null,
+    origin: originFilterValue || null,
+  };
+
+  return {
+    sp,
+    members,
+    userMap,
+    baseParams,
+    hasFilters,
+    hasPanelFilters,
+    sourceFilters,
+    sourceFilterValue,
+    originFilterValue,
+    originOptions,
+    impactFilters,
+    impactFilterValue,
+    focusEventId,
+    focusMomentId,
+    authorFilterValue,
+    events,
+    initialMoments,
+    pinnedMomentIds,
+    timelinePage,
+    userRows,
+    audioUrlMap,
+    artifactClusters,
+    capturedFiles,
+    session,
+    isAdmin,
+    timezone,
+    mode,
+    dateWindow,
+  };
+}
+
+function timelineEmptyState(hasFilters: boolean, mode: TimelineMode) {
+  return {
+    emptyLabel: hasFilters
+      ? mode === 'events'
+        ? 'No events match this view'
+        : 'No moments match this view'
+      : mode === 'events'
+        ? 'No events yet'
+        : 'No moments yet',
+    emptyAction: {
+      href: hasFilters ? '/app/timeline' : '/app#capture',
+      label: hasFilters ? 'Clear timeline filters' : 'Capture first event',
+      body: hasFilters
+        ? mode === 'events'
+          ? 'The archive is still intact. Clear the filters or broaden your search to see more events.'
+          : 'The archive is still intact. Clear the filters or broaden your search to see more moments.'
+        : 'Start from Home with one raw note, decision, or follow-up.',
+    },
+  };
 }

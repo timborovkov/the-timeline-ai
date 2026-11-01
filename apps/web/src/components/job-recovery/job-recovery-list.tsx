@@ -150,17 +150,17 @@ export function JobRecoveryList({
     (initial): JobRecoveryUiState => ({ ...initial, filter: defaultFilter ?? 'all' }),
   );
   const refreshedRetrySnapshots = useRef<Set<string> | null>(null);
-  const olderCountSeenRef = useRef(olderCount);
+  const [olderCountSeen, setOlderCountSeen] = useState(olderCount);
   const [olderDismissed, setOlderDismissed] = useState(0);
   const [listWindow, setListWindow] = useState(JOB_RECOVERY_LIST_WINDOW_SIZE);
   const listWindowKey = `${filter}:${String(items.length)}`;
-  const listWindowKeyRef = useRef(listWindowKey);
-  if (olderCountSeenRef.current !== olderCount) {
-    olderCountSeenRef.current = olderCount;
+  const [previousListWindowKey, setPreviousListWindowKey] = useState(listWindowKey);
+  if (olderCountSeen !== olderCount) {
+    setOlderCountSeen(olderCount);
     setOlderDismissed(0);
   }
-  if (listWindowKeyRef.current !== listWindowKey) {
-    listWindowKeyRef.current = listWindowKey;
+  if (previousListWindowKey !== listWindowKey) {
+    setPreviousListWindowKey(listWindowKey);
     setListWindow(JOB_RECOVERY_LIST_WINDOW_SIZE);
   }
   const pendingOlderCount = Math.max(0, olderCount - olderDismissed);

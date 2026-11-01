@@ -4,6 +4,7 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import { useEffect, useRef, type ReactNode } from 'react';
 
 import { getAppMainScrollElement } from '@/lib/app-scroll';
+import { useCommittedRef } from '@/lib/use-committed-ref';
 import { cn } from '@/lib/utils';
 
 interface VirtualListProps<T> {
@@ -36,11 +37,8 @@ export function VirtualList<T>({
   onEndReached,
 }: VirtualListProps<T>) {
   const fallbackParentRef = useRef<HTMLDivElement | null>(null);
-  const itemsRef = useRef(items);
-  const onEndReachedRef = useRef(onEndReached);
+  const onEndReachedRef = useCommittedRef(onEndReached);
   const requestedCountRef = useRef(0);
-  itemsRef.current = items;
-  onEndReachedRef.current = onEndReached;
 
   const virtualizer = useVirtualizer({
     count: items.length,
@@ -49,18 +47,18 @@ export function VirtualList<T>({
       return getAppMainScrollElement() ?? fallbackParentRef.current;
     },
     estimateSize: (index) => {
-      const item = itemsRef.current[index];
+      const item = items[index];
       const size =
         typeof estimateSize === 'function'
           ? item === undefined
             ? 48
             : estimateSize(item, index)
           : estimateSize;
-      return size + (index < itemsRef.current.length - 1 ? gap : 0);
+      return size + (index < items.length - 1 ? gap : 0);
     },
     overscan,
     getItemKey: (index) => {
-      const item = itemsRef.current[index];
+      const item = items[index];
       return item === undefined ? String(index) : getItemKey(item, index);
     },
     measureElement: (element) => element.getBoundingClientRect().height,
@@ -79,7 +77,7 @@ export function VirtualList<T>({
     if (requestedCountRef.current === items.length) return;
     requestedCountRef.current = items.length;
     onEndReachedRef.current();
-  }, [items.length, lastRenderedIndex, overscan]);
+  }, [items.length, lastRenderedIndex, overscan, onEndReachedRef]);
 
   return (
     <div

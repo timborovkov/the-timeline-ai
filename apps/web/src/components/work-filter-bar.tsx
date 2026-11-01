@@ -366,58 +366,83 @@ function WorkFilterFields({
         />
       </button>
 
-      <div
-        id={`${formId}-date-ranges`}
-        hidden={!showDateRanges}
-        className="grid min-w-full gap-2 pt-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6"
-      >
-        <FilterInput
-          name="dueFrom"
-          label="Due from"
-          defaultValue={filters.dueFrom}
-          type="date"
-          form={domFormId}
+      {
+        <WorkDateFilters
+          formId={formId}
+          showDateRanges={showDateRanges}
+          filters={filters}
+          domFormId={domFormId}
+          mode={mode}
         />
-        <FilterInput
-          name="dueTo"
-          label="Due to"
-          defaultValue={filters.dueTo}
-          type="date"
-          form={domFormId}
-        />
-        <FilterInput
-          name="createdFrom"
-          label={mode === 'board' ? 'Item created from' : 'Created from'}
-          defaultValue={filters.createdFrom}
-          type="date"
-          form={domFormId}
-        />
-        <FilterInput
-          name="createdTo"
-          label={mode === 'board' ? 'Item created to' : 'Created to'}
-          defaultValue={filters.createdTo}
-          type="date"
-          form={domFormId}
-        />
-        <FilterInput
-          name="updatedFrom"
-          label={mode === 'board' ? 'Item updated from' : 'Updated from'}
-          defaultValue={filters.updatedFrom}
-          type="date"
-          form={domFormId}
-        />
-        <FilterInput
-          name="updatedTo"
-          label={mode === 'board' ? 'Item updated to' : 'Updated to'}
-          type="date"
-          defaultValue={filters.updatedTo}
-          form={domFormId}
-        />
-      </div>
+      }
     </div>
   );
 }
 
+function WorkDateFilters({
+  formId,
+  showDateRanges,
+  filters,
+  domFormId,
+  mode,
+}: {
+  formId: string;
+  showDateRanges: boolean;
+  filters: WorkFilterState;
+  domFormId: string;
+  mode: string;
+}) {
+  return (
+    <div
+      id={`${formId}-date-ranges`}
+      hidden={!showDateRanges}
+      className="grid min-w-full gap-2 pt-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6"
+    >
+      <FilterInput
+        name="dueFrom"
+        label="Due from"
+        defaultValue={filters.dueFrom}
+        type="date"
+        form={domFormId}
+      />
+      <FilterInput
+        name="dueTo"
+        label="Due to"
+        defaultValue={filters.dueTo}
+        type="date"
+        form={domFormId}
+      />
+      <FilterInput
+        name="createdFrom"
+        label={mode === 'board' ? 'Item created from' : 'Created from'}
+        defaultValue={filters.createdFrom}
+        type="date"
+        form={domFormId}
+      />
+      <FilterInput
+        name="createdTo"
+        label={mode === 'board' ? 'Item created to' : 'Created to'}
+        defaultValue={filters.createdTo}
+        type="date"
+        form={domFormId}
+      />
+      <FilterInput
+        name="updatedFrom"
+        label={mode === 'board' ? 'Item updated from' : 'Updated from'}
+        defaultValue={filters.updatedFrom}
+        type="date"
+        form={domFormId}
+      />
+      <FilterInput
+        name="updatedTo"
+        label={mode === 'board' ? 'Item updated to' : 'Updated to'}
+        type="date"
+        defaultValue={filters.updatedTo}
+        form={domFormId}
+      />
+    </div>
+  );
+}
 function ProjectFilterControl({
   defaultValue,
   projects,

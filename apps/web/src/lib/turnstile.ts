@@ -38,6 +38,10 @@ export async function verifyTurnstileToken(input: {
       signal: AbortSignal.timeout(10_000),
       body,
     });
+    if (!res.ok) {
+      log.warn({ status: res.status }, 'turnstile verification unavailable');
+      return false;
+    }
     const data = (await res.json()) as SiteverifyResponse;
     if (!data.success) {
       log.warn({ errors: data['error-codes'] ?? [] }, 'turnstile verification failed');

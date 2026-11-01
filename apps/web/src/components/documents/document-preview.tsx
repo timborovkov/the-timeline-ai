@@ -52,8 +52,8 @@ export function DocumentPreview({
     const requestSeq = requestSeqRef.current + 1;
     requestSeqRef.current = requestSeq;
     inFlightKeyRef.current = requestKey;
-    setPreviewError(null);
     startTransition(async () => {
+      setPreviewError(null);
       const requestIsCurrent =
         requestSeqRef.current === requestSeq && inFlightKeyRef.current === requestKey;
       if (!requestIsCurrent) return;
@@ -109,21 +109,13 @@ export function DocumentPreview({
         </p>
       ) : null}
       {showButton ? (
-        <Button
-          type="button"
-          size={compact ? 'sm' : 'default'}
-          variant="outline"
-          onClick={openPreview}
-          disabled={pending}
-          className="gap-1.5"
-        >
-          {pending ? (
-            <Loader2 aria-hidden="true" className="size-3.5 animate-spin" />
-          ) : (
-            <Eye aria-hidden="true" className="size-3.5" />
-          )}
-          {pending ? 'Opening…' : activePreview ? 'Refresh preview' : label}
-        </Button>
+        <DocumentPreviewButton
+          compact={compact}
+          openPreview={openPreview}
+          pending={pending}
+          activePreview={activePreview}
+          label={label}
+        />
       ) : pending ? (
         <div
           aria-busy="true"
@@ -156,61 +148,110 @@ export function DocumentPreview({
       ) : null}
 
       {activePreview ? (
+        <DocumentPreviewMedia
+          showButton={showButton}
+          activePreview={activePreview}
+          compact={compact}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+function DocumentPreviewButton({
+  compact,
+  openPreview,
+  pending,
+  activePreview,
+  label,
+}: {
+  compact: boolean;
+  openPreview: () => void;
+  pending: boolean;
+  activePreview: PreviewState | null;
+  label: string;
+}) {
+  return (
+    <Button
+      type="button"
+      size={compact ? 'sm' : 'default'}
+      variant="outline"
+      onClick={openPreview}
+      disabled={pending}
+      className="gap-1.5"
+    >
+      {pending ? (
+        <Loader2 aria-hidden="true" className="size-3.5 animate-spin" />
+      ) : (
+        <Eye aria-hidden="true" className="size-3.5" />
+      )}
+      {pending ? 'Opening…' : activePreview ? 'Refresh preview' : label}
+    </Button>
+  );
+}
+function DocumentPreviewMedia({
+  showButton,
+  activePreview,
+  compact,
+}: {
+  showButton: boolean;
+  activePreview: PreviewState;
+  compact: boolean;
+}) {
+  return (
+    <div
+      className={cn(
+        'min-w-0 overflow-hidden rounded-sm border border-border bg-bg',
+        showButton ? 'mt-3' : '',
+      )}
+    >
+      {activePreview.mediaKind === 'image' ? (
         <div
           className={cn(
-            'min-w-0 overflow-hidden rounded-sm border border-border bg-bg',
-            showButton ? 'mt-3' : '',
+            'relative flex items-center justify-center',
+            compact
+              ? 'aspect-[4/3] max-h-48 w-64 max-w-full'
+              : 'h-[58vh] min-h-72 max-h-[42rem] w-full',
           )}
         >
-          {activePreview.mediaKind === 'image' ? (
-            <div
-              className={cn(
-                'relative flex items-center justify-center',
-                compact
-                  ? 'aspect-[4/3] max-h-48 w-64 max-w-full'
-                  : 'h-[58vh] min-h-72 max-h-[42rem] w-full',
-              )}
-            >
-              {/* Presigned S3/RustFS URLs include auth query params, so they load directly in the browser instead of through Next's image pipeline. */}
-              <Image
-                src={activePreview.url}
-                alt={activePreview.filename}
-                fill
-                unoptimized
-                sizes="100vw"
-                className="object-contain"
-              />
-            </div>
-          ) : activePreview.mediaKind === 'pdf' ? (
-            <object
-              data={activePreview.url}
-              type="application/pdf"
-              aria-label={activePreview.filename}
-              className={cn('bg-bg', compact ? 'h-80 w-64 max-w-full' : 'h-[72vh] min-h-96 w-full')}
-            >
-              <iframe
-                src={activePreview.url}
-                title={activePreview.filename}
-                sandbox="allow-scripts"
-                referrerPolicy="no-referrer"
-                className={compact ? 'h-80 w-full' : 'h-[72vh] w-full'}
-              />
-            </object>
-          ) : (
-            <div className="p-3">
-              <audio
-                src={activePreview.url}
-                controls
-                preload="metadata"
-                aria-label={activePreview.filename}
-                className="w-full"
-              >
-                <track kind="captions" src="data:text/vtt,WEBVTT" srcLang="en" label="Captions" />
-              </audio>
-            </div>
-          )}
+          {/* Presigned S3/RustFS URLs include auth query params, so they load directly in the browser instead of through Next's image pipeline. */}
+          <Image
+            src={activePreview.url}
+            alt={activePreview.filename}
+            fill
+            unoptimized
+            sizes="100vw"
+            className="object-contain"
+          />
         </div>
-      ) : null}
+      ) : activePreview.mediaKind === 'pdf' ? (
+        <object
+          data={activePreview.url}
+          type="application/pdf"
+          aria-label={activePreview.filename}
+          className={cn('bg-bg', compact ? 'h-80 w-64 max-w-full' : 'h-[72vh] min-h-96 w-full')}
+        >
+          <iframe
+            src={activePreview.url}
+            title={activePreview.filename}
+            sandbox="allow-scripts"
+            referrerPolicy="no-referrer"
+            className={compact ? 'h-80 w-full' : 'h-[72vh] w-full'}
+          />
+        </object>
+      ) : (
+        <div className="p-3">
+          <audio
+            src={activePreview.url}
+            controls
+            preload="metadata"
+            aria-label={activePreview.filename}
+            className="w-full"
+          >
+            <track kind="captions" src="data:text/vtt,WEBVTT" srcLang="en" label="Captions" />
+          </audio>
+        </div>
+      )}
     </div>
   );
 }

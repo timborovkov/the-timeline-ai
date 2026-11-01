@@ -24,30 +24,8 @@ export default async function BillingOperatorPage({
 }: {
   searchParams: Promise<{ team?: string; error?: string; notice?: string; checkout?: string }>;
 }) {
-  const session = await auth();
-  if (!session?.user.id || !session.user.email) redirect('/sign-in');
-  const [operatorUser] = await db
-    .select({ email: users.email, emailVerified: users.emailVerified })
-    .from(users)
-    .where(eq(users.id, session.user.id))
-    .limit(1);
-  if (!operatorUser?.emailVerified || !operatorUser.email) notFound();
-  if (operatorUser.email.toLowerCase() !== session.user.email.toLowerCase()) notFound();
-  if (!isPlatformAdminEmail(operatorUser.email, getEnv().PLATFORM_ADMIN_EMAILS)) notFound();
-
-  const query = await searchParams;
-  const teamQuery = query.team?.trim() ?? '';
-  const actor = { userId: session.user.id, email: operatorUser.email };
-  const matches = teamQuery ? await findOperatorTeams({ db, actor, query: teamQuery }) : [];
-  const selected =
-    matches.find((team) => team.id === teamQuery || team.slug === teamQuery) ??
-    (matches.length === 1 ? matches[0] : null);
-  const account = selected
-    ? await readOperatorBillingAccount({ db, actor, teamId: selected.id })
-    : null;
-  const audit = selected ? await listBillingOperatorAudit({ db, actor, teamId: selected.id }) : [];
-  const unbilled = selected ? await listOpenUnbilledAlerts({ db, actor, teamId: selected.id }) : [];
-  const checkoutHref = polarCheckoutUrl(query.checkout ?? '');
+  const { query, checkoutHref, unbilled, teamQuery, matches, selected, account, audit } =
+    await loadBillingOperatorPage(searchParams);
 
   return (
     <div className="space-y-5">
@@ -87,41 +65,85 @@ export default async function BillingOperatorPage({
         )}
       </SettingsSection>
 
-      <SettingsSection title="Find a team">
-        <form action="/app/admin/billing" className="flex flex-wrap items-end gap-3">
-          <label className="block text-sm">
-            <span className="text-fg-muted">Team id, slug, or name</span>
-            <input name="team" defaultValue={teamQuery} className={FIELD_CLASS} />
-          </label>
-          <button
-            type="submit"
-            className="inline-flex min-h-11 items-center rounded-sm bg-signal px-3 text-sm font-medium text-bg"
-          >
-            Find
-          </button>
-        </form>
-        {teamQuery && matches.length === 0 ? (
-          <p className="text-sm text-fg-muted">No matching team.</p>
-        ) : null}
-        {matches.length > 1 && !selected ? (
-          <ul className="space-y-1 text-sm">
-            {matches.map((team) => (
-              <li key={team.id}>
-                <a
-                  className="underline-offset-4 hover:underline"
-                  href={`/app/admin/billing?team=${team.id}`}
-                >
-                  {team.name} ({team.slug})
-                </a>
-              </li>
-            ))}
-          </ul>
-        ) : null}
-      </SettingsSection>
+      {<BillingTeamSearch teamQuery={teamQuery} matches={matches} selected={selected} />}
 
       {selected && account ? (
         <BillingOperatorTeamPanel team={selected} account={account} audit={audit} />
       ) : null}
     </div>
+  );
+}
+
+async function loadBillingOperatorPage(
+  searchParams: Promise<{ team?: string; error?: string; notice?: string; checkout?: string }>,
+) {
+  const session = await auth();
+  if (!session?.user.id || !session.user.email) redirect('/sign-in');
+  const [operatorUser] = await db
+    .select({ email: users.email, emailVerified: users.emailVerified })
+    .from(users)
+    .where(eq(users.id, session.user.id))
+    .limit(1);
+  if (!operatorUser?.emailVerified || !operatorUser.email) notFound();
+  if (operatorUser.email.toLowerCase() !== session.user.email.toLowerCase()) notFound();
+  if (!isPlatformAdminEmail(operatorUser.email, getEnv().PLATFORM_ADMIN_EMAILS)) notFound();
+
+  const query = await searchParams;
+  const teamQuery = query.team?.trim() ?? '';
+  const actor = { userId: session.user.id, email: operatorUser.email };
+  const matches = teamQuery ? await findOperatorTeams({ db, actor, query: teamQuery }) : [];
+  const selected =
+    matches.find((team) => team.id === teamQuery || team.slug === teamQuery) ??
+    (matches.length === 1 ? matches[0] : null);
+  const account = selected
+    ? await readOperatorBillingAccount({ db, actor, teamId: selected.id })
+    : null;
+  const audit = selected ? await listBillingOperatorAudit({ db, actor, teamId: selected.id }) : [];
+  const unbilled = selected ? await listOpenUnbilledAlerts({ db, actor, teamId: selected.id }) : [];
+  const checkoutHref = polarCheckoutUrl(query.checkout ?? '');
+  return { query, checkoutHref, unbilled, teamQuery, matches, selected, account, audit };
+}
+
+function BillingTeamSearch({
+  teamQuery,
+  matches,
+  selected,
+}: {
+  teamQuery: string;
+  matches: { id: string; name: string; slug: string }[];
+  selected: { id: string; name: string; slug: string } | null | undefined;
+}) {
+  return (
+    <SettingsSection title="Find a team">
+      <form action="/app/admin/billing" className="flex flex-wrap items-end gap-3">
+        <label className="block text-sm">
+          <span className="text-fg-muted">Team id, slug, or name</span>
+          <input name="team" defaultValue={teamQuery} className={FIELD_CLASS} />
+        </label>
+        <button
+          type="submit"
+          className="inline-flex min-h-11 items-center rounded-sm bg-signal px-3 text-sm font-medium text-bg"
+        >
+          Find
+        </button>
+      </form>
+      {teamQuery && matches.length === 0 ? (
+        <p className="text-sm text-fg-muted">No matching team.</p>
+      ) : null}
+      {matches.length > 1 && !selected ? (
+        <ul className="space-y-1 text-sm">
+          {matches.map((team) => (
+            <li key={team.id}>
+              <a
+                className="underline-offset-4 hover:underline"
+                href={`/app/admin/billing?team=${team.id}`}
+              >
+                {team.name} ({team.slug})
+              </a>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </SettingsSection>
   );
 }

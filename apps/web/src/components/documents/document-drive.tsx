@@ -50,11 +50,10 @@ import { useAppDialog } from '@/components/ui/app-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ItemActionGroup } from '@/components/ui/item-actions';
+import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
 import { notifyAction } from '@/lib/notify';
 import { queryKeys } from '@/lib/query-keys';
 import { type DocumentListPage, useDocumentListQuery } from '@/lib/use-paginated-queries';
-
-const LIST_DATE_FORMATTER = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' });
 
 interface FolderItem {
   id: string;
@@ -704,7 +703,7 @@ function Breadcrumbs({ breadcrumbs }: { breadcrumbs: Crumb[] }) {
     <nav aria-label="Document location" className="text-sm">
       <ol className="flex flex-wrap items-center">
         {breadcrumbs.map((c, i) => (
-          <li key={`${c.id ?? 'root'}-${String(i)}`} className="flex items-center">
+          <li key={c.id ?? 'root'} className="flex items-center">
             {i > 0 ? (
               <span aria-hidden="true" className="mx-1 text-muted-foreground">
                 /
@@ -766,6 +765,7 @@ function NewItemVisibilityPicker({
 }) {
   const visibilityId = useId();
 
+  const selectedMemberIds = new Set(visibilityUserIds);
   return (
     <fieldset className="flex flex-wrap items-center gap-3 border-y border-border py-3 text-sm">
       <legend className="px-1 text-xs text-fg-dim">New item visibility</legend>
@@ -798,7 +798,7 @@ function NewItemVisibilityPicker({
                 <input
                   id={memberId}
                   type="checkbox"
-                  checked={visibilityUserIds.includes(m.id)}
+                  checked={selectedMemberIds.has(m.id)}
                   onChange={(e) => {
                     onVisibilityUserIdsChange((prev) =>
                       e.target.checked
@@ -884,6 +884,7 @@ function FolderList({
   folders: FolderItem[];
   onDeleteFolder: (id: string) => Promise<void>;
 }) {
+  const timezone = useWorkspaceTimezone();
   if (folders.length === 0) return null;
   return (
     <CollectionGroup title="Folders" count={folders.length}>
@@ -908,7 +909,7 @@ function FolderList({
               </CollectionRow.Title>
               <CollectionRow.Context>{f.visibility}</CollectionRow.Context>
               <CollectionRow.Metadata>
-                <time dateTime={f.updatedAt}>{formatDate(f.updatedAt)}</time>
+                <time dateTime={f.updatedAt}>{formatDate(f.updatedAt, timezone)}</time>
               </CollectionRow.Metadata>
               <CollectionRow.Actions>
                 <ItemActionGroup label={`Actions for ${f.name}`}>
@@ -967,34 +968,18 @@ function DocumentList({
 }
 
 function DocumentListItem({ document }: { document: DocumentItem }) {
-  const version = document.currentVersion;
-  const sourceEventId = document.provenance.parentEventId ?? document.provenance.sourceEventId;
-  const source = sourceDetails(document.provenance.source);
-  const fileKind = fileKindDetails(document.name, version?.contentType ?? null);
-  const presentation = document.presentation;
-  const title = presentation.displayTitle;
-  const usingFriendlyTitle = presentation.isGeneratedName && title !== document.name;
-  const updatedAt = formatDate(document.updatedAt);
-  const capturedAt = document.provenance.occurredAt
-    ? formatDate(document.provenance.occurredAt)
-    : null;
-  const size = formatBytes(version?.byteSize ?? null);
-  const status = version?.processingStatus ?? (document.optimistic ? 'uploading' : null);
-  const metaItems = document.optimistic
-    ? [
-        { icon: source.icon, label: source.label },
-        { icon: Clock3, label: 'Uploading now' },
-      ]
-    : [
-        { icon: source.icon, label: source.label },
-        capturedAt ? { icon: Clock3, label: capturedAt } : null,
-        size ? { icon: HardDrive, label: size } : null,
-        version ? { icon: FileText, label: `v${String(version.version)}` } : null,
-      ];
-  const summary = document.optimistic
-    ? null
-    : (document.description ??
-      normalizeDocumentSummary(document.provenance.summary, document.name, title));
+  const timezone = useWorkspaceTimezone();
+  const {
+    fileKind,
+    title,
+    usingFriendlyTitle,
+    summary,
+    metaItems,
+    source,
+    status,
+    updatedAt,
+    sourceEventId,
+  } = documentListPresentation(document, timezone);
 
   return (
     <div style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto 52px' }}>
@@ -1045,6 +1030,48 @@ function DocumentListItem({ document }: { document: DocumentItem }) {
       </CollectionRow>
     </div>
   );
+}
+
+function documentListPresentation(document: DocumentItem, timezone: string) {
+  const version = document.currentVersion;
+  const sourceEventId = document.provenance.parentEventId ?? document.provenance.sourceEventId;
+  const source = sourceDetails(document.provenance.source);
+  const fileKind = fileKindDetails(document.name, version?.contentType ?? null);
+  const presentation = document.presentation;
+  const title = presentation.displayTitle;
+  const usingFriendlyTitle = presentation.isGeneratedName && title !== document.name;
+  const updatedAt = formatDate(document.updatedAt, timezone);
+  const capturedAt = document.provenance.occurredAt
+    ? formatDate(document.provenance.occurredAt, timezone)
+    : null;
+  const size = formatBytes(version?.byteSize ?? null);
+  const status = version?.processingStatus ?? (document.optimistic ? 'uploading' : null);
+  const metaItems = document.optimistic
+    ? [
+        { icon: source.icon, label: source.label },
+        { icon: Clock3, label: 'Uploading now' },
+      ]
+    : [
+        { icon: source.icon, label: source.label },
+        capturedAt ? { icon: Clock3, label: capturedAt } : null,
+        size ? { icon: HardDrive, label: size } : null,
+        version ? { icon: FileText, label: `v${String(version.version)}` } : null,
+      ];
+  const summary = document.optimistic
+    ? null
+    : (document.description ??
+      normalizeDocumentSummary(document.provenance.summary, document.name, title));
+  return {
+    fileKind,
+    title,
+    usingFriendlyTitle,
+    summary,
+    metaItems,
+    source,
+    status,
+    updatedAt,
+    sourceEventId,
+  };
 }
 
 function DocumentTitleRow({
@@ -1199,8 +1226,12 @@ function normalizeDocumentSummary(
   return trimmed.replace(storedName, title);
 }
 
-function formatDate(value: string): string {
-  return LIST_DATE_FORMATTER.format(new Date(value));
+function formatDate(value: string, timezone: string): string {
+  return new Intl.DateTimeFormat('en-GB', {
+    month: 'short',
+    day: 'numeric',
+    timeZone: timezone,
+  }).format(new Date(value));
 }
 
 function formatBytes(bytes: number | null): string | null {

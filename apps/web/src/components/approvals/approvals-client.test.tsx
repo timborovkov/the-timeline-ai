@@ -1679,8 +1679,20 @@ describe('ApprovalsClient', () => {
     );
 
     expect(html.match(/Proposed:/g)).toHaveLength(2);
-    expect(html).toContain('Jun 20, 2026, 11:00 AM');
-    expect(html).toContain('Jun 21, 2026, 1:00 PM');
+    expect(html).toContain(
+      new Intl.DateTimeFormat('en-US', {
+        dateStyle: 'medium',
+        timeStyle: 'short',
+        timeZone: 'UTC',
+      }).format(new Date('2026-06-20T11:00:00.000Z')),
+    );
+    expect(html).toContain(
+      new Intl.DateTimeFormat('en-US', {
+        dateStyle: 'medium',
+        timeStyle: 'short',
+        timeZone: 'UTC',
+      }).format(new Date('2026-06-21T13:00:00.000Z')),
+    );
     expect(html).not.toContain('2026-06-20T11:00:00.000Z');
   });
 
@@ -1871,8 +1883,22 @@ describe('ApprovalsClient', () => {
       }),
     );
 
-    expect(html).toContain('Starts Jun 18, 2026, 11:00 AM');
-    expect(html).toContain('Ends Jun 18, 2026, 12:00 PM');
+    expect(html).toContain(
+      'Starts ' +
+        new Intl.DateTimeFormat('en-US', {
+          dateStyle: 'medium',
+          timeStyle: 'short',
+          timeZone: 'UTC',
+        }).format(new Date('2026-06-18T11:00:00.000Z')),
+    );
+    expect(html).toContain(
+      'Ends ' +
+        new Intl.DateTimeFormat('en-US', {
+          dateStyle: 'medium',
+          timeStyle: 'short',
+          timeZone: 'UTC',
+        }).format(new Date('2026-06-18T12:00:00.000Z')),
+    );
     expect(html).not.toContain('2026-06-18T11:00:00.000Z');
     expect(html).not.toContain('2026-06-18T12:00:00.000Z');
   });

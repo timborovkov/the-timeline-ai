@@ -1,4 +1,5 @@
-import { HairlineSectionSkeleton, PageHeaderSkeleton } from '@/components/loading-states';
+import { PageHeaderSkeleton } from '@/components/loading-states';
+import { ObjectDetailSkeleton } from '@/components/objects/object-detail-skeleton';
 import { WorkSubnav } from '@/components/work-subnav';
 
 export default function ObjectDetailLoading() {
@@ -17,21 +18,7 @@ export default function ObjectDetailLoading() {
           <PageHeaderSkeleton />
         </div>
         <WorkSubnav current="/app/objects" />
-        <div
-          aria-hidden="true"
-          inert
-          className="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_23rem]"
-        >
-          <section className="space-y-3">
-            <HairlineSectionSkeleton />
-            <HairlineSectionSkeleton lines={4} />
-            <HairlineSectionSkeleton />
-          </section>
-          <aside className="space-y-3">
-            <HairlineSectionSkeleton lines={2} />
-            <HairlineSectionSkeleton lines={2} />
-          </aside>
-        </div>
+        <ObjectDetailSkeleton />
       </div>
     </>
   );

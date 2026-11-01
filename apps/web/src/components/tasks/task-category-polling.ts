@@ -1,7 +1,7 @@
 'use client';
 
 import { useQueries, type Query } from '@tanstack/react-query';
-import { useRef } from 'react';
+import { useState } from 'react';
 
 import { loadTaskCategoryStatesAction } from '@/app/actions/objects';
 
@@ -31,9 +31,9 @@ export function useTaskCategoryPolling(
 ) {
   const uniqueIds = [...new Set(ids)];
   const key = `${uniqueIds.join(',')}|${generationKey}`;
-  const windowRef = useRef({ key, startedAt: Date.now() });
-  if (windowRef.current.key !== key) {
-    windowRef.current = { key, startedAt: Date.now() };
+  const [pollWindow, setPollWindow] = useState(() => ({ key, startedAt: Date.now() }));
+  if (pollWindow.key !== key) {
+    setPollWindow({ key, startedAt: Date.now() });
   }
 
   const enabled =
@@ -62,7 +62,7 @@ export function useTaskCategoryPolling(
         if (query.state.data?.rows.every((row) => row.taskCategoryStatus !== 'pending')) {
           return false;
         }
-        return taskCategoryPollInterval(windowRef.current.startedAt, fastPollIntervalMs);
+        return taskCategoryPollInterval(pollWindow.startedAt, fastPollIntervalMs);
       },
     })),
   });

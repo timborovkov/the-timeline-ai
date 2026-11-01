@@ -4,6 +4,8 @@ import { Check, GitMerge, X } from 'lucide-react';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 
+import type { ApprovalPreviewTimestamps } from '@/lib/approval-preview';
+
 import { getApprovalTargetSnapshotAction } from '@/app/actions/approval-preview';
 import { SuggestionChangeDialog } from '@/components/approvals/suggestion-change-dialog';
 import { EvidenceLink } from '@/components/evidence-link';
@@ -130,53 +132,16 @@ export function ApprovalPreviewDialog({
               : ' · Current record with highlighted changes'}
           </DialogDescription>
         </DialogHeader>
-        <div className="max-h-[min(28rem,60dvh)] space-y-4 overflow-y-auto pr-1">
-          {loadingSnapshot ? <p className="text-xs text-fg-dim">Loading current record…</p> : null}
-          <dl className="grid gap-1.5">
-            {fields.map((field) => (
-              <PreviewFieldRow field={field} key={field.key} />
-            ))}
-          </dl>
-          {timestamps.createdAt || timestamps.updatedAt ? (
-            <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-fg-dim">
-              {timestamps.createdAt ? (
-                <RelativeTimestamp prefix="Created" value={timestamps.createdAt} />
-              ) : null}
-              {timestamps.createdAt && timestamps.updatedAt ? <span>·</span> : null}
-              {timestamps.updatedAt ? (
-                <RelativeTimestamp prefix="Updated" value={timestamps.updatedAt} />
-              ) : null}
-            </p>
-          ) : null}
-          {item.description ? (
-            <p className="text-sm text-fg-muted">{displayText(item.description, { timezone })}</p>
-          ) : null}
-          {evidence.length > 0 ? (
-            <section className="space-y-2 border-t border-border pt-3">
-              <h3 className="text-xs font-medium text-fg">
-                Why this was suggested · {evidence.length}{' '}
-                {evidence.length === 1 ? 'source' : 'sources'}
-              </h3>
-              {evidence.map((entry) => (
-                <EvidenceLink
-                  key={entry.rawEventId}
-                  eventId={entry.rawEventId}
-                  previewText={entry.quote}
-                  source={entry.source}
-                  occurredAt={entry.occurredAt}
-                  className="grid gap-1 text-xs text-fg-dim hover:text-fg"
-                >
-                  <span>Evidence from {evidenceSourceContextLabel(entry)}</span>
-                  {entry.quote ? (
-                    <span className="line-clamp-3 text-fg-muted">
-                      {displayText(entry.quote, { timezone })}
-                    </span>
-                  ) : null}
-                </EvidenceLink>
-              ))}
-            </section>
-          ) : null}
-        </div>
+        {
+          <ApprovalPreviewContent
+            loadingSnapshot={loadingSnapshot}
+            fields={fields}
+            timestamps={timestamps}
+            item={item}
+            timezone={timezone}
+            evidence={evidence}
+          />
+        }
         <DialogFooter className="sm:justify-between">
           <ItemActionGroup label={`Decision actions for ${displayText(item.title)}`}>
             {mergeHref ? (
@@ -216,6 +181,81 @@ export function ApprovalPreviewDialog({
   );
 }
 
+function ApprovalPreviewContent({
+  loadingSnapshot,
+  fields,
+  timestamps,
+  item,
+  timezone,
+  evidence,
+}: {
+  loadingSnapshot: boolean;
+  fields: ApprovalPreviewField[];
+  timestamps: ApprovalPreviewTimestamps;
+  item: {
+    id: string;
+    status: string;
+    operation: string;
+    targetKind: string;
+    targetId: string | null;
+    title: string;
+    description: string | null;
+    proposedPayload: Record<string, unknown>;
+    evidence?: PreviewEvidence[];
+  };
+  timezone: string;
+  evidence: PreviewEvidence[];
+}) {
+  return (
+    <div className="max-h-[min(28rem,60dvh)] space-y-4 overflow-y-auto pr-1">
+      {loadingSnapshot ? <p className="text-xs text-fg-dim">Loading current record…</p> : null}
+      <dl className="grid gap-1.5">
+        {fields.map((field) => (
+          <PreviewFieldRow field={field} key={field.key} />
+        ))}
+      </dl>
+      {timestamps.createdAt || timestamps.updatedAt ? (
+        <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-fg-dim">
+          {timestamps.createdAt ? (
+            <RelativeTimestamp prefix="Created" value={timestamps.createdAt} />
+          ) : null}
+          {timestamps.createdAt && timestamps.updatedAt ? <span>·</span> : null}
+          {timestamps.updatedAt ? (
+            <RelativeTimestamp prefix="Updated" value={timestamps.updatedAt} />
+          ) : null}
+        </p>
+      ) : null}
+      {item.description ? (
+        <p className="text-sm text-fg-muted">{displayText(item.description, { timezone })}</p>
+      ) : null}
+      {evidence.length > 0 ? (
+        <section className="space-y-2 border-t border-border pt-3">
+          <h3 className="text-xs font-medium text-fg">
+            Why this was suggested · {evidence.length}{' '}
+            {evidence.length === 1 ? 'source' : 'sources'}
+          </h3>
+          {evidence.map((entry) => (
+            <EvidenceLink
+              key={entry.rawEventId}
+              eventId={entry.rawEventId}
+              previewText={entry.quote}
+              source={entry.source}
+              occurredAt={entry.occurredAt}
+              className="grid gap-1 text-xs text-fg-dim hover:text-fg"
+            >
+              <span>Evidence from {evidenceSourceContextLabel(entry)}</span>
+              {entry.quote ? (
+                <span className="line-clamp-3 text-fg-muted">
+                  {displayText(entry.quote, { timezone })}
+                </span>
+              ) : null}
+            </EvidenceLink>
+          ))}
+        </section>
+      ) : null}
+    </div>
+  );
+}
 function PreviewFieldRow({ field }: { field: ApprovalPreviewField }) {
   const proposed = field.proposed ?? '—';
   return (

@@ -1,7 +1,7 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { createContext, use, useRef } from 'react';
+import { createContext, use, useCallback, useRef } from 'react';
 
 import type * as objects from '@timeline/shared/objects/types';
 import type { ReactNode } from 'react';
@@ -32,12 +32,12 @@ export function ObjectMergeRouteModalFrame({ children, description, title }: Fra
   const router = useRouter();
   const closedRef = useRef(false);
 
-  function close(): boolean {
+  const close = useCallback((): boolean => {
     if (closedRef.current) return false;
     closedRef.current = true;
     router.back();
     return true;
-  }
+  }, [router]);
 
   return (
     <Dialog

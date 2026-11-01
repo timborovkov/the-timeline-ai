@@ -150,7 +150,7 @@ function EvidenceList({ rows }: { rows: ReconciliationClusterDetailEvidence[] })
         />
       ) : (
         <ul className="border-y border-border">
-          {rows.map((row, index) => {
+          {rows.map((row) => {
             const hint = reconciliationEvidenceRowHint({
               authoritative: row.authoritative,
               externalObjectId: row.externalObjectId,
@@ -164,7 +164,15 @@ function EvidenceList({ rows }: { rows: ReconciliationClusterDetailEvidence[] })
               row.authoritative ? 'Authoritative source' : null,
             ].filter((part): part is string => Boolean(part));
             return (
-              <li key={`${row.rawEventId ?? 'no-event'}:${row.role}:${String(index)}`}>
+              <li
+                key={JSON.stringify([
+                  row.rawEventId,
+                  row.entityId,
+                  row.provider,
+                  row.externalObjectId,
+                  row.role,
+                ])}
+              >
                 <CollectionRow>
                   <CollectionRow.Leading>
                     <CollectionStatus value={row.role} label={evidenceRoleLabel(row.role)} />

@@ -3,6 +3,8 @@
 import { presentDueDate } from '@timeline/shared/time';
 import { ExternalLink } from 'lucide-react';
 
+import type { UseInfiniteQueryResult, InfiniteData } from '@tanstack/react-query';
+
 import { InfiniteScroll } from '@/components/collections/infinite-scroll';
 import { EvidenceLink } from '@/components/evidence-link';
 import {
@@ -51,39 +53,52 @@ export function ObjectSectionFeed({ objectId, section, title, showTitle = true }
       {items.length === 0 && query.isPending ? (
         <p className={cn(OBJECT_QUIET_CLASS, 'leading-5')}>Loading…</p>
       ) : (
-        <ShowMoreList
-          items={items}
-          previewCount={SECTION_PREVIEW_COUNT}
-          hasMore={query.hasNextPage}
-          getKey={(item, index) => sectionItemKey(item, index)}
-          moreLabel={(hidden, { hasMore }) =>
-            hidden > 0 ? `Show ${hidden}${hasMore ? '+' : ''} more` : 'Show more'
-          }
-          Item={({ item }) => (
-            <div className={OBJECT_BODY_CLASS}>
-              <ObjectSectionItem section={section} item={item} />
-            </div>
-          )}
-          footer={
-            query.hasNextPage || query.isFetchingNextPage || query.isFetchNextPageError ? (
-              <InfiniteScroll
-                hasMore={query.hasNextPage}
-                loading={query.isFetchingNextPage}
-                error={query.isFetchNextPageError ? 'Could not load more.' : null}
-                onLoadMore={() => {
-                  void query.fetchNextPage();
-                }}
-                boundLabel="No more matching activity"
-                hideBound={items.length === 0}
-              />
-            ) : null
-          }
-        />
+        <ObjectSectionItems items={items} query={query} section={section} />
       )}
     </section>
   );
 }
 
+function ObjectSectionItems({
+  items,
+  query,
+  section,
+}: {
+  items: unknown[];
+  query: UseInfiniteQueryResult<InfiniteData<{ items: unknown[]; nextCursor: string | null }>>;
+  section: Props['section'];
+}) {
+  return (
+    <ShowMoreList
+      items={items}
+      previewCount={SECTION_PREVIEW_COUNT}
+      hasMore={query.hasNextPage}
+      getKey={(item, index) => sectionItemKey(item, index)}
+      moreLabel={(hidden, { hasMore }) =>
+        hidden > 0 ? `Show ${hidden}${hasMore ? '+' : ''} more` : 'Show more'
+      }
+      Item={({ item }) => (
+        <div className={OBJECT_BODY_CLASS}>
+          <ObjectSectionItem section={section} item={item} />
+        </div>
+      )}
+      footer={
+        query.hasNextPage || query.isFetchingNextPage || query.isFetchNextPageError ? (
+          <InfiniteScroll
+            hasMore={query.hasNextPage}
+            loading={query.isFetchingNextPage}
+            error={query.isFetchNextPageError ? 'Could not load more.' : null}
+            onLoadMore={() => {
+              void query.fetchNextPage();
+            }}
+            boundLabel="No more matching activity"
+            hideBound={items.length === 0}
+          />
+        ) : null
+      }
+    />
+  );
+}
 function ObjectSectionItem({ section, item }: { section: Props['section']; item: unknown }) {
   const timezone = useWorkspaceTimezone();
   const row = item as Record<string, unknown>;

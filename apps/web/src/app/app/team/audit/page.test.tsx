@@ -87,7 +87,13 @@ describe('TrustAuditPage', () => {
     expect(html.match(/<h1/g)).toHaveLength(1);
     expect(fakes.auditList).toHaveBeenCalledWith(200);
     expect(fakes.getCalendarSettings).toHaveBeenCalledOnce();
-    expect(html).toContain('Jul 14, 2026, 5:30 PM');
+    expect(html).toContain(
+      new Intl.DateTimeFormat('en-US', {
+        dateStyle: 'medium',
+        timeStyle: 'short',
+        timeZone: 'UTC',
+      }).format(new Date('2026-07-14T17:30:00.000Z')),
+    );
     expect(html).toContain('America/Los_Angeles');
     expect(html).toContain('times in America/Los_Angeles');
     expect(html).toContain('dateTime="2026-07-15T00:30:00.000Z"');

@@ -24,6 +24,7 @@ import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 
 import type { TimelineCapturedFile } from '@/lib/timeline-captured-files';
 import type { TimelineArtifactCluster, TimelineEvent } from '@/lib/use-paginated-queries';
+import type { Dispatch, SetStateAction } from 'react';
 
 import { removeConversationalEventAction } from '@/app/actions/events';
 import { CitationCopyChip } from '@/components/artifact-reference-chip';
@@ -649,9 +650,9 @@ function InspectorBody({
         <section>
           <h3 className="mb-2 text-sm font-semibold text-fg">Impact</h3>
           <ul className="space-y-1.5">
-            {impactItems.map((item, index) => (
+            {impactItems.map((item) => (
               <li
-                key={`${item.kind}:${item.label}:${index}`}
+                key={JSON.stringify([item.kind, item.sourceEventId, item.href, item.label])}
                 className="rounded-sm border border-border bg-surface-2 px-2 py-1.5"
               >
                 {item.href ? (
@@ -671,67 +672,21 @@ function InspectorBody({
           </ul>
         </section>
       ) : null}
-      <section>
-        <h3 className="mb-2 text-sm font-semibold text-fg">
-          {compactEvidence ? 'Activity' : 'Source evidence'}
-        </h3>
-        {compactEvidence ? (
-          <ol className="space-y-2">
-            {visibleRawEvents.map((event) => (
-              <li key={event.id} className="min-w-0">
-                <div className="flex min-w-0 items-center gap-2 text-sm">
-                  <time
-                    dateTime={event.occurredAt}
-                    className="shrink-0 font-mono text-xs text-fg-dim"
-                  >
-                    {formatTimestamp(event.occurredAt, timezone)}
-                  </time>
-                  <span className="min-w-0 truncate text-fg-muted">
-                    {rawEventBody(event, timezone)}
-                  </span>
-                  <CitationCopyChip refValue={eventCitationRef(event.id)} className="shrink-0" />
-                </div>
-                <SourceOriginalDisclosure
-                  source={event.source}
-                  contentText={event.contentText}
-                  sourceMetadata={event.sourceMetadata}
-                  className="mt-2"
-                />
-              </li>
-            ))}
-          </ol>
-        ) : (
-          <ol className="space-y-2">
-            {visibleRawEvents.map((event) => (
-              <SourceEvidenceCard
-                key={event.id}
-                event={event}
-                actorLabel={rawEventActorLabel(event, actorByTelegramUserId)}
-                audioUrl={audioUrlMap?.get(event.id)}
-                canEditVisibility={canEditVisibility(event, currentUserId)}
-                canRemove={canRemoveConversational(event, currentUserId, isAdmin)}
-                members={members}
-                capturedFiles={capturedFilesByEventId[event.id] ?? []}
-                timezone={timezone}
-              />
-            ))}
-          </ol>
-        )}
-        {hiddenRawEventCount > 0 ? (
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="mt-2 h-8"
-            onClick={() => {
-              setVisibleRawEventCount((count) => count + INSPECTOR_RAW_EVENT_LIMIT);
-            }}
-          >
-            Show {hiddenRawEventCount} older evidence item
-            {hiddenRawEventCount === 1 ? '' : 's'}
-          </Button>
-        ) : null}
-      </section>
+      {
+        <InspectorAttachments
+          compactEvidence={compactEvidence}
+          visibleRawEvents={visibleRawEvents}
+          timezone={timezone}
+          actorByTelegramUserId={actorByTelegramUserId}
+          audioUrlMap={audioUrlMap}
+          currentUserId={currentUserId}
+          isAdmin={isAdmin}
+          members={members}
+          capturedFilesByEventId={capturedFilesByEventId}
+          hiddenRawEventCount={hiddenRawEventCount}
+          setVisibleRawEventCount={setVisibleRawEventCount}
+        />
+      }
       {clusters.length > 0 ? (
         <section>
           <h3 className="mb-2 text-sm font-semibold text-fg">Related evidence</h3>
@@ -746,6 +701,95 @@ function InspectorBody({
   );
 }
 
+function InspectorAttachments({
+  compactEvidence,
+  visibleRawEvents,
+  timezone,
+  actorByTelegramUserId,
+  audioUrlMap,
+  currentUserId,
+  isAdmin,
+  members,
+  capturedFilesByEventId,
+  hiddenRawEventCount,
+  setVisibleRawEventCount,
+}: {
+  compactEvidence: boolean;
+  visibleRawEvents: TimelineEvent[];
+  timezone: string;
+  actorByTelegramUserId: Map<string, string>;
+  audioUrlMap: Map<string, string> | undefined;
+  currentUserId: string;
+  isAdmin: boolean;
+  members: { id: string; label: string }[];
+  capturedFilesByEventId: Record<string, TimelineCapturedFile[]>;
+  hiddenRawEventCount: number;
+  setVisibleRawEventCount: Dispatch<SetStateAction<number>>;
+}) {
+  return (
+    <section>
+      <h3 className="mb-2 text-sm font-semibold text-fg">
+        {compactEvidence ? 'Activity' : 'Source evidence'}
+      </h3>
+      {compactEvidence ? (
+        <ol className="space-y-2">
+          {visibleRawEvents.map((event) => (
+            <li key={event.id} className="min-w-0">
+              <div className="flex min-w-0 items-center gap-2 text-sm">
+                <time
+                  dateTime={event.occurredAt}
+                  className="shrink-0 font-mono text-xs text-fg-dim"
+                >
+                  {formatTimestamp(event.occurredAt, timezone)}
+                </time>
+                <span className="min-w-0 truncate text-fg-muted">
+                  {rawEventBody(event, timezone)}
+                </span>
+                <CitationCopyChip refValue={eventCitationRef(event.id)} className="shrink-0" />
+              </div>
+              <SourceOriginalDisclosure
+                source={event.source}
+                contentText={event.contentText}
+                sourceMetadata={event.sourceMetadata}
+                className="mt-2"
+              />
+            </li>
+          ))}
+        </ol>
+      ) : (
+        <ol className="space-y-2">
+          {visibleRawEvents.map((event) => (
+            <SourceEvidenceCard
+              key={event.id}
+              event={event}
+              actorLabel={rawEventActorLabel(event, actorByTelegramUserId)}
+              audioUrl={audioUrlMap?.get(event.id)}
+              canEditVisibility={canEditVisibility(event, currentUserId)}
+              canRemove={canRemoveConversational(event, currentUserId, isAdmin)}
+              members={members}
+              capturedFiles={capturedFilesByEventId[event.id] ?? []}
+              timezone={timezone}
+            />
+          ))}
+        </ol>
+      )}
+      {hiddenRawEventCount > 0 ? (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="mt-2 h-8"
+          onClick={() => {
+            setVisibleRawEventCount((count) => count + INSPECTOR_RAW_EVENT_LIMIT);
+          }}
+        >
+          Show {hiddenRawEventCount} older evidence item
+          {hiddenRawEventCount === 1 ? '' : 's'}
+        </Button>
+      ) : null}
+    </section>
+  );
+}
 function InspectorTechnicalDetails({
   moment,
   timezone,
@@ -1248,32 +1292,18 @@ function TimelineMomentRow({
   timezone: string;
 }) {
   const inspector = useInspector();
-  const selected = focused || (inspector.open && inspector.content?.id === moment.id);
-  const meetingHref = meetingDetailHrefForMoment(moment);
-  const transcriptionStatus = momentTranscriptionStatus(moment);
-  const KindIcon = MOMENT_KIND_ICON[moment.kind];
-  const title = displayMomentTitle(moment);
-  const cue = groupingCue(moment);
-  const pulse = moment.visualWeight === 'pulse';
-  const previewText = supportingText(moment, '');
-  const contextParts = rowContextParts(moment);
-  const titleStem = title.replace(/…$/, '').trim().toLowerCase();
-  const previewOverlapsTitle =
-    Boolean(previewText) && Boolean(titleStem) && previewText.toLowerCase().startsWith(titleStem);
-  const subtitleParts = [
-    ...contextParts.filter((part) => !previewText.includes(part)),
-    previewOverlapsTitle ? null : previewText,
-  ].filter((part): part is string => Boolean(part));
-  const selectedChatBinder = selected ? (
-    <ChatViewContextBinder
-      viewKey={`timeline:${moment.id}`}
-      kind={moment.rawEvents[0]?.id ? 'timeline-event' : 'timeline-moment'}
-      href={compactTimelineMomentHref(moment)}
-      label={chatViewLabel(title, 'Timeline moment')}
-      {...(moment.rawEvents[0]?.id ? { timelineEventId: moment.rawEvents[0].id } : {})}
-      timelineMomentId={moment.id}
-    />
-  ) : null;
+  const {
+    selected,
+    title,
+    pulse,
+    KindIcon,
+    previewText,
+    cue,
+    subtitleParts,
+    transcriptionStatus,
+    meetingHref,
+  } = timelineMomentPresentation(focused, inspector, moment);
+  const selectedChatBinder = selected ? <MomentChatContext moment={moment} title={title} /> : null;
   if (compact) {
     return (
       <li
@@ -1382,7 +1412,7 @@ function TimelineMomentRow({
             {subtitleParts.length > 0 ? (
               <p className="mt-0.5 truncate text-xs leading-4 text-fg-dim">
                 {subtitleParts.map((part, index) => (
-                  <Fragment key={`${part}:${index}`}>
+                  <Fragment key={part}>
                     {index > 0 ? ' · ' : null}
                     <span>{part}</span>
                   </Fragment>
@@ -1415,6 +1445,52 @@ function TimelineMomentRow({
       </div>
     </div>
   );
+}
+
+function MomentChatContext({ moment, title }: { moment: TimelineMoment; title: string }) {
+  return (
+    <ChatViewContextBinder
+      viewKey={`timeline:${moment.id}`}
+      kind={moment.rawEvents[0]?.id ? 'timeline-event' : 'timeline-moment'}
+      href={compactTimelineMomentHref(moment)}
+      label={chatViewLabel(title, 'Timeline moment')}
+      {...(moment.rawEvents[0]?.id ? { timelineEventId: moment.rawEvents[0].id } : {})}
+      timelineMomentId={moment.id}
+    />
+  );
+}
+function timelineMomentPresentation(
+  focused: boolean,
+  inspector: ReturnType<typeof useInspector>,
+  moment: TimelineMoment,
+) {
+  const selected = focused || (inspector.open && inspector.content?.id === moment.id);
+  const meetingHref = meetingDetailHrefForMoment(moment);
+  const transcriptionStatus = momentTranscriptionStatus(moment);
+  const KindIcon = MOMENT_KIND_ICON[moment.kind];
+  const title = displayMomentTitle(moment);
+  const cue = groupingCue(moment);
+  const pulse = moment.visualWeight === 'pulse';
+  const previewText = supportingText(moment, '');
+  const contextParts = rowContextParts(moment);
+  const titleStem = title.replace(/…$/, '').trim().toLowerCase();
+  const previewOverlapsTitle =
+    Boolean(previewText) && Boolean(titleStem) && previewText.toLowerCase().startsWith(titleStem);
+  const subtitleParts = [
+    ...contextParts.filter((part) => !previewText.includes(part)),
+    previewOverlapsTitle ? null : previewText,
+  ].filter((part): part is string => Boolean(part));
+  return {
+    selected,
+    title,
+    pulse,
+    KindIcon,
+    previewText,
+    cue,
+    subtitleParts,
+    transcriptionStatus,
+    meetingHref,
+  };
 }
 
 export function TimelineList({
@@ -1460,31 +1536,14 @@ export function TimelineList({
       ),
     [events, authorMap, impactItemsByEventId, artifactClustersByEventId, resolvedTimezone, mode],
   );
-  const moments = serverMoments ?? localMoments;
-  const focusedMoments =
-    focusEventId === null && focusMomentId === null
-      ? []
-      : moments.filter(
-          (moment) =>
-            moment.id === focusMomentId ||
-            moment.rawEvents.some((event) => event.id === focusEventId),
-        );
-  const filteredMoments = mergeTimelineMoments(
-    filterTimelineMomentsByImpact(moments, impactFilter),
-    focusedMoments,
+  const { focusKey, focusedMoment, visibleMoments, dateGroups } = timelineVisibleMoments(
+    serverMoments,
+    localMoments,
+    focusEventId,
+    focusMomentId,
+    impactFilter,
+    maxMoments,
   );
-  const visibleMoments =
-    typeof maxMoments === 'number' ? filteredMoments.slice(0, maxMoments) : filteredMoments;
-  const dateGroups = groupedByDate(visibleMoments);
-  const focusKey = focusMomentId ?? focusEventId;
-  const focusedMoment =
-    focusKey === null
-      ? null
-      : (visibleMoments.find(
-          (moment) =>
-            moment.id === focusMomentId ||
-            moment.rawEvents.some((event) => event.id === focusEventId),
-        ) ?? null);
 
   useEffect(() => {
     if (!focusKey || !focusedMoment) return;
@@ -1515,38 +1574,15 @@ export function TimelineList({
   ]);
 
   if (visibleMoments.length === 0) {
-    return (
-      <EmptyState
-        icon={History}
-        title={emptyLabel}
-        body={
-          emptyAction?.body ??
-          'Moments will appear here as the timeline collects work from capture and connected sources.'
-        }
-        href={emptyAction?.href}
-        action={emptyAction?.label}
-      />
-    );
+    return <TimelineEmptyState emptyLabel={emptyLabel} emptyAction={emptyAction} />;
   }
 
-  const focusedEvent =
-    focusEventId === null ? null : (events.find((event) => event.id === focusEventId) ?? null);
-  const focusedLabel = focusedMoment
-    ? chatViewLabel(
-        displayMomentTitle(focusedMoment),
-        focusMomentId ? 'Timeline moment' : 'Timeline event',
-      )
-    : chatViewLabel(
-        focusedEvent?.contentText?.split(/\r?\n/, 1)[0] ?? '',
-        focusEventId ? 'Timeline event' : 'Timeline moment',
-      );
-  const focusedHref = (() => {
-    const params = new URLSearchParams();
-    if (focusEventId) params.set('event', focusEventId);
-    if (focusMomentId) params.set('moment', focusMomentId);
-    const query = params.toString();
-    return query ? `/app/timeline?${query}` : '/app/timeline';
-  })();
+  const { focusedHref, focusedLabel } = timelineFocusPresentation(
+    focusEventId,
+    events,
+    focusedMoment,
+    focusMomentId,
+  );
 
   return (
     <div
@@ -1556,13 +1592,11 @@ export function TimelineList({
       data-timeline-mode={mode}
     >
       {focusEventId || focusMomentId ? (
-        <ChatViewContextBinder
-          viewKey={`timeline:${focusMomentId ?? focusEventId ?? 'focus'}`}
-          kind={focusEventId ? 'timeline-event' : 'timeline-moment'}
-          href={focusedHref}
-          label={focusedLabel}
-          {...(focusEventId ? { timelineEventId: focusEventId } : {})}
-          {...(focusMomentId ? { timelineMomentId: focusMomentId } : {})}
+        <FocusedTimelineChatContext
+          focusEventId={focusEventId}
+          focusMomentId={focusMomentId}
+          focusedHref={focusedHref}
+          focusedLabel={focusedLabel}
         />
       ) : null}
       {compact || typeof maxMoments === 'number' ? (
@@ -1637,6 +1671,89 @@ export function TimelineList({
   );
 }
 
+function TimelineEmptyState({
+  emptyLabel,
+  emptyAction,
+}: {
+  emptyLabel: string;
+  emptyAction: { href: string; label: string; body: string } | undefined;
+}) {
+  return (
+    <EmptyState
+      icon={History}
+      title={emptyLabel}
+      body={
+        emptyAction?.body ??
+        'Moments will appear here as the timeline collects work from capture and connected sources.'
+      }
+      href={emptyAction?.href}
+      action={emptyAction?.label}
+    />
+  );
+}
+function timelineFocusPresentation(
+  focusEventId: string | null,
+  events: TimelineEvent[],
+  focusedMoment: TimelineMoment | null,
+  focusMomentId: string | null,
+) {
+  const focusedEvent =
+    focusEventId === null ? null : (events.find((event) => event.id === focusEventId) ?? null);
+  const focusedLabel = focusedMoment
+    ? chatViewLabel(
+        displayMomentTitle(focusedMoment),
+        focusMomentId ? 'Timeline moment' : 'Timeline event',
+      )
+    : chatViewLabel(
+        focusedEvent?.contentText?.split(/\r?\n/, 1)[0] ?? '',
+        focusEventId ? 'Timeline event' : 'Timeline moment',
+      );
+  const focusedHref = (() => {
+    const params = new URLSearchParams();
+    if (focusEventId) params.set('event', focusEventId);
+    if (focusMomentId) params.set('moment', focusMomentId);
+    const query = params.toString();
+    return query ? `/app/timeline?${query}` : '/app/timeline';
+  })();
+  return { focusedHref, focusedLabel };
+}
+
+function timelineVisibleMoments(
+  serverMoments: TimelineMoment[] | undefined,
+  localMoments: TimelineMoment[],
+  focusEventId: string | null,
+  focusMomentId: string | null,
+  impactFilter: TimelineImpactFilter,
+  maxMoments: number | undefined,
+) {
+  const moments = serverMoments ?? localMoments;
+  const focusedMoments =
+    focusEventId === null && focusMomentId === null
+      ? []
+      : moments.filter(
+          (moment) =>
+            moment.id === focusMomentId ||
+            moment.rawEvents.some((event) => event.id === focusEventId),
+        );
+  const filteredMoments = mergeTimelineMoments(
+    filterTimelineMomentsByImpact(moments, impactFilter),
+    focusedMoments,
+  );
+  const visibleMoments =
+    typeof maxMoments === 'number' ? filteredMoments.slice(0, maxMoments) : filteredMoments;
+  const dateGroups = groupedByDate(visibleMoments);
+  const focusKey = focusMomentId ?? focusEventId;
+  const focusedMoment =
+    focusKey === null
+      ? null
+      : (visibleMoments.find(
+          (moment) =>
+            moment.id === focusMomentId ||
+            moment.rawEvents.some((event) => event.id === focusEventId),
+        ) ?? null);
+  return { focusKey, focusedMoment, visibleMoments, dateGroups };
+}
+
 function mergeTimelineMoments(
   primary: TimelineMoment[],
   additional: TimelineMoment[],
@@ -1654,4 +1771,27 @@ function mergeTimelineMoments(
         eventDate(b.rawEvents[0]?.occurredAt ?? new Date(0)).getTime() -
         eventDate(a.rawEvents[0]?.occurredAt ?? new Date(0)).getTime(),
     );
+}
+
+function FocusedTimelineChatContext({
+  focusEventId,
+  focusMomentId,
+  focusedHref,
+  focusedLabel,
+}: {
+  focusEventId: string | null;
+  focusMomentId: string | null;
+  focusedHref: string;
+  focusedLabel: string;
+}) {
+  return (
+    <ChatViewContextBinder
+      viewKey={`timeline:${focusMomentId ?? focusEventId ?? 'focus'}`}
+      kind={focusEventId ? 'timeline-event' : 'timeline-moment'}
+      href={focusedHref}
+      label={focusedLabel}
+      {...(focusEventId ? { timelineEventId: focusEventId } : {})}
+      {...(focusMomentId ? { timelineMomentId: focusMomentId } : {})}
+    />
+  );
 }

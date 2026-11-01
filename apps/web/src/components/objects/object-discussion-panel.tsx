@@ -465,12 +465,12 @@ function RichCommentBody({ body, members }: { body: string; members: DiscussionM
   }
   const nodes: ReactNode[] = [];
   let cursor = 0;
-  kept.forEach((match, index) => {
+  kept.forEach((match) => {
     if (match.start > cursor) nodes.push(body.slice(cursor, match.start));
     if (match.url) {
       nodes.push(
         <Link
-          key={`url-${String(index)}`}
+          key={`url-${String(match.start)}`}
           href={match.url}
           className="text-signal underline decoration-signal/40 underline-offset-2"
           target="_blank"
@@ -482,7 +482,7 @@ function RichCommentBody({ body, members }: { body: string; members: DiscussionM
     } else {
       nodes.push(
         <span
-          key={`mention-${String(index)}`}
+          key={`mention-${String(match.start)}`}
           className="rounded-sm bg-signal/10 px-0.5 font-normal text-signal"
         >
           @{mentionChipLabel(match.token ?? '', members)}

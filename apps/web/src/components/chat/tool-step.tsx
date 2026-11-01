@@ -553,6 +553,7 @@ function ToolApprovalCard({
   input: unknown;
   onApprovalResponse: NonNullable<Props['onApprovalResponse']>;
 }) {
+  const ApprovalDetails = approvalDetailsComponent(name);
   const timezone = useWorkspaceTimezone();
   const record = input && typeof input === 'object' ? (input as Record<string, unknown>) : {};
   const objectIds = Array.isArray(record.objectIds)
@@ -568,171 +569,19 @@ function ToolApprovalCard({
   return (
     <div className="mt-2 rounded-md border border-signal/40 bg-signal-soft p-3">
       <p className="text-xs font-medium text-fg">Approval needed</p>
-      {name === 'execute_object_create' ? (
-        <dl className="mt-2 grid gap-2 text-xs text-fg-muted">
-          <ApprovalRow label="Type">{formatApprovalValue(record.type ?? 'other')}</ApprovalRow>
-          <ApprovalRow label="Name">{formatApprovalValue(record.canonicalName)}</ApprovalRow>
-          {record.status !== undefined ? (
-            <ApprovalRow label="Status">{formatApprovalValue(record.status)}</ApprovalRow>
-          ) : null}
-          {record.stage !== undefined ? (
-            <ApprovalRow label="Stage">{formatApprovalValue(record.stage)}</ApprovalRow>
-          ) : null}
-          {record.priority !== undefined ? (
-            <ApprovalRow label="Priority">{formatApprovalValue(record.priority)}</ApprovalRow>
-          ) : null}
-          {record.dueAt !== undefined ? (
-            <ApprovalRow label="Due">
-              <DueDateDisplay
-                value={record.dueAt as string | null}
-                timezone={timezone}
-                variant="inline"
-              />
-            </ApprovalRow>
-          ) : null}
-          {Array.isArray(record.aliases) && record.aliases.length > 0 ? (
-            <ApprovalRow label="Aliases">{record.aliases.join(', ')}</ApprovalRow>
-          ) : null}
-          {typeof record.parentObjectId === 'string' ? (
-            <ApprovalRow label="Parent">
-              <ArtifactReferenceChip refValue={{ kind: 'object', id: record.parentObjectId }} />
-            </ApprovalRow>
-          ) : null}
-          {reason ? <ApprovalRow label="Reason">{reason}</ApprovalRow> : null}
-        </dl>
-      ) : name === 'execute_calendar_create' ? (
-        <dl className="mt-2 grid gap-2 text-xs text-fg-muted">
-          <ApprovalRow label="Title">{formatApprovalValue(record.title)}</ApprovalRow>
-          {calendarToolRange(record) ? (
-            <ApprovalRow label="When">{calendarToolRange(record)}</ApprovalRow>
-          ) : (
-            <>
-              <ApprovalRow label="Start">{formatApprovalValue(record.startAt)}</ApprovalRow>
-              <ApprovalRow label="End">{formatApprovalValue(record.endAt)}</ApprovalRow>
-            </>
-          )}
-          {record.timezone !== undefined ? (
-            <ApprovalRow label="Timezone">{formatApprovalValue(record.timezone)}</ApprovalRow>
-          ) : null}
-          {record.allDay !== undefined ? (
-            <ApprovalRow label="All day">{formatApprovalValue(record.allDay)}</ApprovalRow>
-          ) : null}
-          {record.location !== undefined ? (
-            <ApprovalRow label="Location">{formatApprovalValue(record.location)}</ApprovalRow>
-          ) : null}
-          {record.rrule !== undefined ? (
-            <ApprovalRow label="Repeat">{formatApprovalValue(record.rrule)}</ApprovalRow>
-          ) : null}
-          {reason ? <ApprovalRow label="Reason">{reason}</ApprovalRow> : null}
-        </dl>
-      ) : name === 'execute_calendar_update' ? (
-        <dl className="mt-2 grid gap-2 text-xs text-fg-muted">
-          {calendarEventId ? (
-            <ApprovalRow label="Event">
-              <ArtifactReferenceChip refValue={{ kind: 'calendar_event', id: calendarEventId }} />
-            </ApprovalRow>
-          ) : null}
-          {patch ? (
-            <>
-              {calendarToolRange(nestedRecord(record, 'expectedCurrent')) ? (
-                <ApprovalRow label="Current">
-                  {calendarToolRange(nestedRecord(record, 'expectedCurrent'))}
-                </ApprovalRow>
-              ) : null}
-              {calendarToolRange({
-                ...nestedRecord(record, 'expectedCurrent'),
-                ...(patch as Record<string, unknown>),
-              }) ? (
-                <ApprovalRow label="Proposed">
-                  {calendarToolRange({
-                    ...nestedRecord(record, 'expectedCurrent'),
-                    ...(patch as Record<string, unknown>),
-                  })}
-                </ApprovalRow>
-              ) : null}
-              <ApprovalRow label="Change">
-                {Object.entries(patch)
-                  .map(([key, value]) => `${key}: ${formatApprovalValue(value)}`)
-                  .join(', ')}
-              </ApprovalRow>
-            </>
-          ) : null}
-          {reason ? <ApprovalRow label="Reason">{reason}</ApprovalRow> : null}
-        </dl>
-      ) : name === 'execute_calendar_cancel' ? (
-        <dl className="mt-2 grid gap-2 text-xs text-fg-muted">
-          {calendarEventId ? (
-            <ApprovalRow label="Event">
-              <ArtifactReferenceChip refValue={{ kind: 'calendar_event', id: calendarEventId }} />
-            </ApprovalRow>
-          ) : null}
-          {calendarToolRange(nestedRecord(record, 'expectedCurrent')) ? (
-            <ApprovalRow label="When">
-              {calendarToolRange(nestedRecord(record, 'expectedCurrent'))}
-            </ApprovalRow>
-          ) : null}
-          {record.recurrenceEditMode !== undefined ? (
-            <ApprovalRow label="Scope">
-              {formatApprovalValue(record.recurrenceEditMode)}
-            </ApprovalRow>
-          ) : null}
-          {reason ? <ApprovalRow label="Reason">{reason}</ApprovalRow> : null}
-        </dl>
-      ) : name === 'execute_object_archive' ? (
-        <dl className="mt-2 grid gap-2 text-xs text-fg-muted">
-          {entityId ? (
-            <ApprovalRow label="Object">
-              <ArtifactReferenceChip refValue={{ kind: 'object', id: entityId }} />
-            </ApprovalRow>
-          ) : null}
-          {reason ? <ApprovalRow label="Reason">{reason}</ApprovalRow> : null}
-        </dl>
-      ) : name === 'execute_object_merge' ? (
-        <dl className="mt-2 grid gap-2 text-[11px] text-fg-muted">
-          {survivorId ? (
-            <ApprovalRow label="Keep">
-              <ArtifactReferenceChip refValue={{ kind: 'object', id: survivorId }} />
-            </ApprovalRow>
-          ) : null}
-          {mergedIds.length > 0 ? (
-            <ApprovalRow label="Merge">
-              <span className="flex flex-wrap gap-1">
-                {mergedIds.map((id) => (
-                  <ArtifactReferenceChip key={id} refValue={{ kind: 'object', id }} />
-                ))}
-              </span>
-            </ApprovalRow>
-          ) : null}
-          {reason ? <ApprovalRow label="Reason">{reason}</ApprovalRow> : null}
-        </dl>
-      ) : (
-        <dl className="mt-2 grid gap-1 text-xs text-fg-muted">
-          <ApprovalRow label="Field">{field}</ApprovalRow>
-          <ApprovalRow label="Current">
-            {field === 'dueAt' ? (
-              <DueDateDisplay
-                value={record.expectedCurrentValue as string | null}
-                timezone={timezone}
-                variant="inline"
-              />
-            ) : (
-              formatApprovalValue(record.expectedCurrentValue)
-            )}
-          </ApprovalRow>
-          <ApprovalRow label="Proposed">
-            {field === 'dueAt' ? (
-              <DueDateDisplay
-                value={record.newValue as string | null}
-                timezone={timezone}
-                variant="inline"
-              />
-            ) : (
-              formatApprovalValue(record.newValue)
-            )}
-          </ApprovalRow>
-          {reason ? <ApprovalRow label="Reason">{reason}</ApprovalRow> : null}
-        </dl>
-      )}
+      {
+        <ApprovalDetails
+          record={record}
+          reason={reason}
+          timezone={timezone}
+          calendarEventId={calendarEventId}
+          patch={patch}
+          entityId={entityId}
+          survivorId={survivorId}
+          mergedIds={mergedIds}
+          field={field}
+        />
+      }
       <div className="mt-3 flex flex-wrap gap-2">
         <button
           type="button"
@@ -792,6 +641,74 @@ function ToolDetails({
 }
 
 export function ToolStep({ name, state, input, output, approval, onApprovalResponse }: Props) {
+  const {
+    StateIcon,
+    isRunning,
+    stateClassName,
+    summary,
+    toolStateLabel,
+    reauthServerId,
+    reauthServerName,
+    needsApproval,
+    approvalResponse,
+    suggestion,
+  } = toolStepPresentation(state, output, name, input, approval, onApprovalResponse);
+  return (
+    <div className="rounded-md border border-border bg-surface px-3 py-2 text-xs">
+      <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
+        <div className="flex min-w-0 items-start gap-2 text-fg">
+          <StateIcon
+            aria-hidden="true"
+            className={
+              isRunning
+                ? 'mt-0.5 size-3.5 shrink-0 animate-spin text-fg-muted motion-reduce:animate-none'
+                : `mt-0.5 size-3.5 shrink-0 ${stateClassName}`
+            }
+          />
+          <span className="min-w-0 break-words text-sm leading-[1.35]">{summary}</span>
+        </div>
+        <output aria-atomic="true" className={`shrink-0 text-xs sm:text-right ${stateClassName}`}>
+          <span aria-hidden="true">{toolStateLabel}</span>
+          <span className="sr-only">{`${summary}: ${toolStateLabel}`}</span>
+        </output>
+      </div>
+      {reauthServerId ? (
+        <ReconnectButton serverId={reauthServerId} serverName={reauthServerName} />
+      ) : null}
+      {needsApproval && approvalResponse ? (
+        <ToolApprovalCard
+          name={name}
+          approval={needsApproval}
+          input={input}
+          onApprovalResponse={approvalResponse}
+        />
+      ) : null}
+      {suggestion ? <InlineApprovalCard suggestion={suggestion} /> : null}
+      <ToolDetails name={name} state={state} input={input} output={output} />
+    </div>
+  );
+}
+
+interface ApprovalDetailsProps {
+  record: Record<string, unknown>;
+  reason: string | null;
+  timezone: string;
+  calendarEventId: string | null;
+  patch: object | null;
+  entityId: string | null;
+  survivorId: string | null;
+  mergedIds: string[];
+  field: string;
+}
+function toolStepPresentation(
+  state: string,
+  output: unknown,
+  name: string,
+  input: unknown,
+  approval: { id: string; approved?: boolean; reason?: string } | undefined,
+  onApprovalResponse:
+    ((input: { id: string; approved: boolean; reason?: string }) => void) | undefined,
+) {
   const isRunning =
     state === 'input-streaming' || state === 'input-available' || state === 'partial-call';
   const isApprovalPending = state === 'approval-requested';
@@ -830,38 +747,225 @@ export function ToolStep({ name, state, input, output, approval, onApprovalRespo
         ? CircleAlert
         : CircleCheck;
   const stateClassName = isError ? 'text-danger' : 'text-fg-muted';
+  return {
+    StateIcon,
+    isRunning,
+    stateClassName,
+    summary,
+    toolStateLabel,
+    reauthServerId,
+    reauthServerName,
+    needsApproval,
+    approvalResponse,
+    suggestion,
+  };
+}
+
+function approvalDetailsComponent(name: string) {
+  switch (name) {
+    case 'execute_object_create':
+      return ObjectCreateApproval;
+    case 'execute_calendar_create':
+      return CalendarCreateApproval;
+    case 'execute_calendar_update':
+      return CalendarUpdateApproval;
+    case 'execute_calendar_cancel':
+      return CalendarCancelApproval;
+    case 'execute_object_archive':
+      return ObjectArchiveApproval;
+    case 'execute_object_merge':
+      return ObjectMergeApproval;
+    default:
+      return ObjectFieldApproval;
+  }
+}
+
+function ObjectCreateApproval({ record, reason, timezone }: ApprovalDetailsProps) {
   return (
-    <div className="rounded-md border border-border bg-surface px-3 py-2 text-xs">
-      <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
-        <div className="flex min-w-0 items-start gap-2 text-fg">
-          <StateIcon
-            aria-hidden="true"
-            className={
-              isRunning
-                ? 'mt-0.5 size-3.5 shrink-0 animate-spin text-fg-muted motion-reduce:animate-none'
-                : `mt-0.5 size-3.5 shrink-0 ${stateClassName}`
-            }
+    <dl className="mt-2 grid gap-2 text-xs text-fg-muted">
+      <ApprovalRow label="Type">{formatApprovalValue(record.type ?? 'other')}</ApprovalRow>
+      <ApprovalRow label="Name">{formatApprovalValue(record.canonicalName)}</ApprovalRow>
+      {record.status !== undefined ? (
+        <ApprovalRow label="Status">{formatApprovalValue(record.status)}</ApprovalRow>
+      ) : null}
+      {record.stage !== undefined ? (
+        <ApprovalRow label="Stage">{formatApprovalValue(record.stage)}</ApprovalRow>
+      ) : null}
+      {record.priority !== undefined ? (
+        <ApprovalRow label="Priority">{formatApprovalValue(record.priority)}</ApprovalRow>
+      ) : null}
+      {record.dueAt !== undefined ? (
+        <ApprovalRow label="Due">
+          <DueDateDisplay
+            value={record.dueAt as string | null}
+            timezone={timezone}
+            variant="inline"
           />
-          <span className="min-w-0 break-words text-sm leading-[1.35]">{summary}</span>
-        </div>
-        <output aria-atomic="true" className={`shrink-0 text-xs sm:text-right ${stateClassName}`}>
-          <span aria-hidden="true">{toolStateLabel}</span>
-          <span className="sr-only">{`${summary}: ${toolStateLabel}`}</span>
-        </output>
-      </div>
-      {reauthServerId ? (
-        <ReconnectButton serverId={reauthServerId} serverName={reauthServerName} />
+        </ApprovalRow>
       ) : null}
-      {needsApproval && approvalResponse ? (
-        <ToolApprovalCard
-          name={name}
-          approval={needsApproval}
-          input={input}
-          onApprovalResponse={approvalResponse}
-        />
+      {Array.isArray(record.aliases) && record.aliases.length > 0 ? (
+        <ApprovalRow label="Aliases">{record.aliases.join(', ')}</ApprovalRow>
       ) : null}
-      {suggestion ? <InlineApprovalCard suggestion={suggestion} /> : null}
-      <ToolDetails name={name} state={state} input={input} output={output} />
-    </div>
+      {typeof record.parentObjectId === 'string' ? (
+        <ApprovalRow label="Parent">
+          <ArtifactReferenceChip refValue={{ kind: 'object', id: record.parentObjectId }} />
+        </ApprovalRow>
+      ) : null}
+      {reason ? <ApprovalRow label="Reason">{reason}</ApprovalRow> : null}
+    </dl>
+  );
+}
+
+function CalendarCreateApproval({ record, reason }: ApprovalDetailsProps) {
+  return (
+    <dl className="mt-2 grid gap-2 text-xs text-fg-muted">
+      <ApprovalRow label="Title">{formatApprovalValue(record.title)}</ApprovalRow>
+      {calendarToolRange(record) ? (
+        <ApprovalRow label="When">{calendarToolRange(record)}</ApprovalRow>
+      ) : (
+        <>
+          <ApprovalRow label="Start">{formatApprovalValue(record.startAt)}</ApprovalRow>
+          <ApprovalRow label="End">{formatApprovalValue(record.endAt)}</ApprovalRow>
+        </>
+      )}
+      {record.timezone !== undefined ? (
+        <ApprovalRow label="Timezone">{formatApprovalValue(record.timezone)}</ApprovalRow>
+      ) : null}
+      {record.allDay !== undefined ? (
+        <ApprovalRow label="All day">{formatApprovalValue(record.allDay)}</ApprovalRow>
+      ) : null}
+      {record.location !== undefined ? (
+        <ApprovalRow label="Location">{formatApprovalValue(record.location)}</ApprovalRow>
+      ) : null}
+      {record.rrule !== undefined ? (
+        <ApprovalRow label="Repeat">{formatApprovalValue(record.rrule)}</ApprovalRow>
+      ) : null}
+      {reason ? <ApprovalRow label="Reason">{reason}</ApprovalRow> : null}
+    </dl>
+  );
+}
+
+function CalendarUpdateApproval({ record, reason, calendarEventId, patch }: ApprovalDetailsProps) {
+  return (
+    <dl className="mt-2 grid gap-2 text-xs text-fg-muted">
+      {calendarEventId ? (
+        <ApprovalRow label="Event">
+          <ArtifactReferenceChip refValue={{ kind: 'calendar_event', id: calendarEventId }} />
+        </ApprovalRow>
+      ) : null}
+      {patch ? (
+        <>
+          {calendarToolRange(nestedRecord(record, 'expectedCurrent')) ? (
+            <ApprovalRow label="Current">
+              {calendarToolRange(nestedRecord(record, 'expectedCurrent'))}
+            </ApprovalRow>
+          ) : null}
+          {calendarToolRange({
+            ...nestedRecord(record, 'expectedCurrent'),
+            ...(patch as Record<string, unknown>),
+          }) ? (
+            <ApprovalRow label="Proposed">
+              {calendarToolRange({
+                ...nestedRecord(record, 'expectedCurrent'),
+                ...(patch as Record<string, unknown>),
+              })}
+            </ApprovalRow>
+          ) : null}
+          <ApprovalRow label="Change">
+            {Object.entries(patch)
+              .map(([key, value]) => `${key}: ${formatApprovalValue(value)}`)
+              .join(', ')}
+          </ApprovalRow>
+        </>
+      ) : null}
+      {reason ? <ApprovalRow label="Reason">{reason}</ApprovalRow> : null}
+    </dl>
+  );
+}
+
+function CalendarCancelApproval({ record, reason, calendarEventId }: ApprovalDetailsProps) {
+  return (
+    <dl className="mt-2 grid gap-2 text-xs text-fg-muted">
+      {calendarEventId ? (
+        <ApprovalRow label="Event">
+          <ArtifactReferenceChip refValue={{ kind: 'calendar_event', id: calendarEventId }} />
+        </ApprovalRow>
+      ) : null}
+      {calendarToolRange(nestedRecord(record, 'expectedCurrent')) ? (
+        <ApprovalRow label="When">
+          {calendarToolRange(nestedRecord(record, 'expectedCurrent'))}
+        </ApprovalRow>
+      ) : null}
+      {record.recurrenceEditMode !== undefined ? (
+        <ApprovalRow label="Scope">{formatApprovalValue(record.recurrenceEditMode)}</ApprovalRow>
+      ) : null}
+      {reason ? <ApprovalRow label="Reason">{reason}</ApprovalRow> : null}
+    </dl>
+  );
+}
+
+function ObjectArchiveApproval({ reason, entityId }: ApprovalDetailsProps) {
+  return (
+    <dl className="mt-2 grid gap-2 text-xs text-fg-muted">
+      {entityId ? (
+        <ApprovalRow label="Object">
+          <ArtifactReferenceChip refValue={{ kind: 'object', id: entityId }} />
+        </ApprovalRow>
+      ) : null}
+      {reason ? <ApprovalRow label="Reason">{reason}</ApprovalRow> : null}
+    </dl>
+  );
+}
+
+function ObjectMergeApproval({ reason, survivorId, mergedIds }: ApprovalDetailsProps) {
+  return (
+    <dl className="mt-2 grid gap-2 text-[11px] text-fg-muted">
+      {survivorId ? (
+        <ApprovalRow label="Keep">
+          <ArtifactReferenceChip refValue={{ kind: 'object', id: survivorId }} />
+        </ApprovalRow>
+      ) : null}
+      {mergedIds.length > 0 ? (
+        <ApprovalRow label="Merge">
+          <span className="flex flex-wrap gap-1">
+            {mergedIds.map((id) => (
+              <ArtifactReferenceChip key={id} refValue={{ kind: 'object', id }} />
+            ))}
+          </span>
+        </ApprovalRow>
+      ) : null}
+      {reason ? <ApprovalRow label="Reason">{reason}</ApprovalRow> : null}
+    </dl>
+  );
+}
+
+function ObjectFieldApproval({ record, reason, timezone, field }: ApprovalDetailsProps) {
+  return (
+    <dl className="mt-2 grid gap-1 text-xs text-fg-muted">
+      <ApprovalRow label="Field">{field}</ApprovalRow>
+      <ApprovalRow label="Current">
+        {field === 'dueAt' ? (
+          <DueDateDisplay
+            value={record.expectedCurrentValue as string | null}
+            timezone={timezone}
+            variant="inline"
+          />
+        ) : (
+          formatApprovalValue(record.expectedCurrentValue)
+        )}
+      </ApprovalRow>
+      <ApprovalRow label="Proposed">
+        {field === 'dueAt' ? (
+          <DueDateDisplay
+            value={record.newValue as string | null}
+            timezone={timezone}
+            variant="inline"
+          />
+        ) : (
+          formatApprovalValue(record.newValue)
+        )}
+      </ApprovalRow>
+      {reason ? <ApprovalRow label="Reason">{reason}</ApprovalRow> : null}
+    </dl>
   );
 }

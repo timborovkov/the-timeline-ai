@@ -55,28 +55,19 @@ export function WorkQueueRow({
   const [overlays, setOverlays] = useState<Partial<Record<EditableKey, EditableValue>>>({});
   const [saving, setSaving] = useState<EditableKey | null>(null);
 
-  const objectId = item.entityId;
-  const editable = item.source !== 'approval' && Boolean(objectId);
-  const status = String(overlays.status ?? item.status ?? '');
-  const assigneeUserId =
-    overlays.assigneeUserId === undefined
-      ? (item.assigneeUserId ?? null)
-      : (overlays.assigneeUserId as string | null);
-  const dueAt = toDateOrNull(
-    overlays.dueAt === undefined ? item.dueAt : (overlays.dueAt as Date | string | null),
-  );
-  const priority =
-    overlays.priority === undefined ? item.priority : (overlays.priority as number | null);
-  const assignee = members.find((member) => member.id === assigneeUserId);
-  const displayStatus = item.objectType === 'task' ? taskDisplayStatus(status) : status;
-  const statusOptions =
-    item.objectType === 'task'
-      ? uniqueStatuses([...TASK_STATUS_COLUMNS, displayStatus])
-      : statusOptionsForType(item.objectType ?? '', status);
-  const contextReasons = item.reasons.filter(
-    (reason) => reason !== 'overdue' && reason !== 'due_soon',
-  );
-  const context = item.subtitle ? displayText(item.subtitle) : undefined;
+  const {
+    objectId,
+    status,
+    assigneeUserId,
+    dueAt,
+    priority,
+    context,
+    contextReasons,
+    editable,
+    displayStatus,
+    statusOptions,
+    assignee,
+  } = workQueueRowValues(item, overlays, members);
 
   function save(key: EditableKey, value: EditableValue): void {
     if (!objectId) return;
@@ -142,109 +133,19 @@ export function WorkQueueRow({
             <ReasonBadge key={reason} reason={reason} />
           ))}
           {editable ? (
-            <>
-              <EditableMetadata
-                label={`Status for ${displayText(item.title)}`}
-                pending={saving === 'status'}
-              >
-                <EditableMetadata.Value>
-                  <CollectionStatus
-                    value={displayStatus}
-                    label={statusLabel(displayStatus)}
-                    tone={statusTone(displayStatus)}
-                  />
-                </EditableMetadata.Value>
-                <EditableMetadata.Editor>
-                  <select
-                    aria-label="Status"
-                    value={displayStatus}
-                    onChange={(event) => {
-                      save('status', event.currentTarget.value);
-                    }}
-                    className="h-10 w-full rounded-sm border border-border bg-bg px-2 text-xs"
-                  >
-                    {statusOptions.map((option) => (
-                      <option key={option} value={option}>
-                        {statusLabel(option)}
-                      </option>
-                    ))}
-                  </select>
-                </EditableMetadata.Editor>
-              </EditableMetadata>
-              <EditableMetadata
-                label={`Assignee for ${displayText(item.title)}`}
-                pending={saving === 'assigneeUserId'}
-              >
-                <EditableMetadata.Value>{assignee?.label ?? 'Unassigned'}</EditableMetadata.Value>
-                <EditableMetadata.Editor>
-                  <select
-                    aria-label="Assignee"
-                    value={assigneeUserId ?? ''}
-                    onChange={(event) => {
-                      save('assigneeUserId', event.currentTarget.value || null);
-                    }}
-                    className="h-10 w-full rounded-sm border border-border bg-bg px-2 text-xs"
-                  >
-                    <option value="">Unassigned</option>
-                    {members.map((member) => (
-                      <option key={member.id} value={member.id}>
-                        {member.label}
-                      </option>
-                    ))}
-                  </select>
-                </EditableMetadata.Editor>
-              </EditableMetadata>
-              {isSchedulableObjectType(item.objectType ?? '') || item.dueAt ? (
-                <EditableMetadata
-                  label={`Due date for ${displayText(item.title)}`}
-                  pending={saving === 'dueAt'}
-                >
-                  <EditableMetadata.Value>
-                    <DueDateDisplay value={dueAt} timezone={timezone} variant="compact" />
-                  </EditableMetadata.Value>
-                  <EditableMetadata.Editor>
-                    <MetadataDateEditor
-                      defaultValue={dateInputValue(dueAt)}
-                      onApply={(value) => {
-                        save('dueAt', value ? new Date(`${value}T00:00:00.000Z`) : null);
-                      }}
-                    />
-                  </EditableMetadata.Editor>
-                </EditableMetadata>
-              ) : null}
-              <EditableMetadata
-                label={`Priority for ${displayText(item.title)}`}
-                pending={saving === 'priority'}
-              >
-                <EditableMetadata.Value>
-                  <CollectionStatus
-                    value={priority ? `p${priority}` : 'none'}
-                    tone={priorityTone(priority)}
-                    label={priority ? `P${priority}` : 'No priority'}
-                  />
-                </EditableMetadata.Value>
-                <EditableMetadata.Editor>
-                  <select
-                    aria-label="Priority"
-                    value={priority ?? ''}
-                    onChange={(event) => {
-                      save(
-                        'priority',
-                        event.currentTarget.value ? Number(event.currentTarget.value) : null,
-                      );
-                    }}
-                    className="h-10 w-full rounded-sm border border-border bg-bg px-2 text-xs"
-                  >
-                    <option value="">None</option>
-                    {[1, 2, 3, 4].map((value) => (
-                      <option key={value} value={value}>
-                        P{value}
-                      </option>
-                    ))}
-                  </select>
-                </EditableMetadata.Editor>
-              </EditableMetadata>
-            </>
+            <WorkQueueEditableMetadata
+              item={item}
+              saving={saving}
+              displayStatus={displayStatus}
+              save={save}
+              statusOptions={statusOptions}
+              assignee={assignee}
+              assigneeUserId={assigneeUserId}
+              members={members}
+              dueAt={dueAt}
+              timezone={timezone}
+              priority={priority}
+            />
           ) : item.source !== 'approval' ? (
             <DueDateDisplay value={item.dueAt} timezone={timezone} variant="compact" />
           ) : null}
@@ -273,6 +174,185 @@ export function WorkQueueRow({
   );
 }
 
+function workQueueRowValues(
+  item: Omit<WorkQueueItem, 'dueAt' | 'updatedAt'> & {
+    dueAt: Date | string | null;
+    updatedAt: Date | string;
+  },
+  overlays: Partial<Record<EditableKey, EditableValue>>,
+  members: WorkQueueMemberOption[],
+) {
+  const objectId = item.entityId;
+  const editable = item.source !== 'approval' && Boolean(objectId);
+  const status = String(overlays.status ?? item.status ?? '');
+  const assigneeUserId =
+    overlays.assigneeUserId === undefined
+      ? (item.assigneeUserId ?? null)
+      : (overlays.assigneeUserId as string | null);
+  const dueAt = toDateOrNull(
+    overlays.dueAt === undefined ? item.dueAt : (overlays.dueAt as Date | string | null),
+  );
+  const priority =
+    overlays.priority === undefined ? item.priority : (overlays.priority as number | null);
+  const assignee = members.find((member) => member.id === assigneeUserId);
+  const displayStatus = item.objectType === 'task' ? taskDisplayStatus(status) : status;
+  const statusOptions =
+    item.objectType === 'task'
+      ? uniqueStatuses([...TASK_STATUS_COLUMNS, displayStatus])
+      : statusOptionsForType(item.objectType ?? '', status);
+  const contextReasons = item.reasons.filter(
+    (reason) => reason !== 'overdue' && reason !== 'due_soon',
+  );
+  const context = item.subtitle ? displayText(item.subtitle) : undefined;
+  return {
+    objectId,
+    status,
+    assigneeUserId,
+    dueAt,
+    priority,
+    context,
+    contextReasons,
+    editable,
+    displayStatus,
+    statusOptions,
+    assignee,
+  };
+}
+
+function WorkQueueEditableMetadata({
+  item,
+  saving,
+  displayStatus,
+  save,
+  statusOptions,
+  assignee,
+  assigneeUserId,
+  members,
+  dueAt,
+  timezone,
+  priority,
+}: {
+  item: Omit<WorkQueueItem, 'dueAt' | 'updatedAt'> & {
+    dueAt: Date | string | null;
+    updatedAt: Date | string;
+  };
+  saving: string | null;
+  displayStatus: string;
+  save: (key: EditableKey, value: EditableValue) => void;
+  statusOptions: string[];
+  assignee: WorkQueueMemberOption | undefined;
+  assigneeUserId: string | null;
+  members: WorkQueueMemberOption[];
+  dueAt: Date | null;
+  timezone: string;
+  priority: number | null;
+}) {
+  return (
+    <>
+      <EditableMetadata
+        label={`Status for ${displayText(item.title)}`}
+        pending={saving === 'status'}
+      >
+        <EditableMetadata.Value>
+          <CollectionStatus
+            value={displayStatus}
+            label={statusLabel(displayStatus)}
+            tone={statusTone(displayStatus)}
+          />
+        </EditableMetadata.Value>
+        <EditableMetadata.Editor>
+          <select
+            aria-label="Status"
+            value={displayStatus}
+            onChange={(event) => {
+              save('status', event.currentTarget.value);
+            }}
+            className="h-10 w-full rounded-sm border border-border bg-bg px-2 text-xs"
+          >
+            {statusOptions.map((option) => (
+              <option key={option} value={option}>
+                {statusLabel(option)}
+              </option>
+            ))}
+          </select>
+        </EditableMetadata.Editor>
+      </EditableMetadata>
+      <EditableMetadata
+        label={`Assignee for ${displayText(item.title)}`}
+        pending={saving === 'assigneeUserId'}
+      >
+        <EditableMetadata.Value>{assignee?.label ?? 'Unassigned'}</EditableMetadata.Value>
+        <EditableMetadata.Editor>
+          <select
+            aria-label="Assignee"
+            value={assigneeUserId ?? ''}
+            onChange={(event) => {
+              save('assigneeUserId', event.currentTarget.value || null);
+            }}
+            className="h-10 w-full rounded-sm border border-border bg-bg px-2 text-xs"
+          >
+            <option value="">Unassigned</option>
+            {members.map((member) => (
+              <option key={member.id} value={member.id}>
+                {member.label}
+              </option>
+            ))}
+          </select>
+        </EditableMetadata.Editor>
+      </EditableMetadata>
+      {isSchedulableObjectType(item.objectType ?? '') || item.dueAt ? (
+        <EditableMetadata
+          label={`Due date for ${displayText(item.title)}`}
+          pending={saving === 'dueAt'}
+        >
+          <EditableMetadata.Value>
+            <DueDateDisplay value={dueAt} timezone={timezone} variant="compact" />
+          </EditableMetadata.Value>
+          <EditableMetadata.Editor>
+            <MetadataDateEditor
+              defaultValue={dateInputValue(dueAt)}
+              onApply={(value) => {
+                save('dueAt', value ? new Date(`${value}T00:00:00.000Z`) : null);
+              }}
+            />
+          </EditableMetadata.Editor>
+        </EditableMetadata>
+      ) : null}
+      <EditableMetadata
+        label={`Priority for ${displayText(item.title)}`}
+        pending={saving === 'priority'}
+      >
+        <EditableMetadata.Value>
+          <CollectionStatus
+            value={priority ? `p${priority}` : 'none'}
+            tone={priorityTone(priority)}
+            label={priority ? `P${priority}` : 'No priority'}
+          />
+        </EditableMetadata.Value>
+        <EditableMetadata.Editor>
+          <select
+            aria-label="Priority"
+            value={priority ?? ''}
+            onChange={(event) => {
+              save(
+                'priority',
+                event.currentTarget.value ? Number(event.currentTarget.value) : null,
+              );
+            }}
+            className="h-10 w-full rounded-sm border border-border bg-bg px-2 text-xs"
+          >
+            <option value="">None</option>
+            {[1, 2, 3, 4].map((value) => (
+              <option key={value} value={value}>
+                P{value}
+              </option>
+            ))}
+          </select>
+        </EditableMetadata.Editor>
+      </EditableMetadata>
+    </>
+  );
+}
 function ReasonBadge({ reason }: { reason: WorkQueueReason }) {
   const tone = reasonTone(reason);
   return (

@@ -433,6 +433,7 @@ function IntegrationVisibilityForm({
   ).join(',')}`;
   const [selectedVisibility, setSelectedVisibility] = useState(integration.visibilityDefault);
 
+  const selectedMemberIds = new Set(integration.visibilityDefaultUserIds ?? []);
   return (
     <form key={formKey} action={action} className="mt-2 flex flex-wrap items-center gap-2 text-xs">
       <input type="hidden" name="id" value={integration.id} />
@@ -461,7 +462,7 @@ function IntegrationVisibilityForm({
                 type="checkbox"
                 name="visibilityUserIds"
                 value={m.id}
-                defaultChecked={integration.visibilityDefaultUserIds?.includes(m.id) ?? false}
+                defaultChecked={selectedMemberIds.has(m.id)}
               />
               {m.label}
             </label>

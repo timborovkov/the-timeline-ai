@@ -219,6 +219,7 @@ export function DocumentDetail({
     }
   }
 
+  const downloadingIds = new Set(downloading);
   return (
     <div className="space-y-5">
       <Breadcrumb
@@ -292,7 +293,7 @@ export function DocumentDetail({
           chunks={activeVersionChunks}
           isCurrentVersion={activeVersion.id === currentDocument.currentVersionId}
           onDownload={onDownload}
-          downloading={downloading.includes(activeVersion.id)}
+          downloading={downloadingIds.has(activeVersion.id)}
         />
       ) : null}
 
@@ -362,10 +363,10 @@ export function DocumentDetail({
                       onClick={() => {
                         void onDownload(v.id);
                       }}
-                      disabled={downloading.includes(v.id)}
+                      disabled={downloadingIds.has(v.id)}
                     >
                       <Download className="mr-1 size-3.5" />
-                      {downloading.includes(v.id) ? 'Opening…' : 'Download'}
+                      {downloadingIds.has(v.id) ? 'Opening…' : 'Download'}
                     </Button>
                   </div>
                 </li>

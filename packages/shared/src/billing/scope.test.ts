@@ -6,7 +6,7 @@ import {
   teamBillingAccounts,
   type Db,
 } from '@timeline/db';
-import { expect } from '@timeline/test-support';
+import { expect, vi } from '@timeline/test-support';
 import { afterEach, beforeEach, describe, it } from 'bun:test';
 import { and, eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
@@ -58,6 +58,7 @@ afterEach(async () => {
   delete process.env.POLAR_PRODUCT_ID_ENTERPRISE;
   resetEnvForTests();
   await pg.close();
+  vi.setSystemTime();
 });
 
 const POLAR_PRODUCT_IDS = {
@@ -711,6 +712,8 @@ describe('billing scope', () => {
   });
 
   it('counts only the current-month slice of a pending Recall reservation', async () => {
+    // Keep the session within its intended month regardless of the wall clock.
+    vi.setSystemTime(new Date('2026-10-20T12:00:00.000Z'));
     const scope = createBillingScope({
       db,
       teamId: TEAM_ID,
@@ -1616,6 +1619,8 @@ describe('billing scope', () => {
   });
 
   it('prices recovered reservations on the plan that admitted them', async () => {
+    // Keep the session within its intended month regardless of the wall clock.
+    vi.setSystemTime(new Date('2026-10-20T12:00:00.000Z'));
     const scope = createBillingScope({
       db,
       teamId: TEAM_ID,
@@ -1944,6 +1949,8 @@ describe('billing scope', () => {
   });
 
   it('ingests PAYG overage above the Free floor onto the Polar invoice', async () => {
+    // Keep the session within its intended month regardless of the wall clock.
+    vi.setSystemTime(new Date('2026-10-20T12:00:00.000Z'));
     const provider = createFakeBillingProvider();
     const scope = createBillingScope({
       db,
@@ -2452,6 +2459,8 @@ describe('billing scope', () => {
   });
 
   it('enforces the spend cap on the local charge for every plan, comp, and Enterprise combination', async () => {
+    // Keep the session within its intended month regardless of the wall clock.
+    vi.setSystemTime(new Date('2026-10-20T12:00:00.000Z'));
     const scope = createBillingScope({
       db,
       teamId: TEAM_ID,

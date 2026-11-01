@@ -1,13 +1,29 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useSyncExternalStore } from 'react';
 
 import styles from '@/app/(landing)/home.module.css';
 
+function subscribeReducedMotion(onChange: () => void) {
+  const preference = window.matchMedia('(prefers-reduced-motion: reduce)');
+  preference.addEventListener('change', onChange);
+  return () => {
+    preference.removeEventListener('change', onChange);
+  };
+}
+
+function prefersReducedMotion() {
+  return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+}
+
 export function HomeMotion() {
+  const reducedMotion = useSyncExternalStore(
+    subscribeReducedMotion,
+    prefersReducedMotion,
+    () => true,
+  );
   useEffect(() => {
     const root = document.querySelector<HTMLElement>('[data-home-root]');
-    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
     const motionReadyClass = styles.motionReady;
     const visibleClass = styles.visible;
 
@@ -24,94 +40,73 @@ export function HomeMotion() {
       }
     };
 
-    let disposeMotion = () => undefined;
-
-    const startMotion = () => {
-      if (reduceMotion.matches) {
-        root.classList.remove(motionReadyClass);
-        for (const diagram of root.querySelectorAll<HTMLElement>('[data-home-diagram]')) {
-          diagram.classList.remove(visibleClass);
-          setFlowMotion(diagram, false);
-        }
-        return;
+    if (reducedMotion) {
+      root.classList.remove(motionReadyClass);
+      for (const diagram of root.querySelectorAll<HTMLElement>('[data-home-diagram]')) {
+        diagram.classList.remove(visibleClass);
+        setFlowMotion(diagram, false);
       }
+      return;
+    }
 
-      root.classList.add(motionReadyClass);
-
-      const revealNodes = [...root.querySelectorAll<HTMLElement>('[data-home-reveal]')];
-      const activeNodes = [...root.querySelectorAll<HTMLElement>('[data-home-diagram]')];
-      for (const node of activeNodes) setFlowMotion(node, false);
-
-      const revealObserver = new IntersectionObserver(
-        (entries) => {
-          for (const entry of entries) {
-            if (!entry.isIntersecting) continue;
-            entry.target.classList.add(visibleClass);
-            revealObserver.unobserve(entry.target);
-          }
-        },
-        { rootMargin: '0px 0px -12% 0px', threshold: 0.08 },
-      );
-      const activeObserver = new IntersectionObserver(
-        (entries) => {
-          for (const entry of entries) {
-            const diagram = entry.target as HTMLElement;
-            const wasVisible = diagram.classList.contains(visibleClass);
-            diagram.classList.toggle(visibleClass, entry.isIntersecting);
-            setFlowMotion(diagram, entry.isIntersecting, entry.isIntersecting && !wasVisible);
-          }
-        },
-        { rootMargin: '-4% 0px -4% 0px', threshold: 0.06 },
-      );
-
-      for (const node of revealNodes) revealObserver.observe(node);
-      for (const node of activeNodes) activeObserver.observe(node);
-
-      let frame = 0;
-      const updateProgress = () => {
-        frame = 0;
-        const distance = document.documentElement.scrollHeight - window.innerHeight;
-        const ratio = distance > 0 ? Math.min(1, Math.max(0, window.scrollY / distance)) : 0;
-        root.style.setProperty('--home-progress', String(ratio));
-      };
-      const requestProgress = () => {
-        if (frame) return;
-        frame = window.requestAnimationFrame(updateProgress);
-      };
-
-      window.addEventListener('scroll', requestProgress, { passive: true });
-      window.addEventListener('resize', requestProgress);
-      updateProgress();
-
-      disposeMotion = () => {
-        revealObserver.disconnect();
-        activeObserver.disconnect();
-        window.removeEventListener('scroll', requestProgress);
-        window.removeEventListener('resize', requestProgress);
-        if (frame) window.cancelAnimationFrame(frame);
-        for (const node of activeNodes) {
-          node.classList.remove(visibleClass);
-          setFlowMotion(node, false);
+    const revealNodes = [...root.querySelectorAll<HTMLElement>('[data-home-reveal]')];
+    const activeNodes = [...root.querySelectorAll<HTMLElement>('[data-home-diagram]')];
+    const revealObserver = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (!entry.isIntersecting) continue;
+          entry.target.classList.add(visibleClass);
+          revealObserver.unobserve(entry.target);
         }
-        root.classList.remove(motionReadyClass);
-        root.style.removeProperty('--home-progress');
-      };
+      },
+      { rootMargin: '0px 0px -12% 0px', threshold: 0.08 },
+    );
+    const activeObserver = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          const diagram = entry.target as HTMLElement;
+          const wasVisible = diagram.classList.contains(visibleClass);
+          diagram.classList.toggle(visibleClass, entry.isIntersecting);
+          setFlowMotion(diagram, entry.isIntersecting, entry.isIntersecting && !wasVisible);
+        }
+      },
+      { rootMargin: '-4% 0px -4% 0px', threshold: 0.06 },
+    );
+
+    let frame = 0;
+    const updateProgress = () => {
+      frame = 0;
+      const distance = document.documentElement.scrollHeight - window.innerHeight;
+      const ratio = distance > 0 ? Math.min(1, Math.max(0, window.scrollY / distance)) : 0;
+      root.style.setProperty('--home-progress', String(ratio));
+    };
+    const requestProgress = () => {
+      if (frame) return;
+      frame = window.requestAnimationFrame(updateProgress);
     };
 
-    const restartForPreference = () => {
-      disposeMotion();
-      disposeMotion = () => undefined;
-      startMotion();
-    };
-
-    reduceMotion.addEventListener('change', restartForPreference);
-    startMotion();
+    root.classList.add(motionReadyClass);
+    for (const node of activeNodes) setFlowMotion(node, false);
+    for (const node of revealNodes) revealObserver.observe(node);
+    for (const node of activeNodes) activeObserver.observe(node);
+    window.addEventListener('scroll', requestProgress, { passive: true });
+    window.addEventListener('resize', requestProgress);
+    updateProgress();
 
     return () => {
-      reduceMotion.removeEventListener('change', restartForPreference);
-      disposeMotion();
+      revealObserver.disconnect();
+      activeObserver.disconnect();
+      window.removeEventListener('scroll', requestProgress);
+      window.removeEventListener('resize', requestProgress);
+      if (frame) window.cancelAnimationFrame(frame);
+      for (const node of activeNodes) {
+        node.classList.remove(visibleClass);
+        setFlowMotion(node, false);
+      }
+      root.classList.remove(motionReadyClass);
+      root.style.removeProperty('--home-progress');
     };
-  }, []);
+  }, [reducedMotion]);
 
   return null;
 }

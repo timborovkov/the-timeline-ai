@@ -25,27 +25,8 @@ export default async function InboxPage({
 }: {
   searchParams: Promise<{ unread?: string }>;
 }) {
-  const session = await auth();
-  if (!session?.user) redirect('/sign-in');
-  const { active } = await resolveActiveTeam(session.user.id);
-  if (!active) redirect('/sign-in');
-
-  const scope = withTeam(db, active.teamId, session.user.id);
-  const params = await searchParams;
-  const unreadOnly = params.unread === '1';
-
-  const [rows, totalCount, unreadCount] = await Promise.all([
-    scope.objects.listNotifications({
-      unreadOnly,
-      limit: INBOX_PAGE_SIZE + 1,
-      offset: 0,
-    }),
-    scope.objects.notificationCount(),
-    scope.objects.notificationCount({ unreadOnly: true }),
-  ]);
-  const pageRows = rows.slice(0, INBOX_PAGE_SIZE);
-  const matchingCount = unreadOnly ? unreadCount : totalCount;
-
+  const { totalCount, unreadCount, unreadOnly, pageRows, rows, matchingCount } =
+    await loadInboxPage({ searchParams });
   return (
     <div className="space-y-6">
       <HistoryBackLink fallbackHref="/app" label="Back" />
@@ -63,22 +44,7 @@ export default async function InboxPage({
         <MarkAllReadButton hasUnread={unreadCount > 0} />
       </div>
 
-      <nav aria-label="Filter notifications" className="flex flex-wrap gap-1.5 text-sm">
-        <Link
-          href="/app/inbox"
-          aria-current={!unreadOnly ? 'page' : undefined}
-          className={`inline-flex min-h-9 items-center rounded-sm border px-2.5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong focus-visible:ring-offset-2 focus-visible:ring-offset-bg ${!unreadOnly ? 'border-signal/40 bg-signal-soft text-signal' : 'border-border text-fg-muted hover:bg-surface-2 hover:text-fg'}`}
-        >
-          All
-        </Link>
-        <Link
-          href="/app/inbox?unread=1"
-          aria-current={unreadOnly ? 'page' : undefined}
-          className={`inline-flex min-h-9 items-center rounded-sm border px-2.5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong focus-visible:ring-offset-2 focus-visible:ring-offset-bg ${unreadOnly ? 'border-signal/40 bg-signal-soft text-signal' : 'border-border text-fg-muted hover:bg-surface-2 hover:text-fg'}`}
-        >
-          Unread
-        </Link>
-      </nav>
+      {<InboxFilters unreadOnly={unreadOnly} />}
 
       {pageRows.length === 0 ? (
         <EmptyState
@@ -112,4 +78,49 @@ export default async function InboxPage({
       )}
     </div>
   );
+}
+
+function InboxFilters({ unreadOnly }: { unreadOnly: boolean }) {
+  return (
+    <nav aria-label="Filter notifications" className="flex flex-wrap gap-1.5 text-sm">
+      <Link
+        href="/app/inbox"
+        aria-current={!unreadOnly ? 'page' : undefined}
+        className={`inline-flex min-h-9 items-center rounded-sm border px-2.5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong focus-visible:ring-offset-2 focus-visible:ring-offset-bg ${!unreadOnly ? 'border-signal/40 bg-signal-soft text-signal' : 'border-border text-fg-muted hover:bg-surface-2 hover:text-fg'}`}
+      >
+        All
+      </Link>
+      <Link
+        href="/app/inbox?unread=1"
+        aria-current={unreadOnly ? 'page' : undefined}
+        className={`inline-flex min-h-9 items-center rounded-sm border px-2.5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong focus-visible:ring-offset-2 focus-visible:ring-offset-bg ${unreadOnly ? 'border-signal/40 bg-signal-soft text-signal' : 'border-border text-fg-muted hover:bg-surface-2 hover:text-fg'}`}
+      >
+        Unread
+      </Link>
+    </nav>
+  );
+}
+async function loadInboxPage({ searchParams }: { searchParams: Promise<{ unread?: string }> }) {
+  const session = await auth();
+  if (!session?.user) redirect('/sign-in');
+  const { active } = await resolveActiveTeam(session.user.id);
+  if (!active) redirect('/sign-in');
+
+  const scope = withTeam(db, active.teamId, session.user.id);
+  const params = await searchParams;
+  const unreadOnly = params.unread === '1';
+
+  const [rows, totalCount, unreadCount] = await Promise.all([
+    scope.objects.listNotifications({
+      unreadOnly,
+      limit: INBOX_PAGE_SIZE + 1,
+      offset: 0,
+    }),
+    scope.objects.notificationCount(),
+    scope.objects.notificationCount({ unreadOnly: true }),
+  ]);
+  const pageRows = rows.slice(0, INBOX_PAGE_SIZE);
+  const matchingCount = unreadOnly ? unreadCount : totalCount;
+
+  return { totalCount, unreadCount, unreadOnly, pageRows, rows, matchingCount };
 }

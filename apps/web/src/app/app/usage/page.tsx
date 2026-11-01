@@ -25,27 +25,7 @@ export const metadata: Metadata = {
 };
 
 export default async function UsagePage() {
-  const session = await auth();
-  if (!session?.user) redirect('/sign-in');
-  const { active } = await resolveActiveTeam(session.user.id);
-  if (!active) redirect('/sign-in');
-
-  const scope = withTeam(db, active.teamId, session.user.id);
-  const role = await scope.requireMembership();
-  const canManage = role === 'owner' || role === 'admin';
-  const dashboard = await scope.billing.getDashboard({ canManageBilling: canManage });
-  const commercial = resolveTeamCommercialTerms(dashboard.account);
-  const planId = commercial.planId;
-  const state = customerBillingState({
-    planId,
-    billingState: dashboard.account.billingState,
-    costBearingPaused: dashboard.costBearingPaused,
-    freeRemaining: dashboard.freeRemaining,
-    spendCapCents: dashboard.account.spendCapCents,
-    meteredSpendCents: dashboard.meteredSpendCents,
-    warnPercent: dashboard.utilization.percent,
-  });
-  const notice = state ? BILLING_NOTICE_TITLE[state] : null;
+  const { canManage, planId, dashboard, notice, state, active, commercial } = await loadUsagePage();
 
   if (!canManage) {
     const meterNotice =
@@ -79,23 +59,7 @@ export default async function UsagePage() {
       {dashboard.restrictionReason ? (
         <BillingRestrictionNotice reason={dashboard.restrictionReason} />
       ) : notice ? (
-        <BillingStateBanner title={notice}>
-          {state === 'spend_cap' ? (
-            <Link
-              href="/app/team?section=billing#billing-spend-cap"
-              className="text-sm font-medium text-fg underline-offset-4 hover:underline"
-            >
-              Raise cap
-            </Link>
-          ) : state === 'payment_failed' ? (
-            <Link
-              href="/app/team?section=billing"
-              className="text-sm font-medium text-fg underline-offset-4 hover:underline"
-            >
-              Update payment method
-            </Link>
-          ) : null}
-        </BillingStateBanner>
+        <UsageBillingNotice notice={notice} state={state} />
       ) : null}
       {dashboard.presentation ? <BillingBenefitsSummary summary={dashboard.presentation} /> : null}
       <BillingUsageSummary
@@ -109,4 +73,51 @@ export default async function UsagePage() {
       />
     </div>
   );
+}
+
+function UsageBillingNotice({ notice, state }: { notice: string; state: string | null }) {
+  return (
+    <BillingStateBanner title={notice}>
+      {state === 'spend_cap' ? (
+        <Link
+          href="/app/team?section=billing#billing-spend-cap"
+          className="text-sm font-medium text-fg underline-offset-4 hover:underline"
+        >
+          Raise cap
+        </Link>
+      ) : state === 'payment_failed' ? (
+        <Link
+          href="/app/team?section=billing"
+          className="text-sm font-medium text-fg underline-offset-4 hover:underline"
+        >
+          Update payment method
+        </Link>
+      ) : null}
+    </BillingStateBanner>
+  );
+}
+async function loadUsagePage() {
+  const session = await auth();
+  if (!session?.user) redirect('/sign-in');
+  const { active } = await resolveActiveTeam(session.user.id);
+  if (!active) redirect('/sign-in');
+
+  const scope = withTeam(db, active.teamId, session.user.id);
+  const role = await scope.requireMembership();
+  const canManage = role === 'owner' || role === 'admin';
+  const dashboard = await scope.billing.getDashboard({ canManageBilling: canManage });
+  const commercial = resolveTeamCommercialTerms(dashboard.account);
+  const planId = commercial.planId;
+  const state = customerBillingState({
+    planId,
+    billingState: dashboard.account.billingState,
+    costBearingPaused: dashboard.costBearingPaused,
+    freeRemaining: dashboard.freeRemaining,
+    spendCapCents: dashboard.account.spendCapCents,
+    meteredSpendCents: dashboard.meteredSpendCents,
+    warnPercent: dashboard.utilization.percent,
+  });
+  const notice = state ? BILLING_NOTICE_TITLE[state] : null;
+
+  return { canManage, planId, dashboard, notice, state, active, commercial };
 }

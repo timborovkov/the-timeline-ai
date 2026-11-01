@@ -7,6 +7,8 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useMemo, useReducer, useRef, useState, useTransition } from 'react';
 
+import type { JSX } from 'react';
+
 import { loadSuggestionsPageAction } from '@/app/actions/collection-pages';
 import {
   acceptSuggestionItemAction,
@@ -764,9 +766,10 @@ export function ApprovalsClient({
           run: action,
         });
         if (result.error) {
+          const optimisticIds = new Set(optimisticItemIds);
           const failedItemIds =
             'failedItemIds' in result
-              ? (result.failedItemIds ?? []).filter((id) => optimisticItemIds.includes(id))
+              ? (result.failedItemIds ?? []).filter((id) => optimisticIds.has(id))
               : [];
           const restoreItemIds = failedItemIds.length > 0 ? failedItemIds : optimisticItemIds;
           restoreItems(restoreItemIds);
@@ -898,6 +901,36 @@ export function ApprovalsClient({
   if (!folded) return body;
 
   return (
+    <FoldedApprovals
+      folded={folded}
+      visiblePendingItemCount={visiblePendingItemCount}
+      body={body}
+    />
+  );
+}
+
+function FoldedApprovals({
+  folded,
+  visiblePendingItemCount,
+  body,
+}: {
+  folded: {
+    title: string;
+    summary: {
+      singular: string;
+      plural: string;
+    };
+    className: string;
+    summaryClassName?: string;
+    bodyClassName?: string;
+    titleClassName?: string;
+    countClassName?: string;
+    openLabelClassName?: string;
+  };
+  visiblePendingItemCount: number;
+  body: JSX.Element;
+}) {
+  return (
     <details className={folded.className}>
       <summary className={folded.summaryClassName ?? 'cursor-pointer list-none'}>
         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -914,7 +947,6 @@ export function ApprovalsClient({
     </details>
   );
 }
-
 function decisionMessages(
   kind: 'accept' | 'reject',
   count: number,
@@ -973,34 +1005,21 @@ function ApprovalListBody({
   onClearSelection: () => void;
 }) {
   const selectable = allowBulkAccept || allowBulkReject;
-  const selectedItems: SuggestionItem[] = [];
-  const selectedAccept: SuggestionItem[] = [];
-  const selectedByBundle: { suggestionId: string; itemIds: string[] }[] = [];
-  const selectedAcceptByBundle: { suggestionId: string; itemIds: string[] }[] = [];
-  const actionableIds: string[] = [];
-  for (const bundle of visibleSuggestions) {
-    const bundleItemIds: string[] = [];
-    const acceptItemIds: string[] = [];
-    for (const item of bundle.items) {
-      if (!isActionableSuggestionStatus(item.status)) continue;
-      actionableIds.push(item.id);
-      if (!selectedIds.has(item.id)) continue;
-      selectedItems.push(item);
-      bundleItemIds.push(item.id);
-      if (item.targetKind !== 'object_merge' && item.evidenceStatus !== 'stale') {
-        selectedAccept.push(item);
-        acceptItemIds.push(item.id);
-      }
-    }
-    if (bundleItemIds.length > 0) {
-      selectedByBundle.push({ suggestionId: bundle.id, itemIds: bundleItemIds });
-    }
-    if (acceptItemIds.length > 0) {
-      selectedAcceptByBundle.push({ suggestionId: bundle.id, itemIds: acceptItemIds });
-    }
-  }
-  const allVisibleSelected =
-    actionableIds.length > 0 && actionableIds.every((id) => selectedIds.has(id));
+  const {
+    selectedItems,
+    selectedByBundle,
+    selectedAccept,
+    selectedAcceptByBundle,
+    actionableIds,
+    allVisibleSelected,
+  }: {
+    selectedItems: SuggestionItem[];
+    selectedByBundle: { suggestionId: string; itemIds: string[] }[];
+    selectedAccept: SuggestionItem[];
+    selectedAcceptByBundle: { suggestionId: string; itemIds: string[] }[];
+    actionableIds: string[];
+    allVisibleSelected: boolean;
+  } = approvalSelection(visibleSuggestions, selectedIds);
 
   return (
     <div className="space-y-0">
@@ -1010,50 +1029,16 @@ function ApprovalListBody({
         </p>
       ) : null}
       {selectable ? (
-        <SelectionBar
-          count={selectedItems.length}
-          label={selectedItems.length === 1 ? 'proposal selected' : 'proposals selected'}
-          onClear={onClearSelection}
-          actions={
-            <>
-              {allowBulkReject ? (
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="ghost"
-                  disabled={pending || selectedItems.length === 0}
-                  onClick={() => {
-                    run(
-                      () => rejectVisibleSuggestionsAction({ suggestions: selectedByBundle }),
-                      selectedItems.map((item) => item.id),
-                      decisionMessages('reject', selectedItems.length),
-                    );
-                  }}
-                >
-                  <X className="size-4" />
-                  Reject
-                </Button>
-              ) : null}
-              {allowBulkAccept ? (
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="ghost"
-                  disabled={pending || selectedAccept.length === 0}
-                  onClick={() => {
-                    run(
-                      () => acceptVisibleSuggestionsAction({ suggestions: selectedAcceptByBundle }),
-                      selectedAccept.map((item) => item.id),
-                      decisionMessages('accept', selectedAccept.length),
-                    );
-                  }}
-                >
-                  <Check className="size-4" />
-                  Accept
-                </Button>
-              ) : null}
-            </>
-          }
+        <ApprovalSelectionBar
+          selectedItems={selectedItems}
+          onClearSelection={onClearSelection}
+          allowBulkReject={allowBulkReject}
+          pending={pending}
+          run={run}
+          selectedByBundle={selectedByBundle}
+          allowBulkAccept={allowBulkAccept}
+          selectedAccept={selectedAccept}
+          selectedAcceptByBundle={selectedAcceptByBundle}
         />
       ) : null}
       {pending && visibleSuggestions.length === 0 ? <ApprovalUpdatingState /> : null}
@@ -1104,6 +1089,114 @@ function ApprovalListBody({
       />
     </div>
   );
+}
+
+function ApprovalSelectionBar({
+  selectedItems,
+  onClearSelection,
+  allowBulkReject,
+  pending,
+  run,
+  selectedByBundle,
+  allowBulkAccept,
+  selectedAccept,
+  selectedAcceptByBundle,
+}: {
+  selectedItems: SuggestionItem[];
+  onClearSelection: () => void;
+  allowBulkReject: boolean;
+  pending: boolean;
+  run: ApprovalAction;
+  selectedByBundle: { suggestionId: string; itemIds: string[] }[];
+  allowBulkAccept: boolean;
+  selectedAccept: SuggestionItem[];
+  selectedAcceptByBundle: { suggestionId: string; itemIds: string[] }[];
+}) {
+  return (
+    <SelectionBar
+      count={selectedItems.length}
+      label={selectedItems.length === 1 ? 'proposal selected' : 'proposals selected'}
+      onClear={onClearSelection}
+      actions={
+        <>
+          {allowBulkReject ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              disabled={pending || selectedItems.length === 0}
+              onClick={() => {
+                run(
+                  () => rejectVisibleSuggestionsAction({ suggestions: selectedByBundle }),
+                  selectedItems.map((item) => item.id),
+                  decisionMessages('reject', selectedItems.length),
+                );
+              }}
+            >
+              <X className="size-4" />
+              Reject
+            </Button>
+          ) : null}
+          {allowBulkAccept ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              disabled={pending || selectedAccept.length === 0}
+              onClick={() => {
+                run(
+                  () => acceptVisibleSuggestionsAction({ suggestions: selectedAcceptByBundle }),
+                  selectedAccept.map((item) => item.id),
+                  decisionMessages('accept', selectedAccept.length),
+                );
+              }}
+            >
+              <Check className="size-4" />
+              Accept
+            </Button>
+          ) : null}
+        </>
+      }
+    />
+  );
+}
+function approvalSelection(visibleSuggestions: SuggestionBundle[], selectedIds: Set<string>) {
+  const selectedItems: SuggestionItem[] = [];
+  const selectedAccept: SuggestionItem[] = [];
+  const selectedByBundle: { suggestionId: string; itemIds: string[] }[] = [];
+  const selectedAcceptByBundle: { suggestionId: string; itemIds: string[] }[] = [];
+  const actionableIds: string[] = [];
+  for (const bundle of visibleSuggestions) {
+    const bundleItemIds: string[] = [];
+    const acceptItemIds: string[] = [];
+    for (const item of bundle.items) {
+      if (!isActionableSuggestionStatus(item.status)) continue;
+      actionableIds.push(item.id);
+      if (!selectedIds.has(item.id)) continue;
+      selectedItems.push(item);
+      bundleItemIds.push(item.id);
+      if (item.targetKind !== 'object_merge' && item.evidenceStatus !== 'stale') {
+        selectedAccept.push(item);
+        acceptItemIds.push(item.id);
+      }
+    }
+    if (bundleItemIds.length > 0) {
+      selectedByBundle.push({ suggestionId: bundle.id, itemIds: bundleItemIds });
+    }
+    if (acceptItemIds.length > 0) {
+      selectedAcceptByBundle.push({ suggestionId: bundle.id, itemIds: acceptItemIds });
+    }
+  }
+  const allVisibleSelected =
+    actionableIds.length > 0 && actionableIds.every((id) => selectedIds.has(id));
+  return {
+    selectedItems,
+    selectedByBundle,
+    selectedAccept,
+    selectedAcceptByBundle,
+    actionableIds,
+    allVisibleSelected,
+  };
 }
 
 function ApprovalUpdatingState() {

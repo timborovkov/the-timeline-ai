@@ -4,6 +4,7 @@ import { withTeam } from '@timeline/shared/team-scope';
 import { inArray } from 'drizzle-orm';
 import { notFound, redirect } from 'next/navigation';
 
+import type { ObjectRow } from '@timeline/shared/objects';
 import type { Metadata } from 'next';
 
 import { BoardDetailClient } from '@/components/boards/board-detail-client';
@@ -52,6 +53,87 @@ function itemParam(value: string | string[] | undefined): string | null {
 }
 
 export default async function BoardDetailPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const {
+    categoryFilterBaseline,
+    board,
+    filters,
+    view,
+    initialCandidates,
+    projectOptions,
+    firstLaneId,
+    selectedServerItemId,
+    selectedObjectDetail,
+    session,
+    history,
+    memberOptions,
+    activeFilters,
+    filterParams,
+  } = await loadBoardDetailPage({ params, searchParams });
+  return (
+    <div
+      data-app-layout="full-bleed"
+      className="-mx-4 -my-6 flex h-[calc(100dvh-3rem)] min-w-0 flex-col md:-mx-8 md:-my-8"
+    >
+      {categoryFilterBaseline ? (
+        <TaskCategoryFilterRefresh
+          surface="board"
+          boardId={board.id}
+          filters={filters}
+          baselineToken={categoryFilterBaseline.token}
+        />
+      ) : null}
+      <BoardDetailClient
+        boardId={board.id}
+        boardName={board.name}
+        purpose={board.purpose}
+        pinned={board.pinned}
+        itemCount={board.itemCount}
+        view={view}
+        lanes={board.lanes}
+        initialItems={board.items}
+        initialCandidates={initialCandidates}
+        projectOptions={projectOptions}
+        recommendedTypes={board.recommendedObjectTypes}
+        defaultLaneId={firstLaneId}
+        selectedItemId={selectedServerItemId}
+        selectedObjectContext={selectedObjectDetail?.connectedWork ?? null}
+        selectedObjectNotes={selectedObjectDetail?.notes ?? []}
+        selectedObjectRecentChanges={selectedObjectDetail?.recentChanges ?? []}
+        selectedObjectRelationships={selectedObjectDetail?.relationships ?? []}
+        selectedObjectType={selectedObjectDetail?.type ?? null}
+        currentUserId={session.user.id}
+        history={history}
+        members={memberOptions}
+        filters={filters}
+        activeFilters={activeFilters}
+        filterParams={filterParams}
+        typeLabels={OBJECT_TYPE_LABELS}
+      />
+    </div>
+  );
+}
+
+function boardCandidateOptions(addItemCandidates: ObjectRow[], projectRows: ObjectRow[]) {
+  const initialCandidates: typeof addItemCandidates = [];
+  for (const candidate of addItemCandidates) {
+    if (!candidate.archivedAt) initialCandidates.push(candidate);
+  }
+  const projectOptions: { id: string; label: string }[] = [];
+  for (const row of projectRows) {
+    if (row.type === 'project') {
+      projectOptions.push({ id: row.id, label: row.canonicalName });
+    }
+  }
+  return { initialCandidates, projectOptions };
+}
+
+async function loadBoardDetailPage({
   params,
   searchParams,
 }: {
@@ -130,57 +212,28 @@ export default async function BoardDetailPage({
   const firstLaneId = board.lanes.find((lane) => !lane.archivedAt)?.id ?? null;
   const activeFilters = hasActiveWorkFilters(filters);
   const filterParams = workFilterHiddenParams(query, WORK_FILTER_PARAM_KEYS);
-  const initialCandidates: typeof addItemCandidates = [];
-  for (const candidate of addItemCandidates) {
-    if (!candidate.archivedAt) initialCandidates.push(candidate);
-  }
-  const projectOptions: { id: string; label: string }[] = [];
-  for (const row of projectRows) {
-    if (row.type === 'project') {
-      projectOptions.push({ id: row.id, label: row.canonicalName });
-    }
-  }
-
-  return (
-    <div
-      data-app-layout="full-bleed"
-      className="-mx-4 -my-6 flex h-[calc(100dvh-3rem)] min-w-0 flex-col md:-mx-8 md:-my-8"
-    >
-      {categoryFilterBaseline ? (
-        <TaskCategoryFilterRefresh
-          surface="board"
-          boardId={board.id}
-          filters={filters}
-          baselineToken={categoryFilterBaseline.token}
-        />
-      ) : null}
-      <BoardDetailClient
-        boardId={board.id}
-        boardName={board.name}
-        purpose={board.purpose}
-        pinned={board.pinned}
-        itemCount={board.itemCount}
-        view={view}
-        lanes={board.lanes}
-        initialItems={board.items}
-        initialCandidates={initialCandidates}
-        projectOptions={projectOptions}
-        recommendedTypes={board.recommendedObjectTypes}
-        defaultLaneId={firstLaneId}
-        selectedItemId={selectedServerItemId}
-        selectedObjectContext={selectedObjectDetail?.connectedWork ?? null}
-        selectedObjectNotes={selectedObjectDetail?.notes ?? []}
-        selectedObjectRecentChanges={selectedObjectDetail?.recentChanges ?? []}
-        selectedObjectRelationships={selectedObjectDetail?.relationships ?? []}
-        selectedObjectType={selectedObjectDetail?.type ?? null}
-        currentUserId={session.user.id}
-        history={history}
-        members={memberOptions}
-        filters={filters}
-        activeFilters={activeFilters}
-        filterParams={filterParams}
-        typeLabels={OBJECT_TYPE_LABELS}
-      />
-    </div>
+  const { initialCandidates, projectOptions } = boardCandidateOptions(
+    addItemCandidates,
+    projectRows,
   );
+
+  return {
+    categoryFilterBaseline,
+    board,
+    id,
+    filters,
+    view,
+    initialCandidates,
+    projectOptions,
+    firstLaneId,
+    selectedItemId,
+    selectedServerItemId,
+    selectedObjectDetail,
+    session,
+    history,
+    members,
+    memberOptions,
+    activeFilters,
+    filterParams,
+  };
 }

@@ -22,6 +22,7 @@ import { withTeam } from '@timeline/shared/team-scope';
 import { and, desc, eq, inArray, isNotNull, isNull, lt } from 'drizzle-orm';
 import { redirect } from 'next/navigation';
 
+import type { TeamDigestDestination } from '@timeline/shared/messaging';
 import type { Metadata } from 'next';
 import type { ComponentProps } from 'react';
 
@@ -71,6 +72,390 @@ const SETTINGS_ITEMS = [
 ] as const;
 
 export default async function TeamSettingsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{
+    section?: string;
+    exportError?: string;
+    checkout?: string;
+    checkoutTeam?: string;
+    checkoutPlan?: string;
+  }>;
+}) {
+  const {
+    active,
+    role,
+    memberRows,
+    section,
+    isAdmin,
+    userMap,
+    isOwner,
+    session,
+    inviteRows,
+    removedRows,
+    digestPreference,
+    digestDestinations,
+    destinationOptions,
+    timezoneSettings,
+    visibilityDefaults,
+    visibilityMembers,
+    inboundEmailSettings,
+    inboundEmail,
+    placeholderInbound,
+    billingDashboard,
+    query,
+    entitlementsPlanId,
+    comp,
+    showOperatorLink,
+    commercial,
+    exportRows,
+  } = await loadTeamSettingsPage({ searchParams });
+  return (
+    <div className="space-y-4">
+      <PageHeader
+        variant="collection"
+        title="Team"
+        subtitle="Manage members, defaults, and access."
+        srLabel={`Team ${active.teamName} · your role: ${role} · ${memberRows.length} members`}
+        metadata={[
+          { label: 'Team', value: active.teamName },
+          { label: 'Role', value: role },
+          { label: 'Members', value: memberRows.length, mono: true },
+        ]}
+      />
+      {
+        <TeamSettingsSections
+          section={section}
+          isAdmin={isAdmin}
+          memberRows={memberRows}
+          userMap={userMap}
+          isOwner={isOwner}
+          session={session}
+          inviteRows={inviteRows}
+          removedRows={removedRows}
+          active={active}
+          digestPreference={digestPreference}
+          digestDestinations={digestDestinations}
+          destinationOptions={destinationOptions}
+          timezoneSettings={timezoneSettings}
+          visibilityDefaults={visibilityDefaults}
+          visibilityMembers={visibilityMembers}
+          inboundEmailSettings={inboundEmailSettings}
+          inboundEmail={inboundEmail}
+          placeholderInbound={placeholderInbound}
+          billingDashboard={billingDashboard}
+          query={query}
+          entitlementsPlanId={entitlementsPlanId}
+          comp={comp}
+          showOperatorLink={showOperatorLink}
+          commercial={commercial}
+          exportRows={exportRows}
+        />
+      }
+    </div>
+  );
+}
+
+function TeamSettingsSections({
+  section,
+  isAdmin,
+  memberRows,
+  userMap,
+  isOwner,
+  session,
+  inviteRows,
+  removedRows,
+  active,
+  digestPreference,
+  digestDestinations,
+  destinationOptions,
+  timezoneSettings,
+  visibilityDefaults,
+  visibilityMembers,
+  inboundEmailSettings,
+  inboundEmail,
+  placeholderInbound,
+  billingDashboard,
+  query,
+  entitlementsPlanId,
+  comp,
+  showOperatorLink,
+  commercial,
+  exportRows,
+}: Omit<Awaited<ReturnType<typeof loadTeamSettingsPage>>, 'role'>) {
+  return (
+    <div className="flex flex-col gap-5 lg:flex-row lg:gap-8">
+      <aside className="min-w-0 lg:sticky lg:top-4 lg:self-start">
+        <SettingsNav items={[...SETTINGS_ITEMS]} activeSection={section} isAdmin={isAdmin} />
+      </aside>
+      <div className="min-w-0 flex-1 space-y-5">
+        {section === 'members' ? (
+          <>
+            <TeamMembersSettings
+              members={memberRows}
+              userMap={userMap}
+              isAdmin={isAdmin}
+              isOwner={isOwner}
+              currentUserId={session.user.id}
+              invites={inviteRows}
+              removedMembers={removedRows}
+            />
+          </>
+        ) : null}
+        {section === 'general' ? <TeamIdentitySettings isAdmin={isAdmin} active={active} /> : null}
+        {section === 'preferences' ? (
+          <TeamPreferencesSettings
+            digestPreference={digestPreference}
+            isAdmin={isAdmin}
+            digestDestinations={digestDestinations}
+            destinationOptions={destinationOptions}
+            timezoneSettings={timezoneSettings}
+          />
+        ) : null}
+        {section === 'visibility' ? (
+          <SettingsSection title="Visibility defaults">
+            {isAdmin ? (
+              <VisibilityDefaultSettings
+                defaults={visibilityDefaults}
+                members={visibilityMembers}
+              />
+            ) : (
+              <p className="text-sm text-fg-muted">
+                Only team administrators can change visibility defaults.
+              </p>
+            )}
+          </SettingsSection>
+        ) : null}
+        {section === 'email' ? (
+          <TeamEmailSettings
+            isAdmin={isAdmin}
+            inboundEmailSettings={inboundEmailSettings}
+            inboundEmail={inboundEmail}
+            placeholderInbound={placeholderInbound}
+          />
+        ) : null}
+        {section === 'billing' && isAdmin && billingDashboard ? (
+          <TeamBillingSettings
+            billingDashboard={billingDashboard}
+            query={query}
+            active={active}
+            entitlementsPlanId={entitlementsPlanId}
+            isAdmin={isAdmin}
+            comp={comp}
+            showOperatorLink={showOperatorLink}
+            commercial={commercial}
+          />
+        ) : null}
+        {section === 'exports' ? (
+          <SettingsSection title="Team export">
+            {isAdmin ? (
+              <TeamExportPanel exports={exportRows} downloadError={query.exportError} />
+            ) : (
+              <p className="text-sm text-fg-muted">Only team administrators can create exports.</p>
+            )}
+          </SettingsSection>
+        ) : null}
+        {section === 'advanced' && isAdmin ? <AdminShortcuts isAdmin /> : null}
+      </div>
+    </div>
+  );
+}
+function TeamIdentitySettings({
+  isAdmin,
+  active,
+}: {
+  isAdmin: boolean;
+  active: Awaited<ReturnType<typeof loadTeamSettingsPage>>['active'];
+}) {
+  return (
+    <SettingsSection title="Team identity">
+      {isAdmin ? (
+        <RenameTeamForm currentName={active.teamName} teamId={active.teamId} />
+      ) : (
+        <p className="text-sm text-fg-muted">Only team administrators can rename this team.</p>
+      )}
+    </SettingsSection>
+  );
+}
+function TeamPreferencesSettings({
+  digestPreference,
+  isAdmin,
+  digestDestinations,
+  destinationOptions,
+  timezoneSettings,
+}: {
+  digestPreference: { enabled: boolean; hour: number; timezone: string };
+  isAdmin: boolean;
+  digestDestinations: TeamDigestDestination[];
+  destinationOptions: DigestDestinationOption[];
+  timezoneSettings: { timezone: string };
+}) {
+  return (
+    <>
+      <MessagingPreferencesCard enabled={digestPreference.enabled} />
+      {isAdmin ? (
+        <SettingsSection title="Digest destinations">
+          <DigestDestinationsForm destinations={digestDestinations} options={destinationOptions} />
+        </SettingsSection>
+      ) : null}
+      {isAdmin ? (
+        <SettingsSection title="Team timezone">
+          <TeamTimezoneForm {...timezoneSettings} />
+        </SettingsSection>
+      ) : null}
+    </>
+  );
+}
+function TeamEmailSettings({
+  isAdmin,
+  inboundEmailSettings,
+  inboundEmail,
+  placeholderInbound,
+}: {
+  isAdmin: boolean;
+  inboundEmailSettings: {
+    inboundEmail: string | null;
+    enabled: boolean;
+    senders: string[];
+    placeholderInbound?: boolean;
+  };
+  inboundEmail: string | null;
+  placeholderInbound: boolean;
+}) {
+  return (
+    <SettingsSection title="Team email">
+      {isAdmin ? (
+        <InboundEmailWhitelistForm
+          {...inboundEmailSettings}
+          inboundEmail={inboundEmail}
+          placeholderInbound={placeholderInbound}
+        />
+      ) : (
+        <div className="space-y-3">
+          <CopyableTextField
+            id="team-inbound-email"
+            label="Team email address"
+            value={inboundEmail}
+            copyLabel="Copy team email"
+            description="Forward, CC, or BCC mail to this address to capture it on the timeline."
+          />
+          {placeholderInbound ? <InboundEmailPlaceholderNotice /> : null}
+          <p className="text-sm text-fg-muted">
+            Only team administrators can change the sender whitelist.
+          </p>
+        </div>
+      )}
+    </SettingsSection>
+  );
+}
+function TeamBillingSettings({
+  billingDashboard,
+  query,
+  active,
+  entitlementsPlanId,
+  isAdmin,
+  comp,
+  showOperatorLink,
+  commercial,
+}: Pick<
+  Awaited<ReturnType<typeof loadTeamSettingsPage>>,
+  'query' | 'active' | 'entitlementsPlanId' | 'isAdmin' | 'comp' | 'showOperatorLink' | 'commercial'
+> & {
+  billingDashboard: NonNullable<
+    Awaited<ReturnType<typeof loadTeamSettingsPage>>['billingDashboard']
+  >;
+}) {
+  return (
+    <BillingSettingsPanel
+      presentation={billingDashboard.presentation}
+      checkoutReturned={
+        query.checkout === 'success' &&
+        (!query.checkoutTeam || query.checkoutTeam === active.teamId)
+      }
+      checkoutPlan={query.checkoutPlan}
+      planId={entitlementsPlanId}
+      planName={PLAN_CATALOG[entitlementsPlanId].name}
+      billingState={billingDashboard.account.billingState}
+      spendCapCents={billingDashboard.account.spendCapCents}
+      meteredSpendCents={billingDashboard.meteredSpendCents}
+      utilization={billingDashboard.utilization}
+      freeRemaining={billingDashboard.freeRemaining}
+      restrictionReason={billingDashboard.restrictionReason}
+      costBearingPaused={billingDashboard.costBearingPaused}
+      polarConfigured={isPolarBillingConfigured()}
+      hasActiveTeamDiscount={Boolean(activePolarDiscountId(billingDashboard.account))}
+      hasPolarSubscription={Boolean(billingDashboard.account.polarSubscriptionId)}
+      canManage={isAdmin}
+      planPreview={billingDashboard.planPreview}
+      comp={comp}
+      showOperatorLink={showOperatorLink}
+      platformFeeCents={commercial?.platformFeeCents}
+    />
+  );
+}
+function MessagingPreferencesCard({ enabled }: { enabled: boolean }) {
+  return (
+    <SettingsSection title="Messaging">
+      <DigestPreferenceForm enabled={enabled} />
+    </SettingsSection>
+  );
+}
+
+function AdminShortcuts({ isAdmin }: { isAdmin: boolean }) {
+  if (!isAdmin) return null;
+  return (
+    <div className="flex flex-wrap items-center gap-x-1 gap-y-1 border-y border-border py-1.5">
+      <ActionChip href="/app/team/jobs" label="Job recovery" />
+      <ActionChip href="/app/team/reconciliation" label="Reconciliation" />
+      <ActionChip href="/app/team/audit" label="Audit" />
+      <ActionChip href="/app/team/integrations/audit" label="Integration audit" />
+    </div>
+  );
+}
+
+async function digestDestinationOptions(teamId: string): Promise<DigestDestinationOption[]> {
+  const options: DigestDestinationOption[] = [
+    { kind: 'email_members', label: 'Email every member' },
+  ];
+  const env = getEnv();
+  const slackInstalled = await hasSlackInstallForTeam({ db, teamId });
+  if (slackInstalled) {
+    options.push({ kind: 'slack_dm_members', label: 'Slack DM every linked member' });
+    try {
+      const conversations = await listSlackConversationsForTeam({ db, teamId });
+      for (const conversation of conversations.filter((row) => row.is_member !== false)) {
+        const name = conversation.name ? `#${conversation.name}` : conversation.id;
+        options.push({
+          kind: 'slack_channel',
+          targetId: conversation.id,
+          label: `Slack ${name}`,
+        });
+      }
+    } catch {
+      // Channel picker stays empty when Slack listing fails; DMs remain available.
+    }
+  }
+  if (env.TELEGRAM_BOT_TOKEN) {
+    options.push({ kind: 'telegram_dm_members', label: 'Telegram DM every linked member' });
+    const chats = await db
+      .select({
+        chatId: telegramChatBindings.tgChatId,
+        title: telegramChatBindings.title,
+      })
+      .from(telegramChatBindings)
+      .where(eq(telegramChatBindings.teamId, teamId));
+    for (const chat of chats) {
+      options.push({
+        kind: 'telegram_chat',
+        targetId: String(chat.chatId),
+        label: `Telegram · ${chat.title ?? chat.chatId}`,
+      });
+    }
+  }
+  return options;
+}
+
+async function loadTeamSettingsPage({
   searchParams,
 }: {
   searchParams: Promise<{
@@ -236,208 +621,32 @@ export default async function TeamSettingsPage({
     Boolean(currentSettingsUser?.emailVerified) &&
     isPlatformAdminEmail(currentSettingsUser?.email ?? '', getEnv().PLATFORM_ADMIN_EMAILS);
 
-  return (
-    <div className="space-y-4">
-      <PageHeader
-        variant="collection"
-        title="Team"
-        subtitle="Manage members, defaults, and access."
-        srLabel={`Team ${active.teamName} · your role: ${role} · ${memberRows.length} members`}
-        metadata={[
-          { label: 'Team', value: active.teamName },
-          { label: 'Role', value: role },
-          { label: 'Members', value: memberRows.length, mono: true },
-        ]}
-      />
-      <div className="flex flex-col gap-5 lg:flex-row lg:gap-8">
-        <aside className="min-w-0 lg:sticky lg:top-4 lg:self-start">
-          <SettingsNav items={[...SETTINGS_ITEMS]} activeSection={section} isAdmin={isAdmin} />
-        </aside>
-        <div className="min-w-0 flex-1 space-y-5">
-          {section === 'members' ? (
-            <>
-              <TeamMembersSettings
-                members={memberRows}
-                userMap={userMap}
-                isAdmin={isAdmin}
-                isOwner={isOwner}
-                currentUserId={session.user.id}
-                invites={inviteRows}
-                removedMembers={removedRows}
-              />
-            </>
-          ) : null}
-          {section === 'general' ? (
-            <SettingsSection title="Team identity">
-              {isAdmin ? (
-                <RenameTeamForm currentName={active.teamName} teamId={active.teamId} />
-              ) : (
-                <p className="text-sm text-fg-muted">
-                  Only team administrators can rename this team.
-                </p>
-              )}
-            </SettingsSection>
-          ) : null}
-          {section === 'preferences' ? (
-            <>
-              <MessagingPreferencesCard enabled={digestPreference.enabled} />
-              {isAdmin ? (
-                <SettingsSection title="Digest destinations">
-                  <DigestDestinationsForm
-                    destinations={digestDestinations}
-                    options={destinationOptions}
-                  />
-                </SettingsSection>
-              ) : null}
-              {isAdmin ? (
-                <SettingsSection title="Team timezone">
-                  <TeamTimezoneForm {...timezoneSettings} />
-                </SettingsSection>
-              ) : null}
-            </>
-          ) : null}
-          {section === 'visibility' ? (
-            <SettingsSection title="Visibility defaults">
-              {isAdmin ? (
-                <VisibilityDefaultSettings
-                  defaults={visibilityDefaults}
-                  members={visibilityMembers}
-                />
-              ) : (
-                <p className="text-sm text-fg-muted">
-                  Only team administrators can change visibility defaults.
-                </p>
-              )}
-            </SettingsSection>
-          ) : null}
-          {section === 'email' ? (
-            <SettingsSection title="Team email">
-              {isAdmin ? (
-                <InboundEmailWhitelistForm
-                  {...inboundEmailSettings}
-                  inboundEmail={inboundEmail}
-                  placeholderInbound={placeholderInbound}
-                />
-              ) : (
-                <div className="space-y-3">
-                  <CopyableTextField
-                    id="team-inbound-email"
-                    label="Team email address"
-                    value={inboundEmail}
-                    copyLabel="Copy team email"
-                    description="Forward, CC, or BCC mail to this address to capture it on the timeline."
-                  />
-                  {placeholderInbound ? <InboundEmailPlaceholderNotice /> : null}
-                  <p className="text-sm text-fg-muted">
-                    Only team administrators can change the sender whitelist.
-                  </p>
-                </div>
-              )}
-            </SettingsSection>
-          ) : null}
-          {section === 'billing' && isAdmin && billingDashboard ? (
-            <BillingSettingsPanel
-              presentation={billingDashboard.presentation}
-              checkoutReturned={
-                query.checkout === 'success' &&
-                (!query.checkoutTeam || query.checkoutTeam === active.teamId)
-              }
-              checkoutPlan={query.checkoutPlan}
-              planId={entitlementsPlanId}
-              planName={PLAN_CATALOG[entitlementsPlanId].name}
-              billingState={billingDashboard.account.billingState}
-              spendCapCents={billingDashboard.account.spendCapCents}
-              meteredSpendCents={billingDashboard.meteredSpendCents}
-              utilization={billingDashboard.utilization}
-              freeRemaining={billingDashboard.freeRemaining}
-              restrictionReason={billingDashboard.restrictionReason}
-              costBearingPaused={billingDashboard.costBearingPaused}
-              polarConfigured={isPolarBillingConfigured()}
-              hasActiveTeamDiscount={Boolean(activePolarDiscountId(billingDashboard.account))}
-              hasPolarSubscription={Boolean(billingDashboard.account.polarSubscriptionId)}
-              canManage={isAdmin}
-              planPreview={billingDashboard.planPreview}
-              comp={comp}
-              showOperatorLink={showOperatorLink}
-              platformFeeCents={commercial?.platformFeeCents}
-            />
-          ) : null}
-          {section === 'exports' ? (
-            <SettingsSection title="Team export">
-              {isAdmin ? (
-                <TeamExportPanel exports={exportRows} downloadError={query.exportError} />
-              ) : (
-                <p className="text-sm text-fg-muted">
-                  Only team administrators can create exports.
-                </p>
-              )}
-            </SettingsSection>
-          ) : null}
-          {section === 'advanced' && isAdmin ? <AdminShortcuts isAdmin /> : null}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function MessagingPreferencesCard({ enabled }: { enabled: boolean }) {
-  return (
-    <SettingsSection title="Messaging">
-      <DigestPreferenceForm enabled={enabled} />
-    </SettingsSection>
-  );
-}
-
-function AdminShortcuts({ isAdmin }: { isAdmin: boolean }) {
-  if (!isAdmin) return null;
-  return (
-    <div className="flex flex-wrap items-center gap-x-1 gap-y-1 border-y border-border py-1.5">
-      <ActionChip href="/app/team/jobs" label="Job recovery" />
-      <ActionChip href="/app/team/reconciliation" label="Reconciliation" />
-      <ActionChip href="/app/team/audit" label="Audit" />
-      <ActionChip href="/app/team/integrations/audit" label="Integration audit" />
-    </div>
-  );
-}
-
-async function digestDestinationOptions(teamId: string): Promise<DigestDestinationOption[]> {
-  const options: DigestDestinationOption[] = [
-    { kind: 'email_members', label: 'Email every member' },
-  ];
-  const env = getEnv();
-  const slackInstalled = await hasSlackInstallForTeam({ db, teamId });
-  if (slackInstalled) {
-    options.push({ kind: 'slack_dm_members', label: 'Slack DM every linked member' });
-    try {
-      const conversations = await listSlackConversationsForTeam({ db, teamId });
-      for (const conversation of conversations.filter((row) => row.is_member !== false)) {
-        const name = conversation.name ? `#${conversation.name}` : conversation.id;
-        options.push({
-          kind: 'slack_channel',
-          targetId: conversation.id,
-          label: `Slack ${name}`,
-        });
-      }
-    } catch {
-      // Channel picker stays empty when Slack listing fails; DMs remain available.
-    }
-  }
-  if (env.TELEGRAM_BOT_TOKEN) {
-    options.push({ kind: 'telegram_dm_members', label: 'Telegram DM every linked member' });
-    const chats = await db
-      .select({
-        chatId: telegramChatBindings.tgChatId,
-        title: telegramChatBindings.title,
-      })
-      .from(telegramChatBindings)
-      .where(eq(telegramChatBindings.teamId, teamId));
-    for (const chat of chats) {
-      options.push({
-        kind: 'telegram_chat',
-        targetId: String(chat.chatId),
-        label: `Telegram · ${chat.title ?? chat.chatId}`,
-      });
-    }
-  }
-  return options;
+  return {
+    active,
+    role,
+    memberRows,
+    section,
+    isAdmin,
+    userMap,
+    isOwner,
+    session,
+    inviteRows,
+    removedRows,
+    digestPreference,
+    digestDestinations,
+    destinationOptions,
+    timezoneSettings,
+    visibilityDefaults,
+    visibilityMembers,
+    inboundEmailSettings,
+    inboundEmail,
+    placeholderInbound,
+    billingDashboard,
+    query,
+    entitlementsPlanId,
+    comp,
+    showOperatorLink,
+    commercial,
+    exportRows,
+  };
 }

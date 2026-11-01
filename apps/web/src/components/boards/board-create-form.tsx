@@ -164,7 +164,7 @@ function BoardCreateForm({ showHeading = true }: BoardCreateFormProps) {
     name: 'Team board',
     templateKind: 'custom',
     purpose: '',
-    stages: [...PRESETS[0].stages],
+    stages: PRESETS[0].stages.map((stage) => ({ ...stage, draftKey: `preset:${stage.name}` })),
   });
 
   function submit(): void {
@@ -210,7 +210,10 @@ function BoardCreateForm({ showHeading = true }: BoardCreateFormProps) {
                   type: 'preset',
                   templateKind: preset.kind,
                   name: preset.placeholder,
-                  stages: [...preset.stages],
+                  stages: preset.stages.map((stage) => ({
+                    ...stage,
+                    draftKey: `preset:${stage.name}`,
+                  })),
                 });
               }}
               className={cn(

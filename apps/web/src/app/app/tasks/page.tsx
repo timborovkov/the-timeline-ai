@@ -3,6 +3,8 @@ import { withTeam } from '@timeline/shared/team-scope';
 import { ListTodo } from 'lucide-react';
 import { redirect } from 'next/navigation';
 
+import type { TaskRowsPage } from '@/lib/task-page';
+import type { ObjectListFilter } from '@timeline/shared/objects';
 import type { Metadata } from 'next';
 
 import { ApprovalsClient } from '@/components/approvals/approvals-client';
@@ -48,91 +50,29 @@ function viewParam(value: string | string[] | undefined): TaskView {
 }
 
 export default async function TasksPage({ searchParams }: PageProps<'/app/tasks'>) {
-  const [session, query] = await Promise.all([auth(), searchParams]);
-  if (!session?.user) redirect('/sign-in');
-  const { active } = await resolveActiveTeam(session.user.id);
-  if (!active) redirect('/sign-in');
-
-  const scope = withTeam(db, active.teamId, session.user.id);
-  const now = new Date();
-  const calendarSettings = await scope.calendar.getCalendarSettings();
-  const filterTime = { now, timezone: calendarSettings.defaultTimezone };
-  const taskCategoriesEnabled = getEnv().TASK_CATEGORY_UI_ENABLED;
-  const selectedTaskId = taskParam(query.task);
-  const filters = parseWorkFilters(query, {
+  const {
+    rows,
+    counts,
+    pendingTaskItems,
+    filters,
+    activeFilters,
+    inventoryCounts,
+    hiddenFilterParams,
+    memberOptions,
+    projects,
+    view,
+    selectedVisibleTaskId,
+    taskLoadFilterParams,
+    categoryFilterBaseline,
+    taskPinState,
+    selectedTaskDetail,
+    selectedTaskPinned,
+    session,
+    primaryProjects,
+    taskPage,
     taskCategoriesEnabled,
-  });
-  const categoryKeys = taskCategoryFilterKeys(filters);
-  const categoryFilterBaseline =
-    categoryKeys.length > 0
-      ? await scope.objects.getTaskCategoryFilterRefreshState(
-          taskObjectFilterFromWorkFilters({ ...filters, category: '' }, filterTime),
-          categoryKeys,
-        )
-      : null;
-  const taskFilter = taskObjectFilterFromWorkFilters(filters, filterTime);
-  const activeFilters = hasActiveWorkFilters(filters);
-  const unfilteredTaskFilter = taskObjectFilterFromWorkFilters(
-    parseWorkFilters({}, { taskCategoriesEnabled }),
-    filterTime,
-  );
-  const [projects, taskPage, counts, inventoryCounts, pendingSuggestions, members] =
-    await Promise.all([
-      loadProjectFilterRows({
-        listObjects: (filter) => scope.objects.listObjects(filter),
-        selected: filters.project,
-        includeArchivedSelected: true,
-      }),
-      loadTaskRowsPage(scope.objects, null, taskFilter),
-      countTaskRows(scope.objects, now, taskFilter, calendarSettings.defaultTimezone),
-      activeFilters
-        ? countTaskRows(scope.objects, now, unfilteredTaskFilter, calendarSettings.defaultTimezone)
-        : Promise.resolve(null),
-      scope.suggestions.listPendingSuggestions(),
-      scope.timeline.listMembers(),
-    ]);
-  let rows = taskPage.rows;
-  let selectedVisibleTaskId = rows.some((row) => row.id === selectedTaskId) ? selectedTaskId : null;
-  if (selectedTaskId && !selectedVisibleTaskId) {
-    const [selectedTask] = await scope.objects.listObjects({
-      ...taskFilter,
-      id: selectedTaskId,
-      limit: 1,
-    });
-    if (selectedTask) {
-      rows = [selectedTask, ...rows];
-      selectedVisibleTaskId = selectedTask.id;
-    }
-  }
-  const [selectedTaskDetail, selectedTaskPinned, primaryProjects, taskPinState] = await Promise.all(
-    [
-      selectedVisibleTaskId
-        ? scope.objects.getObject(selectedVisibleTaskId)
-        : Promise.resolve(null),
-      selectedVisibleTaskId
-        ? scope.pins.isPinned({ kind: 'object', key: selectedVisibleTaskId })
-        : Promise.resolve(false),
-      scope.objects.listPrimaryProjectsForTasks(rows.map((row) => row.id)),
-      scope.pins.isPinnedMany(rows.map((row) => ({ kind: 'object' as const, key: row.id }))),
-    ],
-  );
-  const memberOptions = members.map((member) => ({
-    id: member.userId,
-    label: displayMemberLabel(member),
-    name: member.name ?? undefined,
-    email: member.email,
-  }));
-  const taskSuggestions = pendingSuggestions.flatMap((bundle) => {
-    const items = bundle.items.filter(
-      (item) => item.targetKind === 'task' && item.status === 'pending',
-    );
-    return items.length > 0 ? [serializeSuggestionBundle({ ...bundle, items })] : [];
-  });
-  const pendingTaskItems = taskSuggestions.reduce((sum, bundle) => sum + bundle.items.length, 0);
-  const view = viewParam(query.view);
-  const hiddenFilterParams = workFilterHiddenParams(query, ['view']);
-  const taskLoadFilterParams = workFilterHiddenParams(query, WORK_FILTER_PARAM_KEYS);
-
+    taskSuggestions,
+  } = await loadTasksPage({ searchParams });
   return (
     <div
       data-app-layout={rows.length > 0 ? 'full-bleed' : undefined}
@@ -210,59 +150,32 @@ export default async function TasksPage({ searchParams }: PageProps<'/app/tasks'
       ) : null}
 
       {rows.length === 0 ? (
-        <EmptyState
-          icon={ListTodo}
-          title={activeFilters ? 'No tasks match this filter' : 'No active tasks'}
-          body={
-            activeFilters
-              ? 'The task archive is still intact. Clear the filters or broaden the slice to see more work.'
-              : pendingTaskItems > 0
-                ? 'Pending task proposals are waiting below. Accepted proposals will appear on the board.'
-                : 'Tasks are proposed from captured decisions, meetings, and follow-ups. Capture one commitment to start the task board.'
-          }
-          href={
-            activeFilters
-              ? view === 'list'
-                ? '/app/tasks?view=list'
-                : '/app/tasks'
-              : pendingTaskItems > 0
-                ? '/app/approvals'
-                : '/app#capture'
-          }
-          action={
-            activeFilters
-              ? 'Clear filters'
-              : pendingTaskItems > 0
-                ? 'Review proposals'
-                : 'Capture a follow-up'
-          }
+        <TasksEmptyState
+          activeFilters={activeFilters}
+          pendingTaskItems={pendingTaskItems}
+          view={view}
         />
       ) : (
         <div className="min-h-0 flex-1">
-          <TaskBoard
-            rows={rows.map((row) => ({
-              ...row,
-              pinned: taskPinState[`object:${row.id}`] ?? false,
-            }))}
-            columns={[...TASK_STATUS_COLUMNS]}
-            selectedTaskId={selectedVisibleTaskId}
-            selectedTaskContext={selectedTaskDetail?.connectedWork ?? null}
-            selectedTaskProvenance={selectedTaskDetail?.provenance ?? null}
-            selectedTaskNotes={selectedTaskDetail?.notes ?? []}
-            selectedTaskRecentChanges={selectedTaskDetail?.recentChanges ?? []}
-            selectedTaskPinned={selectedTaskPinned}
-            currentUserId={session.user.id}
-            view={view}
-            members={memberOptions}
-            projects={projects.map((project) => ({ id: project.id, label: project.canonicalName }))}
-            primaryProjects={primaryProjects}
-            initialProjectsHydrated
-            totalCount={counts.total}
-            nextCursor={taskPage.nextCursor}
-            filterParams={taskLoadFilterParams}
-            categoryFilterRefreshToken={categoryFilterBaseline?.token}
-            taskCategoriesEnabled={taskCategoriesEnabled}
-          />
+          {
+            <LoadedTaskBoard
+              rows={rows}
+              taskPinState={taskPinState}
+              selectedVisibleTaskId={selectedVisibleTaskId}
+              selectedTaskDetail={selectedTaskDetail}
+              selectedTaskPinned={selectedTaskPinned}
+              session={session}
+              view={view}
+              memberOptions={memberOptions}
+              projects={projects}
+              primaryProjects={primaryProjects}
+              counts={counts}
+              taskPage={taskPage}
+              taskLoadFilterParams={taskLoadFilterParams}
+              categoryFilterBaseline={categoryFilterBaseline}
+              taskCategoriesEnabled={taskCategoriesEnabled}
+            />
+          }
         </div>
       )}
 
@@ -286,4 +199,233 @@ export default async function TasksPage({ searchParams }: PageProps<'/app/tasks'
       ) : null}
     </div>
   );
+}
+
+function LoadedTaskBoard({
+  rows,
+  taskPinState,
+  selectedVisibleTaskId,
+  selectedTaskDetail,
+  selectedTaskPinned,
+  session,
+  view,
+  memberOptions,
+  projects,
+  primaryProjects,
+  counts,
+  taskPage,
+  taskLoadFilterParams,
+  categoryFilterBaseline,
+  taskCategoriesEnabled,
+}: Pick<
+  Awaited<ReturnType<typeof loadTasksPage>>,
+  | 'rows'
+  | 'taskPinState'
+  | 'selectedVisibleTaskId'
+  | 'selectedTaskDetail'
+  | 'selectedTaskPinned'
+  | 'session'
+  | 'view'
+  | 'memberOptions'
+  | 'projects'
+  | 'primaryProjects'
+  | 'counts'
+  | 'taskPage'
+  | 'taskLoadFilterParams'
+  | 'categoryFilterBaseline'
+  | 'taskCategoriesEnabled'
+>) {
+  return (
+    <TaskBoard
+      rows={rows.map((row) => ({
+        ...row,
+        pinned: taskPinState[`object:${row.id}`] ?? false,
+      }))}
+      columns={[...TASK_STATUS_COLUMNS]}
+      selectedTaskId={selectedVisibleTaskId}
+      selectedTaskContext={selectedTaskDetail?.connectedWork ?? null}
+      selectedTaskProvenance={selectedTaskDetail?.provenance ?? null}
+      selectedTaskNotes={selectedTaskDetail?.notes ?? []}
+      selectedTaskRecentChanges={selectedTaskDetail?.recentChanges ?? []}
+      selectedTaskPinned={selectedTaskPinned}
+      currentUserId={session.user.id}
+      view={view}
+      members={memberOptions}
+      projects={projects.map((project) => ({ id: project.id, label: project.canonicalName }))}
+      primaryProjects={primaryProjects}
+      initialProjectsHydrated
+      totalCount={counts.total}
+      nextCursor={taskPage.nextCursor}
+      filterParams={taskLoadFilterParams}
+      categoryFilterRefreshToken={categoryFilterBaseline?.token}
+      taskCategoriesEnabled={taskCategoriesEnabled}
+    />
+  );
+}
+function TasksEmptyState({
+  activeFilters,
+  pendingTaskItems,
+  view,
+}: {
+  activeFilters: boolean;
+  pendingTaskItems: number;
+  view: string;
+}) {
+  return (
+    <EmptyState
+      icon={ListTodo}
+      title={activeFilters ? 'No tasks match this filter' : 'No active tasks'}
+      body={
+        activeFilters
+          ? 'The task archive is still intact. Clear the filters or broaden the slice to see more work.'
+          : pendingTaskItems > 0
+            ? 'Pending task proposals are waiting below. Accepted proposals will appear on the board.'
+            : 'Tasks are proposed from captured decisions, meetings, and follow-ups. Capture one commitment to start the task board.'
+      }
+      href={
+        activeFilters
+          ? view === 'list'
+            ? '/app/tasks?view=list'
+            : '/app/tasks'
+          : pendingTaskItems > 0
+            ? '/app/approvals'
+            : '/app#capture'
+      }
+      action={
+        activeFilters
+          ? 'Clear filters'
+          : pendingTaskItems > 0
+            ? 'Review proposals'
+            : 'Capture a follow-up'
+      }
+    />
+  );
+}
+async function resolveSelectedTask(
+  taskPage: TaskRowsPage,
+  selectedTaskId: string | null,
+  scope: ReturnType<typeof withTeam>,
+  taskFilter: ObjectListFilter,
+) {
+  let rows = taskPage.rows;
+  let selectedVisibleTaskId = rows.some((row) => row.id === selectedTaskId) ? selectedTaskId : null;
+  if (selectedTaskId && !selectedVisibleTaskId) {
+    const [selectedTask] = await scope.objects.listObjects({
+      ...taskFilter,
+      id: selectedTaskId,
+      limit: 1,
+    });
+    if (selectedTask) {
+      rows = [selectedTask, ...rows];
+      selectedVisibleTaskId = selectedTask.id;
+    }
+  }
+  return { selectedVisibleTaskId, rows };
+}
+
+async function loadTasksPage({ searchParams }: Pick<PageProps<'/app/tasks'>, 'searchParams'>) {
+  const [session, query] = await Promise.all([auth(), searchParams]);
+  if (!session?.user) redirect('/sign-in');
+  const { active } = await resolveActiveTeam(session.user.id);
+  if (!active) redirect('/sign-in');
+
+  const scope = withTeam(db, active.teamId, session.user.id);
+  const now = new Date();
+  const calendarSettings = await scope.calendar.getCalendarSettings();
+  const filterTime = { now, timezone: calendarSettings.defaultTimezone };
+  const taskCategoriesEnabled = getEnv().TASK_CATEGORY_UI_ENABLED;
+  const selectedTaskId = taskParam(query.task);
+  const filters = parseWorkFilters(query, {
+    taskCategoriesEnabled,
+  });
+  const categoryKeys = taskCategoryFilterKeys(filters);
+  const categoryFilterBaseline =
+    categoryKeys.length > 0
+      ? await scope.objects.getTaskCategoryFilterRefreshState(
+          taskObjectFilterFromWorkFilters({ ...filters, category: '' }, filterTime),
+          categoryKeys,
+        )
+      : null;
+  const taskFilter = taskObjectFilterFromWorkFilters(filters, filterTime);
+  const activeFilters = hasActiveWorkFilters(filters);
+  const unfilteredTaskFilter = taskObjectFilterFromWorkFilters(
+    parseWorkFilters({}, { taskCategoriesEnabled }),
+    filterTime,
+  );
+  const [projects, taskPage, counts, inventoryCounts, pendingSuggestions, members] =
+    await Promise.all([
+      loadProjectFilterRows({
+        listObjects: (filter) => scope.objects.listObjects(filter),
+        selected: filters.project,
+        includeArchivedSelected: true,
+      }),
+      loadTaskRowsPage(scope.objects, null, taskFilter),
+      countTaskRows(scope.objects, now, taskFilter, calendarSettings.defaultTimezone),
+      activeFilters
+        ? countTaskRows(scope.objects, now, unfilteredTaskFilter, calendarSettings.defaultTimezone)
+        : Promise.resolve(null),
+      scope.suggestions.listPendingSuggestions(),
+      scope.timeline.listMembers(),
+    ]);
+  const { selectedVisibleTaskId, rows } = await resolveSelectedTask(
+    taskPage,
+    selectedTaskId,
+    scope,
+    taskFilter,
+  );
+  const [selectedTaskDetail, selectedTaskPinned, primaryProjects, taskPinState] = await Promise.all(
+    [
+      selectedVisibleTaskId
+        ? scope.objects.getObject(selectedVisibleTaskId)
+        : Promise.resolve(null),
+      selectedVisibleTaskId
+        ? scope.pins.isPinned({ kind: 'object', key: selectedVisibleTaskId })
+        : Promise.resolve(false),
+      scope.objects.listPrimaryProjectsForTasks(rows.map((row) => row.id)),
+      scope.pins.isPinnedMany(rows.map((row) => ({ kind: 'object' as const, key: row.id }))),
+    ],
+  );
+  const memberOptions = members.map((member) => ({
+    id: member.userId,
+    label: displayMemberLabel(member),
+    name: member.name ?? undefined,
+    email: member.email,
+  }));
+  const taskSuggestions = pendingSuggestions.flatMap((bundle) => {
+    const items = bundle.items.filter(
+      (item) => item.targetKind === 'task' && item.status === 'pending',
+    );
+    return items.length > 0 ? [serializeSuggestionBundle({ ...bundle, items })] : [];
+  });
+  const pendingTaskItems = taskSuggestions.reduce((sum, bundle) => sum + bundle.items.length, 0);
+  const view = viewParam(query.view);
+  const hiddenFilterParams = workFilterHiddenParams(query, ['view']);
+  const taskLoadFilterParams = workFilterHiddenParams(query, WORK_FILTER_PARAM_KEYS);
+
+  return {
+    rows,
+    counts,
+    pendingTaskItems,
+    filters,
+    active,
+    activeFilters,
+    inventoryCounts,
+    hiddenFilterParams,
+    members,
+    memberOptions,
+    projects,
+    view,
+    selectedTaskId,
+    selectedVisibleTaskId,
+    taskLoadFilterParams,
+    categoryFilterBaseline,
+    taskPinState,
+    selectedTaskDetail,
+    selectedTaskPinned,
+    session,
+    primaryProjects,
+    taskPage,
+    taskCategoriesEnabled,
+    taskSuggestions,
+  };
 }
