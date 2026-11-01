@@ -60,7 +60,10 @@ describe('reconciliation dashboard snapshot', () => {
           visibility: 'team',
           sourceMetadata: {
             message_id: '<dash-1@example.test>',
-            raw_postmark: { MessageID: '<dash-1@example.test>', TextBody: 'Decision payload.' },
+            raw_resend: {
+              headers: [{ name: 'Message-ID', value: '<dash-1@example.test>' }],
+              text: 'Decision payload.',
+            },
           },
         },
         {

@@ -177,7 +177,7 @@
           team choices remain inside the installed Slack workspace boundary.
         </li>
         <li>
-          <strong>Email ingest</strong>: forward, CC, or BCC to a per-team address. Postmark handles
+          <strong>Email ingest</strong>: forward, CC, or BCC to a per-team address. Resend handles
           inbound parsing.
         </li>
         <li>
@@ -380,7 +380,7 @@
           </tr>
           <tr>
             <td>Email ingest</td>
-            <td>Postmark inbound</td>
+            <td>Resend inbound</td>
           </tr>
           <tr>
             <td>Messaging</td>
@@ -550,8 +550,8 @@
       </p>
       <ul>
         <li>
-          <strong><code>web</code></strong> — Next.js app, public domain, Telegram + Postmark
-          webhook receivers.
+          <strong><code>web</code></strong> — Next.js app, public domain, Telegram + Resend webhook
+          receivers.
         </li>
         <li>
           <strong><code>worker</code></strong> — BullMQ workers for transcription, extraction,

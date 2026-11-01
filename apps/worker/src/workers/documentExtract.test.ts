@@ -1,6 +1,13 @@
 import { randomUUID } from 'node:crypto';
 
-import { type Db, documentChunks, documents, documentVersions, rawEvents } from '@timeline/db';
+import {
+  type Db,
+  documentChunks,
+  documents,
+  documentVersions,
+  rawEvents,
+  teams,
+} from '@timeline/db';
 import { email, withTeam, type queue as queueNS } from '@timeline/shared';
 import {
   createResettablePGliteTestDb,
@@ -224,33 +231,30 @@ async function createFinalisedCapturedFile(
 
 function inboundEmailPayload(messageId: string) {
   return {
-    MessageID: `postmark-${messageId}`,
-    Date: '2026-05-27T09:00:00Z',
-    Subject: 'Customer attachment',
-    From: 'customer@example.net',
-    FromName: 'Customer',
-    FromFull: { Email: 'customer@example.net', Name: 'Customer', MailboxHash: '' },
-    To: 't@inbound.test',
-    ToFull: [{ Email: 't@inbound.test', Name: 'Test Team', MailboxHash: '' }],
-    Cc: '',
-    CcFull: [],
-    Bcc: '',
-    BccFull: [],
-    OriginalRecipient: '',
-    ReplyTo: '',
-    MailboxHash: 't',
-    TextBody: 'Please review the attached implementation notes.',
-    HtmlBody: '',
-    StrippedTextReply: '',
-    Tag: '',
-    Headers: [{ Name: 'Message-ID', Value: `<${messageId}@example.net>` }],
-    Attachments: [
+    providerId: `resend-${messageId}`,
+    sentAt: '2026-05-27T09:00:00Z',
+    subject: 'Customer attachment',
+    from: 'customer@example.net',
+    fromName: 'Customer',
+    fromAddress: { email: 'customer@example.net', name: 'Customer' },
+
+    toAddresses: [{ email: 't@inbound.test', name: 'Test Team' }],
+
+    ccAddresses: [],
+
+    bccAddresses: [],
+
+    text: 'Please review the attached implementation notes.',
+    html: '',
+
+    headers: [{ name: 'Message-ID', value: `<${messageId}@example.net>` }],
+    attachments: [
       {
-        Name: 'implementation-notes.pdf',
-        Content: Buffer.from('%PDF-1.7 customer notes').toString('base64'),
-        ContentType: 'application/pdf',
-        ContentLength: Buffer.byteLength('%PDF-1.7 customer notes'),
-        ContentID: '',
+        name: 'implementation-notes.pdf',
+        content: Buffer.from('%PDF-1.7 customer notes'),
+        contentType: 'application/pdf',
+        size: Buffer.byteLength('%PDF-1.7 customer notes'),
+        contentId: '',
       },
     ],
   };
@@ -462,10 +466,11 @@ describe('processDocumentExtractJob — privacy payloads', () => {
 });
 
 describe('processDocumentExtractJob — content-type routing', () => {
-  it('extracts Postmark email attachments from captured documents with email provenance', async () => {
+  it('extracts Resend email attachments from captured documents with email provenance', async () => {
     h = await makeHarness('%PDF-1.7 customer notes', {
       visionResponse: 'Implementation notes: Acme rollout owner is Ada.',
     });
+    await h.db.update(teams).set({ inboundEmail: 't@inbound.test' }).where(eq(teams.id, TEAM_ID));
     const attachmentUpload = vi.fn().mockResolvedValue(undefined);
     const documentUpload = vi.fn().mockResolvedValue(undefined);
     const documentEnqueue = vi.fn().mockResolvedValue(undefined);
@@ -1228,7 +1233,7 @@ describe('processDocumentExtractJob — content-type routing', () => {
   });
 
   it('falls back to filename extension when content-type is application/octet-stream', async () => {
-    // RustFS sometimes loses the explicit Content-Type on PUT and the
+    // RustFS sometimes loses the explicit content-Type on PUT and the
     // version row stores application/octet-stream. The extension fallback
     // is what keeps a PDF uploaded with no MIME from stamping failed.
     h = await makeHarness('%PDF bytes', {
@@ -1281,9 +1286,9 @@ describe('processDocumentExtractJob — content-type routing', () => {
     expect(result.chunkCount).toBeGreaterThanOrEqual(1);
   });
 
-  it('extension fallback also covers images when Content-Type is lost (bugbot #3299101843)', async () => {
+  it('extension fallback also covers images when content-Type is lost (bugbot #3299101843)', async () => {
     // The PDF/DOCX fallback above had a sibling gap: images uploaded
-    // without a Content-Type were rejected as unsupported because the
+    // without a content-Type were rejected as unsupported because the
     // image branch only checked `ct.startsWith('image/')` with no
     // extension fallback. Now `.jpg/.png/.webp/...` extensions on an
     // octet-stream upload route to vision with a derived image MIME.

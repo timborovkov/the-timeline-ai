@@ -8,6 +8,7 @@ type TimelineQueue<TData> = Queue<TData, unknown, string, TData, unknown, string
 
 export const QUEUE_NAMES = {
   transcribe: 'transcribe',
+  emailInbound: 'email-inbound',
   // Phase 4/5 consumers — names reserved here so producers compile cleanly.
   // No worker process is started for these until those phases land.
   extract: 'extract',
@@ -1515,5 +1516,30 @@ export function getChatDeliveryQueue(): TimelineQueue<ChatDeliveryJobData> {
 export async function closeChatDeliveryQueue(): Promise<void> {
   await closeQueue(_chatDeliveryQueue, () => {
     _chatDeliveryQueue = undefined;
+  });
+}
+
+/** IDs only: content, recipients and signed URLs never enter Redis jobs. */
+export interface EmailInboundJobData {
+  emailId: string;
+}
+let _emailInboundQueue: TimelineQueue<EmailInboundJobData> | undefined;
+export function getEmailInboundQueue(): TimelineQueue<EmailInboundJobData> {
+  return (_emailInboundQueue ??= createTimelineQueue<EmailInboundJobData>(
+    QUEUE_NAMES.emailInbound,
+    {
+      attempts: 8,
+      backoff: { type: 'exponential', delay: 30_000 },
+      removeOnComplete: { age: 24 * 3600 },
+      removeOnFail: { age: 7 * 24 * 3600 },
+    },
+  ));
+}
+export async function enqueueEmailInboundJob(data: EmailInboundJobData): Promise<void> {
+  await getEmailInboundQueue().add('receive', data, { jobId: `resend-${data.emailId}` });
+}
+export async function closeEmailInboundQueue(): Promise<void> {
+  await closeQueue(_emailInboundQueue, () => {
+    _emailInboundQueue = undefined;
   });
 }

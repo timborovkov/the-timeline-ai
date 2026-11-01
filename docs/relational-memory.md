@@ -1168,3 +1168,13 @@ and [Path from here to the ideal engine](#path-from-here-to-the-ideal-engine).
 | ADRs 0003, 0004, 0005, 0006, 0009, 0010, 0011, 0014, 0015, 0016 | Frozen decisions |
 | [`todo.md`](../todo.md) | Open work |
 | [`product-brief.html`](./product-brief.html) | Product vision; points here |
+
+### Email ingestion transport
+
+Resend inbound capture enters through a signed webhook and an ID-only
+`email-inbound` BullMQ job. The worker hydrates content and receiver-computed
+authentication before team-scoped capture. Source snapshots retain normalized
+original bodies and attachment descriptors, never temporary download URLs or
+attachment bytes. RFC message IDs remain the threading and event-deduplication
+keys; provider IDs are audit metadata. Replays resume missing downstream work,
+including stable audio children, without rewriting captured source content.

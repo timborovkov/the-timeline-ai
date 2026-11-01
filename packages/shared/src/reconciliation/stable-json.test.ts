@@ -40,7 +40,7 @@ describe('stable reconciliation JSON helpers', () => {
 
   it('builds the canonical inline source snapshot metadata envelope', () => {
     const snapshot = {
-      provider: 'postmark',
+      provider: 'resend',
       message_id: '<stable@example.test>',
       nested: { b: 2, a: 1, omitted: undefined },
     };
@@ -49,7 +49,7 @@ describe('stable reconciliation JSON helpers', () => {
     expect(
       inlineSourceSnapshotMetadata({
         snapshot,
-        kind: 'postmark_inbound_email',
+        kind: 'resend_inbound_email',
         version: 'email-source-snapshot-test',
         ref: (value) => `inline://timeline/email/${value.slice('sha256:'.length)}`,
       }),
@@ -57,7 +57,7 @@ describe('stable reconciliation JSON helpers', () => {
       source_payload_ref: `inline://timeline/email/${digest.slice('sha256:'.length)}`,
       payload_digest: digest,
       source_snapshot: snapshot,
-      source_snapshot_kind: 'postmark_inbound_email',
+      source_snapshot_kind: 'resend_inbound_email',
       source_snapshot_version: 'email-source-snapshot-test',
     });
   });

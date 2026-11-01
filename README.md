@@ -244,3 +244,14 @@ not yet contain an open-source license. Until a license is added, public source
 does not grant general permission to copy, modify, redistribute, or self-host
 Timeline. The license and contribution terms require a founder and counsel
 decision before broader rights can be promised.
+
+### Email delivery and capture
+
+Resend handles transactional email and inbound capture. The signed
+`/api/email/inbound` webhook queues IDs into `email-inbound`; the full worker
+retrieves bodies and bounded attachments, applies team routing and sender rules,
+and resumes extraction/transcription safely on retry. See
+[Resend configuration and replay](docs/setup/resend.html) for the required
+variables and `bun run email:replay -- <received-email-uuid>`. Credentials, domain
+configuration, and live verification are operator-owned. No live email settings
+are supplied by the repository.

@@ -187,9 +187,9 @@ bun run dev:seed:heavy         # optional extra volume for infinite-scroll / vir
         <li>Post a text note — appears in the timeline.</li>
         <li>
           Go to <strong>Team settings</strong> → invite user B by email. If
-          <code>POSTMARK_SERVER_TOKEN</code> and <code>TRANSACTIONAL_EMAIL_FROM</code> are set, user
-          B receives the invite email. Otherwise the invite is still created with a visible send
-          error and copyable fallback URL.
+          <code>RESEND_API_KEY</code> and <code>TRANSACTIONAL_EMAIL_FROM</code> are set, user B
+          receives the invite email. Otherwise the invite is still created with a visible send error
+          and copyable fallback URL.
         </li>
         <li>
           Open the invite URL in an incognito window, sign up as user B → user B is added to the

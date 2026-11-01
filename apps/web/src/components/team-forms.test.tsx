@@ -273,7 +273,7 @@ describe('InviteMemberForm', () => {
       {
         inviteUrl: 'https://timeline.test/invite/token-2',
         sendStatus: 'failed',
-        sendError: 'Postmark rejected the recipient',
+        sendError: 'Resend rejected the recipient',
       },
       fakes.action,
     ]);
@@ -281,7 +281,7 @@ describe('InviteMemberForm', () => {
 
     expect(screen.getByText('https://timeline.test/invite/token-2')).toBeTruthy();
     expect(screen.getByRole('alert').textContent).toBe(
-      'Invite created, but the email was not sent: Postmark rejected the recipient. The link is ready to share.',
+      'Invite created, but the email was not sent: Resend rejected the recipient. The link is ready to share.',
     );
   });
 

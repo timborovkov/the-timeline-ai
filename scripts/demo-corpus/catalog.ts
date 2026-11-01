@@ -2076,7 +2076,7 @@ function enrichCaptureMetadata(row: CorpusEvent): CorpusEvent {
     extra.thread_root_id ??= extra.message_id ?? row.id;
     extra.html_body ??= `<p>${escapeHtml(row.contentText)}</p>`;
     extra.source_snapshot ??= {
-      provider: 'postmark',
+      provider: 'resend',
       subject: extra.subject ?? 'Acme Labs email',
       html_body: extra.html_body,
       text_body: row.contentText,

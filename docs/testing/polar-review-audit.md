@@ -46,7 +46,7 @@ Threads: [3847000698](https://github.com/timborovkov/the-timeline-ai/pull/384#di
 
 ### Email admission and settlement
 
-Email reserves before Postmark, records accepted delivery before retryable settlement, and recovers accounting without resending. Verification, billing alerts, and support messages are exempt from workspace admission.
+Email reserves before Resend, records accepted delivery before retryable settlement, and recovers accounting without resending. Verification, billing alerts, and support messages are exempt from workspace admission.
 
 Evidence: [packages/shared/src/messaging/delivery.ts](../../packages/shared/src/messaging/delivery.ts), [packages/shared/src/messaging/delivery.test.ts](../../packages/shared/src/messaging/delivery.test.ts), [packages/shared/src/billing/runtime.test.ts](../../packages/shared/src/billing/runtime.test.ts).
 

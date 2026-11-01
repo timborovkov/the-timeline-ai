@@ -559,7 +559,7 @@ function hasInlineReplaySnapshot(
   metadata: Record<string, unknown>,
   contentText: string | null,
 ): boolean {
-  if (recordField(metadata, 'raw_postmark')) return true;
+  if (recordField(metadata, 'raw_resend')) return true;
   if (recordField(metadata, 'raw_payload')) return true;
   if (recordField(metadata, 'source_snapshot')) return true;
   return source === 'ingest_webhook' && Boolean(contentText);

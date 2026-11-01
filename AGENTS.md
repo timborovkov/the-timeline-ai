@@ -307,7 +307,7 @@ Treat this file as an operating contract for agents, not a loose README.
 ```
 apps/
   web/      Next.js 16 app (App Router, RSC, server actions, Auth.js)
-  worker/   BullMQ workers (conversation-agent, transcribe, extract,
+  worker/   BullMQ workers (email-inbound, conversation-agent, transcribe, extract,
             suggestions, embed,
             overdue-scan, calendar-recurrence,
             meeting-finalize, meeting-scheduler, object-summary, janitor,
@@ -369,7 +369,7 @@ plugins/
   timeline/ Codex + Claude Code plugin manifests, hosted MCP connection,
             and general cited-workspace skill
 docs/
-  setup/    External service walkthroughs (Telegram, OpenRouter, Postmark,
+  setup/    External service walkthroughs (Telegram, OpenRouter, Resend,
             Slack, Recall.ai meeting bots, Sentry, Railway, local dev,
             third-party integrations + Timeline-as-MCP-server)
 ```

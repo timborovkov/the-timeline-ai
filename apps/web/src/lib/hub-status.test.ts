@@ -168,38 +168,25 @@ describe('hub status helpers', () => {
     expect(isPlaceholderInboundEmail('acme@inbound.invalid')).toBe(true);
     expect(isPlaceholderInboundEmail('Acme@Inbound.Invalid')).toBe(true);
     expect(isPlaceholderInboundEmail('acme@inbound.timeline.test')).toBe(false);
-    expect(
-      displayInboundEmail(
-        { slug: 'acme', inboundEmail: 'acme@inbound.invalid' },
-        'mailbox@inbound.postmarkapp.com',
-      ),
-    ).toBe('mailbox+acme@inbound.postmarkapp.com');
-    expect(
-      displayInboundEmail({ slug: 'acme', inboundEmail: 'acme@inbound.invalid' }, undefined),
-    ).toBeNull();
+    expect(displayInboundEmail({ slug: 'acme', inboundEmail: 'acme@inbound.invalid' })).toBeNull();
+    expect(displayInboundEmail({ slug: 'acme', inboundEmail: 'acme@inbound.invalid' })).toBeNull();
     expect(
       shouldWarnPlaceholderInboundEmail(
         'acme@inbound.invalid',
-        displayInboundEmail(
-          { slug: 'acme', inboundEmail: 'acme@inbound.invalid' },
-          'mailbox@inbound.postmarkapp.com',
-        ),
+        displayInboundEmail({ slug: 'acme', inboundEmail: 'acme@inbound.invalid' }),
       ),
-    ).toBe(false);
+    ).toBe(true);
     expect(
       shouldWarnPlaceholderInboundEmail(
         'acme@inbound.invalid',
-        displayInboundEmail({ slug: 'acme', inboundEmail: 'acme@inbound.invalid' }, undefined),
+        displayInboundEmail({ slug: 'acme', inboundEmail: 'acme@inbound.invalid' }),
       ),
     ).toBe(true);
   });
 
   it('prefers a configured team inbound domain', () => {
-    expect(
-      displayInboundEmail(
-        { slug: 'acme', inboundEmail: 'acme@inbound.timeline.test' },
-        'mailbox@inbound.postmarkapp.com',
-      ),
-    ).toBe('acme@inbound.timeline.test');
+    expect(displayInboundEmail({ slug: 'acme', inboundEmail: 'acme@inbound.timeline.test' })).toBe(
+      'acme@inbound.timeline.test',
+    );
   });
 });

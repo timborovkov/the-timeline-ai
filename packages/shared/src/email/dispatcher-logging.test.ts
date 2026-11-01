@@ -2,7 +2,7 @@ import { expect } from '@timeline/test-support';
 import { vi } from '@timeline/test-support';
 import { afterEach, beforeEach, describe, it } from 'bun:test';
 
-import type { PostmarkInbound } from '#src/email/postmark-schema.js';
+import type { InboundEmail } from '#src/email/inbound-schema.js';
 import type { PGlite as PGliteType } from '@electric-sql/pglite';
 type PGlite = PGliteType;
 
@@ -33,29 +33,29 @@ const { textQueueDeps } = await import('#src/test/queue-deps.js');
 const TEAM_ID = '11111111-1111-4111-8111-111111111111';
 const USER_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 
-function inboundPayload(messageId: string): PostmarkInbound {
+function inboundPayload(messageId: string): InboundEmail {
   return {
-    MessageID: `postmark-${messageId}`,
-    Date: '2026-05-27T09:00:00Z',
-    Subject: 'Vendor note',
-    From: 'vendor@example.net',
-    FromName: 'Vendor',
-    FromFull: { Email: 'vendor@example.net', Name: 'Vendor', MailboxHash: '' },
-    To: 'team-a@inbound.test',
-    ToFull: [{ Email: 'team-a@inbound.test', Name: 'Team A', MailboxHash: '' }],
-    Cc: '',
-    CcFull: [],
-    Bcc: '',
-    BccFull: [],
-    OriginalRecipient: '',
-    ReplyTo: '',
-    MailboxHash: 'team-a',
-    TextBody: 'Please review this.',
-    HtmlBody: '',
-    StrippedTextReply: '',
-    Tag: '',
-    Headers: [{ Name: 'Message-ID', Value: `<${messageId}@example.net>` }],
-    Attachments: [],
+    providerId: `resend-${messageId}`,
+    sentAt: '2026-05-27T09:00:00Z',
+    subject: 'Vendor note',
+    from: 'vendor@example.net',
+    fromName: 'Vendor',
+    fromAddress: { email: 'vendor@example.net', name: 'Vendor' },
+
+    toAddresses: [{ email: 'team-a@inbound.test', name: 'Team A' }],
+
+    ccAddresses: [],
+
+    bccAddresses: [],
+
+    text: 'Please review this.',
+    html: '',
+
+    headers: [{ name: 'Message-ID', value: `<${messageId}@example.net>` }],
+    attachments: [],
+    receivedFor: [],
+    authentication: null,
+    attachmentsDropped: [],
   };
 }
 
@@ -77,11 +77,7 @@ describe('inbound email drop logging', () => {
 
   it('summarizes recipient domain and slug without full addresses', () => {
     expect(
-      inboundRecipientLogHints(
-        ['lost-team@inbound.test', 'ada@gmail.com'],
-        'lost-team',
-        'inbound.test',
-      ),
+      inboundRecipientLogHints(['lost-team@inbound.test', 'ada@gmail.com'], 'inbound.test'),
     ).toEqual({
       domains: ['inbound.test', 'gmail.com'],
       slugs: ['lost-team'],
@@ -94,11 +90,10 @@ describe('inbound email drop logging', () => {
       { db: db as never, inboundDomain: 'inbound.test' },
       {
         ...inboundPayload('empty-recipients'),
-        MailboxHash: '',
-        To: '',
-        ToFull: [],
-        OriginalRecipient: '',
-        TextBody: 'secret body that must not be logged',
+
+        toAddresses: [],
+
+        text: 'secret body that must not be logged',
       },
     );
 
@@ -113,10 +108,9 @@ describe('inbound email drop logging', () => {
       { db: db as never, inboundDomain: 'inbound.test' },
       {
         ...inboundPayload('missing-team'),
-        MailboxHash: 'lost-team',
-        To: 'lost-team@inbound.test',
-        ToFull: [{ Email: 'lost-team@inbound.test', Name: 'Lost', MailboxHash: 'lost-team' }],
-        TextBody: 'do not log this secret',
+
+        toAddresses: [{ email: 'lost-team@inbound.test', name: 'Lost' }],
+        text: 'do not log this secret',
       },
     );
 
@@ -152,7 +146,7 @@ describe('inbound email drop logging', () => {
 
     const queues = textQueueDeps();
     const payload = inboundPayload('duplicate-note');
-    payload.TextBody = 'secret retry body';
+    payload.text = 'secret retry body';
     await handleInbound({ db: db as never, inboundDomain: 'inbound.test', ...queues }, payload);
     await handleInbound({ db: db as never, inboundDomain: 'inbound.test', ...queues }, payload);
 

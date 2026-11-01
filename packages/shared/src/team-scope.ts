@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import {
   type Db,
   auditLog,
@@ -249,6 +251,8 @@ export interface TimelineImpactItem {
 }
 
 export interface CreateEventInput {
+  /** Stable capture key, hashed with team id; retries never rewrite source content. */
+  idempotencyKey?: string;
   authorUserId: string | null;
   source: EventSource;
   contentText?: string | null;
@@ -266,7 +270,7 @@ export interface CreateEmailEventInput {
   visibilityUserIds?: string[] | null;
   visibilityOwnerUserId?: string | null;
   /** RFC 5322 Message-ID, normalized (no angle brackets). Drives the
-   *  per-team unique index that makes Postmark retries idempotent. */
+   *  per-team unique index that makes Resend retries idempotent. */
   messageId: string;
   /** Optional In-Reply-To Message-ID (normalized) for direct-parent linking. */
   inReplyTo?: string | null;
@@ -284,9 +288,8 @@ export interface CreateEmailEventResult {
   id: string;
   teamId: string;
   threadRootId: string;
-  /** True if the insert hit the unique index (Postmark retry / duplicate
-   *  delivery). The dispatcher should skip downstream enqueues but NOT mark
-   *  failure — the original delivery already enqueued them. */
+  /** True if the insert hit the unique index (Resend retry / duplicate
+   *  delivery). The dispatcher replays downstream operations to recover partial failures. */
   deduplicated: boolean;
 }
 
@@ -3304,9 +3307,16 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
                 visibilityUserIds,
               })
             : {};
+        const digest = input.idempotencyKey
+          ? createHash('sha256').update(`${teamId}\0${input.idempotencyKey}`).digest('hex')
+          : null;
+        const stableId = digest
+          ? `${digest.slice(0, 8)}-${digest.slice(8, 12)}-5${digest.slice(13, 16)}-a${digest.slice(17, 20)}-${digest.slice(20, 32)}`
+          : undefined;
         const rows = await db
           .insert(rawEvents)
           .values({
+            ...(stableId ? { id: stableId } : {}),
             teamId,
             authorUserId: input.authorUserId,
             source: input.source,
@@ -3324,14 +3334,25 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
               contentText,
             ),
           })
+          .onConflictDoNothing()
           .returning();
-        const row = rows[0];
+        const row =
+          rows[0] ??
+          (stableId
+            ? (
+                await db
+                  .select()
+                  .from(rawEvents)
+                  .where(and(eq(rawEvents.teamId, teamId), eq(rawEvents.id, stableId)))
+                  .limit(1)
+              )[0]
+            : undefined);
         if (!row) throw new Error('Failed to create event');
         await normalizeRawEventEvidence({ db, teamId, rawEventId: row.id });
         await reconcileLinkArtifactsForRawEvent(db, {
           teamId,
           rawEventId: row.id,
-          text: contentText,
+          text: row.contentText,
           occurredAt: row.occurredAt,
         });
         return row;
@@ -3341,9 +3362,8 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
        * Phase 7 email-specific create that wraps insert + thread-root lookup
        * in one transaction so the email dispatcher cannot bypass team isolation
        * or forget to thread-link. Idempotent against the partial unique index
-       * on `(team_id, source_metadata->>'message_id')`: a Postmark retry returns
-       * `{ deduplicated: true }` so the dispatcher skips re-enqueueing extract /
-       * embed (the original delivery already did that).
+       * on `(team_id, source_metadata->>'message_id')`: a Resend retry returns
+       * `{ deduplicated: true }` so the dispatcher can recover downstream operations.
        *
        * Thread linking strategy: probe in-reply-to first (direct parent), then
        * walk references[] oldest-to-newest looking for any ancestor in this
@@ -3470,7 +3490,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
 
           const row = inserted[0];
           if (!row) {
-            // Postmark retry; the original row is already on disk with its
+            // Resend retry; the original row is already on disk with its
             // own thread_root_id. Look it up so callers can still link.
             const existing = await tx
               .select({ id: rawEvents.id, metadata: rawEvents.sourceMetadata })
@@ -3511,12 +3531,18 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
           return { id: row.id, teamId: row.teamId, threadRootId: rootId, deduplicated: false };
         });
         if (result) {
+          const [stored] = await db
+            .select({ contentText: rawEvents.contentText, occurredAt: rawEvents.occurredAt })
+            .from(rawEvents)
+            .where(and(eq(rawEvents.teamId, teamId), eq(rawEvents.id, result.id)))
+            .limit(1);
+          if (!stored) throw new Error('Email event missing during reconciliation');
           await normalizeRawEventEvidence({ db, teamId, rawEventId: result.id });
           await reconcileLinkArtifactsForRawEvent(db, {
             teamId,
             rawEventId: result.id,
-            text: input.contentText,
-            occurredAt: input.occurredAt,
+            text: stored.contentText,
+            occurredAt: stored.occurredAt,
           });
         }
         return result;

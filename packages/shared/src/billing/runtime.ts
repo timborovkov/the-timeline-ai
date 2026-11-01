@@ -428,7 +428,7 @@ export async function settleEmailUnits(input: {
     teamId: input.teamId,
     userId: input.userId ?? BILLING_SYSTEM_USER_ID,
   });
-  // Stamp before settle. A throw after Postmark already accepted the mail
+  // Stamp before settle. A throw after Resend already accepted the mail
   // leaves the reservation for the janitor instead of expiring the charge.
   await billing.patchReservationMetadata(input.operationId, {
     pending_settlement: true,
@@ -446,7 +446,7 @@ export async function settleEmailUnits(input: {
       nextNativeUnits: previous + units,
     }),
     operationClass: input.operationClass,
-    provider: 'postmark',
+    provider: 'resend',
     source: 'email',
   });
   return { ok: true };

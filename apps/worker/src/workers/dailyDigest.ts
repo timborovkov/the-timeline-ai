@@ -1,6 +1,7 @@
 import { type Db } from '@timeline/db';
 import { childLogger, messaging, queue } from '@timeline/shared';
-import { Worker, type Job } from 'bullmq';
+import { ResendError } from '@timeline/shared/email';
+import { Worker, DelayedError, type Job } from 'bullmq';
 
 import { withWorkerAiBilling, workerBillingJobOptions } from '#src/billing-context.js';
 import { captureWorkerJobFailure } from '#src/monitoring.js';
@@ -100,6 +101,7 @@ export async function processDailyDigestJob(
       digestUrl: `${siteUrl()}/app`,
     });
     if (!result.ok && !result.skipped && result.retryable !== false) {
+      if (result.retryAfterMs) throw new ResendError('rate_limited', true, result.retryAfterMs);
       throw new Error(result.error ?? 'Workspace daily digest send failed');
     }
     return {
@@ -115,9 +117,10 @@ export async function processDailyDigestJob(
     to: job.email,
     digestUrl: `${siteUrl()}/app/digests?digest=${job.digestId}`,
   });
-  // Permanent provider failures (e.g. Postmark inactive recipient) are already
+  // Permanent provider failures (e.g. Resend inactive recipient) are already
   // recorded on the digest/delivery rows — retrying only burns attempts + Sentry.
   if (!result.ok && !result.skipped && result.retryable !== false) {
+    if (result.retryAfterMs) throw new ResendError('rate_limited', true, result.retryAfterMs);
     throw new Error(result.error ?? 'Daily digest send failed');
   }
   return {
@@ -143,7 +146,17 @@ export function startDailyDigestWorker(deps: { db: Db }): Worker<queue.DailyDige
         'digest',
         () => processDailyDigestJob(deps, job.data),
         workerBillingJobOptions(job, token),
-      );
+      ).catch(async (error: unknown) => {
+        if (
+          error instanceof ResendError &&
+          error.retryAfterMs > 0 &&
+          job.attemptsStarted < (job.opts.attempts ?? 8)
+        ) {
+          await job.moveToDelayed(Date.now() + error.retryAfterMs, token);
+          throw new DelayedError();
+        }
+        throw error;
+      });
       log.info(
         { jobId: job.id, ...result, durationMs: Date.now() - startedAt },
         'digest job complete',

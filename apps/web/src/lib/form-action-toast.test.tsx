@@ -45,6 +45,14 @@ describe('useFormActionToast', () => {
     vi.useRealTimers();
   });
 
+  it('does not dismiss a completed toast when a revalidated form mounts with the same id', () => {
+    const view = render(<Probe id="visibility" pending={false} success="Visibility saved" />);
+    expect(toast.success).toHaveBeenCalled();
+    view.unmount();
+    render(<Probe id="visibility" pending={false} />);
+    expect(toast.dismiss).not.toHaveBeenCalled();
+  });
+
   it('shows a delayed loading toast, then success', () => {
     const view = render(<Probe id="team-timezone" pending success="Timezone updated" />);
     vi.advanceTimersByTime(149);

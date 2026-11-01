@@ -395,7 +395,7 @@ PLATFORM_ADMIN_EMAILS=
         and then the next join reserves the canonical id. Cancelling a joining/active meeting with
         no transcript chunks stamps pending Recall minutes before the meeting is cancelled, and
         maintenance retries that marker if settle fails. Finalize settles failed, cancelled, and
-        no-show reservations. Postmark success is recorded before email settlement. A delivered
+        no-show reservations. Resend success is recorded before email settlement. A delivered
         message whose settlement fails stays reserved for the janitor and is not resent. Reserve,
         settle, release, and reservation expiry lock the billing account before the reservation row.
         Meeting-finalize billing uses the system actor so a departed creator cannot skip settlement.
@@ -624,8 +624,8 @@ PLATFORM_ADMIN_EMAILS=
         </li>
         <li>
           Owner emails: spend-cap 50/75/90/100%, Free near-limit / exhaustion, and subscription
-          <code>past_due</code> (<code>billing_usage_alert</code> via Postmark; once per threshold
-          or past-due notice per period)
+          <code>past_due</code> (<code>billing_usage_alert</code> via Resend; once per threshold or
+          past-due notice per period)
         </li>
       </ul>
     </main>

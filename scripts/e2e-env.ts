@@ -149,7 +149,7 @@ export function buildE2eEnv(input: Env = process.env, options: BuildE2eEnvOption
   // Fixture service URLs/credentials stay configurable, but ordinary E2E runs
   // must never inherit exported provider or telemetry credentials from a shell.
   const providerVariable =
-    /^(?:OPENROUTER_|OPENAI_|ANTHROPIC_|LANGSMITH_|SENTRY_|NEXT_PUBLIC_SENTRY_|NEXT_PUBLIC_POSTHOG_|POSTHOG_|GITHUB_|AUTH_GITHUB_|SLACK_|TELEGRAM_|POSTMARK_|DAYTONA_|RECALL_|LINEAR_|MONDAY_|GOOGLE_|TURNSTILE_|NEXT_PUBLIC_TURNSTILE_|CRON_|ANALYTICS_)/;
+    /^(?:OPENROUTER_|OPENAI_|ANTHROPIC_|LANGSMITH_|SENTRY_|NEXT_PUBLIC_SENTRY_|NEXT_PUBLIC_POSTHOG_|POSTHOG_|GITHUB_|AUTH_GITHUB_|SLACK_|TELEGRAM_|RESEND_|DAYTONA_|RECALL_|LINEAR_|MONDAY_|GOOGLE_|TURNSTILE_|NEXT_PUBLIC_TURNSTILE_|CRON_|ANALYTICS_)/;
   for (const key of Object.keys(env)) {
     if (providerVariable.test(key)) delete env[key];
   }
@@ -198,6 +198,7 @@ export function buildE2eEnv(input: Env = process.env, options: BuildE2eEnvOption
   if (env.E2E_PROD_SMOKE !== '1') env.OPENROUTER_API_KEY = 'e2e-deterministic-chat';
   env.QDRANT_URL ??= qdrantPort ? localUrl(qdrantPort) : 'http://localhost:6333';
   env.QDRANT_API_KEY = env.E2E_QDRANT_API_KEY ?? 'dev_qdrant_key';
+  env.RESEND_API_KEY = 're_e2e_fake';
   env.NODE_OPTIONS = withDevelopmentCondition(env.NODE_OPTIONS);
   assertE2eFixtureServices(env);
   return env;

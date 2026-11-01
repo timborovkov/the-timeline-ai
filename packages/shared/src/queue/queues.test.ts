@@ -132,6 +132,31 @@ afterEach(() => {
 });
 
 describe('queue wrappers', () => {
+  it('deduplicates inbound email IDs with bounded retries and operator retention', async () => {
+    const queues = await importQueues();
+    const emailId = '11111111-1111-4111-8111-111111111111';
+    await queues.enqueueEmailInboundJob({ emailId });
+    await queues.enqueueEmailInboundJob({ emailId });
+    const queue = fakes.queues[0];
+    expect(queue?.name).toBe('email-inbound');
+    expect(queue?.options).toMatchObject({
+      defaultJobOptions: {
+        attempts: 8,
+        backoff: { type: 'exponential', delay: 30_000 },
+        removeOnComplete: { age: 86400 },
+        removeOnFail: { age: 604800 },
+      },
+    });
+    expect(queue?.jobs.size).toBe(1);
+    expect(queue?.addCalls[0]).toEqual({
+      name: 'receive',
+      data: { emailId },
+      opts: { jobId: `resend-${emailId}` },
+    });
+    await queues.closeEmailInboundQueue();
+    expect(queue?.close).toHaveBeenCalledOnce();
+  });
+
   it('constructs core queues with stable names and retry/backoff defaults', async () => {
     const queues = await importQueues();
 

@@ -13,6 +13,7 @@ import { startChatDeliveryWorker } from '#src/workers/chatDelivery.js';
 import { startConversationAgentWorker } from '#src/workers/conversationAgent.js';
 import { startDailyDigestWorker } from '#src/workers/dailyDigest.js';
 import { startDocumentExtractWorker } from '#src/workers/documentExtract.js';
+import { startEmailInboundWorker } from '#src/workers/emailInbound.js';
 import { startEmbedWorker } from '#src/workers/embed.js';
 import { startExtractWorker } from '#src/workers/extract.js';
 import { startIntegrationSyncWorker } from '#src/workers/integrationSync.js';
@@ -66,6 +67,7 @@ async function main(): Promise<void> {
       'skipping document-extract consumer on full worker (use WORKER_MODE=document-extract in production, or set DAYTONA_API_KEY / DOCUMENT_EXTRACT_ALLOW_INPROCESS locally)',
     );
   }
+  const emailInboundWorker = startEmailInboundWorker({ db });
   const transcribeWorker = startTranscribeWorker({ db });
   const extractWorker = startExtractWorker({ db });
   const suggestionWorker = startSuggestionWorker({ db });
@@ -105,13 +107,14 @@ async function main(): Promise<void> {
       taskCategoryWorkerEnabled: taskCategoryWorker !== null,
       documentExtractEnabled,
     },
-    'transcribe + extract + suggestions + embed + overdue + calendar-recurrence + conversation-agent + document-extract + meeting-finalize + meeting-scheduler + object-summary + janitor + webhook-delivery + integration-sync + mcp-health + team-export + timeline-moment-presentation + daily-digest + reconciliation workers started',
+    'email-inbound + transcribe + extract + suggestions + embed + overdue + calendar-recurrence + conversation-agent + document-extract + meeting-finalize + meeting-scheduler + object-summary + janitor + webhook-delivery + integration-sync + mcp-health + team-export + timeline-moment-presentation + daily-digest + reconciliation workers started',
   );
 
   const shutdown = async (signal: string): Promise<void> => {
     log.info({ signal }, 'received shutdown signal');
     try {
       await Promise.all([
+        emailInboundWorker.close(),
         transcribeWorker.close(),
         extractWorker.close(),
         suggestionWorker.close(),
@@ -134,6 +137,7 @@ async function main(): Promise<void> {
         dailyDigestWorker.close(),
         reconciliationWorker.close(),
       ]);
+      await queue.closeEmailInboundQueue();
       await queue.closeTranscribeQueue();
       await queue.closeExtractQueue();
       await queue.closeSuggestionQueue();

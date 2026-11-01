@@ -202,8 +202,9 @@ export interface SendMessageResult {
   deliveryId?: string;
   providerMessageId?: string;
   error?: string;
-  /** When `ok` is false, false means retries cannot help (e.g. Postmark inactive). */
+  /** When `ok` is false, false means retries cannot help (e.g. Resend inactive). */
   retryable?: boolean;
+  retryAfterMs?: number;
   skipped?: boolean;
   skippedStatus?: MessageDeliveryStatus;
 }

@@ -775,14 +775,14 @@ describe('inviteMemberAction', () => {
       teamName: 'Timeline E2E',
       inviterName: 'Tim',
     });
-    fakes.fakeSendMessage.mockResolvedValue({ ok: false, error: 'postmark down' });
+    fakes.fakeSendMessage.mockResolvedValue({ ok: false, error: 'resend down' });
 
     await expect(
       inviteMemberAction({}, form({ email: 'new@example.test', role: 'member' })),
     ).resolves.toEqual({
       inviteUrl: 'https://timeline.test/accept-invite/invite-token',
       sendStatus: 'failed',
-      sendError: 'postmark down',
+      sendError: 'resend down',
     });
     expect(fakes.trackProductEventBestEffort).toHaveBeenCalledWith(
       { kind: 'user', teamId: TEAM_ID, userId: USER_ID },

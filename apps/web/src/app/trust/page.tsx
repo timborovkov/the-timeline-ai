@@ -72,7 +72,7 @@ const PROVIDERS = [
     'Meeting attendance and transcript generation; Timeline requests one-hour media retention',
   ],
   ['Daytona', 'Ephemeral isolated compute for document extraction'],
-  ['Postmark', 'Transactional and inbound email'],
+  ['Resend', 'Transactional and inbound email'],
   [
     'PostHog',
     'Personless surface totals, pseudonymous product events, and optional public-browser analytics after consent',

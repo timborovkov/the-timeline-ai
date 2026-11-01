@@ -245,9 +245,9 @@ describe('reconciliation source normalization', () => {
             message_id: '<acme-approval@example.test>',
             subject: 'Fwd: Acme launch workaround',
             from_email: 'nora@acme.example',
-            raw_postmark: {
-              MessageID: '<acme-approval@example.test>',
-              TextBody: 'Nora approved the launch workaround.',
+            raw_resend: {
+              headers: [{ name: 'Message-ID', value: '<acme-approval@example.test>' }],
+              text: 'Nora approved the launch workaround.',
             },
           },
         },

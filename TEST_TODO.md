@@ -75,8 +75,9 @@ The July 8 live legacy-provenance audit against team
 counts.
 A targeted Playwright MCP run also passed the Timeline-as-MCP bearer-key page,
 one-time key minting, JSON-RPC `timeline.list_events`, and private/specific-user
-visibility exclusion. A targeted Playwright inbound-email run also passed a
-Postmark-shaped webhook payload through `/api/email/inbound`, verified the
+visibility exclusion. The November 1 offline Playwright inbound-email run passed
+a signed Resend webhook through `/api/email/inbound`, the ID-only queue and a
+BullMQ worker using mocked receiving APIs, then verified the
 team-scoped `raw_events` row, rendered it in the signed-in timeline, and proved
 the Team settings sender whitelist blocks non-whitelisted senders while allowing
 configured senders. A targeted Playwright job-recovery run also passed the
@@ -109,12 +110,12 @@ Production sampling over that fresh run reported 7/7 passed with pass rate 1.0
 and zero fixture candidates or ignored files at
 `/tmp/timeline-reconciliation-live-eval/2026-07-03T13-46-10-source-ref-allowlist-retry3/production-sampling-report.json`.
 A July 3, 2026 non-strict live integration canary reached OpenRouter structured
-chat, OpenRouter audio transcription, Postmark, Recall, and the Telegram Bot
+chat, OpenRouter audio transcription, Resend, Recall, and the Telegram Bot
 API; verified GitHub, Monday.com, Slack, and Sentry OAuth authorize endpoints
-plus configured Monday, Sentry OAuth, Slack, and Postmark webhook secrets; and
+plus configured Monday, Sentry OAuth, Slack, and Resend webhook secrets; and
 now includes optional Slack Web API `auth.test` checks for dedicated bot/user
 canary tokens plus optional signed Slack, secret-protected Telegram, and
-DB-polled Postmark inbound event-capture canaries.
+DB-polled Resend inbound event-capture canaries.
 Sentry API access still returns 403 for the configured org/project, and optional
 GitHub App, Google Drive, Linear, Slack auth-test token, and provider capture
 canary credentials remain unset.
@@ -248,7 +249,7 @@ Legend:
 | Slack | Partial: seeded member settings route for workspace, bound channel, linked user, read-only controls, and admin bind/unbind via deterministic Slack Web API fixtures | Strong events webhook plus signed command, install OAuth, and user-link OAuth route coverage | Partial: bind/unbind success, validation, provider failure, audit, onboarding, and revalidation behavior | Strong dispatcher/API/security/source-capture coverage, including text/file capture, linked attribution, visibility defaults, downstream queues, idempotent edits, `/timeline join` Saved Meeting aliases, raw URL confirmation buttons, deterministic Web API fixture coverage for settings E2E, optional live Slack Web API `auth.test` canary coverage, and optional signed Slack event-capture canary coverage | Partial: native Slack provider sync runs through the worker context for selected-channel event writes, cursor persistence, and success cleanup | Partial: settings install/configuration/binding/user list states | Scheduled auth-test token coverage, provider-backed native Slack canary, and richer settings UI states |
 | Telegram | Partial: browser verifies deterministic Telegram voice transcript approval acceptance plus admin settings token generation, revoke, and group unbind | Partial: webhook covered, including media env wiring | Partial: personal/group link token generation, username validation, admin-only revoke/unbind, onboarding, analytics, and revalidation behavior | Strong API/dispatcher coverage, including DM text, voice/audio, caption/photo, document routing, duplicate delivery, media skip behavior, `/join` Saved Meeting aliases, raw URL inline-button confirmation, direct-reply confirmation, passive-text non-trigger behavior, link artifacts, normalized reconciliation evidence, Telegram Bot API live canary, and optional secret-protected Telegram capture canary | Partial: transcribe processor handoff from audio transcript to normalized reconciliation evidence, extract/embed, and suggestions is covered | Partial: link-token form success/error/pending/deep-link states | Scheduled Telegram capture canary credentials and richer image/OCR-to-approval behavior |
 | MCP inbound/outbound | Partial: browser verifies outbound bearer-key minting plus JSON-RPC `timeline.list_events` only exposes team-visible events, excluding private and specific-user rows | Strong MCP OAuth/server/key/server/tool route contracts, including scope-filtered `timeline.ask_agent`, structured citations/proposal IDs, stable failures, per-key throttling, bounded delegation/deadline behavior, outbound moment retrieval, raw event/content-metadata fencing, provider selection before semantic limiting, and team-visible evidence filtering | Missing MCP-specific actions if/when added | Strong auth/OAuth state/tool namespace/server handler, delegation-header propagation, proposal-only tool authority and persisted team-visible synthetic proposals, team-versus-personal custom-tool evidence capture with versioned dedupe/legacy-private preservation, oversized replay-degraded fallback, provider-object anchors from structured MCP snapshots, non-browser `askAgent` provider-backed MCP tool loop, live-model custom MCP tool use with evidence capture, and deterministic untrusted-output/failure/reauth evals | Strong MCP health worker coverage for SSRF-safe production URL validation, cache invalidation, disabled-server skips, and persisted success/failure state | Partial: MCP server add/OAuth-start/enable/remove/test-call management states, reconnect-specific test-call failures, generic tool-call failure dialogs, plus outbound key mint/revoke, default-off Timeline-agent opt-in, one-time-key sequencing, and client setup snippets | Real external custom-server behavior, browser E2E for `timeline.ask_agent`, and richer browser/chat reconnect states |
-| Email inbound/outbound | Partial: browser posts a Postmark-shaped webhook payload, verifies the team-scoped email raw event, sees it render in the signed-in timeline, and checks sender-whitelist block/allow behavior through Team settings | Partial: inbound webhook covered, including Redis queue wiring and document attachment deps | Whitelist action covered; invite/support email action gaps remain | Strong parser/dispatcher/outbound/IP allowlist/source-capture coverage, including sender auth, sender whitelist filtering, visibility defaults, attachment/audio routing, captured-document handoff, downstream queues, duplicate delivery recovery, and optional DB-polled Postmark inbound capture canary coverage | Partial: worker-backed inbound attachment extraction from email-captured documents covered | Partial: inbound sender whitelist configured/unconfigured/success/error/pending states | Scheduled Postmark inbound capture canary credentials |
+| Email inbound/outbound | Partial: browser posts a signed Resend event, runs the queued worker with mocked receiving APIs, verifies the team-scoped email raw event, sees it render in the signed-in timeline, and checks sender-whitelist block/allow behavior through Team settings | Covered: raw-body Svix signatures, malformed events, queue failures, worker retries and throttling | Whitelist action covered; invite/support email action gaps remain | Strong parser/dispatcher/outbound/signature/source-capture coverage, including sender auth, sender whitelist filtering, visibility defaults, attachment/audio routing, captured-document handoff, downstream queues, duplicate delivery recovery, and optional DB-polled Resend inbound capture canary coverage | Partial: worker-backed inbound attachment extraction from email-captured documents covered | Partial: inbound sender whitelist configured/unconfigured/success/error/pending states | Scheduled Resend inbound capture canary credentials |
 | Meeting bots and meetings | Partial: browser saved-meeting setup creates an auto-join schedule, scheduled captures render, finalized transcript detail shows summary/chunks, and the timeline shows the meeting summary card | Strong Recall status/transcript webhook coverage for lifecycle, no-show, failure, and finalize handoff contracts | Thin meetings action coverage | Strong meetings scope, Saved Meeting alias/schedule/materialization/confirmation/failure-counter behavior, Recall/Svix/url helpers, and live read-only Recall API list canary | Strong meeting-finalize and meeting-scheduler workers | Partial: saved-meeting form reset plus meeting detail transcript/summary/export/cancel states | Provider-backed scheduling/finalization capture canary and richer meeting list/form edge states |
 | Reconciliation and work artifacts | Partial: browser covers Team -> Reconciliation with persisted evidence, clusters, outputs, failed output state, worker-backed manual repair result metrics and cluster evidence, cluster drilldown, source audit and dry-run backfill queue submissions plus completed worker-run metrics, team and cluster manual-reconcile queue submissions, run-history filtering/pagination, approval-to-reconciliation technical-detail links, approval accept/reject durable-state effects, partial bulk approval failure recovery, invalid manual-reconcile operator errors, private/specific-user cluster visibility filtering, direct cluster URL denial, and mobile no-overflow layout | Covered through team reconciliation page/action route contracts | Strong reconciliation queue action boundary tests | Strong reconciliation schema, normalization, backfill, resolver, dashboard snapshot, source-ref, visibility-floor, authority, planner, production-sampling, MCP capture, and live artifact eval coverage | Strong reconciliation worker audit/backfill/scoped repair coverage, including separate evidence, association, resolver-output, and projection repair metrics | Partial: dashboard and cluster pages render snapshot/drilldown states and output IDs/source refs; approval rows cover human-readable payload fields, current member/parent-object/board/lane/audience labels, calendar resolution schedules, bounded disclosures, evidence labels, multi-record technical-details links, and stale/partial bulk recovery states | Richer browser coverage for stale approval cross-state edge cases |
 | Job recovery and failed work | Partial: admin dashboard retry/dismiss flow covers failed embedding work, retry metadata clearing, and dismissal persistence | Strong retry/dismiss/dashboard route coverage plus integration cooldown exclusion, cron reconcile auth/failure behavior, and direct finished archive route coverage | N/A | Strong job-recovery PGlite coverage, including provider cooldown exclusion and retained finished-job archive pagination | Janitor worker covered | Partial job recovery list component with filters, single retry/dismiss, bulk retry/dismiss, confirmation, retry status, and finished archive states | Richer dashboard edge states and worker-finished archive transitions |
@@ -418,8 +419,9 @@ Current local coverage includes core product journeys:
 - Team admin visibility, member invite/resend/revoke, signed-out invite
   acceptance, role change, admin removal limits, owner removal, and removed-user
   access loss.
-- Postmark-shaped inbound email webhook journey: the route accepts an
-  authenticated payload, creates a team-scoped `email` raw event, and the owner
+- Resend inbound email webhook journey: the route verifies a signed event and
+  queues its ID; the worker retrieves mocked content and creates a team-scoped
+  `email` raw event, and the owner
   sees the captured customer note on the timeline. Team settings sender
   whitelist E2E verifies blocked senders do not create raw events and allowed
   senders still render in the timeline.
@@ -783,7 +785,7 @@ tests and evals carry the branch coverage and model/tool behavior.
   - Real external MCP custom-server behavior and richer chat reconnect states.
   - Broader source-capture contracts for documents and integrations.
   - Scheduled Slack auth-test token coverage, provider-backed native Slack
-    canary, scheduled Postmark capture canary credentials, and settings UI flows.
+    canary, scheduled Resend capture canary credentials, and settings UI flows.
   - Scheduled Telegram capture canary credentials and richer image/OCR to
     approval behavior.
 
@@ -811,15 +813,15 @@ tests and evals carry the branch coverage and model/tool behavior.
     snapshots, and full-replay reconciliation evidence, including audio
     attachment child rows before transcription. Slack suggestion work now runs
     through debounced conversation reviews. Email has dispatcher/route
-    coverage proving Postmark parent events stamp inline payload refs, digests,
+    coverage proving Resend parent events stamp inline payload refs, digests,
     compact snapshots, and full-replay reconciliation evidence, plus browser
-    E2E from a Postmark-shaped webhook payload to a team-scoped timeline row and
+    E2E from a signed Resend event through queue/worker to a team-scoped timeline row and
     sender-whitelist block/allow E2E, while email proposal work remains
     raw-event anchored.
   - Email attachment capture now promotes non-audio attachments into captured
     document/version rows linked to the parent raw event and queues document
     extraction when document S3 plus Redis are configured.
-  - Worker-backed extraction now covers the Postmark attachment path from
+  - Worker-backed extraction now covers the Resend attachment path from
     inbound email payload to captured document chunking and doc-chunk embed
     enqueue with parent raw-event provenance.
   - Generic ingest webhooks stamp signed textual payloads with inline source
@@ -1166,10 +1168,10 @@ Once the suite is mature, split commands by layer:
 - `bun run test:dist-imports`: compiled-package import smoke.
 - `bun run validate`: format, typecheck, lint, and knip.
 - `bun run canary:integrations`: manual secret-safe live OpenRouter structured
-  chat, OpenRouter audio transcription, GitHub App, Sentry, Postmark, Telegram,
+  chat, OpenRouter audio transcription, GitHub App, Sentry, Resend, Telegram,
   Recall, optional Slack Web API `auth.test`, optional signed Slack event
   capture, optional secret-protected Telegram capture, optional DB-polled
-  Postmark inbound capture, native OAuth authorize endpoint, and webhook-secret
+  Resend inbound capture, native OAuth authorize endpoint, and webhook-secret
   canary.
 - `bun run canary:integrations:strict`: same canary, failing unless every row is
   `OK`.

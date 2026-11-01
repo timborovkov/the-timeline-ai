@@ -35,8 +35,8 @@ const NESTED_PROVIDER_KEYS = [
   'jira',
 ] as const;
 
-const HTML_KEYS = ['html_body', 'htmlBody', 'HtmlBody', 'body_html', 'text_html'] as const;
-const TEXT_KEYS = ['text_body', 'textBody', 'TextBody', 'text', 'content_text'] as const;
+const HTML_KEYS = ['html_body', 'htmlBody', 'body_html', 'text_html'] as const;
+const TEXT_KEYS = ['text_body', 'textBody', 'text', 'content_text'] as const;
 const FILENAME_KEYS = new Set([
   'filename',
   'file_name',
@@ -65,14 +65,14 @@ export function sourceOriginalFromEvent(input: {
   const html = firstString(
     ...HTML_KEYS.map((key) => meta[key]),
     ...HTML_KEYS.map((key) => snapshot[key]),
-    nestedString(meta.raw_postmark, 'HtmlBody'),
-    nestedString(snapshot.raw_postmark, 'HtmlBody'),
+    nestedString(meta.raw_resend, 'html'),
+    nestedString(snapshot.raw_resend, 'html'),
   );
   const storedText = firstString(
     ...TEXT_KEYS.map((key) => snapshot[key]),
     ...TEXT_KEYS.map((key) => meta[key]),
-    nestedString(meta.raw_postmark, 'TextBody'),
-    nestedString(snapshot.raw_postmark, 'TextBody'),
+    nestedString(meta.raw_resend, 'text'),
+    nestedString(snapshot.raw_resend, 'text'),
   );
   const text = distinctText(html, storedText, html ? input.contentText : null);
   const json = originalJson(meta, snapshot, Boolean(html), Boolean(text));
@@ -160,7 +160,7 @@ function cleanJson(value: unknown, hasHtml: boolean, hasText: boolean): unknown 
   const omit = new Set(INTERNAL_META_KEYS);
   if (hasHtml) for (const key of HTML_KEYS) omit.add(key);
   if (hasText) for (const key of TEXT_KEYS) omit.add(key);
-  omit.add('raw_postmark');
+  omit.add('raw_resend');
   const next: Record<string, unknown> = {};
   for (const [key, nested] of Object.entries(value)) {
     if (omit.has(key) || nested === null || nested === undefined || nested === '') continue;

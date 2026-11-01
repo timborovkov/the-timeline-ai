@@ -2,7 +2,7 @@
 --
 -- Adds `teams.inbound_email` (per-team inbound address) and a partial unique
 -- index on `raw_events.source_metadata->>'message_id'` scoped by `team_id` for
--- Postmark webhook idempotency. The index is team-scoped (not global) so a
+-- Resend webhook idempotency. The index is team-scoped (not global) so a
 -- forged Message-ID from one team cannot silently drop another team's
 -- legitimate inbound. ON CONFLICT DO NOTHING in the dispatcher dedups within
 -- a single team.

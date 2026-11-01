@@ -17,7 +17,7 @@ describe('sourceOriginalFromEvent', () => {
         source_payload_ref: 'inline://timeline/email/abc',
         payload_digest: 'sha256:deadbeef',
         source_snapshot: {
-          provider: 'postmark',
+          provider: 'resend',
           subject: 'Vendor contract review',
           html_body: '<p>Please review the <b>appendix</b>.</p>',
           text_body: 'Please review the appendix.',
@@ -31,7 +31,7 @@ describe('sourceOriginalFromEvent', () => {
     expect(original.html).toContain('<b>appendix</b>');
     expect(original.text).toBe('Please review the appendix.');
     expect(original.json).toEqual({
-      provider: 'postmark',
+      provider: 'resend',
       subject: 'Vendor contract review',
       from: { email: 'mika@example.com' },
     });

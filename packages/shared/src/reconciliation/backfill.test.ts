@@ -50,7 +50,10 @@ describe('reconciliation evidence backfill and coverage audit', () => {
           visibility: 'team',
           sourceMetadata: {
             message_id: '<retained@example.test>',
-            raw_postmark: { MessageID: '<retained@example.test>', TextBody: 'Retained payload.' },
+            raw_resend: {
+              headers: [{ name: 'Message-ID', value: '<retained@example.test>' }],
+              text: 'Retained payload.',
+            },
           },
         },
         {

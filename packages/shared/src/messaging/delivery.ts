@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import {
   type Db,
   dailyDigests,
@@ -11,6 +13,7 @@ import {
   users,
 } from '@timeline/db';
 import { and, eq, isNull, lt } from 'drizzle-orm';
+import { z } from 'zod';
 
 import type {
   DailyDigestPayload,
@@ -23,6 +26,7 @@ import type {
 } from '#src/messaging/types.js';
 
 import { emailRecipientCount } from '#src/billing/catalog.js';
+import { resendRequest, ResendError, type EmailFetch } from '#src/email/resend-client.js';
 import { getEnv } from '#src/env.js';
 import { childLogger } from '#src/logger.js';
 import {
@@ -42,53 +46,16 @@ import { renderMessage } from '#src/messaging/templates.js';
 import { sendTeamSlackDirectMessage, sendTeamSlackMessage } from '#src/slack/dispatcher.js';
 import { sendTelegramBotMessage } from '#src/telegram/api.js';
 
-interface PostmarkResult {
+interface ResendResult {
   ok: boolean;
   providerMessageId?: string;
   error?: string;
   retryable?: boolean;
+  retryAfterMs?: number;
 }
 
 const PENDING_DELIVERY_RETRY_AFTER_MS = 30_000;
 const log = childLogger('messaging:delivery');
-
-/** Postmark 406 + matching copy: hard bounce / spam complaint / manual suppression. */
-function isInactiveRecipientFailure(errorCode: number | undefined, message: string): boolean {
-  if (errorCode === 406) return true;
-  return /marked as inactive|inactive (addresses|recipients)/i.test(message);
-}
-
-/** Terminal send-input failures; retries cannot help until config/content changes. */
-const PERMANENT_POSTMARK_ERROR_CODES = new Set([
-  300, // Invalid email request
-  400, // Sender Signature not found
-  401, // Sender signature not confirmed
-  402, // Invalid JSON
-  403, // Invalid request field(s)
-  406, // Inactive recipient
-  409, // JSON required
-  411, // Forbidden attachment type
-  412, // Account pending approval
-  413, // Account may not send
-]);
-
-/**
- * Classify Postmark send failures for BullMQ retry policy.
- * Permanent: inactive recipients and other terminal input/config ErrorCodes.
- * Retryable: credits (405), rate limits (429), 5xx, network, and unknown 422s.
- */
-function isRetryablePostmarkFailure(input: {
-  status: number;
-  errorCode?: number;
-  message: string;
-}): boolean {
-  if (isInactiveRecipientFailure(input.errorCode, input.message)) return false;
-  if (typeof input.errorCode === 'number' && PERMANENT_POSTMARK_ERROR_CODES.has(input.errorCode)) {
-    return false;
-  }
-  if (input.status === 401 || input.status === 403 || input.status === 404) return false;
-  return true;
-}
 
 export interface SendMessageOptions {
   db?: Db;
@@ -110,62 +77,72 @@ function shortError(err: unknown, fallback: string): string {
   return fallback;
 }
 
-async function sendPostmarkEmail(
+const sendPayloadSchema = z.object({
+  from: z.string(),
+  to: z.array(z.string()),
+  subject: z.string(),
+  text: z.string(),
+  html: z.string(),
+  reply_to: z.string().optional(),
+  tags: z.array(z.object({ name: z.string(), value: z.string() })),
+});
+type SendPayload = z.infer<typeof sendPayloadSchema>;
+function resendPayload(message: RenderedMessage): SendPayload {
+  return {
+    from: configuredSender() ?? '',
+    to: message.to
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean),
+    subject: message.subject,
+    text: message.textBody,
+    html: message.htmlBody,
+    ...(message.replyTo ? { reply_to: message.replyTo } : {}),
+    tags: Object.entries(message.metadata ?? {})
+      .filter(
+        ([name, value]) =>
+          /^[A-Za-z0-9_-]{1,256}$/.test(name) && /^[A-Za-z0-9_-]{1,256}$/.test(value),
+      )
+      .slice(0, 10)
+      .map(([name, value]) => ({ name, value })),
+  };
+}
+async function sendResendEmail(
   message: RenderedMessage,
-  fetchImpl: (
-    ...args: Parameters<typeof globalThis.fetch>
-  ) => ReturnType<typeof globalThis.fetch> = globalThis.fetch,
-): Promise<PostmarkResult> {
-  const env = getEnv();
-  const from = configuredSender();
-  if (!env.POSTMARK_SERVER_TOKEN || !from) {
+  fetchImpl: EmailFetch = globalThis.fetch,
+  deliveryKey?: string,
+  payload: SendPayload = resendPayload(message),
+): Promise<ResendResult> {
+  if (!getEnv().RESEND_API_KEY || !payload.from)
     return { ok: false, error: 'Outbound email is not configured', retryable: false };
-  }
-
   try {
-    const res = await fetchImpl('https://api.postmarkapp.com/email', {
-      method: 'POST',
-      signal: AbortSignal.timeout(10_000),
-      headers: {
-        Accept: 'application/json',
-        'Content-Type': 'application/json',
-        'X-Postmark-Server-Token': env.POSTMARK_SERVER_TOKEN,
-      },
-      body: JSON.stringify({
-        From: from,
-        To: message.to,
-        ReplyTo: message.replyTo,
-        Subject: message.subject,
-        TextBody: message.textBody,
-        HtmlBody: message.htmlBody,
-        MessageStream: 'outbound',
-        Metadata: message.metadata,
-      }),
-    });
-    const body = (await res.json().catch(() => null)) as {
-      Message?: string;
-      MessageID?: string;
-      ErrorCode?: number;
-    } | null;
-    if (!res.ok) {
-      const detail = body?.Message ?? `${res.status} ${res.statusText}`.trim();
-      const error = detail.slice(0, 500);
-      return {
-        ok: false,
-        error,
-        retryable: isRetryablePostmarkFailure({
-          status: res.status,
-          ...(typeof body?.ErrorCode === 'number' ? { errorCode: body.ErrorCode } : {}),
-          message: error,
-        }),
-      };
-    }
+    const response = z.object({ id: z.string().min(1) }).parse(
+      await resendRequest(
+        '/emails',
+        {
+          method: 'POST',
+          body: JSON.stringify(payload),
+          ...(deliveryKey
+            ? {
+                headers: {
+                  'Idempotency-Key': `timeline-${createHash('sha256').update(deliveryKey).digest('hex')}`,
+                },
+              }
+            : {}),
+        },
+        fetchImpl,
+      ),
+    );
+    return { ok: true, providerMessageId: response.id };
+  } catch (error) {
     return {
-      ok: true,
-      ...(body?.MessageID ? { providerMessageId: body.MessageID } : {}),
+      ok: false,
+      error: error instanceof ResendError ? error.message : 'Invalid Resend response',
+      retryable: error instanceof ResendError ? error.retryable : true,
+      ...(error instanceof ResendError && error.retryAfterMs
+        ? { retryAfterMs: error.retryAfterMs }
+        : {}),
     };
-  } catch (err) {
-    return { ok: false, error: shortError(err, 'Failed to send email'), retryable: true };
   }
 }
 
@@ -204,9 +181,13 @@ export async function recordDelivery(input: {
 async function findDeliveryByDedupeKey(input: {
   db: Db;
   dedupeKey: string;
-}): Promise<{ id: string; status: MessageDeliveryStatus } | null> {
+}): Promise<{ id: string; status: MessageDeliveryStatus; metadata: unknown } | null> {
   const rows = await input.db
-    .select({ id: messageDeliveries.id, status: messageDeliveries.status })
+    .select({
+      id: messageDeliveries.id,
+      status: messageDeliveries.status,
+      metadata: messageDeliveries.metadata,
+    })
     .from(messageDeliveries)
     .where(eq(messageDeliveries.dedupeKey, input.dedupeKey))
     .limit(1);
@@ -315,7 +296,7 @@ async function settleMeteredEmailBestEffort(input: {
   } catch (err) {
     log.warn(
       { err, teamId, operationId: input.operationId },
-      'postmark sent; email billing settle failed',
+      'resend sent; email billing settle failed',
     );
   }
 }
@@ -327,6 +308,7 @@ export async function sendMessage<TIntent extends MessageIntent>(
 ): Promise<SendMessageResult> {
   const channel = options.channel ?? 'email';
   const rendered = renderMessage(intent, messageInput);
+  let payload = resendPayload(rendered);
   let deliveryId = options.db
     ? await recordDelivery({
         db: options.db,
@@ -337,10 +319,12 @@ export async function sendMessage<TIntent extends MessageIntent>(
         recipientEmail: rendered.to,
         subject: rendered.subject,
         status: 'pending',
-        provider: channel === 'email' ? 'postmark' : null,
+        provider: channel === 'email' ? 'resend' : null,
         dedupeKey: options.dedupeKey ?? null,
         metadata: {
           ...(options.metadata ?? {}),
+          email_payload: payload,
+          template_metadata: rendered.metadata ?? {},
           ...(rendered.previewText ? { previewText: rendered.previewText } : {}),
         },
       })
@@ -352,7 +336,7 @@ export async function sendMessage<TIntent extends MessageIntent>(
       dedupeKey: options.dedupeKey,
     });
     if (existing?.status === 'sent') {
-      const units = Math.max(1, emailRecipientCount(rendered.to));
+      const units = Math.max(1, emailRecipientCount(payload.to.join(',')));
       const operationKey = options.dedupeKey ?? `${intent}:${rendered.to}`;
       await settleMeteredEmailBestEffort({
         intent,
@@ -396,6 +380,24 @@ export async function sendMessage<TIntent extends MessageIntent>(
     } else if (existing) {
       return { ok: true, deliveryId: existing.id, skipped: true, skippedStatus: existing.status };
     }
+    if (existing) {
+      const stored = z.object({ email_payload: sendPayloadSchema }).safeParse(existing.metadata);
+      if (!stored.success) {
+        await markDeliveryResult({
+          db: options.db,
+          deliveryId: existing.id,
+          status: 'failed',
+          error: 'Stored email payload is invalid',
+        });
+        return {
+          ok: false,
+          deliveryId: existing.id,
+          error: 'Stored email payload is invalid',
+          retryable: false,
+        };
+      }
+      payload = stored.data.email_payload;
+    }
   }
 
   if (channel === 'in_app_digest') {
@@ -406,7 +408,7 @@ export async function sendMessage<TIntent extends MessageIntent>(
   }
 
   const shouldMeterEmail = shouldMeterWorkspaceEmail(intent, options);
-  const units = Math.max(1, emailRecipientCount(rendered.to));
+  const units = Math.max(1, emailRecipientCount(payload.to.join(',')));
   const operationKey = options.dedupeKey ?? `${intent}:${rendered.to}`;
   const emailOperationId = `email_out:${operationKey}`;
   if (shouldMeterEmail && options.db && options.teamId) {
@@ -436,7 +438,7 @@ export async function sendMessage<TIntent extends MessageIntent>(
     }
     const result = reserved.alreadySettled
       ? { ok: true as const }
-      : await sendPostmarkEmail(rendered, options.fetch);
+      : await sendResendEmail(rendered, options.fetch, deliveryId ?? options.dedupeKey, payload);
     if (result.ok) {
       if (deliveryId) {
         await markDeliveryResult({
@@ -474,10 +476,16 @@ export async function sendMessage<TIntent extends MessageIntent>(
       ...(result.providerMessageId ? { providerMessageId: result.providerMessageId } : {}),
       ...(result.error ? { error: result.error } : {}),
       ...(result.ok ? {} : { retryable: result.retryable ?? true }),
+      ...(result.retryAfterMs ? { retryAfterMs: result.retryAfterMs } : {}),
     };
   }
 
-  const result = await sendPostmarkEmail(rendered, options.fetch);
+  const result = await sendResendEmail(
+    rendered,
+    options.fetch,
+    deliveryId ?? options.dedupeKey,
+    payload,
+  );
   if (deliveryId && options.db) {
     await markDeliveryResult({
       db: options.db,
@@ -493,6 +501,7 @@ export async function sendMessage<TIntent extends MessageIntent>(
     ...(result.providerMessageId ? { providerMessageId: result.providerMessageId } : {}),
     ...(result.error ? { error: result.error } : {}),
     ...(result.ok ? {} : { retryable: result.retryable ?? true }),
+    ...(result.retryAfterMs ? { retryAfterMs: result.retryAfterMs } : {}),
   };
 }
 
@@ -921,4 +930,4 @@ async function linkedTelegramChatId(
   return rows[0]?.tgUserId ?? null;
 }
 
-export const messagingInternals = { sendPostmarkEmail };
+export const messagingInternals = { sendResendEmail };

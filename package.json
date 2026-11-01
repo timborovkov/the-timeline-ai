@@ -52,7 +52,8 @@
     "db:studio": "bun run --filter @timeline/db studio",
     "doctor": "bun scripts/run-react-doctor.mjs",
     "test:runtime": "bun --no-env-file apps/worker/scripts/runtime-smoke.ts",
-    "billing:polar-convert": "bun --no-env-file --conditions=development scripts/billing-polar-convert.ts"
+    "billing:polar-convert": "bun --no-env-file --conditions=development scripts/billing-polar-convert.ts",
+    "email:replay": "bun --conditions=development scripts/replay-inbound-email.ts"
   },
   "devDependencies": {
     "@happy-dom/global-registrator": "21.0.4",

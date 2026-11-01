@@ -928,7 +928,7 @@ describe('TimelineList inspector source caps', () => {
               subject: 'Vendor contract review',
               html_body: '<p>Please review the <b>appendix</b>.</p>',
               source_snapshot: {
-                provider: 'postmark',
+                provider: 'resend',
                 subject: 'Vendor contract review',
                 html_body: '<p>Please review the <b>appendix</b>.</p>',
                 from: { email: 'mika@example.com' },

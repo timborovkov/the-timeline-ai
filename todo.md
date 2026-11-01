@@ -753,7 +753,7 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       freeze against the live cap. A positive spend-cap raise restores
       `read_only` / `balance_exhausted`. It does not clear `past_due`. Extra member-days persist denied charges. Terminal Recall no-shows settle
       waiting-room minutes. Cancelling a joining/active meeting with no chunks settles elapsed
-      minutes. Postmark success is recorded before email settlement. A delivered
+      minutes. Resend success is recorded before email settlement. A delivered
       message whose settlement fails stays reserved for the janitor and is not resent.
       Reservation expiry locks the billing account before the reservation row. Meeting-finalize
       billing uses the system actor. Free-grant inserts do not abort the caller transaction; the
@@ -820,7 +820,7 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       document/storage limits. Free in-allowance usage is not invoiced under
       live charging. Recall leave retries run before reservation expiry.
 - [x] Owner email reminders at spend-cap 50/75/90/100% and Free near-limit /
-      exhaustion (once per threshold/period via `billing_usage_alert` Postmark
+      exhaustion (once per threshold/period via `billing_usage_alert` Resend
       template; in-app nudges remain).
 - [ ] Enable Polar webhook with a real public URL; one shadow-billing month
       before `BILLING_CHARGES_ENABLED`. Auto-reload emails a Polar checkout URL

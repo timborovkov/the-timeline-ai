@@ -41,9 +41,26 @@ function fakeDeliveryDb(
       select: vi.fn(() => ({
         from: vi.fn(() => ({
           where: vi.fn(() => ({
-            limit: vi
-              .fn()
-              .mockResolvedValue(existing ? [{ id: existing.id, status: existing.status }] : []),
+            limit: vi.fn().mockResolvedValue(
+              existing
+                ? [
+                    {
+                      id: existing.id,
+                      status: existing.status,
+                      metadata: {
+                        email_payload: {
+                          from: 'hello@example.test',
+                          to: ['tim@example.test'],
+                          subject: 'Stored email',
+                          text: 'Stored text',
+                          html: '<p>Stored text</p>',
+                          tags: [],
+                        },
+                      },
+                    },
+                  ]
+                : [],
+            ),
           })),
         })),
       })),
@@ -155,7 +172,7 @@ function fakeDailyDigestDbWithPendingDelivery() {
 
 const OLD_ENV = process.env;
 
-describe('Postmark messaging adapter', () => {
+describe('Resend messaging adapter', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
     billingFakes.reserveEmailUnits.mockReset();
@@ -175,7 +192,7 @@ describe('Postmark messaging adapter', () => {
   });
 
   it('fails visibly when outbound email is not configured', async () => {
-    delete process.env.POSTMARK_SERVER_TOKEN;
+    delete process.env.RESEND_API_KEY;
     delete process.env.TRANSACTIONAL_EMAIL_FROM;
 
     const message = renderMessage('welcome', {
@@ -185,7 +202,7 @@ describe('Postmark messaging adapter', () => {
       dashboardUrl: 'https://timeline.test/app',
     });
 
-    await expect(messagingInternals.sendPostmarkEmail(message)).resolves.toEqual({
+    await expect(messagingInternals.sendResendEmail(message)).resolves.toEqual({
       ok: false,
       error: 'Outbound email is not configured',
       retryable: false,
@@ -193,11 +210,11 @@ describe('Postmark messaging adapter', () => {
   });
 
   it('returns the provider message id on success', async () => {
-    process.env.POSTMARK_SERVER_TOKEN = 'server-token';
+    process.env.RESEND_API_KEY = 'server-token';
     process.env.TRANSACTIONAL_EMAIL_FROM = 'Timeline <hello@example.test>';
     const fetchMock = vi.fn(() =>
       Promise.resolve(
-        new Response(JSON.stringify({ MessageID: 'postmark-id' }), {
+        new Response(JSON.stringify({ id: 'resend-id' }), {
           status: 200,
           headers: { 'content-type': 'application/json' },
         }),
@@ -210,21 +227,21 @@ describe('Postmark messaging adapter', () => {
       dashboardUrl: 'https://timeline.test/app',
     });
 
-    await expect(messagingInternals.sendPostmarkEmail(message, fetchMock)).resolves.toEqual({
+    await expect(messagingInternals.sendResendEmail(message, fetchMock)).resolves.toEqual({
       ok: true,
-      providerMessageId: 'postmark-id',
+      providerMessageId: 'resend-id',
     });
   });
 
   it('uses the legacy invite sender when the shared sender is not set', async () => {
-    process.env.POSTMARK_SERVER_TOKEN = 'server-token';
+    process.env.RESEND_API_KEY = 'server-token';
     delete process.env.TRANSACTIONAL_EMAIL_FROM;
     process.env.INVITE_EMAIL_FROM = 'Timeline Invites <invites@example.test>';
     const requests: RequestInit[] = [];
     const fetchMock = vi.fn((_url: string | URL | Request, init?: RequestInit) => {
       requests.push(init ?? {});
       return Promise.resolve(
-        new Response(JSON.stringify({ MessageID: 'postmark-id' }), {
+        new Response(JSON.stringify({ id: 'resend-id' }), {
           status: 200,
           headers: { 'content-type': 'application/json' },
         }),
@@ -239,23 +256,23 @@ describe('Postmark messaging adapter', () => {
       expiresAt: new Date('2026-06-15T12:00:00Z'),
     });
 
-    await expect(messagingInternals.sendPostmarkEmail(message, fetchMock)).resolves.toEqual({
+    await expect(messagingInternals.sendResendEmail(message, fetchMock)).resolves.toEqual({
       ok: true,
-      providerMessageId: 'postmark-id',
+      providerMessageId: 'resend-id',
     });
     const body = requests[0]?.body;
     expect(typeof body).toBe('string');
     expect(JSON.parse(body as string)).toMatchObject({
-      From: 'Timeline Invites <invites@example.test>',
+      from: 'Timeline Invites <invites@example.test>',
     });
   });
 
   it('maps provider errors into short delivery errors', async () => {
-    process.env.POSTMARK_SERVER_TOKEN = 'server-token';
+    process.env.RESEND_API_KEY = 'server-token';
     process.env.TRANSACTIONAL_EMAIL_FROM = 'Timeline <hello@example.test>';
     const fetchMock = vi.fn(() =>
       Promise.resolve(
-        new Response(JSON.stringify({ Message: 'Bad recipient' }), {
+        new Response(JSON.stringify({ name: 'validation_error', message: 'Bad recipient' }), {
           status: 422,
           statusText: 'Unprocessable Entity',
           headers: { 'content-type': 'application/json' },
@@ -269,21 +286,21 @@ describe('Postmark messaging adapter', () => {
       dashboardUrl: 'https://timeline.test/app',
     });
 
-    await expect(messagingInternals.sendPostmarkEmail(message, fetchMock)).resolves.toEqual({
+    await expect(messagingInternals.sendResendEmail(message, fetchMock)).resolves.toEqual({
       ok: false,
-      error: 'Bad recipient',
-      retryable: true,
+      error: 'Resend request failed: validation_error',
+      retryable: false,
     });
   });
 
-  it('marks inactive Postmark recipients as non-retryable', async () => {
-    process.env.POSTMARK_SERVER_TOKEN = 'server-token';
+  it('marks inactive Resend recipients as non-retryable', async () => {
+    process.env.RESEND_API_KEY = 'server-token';
     process.env.TRANSACTIONAL_EMAIL_FROM = 'Timeline <hello@example.test>';
     const inactiveMessage =
       'You tried to send to recipient(s) that have been marked as inactive. Found inactive addresses: tim@example.test. Inactive recipients are ones that have generated a hard bounce, a spam complaint, or a manual suppression.';
     const fetchMock = vi.fn(() =>
       Promise.resolve(
-        new Response(JSON.stringify({ ErrorCode: 406, Message: inactiveMessage }), {
+        new Response(JSON.stringify({ name: 'validation_error', message: inactiveMessage }), {
           status: 422,
           statusText: 'Unprocessable Entity',
           headers: { 'content-type': 'application/json' },
@@ -297,25 +314,25 @@ describe('Postmark messaging adapter', () => {
       dashboardUrl: 'https://timeline.test/app',
     });
 
-    await expect(messagingInternals.sendPostmarkEmail(message, fetchMock)).resolves.toEqual({
+    await expect(messagingInternals.sendResendEmail(message, fetchMock)).resolves.toEqual({
       ok: false,
-      error: inactiveMessage,
+      error: 'Resend request failed: validation_error',
       retryable: false,
     });
   });
 
-  it('keeps Postmark credit exhaustion retryable', async () => {
-    process.env.POSTMARK_SERVER_TOKEN = 'server-token';
+  it('keeps Resend quota exhaustion retryable', async () => {
+    process.env.RESEND_API_KEY = 'server-token';
     process.env.TRANSACTIONAL_EMAIL_FROM = 'Timeline <hello@example.test>';
     const fetchMock = vi.fn(() =>
       Promise.resolve(
         new Response(
           JSON.stringify({
-            ErrorCode: 405,
-            Message: 'Not allowed to send. Your account has run out of credits.',
+            name: 'daily_quota_exceeded',
+            message: 'Not allowed to send. Your account has run out of credits.',
           }),
           {
-            status: 422,
+            status: 429,
             statusText: 'Unprocessable Entity',
             headers: { 'content-type': 'application/json' },
           },
@@ -329,23 +346,26 @@ describe('Postmark messaging adapter', () => {
       dashboardUrl: 'https://timeline.test/app',
     });
 
-    await expect(messagingInternals.sendPostmarkEmail(message, fetchMock)).resolves.toEqual({
+    await expect(messagingInternals.sendResendEmail(message, fetchMock)).resolves.toEqual({
       ok: false,
-      error: 'Not allowed to send. Your account has run out of credits.',
+      error: 'Resend request failed: daily_quota_exceeded',
       retryable: true,
     });
   });
 
-  it('keeps Postmark 5xx failures retryable', async () => {
-    process.env.POSTMARK_SERVER_TOKEN = 'server-token';
+  it('keeps Resend 5xx failures retryable', async () => {
+    process.env.RESEND_API_KEY = 'server-token';
     process.env.TRANSACTIONAL_EMAIL_FROM = 'Timeline <hello@example.test>';
     const fetchMock = vi.fn(() =>
       Promise.resolve(
-        new Response(JSON.stringify({ Message: 'Temporary upstream failure' }), {
-          status: 503,
-          statusText: 'Service Unavailable',
-          headers: { 'content-type': 'application/json' },
-        }),
+        new Response(
+          JSON.stringify({ name: 'application_error', message: 'Temporary upstream failure' }),
+          {
+            status: 503,
+            statusText: 'Service Unavailable',
+            headers: { 'content-type': 'application/json' },
+          },
+        ),
       ),
     );
     const message = renderMessage('welcome', {
@@ -355,19 +375,49 @@ describe('Postmark messaging adapter', () => {
       dashboardUrl: 'https://timeline.test/app',
     });
 
-    await expect(messagingInternals.sendPostmarkEmail(message, fetchMock)).resolves.toEqual({
+    await expect(messagingInternals.sendResendEmail(message, fetchMock)).resolves.toEqual({
       ok: false,
-      error: 'Temporary upstream failure',
+      error: 'Resend request failed: application_error',
       retryable: true,
     });
   });
 
-  it('retries a failed deduped delivery instead of skipping Postmark', async () => {
-    process.env.POSTMARK_SERVER_TOKEN = 'server-token';
+  it('sends Resend fields and stable idempotency keys without leaking unsupported metadata', async () => {
+    process.env.RESEND_API_KEY = 're_test';
+    process.env.TRANSACTIONAL_EMAIL_FROM = 'hello@example.test';
+    const request = vi.fn((_url: string | URL | Request, _init?: RequestInit) =>
+      Promise.resolve(Response.json({ id: 'sent' })),
+    );
+    const message = renderMessage('welcome', {
+      to: 'tim@example.test',
+      name: 'Tim',
+      teamName: 'Timeline',
+      dashboardUrl: 'https://timeline.test/app',
+    });
+    message.replyTo = 'support@example.test';
+    message.metadata = { message_intent: 'welcome', private_text: 'do not send this text' };
+    await messagingInternals.sendResendEmail(message, request, 'delivery-42');
+    await messagingInternals.sendResendEmail(message, request, 'delivery-42');
+    const first = request.mock.calls[0]?.[1];
+    const headers = new Headers(first?.headers);
+    expect(headers.get('authorization')).toBe('Bearer re_test');
+    expect(headers.get('idempotency-key')).toStartWith('timeline-');
+    expect(first?.headers).toEqual(request.mock.calls[1]?.[1]?.headers);
+    expect(JSON.parse(first?.body as string)).toMatchObject({
+      from: 'hello@example.test',
+      to: ['tim@example.test'],
+      reply_to: 'support@example.test',
+      tags: [{ name: 'message_intent', value: 'welcome' }],
+    });
+    expect(first?.body as string).not.toContain('private_text');
+  });
+
+  it('retries a failed deduped delivery instead of skipping Resend', async () => {
+    process.env.RESEND_API_KEY = 'server-token';
     process.env.TRANSACTIONAL_EMAIL_FROM = 'Timeline <hello@example.test>';
-    const fetchMock = vi.fn(() =>
+    const fetchMock = vi.fn((_url: string | URL | Request, _init?: RequestInit) =>
       Promise.resolve(
-        new Response(JSON.stringify({ MessageID: 'retry-id' }), {
+        new Response(JSON.stringify({ id: 'retry-id' }), {
           status: 200,
           headers: { 'content-type': 'application/json' },
         }),
@@ -397,6 +447,10 @@ describe('Postmark messaging adapter', () => {
     });
 
     expect(fetchMock).toHaveBeenCalledOnce();
+    expect(JSON.parse(fetchMock.mock.calls[0]?.[1]?.body as string)).toMatchObject({
+      subject: 'Stored email',
+      text: 'Stored text',
+    });
     expect(updates).toContainEqual(expect.objectContaining({ status: 'pending' }));
     expect(updates).toContainEqual(
       expect.objectContaining({ status: 'sent', providerMessageId: 'retry-id' }),
@@ -404,7 +458,7 @@ describe('Postmark messaging adapter', () => {
   });
 
   it('does not send when a deduped delivery is already pending', async () => {
-    process.env.POSTMARK_SERVER_TOKEN = 'server-token';
+    process.env.RESEND_API_KEY = 'server-token';
     process.env.TRANSACTIONAL_EMAIL_FROM = 'Timeline <hello@example.test>';
     const fetchMock = vi.fn();
     const { db, updates } = fakeDeliveryDb({
@@ -437,11 +491,11 @@ describe('Postmark messaging adapter', () => {
   });
 
   it('retries a stale pending deduped delivery', async () => {
-    process.env.POSTMARK_SERVER_TOKEN = 'server-token';
+    process.env.RESEND_API_KEY = 'server-token';
     process.env.TRANSACTIONAL_EMAIL_FROM = 'Timeline <hello@example.test>';
     const fetchMock = vi.fn(() =>
       Promise.resolve(
-        new Response(JSON.stringify({ MessageID: 'pending-retry-id' }), {
+        new Response(JSON.stringify({ id: 'pending-retry-id' }), {
           status: 200,
           headers: { 'content-type': 'application/json' },
         }),
@@ -481,7 +535,7 @@ describe('Postmark messaging adapter', () => {
   });
 
   it('does not send when another retry already claimed a failed delivery', async () => {
-    process.env.POSTMARK_SERVER_TOKEN = 'server-token';
+    process.env.RESEND_API_KEY = 'server-token';
     process.env.TRANSACTIONAL_EMAIL_FROM = 'Timeline <hello@example.test>';
     const fetchMock = vi.fn();
     const { db, updates } = fakeDeliveryDb(
@@ -516,8 +570,8 @@ describe('Postmark messaging adapter', () => {
     expect(updates).toContainEqual(expect.objectContaining({ status: 'pending' }));
   });
 
-  it('skips Postmark only when the deduped delivery is already sent', async () => {
-    process.env.POSTMARK_SERVER_TOKEN = 'server-token';
+  it('skips Resend only when the deduped delivery is already sent', async () => {
+    process.env.RESEND_API_KEY = 'server-token';
     process.env.TRANSACTIONAL_EMAIL_FROM = 'Timeline <hello@example.test>';
     const fetchMock = vi.fn();
     const { db, updates } = fakeDeliveryDb({
@@ -548,13 +602,13 @@ describe('Postmark messaging adapter', () => {
     expect(updates).toEqual([]);
   });
 
-  it('records Postmark success before billing settlement and does not resend', async () => {
-    process.env.POSTMARK_SERVER_TOKEN = 'server-token';
+  it('records Resend success before billing settlement and does not resend', async () => {
+    process.env.RESEND_API_KEY = 'server-token';
     process.env.TRANSACTIONAL_EMAIL_FROM = 'Timeline <hello@example.test>';
     billingFakes.settleEmailUnits.mockRejectedValue(new Error('ledger down'));
     const fetchMock = vi.fn(() =>
       Promise.resolve(
-        new Response(JSON.stringify({ MessageID: 'sent-id' }), {
+        new Response(JSON.stringify({ id: 'sent-id' }), {
           status: 200,
           headers: { 'content-type': 'application/json' },
         }),
@@ -624,7 +678,7 @@ describe('Postmark messaging adapter', () => {
   });
 
   it('does not mark a digest sent when its delivery is skipped because another send is pending', async () => {
-    process.env.POSTMARK_SERVER_TOKEN = 'server-token';
+    process.env.RESEND_API_KEY = 'server-token';
     process.env.TRANSACTIONAL_EMAIL_FROM = 'Timeline <hello@example.test>';
     const fetchMock = vi.fn();
     const { db, updates } = fakeDailyDigestDbWithPendingDelivery();
@@ -722,7 +776,7 @@ describe('Postmark messaging adapter', () => {
   });
 
   it('skips email when the digest window has already rolled to the next cycle', async () => {
-    process.env.POSTMARK_SERVER_TOKEN = 'server-token';
+    process.env.RESEND_API_KEY = 'server-token';
     process.env.TRANSACTIONAL_EMAIL_FROM = 'Timeline <hello@example.test>';
     const fetchMock = vi.fn();
     const updates: unknown[] = [];

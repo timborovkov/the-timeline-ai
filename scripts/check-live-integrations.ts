@@ -1,3 +1,4 @@
+import { createHmac } from 'node:crypto';
 import { createSign } from 'node:crypto';
 import { randomUUID } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
@@ -5,7 +6,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { closeDb, getDbClient } from '@timeline/db';
 import {
   buildSpeechTranscriptionCanaryMp3,
-  buildPostmarkInboundCaptureCanaryPayload,
+  buildResendInboundCaptureCanaryPayload,
   buildSlackEventCaptureCanaryPayload,
   buildTelegramCaptureCanaryPayload,
   completeLiveIntegrationCanaryCleanup,
@@ -19,7 +20,7 @@ import {
   redactLiveIntegrationCanaryText,
   signSlackCanaryRequest,
   type LiveIntegrationCanaryResult,
-  validatePostmarkInboundCaptureCanaryUrl,
+  validateResendInboundCaptureCanaryUrl,
   validateSlackEventCaptureCanaryUrl,
   validateTelegramCaptureCanaryUrl,
 } from '@timeline/shared/integrations';
@@ -339,33 +340,33 @@ async function checkSentry(): Promise<LiveIntegrationCanaryResult> {
   return { name: 'Sentry API', status: 'ok', detail: 'project lookup succeeded' };
 }
 
-async function checkPostmark(): Promise<LiveIntegrationCanaryResult> {
-  if (!configured('POSTMARK_SERVER_TOKEN')) {
+async function checkResend(): Promise<LiveIntegrationCanaryResult> {
+  if (!configured('RESEND_API_KEY')) {
     return {
-      name: 'Postmark API',
+      name: 'Resend API',
       status: 'skip',
-      detail: 'POSTMARK_SERVER_TOKEN missing',
-      envKeys: ['POSTMARK_SERVER_TOKEN'],
-      docs: 'docs/setup/postmark.html',
+      detail: 'RESEND_API_KEY missing',
+      envKeys: ['RESEND_API_KEY'],
+      docs: 'docs/setup/resend.html',
     };
   }
-  const response = await fetch('https://api.postmarkapp.com/server', {
+  const response = await fetch('https://api.resend.com/emails/receiving?limit=1', {
     headers: {
       accept: 'application/json',
-      'x-postmark-server-token': process.env.POSTMARK_SERVER_TOKEN ?? '',
+      Authorization: `Bearer ${process.env.RESEND_API_KEY ?? ''}`,
     },
   });
   const { body, text } = await readJson(response);
   if (!response.ok) {
     return {
-      name: 'Postmark API',
+      name: 'Resend API',
       status: 'warn',
       detail: shortProviderError(response.status, body, text),
-      action: 'verify the Postmark server token and server-level API access',
-      docs: 'docs/setup/postmark.html',
+      action: 'verify the Resend API key has receiving access',
+      docs: 'docs/setup/resend.html',
     };
   }
-  return { name: 'Postmark API', status: 'ok', detail: 'server lookup succeeded' };
+  return { name: 'Resend API', status: 'ok', detail: 'received-email API lookup succeeded' };
 }
 
 async function checkRecallApi(): Promise<LiveIntegrationCanaryResult> {
@@ -758,116 +759,76 @@ async function checkSlackEventCapture(): Promise<LiveIntegrationCanaryResult> {
   }
 }
 
-async function checkPostmarkInboundCapture(): Promise<LiveIntegrationCanaryResult> {
+async function checkResendInboundCapture(): Promise<LiveIntegrationCanaryResult> {
   const envKeys = [
     'AUTH_URL',
     'DATABASE_URL',
-    'POSTMARK_WEBHOOK_SECRET',
-    'POSTMARK_INBOUND_CANARY_TO',
-    'POSTMARK_INBOUND_CANARY_FROM',
-    'POSTMARK_INBOUND_CANARY_ALLOWED_ORIGIN',
+    'RESEND_API_KEY',
+    'RESEND_WEBHOOK_SECRET',
+    'RESEND_INBOUND_CANARY_EMAIL_ID',
+    'RESEND_INBOUND_CANARY_ALLOWED_ORIGIN',
   ];
-  if (!configured(...envKeys)) {
+  if (!configured(...envKeys))
     return {
-      name: 'Postmark inbound capture',
+      name: 'Resend inbound capture',
       status: 'skip',
-      detail: 'Postmark inbound capture canary env missing',
+      detail: 'Received-email replay canary is not configured',
       envKeys,
-      action:
-        'configure a canary team address and allowlisted sender before running capture canaries',
-      docs: 'docs/setup/postmark.html#smoke-test',
+      docs: 'docs/setup/resend.html#smoke-test',
     };
-  }
-
-  const messageId = `timeline-canary-${Date.now()}-${randomUUID()}@thetimeline.local`;
-  const textNeedle = `Message: ${messageId}`;
-  const canaryUrl = validatePostmarkInboundCaptureCanaryUrl(
+  const destination = validateResendInboundCaptureCanaryUrl(
     process.env.AUTH_URL,
-    process.env.POSTMARK_INBOUND_CANARY_ALLOWED_ORIGIN,
+    process.env.RESEND_INBOUND_CANARY_ALLOWED_ORIGIN,
   );
-  if (!canaryUrl.ok) {
-    return {
-      name: 'Postmark inbound capture',
-      status: 'warn',
-      detail: canaryUrl.reason,
-      action:
-        'set AUTH_URL and POSTMARK_INBOUND_CANARY_ALLOWED_ORIGIN to the same trusted app origin before running capture canaries',
-      docs: 'docs/setup/postmark.html#smoke-test',
-    };
-  }
-  const response = await fetch(canaryUrl.url, {
+  if (!destination.ok)
+    return { name: 'Resend inbound capture', status: 'warn', detail: destination.reason };
+  const emailId = process.env.RESEND_INBOUND_CANARY_EMAIL_ID ?? '';
+  const payload = JSON.stringify(buildResendInboundCaptureCanaryPayload({ emailId }));
+  const id = `canary-${randomUUID()}`;
+  const timestamp = String(Math.floor(Date.now() / 1000));
+  const secret = process.env.RESEND_WEBHOOK_SECRET ?? '';
+  const signature = createHmac('sha256', Buffer.from(secret.replace(/^whsec_/, ''), 'base64'))
+    .update(`${id}.${timestamp}.${payload}`)
+    .digest('base64');
+  const response = await fetch(destination.url, {
     method: 'POST',
     headers: {
-      authorization: `Basic ${Buffer.from(
-        `postmark:${process.env.POSTMARK_WEBHOOK_SECRET ?? ''}`,
-      ).toString('base64')}`,
       'content-type': 'application/json',
+      'svix-id': id,
+      'svix-timestamp': timestamp,
+      'svix-signature': `v1,${signature}`,
     },
-    body: JSON.stringify(
-      buildPostmarkInboundCaptureCanaryPayload({
-        messageId,
-        to: process.env.POSTMARK_INBOUND_CANARY_TO ?? '',
-        from: process.env.POSTMARK_INBOUND_CANARY_FROM ?? '',
-        date: new Date(),
-      }),
-    ),
+    body: payload,
+    signal: AbortSignal.timeout(10_000),
+    redirect: 'error',
   });
-  const { body, text } = await readJson(response);
-  const record = body && typeof body === 'object' ? (body as Record<string, unknown>) : {};
-  const inserted = Number(record.inserted ?? 0);
-  if (response.ok && inserted > 0) {
-    const rawEventId = await waitForPostmarkInboundCaptureRawEvent({ messageId, textNeedle });
-    if (rawEventId) {
-      return {
-        name: 'Postmark inbound capture',
-        status: 'ok',
-        detail: 'synthetic inbound payload inserted a raw event',
-      };
-    }
+  if (!response.ok)
     return {
-      name: 'Postmark inbound capture',
+      name: 'Resend inbound capture',
       status: 'warn',
-      detail: 'webhook reported an insert but no matching email raw event was found',
-      action: 'verify DATABASE_URL points at the same database as AUTH_URL',
-      docs: 'docs/setup/postmark.html#smoke-test',
+      detail: `Webhook returned ${response.status}`,
     };
-  }
-  const reason =
-    typeof record.reason === 'string'
-      ? record.reason
-      : shortProviderError(response.status, body, text);
-  return {
-    name: 'Postmark inbound capture',
-    status: 'warn',
-    detail: response.ok
-      ? `accepted but inserted 0: ${safeCanaryDetail(reason)}`
-      : shortProviderError(response.status, body, text),
-    action: 'verify canary recipient maps to a team and canary sender passes the inbound whitelist',
-    docs: 'docs/setup/postmark.html#smoke-test',
-  };
-}
-
-async function waitForPostmarkInboundCaptureRawEvent(input: {
-  messageId: string;
-  textNeedle: string;
-}): Promise<string | null> {
   const sql = getDbClient();
-  const deadline = Date.now() + 10_000;
+  const deadline = Date.now() + 30_000;
   while (Date.now() < deadline) {
-    const rows = await sql<{ id: string }[]>`
-      SELECT id
-      FROM raw_events
-      WHERE source = 'email'
-        AND source_metadata ->> 'message_id' = ${input.messageId}
-        AND content_text LIKE ${`%${input.textNeedle}%`}
-      ORDER BY created_at DESC
-      LIMIT 1
-    `;
-    const id = rows[0]?.id;
-    if (id) return id;
-    await new Promise((resolve) => setTimeout(resolve, 250));
+    const rows = await sql<
+      { id: string }[]
+    >`SELECT id FROM raw_events WHERE source = 'email' AND source_metadata ->> 'resend_message_id' = ${emailId} LIMIT 1`;
+    if (rows[0])
+      return {
+        name: 'Resend inbound capture',
+        status: 'ok',
+        detail: 'Received-email replay accepted and captured event verified (may already exist)',
+      };
+    await new Promise((resolve) => setTimeout(resolve, 500));
   }
-  return null;
+  return {
+    name: 'Resend inbound capture',
+    status: 'warn',
+    detail: 'Queued replay has no captured event yet',
+    action: 'Check email-inbound worker failures, recipient routing and sender whitelist',
+    docs: 'docs/setup/resend.html#smoke-test',
+  };
 }
 
 interface OAuthAuthorizeCanary {
@@ -1144,12 +1105,12 @@ function checkWebhookConfig(): LiveIntegrationCanaryResult[] {
       },
     ),
     secretStatus(
-      'Postmark inbound webhook secret',
-      configured('POSTMARK_WEBHOOK_SECRET'),
-      configured('POSTMARK_WEBHOOK_SECRET') ? 'configured' : 'POSTMARK_WEBHOOK_SECRET missing',
+      'Resend inbound webhook secret',
+      configured('RESEND_WEBHOOK_SECRET'),
+      configured('RESEND_WEBHOOK_SECRET') ? 'configured' : 'RESEND_WEBHOOK_SECRET missing',
       {
-        envKeys: ['POSTMARK_WEBHOOK_SECRET'],
-        docs: 'docs/setup/postmark.html',
+        envKeys: ['RESEND_WEBHOOK_SECRET'],
+        docs: 'docs/setup/resend.html',
       },
     ),
   ];
@@ -1164,7 +1125,7 @@ const results: LiveIntegrationCanaryResult[] = [
     checkOpenRouterTranscription(),
     checkGithubApp(),
     checkSentry(),
-    checkPostmark(),
+    checkResend(),
     checkRecallApi(),
     checkTelegramBotApi(),
     checkTelegramCapture(),
@@ -1179,7 +1140,7 @@ const results: LiveIntegrationCanaryResult[] = [
       expectedPrefix: 'xoxp-',
     }),
     checkSlackEventCapture(),
-    checkPostmarkInboundCapture(),
+    checkResendInboundCapture(),
     checkMondayBoardContract(),
     ...oauthAuthorizeCanaries.map((canary) => checkOAuthAuthorizeEndpoint(canary)),
   ])),

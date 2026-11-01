@@ -1,231 +1,78 @@
-import { expect } from '@timeline/test-support';
-import { vi } from '@timeline/test-support';
+import { createHmac } from 'node:crypto';
+
+import { expect, vi } from '@timeline/test-support';
 import { afterEach, beforeEach, describe, it } from 'bun:test';
 
-import type * as EmailModule from '@timeline/shared/email';
-const ENV_BACKUP = { ...process.env };
-
-const fakes = vi.hoisted(() => ({
-  handleInbound: vi.fn(),
-  log: {
-    error: vi.fn(),
-    info: vi.fn(),
-    warn: vi.fn(),
-    debug: vi.fn(),
-  },
-  queue: {
-    enqueueExtractJob: vi.fn(),
-    enqueueDocumentExtractJob: vi.fn(),
-    enqueueEmbedJob: vi.fn(),
-    enqueueSuggestionJob: vi.fn(),
-    enqueueTranscribeJob: vi.fn(),
-  },
-}));
-
-await vi.mock(
-  import.meta.resolve('@/lib/db'),
-  () => ({ db: {} }),
-  () => import('@/lib/db'),
-);
+const enqueueEmailInboundJob = vi.fn().mockResolvedValue(undefined);
 await vi.mock(
   import.meta.resolve('@/lib/queue'),
-  () => ({
-    requireRedisQueue: vi.fn(() => Promise.resolve(fakes.queue)),
-  }),
+  () => ({ requireRedisQueue: () => Promise.resolve({ enqueueEmailInboundJob }) }),
   () => import('@/lib/queue'),
 );
-
-await vi.mock(
-  import.meta.resolve('@timeline/shared/logger'),
-  () => ({
-    childLogger: () => fakes.log,
-  }),
-  () => import('@timeline/shared/logger'),
-);
-
-await vi.mock(
-  import.meta.resolve('@timeline/shared/email'),
-  async () => {
-    const actual = await import('@timeline/shared/email');
-    return {
-      ...actual,
-      clientIpFromHeaders: () => null,
-      handleInbound: fakes.handleInbound,
-    };
-  },
-  () => import('@timeline/shared/email'),
-);
-
-await vi.mock(
-  import.meta.resolve('@timeline/shared/rate-limit'),
-  async () => {
-    const actual = await import('@timeline/shared/rate-limit');
-    return {
-      ...actual,
-      checkRateLimit: vi.fn().mockResolvedValue({ ok: true }),
-    };
-  },
-  () => import('@timeline/shared/rate-limit'),
-);
-
 const { resetEnvForTests } = await import('@timeline/shared/env');
-
-const { POST } = await import('./route.js');
-
-function auth(secret = 'postmark-secret'): string {
-  return `Basic ${Buffer.from(`postmark:${secret}`).toString('base64')}`;
-}
-
-function inboundRequest(secret = 'postmark-secret'): Request {
+const { POST } = await import('@/app/api/email/inbound/route');
+const backup = { ...process.env };
+const secret = `whsec_${Buffer.alloc(32, 7).toString('base64')}`;
+const emailId = '11111111-1111-4111-8111-111111111111';
+function request(
+  event: unknown = { type: 'email.received', data: { email_id: emailId } },
+  secondsAgo = 0,
+  tamper = false,
+  rawBody?: string,
+): Request {
+  const body = rawBody ?? JSON.stringify(event);
+  const timestamp = String(Math.floor(Date.now() / 1000) - secondsAgo);
+  const signature = createHmac('sha256', Buffer.alloc(32, 7))
+    .update(`evt_1.${timestamp}.${body}`)
+    .digest('base64');
   return new Request('https://timeline.test/api/email/inbound', {
     method: 'POST',
-    headers: { authorization: auth(secret), 'content-type': 'application/json' },
-    body: JSON.stringify({
-      FromFull: { Email: 'ada@example.com' },
-      ToFull: [{ Email: 'team@inbound.test' }],
-      TextBody: 'Launch note',
-    }),
+    body: tamper ? `${body} ` : body,
+    headers: {
+      'svix-id': 'evt_1',
+      'svix-timestamp': timestamp,
+      'svix-signature': `v1,${signature}`,
+    },
   });
 }
-
 beforeEach(() => {
-  process.env.POSTMARK_WEBHOOK_SECRET = 'postmark-secret';
-  process.env.INBOUND_EMAIL_DOMAIN = 'inbound.test';
+  Object.assign(process.env, {
+    RESEND_API_KEY: 're_test',
+    RESEND_WEBHOOK_SECRET: secret,
+    INBOUND_EMAIL_DOMAIN: 'inbound.test',
+    REDIS_URL: 'redis://localhost:6379',
+  });
   resetEnvForTests();
-  fakes.handleInbound.mockResolvedValue({ ok: true, inserted: 1 });
-  fakes.queue.enqueueExtractJob.mockResolvedValue(undefined);
-  fakes.queue.enqueueDocumentExtractJob.mockResolvedValue(undefined);
-  fakes.queue.enqueueEmbedJob.mockResolvedValue(undefined);
-  fakes.queue.enqueueSuggestionJob.mockResolvedValue(undefined);
-  fakes.queue.enqueueTranscribeJob.mockResolvedValue(undefined);
-  vi.clearAllMocks();
+  enqueueEmailInboundJob.mockReset().mockResolvedValue(undefined);
 });
-
 afterEach(() => {
-  process.env = { ...ENV_BACKUP };
+  process.env = { ...backup };
   resetEnvForTests();
 });
-
-describe('POST /api/email/inbound', () => {
-  it('returns 503 when disabled and 401 for invalid Basic auth', async () => {
-    delete process.env.POSTMARK_WEBHOOK_SECRET;
-    resetEnvForTests();
-    expect((await POST(inboundRequest())).status).toBe(503);
-    expect(fakes.log.warn).toHaveBeenCalledWith(
-      { missing: ['POSTMARK_WEBHOOK_SECRET'] },
-      'inbound webhook disabled',
-    );
-    expect(JSON.stringify(fakes.log.warn.mock.calls)).not.toContain('postmark-secret');
-
-    process.env.POSTMARK_WEBHOOK_SECRET = 'postmark-secret';
-    resetEnvForTests();
-    expect((await POST(inboundRequest('wrong'))).status).toBe(401);
-    expect(fakes.log.warn).toHaveBeenCalledWith(
-      { clientIp: 'unknown' },
-      'inbound webhook unauthorized',
-    );
-    expect(JSON.stringify(fakes.log.warn.mock.calls)).not.toContain('wrong');
-    expect(JSON.stringify(fakes.log.warn.mock.calls)).not.toContain('Basic ');
-    expect(fakes.handleInbound).not.toHaveBeenCalled();
+describe('Resend inbound webhook', () => {
+  it('queues only the received email id, including repeated deliveries', async () => {
+    expect((await POST(request())).status).toBe(200);
+    expect((await POST(request())).status).toBe(200);
+    expect(enqueueEmailInboundJob).toHaveBeenCalledWith({ emailId });
   });
-
-  it('logs invalid JSON without retrying ingest', async () => {
-    const response = await POST(
-      new Request('https://timeline.test/api/email/inbound', {
-        method: 'POST',
-        headers: { authorization: auth(), 'content-type': 'application/json' },
-        body: '{',
-      }),
-    );
-    expect(response.status).toBe(200);
-    await expect(response.json()).resolves.toEqual({ ok: false, reason: 'invalid_json' });
-    expect(fakes.log.warn).toHaveBeenCalledWith('inbound email dropped: invalid_json');
-    expect(fakes.handleInbound).not.toHaveBeenCalled();
+  it('rejects tampered and stale signed bodies before queueing', async () => {
+    expect((await POST(request(undefined, 0, true))).status).toBe(401);
+    expect((await POST(request(undefined, 600))).status).toBe(401);
+    expect(enqueueEmailInboundJob).not.toHaveBeenCalled();
   });
-
-  it('routes authenticated Postmark payloads to the inbound email dispatcher', async () => {
-    const response = await POST(inboundRequest());
-
-    expect(response.status).toBe(200);
-    await expect(response.json()).resolves.toEqual({ ok: true, inserted: 1 });
-    expect(fakes.handleInbound).toHaveBeenCalledWith(
-      expect.objectContaining({ db: {}, inboundDomain: 'inbound.test' }),
-      expect.objectContaining({ TextBody: 'Launch note' }),
-    );
+  it('ignores unrelated authenticated events and rejects malformed received events', async () => {
+    expect((await POST(request({ type: 'email.sent', data: {} }))).status).toBe(200);
+    expect((await POST(request(undefined, 0, false, '{'))).status).toBe(400);
+    expect(
+      (await POST(request({ type: 'email.received', data: { email_id: 'invalid' } }))).status,
+    ).toBe(400);
+    expect(enqueueEmailInboundJob).not.toHaveBeenCalled();
   });
-
-  it('passes Redis-backed extract, embed, and suggestion queues to the dispatcher', async () => {
-    process.env.REDIS_URL = 'redis://localhost:6379';
+  it('does not acknowledge unavailable queues or configuration', async () => {
+    enqueueEmailInboundJob.mockRejectedValueOnce(new Error('redis down'));
+    expect((await POST(request())).status).toBe(503);
+    delete process.env.RESEND_API_KEY;
     resetEnvForTests();
-    fakes.handleInbound.mockImplementationOnce(async (deps: EmailModule.DispatcherDeps) => {
-      await deps.extract?.enqueueExtract({ rawEventId: 'raw-1', teamId: 'team-1' });
-      await deps.embed?.enqueueEmbed({ rawEventId: 'raw-1', teamId: 'team-1' });
-      await deps.suggestions?.enqueueSuggestion({ rawEventId: 'raw-1', teamId: 'team-1' });
-      return { ok: true, inserted: 1 };
-    });
-
-    const response = await POST(inboundRequest());
-
-    expect(response.status).toBe(200);
-    expect(fakes.queue.enqueueExtractJob).toHaveBeenCalledWith({
-      rawEventId: 'raw-1',
-      teamId: 'team-1',
-    });
-    expect(fakes.queue.enqueueEmbedJob).toHaveBeenCalledWith({
-      rawEventId: 'raw-1',
-      teamId: 'team-1',
-    });
-    expect(fakes.queue.enqueueSuggestionJob).toHaveBeenCalledWith({
-      rawEventId: 'raw-1',
-      teamId: 'team-1',
-    });
-  });
-
-  it('keeps attachment deps separate from Redis text queues', async () => {
-    process.env.S3_ENDPOINT = 'http://localhost:9000';
-    process.env.S3_REGION = 'us-east-1';
-    process.env.S3_ACCESS_KEY_ID = 'timeline';
-    process.env.S3_SECRET_ACCESS_KEY = 'secret';
-    process.env.S3_BUCKET_ATTACHMENTS = 'attachments';
-    process.env.S3_BUCKET_AUDIO = 'audio';
-    delete process.env.REDIS_URL;
-    resetEnvForTests();
-    fakes.handleInbound.mockImplementationOnce((deps: EmailModule.DispatcherDeps) => {
-      expect(deps.attachments).toBeDefined();
-      expect(deps.extract).toBeUndefined();
-      expect(deps.embed).toBeUndefined();
-      expect(deps.suggestions).toBeUndefined();
-      return Promise.resolve({ ok: true, inserted: 1 });
-    });
-
-    const response = await POST(inboundRequest());
-
-    expect(response.status).toBe(200);
-    expect(fakes.handleInbound).toHaveBeenCalledOnce();
-  });
-
-  it('passes document attachment deps when document S3 and Redis are configured', async () => {
-    process.env.S3_ENDPOINT = 'http://localhost:9000';
-    process.env.S3_REGION = 'us-east-1';
-    process.env.S3_ACCESS_KEY_ID = 'timeline';
-    process.env.S3_SECRET_ACCESS_KEY = 'secret';
-    process.env.S3_BUCKET_ATTACHMENTS = 'attachments';
-    process.env.S3_BUCKET_AUDIO = 'audio';
-    process.env.S3_BUCKET_DOCUMENTS = 'documents';
-    process.env.REDIS_URL = 'redis://localhost:6379';
-    resetEnvForTests();
-    fakes.handleInbound.mockImplementationOnce(async (deps: EmailModule.DispatcherDeps) => {
-      expect(deps.documents).toBeDefined();
-      await deps.documents?.enqueueExtract({ documentVersionId: 'version-1', teamId: 'team-1' });
-      return { ok: true, inserted: 1 };
-    });
-
-    const response = await POST(inboundRequest());
-
-    expect(response.status).toBe(200);
-    expect(fakes.queue.enqueueDocumentExtractJob).toHaveBeenCalledWith({
-      documentVersionId: 'version-1',
-      teamId: 'team-1',
-    });
+    expect((await POST(request())).status).toBe(503);
   });
 });
