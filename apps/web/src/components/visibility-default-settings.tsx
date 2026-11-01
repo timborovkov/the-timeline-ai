@@ -73,6 +73,7 @@ function VisibilityDefaultForm({ row, members }: { row: DefaultRow; members: Mem
   const [state, action, pending] = useActionState(setVisibilityDefaultAction, {});
   const specificAllowed = SPECIFIC_OK.has(row.source);
   const [selectedVisibility, setSelectedVisibility] = useState(row.visibility);
+  const selectedMemberIds = new Set(row.visibilityUserIds ?? []);
   return (
     <form action={action} className="border-b border-border/80 py-2 last:border-b-0">
       <input type="hidden" name="source" value={row.source} />
@@ -132,7 +133,7 @@ function VisibilityDefaultForm({ row, members }: { row: DefaultRow; members: Mem
                 type="checkbox"
                 name="visibilityUserIds"
                 value={m.id}
-                defaultChecked={row.visibilityUserIds?.includes(m.id) ?? false}
+                defaultChecked={selectedMemberIds.has(m.id)}
               />
               {m.label}
             </label>

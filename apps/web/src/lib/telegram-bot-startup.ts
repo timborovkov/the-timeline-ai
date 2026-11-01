@@ -125,8 +125,12 @@ async function callTelegram<T>(token: string, method: string, body?: unknown): P
     body: body ? JSON.stringify(body) : '{}',
     signal: AbortSignal.timeout(TELEGRAM_STARTUP_REQUEST_TIMEOUT_MS),
   });
+  if (!res.ok) {
+    const error = (await res.json().catch(() => ({}))) as TelegramCallResult<T>;
+    throw new Error(`Telegram ${method} failed: ${res.status} ${error.description ?? ''}`.trim());
+  }
   const json = (await res.json().catch(() => ({}))) as TelegramCallResult<T>;
-  if (!res.ok || !json.ok) {
+  if (!json.ok) {
     throw new Error(`Telegram ${method} failed: ${res.status} ${json.description ?? ''}`.trim());
   }
   return json.result as T;

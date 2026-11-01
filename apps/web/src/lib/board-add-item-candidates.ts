@@ -37,9 +37,8 @@ export async function loadBoardAddItemCandidates({
   recommendedTypes: readonly ObjectType[];
   limit?: number;
 }): Promise<ObjectRow[]> {
-  const types = boardAddItemTypeOptions(recommendedTypes).filter((type) =>
-    recommendedTypes.includes(type),
-  );
+  const recommended = new Set(recommendedTypes);
+  const types = boardAddItemTypeOptions(recommendedTypes).filter((type) => recommended.has(type));
   if (types.length === 0) {
     return listObjects({ archived: false, limit });
   }

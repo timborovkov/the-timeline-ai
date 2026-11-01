@@ -38,22 +38,90 @@ interface PageProps {
 const EVENT_LIST_RANGE_DAYS = 730;
 
 export default async function CalendarPage({ searchParams }: PageProps) {
-  const session = await auth();
-  if (!session?.user) redirect('/sign-in');
-  const { active } = await resolveActiveTeam(session.user.id);
-  if (!active) redirect('/sign-in');
+  const {
+    serialized,
+    serializedEventList,
+    eventList,
+    eventListNextOffset,
+    eventQuery,
+    eventScope,
+    settings,
+    defaultRow,
+    members,
+    memberUserMap,
+    params,
+    subscriptionRows,
+    calendarSuggestions,
+  } = await loadCalendarPage({ searchParams });
+  return (
+    <div className="space-y-6">
+      <PageHeader
+        variant="collection"
+        title="Calendar"
+        subtitle="Track deadlines, meetings, and follow-ups."
+      />
+      <WorkSubnav current="/app/calendar" />
 
-  const scope = withTeam(db, active.teamId, session.user.id);
+      <CalendarView
+        events={serialized}
+        eventListEvents={serializedEventList}
+        eventListTotal={eventList.total}
+        eventListNextOffset={eventListNextOffset}
+        eventListQuery={eventQuery}
+        eventListScope={eventScope}
+        timezone={settings.defaultTimezone}
+        defaultVisibility={defaultRow.visibility}
+        defaultVisibilityUserIds={defaultRow.visibilityUserIds}
+        members={members.map((m) => {
+          const u = memberUserMap.get(m.userId);
+          return { id: m.userId, label: displayMemberLabel(u) };
+        })}
+        focusEventId={params.event ?? null}
+      />
 
-  const membership = scope.requireMembership();
-  const [params, settings, pendingSuggestions] = await Promise.all([
-    searchParams,
-    membership.then(() => scope.calendar.getCalendarSettings()),
-    membership.then(async () => {
-      const pendingSuggestionRows = await scope.suggestions.listPendingSuggestions();
-      return await scope.suggestions.withCalendarResolutionHints(pendingSuggestionRows);
-    }),
-  ]);
+      <CalendarSubscriptionPanel
+        subscription={
+          subscriptionRows[0]
+            ? {
+                prefix: subscriptionRows[0].tokenPrefix,
+                lastUsedAt: subscriptionRows[0].lastUsedAt?.toISOString() ?? null,
+                createdAt: subscriptionRows[0].createdAt.toISOString(),
+                updatedAt: subscriptionRows[0].updatedAt.toISOString(),
+              }
+            : null
+        }
+      />
+
+      {calendarSuggestions.length > 0 ? (
+        <ApprovalsClient
+          suggestions={calendarSuggestions}
+          allowBulkAccept={false}
+          taskCategoriesEnabled={getEnv().TASK_CATEGORY_UI_ENABLED}
+          timezone={settings.defaultTimezone}
+          folded={{
+            title: 'Calendar approvals',
+            summary: {
+              singular: 'pending calendar proposal',
+              plural: 'pending calendar proposals',
+            },
+            className: 'border-y border-border py-4',
+          }}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+function calendarPageWindow(
+  params: { date?: string; view?: string; eventScope?: string; eventQ?: string; event?: string },
+  settings: {
+    teamId: string;
+    defaultReminderMinutes: number;
+    defaultVisibility: 'private' | 'team' | 'specific_users';
+    defaultTimezone: string;
+    updatedAt: Date;
+  },
+) {
   const now = new Date();
   const anchor = params.date && /^\d{4}-\d{2}-\d{2}$/.test(params.date) ? params.date : null;
   const anchorDate = anchor ? new Date(`${anchor}T00:00:00.000Z`) : now;
@@ -61,7 +129,7 @@ export default async function CalendarPage({ searchParams }: PageProps) {
     params.view === 'day' || params.view === 'week' || params.view === 'month'
       ? params.view
       : 'month';
-  const eventScope =
+  const eventScope: 'all' | 'past' | 'future' =
     params.eventScope === 'past' || params.eventScope === 'all' ? params.eventScope : 'future';
   const eventQuery = params.eventQ?.trim() ?? '';
   const rangeDays = view === 'day' ? 2 : view === 'week' ? 14 : 70;
@@ -93,6 +161,27 @@ export default async function CalendarPage({ searchParams }: PageProps) {
     search: eventQuery,
     limit: CALENDAR_EVENT_LIST_PAGE_SIZE + 1,
   };
+  return { from, to, eventListInput, eventQuery, eventScope };
+}
+
+async function loadCalendarPage({ searchParams }: PageProps) {
+  const session = await auth();
+  if (!session?.user) redirect('/sign-in');
+  const { active } = await resolveActiveTeam(session.user.id);
+  if (!active) redirect('/sign-in');
+
+  const scope = withTeam(db, active.teamId, session.user.id);
+
+  const membership = scope.requireMembership();
+  const [params, settings, pendingSuggestions] = await Promise.all([
+    searchParams,
+    membership.then(() => scope.calendar.getCalendarSettings()),
+    membership.then(async () => {
+      const pendingSuggestionRows = await scope.suggestions.listPendingSuggestions();
+      return await scope.suggestions.withCalendarResolutionHints(pendingSuggestionRows);
+    }),
+  ]);
+  const { from, to, eventListInput, eventQuery, eventScope } = calendarPageWindow(params, settings);
 
   const [events, initialEventList, defaultRow, members, subscriptionRows] = await Promise.all([
     scope.calendar.listCalendarEvents({ from, to }),
@@ -166,61 +255,21 @@ export default async function CalendarPage({ searchParams }: PageProps) {
     );
     return items.length > 0 ? [serializeSuggestionBundle({ ...bundle, items })] : [];
   });
-  return (
-    <div className="space-y-6">
-      <PageHeader
-        variant="collection"
-        title="Calendar"
-        subtitle="Track deadlines, meetings, and follow-ups."
-      />
-      <WorkSubnav current="/app/calendar" />
 
-      <CalendarView
-        events={serialized}
-        eventListEvents={serializedEventList}
-        eventListTotal={eventList.total}
-        eventListNextOffset={eventListNextOffset}
-        eventListQuery={eventQuery}
-        eventListScope={eventScope}
-        timezone={settings.defaultTimezone}
-        defaultVisibility={defaultRow.visibility}
-        defaultVisibilityUserIds={defaultRow.visibilityUserIds}
-        members={members.map((m) => {
-          const u = memberUserMap.get(m.userId);
-          return { id: m.userId, label: displayMemberLabel(u) };
-        })}
-        focusEventId={params.event ?? null}
-      />
-
-      <CalendarSubscriptionPanel
-        subscription={
-          subscriptionRows[0]
-            ? {
-                prefix: subscriptionRows[0].tokenPrefix,
-                lastUsedAt: subscriptionRows[0].lastUsedAt?.toISOString() ?? null,
-                createdAt: subscriptionRows[0].createdAt.toISOString(),
-                updatedAt: subscriptionRows[0].updatedAt.toISOString(),
-              }
-            : null
-        }
-      />
-
-      {calendarSuggestions.length > 0 ? (
-        <ApprovalsClient
-          suggestions={calendarSuggestions}
-          allowBulkAccept={false}
-          taskCategoriesEnabled={getEnv().TASK_CATEGORY_UI_ENABLED}
-          timezone={settings.defaultTimezone}
-          folded={{
-            title: 'Calendar approvals',
-            summary: {
-              singular: 'pending calendar proposal',
-              plural: 'pending calendar proposals',
-            },
-            className: 'border-y border-border py-4',
-          }}
-        />
-      ) : null}
-    </div>
-  );
+  return {
+    events,
+    serialized,
+    serializedEventList,
+    eventList,
+    eventListNextOffset,
+    eventQuery,
+    eventScope,
+    settings,
+    defaultRow,
+    members,
+    memberUserMap,
+    params,
+    subscriptionRows,
+    calendarSuggestions,
+  };
 }

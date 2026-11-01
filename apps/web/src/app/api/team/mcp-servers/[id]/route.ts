@@ -29,8 +29,7 @@ export async function PATCH(
 ): Promise<Response> {
   const session = await auth();
   if (!session?.user.id) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
-  const { id } = await ctx.params;
-  const resolved = await resolveScope(session.user.id);
+  const [{ id }, resolved] = await Promise.all([ctx.params, resolveScope(session.user.id)]);
   if (!resolved) return NextResponse.json({ error: 'no_team' }, { status: 400 });
   const body: unknown = await req.json();
   const parsed = patchSchema.safeParse(body);
@@ -57,8 +56,7 @@ export async function DELETE(
 ): Promise<Response> {
   const session = await auth();
   if (!session?.user.id) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
-  const { id } = await ctx.params;
-  const resolved = await resolveScope(session.user.id);
+  const [{ id }, resolved] = await Promise.all([ctx.params, resolveScope(session.user.id)]);
   if (!resolved) return NextResponse.json({ error: 'no_team' }, { status: 400 });
   try {
     await resolved.scope.mcp.deleteServer(id);

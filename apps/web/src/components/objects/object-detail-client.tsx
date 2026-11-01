@@ -10,6 +10,7 @@ import {
   type ReactNode,
   type RefObject,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useReducer,
   useRef,
@@ -410,8 +411,10 @@ function useObjectDetailController({ detail, userId, suggestions, primaryCompany
     dueAt: 0,
     assigneeUserId: 0,
   });
-  localDetailRef.current = localDetail;
-  serverDetailRef.current = detail;
+  useLayoutEffect(() => {
+    localDetailRef.current = localDetail;
+    serverDetailRef.current = detail;
+  }, [localDetail, detail]);
 
   function updateLocalDetail(updater: (current: ObjectDetail) => ObjectDetail): void {
     const next = updater(localDetailRef.current);
@@ -1271,58 +1274,108 @@ function ObjectSummaryPanel({ detail }: { detail: ObjectDetail }) {
 
   return (
     <section aria-label="Summary">
-      {generated ? (
-        <div className="space-y-1.5">
-          <p className={`max-w-4xl ${DETAIL_BODY_CLASS}`}>{generated.overview}</p>
-          {generated.currentState.length > 0 ? (
-            <ul className="space-y-1">
-              {generated.currentState.map((item) => (
-                <li key={`${item.label}:${item.text}`} className="text-sm leading-5 text-fg-muted">
-                  <span className="text-fg">{item.label}:</span> {item.text}
-                  <SourceChips refs={item.sourceRefs} />
-                </li>
-              ))}
-            </ul>
-          ) : null}
-          {generated.conflicts.length > 0 || generated.openQuestions.length > 0 ? (
-            <div className="space-y-1">
-              {[...generated.conflicts, ...generated.openQuestions].map((item) => (
-                <p key={`${item.label}:${item.text}`} className="text-sm leading-5 text-fg-muted">
-                  <span className="text-fg">{item.label}:</span> {item.text}
-                  <SourceChips refs={item.sourceRefs} />
-                </p>
-              ))}
-            </div>
-          ) : null}
-        </div>
-      ) : null}
+      {generated ? <GeneratedObjectSummary generated={generated} /> : null}
 
-      <div className="mt-1 flex flex-wrap items-center gap-2">
-        {generated && summary.generatedAt ? (
-          <p className={DETAIL_META_CLASS}>
-            Updated {formatDisplayDateTime(summary.generatedAt, { timezone })} ·{' '}
-            {summary.sourceRefs.length} sources
-          </p>
-        ) : summary.status === 'pending' ? (
-          <p className={DETAIL_META_CLASS}>Generating</p>
-        ) : summary.lastErrorCode ? (
-          <p className={DETAIL_META_CLASS}>Update failed</p>
-        ) : null}
-        {canRequest ? (
-          <button
-            type="button"
-            className={DETAIL_ACTION_CLASS}
-            disabled={pending}
-            onClick={requestSummary}
-          >
-            {pending ? 'Generating…' : actionLabel}
-          </button>
-        ) : null}
-      </div>
+      {
+        <ObjectSummaryActions
+          generated={generated}
+          summary={summary}
+          timezone={timezone}
+          canRequest={canRequest}
+          pending={pending}
+          requestSummary={requestSummary}
+          actionLabel={actionLabel}
+        />
+      }
     </section>
   );
 }
 
+function ObjectSummaryActions({
+  generated,
+  summary,
+  timezone,
+  canRequest,
+  pending,
+  requestSummary,
+  actionLabel,
+}: {
+  generated: {
+    overview: string;
+    overviewSourceRefs: objects.ObjectSummarySourceRef[];
+    currentState: objects.ObjectSummaryClaim[];
+    openQuestions: objects.ObjectSummaryClaim[];
+    conflicts: objects.ObjectSummaryClaim[];
+  } | null;
+  summary: objects.ObjectSummaryView;
+  timezone: string;
+  canRequest: boolean;
+  pending: boolean;
+  requestSummary: () => void;
+  actionLabel: string;
+}) {
+  return (
+    <div className="mt-1 flex flex-wrap items-center gap-2">
+      {generated && summary.generatedAt ? (
+        <p className={DETAIL_META_CLASS}>
+          Updated {formatDisplayDateTime(summary.generatedAt, { timezone })} ·{' '}
+          {summary.sourceRefs.length} sources
+        </p>
+      ) : summary.status === 'pending' ? (
+        <p className={DETAIL_META_CLASS}>Generating</p>
+      ) : summary.lastErrorCode ? (
+        <p className={DETAIL_META_CLASS}>Update failed</p>
+      ) : null}
+      {canRequest ? (
+        <button
+          type="button"
+          className={DETAIL_ACTION_CLASS}
+          disabled={pending}
+          onClick={requestSummary}
+        >
+          {pending ? 'Generating…' : actionLabel}
+        </button>
+      ) : null}
+    </div>
+  );
+}
+function GeneratedObjectSummary({
+  generated,
+}: {
+  generated: {
+    overview: string;
+    overviewSourceRefs: objects.ObjectSummarySourceRef[];
+    currentState: objects.ObjectSummaryClaim[];
+    openQuestions: objects.ObjectSummaryClaim[];
+    conflicts: objects.ObjectSummaryClaim[];
+  };
+}) {
+  return (
+    <div className="space-y-1.5">
+      <p className={`max-w-4xl ${DETAIL_BODY_CLASS}`}>{generated.overview}</p>
+      {generated.currentState.length > 0 ? (
+        <ul className="space-y-1">
+          {generated.currentState.map((item) => (
+            <li key={`${item.label}:${item.text}`} className="text-sm leading-5 text-fg-muted">
+              <span className="text-fg">{item.label}:</span> {item.text}
+              <SourceChips refs={item.sourceRefs} />
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      {generated.conflicts.length > 0 || generated.openQuestions.length > 0 ? (
+        <div className="space-y-1">
+          {[...generated.conflicts, ...generated.openQuestions].map((item) => (
+            <p key={`${item.label}:${item.text}`} className="text-sm leading-5 text-fg-muted">
+              <span className="text-fg">{item.label}:</span> {item.text}
+              <SourceChips refs={item.sourceRefs} />
+            </p>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
 function SourceChips({ refs }: { refs: objects.ObjectSummarySourceRef[] }) {
   if (refs.length === 0) return null;
   return (
@@ -1409,51 +1462,17 @@ function ObjectDetailHeader({
   return (
     <header>
       <div className="flex items-start gap-3">
-        <div className="min-w-0 flex-1">
-          <div className={`flex flex-wrap items-center gap-x-2 gap-y-1 ${DETAIL_META_CLASS}`}>
-            <span>{statusLabel(detail.type)}</span>
-            {detail.type === 'task' ? (
-              <LiveTaskCategoryBadge
-                taskId={detail.id}
-                category={detail.taskCategory}
-                status={detail.taskCategoryStatus}
-                updatedAt={detail.taskCategoryUpdatedAt}
-              />
-            ) : null}
-          </div>
-          <h1 className="sr-only">{displayText(displayObjectTitle(detail))}</h1>
-          <input
-            aria-label="Name"
-            value={nameDraft}
-            onFocus={() => {
-              focusedDraftsRef.current.canonicalName = true;
-            }}
-            onChange={(event) => {
-              onNameDraftChange(event.target.value);
-            }}
-            onBlur={(event) => {
-              focusedDraftsRef.current.canonicalName = false;
-              const value = event.target.value.trim();
-              if (value === '') {
-                onNameDraftChange(editableObjectName(detail));
-                return;
-              }
-              onNameDraftChange(value);
-              if (value === editableObjectName(detail)) return;
-              onNameCommit(value);
-            }}
-            className={cn(
-              OBJECT_TITLE_CLASS,
-              'mt-0.5 w-full bg-transparent outline-none focus-visible:ring-2 focus-visible:ring-signal/50',
-            )}
+        {
+          <ObjectHeaderIdentity
+            detail={detail}
+            nameDraft={nameDraft}
+            focusedDraftsRef={focusedDraftsRef}
+            onNameDraftChange={onNameDraftChange}
+            onNameCommit={onNameCommit}
+            visibleAliases={visibleAliases}
+            boardContext={boardContext}
           />
-          {visibleAliases.length > 0 ? (
-            <p className={`mt-0.5 ${DETAIL_META_CLASS}`}>
-              aka {visibleAliases.map((alias) => displayText(alias)).join(' · ')}
-            </p>
-          ) : null}
-          <ObjectBoardContext rows={boardContext} />
-        </div>
+        }
         <div className="flex shrink-0 items-center">
           <ObjectPinButton objectId={detail.id} initialPinned={initialPinned} />
           <ChatViewContextBinder
@@ -1463,23 +1482,15 @@ function ObjectDetailHeader({
             label={displayObjectTitle(detail)}
             objectId={detail.id}
           />
-          <ItemOverflowMenu targetLabel={displayObjectTitle(detail)}>
-            {addTaskHref ? (
-              <DropdownMenuItem asChild>
-                <Link href={addTaskHref}>Add task</Link>
-              </DropdownMenuItem>
-            ) : null}
-            <DropdownMenuItem
-              disabled={pending || repairPending || detail.archivedAt !== null}
-              onSelect={onRepairMemory}
-            >
-              {detail.archivedAt
-                ? 'Repair unavailable'
-                : repairPending
-                  ? 'Repairing…'
-                  : 'Repair memory'}
-            </DropdownMenuItem>
-          </ItemOverflowMenu>
+          {
+            <ObjectHeaderActions
+              detail={detail}
+              addTaskHref={addTaskHref}
+              pending={pending}
+              repairPending={repairPending}
+              onRepairMemory={onRepairMemory}
+            />
+          }
         </div>
       </div>
       {hasAlerts ? (
@@ -1506,6 +1517,100 @@ function ObjectDetailHeader({
   );
 }
 
+function ObjectHeaderActions({
+  detail,
+  addTaskHref,
+  pending,
+  repairPending,
+  onRepairMemory,
+}: {
+  detail: objects.ObjectDetail;
+  addTaskHref: string | null;
+  pending: boolean;
+  repairPending: boolean;
+  onRepairMemory: () => void;
+}) {
+  return (
+    <ItemOverflowMenu targetLabel={displayObjectTitle(detail)}>
+      {addTaskHref ? (
+        <DropdownMenuItem asChild>
+          <Link href={addTaskHref}>Add task</Link>
+        </DropdownMenuItem>
+      ) : null}
+      <DropdownMenuItem
+        disabled={pending || repairPending || detail.archivedAt !== null}
+        onSelect={onRepairMemory}
+      >
+        {detail.archivedAt ? 'Repair unavailable' : repairPending ? 'Repairing…' : 'Repair memory'}
+      </DropdownMenuItem>
+    </ItemOverflowMenu>
+  );
+}
+function ObjectHeaderIdentity({
+  detail,
+  nameDraft,
+  focusedDraftsRef,
+  onNameDraftChange,
+  onNameCommit,
+  visibleAliases,
+  boardContext,
+}: {
+  detail: objects.ObjectDetail;
+  nameDraft: string;
+  focusedDraftsRef: RefObject<Record<DraftField, boolean>>;
+  onNameDraftChange: (value: string) => void;
+  onNameCommit: (value: string) => void;
+  visibleAliases: string[];
+  boardContext: boards.ObjectBoardContextRow[];
+}) {
+  return (
+    <div className="min-w-0 flex-1">
+      <div className={`flex flex-wrap items-center gap-x-2 gap-y-1 ${DETAIL_META_CLASS}`}>
+        <span>{statusLabel(detail.type)}</span>
+        {detail.type === 'task' ? (
+          <LiveTaskCategoryBadge
+            taskId={detail.id}
+            category={detail.taskCategory}
+            status={detail.taskCategoryStatus}
+            updatedAt={detail.taskCategoryUpdatedAt}
+          />
+        ) : null}
+      </div>
+      <h1 className="sr-only">{displayText(displayObjectTitle(detail))}</h1>
+      <input
+        aria-label="Name"
+        value={nameDraft}
+        onFocus={() => {
+          focusedDraftsRef.current.canonicalName = true;
+        }}
+        onChange={(event) => {
+          onNameDraftChange(event.target.value);
+        }}
+        onBlur={(event) => {
+          focusedDraftsRef.current.canonicalName = false;
+          const value = event.target.value.trim();
+          if (value === '') {
+            onNameDraftChange(editableObjectName(detail));
+            return;
+          }
+          onNameDraftChange(value);
+          if (value === editableObjectName(detail)) return;
+          onNameCommit(value);
+        }}
+        className={cn(
+          OBJECT_TITLE_CLASS,
+          'mt-0.5 w-full bg-transparent outline-none focus-visible:ring-2 focus-visible:ring-signal/50',
+        )}
+      />
+      {visibleAliases.length > 0 ? (
+        <p className={`mt-0.5 ${DETAIL_META_CLASS}`}>
+          aka {visibleAliases.map((alias) => displayText(alias)).join(' · ')}
+        </p>
+      ) : null}
+      <ObjectBoardContext rows={boardContext} />
+    </div>
+  );
+}
 function ObjectEditableFields({
   detail,
   aliasesDraft,
@@ -1574,68 +1679,15 @@ function ObjectEditableFields({
           </EditableMetadata.Editor>
         </EditableMetadata>
       </ObjectRailRow>
-      <ObjectRailRow label="Priority">
-        <EditableMetadata
-          label={`Priority for ${displayText(title)}`}
-          className="min-h-8 min-w-0 flex-1 justify-start px-0 text-sm text-fg"
-        >
-          <EditableMetadata.Value>
-            <CollectionStatus
-              value={detail.priority ? `p${detail.priority}` : 'none'}
-              tone={priorityTone(detail.priority)}
-              label={detail.priority ? `P${detail.priority}` : 'No priority'}
-              quietText
-              className="text-sm"
-            />
-          </EditableMetadata.Value>
-          <EditableMetadata.Editor>
-            <select
-              value={detail.priority ?? ''}
-              onChange={(event) => {
-                patch('priority', event.target.value === '' ? null : Number(event.target.value));
-              }}
-              className="h-10 w-full rounded-sm border border-border bg-bg px-2 text-sm"
-              aria-label="Priority"
-            >
-              <option value="">None</option>
-              <option value="1">P1</option>
-              <option value="2">P2</option>
-              <option value="3">P3</option>
-              <option value="4">P4</option>
-            </select>
-          </EditableMetadata.Editor>
-        </EditableMetadata>
-      </ObjectRailRow>
+      {<ObjectPriorityField title={title} detail={detail} patch={patch} />}
       {detail.type === 'task' ? (
-        <ObjectRailRow label="Assignee">
-          <EditableMetadata
-            label={`Assignee for ${displayText(title)}`}
-            className="min-h-8 min-w-0 flex-1 justify-start px-0 text-sm text-fg"
-          >
-            <EditableMetadata.Value>
-              <span className="text-sm font-normal leading-5 text-fg">
-                {assignee?.label ?? (detail.assigneeUserId ? 'Assigned' : 'Unassigned')}
-              </span>
-            </EditableMetadata.Value>
-            <EditableMetadata.Editor>
-              <select
-                value={detail.assigneeUserId ?? ''}
-                onChange={(event) => {
-                  patch('assigneeUserId', event.target.value || null);
-                }}
-                className="h-10 w-full rounded-sm border border-border bg-bg px-2 text-sm"
-                aria-label="Assignee"
-              >
-                <option value="">Unassigned</option>
-                {members.map((member) => (
-                  <option key={member.id} value={member.id}>
-                    {member.label}
-                  </option>
-                ))}
-              </select>
-            </EditableMetadata.Editor>
-          </EditableMetadata>
-        </ObjectRailRow>
+        <ObjectAssigneeField
+          title={title}
+          assignee={assignee}
+          detail={detail}
+          patch={patch}
+          members={members}
+        />
       ) : null}
       {isSchedulableObjectType(detail.type) ? (
         <ObjectRailRow label="Due">
@@ -1745,6 +1797,95 @@ function ObjectEditableFields({
   );
 }
 
+function ObjectPriorityField({
+  title,
+  detail,
+  patch,
+}: {
+  title: string;
+  detail: objects.ObjectDetail;
+  patch: (field: EditableField, value: EditableValue) => void;
+}) {
+  return (
+    <ObjectRailRow label="Priority">
+      <EditableMetadata
+        label={`Priority for ${displayText(title)}`}
+        className="min-h-8 min-w-0 flex-1 justify-start px-0 text-sm text-fg"
+      >
+        <EditableMetadata.Value>
+          <CollectionStatus
+            value={detail.priority ? `p${detail.priority}` : 'none'}
+            tone={priorityTone(detail.priority)}
+            label={detail.priority ? `P${detail.priority}` : 'No priority'}
+            quietText
+            className="text-sm"
+          />
+        </EditableMetadata.Value>
+        <EditableMetadata.Editor>
+          <select
+            value={detail.priority ?? ''}
+            onChange={(event) => {
+              patch('priority', event.target.value === '' ? null : Number(event.target.value));
+            }}
+            className="h-10 w-full rounded-sm border border-border bg-bg px-2 text-sm"
+            aria-label="Priority"
+          >
+            <option value="">None</option>
+            <option value="1">P1</option>
+            <option value="2">P2</option>
+            <option value="3">P3</option>
+            <option value="4">P4</option>
+          </select>
+        </EditableMetadata.Editor>
+      </EditableMetadata>
+    </ObjectRailRow>
+  );
+}
+function ObjectAssigneeField({
+  title,
+  assignee,
+  detail,
+  patch,
+  members,
+}: {
+  title: string;
+  assignee: { id: string; label: string } | undefined;
+  detail: objects.ObjectDetail;
+  patch: (field: EditableField, value: EditableValue) => void;
+  members: { id: string; label: string }[];
+}) {
+  return (
+    <ObjectRailRow label="Assignee">
+      <EditableMetadata
+        label={`Assignee for ${displayText(title)}`}
+        className="min-h-8 min-w-0 flex-1 justify-start px-0 text-sm text-fg"
+      >
+        <EditableMetadata.Value>
+          <span className="text-sm font-normal leading-5 text-fg">
+            {assignee?.label ?? (detail.assigneeUserId ? 'Assigned' : 'Unassigned')}
+          </span>
+        </EditableMetadata.Value>
+        <EditableMetadata.Editor>
+          <select
+            value={detail.assigneeUserId ?? ''}
+            onChange={(event) => {
+              patch('assigneeUserId', event.target.value || null);
+            }}
+            className="h-10 w-full rounded-sm border border-border bg-bg px-2 text-sm"
+            aria-label="Assignee"
+          >
+            <option value="">Unassigned</option>
+            {members.map((member) => (
+              <option key={member.id} value={member.id}>
+                {member.label}
+              </option>
+            ))}
+          </select>
+        </EditableMetadata.Editor>
+      </EditableMetadata>
+    </ObjectRailRow>
+  );
+}
 function ObjectConnectedWorkSection({
   connectedWork,
   hiddenBoardItemIds,

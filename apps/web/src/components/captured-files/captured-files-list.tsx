@@ -30,6 +30,7 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 import { ItemActionGroup } from '@/components/ui/item-actions';
+import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
 import { formatCollectionCount } from '@/lib/collection-count';
 import { displaySourceLabel } from '@/lib/display-labels';
 import { selectedValues } from '@/lib/filter-values';
@@ -84,10 +85,6 @@ interface Props {
 type Visibility = 'team' | 'private' | 'specific_users';
 
 const ALL = 'all';
-const capturedFileDateFormatter = new Intl.DateTimeFormat(undefined, {
-  month: 'short',
-  day: 'numeric',
-});
 
 interface CapturedFilesPageResponse {
   items: CapturedFileItem[];
@@ -179,16 +176,13 @@ export function CapturedFilesList({ files, nextCursor = null, folders, members }
   const [paginationState, setPaginationState] = useState(() =>
     paginationStateForProps(files, nextCursor),
   );
-  const paginationInputsRef = useRef({ files, nextCursor });
+  const [paginationInputs, setPaginationInputs] = useState({ files, nextCursor });
   const [loadingMore, startLoadMore] = useTransition();
   const [loadMoreError, setLoadMoreError] = useState<string | null>(null);
   const [uiState, dispatchUi] = useReducer(capturedFilesUiReducer, capturedFilesUiInitialState);
 
-  if (
-    paginationInputsRef.current.files !== files ||
-    paginationInputsRef.current.nextCursor !== nextCursor
-  ) {
-    paginationInputsRef.current = { files, nextCursor };
+  if (paginationInputs.files !== files || paginationInputs.nextCursor !== nextCursor) {
+    setPaginationInputs({ files, nextCursor });
     setPaginationState(paginationStateForProps(files, nextCursor));
     setLoadMoreError(null);
   }
@@ -486,6 +480,7 @@ function matchesMultiFilter(
 }
 
 function CapturedFileRow({ file, onPromote }: { file: CapturedFileItem; onPromote: () => void }) {
+  const timezone = useWorkspaceTimezone();
   const contentType = file.currentVersion?.contentType ?? '';
   const Icon = contentType.startsWith('image/') ? ImageIcon : FileText;
   const eventId = file.provenance.parentEventId ?? file.sourceRawEventId;
@@ -543,7 +538,7 @@ function CapturedFileRow({ file, onPromote }: { file: CapturedFileItem; onPromot
               {visibilityLabel(file.visibility)}
             </Badge>
             <span className="text-xs tabular-nums text-fg-dim">
-              Updated {formatDate(file.updatedAt)}
+              Updated {formatDate(file.updatedAt, timezone)}
             </span>
           </>
         </CollectionRow.Metadata>
@@ -681,6 +676,7 @@ function PromoteDialog({
     });
   }
 
+  const selectedMemberIds = new Set(form.visibilityUserIds);
   return (
     <DialogContent
       className="max-h-[calc(100dvh-2rem)] overflow-y-auto border-border bg-bg p-4 sm:max-w-lg"
@@ -769,7 +765,7 @@ function PromoteDialog({
                 <input
                   type="checkbox"
                   disabled={pending}
-                  checked={form.visibilityUserIds.includes(member.id)}
+                  checked={selectedMemberIds.has(member.id)}
                   onChange={(event) => {
                     dispatchForm({
                       type: 'member',
@@ -802,8 +798,12 @@ function matchesDateFilter(value: string, filter: string): boolean {
   return Date.now() - new Date(value).getTime() <= days * 24 * 60 * 60 * 1000;
 }
 
-function formatDate(value: string): string {
-  return capturedFileDateFormatter.format(new Date(value));
+function formatDate(value: string, timezone: string): string {
+  return new Intl.DateTimeFormat('en-GB', {
+    month: 'short',
+    day: 'numeric',
+    timeZone: timezone,
+  }).format(new Date(value));
 }
 
 function fileTypeLabel(contentType: string): string {

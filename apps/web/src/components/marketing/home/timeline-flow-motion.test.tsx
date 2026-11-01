@@ -1,9 +1,10 @@
-import { cleanup, render } from '@testing-library/react';
+import { act, cleanup, render } from '@testing-library/react';
 import { expect } from '@timeline/test-support';
 import { vi } from '@timeline/test-support';
 import { afterEach, beforeEach, describe, it } from 'bun:test';
 
 import styles from '@/app/(landing)/home.module.css';
+import { HomeMotion } from '@/components/marketing/home/home-motion';
 import { TimelineFlowMotion } from '@/components/marketing/home/timeline-flow-motion';
 // Test environment: happy-dom
 
@@ -187,5 +188,46 @@ describe('TimelineFlowMotion', () => {
     expect(fixture.steps.every((step) => step.classList.contains(VISIBLE_CLASS))).toBe(true);
     expect(fixture.setCurrentTime).toHaveBeenCalledWith(0);
     expect(fixture.unpauseAnimations).toHaveBeenCalledOnce();
+  });
+});
+
+describe('HomeMotion cleanup', () => {
+  afterEach(() => {
+    cleanup();
+    document.getElementById('expanded-flow')?.remove();
+    vi.unstubAllGlobals();
+  });
+
+  it('disconnects observers and stops SVG motion when preferences change and on unmount', () => {
+    FakeIntersectionObserver.instances = [];
+    const preference = new FakeReducedMotion();
+    vi.stubGlobal('IntersectionObserver', FakeIntersectionObserver);
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn(() => preference as unknown as MediaQueryList),
+    );
+    const fixture = createFlowFixture();
+    fixture.root.dataset.homeRoot = '';
+    fixture.steps[0].dataset.homeDiagram = '';
+    fixture.steps[1].dataset.homeReveal = '';
+    const { unmount } = render(<HomeMotion />);
+    const firstObservers = [...FakeIntersectionObserver.instances];
+    expect(firstObservers).toHaveLength(2);
+    expect(fixture.root.classList.contains(MOTION_READY_CLASS)).toBe(true);
+    act(() => {
+      preference.setMatches(true);
+    });
+    for (const observer of firstObservers) expect(observer.disconnect).toHaveBeenCalledOnce();
+    expect(fixture.root.classList.contains(MOTION_READY_CLASS)).toBe(false);
+    expect(fixture.pauseAnimations).toHaveBeenCalled();
+    act(() => {
+      preference.setMatches(false);
+    });
+    expect(FakeIntersectionObserver.instances).toHaveLength(4);
+    unmount();
+    for (const observer of FakeIntersectionObserver.instances)
+      expect(observer.disconnect).toHaveBeenCalledOnce();
+    expect(preference.listeners.size).toBe(0);
+    expect(fixture.root.style.getPropertyValue('--home-progress')).toBe('');
   });
 });

@@ -7,6 +7,9 @@ import {
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
+import type { TeamMembership } from '@/lib/active-team';
+import type { McpAuthorizationInput } from '@/lib/mcp-oauth-authorization';
+import type { ValidatedAuthorizationRequest } from '@timeline/shared/mcp-server';
 import type { Metadata } from 'next';
 
 import { approveMcpOAuthAction, denyMcpOAuthAction } from '@/app/oauth/actions';
@@ -170,6 +173,42 @@ export default async function McpOAuthAuthorizePage({
   const consentError = consentNotice ? consentErrorMessages[consentNotice] : null;
 
   return (
+    <OAuthConsentPage
+      request={request}
+      clientIdHost={clientIdHost}
+      redirectHost={redirectHost}
+      loopbackRedirect={loopbackRedirect}
+      consentError={consentError}
+      input={input}
+      requiresTeamAdmin={requiresTeamAdmin}
+      memberships={memberships}
+      defaultTeamId={defaultTeamId}
+    />
+  );
+}
+
+function OAuthConsentPage({
+  request,
+  clientIdHost,
+  redirectHost,
+  loopbackRedirect,
+  consentError,
+  input,
+  requiresTeamAdmin,
+  memberships,
+  defaultTeamId,
+}: {
+  request: ValidatedAuthorizationRequest;
+  clientIdHost: string | null;
+  redirectHost: string | null;
+  loopbackRedirect: boolean;
+  consentError: string | null;
+  input: McpAuthorizationInput;
+  requiresTeamAdmin: boolean;
+  memberships: TeamMembership[];
+  defaultTeamId: string | null;
+}) {
+  return (
     <AuthShell
       maxWidth="lg"
       title={`Allow ${request.client.clientName} to access Timeline?`}
@@ -241,54 +280,14 @@ export default async function McpOAuthAuthorizePage({
         </ul>
       </div>
 
-      <form action={approveMcpOAuthAction} className="space-y-5">
-        <HiddenAuthorizationFields input={input} />
-        <fieldset className="space-y-2">
-          <legend className="text-sm font-semibold text-fg">Choose a team</legend>
-          <p className="text-xs leading-5 text-fg-muted">
-            The app receives your permissions in this team. It does not receive team-admin access.
-          </p>
-          {requiresTeamAdmin ? (
-            <p className="rounded-md border border-warning/40 bg-warning/10 p-3 text-xs leading-5 text-fg">
-              Agent access can be granted only for teams where you are an owner or admin. Teams
-              where you are a member are unavailable for this request.
-            </p>
-          ) : null}
-          <div className="space-y-2 pt-1">
-            {memberships.map((membership) => {
-              const eligible = !requiresTeamAdmin || membership.role !== 'member';
-              return (
-                <label
-                  key={membership.teamId}
-                  className={`flex items-center gap-3 rounded-md border border-border p-3 text-sm transition-colors ${
-                    eligible
-                      ? 'cursor-pointer hover:bg-bg-subtle has-[:checked]:border-primary has-[:checked]:bg-primary/5'
-                      : 'cursor-not-allowed opacity-55'
-                  }`}
-                >
-                  <input
-                    type="radio"
-                    name="team_id"
-                    value={membership.teamId}
-                    defaultChecked={membership.teamId === defaultTeamId}
-                    required
-                    disabled={!eligible}
-                    className="size-4 accent-primary"
-                  />
-                  <span className="min-w-0 flex-1 font-medium text-fg">{membership.teamName}</span>
-                  <span className="text-xs capitalize text-fg-muted">
-                    {membership.role}
-                    {!eligible ? ' · unavailable' : ''}
-                  </span>
-                </label>
-              );
-            })}
-          </div>
-        </fieldset>
-        <Button type="submit" className="w-full" disabled={!defaultTeamId}>
-          Allow access
-        </Button>
-      </form>
+      {
+        <OAuthConsentForm
+          input={input}
+          requiresTeamAdmin={requiresTeamAdmin}
+          memberships={memberships}
+          defaultTeamId={defaultTeamId}
+        />
+      }
 
       <form action={denyMcpOAuthAction}>
         <HiddenAuthorizationFields input={input} />
@@ -312,5 +311,67 @@ export default async function McpOAuthAuthorizePage({
         .
       </p>
     </AuthShell>
+  );
+}
+function OAuthConsentForm({
+  input,
+  requiresTeamAdmin,
+  memberships,
+  defaultTeamId,
+}: {
+  input: McpAuthorizationInput;
+  requiresTeamAdmin: boolean;
+  memberships: TeamMembership[];
+  defaultTeamId: string | null;
+}) {
+  return (
+    <form action={approveMcpOAuthAction} className="space-y-5">
+      <HiddenAuthorizationFields input={input} />
+      <fieldset className="space-y-2">
+        <legend className="text-sm font-semibold text-fg">Choose a team</legend>
+        <p className="text-xs leading-5 text-fg-muted">
+          The app receives your permissions in this team. It does not receive team-admin access.
+        </p>
+        {requiresTeamAdmin ? (
+          <p className="rounded-md border border-warning/40 bg-warning/10 p-3 text-xs leading-5 text-fg">
+            Agent access can be granted only for teams where you are an owner or admin. Teams where
+            you are a member are unavailable for this request.
+          </p>
+        ) : null}
+        <div className="space-y-2 pt-1">
+          {memberships.map((membership) => {
+            const eligible = !requiresTeamAdmin || membership.role !== 'member';
+            return (
+              <label
+                key={membership.teamId}
+                className={`flex items-center gap-3 rounded-md border border-border p-3 text-sm transition-colors ${
+                  eligible
+                    ? 'cursor-pointer hover:bg-bg-subtle has-[:checked]:border-primary has-[:checked]:bg-primary/5'
+                    : 'cursor-not-allowed opacity-55'
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="team_id"
+                  value={membership.teamId}
+                  defaultChecked={membership.teamId === defaultTeamId}
+                  required
+                  disabled={!eligible}
+                  className="size-4 accent-primary"
+                />
+                <span className="min-w-0 flex-1 font-medium text-fg">{membership.teamName}</span>
+                <span className="text-xs capitalize text-fg-muted">
+                  {membership.role}
+                  {!eligible ? ' · unavailable' : ''}
+                </span>
+              </label>
+            );
+          })}
+        </div>
+      </fieldset>
+      <Button type="submit" className="w-full" disabled={!defaultTeamId}>
+        Allow access
+      </Button>
+    </form>
   );
 }

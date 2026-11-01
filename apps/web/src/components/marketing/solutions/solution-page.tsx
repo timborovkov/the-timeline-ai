@@ -1,6 +1,7 @@
-import { ArrowRight, Check, ChevronRight } from 'lucide-react';
+import { ArrowRight, ChevronRight } from 'lucide-react';
 import Link from 'next/link';
 
+import { DirectAnswer } from '@/components/marketing/editorial/direct-answer';
 import { EditorialKicker } from '@/components/marketing/editorial/editorial-kicker';
 import { EditorialSectionHeading } from '@/components/marketing/editorial/editorial-section-heading';
 import { EditorialStructuredData } from '@/components/marketing/editorial/editorial-structured-data';
@@ -52,26 +53,7 @@ export function SolutionPage({ solution }: { solution: SolutionContent }) {
               </p>
             </div>
 
-            <aside
-              aria-label="Direct answer"
-              className={`${styles.indexRule} border-y border-border py-8 pl-7 sm:pl-9`}
-            >
-              <p className="font-mono text-[0.68rem] tracking-[0.14em] text-signal uppercase">
-                Start with the answer
-              </p>
-              <h2 className="mt-5 text-balance text-2xl font-semibold tracking-[-0.035em] sm:text-3xl">
-                {solution.answer.title}
-              </h2>
-              <p className="mt-5 text-base leading-7 text-fg-muted">{solution.answer.body}</p>
-              <ul className="mt-7 grid gap-3">
-                {solution.answer.checklist.map((item) => (
-                  <li key={item} className="grid grid-cols-[1rem_1fr] gap-3 text-sm leading-6">
-                    <Check aria-hidden="true" className="mt-1 size-4 text-signal" />
-                    <span>{item}</span>
-                  </li>
-                ))}
-              </ul>
-            </aside>
+            <DirectAnswer answer={solution.answer} />
           </div>
         </header>
 

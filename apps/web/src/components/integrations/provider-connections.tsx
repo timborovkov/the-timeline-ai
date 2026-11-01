@@ -430,7 +430,7 @@ function ConnectionSources({ connection }: { connection: ProviderConnection }) {
         resource.label.toLowerCase().includes(q) ||
         resource.externalId.toLowerCase().includes(q) ||
         (resource.searchText?.toLowerCase().includes(q) ?? false) ||
-        resourceKindSearchText(resource.kind).includes(q),
+        matchesResourceKind(resource.kind, q),
     );
   }, [query, selectableResources]);
 
@@ -1083,4 +1083,9 @@ export function TeamSourcesUi({
       })}
     </div>
   );
+}
+
+function matchesResourceKind(kind: string, query: string): boolean {
+  const searchText: string = resourceKindSearchText(kind);
+  return searchText.includes(query);
 }

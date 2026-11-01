@@ -1,8 +1,8 @@
 import { formatEuroFromCents } from '@timeline/shared/billing/catalog';
 
-import type { BillingPresentation, BillingPeriod } from '@timeline/shared/billing';
+import type { BillingPresentation, BillingPeriod, RecordedCharges } from '@timeline/shared/billing';
 
-export function billingDate(value: string): string {
+function billingDate(value: string): string {
   return new Date(value).toLocaleDateString('en-GB', {
     day: 'numeric',
     month: 'short',
@@ -33,119 +33,8 @@ export function BillingBenefitsSummary({ summary }: { summary: BillingPresentati
           its own allowance.
         </p>
       ) : null}
-      {credit.status !== 'not_applicable' ? (
-        <section className="space-y-2 border border-border p-3" aria-label="Included usage credit">
-          <h3 className="text-sm font-medium">Included usage credit</h3>
-          {credit.period ? (
-            <>
-              <Period value={credit.period} />
-              <p className="text-xs text-fg-muted">
-                Credit renews {billingDate(credit.period.end)} (UTC).
-              </p>
-            </>
-          ) : null}
-          {credit.status === 'updating' ? (
-            <p className="text-sm">Updating billing period</p>
-          ) : (
-            <dl className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-3">
-              <div>
-                <dt className="text-fg-muted">Included</dt>
-                <dd>
-                  <Money value={credit.totalCents} />
-                </dd>
-              </div>
-              <div>
-                <dt className="text-fg-muted">Used</dt>
-                <dd>
-                  <Money value={credit.usedCents} />
-                </dd>
-              </div>
-              <div>
-                <dt className="text-fg-muted">Remaining</dt>
-                <dd>
-                  <Money value={credit.remainingCents} />
-                </dd>
-              </div>
-            </dl>
-          )}
-          <p className="text-xs text-fg-muted">
-            Shared across eligible usage meters. Extra members and the plan fee are charged
-            separately.
-          </p>
-        </section>
-      ) : null}
-      <section className="space-y-2 border border-border p-3" aria-label="Charges recorded so far">
-        <h3 className="text-sm font-medium">Charges recorded so far</h3>
-        {charges.period ? <Period value={charges.period} /> : null}
-        {summary.planId === 'free' ? (
-          <p className="text-sm text-fg-muted">
-            New Free usage is included. Any earlier paid charges remain shown.
-          </p>
-        ) : null}
-        {summary.comped ? (
-          <p className="text-sm">
-            This team is comped. No new Polar usage charges; earlier paid charges remain shown.
-          </p>
-        ) : null}
-        {charges.status !== 'available' || !charges.amounts ? (
-          <p className="text-sm">
-            {charges.status === 'updating'
-              ? 'Updating billing period'
-              : 'Unavailable — some recorded usage cannot be assigned reliably to this billing period.'}
-          </p>
-        ) : (
-          <dl className="space-y-2 text-sm">
-            {credit.totalCents > 0 || charges.amounts.creditAppliedCents > 0 ? (
-              <div className="flex flex-wrap justify-between gap-2">
-                <dt>Usage before included credit</dt>
-                <dd>
-                  <Money value={charges.amounts.usageCents} />
-                </dd>
-              </div>
-            ) : null}
-            {credit.totalCents > 0 || charges.amounts.creditAppliedCents > 0 ? (
-              <div className="flex flex-wrap justify-between gap-2">
-                <dt>Included credit applied</dt>
-                <dd>
-                  −<Money value={charges.amounts.creditAppliedCents} />
-                </dd>
-              </div>
-            ) : null}
-            <div className="flex flex-wrap justify-between gap-2">
-              <dt>
-                {summary.planId === 'payg'
-                  ? 'Usage above Free allowances'
-                  : summary.planId === 'free'
-                    ? 'Recorded usage charges'
-                    : 'Usage after included credit'}
-              </dt>
-              <dd>
-                <Money value={charges.amounts.usageAfterCreditCents} />
-              </dd>
-            </div>
-            <div className="flex flex-wrap justify-between gap-2">
-              <dt>Extra members</dt>
-              <dd>
-                <Money value={charges.amounts.extraMemberCents} />
-              </dd>
-            </div>
-            <div className="flex flex-wrap justify-between gap-2 border-t border-border pt-2 font-medium">
-              <dt>Total recorded usage charges</dt>
-              <dd>
-                <Money value={charges.amounts.totalCents} />
-              </dd>
-            </div>
-          </dl>
-        )}
-        <p className="text-xs text-fg-muted">
-          Recorded usage only, excluding provider adjustments and tax. Polar confirms the final
-          invoice.
-        </p>
-        <p className="text-sm">
-          Recurring plan fee: <Money value={summary.recurringFeeCents} />
-          {summary.recurringFeeCents === null ? '' : ' / month'}
-        </p>
-      </section>
+      {credit.status !== 'not_applicable' ? <IncludedUsageCredit credit={credit} /> : null}
+      {<BillingRecordedCharges charges={charges} summary={summary} credit={credit} />}
       <section className="space-y-1 text-sm" aria-label="Included members">
         <p>
           Members: {members.current} current · {members.included ?? 'Custom'} included
@@ -167,21 +56,189 @@ export function BillingBenefitsSummary({ summary }: { summary: BillingPresentati
         </p>
       ) : null}
       {summary.planId !== 'free' && cap.applicable ? (
-        <section className="space-y-1 text-sm" aria-label="Monthly spend cap">
-          <p>
-            Monthly spend cap: <Money value={cap.usedCents} /> used of{' '}
-            <Money value={cap.limitCents} />
-          </p>
-          <Period value={summary.calendarPeriod} />
-          <p className="text-fg-muted">
-            {summary.planId === 'payg'
-              ? 'Counts usage above Free allowances and extra members.'
-              : 'Counts metered usage before included credit, plus extra members.'}{' '}
-            Excludes the plan fee and tax. This is a limit, not credit or an upfront charge.
-          </p>
-          {cap.limitCents === 0 ? <p>New chargeable usage is paused at a €0 cap.</p> : null}
-        </section>
+        <BillingSpendCapSummary cap={cap} summary={summary} />
       ) : null}
     </div>
+  );
+}
+
+function BillingSpendCapSummary({
+  cap,
+  summary,
+}: {
+  cap: {
+    applicable: boolean;
+    exemption: 'enterprise_contract' | 'shadow_billing' | 'free_plan' | null;
+    usedCents: number;
+    limitCents: number;
+    percent: number;
+    reached: boolean;
+  };
+  summary: BillingPresentation;
+}) {
+  return (
+    <section className="space-y-1 text-sm" aria-label="Monthly spend cap">
+      <p>
+        Monthly spend cap: <Money value={cap.usedCents} /> used of <Money value={cap.limitCents} />
+      </p>
+      <Period value={summary.calendarPeriod} />
+      <p className="text-fg-muted">
+        {summary.planId === 'payg'
+          ? 'Counts usage above Free allowances and extra members.'
+          : 'Counts metered usage before included credit, plus extra members.'}{' '}
+        Excludes the plan fee and tax. This is a limit, not credit or an upfront charge.
+      </p>
+      {cap.limitCents === 0 ? <p>New chargeable usage is paused at a €0 cap.</p> : null}
+    </section>
+  );
+}
+function IncludedUsageCredit({
+  credit,
+}: {
+  credit: {
+    status: 'available' | 'updating' | 'not_applicable';
+    period: BillingPeriod | null;
+    totalCents: number;
+    usedCents: number | null;
+    remainingCents: number | null;
+  };
+}) {
+  return (
+    <section className="space-y-2 border border-border p-3" aria-label="Included usage credit">
+      <h3 className="text-sm font-medium">Included usage credit</h3>
+      {credit.period ? (
+        <>
+          <Period value={credit.period} />
+          <p className="text-xs text-fg-muted">
+            Credit renews {billingDate(credit.period.end)} (UTC).
+          </p>
+        </>
+      ) : null}
+      {credit.status === 'updating' ? (
+        <p className="text-sm">Updating billing period</p>
+      ) : (
+        <dl className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-3">
+          <div>
+            <dt className="text-fg-muted">Included</dt>
+            <dd>
+              <Money value={credit.totalCents} />
+            </dd>
+          </div>
+          <div>
+            <dt className="text-fg-muted">Used</dt>
+            <dd>
+              <Money value={credit.usedCents} />
+            </dd>
+          </div>
+          <div>
+            <dt className="text-fg-muted">Remaining</dt>
+            <dd>
+              <Money value={credit.remainingCents} />
+            </dd>
+          </div>
+        </dl>
+      )}
+      <p className="text-xs text-fg-muted">
+        Shared across eligible usage meters. Extra members and the plan fee are charged separately.
+      </p>
+    </section>
+  );
+}
+function BillingRecordedCharges({
+  charges,
+  summary,
+  credit,
+}: {
+  charges: BillingPresentation['charges'];
+  summary: BillingPresentation;
+  credit: BillingPresentation['credit'];
+}) {
+  return (
+    <section className="space-y-2 border border-border p-3" aria-label="Charges recorded so far">
+      <h3 className="text-sm font-medium">Charges recorded so far</h3>
+      {charges.period ? <Period value={charges.period} /> : null}
+      {summary.planId === 'free' ? (
+        <p className="text-sm text-fg-muted">
+          New Free usage is included. Any earlier paid charges remain shown.
+        </p>
+      ) : null}
+      {summary.comped ? (
+        <p className="text-sm">
+          This team is comped. No new Polar usage charges; earlier paid charges remain shown.
+        </p>
+      ) : null}
+      {charges.status !== 'available' || !charges.amounts ? (
+        <p className="text-sm">
+          {charges.status === 'updating'
+            ? 'Updating billing period'
+            : 'Unavailable — some recorded usage cannot be assigned reliably to this billing period.'}
+        </p>
+      ) : (
+        <RecordedChargeAmounts credit={credit} amounts={charges.amounts} summary={summary} />
+      )}
+      <p className="text-xs text-fg-muted">
+        Recorded usage only, excluding provider adjustments and tax. Polar confirms the final
+        invoice.
+      </p>
+      <p className="text-sm">
+        Recurring plan fee: <Money value={summary.recurringFeeCents} />
+        {summary.recurringFeeCents === null ? '' : ' / month'}
+      </p>
+    </section>
+  );
+}
+
+function RecordedChargeAmounts({
+  credit,
+  amounts,
+  summary,
+}: {
+  credit: BillingPresentation['credit'];
+  amounts: RecordedCharges;
+  summary: BillingPresentation;
+}) {
+  return (
+    <dl className="space-y-2 text-sm">
+      {credit.totalCents > 0 || amounts.creditAppliedCents > 0 ? (
+        <div className="flex flex-wrap justify-between gap-2">
+          <dt>Usage before included credit</dt>
+          <dd>
+            <Money value={amounts.usageCents} />
+          </dd>
+        </div>
+      ) : null}
+      {credit.totalCents > 0 || amounts.creditAppliedCents > 0 ? (
+        <div className="flex flex-wrap justify-between gap-2">
+          <dt>Included credit applied</dt>
+          <dd>
+            −<Money value={amounts.creditAppliedCents} />
+          </dd>
+        </div>
+      ) : null}
+      <div className="flex flex-wrap justify-between gap-2">
+        <dt>
+          {summary.planId === 'payg'
+            ? 'Usage above Free allowances'
+            : summary.planId === 'free'
+              ? 'Recorded usage charges'
+              : 'Usage after included credit'}
+        </dt>
+        <dd>
+          <Money value={amounts.usageAfterCreditCents} />
+        </dd>
+      </div>
+      <div className="flex flex-wrap justify-between gap-2">
+        <dt>Extra members</dt>
+        <dd>
+          <Money value={amounts.extraMemberCents} />
+        </dd>
+      </div>
+      <div className="flex flex-wrap justify-between gap-2 border-t border-border pt-2 font-medium">
+        <dt>Total recorded usage charges</dt>
+        <dd>
+          <Money value={amounts.totalCents} />
+        </dd>
+      </div>
+    </dl>
   );
 }

@@ -62,6 +62,200 @@ export default async function ObjectsIndexPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
+  const {
+    objectWindow,
+    singleType,
+    filters,
+    inventoryTotal,
+    filterBarHiddenParams,
+    memberOptions,
+    projects,
+    categoryFilterBaseline,
+    cleanupSuggestions,
+    mergePreviewsByItemId,
+    rows,
+    activeFilters,
+    objectPinState,
+    params,
+    hasTypeFilter,
+    filterParams,
+  } = await loadObjectsIndexPage({ searchParams });
+  return (
+    <div className="space-y-6">
+      <PageHeader
+        variant="collection"
+        title="Objects"
+        subtitle="Projects, people, decisions, and other durable team context."
+        metadata={[
+          { label: 'Total', value: objectWindow.totalCount, mono: true },
+          ...(singleType
+            ? [{ label: 'Type', value: OBJECT_TYPE_LABELS[singleType] ?? singleType }]
+            : []),
+        ]}
+      />
+      <WorkSubnav current="/app/objects" />
+
+      <WorkFilterBar
+        mode="objects"
+        basePath="/app/objects"
+        filters={filters}
+        active={hasActiveWorkFilters(filters)}
+        resultCount={objectWindow.totalCount}
+        totalCount={inventoryTotal ?? objectWindow.totalCount}
+        hiddenParams={filterBarHiddenParams}
+        members={memberOptions}
+        projects={projects.map((project) => ({ id: project.id, label: project.canonicalName }))}
+        typeLabels={OBJECT_TYPE_LABELS}
+        actions={
+          <Link
+            href="/app/objects/new"
+            className="inline-flex min-h-10 items-center gap-1.5 rounded-sm px-2.5 text-xs font-medium text-fg-muted transition-colors hover:bg-surface-2 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/50"
+          >
+            <Plus className="size-3.5" aria-hidden="true" />
+            New object
+          </Link>
+        }
+      />
+      {categoryFilterBaseline ? (
+        <TaskCategoryFilterRefresh
+          surface="objects"
+          filters={filters}
+          baselineToken={categoryFilterBaseline.token}
+        />
+      ) : null}
+
+      <ObjectCleanupSuggestions
+        suggestions={cleanupSuggestions}
+        mergePreviewsByItemId={mergePreviewsByItemId}
+      />
+
+      {rows.length === 0 ? (
+        <ObjectsEmptyState activeFilters={activeFilters} />
+      ) : (
+        <ObjectCleanupList
+          rows={rows.map((row) => ({
+            ...row,
+            pinned: objectPinState[`object:${row.id}`] ?? false,
+          }))}
+          typeLabels={OBJECT_TYPE_LABELS}
+          returnTo={objectsIndexReturnTo(params)}
+          nextCursor={hasTypeFilter ? objectWindow.nextCursor : null}
+          filterParams={hasTypeFilter ? filterParams : undefined}
+          sectionMoreHrefs={objectWindow.sectionMoreHrefs}
+        />
+      )}
+    </div>
+  );
+}
+
+function ObjectsEmptyState({ activeFilters }: { activeFilters: boolean }) {
+  return (
+    <EmptyState
+      icon={Shapes}
+      title={activeFilters ? 'No objects match this filter' : 'No objects yet'}
+      body={
+        activeFilters
+          ? 'The object directory is still intact. Clear the filter to see everything tracked for this team.'
+          : 'Objects are extracted from captured work. Create one now if you already know what to track.'
+      }
+      href={activeFilters ? '/app/objects' : '/app#capture'}
+      action={activeFilters ? 'Clear filter' : 'Capture first note'}
+    />
+  );
+}
+async function loadTypedObjectPage(
+  objectScope: ObjectListScope,
+  {
+    filter,
+  }: {
+    filter: objects.ObjectListFilter;
+  },
+): Promise<{
+  rows: objects.ObjectRow[];
+  hasNextPage: boolean;
+  nextCursor: string | null;
+  totalCount: number;
+  sectionMoreHrefs?: Record<string, string>;
+}> {
+  const [page, totalCount] = await Promise.all([
+    loadObjectRowsPage(objectScope, null, filter),
+    objectScope.countObjects(filter),
+  ]);
+  return {
+    rows: page.rows,
+    hasNextPage: Boolean(page.nextCursor),
+    nextCursor: page.nextCursor,
+    totalCount,
+  };
+}
+
+async function loadObjectSectionPreviews(
+  objectScope: ObjectListScope,
+  {
+    filter,
+    filterParams,
+  }: { filter: objects.ObjectListFilter; filterParams: Record<string, string> },
+): Promise<{
+  rows: objects.ObjectRow[];
+  hasNextPage: boolean;
+  nextCursor: string | null;
+  totalCount: number;
+  sectionMoreHrefs: Record<string, string>;
+}> {
+  const previews = await Promise.all(
+    OBJECT_TYPES.map(async (typeKey) => {
+      const typedFilter = { ...filter, type: typeKey };
+      const [sectionRows, totalCount] = await Promise.all([
+        objectScope.listObjects({
+          ...typedFilter,
+          limit: OBJECTS_SECTION_PREVIEW_SIZE + 1,
+        }),
+        objectScope.countObjects(typedFilter),
+      ]);
+      return [typeKey, sectionRows, totalCount] as const;
+    }),
+  );
+  const sectionMoreHrefs: Record<string, string> = {};
+  const rows: objects.ObjectRow[] = [];
+  let totalCount = 0;
+  for (const [typeKey, sectionRows, sectionTotal] of previews) {
+    totalCount += sectionTotal;
+    rows.push(...sectionRows.slice(0, OBJECTS_SECTION_PREVIEW_SIZE));
+    if (sectionRows.length > OBJECTS_SECTION_PREVIEW_SIZE) {
+      sectionMoreHrefs[typeKey] = objectsPageHref({
+        filters: { ...filterParams, type: typeKey },
+      });
+    }
+  }
+  return { rows, hasNextPage: false, nextCursor: null, totalCount, sectionMoreHrefs };
+}
+
+function objectsIndexReturnTo(params: Record<string, string | string[] | undefined>): string {
+  const query = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        if (item) query.append(key, item);
+      }
+    } else if (value) {
+      query.set(key, value);
+    }
+  }
+  const qs = query.toString();
+  return qs ? `/app/objects?${qs}` : '/app/objects';
+}
+
+function objectsPageHref(params: { filters?: Record<string, string> }): string {
+  const query = new URLSearchParams(params.filters ?? {});
+  const qs = query.toString();
+  return qs ? `/app/objects?${qs}` : '/app/objects';
+}
+
+async function loadObjectsIndexPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const session = await auth();
   if (!session?.user) redirect('/sign-in');
   const { active } = await resolveActiveTeam(session.user.id);
@@ -182,168 +376,24 @@ export default async function ObjectsIndexPage({
     mergePreviewEntries.filter((entry): entry is NonNullable<typeof entry> => Boolean(entry)),
   );
 
-  return (
-    <div className="space-y-6">
-      <PageHeader
-        variant="collection"
-        title="Objects"
-        subtitle="Projects, people, decisions, and other durable team context."
-        metadata={[
-          { label: 'Total', value: objectWindow.totalCount, mono: true },
-          ...(singleType
-            ? [{ label: 'Type', value: OBJECT_TYPE_LABELS[singleType] ?? singleType }]
-            : []),
-        ]}
-      />
-      <WorkSubnav current="/app/objects" />
-
-      <WorkFilterBar
-        mode="objects"
-        basePath="/app/objects"
-        filters={filters}
-        active={hasActiveWorkFilters(filters)}
-        resultCount={objectWindow.totalCount}
-        totalCount={inventoryTotal ?? objectWindow.totalCount}
-        hiddenParams={filterBarHiddenParams}
-        members={memberOptions}
-        projects={projects.map((project) => ({ id: project.id, label: project.canonicalName }))}
-        typeLabels={OBJECT_TYPE_LABELS}
-        actions={
-          <Link
-            href="/app/objects/new"
-            className="inline-flex min-h-10 items-center gap-1.5 rounded-sm px-2.5 text-xs font-medium text-fg-muted transition-colors hover:bg-surface-2 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/50"
-          >
-            <Plus className="size-3.5" aria-hidden="true" />
-            New object
-          </Link>
-        }
-      />
-      {categoryFilterBaseline ? (
-        <TaskCategoryFilterRefresh
-          surface="objects"
-          filters={filters}
-          baselineToken={categoryFilterBaseline.token}
-        />
-      ) : null}
-
-      <ObjectCleanupSuggestions
-        suggestions={cleanupSuggestions}
-        mergePreviewsByItemId={mergePreviewsByItemId}
-      />
-
-      {rows.length === 0 ? (
-        <EmptyState
-          icon={Shapes}
-          title={activeFilters ? 'No objects match this filter' : 'No objects yet'}
-          body={
-            activeFilters
-              ? 'The object directory is still intact. Clear the filter to see everything tracked for this team.'
-              : 'Objects are extracted from captured work. Create one now if you already know what to track.'
-          }
-          href={activeFilters ? '/app/objects' : '/app#capture'}
-          action={activeFilters ? 'Clear filter' : 'Capture first note'}
-        />
-      ) : (
-        <ObjectCleanupList
-          rows={rows.map((row) => ({
-            ...row,
-            pinned: objectPinState[`object:${row.id}`] ?? false,
-          }))}
-          typeLabels={OBJECT_TYPE_LABELS}
-          returnTo={objectsIndexReturnTo(params)}
-          nextCursor={hasTypeFilter ? objectWindow.nextCursor : null}
-          filterParams={hasTypeFilter ? filterParams : undefined}
-          sectionMoreHrefs={objectWindow.sectionMoreHrefs}
-        />
-      )}
-    </div>
-  );
-}
-
-async function loadTypedObjectPage(
-  objectScope: ObjectListScope,
-  {
-    filter,
-  }: {
-    filter: objects.ObjectListFilter;
-  },
-): Promise<{
-  rows: objects.ObjectRow[];
-  hasNextPage: boolean;
-  nextCursor: string | null;
-  totalCount: number;
-  sectionMoreHrefs?: Record<string, string>;
-}> {
-  const [page, totalCount] = await Promise.all([
-    loadObjectRowsPage(objectScope, null, filter),
-    objectScope.countObjects(filter),
-  ]);
   return {
-    rows: page.rows,
-    hasNextPage: Boolean(page.nextCursor),
-    nextCursor: page.nextCursor,
-    totalCount,
-  };
-}
-
-async function loadObjectSectionPreviews(
-  objectScope: ObjectListScope,
-  {
-    filter,
+    objectWindow,
+    singleType,
+    filters,
+    active,
+    inventoryTotal,
+    filterBarHiddenParams,
+    members,
+    memberOptions,
+    projects,
+    categoryFilterBaseline,
+    cleanupSuggestions,
+    mergePreviewsByItemId,
+    rows,
+    activeFilters,
+    objectPinState,
+    params,
+    hasTypeFilter,
     filterParams,
-  }: { filter: objects.ObjectListFilter; filterParams: Record<string, string> },
-): Promise<{
-  rows: objects.ObjectRow[];
-  hasNextPage: boolean;
-  nextCursor: string | null;
-  totalCount: number;
-  sectionMoreHrefs: Record<string, string>;
-}> {
-  const previews = await Promise.all(
-    OBJECT_TYPES.map(async (typeKey) => {
-      const typedFilter = { ...filter, type: typeKey };
-      const [sectionRows, totalCount] = await Promise.all([
-        objectScope.listObjects({
-          ...typedFilter,
-          limit: OBJECTS_SECTION_PREVIEW_SIZE + 1,
-        }),
-        objectScope.countObjects(typedFilter),
-      ]);
-      return [typeKey, sectionRows, totalCount] as const;
-    }),
-  );
-  const sectionMoreHrefs: Record<string, string> = {};
-  const rows: objects.ObjectRow[] = [];
-  let totalCount = 0;
-  for (const [typeKey, sectionRows, sectionTotal] of previews) {
-    totalCount += sectionTotal;
-    rows.push(...sectionRows.slice(0, OBJECTS_SECTION_PREVIEW_SIZE));
-    if (sectionRows.length > OBJECTS_SECTION_PREVIEW_SIZE) {
-      sectionMoreHrefs[typeKey] = objectsPageHref({
-        filters: { ...filterParams, type: typeKey },
-      });
-    }
-  }
-  return { rows, hasNextPage: false, nextCursor: null, totalCount, sectionMoreHrefs };
-}
-
-function objectsIndexReturnTo(params: Record<string, string | string[] | undefined>): string {
-  const query = new URLSearchParams();
-  for (const [key, value] of Object.entries(params)) {
-    if (Array.isArray(value)) {
-      for (const item of value) {
-        if (item) query.append(key, item);
-      }
-    } else if (value) {
-      query.set(key, value);
-    }
-  }
-  const qs = query.toString();
-  return qs ? `/app/objects?${qs}` : '/app/objects';
-}
-
-function objectsPageHref(params: { filters?: Record<string, string> }): string {
-  const query = new URLSearchParams(params.filters ?? {});
-  const qs = query.toString();
-  return qs ? `/app/objects?${qs}` : '/app/objects';
+  };
 }

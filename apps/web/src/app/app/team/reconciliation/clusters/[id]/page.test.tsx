@@ -130,7 +130,13 @@ describe('ReconciliationClusterPage', () => {
     expect(html).toContain('Update workspace memory');
     expect(html).toContain('High confidence');
     expect(html).toContain('Needs approval');
-    expect(html).toContain('Jun 30, 2026, 3:00 AM');
+    expect(html).toContain(
+      new Intl.DateTimeFormat('en-US', {
+        dateStyle: 'medium',
+        timeStyle: 'short',
+        timeZone: 'UTC',
+      }).format(new Date('2026-06-30T03:00:00.000Z')),
+    );
     expect(html).toContain('America/Los_Angeles');
     expect(html).toContain('Times in America/Los_Angeles');
     expect(html).toContain('dateTime="2026-06-30T10:00:00.000Z"');

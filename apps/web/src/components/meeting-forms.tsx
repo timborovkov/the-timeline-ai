@@ -418,6 +418,7 @@ function VisibilityField({
 }) {
   const descriptionId = `${idPrefix}-visibility-description`;
 
+  const selectedMemberIds = new Set(visibilityUserIds);
   return (
     <fieldset aria-describedby={descriptionId} className="space-y-2">
       <legend className="text-sm font-medium">Visibility</legend>
@@ -461,7 +462,7 @@ function VisibilityField({
                     className="flex items-center gap-2 text-sm text-fg-muted"
                   >
                     <input
-                      checked={visibilityUserIds.includes(member.id)}
+                      checked={selectedMemberIds.has(member.id)}
                       id={inputId}
                       onChange={(event) => {
                         onVisibilityUserIdsChange(

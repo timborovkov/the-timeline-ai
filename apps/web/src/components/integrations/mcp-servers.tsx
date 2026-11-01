@@ -118,6 +118,19 @@ async function testCall(
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ tool: namespaced, args }),
   });
+  if (!res.ok) {
+    const failure = parseToolResponse(await res.text());
+    if (failure?.error === 'needs_reauth') {
+      const name =
+        typeof failure.mcp_server_name === 'string' && failure.mcp_server_name.trim()
+          ? failure.mcp_server_name
+          : server.name;
+      notifyError('mcp:test-call', `${name} needs to be reconnected before this tool can run.`);
+    } else {
+      notifyError('mcp:test-call', 'Couldn’t run tool');
+    }
+    return;
+  }
   const text = await res.text();
   const parsed = parseToolResponse(text);
   if (parsed?.error === 'needs_reauth') {
@@ -128,7 +141,7 @@ async function testCall(
     notifyError('mcp:test-call', `${serverName} needs to be reconnected before this tool can run.`);
     return;
   }
-  if (!res.ok || parsed?.ok === false) {
+  if (parsed?.ok === false) {
     notifyError('mcp:test-call', 'Couldn’t run tool');
     return;
   }

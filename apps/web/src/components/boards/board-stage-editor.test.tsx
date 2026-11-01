@@ -35,3 +35,25 @@ describe('BoardStageEditor', () => {
     expect(stages.map((stage) => stage.name)).toEqual(['Ideas', 'Review', 'New stage']);
   });
 });
+
+it('keeps draft input identity when renaming and reordering equal names', async () => {
+  const user = userEvent.setup();
+  let stages: EditableBoardStage[] = [
+    { draftKey: 'draft-a', name: 'New stage', kind: 'active' },
+    { draftKey: 'draft-b', name: 'New stage', kind: 'active' },
+  ];
+  const onChange = (next: EditableBoardStage[]) => {
+    stages = next;
+    rerender(<BoardStageEditor stages={stages} onChange={onChange} />);
+  };
+  const { rerender, unmount } = render(<BoardStageEditor stages={stages} onChange={onChange} />);
+  const input = screen.getByLabelText('Stage 2 name');
+  await user.clear(input);
+  await user.type(input, 'Review');
+  expect(document.activeElement).toBe(input);
+  expect(screen.getByLabelText('Stage 2 name')).toBe(input);
+  await user.click(screen.getByRole('button', { name: 'Move Review up' }));
+  expect(screen.getByLabelText('Stage 1 name')).toBe(input);
+  expect(stages[0]?.draftKey).toBe('draft-b');
+  unmount();
+});

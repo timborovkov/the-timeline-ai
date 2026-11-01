@@ -667,16 +667,7 @@ function SearchResultsPanel({
       ) : loading && results.length === 0 ? (
         <SearchResultsLoading />
       ) : results.length === 0 && !loading ? (
-        <EmptyState
-          icon={Search}
-          size="inset"
-          title={hasSearchCriteria ? 'No matches found' : 'Start with a search'}
-          body={
-            hasSearchCriteria
-              ? 'Try different words or adjust the filters.'
-              : 'Enter words, then narrow results by type, source, or date.'
-          }
-        />
+        <SearchEmptyState hasSearchCriteria={hasSearchCriteria} />
       ) : (
         <ul>
           {results.map((result) => (
@@ -685,5 +676,20 @@ function SearchResultsPanel({
         </ul>
       )}
     </section>
+  );
+}
+
+function SearchEmptyState({ hasSearchCriteria }: { hasSearchCriteria: boolean }) {
+  return (
+    <EmptyState
+      icon={Search}
+      size="inset"
+      title={hasSearchCriteria ? 'No matches found' : 'Start with a search'}
+      body={
+        hasSearchCriteria
+          ? 'Try different words or adjust the filters.'
+          : 'Enter words, then narrow results by type, source, or date.'
+      }
+    />
   );
 }

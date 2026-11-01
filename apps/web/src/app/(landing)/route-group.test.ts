@@ -85,7 +85,8 @@ describe('landing route group', () => {
     expect(motion).toContain("'[data-home-diagram]'");
     expect(motion).not.toContain('data-home-ambient');
     expect(motion).toContain('classList.toggle(visibleClass, entry.isIntersecting)');
-    expect(motion).toContain("addEventListener('change', restartForPreference)");
+    expect(motion).toContain("addEventListener('change', onChange)");
+    expect(motion).toContain("removeEventListener('change', onChange)");
     expect(motion).toContain('setCurrentTime(0)');
     expect(motion).toContain('pauseAnimations()');
     expect(motion).toContain('unpauseAnimations()');

@@ -117,23 +117,13 @@ export function MeetingCapturesList({
     return (
       <div className="space-y-3">
         {countLabel ? <p className="text-xs tabular-nums text-fg-muted">{countLabel}</p> : null}
-        <EmptyState
-          icon={Video}
-          title={hasActiveFilters ? 'No captures match these filters' : 'No meeting captures yet'}
-          body={
-            hasActiveFilters
-              ? 'Try a different search or clear the filters to see every capture.'
-              : 'Invite the notetaker for a meeting to capture its transcript and follow-up context here.'
-          }
-          href={
-            hasActiveFilters
-              ? clearHref
-              : tab === 'captures'
-                ? '#invite-notetaker'
-                : '/app/meetings'
-          }
-          action={hasActiveFilters ? 'Clear filters' : 'Invite notetaker'}
-        />
+        {
+          <MeetingCapturesEmptyState
+            hasActiveFilters={hasActiveFilters}
+            clearHref={clearHref}
+            tab={tab}
+          />
+        }
       </div>
     );
   }
@@ -191,5 +181,31 @@ export function MeetingCapturesList({
         hideBound={visibleMeetings.length === 0}
       />
     </div>
+  );
+}
+
+function MeetingCapturesEmptyState({
+  hasActiveFilters,
+  clearHref,
+  tab,
+}: {
+  hasActiveFilters: boolean;
+  clearHref: string;
+  tab: string;
+}) {
+  return (
+    <EmptyState
+      icon={Video}
+      title={hasActiveFilters ? 'No captures match these filters' : 'No meeting captures yet'}
+      body={
+        hasActiveFilters
+          ? 'Try a different search or clear the filters to see every capture.'
+          : 'Invite the notetaker for a meeting to capture its transcript and follow-up context here.'
+      }
+      href={
+        hasActiveFilters ? clearHref : tab === 'captures' ? '#invite-notetaker' : '/app/meetings'
+      }
+      action={hasActiveFilters ? 'Clear filters' : 'Invite notetaker'}
+    />
   );
 }

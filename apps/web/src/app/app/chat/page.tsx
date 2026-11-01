@@ -46,6 +46,64 @@ export default async function ChatPage({
 }: {
   searchParams: Promise<{ session?: string }>;
 }) {
+  const {
+    activeSessionId,
+    sessionPage,
+    sessionEntries,
+    activeTitle,
+    team,
+    active,
+    initialMessages,
+    pinnedEntityId,
+    pinnedEntityName,
+    contextTrail,
+  } = await loadChatPage({ searchParams });
+  return (
+    // Escape main's px/py with negative margins so the chat fills the
+    // entire viewport minus the AppShell header (h-12 = 3rem). The chat
+    // pane has its own internal scroll, so a fixed outer height keeps the
+    // layout stable regardless of message count.
+    <div
+      data-app-layout="full-bleed"
+      className="-mx-4 -my-6 flex h-[calc(100dvh-3rem)] md:-mx-8 md:-my-8"
+    >
+      <SessionSidebar
+        activeSessionId={activeSessionId}
+        nextCursor={sessionPage.nextCursor}
+        sessions={sessionEntries}
+      />
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col px-4 py-5 md:px-8 md:py-6">
+        <MobileSessionNav
+          activeSessionId={activeSessionId}
+          activeTitle={activeTitle}
+          nextCursor={sessionPage.nextCursor}
+          sessions={sessionEntries}
+        />
+        <AskHeader activeTitle={activeTitle} teamName={team?.name ?? active.teamName} />
+        <div className="flex min-h-0 flex-1 flex-col">
+          <ChatPane
+            // Key on activeSessionId (or "new" when none) so React remounts
+            // ChatPane on every session switch. Without this, navigating from
+            // session A → B in the sidebar reconciles the same component and
+            // the underlying useChat's Chat instance (created once via
+            // useRef) keeps session A's messages alive — new messages get
+            // sent against the wrong session id even though props change.
+            key={activeSessionId ?? 'new'}
+            teamId={active.teamId}
+            teamName={team?.name ?? active.teamName}
+            sessionId={activeSessionId}
+            initialMessages={initialMessages}
+            pinnedEntityId={pinnedEntityId}
+            pinnedEntityName={pinnedEntityName}
+            contextTrail={contextTrail}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+async function loadChatPage({ searchParams }: { searchParams: Promise<{ session?: string }> }) {
   const session = await auth();
   if (!session?.user) redirect('/sign-in');
   const { active } = await resolveActiveTeam(session.user.id);
@@ -119,47 +177,17 @@ export default async function ChatPage({
         })
       : null;
 
-  return (
-    // Escape main's px/py with negative margins so the chat fills the
-    // entire viewport minus the AppShell header (h-12 = 3rem). The chat
-    // pane has its own internal scroll, so a fixed outer height keeps the
-    // layout stable regardless of message count.
-    <div
-      data-app-layout="full-bleed"
-      className="-mx-4 -my-6 flex h-[calc(100dvh-3rem)] md:-mx-8 md:-my-8"
-    >
-      <SessionSidebar
-        activeSessionId={activeSessionId}
-        nextCursor={sessionPage.nextCursor}
-        sessions={sessionEntries}
-      />
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col px-4 py-5 md:px-8 md:py-6">
-        <MobileSessionNav
-          activeSessionId={activeSessionId}
-          activeTitle={activeTitle}
-          nextCursor={sessionPage.nextCursor}
-          sessions={sessionEntries}
-        />
-        <AskHeader activeTitle={activeTitle} teamName={team?.name ?? active.teamName} />
-        <div className="flex min-h-0 flex-1 flex-col">
-          <ChatPane
-            // Key on activeSessionId (or "new" when none) so React remounts
-            // ChatPane on every session switch. Without this, navigating from
-            // session A → B in the sidebar reconciles the same component and
-            // the underlying useChat's Chat instance (created once via
-            // useRef) keeps session A's messages alive — new messages get
-            // sent against the wrong session id even though props change.
-            key={activeSessionId ?? 'new'}
-            teamId={active.teamId}
-            teamName={team?.name ?? active.teamName}
-            sessionId={activeSessionId}
-            initialMessages={initialMessages}
-            pinnedEntityId={pinnedEntityId}
-            pinnedEntityName={pinnedEntityName}
-            contextTrail={contextTrail}
-          />
-        </div>
-      </div>
-    </div>
-  );
+  return {
+    activeSessionId,
+    sessionPage,
+    sessions,
+    sessionEntries,
+    activeTitle,
+    team,
+    active,
+    initialMessages,
+    pinnedEntityId,
+    pinnedEntityName,
+    contextTrail,
+  };
 }

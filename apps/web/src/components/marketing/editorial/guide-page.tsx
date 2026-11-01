@@ -1,9 +1,10 @@
-import { Check, ChevronRight } from 'lucide-react';
+import { ChevronRight } from 'lucide-react';
 import Link from 'next/link';
 
 import type { EditorialGuide } from '@/components/marketing/editorial/content';
 
 import { HOW_IT_WORKS_ROUTE } from '@/components/marketing/editorial/content';
+import { DirectAnswer } from '@/components/marketing/editorial/direct-answer';
 import { EditorialKicker } from '@/components/marketing/editorial/editorial-kicker';
 import styles from '@/components/marketing/editorial/editorial.module.css';
 import { GuideClosingSections } from '@/components/marketing/editorial/guide-closing-sections';
@@ -66,26 +67,7 @@ export function EditorialGuidePage({ guide }: { guide: EditorialGuide }) {
                 })}
               </div>
             </div>
-            <aside
-              aria-label="Direct answer"
-              className={`${styles.indexRule} border-y border-border py-8 pl-7 sm:pl-9`}
-            >
-              <p className="font-mono text-[0.68rem] tracking-[0.14em] text-signal uppercase">
-                Start with the answer
-              </p>
-              <h2 className="mt-5 text-balance text-2xl font-semibold tracking-[-0.035em] sm:text-3xl">
-                {guide.answer.title}
-              </h2>
-              <p className="mt-5 text-base leading-7 text-fg-muted">{guide.answer.body}</p>
-              <ul className="mt-7 grid gap-3">
-                {guide.answer.checklist.map((item) => (
-                  <li key={item} className="grid grid-cols-[1rem_1fr] gap-3 text-sm leading-6">
-                    <Check aria-hidden="true" className="mt-1 size-4 text-signal" />
-                    <span>{item}</span>
-                  </li>
-                ))}
-              </ul>
-            </aside>
+            <DirectAnswer answer={guide.answer} />
           </div>
         </header>
 

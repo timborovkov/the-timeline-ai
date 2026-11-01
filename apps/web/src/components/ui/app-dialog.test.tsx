@@ -20,9 +20,14 @@ function DialogHarness() {
       <button
         type="button"
         onClick={() => {
-          void dialog.alert({ title: 'Heads up', description: 'Saved.' }).then(() => {
-            setResult('alerted');
-          });
+          void dialog
+            .alert({ title: 'Heads up', description: 'Saved.' })
+            .then(() => {
+              setResult('alerted');
+            })
+            .catch(() => {
+              setResult('failed');
+            });
         }}
       >
         Alert
@@ -39,6 +44,9 @@ function DialogHarness() {
             })
             .then((confirmed) => {
               setResult(confirmed ? 'confirmed' : 'cancelled');
+            })
+            .catch(() => {
+              setResult('failed');
             });
         }}
       >
@@ -57,6 +65,9 @@ function DialogHarness() {
             })
             .then((value) => {
               setResult(value ?? 'cancelled');
+            })
+            .catch(() => {
+              setResult('failed');
             });
         }}
       >

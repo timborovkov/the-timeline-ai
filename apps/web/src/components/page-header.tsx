@@ -109,46 +109,19 @@ export function PageHeader({
         className,
       )}
     >
-      <div
-        className={cn(
-          'flex flex-wrap items-start justify-between gap-3',
-          variant === 'collection' && 'min-h-8 items-center',
-        )}
-      >
-        <div
-          className={cn(
-            'flex flex-col gap-1.5',
-            variant === 'collection' && 'min-w-0 flex-row items-baseline gap-3',
-          )}
-        >
-          {leading ? <div className="text-fg-dim">{leading}</div> : null}
-          <h1
-            id={titleId}
-            className={cn(
-              'm-0 text-2xl font-semibold tracking-tight text-fg',
-              variant === 'collection' && 'truncate text-lg leading-7',
-            )}
-          >
-            {title}
-          </h1>
-          {subtitle ? (
-            <p className={cn('m-0 text-sm text-fg-muted', variant === 'collection' && 'sr-only')}>
-              {subtitle}
-            </p>
-          ) : null}
-          {hasMetadata && variant === 'collection' ? (
-            <dl
-              aria-hidden={srLabel ? true : undefined}
-              className="m-0 hidden min-w-0 items-baseline gap-x-3 text-xs text-fg-muted sm:flex"
-            >
-              {metadataList.map((seg, index) => (
-                <HeaderMetadata key={metadataKey(seg, index)} segment={seg} compact />
-              ))}
-            </dl>
-          ) : null}
-        </div>
-        {trailing ? <div className="flex items-center gap-2">{trailing}</div> : null}
-      </div>
+      {
+        <PageHeaderHeading
+          variant={variant}
+          leading={leading}
+          titleId={titleId}
+          title={title}
+          subtitle={subtitle}
+          hasMetadata={hasMetadata}
+          srLabel={srLabel}
+          metadataList={metadataList}
+          trailing={trailing}
+        />
+      }
       {hasMetadata && variant === 'default' ? (
         <dl
           aria-hidden={srLabel ? true : undefined}
@@ -164,6 +137,63 @@ export function PageHeader({
   );
 }
 
+function PageHeaderHeading({
+  variant,
+  leading,
+  titleId,
+  title,
+  subtitle,
+  hasMetadata,
+  srLabel,
+  metadataList,
+  trailing,
+}: Pick<
+  PageHeaderProps,
+  'variant' | 'leading' | 'titleId' | 'title' | 'subtitle' | 'srLabel' | 'trailing'
+> & { hasMetadata: boolean; metadataList: PageHeaderMetadata[] }) {
+  return (
+    <div
+      className={cn(
+        'flex flex-wrap items-start justify-between gap-3',
+        variant === 'collection' && 'min-h-8 items-center',
+      )}
+    >
+      <div
+        className={cn(
+          'flex flex-col gap-1.5',
+          variant === 'collection' && 'min-w-0 flex-row items-baseline gap-3',
+        )}
+      >
+        {leading ? <div className="text-fg-dim">{leading}</div> : null}
+        <h1
+          id={titleId}
+          className={cn(
+            'm-0 text-2xl font-semibold tracking-tight text-fg',
+            variant === 'collection' && 'truncate text-lg leading-7',
+          )}
+        >
+          {title}
+        </h1>
+        {subtitle ? (
+          <p className={cn('m-0 text-sm text-fg-muted', variant === 'collection' && 'sr-only')}>
+            {subtitle}
+          </p>
+        ) : null}
+        {hasMetadata && variant === 'collection' ? (
+          <dl
+            aria-hidden={srLabel ? true : undefined}
+            className="m-0 hidden min-w-0 items-baseline gap-x-3 text-xs text-fg-muted sm:flex"
+          >
+            {metadataList.map((seg, index) => (
+              <HeaderMetadata key={metadataKey(seg, index)} segment={seg} compact />
+            ))}
+          </dl>
+        ) : null}
+      </div>
+      {trailing ? <div className="flex items-center gap-2">{trailing}</div> : null}
+    </div>
+  );
+}
 function HeaderMetadata({
   segment: seg,
   compact = false,

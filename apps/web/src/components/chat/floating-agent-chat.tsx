@@ -5,7 +5,15 @@ import { type UIMessage } from 'ai';
 import { ExternalLink, MessageSquare, MessageSquarePlus, X } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Suspense, useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import {
+  Suspense,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from 'react';
 
 import { loadChatSessionAction } from '@/app/actions/chat';
 import { ChatSurface } from '@/components/chat/chat-pane';
@@ -20,6 +28,7 @@ import {
   readFloatingChatSessionId,
   storeFloatingChatSessionId,
 } from '@/lib/floating-chat-session-storage';
+import { useCommittedRef } from '@/lib/use-committed-ref';
 import { cn } from '@/lib/utils';
 
 interface FloatingAgentChatProps {
@@ -117,18 +126,17 @@ function FloatingAgentChatContent({ teamId, teamName }: FloatingAgentChatProps) 
   const dialogRef = useRef<HTMLDialogElement>(null);
   const compactViewport = useCompactViewport();
   const trailRef = useRef<ChatContextRef[]>([]);
-  const openRef = useRef(open);
-  const pathnameRef = useRef(pathname);
-  openRef.current = open;
-  pathnameRef.current = pathname;
+  const openRef = useCommittedRef(open);
+  const pathnameRef = useCommittedRef(pathname);
   const excluded = isExcludedPath(pathname);
   const isFullAsk = pathname.startsWith('/app/chat');
-  // Accumulate during render so navigation is not one effect behind. Skip Home
-  // and full Ask so those routes do not become trail entries.
+  // Derive the current trail immediately, but retain it only after commit.
   const liveTrail = excluded
     ? trailRef.current
     : mergeChatContextTrail(trailRef.current, [current]);
-  if (!excluded) trailRef.current = liveTrail;
+  useLayoutEffect(() => {
+    if (!excluded) trailRef.current = liveTrail;
+  }, [excluded, liveTrail]);
   const pinnedEntityId = current.objectId ?? null;
   const showChrome = !excluded;
   const showPanel = open && showChrome;
@@ -212,7 +220,7 @@ function FloatingAgentChatContent({ teamId, teamName }: FloatingAgentChatProps) 
     return () => {
       window.removeEventListener('keydown', onKey);
     };
-  }, []);
+  }, [openRef, pathnameRef]);
 
   useEffect(() => {
     if (!showPanel) return;

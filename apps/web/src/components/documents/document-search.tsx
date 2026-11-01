@@ -20,15 +20,13 @@ export function DocumentSearch() {
   const hasInitialSearchError = query.length > 0 && search.isError && hits.length === 0;
   const hasNoMatches = query.length > 0 && search.isSuccess && hits.length === 0;
   const errorCode = search.error instanceof Error ? search.error.message : undefined;
-  const searchAnnouncement = !query
-    ? ''
-    : search.isFetching
-      ? `Searching documents for ${query}`
-      : hasInitialSearchError
-        ? ''
-        : hasNoMatches
-          ? `No matches for ${query}`
-          : `${String(hits.length)} document ${hits.length === 1 ? 'match' : 'matches'} for ${query}`;
+  const searchAnnouncement = documentSearchAnnouncement(
+    query,
+    search,
+    hasInitialSearchError,
+    hasNoMatches,
+    hits,
+  );
 
   function submitSearch(): void {
     setQuery(draft.trim());
@@ -77,65 +75,113 @@ export function DocumentSearch() {
         {searchAnnouncement}
       </p>
       {query && (
-        <div className="space-y-2">
-          {hasInitialSearchError ? (
-            <InlineError
-              message={searchErrorMessage(errorCode)}
-              details={errorCode}
-              onRetry={() => {
-                void search.refetch();
-              }}
-              retrying={search.isFetching}
-              retryLabel="Retry search"
-            />
-          ) : hasNoMatches ? (
-            <div className="border-y border-border py-3 text-sm">
-              <p className="font-medium">No matches for “{query}”</p>
-              <p className="mt-1 text-fg-muted">
-                Try a different phrase, or clear the search to return to the document browser.
-              </p>
-              <button
-                type="button"
-                onClick={clearSearch}
-                className="mt-3 rounded-sm border border-border px-3 py-1.5 text-xs font-medium text-fg-muted hover:bg-surface-2 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-              >
-                Clear search
-              </button>
-            </div>
-          ) : (
-            <>
-              <VirtualList
-                items={hits}
-                getItemKey={(hit) => hit.documentChunkId}
-                estimateSize={96}
-                gap={8}
-                renderItem={(hit) => (
-                  <Link
-                    href={`/app/documents/${hit.documentId}?version=${String(hit.version)}#chunk-${hit.documentChunkId}`}
-                    className="block border-b border-border py-3 text-sm last:border-b-0 hover:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                  >
-                    <span className="font-medium">{hit.documentDisplayTitle}</span>
-                    <p className="mt-1 text-[11px] text-fg-dim">
-                      v{String(hit.version)} · {hit.fileKind}
-                      {hit.pageNumber !== null ? ` · page ${String(hit.pageNumber)}` : ''}
-                    </p>
-                    <p className="mt-1 line-clamp-3 text-fg-muted">{hit.summary ?? hit.text}</p>
-                  </Link>
-                )}
-              />
-              <InfiniteScroll
-                hasMore={search.hasNextPage}
-                loading={search.isFetchingNextPage}
-                error={search.isFetchNextPageError ? 'Could not load more documents.' : null}
-                onLoadMore={() => {
-                  void search.fetchNextPage();
-                }}
-                boundLabel="No more matching documents"
-              />
-            </>
-          )}
-        </div>
+        <DocumentSearchResults
+          hasInitialSearchError={hasInitialSearchError}
+          errorCode={errorCode}
+          search={search}
+          hasNoMatches={hasNoMatches}
+          query={query}
+          clearSearch={clearSearch}
+          hits={hits}
+        />
       )}
     </section>
+  );
+}
+
+function documentSearchAnnouncement(
+  query: string,
+  search: ReturnType<typeof useDocumentSearchQuery>,
+  hasInitialSearchError: boolean,
+  hasNoMatches: boolean,
+  hits: NonNullable<ReturnType<typeof useDocumentSearchQuery>['data']>['pages'][number]['items'],
+) {
+  return !query
+    ? ''
+    : search.isFetching
+      ? `Searching documents for ${query}`
+      : hasInitialSearchError
+        ? ''
+        : hasNoMatches
+          ? `No matches for ${query}`
+          : `${String(hits.length)} document ${hits.length === 1 ? 'match' : 'matches'} for ${query}`;
+}
+
+function DocumentSearchResults({
+  hasInitialSearchError,
+  errorCode,
+  search,
+  hasNoMatches,
+  query,
+  clearSearch,
+  hits,
+}: {
+  hasInitialSearchError: boolean;
+  errorCode: string | undefined;
+  search: ReturnType<typeof useDocumentSearchQuery>;
+  hasNoMatches: boolean;
+  query: string;
+  clearSearch: () => void;
+  hits: NonNullable<ReturnType<typeof useDocumentSearchQuery>['data']>['pages'][number]['items'];
+}) {
+  return (
+    <div className="space-y-2">
+      {hasInitialSearchError ? (
+        <InlineError
+          message={searchErrorMessage(errorCode)}
+          details={errorCode}
+          onRetry={() => {
+            void search.refetch();
+          }}
+          retrying={search.isFetching}
+          retryLabel="Retry search"
+        />
+      ) : hasNoMatches ? (
+        <div className="border-y border-border py-3 text-sm">
+          <p className="font-medium">No matches for “{query}”</p>
+          <p className="mt-1 text-fg-muted">
+            Try a different phrase, or clear the search to return to the document browser.
+          </p>
+          <button
+            type="button"
+            onClick={clearSearch}
+            className="mt-3 rounded-sm border border-border px-3 py-1.5 text-xs font-medium text-fg-muted hover:bg-surface-2 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+          >
+            Clear search
+          </button>
+        </div>
+      ) : (
+        <>
+          <VirtualList
+            items={hits}
+            getItemKey={(hit) => hit.documentChunkId}
+            estimateSize={96}
+            gap={8}
+            renderItem={(hit) => (
+              <Link
+                href={`/app/documents/${hit.documentId}?version=${String(hit.version)}#chunk-${hit.documentChunkId}`}
+                className="block border-b border-border py-3 text-sm last:border-b-0 hover:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              >
+                <span className="font-medium">{hit.documentDisplayTitle}</span>
+                <p className="mt-1 text-[11px] text-fg-dim">
+                  v{String(hit.version)} · {hit.fileKind}
+                  {hit.pageNumber !== null ? ` · page ${String(hit.pageNumber)}` : ''}
+                </p>
+                <p className="mt-1 line-clamp-3 text-fg-muted">{hit.summary ?? hit.text}</p>
+              </Link>
+            )}
+          />
+          <InfiniteScroll
+            hasMore={search.hasNextPage}
+            loading={search.isFetchingNextPage}
+            error={search.isFetchNextPageError ? 'Could not load more documents.' : null}
+            onLoadMore={() => {
+              void search.fetchNextPage();
+            }}
+            boundLabel="No more matching documents"
+          />
+        </>
+      )}
+    </div>
   );
 }

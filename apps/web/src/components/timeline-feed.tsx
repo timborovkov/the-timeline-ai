@@ -200,24 +200,11 @@ export function TimelineFeed({
         }
       />
       {query.isError ? (
-        <InlineError
-          message={
-            hasLoadMoreError
-              ? 'More timeline updates could not load. The current moments and filters are still available.'
-              : hasTimelineContent
-                ? 'Timeline updates could not load. The current moments and filters are still available.'
-                : 'Timeline updates could not load. Check your connection, then try again.'
-          }
-          details={queryErrorDetails}
-          onRetry={() => {
-            if (hasLoadMoreError) {
-              void query.fetchNextPage();
-              return;
-            }
-            void query.refetch();
-          }}
-          retryLabel={hasLoadMoreError ? 'Retry loading more' : 'Retry timeline'}
-          retrying={hasLoadMoreError ? query.isFetchingNextPage : query.isRefetching}
+        <TimelineLoadError
+          hasLoadMoreError={hasLoadMoreError}
+          hasTimelineContent={hasTimelineContent}
+          queryErrorDetails={queryErrorDetails}
+          query={query}
         />
       ) : null}
       {!compact && !(query.isError && (!hasTimelineContent || hasLoadMoreError)) ? (
@@ -231,5 +218,39 @@ export function TimelineFeed({
         />
       ) : null}
     </div>
+  );
+}
+
+function TimelineLoadError({
+  hasLoadMoreError,
+  hasTimelineContent,
+  queryErrorDetails,
+  query,
+}: {
+  hasLoadMoreError: boolean;
+  hasTimelineContent: boolean;
+  queryErrorDetails: string | undefined;
+  query: ReturnType<typeof useTimelineInfiniteQuery>;
+}) {
+  return (
+    <InlineError
+      message={
+        hasLoadMoreError
+          ? 'More timeline updates could not load. The current moments and filters are still available.'
+          : hasTimelineContent
+            ? 'Timeline updates could not load. The current moments and filters are still available.'
+            : 'Timeline updates could not load. Check your connection, then try again.'
+      }
+      details={queryErrorDetails}
+      onRetry={() => {
+        if (hasLoadMoreError) {
+          void query.fetchNextPage();
+          return;
+        }
+        void query.refetch();
+      }}
+      retryLabel={hasLoadMoreError ? 'Retry loading more' : 'Retry timeline'}
+      retrying={hasLoadMoreError ? query.isFetchingNextPage : query.isRefetching}
+    />
   );
 }

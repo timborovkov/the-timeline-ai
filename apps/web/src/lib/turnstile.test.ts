@@ -18,6 +18,7 @@ function setEnv(overrides: Record<string, string | undefined>): void {
 
 function mockSiteverifyResponse(body: Record<string, unknown>): ReturnType<typeof vi.fn> {
   const fetchMock = vi.fn().mockResolvedValue({
+    ok: true,
     json: vi.fn().mockResolvedValue(body),
   });
   vi.stubGlobal('fetch', fetchMock);
@@ -87,6 +88,14 @@ describe('verifyTurnstileToken', () => {
         expectedHostname: 'app.example.com',
       }),
     ).resolves.toBe(false);
+  });
+
+  it('rejects an HTTP failure even when its body claims success', async () => {
+    setEnv({ NODE_ENV: 'production', TURNSTILE_SECRET_KEY: 'secret' });
+    const json = vi.fn().mockResolvedValue({ success: true });
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 503, json }));
+    await expect(verifyTurnstileToken({ token: 'token' })).resolves.toBe(false);
+    expect(json).not.toHaveBeenCalled();
   });
 
   it('rejects empty and oversized tokens before calling Cloudflare', async () => {

@@ -1005,35 +1005,26 @@ function TaskBoardView({
       >
         <div className="flex h-full min-h-0 min-w-0 flex-col">
           {view === 'kanban' ? (
-            <section
-              aria-label="Task status columns"
-              className="flex min-h-0 flex-1 overflow-x-auto overflow-y-hidden px-2 pb-2 sm:px-3"
-            >
-              {allColumns.map((column) => (
-                <TaskColumn
-                  key={column}
-                  id={column}
-                  rows={byStatus.get(column) ?? []}
-                  selectedTaskId={selectedTaskId}
-                  savingCardIds={moveUi.savingCardIds}
-                  cardErrors={moveUi.cardErrors}
-                  members={members}
-                  projects={projects}
-                  primaryProjects={hydratedPrimaryProjects}
-                  taskCategoriesEnabled={taskCategoriesEnabled}
-                  onUpdateTask={updateTask}
-                  onProjectChange={updatePrimaryProject}
-                  onProjectChangeCommitted={commitPrimaryProject}
-                  onProjectChangeReverted={revertPrimaryProject}
-                  taskHref={(taskId) => taskHref(taskId, filterParams)}
-                  pinnedObjectIds={pinnedObjectIdSet}
-                  canLoadMore={canLoadMore}
-                  loadingMore={loadingMore}
-                  loadError={loadError}
-                  onLoadMore={loadMoreTasks}
-                />
-              ))}
-            </section>
+            <TaskKanbanColumns
+              allColumns={allColumns}
+              byStatus={byStatus}
+              selectedTaskId={selectedTaskId}
+              moveUi={moveUi}
+              members={members}
+              projects={projects}
+              hydratedPrimaryProjects={hydratedPrimaryProjects}
+              taskCategoriesEnabled={taskCategoriesEnabled}
+              updateTask={updateTask}
+              updatePrimaryProject={updatePrimaryProject}
+              commitPrimaryProject={commitPrimaryProject}
+              revertPrimaryProject={revertPrimaryProject}
+              filterParams={filterParams}
+              pinnedObjectIdSet={pinnedObjectIdSet}
+              canLoadMore={canLoadMore}
+              loadingMore={loadingMore}
+              loadError={loadError}
+              loadMoreTasks={loadMoreTasks}
+            />
           ) : (
             <TaskListView
               rows={visibleRows}
@@ -1089,45 +1080,269 @@ function TaskBoardView({
         />
       ) : null}
       {selectedTask ? (
-        <TaskDetailPanel
-          task={selectedTask}
-          connectedWork={selectedTaskContext}
-          provenance={selectedTaskProvenance}
-          notes={selectedTaskNotes}
-          recentChanges={selectedTaskRecentChanges}
-          initialPinned={selectedTaskPinned}
+        <SelectedTaskDetail
+          selectedTask={selectedTask}
+          selectedTaskContext={selectedTaskContext}
+          selectedTaskProvenance={selectedTaskProvenance}
+          selectedTaskNotes={selectedTaskNotes}
+          selectedTaskRecentChanges={selectedTaskRecentChanges}
+          selectedTaskPinned={selectedTaskPinned}
           currentUserId={currentUserId}
-          columns={allColumns}
+          allColumns={allColumns}
           members={members}
           projects={projects}
           taskCategoriesEnabled={taskCategoriesEnabled}
-          primaryProject={
-            hydratedPrimaryProjects.find((project) => project.taskId === selectedTask.id) ?? null
-          }
-          closeHref={closeHref(view, filterParams)}
-          objectHref={objectDetailHref(
-            selectedTask.id,
-            view === 'kanban'
-              ? taskHref(selectedTask.id, filterParams)
-              : taskViewHref(view, selectedTask.id, filterParams),
-          )}
-          onUpdate={updateTask}
-          onProjectChange={(project) => {
-            updatePrimaryProject(selectedTask.id, project);
-          }}
-          onProjectChangeCommitted={() => {
-            commitPrimaryProject(selectedTask.id);
-          }}
-          onProjectChangeReverted={() => {
-            revertPrimaryProject(selectedTask.id);
-          }}
+          hydratedPrimaryProjects={hydratedPrimaryProjects}
+          view={view}
+          filterParams={filterParams}
+          updateTask={updateTask}
+          updatePrimaryProject={updatePrimaryProject}
+          commitPrimaryProject={commitPrimaryProject}
+          revertPrimaryProject={revertPrimaryProject}
         />
       ) : null}
     </div>
   );
 }
 
-// react-doctor-disable-next-line react-doctor/no-multi-comp -- Task board subviews share task patch types, column state, and local selection behavior; moving them is a separate file-layout migration.
+function SelectedTaskDetail({
+  selectedTask,
+  selectedTaskContext,
+  selectedTaskProvenance,
+  selectedTaskNotes,
+  selectedTaskRecentChanges,
+  selectedTaskPinned,
+  currentUserId,
+  allColumns,
+  members,
+  projects,
+  taskCategoriesEnabled,
+  hydratedPrimaryProjects,
+  view,
+  filterParams,
+  updateTask,
+  updatePrimaryProject,
+  commitPrimaryProject,
+  revertPrimaryProject,
+}: {
+  selectedTask: objects.ObjectRow;
+  selectedTaskContext:
+    | {
+        openTasks: objects.ObjectRow[];
+        recentTasks: objects.ObjectRow[];
+        calendarEvents: { id: string; title: string; startAt: Date; endAt: Date; showAs: string }[];
+        timelineEvents: {
+          id: string;
+          source: string;
+          contentText: string | null;
+          occurredAt: Date;
+        }[];
+        objects: {
+          id: string;
+          canonicalName: string;
+          type: objects.ObjectType;
+          factCount: number;
+        }[];
+        boards: {
+          boardId: string;
+          boardName: string;
+          itemId: string;
+          laneName: string | null;
+          dueAt: Date | null;
+          priority: number | null;
+          nextStep: string | null;
+          notes: string | null;
+        }[];
+        pendingApprovals: {
+          suggestionId: string;
+          itemId: string;
+          title: string;
+          operation: string;
+          targetKind: string;
+          createdAt: Date;
+        }[];
+        documents: { id: string; name: string; fileKind: string; updatedAt: Date }[];
+        links: {
+          id: string;
+          canonicalName: string;
+          canonicalUrl: string | null;
+          displayUrl: string | null;
+          domain: string | null;
+          provider: string | null;
+          updatedAt: Date;
+        }[];
+        capturedFiles: {
+          id: string;
+          name: string;
+          contentType: string | null;
+          sourceRawEventId: string | null;
+          updatedAt: Date;
+        }[];
+      }
+    | null
+    | undefined;
+  selectedTaskProvenance:
+    | {
+        whyThisExists: objects.ObjectProvenanceEntry[];
+        whatChangedIt: objects.ObjectProvenanceEntry[];
+        relatedEvidence: objects.ObjectProvenanceEntry[];
+      }
+    | null
+    | undefined;
+  selectedTaskNotes:
+    | {
+        id: string;
+        body: string;
+        authorUserId: string | null;
+        authorName?: string | null;
+        createdAt: Date;
+        updatedAt: Date;
+        mentions?: objects.ObjectNoteMentionView[];
+      }[]
+    | undefined;
+  selectedTaskRecentChanges:
+    | {
+        id: string;
+        field: string;
+        actorKind: objects.ActorKind;
+        actorUserId: string | null;
+        actorName?: string | null;
+        previousValue: unknown;
+        newValue: unknown;
+        status: 'applied' | 'suggested' | 'rejected';
+        note: string | null;
+        changedAt: Date;
+      }[]
+    | undefined;
+  selectedTaskPinned: boolean;
+  currentUserId: string | undefined;
+  allColumns: string[];
+  members: TaskMemberOption[];
+  projects: TaskMemberOption[];
+  taskCategoriesEnabled: boolean;
+  hydratedPrimaryProjects: objects.TaskPrimaryProjectRow[];
+  view: TaskView;
+  filterParams: Record<string, string>;
+  updateTask: (
+    id: string,
+    patch: TaskPatch,
+    options?: { silent?: boolean },
+  ) => Promise<{ ok?: boolean; error?: string }>;
+  updatePrimaryProject: (taskId: string, project: { id: string; label: string } | null) => void;
+  commitPrimaryProject: (taskId: string) => void;
+  revertPrimaryProject: (taskId: string) => void;
+}) {
+  return (
+    <TaskDetailPanel
+      task={selectedTask}
+      connectedWork={selectedTaskContext}
+      provenance={selectedTaskProvenance}
+      notes={selectedTaskNotes}
+      recentChanges={selectedTaskRecentChanges}
+      initialPinned={selectedTaskPinned}
+      currentUserId={currentUserId}
+      columns={allColumns}
+      members={members}
+      projects={projects}
+      taskCategoriesEnabled={taskCategoriesEnabled}
+      primaryProject={
+        hydratedPrimaryProjects.find((project) => project.taskId === selectedTask.id) ?? null
+      }
+      closeHref={closeHref(view, filterParams)}
+      objectHref={objectDetailHref(
+        selectedTask.id,
+        view === 'kanban'
+          ? taskHref(selectedTask.id, filterParams)
+          : taskViewHref(view, selectedTask.id, filterParams),
+      )}
+      onUpdate={updateTask}
+      onProjectChange={(project) => {
+        updatePrimaryProject(selectedTask.id, project);
+      }}
+      onProjectChangeCommitted={() => {
+        commitPrimaryProject(selectedTask.id);
+      }}
+      onProjectChangeReverted={() => {
+        revertPrimaryProject(selectedTask.id);
+      }}
+    />
+  );
+}
+function TaskKanbanColumns({
+  allColumns,
+  byStatus,
+  selectedTaskId,
+  moveUi,
+  members,
+  projects,
+  hydratedPrimaryProjects,
+  taskCategoriesEnabled,
+  updateTask,
+  updatePrimaryProject,
+  commitPrimaryProject,
+  revertPrimaryProject,
+  filterParams,
+  pinnedObjectIdSet,
+  canLoadMore,
+  loadingMore,
+  loadError,
+  loadMoreTasks,
+}: {
+  allColumns: string[];
+  byStatus: Map<string, objects.ObjectRow[]>;
+  selectedTaskId: string | null;
+  moveUi: MoveUiState;
+  members: TaskMemberOption[];
+  projects: TaskMemberOption[];
+  hydratedPrimaryProjects: objects.TaskPrimaryProjectRow[];
+  taskCategoriesEnabled: boolean;
+  updateTask: (
+    id: string,
+    patch: TaskPatch,
+    options?: { silent?: boolean },
+  ) => Promise<{ ok?: boolean; error?: string }>;
+  updatePrimaryProject: (taskId: string, project: { id: string; label: string } | null) => void;
+  commitPrimaryProject: (taskId: string) => void;
+  revertPrimaryProject: (taskId: string) => void;
+  filterParams: Record<string, string>;
+  pinnedObjectIdSet: Set<string>;
+  canLoadMore: boolean;
+  loadingMore: boolean;
+  loadError: string | null;
+  loadMoreTasks: () => void;
+}) {
+  return (
+    <section
+      aria-label="Task status columns"
+      className="flex min-h-0 flex-1 overflow-x-auto overflow-y-hidden px-2 pb-2 sm:px-3"
+    >
+      {allColumns.map((column) => (
+        <TaskColumn
+          key={column}
+          id={column}
+          rows={byStatus.get(column) ?? []}
+          selectedTaskId={selectedTaskId}
+          savingCardIds={moveUi.savingCardIds}
+          cardErrors={moveUi.cardErrors}
+          members={members}
+          projects={projects}
+          primaryProjects={hydratedPrimaryProjects}
+          taskCategoriesEnabled={taskCategoriesEnabled}
+          onUpdateTask={updateTask}
+          onProjectChange={updatePrimaryProject}
+          onProjectChangeCommitted={commitPrimaryProject}
+          onProjectChangeReverted={revertPrimaryProject}
+          taskHref={(taskId) => taskHref(taskId, filterParams)}
+          pinnedObjectIds={pinnedObjectIdSet}
+          canLoadMore={canLoadMore}
+          loadingMore={loadingMore}
+          loadError={loadError}
+          onLoadMore={loadMoreTasks}
+        />
+      ))}
+    </section>
+  );
+} // react-doctor-disable-next-line react-doctor/no-multi-comp -- Task board subviews share task patch types, column state, and local selection behavior; moving them is a separate file-layout migration.
 function TaskListView({
   rows,
   columns,
@@ -2254,140 +2469,23 @@ function TaskDetailPanel({
         </div>
       </div>
 
-      <div className="mt-0.5 flex flex-col px-1.5">
-        <EditableMetadata
-          label="Task status"
-          className="min-h-8 px-1.5"
-          pending={saving === 'status'}
-        >
-          <EditableMetadata.Value>
-            <CollectionStatus
-              value={task.status}
-              label={statusLabel(taskDisplayStatus(task.status))}
-            />
-          </EditableMetadata.Value>
-          <EditableMetadata.Editor>
-            <select
-              value={taskDisplayStatus(task.status)}
-              onChange={(event) => {
-                save('status', { status: event.currentTarget.value });
-              }}
-              className="h-10 w-full rounded-sm border border-border bg-bg px-2 text-xs"
-              aria-label="Status"
-            >
-              {columns.map((column) => (
-                <option key={column} value={column}>
-                  {statusLabel(column)}
-                </option>
-              ))}
-              {!columns.includes(taskDisplayStatus(task.status)) ? (
-                <option value={task.status}>{statusLabel(task.status)}</option>
-              ) : null}
-            </select>
-          </EditableMetadata.Editor>
-        </EditableMetadata>
-        <EditableMetadata
-          label="Task priority"
-          className="min-h-8 px-1.5"
-          pending={saving === 'priority'}
-        >
-          <EditableMetadata.Value>
-            <CollectionStatus
-              value={task.priority ? `p${task.priority}` : 'none'}
-              tone={priorityTone(task.priority)}
-              label={task.priority ? `P${task.priority}` : 'No priority'}
-            />
-          </EditableMetadata.Value>
-          <EditableMetadata.Editor>
-            <select
-              value={task.priority ?? ''}
-              onChange={(event) => {
-                save('priority', {
-                  priority: event.currentTarget.value ? Number(event.currentTarget.value) : null,
-                });
-              }}
-              className="h-10 w-full rounded-sm border border-border bg-bg px-2 text-xs"
-              aria-label="Task priority"
-            >
-              <option value="">No priority</option>
-              {[1, 2, 3, 4].map((priority) => (
-                <option key={priority} value={priority}>
-                  P{priority}
-                </option>
-              ))}
-            </select>
-          </EditableMetadata.Editor>
-        </EditableMetadata>
-        <EditableMetadata
-          label="Task assignee"
-          className="min-h-8 px-1.5"
-          pending={saving === 'assignee'}
-        >
-          <EditableMetadata.Value>{assignee?.label ?? 'Unassigned'}</EditableMetadata.Value>
-          <EditableMetadata.Editor>
-            <select
-              value={task.assigneeUserId ?? ''}
-              onChange={(event) => {
-                save('assignee', { assigneeUserId: event.currentTarget.value || null });
-              }}
-              className="h-10 w-full rounded-sm border border-border bg-bg px-2 text-xs"
-              aria-label="Task assignee"
-            >
-              <option value="">Unassigned</option>
-              {members.map((member) => (
-                <option key={member.id} value={member.id}>
-                  {member.label}
-                </option>
-              ))}
-            </select>
-          </EditableMetadata.Editor>
-        </EditableMetadata>
-        <EditableMetadata
-          label="Task due date"
-          className="min-h-8 px-1.5"
-          pending={saving === 'due date'}
-        >
-          <EditableMetadata.Value>
-            <DueDateDisplay value={task.dueAt} variant="field-hint" />
-          </EditableMetadata.Value>
-          <EditableMetadata.Editor>
-            <MetadataDateEditor
-              defaultValue={task.dueAt ? dateInputValue(task.dueAt, timezone) : ''}
-              label="Due date"
-              onApply={(value) => {
-                save('due date', {
-                  dueAt: value ? new Date(`${value}T00:00:00.000Z`) : null,
-                });
-              }}
-            />
-          </EditableMetadata.Editor>
-        </EditableMetadata>
-        <div className="px-2 py-1">
-          <TaskProjectSelect
-            taskId={task.id}
-            projectId={primaryProject?.projectId ?? null}
-            currentProjectLabel={primaryProject?.projectName}
-            projectArchived={Boolean(primaryProject?.archivedAt)}
-            projects={projects}
-            onProjectChange={onProjectChange}
-            onProjectChangeCommitted={onProjectChangeCommitted}
-            onProjectChangeReverted={onProjectChangeReverted}
-            quiet
-          />
-        </div>
-        {taskCategoriesEnabled ? (
-          <div className="px-2 py-1">
-            <TaskCategorySelect
-              taskId={task.id}
-              category={task.taskCategory}
-              mode={task.taskCategoryMode}
-              status={task.taskCategoryStatus}
-              updatedAt={task.taskCategoryUpdatedAt}
-              quiet
-            />
-          </div>
-        ) : null}
-      </div>
+      {
+        <TaskDetailMetadata
+          saving={saving}
+          task={task}
+          save={save}
+          columns={columns}
+          assignee={assignee}
+          members={members}
+          timezone={timezone}
+          primaryProject={primaryProject}
+          projects={projects}
+          onProjectChange={onProjectChange}
+          onProjectChangeCommitted={onProjectChangeCommitted}
+          onProjectChangeReverted={onProjectChangeReverted}
+          taskCategoriesEnabled={taskCategoriesEnabled}
+        />
+      }
 
       {saving || error ? (
         <div className="px-3 py-1 text-xs">
@@ -2429,6 +2527,172 @@ function TaskDetailPanel({
   );
 }
 
+function TaskDetailMetadata({
+  saving,
+  task,
+  save,
+  columns,
+  assignee,
+  members,
+  timezone,
+  primaryProject,
+  projects,
+  onProjectChange,
+  onProjectChangeCommitted,
+  onProjectChangeReverted,
+  taskCategoriesEnabled,
+}: {
+  saving: string | null;
+  task: objects.ObjectRow;
+  save: (field: string, patch: TaskPatch) => void;
+  columns: string[];
+  assignee: TaskMemberOption | undefined;
+  members: TaskMemberOption[];
+  timezone: string;
+  primaryProject: objects.TaskPrimaryProjectRow | null;
+  projects: TaskMemberOption[];
+  onProjectChange: (project: { id: string; label: string } | null) => void;
+  onProjectChangeCommitted: () => void;
+  onProjectChangeReverted: () => void;
+  taskCategoriesEnabled: boolean;
+}) {
+  return (
+    <div className="mt-0.5 flex flex-col px-1.5">
+      <EditableMetadata
+        label="Task status"
+        className="min-h-8 px-1.5"
+        pending={saving === 'status'}
+      >
+        <EditableMetadata.Value>
+          <CollectionStatus
+            value={task.status}
+            label={statusLabel(taskDisplayStatus(task.status))}
+          />
+        </EditableMetadata.Value>
+        <EditableMetadata.Editor>
+          <select
+            value={taskDisplayStatus(task.status)}
+            onChange={(event) => {
+              save('status', { status: event.currentTarget.value });
+            }}
+            className="h-10 w-full rounded-sm border border-border bg-bg px-2 text-xs"
+            aria-label="Status"
+          >
+            {columns.map((column) => (
+              <option key={column} value={column}>
+                {statusLabel(column)}
+              </option>
+            ))}
+            {!columns.includes(taskDisplayStatus(task.status)) ? (
+              <option value={task.status}>{statusLabel(task.status)}</option>
+            ) : null}
+          </select>
+        </EditableMetadata.Editor>
+      </EditableMetadata>
+      <EditableMetadata
+        label="Task priority"
+        className="min-h-8 px-1.5"
+        pending={saving === 'priority'}
+      >
+        <EditableMetadata.Value>
+          <CollectionStatus
+            value={task.priority ? `p${task.priority}` : 'none'}
+            tone={priorityTone(task.priority)}
+            label={task.priority ? `P${task.priority}` : 'No priority'}
+          />
+        </EditableMetadata.Value>
+        <EditableMetadata.Editor>
+          <select
+            value={task.priority ?? ''}
+            onChange={(event) => {
+              save('priority', {
+                priority: event.currentTarget.value ? Number(event.currentTarget.value) : null,
+              });
+            }}
+            className="h-10 w-full rounded-sm border border-border bg-bg px-2 text-xs"
+            aria-label="Task priority"
+          >
+            <option value="">No priority</option>
+            {[1, 2, 3, 4].map((priority) => (
+              <option key={priority} value={priority}>
+                P{priority}
+              </option>
+            ))}
+          </select>
+        </EditableMetadata.Editor>
+      </EditableMetadata>
+      <EditableMetadata
+        label="Task assignee"
+        className="min-h-8 px-1.5"
+        pending={saving === 'assignee'}
+      >
+        <EditableMetadata.Value>{assignee?.label ?? 'Unassigned'}</EditableMetadata.Value>
+        <EditableMetadata.Editor>
+          <select
+            value={task.assigneeUserId ?? ''}
+            onChange={(event) => {
+              save('assignee', { assigneeUserId: event.currentTarget.value || null });
+            }}
+            className="h-10 w-full rounded-sm border border-border bg-bg px-2 text-xs"
+            aria-label="Task assignee"
+          >
+            <option value="">Unassigned</option>
+            {members.map((member) => (
+              <option key={member.id} value={member.id}>
+                {member.label}
+              </option>
+            ))}
+          </select>
+        </EditableMetadata.Editor>
+      </EditableMetadata>
+      <EditableMetadata
+        label="Task due date"
+        className="min-h-8 px-1.5"
+        pending={saving === 'due date'}
+      >
+        <EditableMetadata.Value>
+          <DueDateDisplay value={task.dueAt} variant="field-hint" />
+        </EditableMetadata.Value>
+        <EditableMetadata.Editor>
+          <MetadataDateEditor
+            defaultValue={task.dueAt ? dateInputValue(task.dueAt, timezone) : ''}
+            label="Due date"
+            onApply={(value) => {
+              save('due date', {
+                dueAt: value ? new Date(`${value}T00:00:00.000Z`) : null,
+              });
+            }}
+          />
+        </EditableMetadata.Editor>
+      </EditableMetadata>
+      <div className="px-2 py-1">
+        <TaskProjectSelect
+          taskId={task.id}
+          projectId={primaryProject?.projectId ?? null}
+          currentProjectLabel={primaryProject?.projectName}
+          projectArchived={Boolean(primaryProject?.archivedAt)}
+          projects={projects}
+          onProjectChange={onProjectChange}
+          onProjectChangeCommitted={onProjectChangeCommitted}
+          onProjectChangeReverted={onProjectChangeReverted}
+          quiet
+        />
+      </div>
+      {taskCategoriesEnabled ? (
+        <div className="px-2 py-1">
+          <TaskCategorySelect
+            taskId={task.id}
+            category={task.taskCategory}
+            mode={task.taskCategoryMode}
+            status={task.taskCategoryStatus}
+            updatedAt={task.taskCategoryUpdatedAt}
+            quiet
+          />
+        </div>
+      ) : null}
+    </div>
+  );
+}
 function memberLabel(userId: string | null, members: TaskMemberOption[]): string {
   if (!userId) return 'Unassigned';
   return members.find((member) => member.id === userId)?.label ?? 'Assigned';

@@ -52,11 +52,9 @@ export function DesktopSidebar({
   }, []);
 
   function toggleExpanded() {
-    setExpanded((current) => {
-      const next = !current;
-      persistSidebarExpanded(next);
-      return next;
-    });
+    const next = !expanded;
+    persistSidebarExpanded(next);
+    setExpanded(next);
   }
 
   return (

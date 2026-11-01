@@ -14,6 +14,7 @@ import {
   Suspense,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useReducer,
   useRef,
@@ -428,7 +429,9 @@ function useCalendarViewModel({
     !sameEventListParams(optimisticEventListParams.params, eventListUrlParams)
       ? optimisticEventListParams.params
       : eventListUrlParams;
-  eventListParamsRef.current = eventListDisplayParams;
+  useLayoutEffect(() => {
+    eventListParamsRef.current = eventListDisplayParams;
+  }, [eventListDisplayParams]);
 
   useEffect(() => {
     return () => {
@@ -1529,6 +1532,7 @@ function CalendarDraftOptions({
   members: NonNullable<CalendarViewProps['members']>;
   onDraftChange: Dispatch<SetStateAction<Draft>>;
 }) {
+  const selectedMemberIds = new Set(draft.visibilityUserIds);
   return (
     <>
       <div className="grid gap-4 sm:grid-cols-2">
@@ -1577,7 +1581,7 @@ function CalendarDraftOptions({
             <label key={m.id} className="flex items-center gap-1.5 text-xs text-muted-foreground">
               <input
                 type="checkbox"
-                checked={draft.visibilityUserIds.includes(m.id)}
+                checked={selectedMemberIds.has(m.id)}
                 onChange={(e) => {
                   onDraftChange((d) => ({
                     ...d,

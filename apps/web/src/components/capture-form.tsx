@@ -32,6 +32,8 @@ import { queryKeys } from '@/lib/query-keys';
 import { type TimelineEvent, type TimelinePage } from '@/lib/use-paginated-queries';
 import { cn } from '@/lib/utils';
 
+const attachmentKeys = new WeakMap<File, string>();
+
 function baseMimeType(mt: string): string {
   return mt.split(';')[0]?.trim() ?? mt;
 }
@@ -101,7 +103,10 @@ function AttachmentPicker({
         ) : (
           files.map((file, index) => (
             <span
-              key={`${file.name}-${String(file.size)}-${String(index)}`}
+              key={
+                attachmentKeys.get(file) ??
+                `${file.name}-${String(file.size)}-${String(file.lastModified)}`
+              }
               className="inline-flex max-w-full items-center gap-2 rounded-sm border border-border bg-bg px-2.5 py-1 text-xs text-fg-muted"
             >
               <SelectedFileIcon file={file} />
@@ -603,6 +608,7 @@ export function CaptureForm({
           setCaptureUi({ clip: nextClip });
         }}
         onAddFiles={(nextFiles) => {
+          for (const file of nextFiles) attachmentKeys.set(file, crypto.randomUUID());
           setCaptureUi((current) => ({ ...current, files: [...current.files, ...nextFiles] }));
         }}
         onRemoveFile={(index) => {

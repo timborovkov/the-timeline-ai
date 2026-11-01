@@ -38,18 +38,32 @@ export function TimelineFlowMotion({ targetId }: TimelineFlowMotionProps) {
       }
     };
 
-    let disconnectObserver: () => void = () => undefined;
+    let observer: IntersectionObserver | null = null;
 
     const startMotion = () => {
-      disconnectObserver();
-      disconnectObserver = () => undefined;
+      observer?.disconnect();
+      observer = null;
       resetMotionState();
 
       if (reduceMotion.matches) return;
 
       root.classList.add(motionReadyClass);
+      observer =
+        typeof window.IntersectionObserver === 'function'
+          ? new IntersectionObserver(
+              (entries) => {
+                for (const entry of entries) {
+                  const step = entry.target as HTMLElement;
+                  const wasVisible = step.classList.contains(visibleClass);
+                  step.classList.toggle(visibleClass, entry.isIntersecting);
+                  setSvgMotion(step, entry.isIntersecting, entry.isIntersecting && !wasVisible);
+                }
+              },
+              { rootMargin: '0px 0px -18% 0px', threshold: 0.18 },
+            )
+          : null;
 
-      if (typeof window.IntersectionObserver !== 'function') {
+      if (!observer) {
         for (const step of steps) {
           step.classList.add(visibleClass);
           setSvgMotion(step, true, true);
@@ -57,33 +71,17 @@ export function TimelineFlowMotion({ targetId }: TimelineFlowMotionProps) {
         return;
       }
 
-      const observer = new IntersectionObserver(
-        (entries) => {
-          for (const entry of entries) {
-            const step = entry.target as HTMLElement;
-            const wasVisible = step.classList.contains(visibleClass);
-            step.classList.toggle(visibleClass, entry.isIntersecting);
-            setSvgMotion(step, entry.isIntersecting, entry.isIntersecting && !wasVisible);
-          }
-        },
-        { rootMargin: '0px 0px -18% 0px', threshold: 0.18 },
-      );
-
       for (const step of steps) {
         observer.observe(step);
       }
-
-      disconnectObserver = () => {
-        observer.disconnect();
-      };
     };
 
     reduceMotion.addEventListener('change', startMotion);
     startMotion();
 
     return () => {
+      observer?.disconnect();
       reduceMotion.removeEventListener('change', startMotion);
-      disconnectObserver();
       resetMotionState();
     };
   }, [targetId]);

@@ -47,6 +47,7 @@ export function EventVisibilityForm({
     notifySaved();
   }, [state]);
 
+  const selectedMemberIds = new Set(visibilityUserIds ?? []);
   return (
     <form
       key={formKey}
@@ -92,7 +93,7 @@ export function EventVisibilityForm({
                   type="checkbox"
                   name="visibilityUserIds"
                   value={m.id}
-                  defaultChecked={visibilityUserIds?.includes(m.id) ?? false}
+                  defaultChecked={selectedMemberIds.has(m.id)}
                 />
                 {m.label}
               </label>

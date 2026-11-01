@@ -1,6 +1,7 @@
 import { expect } from '@timeline/test-support';
 import { vi } from '@timeline/test-support';
 import { afterEach, describe, it } from 'bun:test';
+import { useLayoutEffect } from 'react';
 // Test environment: happy-dom
 
 const fakes = vi.hoisted(() => ({
@@ -24,7 +25,9 @@ const { ChatViewContextBinder, ChatViewProvider, useCurrentChatView } =
   await import('./chat-view-context.js');
 
 function LabelProbe({ onRender }: { onRender: () => void }) {
-  onRender();
+  useLayoutEffect(() => {
+    onRender();
+  });
   const { current } = useCurrentChatView();
   return <p>{current.label}</p>;
 }

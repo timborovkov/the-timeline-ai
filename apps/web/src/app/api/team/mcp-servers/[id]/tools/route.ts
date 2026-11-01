@@ -21,8 +21,7 @@ export async function GET(
 ): Promise<Response> {
   const session = await auth();
   if (!session?.user.id) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
-  const { id } = await ctx.params;
-  const { active } = await resolveActiveTeam(session.user.id);
+  const [{ id }, { active }] = await Promise.all([ctx.params, resolveActiveTeam(session.user.id)]);
   if (!active) return NextResponse.json({ error: 'no_team' }, { status: 400 });
   const scope = withTeam(db, active.teamId, session.user.id);
   const server = await scope.mcp.getServer(id);
@@ -63,8 +62,7 @@ export async function POST(
   // owner can test-call without admin role.
   const session = await auth();
   if (!session?.user.id) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
-  const { id } = await ctx.params;
-  const { active } = await resolveActiveTeam(session.user.id);
+  const [{ id }, { active }] = await Promise.all([ctx.params, resolveActiveTeam(session.user.id)]);
   if (!active) return NextResponse.json({ error: 'no_team' }, { status: 400 });
   const scope = withTeam(db, active.teamId, session.user.id);
   const server = await scope.mcp.getServer(id);

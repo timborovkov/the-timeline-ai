@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Suspense, useEffect, useRef, useState, useTransition } from 'react';
+import { Suspense, useEffect, useLayoutEffect, useRef, useState, useTransition } from 'react';
 
 import { markNotificationReadAction } from '@/app/actions/objects';
 import { RelativeTimestamp } from '@/components/relative-timestamp';
@@ -56,15 +56,17 @@ function NotificationRowContent({
   // ratchet toward "read" — never override a local optimistic-read back
   // to unread, since the user's click is the authoritative intent and
   // the server may not have caught up yet.
-  latestInitiallyReadRef.current = initiallyRead;
-  if (initiallyRead !== previousInitiallyReadRef.current) {
-    previousInitiallyReadRef.current = initiallyRead;
-    if (initiallyRead) {
-      individuallyReadRef.current = true;
-      readRef.current = true;
-      setRead(true);
+  useLayoutEffect(() => {
+    latestInitiallyReadRef.current = initiallyRead;
+    if (initiallyRead !== previousInitiallyReadRef.current) {
+      previousInitiallyReadRef.current = initiallyRead;
+      if (initiallyRead) {
+        individuallyReadRef.current = true;
+        readRef.current = true;
+        setRead(true);
+      }
     }
-  }
+  }, [initiallyRead]);
 
   useEffect(() => {
     function onAllRead(event: Event): void {

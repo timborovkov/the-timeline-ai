@@ -7,7 +7,7 @@ import {
   useQuery,
   useQueryClient,
 } from '@tanstack/react-query';
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 
 import type { OnboardingChecklistView } from '@/lib/onboarding-checklist';
 import type { TimelineCapturedFile } from '@/lib/timeline-captured-files';
@@ -353,10 +353,12 @@ export function useFinishedJobsInfiniteQuery() {
 export function useOnboardingChecklistQuery(initialData?: OnboardingChecklistView) {
   const queryClient = useQueryClient();
   const seededServerSnapshot = useRef(false);
-  if (initialData && !seededServerSnapshot.current) {
-    queryClient.setQueryData(queryKeys.onboarding(), initialData);
-    seededServerSnapshot.current = true;
-  }
+  useLayoutEffect(() => {
+    if (initialData && !seededServerSnapshot.current) {
+      queryClient.setQueryData(queryKeys.onboarding(), initialData);
+      seededServerSnapshot.current = true;
+    }
+  }, [initialData, queryClient]);
   const { data, isPending, isError, refetch } = useQuery({
     queryKey: queryKeys.onboarding(),
     queryFn: async () =>

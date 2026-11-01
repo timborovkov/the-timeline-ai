@@ -8,6 +8,7 @@ type BoardStageKind = 'active' | 'done' | 'terminal' | 'lost' | 'blocked';
 
 export interface EditableBoardStage {
   id?: string;
+  draftKey?: string;
   name: string;
   kind?: BoardStageKind | null;
 }
@@ -20,7 +21,7 @@ interface Props {
 }
 
 function normalizeStages(stages: EditableBoardStage[]): EditableBoardStage[] {
-  return stages.length > 0 ? stages : [{ name: 'Backlog', kind: 'active' }];
+  return stages.length > 0 ? stages : [{ draftKey: 'backlog', name: 'Backlog', kind: 'active' }];
 }
 
 function replaceAt(
@@ -55,7 +56,10 @@ export function BoardStageEditor({ stages, onChange, disabled = false, className
           type="button"
           disabled={disabled}
           onClick={() => {
-            onChange([...rows, { name: 'New stage', kind: 'active' }]);
+            onChange([
+              ...rows,
+              { draftKey: crypto.randomUUID(), name: 'New stage', kind: 'active' },
+            ]);
           }}
           className="inline-flex items-center gap-1 rounded-sm border border-border bg-bg px-2 py-1 text-[11px] text-fg-muted transition-colors hover:border-border-strong hover:text-fg disabled:opacity-40"
         >
@@ -65,7 +69,7 @@ export function BoardStageEditor({ stages, onChange, disabled = false, className
       </div>
       <ol className="space-y-1">
         {rows.map((stage, index) => (
-          <li key={stage.id ?? `new-${index}`} className="flex items-center gap-1">
+          <li key={stage.id ?? stage.draftKey ?? stage.name} className="flex items-center gap-1">
             <span className="w-6 text-center font-mono text-[10px] text-fg-dim">{index + 1}</span>
             <input
               value={stage.name}

@@ -13,7 +13,8 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useReducer, useRef, useState } from 'react';
 
 import type { GlobalSearchResult } from '@timeline/shared/search';
-import type { ComponentType, SVGProps } from 'react';
+import type { AppRouterInstance } from 'next/dist/shared/lib/app-router-context.shared-runtime';
+import type { ActionDispatch, ComponentType, SetStateAction, Dispatch, SVGProps } from 'react';
 
 import { DueDateDisplay } from '@/components/due-date-display';
 import { PinOverflowMenu } from '@/components/pins/pin-overflow-menu';
@@ -249,103 +250,129 @@ export function GlobalSearchPalette({ hint, className }: Props) {
       </div>
 
       {open ? (
-        <div className="absolute left-0 right-0 top-12 z-50 max-h-[min(34rem,calc(100vh-5rem))] overflow-y-auto rounded-sm border border-border bg-bg shadow-xl">
-          {view.error ? (
-            <p className="p-3 text-sm text-destructive">{view.error}</p>
-          ) : grouped.length === 0 && !view.loading ? (
-            <p className="p-3 text-sm text-fg-muted">No matches.</p>
-          ) : (
-            <div className="py-2">
-              {grouped.map(([group, items]) => (
-                <div key={group} className="py-1">
-                  <p className="px-3 py-1 text-[11px] text-fg-dim">{group}</p>
-                  {items.map((result) => {
-                    const index = selectableResults.indexOf(result);
-                    const IconComponent = resultIcon(result.kind);
-                    const objectType =
-                      typeof result.metadata?.type === 'string' ? result.metadata.type : '';
-                    const dueAt =
-                      typeof result.metadata?.dueAt === 'string' ? result.metadata.dueAt : null;
-                    return (
-                      <div
-                        key={result.id}
-                        className={cn(
-                          'flex items-center transition-colors',
-                          view.activeIndex === index ? 'bg-surface-2' : 'hover:bg-surface',
-                        )}
-                        onMouseEnter={() => {
-                          dispatchView({ type: 'active', value: index });
-                        }}
-                      >
-                        <button
-                          type="button"
-                          className="flex min-w-0 flex-1 items-center gap-3 px-3 py-2 text-left"
-                          onClick={() => {
-                            setOpen(false);
-                            openResult(result, router);
-                          }}
-                        >
-                          <IconComponent
-                            aria-hidden="true"
-                            className="size-4 shrink-0 text-fg-muted"
-                          />
-                          <span className="min-w-0 flex-1">
-                            <span className="block truncate text-sm font-medium">
-                              {result.title}
-                            </span>
-                            <span className="block truncate text-xs text-fg-muted">
-                              {result.snippet}
-                            </span>
-                            {isSchedulableObjectType(objectType) ? (
-                              <DueDateDisplay
-                                value={dueAt}
-                                variant="compact"
-                                className="mt-0.5 block truncate"
-                              />
-                            ) : null}
-                          </span>
-                          <span className="shrink-0 text-[11px] text-fg-dim">
-                            {result.externalHref ? 'new tab' : resultKindLabel(result.kind)}
-                          </span>
-                        </button>
-                        {result.pinTarget ? (
-                          <div className="mr-2 shrink-0">
-                            <PinOverflowMenu
-                              target={result.pinTarget}
-                              title={result.title}
-                              initialPinned={result.pinned ?? false}
-                            />
-                          </div>
-                        ) : null}
-                      </div>
-                    );
-                  })}
-                </div>
-              ))}
-              {query.trim() ? (
-                <button
-                  type="button"
-                  className={cn(
-                    'mt-1 flex w-full items-center gap-3 border-t border-border px-3 py-2 text-left transition-colors',
-                    view.activeIndex === selectableResults.length
-                      ? 'bg-surface-2'
-                      : 'hover:bg-surface',
-                  )}
-                  onMouseEnter={() => {
-                    dispatchView({ type: 'active', value: selectableResults.length });
-                  }}
-                  onClick={submitSearch}
-                >
-                  <Search aria-hidden="true" className="size-4 text-fg-muted" />
-                  <span className="min-w-0 flex-1 truncate text-sm">
-                    Search all results for <span className="font-medium">"{query.trim()}"</span>
-                  </span>
-                </button>
-              ) : null}
-            </div>
-          )}
-        </div>
+        <SearchPaletteResults
+          view={view}
+          grouped={grouped}
+          selectableResults={selectableResults}
+          dispatchView={dispatchView}
+          setOpen={setOpen}
+          router={router}
+          query={query}
+          submitSearch={submitSearch}
+        />
       ) : null}
+    </div>
+  );
+}
+
+function SearchPaletteResults({
+  view,
+  grouped,
+  selectableResults,
+  dispatchView,
+  setOpen,
+  router,
+  query,
+  submitSearch,
+}: {
+  view: PaletteViewState;
+  grouped: [string, GlobalSearchResult[]][];
+  selectableResults: GlobalSearchResult[];
+  dispatchView: ActionDispatch<[action: PaletteViewAction]>;
+  setOpen: Dispatch<SetStateAction<boolean>>;
+  router: AppRouterInstance;
+  query: string;
+  submitSearch: () => void;
+}) {
+  return (
+    <div className="absolute left-0 right-0 top-12 z-50 max-h-[min(34rem,calc(100vh-5rem))] overflow-y-auto rounded-sm border border-border bg-bg shadow-xl">
+      {view.error ? (
+        <p className="p-3 text-sm text-destructive">{view.error}</p>
+      ) : grouped.length === 0 && !view.loading ? (
+        <p className="p-3 text-sm text-fg-muted">No matches.</p>
+      ) : (
+        <div className="py-2">
+          {grouped.map(([group, items]) => (
+            <div key={group} className="py-1">
+              <p className="px-3 py-1 text-[11px] text-fg-dim">{group}</p>
+              {items.map((result) => {
+                const index = selectableResults.indexOf(result);
+                const IconComponent = resultIcon(result.kind);
+                const objectType =
+                  typeof result.metadata?.type === 'string' ? result.metadata.type : '';
+                const dueAt =
+                  typeof result.metadata?.dueAt === 'string' ? result.metadata.dueAt : null;
+                return (
+                  <div
+                    key={result.id}
+                    className={cn(
+                      'flex items-center transition-colors',
+                      view.activeIndex === index ? 'bg-surface-2' : 'hover:bg-surface',
+                    )}
+                    onMouseEnter={() => {
+                      dispatchView({ type: 'active', value: index });
+                    }}
+                  >
+                    <button
+                      type="button"
+                      className="flex min-w-0 flex-1 items-center gap-3 px-3 py-2 text-left"
+                      onClick={() => {
+                        setOpen(false);
+                        openResult(result, router);
+                      }}
+                    >
+                      <IconComponent aria-hidden="true" className="size-4 shrink-0 text-fg-muted" />
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm font-medium">{result.title}</span>
+                        <span className="block truncate text-xs text-fg-muted">
+                          {result.snippet}
+                        </span>
+                        {isSchedulableObjectType(objectType) ? (
+                          <DueDateDisplay
+                            value={dueAt}
+                            variant="compact"
+                            className="mt-0.5 block truncate"
+                          />
+                        ) : null}
+                      </span>
+                      <span className="shrink-0 text-[11px] text-fg-dim">
+                        {result.externalHref ? 'new tab' : resultKindLabel(result.kind)}
+                      </span>
+                    </button>
+                    {result.pinTarget ? (
+                      <div className="mr-2 shrink-0">
+                        <PinOverflowMenu
+                          target={result.pinTarget}
+                          title={result.title}
+                          initialPinned={result.pinned ?? false}
+                        />
+                      </div>
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
+          ))}
+          {query.trim() ? (
+            <button
+              type="button"
+              className={cn(
+                'mt-1 flex w-full items-center gap-3 border-t border-border px-3 py-2 text-left transition-colors',
+                view.activeIndex === selectableResults.length ? 'bg-surface-2' : 'hover:bg-surface',
+              )}
+              onMouseEnter={() => {
+                dispatchView({ type: 'active', value: selectableResults.length });
+              }}
+              onClick={submitSearch}
+            >
+              <Search aria-hidden="true" className="size-4 text-fg-muted" />
+              <span className="min-w-0 flex-1 truncate text-sm">
+                Search all results for <span className="font-medium">"{query.trim()}"</span>
+              </span>
+            </button>
+          ) : null}
+        </div>
+      )}
     </div>
   );
 }
