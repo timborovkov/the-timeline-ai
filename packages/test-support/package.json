@@ -12,7 +12,7 @@
   "devDependencies": {
     "@types/bun": "1.4.4",
     "@sinonjs/fake-timers": "15.4.0",
-    "typescript": "^6.0.3"
+    "typescript": "^7.0.2"
   },
   "scripts": {
     "typecheck": "bun x --bun --no-install tsc --noEmit",
