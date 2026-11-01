@@ -209,6 +209,24 @@ describe('Resend messaging adapter', () => {
     });
   });
 
+  it('requires the transactional sender even when the API key is configured', async () => {
+    process.env.RESEND_API_KEY = 'server-token';
+    delete process.env.TRANSACTIONAL_EMAIL_FROM;
+    const fetchMock = vi.fn();
+    const message = renderMessage('welcome', {
+      to: 'tim@example.test',
+      name: 'Tim',
+      teamName: 'Timeline',
+      dashboardUrl: 'https://timeline.test/app',
+    });
+    await expect(messagingInternals.sendResendEmail(message, fetchMock)).resolves.toEqual({
+      ok: false,
+      error: 'Outbound email is not configured',
+      retryable: false,
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it('returns the provider message id on success', async () => {
     process.env.RESEND_API_KEY = 'server-token';
     process.env.TRANSACTIONAL_EMAIL_FROM = 'Timeline <hello@example.test>';
@@ -230,40 +248,6 @@ describe('Resend messaging adapter', () => {
     await expect(messagingInternals.sendResendEmail(message, fetchMock)).resolves.toEqual({
       ok: true,
       providerMessageId: 'resend-id',
-    });
-  });
-
-  it('uses the legacy invite sender when the shared sender is not set', async () => {
-    process.env.RESEND_API_KEY = 'server-token';
-    delete process.env.TRANSACTIONAL_EMAIL_FROM;
-    process.env.INVITE_EMAIL_FROM = 'Timeline Invites <invites@example.test>';
-    const requests: RequestInit[] = [];
-    const fetchMock = vi.fn((_url: string | URL | Request, init?: RequestInit) => {
-      requests.push(init ?? {});
-      return Promise.resolve(
-        new Response(JSON.stringify({ id: 'resend-id' }), {
-          status: 200,
-          headers: { 'content-type': 'application/json' },
-        }),
-      );
-    });
-    const message = renderMessage('team_invite', {
-      to: 'tim@example.test',
-      inviterName: 'Tim',
-      teamName: 'Timeline',
-      role: 'member',
-      inviteUrl: 'https://timeline.test/accept-invite/token',
-      expiresAt: new Date('2026-06-15T12:00:00Z'),
-    });
-
-    await expect(messagingInternals.sendResendEmail(message, fetchMock)).resolves.toEqual({
-      ok: true,
-      providerMessageId: 'resend-id',
-    });
-    const body = requests[0]?.body;
-    expect(typeof body).toBe('string');
-    expect(JSON.parse(body as string)).toMatchObject({
-      from: 'Timeline Invites <invites@example.test>',
     });
   });
 

@@ -6,12 +6,12 @@ import type { SupportSurface } from '@/lib/support-context';
 
 import { submitSupportRequestAction, type SupportFormState } from '@/app/actions/support';
 import { FormActionToast } from '@/components/form-action-toast';
+import { useSupportEmail } from '@/components/support-email-provider';
 import { TurnstileWidget } from '@/components/turnstile-widget';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { PUBLIC_SUPPORT_EMAIL } from '@/lib/support-links';
 
 interface SupportFormProps {
   defaultName?: string;
@@ -33,6 +33,7 @@ export function SupportForm({
   turnstileSiteKey,
   requiresTurnstile,
 }: SupportFormProps) {
+  const supportEmail = useSupportEmail();
   const [state, action, pending] = useActionState(submitSupportRequestAction, initialState);
   const protectionUnavailable = requiresTurnstile && !turnstileSiteKey;
 
@@ -135,8 +136,8 @@ export function SupportForm({
       ) : protectionUnavailable ? (
         <p id={protectionErrorId} className="text-sm text-danger">
           Support form protection is unavailable. Email{' '}
-          <a className="underline underline-offset-4" href={`mailto:${PUBLIC_SUPPORT_EMAIL}`}>
-            {PUBLIC_SUPPORT_EMAIL}
+          <a className="underline underline-offset-4" href={`mailto:${supportEmail}`}>
+            {supportEmail}
           </a>{' '}
           instead.
         </p>

@@ -31,6 +31,12 @@ INBOUND_EMAIL_DOMAIN=</code></pre>
         receiving domain or your Resend-managed subdomain. Existing team records must contain the
         intended address; this migration does not rewrite stored team data.
       </p>
+      <p>
+        <code>TRANSACTIONAL_EMAIL_FROM</code> is the sender for all outgoing email, including
+        invitations. <code>SUPPORT_EMAIL</code> is the support recipient and the contact address
+        shown on public, help, legal, and trust pages. Without it, public links default to
+        contact@thetimeline.cc and support requests are saved without email delivery.
+      </p>
       <h2>Receiving</h2>
       <p>
         Register <code>email.received</code> at

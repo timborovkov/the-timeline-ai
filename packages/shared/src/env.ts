@@ -390,7 +390,6 @@ const baseSchema = z.object({
   // Resend (Phase 7)
   RESEND_API_KEY: z.string().optional(),
   TRANSACTIONAL_EMAIL_FROM: z.string().optional(),
-  INVITE_EMAIL_FROM: z.string().optional(),
   RESEND_WEBHOOK_SECRET: z.string().optional(),
   /**
    * Public support/contact form destination. In production, support

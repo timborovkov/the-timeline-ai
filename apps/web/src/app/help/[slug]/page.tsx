@@ -10,11 +10,11 @@ import { Button } from '@/components/ui/button';
 import { auth } from '@/lib/auth';
 import { findHelpPage, HELP_PAGES } from '@/lib/help-content';
 import { publicMetadata } from '@/lib/public-metadata';
+import { getSupportEmail } from '@/lib/support-email';
 import {
   GITHUB_BUG_REPORT_URL,
   GITHUB_CONTRIBUTING_URL,
   GITHUB_SECURITY_URL,
-  PUBLIC_SUPPORT_EMAIL,
 } from '@/lib/support-links';
 
 const supportLinkClass =
@@ -156,7 +156,7 @@ function RelatedGuides({ related }: { related: string[] }) {
           customer content, personal data, credentials, or private URLs.
         </p>
         <div className="mt-3 flex flex-wrap gap-x-5 gap-y-2 text-sm font-semibold">
-          <a className={supportLinkClass} href={`mailto:${PUBLIC_SUPPORT_EMAIL}`}>
+          <a className={supportLinkClass} href={`mailto:${getSupportEmail()}`}>
             Email support
           </a>
           <a

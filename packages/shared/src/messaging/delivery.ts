@@ -69,7 +69,7 @@ export interface SendMessageOptions {
 
 function configuredSender(): string | null {
   const env = getEnv();
-  return env.TRANSACTIONAL_EMAIL_FROM ?? env.INVITE_EMAIL_FROM ?? null;
+  return env.TRANSACTIONAL_EMAIL_FROM ?? null;
 }
 
 function shortError(err: unknown, fallback: string): string {

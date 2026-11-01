@@ -6,11 +6,13 @@ import type { Metadata, Viewport } from 'next';
 import type { ReactNode } from 'react';
 
 import { PublicAnalyticsBoundary } from '@/components/public-analytics';
+import { SupportEmailProvider } from '@/components/support-email-provider';
 import { ThemeProvider } from '@/components/theme-provider';
 import { Toaster } from '@/components/ui/sonner';
 import { appleWebApp, pwaViewport } from '@/lib/pwa-splash';
 import { SIDEBAR_PREFERENCE_BOOTSTRAP } from '@/lib/sidebar-preference';
 import { getSiteUrl } from '@/lib/site-url';
+import { getSupportEmail } from '@/lib/support-email';
 
 import './globals.css';
 
@@ -143,7 +145,9 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           {SIDEBAR_PREFERENCE_BOOTSTRAP}
         </Script>
         <ThemeProvider>
-          <PublicAnalyticsBoundary>{children}</PublicAnalyticsBoundary>
+          <SupportEmailProvider email={getSupportEmail()}>
+            <PublicAnalyticsBoundary>{children}</PublicAnalyticsBoundary>
+          </SupportEmailProvider>
           <Toaster />
         </ThemeProvider>
       </body>

@@ -1187,6 +1187,9 @@
   "apps/web/src/lib/suggestions.test.ts": {
     "group": "unit"
   },
+  "apps/web/src/lib/support-email.test.ts": {
+    "group": "unit"
+  },
   "apps/web/src/lib/support-context.test.ts": {
     "group": "unit"
   },
