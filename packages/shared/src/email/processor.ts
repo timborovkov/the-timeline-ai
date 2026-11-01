@@ -5,7 +5,11 @@ import type { EmailInboundJobData } from '#src/queue/queues.js';
 
 import { handleInbound, type DispatcherDeps } from '#src/email/dispatcher.js';
 import { isAudioAttachment } from '#src/email/parser.js';
-import { retrieveInboundEmail, ResendError } from '#src/email/resend-client.js';
+import {
+  retrieveInboundEmailMetadata,
+  hydrateInboundEmailAttachments,
+  ResendError,
+} from '#src/email/resend-client.js';
 import { getRedisConnection } from '#src/queue/connection.js';
 import { RATE_LIMITS } from '#src/rate-limit/buckets.js';
 
@@ -43,12 +47,14 @@ export async function processEmailInboundJob(
   deps: {
     dispatcher: DispatcherDeps;
     retrieve?: (id: string) => Promise<InboundEmail>;
+    hydrate?: (email: InboundEmail) => Promise<InboundEmail>;
     admit?: (email: InboundEmail) => Promise<boolean>;
   },
   data: EmailInboundJobData,
 ): Promise<void> {
-  const email = await (deps.retrieve ?? retrieveInboundEmail)(data.emailId);
-  if (!(await (deps.admit ?? admitSender)(email))) return;
+  const metadata = await (deps.retrieve ?? retrieveInboundEmailMetadata)(data.emailId);
+  if (!(await (deps.admit ?? admitSender)(metadata))) return;
+  const email = await (deps.hydrate ?? hydrateInboundEmailAttachments)(metadata);
   if (email.attachments.length && !deps.dispatcher.attachments)
     throw new ResendError('attachment_storage_not_configured', false);
   if (

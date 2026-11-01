@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, it } from 'bun:test';
 import {
   resendRequest,
   retrieveInboundEmail,
+  retrieveInboundEmailMetadata,
   ResendError,
   retryAfterMilliseconds,
   type EmailFetch,
@@ -48,6 +49,14 @@ afterEach(() => {
   resetEnvForTests();
 });
 describe('Resend receiving transport', () => {
+  it('retrieves sender metadata without listing or downloading attachments', async () => {
+    const mock: EmailFetch = vi.fn(async () => Response.json(received));
+    const email = await retrieveInboundEmailMetadata(id, mock);
+    expect(email.from).toBe('ada@example.test');
+    expect(email.attachments).toEqual([]);
+    expect(mock).toHaveBeenCalledOnce();
+  });
+
   it('hydrates normalized bodies, routing, RFC headers and paginated attachment bytes', async () => {
     const mock = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
       const value = url instanceof Request ? url.url : url.toString();

@@ -18,6 +18,7 @@ await vi.mock(
   () => import('#src/billing/runtime.js'),
 );
 
+const { resetSecretsKeyCacheForTests } = await import('#src/crypto/secrets.js');
 const { resetEnvForTests } = await import('#src/env.js');
 const { messagingInternals, sendDailyDigest, sendMessage, shouldMeterWorkspaceEmail } =
   await import('#src/messaging/delivery.js');
@@ -25,18 +26,28 @@ const { renderMessage } = await import('#src/messaging/templates.js');
 
 function fakeDeliveryDb(
   existing: { id: string; status: string; dedupeKey: string } | null,
-  opts: { claimFailed?: boolean; claimPending?: boolean } = {},
+  opts: {
+    claimFailed?: boolean;
+    claimPending?: boolean;
+    create?: boolean;
+    metadata?: Record<string, unknown>;
+  } = {},
 ) {
   const updates: unknown[] = [];
+  const recorded: Record<string, unknown>[] = [];
   return {
     updates,
+    recorded,
     db: {
       insert: vi.fn(() => ({
-        values: vi.fn(() => ({
-          onConflictDoNothing: vi.fn(() => ({
-            returning: vi.fn().mockResolvedValue([]),
-          })),
-        })),
+        values: vi.fn((value: Record<string, unknown>) => {
+          recorded.push(value);
+          return {
+            onConflictDoNothing: vi.fn(() => ({
+              returning: vi.fn().mockResolvedValue(opts.create ? [{ id: 'new-delivery' }] : []),
+            })),
+          };
+        }),
       })),
       select: vi.fn(() => ({
         from: vi.fn(() => ({
@@ -47,7 +58,7 @@ function fakeDeliveryDb(
                     {
                       id: existing.id,
                       status: existing.status,
-                      metadata: {
+                      metadata: opts.metadata ?? {
                         email_payload: {
                           from: 'hello@example.test',
                           to: ['tim@example.test'],
@@ -181,14 +192,104 @@ describe('Resend messaging adapter', () => {
     billingFakes.reserveEmailUnits.mockResolvedValue({ ok: true });
     billingFakes.releaseEmailUnits.mockResolvedValue(undefined);
     billingFakes.settleEmailUnits.mockResolvedValue({ ok: true });
-    process.env = { ...OLD_ENV };
+    process.env = { ...OLD_ENV, SECRETS_ENCRYPTION_KEY: Buffer.alloc(32, 7).toString('base64') };
     resetEnvForTests();
+    resetSecretsKeyCacheForTests();
   });
 
   afterEach(() => {
     process.env = OLD_ENV;
     resetEnvForTests();
+    resetSecretsKeyCacheForTests();
     vi.restoreAllMocks();
+  });
+
+  it('encrypts verification payloads and retries the original bytes without exposing tokens', async () => {
+    process.env.RESEND_API_KEY = 're_test';
+    process.env.TRANSACTIONAL_EMAIL_FROM = 'hello@example.test';
+    const original = {
+      to: 'tim@example.test',
+      verificationUrl: 'https://timeline.test/verify-email/secret-token',
+      expiresAt: new Date('2026-11-01T10:00:00Z'),
+    };
+    const first = fakeDeliveryDb(null, { create: true });
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response('{}', { status: 503 }))
+      .mockResolvedValue(new Response(JSON.stringify({ id: 'sent-id' })));
+    await sendMessage('email_verification', original, {
+      db: first.db as never,
+      dedupeKey: 'verify-key',
+      fetch: fetchMock,
+    });
+    const metadata = first.recorded[0]?.metadata as Record<string, unknown>;
+    expect(metadata.email_payload).toBeUndefined();
+    expect(metadata.email_payload_encrypted).toBeDefined();
+    expect(JSON.stringify(first.recorded)).not.toContain('secret-token');
+    const retry = fakeDeliveryDb(
+      { id: 'new-delivery', status: 'failed', dedupeKey: 'verify-key' },
+      { metadata },
+    );
+    await expect(
+      sendMessage(
+        'email_verification',
+        { ...original, verificationUrl: 'https://timeline.test/verify-email/changed-token' },
+        { db: retry.db as never, dedupeKey: 'verify-key', fetch: fetchMock },
+      ),
+    ).resolves.toMatchObject({ ok: true });
+    expect(fetchMock.mock.calls[1]?.[1]?.body).toBe(fetchMock.mock.calls[0]?.[1]?.body);
+    expect(fetchMock.mock.calls[1]?.[1]?.body).toContain('secret-token');
+    const damaged = fakeDeliveryDb(
+      { id: 'new-delivery', status: 'failed', dedupeKey: 'verify-key' },
+      {
+        metadata: {
+          email_payload_encrypted: { ciphertext: 'broken', iv: 'broken', tag: 'broken' },
+        },
+      },
+    );
+    await expect(
+      sendMessage('email_verification', original, {
+        db: damaged.db as never,
+        dedupeKey: 'verify-key',
+        fetch: fetchMock,
+      }),
+    ).resolves.toMatchObject({ ok: false, retryable: false });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const invite = fakeDeliveryDb(null, { create: true });
+    await sendMessage(
+      'team_invite',
+      {
+        to: original.to,
+        inviterName: 'Tim',
+        teamName: 'Team',
+        role: 'member',
+        inviteUrl: 'https://timeline.test/invite/invite-secret',
+        expiresAt: original.expiresAt,
+      },
+      { db: invite.db as never, fetch: fetchMock },
+    );
+    expect(JSON.stringify(invite.recorded)).not.toContain('invite-secret');
+  });
+
+  it('does not persist or send verification tokens without an encryption key', async () => {
+    delete process.env.SECRETS_ENCRYPTION_KEY;
+    process.env.RESEND_API_KEY = 're_test';
+    process.env.TRANSACTIONAL_EMAIL_FROM = 'hello@example.test';
+    const fixture = fakeDeliveryDb(null, { create: true });
+    const fetchMock = vi.fn<typeof fetch>();
+    await expect(
+      sendMessage(
+        'email_verification',
+        {
+          to: 'tim@example.test',
+          verificationUrl: 'https://timeline.test/verify-email/secret-token',
+          expiresAt: new Date('2026-11-01T10:00:00Z'),
+        },
+        { db: fixture.db as never, fetch: fetchMock },
+      ),
+    ).rejects.toThrow('SECRETS_ENCRYPTION_KEY');
+    expect(fixture.recorded).toEqual([]);
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it('fails visibly when outbound email is not configured', async () => {

@@ -167,7 +167,7 @@ async function downloadAttachment(
   return Buffer.concat(chunks, total);
 }
 
-export async function retrieveInboundEmail(
+export async function retrieveInboundEmailMetadata(
   emailId: string,
   fetchImpl: EmailFetch = fetch,
 ): Promise<InboundEmail> {
@@ -195,6 +195,15 @@ export async function retrieveInboundEmail(
     headers,
     authentication: email.authentication ?? null,
   });
+  return normalized;
+}
+
+export async function hydrateInboundEmailAttachments(
+  email: InboundEmail,
+  fetchImpl: EmailFetch = fetch,
+): Promise<InboundEmail> {
+  const path = `/emails/receiving/${encodeURIComponent(email.providerId)}`;
+  const normalized = { ...email, attachments: [], attachmentsDropped: [] } as InboundEmail;
   let cursor: string | undefined;
   let total = 0;
   const seen = new Set<string>();
@@ -239,4 +248,14 @@ export async function retrieveInboundEmail(
     if (page.has_more && !cursor) throw new ResendError('invalid_attachment_page', false);
   } while (cursor);
   return normalized;
+}
+
+export async function retrieveInboundEmail(
+  emailId: string,
+  fetchImpl: EmailFetch = fetch,
+): Promise<InboundEmail> {
+  return hydrateInboundEmailAttachments(
+    await retrieveInboundEmailMetadata(emailId, fetchImpl),
+    fetchImpl,
+  );
 }

@@ -16,6 +16,7 @@
       <h2>Runtime configuration</h2>
       <pre><code>RESEND_API_KEY=
 RESEND_WEBHOOK_SECRET=
+SECRETS_ENCRYPTION_KEY=
 TRANSACTIONAL_EMAIL_FROM=
 SUPPORT_EMAIL=
 INBOUND_EMAIL_DOMAIN=</code></pre>
@@ -25,6 +26,12 @@ INBOUND_EMAIL_DOMAIN=</code></pre>
         database, and attachment/audio/document storage configuration. Sender settings are also
         needed wherever outbound mail is sent. Missing configuration is reported explicitly; no
         credentials are supplied by the repository.
+      </p>
+      <p>
+        Verification and invitation retry payloads are encrypted with the existing
+        <code>SECRETS_ENCRYPTION_KEY</code> (32 bytes, base64). Configure it wherever these emails
+        are sent; missing keys fail closed. Retries decrypt the original payload to preserve
+        idempotency without storing plaintext access links.
       </p>
       <p>
         Team addresses are <code>&lt;slug&gt;@&lt;INBOUND_EMAIL_DOMAIN&gt;</code>. Use either your
@@ -59,10 +66,11 @@ INBOUND_EMAIL_DOMAIN=</code></pre>
       </p>
       <p>
         The <code>email-inbound</code> worker fetches bodies, headers, receiver-computed
-        authentication, and attachments from Resend. Temporary download URLs and attachment bytes
-        never enter Redis jobs or source snapshots. Downloads reject unsafe destinations and
-        redirects, and attachments have a cumulative 25 MiB limit. Oversized attachments receive
-        explicit dropped reasons.
+        authentication, and attachments from Resend. Sender rate-limit admission runs before
+        attachment listing or downloads and is memoized per logical email across retries. Temporary
+        download URLs and attachment bytes never enter Redis jobs or source snapshots. Downloads
+        reject unsafe destinations and redirects, and attachments have a cumulative 25 MiB limit.
+        Oversized attachments receive explicit dropped reasons.
       </p>
       <p>
         Recipient matching is restricted to the configured receiving domain. To, Cc, Bcc, and

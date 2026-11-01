@@ -26,6 +26,7 @@ import type {
 } from '#src/messaging/types.js';
 
 import { emailRecipientCount } from '#src/billing/catalog.js';
+import { decryptJson, encryptJson } from '#src/crypto/secrets.js';
 import { resendRequest, ResendError, type EmailFetch } from '#src/email/resend-client.js';
 import { getEnv } from '#src/env.js';
 import { childLogger } from '#src/logger.js';
@@ -301,6 +302,44 @@ async function settleMeteredEmailBestEffort(input: {
   }
 }
 
+function secretBearingIntent(intent: MessageIntent): boolean {
+  return intent === 'email_verification' || intent === 'team_invite';
+}
+
+function persistedEmailPayload(intent: MessageIntent, payload: z.infer<typeof sendPayloadSchema>) {
+  if (!secretBearingIntent(intent)) return { email_payload: payload };
+  const encrypted = encryptJson(payload);
+  return {
+    email_payload_encrypted: {
+      ciphertext: encrypted.ciphertext.toString('base64'),
+      iv: encrypted.iv.toString('base64'),
+      tag: encrypted.tag.toString('base64'),
+    },
+  };
+}
+
+function readPersistedEmailPayload(intent: MessageIntent, metadata: unknown) {
+  if (!secretBearingIntent(intent)) {
+    return z.object({ email_payload: sendPayloadSchema }).parse(metadata).email_payload;
+  }
+  const encrypted = z
+    .object({
+      email_payload_encrypted: z.object({
+        ciphertext: z.string(),
+        iv: z.string(),
+        tag: z.string(),
+      }),
+    })
+    .parse(metadata).email_payload_encrypted;
+  return sendPayloadSchema.parse(
+    decryptJson({
+      ciphertext: Buffer.from(encrypted.ciphertext, 'base64'),
+      iv: Buffer.from(encrypted.iv, 'base64'),
+      tag: Buffer.from(encrypted.tag, 'base64'),
+    }),
+  );
+}
+
 export async function sendMessage<TIntent extends MessageIntent>(
   intent: TIntent,
   messageInput: MessageInput<TIntent>,
@@ -323,7 +362,7 @@ export async function sendMessage<TIntent extends MessageIntent>(
         dedupeKey: options.dedupeKey ?? null,
         metadata: {
           ...(options.metadata ?? {}),
-          email_payload: payload,
+          ...persistedEmailPayload(intent, payload),
           template_metadata: rendered.metadata ?? {},
           ...(rendered.previewText ? { previewText: rendered.previewText } : {}),
         },
@@ -381,8 +420,9 @@ export async function sendMessage<TIntent extends MessageIntent>(
       return { ok: true, deliveryId: existing.id, skipped: true, skippedStatus: existing.status };
     }
     if (existing) {
-      const stored = z.object({ email_payload: sendPayloadSchema }).safeParse(existing.metadata);
-      if (!stored.success) {
+      try {
+        payload = readPersistedEmailPayload(intent, existing.metadata);
+      } catch {
         await markDeliveryResult({
           db: options.db,
           deliveryId: existing.id,
@@ -396,7 +436,6 @@ export async function sendMessage<TIntent extends MessageIntent>(
           retryable: false,
         };
       }
-      payload = stored.data.email_payload;
     }
   }
 

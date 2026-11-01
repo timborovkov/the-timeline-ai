@@ -18,6 +18,7 @@ describe('email inbound processor', () => {
         {
           dispatcher: { db: {} as never },
           retrieve: () => Promise.resolve(email),
+          hydrate: (metadata) => Promise.resolve(metadata),
           admit: () => Promise.resolve(true),
         },
         { emailId: 'test-id' },
@@ -25,12 +26,47 @@ describe('email inbound processor', () => {
     ).rejects.toThrow('email_ingest_incomplete');
     expect(handle).toHaveBeenCalledWith({ db: {} }, email);
   });
+  it('does not list or download attachments for a rate-limited sender', async () => {
+    const hydrate = vi.fn();
+    await processEmailInboundJob(
+      {
+        dispatcher: { db: {} as never },
+        retrieve: () => Promise.resolve(email),
+        admit: () => Promise.resolve(false),
+        hydrate,
+      },
+      { emailId: 'test-id' },
+    );
+    expect(hydrate).not.toHaveBeenCalled();
+  });
+
+  it('retries attachment retrieval failures after sender admission', async () => {
+    const admit = vi.fn().mockResolvedValue(true);
+    const hydrate = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('temporary download failure'))
+      .mockResolvedValue(email);
+    handle.mockResolvedValue({ ok: true, inserted: 1 });
+    const deps = {
+      dispatcher: { db: {} as never },
+      retrieve: () => Promise.resolve(email),
+      admit,
+      hydrate,
+    };
+    await expect(processEmailInboundJob(deps, { emailId: 'test-id' })).rejects.toThrow(
+      'temporary download failure',
+    );
+    await processEmailInboundJob(deps, { emailId: 'test-id' });
+    expect(hydrate).toHaveBeenCalledTimes(2);
+  });
+
   it('treats sender-limit and routing drops as terminal', async () => {
     handle.mockReset();
     await processEmailInboundJob(
       {
         dispatcher: { db: {} as never },
         retrieve: () => Promise.resolve(email),
+        hydrate: (metadata) => Promise.resolve(metadata),
         admit: () => Promise.resolve(false),
       },
       { emailId: 'test-id' },
@@ -41,6 +77,7 @@ describe('email inbound processor', () => {
       {
         dispatcher: { db: {} as never },
         retrieve: () => Promise.resolve(email),
+        hydrate: (metadata) => Promise.resolve(metadata),
         admit: () => Promise.resolve(true),
       },
       { emailId: 'test-id' },

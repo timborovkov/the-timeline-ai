@@ -516,7 +516,8 @@ async function postInboundEmail(
   const { getEmailInboundQueue, getRedisConnection, QUEUE_NAMES } =
     await import('@timeline/shared/queue');
   const { Worker, QueueEvents } = await import('bullmq');
-  const { processEmailInboundJob, retrieveInboundEmail } = await import('@timeline/shared/email');
+  const { processEmailInboundJob, retrieveInboundEmailMetadata } =
+    await import('@timeline/shared/email');
   const { getDb } = await import('@timeline/db');
   const emailId = randomUUID();
   const body = JSON.stringify({ type: 'email.received', data: { email_id: emailId } });
@@ -548,8 +549,9 @@ async function postInboundEmail(
       processEmailInboundJob(
         {
           dispatcher: { db: getDb(), inboundDomain: e2eTeam.inboundEmail.split('@')[1] },
+          hydrate: (email) => Promise.resolve(email),
           retrieve: (id) =>
-            retrieveInboundEmail(id, (async (url: string | URL | Request) => {
+            retrieveInboundEmailMetadata(id, (async (url: string | URL | Request) => {
               if (String(url).includes('/attachments'))
                 return Response.json({ data: [], has_more: false });
               return Response.json({
