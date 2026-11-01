@@ -29,15 +29,27 @@ describe('legal route dates', () => {
         error: <CookiesError {...errorProps} />,
         date: `Notice · Last reviewed ${COOKIES_REVIEW_DATE}`,
       },
-      {
-        loading: <TrustLoading />,
-        error: <TrustError {...errorProps} />,
-        date: `Trust · Last reviewed ${TRUST_REVIEW_DATE}`,
-      },
     ];
     for (const state of states) {
       expect(renderToStaticMarkup(state.loading)).toContain(state.date);
       expect(renderToStaticMarkup(state.error)).toContain(state.date);
     }
+  });
+
+  it('keeps the trust error on the reviewed legal date while loading uses the marketing layout', () => {
+    const html = renderToStaticMarkup(<TrustLoading />);
+    const errorHtml = renderToStaticMarkup(
+      <TrustError error={new Error('Test failure')} reset={() => undefined} />,
+    );
+
+    expect(html).toContain('Your work should not become someone else');
+    expect(html).toContain('max-w-[82rem]');
+    expect(html).toContain('xl:grid-cols-4');
+    expect(html).toContain('Data path');
+    expect(html).not.toContain('href="/sign-in"');
+    expect(html).not.toContain('href="/sign-up"');
+    expect(html).not.toContain('>Start free</a>');
+    expect(html).not.toContain(`Trust · Last reviewed ${TRUST_REVIEW_DATE}`);
+    expect(errorHtml).toContain(`Trust · Last reviewed ${TRUST_REVIEW_DATE}`);
   });
 });

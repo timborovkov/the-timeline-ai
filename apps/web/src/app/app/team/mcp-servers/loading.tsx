@@ -1,5 +1,5 @@
 import { Breadcrumb } from '@/components/breadcrumb';
-import { PageHeaderSkeleton } from '@/components/loading-states';
+import { CollectionRowsSkeleton, PageHeaderSkeleton } from '@/components/loading-states';
 import { Skeleton } from '@/components/ui/skeleton';
 
 export default function McpServersLoading() {
@@ -21,26 +21,22 @@ export default function McpServersLoading() {
             { label: 'Team MCP servers' },
           ]}
         />
-        <div className="space-y-8">
-          <PageHeaderSkeleton />
-          <section aria-label="Team MCP server settings loading placeholder" className="space-y-4">
-            <div aria-hidden="true" className="space-y-4">
-              <div className="flex items-center justify-between gap-3">
-                <Skeleton className="h-5 w-44 motion-reduce:animate-none" />
-                <Skeleton className="h-8 w-28 motion-reduce:animate-none" />
-              </div>
-              <div className="space-y-4 rounded-sm border border-border bg-surface p-4">
-                <Skeleton className="h-4 w-2/5 motion-reduce:animate-none" />
-                <Skeleton className="h-3 w-full motion-reduce:animate-none" />
-                <Skeleton className="h-3 w-4/5 motion-reduce:animate-none" />
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <Skeleton className="h-20 w-full motion-reduce:animate-none" />
-                  <Skeleton className="h-20 w-full motion-reduce:animate-none" />
-                </div>
-              </div>
-            </div>
-          </section>
+        <PageHeaderSkeleton />
+        <div
+          aria-hidden="true"
+          className="flex flex-wrap items-center gap-2 border-y border-border py-2"
+        >
+          {Array.from({ length: 4 }).map((_, index) => (
+            <Skeleton key={index} className="h-7 w-28 max-w-full motion-reduce:animate-none" />
+          ))}
         </div>
+        <section aria-label="Team MCP server settings loading placeholder" className="space-y-8">
+          <div aria-hidden="true" className="space-y-3">
+            <Skeleton className="h-5 w-52 max-w-full motion-reduce:animate-none" />
+            <Skeleton className="h-4 w-full max-w-2xl motion-reduce:animate-none" />
+            <CollectionRowsSkeleton count={3} />
+          </div>
+        </section>
       </div>
     </>
   );

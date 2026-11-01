@@ -46,7 +46,10 @@ describe('Trust audit route states', () => {
     expect(screen.queryByRole('region')).toBeNull();
     const placeholder = container.querySelector('[aria-busy="true"] > [aria-hidden="true"][inert]');
     expect(placeholder).toBeTruthy();
-    const rows = placeholder?.querySelectorAll('section > div');
+    expect(placeholder?.querySelector('header')?.className).toContain(
+      'border-y border-border py-3',
+    );
+    const rows = placeholder?.querySelectorAll('ul > li');
     expect(rows).toHaveLength(5);
     const firstRow = rows?.item(0);
     expect(firstRow?.className).toContain('sm:grid-cols-[minmax(0,1fr)_minmax(10rem,18rem)]');

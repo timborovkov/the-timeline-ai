@@ -5,7 +5,7 @@ export function ObjectDetailSkeleton() {
     <div
       aria-hidden="true"
       inert
-      className="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_23rem]"
+      className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_20rem]"
     >
       <section className="space-y-3">
         <HairlineSectionSkeleton />

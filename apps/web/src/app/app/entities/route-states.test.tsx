@@ -77,15 +77,17 @@ describe('legacy entity route states', () => {
       Loading: EntitiesLoading,
       heading: 'Objects',
       label: 'Loading objects',
+      hasWorkNav: true,
     },
     {
       Loading: EntityLoading,
       heading: 'Object',
       label: 'Loading object',
+      hasWorkNav: false,
     },
   ])(
     'announces $label outside inert visual placeholders and retains the destination context',
-    ({ Loading, heading, label }) => {
+    ({ Loading, heading, label, hasWorkNav }) => {
       const { container } = render(<Loading />);
 
       const announcement = screen.getByRole('status');
@@ -95,10 +97,14 @@ describe('legacy entity route states', () => {
       expect(loading.getAttribute('aria-busy')).toBe('true');
       expect(loading.className).toContain('motion-reduce:[&_.animate-pulse]:animate-none');
       expect(screen.getAllByRole('heading', { level: 1, name: heading })).toHaveLength(1);
-      expect(screen.getByRole('navigation', { name: 'Work' })).toBeTruthy();
-      expect(screen.getByRole('link', { name: 'Objects' }).getAttribute('aria-current')).toBe(
-        'page',
-      );
+      if (hasWorkNav) {
+        expect(screen.getByRole('navigation', { name: 'Work' })).toBeTruthy();
+        expect(screen.getByRole('link', { name: 'Objects' }).getAttribute('aria-current')).toBe(
+          'page',
+        );
+      } else {
+        expect(screen.queryByRole('navigation', { name: 'Work' })).toBeNull();
+      }
       expect(screen.queryByRole('region')).toBeNull();
 
       const visualPlaceholders = container.querySelectorAll(

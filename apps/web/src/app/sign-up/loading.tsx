@@ -1,9 +1,14 @@
 import { AuthShell } from '@/components/auth-shell';
+import { AuthProviderDividerSkeleton } from '@/components/loading-states';
 import { Skeleton } from '@/components/ui/skeleton';
+import { hasGitHubAuth } from '@/lib/auth';
 
 export default function SignUpLoading() {
   return (
-    <AuthShell title="Create your account" subtitle="We’ll create your first team automatically.">
+    <AuthShell
+      title="Create your account"
+      subtitle="Free for small teams — no card required. We’ll create your first team automatically."
+    >
       <output className="sr-only" aria-live="polite">
         Loading account creation
       </output>
@@ -13,6 +18,7 @@ export default function SignUpLoading() {
         className="space-y-4"
       >
         <div aria-hidden="true" className="space-y-4">
+          {hasGitHubAuth ? <AuthProviderDividerSkeleton /> : null}
           <div className="space-y-2">
             <Skeleton className="h-4 w-10 motion-reduce:animate-none" />
             <Skeleton className="h-9 w-full motion-reduce:animate-none" />

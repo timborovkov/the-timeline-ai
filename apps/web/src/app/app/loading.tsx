@@ -1,4 +1,4 @@
-import { CollectionRowSkeleton } from '@/components/loading-states';
+import { CollectionRowSkeleton, TimelineFeedSkeleton } from '@/components/loading-states';
 import { Skeleton } from '@/components/ui/skeleton';
 
 export default function HomeLoading() {
@@ -11,10 +11,20 @@ export default function HomeLoading() {
         <h1 className="sr-only">Home</h1>
         <section aria-label="Home loading placeholder" className="space-y-8">
           <div className="space-y-3">
-            <Skeleton className="h-5 w-40 max-w-full" />
-            <Skeleton className="h-4 w-full max-w-xl" />
-            <div className="border border-border">
-              <Skeleton className="h-10 w-full rounded-none" />
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="space-y-2">
+                <Skeleton className="h-5 w-36 max-w-full" />
+                <Skeleton className="h-4 w-full max-w-xl" />
+              </div>
+              <Skeleton className="h-9 w-24 shrink-0" />
+            </div>
+            <div className="relative rounded-sm border border-border">
+              <Skeleton className="h-10 w-full rounded-sm" />
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Skeleton className="h-8 w-40 rounded-sm" />
+              <Skeleton className="h-8 w-32 rounded-sm" />
+              <Skeleton className="h-8 w-44 rounded-sm" />
             </div>
           </div>
           <div className="divide-y divide-border border-y border-border">
@@ -30,11 +40,23 @@ export default function HomeLoading() {
               </div>
             ))}
           </div>
-          <div>
-            {Array.from({ length: 5 }).map((_, index) => (
-              <CollectionRowSkeleton key={index} leading={false} metadata={0} />
+          <section className="space-y-3">
+            <div className="flex items-center justify-between gap-3">
+              <Skeleton className="h-5 w-28" />
+              <Skeleton className="h-4 w-16" />
+            </div>
+            {Array.from({ length: 3 }).map((_, index) => (
+              <CollectionRowSkeleton key={index} leading metadata={2} />
             ))}
-          </div>
+          </section>
+          <section className="space-y-3 border-y border-border py-4">
+            <div className="flex items-baseline justify-between gap-2">
+              <Skeleton className="h-5 w-28" />
+              <Skeleton className="h-3 w-24" />
+            </div>
+            <Skeleton className="h-4 w-24" />
+          </section>
+          <TimelineFeedSkeleton count={5} />
         </section>
       </div>
     </>

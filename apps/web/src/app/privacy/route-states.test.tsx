@@ -32,63 +32,93 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-const legalRoutes = [
+const legalDocumentRoutes = [
   {
-    description:
+    errorDescription:
       'The cookies, browser storage, analytics, and related technologies used by The Timeline.',
     ErrorComponent: CookiesError,
     footerLabel: 'The Timeline legal',
     Loading: CookiesLoading,
+    loadingDescription:
+      'What The Timeline stores in your browser, what is necessary for the service, and how to control optional public analytics.',
     title: 'Cookies and similar technologies',
   },
   {
-    description:
+    errorDescription:
       'This policy explains how The Timeline processes personal data for team memory, capture, search, and AI-assisted workflows.',
     ErrorComponent: PrivacyError,
     footerLabel: 'The Timeline legal',
     Loading: PrivacyLoading,
+    loadingDescription:
+      'How The Timeline collects, uses, shares, protects, and retains personal data—including content processed by AI and connected services.',
     title: 'Privacy Policy',
   },
   {
-    description:
+    errorDescription:
       'These terms govern access to The Timeline, a team memory product operated by Nyxone OÜ.',
     ErrorComponent: TermsError,
     footerLabel: 'The Timeline legal',
     Loading: TermsLoading,
+    loadingDescription:
+      'The agreement governing access to The Timeline, including team authority, captured content, AI features, acceptable use, and responsibility.',
     title: 'Terms of Use',
-  },
-  {
-    description:
-      'How The Timeline protects team data across AI inference, storage, permissions, meetings, analytics, and human access.',
-    ErrorComponent: TrustError,
-    footerLabel: 'The Timeline trust center',
-    Loading: TrustLoading,
-    title: 'Trust, security, and data privacy',
   },
 ] as const;
 
 describe('Legal route states', () => {
-  it.each(legalRoutes)(
+  it.each(legalDocumentRoutes)(
     'announces a $title loading state with legal context',
-    ({ description, footerLabel, Loading, title }) => {
+    ({ footerLabel, Loading, loadingDescription, title }) => {
       render(<Loading />);
 
       expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
       const heading = screen.getByRole('heading', { level: 1, name: title });
-      expect(heading.className).toContain('text-2xl');
-      expect(heading.className).not.toContain('sm:text-4xl');
-      expect(screen.getByText(description)).toBeTruthy();
+      expect(heading.className).toContain('text-3xl');
+      expect(heading.className).toContain('sm:text-4xl');
+      expect(screen.getByText(loadingDescription)).toBeTruthy();
       expect(screen.getByText(footerLabel)).toBeTruthy();
       expect(screen.getByRole('status').textContent).toBe(`Loading ${title}`);
       expect(screen.getByLabelText(`${title} loading placeholder`).getAttribute('aria-busy')).toBe(
         'true',
       );
+      expect(screen.queryByRole('link', { name: 'Sign in' })).toBeNull();
+      expect(screen.queryByRole('link', { name: 'Start free' })).toBeNull();
+      expect(screen.queryByRole('link', { name: 'Dashboard' })).toBeNull();
     },
   );
 
-  it.each(legalRoutes)(
+  it('announces trust loading in the expanded marketing layout', () => {
+    render(<TrustLoading />);
+
+    expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
+    expect(
+      screen.getByRole('heading', {
+        level: 1,
+        name: "Your work should not become someone else's training set.",
+      }),
+    ).toBeTruthy();
+    expect(screen.getByText('The Timeline trust center')).toBeTruthy();
+    expect(screen.getByRole('status').textContent).toBe('Loading The Timeline trust center');
+    expect(
+      screen.getByLabelText('Trust center loading placeholder').getAttribute('aria-busy'),
+    ).toBe('true');
+    expect(screen.queryByRole('link', { name: 'Sign in' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Start free' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Dashboard' })).toBeNull();
+  });
+
+  it.each([
+    ...legalDocumentRoutes,
+    {
+      errorDescription:
+        'How The Timeline protects team data across AI inference, storage, permissions, meetings, analytics, and human access.',
+      ErrorComponent: TrustError,
+      footerLabel: 'The Timeline trust center',
+      title: 'Trust, security, and data privacy',
+    },
+  ])(
     'preserves $title context and lets keyboard users retry an unexpected error',
-    async ({ description, ErrorComponent, footerLabel, title }) => {
+    async ({ errorDescription, ErrorComponent, footerLabel, title }) => {
       const user = userEvent.setup();
       const reset = vi.fn();
 
@@ -96,9 +126,9 @@ describe('Legal route states', () => {
 
       expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
       const heading = screen.getByRole('heading', { level: 1, name: title });
-      expect(heading.className).toContain('text-2xl');
-      expect(heading.className).not.toContain('sm:text-4xl');
-      expect(screen.getByText(description)).toBeTruthy();
+      expect(heading.className).toContain('text-3xl');
+      expect(heading.className).toContain('sm:text-4xl');
+      expect(screen.getByText(errorDescription)).toBeTruthy();
       expect(screen.getByText(footerLabel)).toBeTruthy();
       expect(
         screen.getByRole('heading', { level: 2, name: `Unable to load ${title}` }),

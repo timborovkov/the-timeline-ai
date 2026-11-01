@@ -6,7 +6,7 @@ export default function TermsLoading() {
     <LegalRouteLoading
       eyebrow={`Version ${TERMS_VERSION} · Effective ${LEGAL_EFFECTIVE_DATE}`}
       title="Terms of Use"
-      description="These terms govern access to The Timeline, a team memory product operated by Nyxone OÜ."
+      description="The agreement governing access to The Timeline, including team authority, captured content, AI features, acceptable use, and responsibility."
     />
   );
 }

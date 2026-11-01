@@ -27,10 +27,15 @@ function LegalRouteFrame({
   children,
 }: LegalRouteStateProps & { children: ReactNode }) {
   return (
-    <PublicShell width="reading" footerLabel={footerLabel} currentSection={currentSection}>
+    <PublicShell
+      width="reading"
+      footerLabel={footerLabel}
+      currentSection={currentSection}
+      showAccountActions={false}
+    >
       <main id="main" className="mx-auto max-w-4xl px-4 py-12 sm:px-6 sm:py-16">
         <p className="text-xs font-medium text-fg-muted">{eyebrow}</p>
-        <h1 className="mt-3 text-2xl font-semibold tracking-tight text-fg">{title}</h1>
+        <h1 className="mt-3 text-3xl font-semibold tracking-tight text-fg sm:text-4xl">{title}</h1>
         <p className="mt-4 max-w-[70ch] text-base leading-7 text-fg-muted">{description}</p>
         {children}
       </main>
@@ -61,8 +66,9 @@ export function LegalRouteLoading({
         aria-label={`${title} loading placeholder`}
         className="mt-10 max-w-[70ch] space-y-5"
       >
-        {Array.from({ length: 4 }).map((_, index) => (
+        {Array.from({ length: 5 }).map((_, index) => (
           <div key={index} className="space-y-2">
+            <Skeleton className="h-6 w-48 motion-reduce:animate-none" />
             <Skeleton className="h-4 w-full motion-reduce:animate-none" />
             <Skeleton className="h-4 w-11/12 motion-reduce:animate-none" />
             <Skeleton className="h-4 w-4/5 motion-reduce:animate-none" />

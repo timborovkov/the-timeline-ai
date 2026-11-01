@@ -8,13 +8,13 @@ export default function PersonalConnectionsLoading() {
       <output className="sr-only" aria-live="polite">
         Loading provider accounts
       </output>
-      <div className="space-y-8" aria-busy="true" aria-label="Loading provider accounts">
+      <div className="space-y-4" aria-busy="true" aria-label="Loading provider accounts">
         <h1 className="sr-only">Provider accounts</h1>
         <Breadcrumb
           items={[{ label: 'Connections', href: '/app/sources' }, { label: 'Provider accounts' }]}
         />
-        <div aria-hidden="true" className="space-y-8">
-          <PageHeaderSkeleton />
+        <div aria-hidden="true" className="space-y-4">
+          <PageHeaderSkeleton variant="collection" />
           <div className="flex flex-wrap gap-2 border-y border-border py-2">
             <Skeleton className="h-7 w-32" />
             <Skeleton className="h-7 w-40" />

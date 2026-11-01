@@ -6,7 +6,7 @@ export default function CookiesLoading() {
     <LegalRouteLoading
       eyebrow={`Notice · Last reviewed ${COOKIES_REVIEW_DATE}`}
       title="Cookies and similar technologies"
-      description="The cookies, browser storage, analytics, and related technologies used by The Timeline."
+      description="What The Timeline stores in your browser, what is necessary for the service, and how to control optional public analytics."
     />
   );
 }

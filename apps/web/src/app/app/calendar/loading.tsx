@@ -37,7 +37,7 @@ export default function CalendarLoading() {
               </div>
               <div className="overflow-x-auto">
                 <div className="grid min-w-[38rem] grid-cols-[3rem_repeat(7,minmax(4.5rem,1fr))] gap-px border border-border bg-border sm:min-w-0">
-                  {Array.from({ length: 32 }).map((_, index) => (
+                  {Array.from({ length: 48 }).map((_, index) => (
                     <div
                       key={index}
                       className={index < 8 ? 'h-8 bg-muted/40' : 'min-h-28 bg-background p-2'}
@@ -50,7 +50,7 @@ export default function CalendarLoading() {
                 </div>
               </div>
               <div className="border-t border-border">
-                <CollectionToolbarSkeleton viewSegments={3} action />
+                <CollectionToolbarSkeleton viewSegments={3} filters={false} />
                 <div>
                   {Array.from({ length: 3 }).map((_, index) => (
                     <CollectionRowSkeleton key={index} subtitle metadata={2} />

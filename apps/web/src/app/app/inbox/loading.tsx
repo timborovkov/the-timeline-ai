@@ -1,4 +1,4 @@
-import { PageHeaderSkeleton } from '@/components/loading-states';
+import { HistoryBackLinkSkeleton, PageHeaderSkeleton } from '@/components/loading-states';
 import { Skeleton } from '@/components/ui/skeleton';
 
 export default function InboxLoading() {
@@ -14,23 +14,25 @@ export default function InboxLoading() {
       >
         <h1 className="sr-only">Inbox</h1>
         <div aria-hidden="true" inert className="space-y-6">
-          <PageHeaderSkeleton />
+          <HistoryBackLinkSkeleton />
+          <PageHeaderSkeleton action />
           <section className="space-y-6">
-            <nav className="flex gap-1.5">
+            <div className="flex gap-1.5">
               <Skeleton className="h-9 w-12 rounded-sm" />
               <Skeleton className="h-9 w-16 rounded-sm" />
-            </nav>
+            </div>
             <ul className="border-t border-border">
               {Array.from({ length: 6 }).map((_, i) => (
                 <li
                   key={i}
-                  className="grid grid-cols-1 gap-x-4 gap-y-2 border-b border-border py-3 sm:grid-cols-[18ch_1fr] sm:gap-y-1"
+                  className="grid grid-cols-1 gap-x-4 gap-y-2 border-b border-border px-1 py-3 sm:grid-cols-[18ch_minmax(0,1fr)_auto] sm:gap-y-1"
                 >
                   <Skeleton className="h-3 w-[16ch]" />
                   <div className="space-y-1.5">
                     <Skeleton className="h-3 w-24" />
                     <Skeleton className="h-4 w-2/3" />
                   </div>
+                  <Skeleton className="h-9 w-20 self-start" />
                 </li>
               ))}
             </ul>

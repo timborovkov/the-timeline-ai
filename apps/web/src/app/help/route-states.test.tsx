@@ -409,6 +409,8 @@ const helpChildRoutes = [
     ErrorComponent: HelpTopicError,
     Loading: HelpTopicLoading,
     loadingDescription: 'Loading this Timeline guide.',
+    loadingHeading: 'Guide',
+    loadingTitle: 'Guide',
     pathname: '/help/documents',
     title: 'Guide',
   },
@@ -418,7 +420,10 @@ const helpChildRoutes = [
     errorPageDescription: 'The support request form could not be opened.',
     ErrorComponent: ContactError,
     Loading: ContactLoading,
-    loadingDescription: 'Opening the support request form.',
+    loadingDescription:
+      'Keep account details and sensitive reports private. Use GitHub for reproducible, non-sensitive bugs and proposed contributions.',
+    loadingHeading: 'Choose the right support channel.',
+    loadingTitle: 'Support',
     pathname: '/help/contact',
     title: 'Contact support',
   },
@@ -428,7 +433,10 @@ const helpChildRoutes = [
     errorPageDescription: 'The support request form could not be loaded.',
     ErrorComponent: SupportError,
     Loading: SupportLoading,
-    loadingDescription: 'Loading the support request form.',
+    loadingDescription:
+      'Keep account details and sensitive reports private. Use GitHub for reproducible, non-sensitive bugs and proposed contributions.',
+    loadingHeading: 'Choose the right support channel.',
+    loadingTitle: 'Support',
     pathname: '/help/support',
     title: 'Support',
   },
@@ -437,7 +445,7 @@ const helpChildRoutes = [
 describe('Help child route states', () => {
   it.each(helpChildRoutes)(
     'announces a $title loading state outside its busy, Help-shaped placeholder',
-    ({ Loading, loadingDescription, pathname, title }) => {
+    ({ Loading, loadingDescription, loadingHeading, loadingTitle, pathname }) => {
       fakes.pathname = pathname;
       render(
         <HelpShell isSignedIn={false}>
@@ -446,22 +454,22 @@ describe('Help child route states', () => {
       );
 
       const announcement = screen.getByRole('status');
-      expect(announcement.textContent).toBe(`Loading ${title}`);
+      expect(announcement.textContent).toBe(`Loading ${loadingTitle}`);
       expect(announcement.parentElement?.getAttribute('aria-busy')).toBeNull();
-      expect(screen.getByLabelText(`${title} loading placeholder`).getAttribute('aria-busy')).toBe(
-        'true',
+      expect(
+        screen.getByLabelText(`${loadingTitle} loading placeholder`).getAttribute('aria-busy'),
+      ).toBe('true');
+      expect(screen.getAllByRole('heading', { level: 1, name: loadingHeading })).toHaveLength(1);
+      expect(screen.getByRole('heading', { level: 1, name: loadingHeading }).className).toContain(
+        'text-3xl',
       );
-      expect(screen.getAllByRole('heading', { level: 1, name: title })).toHaveLength(1);
-      expect(screen.getByRole('heading', { level: 1, name: title }).className).toContain(
-        'text-2xl',
-      );
-      expect(screen.getByRole('heading', { level: 1, name: title }).className).not.toContain(
+      expect(screen.getByRole('heading', { level: 1, name: loadingHeading }).className).toContain(
         'sm:text-4xl',
       );
       expect(screen.getByRole('navigation', { name: 'Help guides' })).toBeTruthy();
       expect(screen.getByText(loadingDescription)).toBeTruthy();
       const visuals = screen
-        .getByLabelText(`${title} loading placeholder`)
+        .getByLabelText(`${loadingTitle} loading placeholder`)
         .querySelector('[aria-hidden="true"][inert]');
       expect(visuals).toBeTruthy();
       expect(

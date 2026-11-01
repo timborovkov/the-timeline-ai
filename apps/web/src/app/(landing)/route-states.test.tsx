@@ -27,12 +27,9 @@ describe('Landing route states', () => {
     const html = renderToStaticMarkup(<LandingLoading />);
 
     expect(html.match(/<h1\b/g)).toHaveLength(1);
-    expect(html).toContain('The work <em>becomes</em> the record.');
-    expect(html).toContain('Gathering evidence');
-    expect(html).toContain('Slack');
-    expect(html).toContain('Meeting');
-    expect(html).toContain('GitHub');
-    expect(html).toContain('Drive');
+    expect(html).toContain('Scattered work. <em>Cited answers.</em>');
+    expect(html).toContain('AI team memory');
+    expect(html).toContain('trace each claim back to the source');
     expect(html).toContain('aria-live="polite"');
     expect(html.indexOf('aria-live="polite"')).toBeLessThan(html.indexOf('aria-busy="true"'));
     expect(html).toContain('aria-label="The Timeline loading placeholder"');
@@ -118,5 +115,17 @@ describe('Landing route states', () => {
     expect(html).toContain('href="/help/support"');
     expect(html).not.toContain('href="/sign-in"');
     expect(html).not.toContain('href="/sign-up"');
+    expect(html).not.toContain('>Start free</a>');
+    expect(html).not.toContain('>Dashboard</a>');
+  });
+
+  it('keeps the landing loading masthead auth-neutral instead of guessing session state', () => {
+    render(<LandingLoading />);
+
+    expect(screen.queryByRole('link', { name: 'Sign in' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Start free' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Dashboard' })).toBeNull();
+    expect(screen.getByRole('navigation', { name: 'Public navigation' })).toBeTruthy();
+    expect(screen.getByLabelText('The Timeline source code on GitHub')).toBeTruthy();
   });
 });

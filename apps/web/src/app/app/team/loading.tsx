@@ -15,7 +15,7 @@ export default function TeamLoading() {
             <aside className="min-w-0 lg:self-start">
               <div className="w-full max-w-full overflow-x-auto border-b border-border lg:w-52 lg:overflow-visible lg:border-r lg:border-b-0 lg:pr-4">
                 <div className="flex min-w-max gap-1 lg:min-w-0 lg:flex-col">
-                  {Array.from({ length: 6 }).map((_, i) => (
+                  {Array.from({ length: 8 }).map((_, i) => (
                     <Skeleton
                       key={i}
                       className="h-9 w-20 shrink-0 motion-reduce:animate-none lg:w-full"

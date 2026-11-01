@@ -14,7 +14,7 @@ export default function TimelineLoading() {
       >
         <h1 className="sr-only">Timeline</h1>
         <section aria-label="Timeline loading placeholder" className="space-y-0">
-          <CollectionToolbarSkeleton search={false} count={false} viewSegments={2} />
+          <CollectionToolbarSkeleton search count={false} viewSegments={2} action />
           <TimelineFeedSkeleton count={8} />
         </section>
       </div>

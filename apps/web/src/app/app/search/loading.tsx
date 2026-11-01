@@ -1,5 +1,8 @@
-import { CollectionRowSkeleton, CollectionToolbarSkeleton } from '@/components/loading-states';
-import { Skeleton } from '@/components/ui/skeleton';
+import {
+  CollectionRowSkeleton,
+  CollectionToolbarSkeleton,
+  PageHeaderSkeleton,
+} from '@/components/loading-states';
 
 export default function SearchLoading() {
   return (
@@ -8,12 +11,10 @@ export default function SearchLoading() {
         Loading search
       </output>
       <div className="space-y-5" aria-busy="true" aria-label="Loading search">
-        <header className="space-y-2">
-          <h1 className="sr-only">Search</h1>
-          <Skeleton className="h-7 w-24 motion-reduce:animate-none" />
-          <Skeleton className="h-4 w-full max-w-2xl motion-reduce:animate-none" />
-        </header>
-
+        <h1 className="sr-only">Search</h1>
+        <div aria-hidden="true">
+          <PageHeaderSkeleton variant="collection" />
+        </div>
         <section
           aria-hidden="true"
           className="space-y-0 motion-reduce:animate-none"
