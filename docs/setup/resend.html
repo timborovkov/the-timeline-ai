@@ -37,6 +37,13 @@ INBOUND_EMAIL_DOMAIN=</code></pre>
         shown on public, help, legal, and trust pages. Without it, public links default to
         contact@thetimeline.cc and support requests are saved without email delivery.
       </p>
+      <p>
+        Sender restrictions are enabled by default for new and existing teams. Active members can
+        send from their account email; admins can add additional addresses or disable the
+        restriction in team settings. Membership changes apply automatically. Existing extra
+        addresses are preserved. Messages with failed receiver authentication are rejected when the
+        restriction is enabled; unknown authentication retains the existing audit policy.
+      </p>
       <h2>Receiving</h2>
       <p>
         Register <code>email.received</code> at

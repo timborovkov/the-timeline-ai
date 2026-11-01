@@ -247,6 +247,10 @@ decision before broader rights can be promised.
 
 ### Email delivery and capture
 
+Inbound email is restricted to active member account addresses and editable extra
+senders by default; team admins can disable this restriction. Membership changes
+apply automatically.
+
 Resend handles transactional email and inbound capture. The signed
 `/api/email/inbound` webhook queues IDs into `email-inbound`; the full worker
 retrieves bodies and bounded attachments, applies team routing and sender rules,

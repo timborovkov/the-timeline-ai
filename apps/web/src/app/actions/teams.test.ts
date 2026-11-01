@@ -482,12 +482,18 @@ describe('updateInboundEmailWhitelistAction', () => {
     );
   });
 
-  it('requires at least one sender when enabling the whitelist', async () => {
+  it('allows a members-only whitelist without additional senders', async () => {
+    const { tx, updates } = makeTx([]);
+    mockTransactionWithTx(tx);
     await expect(
       updateInboundEmailWhitelistAction({}, form({ enabled: 'on', senders: '  ' })),
-    ).resolves.toEqual({ error: 'Add at least one sender before enabling the whitelist' });
-
-    expect(fakes.fakeTransaction).not.toHaveBeenCalled();
+    ).resolves.toEqual({ ok: true });
+    expect(updates).toEqual([
+      {
+        inboundSenderWhitelistEnabled: true,
+        inboundSenderWhitelist: [],
+      },
+    ]);
   });
 
   it('normalizes, dedupes, audits, and revalidates updates', async () => {

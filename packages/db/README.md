@@ -72,6 +72,10 @@ attached to a web Ask conversation on `chat_sessions.context_trail`. The trail
 is current-view first, capped, and used for prompt context plus linked badges
 in full Ask.
 
+Migration `0092_inbound_members_default.sql` enables inbound sender restrictions for
+all existing teams and makes them the default for new teams. Explicit extra
+senders are preserved; active member addresses are resolved at ingestion time.
+
 ## Connection guardrails
 
 Runtime Postgres clients should come from `createPgClient()` or `getDb()`, not a

@@ -179,9 +179,29 @@ export async function handleInbound(
   }
 
   const senderEmail = inboundSenderEmail(payload);
-  const allowedTeams = matchedTeams.filter((team) => {
-    if (!team.inboundSenderWhitelistEnabled) return true;
-    if (senderEmail && team.inboundSenderWhitelist.includes(senderEmail)) return true;
+  const allowedTeams: MatchedTeam[] = [];
+  for (const team of matchedTeams) {
+    let allowed = !team.inboundSenderWhitelistEnabled;
+    if (
+      !allowed &&
+      senderEmail &&
+      payload.authentication?.dmarc !== 'fail' &&
+      senderAuthVerdict(payload.authentication) !== 'fail'
+    ) {
+      allowed = team.inboundSenderWhitelist.includes(senderEmail);
+      if (!allowed) {
+        // Verified webhook routing establishes the team; this system scope only reads
+        // current membership, so joins, removals, and email changes take effect immediately.
+        const members = await withTeam(deps.db, team.id, '00000000-0000-0000-0000-000000000000', {
+          skipMembershipCheck: true,
+        }).timeline.listMembers();
+        allowed = members.some((member) => normalizeEmail(member.email) === senderEmail);
+      }
+    }
+    if (allowed) {
+      allowedTeams.push(team);
+      continue;
+    }
     log.warn(
       {
         teamId: team.id,
@@ -191,8 +211,7 @@ export async function handleInbound(
       },
       'inbound sender blocked by whitelist',
     );
-    return false;
-  });
+  }
   if (allowedTeams.length === 0) {
     return { ok: false, inserted: 0, reason: 'blocked_sender' };
   }

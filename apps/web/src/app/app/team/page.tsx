@@ -502,7 +502,7 @@ async function loadTeamSettingsPage({
       .from(teams)
       .where(eq(teams.id, active.teamId))
       .limit(1)
-  )[0] ?? { inboundEmail: null, enabled: false, senders: [] };
+  )[0] ?? { inboundEmail: null, enabled: true, senders: [] };
   const inboundEmail = displayInboundEmail({
     slug: active.teamSlug,
     inboundEmail: inboundEmailSettings.inboundEmail,

@@ -99,6 +99,7 @@ describe('email dispatcher', () => {
       slug: 'team-a',
       name: 'Team A',
       inboundEmail: 'team-a@inbound.test',
+      inboundSenderWhitelistEnabled: false,
     });
     await db.insert(users).values({ id: USER_ID, email: 'member@example.com' });
     await db.insert(teamMembers).values({
@@ -240,6 +241,66 @@ describe('email dispatcher', () => {
         }),
       ],
     });
+  });
+
+  it('defaults to current members, follows membership and email changes, and isolates teams', async () => {
+    await db.insert(teams).values({
+      id: OTHER_TEAM_ID,
+      slug: 'team-b',
+      name: 'Team B',
+      inboundEmail: 'team-b@inbound.test',
+    });
+    const [team] = await db.select().from(teams).where(eq(teams.id, OTHER_TEAM_ID));
+    expect(team?.inboundSenderWhitelistEnabled).toBe(true);
+    const queues = textQueueDeps();
+    const send = (id: string, email: string) =>
+      handleInbound(
+        { db: db as never, inboundDomain: 'inbound.test', ...queues },
+        {
+          ...inboundPayload(id),
+          toAddresses: [{ email: 'team-b@inbound.test', name: '' }],
+          from: email,
+          fromAddress: { email, name: '' },
+        },
+      );
+    await expect(send('other-team-member', 'member@example.com')).resolves.toMatchObject({
+      reason: 'blocked_sender',
+    });
+    await db.insert(teamMembers).values({ teamId: OTHER_TEAM_ID, userId: USER_ID, role: 'owner' });
+    await expect(send('joined-member', 'MEMBER@example.com')).resolves.toMatchObject({
+      inserted: 1,
+    });
+    await db.update(users).set({ email: 'new@example.com' }).where(eq(users.id, USER_ID));
+    await expect(send('old-email', 'member@example.com')).resolves.toMatchObject({
+      reason: 'blocked_sender',
+    });
+    await expect(send('new-email', 'new@example.com')).resolves.toMatchObject({ inserted: 1 });
+    await db
+      .update(teamMembers)
+      .set({ removedAt: new Date() })
+      .where(eq(teamMembers.teamId, OTHER_TEAM_ID));
+    await expect(send('removed-member', 'new@example.com')).resolves.toMatchObject({
+      reason: 'blocked_sender',
+    });
+  });
+
+  it('blocks failed authentication even for an explicitly allowed sender', async () => {
+    await db
+      .update(teams)
+      .set({ inboundSenderWhitelistEnabled: true, inboundSenderWhitelist: ['vendor@example.net'] })
+      .where(eq(teams.id, TEAM_ID));
+    const queues = textQueueDeps();
+    await expect(
+      handleInbound(
+        { db: db as never, inboundDomain: 'inbound.test', ...queues },
+        {
+          ...inboundPayload('spoofed-allowlisted'),
+          authentication: { spf: 'pass', dkim: 'pass', dmarc: 'fail' },
+        },
+      ),
+    ).resolves.toMatchObject({ reason: 'blocked_sender', inserted: 0 });
+    expect(await db.select().from(rawEvents)).toHaveLength(0);
+    expect(queues.extract.enqueueExtract).not.toHaveBeenCalled();
   });
 
   it('allows whitelisted senders case-insensitively when the whitelist is enabled', async () => {
@@ -1175,6 +1236,7 @@ describe('email dispatcher', () => {
       slug: 'team-b',
       name: 'Team B',
       inboundEmail: 'team-b@inbound.test',
+      inboundSenderWhitelistEnabled: false,
     });
     await db.insert(teamMembers).values({ teamId: OTHER_TEAM_ID, userId: USER_ID, role: 'owner' });
     const payload = inboundPayload('partial-teams');

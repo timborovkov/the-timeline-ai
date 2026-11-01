@@ -1451,10 +1451,10 @@ test('inbound email sender whitelist blocks and allows Resend capture from the b
   try {
     await page.goto('/app/team?section=email');
 
-    const whitelistForm = page.locator('form').filter({ hasText: 'Allowed senders' });
+    const whitelistForm = page.locator('form').filter({ hasText: 'Additional allowed senders' });
     await expect(whitelistForm).toBeVisible();
     await whitelistForm.getByRole('checkbox', { name: 'Enable sender whitelist' }).check();
-    await whitelistForm.getByLabel('Allowed senders').fill(allowedSender);
+    await whitelistForm.getByLabel('Additional allowed senders').fill(allowedSender);
     await waitForPost(page, '/app/team', async () => {
       await whitelistForm.getByRole('button', { name: 'Save email settings' }).click();
     });

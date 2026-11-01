@@ -38,7 +38,8 @@ export const teams = pgTable('teams', {
   inboundEmail: text('inbound_email').unique(),
   inboundSenderWhitelistEnabled: boolean('inbound_sender_whitelist_enabled')
     .notNull()
-    .default(false),
+    .default(true),
+  // Additional addresses; active member account emails are allowed dynamically.
   inboundSenderWhitelist: jsonb('inbound_sender_whitelist').$type<string[]>().notNull().default([]),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 });
