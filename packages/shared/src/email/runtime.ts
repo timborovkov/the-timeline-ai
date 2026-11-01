@@ -47,7 +47,7 @@ export function inboundDispatcherDeps(db: Db): DispatcherDeps {
           });
         },
         async enqueueTranscribe(input) {
-          await queue.enqueueTranscribeJob(input);
+          await queue.enqueueTranscribeJob(input, { deduplicate: true });
         },
         buildAttachmentKey({ teamId, messageId, filename }) {
           return `teams/${teamId}/email/${safeForKey(messageId)}/${safeForKey(filename)}`;

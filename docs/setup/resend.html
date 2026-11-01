@@ -44,6 +44,11 @@ INBOUND_EMAIL_DOMAIN=</code></pre>
         addresses are preserved. Messages with failed receiver authentication are rejected when the
         restriction is enabled; unknown authentication retains the existing audit policy.
       </p>
+      <p>
+        Audio replay reuses a stable transcription job and billing identity. Queued and completed
+        audio is not submitted again; failed jobs can retry, and saved transcripts let interrupted
+        workers resume downstream processing without another transcription request.
+      </p>
       <h2>Receiving</h2>
       <p>
         Register <code>email.received</code> at

@@ -20,7 +20,11 @@ import type { InboundEmail } from '#src/email/inbound-schema.js';
 
 import { insertRestrictedFreeBillingAccount } from '#src/billing/capacity.js';
 import { createBillingScope } from '#src/billing/scope.js';
-import { flushDeferredEmailEnrichment, handleInbound } from '#src/email/dispatcher.js';
+import {
+  flushDeferredEmailEnrichment,
+  handleInbound,
+  type EmailAttachmentDeps,
+} from '#src/email/dispatcher.js';
 import { applyDbMigrations } from '#src/test/pglite.js';
 import { textQueueDeps } from '#src/test/queue-deps.js';
 const TEAM_ID = '11111111-1111-1111-1111-111111111111';
@@ -68,7 +72,9 @@ function attachmentDeps() {
   return {
     uploadAttachment: vi.fn().mockResolvedValue(undefined),
     uploadAudio: vi.fn().mockResolvedValue(undefined),
-    enqueueTranscribe: vi.fn().mockResolvedValue(undefined),
+    enqueueTranscribe: vi
+      .fn<EmailAttachmentDeps['enqueueTranscribe']>()
+      .mockResolvedValue(undefined),
     buildAttachmentKey: vi.fn(({ teamId, messageId, filename }) => {
       return `attachments/${teamId}/${messageId}/${filename}`;
     }),
@@ -1189,6 +1195,27 @@ describe('email dispatcher', () => {
     expect(row?.visibility).toBe('team');
     expect(row?.visibilityUserIds).toBeNull();
   });
+  it('does not enqueue a completed audio child when the inbound parent is replayed', async () => {
+    const payload = inboundPayload('completed-audio-replay');
+    payload.attachments = [attachment('memo.m4a', 'audio/mp4')];
+    const attachments = attachmentDeps();
+    const deps = {
+      db: db as never,
+      inboundDomain: 'inbound.test',
+      attachments,
+      ...textQueueDeps(),
+    };
+    await handleInbound(deps, payload);
+    const childId = attachments.enqueueTranscribe.mock.calls[0]?.[0]?.rawEventId;
+    if (!childId) throw new Error('Expected an audio child to be queued');
+    await db
+      .update(rawEvents)
+      .set({ sourceMetadata: { transcribed_at: new Date().toISOString() } })
+      .where(eq(rawEvents.id, childId));
+    await handleInbound(deps, payload);
+    expect(attachments.enqueueTranscribe).toHaveBeenCalledOnce();
+  });
+
   it('resumes a crash after audio-child creation without duplicating children or documents', async () => {
     const payload = inboundPayload('retry-audio-and-document');
     payload.attachments = [

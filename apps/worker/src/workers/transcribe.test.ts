@@ -110,6 +110,36 @@ describe('processTranscribeJobForTests', () => {
     await pg.close();
   });
 
+  it('reuses email audio billing identity and resumes handoffs without retranscribing saved audio', async () => {
+    await seedAudioEvent(db as unknown as Db, RAW_EVENT_ID, { parent_event_id: 'email-parent' });
+    await db.update(rawEvents).set({ source: 'email' }).where(eq(rawEvents.id, RAW_EVENT_ID));
+    const transcribe = vi
+      .fn<TranscribeWorkerIO['transcribeAudio']>()
+      .mockResolvedValue({ text: 'Saved transcript', model: 'test-model' });
+    const headObject = vi.fn().mockResolvedValue({ contentLength: 11 });
+    const enqueueExtract = vi.fn().mockResolvedValue(undefined);
+    const enqueueEmbed = vi.fn().mockResolvedValue(undefined);
+    const io = makeIO({ transcribeAudio: transcribe, headObject, enqueueExtract, enqueueEmbed });
+    transcribe.mockRejectedValueOnce(new Error('provider interrupted'));
+    const data = { rawEventId: RAW_EVENT_ID, teamId: TEAM_ID, audioKey: AUDIO_KEY };
+    await expect(
+      processTranscribeJobForTests({ db: db as unknown as Db }, data, io, {
+        billingOperationId: 'transcription:first-job',
+      }),
+    ).rejects.toThrow('provider interrupted');
+    await processTranscribeJobForTests({ db: db as unknown as Db }, data, io, {
+      billingOperationId: 'transcription:replacement-job',
+    });
+    const calls = transcribe.mock.calls;
+    expect(calls[0]?.[0].operationId).toBe(`transcription:email:${TEAM_ID}:${RAW_EVENT_ID}:0`);
+    expect(calls[1]?.[0].operationId).toBe(calls[0]?.[0].operationId);
+    await processTranscribeJobForTests({ db: db as unknown as Db }, data, io);
+    expect(transcribe).toHaveBeenCalledTimes(2);
+    expect(headObject).toHaveBeenCalledTimes(2);
+    expect(enqueueExtract).toHaveBeenCalledTimes(2);
+    expect(enqueueEmbed).toHaveBeenCalledTimes(2);
+  });
+
   it('writes transcript text, clears stale failure metadata, and enqueues downstream work', async () => {
     await seedAudioEvent(db as never);
     const getObjectBuffer = vi.fn().mockResolvedValue({ body: Buffer.from('audio-bytes') });
@@ -254,7 +284,8 @@ describe('processTranscribeJobForTests', () => {
     const enqueueExtract = vi.fn().mockResolvedValue(undefined);
     const enqueueEmbed = vi.fn().mockResolvedValue(undefined);
     const enqueueSuggestion = vi.fn().mockResolvedValue(undefined);
-    const io = makeIO({ enqueueExtract, enqueueEmbed, enqueueSuggestion });
+    const headObject = vi.fn();
+    const io = makeIO({ headObject, enqueueExtract, enqueueEmbed, enqueueSuggestion });
 
     const result = await processTranscribeJobForTests(
       { db: db as never },
@@ -262,7 +293,8 @@ describe('processTranscribeJobForTests', () => {
       io,
     );
 
-    expect(result).toEqual({ rawEventId: RAW_EVENT_ID, model: 'test-whisper' });
+    expect(result).toEqual({ rawEventId: RAW_EVENT_ID });
+    expect(headObject).not.toHaveBeenCalled();
     expect(enqueueExtract).not.toHaveBeenCalled();
     expect(enqueueEmbed).not.toHaveBeenCalled();
     expect(enqueueSuggestion).not.toHaveBeenCalled();

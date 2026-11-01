@@ -734,7 +734,13 @@ async function ingestForTeam(
       parentAttachmentsDirty = true;
 
       try {
-        if (allowEnrichment) {
+        const [storedChild] = await deps.db
+          .select({ metadata: rawEvents.sourceMetadata })
+          .from(rawEvents)
+          .where(and(eq(rawEvents.id, child.id), eq(rawEvents.teamId, team.id)))
+          .limit(1);
+        const childMetadata = (storedChild?.metadata ?? {}) as Record<string, unknown>;
+        if (allowEnrichment && typeof childMetadata.transcribed_at !== 'string') {
           await deps.attachments.enqueueTranscribe({
             rawEventId: child.id,
             teamId: team.id,
