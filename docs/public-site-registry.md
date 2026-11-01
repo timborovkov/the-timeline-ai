@@ -118,6 +118,9 @@ names when its source module loads.
 
 ## Crawl and indexing policy
 
+`sitemap.xml` and `robots.txt` are generated at request time so their absolute
+URLs use the runtime `AUTH_URL`, rather than the Docker build's localhost fallback.
+
 `robots.txt` blocks APIs, the authenticated app, and token-bearing invite and
 verification routes. Publicly reachable HTML that declares `noindex` remains
 crawlable so search engines can observe that directive and process redirects.
