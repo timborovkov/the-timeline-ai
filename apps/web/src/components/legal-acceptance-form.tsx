@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useActionState } from 'react';
+import { useActionState, useEffect } from 'react';
 import { useFormStatus } from 'react-dom';
 
 import { acceptLegalAction, type AcceptLegalState } from '@/app/actions/legal';
@@ -20,6 +20,14 @@ function SubmitButton() {
 
 export function LegalAcceptanceForm({ returnTo }: { returnTo?: string }) {
   const [state, action] = useActionState<AcceptLegalState, FormData>(acceptLegalAction, {});
+  useEffect(() => {
+    // A proxy redirect during a Server Action can render this page under /app.
+    // Native form actions post to the browser URL, where the legal gate would
+    // intercept acceptance again. Load the canonical route before submission.
+    if (window.location.pathname !== '/legal/accept') {
+      window.location.replace(`/legal/accept?returnTo=${encodeURIComponent(returnTo ?? '/app')}`);
+    }
+  }, [returnTo]);
   return (
     <form action={action} className="space-y-5">
       {returnTo ? <input type="hidden" name="returnTo" value={returnTo} /> : null}

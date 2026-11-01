@@ -44,6 +44,9 @@ export function useFormActionToast({
       }, ACTION_TOAST_LOADING_DELAY_MS);
       return () => {
         window.clearTimeout(timer);
+        // Redirects and error boundaries can unmount the form before pending
+        // becomes false. Do not leave its loading toast alive indefinitely.
+        toast.dismiss(id);
       };
     }
 

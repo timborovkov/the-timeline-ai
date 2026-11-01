@@ -53,6 +53,21 @@ describe('useFormActionToast', () => {
     expect(toast.dismiss).not.toHaveBeenCalled();
   });
 
+  it('dismisses a loading toast when a redirect or error unmounts the pending form', () => {
+    const view = render(<Probe id="legal:accept" pending />);
+    vi.advanceTimersByTime(150);
+    expect(toast.loading).toHaveBeenCalled();
+    view.unmount();
+    expect(toast.dismiss).toHaveBeenCalledWith('legal:accept');
+  });
+
+  it('cancels a delayed loading toast when the form unmounts before it appears', () => {
+    const view = render(<Probe id="legal:accept" pending />);
+    view.unmount();
+    vi.advanceTimersByTime(150);
+    expect(toast.loading).not.toHaveBeenCalled();
+  });
+
   it('shows a delayed loading toast, then success', () => {
     const view = render(<Probe id="team-timezone" pending success="Timezone updated" />);
     vi.advanceTimersByTime(149);

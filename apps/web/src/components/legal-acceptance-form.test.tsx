@@ -8,6 +8,7 @@ import type * as ReactModule from 'react';
 const fakes = vi.hoisted(() => ({
   action: vi.fn(),
   useActionState: vi.fn(),
+  replace: vi.fn(),
 }));
 
 await vi.mock(
@@ -30,12 +31,29 @@ const { PRIVACY_VERSION, TERMS_VERSION } = await import('@/lib/legal-versions');
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.stubGlobal('location', { pathname: '/legal/accept', replace: fakes.replace });
   fakes.useActionState.mockReturnValue([{}, fakes.action]);
 });
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
 
 describe('LegalAcceptanceForm', () => {
+  it('moves a gate rendered under the dashboard to its canonical submission URL', () => {
+    vi.stubGlobal('location', { pathname: '/app', replace: fakes.replace });
+    render(<LegalAcceptanceForm returnTo="/app/team?section=email" />);
+    expect(fakes.replace).toHaveBeenCalledWith(
+      '/legal/accept?returnTo=%2Fapp%2Fteam%3Fsection%3Demail',
+    );
+  });
+
+  it('does not reload an acceptance form already on its canonical route', () => {
+    render(<LegalAcceptanceForm returnTo="/app" />);
+    expect(fakes.replace).not.toHaveBeenCalled();
+  });
+
   it('submits the exact legal versions displayed to the user', () => {
     render(<LegalAcceptanceForm returnTo="/app" />);
 

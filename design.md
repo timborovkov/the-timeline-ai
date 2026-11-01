@@ -1113,6 +1113,10 @@ failures keep `InlineError` with a specific retry.
 4. On error, roll back the optimistic state and restore focus to the control.
 5. Success lasts 2s. Error lasts 6s and is dismissible.
 
+Native form actions must dismiss their loading toast when the form unmounts
+for a redirect, revalidation, or error boundary. Completed success/error toasts
+keep their normal lifetime across form remounts.
+
 Rapid edits on the same entity share one toast id and replace in place. Two
 entities may show two toasts. The stack caps at three.
 
