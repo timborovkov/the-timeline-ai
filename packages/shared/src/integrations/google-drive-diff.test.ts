@@ -51,4 +51,16 @@ describe('diffDriveText', () => {
     expect(diff.hunks.join(' ')).toContain('NEW_VALUE');
     expect(diff.hunks.join(' ')).not.toContain('OLD_VALUE');
   });
+
+  it('emits bounded removed-text hunks for deletion-only diffs', () => {
+    const previous =
+      'Acme Labs is evaluating a $12k pilot with Northstar this quarter.\nKeep this line.';
+    const next = 'Keep this line.';
+    const diff = diffDriveText(previous, next);
+    expect(diff.changed).toBe(true);
+    expect(diff.hunks).toHaveLength(1);
+    expect(diff.hunks[0]).toMatch(/^- /);
+    expect(diff.hunks[0]).toContain('$12k');
+    expect(diff.hunks[0]).not.toBe('- ');
+  });
 });

@@ -202,6 +202,7 @@ export interface SyncContext {
   linkedObjectForDriveSelection?(
     fileId: string,
     parentIds: string[],
+    matchedAncestorId?: string | null,
   ): Promise<{ id: string; canonicalName: string; type: string } | null>;
   /**
    * Optional Drive CRM-relevance judge. Tests inject this; the worker leaves

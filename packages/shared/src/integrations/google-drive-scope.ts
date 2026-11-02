@@ -72,3 +72,106 @@ export function driveFileScopeHint(input: {
   if (scope.folders.size === 0 && scope.sharedDrives.size === 0 && !scope.watchesRoot) return 'out';
   return 'unknown';
 }
+
+/**
+ * Parent-walk memo for nested Drive folders. Stores fetched parent ids and
+ * the selected ancestor that admitted a folder — never an early "out of
+ * scope" boolean, which would reject later files under the same nested path.
+ */
+export interface DriveAncestryCache {
+  parents: Map<string, string[] | null>;
+  selectedAncestorById: Map<string, string>;
+}
+
+export function createDriveAncestryCache(): DriveAncestryCache {
+  return { parents: new Map(), selectedAncestorById: new Map() };
+}
+
+function driveMatchedScopeId(input: {
+  fileId: string;
+  parents?: string[];
+  driveId?: string | null;
+  scope: DriveScopeSets;
+  cache?: DriveAncestryCache;
+}): string | null {
+  const { fileId, parents = [], driveId, scope, cache } = input;
+  if (scope.files.has(fileId)) return fileId;
+  for (const parent of parents) {
+    if (scope.folders.has(parent) || scope.sharedDrives.has(parent)) return parent;
+    const selected = cache?.selectedAncestorById.get(parent);
+    if (selected) return selected;
+  }
+  if (driveId && scope.sharedDrives.has(driveId)) return driveId;
+  if (scope.watchesRoot && parents.includes('root')) return 'root';
+  const fileSelected = cache?.selectedAncestorById.get(fileId);
+  return fileSelected ?? null;
+}
+
+function folderIsSelected(id: string, scope: DriveScopeSets): boolean {
+  return (
+    scope.folders.has(id) || scope.sharedDrives.has(id) || (id === 'root' && scope.watchesRoot)
+  );
+}
+
+function rememberSelectedAncestor(
+  cache: DriveAncestryCache,
+  path: string[],
+  selectedId: string,
+): void {
+  cache.selectedAncestorById.set(selectedId, selectedId);
+  for (const id of path) cache.selectedAncestorById.set(id, selectedId);
+}
+
+export async function resolveDriveFileMembership(input: {
+  fileId: string;
+  parents?: string[];
+  driveId?: string | null;
+  scope: DriveScopeSets;
+  cache: DriveAncestryCache;
+  getParents: (folderId: string) => Promise<string[] | null>;
+  depthCap?: number;
+}): Promise<{ inScope: boolean; matchedAncestorId: string | null }> {
+  const hint = driveFileScopeHint(input);
+  if (hint === 'in') {
+    return { inScope: true, matchedAncestorId: driveMatchedScopeId(input) };
+  }
+  if (hint === 'out') return { inScope: false, matchedAncestorId: null };
+
+  const cachedHit = driveMatchedScopeId(input);
+  if (cachedHit) return { inScope: true, matchedAncestorId: cachedHit };
+
+  const depthCap = input.depthCap ?? 32;
+  const stack: { id: string; path: string[] }[] = (input.parents ?? []).map((id) => ({
+    id,
+    path: [id],
+  }));
+  let depth = 0;
+  while (stack.length > 0 && depth++ < depthCap) {
+    const node = stack.pop();
+    if (!node) break;
+    if (folderIsSelected(node.id, input.scope)) {
+      rememberSelectedAncestor(input.cache, node.path, node.id);
+      return { inScope: true, matchedAncestorId: node.id };
+    }
+    const knownSelected = input.cache.selectedAncestorById.get(node.id);
+    if (knownSelected) {
+      rememberSelectedAncestor(input.cache, node.path, knownSelected);
+      return { inScope: true, matchedAncestorId: knownSelected };
+    }
+    if (input.cache.parents.has(node.id)) {
+      const cachedParents = input.cache.parents.get(node.id);
+      if (!cachedParents) continue;
+      for (const parent of cachedParents) {
+        stack.push({ id: parent, path: [...node.path, parent] });
+      }
+      continue;
+    }
+    const fetched = await input.getParents(node.id);
+    input.cache.parents.set(node.id, fetched);
+    if (!fetched) continue;
+    for (const parent of fetched) {
+      stack.push({ id: parent, path: [...node.path, parent] });
+    }
+  }
+  return { inScope: false, matchedAncestorId: null };
+}

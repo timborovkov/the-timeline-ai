@@ -50,15 +50,26 @@ function changedHunks(previous: string, next: string): string[] {
   const prevLines = previous.split('\n');
   const nextLines = next.split('\n');
   const prevSet = new Set(prevLines.map((line) => line.trim()).filter((line) => line.length > 0));
+  const nextSet = new Set(nextLines.map((line) => line.trim()).filter((line) => line.length > 0));
   const hunks: string[] = [];
   for (const line of nextLines) {
     const trimmed = line.trim();
     if (!trimmed) continue;
     if (!prevSet.has(trimmed)) hunks.push(truncateChangedLine(trimmed));
   }
+  if (hunks.length === 0) {
+    for (const line of prevLines) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      if (!nextSet.has(trimmed)) hunks.push(`- ${truncateChangedLine(trimmed)}`);
+    }
+  }
   if (hunks.length === 0 && next !== previous) {
     const start = firstDifferingIndex(previous, next);
-    hunks.push(truncateChangedLine(next.slice(start)));
+    const added = next.slice(start);
+    const removed = previous.slice(start);
+    if (added.trim()) hunks.push(truncateChangedLine(added));
+    if (removed.trim()) hunks.push(`- ${truncateChangedLine(removed)}`);
   }
   return hunks.slice(0, 40);
 }

@@ -2,8 +2,10 @@ import { expect } from '@timeline/test-support';
 import { describe, it } from 'bun:test';
 
 import {
+  createDriveAncestryCache,
   driveFileScopeHint,
   driveScopeFromSelections,
+  resolveDriveFileMembership,
 } from '#src/integrations/google-drive-scope.js';
 
 describe('driveFileScopeHint', () => {
@@ -35,5 +37,72 @@ describe('driveFileScopeHint', () => {
     const scope = driveScopeFromSelections([{ kind: 'drive.folder', externalId: 'root' }]);
     scope.folders.add('0AMK-my-drive');
     expect(driveFileScopeHint({ fileId: 'mine', parents: ['0AMK-my-drive'], scope })).toBe('in');
+  });
+});
+
+describe('resolveDriveFileMembership', () => {
+  it('caches parent ids and selected ancestors, never an early negative', async () => {
+    const scope = driveScopeFromSelections([{ kind: 'drive.folder', externalId: 'selected' }]);
+    const cache = createDriveAncestryCache();
+    const fetched: string[] = [];
+    const getParents = (folderId: string) => {
+      fetched.push(folderId);
+      if (folderId === 'nested') return Promise.resolve(['selected']);
+      return Promise.resolve(null);
+    };
+
+    const first = await resolveDriveFileMembership({
+      fileId: 'file-a',
+      parents: ['nested'],
+      scope,
+      cache,
+      getParents,
+    });
+    const second = await resolveDriveFileMembership({
+      fileId: 'file-b',
+      parents: ['nested'],
+      scope,
+      cache,
+      getParents,
+    });
+
+    expect(first).toEqual({ inScope: true, matchedAncestorId: 'selected' });
+    expect(second).toEqual({ inScope: true, matchedAncestorId: 'selected' });
+    expect(fetched).toEqual(['nested']);
+    expect(cache.parents.get('nested')).toEqual(['selected']);
+    expect(cache.selectedAncestorById.get('nested')).toBe('selected');
+    expect(cache.parents.has('file-a')).toBe(false);
+  });
+
+  it('reuses cached parent metadata for a later out-of-scope sibling without storing false', async () => {
+    const scope = driveScopeFromSelections([{ kind: 'drive.folder', externalId: 'other-tree' }]);
+    const cache = createDriveAncestryCache();
+    const fetched: string[] = [];
+    const getParents = (folderId: string) => {
+      fetched.push(folderId);
+      if (folderId === 'nested') return Promise.resolve(['outside']);
+      if (folderId === 'outside') return Promise.resolve(null);
+      return Promise.resolve(null);
+    };
+
+    const first = await resolveDriveFileMembership({
+      fileId: 'file-a',
+      parents: ['nested'],
+      scope,
+      cache,
+      getParents,
+    });
+    const second = await resolveDriveFileMembership({
+      fileId: 'file-b',
+      parents: ['nested'],
+      scope,
+      cache,
+      getParents,
+    });
+
+    expect(first.inScope).toBe(false);
+    expect(second.inScope).toBe(false);
+    expect(fetched).toEqual(['nested', 'outside']);
+    expect(cache.selectedAncestorById.size).toBe(0);
   });
 });

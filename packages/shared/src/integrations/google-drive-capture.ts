@@ -173,9 +173,22 @@ export async function listTeamEmailDomains(db: Db, teamId: string): Promise<stri
 
 export async function linkedObjectForDriveSelection(
   db: Db,
-  input: { teamId: string; integrationId: string; fileId: string; parentIds: string[] },
+  input: {
+    teamId: string;
+    integrationId: string;
+    fileId: string;
+    parentIds: string[];
+    matchedAncestorId?: string | null;
+  },
 ): Promise<{ id: string; canonicalName: string; type: string } | null> {
-  const ids = [...new Set([input.fileId, ...input.parentIds, 'root'])];
+  const candidates = [
+    ...new Set(
+      [input.fileId, input.matchedAncestorId, ...input.parentIds, 'root'].filter(
+        (id): id is string => typeof id === 'string' && id.length > 0,
+      ),
+    ),
+  ];
+  if (candidates.length === 0) return null;
   const rows = await db
     .select({
       externalId: integrationSelections.externalId,
@@ -189,11 +202,11 @@ export async function linkedObjectForDriveSelection(
       and(
         eq(entities.teamId, input.teamId),
         eq(integrationSelections.integrationId, input.integrationId),
-        inArray(integrationSelections.externalId, ids),
+        inArray(integrationSelections.externalId, candidates),
       ),
     );
   const byId = new Map(rows.map((row) => [row.externalId, row]));
-  for (const candidate of [input.fileId, ...input.parentIds, 'root']) {
+  for (const candidate of candidates) {
     const hit = byId.get(candidate);
     if (hit?.objectId) {
       return { id: hit.objectId, canonicalName: hit.canonicalName, type: hit.type };

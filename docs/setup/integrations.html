@@ -142,13 +142,20 @@ GOOGLE_DRIVE_WEBHOOK_SECRET=...</code></pre>
         <li>
           File capture fetches text transiently, diffs against a truncated snapshot, skips
           formatting-only and tiny edits, then bills a small CRM-relevance judge through
-          <code>llm.chatStructured</code> / the existing AI meter. Snapshots uniquely key content,
-          comments, and permission fingerprints so comment-only and share-only changes persist; the
-          judged event is written before the snapshot advances. Delayed <code>drive.file</code> jobs
-          are kept across integration and provider-budget pauses after the changes cursor has
-          already moved. Sparse or scanned PDFs reuse the document-extract vision OCR fallback.
-          Daily caps: 8 processed files per doc and 200 per connection. Full Drive copies are not
-          stored in the document drive. Apply
+          <code>llm.chatStructured</code> / the existing AI meter. Deletion-only diffs emit bounded
+          removed-text hunks. Nested-folder membership caches fetched parent ids and the selected
+          ancestor that admitted a path — never an early "out of scope" boolean that would drop
+          later files under the same folder. Linked-object lookup uses that matched ancestor, not
+          only the file id, immediate parents, and root. Snapshots, team email domains, and those
+          links load through <code>withTeam(...).integrations</code>. Snapshots uniquely key
+          content, comments, and permission fingerprints so comment-only and share-only changes
+          persist; the judged event is written before the snapshot advances. Delayed
+          <code>drive.file</code> and <code>drive.changes</code> jobs are kept across integration
+          and provider-budget pauses, and persist to the continuation handoff table when the
+          per-integration lock is busy so a skipped tick cannot advance past unprocessed watch work.
+          Reactivating the same Drive sources keeps existing object links. Sparse or scanned PDFs
+          reuse the document-extract vision OCR fallback. Daily caps: 8 processed files per doc and
+          200 per connection. Full Drive copies are not stored in the document drive. Apply
           <code>0094_google_drive_snapshot_uniqueness.sql</code> with the usual migration path.
         </li>
         <li>

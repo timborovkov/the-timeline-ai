@@ -2208,6 +2208,51 @@ describe('withTeam namespaced port', () => {
     ).rejects.toThrow('Integration not found');
   });
 
+  it('preserves Drive selection object links when reactivating the same sources', async () => {
+    const ownerScope = withTeam(db as never, TEAM_A, USER_A);
+    const adminScope = withTeam(db as never, TEAM_A, USER_C);
+    const connection = await ownerScope.integrations.upsertProviderConnection({
+      provider: 'google_drive',
+      displayName: 'Google Drive — Acme',
+      externalAccountId: 'drive-acct-links',
+      scopes: ['https://www.googleapis.com/auth/drive.readonly'],
+      tokens: { access_token: 'drive-token' },
+    });
+    await ownerScope.integrations.shareProviderResources(connection.id, [
+      { kind: 'drive.folder', externalId: 'selected-folder', label: 'Selected' },
+    ]);
+    const share = (await ownerScope.integrations.listOwnedTeamResourceShares())[0]?.share;
+    if (!share) throw new Error('Expected Drive share');
+    const integration = await adminScope.integrations.activateSharedResources({
+      providerConnectionId: connection.id,
+      resourceShareIds: [share.id],
+    });
+    const company = await adminScope.objects.createObject({
+      type: 'company',
+      canonicalName: 'Northstar',
+      actor: { kind: 'user', userId: USER_C },
+    });
+    const [selection] = await adminScope.integrations.listSelections(integration.id);
+    if (!selection) throw new Error('Expected Drive selection');
+    await adminScope.integrations.setSelectionLinkedObject(
+      integration.id,
+      selection.id,
+      company.id,
+    );
+
+    const reactivated = await adminScope.integrations.activateSharedResources({
+      providerConnectionId: connection.id,
+      resourceShareIds: [share.id],
+    });
+    expect(reactivated.id).toBe(integration.id);
+    const [kept] = await adminScope.integrations.listSelections(integration.id);
+    expect(kept).toMatchObject({
+      selectionKind: 'drive.folder',
+      externalId: 'selected-folder',
+      linkedObjectId: company.id,
+    });
+  });
+
   // Provider connections are personal grants, while team integration scopes are
   // admin-activated source paths. This regression covers the ownership,
   // activation, duplicate-source, token, and revocation contracts together.

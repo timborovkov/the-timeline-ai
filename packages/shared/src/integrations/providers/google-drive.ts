@@ -24,11 +24,13 @@ import {
   DRIVE_FILE_KIND,
   DRIVE_FOLDER_KIND,
   DRIVE_SHARED_DRIVE_KIND,
-  driveFileScopeHint,
+  createDriveAncestryCache,
   driveResourceKindForMime,
   driveScopeFromSelections,
   driveSelectionIsWatchable,
   isSupportedDriveMimeType,
+  resolveDriveFileMembership,
+  type DriveAncestryCache,
   type DriveScopeSets,
 } from '#src/integrations/google-drive-scope.js';
 import { providerFetch } from '#src/integrations/request.js';
@@ -406,40 +408,24 @@ async function fileInSelectedSubtree(
   tokens: DriveTokens,
   file: Pick<DriveFile, 'id' | 'parents' | 'driveId'>,
   scope: DriveScopeSets,
-  cache: Map<string, boolean>,
-  depthCap = 32,
-): Promise<boolean> {
-  const hint = driveFileScopeHint({
+  cache: DriveAncestryCache,
+): Promise<{ inScope: boolean; matchedAncestorId: string | null }> {
+  return resolveDriveFileMembership({
     fileId: file.id,
     scope,
+    cache,
+    getParents: async (folderId) => {
+      const info = await driveGetOptional<{ parents?: string[] }>(
+        tokens,
+        `/files/${encodeURIComponent(folderId)}`,
+        { fields: 'parents', supportsAllDrives: 'true' },
+      );
+      if (!info) return null;
+      return info.parents ?? [];
+    },
     ...(file.parents ? { parents: file.parents } : {}),
     ...(file.driveId ? { driveId: file.driveId } : {}),
   });
-  if (hint === 'in') return true;
-  if (hint === 'out') return false;
-  const stack = [...(file.parents ?? [])];
-  let depth = 0;
-  while (stack.length > 0 && depth++ < depthCap) {
-    const parent = stack.pop();
-    if (!parent) break;
-    if (scope.folders.has(parent) || scope.sharedDrives.has(parent)) return true;
-    if (parent === 'root' && scope.watchesRoot) return true;
-    const cached = cache.get(parent);
-    if (cached === true) return true;
-    if (cached === false) continue;
-    const info = await driveGetOptional<{ parents?: string[] }>(
-      tokens,
-      `/files/${encodeURIComponent(parent)}`,
-      { fields: 'parents', supportsAllDrives: 'true' },
-    );
-    if (!info) {
-      cache.set(parent, false);
-      continue;
-    }
-    cache.set(parent, false);
-    for (const next of info.parents ?? []) stack.push(next);
-  }
-  return false;
 }
 
 function exportSpec(
@@ -691,7 +677,7 @@ async function fetchChanges(
     }
     let pageToken = cursor.page_token;
     let safety = 0;
-    const ancestorCache = new Map<string, boolean>();
+    const ancestorCache = createDriveAncestryCache();
     while (pageToken && safety++ < 50) {
       const page = await driveGet<DriveChangesPage>(tokens, '/changes', {
         pageToken,
@@ -712,8 +698,8 @@ async function fetchChanges(
         ) {
           continue;
         }
-        const inScope = await fileInSelectedSubtree(tokens, file, scope, ancestorCache);
-        if (!inScope) continue;
+        const membership = await fileInSelectedSubtree(tokens, file, scope, ancestorCache);
+        if (!membership.inScope) continue;
         await scheduleFileCapture(integration, file.id, ctx, 'drive_watch');
       }
       if (page.nextPageToken) {
@@ -774,8 +760,8 @@ async function processDriveFile(
     await ctx.recordAudit('drive_file_missing', { file_id: fileId });
     return;
   }
-  const inScope = await fileInSelectedSubtree(tokens, file, scope, new Map());
-  if (!inScope) {
+  const membership = await fileInSelectedSubtree(tokens, file, scope, createDriveAncestryCache());
+  if (!membership.inScope) {
     await ctx.recordAudit('drive_file_out_of_scope', { file_id: fileId });
     return;
   }
@@ -878,7 +864,11 @@ async function processDriveFile(
   }
 
   const linked = ctx.linkedObjectForDriveSelection
-    ? await ctx.linkedObjectForDriveSelection(file.id, file.parents ?? [])
+    ? await ctx.linkedObjectForDriveSelection(
+        file.id,
+        file.parents ?? [],
+        membership.matchedAncestorId,
+      )
     : null;
   const hunkPreview = diff.hunks.slice(0, 12).join('\n');
   const commentPreview = commentsChanged ? commentEventContext(comments) : '';

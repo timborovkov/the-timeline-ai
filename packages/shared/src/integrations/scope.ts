@@ -34,6 +34,12 @@ import type {
 import { decryptJson, encryptJson } from '#src/crypto/secrets.js';
 import { getEnv } from '#src/env.js';
 import {
+  linkedObjectForDriveSelection as loadLinkedObjectForDriveSelection,
+  listTeamEmailDomains as loadTeamEmailDomains,
+  loadLatestDriveSnapshot,
+  saveDriveSnapshot,
+} from '#src/integrations/google-drive-capture.js';
+import {
   formatHealthPauseNotice,
   healthPauseNotificationDedupeKey,
   INTEGRATION_HEALTH_PAUSE_MIN_FAILURES,
@@ -1416,9 +1422,16 @@ export function createIntegrationScope(deps: {
         .select({
           selectionKind: integrationSelections.selectionKind,
           externalId: integrationSelections.externalId,
+          linkedObjectId: integrationSelections.linkedObjectId,
         })
         .from(integrationSelections)
         .where(eq(integrationSelections.integrationId, integration.id));
+      const links = new Map(
+        existingSelections.map((row) => [
+          `${row.selectionKind}\x00${row.externalId}`,
+          row.linkedObjectId,
+        ]),
+      );
       const existingSelectionKeys = new Set(
         existingSelections.map((row) => `${row.selectionKind}\x00${row.externalId}`),
       );
@@ -1474,6 +1487,7 @@ export function createIntegrationScope(deps: {
             selectionKind: share.resourceKind,
             externalId: share.externalId,
             externalLabel: share.externalLabel,
+            linkedObjectId: links.get(`${share.resourceKind}\x00${share.externalId}`) ?? null,
           })),
         );
       }
@@ -1577,6 +1591,44 @@ export function createIntegrationScope(deps: {
         targetVisibility: 'team',
         metadata: { field: 'selections', selection_count: selections.length },
       });
+    });
+  }
+
+  async function loadDriveSnapshot(integrationId: string, fileId: string) {
+    const integration = await getIntegration(integrationId);
+    if (!integration) return null;
+    return loadLatestDriveSnapshot(db, { teamId, integrationId, fileId });
+  }
+
+  async function persistDriveSnapshot(
+    integrationId: string,
+    fileId: string,
+    snapshot: Parameters<typeof saveDriveSnapshot>[1]['snapshot'],
+  ): Promise<void> {
+    const integration = await getIntegration(integrationId);
+    if (!integration) return;
+    await saveDriveSnapshot(db, { teamId, integrationId, fileId, snapshot });
+  }
+
+  async function listDriveTeamEmailDomains(): Promise<string[]> {
+    await ensureMember();
+    return loadTeamEmailDomains(db, teamId);
+  }
+
+  async function linkedObjectForDriveSelection(input: {
+    integrationId: string;
+    fileId: string;
+    parentIds: string[];
+    matchedAncestorId?: string | null;
+  }): Promise<{ id: string; canonicalName: string; type: string } | null> {
+    const integration = await getIntegration(input.integrationId);
+    if (!integration) return null;
+    return loadLinkedObjectForDriveSelection(db, {
+      teamId,
+      integrationId: input.integrationId,
+      fileId: input.fileId,
+      parentIds: input.parentIds,
+      ...(input.matchedAncestorId ? { matchedAncestorId: input.matchedAncestorId } : {}),
     });
   }
 
@@ -1898,6 +1950,10 @@ export function createIntegrationScope(deps: {
     listSelections,
     setSelections,
     setSelectionLinkedObject,
+    loadLatestDriveSnapshot: loadDriveSnapshot,
+    saveDriveSnapshot: persistDriveSnapshot,
+    listTeamEmailDomains: listDriveTeamEmailDomains,
+    linkedObjectForDriveSelection,
     loadCursor,
     saveCursor,
     listSyncState,

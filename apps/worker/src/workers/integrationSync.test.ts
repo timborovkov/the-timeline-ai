@@ -1233,6 +1233,88 @@ describe('runOneIntegration attention classification', () => {
     expect(fakes.reserved.release).toHaveBeenCalledOnce();
   });
 
+  it('requeues a blocked Drive watch file target after a short bounded delay', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-06-25T03:00:00.000Z'));
+    fakes.reserved.mockImplementation((strings: TemplateStringsArray) => {
+      const query = strings.join('');
+      if (query.includes('pg_try_advisory_lock')) return Promise.resolve([{ locked: false }]);
+      return Promise.resolve([]);
+    });
+    const target = {
+      kind: 'targeted' as const,
+      integrationId: INTEGRATION_ID,
+      teamId: TEAM_ID,
+      triggeredBy: 'webhook' as const,
+      resourceType: 'drive.file',
+      externalId: 'file-1',
+      reason: 'drive_watch',
+    };
+
+    try {
+      await runOneIntegration({} as never, INTEGRATION_ID, 'targeted', target);
+    } finally {
+      vi.useRealTimers();
+    }
+
+    expect(fakes.adminLoadIntegration).not.toHaveBeenCalled();
+    expect(fakes.adminRecordPendingIntegrationSyncContinuations).toHaveBeenCalledWith(
+      expect.anything(),
+      INTEGRATION_ID,
+      [
+        {
+          resourceType: 'drive.file',
+          externalId: 'file-1',
+          retryAt: new Date('2026-06-25T03:00:05.000Z'),
+          continuationAttempt: 1,
+        },
+      ],
+    );
+    expect(fakes.enqueueIntegrationSyncJob).toHaveBeenCalledWith(
+      {
+        ...target,
+        continuationAttempt: 1,
+        continuationHandoffId: continuationHandoffId(1),
+      },
+      { delayMs: 5_000 },
+    );
+    expect(fakes.reserved.release).toHaveBeenCalledOnce();
+  });
+
+  it('requeues a blocked Drive changes watch after a short bounded delay', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-06-25T03:00:00.000Z'));
+    fakes.reserved.mockImplementation((strings: TemplateStringsArray) => {
+      const query = strings.join('');
+      if (query.includes('pg_try_advisory_lock')) return Promise.resolve([{ locked: false }]);
+      return Promise.resolve([]);
+    });
+    const target = {
+      kind: 'targeted' as const,
+      integrationId: INTEGRATION_ID,
+      teamId: TEAM_ID,
+      triggeredBy: 'webhook' as const,
+      resourceType: 'drive.changes',
+      externalId: INTEGRATION_ID,
+      reason: 'drive_watch',
+    };
+
+    try {
+      await runOneIntegration({} as never, INTEGRATION_ID, 'targeted', target);
+    } finally {
+      vi.useRealTimers();
+    }
+
+    expect(fakes.enqueueIntegrationSyncJob).toHaveBeenCalledWith(
+      {
+        ...target,
+        continuationAttempt: 1,
+        continuationHandoffId: continuationHandoffId(1),
+      },
+      { delayMs: 5_000 },
+    );
+  });
+
   it('propagates a failed lock-contention continuation handoff for BullMQ retry', async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-06-25T03:00:00.000Z'));

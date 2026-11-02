@@ -43,6 +43,7 @@ const HARVESTED_DOCUMENT_SOURCE_SNAPSHOT_VERSION = 'integration-document-source-
 const PAGINATION_LOCK_RETRY_DELAY_MS = 5_000;
 const MAX_PAGINATION_LOCK_RETRY_ATTEMPTS = 3;
 const PAGINATION_LOCK_DURABLE_RETRY_DELAY_MS = 60_000;
+const ZERO_UUID = '00000000-0000-0000-0000-000000000000';
 
 type TargetedIntegrationSyncJob = Extract<queue.IntegrationSyncJobData, { kind: 'targeted' }>;
 interface ContinuationJob {
@@ -64,6 +65,65 @@ function isProviderPaginationContinuation(
   target: TargetedIntegrationSyncJob | undefined,
 ): target is TargetedIntegrationSyncJob {
   return target?.reason === 'provider_pagination_continuation';
+}
+
+function isDriveWatchTarget(
+  target: TargetedIntegrationSyncJob | undefined,
+): target is TargetedIntegrationSyncJob {
+  return target?.resourceType === 'drive.file' || target?.resourceType === 'drive.changes';
+}
+
+async function rescheduleLockBlockedTarget(
+  db: Db,
+  integrationId: string,
+  target: TargetedIntegrationSyncJob | undefined,
+): Promise<void> {
+  if (!isProviderPaginationContinuation(target) && !isDriveWatchTarget(target)) return;
+  const attempt = target.continuationAttempt ?? 0;
+  const continuationAttempt = attempt < MAX_PAGINATION_LOCK_RETRY_ATTEMPTS ? attempt + 1 : attempt;
+  const retryDelayMs =
+    attempt < MAX_PAGINATION_LOCK_RETRY_ATTEMPTS
+      ? PAGINATION_LOCK_RETRY_DELAY_MS
+      : PAGINATION_LOCK_DURABLE_RETRY_DELAY_MS;
+  // The current job has already acknowledged its prior outbox handoff.
+  // Persist the next target before asking Redis to delay it; otherwise an
+  // enqueue rejection would strand Drive watch work after BullMQ marks this
+  // lock-miss as a successful skip.
+  await integrationsLib.adminRecordPendingIntegrationSyncContinuations(db, integrationId, [
+    {
+      resourceType: target.resourceType,
+      externalId: target.externalId,
+      ...(target.surface ? { surface: target.surface } : {}),
+      retryAt: new Date(Date.now() + retryDelayMs),
+      continuationAttempt,
+    },
+  ]);
+  const claimed = await integrationsLib.adminClaimPendingIntegrationSyncContinuations(
+    db,
+    integrationId,
+  );
+  await handoffClaimedContinuations(
+    db,
+    claimed.map((claim) => {
+      const job = continuationJob(
+        { id: integrationId, teamId: target.teamId },
+        claim.continuation,
+        claim.continuation.retryAt,
+        claim,
+      );
+      if (isDriveWatchTarget(target) && isMatchingContinuation(target, claim.continuation)) {
+        return {
+          ...job,
+          data: {
+            ...job.data,
+            ...(target.triggeredBy ? { triggeredBy: target.triggeredBy } : {}),
+            ...(target.reason ? { reason: target.reason } : {}),
+          },
+        };
+      }
+      return job;
+    }),
+  );
 }
 
 function isMatchingContinuation(
@@ -665,43 +725,7 @@ export async function runOneIntegration(
   if (!lockedRow?.locked) {
     log.info({ integrationId, kind }, 'integration sync already running — skipping this tick');
     reserved.release();
-    if (isProviderPaginationContinuation(target)) {
-      const attempt = target.continuationAttempt ?? 0;
-      const continuationAttempt =
-        attempt < MAX_PAGINATION_LOCK_RETRY_ATTEMPTS ? attempt + 1 : attempt;
-      const retryDelayMs =
-        attempt < MAX_PAGINATION_LOCK_RETRY_ATTEMPTS
-          ? PAGINATION_LOCK_RETRY_DELAY_MS
-          : PAGINATION_LOCK_DURABLE_RETRY_DELAY_MS;
-      // The current job has already acknowledged its prior outbox handoff.
-      // Persist the next target before asking Redis to delay it; otherwise an
-      // enqueue rejection would strand the continuation after BullMQ exhausts
-      // this job's own retries.
-      await integrationsLib.adminRecordPendingIntegrationSyncContinuations(db, integrationId, [
-        {
-          resourceType: target.resourceType,
-          externalId: target.externalId,
-          ...(target.surface ? { surface: target.surface } : {}),
-          retryAt: new Date(Date.now() + retryDelayMs),
-          continuationAttempt,
-        },
-      ]);
-      const claimed = await integrationsLib.adminClaimPendingIntegrationSyncContinuations(
-        db,
-        integrationId,
-      );
-      await handoffClaimedContinuations(
-        db,
-        claimed.map((claim) =>
-          continuationJob(
-            { id: integrationId, teamId: target.teamId },
-            claim.continuation,
-            claim.continuation.retryAt,
-            claim,
-          ),
-        ),
-      );
-    }
+    await rescheduleLockBlockedTarget(db, integrationId, target);
     return;
   }
   const continuationJobs: ContinuationJob[] = [];
@@ -1008,6 +1032,7 @@ export async function runOneIntegration(
     }
     const harvestEnabled =
       providerSupportsDocumentHarvest && harvestableUserId !== null && harvestUserStillMember;
+    const teamScope = withTeam(db, integration.teamId, ZERO_UUID, { skipMembershipCheck: true });
 
     const ctx: integrationsLib.SyncContext = {
       async writeEvents(events) {
@@ -1065,35 +1090,26 @@ export async function runOneIntegration(
       },
       extractBinaryText: extractDriveBinaryText,
       loadLatestDriveSnapshot(fileId) {
-        return integrationsLib.loadLatestDriveSnapshot(db, {
-          teamId: integration.teamId,
-          integrationId,
-          fileId,
-        });
+        return teamScope.integrations.loadLatestDriveSnapshot(integrationId, fileId);
       },
       saveDriveSnapshot(input) {
-        return integrationsLib.saveDriveSnapshot(db, {
-          teamId: integration.teamId,
-          integrationId,
-          fileId: input.fileId,
-          snapshot: {
-            contentHash: input.contentHash,
-            snapshotText: input.snapshotText,
-            commentsHash: input.commentsHash ?? '',
-            permissionsHash: input.permissionsHash ?? '',
-            mimeType: input.mimeType,
-          },
+        return teamScope.integrations.saveDriveSnapshot(integrationId, input.fileId, {
+          contentHash: input.contentHash,
+          snapshotText: input.snapshotText,
+          commentsHash: input.commentsHash ?? '',
+          permissionsHash: input.permissionsHash ?? '',
+          mimeType: input.mimeType,
         });
       },
       listTeamEmailDomains() {
-        return integrationsLib.listTeamEmailDomains(db, integration.teamId);
+        return teamScope.integrations.listTeamEmailDomains();
       },
-      linkedObjectForDriveSelection(fileId, parentIds) {
-        return integrationsLib.linkedObjectForDriveSelection(db, {
-          teamId: integration.teamId,
+      linkedObjectForDriveSelection(fileId, parentIds, matchedAncestorId) {
+        return teamScope.integrations.linkedObjectForDriveSelection({
           integrationId,
           fileId,
           parentIds,
+          ...(matchedAncestorId !== undefined ? { matchedAncestorId } : {}),
         });
       },
       judgeDriveChange: integrationsLib.judgeDriveChange,
