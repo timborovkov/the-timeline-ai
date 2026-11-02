@@ -30,10 +30,7 @@ export const metadata: Metadata = publicMetadata({
 
 export default function SupportPage() {
   const requiresTurnstile = process.env.NODE_ENV === 'production';
-  const turnstileSiteKey = process.env.TURNSTILE_SITE_KEY;
-  const form = (
-    <SupportForm turnstileSiteKey={turnstileSiteKey} requiresTurnstile={requiresTurnstile} />
-  );
+  const form = <SupportForm requiresTurnstile={requiresTurnstile} />;
 
   return (
     <article className="space-y-12">
@@ -112,10 +109,7 @@ export default function SupportPage() {
           </p>
         </div>
         <Suspense fallback={form}>
-          <SupportRequestForm
-            turnstileSiteKey={turnstileSiteKey}
-            requiresTurnstile={requiresTurnstile}
-          />
+          <SupportRequestForm requiresTurnstile={requiresTurnstile} />
         </Suspense>
       </section>
     </article>

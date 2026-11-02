@@ -143,6 +143,9 @@
   "apps/web/src/app/api/onboarding/checklist/route.test.ts": {
     "group": "unit"
   },
+  "apps/web/src/app/api/public/turnstile/route.test.ts": {
+    "group": "unit"
+  },
   "apps/web/src/app/api/search/global/route.test.ts": {
     "group": "unit"
   },

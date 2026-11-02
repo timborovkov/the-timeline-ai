@@ -47,9 +47,11 @@ await vi.mock(
   () => import('@/components/form-action-toast'),
 );
 
-const { cleanup, render, screen } = await import('@testing-library/react');
+const { cleanup, render, screen, waitFor } = await import('@testing-library/react');
+const { default: userEvent } = await import('@testing-library/user-event');
 
 const { SupportForm } = await import('./support-form.js');
+const { resetPublicTurnstileCache } = await import('@/lib/public-turnstile');
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -58,7 +60,9 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  resetPublicTurnstileCache();
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 
 describe('SupportForm', () => {
@@ -91,7 +95,7 @@ describe('SupportForm', () => {
     );
   });
 
-  it('renders Turnstile when configured and blocks submit when required protection is missing', () => {
+  it('renders Turnstile when configured and blocks submit when required protection is missing', async () => {
     render(<SupportForm turnstileSiteKey="site-key" requiresTurnstile />);
 
     expect(screen.getByTestId('turnstile-widget').getAttribute('data-action')).toBe('support');
@@ -101,8 +105,22 @@ describe('SupportForm', () => {
     );
 
     cleanup();
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ siteKey: null }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
     render(<SupportForm requiresTurnstile />);
 
+    expect(screen.queryByTestId('turnstile-widget')).toBeNull();
+    expect(document.querySelector('#support-form-protection-error')).toBeNull();
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Send request' }).disabled).toBe(
+      true,
+    );
+
+    await waitFor(() => {
+      expect(document.querySelector('#support-form-protection-error')).toBeTruthy();
+    });
     const protectionError = document.querySelector<HTMLElement>('#support-form-protection-error');
     if (!protectionError) throw new Error('expected support form protection message');
     expect(protectionError.textContent).toBe(
@@ -117,6 +135,53 @@ describe('SupportForm', () => {
     const submit = screen.getByRole<HTMLButtonElement>('button', { name: 'Send request' });
     expect(submit.disabled).toBe(true);
     expect(submit.getAttribute('aria-describedby')).toBe(protectionError.id);
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/public/turnstile',
+      expect.objectContaining({ credentials: 'same-origin' }),
+    );
+  });
+
+  it('loads the Turnstile site key from the runtime endpoint', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ siteKey: 'runtime-site-key' }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<SupportForm requiresTurnstile />);
+
+    expect(screen.queryByTestId('turnstile-widget')).toBeNull();
+    await waitFor(() => {
+      expect(screen.getByTestId('turnstile-widget').getAttribute('data-site-key')).toBe(
+        'runtime-site-key',
+      );
+    });
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Send request' }).disabled).toBe(
+      false,
+    );
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/public/turnstile',
+      expect.objectContaining({ credentials: 'same-origin' }),
+    );
+  });
+
+  it('fills signed-in defaults only when the visitor has not typed', async () => {
+    const user = userEvent.setup();
+    const { rerender } = render(<SupportForm requiresTurnstile={false} />);
+    const name = screen.getByLabelText<HTMLInputElement>('Name');
+    const email = screen.getByLabelText<HTMLInputElement>('Email');
+
+    await user.type(name, 'Visitor');
+    rerender(
+      <SupportForm
+        defaultName="Ada Lovelace"
+        defaultEmail="ada@example.test"
+        requiresTurnstile={false}
+      />,
+    );
+
+    expect(name.value).toBe('Visitor');
+    expect(email.value).toBe('ada@example.test');
   });
 
   it('keeps pending submit state on the button without inline banners', () => {

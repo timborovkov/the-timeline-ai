@@ -17,26 +17,41 @@ await vi.mock(
 );
 await vi.mock(
   import.meta.resolve('@/components/help/support-form'),
-  () => ({
-    SupportForm: (props: {
-      defaultSurface?: string;
-      defaultErrorReference?: string;
-      defaultName?: string;
-      defaultEmail?: string;
-    }) => (
-      <div
-        data-testid="support-form"
-        data-surface={props.defaultSurface ?? ''}
-        data-error-reference={props.defaultErrorReference ?? ''}
-        data-name={props.defaultName ?? ''}
-        data-email={props.defaultEmail ?? ''}
-      />
-    ),
-  }),
+  async () => {
+    const { useState } = await import('react');
+    return {
+      SupportForm: (props: {
+        defaultSurface?: string;
+        defaultErrorReference?: string;
+        defaultName?: string;
+        defaultEmail?: string;
+      }) => {
+        const [message, setMessage] = useState('');
+        return (
+          <div
+            data-testid="support-form"
+            data-surface={props.defaultSurface ?? ''}
+            data-error-reference={props.defaultErrorReference ?? ''}
+            data-name={props.defaultName ?? ''}
+            data-email={props.defaultEmail ?? ''}
+          >
+            <textarea
+              aria-label="Message"
+              value={message}
+              onChange={(event) => {
+                setMessage(event.target.value);
+              }}
+            />
+          </div>
+        );
+      },
+    };
+  },
   () => import('@/components/help/support-form'),
 );
 
-const { cleanup, render, screen } = await import('@testing-library/react');
+const { act, cleanup, render, screen } = await import('@testing-library/react');
+const { default: userEvent } = await import('@testing-library/user-event');
 const { SupportRequestForm } = await import('@/components/help/support-request-form');
 const { resetPublicSessionCache, setPublicSessionCache } = await import('@/lib/public-session');
 
@@ -82,5 +97,25 @@ describe('support request form', () => {
     expect(form.getAttribute('data-surface')).toBe('');
     expect(form.getAttribute('data-error-reference')).toBe('');
     expect(form.outerHTML).not.toContain('secret-id');
+  });
+
+  it('keeps typed values after the public session resolves', async () => {
+    const user = userEvent.setup();
+    render(<SupportRequestForm requiresTurnstile={false} />);
+
+    await user.type(screen.getByLabelText('Message'), 'I already started this request.');
+    act(() => {
+      setPublicSessionCache({
+        status: 'signed-in',
+        name: 'Ada Lovelace',
+        email: 'ada@example.test',
+      });
+    });
+
+    expect(screen.getByLabelText<HTMLTextAreaElement>('Message').value).toBe(
+      'I already started this request.',
+    );
+    expect(screen.getByTestId('support-form').getAttribute('data-name')).toBe('Ada Lovelace');
+    expect(screen.getByTestId('support-form').getAttribute('data-email')).toBe('ada@example.test');
   });
 });

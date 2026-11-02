@@ -3,27 +3,44 @@ import { vi } from '@timeline/test-support';
 import { afterEach, describe, it } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 
-import { PublicHeader } from '@/components/public-header';
-import { PublicSessionBranch } from '@/components/public-session-branch';
-import {
-  resetPublicSessionCache,
-  setPublicSessionCache,
-  usePublicSession,
-} from '@/lib/public-session';
-
 // Test environment: happy-dom
 
-const { cleanup, render, screen, waitFor } = await import('@testing-library/react');
+const route = vi.hoisted(() => ({ pathname: '/help' }));
+
+await vi.mock(
+  import.meta.resolve('next/navigation'),
+  async () => ({
+    ...(await import('next/navigation')),
+    usePathname: () => route.pathname,
+  }),
+  () => import('next/navigation'),
+);
+
+const { PublicHeader } = await import('@/components/public-header');
+const { PublicSessionBranch } = await import('@/components/public-session-branch');
+const { refreshPublicSession, resetPublicSessionCache, setPublicSessionCache, usePublicSession } =
+  await import('@/lib/public-session');
+const { act, cleanup, render, screen, waitFor } = await import('@testing-library/react');
 
 afterEach(() => {
   cleanup();
   resetPublicSessionCache();
+  route.pathname = '/help';
   vi.unstubAllGlobals();
 });
 
 function SessionStatus() {
   const session = usePublicSession();
   return <span>{session.status}</span>;
+}
+
+function SessionLinks() {
+  return (
+    <PublicSessionBranch
+      signedOut={<a href="/sign-in">Sign in</a>}
+      signedIn={<a href="/app">Dashboard</a>}
+    />
+  );
 }
 
 describe('public session island', () => {
@@ -80,5 +97,79 @@ describe('public session island', () => {
     expect(screen.getByText('signed-out')).toBeTruthy();
     expect(screen.getByRole('link', { name: 'Sign in' })).toBeTruthy();
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('refetches after an explicit auth-change refresh', async () => {
+    setPublicSessionCache({ status: 'signed-out' });
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ user: { name: 'Ada', email: 'ada@example.test' } }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<SessionStatus />);
+    expect(screen.getByText('signed-out')).toBeTruthy();
+
+    await act(async () => {
+      await refreshPublicSession();
+    });
+
+    expect(screen.getByText('signed-in')).toBeTruthy();
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/auth/session',
+      expect.objectContaining({ credentials: 'same-origin' }),
+    );
+  });
+
+  it('refreshes the cached session on window focus after sign-in', async () => {
+    setPublicSessionCache({ status: 'signed-out' });
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ user: { name: 'Ada', email: 'ada@example.test' } }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<SessionLinks />);
+
+    expect(screen.getByRole('link', { name: 'Sign in' })).toBeTruthy();
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    act(() => {
+      window.dispatchEvent(new Event('focus'));
+    });
+
+    await waitFor(() => {
+      expect(screen.getByRole('link', { name: 'Dashboard' }).getAttribute('href')).toBe('/app');
+    });
+    expect(screen.queryByRole('link', { name: 'Sign in' })).toBeNull();
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/auth/session',
+      expect.objectContaining({ credentials: 'same-origin' }),
+    );
+  });
+
+  it('refreshes the cached session when the public path changes', async () => {
+    setPublicSessionCache({ status: 'signed-out' });
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ user: { name: 'Ada', email: 'ada@example.test' } }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { rerender } = render(<SessionLinks />);
+
+    expect(screen.getByRole('link', { name: 'Sign in' })).toBeTruthy();
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    route.pathname = '/trust';
+    rerender(<SessionLinks />);
+
+    await waitFor(() => {
+      expect(screen.getByRole('link', { name: 'Dashboard' }).getAttribute('href')).toBe('/app');
+    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/auth/session',
+      expect.objectContaining({ credentials: 'same-origin' }),
+    );
   });
 });

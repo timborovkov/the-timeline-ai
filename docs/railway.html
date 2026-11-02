@@ -410,10 +410,13 @@ BILLING_CHARGES_ENABLED=false
       </p>
       <p>
         <strong>About <code>TURNSTILE_*</code>:</strong> Turnstile is used only on anonymous abuse
-        surfaces: email/password registration and the public support/contact form. OAuth signup and
-        signed-in product flows rely on Redis-backed rate limits, team permissions, and existing
-        quota checks. In production, leave neither key blank; the server action rejects missing or
-        invalid Turnstile tokens.
+        surfaces: email/password registration and the public support/contact form. The web Docker
+        build does not receive these variables, so set them on the running <code>web</code> service.
+        <code>/help/support</code> is statically prerendered and loads
+        <code>TURNSTILE_SITE_KEY</code> at request time; sign-up is dynamic and reads the runtime
+        env directly. OAuth signup and signed-in product flows rely on Redis-backed rate limits,
+        team permissions, and existing quota checks. In production, leave neither key blank; the
+        server action rejects missing or invalid Turnstile tokens.
       </p>
 
       <h2 id="staging-vs-production">Staging vs production</h2>

@@ -23,7 +23,6 @@ export function SupportRequestForm({
 
   return (
     <SupportForm
-      key={session.status}
       defaultName={signedIn ? (session.name ?? undefined) : undefined}
       defaultEmail={signedIn ? (session.email ?? undefined) : undefined}
       defaultSurface={defaultSurface}

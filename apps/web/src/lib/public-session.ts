@@ -1,5 +1,6 @@
 'use client';
 
+import { usePathname } from 'next/navigation';
 import { useSyncExternalStore } from 'react';
 
 export type PublicSession =
@@ -12,6 +13,10 @@ const SIGNED_OUT: PublicSession = { status: 'signed-out' };
 
 let snapshot: PublicSession = UNKNOWN;
 let inflight: Promise<PublicSession> | null = null;
+let loadId = 0;
+let fetchPending = false;
+let currentPathname: string | null = null;
+let browserRefreshBound = false;
 const listeners = new Set<() => void>();
 
 function emit() {
@@ -43,16 +48,49 @@ async function fetchPublicSession(): Promise<PublicSession> {
   }
 }
 
-function ensurePublicSessionLoad() {
-  inflight ??= fetchPublicSession().then((next) => {
+export function refreshPublicSession(): Promise<PublicSession> {
+  if (fetchPending && inflight) return inflight;
+  const id = ++loadId;
+  fetchPending = true;
+  const request = fetchPublicSession().then((next) => {
+    fetchPending = false;
+    if (id !== loadId) return snapshot;
     snapshot = next;
     emit();
     return next;
   });
+  inflight = request;
+  return request;
+}
+
+function ensurePublicSessionLoad() {
+  inflight ??= refreshPublicSession();
+}
+
+function bindBrowserSessionRefresh() {
+  if (browserRefreshBound || typeof window === 'undefined') return;
+  browserRefreshBound = true;
+  const onVisible = () => {
+    void refreshPublicSession();
+  };
+  window.addEventListener('focus', onVisible);
+  window.addEventListener('pageshow', onVisible);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') onVisible();
+  });
+}
+
+function reportPublicSessionPathname(pathname: string) {
+  if (currentPathname === pathname) return;
+  const first = currentPathname === null;
+  currentPathname = pathname;
+  if (first) return;
+  void refreshPublicSession();
 }
 
 function subscribePublicSession(listener: () => void): () => void {
   listeners.add(listener);
+  bindBrowserSessionRefresh();
   ensurePublicSessionLoad();
   return () => {
     listeners.delete(listener);
@@ -68,6 +106,8 @@ function getPublicSessionServerSnapshot(): PublicSession {
 }
 
 export function usePublicSession(): PublicSession {
+  const pathname = usePathname();
+  if (pathname) reportPublicSessionPathname(pathname);
   return useSyncExternalStore(
     subscribePublicSession,
     getPublicSessionSnapshot,
@@ -76,12 +116,17 @@ export function usePublicSession(): PublicSession {
 }
 
 export function resetPublicSessionCache() {
+  loadId++;
+  fetchPending = false;
   snapshot = UNKNOWN;
   inflight = null;
+  currentPathname = null;
   emit();
 }
 
 export function setPublicSessionCache(next: PublicSession) {
+  loadId++;
+  fetchPending = false;
   snapshot = next;
   inflight = Promise.resolve(next);
   emit();

@@ -228,10 +228,13 @@
       </p>
       <p>
         For production abuse controls, also set <code>TURNSTILE_SITE_KEY</code>,
-        <code>TURNSTILE_SECRET_KEY</code>, and <code>SUPPORT_EMAIL</code>. Turnstile is only
-        rendered on anonymous public forms: email/password registration and
-        <code>/help/support</code>. OAuth sign-up and signed-in app forms do not show CAPTCHA; they
-        use rate limits, permission checks, and product quotas instead.
+        <code>TURNSTILE_SECRET_KEY</code>, and <code>SUPPORT_EMAIL</code> on the running
+        <code>web</code> service. The Docker image build does not receive the Turnstile site key, so
+        statically prerendered <code>/help/support</code> loads it at request time from
+        <code>/api/public/turnstile</code>. Sign-up stays a dynamic route and reads the key from the
+        runtime environment. Turnstile is only rendered on anonymous public forms: email/password
+        registration and <code>/help/support</code>. OAuth sign-up and signed-in app forms do not
+        show CAPTCHA; they use rate limits, permission checks, and product quotas instead.
       </p>
       <p>
         For personless surface counts and pseudonymous server/worker product analytics, set
