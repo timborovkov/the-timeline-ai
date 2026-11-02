@@ -8,7 +8,6 @@ import {
   PricingPlanGrid,
 } from '@/components/marketing/pricing-blocks';
 import { MarketingSectionIndex } from '@/components/marketing/section-index';
-import { auth } from '@/lib/auth';
 import { publicMetadata } from '@/lib/public-metadata';
 
 export const metadata: Metadata = publicMetadata({
@@ -18,10 +17,7 @@ export const metadata: Metadata = publicMetadata({
   path: '/pricing',
 });
 
-export default async function PricingPage() {
-  const session = await auth();
-  const signedIn = Boolean(session?.user);
-
+export default function PricingPage() {
   return (
     <main id="main" tabIndex={-1}>
       <section className="border-b border-border">
@@ -51,7 +47,7 @@ export default async function PricingPage() {
               <p className="mt-4 max-w-[64ch] text-base leading-relaxed text-fg-muted">
                 All prices are in euros and exclude VAT.
               </p>
-              <PricingPlanGrid className="mt-10" signedIn={signedIn} />
+              <PricingPlanGrid className="mt-10" />
               <PricingEnterpriseNudge className="mt-4" />
             </div>
           </MarketingSectionGrid>

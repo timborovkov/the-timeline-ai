@@ -14,20 +14,20 @@ import { DirectoryStructuredData } from '@/components/marketing/integrations/con
 import { RecordsToAnswer } from '@/components/marketing/integrations/records-to-answer';
 import { MarketingContainer, MarketingSectionGrid } from '@/components/marketing/marketing-layout';
 import { MarketingSectionIndex } from '@/components/marketing/section-index';
+import { PublicSessionBranch } from '@/components/public-session-branch';
 import { PublicShell } from '@/components/public-shell';
 import { Button } from '@/components/ui/button';
 
 const FEATURED_CAPTURE_SURFACES = CAPTURE_SURFACES.filter((surface) => surface.featured);
 const SUPPORTING_CAPTURE_SURFACES = CAPTURE_SURFACES.filter((surface) => !surface.featured);
 
-export function IntegrationDirectory({ isSignedIn }: { isSignedIn: boolean }) {
+export function IntegrationDirectory() {
   const featuredConnector = CONNECTORS.find((connector) => connector.slug === 'slack');
   if (!featuredConnector) throw new Error('Native Slack connector content is required');
   const capabilityTiers = getConnectorCapabilityTiers();
 
   return (
     <PublicShell
-      isSignedIn={isSignedIn}
       width="expanded"
       footerLabel="The Timeline integrations"
       currentSection="integrations"
@@ -47,12 +47,24 @@ export function IntegrationDirectory({ isSignedIn }: { isSignedIn: boolean }) {
                   webhook payloads into Timeline, or select records from connected tools. Timeline
                   keeps the origin clear while it turns that work into chronology and cited answers.
                 </p>
-                <Button asChild size="lg" className="mt-7">
-                  <Link href={isSignedIn ? '/app/sources' : '/sign-up'}>
-                    {isSignedIn ? 'Open connections' : 'Create your Timeline'}
-                    <ArrowRight aria-hidden="true" />
-                  </Link>
-                </Button>
+                <PublicSessionBranch
+                  signedOut={
+                    <Button asChild size="lg" className="mt-7">
+                      <Link href="/sign-up">
+                        Create your Timeline
+                        <ArrowRight aria-hidden="true" />
+                      </Link>
+                    </Button>
+                  }
+                  signedIn={
+                    <Button asChild size="lg" className="mt-7">
+                      <Link href="/app/sources">
+                        Open connections
+                        <ArrowRight aria-hidden="true" />
+                      </Link>
+                    </Button>
+                  }
+                />
               </div>
             </div>
           </MarketingContainer>
@@ -81,16 +93,12 @@ export function IntegrationDirectory({ isSignedIn }: { isSignedIn: boolean }) {
 
                 <div className="mt-10 grid gap-px border border-border bg-border md:grid-cols-2">
                   {FEATURED_CAPTURE_SURFACES.map((surface) => (
-                    <FeaturedCaptureSurface
-                      key={surface.id}
-                      surface={surface}
-                      isSignedIn={isSignedIn}
-                    />
+                    <FeaturedCaptureSurface key={surface.id} surface={surface} />
                   ))}
                 </div>
                 <div className="grid gap-px border-x border-b border-border bg-border">
                   {SUPPORTING_CAPTURE_SURFACES.map((surface) => (
-                    <CaptureSurfaceRow key={surface.id} surface={surface} isSignedIn={isSignedIn} />
+                    <CaptureSurfaceRow key={surface.id} surface={surface} />
                   ))}
                 </div>
               </div>
@@ -228,15 +236,7 @@ export function IntegrationDirectory({ isSignedIn }: { isSignedIn: boolean }) {
   );
 }
 
-function FeaturedCaptureSurface({
-  surface,
-  isSignedIn,
-}: {
-  surface: CaptureSurfaceContent;
-  isSignedIn: boolean;
-}) {
-  const href = isSignedIn ? surface.setupHref : '/sign-up';
-
+function FeaturedCaptureSurface({ surface }: { surface: CaptureSurfaceContent }) {
   return (
     <article className="flex min-h-96 flex-col bg-bg p-6 sm:p-8">
       <div>
@@ -255,29 +255,37 @@ function FeaturedCaptureSurface({
           <dd className="mt-1 text-fg-muted">{surface.boundary}</dd>
         </div>
       </dl>
-      <Link
-        href={href}
-        className="group mt-7 inline-flex w-fit items-center gap-2 text-sm font-semibold text-fg outline-none focus-visible:ring-2 focus-visible:ring-ring"
-      >
-        {isSignedIn ? surface.setupLabel : `Start with ${surface.name}`}
-        <ArrowRight
-          aria-hidden="true"
-          className="size-4 motion-safe:transition-transform motion-safe:group-hover:translate-x-1"
-        />
-      </Link>
+      <PublicSessionBranch
+        signedOut={
+          <Link
+            href="/sign-up"
+            className="group mt-7 inline-flex w-fit items-center gap-2 text-sm font-semibold text-fg outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            {`Start with ${surface.name}`}
+            <ArrowRight
+              aria-hidden="true"
+              className="size-4 motion-safe:transition-transform motion-safe:group-hover:translate-x-1"
+            />
+          </Link>
+        }
+        signedIn={
+          <Link
+            href={surface.setupHref}
+            className="group mt-7 inline-flex w-fit items-center gap-2 text-sm font-semibold text-fg outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            {surface.setupLabel}
+            <ArrowRight
+              aria-hidden="true"
+              className="size-4 motion-safe:transition-transform motion-safe:group-hover:translate-x-1"
+            />
+          </Link>
+        }
+      />
     </article>
   );
 }
 
-function CaptureSurfaceRow({
-  surface,
-  isSignedIn,
-}: {
-  surface: CaptureSurfaceContent;
-  isSignedIn: boolean;
-}) {
-  const href = isSignedIn ? surface.setupHref : '/sign-up';
-
+function CaptureSurfaceRow({ surface }: { surface: CaptureSurfaceContent }) {
   return (
     <article className="grid gap-6 bg-bg p-6 sm:p-8 lg:grid-cols-[1.1fr_1fr_1fr] lg:gap-10">
       <div>
@@ -287,16 +295,32 @@ function CaptureSurfaceRow({
         <p className="mt-5 text-sm font-medium text-fg-muted">{surface.category}</p>
         <h3 className="mt-2 text-2xl font-semibold tracking-tight text-fg">{surface.name}</h3>
         <p className="mt-3 text-sm leading-relaxed text-fg-muted">{surface.summary}</p>
-        <Link
-          href={href}
-          className="group mt-5 inline-flex w-fit items-center gap-2 text-sm font-semibold text-fg outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          {isSignedIn ? surface.setupLabel : `Start with ${surface.name}`}
-          <ArrowRight
-            aria-hidden="true"
-            className="size-4 motion-safe:transition-transform motion-safe:group-hover:translate-x-1"
-          />
-        </Link>
+        <PublicSessionBranch
+          signedOut={
+            <Link
+              href="/sign-up"
+              className="group mt-5 inline-flex w-fit items-center gap-2 text-sm font-semibold text-fg outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              {`Start with ${surface.name}`}
+              <ArrowRight
+                aria-hidden="true"
+                className="size-4 motion-safe:transition-transform motion-safe:group-hover:translate-x-1"
+              />
+            </Link>
+          }
+          signedIn={
+            <Link
+              href={surface.setupHref}
+              className="group mt-5 inline-flex w-fit items-center gap-2 text-sm font-semibold text-fg outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              {surface.setupLabel}
+              <ArrowRight
+                aria-hidden="true"
+                className="size-4 motion-safe:transition-transform motion-safe:group-hover:translate-x-1"
+              />
+            </Link>
+          }
+        />
       </div>
       <div className="border-t border-border pt-5 lg:border-t-0 lg:pt-0">
         <p className="font-medium text-fg">Timeline captures</p>

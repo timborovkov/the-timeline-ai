@@ -158,16 +158,15 @@ describe('how-it-works and guide routes', () => {
     expect(recordShell).toContain('href="/cookies"');
   });
 
-  it('routes signed-in editorial readers directly to the dashboard', () => {
+  it('keeps editorial chrome static until the session island resolves', () => {
     const html = renderToStaticMarkup(
-      <EditorialShell isSignedIn>
+      <EditorialShell>
         <main id="main" />
       </EditorialShell>,
     );
 
-    expect(html).toContain('href="/app"');
-    expect(html).toContain('href="/app"');
-    expect(html).toContain('Dashboard');
-    expect(html).not.toContain('href="/sign-in"');
+    expect(html).toContain('data-public-session="unknown"');
+    expect(html).toContain('>Start free</a>');
+    expect(html).toContain('href="/sign-in"');
   });
 });

@@ -1,12 +1,9 @@
 import { RootNotFoundContent } from '@/app/_root-not-found-content';
 import { PublicShell } from '@/components/public-shell';
-import { auth } from '@/lib/auth';
 
-export default async function NotFound() {
-  const session = await auth();
-
+export default function NotFound() {
   return (
-    <PublicShell isSignedIn={Boolean(session?.user)} footerLabel="The Timeline">
+    <PublicShell footerLabel="The Timeline">
       <RootNotFoundContent />
     </PublicShell>
   );

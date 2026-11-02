@@ -42,7 +42,7 @@ function CopyPanel({
   );
 }
 
-export function AgentInstallGuide({ isSignedIn }: { isSignedIn: boolean }) {
+export function AgentInstallGuide() {
   return (
     <>
       <header className="space-y-6">
@@ -145,11 +145,7 @@ export function AgentInstallGuide({ isSignedIn }: { isSignedIn: boolean }) {
             </article>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <HelpAppLink
-              href="/app/me/connections"
-              label="Manage approved AI apps"
-              isSignedIn={isSignedIn}
-            />
+            <HelpAppLink href="/app/me/connections" label="Manage approved AI apps" />
           </div>
         </div>
       </section>

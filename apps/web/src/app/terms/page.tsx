@@ -22,8 +22,6 @@ export const metadata: Metadata = publicMetadata({
   path: '/terms',
 });
 
-export const dynamic = 'force-dynamic';
-
 type LegalContactEmail = ReturnType<typeof getLegalContactEmail>;
 
 function TermsFormationSections() {

@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useRef } from 'react';
 
+import { PublicSessionBranch } from '@/components/public-session-branch';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { cn } from '@/lib/utils';
 
@@ -69,12 +70,10 @@ export function PublicNavigationItems({
 export function PublicNavigationDisclosure({
   currentSection,
   className,
-  isSignedIn = false,
   showAccountActions = true,
 }: {
   currentSection?: PublicNavigationSection;
   className?: string;
-  isSignedIn?: boolean;
   showAccountActions?: boolean;
 }) {
   const pathname = usePathname();
@@ -105,15 +104,20 @@ export function PublicNavigationDisclosure({
           onNavigate={closeDisclosure}
         />
         <div className="mt-2 flex items-center justify-between gap-3 border-t border-border px-3 pt-2">
-          {showAccountActions && !isSignedIn ? (
-            <Link
-              href="/sign-in"
-              data-public-analytics-cta="sign_in"
-              onClick={closeDisclosure}
-              className="flex min-h-11 items-center rounded-sm text-sm font-medium text-fg outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
-            >
-              Sign in
-            </Link>
+          {showAccountActions ? (
+            <PublicSessionBranch
+              signedOut={
+                <Link
+                  href="/sign-in"
+                  data-public-analytics-cta="sign_in"
+                  onClick={closeDisclosure}
+                  className="flex min-h-11 items-center rounded-sm text-sm font-medium text-fg outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
+                >
+                  Sign in
+                </Link>
+              }
+              signedIn={<span className="text-sm font-medium text-fg-muted">Appearance</span>}
+            />
           ) : (
             <span className="text-sm font-medium text-fg-muted">Appearance</span>
           )}

@@ -5,7 +5,6 @@ import { EditorialStructuredData } from '@/components/marketing/editorial/editor
 import { MarketingContainer, MarketingSectionGrid } from '@/components/marketing/marketing-layout';
 import { MarketingSectionIndex } from '@/components/marketing/section-index';
 import { PublicShell } from '@/components/public-shell';
-import { auth } from '@/lib/auth';
 import { getLegalContactEmail } from '@/lib/legal-versions';
 import { buildPublicStructuredData, metadataForPublicDocument } from '@/lib/public-site';
 import { TRUST_DOCUMENT } from '@/lib/public-site/documents';
@@ -232,18 +231,12 @@ function TrustDeploymentSection() {
   );
 }
 
-export default async function TrustPage() {
-  const session = await auth();
+export default function TrustPage() {
   const structuredData = buildPublicStructuredData(TRUST_DOCUMENT, getSiteUrl());
   const securityEmail = getLegalContactEmail();
 
   return (
-    <PublicShell
-      isSignedIn={Boolean(session?.user)}
-      width="expanded"
-      currentSection="trust"
-      footerLabel="The Timeline trust center"
-    >
+    <PublicShell width="expanded" currentSection="trust" footerLabel="The Timeline trust center">
       <main id="main" tabIndex={-1}>
         <EditorialStructuredData data={structuredData} />
 

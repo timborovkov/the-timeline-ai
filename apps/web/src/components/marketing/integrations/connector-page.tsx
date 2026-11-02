@@ -9,25 +9,16 @@ import {
 import { ConnectorStructuredData } from '@/components/marketing/integrations/connector-seo';
 import { RecordsToAnswer } from '@/components/marketing/integrations/records-to-answer';
 import { PUBLIC_DEMO_DISCLOSURE } from '@/components/marketing/public-demo-story';
+import { PublicSessionBranch } from '@/components/public-session-branch';
 import { PublicShell } from '@/components/public-shell';
 import { Button } from '@/components/ui/button';
 
-export function ConnectorPage({
-  connector,
-  isSignedIn,
-}: {
-  connector: ConnectorContent;
-  isSignedIn: boolean;
-}) {
+export function ConnectorPage({ connector }: { connector: ConnectorContent }) {
   return (
-    <PublicShell
-      isSignedIn={isSignedIn}
-      footerLabel={`${connector.name} integration`}
-      currentSection="integrations"
-    >
+    <PublicShell footerLabel={`${connector.name} integration`} currentSection="integrations">
       <ConnectorStructuredData connector={connector} />
       <main id="main" tabIndex={-1}>
-        <ConnectorHero connector={connector} isSignedIn={isSignedIn} />
+        <ConnectorHero connector={connector} />
         <div className="mx-auto max-w-6xl px-4 sm:px-6">
           <TruthBoundary connector={connector} />
           <Questions connector={connector} />
@@ -38,20 +29,14 @@ export function ConnectorPage({
           <Limitations connector={connector} />
           <Faq connector={connector} />
           <Related connector={connector} />
-          <FinalCta connector={connector} isSignedIn={isSignedIn} />
+          <FinalCta connector={connector} />
         </div>
       </main>
     </PublicShell>
   );
 }
 
-function ConnectorHero({
-  connector,
-  isSignedIn,
-}: {
-  connector: ConnectorContent;
-  isSignedIn: boolean;
-}) {
+function ConnectorHero({ connector }: { connector: ConnectorContent }) {
   return (
     <section className="overflow-hidden border-b border-border bg-bg">
       <div className="mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-24 lg:py-28">
@@ -89,12 +74,24 @@ function ConnectorHero({
               {connector.intro}
             </p>
             <div className="mt-7 flex flex-wrap gap-3">
-              <Button asChild size="lg">
-                <Link href={isSignedIn ? '/app/team/integrations' : '/sign-up'}>
-                  {isSignedIn ? `Connect ${connector.name}` : 'Create your Timeline'}
-                  <ArrowRight aria-hidden="true" />
-                </Link>
-              </Button>
+              <PublicSessionBranch
+                signedOut={
+                  <Button asChild size="lg">
+                    <Link href="/sign-up">
+                      Create your Timeline
+                      <ArrowRight aria-hidden="true" />
+                    </Link>
+                  </Button>
+                }
+                signedIn={
+                  <Button asChild size="lg">
+                    <Link href="/app/team/integrations">
+                      {`Connect ${connector.name}`}
+                      <ArrowRight aria-hidden="true" />
+                    </Link>
+                  </Button>
+                }
+              />
               <Button asChild size="lg" variant="outline">
                 <Link href="#how-it-works">See the evidence flow</Link>
               </Button>
@@ -397,7 +394,7 @@ function Related({ connector }: { connector: ConnectorContent }) {
   );
 }
 
-function FinalCta({ connector, isSignedIn }: { connector: ConnectorContent; isSignedIn: boolean }) {
+function FinalCta({ connector }: { connector: ConnectorContent }) {
   return (
     <section className="py-20 sm:py-28" aria-labelledby="cta">
       <div className="grid gap-10 lg:grid-cols-[0.45fr_1fr]">
@@ -413,12 +410,24 @@ function FinalCta({ connector, isSignedIn }: { connector: ConnectorContent; isSi
             Choose the sources your team trusts. Let the work form a chronology. Inspect the
             evidence behind every answer.
           </p>
-          <Button asChild size="lg" className="mt-8">
-            <Link href={isSignedIn ? '/app/team/integrations' : '/sign-up'}>
-              {isSignedIn ? `Connect ${connector.name}` : 'Create your Timeline'}
-              <ArrowRight aria-hidden="true" />
-            </Link>
-          </Button>
+          <PublicSessionBranch
+            signedOut={
+              <Button asChild size="lg" className="mt-8">
+                <Link href="/sign-up">
+                  Create your Timeline
+                  <ArrowRight aria-hidden="true" />
+                </Link>
+              </Button>
+            }
+            signedIn={
+              <Button asChild size="lg" className="mt-8">
+                <Link href="/app/team/integrations">
+                  {`Connect ${connector.name}`}
+                  <ArrowRight aria-hidden="true" />
+                </Link>
+              </Button>
+            }
+          />
         </div>
       </div>
     </section>
