@@ -258,7 +258,7 @@ describe('OnboardingChecklist', () => {
     expect(window.location.hash).toBe('#capture');
   });
 
-  it('links the email forwarding step to the Home team email section', () => {
+  it('links the email forwarding step to the Email provider sheet', () => {
     renderChecklist({
       dismissed: false,
       items: [
@@ -266,8 +266,8 @@ describe('OnboardingChecklist', () => {
       ],
     });
 
-    expect(screen.getByRole('link', { name: 'View team email' }).getAttribute('href')).toBe(
-      '/app#team-email',
+    expect(screen.getByRole('link', { name: 'Set up email' }).getAttribute('href')).toBe(
+      '/app/sources#email',
     );
   });
 

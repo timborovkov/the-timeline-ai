@@ -1,6 +1,5 @@
-import { teams } from '@timeline/db';
-import { withTeam } from '@timeline/shared/team-scope';
-import { eq } from 'drizzle-orm';
+import { getEnv } from '@timeline/shared/env';
+import { withTeam, type TeamScope } from '@timeline/shared/team-scope';
 import { redirect } from 'next/navigation';
 
 import type { Metadata } from 'next';
@@ -9,10 +8,12 @@ import { AdvancedConnections } from '@/app/app/sources/advanced-connections';
 import {
   buildDirectoryProviders,
   connectionHeaderMetadata,
+  EMPTY_TELEGRAM_SETUP,
   initialOpenProviderId,
   partitionMcpCatalog,
   partitionMcpServers,
   type InboundEmailSettings,
+  type TelegramSetupSnapshot,
 } from '@/app/app/sources/connection-directory';
 import { ConnectionsDirectory } from '@/app/app/sources/connections-directory';
 import {
@@ -43,30 +44,50 @@ interface SourcesPageParams {
   integrationId?: string;
 }
 
-async function loadInboundEmailSettings(
-  teamId: string,
+function inboundEmailFromTeam(
+  team: {
+    inboundEmail: string | null;
+    inboundSenderWhitelistEnabled: boolean;
+    inboundSenderWhitelist: string[];
+  } | null,
   teamSlug: string,
-): Promise<InboundEmailSettings> {
-  const row = (
-    await db
-      .select({
-        inboundEmail: teams.inboundEmail,
-        enabled: teams.inboundSenderWhitelistEnabled,
-        senders: teams.inboundSenderWhitelist,
-      })
-      .from(teams)
-      .where(eq(teams.id, teamId))
-      .limit(1)
-  )[0] ?? { inboundEmail: null, enabled: true, senders: [] };
+): InboundEmailSettings {
   const inboundEmail = displayInboundEmail({
     slug: teamSlug,
-    inboundEmail: row.inboundEmail,
+    inboundEmail: team?.inboundEmail ?? null,
   });
   return {
     inboundEmail,
-    enabled: row.enabled,
-    senders: row.senders,
-    placeholderInbound: shouldWarnPlaceholderInboundEmail(row.inboundEmail, inboundEmail),
+    enabled: team?.inboundSenderWhitelistEnabled ?? true,
+    senders: team?.inboundSenderWhitelist ?? [],
+    placeholderInbound: shouldWarnPlaceholderInboundEmail(team?.inboundEmail, inboundEmail),
+  };
+}
+
+async function loadTelegramSetup(scope: TeamScope): Promise<TelegramSetupSnapshot> {
+  const env = getEnv();
+  const [tokens, bindings, linkedUsers] = await Promise.all([
+    scope.telegram.listActiveLinkTokens(),
+    scope.telegram.listChatBindings(),
+    scope.telegram.listLinkedUsers(),
+  ]);
+  return {
+    botUsername: env.TELEGRAM_BOT_USERNAME ?? null,
+    webhookConfigured: Boolean(env.TELEGRAM_WEBHOOK_SECRET),
+    currentUserId: scope.userId,
+    tokens: tokens.map((token) => ({
+      id: token.id,
+      scope: token.scope,
+      expiresAt: token.expiresAt.toISOString(),
+      issuedByUserId: token.issuedByUserId,
+    })),
+    bindings: bindings.map((binding) => ({
+      id: binding.id,
+      title: binding.title,
+      tgChatId: binding.tgChatId,
+      createdAt: binding.createdAt.toISOString(),
+    })),
+    linkedUsers,
   };
 }
 
@@ -101,7 +122,7 @@ export default async function SourcesPage({
   const { active } = await resolveActiveTeam(session.user.id);
   if (!active) redirect('/sign-in');
   const scope = withTeam(db, active.teamId, session.user.id);
-  const [params, role, summary, model, inboundEmail] = await Promise.all([
+  const [params, role, summary, model, team, telegramSetup] = await Promise.all([
     searchParams,
     scope.requireMembership(),
     getSourcesStatusSummary(scope),
@@ -109,7 +130,8 @@ export default async function SourcesPage({
       teamId: active.teamId,
       userId: session.user.id,
     }),
-    loadInboundEmailSettings(active.teamId, active.teamSlug),
+    scope.timeline.team(),
+    loadTelegramSetup(scope),
   ]);
   const isAdmin = role === 'owner' || role === 'admin';
   return (
@@ -119,7 +141,8 @@ export default async function SourcesPage({
       isAdmin={isAdmin}
       summary={summary}
       model={model}
-      inboundEmail={inboundEmail}
+      inboundEmail={inboundEmailFromTeam(team, active.teamSlug)}
+      telegramSetup={telegramSetup}
     />
   );
 }
@@ -131,6 +154,7 @@ export function SourcesPageView({
   summary,
   model,
   inboundEmail,
+  telegramSetup,
 }: {
   params: SourcesPageParams;
   active: { teamName: string };
@@ -138,22 +162,27 @@ export function SourcesPageView({
   summary: SourcesStatusSummary;
   model: IntegrationsPageModel;
   inboundEmail?: InboundEmailSettings;
+  telegramSetup?: TelegramSetupSnapshot;
 }) {
-  const directory = buildDirectoryProviders({
-    model,
-    slackConnections: summary.slackConnections,
-  });
-  const mcpCatalog = partitionMcpCatalog(model.mcpCatalogAvailable, model.nativeCatalog);
-  const mcpServers = partitionMcpServers(model.mcpServerRows, model.nativeCatalog);
-  const attentionCount = directory.connected.filter(
-    (provider) => provider.status === 'attention',
-  ).length;
   const emailSettings: InboundEmailSettings = inboundEmail ?? {
     inboundEmail: summary.inboundEmail,
     enabled: true,
     senders: [],
     placeholderInbound: false,
   };
+  const telegram = telegramSetup ?? EMPTY_TELEGRAM_SETUP;
+  const directory = buildDirectoryProviders({
+    model,
+    slackConnections: summary.slackConnections,
+    telegramConnections: summary.telegramConnections,
+    telegramWebhookConfigured: telegram.webhookConfigured,
+    inboundEmail: emailSettings,
+  });
+  const mcpCatalog = partitionMcpCatalog(model.mcpCatalogAvailable, model.nativeCatalog);
+  const mcpServers = partitionMcpServers(model.mcpServerRows, model.nativeCatalog);
+  const attentionCount = directory.connected.filter(
+    (provider) => provider.status === 'attention',
+  ).length;
   const openProviderId = initialOpenProviderId({
     providers: [...directory.connected, ...directory.available],
     connectedRows: model.connectedRows,
@@ -188,11 +217,12 @@ export function SourcesPageView({
         connected={directory.connected}
         available={directory.available}
         initialProviderId={openProviderId}
+        inboundEmail={emailSettings}
+        telegramSetup={telegram}
       />
       <AdvancedConnections
         isAdmin={isAdmin}
         model={model}
-        inboundEmail={emailSettings}
         mcpServerRows={mcpServers.advanced}
         mcpCatalog={mcpCatalog.advanced}
       />

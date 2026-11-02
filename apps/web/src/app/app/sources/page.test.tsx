@@ -38,6 +38,16 @@ await vi.mock(
   }),
   () => import('@/app/actions/teams'),
 );
+await vi.mock(
+  import.meta.resolve('@/app/actions/telegram'),
+  () => ({
+    generatePersonalLinkTokenAction: vi.fn(() => Promise.resolve({})),
+    generateGroupLinkTokenAction: vi.fn(() => Promise.resolve({})),
+    revokeLinkTokenAction: vi.fn(() => Promise.resolve()),
+    unbindChatAction: vi.fn(() => Promise.resolve()),
+  }),
+  () => import('@/app/actions/telegram'),
+);
 const notify = vi.hoisted(() => ({
   notifyError: vi.fn(),
   notifySuccess: vi.fn(),
@@ -242,6 +252,9 @@ describe('SourcesPageView', () => {
     expect(document.querySelectorAll('#linear')).toHaveLength(1);
     expect(document.querySelectorAll('#google_drive')).toHaveLength(1);
     expect(document.querySelectorAll('#slack')).toHaveLength(1);
+    expect(document.querySelectorAll('#telegram')).toHaveLength(1);
+    expect(document.querySelectorAll('#email')).toHaveLength(1);
+    expect(screen.getByRole('button', { name: 'Set up: telegram' })).toBeTruthy();
     expect(screen.getByText('Connected providers')).toBeTruthy();
     expect(screen.getByText('Available providers')).toBeTruthy();
     expect(screen.queryByText('Active team sync')).toBeNull();
@@ -325,6 +338,52 @@ describe('SourcesPageView', () => {
     expect(within(dialog).getByText('MCP')).toBeTruthy();
   });
 
+  it('keeps an MCP-only native-named server manageable from the provider sheet', async () => {
+    const user = userEvent.setup();
+    const pageModel = model({
+      blockingAttentionCount: 0,
+      connectedRows: [],
+      ownedConnections: [],
+      teamSourceRows: [],
+      mcpServerRows: [
+        {
+          id: 'mcp-linear',
+          name: 'Linear',
+          url: 'https://mcp.linear.app',
+          authType: 'oauth',
+          enabled: true,
+          cachedTools: [],
+          disabledTools: [],
+          toolsCachedAt: null,
+          lastError: null,
+        },
+      ],
+    });
+    renderPage(
+      <SourcesPageView
+        params={{}}
+        active={{ teamName: 'Acme Labs' }}
+        isAdmin
+        summary={summary({ attention: 0 })}
+        model={pageModel}
+      />,
+    );
+
+    expect(document.querySelectorAll('#linear')).toHaveLength(1);
+    expect(screen.getByRole('button', { name: 'Open Linear details' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Connect: linear' })).toBeNull();
+
+    await expandAdvanced();
+    const advanced = screen.getByRole('button', { name: /^Advanced / }).closest('section');
+    if (!advanced) throw new Error('Expected Advanced section');
+    expect(within(advanced).queryByText('Linear')).toBeNull();
+
+    await user.click(screen.getByRole('button', { name: 'Open Linear details' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Linear' });
+    expect(within(dialog).getByText('MCP')).toBeTruthy();
+    expect(within(dialog).getByText('https://mcp.linear.app')).toBeTruthy();
+  });
+
   it('opens a provider details sheet with accounts, team sync, and visibility', async () => {
     const user = userEvent.setup();
     renderPage(
@@ -347,13 +406,17 @@ describe('SourcesPageView', () => {
     expect(within(dialog).getAllByText('Linear — Acme').length).toBeGreaterThan(0);
   });
 
-  it('keeps the allowed-senders editor and admin tools inside collapsed Advanced', async () => {
+  it('moves Telegram and Email setup into provider sheets and keeps Advanced to agent MCP, webhooks, audit, and jobs', async () => {
+    const user = userEvent.setup();
     renderPage(
       <SourcesPageView
         params={{}}
         active={{ teamName: 'Acme Labs' }}
         isAdmin
-        summary={summary()}
+        summary={summary({
+          telegramConnections: 1,
+          inboundEmail: 'acme+archive@inbound.timeline.test',
+        })}
         model={model()}
         inboundEmail={{
           inboundEmail: 'acme+archive@inbound.timeline.test',
@@ -364,16 +427,32 @@ describe('SourcesPageView', () => {
       />,
     );
 
+    expect(document.querySelectorAll('#telegram')).toHaveLength(1);
+    expect(document.querySelectorAll('#email')).toHaveLength(1);
+    expect(screen.queryByRole('link', { name: 'Telegram' })).toBeNull();
+    expect(screen.queryByLabelText('Additional senders')).toBeNull();
     expect(screen.getByRole('button', { name: /^Advanced / }).getAttribute('aria-expanded')).toBe(
       'false',
     );
-    expect(screen.queryByRole('link', { name: 'Outbound MCP sharing' })).toBeNull();
+
+    await user.click(screen.getByRole('button', { name: 'Open Telegram details' }));
+    const telegram = await screen.findByRole('dialog', { name: 'Telegram' });
+    expect(within(telegram).getByText('Link a personal DM')).toBeTruthy();
+    expect(within(telegram).getByText('Bind a group chat')).toBeTruthy();
+    await user.keyboard('{Escape}');
+
+    await user.click(screen.getByRole('button', { name: 'Open Email details' }));
+    const email = await screen.findByRole('dialog', { name: 'Email' });
+    expect(within(email).getByLabelText('Additional senders')).toBeTruthy();
+    expect(within(email).getByText('vendor@example.test')).toBeTruthy();
+    expect(within(email).getByDisplayValue('acme+archive@inbound.timeline.test')).toBeTruthy();
+    await user.keyboard('{Escape}');
 
     await expandAdvanced();
-    expect(screen.getByLabelText('Additional senders')).toBeTruthy();
-    expect(screen.getByText('vendor@example.test')).toBeTruthy();
-    expect(screen.getByDisplayValue('acme+archive@inbound.timeline.test')).toBeTruthy();
-    expect(screen.getByRole('link', { name: 'Outbound MCP sharing' })).toBeTruthy();
+    expect(screen.queryByLabelText('Additional senders')).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Telegram' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Provider accounts' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Personal MCP' })).toBeNull();
     expect(screen.getByRole('link', { name: 'Integration audit' })).toBeTruthy();
     expect(screen.getByRole('link', { name: 'Job recovery' })).toBeTruthy();
     expect(screen.getByRole('link', { name: 'Agent install guide' }).getAttribute('href')).toBe(
@@ -410,8 +489,8 @@ describe('SourcesPageView', () => {
       />,
     );
     await expandAdvanced();
-    expect(screen.getByRole('link', { name: 'Outbound MCP sharing' })).toBeTruthy();
     expect(screen.getByRole('link', { name: 'Integration audit' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Job recovery' })).toBeTruthy();
 
     const queryClient = new QueryClient({
       defaultOptions: { queries: { retry: false } },
@@ -427,11 +506,9 @@ describe('SourcesPageView', () => {
         />
       </QueryClientProvider>,
     );
-    await expandAdvanced();
-    expect(screen.queryByRole('link', { name: 'Outbound MCP sharing' })).toBeNull();
+    expect(screen.queryByRole('button', { name: /^Advanced / })).toBeNull();
     expect(screen.queryByRole('link', { name: 'Integration audit' })).toBeNull();
     expect(screen.queryByRole('link', { name: 'Job recovery' })).toBeNull();
-    expect(screen.getByRole('link', { name: 'Provider accounts' })).toBeTruthy();
   });
 
   it('keeps the shared-source recovery action inside the provider sheet', async () => {

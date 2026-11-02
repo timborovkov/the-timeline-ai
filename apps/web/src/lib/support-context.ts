@@ -68,7 +68,7 @@ const surfacePaths: Record<SupportSurface, string> = {
   team_audit: '/app/team/audit',
   team_reconciliation: '/app/team/reconciliation',
   team_slack: '/app/team/slack',
-  team_telegram: '/app/team/telegram',
+  team_telegram: '/app/sources#telegram',
 };
 
 export function parseSupportSurface(value: unknown): SupportSurface | null {

@@ -269,7 +269,7 @@ export const APP_GUIDE_ROUTES: readonly AppGuideRoute[] = [
       'set up a source',
     ],
     guide:
-      'Use Connections to see capture sources, native providers, and linked accounts. Person-owned provider logins live under Provider accounts. Admins activate shared team sources on the same Connections page. Slack chat capture and Telegram have their own setup pages. MCP servers give the agent live tools without turning every call into timeline evidence.',
+      'Use Connections to see capture sources, native providers, and linked accounts. Person-owned provider logins live under Provider accounts. Admins activate shared team sources on the same Connections page. Telegram bot setup and inbound Email live in those provider sheets. Slack chat capture has its own setup page. Agent MCP, webhooks, audit, and job recovery sit in Advanced. MCP servers give the agent live tools without turning every call into timeline evidence.',
     relatedRouteIds: [
       'me/connections',
       'team/integrations',
@@ -314,12 +314,12 @@ export const APP_GUIDE_ROUTES: readonly AppGuideRoute[] = [
     id: 'team/telegram',
     title: 'Telegram Setup',
     description: 'Connect Telegram capture and direct-chat routing for this team.',
-    href: '/app/team/telegram',
+    href: '/app/sources#telegram',
     group: 'dashboard',
     minRole: 'member',
     intents: ['connect telegram', 'telegram bot', 'telegram capture'],
     guide:
-      'Use Telegram setup to connect the bot and route your Telegram account to this team. Direct chats with the bot are agent conversations; groups remain capture unless someone uses /ask.',
+      'Open Connections and the Telegram provider sheet to connect the bot and route your Telegram account to this team. Direct chats with the bot are agent conversations; groups remain capture unless someone uses /ask.',
     relatedRouteIds: ['connections', 'help/capture', 'chat'],
   },
   {

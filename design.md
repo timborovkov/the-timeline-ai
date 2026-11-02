@@ -663,18 +663,20 @@ forms, with hairline section structure, 12px muted labels, compact `sm`
 outline saves, and at most one filled primary action per view (Rename, Create
 invite, Start export). Select and checkbox preferences may save immediately.
 
-Connections is a collection directory. Each native provider appears once.
-Connected providers are `CollectionGroup` + `CollectionRow` rows (white padded
-logo tile, name, one status — Connected, Syncing for team, or Needs attention —
-and one primary action). They are not bordered `p-4` cards. Clicking a connected
-row opens a details sheet with that provider’s accounts, resource picker (repos,
-projects, channels, folders), default team visibility, team-sync activation,
-matching MCP server, recent activity, and disconnect. A Drive folder picker
-replaces the generic checkbox list inside that resource-picker slot. Available
-providers sit below as a searchable Connect list. Agent MCP, webhooks, inbound
-email (including the allowed-senders editor), audit, and job recovery sit in one
-collapsed Advanced section. There is no separate Integrations row, and no
-provider is listed twice. Status uses `CollectionStatus` or readable
+Connections is a collection directory. Each provider appears once — native OAuth
+providers plus Telegram and inbound Email. Connected providers are
+`CollectionGroup` + `CollectionRow` rows (white padded logo tile, name, one
+status — Connected, Syncing for team, or Needs attention — and one primary
+action). They are not bordered `p-4` cards. Clicking a connected row opens a
+details sheet with that provider’s accounts, resource picker (repos, projects,
+channels, folders), default team visibility, team-sync activation, matching MCP
+server, recent activity, and disconnect. Telegram setup (bot link tokens, group
+bindings, linked users) and inbound Email (team address and list-style allowed
+senders) live in those sheets. A Drive folder picker replaces the generic
+checkbox list inside that resource-picker slot. Available providers sit below as
+a searchable Connect / Set up list. Agent MCP, webhooks, audit, and job recovery
+sit in one collapsed Advanced section. There is no separate Integrations row,
+and no provider is listed twice. Status uses `CollectionStatus` or readable
 sentence-case text, not uppercase chips. Provider logos always sit on a white
 padded rounded tile.
 

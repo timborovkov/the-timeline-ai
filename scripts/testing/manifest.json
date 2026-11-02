@@ -2024,6 +2024,9 @@
   "packages/shared/src/telegram/dispatcher.test.ts": {
     "group": "integration"
   },
+  "packages/shared/src/telegram/scope.test.ts": {
+    "group": "integration"
+  },
   "packages/shared/src/time/index.test.ts": {
     "group": "unit"
   },

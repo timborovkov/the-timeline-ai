@@ -86,13 +86,13 @@ describe('public integration routes', () => {
     render(<IntegrationsPage />);
 
     expect(screen.getByRole('link', { name: 'Link Telegram' }).getAttribute('href')).toBe(
-      '/app/team/telegram',
+      '/app/sources#telegram',
     );
     expect(screen.getByRole('link', { name: 'Install Slack' }).getAttribute('href')).toBe(
       '/app/team/slack',
     );
     expect(screen.getByRole('link', { name: 'Set up email' }).getAttribute('href')).toBe(
-      '/app/team?section=email',
+      '/app/sources#email',
     );
     expect(screen.getByRole('link', { name: 'Open meetings' }).getAttribute('href')).toBe(
       '/app/meetings',

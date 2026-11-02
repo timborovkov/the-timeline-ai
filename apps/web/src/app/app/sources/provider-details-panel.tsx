@@ -2,10 +2,16 @@
 
 import Link from 'next/link';
 
-import type { DirectoryProvider } from '@/app/app/sources/connection-directory';
+import type {
+  DirectoryProvider,
+  InboundEmailSettings,
+  TelegramSetupSnapshot,
+} from '@/app/app/sources/connection-directory';
 import type { IntegrationsPageModel } from '@/app/app/team/integrations/integrations-page-model';
 import type { ReactNode } from 'react';
 
+import { EmailSetupBody } from '@/app/app/sources/email-setup-panel';
+import { TelegramSetupBody } from '@/app/app/sources/telegram-setup-panel';
 import { ConnectedIntegrations } from '@/components/integrations/connected';
 import { McpCatalog } from '@/components/integrations/mcp-catalog';
 import { McpServersUi } from '@/components/integrations/mcp-servers';
@@ -149,6 +155,8 @@ function ProviderDetailsBody({
   ownedConnections,
   mcpCatalog,
   mcpServers,
+  inboundEmail,
+  telegramSetup,
 }: {
   provider: DirectoryProvider;
   isAdmin: boolean;
@@ -156,6 +164,8 @@ function ProviderDetailsBody({
   ownedConnections: IntegrationsPageModel['ownedConnections'];
   mcpCatalog: IntegrationsPageModel['mcpCatalogAvailable'];
   mcpServers: IntegrationsPageModel['mcpServerRows'];
+  inboundEmail: InboundEmailSettings;
+  telegramSetup: TelegramSetupSnapshot;
 }) {
   const connectedRows = model.connectedRows.filter((row) => row.provider === provider.id);
   const teamSourceRows = model.teamSourceRows.filter(
@@ -171,16 +181,26 @@ function ProviderDetailsBody({
         <SheetDescription className="sr-only">{provider.description}</SheetDescription>
       </SheetHeader>
       <SheetBody className="space-y-6">
-        <ProviderAccountsSection provider={provider} ownedConnections={ownedConnections} />
-        <ProviderTeamSyncSection
-          providerId={provider.id}
-          isAdmin={isAdmin}
-          model={model}
-          teamSourceRows={teamSourceRows}
-          connectedRows={connectedRows}
-        />
-        <ProviderSlackCaptureSection providerId={provider.id} />
-        <ProviderMcpSection mcpCatalog={mcpCatalog} mcpServers={mcpServers} />
+        {provider.id === 'telegram' ? (
+          <TelegramSetupBody setup={telegramSetup} isAdmin={isAdmin} />
+        ) : null}
+        {provider.id === 'email' ? (
+          <EmailSetupBody isAdmin={isAdmin} inboundEmail={inboundEmail} />
+        ) : null}
+        {provider.kind === 'native' ? (
+          <>
+            <ProviderAccountsSection provider={provider} ownedConnections={ownedConnections} />
+            <ProviderTeamSyncSection
+              providerId={provider.id}
+              isAdmin={isAdmin}
+              model={model}
+              teamSourceRows={teamSourceRows}
+              connectedRows={connectedRows}
+            />
+            <ProviderSlackCaptureSection providerId={provider.id} />
+            <ProviderMcpSection mcpCatalog={mcpCatalog} mcpServers={mcpServers} />
+          </>
+        ) : null}
       </SheetBody>
     </>
   );
@@ -195,6 +215,8 @@ export function ProviderDetailsPanel({
   ownedConnections,
   mcpCatalog,
   mcpServers,
+  inboundEmail,
+  telegramSetup,
 }: {
   provider: DirectoryProvider | null;
   open: boolean;
@@ -204,6 +226,8 @@ export function ProviderDetailsPanel({
   ownedConnections: IntegrationsPageModel['ownedConnections'];
   mcpCatalog: IntegrationsPageModel['mcpCatalogAvailable'];
   mcpServers: IntegrationsPageModel['mcpServerRows'];
+  inboundEmail: InboundEmailSettings;
+  telegramSetup: TelegramSetupSnapshot;
 }) {
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -216,6 +240,8 @@ export function ProviderDetailsPanel({
             ownedConnections={ownedConnections}
             mcpCatalog={mcpCatalog}
             mcpServers={mcpServers}
+            inboundEmail={inboundEmail}
+            telegramSetup={telegramSetup}
           />
         ) : null}
       </SheetContent>

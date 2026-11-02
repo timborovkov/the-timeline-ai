@@ -32,7 +32,7 @@ export const CAPTURE_SURFACES = [
     captured: 'Explicit notes, linked group messages, files, images, audio, and voice memos.',
     boundary:
       'Plain text in a direct chat asks the agent; it does not silently become team evidence. Use /note for an explicit note. Telegram is not a passive account-history sync.',
-    setupHref: '/app/team/telegram',
+    setupHref: '/app/sources#telegram',
     setupLabel: 'Link Telegram',
     featured: true,
   },
@@ -62,7 +62,7 @@ export const CAPTURE_SURFACES = [
       'Message body, sender and recipient context, and supported file, document, and audio attachments.',
     boundary:
       'Email enters only when the team address is included. Accepted messages from unknown senders are retained as unverified evidence rather than silently mapped to a member. When the team sender whitelist is enabled, messages from unlisted senders are rejected.',
-    setupHref: '/app/team?section=email',
+    setupHref: '/app/sources#email',
     setupLabel: 'Set up email',
     featured: false,
   },

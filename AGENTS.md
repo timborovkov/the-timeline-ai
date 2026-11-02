@@ -153,7 +153,7 @@ Treat this file as an operating contract for agents, not a loose README.
   `withTeam(db, teamId, userId)` in `packages/shared`. Use the returned
   named modules (`scope.timeline`, `scope.documents`, `scope.meetings`,
   `scope.objects`, `scope.boards`, `scope.pins`, `scope.suggestions`, `scope.calendar`,
-  `scope.integrations`, `scope.mcp`, `scope.mcpOAuth`, `scope.onboarding`, `scope.jobRecovery`,
+  `scope.integrations`, `scope.telegram`, `scope.mcp`, `scope.mcpOAuth`, `scope.onboarding`, `scope.jobRecovery`,
   `scope.reconciliation`, `scope.audit`, `scope.conversations`, `scope.billing`,
   `scope.billingOperator`) rather than flat scope methods or
   manually passing `db` into object helpers. Every Qdrant query filters on

@@ -82,6 +82,7 @@ import {
   sourcePayloadRefFromMetadata,
 } from '#src/reconciliation/source-snapshot.js';
 import { createSuggestionScope } from '#src/suggestions/index.js';
+import { createTelegramScope } from '#src/telegram/scope.js';
 import {
   buildTimelineMomentPresentationCacheFingerprint,
   timelineMomentPresentationCacheKeyMatches,
@@ -1739,6 +1740,12 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
   }
 
   const jobRecoveryScope = createJobRecoveryScope({
+    db,
+    teamId,
+    userId,
+    ensureMember,
+  });
+  const telegramScope = createTelegramScope({
     db,
     teamId,
     userId,
@@ -4272,6 +4279,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
     calendar: calendarScope,
     jobRecovery: jobRecoveryScope,
     audit: auditScope,
+    telegram: telegramScope,
   };
 }
 

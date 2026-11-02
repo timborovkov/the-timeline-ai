@@ -829,10 +829,12 @@ test('Telegram settings admins can generate tokens, revoke tokens, and unbind gr
   await signIn(page, e2eUsers.owner.email);
 
   await page.goto('/app/team/telegram');
-
-  await expect(page.getByRole('heading', { name: 'Telegram', level: 1 })).toBeVisible();
-  await expect(page.getByText('Link a personal DM', { exact: true })).toBeVisible();
-  await expect(page.getByText('Bind a group chat', { exact: true })).toBeVisible();
+  await expect(page).toHaveURL(/\/app\/sources#telegram/);
+  await expect(page.getByRole('heading', { name: 'Connections', level: 1 })).toBeVisible();
+  const telegram = page.getByRole('dialog', { name: 'Telegram' });
+  await expect(telegram).toBeVisible();
+  await expect(telegram.getByText('Link a personal DM', { exact: true })).toBeVisible();
+  await expect(telegram.getByText('Bind a group chat', { exact: true })).toBeVisible();
   await expect(page.getByText('Group binding', { exact: true })).toBeVisible();
   await expect(
     page.getByText('Issued by another teammate', { exact: true }).filter({ visible: true }),

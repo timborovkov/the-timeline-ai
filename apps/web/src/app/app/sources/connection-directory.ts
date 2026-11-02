@@ -7,17 +7,20 @@ function needsAttention(row: ConnectedRow): boolean {
 }
 
 export type ProviderRowStatus = 'connected' | 'syncing' | 'attention';
+type DirectoryProviderKind = 'native' | 'capture';
+type DirectoryPrimaryAction = 'open' | 'reconnect' | 'connect' | 'setup';
 
 export interface DirectoryProvider {
   id: string;
   label: string;
   description: string;
   logo: string;
+  kind: DirectoryProviderKind;
   available: boolean;
   connected: boolean;
   status: ProviderRowStatus;
   statusLabel: string;
-  primaryAction: 'open' | 'reconnect' | 'connect';
+  primaryAction: DirectoryPrimaryAction;
 }
 
 export interface InboundEmailSettings {
@@ -26,6 +29,58 @@ export interface InboundEmailSettings {
   senders: string[];
   placeholderInbound: boolean;
 }
+
+export interface TelegramSetupSnapshot {
+  botUsername: string | null;
+  webhookConfigured: boolean;
+  currentUserId: string;
+  tokens: {
+    id: string;
+    scope: 'personal' | 'group';
+    expiresAt: string;
+    issuedByUserId: string;
+  }[];
+  bindings: {
+    id: string;
+    title: string | null;
+    tgChatId: number;
+    createdAt: string;
+  }[];
+  linkedUsers: {
+    id: string;
+    username: string | null;
+    firstName: string | null;
+    lastName: string | null;
+    userId: string | null;
+    isActive: boolean;
+    appName: string | null;
+    appEmail: string | null;
+  }[];
+}
+
+export const EMPTY_TELEGRAM_SETUP: TelegramSetupSnapshot = {
+  botUsername: null,
+  webhookConfigured: true,
+  currentUserId: '',
+  tokens: [],
+  bindings: [],
+  linkedUsers: [],
+};
+
+const CAPTURE_DIRECTORY_PROVIDERS = [
+  {
+    id: 'telegram',
+    label: 'Telegram',
+    description: 'Capture DMs and group chats through the Timeline bot.',
+    logo: '/connectors/telegram.svg',
+  },
+  {
+    id: 'email',
+    label: 'Email',
+    description: 'Forward, CC, or BCC mail to capture it on the timeline.',
+    logo: '/connectors/email.svg',
+  },
+] as const;
 
 function nativeKey(value: string): string {
   return value.trim().toLowerCase();
@@ -120,12 +175,47 @@ export function partitionMcpServers<T extends { name: string }>(
   return { advanced, byProviderId };
 }
 
+function captureProviderEntry(
+  provider: (typeof CAPTURE_DIRECTORY_PROVIDERS)[number],
+  input: {
+    connected: boolean;
+    attention: boolean;
+  },
+): DirectoryProvider {
+  const status = input.connected
+    ? providerRowStatus({ attention: input.attention, teamSyncing: false })
+    : 'connected';
+  return {
+    id: provider.id,
+    label: provider.label,
+    description: provider.description,
+    logo: provider.logo,
+    kind: 'capture',
+    available: true,
+    connected: input.connected,
+    status: input.connected ? status : 'connected',
+    statusLabel: input.connected ? providerStatusLabel(status) : 'Not connected',
+    primaryAction: input.connected ? 'open' : 'setup',
+  };
+}
+
+function inboundEmailIsConfigured(settings: InboundEmailSettings | undefined): boolean {
+  return Boolean(settings?.inboundEmail) && !settings?.placeholderInbound;
+}
+
 export function buildDirectoryProviders(input: {
   model: IntegrationsPageModel;
   slackConnections: number;
+  telegramConnections: number;
+  telegramWebhookConfigured?: boolean;
+  inboundEmail?: InboundEmailSettings;
 }): { connected: DirectoryProvider[]; available: DirectoryProvider[] } {
   const connected: DirectoryProvider[] = [];
   const available: DirectoryProvider[] = [];
+  const mcpByProvider = partitionMcpServers(
+    input.model.mcpServerRows,
+    input.model.nativeCatalog,
+  ).byProviderId;
   for (const provider of input.model.nativeCatalog) {
     const providerRows = input.model.connectedRows.filter((row) => row.provider === provider.id);
     const owned = input.model.ownedConnections.filter((row) => row.provider === provider.id);
@@ -133,11 +223,21 @@ export function buildDirectoryProviders(input: {
       (row) => row.connection.provider === provider.id,
     );
     const slackCapture = provider.id === 'slack' && input.slackConnections > 0;
+    // Keep MCP-only providers accessible: a custom MCP server named after a
+    // native provider is routed into that provider's sheet, so the provider
+    // must count as connected even with no native account or share.
+    const matchingMcp = mcpByProvider.get(provider.id) ?? [];
+    const mcpConnected = matchingMcp.length > 0;
     const isConnected =
-      providerRows.length > 0 || owned.length > 0 || shares.length > 0 || slackCapture;
+      providerRows.length > 0 ||
+      owned.length > 0 ||
+      shares.length > 0 ||
+      slackCapture ||
+      mcpConnected;
     const attention =
       providerRows.some((row) => needsAttention(row)) ||
-      owned.some((row) => Boolean(row.lastError));
+      owned.some((row) => Boolean(row.lastError)) ||
+      matchingMcp.some((server) => Boolean(server.lastError));
     const teamSyncing = providerRows.some((row) => row.enabled && !needsAttention(row));
     const status = isConnected ? providerRowStatus({ attention, teamSyncing }) : 'connected';
     const primaryAction: DirectoryProvider['primaryAction'] = !isConnected
@@ -150,6 +250,7 @@ export function buildDirectoryProviders(input: {
       label: provider.label,
       description: provider.description,
       logo: provider.logo,
+      kind: 'native',
       available: provider.available,
       connected: isConnected,
       status: isConnected ? status : 'connected',
@@ -161,6 +262,21 @@ export function buildDirectoryProviders(input: {
       primaryAction,
     };
     if (isConnected) connected.push(entry);
+    else available.push(entry);
+  }
+
+  const captureEntries = [
+    captureProviderEntry(CAPTURE_DIRECTORY_PROVIDERS[0], {
+      connected: input.telegramConnections > 0,
+      attention: input.telegramConnections > 0 && input.telegramWebhookConfigured === false,
+    }),
+    captureProviderEntry(CAPTURE_DIRECTORY_PROVIDERS[1], {
+      connected: inboundEmailIsConfigured(input.inboundEmail),
+      attention: Boolean(input.inboundEmail?.placeholderInbound),
+    }),
+  ];
+  for (const entry of captureEntries) {
+    if (entry.connected) connected.push(entry);
     else available.push(entry);
   }
   return { connected, available };

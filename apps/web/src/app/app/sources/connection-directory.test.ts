@@ -71,6 +71,7 @@ describe('connection directory helpers', () => {
 
   it('lists each native provider once as connected or available', () => {
     const directory = buildDirectoryProviders({
+      telegramConnections: 0,
       model: model({
         connectedRows: [
           {
@@ -114,7 +115,7 @@ describe('connection directory helpers', () => {
     });
 
     expect(directory.connected.map((row) => row.id)).toEqual(['github', 'linear', 'slack']);
-    expect(directory.available).toEqual([]);
+    expect(directory.available.map((row) => row.id)).toEqual(['telegram', 'email']);
     expect(directory.connected.filter((row) => row.id === 'linear')).toHaveLength(1);
     expect(directory.connected.find((row) => row.id === 'linear')?.statusLabel).toBe(
       'Syncing for team',
@@ -134,6 +135,63 @@ describe('connection directory helpers', () => {
     expect(partitioned.byProviderId.get('linear')?.map((entry) => entry.id)).toEqual(['linear']);
   });
 
+  it('counts a native-named MCP server as connected so the provider sheet stays reachable', () => {
+    const directory = buildDirectoryProviders({
+      model: model({
+        mcpServerRows: [
+          {
+            id: 'mcp-linear',
+            name: 'Linear',
+            url: 'https://mcp.linear.app',
+            authType: 'oauth',
+            enabled: true,
+            cachedTools: [],
+            disabledTools: [],
+            toolsCachedAt: null,
+            lastError: null,
+          },
+        ],
+      }),
+      slackConnections: 0,
+      telegramConnections: 0,
+    });
+    expect(directory.connected.map((row) => row.id)).toEqual(['linear']);
+    expect(directory.connected.find((row) => row.id === 'linear')).toMatchObject({
+      kind: 'native',
+      primaryAction: 'open',
+      statusLabel: 'Connected',
+    });
+    expect(directory.available.map((row) => row.id)).toEqual([
+      'github',
+      'slack',
+      'telegram',
+      'email',
+    ]);
+
+    const attention = buildDirectoryProviders({
+      model: model({
+        mcpServerRows: [
+          {
+            id: 'mcp-linear',
+            name: 'Linear',
+            url: 'https://mcp.linear.app',
+            authType: 'oauth',
+            enabled: true,
+            cachedTools: [],
+            disabledTools: [],
+            toolsCachedAt: null,
+            lastError: 'token expired',
+          },
+        ],
+      }),
+      slackConnections: 0,
+      telegramConnections: 0,
+    });
+    expect(attention.connected.find((row) => row.id === 'linear')?.statusLabel).toBe(
+      'Needs attention',
+    );
+  });
+
   it('routes exact-name MCP servers onto the matching provider panel', () => {
     const partitioned = partitionMcpServers(
       [{ name: 'Linear' }, { name: 'Custom tools' }],
@@ -144,10 +202,69 @@ describe('connection directory helpers', () => {
   });
 
   it('filters available providers by name', () => {
-    const directory = buildDirectoryProviders({ model: model(), slackConnections: 0 });
-    expect(filterAvailableProviders(directory.available, 'lin').map((row) => row.id)).toEqual([
+    const directory = buildDirectoryProviders({
+      model: model(),
+      slackConnections: 0,
+      telegramConnections: 0,
+    });
+    expect(filterAvailableProviders(directory.available, 'linea').map((row) => row.id)).toEqual([
       'linear',
     ]);
+    expect(filterAvailableProviders(directory.available, 'tele').map((row) => row.id)).toEqual([
+      'telegram',
+    ]);
+    expect(filterAvailableProviders(directory.available, 'email').map((row) => row.id)).toEqual([
+      'email',
+    ]);
+  });
+
+  it('lists Telegram and Email once as connected or available capture rows', () => {
+    const unconfigured = buildDirectoryProviders({
+      model: model(),
+      slackConnections: 0,
+      telegramConnections: 0,
+      inboundEmail: {
+        inboundEmail: null,
+        enabled: true,
+        senders: [],
+        placeholderInbound: true,
+      },
+    });
+    expect(unconfigured.available.map((row) => row.id)).toEqual([
+      'github',
+      'linear',
+      'slack',
+      'telegram',
+      'email',
+    ]);
+    expect(unconfigured.available.find((row) => row.id === 'telegram')).toMatchObject({
+      kind: 'capture',
+      primaryAction: 'setup',
+      statusLabel: 'Not connected',
+    });
+    expect(unconfigured.available.find((row) => row.id === 'email')).toMatchObject({
+      kind: 'capture',
+      primaryAction: 'setup',
+    });
+
+    const configured = buildDirectoryProviders({
+      model: model(),
+      slackConnections: 0,
+      telegramConnections: 2,
+      telegramWebhookConfigured: true,
+      inboundEmail: {
+        inboundEmail: 'acme@inbound.timeline.test',
+        enabled: true,
+        senders: ['ops@example.test'],
+        placeholderInbound: false,
+      },
+    });
+    expect(configured.connected.map((row) => row.id)).toEqual(['telegram', 'email']);
+    expect(configured.connected.find((row) => row.id === 'telegram')?.statusLabel).toBe(
+      'Connected',
+    );
+    expect(configured.connected.find((row) => row.id === 'email')?.statusLabel).toBe('Connected');
+    expect(configured.available.map((row) => row.id)).toEqual(['github', 'linear', 'slack']);
   });
 
   it('opens a provider from an integration id or hash', () => {
@@ -169,6 +286,7 @@ describe('connection directory helpers', () => {
     const directory = buildDirectoryProviders({
       model: model({ connectedRows }),
       slackConnections: 0,
+      telegramConnections: 0,
     });
     expect(
       initialOpenProviderId({
@@ -184,5 +302,12 @@ describe('connection directory helpers', () => {
         hash: '#github',
       }),
     ).toBe('github');
+    expect(
+      initialOpenProviderId({
+        providers: [...directory.connected, ...directory.available],
+        connectedRows,
+        hash: '#telegram',
+      }),
+    ).toBe('telegram');
   });
 });

@@ -3,7 +3,11 @@
 import { Plug, Search } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 
-import type { DirectoryProvider } from '@/app/app/sources/connection-directory';
+import type {
+  DirectoryProvider,
+  InboundEmailSettings,
+  TelegramSetupSnapshot,
+} from '@/app/app/sources/connection-directory';
 import type { IntegrationsPageModel } from '@/app/app/team/integrations/integrations-page-model';
 
 import {
@@ -27,6 +31,18 @@ const ROW_ACTION_CLASS =
   'inline-flex min-h-8 items-center rounded-sm px-2 text-xs text-fg-muted hover:bg-surface-2 hover:text-fg focus-visible:ring-2 focus-visible:ring-signal/50';
 
 function ProviderAction({ provider, onOpen }: { provider: DirectoryProvider; onOpen: () => void }) {
+  if (provider.primaryAction === 'setup') {
+    return (
+      <button
+        type="button"
+        aria-label={`Set up: ${provider.id}`}
+        className={ROW_ACTION_CLASS}
+        onClick={onOpen}
+      >
+        Set up
+      </button>
+    );
+  }
   if (provider.primaryAction === 'connect') {
     return (
       <NativeProviderConnectButton
@@ -59,7 +75,7 @@ function DirectoryProviderRow({
   provider: DirectoryProvider;
   onOpen?: () => void;
 }) {
-  const connected = Boolean(onOpen);
+  const connected = provider.connected;
   const slots = [
     <CollectionRow.Leading key="leading">
       <ProviderLogo src={provider.logo} />
@@ -105,12 +121,16 @@ export function ConnectionsDirectory({
   connected,
   available,
   initialProviderId,
+  inboundEmail,
+  telegramSetup,
 }: {
   isAdmin: boolean;
   model: IntegrationsPageModel;
   connected: DirectoryProvider[];
   available: DirectoryProvider[];
   initialProviderId?: string | null;
+  inboundEmail: InboundEmailSettings;
+  telegramSetup: TelegramSetupSnapshot;
 }) {
   const [query, setQuery] = useState('');
   const [openProviderId, setOpenProviderId] = useState<string | null>(initialProviderId ?? null);
@@ -126,7 +146,10 @@ export function ConnectionsDirectory({
     () => partitionMcpServers(model.mcpServerRows, model.nativeCatalog),
     [model.mcpServerRows, model.nativeCatalog],
   );
-  const openProvider = connected.find((provider) => provider.id === openProviderId) ?? null;
+  const openProvider =
+    connected.find((provider) => provider.id === openProviderId) ??
+    available.find((provider) => provider.id === openProviderId) ??
+    null;
 
   useEffect(() => {
     const fromHash = initialOpenProviderId({
@@ -187,7 +210,17 @@ export function ConnectionsDirectory({
           >
             {visibleAvailable.length > 0 ? (
               visibleAvailable.map((provider) => (
-                <DirectoryProviderRow key={provider.id} provider={provider} />
+                <DirectoryProviderRow
+                  key={provider.id}
+                  provider={provider}
+                  onOpen={
+                    provider.kind === 'capture'
+                      ? () => {
+                          setOpenProviderId(provider.id);
+                        }
+                      : undefined
+                  }
+                />
               ))
             ) : (
               <p className="px-3 py-2 text-sm text-fg-muted">No matching providers.</p>
@@ -211,6 +244,8 @@ export function ConnectionsDirectory({
         }
         mcpCatalog={openProvider ? (mcpCatalog.byProviderId.get(openProvider.id) ?? []) : []}
         mcpServers={openProvider ? (mcpServers.byProviderId.get(openProvider.id) ?? []) : []}
+        inboundEmail={inboundEmail}
+        telegramSetup={telegramSetup}
       />
     </>
   );
