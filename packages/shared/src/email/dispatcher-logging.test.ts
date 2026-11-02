@@ -136,6 +136,7 @@ describe('inbound email drop logging', () => {
       slug: 'team-a',
       name: 'Team A',
       inboundEmail: 'team-a@inbound.test',
+      inboundSenderWhitelistEnabled: false,
     });
     await db.insert(users).values({ id: USER_ID, email: 'member@example.com' });
     await db.insert(teamMembers).values({
