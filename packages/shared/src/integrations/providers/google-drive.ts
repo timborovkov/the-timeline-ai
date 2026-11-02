@@ -530,9 +530,19 @@ async function loadDriveText(
       return { text: existing.text };
     }
     if (existing?.status === 'failed') {
-      return { text: '', skippedReason: 'extract_failed', extractError: existing.error };
-    }
-    if (existing?.status === 'pending') {
+      if (!ctx.consumeTransientDriveExtract) {
+        return { text: '', skippedReason: 'extract_failed', extractError: existing.error };
+      }
+      await ctx.recordAudit('drive_extract_failed', {
+        file_id: file.id,
+        mime_type: file.mimeType,
+        error: existing.error,
+        retrying: true,
+      });
+      await ctx.consumeTransientDriveExtract(file.id);
+      // Fall through: take a new extract slot (the daily budget is the bound)
+      // and enqueue again after a config fix or a later edit.
+    } else if (existing?.status === 'pending') {
       return { text: '', skippedReason: 'extract_pending' };
     }
   }

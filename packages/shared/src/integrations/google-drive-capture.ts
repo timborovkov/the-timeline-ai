@@ -117,6 +117,52 @@ export function driveExtractCursorKey(fileId: string): string {
   return `drive.extract.${fileId}`;
 }
 
+/** Re-enqueue a missing result after the same quiet window as file debounce. */
+export const DRIVE_EXTRACT_PENDING_STALE_MS = 15 * 60 * 1000;
+
+export interface DriveExtractCursor {
+  extractId: string;
+  objectKey: string;
+  resultObjectKey: string;
+  contentType: string;
+  filename: string;
+  enqueuedAt: string;
+}
+
+export function parseDriveExtractCursor(cursor: unknown): DriveExtractCursor | null {
+  if (!cursor || typeof cursor !== 'object') return null;
+  const record = cursor as Record<string, unknown>;
+  if (
+    typeof record.extractId !== 'string' ||
+    record.extractId.length === 0 ||
+    typeof record.objectKey !== 'string' ||
+    record.objectKey.length === 0 ||
+    typeof record.resultObjectKey !== 'string' ||
+    record.resultObjectKey.length === 0 ||
+    typeof record.contentType !== 'string' ||
+    record.contentType.length === 0 ||
+    typeof record.filename !== 'string' ||
+    record.filename.length === 0 ||
+    typeof record.enqueuedAt !== 'string'
+  ) {
+    return null;
+  }
+  return {
+    extractId: record.extractId,
+    objectKey: record.objectKey,
+    resultObjectKey: record.resultObjectKey,
+    contentType: record.contentType,
+    filename: record.filename,
+    enqueuedAt: record.enqueuedAt,
+  };
+}
+
+export function isDriveExtractPendingStale(cursor: DriveExtractCursor, now = Date.now()): boolean {
+  const enqueuedAtMs = Date.parse(cursor.enqueuedAt);
+  if (!Number.isFinite(enqueuedAtMs)) return true;
+  return now - enqueuedAtMs >= DRIVE_EXTRACT_PENDING_STALE_MS;
+}
+
 export function driveTransientExtractKeys(input: {
   teamId: string;
   integrationId: string;

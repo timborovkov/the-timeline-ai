@@ -33,7 +33,9 @@ persistence of `drive.file` / `drive.changes` targets, contextual Markdown
 normalization that keeps signed amounts, and PDF/Word/Slides text via the
 credential-thin `document-extract-orchestrator` (ADR 0013) with a separate paid
 extract budget before Daytona/vision spend. Full Drive copies are not harvested into the document
-drive. Daytona misconfiguration is a visible `drive_extract_failed` audit, not a silent skip.
+drive. Daytona misconfiguration is a visible `drive_extract_failed` audit; failed extract state is
+cleared and retried within the extract budget. Extract cursors go through `withTeam` integrations
+scope; enqueue-before-cursor plus stale-pending re-enqueue keeps the orchestrator handoff recoverable.
 
 ## Billing identity follow-up
 

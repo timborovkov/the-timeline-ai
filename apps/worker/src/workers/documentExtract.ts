@@ -255,6 +255,8 @@ async function processDriveTransientExtract(
   data: queue.DriveTransientExtractJobData,
   io: DocumentExtractIO,
 ): Promise<DocumentExtractResult> {
+  // Credential-thin: no withTeam / integration_sync_state. Cursor handoff
+  // stays on the main worker's team-scoped integrations module.
   let body: Buffer;
   try {
     const fetched = await io.fetchBlob(data.objectKey, MAX_DOCUMENT_BYTES);

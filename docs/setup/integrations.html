@@ -161,11 +161,15 @@ GOOGLE_DRIVE_WEBHOOK_SECRET=...</code></pre>
           Reactivating the same Drive sources keeps existing object links. PDF, Word, and Google
           Slides text is extracted by the credential-thin
           <code>document-extract-orchestrator</code> (ADR 0013) — the main worker must not copy
-          Daytona credentials. Extract failures audit <code>drive_extract_failed</code> instead of
-          skipping as empty. Paid extract is gated by its own daily budget (4 per file / 40 per
-          connection) before sandbox or billed vision spend; the post-diff judge stays at 8
-          processed files per doc and 200 per connection. Baseline captures consume extract budget,
-          not the judge cap. Full Drive copies are not stored in the document drive. Apply
+          Daytona credentials. Extract cursors persist through
+          <code>withTeam(...).integrations</code> (not admin cursor helpers). Enqueue happens before
+          the cursor write so a Redis failure cannot leave a forever-pending handoff; stale pending
+          results are re-enqueued. Extract failures audit <code>drive_extract_failed</code>, clear
+          that state, and retry within the extract budget instead of skipping as empty. Paid extract
+          is gated by its own daily budget (4 per file / 40 per connection) before sandbox or billed
+          vision spend; the post-diff judge stays at 8 processed files per doc and 200 per
+          connection. Baseline captures consume extract budget, not the judge cap. Full Drive copies
+          are not stored in the document drive. Apply
           <code>0094_google_drive_snapshot_uniqueness.sql</code> with the usual migration path.
         </li>
         <li>

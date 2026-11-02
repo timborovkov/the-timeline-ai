@@ -38,9 +38,13 @@ export { googleDriveProvider } from '#src/integrations/providers/google-drive.js
 export { judgeDriveChange } from '#src/integrations/google-drive-judge.js';
 export { driveSelectionIsWatchable } from '#src/integrations/google-drive-scope.js';
 export {
+  DRIVE_EXTRACT_PENDING_STALE_MS,
   driveExtractCursorKey,
   driveTransientExtractKeys,
+  isDriveExtractPendingStale,
+  parseDriveExtractCursor,
   parseDriveTransientExtractResult,
+  type DriveExtractCursor,
   type DriveTransientExtractResultPayload,
 } from '#src/integrations/google-drive-capture.js';
 export { linearProvider, verifyLinearSignature } from '#src/integrations/providers/linear.js';

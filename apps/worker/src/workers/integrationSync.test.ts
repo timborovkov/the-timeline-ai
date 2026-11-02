@@ -135,7 +135,13 @@ await vi.mock(
   () => import('@timeline/shared'),
 );
 
-const { handleTick, runOneIntegration } = await import('./integrationSync.js');
+const {
+  clearDriveTransientExtract,
+  handleTick,
+  putAndEnqueueDriveTransientExtract,
+  readDriveTransientExtract,
+  runOneIntegration,
+} = await import('./integrationSync.js');
 const { integrations } = await import('@timeline/shared');
 
 const TEAM_ID = '11111111-1111-4111-8111-111111111111';
@@ -2794,5 +2800,197 @@ describe('runOneIntegration attention classification', () => {
     });
 
     expect(fakes.incrementalSync).toHaveBeenCalled();
+  });
+});
+
+describe('Drive transient extract handoff', () => {
+  const FILE_ID = 'file-1';
+  const cursorKey = integrations.driveExtractCursorKey(FILE_ID);
+
+  function extractScope(store = new Map<string, unknown>()) {
+    return {
+      store,
+      getIntegration: vi.fn((id: string) =>
+        Promise.resolve(id === INTEGRATION_ID ? { id, teamId: TEAM_ID } : null),
+      ),
+      loadCursor: vi.fn((_id: string, resourceType: string) =>
+        Promise.resolve(store.get(resourceType) ?? {}),
+      ),
+      saveCursor: vi.fn((_id: string, resourceType: string, cursor: unknown) => {
+        store.set(resourceType, cursor);
+        return Promise.resolve();
+      }),
+    };
+  }
+
+  function extractIO() {
+    return {
+      getDocumentsBucket: () => 'docs',
+      putDocumentObject: vi.fn(() => Promise.resolve()),
+      getDocumentObject: vi.fn(() => {
+        const err = new Error('missing');
+        err.name = 'NoSuchKey';
+        return Promise.reject(err);
+      }),
+      deleteDocumentObject: vi.fn(() => Promise.resolve()),
+      enqueueDocumentExtractJob: vi.fn(() => Promise.resolve()),
+    };
+  }
+
+  it('writes extract cursors through the team-scoped integrations module', async () => {
+    const scope = extractScope();
+    const io = extractIO();
+    const order: string[] = [];
+    io.enqueueDocumentExtractJob.mockImplementation(() => {
+      order.push('enqueue');
+      return Promise.resolve();
+    });
+    scope.saveCursor.mockImplementation((_id: string, resourceType: string, cursor: unknown) => {
+      order.push('cursor');
+      scope.store.set(resourceType, cursor);
+      return Promise.resolve();
+    });
+
+    await putAndEnqueueDriveTransientExtract({
+      integrations: scope,
+      teamId: TEAM_ID,
+      integrationId: INTEGRATION_ID,
+      fileId: FILE_ID,
+      filename: 'Notes.pdf',
+      contentType: 'application/pdf',
+      body: Buffer.from('%PDF-1.4'),
+      io,
+      now: new Date('2026-11-02T12:00:00.000Z'),
+    });
+
+    expect(scope.getIntegration).toHaveBeenCalledWith(INTEGRATION_ID);
+    expect(fakes.adminSaveCursor).not.toHaveBeenCalled();
+    expect(fakes.adminLoadCursor).not.toHaveBeenCalled();
+    expect(order).toEqual(['enqueue', 'cursor']);
+    expect(io.enqueueDocumentExtractJob).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: 'drive_transient',
+        teamId: TEAM_ID,
+        integrationId: INTEGRATION_ID,
+        fileId: FILE_ID,
+        filename: 'Notes.pdf',
+      }),
+    );
+    expect(scope.saveCursor).toHaveBeenCalledWith(
+      INTEGRATION_ID,
+      cursorKey,
+      expect.objectContaining({
+        filename: 'Notes.pdf',
+        contentType: 'application/pdf',
+        enqueuedAt: '2026-11-02T12:00:00.000Z',
+      }),
+    );
+  });
+
+  it('does not persist a cursor when document-extract enqueue fails', async () => {
+    const scope = extractScope();
+    const io = extractIO();
+    io.enqueueDocumentExtractJob.mockRejectedValue(new Error('redis down'));
+
+    await expect(
+      putAndEnqueueDriveTransientExtract({
+        integrations: scope,
+        teamId: TEAM_ID,
+        integrationId: INTEGRATION_ID,
+        fileId: FILE_ID,
+        filename: 'Notes.pdf',
+        contentType: 'application/pdf',
+        body: Buffer.from('%PDF-1.4'),
+        io,
+      }),
+    ).rejects.toThrow('redis down');
+
+    expect(scope.saveCursor).not.toHaveBeenCalled();
+    expect(io.deleteDocumentObject).toHaveBeenCalled();
+    expect(fakes.adminSaveCursor).not.toHaveBeenCalled();
+  });
+
+  it('re-enqueues stale pending extracts and leaves fresh pending alone', async () => {
+    const fresh = {
+      extractId: 'ext-fresh',
+      objectKey: 'source-fresh',
+      resultObjectKey: 'result-fresh.json',
+      contentType: 'application/pdf',
+      filename: 'Notes.pdf',
+      enqueuedAt: '2026-11-02T12:00:00.000Z',
+    };
+    const stale = {
+      ...fresh,
+      extractId: 'ext-stale',
+      objectKey: 'source-stale',
+      resultObjectKey: 'result-stale.json',
+      enqueuedAt: '2026-11-02T11:00:00.000Z',
+    };
+    const freshScope = extractScope(new Map([[cursorKey, fresh]]));
+    const freshIo = extractIO();
+    await expect(
+      readDriveTransientExtract({
+        integrations: freshScope,
+        teamId: TEAM_ID,
+        integrationId: INTEGRATION_ID,
+        fileId: FILE_ID,
+        io: freshIo,
+        now: new Date('2026-11-02T12:05:00.000Z'),
+      }),
+    ).resolves.toEqual({ status: 'pending' });
+    expect(freshIo.enqueueDocumentExtractJob).not.toHaveBeenCalled();
+
+    const staleScope = extractScope(new Map([[cursorKey, stale]]));
+    const staleIo = extractIO();
+    await expect(
+      readDriveTransientExtract({
+        integrations: staleScope,
+        teamId: TEAM_ID,
+        integrationId: INTEGRATION_ID,
+        fileId: FILE_ID,
+        io: staleIo,
+        now: new Date('2026-11-02T12:00:00.000Z'),
+      }),
+    ).resolves.toEqual({ status: 'pending' });
+    expect(staleIo.enqueueDocumentExtractJob).toHaveBeenCalledWith(
+      expect.objectContaining({ extractId: 'ext-stale', objectKey: 'source-stale' }),
+    );
+    expect(staleScope.saveCursor).toHaveBeenCalledWith(
+      INTEGRATION_ID,
+      cursorKey,
+      expect.objectContaining({
+        extractId: 'ext-stale',
+        enqueuedAt: '2026-11-02T12:00:00.000Z',
+      }),
+    );
+    expect(fakes.adminLoadCursor).not.toHaveBeenCalled();
+  });
+
+  it('clears failed extract objects through team-scoped cursors', async () => {
+    const scope = extractScope(
+      new Map([
+        [
+          cursorKey,
+          {
+            extractId: 'ext-1',
+            objectKey: 'source',
+            resultObjectKey: 'result.json',
+            contentType: 'application/pdf',
+            filename: 'Notes.pdf',
+            enqueuedAt: '2026-11-02T12:00:00.000Z',
+          },
+        ],
+      ]),
+    );
+    const io = extractIO();
+    await clearDriveTransientExtract({
+      integrations: scope,
+      integrationId: INTEGRATION_ID,
+      fileId: FILE_ID,
+      io,
+    });
+    expect(io.deleteDocumentObject).toHaveBeenCalledTimes(2);
+    expect(scope.saveCursor).toHaveBeenCalledWith(INTEGRATION_ID, cursorKey, {});
+    expect(fakes.adminSaveCursor).not.toHaveBeenCalled();
   });
 });

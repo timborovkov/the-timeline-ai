@@ -10,14 +10,17 @@ import { afterEach, beforeEach, describe, it } from 'bun:test';
 import { drizzle } from 'drizzle-orm/pglite';
 
 import {
+  DRIVE_EXTRACT_PENDING_STALE_MS,
   DRIVE_FILE_DEBOUNCE_MS,
   DRIVE_FILE_MAX_LATENCY_MS,
   driveDebouncePlan,
   driveExtractCursorKey,
   driveTransientExtractKeys,
   hashDrivePayload,
+  isDriveExtractPendingStale,
   linkedObjectForDriveSelection,
   loadLatestDriveSnapshot,
+  parseDriveExtractCursor,
   parseDriveTransientExtractResult,
   saveDriveSnapshot,
   takeDriveExtractSlot,
@@ -109,6 +112,36 @@ describe('drive transient extract helpers', () => {
         Buffer.from(JSON.stringify({ ok: false, error: 'Daytona is not configured' })),
       ),
     ).toEqual({ ok: false, error: 'Daytona is not configured' });
+  });
+
+  it('parses extract cursors and treats missing or aged pending as stale', () => {
+    const cursor = parseDriveExtractCursor({
+      extractId: 'ext-1',
+      objectKey: 'source',
+      resultObjectKey: 'result.json',
+      contentType: 'application/pdf',
+      filename: 'Notes.pdf',
+      enqueuedAt: '2026-11-02T12:00:00.000Z',
+    });
+    expect(cursor).toEqual({
+      extractId: 'ext-1',
+      objectKey: 'source',
+      resultObjectKey: 'result.json',
+      contentType: 'application/pdf',
+      filename: 'Notes.pdf',
+      enqueuedAt: '2026-11-02T12:00:00.000Z',
+    });
+    expect(parseDriveExtractCursor({ extractId: 'ext-1' })).toBeNull();
+    expect(cursor).not.toBeNull();
+    if (!cursor) return;
+    expect(isDriveExtractPendingStale(cursor, Date.parse('2026-11-02T12:05:00.000Z'))).toBe(false);
+    expect(
+      isDriveExtractPendingStale(
+        cursor,
+        Date.parse('2026-11-02T12:00:00.000Z') + DRIVE_EXTRACT_PENDING_STALE_MS,
+      ),
+    ).toBe(true);
+    expect(isDriveExtractPendingStale({ ...cursor, enqueuedAt: 'not-a-date' })).toBe(true);
   });
 });
 

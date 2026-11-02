@@ -390,29 +390,72 @@ function isMissingObjectError(err: unknown): boolean {
   return name === 'NoSuchKey' || name === 'NotFound' || code === 'NoSuchKey' || status === 404;
 }
 
-function driveExtractCursorFromUnknown(cursor: unknown): {
-  extractId: string;
-  objectKey: string;
-  resultObjectKey: string;
-} | null {
-  if (!cursor || typeof cursor !== 'object') return null;
-  const record = cursor as Record<string, unknown>;
-  if (
-    typeof record.extractId !== 'string' ||
-    typeof record.objectKey !== 'string' ||
-    typeof record.resultObjectKey !== 'string'
-  ) {
-    return null;
-  }
+interface DriveExtractCursorScope {
+  getIntegration: (id: string) => Promise<{ id: string; teamId: string } | null>;
+  loadCursor: (integrationId: string, resourceType: string) => Promise<unknown>;
+  saveCursor: (
+    integrationId: string,
+    resourceType: string,
+    cursor: unknown,
+    status?: { lastStatus?: string; lastError?: string | null },
+  ) => Promise<void>;
+}
+
+async function requireDriveExtractIntegration(
+  integrations: DriveExtractCursorScope,
+  integrationId: string,
+): Promise<{ id: string; teamId: string }> {
+  const integration = await integrations.getIntegration(integrationId);
+  if (!integration) throw new Error('drive extract integration not found for team');
+  return integration;
+}
+
+function driveTransientExtractJob(input: {
+  teamId: string;
+  integrationId: string;
+  fileId: string;
+  cursor: integrationsLib.DriveExtractCursor;
+}): queue.DriveTransientExtractJobData {
   return {
-    extractId: record.extractId,
-    objectKey: record.objectKey,
-    resultObjectKey: record.resultObjectKey,
+    kind: 'drive_transient',
+    teamId: input.teamId,
+    integrationId: input.integrationId,
+    fileId: input.fileId,
+    extractId: input.cursor.extractId,
+    objectKey: input.cursor.objectKey,
+    resultObjectKey: input.cursor.resultObjectKey,
+    contentType: input.cursor.contentType,
+    filename: input.cursor.filename,
   };
 }
 
-async function putAndEnqueueDriveTransientExtract(input: {
-  db: Db;
+async function loadDriveExtractCursor(
+  integrations: DriveExtractCursorScope,
+  integrationId: string,
+  fileId: string,
+): Promise<integrationsLib.DriveExtractCursor | null> {
+  await requireDriveExtractIntegration(integrations, integrationId);
+  return integrationsLib.parseDriveExtractCursor(
+    await integrations.loadCursor(integrationId, integrationsLib.driveExtractCursorKey(fileId)),
+  );
+}
+
+async function saveDriveExtractCursor(
+  integrations: DriveExtractCursorScope,
+  integrationId: string,
+  fileId: string,
+  cursor: integrationsLib.DriveExtractCursor | Record<string, never>,
+): Promise<void> {
+  await requireDriveExtractIntegration(integrations, integrationId);
+  await integrations.saveCursor(
+    integrationId,
+    integrationsLib.driveExtractCursorKey(fileId),
+    cursor,
+  );
+}
+
+export async function putAndEnqueueDriveTransientExtract(input: {
+  integrations: DriveExtractCursorScope;
   teamId: string;
   integrationId: string;
   fileId: string;
@@ -420,8 +463,10 @@ async function putAndEnqueueDriveTransientExtract(input: {
   contentType: string;
   body: Buffer;
   io?: DriveTransientExtractIO;
+  now?: Date;
 }): Promise<void> {
   const io = input.io ?? defaultDriveTransientExtractIO;
+  await requireDriveExtractIntegration(input.integrations, input.integrationId);
   const extractId = randomUUID();
   const keys = integrationsLib.driveTransientExtractKeys({
     teamId: input.teamId,
@@ -429,43 +474,45 @@ async function putAndEnqueueDriveTransientExtract(input: {
     fileId: input.fileId,
     extractId,
   });
+  const cursor: integrationsLib.DriveExtractCursor = {
+    extractId,
+    objectKey: keys.objectKey,
+    resultObjectKey: keys.resultObjectKey,
+    contentType: input.contentType,
+    filename: input.filename,
+    enqueuedAt: (input.now ?? new Date()).toISOString(),
+  };
   await io.putDocumentObject({
     bucket: io.getDocumentsBucket(),
     key: keys.objectKey,
     body: input.body,
     contentType: input.contentType,
   });
-  await integrationsLib.adminSaveCursor(
-    input.db,
-    input.integrationId,
-    integrationsLib.driveExtractCursorKey(input.fileId),
-    {
-      extractId,
-      objectKey: keys.objectKey,
-      resultObjectKey: keys.resultObjectKey,
-      contentType: input.contentType,
-      filename: input.filename,
-      enqueuedAt: new Date().toISOString(),
-    },
-  );
-  await io.enqueueDocumentExtractJob({
-    kind: 'drive_transient',
-    teamId: input.teamId,
-    integrationId: input.integrationId,
-    fileId: input.fileId,
-    extractId,
-    objectKey: keys.objectKey,
-    resultObjectKey: keys.resultObjectKey,
-    contentType: input.contentType,
-    filename: input.filename,
-  });
+  try {
+    await io.enqueueDocumentExtractJob(
+      driveTransientExtractJob({
+        teamId: input.teamId,
+        integrationId: input.integrationId,
+        fileId: input.fileId,
+        cursor,
+      }),
+    );
+  } catch (err) {
+    await Promise.allSettled([
+      io.deleteDocumentObject({ bucket: io.getDocumentsBucket(), key: keys.objectKey }),
+    ]);
+    throw err;
+  }
+  await saveDriveExtractCursor(input.integrations, input.integrationId, input.fileId, cursor);
 }
 
-async function readDriveTransientExtract(input: {
-  db: Db;
+export async function readDriveTransientExtract(input: {
+  integrations: DriveExtractCursorScope;
+  teamId: string;
   integrationId: string;
   fileId: string;
   io?: DriveTransientExtractIO;
+  now?: Date;
 }): Promise<
   | { status: 'pending' }
   | { status: 'ready'; text: string }
@@ -473,12 +520,10 @@ async function readDriveTransientExtract(input: {
   | null
 > {
   const io = input.io ?? defaultDriveTransientExtractIO;
-  const cursor = driveExtractCursorFromUnknown(
-    await integrationsLib.adminLoadCursor(
-      input.db,
-      input.integrationId,
-      integrationsLib.driveExtractCursorKey(input.fileId),
-    ),
+  const cursor = await loadDriveExtractCursor(
+    input.integrations,
+    input.integrationId,
+    input.fileId,
   );
   if (!cursor) return null;
   try {
@@ -491,25 +536,39 @@ async function readDriveTransientExtract(input: {
     if (parsed.ok) return { status: 'ready', text: parsed.text };
     return { status: 'failed', error: parsed.error };
   } catch (err) {
-    if (isMissingObjectError(err)) return { status: 'pending' };
-    const message = err instanceof Error ? err.message : String(err);
-    return { status: 'failed', error: message.slice(0, 500) };
+    if (!isMissingObjectError(err)) {
+      const message = err instanceof Error ? err.message : String(err);
+      return { status: 'failed', error: message.slice(0, 500) };
+    }
+    if (integrationsLib.isDriveExtractPendingStale(cursor, (input.now ?? new Date()).getTime())) {
+      await io.enqueueDocumentExtractJob(
+        driveTransientExtractJob({
+          teamId: input.teamId,
+          integrationId: input.integrationId,
+          fileId: input.fileId,
+          cursor,
+        }),
+      );
+      await saveDriveExtractCursor(input.integrations, input.integrationId, input.fileId, {
+        ...cursor,
+        enqueuedAt: (input.now ?? new Date()).toISOString(),
+      });
+    }
+    return { status: 'pending' };
   }
 }
 
-async function clearDriveTransientExtract(input: {
-  db: Db;
+export async function clearDriveTransientExtract(input: {
+  integrations: DriveExtractCursorScope;
   integrationId: string;
   fileId: string;
   io?: DriveTransientExtractIO;
 }): Promise<void> {
   const io = input.io ?? defaultDriveTransientExtractIO;
-  const cursor = driveExtractCursorFromUnknown(
-    await integrationsLib.adminLoadCursor(
-      input.db,
-      input.integrationId,
-      integrationsLib.driveExtractCursorKey(input.fileId),
-    ),
+  const cursor = await loadDriveExtractCursor(
+    input.integrations,
+    input.integrationId,
+    input.fileId,
   );
   if (cursor) {
     const bucket = io.getDocumentsBucket();
@@ -518,12 +577,7 @@ async function clearDriveTransientExtract(input: {
       io.deleteDocumentObject({ bucket, key: cursor.resultObjectKey }),
     ]);
   }
-  await integrationsLib.adminSaveCursor(
-    input.db,
-    input.integrationId,
-    integrationsLib.driveExtractCursorKey(input.fileId),
-    {},
-  );
+  await saveDriveExtractCursor(input.integrations, input.integrationId, input.fileId, {});
 }
 
 export async function harvestIntegrationDocument(input: {
@@ -1213,6 +1267,9 @@ export async function runOneIntegration(
         return Promise.resolve();
       },
       async loadCursor(resourceType) {
+        if (resourceType.startsWith('drive.')) {
+          return teamScope.integrations.loadCursor(integrationId, resourceType);
+        }
         return integrationsLib.adminLoadCursor(db, integrationId, resourceType);
       },
       async persistTokens(tokens) {
@@ -1239,7 +1296,7 @@ export async function runOneIntegration(
       },
       enqueueTransientDriveExtract(input) {
         return putAndEnqueueDriveTransientExtract({
-          db,
+          integrations: teamScope.integrations,
           teamId: integration.teamId,
           integrationId,
           fileId: input.fileId,
@@ -1249,10 +1306,19 @@ export async function runOneIntegration(
         });
       },
       loadTransientDriveExtract(fileId) {
-        return readDriveTransientExtract({ db, integrationId, fileId });
+        return readDriveTransientExtract({
+          integrations: teamScope.integrations,
+          teamId: integration.teamId,
+          integrationId,
+          fileId,
+        });
       },
       consumeTransientDriveExtract(fileId) {
-        return clearDriveTransientExtract({ db, integrationId, fileId });
+        return clearDriveTransientExtract({
+          integrations: teamScope.integrations,
+          integrationId,
+          fileId,
+        });
       },
       loadLatestDriveSnapshot(fileId) {
         return teamScope.integrations.loadLatestDriveSnapshot(integrationId, fileId);

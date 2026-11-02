@@ -783,12 +783,16 @@ describe('googleDriveProvider', () => {
     expect(events[0]?.contentText).not.toContain('ya29.');
   });
 
-  it('audits a visible Drive extract failure instead of skipping as empty', async () => {
+  it('audits a visible Drive extract failure then retries after clearing failed state', async () => {
+    const body = Buffer.from('%PDF-1.4 retry');
     const fetch = vi.fn<
       (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
     >((input) => {
       const url = requestUrl(input);
       if (url.pathname.endsWith('/files/file-1')) {
+        if (url.searchParams.get('alt') === 'media') {
+          return Promise.resolve(new Response(body, { status: 200 }));
+        }
         return Promise.resolve(
           jsonResponse({
             id: 'file-1',
@@ -820,13 +824,76 @@ describe('googleDriveProvider', () => {
     });
 
     expect(ctx.writeEvents).not.toHaveBeenCalled();
-    expect(ctx.enqueueTransientDriveExtract).not.toHaveBeenCalled();
+    expect(ctx.consumeTransientDriveExtract).toHaveBeenCalledWith('file-1');
+    expect(ctx.takeDriveExtractSlot).toHaveBeenCalledWith({
+      integrationId: 'integration-1',
+      fileId: 'file-1',
+    });
+    expect(ctx.enqueueTransientDriveExtract).toHaveBeenCalledOnce();
     expect(ctx.recordAudit).toHaveBeenCalledWith(
       'drive_extract_failed',
       expect.objectContaining({
         file_id: 'file-1',
         error: 'Daytona is not configured for PDF extraction',
+        retrying: true,
       }),
+    );
+    expect(ctx.recordAudit).toHaveBeenCalledWith(
+      'drive_extract_enqueued',
+      expect.objectContaining({ file_id: 'file-1' }),
+    );
+  });
+
+  it('does not retry a failed Drive extract when the extract budget is exhausted', async () => {
+    const body = Buffer.from('%PDF-1.4 retry');
+    const fetch = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((input) => {
+      const url = requestUrl(input);
+      if (url.pathname.endsWith('/files/file-1')) {
+        if (url.searchParams.get('alt') === 'media') {
+          return Promise.resolve(new Response(body, { status: 200 }));
+        }
+        return Promise.resolve(
+          jsonResponse({
+            id: 'file-1',
+            name: 'Notes',
+            mimeType: 'application/pdf',
+            parents: ['root'],
+          }),
+        );
+      }
+      if (url.pathname.endsWith('/comments')) {
+        return Promise.resolve(jsonResponse({ comments: [] }));
+      }
+      return Promise.resolve(jsonResponse({ permissions: [] }));
+    });
+    vi.stubGlobal('fetch', fetch);
+    const ctx = syncContext({
+      loadTransientDriveExtract: vi.fn().mockResolvedValue({
+        status: 'failed',
+        error: 'Daytona is not configured for PDF extraction',
+      }),
+      takeDriveExtractSlot: vi.fn().mockResolvedValue({
+        allowed: false,
+        reason: 'file',
+        retryAfterMs: 1_000,
+      }),
+    });
+
+    await googleDriveProvider.incrementalSync({
+      integration: { id: 'integration-1', teamId: 'team-1' } as never,
+      tokens: { access_token: 'access-token', expires_at: Date.now() + 600_000 },
+      selections: [{ kind: 'drive.file', externalId: 'file-1' }],
+      ctx: ctx,
+      target: { resourceType: 'drive.file', externalId: 'file-1' },
+    });
+
+    expect(ctx.consumeTransientDriveExtract).toHaveBeenCalledWith('file-1');
+    expect(ctx.enqueueTransientDriveExtract).not.toHaveBeenCalled();
+    expect(ctx.recordAudit).toHaveBeenCalledWith(
+      'drive_extract_capped',
+      expect.objectContaining({ file_id: 'file-1', reason: 'file' }),
     );
   });
 

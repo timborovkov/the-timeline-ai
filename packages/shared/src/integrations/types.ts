@@ -186,8 +186,9 @@ export interface SyncContext {
   }): Promise<void>;
   /**
    * Read a previously enqueued Drive transient extract. `pending` means the
-   * orchestrator has not written a result yet; `failed` is a visible error
-   * (missing Daytona, empty extract, routing failure) rather than a silent skip.
+   * orchestrator has not written a result yet (stale pending is re-enqueued
+   * by the worker). `failed` is a visible error; the provider clears that
+   * state and retries within the extract budget rather than blocking forever.
    */
   loadTransientDriveExtract?(
     fileId: string,

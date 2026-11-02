@@ -13,7 +13,10 @@ text is sparse or the input is an image.
 Document upload, chat attachments, inbound email, integration harvest, and
 Drive v1 PDF/Word/Slides capture all enqueue `document-extract`. Drive does not
 harvest into the document drive: the main worker uploads bytes to a transient
-S3 key, the orchestrator writes a JSON result, then `drive.file` resumes. Do
+S3 key, enqueues `document-extract` before writing the team-scoped extract
+cursor, the orchestrator writes a JSON result, then `drive.file` resumes.
+Stale pending results are re-enqueued; failed results are cleared and retried
+within the extract budget. Do
 not copy `DAYTONA_*` onto the full worker. Historically the BullMQ worker
 downloaded bytes into the same Node process that holds Postgres, Redis, S3,
 OpenRouter, `SECRETS_ENCRYPTION_KEY`, and integration tokens, then ran
