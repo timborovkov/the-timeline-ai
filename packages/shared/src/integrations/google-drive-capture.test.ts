@@ -274,6 +274,62 @@ describe('saveDriveSnapshot uniqueness', () => {
     expect(latest?.contentHash).toBe(snapshot.contentHash);
   });
 
+  it('makes a revisited fingerprint the latest baseline across A→B→A→B', async () => {
+    const [integration] = await db
+      .insert(integrations)
+      .values({
+        teamId: TEAM_ID,
+        connectedByUserId: USER_ID,
+        provider: 'google_drive',
+        displayName: 'Google Drive',
+        externalAccountId: 'drive-acct-revisit',
+        visibilityDefault: 'team',
+      })
+      .returning();
+    if (!integration) throw new Error('integration insert failed');
+
+    const snapshotA = {
+      contentHash: hashDrivePayload('body-a'),
+      snapshotText: 'body-a',
+      commentsHash: 'comments-stable',
+      permissionsHash: 'permissions-stable',
+      mimeType: 'application/vnd.google-apps.document',
+    };
+    const snapshotB = {
+      ...snapshotA,
+      contentHash: hashDrivePayload('body-b'),
+      snapshotText: 'body-b',
+    };
+    const loadLatest = () =>
+      loadLatestDriveSnapshot(db as never, {
+        teamId: TEAM_ID,
+        integrationId: integration.id,
+        fileId: 'file-ab',
+      });
+    const save = (snapshot: typeof snapshotA) =>
+      saveDriveSnapshot(db as never, {
+        teamId: TEAM_ID,
+        integrationId: integration.id,
+        fileId: 'file-ab',
+        snapshot,
+      });
+
+    await save(snapshotA);
+    expect((await loadLatest())?.contentHash).toBe(snapshotA.contentHash);
+
+    await save(snapshotB);
+    expect((await loadLatest())?.contentHash).toBe(snapshotB.contentHash);
+
+    await save(snapshotA);
+    expect((await loadLatest())?.contentHash).toBe(snapshotA.contentHash);
+
+    await save(snapshotB);
+    expect((await loadLatest())?.contentHash).toBe(snapshotB.contentHash);
+
+    const rows = await db.select().from(googleDriveFileSnapshots);
+    expect(rows).toHaveLength(2);
+  });
+
   it('loads and saves Drive snapshots through the team integrations scope', async () => {
     const [integration] = await db
       .insert(integrations)

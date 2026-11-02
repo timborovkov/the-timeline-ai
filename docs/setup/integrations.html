@@ -157,18 +157,21 @@ GOOGLE_DRIVE_WEBHOOK_SECRET=...</code></pre>
           lookup uses that matched ancestor, not only the file id, immediate parents, and root.
           Snapshots, team email domains, and those links load through
           <code>withTeam(...).integrations</code>. Snapshots uniquely key content, comments, and
-          permission fingerprints so comment-only and share-only changes persist. Comment and ACL
-          fingerprints page <code>comments.list</code> / <code>permissions.list</code> (with
-          <code>supportsAllDrives</code>) up to the same 10×100 bound as folder listing —
-          shared-drive <code>files.get</code> never returns <code>permissions</code>. The judged
-          event is written before the snapshot advances. Delayed <code>drive.file</code> and
-          <code>drive.changes</code> jobs are kept across integration and provider-budget pauses,
-          persist to the continuation handoff table when the per-integration lock is busy, and
-          attach to quota or token-refresh failures so capture resumes after the pause. A skipped
-          tick cannot advance past unprocessed watch work. Reactivating the same Drive sources keeps
-          existing object links. PDF, Word, and Google Slides text is extracted by the
-          credential-thin <code>document-extract-orchestrator</code> (ADR 0013) — the main worker
-          must not copy Daytona credentials. Extract cursors persist through
+          permission fingerprints so comment-only and share-only changes persist. Revisit of a
+          retained fingerprint refreshes its ordering timestamp so it becomes the latest baseline
+          again; otherwise A→B→A would leave B latest and a later edit back to B would be dropped as
+          unchanged. Comment and ACL fingerprints page <code>comments.list</code> /
+          <code>permissions.list</code> (with <code>supportsAllDrives</code>) up to the same 10×100
+          bound as folder listing — shared-drive <code>files.get</code> never returns
+          <code>permissions</code>. The judged event is written before the snapshot advances.
+          Delayed <code>drive.file</code> and <code>drive.changes</code> jobs are kept across
+          integration and provider-budget pauses, persist to the continuation handoff table when the
+          per-integration lock is busy, and attach to quota or token-refresh failures so capture
+          resumes after the pause. A skipped tick cannot advance past unprocessed watch work.
+          Reactivating the same Drive sources keeps existing object links. PDF, Word, and Google
+          Slides text is extracted by the credential-thin
+          <code>document-extract-orchestrator</code> (ADR 0013) — the main worker must not copy
+          Daytona credentials. Extract cursors persist through
           <code>withTeam(...).integrations</code> (not admin cursor helpers). Enqueue happens before
           the cursor write so a Redis failure cannot leave a forever-pending handoff. Extract
           cursors stamp the Drive revision of the uploaded bytes (<code>headRevisionId</code> / md5

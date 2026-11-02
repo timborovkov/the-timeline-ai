@@ -8,7 +8,7 @@ import {
   users,
   type Db,
 } from '@timeline/db';
-import { and, desc, eq, inArray, isNull, notInArray } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull, notInArray, sql } from 'drizzle-orm';
 
 import {
   checkRateLimit,
@@ -268,7 +268,25 @@ export async function saveDriveSnapshot(
       permissionsHash: input.snapshot.permissionsHash,
       mimeType: input.snapshot.mimeType,
     })
-    .onConflictDoNothing();
+    .onConflictDoUpdate({
+      target: [
+        googleDriveFileSnapshots.integrationId,
+        googleDriveFileSnapshots.fileId,
+        googleDriveFileSnapshots.contentHash,
+        googleDriveFileSnapshots.commentsHash,
+        googleDriveFileSnapshots.permissionsHash,
+      ],
+      set: {
+        snapshotText: sql`excluded.snapshot_text`,
+        mimeType: sql`excluded.mime_type`,
+        // Revisit of a retained fingerprint must become the latest baseline.
+        // `onConflictDoNothing` left the later distinct snapshot as latest, so
+        // A→B→A compared later captures against B and a later edit back to B
+        // was dropped as unchanged. `clock_timestamp()` advances inside a
+        // transaction where `now()` would not.
+        createdAt: sql`clock_timestamp()`,
+      },
+    });
   const kept = await db
     .select({ id: googleDriveFileSnapshots.id })
     .from(googleDriveFileSnapshots)
