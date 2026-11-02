@@ -6,6 +6,8 @@ import { HttpTelegramApi } from '@timeline/shared/telegram';
 import { DelayedError, Worker, type Job } from 'bullmq';
 import { z } from 'zod';
 
+import { guardWorkerProcessor } from '#src/platform-worker.js';
+
 const log = childLogger('worker:chat-delivery');
 const deliverySchema = z.object({
   provider: z.enum(['slack', 'telegram']),
@@ -71,7 +73,7 @@ export async function processChatDelivery(data: ChatDeliveryJobData): Promise<vo
 export function startChatDeliveryWorker(): Worker<ChatDeliveryJobData> {
   const worker = new Worker<ChatDeliveryJobData>(
     QUEUE_NAMES.chatDelivery,
-    async (job: Job<ChatDeliveryJobData>, token?: string) => {
+    guardWorkerProcessor(undefined, async (job: Job<ChatDeliveryJobData>, token?: string) => {
       try {
         await processChatDelivery(job.data);
       } catch (error) {
@@ -82,7 +84,7 @@ export function startChatDeliveryWorker(): Worker<ChatDeliveryJobData> {
         // One attempt: ambiguous writes are never automatically replayed.
         throw new Error('Chat delivery failed; automatic replay suppressed');
       }
-    },
+    }),
     {
       connection: getRedisConnection(),
       concurrency: 2,

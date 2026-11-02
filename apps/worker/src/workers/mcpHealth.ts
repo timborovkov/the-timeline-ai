@@ -1,9 +1,11 @@
 import { type Db, mcpServers } from '@timeline/db';
 import { childLogger, mcp, queue } from '@timeline/shared';
+import { principalIsActive } from '@timeline/shared/platform-admin/runtime';
 import { Worker, type Job } from 'bullmq';
 import { and, eq, isNull, lte, or } from 'drizzle-orm';
 
 import { captureWorkerJobFailure } from '#src/monitoring.js';
+import { guardWorkerProcessor } from '#src/platform-worker.js';
 
 const log = childLogger('worker:mcp-health');
 
@@ -31,6 +33,8 @@ export async function pingMcpServer(
   const rows = await db.select().from(mcpServers).where(eq(mcpServers.id, serverId)).limit(1);
   const row = rows[0];
   if (!row) return { ok: false, error: 'not_found' };
+  if (!(await principalIsActive(db, row.teamId, row.userId ?? undefined)))
+    return { ok: false, error: 'suspended' };
   if (row.nextHealthCheckAt && row.nextHealthCheckAt.getTime() > Date.now()) {
     return { ok: !row.lastError, ...(row.lastError ? { error: row.lastError } : {}) };
   }
@@ -125,13 +129,13 @@ export async function processMcpHealthTick(deps: HealthDeps): Promise<HealthResu
 export function startMcpHealthWorker(deps: { db: Db }): Worker<queue.McpHealthJobData> {
   const worker = new Worker<queue.McpHealthJobData>(
     queue.QUEUE_NAMES.mcpHealth,
-    async (job: Job<queue.McpHealthJobData>) => {
+    guardWorkerProcessor(deps.db, async (job: Job<queue.McpHealthJobData>) => {
       const startedAt = Date.now();
       const result = await processMcpHealthTick({ db: deps.db });
       const durationMs = Date.now() - startedAt;
       log.info({ jobId: job.id, ...result, durationMs }, 'mcp health tick');
       return { ...result, durationMs };
-    },
+    }),
     {
       connection: queue.getRedisConnection(),
       // Singleton — concurrent ticks would just duplicate pings; discovery

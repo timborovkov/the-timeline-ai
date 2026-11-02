@@ -7,6 +7,7 @@ import { DelayedError, Worker, type Job } from 'bullmq';
 
 import { withWorkerAiBilling, workerBillingJobOptions } from '#src/billing-context.js';
 import { captureWorkerJobFailure } from '#src/monitoring.js';
+import { guardWorkerProcessor } from '#src/platform-worker.js';
 
 const ZERO_UUID = '00000000-0000-0000-0000-000000000000';
 
@@ -124,7 +125,7 @@ export function startTaskCategoryWorker(
   }
   const worker = new Worker<queue.TaskCategoryJobData>(
     queue.QUEUE_NAMES.taskCategory,
-    async (job: Job<queue.TaskCategoryJobData>, token?: string) => {
+    guardWorkerProcessor(deps.db, async (job: Job<queue.TaskCategoryJobData>, token?: string) => {
       const startedAt = Date.now();
       try {
         const result = await withWorkerAiBilling(
@@ -159,7 +160,7 @@ export function startTaskCategoryWorker(
         }
         throw error;
       }
-    },
+    }),
     {
       connection: queue.getRedisConnection(),
       concurrency: 3,

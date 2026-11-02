@@ -40,6 +40,7 @@ import { z } from 'zod';
 import { trackProductEventBestEffort } from '#src/analytics.js';
 import { withWorkerAiBilling, workerBillingJobOptions } from '#src/billing-context.js';
 import { captureWorkerJobFailure } from '#src/monitoring.js';
+import { guardWorkerProcessor } from '#src/platform-worker.js';
 
 const log = childLogger('worker:meeting-finalize');
 const MEETING_SOURCE_SNAPSHOT_VERSION = 'meeting-finalized-source-snapshot-2026-07';
@@ -1065,7 +1066,7 @@ export function startMeetingFinalizeWorker(
 ): Worker<queue.MeetingFinalizeJobData> {
   const worker = new Worker<queue.MeetingFinalizeJobData>(
     queue.QUEUE_NAMES.meetingFinalize,
-    async (job: Job<queue.MeetingFinalizeJobData>, token?: string) =>
+    guardWorkerProcessor(deps.db, async (job: Job<queue.MeetingFinalizeJobData>, token?: string) =>
       withWorkerAiBilling(
         deps.db,
         job.data.teamId,
@@ -1073,6 +1074,7 @@ export function startMeetingFinalizeWorker(
         () => processMeetingFinalizeJob(deps, job.data),
         workerBillingJobOptions(job, token),
       ),
+    ),
     {
       connection: queue.getRedisConnection(),
       // Single concurrency per process — meeting summarisation is rare

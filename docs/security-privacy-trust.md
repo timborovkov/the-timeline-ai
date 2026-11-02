@@ -196,6 +196,14 @@ Provider support access follows the same minimum-necessary principle and must be
 governed by the provider contract and account controls. Section 17 records the
 current gap in evidencing staff access, break-glass logging, and review.
 
+The platform panel implements named, time-limited support sessions under
+`PLATFORM_ADMIN_EMAILS`. Operators record purpose, ticket/incident reference, and
+authorization context. Impersonation retains the selected member's role and
+visibility, records both identities, and never grants a general private-content
+bypass. Suspended inspection is read-only. These repository controls do not close
+the operational access-review and approval-evidence gaps in G-12. See
+[Platform administration](platform-admin.md).
+
 ## 6. User, team, and agent permissions
 
 Every data path must enforce both boundaries:

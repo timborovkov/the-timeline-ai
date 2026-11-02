@@ -1,5 +1,18 @@
 const checks = [
   {
+    name: '@timeline/shared platform admin exports',
+    run: async () => {
+      const service = await import('@timeline/shared/platform-admin');
+      const runtime = await import('@timeline/shared/platform-admin/runtime');
+      if (
+        typeof service.requirePlatformActor !== 'function' ||
+        typeof runtime.runGuardedJob !== 'function'
+      ) {
+        throw new Error('Platform admin authorization exports are missing');
+      }
+    },
+  },
+  {
     name: '@timeline/shared legal versions',
     run: async () => {
       const legalVersions = await import('@timeline/shared/legal-versions');

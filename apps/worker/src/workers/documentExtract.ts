@@ -26,6 +26,7 @@ import {
 } from '#src/document-ingestion/pdf-extraction.js';
 import { isDaytonaNotConfiguredError } from '#src/document-ingestion/types.js';
 import { captureWorkerJobFailure } from '#src/monitoring.js';
+import { guardWorkerProcessor } from '#src/platform-worker.js';
 
 export {
   ANYDOC_SANDBOX_MODEL,
@@ -545,7 +546,7 @@ export function startDocumentExtractWorker(
   const io = defaultIO();
   const worker = new Worker<queue.DocumentExtractJobData>(
     queue.QUEUE_NAMES.documentExtract,
-    async (job: Job<queue.DocumentExtractJobData>, token?: string) =>
+    guardWorkerProcessor(deps.db, async (job: Job<queue.DocumentExtractJobData>, token?: string) =>
       withWorkerAiBilling(
         deps.db,
         job.data.teamId,
@@ -553,6 +554,7 @@ export function startDocumentExtractWorker(
         () => processDocumentExtractJob(deps, job.data, io),
         workerBillingJobOptions(job, token),
       ),
+    ),
     {
       connection: queue.getRedisConnection(),
       // PDF / vision extraction will be CPU- or LLM-bound; keep modest

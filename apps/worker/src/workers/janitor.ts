@@ -22,6 +22,7 @@ import { and, asc, eq, gt, inArray, isNotNull, isNull, or, sql } from 'drizzle-o
 import { alias } from 'drizzle-orm/pg-core';
 
 import { captureWorkerException, captureWorkerJobFailure } from '#src/monitoring.js';
+import { guardWorkerProcessor } from '#src/platform-worker.js';
 
 // Keyset paging by id keeps memory bounded on a backlog that hasn't been
 // swept in a while. UUIDs sort lexicographically — total + stable, which
@@ -415,7 +416,7 @@ async function sweepMeetings(
 export function startJanitorWorker(deps: { db: Db }): Worker<queue.JanitorJobData> {
   const worker = new Worker<queue.JanitorJobData>(
     queue.QUEUE_NAMES.janitor,
-    async (job: Job<queue.JanitorJobData>) => {
+    guardWorkerProcessor(deps.db, async (job: Job<queue.JanitorJobData>) => {
       const startedAt = Date.now();
       const result = await processJanitorTick({ db: deps.db });
       try {
@@ -433,7 +434,7 @@ export function startJanitorWorker(deps: { db: Db }): Worker<queue.JanitorJobDat
         log.info({ jobId: job.id, ...result, durationMs }, 'janitor: completed maintenance');
       }
       return { ...result, durationMs };
-    },
+    }),
     {
       connection: queue.getRedisConnection(),
       // Singleton — the sweep is cheap and concurrent runs would just

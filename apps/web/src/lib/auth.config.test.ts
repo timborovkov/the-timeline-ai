@@ -40,6 +40,17 @@ describe('hasCurrentLegalSession', () => {
 });
 
 describe('authorizeProductRequest', () => {
+  it('allows exiting impersonation with stale legal acceptance', () => {
+    expect(
+      authorizeProductRequest({
+        auth: session(false),
+        request: request('/api/platform-admin/exit'),
+      }),
+    ).toBe(true);
+    expect(
+      authorizeProductRequest({ auth: session(false), request: request('/app/admin/users') }),
+    ).toBe(true);
+  });
   it('does not enforce an unpublished legal version in production', () => {
     vi.stubEnv('NODE_ENV', 'production');
     vi.stubEnv('LEGAL_PUBLICATION_READY', 'false');

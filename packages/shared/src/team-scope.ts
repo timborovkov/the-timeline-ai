@@ -40,9 +40,6 @@ import {
 } from '@timeline/db';
 import { and, asc, desc, eq, gte, inArray, isNull, lt, ne, notInArray, or, sql } from 'drizzle-orm';
 
-import type { chatStructured } from '#src/llm/chat.js';
-import type { TimelineMomentLookupPlan } from '#src/timeline-moments/index.js';
-
 import { createAuditScope } from '#src/audit/scope.js';
 import { getBillingContext, runWithBillingContext } from '#src/billing/context.js';
 import { createBillingOperatorScope } from '#src/billing/operator-store.js';
@@ -68,6 +65,11 @@ import { invalidateObjectSummariesForRawEvent } from '#src/objects/summaries.js'
 import { createOnboardingScope } from '#src/onboarding/index.js';
 import { decodeCursor, encodeCursor, pageWindow } from '#src/pagination.js';
 import { createPinScope } from '#src/pins/scope.js';
+import {
+  guardTeamAccess,
+  guardOperatorScope,
+  operatorDatabase,
+} from '#src/platform-admin/runtime.js';
 import {
   getQdrantClient,
   type SearchHit,
@@ -96,6 +98,9 @@ import {
   rawEventIsActive,
   rawEventVisibleToUser,
 } from '#src/visibility.js';
+
+import type { chatStructured } from '#src/llm/chat.js';
+import type { TimelineMomentLookupPlan } from '#src/timeline-moments/index.js';
 
 // Note: `teamRole` value is referenced at runtime by drizzle elsewhere; keeping
 // the value import lets us derive the union type from the enum definition.
@@ -583,12 +588,14 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
  * to require a higher role than `member` (e.g. for admin-only operations).
  */
 export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScopeDeps = {}) {
+  db = operatorDatabase(db);
   const visibilityFilter = rawEventVisibleToUser(userId);
   const activeRawEventFilter = rawEventIsActive();
 
   let membershipPromise: Promise<TeamRole> | undefined;
 
-  function ensureMember(minRole: TeamRole = 'member'): Promise<TeamRole> {
+  async function ensureMember(minRole: TeamRole = 'member'): Promise<TeamRole> {
+    await guardTeamAccess(db, teamId, userId, deps.skipMembershipCheck);
     if (deps.skipMembershipCheck) {
       // Trusted-caller path (Phase 11 outbound MCP): membership has
       // already been proven by the bearer-key resolution. Resolve as
@@ -2810,7 +2817,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
     getTimezone: async () => (await calendarScope.getCalendarSettings()).defaultTimezone,
   });
 
-  return {
+  const guardedScope = {
     ...core,
     timeline: {
       /** Internal recovery metadata, never a user-visible event read. */
@@ -4281,6 +4288,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
     audit: auditScope,
     telegram: telegramScope,
   };
+  return guardOperatorScope(db, teamId, userId, guardedScope, '', deps.skipMembershipCheck);
 }
 
 export type TeamScope = ReturnType<typeof withTeam>;

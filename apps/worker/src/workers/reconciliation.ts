@@ -31,6 +31,7 @@ import { and, count, desc, eq, gte, inArray, lte, or, sql, type SQL } from 'driz
 
 import { withWorkerAiBilling, workerBillingJobOptions } from '#src/billing-context.js';
 import { captureWorkerJobFailure } from '#src/monitoring.js';
+import { guardWorkerProcessor } from '#src/platform-worker.js';
 
 const log = childLogger('worker:reconciliation');
 
@@ -1483,7 +1484,7 @@ function sourceFromJob(source: string | undefined): ReconciliationEvidenceSource
 export function startReconciliationWorker(deps: { db: Db }): Worker<queue.ReconciliationJobData> {
   const worker = new Worker<queue.ReconciliationJobData>(
     queue.QUEUE_NAMES.reconciliation,
-    async (job: Job<queue.ReconciliationJobData>, token?: string) => {
+    guardWorkerProcessor(deps.db, async (job: Job<queue.ReconciliationJobData>, token?: string) => {
       const startedAt = Date.now();
       const result = await withWorkerAiBilling(
         deps.db,
@@ -1505,7 +1506,7 @@ export function startReconciliationWorker(deps: { db: Db }): Worker<queue.Reconc
         'reconciliation job completed',
       );
       return { ...result, durationMs };
-    },
+    }),
     { connection: queue.getRedisConnection(), concurrency: 1 },
   );
 

@@ -50,6 +50,8 @@ export function hasCurrentLegalSession(
 }
 
 function isLegalExemptApi(path: string): boolean {
+  // Revoking an operator session must remain possible after legal versions change.
+  if (path === '/api/platform-admin/exit') return true;
   return LEGAL_EXEMPT_API_PREFIXES.some(
     (prefix) => path === prefix || path.startsWith(`${prefix}/`),
   );
@@ -96,6 +98,9 @@ export function authorizeProductRequest({
   const isInviteRoute = isRouteWithin(path, '/accept-invite');
 
   if (isAppRoute && !isAuthed) return unauthenticatedAppRedirect(request);
+  // Platform authorization must decide 404 before clickwrap redirects. The admin
+  // page/action guard checks current legal acceptance after verifying eligibility.
+  if (isRouteWithin(path, '/app/admin') || isRouteWithin(path, '/api/platform-admin')) return true;
   if (!isAuthed || !isLegalPublicationReady() || hasCurrentLegalSession(auth?.user)) return true;
 
   if (isAppRoute || isInviteRoute) {

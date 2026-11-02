@@ -1,13 +1,16 @@
 import { type Db } from '@timeline/db';
 import { childLogger, integrations as integrationsLib, queue } from '@timeline/shared';
+import { assertActivePrincipal } from '@timeline/shared/platform-admin/runtime';
 import { DelayedError, Worker, type Job } from 'bullmq';
 
 import { captureWorkerJobFailure } from '#src/monitoring.js';
+import { guardWorkerProcessor } from '#src/platform-worker.js';
 
 const log = childLogger('worker:webhook-delivery');
 
 interface WebhookDeliveryWorkerDeps {
   db: Db;
+  assertActive?: typeof assertActivePrincipal;
 }
 
 export interface WebhookDeliveryProcessResult {
@@ -105,6 +108,11 @@ export async function processWebhookDeliveryJob(
       );
       continue;
     }
+    await (deps.assertActive ?? assertActivePrincipal)(
+      deps.db,
+      integration.teamId,
+      integration.connectedByUserId ?? undefined,
+    );
     if (!integration.enabled) {
       ignored += 1;
       await integrationsLib.markWebhookDeliveryTargetIgnored(
@@ -276,24 +284,27 @@ export function startWebhookDeliveryWorker(
 ): Worker<queue.WebhookDeliveryJobData> {
   const worker = new Worker<queue.WebhookDeliveryJobData>(
     queue.QUEUE_NAMES.webhookDelivery,
-    async (job: Job<queue.WebhookDeliveryJobData>, token?: string) => {
-      const startedAt = Date.now();
-      let result: WebhookDeliveryProcessResult;
-      try {
-        result = await processWebhookDeliveryJob(deps, job.data);
-      } catch (error) {
-        if (error instanceof Error && 'retryAt' in error && error.retryAt instanceof Date) {
-          await job.moveToDelayed(Math.max(Date.now() + 1000, error.retryAt.getTime()), token);
-          throw new DelayedError();
+    guardWorkerProcessor(
+      deps.db,
+      async (job: Job<queue.WebhookDeliveryJobData>, token?: string) => {
+        const startedAt = Date.now();
+        let result: WebhookDeliveryProcessResult;
+        try {
+          result = await processWebhookDeliveryJob(deps, job.data);
+        } catch (error) {
+          if (error instanceof Error && 'retryAt' in error && error.retryAt instanceof Date) {
+            await job.moveToDelayed(Math.max(Date.now() + 1000, error.retryAt.getTime()), token);
+            throw new DelayedError();
+          }
+          throw error;
         }
-        throw error;
-      }
-      log.info(
-        { jobId: job.id, ...result, durationMs: Date.now() - startedAt },
-        'webhook delivery job complete',
-      );
-      return result;
-    },
+        log.info(
+          { jobId: job.id, ...result, durationMs: Date.now() - startedAt },
+          'webhook delivery job complete',
+        );
+        return result;
+      },
+    ),
     { connection: queue.getRedisConnection(), concurrency: 4 },
   );
 

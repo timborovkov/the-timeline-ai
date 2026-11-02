@@ -26,6 +26,19 @@ export async function runSentryServerAction<T>(
       if (!PRE_ACCEPTANCE_ACTIONS.has(operation)) {
         await requireCurrentLegalSession(requestHeaders);
       }
+      if ((await requestHeaders).has('next-action')) {
+        const { getRequestIdentity } = await import('@/lib/auth');
+        const { impersonation } = await getRequestIdentity();
+        if (
+          impersonation &&
+          (impersonation.readOnly ||
+            /(?:sign_|legal|verification|invite|create_team|switch_team|leave_team|billing|mcp|oauth|integration|telegram|slack|connection|password|link_token|unbind_chat)/.test(
+              operation,
+            ))
+        ) {
+          throw new Error('Exit impersonation before performing this account action');
+        }
+      }
       return callback();
     },
   );

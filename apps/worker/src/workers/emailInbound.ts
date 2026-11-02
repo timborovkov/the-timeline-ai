@@ -6,13 +6,14 @@ import { DelayedError, UnrecoverableError, Worker, type Job } from 'bullmq';
 import type { Db } from '@timeline/db';
 
 import { captureWorkerJobFailure } from '#src/monitoring.js';
+import { guardWorkerProcessor } from '#src/platform-worker.js';
 
 const log = childLogger('worker:email-inbound');
 
 export function startEmailInboundWorker({ db }: { db: Db }): Worker<EmailInboundJobData> {
   const worker = new Worker<EmailInboundJobData>(
     QUEUE_NAMES.emailInbound,
-    (job, token) => processInboundJob(db, job, token),
+    guardWorkerProcessor(db, (job, token) => processInboundJob(db, job, token)),
     { connection: getRedisConnection(), concurrency: 2 },
   );
   worker.on('failed', (job, error) => {
