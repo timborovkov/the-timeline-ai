@@ -3,7 +3,15 @@
 import { useQuery } from '@tanstack/react-query';
 import { ExternalLink, Plug, Search } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { useId, useMemo, useReducer, useRef, useState, type RefObject } from 'react';
+import {
+  useId,
+  useMemo,
+  useReducer,
+  useRef,
+  useState,
+  type ReactNode,
+  type RefObject,
+} from 'react';
 
 import { EmptyState } from '@/components/empty-state';
 import { InlineError } from '@/components/inline-error';
@@ -157,31 +165,39 @@ function sourcePickerReducer(
 export function PersonalConnectionsUi({
   connections,
   connectProviderHref = '#connect-provider',
+  compact = false,
+  connectControl,
 }: {
   connections: ProviderConnection[];
   connectProviderHref?: string;
+  compact?: boolean;
+  connectControl?: ReactNode;
 }) {
   if (connections.length === 0) {
     return (
       <div className="space-y-3">
-        <PersonalConnectionFlow />
+        {compact ? null : <PersonalConnectionFlow />}
         <EmptyState
           icon={Plug}
+          size={compact ? 'compact' : undefined}
           title="No provider accounts yet"
           body="Connect an account to choose the sources this team may use."
         >
-          <Button asChild size="sm">
-            <a href={connectProviderHref}>Connect a provider account</a>
-          </Button>
+          {connectControl ?? (
+            <Button asChild size="sm">
+              <a href={connectProviderHref}>Connect a provider account</a>
+            </Button>
+          )}
         </EmptyState>
       </div>
     );
   }
   return (
     <div className="space-y-3">
-      <PersonalConnectionFlow />
+      {compact ? null : <PersonalConnectionFlow />}
+      {compact && connectControl ? <div className="flex justify-end">{connectControl}</div> : null}
       {connections.map((connection) => (
-        <ConnectionSources key={connection.id} connection={connection} />
+        <ConnectionSources compact={compact} connection={connection} key={connection.id} />
       ))}
     </div>
   );
@@ -361,7 +377,13 @@ function PersonalConnectionToolbar({
   );
 }
 
-function ConnectionSources({ connection }: { connection: ProviderConnection }) {
+function ConnectionSources({
+  connection,
+  compact = false,
+}: {
+  connection: ProviderConnection;
+  compact?: boolean;
+}) {
   const router = useRouter();
   const [state, dispatch] = useReducer(sourcePickerReducer, initialSourcePickerState);
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -546,6 +568,7 @@ function ConnectionSources({ connection }: { connection: ProviderConnection }) {
 
   return (
     <ConnectionSourcesPanel
+      compact={compact}
       connection={connection}
       selected={selected}
       query={query}
@@ -587,6 +610,7 @@ function ConnectionSources({ connection }: { connection: ProviderConnection }) {
 }
 
 function ConnectionSourcesPanel({
+  compact = false,
   connection,
   selected,
   query,
@@ -610,6 +634,7 @@ function ConnectionSourcesPanel({
   onToggle,
   onClearSearch,
 }: {
+  compact?: boolean;
   connection: ProviderConnection;
   selected: Set<string>;
   query: string;
@@ -662,9 +687,13 @@ function ConnectionSourcesPanel({
         </span>
       </div>
       <div className="space-y-3 p-3">
-        <ProviderAccountHint provider={connection.provider} />
-        <ProviderSourceHint provider={connection.provider} />
-        <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
+        {compact ? null : <ProviderAccountHint provider={connection.provider} />}
+        {compact ? null : <ProviderSourceHint provider={connection.provider} />}
+        <div
+          className={
+            compact ? 'space-y-2' : 'grid gap-2 md:grid-cols-[minmax(0,1fr)_auto] md:items-end'
+          }
+        >
           <div className="min-w-0 space-y-1.5">
             <label htmlFor={searchInputId} className="block text-xs font-medium text-fg">
               Search sources
@@ -723,15 +752,17 @@ function ConnectionSourcesPanel({
           />
         ) : null}
         {picker.isLoading ? <SourcePickerLoading /> : null}
-        {grouped.map((group) => (
-          <ResourceGroup
-            key={group.kind}
-            title={group.label}
-            resources={group.resources}
-            selected={selected}
-            onToggle={onToggle}
-          />
-        ))}
+        <div data-slot="provider-resource-picker" data-provider={connection.provider}>
+          {grouped.map((group) => (
+            <ResourceGroup
+              key={group.kind}
+              title={group.label}
+              resources={group.resources}
+              selected={selected}
+              onToggle={onToggle}
+            />
+          ))}
+        </div>
         {picker.showEmptyResult ? (
           <SourcePickerEmptyState
             query={query}
@@ -923,10 +954,12 @@ export function TeamSourcesUi({
   rows,
   activeShareIds,
   isAdmin,
+  compact = false,
 }: {
   rows: TeamShareRow[];
   activeShareIds: string[];
   isAdmin: boolean;
+  compact?: boolean;
 }) {
   const router = useRouter();
   const activeShareIdSet = useMemo(() => new Set(activeShareIds), [activeShareIds]);
@@ -954,7 +987,7 @@ export function TeamSourcesUi({
     return (
       <EmptyState
         icon={Plug}
-        size="inset"
+        size={compact ? 'compact' : 'inset'}
         title="No shared provider sources yet"
         body="Connection owners can share sources from Personal connections so this team can import them."
       />
@@ -1007,7 +1040,7 @@ export function TeamSourcesUi({
 
   return (
     <div className="space-y-3">
-      <TeamSyncFlow isAdmin={isAdmin} />
+      {compact ? null : <TeamSyncFlow isAdmin={isAdmin} />}
       {[...groups.entries()].map(([connectionId, groupRows]) => {
         const connection = groupRows[0]?.connection;
         if (!connection) return null;

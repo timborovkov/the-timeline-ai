@@ -663,15 +663,20 @@ forms, with hairline section structure, 12px muted labels, compact `sm`
 outline saves, and at most one filled primary action per view (Rename, Create
 invite, Start export). Select and checkbox preferences may save immediately.
 
-Connections is a collection directory. Provider and capture surfaces are
-`CollectionGroup` + `CollectionRow` rows (icon or white padded logo tile, name,
-status, one context line, quiet action). They are not bordered `p-4` cards.
-Native providers from the catalog appear in the same list as Meetings,
-Documents, Email, and Telegram — there is no separate Integrations row, and
-Slack appears once. Status uses `CollectionStatus` or readable sentence-case
-text, not uppercase chips. Advanced MCP, webhook, audit, and job-recovery tools
-sit in a compact advanced section. Provider logos always sit on a white padded
-rounded tile.
+Connections is a collection directory. Each native provider appears once.
+Connected providers are `CollectionGroup` + `CollectionRow` rows (white padded
+logo tile, name, one status — Connected, Syncing for team, or Needs attention —
+and one primary action). They are not bordered `p-4` cards. Clicking a connected
+row opens a details sheet with that provider’s accounts, resource picker (repos,
+projects, channels, folders), default team visibility, team-sync activation,
+matching MCP server, recent activity, and disconnect. A Drive folder picker
+replaces the generic checkbox list inside that resource-picker slot. Available
+providers sit below as a searchable Connect list. Agent MCP, webhooks, inbound
+email (including the allowed-senders editor), audit, and job recovery sit in one
+collapsed Advanced section. There is no separate Integrations row, and no
+provider is listed twice. Status uses `CollectionStatus` or readable
+sentence-case text, not uppercase chips. Provider logos always sit on a white
+padded rounded tile.
 
 Meetings keep the collection header and rows. Capture and saved-meeting setup
 forms sit in a closed disclosure so the list is the default view. The Saved tab

@@ -150,6 +150,7 @@ function model(): Parameters<typeof IntegrationsPageView>[0]['model'] {
       },
     ],
     connectedMembers: [],
+    ownedConnections: [],
     mcpServerRows: [],
   };
 }

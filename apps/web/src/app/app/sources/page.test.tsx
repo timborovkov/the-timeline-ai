@@ -1,6 +1,8 @@
 import { expect } from '@timeline/test-support';
 import { vi } from '@timeline/test-support';
 import { afterEach, describe, it } from 'bun:test';
+
+import type { ReactElement } from 'react';
 // Test environment: happy-dom
 
 await vi.mock(
@@ -28,6 +30,14 @@ await vi.mock(
   }),
   () => import('@/app/actions/visibility'),
 );
+await vi.mock(
+  import.meta.resolve('@/app/actions/teams'),
+  async () => ({
+    ...(await import('@/app/actions/teams')),
+    updateInboundEmailWhitelistAction: vi.fn(() => Promise.resolve({ ok: true })),
+  }),
+  () => import('@/app/actions/teams'),
+);
 const notify = vi.hoisted(() => ({
   notifyError: vi.fn(),
   notifySuccess: vi.fn(),
@@ -42,7 +52,9 @@ await vi.mock(
   () => import('@/lib/notify'),
 );
 
-const { cleanup, render, screen } = await import('@testing-library/react');
+const { QueryClient, QueryClientProvider } = await import('@tanstack/react-query');
+const { cleanup, render, screen, within } = await import('@testing-library/react');
+const { default: userEvent } = await import('@testing-library/user-event');
 const { renderToString } = await import('react-dom/server');
 const { RedirectActionToast } = await import('@/components/redirect-action-toast');
 const { SourcesPageView } = await import('@/app/app/sources/sources-page-content');
@@ -52,6 +64,13 @@ afterEach(() => {
   notify.notifySuccess.mockClear();
   cleanup();
 });
+
+function renderPage(ui: ReactElement) {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  return render(<QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>);
+}
 
 const baseConnectedRow = {
   provider: 'github',
@@ -105,6 +124,13 @@ function model(
         label: 'GitHub',
         description: 'Repository activity and pull requests.',
         logo: '/connectors/github.svg',
+        available: true,
+      },
+      {
+        id: 'linear' as const,
+        label: 'Linear',
+        description: 'Issues and projects.',
+        logo: '/connectors/linear.svg',
         available: true,
       },
       {
@@ -167,16 +193,41 @@ function model(
         displayName: 'GitHub — healthy',
         attention: [],
       },
+      {
+        ...baseConnectedRow,
+        id: 'integration-linear',
+        provider: 'linear',
+        displayName: 'Linear — Acme',
+        attention: [],
+      },
     ],
     connectedMembers: [],
+    ownedConnections: [
+      {
+        id: 'conn-1',
+        provider: 'github',
+        displayName: 'GitHub — Tim',
+        lastError: null,
+        lastConnectedAt: '2026-06-01T00:00:00.000Z',
+      },
+    ],
     mcpServerRows: [],
     ...overrides,
   };
 }
 
+async function expandAdvanced() {
+  const user = userEvent.setup();
+  const trigger = screen.getByRole('button', { name: /^Advanced / });
+  if (trigger.getAttribute('aria-expanded') === 'false') {
+    await user.click(trigger);
+  }
+  return user;
+}
+
 describe('SourcesPageView', () => {
-  it('keeps one page heading, the inbound address copy control, and sender-attribution guidance', () => {
-    render(
+  it('keeps one page heading and lists each native provider once', () => {
+    renderPage(
       <SourcesPageView
         params={{}}
         active={{ teamName: 'Acme Labs' }}
@@ -187,151 +238,204 @@ describe('SourcesPageView', () => {
     );
 
     expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
-    expect(screen.getByText('acme+archive@inbound.timeline.test')).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Copy address' })).toBeTruthy();
-    expect(screen.getByText(/Member email addresses are attributed automatically/)).toBeTruthy();
-    expect(screen.getByText(/Unknown senders are captured and marked unverified/)).toBeTruthy();
-  });
-
-  it('lists native providers as collection rows without a separate Integrations or duplicate Slack row', () => {
-    render(
-      <SourcesPageView
-        params={{}}
-        active={{ teamName: 'Acme Labs' }}
-        isAdmin
-        summary={summary()}
-        model={model()}
-      />,
-    );
-
     expect(document.querySelectorAll('#github')).toHaveLength(1);
+    expect(document.querySelectorAll('#linear')).toHaveLength(1);
     expect(document.querySelectorAll('#google_drive')).toHaveLength(1);
     expect(document.querySelectorAll('#slack')).toHaveLength(1);
-    expect(screen.getByRole('link', { name: 'Chat capture: Slack' })).toBeTruthy();
-    expect(screen.queryByRole('link', { name: /Install Slack/ })).toBeNull();
+    expect(screen.getByText('Connected providers')).toBeTruthy();
+    expect(screen.getByText('Available providers')).toBeTruthy();
+    expect(screen.queryByText('Active team sync')).toBeNull();
+    expect(screen.queryByText('Available shared sources')).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Chat capture: Slack' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Connect: google_drive' })).toBeTruthy();
+    expect(screen.getByText('Needs attention')).toBeTruthy();
+    expect(screen.getByText('Syncing for team')).toBeTruthy();
+  });
+
+  it('filters the available provider list by search', async () => {
+    const user = userEvent.setup();
+    renderPage(
+      <SourcesPageView
+        params={{}}
+        active={{ teamName: 'Acme Labs' }}
+        isAdmin
+        summary={summary()}
+        model={model()}
+      />,
+    );
+
+    await user.type(screen.getByLabelText('Search available providers'), 'drive');
+    expect(screen.getByText('Google Drive')).toBeTruthy();
+    expect(screen.queryByText('Slack')).toBeNull();
+    expect(screen.queryByText('No matching providers.')).toBeNull();
+  });
+
+  it('keeps native-named MCP catalog entries off the page until that provider sheet opens', async () => {
+    const user = userEvent.setup();
+    renderPage(
+      <SourcesPageView
+        params={{}}
+        active={{ teamName: 'Acme Labs' }}
+        isAdmin
+        summary={summary()}
+        model={model({
+          mcpCatalogAvailable: [
+            {
+              id: 'linear',
+              label: 'Linear',
+              description: 'Linear MCP tools.',
+              logo: '/connectors/linear.svg',
+              category: 'project-management',
+              kind: 'mcp',
+              status: 'mcp_available',
+              ingestStatus: 'coming_soon',
+              featured: false,
+              examplePrompt: 'What is blocked in Linear?',
+            },
+            {
+              id: 'notion',
+              label: 'Notion',
+              description: 'Notion MCP tools.',
+              logo: '/connectors/notion.svg',
+              category: 'productivity',
+              kind: 'mcp',
+              status: 'mcp_available',
+              ingestStatus: 'coming_soon',
+              featured: false,
+              examplePrompt: 'What is in the runbook?',
+            },
+          ],
+        })}
+      />,
+    );
+
+    expect(document.querySelectorAll('#linear')).toHaveLength(1);
+    expect(screen.getByRole('button', { name: /^Advanced / }).getAttribute('aria-expanded')).toBe(
+      'false',
+    );
+
+    await expandAdvanced();
+    const advanced = screen.getByRole('button', { name: /^Advanced / }).closest('section');
+    if (!advanced) throw new Error('Expected Advanced section');
+    expect(within(advanced).getByText('Notion')).toBeTruthy();
+    expect(within(advanced).queryByText('Linear')).toBeNull();
+
+    await user.click(screen.getByRole('button', { name: 'Open Linear details' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Linear' });
+    expect(within(dialog).getByText('MCP')).toBeTruthy();
+  });
+
+  it('opens a provider details sheet with accounts, team sync, and visibility', async () => {
+    const user = userEvent.setup();
+    renderPage(
+      <SourcesPageView
+        params={{}}
+        active={{ teamName: 'Acme Labs' }}
+        isAdmin
+        summary={summary()}
+        model={model()}
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Open Linear details' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Linear' });
+    expect(within(dialog).getByText('Accounts')).toBeTruthy();
+    expect(within(dialog).getByText('Team sync')).toBeTruthy();
     expect(
-      screen.queryByText('Connect Google Drive, Linear, GitHub, Monday.com, Slack, and Sentry.'),
-    ).toBeNull();
-    expect(screen.getByRole('button', { name: 'Connect: github' })).toBeTruthy();
+      within(dialog).getByRole('combobox', { name: 'Default visibility for Linear' }),
+    ).toBeTruthy();
+    expect(within(dialog).getAllByText('Linear — Acme').length).toBeGreaterThan(0);
   });
 
-  it('keeps source actions contextual and rows responsive for keyboard and narrow-screen use', () => {
-    const { container } = render(
+  it('keeps the allowed-senders editor and admin tools inside collapsed Advanced', async () => {
+    renderPage(
       <SourcesPageView
         params={{}}
         active={{ teamName: 'Acme Labs' }}
         isAdmin
         summary={summary()}
         model={model()}
+        inboundEmail={{
+          inboundEmail: 'acme+archive@inbound.timeline.test',
+          enabled: true,
+          senders: ['vendor@example.test'],
+          placeholderInbound: false,
+        }}
       />,
     );
 
-    expect(screen.getByRole('link', { name: 'Manage email: Email' })).toBeTruthy();
-    expect(container.innerHTML).toContain('min-h-8');
-    expect(container.innerHTML).toContain('sm:flex-row sm:items-center sm:gap-3');
-    expect(container.innerHTML).toContain('focus-visible:ring-2 focus-visible:ring-signal/50');
-    expect(container.innerHTML).toContain('bg-white');
-    expect(screen.getByText('Advanced tools')).toBeTruthy();
-    expect(container.innerHTML).not.toContain('rounded-md border border-border bg-surface p-4');
-  });
-
-  it('shows administrator tools only to owners and admins', () => {
-    const { rerender } = render(
-      <SourcesPageView
-        params={{}}
-        active={{ teamName: 'Acme Labs' }}
-        isAdmin
-        summary={summary()}
-        model={model()}
-      />,
-    );
-    expect(screen.getByRole('link', { name: 'Outbound MCP sharing' })).toBeTruthy();
-    expect(screen.getByRole('link', { name: 'Integration audit' })).toBeTruthy();
-
-    rerender(
-      <SourcesPageView
-        params={{}}
-        active={{ teamName: 'Acme Labs' }}
-        isAdmin={false}
-        summary={summary()}
-        model={model({ isAdmin: false })}
-      />,
+    expect(screen.getByRole('button', { name: /^Advanced / }).getAttribute('aria-expanded')).toBe(
+      'false',
     );
     expect(screen.queryByRole('link', { name: 'Outbound MCP sharing' })).toBeNull();
-    expect(screen.queryByRole('link', { name: 'Integration audit' })).toBeNull();
-    expect(screen.getByRole('link', { name: 'Provider accounts' })).toBeTruthy();
-  });
 
-  it('sends meeting failures to job recovery for admins only', () => {
-    const failedSummary = summary({
-      meetingsRecent: 4,
-      meetingsFailed: 2,
-      attention: 1,
-    });
-    const { rerender } = render(
-      <SourcesPageView
-        params={{}}
-        active={{ teamName: 'Acme Labs' }}
-        isAdmin
-        summary={failedSummary}
-        model={model()}
-      />,
-    );
-    expect(
-      screen.getByRole('link', { name: 'Review failures: Meetings' }).getAttribute('href'),
-    ).toBe('/app/team/jobs?kind=meeting_finalization');
-
-    rerender(
-      <SourcesPageView
-        params={{}}
-        active={{ teamName: 'Acme Labs' }}
-        isAdmin={false}
-        summary={failedSummary}
-        model={model({ isAdmin: false })}
-      />,
-    );
-    expect(screen.queryByRole('link', { name: /Review failures/ })).toBeNull();
-    expect(screen.queryByRole('link', { name: /job recovery/i })).toBeNull();
-  });
-
-  it('orders recovery, connected sources, capture, team sync, then advanced tools', () => {
-    render(
-      <SourcesPageView
-        params={{}}
-        active={{ teamName: 'Acme' }}
-        isAdmin
-        summary={summary()}
-        model={model()}
-      />,
-    );
-
-    expect(screen.getByRole('heading', { name: 'Connections', level: 1 })).toBeTruthy();
-    const sectionNames = [
-      'Needs attention',
-      'Add a connection',
-      'Capture from email and chat',
-      'Active team sync',
-      'Available shared sources',
-      'Advanced tools',
-      'Advanced integration tools',
-    ];
-    const nodes = sectionNames.map((name) => screen.getByText(name, { exact: true }));
-    expect(
-      nodes.every((current, index) => {
-        const next = nodes[index + 1];
-        if (!next) return true;
-        return Boolean(current.compareDocumentPosition(next) & Node.DOCUMENT_POSITION_FOLLOWING);
-      }),
-    ).toBe(true);
-    expect(screen.getAllByText('GitHub — needs help').length).toBeGreaterThan(0);
-    expect(screen.getByRole('link', { name: 'Reconnect account' })).toBeTruthy();
-    expect(screen.getByText(/Choose which provider-account sources/i)).toBeTruthy();
+    await expandAdvanced();
+    expect(screen.getByLabelText('Additional senders')).toBeTruthy();
+    expect(screen.getByText('vendor@example.test')).toBeTruthy();
+    expect(screen.getByDisplayValue('acme+archive@inbound.timeline.test')).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Outbound MCP sharing' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Integration audit' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Job recovery' })).toBeTruthy();
     expect(screen.getByRole('link', { name: 'Agent install guide' }).getAttribute('href')).toBe(
       '/help/agents',
     );
   });
 
-  it('keeps the shared-source anchor available when replacement attention has no sources yet', () => {
+  it('keeps source actions contextual and rows responsive for keyboard and narrow-screen use', () => {
+    const { container } = renderPage(
+      <SourcesPageView
+        params={{}}
+        active={{ teamName: 'Acme Labs' }}
+        isAdmin
+        summary={summary()}
+        model={model()}
+      />,
+    );
+
+    expect(container.innerHTML).toContain('min-h-8');
+    expect(container.innerHTML).toContain('sm:flex-row sm:items-center sm:gap-3');
+    expect(container.innerHTML).toContain('focus-visible:ring-2 focus-visible:ring-signal/50');
+    expect(container.innerHTML).toContain('bg-white');
+    expect(container.innerHTML).not.toContain('rounded-md border border-border bg-surface p-4');
+  });
+
+  it('shows administrator tools only to owners and admins', async () => {
+    const { rerender } = renderPage(
+      <SourcesPageView
+        params={{}}
+        active={{ teamName: 'Acme Labs' }}
+        isAdmin
+        summary={summary()}
+        model={model()}
+      />,
+    );
+    await expandAdvanced();
+    expect(screen.getByRole('link', { name: 'Outbound MCP sharing' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Integration audit' })).toBeTruthy();
+
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    rerender(
+      <QueryClientProvider client={queryClient}>
+        <SourcesPageView
+          params={{}}
+          active={{ teamName: 'Acme Labs' }}
+          isAdmin={false}
+          summary={summary()}
+          model={model({ isAdmin: false })}
+        />
+      </QueryClientProvider>,
+    );
+    await expandAdvanced();
+    expect(screen.queryByRole('link', { name: 'Outbound MCP sharing' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Integration audit' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Job recovery' })).toBeNull();
+    expect(screen.getByRole('link', { name: 'Provider accounts' })).toBeTruthy();
+  });
+
+  it('keeps the shared-source recovery action inside the provider sheet', async () => {
+    const user = userEvent.setup();
     const pageModel = model({
       totalSharedSources: 0,
       teamSourceRows: [],
@@ -350,7 +454,7 @@ describe('SourcesPageView', () => {
       ],
     };
 
-    render(
+    renderPage(
       <SourcesPageView
         params={{}}
         active={{ teamName: 'Acme' }}
@@ -360,15 +464,17 @@ describe('SourcesPageView', () => {
       />,
     );
 
-    expect(screen.getByRole('heading', { name: 'Available shared sources' })).toBeTruthy();
-    expect(screen.getByText(/No shared provider sources yet/i)).toBeTruthy();
-    expect(screen.getByRole('link', { name: 'Choose replacement' }).getAttribute('href')).toBe(
-      '#available-shared-sources',
-    );
+    await user.click(screen.getByRole('button', { name: 'Open GitHub details' }));
+    const dialog = await screen.findByRole('dialog', { name: 'GitHub' });
+    expect(within(dialog).getByText(/No shared provider sources yet/i)).toBeTruthy();
+    expect(
+      within(dialog).getByRole('link', { name: 'Choose replacement' }).getAttribute('href'),
+    ).toBe('#github-team-sources');
   });
 
-  it('places health-paused integrations in Needs attention with a Paused notice', () => {
-    render(
+  it('places health-paused integrations in Needs attention with a Resume control in the sheet', async () => {
+    const user = userEvent.setup();
+    renderPage(
       <SourcesPageView
         params={{}}
         active={{ teamName: 'Acme' }}
@@ -394,12 +500,14 @@ describe('SourcesPageView', () => {
     );
 
     expect(screen.getByText('Needs attention')).toBeTruthy();
-    expect(screen.getByText(/Paused: GitHub hasn't responded/)).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Resume' })).toBeTruthy();
+    await user.click(screen.getByRole('button', { name: 'Open GitHub details' }));
+    const dialog = await screen.findByRole('dialog', { name: 'GitHub' });
+    expect(within(dialog).getByText(/Paused: GitHub hasn't responded/)).toBeTruthy();
+    expect(within(dialog).getByRole('button', { name: 'Resume' })).toBeTruthy();
   });
 
   it('toasts MCP OAuth success instead of a page banner', () => {
-    render(
+    renderPage(
       <SourcesPageView
         params={{ connected: '1' }}
         active={{ teamName: 'Acme' }}
@@ -414,7 +522,7 @@ describe('SourcesPageView', () => {
   });
 
   it('toasts connection errors without a page banner', () => {
-    render(
+    renderPage(
       <SourcesPageView
         params={{ error: 'oauth_denied' }}
         active={{ teamName: 'Acme' }}

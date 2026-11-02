@@ -1,7 +1,7 @@
 import { createHmac, randomUUID } from 'node:crypto';
 
 import { encryptJson } from '@timeline/shared/crypto';
-import { expect, type Locator, test } from '@playwright/test';
+import { expect, type Locator, type Page, test } from '@playwright/test';
 import { getDbClient } from '@timeline/db';
 
 import { signIn, waitForPost } from './helpers.js';
@@ -740,6 +740,14 @@ async function clickSourceCheckbox(sourceCard: Locator, label: string): Promise<
   await sourceCard.locator('label').filter({ hasText: label }).getByRole('checkbox').check();
 }
 
+async function openProviderDetails(page: Page, label: string): Promise<Locator> {
+  const overlay = page.getByRole('button', { name: `Open ${label} details` });
+  await overlay.click({ force: true });
+  const dialog = page.getByRole('dialog', { name: label });
+  await expect(dialog).toBeVisible();
+  return dialog;
+}
+
 test('Slack settings page renders seeded workspace status for members', async ({ page }) => {
   await seedSlackSettingsState();
   await signIn(page, e2eUsers.member.email);
@@ -884,18 +892,21 @@ test.describe.serial('integrations health states', () => {
     await expect(page.getByText('1 webhook subscription degraded')).toBeVisible();
     await expect(page.getByText('integration items need attention')).toHaveCount(0);
 
-    const githubRow = page
+    const githubPanel = await openProviderDetails(page, 'GitHub');
+    const githubRow = githubPanel
       .locator('div')
-      .filter({ has: page.getByRole('combobox', { name: 'Default visibility for GitHub' }) })
+      .filter({ has: githubPanel.getByRole('combobox', { name: 'Default visibility for GitHub' }) })
       .filter({ hasText: `${SEED_PREFIX} GitHub` })
       .last();
     await expect(githubRow.getByText('Webhook delivery degraded:')).toBeVisible();
     await expect(githubRow.getByText('reconciliation remains active')).toBeVisible();
     await expect(githubRow.getByRole('button', { name: 'Sync now' })).toBeEnabled();
+    await page.keyboard.press('Escape');
 
-    const linearRow = page
+    const linearPanel = await openProviderDetails(page, 'Linear');
+    const linearRow = linearPanel
       .locator('div')
-      .filter({ has: page.getByRole('combobox', { name: 'Default visibility for Linear' }) })
+      .filter({ has: linearPanel.getByRole('combobox', { name: 'Default visibility for Linear' }) })
       .filter({ hasText: `${SEED_PREFIX} Linear` })
       .last();
     await expect(linearRow.getByText('Provider quota cooldown (requests).')).toBeVisible();
@@ -912,7 +923,8 @@ test.describe.serial('integrations health states', () => {
     await expect(chatLauncher).toBeVisible();
     await expect(chatLauncher).toHaveAttribute('aria-expanded', 'false');
 
-    const sourceCard = page
+    const githubPanel = await openProviderDetails(page, 'GitHub');
+    const sourceCard = githubPanel
       .locator('section.border-y')
       .filter({ hasText: `${SEED_PREFIX} GitHub connection` })
       .first();
@@ -928,9 +940,9 @@ test.describe.serial('integrations health states', () => {
       (sourceBox?.x ?? 0) + (sourceBox?.width ?? 0) + 1,
     );
 
-    const githubRow = page
+    const githubRow = githubPanel
       .locator('div')
-      .filter({ has: page.getByRole('combobox', { name: 'Default visibility for GitHub' }) })
+      .filter({ has: githubPanel.getByRole('combobox', { name: 'Default visibility for GitHub' }) })
       .filter({ hasText: `${SEED_PREFIX} GitHub` })
       .last();
     const attentionPanel = githubRow
@@ -982,7 +994,8 @@ test.describe.serial('integrations source management', () => {
     await signIn(page, e2eUsers.owner.email);
     await page.goto('/app/sources');
 
-    const firstCard = page
+    const githubPanel = await openProviderDetails(page, 'GitHub');
+    const firstCard = githubPanel
       .locator('section.border-y')
       .filter({ hasText: `${MANAGE_PREFIX} first GitHub connection` })
       .first();
@@ -995,7 +1008,7 @@ test.describe.serial('integrations source management', () => {
     await expect(firstCard.getByRole('button', { name: 'Save team sync' })).toBeVisible();
     await expect.poll(() => activeIntegrationConnectionIdForManageRepo()).toBe(firstConnectionId);
 
-    const secondCard = page
+    const secondCard = githubPanel
       .locator('section.border-y')
       .filter({ hasText: `${MANAGE_PREFIX} second GitHub connection` })
       .first();

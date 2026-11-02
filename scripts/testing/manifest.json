@@ -377,6 +377,9 @@
   "apps/web/src/app/app/search/route-states.test.tsx": {
     "group": "dom"
   },
+  "apps/web/src/app/app/sources/connection-directory.test.ts": {
+    "group": "unit"
+  },
   "apps/web/src/app/app/sources/page.test.tsx": {
     "group": "dom"
   },

@@ -159,7 +159,7 @@ function needsSharedSourceRecovery(row: ConnectedIntegrationUiRow) {
   );
 }
 
-export function IntegrationWorkflow({
+function IntegrationWorkflow({
   sourceRows,
   activeShareIds,
   isAdmin,
@@ -283,22 +283,34 @@ export function AdvancedIntegrationSection({
   webhooks,
   mcpServerRows,
   mcpCatalog,
+  hideHeading = false,
 }: {
   isAdmin: boolean;
   webhooks: IngestWebhookRow[];
   mcpServerRows: McpServerUiRow[];
   mcpCatalog: IntegrationsPageModel['mcpCatalogAvailable'];
+  hideHeading?: boolean;
 }) {
   const hasContent =
     isAdmin || webhooks.length > 0 || mcpServerRows.length > 0 || mcpCatalog.length > 0;
   if (!hasContent) return null;
   return (
     <section className="space-y-4" aria-labelledby="advanced-integration-tools">
-      <SectionHeading id="advanced-integration-tools">Advanced integration tools</SectionHeading>
-      <p className="max-w-2xl text-sm text-fg-muted">
-        Use these for agent tool access, custom ingestion, and operator-level recovery. Native
-        provider sync stays above.
-      </p>
+      {hideHeading ? (
+        <h3 id="advanced-integration-tools" className="sr-only">
+          Agent MCP servers and webhooks
+        </h3>
+      ) : (
+        <>
+          <SectionHeading id="advanced-integration-tools">
+            Advanced integration tools
+          </SectionHeading>
+          <p className="max-w-2xl text-sm text-fg-muted">
+            Use these for agent tool access, custom ingestion, and operator-level recovery. Native
+            provider sync stays above.
+          </p>
+        </>
+      )}
       {isAdmin ? (
         <div className="space-y-2">
           <AddCustomMcpServerLauncher ownership="team" />

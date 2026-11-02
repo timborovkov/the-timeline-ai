@@ -109,6 +109,7 @@ function hasOnlyWebhookDegradedAttention(attention: ConnectedAttention[]): boole
 
 function blockingAttentionAction(
   attention: ConnectedAttention[],
+  sourceRecoveryHref: string,
 ): { href: string; label: string } | null {
   if (
     attention.some(
@@ -118,10 +119,10 @@ function blockingAttentionAction(
     return { href: '/app/me/connections', label: 'Reconnect account' };
   }
   if (attention.some((item) => item.category === 'needs_new_owner')) {
-    return { href: '#available-shared-sources', label: 'Choose replacement' };
+    return { href: sourceRecoveryHref, label: 'Choose replacement' };
   }
   if (attention.some((item) => item.category === 'access_changed')) {
-    return { href: '#available-shared-sources', label: 'Review sources' };
+    return { href: sourceRecoveryHref, label: 'Review sources' };
   }
   return null;
 }
@@ -145,9 +146,11 @@ function dedupeAttention(attention: ConnectedAttention[]): ConnectedAttention[] 
 export function ConnectedIntegrations({
   connected,
   members = EMPTY_MEMBERS,
+  sourceRecoveryHref = '#available-shared-sources',
 }: {
   connected: ConnectedRow[];
   members?: MemberOption[];
+  sourceRecoveryHref?: string;
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState<string | null>(null);
@@ -230,10 +233,8 @@ export function ConnectedIntegrations({
           (healthPause?.action.action === 'reconnect' && healthPause.action.href
             ? { href: healthPause.action.href, label: healthPause.action.label }
             : null) ??
-          blockingAttentionAction(attention) ??
-          (needsReplacement
-            ? { href: '#available-shared-sources', label: 'Choose replacement' }
-            : null);
+          blockingAttentionAction(attention, sourceRecoveryHref) ??
+          (needsReplacement ? { href: sourceRecoveryHref, label: 'Choose replacement' } : null);
         const syncDisabled =
           busy !== null ||
           !c.enabled ||

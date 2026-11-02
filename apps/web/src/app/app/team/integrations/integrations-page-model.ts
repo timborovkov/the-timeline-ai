@@ -61,27 +61,36 @@ export function needsAttention(row: ConnectedIntegrationUiRow) {
 
 export async function loadIntegrationsPageModel(input: { teamId: string; userId: string }) {
   const scope = withTeam(db, input.teamId, input.userId);
-  const [role, connected, mcpServers, members, resourceShares, attention, ingestWebhookRows] =
-    await Promise.all([
-      scope.requireMembership(),
-      scope.integrations.listIntegrations(),
-      scope.mcp.listTeamServers(),
-      scope.timeline.listMembers(),
-      scope.integrations.listTeamResourceShares(),
-      scope.integrations.listConnectionAttention(),
-      db
-        .select({ webhook: ingestWebhooks, credential: ingestWebhookCredentials })
-        .from(ingestWebhooks)
-        .leftJoin(
-          ingestWebhookCredentials,
-          and(
-            eq(ingestWebhookCredentials.webhookId, ingestWebhooks.id),
-            isNull(ingestWebhookCredentials.revokedAt),
-          ),
-        )
-        .where(eq(ingestWebhooks.teamId, input.teamId))
-        .orderBy(desc(ingestWebhooks.createdAt), desc(ingestWebhookCredentials.createdAt)),
-    ]);
+  const [
+    role,
+    connected,
+    mcpServers,
+    members,
+    resourceShares,
+    attention,
+    ingestWebhookRows,
+    ownedProviderConnections,
+  ] = await Promise.all([
+    scope.requireMembership(),
+    scope.integrations.listIntegrations(),
+    scope.mcp.listTeamServers(),
+    scope.timeline.listMembers(),
+    scope.integrations.listTeamResourceShares(),
+    scope.integrations.listConnectionAttention(),
+    db
+      .select({ webhook: ingestWebhooks, credential: ingestWebhookCredentials })
+      .from(ingestWebhooks)
+      .leftJoin(
+        ingestWebhookCredentials,
+        and(
+          eq(ingestWebhookCredentials.webhookId, ingestWebhooks.id),
+          isNull(ingestWebhookCredentials.revokedAt),
+        ),
+      )
+      .where(eq(ingestWebhooks.teamId, input.teamId))
+      .orderBy(desc(ingestWebhooks.createdAt), desc(ingestWebhookCredentials.createdAt)),
+    scope.integrations.listOwnedProviderConnections(),
+  ]);
   const isAdmin = role === 'owner' || role === 'admin';
   const ownerIds = resourceShares.map((row) => row.connection.ownerUserId);
   const userIds = [...new Set([...members.map((m) => m.userId), ...ownerIds])];
@@ -240,6 +249,13 @@ export async function loadIntegrationsPageModel(input: { teamId: string; userId:
     const u = memberUserMap.get(m.userId);
     return { id: m.userId, label: displayMemberLabel(u) };
   });
+  const ownedConnections = ownedProviderConnections.map((connection) => ({
+    id: connection.id,
+    provider: connection.provider,
+    displayName: connection.displayName,
+    lastError: connection.lastError,
+    lastConnectedAt: connection.lastConnectedAt.toISOString(),
+  }));
   const mcpServerRows: McpServerUiRow[] = mcpServers.map((s) => ({
     id: s.id,
     name: s.name,
@@ -278,6 +294,7 @@ export async function loadIntegrationsPageModel(input: { teamId: string; userId:
     teamSourceRows,
     connectedRows,
     connectedMembers,
+    ownedConnections,
     mcpServerRows,
   };
 }
