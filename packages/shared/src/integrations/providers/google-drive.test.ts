@@ -41,6 +41,48 @@ function jsonResponse(body: unknown, init: ResponseInit = {}): Response {
   });
 }
 
+function driveCommentsHash(
+  comments: {
+    id: string;
+    content?: string;
+    resolved?: boolean;
+    modifiedTime?: string;
+  }[],
+): string {
+  return hashDrivePayload(
+    JSON.stringify(
+      comments.map((comment) => ({
+        id: comment.id,
+        resolved: Boolean(comment.resolved),
+        modified: comment.modifiedTime ?? '',
+        content: hashDrivePayload(comment.content ?? ''),
+      })),
+    ),
+  );
+}
+
+function drivePermissionsHash(
+  permissions: {
+    id?: string;
+    type?: string;
+    role?: string;
+    emailAddress?: string;
+    domain?: string;
+  }[],
+): string {
+  return hashDrivePayload(
+    JSON.stringify(
+      permissions.map((permission) => ({
+        id: permission.id ?? '',
+        type: permission.type ?? '',
+        role: permission.role ?? '',
+        email: permission.emailAddress ?? '',
+        domain: permission.domain ?? '',
+      })),
+    ),
+  );
+}
+
 function requestUrl(
   input: Parameters<
     (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
@@ -837,21 +879,22 @@ describe('googleDriveProvider', () => {
           }),
         );
       }
+      if (url.pathname.endsWith('/permissions')) {
+        expect(url.searchParams.get('supportsAllDrives')).toBe('true');
+        return Promise.resolve(
+          jsonResponse({
+            permissions: [
+              {
+                id: 'p1',
+                type: 'user',
+                role: 'writer',
+                emailAddress: 'buyer@northstar.test',
+              },
+            ],
+          }),
+        );
+      }
       if (url.pathname.endsWith('/files/file-1')) {
-        if (url.searchParams.get('fields')?.includes('permissions')) {
-          return Promise.resolve(
-            jsonResponse({
-              permissions: [
-                {
-                  id: 'p1',
-                  type: 'user',
-                  role: 'writer',
-                  emailAddress: 'buyer@northstar.test',
-                },
-              ],
-            }),
-          );
-        }
         return Promise.resolve(
           jsonResponse({
             id: 'file-1',
@@ -917,6 +960,169 @@ describe('googleDriveProvider', () => {
       (ctx.saveDriveSnapshot as unknown as { mock: { invocationCallOrder: number[] } }).mock
         .invocationCallOrder[0] ?? 0,
     );
+  });
+
+  it('fingerprints comments from later pages before skipping a comment-only change', async () => {
+    const snapshotText = 'Contract amount is forty eight thousand dollars for Northstar.';
+    const contentHash = hashDrivePayload(snapshotText);
+    const pageOneComments = [
+      {
+        id: 'c1',
+        content: 'Keep the original term.',
+        resolved: false,
+        modifiedTime: '2026-06-01T00:00:00.000Z',
+      },
+    ];
+    const pageTwoComments = [
+      {
+        id: 'c51',
+        content: 'Please confirm the $48k annual term.',
+        resolved: true,
+        modifiedTime: '2026-06-20T10:00:00.000Z',
+        author: { displayName: 'Ada' },
+      },
+    ];
+    const fetch = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((input) => {
+      const url = requestUrl(input);
+      if (url.pathname.includes('/export')) {
+        return Promise.resolve(new Response(snapshotText, { status: 200 }));
+      }
+      if (url.pathname.endsWith('/comments')) {
+        expect(url.searchParams.get('fields')).toContain('nextPageToken');
+        if (!url.searchParams.get('pageToken')) {
+          return Promise.resolve(
+            jsonResponse({ comments: pageOneComments, nextPageToken: 'comments-page-2' }),
+          );
+        }
+        expect(url.searchParams.get('pageToken')).toBe('comments-page-2');
+        return Promise.resolve(jsonResponse({ comments: pageTwoComments }));
+      }
+      if (url.pathname.endsWith('/permissions')) {
+        return Promise.resolve(jsonResponse({ permissions: [] }));
+      }
+      if (url.pathname.endsWith('/files/file-1')) {
+        return Promise.resolve(
+          jsonResponse({
+            id: 'file-1',
+            name: 'SOW',
+            mimeType: 'application/vnd.google-apps.document',
+            parents: ['root'],
+            modifiedTime: '2026-06-20T10:00:00.000Z',
+          }),
+        );
+      }
+      return Promise.resolve(jsonResponse({ message: 'unexpected' }, { status: 404 }));
+    });
+    vi.stubGlobal('fetch', fetch);
+    const ctx = syncContext({
+      loadLatestDriveSnapshot: vi.fn().mockResolvedValue({
+        contentHash,
+        snapshotText,
+        commentsHash: driveCommentsHash(pageOneComments),
+        permissionsHash: drivePermissionsHash([]),
+        mimeType: 'application/vnd.google-apps.document',
+      }),
+    });
+
+    await googleDriveProvider.incrementalSync({
+      integration: { id: 'integration-1', teamId: 'team-1' } as never,
+      tokens: { access_token: 'access-token', expires_at: Date.now() + 600_000 },
+      selections: [{ kind: 'drive.file', externalId: 'file-1' }],
+      ctx: ctx,
+      target: { resourceType: 'drive.file', externalId: 'file-1' },
+    });
+
+    const commentCalls = fetch.mock.calls.filter(([input]) =>
+      requestUrl(input).pathname.endsWith('/comments'),
+    );
+    expect(commentCalls).toHaveLength(2);
+    const events: IntegrationEvent[] = (
+      ctx.writeEvents as unknown as { mock: { calls: [IntegrationEvent[]][] } }
+    ).mock.calls.flatMap(([batch]) => batch);
+    expect(events).toHaveLength(1);
+    expect(events[0]?.contentText).toContain('Please confirm the $48k annual term.');
+    expect(events[0]?.extra).toMatchObject({
+      drive: { strong_signals: ['comment_changed', 'comment_resolved'] },
+    });
+  });
+
+  it('lists shared-drive permissions instead of files.get so share-only changes emit', async () => {
+    const snapshotText = 'Contract amount is forty eight thousand dollars for Northstar.';
+    const contentHash = hashDrivePayload(snapshotText);
+    const pageOnePermissions = [
+      { id: 'p-team', type: 'user', role: 'writer', emailAddress: 'owner@acme.test' },
+    ];
+    const pageTwoPermissions = [
+      { id: 'p-client', type: 'user', role: 'reader', emailAddress: 'buyer@northstar.test' },
+    ];
+    const fetch = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((input) => {
+      const url = requestUrl(input);
+      if (url.pathname.includes('/export')) {
+        return Promise.resolve(new Response(snapshotText, { status: 200 }));
+      }
+      if (url.pathname.endsWith('/comments')) {
+        return Promise.resolve(jsonResponse({ comments: [] }));
+      }
+      if (url.pathname.endsWith('/permissions')) {
+        expect(url.searchParams.get('supportsAllDrives')).toBe('true');
+        expect(url.searchParams.get('fields')).toContain('nextPageToken');
+        if (!url.searchParams.get('pageToken')) {
+          return Promise.resolve(
+            jsonResponse({ permissions: pageOnePermissions, nextPageToken: 'acl-page-2' }),
+          );
+        }
+        expect(url.searchParams.get('pageToken')).toBe('acl-page-2');
+        return Promise.resolve(jsonResponse({ permissions: pageTwoPermissions }));
+      }
+      if (url.pathname.endsWith('/files/file-shared')) {
+        expect(url.searchParams.get('fields')).not.toContain('permissions');
+        return Promise.resolve(
+          jsonResponse({
+            id: 'file-shared',
+            name: 'SOW',
+            mimeType: 'application/vnd.google-apps.document',
+            parents: ['shared-folder'],
+            driveId: 'shared-drive-1',
+            modifiedTime: '2026-06-20T10:00:00.000Z',
+          }),
+        );
+      }
+      return Promise.resolve(jsonResponse({ message: 'unexpected' }, { status: 404 }));
+    });
+    vi.stubGlobal('fetch', fetch);
+    const ctx = syncContext({
+      loadLatestDriveSnapshot: vi.fn().mockResolvedValue({
+        contentHash,
+        snapshotText,
+        commentsHash: driveCommentsHash([]),
+        permissionsHash: drivePermissionsHash(pageOnePermissions),
+        mimeType: 'application/vnd.google-apps.document',
+      }),
+    });
+
+    await googleDriveProvider.incrementalSync({
+      integration: { id: 'integration-1', teamId: 'team-1' } as never,
+      tokens: { access_token: 'access-token', expires_at: Date.now() + 600_000 },
+      selections: [{ kind: 'drive.file', externalId: 'file-shared' }],
+      ctx: ctx,
+      target: { resourceType: 'drive.file', externalId: 'file-shared' },
+    });
+
+    const permissionCalls = fetch.mock.calls.filter(([input]) =>
+      requestUrl(input).pathname.endsWith('/permissions'),
+    );
+    expect(permissionCalls).toHaveLength(2);
+    const events: IntegrationEvent[] = (
+      ctx.writeEvents as unknown as { mock: { calls: [IntegrationEvent[]][] } }
+    ).mock.calls.flatMap(([batch]) => batch);
+    expect(events).toHaveLength(1);
+    expect(events[0]?.extra).toMatchObject({
+      drive: { strong_signals: ['shared_external_domain'] },
+    });
   });
 
   it('passes the matched selected ancestor into Drive linked-object lookup', async () => {

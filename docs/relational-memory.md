@@ -267,7 +267,7 @@ Class is a property of the **event**, not the OAuth app.
 
 **Curated documents are not a signal class.** They are a parallel **reference-knowledge** store (versions + chunks). Manual uploads and promoted captured files live there. The `source: document` raw event is only the lifecycle ping ("Uploaded the MSA"). The bytes are chunked by document-extract, embedded, and cited as `[doc:<id>#v<n>:chunk:<chunkId>]`.
 
-Do not treat an unlabeled legacy Drive `file.changed` ping as equal to a judged Drive capture. Native Drive v1 stamps CRM-relevant edits as `communication` (hunks + comments/sharing signals, never a full document copy). Formatting-only and tiny edits never reach an LLM; signed amounts such as `-50000 USD` stay substantive rather than collapsing to formatting. Manual uploads remain reference knowledge.
+Do not treat an unlabeled legacy Drive `file.changed` ping as equal to a judged Drive capture. Native Drive v1 stamps CRM-relevant edits as `communication` (hunks + comments/sharing signals from paginated `comments.list` / `permissions.list`, never a full document copy). Shared-drive ACLs are not on `files.get`. Formatting-only and tiny edits never reach an LLM; signed amounts such as `-50000 USD` stay substantive rather than collapsing to formatting. Manual uploads remain reference knowledge.
 
 Unstructured captured work (a CRM call log) may still extract. Structured
 captured work (PR merged, Linear state) must not. Pulses never extract.

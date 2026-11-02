@@ -25,7 +25,8 @@ implementation detail.
 Google Drive v1 is shipped: person-owned OAuth, folder/file/shared-drive picker,
 `changes.watch` push (not polling), webhook-delivery + delayed targeted
 `integration-sync` debounce, truncated snapshots keyed by content/comments/
-permission hashes, billed CRM-relevance judge, optional object links (including
+permission hashes (paginated `comments.list` / `permissions.list` with
+`supportsAllDrives`; shared-drive `files.get` omits ACLs), billed CRM-relevance judge, optional object links (including
 the matched selected ancestor for nested files), nested-folder ancestry that
 caches parent metadata rather than early negatives, lock-busy and quota/token-refresh
 persistence of `drive.file` / `drive.changes` targets, contextual Markdown

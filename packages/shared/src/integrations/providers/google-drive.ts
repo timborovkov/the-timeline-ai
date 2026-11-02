@@ -52,6 +52,9 @@ const AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth';
 const TOKEN_URL = 'https://oauth2.googleapis.com/token';
 const DRIVE_BASE = 'https://www.googleapis.com/drive/v3';
 const MAX_HARVEST_BYTES = 20 * 1024 * 1024;
+/** Same page size and page cap as folder listing so comment/ACL fingerprints stay bounded. */
+const DRIVE_METADATA_PAGE_SIZE = '100';
+const DRIVE_METADATA_MAX_PAGES = 10;
 const FILE_FIELDS =
   'id,name,mimeType,modifiedTime,webViewLink,parents,driveId,owners(displayName,emailAddress),shortcutDetails(targetId,targetMimeType)';
 
@@ -520,32 +523,57 @@ async function loadDriveText(
   return { text: truncateDriveSnapshot(download.body.toString('utf8')) };
 }
 
+async function paginateDriveList<TItem>(
+  tokens: DriveTokens,
+  path: string,
+  params: Record<string, string>,
+  readItems: (page: Record<string, unknown> | null) => TItem[],
+): Promise<TItem[]> {
+  const items: TItem[] = [];
+  let pageToken: string | undefined;
+  let safety = 0;
+  while (safety++ < DRIVE_METADATA_MAX_PAGES) {
+    const page = await driveGetOptional<Record<string, unknown>>(tokens, path, {
+      ...params,
+      pageSize: DRIVE_METADATA_PAGE_SIZE,
+      ...(pageToken ? { pageToken } : {}),
+    });
+    items.push(...readItems(page));
+    const next = typeof page?.nextPageToken === 'string' ? page.nextPageToken : undefined;
+    if (!next) return items;
+    pageToken = next;
+  }
+  return items;
+}
+
 async function listDriveComments(tokens: DriveTokens, fileId: string): Promise<DriveComment[]> {
-  const page = await driveGetOptional<{ comments?: DriveComment[] }>(
+  return paginateDriveList(
     tokens,
     `/files/${encodeURIComponent(fileId)}/comments`,
     {
-      fields: 'comments(id,content,resolved,modifiedTime,author(displayName,emailAddress))',
-      pageSize: '50',
+      fields:
+        'nextPageToken,comments(id,content,resolved,modifiedTime,author(displayName,emailAddress))',
       includeDeleted: 'false',
     },
+    (page) => (Array.isArray(page?.comments) ? (page.comments as DriveComment[]) : []),
   );
-  return page?.comments ?? [];
 }
 
 async function listDrivePermissions(
   tokens: DriveTokens,
   fileId: string,
 ): Promise<DrivePermission[]> {
-  const page = await driveGetOptional<{ permissions?: DrivePermission[] }>(
+  // Shared-drive files.get never populates `permissions`; permissions.list is
+  // the paginated ACL surface for both My Drive and shared drives.
+  return paginateDriveList(
     tokens,
-    `/files/${encodeURIComponent(fileId)}`,
+    `/files/${encodeURIComponent(fileId)}/permissions`,
     {
-      fields: 'permissions(id,type,role,emailAddress,domain)',
+      fields: 'nextPageToken,permissions(id,type,role,emailAddress,domain)',
       supportsAllDrives: 'true',
     },
+    (page) => (Array.isArray(page?.permissions) ? (page.permissions as DrivePermission[]) : []),
   );
-  return page?.permissions ?? [];
 }
 
 function commentsFingerprint(comments: DriveComment[]): string {
