@@ -3,13 +3,8 @@ import { vi } from '@timeline/test-support';
 import { afterEach, describe, it } from 'bun:test';
 // Test environment: happy-dom
 
-const fakes = vi.hoisted(() => ({ reportCaughtError: vi.fn(), auth: vi.fn() }));
+const fakes = vi.hoisted(() => ({ reportCaughtError: vi.fn() }));
 
-await vi.mock(
-  import.meta.resolve('@/lib/auth'),
-  () => ({ auth: fakes.auth }),
-  () => import('@/lib/auth'),
-);
 await vi.mock(
   import.meta.resolve('@/lib/sentry-report'),
   () => ({ reportCaughtError: fakes.reportCaughtError }),
@@ -24,16 +19,17 @@ const { default: AppNotFound } = await import('@/app/app/not-found');
 const { default: GlobalError } = await import('@/app/global-error');
 const { default: HelpNotFound } = await import('@/app/help/not-found');
 const { default: NotFound } = await import('@/app/not-found');
+const { resetPublicSessionCache, setPublicSessionCache } = await import('@/lib/public-session');
 
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  resetPublicSessionCache();
 });
 
 describe('root route recovery states', () => {
-  it('keeps unauthenticated-safe navigation and one route heading for an unknown address', async () => {
-    fakes.auth.mockResolvedValue(null);
-    const html = renderToStaticMarkup(await NotFound());
+  it('keeps unauthenticated-safe navigation and one route heading for an unknown address', () => {
+    const html = renderToStaticMarkup(<NotFound />);
 
     expect(html.match(/<h1\b/g)).toHaveLength(1);
     expect(html).toContain('Nothing in your workspace was changed.');
@@ -45,12 +41,12 @@ describe('root route recovery states', () => {
     expect(html).toContain('aria-label="Continue navigating"');
   });
 
-  it('keeps signed-in people oriented toward the workspace from an unknown address', async () => {
-    fakes.auth.mockResolvedValue({ user: { id: 'user-1' } });
-    const html = renderToStaticMarkup(await NotFound());
+  it('keeps signed-in people oriented toward the workspace from an unknown address', () => {
+    setPublicSessionCache({ status: 'signed-in' });
+    render(<NotFound />);
 
-    expect(html).toContain('>Dashboard<');
-    expect(html).not.toContain('>Sign in<');
+    expect(screen.getByRole('link', { name: 'Dashboard' }).getAttribute('href')).toBe('/app');
+    expect(screen.queryByRole('link', { name: 'Sign in' })).toBeNull();
   });
 
   it('keeps unmatched workspace and help content inside their existing shell landmarks', () => {

@@ -3,7 +3,6 @@ import type { ReactNode } from 'react';
 
 import { ErrorState } from '@/components/error-state';
 import { PublicShell } from '@/components/public-shell';
-import { Skeleton } from '@/components/ui/skeleton';
 
 interface LegalRouteStateProps {
   eyebrow: string;
@@ -40,42 +39,6 @@ function LegalRouteFrame({
         {children}
       </main>
     </PublicShell>
-  );
-}
-
-export function LegalRouteLoading({
-  eyebrow,
-  title,
-  description,
-  footerLabel,
-  currentSection,
-}: LegalRouteStateProps) {
-  return (
-    <LegalRouteFrame
-      eyebrow={eyebrow}
-      title={title}
-      description={description}
-      footerLabel={footerLabel}
-      currentSection={currentSection}
-    >
-      <output className="sr-only" aria-live="polite">
-        Loading {title}
-      </output>
-      <section
-        aria-busy="true"
-        aria-label={`${title} loading placeholder`}
-        className="mt-10 max-w-[70ch] space-y-5"
-      >
-        {Array.from({ length: 5 }).map((_, index) => (
-          <div key={index} className="space-y-2">
-            <Skeleton className="h-6 w-48 motion-reduce:animate-none" />
-            <Skeleton className="h-4 w-full motion-reduce:animate-none" />
-            <Skeleton className="h-4 w-11/12 motion-reduce:animate-none" />
-            <Skeleton className="h-4 w-4/5 motion-reduce:animate-none" />
-          </div>
-        ))}
-      </section>
-    </LegalRouteFrame>
   );
 }
 

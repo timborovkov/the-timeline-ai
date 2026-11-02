@@ -21,26 +21,18 @@ await vi.mock(
   () => ({ reportCaughtError: fakes.reportCaughtError }),
   () => import('@/lib/sentry-report'),
 );
-await vi.mock(
-  import.meta.resolve('@/lib/auth'),
-  () => ({ auth: vi.fn().mockResolvedValue(null) }),
-  () => import('@/lib/auth'),
-);
 
 const { cleanup, fireEvent, render, screen, waitFor, within } =
   await import('@testing-library/react');
 const { default: userEvent } = await import('@testing-library/user-event');
 const { default: HelpTopicError } = await import('@/app/help/[slug]/error');
-const { default: HelpTopicLoading } = await import('@/app/help/[slug]/loading');
 const { default: HelpTopicPage } = await import('@/app/help/[slug]/page');
 const { default: ContactError } = await import('@/app/help/contact/error');
-const { default: ContactLoading } = await import('@/app/help/contact/loading');
 const { default: HelpError } = await import('@/app/help/error');
-const { default: HelpLoading } = await import('@/app/help/loading');
 const { default: HelpIndexPage } = await import('@/app/help/page');
 const { default: SupportError } = await import('@/app/help/support/error');
-const { default: SupportLoading } = await import('@/app/help/support/loading');
 const { HelpShell } = await import('@/components/help/help-shell');
+const { resetPublicSessionCache, setPublicSessionCache } = await import('@/lib/public-session');
 const {
   TIMELINE_CLAUDE_PLUGIN_INSTALL_COMMAND,
   TIMELINE_PLUGIN_INSTALL_PROMPT,
@@ -52,6 +44,7 @@ afterEach(() => {
   vi.clearAllMocks();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
+  resetPublicSessionCache();
   fakes.pathname = '/help/documents';
   window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}`);
 });
@@ -79,27 +72,9 @@ describe('Help route states', () => {
     expect(reset).toHaveBeenCalledOnce();
   });
 
-  it('announces loading outside inert, help-shaped visuals', () => {
-    const { container } = render(<HelpLoading />);
-
-    const announcement = screen.getByRole('status');
-    expect(announcement.textContent).toBe('Loading help');
-    expect(announcement.parentElement?.getAttribute('aria-busy')).toBeNull();
-    const loading = screen.getByLabelText('Loading help');
-    expect(loading.getAttribute('aria-busy')).toBe('true');
-    expect(screen.getByRole('heading', { level: 1, name: 'Help' })).toBeTruthy();
-    expect(screen.queryByRole('region')).toBeNull();
-    const visuals = container.querySelector('[aria-busy="true"] > [aria-hidden="true"][inert]');
-    expect(visuals).toBeTruthy();
-    expect(
-      visuals?.querySelectorAll('a, button, input, select, textarea, [tabindex]'),
-    ).toHaveLength(0);
-    expect(visuals?.querySelectorAll('.animate-pulse').length).toBeGreaterThan(0);
-  });
-
   it('identifies the guide navigation and exposes the current page', () => {
     render(
-      <HelpShell isSignedIn={false}>
+      <HelpShell>
         <article>Guide content</article>
       </HelpShell>,
     );
@@ -115,7 +90,7 @@ describe('Help route states', () => {
     window.history.replaceState(null, '', '#restored-section');
     const restoredScrollY = window.scrollY;
     const { rerender } = render(
-      <HelpShell isSignedIn={false}>
+      <HelpShell>
         <article>Guide content</article>
       </HelpShell>,
     );
@@ -152,7 +127,7 @@ describe('Help route states', () => {
 
     fakes.pathname = '/help/agents';
     rerender(
-      <HelpShell isSignedIn={false}>
+      <HelpShell>
         <article>Guide content</article>
       </HelpShell>,
     );
@@ -187,7 +162,7 @@ describe('Help route states', () => {
     const restoredScrollY = window.scrollY;
 
     render(
-      <HelpShell isSignedIn={false}>
+      <HelpShell>
         <article>Guide content</article>
       </HelpShell>,
     );
@@ -285,6 +260,7 @@ describe('Help route states', () => {
       value: { writeText },
     });
 
+    setPublicSessionCache({ status: 'signed-out' });
     render(await HelpTopicPage({ params: Promise.resolve({ slug: 'agents' }) }));
 
     expect(
@@ -407,10 +383,6 @@ const helpChildRoutes = [
       'This error did not change the guide content. Check your connection, then try again.',
     errorPageDescription: 'This Timeline guide could not be loaded.',
     ErrorComponent: HelpTopicError,
-    Loading: HelpTopicLoading,
-    loadingDescription: 'Loading this Timeline guide.',
-    loadingHeading: 'Guide',
-    loadingTitle: 'Guide',
     pathname: '/help/documents',
     title: 'Guide',
   },
@@ -419,11 +391,6 @@ const helpChildRoutes = [
       'This error did not send or change any support request. Check your connection, then try again.',
     errorPageDescription: 'The support request form could not be opened.',
     ErrorComponent: ContactError,
-    Loading: ContactLoading,
-    loadingDescription:
-      'Keep account details and sensitive reports private. Use GitHub for reproducible, non-sensitive bugs and proposed contributions.',
-    loadingHeading: 'Choose the right support channel.',
-    loadingTitle: 'Support',
     pathname: '/help/contact',
     title: 'Contact support',
   },
@@ -432,59 +399,12 @@ const helpChildRoutes = [
       'This error did not send or change any support request. Check your connection, then try again.',
     errorPageDescription: 'The support request form could not be loaded.',
     ErrorComponent: SupportError,
-    Loading: SupportLoading,
-    loadingDescription:
-      'Keep account details and sensitive reports private. Use GitHub for reproducible, non-sensitive bugs and proposed contributions.',
-    loadingHeading: 'Choose the right support channel.',
-    loadingTitle: 'Support',
     pathname: '/help/support',
     title: 'Support',
   },
 ] as const;
 
 describe('Help child route states', () => {
-  it.each(helpChildRoutes)(
-    'announces a $title loading state outside its busy, Help-shaped placeholder',
-    ({ Loading, loadingDescription, loadingHeading, loadingTitle, pathname }) => {
-      fakes.pathname = pathname;
-      render(
-        <HelpShell isSignedIn={false}>
-          <Loading />
-        </HelpShell>,
-      );
-
-      const announcement = screen.getByRole('status');
-      expect(announcement.textContent).toBe(`Loading ${loadingTitle}`);
-      expect(announcement.parentElement?.getAttribute('aria-busy')).toBeNull();
-      expect(
-        screen.getByLabelText(`${loadingTitle} loading placeholder`).getAttribute('aria-busy'),
-      ).toBe('true');
-      expect(screen.getAllByRole('heading', { level: 1, name: loadingHeading })).toHaveLength(1);
-      expect(screen.getByRole('heading', { level: 1, name: loadingHeading }).className).toContain(
-        'text-3xl',
-      );
-      expect(screen.getByRole('heading', { level: 1, name: loadingHeading }).className).toContain(
-        'sm:text-4xl',
-      );
-      expect(screen.getByRole('navigation', { name: 'Help guides' })).toBeTruthy();
-      expect(screen.getByText(loadingDescription)).toBeTruthy();
-      const visuals = screen
-        .getByLabelText(`${loadingTitle} loading placeholder`)
-        .querySelector('[aria-hidden="true"][inert]');
-      expect(visuals).toBeTruthy();
-      expect(
-        visuals?.querySelectorAll('a, button, input, select, textarea, [tabindex]'),
-      ).toHaveLength(0);
-      expect(
-        within(screen.getByRole('navigation', { name: 'Help guides' }))
-          .getByRole('link', {
-            name: 'Support',
-          })
-          .getAttribute('aria-current'),
-      ).toBe(pathname === '/help/contact' || pathname === '/help/support' ? 'page' : null);
-    },
-  );
-
   it.each(helpChildRoutes)(
     'keeps Help context and lets keyboard users retry the $title error',
     async ({ errorDescription, errorPageDescription, ErrorComponent, pathname, title }) => {
@@ -493,7 +413,7 @@ describe('Help child route states', () => {
       fakes.pathname = pathname;
 
       render(
-        <HelpShell isSignedIn={false}>
+        <HelpShell>
           <ErrorComponent error={new Error('route failed')} reset={reset} />
         </HelpShell>,
       );

@@ -1,8 +1,18 @@
 import { expect } from '@timeline/test-support';
-import { describe, it } from 'bun:test';
+import { afterEach, describe, it } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 import { PublicShell } from '@/components/public-shell';
+import { resetPublicSessionCache, setPublicSessionCache } from '@/lib/public-session';
+// Test environment: happy-dom
+
+const { cleanup, render, screen } = await import('@testing-library/react');
+
+afterEach(() => {
+  cleanup();
+  resetPublicSessionCache();
+});
+
 // Public pages must let keyboard users bypass shared navigation before any other action.
 describe('PublicShell', () => {
   it('renders the skip link first and targets the page main landmark', () => {
@@ -28,6 +38,7 @@ describe('PublicShell', () => {
     expect(html).toContain('href="/cookies"');
     expect(html).toContain('data-public-analytics-cta="try_project"');
     expect(html).toContain('data-public-analytics-cta="sign_in"');
+    expect(html).toContain('data-public-session="unknown"');
     expect(html).not.toMatch(/href="(?:\/(?:app\/)?demo|\/workspace\/demo|https?:\/\/t\.me\/)/u);
   });
 
@@ -52,16 +63,17 @@ describe('PublicShell', () => {
   });
 
   it('uses the landing CTA state for signed-in public routes', () => {
-    const html = renderToStaticMarkup(
-      <PublicShell isSignedIn>
+    setPublicSessionCache({ status: 'signed-in' });
+    render(
+      <PublicShell>
         <main id="main">Public content</main>
       </PublicShell>,
     );
 
-    expect(html).toContain('href="/app"');
-    expect(html).toContain('>Dashboard</a>');
-    expect(html).not.toContain('href="/sign-in"');
-    expect(html).not.toContain('>Open app</a>');
+    expect(screen.getByRole('link', { name: 'Dashboard' }).getAttribute('href')).toBe('/app');
+    expect(screen.queryByRole('link', { name: 'Sign in' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Start free' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Open app' })).toBeNull();
   });
 
   it('can omit account actions from auth-neutral loading and error chrome', () => {

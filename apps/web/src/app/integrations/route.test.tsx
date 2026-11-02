@@ -1,34 +1,27 @@
 import { expect } from '@timeline/test-support';
-import { vi } from '@timeline/test-support';
-import { beforeEach, describe, it } from 'bun:test';
+import { afterEach, describe, it } from 'bun:test';
 // Test environment: happy-dom
 
 function visibleText(html: string): string {
   return html.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gu, '').replace(/<[^>]+>/gu, '');
 }
 
-const fakes = vi.hoisted(() => ({ auth: vi.fn() }));
-
-await vi.mock(
-  import.meta.resolve('@/lib/auth'),
-  () => ({ auth: fakes.auth }),
-  () => import('@/lib/auth'),
-);
-
+const { cleanup, render, screen } = await import('@testing-library/react');
 const { renderToStaticMarkup } = await import('react-dom/server');
 const { CONNECTOR_SLUGS } = await import('@/components/marketing/integrations/connector-content');
+const { resetPublicSessionCache, setPublicSessionCache } = await import('@/lib/public-session');
 
 const { default: IntegrationsPage, metadata } = await import('@/app/integrations/page');
 const connectorRoute = await import('@/app/integrations/[slug]/page');
 
 describe('public integration routes', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    fakes.auth.mockResolvedValue(null);
+  afterEach(() => {
+    cleanup();
+    resetPublicSessionCache();
   });
 
-  it('renders the directory with one heading and an accurate capability tier boundary', async () => {
-    const html = renderToStaticMarkup(await IntegrationsPage());
+  it('renders the directory with one heading and an accurate capability tier boundary', () => {
+    const html = renderToStaticMarkup(<IntegrationsPage />);
     const text = visibleText(html);
 
     expect(html.match(/<h1\b/g)).toHaveLength(1);
@@ -86,19 +79,25 @@ describe('public integration routes', () => {
     expect(html.match(/dark:bg-white/g)).toHaveLength(5);
   });
 
-  it('routes signed-in visitors to each implemented capture setup', async () => {
-    fakes.auth.mockResolvedValue({ user: { id: 'user-1' } });
+  it('routes signed-in visitors to each implemented capture setup', () => {
+    setPublicSessionCache({ status: 'signed-in' });
+    render(<IntegrationsPage />);
 
-    const html = renderToStaticMarkup(await IntegrationsPage());
-
-    expect(html).toContain('href="/app/sources"');
-    expect(html).toContain('href="/app/team/telegram"');
-    expect(html).toContain('href="/app/team/slack"');
-    expect(html).toContain('href="/app/team?section=email"');
-    expect(html).toContain('href="/app/meetings"');
-    expect(html).toContain('Link Telegram');
-    expect(html).toContain('Install Slack');
-    expect(html).toContain('Create a webhook');
+    expect(screen.getByRole('link', { name: 'Link Telegram' }).getAttribute('href')).toBe(
+      '/app/team/telegram',
+    );
+    expect(screen.getByRole('link', { name: 'Install Slack' }).getAttribute('href')).toBe(
+      '/app/team/slack',
+    );
+    expect(screen.getByRole('link', { name: 'Set up email' }).getAttribute('href')).toBe(
+      '/app/team?section=email',
+    );
+    expect(screen.getByRole('link', { name: 'Open meetings' }).getAttribute('href')).toBe(
+      '/app/meetings',
+    );
+    expect(screen.getByRole('link', { name: 'Create a webhook' }).getAttribute('href')).toBe(
+      '/app/sources',
+    );
   });
 
   it.each(['slack', 'sentry'])('renders a light dark-mode logo tile for %s', async (slug) => {

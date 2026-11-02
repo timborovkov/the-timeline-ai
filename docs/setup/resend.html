@@ -41,7 +41,9 @@ INBOUND_EMAIL_DOMAIN=</code></pre>
       <p>
         <code>TRANSACTIONAL_EMAIL_FROM</code> is the sender for all outgoing email, including
         invitations. <code>SUPPORT_EMAIL</code> is the support recipient and the contact address
-        shown on public, help, legal, and trust pages. Without it, public links default to
+        shown on public, help, legal, and trust pages. The Docker web image does not receive that
+        value at build time, so prerendered pages load it from
+        <code>/api/public/runtime</code> after paint. Without it, public links default to
         contact@thetimeline.cc and support requests are saved without email delivery.
       </p>
       <p>
