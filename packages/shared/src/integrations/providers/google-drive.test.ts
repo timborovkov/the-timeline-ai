@@ -27,7 +27,8 @@ const { resetEnvForTests } = await import('#src/env.js');
 const { googleDriveProvider } = await import('#src/integrations/providers/google-drive.js');
 const { DRIVE_FILE_DEBOUNCE_MS, hashDrivePayload } =
   await import('#src/integrations/google-drive-capture.js');
-const { DRIVE_SNAPSHOT_MAX_CHARS } = await import('#src/integrations/google-drive-diff.js');
+const { DRIVE_BEYOND_SNAPSHOT_HUNK, DRIVE_SNAPSHOT_MAX_CHARS } =
+  await import('#src/integrations/google-drive-diff.js');
 
 const ORIGINAL_ENV = {
   GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID,
@@ -715,6 +716,12 @@ describe('googleDriveProvider', () => {
     );
     expect(downloadCall?.[2]).toMatchObject({ maxResponseBytes: 20 * 1024 * 1024 });
     expect(ctx.enqueueTransientDriveExtract).toHaveBeenCalledOnce();
+    expect(ctx.enqueueTransientDriveExtract).toHaveBeenCalledWith(
+      expect.objectContaining({
+        fileId: 'file-1',
+        revisionId: 'mod:2026-06-20T10:00:00.000Z',
+      }),
+    );
     expect(ctx.takeDriveExtractSlot).toHaveBeenCalledWith({
       integrationId: 'integration-1',
       fileId: 'file-1',
@@ -781,6 +788,171 @@ describe('googleDriveProvider', () => {
       eventType: 'file.changed',
     });
     expect(events[0]?.contentText).not.toContain('ya29.');
+  });
+
+  it('re-requests bytes when a pending extract no longer matches the Drive revision', async () => {
+    const body = Buffer.from('%PDF-1.4 next-revision');
+    const fetch = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((input) => {
+      const url = requestUrl(input);
+      if (url.pathname.endsWith('/files/file-1')) {
+        if (url.searchParams.get('alt') === 'media') {
+          return Promise.resolve(new Response(body, { status: 200 }));
+        }
+        return Promise.resolve(
+          jsonResponse({
+            id: 'file-1',
+            name: 'Notes',
+            mimeType: 'application/pdf',
+            parents: ['root'],
+            headRevisionId: 'rev-new',
+            modifiedTime: '2026-06-21T10:00:00.000Z',
+          }),
+        );
+      }
+      if (url.pathname.endsWith('/comments')) {
+        return Promise.resolve(jsonResponse({ comments: [] }));
+      }
+      return Promise.resolve(jsonResponse({ permissions: [] }));
+    });
+    vi.stubGlobal('fetch', fetch);
+    const ctx = syncContext({
+      loadTransientDriveExtract: vi.fn().mockResolvedValue({
+        status: 'pending',
+        revisionId: 'rev:rev-old',
+      }),
+    });
+
+    await googleDriveProvider.incrementalSync({
+      integration: { id: 'integration-1', teamId: 'team-1' } as never,
+      tokens: { access_token: 'access-token', expires_at: Date.now() + 600_000 },
+      selections: [{ kind: 'drive.file', externalId: 'file-1' }],
+      ctx: ctx,
+      target: { resourceType: 'drive.file', externalId: 'file-1' },
+    });
+
+    expect(ctx.consumeTransientDriveExtract).toHaveBeenCalledWith('file-1');
+    expect(ctx.enqueueTransientDriveExtract).toHaveBeenCalledWith(
+      expect.objectContaining({
+        fileId: 'file-1',
+        body,
+        revisionId: 'rev:rev-new',
+      }),
+    );
+    expect(ctx.writeEvents).not.toHaveBeenCalled();
+    expect(ctx.recordAudit).toHaveBeenCalledWith(
+      'drive_extract_stale_revision',
+      expect.objectContaining({
+        file_id: 'file-1',
+        status: 'pending',
+        stored_revision: 'rev:rev-old',
+        file_revision: 'rev:rev-new',
+      }),
+    );
+    expect(ctx.recordAudit).toHaveBeenCalledWith(
+      'drive_extract_enqueued',
+      expect.objectContaining({ file_id: 'file-1' }),
+    );
+  });
+
+  it('does not accept a ready extract for a newer Drive revision', async () => {
+    const body = Buffer.from('%PDF-1.4 next-revision');
+    const fetch = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((input) => {
+      const url = requestUrl(input);
+      if (url.pathname.endsWith('/files/file-1')) {
+        if (url.searchParams.get('alt') === 'media') {
+          return Promise.resolve(new Response(body, { status: 200 }));
+        }
+        return Promise.resolve(
+          jsonResponse({
+            id: 'file-1',
+            name: 'Notes',
+            mimeType: 'application/pdf',
+            parents: ['root'],
+            headRevisionId: 'rev-new',
+          }),
+        );
+      }
+      if (url.pathname.endsWith('/comments')) {
+        return Promise.resolve(jsonResponse({ comments: [] }));
+      }
+      return Promise.resolve(jsonResponse({ permissions: [] }));
+    });
+    vi.stubGlobal('fetch', fetch);
+    const ctx = syncContext({
+      loadTransientDriveExtract: vi.fn().mockResolvedValue({
+        status: 'ready',
+        text: 'Stale extract for the previous revision.',
+        revisionId: 'rev:rev-old',
+      }),
+    });
+
+    await googleDriveProvider.incrementalSync({
+      integration: { id: 'integration-1', teamId: 'team-1' } as never,
+      tokens: { access_token: 'access-token', expires_at: Date.now() + 600_000 },
+      selections: [{ kind: 'drive.file', externalId: 'file-1' }],
+      ctx: ctx,
+      target: { resourceType: 'drive.file', externalId: 'file-1' },
+    });
+
+    expect(ctx.consumeTransientDriveExtract).toHaveBeenCalledWith('file-1');
+    expect(ctx.writeEvents).not.toHaveBeenCalled();
+    expect(ctx.enqueueTransientDriveExtract).toHaveBeenCalledWith(
+      expect.objectContaining({ revisionId: 'rev:rev-new' }),
+    );
+    expect(ctx.judgeDriveChange).not.toHaveBeenCalled();
+  });
+
+  it('keeps a matching pending extract instead of downloading a newer copy', async () => {
+    const fetch = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((input) => {
+      const url = requestUrl(input);
+      if (url.pathname.endsWith('/files/file-1')) {
+        return Promise.resolve(
+          jsonResponse({
+            id: 'file-1',
+            name: 'Notes',
+            mimeType: 'application/pdf',
+            parents: ['root'],
+            headRevisionId: 'rev-same',
+          }),
+        );
+      }
+      if (url.pathname.endsWith('/comments')) {
+        return Promise.resolve(jsonResponse({ comments: [] }));
+      }
+      return Promise.resolve(jsonResponse({ permissions: [] }));
+    });
+    vi.stubGlobal('fetch', fetch);
+    const ctx = syncContext({
+      loadTransientDriveExtract: vi.fn().mockResolvedValue({
+        status: 'pending',
+        revisionId: 'rev:rev-same',
+      }),
+    });
+
+    await googleDriveProvider.incrementalSync({
+      integration: { id: 'integration-1', teamId: 'team-1' } as never,
+      tokens: { access_token: 'access-token', expires_at: Date.now() + 600_000 },
+      selections: [{ kind: 'drive.file', externalId: 'file-1' }],
+      ctx: ctx,
+      target: { resourceType: 'drive.file', externalId: 'file-1' },
+    });
+
+    expect(ctx.enqueueTransientDriveExtract).not.toHaveBeenCalled();
+    expect(ctx.consumeTransientDriveExtract).not.toHaveBeenCalled();
+    expect(ctx.recordAudit).toHaveBeenCalledWith(
+      'drive_extract_pending',
+      expect.objectContaining({ file_id: 'file-1' }),
+    );
+    const mediaCall = fetch.mock.calls.find(
+      ([input]) => requestUrl(input).searchParams.get('alt') === 'media',
+    );
+    expect(mediaCall).toBeUndefined();
   });
 
   it('audits a visible Drive extract failure then retries after clearing failed state', async () => {
@@ -995,7 +1167,8 @@ describe('googleDriveProvider', () => {
         mock: { calls: [{ hunks: string[] }][] };
       }
     ).mock.calls[0]?.[0];
-    expect(judgeInput?.hunks.join(' ')).toContain('$48k');
+    expect(judgeInput?.hunks).toEqual([DRIVE_BEYOND_SNAPSHOT_HUNK]);
+    expect(judgeInput?.hunks.join(' ')).not.toContain('$48k');
     expect(ctx.saveDriveSnapshot).toHaveBeenCalledWith(
       expect.objectContaining({
         contentHash: hashDrivePayload(nextFull),
@@ -1009,6 +1182,64 @@ describe('googleDriveProvider', () => {
     ).mock.calls[0]?.[0];
     expect(saved?.snapshotText).toHaveLength(DRIVE_SNAPSHOT_MAX_CHARS);
     expect(saved?.contentHash).not.toBe(hashDrivePayload(prefix));
+  });
+
+  it('skips a whitespace-only edit on a document longer than the snapshot bound', async () => {
+    const paragraph = 'Contract amount is forty eight thousand dollars for Northstar.\n';
+    const previousFull = paragraph.repeat(500);
+    const nextFull = previousFull.replace('forty eight', 'forty  eight');
+    expect(previousFull.length).toBeGreaterThan(DRIVE_SNAPSHOT_MAX_CHARS);
+    const fetch = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((input) => {
+      const url = requestUrl(input);
+      if (url.pathname.includes('/export')) {
+        return Promise.resolve(new Response(nextFull, { status: 200 }));
+      }
+      if (url.pathname.endsWith('/files/file-1')) {
+        return Promise.resolve(
+          jsonResponse({
+            id: 'file-1',
+            name: 'SOW',
+            mimeType: 'application/vnd.google-apps.document',
+            parents: ['root'],
+            modifiedTime: '2026-06-20T10:00:00.000Z',
+          }),
+        );
+      }
+      if (url.pathname.endsWith('/comments')) {
+        return Promise.resolve(jsonResponse({ comments: [] }));
+      }
+      return Promise.resolve(jsonResponse({ permissions: [] }));
+    });
+    vi.stubGlobal('fetch', fetch);
+    const ctx = syncContext({
+      loadLatestDriveSnapshot: vi.fn().mockResolvedValue({
+        contentHash: hashDrivePayload(previousFull),
+        snapshotText: previousFull.slice(0, DRIVE_SNAPSHOT_MAX_CHARS),
+        commentsHash: driveCommentsHash([]),
+        permissionsHash: drivePermissionsHash([]),
+        mimeType: 'application/vnd.google-apps.document',
+      }),
+    });
+
+    await googleDriveProvider.incrementalSync({
+      integration: { id: 'integration-1', teamId: 'team-1' } as never,
+      tokens: { access_token: 'access-token', expires_at: Date.now() + 600_000 },
+      selections: [{ kind: 'drive.file', externalId: 'file-1' }],
+      ctx: ctx,
+      target: { resourceType: 'drive.file', externalId: 'file-1' },
+    });
+
+    expect(ctx.judgeDriveChange).not.toHaveBeenCalled();
+    expect(ctx.writeEvents).not.toHaveBeenCalled();
+    expect(ctx.recordAudit).toHaveBeenCalledWith(
+      'drive_change_skipped',
+      expect.objectContaining({ file_id: 'file-1', reason: 'formatting' }),
+    );
+    expect(ctx.saveDriveSnapshot).toHaveBeenCalledWith(
+      expect.objectContaining({ contentHash: hashDrivePayload(nextFull) }),
+    );
   });
 
   it('audits Drive bodies that exceed the download cap as skipped instead of failed', async () => {

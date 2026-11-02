@@ -462,6 +462,7 @@ export async function putAndEnqueueDriveTransientExtract(input: {
   filename: string;
   contentType: string;
   body: Buffer;
+  revisionId?: string;
   io?: DriveTransientExtractIO;
   now?: Date;
 }): Promise<void> {
@@ -481,6 +482,7 @@ export async function putAndEnqueueDriveTransientExtract(input: {
     contentType: input.contentType,
     filename: input.filename,
     enqueuedAt: (input.now ?? new Date()).toISOString(),
+    ...(input.revisionId ? { revisionId: input.revisionId } : {}),
   };
   await io.putDocumentObject({
     bucket: io.getDocumentsBucket(),
@@ -506,6 +508,13 @@ export async function putAndEnqueueDriveTransientExtract(input: {
   await saveDriveExtractCursor(input.integrations, input.integrationId, input.fileId, cursor);
 }
 
+function withExtractRevision<T extends object>(
+  result: T,
+  cursor: integrationsLib.DriveExtractCursor,
+): T & { revisionId?: string } {
+  return cursor.revisionId ? { ...result, revisionId: cursor.revisionId } : result;
+}
+
 export async function readDriveTransientExtract(input: {
   integrations: DriveExtractCursorScope;
   teamId: string;
@@ -514,9 +523,9 @@ export async function readDriveTransientExtract(input: {
   io?: DriveTransientExtractIO;
   now?: Date;
 }): Promise<
-  | { status: 'pending' }
-  | { status: 'ready'; text: string }
-  | { status: 'failed'; error: string }
+  | { status: 'pending'; revisionId?: string }
+  | { status: 'ready'; text: string; revisionId?: string }
+  | { status: 'failed'; error: string; revisionId?: string }
   | null
 > {
   const io = input.io ?? defaultDriveTransientExtractIO;
@@ -533,12 +542,17 @@ export async function readDriveTransientExtract(input: {
       maxBytes: DRIVE_TRANSIENT_RESULT_MAX_BYTES,
     });
     const parsed = integrationsLib.parseDriveTransientExtractResult(fetched.body);
-    if (parsed.ok) return { status: 'ready', text: parsed.text };
-    return { status: 'failed', error: parsed.error };
+    if (parsed.ok) {
+      return withExtractRevision({ status: 'ready' as const, text: parsed.text }, cursor);
+    }
+    return withExtractRevision({ status: 'failed' as const, error: parsed.error }, cursor);
   } catch (err) {
     if (!isMissingObjectError(err)) {
       const message = err instanceof Error ? err.message : String(err);
-      return { status: 'failed', error: message.slice(0, 500) };
+      return withExtractRevision(
+        { status: 'failed' as const, error: message.slice(0, 500) },
+        cursor,
+      );
     }
     if (integrationsLib.isDriveExtractPendingStale(cursor, (input.now ?? new Date()).getTime())) {
       await io.enqueueDocumentExtractJob(
@@ -554,7 +568,7 @@ export async function readDriveTransientExtract(input: {
         enqueuedAt: (input.now ?? new Date()).toISOString(),
       });
     }
-    return { status: 'pending' };
+    return withExtractRevision({ status: 'pending' as const }, cursor);
   }
 }
 
@@ -1303,6 +1317,7 @@ export async function runOneIntegration(
           filename: input.filename,
           contentType: input.contentType,
           body: input.body,
+          ...(input.revisionId ? { revisionId: input.revisionId } : {}),
         });
       },
       loadTransientDriveExtract(fileId) {

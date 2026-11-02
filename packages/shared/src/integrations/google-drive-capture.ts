@@ -127,6 +127,31 @@ export interface DriveExtractCursor {
   contentType: string;
   filename: string;
   enqueuedAt: string;
+  /** Drive `headRevisionId` / md5 / modifiedTime of the bytes sent to extract. */
+  revisionId?: string;
+}
+
+export function driveFileContentRevision(file: {
+  headRevisionId?: string | null;
+  md5Checksum?: string | null;
+  modifiedTime?: string | null;
+}): string | null {
+  const head = file.headRevisionId?.trim();
+  if (head) return `rev:${head}`;
+  const md5 = file.md5Checksum?.trim();
+  if (md5) return `md5:${md5}`;
+  const modified = file.modifiedTime?.trim();
+  if (modified) return `mod:${modified}`;
+  return null;
+}
+
+/** Legacy cursors and metadata-less files cannot disprove a match. */
+export function driveExtractMatchesFileRevision(
+  storedRevisionId: string | undefined,
+  fileRevisionId: string | null,
+): boolean {
+  if (!storedRevisionId || !fileRevisionId) return true;
+  return storedRevisionId === fileRevisionId;
 }
 
 export function parseDriveExtractCursor(cursor: unknown): DriveExtractCursor | null {
@@ -154,6 +179,9 @@ export function parseDriveExtractCursor(cursor: unknown): DriveExtractCursor | n
     contentType: record.contentType,
     filename: record.filename,
     enqueuedAt: record.enqueuedAt,
+    ...(typeof record.revisionId === 'string' && record.revisionId.length > 0
+      ? { revisionId: record.revisionId }
+      : {}),
   };
 }
 

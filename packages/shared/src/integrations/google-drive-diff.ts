@@ -10,6 +10,9 @@ const MARKDOWN_LINE_PREFIX = /^\s{0,3}(?:#{1,6}\s+|>\s+|[-*+]\s+)/;
 
 const DRIVE_DIFF_MIN_CHANGED_CHARS = 40;
 export const DRIVE_SNAPSHOT_MAX_CHARS = 20_000;
+export const DRIVE_BEYOND_SNAPSHOT_HUNK = 'Text changed past the stored snapshot window.';
+/** Ignore this many trailing normalized chars so a prefix insert doesn't slide the cap. */
+const DRIVE_SNAPSHOT_BOUNDARY_SLACK = 1024;
 const DRIVE_HUNK_LINE_MAX = 400;
 const DRIVE_HUNK_HEAD_CHARS = 240;
 
@@ -38,6 +41,83 @@ export function normalizeDriveTextForCompare(text: string): string {
 export function truncateDriveSnapshot(text: string, maxChars = DRIVE_SNAPSHOT_MAX_CHARS): string {
   if (text.length <= maxChars) return text;
   return text.slice(0, maxChars);
+}
+
+/**
+ * Compare stored snapshot text to the current truncated snapshot. Full-text
+ * hashes still detect edits past the bound; this must not diff a prefix
+ * against a longer current document or the unchanged tail looks added.
+ */
+export function diffDriveSnapshots(input: {
+  previousSnapshotText: string;
+  nextSnapshotText: string;
+  previousContentHash?: string | null;
+  nextContentHash: string;
+}): DriveTextDiff {
+  const previous = truncateDriveSnapshot(input.previousSnapshotText);
+  const next = truncateDriveSnapshot(input.nextSnapshotText);
+  const aligned = alignedNormalizedPrefixes(previous, next);
+  const hashMoved =
+    Boolean(input.previousContentHash) && input.previousContentHash !== input.nextContentHash;
+
+  if (aligned.previous === aligned.next) {
+    if (previous === next && hashMoved) {
+      return {
+        changed: true,
+        reason: 'substantive',
+        changedChars: 1,
+        hunks: [DRIVE_BEYOND_SNAPSHOT_HUNK],
+      };
+    }
+    if (previous === next) {
+      return { changed: false, reason: 'identical', changedChars: 0, hunks: [] };
+    }
+    return { changed: false, reason: 'formatting', changedChars: 0, hunks: [] };
+  }
+
+  const changedChars = suffixAlignedChangedChars(aligned.previous, aligned.next);
+  const normalizedLengthDelta = Math.abs(
+    normalizeDriveTextForCompare(next).length - normalizeDriveTextForCompare(previous).length,
+  );
+  if (changedChars < DRIVE_DIFF_MIN_CHANGED_CHARS && normalizedLengthDelta < 20) {
+    return { changed: false, reason: 'tiny', changedChars, hunks: [] };
+  }
+
+  const diff = diffDriveText(previous, next);
+  if (diff.changed) return diff;
+  if (hashMoved) {
+    return {
+      changed: true,
+      reason: 'substantive',
+      changedChars: 1,
+      hunks: [DRIVE_BEYOND_SNAPSHOT_HUNK],
+    };
+  }
+  return diff;
+}
+
+function alignedNormalizedPrefixes(
+  previous: string,
+  next: string,
+): { previous: string; next: string } {
+  const atCap =
+    previous.length >= DRIVE_SNAPSHOT_MAX_CHARS || next.length >= DRIVE_SNAPSHOT_MAX_CHARS;
+  const prevN = normalizeDriveTextForCompare(previous);
+  const nextN = normalizeDriveTextForCompare(next);
+  const slack = atCap ? DRIVE_SNAPSHOT_BOUNDARY_SLACK : 0;
+  const bound = Math.max(0, Math.min(prevN.length, nextN.length) - slack);
+  return { previous: prevN.slice(0, bound), next: nextN.slice(0, bound) };
+}
+
+function suffixAlignedChangedChars(previous: string, next: string): number {
+  const start = firstDifferingIndex(previous, next);
+  let endPrev = previous.length;
+  let endNext = next.length;
+  while (endPrev > start && endNext > start && previous[endPrev - 1] === next[endNext - 1]) {
+    endPrev -= 1;
+    endNext -= 1;
+  }
+  return endPrev - start + (endNext - start);
 }
 
 export function diffDriveText(previous: string, next: string): DriveTextDiff {

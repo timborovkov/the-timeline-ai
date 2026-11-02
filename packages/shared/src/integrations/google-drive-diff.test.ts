@@ -2,7 +2,9 @@ import { expect } from '@timeline/test-support';
 import { describe, it } from 'bun:test';
 
 import {
+  DRIVE_BEYOND_SNAPSHOT_HUNK,
   DRIVE_SNAPSHOT_MAX_CHARS,
+  diffDriveSnapshots,
   diffDriveText,
   normalizeDriveTextForCompare,
   truncateDriveSnapshot,
@@ -60,14 +62,52 @@ describe('diffDriveText', () => {
     expect(truncateDriveSnapshot('abcdef', 4)).toBe('abcd');
   });
 
-  it('treats edits past the stored snapshot bound as substantive', () => {
+  it('does not treat an unchanged tail as added when the stored snapshot is truncated', () => {
+    const paragraph = 'Contract amount is forty eight thousand dollars for Northstar.\n';
+    const full = paragraph.repeat(500);
+    expect(full.length).toBeGreaterThan(DRIVE_SNAPSHOT_MAX_CHARS);
+    const previousStored = truncateDriveSnapshot(full);
+    const nextFull = full.replace('forty eight', 'forty  eight');
+    const unlike = diffDriveText(previousStored, nextFull);
+    expect(unlike.changed).toBe(true);
+    expect(unlike.reason).toBe('substantive');
+    const like = diffDriveSnapshots({
+      previousSnapshotText: previousStored,
+      nextSnapshotText: truncateDriveSnapshot(nextFull),
+      previousContentHash: 'prev-hash',
+      nextContentHash: 'next-hash',
+    });
+    expect(like.changed).toBe(false);
+    expect(like.reason).toBe('formatting');
+  });
+
+  it('keeps full-text hash changes past the snapshot bound without inventing a tail add', () => {
     const prefix = 'A'.repeat(DRIVE_SNAPSHOT_MAX_CHARS);
-    const previousStored = prefix;
-    const nextFull = `${prefix}Signed $48k Northstar contract.`;
-    const diff = diffDriveText(previousStored, nextFull);
-    expect(truncateDriveSnapshot(nextFull)).toBe(prefix);
+    const previousFull = `${prefix}OLD_TAIL signed $12k`;
+    const nextFull = `${prefix}NEW_TAIL signed $48k Northstar contract.`;
+    const diff = diffDriveSnapshots({
+      previousSnapshotText: truncateDriveSnapshot(previousFull),
+      nextSnapshotText: truncateDriveSnapshot(nextFull),
+      previousContentHash: 'old-hash',
+      nextContentHash: 'new-hash',
+    });
     expect(diff.changed).toBe(true);
-    expect(diff.hunks.join(' ')).toContain('$48k');
+    expect(diff.hunks).toEqual([DRIVE_BEYOND_SNAPSHOT_HUNK]);
+    expect(diff.hunks.join(' ')).not.toContain('$48k');
+  });
+
+  it('does not escalate a tiny prefix edit because the full-text hash also changed', () => {
+    const body = 'A'.repeat(DRIVE_SNAPSHOT_MAX_CHARS);
+    const previousFull = `Status is open\n${body}`;
+    const nextFull = `Status is open.\n${body}`;
+    const diff = diffDriveSnapshots({
+      previousSnapshotText: truncateDriveSnapshot(previousFull),
+      nextSnapshotText: truncateDriveSnapshot(nextFull),
+      previousContentHash: 'old-hash',
+      nextContentHash: 'new-hash',
+    });
+    expect(diff.changed).toBe(false);
+    expect(diff.reason).toBe('tiny');
   });
 
   it('keeps later-half edits when a changed line is longer than 400 characters', () => {

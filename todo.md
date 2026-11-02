@@ -38,6 +38,8 @@ cleared and retried within the extract budget. Extract cursors go through `withT
 scope; enqueue-before-cursor plus stale-pending re-enqueue keeps the orchestrator handoff recoverable.
 Extract resumes use an independent BullMQ identity so they cannot be dropped by an in-flight `drive.file`
 debounce; the orchestrator persists the JSON result before resuming and retries reuse that result.
+Extract cursors store the Drive revision of the uploaded bytes and re-request when it no longer matches.
+Change detection diffs truncated snapshots like-for-like; full-text hashes still see edits past 20k chars.
 
 ## Billing identity follow-up
 

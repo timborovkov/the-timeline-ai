@@ -18,7 +18,10 @@ cursor, the orchestrator writes a JSON result, then a dedicated `drive.file`
 resume continuation (independent of the originating debounce job id) runs.
 The JSON result is durable before that resume is accepted; retries reuse it
 and only retry the handoff. Source bytes are deleted after resume, not before.
-Stale pending results are re-enqueued; failed results are cleared and retried
+Extract cursors stamp the Drive revision (`headRevisionId` / md5 / modifiedTime)
+of the uploaded bytes; a later `drive.file` run re-requests when the live file
+no longer matches so an in-flight extract cannot be accepted against a newer
+revision. Stale pending results are re-enqueued; failed results are cleared and retried
 within the extract budget. Do
 not copy `DAYTONA_*` onto the full worker. Historically the BullMQ worker
 downloaded bytes into the same Node process that holds Postgres, Redis, S3,

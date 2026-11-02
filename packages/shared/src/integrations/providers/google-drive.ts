@@ -16,11 +16,13 @@ import type {
 import { getEnv } from '#src/env.js';
 import {
   driveDebouncePlan,
+  driveExtractMatchesFileRevision,
+  driveFileContentRevision,
   hashDrivePayload,
   takeDriveExtractSlot,
   takeDriveProcessSlot,
 } from '#src/integrations/google-drive-capture.js';
-import { diffDriveText, truncateDriveSnapshot } from '#src/integrations/google-drive-diff.js';
+import { diffDriveSnapshots, truncateDriveSnapshot } from '#src/integrations/google-drive-diff.js';
 import {
   DRIVE_FILE_KIND,
   DRIVE_FOLDER_KIND,
@@ -57,7 +59,7 @@ const MAX_HARVEST_BYTES = 20 * 1024 * 1024;
 const DRIVE_METADATA_PAGE_SIZE = '100';
 const DRIVE_METADATA_MAX_PAGES = 10;
 const FILE_FIELDS =
-  'id,name,mimeType,modifiedTime,webViewLink,parents,driveId,owners(displayName,emailAddress),shortcutDetails(targetId,targetMimeType)';
+  'id,name,mimeType,modifiedTime,headRevisionId,md5Checksum,webViewLink,parents,driveId,owners(displayName,emailAddress),shortcutDetails(targetId,targetMimeType)';
 
 interface DriveTokens {
   access_token: string;
@@ -73,6 +75,8 @@ interface DriveFile {
   name: string;
   mimeType: string;
   modifiedTime?: string;
+  headRevisionId?: string;
+  md5Checksum?: string;
   webViewLink?: string;
   owners?: { displayName?: string; emailAddress?: string }[];
   parents?: string[];
@@ -522,9 +526,11 @@ async function loadDriveText(
   file: DriveFile,
   ctx: SyncContext,
 ): Promise<LoadedDriveText> {
+  const fileRevisionId = driveFileContentRevision(file);
   if (driveMimeNeedsPaidExtract(file.mimeType) && ctx.loadTransientDriveExtract) {
     const existing = await ctx.loadTransientDriveExtract(file.id);
-    if (existing?.status === 'ready') {
+    const revisionMatches = driveExtractMatchesFileRevision(existing?.revisionId, fileRevisionId);
+    if (existing?.status === 'ready' && revisionMatches) {
       await ctx.consumeTransientDriveExtract?.(file.id);
       if (!existing.text.trim()) return { text: '', skippedReason: 'extract_empty' };
       return { text: existing.text };
@@ -542,8 +548,17 @@ async function loadDriveText(
       await ctx.consumeTransientDriveExtract(file.id);
       // Fall through: take a new extract slot (the daily budget is the bound)
       // and enqueue again after a config fix or a later edit.
-    } else if (existing?.status === 'pending') {
+    } else if (existing?.status === 'pending' && revisionMatches) {
       return { text: '', skippedReason: 'extract_pending' };
+    } else if (existing && !revisionMatches) {
+      await ctx.recordAudit('drive_extract_stale_revision', {
+        file_id: file.id,
+        mime_type: file.mimeType,
+        status: existing.status,
+        stored_revision: existing.revisionId ?? null,
+        file_revision: fileRevisionId,
+      });
+      await ctx.consumeTransientDriveExtract?.(file.id);
     }
   }
 
@@ -578,6 +593,7 @@ async function loadDriveText(
       filename: `${file.name}${download.filenameSuffix}`,
       contentType: download.contentType,
       body: download.body,
+      ...(fileRevisionId ? { revisionId: fileRevisionId } : {}),
     });
     return { text: '', skippedReason: 'extract_enqueued' };
   }
@@ -916,7 +932,12 @@ async function processDriveFile(
     ...commentSignals(comments, commentsChanged),
     ...(permissionsChanged ? clientShareSignals(permissions, teamDomains) : []),
   ];
-  const diff = diffDriveText(previous?.snapshotText ?? '', fullText);
+  const diff = diffDriveSnapshots({
+    previousSnapshotText: previous?.snapshotText ?? '',
+    nextSnapshotText: snapshotText,
+    nextContentHash: contentHash,
+    ...(previous?.contentHash ? { previousContentHash: previous.contentHash } : {}),
+  });
   const snapshot = {
     contentHash,
     snapshotText,

@@ -2859,6 +2859,7 @@ describe('Drive transient extract handoff', () => {
       filename: 'Notes.pdf',
       contentType: 'application/pdf',
       body: Buffer.from('%PDF-1.4'),
+      revisionId: 'rev:rev-9',
       io,
       now: new Date('2026-11-02T12:00:00.000Z'),
     });
@@ -2883,6 +2884,7 @@ describe('Drive transient extract handoff', () => {
         filename: 'Notes.pdf',
         contentType: 'application/pdf',
         enqueuedAt: '2026-11-02T12:00:00.000Z',
+        revisionId: 'rev:rev-9',
       }),
     );
   });
@@ -2918,6 +2920,7 @@ describe('Drive transient extract handoff', () => {
       contentType: 'application/pdf',
       filename: 'Notes.pdf',
       enqueuedAt: '2026-11-02T12:00:00.000Z',
+      revisionId: 'rev:rev-9',
     };
     const stale = {
       ...fresh,
@@ -2937,7 +2940,7 @@ describe('Drive transient extract handoff', () => {
         io: freshIo,
         now: new Date('2026-11-02T12:05:00.000Z'),
       }),
-    ).resolves.toEqual({ status: 'pending' });
+    ).resolves.toEqual({ status: 'pending', revisionId: 'rev:rev-9' });
     expect(freshIo.enqueueDocumentExtractJob).not.toHaveBeenCalled();
 
     const staleScope = extractScope(new Map([[cursorKey, stale]]));
@@ -2951,7 +2954,7 @@ describe('Drive transient extract handoff', () => {
         io: staleIo,
         now: new Date('2026-11-02T12:00:00.000Z'),
       }),
-    ).resolves.toEqual({ status: 'pending' });
+    ).resolves.toEqual({ status: 'pending', revisionId: 'rev:rev-9' });
     expect(staleIo.enqueueDocumentExtractJob).toHaveBeenCalledWith(
       expect.objectContaining({ extractId: 'ext-stale', objectKey: 'source-stale' }),
     );

@@ -15,6 +15,8 @@ import {
   DRIVE_FILE_MAX_LATENCY_MS,
   driveDebouncePlan,
   driveExtractCursorKey,
+  driveExtractMatchesFileRevision,
+  driveFileContentRevision,
   driveTransientExtractKeys,
   hashDrivePayload,
   isDriveExtractPendingStale,
@@ -142,6 +144,43 @@ describe('drive transient extract helpers', () => {
       ),
     ).toBe(true);
     expect(isDriveExtractPendingStale({ ...cursor, enqueuedAt: 'not-a-date' })).toBe(true);
+  });
+
+  it('stamps extract revisions from Drive headRevisionId, md5, then modifiedTime', () => {
+    expect(
+      driveFileContentRevision({
+        headRevisionId: 'rev-9',
+        md5Checksum: 'abcd',
+        modifiedTime: '2026-06-20T10:00:00.000Z',
+      }),
+    ).toBe('rev:rev-9');
+    expect(
+      driveFileContentRevision({
+        md5Checksum: 'abcd',
+        modifiedTime: '2026-06-20T10:00:00.000Z',
+      }),
+    ).toBe('md5:abcd');
+    expect(driveFileContentRevision({ modifiedTime: '2026-06-20T10:00:00.000Z' })).toBe(
+      'mod:2026-06-20T10:00:00.000Z',
+    );
+    expect(driveExtractMatchesFileRevision('rev:old', 'rev:new')).toBe(false);
+    expect(driveExtractMatchesFileRevision('rev:same', 'rev:same')).toBe(true);
+    expect(driveExtractMatchesFileRevision(undefined, 'rev:new')).toBe(true);
+    expect(driveExtractMatchesFileRevision('rev:old', null)).toBe(true);
+  });
+
+  it('parses extract cursors that carry a Drive revision id', () => {
+    expect(
+      parseDriveExtractCursor({
+        extractId: 'ext-1',
+        objectKey: 'source',
+        resultObjectKey: 'result.json',
+        contentType: 'application/pdf',
+        filename: 'Notes.pdf',
+        enqueuedAt: '2026-11-02T12:00:00.000Z',
+        revisionId: 'rev:rev-9',
+      }),
+    ).toMatchObject({ revisionId: 'rev:rev-9' });
   });
 });
 

@@ -183,19 +183,21 @@ export interface SyncContext {
     filename: string;
     contentType: string;
     body: Buffer;
+    revisionId?: string;
   }): Promise<void>;
   /**
    * Read a previously enqueued Drive transient extract. `pending` means the
    * orchestrator has not written a result yet (stale pending is re-enqueued
    * by the worker). `failed` is a visible error; the provider clears that
    * state and retries within the extract budget rather than blocking forever.
+   * `revisionId` is the Drive revision stamped when those bytes were uploaded.
    */
   loadTransientDriveExtract?(
     fileId: string,
   ): Promise<
-    | { status: 'pending' }
-    | { status: 'ready'; text: string }
-    | { status: 'failed'; error: string }
+    | { status: 'pending'; revisionId?: string }
+    | { status: 'ready'; text: string; revisionId?: string }
+    | { status: 'failed'; error: string; revisionId?: string }
     | null
   >;
   /** Delete the transient source/result objects and clear the extract cursor. */
