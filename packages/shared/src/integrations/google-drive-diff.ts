@@ -1,6 +1,13 @@
 /**
  * Cheap deterministic Drive text comparison. Formatting-only and tiny edits
  * must never reach an LLM.
+ *
+ * Comparable text is the truncated 20k snapshot window. A last incomplete line
+ * at the cap may be a clip artifact, but it is always inspected: hash-moved
+ * snapshots never report identical/formatting unless the full comparable window
+ * is verifiably whitespace-equivalent. If the window cannot prove the hash
+ * change is formatting or tiny, fall back to a conservative changed hunk.
+ * Added and removed hunks are always collected together.
  */
 
 const WHITESPACE = /\s+/g;
@@ -11,10 +18,10 @@ const MARKDOWN_LINE_PREFIX = /^\s{0,3}(?:#{1,6}\s+|>\s+|[-*+]\s+)/;
 const DRIVE_DIFF_MIN_CHANGED_CHARS = 40;
 export const DRIVE_SNAPSHOT_MAX_CHARS = 20_000;
 export const DRIVE_BEYOND_SNAPSHOT_HUNK = 'Text changed past the stored snapshot window.';
-/** Ignore this many trailing normalized chars so a prefix insert doesn't slide the cap. */
-const DRIVE_SNAPSHOT_BOUNDARY_SLACK = 1024;
+const DRIVE_CAP_TAIL_SLACK = 1024;
 const DRIVE_HUNK_LINE_MAX = 400;
 const DRIVE_HUNK_HEAD_CHARS = 240;
+const DRIVE_HUNK_CONTEXT_CHARS = 80;
 
 type DriveDiffReason = 'identical' | 'formatting' | 'tiny' | 'substantive';
 
@@ -43,13 +50,60 @@ export function truncateDriveSnapshot(text: string, maxChars = DRIVE_SNAPSHOT_MA
   return text.slice(0, maxChars);
 }
 
+function beyondSnapshotDiff(): DriveTextDiff {
+  return {
+    changed: true,
+    reason: 'substantive',
+    changedChars: 1,
+    hunks: [DRIVE_BEYOND_SNAPSHOT_HUNK],
+  };
+}
+
+function withProvenHunks(diff: DriveTextDiff): DriveTextDiff {
+  if (!diff.changed) return diff;
+  if (diff.hunks.length > 0) return diff;
+  return { ...diff, hunks: [DRIVE_BEYOND_SNAPSHOT_HUNK] };
+}
+
+function splitCapWindow(text: string): { stable: string; tail: string } {
+  if (text.length < DRIVE_SNAPSHOT_MAX_CHARS) return { stable: text, tail: '' };
+  const lastNl = text.lastIndexOf('\n');
+  if (lastNl < 0) return { stable: text, tail: '' };
+  if (lastNl < text.length - DRIVE_CAP_TAIL_SLACK) return { stable: text, tail: '' };
+  return { stable: text.slice(0, lastNl), tail: text.slice(lastNl + 1) };
+}
+
+function tailsAreCapSlide(previousTail: string, nextTail: string): boolean {
+  if (previousTail === nextTail) return true;
+  if (normalizeDriveTextForCompare(previousTail) === normalizeDriveTextForCompare(nextTail)) {
+    return true;
+  }
+  if (previousTail.length === 0 || nextTail.length === 0) return false;
+  if (previousTail.startsWith(nextTail) || nextTail.startsWith(previousTail)) return true;
+  const [shorter, longer] =
+    previousTail.length <= nextTail.length ? [previousTail, nextTail] : [nextTail, previousTail];
+  return longer.slice(1).startsWith(shorter) || shorter.startsWith(longer.slice(1));
+}
+
+function mergeWindowDiffs(stable: DriveTextDiff, tail: DriveTextDiff | null): DriveTextDiff {
+  if (!tail || !tail.changed) return withProvenHunks(stable);
+  if (!stable.changed) return withProvenHunks(tail);
+  return withProvenHunks({
+    changed: true,
+    reason: 'substantive',
+    changedChars: stable.changedChars + tail.changedChars,
+    hunks: [...stable.hunks, ...tail.hunks].slice(0, 40),
+  });
+}
+
 /**
  * Compare stored snapshot text to the current truncated snapshot.
  *
- * Below the cap, compare the full normalized snapshots — including unmatched
- * suffixes — so an appended or deleted tail is not sliced away. At the cap,
- * compare only the stored window; extra suffix inside that window is an
- * explicit append/delete, and full-text hashes still see edits past 20k.
+ * Always inspect the full truncated window, including the last incomplete line
+ * at the cap. That tail is ignored only when it is a clip/slide artifact.
+ * Full-text hashes still see edits past 20k: byte-identical windows with a
+ * moved hash are beyond-window. A hash change whose comparable window is
+ * whitespace-equivalent stays formatting; a proven tiny window edit stays tiny.
  */
 export function diffDriveSnapshots(input: {
   previousSnapshotText: string;
@@ -63,96 +117,33 @@ export function diffDriveSnapshots(input: {
     Boolean(input.previousContentHash) && input.previousContentHash !== input.nextContentHash;
 
   if (previous === next) {
-    if (hashMoved) {
-      return {
-        changed: true,
-        reason: 'substantive',
-        changedChars: 1,
-        hunks: [DRIVE_BEYOND_SNAPSHOT_HUNK],
-      };
+    return hashMoved
+      ? beyondSnapshotDiff()
+      : { changed: false, reason: 'identical', changedChars: 0, hunks: [] };
+  }
+
+  const previousParts = splitCapWindow(previous);
+  const nextParts = splitCapWindow(next);
+  const stableDiff = diffDriveText(previousParts.stable, nextParts.stable);
+  const tailSlide = tailsAreCapSlide(previousParts.tail, nextParts.tail);
+  const tailDiff =
+    previousParts.tail === nextParts.tail
+      ? null
+      : diffDriveText(previousParts.tail, nextParts.tail);
+  const provenUnchanged = !stableDiff.changed && (tailSlide || !tailDiff || !tailDiff.changed);
+
+  if (provenUnchanged) {
+    if (stableDiff.reason === 'formatting' || stableDiff.reason === 'tiny') {
+      return stableDiff;
     }
-    return { changed: false, reason: 'identical', changedChars: 0, hunks: [] };
+    if (hashMoved) return beyondSnapshotDiff();
+    return stableDiff;
   }
 
-  const atCap =
-    previous.length >= DRIVE_SNAPSHOT_MAX_CHARS || next.length >= DRIVE_SNAPSHOT_MAX_CHARS;
-  if (!atCap) {
-    return diffDriveText(previous, next);
-  }
-
-  const overlapLen = Math.min(previous.length, next.length);
-  const extraPrev = previous.slice(overlapLen);
-  const extraNext = next.slice(overlapLen);
-  if (extraPrev.length > 0 || extraNext.length > 0) {
-    return diffWithUnmatchedSuffixes(
-      previous.slice(0, overlapLen),
-      next.slice(0, overlapLen),
-      extraPrev,
-      extraNext,
-    );
-  }
-  return diffCappedEqualWindow(previous, next);
-}
-
-function diffWithUnmatchedSuffixes(
-  overlapPrev: string,
-  overlapNext: string,
-  extraPrev: string,
-  extraNext: string,
-): DriveTextDiff {
-  const overlapDiff =
-    overlapPrev.length >= DRIVE_SNAPSHOT_MAX_CHARS && overlapNext.length >= DRIVE_SNAPSHOT_MAX_CHARS
-      ? diffCappedEqualWindow(overlapPrev, overlapNext)
-      : diffDriveText(overlapPrev, overlapNext);
-  const suffixHunks = unmatchedSuffixHunks(extraPrev, extraNext);
-  const extraChars = extraPrev.trim().length + extraNext.trim().length;
-  if (suffixHunks.length === 0) {
-    if (!overlapDiff.changed) {
-      return { changed: false, reason: 'formatting', changedChars: 0, hunks: [] };
-    }
-    return overlapDiff;
-  }
-  const tinySuffix =
-    extraChars < DRIVE_DIFF_MIN_CHANGED_CHARS && Math.abs(extraNext.length - extraPrev.length) < 20;
-  if (tinySuffix && !overlapDiff.changed) {
-    return { changed: false, reason: 'tiny', changedChars: extraChars, hunks: [] };
-  }
-  if (!overlapDiff.changed) {
-    return {
-      changed: true,
-      reason: 'substantive',
-      changedChars: extraChars,
-      hunks: suffixHunks,
-    };
-  }
-  return {
-    changed: true,
-    reason: 'substantive',
-    changedChars: overlapDiff.changedChars + extraChars,
-    hunks: [...overlapDiff.hunks, ...suffixHunks].slice(0, 40),
-  };
-}
-
-function diffCappedEqualWindow(previous: string, next: string): DriveTextDiff {
-  return diffDriveText(storedWindowForCompare(previous), storedWindowForCompare(next));
-}
-
-/** Drop the clipped last line at the cap so a 1-char slide is not a hunk. */
-function storedWindowForCompare(text: string): string {
-  if (text.length < DRIVE_SNAPSHOT_MAX_CHARS) return text;
-  const lastNl = text.lastIndexOf('\n');
-  const nearEnd = text.length - Math.min(DRIVE_SNAPSHOT_BOUNDARY_SLACK, text.length);
-  if (lastNl >= nearEnd) return text.slice(0, lastNl);
-  return text.slice(0, Math.max(0, text.length - DRIVE_SNAPSHOT_BOUNDARY_SLACK));
-}
-
-function unmatchedSuffixHunks(extraPrev: string, extraNext: string): string[] {
-  const hunks: string[] = [];
-  const added = extraNext.trim();
-  const removed = extraPrev.trim();
-  if (added) hunks.push(truncateChangedLine(added));
-  if (removed) hunks.push(`- ${truncateChangedLine(removed)}`);
-  return hunks;
+  const windowDiff = mergeWindowDiffs(stableDiff, tailSlide ? null : tailDiff);
+  if (windowDiff.changed) return windowDiff;
+  if (hashMoved) return beyondSnapshotDiff();
+  return windowDiff;
 }
 
 export function diffDriveText(previous: string, next: string): DriveTextDiff {
@@ -169,7 +160,7 @@ export function diffDriveText(previous: string, next: string): DriveTextDiff {
   if (changedChars < DRIVE_DIFF_MIN_CHANGED_CHARS && Math.abs(next.length - previous.length) < 20) {
     return { changed: false, reason: 'tiny', changedChars, hunks };
   }
-  return { changed: true, reason: 'substantive', changedChars, hunks };
+  return withProvenHunks({ changed: true, reason: 'substantive', changedChars, hunks });
 }
 
 function changedHunks(previous: string, next: string): string[] {
@@ -177,27 +168,56 @@ function changedHunks(previous: string, next: string): string[] {
   const nextLines = next.split('\n');
   const prevSet = new Set(prevLines.map((line) => line.trim()).filter((line) => line.length > 0));
   const nextSet = new Set(nextLines.map((line) => line.trim()).filter((line) => line.length > 0));
+  const addedLines = nextLines
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0 && !prevSet.has(line));
+  const removedLines = prevLines
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0 && !nextSet.has(line));
   const hunks: string[] = [];
-  for (const line of nextLines) {
-    const trimmed = line.trim();
-    if (!trimmed) continue;
-    if (!prevSet.has(trimmed)) hunks.push(truncateChangedLine(trimmed));
-  }
-  if (hunks.length === 0) {
-    for (const line of prevLines) {
-      const trimmed = line.trim();
-      if (!trimmed) continue;
-      if (!nextSet.has(trimmed)) hunks.push(`- ${truncateChangedLine(trimmed)}`);
+  const pairedRemoved = new Set<number>();
+  for (const added of addedLines) {
+    if (added.length <= DRIVE_HUNK_LINE_MAX) {
+      hunks.push(truncateChangedLine(added));
+      continue;
     }
+    const pairIndex = removedLines.findIndex(
+      (line, index) => !pairedRemoved.has(index) && line.length > DRIVE_HUNK_LINE_MAX,
+    );
+    if (pairIndex >= 0) {
+      pairedRemoved.add(pairIndex);
+      hunks.push(...changedSpanHunks(removedLines[pairIndex] ?? '', added));
+      continue;
+    }
+    hunks.push(truncateChangedLine(added));
+  }
+  for (const [index, removed] of removedLines.entries()) {
+    if (pairedRemoved.has(index)) continue;
+    hunks.push(`- ${truncateChangedLine(removed)}`);
   }
   if (hunks.length === 0 && next !== previous) {
-    const start = firstDifferingIndex(previous, next);
-    const added = next.slice(start);
-    const removed = previous.slice(start);
-    if (added.trim()) hunks.push(truncateChangedLine(added));
-    if (removed.trim()) hunks.push(`- ${truncateChangedLine(removed)}`);
+    hunks.push(...changedSpanHunks(previous, next));
   }
   return hunks.slice(0, 40);
+}
+
+function changedSpanHunks(previous: string, next: string): string[] {
+  const start = firstDifferingIndex(previous, next);
+  let endPrev = previous.length;
+  let endNext = next.length;
+  while (endPrev > start && endNext > start && previous[endPrev - 1] === next[endNext - 1]) {
+    endPrev -= 1;
+    endNext -= 1;
+  }
+  const contextStart = Math.max(0, start - DRIVE_HUNK_CONTEXT_CHARS);
+  const addedEnd = Math.min(next.length, Math.max(endNext, start) + DRIVE_HUNK_CONTEXT_CHARS);
+  const removedEnd = Math.min(previous.length, Math.max(endPrev, start) + DRIVE_HUNK_CONTEXT_CHARS);
+  const added = next.slice(contextStart, addedEnd);
+  const removed = previous.slice(contextStart, removedEnd);
+  const hunks: string[] = [];
+  if (added.trim()) hunks.push(truncateChangedLine(added.trim()));
+  if (removed.trim()) hunks.push(`- ${truncateChangedLine(removed.trim())}`);
+  return hunks;
 }
 
 function truncateChangedLine(line: string, maxChars = DRIVE_HUNK_LINE_MAX): string {

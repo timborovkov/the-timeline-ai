@@ -118,7 +118,21 @@ describe('diffDriveText', () => {
     const diff = diffDriveText(`${prefix}OLD_VALUE`, `${prefix}NEW_VALUE`);
     expect(diff.changed).toBe(true);
     expect(diff.hunks.join(' ')).toContain('NEW_VALUE');
-    expect(diff.hunks.join(' ')).not.toContain('OLD_VALUE');
+    expect(diff.hunks.some((hunk) => hunk.startsWith('- ') && hunk.includes('OLD_VALUE'))).toBe(
+      true,
+    );
+  });
+
+  it('collects removed lines even when other lines were added', () => {
+    const diff = diffDriveText(
+      'The vendor shall indemnify Acme Labs against all claims arising from delivery.\nKeep this line.',
+      `${SIGNING_PARAGRAPH}\nKeep this line.`,
+    );
+    expect(diff.changed).toBe(true);
+    expect(diff.hunks.join(' ')).toContain('$48k');
+    expect(diff.hunks.some((hunk) => hunk.startsWith('- ') && hunk.includes('indemnify'))).toBe(
+      true,
+    );
   });
 
   it('emits bounded removed-text hunks for deletion-only diffs', () => {
@@ -163,6 +177,21 @@ function longSow(repeats = 500): string {
   const text = SOW_LINE.repeat(repeats);
   if (text.length <= DRIVE_SNAPSHOT_MAX_CHARS) {
     throw new Error(`long fixture ${text.length} did not exceed the snapshot cap`);
+  }
+  return text;
+}
+
+/** Unique clause starting near char 19.2k, past the old 1024-char slack drop. */
+function nearCapBoundaryEdit(amount: string): string {
+  const marker = `Acme Labs signed a ${amount} annual contract with Northstar this quarter.`;
+  const prefix = 'A'.repeat(19_200);
+  const tail = 'B'.repeat(5_000);
+  const text = `${prefix}${marker}${tail}`;
+  if (text.length <= DRIVE_SNAPSHOT_MAX_CHARS) {
+    throw new Error(`near-cap fixture ${text.length} did not exceed the snapshot cap`);
+  }
+  if (prefix.length + marker.length > DRIVE_SNAPSHOT_MAX_CHARS) {
+    throw new Error('near-cap marker sits past the stored snapshot window');
   }
   return text;
 }
@@ -323,6 +352,24 @@ describe('diffDriveSnapshots regression matrix', () => {
       changed: true,
       reason: 'substantive',
       hunkIncludes: '$48k',
+    },
+    {
+      name: '<20k delete a clause while adding a signing line',
+      previousFull: `The vendor shall indemnify Acme Labs against all claims arising from delivery.\n${short}`,
+      nextFull: `${SIGNING_PARAGRAPH}\n${short}`,
+      changed: true,
+      reason: 'substantive',
+      hunkIncludes: '$48k',
+      removedHunk: true,
+    },
+    {
+      name: '~19k mid-window amount edit under a moved hash',
+      previousFull: nearCapBoundaryEdit('$12k'),
+      nextFull: nearCapBoundaryEdit('$48k'),
+      changed: true,
+      reason: 'substantive',
+      hunkIncludes: '$48k',
+      removedHunk: true,
     },
   ];
 

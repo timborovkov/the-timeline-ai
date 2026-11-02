@@ -39,7 +39,7 @@ scope; enqueue-before-cursor plus stale-pending re-enqueue keeps the orchestrato
 Extract resumes use an independent BullMQ identity so they cannot be dropped by an in-flight `drive.file`
 debounce; the orchestrator persists the JSON result before resuming and retries reuse that result.
 Extract cursors store the Drive revision of the uploaded bytes and re-request when it no longer matches.
-Change detection diffs truncated snapshots like-for-like, including unmatched suffixes so an append or deleted tail is not sliced away; full-text hashes still see edits past 20k chars.
+Change detection diffs the full truncated 20k windows like-for-like, always collecting added and removed hunks together. Hash-moved snapshots never skip as identical/formatting unless that full window is verifiably whitespace-equivalent; otherwise the fallback is a conservative changed hunk. Full-text hashes still see edits past 20k chars.
 
 ## Billing identity follow-up
 
