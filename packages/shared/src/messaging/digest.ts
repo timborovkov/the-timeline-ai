@@ -15,13 +15,6 @@ import {
 import { and, desc, eq, gte, inArray, isNull, lt, or, sql } from 'drizzle-orm';
 import { z } from 'zod';
 
-import type {
-  DailyDigestActivity,
-  DailyDigestPayload,
-  DailyDigestSection,
-} from '#src/messaging/types.js';
-import type { TeamScope } from '#src/team-scope.js';
-
 import { CAPACITY_BY_PLAN } from '#src/billing/catalog.js';
 import { getBillingContext } from '#src/billing/context.js';
 import { isBillingAdmissionError } from '#src/billing/errors.js';
@@ -44,6 +37,13 @@ import {
   buildTimelineMomentPresentationCacheFingerprint,
   buildTimelineMomentPresentationCacheKey,
 } from '#src/timeline-moments/presentation.js';
+
+import type {
+  DailyDigestActivity,
+  DailyDigestPayload,
+  DailyDigestSection,
+} from '#src/messaging/types.js';
+import type { TeamScope } from '#src/team-scope.js';
 
 const log = childLogger('digest');
 const DEFAULT_WORKSPACE_TIMEZONE = 'Europe/Helsinki';

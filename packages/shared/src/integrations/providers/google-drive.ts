@@ -1,18 +1,5 @@
 import { createHmac, randomUUID } from 'node:crypto';
 
-import type { DriveChangeJudge } from '#src/integrations/google-drive-judge.js';
-import type {
-  IntegrationEvent,
-  IntegrationProvider,
-  IntegrationRow,
-  OAuthCallbackInput,
-  OAuthStartInput,
-  ProviderResource,
-  SyncContext,
-  SyncResult,
-  WebhookHandleResult,
-} from '#src/integrations/types.js';
-
 import { getEnv } from '#src/env.js';
 import {
   driveDebouncePlan,
@@ -39,6 +26,19 @@ import {
 import { providerFetch } from '#src/integrations/request.js';
 import { attachSyncContinuation, isProviderRateLimitError } from '#src/integrations/types.js';
 import { childLogger } from '#src/logger.js';
+
+import type { DriveChangeJudge } from '#src/integrations/google-drive-judge.js';
+import type {
+  IntegrationEvent,
+  IntegrationProvider,
+  IntegrationRow,
+  OAuthCallbackInput,
+  OAuthStartInput,
+  ProviderResource,
+  SyncContext,
+  SyncResult,
+  WebhookHandleResult,
+} from '#src/integrations/types.js';
 
 const fetch = providerFetch('google_drive');
 

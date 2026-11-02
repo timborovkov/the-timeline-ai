@@ -17,8 +17,6 @@ import {
 } from '@timeline/db';
 import { and, asc, eq, inArray, isNotNull, sql } from 'drizzle-orm';
 
-import type { IntegrationEvent, IntegrationRow, ObjectMapping } from '#src/integrations/types.js';
-
 import {
   reconcileArtifactEvidence,
   type ArtifactAnchorInput,
@@ -72,6 +70,8 @@ import {
   sourcePayloadRefFromMetadata,
 } from '#src/reconciliation/source-snapshot.js';
 import { withTeam } from '#src/team-scope.js';
+
+import type { IntegrationEvent, IntegrationRow, ObjectMapping } from '#src/integrations/types.js';
 
 const log = childLogger('integrations:event-writer');
 

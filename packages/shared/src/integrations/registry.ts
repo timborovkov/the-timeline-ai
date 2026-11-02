@@ -1,5 +1,3 @@
-import type { IntegrationProvider, NativeProviderId } from '#src/integrations/types.js';
-
 import { getEnv } from '#src/env.js';
 import { githubProvider } from '#src/integrations/providers/github.js';
 import { googleDriveProvider } from '#src/integrations/providers/google-drive.js';
@@ -8,6 +6,8 @@ import { mondayProvider } from '#src/integrations/providers/monday.js';
 import { sentryProvider } from '#src/integrations/providers/sentry.js';
 import { slackProvider } from '#src/integrations/providers/slack.js';
 import { withProviderRequestContext } from '#src/integrations/request.js';
+
+import type { IntegrationProvider, NativeProviderId } from '#src/integrations/types.js';
 
 // Phase 11 — Provider registry + integration catalog.
 //

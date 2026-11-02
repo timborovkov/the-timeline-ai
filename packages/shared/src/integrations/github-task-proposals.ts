@@ -13,8 +13,6 @@ import {
 } from '@timeline/db';
 import { and, desc, eq, inArray, isNull, or, sql } from 'drizzle-orm';
 
-import type { IntegrationEvent, ObjectMapping } from '#src/integrations/types.js';
-
 import { GITHUB_TASK_PROPOSAL_COALESCE_MS } from '#src/integrations/ingest-processing.js';
 import {
   isSignalClass,
@@ -25,6 +23,8 @@ import { childLogger } from '#src/logger.js';
 import { enqueueSuggestionJob } from '#src/queue/queues.js';
 import { suggestionDedupeKey } from '#src/suggestions/dedupe-key.js';
 import { withTeam } from '#src/team-scope.js';
+
+import type { IntegrationEvent, ObjectMapping } from '#src/integrations/types.js';
 
 const log = childLogger('integrations:github-task-proposals');
 const PSEUDO_USER = '00000000-0000-0000-0000-000000000000';

@@ -7,8 +7,6 @@ import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { z } from 'zod';
 
-import type { LanguageModel } from 'ai';
-
 import { runWorkerBilling } from '#src/billing/runtime.js';
 import { resetEnvForTests } from '#src/env.js';
 import { EXTRACTION_SYSTEM_PROMPT } from '#src/extract/prompt.js';
@@ -16,6 +14,8 @@ import { extractionResultSchema } from '#src/extract/schema.js';
 import { chatStructured } from '#src/llm/chat.js';
 import { TIMELINE_MODELS } from '#src/llm/models.js';
 import { applyDbMigrations } from '#src/test/pglite.js';
+
+import type { LanguageModel } from 'ai';
 
 type ProviderFetch = (
   ...args: Parameters<typeof globalThis.fetch>

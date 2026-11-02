@@ -1,7 +1,7 @@
-import type { QdrantClient, SearchHit } from '#src/qdrant/client.js';
-
 import { QDRANT_EXACT_SEARCH_PARAMS } from '#src/qdrant/collection-config.js';
 import { denseVectorFromUnknown } from '#src/qdrant/copy-points.js';
+
+import type { QdrantClient, SearchHit } from '#src/qdrant/client.js';
 
 const DEFAULT_RECALL_SAMPLE = 32;
 const DEFAULT_RECALL_K = 10;

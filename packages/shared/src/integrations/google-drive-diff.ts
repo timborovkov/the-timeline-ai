@@ -86,7 +86,7 @@ function tailsAreCapSlide(previousTail: string, nextTail: string): boolean {
 }
 
 function mergeWindowDiffs(stable: DriveTextDiff, tail: DriveTextDiff | null): DriveTextDiff {
-  if (!tail || !tail.changed) return withProvenHunks(stable);
+  if (!tail?.changed) return withProvenHunks(stable);
   if (!stable.changed) return withProvenHunks(tail);
   return withProvenHunks({
     changed: true,
@@ -130,7 +130,7 @@ export function diffDriveSnapshots(input: {
     previousParts.tail === nextParts.tail
       ? null
       : diffDriveText(previousParts.tail, nextParts.tail);
-  const provenUnchanged = !stableDiff.changed && (tailSlide || !tailDiff || !tailDiff.changed);
+  const provenUnchanged = !stableDiff.changed && (tailSlide || !tailDiff?.changed);
 
   if (provenUnchanged) {
     if (stableDiff.reason === 'formatting' || stableDiff.reason === 'tiny') {

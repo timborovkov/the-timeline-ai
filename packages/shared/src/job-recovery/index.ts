@@ -27,11 +27,11 @@ import {
   sql,
 } from 'drizzle-orm';
 
-import type { JobType } from 'bullmq';
-
 import { isProviderCooldownErrorMessage } from '#src/integrations/types.js';
 import * as queue from '#src/queue/index.js';
 import { rawEventVisibleToUser } from '#src/visibility.js';
+
+import type { JobType } from 'bullmq';
 
 type TeamRole = 'owner' | 'admin' | 'member';
 
