@@ -7,6 +7,7 @@ import {
   getEnv,
   getObjectBuffer,
   getS3Client,
+  integrations,
   isLikelyGeneratedDocumentName,
   llm,
   normalizeSuggestedTitle,
@@ -92,14 +93,39 @@ export interface DocumentExtractIO {
   extractPdfSandbox: (body: Buffer) => Promise<SandboxPdfExtractResult>;
   /** Persist Drive transient extract JSON (success or visible failure). */
   writeDriveTransientResult: (objectKey: string, body: Buffer) => Promise<void>;
-  /** Resume the delayed `drive.file` job after transient extract completes. */
+  /**
+   * Read a previously persisted Drive transient extract JSON, or `null`
+   * when the object is missing. Retries reuse this instead of re-fetching
+   * source bytes that may already have been deleted.
+   */
+  readDriveTransientResult: (objectKey: string) => Promise<Buffer | null>;
+  /** Resume `drive.file` after a transient extract result is durable. */
   resumeDriveFile: (input: {
     teamId: string;
     integrationId: string;
     fileId: string;
+    extractId: string;
   }) => Promise<void>;
-  /** Delete the uploaded Drive source bytes after extract. */
+  /** Delete the uploaded Drive source bytes after resume is accepted. */
   deleteBlob: (objectKey: string) => Promise<void>;
+}
+
+/** 25 MiB in-memory cap; matches the transcribe worker. */
+const MAX_DOCUMENT_BYTES = 25 * 1024 * 1024;
+const DRIVE_TRANSIENT_RESULT_MAX_BYTES = 2 * 1024 * 1024;
+
+function isMissingObjectError(err: unknown): boolean {
+  if (!err || typeof err !== 'object') return false;
+  const name = 'name' in err && typeof err.name === 'string' ? err.name : '';
+  const code = 'Code' in err && typeof err.Code === 'string' ? err.Code : '';
+  const status =
+    '$metadata' in err &&
+    err.$metadata &&
+    typeof err.$metadata === 'object' &&
+    'httpStatusCode' in err.$metadata
+      ? err.$metadata.httpStatusCode
+      : undefined;
+  return name === 'NoSuchKey' || name === 'NotFound' || code === 'NoSuchKey' || status === 404;
 }
 
 function defaultIO(): DocumentExtractIO {
@@ -139,6 +165,20 @@ function defaultIO(): DocumentExtractIO {
         contentType: 'application/json',
       });
     },
+    async readDriveTransientResult(objectKey) {
+      try {
+        const fetched = await getObjectBuffer(
+          getS3Client(),
+          getDocumentsBucket(),
+          objectKey,
+          DRIVE_TRANSIENT_RESULT_MAX_BYTES,
+        );
+        return fetched.body;
+      } catch (err: unknown) {
+        if (isMissingObjectError(err)) return null;
+        throw err;
+      }
+    },
     async resumeDriveFile(input) {
       await queue.enqueueIntegrationSyncJob({
         kind: 'targeted',
@@ -148,6 +188,7 @@ function defaultIO(): DocumentExtractIO {
         resourceType: 'drive.file',
         externalId: input.fileId,
         reason: 'drive_transient_extract',
+        surface: queue.driveTransientExtractResumeSurface(input.extractId),
       });
     },
     async deleteBlob(objectKey) {
@@ -160,12 +201,6 @@ function defaultIO(): DocumentExtractIO {
 // `redocument-extract` script can re-drive jobs whose chunking policy
 // predates a change.
 const EXTRACT_CODE_VERSION = '2026-08-c';
-
-// Cap on document size we will pull into memory for processing. Above
-// this, the worker stamps the version as 'failed' with a clear message
-// so the user can decide how to split the file. 25 MiB matches the
-// transcribe cap; revisit when streaming extraction lands.
-const MAX_DOCUMENT_BYTES = 25 * 1024 * 1024;
 
 /**
  * Phase 9 document extract worker. One job per `document_versions.id`:
@@ -224,31 +259,73 @@ function metadataPreviewText(input: {
  *   - embed enqueue via `io.enqueueEmbed`
  * No direct Redis/S3 references; both go through `io`.
  */
-async function writeDriveTransientOutcome(
+async function persistDriveTransientResult(
   io: DocumentExtractIO,
   data: queue.DriveTransientExtractJobData,
-  payload: { ok: true; text: string } | { ok: false; error: string },
+  payload: integrations.DriveTransientExtractResultPayload,
 ): Promise<void> {
   await io.writeDriveTransientResult(data.resultObjectKey, Buffer.from(JSON.stringify(payload)));
+}
+
+async function resumeAndCleanupDriveTransientExtract(
+  io: DocumentExtractIO,
+  data: queue.DriveTransientExtractJobData,
+): Promise<void> {
+  await io.resumeDriveFile({
+    teamId: data.teamId,
+    integrationId: data.integrationId,
+    fileId: data.fileId,
+    extractId: data.extractId,
+  });
   try {
     await io.deleteBlob(data.objectKey);
   } catch (err) {
     log.warn({ err, objectKey: data.objectKey }, 'failed to delete Drive transient source blob');
   }
-  await io.resumeDriveFile({
-    teamId: data.teamId,
-    integrationId: data.integrationId,
-    fileId: data.fileId,
-  });
 }
 
-async function finalizeDriveTransientExtractFailure(
+async function loadPersistedDriveTransientResult(
+  io: DocumentExtractIO,
+  resultObjectKey: string,
+): Promise<integrations.DriveTransientExtractResultPayload | null> {
+  const body = await io.readDriveTransientResult(resultObjectKey);
+  if (!body) return null;
+  try {
+    return integrations.parseDriveTransientExtractResult(body);
+  } catch (err) {
+    log.warn({ err, resultObjectKey }, 'ignoring unreadable Drive transient extract result');
+    return null;
+  }
+}
+
+async function handoffPersistedDriveTransientResult(
+  io: DocumentExtractIO,
+  data: queue.DriveTransientExtractJobData,
+  payload: integrations.DriveTransientExtractResultPayload,
+): Promise<DocumentExtractResult> {
+  await persistDriveTransientResult(io, data, payload);
+  await resumeAndCleanupDriveTransientExtract(io, data);
+  if (payload.ok) {
+    return { driveFileId: data.fileId, reason: 'drive_transient_ready' };
+  }
+  return { driveFileId: data.fileId, skipped: true, reason: 'drive_transient_failed' };
+}
+
+/**
+ * Last-attempt failure path. Reuses a durable result (including a prior
+ * success whose resume threw) instead of overwriting it with `{ ok: false }`.
+ */
+export async function finalizeDriveTransientExtractFailure(
   io: DocumentExtractIO,
   data: queue.DriveTransientExtractJobData,
   err: unknown,
 ): Promise<void> {
-  const message = err instanceof Error ? err.message : String(err);
-  await writeDriveTransientOutcome(io, data, { ok: false, error: message.slice(0, 500) });
+  const persisted = await loadPersistedDriveTransientResult(io, data.resultObjectKey);
+  if (!persisted) {
+    const message = err instanceof Error ? err.message : String(err);
+    await persistDriveTransientResult(io, data, { ok: false, error: message.slice(0, 500) });
+  }
+  await resumeAndCleanupDriveTransientExtract(io, data);
 }
 
 async function processDriveTransientExtract(
@@ -257,12 +334,20 @@ async function processDriveTransientExtract(
 ): Promise<DocumentExtractResult> {
   // Credential-thin: no withTeam / integration_sync_state. Cursor handoff
   // stays on the main worker's team-scoped integrations module.
+  const persisted = await loadPersistedDriveTransientResult(io, data.resultObjectKey);
+  if (persisted) {
+    await resumeAndCleanupDriveTransientExtract(io, data);
+    return persisted.ok
+      ? { driveFileId: data.fileId, reason: 'drive_transient_ready' }
+      : { driveFileId: data.fileId, skipped: true, reason: 'drive_transient_failed' };
+  }
+
   let body: Buffer;
   try {
     const fetched = await io.fetchBlob(data.objectKey, MAX_DOCUMENT_BYTES);
     body = fetched.body;
   } catch (err: unknown) {
-    await writeDriveTransientOutcome(io, data, {
+    await handoffPersistedDriveTransientResult(io, data, {
       ok: false,
       error: (err instanceof Error ? err.message : String(err)).slice(0, 500),
     });
@@ -277,7 +362,7 @@ async function processDriveTransientExtract(
     );
   } catch (err: unknown) {
     if (isDaytonaNotConfiguredError(err) || err instanceof UnrecoverableError) {
-      await writeDriveTransientOutcome(io, data, {
+      await handoffPersistedDriveTransientResult(io, data, {
         ok: false,
         error: err.message.slice(0, 500),
       });
@@ -287,7 +372,10 @@ async function processDriveTransientExtract(
   }
 
   if ('failure' in routed) {
-    await writeDriveTransientOutcome(io, data, { ok: false, error: routed.failure.slice(0, 500) });
+    await handoffPersistedDriveTransientResult(io, data, {
+      ok: false,
+      error: routed.failure.slice(0, 500),
+    });
     return { driveFileId: data.fileId, skipped: true, reason: 'drive_transient_failed' };
   }
 
@@ -296,12 +384,11 @@ async function processDriveTransientExtract(
     .filter((line) => line.length > 0)
     .join('\n\n');
   if (!text) {
-    await writeDriveTransientOutcome(io, data, { ok: false, error: 'no text extracted' });
+    await handoffPersistedDriveTransientResult(io, data, { ok: false, error: 'no text extracted' });
     return { driveFileId: data.fileId, skipped: true, reason: 'drive_transient_empty' };
   }
 
-  await writeDriveTransientOutcome(io, data, { ok: true, text });
-  return { driveFileId: data.fileId, reason: 'drive_transient_ready' };
+  return handoffPersistedDriveTransientResult(io, data, { ok: true, text });
 }
 
 export async function processDocumentExtractJob(

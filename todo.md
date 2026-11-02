@@ -36,6 +36,8 @@ extract budget before Daytona/vision spend. Full Drive copies are not harvested 
 drive. Daytona misconfiguration is a visible `drive_extract_failed` audit; failed extract state is
 cleared and retried within the extract budget. Extract cursors go through `withTeam` integrations
 scope; enqueue-before-cursor plus stale-pending re-enqueue keeps the orchestrator handoff recoverable.
+Extract resumes use an independent BullMQ identity so they cannot be dropped by an in-flight `drive.file`
+debounce; the orchestrator persists the JSON result before resuming and retries reuse that result.
 
 ## Billing identity follow-up
 

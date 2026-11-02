@@ -14,7 +14,10 @@ Document upload, chat attachments, inbound email, integration harvest, and
 Drive v1 PDF/Word/Slides capture all enqueue `document-extract`. Drive does not
 harvest into the document drive: the main worker uploads bytes to a transient
 S3 key, enqueues `document-extract` before writing the team-scoped extract
-cursor, the orchestrator writes a JSON result, then `drive.file` resumes.
+cursor, the orchestrator writes a JSON result, then a dedicated `drive.file`
+resume continuation (independent of the originating debounce job id) runs.
+The JSON result is durable before that resume is accepted; retries reuse it
+and only retry the handoff. Source bytes are deleted after resume, not before.
 Stale pending results are re-enqueued; failed results are cleared and retried
 within the extract budget. Do
 not copy `DAYTONA_*` onto the full worker. Historically the BullMQ worker

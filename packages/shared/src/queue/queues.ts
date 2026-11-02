@@ -671,6 +671,22 @@ export function isDriveTransientExtractJob(
   return data.kind === 'drive_transient';
 }
 
+/** Surface stamped on the `drive.file` continuation that picks up one extract. */
+export function driveTransientExtractResumeSurface(extractId: string): string {
+  return `extract:${extractId}`;
+}
+
+const DOCUMENT_EXTRACT_JOB_DEDUPE_STATES = new Set([
+  'active',
+  'delayed',
+  'paused',
+  'prioritized',
+  'waiting',
+  'waiting-children',
+]);
+
+const DOCUMENT_EXTRACT_JOB_REPLACEABLE_STATES = new Set(['completed', 'failed']);
+
 let _documentExtractQueue: TimelineQueue<DocumentExtractJobData> | undefined;
 
 export function getDocumentExtractQueue(): TimelineQueue<DocumentExtractJobData> {
@@ -686,8 +702,11 @@ export function getDocumentExtractQueue(): TimelineQueue<DocumentExtractJobData>
 
 export async function enqueueDocumentExtractJob(data: DocumentExtractJobData): Promise<void> {
   // Document-version jobs rely on advisory locks for idempotency. Drive
-  // transient extracts additionally collapse on extractId so a resume
-  // cannot stack duplicate Daytona/vision work for the same bytes.
+  // transient extracts collapse on extractId while in flight so a stale
+  // pending re-enqueue cannot stack duplicate Daytona/vision work. A
+  // retained completed/failed job is replaced so a dropped resume can
+  // reuse the persisted result instead of throwing on JobIdAlreadyExists.
+  const q = getDocumentExtractQueue();
   const jobId = isDriveTransientExtractJob(data)
     ? bullmqCustomJobId([
         'document-extract',
@@ -697,7 +716,24 @@ export async function enqueueDocumentExtractJob(data: DocumentExtractJobData): P
         data.extractId,
       ])
     : undefined;
-  await getDocumentExtractQueue().add('document-extract', data, jobId ? { jobId } : undefined);
+  if (jobId) {
+    const existing = (await q.getJob(jobId)) as ExistingJobLike | null;
+    if (existing) {
+      const state = await existing.getState?.().catch(() => null);
+      if (!state || DOCUMENT_EXTRACT_JOB_DEDUPE_STATES.has(state)) return;
+      if (DOCUMENT_EXTRACT_JOB_REPLACEABLE_STATES.has(state)) {
+        if (!existing.remove) return;
+        const removed = await existing.remove().then(
+          () => true,
+          () => false,
+        );
+        if (!removed) return;
+      } else {
+        return;
+      }
+    }
+  }
+  await q.add('document-extract', data, jobId ? { jobId } : undefined);
 }
 
 export async function closeDocumentExtractQueue(): Promise<void> {
@@ -924,6 +960,18 @@ function integrationSyncJobId(data: IntegrationSyncJobData): string | undefined 
     return data.continuationHandoffId
       ? bullmqCustomJobId(['integration-pagination-continuation', data.continuationHandoffId])
       : undefined;
+  }
+  // Extract resumes must not share the originating `drive.file` debounce
+  // id (`…|all`). If that job is still active, delayed, or waiting,
+  // `enqueueIntegrationSyncJob` would otherwise silently drop the
+  // continuation after the changes cursor has already advanced.
+  if (data.reason === 'drive_transient_extract') {
+    return bullmqCustomJobId([
+      'integration-drive-extract-resume',
+      data.integrationId,
+      data.externalId,
+      data.continuationHandoffId ?? data.surface ?? 'resume',
+    ]);
   }
   return bullmqCustomJobId([
     'integration-targeted',
