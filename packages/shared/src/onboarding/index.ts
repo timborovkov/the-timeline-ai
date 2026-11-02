@@ -24,9 +24,9 @@ import {
 } from '@timeline/db';
 import { and, count, eq, gt, inArray, isNull } from 'drizzle-orm';
 
-import type { TeamRole } from '#src/team-scope.js';
-
 import { isActiveComp } from '#src/billing/operator.js';
+
+import type { TeamRole } from '#src/team-scope.js';
 
 export const ONBOARDING_STEPS = [
   'billing_setup',

@@ -69,9 +69,6 @@ import {
 } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 
-import type { TaskCategoryFilterKey } from '#src/task-categories/types.js';
-import type { TeamScopeCore } from '#src/team-scope.js';
-
 import {
   deleteDueDateCalendarEventEmbeddings,
   enqueueDueDateCalendarEventEmbeddings,
@@ -159,6 +156,9 @@ import {
   type TaskCategoryStatus,
 } from '#src/task-categories/types.js';
 import { rawEventVisibleToUser } from '#src/visibility.js';
+
+import type { TaskCategoryFilterKey } from '#src/task-categories/types.js';
+import type { TeamScopeCore } from '#src/team-scope.js';
 
 export {
   fireAndForgetObjectSummaryRefresh,

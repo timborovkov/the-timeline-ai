@@ -1,7 +1,7 @@
-import type { BillingProvider } from '#src/billing/provider.js';
-
 import { type BillingPlanId, PLAN_CATALOG } from '#src/billing/catalog.js';
 import { billingStateAllowsReservation, billingStateForPaidPlan } from '#src/billing/status.js';
+
+import type { BillingProvider } from '#src/billing/provider.js';
 
 export type BillingArrangement = 'standard' | 'comped';
 

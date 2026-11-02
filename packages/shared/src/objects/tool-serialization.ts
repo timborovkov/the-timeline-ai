@@ -1,7 +1,7 @@
+import { artifactRefCitation } from '#src/citation.js';
+
 import type { ObjectRow } from '#src/objects/types.js';
 import type { TeamScope } from '#src/team-scope.js';
-
-import { artifactRefCitation } from '#src/citation.js';
 
 export function serializeObjectRow(row: ObjectRow): Record<string, unknown> {
   return {

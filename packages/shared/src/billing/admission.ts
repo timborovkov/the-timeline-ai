@@ -3,8 +3,6 @@ import { randomUUID } from 'node:crypto';
 import { billingUsageReservations, type Db } from '@timeline/db';
 import { and, eq, sql } from 'drizzle-orm';
 
-import type { FreeAllowanceRemaining } from '#src/billing/status.js';
-
 import {
   ASK_AI_RESERVE_CUSTOMER_CHARGE_CENTS,
   ASK_AI_RESERVATION_TTL_MS,
@@ -15,6 +13,8 @@ import {
   type BillingPlanId,
 } from '#src/billing/catalog.js';
 import { effectiveBillingPlanId } from '#src/billing/operator.js';
+
+import type { FreeAllowanceRemaining } from '#src/billing/status.js';
 
 type DbTx = Parameters<Parameters<Db['transaction']>[0]>[0];
 type DbOrTx = Db | DbTx;

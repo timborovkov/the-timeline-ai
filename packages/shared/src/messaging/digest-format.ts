@@ -1,11 +1,11 @@
+import { localDateFromInstant, presentDueDate } from '#src/time/index.js';
+
 import type {
   DailyDigestActivity,
   DailyDigestCalendarEvent,
   DailyDigestPayload,
   DailyDigestSection,
 } from '#src/messaging/types.js';
-
-import { localDateFromInstant, presentDueDate } from '#src/time/index.js';
 
 const SENTENCE_BOUNDARY = /(?<=[.!?])\s+(?=[A-Z0-9])/;
 const BANNED_PR_NUMBER = /(?:\bPR\s*#?\s*\d+\b|\bpull requests?\s+#?\d+|#\d{2,}\b)/gi;

@@ -2,8 +2,6 @@ import { getDb, type Db } from '@timeline/db';
 import { jsonSchema, tool, type ToolSet } from 'ai';
 import { z } from 'zod';
 
-import type * as boards from '#src/boards/index.js';
-
 import { fenceExternalContent } from '#src/agent/external-content.js';
 import { retrieveWorkspaceContext } from '#src/agent/retrieval.js';
 import { getAppGuideRoute, searchAppGuide } from '#src/app-guide.js';
@@ -44,6 +42,8 @@ import {
   buildTimelineMomentPresentationCacheFingerprint,
   buildTimelineMomentPresentationCacheKey,
 } from '#src/timeline-moments/presentation.js';
+
+import type * as boards from '#src/boards/index.js';
 
 const log = childLogger('agent:tools');
 

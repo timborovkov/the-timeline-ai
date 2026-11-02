@@ -16,8 +16,6 @@ import { afterEach, beforeEach, describe, it } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 
-import type { InboundEmail } from '#src/email/inbound-schema.js';
-
 import { insertRestrictedFreeBillingAccount } from '#src/billing/capacity.js';
 import { createBillingScope } from '#src/billing/scope.js';
 import {
@@ -28,6 +26,8 @@ import {
 import { withTeam } from '#src/team-scope.js';
 import { applyDbMigrations } from '#src/test/pglite.js';
 import { textQueueDeps } from '#src/test/queue-deps.js';
+
+import type { InboundEmail } from '#src/email/inbound-schema.js';
 const TEAM_ID = '11111111-1111-1111-1111-111111111111';
 const OTHER_TEAM_ID = '22222222-2222-2222-2222-222222222222';
 const USER_ID = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';

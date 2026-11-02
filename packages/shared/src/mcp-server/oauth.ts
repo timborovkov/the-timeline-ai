@@ -1,7 +1,7 @@
+import { withTeam } from '#src/team-scope.js';
+
 import type { ValidatedAuthorizationRequest } from '#src/mcp-server/oauth-core.js';
 import type { Db } from '@timeline/db';
-
-import { withTeam } from '#src/team-scope.js';
 
 export {
   McpOAuthError,

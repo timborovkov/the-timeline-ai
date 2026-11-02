@@ -1,8 +1,8 @@
 import { type SQL, type SQLWrapper, sql } from 'drizzle-orm';
 
-import type { DueDateRangeFilter } from '#src/time/index.js';
-
 import { assertValidTimezone } from '#src/time/index.js';
+
+import type { DueDateRangeFilter } from '#src/time/index.js';
 
 const LOCAL_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
