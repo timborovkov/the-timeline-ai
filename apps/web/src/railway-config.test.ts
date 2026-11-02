@@ -72,4 +72,18 @@ describe('Railway web config', () => {
     expect(dockerfile).toContain('ENV SENTRY_AUTH_TOKEN=$SENTRY_AUTH_TOKEN');
     expect(dockerfile).toContain('ENV NEXT_PUBLIC_SENTRY_DSN=$NEXT_PUBLIC_SENTRY_DSN');
   });
+
+  it('supplies the canonical public origin while prerendering the web image', () => {
+    const dockerfile = readFileSync(
+      new URL('../../../docker/web.Dockerfile', import.meta.url),
+      'utf8',
+    );
+    const authUrlArg = dockerfile.indexOf('ARG AUTH_URL=https://thetimeline.cc');
+    const authUrlEnv = dockerfile.indexOf('ENV AUTH_URL=$AUTH_URL');
+    const webBuild = dockerfile.indexOf('bun run --filter @timeline/web build');
+
+    expect(authUrlArg).toBeGreaterThan(-1);
+    expect(authUrlEnv).toBeGreaterThan(authUrlArg);
+    expect(webBuild).toBeGreaterThan(authUrlEnv);
+  });
 });

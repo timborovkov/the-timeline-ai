@@ -19,6 +19,7 @@ const { default: userEvent } = await import('@testing-library/user-event');
 const { renderToStaticMarkup } = await import('react-dom/server');
 
 const { resetPublicSessionCache, setPublicSessionCache } = await import('@/lib/public-session');
+const { getSiteUrl } = await import('@/lib/site-url');
 const { default: LandingPage, metadata } = await import('@/app/(landing)/page');
 
 describe('LandingPage', () => {
@@ -116,6 +117,7 @@ describe('LandingPage', () => {
 
     const jsonLd = /<script type="application\/ld\+json">(.*?)<\/script>/.exec(html)?.[1];
     expect(jsonLd).toBeDefined();
+    expect(jsonLd).toContain(`"url":"${getSiteUrl()}"`);
     const graph = JSON.parse(jsonLd ?? '{"@graph":[]}') as {
       '@graph': Record<string, unknown>[];
     };

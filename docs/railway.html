@@ -364,7 +364,11 @@ BILLING_CHARGES_ENABLED=false
       </p>
       <p>
         Railway uses the checked-in Dockerfiles for web and worker deploys. They accept the Sentry
-        build/runtime variables above; source-map upload requires those values at build time.
+        build/runtime variables above; source-map upload requires those values at build time. The
+        web image also accepts <code>AUTH_URL</code> at build time (default
+        <code>https://thetimeline.cc</code>) so prerendered public metadata and JSON-LD do not bake
+        <code>http://localhost:3000</code>. Runtime <code>AUTH_URL</code> on the web service still
+        controls Auth.js, redirects, and request-time routes such as <code>sitemap.xml</code>.
       </p>
       <p>
         App runtimes use Bun <code>1.4.4</code>, pinned in <code>.bun-version</code>,

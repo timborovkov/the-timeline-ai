@@ -119,7 +119,10 @@ names when its source module loads.
 ## Crawl and indexing policy
 
 `sitemap.xml` and `robots.txt` are generated at request time so their absolute
-URLs use the runtime `AUTH_URL`, rather than the Docker build's localhost fallback.
+URLs use the runtime `AUTH_URL`. Prerendered public HTML (`metadataBase`, JSON-LD)
+bakes the origin at `next build`. The web Docker image defaults `AUTH_URL` to
+`https://thetimeline.cc` for that build so production pages do not ship
+`http://localhost:3000`. Override the build arg for a non-canonical origin.
 
 `robots.txt` blocks APIs, the authenticated app, and token-bearing invite and
 verification routes. Publicly reachable HTML that declares `noindex` remains

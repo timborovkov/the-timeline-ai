@@ -202,7 +202,9 @@
         Set <code>AUTH_URL</code> to the primary public origin, such as
         <code>https://thetimeline.cc</code>. The web proxy redirects alternate hosts, including
         <code>www</code> and Railway's default <code>*.up.railway.app</code> host, back to this
-        origin before Auth.js runs.
+        origin before Auth.js runs. Pass the same origin as a web Docker build arg when prerendering
+        public HTML; the Dockerfile defaults to <code>https://thetimeline.cc</code> because
+        <code>.env</code> files are excluded from the image context.
       </p>
       <p>
         Production security and rate-limit buckets trust only <code>X-Real-IP</code>. Keep Railway's
