@@ -628,6 +628,7 @@ a soft-delete flag alone is not a complete deletion claim.
 | Sentry | Account retention is unverified | Describe minimized error monitoring, not a retention period |
 | LangSmith | Production tracing is rejected | Development traces must use synthetic/approved data and follow the selected account retention |
 | Connected services | Source retention remains controlled by the customer's provider; Timeline retains captured copies separately | Disconnecting is not deletion from either system |
+| Google Drive v1 snapshots | Truncated text snapshots (retention 3 per file) plus hashes for diffing; full Drive copies are not stored in the document drive; PDF/Word text is fetched transiently | Say selected-source capture and truncated snapshots, not a Drive document archive |
 
 Each deletion or data-subject request must have a case owner and cover, as
 applicable: account rows, memberships, raw and derived records, object bytes,

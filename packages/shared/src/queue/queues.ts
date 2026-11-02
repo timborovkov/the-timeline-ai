@@ -901,7 +901,7 @@ function integrationSyncJobId(data: IntegrationSyncJobData): string | undefined 
 
 export async function enqueueIntegrationSyncJob(
   data: IntegrationSyncJobData,
-  opts: { delayMs?: number } = {},
+  opts: { delayMs?: number; replaceDelayed?: boolean } = {},
 ): Promise<void> {
   // Backfill and broad incremental jobs intentionally avoid jobId dedupe:
   // idempotency lives in raw_event dedup keys, per-resource cursors, and the
@@ -911,6 +911,9 @@ export async function enqueueIntegrationSyncJob(
   // repo/board/project should collapse while a job is waiting or running. A
   // later delivery/reconciliation must be able to enqueue once the retained
   // completed/failed BullMQ job is removed.
+  //
+  // Drive file capture is the exception: `replaceDelayed` extends a waiting
+  // quiet window the same way conversation-review bumps `quietUntil`.
   const q = getIntegrationSyncQueue();
   const jobId = integrationSyncJobId(data);
   if (jobId) {
@@ -922,8 +925,16 @@ export async function enqueueIntegrationSyncJob(
       // Redis connection dropped" error. Do not recycle it into a duplicate.
       if (data.kind === 'targeted' && data.continuationHandoffId) return;
       const state = await existing.getState?.().catch(() => null);
-      if (!state || INTEGRATION_SYNC_JOB_DEDUPE_STATES.has(state)) return;
-      if (INTEGRATION_SYNC_JOB_REPLACEABLE_STATES.has(state)) {
+      if (state === 'delayed' && opts.replaceDelayed) {
+        if (!existing.remove) return;
+        const removed = await existing.remove().then(
+          () => true,
+          () => false,
+        );
+        if (!removed) return;
+      } else if (!state || INTEGRATION_SYNC_JOB_DEDUPE_STATES.has(state)) {
+        return;
+      } else if (INTEGRATION_SYNC_JOB_REPLACEABLE_STATES.has(state)) {
         if (!existing.remove) return;
         const removed = await existing.remove().then(
           () => true,

@@ -1,0 +1,46 @@
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
+
+import {
+  diffDriveText,
+  normalizeDriveTextForCompare,
+  truncateDriveSnapshot,
+} from '#src/integrations/google-drive-diff.js';
+
+describe('diffDriveText', () => {
+  it('skips identical snapshots', () => {
+    expect(diffDriveText('hello', 'hello')).toMatchObject({
+      changed: false,
+      reason: 'identical',
+    });
+  });
+
+  it('skips markdown and whitespace-only formatting', () => {
+    expect(diffDriveText('# Title\n\nHello world', 'Title\nHello   world')).toMatchObject({
+      changed: false,
+      reason: 'formatting',
+    });
+    expect(normalizeDriveTextForCompare('# Hello')).toBe('hello');
+  });
+
+  it('skips tiny punctuation edits', () => {
+    expect(diffDriveText('Status is open', 'Status is open.')).toMatchObject({
+      changed: false,
+      reason: 'tiny',
+    });
+  });
+
+  it('returns changed hunks for substantive edits', () => {
+    const diff = diffDriveText(
+      'Acme Labs is evaluating a $12k pilot.',
+      'Acme Labs signed a $48k annual contract with Northstar.',
+    );
+    expect(diff.changed).toBe(true);
+    expect(diff.reason).toBe('substantive');
+    expect(diff.hunks.join(' ')).toContain('$48k');
+  });
+
+  it('truncates snapshots used for later diffs', () => {
+    expect(truncateDriveSnapshot('abcdef', 4)).toBe('abcd');
+  });
+});

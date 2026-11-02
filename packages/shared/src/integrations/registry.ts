@@ -227,7 +227,7 @@ const CATALOG_SEEDS: CatalogSeed[] = [
     id: 'google_drive',
     label: 'Google Drive',
     description:
-      'Selected folders mirror into the team document drive. New files, comments, and version changes become cited timeline events.',
+      'Selected Drive folders and files become cited timeline events after a quiet editing window. Timeline stores truncated snapshots for diffing, not full document copies.',
     logo: '/connectors/google-drive.svg',
     category: 'productivity',
     kind: 'native',

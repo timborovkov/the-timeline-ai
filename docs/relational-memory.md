@@ -247,9 +247,11 @@ Qdrant query filters on `team_id`.
 Writers also stamp `source_metadata.event_class` for timeline presentation
 (communication / work_record / pulse / incident / artifact / schedule). That
 family is not a substitute for `signalClass`. A merged GitHub PR is
-`signalClass=captured_work` and `event_class=work_record`. A Drive
-`file.changed` ping is `signalClass=pulse` and `event_class=artifact`. Ingest,
-extract skip, and proposals read `signalClass` only.
+`signalClass=captured_work` and `event_class=work_record`. A judged Drive v1
+capture is `signalClass=communication` and `event_class=communication`. An
+unlabeled legacy Drive `file.changed` ping is `signalClass=pulse` and
+`event_class=artifact`. Ingest, extract skip, and proposals read `signalClass`
+only.
 
 ## Layer 3 — Signal class and ingest fan-out
 
@@ -259,18 +261,18 @@ Class is a property of the **event**, not the OAuth app.
 | --- | --- | --- | --- |
 | **Communication** | People talking, deciding, committing | Slack/Telegram threads, meetings, email, voice notes, PR review discussion, **intentional captures** (home Capture, Telegram `/note`, Telegram/Slack voice memos) | Persist, embed, extract facts; conversation review for threaded firehose; **event-local proposal for intentional captures** |
 | **Captured work** | A durable work record or lifecycle change | Merged PR, closed issue, Linear/Jira status, Monday item, CRM call log, signed contract *as a work record* | Persist, embed, reconcile; structured proposal only when Timeline memory should move |
-| **Pulse** | Telemetry that can explain or impact work | CI runs, Sentry events, deploy pings, noisy issue-alert repeats, **Drive file-changed pings**, **document-drive lifecycle rows** ("Uploaded X") | Persist, embed, attach as supporting evidence; never originate a proposal |
+| **Pulse** | Telemetry that can explain or impact work | CI runs, Sentry events, deploy pings, noisy issue-alert repeats, unlabeled legacy Drive change pings, **document-drive lifecycle rows** ("Uploaded X") | Persist, embed, attach as supporting evidence; never originate a proposal |
 
 **Intentional captures are still communication**, not a fourth class and not pulses. The team took an extra step to write the note. That is high-intent conversation: extract + propose. Home Capture (`source: web`) and Telegram `/note` have no conversation identity, so they run the event-local suggestion path — the human already isolated the utterance. Telegram/Slack **group** messages stay on the debounced conversation review. Ordinary Telegram DMs that are not `/note` are Ask, not capture.
 
-**Curated documents are not a signal class.** They are a parallel **reference-knowledge** store (versions + chunks). Manual uploads, Drive harvest into the document drive, and promoted captured files live there. The `source: document` raw event is only the lifecycle ping ("Uploaded the MSA"). The bytes are chunked by document-extract, embedded, and cited as `[doc:<id>#v<n>:chunk:<chunkId>]`.
+**Curated documents are not a signal class.** They are a parallel **reference-knowledge** store (versions + chunks). Manual uploads and promoted captured files live there. The `source: document` raw event is only the lifecycle ping ("Uploaded the MSA"). The bytes are chunked by document-extract, embedded, and cited as `[doc:<id>#v<n>:chunk:<chunkId>]`.
 
-Do not treat a Drive `file.changed` ping as equal to a human uploading a strategy PDF. The ping is a pulse. The harvested/uploaded document body is reference knowledge.
+Do not treat an unlabeled legacy Drive `file.changed` ping as equal to a judged Drive capture. Native Drive v1 stamps CRM-relevant edits as `communication` (hunks + comments/sharing signals, never a full document copy). Formatting-only and tiny edits never reach an LLM. Manual uploads remain reference knowledge.
 
 Unstructured captured work (a CRM call log) may still extract. Structured
 captured work (PR merged, Linear state) must not. Pulses never extract.
 
-**Shipped:** skip extract/suggestion LLM by envelope `signalClass` ([ADR 0016](./adr/0016-ingest-signal-class-lives-on-the-envelope.md)). GitHub PRs are `captured_work`; GitHub CI is `pulse`; review comments and Sentry incidents are `finding`. Drive `file.changed` events skip extract as pulses. Document lifecycle rows skip event extract/suggest. A legacy provider fallback keeps already-ingested GitHub/Linear/Monday/Sentry rows skipping extract.
+**Shipped:** skip extract/suggestion LLM by envelope `signalClass` ([ADR 0016](./adr/0016-ingest-signal-class-lives-on-the-envelope.md)). GitHub PRs are `captured_work`; GitHub CI is `pulse`; review comments and Sentry incidents are `finding`. Drive v1 judged captures stamp `communication`; unlabeled legacy Drive `file.changed` rows still skip extract as pulses. Document lifecycle rows skip event extract/suggest. A legacy provider fallback keeps already-ingested GitHub/Linear/Monday/Sentry rows skipping extract.
 **Target:** adapters keep stamping `signalClass` at emit time; `relatedExternalObjectId` lets pulses attach to a parent PR/SHA without originating.
 
 ```mermaid
@@ -314,10 +316,11 @@ flowchart TD
 | Telegram/Slack group message | Communication | Debounced conversation review | Firehose; one message must not mint a task |
 | Ordinary Telegram DM (not `/note`) | Not a capture | Ask / conversation-agent | Questions are not notes |
 | Telegram/Slack attachment | Captured file (evidence) | Stays on the parent message | Unpromoted; not drive knowledge |
-| Manual document upload / promotion / Drive harvest | Reference knowledge | Document-extract → chunks; lifecycle row is a pulse | The file is the knowledge, not "Uploaded X" |
-| Drive `file.changed` / `file.removed` integration event | Pulse | Embed only | Telemetry that a file moved; harvest already has the body |
+| Manual document upload / promotion | Reference knowledge | Document-extract → chunks; lifecycle row is a pulse | The file is the knowledge, not "Uploaded X" |
+| Drive `file.changed` (unlabeled legacy) | Pulse | Embed only | Old pulse pings; no full-document harvest |
+| Drive `file.changed` (v1 judged capture) | Communication | Extract + suggestions | Compact hunks after debounce/diff/caps; billed judge |
 
-**Shipped:** web Capture and Telegram `/note` extract + suggest; document finalize writes a lifecycle raw event and enqueues document-extract, not event extract/suggest; Drive change events persist + embed and skip extract.
+**Shipped:** web Capture and Telegram `/note` extract + suggest; document finalize writes a lifecycle raw event and enqueues document-extract, not event extract/suggest; Drive v1 push `changes.watch` records webhook-delivery, lists changes, and debounces per-file capture. Judged CRM-relevant Drive events stamp `communication`. Unlabeled legacy Drive rows stay pulse.
 
 ### How reference knowledge is used
 

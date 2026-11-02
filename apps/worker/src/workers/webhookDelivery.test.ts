@@ -336,7 +336,7 @@ describe('webhook delivery worker', () => {
     expect(fakes.enqueueIntegrationSyncJob).not.toHaveBeenCalled();
   });
 
-  it('processes wake-up deliveries with no direct events and still enqueues catch-up sync', async () => {
+  it('processes Drive push deliveries as targeted drive.changes jobs without catch-up sync', async () => {
     fakes.loadWebhookDeliveryWork.mockResolvedValueOnce({
       delivery: {
         ...delivery,
@@ -351,7 +351,23 @@ describe('webhook delivery worker', () => {
       ],
     });
     fakes.getProvider.mockReturnValueOnce({
-      handleWebhook: vi.fn().mockResolvedValue([]),
+      handleWebhook: vi.fn().mockResolvedValue({
+        events: [],
+        syncTaskDisposition: 'handled',
+        syncTasks: [
+          {
+            integrationId: INTEGRATION_ID,
+            teamId: TEAM_ID,
+            triggeredBy: 'webhook',
+            resourceType: 'drive.changes',
+            externalId: INTEGRATION_ID,
+            reason: 'drive_watch',
+          },
+        ],
+      }),
+    });
+    fakes.providerSyncPolicy.mockReturnValueOnce({
+      supportsTargetedSync: true,
     });
 
     await expect(
@@ -365,10 +381,13 @@ describe('webhook delivery worker', () => {
 
     expect(fakes.writeIntegrationEvents).not.toHaveBeenCalled();
     expect(fakes.enqueueIntegrationSyncJob).toHaveBeenCalledWith({
-      kind: 'incremental',
+      kind: 'targeted',
       integrationId: INTEGRATION_ID,
       teamId: TEAM_ID,
       triggeredBy: 'webhook',
+      resourceType: 'drive.changes',
+      externalId: INTEGRATION_ID,
+      reason: 'drive_watch',
     });
     expect(fakes.markWebhookDeliveryTargetProcessed).toHaveBeenCalledWith({}, TARGET_ID, {
       eventDedupKeys: [],

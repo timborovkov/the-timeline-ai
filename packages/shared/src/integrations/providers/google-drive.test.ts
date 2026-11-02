@@ -3,6 +3,7 @@ import { vi } from '@timeline/test-support';
 import { afterEach, beforeEach, describe, it } from 'bun:test';
 
 import type { IntegrationEvent, SyncContext } from '#src/integrations/types.js';
+
 const externalFetchMock = vi.hoisted(() =>
   vi.fn(
     (
@@ -24,6 +25,7 @@ await vi.mock(
 
 const { resetEnvForTests } = await import('#src/env.js');
 const { googleDriveProvider } = await import('#src/integrations/providers/google-drive.js');
+const { DRIVE_FILE_DEBOUNCE_MS } = await import('#src/integrations/google-drive-capture.js');
 
 const ORIGINAL_ENV = {
   GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID,
@@ -46,6 +48,43 @@ function requestUrl(
   return new URL(
     typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url,
   );
+}
+
+function syncContext(
+  overrides: Partial<SyncContext> = {},
+): Pick<
+  SyncContext,
+  | 'loadCursor'
+  | 'saveCursor'
+  | 'writeEvents'
+  | 'persistTokens'
+  | 'recordAudit'
+  | 'scheduleTargetedSync'
+  | 'loadLatestDriveSnapshot'
+  | 'saveDriveSnapshot'
+  | 'listTeamEmailDomains'
+  | 'judgeDriveChange'
+  | 'extractBinaryText'
+> &
+  Partial<SyncContext> {
+  return {
+    loadCursor: vi.fn().mockResolvedValue({}),
+    saveCursor: vi.fn().mockResolvedValue(undefined),
+    writeEvents: vi.fn<SyncContext['writeEvents']>().mockResolvedValue([]),
+    persistTokens: vi.fn(),
+    recordAudit: vi.fn().mockResolvedValue(undefined),
+    scheduleTargetedSync: vi.fn().mockResolvedValue(undefined),
+    loadLatestDriveSnapshot: vi.fn().mockResolvedValue(null),
+    saveDriveSnapshot: vi.fn().mockResolvedValue(undefined),
+    listTeamEmailDomains: vi.fn().mockResolvedValue(['acme.test']),
+    judgeDriveChange: vi.fn().mockResolvedValue({
+      matters: true,
+      reason: 'crm_update',
+      summary: 'Pricing section changed',
+    }),
+    extractBinaryText: vi.fn().mockResolvedValue({ text: 'Extracted PDF text for the contract.' }),
+    ...overrides,
+  };
 }
 
 describe('googleDriveProvider', () => {
@@ -177,33 +216,98 @@ describe('googleDriveProvider', () => {
       { externalId: 'drive-1', label: 'Engineering', kind: 'drive.shared_drive' },
       { externalId: 'drive-2', label: 'Launch', kind: 'drive.shared_drive' },
     ]);
-    expect(fetch).toHaveBeenCalledWith(
-      expect.stringContaining('https://www.googleapis.com/drive/v3/drives'),
-      expect.objectContaining({ headers: { authorization: 'Bearer access-token' } }),
-    );
   });
 
-  it('does not sync Drive changes until folders or shared drives are selected', async () => {
-    const ctx = {
-      loadCursor: vi.fn(),
-      saveCursor: vi.fn(),
-      writeEvents: vi.fn(),
-      persistTokens: vi.fn(),
-      recordAudit: vi.fn(),
-    };
+  it('lists folder children and includeIds for the source picker', async () => {
+    const fetch = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((input) => {
+      const url = requestUrl(input);
+      if (url.pathname.endsWith('/files') && url.searchParams.get('q')?.includes('folder-1')) {
+        return Promise.resolve(
+          jsonResponse({
+            files: [
+              {
+                id: 'doc-1',
+                name: 'SOW',
+                mimeType: 'application/vnd.google-apps.document',
+                parents: ['folder-1'],
+              },
+              {
+                id: 'nested',
+                name: 'Nested',
+                mimeType: 'application/vnd.google-apps.folder',
+                parents: ['folder-1'],
+              },
+            ],
+          }),
+        );
+      }
+      if (url.pathname.endsWith('/files/file-9')) {
+        return Promise.resolve(
+          jsonResponse({
+            id: 'file-9',
+            name: 'Kept',
+            mimeType: 'application/vnd.google-apps.document',
+          }),
+        );
+      }
+      return Promise.resolve(jsonResponse({ message: 'unexpected' }, { status: 404 }));
+    });
+    vi.stubGlobal('fetch', fetch);
 
+    const children = await googleDriveProvider.listSyncableResources(
+      { id: 'integration-1' } as never,
+      { access_token: 'access-token', expires_at: Date.now() + 600_000 },
+      {
+        persistTokens: vi.fn(),
+        parentId: 'folder-1',
+      },
+    );
+    expect(children).toEqual([
+      { externalId: 'doc-1', label: 'SOW', kind: 'drive.file' },
+      { externalId: 'nested', label: 'Nested', kind: 'drive.folder' },
+    ]);
+
+    const included = await googleDriveProvider.listSyncableResources(
+      { id: 'integration-1' } as never,
+      { access_token: 'access-token', expires_at: Date.now() + 600_000 },
+      {
+        persistTokens: vi.fn(),
+        includeIds: [{ kind: 'drive.file', externalId: 'file-9' }],
+      },
+    );
+    expect(included).toEqual([{ externalId: 'file-9', label: 'Kept', kind: 'drive.file' }]);
+  });
+
+  it('does not sync Drive changes until folders, files, or shared drives are selected', async () => {
+    const ctx = syncContext();
     await googleDriveProvider.backfill({
       integration: { id: 'integration-1' } as never,
       tokens: { access_token: 'access-token', expires_at: Date.now() + 600_000 },
       selections: [],
-      ctx,
+      ctx: ctx,
     });
-
     expect(ctx.loadCursor).not.toHaveBeenCalled();
     expect(ctx.writeEvents).not.toHaveBeenCalled();
   });
 
-  it('follows Drive changes pagination and saves the final start page token', async () => {
+  it('backfill only stores a start page token and does not enumerate historical files', async () => {
+    const fetch = vi.fn().mockResolvedValue(jsonResponse({ startPageToken: 'start-9' }));
+    vi.stubGlobal('fetch', fetch);
+    const ctx = syncContext();
+    await googleDriveProvider.backfill({
+      integration: { id: 'integration-1', teamId: 'team-1' } as never,
+      tokens: { access_token: 'access-token', expires_at: Date.now() + 600_000 },
+      selections: [{ kind: 'drive.folder', externalId: 'root' }],
+      ctx: ctx,
+    });
+    expect(ctx.saveCursor).toHaveBeenCalledWith('drive.changes', { page_token: 'start-9' });
+    expect(ctx.scheduleTargetedSync).not.toHaveBeenCalled();
+    expect(ctx.writeEvents).not.toHaveBeenCalled();
+  });
+
+  it('schedules delayed per-file capture from the Drive changes feed', async () => {
     const fetch = vi.fn<
       (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
     >((input) => {
@@ -211,7 +315,6 @@ describe('googleDriveProvider', () => {
       if (url.pathname.endsWith('/changes')) {
         const pageToken = url.searchParams.get('pageToken');
         expect(url.searchParams.get('includeItemsFromAllDrives')).toBe('true');
-        expect(url.searchParams.get('supportsAllDrives')).toBe('true');
         if (pageToken === 'page-1') {
           return Promise.resolve(
             jsonResponse({
@@ -223,11 +326,9 @@ describe('googleDriveProvider', () => {
                   file: {
                     id: 'file-1',
                     name: 'Roadmap',
-                    mimeType: 'text/plain',
+                    mimeType: 'application/vnd.google-apps.document',
                     modifiedTime: '2026-06-20T10:00:00.000Z',
-                    webViewLink: 'https://drive.google.com/file/d/file-1',
-                    parents: ['folder-1'],
-                    driveId: 'shared-drive-1',
+                    parents: ['root'],
                     owners: [{ displayName: 'Ada', emailAddress: 'ada@example.com' }],
                   },
                 },
@@ -236,75 +337,68 @@ describe('googleDriveProvider', () => {
             }),
           );
         }
-        if (pageToken === 'page-2') {
-          return Promise.resolve(
-            jsonResponse({
-              changes: [
-                {
-                  changeType: 'file',
-                  time: '2026-06-20T10:05:00.000Z',
-                  fileId: 'file-2',
-                  file: {
-                    id: 'file-2',
-                    name: 'Incident Notes',
-                    mimeType: 'text/plain',
-                    modifiedTime: '2026-06-20T10:05:00.000Z',
-                    webViewLink: 'https://drive.google.com/file/d/file-2',
-                    parents: ['folder-1'],
-                  },
+        return Promise.resolve(
+          jsonResponse({
+            changes: [
+              {
+                changeType: 'file',
+                time: '2026-06-20T10:05:00.000Z',
+                fileId: 'file-2',
+                file: {
+                  id: 'file-2',
+                  name: 'Notes',
+                  mimeType: 'text/plain',
+                  parents: ['root'],
                 },
-              ],
-              newStartPageToken: 'page-3',
-            }),
-          );
-        }
+              },
+              {
+                changeType: 'file',
+                time: '2026-06-20T10:06:00.000Z',
+                fileId: 'file-3',
+                file: {
+                  id: 'file-3',
+                  name: 'In scope doc',
+                  mimeType: 'application/vnd.google-apps.document',
+                  parents: ['root'],
+                },
+              },
+            ],
+            newStartPageToken: 'page-3',
+          }),
+        );
       }
       return Promise.resolve(jsonResponse({ message: 'unexpected' }, { status: 404 }));
     });
     vi.stubGlobal('fetch', fetch);
-    const ctx = {
+    const ctx = syncContext({
       loadCursor: vi.fn().mockResolvedValue({ page_token: 'page-1' }),
-      saveCursor: vi.fn().mockResolvedValue(undefined),
-      writeEvents: vi.fn<SyncContext['writeEvents']>().mockResolvedValue([]),
-      persistTokens: vi.fn(),
-      recordAudit: vi.fn(),
-    };
+    });
 
     await googleDriveProvider.incrementalSync({
-      integration: { id: 'integration-1' } as never,
+      integration: { id: 'integration-1', teamId: 'team-1' } as never,
       tokens: { access_token: 'access-token', expires_at: Date.now() + 600_000 },
       selections: [{ kind: 'drive.folder', externalId: 'root' }],
-      ctx,
+      ctx: ctx,
     });
 
-    const changeCalls = fetch.mock.calls
-      .map(([input]) => requestUrl(input))
-      .filter((url) => url.pathname.endsWith('/changes'));
-    expect(changeCalls.map((url) => url.searchParams.get('pageToken'))).toEqual([
-      'page-1',
-      'page-2',
-    ]);
-    const events: IntegrationEvent[] = ctx.writeEvents.mock.calls.flatMap(([batch]) => batch);
-    expect(events.map((event) => event.externalObjectId)).toEqual(['file-1', 'file-2']);
-    expect(events[0]).toMatchObject({
-      provider: 'google_drive',
-      eventType: 'file.changed',
-      contentText: 'Drive file "Roadmap" (text/plain) was modified',
-      actor: { name: 'Ada', email: 'ada@example.com' },
-      extra: {
-        drive: {
-          modified_time: '2026-06-20T10:00:00.000Z',
-          drive_id: 'shared-drive-1',
-          parents: ['folder-1'],
-        },
-      },
-    });
+    expect(ctx.writeEvents).not.toHaveBeenCalled();
+    expect(ctx.scheduleTargetedSync).toHaveBeenCalledTimes(2);
+    expect(ctx.scheduleTargetedSync).toHaveBeenCalledWith(
+      expect.objectContaining({
+        resourceType: 'drive.file',
+        externalId: 'file-1',
+        reason: 'drive_watch',
+      }),
+      expect.objectContaining({ delayMs: DRIVE_FILE_DEBOUNCE_MS, replaceDelayed: true }),
+    );
+    expect(ctx.scheduleTargetedSync).toHaveBeenCalledWith(
+      expect.objectContaining({ externalId: 'file-3' }),
+      expect.objectContaining({ replaceDelayed: true }),
+    );
     expect(ctx.saveCursor).toHaveBeenCalledWith('drive.changes', { page_token: 'page-3' });
-    expect(ctx.recordAudit).not.toHaveBeenCalledWith('drive_page_cap_hit', expect.anything());
   });
 
-  it('uses the provider 20 MB cap when harvesting Drive file bodies', async () => {
-    const body = new Uint8Array(9 * 1024 * 1024);
+  it('does not admit Shared with me files when My Drive root is selected', async () => {
     const fetch = vi.fn<
       (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
     >((input) => {
@@ -314,14 +408,12 @@ describe('googleDriveProvider', () => {
           jsonResponse({
             changes: [
               {
-                changeType: 'file',
-                time: '2026-06-20T10:00:00.000Z',
-                fileId: 'file-1',
+                fileId: 'shared-file',
                 file: {
-                  id: 'file-1',
-                  name: 'Large notes',
-                  mimeType: 'text/plain',
-                  parents: ['root'],
+                  id: 'shared-file',
+                  name: 'Outside',
+                  mimeType: 'application/vnd.google-apps.document',
+                  parents: ['someone-else-folder'],
                 },
               },
             ],
@@ -329,67 +421,105 @@ describe('googleDriveProvider', () => {
           }),
         );
       }
-      if (url.searchParams.get('alt') === 'media') {
-        return Promise.resolve(new Response(body, { status: 200 }));
+      if (url.pathname.endsWith('/files/someone-else-folder')) {
+        return Promise.resolve(jsonResponse({ message: 'not found' }, { status: 404 }));
       }
       return Promise.resolve(jsonResponse({ message: 'unexpected' }, { status: 404 }));
     });
     vi.stubGlobal('fetch', fetch);
-    const harvestDocument = vi
-      .fn<NonNullable<SyncContext['harvestDocument']>>()
-      .mockResolvedValue({ documentId: 'document-1', versionId: 'version-1' });
-    const ctx = {
+    const ctx = syncContext({
       loadCursor: vi.fn().mockResolvedValue({ page_token: 'page-1' }),
-      saveCursor: vi.fn().mockResolvedValue(undefined),
-      writeEvents: vi.fn<SyncContext['writeEvents']>().mockResolvedValue([]),
-      persistTokens: vi.fn(),
-      recordAudit: vi.fn().mockResolvedValue(undefined),
-      harvestDocument,
-    };
-
-    await googleDriveProvider.incrementalSync({
-      integration: { id: 'integration-1' } as never,
-      tokens: { access_token: 'access-token', expires_at: Date.now() + 600_000 },
-      selections: [{ kind: 'drive.folder', externalId: 'root' }],
-      ctx,
     });
 
-    expect(harvestDocument).toHaveBeenCalledOnce();
-    const harvested = harvestDocument.mock.calls[0]?.[0];
-    expect(harvested?.externalId).toBe('file-1');
-    expect(harvested?.body).toBeInstanceOf(Buffer);
-    expect(harvested?.body.byteLength).toBe(body.byteLength);
+    await googleDriveProvider.incrementalSync({
+      integration: { id: 'integration-1', teamId: 'team-1' } as never,
+      tokens: { access_token: 'access-token', expires_at: Date.now() + 600_000 },
+      selections: [{ kind: 'drive.folder', externalId: 'root' }],
+      ctx: ctx,
+    });
+
+    expect(ctx.scheduleTargetedSync).not.toHaveBeenCalled();
+  });
+
+  it('uses the provider 20 MB cap when downloading Drive file bodies', async () => {
+    const body = Buffer.from('Contract amount is forty eight thousand dollars for Northstar.');
+    const fetch = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((input) => {
+      const url = requestUrl(input);
+      if (url.pathname.endsWith('/files/file-1') && !url.pathname.includes('export')) {
+        if (url.searchParams.get('alt') === 'media') {
+          return Promise.resolve(new Response(body, { status: 200 }));
+        }
+        return Promise.resolve(
+          jsonResponse({
+            id: 'file-1',
+            name: 'Notes',
+            mimeType: 'application/pdf',
+            parents: ['root'],
+            modifiedTime: '2026-06-20T10:00:00.000Z',
+          }),
+        );
+      }
+      if (url.pathname.endsWith('/comments')) {
+        return Promise.resolve(jsonResponse({ comments: [] }));
+      }
+      return Promise.resolve(jsonResponse({ message: 'unexpected' }, { status: 404 }));
+    });
+    vi.stubGlobal('fetch', fetch);
+    const ctx = syncContext({
+      loadLatestDriveSnapshot: vi.fn().mockResolvedValue({
+        contentHash: 'old',
+        snapshotText: 'Prior snapshot text that is different enough to count.',
+        commentsHash: 'old-comments',
+        permissionsHash: 'old-permissions',
+        mimeType: 'application/pdf',
+      }),
+    });
+
+    await googleDriveProvider.incrementalSync({
+      integration: { id: 'integration-1', teamId: 'team-1' } as never,
+      tokens: { access_token: 'access-token', expires_at: Date.now() + 600_000 },
+      selections: [{ kind: 'drive.file', externalId: 'file-1' }],
+      ctx: ctx,
+      target: { resourceType: 'drive.file', externalId: 'file-1' },
+    });
+
     const downloadCall = externalFetchMock.mock.calls.find(
       ([input]) => requestUrl(input).searchParams.get('alt') === 'media',
     );
     expect(downloadCall?.[2]).toMatchObject({ maxResponseBytes: 20 * 1024 * 1024 });
+    expect(ctx.extractBinaryText).toHaveBeenCalledOnce();
+    const events: IntegrationEvent[] = (
+      ctx.writeEvents as unknown as { mock: { calls: [IntegrationEvent[]][] } }
+    ).mock.calls.flatMap(([batch]) => batch);
+    expect(events[0]).toMatchObject({
+      provider: 'google_drive',
+      signalClass: 'communication',
+      eventClass: 'communication',
+      eventType: 'file.changed',
+    });
+    expect(ctx.saveCursor).toHaveBeenCalledWith('drive.debounce.file-1', {});
+    expect(events[0]?.contentText).not.toContain('ya29.');
   });
 
-  it('audits Drive bodies that exceed the harvest cap as skipped instead of failed', async () => {
+  it('audits Drive bodies that exceed the download cap as skipped instead of failed', async () => {
     const fetch = vi.fn<
       (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
     >((input) => {
       const url = requestUrl(input);
-      if (url.pathname.endsWith('/changes')) {
+      if (url.pathname.endsWith('/files/file-1')) {
         return Promise.resolve(
           jsonResponse({
-            changes: [
-              {
-                changeType: 'file',
-                time: '2026-06-20T10:00:00.000Z',
-                fileId: 'file-1',
-                file: {
-                  id: 'file-1',
-                  name: 'Oversized notes',
-                  mimeType: 'text/plain',
-                  parents: ['root'],
-                },
-              },
-            ],
-            newStartPageToken: 'page-2',
+            id: 'file-1',
+            name: 'Oversized notes',
+            mimeType: 'application/pdf',
+            parents: ['root'],
           }),
         );
       }
+      if (url.pathname.endsWith('/comments'))
+        return Promise.resolve(jsonResponse({ comments: [] }));
       return Promise.resolve(jsonResponse({ message: 'unexpected' }, { status: 404 }));
     });
     vi.stubGlobal('fetch', fetch);
@@ -403,28 +533,60 @@ describe('googleDriveProvider', () => {
       }
       return globalThis.fetch(input, init);
     });
-    const ctx = {
-      loadCursor: vi.fn().mockResolvedValue({ page_token: 'page-1' }),
-      saveCursor: vi.fn().mockResolvedValue(undefined),
-      writeEvents: vi.fn<SyncContext['writeEvents']>().mockResolvedValue([]),
-      persistTokens: vi.fn(),
-      recordAudit: vi.fn().mockResolvedValue(undefined),
-      harvestDocument: vi.fn<NonNullable<SyncContext['harvestDocument']>>(),
-    };
+    const ctx = syncContext();
 
     await googleDriveProvider.incrementalSync({
-      integration: { id: 'integration-1' } as never,
+      integration: { id: 'integration-1', teamId: 'team-1' } as never,
       tokens: { access_token: 'access-token', expires_at: Date.now() + 600_000 },
-      selections: [{ kind: 'drive.folder', externalId: 'root' }],
-      ctx,
+      selections: [{ kind: 'drive.file', externalId: 'file-1' }],
+      ctx: ctx,
+      target: { resourceType: 'drive.file', externalId: 'file-1' },
     });
 
-    expect(ctx.harvestDocument).not.toHaveBeenCalled();
+    expect(ctx.writeEvents).not.toHaveBeenCalled();
     expect(ctx.recordAudit).toHaveBeenCalledWith(
-      'harvest_skipped',
+      'drive_extract_skipped',
       expect.objectContaining({ file_id: 'file-1', reason: 'too_large_or_unsupported' }),
     );
-    expect(ctx.recordAudit).not.toHaveBeenCalledWith('harvest_failed', expect.anything());
+  });
+
+  it('saves a baseline snapshot without calling the judge', async () => {
+    const fetch = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((input) => {
+      const url = requestUrl(input);
+      if (url.pathname.includes('/export')) {
+        return Promise.resolve(new Response('Initial contract draft', { status: 200 }));
+      }
+      if (url.pathname.endsWith('/files/file-1')) {
+        return Promise.resolve(
+          jsonResponse({
+            id: 'file-1',
+            name: 'SOW',
+            mimeType: 'application/vnd.google-apps.document',
+            parents: ['root'],
+          }),
+        );
+      }
+      if (url.pathname.endsWith('/comments'))
+        return Promise.resolve(jsonResponse({ comments: [] }));
+      return Promise.resolve(jsonResponse({ permissions: [] }));
+    });
+    vi.stubGlobal('fetch', fetch);
+    const ctx = syncContext();
+
+    await googleDriveProvider.incrementalSync({
+      integration: { id: 'integration-1', teamId: 'team-1' } as never,
+      tokens: { access_token: 'access-token', expires_at: Date.now() + 600_000 },
+      selections: [{ kind: 'drive.folder', externalId: 'root' }],
+      ctx: ctx,
+      target: { resourceType: 'drive.file', externalId: 'file-1' },
+    });
+
+    expect(ctx.saveDriveSnapshot).toHaveBeenCalledOnce();
+    expect(ctx.judgeDriveChange).not.toHaveBeenCalled();
+    expect(ctx.writeEvents).not.toHaveBeenCalled();
+    expect(ctx.saveCursor).toHaveBeenCalledWith('drive.debounce.file-1', {});
   });
 
   it('persists a Drive changes resume token when the page safety cap is hit', async () => {
@@ -444,19 +606,15 @@ describe('googleDriveProvider', () => {
       return Promise.resolve(jsonResponse({ message: 'unexpected' }, { status: 404 }));
     });
     vi.stubGlobal('fetch', fetch);
-    const ctx = {
+    const ctx = syncContext({
       loadCursor: vi.fn().mockResolvedValue({ page_token: 'page-1' }),
-      saveCursor: vi.fn().mockResolvedValue(undefined),
-      writeEvents: vi.fn<SyncContext['writeEvents']>().mockResolvedValue([]),
-      persistTokens: vi.fn(),
-      recordAudit: vi.fn().mockResolvedValue(undefined),
-    };
+    });
 
     await googleDriveProvider.incrementalSync({
       integration: { id: 'integration-1' } as never,
       tokens: { access_token: 'access-token', expires_at: Date.now() + 600_000 },
       selections: [{ kind: 'drive.folder', externalId: 'root' }],
-      ctx,
+      ctx: ctx,
     });
 
     const changeCalls = fetch.mock.calls
@@ -471,12 +629,32 @@ describe('googleDriveProvider', () => {
     });
   });
 
-  it('uses Drive webhooks only as wake-up signals', async () => {
+  it('enqueues a targeted drive.changes job from push notifications and ignores the sync handshake', async () => {
     await expect(
       googleDriveProvider.handleWebhook?.({
-        integration: { id: 'integration-1' } as never,
-        payload: { headers: { 'x-goog-resource-state': 'change' } },
+        integration: { id: 'integration-1', teamId: 'team-1' } as never,
+        payload: { headers: { resourceState: 'sync' } },
       }),
-    ).resolves.toEqual([]);
+    ).resolves.toEqual({ events: [], syncTasks: [], syncTaskDisposition: 'handled' });
+
+    await expect(
+      googleDriveProvider.handleWebhook?.({
+        integration: { id: 'integration-1', teamId: 'team-1' } as never,
+        payload: { headers: { resourceState: 'change' } },
+      }),
+    ).resolves.toEqual({
+      events: [],
+      syncTaskDisposition: 'handled',
+      syncTasks: [
+        {
+          integrationId: 'integration-1',
+          teamId: 'team-1',
+          triggeredBy: 'webhook',
+          resourceType: 'drive.changes',
+          externalId: 'integration-1',
+          reason: 'drive_watch',
+        },
+      ],
+    });
   });
 });

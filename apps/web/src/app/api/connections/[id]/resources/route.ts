@@ -95,7 +95,7 @@ function serializeConnection(connection: {
 }
 
 export async function GET(
-  _req: Request,
+  req: Request,
   ctx: { params: Promise<{ id: string }> },
 ): Promise<Response> {
   const session = await auth();
@@ -108,6 +108,9 @@ export async function GET(
   const tokens = await scope.integrations.getProviderConnectionTokens(id);
   if (!tokens) return NextResponse.json({ error: 'no_tokens' }, { status: 400 });
   const provider = integrationsLib.getProvider(connection.provider);
+  const url = new URL(req.url);
+  const parentId = url.searchParams.get('parentId') ?? undefined;
+  const query = (url.searchParams.get('query') ?? url.searchParams.get('q') ?? '').trim();
   let resources;
   try {
     resources = await provider.listSyncableResources(
@@ -116,6 +119,8 @@ export async function GET(
       {
         persistTokens: (fresh) =>
           integrationsLib.adminPersistProviderConnectionTokens(db, connection.id, fresh),
+        ...(parentId ? { parentId } : {}),
+        ...(query ? { query } : {}),
       },
     );
   } catch (err) {
@@ -169,6 +174,7 @@ export async function PUT(
     {
       persistTokens: (fresh) =>
         integrationsLib.adminPersistProviderConnectionTokens(db, connection.id, fresh),
+      includeIds: parsed.data.resources,
     },
   );
   const allowed = new Set(available.map((r) => `${r.kind}\x00${r.externalId}`));

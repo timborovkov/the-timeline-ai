@@ -116,6 +116,9 @@
   "apps/web/src/app/api/integrations/manage/[id]/resume/route.test.ts": {
     "group": "unit"
   },
+  "apps/web/src/app/api/integrations/manage/[id]/selections/[selectionId]/route.test.ts": {
+    "group": "unit"
+  },
   "apps/web/src/app/api/integrations/manage/[id]/selections/route.test.ts": {
     "group": "unit"
   },
@@ -1683,6 +1686,15 @@
     "group": "unit"
   },
   "packages/shared/src/integrations/providers/github.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/integrations/google-drive-capture.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/integrations/google-drive-diff.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/integrations/google-drive-scope.test.ts": {
     "group": "unit"
   },
   "packages/shared/src/integrations/providers/google-drive.test.ts": {

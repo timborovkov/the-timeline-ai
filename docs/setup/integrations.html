@@ -115,32 +115,40 @@ GOOGLE_DRIVE_WEBHOOK_SECRET=...</code></pre>
         </li>
         <li>
           Any team member can connect their Google Drive account from
-          <code>/app/me/connections</code> or the native catalog. The member chooses whether their
-          My Drive root or shared drives are shared with the current Timeline team. A shared-drive
-          selection scopes live changes to that drive, but the current My Drive root filter admits
-          every changed non-removed file the account can access, including Shared with me files and
-          files in other shared drives. Use a shared-drive-only selection when that broader account
-          scope is not acceptable.
-        </li>
-        <li>A team admin activates shared Drive sources from <code>/app/sources</code>.</li>
-        <li>
-          Document-body harvest requires the person who connected Drive to remain a member of the
-          Timeline team. If that connector leaves, integration-event metadata continues and the
-          Drive cursor advances, but file bodies and document versions are skipped. Reconnecting
-          under a current member resumes future reported changes; it does not recover intervening
-          file states unless Drive reports another change for the file.
+          <code>/app/me/connections</code> or the native catalog. The picker can browse My Drive,
+          folders, shared drives, and specific Docs, Sheets, Slides, PDF, and Word files. Only those
+          selections are read. My Drive root walks ancestry to <code>root</code> and does not admit
+          Shared with me. A team admin activates shared Drive sources from
+          <code>/app/sources</code> and may optionally link a watched folder or file to a Timeline
+          object.
         </li>
         <li>
-          (Optional) Register a Drive push-notification channel for incremental sync. The channel
-          <code>token</code> must be
+          Drive uses push <code>changes.watch</code>, not polling. Register the site domain for
+          Drive push notifications and set <code>GOOGLE_DRIVE_WEBHOOK_SECRET</code> (32+ bytes). The
+          channel token is
           <code
             >&lt;integration_id&gt;.&lt;HMAC-SHA256(GOOGLE_DRIVE_WEBHOOK_SECRET,
             integration_id)&gt;</code
-          >; route hits <code>/api/webhooks/google-drive</code>. The handler refuses inbound
-          notifications when the secret is unset, and rejects bad signatures. Timeline records
-          channel expirations in <code>integration_webhook_subscriptions</code>; when a manual Drive
-          channel expires, the integration tick marks it <code>webhook_degraded</code> while
-          changes-cursor reconciliation continues.
+          >; the route is <code>/api/webhooks/google-drive</code>. The HTTP handler only records the
+          delivery and enqueues <code>webhook-delivery</code>. That worker asks the provider for a
+          targeted <code>drive.changes</code> job (the same webhook-delivery + targeted
+          <code>integration-sync</code> path GitHub and Monday use). The Drive changes job lists the
+          account feed, keeps in-scope files, and enqueues one delayed <code>drive.file</code> job
+          per file. BullMQ <code>jobId</code> coalesces bursts; <code>replaceDelayed</code> extends
+          the quiet window the same way conversation-review bumps <code>quietUntil</code>
+          (about 15 minutes, at most one hour from the first notification).
+        </li>
+        <li>
+          File capture fetches text transiently, diffs against a truncated snapshot, skips
+          formatting-only and tiny edits, then bills a small CRM-relevance judge through
+          <code>llm.chatStructured</code> / the existing AI meter. Daily caps: 8 processed files per
+          doc and 200 per connection. Full Drive copies are not stored in the document drive.
+        </li>
+        <li>
+          Google Cloud also needs the Drive API enabled, OAuth verification for
+          <code>drive.readonly</code> / <code>drive.metadata.readonly</code> if the app is external,
+          and the push-notification domain allowlist for
+          <code>https://thetimeline.cc/api/webhooks/google-drive</code>.
         </li>
       </ol>
 
@@ -949,24 +957,25 @@ codex mcp add timeline --url "&lt;copied MCP endpoint URL&gt;" --bearer-token-en
         the matching team targets and enqueues either targeted sync work or a bounded catch-up
         fallback. A successfully written Monday update/reply deletion is explicitly terminal for
         that delivery and does not enqueue a broad catch-up; genuinely unhandled deliveries retain
-        the fallback. Google Drive can still use webhooks as wake-up signals; GitHub, Linear,
-        Monday.com, Slack, and Sentry route protected deliveries through the shared delivery worker.
-        GitHub repo deliveries, Monday item/board deliveries, and Sentry project deliveries hydrate
-        only the affected selected resource. Sentry issue alert, issue lifecycle, and release
-        payloads can also write direct events before the reconciliation pass. Provider rate-limit
-        responses also create account/app budget pauses in
-        <code>integration_provider_budgets</code>; the scheduler skips every matching integration
-        until the provider retry time rather than retrying per Timeline team. GitHub selected repos
-        and organization scopes can accept signed webhook deliveries, while slow reconciliation
-        still covers missed events and backfill. GitHub background sync skips active provider
-        rate-limit pauses, waits 24 hours after the previous successful sync, and caches
-        organization repo expansion for a short window so org-wide selections do not re-list every
-        repository on every tick. GitHub repo cursors are also split by surface — PRs, issues, issue
-        comments, inline PR review comments, commits, releases, and workflow runs — so one failing
-        or noisy surface does not block cursor advancement for the others. Daily reconciliation
-        retains independent checkpoints for releases, workflow runs, and other surfaces. MCP servers
-        are monitored by the MCP health worker, but that health check only validates connectivity
-        and cached tools.
+        the fallback. Google Drive push deliveries enqueue a targeted <code>drive.changes</code> job
+        through that same worker, then delayed per-file <code>drive.file</code> jobs; they do not
+        fall back to a broad catch-up incremental. GitHub, Linear, Monday.com, Slack, and Sentry
+        also route protected deliveries through the shared delivery worker. GitHub repo deliveries,
+        Monday item/board deliveries, and Sentry project deliveries hydrate only the affected
+        selected resource. Sentry issue alert, issue lifecycle, and release payloads can also write
+        direct events before the reconciliation pass. Provider rate-limit responses also create
+        account/app budget pauses in <code>integration_provider_budgets</code>; the scheduler skips
+        every matching integration until the provider retry time rather than retrying per Timeline
+        team. GitHub selected repos and organization scopes can accept signed webhook deliveries,
+        while slow reconciliation still covers missed events and backfill. GitHub background sync
+        skips active provider rate-limit pauses, waits 24 hours after the previous successful sync,
+        and caches organization repo expansion for a short window so org-wide selections do not
+        re-list every repository on every tick. GitHub repo cursors are also split by surface — PRs,
+        issues, issue comments, inline PR review comments, commits, releases, and workflow runs — so
+        one failing or noisy surface does not block cursor advancement for the others. Daily
+        reconciliation retains independent checkpoints for releases, workflow runs, and other
+        surfaces. MCP servers are monitored by the MCP health worker, but that health check only
+        validates connectivity and cached tools.
       </p>
       <p>
         Routine recovery is daily for all six native providers. Webhooks remain the prompt update

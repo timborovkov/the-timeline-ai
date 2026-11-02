@@ -91,10 +91,11 @@ export interface IntegrationEvent {
    * Optional timeline presentation family (`communication` / `work_record` /
    * `pulse` / `incident` / `artifact` / `schedule`). When omitted, the
    * event-writer classifies from provider, event type, and nested record
-   * kind. This is not `signalClass`: a Drive `file.changed` ping is
-   * `signalClass=pulse` and `eventClass=artifact`. Presentation `pulse`
-   * never promotes `objectMap` into artifact identity. Ingest and proposals
-   * read `signalClass` only.
+   * kind. This is not `signalClass`: an unlabeled legacy Drive `file.changed`
+   * ping is `signalClass=pulse` and `eventClass=artifact`. Judged Drive v1
+   * captures stamp both as `communication`. Presentation `pulse` never
+   * promotes `objectMap` into artifact identity. Ingest and proposals read
+   * `signalClass` only.
    */
   eventClass?: TimelineEventClass;
   /**
@@ -164,6 +165,59 @@ export interface SyncContext {
    * updates the existing document by adding a new version.
    */
   harvestDocument?(input: HarvestDocumentInput): Promise<{ documentId: string; versionId: string }>;
+  /**
+   * Enqueue a targeted follow-up for one resource. Drive reuses the GitHub /
+   * Monday targeted `integration-sync` job with delay so per-file processing
+   * can debounce after `changes.watch`.
+   */
+  scheduleTargetedSync?(
+    task: TargetedSyncTask,
+    opts?: { delayMs?: number; replaceDelayed?: boolean },
+  ): Promise<void>;
+  /**
+   * Extract text from a downloaded PDF/Office body via the document-extract
+   * service without persisting a document copy.
+   */
+  extractBinaryText?(input: {
+    filename: string;
+    contentType: string;
+    body: Buffer;
+  }): Promise<{ text: string } | null>;
+  loadLatestDriveSnapshot?(fileId: string): Promise<{
+    contentHash: string;
+    snapshotText: string;
+    commentsHash: string | null;
+    permissionsHash: string | null;
+    mimeType: string | null;
+  } | null>;
+  saveDriveSnapshot?(input: {
+    contentHash: string;
+    snapshotText: string;
+    commentsHash: string | null;
+    permissionsHash: string | null;
+    mimeType: string | null;
+    fileId: string;
+  }): Promise<void>;
+  listTeamEmailDomains?(): Promise<string[]>;
+  linkedObjectForDriveSelection?(
+    fileId: string,
+    parentIds: string[],
+  ): Promise<{ id: string; canonicalName: string; type: string } | null>;
+  /**
+   * Optional Drive CRM-relevance judge. Tests inject this; the worker leaves
+   * it unset so the provider bills through `llm.chatStructured`.
+   */
+  judgeDriveChange?(input: {
+    fileName: string;
+    mimeType: string;
+    hunks: string[];
+    strongSignals: string[];
+  }): Promise<{
+    matters: boolean;
+    reason:
+      'crm_update' | 'status_change' | 'client_share' | 'comment' | 'decision' | 'noise' | 'other';
+    summary: string;
+  }>;
   /**
    * Persist refreshed OAuth tokens back to the integration row. Providers
    * call this after `ensureAccessToken` (or the equivalent refresh path)
@@ -242,10 +296,10 @@ export interface ProviderSyncPolicy {
 export const PROVIDER_SYNC_POLICIES: Record<NativeProviderId, ProviderSyncPolicy> = {
   google_drive: {
     reconciliationIntervalMs: 24 * HOUR_MS,
-    ingestionPosture: 'webhook_wakeup',
+    ingestionPosture: 'webhook_first',
     budgetScopes: ['requests'],
     supportsWebhookIngress: true,
-    supportsTargetedSync: false,
+    supportsTargetedSync: true,
     provisioningModel: 'provider_managed',
   },
   linear: {
@@ -603,6 +657,12 @@ export interface ListSyncableResourcesContext {
    * encrypted connection with the expired token.
    */
   persistTokens(tokens: Record<string, unknown>): Promise<void>;
+  /** Drive folder/shared-drive id to list children for the source picker. */
+  parentId?: string;
+  /** Drive filename contains query for the source picker. */
+  query?: string;
+  /** Existing or proposed picker ids to re-validate without listing the whole tree. */
+  includeIds?: { kind: string; externalId: string }[];
 }
 
 export interface OAuthStartInput {

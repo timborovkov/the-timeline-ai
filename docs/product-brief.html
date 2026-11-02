@@ -633,11 +633,11 @@
           and extracted action items into the timeline like any other source.
         </li>
         <li>
-          <strong>External knowledge sync</strong>: map selected Google Drive folders/files into the
-          internal document model. Start with changes, comments, metadata, titles, selected document
-          summaries, and folder/project membership. Do not vectorize whole third-party repositories
-          by default; embed deltas and curated summaries first, then full chunks for selected
-          scopes.
+          <strong>External knowledge sync</strong>: watch selected Google Drive folders and files
+          (Docs, Sheets, Slides, PDF, Word) through Drive push <code>changes.watch</code>. Capture
+          CRM-relevant deltas as timeline events after a quiet-window debounce; store truncated
+          snapshots for diffing, not full document copies. Do not vectorize whole third-party
+          repositories by default.
         </li>
         <li>
           <strong>Proactive agent</strong>: agent notices a forgotten follow-up and surfaces it.

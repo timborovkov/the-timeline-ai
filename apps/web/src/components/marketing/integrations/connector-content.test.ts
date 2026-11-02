@@ -288,72 +288,31 @@ describe('connector content manifest', () => {
     const drive = findConnector('google-drive');
     if (!drive) throw new Error('expected Google Drive connector');
 
-    const promotedClaims = JSON.stringify({
-      hero: drive.hero,
-      intro: drive.intro,
-      seoDescription: drive.seoDescription,
-      captureStatement: drive.captureStatement,
-      diagram: drive.diagram,
-      exampleQuestions: drive.exampleQuestions,
-      scenario: drive.scenario,
-      capturedRecords: drive.capturedRecords,
-    });
     const publicClaims = JSON.stringify(drive);
 
-    expect(promotedClaims).not.toMatch(/Drive comments|selected folders|specific folders/iu);
-    expect(publicClaims).toContain('My Drive root');
+    expect(publicClaims).toContain('My Drive');
     expect(publicClaims).toContain('shared drives');
+    expect(publicClaims).toContain('changes.watch');
+    expect(publicClaims).toContain('does not admit Shared with me');
     expect(drive.permissions.join(' ')).toContain('openid and email');
     expect(drive.permissions.join(' ')).toContain('stable subject identifier');
     expect(drive.permissions.join(' ')).toContain('primary email labels the connection');
-    expect(publicClaims).toContain(
-      'capture effectively begins at the cursor used by the first successful reconciliation',
-    );
-    expect(publicClaims).toContain('Activation only queues the first sync');
-    expect(publicClaims).toContain('does not persist a Drive cursor');
-    expect(publicClaims).toContain(
-      'Changes made between activation and that cursor can precede it',
-    );
-    expect(publicClaims).toContain('are never returned');
-    expect(publicClaims).toContain('does not ingest Drive comments or Activity history');
+    expect(drive.permissions.join(' ')).toContain('Limited Use');
+    expect(publicClaims).toContain('Historical files are not enumerated');
+    expect(publicClaims).toContain('never a full Drive copy in the document drive');
+    expect(publicClaims).toContain('quiet editing window of about 15 minutes');
+    expect(publicClaims).toContain('at most one hour');
+    expect(publicClaims).toContain('webhook-delivery worker');
+    expect(publicClaims).toContain('delayed `drive.file` job');
     expect(publicClaims).not.toContain(
-      'A team receives changes only from the My Drive root or shared drives',
-    );
-    expect(publicClaims).not.toContain(
-      'Timeline admits changes only when their parent tree or shared-drive ID matches a deliberately activated source',
-    );
-    expect(publicClaims).toContain(
       'Selecting My Drive root currently admits any changed file the connected account can access',
     );
-    expect(publicClaims).toContain(
+    expect(publicClaims).not.toContain(
       'changed Shared with me file or accessible shared-drive file can therefore be captured',
     );
-    expect(publicClaims).toContain(
-      'every non-removed file in the account-wide changes feed passes',
-    );
-    expect(publicClaims).toContain(
-      'Document-body harvest and version creation require the person who connected Drive to remain a member',
-    );
-    expect(publicClaims).toContain(
-      'change metadata continues to land and the Drive cursor still advances',
-    );
-    expect(publicClaims).toContain('intervening file states are not recovered');
-    expect(publicClaims).toContain('outside the user’s My Drive');
-    expect(publicClaims).toContain('Versions are sync-observed snapshots');
-    expect(publicClaims).toContain('may not preserve the intermediate wording');
-    expect(publicClaims).toContain('up to the first 100 shared drives returned by Google');
-    expect(publicClaims).toContain('current listing does not paginate beyond that first page');
-    expect(publicClaims).toContain(
+    expect(publicClaims).not.toContain('Document-body harvest and version creation');
+    expect(publicClaims).not.toContain(
       'does not currently provision a customer-configurable Drive push channel',
     );
-    expect(publicClaims).toContain('15-minute scheduled reconciliation policy');
-    expect(publicClaims).toContain('evaluated by the worker’s five-minute integration tick');
-    expect(publicClaims).toContain('roughly that interval plus scheduling delay');
-    expect(publicClaims).not.toContain(
-      'an optional push channel can signal faster incremental sync',
-    );
-    expect(publicClaims).not.toContain('Timeline observes each new file modification');
-    expect(publicClaims).toContain('Drive removal tombstones do not include parent information');
-    expect(publicClaims).toContain('even when that area was not activated');
   });
 });

@@ -17,6 +17,13 @@ import {
 import { Worker, type Job } from 'bullmq';
 import { and, eq, sql } from 'drizzle-orm';
 
+import { withWorkerAiBilling, workerBillingJobOptions } from '#src/billing-context.js';
+import {
+  extractOfficeForDocument,
+  extractPdfForDocument,
+  resolveAnydocFormatHint,
+} from '#src/document-ingestion/pdf-extraction.js';
+import { isDaytonaNotConfiguredError } from '#src/document-ingestion/types.js';
 import { captureWorkerException, captureWorkerJobFailure } from '#src/monitoring.js';
 
 // Phase 11 — Integration sync worker.
@@ -248,6 +255,31 @@ const defaultDocumentHarvestIO: IntegrationDocumentHarvestIO = {
   },
   enqueueDocumentExtractJob: queue.enqueueDocumentExtractJob,
 };
+
+async function extractDriveBinaryText(input: {
+  filename: string;
+  contentType: string;
+  body: Buffer;
+}): Promise<{ text: string } | null> {
+  const contentType = input.contentType.toLowerCase().split(';')[0]?.trim() ?? '';
+  try {
+    if (contentType === 'application/pdf' || /\.pdf$/i.test(input.filename)) {
+      const result = await extractPdfForDocument(input.body);
+      const text = result.text.trim();
+      return text.length > 0 ? { text } : null;
+    }
+    const format = resolveAnydocFormatHint(contentType, input.filename);
+    if (format && format !== 'pdf') {
+      const result = await extractOfficeForDocument(input.body, format);
+      const text = result.text.trim();
+      return text.length > 0 ? { text } : null;
+    }
+  } catch (err) {
+    if (isDaytonaNotConfiguredError(err)) return null;
+    throw err;
+  }
+  return null;
+}
 
 export async function harvestIntegrationDocument(input: {
   db: Db;
@@ -914,8 +946,7 @@ export async function runOneIntegration(
       harvestableUserId !== null
         ? await integrationsLib.adminVerifyTeamMember(db, integration.teamId, harvestableUserId)
         : false;
-    const providerSupportsDocumentHarvest =
-      integration.provider === 'google_drive' || integration.provider === 'monday';
+    const providerSupportsDocumentHarvest = integration.provider === 'monday';
     if (providerSupportsDocumentHarvest && harvestableUserId !== null && !harvestUserStillMember) {
       await integrationsLib.adminRecordAudit(
         db,
@@ -967,6 +998,55 @@ export async function runOneIntegration(
         // rather than re-refreshing every tick. AES-256-GCM at rest.
         await integrationsLib.adminPersistTokens(db, integrationId, tokens);
       },
+      async scheduleTargetedSync(task, opts) {
+        await queue.enqueueIntegrationSyncJob(
+          {
+            kind: 'targeted',
+            integrationId: task.integrationId,
+            teamId: task.teamId,
+            triggeredBy: task.triggeredBy,
+            resourceType: task.resourceType,
+            externalId: task.externalId,
+            ...(task.surface ? { surface: task.surface } : {}),
+            ...(task.reason ? { reason: task.reason } : {}),
+          },
+          opts,
+        );
+      },
+      extractBinaryText: extractDriveBinaryText,
+      loadLatestDriveSnapshot(fileId) {
+        return integrationsLib.loadLatestDriveSnapshot(db, {
+          teamId: integration.teamId,
+          integrationId,
+          fileId,
+        });
+      },
+      saveDriveSnapshot(input) {
+        return integrationsLib.saveDriveSnapshot(db, {
+          teamId: integration.teamId,
+          integrationId,
+          fileId: input.fileId,
+          snapshot: {
+            contentHash: input.contentHash,
+            snapshotText: input.snapshotText,
+            commentsHash: input.commentsHash,
+            permissionsHash: input.permissionsHash,
+            mimeType: input.mimeType,
+          },
+        });
+      },
+      listTeamEmailDomains() {
+        return integrationsLib.listTeamEmailDomains(db, integration.teamId);
+      },
+      linkedObjectForDriveSelection(fileId, parentIds) {
+        return integrationsLib.linkedObjectForDriveSelection(db, {
+          teamId: integration.teamId,
+          integrationId,
+          fileId,
+          parentIds,
+        });
+      },
+      judgeDriveChange: integrationsLib.judgeDriveChange,
       ...(harvestEnabled && harvestableUserId
         ? {
             async harvestDocument(input) {
@@ -1439,12 +1519,13 @@ function targetedSelections(
   ) {
     return [{ kind: target.resourceType, externalId: target.externalId }];
   }
-  if (
-    provider === 'google_drive' &&
-    target.resourceType === 'drive.changes' &&
-    target.reason === 'provider_pagination_continuation'
-  )
-    return selections;
+  if (provider === 'google_drive' && target.resourceType === 'drive.changes') return selections;
+  if (provider === 'google_drive' && target.resourceType === 'drive.file') {
+    const watchable = selections.filter((selection) =>
+      integrationsLib.driveSelectionIsWatchable(selection.kind),
+    );
+    return watchable;
+  }
   if (provider === 'linear' && target.reason === 'provider_pagination_continuation')
     return selections;
   const exact = selections.filter(
@@ -1623,13 +1704,25 @@ export function startIntegrationSyncWorker(
         await handleTick(deps.db);
         return { ticked: true, durationMs: Date.now() - startedAt };
       }
-      await runOneIntegration(
-        deps.db,
-        data.integrationId,
-        data.kind,
-        data.kind === 'targeted' ? data : undefined,
-        data.triggeredBy,
-      );
+      const run = () =>
+        runOneIntegration(
+          deps.db,
+          data.integrationId,
+          data.kind,
+          data.kind === 'targeted' ? data : undefined,
+          data.triggeredBy,
+        );
+      if (data.kind === 'targeted' && data.resourceType === 'drive.file') {
+        await withWorkerAiBilling(
+          deps.db,
+          data.teamId,
+          'drive_capture',
+          run,
+          workerBillingJobOptions(job),
+        );
+      } else {
+        await run();
+      }
       return {
         integrationId: data.integrationId,
         kind: data.kind,

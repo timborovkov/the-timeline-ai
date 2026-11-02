@@ -200,6 +200,21 @@ async function loadIntegrationsPageModel(input: { teamId: string; userId: string
   const activeShareIds = selectionLists
     .flat()
     .flatMap((selection) => (selection.resourceShareId ? [selection.resourceShareId] : []));
+  const driveSelectionByShareId = new Map<
+    string,
+    { integrationId: string; selectionId: string; linkedObjectId: string | null }
+  >();
+  for (const integration of connected) {
+    if (integration.provider !== 'google_drive') continue;
+    for (const selection of selectionsByIntegrationId.get(integration.id) ?? []) {
+      if (!selection.resourceShareId) continue;
+      driveSelectionByShareId.set(selection.resourceShareId, {
+        integrationId: integration.id,
+        selectionId: selection.id,
+        linkedObjectId: selection.linkedObjectId,
+      });
+    }
+  }
   const teamSourceRows: TeamSourceUiRow[] = resourceShares.map((row) => ({
     share: {
       id: row.share.id,
@@ -221,6 +236,10 @@ async function loadIntegrationsPageModel(input: { teamId: string; userId: string
       lastError: row.connection.lastError,
       lastConnectedAt: row.connection.lastConnectedAt.toISOString(),
     },
+    ...((): Pick<TeamSourceUiRow, 'driveLink'> => {
+      const driveLink = driveSelectionByShareId.get(row.share.id);
+      return driveLink ? { driveLink } : {};
+    })(),
   }));
   const connectedRows: ConnectedIntegrationUiRow[] = connected.map((c, index) => ({
     id: c.id,

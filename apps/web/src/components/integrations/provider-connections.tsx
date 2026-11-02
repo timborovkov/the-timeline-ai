@@ -1,12 +1,16 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
-import { ExternalLink, Plug, Search } from 'lucide-react';
+import { ChevronRight, ExternalLink, Plug, Search } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useId, useMemo, useReducer, useRef, useState, type RefObject } from 'react';
 
 import { EmptyState } from '@/components/empty-state';
 import { InlineError } from '@/components/inline-error';
+import {
+  type ObjectSearchResponse,
+  visibleObjectSearchResultsForQuery,
+} from '@/components/objects/object-search-results';
 import { RelativeTimestamp } from '@/components/relative-timestamp';
 import { Button } from '@/components/ui/button';
 import { DropdownMenuItem } from '@/components/ui/dropdown-menu';
@@ -115,6 +119,11 @@ const providerSourceHints: Partial<
   },
   sentry: {
     body: 'Choose individual Sentry projects for a fixed list, or choose an organization to include all projects your Sentry account can access there.',
+  },
+  google_drive: {
+    body: 'Choose My Drive, a folder, a shared drive, or specific Docs/Sheets/Slides/PDF/Word files. Timeline reads only those selections — not Shared with me or other unselected files.',
+    detail:
+      'Push notifications wake a changes.watch channel. File capture waits for a quiet editing window (about 15 minutes, at most one hour) before extracting a compact text snapshot.',
   },
 };
 
@@ -356,10 +365,14 @@ function PersonalConnectionToolbar({
 function ConnectionSources({ connection }: { connection: ProviderConnection }) {
   const router = useRouter();
   const [state, dispatch] = useReducer(sourcePickerReducer, initialSourcePickerState);
+  const [driveParentId, setDriveParentId] = useState('');
+  const [driveCrumbs, setDriveCrumbs] = useState([{ id: '', label: 'Google Drive' }]);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const deleteButtonRef = useRef<HTMLButtonElement>(null);
   const searchInputId = useId();
   const deleteConfirmationId = useId();
+  const isDrive = connection.provider === 'google_drive';
+  const driveQuery = isDrive && state.query.trim().length >= 2 ? state.query.trim() : undefined;
   const {
     data,
     error: queryError,
@@ -367,9 +380,15 @@ function ConnectionSources({ connection }: { connection: ProviderConnection }) {
     isFetching,
     refetch,
   } = useQuery({
-    queryKey: queryKeys.providerConnectionResources(connection.id),
+    queryKey: queryKeys.providerConnectionResources(connection.id, {
+      ...(driveQuery ? { query: driveQuery } : driveParentId ? { parentId: driveParentId } : {}),
+    }),
     queryFn: async () => {
-      const res = await fetch(`/api/connections/${connection.id}/resources`);
+      const params = new URLSearchParams();
+      if (driveQuery) params.set('query', driveQuery);
+      else if (driveParentId) params.set('parentId', driveParentId);
+      const suffix = params.size > 0 ? `?${params.toString()}` : '';
+      const res = await fetch(`/api/connections/${connection.id}/resources${suffix}`);
       return readJsonResponse<ConnectionResourcesPayload>(res);
     },
   });
@@ -556,6 +575,33 @@ function ConnectionSources({ connection }: { connection: ProviderConnection }) {
         hasSearchQuery,
       }}
       grouped={grouped}
+      driveBrowse={
+        isDrive
+          ? {
+              crumbs: driveCrumbs,
+              onOpenFolder: (resource) => {
+                setDriveParentId(resource.externalId);
+                setDriveCrumbs((current) => [
+                  ...current,
+                  { id: resource.externalId, label: resource.label },
+                ]);
+                dispatch({ type: 'query', query: '' });
+              },
+              onCrumb: (id) => {
+                if (!id) {
+                  setDriveParentId('');
+                  setDriveCrumbs([{ id: '', label: 'Google Drive' }]);
+                  return;
+                }
+                setDriveCrumbs((current) => {
+                  const index = current.findIndex((crumb) => crumb.id === id);
+                  return index >= 0 ? current.slice(0, index + 1) : current;
+                });
+                setDriveParentId(id);
+              },
+            }
+          : null
+      }
       onQueryChange={(nextQuery) => {
         dispatch({ type: 'query', query: nextQuery });
       }}
@@ -592,6 +638,7 @@ function ConnectionSourcesPanel({
   sourceLoadError,
   picker,
   grouped,
+  driveBrowse,
   onQueryChange,
   onSave,
   onDelete,
@@ -620,6 +667,11 @@ function ConnectionSourcesPanel({
     hasSearchQuery: boolean;
   };
   grouped: ReturnType<typeof groupResourcesByKind>;
+  driveBrowse: {
+    crumbs: { id: string; label: string }[];
+    onOpenFolder: (resource: ProviderResource) => void;
+    onCrumb: (id: string) => void;
+  } | null;
   onQueryChange: (query: string) => void;
   onSave: () => void;
   onDelete: () => void;
@@ -715,6 +767,29 @@ function ConnectionSourcesPanel({
           />
         ) : null}
         {picker.isLoading ? <SourcePickerLoading /> : null}
+        {driveBrowse ? (
+          <nav
+            aria-label="Google Drive folders"
+            className="flex flex-wrap items-center gap-1 text-xs"
+          >
+            {driveBrowse.crumbs.map((crumb, index) => (
+              <span key={crumb.id || 'drive-root'} className="inline-flex items-center gap-1">
+                {index > 0 ? (
+                  <ChevronRight aria-hidden="true" className="size-3 text-fg-muted" />
+                ) : null}
+                <button
+                  type="button"
+                  className="text-signal hover:underline"
+                  onClick={() => {
+                    driveBrowse.onCrumb(crumb.id);
+                  }}
+                >
+                  {crumb.label}
+                </button>
+              </span>
+            ))}
+          </nav>
+        ) : null}
         {grouped.map((group) => (
           <ResourceGroup
             key={group.kind}
@@ -722,6 +797,11 @@ function ConnectionSourcesPanel({
             resources={group.resources}
             selected={selected}
             onToggle={onToggle}
+            onOpen={
+              driveBrowse && (group.kind === 'drive.folder' || group.kind === 'drive.shared_drive')
+                ? driveBrowse.onOpenFolder
+                : undefined
+            }
           />
         ))}
         {picker.showEmptyResult ? (
@@ -814,11 +894,13 @@ function ResourceGroup({
   resources,
   selected,
   onToggle,
+  onOpen,
 }: {
   title: string;
   resources: ProviderResource[];
   selected: Set<string>;
   onToggle: (resource: ProviderResource) => void;
+  onOpen?: (resource: ProviderResource) => void;
 }) {
   if (resources.length === 0) return null;
   return (
@@ -828,24 +910,38 @@ function ResourceGroup({
         {resources.map((resource) => {
           const key = `${resource.kind}\x00${resource.externalId}`;
           return (
-            <label
+            <div
               key={key}
-              className="flex cursor-pointer items-center gap-2 border-b border-border px-2 py-1.5 text-sm last:border-b-0"
+              className="flex items-center gap-2 border-b border-border px-2 py-1.5 text-sm last:border-b-0"
             >
-              <input
-                type="checkbox"
-                checked={selected.has(key)}
-                onChange={() => {
-                  onToggle(resource);
-                }}
-              />
-              <span className="min-w-0 flex-1">
-                <span className="block break-words">{resource.label}</span>
-                <span className="block break-words text-xs text-fg-muted">
-                  {resourceKindDescription(resource.kind)}
+              <label className="flex min-w-0 flex-1 cursor-pointer items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={selected.has(key)}
+                  onChange={() => {
+                    onToggle(resource);
+                  }}
+                />
+                <span className="min-w-0 flex-1">
+                  <span className="block break-words">{resource.label}</span>
+                  <span className="block break-words text-xs text-fg-muted">
+                    {resourceKindDescription(resource.kind)}
+                  </span>
                 </span>
-              </span>
-            </label>
+              </label>
+              {onOpen ? (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="shrink-0"
+                  onClick={() => {
+                    onOpen(resource);
+                  }}
+                >
+                  Open
+                </Button>
+              ) : null}
+            </div>
           );
         })}
       </div>
@@ -856,9 +952,11 @@ function ResourceGroup({
 function resourceKindDescription(kind: string): string {
   switch (kind) {
     case 'drive.folder':
-      return 'Folder files imported into the document drive';
+      return 'Folder whose Docs, Sheets, Slides, PDF, and Word files become timeline evidence';
+    case 'drive.file':
+      return 'Single Doc, Sheet, Slide, PDF, or Word file watched for CRM-relevant changes';
     case 'drive.shared_drive':
-      return 'Shared drive files imported into the document drive';
+      return 'Shared drive whose supported files become timeline evidence';
     case 'monday.board':
       return 'Board items, updates, columns, and subitems';
     case 'monday.doc':
@@ -896,6 +994,11 @@ function activeShareToResource(share: ResourceShare | undefined): ProviderResour
 interface TeamShareRow {
   share: ResourceShare;
   connection: ProviderConnection & { ownerLabel: string; ownerUserId: string };
+  driveLink?: {
+    integrationId: string;
+    selectionId: string;
+    linkedObjectId: string | null;
+  };
 }
 
 function sourceKey(share: Pick<ResourceShare, 'resourceKind' | 'externalId'>) {
@@ -1036,21 +1139,26 @@ export function TeamSourcesUi({
                 const checked = selected.has(row.share.id);
                 const revoked = Boolean(row.share.revokedAt);
                 return (
-                  <label key={row.share.id} className="flex items-center gap-2 px-3 py-2 text-sm">
-                    <input
-                      type="checkbox"
-                      disabled={!isAdmin || revoked}
-                      checked={checked}
-                      onChange={() => {
-                        setSelectedOverrides((current) => {
-                          const next = new Set(selected);
-                          if (next.has(row.share.id)) next.delete(row.share.id);
-                          else next.add(row.share.id);
-                          return { ...current, [connectionId]: next };
-                        });
-                      }}
-                    />
-                    <span className="min-w-0 flex-1 truncate">{shareDisplayName(row.share)}</span>
+                  <div key={row.share.id} className="flex items-center gap-2 px-3 py-2 text-sm">
+                    <label className="flex min-w-0 flex-1 items-center gap-2">
+                      <input
+                        type="checkbox"
+                        disabled={!isAdmin || revoked}
+                        checked={checked}
+                        onChange={() => {
+                          setSelectedOverrides((current) => {
+                            const next = new Set(selected);
+                            if (next.has(row.share.id)) next.delete(row.share.id);
+                            else next.add(row.share.id);
+                            return { ...current, [connectionId]: next };
+                          });
+                        }}
+                      />
+                      <span className="min-w-0 flex-1 truncate">{shareDisplayName(row.share)}</span>
+                    </label>
+                    {isAdmin && row.driveLink ? (
+                      <DriveObjectLinkField link={row.driveLink} disabled={busy !== null} />
+                    ) : null}
                     {revoked ? (
                       <>
                         <span className="rounded-sm border border-destructive/40 px-1.5 py-0.5 text-[10px] uppercase text-destructive">
@@ -1074,7 +1182,7 @@ export function TeamSourcesUi({
                         ) : null}
                       </>
                     ) : null}
-                  </label>
+                  </div>
                 );
               })}
             </div>
@@ -1082,6 +1190,114 @@ export function TeamSourcesUi({
         );
       })}
     </div>
+  );
+}
+
+function DriveObjectLinkField({
+  link,
+  disabled,
+}: {
+  link: { integrationId: string; selectionId: string; linkedObjectId: string | null };
+  disabled: boolean;
+}) {
+  const router = useRouter();
+  const [query, setQuery] = useState('');
+  const [busy, setBusy] = useState(false);
+  const trimmed = query.trim();
+  const { data } = useQuery<ObjectSearchResponse>({
+    queryKey: queryKeys.objectSearch(trimmed, ''),
+    enabled: trimmed.length >= 2 && !disabled && !busy,
+    staleTime: 0,
+    gcTime: 30_000,
+    queryFn: async ({ signal }) => {
+      const params = new URLSearchParams({ q: trimmed });
+      const payload = await readJsonResponse<{
+        error?: string;
+        results?: ObjectSearchResponse['results'];
+      }>(await fetch(`/api/objects/search?${params.toString()}`, { signal }));
+      return { query: trimmed, results: payload.results };
+    },
+  });
+  const results = visibleObjectSearchResultsForQuery(data, trimmed);
+
+  async function save(linkedObjectId: string | null) {
+    setBusy(true);
+    try {
+      const result = await notifyAction({
+        id: `drive-link:${link.selectionId}`,
+        loading: 'Saving object link…',
+        success: linkedObjectId ? 'Linked Drive source' : 'Cleared Drive object link',
+        error: 'Couldn’t update Drive object link',
+        run: async () => {
+          const res = await fetch(
+            `/api/integrations/manage/${link.integrationId}/selections/${link.selectionId}`,
+            {
+              method: 'PATCH',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify({ linkedObjectId }),
+            },
+          );
+          await readJsonResponse(res);
+          return { ok: true };
+        },
+      });
+      if (!('error' in result)) {
+        setQuery('');
+        router.refresh();
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <span className="relative min-w-[12rem] max-w-xs">
+      <span className="flex items-center gap-1">
+        <Input
+          aria-label="Link Drive source to a Timeline object"
+          className="h-8 text-xs"
+          placeholder={link.linkedObjectId ? 'Linked · search to replace' : 'Link object'}
+          value={query}
+          disabled={disabled || busy}
+          onChange={(event) => {
+            setQuery(event.currentTarget.value);
+          }}
+        />
+        {link.linkedObjectId ? (
+          <Button
+            size="sm"
+            variant="ghost"
+            disabled={disabled || busy}
+            onClick={() => {
+              void save(null);
+            }}
+          >
+            Clear
+          </Button>
+        ) : null}
+      </span>
+      {results.length > 0 ? (
+        <ul
+          aria-label="Matching Timeline objects"
+          className="absolute z-10 mt-1 max-h-40 w-full overflow-auto rounded-sm border border-border bg-popover p-1 text-popover-foreground shadow-md"
+        >
+          {results.map((result) => (
+            <li key={result.id}>
+              <button
+                type="button"
+                className="w-full rounded-sm px-2 py-1 text-left text-xs text-fg hover:bg-accent"
+                disabled={disabled || busy}
+                onClick={() => {
+                  void save(result.id);
+                }}
+              >
+                {result.canonicalName}
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </span>
   );
 }
 

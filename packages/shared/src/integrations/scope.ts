@@ -1543,6 +1543,17 @@ export function createIntegrationScope(deps: {
     if (!integration) throw new Error('Integration not found');
     // Replace strategy: simpler than diffing and idempotent on resync.
     await db.transaction(async (tx) => {
+      const existing = await tx
+        .select({
+          selectionKind: integrationSelections.selectionKind,
+          externalId: integrationSelections.externalId,
+          linkedObjectId: integrationSelections.linkedObjectId,
+        })
+        .from(integrationSelections)
+        .where(eq(integrationSelections.integrationId, integrationId));
+      const links = new Map(
+        existing.map((row) => [`${row.selectionKind}\x00${row.externalId}`, row.linkedObjectId]),
+      );
       await tx
         .delete(integrationSelections)
         .where(eq(integrationSelections.integrationId, integrationId));
@@ -1553,6 +1564,7 @@ export function createIntegrationScope(deps: {
             selectionKind: s.kind,
             externalId: s.externalId,
             externalLabel: s.label ?? null,
+            linkedObjectId: links.get(`${s.kind}\x00${s.externalId}`) ?? null,
           })),
         );
       }
@@ -1565,6 +1577,44 @@ export function createIntegrationScope(deps: {
         targetVisibility: 'team',
         metadata: { field: 'selections', selection_count: selections.length },
       });
+    });
+  }
+
+  async function setSelectionLinkedObject(
+    integrationId: string,
+    selectionId: string,
+    objectId: string | null,
+  ): Promise<void> {
+    await ensureMember('admin');
+    const integration = await getIntegration(integrationId);
+    if (!integration) throw new Error('Integration not found');
+    if (objectId) {
+      const [object] = await db
+        .select({ id: entities.id })
+        .from(entities)
+        .where(and(eq(entities.id, objectId), eq(entities.teamId, teamId)))
+        .limit(1);
+      if (!object) throw new Error('Object not found');
+    }
+    const updated = await db
+      .update(integrationSelections)
+      .set({ linkedObjectId: objectId })
+      .where(
+        and(
+          eq(integrationSelections.id, selectionId),
+          eq(integrationSelections.integrationId, integrationId),
+        ),
+      )
+      .returning({ id: integrationSelections.id });
+    if (updated.length === 0) throw new Error('Selection not found');
+    await db.insert(auditLog).values({
+      teamId,
+      actorUserId: userId,
+      action: 'integration.settings_change',
+      targetType: 'integration',
+      targetId: integrationId,
+      targetVisibility: 'team',
+      metadata: { field: 'selection_linked_object', selection_id: selectionId },
     });
   }
 
@@ -1847,6 +1897,7 @@ export function createIntegrationScope(deps: {
     resolveConnectionAttention,
     listSelections,
     setSelections,
+    setSelectionLinkedObject,
     loadCursor,
     saveCursor,
     listSyncState,
@@ -3053,7 +3104,9 @@ async function emailConnectionAttentionActors(
 export async function adminListSelections(
   db: Db,
   integrationId: string,
-): Promise<{ kind: string; externalId: string; label: string | null }[]> {
+): Promise<
+  { kind: string; externalId: string; label: string | null; linkedObjectId: string | null }[]
+> {
   const rows = await db
     .select()
     .from(integrationSelections)
@@ -3062,6 +3115,7 @@ export async function adminListSelections(
     kind: r.selectionKind,
     externalId: r.externalId,
     label: r.externalLabel,
+    linkedObjectId: r.linkedObjectId,
   }));
 }
 

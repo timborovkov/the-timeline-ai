@@ -1,5 +1,6 @@
 import { createHmac, randomUUID } from 'node:crypto';
 
+import type { DriveChangeJudge } from '#src/integrations/google-drive-judge.js';
 import type {
   IntegrationEvent,
   IntegrationProvider,
@@ -9,27 +10,32 @@ import type {
   ProviderResource,
   SyncContext,
   SyncResult,
+  WebhookHandleResult,
 } from '#src/integrations/types.js';
 
 import { getEnv } from '#src/env.js';
+import {
+  driveDebouncePlan,
+  hashDrivePayload,
+  takeDriveProcessSlot,
+} from '#src/integrations/google-drive-capture.js';
+import { diffDriveText, truncateDriveSnapshot } from '#src/integrations/google-drive-diff.js';
+import {
+  DRIVE_FILE_KIND,
+  DRIVE_FOLDER_KIND,
+  DRIVE_SHARED_DRIVE_KIND,
+  driveFileScopeHint,
+  driveResourceKindForMime,
+  driveScopeFromSelections,
+  driveSelectionIsWatchable,
+  isSupportedDriveMimeType,
+  type DriveScopeSets,
+} from '#src/integrations/google-drive-scope.js';
 import { providerFetch } from '#src/integrations/request.js';
 import { attachSyncContinuation, isProviderRateLimitError } from '#src/integrations/types.js';
 import { childLogger } from '#src/logger.js';
 
 const fetch = providerFetch('google_drive');
-
-// Phase 11 — Google Drive provider.
-//
-// Uses OAuth 2.0 web flow + Drive v3 REST API. The minimum viable sync
-// surface this phase ships:
-//   - drive.changes.list for incremental deltas (server-issued startPageToken).
-//   - drive.files.list per selected folder for backfill enumeration.
-//   - drive.files.get for per-file metadata used as the event body.
-//
-// Full file body download + comment activity require additional API
-// quota and (for activity) Activity v2; those land as follow-ups. The
-// shape implemented here writes one integration_event per file delta /
-// metadata change, which is the value-add over a manual upload.
 
 const log = childLogger('integrations:google-drive');
 
@@ -43,6 +49,9 @@ const SCOPES = [
 const AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth';
 const TOKEN_URL = 'https://oauth2.googleapis.com/token';
 const DRIVE_BASE = 'https://www.googleapis.com/drive/v3';
+const MAX_HARVEST_BYTES = 20 * 1024 * 1024;
+const FILE_FIELDS =
+  'id,name,mimeType,modifiedTime,webViewLink,parents,driveId,owners(displayName,emailAddress),shortcutDetails(targetId,targetMimeType)';
 
 interface DriveTokens {
   access_token: string;
@@ -51,6 +60,53 @@ interface DriveTokens {
   token_type?: string;
   scope?: string;
   sub?: string;
+}
+
+interface DriveFile {
+  id: string;
+  name: string;
+  mimeType: string;
+  modifiedTime?: string;
+  webViewLink?: string;
+  owners?: { displayName?: string; emailAddress?: string }[];
+  parents?: string[];
+  driveId?: string;
+  shortcutDetails?: { targetId?: string; targetMimeType?: string };
+}
+
+interface DriveChange {
+  changeType?: 'file' | 'drive';
+  removed?: boolean;
+  time?: string;
+  fileId?: string;
+  file?: DriveFile;
+}
+
+interface DriveChangesPage {
+  changes?: DriveChange[];
+  nextPageToken?: string;
+  newStartPageToken?: string;
+}
+
+interface DriveCursor {
+  page_token?: string;
+  firstQueuedAt?: string;
+}
+
+interface DriveComment {
+  id?: string;
+  content?: string;
+  resolved?: boolean;
+  modifiedTime?: string;
+  author?: { displayName?: string; emailAddress?: string };
+}
+
+interface DrivePermission {
+  id?: string;
+  type?: string;
+  role?: string;
+  emailAddress?: string;
+  domain?: string;
 }
 
 async function postForm(
@@ -85,8 +141,6 @@ async function ensureAccessToken(tokens: DriveTokens): Promise<DriveTokens> {
   const now = Date.now();
   if (tokens.expires_at && tokens.expires_at > now + 60_000) return tokens;
   if (!tokens.refresh_token) {
-    // Access token has lifetime ~1h; without a refresh token we'll fail
-    // explicitly so the operator reconnects.
     throw new Error('Google Drive access token expired and no refresh_token available');
   }
   const body = await postForm(TOKEN_URL, {
@@ -103,6 +157,20 @@ async function ensureAccessToken(tokens: DriveTokens): Promise<DriveTokens> {
     access_token: access,
     expires_at: now + expiresIn * 1000,
   };
+}
+
+async function persistRefreshedTokens(
+  ctx: { persistTokens(tokens: Record<string, unknown>): Promise<void> } | undefined,
+  original: DriveTokens,
+  refreshed: DriveTokens,
+): Promise<void> {
+  if (!ctx) return;
+  if (
+    refreshed.access_token === original.access_token &&
+    refreshed.expires_at === original.expires_at
+  )
+    return;
+  await ctx.persistTokens(refreshed as unknown as Record<string, unknown>);
 }
 
 async function driveGet<T>(
@@ -122,149 +190,41 @@ async function driveGet<T>(
   return JSON.parse(text) as T;
 }
 
-const MAX_HARVEST_BYTES = 20 * 1024 * 1024;
-
-/**
- * Download a file's bytes. For Google-native MIMEs (Docs/Sheets/Slides) we
- * use the export endpoint to a downloadable format. Returns null if the
- * file is too large (>20MB) or its MIME type is not supported.
- */
-async function downloadFileBody(
+async function driveGetOptional<T>(
   tokens: DriveTokens,
-  fileId: string,
-  mimeType: string,
-): Promise<{ body: Buffer; contentType: string; filenameSuffix: string } | null> {
-  let url: string;
-  let exportedContentType: string | null = null;
-  let suffix = '';
-  if (mimeType === 'application/vnd.google-apps.document') {
-    url = `${DRIVE_BASE}/files/${fileId}/export?mimeType=${encodeURIComponent('text/markdown')}`;
-    exportedContentType = 'text/markdown';
-    suffix = '.md';
-  } else if (mimeType === 'application/vnd.google-apps.spreadsheet') {
-    url = `${DRIVE_BASE}/files/${fileId}/export?mimeType=${encodeURIComponent('text/csv')}`;
-    exportedContentType = 'text/csv';
-    suffix = '.csv';
-  } else if (mimeType === 'application/vnd.google-apps.presentation') {
-    url = `${DRIVE_BASE}/files/${fileId}/export?mimeType=${encodeURIComponent('application/pdf')}`;
-    exportedContentType = 'application/pdf';
-    suffix = '.pdf';
-  } else if (mimeType.startsWith('application/vnd.google-apps.')) {
-    return null;
-  } else {
-    url = `${DRIVE_BASE}/files/${fileId}?alt=media`;
-  }
-  let res: Response;
+  path: string,
+  params: Record<string, string> = {},
+): Promise<T | null> {
   try {
-    res = await fetch(
-      url,
-      {
-        headers: { authorization: `Bearer ${tokens.access_token}` },
-      },
-      { maxResponseBytes: MAX_HARVEST_BYTES },
-    );
-  } catch (err) {
-    if (err && typeof err === 'object' && 'code' in err && err.code === 'response_too_large') {
-      return null;
-    }
-    throw err;
+    return await driveGet<T>(tokens, path, params);
+  } catch (error) {
+    if (isProviderRateLimitError(error)) throw error;
+    const message = error instanceof Error ? error.message : String(error);
+    if (message.includes(' 404:') || message.includes(' 403:')) return null;
+    throw error;
   }
-  if (!res.ok) {
-    throw new Error(`Drive download ${fileId} ${String(res.status)}`);
-  }
-  const ab = await res.arrayBuffer();
-  if (ab.byteLength > MAX_HARVEST_BYTES) return null;
-  const contentType = exportedContentType ?? res.headers.get('content-type') ?? mimeType;
-  return { body: Buffer.from(ab), contentType, filenameSuffix: suffix };
 }
 
-/**
- * Check whether a file lives under one of the selected folders. Performs an
- * upward walk through `parents` until we hit a selected folder, a shared
- * drive root, or run out. The result is cached for the lifetime of a sync
- * page so a tree of files under one folder pays for ancestor lookup once.
- */
-async function fileInSelectedSubtree(
-  tokens: DriveTokens,
-  _fileId: string,
-  parents: string[],
-  selectedIds: Set<string>,
-  cache: Map<string, boolean>,
-  // Drive folder nesting is bounded in practice by the user's appetite
-  // for clicking "New folder"; cap is intentionally generous (it
-  // bounds runaway loops and accidental cycles, not real trees). The
-  // per-page `cache` map collapses repeated ancestor walks within the
-  // same sync page so 32 hops is essentially free after the first
-  // file in a deep folder.
-  depthCap = 32,
-): Promise<boolean> {
-  if (selectedIds.size === 0) return false;
-  if (selectedIds.has('root')) {
-    // 'root' means everything under My Drive — treat any reachable file as in-scope.
-    return true;
-  }
-  const stack = [...parents];
-  let depth = 0;
-  while (stack.length > 0 && depth++ < depthCap) {
-    const p = stack.pop();
-    if (!p) break;
-    if (selectedIds.has(p)) return true;
-    const cached = cache.get(p);
-    if (cached === true) return true;
-    if (cached === false) continue;
-    try {
-      const info = await driveGet<{ parents?: string[] }>(
-        tokens,
-        `/files/${encodeURIComponent(p)}`,
-        {
-          fields: 'parents',
-        },
-      );
-      cache.set(p, false);
-      if (info.parents) {
-        for (const pp of info.parents) stack.push(pp);
-      }
-    } catch (error) {
-      if (isProviderRateLimitError(error)) throw error;
-      cache.set(p, false);
-    }
-  }
-  return false;
+function driveQueryLiteral(value: string): string {
+  return value.replaceAll('\\', '\\\\').replaceAll("'", "\\'");
 }
 
-interface DriveFile {
-  id: string;
-  name: string;
-  mimeType: string;
-  modifiedTime?: string;
-  webViewLink?: string;
-  owners?: { displayName?: string; emailAddress?: string }[];
-  parents?: string[];
-  /** Shared drive id when the file lives in a shared (Team) drive. Shared
-   *  drives don't expose the drive id via `parents` — only this field. */
-  driveId?: string;
-}
-
-interface DriveChange {
-  changeType?: 'file' | 'drive';
-  removed?: boolean;
-  time?: string;
-  fileId?: string;
-  file?: DriveFile;
-}
-
-interface DriveChangesPage {
-  changes?: DriveChange[];
-  nextPageToken?: string;
-  newStartPageToken?: string;
-}
-
-interface DriveCursor {
-  page_token?: string;
+function supportedMimeQuery(): string {
+  return [
+    "mimeType = 'application/vnd.google-apps.folder'",
+    "mimeType = 'application/vnd.google-apps.document'",
+    "mimeType = 'application/vnd.google-apps.spreadsheet'",
+    "mimeType = 'application/vnd.google-apps.presentation'",
+    "mimeType = 'application/pdf'",
+    "mimeType = 'application/msword'",
+    "mimeType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'",
+  ].join(' or ');
 }
 
 async function startPageToken(tokens: DriveTokens): Promise<string> {
-  const data = await driveGet<{ startPageToken: string }>(tokens, '/changes/startPageToken');
+  const data = await driveGet<{ startPageToken: string }>(tokens, '/changes/startPageToken', {
+    supportsAllDrives: 'true',
+  });
   return data.startPageToken;
 }
 
@@ -282,182 +242,454 @@ function buildAuthorizeUrl(input: OAuthStartInput): string {
   return url.toString();
 }
 
-function changeToEvent(_integration: IntegrationRow, change: DriveChange): IntegrationEvent | null {
-  if (!change.fileId) return null;
-  if (change.removed) {
+function resourceFromFile(file: DriveFile): ProviderResource {
+  return {
+    externalId: file.id,
+    label: file.name,
+    kind: driveResourceKindForMime(file.mimeType),
+  };
+}
+
+async function listFolderChildren(
+  tokens: DriveTokens,
+  parentId: string,
+): Promise<ProviderResource[]> {
+  const items: ProviderResource[] = [];
+  let pageToken: string | undefined;
+  let safety = 0;
+  while (safety++ < 10) {
+    const page = await driveGet<{ files?: DriveFile[]; nextPageToken?: string }>(tokens, '/files', {
+      q: `'${driveQueryLiteral(parentId)}' in parents and trashed = false and (${supportedMimeQuery()})`,
+      fields: `files(${FILE_FIELDS}),nextPageToken`,
+      pageSize: '100',
+      supportsAllDrives: 'true',
+      includeItemsFromAllDrives: 'true',
+      ...(pageToken ? { pageToken } : {}),
+    });
+    for (const file of page.files ?? []) {
+      if (
+        file.mimeType === 'application/vnd.google-apps.folder' ||
+        isSupportedDriveMimeType(file.mimeType)
+      ) {
+        items.push(resourceFromFile(file));
+      }
+    }
+    if (!page.nextPageToken) break;
+    pageToken = page.nextPageToken;
+  }
+  return items;
+}
+
+async function searchDriveResources(
+  tokens: DriveTokens,
+  query: string,
+): Promise<ProviderResource[]> {
+  const needle = driveQueryLiteral(query.trim().slice(0, 100));
+  if (!needle) return [];
+  const page = await driveGet<{ files?: DriveFile[] }>(tokens, '/files', {
+    q: `trashed = false and name contains '${needle}' and (${supportedMimeQuery()})`,
+    fields: `files(${FILE_FIELDS})`,
+    pageSize: '50',
+    corpora: 'user',
+    supportsAllDrives: 'true',
+    includeItemsFromAllDrives: 'true',
+  });
+  const items: ProviderResource[] = [];
+  for (const file of page.files ?? []) {
+    if (
+      file.mimeType === 'application/vnd.google-apps.folder' ||
+      isSupportedDriveMimeType(file.mimeType)
+    ) {
+      items.push(resourceFromFile(file));
+    }
+  }
+  try {
+    const drives = await driveGet<{ drives?: { id: string; name: string }[] }>(tokens, '/drives', {
+      pageSize: '100',
+      q: `name contains '${needle}'`,
+    });
+    for (const drive of drives.drives ?? []) {
+      items.push({
+        externalId: drive.id,
+        label: drive.name,
+        kind: DRIVE_SHARED_DRIVE_KIND,
+      });
+    }
+  } catch (error) {
+    if (isProviderRateLimitError(error)) throw error;
+    log.warn({ err: error }, 'drive shared-drive search failed');
+  }
+  return items;
+}
+
+async function resolveIncludeIds(
+  tokens: DriveTokens,
+  includeIds: { kind: string; externalId: string }[],
+): Promise<ProviderResource[]> {
+  const items: ProviderResource[] = [];
+  const seen = new Set<string>();
+  for (const requested of includeIds) {
+    const key = `${requested.kind}\x00${requested.externalId}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    if (requested.externalId === 'root' && requested.kind === DRIVE_FOLDER_KIND) {
+      items.push({ externalId: 'root', label: 'My Drive (root)', kind: DRIVE_FOLDER_KIND });
+      continue;
+    }
+    if (requested.kind === DRIVE_SHARED_DRIVE_KIND) {
+      const drive = await driveGetOptional<{ id: string; name: string }>(
+        tokens,
+        `/drives/${encodeURIComponent(requested.externalId)}`,
+        { fields: 'id,name' },
+      );
+      if (drive) {
+        items.push({
+          externalId: drive.id,
+          label: drive.name,
+          kind: DRIVE_SHARED_DRIVE_KIND,
+        });
+      }
+      continue;
+    }
+    const file = await driveGetOptional<DriveFile>(
+      tokens,
+      `/files/${encodeURIComponent(requested.externalId)}`,
+      { fields: FILE_FIELDS, supportsAllDrives: 'true' },
+    );
+    if (!file) continue;
+    const kind = driveResourceKindForMime(file.mimeType);
+    if (
+      kind === requested.kind ||
+      requested.kind === DRIVE_FILE_KIND ||
+      requested.kind === DRIVE_FOLDER_KIND
+    ) {
+      items.push({ externalId: file.id, label: file.name, kind });
+    }
+  }
+  return items;
+}
+
+async function listTopLevelResources(tokens: DriveTokens): Promise<ProviderResource[]> {
+  const items: ProviderResource[] = [
+    { externalId: 'root', label: 'My Drive (root)', kind: DRIVE_FOLDER_KIND },
+  ];
+  try {
+    const drives = await driveGet<{ drives?: { id: string; name: string }[] }>(tokens, '/drives', {
+      pageSize: '100',
+    });
+    for (const drive of drives.drives ?? []) {
+      items.push({ externalId: drive.id, label: drive.name, kind: DRIVE_SHARED_DRIVE_KIND });
+    }
+  } catch (error) {
+    if (isProviderRateLimitError(error)) throw error;
+    log.warn({ err: error }, 'listing drives failed');
+  }
+  return items;
+}
+
+async function fileInSelectedSubtree(
+  tokens: DriveTokens,
+  file: Pick<DriveFile, 'id' | 'parents' | 'driveId'>,
+  scope: DriveScopeSets,
+  cache: Map<string, boolean>,
+  depthCap = 32,
+): Promise<boolean> {
+  const hint = driveFileScopeHint({
+    fileId: file.id,
+    scope,
+    ...(file.parents ? { parents: file.parents } : {}),
+    ...(file.driveId ? { driveId: file.driveId } : {}),
+  });
+  if (hint === 'in') return true;
+  if (hint === 'out') return false;
+  const stack = [...(file.parents ?? [])];
+  let depth = 0;
+  while (stack.length > 0 && depth++ < depthCap) {
+    const parent = stack.pop();
+    if (!parent) break;
+    if (scope.folders.has(parent) || scope.sharedDrives.has(parent)) return true;
+    if (parent === 'root' && scope.watchesRoot) return true;
+    const cached = cache.get(parent);
+    if (cached === true) return true;
+    if (cached === false) continue;
+    const info = await driveGetOptional<{ parents?: string[] }>(
+      tokens,
+      `/files/${encodeURIComponent(parent)}`,
+      { fields: 'parents', supportsAllDrives: 'true' },
+    );
+    if (!info) {
+      cache.set(parent, false);
+      continue;
+    }
+    cache.set(parent, false);
+    for (const next of info.parents ?? []) stack.push(next);
+  }
+  return false;
+}
+
+function exportSpec(
+  mimeType: string,
+): { urlPath: string; contentType: string; suffix: string } | null {
+  if (mimeType === 'application/vnd.google-apps.document') {
     return {
-      dedupKey: `google_drive:change:${change.fileId}:removed:${change.time ?? ''}`,
-      provider: 'google_drive',
-      signalClass: 'pulse',
-      externalObjectId: change.fileId,
-      externalEventId: change.time ?? null,
-      eventType: 'file.removed',
-      occurredAt: change.time ? new Date(change.time) : new Date(),
-      contentText: `Drive file ${change.fileId} was removed`,
-      extra: { drive: { changeType: change.changeType } },
+      urlPath: `/files/{id}/export?mimeType=${encodeURIComponent('text/plain')}`,
+      contentType: 'text/plain',
+      suffix: '.txt',
     };
   }
-  const file = change.file;
-  if (!file) return null;
-  const owner = file.owners?.[0];
-  const occurred = file.modifiedTime ? new Date(file.modifiedTime) : new Date();
-  const actor: { externalId?: string; name?: string; email?: string } | null = owner
-    ? {
-        ...(owner.displayName ? { name: owner.displayName } : {}),
-        ...(owner.emailAddress ? { email: owner.emailAddress } : {}),
-      }
-    : null;
-  return {
-    dedupKey: `google_drive:change:${file.id}:${file.modifiedTime ?? ''}`,
-    provider: 'google_drive',
-    signalClass: 'pulse',
-    externalObjectId: file.id,
-    externalEventId: file.modifiedTime ?? null,
-    eventType: 'file.changed',
-    occurredAt: occurred,
-    actor,
-    contentText: `Drive file "${file.name}" (${file.mimeType}) was modified`,
-    extra: {
-      drive: {
-        name: file.name,
-        mime_type: file.mimeType,
-        web_view_link: file.webViewLink ?? null,
-        modified_time: file.modifiedTime ?? null,
-        drive_id: file.driveId ?? null,
-        parents: file.parents ?? [],
-      },
+  if (mimeType === 'application/vnd.google-apps.spreadsheet') {
+    return {
+      urlPath: `/files/{id}/export?mimeType=${encodeURIComponent('text/csv')}`,
+      contentType: 'text/csv',
+      suffix: '.csv',
+    };
+  }
+  if (mimeType === 'application/vnd.google-apps.presentation') {
+    return {
+      urlPath: `/files/{id}/export?mimeType=${encodeURIComponent('application/pdf')}`,
+      contentType: 'application/pdf',
+      suffix: '.pdf',
+    };
+  }
+  if (mimeType.startsWith('application/vnd.google-apps.')) return null;
+  return { urlPath: `/files/{id}?alt=media`, contentType: mimeType, suffix: '' };
+}
+
+async function downloadFileBody(
+  tokens: DriveTokens,
+  fileId: string,
+  mimeType: string,
+): Promise<{ body: Buffer; contentType: string; filenameSuffix: string } | null> {
+  const spec = exportSpec(mimeType);
+  if (!spec) return null;
+  const url = `${DRIVE_BASE}${spec.urlPath.replace('{id}', encodeURIComponent(fileId))}`;
+  let res: Response;
+  try {
+    res = await fetch(
+      url,
+      { headers: { authorization: `Bearer ${tokens.access_token}` } },
+      { maxResponseBytes: MAX_HARVEST_BYTES },
+    );
+  } catch (err) {
+    if (err && typeof err === 'object' && 'code' in err && err.code === 'response_too_large') {
+      return null;
+    }
+    throw err;
+  }
+  if (!res.ok) {
+    throw new Error(`Drive download ${fileId} ${String(res.status)}`);
+  }
+  const ab = await res.arrayBuffer();
+  if (ab.byteLength > MAX_HARVEST_BYTES) return null;
+  const contentType = res.headers.get('content-type') ?? spec.contentType;
+  return { body: Buffer.from(ab), contentType, filenameSuffix: spec.suffix };
+}
+
+async function loadDriveText(
+  tokens: DriveTokens,
+  file: DriveFile,
+  ctx: SyncContext,
+): Promise<{ text: string; skippedReason?: string }> {
+  const download = await downloadFileBody(tokens, file.id, file.mimeType);
+  if (!download) {
+    return {
+      text: '',
+      skippedReason: file.mimeType.startsWith('application/vnd.google-apps.')
+        ? 'unsupported_google_app_mime'
+        : 'too_large_or_unsupported',
+    };
+  }
+  const isBinary =
+    download.contentType === 'application/pdf' ||
+    download.contentType === 'application/msword' ||
+    download.contentType.includes('officedocument') ||
+    download.contentType.includes('msword');
+  if (isBinary) {
+    if (!ctx.extractBinaryText) {
+      return { text: '', skippedReason: 'extract_unavailable' };
+    }
+    const extracted = await ctx.extractBinaryText({
+      filename: `${file.name}${download.filenameSuffix}`,
+      contentType: download.contentType,
+      body: download.body,
+    });
+    if (!extracted?.text.trim()) return { text: '', skippedReason: 'extract_empty' };
+    return { text: truncateDriveSnapshot(extracted.text) };
+  }
+  return { text: truncateDriveSnapshot(download.body.toString('utf8')) };
+}
+
+async function listDriveComments(tokens: DriveTokens, fileId: string): Promise<DriveComment[]> {
+  const page = await driveGetOptional<{ comments?: DriveComment[] }>(
+    tokens,
+    `/files/${encodeURIComponent(fileId)}/comments`,
+    {
+      fields: 'comments(id,content,resolved,modifiedTime,author(displayName,emailAddress))',
+      pageSize: '50',
+      includeDeleted: 'false',
     },
-  };
+  );
+  return page?.comments ?? [];
+}
+
+async function listDrivePermissions(
+  tokens: DriveTokens,
+  fileId: string,
+): Promise<DrivePermission[]> {
+  const page = await driveGetOptional<{ permissions?: DrivePermission[] }>(
+    tokens,
+    `/files/${encodeURIComponent(fileId)}`,
+    {
+      fields: 'permissions(id,type,role,emailAddress,domain)',
+      supportsAllDrives: 'true',
+    },
+  );
+  return page?.permissions ?? [];
+}
+
+function commentsFingerprint(comments: DriveComment[]): string {
+  return hashDrivePayload(
+    JSON.stringify(
+      comments.map((comment) => ({
+        id: comment.id ?? '',
+        resolved: Boolean(comment.resolved),
+        modified: comment.modifiedTime ?? '',
+        content: hashDrivePayload(comment.content ?? ''),
+      })),
+    ),
+  );
+}
+
+function permissionsFingerprint(permissions: DrivePermission[]): string {
+  return hashDrivePayload(
+    JSON.stringify(
+      permissions.map((permission) => ({
+        id: permission.id ?? '',
+        type: permission.type ?? '',
+        role: permission.role ?? '',
+        email: permission.emailAddress ?? '',
+        domain: permission.domain ?? '',
+      })),
+    ),
+  );
+}
+
+function clientShareSignals(permissions: DrivePermission[], teamDomains: string[]): string[] {
+  const team = new Set(teamDomains.map((domain) => domain.toLowerCase()));
+  const signals = new Set<string>();
+  for (const permission of permissions) {
+    if (permission.type === 'anyone') signals.add('shared_anyone');
+    const domain = (
+      permission.domain ??
+      permission.emailAddress?.slice(permission.emailAddress.lastIndexOf('@') + 1)
+    )?.toLowerCase();
+    if (domain && domain.length > 0 && !team.has(domain)) signals.add('shared_external_domain');
+  }
+  return [...signals];
+}
+
+function commentSignals(comments: DriveComment[], commentsChanged: boolean): string[] {
+  if (!commentsChanged) return [];
+  const signals = ['comment_changed'];
+  if (comments.some((comment) => comment.resolved)) signals.push('comment_resolved');
+  return signals;
+}
+
+async function persistDriveSnapshot(
+  ctx: SyncContext,
+  fileId: string,
+  snapshot: {
+    contentHash: string;
+    snapshotText: string;
+    commentsHash: string;
+    permissionsHash: string;
+    mimeType: string;
+  },
+): Promise<void> {
+  if (!ctx.saveDriveSnapshot) return;
+  await ctx.saveDriveSnapshot({ fileId, ...snapshot });
+}
+
+function driveDebounceCursorKey(fileId: string): string {
+  return `drive.debounce.${fileId}`;
+}
+
+async function scheduleFileCapture(
+  integration: IntegrationRow,
+  fileId: string,
+  ctx: SyncContext,
+  reason: string,
+): Promise<void> {
+  if (!ctx.scheduleTargetedSync) return;
+  const existing = (await ctx.loadCursor(driveDebounceCursorKey(fileId))) as DriveCursor;
+  const plan = driveDebouncePlan(existing);
+  await ctx.saveCursor(driveDebounceCursorKey(fileId), {
+    firstQueuedAt: plan.firstQueuedAt,
+    quietUntil: plan.quietUntil,
+  });
+  await ctx.scheduleTargetedSync(
+    {
+      integrationId: integration.id,
+      teamId: integration.teamId,
+      triggeredBy: 'webhook',
+      resourceType: DRIVE_FILE_KIND,
+      externalId: fileId,
+      reason,
+    },
+    { delayMs: plan.delayMs, replaceDelayed: true },
+  );
 }
 
 async function fetchChanges(
   integration: IntegrationRow,
   tokens: DriveTokens,
-  selectedFolderIds: Set<string>,
+  selections: { kind: string; externalId: string }[],
   ctx: SyncContext,
   resourceType: string,
 ): Promise<SyncResult | undefined> {
   const continuation = { resourceType: 'drive.changes', externalId: integration.id };
+  const scope = driveScopeFromSelections(selections);
+  if (
+    scope.files.size === 0 &&
+    scope.folders.size === 0 &&
+    scope.sharedDrives.size === 0 &&
+    !scope.watchesRoot
+  ) {
+    return undefined;
+  }
   try {
     let cursor = (await ctx.loadCursor(resourceType)) as DriveCursor;
     if (!cursor.page_token) {
       cursor = { page_token: await startPageToken(tokens) };
+      await ctx.saveCursor(resourceType, cursor);
     }
-    const harvestState = (await ctx.loadCursor(`${resourceType}.harvest`)) as {
-      versions?: Record<string, string>;
-    };
-    let harvestedVersions = { ...harvestState.versions };
     let pageToken = cursor.page_token;
     let safety = 0;
+    const ancestorCache = new Map<string, boolean>();
     while (pageToken && safety++ < 50) {
       const page = await driveGet<DriveChangesPage>(tokens, '/changes', {
         pageToken,
         includeRemoved: 'true',
-        fields:
-          'changes(changeType,removed,time,fileId,file(id,name,mimeType,modifiedTime,webViewLink,parents,driveId,owners(displayName,emailAddress))),nextPageToken,newStartPageToken',
+        fields: `changes(changeType,removed,time,fileId,file(${FILE_FIELDS})),nextPageToken,newStartPageToken`,
         pageSize: '100',
-        // Required by the Drive API to receive changes from shared drives
-        // (Team Drives) at all, plus the `driveId` field. Without these
-        // params the feed only carries My Drive changes regardless of
-        // what scopes the OAuth grants.
         includeItemsFromAllDrives: 'true',
         supportsAllDrives: 'true',
       });
-      const events: IntegrationEvent[] = [];
-      const ancestorCache = new Map<string, boolean>();
-      for (const c of page.changes ?? []) {
-        // Subtree gate applies to BOTH event writes and body harvest. The
-        // Drive changes feed is account-wide, but the team has opted in to
-        // specific folders / shared drives — matches the opt-in posture
-        // GitHub (repo selections) and Linear (team selections) use.
-        // Removed-file changes pass through so deletions for previously
-        // selected files still produce a tombstone event; we don't have
-        // parents on a tombstone to check otherwise.
-        let inScope = c.removed === true;
-        if (!inScope && c.file) {
-          // Shared-drive files don't expose the shared-drive id via
-          // `parents` — only via the top-level `driveId`. Check that
-          // first so `drive.shared_drive` selections actually match,
-          // then fall back to the parent walk for My Drive / nested
-          // folder selections.
-          if (c.file.driveId && selectedFolderIds.has(c.file.driveId)) {
-            inScope = true;
-          } else {
-            inScope = await fileInSelectedSubtree(
-              tokens,
-              c.file.id,
-              c.file.parents ?? [],
-              selectedFolderIds,
-              ancestorCache,
-            );
-          }
+      for (const change of page.changes ?? []) {
+        if (change.removed || !change.fileId) continue;
+        const file = change.file;
+        if (!file) continue;
+        const mimeType = file.shortcutDetails?.targetMimeType ?? file.mimeType;
+        if (
+          mimeType !== 'application/vnd.google-apps.folder' &&
+          !isSupportedDriveMimeType(mimeType)
+        ) {
+          continue;
         }
+        const inScope = await fileInSelectedSubtree(tokens, file, scope, ancestorCache);
         if (!inScope) continue;
-        const evt = changeToEvent(integration, c);
-        if (evt) events.push(evt);
-        // Body harvest: only for non-removed files when the worker
-        // supplied a harvestDocument hook. Subtree membership was already
-        // checked above.
-        if (!c.removed && c.file && ctx.harvestDocument) {
-          const version = c.file.modifiedTime ?? c.time;
-          if (version && harvestedVersions[c.file.id] === version) continue;
-          try {
-            const download = await downloadFileBody(tokens, c.file.id, c.file.mimeType);
-            if (download) {
-              await ctx.harvestDocument({
-                filename: `${c.file.name}${download.filenameSuffix}`,
-                contentType: download.contentType,
-                body: download.body,
-                externalId: c.file.id,
-                metadata: {
-                  drive: {
-                    web_view_link: c.file.webViewLink ?? null,
-                    mime_type: c.file.mimeType,
-                    modified_time: c.file.modifiedTime ?? null,
-                  },
-                },
-              });
-              if (version) {
-                harvestedVersions[c.file.id] = version;
-                harvestedVersions = Object.fromEntries(
-                  Object.entries(harvestedVersions).slice(-5000),
-                );
-                await ctx.saveCursor(`${resourceType}.harvest`, { versions: harvestedVersions });
-              }
-            } else {
-              // downloadFileBody returns null for files we can't ingest:
-              // > 20MB body, or an unsupported Google-native MIME (forms,
-              // drawings, etc.). Surface to the audit log so the admin can
-              // tell the difference between "harvest succeeded" and
-              // "harvest silently skipped". The integration row's
-              // `last_error` is left alone — the sync as a whole still
-              // succeeded.
-              await ctx.recordAudit('harvest_skipped', {
-                file_id: c.file.id,
-                file_name: c.file.name,
-                mime_type: c.file.mimeType,
-                reason:
-                  c.file.mimeType.startsWith('application/vnd.google-apps.') &&
-                  c.file.mimeType !== 'application/vnd.google-apps.document' &&
-                  c.file.mimeType !== 'application/vnd.google-apps.spreadsheet' &&
-                  c.file.mimeType !== 'application/vnd.google-apps.presentation'
-                    ? 'unsupported_google_app_mime'
-                    : 'too_large_or_unsupported',
-              });
-            }
-          } catch (err) {
-            if (isProviderRateLimitError(err)) throw err;
-            log.warn({ err, fileId: c.file.id }, 'drive body harvest failed');
-            await ctx.recordAudit('harvest_failed', {
-              file_id: c.file.id,
-              file_name: c.file.name,
-              mime_type: c.file.mimeType,
-              error: err instanceof Error ? err.message : String(err),
-            });
-          }
-        }
+        await scheduleFileCapture(integration, file.id, ctx, 'drive_watch');
       }
-      if (events.length > 0) await ctx.writeEvents(events);
       if (page.nextPageToken) {
         pageToken = page.nextPageToken;
         await ctx.saveCursor(resourceType, { page_token: pageToken });
@@ -468,11 +700,6 @@ async function fetchChanges(
         return;
       }
     }
-    // Hit the 50-page safety cap with more pages still available. Persist
-    // the next `pageToken` so the following tick resumes where we stopped
-    // instead of restarting from the stored token and reprocessing the
-    // same window forever. Surfaces in audit so operators can spot the
-    // accounts that consistently exceed the cap.
     if (pageToken) {
       if (ctx.saveCursorWithContinuations)
         await ctx.saveCursorWithContinuations(resourceType, { page_token: pageToken }, [
@@ -491,6 +718,200 @@ async function fetchChanges(
     if (error instanceof Error) throw attachSyncContinuation(error, continuation);
     throw error;
   }
+}
+
+function actorFromFile(file: DriveFile): IntegrationEvent['actor'] {
+  const owner = file.owners?.[0];
+  if (!owner) return null;
+  return {
+    ...(owner.displayName ? { name: owner.displayName } : {}),
+    ...(owner.emailAddress ? { email: owner.emailAddress } : {}),
+  };
+}
+
+async function processDriveFile(
+  integration: IntegrationRow,
+  tokens: DriveTokens,
+  selections: { kind: string; externalId: string }[],
+  ctx: SyncContext,
+  fileId: string,
+): Promise<void> {
+  const scope = driveScopeFromSelections(selections);
+  const file = await driveGetOptional<DriveFile>(tokens, `/files/${encodeURIComponent(fileId)}`, {
+    fields: FILE_FIELDS,
+    supportsAllDrives: 'true',
+  });
+  // The delayed job is the end of this editing burst. Clear the quiet-window
+  // cursor so the next changes.watch ping starts a fresh 15-minute debounce.
+  await ctx.saveCursor(driveDebounceCursorKey(fileId), {});
+  if (!file) {
+    await ctx.recordAudit('drive_file_missing', { file_id: fileId });
+    return;
+  }
+  const inScope = await fileInSelectedSubtree(tokens, file, scope, new Map());
+  if (!inScope) {
+    await ctx.recordAudit('drive_file_out_of_scope', { file_id: fileId });
+    return;
+  }
+  if (!isSupportedDriveMimeType(file.mimeType)) {
+    await ctx.recordAudit('drive_file_unsupported_mime', {
+      file_id: fileId,
+      mime_type: file.mimeType,
+    });
+    return;
+  }
+
+  const [comments, permissions, loaded] = await Promise.all([
+    listDriveComments(tokens, file.id),
+    listDrivePermissions(tokens, file.id),
+    loadDriveText(tokens, file, ctx),
+  ]);
+  if (loaded.skippedReason) {
+    await ctx.recordAudit('drive_extract_skipped', {
+      file_id: fileId,
+      mime_type: file.mimeType,
+      reason: loaded.skippedReason,
+    });
+    return;
+  }
+
+  const snapshotText = loaded.text;
+  const contentHash = hashDrivePayload(snapshotText);
+  const commentsHash = commentsFingerprint(comments);
+  const permissionsHash = permissionsFingerprint(permissions);
+  const previous = ctx.loadLatestDriveSnapshot ? await ctx.loadLatestDriveSnapshot(file.id) : null;
+  const commentsChanged = previous?.commentsHash !== commentsHash;
+  const permissionsChanged = previous?.permissionsHash !== permissionsHash;
+  const teamDomains = ctx.listTeamEmailDomains ? await ctx.listTeamEmailDomains() : [];
+  const strongSignals = [
+    ...commentSignals(comments, commentsChanged),
+    ...(permissionsChanged ? clientShareSignals(permissions, teamDomains) : []),
+  ];
+  const diff = diffDriveText(previous?.snapshotText ?? '', snapshotText);
+  const snapshot = {
+    contentHash,
+    snapshotText,
+    commentsHash,
+    permissionsHash,
+    mimeType: file.mimeType,
+  };
+
+  if (previous?.contentHash === contentHash && !commentsChanged && !permissionsChanged) {
+    return;
+  }
+
+  if (!previous) {
+    await persistDriveSnapshot(ctx, file.id, snapshot);
+    await ctx.recordAudit('drive_baseline_saved', { file_id: fileId });
+    return;
+  }
+
+  if (!diff.changed && strongSignals.length === 0) {
+    await persistDriveSnapshot(ctx, file.id, snapshot);
+    await ctx.recordAudit('drive_change_skipped', {
+      file_id: fileId,
+      reason: diff.reason,
+    });
+    return;
+  }
+
+  const slot = await takeDriveProcessSlot({ integrationId: integration.id, fileId: file.id });
+  if (!slot.allowed) {
+    await ctx.recordAudit('drive_process_capped', {
+      file_id: fileId,
+      reason: slot.reason,
+    });
+    return;
+  }
+
+  let judge: DriveChangeJudge;
+  if (strongSignals.length > 0) {
+    judge = {
+      matters: true,
+      reason: strongSignals.some((signal) => signal.startsWith('shared_'))
+        ? 'client_share'
+        : 'comment',
+      summary: `Drive change on "${file.name}" (${strongSignals.join(', ')})`,
+    };
+  } else if (ctx.judgeDriveChange) {
+    judge = await ctx.judgeDriveChange({
+      fileName: file.name,
+      mimeType: file.mimeType,
+      hunks: diff.hunks,
+      strongSignals,
+    });
+  } else {
+    await ctx.recordAudit('drive_judge_unavailable', { file_id: fileId });
+    return;
+  }
+
+  await persistDriveSnapshot(ctx, file.id, snapshot);
+  if (!judge.matters || judge.reason === 'noise') {
+    await ctx.recordAudit('drive_change_noise', { file_id: fileId, reason: judge.reason });
+    return;
+  }
+
+  const linked = ctx.linkedObjectForDriveSelection
+    ? await ctx.linkedObjectForDriveSelection(file.id, file.parents ?? [])
+    : null;
+  const hunkPreview = diff.hunks.slice(0, 12).join('\n');
+  const contentText = [judge.summary, hunkPreview].filter(Boolean).join('\n\n').slice(0, 4000);
+  const event: IntegrationEvent = {
+    dedupKey: `google_drive:file:${file.id}:${contentHash}:${commentsHash}`,
+    provider: 'google_drive',
+    signalClass: 'communication',
+    eventClass: 'communication',
+    externalObjectId: file.id,
+    externalEventId: file.modifiedTime ?? null,
+    eventType: 'file.changed',
+    occurredAt: file.modifiedTime ? new Date(file.modifiedTime) : new Date(),
+    actor: actorFromFile(file) ?? null,
+    contentText,
+    extra: {
+      drive: {
+        name: file.name,
+        mime_type: file.mimeType,
+        web_view_link: file.webViewLink ?? null,
+        modified_time: file.modifiedTime ?? null,
+        drive_id: file.driveId ?? null,
+        parents: file.parents ?? [],
+        judge_reason: judge.reason,
+        strong_signals: strongSignals,
+        changed_chars: diff.changedChars,
+        ...(linked ? { linked_object_id: linked.id } : {}),
+      },
+    },
+    ...(linked
+      ? {
+          objectMap: {
+            type: linked.type as NonNullable<IntegrationEvent['objectMap']>['type'],
+            canonicalName: linked.canonicalName,
+            externalId: file.id,
+            displayTitle: file.name,
+            ...(file.webViewLink ? { url: file.webViewLink } : {}),
+          },
+        }
+      : {}),
+  };
+  await ctx.writeEvents([event]);
+}
+
+function driveWebhookResourceState(payload: unknown): string | null {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return null;
+  const record = payload as Record<string, unknown>;
+  const headers =
+    record.headers && typeof record.headers === 'object' && !Array.isArray(record.headers)
+      ? (record.headers as Record<string, unknown>)
+      : record;
+  const state = headers.resourceState ?? headers['x-goog-resource-state'];
+  return typeof state === 'string' ? state : null;
+}
+
+async function refreshForSync(tokens: unknown, ctx: SyncContext): Promise<DriveTokens> {
+  const original = tokens as DriveTokens;
+  const refreshed = await ensureAccessToken(original);
+  await persistRefreshedTokens(ctx, original, refreshed);
+  return refreshed;
 }
 
 export const googleDriveProvider: IntegrationProvider = {
@@ -524,12 +945,7 @@ export const googleDriveProvider: IntegrationProvider = {
       scope: typeof body.scope === 'string' ? body.scope : SCOPES.join(' '),
     };
     if (typeof body.refresh_token === 'string') tokens.refresh_token = body.refresh_token;
-    // Fetch the user's primary email + sub for displayName / externalAccountId.
     let displayName = 'Google Drive';
-    // externalAccountId MUST be the stable Google subject id so reconnects
-    // upsert on the existing integration row. A random fallback would
-    // silently produce duplicate integrations every reconnect — fail
-    // the OAuth flow instead and let the user retry.
     let sub = '';
     let userInfoOk = false;
     try {
@@ -563,75 +979,66 @@ export const googleDriveProvider: IntegrationProvider = {
     };
   },
 
-  async listSyncableResources(integration, tokens): Promise<ProviderResource[]> {
-    const refreshed = await ensureAccessToken(tokens as DriveTokens);
-    // List top-level shared drives + the user's "My Drive" root folder.
-    const items: ProviderResource[] = [
-      { externalId: 'root', label: 'My Drive (root)', kind: 'drive.folder' },
-    ];
+  async listSyncableResources(integration, tokens, ctx): Promise<ProviderResource[]> {
+    const original = tokens as DriveTokens;
+    const refreshed = await ensureAccessToken(original);
+    await persistRefreshedTokens(ctx, original, refreshed);
     try {
-      const drives = await driveGet<{ drives?: { id: string; name: string }[] }>(
-        refreshed,
-        '/drives',
-        {
-          pageSize: '100',
-        },
-      );
-      for (const d of drives.drives ?? []) {
-        items.push({ externalId: d.id, label: d.name, kind: 'drive.shared_drive' });
+      if (ctx?.includeIds && ctx.includeIds.length > 0 && !ctx.parentId && !ctx.query) {
+        return await resolveIncludeIds(refreshed, ctx.includeIds);
       }
+      if (ctx?.query?.trim()) {
+        const found = await searchDriveResources(refreshed, ctx.query);
+        if (ctx.includeIds?.length) {
+          const included = await resolveIncludeIds(refreshed, ctx.includeIds);
+          const seen = new Set(found.map((item) => `${item.kind}\x00${item.externalId}`));
+          for (const item of included) {
+            const key = `${item.kind}\x00${item.externalId}`;
+            if (!seen.has(key)) found.push(item);
+          }
+        }
+        return found;
+      }
+      if (ctx?.parentId) {
+        return await listFolderChildren(refreshed, ctx.parentId);
+      }
+      return await listTopLevelResources(refreshed);
     } catch (err) {
       if (isProviderRateLimitError(err)) throw err;
-      log.warn({ err, integrationId: integration.id }, 'listing drives failed');
+      log.warn({ err, integrationId: integration.id }, 'listing drive resources failed');
+      throw err;
     }
-    return items;
   },
 
   async backfill({ integration, tokens, selections, ctx }) {
-    const selected = new Set(
-      selections
-        .filter((s) => s.kind === 'drive.folder' || s.kind === 'drive.shared_drive')
-        .map((s) => s.externalId),
-    );
-    // Opt-in only. fetchChanges walks the whole Drive change feed
-    // unconditionally — selections only gate the document-body harvest
-    // step inside it. Without this guard, a Drive integration with no
-    // folder selections still writes change events for the entire
-    // drive into raw_events. Match webhook + Linear posture: an
-    // integration with no drive.folder / drive.shared_drive
-    // selections syncs nothing.
-    if (selected.size === 0) return;
-    const refreshed = await ensureAccessToken(tokens as DriveTokens);
-    if (refreshed.access_token !== (tokens as DriveTokens).access_token) {
-      await ctx.persistTokens(refreshed as unknown as Record<string, unknown>);
+    if (!selections.some((selection) => driveSelectionIsWatchable(selection.kind))) return;
+    const refreshed = await refreshForSync(tokens, ctx);
+    const existing = (await ctx.loadCursor('drive.changes')) as DriveCursor;
+    if (!existing.page_token) {
+      await ctx.saveCursor('drive.changes', { page_token: await startPageToken(refreshed) });
     }
-    return fetchChanges(integration, refreshed, selected, ctx, 'drive.changes');
+    await ctx.recordAudit('drive_backfill_cursor_set', { integration_id: integration.id });
+    return undefined;
   },
 
-  async incrementalSync({ integration, tokens, selections, ctx }) {
-    const selected = new Set(
-      selections
-        .filter((s) => s.kind === 'drive.folder' || s.kind === 'drive.shared_drive')
-        .map((s) => s.externalId),
-    );
-    if (selected.size === 0) return;
-    const refreshed = await ensureAccessToken(tokens as DriveTokens);
-    if (refreshed.access_token !== (tokens as DriveTokens).access_token) {
-      // Persist the refreshed access_token + new expires_at so the next
-      // sync doesn't repeat the refresh roundtrip. Skipped when
-      // ensureAccessToken returned the same input (token still valid).
-      await ctx.persistTokens(refreshed as unknown as Record<string, unknown>);
+  async incrementalSync({ integration, tokens, selections, ctx, target }) {
+    if (!selections.some((selection) => driveSelectionIsWatchable(selection.kind))) return;
+    const refreshed = await refreshForSync(tokens, ctx);
+    if (target?.resourceType === DRIVE_FILE_KIND) {
+      await processDriveFile(integration, refreshed, selections, ctx, target.externalId);
+      return undefined;
     }
-    return fetchChanges(integration, refreshed, selected, ctx, 'drive.changes');
+    return fetchChanges(
+      integration,
+      refreshed,
+      selections,
+      ctx,
+      target?.resourceType === 'drive.changes' ? target.resourceType : 'drive.changes',
+    );
   },
 
   async provisionWebhooks({ integration, tokens, selections, existingSubscriptions, ctx }) {
-    if (
-      !selections.some(
-        (selection) => selection.kind === 'drive.folder' || selection.kind === 'drive.shared_drive',
-      )
-    )
-      return [];
+    if (!selections.some((selection) => driveSelectionIsWatchable(selection.kind))) return [];
     const existing = existingSubscriptions?.find(
       (subscription) =>
         subscription.expiresAt && subscription.expiresAt.getTime() > Date.now() + 24 * 3600_000,
@@ -640,9 +1047,9 @@ export const googleDriveProvider: IntegrationProvider = {
     const env = getEnv();
     if (!env.GOOGLE_DRIVE_WEBHOOK_SECRET)
       throw new Error('Google Drive notification setup requires GOOGLE_DRIVE_WEBHOOK_SECRET');
-    const refreshed = await ensureAccessToken(tokens as DriveTokens);
-    if (refreshed !== tokens)
-      await ctx?.persistTokens(refreshed as unknown as Record<string, unknown>);
+    const original = tokens as DriveTokens;
+    const refreshed = await ensureAccessToken(original);
+    await persistRefreshedTokens(ctx, original, refreshed);
     const pageToken = await startPageToken(refreshed);
     const token = `${integration.id}.${createHmac('sha256', env.GOOGLE_DRIVE_WEBHOOK_SECRET).update(integration.id).digest('hex')}`;
     const response = await fetch(
@@ -683,9 +1090,9 @@ export const googleDriveProvider: IntegrationProvider = {
 
   async deprovisionWebhook({ tokens, subscription, ctx }) {
     if (!subscription.externalSubscriptionId) return;
-    const refreshed = await ensureAccessToken(tokens as DriveTokens);
-    if (refreshed !== tokens)
-      await ctx?.persistTokens(refreshed as unknown as Record<string, unknown>);
+    const original = tokens as DriveTokens;
+    const refreshed = await ensureAccessToken(original);
+    await persistRefreshedTokens(ctx, original, refreshed);
     const channel = JSON.parse(subscription.externalSubscriptionId) as {
       id: string;
       resourceId: string;
@@ -703,10 +1110,24 @@ export const googleDriveProvider: IntegrationProvider = {
   },
 
   // eslint-disable-next-line @typescript-eslint/require-await
-  async handleWebhook({ integration: _integration, payload: _payload }) {
-    // Drive push notifications carry a resourceId in headers; we use the
-    // payload only as a wake-up signal and rely on the incremental cursor
-    // to fetch the actual changes.
-    return [];
+  async handleWebhook({ integration, payload }): Promise<WebhookHandleResult> {
+    const state = driveWebhookResourceState(payload);
+    if (state === 'sync') {
+      return { events: [], syncTasks: [], syncTaskDisposition: 'handled' };
+    }
+    return {
+      events: [],
+      syncTasks: [
+        {
+          integrationId: integration.id,
+          teamId: integration.teamId,
+          triggeredBy: 'webhook',
+          resourceType: 'drive.changes',
+          externalId: integration.id,
+          reason: 'drive_watch',
+        },
+      ],
+      syncTaskDisposition: 'handled',
+    };
   },
 };

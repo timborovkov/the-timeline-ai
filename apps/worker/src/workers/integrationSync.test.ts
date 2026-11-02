@@ -2465,4 +2465,51 @@ describe('runOneIntegration attention classification', () => {
 
     expect(fakes.incrementalSync).toHaveBeenCalled();
   });
+
+  it('does not harvest Drive files and instead mounts delayed targeted sync', async () => {
+    fakes.adminLoadIntegration.mockResolvedValueOnce({ ...integration, provider: 'google_drive' });
+    fakes.adminListSelections.mockResolvedValueOnce([{ kind: 'drive.folder', externalId: 'root' }]);
+    fakes.incrementalSync.mockImplementationOnce(
+      ({ ctx }: { ctx: { harvestDocument?: unknown; scheduleTargetedSync?: unknown } }) => {
+        expect(ctx.harvestDocument).toBeUndefined();
+        expect(ctx.scheduleTargetedSync).toEqual(expect.any(Function));
+        return Promise.resolve();
+      },
+    );
+
+    await runOneIntegration({} as never, INTEGRATION_ID, 'incremental');
+
+    expect(fakes.incrementalSync).toHaveBeenCalled();
+  });
+
+  it('keeps Drive file targeted jobs on all watchable selections', async () => {
+    fakes.adminLoadIntegration.mockResolvedValueOnce({ ...integration, provider: 'google_drive' });
+    const selections = [
+      { kind: 'drive.folder', externalId: 'folder-1' },
+      { kind: 'drive.file', externalId: 'file-9' },
+    ];
+    fakes.adminListSelections.mockResolvedValueOnce(selections);
+    fakes.incrementalSync.mockImplementationOnce(
+      (args: { selections: unknown; target?: { resourceType?: string; externalId?: string } }) => {
+        expect(args.selections).toEqual(selections);
+        expect(args.target).toMatchObject({
+          resourceType: 'drive.file',
+          externalId: 'file-1',
+        });
+        return Promise.resolve();
+      },
+    );
+
+    await runOneIntegration({} as never, INTEGRATION_ID, 'targeted', {
+      kind: 'targeted',
+      integrationId: INTEGRATION_ID,
+      teamId: TEAM_ID,
+      triggeredBy: 'webhook',
+      resourceType: 'drive.file',
+      externalId: 'file-1',
+      reason: 'drive_watch',
+    });
+
+    expect(fakes.incrementalSync).toHaveBeenCalled();
+  });
 });

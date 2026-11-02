@@ -347,6 +347,44 @@ describe('queue wrappers', () => {
     expect(conversationQueue?.addCalls).toHaveLength(2);
   });
 
+  it('replaces a delayed Drive file job so trailing debounce can extend', async () => {
+    const queues = await importQueues();
+    const targeted = {
+      kind: 'targeted' as const,
+      integrationId: '11111111-1111-4111-8111-111111111111',
+      teamId: '22222222-2222-4222-8222-222222222222',
+      triggeredBy: 'webhook' as const,
+      resourceType: 'drive.file',
+      externalId: 'file-1',
+      reason: 'drive_watch',
+    };
+
+    await queues.enqueueIntegrationSyncJob(targeted, { delayMs: 15 * 60_000 });
+    await queues.enqueueIntegrationSyncJob(targeted, {
+      delayMs: 10 * 60_000,
+      replaceDelayed: true,
+    });
+
+    expect(fakes.queues[0]?.addCalls).toEqual([
+      {
+        name: 'integration-sync',
+        data: targeted,
+        opts: {
+          jobId: 'integration-targeted|11111111-1111-4111-8111-111111111111|drive.file|file-1|all',
+          delay: 15 * 60_000,
+        },
+      },
+      {
+        name: 'integration-sync',
+        data: targeted,
+        opts: {
+          jobId: 'integration-targeted|11111111-1111-4111-8111-111111111111|drive.file|file-1|all',
+          delay: 10 * 60_000,
+        },
+      },
+    ]);
+  });
+
   it('coalesces targeted integration sync bursts by resource while leaving broad syncs undeduped', async () => {
     const queues = await importQueues();
     const targeted = {

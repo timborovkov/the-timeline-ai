@@ -22,6 +22,12 @@ This file now tracks only remaining work and recurring operating obligations.
 Use the repository history, release notes, and phase PRs for shipped
 implementation detail.
 
+Google Drive v1 is shipped: person-owned OAuth, folder/file/shared-drive picker,
+`changes.watch` push (not polling), webhook-delivery + delayed targeted
+`integration-sync` debounce, truncated snapshots, billed CRM-relevance judge,
+and optional object links. Full Drive copies are not harvested into the document
+drive.
+
 ## Billing identity follow-up
 
 - Polar sandbox currently ignores `CustomerUpdate.email = null`; track provider

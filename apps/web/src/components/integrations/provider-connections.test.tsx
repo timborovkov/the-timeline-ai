@@ -60,6 +60,12 @@ afterEach(() => {
   cleanup();
 });
 
+function fetchHref(input: RequestInfo | URL): string {
+  if (typeof input === 'string') return input;
+  if (input instanceof URL) return input.href;
+  return input.url;
+}
+
 function renderWithQueryClient(ui: ReactElement) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
@@ -79,22 +85,32 @@ function row(input: {
   connectionId: string;
   ownerLabel: string;
   sourceExternalId?: string;
+  provider?: string;
+  resourceKind?: string;
+  externalLabel?: string;
+  driveLink?: {
+    integrationId: string;
+    selectionId: string;
+    linkedObjectId: string | null;
+  };
 }) {
   return {
     share: {
       id: input.id,
       providerConnectionId: input.connectionId,
-      resourceKind: 'github.repo',
+      resourceKind: input.resourceKind ?? 'github.repo',
       externalId: input.sourceExternalId ?? 'repo-1',
-      externalLabel: 'Acme Repo',
+      externalLabel: input.externalLabel ?? 'Acme Repo',
       revokedAt: null,
     },
     connection: {
       ...baseConnection,
+      ...(input.provider ? { provider: input.provider } : {}),
       id: input.connectionId,
       ownerLabel: input.ownerLabel,
       ownerUserId: `${input.connectionId}-owner`,
     },
+    ...(input.driveLink ? { driveLink: input.driveLink } : {}),
   };
 }
 
@@ -496,10 +512,51 @@ describe('PersonalConnectionsUi', () => {
       />,
     );
 
-    expect(await screen.findByText(/Folder files imported into the document drive/i)).toBeTruthy();
-    expect(screen.getByText(/Shared drive files imported into the document drive/i)).toBeTruthy();
+    expect(
+      await screen.findByText(/Folder whose Docs, Sheets, Slides, PDF, and Word files/i),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(/Shared drive whose supported files become timeline evidence/i),
+    ).toBeTruthy();
     expect(screen.getByText(/Team issues, projects, comments, and workflow changes/i)).toBeTruthy();
     expect(screen.getByText(/All accessible projects in this organization/i)).toBeTruthy();
+  });
+
+  it('browses Drive folders through parentId', async () => {
+    const user = userEvent.setup();
+    const requests: string[] = [];
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      const url = fetchHref(input);
+      requests.push(url);
+      const resources = url.includes('parentId=folder-1')
+        ? [{ kind: 'drive.file', externalId: 'doc-1', label: 'SOW' }]
+        : [{ kind: 'drive.folder', externalId: 'folder-1', label: 'Clients' }];
+      return Promise.resolve(
+        new Response(JSON.stringify({ resources, shares: [] }), { status: 200 }),
+      );
+    });
+
+    renderWithQueryClient(
+      <PersonalConnectionsUi
+        connections={[
+          {
+            id: 'conn-drive',
+            provider: 'google_drive',
+            displayName: 'Google Drive — Tim',
+            lastError: null,
+            lastConnectedAt: '2026-06-01T00:00:00.000Z',
+          },
+        ]}
+      />,
+    );
+
+    expect(await screen.findByText('Clients')).toBeTruthy();
+    await user.click(screen.getByRole('button', { name: 'Open' }));
+    await waitFor(() => {
+      expect(requests.some((url) => url.includes('parentId=folder-1'))).toBe(true);
+    });
+    expect(await screen.findByText('SOW')).toBeTruthy();
+    expect(screen.getByRole('navigation', { name: 'Google Drive folders' })).toBeTruthy();
   });
 
   it('drops stale monday helper-board shares that are absent from live resources', async () => {
@@ -741,6 +798,63 @@ describe('PersonalConnectionsUi', () => {
       );
     });
     expect(screen.queryByText(/Could not disconnect this connection/i)).toBeNull();
+  });
+
+  it('lets admins link an active Drive source to a Timeline object', async () => {
+    const user = userEvent.setup();
+    const patches: unknown[] = [];
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
+      const url = fetchHref(input);
+      const method = init?.method ?? 'GET';
+      if (method === 'PATCH') {
+        patches.push(typeof init?.body === 'string' ? JSON.parse(init.body) : null);
+        return Promise.resolve(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+      }
+      if (url.includes('/api/objects/search')) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              results: [{ id: 'object-1', canonicalName: 'Northstar', type: 'project' }],
+            }),
+            { status: 200 },
+          ),
+        );
+      }
+      return Promise.resolve(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+    });
+
+    renderWithQueryClient(
+      <TeamSourcesUi
+        isAdmin
+        activeShareIds={['share-drive']}
+        rows={[
+          row({
+            id: 'share-drive',
+            connectionId: 'conn-drive',
+            ownerLabel: 'Tim',
+            provider: 'google_drive',
+            resourceKind: 'drive.file',
+            sourceExternalId: 'file-1',
+            externalLabel: 'SOW',
+            driveLink: {
+              integrationId: 'integration-drive',
+              selectionId: 'selection-drive',
+              linkedObjectId: null,
+            },
+          }),
+        ]}
+      />,
+    );
+
+    await user.type(
+      screen.getByRole('textbox', { name: 'Link Drive source to a Timeline object' }),
+      'North',
+    );
+    expect(await screen.findByRole('button', { name: 'Northstar' })).toBeTruthy();
+    await user.click(screen.getByRole('button', { name: 'Northstar' }));
+    await waitFor(() => {
+      expect(patches).toEqual([{ linkedObjectId: 'object-1' }]);
+    });
   });
 
   it('explains that admins activate shared team sources', () => {

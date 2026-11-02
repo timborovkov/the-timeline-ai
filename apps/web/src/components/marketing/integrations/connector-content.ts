@@ -395,18 +395,18 @@ export const CONNECTORS: readonly ConnectorContent[] = [
     providerId: 'google_drive',
     name: 'Google Drive',
     eyebrow: 'File change becomes durable evidence',
-    hero: 'Turn new Drive changes into cited document evidence.',
+    hero: 'Turn selected Drive changes into cited timeline evidence.',
     intro:
-      'Timeline saves supported file changes it sees after Google Drive is connected, so later answers can cite the document state captured at the time. You can limit the connection to a shared drive; choosing My Drive currently also includes changed files the connected account can access through Shared with me and other shared drives.',
+      'Timeline watches the folders and files you pick, then records CRM-relevant Docs, Sheets, Slides, PDF, and Word changes as cited timeline events. Nothing outside that selection is read, including Shared with me.',
     seoTitle: 'Google Drive integration for cited document answers',
     seoDescription:
-      'Capture sync-observed Google Drive file states in The Timeline for cited cross-tool answers and versioned evidence, with explicit source-scope limitations.',
+      'Capture selected Google Drive Docs, Sheets, Slides, PDF, and Word changes in The Timeline as cited evidence, using Drive push notifications and a quiet-window debounce.',
     logo: '/connectors/google-drive.svg',
     lightLogoTileInDarkMode: false,
     capability: 'Native integration',
     lastReviewed: LAST_REVIEWED,
     captureStatement:
-      'Timeline records supported Drive changes as cited events and saves the file state it sees during each sync, subject to the limits below.',
+      'Timeline records selected Drive changes as cited events after a quiet editing window. It stores a compact text snapshot for diffing, not a full document copy.',
     providerStatement:
       'Google Drive remains the place where files are authored, shared, organized, and permissioned. Timeline reads changed content included by the selected source; it does not replace Drive collaboration or rewrite source files.',
     diagram: DEMO_CONNECTORS.googleDrive.diagram,
@@ -418,13 +418,12 @@ export const CONNECTORS: readonly ConnectorContent[] = [
     ],
     scenario: DEMO_CONNECTORS.googleDrive.scenario,
     capturedRecords: [
-      'New file changes observed under an activated My Drive root after the first successful reconciliation cursor',
-      'New file changes observed inside activated shared drives after the first successful reconciliation cursor',
-      'Changed Shared with me files and accessible shared-drive files admitted when My Drive root is active',
-      'Drive removal tombstones with a file ID and removal time',
+      'CRM-relevant edits to activated Docs, Sheets, Slides, PDF, and Word files after the Drive changes cursor is set',
+      'New or resolved comments and sharing with domains outside the Timeline team as strong signals',
+      'Optional links from a watched folder or file to an existing Timeline object',
       'File names, MIME types, modification times, owners, and source links',
-      'Supported changed-file content up to the ingestion limit',
-      'Timeline document versions created from supported file states observed at sync time',
+      'Changed sections sent to a small billed model that first judges CRM relevance',
+      'Truncated text snapshots used only to skip formatting-only and tiny edits',
     ],
     recipes: [
       {
@@ -445,43 +444,40 @@ export const CONNECTORS: readonly ConnectorContent[] = [
     ],
     setup: [
       'Connect Google Drive with a person-owned OAuth connection.',
-      'Choose My Drive root or one or more shared drives that person can share.',
-      'Have a Timeline team admin activate the shared sources.',
-      'Let the first successful reconciliation establish the Drive changes cursor, then use the 15-minute scheduled reconciliation policy to process later changes. Timeline does not currently provision a customer-configurable Drive push channel.',
+      'Pick My Drive, folders, shared drives, and/or specific Docs, Sheets, Slides, PDF, or Word files to share with the team.',
+      'Have a Timeline team admin activate those sources, and optionally link a watched folder or file to a Timeline object.',
+      'Register the Drive push-notification domain for `/api/webhooks/google-drive`. Timeline uses `changes.watch`; file capture waits for a quiet editing window of about 15 minutes and at most one hour.',
     ],
     permissions: [
       'OAuth requests read-only Drive content and metadata plus openid and email. Google’s stable subject identifier anchors the provider account identity, and its primary email labels the connection.',
       'The connection sees only files the authorizing Google account is allowed to read.',
-      'Selecting a shared drive admits live changes from that drive. Selecting My Drive root currently admits any changed file the connected account can access, including Shared with me files and files in other shared drives, even when those locations were not separately activated.',
+      'Selecting a folder, file, or shared drive admits only that subtree. My Drive root walks ancestry to `root` and does not admit Shared with me.',
       'Non-owners cannot use Timeline to browse the connection owner’s unshared Drive resources.',
       'OAuth credentials are encrypted at rest; Timeline’s own team and event visibility rules still apply after capture.',
+      'Timeline’s use of information received from Google APIs adheres to the Google API Services User Data Policy, including the Limited Use requirements. Drive content is used only to provide and improve the user-facing capture features described here.',
     ],
     limitations: [
-      'Activation only queues the first sync; it does not persist a Drive cursor. A cursor is requested when reconciliation runs and saved only as that work progresses, so capture effectively begins at the cursor used by the first successful reconciliation. Changes made between activation and that cursor can precede it and are never returned. Untouched files that already existed are not enumerated or imported.',
-      'Scheduled Drive reconciliation becomes due every 15 minutes and is evaluated by the worker’s five-minute integration tick. Without an operator-registered push channel, a supported post-cursor file change can remain absent for roughly that interval plus scheduling delay.',
-      'Versions are sync-observed snapshots, not a copy of every Drive edit. If a file changes multiple times before reconciliation, Timeline downloads the current body and may not preserve the intermediate wording.',
-      'Document-body harvest and version creation require the person who connected Drive to remain a member of the Timeline team. If that person leaves, change metadata continues to land and the Drive cursor still advances, but file bodies and versions are skipped. Reconnecting under a current member resumes future reported changes; intervening file states are not recovered unless Drive reports another change for the file.',
-      'The source picker exposes My Drive root and up to the first 100 shared drives returned by Google; the current listing does not paginate beyond that first page or offer arbitrary individual subfolders.',
-      'My Drive root is not an ancestry boundary in the current change filter. If root is active, every non-removed file in the account-wide changes feed passes before parent inspection. A changed Shared with me file or accessible shared-drive file can therefore be captured with its metadata and supported body even when it is outside the user’s My Drive and that location was not separately activated.',
-      'Drive removal tombstones do not include parent information. Timeline may therefore record a file ID and removal time for a deleted file elsewhere in the connected account, even when that area was not activated; no file body is present in that tombstone.',
-      'Files over 20 MB and unsupported Google-native formats still produce change metadata, but their bodies are not added to the document library.',
-      'Timeline does not ingest Drive comments or Activity history, edit files, change sharing settings, or replace Google Docs collaboration.',
+      'Activation sets a Drive changes cursor and registers `changes.watch`. Historical files are not enumerated. Changes before that cursor are never returned.',
+      'Drive push notifications do not include file ids. The webhook-delivery worker records the channel ping, then a targeted `drive.changes` job lists changes and enqueues one delayed `drive.file` job per in-scope file, coalesced by BullMQ job id. Trailing debounce extends that delayed job up to one hour from the first notification.',
+      'Formatting-only and tiny edits are skipped before any LLM call. Remaining hunks go to a small billed model that first judges CRM relevance. Daily caps apply per file and per connection.',
+      'Timeline stores truncated text snapshots for diffing, never a full Drive copy in the document drive. PDF and Word text is extracted transiently.',
+      'Files over 20 MB and unsupported Google-native formats are skipped. Comments are used as signals, not stored as a full comment archive. Timeline does not edit files, change sharing, or replace Google Docs collaboration.',
     ],
     faqs: [
       {
         question: 'Which Google Drive sources can I activate?',
         answer:
-          'The current source picker offers My Drive root and up to the first 100 shared drives returned for the connection owner. It does not paginate further or offer arbitrary individual subfolders. A shared-drive-only selection scopes live files to that drive, but selecting My Drive root currently admits changed files anywhere the account can access, including Shared with me and other shared drives.',
+          'The source picker can browse My Drive, folders, shared drives, and specific Docs, Sheets, Slides, PDF, and Word files. Only activated selections are read. Shared with me stays out unless you pick those files explicitly.',
       },
       {
-        question: 'Can answers cite a specific document version?',
+        question: 'Does Timeline store a copy of each document?',
         answer:
-          'When reconciliation observes a supported changed file and the connection owner remains a Timeline team member, Timeline stores its current content as a document version and can cite that captured evidence. Separate observed sync states can become separate versions; edits between syncs may collapse into the latest body. If the connector leaves the team, metadata continues while body capture pauses, and reconnecting does not recover intervening states unless Drive reports another change. Timeline does not import the file’s earlier Drive revision history.',
+          'No. Timeline fetches text long enough to diff and judge CRM relevance, then keeps a truncated snapshot and hashes. It does not harvest Drive files into the document drive.',
       },
       {
-        question: 'What happens if a file is removed?',
+        question: 'How quickly do edits appear?',
         answer:
-          'Timeline records the Drive tombstone while retaining previously captured evidence according to its immutable event-history model. Because Drive omits parent information from removal tombstones, the current sync can record a deleted file’s ID and removal time even when its former area was not activated; the tombstone contains no file body.',
+          'Drive notifies Timeline through `changes.watch`. Capture waits until the document has been quiet for about 15 minutes, and never longer than one hour from the first notification in that burst, so an editing session is processed once.',
       },
       {
         question: 'Does Timeline write changes back to Drive?',
