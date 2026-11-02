@@ -28,6 +28,7 @@ const LEGAL_EXEMPT_API_PREFIXES = [
   '/api/email/inbound',
   '/api/health',
   '/api/mcp/server',
+  '/api/public/turnstile',
   '/api/slack/commands',
   '/api/slack/events',
   '/api/slack/interactions',
