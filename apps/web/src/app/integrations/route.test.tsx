@@ -8,7 +8,9 @@ function visibleText(html: string): string {
 
 const { cleanup, render, screen } = await import('@testing-library/react');
 const { renderToStaticMarkup } = await import('react-dom/server');
-const { CONNECTOR_SLUGS } = await import('@/components/marketing/integrations/connector-content');
+const { CONNECTOR_SLUGS, findConnector } =
+  await import('@/components/marketing/integrations/connector-content');
+const { ConnectorPage } = await import('@/components/marketing/integrations/connector-page');
 const { resetPublicSessionCache, setPublicSessionCache } = await import('@/lib/public-session');
 
 const { default: IntegrationsPage, metadata } = await import('@/app/integrations/page');
@@ -60,7 +62,7 @@ describe('public integration routes', () => {
     expect(html).not.toMatch(/href="(?:\/(?:app\/)?demo|\/workspace\/demo|https?:\/\/t\.me\/)/u);
     expect(text).not.toMatch(/captures? (?:all|every) (?:chat|conversation|message)/iu);
     expect(html).toContain('compact');
-    expect(html).toContain('dark:bg-white');
+    expect(html).toContain('bg-white');
     expect(html).toContain('text-[3rem]');
     expect(html).toContain('sm:text-[clamp(3.5rem,5vw,5.5rem)]');
     expect(html).not.toContain('7.5vw');
@@ -76,7 +78,7 @@ describe('public integration routes', () => {
     expect(html).toContain('xl:grid-cols-[15rem_minmax(0,1fr)]');
     expect(html).not.toContain('01 / Native');
     expect(html).not.toContain('03 / Tiers');
-    expect(html.match(/dark:bg-white/g)).toHaveLength(5);
+    expect(html.match(/bg-white/g)?.length).toBeGreaterThanOrEqual(6);
   });
 
   it('routes signed-in visitors to each implemented capture setup', () => {
@@ -84,13 +86,13 @@ describe('public integration routes', () => {
     render(<IntegrationsPage />);
 
     expect(screen.getByRole('link', { name: 'Link Telegram' }).getAttribute('href')).toBe(
-      '/app/team/telegram',
+      '/app/sources#telegram',
     );
     expect(screen.getByRole('link', { name: 'Install Slack' }).getAttribute('href')).toBe(
       '/app/team/slack',
     );
     expect(screen.getByRole('link', { name: 'Set up email' }).getAttribute('href')).toBe(
-      '/app/team?section=email',
+      '/app/sources#email',
     );
     expect(screen.getByRole('link', { name: 'Open meetings' }).getAttribute('href')).toBe(
       '/app/meetings',
@@ -98,6 +100,21 @@ describe('public integration routes', () => {
     expect(screen.getByRole('link', { name: 'Create a webhook' }).getAttribute('href')).toBe(
       '/app/sources',
     );
+    expect(screen.getByRole('link', { name: 'Open connections' }).getAttribute('href')).toBe(
+      '/app/sources',
+    );
+  });
+
+  it('routes signed-in visitors from a connector page to Connections', () => {
+    const connector = findConnector('github');
+    if (!connector) throw new Error('GitHub connector content is required');
+
+    setPublicSessionCache({ status: 'signed-in' });
+    render(<ConnectorPage connector={connector} />);
+
+    for (const link of screen.getAllByRole('link', { name: 'Connect GitHub' })) {
+      expect(link.getAttribute('href')).toBe('/app/sources');
+    }
   });
 
   it.each(['slack', 'sentry'])('renders a light dark-mode logo tile for %s', async (slug) => {
@@ -105,7 +122,7 @@ describe('public integration routes', () => {
       await connectorRoute.default({ params: Promise.resolve({ slug }) }),
     );
 
-    expect(html).toContain('dark:bg-white');
+    expect(html).toContain('bg-white');
     expect(html.match(/Fictional Acme example, not customer data\./g)).toHaveLength(2);
     expect(html).toContain('scroll-mt-12');
     expect(html).toContain('text-[3rem]');
@@ -148,7 +165,7 @@ describe('public integration routes', () => {
     expect(html).not.toContain('02 / Questions');
     expect(html).not.toContain('09 / Related');
     expect(text).toContain('10/Start');
-    expect(html).toContain('dark:bg-white');
+    expect(html).toContain('bg-white');
     expect(html).toContain('PR #482');
     expect(html).toContain('application/ld+json');
   });

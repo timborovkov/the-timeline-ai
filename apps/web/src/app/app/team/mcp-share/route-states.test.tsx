@@ -46,8 +46,8 @@ describe('Timeline as MCP server route states', () => {
       screen.getAllByRole('heading', { level: 1, name: 'Timeline as MCP server' }),
     ).toHaveLength(1);
     expect(screen.getByRole('navigation', { name: 'Breadcrumb' })).toBeTruthy();
-    expect(screen.getByRole('link', { name: 'Integrations' }).getAttribute('href')).toBe(
-      '/app/team/integrations',
+    expect(screen.getByRole('link', { name: 'Connections' }).getAttribute('href')).toBe(
+      '/app/sources',
     );
     const loadingPlaceholder = screen.getByRole('region', {
       name: 'Timeline as MCP server loading placeholder',
@@ -87,8 +87,8 @@ describe('Timeline as MCP server route states', () => {
       screen.getAllByRole('heading', { level: 1, name: 'Timeline as MCP server' }),
     ).toHaveLength(1);
     expect(screen.getByRole('navigation', { name: 'Breadcrumb' })).toBeTruthy();
-    expect(screen.getByRole('link', { name: 'Integrations' }).getAttribute('href')).toBe(
-      '/app/team/integrations',
+    expect(screen.getByRole('link', { name: 'Connections' }).getAttribute('href')).toBe(
+      '/app/sources',
     );
     expect(
       screen.getByRole('heading', { level: 2, name: 'Unable to load Timeline as MCP server' }),

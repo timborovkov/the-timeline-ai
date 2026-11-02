@@ -557,6 +557,48 @@ describe('PersonalConnectionsUi', () => {
     });
     expect(await screen.findByText('SOW')).toBeTruthy();
     expect(screen.getByRole('navigation', { name: 'Google Drive folders' })).toBeTruthy();
+    expect(
+      document.querySelector(
+        '[data-slot="provider-resource-picker"][data-provider="google_drive"]',
+      ),
+    ).toBeTruthy();
+  });
+
+  it('keeps the Drive resource picker in the compact details-sheet slot', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      const url = fetchHref(input);
+      const resources = url.includes('parentId=folder-1')
+        ? [{ kind: 'drive.file', externalId: 'doc-1', label: 'SOW' }]
+        : [{ kind: 'drive.folder', externalId: 'folder-1', label: 'Clients' }];
+      return Promise.resolve(
+        new Response(JSON.stringify({ resources, shares: [] }), { status: 200 }),
+      );
+    });
+
+    renderWithQueryClient(
+      <PersonalConnectionsUi
+        compact
+        connections={[
+          {
+            id: 'conn-drive',
+            provider: 'google_drive',
+            displayName: 'Google Drive — Tim',
+            lastError: null,
+            lastConnectedAt: '2026-06-01T00:00:00.000Z',
+          },
+        ]}
+      />,
+    );
+
+    expect(await screen.findByText('Clients')).toBeTruthy();
+    expect(
+      document.querySelector(
+        '[data-slot="provider-resource-picker"][data-provider="google_drive"]',
+      ),
+    ).toBeTruthy();
+    await user.click(screen.getByRole('button', { name: 'Open' }));
+    expect(await screen.findByText('SOW')).toBeTruthy();
   });
 
   it('keeps an unsaved Drive folder selection after opening another folder', async () => {

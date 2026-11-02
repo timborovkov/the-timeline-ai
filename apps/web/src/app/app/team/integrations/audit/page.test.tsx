@@ -119,8 +119,8 @@ describe('IntegrationAuditPage', () => {
     expect(html).toContain(
       'Connection and sync activity that creates an audit record will appear here.',
     );
-    expect(html).toContain('href="/app/team/integrations"');
-    expect(html).toContain('Manage integrations');
+    expect(html).toContain('href="/app/sources"');
+    expect(html).toContain('Manage connections');
   });
 });
 

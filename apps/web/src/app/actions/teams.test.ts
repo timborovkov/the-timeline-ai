@@ -527,6 +527,7 @@ describe('updateInboundEmailWhitelistAction', () => {
       }),
     );
     expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/team');
+    expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/sources');
     expect(fakes.trackProductEventBestEffort).toHaveBeenCalledWith(
       { kind: 'user', teamId: TEAM_ID, userId: USER_ID },
       'team_management_action_completed',

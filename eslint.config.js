@@ -1,8 +1,8 @@
 import { fileURLToPath } from 'node:url';
-import tseslint from 'typescript-eslint';
 import prettierConfig from 'eslint-config-prettier';
-import importPlugin from 'eslint-plugin-import';
+import { importX } from 'eslint-plugin-import-x';
 import unusedImports from 'eslint-plugin-unused-imports';
+import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
   {
@@ -26,7 +26,7 @@ export default tseslint.config(
       },
     },
     plugins: {
-      import: importPlugin,
+      'import-x': importX,
       'unused-imports': unusedImports,
     },
     rules: {
@@ -47,10 +47,17 @@ export default tseslint.config(
       ],
       eqeqeq: ['error', 'always'],
       'no-console': ['warn', { allow: ['warn', 'error'] }],
-      'import/order': [
+      'import-x/order': [
         'error',
         {
           groups: ['builtin', 'external', 'internal', 'parent', 'sibling', 'index', 'type'],
+          pathGroups: [
+            { pattern: 'bun', group: 'external' },
+            { pattern: 'bun:**', group: 'external' },
+          ],
+          // bun:test is a runtime builtin to import-x, but this repo groups it
+          // with third-party imports. Allow pathGroups to rematch that builtin.
+          pathGroupsExcludedImportTypes: ['type'],
           'newlines-between': 'always',
           alphabetize: { order: 'asc', caseInsensitive: true },
         },

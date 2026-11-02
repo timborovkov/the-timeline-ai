@@ -197,6 +197,7 @@ describe('withTeam namespaced port', () => {
     expect(scope.objects).toBeDefined();
     expect(scope.calendar).toBeDefined();
     expect(scope.integrations).toBeDefined();
+    expect(scope.telegram).toBeDefined();
     expect(scope.mcp).toBeDefined();
     expect(scope.billing).toBeDefined();
     expect(scope.billingOperator).toBeDefined();

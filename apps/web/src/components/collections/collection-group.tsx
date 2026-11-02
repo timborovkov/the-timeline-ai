@@ -16,6 +16,7 @@ export function CollectionGroup({
   actions,
   children,
   className,
+  defaultOpen = true,
 }: {
   title: ReactNode;
   count: number;
@@ -24,8 +25,9 @@ export function CollectionGroup({
   actions?: ReactNode;
   children: ReactNode;
   className?: string;
+  defaultOpen?: boolean;
 }) {
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useState(defaultOpen);
   const contentId = useId();
   return (
     <section className={cn('min-w-0', className)}>

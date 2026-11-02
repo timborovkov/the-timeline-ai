@@ -69,7 +69,7 @@ export async function GET(
   const state = url.searchParams.get('state');
   const oauthError = url.searchParams.get('error');
   if (oauthError) {
-    return NextResponse.redirect(appUrl('/app/team/integrations?error=oauth_denied'));
+    return NextResponse.redirect(appUrl('/app/sources?error=oauth_denied'));
   }
   if (!code || !state) {
     return new Response('missing_code_or_state', { status: 400 });
@@ -124,7 +124,7 @@ export async function GET(
     });
     return NextResponse.redirect(
       appUrl(
-        `/app/team/integrations?error=${failure.error}${failure.reference ? `&reference=${failure.reference}` : ''}`,
+        `/app/sources?error=${failure.error}${failure.reference ? `&reference=${failure.reference}` : ''}`,
       ),
     );
   }
