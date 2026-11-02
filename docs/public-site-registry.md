@@ -127,7 +127,9 @@ bakes the origin at `next build`. The web Docker image defaults `AUTH_URL` to
 Request-time values that can differ from the Docker build (`SUPPORT_EMAIL`,
 `TURNSTILE_SITE_KEY`, `TASK_CATEGORY_UI_ENABLED`, production Turnstile gating)
 are not read during prerender. Public pages load them from
-`GET /api/public/runtime`. JSON-LD Organization email stays the canonical
+`GET /api/public/runtime`. A failed client fetch is not cached; the store
+retries on window focus, pageshow, and client navigation. JSON-LD Organization
+email stays the canonical
 `contact@thetimeline.cc`. `/terms` is request-time so `LEGAL_PUBLICATION_READY`
 cannot freeze the unpublished placeholder into static HTML.
 `NEXT_PUBLIC_*` analytics and Sentry values are inlined into the client bundle

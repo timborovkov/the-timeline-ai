@@ -1,14 +1,22 @@
-import { describe, expect, it } from 'bun:test';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
-import {
-  SupportEmailProvider,
-  SupportMailto,
-  useSupportEmail,
-} from '@/components/support-email-provider';
-import { getLegalContactEmail } from '@/lib/legal-versions';
-import { getSupportEmail } from '@/lib/support-email';
+await vi.mock(
+  import.meta.resolve('next/navigation'),
+  async () => ({
+    ...(await import('next/navigation')),
+    usePathname: () => null,
+  }),
+  () => import('next/navigation'),
+);
+
+const { SupportEmailProvider, SupportMailto, useSupportEmail } =
+  await import('@/components/support-email-provider');
+const { getLegalContactEmail } = await import('@/lib/legal-versions');
+const { getSupportEmail } = await import('@/lib/support-email');
 
 function ContactLink() {
   const email = useSupportEmail();

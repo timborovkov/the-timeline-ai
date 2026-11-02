@@ -46,8 +46,16 @@ await vi.mock(
   }),
   () => import('@/components/form-action-toast'),
 );
+await vi.mock(
+  import.meta.resolve('next/navigation'),
+  async () => ({
+    ...(await import('next/navigation')),
+    usePathname: () => '/help/support',
+  }),
+  () => import('next/navigation'),
+);
 
-const { cleanup, render, screen, waitFor } = await import('@testing-library/react');
+const { act, cleanup, render, screen, waitFor } = await import('@testing-library/react');
 const { default: userEvent } = await import('@testing-library/user-event');
 
 const { SupportForm } = await import('./support-form.js');
@@ -202,6 +210,45 @@ describe('SupportForm', () => {
       '/api/public/runtime',
       expect.objectContaining({ credentials: 'same-origin' }),
     );
+  });
+
+  it('recovers the Turnstile site key after a failed runtime load on window focus', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('offline'))
+      .mockResolvedValueOnce({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            supportEmail: 'help@example.test',
+            turnstileSiteKey: 'runtime-site-key',
+            requiresTurnstile: true,
+            taskCategoriesEnabled: true,
+          }),
+      });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<SupportForm requiresTurnstile />);
+
+    await waitFor(() => {
+      expect(document.querySelector('#support-form-protection-error')).toBeTruthy();
+    });
+    expect(screen.queryByTestId('turnstile-widget')).toBeNull();
+
+    act(() => {
+      window.dispatchEvent(new Event('focus'));
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('turnstile-widget').getAttribute('data-site-key')).toBe(
+        'runtime-site-key',
+      );
+    });
+    expect(document.querySelector('#support-form-protection-error')).toBeNull();
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Send request' }).disabled).toBe(
+      false,
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it('fills signed-in defaults only when the visitor has not typed', async () => {
