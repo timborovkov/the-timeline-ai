@@ -19,7 +19,7 @@ import { SOLUTION_ROUTES } from '@/components/marketing/solutions/content';
 import { CookieSettingsButton } from '@/components/public-analytics';
 import { PublicHeader } from '@/components/public-header';
 import { PublicNavigationItems } from '@/components/public-navigation';
-import { auth } from '@/lib/auth';
+import { PublicSessionBranch } from '@/components/public-session-branch';
 import { getLegalContactEmail } from '@/lib/legal-versions';
 import {
   PUBLIC_DOCUMENT_REGISTRY,
@@ -115,9 +115,7 @@ interface NativeConnector {
   href?: `/integrations/${string}`;
 }
 
-export default async function LandingPage() {
-  const session = await auth();
-  const isSignedIn = Boolean(session?.user);
+export default function LandingPage() {
   const nativeConnectors: NativeConnector[] = [];
   for (const connector of integrationsLib.listCatalog()) {
     if (connector.kind !== 'native' || connector.ingestStatus !== 'implemented') continue;
@@ -154,15 +152,15 @@ export default async function LandingPage() {
       <div className={styles.progress} aria-hidden="true">
         <span />
       </div>
-      <PublicHeader isSignedIn={isSignedIn} currentSection="product" />
+      <PublicHeader currentSection="product" />
       <main id="main" tabIndex={-1}>
-        <ClaimScene isSignedIn={isSignedIn} />
+        <ClaimScene />
         <ChronologyScene nativeConnectors={nativeConnectors} />
         <AnswerScene />
         <TrustScene />
-        <CtaScene isSignedIn={isSignedIn} />
+        <CtaScene />
       </main>
-      <Footer isSignedIn={isSignedIn} />
+      <Footer />
     </div>
   );
 }
@@ -216,7 +214,7 @@ function StructuredData() {
   );
 }
 
-function ClaimScene({ isSignedIn }: { isSignedIn: boolean }) {
+function ClaimScene() {
   return (
     <section
       className={cn(styles.scene, styles.claimScene)}
@@ -234,25 +232,41 @@ function ClaimScene({ isSignedIn }: { isSignedIn: boolean }) {
           what changed, and what comes next—then trace each claim back to the source.
         </p>
         <div className={styles.heroActions}>
-          <Link
-            href={isSignedIn ? '/app' : '/sign-up'}
-            data-public-analytics-cta={isSignedIn ? 'open_dashboard' : 'try_project'}
-            className={styles.primaryCta}
-          >
-            {isSignedIn ? 'Go to dashboard' : 'Try one real project'} <span aria-hidden>→</span>
-          </Link>
+          <PublicSessionBranch
+            signedOut={
+              <Link
+                href="/sign-up"
+                data-public-analytics-cta="try_project"
+                className={styles.primaryCta}
+              >
+                Try one real project <span aria-hidden>→</span>
+              </Link>
+            }
+            signedIn={
+              <Link
+                href="/app"
+                data-public-analytics-cta="open_dashboard"
+                className={styles.primaryCta}
+              >
+                Go to dashboard <span aria-hidden>→</span>
+              </Link>
+            }
+          />
           <Link href="/how-it-works" className={styles.textLink}>
             See how Timeline works
           </Link>
         </div>
-        {isSignedIn ? null : (
-          <p className={styles.ctaFinePrint}>
-            Free to start · no card required ·{' '}
-            <Link href="/pricing" className={styles.textLink}>
-              See pricing
-            </Link>
-          </p>
-        )}
+        <PublicSessionBranch
+          signedOut={
+            <p className={styles.ctaFinePrint}>
+              Free to start · no card required ·{' '}
+              <Link href="/pricing" className={styles.textLink}>
+                See pricing
+              </Link>
+            </p>
+          }
+          signedIn={null}
+        />
         <div className={styles.heroSourceLink}>
           <GitHubSourceLink />
         </div>
@@ -572,7 +586,7 @@ function TrustScene() {
   );
 }
 
-function CtaScene({ isSignedIn }: { isSignedIn: boolean }) {
+function CtaScene() {
   return (
     <section
       className={cn(styles.scene, styles.ctaScene)}
@@ -588,26 +602,42 @@ function CtaScene({ isSignedIn }: { isSignedIn: boolean }) {
           Choose one project and the smallest useful source set. Preserve a week of selected work,
           then ask for current status, the next handoff, open blockers, and customer commitments.
         </p>
-        <Link
-          href={isSignedIn ? '/app' : '/sign-up'}
-          data-public-analytics-cta={isSignedIn ? 'open_dashboard' : 'try_project'}
-          className={styles.primaryCta}
-        >
-          {isSignedIn ? 'Open your Timeline' : 'Try one real project'} <span aria-hidden>→</span>
-        </Link>
-        {isSignedIn ? null : (
-          <>
-            <p className={styles.ctaFinePrint}>
-              Free to start · no card required ·{' '}
-              <Link href="/pricing" className={styles.textLink}>
-                See pricing
-              </Link>
-            </p>
-            <span className={styles.ctaSignIn}>
-              Already have a Timeline? <Link href="/sign-in">Sign in</Link>
-            </span>
-          </>
-        )}
+        <PublicSessionBranch
+          signedOut={
+            <Link
+              href="/sign-up"
+              data-public-analytics-cta="try_project"
+              className={styles.primaryCta}
+            >
+              Try one real project <span aria-hidden>→</span>
+            </Link>
+          }
+          signedIn={
+            <Link
+              href="/app"
+              data-public-analytics-cta="open_dashboard"
+              className={styles.primaryCta}
+            >
+              Open your Timeline <span aria-hidden>→</span>
+            </Link>
+          }
+        />
+        <PublicSessionBranch
+          signedOut={
+            <>
+              <p className={styles.ctaFinePrint}>
+                Free to start · no card required ·{' '}
+                <Link href="/pricing" className={styles.textLink}>
+                  See pricing
+                </Link>
+              </p>
+              <span className={styles.ctaSignIn}>
+                Already have a Timeline? <Link href="/sign-in">Sign in</Link>
+              </span>
+            </>
+          }
+          signedIn={null}
+        />
         <div className={styles.ctaProof} aria-label="Timeline trust defaults">
           <span>Captured</span>
           <span>Chronological</span>
@@ -663,7 +693,7 @@ function Citation({ id, label }: { id: string; label: string }) {
   );
 }
 
-function Footer({ isSignedIn }: { isSignedIn: boolean }) {
+function Footer() {
   const year = new Date().getFullYear();
   return (
     <footer className={styles.footer}>
@@ -691,12 +721,18 @@ function Footer({ isSignedIn }: { isSignedIn: boolean }) {
           <Link href={CONTACT_HREF} data-public-analytics-cta="contact_support">
             Contact
           </Link>
-          <Link
-            href={isSignedIn ? '/app' : '/sign-in'}
-            data-public-analytics-cta={isSignedIn ? 'open_dashboard' : 'sign_in'}
-          >
-            {isSignedIn ? 'Dashboard' : 'Sign in'}
-          </Link>
+          <PublicSessionBranch
+            signedOut={
+              <Link href="/sign-in" data-public-analytics-cta="sign_in">
+                Sign in
+              </Link>
+            }
+            signedIn={
+              <Link href="/app" data-public-analytics-cta="open_dashboard">
+                Dashboard
+              </Link>
+            }
+          />
         </nav>
       </div>
     </footer>

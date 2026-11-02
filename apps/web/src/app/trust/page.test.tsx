@@ -1,26 +1,20 @@
 import { expect } from '@timeline/test-support';
-import { vi } from '@timeline/test-support';
 import { afterEach, describe, it } from 'bun:test';
-const fakes = vi.hoisted(() => ({ auth: vi.fn() }));
+import { renderToStaticMarkup } from 'react-dom/server';
+// Test environment: happy-dom
 
-await vi.mock(
-  import.meta.resolve('@/lib/auth'),
-  () => ({ auth: fakes.auth }),
-  () => import('@/lib/auth'),
-);
-
-const { renderToStaticMarkup } = await import('react-dom/server');
+const { cleanup, render, screen } = await import('@testing-library/react');
+const { resetPublicSessionCache, setPublicSessionCache } = await import('@/lib/public-session');
 const { default: TrustPage } = await import('@/app/trust/page');
 
 afterEach(() => {
-  vi.clearAllMocks();
+  cleanup();
+  resetPublicSessionCache();
 });
 
 describe('Trust page', () => {
-  it('states the enforceable AI boundary and current assurance status', async () => {
-    fakes.auth.mockResolvedValue(null);
-
-    const html = renderToStaticMarkup(await TrustPage());
+  it('states the enforceable AI boundary and current assurance status', () => {
+    const html = renderToStaticMarkup(<TrustPage />);
 
     expect(html.match(/<h1\b/g)).toHaveLength(1);
     expect(html).toContain('Your work should not become someone else');
@@ -55,12 +49,11 @@ describe('Trust page', () => {
     expect(html).toContain('href="https://github.com/timborovkov/the-timeline-ai"');
   });
 
-  it('routes signed-in readers back to their dashboard', async () => {
-    fakes.auth.mockResolvedValue({ user: { id: 'user-1' } });
+  it('routes signed-in readers back to their dashboard', () => {
+    setPublicSessionCache({ status: 'signed-in' });
+    render(<TrustPage />);
 
-    const html = renderToStaticMarkup(await TrustPage());
-
-    expect(html).toContain('>Dashboard<');
-    expect(html).not.toContain('>Sign in<');
+    expect(screen.getByRole('link', { name: 'Dashboard' }).getAttribute('href')).toBe('/app');
+    expect(screen.queryByRole('link', { name: 'Sign in' })).toBeNull();
   });
 });

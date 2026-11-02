@@ -14,8 +14,6 @@ export const metadata: Metadata = publicMetadata({
   path: '/cookies',
 });
 
-export const dynamic = 'force-dynamic';
-
 function CurrentBrowserStorage() {
   return (
     <>

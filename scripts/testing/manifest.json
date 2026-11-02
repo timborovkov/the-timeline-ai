@@ -507,7 +507,7 @@
     "group": "unit"
   },
   "apps/web/src/app/trust/page.test.tsx": {
-    "group": "unit"
+    "group": "dom"
   },
   "apps/web/src/app/verify-email/[token]/route-states.test.tsx": {
     "group": "dom"
@@ -683,6 +683,9 @@
   "apps/web/src/components/help/support-form.test.tsx": {
     "group": "dom"
   },
+  "apps/web/src/components/help/support-request-form.test.tsx": {
+    "group": "dom"
+  },
   "apps/web/src/components/history-back-link.test.tsx": {
     "group": "unit"
   },
@@ -756,7 +759,7 @@
     "group": "dom"
   },
   "apps/web/src/components/legal-page.test.tsx": {
-    "group": "unit"
+    "group": "dom"
   },
   "apps/web/src/components/legal-route-state.test.tsx": {
     "group": "unit"
@@ -867,7 +870,7 @@
     "group": "dom"
   },
   "apps/web/src/components/public-shell.test.tsx": {
-    "group": "unit"
+    "group": "dom"
   },
   "apps/web/src/components/rail-nav.test.tsx": {
     "group": "dom"
@@ -1129,6 +1132,9 @@
   },
   "apps/web/src/lib/public-metadata.test.ts": {
     "group": "unit"
+  },
+  "apps/web/src/lib/public-session.test.tsx": {
+    "group": "dom"
   },
   "apps/web/src/lib/public-site/documents.test.ts": {
     "group": "unit"

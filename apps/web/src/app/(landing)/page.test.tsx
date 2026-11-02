@@ -3,13 +3,8 @@ import { vi } from '@timeline/test-support';
 import { afterEach, beforeEach, describe, it } from 'bun:test';
 // Test environment: happy-dom
 
-const fakes = vi.hoisted(() => ({ auth: vi.fn(), listCatalog: vi.fn() }));
+const fakes = vi.hoisted(() => ({ listCatalog: vi.fn() }));
 
-await vi.mock(
-  import.meta.resolve('@/lib/auth'),
-  () => ({ auth: fakes.auth }),
-  () => import('@/lib/auth'),
-);
 await vi.mock(
   import.meta.resolve('@timeline/shared/integrations/registry'),
   async () => ({
@@ -23,16 +18,17 @@ const { cleanup, render, screen } = await import('@testing-library/react');
 const { default: userEvent } = await import('@testing-library/user-event');
 const { renderToStaticMarkup } = await import('react-dom/server');
 
+const { resetPublicSessionCache, setPublicSessionCache } = await import('@/lib/public-session');
 const { default: LandingPage, metadata } = await import('@/app/(landing)/page');
 
 describe('LandingPage', () => {
   afterEach(() => {
     cleanup();
+    resetPublicSessionCache();
   });
 
   beforeEach(() => {
     vi.clearAllMocks();
-    fakes.auth.mockResolvedValue(null);
     fakes.listCatalog.mockReturnValue(
       ['GitHub', 'Linear', 'Google Drive', 'Monday.com', 'Slack', 'Sentry'].map((label, index) => ({
         kind: 'native',
@@ -43,8 +39,8 @@ describe('LandingPage', () => {
     );
   });
 
-  it('server-renders the five-scene evidence narrative in order', async () => {
-    const html = renderToStaticMarkup(await LandingPage());
+  it('server-renders the five-scene evidence narrative in order', () => {
+    const html = renderToStaticMarkup(<LandingPage />);
 
     expect(html.match(/<footer\b/g)).toHaveLength(1);
     expect(html).toContain('aria-label="The Timeline home"');
@@ -147,8 +143,8 @@ describe('LandingPage', () => {
     });
   });
 
-  it('states connector capabilities without inventing a connector destination', async () => {
-    const html = renderToStaticMarkup(await LandingPage());
+  it('states connector capabilities without inventing a connector destination', () => {
+    const html = renderToStaticMarkup(<LandingPage />);
 
     for (const connector of ['GitHub', 'Linear', 'Google Drive', 'Monday.com', 'Slack', 'Sentry']) {
       expect(html).toContain(connector);
@@ -182,8 +178,8 @@ describe('LandingPage', () => {
     }
   });
 
-  it('renders the product, problem, workflow, and trust contract without implying passive capture', async () => {
-    const html = renderToStaticMarkup(await LandingPage());
+  it('renders the product, problem, workflow, and trust contract without implying passive capture', () => {
+    const html = renderToStaticMarkup(<LandingPage />);
 
     expect(html).toContain('Timeline is AI team memory for real projects.');
     expect(html).toContain(
@@ -211,8 +207,8 @@ describe('LandingPage', () => {
     expect(html).not.toMatch(/captures? (?:all|every) (?:chat|conversation|message)/iu);
   });
 
-  it('keeps signed-out calls to action on public pages or the real account conversion path', async () => {
-    const html = renderToStaticMarkup(await LandingPage());
+  it('keeps signed-out calls to action on public pages or the real account conversion path', () => {
+    const html = renderToStaticMarkup(<LandingPage />);
 
     expect(html.match(/href="\/sign-up"/g)).toHaveLength(3);
     expect(html).toContain('data-public-analytics-cta="try_project"');
@@ -225,24 +221,33 @@ describe('LandingPage', () => {
     expect(html).not.toMatch(/href="\/(?:app\/)?(?:seed|acme)(?:\/|"|\?)/iu);
   });
 
-  it('keeps the marketing page browsable for signed-in users with dashboard CTAs', async () => {
-    fakes.auth.mockResolvedValue({ user: { id: 'user-1' } });
+  it('keeps the marketing page browsable for signed-in users with dashboard CTAs', () => {
+    setPublicSessionCache({ status: 'signed-in' });
+    render(<LandingPage />);
 
-    const html = renderToStaticMarkup(await LandingPage());
-
-    expect(html).toContain('Go to dashboard');
-    expect(html).toContain('<span aria-hidden="true">→</span>');
-    expect(html).toContain('href="/app"');
-    expect(html).toContain('data-public-analytics-cta="open_dashboard"');
-    expect(html).not.toContain('Create team');
-    expect(html).not.toContain('href="/sign-in"');
-    expect(html).not.toContain('href="/sign-up"');
+    expect(screen.getByRole('link', { name: 'Go to dashboard' }).getAttribute('href')).toBe('/app');
+    expect(screen.getByRole('link', { name: 'Open your Timeline' }).getAttribute('href')).toBe(
+      '/app',
+    );
+    expect(
+      screen
+        .getAllByRole('link', { name: 'Dashboard' })
+        .every((link) => link.getAttribute('href') === '/app'),
+    ).toBe(true);
+    expect(
+      screen
+        .getAllByRole('link')
+        .some((link) => link.getAttribute('data-public-analytics-cta') === 'open_dashboard'),
+    ).toBe(true);
+    expect(screen.queryByText('Create team')).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Sign in' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Try one real project' })).toBeNull();
   });
 
   it('moves keyboard focus to main when the landing skip link is activated', async () => {
     const user = userEvent.setup();
 
-    render(await LandingPage());
+    render(<LandingPage />);
 
     const skipLink = screen.getByRole('link', { name: 'Skip to main content' });
     const main = screen.getByRole('main');

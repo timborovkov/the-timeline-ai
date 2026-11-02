@@ -8,16 +8,15 @@ import {
   PublicNavigationItems,
   type PublicNavigationSection,
 } from '@/components/public-navigation';
+import { PublicSessionBranch } from '@/components/public-session-branch';
 import publicSiteStyles from '@/components/public-site.module.css';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { cn } from '@/lib/utils';
 
 export function PublicHeader({
-  isSignedIn = false,
   currentSection,
   showAccountActions = true,
 }: {
-  isSignedIn?: boolean;
   currentSection?: PublicNavigationSection;
   showAccountActions?: boolean;
 }) {
@@ -38,29 +37,46 @@ export function PublicHeader({
         <PublicNavigationDisclosure
           currentSection={currentSection}
           className={styles.publicMenu}
-          isSignedIn={isSignedIn}
           showAccountActions={showAccountActions}
         />
         <GitHubSourceLink compact className={styles.githubLink} />
-        {showAccountActions && !isSignedIn ? (
-          <Link
-            href="/sign-in"
-            data-public-analytics-cta="sign_in"
-            className={cn(styles.navLink, styles.signInLink)}
-          >
-            Sign in
-          </Link>
+        {showAccountActions ? (
+          <PublicSessionBranch
+            signedOut={
+              <Link
+                href="/sign-in"
+                data-public-analytics-cta="sign_in"
+                className={cn(styles.navLink, styles.signInLink)}
+              >
+                Sign in
+              </Link>
+            }
+            signedIn={null}
+          />
         ) : null}
         <ThemeToggle className={styles.themeToggle} />
         {showAccountActions ? (
-          <Link
-            href={isSignedIn ? '/app' : '/sign-up'}
-            data-public-analytics-cta={isSignedIn ? 'open_dashboard' : 'try_project'}
-            className={styles.navCta}
-            title={isSignedIn ? undefined : 'Free to start — no card required'}
-          >
-            {isSignedIn ? 'Dashboard' : 'Start free'}
-          </Link>
+          <PublicSessionBranch
+            signedOut={
+              <Link
+                href="/sign-up"
+                data-public-analytics-cta="try_project"
+                className={styles.navCta}
+                title="Free to start — no card required"
+              >
+                Start free
+              </Link>
+            }
+            signedIn={
+              <Link
+                href="/app"
+                data-public-analytics-cta="open_dashboard"
+                className={styles.navCta}
+              >
+                Dashboard
+              </Link>
+            }
+          />
         ) : null}
       </div>
     </header>

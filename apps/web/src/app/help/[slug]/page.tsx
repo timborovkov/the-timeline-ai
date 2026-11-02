@@ -7,7 +7,6 @@ import type { Metadata } from 'next';
 import { AgentInstallGuide } from '@/components/help/agent-install-guide';
 import { HelpAppLink } from '@/components/help/app-link';
 import { Button } from '@/components/ui/button';
-import { auth } from '@/lib/auth';
 import { findHelpPage, HELP_PAGES } from '@/lib/help-content';
 import { publicMetadata } from '@/lib/public-metadata';
 import { getSupportEmail } from '@/lib/support-email';
@@ -44,13 +43,10 @@ export default async function HelpTopicPage({ params }: HelpPageProps) {
   const page = findHelpPage(slug);
   if (!page) notFound();
 
-  const session = await auth();
-  const isSignedIn = Boolean(session?.user);
-
   if (page.slug === 'agents') {
     return (
       <article className="space-y-14">
-        <AgentInstallGuide isSignedIn={isSignedIn} />
+        <AgentInstallGuide />
         <RelatedGuides related={page.related} />
       </article>
     );
@@ -96,11 +92,7 @@ export default async function HelpTopicPage({ params }: HelpPageProps) {
               {section.appLink || section.resourceLinks?.length ? (
                 <div className="flex flex-col items-start gap-2 lg:pt-11">
                   {section.appLink ? (
-                    <HelpAppLink
-                      href={section.appLink.href}
-                      label={section.appLink.label}
-                      isSignedIn={isSignedIn}
-                    />
+                    <HelpAppLink href={section.appLink.href} label={section.appLink.label} />
                   ) : null}
                   {section.resourceLinks?.map((link) => (
                     <Button key={link.href} asChild size="sm" variant="outline">

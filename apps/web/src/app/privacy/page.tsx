@@ -21,8 +21,6 @@ export const metadata: Metadata = publicMetadata({
   path: '/privacy',
 });
 
-export const dynamic = 'force-dynamic';
-
 type LegalContactEmail = ReturnType<typeof getLegalContactEmail>;
 
 function TranscriptionRetentionSources() {

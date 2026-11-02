@@ -8,13 +8,13 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import Link from 'next/link';
+import { Suspense } from 'react';
 
 import type { Metadata } from 'next';
 
 import { SupportForm } from '@/components/help/support-form';
-import { auth } from '@/lib/auth';
+import { SupportRequestForm } from '@/components/help/support-request-form';
 import { publicMetadata } from '@/lib/public-metadata';
-import { parseErrorReference, parseSupportSurface } from '@/lib/support-context';
 import { getSupportEmail } from '@/lib/support-email';
 import {
   GITHUB_BUG_REPORT_URL,
@@ -28,21 +28,12 @@ export const metadata: Metadata = publicMetadata({
   path: '/help/support',
 });
 
-interface SupportPageProps {
-  searchParams: Promise<Record<string, string | string[] | undefined>>;
-}
-
-function firstParam(value: string | string[] | undefined): string | undefined {
-  return Array.isArray(value) ? value[0] : value;
-}
-
-export default async function SupportPage({ searchParams }: SupportPageProps) {
-  const [query, session] = await Promise.all([searchParams, auth()]);
+export default function SupportPage() {
   const requiresTurnstile = process.env.NODE_ENV === 'production';
-  const defaultSurface = parseSupportSurface(firstParam(query.surface)) ?? undefined;
-  const defaultErrorReference = defaultSurface
-    ? (parseErrorReference(firstParam(query.error)) ?? undefined)
-    : undefined;
+  const turnstileSiteKey = process.env.TURNSTILE_SITE_KEY;
+  const form = (
+    <SupportForm turnstileSiteKey={turnstileSiteKey} requiresTurnstile={requiresTurnstile} />
+  );
 
   return (
     <article className="space-y-12">
@@ -120,14 +111,12 @@ export default async function SupportPage({ searchParams }: SupportPageProps) {
             .
           </p>
         </div>
-        <SupportForm
-          defaultName={session ? (session.user.name ?? undefined) : undefined}
-          defaultEmail={session ? (session.user.email ?? undefined) : undefined}
-          defaultSurface={defaultSurface}
-          defaultErrorReference={defaultErrorReference}
-          turnstileSiteKey={process.env.TURNSTILE_SITE_KEY}
-          requiresTurnstile={requiresTurnstile}
-        />
+        <Suspense fallback={form}>
+          <SupportRequestForm
+            turnstileSiteKey={turnstileSiteKey}
+            requiresTurnstile={requiresTurnstile}
+          />
+        </Suspense>
       </section>
     </article>
   );
