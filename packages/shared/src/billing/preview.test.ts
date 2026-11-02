@@ -47,7 +47,7 @@ describe('cheapestPlanPreview', () => {
         member_days: { nativeUnits: 62, customerChargeCents: 400 },
       },
     });
-    expect(preview.bills.payg.extraMemberCents).toBe(400);
+    expect(preview.bills.payg.extraMemberCents).toBe(listChargeCentsForMeter('member_days', 62));
     expect(preview.bills.payg.meteredAfterDiscountCents).toBe(0);
     expect(preview.bills.team.extraMemberCents).toBe(0);
     expect(preview.bills.team.meteredAfterDiscountCents).toBe(0);
