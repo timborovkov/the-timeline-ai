@@ -46,10 +46,21 @@ await vi.mock(
   }),
   () => import('@/components/form-action-toast'),
 );
+await vi.mock(
+  import.meta.resolve('next/navigation'),
+  async () => ({
+    ...(await import('next/navigation')),
+    usePathname: () => '/help/support',
+  }),
+  () => import('next/navigation'),
+);
 
-const { cleanup, render, screen } = await import('@testing-library/react');
+const { act, cleanup, render, screen, waitFor } = await import('@testing-library/react');
+const { default: userEvent } = await import('@testing-library/user-event');
 
 const { SupportForm } = await import('./support-form.js');
+const { SupportEmailProvider } = await import('@/components/support-email-provider');
+const { resetPublicRuntimeCache } = await import('@/lib/public-runtime');
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -58,7 +69,9 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  resetPublicRuntimeCache();
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 
 describe('SupportForm', () => {
@@ -91,7 +104,7 @@ describe('SupportForm', () => {
     );
   });
 
-  it('renders Turnstile when configured and blocks submit when required protection is missing', () => {
+  it('renders Turnstile when configured and blocks submit when required protection is missing', async () => {
     render(<SupportForm turnstileSiteKey="site-key" requiresTurnstile />);
 
     expect(screen.getByTestId('turnstile-widget').getAttribute('data-action')).toBe('support');
@@ -101,8 +114,28 @@ describe('SupportForm', () => {
     );
 
     cleanup();
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () =>
+        Promise.resolve({
+          supportEmail: 'contact@thetimeline.cc',
+          turnstileSiteKey: null,
+          requiresTurnstile: true,
+          taskCategoriesEnabled: true,
+        }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
     render(<SupportForm requiresTurnstile />);
 
+    expect(screen.queryByTestId('turnstile-widget')).toBeNull();
+    expect(document.querySelector('#support-form-protection-error')).toBeNull();
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Send request' }).disabled).toBe(
+      true,
+    );
+
+    await waitFor(() => {
+      expect(document.querySelector('#support-form-protection-error')).toBeTruthy();
+    });
     const protectionError = document.querySelector<HTMLElement>('#support-form-protection-error');
     if (!protectionError) throw new Error('expected support form protection message');
     expect(protectionError.textContent).toBe(
@@ -117,6 +150,124 @@ describe('SupportForm', () => {
     const submit = screen.getByRole<HTMLButtonElement>('button', { name: 'Send request' });
     expect(submit.disabled).toBe(true);
     expect(submit.getAttribute('aria-describedby')).toBe(protectionError.id);
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/public/runtime',
+      expect.objectContaining({ credentials: 'same-origin' }),
+    );
+  });
+
+  it('uses the request-time support address from the public runtime endpoint', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () =>
+        Promise.resolve({
+          supportEmail: 'help@example.test',
+          turnstileSiteKey: null,
+          requiresTurnstile: true,
+          taskCategoriesEnabled: true,
+        }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(
+      <SupportEmailProvider>
+        <SupportForm />
+      </SupportEmailProvider>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole('link', { name: 'help@example.test' }).getAttribute('href')).toBe(
+        'mailto:help@example.test',
+      );
+    });
+  });
+
+  it('loads the Turnstile site key from the runtime endpoint', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () =>
+        Promise.resolve({
+          supportEmail: 'contact@thetimeline.cc',
+          turnstileSiteKey: 'runtime-site-key',
+          requiresTurnstile: true,
+          taskCategoriesEnabled: true,
+        }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<SupportForm requiresTurnstile />);
+
+    expect(screen.queryByTestId('turnstile-widget')).toBeNull();
+    await waitFor(() => {
+      expect(screen.getByTestId('turnstile-widget').getAttribute('data-site-key')).toBe(
+        'runtime-site-key',
+      );
+    });
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Send request' }).disabled).toBe(
+      false,
+    );
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/public/runtime',
+      expect.objectContaining({ credentials: 'same-origin' }),
+    );
+  });
+
+  it('recovers the Turnstile site key after a failed runtime load on window focus', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('offline'))
+      .mockResolvedValueOnce({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            supportEmail: 'help@example.test',
+            turnstileSiteKey: 'runtime-site-key',
+            requiresTurnstile: true,
+            taskCategoriesEnabled: true,
+          }),
+      });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<SupportForm requiresTurnstile />);
+
+    await waitFor(() => {
+      expect(document.querySelector('#support-form-protection-error')).toBeTruthy();
+    });
+    expect(screen.queryByTestId('turnstile-widget')).toBeNull();
+
+    act(() => {
+      window.dispatchEvent(new Event('focus'));
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('turnstile-widget').getAttribute('data-site-key')).toBe(
+        'runtime-site-key',
+      );
+    });
+    expect(document.querySelector('#support-form-protection-error')).toBeNull();
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Send request' }).disabled).toBe(
+      false,
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('fills signed-in defaults only when the visitor has not typed', async () => {
+    const user = userEvent.setup();
+    const { rerender } = render(<SupportForm requiresTurnstile={false} />);
+    const name = screen.getByLabelText<HTMLInputElement>('Name');
+    const email = screen.getByLabelText<HTMLInputElement>('Email');
+
+    await user.type(name, 'Visitor');
+    rerender(
+      <SupportForm
+        defaultName="Ada Lovelace"
+        defaultEmail="ada@example.test"
+        requiresTurnstile={false}
+      />,
+    );
+
+    expect(name.value).toBe('Visitor');
+    expect(email.value).toBe('ada@example.test');
   });
 
   it('keeps pending submit state on the button without inline banners', () => {

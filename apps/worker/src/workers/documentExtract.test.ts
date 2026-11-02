@@ -58,7 +58,9 @@ let testDb: ResettablePGliteTestDb;
 let db: AnyDb;
 
 async function seedTeam(pg: PGlite): Promise<void> {
-  await pg.exec(`INSERT INTO teams (id, slug, name) VALUES ('${TEAM_ID}', 't', 'Test Team');`);
+  await pg.exec(
+    `INSERT INTO teams (id, slug, name, inbound_sender_whitelist_enabled) VALUES ('${TEAM_ID}', 't', 'Test Team', false);`,
+  );
   await pg.exec(`INSERT INTO users (id, email) VALUES ('${USER_A}', 'a@test.local');`);
   await pg.exec(
     `INSERT INTO team_members (team_id, user_id, role) VALUES ('${TEAM_ID}', '${USER_A}', 'owner');`,

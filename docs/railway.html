@@ -287,7 +287,8 @@ LOG_LEVEL=info
       <p>
         Keep <code>ANALYTICS_PSEUDONYMIZATION_KEY</code> secret and server-only. Leave
         <code>NEXT_PUBLIC_POSTHOG_KEY</code> empty until the consent-gated public-browser path and
-        PostHog account have been reviewed. None of the PostHog variables belong on the
+        PostHog account have been reviewed, then pass it as a web Docker build arg together with
+        <code>NEXT_PUBLIC_POSTHOG_HOST</code>. None of the PostHog variables belong on the
         credential-thin <code>document-extract-orchestrator</code> service.
       </p>
       <p>
@@ -364,7 +365,14 @@ BILLING_CHARGES_ENABLED=false
       </p>
       <p>
         Railway uses the checked-in Dockerfiles for web and worker deploys. They accept the Sentry
-        build/runtime variables above; source-map upload requires those values at build time.
+        and public PostHog build/runtime variables above; source-map upload requires those values at
+        build time. The web image also accepts <code>AUTH_URL</code> at build time (default
+        <code>https://thetimeline.cc</code>) so prerendered public metadata and JSON-LD do not bake
+        <code>http://localhost:3000</code>. Runtime <code>AUTH_URL</code> on the web service still
+        controls Auth.js, redirects, and request-time routes such as <code>sitemap.xml</code>.
+        <code>SUPPORT_EMAIL</code>, Turnstile keys, and <code>LEGAL_PUBLICATION_READY</code> stay on
+        the running web service; prerendered pages read the public subset from
+        <code>/api/public/runtime</code>, and <code>/terms</code> is generated per request.
       </p>
       <p>
         App runtimes use Bun <code>1.4.4</code>, pinned in <code>.bun-version</code>,
@@ -410,10 +418,13 @@ BILLING_CHARGES_ENABLED=false
       </p>
       <p>
         <strong>About <code>TURNSTILE_*</code>:</strong> Turnstile is used only on anonymous abuse
-        surfaces: email/password registration and the public support/contact form. OAuth signup and
-        signed-in product flows rely on Redis-backed rate limits, team permissions, and existing
-        quota checks. In production, leave neither key blank; the server action rejects missing or
-        invalid Turnstile tokens.
+        surfaces: email/password registration and the public support/contact form. The web Docker
+        build does not receive these variables, so set them on the running <code>web</code> service.
+        <code>/help/support</code> is statically prerendered and loads
+        <code>TURNSTILE_SITE_KEY</code> at request time; sign-up is dynamic and reads the runtime
+        env directly. OAuth signup and signed-in product flows rely on Redis-backed rate limits,
+        team permissions, and existing quota checks. In production, leave neither key blank; the
+        server action rejects missing or invalid Turnstile tokens.
       </p>
 
       <h2 id="staging-vs-production">Staging vs production</h2>

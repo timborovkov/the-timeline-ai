@@ -1,10 +1,22 @@
-import { describe, expect, it } from 'bun:test';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
-import { SupportEmailProvider, useSupportEmail } from '@/components/support-email-provider';
-import { getLegalContactEmail } from '@/lib/legal-versions';
-import { getSupportEmail } from '@/lib/support-email';
+await vi.mock(
+  import.meta.resolve('next/navigation'),
+  async () => ({
+    ...(await import('next/navigation')),
+    usePathname: () => null,
+  }),
+  () => import('next/navigation'),
+);
+
+const { SupportEmailProvider, SupportMailto, useSupportEmail } =
+  await import('@/components/support-email-provider');
+const { getLegalContactEmail } = await import('@/lib/legal-versions');
+const { getSupportEmail } = await import('@/lib/support-email');
 
 function ContactLink() {
   const email = useSupportEmail();
@@ -28,6 +40,9 @@ describe('support contact address', () => {
       expect(html).not.toContain('contact@thetimeline.cc');
       process.env.SUPPORT_EMAIL = ' ';
       expect(getSupportEmail()).toBe('contact@thetimeline.cc');
+      expect(renderToStaticMarkup(createElement(SupportMailto))).toContain(
+        'href="mailto:contact@thetimeline.cc"',
+      );
     } finally {
       if (previous === undefined) delete process.env.SUPPORT_EMAIL;
       else process.env.SUPPORT_EMAIL = previous;

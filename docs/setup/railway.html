@@ -202,7 +202,9 @@
         Set <code>AUTH_URL</code> to the primary public origin, such as
         <code>https://thetimeline.cc</code>. The web proxy redirects alternate hosts, including
         <code>www</code> and Railway's default <code>*.up.railway.app</code> host, back to this
-        origin before Auth.js runs.
+        origin before Auth.js runs. Pass the same origin as a web Docker build arg when prerendering
+        public HTML; the Dockerfile defaults to <code>https://thetimeline.cc</code> because
+        <code>.env</code> files are excluded from the image context.
       </p>
       <p>
         Production security and rate-limit buckets trust only <code>X-Real-IP</code>. Keep Railway's
@@ -228,22 +230,27 @@
       </p>
       <p>
         For production abuse controls, also set <code>TURNSTILE_SITE_KEY</code>,
-        <code>TURNSTILE_SECRET_KEY</code>, and <code>SUPPORT_EMAIL</code>. Turnstile is only
-        rendered on anonymous public forms: email/password registration and
-        <code>/help/support</code>. OAuth sign-up and signed-in app forms do not show CAPTCHA; they
-        use rate limits, permission checks, and product quotas instead.
+        <code>TURNSTILE_SECRET_KEY</code>, and <code>SUPPORT_EMAIL</code> on the running
+        <code>web</code> service. The Docker image build does not receive those values, so
+        statically prerendered public pages load them at request time from
+        <code>/api/public/runtime</code>. Sign-up stays a dynamic route and reads the Turnstile key
+        from the runtime environment. Turnstile is only rendered on anonymous public forms:
+        email/password registration and <code>/help/support</code>. OAuth sign-up and signed-in app
+        forms do not show CAPTCHA; they use rate limits, permission checks, and product quotas
+        instead.
       </p>
       <p>
         For personless surface counts and pseudonymous server/worker product analytics, set
         <code>POSTHOG_PROJECT_KEY</code>, <code>POSTHOG_HOST=https://eu.i.posthog.com</code>, and a
         separate high-entropy <code>ANALYTICS_PSEUDONYMIZATION_KEY</code>. Set
         <code>NEXT_PUBLIC_POSTHOG_KEY</code> and
-        <code>NEXT_PUBLIC_POSTHOG_HOST=https://eu.i.posthog.com</code> only when the consent-gated
-        public-browser path and provider account have been verified; leaving the public key empty
-        disables browser capture. Put the server analytics values only on <code>web</code> and the
-        main <code>worker</code>; the document-extract orchestrator does not emit product analytics
-        and its startup allowlist rejects them. See <a href="analytics.html">Analytics setup</a>.
-        For error monitoring, set <code>SENTRY_DSN</code>, <code>NEXT_PUBLIC_SENTRY_DSN</code>,
+        <code>NEXT_PUBLIC_POSTHOG_HOST=https://eu.i.posthog.com</code> as web Docker build args only
+        when the consent-gated public-browser path and provider account have been verified; leaving
+        the public key empty disables browser capture. Put the server analytics values only on
+        <code>web</code> and the main <code>worker</code>; the document-extract orchestrator does
+        not emit product analytics and its startup allowlist rejects them. See
+        <a href="analytics.html">Analytics setup</a>. For error monitoring, set
+        <code>SENTRY_DSN</code>, <code>NEXT_PUBLIC_SENTRY_DSN</code>,
         <code>NEXT_PUBLIC_SENTRY_TRACES_SAMPLE_RATE</code>,
         <code>NEXT_PUBLIC_SENTRY_PROFILES_SAMPLE_RATE</code>, <code>SENTRY_ENVIRONMENT</code>,
         <code>SENTRY_TRACES_SAMPLE_RATE</code>, <code>SENTRY_PROFILES_SAMPLE_RATE</code>, and

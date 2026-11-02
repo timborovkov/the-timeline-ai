@@ -5,7 +5,6 @@ import type { Metadata } from 'next';
 import { CONNECTORS, findConnector } from '@/components/marketing/integrations/connector-content';
 import { ConnectorPage } from '@/components/marketing/integrations/connector-page';
 import { findConnectorPublicDocument } from '@/components/marketing/integrations/connector-public-documents';
-import { auth } from '@/lib/auth';
 import { metadataForPublicDocument } from '@/lib/public-site';
 
 interface ConnectorPageProps {
@@ -31,6 +30,5 @@ export default async function NativeConnectorPage({ params }: ConnectorPageProps
   const connector = findConnector(slug);
   if (!connector) notFound();
 
-  const session = await auth();
-  return <ConnectorPage connector={connector} isSignedIn={Boolean(session?.user)} />;
+  return <ConnectorPage connector={connector} />;
 }
