@@ -6,10 +6,10 @@ import type { Metadata } from 'next';
 
 import { AgentInstallGuide } from '@/components/help/agent-install-guide';
 import { HelpAppLink } from '@/components/help/app-link';
+import { SupportMailto } from '@/components/support-email-provider';
 import { Button } from '@/components/ui/button';
 import { findHelpPage, HELP_PAGES } from '@/lib/help-content';
 import { publicMetadata } from '@/lib/public-metadata';
-import { getSupportEmail } from '@/lib/support-email';
 import {
   GITHUB_BUG_REPORT_URL,
   GITHUB_CONTRIBUTING_URL,
@@ -148,9 +148,7 @@ function RelatedGuides({ related }: { related: string[] }) {
           customer content, personal data, credentials, or private URLs.
         </p>
         <div className="mt-3 flex flex-wrap gap-x-5 gap-y-2 text-sm font-semibold">
-          <a className={supportLinkClass} href={`mailto:${getSupportEmail()}`}>
-            Email support
-          </a>
+          <SupportMailto className={supportLinkClass}>Email support</SupportMailto>
           <a
             className={supportLinkClass}
             href={GITHUB_BUG_REPORT_URL}

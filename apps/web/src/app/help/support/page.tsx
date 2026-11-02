@@ -8,14 +8,14 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import Link from 'next/link';
-import { Suspense } from 'react';
+import { Suspense, type ReactNode } from 'react';
 
 import type { Metadata } from 'next';
 
 import { SupportForm } from '@/components/help/support-form';
 import { SupportRequestForm } from '@/components/help/support-request-form';
+import { SupportMailto } from '@/components/support-email-provider';
 import { publicMetadata } from '@/lib/public-metadata';
-import { getSupportEmail } from '@/lib/support-email';
 import {
   GITHUB_BUG_REPORT_URL,
   GITHUB_CONTRIBUTING_URL,
@@ -28,9 +28,11 @@ export const metadata: Metadata = publicMetadata({
   path: '/help/support',
 });
 
+const supportChannelLinkClass =
+  'mt-5 inline-flex min-h-10 items-center gap-2 rounded-sm text-sm font-semibold text-fg transition-colors hover:text-signal focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2';
+
 export default function SupportPage() {
-  const requiresTurnstile = process.env.NODE_ENV === 'production';
-  const form = <SupportForm requiresTurnstile={requiresTurnstile} />;
+  const form = <SupportForm />;
 
   return (
     <article className="space-y-12">
@@ -59,8 +61,7 @@ export default function SupportPage() {
           icon={Mail}
           title="Private support"
           body="Send account-specific questions, sensitive bugs, sales requests, or billing questions privately."
-          href={`mailto:${getSupportEmail()}`}
-          label={`Email ${getSupportEmail()}`}
+          action={<SupportMailto className={supportChannelLinkClass} prefix="Email " />}
         />
         <SupportChannel
           icon={Bug}
@@ -99,17 +100,12 @@ export default function SupportPage() {
           <p className="text-sm leading-6 text-fg-muted">
             Requests are stored for support handling and emailed to the Timeline team. You can also
             email{' '}
-            <a
-              className="rounded-sm text-fg underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-              href={`mailto:${getSupportEmail()}`}
-            >
-              {getSupportEmail()}
-            </a>
+            <SupportMailto className="rounded-sm text-fg underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2" />
             .
           </p>
         </div>
         <Suspense fallback={form}>
-          <SupportRequestForm requiresTurnstile={requiresTurnstile} />
+          <SupportRequestForm />
         </Suspense>
       </section>
     </article>
@@ -122,13 +118,15 @@ function SupportChannel({
   body,
   href,
   label,
+  action,
   external = false,
 }: {
   icon: LucideIcon;
   title: string;
   body: string;
-  href: string;
-  label: string;
+  href?: string;
+  label?: string;
+  action?: ReactNode;
   external?: boolean;
 }) {
   return (
@@ -136,15 +134,17 @@ function SupportChannel({
       <Icon aria-hidden="true" className="size-5 text-signal" />
       <h2 className="mt-4 text-base font-semibold text-fg">{title}</h2>
       <p className="mt-2 flex-1 text-sm leading-6 text-fg-muted">{body}</p>
-      <a
-        href={href}
-        target={external ? '_blank' : undefined}
-        rel={external ? 'noreferrer' : undefined}
-        className="mt-5 inline-flex min-h-10 items-center gap-2 rounded-sm text-sm font-semibold text-fg transition-colors hover:text-signal focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-      >
-        {label}
-        {external ? <ExternalLink aria-hidden="true" className="size-3.5" /> : null}
-      </a>
+      {action ?? (
+        <a
+          href={href}
+          target={external ? '_blank' : undefined}
+          rel={external ? 'noreferrer' : undefined}
+          className={supportChannelLinkClass}
+        >
+          {label}
+          {external ? <ExternalLink aria-hidden="true" className="size-3.5" /> : null}
+        </a>
+      )}
     </div>
   );
 }

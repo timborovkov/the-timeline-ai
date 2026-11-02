@@ -5,7 +5,7 @@ import { EditorialStructuredData } from '@/components/marketing/editorial/editor
 import { MarketingContainer, MarketingSectionGrid } from '@/components/marketing/marketing-layout';
 import { MarketingSectionIndex } from '@/components/marketing/section-index';
 import { PublicShell } from '@/components/public-shell';
-import { getLegalContactEmail } from '@/lib/legal-versions';
+import { SupportMailto } from '@/components/support-email-provider';
 import { buildPublicStructuredData, metadataForPublicDocument } from '@/lib/public-site';
 import { TRUST_DOCUMENT } from '@/lib/public-site/documents';
 import { getSiteUrl } from '@/lib/site-url';
@@ -138,7 +138,7 @@ function TrustProvidersSection() {
   );
 }
 
-function TrustAssuranceSection({ securityEmail }: { securityEmail: string }) {
+function TrustAssuranceSection() {
   return (
     <section className="border-b border-border bg-surface/45">
       <MarketingContainer className="py-16 sm:py-20">
@@ -181,12 +181,10 @@ function TrustAssuranceSection({ securityEmail }: { securityEmail: string }) {
             </div>
             <p className="mt-7 text-sm leading-7 text-fg-muted">
               Report suspected vulnerabilities privately to{' '}
-              <a
+              <SupportMailto
                 className="text-fg underline underline-offset-4"
-                href={`mailto:${securityEmail}?subject=${encodeURIComponent('[Security] Vulnerability report')}`}
-              >
-                {securityEmail}
-              </a>
+                subject="[Security] Vulnerability report"
+              />
               . Do not put credentials, customer data, or an undisclosed exploit in a public issue.
             </p>
           </div>
@@ -233,7 +231,6 @@ function TrustDeploymentSection() {
 
 export default function TrustPage() {
   const structuredData = buildPublicStructuredData(TRUST_DOCUMENT, getSiteUrl());
-  const securityEmail = getLegalContactEmail();
 
   return (
     <PublicShell width="expanded" currentSection="trust" footerLabel="The Timeline trust center">
@@ -403,7 +400,7 @@ export default function TrustPage() {
         </section>
 
         <TrustProvidersSection />
-        <TrustAssuranceSection securityEmail={securityEmail} />
+        <TrustAssuranceSection />
         <TrustDeploymentSection />
       </main>
     </PublicShell>

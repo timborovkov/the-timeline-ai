@@ -4,7 +4,8 @@ import type { Metadata } from 'next';
 
 import { LegalPage } from '@/components/legal-page';
 import { CookieSettingsButton } from '@/components/public-analytics';
-import { COOKIES_REVIEW_DATE, getLegalContactEmail } from '@/lib/legal-versions';
+import { SupportMailto } from '@/components/support-email-provider';
+import { COOKIES_REVIEW_DATE } from '@/lib/legal-versions';
 import { publicMetadata } from '@/lib/public-metadata';
 
 export const metadata: Metadata = publicMetadata({
@@ -285,8 +286,6 @@ function ChoicesAndOtherServices() {
 }
 
 export default function CookiesPage() {
-  const legalContactEmail = getLegalContactEmail();
-
   return (
     <LegalPage
       eyebrow={`Notice · Last reviewed ${COOKIES_REVIEW_DATE}`}
@@ -306,9 +305,8 @@ export default function CookiesPage() {
       <h2>6. Changes and contact</h2>
       <p>
         We will update this inventory before adding a new browser technology or enabling optional
-        analytics. Privacy questions and requests can be sent to{' '}
-        <a href={`mailto:${legalContactEmail}`}>{legalContactEmail}</a>. Security and provider
-        boundaries are summarized on the <Link href="/trust">Trust page</Link>.
+        analytics. Privacy questions and requests can be sent to <SupportMailto />. Security and
+        provider boundaries are summarized on the <Link href="/trust">Trust page</Link>.
       </p>
     </LegalPage>
   );

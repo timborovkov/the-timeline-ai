@@ -12,7 +12,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { usePublicTurnstile } from '@/lib/public-turnstile';
+import { usePublicRuntime, type PublicRuntime } from '@/lib/public-runtime';
 
 interface SupportFormProps {
   defaultName?: string;
@@ -20,7 +20,7 @@ interface SupportFormProps {
   defaultSurface?: SupportSurface;
   defaultErrorReference?: string;
   turnstileSiteKey?: string;
-  requiresTurnstile: boolean;
+  requiresTurnstile?: boolean;
 }
 
 const initialState: SupportFormState = {};
@@ -55,6 +55,45 @@ function resolveTurnstileSiteKey(
   }
   if (runtime.status !== 'ready') return { ready: false };
   return { siteKey: runtime.siteKey, ready: true };
+}
+
+function resolveRequiresTurnstile(
+  requiresTurnstile: boolean | undefined,
+  runtime: PublicRuntime,
+): boolean {
+  if (requiresTurnstile === false) return false;
+  if (requiresTurnstile === true) return true;
+  if (runtime.status !== 'ready') return true;
+  return runtime.requiresTurnstile;
+}
+
+function runtimeTurnstileSiteKey(runtime: PublicRuntime): string | undefined {
+  if (runtime.status !== 'ready') return undefined;
+  return runtime.turnstileSiteKey;
+}
+
+function protectionFlags(
+  required: boolean,
+  turnstile: { siteKey?: string; ready: boolean },
+): { siteKey?: string; unavailable: boolean; pending: boolean } {
+  return {
+    siteKey: turnstile.siteKey,
+    unavailable: required && turnstile.ready && !turnstile.siteKey,
+    pending: required && !turnstile.ready,
+  };
+}
+
+function useSupportFormProtection({
+  turnstileSiteKey,
+  requiresTurnstile,
+}: Pick<SupportFormProps, 'turnstileSiteKey' | 'requiresTurnstile'>) {
+  const runtime = usePublicRuntime(turnstileSiteKey === undefined && requiresTurnstile !== false);
+  const required = resolveRequiresTurnstile(requiresTurnstile, runtime);
+  const turnstile = resolveTurnstileSiteKey(turnstileSiteKey, {
+    status: runtime.status,
+    siteKey: runtimeTurnstileSiteKey(runtime),
+  });
+  return protectionFlags(required, turnstile);
 }
 
 function SupportRequestReceived({
@@ -98,28 +137,29 @@ function SupportFormProtection({
   );
 }
 
-export function SupportForm({
+function SupportFormFields({
+  action,
+  pending,
+  state,
+  protection,
+  supportEmail,
   defaultName,
   defaultEmail,
   defaultSurface,
   defaultErrorReference,
-  turnstileSiteKey,
-  requiresTurnstile,
-}: SupportFormProps) {
-  const supportEmail = useSupportEmail();
-  const [state, action, pending] = useActionState(submitSupportRequestAction, initialState);
+}: {
+  action: (payload: FormData) => void;
+  pending: boolean;
+  state: SupportFormState;
+  protection: { siteKey?: string; unavailable: boolean; pending: boolean };
+  supportEmail: string;
+  defaultName?: string;
+  defaultEmail?: string;
+  defaultSurface?: SupportSurface;
+  defaultErrorReference?: string;
+}) {
   const nameRef = useFillEmptyDefault(defaultName);
   const emailRef = useFillEmptyDefault(defaultEmail);
-  const runtime = usePublicTurnstile(turnstileSiteKey === undefined && requiresTurnstile);
-  const turnstile = resolveTurnstileSiteKey(turnstileSiteKey, runtime);
-  const protectionUnavailable = requiresTurnstile && turnstile.ready && !turnstile.siteKey;
-  const protectionPending = requiresTurnstile && !turnstile.ready;
-
-  if (state.ok && state.requestReference) {
-    return (
-      <SupportRequestReceived requestReference={state.requestReference} warning={state.warning} />
-    );
-  }
 
   return (
     <form action={action} className="space-y-5">
@@ -205,8 +245,8 @@ export function SupportForm({
       </div>
 
       <SupportFormProtection
-        siteKey={turnstile.siteKey}
-        unavailable={protectionUnavailable}
+        siteKey={protection.siteKey}
+        unavailable={protection.unavailable}
         supportEmail={supportEmail}
       />
 
@@ -220,11 +260,44 @@ export function SupportForm({
 
       <Button
         type="submit"
-        disabled={pending || protectionPending || protectionUnavailable}
-        aria-describedby={protectionUnavailable ? protectionErrorId : undefined}
+        disabled={pending || protection.pending || protection.unavailable}
+        aria-describedby={protection.unavailable ? protectionErrorId : undefined}
       >
         {pending ? 'Sending…' : 'Send request'}
       </Button>
     </form>
+  );
+}
+
+export function SupportForm({
+  defaultName,
+  defaultEmail,
+  defaultSurface,
+  defaultErrorReference,
+  turnstileSiteKey,
+  requiresTurnstile,
+}: SupportFormProps) {
+  const supportEmail = useSupportEmail();
+  const [state, action, pending] = useActionState(submitSupportRequestAction, initialState);
+  const protection = useSupportFormProtection({ turnstileSiteKey, requiresTurnstile });
+
+  if (state.ok && state.requestReference) {
+    return (
+      <SupportRequestReceived requestReference={state.requestReference} warning={state.warning} />
+    );
+  }
+
+  return (
+    <SupportFormFields
+      action={action}
+      pending={pending}
+      state={state}
+      protection={protection}
+      supportEmail={supportEmail}
+      defaultName={defaultName}
+      defaultEmail={defaultEmail}
+      defaultSurface={defaultSurface}
+      defaultErrorReference={defaultErrorReference}
+    />
   );
 }

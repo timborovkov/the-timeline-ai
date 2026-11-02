@@ -71,6 +71,8 @@ describe('Railway web config', () => {
     expect(dockerfile).toContain('ARG NEXT_PUBLIC_SENTRY_DSN');
     expect(dockerfile).toContain('ENV SENTRY_AUTH_TOKEN=$SENTRY_AUTH_TOKEN');
     expect(dockerfile).toContain('ENV NEXT_PUBLIC_SENTRY_DSN=$NEXT_PUBLIC_SENTRY_DSN');
+    expect(dockerfile).toContain('ARG NEXT_PUBLIC_POSTHOG_KEY');
+    expect(dockerfile).toContain('ENV NEXT_PUBLIC_POSTHOG_KEY=$NEXT_PUBLIC_POSTHOG_KEY');
   });
 
   it('supplies the canonical public origin while prerendering the web image', () => {
@@ -85,5 +87,8 @@ describe('Railway web config', () => {
     expect(authUrlArg).toBeGreaterThan(-1);
     expect(authUrlEnv).toBeGreaterThan(authUrlArg);
     expect(webBuild).toBeGreaterThan(authUrlEnv);
+    expect(dockerfile).not.toContain('ARG SUPPORT_EMAIL');
+    expect(dockerfile).not.toContain('ARG TURNSTILE_SITE_KEY');
+    expect(dockerfile).not.toContain('ARG LEGAL_PUBLICATION_READY');
   });
 });

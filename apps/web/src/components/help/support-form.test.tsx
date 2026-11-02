@@ -51,7 +51,8 @@ const { cleanup, render, screen, waitFor } = await import('@testing-library/reac
 const { default: userEvent } = await import('@testing-library/user-event');
 
 const { SupportForm } = await import('./support-form.js');
-const { resetPublicTurnstileCache } = await import('@/lib/public-turnstile');
+const { SupportEmailProvider } = await import('@/components/support-email-provider');
+const { resetPublicRuntimeCache } = await import('@/lib/public-runtime');
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -60,7 +61,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
-  resetPublicTurnstileCache();
+  resetPublicRuntimeCache();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
@@ -107,7 +108,13 @@ describe('SupportForm', () => {
     cleanup();
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
-      json: () => Promise.resolve({ siteKey: null }),
+      json: () =>
+        Promise.resolve({
+          supportEmail: 'contact@thetimeline.cc',
+          turnstileSiteKey: null,
+          requiresTurnstile: true,
+          taskCategoriesEnabled: true,
+        }),
     });
     vi.stubGlobal('fetch', fetchMock);
     render(<SupportForm requiresTurnstile />);
@@ -136,15 +143,47 @@ describe('SupportForm', () => {
     expect(submit.disabled).toBe(true);
     expect(submit.getAttribute('aria-describedby')).toBe(protectionError.id);
     expect(fetchMock).toHaveBeenCalledWith(
-      '/api/public/turnstile',
+      '/api/public/runtime',
       expect.objectContaining({ credentials: 'same-origin' }),
     );
+  });
+
+  it('uses the request-time support address from the public runtime endpoint', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () =>
+        Promise.resolve({
+          supportEmail: 'help@example.test',
+          turnstileSiteKey: null,
+          requiresTurnstile: true,
+          taskCategoriesEnabled: true,
+        }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(
+      <SupportEmailProvider>
+        <SupportForm />
+      </SupportEmailProvider>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole('link', { name: 'help@example.test' }).getAttribute('href')).toBe(
+        'mailto:help@example.test',
+      );
+    });
   });
 
   it('loads the Turnstile site key from the runtime endpoint', async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
-      json: () => Promise.resolve({ siteKey: 'runtime-site-key' }),
+      json: () =>
+        Promise.resolve({
+          supportEmail: 'contact@thetimeline.cc',
+          turnstileSiteKey: 'runtime-site-key',
+          requiresTurnstile: true,
+          taskCategoriesEnabled: true,
+        }),
     });
     vi.stubGlobal('fetch', fetchMock);
 
@@ -160,7 +199,7 @@ describe('SupportForm', () => {
       false,
     );
     expect(fetchMock).toHaveBeenCalledWith(
-      '/api/public/turnstile',
+      '/api/public/runtime',
       expect.objectContaining({ credentials: 'same-origin' }),
     );
   });

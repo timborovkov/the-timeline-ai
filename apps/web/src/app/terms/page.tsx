@@ -3,6 +3,7 @@ import Link from 'next/link';
 import type { Metadata } from 'next';
 
 import { LegalPage } from '@/components/legal-page';
+import { SupportMailto } from '@/components/support-email-provider';
 import { isLegalPublicationReady } from '@/lib/legal-publication';
 import {
   LEGAL_ADDRESS,
@@ -11,7 +12,6 @@ import {
   LEGAL_REGISTRY_CODE,
   LEGAL_SERVICE_URL,
   TERMS_VERSION,
-  getLegalContactEmail,
 } from '@/lib/legal-versions';
 import { publicMetadata } from '@/lib/public-metadata';
 import { PUBLIC_TRANSCRIPTION_PRIVACY_CLAIMS } from '@/lib/trust-claims';
@@ -22,7 +22,7 @@ export const metadata: Metadata = publicMetadata({
   path: '/terms',
 });
 
-type LegalContactEmail = ReturnType<typeof getLegalContactEmail>;
+export const dynamic = 'force-dynamic';
 
 function TermsFormationSections() {
   return (
@@ -173,11 +173,7 @@ function TermsContentAndAiSections() {
   );
 }
 
-function TermsResponsibleUseSections({
-  legalContactEmail,
-}: {
-  legalContactEmail: LegalContactEmail;
-}) {
+function TermsResponsibleUseSections() {
   return (
     <>
       <h2>10. Acceptable use</h2>
@@ -208,13 +204,9 @@ function TermsResponsibleUseSections({
       </ul>
       <p>
         Report suspected vulnerabilities privately to{' '}
-        <a
-          href={`mailto:${legalContactEmail}?subject=${encodeURIComponent('[Security] Vulnerability report')}`}
-        >
-          {legalContactEmail}
-        </a>
-        ; do not put credentials, Customer Content, or undisclosed exploits in public issues. We may
-        rate limit, investigate, or block activity reasonably believed to create risk.
+        <SupportMailto subject="[Security] Vulnerability report" />; do not put credentials,
+        Customer Content, or undisclosed exploits in public issues. We may rate limit, investigate,
+        or block activity reasonably believed to create risk.
       </p>
 
       <h2>11. Confidentiality and security responsibilities</h2>
@@ -238,8 +230,7 @@ function TermsResponsibleUseSections({
         Our <Link href="/privacy">Privacy Policy</Link> describes our controller activities. For
         Customer Content where we act as processor, the customer is responsible for its instructions
         and lawful basis. Customers needing a data-processing agreement or transfer terms should
-        contact <a href={`mailto:${legalContactEmail}`}>{legalContactEmail}</a> before using the
-        Service for data that depends on those terms.
+        contact <SupportMailto /> before using the Service for data that depends on those terms.
       </p>
       <p>
         Our <Link href="/cookies">Cookies and similar technologies notice</Link> lists current
@@ -360,7 +351,7 @@ function TermsRiskSections() {
   );
 }
 
-function TermsClosingSections({ legalContactEmail }: { legalContactEmail: LegalContactEmail }) {
+function TermsClosingSections() {
   return (
     <>
       <h2>21. Changes to these Terms</h2>
@@ -384,16 +375,14 @@ function TermsClosingSections({ legalContactEmail }: { legalContactEmail: LegalC
 
       <h2>23. Contact</h2>
       <p>
-        Legal questions and notices: <a href={`mailto:${legalContactEmail}`}>{legalContactEmail}</a>
-        . Provider: {LEGAL_PROVIDER}, Estonian registry code {LEGAL_REGISTRY_CODE}, {LEGAL_ADDRESS}.
+        Legal questions and notices: <SupportMailto />. Provider: {LEGAL_PROVIDER}, Estonian
+        registry code {LEGAL_REGISTRY_CODE}, {LEGAL_ADDRESS}.
       </p>
     </>
   );
 }
 
 export default function TermsPage() {
-  const legalContactEmail = getLegalContactEmail();
-
   if (!isLegalPublicationReady()) {
     return (
       <LegalPage
@@ -407,8 +396,7 @@ export default function TermsPage() {
         </p>
         <p>
           Existing users may continue under any previously applicable agreement. New account
-          creation is paused. For questions, email{' '}
-          <a href={`mailto:${legalContactEmail}`}>{legalContactEmail}</a>.
+          creation is paused. For questions, email <SupportMailto />.
         </p>
       </LegalPage>
     );
@@ -422,10 +410,10 @@ export default function TermsPage() {
     >
       <TermsFormationSections />
       <TermsContentAndAiSections />
-      <TermsResponsibleUseSections legalContactEmail={legalContactEmail} />
+      <TermsResponsibleUseSections />
       <TermsProductAndLifecycleSections />
       <TermsRiskSections />
-      <TermsClosingSections legalContactEmail={legalContactEmail} />
+      <TermsClosingSections />
     </LegalPage>
   );
 }

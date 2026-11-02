@@ -143,7 +143,7 @@
   "apps/web/src/app/api/onboarding/checklist/route.test.ts": {
     "group": "unit"
   },
-  "apps/web/src/app/api/public/turnstile/route.test.ts": {
+  "apps/web/src/app/api/public/runtime/route.test.ts": {
     "group": "unit"
   },
   "apps/web/src/app/api/search/global/route.test.ts": {
@@ -1134,6 +1134,12 @@
     "group": "unit"
   },
   "apps/web/src/lib/public-metadata.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/lib/public-runtime.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/lib/public-static-env.test.ts": {
     "group": "unit"
   },
   "apps/web/src/lib/public-session.test.tsx": {

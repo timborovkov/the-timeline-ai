@@ -4,13 +4,13 @@ import Link from 'next/link';
 import type { Metadata } from 'next';
 
 import { LegalPage } from '@/components/legal-page';
+import { SupportMailto } from '@/components/support-email-provider';
 import {
   LEGAL_ADDRESS,
   LEGAL_PROVIDER,
   LEGAL_REGISTRY_CODE,
   PRIVACY_VERSION,
   PRIVACY_EFFECTIVE_DATE,
-  getLegalContactEmail,
 } from '@/lib/legal-versions';
 import { publicMetadata } from '@/lib/public-metadata';
 import { PUBLIC_TRANSCRIPTION_PRIVACY_CLAIMS } from '@/lib/trust-claims';
@@ -20,8 +20,6 @@ export const metadata: Metadata = publicMetadata({
   description: 'How The Timeline collects, uses, shares, protects, and retains personal data.',
   path: '/privacy',
 });
-
-type LegalContactEmail = ReturnType<typeof getLegalContactEmail>;
 
 function TranscriptionRetentionSources() {
   const sources = PUBLIC_TRANSCRIPTION_PRIVACY_CLAIMS.retentionSources;
@@ -42,7 +40,7 @@ function TranscriptionRetentionSources() {
   );
 }
 
-function PrivacyOverviewSections({ legalContactEmail }: { legalContactEmail: LegalContactEmail }) {
+function PrivacyOverviewSections() {
   return (
     <>
       <p>
@@ -58,8 +56,7 @@ function PrivacyOverviewSections({ legalContactEmail }: { legalContactEmail: Leg
       <p>
         For our website, account administration, service operations, security, product analytics,
         and direct support, the data controller is {LEGAL_PROVIDER}, Estonian registry code{' '}
-        {LEGAL_REGISTRY_CODE}, {LEGAL_ADDRESS}. Contact us at{' '}
-        <a href={`mailto:${legalContactEmail}`}>{legalContactEmail}</a>.
+        {LEGAL_REGISTRY_CODE}, {LEGAL_ADDRESS}. Contact us at <SupportMailto />.
       </p>
       <p>
         For messages, documents, recordings, transcripts, integration records, and other content
@@ -520,11 +517,7 @@ function PrivacyRetentionSections() {
   );
 }
 
-function PrivacyRightsAndClosingSections({
-  legalContactEmail,
-}: {
-  legalContactEmail: LegalContactEmail;
-}) {
+function PrivacyRightsAndClosingSections() {
   return (
     <>
       <h2>15. Your rights and choices</h2>
@@ -543,7 +536,7 @@ function PrivacyRightsAndClosingSections({
         the browser-storage inventory.
       </p>
       <p>
-        Send requests to <a href={`mailto:${legalContactEmail}`}>{legalContactEmail}</a> or use our{' '}
+        Send requests to <SupportMailto /> or use our{' '}
         <Link href="/help/support">private support form</Link>. Do not put account details or a
         privacy request in a public GitHub issue. You also have the right to complain to your local
         supervisory authority or the{' '}
@@ -582,28 +575,25 @@ function PrivacyRightsAndClosingSections({
 
       <h2>19. Contact</h2>
       <p>
-        Privacy requests and questions:{' '}
-        <a href={`mailto:${legalContactEmail}`}>{legalContactEmail}</a>. Provider: {LEGAL_PROVIDER},{' '}
-        Estonian registry code {LEGAL_REGISTRY_CODE}, {LEGAL_ADDRESS}.
+        Privacy requests and questions: <SupportMailto />. Provider: {LEGAL_PROVIDER}, Estonian
+        registry code {LEGAL_REGISTRY_CODE}, {LEGAL_ADDRESS}.
       </p>
     </>
   );
 }
 
 export default function PrivacyPage() {
-  const legalContactEmail = getLegalContactEmail();
-
   return (
     <LegalPage
       eyebrow={`Version ${PRIVACY_VERSION} · Effective ${PRIVACY_EFFECTIVE_DATE}`}
       title="Privacy Policy"
       description="How The Timeline collects, uses, shares, protects, and retains personal data—including content processed by AI and connected services."
     >
-      <PrivacyOverviewSections legalContactEmail={legalContactEmail} />
+      <PrivacyOverviewSections />
       <PrivacyAiAndProviderSections />
       <PrivacyDisclosureAndSecuritySections />
       <PrivacyRetentionSections />
-      <PrivacyRightsAndClosingSections legalContactEmail={legalContactEmail} />
+      <PrivacyRightsAndClosingSections />
     </LegalPage>
   );
 }

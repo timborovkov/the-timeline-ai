@@ -2,7 +2,11 @@ import { describe, expect, it } from 'bun:test';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
-import { SupportEmailProvider, useSupportEmail } from '@/components/support-email-provider';
+import {
+  SupportEmailProvider,
+  SupportMailto,
+  useSupportEmail,
+} from '@/components/support-email-provider';
 import { getLegalContactEmail } from '@/lib/legal-versions';
 import { getSupportEmail } from '@/lib/support-email';
 
@@ -28,6 +32,9 @@ describe('support contact address', () => {
       expect(html).not.toContain('contact@thetimeline.cc');
       process.env.SUPPORT_EMAIL = ' ';
       expect(getSupportEmail()).toBe('contact@thetimeline.cc');
+      expect(renderToStaticMarkup(createElement(SupportMailto))).toContain(
+        'href="mailto:contact@thetimeline.cc"',
+      );
     } finally {
       if (previous === undefined) delete process.env.SUPPORT_EMAIL;
       else process.env.SUPPORT_EMAIL = previous;

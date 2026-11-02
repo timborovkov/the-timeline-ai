@@ -1,3 +1,7 @@
+import { readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
 import { expect } from '@timeline/test-support';
 import { vi } from '@timeline/test-support';
 import { afterEach, describe, it } from 'bun:test';
@@ -40,5 +44,13 @@ describe('Terms legal links', () => {
     expect(html).toContain('New account creation is paused');
     expect(html).toContain('does not form an agreement');
     expect(html).not.toContain('These Terms of Use (“Terms”) are a binding agreement');
+  });
+
+  it('does not prerender the publication gate', () => {
+    const source = readFileSync(
+      resolve(dirname(fileURLToPath(import.meta.url)), 'page.tsx'),
+      'utf8',
+    );
+    expect(source).toContain("export const dynamic = 'force-dynamic'");
   });
 });

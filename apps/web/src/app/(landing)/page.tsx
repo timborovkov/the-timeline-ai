@@ -20,7 +20,6 @@ import { CookieSettingsButton } from '@/components/public-analytics';
 import { PublicHeader } from '@/components/public-header';
 import { PublicNavigationItems } from '@/components/public-navigation';
 import { PublicSessionBranch } from '@/components/public-session-branch';
-import { getLegalContactEmail } from '@/lib/legal-versions';
 import {
   PUBLIC_DOCUMENT_REGISTRY,
   buildPublicStructuredData,
@@ -28,6 +27,7 @@ import {
   stringifyJsonLdForHtml,
 } from '@/lib/public-site';
 import { getSiteUrl } from '@/lib/site-url';
+import { DEFAULT_SUPPORT_EMAIL } from '@/lib/support-links';
 import { cn } from '@/lib/utils';
 
 const SITE_NAME = 'The Timeline';
@@ -166,7 +166,6 @@ export default function LandingPage() {
 }
 
 function StructuredData() {
-  const legalContactEmail = getLegalContactEmail();
   const siteUrl = getSiteUrl();
   const publicGraph = buildPublicStructuredData(HOME_DOCUMENT, siteUrl);
   const orgId = new URL('/#organization', siteUrl).toString();
@@ -178,8 +177,8 @@ function StructuredData() {
     name: SITE_NAME,
     url: siteUrl,
     logo: new URL('/icon.svg', siteUrl).toString(),
+    email: DEFAULT_SUPPORT_EMAIL,
   };
-  if (legalContactEmail) organization.email = legalContactEmail;
 
   const graph = {
     '@context': 'https://schema.org',

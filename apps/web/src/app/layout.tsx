@@ -1,4 +1,3 @@
-import { getEnv } from '@timeline/shared/env';
 import localFont from 'next/font/local';
 import Script from 'next/script';
 
@@ -12,7 +11,6 @@ import { Toaster } from '@/components/ui/sonner';
 import { appleWebApp, pwaViewport } from '@/lib/pwa-splash';
 import { SIDEBAR_PREFERENCE_BOOTSTRAP } from '@/lib/sidebar-preference';
 import { getSiteUrl } from '@/lib/site-url';
-import { getSupportEmail } from '@/lib/support-email';
 
 import './globals.css';
 
@@ -130,7 +128,6 @@ export const metadata: Metadata = {
 export const viewport: Viewport = pwaViewport;
 
 export default function RootLayout({ children }: { children: ReactNode }) {
-  const taskCategoriesEnabled = getEnv().TASK_CATEGORY_UI_ENABLED;
   return (
     <html
       lang="en"
@@ -139,13 +136,13 @@ export default function RootLayout({ children }: { children: ReactNode }) {
     >
       <body
         className="min-h-screen bg-background text-foreground antialiased"
-        data-task-categories-enabled={taskCategoriesEnabled ? 'true' : 'false'}
+        data-task-categories-enabled="true"
       >
         <Script id="sidebar-preference" strategy="beforeInteractive">
           {SIDEBAR_PREFERENCE_BOOTSTRAP}
         </Script>
         <ThemeProvider>
-          <SupportEmailProvider email={getSupportEmail()}>
+          <SupportEmailProvider>
             <PublicAnalyticsBoundary>{children}</PublicAnalyticsBoundary>
           </SupportEmailProvider>
           <Toaster />

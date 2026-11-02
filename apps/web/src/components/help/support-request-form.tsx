@@ -11,7 +11,7 @@ export function SupportRequestForm({
   requiresTurnstile,
 }: {
   turnstileSiteKey?: string;
-  requiresTurnstile: boolean;
+  requiresTurnstile?: boolean;
 }) {
   const searchParams = useSearchParams();
   const session = usePublicSession();
