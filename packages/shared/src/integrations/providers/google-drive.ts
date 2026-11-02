@@ -17,6 +17,7 @@ import { getEnv } from '#src/env.js';
 import {
   driveDebouncePlan,
   hashDrivePayload,
+  takeDriveExtractSlot,
   takeDriveProcessSlot,
 } from '#src/integrations/google-drive-capture.js';
 import { diffDriveText, truncateDriveSnapshot } from '#src/integrations/google-drive-diff.js';
@@ -489,11 +490,53 @@ async function downloadFileBody(
   return { body: Buffer.from(ab), contentType, filenameSuffix: spec.suffix };
 }
 
+function driveMimeNeedsPaidExtract(mimeType: string): boolean {
+  return (
+    mimeType === 'application/pdf' ||
+    mimeType === 'application/msword' ||
+    mimeType === 'application/vnd.google-apps.presentation' ||
+    mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+  );
+}
+
+function downloadedBodyNeedsPaidExtract(contentType: string): boolean {
+  const ct = contentType.toLowerCase().split(';')[0]?.trim() ?? '';
+  return (
+    ct === 'application/pdf' ||
+    ct === 'application/msword' ||
+    ct.includes('officedocument') ||
+    ct.includes('msword')
+  );
+}
+
+interface LoadedDriveText {
+  text: string;
+  skippedReason?: string;
+  extractError?: string;
+  extractCapReason?: 'file' | 'connection';
+}
+
 async function loadDriveText(
+  integrationId: string,
   tokens: DriveTokens,
   file: DriveFile,
   ctx: SyncContext,
-): Promise<{ text: string; skippedReason?: string }> {
+): Promise<LoadedDriveText> {
+  if (driveMimeNeedsPaidExtract(file.mimeType) && ctx.loadTransientDriveExtract) {
+    const existing = await ctx.loadTransientDriveExtract(file.id);
+    if (existing?.status === 'ready') {
+      await ctx.consumeTransientDriveExtract?.(file.id);
+      if (!existing.text.trim()) return { text: '', skippedReason: 'extract_empty' };
+      return { text: existing.text };
+    }
+    if (existing?.status === 'failed') {
+      return { text: '', skippedReason: 'extract_failed', extractError: existing.error };
+    }
+    if (existing?.status === 'pending') {
+      return { text: '', skippedReason: 'extract_pending' };
+    }
+  }
+
   const download = await downloadFileBody(tokens, file.id, file.mimeType);
   if (!download) {
     return {
@@ -503,24 +546,32 @@ async function loadDriveText(
         : 'too_large_or_unsupported',
     };
   }
-  const isBinary =
-    download.contentType === 'application/pdf' ||
-    download.contentType === 'application/msword' ||
-    download.contentType.includes('officedocument') ||
-    download.contentType.includes('msword');
-  if (isBinary) {
-    if (!ctx.extractBinaryText) {
+  if (
+    driveMimeNeedsPaidExtract(file.mimeType) ||
+    downloadedBodyNeedsPaidExtract(download.contentType)
+  ) {
+    const extractSlot = ctx.takeDriveExtractSlot
+      ? await ctx.takeDriveExtractSlot({ integrationId, fileId: file.id })
+      : await takeDriveExtractSlot({ integrationId, fileId: file.id });
+    if (!extractSlot.allowed) {
+      return {
+        text: '',
+        skippedReason: 'extract_capped',
+        extractCapReason: extractSlot.reason,
+      };
+    }
+    if (!ctx.enqueueTransientDriveExtract) {
       return { text: '', skippedReason: 'extract_unavailable' };
     }
-    const extracted = await ctx.extractBinaryText({
+    await ctx.enqueueTransientDriveExtract({
+      fileId: file.id,
       filename: `${file.name}${download.filenameSuffix}`,
       contentType: download.contentType,
       body: download.body,
     });
-    if (!extracted?.text.trim()) return { text: '', skippedReason: 'extract_empty' };
-    return { text: truncateDriveSnapshot(extracted.text) };
+    return { text: '', skippedReason: 'extract_enqueued' };
   }
-  return { text: truncateDriveSnapshot(download.body.toString('utf8')) };
+  return { text: download.body.toString('utf8') };
 }
 
 async function paginateDriveList<TItem>(
@@ -804,8 +855,35 @@ async function processDriveFile(
   const [comments, permissions, loaded] = await Promise.all([
     listDriveComments(tokens, file.id),
     listDrivePermissions(tokens, file.id),
-    loadDriveText(tokens, file, ctx),
+    loadDriveText(integration.id, tokens, file, ctx),
   ]);
+  if (loaded.skippedReason === 'extract_enqueued') {
+    await ctx.recordAudit('drive_extract_enqueued', {
+      file_id: fileId,
+      mime_type: file.mimeType,
+    });
+    return;
+  }
+  if (loaded.skippedReason === 'extract_pending') {
+    await ctx.recordAudit('drive_extract_pending', { file_id: fileId, mime_type: file.mimeType });
+    return;
+  }
+  if (loaded.skippedReason === 'extract_failed') {
+    await ctx.recordAudit('drive_extract_failed', {
+      file_id: fileId,
+      mime_type: file.mimeType,
+      error: loaded.extractError ?? 'extract_failed',
+    });
+    return;
+  }
+  if (loaded.skippedReason === 'extract_capped') {
+    await ctx.recordAudit('drive_extract_capped', {
+      file_id: fileId,
+      mime_type: file.mimeType,
+      reason: loaded.extractCapReason ?? 'connection',
+    });
+    return;
+  }
   if (loaded.skippedReason) {
     await ctx.recordAudit('drive_extract_skipped', {
       file_id: fileId,
@@ -815,8 +893,9 @@ async function processDriveFile(
     return;
   }
 
-  const snapshotText = loaded.text;
-  const contentHash = hashDrivePayload(snapshotText);
+  const fullText = loaded.text;
+  const snapshotText = truncateDriveSnapshot(fullText);
+  const contentHash = hashDrivePayload(fullText);
   const commentsHash = commentsFingerprint(comments);
   const permissionsHash = permissionsFingerprint(permissions);
   const previous = ctx.loadLatestDriveSnapshot ? await ctx.loadLatestDriveSnapshot(file.id) : null;
@@ -827,7 +906,7 @@ async function processDriveFile(
     ...commentSignals(comments, commentsChanged),
     ...(permissionsChanged ? clientShareSignals(permissions, teamDomains) : []),
   ];
-  const diff = diffDriveText(previous?.snapshotText ?? '', snapshotText);
+  const diff = diffDriveText(previous?.snapshotText ?? '', fullText);
   const snapshot = {
     contentHash,
     snapshotText,

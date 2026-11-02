@@ -9,7 +9,7 @@ const MARKDOWN_LINK = /!?\[([^\]]*)\]\([^)]*\)/g;
 const MARKDOWN_LINE_PREFIX = /^\s{0,3}(?:#{1,6}\s+|>\s+|[-*+]\s+)/;
 
 const DRIVE_DIFF_MIN_CHANGED_CHARS = 40;
-const DRIVE_SNAPSHOT_MAX_CHARS = 20_000;
+export const DRIVE_SNAPSHOT_MAX_CHARS = 20_000;
 const DRIVE_HUNK_LINE_MAX = 400;
 const DRIVE_HUNK_HEAD_CHARS = 240;
 

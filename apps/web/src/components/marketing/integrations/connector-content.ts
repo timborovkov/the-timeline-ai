@@ -459,8 +459,8 @@ export const CONNECTORS: readonly ConnectorContent[] = [
     limitations: [
       'Activation sets a Drive changes cursor and registers `changes.watch`. Historical files are not enumerated. Changes before that cursor are never returned.',
       'Drive push notifications do not include file ids. The webhook-delivery worker records the channel ping, then a targeted `drive.changes` job lists changes and enqueues one delayed `drive.file` job per in-scope file, coalesced by BullMQ job id. Trailing debounce extends that delayed job up to one hour from the first notification.',
-      'Formatting-only and tiny edits are skipped before any LLM call. Remaining hunks go to a small billed model that first judges CRM relevance. Daily caps apply per file and per connection.',
-      'Timeline stores truncated text snapshots for diffing, never a full Drive copy in the document drive. PDF and Word text is extracted transiently.',
+      'Formatting-only and tiny edits are skipped before any LLM call. Remaining hunks go to a small billed model that first judges CRM relevance. Daily caps apply per file and per connection, and paid PDF/Word/Slides extraction has its own tighter budget.',
+      'Timeline hashes the full extracted text and stores truncated snapshots for diffing, never a full Drive copy in the document drive. PDF, Word, and Slides text is extracted transiently by the document-extract service.',
       'Files over 20 MB and unsupported Google-native formats are skipped. Comments are used as signals, not stored as a full comment archive. Timeline does not edit files, change sharing, or replace Google Docs collaboration.',
     ],
     faqs: [
@@ -472,7 +472,7 @@ export const CONNECTORS: readonly ConnectorContent[] = [
       {
         question: 'Does Timeline store a copy of each document?',
         answer:
-          'No. Timeline fetches text long enough to diff and judge CRM relevance, then keeps a truncated snapshot and hashes. It does not harvest Drive files into the document drive.',
+          'No. Timeline hashes and diffs the full extracted text, then keeps a truncated snapshot. It does not harvest Drive files into the document drive.',
       },
       {
         question: 'How quickly do edits appear?',

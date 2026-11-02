@@ -636,13 +636,39 @@ export async function closeCalendarRecurrenceQueue(): Promise<void> {
   });
 }
 
-export interface DocumentExtractJobData {
+export interface DocumentVersionExtractJobData {
+  kind?: 'document';
   documentVersionId: string;
   teamId: string;
   /** Override target Qdrant collection for the embed fan-out — used by the
    *  redocument-embed migration script. Threaded into each chunk's embed
    *  job verbatim. */
   targetCollection?: string;
+}
+
+/**
+ * Transient Drive PDF/Word/Slides extract. Bytes live in the documents
+ * bucket only for the extract hop; the orchestrator writes a JSON result
+ * and resumes `drive.file`. This must not create a document-drive harvest.
+ */
+export interface DriveTransientExtractJobData {
+  kind: 'drive_transient';
+  teamId: string;
+  integrationId: string;
+  fileId: string;
+  extractId: string;
+  objectKey: string;
+  resultObjectKey: string;
+  contentType: string;
+  filename: string;
+}
+
+export type DocumentExtractJobData = DocumentVersionExtractJobData | DriveTransientExtractJobData;
+
+export function isDriveTransientExtractJob(
+  data: DocumentExtractJobData,
+): data is DriveTransientExtractJobData {
+  return data.kind === 'drive_transient';
 }
 
 let _documentExtractQueue: TimelineQueue<DocumentExtractJobData> | undefined;
@@ -659,10 +685,19 @@ export function getDocumentExtractQueue(): TimelineQueue<DocumentExtractJobData>
 }
 
 export async function enqueueDocumentExtractJob(data: DocumentExtractJobData): Promise<void> {
-  // No jobId-based dedup for the same reasons as the other queues:
-  // worker-side idempotency comes from advisory locks on
-  // `document_versions.id` plus the deterministic chunk-embed point ids.
-  await getDocumentExtractQueue().add('document-extract', data);
+  // Document-version jobs rely on advisory locks for idempotency. Drive
+  // transient extracts additionally collapse on extractId so a resume
+  // cannot stack duplicate Daytona/vision work for the same bytes.
+  const jobId = isDriveTransientExtractJob(data)
+    ? bullmqCustomJobId([
+        'document-extract',
+        'drive-transient',
+        data.integrationId,
+        data.fileId,
+        data.extractId,
+      ])
+    : undefined;
+  await getDocumentExtractQueue().add('document-extract', data, jobId ? { jobId } : undefined);
 }
 
 export async function closeDocumentExtractQueue(): Promise<void> {

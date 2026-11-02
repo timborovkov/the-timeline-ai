@@ -238,6 +238,31 @@ describe('queue wrappers', () => {
     expect(fakes.queues[2]?.addCalls[0]).toMatchObject({ name: 'document-extract' });
   }, 20_000);
 
+  it('dedupes Drive transient extract jobs by extract id', async () => {
+    const queues = await importQueues();
+
+    await queues.enqueueDocumentExtractJob({
+      kind: 'drive_transient',
+      teamId: '22222222-2222-4222-8222-222222222222',
+      integrationId: '11111111-1111-4111-8111-111111111111',
+      fileId: 'file-1',
+      extractId: 'extract-1',
+      objectKey: 'drive-transient/source',
+      resultObjectKey: 'drive-transient/result.json',
+      contentType: 'application/pdf',
+      filename: 'Notes.pdf',
+    });
+
+    expect(fakes.queues[0]?.name).toBe('document-extract');
+    expect(fakes.queues[0]?.addCalls[0]).toMatchObject({
+      name: 'document-extract',
+      opts: {
+        jobId:
+          'document-extract|drive-transient|11111111-1111-4111-8111-111111111111|file-1|extract-1',
+      },
+    });
+  });
+
   it('keeps worker-idempotent queues free of jobId dedupe but uses explicit ids where required', async () => {
     const queues = await importQueues();
 

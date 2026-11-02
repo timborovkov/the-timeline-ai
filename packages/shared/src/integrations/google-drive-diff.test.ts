@@ -2,6 +2,7 @@ import { expect } from '@timeline/test-support';
 import { describe, it } from 'bun:test';
 
 import {
+  DRIVE_SNAPSHOT_MAX_CHARS,
   diffDriveText,
   normalizeDriveTextForCompare,
   truncateDriveSnapshot,
@@ -57,6 +58,16 @@ describe('diffDriveText', () => {
 
   it('truncates snapshots used for later diffs', () => {
     expect(truncateDriveSnapshot('abcdef', 4)).toBe('abcd');
+  });
+
+  it('treats edits past the stored snapshot bound as substantive', () => {
+    const prefix = 'A'.repeat(DRIVE_SNAPSHOT_MAX_CHARS);
+    const previousStored = prefix;
+    const nextFull = `${prefix}Signed $48k Northstar contract.`;
+    const diff = diffDriveText(previousStored, nextFull);
+    expect(truncateDriveSnapshot(nextFull)).toBe(prefix);
+    expect(diff.changed).toBe(true);
+    expect(diff.hunks.join(' ')).toContain('$48k');
   });
 
   it('keeps later-half edits when a changed line is longer than 400 characters', () => {

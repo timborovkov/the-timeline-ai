@@ -175,14 +175,40 @@ export interface SyncContext {
     opts?: { delayMs?: number; replaceDelayed?: boolean },
   ): Promise<void>;
   /**
-   * Extract text from a downloaded PDF/Office body via the document-extract
-   * service without persisting a document copy.
+   * Enqueue a credential-thin document-extract job for Drive PDF/Word/Slides.
+   * The main worker must not run Daytona or billed vision itself (ADR 0013).
    */
-  extractBinaryText?(input: {
+  enqueueTransientDriveExtract?(input: {
+    fileId: string;
     filename: string;
     contentType: string;
     body: Buffer;
-  }): Promise<{ text: string } | null>;
+  }): Promise<void>;
+  /**
+   * Read a previously enqueued Drive transient extract. `pending` means the
+   * orchestrator has not written a result yet; `failed` is a visible error
+   * (missing Daytona, empty extract, routing failure) rather than a silent skip.
+   */
+  loadTransientDriveExtract?(
+    fileId: string,
+  ): Promise<
+    | { status: 'pending' }
+    | { status: 'ready'; text: string }
+    | { status: 'failed'; error: string }
+    | null
+  >;
+  /** Delete the transient source/result objects and clear the extract cursor. */
+  consumeTransientDriveExtract?(fileId: string): Promise<void>;
+  /**
+   * Paid Drive extract budget, checked before Daytona/vision spend. Tests
+   * inject this; production uses `takeDriveExtractSlot`.
+   */
+  takeDriveExtractSlot?(input: {
+    integrationId: string;
+    fileId: string;
+  }): Promise<
+    { allowed: true } | { allowed: false; reason: 'file' | 'connection'; retryAfterMs: number }
+  >;
   loadLatestDriveSnapshot?(fileId: string): Promise<{
     contentHash: string;
     snapshotText: string;

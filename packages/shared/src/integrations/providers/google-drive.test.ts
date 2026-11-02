@@ -27,6 +27,7 @@ const { resetEnvForTests } = await import('#src/env.js');
 const { googleDriveProvider } = await import('#src/integrations/providers/google-drive.js');
 const { DRIVE_FILE_DEBOUNCE_MS, hashDrivePayload } =
   await import('#src/integrations/google-drive-capture.js');
+const { DRIVE_SNAPSHOT_MAX_CHARS } = await import('#src/integrations/google-drive-diff.js');
 
 const ORIGINAL_ENV = {
   GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID,
@@ -107,7 +108,10 @@ function syncContext(
   | 'saveDriveSnapshot'
   | 'listTeamEmailDomains'
   | 'judgeDriveChange'
-  | 'extractBinaryText'
+  | 'enqueueTransientDriveExtract'
+  | 'loadTransientDriveExtract'
+  | 'consumeTransientDriveExtract'
+  | 'takeDriveExtractSlot'
 > &
   Partial<SyncContext> {
   return {
@@ -125,7 +129,10 @@ function syncContext(
       reason: 'crm_update',
       summary: 'Pricing section changed',
     }),
-    extractBinaryText: vi.fn().mockResolvedValue({ text: 'Extracted PDF text for the contract.' }),
+    enqueueTransientDriveExtract: vi.fn().mockResolvedValue(undefined),
+    loadTransientDriveExtract: vi.fn().mockResolvedValue(null),
+    consumeTransientDriveExtract: vi.fn().mockResolvedValue(undefined),
+    takeDriveExtractSlot: vi.fn().mockResolvedValue({ allowed: true }),
     ...overrides,
   };
 }
@@ -707,7 +714,63 @@ describe('googleDriveProvider', () => {
       ([input]) => requestUrl(input).searchParams.get('alt') === 'media',
     );
     expect(downloadCall?.[2]).toMatchObject({ maxResponseBytes: 20 * 1024 * 1024 });
-    expect(ctx.extractBinaryText).toHaveBeenCalledOnce();
+    expect(ctx.enqueueTransientDriveExtract).toHaveBeenCalledOnce();
+    expect(ctx.takeDriveExtractSlot).toHaveBeenCalledWith({
+      integrationId: 'integration-1',
+      fileId: 'file-1',
+    });
+    expect(ctx.writeEvents).not.toHaveBeenCalled();
+    expect(ctx.recordAudit).toHaveBeenCalledWith(
+      'drive_extract_enqueued',
+      expect.objectContaining({ file_id: 'file-1', mime_type: 'application/pdf' }),
+    );
+    expect(ctx.saveCursor).toHaveBeenCalledWith('drive.debounce.file-1', {});
+  });
+
+  it('resumes Drive PDF capture from orchestrator text without extracting in-process', async () => {
+    const fetch = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((input) => {
+      const url = requestUrl(input);
+      if (url.pathname.endsWith('/files/file-1')) {
+        return Promise.resolve(
+          jsonResponse({
+            id: 'file-1',
+            name: 'Notes',
+            mimeType: 'application/pdf',
+            parents: ['root'],
+            modifiedTime: '2026-06-20T10:00:00.000Z',
+          }),
+        );
+      }
+      if (url.pathname.endsWith('/comments')) {
+        return Promise.resolve(jsonResponse({ comments: [] }));
+      }
+      return Promise.resolve(jsonResponse({ permissions: [] }));
+    });
+    vi.stubGlobal('fetch', fetch);
+    const extracted = 'Contract amount is forty eight thousand dollars for Northstar.';
+    const ctx = syncContext({
+      loadTransientDriveExtract: vi.fn().mockResolvedValue({ status: 'ready', text: extracted }),
+      loadLatestDriveSnapshot: vi.fn().mockResolvedValue({
+        contentHash: 'old',
+        snapshotText: 'Prior snapshot text that is different enough to count.',
+        commentsHash: 'old-comments',
+        permissionsHash: 'old-permissions',
+        mimeType: 'application/pdf',
+      }),
+    });
+
+    await googleDriveProvider.incrementalSync({
+      integration: { id: 'integration-1', teamId: 'team-1' } as never,
+      tokens: { access_token: 'access-token', expires_at: Date.now() + 600_000 },
+      selections: [{ kind: 'drive.file', externalId: 'file-1' }],
+      ctx: ctx,
+      target: { resourceType: 'drive.file', externalId: 'file-1' },
+    });
+
+    expect(ctx.enqueueTransientDriveExtract).not.toHaveBeenCalled();
+    expect(ctx.consumeTransientDriveExtract).toHaveBeenCalledWith('file-1');
     const events: IntegrationEvent[] = (
       ctx.writeEvents as unknown as { mock: { calls: [IntegrationEvent[]][] } }
     ).mock.calls.flatMap(([batch]) => batch);
@@ -717,8 +780,168 @@ describe('googleDriveProvider', () => {
       eventClass: 'communication',
       eventType: 'file.changed',
     });
-    expect(ctx.saveCursor).toHaveBeenCalledWith('drive.debounce.file-1', {});
     expect(events[0]?.contentText).not.toContain('ya29.');
+  });
+
+  it('audits a visible Drive extract failure instead of skipping as empty', async () => {
+    const fetch = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((input) => {
+      const url = requestUrl(input);
+      if (url.pathname.endsWith('/files/file-1')) {
+        return Promise.resolve(
+          jsonResponse({
+            id: 'file-1',
+            name: 'Notes',
+            mimeType: 'application/pdf',
+            parents: ['root'],
+          }),
+        );
+      }
+      if (url.pathname.endsWith('/comments')) {
+        return Promise.resolve(jsonResponse({ comments: [] }));
+      }
+      return Promise.resolve(jsonResponse({ permissions: [] }));
+    });
+    vi.stubGlobal('fetch', fetch);
+    const ctx = syncContext({
+      loadTransientDriveExtract: vi.fn().mockResolvedValue({
+        status: 'failed',
+        error: 'Daytona is not configured for PDF extraction',
+      }),
+    });
+
+    await googleDriveProvider.incrementalSync({
+      integration: { id: 'integration-1', teamId: 'team-1' } as never,
+      tokens: { access_token: 'access-token', expires_at: Date.now() + 600_000 },
+      selections: [{ kind: 'drive.file', externalId: 'file-1' }],
+      ctx: ctx,
+      target: { resourceType: 'drive.file', externalId: 'file-1' },
+    });
+
+    expect(ctx.writeEvents).not.toHaveBeenCalled();
+    expect(ctx.enqueueTransientDriveExtract).not.toHaveBeenCalled();
+    expect(ctx.recordAudit).toHaveBeenCalledWith(
+      'drive_extract_failed',
+      expect.objectContaining({
+        file_id: 'file-1',
+        error: 'Daytona is not configured for PDF extraction',
+      }),
+    );
+  });
+
+  it('gates paid Drive extraction before enqueueing the orchestrator', async () => {
+    const fetch = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((input) => {
+      const url = requestUrl(input);
+      if (url.pathname.endsWith('/files/file-1')) {
+        return Promise.resolve(
+          jsonResponse({
+            id: 'file-1',
+            name: 'Notes',
+            mimeType: 'application/pdf',
+            parents: ['root'],
+          }),
+        );
+      }
+      if (url.pathname.endsWith('/comments')) {
+        return Promise.resolve(jsonResponse({ comments: [] }));
+      }
+      return Promise.resolve(jsonResponse({ permissions: [] }));
+    });
+    vi.stubGlobal('fetch', fetch);
+    const ctx = syncContext({
+      takeDriveExtractSlot: vi.fn().mockResolvedValue({
+        allowed: false,
+        reason: 'connection',
+        retryAfterMs: 1_000,
+      }),
+    });
+
+    await googleDriveProvider.incrementalSync({
+      integration: { id: 'integration-1', teamId: 'team-1' } as never,
+      tokens: { access_token: 'access-token', expires_at: Date.now() + 600_000 },
+      selections: [{ kind: 'drive.file', externalId: 'file-1' }],
+      ctx: ctx,
+      target: { resourceType: 'drive.file', externalId: 'file-1' },
+    });
+
+    expect(ctx.enqueueTransientDriveExtract).not.toHaveBeenCalled();
+    expect(ctx.judgeDriveChange).not.toHaveBeenCalled();
+    expect(ctx.recordAudit).toHaveBeenCalledWith(
+      'drive_extract_capped',
+      expect.objectContaining({ file_id: 'file-1', reason: 'connection' }),
+    );
+  });
+
+  it('hashes and diffs the full Drive text while storing a truncated snapshot', async () => {
+    const prefix = 'A'.repeat(DRIVE_SNAPSHOT_MAX_CHARS);
+    const previousFull = `${prefix}OLD_TAIL signed $12k`;
+    const nextFull = `${prefix}NEW_TAIL signed $48k Northstar contract.`;
+    const fetch = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((input) => {
+      const url = requestUrl(input);
+      if (url.pathname.includes('/export')) {
+        return Promise.resolve(new Response(nextFull, { status: 200 }));
+      }
+      if (url.pathname.endsWith('/files/file-1')) {
+        return Promise.resolve(
+          jsonResponse({
+            id: 'file-1',
+            name: 'SOW',
+            mimeType: 'application/vnd.google-apps.document',
+            parents: ['root'],
+            modifiedTime: '2026-06-20T10:00:00.000Z',
+          }),
+        );
+      }
+      if (url.pathname.endsWith('/comments')) {
+        return Promise.resolve(jsonResponse({ comments: [] }));
+      }
+      return Promise.resolve(jsonResponse({ permissions: [] }));
+    });
+    vi.stubGlobal('fetch', fetch);
+    const ctx = syncContext({
+      loadLatestDriveSnapshot: vi.fn().mockResolvedValue({
+        contentHash: hashDrivePayload(previousFull),
+        snapshotText: prefix,
+        commentsHash: driveCommentsHash([]),
+        permissionsHash: drivePermissionsHash([]),
+        mimeType: 'application/vnd.google-apps.document',
+      }),
+    });
+
+    await googleDriveProvider.incrementalSync({
+      integration: { id: 'integration-1', teamId: 'team-1' } as never,
+      tokens: { access_token: 'access-token', expires_at: Date.now() + 600_000 },
+      selections: [{ kind: 'drive.file', externalId: 'file-1' }],
+      ctx: ctx,
+      target: { resourceType: 'drive.file', externalId: 'file-1' },
+    });
+
+    expect(ctx.enqueueTransientDriveExtract).not.toHaveBeenCalled();
+    expect(ctx.judgeDriveChange).toHaveBeenCalled();
+    const judgeInput = (
+      ctx.judgeDriveChange as unknown as {
+        mock: { calls: [{ hunks: string[] }][] };
+      }
+    ).mock.calls[0]?.[0];
+    expect(judgeInput?.hunks.join(' ')).toContain('$48k');
+    expect(ctx.saveDriveSnapshot).toHaveBeenCalledWith(
+      expect.objectContaining({
+        contentHash: hashDrivePayload(nextFull),
+        snapshotText: prefix,
+      }),
+    );
+    const saved = (
+      ctx.saveDriveSnapshot as unknown as {
+        mock: { calls: [{ snapshotText: string; contentHash: string }][] };
+      }
+    ).mock.calls[0]?.[0];
+    expect(saved?.snapshotText).toHaveLength(DRIVE_SNAPSHOT_MAX_CHARS);
+    expect(saved?.contentHash).not.toBe(hashDrivePayload(prefix));
   });
 
   it('audits Drive bodies that exceed the download cap as skipped instead of failed', async () => {
@@ -804,6 +1027,8 @@ describe('googleDriveProvider', () => {
     expect(ctx.saveDriveSnapshot).toHaveBeenCalledOnce();
     expect(ctx.judgeDriveChange).not.toHaveBeenCalled();
     expect(ctx.writeEvents).not.toHaveBeenCalled();
+    expect(ctx.takeDriveExtractSlot).not.toHaveBeenCalled();
+    expect(ctx.enqueueTransientDriveExtract).not.toHaveBeenCalled();
     expect(ctx.saveCursor).toHaveBeenCalledWith('drive.debounce.file-1', {});
   });
 

@@ -2742,9 +2742,20 @@ describe('runOneIntegration attention classification', () => {
     fakes.adminLoadIntegration.mockResolvedValueOnce({ ...integration, provider: 'google_drive' });
     fakes.adminListSelections.mockResolvedValueOnce([{ kind: 'drive.folder', externalId: 'root' }]);
     fakes.incrementalSync.mockImplementationOnce(
-      ({ ctx }: { ctx: { harvestDocument?: unknown; scheduleTargetedSync?: unknown } }) => {
+      ({
+        ctx,
+      }: {
+        ctx: {
+          harvestDocument?: unknown;
+          scheduleTargetedSync?: unknown;
+          enqueueTransientDriveExtract?: unknown;
+          extractBinaryText?: unknown;
+        };
+      }) => {
         expect(ctx.harvestDocument).toBeUndefined();
         expect(ctx.scheduleTargetedSync).toEqual(expect.any(Function));
+        expect(ctx.enqueueTransientDriveExtract).toEqual(expect.any(Function));
+        expect(ctx.extractBinaryText).toBeUndefined();
         return Promise.resolve();
       },
     );

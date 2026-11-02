@@ -37,6 +37,12 @@ export * from '#src/integrations/registry.js';
 export { googleDriveProvider } from '#src/integrations/providers/google-drive.js';
 export { judgeDriveChange } from '#src/integrations/google-drive-judge.js';
 export { driveSelectionIsWatchable } from '#src/integrations/google-drive-scope.js';
+export {
+  driveExtractCursorKey,
+  driveTransientExtractKeys,
+  parseDriveTransientExtractResult,
+  type DriveTransientExtractResultPayload,
+} from '#src/integrations/google-drive-capture.js';
 export { linearProvider, verifyLinearSignature } from '#src/integrations/providers/linear.js';
 export {
   GITHUB_RATE_LIMIT_CODE,

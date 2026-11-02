@@ -24,15 +24,16 @@ implementation detail.
 
 Google Drive v1 is shipped: person-owned OAuth, folder/file/shared-drive picker,
 `changes.watch` push (not polling), webhook-delivery + delayed targeted
-`integration-sync` debounce, truncated snapshots keyed by content/comments/
-permission hashes (paginated `comments.list` / `permissions.list` with
+`integration-sync` debounce, truncated snapshots keyed by full-text content hashes
+plus comments/permission hashes (paginated `comments.list` / `permissions.list` with
 `supportsAllDrives`; shared-drive `files.get` omits ACLs), billed CRM-relevance judge, optional object links (including
 the matched selected ancestor for nested files), nested-folder ancestry that
 caches parent metadata rather than early negatives, lock-busy and quota/token-refresh
 persistence of `drive.file` / `drive.changes` targets, contextual Markdown
-normalization that keeps signed amounts, and the document-extract vision OCR
-fallback for sparse PDFs. Full Drive copies are not harvested into the document
-drive.
+normalization that keeps signed amounts, and PDF/Word/Slides text via the
+credential-thin `document-extract-orchestrator` (ADR 0013) with a separate paid
+extract budget before Daytona/vision spend. Full Drive copies are not harvested into the document
+drive. Daytona misconfiguration is a visible `drive_extract_failed` audit, not a silent skip.
 
 ## Billing identity follow-up
 

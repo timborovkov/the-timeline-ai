@@ -2,6 +2,7 @@ import { type Db, documentChunks, documents, documentVersions } from '@timeline/
 import {
   childLogger,
   chunkText,
+  deleteObject,
   getDocumentsBucket,
   getEnv,
   getObjectBuffer,
@@ -9,6 +10,7 @@ import {
   isLikelyGeneratedDocumentName,
   llm,
   normalizeSuggestedTitle,
+  putObject,
   queue,
 } from '@timeline/shared';
 import { assertTeamWriteCapacity, isBillingAdmissionError } from '@timeline/shared/billing';
@@ -88,6 +90,16 @@ export interface DocumentExtractIO {
    * Tests inject fakes to assert accept/reject routing.
    */
   extractPdfSandbox: (body: Buffer) => Promise<SandboxPdfExtractResult>;
+  /** Persist Drive transient extract JSON (success or visible failure). */
+  writeDriveTransientResult: (objectKey: string, body: Buffer) => Promise<void>;
+  /** Resume the delayed `drive.file` job after transient extract completes. */
+  resumeDriveFile: (input: {
+    teamId: string;
+    integrationId: string;
+    fileId: string;
+  }) => Promise<void>;
+  /** Delete the uploaded Drive source bytes after extract. */
+  deleteBlob: (objectKey: string) => Promise<void>;
 }
 
 function defaultIO(): DocumentExtractIO {
@@ -118,6 +130,28 @@ function defaultIO(): DocumentExtractIO {
     },
     extractPdfSandbox(body) {
       return extractPdfForDocument(body);
+    },
+    async writeDriveTransientResult(objectKey, body) {
+      await putObject(getS3Client(), {
+        bucket: getDocumentsBucket(),
+        key: objectKey,
+        body,
+        contentType: 'application/json',
+      });
+    },
+    async resumeDriveFile(input) {
+      await queue.enqueueIntegrationSyncJob({
+        kind: 'targeted',
+        integrationId: input.integrationId,
+        teamId: input.teamId,
+        triggeredBy: 'drive_extract',
+        resourceType: 'drive.file',
+        externalId: input.fileId,
+        reason: 'drive_transient_extract',
+      });
+    },
+    async deleteBlob(objectKey) {
+      await deleteObject(getS3Client(), getDocumentsBucket(), objectKey);
     },
   };
 }
@@ -151,10 +185,11 @@ const MAX_DOCUMENT_BYTES = 25 * 1024 * 1024;
  * unique constraint and rolls back).
  */
 interface DocumentExtractResult {
-  documentVersionId: string;
+  documentVersionId?: string;
   chunkCount?: number;
   skipped?: boolean;
   reason?: string;
+  driveFileId?: string;
 }
 
 type RepresentationKind = 'source_text' | 'transcript' | 'visual_description' | 'metadata_preview';
@@ -189,11 +224,92 @@ function metadataPreviewText(input: {
  *   - embed enqueue via `io.enqueueEmbed`
  * No direct Redis/S3 references; both go through `io`.
  */
+async function writeDriveTransientOutcome(
+  io: DocumentExtractIO,
+  data: queue.DriveTransientExtractJobData,
+  payload: { ok: true; text: string } | { ok: false; error: string },
+): Promise<void> {
+  await io.writeDriveTransientResult(data.resultObjectKey, Buffer.from(JSON.stringify(payload)));
+  try {
+    await io.deleteBlob(data.objectKey);
+  } catch (err) {
+    log.warn({ err, objectKey: data.objectKey }, 'failed to delete Drive transient source blob');
+  }
+  await io.resumeDriveFile({
+    teamId: data.teamId,
+    integrationId: data.integrationId,
+    fileId: data.fileId,
+  });
+}
+
+async function finalizeDriveTransientExtractFailure(
+  io: DocumentExtractIO,
+  data: queue.DriveTransientExtractJobData,
+  err: unknown,
+): Promise<void> {
+  const message = err instanceof Error ? err.message : String(err);
+  await writeDriveTransientOutcome(io, data, { ok: false, error: message.slice(0, 500) });
+}
+
+async function processDriveTransientExtract(
+  data: queue.DriveTransientExtractJobData,
+  io: DocumentExtractIO,
+): Promise<DocumentExtractResult> {
+  let body: Buffer;
+  try {
+    const fetched = await io.fetchBlob(data.objectKey, MAX_DOCUMENT_BYTES);
+    body = fetched.body;
+  } catch (err: unknown) {
+    await writeDriveTransientOutcome(io, data, {
+      ok: false,
+      error: (err instanceof Error ? err.message : String(err)).slice(0, 500),
+    });
+    return { driveFileId: data.fileId, skipped: true, reason: 'drive_transient_fetch_failed' };
+  }
+
+  let routed: RouteResult;
+  try {
+    routed = await routeContentToText(
+      { contentType: data.contentType, body, name: data.filename },
+      io,
+    );
+  } catch (err: unknown) {
+    if (isDaytonaNotConfiguredError(err) || err instanceof UnrecoverableError) {
+      await writeDriveTransientOutcome(io, data, {
+        ok: false,
+        error: err.message.slice(0, 500),
+      });
+      return { driveFileId: data.fileId, skipped: true, reason: 'drive_transient_failed' };
+    }
+    throw err;
+  }
+
+  if ('failure' in routed) {
+    await writeDriveTransientOutcome(io, data, { ok: false, error: routed.failure.slice(0, 500) });
+    return { driveFileId: data.fileId, skipped: true, reason: 'drive_transient_failed' };
+  }
+
+  const text = routed.representations
+    .map((representation) => representation.text.trim())
+    .filter((line) => line.length > 0)
+    .join('\n\n');
+  if (!text) {
+    await writeDriveTransientOutcome(io, data, { ok: false, error: 'no text extracted' });
+    return { driveFileId: data.fileId, skipped: true, reason: 'drive_transient_empty' };
+  }
+
+  await writeDriveTransientOutcome(io, data, { ok: true, text });
+  return { driveFileId: data.fileId, reason: 'drive_transient_ready' };
+}
+
 export async function processDocumentExtractJob(
   deps: DocumentExtractWorkerDeps,
   data: queue.DocumentExtractJobData,
   io: DocumentExtractIO = defaultIO(),
 ): Promise<DocumentExtractResult> {
+  if (queue.isDriveTransientExtractJob(data)) {
+    return processDriveTransientExtract(data, io);
+  }
   const { documentVersionId, teamId, targetCollection } = data;
   // OpenRouter is gated lazily inside routeContentToText only when a
   // vision path is taken. Text / DOCX / accepted sandbox PDFs work without it.
@@ -566,6 +682,16 @@ export function startDocumentExtractWorker(
   worker.on('failed', (job, err) => {
     log.error({ jobId: job?.id, err }, 'job failed');
     captureWorkerJobFailure(err, job);
+    if (!job || !queue.isDriveTransientExtractJob(job.data)) return;
+    const attempts = job.opts.attempts ?? 1;
+    if (job.attemptsMade < attempts) return;
+    const data = job.data;
+    void finalizeDriveTransientExtractFailure(io, data, err).catch((finalizeErr: unknown) => {
+      log.error(
+        { err: finalizeErr, fileId: data.fileId },
+        'failed to persist Drive transient extract failure',
+      );
+    });
   });
   worker.on('completed', (job) => {
     log.info({ jobId: job.id }, 'job completed');

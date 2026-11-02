@@ -13,10 +13,14 @@ import {
   DRIVE_FILE_DEBOUNCE_MS,
   DRIVE_FILE_MAX_LATENCY_MS,
   driveDebouncePlan,
+  driveExtractCursorKey,
+  driveTransientExtractKeys,
   hashDrivePayload,
   linkedObjectForDriveSelection,
   loadLatestDriveSnapshot,
+  parseDriveTransientExtractResult,
   saveDriveSnapshot,
+  takeDriveExtractSlot,
   takeDriveProcessSlot,
 } from '#src/integrations/google-drive-capture.js';
 import { driveChangeJudgePrompt } from '#src/integrations/google-drive-judge.js';
@@ -57,6 +61,54 @@ describe('takeDriveProcessSlot', () => {
         checkRateLimit,
       }),
     ).resolves.toMatchObject({ allowed: false, reason: 'file' });
+  });
+});
+
+describe('takeDriveExtractSlot', () => {
+  it('rejects after the per-connection extract cap without consuming the judge cap', async () => {
+    const seen: string[] = [];
+    const checkRateLimit = ({ key }: { key: string }) => {
+      seen.push(key);
+      return Promise.resolve(
+        key.includes('connection')
+          ? { ok: false as const, retryAfterMs: 2_000, remaining: 0 }
+          : { ok: true as const, remaining: 3 },
+      );
+    };
+    await expect(
+      takeDriveExtractSlot({
+        integrationId: 'int-1',
+        fileId: 'file-1',
+        checkRateLimit,
+      }),
+    ).resolves.toMatchObject({ allowed: false, reason: 'connection' });
+    expect(seen.some((key) => key.includes('drive-extract'))).toBe(true);
+    expect(seen.some((key) => key.includes('drive-process'))).toBe(false);
+  });
+});
+
+describe('drive transient extract helpers', () => {
+  it('builds per-extract object keys and parses visible failures', () => {
+    expect(driveExtractCursorKey('file-1')).toBe('drive.extract.file-1');
+    expect(
+      driveTransientExtractKeys({
+        teamId: 'team-1',
+        integrationId: 'int-1',
+        fileId: 'file-1',
+        extractId: 'ext-1',
+      }),
+    ).toEqual({
+      objectKey: 'drive-transient/team-1/int-1/file-1/ext-1/source',
+      resultObjectKey: 'drive-transient/team-1/int-1/file-1/ext-1/result.json',
+    });
+    expect(
+      parseDriveTransientExtractResult(Buffer.from(JSON.stringify({ ok: true, text: 'Hello' }))),
+    ).toEqual({ ok: true, text: 'Hello' });
+    expect(
+      parseDriveTransientExtractResult(
+        Buffer.from(JSON.stringify({ ok: false, error: 'Daytona is not configured' })),
+      ),
+    ).toEqual({ ok: false, error: 'Daytona is not configured' });
   });
 });
 

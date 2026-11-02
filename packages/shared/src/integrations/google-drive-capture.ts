@@ -84,6 +84,70 @@ export async function takeDriveProcessSlot(input: {
   return { allowed: true };
 }
 
+export async function takeDriveExtractSlot(input: {
+  integrationId: string;
+  fileId: string;
+  checkRateLimit?: (input: RateLimitInput) => Promise<RateLimitResult>;
+}): Promise<
+  { allowed: true } | { allowed: false; reason: 'file' | 'connection'; retryAfterMs: number }
+> {
+  const check = input.checkRateLimit ?? checkRateLimit;
+  const file = await check({
+    key: rateLimitKey('drive-extract', 'file', input.integrationId, input.fileId),
+    ...RATE_LIMITS.driveExtractFilePerDay,
+  });
+  if (!file.ok) {
+    return { allowed: false, reason: 'file', retryAfterMs: Math.max(250, file.retryAfterMs) };
+  }
+  const connection = await check({
+    key: rateLimitKey('drive-extract', 'connection', input.integrationId),
+    ...RATE_LIMITS.driveExtractConnectionPerDay,
+  });
+  if (!connection.ok) {
+    return {
+      allowed: false,
+      reason: 'connection',
+      retryAfterMs: Math.max(250, connection.retryAfterMs),
+    };
+  }
+  return { allowed: true };
+}
+
+export function driveExtractCursorKey(fileId: string): string {
+  return `drive.extract.${fileId}`;
+}
+
+export function driveTransientExtractKeys(input: {
+  teamId: string;
+  integrationId: string;
+  fileId: string;
+  extractId: string;
+}): { objectKey: string; resultObjectKey: string } {
+  const prefix = `drive-transient/${input.teamId}/${input.integrationId}/${input.fileId}/${input.extractId}`;
+  return {
+    objectKey: `${prefix}/source`,
+    resultObjectKey: `${prefix}/result.json`,
+  };
+}
+
+export type DriveTransientExtractResultPayload =
+  { ok: true; text: string } | { ok: false; error: string };
+
+export function parseDriveTransientExtractResult(body: Buffer): DriveTransientExtractResultPayload {
+  const parsed: unknown = JSON.parse(body.toString('utf8'));
+  if (!parsed || typeof parsed !== 'object') {
+    throw new Error('invalid drive transient extract result');
+  }
+  const record = parsed as Record<string, unknown>;
+  if (record.ok === true && typeof record.text === 'string') {
+    return { ok: true, text: record.text };
+  }
+  if (record.ok === false && typeof record.error === 'string') {
+    return { ok: false, error: record.error };
+  }
+  throw new Error('invalid drive transient extract result');
+}
+
 export async function loadLatestDriveSnapshot(
   db: Db,
   input: { teamId: string; integrationId: string; fileId: string },

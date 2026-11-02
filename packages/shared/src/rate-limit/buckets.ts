@@ -69,6 +69,14 @@ export const RATE_LIMITS = {
   driveFilePerDay: { capacity: 8, refillPerSec: 8 / 86_400 },
   /** Per Drive connection per day. Caps a noisy shared drive. */
   driveConnectionPerDay: { capacity: 200, refillPerSec: 200 / 86_400 },
+  /**
+   * Paid Drive binary extract (Daytona sandbox + billed vision) per file
+   * per day. Separate from the post-diff judge cap so baseline captures and
+   * unchanged PDFs cannot spend extract without a budget.
+   */
+  driveExtractFilePerDay: { capacity: 4, refillPerSec: 4 / 86_400 },
+  /** Paid Drive binary extract per connection per day. */
+  driveExtractConnectionPerDay: { capacity: 40, refillPerSec: 40 / 86_400 },
   /** 401/lookup lockout for ingest webhooks: 60/min per source IP. */
   ingestWebhookAuth: { capacity: 60, refillPerSec: 60 / 60 },
 } as const;

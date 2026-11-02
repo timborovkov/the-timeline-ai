@@ -10,10 +10,13 @@ text is sparse or the input is an image.
 
 ## Context
 
-Document upload, chat attachments, inbound email, and integration harvest all
-enqueue `document-extract`. Historically the BullMQ worker downloaded bytes
-into the same Node process that holds Postgres, Redis, S3, OpenRouter,
-`SECRETS_ENCRYPTION_KEY`, and integration tokens, then ran
+Document upload, chat attachments, inbound email, integration harvest, and
+Drive v1 PDF/Word/Slides capture all enqueue `document-extract`. Drive does not
+harvest into the document drive: the main worker uploads bytes to a transient
+S3 key, the orchestrator writes a JSON result, then `drive.file` resumes. Do
+not copy `DAYTONA_*` onto the full worker. Historically the BullMQ worker
+downloaded bytes into the same Node process that holds Postgres, Redis, S3,
+OpenRouter, `SECRETS_ENCRYPTION_KEY`, and integration tokens, then ran
 `@firecrawl/pdf-inspector` / mammoth in-process (or off-thread). That is a
 reliability boundary, not a security boundary: a hostile PDF/DOCX can share
 an address space with production secrets.
@@ -108,7 +111,9 @@ DAYTONA_SNAPSHOT=auto
 
 ## Consequences
 
-- Main worker no longer loads untrusted PDF/Office parsers on the hot path.
+- Main worker no longer loads untrusted PDF/Office parsers on the hot path,
+  including Drive binary capture. Missing Daytona is a visible extract failure,
+  not an empty skip.
 - The orchestrator still has DB write + S3 read + OpenRouter; compromise is
   narrower than full worker secret theft but not zero.
 - Operators set `DAYTONA_*` on `document-extract-orchestrator`. Snapshot drift is avoided

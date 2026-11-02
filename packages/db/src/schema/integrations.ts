@@ -342,7 +342,8 @@ export const integrationSelections = pgTable(
 );
 
 // Compact Drive text hashes for diffing. Full document copies are never stored;
-// snapshot_text is truncated source text used only to skip formatting-only edits.
+// snapshot_text is truncated for storage. content_hash is sha256 of the full
+// extracted text so edits past the snapshot bound still change-detect.
 export const googleDriveFileSnapshots = pgTable(
   'google_drive_file_snapshots',
   {

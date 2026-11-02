@@ -1,17 +1,17 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 
 import { type Db, documents as documentsTable, getDbClient } from '@timeline/db';
 import {
   childLogger,
+  deleteObject,
   getDocumentsBucket,
+  getObjectBuffer,
   getS3Client,
   integrations as integrationsLib,
-  llm,
   putObject,
   queue,
   withTeam,
 } from '@timeline/shared';
-import { isBillingAdmissionError } from '@timeline/shared/billing';
 import {
   payloadDigestFromMetadata,
   sourcePayloadRefFromMetadata,
@@ -20,12 +20,6 @@ import { Worker, type Job } from 'bullmq';
 import { and, eq, sql } from 'drizzle-orm';
 
 import { withWorkerAiBilling, workerBillingJobOptions } from '#src/billing-context.js';
-import {
-  extractOfficeForDocument,
-  extractPdfTextWithVisionFallback,
-  resolveAnydocFormatHint,
-} from '#src/document-ingestion/pdf-extraction.js';
-import { isDaytonaNotConfiguredError } from '#src/document-ingestion/types.js';
 import { captureWorkerException, captureWorkerJobFailure } from '#src/monitoring.js';
 
 // Phase 11 — Integration sync worker.
@@ -349,32 +343,187 @@ const defaultDocumentHarvestIO: IntegrationDocumentHarvestIO = {
   enqueueDocumentExtractJob: queue.enqueueDocumentExtractJob,
 };
 
-async function extractDriveBinaryText(input: {
+interface DriveTransientExtractIO {
+  getDocumentsBucket: () => string;
+  putDocumentObject: (input: {
+    bucket: string;
+    key: string;
+    body: Buffer;
+    contentType: string;
+  }) => Promise<void>;
+  getDocumentObject: (input: {
+    bucket: string;
+    key: string;
+    maxBytes: number;
+  }) => Promise<{ body: Buffer }>;
+  deleteDocumentObject: (input: { bucket: string; key: string }) => Promise<void>;
+  enqueueDocumentExtractJob: (data: queue.DocumentExtractJobData) => Promise<void>;
+}
+
+const defaultDriveTransientExtractIO: DriveTransientExtractIO = {
+  getDocumentsBucket,
+  async putDocumentObject(input) {
+    await putObject(getS3Client(), input);
+  },
+  async getDocumentObject(input) {
+    return getObjectBuffer(getS3Client(), input.bucket, input.key, input.maxBytes);
+  },
+  async deleteDocumentObject(input) {
+    await deleteObject(getS3Client(), input.bucket, input.key);
+  },
+  enqueueDocumentExtractJob: queue.enqueueDocumentExtractJob,
+};
+
+const DRIVE_TRANSIENT_RESULT_MAX_BYTES = 2 * 1024 * 1024;
+
+function isMissingObjectError(err: unknown): boolean {
+  if (!err || typeof err !== 'object') return false;
+  const name = 'name' in err && typeof err.name === 'string' ? err.name : '';
+  const code = 'Code' in err && typeof err.Code === 'string' ? err.Code : '';
+  const status =
+    '$metadata' in err &&
+    err.$metadata &&
+    typeof err.$metadata === 'object' &&
+    'httpStatusCode' in err.$metadata
+      ? err.$metadata.httpStatusCode
+      : undefined;
+  return name === 'NoSuchKey' || name === 'NotFound' || code === 'NoSuchKey' || status === 404;
+}
+
+function driveExtractCursorFromUnknown(cursor: unknown): {
+  extractId: string;
+  objectKey: string;
+  resultObjectKey: string;
+} | null {
+  if (!cursor || typeof cursor !== 'object') return null;
+  const record = cursor as Record<string, unknown>;
+  if (
+    typeof record.extractId !== 'string' ||
+    typeof record.objectKey !== 'string' ||
+    typeof record.resultObjectKey !== 'string'
+  ) {
+    return null;
+  }
+  return {
+    extractId: record.extractId,
+    objectKey: record.objectKey,
+    resultObjectKey: record.resultObjectKey,
+  };
+}
+
+async function putAndEnqueueDriveTransientExtract(input: {
+  db: Db;
+  teamId: string;
+  integrationId: string;
+  fileId: string;
   filename: string;
   contentType: string;
   body: Buffer;
-}): Promise<{ text: string } | null> {
-  const contentType = input.contentType.toLowerCase().split(';')[0]?.trim() ?? '';
+  io?: DriveTransientExtractIO;
+}): Promise<void> {
+  const io = input.io ?? defaultDriveTransientExtractIO;
+  const extractId = randomUUID();
+  const keys = integrationsLib.driveTransientExtractKeys({
+    teamId: input.teamId,
+    integrationId: input.integrationId,
+    fileId: input.fileId,
+    extractId,
+  });
+  await io.putDocumentObject({
+    bucket: io.getDocumentsBucket(),
+    key: keys.objectKey,
+    body: input.body,
+    contentType: input.contentType,
+  });
+  await integrationsLib.adminSaveCursor(
+    input.db,
+    input.integrationId,
+    integrationsLib.driveExtractCursorKey(input.fileId),
+    {
+      extractId,
+      objectKey: keys.objectKey,
+      resultObjectKey: keys.resultObjectKey,
+      contentType: input.contentType,
+      filename: input.filename,
+      enqueuedAt: new Date().toISOString(),
+    },
+  );
+  await io.enqueueDocumentExtractJob({
+    kind: 'drive_transient',
+    teamId: input.teamId,
+    integrationId: input.integrationId,
+    fileId: input.fileId,
+    extractId,
+    objectKey: keys.objectKey,
+    resultObjectKey: keys.resultObjectKey,
+    contentType: input.contentType,
+    filename: input.filename,
+  });
+}
+
+async function readDriveTransientExtract(input: {
+  db: Db;
+  integrationId: string;
+  fileId: string;
+  io?: DriveTransientExtractIO;
+}): Promise<
+  | { status: 'pending' }
+  | { status: 'ready'; text: string }
+  | { status: 'failed'; error: string }
+  | null
+> {
+  const io = input.io ?? defaultDriveTransientExtractIO;
+  const cursor = driveExtractCursorFromUnknown(
+    await integrationsLib.adminLoadCursor(
+      input.db,
+      input.integrationId,
+      integrationsLib.driveExtractCursorKey(input.fileId),
+    ),
+  );
+  if (!cursor) return null;
   try {
-    if (contentType === 'application/pdf' || /\.pdf$/i.test(input.filename)) {
-      return await extractPdfTextWithVisionFallback({
-        body: input.body,
-        filename: input.filename,
-        extractFromMedia: (media) => llm.extractTextFromMedia(media),
-      });
-    }
-    const format = resolveAnydocFormatHint(contentType, input.filename);
-    if (format && format !== 'pdf') {
-      const result = await extractOfficeForDocument(input.body, format);
-      const text = result.text.trim();
-      return text.length > 0 ? { text } : null;
-    }
+    const fetched = await io.getDocumentObject({
+      bucket: io.getDocumentsBucket(),
+      key: cursor.resultObjectKey,
+      maxBytes: DRIVE_TRANSIENT_RESULT_MAX_BYTES,
+    });
+    const parsed = integrationsLib.parseDriveTransientExtractResult(fetched.body);
+    if (parsed.ok) return { status: 'ready', text: parsed.text };
+    return { status: 'failed', error: parsed.error };
   } catch (err) {
-    if (isBillingAdmissionError(err)) throw err;
-    if (isDaytonaNotConfiguredError(err)) return null;
-    throw err;
+    if (isMissingObjectError(err)) return { status: 'pending' };
+    const message = err instanceof Error ? err.message : String(err);
+    return { status: 'failed', error: message.slice(0, 500) };
   }
-  return null;
+}
+
+async function clearDriveTransientExtract(input: {
+  db: Db;
+  integrationId: string;
+  fileId: string;
+  io?: DriveTransientExtractIO;
+}): Promise<void> {
+  const io = input.io ?? defaultDriveTransientExtractIO;
+  const cursor = driveExtractCursorFromUnknown(
+    await integrationsLib.adminLoadCursor(
+      input.db,
+      input.integrationId,
+      integrationsLib.driveExtractCursorKey(input.fileId),
+    ),
+  );
+  if (cursor) {
+    const bucket = io.getDocumentsBucket();
+    await Promise.allSettled([
+      io.deleteDocumentObject({ bucket, key: cursor.objectKey }),
+      io.deleteDocumentObject({ bucket, key: cursor.resultObjectKey }),
+    ]);
+  }
+  await integrationsLib.adminSaveCursor(
+    input.db,
+    input.integrationId,
+    integrationsLib.driveExtractCursorKey(input.fileId),
+    {},
+  );
 }
 
 export async function harvestIntegrationDocument(input: {
@@ -1088,7 +1237,23 @@ export async function runOneIntegration(
           opts,
         );
       },
-      extractBinaryText: extractDriveBinaryText,
+      enqueueTransientDriveExtract(input) {
+        return putAndEnqueueDriveTransientExtract({
+          db,
+          teamId: integration.teamId,
+          integrationId,
+          fileId: input.fileId,
+          filename: input.filename,
+          contentType: input.contentType,
+          body: input.body,
+        });
+      },
+      loadTransientDriveExtract(fileId) {
+        return readDriveTransientExtract({ db, integrationId, fileId });
+      },
+      consumeTransientDriveExtract(fileId) {
+        return clearDriveTransientExtract({ db, integrationId, fileId });
+      },
       loadLatestDriveSnapshot(fileId) {
         return teamScope.integrations.loadLatestDriveSnapshot(integrationId, fileId);
       },
