@@ -9,7 +9,7 @@ import {
 } from '@/components/marketing/editorial/content';
 import { EditorialKicker } from '@/components/marketing/editorial/editorial-kicker';
 import { EditorialSectionHeading } from '@/components/marketing/editorial/editorial-section-heading';
-import { getSupportEmail } from '@/lib/support-email';
+import { SupportMailto } from '@/components/support-email-provider';
 import {
   GITHUB_BUG_REPORT_URL,
   GITHUB_CONTRIBUTING_URL,
@@ -169,9 +169,7 @@ export function GuideClosingSections({ guide }: { guide: EditorialGuide }) {
             <Link className={supportLinkClass} href="/help/support">
               Contact support
             </Link>
-            <a className={supportLinkClass} href={`mailto:${getSupportEmail()}`}>
-              Email support
-            </a>
+            <SupportMailto className={supportLinkClass}>Email support</SupportMailto>
             <a
               className={supportLinkClass}
               href={GITHUB_BUG_REPORT_URL}

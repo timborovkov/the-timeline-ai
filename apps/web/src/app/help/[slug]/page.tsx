@@ -6,11 +6,10 @@ import type { Metadata } from 'next';
 
 import { AgentInstallGuide } from '@/components/help/agent-install-guide';
 import { HelpAppLink } from '@/components/help/app-link';
+import { SupportMailto } from '@/components/support-email-provider';
 import { Button } from '@/components/ui/button';
-import { auth } from '@/lib/auth';
 import { findHelpPage, HELP_PAGES } from '@/lib/help-content';
 import { publicMetadata } from '@/lib/public-metadata';
-import { getSupportEmail } from '@/lib/support-email';
 import {
   GITHUB_BUG_REPORT_URL,
   GITHUB_CONTRIBUTING_URL,
@@ -44,13 +43,10 @@ export default async function HelpTopicPage({ params }: HelpPageProps) {
   const page = findHelpPage(slug);
   if (!page) notFound();
 
-  const session = await auth();
-  const isSignedIn = Boolean(session?.user);
-
   if (page.slug === 'agents') {
     return (
       <article className="space-y-14">
-        <AgentInstallGuide isSignedIn={isSignedIn} />
+        <AgentInstallGuide />
         <RelatedGuides related={page.related} />
       </article>
     );
@@ -96,11 +92,7 @@ export default async function HelpTopicPage({ params }: HelpPageProps) {
               {section.appLink || section.resourceLinks?.length ? (
                 <div className="flex flex-col items-start gap-2 lg:pt-11">
                   {section.appLink ? (
-                    <HelpAppLink
-                      href={section.appLink.href}
-                      label={section.appLink.label}
-                      isSignedIn={isSignedIn}
-                    />
+                    <HelpAppLink href={section.appLink.href} label={section.appLink.label} />
                   ) : null}
                   {section.resourceLinks?.map((link) => (
                     <Button key={link.href} asChild size="sm" variant="outline">
@@ -156,9 +148,7 @@ function RelatedGuides({ related }: { related: string[] }) {
           customer content, personal data, credentials, or private URLs.
         </p>
         <div className="mt-3 flex flex-wrap gap-x-5 gap-y-2 text-sm font-semibold">
-          <a className={supportLinkClass} href={`mailto:${getSupportEmail()}`}>
-            Email support
-          </a>
+          <SupportMailto className={supportLinkClass}>Email support</SupportMailto>
           <a
             className={supportLinkClass}
             href={GITHUB_BUG_REPORT_URL}

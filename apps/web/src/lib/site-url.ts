@@ -1,5 +1,8 @@
 import { nonEmptyEnv } from '@/lib/safe-redirect';
 
+/** Origin baked into prerendered public HTML when Docker/Railway omit AUTH_URL. */
+export const CANONICAL_PUBLIC_ORIGIN = 'https://thetimeline.cc';
+
 /**
  * Canonical site URL used by metadata, OG/Twitter image bases, robots,
  * and sitemap. Single source so we don't ship localhost references to
@@ -10,7 +13,8 @@ import { nonEmptyEnv } from '@/lib/safe-redirect';
  *   2. `VERCEL_URL` — auto-injected by Vercel for preview deploys
  *      (host only, no protocol). Prepend `https://`.
  *   3. `NEXTAUTH_URL` — legacy compatibility fallback.
- *   4. `http://localhost:3000` — local dev fallback.
+ *   4. `https://thetimeline.cc` in production builds, otherwise
+ *      `http://localhost:3000`.
  */
 export function getSiteUrl(): string {
   const authUrl = nonEmptyEnv(process.env.AUTH_URL);
@@ -19,7 +23,7 @@ export function getSiteUrl(): string {
   if (vercelUrl) return canonicalOrigin(`https://${vercelUrl}`);
   const nextAuthUrl = nonEmptyEnv(process.env.NEXTAUTH_URL);
   if (nextAuthUrl) return canonicalOrigin(nextAuthUrl);
-  return 'http://localhost:3000';
+  return process.env.NODE_ENV === 'production' ? CANONICAL_PUBLIC_ORIGIN : 'http://localhost:3000';
 }
 
 export function appUrl(path: string): URL {

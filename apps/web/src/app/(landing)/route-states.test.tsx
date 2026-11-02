@@ -15,7 +15,6 @@ const { cleanup, render, screen, within } = await import('@testing-library/react
 const { default: userEvent } = await import('@testing-library/user-event');
 const { renderToStaticMarkup } = await import('react-dom/server');
 const { default: LandingError } = await import('@/app/(landing)/error');
-const { default: LandingLoading } = await import('@/app/(landing)/loading');
 
 afterEach(() => {
   cleanup();
@@ -23,30 +22,6 @@ afterEach(() => {
 });
 
 describe('Landing route states', () => {
-  it('announces a responsive landing-shaped loading state outside busy content', () => {
-    const html = renderToStaticMarkup(<LandingLoading />);
-
-    expect(html.match(/<h1\b/g)).toHaveLength(1);
-    expect(html).toContain('Scattered work. <em>Cited answers.</em>');
-    expect(html).toContain('AI team memory');
-    expect(html).toContain('trace each claim back to the source');
-    expect(html).toContain('aria-live="polite"');
-    expect(html.indexOf('aria-live="polite"')).toBeLessThan(html.indexOf('aria-busy="true"'));
-    expect(html).toContain('aria-label="The Timeline loading placeholder"');
-    expect(html).toContain('href="/help"');
-    expect(html).toContain('href="/help/support"');
-    expect(html).toContain('href="/cookies"');
-
-    render(<LandingLoading />);
-
-    const announcement = screen.getByRole('status');
-    expect(announcement.textContent).toBe('Loading The Timeline');
-    expect(announcement.parentElement?.getAttribute('aria-busy')).toBeNull();
-    expect(
-      screen.getByLabelText('The Timeline loading placeholder').getAttribute('aria-busy'),
-    ).toBe('true');
-  });
-
   it('keeps auth-neutral landing context and lets keyboard users retry safely after a failed load', async () => {
     const reset = vi.fn();
     const user = userEvent.setup();
@@ -88,7 +63,7 @@ describe('Landing route states', () => {
   it('moves keyboard focus to the landing recovery content when its skip link is activated', async () => {
     const user = userEvent.setup();
 
-    render(<LandingLoading />);
+    render(<LandingError error={new Error('offline')} reset={vi.fn()} />);
 
     const skipLink = screen.getByRole('link', { name: 'Skip to main content' });
     const main = screen.getByRole('main');
@@ -102,7 +77,9 @@ describe('Landing route states', () => {
   });
 
   it('ships responsive recovery navigation constraints and layers the skip link above the sticky header', () => {
-    const html = renderToStaticMarkup(<LandingLoading />);
+    const html = renderToStaticMarkup(
+      <LandingError error={new Error('offline')} reset={() => undefined} />,
+    );
 
     expect(html).toContain('focus:z-[90]');
     expect(html).toContain('>Product</a>');
@@ -117,15 +94,5 @@ describe('Landing route states', () => {
     expect(html).not.toContain('href="/sign-up"');
     expect(html).not.toContain('>Start free</a>');
     expect(html).not.toContain('>Dashboard</a>');
-  });
-
-  it('keeps the landing loading masthead auth-neutral instead of guessing session state', () => {
-    render(<LandingLoading />);
-
-    expect(screen.queryByRole('link', { name: 'Sign in' })).toBeNull();
-    expect(screen.queryByRole('link', { name: 'Start free' })).toBeNull();
-    expect(screen.queryByRole('link', { name: 'Dashboard' })).toBeNull();
-    expect(screen.getByRole('navigation', { name: 'Public navigation' })).toBeTruthy();
-    expect(screen.getByLabelText('The Timeline source code on GitHub')).toBeTruthy();
   });
 });

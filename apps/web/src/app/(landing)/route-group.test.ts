@@ -8,12 +8,25 @@ const rootRouteFile = (name: string) => new URL(`../${name}`, import.meta.url);
 describe('landing route group', () => {
   it('keeps the root URL route and its recovery boundaries inside a URL-neutral group', () => {
     expect(existsSync(landingRouteFile('page.tsx'))).toBe(true);
-    expect(existsSync(landingRouteFile('loading.tsx'))).toBe(true);
+    expect(existsSync(landingRouteFile('loading.tsx'))).toBe(false);
     expect(existsSync(landingRouteFile('error.tsx'))).toBe(true);
 
     expect(existsSync(rootRouteFile('page.tsx'))).toBe(false);
     expect(existsSync(rootRouteFile('loading.tsx'))).toBe(false);
     expect(existsSync(rootRouteFile('error.tsx'))).toBe(false);
+
+    for (const publicLoading of [
+      'cookies/loading.tsx',
+      'help/contact/loading.tsx',
+      'help/loading.tsx',
+      'help/support/loading.tsx',
+      'help/[slug]/loading.tsx',
+      'privacy/loading.tsx',
+      'terms/loading.tsx',
+      'trust/loading.tsx',
+    ]) {
+      expect(existsSync(rootRouteFile(publicLoading))).toBe(false);
+    }
   });
 
   it('keeps public-page preferences, metadata, and motion usable', () => {

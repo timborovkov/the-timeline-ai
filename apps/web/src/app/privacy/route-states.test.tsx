@@ -19,13 +19,9 @@ await vi.mock(
 const { cleanup, render, screen } = await import('@testing-library/react');
 const { default: userEvent } = await import('@testing-library/user-event');
 const { default: CookiesError } = await import('@/app/cookies/error');
-const { default: CookiesLoading } = await import('@/app/cookies/loading');
 const { default: PrivacyError } = await import('@/app/privacy/error');
-const { default: PrivacyLoading } = await import('@/app/privacy/loading');
 const { default: TermsError } = await import('@/app/terms/error');
-const { default: TermsLoading } = await import('@/app/terms/loading');
 const { default: TrustError } = await import('@/app/trust/error');
-const { default: TrustLoading } = await import('@/app/trust/loading');
 
 afterEach(() => {
   cleanup();
@@ -38,9 +34,6 @@ const legalDocumentRoutes = [
       'The cookies, browser storage, analytics, and related technologies used by The Timeline.',
     ErrorComponent: CookiesError,
     footerLabel: 'The Timeline legal',
-    Loading: CookiesLoading,
-    loadingDescription:
-      'What The Timeline stores in your browser, what is necessary for the service, and how to control optional public analytics.',
     title: 'Cookies and similar technologies',
   },
   {
@@ -48,9 +41,6 @@ const legalDocumentRoutes = [
       'This policy explains how The Timeline processes personal data for team memory, capture, search, and AI-assisted workflows.',
     ErrorComponent: PrivacyError,
     footerLabel: 'The Timeline legal',
-    Loading: PrivacyLoading,
-    loadingDescription:
-      'How The Timeline collects, uses, shares, protects, and retains personal data—including content processed by AI and connected services.',
     title: 'Privacy Policy',
   },
   {
@@ -58,55 +48,11 @@ const legalDocumentRoutes = [
       'These terms govern access to The Timeline, a team memory product operated by Nyxone OÜ.',
     ErrorComponent: TermsError,
     footerLabel: 'The Timeline legal',
-    Loading: TermsLoading,
-    loadingDescription:
-      'The agreement governing access to The Timeline, including team authority, captured content, AI features, acceptable use, and responsibility.',
     title: 'Terms of Use',
   },
 ] as const;
 
 describe('Legal route states', () => {
-  it.each(legalDocumentRoutes)(
-    'announces a $title loading state with legal context',
-    ({ footerLabel, Loading, loadingDescription, title }) => {
-      render(<Loading />);
-
-      expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
-      const heading = screen.getByRole('heading', { level: 1, name: title });
-      expect(heading.className).toContain('text-3xl');
-      expect(heading.className).toContain('sm:text-4xl');
-      expect(screen.getByText(loadingDescription)).toBeTruthy();
-      expect(screen.getByText(footerLabel)).toBeTruthy();
-      expect(screen.getByRole('status').textContent).toBe(`Loading ${title}`);
-      expect(screen.getByLabelText(`${title} loading placeholder`).getAttribute('aria-busy')).toBe(
-        'true',
-      );
-      expect(screen.queryByRole('link', { name: 'Sign in' })).toBeNull();
-      expect(screen.queryByRole('link', { name: 'Start free' })).toBeNull();
-      expect(screen.queryByRole('link', { name: 'Dashboard' })).toBeNull();
-    },
-  );
-
-  it('announces trust loading in the expanded marketing layout', () => {
-    render(<TrustLoading />);
-
-    expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
-    expect(
-      screen.getByRole('heading', {
-        level: 1,
-        name: "Your work should not become someone else's training set.",
-      }),
-    ).toBeTruthy();
-    expect(screen.getByText('The Timeline trust center')).toBeTruthy();
-    expect(screen.getByRole('status').textContent).toBe('Loading The Timeline trust center');
-    expect(
-      screen.getByLabelText('Trust center loading placeholder').getAttribute('aria-busy'),
-    ).toBe('true');
-    expect(screen.queryByRole('link', { name: 'Sign in' })).toBeNull();
-    expect(screen.queryByRole('link', { name: 'Start free' })).toBeNull();
-    expect(screen.queryByRole('link', { name: 'Dashboard' })).toBeNull();
-  });
-
   it.each([
     ...legalDocumentRoutes,
     {

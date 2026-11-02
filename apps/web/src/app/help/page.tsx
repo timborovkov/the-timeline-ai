@@ -4,8 +4,8 @@ import Link from 'next/link';
 import type { Metadata } from 'next';
 
 import { HelpGuideDirectory } from '@/components/help/help-guide-directory';
+import { SupportMailto } from '@/components/support-email-provider';
 import { publicMetadata } from '@/lib/public-metadata';
-import { getSupportEmail } from '@/lib/support-email';
 import {
   GITHUB_BUG_REPORT_URL,
   GITHUB_CONTRIBUTING_URL,
@@ -69,9 +69,7 @@ export default function HelpIndexPage() {
           <Link className={supportLinkClass} href="/help/support">
             Contact support
           </Link>
-          <a className={supportLinkClass} href={`mailto:${getSupportEmail()}`}>
-            Email {getSupportEmail()}
-          </a>
+          <SupportMailto className={supportLinkClass} prefix="Email " />
           <a
             className={supportLinkClass}
             href={GITHUB_BUG_REPORT_URL}

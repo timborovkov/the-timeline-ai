@@ -1,6 +1,6 @@
 'use client';
 
-import { useActionState } from 'react';
+import { useActionState, useEffect, useRef } from 'react';
 
 import type { SupportSurface } from '@/lib/support-context';
 
@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { usePublicRuntime, type PublicRuntime } from '@/lib/public-runtime';
 
 interface SupportFormProps {
   defaultName?: string;
@@ -19,36 +20,146 @@ interface SupportFormProps {
   defaultSurface?: SupportSurface;
   defaultErrorReference?: string;
   turnstileSiteKey?: string;
-  requiresTurnstile: boolean;
+  requiresTurnstile?: boolean;
 }
 
 const initialState: SupportFormState = {};
 const protectionErrorId = 'support-form-protection-error';
 
-export function SupportForm({
+function nonEmptyTrimmed(value?: string): string | undefined {
+  const trimmed = value?.trim();
+  return trimmed && trimmed.length > 0 ? trimmed : undefined;
+}
+
+function fillEmptyInput(input: HTMLInputElement | null, nextValue?: string) {
+  if (!nextValue) return;
+  if (!input) return;
+  if (input.value !== '') return;
+  input.value = nextValue;
+}
+
+function useFillEmptyDefault(nextValue?: string) {
+  const ref = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    fillEmptyInput(ref.current, nextValue);
+  }, [nextValue]);
+  return ref;
+}
+
+function resolveTurnstileSiteKey(
+  turnstileSiteKey: string | undefined,
+  runtime: { status: 'unknown' | 'ready'; siteKey?: string },
+): { siteKey?: string; ready: boolean } {
+  if (turnstileSiteKey !== undefined) {
+    return { siteKey: nonEmptyTrimmed(turnstileSiteKey), ready: true };
+  }
+  if (runtime.status !== 'ready') return { ready: false };
+  return { siteKey: runtime.siteKey, ready: true };
+}
+
+function resolveRequiresTurnstile(
+  requiresTurnstile: boolean | undefined,
+  runtime: PublicRuntime,
+): boolean {
+  if (requiresTurnstile === false) return false;
+  if (requiresTurnstile === true) return true;
+  if (runtime.status !== 'ready') return true;
+  return runtime.requiresTurnstile;
+}
+
+function runtimeTurnstileSiteKey(runtime: PublicRuntime): string | undefined {
+  if (runtime.status !== 'ready') return undefined;
+  return runtime.turnstileSiteKey;
+}
+
+function protectionFlags(
+  required: boolean,
+  turnstile: { siteKey?: string; ready: boolean },
+): { siteKey?: string; unavailable: boolean; pending: boolean } {
+  return {
+    siteKey: turnstile.siteKey,
+    unavailable: required && turnstile.ready && !turnstile.siteKey,
+    pending: required && !turnstile.ready,
+  };
+}
+
+function useSupportFormProtection({
+  turnstileSiteKey,
+  requiresTurnstile,
+}: Pick<SupportFormProps, 'turnstileSiteKey' | 'requiresTurnstile'>) {
+  const runtime = usePublicRuntime(turnstileSiteKey === undefined && requiresTurnstile !== false);
+  const required = resolveRequiresTurnstile(requiresTurnstile, runtime);
+  const turnstile = resolveTurnstileSiteKey(turnstileSiteKey, {
+    status: runtime.status,
+    siteKey: runtimeTurnstileSiteKey(runtime),
+  });
+  return protectionFlags(required, turnstile);
+}
+
+function SupportRequestReceived({
+  requestReference,
+  warning,
+}: {
+  requestReference: string;
+  warning?: string;
+}) {
+  return (
+    <output className="block space-y-3 border-l-2 border-signal pl-4 text-sm">
+      <p className="font-semibold text-fg">Request received</p>
+      <p className="text-fg-muted">
+        Keep this reference if you need to follow up:{' '}
+        <code className="font-mono text-xs text-fg">{requestReference}</code>
+      </p>
+      {warning ? <p className="text-fg-muted">{warning}</p> : null}
+    </output>
+  );
+}
+
+function SupportFormProtection({
+  siteKey,
+  unavailable,
+  supportEmail,
+}: {
+  siteKey?: string;
+  unavailable: boolean;
+  supportEmail: string;
+}) {
+  if (siteKey) return <TurnstileWidget action="support" siteKey={siteKey} />;
+  if (!unavailable) return null;
+  return (
+    <p id={protectionErrorId} className="text-sm text-danger">
+      Support form protection is unavailable. Email{' '}
+      <a className="underline underline-offset-4" href={`mailto:${supportEmail}`}>
+        {supportEmail}
+      </a>{' '}
+      instead.
+    </p>
+  );
+}
+
+function SupportFormFields({
+  action,
+  pending,
+  state,
+  protection,
+  supportEmail,
   defaultName,
   defaultEmail,
   defaultSurface,
   defaultErrorReference,
-  turnstileSiteKey,
-  requiresTurnstile,
-}: SupportFormProps) {
-  const supportEmail = useSupportEmail();
-  const [state, action, pending] = useActionState(submitSupportRequestAction, initialState);
-  const protectionUnavailable = requiresTurnstile && !turnstileSiteKey;
-
-  if (state.ok && state.requestReference) {
-    return (
-      <output className="block space-y-3 border-l-2 border-signal pl-4 text-sm">
-        <p className="font-semibold text-fg">Request received</p>
-        <p className="text-fg-muted">
-          Keep this reference if you need to follow up:{' '}
-          <code className="font-mono text-xs text-fg">{state.requestReference}</code>
-        </p>
-        {state.warning ? <p className="text-fg-muted">{state.warning}</p> : null}
-      </output>
-    );
-  }
+}: {
+  action: (payload: FormData) => void;
+  pending: boolean;
+  state: SupportFormState;
+  protection: { siteKey?: string; unavailable: boolean; pending: boolean };
+  supportEmail: string;
+  defaultName?: string;
+  defaultEmail?: string;
+  defaultSurface?: SupportSurface;
+  defaultErrorReference?: string;
+}) {
+  const nameRef = useFillEmptyDefault(defaultName);
+  const emailRef = useFillEmptyDefault(defaultEmail);
 
   return (
     <form action={action} className="space-y-5">
@@ -79,6 +190,7 @@ export function SupportForm({
         <div className="space-y-2">
           <Label htmlFor="support-name">Name</Label>
           <Input
+            ref={nameRef}
             id="support-name"
             name="name"
             autoComplete="name"
@@ -90,6 +202,7 @@ export function SupportForm({
         <div className="space-y-2">
           <Label htmlFor="support-email">Email</Label>
           <Input
+            ref={emailRef}
             id="support-email"
             name="email"
             type="email"
@@ -131,17 +244,11 @@ export function SupportForm({
         />
       </div>
 
-      {turnstileSiteKey ? (
-        <TurnstileWidget action="support" siteKey={turnstileSiteKey} />
-      ) : protectionUnavailable ? (
-        <p id={protectionErrorId} className="text-sm text-danger">
-          Support form protection is unavailable. Email{' '}
-          <a className="underline underline-offset-4" href={`mailto:${supportEmail}`}>
-            {supportEmail}
-          </a>{' '}
-          instead.
-        </p>
-      ) : null}
+      <SupportFormProtection
+        siteKey={protection.siteKey}
+        unavailable={protection.unavailable}
+        supportEmail={supportEmail}
+      />
 
       <p className="text-xs leading-5 text-fg-muted">
         When you submit, we store your contact details and message. If you are signed in, we also
@@ -153,11 +260,44 @@ export function SupportForm({
 
       <Button
         type="submit"
-        disabled={pending || protectionUnavailable}
-        aria-describedby={protectionUnavailable ? protectionErrorId : undefined}
+        disabled={pending || protection.pending || protection.unavailable}
+        aria-describedby={protection.unavailable ? protectionErrorId : undefined}
       >
         {pending ? 'Sending…' : 'Send request'}
       </Button>
     </form>
+  );
+}
+
+export function SupportForm({
+  defaultName,
+  defaultEmail,
+  defaultSurface,
+  defaultErrorReference,
+  turnstileSiteKey,
+  requiresTurnstile,
+}: SupportFormProps) {
+  const supportEmail = useSupportEmail();
+  const [state, action, pending] = useActionState(submitSupportRequestAction, initialState);
+  const protection = useSupportFormProtection({ turnstileSiteKey, requiresTurnstile });
+
+  if (state.ok && state.requestReference) {
+    return (
+      <SupportRequestReceived requestReference={state.requestReference} warning={state.warning} />
+    );
+  }
+
+  return (
+    <SupportFormFields
+      action={action}
+      pending={pending}
+      state={state}
+      protection={protection}
+      supportEmail={supportEmail}
+      defaultName={defaultName}
+      defaultEmail={defaultEmail}
+      defaultSurface={defaultSurface}
+      defaultErrorReference={defaultErrorReference}
+    />
   );
 }

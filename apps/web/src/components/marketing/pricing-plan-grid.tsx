@@ -3,26 +3,22 @@ import {
   SELF_SERVE_PLAN_ORDER,
   formatEuroFromCents,
 } from '@timeline/shared/billing/catalog';
+import Link from 'next/link';
 
+import { PublicSessionBranch } from '@/components/public-session-branch';
 import { cn } from '@/lib/utils';
 
-export function PricingPlanGrid({
-  className,
-  signedIn = false,
-}: {
-  className?: string;
-  signedIn?: boolean;
-}) {
+export function PricingPlanGrid({ className }: { className?: string }) {
   return (
     <div className={cn('grid gap-px border border-border bg-border lg:grid-cols-4', className)}>
       {SELF_SERVE_PLAN_ORDER.map((planId) => {
         const plan = PLAN_CATALOG[planId];
-        const href = signedIn ? '/app/team?section=billing' : plan.cta.href;
-        const label = signedIn
-          ? planId === 'free'
-            ? 'Open billing'
-            : 'Manage plan'
-          : plan.cta.label;
+        const ctaClassName = cn(
+          'mt-6 inline-flex min-h-11 items-center justify-center rounded-sm px-4 text-sm font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-bg',
+          plan.highlighted
+            ? 'bg-signal text-bg hover:opacity-90'
+            : 'border border-border bg-surface text-fg hover:bg-bg',
+        );
         return (
           <article
             key={plan.id}
@@ -43,17 +39,18 @@ export function PricingPlanGrid({
                 <span className="text-base font-normal text-fg-muted">/mo</span>
               ) : null}
             </p>
-            <a
-              href={href}
-              className={cn(
-                'mt-6 inline-flex min-h-11 items-center justify-center rounded-sm px-4 text-sm font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-bg',
-                plan.highlighted
-                  ? 'bg-signal text-bg hover:opacity-90'
-                  : 'border border-border bg-surface text-fg hover:bg-bg',
-              )}
-            >
-              {label}
-            </a>
+            <PublicSessionBranch
+              signedOut={
+                <Link href={plan.cta.href} className={ctaClassName}>
+                  {plan.cta.label}
+                </Link>
+              }
+              signedIn={
+                <Link href="/app/team?section=billing" className={ctaClassName}>
+                  {planId === 'free' ? 'Open billing' : 'Manage plan'}
+                </Link>
+              }
+            />
           </article>
         );
       })}
