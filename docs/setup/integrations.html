@@ -142,10 +142,11 @@ GOOGLE_DRIVE_WEBHOOK_SECRET=...</code></pre>
         <li>
           File capture fetches text transiently, hashes the full extracted text, then stores a
           truncated snapshot. Change detection diffs truncated snapshots like-for-like so a prefix
-          compared to a longer current document cannot treat the unchanged tail as added; full-text
-          hashes still see edits past 20k chars. Formatting-only and tiny edits (Markdown markers,
-          not signed amounts such as <code>-50000 USD</code>) skip the LLM. Remaining hunks bill a
-          small CRM-relevance judge through <code>llm.chatStructured</code> / the existing AI meter.
+          compared to a longer current document cannot treat the unchanged tail as added, and it
+          keeps unmatched suffixes so an append or deleted tail is judged; full-text hashes still
+          see edits past 20k chars. Formatting-only and tiny edits (Markdown markers, not signed
+          amounts such as <code>-50000 USD</code>) skip the LLM. Remaining hunks bill a small
+          CRM-relevance judge through <code>llm.chatStructured</code> / the existing AI meter.
           Deletion-only diffs emit bounded removed-text hunks. Nested-folder membership caches
           fetched parent ids and the selected ancestor that admitted a path — never an early "out of
           scope" boolean that would drop later files under the same folder. Linked-object lookup
