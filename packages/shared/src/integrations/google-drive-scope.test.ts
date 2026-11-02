@@ -30,4 +30,10 @@ describe('driveFileScopeHint', () => {
       'unknown',
     );
   });
+
+  it('matches the resolved My Drive folder id after it is added to the folder set', () => {
+    const scope = driveScopeFromSelections([{ kind: 'drive.folder', externalId: 'root' }]);
+    scope.folders.add('0AMK-my-drive');
+    expect(driveFileScopeHint({ fileId: 'mine', parents: ['0AMK-my-drive'], scope })).toBe('in');
+  });
 });

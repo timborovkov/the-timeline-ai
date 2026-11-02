@@ -31,8 +31,8 @@ export interface DriveDebouncePlan {
 export interface DriveSnapshotRecord {
   contentHash: string;
   snapshotText: string;
-  commentsHash: string | null;
-  permissionsHash: string | null;
+  commentsHash: string;
+  permissionsHash: string;
   mimeType: string | null;
 }
 

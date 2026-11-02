@@ -8,6 +8,8 @@ const MARKDOWN_NOISE = /[_*`#>\-\[\]()]/g;
 
 const DRIVE_DIFF_MIN_CHANGED_CHARS = 40;
 const DRIVE_SNAPSHOT_MAX_CHARS = 20_000;
+const DRIVE_HUNK_LINE_MAX = 400;
+const DRIVE_HUNK_HEAD_CHARS = 240;
 
 type DriveDiffReason = 'identical' | 'formatting' | 'tiny' | 'substantive';
 
@@ -52,13 +54,20 @@ function changedHunks(previous: string, next: string): string[] {
   for (const line of nextLines) {
     const trimmed = line.trim();
     if (!trimmed) continue;
-    if (!prevSet.has(trimmed)) hunks.push(trimmed.slice(0, 400));
+    if (!prevSet.has(trimmed)) hunks.push(truncateChangedLine(trimmed));
   }
   if (hunks.length === 0 && next !== previous) {
     const start = firstDifferingIndex(previous, next);
-    hunks.push(next.slice(start, start + 400));
+    hunks.push(truncateChangedLine(next.slice(start)));
   }
   return hunks.slice(0, 40);
+}
+
+function truncateChangedLine(line: string, maxChars = DRIVE_HUNK_LINE_MAX): string {
+  if (line.length <= maxChars) return line;
+  const head = Math.min(DRIVE_HUNK_HEAD_CHARS, maxChars - 2);
+  const tail = maxChars - head - 1;
+  return `${line.slice(0, head)}…${line.slice(-tail)}`;
 }
 
 function firstDifferingIndex(left: string, right: string): number {

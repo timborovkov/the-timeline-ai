@@ -559,6 +559,54 @@ describe('PersonalConnectionsUi', () => {
     expect(screen.getByRole('navigation', { name: 'Google Drive folders' })).toBeTruthy();
   });
 
+  it('keeps an unsaved Drive folder selection after opening another folder', async () => {
+    const user = userEvent.setup();
+    const requests: { method: string; url: string; body: unknown }[] = [];
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
+      const url = fetchHref(input);
+      const method = init?.method ?? 'GET';
+      if (method === 'PUT') {
+        const bodyText = typeof init?.body === 'string' ? init.body : null;
+        requests.push({ method, url, body: bodyText ? JSON.parse(bodyText) : null });
+        return Promise.resolve(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+      }
+      requests.push({ method, url, body: null });
+      const resources = url.includes('parentId=folder-1')
+        ? [{ kind: 'drive.file', externalId: 'doc-1', label: 'SOW' }]
+        : [{ kind: 'drive.folder', externalId: 'folder-1', label: 'Clients' }];
+      return Promise.resolve(
+        new Response(JSON.stringify({ resources, shares: [] }), { status: 200 }),
+      );
+    });
+
+    renderWithQueryClient(
+      <PersonalConnectionsUi
+        connections={[
+          {
+            id: 'conn-drive',
+            provider: 'google_drive',
+            displayName: 'Google Drive — Tim',
+            lastError: null,
+            lastConnectedAt: '2026-06-01T00:00:00.000Z',
+          },
+        ]}
+      />,
+    );
+
+    expect(await screen.findByText('Clients')).toBeTruthy();
+    await user.click(screen.getByRole('checkbox', { name: /Clients/i }));
+    await user.click(screen.getByRole('button', { name: 'Open' }));
+    expect(await screen.findByText('SOW')).toBeTruthy();
+    await user.click(screen.getByRole('button', { name: /Save sharing/i }));
+
+    await waitFor(() => {
+      expect(requests.some((request) => request.method === 'PUT')).toBe(true);
+    });
+    expect(requests.find((request) => request.method === 'PUT')?.body).toEqual({
+      resources: [{ kind: 'drive.folder', externalId: 'folder-1', label: 'Clients' }],
+    });
+  });
+
   it('drops stale monday helper-board shares that are absent from live resources', async () => {
     const user = userEvent.setup();
     const requests: { method: string; body: unknown }[] = [];

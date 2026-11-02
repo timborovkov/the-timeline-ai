@@ -6,10 +6,12 @@ import {
   getDocumentsBucket,
   getS3Client,
   integrations as integrationsLib,
+  llm,
   putObject,
   queue,
   withTeam,
 } from '@timeline/shared';
+import { isBillingAdmissionError } from '@timeline/shared/billing';
 import {
   payloadDigestFromMetadata,
   sourcePayloadRefFromMetadata,
@@ -20,7 +22,7 @@ import { and, eq, sql } from 'drizzle-orm';
 import { withWorkerAiBilling, workerBillingJobOptions } from '#src/billing-context.js';
 import {
   extractOfficeForDocument,
-  extractPdfForDocument,
+  extractPdfTextWithVisionFallback,
   resolveAnydocFormatHint,
 } from '#src/document-ingestion/pdf-extraction.js';
 import { isDaytonaNotConfiguredError } from '#src/document-ingestion/types.js';
@@ -135,6 +137,37 @@ function retainPausedMondayTarget(
       retryAt,
     ),
   );
+}
+
+function retainPausedDriveTarget(
+  integration: Pick<integrationsLib.IntegrationRow, 'id' | 'teamId' | 'provider'>,
+  target: TargetedIntegrationSyncJob | undefined,
+  continuationJobs: ContinuationJob[],
+  retryAt?: Date,
+): void {
+  if (integration.provider !== 'google_drive' || !target) return;
+  if (target.resourceType !== 'drive.file' && target.resourceType !== 'drive.changes') return;
+  if (
+    continuationJobs.some(
+      (job) =>
+        job.data.resourceType === target.resourceType && job.data.externalId === target.externalId,
+    )
+  ) {
+    return;
+  }
+  continuationJobs.push({
+    data: {
+      kind: 'targeted',
+      integrationId: integration.id,
+      teamId: integration.teamId,
+      resourceType: target.resourceType,
+      externalId: target.externalId,
+      ...(target.triggeredBy ? { triggeredBy: target.triggeredBy } : {}),
+      ...(target.surface ? { surface: target.surface } : {}),
+      ...(target.reason ? { reason: target.reason } : {}),
+    },
+    ...(retryAt ? { retryAt } : {}),
+  });
 }
 
 async function retainPausedBackfill(
@@ -264,9 +297,11 @@ async function extractDriveBinaryText(input: {
   const contentType = input.contentType.toLowerCase().split(';')[0]?.trim() ?? '';
   try {
     if (contentType === 'application/pdf' || /\.pdf$/i.test(input.filename)) {
-      const result = await extractPdfForDocument(input.body);
-      const text = result.text.trim();
-      return text.length > 0 ? { text } : null;
+      return await extractPdfTextWithVisionFallback({
+        body: input.body,
+        filename: input.filename,
+        extractFromMedia: (media) => llm.extractTextFromMedia(media),
+      });
     }
     const format = resolveAnydocFormatHint(contentType, input.filename);
     if (format && format !== 'pdf') {
@@ -275,6 +310,7 @@ async function extractDriveBinaryText(input: {
       return text.length > 0 ? { text } : null;
     }
   } catch (err) {
+    if (isBillingAdmissionError(err)) throw err;
     if (isDaytonaNotConfiguredError(err)) return null;
     throw err;
   }
@@ -789,6 +825,12 @@ export async function runOneIntegration(
           continuationJobs,
           latestRetryAt(pause?.retryAt, providerBudgetPause?.retryAt),
         );
+        retainPausedDriveTarget(
+          integration,
+          target,
+          continuationJobs,
+          latestRetryAt(pause?.retryAt, providerBudgetPause?.retryAt),
+        );
       }
       await retainPausedBackfill(
         db,
@@ -805,6 +847,12 @@ export async function runOneIntegration(
         'provider pagination continuation is leased by another worker — skipping provider sync',
       );
       retainPausedMondayTarget(
+        integration,
+        target,
+        continuationJobs,
+        latestRetryAt(pause?.retryAt, providerBudgetPause?.retryAt),
+      );
+      retainPausedDriveTarget(
         integration,
         target,
         continuationJobs,
@@ -843,6 +891,7 @@ export async function runOneIntegration(
           retryAt: pause.retryAt,
         });
       }
+      retainPausedDriveTarget(integration, target, continuationJobs, pause.retryAt);
       return;
     }
     if (providerBudgetPause) {
@@ -890,6 +939,7 @@ export async function runOneIntegration(
           retryAt: providerBudgetPause.retryAt,
         });
       }
+      retainPausedDriveTarget(integration, target, continuationJobs, providerBudgetPause.retryAt);
       return;
     }
     if (integration.provider === 'slack') {
@@ -1029,8 +1079,8 @@ export async function runOneIntegration(
           snapshot: {
             contentHash: input.contentHash,
             snapshotText: input.snapshotText,
-            commentsHash: input.commentsHash,
-            permissionsHash: input.permissionsHash,
+            commentsHash: input.commentsHash ?? '',
+            permissionsHash: input.permissionsHash ?? '',
             mimeType: input.mimeType,
           },
         });

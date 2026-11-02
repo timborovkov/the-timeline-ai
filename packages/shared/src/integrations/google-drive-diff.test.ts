@@ -43,4 +43,12 @@ describe('diffDriveText', () => {
   it('truncates snapshots used for later diffs', () => {
     expect(truncateDriveSnapshot('abcdef', 4)).toBe('abcd');
   });
+
+  it('keeps later-half edits when a changed line is longer than 400 characters', () => {
+    const prefix = 'A'.repeat(500);
+    const diff = diffDriveText(`${prefix}OLD_VALUE`, `${prefix}NEW_VALUE`);
+    expect(diff.changed).toBe(true);
+    expect(diff.hunks.join(' ')).toContain('NEW_VALUE');
+    expect(diff.hunks.join(' ')).not.toContain('OLD_VALUE');
+  });
 });

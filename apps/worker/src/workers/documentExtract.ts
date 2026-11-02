@@ -18,6 +18,7 @@ import { and, eq, sql } from 'drizzle-orm';
 import { withWorkerAiBilling, workerBillingJobOptions } from '#src/billing-context.js';
 import {
   ANYDOC_SANDBOX_MODEL,
+  completeSandboxPageImages,
   extractOfficeForDocument,
   extractPdfForDocument,
   resolveAnydocFormatHint,
@@ -29,6 +30,7 @@ import { captureWorkerJobFailure } from '#src/monitoring.js';
 
 export {
   ANYDOC_SANDBOX_MODEL,
+  completeSandboxPageImages,
   shouldAcceptSandboxPdfText,
   type SandboxPdfExtractResult,
 } from '#src/document-ingestion/pdf-extraction.js';
@@ -638,24 +640,6 @@ async function routePdfContent(
     filename: input.name,
     ...(pageImagesForVision ? { pageImages: pageImagesForVision } : {}),
   });
-}
-
-/** Exported for unit tests. */
-export function completeSandboxPageImages(
-  sandbox: SandboxPdfExtractResult | null,
-): Buffer[] | undefined {
-  if (!sandbox || sandbox.pageImages.length === 0) return undefined;
-  if (sandbox.pageCount > sandbox.pageImages.length) {
-    log.warn(
-      {
-        pageCount: sandbox.pageCount,
-        pageImageCount: sandbox.pageImages.length,
-      },
-      'sandbox pageImages truncated vs pageCount; using full PDF for vision',
-    );
-    return undefined;
-  }
-  return sandbox.pageImages;
 }
 
 async function routeContentToText(

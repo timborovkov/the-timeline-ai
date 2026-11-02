@@ -387,6 +387,21 @@ async function listTopLevelResources(tokens: DriveTokens): Promise<ProviderResou
   return items;
 }
 
+async function resolveDriveScope(
+  tokens: DriveTokens,
+  selections: { kind: string; externalId: string }[],
+): Promise<DriveScopeSets> {
+  const scope = driveScopeFromSelections(selections);
+  if (!scope.watchesRoot) return scope;
+  // Drive file `parents` use the real My Drive folder UUID, never the `root`
+  // alias. Resolve it once per sync so My Drive selections match production
+  // change payloads. Tests that still stub `parents: ['root']` keep working
+  // because `driveScopeFromSelections` also records the alias.
+  const root = await driveGetOptional<{ id?: string }>(tokens, '/files/root', { fields: 'id' });
+  if (root?.id) scope.folders.add(root.id);
+  return scope;
+}
+
 async function fileInSelectedSubtree(
   tokens: DriveTokens,
   file: Pick<DriveFile, 'id' | 'parents' | 'driveId'>,
@@ -595,6 +610,17 @@ function commentSignals(comments: DriveComment[], commentsChanged: boolean): str
   return signals;
 }
 
+function commentEventContext(comments: DriveComment[]): string {
+  const lines: string[] = [];
+  for (const comment of comments.slice(0, 8)) {
+    const author = comment.author?.displayName ?? comment.author?.emailAddress ?? 'Someone';
+    const state = comment.resolved ? 'resolved' : 'open';
+    const text = (comment.content ?? '').replace(/\s+/g, ' ').trim().slice(0, 240);
+    lines.push(text ? `${author} (${state}): ${text}` : `${author} (${state})`);
+  }
+  return lines.join('\n');
+}
+
 async function persistDriveSnapshot(
   ctx: SyncContext,
   fileId: string,
@@ -648,7 +674,7 @@ async function fetchChanges(
   resourceType: string,
 ): Promise<SyncResult | undefined> {
   const continuation = { resourceType: 'drive.changes', externalId: integration.id };
-  const scope = driveScopeFromSelections(selections);
+  const scope = await resolveDriveScope(tokens, selections);
   if (
     scope.files.size === 0 &&
     scope.folders.size === 0 &&
@@ -736,7 +762,7 @@ async function processDriveFile(
   ctx: SyncContext,
   fileId: string,
 ): Promise<void> {
-  const scope = driveScopeFromSelections(selections);
+  const scope = await resolveDriveScope(tokens, selections);
   const file = await driveGetOptional<DriveFile>(tokens, `/files/${encodeURIComponent(fileId)}`, {
     fields: FILE_FIELDS,
     supportsAllDrives: 'true',
@@ -845,8 +871,8 @@ async function processDriveFile(
     return;
   }
 
-  await persistDriveSnapshot(ctx, file.id, snapshot);
   if (!judge.matters || judge.reason === 'noise') {
+    await persistDriveSnapshot(ctx, file.id, snapshot);
     await ctx.recordAudit('drive_change_noise', { file_id: fileId, reason: judge.reason });
     return;
   }
@@ -855,9 +881,13 @@ async function processDriveFile(
     ? await ctx.linkedObjectForDriveSelection(file.id, file.parents ?? [])
     : null;
   const hunkPreview = diff.hunks.slice(0, 12).join('\n');
-  const contentText = [judge.summary, hunkPreview].filter(Boolean).join('\n\n').slice(0, 4000);
+  const commentPreview = commentsChanged ? commentEventContext(comments) : '';
+  const contentText = [judge.summary, hunkPreview, commentPreview]
+    .filter(Boolean)
+    .join('\n\n')
+    .slice(0, 4000);
   const event: IntegrationEvent = {
-    dedupKey: `google_drive:file:${file.id}:${contentHash}:${commentsHash}`,
+    dedupKey: `google_drive:file:${file.id}:${contentHash}:${commentsHash}:${permissionsHash}`,
     provider: 'google_drive',
     signalClass: 'communication',
     eventClass: 'communication',
@@ -886,14 +916,16 @@ async function processDriveFile(
           objectMap: {
             type: linked.type as NonNullable<IntegrationEvent['objectMap']>['type'],
             canonicalName: linked.canonicalName,
-            externalId: file.id,
+            externalId: linked.id,
             displayTitle: file.name,
+            aliases: [file.id],
             ...(file.webViewLink ? { url: file.webViewLink } : {}),
           },
         }
       : {}),
   };
   await ctx.writeEvents([event]);
+  await persistDriveSnapshot(ctx, file.id, snapshot);
 }
 
 function driveWebhookResourceState(payload: unknown): string | null {

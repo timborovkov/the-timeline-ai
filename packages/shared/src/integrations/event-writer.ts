@@ -1360,15 +1360,31 @@ function slackBindingKeyParts(slackTeamId: string, channelId: string): string {
   return `${slackTeamId}:${channelId}`;
 }
 
+const ENTITY_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function driveLinkedObjectId(event: IntegrationEvent): string | null {
+  const drive = event.extra?.drive;
+  if (!drive || typeof drive !== 'object' || Array.isArray(drive)) return null;
+  const id = (drive as Record<string, unknown>).linked_object_id;
+  return typeof id === 'string' && ENTITY_ID_RE.test(id) ? id : null;
+}
+
 async function loadExistingWorkspaceObjectLinks(
   db: Db,
   integration: IntegrationRow,
   evts: (IntegrationEvent & { objectMap: ObjectMapping })[],
 ): Promise<Map<string, string>> {
   const externalIds = [...new Set(evts.map((e) => e.objectMap.externalId))];
-  if (externalIds.length === 0) return new Map();
+  const linkedIds = [
+    ...new Set(
+      evts.map((event) => driveLinkedObjectId(event)).filter((id): id is string => Boolean(id)),
+    ),
+  ];
+  const candidateIds = [...new Set([...externalIds, ...linkedIds])];
+  if (candidateIds.length === 0) return new Map();
 
-  const rows = await db
+  const entityByExternalId = new Map<string, string>();
+  const metadataRows = await db
     .select({
       id: entities.id,
       externalId: sql<string>`${entities.metadata} ->> 'integration_external_id'`,
@@ -1378,11 +1394,19 @@ async function loadExistingWorkspaceObjectLinks(
       and(
         eq(entities.teamId, integration.teamId),
         sql`(${entities.metadata} ->> 'integration_provider') = ${integration.provider}`,
-        inArray(sql`(${entities.metadata} ->> 'integration_external_id')`, [...externalIds]),
+        inArray(sql`(${entities.metadata} ->> 'integration_external_id')`, [...candidateIds]),
       ),
     );
-  const entityByExternalId = new Map<string, string>();
-  for (const row of rows) entityByExternalId.set(row.externalId, row.id);
+  for (const row of metadataRows) entityByExternalId.set(row.externalId, row.id);
+
+  const entityIds = candidateIds.filter((id) => ENTITY_ID_RE.test(id));
+  if (entityIds.length > 0) {
+    const idRows = await db
+      .select({ id: entities.id })
+      .from(entities)
+      .where(and(eq(entities.teamId, integration.teamId), inArray(entities.id, entityIds)));
+    for (const row of idRows) entityByExternalId.set(row.id, row.id);
+  }
   return entityByExternalId;
 }
 
@@ -1395,7 +1419,10 @@ async function reconcileIntegrationArtifacts(deps: {
 }): Promise<void> {
   for (const event of deps.events) {
     const rawEventId = deps.rawEventIdsByDedupKey.get(event.dedupKey);
-    const entityId = deps.entityByExternalId.get(event.objectMap.externalId);
+    const linkedId = driveLinkedObjectId(event);
+    const entityId =
+      deps.entityByExternalId.get(event.objectMap.externalId) ??
+      (linkedId ? deps.entityByExternalId.get(linkedId) : undefined);
     if (!rawEventId) continue;
     const role = evidenceRoleForIntegrationEvent(event);
     const strength = evidenceStrengthForIntegrationEvent(event);

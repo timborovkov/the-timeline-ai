@@ -2227,6 +2227,75 @@ describe('runOneIntegration attention classification', () => {
     );
   });
 
+  it('durably delays a Drive file capture that arrives during an account pause', async () => {
+    const retryAt = new Date(Date.now() + 60_000);
+    fakes.adminLoadIntegration.mockResolvedValueOnce({ ...integration, provider: 'google_drive' });
+    fakes.adminLoadIntegrationSyncPause.mockResolvedValueOnce({
+      retryAt,
+      reason: 'timeline_daily_budget',
+    });
+
+    await runOneIntegration({} as never, INTEGRATION_ID, 'targeted', {
+      kind: 'targeted',
+      integrationId: INTEGRATION_ID,
+      teamId: TEAM_ID,
+      triggeredBy: 'webhook',
+      resourceType: 'drive.file',
+      externalId: 'file-1',
+      reason: 'drive_watch',
+    });
+
+    expect(fakes.incrementalSync).not.toHaveBeenCalled();
+    expect(fakes.adminRecordPendingIntegrationSyncContinuations).toHaveBeenCalledWith(
+      expect.anything(),
+      INTEGRATION_ID,
+      [
+        {
+          resourceType: 'drive.file',
+          externalId: 'file-1',
+          retryAt,
+        },
+      ],
+    );
+  });
+
+  it('durably delays a Drive file capture during a provider budget pause', async () => {
+    const retryAt = new Date(Date.now() + 60_000);
+    fakes.adminLoadIntegration.mockResolvedValueOnce({
+      ...integration,
+      provider: 'google_drive',
+      externalAccountId: 'drive-user-1',
+    });
+    fakes.adminLoadProviderBudgetPause.mockResolvedValueOnce({
+      retryAt,
+      reason: 'daily_limit_exceeded',
+      scope: 'requests',
+    });
+
+    await runOneIntegration({} as never, INTEGRATION_ID, 'targeted', {
+      kind: 'targeted',
+      integrationId: INTEGRATION_ID,
+      teamId: TEAM_ID,
+      triggeredBy: 'webhook',
+      resourceType: 'drive.file',
+      externalId: 'file-1',
+      reason: 'drive_watch',
+    });
+
+    expect(fakes.incrementalSync).not.toHaveBeenCalled();
+    expect(fakes.adminRecordPendingIntegrationSyncContinuations).toHaveBeenCalledWith(
+      expect.anything(),
+      INTEGRATION_ID,
+      [
+        {
+          resourceType: 'drive.file',
+          externalId: 'file-1',
+          retryAt,
+        },
+      ],
+    );
+  });
+
   it('durably delays a Monday webhook that arrives during an account pause', async () => {
     const retryAt = new Date(Date.now() + 60_000);
     fakes.adminLoadIntegration.mockResolvedValueOnce({ ...integration, provider: 'monday' });

@@ -2307,6 +2307,131 @@ describe('writeIntegrationEvents visibility', () => {
     ]);
   });
 
+  it('associates Drive events with the linked Timeline object id', async () => {
+    const [integration] = await db
+      .insert(integrations)
+      .values({
+        teamId: TEAM_ID,
+        connectedByUserId: USER_ID,
+        provider: 'google_drive',
+        displayName: 'Google Drive',
+        externalAccountId: 'drive-acct-linked',
+        visibilityDefault: 'team',
+      })
+      .returning();
+    if (!integration) throw new Error('integration insert failed');
+
+    const [existing] = await db
+      .insert(entities)
+      .values({
+        teamId: TEAM_ID,
+        type: 'company',
+        canonicalName: 'Northstar',
+        status: 'open',
+        metadata: { user_label: 'keep me' },
+      })
+      .returning();
+    if (!existing) throw new Error('object insert failed');
+
+    const insertedIds = await writeIntegrationEvents({
+      db: db as never,
+      integration,
+      events: [
+        {
+          dedupKey: `google_drive:file:file-1:hash:comments:permissions`,
+          provider: 'google_drive',
+          signalClass: 'communication',
+          eventClass: 'communication',
+          externalObjectId: 'file-1',
+          eventType: 'file.changed',
+          occurredAt: new Date('2026-06-20T10:00:00Z'),
+          contentText: 'Ada (resolved): Please confirm the $48k annual term.',
+          extra: {
+            drive: {
+              name: 'SOW',
+              linked_object_id: existing.id,
+            },
+          },
+          objectMap: {
+            type: 'company',
+            canonicalName: 'Northstar',
+            externalId: existing.id,
+            displayTitle: 'SOW',
+            aliases: ['file-1'],
+          },
+        },
+      ],
+    });
+    expect(insertedIds).toHaveLength(1);
+
+    const clusters = await db.select().from(artifactClusters);
+    expect(clusters).toEqual([
+      expect.objectContaining({
+        canonicalEntityId: existing.id,
+        artifactType: 'company',
+        canonicalName: 'SOW',
+      }),
+    ]);
+  });
+
+  it('consumes extra.drive.linked_object_id when objectMap.externalId is the Drive file', async () => {
+    const [integration] = await db
+      .insert(integrations)
+      .values({
+        teamId: TEAM_ID,
+        connectedByUserId: USER_ID,
+        provider: 'google_drive',
+        displayName: 'Google Drive',
+        externalAccountId: 'drive-acct-linked-extra',
+        visibilityDefault: 'team',
+      })
+      .returning();
+    if (!integration) throw new Error('integration insert failed');
+
+    const [existing] = await db
+      .insert(entities)
+      .values({
+        teamId: TEAM_ID,
+        type: 'project',
+        canonicalName: 'Northstar rollout',
+        status: 'open',
+      })
+      .returning();
+    if (!existing) throw new Error('object insert failed');
+
+    await writeIntegrationEvents({
+      db: db as never,
+      integration,
+      events: [
+        {
+          dedupKey: 'google_drive:file:file-9:hash:comments:permissions',
+          provider: 'google_drive',
+          signalClass: 'communication',
+          eventClass: 'communication',
+          externalObjectId: 'file-9',
+          eventType: 'file.changed',
+          occurredAt: new Date('2026-06-20T11:00:00Z'),
+          contentText: 'Pricing section changed',
+          extra: { drive: { linked_object_id: existing.id } },
+          objectMap: {
+            type: 'project',
+            canonicalName: 'Northstar rollout',
+            externalId: 'file-9',
+            displayTitle: 'SOW',
+          },
+        },
+      ],
+    });
+
+    const clusters = await db.select().from(artifactClusters);
+    expect(clusters).toEqual([
+      expect.objectContaining({
+        canonicalEntityId: existing.id,
+        artifactType: 'project',
+      }),
+    ]);
+  });
+
   it('clusters technical evidence across Sentry and GitHub when a shared incident key appears', async () => {
     const [sentryIntegration] = await db
       .insert(integrations)

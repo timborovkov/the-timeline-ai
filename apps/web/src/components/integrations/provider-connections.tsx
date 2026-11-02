@@ -395,6 +395,10 @@ function ConnectionSources({ connection }: { connection: ProviderConnection }) {
 
   const resources = data?.resources ?? emptyResources;
   const shares = data?.shares ?? emptyShares;
+  const knownResourcesRef = useRef(new Map<string, ProviderResource>());
+  for (const resource of resources) {
+    knownResourcesRef.current.set(resourceKey(resource), resource);
+  }
   const resourceByKey = useMemo(() => {
     return new Map(resources.map((resource) => [resourceKey(resource), resource]));
   }, [resources]);
@@ -435,7 +439,8 @@ function ConnectionSources({ connection }: { connection: ProviderConnection }) {
     const hiddenSelectedResources: ProviderResource[] = [];
     for (const key of selected) {
       if (resourceByKey.has(key)) continue;
-      const resource = activeShareToResource(activeShareByKey.get(key));
+      const resource =
+        knownResourcesRef.current.get(key) ?? activeShareToResource(activeShareByKey.get(key));
       if (resource) hiddenSelectedResources.push(resource);
     }
     return [...resources, ...hiddenSelectedResources];
@@ -468,6 +473,7 @@ function ConnectionSources({ connection }: { connection: ProviderConnection }) {
   }
 
   function toggle(resource: ProviderResource) {
+    knownResourcesRef.current.set(resourceKey(resource), resource);
     dispatch({ type: 'toggle', key: resourceKey(resource), currentSelected: selected });
   }
 
@@ -475,7 +481,12 @@ function ConnectionSources({ connection }: { connection: ProviderConnection }) {
     dispatch({ type: 'busy', busy: 'save' });
     dispatch({ type: 'error', error: null });
     const chosen = [...selected]
-      .map((key) => resourceByKey.get(key) ?? activeShareToResource(activeShareByKey.get(key)))
+      .map(
+        (key) =>
+          resourceByKey.get(key) ??
+          knownResourcesRef.current.get(key) ??
+          activeShareToResource(activeShareByKey.get(key)),
+      )
       .filter((resource): resource is ProviderResource => Boolean(resource));
     const result = await notifyAction({
       id: `connection:${connection.id}:save`,

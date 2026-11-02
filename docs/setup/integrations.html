@@ -117,10 +117,11 @@ GOOGLE_DRIVE_WEBHOOK_SECRET=...</code></pre>
           Any team member can connect their Google Drive account from
           <code>/app/me/connections</code> or the native catalog. The picker can browse My Drive,
           folders, shared drives, and specific Docs, Sheets, Slides, PDF, and Word files. Only those
-          selections are read. My Drive root walks ancestry to <code>root</code> and does not admit
-          Shared with me. A team admin activates shared Drive sources from
-          <code>/app/sources</code> and may optionally link a watched folder or file to a Timeline
-          object.
+          selections are read. My Drive root resolves <code>/files/root</code> to the real folder id
+          and walks ancestry to that folder — Drive never puts the <code>root</code> alias in
+          production <code>parents</code>. Shared with me is not admitted. A team admin activates
+          shared Drive sources from <code>/app/sources</code> and may optionally link a watched
+          folder or file to a Timeline object.
         </li>
         <li>
           Drive uses push <code>changes.watch</code>, not polling. Register the site domain for
@@ -141,8 +142,14 @@ GOOGLE_DRIVE_WEBHOOK_SECRET=...</code></pre>
         <li>
           File capture fetches text transiently, diffs against a truncated snapshot, skips
           formatting-only and tiny edits, then bills a small CRM-relevance judge through
-          <code>llm.chatStructured</code> / the existing AI meter. Daily caps: 8 processed files per
-          doc and 200 per connection. Full Drive copies are not stored in the document drive.
+          <code>llm.chatStructured</code> / the existing AI meter. Snapshots uniquely key content,
+          comments, and permission fingerprints so comment-only and share-only changes persist; the
+          judged event is written before the snapshot advances. Delayed <code>drive.file</code> jobs
+          are kept across integration and provider-budget pauses after the changes cursor has
+          already moved. Sparse or scanned PDFs reuse the document-extract vision OCR fallback.
+          Daily caps: 8 processed files per doc and 200 per connection. Full Drive copies are not
+          stored in the document drive. Apply
+          <code>0094_google_drive_snapshot_uniqueness.sql</code> with the usual migration path.
         </li>
         <li>
           Google Cloud also needs the Drive API enabled, OAuth verification for

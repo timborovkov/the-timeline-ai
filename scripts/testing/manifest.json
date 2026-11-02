@@ -1265,6 +1265,9 @@
   "apps/worker/src/document-ingestion/full-worker-extract-gate.test.ts": {
     "group": "unit"
   },
+  "apps/worker/src/document-ingestion/pdf-extraction.test.ts": {
+    "group": "unit"
+  },
   "apps/worker/src/document-ingestion/types.test.ts": {
     "group": "unit"
   },

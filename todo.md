@@ -24,9 +24,10 @@ implementation detail.
 
 Google Drive v1 is shipped: person-owned OAuth, folder/file/shared-drive picker,
 `changes.watch` push (not polling), webhook-delivery + delayed targeted
-`integration-sync` debounce, truncated snapshots, billed CRM-relevance judge,
-and optional object links. Full Drive copies are not harvested into the document
-drive.
+`integration-sync` debounce, truncated snapshots keyed by content/comments/
+permission hashes, billed CRM-relevance judge, optional object links, and the
+document-extract vision OCR fallback for sparse PDFs. Full Drive copies are not
+harvested into the document drive.
 
 ## Billing identity follow-up
 
