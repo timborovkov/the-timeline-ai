@@ -44,8 +44,9 @@ test('saving the email whitelist clears loading and preserves the success toast'
   const page = await newSignedInPage(browser, 'owner');
   try {
     await page.goto('/app/team?section=email');
-    const form = page.locator('form').filter({ hasText: 'Additional allowed senders' });
-    await form.getByLabel('Additional allowed senders').fill('toast-feedback@example.test');
+    const form = page.locator('form').filter({ hasText: 'Additional senders' });
+    await form.getByLabel('Additional senders').fill('toast-feedback@example.test');
+    await form.getByRole('button', { name: 'Add' }).click();
     await waitForPost(page, '/app/team', async () => {
       await form.getByRole('button', { name: 'Save email settings' }).click();
     });
@@ -53,9 +54,7 @@ test('saving the email whitelist clears loading and preserves the success toast'
     await expect(page.getByText('Saving changes…', { exact: true })).not.toBeVisible();
     await expect(form.getByRole('button', { name: 'Save email settings' })).toBeEnabled();
     await page.reload();
-    await expect(page.getByLabel('Additional allowed senders')).toHaveValue(
-      'toast-feedback@example.test',
-    );
+    await expect(page.getByText('toast-feedback@example.test')).toBeVisible();
     await expect(page.getByText('Saving changes…', { exact: true })).not.toBeVisible();
   } finally {
     await sql`UPDATE teams SET inbound_sender_whitelist = ${JSON.stringify(original.inbound_sender_whitelist)}::jsonb,

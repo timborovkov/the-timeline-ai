@@ -48,8 +48,8 @@ describe('Team MCP servers route states', () => {
     expect(screen.getByRole('status').textContent).toBe('Opening team MCP server settings');
     expect(screen.getByRole('heading', { name: 'Team MCP servers', level: 1 })).toBeTruthy();
     expect(screen.getByRole('link', { name: 'Team' }).getAttribute('href')).toBe('/app/team');
-    expect(screen.getByRole('link', { name: 'Integrations' }).getAttribute('href')).toBe(
-      '/app/team/integrations',
+    expect(screen.getByRole('link', { name: 'Connections' }).getAttribute('href')).toBe(
+      '/app/sources',
     );
     expect(screen.getByLabelText('Team MCP server settings loading placeholder')).toBeTruthy();
   });
@@ -75,8 +75,8 @@ describe('Team MCP servers route states', () => {
       ),
     ).toBeTruthy();
     expect(screen.getByRole('link', { name: 'Team' }).getAttribute('href')).toBe('/app/team');
-    expect(screen.getByRole('link', { name: 'Integrations' }).getAttribute('href')).toBe(
-      '/app/team/integrations?connected=server-1&error=retry',
+    expect(screen.getByRole('link', { name: 'Connections' }).getAttribute('href')).toBe(
+      '/app/sources?connected=server-1&error=retry',
     );
 
     const retry = screen.getByRole('button', { name: 'Retry' });
@@ -93,7 +93,7 @@ describe('Team MCP servers route states', () => {
     });
 
     expect(fakes.redirect).toHaveBeenCalledWith(
-      '/app/team/integrations?connected=server-1&error=retry&error=ignored',
+      '/app/sources?connected=server-1&error=retry&error=ignored',
     );
   });
 });

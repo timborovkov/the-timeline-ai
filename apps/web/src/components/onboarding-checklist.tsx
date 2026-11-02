@@ -6,7 +6,6 @@ import { useEffect, useRef, type ButtonHTMLAttributes, type RefObject } from 're
 
 import type { OnboardingChecklistView } from '@/lib/onboarding-checklist';
 
-import { HOME_TEAM_EMAIL_SECTION_ID } from '@/components/home/home-team-email';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { notifyError } from '@/lib/notify';
@@ -388,7 +387,7 @@ function onboardingMeta(key: string): { href: string; cta: string; description: 
       };
     case 'telegram':
       return {
-        href: '/app/team/telegram',
+        href: '/app/sources#telegram',
         cta: 'Link',
         description: 'Let chats and voice notes flow into the timeline.',
       };
@@ -400,10 +399,10 @@ function onboardingMeta(key: string): { href: string; cta: string; description: 
       };
     case 'email_forwarding':
       return {
-        href: `/app#${HOME_TEAM_EMAIL_SECTION_ID}`,
-        cta: 'View team email',
+        href: '/app/sources#email',
+        cta: 'Set up email',
         description:
-          'Open the copyable team address on Home, then forward a message into the archive.',
+          'Open the Email provider sheet to copy the team address and edit allowed senders, then forward a message into the archive.',
       };
     case 'first_document':
       return {

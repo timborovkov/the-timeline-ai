@@ -110,7 +110,6 @@ const TRUST_STEPS = [
 interface NativeConnector {
   label: string;
   logo: string;
-  lightLogoTileInDarkMode: boolean;
   state: 'available' | 'setup-required';
   href?: `/integrations/${string}`;
 }
@@ -126,7 +125,6 @@ export default function LandingPage() {
       nativeConnectors.push({
         label: connector.label,
         logo: publicConnector.logo,
-        lightLogoTileInDarkMode: publicConnector.lightLogoTileInDarkMode,
         state: 'available',
         href,
       });
@@ -135,7 +133,6 @@ export default function LandingPage() {
       nativeConnectors.push({
         label: connector.label,
         logo: publicConnector.logo,
-        lightLogoTileInDarkMode: publicConnector.lightLogoTileInDarkMode,
         state: 'setup-required',
         href,
       });
@@ -387,12 +384,7 @@ function ConnectorRail({ nativeConnectors }: { nativeConnectors: NativeConnector
               {nativeConnectors.map((connector) => (
                 <li key={connector.label}>
                   <Link href={connector.href ?? '/integrations'}>
-                    <span
-                      className={cn(
-                        styles.connectorLogoTile,
-                        connector.lightLogoTileInDarkMode && styles.connectorLogoTileLight,
-                      )}
-                    >
+                    <span className={cn(styles.connectorLogoTile, styles.connectorLogoTileLight)}>
                       <Image src={connector.logo} alt="" width={20} height={20} />
                     </span>
                     <span>{connector.label}</span>

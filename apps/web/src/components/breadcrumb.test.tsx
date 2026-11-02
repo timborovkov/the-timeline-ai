@@ -21,13 +21,13 @@ describe('Breadcrumb', () => {
       createElement(Breadcrumb, {
         items: [
           { label: 'Team', href: '/app/team' },
-          { label: 'Integrations', href: '/app/team/integrations' },
+          { label: 'Integrations', href: '/app/sources' },
           { label: 'Audit log' },
         ],
       }),
     );
 
-    expect(html).toContain('href="/app/team/integrations"');
+    expect(html).toContain('href="/app/sources"');
     expect(html).toContain('Back');
     expect(html).toContain('Audit log');
   });

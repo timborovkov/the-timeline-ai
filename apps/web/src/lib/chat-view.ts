@@ -38,7 +38,7 @@ const PAGE_LABELS: Record<string, string> = {
   sources: 'Connections',
   approvals: 'Approvals',
   team: 'Team',
-  'team/integrations': 'Integrations',
+  'team/integrations': 'Connections',
   'team/slack': 'Slack',
   'team/telegram': 'Telegram',
   'team/mcp-servers': 'MCP servers',

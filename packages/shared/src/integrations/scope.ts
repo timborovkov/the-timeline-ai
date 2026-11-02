@@ -2452,7 +2452,7 @@ async function notifyHealthPauseOwnerOnce(
         to: recipient.email,
         teamName: teamRow?.name ?? 'Timeline',
         summary,
-        actionUrl: `${process.env.AUTH_URL ?? process.env.NEXTAUTH_URL ?? 'https://thetimeline.cc'}/app/team/integrations`,
+        actionUrl: `${process.env.AUTH_URL ?? process.env.NEXTAUTH_URL ?? 'https://thetimeline.cc'}/app/sources`,
       },
       {
         db,
@@ -3015,7 +3015,7 @@ async function emailConnectionAttentionActors(
     .select({ id: users.id, email: users.email })
     .from(users)
     .where(inArray(users.id, recipientIds));
-  const actionUrl = `${process.env.AUTH_URL ?? process.env.NEXTAUTH_URL ?? 'https://thetimeline.cc'}/app/team/integrations`;
+  const actionUrl = `${process.env.AUTH_URL ?? process.env.NEXTAUTH_URL ?? 'https://thetimeline.cc'}/app/sources`;
   const results = await Promise.all(
     recipients.map((recipient) =>
       sendMessage(

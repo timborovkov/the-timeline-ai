@@ -40,7 +40,7 @@ export default async function McpSharePage() {
   } catch {
     canManageMcpShare = false;
   }
-  if (!canManageMcpShare) redirect('/app/team/integrations');
+  if (!canManageMcpShare) redirect('/app/sources');
   const rows = await db
     .select()
     .from(mcpOutboundKeys)
@@ -61,7 +61,7 @@ export default async function McpSharePage() {
       <Breadcrumb
         items={[
           { label: 'Team', href: '/app/team' },
-          { label: 'Integrations', href: '/app/team/integrations' },
+          { label: 'Connections', href: '/app/sources' },
           { label: 'Timeline as MCP' },
         ]}
       />

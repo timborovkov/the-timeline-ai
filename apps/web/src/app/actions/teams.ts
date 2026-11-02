@@ -343,6 +343,7 @@ export async function updateInboundEmailWhitelistAction(
     );
 
     revalidatePath('/app/team');
+    revalidatePath('/app/sources');
     return { ok: true };
   });
 }

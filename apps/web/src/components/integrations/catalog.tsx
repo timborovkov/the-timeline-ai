@@ -1,7 +1,6 @@
 'use client';
 
 import { Plug } from 'lucide-react';
-import Image from 'next/image';
 import { useState } from 'react';
 
 import type * as integrationsLib from '@timeline/shared/integrations';
@@ -9,6 +8,7 @@ import type * as integrationsLib from '@timeline/shared/integrations';
 import { CollectionRow } from '@/components/collections/collection-row';
 import { EmptyState } from '@/components/empty-state';
 import { InlineError } from '@/components/inline-error';
+import { ProviderLogo } from '@/components/provider-logo';
 import { Button } from '@/components/ui/button';
 import { notifyAction } from '@/lib/notify';
 import { connectionErrorMessage } from '@/lib/ux-errors';
@@ -133,13 +133,7 @@ function ProviderRow({
     <div id={provider.id} className="scroll-mt-24">
       <CollectionRow>
         <CollectionRow.Leading>
-          <Image
-            src={provider.logo}
-            alt=""
-            width={28}
-            height={28}
-            className="size-7 rounded-sm bg-surface-2 p-1"
-          />
+          <ProviderLogo src={provider.logo} />
         </CollectionRow.Leading>
         <CollectionRow.Title>{provider.label}</CollectionRow.Title>
         <CollectionRow.Context>{provider.description}</CollectionRow.Context>

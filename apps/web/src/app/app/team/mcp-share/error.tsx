@@ -16,7 +16,7 @@ export default function McpShareError({
       <Breadcrumb
         items={[
           { label: 'Team', href: '/app/team' },
-          { label: 'Integrations', href: '/app/team/integrations' },
+          { label: 'Connections', href: '/app/sources' },
           { label: 'Timeline as MCP' },
         ]}
       />

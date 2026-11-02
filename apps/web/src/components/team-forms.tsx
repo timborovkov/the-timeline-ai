@@ -22,6 +22,7 @@ import {
   type InviteState,
   type RenameTeamState,
 } from '@/app/actions/teams';
+import { AllowedSendersEditor } from '@/components/allowed-senders-editor';
 import { CollectionRow } from '@/components/collections/collection-row';
 import { CollectionStatus } from '@/components/collections/collection-status';
 import { CopyableTextField } from '@/components/copyable-text-field';
@@ -33,7 +34,6 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { NativeSelect } from '@/components/ui/native-select';
-import { Textarea } from '@/components/ui/textarea';
 import { DEFAULT_TIMEZONE, timezoneOptions } from '@/lib/timezones';
 
 function unsubscribeTimezone(): void {
@@ -319,27 +319,19 @@ export function InboundEmailWhitelistForm({
         Enable sender whitelist
       </label>
       <p className="text-sm text-fg-muted">
-        Enabled by default. Active team members can send from their account email addresses. Add any
-        additional allowed senders below. Disable to accept mail from anyone.
+        Members can always send from their account email. Add extra addresses, or turn this off to
+        accept mail from anyone.
       </p>
-      <div className="space-y-1.5">
-        <Label htmlFor="inbound-email-senders" size="sm">
-          Additional allowed senders
-        </Label>
-        <FieldError error={sendersError}>
-          {(activeSendersError) => (
-            <Textarea
-              id="inbound-email-senders"
-              name="senders"
-              defaultValue={senders.join(', ')}
-              placeholder="alice@example.com, vendor@example.net"
-              className="min-h-24"
-              aria-invalid={activeSendersError ? true : undefined}
-              aria-describedby={activeSendersError ? 'inbound-email-senders-error' : undefined}
-            />
-          )}
-        </FieldError>
-      </div>
+      <FieldError error={sendersError}>
+        {(activeSendersError) => (
+          <div
+            aria-invalid={activeSendersError ? true : undefined}
+            aria-describedby={activeSendersError ? 'inbound-email-senders-error' : undefined}
+          >
+            <AllowedSendersEditor senders={senders} />
+          </div>
+        )}
+      </FieldError>
       <div className="flex flex-wrap items-center gap-2">
         <Submit label="Save email settings" />
         <FormFeedback

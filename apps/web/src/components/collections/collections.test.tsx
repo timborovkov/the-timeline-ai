@@ -50,6 +50,19 @@ describe('collection primitives', () => {
     expect(screen.getByText('Group contents').closest('[hidden]')).toBeTruthy();
   });
 
+  it('can start a group collapsed', () => {
+    render(
+      <CollectionGroup title="Advanced" count={4} defaultOpen={false}>
+        <p>Folded tools</p>
+      </CollectionGroup>,
+    );
+
+    expect(screen.getByRole('button', { name: /Advanced 4/ }).getAttribute('aria-expanded')).toBe(
+      'false',
+    );
+    expect(screen.getByText('Folded tools').closest('[hidden]')).toBeTruthy();
+  });
+
   it('shows selection chrome only while items are selected', () => {
     const clear = vi.fn();
     const view = render(
