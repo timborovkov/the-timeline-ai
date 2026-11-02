@@ -142,7 +142,7 @@ function includeCurrentContinuationWhenMissing(
   target: TargetedIntegrationSyncJob | undefined,
 ): void {
   if (
-    isProviderPaginationContinuation(target) &&
+    (isProviderPaginationContinuation(target) || isDriveWatchTarget(target)) &&
     !continuations.some((continuation) => isMatchingContinuation(target, continuation))
   ) {
     continuations.push({

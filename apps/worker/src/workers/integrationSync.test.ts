@@ -1837,6 +1837,127 @@ describe('runOneIntegration attention classification', () => {
     );
   });
 
+  it('persists a Drive watch file target when capture hits a quota pause without a carried continuation', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-06-25T02:59:00.000Z'));
+    const retryAt = new Date('2026-06-25T03:00:00.000Z');
+    fakes.adminLoadIntegration.mockResolvedValueOnce({
+      ...integration,
+      provider: 'google_drive',
+      externalAccountId: 'drive-user-1',
+    });
+    fakes.adminListSelections.mockResolvedValueOnce([{ kind: 'drive.file', externalId: 'file-1' }]);
+    const err = Object.assign(new Error('Drive GET /files/file-1 429: rate limited'), {
+      code: 'provider_rate_limited',
+      provider: 'google_drive',
+      retryAt,
+      retryAfterSeconds: 60,
+      scope: 'requests',
+      reason: 'provider_quota_exhausted',
+    });
+    fakes.incrementalSync.mockRejectedValueOnce(err);
+
+    try {
+      await runOneIntegration({} as never, INTEGRATION_ID, 'targeted', {
+        kind: 'targeted',
+        integrationId: INTEGRATION_ID,
+        teamId: TEAM_ID,
+        triggeredBy: 'webhook',
+        resourceType: 'drive.file',
+        externalId: 'file-1',
+        reason: 'drive_watch',
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+
+    expect(fakes.adminCommitIntegrationSyncCheckpoint).toHaveBeenCalledWith(expect.anything(), {
+      integrationId: INTEGRATION_ID,
+      cursors: [],
+      continuations: [
+        {
+          resourceType: 'drive.file',
+          externalId: 'file-1',
+          retryAt,
+        },
+      ],
+    });
+    expect(fakes.enqueueIntegrationSyncJob).toHaveBeenCalledWith(
+      {
+        kind: 'targeted',
+        integrationId: INTEGRATION_ID,
+        teamId: TEAM_ID,
+        triggeredBy: 'reconcile',
+        resourceType: 'drive.file',
+        externalId: 'file-1',
+        reason: 'provider_pagination_continuation',
+        continuationHandoffId: continuationHandoffId(1),
+      },
+      { delayMs: 60_000 },
+    );
+    expect(fakes.incrementalSync).toHaveBeenCalled();
+  });
+
+  it('persists a Drive changes watch when listing hits a quota pause without a carried continuation', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-06-25T02:59:00.000Z'));
+    const retryAt = new Date('2026-06-25T03:00:00.000Z');
+    fakes.adminLoadIntegration.mockResolvedValueOnce({
+      ...integration,
+      provider: 'google_drive',
+      externalAccountId: 'drive-user-1',
+    });
+    fakes.adminListSelections.mockResolvedValueOnce([{ kind: 'drive.file', externalId: 'file-1' }]);
+    const err = Object.assign(new Error('Drive GET /changes 429: rate limited'), {
+      code: 'provider_rate_limited',
+      provider: 'google_drive',
+      retryAt,
+      retryAfterSeconds: 60,
+      scope: 'requests',
+      reason: 'provider_quota_exhausted',
+    });
+    fakes.incrementalSync.mockRejectedValueOnce(err);
+
+    try {
+      await runOneIntegration({} as never, INTEGRATION_ID, 'targeted', {
+        kind: 'targeted',
+        integrationId: INTEGRATION_ID,
+        teamId: TEAM_ID,
+        triggeredBy: 'webhook',
+        resourceType: 'drive.changes',
+        externalId: INTEGRATION_ID,
+        reason: 'drive_watch',
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+
+    expect(fakes.adminCommitIntegrationSyncCheckpoint).toHaveBeenCalledWith(expect.anything(), {
+      integrationId: INTEGRATION_ID,
+      cursors: [],
+      continuations: [
+        {
+          resourceType: 'drive.changes',
+          externalId: INTEGRATION_ID,
+          retryAt,
+        },
+      ],
+    });
+    expect(fakes.enqueueIntegrationSyncJob).toHaveBeenCalledWith(
+      {
+        kind: 'targeted',
+        integrationId: INTEGRATION_ID,
+        teamId: TEAM_ID,
+        triggeredBy: 'reconcile',
+        resourceType: 'drive.changes',
+        externalId: INTEGRATION_ID,
+        reason: 'provider_pagination_continuation',
+        continuationHandoffId: continuationHandoffId(1),
+      },
+      { delayMs: 60_000 },
+    );
+  });
+
   it('records Slack Web API rate limits as provider budget pauses', async () => {
     fakes.adminLoadIntegration.mockResolvedValueOnce({
       ...integration,

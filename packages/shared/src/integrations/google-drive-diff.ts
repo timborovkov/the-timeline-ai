@@ -4,7 +4,9 @@
  */
 
 const WHITESPACE = /\s+/g;
-const MARKDOWN_NOISE = /[_*`#>\-\[\]()]/g;
+const MARKDOWN_MARKERS = /[_*`#>\[\]]/g;
+const MARKDOWN_LINK = /!?\[([^\]]*)\]\([^)]*\)/g;
+const MARKDOWN_LINE_PREFIX = /^\s{0,3}(?:#{1,6}\s+|>\s+|[-*+]\s+)/;
 
 const DRIVE_DIFF_MIN_CHANGED_CHARS = 40;
 const DRIVE_SNAPSHOT_MAX_CHARS = 20_000;
@@ -21,7 +23,16 @@ export interface DriveTextDiff {
 }
 
 export function normalizeDriveTextForCompare(text: string): string {
-  return text.replace(WHITESPACE, ' ').replace(MARKDOWN_NOISE, '').trim().toLowerCase();
+  const withoutLinks = text.replace(MARKDOWN_LINK, '$1');
+  const withoutLineMarkup = withoutLinks
+    .split('\n')
+    .map((line) => line.replace(MARKDOWN_LINE_PREFIX, ''))
+    .join(' ');
+  return withoutLineMarkup
+    .replace(MARKDOWN_MARKERS, '')
+    .replace(WHITESPACE, ' ')
+    .trim()
+    .toLowerCase();
 }
 
 export function truncateDriveSnapshot(text: string, maxChars = DRIVE_SNAPSHOT_MAX_CHARS): string {

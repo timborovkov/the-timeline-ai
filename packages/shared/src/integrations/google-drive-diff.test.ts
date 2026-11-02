@@ -20,7 +20,22 @@ describe('diffDriveText', () => {
       changed: false,
       reason: 'formatting',
     });
+    expect(diffDriveText('- Hello world', 'Hello world')).toMatchObject({
+      changed: false,
+      reason: 'formatting',
+    });
     expect(normalizeDriveTextForCompare('# Hello')).toBe('hello');
+  });
+
+  it('keeps signed amounts instead of treating hyphens as markdown', () => {
+    expect(normalizeDriveTextForCompare('-50000 USD')).toBe('-50000 usd');
+    const diff = diffDriveText(
+      'Budget is -50000 USD for the Northstar pilot this quarter.',
+      'Budget is 50000 USD for the Northstar pilot this quarter.',
+    );
+    expect(diff.changed).toBe(true);
+    expect(diff.reason).toBe('substantive');
+    expect(diff.hunks.join(' ')).toContain('50000 USD');
   });
 
   it('skips tiny punctuation edits', () => {

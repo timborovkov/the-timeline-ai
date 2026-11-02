@@ -126,6 +126,66 @@ describe('googleDriveProvider', () => {
     ).rejects.toMatchObject({ provider: 'google_drive', retryAfterSeconds: 120 });
   });
 
+  it('attaches the current Drive file target when capture hits a quota pause', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValue(
+          jsonResponse(
+            { error: 'rate limited' },
+            { status: 429, headers: { 'retry-after': '60' } },
+          ),
+        ),
+    );
+    const ctx = syncContext();
+
+    await expect(
+      googleDriveProvider.incrementalSync({
+        integration: { id: 'integration-1', teamId: 'team-1' } as never,
+        tokens: { access_token: 'access-token', expires_at: Date.now() + 600_000 },
+        selections: [{ kind: 'drive.file', externalId: 'file-1' }],
+        ctx,
+        target: { resourceType: 'drive.file', externalId: 'file-1' },
+      }),
+    ).rejects.toMatchObject({
+      provider: 'google_drive',
+      syncContinuations: [{ resourceType: 'drive.file', externalId: 'file-1' }],
+    });
+  });
+
+  it('attaches the current Drive file target when token refresh is rate-limited', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValue(
+          jsonResponse(
+            { error: 'rate limited' },
+            { status: 429, headers: { 'retry-after': '90' } },
+          ),
+        ),
+    );
+    const ctx = syncContext();
+
+    await expect(
+      googleDriveProvider.incrementalSync({
+        integration: { id: 'integration-1', teamId: 'team-1' } as never,
+        tokens: {
+          access_token: 'expired-token',
+          refresh_token: 'refresh-token',
+          expires_at: Date.now() - 10_000,
+        },
+        selections: [{ kind: 'drive.file', externalId: 'file-1' }],
+        ctx,
+        target: { resourceType: 'drive.file', externalId: 'file-1' },
+      }),
+    ).rejects.toMatchObject({
+      provider: 'google_drive',
+      syncContinuations: [{ resourceType: 'drive.file', externalId: 'file-1' }],
+    });
+  });
+
   it('builds a Google OAuth authorize URL', async () => {
     const { authorizeUrl } = await googleDriveProvider.startOAuth({
       teamId: 'team-1',

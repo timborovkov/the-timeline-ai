@@ -1045,11 +1045,22 @@ export const googleDriveProvider: IntegrationProvider = {
 
   async incrementalSync({ integration, tokens, selections, ctx, target }) {
     if (!selections.some((selection) => driveSelectionIsWatchable(selection.kind))) return;
-    const refreshed = await refreshForSync(tokens, ctx);
     if (target?.resourceType === DRIVE_FILE_KIND) {
-      await processDriveFile(integration, refreshed, selections, ctx, target.externalId);
-      return undefined;
+      try {
+        const refreshed = await refreshForSync(tokens, ctx);
+        await processDriveFile(integration, refreshed, selections, ctx, target.externalId);
+        return undefined;
+      } catch (error) {
+        if (error instanceof Error) {
+          throw attachSyncContinuation(error, {
+            resourceType: DRIVE_FILE_KIND,
+            externalId: target.externalId,
+          });
+        }
+        throw error;
+      }
     }
+    const refreshed = await refreshForSync(tokens, ctx);
     return fetchChanges(
       integration,
       refreshed,

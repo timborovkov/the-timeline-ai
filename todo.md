@@ -27,8 +27,9 @@ Google Drive v1 is shipped: person-owned OAuth, folder/file/shared-drive picker,
 `integration-sync` debounce, truncated snapshots keyed by content/comments/
 permission hashes, billed CRM-relevance judge, optional object links (including
 the matched selected ancestor for nested files), nested-folder ancestry that
-caches parent metadata rather than early negatives, lock-busy persistence of
-`drive.file` / `drive.changes` targets, and the document-extract vision OCR
+caches parent metadata rather than early negatives, lock-busy and quota/token-refresh
+persistence of `drive.file` / `drive.changes` targets, contextual Markdown
+normalization that keeps signed amounts, and the document-extract vision OCR
 fallback for sparse PDFs. Full Drive copies are not harvested into the document
 drive.
 
