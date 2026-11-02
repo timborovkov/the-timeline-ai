@@ -2,9 +2,9 @@ import { expect } from '@timeline/test-support';
 import { vi, freshModuleUrl } from '@timeline/test-support';
 import { afterEach, describe, it } from 'bun:test';
 
-import type * as TestModule1 from '#src/index.js';
-
 import { buildPgClientOptions, PG_TIMEOUTS } from '#src/client.js';
+
+import type * as TestModule1 from '#src/index.js';
 const ENV_BACKUP = { ...process.env };
 
 afterEach(() => {
