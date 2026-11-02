@@ -63,7 +63,7 @@ await vi.mock(
 );
 
 const { QueryClient, QueryClientProvider } = await import('@tanstack/react-query');
-const { cleanup, render, screen, within } = await import('@testing-library/react');
+const { act, cleanup, render, screen, within } = await import('@testing-library/react');
 const { default: userEvent } = await import('@testing-library/user-event');
 const { renderToString } = await import('react-dom/server');
 const { RedirectActionToast } = await import('@/components/redirect-action-toast');
@@ -73,6 +73,7 @@ afterEach(() => {
   notify.notifyError.mockClear();
   notify.notifySuccess.mockClear();
   cleanup();
+  window.history.replaceState(null, '', '/');
 });
 
 function renderPage(ui: ReactElement) {
@@ -382,6 +383,49 @@ describe('SourcesPageView', () => {
     const dialog = await screen.findByRole('dialog', { name: 'Linear' });
     expect(within(dialog).getByText('MCP')).toBeTruthy();
     expect(within(dialog).getByText('https://mcp.linear.app')).toBeTruthy();
+  });
+
+  it('opens and switches provider sheets on fragment-only navigation', async () => {
+    window.history.replaceState(null, '', '/app/sources');
+    renderPage(
+      <SourcesPageView
+        params={{}}
+        active={{ teamName: 'Acme Labs' }}
+        isAdmin
+        summary={summary({
+          telegramConnections: 1,
+          inboundEmail: 'acme+archive@inbound.timeline.test',
+        })}
+        model={model()}
+        inboundEmail={{
+          inboundEmail: 'acme+archive@inbound.timeline.test',
+          enabled: true,
+          senders: ['vendor@example.test'],
+          placeholderInbound: false,
+        }}
+      />,
+    );
+
+    expect(screen.queryByRole('dialog')).toBeNull();
+
+    act(() => {
+      window.history.pushState(null, '', '/app/sources#telegram');
+    });
+    const telegram = await screen.findByRole('dialog', { name: 'Telegram' });
+    expect(within(telegram).getByText('Link a personal DM')).toBeTruthy();
+
+    act(() => {
+      window.history.pushState(null, '', '/app/sources#email');
+    });
+    const email = await screen.findByRole('dialog', { name: 'Email' });
+    expect(within(email).getByLabelText('Additional senders')).toBeTruthy();
+
+    act(() => {
+      window.location.hash = 'github';
+      window.dispatchEvent(new Event('hashchange'));
+    });
+    const github = await screen.findByRole('dialog', { name: 'GitHub' });
+    expect(within(github).getByText('Accounts')).toBeTruthy();
   });
 
   it('opens a provider details sheet with accounts, team sync, and visibility', async () => {

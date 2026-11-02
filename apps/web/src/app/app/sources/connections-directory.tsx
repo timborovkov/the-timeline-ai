@@ -26,6 +26,7 @@ import { NativeProviderConnectButton } from '@/components/native-provider-connec
 import { ProviderLogo } from '@/components/provider-logo';
 import { Input } from '@/components/ui/input';
 import { ItemActionGroup } from '@/components/ui/item-actions';
+import { subscribeToClientUrlChanges } from '@/lib/client-url-changes';
 
 const ROW_ACTION_CLASS =
   'inline-flex min-h-8 items-center rounded-sm px-2 text-xs text-fg-muted hover:bg-surface-2 hover:text-fg focus-visible:ring-2 focus-visible:ring-signal/50';
@@ -152,12 +153,16 @@ export function ConnectionsDirectory({
     null;
 
   useEffect(() => {
-    const fromHash = initialOpenProviderId({
-      providers: [...connected, ...available],
-      connectedRows: model.connectedRows,
-      hash: window.location.hash,
-    });
-    if (fromHash) setOpenProviderId(fromHash);
+    const applyHash = () => {
+      const fromHash = initialOpenProviderId({
+        providers: [...connected, ...available],
+        connectedRows: model.connectedRows,
+        hash: window.location.hash,
+      });
+      if (fromHash) setOpenProviderId(fromHash);
+    };
+    applyHash();
+    return subscribeToClientUrlChanges(applyHash);
   }, [available, connected, model.connectedRows]);
 
   return (
