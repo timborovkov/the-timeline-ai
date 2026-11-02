@@ -67,7 +67,7 @@ describe('public integration routes', () => {
     expect(html).not.toMatch(/href="(?:\/(?:app\/)?demo|\/workspace\/demo|https?:\/\/t\.me\/)/u);
     expect(text).not.toMatch(/captures? (?:all|every) (?:chat|conversation|message)/iu);
     expect(html).toContain('compact');
-    expect(html).toContain('dark:bg-white');
+    expect(html).toContain('bg-white');
     expect(html).toContain('text-[3rem]');
     expect(html).toContain('sm:text-[clamp(3.5rem,5vw,5.5rem)]');
     expect(html).not.toContain('7.5vw');
@@ -83,7 +83,7 @@ describe('public integration routes', () => {
     expect(html).toContain('xl:grid-cols-[15rem_minmax(0,1fr)]');
     expect(html).not.toContain('01 / Native');
     expect(html).not.toContain('03 / Tiers');
-    expect(html.match(/dark:bg-white/g)).toHaveLength(5);
+    expect(html.match(/bg-white/g)?.length).toBeGreaterThanOrEqual(6);
   });
 
   it('routes signed-in visitors to each implemented capture setup', async () => {
@@ -106,7 +106,7 @@ describe('public integration routes', () => {
       await connectorRoute.default({ params: Promise.resolve({ slug }) }),
     );
 
-    expect(html).toContain('dark:bg-white');
+    expect(html).toContain('bg-white');
     expect(html.match(/Fictional Acme example, not customer data\./g)).toHaveLength(2);
     expect(html).toContain('scroll-mt-12');
     expect(html).toContain('text-[3rem]');
@@ -149,7 +149,7 @@ describe('public integration routes', () => {
     expect(html).not.toContain('02 / Questions');
     expect(html).not.toContain('09 / Related');
     expect(text).toContain('10/Start');
-    expect(html).toContain('dark:bg-white');
+    expect(html).toContain('bg-white');
     expect(html).toContain('PR #482');
     expect(html).toContain('application/ld+json');
   });

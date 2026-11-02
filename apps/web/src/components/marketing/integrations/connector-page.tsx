@@ -1,5 +1,4 @@
 import { ArrowRight, Check, LockKeyhole, Minus, Sparkles } from 'lucide-react';
-import Image from 'next/image';
 import Link from 'next/link';
 
 import {
@@ -9,6 +8,7 @@ import {
 import { ConnectorStructuredData } from '@/components/marketing/integrations/connector-seo';
 import { RecordsToAnswer } from '@/components/marketing/integrations/records-to-answer';
 import { PUBLIC_DEMO_DISCLOSURE } from '@/components/marketing/public-demo-story';
+import { ProviderLogo } from '@/components/provider-logo';
 import { PublicShell } from '@/components/public-shell';
 import { Button } from '@/components/ui/button';
 
@@ -64,17 +64,7 @@ function ConnectorHero({
         <div className="grid items-end gap-10 lg:grid-cols-[1.3fr_0.7fr]">
           <div>
             <div className="mb-7 flex items-center gap-4">
-              <div
-                className={`grid size-14 place-items-center rounded-md border border-border bg-surface sm:size-16 ${connector.lightLogoTileInDarkMode ? 'dark:bg-white' : ''}`}
-              >
-                <Image
-                  src={connector.logo}
-                  alt=""
-                  width={38}
-                  height={38}
-                  className="size-8 sm:size-10"
-                />
-              </div>
+              <ProviderLogo src={connector.logo} size="lg" />
               <div>
                 <p className="text-sm font-medium text-fg-muted">Integration</p>
                 <p className="mt-1 text-sm font-semibold text-fg">{connector.name}</p>
@@ -90,7 +80,7 @@ function ConnectorHero({
             </p>
             <div className="mt-7 flex flex-wrap gap-3">
               <Button asChild size="lg">
-                <Link href={isSignedIn ? '/app/team/integrations' : '/sign-up'}>
+                <Link href={isSignedIn ? '/app/sources' : '/sign-up'}>
                   {isSignedIn ? `Connect ${connector.name}` : 'Create your Timeline'}
                   <ArrowRight aria-hidden="true" />
                 </Link>
@@ -414,7 +404,7 @@ function FinalCta({ connector, isSignedIn }: { connector: ConnectorContent; isSi
             evidence behind every answer.
           </p>
           <Button asChild size="lg" className="mt-8">
-            <Link href={isSignedIn ? '/app/team/integrations' : '/sign-up'}>
+            <Link href={isSignedIn ? '/app/sources' : '/sign-up'}>
               {isSignedIn ? `Connect ${connector.name}` : 'Create your Timeline'}
               <ArrowRight aria-hidden="true" />
             </Link>

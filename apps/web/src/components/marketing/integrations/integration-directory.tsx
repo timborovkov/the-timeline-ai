@@ -1,5 +1,4 @@
 import { ArrowRight, Check, CircleDotDashed, Mail, Video, Webhook, Wrench } from 'lucide-react';
-import Image from 'next/image';
 import Link from 'next/link';
 
 import {
@@ -14,6 +13,7 @@ import { DirectoryStructuredData } from '@/components/marketing/integrations/con
 import { RecordsToAnswer } from '@/components/marketing/integrations/records-to-answer';
 import { MarketingContainer, MarketingSectionGrid } from '@/components/marketing/marketing-layout';
 import { MarketingSectionIndex } from '@/components/marketing/section-index';
+import { ProviderLogo } from '@/components/provider-logo';
 import { PublicShell } from '@/components/public-shell';
 import { Button } from '@/components/ui/button';
 
@@ -123,17 +123,7 @@ export function IntegrationDirectory({ isSignedIn }: { isSignedIn: boolean }) {
                       className="group flex min-h-64 flex-col bg-bg p-6 outline-none transition-colors hover:bg-surface focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:p-8"
                     >
                       <div className="flex items-start justify-between gap-4">
-                        <div
-                          className={`grid size-12 place-items-center rounded-md border border-border bg-surface ${connector.lightLogoTileInDarkMode ? 'dark:bg-white' : ''}`}
-                        >
-                          <Image
-                            src={connector.logo}
-                            alt=""
-                            width={30}
-                            height={30}
-                            className="size-7"
-                          />
-                        </div>
+                        <ProviderLogo src={connector.logo} size="md" />
                         <span className="font-mono text-[11px] text-fg-dim">0{index + 1}</span>
                       </div>
                       <h3 className="mt-8 text-2xl font-semibold tracking-tight text-fg">
@@ -313,15 +303,10 @@ function CaptureSurfaceRow({
 function CaptureSurfaceIcon({ surface }: { surface: CaptureSurfaceContent }) {
   if (surface.icon === 'telegram' || surface.icon === 'slack') {
     return (
-      <div className="grid size-12 place-items-center rounded-md border border-border bg-surface dark:bg-white">
-        <Image
-          src={`/connectors/${surface.icon === 'telegram' ? 'telegram' : 'slack'}.svg`}
-          alt=""
-          width={30}
-          height={30}
-          className="size-7"
-        />
-      </div>
+      <ProviderLogo
+        src={`/connectors/${surface.icon === 'telegram' ? 'telegram' : 'slack'}.svg`}
+        size="md"
+      />
     );
   }
 

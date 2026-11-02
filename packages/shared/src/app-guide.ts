@@ -222,10 +222,10 @@ export const APP_GUIDE_ROUTES: readonly AppGuideRoute[] = [
   },
   {
     id: 'team/integrations',
-    title: 'Integrations',
+    title: 'Connections',
     description:
       'Connect Drive, Linear, GitHub, Monday.com, Slack workspace, Sentry, custom ingest webhooks, and MCP tools.',
-    href: '/app/team/integrations',
+    href: '/app/sources',
     group: 'dashboard',
     minRole: 'admin',
     intents: [
@@ -250,13 +250,13 @@ export const APP_GUIDE_ROUTES: readonly AppGuideRoute[] = [
       'ingest webhooks',
     ],
     guide:
-      'Use Team Integrations to connect native sources, activate shared provider resources, manage ingest webhooks, and add MCP tools. Monday.com board selection captures items, updates, columns, and subitems from the parent board; choose WorkDocs separately when docs should become cited evidence. Provider connections are person-owned, admins activate shared team sources, and MCP provides live tool/context access with private evidence capture for successful tool calls.',
+      'Use Connections to connect native sources, activate shared provider resources, manage ingest webhooks, and add MCP tools. Monday.com board selection captures items, updates, columns, and subitems from the parent board; choose WorkDocs separately when docs should become cited evidence. Provider connections are person-owned, admins activate shared team sources, and MCP provides live tool/context access with private evidence capture for successful tool calls.',
     relatedRouteIds: ['help/integrations', 'team', 'connections', 'me/connections'],
   },
   {
     id: 'connections',
     title: 'Connections',
-    description: 'Personal provider accounts, Slack, Telegram, team integrations, and MCP tools.',
+    description: 'Personal provider accounts, Slack, Telegram, native providers, and MCP tools.',
     href: '/app/sources',
     group: 'dashboard',
     minRole: 'member',
@@ -269,7 +269,7 @@ export const APP_GUIDE_ROUTES: readonly AppGuideRoute[] = [
       'set up a source',
     ],
     guide:
-      'Use Connections to see capture sources and linked accounts. Person-owned provider logins live under Provider accounts. Admins activate shared team sources on Team Integrations. Slack and Telegram have their own setup pages. MCP servers give the agent live tools without turning every call into timeline evidence.',
+      'Use Connections to see capture sources, native providers, and linked accounts. Person-owned provider logins live under Provider accounts. Admins activate shared team sources on the same Connections page. Slack chat capture and Telegram have their own setup pages. MCP servers give the agent live tools without turning every call into timeline evidence.',
     relatedRouteIds: [
       'me/connections',
       'team/integrations',
@@ -295,7 +295,7 @@ export const APP_GUIDE_ROUTES: readonly AppGuideRoute[] = [
       'linear account',
     ],
     guide:
-      'Use Provider accounts to connect a personal login for Drive, GitHub, Linear, Monday.com, or Sentry. Connecting an account does not share it with the team until an admin activates a resource on Team Integrations.',
+      'Use Provider accounts to connect a personal login for Drive, GitHub, Linear, Monday.com, or Sentry. Connecting an account does not share it with the team until an admin activates a resource on Connections.',
     relatedRouteIds: ['connections', 'team/integrations', 'help/integrations'],
   },
   {
@@ -350,7 +350,7 @@ export const APP_GUIDE_ROUTES: readonly AppGuideRoute[] = [
     id: 'team/integrations/monday',
     title: 'Monday.com Integration',
     description: 'Connect Monday.com boards, subitems, updates, columns, records, and WorkDocs.',
-    href: '/app/team/integrations#monday',
+    href: '/app/sources#monday',
     group: 'dashboard',
     minRole: 'admin',
     intents: [

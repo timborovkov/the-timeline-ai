@@ -16,12 +16,12 @@
         provider accounts from <code>/app/me/connections</code>, share the sources a team may use,
         then activate team sync from <code>/app/sources</code>. Native providers sync external
         activity into the timeline as <code>source='integration'</code>. Team MCP servers in the
-        Advanced integration tools section of <code>/app/team/integrations</code> give the agent
-        live tool access; successful team-server results become immutable team-visible integration
-        evidence, while personal-server results stay private to their owner. Passive provider
-        activity still needs a native sync adapter or custom ingestion layer. For tools that only
-        need to push arbitrary evidence into Timeline, admins can also create named ingest webhooks
-        from <code>/app/sources</code>.
+        Advanced integration tools section of <code>/app/sources</code> give the agent live tool
+        access; successful team-server results become immutable team-visible integration evidence,
+        while personal-server results stay private to their owner. Passive provider activity still
+        needs a native sync adapter or custom ingestion layer. For tools that only need to push
+        arbitrary evidence into Timeline, admins can also create named ingest webhooks from
+        <code>/app/sources</code>.
       </p>
 
       <h2 id="secrets">Encryption key (required first)</h2>
@@ -564,10 +564,10 @@ SENTRY_INTEGRATION_CLIENT_SECRET=...</code></pre>
       <h2 id="mcp">Custom MCP servers (inbound)</h2>
       <p>
         Bring tools from any MCP-compatible server into the agent's toolset. Visit the Advanced
-        integration tools section of <code>/app/team/integrations</code> (team catalog — admins
-        only) or <code>/app/me/mcp-servers</code> (personal overlay — visible only to you, any
-        member can add). MCP servers are queried on demand during chat; they are not passive
-        ingestion jobs. Successful team-server results are captured as immutable team-visible
+        integration tools section of <code>/app/sources</code> (team catalog — admins only) or
+        <code>/app/me/mcp-servers</code> (personal overlay — visible only to you, any member can
+        add). MCP servers are queried on demand during chat; they are not passive ingestion jobs.
+        Successful team-server results are captured as immutable team-visible
         <code>source='integration'</code>, <code>provider='mcp'</code> evidence. Personal-server
         results remain private to their owner. Captured results include an event citation for the
         current answer and later reconciliation. Pick an auth mode:

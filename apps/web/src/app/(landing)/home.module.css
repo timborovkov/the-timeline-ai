@@ -1739,7 +1739,7 @@
 
 .captureSurfaceIconBrand,
 .connectorLogoTileLight {
-  background: oklch(0.98 0.005 95);
+  background: #fff;
 }
 
 .captureSurfaceIcon img,

@@ -159,8 +159,8 @@ export interface CatalogEntry {
   ingestStatus: IntegrationIngestStatus;
   /** True when shown on the landing-page integration cloud. */
   featured: boolean;
-  /** Native adapters expose Connect on `/app/team/integrations`. */
-  connectablePath?: '/app/team/integrations' | '/app/team/mcp-servers';
+  /** Native adapters expose Connect on `/app/sources`. */
+  connectablePath?: '/app/sources' | '/app/team/mcp-servers';
   /** MCP server URL for `mcp_available` and `mcp_local` entries. */
   mcpUrl?: string;
   /**
@@ -198,7 +198,7 @@ const CATALOG_SEEDS: CatalogSeed[] = [
     category: 'dev-tools',
     kind: 'native',
     featured: true,
-    connectablePath: '/app/team/integrations',
+    connectablePath: '/app/sources',
     ingestStatus: 'implemented',
     examplePrompt: 'What shipped in last week’s releases?',
     envCheck: () => {
@@ -215,7 +215,7 @@ const CATALOG_SEEDS: CatalogSeed[] = [
     category: 'project-management',
     kind: 'native',
     featured: true,
-    connectablePath: '/app/team/integrations',
+    connectablePath: '/app/sources',
     ingestStatus: 'implemented',
     examplePrompt: 'Which ENG issues did Alice complete this week?',
     envCheck: () => {
@@ -232,7 +232,7 @@ const CATALOG_SEEDS: CatalogSeed[] = [
     category: 'productivity',
     kind: 'native',
     featured: true,
-    connectablePath: '/app/team/integrations',
+    connectablePath: '/app/sources',
     ingestStatus: 'implemented',
     examplePrompt: 'Summarize the latest version of the partnership agreement.',
     envCheck: () => {
@@ -249,7 +249,7 @@ const CATALOG_SEEDS: CatalogSeed[] = [
     category: 'project-management',
     kind: 'native',
     featured: true,
-    connectablePath: '/app/team/integrations',
+    connectablePath: '/app/sources',
     ingestStatus: 'implemented',
     examplePrompt: 'Which launch board records changed this week?',
     envCheck: () => {
@@ -266,7 +266,7 @@ const CATALOG_SEEDS: CatalogSeed[] = [
     category: 'communication',
     kind: 'native',
     featured: true,
-    connectablePath: '/app/team/integrations',
+    connectablePath: '/app/sources',
     ingestStatus: 'implemented',
     examplePrompt: 'What did the team decide about pricing in #leadership last week?',
     envCheck: () => {
@@ -283,7 +283,7 @@ const CATALOG_SEEDS: CatalogSeed[] = [
     category: 'dev-tools',
     kind: 'native',
     featured: true,
-    connectablePath: '/app/team/integrations',
+    connectablePath: '/app/sources',
     ingestStatus: 'implemented',
     examplePrompt: 'What broke after yesterday’s deploy?',
     envCheck: () => {

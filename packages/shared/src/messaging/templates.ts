@@ -473,7 +473,7 @@ function renderConnectionAttention(input: ConnectionAttentionMessageInput): Rend
   const textBody = [
     input.summary,
     '',
-    `Open integrations: ${input.actionUrl}`,
+    `Open Connections: ${input.actionUrl}`,
     '',
     'Existing timeline events remain available; this only affects future sync.',
   ].join('\n');
@@ -484,7 +484,7 @@ function renderConnectionAttention(input: ConnectionAttentionMessageInput): Rend
       `<p style="font-size: 14px; line-height: 1.55;">${escapeHtml(input.summary)}</p>`,
       '<p style="font-size: 13px; color: #747b7b;">Existing timeline events remain available; this only affects future sync.</p>',
     ].join('\n'),
-    cta: { href: input.actionUrl, label: 'Open integrations' },
+    cta: { href: input.actionUrl, label: 'Open Connections' },
   });
   return {
     intent: 'connection_attention',

@@ -375,7 +375,7 @@
     "group": "dom"
   },
   "apps/web/src/app/app/sources/page.test.tsx": {
-    "group": "unit"
+    "group": "dom"
   },
   "apps/web/src/app/app/sources/route-states.test.tsx": {
     "group": "dom"
@@ -510,6 +510,9 @@
     "group": "unit"
   },
   "apps/web/src/app/verify-email/[token]/route-states.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/allowed-senders-editor.test.tsx": {
     "group": "dom"
   },
   "apps/web/src/components/app-document-scroll-lock.test.tsx": {
@@ -857,6 +860,9 @@
   "apps/web/src/components/pins/pinned-workspace-manager.test.tsx": {
     "group": "dom"
   },
+  "apps/web/src/components/provider-logo.test.tsx": {
+    "group": "unit"
+  },
   "apps/web/src/components/public-analytics-unconfigured.test.tsx": {
     "group": "dom"
   },
@@ -1034,6 +1040,9 @@
   "apps/web/src/lib/collection-count.test.ts": {
     "group": "unit"
   },
+  "apps/web/src/lib/connections.test.ts": {
+    "group": "unit"
+  },
   "apps/web/src/lib/display-dates.test.ts": {
     "group": "unit"
   },
@@ -1187,10 +1196,10 @@
   "apps/web/src/lib/suggestions.test.ts": {
     "group": "unit"
   },
-  "apps/web/src/lib/support-email.test.ts": {
+  "apps/web/src/lib/support-context.test.ts": {
     "group": "unit"
   },
-  "apps/web/src/lib/support-context.test.ts": {
+  "apps/web/src/lib/support-email.test.ts": {
     "group": "unit"
   },
   "apps/web/src/lib/surface-request-analytics.test.ts": {
@@ -1327,6 +1336,9 @@
   },
   "apps/worker/src/workers/documentExtract.test.ts": {
     "group": "integration"
+  },
+  "apps/worker/src/workers/emailInbound.test.ts": {
+    "group": "unit"
   },
   "apps/worker/src/workers/embed.test.ts": {
     "group": "integration"
@@ -2017,8 +2029,5 @@
   },
   "scripts/testing/runner.test.ts": {
     "group": "script"
-  },
-  "apps/worker/src/workers/emailInbound.test.ts": {
-    "group": "unit"
   }
 }

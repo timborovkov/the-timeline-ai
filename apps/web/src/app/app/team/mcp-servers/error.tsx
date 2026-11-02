@@ -15,20 +15,20 @@ export default function McpServersError({
 }) {
   const searchParams = useSearchParams();
   const suffix = searchParams.toString();
-  const integrationsHref = `/app/team/integrations${suffix ? `?${suffix}` : ''}`;
+  const integrationsHref = `/app/sources${suffix ? `?${suffix}` : ''}`;
 
   return (
     <div className="space-y-8">
       <Breadcrumb
         items={[
           { label: 'Team', href: '/app/team' },
-          { label: 'Integrations', href: integrationsHref },
+          { label: 'Connections', href: integrationsHref },
           { label: 'Team MCP servers' },
         ]}
       />
       <PageHeader
         title="Team MCP servers"
-        subtitle="Team MCP server settings are managed in Integrations."
+        subtitle="Team MCP server settings are managed on Connections."
       />
       <ErrorState
         title="Unable to open team MCP servers"

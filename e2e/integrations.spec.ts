@@ -878,9 +878,9 @@ test.describe.serial('integrations health states', () => {
     page,
   }) => {
     await signIn(page, e2eUsers.owner.email);
-    await page.goto('/app/team/integrations');
+    await page.goto('/app/sources');
 
-    await expect(page.getByRole('heading', { name: 'Integrations', level: 1 })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Connections', level: 1 })).toBeVisible();
     await expect(page.getByText('1 webhook subscription degraded')).toBeVisible();
     await expect(page.getByText('integration items need attention')).toHaveCount(0);
 
@@ -905,7 +905,7 @@ test.describe.serial('integrations health states', () => {
   test('keeps integration management usable on mobile', async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await signIn(page, e2eUsers.owner.email);
-    await page.goto('/app/team/integrations');
+    await page.goto('/app/sources');
 
     await expect(page.getByText('1 webhook subscription degraded')).toBeVisible();
     const chatLauncher = page.getByLabel('Open floating agent chat');
@@ -980,7 +980,7 @@ test.describe.serial('integrations source management', () => {
     const sourceLabel = `${MANAGE_PREFIX} replacement repo`;
 
     await signIn(page, e2eUsers.owner.email);
-    await page.goto('/app/team/integrations');
+    await page.goto('/app/sources');
 
     const firstCard = page
       .locator('section.border-y')
@@ -1182,7 +1182,7 @@ test('starts native provider OAuth from the integrations catalog', async ({ page
   });
 
   await signIn(page, e2eUsers.owner.email);
-  await page.goto('/app/team/integrations');
+  await page.goto('/app/sources');
   const appOrigin = new URL(page.url()).origin;
 
   const githubCard = page.locator('#github');
@@ -1210,8 +1210,8 @@ test('renders native provider OAuth callback denial in the browser', async ({ pa
 
   await page.goto('/api/integrations/github/callback?error=access_denied');
 
-  await expect(page).toHaveURL(/\/app\/team\/integrations\?error=oauth_denied$/);
-  await expect(page.getByRole('heading', { name: 'Team integrations', level: 1 })).toBeVisible();
+  await expect(page).toHaveURL(/\/app\/sources\?error=oauth_denied$/);
+  await expect(page.getByRole('heading', { name: 'Connections', level: 1 })).toBeVisible();
   await expect(page.getByText('The provider denied access. Try connecting again.')).toBeVisible();
   await expect(page.getByText('GitHub', { exact: true }).first()).toBeVisible();
 });

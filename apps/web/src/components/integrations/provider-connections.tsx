@@ -7,12 +7,14 @@ import { useId, useMemo, useReducer, useRef, useState, type RefObject } from 're
 
 import { EmptyState } from '@/components/empty-state';
 import { InlineError } from '@/components/inline-error';
+import { ProviderLogo } from '@/components/provider-logo';
 import { RelativeTimestamp } from '@/components/relative-timestamp';
 import { Button } from '@/components/ui/button';
 import { DropdownMenuItem } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import { ItemActionGroup, ItemOverflowMenu } from '@/components/ui/item-actions';
 import { Skeleton } from '@/components/ui/skeleton';
+import { providerLogoSrc } from '@/lib/connections';
 import { notifyAction } from '@/lib/notify';
 import { queryKeys } from '@/lib/query-keys';
 import { groupResourcesByKind, providerLabel, shareDisplayName } from '@/lib/resource-labels';
@@ -267,26 +269,32 @@ function ProviderAccountHint({ provider }: { provider: string }) {
 
 function PersonalConnectionHeader({ connection }: { connection: ProviderConnection }) {
   return (
-    <div className="space-y-1">
-      <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-        <span className="text-sm font-medium">{providerLabel(connection.provider)}</span>
-        <span className="min-w-0 max-w-full break-words text-sm text-fg-muted">
-          {connection.displayName}
-        </span>
+    <div className="flex min-w-0 items-start gap-2">
+      <ProviderLogo src={providerLogoSrc(connection.provider)} />
+      <div className="min-w-0 space-y-1">
+        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+          <span className="text-sm font-medium">{providerLabel(connection.provider)}</span>
+          <span className="min-w-0 max-w-full break-words text-sm text-fg-muted">
+            {connection.displayName}
+          </span>
+        </div>
+        <PersonalConnectionRoleLine lastConnectedAt={connection.lastConnectedAt} />
       </div>
-      <PersonalConnectionRoleLine lastConnectedAt={connection.lastConnectedAt} />
     </div>
   );
 }
 
 function TeamConnectionHeader({ connection }: { connection: TeamShareRow['connection'] }) {
   return (
-    <div className="min-w-0">
-      <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
-        <span className="text-sm font-medium">{providerLabel(connection.provider)}</span>
-        <span className="min-w-0 truncate text-sm text-fg-muted">{connection.displayName}</span>
+    <div className="flex min-w-0 items-start gap-2">
+      <ProviderLogo src={providerLogoSrc(connection.provider)} />
+      <div className="min-w-0">
+        <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
+          <span className="text-sm font-medium">{providerLabel(connection.provider)}</span>
+          <span className="min-w-0 truncate text-sm text-fg-muted">{connection.displayName}</span>
+        </div>
+        <TeamConnectionRoleLine ownerLabel={connection.ownerLabel} />
       </div>
-      <TeamConnectionRoleLine ownerLabel={connection.ownerLabel} />
     </div>
   );
 }

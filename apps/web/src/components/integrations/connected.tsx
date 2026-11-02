@@ -10,11 +10,13 @@ import { CollectionRow } from '@/components/collections/collection-row';
 import { EmptyState } from '@/components/empty-state';
 import { FormActionToast } from '@/components/form-action-toast';
 import { InlineError } from '@/components/inline-error';
+import { ProviderLogo } from '@/components/provider-logo';
 import { RelativeTimestamp } from '@/components/relative-timestamp';
 import { Button } from '@/components/ui/button';
 import { DropdownMenuItem } from '@/components/ui/dropdown-menu';
 import { ItemActionGroup, ItemOverflowMenu } from '@/components/ui/item-actions';
 import { NativeSelect } from '@/components/ui/native-select';
+import { providerLogoSrc } from '@/lib/connections';
 import { notifyAction } from '@/lib/notify';
 import { providerLabel } from '@/lib/resource-labels';
 import { connectionErrorMessage } from '@/lib/ux-errors';
@@ -242,6 +244,9 @@ export function ConnectedIntegrations({
         return (
           <div key={c.id}>
             <CollectionRow>
+              <CollectionRow.Leading>
+                <ProviderLogo src={providerLogoSrc(c.provider)} />
+              </CollectionRow.Leading>
               <CollectionRow.Title>{providerLabel(c.provider)}</CollectionRow.Title>
               <CollectionRow.Context>{c.displayName}</CollectionRow.Context>
               <CollectionRow.Metadata>

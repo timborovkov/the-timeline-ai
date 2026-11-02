@@ -57,7 +57,9 @@ await vi.mock(
   () => import('@/lib/notify'),
 );
 
+const { redirect } = await import('next/navigation');
 const { cleanup, render, screen } = await import('@testing-library/react');
+const { default: IntegrationsRedirect } = await import('@/app/app/team/integrations/page');
 const { renderToString } = await import('react-dom/server');
 const { RedirectActionToast } = await import('@/components/redirect-action-toast');
 const { visibleConnectionAttentionStats } =
@@ -151,6 +153,15 @@ function model(): Parameters<typeof IntegrationsPageView>[0]['model'] {
     mcpServerRows: [],
   };
 }
+
+describe('IntegrationsRedirect', () => {
+  it('forwards query parameters onto Connections', async () => {
+    await IntegrationsRedirect({
+      searchParams: Promise.resolve({ error: 'oauth_denied', connected: 'server-1' }),
+    });
+    expect(redirect).toHaveBeenCalledWith('/app/sources?error=oauth_denied&connected=server-1');
+  });
+});
 
 describe('IntegrationsPageView', () => {
   it('counts only attention attached to visible integrations for the page banners', () => {

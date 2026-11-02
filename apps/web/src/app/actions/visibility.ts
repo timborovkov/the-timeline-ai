@@ -140,7 +140,7 @@ export async function setIntegrationVisibilityDefaultAction(
         parsed.data.visibility,
         idsFromForm(formData, 'visibilityUserIds'),
       );
-      revalidatePath('/app/team/integrations');
+      revalidatePath('/app/sources');
       return { ok: true };
     } catch (err) {
       log.error({ err }, 'integration_visibility_default_update_failed');

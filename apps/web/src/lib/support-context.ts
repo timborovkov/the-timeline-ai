@@ -60,7 +60,7 @@ const surfacePaths: Record<SupportSurface, string> = {
   personal_connections: '/app/me/connections',
   personal_mcp: '/app/me/mcp-servers',
   team: '/app/team',
-  team_integrations: '/app/team/integrations',
+  team_integrations: '/app/sources',
   team_integration_audit: '/app/team/integrations/audit',
   team_mcp: '/app/team/mcp-servers',
   team_mcp_share: '/app/team/mcp-share',

@@ -664,11 +664,14 @@ outline saves, and at most one filled primary action per view (Rename, Create
 invite, Start export). Select and checkbox preferences may save immediately.
 
 Connections is a collection directory. Provider and capture surfaces are
-`CollectionGroup` + `CollectionRow` rows (icon, name, status, one context
-line, quiet action). They are not bordered `p-4` cards. Status uses
-`CollectionStatus` or readable sentence-case text, not uppercase chips.
-Slack, Telegram, provider accounts, and connected integrations reuse the same
-row density.
+`CollectionGroup` + `CollectionRow` rows (icon or white padded logo tile, name,
+status, one context line, quiet action). They are not bordered `p-4` cards.
+Native providers from the catalog appear in the same list as Meetings,
+Documents, Email, and Telegram — there is no separate Integrations row, and
+Slack appears once. Status uses `CollectionStatus` or readable sentence-case
+text, not uppercase chips. Advanced MCP, webhook, audit, and job-recovery tools
+sit in a compact advanced section. Provider logos always sit on a white padded
+rounded tile.
 
 Meetings keep the collection header and rows. Capture and saved-meeting setup
 forms sit in a closed disclosure so the list is the default view. The Saved tab
