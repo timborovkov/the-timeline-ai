@@ -49,7 +49,15 @@ describe('PublicShell', () => {
       </PublicShell>,
     );
 
-    for (const href of ['/', '/integrations', '/pricing', '/how-it-works', '/help']) {
+    for (const href of [
+      '/',
+      '/use-cases',
+      '/integrations',
+      '/pricing',
+      '/how-it-works',
+      '/help',
+      '/product-tour',
+    ]) {
       expect(
         html.match(new RegExp(`href="${href.replace('/', '\\/')}"`, 'gu'))?.length,
       ).toBeGreaterThanOrEqual(3);

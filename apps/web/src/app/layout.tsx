@@ -56,20 +56,19 @@ const commitMono = localFont({
 export const metadata: Metadata = {
   metadataBase: new URL(getSiteUrl()),
   title: {
-    default: 'AI Team Memory With Cited Answers · The Timeline',
+    default: 'Your work record, kept up to date · The Timeline',
     template: '%s · The Timeline',
   },
   description:
-    'Timeline turns selected chats, meetings, documents, tickets, and code into a searchable project history. Ask questions and verify every claim at the source.',
+    'The Timeline keeps client, deal, task and decision records up to date from Slack, Telegram, email and calls. Every line has its source, and you approve each change.',
   keywords: [
-    'AI team memory',
-    'project memory',
-    'project history',
-    'team memory',
-    'cross-tool knowledge base',
+    'work record',
+    'auto-updating work record',
+    'team daily log',
+    'communication trail',
+    'Slack and Telegram work record',
+    'cited answers',
     'meeting transcript search',
-    'Slack knowledge base',
-    'cited AI answers',
     'project status AI',
   ],
   applicationName: 'The Timeline',
@@ -89,9 +88,9 @@ export const metadata: Metadata = {
   },
   appleWebApp,
   openGraph: {
-    title: 'AI Team Memory With Cited Answers · The Timeline',
+    title: 'Your work record, kept up to date · The Timeline',
     description:
-      'Turn selected chats, meetings, documents, tickets, and code into a searchable project history. Ask questions and verify every claim at the source.',
+      'The Timeline keeps client, deal, task and decision records up to date from Slack, Telegram, email and calls. Every line has its source, and you approve each change.',
     url: '/',
     siteName: 'The Timeline',
     images: [
@@ -99,7 +98,7 @@ export const metadata: Metadata = {
         url: '/opengraph-image',
         width: 1200,
         height: 630,
-        alt: 'The Timeline — AI team memory with cited answers',
+        alt: 'The Timeline — your work record, kept up to date from your conversations',
       },
     ],
     locale: 'en_US',
@@ -107,9 +106,8 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'AI Team Memory With Cited Answers · The Timeline',
-    description:
-      'Turn selected team work into a searchable project history with cited answers you can verify.',
+    title: 'Your work record, kept up to date · The Timeline',
+    description: 'Your work record, kept up to date from your conversations.',
     images: ['/twitter-image'],
   },
   robots: {

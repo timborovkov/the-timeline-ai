@@ -6,6 +6,10 @@ import { EDITORIAL_PUBLIC_DOCUMENTS } from '@/components/marketing/editorial/pub
 import { CONNECTOR_PUBLIC_DOCUMENTS } from '@/components/marketing/integrations/connector-public-documents';
 import { SOLUTION_PUBLIC_DOCUMENTS } from '@/components/marketing/solutions/public-documents';
 import {
+  PRODUCT_TOUR_DOCUMENT,
+  USE_CASE_PUBLIC_DOCUMENTS,
+} from '@/components/marketing/use-cases/public-documents';
+import {
   TIMELINE_AGENT_ACCESS_FAQS,
   TIMELINE_AGENT_INSTALL_STEPS,
   TIMELINE_CLAUDE_PLUGIN_INSTALL_COMMAND,
@@ -54,15 +58,15 @@ const AGENT_INSTALL_LLM_SECTIONS = [
 const LANDING_SECTIONS = [
   {
     title: 'What The Timeline does',
-    body: 'The Timeline is an AI team memory. Teams deliberately send notes, files, emails, meeting transcripts, calendar events, and documents or select provider records to preserve as chronological project history. The agent answers questions with citations back to the original source material.',
+    body: 'The Timeline is an auto-updating work record. It turns what is said in Slack, Telegram, email and calls into current client, deal, task and decision records, with the source for every line and human approval before anything changes.',
   },
   {
     title: 'Best-fit teams',
-    body: 'The product is built for small to mid-sized knowledge-work teams where context compounds: founding teams, sales teams, consulting teams, product teams, and operators who need a reliable record of what happened.',
+    body: 'The product is built for teams that run their day in Slack or Telegram, then spread the rest of the work across email, calls and documents. That includes consultancies, agencies, client delivery, product and operations teams, at any size.',
   },
   {
     title: 'Core differentiator',
-    body: 'Capture is unstructured, but output is structured. Teams keep working in their existing tools while Timeline preserves source, time, and visibility. Cited answers remain inspectable, and suggested durable workspace changes require human approval.',
+    body: 'Capture is unstructured, but output is structured. Teams keep working in their existing tools while The Timeline preserves source, time, and visibility. Cited answers remain inspectable, and suggested durable workspace changes require human approval.',
   },
   {
     title: 'Trust model',
@@ -152,9 +156,9 @@ const coreDocuments = definePublicDocuments('public-core', [
   {
     canonicalPath: '/',
     kind: 'landing',
-    title: 'AI Team Memory With Cited Answers',
+    title: 'Your work record, kept up to date',
     description:
-      'Timeline turns selected chats, meetings, documents, tickets, and code into a searchable project history. Ask questions and verify every claim at the source.',
+      'The Timeline keeps client, deal, task and decision records up to date from Slack, Telegram, email and calls. Every line has its source, and you approve each change.',
     indexability: 'index',
     dates: { modified: '2026-11-03', reviewed: '2026-11-03' },
     capability: { kind: 'current-product' },
@@ -167,7 +171,7 @@ const coreDocuments = definePublicDocuments('public-core', [
         applicationCategory: 'BusinessApplication',
         operatingSystem: 'Web',
         features: [
-          'Evidence-backed chronological project history from selected work',
+          'Auto-updating work record from Slack, Telegram, email and calls',
           'Deliberate Telegram, Slack, email, meeting transcript, and webhook capture',
           'Cited status, handoffs, blockers, decisions, and commitments',
           'Native ingestion for GitHub, Linear, Google Drive, Monday.com, Slack, and Sentry',
@@ -190,7 +194,8 @@ const coreDocuments = definePublicDocuments('public-core', [
     canonicalPath: '/help',
     kind: 'guide-index',
     title: 'Help',
-    description: 'Public help docs for The Timeline.',
+    description:
+      'Guides for The Timeline: capture Slack, Telegram, email and calls, keep records current, and trace every answer to its source.',
     indexability: 'index',
     dates: { modified: '2026-11-03', reviewed: '2026-11-03' },
     capability: { kind: 'current-product' },
@@ -210,7 +215,7 @@ const coreDocuments = definePublicDocuments('public-core', [
     kind: 'guide-index',
     title: 'Pricing',
     description:
-      'Free, pay as you go, optional Team and Business commitments, and native AI, meeting, email, and storage meters. EUR, excl. VAT.',
+      'Start free for up to 3 members, no card. Then choose Pay as you go (€0 fee), Team (€49/mo, 25 members) or Business (€199/mo, 100 members). Prices in EUR, excluding VAT.',
     indexability: 'index',
     dates: { modified: '2026-11-03', reviewed: '2026-11-03' },
     capability: { kind: 'current-product' },
@@ -370,7 +375,7 @@ const publicUtilityDocuments = definePublicDocuments('public-utility', [
     title: 'llms-full.txt',
     description: 'Expanded Markdown summary of the public product and help content.',
     indexability: 'index',
-    dates: { modified: '2026-08-26', reviewed: '2026-08-26' },
+    dates: { modified: '2026-11-03', reviewed: '2026-11-03' },
     capability: { kind: 'not-applicable' },
     sitemap: false,
     structuredData: [],
@@ -386,7 +391,7 @@ const publicUtilityDocuments = definePublicDocuments('public-utility', [
     title: 'sitemap.xml',
     description: 'Machine-readable sitemap for public indexable pages.',
     indexability: 'index',
-    dates: { modified: '2026-08-26', reviewed: '2026-08-26' },
+    dates: { modified: '2026-11-03', reviewed: '2026-11-03' },
     capability: { kind: 'not-applicable' },
     sitemap: false,
     structuredData: [],
@@ -399,6 +404,8 @@ const publicUtilityDocuments = definePublicDocuments('public-utility', [
   },
 ] satisfies readonly PublicDocument[]);
 
+const productTourDocuments = definePublicDocuments('product-tour', [PRODUCT_TOUR_DOCUMENT]);
+
 export const PUBLIC_DOCUMENT_REGISTRY = createPublicDocumentRegistry(
   coreDocuments,
   helpDocuments,
@@ -406,4 +413,6 @@ export const PUBLIC_DOCUMENT_REGISTRY = createPublicDocumentRegistry(
   CONNECTOR_PUBLIC_DOCUMENTS,
   EDITORIAL_PUBLIC_DOCUMENTS,
   SOLUTION_PUBLIC_DOCUMENTS,
+  USE_CASE_PUBLIC_DOCUMENTS,
+  productTourDocuments,
 );

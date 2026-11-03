@@ -5,7 +5,7 @@ const OG_IMAGE = {
   url: '/opengraph-image',
   width: 1200,
   height: 630,
-  alt: 'The Timeline — AI team memory with cited answers',
+  alt: 'The Timeline — your work record, kept up to date from your conversations',
 };
 
 interface PublicMetadataInput {

@@ -10,15 +10,21 @@ import { LandingSkipLink } from '@/app/(landing)/_landing-skip-link';
 import styles from '@/app/(landing)/home.module.css';
 import { Logo } from '@/components/brand/logo';
 import { GitHubSourceLink } from '@/components/github-source-link';
+import {
+  CTA_MICROCOPY_LEAD,
+  SEE_IT_FIRST_HREF,
+  SEE_IT_FIRST_LABEL,
+  START_FREE_LABEL,
+} from '@/components/marketing/copy';
 import { HomeMotion } from '@/components/marketing/home/home-motion';
 import { TimelineFlowDiagram } from '@/components/marketing/home/timeline-flow-diagram';
 import { CAPTURE_SURFACES } from '@/components/marketing/integrations/capture-surface-content';
 import { findConnectorByName } from '@/components/marketing/integrations/connector-content';
 import { PUBLIC_DEMO_STORY } from '@/components/marketing/public-demo-story';
-import { SOLUTION_ROUTES } from '@/components/marketing/solutions/content';
+import { USE_CASES } from '@/components/marketing/use-cases/content';
 import { CookieSettingsButton } from '@/components/public-analytics';
 import { PublicHeader } from '@/components/public-header';
-import { PublicNavigationItems } from '@/components/public-navigation';
+import { PublicFooterUseCaseLinks, PublicNavigationItems } from '@/components/public-navigation';
 import { PublicSessionBranch } from '@/components/public-session-branch';
 import {
   PUBLIC_DOCUMENT_REGISTRY,
@@ -37,11 +43,11 @@ const HOME_DOCUMENT = getHomeDocument();
 export const metadata: Metadata = {
   ...metadataForPublicDocument(HOME_DOCUMENT),
   keywords: [
-    'AI team memory',
-    'project memory',
-    'project history',
-    'cited AI answers',
-    'cross-tool knowledge base',
+    'work record',
+    'auto-updating work record',
+    'team daily log',
+    'cited answers',
+    'Slack and Telegram work record',
     'meeting transcript search',
     'project status AI',
   ],
@@ -60,29 +66,13 @@ function getHomeDocument() {
 
 const ACME_EVENTS = PUBLIC_DEMO_STORY.landing.events;
 
-const AUDIENCES = [
-  {
-    index: '01',
-    name: 'Client delivery',
-    outcome: 'Transfer the decisions, blockers, owners, and commitments with their sources.',
-    result: 'Current handoff',
-    href: SOLUTION_ROUTES.clientProjectHandoffs,
-  },
-  {
-    index: '02',
-    name: 'Sales and account teams',
-    outcome: 'Keep people, company, deal, and follow-up context tied to the conversation.',
-    result: 'Cited account context',
-    href: SOLUTION_ROUTES.crmContextFromTeamActivity,
-  },
-  {
-    index: '03',
-    name: 'Product and engineering',
-    outcome: 'Turn the week’s discussion, issue state, code, and releases into one update.',
-    result: 'Weekly status',
-    href: SOLUTION_ROUTES.weeklyProjectUpdates,
-  },
-] as const;
+const AUDIENCES = USE_CASES.map((useCase, index) => ({
+  index: String(index + 1).padStart(2, '0'),
+  name: useCase.cardTitle,
+  outcome: useCase.cardBody,
+  result: useCase.navLabel,
+  href: useCase.route,
+}));
 
 const TRUST_STEPS = [
   {
@@ -218,24 +208,24 @@ function ClaimScene() {
       data-scene="01-claim"
     >
       <div className={styles.heroCopy} data-home-reveal>
-        <SceneIndex number="01" label="AI team memory" />
+        <SceneIndex number="01" label="The auto-updating work record" />
         <h1 id="claim-title" className={styles.heroTitle}>
-          Scattered work. <em>Cited answers.</em>
+          Your work record, <em>kept up to date</em> from your conversations.
         </h1>
         <p className={styles.heroIntro}>
-          Get a project update from the messages, meetings, documents, tickets and code your team
-          chooses to share. Ask what changed, what is blocked and who owns the next step—then open
-          the sources behind the answer. Start with one note or document.
+          The Timeline turns what is said in Slack, Telegram, email and calls into current client,
+          deal, task and decision records, with the source for every line and your approval before
+          anything changes.
         </p>
         <div className={styles.heroActions}>
           <PublicSessionBranch
             signedOut={
               <Link
                 href="/sign-up"
-                data-public-analytics-cta="try_project"
+                data-public-analytics-cta="start_free"
                 className={styles.primaryCta}
               >
-                Try one real project <span aria-hidden>→</span>
+                {START_FREE_LABEL} <span aria-hidden>→</span>
               </Link>
             }
             signedIn={
@@ -248,14 +238,14 @@ function ClaimScene() {
               </Link>
             }
           />
-          <Link href="/how-it-works" className={styles.textLink}>
-            See how Timeline works
+          <Link href={SEE_IT_FIRST_HREF} className={styles.textLink}>
+            {SEE_IT_FIRST_LABEL}
           </Link>
         </div>
         <PublicSessionBranch
           signedOut={
             <p className={styles.ctaFinePrint}>
-              Free to start · no card required ·{' '}
+              {CTA_MICROCOPY_LEAD}{' '}
               <Link href="/pricing" className={styles.textLink}>
                 See pricing
               </Link>
@@ -290,7 +280,7 @@ function ChronologyScene({ nativeConnectors }: { nativeConnectors: NativeConnect
             Status should not require an <em>investigation.</em>
           </>
         }
-        copy="Work can begin in a linked Telegram group or Slack channel, then spread through meetings, documents, tickets, code, automations, and email. Rebuilding status, handoffs, customer commitments, and decisions becomes slow—and the result is easy to get wrong. Timeline preserves source, time, and visibility in the project record."
+        copy="Your team runs its work in Slack or Telegram, then spreads it across email, calls and documents. Even well-kept tools like Jira or Pipedrive miss what was said in conversation, so status, promises and decisions get rebuilt by hand, and often wrong. The Timeline keeps the record current from those conversations, with the source, time and visibility of every line."
       />
       <div className={styles.timelineStage} data-home-diagram>
         <div className={styles.timelineHeader}>
@@ -349,8 +339,8 @@ function ConnectorRail({ nativeConnectors }: { nativeConnectors: NativeConnector
         <div>
           <h3 id="connector-title">Two ways in. One cited record.</h3>
           <p>
-            Deliberately send work to Timeline, or sync selected records from the systems that
-            already hold it. Both paths preserve the source and its evidence boundary.
+            Link a Slack channel or Telegram group, forward email, and add calls, or sync selected
+            records from the tools that already hold them. Either way, the source stays attached.
           </p>
         </div>
       </header>
@@ -442,7 +432,7 @@ function AnswerScene() {
         id="answer-title"
         title={
           <>
-            Meaning resolves. The receipts <em>stay attached.</em>
+            Ask the record. The receipts <em>come with the answer.</em>
           </>
         }
         copy="Ask the question you normally answer by searching four tools and messaging three people."
@@ -520,21 +510,18 @@ function TrustScene() {
         id="trust-title"
         title={
           <>
-            When the work is scattered, the answer <em>should not be.</em>
+            Built for teams that run their work <em>through chat.</em>
           </>
         }
-        copy="Timeline gives client delivery, account, product, and engineering teams one current account of what happened without asking everyone to maintain another system."
+        copy="If your team runs its day in Slack or Telegram and the rest of the work lives in email, calls and documents, The Timeline keeps one current record of it. That includes consultancies, agencies, client delivery, product and operations teams, at any size. Keep working where you already work."
       />
       <div className={styles.fitPanel} data-home-diagram>
         <div className={styles.fitPanelIntro}>
-          <span className={styles.monoLabel}>Three everyday jobs</span>
-          <h3>Teams that owe someone a reliable answer.</h3>
-          <p>
-            When status is scattered, Timeline turns the work already happening into a brief you can
-            stand behind.
-          </p>
+          <span className={styles.monoLabel}>Six ways teams use it</span>
+          <h3>One record, kept current from your conversations.</h3>
+          <p>One record, kept current from your conversations, used for six jobs.</p>
         </div>
-        <div className={styles.audienceRail} aria-label="Teams Timeline serves">
+        <div className={styles.audienceRail} aria-label="Ways teams use The Timeline">
           {AUDIENCES.map((audience) => (
             <Link href={audience.href} key={audience.name}>
               <span>{audience.index}</span>
@@ -588,23 +575,23 @@ function CtaScene() {
       data-scene="05-cta"
     >
       <div className={styles.ctaInner} data-home-reveal>
-        <SceneIndex number="05" label="One-project start" />
+        <SceneIndex number="05" label="Start free" />
         <h2 id="cta-title">
-          Give it one real project. <em>Ask one honest question.</em>
+          Link one channel. <em>Watch the record fill in.</em>
         </h2>
         <p>
-          Start with an existing project document or a short note. Once it is searchable, ask about
-          a decision or next step and open the evidence behind the answer. Connect more sources as
-          you go.
+          Link one Slack channel or Telegram group, forward a few emails and add a call. Read the
+          daily update, approve the changes The Timeline proposes, and ask what was decided, with
+          the source for every line.
         </p>
         <PublicSessionBranch
           signedOut={
             <Link
               href="/sign-up"
-              data-public-analytics-cta="try_project"
+              data-public-analytics-cta="start_free"
               className={styles.primaryCta}
             >
-              Try one real project <span aria-hidden>→</span>
+              {START_FREE_LABEL} <span aria-hidden>→</span>
             </Link>
           }
           signedIn={
@@ -621,7 +608,7 @@ function CtaScene() {
           signedOut={
             <>
               <p className={styles.ctaFinePrint}>
-                Free to start · no card required ·{' '}
+                {CTA_MICROCOPY_LEAD}{' '}
                 <Link href="/pricing" className={styles.textLink}>
                   See pricing
                 </Link>
@@ -699,12 +686,14 @@ function Footer() {
         <span>© {year}</span>
       </div>
       <div className={styles.footerNavigation}>
-        <nav aria-label="Explore The Timeline">
+        <nav aria-label="Explore The Timeline" className="grid gap-3">
           <PublicNavigationItems
             currentSection="product"
+            variant="simple"
             listClassName={styles.footerLinks}
             activeItemClassName={styles.footerLinkActive}
           />
+          <PublicFooterUseCaseLinks />
         </nav>
         <nav aria-label="Support and legal">
           <GitHubSourceLink compact className={styles.footerGithub} />

@@ -1,5 +1,8 @@
+import Link from 'next/link';
+
 import type { Metadata } from 'next';
 
+import { SEE_IT_FIRST_HREF, SEE_IT_FIRST_LABEL } from '@/components/marketing/copy';
 import { MarketingContainer, MarketingSectionGrid } from '@/components/marketing/marketing-layout';
 import {
   PricingComparisonTable,
@@ -13,7 +16,7 @@ import { publicMetadata } from '@/lib/public-metadata';
 export const metadata: Metadata = publicMetadata({
   title: 'Pricing',
   description:
-    'Start free or choose Pay as you go, Team, or Business. Compare included usage and prices for AI, meetings, email, and storage. Prices in EUR, excluding VAT.',
+    'Start free for up to 3 members, no card. Then choose Pay as you go (€0 fee), Team (€49/mo, 25 members) or Business (€199/mo, 100 members). Prices in EUR, excluding VAT.',
   path: '/pricing',
 });
 
@@ -27,11 +30,22 @@ export default function PricingPage() {
             <h1 className="max-w-[14ch] break-words text-balance text-[3rem] font-semibold leading-[0.95] tracking-[-0.05em] text-fg sm:text-[clamp(3.5rem,5vw,5.5rem)]">
               Start free. Pay for what you use.
             </h1>
-            <p className="max-w-[44ch] text-base leading-relaxed text-fg-muted sm:text-lg">
-              Start with Free, with no card required. Pay as you go keeps the Free allowance and
-              charges for usage beyond it. Choose Team or Business for more included usage and
-              members.
-            </p>
+            <div className="max-w-[44ch] space-y-4 text-base leading-relaxed text-fg-muted sm:text-lg">
+              <p>
+                Start with Free, with no card required. Pay as you go keeps the Free allowance and
+                charges for usage beyond it. Choose Team or Business for more included usage and
+                members.
+              </p>
+              <p>
+                Not sure yet?{' '}
+                <Link
+                  href={SEE_IT_FIRST_HREF}
+                  className="rounded-sm font-medium text-fg underline decoration-border-strong underline-offset-4 outline-none hover:decoration-fg focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  {SEE_IT_FIRST_LABEL}
+                </Link>
+              </p>
+            </div>
           </div>
         </MarketingContainer>
       </section>

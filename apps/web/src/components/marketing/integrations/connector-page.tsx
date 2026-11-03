@@ -68,7 +68,7 @@ function ConnectorHero({ connector }: { connector: ConnectorContent }) {
                 signedOut={
                   <Button asChild size="lg">
                     <Link href="/sign-up">
-                      Create your Timeline
+                      Start free
                       <ArrowRight aria-hidden="true" />
                     </Link>
                   </Button>
@@ -409,7 +409,7 @@ function FinalCta({ connector }: { connector: ConnectorContent }) {
             signedOut={
               <Button asChild size="lg" className="mt-8">
                 <Link href="/sign-up">
-                  Create your Timeline
+                  Start free
                   <ArrowRight aria-hidden="true" />
                 </Link>
               </Button>

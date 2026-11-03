@@ -15,11 +15,11 @@ describe('TimelineFlowDiagram', () => {
 
     const figure = screen.getByRole('figure');
     expect(figure.getAttribute('aria-label')).toBe(
-      'Work events stream from six sources into The Timeline, where project history becomes working records and cited answers.',
+      'Work events stream from six sources into The Timeline, where the work record becomes a daily update and cited answers.',
     );
     expect(within(figure).getByText('The Timeline')).toBeTruthy();
-    expect(within(figure).getByText('Project history')).toBeTruthy();
-    expect(within(figure).getByText('Working records')).toBeTruthy();
+    expect(within(figure).getByText('Work record')).toBeTruthy();
+    expect(within(figure).getByText('Daily update')).toBeTruthy();
     expect(within(figure).getByText('Cited answers')).toBeTruthy();
     expect(within(figure).queryByText(/Fictional Acme example/i)).toBeNull();
     expect(within(figure).queryByText(/not used in this answer/i)).toBeNull();
@@ -68,18 +68,10 @@ describe('TimelineFlowDiagram', () => {
       }),
     ).toBeTruthy();
 
-    expect(
-      screen.getByRole('heading', { level: 3, name: 'Events stream in as evidence' }),
-    ).toBeTruthy();
-    expect(
-      screen.getByRole('heading', { level: 3, name: 'Events join The Timeline' }),
-    ).toBeTruthy();
-    expect(
-      screen.getByRole('heading', { level: 3, name: 'Build useful records from history' }),
-    ).toBeTruthy();
-    expect(
-      screen.getByRole('heading', { level: 3, name: 'Ask in Timeline—or your own agent' }),
-    ).toBeTruthy();
+    expect(screen.getByRole('heading', { level: 3, name: 'Connect' })).toBeTruthy();
+    expect(screen.getByRole('heading', { level: 3, name: 'Capture' })).toBeTruthy();
+    expect(screen.getByRole('heading', { level: 3, name: 'Approve' })).toBeTruthy();
+    expect(screen.getByRole('heading', { level: 3, name: 'Stay current and ask' })).toBeTruthy();
 
     const steps = [...container.querySelectorAll('[data-flow-step]')].map((step) =>
       step.getAttribute('data-flow-step'),
@@ -111,7 +103,7 @@ describe('TimelineFlowDiagram', () => {
     expect(within(evidenceSources).queryByText(/Linear/)).toBeNull();
     expect(screen.getByText('+ Any source via a pre-built integration or webhook')).toBeTruthy();
 
-    const timelineHeading = screen.getByRole('heading', { name: 'Events join The Timeline' });
+    const timelineHeading = screen.getByRole('heading', { name: 'Capture' });
     const timelineStage = timelineHeading.closest('article');
     if (!timelineStage) throw new Error('The timeline heading must belong to a stage');
     expect(within(timelineStage).getAllByRole('listitem')).toHaveLength(5);

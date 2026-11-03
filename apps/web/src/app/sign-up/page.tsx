@@ -13,7 +13,7 @@ import { readPendingInvite } from '@/lib/pending-invite';
 
 export const metadata: Metadata = {
   title: 'Sign up',
-  description: 'Create a Timeline AI account.',
+  description: 'Start free with The Timeline.',
   robots: { index: false, follow: false },
 };
 
@@ -67,7 +67,7 @@ function signupSubtitle(invited: boolean, ready: boolean): string {
   if (!ready) return 'New accounts are paused while our legal publication review is completed.';
   return invited
     ? 'You’ve been invited to a team. Sign up to accept.'
-    : 'Free for small teams — no card required. We’ll create your first team automatically.';
+    : 'Free for up to 3 members — no card required. We’ll create your first team automatically.';
 }
 
 function SignupGitHubOptions({ invite, callbackUrl }: { invite?: string; callbackUrl?: string }) {

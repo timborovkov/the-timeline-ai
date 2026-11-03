@@ -50,7 +50,7 @@ describe('LandingPage', () => {
     expect(html.match(/>Source on GitHub</g)).toHaveLength(1);
     expect(html).toContain('href="/cookies"');
     expect(html.match(/<h1\b/g)).toHaveLength(1);
-    expect(html).toContain('Scattered work. <em>Cited answers.</em>');
+    expect(html).toContain('Your work record, <em>kept up to date</em> from your conversations.');
 
     const scenes = ['01-claim', '02-chronology', '03-answer', '04-trust', '05-cta'];
     let previousIndex = -1;
@@ -62,13 +62,13 @@ describe('LandingPage', () => {
 
     expect(html).toContain('Acme rollout / Last 7 days');
     expect(html).toContain(
-      'aria-label="Work events stream from six sources into The Timeline, where project history becomes working records and cited answers."',
+      'aria-label="Work events stream from six sources into The Timeline, where the work record becomes a daily update and cited answers."',
     );
     expect(html).toContain('Fictional Acme example, not customer data.');
     expect(html).toContain('<details');
     expect(html).toContain('The Timeline');
-    expect(html).toContain('Project history');
-    expect(html).toContain('Working records');
+    expect(html).toContain('Work record');
+    expect(html).toContain('Daily update');
     expect(html).toContain('Cited answers');
     expect(html).not.toContain('How scattered work becomes useful context.');
     expect(html).not.toContain('Connected, not used in this answer');
@@ -94,19 +94,15 @@ describe('LandingPage', () => {
     expect(html).toContain('Evidence behind this answer');
     expect(html).toContain('href="#acme-source-01"');
     expect(html).toContain('Source 01: Telegram group message');
-    expect(html).toContain('Teams that owe someone a reliable answer.');
-    expect(html).toContain('href="/solutions/crm-context-from-team-activity"');
-    expect(html).toContain('href="/solutions/client-project-handoffs"');
-    expect(html).toContain('href="/solutions/weekly-project-updates"');
+    expect(html).toContain('Built for teams that run their work <em>through chat.</em>');
+    expect(html).toContain('href="/use-cases/work-record"');
+    expect(html).toContain('href="/use-cases/team-daily-log"');
+    expect(html).toContain('href="/use-cases/crm"');
+    expect(html).toContain('<a href="/use-cases/work-record"><span>01</span><h4>Work record</h4>');
     expect(html).toContain(
-      '<a href="/solutions/client-project-handoffs"><span>01</span><h4>Client delivery</h4>',
+      '<a href="/use-cases/team-daily-log"><span>02</span><h4>Team daily log</h4>',
     );
-    expect(html).toContain(
-      '<a href="/solutions/crm-context-from-team-activity"><span>02</span><h4>Sales and account teams</h4>',
-    );
-    expect(html).toContain(
-      '<a href="/solutions/weekly-project-updates"><span>03</span><h4>Product and engineering</h4>',
-    );
+    expect(html).toContain('<a href="/use-cases/crm"><span>04</span><h4>CRM</h4>');
     expect(html).toContain('Every answer carries its evidence chain.');
     expect(html).not.toContain('Northline');
     expect(html.match(/data-home-diagram/g)).toHaveLength(6);
@@ -135,13 +131,13 @@ describe('LandingPage', () => {
       'Human approval before inferred durable workspace changes',
     );
     expect(metadata).toMatchObject({
-      title: 'AI Team Memory With Cited Answers',
+      title: 'Your work record, kept up to date',
       description:
-        'Timeline turns selected chats, meetings, documents, tickets, and code into a searchable project history. Ask questions and verify every claim at the source.',
+        'The Timeline keeps client, deal, task and decision records up to date from Slack, Telegram, email and calls. Every line has its source, and you approve each change.',
       alternates: { canonical: '/' },
       openGraph: {
         description:
-          'Timeline turns selected chats, meetings, documents, tickets, and code into a searchable project history. Ask questions and verify every claim at the source.',
+          'The Timeline keeps client, deal, task and decision records up to date from Slack, Telegram, email and calls. Every line has its source, and you approve each change.',
       },
     });
   });
@@ -185,20 +181,16 @@ describe('LandingPage', () => {
     const html = renderToStaticMarkup(<LandingPage />);
 
     expect(html).toContain(
-      'Get a project update from the messages, meetings, documents, tickets and code your team',
+      'The Timeline turns what is said in Slack, Telegram, email and calls into current client',
     );
-    expect(html).toContain('Start with one note or document.');
+    expect(html).toContain('Link one channel. <em>Watch the record fill in.</em>');
     expect(html).toContain(
-      'Work can begin in a linked Telegram group or Slack channel, then spread through meetings, documents, tickets, code, automations, and email.',
-    );
-    expect(html).toContain(
-      'Rebuilding status, handoffs, customer commitments, and decisions becomes slow—and the result is easy to get wrong.',
+      'Your team runs its work in Slack or Telegram, then spreads it across email, calls and documents.',
     );
     expect(html).toContain(
-      'chooses to share. Ask what changed, what is blocked and who owns the next step',
+      'The Timeline keeps the record current from those conversations, with the source, time and visibility of every line.',
     );
-    expect(html).toContain('open the sources behind the answer.');
-    expect(html).toContain('preserves source, time, and visibility');
+    expect(html).toContain('Ask the question you normally answer by searching four tools');
     expect(html).toContain(
       'Give me the current status, handoff, blockers, and customer commitments.',
     );
@@ -220,6 +212,9 @@ describe('LandingPage', () => {
 
     expect(html.match(/href="\/sign-up"/g)).toHaveLength(3);
     expect(html).toContain('data-public-analytics-cta="try_project"');
+    expect(html).toContain('data-public-analytics-cta="start_free"');
+    expect(html).toContain('href="/product-tour"');
+    expect(html).toContain('See it first');
     expect(html).toContain('data-public-analytics-cta="sign_in"');
     expect(html).toContain('data-public-analytics-cta="contact_support"');
     expect(html).toContain('href="/how-it-works"');

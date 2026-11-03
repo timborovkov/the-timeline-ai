@@ -51,7 +51,7 @@ export function IntegrationDirectory() {
                   signedOut={
                     <Button asChild size="lg" className="mt-7">
                       <Link href="/sign-up">
-                        Create your Timeline
+                        Start free
                         <ArrowRight aria-hidden="true" />
                       </Link>
                     </Button>
@@ -248,7 +248,7 @@ function FeaturedCaptureSurface({ surface }: { surface: CaptureSurfaceContent })
       <PublicSessionBranch
         signedOut={
           <Link
-            href="/sign-up"
+            href={surface.publicHref ?? '/sign-up'}
             className="group mt-7 inline-flex w-fit items-center gap-2 text-sm font-semibold text-fg outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             {`Start with ${surface.name}`}
@@ -288,7 +288,7 @@ function CaptureSurfaceRow({ surface }: { surface: CaptureSurfaceContent }) {
         <PublicSessionBranch
           signedOut={
             <Link
-              href="/sign-up"
+              href={surface.publicHref ?? '/sign-up'}
               className="group mt-5 inline-flex w-fit items-center gap-2 text-sm font-semibold text-fg outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               {`Start with ${surface.name}`}

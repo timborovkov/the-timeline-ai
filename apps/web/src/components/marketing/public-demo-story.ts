@@ -246,7 +246,7 @@ export const PUBLIC_DEMO_STORY = {
       scenario: {
         title: 'A status change gets a reason',
         situation:
-          'The Acme rollout date holds while an urgent SSO issue needs another validation run. The weekly update needs the cause, not a list of changed fields.',
+          'The Acme rollout date holds while an urgent SSO issue needs another validation run. The status update needs the cause, not a list of changed fields.',
         chronology: [
           'Timeline records ENG-241 state, priority, assignee, and comment context.',
           'The Acme rollout project update lands in the same chronology as the issue evidence.',

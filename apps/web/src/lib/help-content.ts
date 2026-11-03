@@ -140,19 +140,19 @@ export const HELP_PAGES: HelpPage[] = [
     updatedAt: '2026-11-03',
     title: 'Work surface',
     description:
-      'Use tasks, boards, objects, updates, digests, and handoffs that stay current from evidence.',
+      'Use tasks, boards, objects, the daily update, on-demand updates and handoffs that stay current from evidence.',
     icon: ClipboardList,
     related: ['capture', 'objects', 'boards'],
     sections: [
       {
         title: 'What Work is',
-        body: 'Work is the operating surface Timeline keeps current from captured evidence. It brings tasks, boards, objects, comments, updates, digests, and handoffs together without asking teammates to maintain a separate tracker.',
+        body: 'Work is the operating surface The Timeline keeps current from captured evidence. The daily update, on-demand updates and handoffs are generated from the current work state with citations. It brings tasks, boards, objects, comments, updates and handoffs together without asking teammates to maintain a separate tracker.',
         items: [
           'Open Work to find tasks assigned to you and work that needs attention.',
           'Open a task or object to inspect its source evidence before changing status, owner or due date.',
           'Pin frequently used objects, boards or documents so you can return to them from Home.',
           'Review proposed changes in Approvals. Accept the changes you agree with; reject unsupported suggestions.',
-          'Open Digests for a saved briefing, then follow citations to check the underlying work.',
+          'Work → Digests lists every daily update as collapsed rows so a teammate can open a specific day, then follow citations to check the underlying work.',
           'Use Ask about a specific project or decision. Check its citations before sharing the answer.',
         ],
         appLink: { href: '/app/work', label: 'Open Work' },

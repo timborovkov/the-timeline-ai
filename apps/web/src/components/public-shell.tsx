@@ -5,6 +5,7 @@ import type { ReactNode } from 'react';
 import { CookieSettingsButton } from '@/components/public-analytics';
 import { PublicHeader } from '@/components/public-header';
 import {
+  PublicFooterUseCaseLinks,
   PublicNavigationItems,
   type PublicNavigationSection,
 } from '@/components/public-navigation';
@@ -43,13 +44,15 @@ export function PublicShell({
         >
           <span>{footerLabel}</span>
           <div className="flex flex-col gap-4 sm:items-end">
-            <nav aria-label="Explore The Timeline">
+            <nav aria-label="Explore The Timeline" className="grid gap-3">
               <PublicNavigationItems
                 currentSection={currentSection}
+                variant="simple"
                 listClassName="flex flex-wrap gap-x-4 gap-y-3"
                 itemClassName="rounded-sm outline-none hover:text-fg focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                 activeItemClassName="text-fg"
               />
+              <PublicFooterUseCaseLinks itemClassName="rounded-sm outline-none hover:text-fg focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2" />
             </nav>
             <nav aria-label="Support and legal" className="flex flex-wrap gap-x-4 gap-y-3">
               <Link

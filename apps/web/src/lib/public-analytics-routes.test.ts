@@ -25,7 +25,11 @@ describe('public analytics route registry', () => {
     expect(classifyPublicAnalyticsPath('/solutions/crm-context-from-team-activity')).toBe(
       'solution_crm_context_team_activity',
     );
-    expect(Object.keys(PUBLIC_ANALYTICS_ROUTES)).toHaveLength(29);
+    expect(classifyPublicAnalyticsPath('/use-cases')).toBe('use_cases');
+    expect(classifyPublicAnalyticsPath('/use-cases/work-record')).toBe('use_case_work_record');
+    expect(classifyPublicAnalyticsPath('/product-tour')).toBe('product_tour');
+    expect(classifyPublicAnalyticsPath('/integrations/telegram')).toBe('integration_telegram');
+    expect(Object.keys(PUBLIC_ANALYTICS_ROUTES)).toHaveLength(38);
   });
 
   it.each([

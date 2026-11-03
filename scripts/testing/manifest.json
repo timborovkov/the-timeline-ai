@@ -479,6 +479,9 @@
   "apps/web/src/app/integrations/route.test.tsx": {
     "group": "dom"
   },
+  "apps/web/src/app/integrations/telegram/route.test.tsx": {
+    "group": "unit"
+  },
   "apps/web/src/app/layout-analytics.test.ts": {
     "group": "unit"
   },
@@ -506,6 +509,9 @@
   "apps/web/src/app/privacy/route-states.test.tsx": {
     "group": "dom"
   },
+  "apps/web/src/app/product-tour/route.test.tsx": {
+    "group": "unit"
+  },
   "apps/web/src/app/record/editorial-routes.test.tsx": {
     "group": "unit"
   },
@@ -518,11 +524,17 @@
   "apps/web/src/app/sitemap.test.ts": {
     "group": "unit"
   },
+  "apps/web/src/app/solutions/redirects.test.ts": {
+    "group": "unit"
+  },
   "apps/web/src/app/terms/page.test.tsx": {
     "group": "unit"
   },
   "apps/web/src/app/trust/page.test.tsx": {
     "group": "dom"
+  },
+  "apps/web/src/app/use-cases/route.test.tsx": {
+    "group": "unit"
   },
   "apps/web/src/app/verify-email/[token]/route-states.test.tsx": {
     "group": "dom"
@@ -825,6 +837,12 @@
     "group": "unit"
   },
   "apps/web/src/components/marketing/solutions/solution-page.test.tsx": {
+    "group": "unit"
+  },
+  "apps/web/src/components/marketing/use-cases/content.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/components/marketing/use-cases/public-documents.test.ts": {
     "group": "unit"
   },
   "apps/web/src/components/mcp-oauth-grants.test.tsx": {

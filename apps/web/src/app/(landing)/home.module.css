@@ -164,10 +164,10 @@
 }
 
 .heroTitle {
-  max-width: 8.5ch;
+  max-width: 13ch;
   margin-block: 1.5rem 2rem;
-  font-size: clamp(4.4rem, 9.3vw, 9.4rem);
-  line-height: 0.8;
+  font-size: clamp(3.1rem, 6.6vw, 6.4rem);
+  line-height: 0.9;
 }
 
 .heroTitle em,
@@ -2286,6 +2286,18 @@
 
   .motionReady .fitPanel.visible .audienceRail a:nth-child(3) {
     animation-delay: 380ms;
+  }
+
+  .motionReady .fitPanel.visible .audienceRail a:nth-child(4) {
+    animation-delay: 500ms;
+  }
+
+  .motionReady .fitPanel.visible .audienceRail a:nth-child(5) {
+    animation-delay: 620ms;
+  }
+
+  .motionReady .fitPanel.visible .audienceRail a:nth-child(6) {
+    animation-delay: 740ms;
   }
 
   .motionReady .trustFlowPanel.visible .trustFlow::before {

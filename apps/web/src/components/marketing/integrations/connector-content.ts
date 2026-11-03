@@ -91,7 +91,7 @@ export const CONNECTORS: readonly ConnectorContent[] = [
     providerId: 'slack',
     name: 'Slack',
     eyebrow: 'Conversation becomes chronology',
-    hero: 'Turn selected Slack history into cited operational memory.',
+    hero: 'Turn selected Slack channels into an up-to-date work record.',
     intro:
       'Timeline preserves the messages, threads, file-share metadata, reactions, and edits you choose, then places them beside work from other systems. Ask what was decided and inspect the conversation behind the answer.',
     seoTitle: 'Slack integration for cited team answers',
@@ -147,7 +147,7 @@ export const CONNECTORS: readonly ConnectorContent[] = [
     permissions: [
       'Timeline requests channel and group read/history access, plus file, reaction, and user read access.',
       'A selected public or private channel is readable only when the Slack app is a member; the native connector does not intersect bot access with the authorizing person’s own channel membership.',
-      'The OAuth installation is initiated by a person, but native history sync uses the workspace bot token. Only explicitly shared channels can be activated by the team, and every selected channel still requires bot membership for history reads.',
+      'The OAuth installation is initiated by a person, but native history sync uses the workspace bot token. Only channels the connection owner has shared with the team can be activated, and every selected channel still requires bot membership for history reads.',
       'Previously captured evidence remains team-scoped if a connection later needs attention.',
     ],
     limitations: [

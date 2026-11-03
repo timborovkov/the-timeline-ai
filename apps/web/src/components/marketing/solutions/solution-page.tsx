@@ -6,10 +6,7 @@ import { EditorialKicker } from '@/components/marketing/editorial/editorial-kick
 import { EditorialSectionHeading } from '@/components/marketing/editorial/editorial-section-heading';
 import { EditorialStructuredData } from '@/components/marketing/editorial/editorial-structured-data';
 import styles from '@/components/marketing/editorial/editorial.module.css';
-import {
-  findSolutionByRoute,
-  type SolutionContent,
-} from '@/components/marketing/solutions/content';
+import { type SolutionContent } from '@/components/marketing/solutions/content';
 import { buildSolutionStructuredData } from '@/components/marketing/solutions/metadata';
 import { SolutionPageCta } from '@/components/marketing/solutions/solution-page-cta';
 import { SolutionPageRelated } from '@/components/marketing/solutions/solution-page-related';
@@ -18,8 +15,6 @@ const focusLink =
   'rounded-sm outline-none hover:text-fg focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2';
 
 export function SolutionPage({ solution }: { solution: SolutionContent }) {
-  const relatedSolutions = solution.relatedRoutes.map(findSolutionByRoute);
-
   return (
     <main id="main" tabIndex={-1} data-solution-route={solution.route}>
       <EditorialStructuredData data={buildSolutionStructuredData(solution)} />
@@ -29,7 +24,7 @@ export function SolutionPage({ solution }: { solution: SolutionContent }) {
             <ol className="flex flex-wrap items-center gap-2 text-sm text-fg-muted">
               <li>
                 <Link href="/" className={focusLink}>
-                  Timeline
+                  The Timeline
                 </Link>
               </li>
               <li aria-hidden="true">
@@ -190,7 +185,7 @@ export function SolutionPage({ solution }: { solution: SolutionContent }) {
             <EditorialSectionHeading
               index="04 · Trust"
               title="What this cannot prove."
-              intro="A useful AI team memory makes the gaps inspectable. It does not turn missing evidence into confidence."
+              intro="A useful work record makes the gaps inspectable. It does not turn missing evidence into confidence."
             />
             <ul className="mt-10 grid gap-px bg-border sm:grid-cols-2">
               {solution.limitations.map((limitation, index) => (
@@ -224,10 +219,7 @@ export function SolutionPage({ solution }: { solution: SolutionContent }) {
           </div>
         </section>
 
-        <SolutionPageRelated
-          relatedSolutions={relatedSolutions}
-          furtherReading={solution.furtherReading}
-        />
+        <SolutionPageRelated related={solution.related} furtherReading={solution.furtherReading} />
         <SolutionPageCta cta={solution.cta} />
       </article>
     </main>

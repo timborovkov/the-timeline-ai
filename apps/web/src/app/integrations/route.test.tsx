@@ -44,13 +44,14 @@ describe('public integration routes', () => {
     expect(html).toContain('Slack example shows that journey from conversation to chronology');
     expect(html.match(/Fictional Acme example, not customer data\./g)).toHaveLength(1);
     expect(html).toContain('href="/integrations/slack"');
+    expect(html).toContain('href="/integrations/telegram"');
     expect(text).toContain('Telegram');
     expect(text).toContain('Plain text in a direct chat asks the agent');
     expect(text).toContain('does not silently become team evidence');
     expect(text).toContain('Telegram is not a passive account-history sync');
     expect(text).toContain('Slack conversations');
     expect(text).toContain('Forward, CC, or BCC');
-    expect(text).toContain('Google Meet · Microsoft Teams · Zoom');
+    expect(text).toContain('Google Meet · Microsoft Teams calls · Zoom');
     expect(text).toContain('Ingest webhooks');
     expect(text).toContain('cannot update or control records in the sending tool');
     expect(text).toContain('separate from the Slack history connector below');
