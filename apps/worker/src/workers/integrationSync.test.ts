@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, it } from 'bun:test';
 
 import type * as TimelineDb from '@timeline/db';
 import type * as TimelineShared from '@timeline/shared';
+import type * as PlatformAdminRuntime from '@timeline/shared/platform-admin/runtime';
 type TestSyncContinuation = TimelineShared.integrations.SyncContinuation;
 type TestCheckpointInput = TimelineShared.integrations.CommitIntegrationSyncCheckpointInput;
 
@@ -133,6 +134,15 @@ await vi.mock(
     };
   },
   () => import('@timeline/shared'),
+);
+
+await vi.mock(
+  import.meta.resolve('@timeline/shared/platform-admin/runtime'),
+  async (importOriginal) => ({
+    ...(await importOriginal<typeof PlatformAdminRuntime>()),
+    assertActivePrincipal: () => Promise.resolve(),
+  }),
+  () => import('@timeline/shared/platform-admin/runtime'),
 );
 
 const { handleTick, runOneIntegration } = await import('./integrationSync.js');

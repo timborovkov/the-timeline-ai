@@ -888,7 +888,7 @@ test.describe.serial('integrations health states', () => {
     page,
   }) => {
     await signIn(page, e2eUsers.owner.email);
-    await page.goto('/app/sources');
+    await page.goto('/app/connections');
 
     await expect(page.getByRole('heading', { name: 'Connections', level: 1 })).toBeVisible();
     await expect(page.getByText('1 webhook subscription degraded')).toBeVisible();
@@ -918,7 +918,7 @@ test.describe.serial('integrations health states', () => {
   test('keeps integration management usable on mobile', async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await signIn(page, e2eUsers.owner.email);
-    await page.goto('/app/sources');
+    await page.goto('/app/connections');
 
     await expect(page.getByText('1 webhook subscription degraded')).toBeVisible();
     const chatLauncher = page.getByLabel('Open floating agent chat');
@@ -994,7 +994,7 @@ test.describe.serial('integrations source management', () => {
     const sourceLabel = `${MANAGE_PREFIX} replacement repo`;
 
     await signIn(page, e2eUsers.owner.email);
-    await page.goto('/app/sources');
+    await page.goto('/app/connections');
 
     const githubPanel = await openProviderDetails(page, 'GitHub');
     const firstCard = githubPanel
@@ -1197,7 +1197,7 @@ test('starts native provider OAuth from the integrations catalog', async ({ page
   });
 
   await signIn(page, e2eUsers.owner.email);
-  await page.goto('/app/sources');
+  await page.goto('/app/connections');
   const appOrigin = new URL(page.url()).origin;
 
   const githubCard = page.locator('#github');

@@ -29,6 +29,12 @@ describe('proxy matcher', () => {
     const source = readFileSync(join(process.cwd(), 'src/proxy.ts'), 'utf8');
     expect(source).toContain('rejectInvalidMultipartRequest');
   });
+
+  it('HTTP-redirects legacy Connections URLs so browser hashes survive', () => {
+    const source = readFileSync(join(process.cwd(), 'src/proxy.ts'), 'utf8');
+    expect(source).toContain('connectionsLegacyRedirectLocation');
+    expect(source).toContain('308');
+  });
 });
 
 describe('canonicalHostRedirect', () => {

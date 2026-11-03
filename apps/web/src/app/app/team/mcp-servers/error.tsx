@@ -5,6 +5,7 @@ import { useSearchParams } from 'next/navigation';
 import { Breadcrumb } from '@/components/breadcrumb';
 import { ErrorState } from '@/components/error-state';
 import { PageHeader } from '@/components/page-header';
+import { connectionsHref } from '@/lib/connections';
 
 export default function McpServersError({
   error,
@@ -15,7 +16,9 @@ export default function McpServersError({
 }) {
   const searchParams = useSearchParams();
   const suffix = searchParams.toString();
-  const integrationsHref = `/app/sources${suffix ? `?${suffix}` : ''}`;
+  const integrationsHref = connectionsHref(
+    suffix ? new URLSearchParams(`tab=agent&${suffix}`) : { tab: 'agent' },
+  );
 
   return (
     <div className="space-y-8">

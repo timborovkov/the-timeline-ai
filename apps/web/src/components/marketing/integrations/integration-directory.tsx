@@ -58,7 +58,7 @@ export function IntegrationDirectory() {
                   }
                   signedIn={
                     <Button asChild size="lg" className="mt-7">
-                      <Link href="/app/sources">
+                      <Link href="/app/connections">
                         Open connections
                         <ArrowRight aria-hidden="true" />
                       </Link>

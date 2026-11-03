@@ -6,12 +6,14 @@ import type {
   DirectoryProvider,
   InboundEmailSettings,
   TelegramSetupSnapshot,
-} from '@/app/app/sources/connection-directory';
+} from '@/app/app/connections/connection-directory';
 import type { IntegrationsPageModel } from '@/app/app/team/integrations/integrations-page-model';
 import type { ReactNode } from 'react';
 
-import { EmailSetupBody } from '@/app/app/sources/email-setup-panel';
-import { TelegramSetupBody } from '@/app/app/sources/telegram-setup-panel';
+import { providerStatusTone } from '@/app/app/connections/connection-directory';
+import { EmailSetupBody } from '@/app/app/connections/email-setup-panel';
+import { TelegramSetupBody } from '@/app/app/connections/telegram-setup-panel';
+import { CollectionStatus } from '@/components/collections/collection-status';
 import { ConnectedIntegrations } from '@/components/integrations/connected';
 import { McpCatalog } from '@/components/integrations/mcp-catalog';
 import { McpServersUi } from '@/components/integrations/mcp-servers';
@@ -176,9 +178,14 @@ function ProviderDetailsBody({
       <SheetHeader>
         <div className="flex min-w-0 items-center gap-2">
           <ProviderLogo src={provider.logo} />
-          <SheetTitle>{provider.label}</SheetTitle>
+          <SheetTitle className="min-w-0 flex-1 truncate">{provider.label}</SheetTitle>
+          <CollectionStatus
+            value={provider.status}
+            label={provider.statusLabel}
+            tone={provider.connected ? providerStatusTone(provider.status) : 'neutral'}
+          />
         </div>
-        <SheetDescription className="sr-only">{provider.description}</SheetDescription>
+        <SheetDescription>{provider.description}</SheetDescription>
       </SheetHeader>
       <SheetBody className="space-y-6">
         {provider.id === 'telegram' ? (
@@ -231,7 +238,12 @@ export function ProviderDetailsPanel({
 }) {
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent aria-describedby={undefined}>
+      <SheetContent
+        onOpenAutoFocus={(event) => {
+          event.preventDefault();
+          if (event.currentTarget instanceof HTMLElement) event.currentTarget.focus();
+        }}
+      >
         {provider ? (
           <ProviderDetailsBody
             provider={provider}

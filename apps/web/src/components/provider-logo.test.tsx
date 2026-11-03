@@ -19,5 +19,6 @@ describe('ProviderLogo', () => {
     expect(html).toContain('rounded-sm');
     expect(html).toContain('p-1');
     expect(html).toContain('src="/connectors/slack.svg"');
+    expect(html).not.toContain('/_next/image');
   });
 });

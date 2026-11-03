@@ -40,7 +40,7 @@ describe('Team integrations route states', () => {
     expect(screen.getByRole('status').textContent).toBe('Opening connections');
     expect(screen.getByRole('heading', { name: 'Team integrations', level: 1 })).toBeTruthy();
     expect(screen.getByRole('link', { name: 'Connections' }).getAttribute('href')).toBe(
-      '/app/sources',
+      '/app/connections',
     );
     expect(screen.queryByRole('button')).toBeNull();
   });
@@ -73,7 +73,7 @@ describe('Team integrations route states', () => {
     expect(screen.getAllByRole('heading', { level: 1, name: 'Team integrations' })).toHaveLength(1);
     expect(screen.getByRole('navigation', { name: 'Breadcrumb' })).toBeTruthy();
     expect(screen.getByRole('link', { name: 'Connections' }).getAttribute('href')).toBe(
-      '/app/sources',
+      '/app/connections',
     );
     expect(
       screen.getByRole('heading', { level: 2, name: 'Unable to open team integrations' }),
@@ -103,7 +103,7 @@ describe('Team integrations route states', () => {
     expect(screen.getAllByRole('heading', { level: 1, name: 'Integration audit' })).toHaveLength(1);
     expect(screen.getByRole('navigation', { name: 'Breadcrumb' })).toBeTruthy();
     expect(screen.getByRole('link', { name: 'Connections' }).getAttribute('href')).toBe(
-      '/app/sources',
+      '/app/connections',
     );
     expect(
       screen.getByRole('heading', { level: 2, name: 'Unable to load integration audit' }),

@@ -12,7 +12,7 @@ export default function PersonalMcpServersLoading() {
         <h1 className="sr-only">Personal MCP servers</h1>
         <Breadcrumb
           items={[
-            { label: 'Connections', href: '/app/sources' },
+            { label: 'Connections', href: '/app/connections' },
             { label: 'Personal MCP servers' },
           ]}
         />

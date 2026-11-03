@@ -1,3 +1,18 @@
-export { default, metadata } from '@/app/app/sources/sources-page-content';
+import { redirect } from 'next/navigation';
 
-export const dynamic = 'force-dynamic';
+import type { Metadata } from 'next';
+
+import { connectionsHref } from '@/lib/connections';
+
+export const metadata: Metadata = {
+  title: 'Connections',
+  description: 'Connect the tools this team already uses.',
+};
+
+export default async function LegacySourcesRedirect({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}): Promise<never> {
+  redirect(connectionsHref(await searchParams));
+}

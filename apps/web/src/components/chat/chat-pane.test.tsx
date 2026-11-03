@@ -663,9 +663,9 @@ describe('ChatPane', () => {
       chatHandoffKey('team-1'),
       JSON.stringify({
         createdAt: Date.now(),
-        context: { pathname: '/app/sources', routeKind: 'sources' },
+        context: { pathname: '/app/connections', routeKind: 'sources' },
         contextTrail: [
-          { kind: 'page', href: '/app/sources', label: 'Connections' },
+          { kind: 'page', href: '/app/connections', label: 'Connections' },
           {
             kind: 'object',
             href: '/app/objects/44444444-4444-4444-8444-444444444444',
@@ -754,7 +754,7 @@ describe('ChatPane', () => {
       chatHandoffKey('team-1'),
       JSON.stringify({
         createdAt: Date.now(),
-        contextTrail: [{ kind: 'page', href: '/app/sources', label: 'Connections' }],
+        contextTrail: [{ kind: 'page', href: '/app/connections', label: 'Connections' }],
       }),
     );
 

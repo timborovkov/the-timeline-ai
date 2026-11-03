@@ -54,13 +54,13 @@ const surfacePaths: Record<SupportSurface, string> = {
   calendar: '/app/calendar',
   chat: '/app/chat',
   search: '/app/search',
-  sources: '/app/sources',
+  sources: '/app/connections/sources',
   inbox: '/app/inbox',
   digests: '/app/digests',
   personal_connections: '/app/me/connections',
   personal_mcp: '/app/me/mcp-servers',
   team: '/app/team',
-  team_integrations: '/app/sources',
+  team_integrations: '/app/connections/sources',
   team_integration_audit: '/app/team/integrations/audit',
   team_mcp: '/app/team/mcp-servers',
   team_mcp_share: '/app/team/mcp-share',
@@ -68,7 +68,7 @@ const surfacePaths: Record<SupportSurface, string> = {
   team_audit: '/app/team/audit',
   team_reconciliation: '/app/team/reconciliation',
   team_slack: '/app/team/slack',
-  team_telegram: '/app/sources#telegram',
+  team_telegram: '/app/connections/sources#telegram',
 };
 
 export function parseSupportSurface(value: unknown): SupportSurface | null {
@@ -106,6 +106,8 @@ export function supportSurfaceForPath(pathname: string | null): SupportSurface |
     case 'inbox':
     case 'digests':
       return section;
+    case 'connections':
+      return 'sources';
     case 'boards':
       return detail ? 'board_detail' : 'boards';
     case 'objects':

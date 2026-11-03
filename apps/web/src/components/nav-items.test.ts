@@ -52,11 +52,26 @@ describe('nav items', () => {
     ).toBe(true);
     expect(
       isNavItemActive(
-        { href: '/app/sources', activeHrefs: ['/app/sources', '/app/team/slack'] },
+        { href: '/app/connections', activeHrefs: ['/app/connections', '/app/team/slack'] },
         '/app/team/slack',
       ),
     ).toBe(true);
     expect(isNavItemActive({ href: '/app/meetings' }, '/app/meetings/123')).toBe(true);
+    const connections = visibleNavItems('member').find((item) => item.label === 'Connections');
+    expect(connections?.href).toBe('/app/connections');
+    expect(isNavItemActive(connections ?? { href: '/app/connections' }, '/app/connections')).toBe(
+      true,
+    );
+    expect(
+      isNavItemActive(connections ?? { href: '/app/connections' }, '/app/connections/sources'),
+    ).toBe(true);
+    expect(
+      isNavItemActive(connections ?? { href: '/app/connections' }, '/app/connections/agent-tools'),
+    ).toBe(true);
+    expect(
+      isNavItemActive(connections ?? { href: '/app/connections' }, '/app/connections/developer'),
+    ).toBe(true);
+    expect(isNavItemActive(connections ?? { href: '/app/connections' }, '/app/sources')).toBe(true);
   });
 
   it('does not keep Team active for source routes nested under team settings', () => {

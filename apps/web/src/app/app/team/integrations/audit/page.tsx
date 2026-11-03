@@ -36,7 +36,7 @@ export default async function IntegrationAuditPage() {
   } catch {
     canViewAudit = false;
   }
-  if (!canViewAudit) redirect('/app/sources');
+  if (!canViewAudit) redirect('/app/connections');
   const [rows, calendarSettings] = await Promise.all([
     scope.integrations.listAudit(null, 200),
     scope.calendar.getCalendarSettings(),
@@ -48,7 +48,7 @@ export default async function IntegrationAuditPage() {
       <Breadcrumb
         items={[
           { label: 'Team', href: '/app/team' },
-          { label: 'Connections', href: '/app/sources' },
+          { label: 'Connections', href: '/app/connections' },
           { label: 'Audit log' },
         ]}
       />
@@ -73,7 +73,7 @@ export default async function IntegrationAuditPage() {
             icon={ClipboardList}
             title="No integration audit entries yet"
             body="Connection and sync activity that creates an audit record will appear here."
-            href="/app/sources"
+            href="/app/connections"
             action="Manage connections"
           />
         ) : (
