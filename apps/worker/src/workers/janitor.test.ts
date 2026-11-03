@@ -4,6 +4,8 @@ import {
   documentVersions,
   entities,
   entityRelationships,
+  integrations as integrationsTable,
+  integrationSyncState,
   meetings as meetingsTable,
   mcpOutboundOAuthClients,
   mcpOutboundOAuthCodes,
@@ -11,6 +13,7 @@ import {
   mcpOutboundOAuthTokens,
   taskCategoryProjectInvalidations,
 } from '@timeline/db';
+import { integrations, withTeam } from '@timeline/shared';
 import { expect } from '@timeline/test-support';
 import { vi } from '@timeline/test-support';
 import { afterEach, beforeEach, describe, it } from 'bun:test';
@@ -18,6 +21,7 @@ import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 
 import { applyDbMigrations } from '#src/test/pglite.js';
+import { sweepOrphanDriveTransientExtracts } from '#src/workers/integrationSync.js';
 import { janitorTickIsIdle, processJanitorTick } from '#src/workers/janitor.js';
 /**
  * Integration tests for the janitor tick. Uses pglite for Postgres + stub
@@ -647,6 +651,112 @@ describe('processJanitorTick — Drive transient extract orphans', () => {
     });
     expect(result.driveTransientExtractsCleared).toBe(2);
     expect(janitorTickIsIdle(result)).toBe(false);
+  });
+
+  it('enumerates teams then clears orphans through withTeam integrations', async () => {
+    await pg.exec(`
+      INSERT INTO teams (id, slug, name) VALUES ('${OTHER_TEAM_ID}', 'other', 'Other');
+      INSERT INTO users (id, email) VALUES ('${OTHER_USER_ID}', 'b@x');
+      INSERT INTO team_members (team_id, user_id, role) VALUES
+        ('${OTHER_TEAM_ID}', '${OTHER_USER_ID}', 'owner');
+    `);
+    const [home] = await db
+      .insert(integrationsTable)
+      .values({
+        teamId: TEAM_ID,
+        connectedByUserId: USER_ID,
+        provider: 'google_drive',
+        displayName: 'Google Drive',
+        externalAccountId: 'drive-home',
+        visibilityDefault: 'team',
+      })
+      .returning();
+    const [away] = await db
+      .insert(integrationsTable)
+      .values({
+        teamId: OTHER_TEAM_ID,
+        connectedByUserId: OTHER_USER_ID,
+        provider: 'google_drive',
+        displayName: 'Google Drive',
+        externalAccountId: 'drive-away',
+        visibilityDefault: 'team',
+      })
+      .returning();
+    if (!home || !away) throw new Error('integration insert failed');
+
+    const now = new Date('2026-11-03T00:00:00.000Z');
+    const staleEnqueuedAt = new Date(
+      now.getTime() - integrations.DRIVE_TRANSIENT_EXTRACT_ORPHAN_MS,
+    ).toISOString();
+    await db.insert(integrationSyncState).values([
+      {
+        integrationId: home.id,
+        resourceType: integrations.driveExtractCursorKey('cleared-file'),
+        cursor: {},
+        updatedAt: new Date('2026-10-01T00:00:00.000Z'),
+      },
+      {
+        integrationId: home.id,
+        resourceType: integrations.driveExtractCursorKey('home-orphan'),
+        cursor: {
+          extractId: 'ext-home',
+          objectKey: 'home-source',
+          resultObjectKey: 'home-result.json',
+          contentType: 'application/pdf',
+          filename: 'Home.pdf',
+          enqueuedAt: staleEnqueuedAt,
+        },
+      },
+      {
+        integrationId: away.id,
+        resourceType: integrations.driveExtractCursorKey('away-orphan'),
+        cursor: {
+          extractId: 'ext-away',
+          objectKey: 'away-source',
+          resultObjectKey: 'away-result.json',
+          contentType: 'application/pdf',
+          filename: 'Away.pdf',
+          enqueuedAt: staleEnqueuedAt,
+        },
+      },
+    ]);
+
+    const deleteDocumentObject = vi.fn().mockResolvedValue(undefined);
+    const cleared = await sweepOrphanDriveTransientExtracts({
+      db: db as never,
+      now,
+      io: {
+        getDocumentsBucket: () => 'docs',
+        getDocumentObject: vi.fn(),
+        putDocumentObject: vi.fn(),
+        deleteDocumentObject,
+        enqueueDocumentExtractJob: vi.fn(),
+      },
+    });
+    expect(cleared).toBe(2);
+    expect(deleteDocumentObject).toHaveBeenCalledTimes(4);
+    expect(deleteDocumentObject).toHaveBeenCalledWith({ bucket: 'docs', key: 'home-source' });
+    expect(deleteDocumentObject).toHaveBeenCalledWith({
+      bucket: 'docs',
+      key: 'home-result.json',
+    });
+    expect(deleteDocumentObject).toHaveBeenCalledWith({ bucket: 'docs', key: 'away-source' });
+    expect(deleteDocumentObject).toHaveBeenCalledWith({
+      bucket: 'docs',
+      key: 'away-result.json',
+    });
+    const homeLeft = await withTeam(
+      db as never,
+      TEAM_ID,
+      USER_ID,
+    ).integrations.listDriveExtractCursors({ now });
+    const awayLeft = await withTeam(
+      db as never,
+      OTHER_TEAM_ID,
+      OTHER_USER_ID,
+    ).integrations.listDriveExtractCursors({ now });
+    expect(homeLeft).toEqual([]);
+    expect(awayLeft).toEqual([]);
   });
 });
 

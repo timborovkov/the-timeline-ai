@@ -27,6 +27,7 @@ import { and, desc, eq, inArray, isNotNull, isNull, lte, ne, or, sql } from 'dri
 import { decryptJson, encryptJson } from '#src/crypto/secrets.js';
 import { getEnv } from '#src/env.js';
 import {
+  forEachDriveExtractCursorPage,
   linkedObjectForDriveSelection as loadLinkedObjectForDriveSelection,
   listDriveExtractCursors,
   listTeamEmailDomains as loadTeamEmailDomains,
@@ -655,12 +656,16 @@ export function createIntegrationScope(deps: {
         .delete(integrationWebhookSubscriptions)
         .where(eq(integrationWebhookSubscriptions.integrationId, id));
       await tx.delete(integrationSelections).where(eq(integrationSelections.integrationId, id));
-      const extractCursors = await listDriveExtractCursors(tx as unknown as Db, {
+      // Paginate so leftover `{}` cursors cannot hide later extract objects
+      // from S3 cleanup. The helper is team-bound by this withTeam scope; we
+      // pass `tx` so deletes stay in the disconnect transaction.
+      await forEachDriveExtractCursorPage(tx as unknown as Db, {
+        teamId,
         integrationId: id,
+        onPage: async (page) => {
+          await Promise.all(page.map((row) => tryDeleteDriveTransientExtractObjects(row.cursor)));
+        },
       });
-      await Promise.all(
-        extractCursors.map((row) => tryDeleteDriveTransientExtractObjects(row.cursor)),
-      );
       await tx.delete(integrationSyncState).where(eq(integrationSyncState.integrationId, id));
       await tx.delete(integrationAuditLog).where(eq(integrationAuditLog.integrationId, id));
       await tx
@@ -1619,6 +1624,30 @@ export function createIntegrationScope(deps: {
     });
   }
 
+  async function listTeamDriveExtractCursors(
+    input: {
+      integrationId?: string;
+      now?: Date;
+      orphanOnly?: boolean;
+      limit?: number;
+      after?: { updatedAt: Date; id: string };
+    } = {},
+  ) {
+    await ensureMember();
+    if (input.integrationId) {
+      const integration = await getIntegration(input.integrationId);
+      if (!integration) return [];
+    }
+    return listDriveExtractCursors(db, {
+      teamId,
+      ...(input.integrationId ? { integrationId: input.integrationId } : {}),
+      ...(input.now ? { now: input.now } : {}),
+      ...(input.orphanOnly ? { orphanOnly: true } : {}),
+      ...(input.limit !== undefined ? { limit: input.limit } : {}),
+      ...(input.after ? { after: input.after } : {}),
+    });
+  }
+
   async function loadDriveSnapshot(integrationId: string, fileId: string) {
     const integration = await getIntegration(integrationId);
     if (!integration) return null;
@@ -1979,6 +2008,7 @@ export function createIntegrationScope(deps: {
     listSelections,
     setSelections,
     setSelectionLinkedObject,
+    listDriveExtractCursors: listTeamDriveExtractCursors,
     loadLatestDriveSnapshot: loadDriveSnapshot,
     saveDriveSnapshot: persistDriveSnapshot,
     listTeamEmailDomains: listDriveTeamEmailDomains,

@@ -38,10 +38,12 @@ export { googleDriveProvider } from '#src/integrations/providers/google-drive.js
 export { judgeDriveChange } from '#src/integrations/google-drive-judge.js';
 export { driveSelectionIsWatchable } from '#src/integrations/google-drive-scope.js';
 export {
+  DRIVE_EXTRACT_CURSOR_PAGE_SIZE,
   DRIVE_EXTRACT_PENDING_STALE_MS,
   DRIVE_TRANSIENT_EXTRACT_ORPHAN_MS,
   DRIVE_TRANSIENT_RESULT_MAX_BYTES,
   DRIVE_TRANSIENT_RESULT_TOO_LARGE,
+  adminListTeamIdsWithDriveExtractCursors,
   driveExtractCursorKey,
   driveExtractFileIdFromResourceType,
   driveFileChangeDedupKey,
@@ -50,7 +52,6 @@ export {
   isDriveExtractCursorOrphan,
   isDriveExtractPendingStale,
   isDriveExtractResultTooLarge,
-  listDriveExtractCursors,
   parseDriveExtractCursor,
   parseDriveTransientExtractResult,
   type DriveExtractCursor,

@@ -10,7 +10,7 @@ import {
   users,
   type Db,
 } from '@timeline/db';
-import { and, asc, desc, eq, inArray, isNull, notInArray, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, inArray, isNull, notInArray, or, sql } from 'drizzle-orm';
 
 import {
   checkRateLimit,
@@ -129,6 +129,8 @@ export function driveExtractFileIdFromResourceType(resourceType: string): string
 export const DRIVE_EXTRACT_PENDING_STALE_MS = 15 * 60 * 1000;
 /** Drop Drive transient extract objects whose resume never ran. */
 export const DRIVE_TRANSIENT_EXTRACT_ORPHAN_MS = 24 * 60 * 60 * 1000;
+/** Bounded page for orphan sweeps and disconnect S3 cleanup. */
+export const DRIVE_EXTRACT_CURSOR_PAGE_SIZE = 500;
 
 export interface DriveExtractCursor {
   extractId: string;
@@ -217,52 +219,160 @@ export function driveFileChangeDedupKey(input: {
   return `google_drive:file:${input.fileId}:${input.occurrence}:${input.contentHash}:${input.commentsHash}:${input.permissionsHash}`;
 }
 
-interface DriveExtractCursorRow {
+export interface DriveExtractCursorRow {
+  id: string;
   teamId: string;
   integrationId: string;
   fileId: string;
   cursor: DriveExtractCursor;
+  updatedAt: Date;
 }
 
-export async function listDriveExtractCursors(
+function driveExtractCursorPopulatedSql() {
+  const cursor = integrationSyncState.cursor;
+  return and(
+    sql`jsonb_typeof(${cursor} -> 'extractId') = 'string'`,
+    sql`length(${cursor} ->> 'extractId') > 0`,
+    sql`jsonb_typeof(${cursor} -> 'objectKey') = 'string'`,
+    sql`length(${cursor} ->> 'objectKey') > 0`,
+    sql`jsonb_typeof(${cursor} -> 'resultObjectKey') = 'string'`,
+    sql`length(${cursor} ->> 'resultObjectKey') > 0`,
+    sql`jsonb_typeof(${cursor} -> 'contentType') = 'string'`,
+    sql`length(${cursor} ->> 'contentType') > 0`,
+    sql`jsonb_typeof(${cursor} -> 'filename') = 'string'`,
+    sql`length(${cursor} ->> 'filename') > 0`,
+    sql`jsonb_typeof(${cursor} -> 'enqueuedAt') = 'string'`,
+    sql`length(${cursor} ->> 'enqueuedAt') > 0`,
+  );
+}
+
+function driveExtractCursorOrphanSql(now: Date) {
+  const cutoff = new Date(now.getTime() - DRIVE_TRANSIENT_EXTRACT_ORPHAN_MS).toISOString();
+  const enqueuedAt = sql`${integrationSyncState.cursor} ->> ${sql.raw("'enqueuedAt'")}`;
+  return sql`(
+    ${enqueuedAt} !~ ${'^[0-9]{4}-[0-9]{2}-[0-9]{2}T'}
+    OR ${enqueuedAt} <= ${cutoff}
+  )`;
+}
+
+function driveExtractCursorAfterSql(after: { updatedAt: Date; id: string }) {
+  return or(
+    gt(integrationSyncState.updatedAt, after.updatedAt),
+    and(eq(integrationSyncState.updatedAt, after.updatedAt), gt(integrationSyncState.id, after.id)),
+  );
+}
+
+/**
+ * Worker discovery only: team ids that still have populated Drive extract
+ * cursors. Payload reads go through `withTeam(...).integrations.listDriveExtractCursors`.
+ */
+export async function adminListTeamIdsWithDriveExtractCursors(
   db: Db,
-  input: {
-    integrationId?: string;
-    now?: Date;
-    orphanOnly?: boolean;
-    limit?: number;
-  } = {},
-): Promise<DriveExtractCursorRow[]> {
-  const limit = input.limit ?? 500;
+  input: { now?: Date; orphanOnly?: boolean } = {},
+): Promise<string[]> {
+  const now = input.now ?? new Date();
   const rows = await db
-    .select({
-      teamId: integrationsTable.teamId,
-      integrationId: integrationSyncState.integrationId,
-      resourceType: integrationSyncState.resourceType,
-      cursor: integrationSyncState.cursor,
-    })
+    .selectDistinct({ teamId: integrationsTable.teamId })
     .from(integrationSyncState)
     .innerJoin(integrationsTable, eq(integrationsTable.id, integrationSyncState.integrationId))
     .where(
       and(
         sql`${integrationSyncState.resourceType} LIKE 'drive.extract.%'`,
+        driveExtractCursorPopulatedSql(),
+        ...(input.orphanOnly ? [driveExtractCursorOrphanSql(now)] : []),
+      ),
+    )
+    .orderBy(asc(integrationsTable.teamId));
+  return rows.map((row) => row.teamId);
+}
+
+export async function listDriveExtractCursors(
+  db: Db,
+  input: {
+    teamId: string;
+    integrationId?: string;
+    now?: Date;
+    orphanOnly?: boolean;
+    limit?: number;
+    after?: { updatedAt: Date; id: string };
+  },
+): Promise<DriveExtractCursorRow[]> {
+  const limit = input.limit ?? DRIVE_EXTRACT_CURSOR_PAGE_SIZE;
+  const now = input.now ?? new Date();
+  const rows = await db
+    .select({
+      id: integrationSyncState.id,
+      teamId: integrationsTable.teamId,
+      integrationId: integrationSyncState.integrationId,
+      resourceType: integrationSyncState.resourceType,
+      cursor: integrationSyncState.cursor,
+      updatedAt: integrationSyncState.updatedAt,
+    })
+    .from(integrationSyncState)
+    .innerJoin(integrationsTable, eq(integrationsTable.id, integrationSyncState.integrationId))
+    .where(
+      and(
+        eq(integrationsTable.teamId, input.teamId),
+        sql`${integrationSyncState.resourceType} LIKE 'drive.extract.%'`,
+        driveExtractCursorPopulatedSql(),
         ...(input.integrationId
           ? [eq(integrationSyncState.integrationId, input.integrationId)]
           : []),
+        ...(input.orphanOnly ? [driveExtractCursorOrphanSql(now)] : []),
+        ...(input.after ? [driveExtractCursorAfterSql(input.after)] : []),
       ),
     )
     .orderBy(asc(integrationSyncState.updatedAt), asc(integrationSyncState.id))
     .limit(limit);
-  const now = (input.now ?? new Date()).getTime();
   const found: DriveExtractCursorRow[] = [];
   for (const row of rows) {
     const fileId = driveExtractFileIdFromResourceType(row.resourceType);
     const cursor = parseDriveExtractCursor(row.cursor);
     if (!fileId || !cursor) continue;
-    if (input.orphanOnly && !isDriveExtractCursorOrphan(cursor, now)) continue;
-    found.push({ teamId: row.teamId, integrationId: row.integrationId, fileId, cursor });
+    found.push({
+      id: row.id,
+      teamId: row.teamId,
+      integrationId: row.integrationId,
+      fileId,
+      cursor,
+      updatedAt: row.updatedAt,
+    });
   }
   return found;
+}
+
+export async function forEachDriveExtractCursorPage(
+  db: Db,
+  input: {
+    teamId: string;
+    integrationId?: string;
+    now?: Date;
+    orphanOnly?: boolean;
+    limit?: number;
+    onPage: (rows: DriveExtractCursorRow[]) => Promise<void>;
+  },
+): Promise<number> {
+  const limit = input.limit ?? DRIVE_EXTRACT_CURSOR_PAGE_SIZE;
+  let after: { updatedAt: Date; id: string } | undefined;
+  let seen = 0;
+  for (;;) {
+    const page = await listDriveExtractCursors(db, {
+      teamId: input.teamId,
+      limit,
+      ...(input.integrationId ? { integrationId: input.integrationId } : {}),
+      ...(input.now ? { now: input.now } : {}),
+      ...(input.orphanOnly ? { orphanOnly: true } : {}),
+      ...(after ? { after } : {}),
+    });
+    if (page.length === 0) break;
+    await input.onPage(page);
+    seen += page.length;
+    if (page.length < limit) break;
+    const last = page[page.length - 1];
+    if (!last) break;
+    after = { updatedAt: last.updatedAt, id: last.id };
+  }
+  return seen;
 }
 
 export function driveTransientExtractKeys(input: {

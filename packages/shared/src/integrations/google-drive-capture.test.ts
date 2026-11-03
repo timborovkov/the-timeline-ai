@@ -11,6 +11,7 @@ import { afterEach, beforeEach, describe, it } from 'bun:test';
 import { drizzle } from 'drizzle-orm/pglite';
 
 import {
+  DRIVE_EXTRACT_CURSOR_PAGE_SIZE,
   DRIVE_EXTRACT_PENDING_STALE_MS,
   DRIVE_FILE_DEBOUNCE_MS,
   DRIVE_FILE_MAX_LATENCY_MS,
@@ -30,6 +31,8 @@ import {
   isDriveExtractCursorOrphan,
   isDriveExtractPendingStale,
   isDriveExtractResultTooLarge,
+  adminListTeamIdsWithDriveExtractCursors,
+  forEachDriveExtractCursorPage,
   linkedObjectForDriveSelection,
   listDriveExtractCursors,
   loadLatestDriveSnapshot,
@@ -44,7 +47,9 @@ import { withTeam } from '#src/team-scope.js';
 import { applyDbMigrations } from '#src/test/pglite.js';
 
 const TEAM_ID = '11111111-1111-1111-1111-111111111111';
+const OTHER_TEAM_ID = '22222222-2222-4222-8222-222222222222';
 const USER_ID = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+const OTHER_USER_ID = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 
 describe('driveObjectLinkCandidates', () => {
   it('covers My Drive, shared drives, individual files, and missing ancestors', () => {
@@ -700,9 +705,11 @@ describe('saveDriveSnapshot uniqueness', () => {
       },
     ]);
 
+    const now = new Date('2026-11-03T00:00:00.000Z');
     const orphans = await listDriveExtractCursors(db as never, {
+      teamId: TEAM_ID,
       orphanOnly: true,
-      now: new Date('2026-11-03T00:00:00.000Z'),
+      now,
     });
     expect(orphans).toHaveLength(1);
     expect(orphans[0]).toMatchObject({
@@ -711,15 +718,191 @@ describe('saveDriveSnapshot uniqueness', () => {
       fileId: 'stale-file',
       cursor: { extractId: 'ext-stale' },
     });
-    const forIntegration = await listDriveExtractCursors(db as never, {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const forIntegration = await scope.integrations.listDriveExtractCursors({
       integrationId: integration.id,
     });
     expect(forIntegration.map((row) => row.fileId).sort()).toEqual(['fresh-file', 'stale-file']);
 
-    const scope = withTeam(db as never, TEAM_ID, USER_ID);
     await expect(scope.integrations.deleteIntegration(integration.id)).resolves.toBeUndefined();
     await expect(
-      listDriveExtractCursors(db as never, { integrationId: integration.id }),
+      listDriveExtractCursors(db as never, { teamId: TEAM_ID, integrationId: integration.id }),
     ).resolves.toEqual([]);
+  });
+
+  it('filters cleared extract cursors in SQL before the page limit', async () => {
+    const [integration] = await db
+      .insert(integrations)
+      .values({
+        teamId: TEAM_ID,
+        connectedByUserId: USER_ID,
+        provider: 'google_drive',
+        displayName: 'Google Drive',
+        externalAccountId: 'drive-acct-cleared',
+        visibilityDefault: 'team',
+      })
+      .returning();
+    if (!integration) throw new Error('integration insert failed');
+
+    const staleEnqueuedAt = new Date(
+      Date.parse('2026-11-03T00:00:00.000Z') - DRIVE_TRANSIENT_EXTRACT_ORPHAN_MS,
+    ).toISOString();
+    const cleared = Array.from({ length: DRIVE_EXTRACT_CURSOR_PAGE_SIZE }, (_, index) => ({
+      integrationId: integration.id,
+      resourceType: driveExtractCursorKey(`cleared-${String(index)}`),
+      cursor: {},
+      updatedAt: new Date('2026-10-01T00:00:00.000Z'),
+    }));
+    await db.insert(integrationSyncState).values([
+      ...cleared,
+      {
+        integrationId: integration.id,
+        resourceType: driveExtractCursorKey('orphan-file'),
+        cursor: {
+          extractId: 'ext-orphan',
+          objectKey: 'orphan-source',
+          resultObjectKey: 'orphan-result.json',
+          contentType: 'application/pdf',
+          filename: 'Orphan.pdf',
+          enqueuedAt: staleEnqueuedAt,
+        },
+        updatedAt: new Date('2026-11-01T00:00:00.000Z'),
+      },
+    ]);
+
+    const now = new Date('2026-11-03T00:00:00.000Z');
+    const orphans = await listDriveExtractCursors(db as never, {
+      teamId: TEAM_ID,
+      orphanOnly: true,
+      now,
+      limit: 10,
+    });
+    expect(orphans.map((row) => row.fileId)).toEqual(['orphan-file']);
+    await expect(
+      adminListTeamIdsWithDriveExtractCursors(db as never, { orphanOnly: true, now }),
+    ).resolves.toEqual([TEAM_ID]);
+  });
+
+  it('paginates populated extract cursors so disconnect cleanup can walk past a full page', async () => {
+    const [integration] = await db
+      .insert(integrations)
+      .values({
+        teamId: TEAM_ID,
+        connectedByUserId: USER_ID,
+        provider: 'google_drive',
+        displayName: 'Google Drive',
+        externalAccountId: 'drive-acct-pages',
+        visibilityDefault: 'team',
+      })
+      .returning();
+    if (!integration) throw new Error('integration insert failed');
+
+    await db.insert(integrationSyncState).values(
+      ['a', 'b', 'c'].map((fileId, index) => ({
+        integrationId: integration.id,
+        resourceType: driveExtractCursorKey(fileId),
+        cursor: {
+          extractId: `ext-${fileId}`,
+          objectKey: `${fileId}-source`,
+          resultObjectKey: `${fileId}-result.json`,
+          contentType: 'application/pdf',
+          filename: `${fileId}.pdf`,
+          enqueuedAt: '2026-11-03T00:00:00.000Z',
+        },
+        updatedAt: new Date(`2026-11-03T00:00:0${String(index)}.000Z`),
+      })),
+    );
+
+    const pages: string[][] = [];
+    const seen = await forEachDriveExtractCursorPage(db as never, {
+      teamId: TEAM_ID,
+      integrationId: integration.id,
+      limit: 2,
+      onPage: (page) => {
+        pages.push(page.map((row) => row.fileId));
+        return Promise.resolve();
+      },
+    });
+    expect(seen).toBe(3);
+    expect(pages).toEqual([['a', 'b'], ['c']]);
+  });
+
+  it('does not list another team Drive extract cursor', async () => {
+    await pg.exec(`
+      INSERT INTO teams (id, slug, name) VALUES ('${OTHER_TEAM_ID}', 'team-b', 'Team B');
+      INSERT INTO users (id, email) VALUES ('${OTHER_USER_ID}', 'other@example.com');
+      INSERT INTO team_members (team_id, user_id, role) VALUES
+        ('${OTHER_TEAM_ID}', '${OTHER_USER_ID}', 'owner');
+    `);
+    const [home] = await db
+      .insert(integrations)
+      .values({
+        teamId: TEAM_ID,
+        connectedByUserId: USER_ID,
+        provider: 'google_drive',
+        displayName: 'Google Drive',
+        externalAccountId: 'drive-acct-home',
+        visibilityDefault: 'team',
+      })
+      .returning();
+    const [away] = await db
+      .insert(integrations)
+      .values({
+        teamId: OTHER_TEAM_ID,
+        connectedByUserId: OTHER_USER_ID,
+        provider: 'google_drive',
+        displayName: 'Google Drive',
+        externalAccountId: 'drive-acct-away',
+        visibilityDefault: 'team',
+      })
+      .returning();
+    if (!home || !away) throw new Error('integration insert failed');
+
+    const staleEnqueuedAt = new Date(
+      Date.parse('2026-11-03T00:00:00.000Z') - DRIVE_TRANSIENT_EXTRACT_ORPHAN_MS,
+    ).toISOString();
+    await db.insert(integrationSyncState).values([
+      {
+        integrationId: home.id,
+        resourceType: driveExtractCursorKey('home-file'),
+        cursor: {
+          extractId: 'ext-home',
+          objectKey: 'home-source',
+          resultObjectKey: 'home-result.json',
+          contentType: 'application/pdf',
+          filename: 'Home.pdf',
+          enqueuedAt: staleEnqueuedAt,
+        },
+      },
+      {
+        integrationId: away.id,
+        resourceType: driveExtractCursorKey('away-file'),
+        cursor: {
+          extractId: 'ext-away',
+          objectKey: 'away-source',
+          resultObjectKey: 'away-result.json',
+          contentType: 'application/pdf',
+          filename: 'Away.pdf',
+          enqueuedAt: staleEnqueuedAt,
+        },
+      },
+    ]);
+
+    const now = new Date('2026-11-03T00:00:00.000Z');
+    const homeScope = withTeam(db as never, TEAM_ID, USER_ID);
+    const awayScope = withTeam(db as never, OTHER_TEAM_ID, OTHER_USER_ID);
+    const homeOrphans = await homeScope.integrations.listDriveExtractCursors({
+      orphanOnly: true,
+      now,
+    });
+    const awayOrphans = await awayScope.integrations.listDriveExtractCursors({
+      orphanOnly: true,
+      now,
+    });
+    expect(homeOrphans.map((row) => row.fileId)).toEqual(['home-file']);
+    expect(awayOrphans.map((row) => row.fileId)).toEqual(['away-file']);
+    await expect(
+      adminListTeamIdsWithDriveExtractCursors(db as never, { orphanOnly: true, now }),
+    ).resolves.toEqual([TEAM_ID, OTHER_TEAM_ID]);
   });
 });

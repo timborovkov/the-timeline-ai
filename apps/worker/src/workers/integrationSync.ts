@@ -609,21 +609,33 @@ export async function sweepOrphanDriveTransientExtracts(input: {
   limit?: number;
   io?: DriveTransientExtractIO;
 }): Promise<number> {
-  const orphans = await integrationsLib.listDriveExtractCursors(input.db, {
+  const now = input.now ?? new Date();
+  const remainingLimit = input.limit ?? integrationsLib.DRIVE_EXTRACT_CURSOR_PAGE_SIZE;
+  const teamIds = await integrationsLib.adminListTeamIdsWithDriveExtractCursors(input.db, {
     orphanOnly: true,
-    ...(input.now ? { now: input.now } : {}),
-    ...(input.limit !== undefined ? { limit: input.limit } : {}),
+    now,
   });
+  let remaining = remainingLimit;
   let cleared = 0;
-  for (const row of orphans) {
-    const scope = withTeam(input.db, row.teamId, ZERO_UUID, { skipMembershipCheck: true });
-    await clearDriveTransientExtract({
-      integrations: scope.integrations,
-      integrationId: row.integrationId,
-      fileId: row.fileId,
-      ...(input.io ? { io: input.io } : {}),
+  for (const teamId of teamIds) {
+    if (remaining <= 0) break;
+    const scope = withTeam(input.db, teamId, ZERO_UUID, { skipMembershipCheck: true });
+    const orphans = await scope.integrations.listDriveExtractCursors({
+      orphanOnly: true,
+      now,
+      limit: remaining,
     });
-    cleared += 1;
+    for (const row of orphans) {
+      await clearDriveTransientExtract({
+        integrations: scope.integrations,
+        integrationId: row.integrationId,
+        fileId: row.fileId,
+        ...(input.io ? { io: input.io } : {}),
+      });
+      cleared += 1;
+      remaining -= 1;
+      if (remaining <= 0) break;
+    }
   }
   return cleared;
 }

@@ -1733,6 +1733,9 @@
   "packages/shared/src/integrations/google-drive-scope.test.ts": {
     "group": "unit"
   },
+  "packages/shared/src/integrations/google-drive-team-isolation.test.ts": {
+    "group": "unit"
+  },
   "packages/shared/src/integrations/providers/google-drive-revisit.test.ts": {
     "group": "unit"
   },
