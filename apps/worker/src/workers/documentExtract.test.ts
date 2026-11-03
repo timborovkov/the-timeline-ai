@@ -8,7 +8,7 @@ import {
   rawEvents,
   teams,
 } from '@timeline/db';
-import { email, withTeam, type queue as queueNS } from '@timeline/shared';
+import { email, integrations, withTeam, type queue as queueNS } from '@timeline/shared';
 import {
   createResettablePGliteTestDb,
   type ResettablePGliteTestDb,
@@ -1593,6 +1593,35 @@ describe('processDocumentExtractJob — Drive transient extract', () => {
     ) as { ok: boolean; error?: string };
     expect(written.ok).toBe(false);
     expect(written.error).toContain('Daytona is not configured');
+    expect(h.resumeDriveFile).toHaveBeenCalledOnce();
+    expect(h.enqueueEmbed).not.toHaveBeenCalled();
+  });
+
+  it('persists a terminal too-large result instead of an unreadable blob', async () => {
+    h = await makeHarness(Buffer.from('%PDF-1.4'), {
+      sandboxPdf: {
+        text: 'Northstar contract. '.repeat(
+          Math.ceil(integrations.DRIVE_TRANSIENT_RESULT_MAX_BYTES / 20),
+        ),
+        method: 'anydoc',
+        pageCount: 1,
+        sparse: false,
+        pageImages: [],
+      },
+    });
+    const result = await processDocumentExtractJob({ db: h.db }, driveJob, h.io);
+    expect(result).toMatchObject({
+      driveFileId: 'file-1',
+      skipped: true,
+      reason: 'drive_transient_failed',
+    });
+    const written = JSON.parse(
+      (h.writeDriveTransientResult.mock.calls[0]?.[1] as Buffer).toString('utf8'),
+    ) as { ok: boolean; error?: string };
+    expect(written).toEqual({ ok: false, error: integrations.DRIVE_TRANSIENT_RESULT_TOO_LARGE });
+    expect((h.writeDriveTransientResult.mock.calls[0]?.[1] as Buffer).length).toBeLessThan(
+      integrations.DRIVE_TRANSIENT_RESULT_MAX_BYTES,
+    );
     expect(h.resumeDriveFile).toHaveBeenCalledOnce();
     expect(h.enqueueEmbed).not.toHaveBeenCalled();
   });

@@ -112,7 +112,7 @@ export interface DocumentExtractIO {
 
 /** 25 MiB in-memory cap; matches the transcribe worker. */
 const MAX_DOCUMENT_BYTES = 25 * 1024 * 1024;
-const DRIVE_TRANSIENT_RESULT_MAX_BYTES = 2 * 1024 * 1024;
+const DRIVE_TRANSIENT_RESULT_MAX_BYTES = integrations.DRIVE_TRANSIENT_RESULT_MAX_BYTES;
 
 function isMissingObjectError(err: unknown): boolean {
   if (!err || typeof err !== 'object') return false;
@@ -263,8 +263,10 @@ async function persistDriveTransientResult(
   io: DocumentExtractIO,
   data: queue.DriveTransientExtractJobData,
   payload: integrations.DriveTransientExtractResultPayload,
-): Promise<void> {
-  await io.writeDriveTransientResult(data.resultObjectKey, Buffer.from(JSON.stringify(payload)));
+): Promise<integrations.DriveTransientExtractResultPayload> {
+  const body = integrations.driveTransientExtractResultBody(payload);
+  await io.writeDriveTransientResult(data.resultObjectKey, body);
+  return integrations.parseDriveTransientExtractResult(body);
 }
 
 async function resumeAndCleanupDriveTransientExtract(
@@ -303,9 +305,9 @@ async function handoffPersistedDriveTransientResult(
   data: queue.DriveTransientExtractJobData,
   payload: integrations.DriveTransientExtractResultPayload,
 ): Promise<DocumentExtractResult> {
-  await persistDriveTransientResult(io, data, payload);
+  const stored = await persistDriveTransientResult(io, data, payload);
   await resumeAndCleanupDriveTransientExtract(io, data);
-  if (payload.ok) {
+  if (stored.ok) {
     return { driveFileId: data.fileId, reason: 'drive_transient_ready' };
   }
   return { driveFileId: data.fileId, skipped: true, reason: 'drive_transient_failed' };

@@ -25,7 +25,7 @@ await vi.mock(
 
 const { resetEnvForTests } = await import('#src/env.js');
 const { googleDriveProvider } = await import('#src/integrations/providers/google-drive.js');
-const { DRIVE_FILE_DEBOUNCE_MS, hashDrivePayload } =
+const { DRIVE_FILE_DEBOUNCE_MS, DRIVE_TRANSIENT_RESULT_TOO_LARGE, hashDrivePayload } =
   await import('#src/integrations/google-drive-capture.js');
 const { DRIVE_BEYOND_SNAPSHOT_HUNK, DRIVE_SNAPSHOT_MAX_CHARS } =
   await import('#src/integrations/google-drive-diff.js');
@@ -778,6 +778,20 @@ describe('googleDriveProvider', () => {
 
     expect(ctx.enqueueTransientDriveExtract).not.toHaveBeenCalled();
     expect(ctx.consumeTransientDriveExtract).toHaveBeenCalledWith('file-1');
+    expect(
+      (ctx.writeEvents as unknown as { mock: { invocationCallOrder: number[] } }).mock
+        .invocationCallOrder[0] ?? 0,
+    ).toBeLessThan(
+      (ctx.consumeTransientDriveExtract as unknown as { mock: { invocationCallOrder: number[] } })
+        .mock.invocationCallOrder[0] ?? 0,
+    );
+    expect(
+      (ctx.saveDriveSnapshot as unknown as { mock: { invocationCallOrder: number[] } }).mock
+        .invocationCallOrder[0] ?? 0,
+    ).toBeLessThan(
+      (ctx.consumeTransientDriveExtract as unknown as { mock: { invocationCallOrder: number[] } })
+        .mock.invocationCallOrder[0] ?? 0,
+    );
     const events: IntegrationEvent[] = (
       ctx.writeEvents as unknown as { mock: { calls: [IntegrationEvent[]][] } }
     ).mock.calls.flatMap(([batch]) => batch);
@@ -788,6 +802,104 @@ describe('googleDriveProvider', () => {
       eventType: 'file.changed',
     });
     expect(events[0]?.contentText).not.toContain('ya29.');
+  });
+
+  it('keeps a ready extract until the event and snapshot are saved', async () => {
+    const fetch = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((input) => {
+      const url = requestUrl(input);
+      if (url.pathname.endsWith('/files/file-1')) {
+        return Promise.resolve(
+          jsonResponse({
+            id: 'file-1',
+            name: 'Notes',
+            mimeType: 'application/pdf',
+            parents: ['root'],
+            modifiedTime: '2026-06-20T10:00:00.000Z',
+          }),
+        );
+      }
+      if (url.pathname.endsWith('/comments')) {
+        return Promise.resolve(jsonResponse({ comments: [] }));
+      }
+      return Promise.resolve(jsonResponse({ permissions: [] }));
+    });
+    vi.stubGlobal('fetch', fetch);
+    const extracted = 'Contract amount is forty eight thousand dollars for Northstar.';
+    const ctx = syncContext({
+      loadTransientDriveExtract: vi.fn().mockResolvedValue({ status: 'ready', text: extracted }),
+      loadLatestDriveSnapshot: vi.fn().mockResolvedValue({
+        contentHash: 'old',
+        snapshotText: 'Prior snapshot text that is different enough to count.',
+        commentsHash: 'old-comments',
+        permissionsHash: 'old-permissions',
+        mimeType: 'application/pdf',
+      }),
+      writeEvents: vi.fn<SyncContext['writeEvents']>().mockRejectedValue(new Error('db down')),
+    });
+
+    await expect(
+      googleDriveProvider.incrementalSync({
+        integration: { id: 'integration-1', teamId: 'team-1' } as never,
+        tokens: { access_token: 'access-token', expires_at: Date.now() + 600_000 },
+        selections: [{ kind: 'drive.file', externalId: 'file-1' }],
+        ctx: ctx,
+        target: { resourceType: 'drive.file', externalId: 'file-1' },
+      }),
+    ).rejects.toThrow('db down');
+
+    expect(ctx.enqueueTransientDriveExtract).not.toHaveBeenCalled();
+    expect(ctx.consumeTransientDriveExtract).not.toHaveBeenCalled();
+    expect(ctx.saveDriveSnapshot).not.toHaveBeenCalled();
+  });
+
+  it('does not re-enqueue a terminal oversized extract result', async () => {
+    const fetch = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((input) => {
+      const url = requestUrl(input);
+      if (url.pathname.endsWith('/files/file-1')) {
+        return Promise.resolve(
+          jsonResponse({
+            id: 'file-1',
+            name: 'Notes',
+            mimeType: 'application/pdf',
+            parents: ['root'],
+          }),
+        );
+      }
+      if (url.pathname.endsWith('/comments')) {
+        return Promise.resolve(jsonResponse({ comments: [] }));
+      }
+      return Promise.resolve(jsonResponse({ permissions: [] }));
+    });
+    vi.stubGlobal('fetch', fetch);
+    const ctx = syncContext({
+      loadTransientDriveExtract: vi.fn().mockResolvedValue({
+        status: 'failed',
+        error: DRIVE_TRANSIENT_RESULT_TOO_LARGE,
+      }),
+    });
+
+    await googleDriveProvider.incrementalSync({
+      integration: { id: 'integration-1', teamId: 'team-1' } as never,
+      tokens: { access_token: 'access-token', expires_at: Date.now() + 600_000 },
+      selections: [{ kind: 'drive.file', externalId: 'file-1' }],
+      ctx: ctx,
+      target: { resourceType: 'drive.file', externalId: 'file-1' },
+    });
+
+    expect(ctx.consumeTransientDriveExtract).toHaveBeenCalledWith('file-1');
+    expect(ctx.enqueueTransientDriveExtract).not.toHaveBeenCalled();
+    expect(ctx.takeDriveExtractSlot).not.toHaveBeenCalled();
+    expect(ctx.recordAudit).toHaveBeenCalledWith(
+      'drive_extract_failed',
+      expect.objectContaining({
+        file_id: 'file-1',
+        error: DRIVE_TRANSIENT_RESULT_TOO_LARGE,
+      }),
+    );
   });
 
   it('re-requests bytes when a pending extract no longer matches the Drive revision', async () => {
@@ -1590,7 +1702,12 @@ describe('googleDriveProvider', () => {
       displayTitle: 'SOW',
       aliases: ['file-1'],
     });
-    expect(ctx.linkedObjectForDriveSelection).toHaveBeenCalledWith('file-1', ['root'], 'file-1');
+    expect(ctx.linkedObjectForDriveSelection).toHaveBeenCalledWith(
+      'file-1',
+      ['root'],
+      'file-1',
+      {},
+    );
     expect(ctx.saveDriveSnapshot).toHaveBeenCalledOnce();
     expect(
       (ctx.writeEvents as unknown as { mock: { invocationCallOrder: number[] } }).mock
@@ -1819,6 +1936,7 @@ describe('googleDriveProvider', () => {
       'file-nested',
       ['nested'],
       'selected-folder',
+      {},
     );
   });
 

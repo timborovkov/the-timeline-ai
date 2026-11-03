@@ -66,9 +66,9 @@ function fetchHref(input: RequestInfo | URL): string {
   return input.url;
 }
 
-function renderWithQueryClient(ui: ReactElement) {
+function renderWithQueryClient(ui: ReactElement, options?: { staleTime?: number }) {
   const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
+    defaultOptions: { queries: { retry: false, staleTime: options?.staleTime ?? 0 } },
   });
   return render(<QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>);
 }
@@ -646,6 +646,69 @@ describe('PersonalConnectionsUi', () => {
     });
     expect(requests.find((request) => request.method === 'PUT')?.body).toEqual({
       resources: [{ kind: 'drive.folder', externalId: 'folder-1', label: 'Clients' }],
+    });
+  });
+
+  it('invalidates every Drive picker query after saving shares', async () => {
+    const user = userEvent.setup();
+    const gets: string[] = [];
+    let saved = false;
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
+      const url = fetchHref(input);
+      const method = init?.method ?? 'GET';
+      if (method === 'PUT') {
+        saved = true;
+        return Promise.resolve(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+      }
+      gets.push(url);
+      const isFolder = url.includes('parentId=folder-1');
+      const shares = saved
+        ? [
+            {
+              id: 'share-doc',
+              providerConnectionId: 'conn-drive',
+              resourceKind: 'drive.file',
+              externalId: 'doc-1',
+              externalLabel: 'SOW',
+              revokedAt: null,
+            },
+          ]
+        : [];
+      const resources = isFolder
+        ? [{ kind: 'drive.file', externalId: 'doc-1', label: 'SOW' }]
+        : [{ kind: 'drive.folder', externalId: 'folder-1', label: 'Clients' }];
+      return Promise.resolve(new Response(JSON.stringify({ resources, shares }), { status: 200 }));
+    });
+
+    renderWithQueryClient(
+      <PersonalConnectionsUi
+        connections={[
+          {
+            id: 'conn-drive',
+            provider: 'google_drive',
+            displayName: 'Google Drive — Tim',
+            lastError: null,
+            lastConnectedAt: '2026-06-01T00:00:00.000Z',
+          },
+        ]}
+      />,
+      { staleTime: 30_000 },
+    );
+
+    expect(await screen.findByText('Clients')).toBeTruthy();
+    await user.click(screen.getByRole('button', { name: 'Open' }));
+    expect(await screen.findByText('SOW')).toBeTruthy();
+    await user.click(screen.getByRole('checkbox', { name: /SOW/i }));
+    const rootGetsBeforeSave = gets.filter(
+      (url) => url.includes('/resources') && !url.includes('parentId') && !url.includes('query='),
+    ).length;
+    await user.click(screen.getByRole('button', { name: /Save sharing/i }));
+    await user.click(screen.getByRole('button', { name: 'Google Drive' }));
+    await waitFor(() => {
+      const rootGets = gets.filter(
+        (url) => url.includes('/resources') && !url.includes('parentId') && !url.includes('query='),
+      );
+      expect(rootGets.length).toBeGreaterThan(rootGetsBeforeSave);
     });
   });
 

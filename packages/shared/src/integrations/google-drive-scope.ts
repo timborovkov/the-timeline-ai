@@ -21,6 +21,7 @@ export interface DriveScopeSets {
   folders: Set<string>;
   sharedDrives: Set<string>;
   watchesRoot: boolean;
+  myDriveRootId: string | null;
 }
 
 export function driveScopeFromSelections(selections: DriveSelection[]): DriveScopeSets {
@@ -36,7 +37,7 @@ export function driveScopeFromSelections(selections: DriveSelection[]): DriveSco
       folders.add(selection.externalId);
     }
   }
-  return { files, folders, sharedDrives, watchesRoot };
+  return { files, folders, sharedDrives, watchesRoot, myDriveRootId: null };
 }
 
 export function driveSelectionIsWatchable(kind: string): boolean {

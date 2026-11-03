@@ -7,6 +7,8 @@ export const queryKeys = {
   documentList: (folderId: string | null) => ['documents', 'list', folderId] as const,
   documentSearch: (query: string, filters: Record<string, string | null | undefined>) =>
     ['documents', 'search', query, filters] as const,
+  providerConnectionResourcesPrefix: (connectionId: string) =>
+    ['provider-connections', connectionId, 'resources'] as const,
   providerConnectionResources: (
     connectionId: string,
     browse?: { parentId?: string; query?: string },

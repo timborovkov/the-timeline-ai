@@ -6,6 +6,7 @@ import {
   driveExtractMatchesFileRevision,
   driveFileContentRevision,
   hashDrivePayload,
+  isDriveExtractResultTooLarge,
   takeDriveExtractSlot,
   takeDriveProcessSlot,
 } from '#src/integrations/google-drive-capture.js';
@@ -408,7 +409,10 @@ async function resolveDriveScope(
   // change payloads. Tests that still stub `parents: ['root']` keep working
   // because `driveScopeFromSelections` also records the alias.
   const root = await driveGetOptional<{ id?: string }>(tokens, '/files/root', { fields: 'id' });
-  if (root?.id) scope.folders.add(root.id);
+  if (root?.id) {
+    scope.folders.add(root.id);
+    scope.myDriveRootId = root.id;
+  }
   return scope;
 }
 
@@ -518,6 +522,15 @@ interface LoadedDriveText {
   skippedReason?: string;
   extractError?: string;
   extractCapReason?: 'file' | 'connection';
+  consumeReadyExtract?: boolean;
+}
+
+async function consumeReadyDriveExtract(
+  ctx: SyncContext,
+  fileId: string,
+  loaded: LoadedDriveText,
+): Promise<void> {
+  if (loaded.consumeReadyExtract) await ctx.consumeTransientDriveExtract?.(fileId);
 }
 
 async function loadDriveText(
@@ -531,12 +544,18 @@ async function loadDriveText(
     const existing = await ctx.loadTransientDriveExtract(file.id);
     const revisionMatches = driveExtractMatchesFileRevision(existing?.revisionId, fileRevisionId);
     if (existing?.status === 'ready' && revisionMatches) {
-      await ctx.consumeTransientDriveExtract?.(file.id);
-      if (!existing.text.trim()) return { text: '', skippedReason: 'extract_empty' };
-      return { text: existing.text };
+      if (!existing.text.trim()) {
+        return { text: '', skippedReason: 'extract_empty', consumeReadyExtract: true };
+      }
+      return { text: existing.text, consumeReadyExtract: true };
     }
     if (existing?.status === 'failed') {
       if (!ctx.consumeTransientDriveExtract) {
+        return { text: '', skippedReason: 'extract_failed', extractError: existing.error };
+      }
+      const terminal = isDriveExtractResultTooLarge(existing.error);
+      if (terminal) {
+        await ctx.consumeTransientDriveExtract(file.id);
         return { text: '', skippedReason: 'extract_failed', extractError: existing.error };
       }
       await ctx.recordAudit('drive_extract_failed', {
@@ -911,6 +930,7 @@ async function processDriveFile(
     return;
   }
   if (loaded.skippedReason) {
+    await consumeReadyDriveExtract(ctx, file.id, loaded);
     await ctx.recordAudit('drive_extract_skipped', {
       file_id: fileId,
       mime_type: file.mimeType,
@@ -947,17 +967,20 @@ async function processDriveFile(
   };
 
   if (previous?.contentHash === contentHash && !commentsChanged && !permissionsChanged) {
+    await consumeReadyDriveExtract(ctx, file.id, loaded);
     return;
   }
 
   if (!previous) {
     await persistDriveSnapshot(ctx, file.id, snapshot);
+    await consumeReadyDriveExtract(ctx, file.id, loaded);
     await ctx.recordAudit('drive_baseline_saved', { file_id: fileId });
     return;
   }
 
   if (!diff.changed && strongSignals.length === 0) {
     await persistDriveSnapshot(ctx, file.id, snapshot);
+    await consumeReadyDriveExtract(ctx, file.id, loaded);
     await ctx.recordAudit('drive_change_skipped', {
       file_id: fileId,
       reason: diff.reason,
@@ -997,6 +1020,7 @@ async function processDriveFile(
 
   if (!judge.matters || judge.reason === 'noise') {
     await persistDriveSnapshot(ctx, file.id, snapshot);
+    await consumeReadyDriveExtract(ctx, file.id, loaded);
     await ctx.recordAudit('drive_change_noise', { file_id: fileId, reason: judge.reason });
     return;
   }
@@ -1006,6 +1030,10 @@ async function processDriveFile(
         file.id,
         file.parents ?? [],
         membership.matchedAncestorId,
+        {
+          ...(file.driveId ? { driveId: file.driveId } : {}),
+          ...(scope.myDriveRootId ? { myDriveRootId: scope.myDriveRootId } : {}),
+        },
       )
     : null;
   const hunkPreview = diff.hunks.slice(0, 12).join('\n');
@@ -1054,6 +1082,7 @@ async function processDriveFile(
   };
   await ctx.writeEvents([event]);
   await persistDriveSnapshot(ctx, file.id, snapshot);
+  await consumeReadyDriveExtract(ctx, file.id, loaded);
 }
 
 function driveWebhookResourceState(payload: unknown): string | null {

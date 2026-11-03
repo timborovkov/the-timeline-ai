@@ -1,6 +1,6 @@
 'use client';
 
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ChevronRight, ExternalLink, Plug, Search } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import {
@@ -394,6 +394,7 @@ function ConnectionSources({
   compact?: boolean;
 }) {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const [state, dispatch] = useReducer(sourcePickerReducer, initialSourcePickerState);
   const [driveParentId, setDriveParentId] = useState('');
   const [driveCrumbs, setDriveCrumbs] = useState([{ id: '', label: 'Google Drive' }]);
@@ -537,7 +538,9 @@ function ConnectionSources({
             }),
           });
           if (!res.ok) await readJsonResponse(res);
-          await refetch();
+          await queryClient.invalidateQueries({
+            queryKey: queryKeys.providerConnectionResourcesPrefix(connection.id),
+          });
           return { ok: true };
         } catch {
           return { error: 'failed' };

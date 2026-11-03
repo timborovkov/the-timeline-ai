@@ -374,7 +374,7 @@ const defaultDriveTransientExtractIO: DriveTransientExtractIO = {
   enqueueDocumentExtractJob: queue.enqueueDocumentExtractJob,
 };
 
-const DRIVE_TRANSIENT_RESULT_MAX_BYTES = 2 * 1024 * 1024;
+const DRIVE_TRANSIENT_RESULT_MAX_BYTES = integrationsLib.DRIVE_TRANSIENT_RESULT_MAX_BYTES;
 
 function isMissingObjectError(err: unknown): boolean {
   if (!err || typeof err !== 'object') return false;
@@ -549,10 +549,10 @@ export async function readDriveTransientExtract(input: {
   } catch (err) {
     if (!isMissingObjectError(err)) {
       const message = err instanceof Error ? err.message : String(err);
-      return withExtractRevision(
-        { status: 'failed' as const, error: message.slice(0, 500) },
-        cursor,
-      );
+      const error = integrationsLib.isDriveExtractResultTooLarge(message)
+        ? integrationsLib.DRIVE_TRANSIENT_RESULT_TOO_LARGE
+        : message.slice(0, 500);
+      return withExtractRevision({ status: 'failed' as const, error }, cursor);
     }
     if (integrationsLib.isDriveExtractPendingStale(cursor, (input.now ?? new Date()).getTime())) {
       await io.enqueueDocumentExtractJob(
@@ -1350,12 +1350,14 @@ export async function runOneIntegration(
       listTeamEmailDomains() {
         return teamScope.integrations.listTeamEmailDomains();
       },
-      linkedObjectForDriveSelection(fileId, parentIds, matchedAncestorId) {
+      linkedObjectForDriveSelection(fileId, parentIds, matchedAncestorId, linkContext) {
         return teamScope.integrations.linkedObjectForDriveSelection({
           integrationId,
           fileId,
           parentIds,
           ...(matchedAncestorId !== undefined ? { matchedAncestorId } : {}),
+          ...(linkContext?.driveId ? { driveId: linkContext.driveId } : {}),
+          ...(linkContext?.myDriveRootId ? { myDriveRootId: linkContext.myDriveRootId } : {}),
         });
       },
       judgeDriveChange: integrationsLib.judgeDriveChange,

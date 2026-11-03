@@ -207,6 +207,9 @@ export function driveTransientExtractKeys(input: {
 export type DriveTransientExtractResultPayload =
   { ok: true; text: string } | { ok: false; error: string };
 
+export const DRIVE_TRANSIENT_RESULT_MAX_BYTES = 2 * 1024 * 1024;
+export const DRIVE_TRANSIENT_RESULT_TOO_LARGE = 'extract_result_too_large';
+
 export function parseDriveTransientExtractResult(body: Buffer): DriveTransientExtractResultPayload {
   const parsed: unknown = JSON.parse(body.toString('utf8'));
   if (!parsed || typeof parsed !== 'object') {
@@ -220,6 +223,51 @@ export function parseDriveTransientExtractResult(body: Buffer): DriveTransientEx
     return { ok: false, error: record.error };
   }
   throw new Error('invalid drive transient extract result');
+}
+
+export function driveTransientExtractResultBody(
+  payload: DriveTransientExtractResultPayload,
+): Buffer {
+  const body = Buffer.from(JSON.stringify(payload));
+  if (body.length <= DRIVE_TRANSIENT_RESULT_MAX_BYTES) return body;
+  return Buffer.from(JSON.stringify({ ok: false, error: DRIVE_TRANSIENT_RESULT_TOO_LARGE }));
+}
+
+export function isDriveExtractResultTooLarge(error: string): boolean {
+  return (
+    error === DRIVE_TRANSIENT_RESULT_TOO_LARGE ||
+    /exceeds \d+ bytes/u.test(error) ||
+    /exceeded \d+ bytes/u.test(error)
+  );
+}
+
+export function driveObjectLinkCandidates(input: {
+  fileId: string;
+  parentIds: string[];
+  matchedAncestorId?: string | null;
+  driveId?: string | null;
+  myDriveRootId?: string | null;
+}): string[] {
+  const ids = [input.fileId, input.matchedAncestorId, input.driveId, ...input.parentIds].filter(
+    (id): id is string => typeof id === 'string' && id.length > 0,
+  );
+  if (driveFileIsMyDriveDescendant(input)) ids.push('root');
+  return [...new Set(ids)];
+}
+
+function driveFileIsMyDriveDescendant(input: {
+  fileId: string;
+  parentIds: string[];
+  matchedAncestorId?: string | null;
+  driveId?: string | null;
+  myDriveRootId?: string | null;
+}): boolean {
+  if (typeof input.driveId === 'string' && input.driveId.length > 0) return false;
+  const rootIds = new Set<string>(['root']);
+  if (input.myDriveRootId) rootIds.add(input.myDriveRootId);
+  if (rootIds.has(input.fileId)) return true;
+  if (input.matchedAncestorId && rootIds.has(input.matchedAncestorId)) return true;
+  return input.parentIds.some((id) => rootIds.has(id));
 }
 
 export async function loadLatestDriveSnapshot(
@@ -335,15 +383,11 @@ export async function linkedObjectForDriveSelection(
     fileId: string;
     parentIds: string[];
     matchedAncestorId?: string | null;
+    driveId?: string | null;
+    myDriveRootId?: string | null;
   },
 ): Promise<{ id: string; canonicalName: string; type: string } | null> {
-  const candidates = [
-    ...new Set(
-      [input.fileId, input.matchedAncestorId, ...input.parentIds, 'root'].filter(
-        (id): id is string => typeof id === 'string' && id.length > 0,
-      ),
-    ),
-  ];
+  const candidates = driveObjectLinkCandidates(input);
   if (candidates.length === 0) return null;
   const rows = await db
     .select({

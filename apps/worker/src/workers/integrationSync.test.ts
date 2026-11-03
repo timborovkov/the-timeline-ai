@@ -2969,6 +2969,39 @@ describe('Drive transient extract handoff', () => {
     expect(fakes.adminLoadCursor).not.toHaveBeenCalled();
   });
 
+  it('returns a terminal too-large failure without re-enqueuing extract', async () => {
+    const scope = extractScope(
+      new Map([
+        [
+          cursorKey,
+          {
+            extractId: 'ext-1',
+            objectKey: 'source',
+            resultObjectKey: 'result.json',
+            contentType: 'application/pdf',
+            filename: 'Notes.pdf',
+            enqueuedAt: '2026-11-02T12:00:00.000Z',
+          },
+        ],
+      ]),
+    );
+    const io = extractIO();
+    io.getDocumentObject.mockRejectedValue(
+      new Error('S3 object docs/result.json exceeds 2097152 bytes'),
+    );
+
+    await expect(
+      readDriveTransientExtract({
+        integrations: scope,
+        teamId: TEAM_ID,
+        integrationId: INTEGRATION_ID,
+        fileId: FILE_ID,
+        io,
+      }),
+    ).resolves.toEqual({ status: 'failed', error: integrations.DRIVE_TRANSIENT_RESULT_TOO_LARGE });
+    expect(io.enqueueDocumentExtractJob).not.toHaveBeenCalled();
+  });
+
   it('clears failed extract objects through team-scoped cursors', async () => {
     const scope = extractScope(
       new Map([

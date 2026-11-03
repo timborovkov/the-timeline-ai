@@ -1620,6 +1620,8 @@ export function createIntegrationScope(deps: {
     fileId: string;
     parentIds: string[];
     matchedAncestorId?: string | null;
+    driveId?: string | null;
+    myDriveRootId?: string | null;
   }): Promise<{ id: string; canonicalName: string; type: string } | null> {
     const integration = await getIntegration(input.integrationId);
     if (!integration) return null;
@@ -1629,6 +1631,8 @@ export function createIntegrationScope(deps: {
       fileId: input.fileId,
       parentIds: input.parentIds,
       ...(input.matchedAncestorId ? { matchedAncestorId: input.matchedAncestorId } : {}),
+      ...(input.driveId ? { driveId: input.driveId } : {}),
+      ...(input.myDriveRootId ? { myDriveRootId: input.myDriveRootId } : {}),
     });
   }
 

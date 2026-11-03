@@ -13,13 +13,18 @@ import {
   DRIVE_EXTRACT_PENDING_STALE_MS,
   DRIVE_FILE_DEBOUNCE_MS,
   DRIVE_FILE_MAX_LATENCY_MS,
+  DRIVE_TRANSIENT_RESULT_MAX_BYTES,
+  DRIVE_TRANSIENT_RESULT_TOO_LARGE,
   driveDebouncePlan,
   driveExtractCursorKey,
   driveExtractMatchesFileRevision,
   driveFileContentRevision,
+  driveObjectLinkCandidates,
   driveTransientExtractKeys,
+  driveTransientExtractResultBody,
   hashDrivePayload,
   isDriveExtractPendingStale,
+  isDriveExtractResultTooLarge,
   linkedObjectForDriveSelection,
   loadLatestDriveSnapshot,
   parseDriveExtractCursor,
@@ -34,6 +39,56 @@ import { applyDbMigrations } from '#src/test/pglite.js';
 
 const TEAM_ID = '11111111-1111-1111-1111-111111111111';
 const USER_ID = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+
+describe('driveObjectLinkCandidates', () => {
+  it('covers My Drive, shared drives, individual files, and missing ancestors', () => {
+    expect(
+      driveObjectLinkCandidates({
+        fileId: 'doc-1',
+        parentIds: ['root'],
+        matchedAncestorId: 'root',
+      }),
+    ).toEqual(['doc-1', 'root']);
+    expect(
+      driveObjectLinkCandidates({
+        fileId: 'nested-doc',
+        parentIds: ['clients'],
+        matchedAncestorId: '0AMK-my-drive',
+        myDriveRootId: '0AMK-my-drive',
+      }),
+    ).toEqual(['nested-doc', '0AMK-my-drive', 'clients', 'root']);
+    expect(
+      driveObjectLinkCandidates({
+        fileId: 'shared-doc',
+        parentIds: ['shared-folder'],
+        matchedAncestorId: 'shared-drive',
+        driveId: 'shared-drive',
+        myDriveRootId: '0AMK-my-drive',
+      }),
+    ).toEqual(['shared-doc', 'shared-drive', 'shared-folder']);
+    expect(
+      driveObjectLinkCandidates({
+        fileId: 'picked-file',
+        parentIds: ['outside'],
+        matchedAncestorId: 'picked-file',
+      }),
+    ).toEqual(['picked-file', 'outside']);
+    expect(
+      driveObjectLinkCandidates({
+        fileId: 'shared-picked',
+        parentIds: ['team-folder'],
+        matchedAncestorId: 'shared-picked',
+        driveId: 'shared-drive',
+      }),
+    ).toEqual(['shared-picked', 'shared-drive', 'team-folder']);
+    expect(
+      driveObjectLinkCandidates({
+        fileId: 'orphan',
+        parentIds: ['unknown'],
+      }),
+    ).toEqual(['orphan', 'unknown']);
+  });
+});
 
 describe('driveDebouncePlan', () => {
   it('waits the quiet window from the latest notification', () => {
@@ -114,6 +169,25 @@ describe('drive transient extract helpers', () => {
         Buffer.from(JSON.stringify({ ok: false, error: 'Daytona is not configured' })),
       ),
     ).toEqual({ ok: false, error: 'Daytona is not configured' });
+  });
+
+  it('rejects oversized extract JSON at write time instead of storing an unreadable blob', () => {
+    const small = driveTransientExtractResultBody({ ok: true, text: 'Hello' });
+    expect(JSON.parse(small.toString('utf8'))).toEqual({ ok: true, text: 'Hello' });
+    const huge = driveTransientExtractResultBody({
+      ok: true,
+      text: 'x'.repeat(DRIVE_TRANSIENT_RESULT_MAX_BYTES),
+    });
+    expect(huge.length).toBeLessThan(DRIVE_TRANSIENT_RESULT_MAX_BYTES);
+    expect(JSON.parse(huge.toString('utf8'))).toEqual({
+      ok: false,
+      error: DRIVE_TRANSIENT_RESULT_TOO_LARGE,
+    });
+    expect(isDriveExtractResultTooLarge(DRIVE_TRANSIENT_RESULT_TOO_LARGE)).toBe(true);
+    expect(isDriveExtractResultTooLarge('S3 object docs/result.json exceeds 2097152 bytes')).toBe(
+      true,
+    );
+    expect(isDriveExtractResultTooLarge('Daytona is not configured')).toBe(false);
   });
 
   it('parses extract cursors and treats missing or aged pending as stale', () => {
@@ -358,7 +432,7 @@ describe('saveDriveSnapshot uniqueness', () => {
     await expect(scope.integrations.listTeamEmailDomains()).resolves.toEqual(['example.com']);
   });
 
-  it('prefers the matched selected ancestor over an unrelated root link', async () => {
+  it('resolves Drive object links for My Drive, shared drives, individual files, and missing ancestors', async () => {
     const [integration] = await db
       .insert(integrations)
       .values({
@@ -380,16 +454,36 @@ describe('saveDriveSnapshot uniqueness', () => {
         status: 'open',
       })
       .returning();
-    const [unrelated] = await db
+    const [rootObject] = await db
       .insert(entities)
       .values({
         teamId: TEAM_ID,
         type: 'project',
-        canonicalName: 'Unrelated root',
+        canonicalName: 'My Drive root',
         status: 'open',
       })
       .returning();
-    if (!northstar || !unrelated) throw new Error('object insert failed');
+    const [sharedObject] = await db
+      .insert(entities)
+      .values({
+        teamId: TEAM_ID,
+        type: 'project',
+        canonicalName: 'Engineering drive',
+        status: 'open',
+      })
+      .returning();
+    const [fileObject] = await db
+      .insert(entities)
+      .values({
+        teamId: TEAM_ID,
+        type: 'project',
+        canonicalName: 'Picked SOW',
+        status: 'open',
+      })
+      .returning();
+    if (!northstar || !rootObject || !sharedObject || !fileObject) {
+      throw new Error('object insert failed');
+    }
     await db.insert(integrationSelections).values([
       {
         integrationId: integration.id,
@@ -401,30 +495,83 @@ describe('saveDriveSnapshot uniqueness', () => {
         integrationId: integration.id,
         selectionKind: 'drive.folder',
         externalId: 'root',
-        linkedObjectId: unrelated.id,
+        linkedObjectId: rootObject.id,
+      },
+      {
+        integrationId: integration.id,
+        selectionKind: 'drive.shared_drive',
+        externalId: 'shared-drive',
+        linkedObjectId: sharedObject.id,
+      },
+      {
+        integrationId: integration.id,
+        selectionKind: 'drive.file',
+        externalId: 'picked-file',
+        linkedObjectId: fileObject.id,
       },
     ]);
 
-    const withoutAncestor = await linkedObjectForDriveSelection(db as never, {
-      teamId: TEAM_ID,
-      integrationId: integration.id,
-      fileId: 'nested-file',
-      parentIds: ['nested'],
-    });
-    expect(withoutAncestor?.id).toBe(unrelated.id);
+    const lookup = (
+      input: Omit<Parameters<typeof linkedObjectForDriveSelection>[1], 'teamId' | 'integrationId'>,
+    ) =>
+      linkedObjectForDriveSelection(db as never, {
+        teamId: TEAM_ID,
+        integrationId: integration.id,
+        ...input,
+      });
 
-    const withAncestor = await linkedObjectForDriveSelection(db as never, {
-      teamId: TEAM_ID,
-      integrationId: integration.id,
-      fileId: 'nested-file',
-      parentIds: ['nested'],
-      matchedAncestorId: 'selected-folder',
-    });
-    expect(withAncestor).toMatchObject({
-      id: northstar.id,
-      canonicalName: 'Northstar',
-      type: 'company',
-    });
+    await expect(
+      lookup({ fileId: 'mine', parentIds: ['root'], matchedAncestorId: 'root' }),
+    ).resolves.toMatchObject({ id: rootObject.id });
+    await expect(
+      lookup({
+        fileId: 'nested-my-drive',
+        parentIds: ['clients'],
+        matchedAncestorId: '0AMK-my-drive',
+        myDriveRootId: '0AMK-my-drive',
+      }),
+    ).resolves.toMatchObject({ id: rootObject.id });
+    await expect(
+      lookup({
+        fileId: 'nested-file',
+        parentIds: ['nested'],
+        matchedAncestorId: 'selected-folder',
+      }),
+    ).resolves.toMatchObject({ id: northstar.id, canonicalName: 'Northstar', type: 'company' });
+    await expect(
+      lookup({
+        fileId: 'shared-doc',
+        parentIds: ['shared-folder'],
+        matchedAncestorId: 'shared-drive',
+        driveId: 'shared-drive',
+        myDriveRootId: '0AMK-my-drive',
+      }),
+    ).resolves.toMatchObject({ id: sharedObject.id });
+    await expect(
+      lookup({
+        fileId: 'unlinked-shared',
+        parentIds: ['other-shared-folder'],
+        matchedAncestorId: 'other-shared-drive',
+        driveId: 'other-shared-drive',
+        myDriveRootId: '0AMK-my-drive',
+      }),
+    ).resolves.toBeNull();
+    await expect(
+      lookup({
+        fileId: 'picked-file',
+        parentIds: ['outside'],
+        matchedAncestorId: 'picked-file',
+      }),
+    ).resolves.toMatchObject({ id: fileObject.id });
+    await expect(
+      lookup({
+        fileId: 'shared-picked',
+        parentIds: ['team-folder'],
+        matchedAncestorId: 'shared-picked',
+        driveId: 'shared-drive',
+      }),
+    ).resolves.toMatchObject({ id: sharedObject.id });
+    await expect(lookup({ fileId: 'orphan', parentIds: ['unknown'] })).resolves.toBeNull();
 
     const scope = withTeam(db as never, TEAM_ID, USER_ID);
     await expect(
@@ -435,5 +582,15 @@ describe('saveDriveSnapshot uniqueness', () => {
         matchedAncestorId: 'selected-folder',
       }),
     ).resolves.toMatchObject({ id: northstar.id });
+    await expect(
+      scope.integrations.linkedObjectForDriveSelection({
+        integrationId: integration.id,
+        fileId: 'unlinked-shared',
+        parentIds: ['other-shared-folder'],
+        matchedAncestorId: 'other-shared-drive',
+        driveId: 'other-shared-drive',
+        myDriveRootId: '0AMK-my-drive',
+      }),
+    ).resolves.toBeNull();
   });
 });

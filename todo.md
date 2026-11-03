@@ -38,7 +38,11 @@ cleared and retried within the extract budget. Extract cursors go through `withT
 scope; enqueue-before-cursor plus stale-pending re-enqueue keeps the orchestrator handoff recoverable.
 Extract resumes use an independent BullMQ identity so they cannot be dropped by an in-flight `drive.file`
 debounce; the orchestrator persists the JSON result before resuming and retries reuse that result.
-Extract cursors store the Drive revision of the uploaded bytes and re-request when it no longer matches.
+A ready extract is consumed only after the event and snapshot are saved. Oversized extract JSON is
+rejected at write time against the same 2 MiB cap the reader uses, then skipped without a retry loop.
+Object links use the matched ancestor, file, parents, and shared-drive id; the My Drive `root` link
+applies only to My Drive descendants. Saving picker shares invalidates every cached Drive folder and
+search query. Extract cursors store the Drive revision of the uploaded bytes and re-request when it no longer matches.
 Change detection diffs the full truncated 20k windows like-for-like, always collecting added and removed hunks together. Hash-moved snapshots never skip as identical/formatting unless that full window is verifiably whitespace-equivalent; otherwise the fallback is a conservative changed hunk. Full-text hashes still see edits past 20k chars. A file that revisits a retained content/comments/permissions fingerprint refreshes that snapshot's ordering timestamp so it becomes the latest baseline again; otherwise A→B→A leaves B latest and a later edit back to B is dropped as unchanged.
 
 ## Billing identity follow-up
