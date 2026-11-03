@@ -326,6 +326,38 @@ function middleAmountAt(offset: number, amount: string): string {
   return text;
 }
 
+const APPROVED_RENEWAL = 'Customer renewal approved.';
+const REJECTED_RENEWAL = 'Customer renewal rejected.';
+
+function documentWithPhrase(length: number, offset: number, phrase: string): string {
+  if (phrase.length === 0) {
+    throw new Error('documentWithPhrase requires a phrase');
+  }
+  if (offset < 0 || offset + phrase.length > length) {
+    throw new Error(`phrase at ${offset} does not fit in ${length}`);
+  }
+  return `${'A'.repeat(offset)}${phrase}${'B'.repeat(length - offset - phrase.length)}`;
+}
+
+function mulberry32(seed: number): () => number {
+  let state = seed >>> 0;
+  return () => {
+    state += 0x6d2b79f5;
+    let next = state;
+    next = Math.imul(next ^ (next >>> 15), next | 1);
+    next ^= next + Math.imul(next ^ (next >>> 7), next | 61);
+    return ((next ^ (next >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function spliceAt(text: string, offset: number, deleteCount: number, insert: string): string {
+  return `${text.slice(0, offset)}${insert}${text.slice(offset + deleteCount)}`;
+}
+
+function hunkBody(hunk: string): string {
+  return hunk.startsWith('- ') ? hunk.slice(2) : hunk;
+}
+
 describe('diffDriveSnapshots regression matrix', () => {
   const short = shortSow();
   const long = longSow();
@@ -498,6 +530,38 @@ describe('diffDriveSnapshots regression matrix', () => {
       hunkIncludes: '$48k',
     },
     {
+      name: '>40k straddling-chunk renewal at char 20200',
+      previousFull: documentWithPhrase(41_001, 20_200, APPROVED_RENEWAL),
+      nextFull: documentWithPhrase(41_001, 20_200, REJECTED_RENEWAL),
+      changed: true,
+      reason: 'substantive',
+      hunkIncludes: 'rejected',
+    },
+    {
+      name: '>40k prefix-boundary straddling chunk',
+      previousFull: documentWithPhrase(41_001, DRIVE_SNAPSHOT_MAX_CHARS - 10, APPROVED_RENEWAL),
+      nextFull: documentWithPhrase(41_001, DRIVE_SNAPSHOT_MAX_CHARS - 10, REJECTED_RENEWAL),
+      changed: true,
+      reason: 'substantive',
+      hunkIncludes: 'rejected',
+    },
+    {
+      name: '>40k suffix-start straddling chunk',
+      previousFull: documentWithPhrase(41_001, 21_001 - APPROVED_RENEWAL.length, APPROVED_RENEWAL),
+      nextFull: documentWithPhrase(41_001, 21_001 - REJECTED_RENEWAL.length, REJECTED_RENEWAL),
+      changed: true,
+      reason: 'substantive',
+      hunkIncludes: 'rejected',
+    },
+    {
+      name: '>40k edit on a 4096-char chunk boundary in the unstored region',
+      previousFull: documentWithPhrase(41_001, DRIVE_SNAPSHOT_CHUNK_CHARS * 5, APPROVED_RENEWAL),
+      nextFull: documentWithPhrase(41_001, DRIVE_SNAPSHOT_CHUNK_CHARS * 5, REJECTED_RENEWAL),
+      changed: true,
+      reason: 'substantive',
+      hunkIncludes: 'rejected',
+    },
+    {
       name: '>20k mid-window edit plus past-window append',
       previousFull: long.replace('implementation', 'a $12k implementation'),
       nextFull: `${long.replace('implementation', 'a $48k implementation')}\n${SIGNING_PARAGRAPH}`,
@@ -542,10 +606,83 @@ describe('diffDriveSnapshots regression matrix', () => {
       if (row.removedHunk) {
         expect(diff.hunks.some((hunk) => hunk.startsWith('- '))).toBe(true);
       }
+      if (row.previousFull !== row.nextFull) {
+        expect(diff.reason).not.toBe('identical');
+      }
       if (row.changed) expect(driveDiffHasEvidence(diff)).toBe(true);
       expect(diff.hunks.join(' ')).not.toContain('Text changed past the stored snapshot window.');
     });
   }
+
+  it('never returns identical for a 41,001-char hash-moved edit at offset 20,200', () => {
+    const previousFull = documentWithPhrase(41_001, 20_200, APPROVED_RENEWAL);
+    const nextFull = documentWithPhrase(41_001, 20_200, REJECTED_RENEWAL);
+    expect(previousFull.length).toBe(41_001);
+    expect(nextFull.length).toBe(41_001);
+    expect(previousFull.indexOf(APPROVED_RENEWAL)).toBe(20_200);
+    expect(nextFull.indexOf(REJECTED_RENEWAL)).toBe(20_200);
+    const prefixEnd = DRIVE_SNAPSHOT_MAX_CHARS;
+    const suffixStart = 41_001 - DRIVE_SNAPSHOT_MAX_CHARS;
+    expect(20_200).toBeGreaterThan(prefixEnd);
+    expect(20_200 + APPROVED_RENEWAL.length).toBeLessThan(suffixStart);
+    const firstExclusive = Math.ceil(prefixEnd / DRIVE_SNAPSHOT_CHUNK_CHARS);
+    const lastExclusive = Math.floor(suffixStart / DRIVE_SNAPSHOT_CHUNK_CHARS);
+    expect(firstExclusive).toBe(lastExclusive);
+    const diff = diffDriveSnapshots(snapshotArgs(previousFull, nextFull));
+    expect(diff.changed).toBe(true);
+    expect(diff.reason).not.toBe('identical');
+    expect(diff.reason).toBe('substantive');
+    expect(diff.hunks.join(' ')).toContain('rejected');
+    expect(diff.hunks.some((hunk) => nextFull.includes(hunkBody(hunk)))).toBe(true);
+    expect(driveDiffHasEvidence(diff)).toBe(true);
+  });
+
+  it('never returns identical for hash-moved edits across prefix, chunk, and suffix bounds', () => {
+    const rng = mulberry32(20_200);
+    const lengths = [41_001, 45_000, 50_000, 81_920];
+    const inserts = ['X', 'rejected.', REJECTED_RENEWAL, ' $48k '];
+    let checked = 0;
+    for (const length of lengths) {
+      const previous = 'N'.repeat(length);
+      const suffixStart = Math.max(0, length - DRIVE_SNAPSHOT_MAX_CHARS);
+      const offsets = [
+        0,
+        DRIVE_SNAPSHOT_MAX_CHARS - 1,
+        DRIVE_SNAPSHOT_MAX_CHARS,
+        DRIVE_SNAPSHOT_MAX_CHARS + 1,
+        DRIVE_SNAPSHOT_CHUNK_CHARS * 4,
+        DRIVE_SNAPSHOT_CHUNK_CHARS * 5,
+        20_200,
+        suffixStart - 1,
+        suffixStart,
+        suffixStart + 1,
+        length - 8,
+        ...Array.from({ length: 8 }, () => Math.floor(rng() * Math.max(1, length - 12))),
+      ].filter((offset) => offset >= 0 && offset < length);
+      for (const offset of offsets) {
+        for (const insert of inserts) {
+          const deleteCount = Math.min(length - offset, 1 + Math.floor(rng() * 12));
+          const next = spliceAt(previous, offset, deleteCount, insert);
+          if (next === previous) continue;
+          const diff = diffDriveSnapshots(snapshotArgs(previous, next));
+          expect(diff.reason).not.toBe('identical');
+          if (diff.changed) {
+            expect(driveDiffHasEvidence(diff)).toBe(true);
+            const currentHunks = diff.hunks.filter((hunk) => !hunk.startsWith('- '));
+            expect(currentHunks.length).toBeGreaterThan(0);
+            expect(
+              currentHunks.some((hunk) => {
+                const body = hunkBody(hunk).replaceAll('…', '');
+                return body.length === 0 || next.includes(body.slice(0, Math.min(24, body.length)));
+              }),
+            ).toBe(true);
+          }
+          checked += 1;
+        }
+      }
+    }
+    expect(checked).toBeGreaterThan(80);
+  });
 
   it('does not treat unlike truncated-vs-full comparison as the snapshot path', () => {
     const previousFull = longSow();
@@ -653,6 +790,17 @@ describe('resolveDriveSnapshotDiff invariant', () => {
       expect(diff.hunks.join(' ')).not.toContain('Text changed past the stored snapshot window.');
     });
   }
+
+  it('never returns identical when a located diff is identical but the hash moved', () => {
+    const diff = resolveDriveSnapshotDiff({
+      windowDiff: identical,
+      hashMoved: true,
+      windowCoversFullText: false,
+      locatedDiff: identical,
+    });
+    expect(diff.changed).toBe(true);
+    expect(diff.reason).not.toBe('identical');
+  });
 
   it('uses located current-text hunks instead of escalating to a content-free marker', () => {
     const located = {

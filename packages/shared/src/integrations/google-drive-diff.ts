@@ -3,12 +3,16 @@
  * must never reach an LLM.
  *
  * Stored evidence is a 20k prefix, a 20k suffix, and a chunk-hash index of the
- * full extracted text. Capture always has the current full text, so the judge
+ * full extracted text (every chunk, including those that straddle the prefix
+ * and suffix bounds). Capture always has the current full text, so the judge
  * and event receive bounded hunks from that text around the changed region —
  * never a content-free marker. Prefix equivalence never proves the suffix is
  * unchanged. A hash change whose location is proven cosmetic (tiny/formatting)
- * may skip. A hash change that cannot be located must not advance the baseline
- * without real hunks. Added and removed hunks are always collected together.
+ * may skip. When the full-text hash moved the result is never `identical`:
+ * hunks come from current text, and every chunk that touches the unstored
+ * middle is inspected. A hash change that cannot be located must not advance
+ * the baseline without real hunks. Added and removed hunks are always
+ * collected together.
  * The tiny/substantive threshold uses intra-line edited spans, not hunk context
  * kept for the judge. Tiny is only for edits that are provably non-semantic:
  * whitespace, punctuation-only, case-only, or a single-letter typo (edit
@@ -139,6 +143,9 @@ export function resolveDriveSnapshotDiff(input: {
   if (!input.hashMoved || input.windowCoversFullText) return input.windowDiff;
   const located = input.locatedDiff;
   if (!located) {
+    return { changed: true, reason: 'substantive', changedChars: 1, hunks: [] };
+  }
+  if (!located.changed && located.reason === 'identical') {
     return { changed: true, reason: 'substantive', changedChars: 1, hunks: [] };
   }
   if (located.changed && located.hunks.length === 0) {
@@ -284,32 +291,63 @@ function excerptPastPrefix(nextFull: string, prefixLength: number): DriveTextDif
   };
 }
 
-function locateMiddleChange(
+function chunkTouchesUnstored(input: {
+  start: number;
+  end: number;
+  prefixEnd: number;
+  previousSuffixStart: number;
+  nextSuffixStart: number;
+}): boolean {
+  if (input.end <= input.prefixEnd) return false;
+  if (input.start >= input.previousSuffixStart && input.start >= input.nextSuffixStart) {
+    return false;
+  }
+  return true;
+}
+
+/**
+ * Walk the full-document chunk-hash index. Prefix and suffix text already
+ * classified their windows; inspect every remaining mismatched chunk,
+ * including ones that straddle those bounds.
+ */
+function locateByChunkHashes(
   previous: DriveSnapshotLocate,
   next: DriveSnapshotLocate,
   nextFull: string,
 ): DriveTextDiff | null {
-  const prefixEnd = Math.min(nextFull.length, DRIVE_SNAPSHOT_MAX_CHARS);
-  const suffixStart = Math.max(0, nextFull.length - DRIVE_SNAPSHOT_MAX_CHARS);
-  if (prefixEnd >= suffixStart) return null;
+  const prefixEnd = Math.min(DRIVE_SNAPSHOT_MAX_CHARS, previous.length, nextFull.length);
+  const previousSuffixStart = Math.max(0, previous.length - DRIVE_SNAPSHOT_MAX_CHARS);
+  const nextSuffixStart = Math.max(0, nextFull.length - DRIVE_SNAPSHOT_MAX_CHARS);
+  if (prefixEnd >= previousSuffixStart && prefixEnd >= nextSuffixStart) return null;
   const chunkSize = previous.chunkSize > 0 ? previous.chunkSize : DRIVE_SNAPSHOT_CHUNK_CHARS;
   const nextHashes =
     next.chunkSize === chunkSize
       ? next.chunkHashes
       : buildDriveSnapshotLocate(nextFull, chunkSize).chunkHashes;
-  const first = Math.ceil(prefixEnd / chunkSize);
-  const lastExclusive = Math.floor(suffixStart / chunkSize);
-  for (let index = first; index < lastExclusive; index++) {
-    if (previous.chunkHashes[index] !== nextHashes[index]) {
-      const hunks = excerptAroundOffset(nextFull, index * chunkSize);
-      if (hunks.length === 0) return null;
-      return {
-        changed: true,
-        reason: 'substantive',
-        changedChars: Math.max(1, Math.abs(previous.length - nextFull.length) || chunkSize),
-        hunks,
-      };
+  const limit = Math.max(previous.chunkHashes.length, nextHashes.length);
+  for (let index = 0; index < limit; index++) {
+    if ((previous.chunkHashes[index] ?? '') === (nextHashes[index] ?? '')) continue;
+    const start = index * chunkSize;
+    const end = start + chunkSize;
+    if (
+      !chunkTouchesUnstored({
+        start,
+        end,
+        prefixEnd,
+        previousSuffixStart,
+        nextSuffixStart,
+      })
+    ) {
+      continue;
     }
+    const hunks = excerptAroundOffset(nextFull, Math.max(start, prefixEnd));
+    if (hunks.length === 0) continue;
+    return {
+      changed: true,
+      reason: 'substantive',
+      changedChars: Math.max(1, Math.abs(previous.length - nextFull.length) || chunkSize),
+      hunks,
+    };
   }
   if (previous.length !== nextFull.length) {
     const hunks = excerptAroundOffset(nextFull, prefixEnd);
@@ -322,6 +360,42 @@ function locateMiddleChange(
     };
   }
   return null;
+}
+
+function excerptCurrentTextFallback(
+  nextFull: string,
+  previousPrefix: string,
+  previousLocate: DriveSnapshotLocate | null,
+): DriveTextDiff {
+  if (previousLocate) {
+    const chunkSize =
+      previousLocate.chunkSize > 0 ? previousLocate.chunkSize : DRIVE_SNAPSHOT_CHUNK_CHARS;
+    const nextLocate = buildDriveSnapshotLocate(nextFull, chunkSize);
+    const limit = Math.max(previousLocate.chunkHashes.length, nextLocate.chunkHashes.length);
+    for (let index = 0; index < limit; index++) {
+      if ((previousLocate.chunkHashes[index] ?? '') === (nextLocate.chunkHashes[index] ?? '')) {
+        continue;
+      }
+      const hunks = excerptAroundOffset(nextFull, index * chunkSize);
+      if (hunks.length > 0) {
+        return {
+          changed: true,
+          reason: 'substantive',
+          changedChars: Math.max(1, Math.abs(previousLocate.length - nextFull.length)),
+          hunks,
+        };
+      }
+    }
+  }
+  const excerpt = excerptPastPrefix(nextFull, previousPrefix.length);
+  if (excerpt.hunks.length > 0) return excerpt;
+  const tail = nextFull.slice(Math.max(0, nextFull.length - DRIVE_HUNK_LINE_MAX)).trim();
+  return {
+    changed: true,
+    reason: 'substantive',
+    changedChars: 1,
+    hunks: tail.length > 0 ? [truncateChangedLine(tail)] : [],
+  };
 }
 
 function locateBeyondPrefix(input: {
@@ -358,7 +432,7 @@ function locateBeyondPrefix(input: {
   const skipped = skipLocatedDiff(input.prefixDiff, suffixDiff);
   const middle =
     input.previousLocate && suffixCoversBeyondPrefix
-      ? locateMiddleChange(input.previousLocate, input.nextLocate, input.nextFull)
+      ? locateByChunkHashes(input.previousLocate, input.nextLocate, input.nextFull)
       : null;
   if (middle?.changed && middle.hunks.length > 0) return middle;
   if (input.previousLocate) return skipped;
@@ -397,13 +471,16 @@ export function diffDriveSnapshots(input: {
     nextFull.length < DRIVE_SNAPSHOT_MAX_CHARS;
   const prefixDiff = diffPrefixWindows(previous, next);
   const nextLocate = buildDriveSnapshotLocate(nextFull);
-  const locatedDiff = locateBeyondPrefix({
+  let locatedDiff = locateBeyondPrefix({
     prefixDiff,
     previousPrefix: previous,
     previousLocate: input.previousLocate ?? null,
     nextFull,
     nextLocate,
   });
+  if (hashMoved && !windowCoversFullText && locatedDiff.reason === 'identical') {
+    locatedDiff = excerptCurrentTextFallback(nextFull, previous, input.previousLocate ?? null);
+  }
   return resolveDriveSnapshotDiff({
     windowDiff: prefixDiff,
     hashMoved,

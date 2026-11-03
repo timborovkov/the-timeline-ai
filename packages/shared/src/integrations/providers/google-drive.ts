@@ -1017,7 +1017,11 @@ async function processDriveFile(
     return;
   }
 
-  if (!driveDiffHasEvidence(diff) && strongSignals.length === 0) {
+  if (
+    (!driveDiffHasEvidence(diff) ||
+      (diff.reason === 'identical' && previous.contentHash !== contentHash)) &&
+    strongSignals.length === 0
+  ) {
     await consumeReadyDriveExtract(ctx, file.id, loaded);
     await ctx.recordAudit('drive_change_skipped', {
       file_id: fileId,
