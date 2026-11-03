@@ -49,9 +49,11 @@ import {
   CORPUS_SLACK,
   CORPUS_WEBHOOK,
 } from './demo-corpus/index.js';
+import { readEmptyDemoWorkspaceSnapshot } from './demo-empty-team.js';
 import {
   assertDemoFixture,
   assertDemoVectorEnvironment,
+  assertEmptyDemoWorkspace,
   DEMO_DOCUMENT_BYTE_SIZE,
   DEMO_DOCUMENT_OBJECT_KEY,
   DEMO_ENTITIES,
@@ -712,7 +714,9 @@ async function main(): Promise<void> {
   try {
     assertDemoFixture(await readDemoFixtureSnapshot());
     assertExpandedDemoCorpus(await readExpandedDemoCorpusSnapshot());
+    assertEmptyDemoWorkspace(await readEmptyDemoWorkspaceSnapshot(getDb()));
     console.log('[demo:verify] deterministic demo fixture is intact');
+    console.log('[demo:verify] empty onboarding workspace is intact');
   } finally {
     await closeDb();
   }

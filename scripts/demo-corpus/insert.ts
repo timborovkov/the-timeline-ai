@@ -66,6 +66,7 @@ import { normalizeIdentityFacet } from '@timeline/shared/objects/identity-facets
 import { hashPassword } from '@timeline/shared/passwords';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 
+import { dateAt, DEMO_TOKEN_EXPIRY_DAYS, getDemoSeedNow, isoAt } from '../demo-clock.js';
 import { DEMO_FIXTURE_VERSION, DEMO_IDS, DEMO_LEGAL_ACCEPTED_AT } from '../demo-fixture.js';
 import { seedCurrentLegalAcceptances } from '../demo-legal.js';
 
@@ -156,7 +157,9 @@ function clusterIdForEntity(entityId: string): string {
   return CORPUS_UUID.cluster(index + 1);
 }
 
-const NOW = new Date('2026-08-14T18:00:00.000Z');
+function seedNow(): Date {
+  return getDemoSeedNow();
+}
 
 export async function insertExpandedDemoCorpus(tx: SeedTx): Promise<void> {
   const passwordHash = await hashPassword(CORPUS_PASSWORD);
@@ -188,7 +191,7 @@ async function insertPeople(tx: SeedTx, passwordHash: string): Promise<void> {
         id: person.id,
         name: person.name,
         email: person.email,
-        emailVerified: NOW,
+        emailVerified: seedNow(),
         passwordHash,
         legalTermsVersion: TERMS_VERSION,
         legalPrivacyVersion: PRIVACY_VERSION,
@@ -204,7 +207,7 @@ async function insertPeople(tx: SeedTx, passwordHash: string): Promise<void> {
         legalTermsVersion: sql`excluded.legal_terms_version`,
         legalPrivacyVersion: sql`excluded.legal_privacy_version`,
         legalAcceptedAt: sql`excluded.legal_accepted_at`,
-        updatedAt: NOW,
+        updatedAt: seedNow(),
       },
     });
 
@@ -246,7 +249,7 @@ async function insertPeople(tx: SeedTx, passwordHash: string): Promise<void> {
         dailyDigestEnabled: sql`excluded.daily_digest_enabled`,
         dailyDigestHour: sql`excluded.daily_digest_hour`,
         timezone: sql`excluded.timezone`,
-        updatedAt: NOW,
+        updatedAt: seedNow(),
       },
     });
 }
@@ -254,16 +257,16 @@ async function insertPeople(tx: SeedTx, passwordHash: string): Promise<void> {
 async function insertConnections(tx: SeedTx): Promise<void> {
   const mondaySecret = encryptJson({
     access_token: CORPUS_SECRETS.mondayAccess,
-    expires_at: '2026-12-31T23:59:59.000Z',
+    expires_at: isoAt(DEMO_TOKEN_EXPIRY_DAYS, '23:59:59'),
   });
   const sentrySecret = encryptJson({
     access_token: CORPUS_SECRETS.sentryAccess,
-    expires_at: '2026-12-31T23:59:59.000Z',
+    expires_at: isoAt(DEMO_TOKEN_EXPIRY_DAYS, '23:59:59'),
   });
   const driveSecret = encryptJson({
     access_token: CORPUS_SECRETS.driveAccess,
     refresh_token: '1//dev_seed_drive_refresh',
-    expires_at: '2026-12-31T23:59:59.000Z',
+    expires_at: isoAt(DEMO_TOKEN_EXPIRY_DAYS, '23:59:59'),
   });
   const mcpAuth = encryptJson({ token: CORPUS_SECRETS.mcpInboundBearer });
 
@@ -280,7 +283,7 @@ async function insertConnections(tx: SeedTx): Promise<void> {
         authSecretCiphertext: mondaySecret.ciphertext,
         authSecretIv: mondaySecret.iv,
         authSecretTag: mondaySecret.tag,
-        lastConnectedAt: NOW,
+        lastConnectedAt: seedNow(),
       },
       {
         id: CORPUS_CONNECTIONS.sentry,
@@ -292,7 +295,7 @@ async function insertConnections(tx: SeedTx): Promise<void> {
         authSecretCiphertext: sentrySecret.ciphertext,
         authSecretIv: sentrySecret.iv,
         authSecretTag: sentrySecret.tag,
-        lastConnectedAt: NOW,
+        lastConnectedAt: seedNow(),
       },
       {
         id: CORPUS_CONNECTIONS.drive,
@@ -304,7 +307,7 @@ async function insertConnections(tx: SeedTx): Promise<void> {
         authSecretCiphertext: driveSecret.ciphertext,
         authSecretIv: driveSecret.iv,
         authSecretTag: driveSecret.tag,
-        lastConnectedAt: NOW,
+        lastConnectedAt: seedNow(),
       },
     ])
     .onConflictDoNothing();
@@ -322,7 +325,7 @@ async function insertConnections(tx: SeedTx): Promise<void> {
         externalAccountId: 'monday-account-acme-dev',
         visibilityDefault: 'team',
         enabled: false,
-        lastSyncedAt: new Date('2026-08-12T16:30:00.000Z'),
+        lastSyncedAt: dateAt(-2, '16:30:00'),
       },
       {
         id: CORPUS_INTEGRATIONS.sentry,
@@ -334,7 +337,7 @@ async function insertConnections(tx: SeedTx): Promise<void> {
         externalAccountId: 'sentry-org-acme-dev',
         visibilityDefault: 'team',
         enabled: false,
-        lastSyncedAt: new Date('2026-08-03T09:50:00.000Z'),
+        lastSyncedAt: dateAt(-11, '09:50:00'),
       },
       {
         id: CORPUS_INTEGRATIONS.drive,
@@ -346,7 +349,7 @@ async function insertConnections(tx: SeedTx): Promise<void> {
         externalAccountId: 'drive-user-avery-dev',
         visibilityDefault: 'team',
         enabled: false,
-        lastSyncedAt: new Date('2026-08-11T13:20:00.000Z'),
+        lastSyncedAt: dateAt(-3, '13:20:00'),
       },
     ])
     .onConflictDoUpdate({
@@ -428,16 +431,16 @@ async function insertConnections(tx: SeedTx): Promise<void> {
         id: CORPUS_UUID.sync(1),
         integrationId: CORPUS_INTEGRATIONS.monday,
         resourceType: 'monday.board',
-        cursor: { since: '2026-08-12T16:30:00.000Z' },
-        lastRunAt: new Date('2026-08-12T16:30:00.000Z'),
+        cursor: { since: isoAt(-2, '16:30:00') },
+        lastRunAt: dateAt(-2, '16:30:00'),
         lastStatus: 'ok',
       },
       {
         id: CORPUS_UUID.sync(2),
         integrationId: CORPUS_INTEGRATIONS.sentry,
         resourceType: 'sentry.project:acme/atlas',
-        cursor: { since: '2026-08-03T09:50:00.000Z' },
-        lastRunAt: new Date('2026-08-03T09:50:00.000Z'),
+        cursor: { since: isoAt(-11, '09:50:00') },
+        lastRunAt: dateAt(-11, '09:50:00'),
         lastStatus: 'ok',
       },
     ])
@@ -457,8 +460,8 @@ async function insertConnections(tx: SeedTx): Promise<void> {
       authConfigTag: mcpAuth.tag,
       enabled: false,
       cachedTools: [{ name: 'ledger.list_invoices', description: 'List fictional invoices' }],
-      toolsCachedAt: NOW,
-      lastConnectedAt: new Date('2026-07-24T06:00:00.000Z'),
+      toolsCachedAt: seedNow(),
+      lastConnectedAt: dateAt(-21, '06:00:00'),
       lastError: null,
     })
     .onConflictDoUpdate({
@@ -655,7 +658,7 @@ async function insertCaptureSurfaces(tx: SeedTx): Promise<void> {
         visibilityDefault: sql`excluded.visibility_default`,
         proposalGenerationEnabled: sql`excluded.proposal_generation_enabled`,
         disabledAt: null,
-        updatedAt: NOW,
+        updatedAt: seedNow(),
       },
     });
   await tx
@@ -667,7 +670,7 @@ async function insertCaptureSurfaces(tx: SeedTx): Promise<void> {
       createdByUserId: CORPUS_PERSON.jordan.id,
       keyHash: hashCredential(CORPUS_SECRETS.ingestWebhook),
       keyPrefix: CORPUS_SECRETS.ingestWebhook.slice(0, 12),
-      lastUsedAt: new Date('2026-08-13T07:05:00.000Z'),
+      lastUsedAt: dateAt(-1, '07:05:00'),
     })
     .onConflictDoNothing();
 
@@ -744,7 +747,7 @@ async function insertEventsAndFacts(tx: SeedTx): Promise<void> {
         statement: row.statement,
         confidence: 0.94,
         modelVersion: DEMO_FIXTURE_VERSION,
-        extractedAt: NOW,
+        extractedAt: seedNow(),
       })),
     )
     .onConflictDoUpdate({
@@ -810,7 +813,7 @@ async function insertObjects(tx: SeedTx): Promise<void> {
         ownerUserId: row.ownerUserId ?? null,
         assigneeUserId: row.assigneeUserId ?? null,
         dueAt: row.dueAt ? new Date(row.dueAt) : null,
-        archivedAt: row.status === 'archived' ? NOW : null,
+        archivedAt: row.status === 'archived' ? seedNow() : null,
         sourceEventId: null,
         ...(row.type === 'task' && row.taskCategory
           ? {
@@ -820,7 +823,7 @@ async function insertObjects(tx: SeedTx): Promise<void> {
               taskCategoryStatus: 'ready' as const,
               taskCategoryAppliedInputHash: `demo-seed-task-${row.id}`,
               taskCategoryTaxonomyVersion: 'task-categories-v1',
-              taskCategoryUpdatedAt: NOW,
+              taskCategoryUpdatedAt: seedNow(),
             }
           : {}),
       })),
@@ -846,7 +849,7 @@ async function insertObjects(tx: SeedTx): Promise<void> {
         taskCategoryTaxonomyVersion: sql`excluded.task_category_taxonomy_version`,
         taskCategoryUpdatedAt: sql`excluded.task_category_updated_at`,
         sourceEventId: null,
-        updatedAt: NOW,
+        updatedAt: seedNow(),
       },
     });
 
@@ -883,7 +886,7 @@ async function insertObjects(tx: SeedTx): Promise<void> {
           normalizedValue: sql`excluded.normalized_value`,
           status: sql`excluded.status`,
           source: sql`excluded.source`,
-          updatedAt: NOW,
+          updatedAt: seedNow(),
           archivedAt: null,
         },
       });
@@ -953,8 +956,8 @@ async function insertObjects(tx: SeedTx): Promise<void> {
         entityId: row.entityId,
         authorUserId: row.authorUserId,
         body: row.body,
-        createdAt: NOW,
-        updatedAt: NOW,
+        createdAt: seedNow(),
+        updatedAt: seedNow(),
       })),
     )
     .onConflictDoUpdate({
@@ -962,7 +965,7 @@ async function insertObjects(tx: SeedTx): Promise<void> {
       set: {
         body: sql`excluded.body`,
         entityId: sql`excluded.entity_id`,
-        updatedAt: NOW,
+        updatedAt: seedNow(),
       },
     });
 
@@ -978,7 +981,7 @@ async function insertObjects(tx: SeedTx): Promise<void> {
         kind: row.kind,
         startOffset: row.startOffset,
         endOffset: row.endOffset,
-        createdAt: NOW,
+        createdAt: seedNow(),
       })),
     )
     .onConflictDoNothing();
@@ -999,7 +1002,7 @@ async function insertObjects(tx: SeedTx): Promise<void> {
           actor_user_id: row.actorUserId,
           actor_name: row.actorName,
         },
-        createdAt: NOW,
+        createdAt: seedNow(),
       })),
     )
     .onConflictDoNothing();
@@ -1057,7 +1060,7 @@ async function insertObjects(tx: SeedTx): Promise<void> {
           tasks: 0,
           changes: 0,
         },
-        generatedAt: NOW,
+        generatedAt: seedNow(),
         model: DEMO_FIXTURE_VERSION,
         promptVersion: DEMO_FIXTURE_VERSION,
       },
@@ -1118,7 +1121,7 @@ async function insertObjects(tx: SeedTx): Promise<void> {
           tasks: 1,
           changes: 0,
         },
-        generatedAt: NOW,
+        generatedAt: seedNow(),
         model: DEMO_FIXTURE_VERSION,
         promptVersion: DEMO_FIXTURE_VERSION,
       },
@@ -1298,7 +1301,7 @@ async function insertMeetings(tx: SeedTx): Promise<void> {
       teamId: TEAM_ID,
       meetingMinutesCap: 600,
       requireHostConsent: true,
-      updatedAt: NOW,
+      updatedAt: seedNow(),
     })
     .onConflictDoNothing();
 
@@ -1369,8 +1372,8 @@ async function insertMeetings(tx: SeedTx): Promise<void> {
         metadata: { fixture_version: DEMO_FIXTURE_VERSION, silent: true, consent_confirmed: true },
         scheduledStartAt: new Date(CORPUS_SAVED_MEETING.upcoming.scheduledStartAt),
         scheduledEndAt: new Date(CORPUS_SAVED_MEETING.upcoming.scheduledEndAt),
-        createdAt: NOW,
-        updatedAt: NOW,
+        createdAt: seedNow(),
+        updatedAt: seedNow(),
       },
     ])
     .onConflictDoUpdate({
@@ -1384,7 +1387,7 @@ async function insertMeetings(tx: SeedTx): Promise<void> {
         endedAt: sql`excluded.ended_at`,
         scheduledStartAt: sql`excluded.scheduled_start_at`,
         scheduledEndAt: sql`excluded.scheduled_end_at`,
-        updatedAt: NOW,
+        updatedAt: seedNow(),
       },
     });
 
@@ -1574,8 +1577,8 @@ async function insertProposals(tx: SeedTx): Promise<void> {
         dedupeKey: `demo-seed:proposal:${row.id}`,
         visibility: 'team' as const,
         metadata: { fixture_version: DEMO_FIXTURE_VERSION },
-        createdAt: NOW,
-        updatedAt: NOW,
+        createdAt: seedNow(),
+        updatedAt: seedNow(),
       })),
     )
     .onConflictDoUpdate({
@@ -1586,7 +1589,7 @@ async function insertProposals(tx: SeedTx): Promise<void> {
         reason: sql`excluded.reason`,
         source: sql`excluded.source`,
         status: sql`excluded.status`,
-        updatedAt: NOW,
+        updatedAt: seedNow(),
       },
     });
   await tx
@@ -1650,7 +1653,7 @@ async function insertProposals(tx: SeedTx): Promise<void> {
       dedupeKey: 'demo-seed:proposal:accepted-csv-replay',
       visibility: 'team',
       resolvedByUserId: CORPUS_PERSON.mika.id,
-      resolvedAt: new Date('2026-07-15T14:00:00.000Z'),
+      resolvedAt: dateAt(-30, '14:00:00'),
       metadata: { fixture_version: DEMO_FIXTURE_VERSION },
     })
     .onConflictDoNothing();
@@ -1673,7 +1676,7 @@ async function insertProposals(tx: SeedTx): Promise<void> {
         status: 'accepted',
       },
       resolvedByUserId: CORPUS_PERSON.mika.id,
-      resolvedAt: new Date('2026-07-15T14:00:00.000Z'),
+      resolvedAt: dateAt(-30, '14:00:00'),
     })
     .onConflictDoNothing();
 
@@ -1686,7 +1689,7 @@ async function insertProposals(tx: SeedTx): Promise<void> {
       source: 'slack',
       status: 'pending',
       lastRawEventId: reviewEventId,
-      quietUntil: new Date('2026-08-14T18:30:00.000Z'),
+      quietUntil: dateAt(0, '18:30:00'),
       metadata: { fixture_version: DEMO_FIXTURE_VERSION, title: '#gtm' },
     })
     .onConflictDoUpdate({
@@ -1856,29 +1859,27 @@ async function insertDigests(tx: SeedTx): Promise<void> {
                     id: elenaTaskId,
                     title: 'Ping Elena Park on field-mapping',
                     status: 'todo',
-                    dueAt: '2026-08-19T15:00:00.000Z',
+                    dueAt: isoAt(5, '15:00:00'),
                     href: `/app/objects/${elenaTaskId}`,
                   },
                   {
                     id: quoteTaskId,
                     title: 'Write Avery webinar quote',
                     status: 'todo',
-                    dueAt: '2026-08-18T12:00:00.000Z',
+                    dueAt: isoAt(4, '12:00:00'),
                     href: `/app/objects/${quoteTaskId}`,
                   },
                   {
                     id: webinarTaskId,
                     title: 'Lock webinar run of show',
                     status: 'todo',
-                    dueAt: '2026-08-18T13:00:00.000Z',
+                    dueAt: isoAt(4, '13:00:00'),
                     href: `/app/objects/${webinarTaskId}`,
                   },
                 ]
               : [],
             upcomingCalendar: isLatest
-              ? CORPUS_CALENDAR_EVENTS.filter(
-                  (event) => event.startAt >= '2026-08-15T00:00:00.000Z',
-                )
+              ? CORPUS_CALENDAR_EVENTS.filter((event) => event.startAt >= isoAt(1, '00:00:00'))
                   .slice(0, 4)
                   .map((event) => ({
                     id: event.id,
@@ -1934,7 +1935,7 @@ async function insertPinsNotesOnboarding(tx: SeedTx): Promise<void> {
         teamId: TEAM_ID,
         step,
         completedByUserId: DEMO_IDS.owner,
-        completedAt: new Date('2026-07-10T12:00:00.000Z'),
+        completedAt: dateAt(-35, '12:00:00'),
       })),
     )
     .onConflictDoNothing();
@@ -1944,7 +1945,7 @@ async function insertPinsNotesOnboarding(tx: SeedTx): Promise<void> {
     .values({
       teamId: TEAM_ID,
       userId: DEMO_IDS.owner,
-      dismissedAt: new Date('2026-07-10T12:05:00.000Z'),
+      dismissedAt: dateAt(-35, '12:05:00'),
     })
     .onConflictDoNothing();
 }

@@ -2,6 +2,14 @@ import { createHash } from 'node:crypto';
 
 import { PRIVACY_VERSION, TERMS_VERSION } from '@timeline/shared/legal-versions';
 
+import {
+  DEMO_CLOCK_ANCHOR,
+  DEMO_TIME_OFFSETS,
+  isoAt,
+  resolveDemoTime,
+  type DemoTimeOffset,
+} from './demo-clock.js';
+
 export const LOCAL_DEV_SEED_OVERRIDE = 'I_UNDERSTAND_THIS_SEEDS_KNOWN_DEV_CREDENTIALS';
 export const LOCAL_DEV_SEED_STORAGE_OVERRIDE =
   'I_UNDERSTAND_THIS_WRITES_DEMO_DATA_TO_ISOLATED_STORAGE';
@@ -47,14 +55,36 @@ export const DEMO_IDS = {
   documentChunk: '44000000-0000-4000-8000-000000000003',
   meeting: '55000000-0000-4000-8000-000000000001',
   meetingChunk: '55000000-0000-4000-8000-000000000002',
+  emptyUser: '10000000-0000-4000-8000-000000000010',
+  emptyTeam: '20000000-0000-4000-8000-000000000010',
 } as const;
 
-export const DEMO_TIMES = {
-  note: '2026-07-06T09:00:00.000Z',
-  email: '2026-07-07T10:30:00.000Z',
-  meeting: '2026-07-08T15:00:00.000Z',
-  provider: '2026-07-09T16:15:00.000Z',
+export const EMPTY_DEMO_LOGIN = {
+  id: DEMO_IDS.emptyUser,
+  name: 'Noah Blake',
+  email: 'onboarding@timeline.dev',
+  role: 'owner' as const,
+  teamSlug: 'blank-workspace',
+  teamName: "Noah Blake's Team",
 } as const;
+
+export function getDemoTimes(): {
+  note: string;
+  email: string;
+  meeting: string;
+  meetingEnd: string;
+  provider: string;
+} {
+  return {
+    note: isoAt(DEMO_TIME_OFFSETS.note.days, DEMO_TIME_OFFSETS.note.time),
+    email: isoAt(DEMO_TIME_OFFSETS.email.days, DEMO_TIME_OFFSETS.email.time),
+    meeting: isoAt(DEMO_TIME_OFFSETS.meeting.days, DEMO_TIME_OFFSETS.meeting.time),
+    meetingEnd: isoAt(DEMO_TIME_OFFSETS.meetingEnd.days, DEMO_TIME_OFFSETS.meetingEnd.time),
+    provider: isoAt(DEMO_TIME_OFFSETS.provider.days, DEMO_TIME_OFFSETS.provider.time),
+  };
+}
+
+export let DEMO_TIMES = getDemoTimes();
 
 export const DEMO_LOGINS = [
   {
@@ -95,40 +125,58 @@ export const DEMO_FACTS = {
   status: 'The Northstar pilot export task is currently blocked and owned by Mika.',
 } as const;
 
-export const DEMO_EVENTS = [
-  {
-    id: DEMO_IDS.eventNote,
-    source: 'slack',
-    contentText:
-      'Explicit note from Avery: Northstar pilot review is July 15. Keep the export path narrow and evidence-backed.',
-    occurredAt: DEMO_TIMES.note,
-    sourcePayloadRef: DEMO_SOURCE_REFS.note,
-  },
-  {
-    id: DEMO_IDS.eventEmail,
-    source: 'email',
-    contentText:
-      'Email from Elena Park at Northstar Works: We will send the final sample export by July 8 for the pilot review. Attached: Northstar pilot handoff brief.',
-    occurredAt: DEMO_TIMES.email,
-    sourcePayloadRef: DEMO_SOURCE_REFS.email,
-  },
-  {
-    id: DEMO_IDS.eventMeeting,
-    source: 'meeting',
-    contentText:
-      'Northstar pilot review transcript: Avery handed export validation to Mika. The team decided to use the CSV fallback. Field-mapping confirmation remains unresolved.',
-    occurredAt: DEMO_TIMES.meeting,
-    sourcePayloadRef: DEMO_SOURCE_REFS.meeting,
-  },
-  {
-    id: DEMO_IDS.eventProvider,
-    source: 'integration',
-    contentText:
-      'Linear issue NORTH-42 moved to Blocked: Validate Northstar pilot export. Owner: Mika. Blocker: waiting for field-mapping confirmation.',
-    occurredAt: DEMO_TIMES.provider,
-    sourcePayloadRef: DEMO_SOURCE_REFS.provider,
-  },
-] as const;
+export interface DemoSeedEvent {
+  id: string;
+  source: string;
+  contentText: string;
+  occurredAt: string;
+  sourcePayloadRef: string;
+}
+
+function buildDemoEvents(): DemoSeedEvent[] {
+  const times = getDemoTimes();
+  return [
+    {
+      id: DEMO_IDS.eventNote,
+      source: 'slack',
+      contentText:
+        'Explicit note from Avery: Northstar pilot review is July 15. Keep the export path narrow and evidence-backed.',
+      occurredAt: times.note,
+      sourcePayloadRef: DEMO_SOURCE_REFS.note,
+    },
+    {
+      id: DEMO_IDS.eventEmail,
+      source: 'email',
+      contentText:
+        'Email from Elena Park at Northstar Works: We will send the final sample export by July 8 for the pilot review. Attached: Northstar pilot handoff brief.',
+      occurredAt: times.email,
+      sourcePayloadRef: DEMO_SOURCE_REFS.email,
+    },
+    {
+      id: DEMO_IDS.eventMeeting,
+      source: 'meeting',
+      contentText:
+        'Northstar pilot review transcript: Avery handed export validation to Mika. The team decided to use the CSV fallback. Field-mapping confirmation remains unresolved.',
+      occurredAt: times.meeting,
+      sourcePayloadRef: DEMO_SOURCE_REFS.meeting,
+    },
+    {
+      id: DEMO_IDS.eventProvider,
+      source: 'integration',
+      contentText:
+        'Linear issue NORTH-42 moved to Blocked: Validate Northstar pilot export. Owner: Mika. Blocker: waiting for field-mapping confirmation.',
+      occurredAt: times.provider,
+      sourcePayloadRef: DEMO_SOURCE_REFS.provider,
+    },
+  ];
+}
+
+export let DEMO_EVENTS = buildDemoEvents();
+
+export function refreshDemoFixture(): void {
+  DEMO_TIMES = getDemoTimes();
+  DEMO_EVENTS = buildDemoEvents();
+}
 
 export const DEMO_ENTITIES = [
   {
@@ -355,6 +403,23 @@ export interface DemoFixtureSnapshot {
   };
 }
 
+export interface EmptyDemoWorkspaceSnapshot {
+  workspace: { id: string; slug: string; name: string } | null;
+  login: DemoLoginSnapshot | null;
+  eventCount: number;
+  documentCount: number;
+  meetingCount: number;
+  objectCount: number;
+  integrationCount: number;
+  ownedConnectionCount: number;
+  pendingProposalCount: number;
+  calendarEventCount: number;
+  onboardingDismissed: boolean;
+  completedOnboardingSteps: string[];
+  billingPlanId: string | null;
+  billingState: string | null;
+}
+
 export function assertDemoFixture(snapshot: DemoFixtureSnapshot): void {
   const errors: string[] = [];
   const fail = (message: string): void => {
@@ -363,6 +428,28 @@ export function assertDemoFixture(snapshot: DemoFixtureSnapshot): void {
   const expectValue = (label: string, actual: unknown, expected: unknown): void => {
     if (!sameValue(actual, expected))
       fail(`${label}: expected ${show(expected)}, got ${show(actual)}`);
+  };
+  const expectRelativeOffset = (
+    label: string,
+    actualIso: string | null | undefined,
+    referenceIso: string | null | undefined,
+    actualOffset: DemoTimeOffset,
+    referenceOffset: DemoTimeOffset,
+  ): void => {
+    if (!actualIso || !referenceIso) {
+      fail(`${label}: missing timestamp`);
+      return;
+    }
+    const dummy = DEMO_CLOCK_ANCHOR;
+    const actualDelta = Date.parse(actualIso) - Date.parse(referenceIso);
+    const expectedDelta =
+      resolveDemoTime(dummy, actualOffset).getTime() -
+      resolveDemoTime(dummy, referenceOffset).getTime();
+    if (actualDelta !== expectedDelta) {
+      fail(
+        `${label}: expected ${String(expectedDelta)}ms from reference, got ${String(actualDelta)}ms`,
+      );
+    }
   };
 
   expectValue('workspace id', snapshot.workspace?.id, DEMO_IDS.team);
@@ -409,7 +496,24 @@ export function assertDemoFixture(snapshot: DemoFixtureSnapshot): void {
     expectValue(`${expected.id} team`, row.teamId, DEMO_IDS.team);
     expectValue(`${expected.id} source`, row.source, expected.source);
     expectValue(`${expected.id} content`, row.contentText, expected.contentText);
-    expectValue(`${expected.id} occurred_at`, row.occurredAt, expected.occurredAt);
+    const noteOccurredAt = snapshot.events.find(
+      (candidate) => candidate.id === DEMO_IDS.eventNote,
+    )?.occurredAt;
+    const eventOffset =
+      expected.id === DEMO_IDS.eventNote
+        ? DEMO_TIME_OFFSETS.note
+        : expected.id === DEMO_IDS.eventEmail
+          ? DEMO_TIME_OFFSETS.email
+          : expected.id === DEMO_IDS.eventMeeting
+            ? DEMO_TIME_OFFSETS.meeting
+            : DEMO_TIME_OFFSETS.provider;
+    expectRelativeOffset(
+      `${expected.id} occurred_at`,
+      row.occurredAt,
+      noteOccurredAt,
+      eventOffset,
+      DEMO_TIME_OFFSETS.note,
+    );
     expectTeamVisibility(errors, `raw event ${expected.id}`, row);
     expectValue(
       `${expected.id} fixture version`,
@@ -563,6 +667,7 @@ export function assertDemoFixture(snapshot: DemoFixtureSnapshot): void {
 
     const evidence = snapshot.evidence.find((row) => row.id === support.evidenceId);
     const event = DEMO_EVENTS.find((row) => row.id === support.eventId);
+    const eventRow = snapshot.events.find((row) => row.id === support.eventId);
     expectValue(`${support.label} evidence team`, evidence?.teamId, DEMO_IDS.team);
     expectValue(`${support.label} evidence raw event`, evidence?.rawEventId, support.eventId);
     expectValue(`${support.label} evidence source`, evidence?.source, event?.source);
@@ -571,7 +676,11 @@ export function assertDemoFixture(snapshot: DemoFixtureSnapshot): void {
       evidence?.sourcePayloadRef,
       event?.sourcePayloadRef,
     );
-    expectValue(`${support.label} evidence occurred_at`, evidence?.occurredAt, event?.occurredAt);
+    expectValue(
+      `${support.label} evidence occurred_at`,
+      evidence?.occurredAt,
+      eventRow?.occurredAt,
+    );
     expectValue(`${support.label} evidence visibility`, evidence?.visibility, 'team');
 
     const association = snapshot.associations.find((row) => row.id === support.associationId);
@@ -674,8 +783,17 @@ export function assertDemoFixture(snapshot: DemoFixtureSnapshot): void {
   expectValue('meeting team', snapshot.meeting?.teamId, DEMO_IDS.team);
   expectValue('meeting status', snapshot.meeting?.status, 'completed');
   expectValue('meeting visibility', snapshot.meeting?.defaultVisibility, 'team');
-  expectValue('meeting started_at', snapshot.meeting?.startedAt, DEMO_TIMES.meeting);
-  expectValue('meeting ended_at', snapshot.meeting?.endedAt, '2026-07-08T15:30:00.000Z');
+  const meetingEvent = snapshot.events.find((row) => row.id === DEMO_IDS.eventMeeting);
+  expectValue('meeting started_at', snapshot.meeting?.startedAt, meetingEvent?.occurredAt);
+  const meetingEndedAt =
+    meetingEvent === undefined
+      ? null
+      : new Date(
+          Date.parse(meetingEvent.occurredAt) +
+            (resolveDemoTime(DEMO_CLOCK_ANCHOR, DEMO_TIME_OFFSETS.meetingEnd).getTime() -
+              resolveDemoTime(DEMO_CLOCK_ANCHOR, DEMO_TIME_OFFSETS.meeting).getTime()),
+        ).toISOString();
+  expectValue('meeting ended_at', snapshot.meeting?.endedAt, meetingEndedAt);
   expectValue('meeting chunk id', snapshot.meeting?.chunkId, DEMO_IDS.meetingChunk);
   expectValue('meeting chunk meeting link', snapshot.meeting?.chunkMeetingId, DEMO_IDS.meeting);
   expectValue('meeting chunk raw event', snapshot.meeting?.chunkRawEventId, DEMO_IDS.eventMeeting);
@@ -725,6 +843,41 @@ export function assertDemoFixture(snapshot: DemoFixtureSnapshot): void {
 
   if (errors.length > 0) {
     throw new Error(`Demo fixture verification failed:\n- ${errors.join('\n- ')}`);
+  }
+}
+
+export function assertEmptyDemoWorkspace(snapshot: EmptyDemoWorkspaceSnapshot): void {
+  const errors: string[] = [];
+  const expectValue = (label: string, actual: unknown, expected: unknown): void => {
+    if (!sameValue(actual, expected))
+      errors.push(`${label}: expected ${show(expected)}, got ${show(actual)}`);
+  };
+
+  expectValue('empty workspace id', snapshot.workspace?.id, DEMO_IDS.emptyTeam);
+  expectValue('empty workspace slug', snapshot.workspace?.slug, EMPTY_DEMO_LOGIN.teamSlug);
+  expectValue('empty workspace name', snapshot.workspace?.name, EMPTY_DEMO_LOGIN.teamName);
+  expectValue('empty login id', snapshot.login?.id, EMPTY_DEMO_LOGIN.id);
+  expectValue('empty login name', snapshot.login?.name, EMPTY_DEMO_LOGIN.name);
+  expectValue('empty login email', snapshot.login?.email, EMPTY_DEMO_LOGIN.email);
+  expectValue('empty login team', snapshot.login?.teamId, DEMO_IDS.emptyTeam);
+  expectValue('empty login role', snapshot.login?.role, EMPTY_DEMO_LOGIN.role);
+  expectValue('empty login active membership', snapshot.login?.membershipActive, true);
+  expectValue('empty login password usability', snapshot.login?.passwordUsable, true);
+  expectValue('empty workspace events', snapshot.eventCount, 0);
+  expectValue('empty workspace documents', snapshot.documentCount, 0);
+  expectValue('empty workspace meetings', snapshot.meetingCount, 0);
+  expectValue('empty workspace objects', snapshot.objectCount, 0);
+  expectValue('empty workspace integrations', snapshot.integrationCount, 0);
+  expectValue('empty workspace provider connections', snapshot.ownedConnectionCount, 0);
+  expectValue('empty workspace pending proposals', snapshot.pendingProposalCount, 0);
+  expectValue('empty workspace calendar events', snapshot.calendarEventCount, 0);
+  expectValue('empty workspace onboarding dismissed', snapshot.onboardingDismissed, false);
+  expectValue('empty workspace completed onboarding', snapshot.completedOnboardingSteps, []);
+  expectValue('empty workspace billing plan', snapshot.billingPlanId, 'free');
+  expectValue('empty workspace billing state', snapshot.billingState, 'free');
+
+  if (errors.length > 0) {
+    throw new Error(`Empty onboarding workspace verification failed:\n- ${errors.join('\n- ')}`);
   }
 }
 

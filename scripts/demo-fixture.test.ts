@@ -2,9 +2,18 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
 import {
+  DEMO_CLOCK_ANCHOR,
+  DEMO_TIME_OFFSETS,
+  dateAt,
+  demoTimes,
+  isoAt,
+  setDemoSeedNow,
+} from './demo-clock.js';
+import {
   assertDemoFixture,
   assertDemoSeedEnvironment,
   assertDemoVectorEnvironment,
+  assertEmptyDemoWorkspace,
   DEMO_DOCUMENT_BYTE_SIZE,
   DEMO_DOCUMENT_CHECKSUM_SHA256,
   DEMO_DOCUMENT_CONTENT_TYPE,
@@ -15,7 +24,11 @@ import {
   DEMO_FACTS,
   DEMO_FIXTURE_VERSION,
   DEMO_IDS,
+  EMPTY_DEMO_LOGIN,
+  getDemoTimes,
+  refreshDemoFixture,
   type DemoFixtureSnapshot,
+  type EmptyDemoWorkspaceSnapshot,
 } from './demo-fixture.js';
 import {
   buildCadenceBeats,
@@ -804,3 +817,93 @@ function validSnapshot(): DemoFixtureSnapshot {
     },
   };
 }
+
+function validEmptySnapshot(): EmptyDemoWorkspaceSnapshot {
+  return {
+    workspace: {
+      id: DEMO_IDS.emptyTeam,
+      slug: EMPTY_DEMO_LOGIN.teamSlug,
+      name: EMPTY_DEMO_LOGIN.teamName,
+    },
+    login: {
+      id: EMPTY_DEMO_LOGIN.id,
+      name: EMPTY_DEMO_LOGIN.name,
+      email: EMPTY_DEMO_LOGIN.email,
+      teamId: DEMO_IDS.emptyTeam,
+      role: EMPTY_DEMO_LOGIN.role,
+      membershipActive: true,
+      passwordUsable: true,
+    },
+    eventCount: 0,
+    documentCount: 0,
+    meetingCount: 0,
+    objectCount: 0,
+    integrationCount: 0,
+    ownedConnectionCount: 0,
+    pendingProposalCount: 0,
+    calendarEventCount: 0,
+    onboardingDismissed: false,
+    completedOnboardingSteps: [],
+    billingPlanId: 'free',
+    billingState: 'free',
+  };
+}
+
+assert.doesNotThrow(() => assertEmptyDemoWorkspace(validEmptySnapshot()));
+
+{
+  const snapshot = validEmptySnapshot();
+  snapshot.eventCount = 1;
+  assert.throws(() => assertEmptyDemoWorkspace(snapshot), /empty workspace events/);
+}
+
+{
+  const snapshot = validEmptySnapshot();
+  snapshot.completedOnboardingSteps = ['first_note'];
+  assert.throws(() => assertEmptyDemoWorkspace(snapshot), /empty workspace completed onboarding/);
+}
+
+{
+  const snapshot = validEmptySnapshot();
+  if (snapshot.login) snapshot.login.email = 'owner@timeline.dev';
+  assert.throws(() => assertEmptyDemoWorkspace(snapshot), /empty login email/);
+}
+
+const anchoredTimes = demoTimes(DEMO_CLOCK_ANCHOR);
+assert.equal(isoAt(-39, '09:00:00', DEMO_CLOCK_ANCHOR), '2026-07-06T09:00:00.000Z');
+assert.equal(isoAt(-38, '10:30:00', DEMO_CLOCK_ANCHOR), '2026-07-07T10:30:00.000Z');
+assert.equal(isoAt(-37, '15:00:00', DEMO_CLOCK_ANCHOR), '2026-07-08T15:00:00.000Z');
+assert.equal(isoAt(-37, '15:30:00', DEMO_CLOCK_ANCHOR), '2026-07-08T15:30:00.000Z');
+assert.equal(isoAt(-36, '16:15:00', DEMO_CLOCK_ANCHOR), '2026-07-09T16:15:00.000Z');
+assert.ok(anchoredTimes.note.getTime() < anchoredTimes.email.getTime());
+assert.ok(anchoredTimes.email.getTime() < anchoredTimes.meeting.getTime());
+assert.ok(anchoredTimes.meeting.getTime() < anchoredTimes.meetingEnd.getTime());
+assert.ok(anchoredTimes.meetingEnd.getTime() < anchoredTimes.provider.getTime());
+assert.equal(anchoredTimes.meetingEnd.getTime() - anchoredTimes.meeting.getTime(), 30 * 60 * 1000);
+
+const shiftedNow = new Date('2026-11-03T18:00:00.000Z');
+try {
+  setDemoSeedNow(shiftedNow);
+  refreshDemoFixture();
+  const shifted = getDemoTimes();
+  assert.equal(
+    shifted.note,
+    isoAt(DEMO_TIME_OFFSETS.note.days, DEMO_TIME_OFFSETS.note.time, shiftedNow),
+  );
+  assert.equal(shifted.meeting, '2026-09-27T15:00:00.000Z');
+  assert.equal(CADENCE_RANGE.end, '2026-11-03');
+  assert.equal(CADENCE_RANGE.start, '2026-10-03');
+  assert.equal(dateAt(0, '18:00:00', shiftedNow).toISOString(), shiftedNow.toISOString());
+  const noteMs = Date.parse(shifted.note);
+  const emailMs = Date.parse(shifted.email);
+  const meetingMs = Date.parse(shifted.meeting);
+  assert.ok(noteMs < emailMs);
+  assert.ok(emailMs < meetingMs);
+} finally {
+  setDemoSeedNow(DEMO_CLOCK_ANCHOR);
+  refreshDemoFixture();
+}
+
+assert.equal(CADENCE_RANGE.start, '2026-07-14');
+assert.equal(CADENCE_RANGE.end, '2026-08-14');
+assert.equal(getDemoTimes().meeting, '2026-07-08T15:00:00.000Z');

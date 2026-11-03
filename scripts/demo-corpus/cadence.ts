@@ -1,5 +1,7 @@
 import { timelineGroupKey } from '@timeline/shared/timeline-moments';
 
+import { cadenceRange, isoAt } from '../demo-clock.js';
+
 import { CORPUS_UUID } from './ids.js';
 import type { CorpusPerson } from './people.js';
 
@@ -24,7 +26,20 @@ export interface CadenceBeat {
   payloadRef: string;
 }
 
-export const CADENCE_RANGE = { start: '2026-07-14', end: '2026-08-14' } as const;
+export function getCadenceRange(): { start: string; end: string } {
+  return cadenceRange();
+}
+
+/** Live cadence window; getters re-read the demo clock so tests stay on the fixture anchor. */
+export const CADENCE_RANGE: { readonly start: string; readonly end: string } = {
+  get start() {
+    return getCadenceRange().start;
+  },
+  get end() {
+    return getCadenceRange().end;
+  },
+};
+
 export const CADENCE_WEEKDAY_EVENT_FLOOR = 90;
 export const CADENCE_WEEKDAY_MOMENT_CEILING = 32;
 
@@ -751,7 +766,7 @@ export function buildCadenceBeats(): CadenceBeat[] {
   push({
     author: 'avery',
     source: 'meeting',
-    occurredAt: '2026-07-14T09:32:00.000Z',
+    occurredAt: isoAt(-31, '09:32:00'),
     contentText:
       'Meeting "Weekly product standup" completed on Google Meet. Importer 500s are the week-one fire. Northstar field-mapping is already the longer blocker.',
     extra: {
@@ -762,10 +777,11 @@ export function buildCadenceBeats(): CadenceBeat[] {
     payloadRef: 'inline://timeline/demo-seed/meeting/standup-2026-07-14',
   });
 
-  for (const [dayIndex, day] of weekdayDates(CADENCE_RANGE.start, CADENCE_RANGE.end).entries()) {
+  const range = getCadenceRange();
+  for (const [dayIndex, day] of weekdayDates(range.start, range.end).entries()) {
     pushWorkday(push, day, dayIndex);
   }
-  for (const [dayIndex, day] of weekendDates(CADENCE_RANGE.start, CADENCE_RANGE.end).entries()) {
+  for (const [dayIndex, day] of weekendDates(range.start, range.end).entries()) {
     pushWeekend(push, day, dayIndex);
   }
 

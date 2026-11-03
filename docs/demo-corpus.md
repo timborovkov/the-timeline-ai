@@ -37,12 +37,24 @@ virtualization tests. It runs after the verified corpus and is not part of
 A development `OPENROUTER_API_KEY` is required so search vectors are real. Documents
 are marked `embedded` only after Qdrant confirms the points. Verification checks every
 seeded login password, downloads document bytes and hashes them (same-size tampering
-fails), confirms Northstar search hits, and confirms every expanded-corpus document
-version is `embedded` with a Qdrant point for each corpus chunk id.
+fails), confirms Northstar search hits, confirms every expanded-corpus document
+version is `embedded` with a Qdrant point for each corpus chunk id, and confirms the
+empty onboarding team has no events, integrations, or completed checklist steps.
+
+Fixture timestamps are relative offsets from seed time (meeting 37 days ago, follow-up
+email the next morning, cadence covering the last 31 days). Related times stay in the
+same order when the clock moves. Tests pin the historical authoring anchor
+(14 August 2026 18:00 UTC) so cadence floors stay deterministic.
 
 ## Logins
 
 Password for every seeded member: `timeline-dev`
+
+### Acme Labs
+
+Start product demos as Avery (`owner@timeline.dev`). Mika is the product counterpart on
+the Northstar pilot. The other six people exist so boards, hiring, GTM, and Ask history
+look like a month of active use.
 
 | Email | Role | Title |
 | --- | --- | --- |
@@ -55,15 +67,21 @@ Password for every seeded member: `timeline-dev`
 | `quinn@timeline.dev` | member | People operations (Quinn Okonkwo) |
 | `harper@timeline.dev` | member | Finance lead (Harper Singh) |
 
-Start demos as Avery (`owner@timeline.dev`). Mika is the product counterpart on the
-Northstar pilot. The other six people exist so boards, hiring, GTM, and Ask history
-look like a month of active use.
+### Empty onboarding team
+
+Use this login to capture first-run onboarding screens. Nothing is connected: no
+timeline events, integrations, documents, meetings, objects, proposals, or completed
+checklist steps.
+
+| Email | Role | Team |
+| --- | --- | --- |
+| `onboarding@timeline.dev` | owner (Noah Blake) | Noah Blake's Team (`blank-workspace`) |
 
 ## Story
 
 Acme Labs is an eight-person startup building **Atlas**, an evidence-backed working
-history product. They have been using Timeline itself for about a month (mid-July
-through 14 August 2026).
+history product. They have been using Timeline itself for about a month ending on the
+day you seed.
 
 The through-line:
 
@@ -87,6 +105,10 @@ The through-line:
 
 Ask “what did the team achieve last week?” as Avery to walk the cited recap.
 
+Named dates in the story copy (19 August, 15 August, and so on) keep the original
+authoring voice. Column timestamps, ISO times in event content, calendar starts,
+and digest windows follow the seed clock so the live workspace stays recent.
+
 ## Seeded surfaces
 
 | Surface | What you should see |
@@ -95,10 +117,10 @@ Ask “what did the team achieve last week?” as Avery to walk the cited recap.
 | Objects | Tasks, deals, companies, people, decisions, incidents, hiring loops, follow-ups, projects |
 | Boards | Atlas Launch (tasks plus launch work), Customer dealflow, Series A funding |
 | Documents | Code of conduct, office rules, DPA excerpt, MSA excerpt, contractor excerpt, strategy memo, one-pager, pitch narrative, onboarding, brand voice, security FAQ, plus the Northstar handoff brief |
-| Meetings | Weekly standups from 14 July through 11 August, importer incident review, Northwind partner meeting, Brightline scoping, Maya Chen interview; saved weekly standup with auto-join and a scheduled 18 August occurrence |
+| Meetings | Weekly standups across the last month, importer incident review, Northwind partner meeting, Brightline scoping, Maya Chen interview; saved weekly standup with auto-join and a scheduled occurrence a few days out |
 | Ask | Nine historic sessions with `[ev:…]` / `[ent:…]` citation chips, including last-week recap, Northstar status, a Northstar handoff brief, dealflow, hiring, webinar blockers, and the code of conduct |
 | Approvals | Fourteen pending proposals plus one already-accepted CSV-replay decision |
-| Digests | Twenty weekdays of Avery’s daily digest history. The 14 August digest includes Highlights / Status / Follow-ups, open tasks, and upcoming calendar. Live digest send stays off so the worker can run without Resend, Slack, or Telegram delivery. Team settings still show the default email destination plus disabled Slack `#product` and Telegram “Acme leadership” destinations. |
+| Digests | Twenty weekdays of Avery’s daily digest history. The most recent digest includes Highlights / Status / Follow-ups, open tasks, and upcoming calendar. Live digest send stays off so the worker can run without Resend, Slack, or Telegram delivery. Team settings still show the default email destination plus disabled Slack `#product` and Telegram “Acme leadership” destinations. |
 | Setup | Team checklist completed and dismissed for Avery |
 | Capture | Slack `#product` `#gtm` `#eng` `#hiring`, Telegram “Acme leadership” group, Avery’s Telegram DM plus a transcribed voice memo, inbound email whitelist, Ledger webhook (Timeline type: status pulse) |
 
