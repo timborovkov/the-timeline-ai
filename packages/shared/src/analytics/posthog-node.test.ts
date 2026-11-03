@@ -248,3 +248,39 @@ describe('PostHog Node analytics helper', () => {
     expect(shutdown).toHaveBeenCalledTimes(2);
   });
 });
+
+it('uses reviewed configuration for lifecycle events and never blocks billing on delivery failure', async () => {
+  const previous = { ...process.env };
+  try {
+    process.env.POSTHOG_PROJECT_KEY = 'ph-test';
+    process.env.POSTHOG_HOST = 'https://eu.i.posthog.com';
+    process.env.ANALYTICS_PSEUDONYMIZATION_KEY = 'a'.repeat(32);
+    const analytics = await (import(
+      freshModuleUrl(import.meta.resolve('#src/analytics/posthog-node.js'))
+    ) as Promise<typeof TestModule1>);
+    await analytics.captureConfiguredProductEvent(
+      { kind: 'team', teamId: 'team-1' },
+      'billing_plan_activated',
+      { plan: 'payg' },
+    );
+    expect(captureImmediate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: 'billing_plan_activated',
+        distinctId: analytics.pseudonymizeAnalyticsId('a'.repeat(32), 'team', 'team-1'),
+        properties: expect.objectContaining({ plan: 'payg' }) as unknown,
+      }),
+    );
+    captureImmediate.mockRejectedValueOnce(new Error('provider unavailable'));
+    await expect(
+      analytics.captureConfiguredProductEvent(
+        { kind: 'team', teamId: 'team-1' },
+        'paid_usage_recorded',
+        { meter: 'ai' },
+      ),
+    ).resolves.toBeUndefined();
+    await analytics.shutdownPostHogNodeClients();
+  } finally {
+    process.env = previous;
+    vi.clearAllMocks();
+  }
+});

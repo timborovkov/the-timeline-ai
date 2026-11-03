@@ -4,6 +4,7 @@ import type { Metadata } from 'next';
 
 import { AuthShell } from '@/components/auth-shell';
 import { Button } from '@/components/ui/button';
+import { selectedPlanCallback } from '@/lib/auth-redirect';
 import { db } from '@/lib/db';
 import { verifyEmailToken } from '@/lib/email-verification';
 
@@ -17,18 +18,19 @@ export default async function VerifyEmailPage({
   searchParams,
 }: {
   params: Promise<{ token: string }>;
-  searchParams: Promise<{ email?: string }>;
+  searchParams: Promise<{ email?: string; plan?: string }>;
 }) {
   const [{ token }, query] = await Promise.all([params, searchParams]);
   const email = typeof query.email === 'string' ? query.email : '';
   const result = email ? await verifyEmailToken({ db, email, token }) : 'invalid';
+  const callback = selectedPlanCallback(query.plan);
   const copy =
     result === 'verified'
       ? {
           title: 'Email verified',
           body: 'Thanks. This email address is now confirmed for your Timeline account.',
-          action: 'Open dashboard',
-          href: '/app',
+          action: callback ? 'Continue to billing' : 'Open dashboard',
+          href: callback ? `/sign-in?callbackUrl=${encodeURIComponent(callback)}` : '/app',
         }
       : result === 'expired'
         ? {

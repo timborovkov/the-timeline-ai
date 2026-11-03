@@ -1,7 +1,11 @@
 import { expect } from '@timeline/test-support';
 import { afterEach, describe, it } from 'bun:test';
 
-import { signedInAuthRedirect, selectedPlanCallback } from '@/lib/auth-redirect';
+import {
+  signedInAuthRedirect,
+  selectedPlanCallback,
+  selectedPlanFromCallback,
+} from '@/lib/auth-redirect';
 const ENV_BACKUP = { ...process.env };
 
 afterEach(() => {
@@ -55,4 +59,14 @@ describe('pricing plan intent', () => {
     expect(selectedPlanCallback('enterprise')).toBeUndefined();
     expect(selectedPlanCallback(['payg'])).toBeUndefined();
   });
+});
+
+it('carries only fixed plan destinations into verification emails', () => {
+  expect(selectedPlanFromCallback(selectedPlanCallback('payg'))).toBe('payg');
+  expect(selectedPlanFromCallback('/app/team?plan=payg&section=billing')).toBe('payg');
+  expect(selectedPlanFromCallback('https://evil.test/app/team?plan=payg')).toBeUndefined();
+  expect(
+    selectedPlanFromCallback('/app/team?section=billing&plan=enterprise#change-plan'),
+  ).toBeUndefined();
+  expect(selectedPlanFromCallback('/accept-invite/token')).toBeUndefined();
 });

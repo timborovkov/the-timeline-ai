@@ -145,6 +145,25 @@ const PRODUCT_EVENT_SCHEMAS = {
       attributionCampaign: z.enum(PUBLIC_ATTRIBUTION_CAMPAIGNS).optional(),
     })
     .strict(),
+  billing_checkout_created: z.object({ plan: z.enum(['payg', 'team', 'business']) }).strict(),
+  billing_plan_activated: z
+    .object({ plan: z.enum(['payg', 'team', 'business', 'enterprise']) })
+    .strict(),
+  paid_usage_recorded: z
+    .object({
+      meter: z.enum([
+        'ai',
+        'recall_minutes',
+        'email_units',
+        'storage_gb_month',
+        'member_days',
+        'accepted_sources',
+      ]),
+    })
+    .strict(),
+  source_indexed: z.object({ source: z.enum(['event', 'fact', 'object', 'other']) }).strict(),
+  reference_preview_loaded: z.object({}).strict(),
+  email_verified: z.object({}).strict(),
   authentication_succeeded: z.object({ method: z.enum(['credentials', 'github']) }).strict(),
   team_created: z
     .object({ source: z.enum(['signup', 'oauth', 'manual', 'invite_fallback']) })
@@ -337,6 +356,30 @@ function metadata(purpose: string, trigger: string): ProductEventMetadata {
 
 export const PRODUCT_EVENT_METADATA: Record<ProductEventName, ProductEventMetadata> = {
   account_registered: metadata('Measure account acquisition.', 'An account is created.'),
+  billing_checkout_created: metadata(
+    'Understand paid-plan intent.',
+    'A self-serve billing session is created successfully; not a confirmed purchase.',
+  ),
+  billing_plan_activated: metadata(
+    'Understand paid-plan adoption.',
+    'A committed Polar webhook changes the account into an active plan.',
+  ),
+  paid_usage_recorded: metadata(
+    'Understand chargeable usage adoption.',
+    'A new non-shadow ledger settlement has a positive invoice amount; not proof of payment collection.',
+  ),
+  source_indexed: metadata(
+    'Understand capture availability.',
+    'All embedding chunks for a timeline event are persisted successfully; reindexing may repeat this event.',
+  ),
+  reference_preview_loaded: metadata(
+    'Understand use of supporting evidence.',
+    'An authorized artifact preview is returned; cached reopenings are not counted.',
+  ),
+  email_verified: metadata(
+    'Understand verification completion.',
+    'An email verification token is accepted.',
+  ),
   authentication_succeeded: metadata(
     'Measure successful authentication.',
     'Auth.js completes a sign-in.',

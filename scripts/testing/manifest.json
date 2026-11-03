@@ -875,6 +875,9 @@
   "apps/web/src/components/password-recovery-form.test.tsx": {
     "group": "dom"
   },
+  "apps/web/src/components/payg-value-nudge.test.tsx": {
+    "group": "dom"
+  },
   "apps/web/src/components/pins/pin-controls.test.tsx": {
     "group": "dom"
   },

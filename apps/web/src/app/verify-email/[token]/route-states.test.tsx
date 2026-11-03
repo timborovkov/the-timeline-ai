@@ -106,3 +106,26 @@ describe('VerifyEmail route states', () => {
     expect(reset).toHaveBeenCalledTimes(2);
   });
 });
+
+it('preserves an allowlisted plan through a verified email and fresh sign-in', async () => {
+  vi.mocked(verifyEmailToken).mockResolvedValueOnce('verified');
+  const html = renderToStaticMarkup(
+    await VerifyEmailPage({
+      params: Promise.resolve({ token: 'token' }),
+      searchParams: Promise.resolve({ email: 'user@example.test', plan: 'payg' }),
+    }),
+  );
+  expect(html).toContain('Continue to billing');
+  expect(html).toContain(
+    '/sign-in?callbackUrl=%2Fapp%2Fteam%3Fsection%3Dbilling%26plan%3Dpayg%23change-plan',
+  );
+  vi.mocked(verifyEmailToken).mockResolvedValueOnce('verified');
+  const invalid = renderToStaticMarkup(
+    await VerifyEmailPage({
+      params: Promise.resolve({ token: 'token' }),
+      searchParams: Promise.resolve({ email: 'user@example.test', plan: '//evil.test' }),
+    }),
+  );
+  expect(invalid).toContain('href="/app"');
+  expect(invalid).not.toContain('evil.test');
+});

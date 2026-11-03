@@ -13,8 +13,15 @@ await vi.mock(
   () => import('@timeline/shared/billing'),
 );
 
+const emailFakes = vi.hoisted(() => ({ send: vi.fn().mockResolvedValue({ ok: true }) }));
+await vi.mock(
+  import.meta.resolve('@timeline/shared/messaging'),
+  () => ({ sendMessage: emailFakes.send }),
+  () => import('@timeline/shared/messaging'),
+);
+
 const { claimOwnedTeamFreeGrantsForVerifiedUser } = await import('@timeline/shared/billing');
-const { retryOwnedTeamFreeGrantsAfterSignIn, verifyEmailToken } =
+const { retryOwnedTeamFreeGrantsAfterSignIn, verifyEmailToken, sendEmailVerification } =
   await import('@/lib/email-verification');
 
 beforeEach(() => {
@@ -158,4 +165,29 @@ describe('verifyEmailToken', () => {
     });
     expect(claimOwnedTeamFreeGrantsForVerifiedUser).not.toHaveBeenCalled();
   });
+});
+
+it('puts only allowlisted plan intent in verification emails', async () => {
+  const db = {
+    delete: () => ({ where: () => Promise.resolve([]) }),
+    insert: () => ({ values: () => Promise.resolve([]) }),
+  } as never;
+  await sendEmailVerification({
+    db,
+    userId: 'user-1',
+    email: 'USER@example.test',
+    callbackUrl: '/app/team?section=billing&plan=payg#change-plan',
+  });
+  const payload = emailFakes.send.mock.calls.at(-1)?.[1] as { verificationUrl: string };
+  expect(new URL(payload.verificationUrl).searchParams.get('plan')).toBe('payg');
+  expect(new URL(payload.verificationUrl).searchParams.get('email')).toBe('user@example.test');
+  await sendEmailVerification({
+    db,
+    userId: 'user-1',
+    email: 'user@example.test',
+    callbackUrl: 'https://evil.test',
+  });
+  const rejected = emailFakes.send.mock.calls.at(-1)?.[1] as { verificationUrl: string };
+  expect(new URL(rejected.verificationUrl).searchParams.has('plan')).toBe(false);
+  expect(rejected.verificationUrl).not.toContain('evil.test');
 });

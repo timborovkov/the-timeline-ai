@@ -21,6 +21,12 @@ describe('product analytics contract', () => {
     expect(Object.keys(PRODUCT_EVENT_METADATA).sort()).toEqual(
       [
         'account_registered',
+        'billing_checkout_created',
+        'billing_plan_activated',
+        'paid_usage_recorded',
+        'source_indexed',
+        'reference_preview_loaded',
+        'email_verified',
         'approval_decision_submitted',
         'agent_answer_generated',
         'authentication_succeeded',
@@ -167,4 +173,22 @@ describe('product analytics contract', () => {
       }),
     ).toThrow();
   });
+});
+
+it('keeps lifecycle event properties bounded and content-free', () => {
+  expect(validateProductEventProperties('billing_checkout_created', { plan: 'payg' })).toEqual({
+    plan: 'payg',
+  });
+  expect(() =>
+    validateProductEventProperties('billing_plan_activated', {
+      plan: 'payg',
+      customerId: 'private-id',
+    }),
+  ).toThrow();
+  expect(() =>
+    validateProductEventProperties('reference_preview_loaded', { title: 'private title' }),
+  ).toThrow();
+  expect(() =>
+    validateProductEventProperties('source_indexed', { source: 'private source name' }),
+  ).toThrow();
 });

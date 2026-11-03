@@ -181,6 +181,7 @@ export async function settleAskAiFromOpenRouterUsd(
     openRouterUsd: number;
     deliverySurface: string;
     model?: string;
+    providerUsageIncomplete?: boolean;
   },
 ): Promise<void> {
   const { providerCostCents, customerChargeExactCents } = customerAiChargeCentsFromOpenRouterUsd(
@@ -191,6 +192,9 @@ export async function settleAskAiFromOpenRouterUsd(
   // the reservation reserved so maintenance can retry without a new model call.
   await billing.patchReservationMetadata(input.operationId, {
     pending_settlement: true,
+    ...(input.providerUsageIncomplete
+      ? { provider_usage_incomplete: true, usage_incomplete_reason: 'stream_aborted' }
+      : {}),
     pending_openrouter_usd: input.openRouterUsd,
     pending_delivery_surface: input.deliverySurface,
     ...(input.model ? { pending_model: input.model } : {}),
@@ -208,6 +212,7 @@ export async function settleAskAiFromOpenRouterUsd(
     deliverySurface: input.deliverySurface,
     metadata: {
       openrouter_usd: input.openRouterUsd,
+      ...(input.providerUsageIncomplete ? { provider_usage_incomplete: true } : {}),
     },
   });
 }

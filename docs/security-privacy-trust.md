@@ -931,3 +931,17 @@ analytics, no-index/no-store/no-referrer policies, and sanitized error events.
 Provider-account tracking and retention evidence remains G-09; this feature makes
 no new provider-retention claim. Infrastructure access logs must not retain reset
 URL query parameters. Production delivery still requires operator verification.
+
+
+### MVP follow-up (2026-11-03)
+
+Verification emails may carry an allowlisted self-serve plan name, never an arbitrary
+redirect URL. The verified page routes through sign-in with a fixed billing destination;
+this does not authorize checkout. Product events remain on the existing content-free,
+pseudonymized server/worker path; see the analytics interface for exact limitations.
+The device-local PAYG dismissal is a UI preference, not analytics storage.
+
+Interrupted web Ask settlement waits for the SDK abort callback so completed-step
+usage is included. Unreported partial-step usage is marked incomplete in billing
+metadata and is not estimated from the reservation. Recovering costs the provider
+never reports remains unverified; no exact-cost guarantee is added.

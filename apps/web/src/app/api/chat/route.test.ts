@@ -233,6 +233,8 @@ const followUpMessage = {
 let capturedOnFinish: ((event: Record<string, unknown>) => void | Promise<void>) | null = null;
 let capturedOnError: ((event: { error: unknown }) => void) | null = null;
 let capturedOnStepEnd: ((step: Record<string, unknown>) => void) | null = null;
+let capturedOnAbort:
+  ((event: { steps: Record<string, unknown>[] }) => void | Promise<void>) | null = null;
 
 function request(
   body: unknown,
@@ -275,6 +277,7 @@ beforeEach(() => {
   capturedOnFinish = null;
   capturedOnError = null;
   capturedOnStepEnd = null;
+  capturedOnAbort = null;
   fakes.fakeOpenRouterUsdCost.mockReset();
   fakes.fakeOpenRouterUsdCost.mockImplementation(() => 0);
   delete process.env.E2E_DETERMINISTIC_CHAT;
@@ -373,10 +376,12 @@ beforeEach(() => {
       onError?: (event: { error: unknown }) => void;
       onEnd?: (event: Record<string, unknown>) => void | Promise<void>;
       onStepEnd?: (step: Record<string, unknown>) => void;
+      onAbort?: (event: { steps: Record<string, unknown>[] }) => void | Promise<void>;
     }) => {
       capturedOnError = input.onError ?? null;
       capturedOnFinish = input.onEnd ?? null;
       capturedOnStepEnd = input.onStepEnd ?? null;
+      capturedOnAbort = input.onAbort ?? null;
       return { stream: { kind: 'chat' } };
     },
   );
@@ -1403,6 +1408,8 @@ describe('POST /api/chat', () => {
 
     expect(fakes.fakeReportCaughtError).not.toHaveBeenCalled();
     expect(fakes.fakeReportHandledEvent).not.toHaveBeenCalled();
+    expect(settleAskAiFromOpenRouterUsd).not.toHaveBeenCalled();
+    await capturedOnAbort?.({ steps: [] });
     await vi.waitFor(() => {
       expect(settleAskAiFromOpenRouterUsd).toHaveBeenCalledWith(
         expect.objectContaining({}),
@@ -1558,6 +1565,8 @@ describe('POST /api/chat', () => {
     expect(response.status).toBe(200);
     expect(fakes.fakeStreamChat).toHaveBeenCalled();
     controller.abort();
+    expect(settleAskAiFromOpenRouterUsd).not.toHaveBeenCalled();
+    await capturedOnAbort?.({ steps: [] });
     await vi.waitFor(() => {
       expect(settleAskAiFromOpenRouterUsd).toHaveBeenCalledWith(
         expect.objectContaining({}),
@@ -1566,4 +1575,29 @@ describe('POST /api/chat', () => {
     });
     expect(releaseBillingReservation).not.toHaveBeenCalled();
   });
+});
+
+it('waits for SDK abort completion and charges the final completed step only once', async () => {
+  fakes.fakeOpenRouterUsdCost.mockImplementation(
+    (event: unknown) =>
+      (event as { providerMetadata?: { openrouter?: { usage?: { cost?: number } } } })
+        .providerMetadata?.openrouter?.usage?.cost ?? 0,
+  );
+  const controller = new AbortController();
+  await POST(
+    request(validBody({ sessionId: SESSION_ID }), 'https://timeline.test/api/chat', {
+      signal: controller.signal,
+    }),
+  );
+  controller.abort();
+  expect(settleAskAiFromOpenRouterUsd).not.toHaveBeenCalled();
+  const step = { providerMetadata: { openrouter: { usage: { cost: 0.12 } } } };
+  capturedOnStepEnd?.(step);
+  await capturedOnAbort?.({ steps: [step] });
+  await capturedOnAbort?.({ steps: [step] });
+  expect(settleAskAiFromOpenRouterUsd).toHaveBeenCalledTimes(1);
+  expect(settleAskAiFromOpenRouterUsd).toHaveBeenCalledWith(
+    expect.anything(),
+    expect.objectContaining({ openRouterUsd: 0.12, providerUsageIncomplete: true }),
+  );
 });

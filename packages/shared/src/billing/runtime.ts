@@ -1486,6 +1486,7 @@ export async function settlePendingBillingReservations(db: Db): Promise<number> 
         operationId: row.operationId,
         openRouterUsd,
         deliverySurface,
+        ...(metadata.provider_usage_incomplete === true ? { providerUsageIncomplete: true } : {}),
         ...(model ? { model } : {}),
       });
       settled += 1;
