@@ -53,10 +53,6 @@ export async function assertActivePrincipal(db: Db, teamId: string, userId?: str
     if (user?.suspendedAt) throw new PlatformAccessError('Account is suspended');
   }
 }
-function isTransactionClient(database: Db): boolean {
-  return /Transaction/i.test(database.constructor.name);
-}
-
 export async function guardTeamAccess(db: Db, teamId: string, userId: string, system = false) {
   const context = await operatorContext();
   if (context) {
@@ -71,10 +67,12 @@ export async function guardTeamAccess(db: Db, teamId: string, userId: string, sy
   if (!context && maintenanceStorage.getStore()) return;
   const admitted = admissionStorage.getStore();
   if (admitted?.teamId === teamId && admitted.userId === userId) return;
-  // Nested helpers may close over a transaction client. Querying that client
-  // again deadlocks a single-connection transaction (PGlite tests and some
-  // Postgres pool modes). The outer operation already admitted the principal.
-  if (isTransactionClient(db)) return;
+  // Nested helpers may close over a transaction client. Skip only after this
+  // principal was admitted into AsyncLocalStorage — a Transaction constructor
+  // name is not authorization. Querying an unadmitted tx client is required so
+  // first scoped ops like withTeam(tx) inside db.transaction still check
+  // suspension. Admitted nested calls reuse this store instead of querying
+  // again (which deadlocks a single-connection transaction).
   await assertActivePrincipal(db, teamId, userId);
 }
 const READ_OPERATION =
