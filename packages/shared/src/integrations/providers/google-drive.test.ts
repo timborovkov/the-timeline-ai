@@ -1524,6 +1524,84 @@ describe('googleDriveProvider', () => {
     );
   });
 
+  it('judges a 73,600-char mixed-filler renewal at offset 22,000 instead of advancing on filler hunks', async () => {
+    const approved = 'Customer renewal approved.';
+    const rejected = 'Customer renewal rejected.';
+    const fill = 'Northstar SOW covers implementation, training, and support. #';
+    const mixed = fill.repeat(Math.ceil(73_600 / fill.length)).slice(0, 73_600);
+    const previousFull = `${mixed.slice(0, 22_000)}${approved}${mixed.slice(22_000 + approved.length)}`;
+    const nextFull = `${mixed.slice(0, 22_000)}${rejected}${mixed.slice(22_000 + rejected.length)}`;
+    expect(previousFull.length).toBe(73_600);
+    expect(nextFull.indexOf(rejected)).toBe(22_000);
+    const chunkStart = Math.floor(22_000 / 4_096) * 4_096;
+    expect(22_000 - chunkStart).toBeGreaterThan(400);
+    const fetch = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((input) => {
+      const url = requestUrl(input);
+      if (url.pathname.includes('/export')) {
+        return Promise.resolve(new Response(nextFull, { status: 200 }));
+      }
+      if (url.pathname.endsWith('/files/file-1')) {
+        return Promise.resolve(
+          jsonResponse({
+            id: 'file-1',
+            name: 'SOW',
+            mimeType: 'application/vnd.google-apps.document',
+            parents: ['root'],
+            modifiedTime: '2026-06-20T10:00:00.000Z',
+          }),
+        );
+      }
+      if (url.pathname.endsWith('/comments')) {
+        return Promise.resolve(jsonResponse({ comments: [] }));
+      }
+      return Promise.resolve(jsonResponse({ permissions: [] }));
+    });
+    vi.stubGlobal('fetch', fetch);
+    const ctx = syncContext({
+      loadLatestDriveSnapshot: vi.fn().mockResolvedValue({
+        contentHash: hashDrivePayload(previousFull),
+        snapshotText: previousFull.slice(0, DRIVE_SNAPSHOT_MAX_CHARS),
+        snapshotLocate: buildDriveSnapshotLocate(previousFull),
+        commentsHash: driveCommentsHash([]),
+        permissionsHash: drivePermissionsHash([]),
+        mimeType: 'application/vnd.google-apps.document',
+      }),
+    });
+
+    await googleDriveProvider.incrementalSync({
+      integration: { id: 'integration-1', teamId: 'team-1' } as never,
+      tokens: { access_token: 'access-token', expires_at: Date.now() + 600_000 },
+      selections: [{ kind: 'drive.file', externalId: 'file-1' }],
+      ctx: ctx,
+      target: { resourceType: 'drive.file', externalId: 'file-1' },
+    });
+
+    expect(ctx.judgeDriveChange).toHaveBeenCalled();
+    const judgeInput = (
+      ctx.judgeDriveChange as unknown as {
+        mock: { calls: [{ hunks: string[] }][] };
+      }
+    ).mock.calls[0]?.[0];
+    expect(judgeInput?.hunks.join(' ')).toContain('rejected');
+    expect(judgeInput?.hunks.join(' ')).not.toContain(
+      'Text changed past the stored snapshot window.',
+    );
+    expect(ctx.writeEvents).toHaveBeenCalled();
+    const written = (
+      ctx.writeEvents as unknown as {
+        mock: { calls: [{ contentText: string }[]][] };
+      }
+    ).mock.calls[0]?.[0]?.[0];
+    expect(written?.contentText).toContain('rejected');
+    expect(ctx.saveDriveSnapshot).toHaveBeenCalled();
+    expect(ctx.recordAudit).not.toHaveBeenCalledWith(
+      'drive_change_skipped',
+      expect.objectContaining({ reason: 'no_evidence' }),
+    );
+  });
+
   it('skips a cosmetic suffix punctuation edit instead of judging it as substantive', async () => {
     const previousFull = `${'A'.repeat(25_000)}Status is open\n${'B'.repeat(200)}`;
     const nextFull = `${'A'.repeat(25_000)}Status is open.\n${'B'.repeat(200)}`;

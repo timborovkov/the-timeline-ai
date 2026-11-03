@@ -1006,6 +1006,10 @@ async function processDriveFile(
   };
 
   if (previous?.contentHash === contentHash && !commentsChanged && !permissionsChanged) {
+    const previousLocate = parseDriveSnapshotLocate(previous.snapshotLocate);
+    if (!previousLocate || previousLocate.chunkTexts.length === 0) {
+      await persistDriveSnapshot(ctx, file.id, snapshot);
+    }
     await consumeReadyDriveExtract(ctx, file.id, loaded);
     return;
   }

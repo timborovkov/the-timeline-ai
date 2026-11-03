@@ -8,6 +8,7 @@ import {
   diffDriveSnapshots,
   diffDriveText,
   driveDiffHasEvidence,
+  driveHunksContainChangedSpan,
   driveSnapshotWindowCoversFullText,
   normalizeDriveTextForCompare,
   parseDriveSnapshotLocate,
@@ -339,6 +340,35 @@ function documentWithPhrase(length: number, offset: number, phrase: string): str
   return `${'A'.repeat(offset)}${phrase}${'B'.repeat(length - offset - phrase.length)}`;
 }
 
+const MIXED_FILL = 'Northstar SOW covers implementation, training, and support. #';
+
+function mixedFill(length: number): string {
+  if (MIXED_FILL.length < 8) throw new Error('mixed fill seed is too short');
+  return MIXED_FILL.repeat(Math.ceil(length / MIXED_FILL.length)).slice(0, length);
+}
+
+function mixedDocumentWithPhrase(length: number, offset: number, phrase: string): string {
+  if (phrase.length === 0) {
+    throw new Error('mixedDocumentWithPhrase requires a phrase');
+  }
+  if (offset < 0 || offset + phrase.length > length) {
+    throw new Error(`phrase at ${offset} does not fit in ${length}`);
+  }
+  const base = mixedFill(length);
+  return `${base.slice(0, offset)}${phrase}${base.slice(offset + phrase.length)}`;
+}
+
+function hashesOnlyLocate(text: string): ReturnType<typeof buildDriveSnapshotLocate> {
+  const locate = buildDriveSnapshotLocate(text);
+  return {
+    length: locate.length,
+    suffix: locate.suffix,
+    chunkSize: locate.chunkSize,
+    chunkHashes: locate.chunkHashes,
+    chunkTexts: [],
+  };
+}
+
 function mulberry32(seed: number): () => number {
   let state = seed >>> 0;
   return () => {
@@ -562,6 +592,14 @@ describe('diffDriveSnapshots regression matrix', () => {
       hunkIncludes: 'rejected',
     },
     {
+      name: '>40k mixed-filler renewal at char 22,000 in a 73,600-char doc',
+      previousFull: mixedDocumentWithPhrase(73_600, 22_000, APPROVED_RENEWAL),
+      nextFull: mixedDocumentWithPhrase(73_600, 22_000, REJECTED_RENEWAL),
+      changed: true,
+      reason: 'substantive',
+      hunkIncludes: 'rejected',
+    },
+    {
       name: '>20k mid-window edit plus past-window append',
       previousFull: long.replace('implementation', 'a $12k implementation'),
       nextFull: `${long.replace('implementation', 'a $48k implementation')}\n${SIGNING_PARAGRAPH}`,
@@ -609,7 +647,10 @@ describe('diffDriveSnapshots regression matrix', () => {
       if (row.previousFull !== row.nextFull) {
         expect(diff.reason).not.toBe('identical');
       }
-      if (row.changed) expect(driveDiffHasEvidence(diff)).toBe(true);
+      if (row.changed) {
+        expect(driveDiffHasEvidence(diff)).toBe(true);
+        expect(driveHunksContainChangedSpan(diff.hunks, row.previousFull, row.nextFull)).toBe(true);
+      }
       expect(diff.hunks.join(' ')).not.toContain('Text changed past the stored snapshot window.');
     });
   }
@@ -639,11 +680,11 @@ describe('diffDriveSnapshots regression matrix', () => {
 
   it('never returns identical for hash-moved edits across prefix, chunk, and suffix bounds', () => {
     const rng = mulberry32(20_200);
-    const lengths = [41_001, 45_000, 50_000, 81_920];
+    const lengths = [41_001, 45_000, 50_000, 73_600, 81_920];
     const inserts = ['X', 'rejected.', REJECTED_RENEWAL, ' $48k '];
     let checked = 0;
     for (const length of lengths) {
-      const previous = 'N'.repeat(length);
+      const previous = mixedFill(length);
       const suffixStart = Math.max(0, length - DRIVE_SNAPSHOT_MAX_CHARS);
       const offsets = [
         0,
@@ -653,6 +694,7 @@ describe('diffDriveSnapshots regression matrix', () => {
         DRIVE_SNAPSHOT_CHUNK_CHARS * 4,
         DRIVE_SNAPSHOT_CHUNK_CHARS * 5,
         20_200,
+        22_000,
         suffixStart - 1,
         suffixStart,
         suffixStart + 1,
@@ -668,6 +710,7 @@ describe('diffDriveSnapshots regression matrix', () => {
           expect(diff.reason).not.toBe('identical');
           if (diff.changed) {
             expect(driveDiffHasEvidence(diff)).toBe(true);
+            expect(driveHunksContainChangedSpan(diff.hunks, previous, next)).toBe(true);
             const currentHunks = diff.hunks.filter((hunk) => !hunk.startsWith('- '));
             expect(currentHunks.length).toBeGreaterThan(0);
             expect(
@@ -684,6 +727,32 @@ describe('diffDriveSnapshots regression matrix', () => {
     expect(checked).toBeGreaterThan(80);
   });
 
+  it('centers a 73,600-char mixed-filler hunk on the edit at offset 22,000', () => {
+    const previousFull = mixedDocumentWithPhrase(73_600, 22_000, APPROVED_RENEWAL);
+    const nextFull = mixedDocumentWithPhrase(73_600, 22_000, REJECTED_RENEWAL);
+    const chunkStart = Math.floor(22_000 / DRIVE_SNAPSHOT_CHUNK_CHARS) * DRIVE_SNAPSHOT_CHUNK_CHARS;
+    expect(22_000 - chunkStart).toBeGreaterThan(400);
+    const diff = diffDriveSnapshots(snapshotArgs(previousFull, nextFull));
+    expect(diff.changed).toBe(true);
+    expect(diff.reason).toBe('substantive');
+    expect(diff.hunks.join(' ')).toContain('rejected');
+    expect(driveHunksContainChangedSpan(diff.hunks, previousFull, nextFull)).toBe(true);
+    expect(driveDiffHasEvidence(diff)).toBe(true);
+  });
+
+  it('refuses a middle mixed-filler edit when previous chunk texts are missing', () => {
+    const previousFull = mixedDocumentWithPhrase(73_600, 22_000, APPROVED_RENEWAL);
+    const nextFull = mixedDocumentWithPhrase(73_600, 22_000, REJECTED_RENEWAL);
+    const diff = diffDriveSnapshots({
+      ...snapshotArgs(previousFull, nextFull),
+      previousLocate: hashesOnlyLocate(previousFull),
+    });
+    expect(diff.changed).toBe(true);
+    expect(diff.reason).not.toBe('identical');
+    expect(driveDiffHasEvidence(diff)).toBe(false);
+    expect(diff.hunks).toEqual([]);
+  });
+
   it('does not treat unlike truncated-vs-full comparison as the snapshot path', () => {
     const previousFull = longSow();
     const nextFull = `${previousFull}\n${SIGNING_PARAGRAPH}`;
@@ -696,7 +765,7 @@ describe('diffDriveSnapshots regression matrix', () => {
     expect(like.hunks.join(' ')).not.toContain('Text changed past the stored snapshot window.');
   });
 
-  it('still excerpts a 25k amount from current text when the previous locate is missing', () => {
+  it('does not invent filler hunks when the previous locate is missing', () => {
     const previousFull = suffixAmountAt(25_000, '$12k');
     const nextFull = suffixAmountAt(25_000, '$48k');
     const diff = diffDriveSnapshots({
@@ -706,11 +775,25 @@ describe('diffDriveSnapshots regression matrix', () => {
       nextContentHash: 'new-hash',
     });
     expect(diff.changed).toBe(true);
+    expect(diff.reason).not.toBe('identical');
+    expect(driveDiffHasEvidence(diff)).toBe(false);
+    expect(diff.hunks).toEqual([]);
+  });
+
+  it('still locates a 25k suffix amount from stored suffix text without chunk texts', () => {
+    const previousFull = suffixAmountAt(25_000, '$12k');
+    const nextFull = suffixAmountAt(25_000, '$48k');
+    const diff = diffDriveSnapshots({
+      ...snapshotArgs(previousFull, nextFull),
+      previousLocate: hashesOnlyLocate(previousFull),
+    });
+    expect(diff.changed).toBe(true);
     expect(diff.hunks.join(' ')).toContain('$48k');
+    expect(driveHunksContainChangedSpan(diff.hunks, previousFull, nextFull)).toBe(true);
     expect(driveDiffHasEvidence(diff)).toBe(true);
   });
 
-  it('builds a parseable suffix and chunk-hash locate index', () => {
+  it('builds a parseable suffix, chunk-hash, and chunk-text locate index', () => {
     const text = suffixAmountAt(25_000, '$48k');
     const locate = buildDriveSnapshotLocate(text);
     expect(locate.length).toBe(text.length);
@@ -718,8 +801,11 @@ describe('diffDriveSnapshots regression matrix', () => {
     expect(locate.suffix).toBe(text.slice(-DRIVE_SNAPSHOT_MAX_CHARS));
     expect(locate.suffix).toContain('$48k');
     expect(locate.chunkHashes.length).toBe(Math.ceil(text.length / DRIVE_SNAPSHOT_CHUNK_CHARS));
+    expect(locate.chunkTexts.join('')).toBe(text);
+    expect(locate.chunkTexts.length).toBe(locate.chunkHashes.length);
     expect(parseDriveSnapshotLocate(locate)).toEqual(locate);
     expect(parseDriveSnapshotLocate(null)).toBeNull();
+    expect(parseDriveSnapshotLocate(hashesOnlyLocate(text))?.chunkTexts).toEqual([]);
   });
 });
 

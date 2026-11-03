@@ -230,6 +230,7 @@ export interface SyncContext {
       suffix: string;
       chunkSize: number;
       chunkHashes: string[];
+      chunkTexts: string[];
     } | null;
   } | null>;
   saveDriveSnapshot?(input: {
@@ -244,6 +245,7 @@ export interface SyncContext {
       suffix: string;
       chunkSize: number;
       chunkHashes: string[];
+      chunkTexts: string[];
     } | null;
     fileId: string;
   }): Promise<void>;
