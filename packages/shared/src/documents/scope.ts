@@ -21,7 +21,7 @@ import { documentPresentation } from '#src/documents/presentation.js';
 import { embed as defaultEmbed, type EmbedResult } from '#src/llm/embed.js';
 import { childLogger } from '#src/logger.js';
 import { decodeCursor, pageWindow } from '#src/pagination.js';
-import { operatorContext } from '#src/platform-admin/runtime.js';
+import { operatorContext, recordScopedReadAudit } from '#src/platform-admin/runtime.js';
 import { getQdrantClient, type SearchHit, type SearchOpts } from '#src/qdrant/client.js';
 import { normalizeRawEventsToEvidence } from '#src/reconciliation/normalization.js';
 import {
@@ -1210,7 +1210,7 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
       await ensureMember();
       const document = await getDocumentRaw(id);
       if (document && document.visibility !== 'team' && options.auditDetailRead !== false) {
-        await db.insert(auditLog).values({
+        await recordScopedReadAudit(db, {
           teamId,
           actorUserId: userId,
           action: 'document.detail_read',

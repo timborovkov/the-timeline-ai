@@ -64,6 +64,11 @@ sweeps skip suspended teams so active teams continue processing.
 Suspension admission runs at each scoped operation's entry. Nested helpers reuse
 that operation's admission to avoid querying an outer connection from inside a
 transaction; a later operation on the same scope checks current suspension again.
+Private document and event detail reads may append their specific product audit
+records during suspended inspection; audit updates and arbitrary inserts remain
+blocked. Verified operator billing remains available for suspended teams through
+its separate administrator checks. Meeting scheduling excludes suspended teams
+and creators before applying the global batch limit.
 Webhook suspension failures retain failed target status for the existing retry
 and recovery flow instead of stranding targets in processing. Digest delivery
 rechecks the stored recipient and workspace security state before selecting any

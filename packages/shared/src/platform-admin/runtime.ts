@@ -2,6 +2,7 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 
 import {
   getDb,
+  auditLog,
   documentVersions,
   rawEvents,
   platformAdminAudit,
@@ -28,6 +29,7 @@ export interface OperatorContext {
 }
 const contextStorage = new AsyncLocalStorage<OperatorContext>();
 const admissionStorage = new AsyncLocalStorage<{ teamId: string; userId: string }>();
+const readAuditStorage = new AsyncLocalStorage<boolean>();
 const maintenanceStorage = new AsyncLocalStorage<boolean>();
 let webResolver: (() => Promise<OperatorContext | null>) | undefined;
 export function registerOperatorContextResolver(resolver: () => Promise<OperatorContext | null>) {
@@ -113,6 +115,7 @@ export function guardOperatorScope<T extends object>(
           !context &&
           system &&
           (operation.startsWith('billing.') ||
+            operation.startsWith('billingOperator.') ||
             operation === 'mcpOAuth.pruneExpiredCredentials' ||
             operation === 'pins.pruneDeletedTimelineMomentPins')
         )
@@ -221,6 +224,23 @@ export async function runGuardedJob<T>(
   return contextStorage.run(context, callback);
 }
 
+/** Only the two sensitive detail-read audit appends may write during inspection. */
+export async function recordScopedReadAudit(
+  db: Db,
+  input: Omit<typeof auditLog.$inferInsert, 'action'> & {
+    action: 'document.detail_read' | 'event.detail_read';
+  },
+): Promise<void> {
+  if (!['document.detail_read', 'event.detail_read'].includes(input.action))
+    throw new PlatformAccessError('Unsupported read audit');
+  const context = await operatorContext();
+  if (context && (input.teamId !== context.teamId || input.actorUserId !== context.effectiveUserId))
+    throw new PlatformAccessError('Read audit must match the impersonated identity');
+  await readAuditStorage.run(true, async () => {
+    await db.insert(auditLog).values(input);
+  });
+}
+
 /** Guard writes even when a read helper initializes defaults or uses direct Drizzle access. */
 export function operatorDatabase<T extends Db>(database: T): T {
   async function assertWritable() {
@@ -257,7 +277,9 @@ export function operatorDatabase<T extends Db>(database: T): T {
       if (key === 'insert' || key === 'update' || key === 'delete')
         return (...args: unknown[]) => {
           const builder = Reflect.apply(value, target, args) as object;
-          return key === 'insert' && args[0] === platformAdminAudit
+          return key === 'insert' &&
+            (args[0] === platformAdminAudit ||
+              (args[0] === auditLog && readAuditStorage.getStore()))
             ? builder
             : guardedBuilder(builder);
         };

@@ -69,6 +69,7 @@ import {
   guardTeamAccess,
   guardOperatorScope,
   operatorDatabase,
+  recordScopedReadAudit,
 } from '#src/platform-admin/runtime.js';
 import {
   getQdrantClient,
@@ -3632,7 +3633,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
         const senderMap = await resolveSenderContexts([event]);
         const senderInfo = senderMap.get(event.id);
         if (event.visibility !== 'team') {
-          await db.insert(auditLog).values({
+          await recordScopedReadAudit(db, {
             teamId,
             actorUserId: userId,
             action: 'event.detail_read',

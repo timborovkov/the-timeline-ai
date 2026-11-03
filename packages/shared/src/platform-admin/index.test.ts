@@ -1,5 +1,11 @@
 import { PGlite } from '@electric-sql/pglite';
-import { platformAdminAudit, platformImpersonationSessions, users, type Db } from '@timeline/db';
+import {
+  auditLog,
+  platformAdminAudit,
+  platformImpersonationSessions,
+  users,
+  type Db,
+} from '@timeline/db';
 import { expect } from '@timeline/test-support';
 import { afterEach, beforeEach, describe, it } from 'bun:test';
 import { eq } from 'drizzle-orm';
@@ -283,6 +289,23 @@ describe('impersonation lifecycle', () => {
     expect((await workspace.timeline.team())?.id).toBe(TEAM);
     expect(await workspace.objects.unreadNotificationCount()).toBe(0);
     expect(await workspace.timeline.getEvent(otherEvent)).toBeNull();
+    expect(await workspace.timeline.getEventWithFacts(ownEvent)).not.toBeNull();
+    const documentId = crypto.randomUUID();
+    await pg.exec(
+      `INSERT INTO documents (id,team_id,name,visibility,owner_user_id) VALUES ('${documentId}','${TEAM}','private.pdf','private','${MEMBER}')`,
+    );
+    expect(await workspace.documents.getDocument(documentId)).not.toBeNull();
+    const reads = await db.select({ action: auditLog.action }).from(auditLog);
+    expect(reads.map((row) => row.action)).toContain('document.detail_read');
+    expect(reads.map((row) => row.action)).toContain('event.detail_read');
+    await expect(
+      operatorDatabase(db)
+        .insert(auditLog)
+        .values({ teamId: TEAM, action: 'document.visibility_change', targetType: 'document' }),
+    ).rejects.toThrow('read-only');
+    await expect(operatorDatabase(db).update(auditLog).set({ metadata: {} })).rejects.toThrow(
+      'read-only',
+    );
     await expect(workspace.requireMembership('admin')).rejects.toThrow('Requires admin role');
     expect(await scope.getItem()).toBe('visible');
     await expect(scope.updateItem()).rejects.toThrow('read-only');

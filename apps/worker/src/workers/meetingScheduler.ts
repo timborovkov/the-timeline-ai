@@ -1,4 +1,12 @@
-import { type Db, meetings, meetingUsage, savedMeetings, teamMeetingSettings } from '@timeline/db';
+import {
+  type Db,
+  teamBillingAccounts,
+  users,
+  meetings,
+  meetingUsage,
+  savedMeetings,
+  teamMeetingSettings,
+} from '@timeline/db';
 import { childLogger, meetingBots, queue, withTeam } from '@timeline/shared';
 import {
   abortRecallJoinAfterProviderAccept,
@@ -9,7 +17,21 @@ import {
 } from '@timeline/shared/billing';
 import { principalIsActive } from '@timeline/shared/platform-admin/runtime';
 import { Worker, type Job } from 'bullmq';
-import { and, asc, eq, exists, gt, gte, isNotNull, isNull, lte, or, sql } from 'drizzle-orm';
+import {
+  and,
+  asc,
+  eq,
+  exists,
+  notExists,
+  inArray,
+  gt,
+  gte,
+  isNotNull,
+  isNull,
+  lte,
+  or,
+  sql,
+} from 'drizzle-orm';
 
 import { captureWorkerException } from '#src/monitoring.js';
 import { guardWorkerProcessor } from '#src/platform-worker.js';
@@ -180,6 +202,25 @@ export async function processMeetingSchedulerTick(deps: MeetingSchedulerDeps): P
     .where(
       and(
         eq(meetings.status, 'scheduled'),
+        // Apply suspension before the global batch limit so inactive principals
+        // cannot starve eligible captures in another workspace.
+        notExists(
+          deps.db
+            .select({ id: teamBillingAccounts.teamId })
+            .from(teamBillingAccounts)
+            .where(
+              and(
+                eq(teamBillingAccounts.teamId, meetings.teamId),
+                inArray(teamBillingAccounts.securityState, ['suspended', 'terminated']),
+              ),
+            ),
+        ),
+        notExists(
+          deps.db
+            .select({ id: users.id })
+            .from(users)
+            .where(and(eq(users.id, meetings.createdByUserId), isNotNull(users.suspendedAt))),
+        ),
         eq(savedMeetings.autoJoinEnabled, true),
         isNull(savedMeetings.autoJoinPausedAt),
         isNull(savedMeetings.archivedAt),
