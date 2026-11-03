@@ -6,8 +6,11 @@ import {
   DRIVE_SNAPSHOT_MAX_CHARS,
   diffDriveSnapshots,
   diffDriveText,
+  driveSnapshotWindowCoversFullText,
   normalizeDriveTextForCompare,
+  resolveDriveSnapshotDiff,
   truncateDriveSnapshot,
+  type DriveTextDiff,
 } from '#src/integrations/google-drive-diff.js';
 
 const SIGNING_PARAGRAPH = 'Acme Labs signed a $48k annual contract with Northstar this quarter.';
@@ -80,8 +83,8 @@ describe('diffDriveText', () => {
       previousContentHash: 'prev-hash',
       nextContentHash: 'next-hash',
     });
-    expect(like.changed).toBe(false);
-    expect(like.reason).toBe('formatting');
+    expect(like.changed).toBe(true);
+    expect(like.hunks).toEqual([DRIVE_BEYOND_SNAPSHOT_HUNK]);
   });
 
   it('keeps full-text hash changes past the snapshot bound without inventing a tail add', () => {
@@ -99,7 +102,7 @@ describe('diffDriveText', () => {
     expect(diff.hunks.join(' ')).not.toContain('$48k');
   });
 
-  it('does not escalate a tiny prefix edit because the full-text hash also changed', () => {
+  it('escalates a tiny prefix edit when the full-text hash also moved past the window', () => {
     const body = SOW_LINE.repeat(500);
     const previousFull = `Status is open\n${body}`;
     const nextFull = `Status is open.\n${body}`;
@@ -109,8 +112,8 @@ describe('diffDriveText', () => {
       previousContentHash: 'old-hash',
       nextContentHash: 'new-hash',
     });
-    expect(diff.changed).toBe(false);
-    expect(diff.reason).toBe('tiny');
+    expect(diff.changed).toBe(true);
+    expect(diff.hunks).toEqual([DRIVE_BEYOND_SNAPSHOT_HUNK]);
   });
 
   it('keeps later-half edits when a changed line is longer than 400 characters', () => {
@@ -332,18 +335,20 @@ describe('diffDriveSnapshots regression matrix', () => {
       hunkIncludes: '$48k',
     },
     {
-      name: '>20k whitespace-only in the stored window',
+      name: '>20k whitespace-only in the stored window with a moved hash',
       previousFull: long,
       nextFull: long.replace('training, and', 'training,  and'),
-      changed: false,
-      reason: 'formatting',
+      changed: true,
+      reason: 'substantive',
+      hunkEquals: [DRIVE_BEYOND_SNAPSHOT_HUNK],
     },
     {
-      name: '>20k tiny prefix punctuation',
+      name: '>20k tiny prefix punctuation with a moved hash',
       previousFull: `Status is open\n${long}`,
       nextFull: `Status is open.\n${long}`,
-      changed: false,
-      reason: 'tiny',
+      changed: true,
+      reason: 'substantive',
+      hunkEquals: [DRIVE_BEYOND_SNAPSHOT_HUNK],
     },
     {
       name: '>20k mid-window edit plus past-window append',
@@ -402,5 +407,105 @@ describe('diffDriveSnapshots regression matrix', () => {
     const like = diffDriveSnapshots(snapshotArgs(previousFull, nextFull));
     expect(like.hunks).toEqual([DRIVE_BEYOND_SNAPSHOT_HUNK]);
     expect(like.hunks.join(' ')).not.toContain('$48k');
+  });
+});
+
+describe('resolveDriveSnapshotDiff invariant', () => {
+  const identical = {
+    changed: false,
+    reason: 'identical' as const,
+    changedChars: 0,
+    hunks: [] as string[],
+  };
+  const formatting = {
+    changed: false,
+    reason: 'formatting' as const,
+    changedChars: 0,
+    hunks: [] as string[],
+  };
+  const tiny = {
+    changed: false,
+    reason: 'tiny' as const,
+    changedChars: 5,
+    hunks: ['Status is open.'],
+  };
+  const substantive = {
+    changed: true,
+    reason: 'substantive' as const,
+    changedChars: 40,
+    hunks: ['$48k annual contract'],
+  };
+
+  const matrix: {
+    name: string;
+    windowDiff: DriveTextDiff;
+    hashMoved: boolean;
+    windowCoversFullText: boolean;
+    changed: boolean;
+    reason: DriveTextDiff['reason'];
+    hunkEquals?: string[];
+  }[] = [];
+
+  for (const windowDiff of [identical, formatting, tiny, substantive]) {
+    for (const hashMoved of [false, true]) {
+      for (const windowCoversFullText of [false, true]) {
+        const mustEscalate = !windowDiff.changed && hashMoved && !windowCoversFullText;
+        matrix.push({
+          name: `${windowDiff.reason} window, hashMoved=${String(hashMoved)}, coversFullText=${String(windowCoversFullText)}`,
+          windowDiff,
+          hashMoved,
+          windowCoversFullText,
+          changed: windowDiff.changed || mustEscalate,
+          reason: mustEscalate ? 'substantive' : windowDiff.reason,
+          ...(mustEscalate ? { hunkEquals: [DRIVE_BEYOND_SNAPSHOT_HUNK] } : {}),
+        });
+      }
+    }
+  }
+
+  for (const row of matrix) {
+    it(row.name, () => {
+      const diff = resolveDriveSnapshotDiff({
+        windowDiff: row.windowDiff,
+        hashMoved: row.hashMoved,
+        windowCoversFullText: row.windowCoversFullText,
+      });
+      expect(diff.changed).toBe(row.changed);
+      expect(diff.reason).toBe(row.reason);
+      if (row.hunkEquals) expect(diff.hunks).toEqual(row.hunkEquals);
+      if (row.windowDiff.changed) expect(diff.hunks).toEqual(row.windowDiff.hunks);
+    });
+  }
+
+  it('treats a cap-length stored window as unable to prove the suffix', () => {
+    const cap = 'A'.repeat(DRIVE_SNAPSHOT_MAX_CHARS);
+    expect(driveSnapshotWindowCoversFullText(cap, cap)).toBe(false);
+    expect(driveSnapshotWindowCoversFullText('short', 'short')).toBe(true);
+  });
+
+  it('keeps <20k formatting skip even when the full-text hash moved', () => {
+    const previousFull = shortSow();
+    const nextFull = previousFull.replace('training, and', 'training,  and');
+    const diff = diffDriveSnapshots({
+      previousSnapshotText: truncateDriveSnapshot(previousFull),
+      nextSnapshotText: truncateDriveSnapshot(nextFull),
+      previousContentHash: 'old-hash',
+      nextContentHash: 'new-hash',
+    });
+    expect(diff.changed).toBe(false);
+    expect(diff.reason).toBe('formatting');
+  });
+
+  it('keeps >20k formatting skip when the full-text hash did not move', () => {
+    const previousFull = longSow();
+    const nextFull = previousFull.replace('training, and', 'training,  and');
+    const diff = diffDriveSnapshots({
+      previousSnapshotText: truncateDriveSnapshot(previousFull),
+      nextSnapshotText: truncateDriveSnapshot(nextFull),
+      previousContentHash: 'same-hash',
+      nextContentHash: 'same-hash',
+    });
+    expect(diff.changed).toBe(false);
+    expect(diff.reason).toBe('formatting');
   });
 });

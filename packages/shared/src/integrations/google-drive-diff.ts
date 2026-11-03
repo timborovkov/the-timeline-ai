@@ -3,11 +3,11 @@
  * must never reach an LLM.
  *
  * Comparable text is the truncated 20k snapshot window. A last incomplete line
- * at the cap may be a clip artifact, but it is always inspected: hash-moved
- * snapshots never report identical/formatting unless the full comparable window
- * is verifiably whitespace-equivalent. If the window cannot prove the hash
- * change is formatting or tiny, fall back to a conservative changed hunk.
- * Added and removed hunks are always collected together.
+ * at the cap may be a clip artifact, but it is always inspected. Prefix
+ * equivalence never proves the suffix is unchanged: if the full-text hash
+ * moved and the stored window cannot prove the change lies entirely inside
+ * that window, return changed (conservative). Added and removed hunks are
+ * always collected together.
  */
 
 const WHITESPACE = /\s+/g;
@@ -65,6 +65,29 @@ function withProvenHunks(diff: DriveTextDiff): DriveTextDiff {
   return { ...diff, hunks: [DRIVE_BEYOND_SNAPSHOT_HUNK] };
 }
 
+/** Stored snapshots shorter than the cap are the entire extracted document. */
+export function driveSnapshotWindowCoversFullText(previous: string, next: string): boolean {
+  return previous.length < DRIVE_SNAPSHOT_MAX_CHARS && next.length < DRIVE_SNAPSHOT_MAX_CHARS;
+}
+
+/**
+ * Prefix/window equivalence never proves the suffix is unchanged.
+ *
+ * A substantive window change already locates an edit inside the stored text.
+ * Formatting-only or tiny window equivalence may skip only when the window is
+ * the whole document, or when the full-text hash did not move. Otherwise a
+ * hash change whose location cannot be proven returns a conservative hunk.
+ */
+export function resolveDriveSnapshotDiff(input: {
+  windowDiff: DriveTextDiff;
+  hashMoved: boolean;
+  windowCoversFullText: boolean;
+}): DriveTextDiff {
+  if (input.windowDiff.changed) return withProvenHunks(input.windowDiff);
+  if (!input.hashMoved || input.windowCoversFullText) return input.windowDiff;
+  return beyondSnapshotDiff();
+}
+
 function splitCapWindow(text: string): { stable: string; tail: string } {
   if (text.length < DRIVE_SNAPSHOT_MAX_CHARS) return { stable: text, tail: '' };
   const lastNl = text.lastIndexOf('\n');
@@ -101,9 +124,8 @@ function mergeWindowDiffs(stable: DriveTextDiff, tail: DriveTextDiff | null): Dr
  *
  * Always inspect the full truncated window, including the last incomplete line
  * at the cap. That tail is ignored only when it is a clip/slide artifact.
- * Full-text hashes still see edits past 20k: byte-identical windows with a
- * moved hash are beyond-window. A hash change whose comparable window is
- * whitespace-equivalent stays formatting; a proven tiny window edit stays tiny.
+ * Full-text hashes still see edits past 20k. `resolveDriveSnapshotDiff` is the
+ * single invariant: a hash change the stored window cannot locate is changed.
  */
 export function diffDriveSnapshots(input: {
   previousSnapshotText: string;
@@ -115,11 +137,14 @@ export function diffDriveSnapshots(input: {
   const next = truncateDriveSnapshot(input.nextSnapshotText);
   const hashMoved =
     Boolean(input.previousContentHash) && input.previousContentHash !== input.nextContentHash;
+  const windowCoversFullText = driveSnapshotWindowCoversFullText(previous, next);
 
   if (previous === next) {
-    return hashMoved
-      ? beyondSnapshotDiff()
-      : { changed: false, reason: 'identical', changedChars: 0, hunks: [] };
+    return resolveDriveSnapshotDiff({
+      windowDiff: { changed: false, reason: 'identical', changedChars: 0, hunks: [] },
+      hashMoved,
+      windowCoversFullText,
+    });
   }
 
   const previousParts = splitCapWindow(previous);
@@ -131,19 +156,10 @@ export function diffDriveSnapshots(input: {
       ? null
       : diffDriveText(previousParts.tail, nextParts.tail);
   const provenUnchanged = !stableDiff.changed && (tailSlide || !tailDiff?.changed);
-
-  if (provenUnchanged) {
-    if (stableDiff.reason === 'formatting' || stableDiff.reason === 'tiny') {
-      return stableDiff;
-    }
-    if (hashMoved) return beyondSnapshotDiff();
-    return stableDiff;
-  }
-
-  const windowDiff = mergeWindowDiffs(stableDiff, tailSlide ? null : tailDiff);
-  if (windowDiff.changed) return windowDiff;
-  if (hashMoved) return beyondSnapshotDiff();
-  return windowDiff;
+  const windowDiff = provenUnchanged
+    ? stableDiff
+    : mergeWindowDiffs(stableDiff, tailSlide ? null : tailDiff);
+  return resolveDriveSnapshotDiff({ windowDiff, hashMoved, windowCoversFullText });
 }
 
 export function diffDriveText(previous: string, next: string): DriveTextDiff {
