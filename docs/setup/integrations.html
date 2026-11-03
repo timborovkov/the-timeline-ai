@@ -187,7 +187,10 @@ GOOGLE_DRIVE_WEBHOOK_SECRET=...</code></pre>
           failed S3 delete keeps a <code>cleanupPending</code> extract cursor until both objects are
           gone. Cancel and janitor cleanup keep that tombstone for the extract wait window because
           S3 <code>DeleteObject</code> treats a not-yet-written <code>result.json</code> as success;
-          a ready extract consumed after persist still clears immediately. The janitor enumerates
+          a ready extract consumed after persist still clears immediately. File-only
+          <code>drive.file</code> captures keep the full watchable selection list for membership
+          checks and leave <code>sync.recovery</code> alone so scheduled
+          <code>changes.list</code> fallback still covers missed webhooks. The janitor enumerates
           team ids then lists orphans through <code>withTeam(...).integrations</code>, filtering
           populated extract cursors in SQL before the page limit so leftover <code>{}</code> rows
           cannot stall the sweep, treating <code>cleanupPending</code> cursors as immediately

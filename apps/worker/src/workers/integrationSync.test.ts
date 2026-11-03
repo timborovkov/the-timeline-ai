@@ -2818,6 +2818,76 @@ describe('runOneIntegration attention classification', () => {
 
     expect(fakes.incrementalSync).toHaveBeenCalled();
   });
+
+  it('does not complete Drive feed recovery after a file-only extract resume', async () => {
+    fakes.adminLoadIntegration.mockResolvedValue({ ...integration, provider: 'google_drive' });
+    const selections = [
+      { kind: 'drive.folder', externalId: 'folder-1' },
+      { kind: 'drive.folder', externalId: 'folder-2' },
+    ];
+    fakes.adminListSelections.mockResolvedValue(selections);
+
+    await runOneIntegration({} as never, INTEGRATION_ID, 'targeted', {
+      kind: 'targeted',
+      integrationId: INTEGRATION_ID,
+      teamId: TEAM_ID,
+      triggeredBy: 'drive_extract',
+      resourceType: 'drive.file',
+      externalId: 'file-1',
+      reason: 'drive_transient_extract',
+    });
+
+    expect(fakes.incrementalSync).toHaveBeenCalledWith(expect.objectContaining({ selections }));
+    const resumeCall = fakes.incrementalSync.mock.calls[0] as
+      | [{ target?: { resourceType?: string; externalId?: string; triggeredBy?: string } }]
+      | undefined;
+    expect(resumeCall?.[0]?.target).toEqual({
+      resourceType: 'drive.file',
+      externalId: 'file-1',
+      reason: 'drive_transient_extract',
+      triggeredBy: 'drive_extract',
+    });
+    expect(fakes.adminCommitIntegrationSyncCheckpoint).toHaveBeenCalledWith(expect.anything(), {
+      integrationId: INTEGRATION_ID,
+      cursors: [],
+      continuations: [],
+    });
+
+    fakes.incrementalSync.mockClear();
+    await runOneIntegration({} as never, INTEGRATION_ID, 'incremental');
+    expect(fakes.incrementalSync).toHaveBeenCalledWith(expect.objectContaining({ selections }));
+  });
+
+  it('skips the Drive changes feed while every watchable selection is inside the recovery quiet window', async () => {
+    fakes.adminLoadIntegration.mockResolvedValue({ ...integration, provider: 'google_drive' });
+    fakes.adminListSelections.mockResolvedValue([
+      { kind: 'drive.folder', externalId: 'folder-1' },
+      { kind: 'drive.folder', externalId: 'folder-2' },
+    ]);
+    fakes.adminLoadCursor.mockImplementation((_db, _id, resource) =>
+      Promise.resolve(
+        resource === 'sync.recovery'
+          ? {
+              completed: {
+                'drive.folder:folder-1': new Date().toISOString(),
+                'drive.folder:folder-2': new Date().toISOString(),
+              },
+            }
+          : {},
+      ),
+    );
+
+    await runOneIntegration({} as never, INTEGRATION_ID, 'incremental');
+
+    expect(fakes.incrementalSync).not.toHaveBeenCalled();
+    expect(fakes.adminCommitIntegrationSyncCheckpoint).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        integrationId: INTEGRATION_ID,
+        markSynced: {},
+      }),
+    );
+  });
 });
 
 describe('Drive transient extract handoff', () => {

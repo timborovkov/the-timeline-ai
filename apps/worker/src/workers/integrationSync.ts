@@ -1564,8 +1564,7 @@ export async function runOneIntegration(
           target?.surface !== 'backfill_restart');
       if (
         isRecovery &&
-        integration.provider !== 'monday' &&
-        !(integration.provider === 'github' && kind === 'targeted' && target?.surface) &&
+        recordsFeedRecoveryCompletion(integration.provider, kind, target) &&
         partialFailures.length === 0
       ) {
         let completedAny = false;
@@ -1907,6 +1906,22 @@ export async function runOneIntegration(
         : new Error('failed to enqueue provider pagination continuation');
     }
   }
+}
+
+function recordsFeedRecoveryCompletion(
+  provider: NativeSyncProvider,
+  kind: 'backfill' | 'incremental' | 'targeted',
+  target: TargetedIntegrationSyncJob | undefined,
+): boolean {
+  if (provider === 'monday') return false;
+  if (provider === 'github' && kind === 'targeted' && target?.surface) return false;
+  // File-only Drive captures still receive every watchable selection for
+  // membership checks. Stamping those folders complete would skip the next
+  // scheduled changes.list fallback that recovers missed webhooks.
+  if (provider === 'google_drive' && kind === 'targeted' && target?.resourceType === 'drive.file') {
+    return false;
+  }
+  return true;
 }
 
 function targetedSelections(
