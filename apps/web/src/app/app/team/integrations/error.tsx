@@ -14,7 +14,7 @@ export default function IntegrationsError({
   return (
     <div className="space-y-8">
       <Breadcrumb
-        items={[{ label: 'Connections', href: '/app/sources' }, { label: 'Integrations' }]}
+        items={[{ label: 'Connections', href: '/app/connections' }, { label: 'Integrations' }]}
       />
       <PageHeader
         title="Team integrations"

@@ -7,6 +7,11 @@ describe('app analytics route classification', () => {
     expect(classifyAppAnalyticsPath('/app')).toBe('home');
     expect(classifyAppAnalyticsPath('/app/timeline')).toBe('timeline');
     expect(classifyAppAnalyticsPath('/app/team/integrations/audit')).toBe('team_integrations');
+    expect(classifyAppAnalyticsPath('/app/sources')).toBe('sources');
+    expect(classifyAppAnalyticsPath('/app/connections')).toBe('sources');
+    expect(classifyAppAnalyticsPath('/app/connections/sources')).toBe('sources');
+    expect(classifyAppAnalyticsPath('/app/connections/agent-tools')).toBe('sources');
+    expect(classifyAppAnalyticsPath('/app/connections/developer')).toBe('sources');
   });
 
   it('collapses dynamic identifiers into fixed detail surfaces', () => {

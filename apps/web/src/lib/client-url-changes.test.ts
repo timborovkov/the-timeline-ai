@@ -17,18 +17,18 @@ describe('subscribeToClientUrlChanges', () => {
   it('notifies on App Router-style pushState fragment navigation', () => {
     const onChange = vi.fn();
     stop = subscribeToClientUrlChanges(onChange);
-    window.history.replaceState(null, '', '/app/sources');
+    window.history.replaceState(null, '', '/app/connections/sources');
     onChange.mockClear();
 
-    window.history.pushState(null, '', '/app/sources#telegram');
+    window.history.pushState(null, '', '/app/connections/sources#telegram');
     expect(onChange).toHaveBeenCalledTimes(1);
 
-    window.history.pushState(null, '', '/app/sources#email');
+    window.history.pushState(null, '', '/app/connections/sources#email');
     expect(onChange).toHaveBeenCalledTimes(2);
   });
 
   it('notifies on hashchange and popstate', () => {
-    window.history.replaceState(null, '', '/app/sources');
+    window.history.replaceState(null, '', '/app/connections/sources');
     const onChange = vi.fn();
     stop = subscribeToClientUrlChanges(onChange);
 
@@ -42,12 +42,12 @@ describe('subscribeToClientUrlChanges', () => {
   });
 
   it('does not notify when replaceState keeps the current URL', () => {
-    window.history.replaceState(null, '', '/app/sources');
+    window.history.replaceState(null, '', '/app/connections/sources');
     const onChange = vi.fn();
     stop = subscribeToClientUrlChanges(onChange);
     onChange.mockClear();
 
-    window.history.replaceState({ sidebar: 'collapsed' }, '', '/app/sources');
+    window.history.replaceState({ sidebar: 'collapsed' }, '', '/app/connections/sources');
     expect(onChange).not.toHaveBeenCalled();
   });
 
@@ -56,12 +56,12 @@ describe('subscribeToClientUrlChanges', () => {
     const nativeReplace = History.prototype.replaceState.bind(window.history);
     const onChange = vi.fn();
     stop = subscribeToClientUrlChanges(onChange);
-    window.history.replaceState(null, '', '/app/sources');
+    window.history.replaceState(null, '', '/app/connections/sources');
     onChange.mockClear();
 
     window.history.pushState = nativePush;
     window.history.replaceState = nativeReplace;
-    nativePush(null, '', '/app/sources#telegram');
+    nativePush(null, '', '/app/connections/sources#telegram');
 
     await vi.waitFor(() => {
       expect(onChange).toHaveBeenCalled();

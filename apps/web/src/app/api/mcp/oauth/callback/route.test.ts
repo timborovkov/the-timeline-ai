@@ -122,7 +122,7 @@ describe('GET /api/mcp/oauth/callback', () => {
     const providerError = await GET(request('?error=access_denied'));
     expect(providerError.status).toBe(307);
     expect(providerError.headers.get('location')).toBe(
-      `${PUBLIC_ORIGIN}/app/sources?error=oauth_denied`,
+      `${PUBLIC_ORIGIN}/app/connections/agent-tools?error=oauth_denied`,
     );
   });
 
@@ -178,7 +178,7 @@ describe('GET /api/mcp/oauth/callback', () => {
 
     expect(response.status).toBe(307);
     expect(response.headers.get('location')).toBe(
-      `${PUBLIC_ORIGIN}/app/sources?connected=${SERVER_ID}`,
+      `${PUBLIC_ORIGIN}/app/connections/agent-tools?connected=${SERVER_ID}`,
     );
     expect(fakes.discoverOAuth).not.toHaveBeenCalled();
     expect(fakes.exchangeCode).toHaveBeenCalledWith({
@@ -244,7 +244,7 @@ describe('GET /api/mcp/oauth/callback', () => {
     const location = response.headers.get('location') ?? '';
     expect(location).toMatch(
       new RegExp(
-        `^${PUBLIC_ORIGIN}/app/sources\\?error=mcp_oauth_callback_failed&reference=[0-9a-f]{8}$`,
+        `^${PUBLIC_ORIGIN}/app/connections/agent-tools\\?error=mcp_oauth_callback_failed&reference=[0-9a-f]{8}$`,
       ),
     );
     expect(location).not.toContain('token_down');

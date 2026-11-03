@@ -232,7 +232,7 @@ describe('OnboardingChecklist', () => {
     expect(screen.getByText('Capture one timeline event')).toBeTruthy();
     expect(screen.getByText('Upload a document')).toBeTruthy();
     expect(screen.getByRole('link', { name: 'Connect an integration' }).getAttribute('href')).toBe(
-      '/app/sources',
+      '/app/connections',
     );
     expect(screen.getByRole('link', { name: 'Upload' }).getAttribute('href')).toBe(
       '/app/documents',
@@ -267,7 +267,7 @@ describe('OnboardingChecklist', () => {
     });
 
     expect(screen.getByRole('link', { name: 'Set up email' }).getAttribute('href')).toBe(
-      '/app/sources#email',
+      '/app/connections/sources#email',
     );
   });
 

@@ -387,7 +387,7 @@ function onboardingMeta(key: string): { href: string; cta: string; description: 
       };
     case 'telegram':
       return {
-        href: '/app/sources#telegram',
+        href: '/app/connections/sources#telegram',
         cta: 'Link',
         description: 'Let chats and voice notes flow into the timeline.',
       };
@@ -399,7 +399,7 @@ function onboardingMeta(key: string): { href: string; cta: string; description: 
       };
     case 'email_forwarding':
       return {
-        href: '/app/sources#email',
+        href: '/app/connections/sources#email',
         cta: 'Set up email',
         description:
           'Open the Email provider sheet to copy the team address and edit allowed senders, then forward a message into the archive.',
@@ -436,7 +436,7 @@ function onboardingMeta(key: string): { href: string; cta: string; description: 
       };
     case 'first_integration':
       return {
-        href: '/app/sources',
+        href: '/app/connections',
         cta: 'Connect',
         description:
           'Connect Drive, Linear, or GitHub, add a custom webhook, or share Timeline as MCP with Claude Desktop.',

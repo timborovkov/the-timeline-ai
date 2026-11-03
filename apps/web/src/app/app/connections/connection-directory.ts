@@ -1,5 +1,14 @@
 import type { IntegrationsPageModel } from '@/app/app/team/integrations/integrations-page-model';
 
+import {
+  CONNECTIONS_TABS,
+  connectionsTabFromSearch,
+  connectionsTabHref,
+  type ConnectionsTab,
+} from '@/lib/connections';
+
+export { CONNECTIONS_TABS, connectionsTabFromSearch, connectionsTabHref, type ConnectionsTab };
+
 type ConnectedRow = IntegrationsPageModel['connectedRows'][number];
 
 function needsAttention(row: ConnectedRow): boolean {
@@ -67,20 +76,36 @@ export const EMPTY_TELEGRAM_SETUP: TelegramSetupSnapshot = {
   linkedUsers: [],
 };
 
-const CAPTURE_DIRECTORY_PROVIDERS = [
-  {
-    id: 'telegram',
-    label: 'Telegram',
-    description: 'Capture DMs and group chats through the Timeline bot.',
-    logo: '/connectors/telegram.svg',
-  },
-  {
-    id: 'email',
-    label: 'Email',
-    description: 'Forward, CC, or BCC mail to capture it on the timeline.',
-    logo: '/connectors/email.svg',
-  },
-] as const;
+const TELEGRAM_DIRECTORY_PROVIDER = {
+  id: 'telegram',
+  label: 'Telegram',
+  description: 'Capture DMs and group chats through the Timeline bot.',
+  logo: '/connectors/telegram.svg',
+} as const;
+
+const EMAIL_DIRECTORY_PROVIDER = {
+  id: 'email',
+  label: 'Email',
+  description: 'Forward, CC, or BCC mail to capture it on the timeline.',
+  logo: '/connectors/email.svg',
+} as const;
+
+function providerOrderRank(id: string): number {
+  if (id === 'telegram') return 0;
+  if (id === 'slack') return 1;
+  return 2;
+}
+
+function sortDirectoryProviders(providers: readonly DirectoryProvider[]): DirectoryProvider[] {
+  return providers
+    .map((provider, index) => ({ provider, index }))
+    .sort((left, right) => {
+      const rank = providerOrderRank(left.provider.id) - providerOrderRank(right.provider.id);
+      if (rank !== 0) return rank;
+      return left.index - right.index;
+    })
+    .map((entry) => entry.provider);
+}
 
 function nativeKey(value: string): string {
   return value.trim().toLowerCase();
@@ -176,7 +201,7 @@ export function partitionMcpServers<T extends { name: string }>(
 }
 
 function captureProviderEntry(
-  provider: (typeof CAPTURE_DIRECTORY_PROVIDERS)[number],
+  provider: typeof TELEGRAM_DIRECTORY_PROVIDER | typeof EMAIL_DIRECTORY_PROVIDER,
   input: {
     connected: boolean;
     attention: boolean;
@@ -209,7 +234,11 @@ export function buildDirectoryProviders(input: {
   telegramConnections: number;
   telegramWebhookConfigured?: boolean;
   inboundEmail?: InboundEmailSettings;
-}): { connected: DirectoryProvider[]; available: DirectoryProvider[] } {
+}): {
+  email: DirectoryProvider;
+  connected: DirectoryProvider[];
+  available: DirectoryProvider[];
+} {
   const connected: DirectoryProvider[] = [];
   const available: DirectoryProvider[] = [];
   const mcpByProvider = partitionMcpServers(
@@ -265,35 +294,111 @@ export function buildDirectoryProviders(input: {
     else available.push(entry);
   }
 
-  const captureEntries = [
-    captureProviderEntry(CAPTURE_DIRECTORY_PROVIDERS[0], {
-      connected: input.telegramConnections > 0,
-      attention: input.telegramConnections > 0 && input.telegramWebhookConfigured === false,
-    }),
-    captureProviderEntry(CAPTURE_DIRECTORY_PROVIDERS[1], {
+  const telegram = captureProviderEntry(TELEGRAM_DIRECTORY_PROVIDER, {
+    connected: input.telegramConnections > 0,
+    attention: input.telegramConnections > 0 && input.telegramWebhookConfigured === false,
+  });
+  if (telegram.connected) connected.push(telegram);
+  else available.push(telegram);
+
+  return {
+    email: captureProviderEntry(EMAIL_DIRECTORY_PROVIDER, {
       connected: inboundEmailIsConfigured(input.inboundEmail),
       attention: Boolean(input.inboundEmail?.placeholderInbound),
     }),
-  ];
-  for (const entry of captureEntries) {
-    if (entry.connected) connected.push(entry);
-    else available.push(entry);
+    connected: sortDirectoryProviders(connected),
+    available: sortDirectoryProviders(available),
+  };
+}
+
+export function directoryProviderList(directory: {
+  email: DirectoryProvider;
+  connected: readonly DirectoryProvider[];
+  available: readonly DirectoryProvider[];
+}): DirectoryProvider[] {
+  return [directory.email, ...directory.connected, ...directory.available];
+}
+
+const CONNECTIONS_TOOL_SHEETS = ['agent-mcp', 'timeline-mcp', 'webhooks'] as const;
+export type ConnectionsToolSheet = (typeof CONNECTIONS_TOOL_SHEETS)[number];
+
+const TOOL_SHEET_TAB: Record<ConnectionsToolSheet, ConnectionsTab> = {
+  'agent-mcp': 'agent',
+  'timeline-mcp': 'agent',
+  webhooks: 'developer',
+};
+
+export function isConnectionsToolSheet(
+  value: string | null | undefined,
+): value is ConnectionsToolSheet {
+  return CONNECTIONS_TOOL_SHEETS.some((sheet) => sheet === value);
+}
+
+function isQuietComingSoonMcp(entry: { status?: string }): boolean {
+  return entry.status === 'coming_soon' || entry.status === 'mcp_local';
+}
+
+export function partitionAdvancedMcpCatalog<T extends { status?: string }>(
+  entries: readonly T[],
+): { connectable: T[]; comingSoon: T[] } {
+  const connectable: T[] = [];
+  const comingSoon: T[] = [];
+  for (const entry of entries) {
+    if (isQuietComingSoonMcp(entry)) comingSoon.push(entry);
+    else connectable.push(entry);
   }
-  return { connected, available };
+  return { connectable, comingSoon };
+}
+
+export function filterByDirectoryQuery<
+  T extends { id: string; label: string; description?: string },
+>(items: readonly T[], query: string): T[] {
+  const needle = query.trim().toLowerCase();
+  if (!needle) return [...items];
+  return items.filter(
+    (item) =>
+      item.label.toLowerCase().includes(needle) ||
+      item.id.toLowerCase().includes(needle) ||
+      (item.description?.toLowerCase().includes(needle) ?? false),
+  );
 }
 
 export function filterAvailableProviders(
   providers: readonly DirectoryProvider[],
   query: string,
 ): DirectoryProvider[] {
-  const needle = query.trim().toLowerCase();
-  if (!needle) return [...providers];
-  return providers.filter(
-    (provider) =>
-      provider.label.toLowerCase().includes(needle) ||
-      provider.id.toLowerCase().includes(needle) ||
-      provider.description.toLowerCase().includes(needle),
-  );
+  return filterByDirectoryQuery(providers, query);
+}
+
+export function directoryHashOwnerId(
+  hash: string | null | undefined,
+  providers: readonly { id: string }[],
+): string | null {
+  const value = hash?.replace(/^#/, '') ?? '';
+  if (!value) return null;
+  const exact = providers.find((provider) => provider.id === value);
+  if (exact) return exact.id;
+  const sectionOwners = providers.filter((provider) => value.startsWith(`${provider.id}-`));
+  if (sectionOwners.length === 0) return null;
+  return sectionOwners.reduce((longest, provider) =>
+    provider.id.length >= longest.id.length ? provider : longest,
+  ).id;
+}
+
+export function agentMcpAccessMatchesQuery(input: {
+  query: string;
+  connectable: readonly { id: string; label: string; description?: string }[];
+  servers: readonly { id: string; name: string; url?: string | null }[];
+}): boolean {
+  const extras = [
+    ...input.connectable,
+    ...input.servers.map((server) => ({
+      id: server.id,
+      label: server.name,
+      ...(server.url ? { description: server.url } : {}),
+    })),
+  ];
+  return filterByDirectoryQuery(extras, input.query).length > 0;
 }
 
 export function initialOpenProviderId(input: {
@@ -302,11 +407,49 @@ export function initialOpenProviderId(input: {
   integrationId?: string;
   hash?: string;
 }): string | null {
-  const hash = input.hash?.replace(/^#/, '') ?? '';
-  if (hash && input.providers.some((provider) => provider.id === hash)) return hash;
+  const ownerId = directoryHashOwnerId(input.hash, input.providers);
+  if (ownerId) return ownerId;
   if (!input.integrationId) return null;
   const row = input.connectedRows.find((item) => item.id === input.integrationId);
   return row?.provider ?? null;
+}
+
+/** Query-param sheet fallback is for the first navigation (and later popstate), not hash edits. */
+export function connectionsIntegrationIdFallback(input: {
+  source: 'initial' | 'hash' | 'popstate';
+  dismissed: boolean;
+  integrationId?: string;
+}): string | undefined {
+  if (input.dismissed || input.source === 'hash' || !input.integrationId) return undefined;
+  return input.integrationId;
+}
+
+export function parseConnectionsLocation(input: {
+  tab?: string | null;
+  hash?: string | null;
+  providers: readonly DirectoryProvider[];
+  connectedRows: IntegrationsPageModel['connectedRows'];
+  integrationId?: string;
+}): { tab: ConnectionsTab; hash: string | null } {
+  const hash = input.hash?.replace(/^#/, '') ?? '';
+  if (isConnectionsToolSheet(hash)) {
+    return { tab: TOOL_SHEET_TAB[hash], hash };
+  }
+  if (hash === 'audit' || hash === 'jobs') {
+    return { tab: 'developer', hash };
+  }
+  if (directoryHashOwnerId(hash, input.providers)) {
+    return { tab: 'sources', hash };
+  }
+  if (!hash && input.integrationId) {
+    const fromId = initialOpenProviderId({
+      providers: input.providers,
+      connectedRows: input.connectedRows,
+      integrationId: input.integrationId,
+    });
+    if (fromId) return { tab: 'sources', hash: fromId };
+  }
+  return { tab: connectionsTabFromSearch(input.tab), hash: hash || null };
 }
 
 export function connectionHeaderMetadata(

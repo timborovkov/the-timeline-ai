@@ -208,12 +208,65 @@ describe('platform administrator boundary', () => {
     await setPlatformSuspension(db, actor, 'team', TEAM, false, 'incident resolved');
     await assertActivePrincipal(db, TEAM);
   });
+  it('installs one wrapper on the underlying method so later replacements intercept it', async () => {
+    const objects = {
+      setTaskProject: (id: string) => Promise.resolve(`orig:${id}`),
+    };
+    const scope = guardOperatorScope(db, TEAM, MEMBER, { objects });
+    expect(scope.objects).toBe(scope.objects);
+    expect(scope.objects.setTaskProject).toBe(objects.setTaskProject);
+    let intercepted = false;
+    const current = objects.setTaskProject;
+    objects.setTaskProject = (id: string) => {
+      intercepted = true;
+      return current(id);
+    };
+    expect(await scope.objects.setTaskProject('task-1')).toBe('orig:task-1');
+    expect(intercepted).toBe(true);
+    const spy = vi.spyOn(scope.objects, 'setTaskProject');
+    await scope.objects.setTaskProject('task-2');
+    expect(spy).toHaveBeenCalledWith('task-2');
+    spy.mockRestore();
+  });
+
   it('rechecks suspension on each operation even when reusing a team scope', async () => {
     const { withTeam } = await import('#src/team-scope.js');
     const scope = withTeam(db, TEAM, MEMBER);
     expect((await scope.timeline.team())?.id).toBe(TEAM);
     await setPlatformSuspension(db, actor, 'user', MEMBER, true, 'suspend between operations');
     await expect(scope.timeline.team()).rejects.toThrow('Account is suspended');
+  });
+  it('still checks suspension when the first scoped operation uses a transaction client', async () => {
+    const { withTeam } = await import('#src/team-scope.js');
+    await setPlatformSuspension(db, actor, 'user', MEMBER, true, 'suspend before tx scope');
+    await expect(
+      db.transaction(async (tx) => {
+        const txScope = withTeam(tx as unknown as Db, TEAM, MEMBER);
+        return txScope.timeline.team();
+      }),
+    ).rejects.toThrow('Account is suspended');
+    await setPlatformSuspension(db, actor, 'user', MEMBER, false, 'restore before team suspension');
+    await setPlatformSuspension(db, actor, 'team', TEAM, true, 'suspend workspace before tx scope');
+    await expect(
+      db.transaction(async (tx) => {
+        const txScope = withTeam(tx as unknown as Db, TEAM, MEMBER);
+        return txScope.timeline.team();
+      }),
+    ).rejects.toThrow('Workspace is suspended');
+  });
+  it('reuses verified admission inside a nested transaction scope', async () => {
+    const { withTeam } = await import('#src/team-scope.js');
+    const nested = {
+      work: async () =>
+        db.transaction(async (tx) => {
+          const txScope = withTeam(tx as unknown as Db, TEAM, MEMBER);
+          return (await txScope.timeline.team())?.id;
+        }),
+    };
+    const scope = guardOperatorScope(db, TEAM, MEMBER, nested);
+    expect(await scope.work()).toBe(TEAM);
+    await setPlatformSuspension(db, actor, 'user', MEMBER, true, 'suspend after nested tx');
+    await expect(scope.work()).rejects.toThrow('Account is suspended');
   });
   it('permits internal cleanup but rejects normal suspended work', async () => {
     await setPlatformSuspension(db, actor, 'team', TEAM, true, 'customer incident');

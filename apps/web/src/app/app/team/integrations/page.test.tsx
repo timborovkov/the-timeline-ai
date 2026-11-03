@@ -160,7 +160,9 @@ describe('IntegrationsRedirect', () => {
     await IntegrationsRedirect({
       searchParams: Promise.resolve({ error: 'oauth_denied', connected: 'server-1' }),
     });
-    expect(redirect).toHaveBeenCalledWith('/app/sources?error=oauth_denied&connected=server-1');
+    expect(redirect).toHaveBeenCalledWith(
+      '/app/connections/sources?error=oauth_denied&connected=server-1',
+    );
   });
 });
 

@@ -67,13 +67,20 @@ export async function guardTeamAccess(db: Db, teamId: string, userId: string, sy
   if (!context && maintenanceStorage.getStore()) return;
   const admitted = admissionStorage.getStore();
   if (admitted?.teamId === teamId && admitted.userId === userId) return;
+  // Nested helpers may close over a transaction client. Skip only after this
+  // principal was admitted into AsyncLocalStorage — a Transaction constructor
+  // name is not authorization. Querying an unadmitted tx client is required so
+  // first scoped ops like withTeam(tx) inside db.transaction still check
+  // suspension. Admitted nested calls reuse this store instead of querying
+  // again (which deadlocks a single-connection transaction).
   await assertActivePrincipal(db, teamId, userId);
 }
 const READ_OPERATION =
   /^(get|list|read|search|count|find|resolve|is|has|require|can|preview|summarizeVisibility)/;
 // Read helpers without a conventional read prefix must be reviewed by full scope path.
 const ADDITIONAL_READ_OPERATIONS = new Set(['timeline.team', 'objects.unreadNotificationCount']);
-const guardedScopes = new WeakSet();
+const WRAPPED_OPERATOR_METHOD = Symbol('timeline.guardOperatorWrapped');
+const wrappedOperatorScopes = new WeakSet();
 const SKIP_NESTED_SCOPE_KEYS = new Set(['postCommitDb', 'postCommitEffects', 'teamId', 'userId']);
 
 function isPlainScopeRecord(value: object): boolean {
@@ -86,14 +93,6 @@ function isDatabaseHandle(value: object): boolean {
   return typeof record.select === 'function' && typeof record.transaction === 'function';
 }
 
-/**
- * Wrap enumerable own methods in place so later `spyOn` and closed-over nested
- * scopes (suggestions → objects) observe the same functions. A Proxy wrapper
- * would intercept callers of the returned object, but not `vi.spyOn` patches
- * on the original nested scope. Never wrap the Drizzle handle or other class
- * instances: replacing `db.select` with a guard that itself queries `db`
- * recurses until the process hangs.
- */
 export function guardOperatorScope<T extends object>(
   db: Db,
   teamId: string,
@@ -102,11 +101,16 @@ export function guardOperatorScope<T extends object>(
   prefix = '',
   system = false,
 ): T {
-  if (guardedScopes.has(scope)) return scope;
-  guardedScopes.add(scope);
+  // Wrap own methods in place and return the same plain object. A Proxy here
+  // would hide replacements from Bun's spyOn and from helpers that close over
+  // the original nested namespace. Never wrap Drizzle handles or other class
+  // instances: replacing `db.select` with a guard that itself queries `db`
+  // recurses until the process hangs.
+  if (wrappedOperatorScopes.has(scope)) return scope;
+  wrappedOperatorScopes.add(scope);
   for (const key of Object.keys(scope)) {
     if (SKIP_NESTED_SCOPE_KEYS.has(key)) continue;
-    const value = (scope as Record<string, unknown>)[key];
+    const value: unknown = Reflect.get(scope, key);
     const operation = prefix ? `${prefix}.${key}` : key;
     if (value && typeof value === 'object' && !Array.isArray(value)) {
       if (isPlainScopeRecord(value) && !isDatabaseHandle(value))
@@ -114,46 +118,60 @@ export function guardOperatorScope<T extends object>(
       continue;
     }
     if (typeof value !== 'function') continue;
-    (scope as Record<string, unknown>)[key] = async (...args: unknown[]) => {
-      const context = await operatorContext();
-      if (context) {
-        await guardTeamAccess(db, teamId, userId, system);
-        if (
-          context.readOnly &&
-          !READ_OPERATION.test(key) &&
-          !ADDITIONAL_READ_OPERATIONS.has(operation)
-        )
-          throw new PlatformAccessError('Suspended inspection is read-only');
-        if (/^(billingOperator|mcpOAuth)\./.test(operation))
-          throw new PlatformAccessError('Use your administrator identity for account management');
-        await recordPlatformAudit(db, {
-          actorUserId: context.actorUserId,
-          effectiveUserId: context.effectiveUserId,
-          teamId,
-          sessionId: context.sessionId,
-          action: `impersonation.${operation}`,
-        });
-      }
-      // Only internal system scopes can reconcile billing or prune expired data while
-      // suspended. Never grant a browser or an impersonated job this exception.
-      if (
-        !context &&
-        system &&
-        (operation.startsWith('billing.') ||
-          operation.startsWith('billingOperator.') ||
-          operation === 'mcpOAuth.pruneExpiredCredentials' ||
-          operation === 'pins.pruneDeletedTimelineMomentPins')
-      )
-        return maintenanceStorage.run(true, () => Reflect.apply(value, scope, args) as unknown);
-      // Nested helpers may run inside a transaction while closing over the outer
-      // connection. Reuse this operation's admission instead of querying that
-      // connection again (which deadlocks a single-connection transaction).
-      await guardTeamAccess(db, teamId, userId, system);
-      return admissionStorage.run(
-        { teamId, userId },
-        () => Reflect.apply(value, scope, args) as unknown,
-      );
-    };
+    if (Reflect.get(value, WRAPPED_OPERATOR_METHOD) === true) continue;
+    const original = value;
+    Reflect.set(
+      scope,
+      key,
+      Object.assign(
+        async (...args: unknown[]) => {
+          const context = await operatorContext();
+          if (context) {
+            await guardTeamAccess(db, teamId, userId, system);
+            if (
+              context.readOnly &&
+              !READ_OPERATION.test(key) &&
+              !ADDITIONAL_READ_OPERATIONS.has(operation)
+            )
+              throw new PlatformAccessError('Suspended inspection is read-only');
+            if (/^(billingOperator|mcpOAuth)\./.test(operation))
+              throw new PlatformAccessError(
+                'Use your administrator identity for account management',
+              );
+            await recordPlatformAudit(db, {
+              actorUserId: context.actorUserId,
+              effectiveUserId: context.effectiveUserId,
+              teamId,
+              sessionId: context.sessionId,
+              action: `impersonation.${operation}`,
+            });
+          }
+          // Only internal system scopes can reconcile billing or prune expired data while
+          // suspended. Never grant a browser or an impersonated job this exception.
+          if (
+            !context &&
+            system &&
+            (operation.startsWith('billing.') ||
+              operation.startsWith('billingOperator.') ||
+              operation === 'mcpOAuth.pruneExpiredCredentials' ||
+              operation === 'pins.pruneDeletedTimelineMomentPins')
+          )
+            return maintenanceStorage.run(
+              true,
+              () => Reflect.apply(original, scope, args) as unknown,
+            );
+          // Nested helpers may run inside a transaction while closing over the outer
+          // connection. Reuse this operation's admission instead of querying that
+          // connection again (which deadlocks a single-connection transaction).
+          await guardTeamAccess(db, teamId, userId, system);
+          return admissionStorage.run(
+            { teamId, userId },
+            () => Reflect.apply(original, scope, args) as unknown,
+          );
+        },
+        { [WRAPPED_OPERATOR_METHOD]: true as const },
+      ),
+    );
   }
   return scope;
 }

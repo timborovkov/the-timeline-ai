@@ -11,6 +11,8 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 
+import { CONNECTIONS_HREF, CONNECTIONS_LEGACY_HREF, CONNECTIONS_TAB_PATH } from '@/lib/connections';
+
 /**
  * Single source of truth for the primary app navigation.
  *
@@ -82,13 +84,17 @@ const NAV_ITEMS: readonly NavItem[] = [
     group: 'workspace',
   },
   {
-    href: '/app/sources',
+    href: CONNECTIONS_HREF,
     label: 'Connections',
     icon: Cable,
     group: 'manage',
     badgeKey: 'connections',
     activeHrefs: [
-      '/app/sources',
+      CONNECTIONS_HREF,
+      CONNECTIONS_TAB_PATH.sources,
+      CONNECTIONS_TAB_PATH.agent,
+      CONNECTIONS_TAB_PATH.developer,
+      CONNECTIONS_LEGACY_HREF,
       '/app/team/telegram',
       '/app/team/slack',
       '/app/team/integrations',

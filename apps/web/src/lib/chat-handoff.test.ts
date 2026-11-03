@@ -78,9 +78,9 @@ describe('chat handoff', () => {
       storage,
       'team-a',
       {
-        context: { pathname: '/app/sources', routeKind: 'sources' },
+        context: { pathname: '/app/connections', routeKind: 'sources' },
         contextTrail: [
-          { kind: 'page', href: '/app/sources', label: 'Connections' },
+          { kind: 'page', href: '/app/connections', label: 'Connections' },
           {
             kind: 'object',
             href: '/app/objects/44444444-4444-4444-8444-444444444444',
@@ -93,7 +93,7 @@ describe('chat handoff', () => {
     );
     expect(consumeChatHandoffEntry(storage, 'team-a', 2_000)).toMatchObject({
       contextTrail: [
-        { kind: 'page', href: '/app/sources', label: 'Connections' },
+        { kind: 'page', href: '/app/connections', label: 'Connections' },
         { kind: 'object', label: 'Project Atlas' },
       ],
     });

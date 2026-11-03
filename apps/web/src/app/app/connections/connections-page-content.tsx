@@ -4,18 +4,17 @@ import { redirect } from 'next/navigation';
 
 import type { Metadata } from 'next';
 
-import { AdvancedConnections } from '@/app/app/sources/advanced-connections';
 import {
   buildDirectoryProviders,
   connectionHeaderMetadata,
+  directoryProviderList,
   EMPTY_TELEGRAM_SETUP,
-  initialOpenProviderId,
-  partitionMcpCatalog,
-  partitionMcpServers,
+  parseConnectionsLocation,
+  type ConnectionsTab,
   type InboundEmailSettings,
   type TelegramSetupSnapshot,
-} from '@/app/app/sources/connection-directory';
-import { ConnectionsDirectory } from '@/app/app/sources/connections-directory';
+} from '@/app/app/connections/connection-directory';
+import { ConnectionsWorkspace } from '@/app/app/connections/connections-workspace';
 import {
   loadIntegrationsPageModel,
   type IntegrationsPageModel,
@@ -24,6 +23,7 @@ import { PageHeader } from '@/components/page-header';
 import { RedirectActionToast } from '@/components/redirect-action-toast';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
+import { connectionsHref, connectionsTabFromSearch } from '@/lib/connections';
 import { db } from '@/lib/db';
 import {
   displayInboundEmail,
@@ -35,13 +35,14 @@ import { connectionErrorMessage } from '@/lib/ux-errors';
 
 export const metadata: Metadata = {
   title: 'Connections',
-  description: 'Provider accounts and team sync.',
+  description: 'Connect the tools this team already uses.',
 };
 
 interface SourcesPageParams {
   connected?: string;
   error?: string;
   integrationId?: string;
+  tab?: string;
 }
 
 function inboundEmailFromTeam(
@@ -91,30 +92,11 @@ async function loadTelegramSetup(scope: TeamScope): Promise<TelegramSetupSnapsho
   };
 }
 
-function ConnectionHealthNotices({ model }: { model: IntegrationsPageModel }) {
-  return (
-    <>
-      {model.blockingAttentionCount > 0 ? (
-        <div role="alert" className="text-sm text-danger">
-          {String(model.blockingAttentionCount)} integration item
-          {model.blockingAttentionCount === 1 ? '' : 's'} need attention. Open the affected provider
-          to reconnect, replace the connection, or retry failed sync.
-        </div>
-      ) : null}
-      {model.webhookDegradedCount > 0 ? (
-        <output className="block text-sm text-fg-muted">
-          {String(model.webhookDegradedCount)} webhook subscription
-          {model.webhookDegradedCount === 1 ? '' : 's'} degraded. Reconciliation remains active
-          while provider webhook delivery is repaired.
-        </output>
-      ) : null}
-    </>
-  );
-}
-
-export default async function SourcesPage({
+export default async function ConnectionsPage({
+  tab,
   searchParams,
 }: {
+  tab: ConnectionsTab;
   searchParams: Promise<SourcesPageParams>;
 }) {
   const session = await auth();
@@ -133,9 +115,13 @@ export default async function SourcesPage({
     scope.timeline.team(),
     loadTelegramSetup(scope),
   ]);
+  if (params.tab && connectionsTabFromSearch(params.tab) !== tab) {
+    redirect(connectionsHref(params));
+  }
   const isAdmin = role === 'owner' || role === 'admin';
   return (
     <SourcesPageView
+      tab={tab}
       params={params}
       active={active}
       isAdmin={isAdmin}
@@ -148,6 +134,7 @@ export default async function SourcesPage({
 }
 
 export function SourcesPageView({
+  tab = 'sources',
   params,
   active,
   isAdmin,
@@ -156,6 +143,7 @@ export function SourcesPageView({
   inboundEmail,
   telegramSetup,
 }: {
+  tab?: ConnectionsTab;
   params: SourcesPageParams;
   active: { teamName: string };
   isAdmin: boolean;
@@ -178,29 +166,29 @@ export function SourcesPageView({
     telegramWebhookConfigured: telegram.webhookConfigured,
     inboundEmail: emailSettings,
   });
-  const mcpCatalog = partitionMcpCatalog(model.mcpCatalogAvailable, model.nativeCatalog);
-  const mcpServers = partitionMcpServers(model.mcpServerRows, model.nativeCatalog);
-  const attentionCount = directory.connected.filter(
-    (provider) => provider.status === 'attention',
-  ).length;
-  const openProviderId = initialOpenProviderId({
-    providers: [...directory.connected, ...directory.available],
+  const providers = directoryProviderList(directory);
+  const connectedCount = directory.connected.length + (directory.email.connected ? 1 : 0);
+  const availableCount = directory.available.length + (directory.email.connected ? 0 : 1);
+  const attentionCount = providers.filter((provider) => provider.status === 'attention').length;
+  const location = parseConnectionsLocation({
+    tab,
+    providers,
     connectedRows: model.connectedRows,
     integrationId: params.integrationId,
   });
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <PageHeader
         variant="collection"
         title="Connections"
-        subtitle="Provider accounts and team sync."
-        srLabel={`Connections · ${active.teamName} · ${String(directory.connected.length)} connected · ${String(attentionCount)} need attention · ${String(directory.available.length)} available`}
+        subtitle="Connect the tools this team already uses."
+        srLabel={`Connections · ${active.teamName} · ${String(connectedCount)} connected · ${String(attentionCount)} need attention · ${String(availableCount)} available`}
         metadata={connectionHeaderMetadata(
           active.teamName,
-          directory.connected.length,
+          connectedCount,
           attentionCount,
-          directory.available.length,
+          availableCount,
         )}
       />
 
@@ -210,21 +198,17 @@ export function SourcesPageView({
         success={params.connected ? 'MCP server connected' : null}
       />
 
-      <ConnectionHealthNotices model={model} />
-      <ConnectionsDirectory
+      <ConnectionsWorkspace
         isAdmin={isAdmin}
         model={model}
+        email={directory.email}
         connected={directory.connected}
         available={directory.available}
-        initialProviderId={openProviderId}
         inboundEmail={emailSettings}
         telegramSetup={telegram}
-      />
-      <AdvancedConnections
-        isAdmin={isAdmin}
-        model={model}
-        mcpServerRows={mcpServers.advanced}
-        mcpCatalog={mcpCatalog.advanced}
+        initialTab={location.tab}
+        initialHash={location.hash}
+        integrationId={params.integrationId}
       />
     </div>
   );

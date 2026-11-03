@@ -75,7 +75,7 @@ function ConnectorHero({ connector }: { connector: ConnectorContent }) {
                 }
                 signedIn={
                   <Button asChild size="lg">
-                    <Link href="/app/sources">
+                    <Link href="/app/connections">
                       {`Connect ${connector.name}`}
                       <ArrowRight aria-hidden="true" />
                     </Link>
@@ -411,7 +411,7 @@ function FinalCta({ connector }: { connector: ConnectorContent }) {
             }
             signedIn={
               <Button asChild size="lg" className="mt-8">
-                <Link href="/app/sources">
+                <Link href="/app/connections">
                   {`Connect ${connector.name}`}
                   <ArrowRight aria-hidden="true" />
                 </Link>

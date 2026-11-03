@@ -180,6 +180,7 @@ describe('Telegram server actions', () => {
         source: 'automatic',
       },
     );
+    expect(fakes.revalidatePath).toHaveBeenCalledWith('/app/connections', 'layout');
     expect(fakes.revalidatePath).toHaveBeenCalledWith('/app/sources');
     expect(fakes.revalidatePath).toHaveBeenCalledWith('/app/team/telegram');
     expect(fakes.revalidatePath).toHaveBeenCalledWith('/app/timeline');
@@ -221,6 +222,7 @@ describe('Telegram server actions', () => {
     expect(fakes.requireMembership).toHaveBeenNthCalledWith(2, 'admin');
     expect(fakes.revokeLinkToken).toHaveBeenCalledWith(TOKEN_ID);
     expect(fakes.unbindChat).toHaveBeenCalledWith(CHAT_BINDING_ID);
+    expect(fakes.revalidatePath).toHaveBeenCalledWith('/app/connections', 'layout');
     expect(fakes.revalidatePath).toHaveBeenCalledWith('/app/sources');
     expect(fakes.revalidatePath).toHaveBeenCalledWith('/app/team/telegram');
   });

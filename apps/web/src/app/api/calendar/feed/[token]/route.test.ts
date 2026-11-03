@@ -120,13 +120,18 @@ await vi.mock(
               where: chain.where,
             };
           }
+          if (table.table === 'calendar_events') {
+            return {
+              where: (where: unknown) => {
+                fakes.eventWhere = where;
+                return {
+                  orderBy: vi.fn().mockResolvedValue(fakes.eventRows),
+                };
+              },
+            };
+          }
           return {
-            where: (where: unknown) => {
-              fakes.eventWhere = where;
-              return {
-                orderBy: vi.fn().mockResolvedValue(fakes.eventRows),
-              };
-            },
+            where: () => Promise.resolve([]),
           };
         },
       }),

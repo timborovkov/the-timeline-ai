@@ -1,7 +1,7 @@
 # The Timeline — Design System
 
-**Version:** v3.30 · Privacy-conscious analytics and usage billing (2026-10-24).
-Replaces v3.29 Installed-app splash.
+**Version:** v3.31 · Connections as a flagship settings page (2026-11-02).
+Replaces v3.30 Privacy-conscious analytics and usage billing.
 
 This is the visual and interaction contract for the product. If a screen
 disagrees with it, fix the screen. If the language intentionally changes,
@@ -663,22 +663,37 @@ forms, with hairline section structure, 12px muted labels, compact `sm`
 outline saves, and at most one filled primary action per view (Rename, Create
 invite, Start export). Select and checkbox preferences may save immediately.
 
-Connections is a collection directory. Each provider appears once — native OAuth
-providers plus Telegram and inbound Email. Connected providers are
-`CollectionGroup` + `CollectionRow` rows (white padded logo tile, name, one
-status — Connected, Syncing for team, or Needs attention — and one primary
-action). They are not bordered `p-4` cards. Clicking a connected row opens a
-details sheet with that provider’s accounts, resource picker (repos, projects,
-channels, folders), default team visibility, team-sync activation, matching MCP
-server, recent activity, and disconnect. Telegram setup (bot link tokens, group
-bindings, linked users) and inbound Email (team address and list-style allowed
-senders) live in those sheets. A Drive folder picker replaces the generic
-checkbox list inside that resource-picker slot. Available providers sit below as
-a searchable Connect / Set up list. Agent MCP, webhooks, audit, and job recovery
-sit in one collapsed Advanced section. There is no separate Integrations row,
-and no provider is listed twice. Status uses `CollectionStatus` or readable
-sentence-case text, not uppercase chips. Provider logos always sit on a white
-padded rounded tile.
+Connections is a flagship settings directory with Sources, Agent tools, and
+Developer as real routes (`/app/connections/sources`,
+`/app/connections/agent-tools`, `/app/connections/developer`) — the same
+hairline tab chrome as Meetings. `/app/connections` redirects to Sources.
+Inbound Email sits in its own quiet Inbox section at the top of Sources because
+it is Timeline’s team inbox, not a third-party provider. Telegram, Slack, and
+the remaining providers follow as `CollectionGroup` + `CollectionRow` (white
+padded logo tile, name, one status — Connected, Syncing for team, Needs
+attention, or Not connected — and one primary action). They are not bordered
+`p-4` cards. Documents uploads and meeting notetakers stay on their own sidebar
+pages, not on Connections. Clicking a source row opens a details sheet with
+that provider’s accounts, resource picker (repos, projects, channels, folders),
+default team visibility, team-sync activation, matching MCP server, recent
+activity, and disconnect. Telegram setup (bot link tokens, group bindings,
+linked users) and inbound Email (team address and list-style allowed senders)
+live in those sheets. A Drive folder picker replaces the generic checkbox list
+inside that resource-picker slot. Available providers sit below as a Connect /
+Set up list. A quiet search on the tab chrome filters the open section. Agent
+tools holds compact rows for Agent MCP servers and the Timeline MCP endpoint;
+local-only and unroutable catalog entries such as Figma sit in Coming soon with
+no Connect action. Developer holds ingest webhooks, integration audit, and job
+recovery.
+Those tools open sheets or their existing admin pages — they are not an
+expanded dump. Sheets close with Escape and trap focus. There is no separate
+Integrations row, and no provider is listed twice. Status uses
+`CollectionStatus` or readable sentence-case text, not uppercase chips. Provider
+logos always sit on a white padded rounded tile. Fragment links such as
+`/app/connections/sources#email`, `/app/connections/agent-tools#agent-mcp`, and
+`/app/connections/developer#webhooks` open the matching tab and sheet. Legacy
+`/app/sources` (including hashes), `/app/team/integrations`, and
+`/app/team/telegram` redirect to the matching Connections route and sheet.
 
 Meetings keep the collection header and rows. Capture and saved-meeting setup
 forms sit in a closed disclosure so the list is the default view. The Saved tab
@@ -1312,6 +1327,7 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-08-28 | Object detail typography | Shares `object-detail-type` roles: 13px semibold section titles, medium 14px row titles, Commit Mono counts/timestamps, and medium rail labels. |
 | 2026-10-30 | Polar promo codes | Change plan includes an optional promo field with inline eligibility/provider errors. An active assigned team discount disables the field and explains precedence; discounts never stack. Invoice previews remain local estimates before Polar campaign savings. |
 | 2026-10-23 | Quiet customer billing | Team Billing separates remaining benefits, recorded usage charges, recurring fee, and monthly spend cap. Usage is a meter table. Cap, payment, and comp states are one banner each. Members only see a limit notice. Platform admin billing stays dense. |
+| 2026-11-02 | Connections as a flagship settings page | Splits Connections into Sources, Agent tools, and Developer tabs. Email stays a normal capture row; Documents and Meetings stay on their sidebar pages. Agent MCP, Timeline MCP, and webhooks open compact sheets. Figma and other local-only catalog entries sit in Coming soon. |
 
 
 ### Billing benefits and recorded charges (2026-10-31)

@@ -4,6 +4,7 @@ import { withTeam } from '@timeline/shared/team-scope';
 import { NextResponse } from 'next/server';
 
 import { auth } from '@/lib/auth';
+import { connectionsHref } from '@/lib/connections';
 import { db } from '@/lib/db';
 import { publicApiError } from '@/lib/public-error';
 import { appUrl } from '@/lib/site-url';
@@ -19,7 +20,7 @@ const log = childLogger('web:api:mcp:oauth:callback');
  * Verifies the HMAC state JWT, restores (teamId, mcpServerId, userId), loads
  * the persisted client_info + PKCE verifier, exchanges the code for tokens,
  * and stores them encrypted on `mcp_oauth_tokens`. The user lands back on
- * `/app/sources`.
+ * Connections Agent tools.
  */
 export async function GET(req: Request): Promise<Response> {
   const session = await auth();
@@ -31,7 +32,7 @@ export async function GET(req: Request): Promise<Response> {
   const state = url.searchParams.get('state');
   const oauthError = url.searchParams.get('error');
   if (oauthError) {
-    return NextResponse.redirect(appUrl('/app/sources?error=oauth_denied'));
+    return NextResponse.redirect(appUrl(connectionsHref({ tab: 'agent', error: 'oauth_denied' })));
   }
   if (!code || !state) {
     return new Response('missing_code_or_state', { status: 400 });
@@ -123,7 +124,9 @@ export async function GET(req: Request): Promise<Response> {
     if (!hasExistingTokens) {
       await scope.mcp.updateServer(verified.mcpServerId, { enabled: true });
     }
-    return NextResponse.redirect(appUrl(`/app/sources?connected=${verified.mcpServerId}`));
+    return NextResponse.redirect(
+      appUrl(connectionsHref({ tab: 'agent', connected: verified.mcpServerId })),
+    );
   } catch (err) {
     log.warn({ err, mcpServerId: verified.mcpServerId }, 'mcp oauth callback failed');
     const failure = publicApiError(err, {
@@ -132,7 +135,11 @@ export async function GET(req: Request): Promise<Response> {
     });
     return NextResponse.redirect(
       appUrl(
-        `/app/sources?error=${failure.error}${failure.reference ? `&reference=${failure.reference}` : ''}`,
+        connectionsHref({
+          tab: 'agent',
+          error: failure.error,
+          ...(failure.reference ? { reference: failure.reference } : {}),
+        }),
       ),
     );
   }
