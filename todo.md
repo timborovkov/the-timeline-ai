@@ -120,8 +120,9 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       First slice shipped the Moments/All events mode split, quieter chrome,
       weighted rows (story / record / pulse), Linear-style single-icon rows,
       a wider family-aware inspector with collapsed original-source viewers,
-      Ask citation previews that name transcript/calendar/document/Timeline
-      destinations and reuse that original-source viewer,
+      Ask numbered superscript citations with compact source cards that keep
+      transcript/calendar/document/Timeline destinations (inspector chips still
+      reuse the original-source viewer),
       sentinel infinite scroll with virtualized archive rows and no inventory
       chip,
       GitHub workflow bundling, and the

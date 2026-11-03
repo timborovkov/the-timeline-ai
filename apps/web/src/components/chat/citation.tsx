@@ -4,23 +4,24 @@
 // doesn't pull the queue/qdrant/llm modules that the package index
 // re-exports — those drag in bullmq → ioredis → node:dns and fail the
 // Next.js client compile.
-import { citationPartToArtifactRef, parseCitations } from '@timeline/shared/citation';
-import { Fragment, type ReactNode } from 'react';
+import {
+  artifactRefCitation,
+  citationPartToArtifactRef,
+  numberCitations,
+  parseCitations,
+} from '@timeline/shared/citation';
+import { Fragment, useMemo, type ReactNode } from 'react';
 
-import { ArtifactReferenceChip } from '@/components/artifact-reference-chip';
+import { CitationMarker } from '@/components/chat/citation-marker';
 
 interface Props {
   text: string;
 }
 
 /**
- * Splits the assistant's text into runs and typed artifact chips. Every
- * citation opens the shared preview dialog first, with the full page link
- * available inside the dialog.
- *
- * The visual matches the system-wide citation primitive — mono lime
- * brackets on a signal-soft background — so chips inside chat read the
- * same as chips anywhere else.
+ * Splits the assistant's text into runs and numbered superscript citations.
+ * Markers are numbered by first appearance and reused when the same source
+ * is cited again. Hover, tap, or keyboard focus opens a compact source card.
  *
  * Text also renders the lightweight Markdown shape LLMs normally produce
  * in AI SDK chat parts: paragraphs, bullets, numbered lists, headings,
@@ -31,6 +32,7 @@ interface Props {
  */
 export function CitationText({ text }: Props) {
   const blocks = parseMarkdownBlocks(text);
+  const numbers = useMemo(() => numberCitations(text), [text]);
 
   return (
     <div className="space-y-3 leading-relaxed">
@@ -42,7 +44,7 @@ export function CitationText({ text }: Props) {
               <ul key={key} className="ml-5 list-disc space-y-1 marker:text-fg-dim">
                 {block.items.map((item) => (
                   <li key={item.key}>
-                    <InlineText keyPrefix={item.key} text={item.text} />
+                    <InlineText keyPrefix={item.key} numbers={numbers} text={item.text} />
                   </li>
                 ))}
               </ul>
@@ -56,7 +58,7 @@ export function CitationText({ text }: Props) {
               >
                 {block.items.map((item) => (
                   <li key={item.key} value={item.value}>
-                    <InlineText keyPrefix={item.key} text={item.text} />
+                    <InlineText keyPrefix={item.key} numbers={numbers} text={item.text} />
                   </li>
                 ))}
               </ol>
@@ -64,7 +66,7 @@ export function CitationText({ text }: Props) {
           case 'heading':
             return (
               <p key={key} className="font-semibold text-fg">
-                <InlineText keyPrefix={key} text={block.text} />
+                <InlineText keyPrefix={key} numbers={numbers} text={block.text} />
               </p>
             );
           case 'table':
@@ -79,7 +81,11 @@ export function CitationText({ text }: Props) {
                           scope="col"
                           className="px-3 py-2 align-top font-medium"
                         >
-                          <InlineText keyPrefix={`${key}:head:${String(cellIndex)}`} text={cell} />
+                          <InlineText
+                            keyPrefix={`${key}:head:${String(cellIndex)}`}
+                            numbers={numbers}
+                            text={cell}
+                          />
                         </th>
                       ))}
                     </tr>
@@ -94,6 +100,7 @@ export function CitationText({ text }: Props) {
                           >
                             <InlineText
                               keyPrefix={`${key}:cell:${String(rowIndex)}:${String(cellIndex)}`}
+                              numbers={numbers}
                               text={row[cellIndex] ?? ''}
                             />
                           </td>
@@ -107,7 +114,7 @@ export function CitationText({ text }: Props) {
           case 'paragraph':
             return (
               <p key={key}>
-                <InlineText keyPrefix={key} text={block.text} />
+                <InlineText keyPrefix={key} numbers={numbers} text={block.text} />
               </p>
             );
         }
@@ -246,7 +253,15 @@ function blockKey(type: string, line: number, text: string): string {
   return `${type}:${String(line)}:${text.slice(0, 24)}`;
 }
 
-function InlineText({ text, keyPrefix }: { text: string; keyPrefix: string }) {
+function InlineText({
+  text,
+  keyPrefix,
+  numbers,
+}: {
+  text: string;
+  keyPrefix: string;
+  numbers: Map<string, number>;
+}) {
   const parts = parseCitations(text);
   let cursor = 0;
 
@@ -259,11 +274,9 @@ function InlineText({ text, keyPrefix }: { text: string; keyPrefix: string }) {
         else cursor += p.value.length;
         const key = `${keyPrefix}:${p.type}:${String(start)}:${String(cursor)}`;
         if (p.type === 'text') return <StrongText key={key} keyPrefix={key} text={p.value} />;
-        return (
-          <span key={key} className="mx-0.5">
-            <ArtifactReferenceChip refValue={citationPartToArtifactRef(p)} />
-          </span>
-        );
+        const refValue = citationPartToArtifactRef(p);
+        const number = numbers.get(artifactRefCitation(refValue)) ?? 1;
+        return <CitationMarker key={key} number={number} refValue={refValue} />;
       })}
     </>
   );

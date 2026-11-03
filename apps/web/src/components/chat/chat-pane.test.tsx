@@ -410,7 +410,7 @@ describe('ChatPane', () => {
     });
   });
 
-  it('renders assistant markdown text parts with citation chips', () => {
+  it('renders assistant markdown text parts with numbered citation markers', () => {
     const eventId = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
     fakes.useChat.mockReturnValue({
       messages: [
@@ -446,8 +446,9 @@ describe('ChatPane', () => {
     expect(html).toContain('<ul');
     expect(html).toContain('list-disc');
     expect(html).toContain('<li');
-    expect(html).toContain('[ev:aaaaaaaa]');
-    expect(html).toContain(`Open reference [ev:aaaaaaaa]`);
+    expect(html).toContain('Citation 1');
+    expect(html).not.toContain('[ev:aaaaaaaa]');
+    expect(html).not.toContain('Open reference [ev:aaaaaaaa]');
     expect(html).not.toContain('**Sales');
     expect(html).not.toContain('- Follow-up');
   });
@@ -562,7 +563,8 @@ describe('ChatPane', () => {
     expect(html).toContain('<td');
     expect(html).toContain('<strong');
     expect(html).toContain('Register domains');
-    expect(html).toContain('[ev:aaaaaaaa]');
+    expect(html).toContain('Citation 1');
+    expect(html).not.toContain('[ev:aaaaaaaa]');
     expect(html).not.toContain('|---|--------|-------|------|');
   });
 

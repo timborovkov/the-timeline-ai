@@ -84,6 +84,15 @@ export interface ArtifactPreviewOriginal {
   json?: unknown;
 }
 
+export interface ArtifactCitationCard {
+  sourceKey: string;
+  sourceLabel: string;
+  logoSrc: string | null;
+  author: string | null;
+  dateLabel: string | null;
+  quote: string | null;
+}
+
 export interface ArtifactPreview {
   ref: ArtifactRef;
   title: string;
@@ -95,6 +104,7 @@ export interface ArtifactPreview {
   actions?: ArtifactPreviewAction[];
   original?: ArtifactPreviewOriginal | null;
   media?: { kind: 'audio'; url: string; label?: string | null } | null;
+  card?: ArtifactCitationCard | null;
 }
 
 export type CitationPart =
@@ -269,6 +279,40 @@ export function artifactRefCitation(ref: ArtifactRef): string {
     case 'route':
       return `[route:${ref.id}]`;
   }
+}
+
+const SUPERSCRIPT_DIGITS = ['⁰', '¹', '²', '³', '⁴', '⁵', '⁶', '⁷', '⁸', '⁹'] as const;
+
+export function citationQuote(text: string | null | undefined, max = 140): string | null {
+  const line = text?.replace(/\s+/g, ' ').trim();
+  if (!line) return null;
+  if (line.length <= max) return line;
+  const clipped = line.slice(0, max - 1);
+  const lastSpace = clipped.lastIndexOf(' ');
+  const base = (lastSpace > max / 2 ? clipped.slice(0, lastSpace) : clipped).trimEnd();
+  return `${base}…`;
+}
+
+export function citationSuperscript(n: number): string {
+  if (!Number.isInteger(n) || n < 1) return '';
+  return String(n)
+    .split('')
+    .map((digit) => SUPERSCRIPT_DIGITS[Number(digit)] ?? digit)
+    .join('');
+}
+
+export function numberCitations(text: string): Map<string, number> {
+  const numbers = new Map<string, number>();
+  let next = 1;
+  for (const part of parseCitations(text)) {
+    if (part.type === 'text') continue;
+    const key = artifactRefCitation(citationPartToArtifactRef(part));
+    if (!numbers.has(key)) {
+      numbers.set(key, next);
+      next += 1;
+    }
+  }
+  return numbers;
 }
 
 export function parseCitations(text: string): CitationPart[] {

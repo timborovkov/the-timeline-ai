@@ -116,7 +116,8 @@ The through-line:
 6. **Hiring**: product designer (Maya Chen, final round the day after seed day) and a
    reopened senior backend loop.
 
-Ask “what did the team achieve recently?” as Avery to walk the cited recap.
+Ask “what did the team achieve recently?” as Avery to walk the numbered recap. Hover a
+superscript to open the source card.
 
 Every seeded date — timestamps, calendar starts, digest windows, object due dates, and
 dates written inside notes, emails, Ask answers, and documents — is a relative offset
