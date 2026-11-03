@@ -53,7 +53,7 @@ describe('billing status', () => {
         aiChargeCents: 50,
         recallMinutes: 60,
         emailUnits: 500,
-        storageGb: 1,
+        storageGb: FREE_ALLOWANCES.storageGb,
         acceptedSources: 1000,
       },
       meteredSpendCents: 450,

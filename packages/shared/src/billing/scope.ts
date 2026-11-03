@@ -22,6 +22,7 @@ import {
   FREE_ALLOWANCES,
   PLAN_CATALOG,
   polarEventNameForMeter,
+  storageGbFromBytes,
 } from '#src/billing/catalog.js';
 import {
   capEligibleCustomerChargeCents,
@@ -86,6 +87,7 @@ import {
   restoredPaidBillingStateAfterWalletOrCapRecovery,
   spendCapUtilization,
 } from '#src/billing/status.js';
+import { sumTeamStoredBytes } from '#src/billing/stored-bytes.js';
 import { getEnv } from '#src/env.js';
 import { childLogger } from '#src/logger.js';
 
@@ -480,6 +482,17 @@ export function createBillingScope(deps: BillingScopeDeps) {
       return ensureAccount();
     },
 
+    async getCapacityUsage() {
+      await ensureMember();
+      const account = await ensureAccount();
+      const { getTeamCapacityUsage } = await import('#src/billing/capacity.js');
+      return getTeamCapacityUsage({
+        db,
+        teamId,
+        planId: effectiveBillingPlanId(account),
+      });
+    },
+
     async getDashboard(options?: { canManageBilling?: boolean }) {
       const dashboardRole = await ensureMember();
       await ensureAccount();
@@ -517,6 +530,15 @@ export function createBillingScope(deps: BillingScopeDeps) {
               { nativeUnits: number; customerChargeCents: number; capEligibleChargeCents: number }
             >
           >;
+          const storageMeter = byMeter.storage_gb_month;
+          const liveStorageGb = storageGbFromBytes(
+            await sumTeamStoredBytes(tx as unknown as Db, teamId),
+          );
+          byMeter.storage_gb_month = {
+            nativeUnits: liveStorageGb,
+            customerChargeCents: storageMeter?.customerChargeCents ?? 0,
+            capEligibleChargeCents: storageMeter?.capEligibleChargeCents ?? 0,
+          };
           const meteredSpendCents = counters.reduce(
             (sum, row) => sum + row.capEligibleChargeCents,
             0,
