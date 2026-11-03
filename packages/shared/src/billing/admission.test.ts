@@ -143,6 +143,7 @@ describe('billing admission helpers', () => {
           operationId,
           openRouterUsd: 0.05,
           deliverySurface: 'web',
+          providerUsageIncomplete: true,
         },
       ),
     ).rejects.toThrow('ledger down');
@@ -155,6 +156,16 @@ describe('billing admission helpers', () => {
       pending_settlement: true,
       pending_openrouter_usd: 0.05,
       pending_delivery_surface: 'web',
+      provider_usage_incomplete: true,
+    });
+    expect(await settlePendingBillingReservations(db)).toBe(1);
+    const [ledger] = await db
+      .select()
+      .from(billingUsageLedger)
+      .where(eq(billingUsageLedger.operationId, operationId));
+    expect(ledger?.metadata).toMatchObject({
+      openrouter_usd: 0.05,
+      provider_usage_incomplete: true,
     });
   });
 

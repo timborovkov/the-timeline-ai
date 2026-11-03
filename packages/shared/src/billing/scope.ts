@@ -12,6 +12,7 @@ import {
 } from '@timeline/db';
 import { and, eq, gte, inArray, isNull, or, sql } from 'drizzle-orm';
 
+import { captureConfiguredProductEvent } from '#src/analytics/posthog-node.js';
 import { notifyBillingUsageAlerts } from '#src/billing/alerts.js';
 import {
   BILLING_ENTITLEMENTS_VERSION,
@@ -1725,6 +1726,15 @@ export function createBillingScope(deps: BillingScopeDeps) {
         return { ok: true as const, duplicate: true as const };
       }
       if (!settled.ledger) throw new Error('Missing settlement ledger');
+      const settlementMetadata = settled.ledger.metadata;
+      if (
+        settlementMetadata.presentation_chargeable === true &&
+        Number(settlementMetadata.invoice_cents) > 0
+      ) {
+        await captureConfiguredProductEvent({ kind: 'team', teamId }, 'paid_usage_recorded', {
+          meter: input.meterId,
+        });
+      }
 
       try {
         const ymNow = periodYm();

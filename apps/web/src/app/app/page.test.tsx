@@ -11,6 +11,7 @@ const fakes = vi.hoisted(() => ({
   captureVisibility: null as 'private' | 'team' | null,
   getCalendarSettings: vi.fn(),
   getDashboard: vi.fn(),
+  hasCompletedChatAnswer: vi.fn(),
   getWorkAttentionSummary: vi.fn(),
   getHomeOpenObjectCounts: vi.fn(),
   isPinnedMany: vi.fn(),
@@ -51,6 +52,12 @@ const fakes = vi.hoisted(() => ({
 }));
 
 await vi.mock(
+  import.meta.resolve('@/components/payg-value-nudge'),
+  () => ({ PaygValueNudge: () => <p>Optional PAYG suggestion</p> }),
+  () => import('@/components/payg-value-nudge'),
+);
+
+await vi.mock(
   import.meta.resolve('@/components/billing-restriction-notice'),
   () => ({ BillingRestrictionNotice: ({ reason }: { reason: string }) => <p>{reason}</p> }),
   () => import('@/components/billing-restriction-notice'),
@@ -80,6 +87,7 @@ await vi.mock(
   import.meta.resolve('@timeline/shared/team-scope'),
   () => ({
     withTeam: () => ({
+      objects: { hasCompletedChatAnswer: fakes.hasCompletedChatAnswer },
       documents: { listDocuments: () => Promise.resolve([]) },
       requireMembership: vi.fn().mockImplementation(() => Promise.resolve(fakes.role)),
       billing: { getDashboard: fakes.getDashboard },
@@ -244,6 +252,7 @@ beforeEach(() => {
   fakes.resolveActiveTeam.mockResolvedValue({ active: { teamId: 'team-1' } });
   fakes.getCalendarSettings.mockResolvedValue({ defaultTimezone: 'UTC' });
   fakes.getDashboard.mockResolvedValue({ nudge: null });
+  fakes.hasCompletedChatAnswer.mockResolvedValue(false);
   fakes.getWorkAttentionSummary.mockResolvedValue({
     attention: 0,
     overdueTasks: 0,
@@ -464,4 +473,49 @@ describe('HomeDashboardPage', () => {
       operation: 'billing_dashboard',
     });
   });
+});
+
+it('keeps Home usable when optional PAYG eligibility cannot be loaded', async () => {
+  fakes.role = 'owner';
+  fakes.getDashboard.mockResolvedValue({
+    account: { planId: 'free' },
+    nudge: null,
+    restrictionReason: null,
+  });
+  fakes.hasCompletedChatAnswer.mockRejectedValue(new Error('lookup unavailable'));
+  const html = renderToStaticMarkup(await HomeDashboardPage());
+  expect(html).toContain('<h1 class="sr-only">Home</h1>');
+  expect(html).not.toContain('Optional PAYG suggestion');
+  expect(fakes.reportCaughtError).toHaveBeenCalledWith(expect.any(Error), {
+    surface: 'render',
+    operation: 'payg_suggestion',
+  });
+});
+
+it('shows optional PAYG followup only for an unrestricted Free admin with an answer', async () => {
+  fakes.role = 'owner';
+  fakes.getDashboard.mockResolvedValue({
+    account: { planId: 'free' },
+    nudge: null,
+    restrictionReason: null,
+  });
+  fakes.hasCompletedChatAnswer.mockResolvedValue(false);
+  expect(renderToStaticMarkup(await HomeDashboardPage())).not.toContain('Optional PAYG suggestion');
+  fakes.hasCompletedChatAnswer.mockResolvedValue(true);
+  expect(renderToStaticMarkup(await HomeDashboardPage())).toContain('Optional PAYG suggestion');
+  fakes.role = 'member';
+  expect(renderToStaticMarkup(await HomeDashboardPage())).not.toContain('Optional PAYG suggestion');
+  fakes.role = 'owner';
+  fakes.getDashboard.mockResolvedValue({
+    account: { planId: 'free' },
+    nudge: null,
+    restrictionReason: 'email_unverified',
+  });
+  expect(renderToStaticMarkup(await HomeDashboardPage())).not.toContain('Optional PAYG suggestion');
+  fakes.getDashboard.mockResolvedValue({
+    account: { planId: 'payg' },
+    nudge: null,
+    restrictionReason: null,
+  });
+  expect(renderToStaticMarkup(await HomeDashboardPage())).not.toContain('Optional PAYG suggestion');
 });

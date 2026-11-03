@@ -1,0 +1,60 @@
+'use client';
+
+import Link from 'next/link';
+import { useState, useSyncExternalStore } from 'react';
+
+function subscribe(listener: () => void) {
+  window.addEventListener('storage', listener);
+  return () => {
+    window.removeEventListener('storage', listener);
+  };
+}
+
+/** A per-user/team suggestion; never replaces billing warnings or restrictions. */
+export function PaygValueNudge({ storageKey }: { storageKey: string }) {
+  const [dismissed, setDismissed] = useState(false);
+  const storedDismissal = useSyncExternalStore(
+    subscribe,
+    () => {
+      try {
+        return localStorage.getItem(storageKey) === 'dismissed';
+      } catch {
+        return false;
+      }
+    },
+    () => true,
+  );
+  if (dismissed || storedDismissal) return null;
+  return (
+    <aside
+      aria-label="Pay as you go suggestion"
+      className="flex flex-wrap items-center justify-between gap-3 border border-border bg-surface-2 p-3"
+    >
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-medium">Keep going when your Free allowance runs out</p>
+        <p className="mt-1 text-sm text-fg-muted">
+          Pay as you go keeps your Free allowances, with no platform fee. Extra usage is metered
+          under a €25 monthly default cap; extra members and tax may add charges.
+        </p>
+      </div>
+      <Link href="/app/team?section=billing&plan=payg#change-plan" className="text-sm underline">
+        Explore Pay as you go
+      </Link>
+      <button
+        type="button"
+        className="text-sm text-fg-muted underline"
+        onClick={() => {
+          setDismissed(true);
+          try {
+            localStorage.setItem(storageKey, 'dismissed');
+            window.dispatchEvent(new Event('storage'));
+          } catch {
+            /* Dismiss for this visit even when storage is unavailable. */
+          }
+        }}
+      >
+        Not now
+      </button>
+    </aside>
+  );
+}

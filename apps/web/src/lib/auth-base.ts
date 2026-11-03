@@ -20,6 +20,11 @@ import GitHub from 'next-auth/providers/github';
 import { z } from 'zod';
 
 import { trackProductEventBestEffort } from '@/lib/analytics';
+import {
+  selectedPlanCallback,
+  selectedPlanFromCallback,
+  signedInAuthRedirect,
+} from '@/lib/auth-redirect';
 import { authConfig } from '@/lib/auth.config';
 import { ensureSoloTeam } from '@/lib/default-team';
 import { sendEmailVerification } from '@/lib/email-verification';
@@ -218,8 +223,17 @@ const nextAuth = NextAuth({
         reportCaughtError(err, { surface: 'server_action', operation: 'pending_invite_read' });
       }
       let attribution: ReturnType<typeof readConsentedPublicAttributionCookie>;
+      let verificationCallbackUrl: string | undefined;
       try {
-        attribution = readConsentedPublicAttributionCookie(await cookies());
+        const jar = await cookies();
+        attribution = readConsentedPublicAttributionCookie(jar);
+        const savedCallback =
+          jar.get('__Secure-authjs.callback-url')?.value ?? jar.get('authjs.callback-url')?.value;
+        verificationCallbackUrl = selectedPlanCallback(
+          selectedPlanFromCallback(
+            signedInAuthRedirect({ ...(savedCallback ? { callbackUrl: savedCallback } : {}) }),
+          ),
+        );
       } catch {
         attribution = undefined;
       }
@@ -269,14 +283,18 @@ const nextAuth = NextAuth({
                 operation: 'oauth_welcome_email',
               });
             }),
-            sendEmailVerification({ db, userId, email: user.email, teamId }).catch(
-              (err: unknown) => {
-                reportCaughtError(err, {
-                  surface: 'server_action',
-                  operation: 'oauth_verify_email',
-                });
-              },
-            ),
+            sendEmailVerification({
+              db,
+              userId,
+              email: user.email,
+              teamId,
+              callbackUrl: verificationCallbackUrl,
+            }).catch((err: unknown) => {
+              reportCaughtError(err, {
+                surface: 'server_action',
+                operation: 'oauth_verify_email',
+              });
+            }),
           ]);
         }
       }

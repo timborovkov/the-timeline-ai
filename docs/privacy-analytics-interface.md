@@ -317,3 +317,25 @@ claim.
 ## November 2026 acquisition coverage
 
 Public pricing and billing help are explicitly allowlisted public surfaces. Pricing choices use only fixed `choose_free`, `choose_payg`, `choose_team` and `choose_business` CTA values under the existing consent gate. No plan query string, promo code, payment detail, customer identifier or visitor-to-account identity link is collected by this change.
+
+
+## MVP lifecycle coverage (3 November 2026)
+
+The existing pseudonymous server/worker stream now includes `email_verified`,
+`billing_checkout_created` (plan only), `billing_plan_activated` (plan only),
+`paid_usage_recorded` (meter only), `source_indexed` (bounded source category),
+and `reference_preview_loaded` (no properties). Event purpose, trigger, owner and
+retention target remain defined in the runtime event registry. No content,
+resource identifiers, payment identifiers, verification tokens or URLs are exported.
+
+These events are best effort, not a financial ledger or exactly-once outbox.
+Checkout creation is not purchase confirmation; positive chargeable ledger usage
+is not proof of payment collection. Reindexing can repeat `source_indexed`; current
+coverage is timeline events, not whole-document readiness. Artifact preview events
+occur only after authorization and successful hydration and do not count cached
+reopenings. Private pages still load no browser analytics and forward no click events.
+Production delivery and provider settings are not verified by source tests.
+
+The optional PAYG suggestion uses a per-user/team local-storage dismissal preference.
+It stays on the device, is not exported to analytics, and does not hide billing
+restrictions or spend-cap warnings. Clearing browser storage resets the preference.

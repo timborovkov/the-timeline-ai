@@ -2,6 +2,13 @@ import { createFakeBillingProvider, PolarDiscountError } from '@timeline/shared/
 import { expect, vi } from '@timeline/test-support';
 import { beforeEach, describe, it } from 'bun:test';
 
+const trackProduct = vi.fn();
+await vi.mock(
+  import.meta.resolve('@/lib/analytics'),
+  () => ({ trackProductEventBestEffort: trackProduct }),
+  () => import('@/lib/analytics'),
+);
+
 const provider = createFakeBillingProvider();
 const auth = vi.fn();
 const resolveActiveTeam = vi.fn();
@@ -116,6 +123,11 @@ describe('promo checkout action', () => {
       discountId: 'discount-synthetic',
     });
     expect(provider.checkouts[0]?.amount).toBeUndefined();
+    expect(trackProduct).toHaveBeenCalledWith(
+      { kind: 'user', userId: 'user-synthetic', teamId: 'team-synthetic' },
+      'billing_checkout_created',
+      { plan: 'team' },
+    );
   });
 
   it('returns distinct eligibility and provider errors without creating a checkout', async () => {
@@ -125,6 +137,7 @@ describe('promo checkout action', () => {
       expect(result).toEqual({ ok: false, error: new PolarDiscountError(code).message });
     }
     expect(provider.checkouts).toHaveLength(0);
+    expect(trackProduct).not.toHaveBeenCalled();
   });
 
   it('uses active team assignments, then customer codes after assignment expiry', async () => {

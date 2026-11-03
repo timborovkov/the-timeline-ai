@@ -18,6 +18,7 @@ import { HomeAskComposer } from '@/components/home/home-ask-composer';
 import { HomeAttention } from '@/components/home/home-attention';
 import { HomeTeamEmail } from '@/components/home/home-team-email';
 import { OnboardingChecklist } from '@/components/onboarding-checklist';
+import { PaygValueNudge } from '@/components/payg-value-nudge';
 import { PinnedWorkspacePreview } from '@/components/pins/pinned-workspace-preview';
 import { TimelineFeed } from '@/components/timeline-feed';
 import { resolveActiveTeam } from '@/lib/active-team';
@@ -66,6 +67,28 @@ async function signAudio(events: { id: string; contentAudioUrl: string | null }[
     console.error('[home] audio playback unavailable; S3 is not configured', error);
   }
   return audioUrls;
+}
+
+async function shouldShowPaygSuggestion(input: {
+  isAdmin: boolean;
+  dashboard: {
+    account?: { planId: string };
+    restrictionReason?: string | null;
+    nudge?: unknown;
+  } | null;
+  hasAnswer: () => Promise<boolean>;
+}): Promise<boolean> {
+  if (
+    !input.isAdmin ||
+    input.dashboard?.account?.planId !== 'free' ||
+    input.dashboard.restrictionReason ||
+    input.dashboard.nudge
+  )
+    return false;
+  return input.hasAnswer().catch((err: unknown) => {
+    reportCaughtError(err, { surface: 'render', operation: 'payg_suggestion' });
+    return false;
+  });
 }
 
 export default async function HomeDashboardPage() {
@@ -126,6 +149,11 @@ export default async function HomeDashboardPage() {
       .then((rows) => rows[0] ?? null),
     scope.documents.listDocuments({ limit: 1 }),
   ]);
+  const showPaygSuggestion = await shouldShowPaygSuggestion({
+    isAdmin,
+    dashboard: billingDashboard,
+    hasAnswer: () => scope.objects.hasCompletedChatAnswer(),
+  });
   const inboundEmail = displayInboundEmail(teamRow);
   const events = eventPage.items;
   const pendingApprovals = workAttention.pendingApprovals;
@@ -196,6 +224,13 @@ export default async function HomeDashboardPage() {
 
       {isAdmin && billingDashboard?.nudge ? (
         <BillingUpgradeNudge nudge={billingDashboard.nudge} />
+      ) : null}
+
+      {showPaygSuggestion ? (
+        <PaygValueNudge
+          key={`${session.user.id}:${active.teamId}`}
+          storageKey={`tl-coachmark:payg:${session.user.id}:${active.teamId}`}
+        />
       ) : null}
 
       <HomeAttention

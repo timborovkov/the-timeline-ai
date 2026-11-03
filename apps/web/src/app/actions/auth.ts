@@ -326,6 +326,7 @@ export async function signUpAction(_prev: SignUpState, formData: FormData): Prom
         userId: createdAccount.userId,
         email,
         teamId: createdAccount.activeTeamId,
+        callbackUrl: inviteToken ? undefined : safeCallbackUrl(parsed.data.callbackUrl),
       }).catch((err: unknown) => {
         reportCaughtError(err, { surface: 'server_action', operation: 'signup_verify_email' });
       }),
@@ -428,7 +429,7 @@ export async function signInWithGitHubAction(formData: FormData): Promise<void> 
 
 export async function resendEmailVerificationAction(
   _prev: EmailVerificationState,
-  _formData: FormData,
+  formData: FormData,
 ): Promise<EmailVerificationState> {
   return runSentryServerAction('resend_email_verification', async () => {
     const session = await auth();
@@ -462,10 +463,12 @@ export async function resendEmailVerificationAction(
       };
     }
 
+    const callbackUrl = formData.get('callbackUrl');
     const result = await sendEmailVerification({
       db,
       userId: session.user.id,
       email: user.email,
+      callbackUrl: typeof callbackUrl === 'string' ? callbackUrl : undefined,
     });
     if (!result.ok) return { error: result.error ?? 'Failed to send verification email.' };
     return { ok: true };
