@@ -533,7 +533,31 @@ it('rejects suspended integration processing before calling its provider', async
       { db: {} as never, assertActive: fakes.assertActive },
       { deliveryId: DELIVERY_ID },
     ),
-  ).rejects.toThrow('Workspace is suspended');
+  ).rejects.toThrow('webhook_delivery_failed');
+  expect(fakes.markWebhookDeliveryTargetFailed).toHaveBeenCalledWith(
+    expect.anything(),
+    TARGET_ID,
+    'Workspace is suspended',
+  );
+  expect(fakes.markWebhookDeliveryStatus).toHaveBeenCalledWith(
+    expect.anything(),
+    DELIVERY_ID,
+    'failed',
+    expect.stringContaining('Workspace is suspended'),
+  );
+  expect(fakes.markWebhookDeliveryTargetProcessed).not.toHaveBeenCalled();
   expect(fakes.writeIntegrationEvents).not.toHaveBeenCalled();
   expect(fakes.enqueueIntegrationSyncJob).not.toHaveBeenCalled();
+  // A failed target is eligible for the existing loader/retry path after restoration.
+  fakes.loadWebhookDeliveryWork.mockResolvedValue({
+    delivery: { ...delivery, status: 'failed' },
+    targets: [{ target: { ...target, status: 'failed' }, integration }],
+  });
+  await expect(
+    processWebhookDeliveryJob(
+      { db: {} as never, assertActive: fakes.assertActive },
+      { deliveryId: DELIVERY_ID },
+    ),
+  ).resolves.toMatchObject({ failed: 0 });
+  expect(fakes.markWebhookDeliveryTargetProcessed).toHaveBeenCalled();
 });

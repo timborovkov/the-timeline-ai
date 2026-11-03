@@ -64,6 +64,8 @@ export async function guardTeamAccess(db: Db, teamId: string, userId: string, sy
 }
 const READ_OPERATION =
   /^(get|list|read|search|count|find|resolve|is|has|require|can|preview|summarizeVisibility)/;
+// Read helpers without a conventional read prefix must be reviewed by full scope path.
+const ADDITIONAL_READ_OPERATIONS = new Set(['timeline.team', 'objects.unreadNotificationCount']);
 export function guardOperatorScope<T extends object>(
   db: Db,
   teamId: string,
@@ -84,7 +86,11 @@ export function guardOperatorScope<T extends object>(
         const context = await operatorContext();
         if (context) {
           await guardTeamAccess(db, teamId, userId, system);
-          if (context.readOnly && !READ_OPERATION.test(key))
+          if (
+            context.readOnly &&
+            !READ_OPERATION.test(key) &&
+            !ADDITIONAL_READ_OPERATIONS.has(operation)
+          )
             throw new PlatformAccessError('Suspended inspection is read-only');
           if (/^(billingOperator|mcpOAuth)\./.test(operation))
             throw new PlatformAccessError('Use your administrator identity for account management');

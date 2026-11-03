@@ -8,6 +8,7 @@ import {
   slackUsers,
   slackUserTeams,
   teamMembers,
+  teamBillingAccounts,
   telegramUsers,
   telegramUserTeams,
   users,
@@ -562,11 +563,14 @@ export async function sendDailyDigest(input: {
   const recipientRows = await input.db
     .select({
       email: users.email,
+      suspendedAt: users.suspendedAt,
+      securityState: teamBillingAccounts.securityState,
       removedAt: teamMembers.removedAt,
       dailyDigestEnabled: messagePreferences.dailyDigestEnabled,
     })
     .from(teamMembers)
     .innerJoin(users, eq(users.id, teamMembers.userId))
+    .leftJoin(teamBillingAccounts, eq(teamBillingAccounts.teamId, teamMembers.teamId))
     .leftJoin(
       messagePreferences,
       and(
@@ -583,12 +587,19 @@ export async function sendDailyDigest(input: {
     )
     .limit(1);
   const recipient = recipientRows[0];
-  if (!recipient || recipient.dailyDigestEnabled === false) {
+  const suspensionReason = recipient?.suspendedAt
+    ? 'Recipient is suspended.'
+    : recipient?.securityState === 'suspended' || recipient?.securityState === 'terminated'
+      ? 'Workspace is suspended.'
+      : null;
+  if (!recipient || recipient.dailyDigestEnabled === false || suspensionReason) {
     await input.db
       .update(dailyDigests)
       .set({
         status: 'skipped',
-        error: recipient ? 'Daily digest is disabled.' : 'Recipient is no longer a team member.',
+        error:
+          suspensionReason ??
+          (recipient ? 'Daily digest is disabled.' : 'Recipient is no longer a team member.'),
       })
       .where(eq(dailyDigests.id, input.digestId));
     return { ok: true, skipped: true, skippedStatus: 'skipped' };

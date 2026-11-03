@@ -52,6 +52,11 @@ Suspended accounts and teams allow read-only impersonation inspection. The
 request, scoped operation, database-write, and job-admission boundaries block
 mutations and new work. Previously issued external signed URLs retain their
 existing expiry; suspension does not revoke a provider URL already issued.
+Read-only inspection includes team metadata and unread notification counts.
+Webhook suspension failures retain failed target status for the existing retry
+and recovery flow instead of stranding targets in processing. Digest delivery
+rechecks the stored recipient and workspace security state before selecting any
+delivery channel; already-generated digests are skipped if either is suspended.
 
 Platform audit records cannot be edited and are deleted only under the retention
 rules below. They record management changes, support

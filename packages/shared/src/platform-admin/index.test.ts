@@ -273,6 +273,8 @@ describe('impersonation lifecycle', () => {
     const { withTeam } = await import('#src/team-scope.js');
     const workspace = withTeam(db, TEAM, MEMBER);
     expect(await workspace.timeline.getEvent(ownEvent)).not.toBeNull();
+    expect((await workspace.timeline.team())?.id).toBe(TEAM);
+    expect(await workspace.objects.unreadNotificationCount()).toBe(0);
     expect(await workspace.timeline.getEvent(otherEvent)).toBeNull();
     await expect(workspace.requireMembership('admin')).rejects.toThrow('Requires admin role');
     expect(await scope.getItem()).toBe('visible');

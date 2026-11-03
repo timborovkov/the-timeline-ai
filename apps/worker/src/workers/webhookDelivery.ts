@@ -108,11 +108,6 @@ export async function processWebhookDeliveryJob(
       );
       continue;
     }
-    await (deps.assertActive ?? assertActivePrincipal)(
-      deps.db,
-      integration.teamId,
-      integration.connectedByUserId ?? undefined,
-    );
     if (!integration.enabled) {
       ignored += 1;
       await integrationsLib.markWebhookDeliveryTargetIgnored(
@@ -142,6 +137,11 @@ export async function processWebhookDeliveryJob(
     }
 
     try {
+      await (deps.assertActive ?? assertActivePrincipal)(
+        deps.db,
+        integration.teamId,
+        integration.connectedByUserId ?? undefined,
+      );
       const normalized = normalizeWebhookResult(
         await provider.handleWebhook({
           integration,
