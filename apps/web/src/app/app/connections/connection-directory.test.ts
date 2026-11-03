@@ -4,8 +4,10 @@ import { describe, it } from 'bun:test';
 import type { IntegrationsPageModel } from '@/app/app/team/integrations/integrations-page-model';
 
 import {
+  agentMcpAccessMatchesQuery,
   buildDirectoryProviders,
   connectionsTabHref,
+  directoryHashOwnerId,
   directoryProviderList,
   filterAvailableProviders,
   initialOpenProviderId,
@@ -322,6 +324,30 @@ describe('connection directory helpers', () => {
         hash: '#email',
       }),
     ).toBe('email');
+    expect(
+      initialOpenProviderId({
+        providers,
+        connectedRows,
+        hash: '#github-team-sources',
+      }),
+    ).toBe('github');
+    expect(
+      initialOpenProviderId({
+        providers,
+        connectedRows,
+        hash: '#github-accounts',
+      }),
+    ).toBe('github');
+    expect(
+      directoryHashOwnerId('#google_drive-team-sources', [
+        { id: 'google' },
+        { id: 'google_drive' },
+      ]),
+    ).toBe('google_drive');
+    expect(
+      directoryHashOwnerId('#google-team-sources', [{ id: 'google' }, { id: 'google_drive' }]),
+    ).toBe('google');
+    expect(directoryHashOwnerId('#agent-mcp', providers)).toBeNull();
   });
 
   it('moves local-only and planned MCP catalog rows into Coming soon', () => {
@@ -350,6 +376,20 @@ describe('connection directory helpers', () => {
     ).toEqual({ tab: 'sources', hash: 'email' });
     expect(
       parseConnectionsLocation({
+        hash: '#github-team-sources',
+        providers,
+        connectedRows: [],
+      }),
+    ).toEqual({ tab: 'sources', hash: 'github-team-sources' });
+    expect(
+      parseConnectionsLocation({
+        hash: '#github-accounts',
+        providers,
+        connectedRows: [],
+      }),
+    ).toEqual({ tab: 'sources', hash: 'github-accounts' });
+    expect(
+      parseConnectionsLocation({
         hash: '#agent-mcp',
         providers,
         connectedRows: [],
@@ -372,5 +412,33 @@ describe('connection directory helpers', () => {
     expect(connectionsTabHref('agent', 'timeline-mcp')).toBe(
       '/app/connections/agent-tools#timeline-mcp',
     );
+  });
+
+  it('keeps the Agent MCP row when search matches a connectable catalog tool or connected server', () => {
+    const connectable = [
+      { id: 'notion', label: 'Notion', description: 'Workspace pages and databases.' },
+    ];
+    const servers = [{ id: 'srv-1', name: 'Stripe MCP', url: 'https://mcp.stripe.com' }];
+    expect(
+      agentMcpAccessMatchesQuery({
+        query: 'notion',
+        connectable,
+        servers,
+      }),
+    ).toBe(true);
+    expect(
+      agentMcpAccessMatchesQuery({
+        query: 'stripe',
+        connectable,
+        servers,
+      }),
+    ).toBe(true);
+    expect(
+      agentMcpAccessMatchesQuery({
+        query: 'figma',
+        connectable,
+        servers,
+      }),
+    ).toBe(false);
   });
 });

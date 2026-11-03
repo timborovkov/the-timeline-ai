@@ -370,14 +370,45 @@ export function filterAvailableProviders(
   return filterByDirectoryQuery(providers, query);
 }
 
+export function directoryHashOwnerId(
+  hash: string | null | undefined,
+  providers: readonly { id: string }[],
+): string | null {
+  const value = hash?.replace(/^#/, '') ?? '';
+  if (!value) return null;
+  const exact = providers.find((provider) => provider.id === value);
+  if (exact) return exact.id;
+  const sectionOwners = providers.filter((provider) => value.startsWith(`${provider.id}-`));
+  if (sectionOwners.length === 0) return null;
+  return sectionOwners.reduce((longest, provider) =>
+    provider.id.length >= longest.id.length ? provider : longest,
+  ).id;
+}
+
+export function agentMcpAccessMatchesQuery(input: {
+  query: string;
+  connectable: readonly { id: string; label: string; description?: string }[];
+  servers: readonly { id: string; name: string; url?: string | null }[];
+}): boolean {
+  const extras = [
+    ...input.connectable,
+    ...input.servers.map((server) => ({
+      id: server.id,
+      label: server.name,
+      ...(server.url ? { description: server.url } : {}),
+    })),
+  ];
+  return filterByDirectoryQuery(extras, input.query).length > 0;
+}
+
 export function initialOpenProviderId(input: {
   providers: readonly DirectoryProvider[];
   connectedRows: IntegrationsPageModel['connectedRows'];
   integrationId?: string;
   hash?: string;
 }): string | null {
-  const hash = input.hash?.replace(/^#/, '') ?? '';
-  if (hash && input.providers.some((provider) => provider.id === hash)) return hash;
+  const ownerId = directoryHashOwnerId(input.hash, input.providers);
+  if (ownerId) return ownerId;
   if (!input.integrationId) return null;
   const row = input.connectedRows.find((item) => item.id === input.integrationId);
   return row?.provider ?? null;
@@ -397,13 +428,9 @@ export function parseConnectionsLocation(input: {
   if (hash === 'audit' || hash === 'jobs') {
     return { tab: 'developer', hash };
   }
-  const providerId = initialOpenProviderId({
-    providers: input.providers,
-    connectedRows: input.connectedRows,
-    integrationId: hash ? undefined : input.integrationId,
-    hash,
-  });
-  if (providerId) return { tab: 'sources', hash: providerId };
+  if (directoryHashOwnerId(hash, input.providers)) {
+    return { tab: 'sources', hash };
+  }
   if (!hash && input.integrationId) {
     const fromId = initialOpenProviderId({
       providers: input.providers,

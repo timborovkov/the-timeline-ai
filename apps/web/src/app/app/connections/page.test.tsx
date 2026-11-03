@@ -470,9 +470,22 @@ describe('SourcesPageView', () => {
     });
     const agent = await screen.findByRole('dialog', { name: 'Agent MCP servers' });
     expect(within(agent).getByText(/live tool access/i)).toBeTruthy();
+    expect(within(agent).getByText(/team-visible evidence/i)).toBeTruthy();
+    expect(
+      within(agent).getByText(/personal-server results stay private to the owner/i),
+    ).toBeTruthy();
+    expect(within(agent).queryByText(/captured as private evidence/i)).toBeNull();
+    expect(within(agent).queryByText(/team-server results are captured as private/i)).toBeNull();
     expect(
       screen.getByRole('tab', { name: 'Agent tools', hidden: true }).getAttribute('aria-selected'),
     ).toBe('true');
+
+    act(() => {
+      window.history.pushState(null, '', '/app/connections/sources#github-team-sources');
+    });
+    const githubSection = await screen.findByRole('dialog', { name: 'GitHub' });
+    expect(within(githubSection).getByRole('heading', { name: 'Team sync' })).toBeTruthy();
+    expect(document.getElementById('github-team-sources')).toBeTruthy();
   });
 
   it('lists Figma and other local-only MCP entries as Coming soon without a connect action', async () => {
@@ -532,6 +545,68 @@ describe('SourcesPageView', () => {
     const dialog = await screen.findByRole('dialog', { name: 'Agent MCP servers' });
     expect(within(dialog).queryByText('Figma')).toBeNull();
     expect(within(dialog).queryByText('Local setup only')).toBeNull();
+  });
+
+  it('keeps Agent MCP servers when search matches a catalog tool or connected server', async () => {
+    const user = userEvent.setup();
+    renderPage(
+      <SourcesPageView
+        params={{}}
+        active={{ teamName: 'Acme Labs' }}
+        isAdmin
+        summary={summary({ attention: 0 })}
+        model={model({
+          blockingAttentionCount: 0,
+          mcpCatalogAvailable: [
+            {
+              id: 'notion',
+              label: 'Notion',
+              description: 'Workspace pages and databases.',
+              logo: '/connectors/notion.svg',
+              category: 'productivity',
+              kind: 'mcp',
+              status: 'mcp_available',
+              ingestStatus: 'coming_soon',
+              featured: false,
+              examplePrompt: 'What is in the runbook?',
+            },
+          ],
+          mcpServerRows: [
+            {
+              id: 'mcp-stripe',
+              name: 'Stripe MCP',
+              url: 'https://mcp.stripe.com',
+              authType: 'oauth',
+              enabled: true,
+              cachedTools: [],
+              disabledTools: [],
+              toolsCachedAt: null,
+              lastError: null,
+            },
+          ],
+        })}
+      />,
+    );
+
+    await openTab('Agent tools');
+    expect(screen.getByText('Agent MCP servers')).toBeTruthy();
+    expect(screen.getByText('Timeline MCP endpoint')).toBeTruthy();
+
+    await user.type(screen.getByLabelText('Search agent tools'), 'notion');
+    expect(screen.getByText('Agent MCP servers')).toBeTruthy();
+    expect(screen.queryByText('Timeline MCP endpoint')).toBeNull();
+    expect(screen.queryByText('No matching tools.')).toBeNull();
+
+    await user.clear(screen.getByLabelText('Search agent tools'));
+    await user.type(screen.getByLabelText('Search agent tools'), 'stripe');
+    expect(screen.getByText('Agent MCP servers')).toBeTruthy();
+    expect(screen.queryByText('Timeline MCP endpoint')).toBeNull();
+    expect(screen.queryByText('No matching tools.')).toBeNull();
+
+    await user.clear(screen.getByLabelText('Search agent tools'));
+    await user.type(screen.getByLabelText('Search agent tools'), 'figma-not-a-tool');
+    expect(screen.getByText('No matching tools.')).toBeTruthy();
+    expect(screen.queryByText('Agent MCP servers')).toBeNull();
   });
 
   it('opens a provider details sheet with accounts, team sync, and visibility', async () => {
@@ -704,6 +779,12 @@ describe('SourcesPageView', () => {
     expect(
       within(dialog).getByRole('link', { name: 'Choose replacement' }).getAttribute('href'),
     ).toBe('#github-team-sources');
+
+    await user.click(within(dialog).getByRole('link', { name: 'Choose replacement' }));
+    const stillOpen = await screen.findByRole('dialog', { name: 'GitHub' });
+    expect(window.location.hash).toBe('#github-team-sources');
+    expect(within(stillOpen).getByRole('heading', { name: 'Team sync' })).toBeTruthy();
+    expect(document.getElementById('github-team-sources')).toBeTruthy();
   });
 
   it('places health-paused integrations in Needs attention with a Resume control in the sheet', async () => {

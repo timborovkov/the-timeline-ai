@@ -14,6 +14,7 @@ import type { IntegrationsPageModel } from '@/app/app/team/integrations/integrat
 import {
   connectionsTabFromSearch,
   connectionsTabHref,
+  directoryHashOwnerId,
   isConnectionsToolSheet,
   parseConnectionsLocation,
   partitionAdvancedMcpCatalog,
@@ -133,7 +134,8 @@ export function ConnectionsWorkspace({
     developer: '',
   });
   const query = queryByTab[tab];
-  const openProvider = providers.find((provider) => provider.id === hash) ?? null;
+  const openProvider =
+    providers.find((provider) => provider.id === directoryHashOwnerId(hash, providers)) ?? null;
   const openToolSheet: ConnectionsToolSheet | null = isConnectionsToolSheet(hash) ? hash : null;
   const providersRef = useRef(providers);
   const connectedRowsRef = useRef(model.connectedRows);
@@ -258,6 +260,7 @@ export function ConnectionsWorkspace({
           <ConnectionsAgentTools
             isAdmin={isAdmin}
             mcpServers={mcpServers.advanced}
+            connectable={advancedCatalog.connectable}
             comingSoon={advancedCatalog.comingSoon}
             query={query}
             selectedId={openToolSheet}

@@ -7,7 +7,10 @@ import { type ReactNode } from 'react';
 import type { ConnectionsToolSheet } from '@/app/app/connections/connection-directory';
 import type { IntegrationsPageModel } from '@/app/app/team/integrations/integrations-page-model';
 
-import { filterByDirectoryQuery } from '@/app/app/connections/connection-directory';
+import {
+  agentMcpAccessMatchesQuery,
+  filterByDirectoryQuery,
+} from '@/app/app/connections/connection-directory';
 import {
   CONNECTIONS_ROW_ACTION_CLASS,
   ConnectionsEmptyHint,
@@ -139,6 +142,7 @@ function agentMcpStatus(servers: IntegrationsPageModel['mcpServerRows']): {
 export function ConnectionsAgentTools({
   isAdmin,
   mcpServers,
+  connectable,
   comingSoon,
   query,
   selectedId,
@@ -146,6 +150,7 @@ export function ConnectionsAgentTools({
 }: {
   isAdmin: boolean;
   mcpServers: IntegrationsPageModel['mcpServerRows'];
+  connectable: McpCatalogEntry[];
   comingSoon: McpCatalogEntry[];
   query: string;
   selectedId: string | null;
@@ -180,7 +185,17 @@ export function ConnectionsAgentTools({
         ]
       : []),
   ];
-  const visibleAccess = filterByDirectoryQuery(accessRows, query);
+  const visibleAccess = accessRows.filter((row) => {
+    if (filterByDirectoryQuery([row], query).length > 0) return true;
+    return (
+      row.id === 'agent-mcp' &&
+      agentMcpAccessMatchesQuery({
+        query,
+        connectable,
+        servers: mcpServers,
+      })
+    );
+  });
   const visibleComingSoon = filterByDirectoryQuery(comingSoon, query);
 
   if (visibleAccess.length === 0 && visibleComingSoon.length === 0) {
@@ -391,7 +406,7 @@ export function ConnectionsToolSheets({
           <>
             <ToolSheetChrome
               title="Agent MCP servers"
-              description="MCP servers give the agent live tool access. Successful team-server results are captured as private evidence."
+              description="MCP servers give the agent live tool access. Successful results from team-shared servers are captured as team-visible evidence; personal-server results stay private to the owner."
               glyph={<Server aria-hidden="true" className="size-3.5" />}
             />
             <SheetBody className="space-y-6">
