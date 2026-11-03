@@ -41,6 +41,7 @@ const signUpSchema = z.object({
   email: z.email().toLowerCase(),
   password: z.string().min(8).max(200),
   inviteToken: z.string().optional(),
+  callbackUrl: z.string().max(2048).optional(),
   legalAccepted: z.literal('on'),
   termsVersion: z.literal(TERMS_VERSION),
   privacyVersion: z.literal(PRIVACY_VERSION),
@@ -78,6 +79,7 @@ export async function signUpAction(_prev: SignUpState, formData: FormData): Prom
       email: formData.get('email'),
       password: formData.get('password'),
       inviteToken: formData.get('inviteToken') ?? undefined,
+      callbackUrl: formData.get('callbackUrl') ?? undefined,
       legalAccepted: formData.get('legalAccepted'),
       termsVersion: submittedTermsVersion,
       privacyVersion: submittedPrivacyVersion,
@@ -348,9 +350,15 @@ export async function signUpAction(_prev: SignUpState, formData: FormData): Prom
         throw e;
       }
     }
-    if (signInFailed) redirect('/sign-in');
+    const destination = inviteToken ? '/app' : safeCallbackUrl(parsed.data.callbackUrl);
+    if (signInFailed)
+      redirect(
+        destination === '/app'
+          ? '/sign-in'
+          : `/sign-in?callbackUrl=${encodeURIComponent(destination)}`,
+      );
 
-    redirect('/app');
+    redirect(destination);
   });
 }
 

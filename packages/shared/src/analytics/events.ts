@@ -55,6 +55,7 @@ export const CAPTURE_DURATION_BUCKETS = ['under_1m', '1m_to_5m', '5m_to_15m', '1
 
 export const PUBLIC_ANALYTICS_SURFACES = [
   'home',
+  'pricing',
   'how_it_works',
   'integrations',
   'integration_slack',
@@ -71,6 +72,7 @@ export const PUBLIC_ANALYTICS_SURFACES = [
   'solution_crm_context_team_activity',
   'help',
   'help_capture',
+  'help_billing',
   'help_work',
   'help_documents',
   'help_boards',

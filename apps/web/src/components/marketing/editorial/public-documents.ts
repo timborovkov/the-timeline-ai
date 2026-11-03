@@ -9,7 +9,7 @@ import {
 import { definePublicDocuments } from '@/lib/public-site/registry';
 
 const EDITORIAL_REVIEW_DATE = '2026-08-15' as const;
-const HOW_IT_WORKS_REVIEW_DATE = '2026-08-21' as const;
+const HOW_IT_WORKS_REVIEW_DATE = '2026-11-03' as const;
 
 const howItWorksDocument = {
   canonicalPath: HOW_IT_WORKS_ROUTE,
@@ -57,7 +57,16 @@ const guideDocuments = EDITORIAL_GUIDES.map((guide, index): PublicDocument => ({
   title: guide.title,
   description: guide.summary,
   indexability: 'index',
-  dates: { modified: EDITORIAL_REVIEW_DATE, reviewed: EDITORIAL_REVIEW_DATE },
+  dates: {
+    modified:
+      guide.slug === 'search-slack-and-google-drive-together'
+        ? '2026-11-03'
+        : EDITORIAL_REVIEW_DATE,
+    reviewed:
+      guide.slug === 'search-slack-and-google-drive-together'
+        ? '2026-11-03'
+        : EDITORIAL_REVIEW_DATE,
+  },
   capability: { kind: 'current-product' },
   sitemap: { changeFrequency: 'monthly', priority: 0.7 },
   structuredData: [

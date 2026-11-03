@@ -283,7 +283,45 @@ function TermsProductAndLifecycleSections() {
         change substantially reduces core functionality, where practicable.
       </p>
 
-      <h2>16. Suspension and termination</h2>
+      <h2>16. Paid plans, usage and cancellation</h2>
+      <p>
+        Prices, included usage, member allowances and capacity limits are described on our{' '}
+        <Link href="/pricing">pricing page</Link> and in Billing. Paid subscriptions renew on the
+        billing cycle shown at checkout until canceled. You authorize charges for the selected plan,
+        additional members and metered usage. Pay as you go has no platform fee; it is not a promise
+        of unlimited free use. AI is metered in euros according to the model and work performed,
+        including background processing. Usage records show the resulting charges.
+      </p>
+      <p>
+        Polar acts as merchant of record for supported checkout purchases and handles payment
+        collection, invoices and applicable transaction taxes. Its buyer terms also apply to the
+        purchase. You must provide accurate billing details and a valid payment method. Failed
+        payments can pause cost-bearing work while outstanding charges remain payable. Spending
+        limits apply to metered usage, not platform fees or taxes; work already incurred or still
+        being reconciled can appear later. Included allowances are not cash and are not refundable.
+      </p>
+      <p>
+        A workspace owner or admin can cancel through Team settings → Billing → Manage payment.
+        Cancellation normally stops renewal at the end of the current billing period, as confirmed
+        in the portal. Charges incurred before cancellation takes effect remain due. Stopping use,
+        disconnecting sources or deleting content does not cancel a subscription. If the portal is
+        unavailable or does not offer cancellation, contact <SupportMailto /> for help.
+      </p>
+      <p>
+        Fees and consumed usage are generally non-refundable, including unused time in a billing
+        period, unless applicable law requires otherwise or we agree to a refund. This does not
+        limit mandatory consumer cancellation, withdrawal or refund rights. Report duplicate,
+        incorrect or unauthorized charges to <SupportMailto /> with the workspace and invoice
+        reference so we and Polar can investigate and correct confirmed errors. Do not send full
+        payment-card details. Agreed enterprise terms take precedence where they differ.
+      </p>
+      <p>
+        We will give reasonable advance notice of material price changes and apply subscription fee
+        changes from a subsequent billing period, so you can cancel before they take effect. See{' '}
+        <Link href="/help/billing">billing help</Link> for practical steps.
+      </p>
+
+      <h2>17. Suspension and termination</h2>
       <p>
         You may stop using the Service at any time. We may suspend or terminate access when you
         materially breach these Terms, fail to cure a remediable breach after notice, create an
@@ -305,7 +343,7 @@ function TermsProductAndLifecycleSections() {
 function TermsRiskSections() {
   return (
     <>
-      <h2>17. Disclaimers</h2>
+      <h2>18. Disclaimers</h2>
       <p>
         To the maximum extent permitted by law, the Service is provided “as is” and “as available”.
         We disclaim implied warranties of merchantability, fitness for a particular purpose,
@@ -314,7 +352,7 @@ function TermsRiskSections() {
         These disclaimers do not limit warranties or rights that cannot lawfully be excluded.
       </p>
 
-      <h2>18. Limitation of liability</h2>
+      <h2>19. Limitation of liability</h2>
       <p>
         To the maximum extent permitted by law, neither party will be liable for indirect,
         incidental, special, consequential, exemplary, or punitive damages, or for lost profits,
@@ -329,7 +367,7 @@ function TermsRiskSections() {
         use, or indemnity obligations. Mandatory consumer rights remain unaffected.
       </p>
 
-      <h2>19. Indemnity</h2>
+      <h2>20. Indemnity</h2>
       <p>
         If you use the Service for an organization, that organization will defend and indemnify
         Timeline and its personnel against third-party claims, damages, and reasonable costs arising
@@ -339,7 +377,7 @@ function TermsRiskSections() {
         right to participate and to approve any settlement imposing liability or an admission on us.
       </p>
 
-      <h2>20. Governing law and disputes</h2>
+      <h2>21. Governing law and disputes</h2>
       <p>
         These Terms are governed by Estonian law, without its conflict-of-law rules. The courts of
         Harju County, Estonia have exclusive jurisdiction, except that either party may seek urgent
@@ -354,7 +392,7 @@ function TermsRiskSections() {
 function TermsClosingSections() {
   return (
     <>
-      <h2>21. Changes to these Terms</h2>
+      <h2>22. Changes to these Terms</h2>
       <p>
         We may update these Terms to reflect product, provider, legal, or security changes. We will
         publish a new version and effective date. For material changes, we will provide reasonable
@@ -362,7 +400,7 @@ function TermsClosingSections() {
         the protected product. Continued use after valid acceptance means the updated Terms apply.
       </p>
 
-      <h2>22. General terms</h2>
+      <h2>23. General terms</h2>
       <p>
         You may not assign these Terms without our consent, except as part of a permitted corporate
         reorganization. We may assign them in connection with a merger, acquisition, reorganization,
@@ -373,7 +411,7 @@ function TermsClosingSections() {
         discussions on that subject.
       </p>
 
-      <h2>23. Contact</h2>
+      <h2>24. Contact</h2>
       <p>
         Legal questions and notices: <SupportMailto />. Provider: {LEGAL_PROVIDER}, Estonian
         registry code {LEGAL_REGISTRY_CODE}, {LEGAL_ADDRESS}.

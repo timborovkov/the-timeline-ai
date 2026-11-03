@@ -223,9 +223,9 @@ function ClaimScene() {
           Scattered work. <em>Cited answers.</em>
         </h1>
         <p className={styles.heroIntro}>
-          Timeline is AI team memory for real projects. It preserves the messages, meetings,
-          documents, tickets, and code you choose in one chronological record. Ask what happened,
-          what changed, and what comes next—then trace each claim back to the source.
+          Get a project update from the messages, meetings, documents, tickets and code your team
+          chooses to share. Ask what changed, what is blocked and who owns the next step—then open
+          the sources behind the answer. Start with one note or document.
         </p>
         <div className={styles.heroActions}>
           <PublicSessionBranch
@@ -388,9 +388,7 @@ function ConnectorRail({ nativeConnectors }: { nativeConnectors: NativeConnector
                       <Image src={connector.logo} alt="" width={20} height={20} />
                     </span>
                     <span>{connector.label}</span>
-                    <small>
-                      {connector.state === 'available' ? 'Ready to connect' : 'Admin setup needed'}
-                    </small>
+                    <small>Setup and supported data</small>
                   </Link>
                 </li>
               ))}
@@ -494,6 +492,11 @@ function AnswerScene() {
                     {event.shortSource} / {event.day} {event.time}
                   </small>
                 </a>
+                <details>
+                  <summary>Inspect example source</summary>
+                  <p>{event.detail}</p>
+                  <p>Fictional Acme example, not customer data.</p>
+                </details>
               </li>
             ))}
           </ol>
@@ -590,8 +593,9 @@ function CtaScene() {
           Give it one real project. <em>Ask one honest question.</em>
         </h2>
         <p>
-          Choose one project and the smallest useful source set. Preserve a week of selected work,
-          then ask for current status, the next handoff, open blockers, and customer commitments.
+          Start with an existing project document or a short note. Once it is searchable, ask about
+          a decision or next step and open the evidence behind the answer. Connect more sources as
+          you go.
         </p>
         <PublicSessionBranch
           signedOut={

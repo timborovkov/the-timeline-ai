@@ -3,8 +3,6 @@ import { randomUUID } from 'node:crypto';
 import { billingUsageReservations, type Db } from '@timeline/db';
 import { and, eq, sql } from 'drizzle-orm';
 
-import type { FreeAllowanceRemaining } from '#src/billing/status.js';
-
 import {
   ASK_AI_RESERVE_CUSTOMER_CHARGE_CENTS,
   ASK_AI_RESERVATION_TTL_MS,
@@ -15,6 +13,8 @@ import {
   type BillingPlanId,
 } from '#src/billing/catalog.js';
 import { effectiveBillingPlanId } from '#src/billing/operator.js';
+
+import type { FreeAllowanceRemaining } from '#src/billing/status.js';
 
 type DbTx = Parameters<Parameters<Db['transaction']>[0]>[0];
 type DbOrTx = Db | DbTx;
@@ -125,7 +125,7 @@ export function askBillingUserMessage(error: AskBillingError): string {
     case 'security_blocked':
       return 'This workspace cannot run paid AI right now. Contact support if that looks wrong.';
     case 'free_allowance_reached':
-      return 'Free AI allowance is used up for this period. Add a payment method in Billing (or ask an admin) to continue.';
+      return 'There is not enough unreserved Free AI allowance to start this Ask. Other jobs may temporarily reserve allowance. Retry after they finish, check Usage for the reset date, or ask an admin to enable pay as you go in Billing.';
     case 'usage_limit_reached':
       return 'Usage balance is too low for this Ask. Top up or raise the spend cap in Billing.';
     case 'spend_cap_reached':
@@ -181,13 +181,12 @@ export async function settleAskAiFromOpenRouterUsd(
     openRouterUsd: number;
     deliverySurface: string;
     model?: string;
-    minCustomerChargeCents?: number;
   },
 ): Promise<void> {
   const { providerCostCents, customerChargeExactCents } = customerAiChargeCentsFromOpenRouterUsd(
     Math.max(0, input.openRouterUsd),
   );
-  const nativeUnits = Math.max(customerChargeExactCents, input.minCustomerChargeCents ?? 0);
+  const nativeUnits = customerChargeExactCents;
   // Persist the completed provider cost before settle. A failed settle leaves
   // the reservation reserved so maintenance can retry without a new model call.
   await billing.patchReservationMetadata(input.operationId, {
@@ -195,9 +194,6 @@ export async function settleAskAiFromOpenRouterUsd(
     pending_openrouter_usd: input.openRouterUsd,
     pending_delivery_surface: input.deliverySurface,
     ...(input.model ? { pending_model: input.model } : {}),
-    ...(input.minCustomerChargeCents !== undefined
-      ? { pending_min_customer_charge_cents: input.minCustomerChargeCents }
-      : {}),
   });
   await billing.settle({
     operationId: input.operationId,
@@ -212,9 +208,6 @@ export async function settleAskAiFromOpenRouterUsd(
     deliverySurface: input.deliverySurface,
     metadata: {
       openrouter_usd: input.openRouterUsd,
-      ...(input.minCustomerChargeCents
-        ? { conservative_min_customer_charge_cents: input.minCustomerChargeCents }
-        : {}),
     },
   });
 }

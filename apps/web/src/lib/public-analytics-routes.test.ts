@@ -8,6 +8,7 @@ import {
 describe('public analytics route registry', () => {
   it('classifies only reviewed public documents', () => {
     expect(classifyPublicAnalyticsPath('/')).toBe('home');
+    expect(classifyPublicAnalyticsPath('/pricing')).toBe('pricing');
     expect(classifyPublicAnalyticsPath('/integrations/google-drive')).toBe(
       'integration_google_drive',
     );
@@ -24,7 +25,7 @@ describe('public analytics route registry', () => {
     expect(classifyPublicAnalyticsPath('/solutions/crm-context-from-team-activity')).toBe(
       'solution_crm_context_team_activity',
     );
-    expect(Object.keys(PUBLIC_ANALYTICS_ROUTES)).toHaveLength(27);
+    expect(Object.keys(PUBLIC_ANALYTICS_ROUTES)).toHaveLength(29);
   });
 
   it.each([

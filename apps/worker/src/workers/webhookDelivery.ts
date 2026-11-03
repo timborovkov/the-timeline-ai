@@ -134,10 +134,40 @@ export async function processWebhookDeliveryJob(
     }
 
     try {
+      if (integration.provider === 'sentry') {
+        // Recheck at processing time: selection can change after receipt or
+        // before a retry. Legacy installation-only deliveries fail closed.
+        const selections = await integrationsLib.adminListSelections(deps.db, integration.id);
+        const resource = work.delivery.externalResourceId;
+        const kind = work.delivery.resourceKind;
+        const allowed =
+          resource &&
+          (kind === 'sentry.org' || kind === 'sentry.project') &&
+          selections.some(
+            (selection) =>
+              (selection.kind === 'sentry.org' &&
+                selection.externalId === resource.split('/')[0]) ||
+              (kind === 'sentry.project' &&
+                selection.kind === kind &&
+                selection.externalId === resource),
+          );
+        if (!allowed) {
+          ignored += 1;
+          await integrationsLib.markWebhookDeliveryTargetIgnored(
+            deps.db,
+            target.id,
+            'sentry_resource_not_selected',
+          );
+          continue;
+        }
+      }
       const normalized = normalizeWebhookResult(
         await provider.handleWebhook({
           integration,
           payload: work.delivery.payload,
+          ...(integration.provider === 'sentry'
+            ? { delivery: { key: work.delivery.id, receivedAt: work.delivery.receivedAt } }
+            : {}),
           ...(integration.provider === 'slack'
             ? {
                 tokens:

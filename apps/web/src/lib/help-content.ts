@@ -12,7 +12,8 @@ import {
 
 import type { LucideIcon } from 'lucide-react';
 
-type HelpSlug = 'capture' | 'work' | 'documents' | 'boards' | 'integrations' | 'agents' | 'objects';
+type HelpSlug =
+  'capture' | 'work' | 'documents' | 'boards' | 'integrations' | 'agents' | 'objects' | 'billing';
 
 interface HelpLink {
   href: string;
@@ -40,14 +41,68 @@ interface HelpPage {
 
 export const HELP_PAGES: HelpPage[] = [
   {
+    slug: 'billing',
+    title: 'Billing and spending limits',
+    description: 'Understand Free, pay as you go, usage limits and payment settings.',
+    icon: LifeBuoy,
+    related: ['capture', 'integrations'],
+    updatedAt: '2026-11-03',
+    sections: [
+      {
+        title: 'Enable pay as you go',
+        body: 'A team owner or admin manages billing for the current workspace. Pay as you go has no platform fee and keeps the included Free allowances; usage above them and additional members can create charges.',
+        items: [
+          'Open Team settings → Billing and check the workspace name.',
+          'Choose Change plan → Pay as you go. Review the rates, included members and spending limit before continuing to payment.',
+          'After checkout, wait for Billing to confirm activation. Returning from checkout alone does not mean the plan is active.',
+          'Review Usage to see recorded charges. Three active members are included; additional members cost €2 per member per month.',
+        ],
+        appLink: { href: '/app/team?section=billing', label: 'Open Billing' },
+      },
+      {
+        title: 'Understand the spending limit',
+        body: 'The default PAYG spending limit is €25 per month. Owners and admins can change it in Billing. The cap applies to metered spend; platform fees and tax are outside it. On commitment plans, the cap is checked before included usage credit.',
+        items: [
+          'Free has both usage allowances and capacity limits; reaching either can pause a task.',
+          'Work in progress can reserve allowance temporarily. If Ask cannot start, let other jobs finish and check Usage.',
+          'Meeting minutes include joining and waiting-room time. Capturing sources can also trigger separately metered AI extraction and indexing.',
+        ],
+        appLink: { href: '/app/usage', label: 'Review Usage' },
+      },
+      {
+        title: 'Invoices, payment changes and cancellation',
+        body: 'Open Manage payment in Billing to use the payment provider’s customer portal. Review its confirmation for the effective cancellation date and any outstanding charges. Disconnecting a source or deleting data is not a billing cancellation. Fees and consumed usage are generally non-refundable, except where law requires otherwise or a refund is agreed. Report suspected billing errors with the workspace and invoice reference; mandatory consumer rights remain unaffected.',
+        items: [
+          'Check the active workspace before opening its payment portal.',
+          'Use the portal to review invoices, payment details and available subscription actions.',
+          'Return to Billing and verify the updated subscription state. If the portal does not offer the action you need or the state does not update, contact support.',
+        ],
+        appLink: { href: '/help/support', label: 'Contact billing support' },
+      },
+    ],
+  },
+
+  {
     slug: 'capture',
     title: 'Capture surfaces',
     description:
       'Send raw work into Timeline from web, Slack, Telegram, email, meetings, and uploads.',
     icon: Inbox,
     related: ['work', 'integrations'],
-    updatedAt: '2026-08-21',
+    updatedAt: '2026-11-03',
     sections: [
+      {
+        title: 'Get your first cited answer',
+        body: 'Start with one source you are allowed to share. You do not need to connect every tool or invite teammates.',
+        items: [
+          'Open Home and capture a short note about a real project, including a decision or next step. Alternatively, upload an existing document in Documents.',
+          'Choose who can see it before saving. Wait for processing; if a document fails, open its status and retry or use a supported file.',
+          'Open Ask and ask a specific question the source can answer, such as “What next step did we agree for this project?”',
+          'Open the answer’s citation and check that it supports the claim. If no evidence is found, check source visibility and processing before adding more connections.',
+        ],
+        appLink: { href: '/app', label: 'Start on Home' },
+      },
+
       {
         title: 'What gets captured',
         body: 'Timeline preserves selected notes and source records as events, extracts facts, and can propose objects or tasks for review. Every searchable citation stays linked to the captured source.',
@@ -59,6 +114,15 @@ export const HELP_PAGES: HelpPage[] = [
           'Document uploads that become searchable chunks after extraction.',
         ],
         appLink: { href: '/app/timeline', label: 'Open timeline capture' },
+      },
+      {
+        title: 'Connections, sources and evidence',
+        body: 'A connection authorizes access to a provider account. A source is the channel, project, folder or other resource selected for capture. Captured records become evidence that Ask can cite after processing. Connecting an account alone does not import everything.',
+        items: [
+          'Check source selection and team visibility before activating capture.',
+          'Timeline’s stored record is separate from the original tool; disconnecting does not erase earlier captures.',
+          'A proposed change is a suggestion for review. Approving it updates Timeline’s work record. Enabled external tools may have separate effects in other services.',
+        ],
       },
       {
         title: 'Good capture habits',
@@ -73,6 +137,7 @@ export const HELP_PAGES: HelpPage[] = [
   },
   {
     slug: 'work',
+    updatedAt: '2026-11-03',
     title: 'Work surface',
     description:
       'Use tasks, boards, objects, updates, digests, and handoffs that stay current from evidence.',
@@ -83,16 +148,12 @@ export const HELP_PAGES: HelpPage[] = [
         title: 'What Work is',
         body: 'Work is the operating surface Timeline keeps current from captured evidence. It brings tasks, boards, objects, comments, updates, digests, and handoffs together without asking teammates to maintain a separate tracker.',
         items: [
-          'Overview leads with mixed pinned work, then team boards, then the work queue for due and assigned items.',
-          'Pin objects, boards, documents, meetings, and calendar events to Home; Work → Pinned is the manager. Ask bindings say About {name}, not Pin.',
-          'Queue rows keep the object type off the metadata chips; status, assignee, due date, and priority change inline.',
-          'Home opens the team setup checklist under Ask for new teams; after Hide it stays as a quiet Team setup checklist toggle. Other app pages keep a quiet header chip back to that panel until setup is done or hidden.',
-          'Home lists open tasks and one open-objects count (people, companies, projects, deals, and follow-ups) when those counts are not zero.',
-          'Tasks and boards show owners, status, blockers, due dates, and source evidence.',
-          'Object pages keep people, companies, projects, deals, documents, and tasks tied to the event history, with discussion comments and @mentions.',
-          'Updates, digests, and handoffs are generated from the current work state with citations.',
-          'On dashboard pages other than Home, floating Ask (⌘J / Ctrl+J) asks about the current view and keeps one thread until New. Home still opens the full Ask page.',
-          'Work → Digests lists every stored daily briefing as collapsed rows so a teammate can open a specific day.',
+          'Open Work to find tasks assigned to you and work that needs attention.',
+          'Open a task or object to inspect its source evidence before changing status, owner or due date.',
+          'Pin frequently used objects, boards or documents so you can return to them from Home.',
+          'Review proposed changes in Approvals. Accept the changes you agree with; reject unsupported suggestions.',
+          'Open Digests for a saved briefing, then follow citations to check the underlying work.',
+          'Use Ask about a specific project or decision. Check its citations before sharing the answer.',
         ],
         appLink: { href: '/app/work', label: 'Open Work' },
       },

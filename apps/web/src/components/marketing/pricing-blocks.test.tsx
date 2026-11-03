@@ -30,7 +30,8 @@ describe('pricing blocks', () => {
     const html = renderToStaticMarkup(<PricingMetersExplainer />);
     expect(html).toContain('AI');
     expect(html).toContain('Meetings');
-    expect(html).toMatch(/provider token cost/i);
+    expect(html).toMatch(/recorded charges by model and operation/i);
+    expect(html).not.toMatch(/provider (token )?cost|×\s*4/i);
     expect(html).toMatch(/one owned workspace/i);
     expect(html).toMatch(/restricted until you add a payment method/i);
   });

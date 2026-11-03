@@ -9,6 +9,7 @@ import { redirect } from 'next/navigation';
 
 import type { Metadata } from 'next';
 
+import { BillingRestrictionNotice } from '@/components/billing-restriction-notice';
 import { BillingUpgradeNudge } from '@/components/billing-upgrade-nudge';
 import { CaptureForm } from '@/components/capture-form';
 import { CaptureDialog } from '@/components/home/capture-dialog';
@@ -94,6 +95,7 @@ export default async function HomeDashboardPage() {
     recoverableJobs,
     billingDashboard,
     teamRow,
+    sourceDocuments,
   ] = await Promise.all([
     getWorkAttentionSummary(scope, now, calendarSettings.defaultTimezone),
     getHomeOpenObjectCounts(scope),
@@ -122,6 +124,7 @@ export default async function HomeDashboardPage() {
       .where(eq(teams.id, active.teamId))
       .limit(1)
       .then((rows) => rows[0] ?? null),
+    scope.documents.listDocuments({ limit: 1 }),
   ]);
   const inboundEmail = displayInboundEmail(teamRow);
   const events = eventPage.items;
@@ -168,8 +171,12 @@ export default async function HomeDashboardPage() {
   return (
     <div className="space-y-8">
       <h1 className="sr-only">Home</h1>
+      {billingDashboard?.restrictionReason ? (
+        <BillingRestrictionNotice reason={billingDashboard.restrictionReason} />
+      ) : null}
       <HomeAskComposer
         teamId={active.teamId}
+        hasSources={events.length > 0 || sourceDocuments.length > 0}
         actions={
           <CaptureDialog>
             <CaptureForm

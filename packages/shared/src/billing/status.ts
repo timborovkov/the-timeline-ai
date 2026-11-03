@@ -1,8 +1,3 @@
-import type { BillingPresentation } from '#src/billing/presentation.js';
-/**
- * Derived billing status for dashboards, upgrade nudges, and admission UX.
- */
-
 import {
   FREE_ALLOWANCES,
   PLAN_CATALOG,
@@ -11,6 +6,12 @@ import {
   type BillingPlanId,
   formatEuroFromCents,
 } from '#src/billing/catalog.js';
+import { shouldShowPlanRecommendation, type CheapestPlanPreview } from '#src/billing/preview.js';
+
+import type { BillingPresentation } from '#src/billing/presentation.js';
+/**
+ * Derived billing status for dashboards, upgrade nudges, and admission UX.
+ */
 
 export type SpendCapWarnLevel = (typeof SPEND_CAP_WARN_THRESHOLDS)[number] | null;
 
@@ -238,6 +239,7 @@ export function deriveBillingNudge(input: {
   utilization: SpendCapUtilization;
   freeRemaining: FreeAllowanceRemaining;
   meteredSpendCents: number;
+  planPreview?: CheapestPlanPreview;
 }): BillingNudge | null {
   const billingHref = '/app/team?section=billing';
   const usageHref = '/app/usage';
@@ -298,19 +300,16 @@ export function deriveBillingNudge(input: {
 
   if (
     manage &&
-    (input.planId === 'payg' || input.planId === 'team') &&
-    input.meteredSpendCents >= PLAN_CATALOG.team.includedUsageDiscountCents * 0.7
+    input.planPreview &&
+    shouldShowPlanRecommendation(input.planPreview, input.planId)
   ) {
-    const target = input.planId === 'payg' ? 'Team' : 'Business';
+    const target = PLAN_CATALOG[input.planPreview.recommended];
     return {
       kind: 'suggest_commitment',
-      title: `Optional ${target} commitment`,
-      body:
-        input.planId === 'payg'
-          ? 'Team includes members and up to €60 metered usage on the invoice — never a mandatory upgrade.'
-          : 'Business includes more members and up to €250 metered usage on the invoice.',
-      href: '/pricing',
-      ctaLabel: `Compare ${target}`,
+      title: `Compare ${target.name}`,
+      body: 'Your recorded usage and member costs suggest this plan may cost less. Review the estimate before changing plans; future usage can differ.',
+      href: billingHref,
+      ctaLabel: 'Review estimate',
     };
   }
 

@@ -1481,14 +1481,12 @@ export async function settlePendingBillingReservations(db: Db): Promise<number> 
         ? metadata.pending_delivery_surface
         : 'ask';
     const model = typeof metadata.pending_model === 'string' ? metadata.pending_model : undefined;
-    const minCustomerChargeCents = metadataNumber(metadata, 'pending_min_customer_charge_cents');
     try {
       await settleAskAiFromOpenRouterUsd(billing, {
         operationId: row.operationId,
         openRouterUsd,
         deliverySurface,
         ...(model ? { model } : {}),
-        ...(minCustomerChargeCents !== undefined ? { minCustomerChargeCents } : {}),
       });
       settled += 1;
     } catch (err) {

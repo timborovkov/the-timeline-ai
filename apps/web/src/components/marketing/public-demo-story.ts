@@ -286,7 +286,7 @@ export const PUBLIC_DEMO_STORY = {
           'The Acme migration checklist changes owner and review date before a later launch plan records the staged cohort. A handoff must distinguish the states Timeline actually observed.',
         chronology: [
           'Timeline observes the changed migration checklist when Drive reconciliation processes the changes feed.',
-          'The supported file state becomes a Timeline document version beside its cited change event.',
+          'The supported file snapshot becomes captured evidence beside its cited change event.',
           'A later captured launch plan joins the chronology without erasing the earlier checklist version.',
         ],
         result:

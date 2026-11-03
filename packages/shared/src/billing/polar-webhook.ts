@@ -7,8 +7,6 @@ import {
 } from '@timeline/db';
 import { and, eq, isNotNull, isNull, lte, ne } from 'drizzle-orm';
 
-import type { BillingProvider } from '#src/billing/provider.js';
-
 import { notifySubscriptionPastDue } from '#src/billing/alerts.js';
 import { PLAN_CATALOG, type BillingPlanId } from '#src/billing/catalog.js';
 import { assertStoredPolarIdentity } from '#src/billing/customer-identity.js';
@@ -22,6 +20,8 @@ import { recordBillingPlan } from '#src/billing/plan-history.js';
 import { PolarIdentityError } from '#src/billing/polar-identity-api.js';
 import { TIMELINE_TOPUP_PRODUCT_NAME } from '#src/billing/polar-setup.js';
 import { childLogger } from '#src/logger.js';
+
+import type { BillingProvider } from '#src/billing/provider.js';
 
 export type PolarPaidPlanId = 'payg' | 'team' | 'business' | 'enterprise';
 

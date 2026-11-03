@@ -354,7 +354,9 @@ function PersonalConnectionToolbar({
               {String(selectedSize)} source{selectedSize === 1 ? '' : 's'} shared to this team
             </p>
             <p className="text-xs text-fg-muted">
-              Sharing allows team admins to activate sync later.
+              Sharing allows team admins to activate sync later. Captured evidence uses Timeline
+              visibility, which can differ from access in the original tool. Disconnecting stops
+              future capture; it does not delete existing records.
             </p>
           </>
         )}

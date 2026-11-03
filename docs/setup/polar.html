@@ -418,60 +418,61 @@ PLATFORM_ADMIN_EMAILS=
         plan or period, and a missed renewal advances by calendar months from the subscription
         anchor. A late or retried <code>subscription.updated</code> for an earlier period of the
         same subscription and plan keeps that rolled window. Status changes from the event still
-        apply. Ask streams that abort after work starts settle at least the reserved customer
-        charge. Failed structured-output attempts still contribute OpenRouter
-        <code>usage.cost</code>. Recall minutes that cross a UTC month are attributed to each month
-        they span. A meeting that also crosses a subscription renewal spends each window's included
-        discount separately, and the ledger records the window each discount used. Document create
-        serializes capacity under advisory lock key 1; restore takes key 1 then key 2 so restored
-        chunks serialize with extraction writes. Worker AI reservations count against plan
-        <code>costlyWorkerConcurrency</code> and delay the job when busy. Digest map-reduce stays
-        within that concurrency. A busy slot delays the digest instead of sending a partial one.
-        Polar team customers resolve only through the stored environment/organization-bound mapping
-        or the exact Timeline team external ID. Returned customer ID, external ID, organization, and
-        type are verified before use; email is never a customer-discovery key. Object summaries,
-        suggestion extraction, suggestion planning, calendar-dedupe adjudication, meeting summaries,
-        embedding batch splits, structured-output fallback, Ask presentation, conversation-agent
-        turns, and Slack answers rethrow billing admission so a busy costly-worker slot delays the
-        job instead of being stored as an ordinary failure. A busy meeting summary stays unfinalized
-        instead of completing transcript-only. Non-admission summary failures still complete with
-        the transcript. Background AI metering keeps the reservation when settle fails after a
-        successful provider call and reuses the BullMQ job id. A thrown call that already reported
-        OpenRouter usage stores that attempt on the reservation before settle and keeps it until the
-        ledger row commits. A retry records the saved attempt before calling the provider again.
-        Each transcription chunk gets its own operation id. Every other metered model call appends
-        its stage and a digest of the model, prompt, schema, and input to the worker operation id,
-        so a later call in that job does not replay an earlier result. A retry of the same call
-        still reuses its settlement. Aborting a Recall join after the bot is accepted keeps the
-        reservation when leave fails so the janitor can retry. Terminal Recall settlement errors
-        propagate so the status webhook can 503 and retry. Re-accepting a removed member stamps a
-        new membership <code>createdAt</code> and appends the previous interval to
-        <code>prior_intervals</code>. A leftover Free team stays unrestricted while another owner's
-        grant remains assigned. Storage snapshots backfill missed days across the 31-day lookback,
-        price each day on the plan in force then, and count that day in its own month. A missed day,
-        a day on another plan, or a day in another month settles without reserving against today's
-        allowance, spend cap, or billing state. Suspended and terminated workspaces still block that
-        recovery. Today's snapshot on the live plan still reserves. Replay included discount uses
-        the subscription renewal window that contains the usage day. Calendar-month windows keep an
-        explicit period tag and otherwise use that same usage instant, so a September operation
-        recovered in October stays in September. A short month keeps those stored bounds, and later
-        windows use the later boundary day so a 31st renewal clamped in February resumes on the
-        31st. Live settlements stamp <code>usage_at</code> from the reservation time, and replay
-        uses that instant instead of the 15th of the ingest month. A month tag with no instant still
-        falls on the 15th so a backfill is not placed on the day it was written. The ledger time is
-        used only when neither a usage instant nor a period tag is set. Reserve and settle refill an
-        elapsed included-discount window under the account lock before pricing current-period usage.
-        A settlement whose usage instant is earlier than that window uses the earlier window's
-        remaining discount and leaves the refilled balance unchanged. The instant is the settlement
-        usage time or the reservation's creation time, so a recovered worker, Ask, Recall, email, or
-        accepted-source charge does not need a separate historical pool. That remaining discount is
-        read inside the settlement transaction after the account lock. Settlement prices the plan
-        that admitted the usage. Reserve stores that plan on the reservation, and a row without it
-        uses plan history when the plan changed after the usage instant. An explicit pricing plan
-        still wins, so storage and member-day replay keep the plan they already resolved. A PAYG
-        call recovered after a downgrade to Free keeps its overage on the invoice. A Team call keeps
-        that plan's included discount. The replacement plan's balance stays in place. A reservation
-        opened in the previous window does not reduce the refilled allowance. The janitor rechecks
+        apply. Ask streams that abort settle recorded usage without a reservation-based minimum;
+        legacy pending cancellation floors are ignored. Failed structured-output attempts still
+        contribute OpenRouter <code>usage.cost</code>. Recall minutes that cross a UTC month are
+        attributed to each month they span. A meeting that also crosses a subscription renewal
+        spends each window's included discount separately, and the ledger records the window each
+        discount used. Document create serializes capacity under advisory lock key 1; restore takes
+        key 1 then key 2 so restored chunks serialize with extraction writes. Worker AI reservations
+        count against plan <code>costlyWorkerConcurrency</code> and delay the job when busy. Digest
+        map-reduce stays within that concurrency. A busy slot delays the digest instead of sending a
+        partial one. Polar team customers resolve only through the stored
+        environment/organization-bound mapping or the exact Timeline team external ID. Returned
+        customer ID, external ID, organization, and type are verified before use; email is never a
+        customer-discovery key. Object summaries, suggestion extraction, suggestion planning,
+        calendar-dedupe adjudication, meeting summaries, embedding batch splits, structured-output
+        fallback, Ask presentation, conversation-agent turns, and Slack answers rethrow billing
+        admission so a busy costly-worker slot delays the job instead of being stored as an ordinary
+        failure. A busy meeting summary stays unfinalized instead of completing transcript-only.
+        Non-admission summary failures still complete with the transcript. Background AI metering
+        keeps the reservation when settle fails after a successful provider call and reuses the
+        BullMQ job id. A thrown call that already reported OpenRouter usage stores that attempt on
+        the reservation before settle and keeps it until the ledger row commits. A retry records the
+        saved attempt before calling the provider again. Each transcription chunk gets its own
+        operation id. Every other metered model call appends its stage and a digest of the model,
+        prompt, schema, and input to the worker operation id, so a later call in that job does not
+        replay an earlier result. A retry of the same call still reuses its settlement. Aborting a
+        Recall join after the bot is accepted keeps the reservation when leave fails so the janitor
+        can retry. Terminal Recall settlement errors propagate so the status webhook can 503 and
+        retry. Re-accepting a removed member stamps a new membership <code>createdAt</code> and
+        appends the previous interval to <code>prior_intervals</code>. A leftover Free team stays
+        unrestricted while another owner's grant remains assigned. Storage snapshots backfill missed
+        days across the 31-day lookback, price each day on the plan in force then, and count that
+        day in its own month. A missed day, a day on another plan, or a day in another month settles
+        without reserving against today's allowance, spend cap, or billing state. Suspended and
+        terminated workspaces still block that recovery. Today's snapshot on the live plan still
+        reserves. Replay included discount uses the subscription renewal window that contains the
+        usage day. Calendar-month windows keep an explicit period tag and otherwise use that same
+        usage instant, so a September operation recovered in October stays in September. A short
+        month keeps those stored bounds, and later windows use the later boundary day so a 31st
+        renewal clamped in February resumes on the 31st. Live settlements stamp
+        <code>usage_at</code> from the reservation time, and replay uses that instant instead of the
+        15th of the ingest month. A month tag with no instant still falls on the 15th so a backfill
+        is not placed on the day it was written. The ledger time is used only when neither a usage
+        instant nor a period tag is set. Reserve and settle refill an elapsed included-discount
+        window under the account lock before pricing current-period usage. A settlement whose usage
+        instant is earlier than that window uses the earlier window's remaining discount and leaves
+        the refilled balance unchanged. The instant is the settlement usage time or the
+        reservation's creation time, so a recovered worker, Ask, Recall, email, or accepted-source
+        charge does not need a separate historical pool. That remaining discount is read inside the
+        settlement transaction after the account lock. Settlement prices the plan that admitted the
+        usage. Reserve stores that plan on the reservation, and a row without it uses plan history
+        when the plan changed after the usage instant. An explicit pricing plan still wins, so
+        storage and member-day replay keep the plan they already resolved. A PAYG call recovered
+        after a downgrade to Free keeps its overage on the invoice. A Team call keeps that plan's
+        included discount. The replacement plan's balance stays in place. A reservation opened in
+        the previous window does not reduce the refilled allowance. The janitor rechecks
         <code>cancel_effective_at</code> under the account lock before a scheduled downgrade. A Free
         plan-history row is stored at account creation, and the first paid history row is backfilled
         with that baseline. A prior month is recorded on that month and is not compared to the live

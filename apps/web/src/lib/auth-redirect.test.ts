@@ -1,7 +1,7 @@
 import { expect } from '@timeline/test-support';
 import { afterEach, describe, it } from 'bun:test';
 
-import { signedInAuthRedirect } from '@/lib/auth-redirect';
+import { signedInAuthRedirect, selectedPlanCallback } from '@/lib/auth-redirect';
 const ENV_BACKUP = { ...process.env };
 
 afterEach(() => {
@@ -45,5 +45,14 @@ describe('signedInAuthRedirect', () => {
     process.env.AUTH_URL = 'https://timeline.example.com';
 
     expect(signedInAuthRedirect({ callbackUrl: '/sign-in?callbackUrl=/app' })).toBe('/app');
+  });
+});
+
+describe('pricing plan intent', () => {
+  it('allows only self-serve paid plans without authorizing a purchase', () => {
+    expect(selectedPlanCallback('payg')).toBe('/app/team?section=billing&plan=payg#change-plan');
+    expect(selectedPlanCallback('https://evil.test')).toBeUndefined();
+    expect(selectedPlanCallback('enterprise')).toBeUndefined();
+    expect(selectedPlanCallback(['payg'])).toBeUndefined();
   });
 });

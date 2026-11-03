@@ -1,5 +1,3 @@
-import type { Db } from '@timeline/db';
-
 import {
   abortRecallJoinAfterProviderAccept,
   recallBillingUserMessage,
@@ -10,6 +8,8 @@ import { isBillingAdmissionError } from '#src/billing/errors.js';
 import * as meetingBots from '#src/meeting-bots/index.js';
 import { detectMeetingPlatform, type MeetingRow } from '#src/meetings/scope.js';
 import { withTeam } from '#src/team-scope.js';
+
+import type { Db } from '@timeline/db';
 
 export interface QuickJoinResult {
   ok: boolean;

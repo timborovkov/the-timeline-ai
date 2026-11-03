@@ -1,14 +1,5 @@
 import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
 
-import type {
-  IntegrationEvent,
-  IntegrationProvider,
-  OAuthCallbackInput,
-  OAuthStartInput,
-  ProviderResource,
-  SyncContext,
-} from '#src/integrations/types.js';
-
 import { getEnv } from '#src/env.js';
 import { providerFetch } from '#src/integrations/request.js';
 import {
@@ -17,6 +8,15 @@ import {
   isProviderRateLimitError,
 } from '#src/integrations/types.js';
 import { childLogger } from '#src/logger.js';
+
+import type {
+  IntegrationEvent,
+  IntegrationProvider,
+  OAuthCallbackInput,
+  OAuthStartInput,
+  ProviderResource,
+  SyncContext,
+} from '#src/integrations/types.js';
 
 const fetch = providerFetch('linear');
 

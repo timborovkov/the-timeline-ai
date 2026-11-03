@@ -761,8 +761,7 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       do not pause auto-join as consecutive failures. Document writes require a reservable billing state.
       Free-grant claims skip removed owners; storage admission converts aggregated bytes before
       adding a new upload. Janitor included-discount resets lock the billing account against a
-      newer Polar plan/period. Ask streams that abort after work starts settle the reserved
-      customer charge. Document-extract allowlists `BILLING_CHARGES_ENABLED`. Deferred
+      newer Polar plan/period. Ask streams that abort settle recorded usage without a reservation-based minimum. Document-extract allowlists `BILLING_CHARGES_ENABLED`. Deferred
       accepted-source flush rotates past still-blocked rows. Document restore rechecks capacity;
       document create serializes the Free count under lock key 1. Failed structured-output
       attempts still contribute OpenRouter `usage.cost`. Recall minutes that span UTC months

@@ -299,22 +299,27 @@ function Limitations({ connector }: { connector: ConnectorContent }) {
         <SectionLabel label="Limits" />
         <div>
           <h2 id="limitations" className="text-3xl font-semibold tracking-tight sm:text-4xl">
-            Honest limitations
+            Capture limits and recovery
           </h2>
           <p className="mt-4 max-w-[62ch] text-base leading-relaxed text-fg-muted">
             Review these capture and recovery boundaries before connecting your account.
           </p>
-          <ul className="mt-8 border-t border-border">
-            {connector.limitations.map((limitation) => (
-              <li
-                key={limitation}
-                className="grid grid-cols-[1.5rem_1fr] gap-4 border-b border-border py-5"
-              >
-                <Minus aria-hidden="true" className="mt-1 size-4 text-fg-dim" />
-                <span className="text-base leading-relaxed text-fg">{limitation}</span>
-              </li>
-            ))}
-          </ul>
+          <details className="mt-6 border-t border-border pt-4">
+            <summary className="cursor-pointer text-base font-medium text-fg">
+              Read capture limits, history coverage and recovery behaviour
+            </summary>
+            <ul className="mt-4 border-t border-border">
+              {connector.limitations.map((limitation) => (
+                <li
+                  key={limitation}
+                  className="grid grid-cols-[1.5rem_1fr] gap-4 border-b border-border py-5"
+                >
+                  <Minus aria-hidden="true" className="mt-1 size-4 text-fg-dim" />
+                  <span className="text-base leading-relaxed text-fg">{limitation}</span>
+                </li>
+              ))}
+            </ul>
+          </details>
         </div>
       </div>
     </section>

@@ -259,3 +259,14 @@ and resumes extraction/transcription safely on retry. See
 variables and `bun run email:replay -- <received-email-uuid>`. Credentials, domain
 configuration, and live verification are operator-owned. No live email settings
 are supplied by the repository.
+
+### Prelaunch implementation review
+
+See [the implementation tracker](docs/prelaunch-implementation.md) for the November 2026 billing, capture-boundary, onboarding and public-copy changes, validation evidence, and remaining work. The tracker distinguishes local implementation from live provider verification and publication.
+
+
+### Internal queue readiness
+
+`GET /api/health/ready` requires `Authorization: Bearer <CRON_SECRET>` and returns `Cache-Control: no-store`. It checks extraction, embedding, integration sync and webhook-delivery workers and waiting-job age. Missing workers, waiting work older than 30 minutes, dependency failures or a five-second probe timeout return 503. This complements public `/api/health`; it does not certify answer quality, active-job progress, every queue or billing reconciliation. Never place the secret in a URL or public monitor. See [prelaunch implementation coverage](docs/prelaunch-implementation.md).
+
+Validation environment note (2026-11-03): the supplied workspace’s installed `.bin` shell shims launch the TypeScript, ESLint, Prettier and Playwright CLI processes with host Node even when invoked by the canonical `bun x --bun --no-install` scripts. This is a build/analysis/browser-harness exception observed in this workspace, not an application runtime fallback: the Next server, worker/unit-test processes and shared-package import checks used Bun 1.4.4. No package-manager or runtime pin changed.

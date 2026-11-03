@@ -1406,7 +1406,7 @@ describe('POST /api/chat', () => {
     await vi.waitFor(() => {
       expect(settleAskAiFromOpenRouterUsd).toHaveBeenCalledWith(
         expect.objectContaining({}),
-        expect.objectContaining({ minCustomerChargeCents: 250 }),
+        expect.objectContaining({ openRouterUsd: 0 }),
       );
     });
     expect(releaseBillingReservation).not.toHaveBeenCalled();
@@ -1548,7 +1548,7 @@ describe('POST /api/chat', () => {
     expect(settleAskAiFromOpenRouterUsd).not.toHaveBeenCalled();
   });
 
-  it('conservatively settles streamed usage when the client aborts after work starts', async () => {
+  it('settles recorded usage without a minimum when the client aborts after work starts', async () => {
     const controller = new AbortController();
     const response = await POST(
       request(validBody({ sessionId: SESSION_ID }), 'https://timeline.test/api/chat', {
@@ -1561,7 +1561,7 @@ describe('POST /api/chat', () => {
     await vi.waitFor(() => {
       expect(settleAskAiFromOpenRouterUsd).toHaveBeenCalledWith(
         expect.objectContaining({}),
-        expect.objectContaining({ minCustomerChargeCents: 250 }),
+        expect.objectContaining({ openRouterUsd: 0 }),
       );
     });
     expect(releaseBillingReservation).not.toHaveBeenCalled();

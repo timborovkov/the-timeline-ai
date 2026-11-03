@@ -1194,3 +1194,8 @@ Once the suite is mature, split commands by layer:
 5. Finish worker processor coverage for integration sync.
 6. Add database, queue, and S3 contract tests.
 7. Add component tests for high-value UI states.
+
+
+### Prelaunch regression additions — 2026-11-03
+
+The prelaunch branch adds zero-cost interrupted-Ask settlement and legacy retry-idempotency coverage, Sentry selection checks at intake and delivery, repeated Sentry delivery identity, GitHub paginated installation discovery and fail-closed capture, empty-source Home behavior, plan-intent navigation, and authenticated queue readiness. Browser additions exercise pricing, PAYG signup intent, mobile overflow, security headers/contact metadata, and pricing-token contrast. See [implementation tracker](docs/prelaunch-implementation.md) for executed results and remaining live-provider, payment and complete first-value journey gaps; these tests do not establish live invoice reconciliation or an accessibility certification.

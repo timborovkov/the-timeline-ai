@@ -16,6 +16,21 @@ const nextConfig: NextConfig = {
   headers() {
     return Promise.resolve([
       {
+        source: '/:path*',
+        headers: [
+          {
+            key: 'Content-Security-Policy',
+            value: "frame-ancestors 'none'; base-uri 'self'",
+          },
+          { key: 'X-Frame-Options', value: 'DENY' },
+          { key: 'X-Content-Type-Options', value: 'nosniff' },
+          { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
+          ...(process.env.NODE_ENV === 'production'
+            ? [{ key: 'Strict-Transport-Security', value: 'max-age=31536000' }]
+            : []),
+        ],
+      },
+      {
         source: '/oauth/authorize',
         headers: [
           { key: 'Cache-Control', value: 'no-store' },

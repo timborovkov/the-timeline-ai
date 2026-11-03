@@ -689,6 +689,8 @@ export interface IntegrationProvider {
     tokens?: Record<string, unknown>;
     integration: IntegrationRow;
     payload: unknown;
+    /** Persisted delivery identity/time, stable across worker retries. */
+    delivery?: { key: string; receivedAt: Date };
   }): Promise<WebhookHandleResult>;
   /**
    * Optional native webhook subscription management. Providers return the

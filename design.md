@@ -103,7 +103,7 @@ The neutral OKLCH palette and single lime signal remain. Tokens live in
 | `--border-strong` | Focus and emphasized boundaries |
 | `--fg` | Primary text |
 | `--fg-muted` | Supporting text |
-| `--fg-dim` | Non-essential metadata |
+| `--fg-dim` | Non-essential metadata; light-mode lightness 0.50 to preserve small-text contrast on all three surfaces |
 | `--signal` / `--signal-soft` | Primary action, active route, citation |
 | `--danger` | Failure, destructive state, overdue work |
 | `--status-progress` | Active, doing, and in-progress work |
@@ -1337,3 +1337,7 @@ owners/admins; members retain the existing limited warning view.
 Contractual Enterprise displays agreement-based limits instead of a local cap
 warning/editor. Cap warnings follow enforcement applicability; comped Enterprise
 keeps its enforced cap. Disabled enforcement is labeled as informational tracking.
+
+Light-mode signal controls use `oklch(0.51 0.15 130)` with near-white foreground; the signal background must retain normal-text contrast. Homepage overrides require separate verification.
+
+Dark-theme dim text uses OKLCH lightness 0.64 (rather than 0.48). Browser sRGB measurement puts it above 5:1 on the secondary dark surface; dim is a hierarchy treatment, not permission for unreadable body text. The pricing browser regression checks both themes’ dim-text surfaces and primary-button pair at 4.5:1 or better.

@@ -42,12 +42,12 @@ describe('editorial public documents', () => {
     if (!firstGuide) throw new Error('Expected at least one editorial guide');
 
     expect(findEditorialPublicDocument(HOW_IT_WORKS_ROUTE).dates).toEqual({
-      modified: '2026-08-21',
-      reviewed: '2026-08-21',
+      modified: '2026-11-03',
+      reviewed: '2026-11-03',
     });
     expect(findEditorialPublicDocument(firstGuide.route).dates).toEqual({
-      modified: '2026-08-15',
-      reviewed: '2026-08-15',
+      modified: '2026-11-03',
+      reviewed: '2026-11-03',
     });
   });
 

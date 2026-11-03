@@ -39,22 +39,6 @@ import {
 import { alias } from 'drizzle-orm/pg-core';
 import { z } from 'zod';
 
-import type { BoardScope } from '#src/boards/index.js';
-import type {
-  CalendarEventWithRedaction,
-  CalendarScope,
-  CreateCalendarEventInput,
-  UpdateCalendarEventInput,
-} from '#src/calendar/index.js';
-import type {
-  CreateObjectInput,
-  IdentityFacetInput,
-  ObjectPatch,
-  ObjectScope,
-  ObjectType,
-} from '#src/objects/index.js';
-import type { TeamRole } from '#src/team-scope.js';
-
 import {
   reconcileArtifactEvidence,
   type ArtifactAnchorInput,
@@ -98,6 +82,22 @@ import {
   rawEventIsActive,
   rawEventVisibleToUser,
 } from '#src/visibility.js';
+
+import type { BoardScope } from '#src/boards/index.js';
+import type {
+  CalendarEventWithRedaction,
+  CalendarScope,
+  CreateCalendarEventInput,
+  UpdateCalendarEventInput,
+} from '#src/calendar/index.js';
+import type {
+  CreateObjectInput,
+  IdentityFacetInput,
+  ObjectPatch,
+  ObjectScope,
+  ObjectType,
+} from '#src/objects/index.js';
+import type { TeamRole } from '#src/team-scope.js';
 
 export { suggestionDedupeKey } from '#src/suggestions/dedupe-key.js';
 export {

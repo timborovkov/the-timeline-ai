@@ -40,9 +40,6 @@ import {
 } from '@timeline/db';
 import { and, asc, desc, eq, gte, inArray, isNull, lt, ne, notInArray, or, sql } from 'drizzle-orm';
 
-import type { chatStructured } from '#src/llm/chat.js';
-import type { TimelineMomentLookupPlan } from '#src/timeline-moments/index.js';
-
 import { createAuditScope } from '#src/audit/scope.js';
 import { getBillingContext, runWithBillingContext } from '#src/billing/context.js';
 import { createBillingOperatorScope } from '#src/billing/operator-store.js';
@@ -96,6 +93,9 @@ import {
   rawEventIsActive,
   rawEventVisibleToUser,
 } from '#src/visibility.js';
+
+import type { chatStructured } from '#src/llm/chat.js';
+import type { TimelineMomentLookupPlan } from '#src/timeline-moments/index.js';
 
 // Note: `teamRole` value is referenced at runtime by drizzle elsewhere; keeping
 // the value import lets us derive the union type from the enum definition.

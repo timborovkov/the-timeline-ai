@@ -29,6 +29,15 @@ describe('HomeAskComposer', () => {
     cleanup();
   });
 
+  it('guides an empty workspace to a source without suggesting unsupported questions', () => {
+    render(<HomeAskComposer teamId="team-1" hasSources={false} />);
+    expect(
+      screen.getByRole('link', { name: 'Upload your first document' }).getAttribute('href'),
+    ).toBe('/app/documents');
+    expect(screen.queryByRole('button', { name: 'What changed today?' })).toBeNull();
+    expect(screen.getByLabelText('Question for Ask')).toBeTruthy();
+  });
+
   it('validates an empty question without navigating', () => {
     render(<HomeAskComposer teamId="team-1" />);
     const question = screen.getByLabelText('Question for Ask');
