@@ -1,5 +1,5 @@
-import { expect } from '@timeline/test-support';
-import { vi } from '@timeline/test-support';
+import type * as TimelineDb from '@timeline/db';
+import { expect, vi } from '@timeline/test-support';
 import { afterEach, describe, it } from 'bun:test';
 // Test environment: happy-dom
 
@@ -25,7 +25,7 @@ await vi.mock(
 await vi.mock(
   import.meta.resolve('@timeline/db'),
   async (importOriginal) => ({
-    ...(await importOriginal()),
+    ...(await importOriginal<typeof TimelineDb>()),
     getDb: () => ({}),
   }),
   () => import('@timeline/db'),
