@@ -389,9 +389,20 @@ export default function TrustPage() {
                     needs.
                   </p>
                   <p className="mt-5 text-sm leading-7 text-fg-muted">
-                    Inside a team, records are team-visible, private, or restricted to named users.
-                    Administrator status is not a general bypass into a member&apos;s private
-                    context.
+                    Customer team owners and administrators do not receive general access to another
+                    member&apos;s private content. Separately authorized Timeline staff may use a
+                    temporary support session as a selected member for a permitted purpose. That
+                    session can read the member&apos;s private content and make changes within the
+                    member&apos;s permissions. It does not grant access to other members&apos;
+                    private content that the selected member cannot see.
+                  </p>
+                  <p className="mt-5 text-sm leading-7 text-fg-muted">
+                    These support sessions expire after 30 minutes and require a recorded purpose,
+                    ticket or incident reference, and authorization or emergency context. We record
+                    the staff identity separately from the member identity. Inspection of suspended
+                    accounts or teams is read-only. Ordinary support requires customer
+                    authorization; emergency access remains subject to subsequent review under our
+                    staff policy.
                   </p>
                 </div>
               </div>

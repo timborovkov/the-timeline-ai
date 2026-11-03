@@ -4,6 +4,8 @@ import {
   hashCalendarSubscriptionToken,
   isCalendarSubscriptionToken,
 } from '@timeline/shared/calendar';
+import { PlatformAccessError } from '@timeline/shared/platform-admin';
+import { assertActivePrincipal } from '@timeline/shared/platform-admin/runtime';
 import { and, asc, eq, gte, isNull, lt, sql } from 'drizzle-orm';
 import ical, {
   ICalCalendarMethod,
@@ -92,6 +94,12 @@ export async function GET(req: Request, context: RouteContext): Promise<Response
   const subscription = rows[0];
   if (!subscription || !calendarSubscriptionHashesMatch(subscription.tokenHash, hash)) {
     return new Response('Not found', { status: 404 });
+  }
+  try {
+    await assertActivePrincipal(db, subscription.teamId, subscription.userId);
+  } catch (error) {
+    if (error instanceof PlatformAccessError) return new Response('Not found', { status: 404 });
+    throw error;
   }
   after(() => {
     const usedAt = new Date();

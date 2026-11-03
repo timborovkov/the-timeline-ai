@@ -12,6 +12,7 @@ type ServerActionInstrumentation = (
 
 const mocks = vi.hoisted(() => ({
   auth: vi.fn(),
+  getRequestIdentity: vi.fn(),
   headers: vi.fn<() => Headers>(),
   redirect: vi.fn(),
   withServerActionInstrumentation: vi.fn<ServerActionInstrumentation>(
@@ -21,7 +22,7 @@ const mocks = vi.hoisted(() => ({
 
 await vi.mock(
   import.meta.resolve('@/lib/auth'),
-  () => ({ auth: mocks.auth }),
+  () => ({ auth: mocks.auth, getRequestIdentity: mocks.getRequestIdentity }),
   () => import('@/lib/auth'),
 );
 
@@ -71,6 +72,7 @@ const { runSentryServerAction } = await import('@/lib/sentry-action');
 describe('runSentryServerAction', () => {
   beforeEach(() => {
     mocks.auth.mockReset();
+    mocks.getRequestIdentity.mockResolvedValue({ impersonation: null });
     mocks.headers.mockReturnValue(
       new Headers({
         'sentry-trace': '0123456789abcdef0123456789abcdef-0123456789abcdef-1',
@@ -82,6 +84,27 @@ describe('runSentryServerAction', () => {
     });
     mocks.withServerActionInstrumentation.mockClear();
     vi.unstubAllEnvs();
+  });
+
+  it('allows only explicitly classified document reads during suspended inspection', async () => {
+    mocks.headers.mockReturnValue(new Headers({ 'next-action': 'untrusted-action-id' }));
+    mocks.auth.mockResolvedValue(null);
+    mocks.getRequestIdentity.mockResolvedValue({ impersonation: { readOnly: true } });
+    for (const operation of ['get_document_download_url', 'get_document_preview_url']) {
+      await expect(runSentryServerAction(operation, () => 'read')).resolves.toBe('read');
+    }
+    for (const operation of [
+      'finalize_document_version',
+      'delete_document',
+      'get_unknown_url',
+      'accept_legal',
+    ]) {
+      const callback = vi.fn();
+      await expect(runSentryServerAction(operation, callback)).rejects.toThrow(
+        'Exit impersonation',
+      );
+      expect(callback).not.toHaveBeenCalled();
+    }
   });
 
   it('passes only a valid trace header into Sentry instrumentation', async () => {

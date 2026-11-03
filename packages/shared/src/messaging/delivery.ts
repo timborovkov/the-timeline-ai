@@ -8,6 +8,7 @@ import {
   slackUsers,
   slackUserTeams,
   teamMembers,
+  teamBillingAccounts,
   telegramUsers,
   telegramUserTeams,
   users,
@@ -15,17 +16,8 @@ import {
 import { and, eq, isNull, lt } from 'drizzle-orm';
 import { z } from 'zod';
 
-import type {
-  DailyDigestPayload,
-  MessageChannel,
-  MessageDeliveryStatus,
-  MessageInput,
-  MessageIntent,
-  RenderedMessage,
-  SendMessageResult,
-} from '#src/messaging/types.js';
-
 import { emailRecipientCount } from '#src/billing/catalog.js';
+import { withChatDeliveryPrincipal } from '#src/conversation-surfaces/deferred-delivery.js';
 import { decryptJson, encryptJson } from '#src/crypto/secrets.js';
 import { resendRequest, ResendError, type EmailFetch } from '#src/email/resend-client.js';
 import { getEnv } from '#src/env.js';
@@ -46,6 +38,16 @@ import {
 import { renderMessage } from '#src/messaging/templates.js';
 import { sendTeamSlackDirectMessage, sendTeamSlackMessage } from '#src/slack/dispatcher.js';
 import { sendTelegramBotMessage } from '#src/telegram/api.js';
+
+import type {
+  DailyDigestPayload,
+  MessageChannel,
+  MessageDeliveryStatus,
+  MessageInput,
+  MessageIntent,
+  RenderedMessage,
+  SendMessageResult,
+} from '#src/messaging/types.js';
 
 interface ResendResult {
   ok: boolean;
@@ -562,11 +564,14 @@ export async function sendDailyDigest(input: {
   const recipientRows = await input.db
     .select({
       email: users.email,
+      suspendedAt: users.suspendedAt,
+      securityState: teamBillingAccounts.securityState,
       removedAt: teamMembers.removedAt,
       dailyDigestEnabled: messagePreferences.dailyDigestEnabled,
     })
     .from(teamMembers)
     .innerJoin(users, eq(users.id, teamMembers.userId))
+    .leftJoin(teamBillingAccounts, eq(teamBillingAccounts.teamId, teamMembers.teamId))
     .leftJoin(
       messagePreferences,
       and(
@@ -583,12 +588,19 @@ export async function sendDailyDigest(input: {
     )
     .limit(1);
   const recipient = recipientRows[0];
-  if (!recipient || recipient.dailyDigestEnabled === false) {
+  const suspensionReason = recipient?.suspendedAt
+    ? 'Recipient is suspended.'
+    : recipient?.securityState === 'suspended' || recipient?.securityState === 'terminated'
+      ? 'Workspace is suspended.'
+      : null;
+  if (!recipient || recipient.dailyDigestEnabled === false || suspensionReason) {
     await input.db
       .update(dailyDigests)
       .set({
         status: 'skipped',
-        error: recipient ? 'Daily digest is disabled.' : 'Recipient is no longer a team member.',
+        error:
+          suspensionReason ??
+          (recipient ? 'Daily digest is disabled.' : 'Recipient is no longer a team member.'),
       })
       .where(eq(dailyDigests.id, input.digestId));
     return { ok: true, skipped: true, skippedStatus: 'skipped' };
@@ -930,7 +942,10 @@ async function deliverBotDigest(input: {
     }
   }
   try {
-    await input.send();
+    await withChatDeliveryPrincipal(
+      { teamId: input.teamId, ...(input.userId ? { userId: input.userId } : {}) },
+      input.send,
+    );
     if (deliveryId) {
       await markDeliveryResult({ db: input.db, deliveryId, status: 'sent' });
     }

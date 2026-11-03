@@ -1,3 +1,11 @@
+import { getEnv } from '#src/env.js';
+import { providerFetch, providerRetryAt } from '#src/integrations/request.js';
+import {
+  attachSyncContinuation,
+  ProviderRateLimitError as ProviderRateLimit,
+} from '#src/integrations/types.js';
+import { SlackApi } from '#src/slack/api.js';
+
 import type { externalFetch } from '#src/http/external-fetch.js';
 import type {
   IntegrationEvent,
@@ -8,14 +16,6 @@ import type {
   SyncContext,
   SyncContinuation,
 } from '#src/integrations/types.js';
-
-import { getEnv } from '#src/env.js';
-import { providerFetch, providerRetryAt } from '#src/integrations/request.js';
-import {
-  attachSyncContinuation,
-  ProviderRateLimitError as ProviderRateLimit,
-} from '#src/integrations/types.js';
-import { SlackApi } from '#src/slack/api.js';
 
 const defaultFetch = providerFetch('slack');
 

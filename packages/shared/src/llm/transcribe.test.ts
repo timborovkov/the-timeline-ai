@@ -6,13 +6,13 @@ import { afterEach, beforeEach, describe, it } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 
-import type { TranscriptionModel } from 'ai';
-
 import { runWorkerBilling } from '#src/billing/runtime.js';
 import { resetEnvForTests } from '#src/env.js';
 import { TIMELINE_MODELS } from '#src/llm/models.js';
 import { transcribeAudio } from '#src/llm/transcribe.js';
 import { applyDbMigrations } from '#src/test/pglite.js';
+
+import type { TranscriptionModel } from 'ai';
 // Tests for the transcribe wrapper. The production path calls OpenRouter's
 // JSON/base64 STT endpoint; tests also inject a mock TranscriptionModel for
 // deterministic SDK-level wrapper coverage. AUTH_SECRET and DATABASE_URL are

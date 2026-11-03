@@ -1,4 +1,12 @@
-import { type Db, meetings, meetingUsage, savedMeetings, teamMeetingSettings } from '@timeline/db';
+import {
+  type Db,
+  teamBillingAccounts,
+  users,
+  meetings,
+  meetingUsage,
+  savedMeetings,
+  teamMeetingSettings,
+} from '@timeline/db';
 import { childLogger, meetingBots, queue, withTeam } from '@timeline/shared';
 import {
   abortRecallJoinAfterProviderAccept,
@@ -7,10 +15,26 @@ import {
   reserveRecallMeetingMinutes,
   runWithConcurrentRecallJoinLock,
 } from '@timeline/shared/billing';
+import { principalIsActive } from '@timeline/shared/platform-admin/runtime';
 import { Worker, type Job } from 'bullmq';
-import { and, asc, eq, exists, gt, gte, isNotNull, isNull, lte, or, sql } from 'drizzle-orm';
+import {
+  and,
+  asc,
+  eq,
+  exists,
+  notExists,
+  inArray,
+  gt,
+  gte,
+  isNotNull,
+  isNull,
+  lte,
+  or,
+  sql,
+} from 'drizzle-orm';
 
 import { captureWorkerException } from '#src/monitoring.js';
+import { guardWorkerProcessor } from '#src/platform-worker.js';
 
 const log = childLogger('worker:meeting-scheduler');
 const PSEUDO_USER = '00000000-0000-0000-0000-000000000000';
@@ -137,6 +161,7 @@ export async function processMeetingSchedulerTick(deps: MeetingSchedulerDeps): P
     .select({
       id: savedMeetings.id,
       teamId: savedMeetings.teamId,
+      createdByUserId: savedMeetings.createdByUserId,
       autoJoinEnabled: savedMeetings.autoJoinEnabled,
       autoJoinPausedAt: savedMeetings.autoJoinPausedAt,
       archivedAt: savedMeetings.archivedAt,
@@ -157,6 +182,8 @@ export async function processMeetingSchedulerTick(deps: MeetingSchedulerDeps): P
   let failed = 0;
   const expiredRetryTeams = new Set<string>();
   for (const saved of schedulerSaved) {
+    if (!(await principalIsActive(deps.db, saved.teamId, saved.createdByUserId ?? undefined)))
+      continue;
     const scope = withTeam(deps.db, saved.teamId, PSEUDO_USER, { skipMembershipCheck: true });
     if (!expiredRetryTeams.has(saved.teamId)) {
       failed += await scope.meetings.expireSavedMeetingNoShowRetries(now);
@@ -175,6 +202,25 @@ export async function processMeetingSchedulerTick(deps: MeetingSchedulerDeps): P
     .where(
       and(
         eq(meetings.status, 'scheduled'),
+        // Apply suspension before the global batch limit so inactive principals
+        // cannot starve eligible captures in another workspace.
+        notExists(
+          deps.db
+            .select({ id: teamBillingAccounts.teamId })
+            .from(teamBillingAccounts)
+            .where(
+              and(
+                eq(teamBillingAccounts.teamId, meetings.teamId),
+                inArray(teamBillingAccounts.securityState, ['suspended', 'terminated']),
+              ),
+            ),
+        ),
+        notExists(
+          deps.db
+            .select({ id: users.id })
+            .from(users)
+            .where(and(eq(users.id, meetings.createdByUserId), isNotNull(users.suspendedAt))),
+        ),
         eq(savedMeetings.autoJoinEnabled, true),
         isNull(savedMeetings.autoJoinPausedAt),
         isNull(savedMeetings.archivedAt),
@@ -194,6 +240,8 @@ export async function processMeetingSchedulerTick(deps: MeetingSchedulerDeps): P
   let joined = 0;
   for (const dueRow of due) {
     const meeting = dueRow.meeting;
+    if (!(await principalIsActive(deps.db, meeting.teamId, meeting.createdByUserId ?? undefined)))
+      continue;
     if (!meeting.savedMeetingId) continue;
     if (
       meeting.scheduledStartAt &&
@@ -326,7 +374,9 @@ export function startMeetingSchedulerWorker(
 ): Worker<queue.MeetingSchedulerJobData> {
   const worker = new Worker<queue.MeetingSchedulerJobData>(
     queue.QUEUE_NAMES.meetingScheduler,
-    async (_job: Job<queue.MeetingSchedulerJobData>) => processMeetingSchedulerTick(deps),
+    guardWorkerProcessor(deps.db, async (_job: Job<queue.MeetingSchedulerJobData>) =>
+      processMeetingSchedulerTick(deps),
+    ),
     { connection: queue.getRedisConnection() },
   );
   worker.on('failed', (job, err) => {

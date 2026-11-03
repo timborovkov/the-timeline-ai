@@ -2053,5 +2053,8 @@
   },
   "scripts/testing/runner.test.ts": {
     "group": "script"
+  },
+  "packages/shared/src/platform-admin/index.test.ts": {
+    "group": "integration"
   }
 }

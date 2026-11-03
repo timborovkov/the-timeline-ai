@@ -259,3 +259,7 @@ and resumes extraction/transcription safely on retry. See
 variables and `bun run email:replay -- <received-email-uuid>`. Credentials, domain
 configuration, and live verification are operator-owned. No live email settings
 are supplied by the repository.
+
+### Platform administration
+
+Verified accounts in `PLATFORM_ADMIN_EMAILS` can open `/app/admin` to browse and manage users and teams, suspend/restore access, and start audited 30-minute user impersonation sessions. See [Platform administration](docs/platform-admin.md) for access boundaries, migration, and operator guidance.

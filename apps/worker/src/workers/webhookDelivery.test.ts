@@ -3,6 +3,7 @@ import { vi } from '@timeline/test-support';
 import { beforeEach, describe, it } from 'bun:test';
 const fakes = vi.hoisted(() => ({
   loadWebhookDeliveryWork: vi.fn(),
+  assertActive: vi.fn(),
   markWebhookDeliveryStatus: vi.fn(),
   markWebhookDeliveryTargetProcessing: vi.fn(),
   markWebhookDeliveryTargetProcessed: vi.fn(),
@@ -85,6 +86,7 @@ const integration = {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  fakes.assertActive.mockResolvedValue(undefined);
   fakes.markWebhookDeliveryStatus.mockResolvedValue(undefined);
   fakes.markWebhookDeliveryTargetProcessing.mockResolvedValue(undefined);
   fakes.markWebhookDeliveryTargetProcessed.mockResolvedValue(undefined);
@@ -116,7 +118,10 @@ describe('webhook delivery worker', () => {
     });
 
     await expect(
-      processWebhookDeliveryJob({ db: {} as never }, { deliveryId: DELIVERY_ID }),
+      processWebhookDeliveryJob(
+        { db: {} as never, assertActive: fakes.assertActive },
+        { deliveryId: DELIVERY_ID },
+      ),
     ).resolves.toEqual({
       deliveryId: DELIVERY_ID,
       processed: 1,
@@ -183,7 +188,10 @@ describe('webhook delivery worker', () => {
     });
 
     await expect(
-      processWebhookDeliveryJob({ db: {} as never }, { deliveryId: DELIVERY_ID }),
+      processWebhookDeliveryJob(
+        { db: {} as never, assertActive: fakes.assertActive },
+        { deliveryId: DELIVERY_ID },
+      ),
     ).resolves.toMatchObject({
       processed: 1,
       ignored: 0,
@@ -234,7 +242,10 @@ describe('webhook delivery worker', () => {
     });
 
     await expect(
-      processWebhookDeliveryJob({ db: {} as never }, { deliveryId: DELIVERY_ID }),
+      processWebhookDeliveryJob(
+        { db: {} as never, assertActive: fakes.assertActive },
+        { deliveryId: DELIVERY_ID },
+      ),
     ).resolves.toMatchObject({
       processed: 1,
       ignored: 0,
@@ -256,7 +267,10 @@ describe('webhook delivery worker', () => {
     });
 
     await expect(
-      processWebhookDeliveryJob({ db: {} as never }, { deliveryId: DELIVERY_ID }),
+      processWebhookDeliveryJob(
+        { db: {} as never, assertActive: fakes.assertActive },
+        { deliveryId: DELIVERY_ID },
+      ),
     ).resolves.toEqual({
       deliveryId: DELIVERY_ID,
       processed: 0,
@@ -275,7 +289,10 @@ describe('webhook delivery worker', () => {
     });
 
     await expect(
-      processWebhookDeliveryJob({ db: {} as never }, { deliveryId: DELIVERY_ID }),
+      processWebhookDeliveryJob(
+        { db: {} as never, assertActive: fakes.assertActive },
+        { deliveryId: DELIVERY_ID },
+      ),
     ).resolves.toEqual({
       deliveryId: DELIVERY_ID,
       processed: 0,
@@ -296,7 +313,10 @@ describe('webhook delivery worker', () => {
     fakes.isNativeProviderId.mockReturnValueOnce(false);
 
     await expect(
-      processWebhookDeliveryJob({ db: {} as never }, { deliveryId: DELIVERY_ID }),
+      processWebhookDeliveryJob(
+        { db: {} as never, assertActive: fakes.assertActive },
+        { deliveryId: DELIVERY_ID },
+      ),
     ).resolves.toEqual({
       deliveryId: DELIVERY_ID,
       processed: 0,
@@ -320,7 +340,10 @@ describe('webhook delivery worker', () => {
     });
 
     await expect(
-      processWebhookDeliveryJob({ db: {} as never }, { deliveryId: DELIVERY_ID }),
+      processWebhookDeliveryJob(
+        { db: {} as never, assertActive: fakes.assertActive },
+        { deliveryId: DELIVERY_ID },
+      ),
     ).resolves.toMatchObject({
       processed: 0,
       ignored: 1,
@@ -355,7 +378,10 @@ describe('webhook delivery worker', () => {
     });
 
     await expect(
-      processWebhookDeliveryJob({ db: {} as never }, { deliveryId: DELIVERY_ID }),
+      processWebhookDeliveryJob(
+        { db: {} as never, assertActive: fakes.assertActive },
+        { deliveryId: DELIVERY_ID },
+      ),
     ).resolves.toEqual({
       deliveryId: DELIVERY_ID,
       processed: 1,
@@ -406,7 +432,10 @@ describe('webhook delivery worker', () => {
     fakes.providerSyncPolicy.mockReturnValueOnce({ supportsTargetedSync: true });
 
     await expect(
-      processWebhookDeliveryJob({ db: {} as never }, { deliveryId: DELIVERY_ID }),
+      processWebhookDeliveryJob(
+        { db: {} as never, assertActive: fakes.assertActive },
+        { deliveryId: DELIVERY_ID },
+      ),
     ).resolves.toMatchObject({ processed: 1, ignored: 0, failed: 0 });
 
     expect(fakes.writeIntegrationEvents).toHaveBeenCalledWith({
@@ -430,7 +459,10 @@ describe('webhook delivery worker', () => {
     });
 
     await expect(
-      processWebhookDeliveryJob({ db: {} as never }, { deliveryId: DELIVERY_ID }),
+      processWebhookDeliveryJob(
+        { db: {} as never, assertActive: fakes.assertActive },
+        { deliveryId: DELIVERY_ID },
+      ),
     ).rejects.toThrow('webhook_delivery_failed');
 
     expect(fakes.markWebhookDeliveryTargetFailed).toHaveBeenCalledWith(
@@ -453,7 +485,7 @@ describe('webhook delivery worker', () => {
     });
 
     await deadLetterWebhookDeliveryJobIfExhausted(
-      { db: {} as never },
+      { db: {} as never, assertActive: fakes.assertActive },
       {
         data: { deliveryId: DELIVERY_ID },
         attemptsMade: 5,
@@ -478,7 +510,7 @@ describe('webhook delivery worker', () => {
 
   it('does not dead-letter before BullMQ attempts are exhausted', async () => {
     await deadLetterWebhookDeliveryJobIfExhausted(
-      { db: {} as never },
+      { db: {} as never, assertActive: fakes.assertActive },
       {
         data: { deliveryId: DELIVERY_ID },
         attemptsMade: 2,
@@ -491,4 +523,41 @@ describe('webhook delivery worker', () => {
     expect(fakes.markWebhookDeliveryDeadLettered).not.toHaveBeenCalled();
     expect(fakes.adminRecordConnectionAttention).not.toHaveBeenCalled();
   });
+});
+
+it('rejects suspended integration processing before calling its provider', async () => {
+  fakes.loadWebhookDeliveryWork.mockResolvedValue({ delivery, targets: [{ target, integration }] });
+  fakes.assertActive.mockRejectedValueOnce(new Error('Workspace is suspended'));
+  await expect(
+    processWebhookDeliveryJob(
+      { db: {} as never, assertActive: fakes.assertActive },
+      { deliveryId: DELIVERY_ID },
+    ),
+  ).rejects.toThrow('webhook_delivery_failed');
+  expect(fakes.markWebhookDeliveryTargetFailed).toHaveBeenCalledWith(
+    expect.anything(),
+    TARGET_ID,
+    'Workspace is suspended',
+  );
+  expect(fakes.markWebhookDeliveryStatus).toHaveBeenCalledWith(
+    expect.anything(),
+    DELIVERY_ID,
+    'failed',
+    expect.stringContaining('Workspace is suspended'),
+  );
+  expect(fakes.markWebhookDeliveryTargetProcessed).not.toHaveBeenCalled();
+  expect(fakes.writeIntegrationEvents).not.toHaveBeenCalled();
+  expect(fakes.enqueueIntegrationSyncJob).not.toHaveBeenCalled();
+  // A failed target is eligible for the existing loader/retry path after restoration.
+  fakes.loadWebhookDeliveryWork.mockResolvedValue({
+    delivery: { ...delivery, status: 'failed' },
+    targets: [{ target: { ...target, status: 'failed' }, integration }],
+  });
+  await expect(
+    processWebhookDeliveryJob(
+      { db: {} as never, assertActive: fakes.assertActive },
+      { deliveryId: DELIVERY_ID },
+    ),
+  ).resolves.toMatchObject({ failed: 0 });
+  expect(fakes.markWebhookDeliveryTargetProcessed).toHaveBeenCalled();
 });

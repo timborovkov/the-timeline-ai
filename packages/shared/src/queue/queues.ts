@@ -2,6 +2,7 @@ import { Queue, type JobsOptions } from 'bullmq';
 
 import { getEnv } from '#src/env.js';
 import { defaultDigestWindow } from '#src/messaging/digest.js';
+import { tagOperatorJob } from '#src/platform-admin/runtime.js';
 import { getRedisConnection } from '#src/queue/connection.js';
 
 type TimelineQueue<TData> = Queue<TData, unknown, string, TData, unknown, string>;
@@ -83,10 +84,23 @@ function createTimelineQueue<TData>(
   name: QueueName,
   defaultJobOptions: JobsOptions,
 ): TimelineQueue<TData> {
-  return new Queue<TData, unknown, string, TData, unknown, string>(name, {
+  const queue = new Queue<TData, unknown, string, TData, unknown, string>(name, {
     connection: getRedisConnection(),
     defaultJobOptions,
   });
+  const add = queue.add.bind(queue);
+  queue.add = async (jobName, data, options) => add(jobName, await tagOperatorJob(data), options);
+  const bulkMethod: unknown = Reflect.get(queue, 'addBulk');
+  if (typeof bulkMethod === 'function') {
+    const addBulk = queue.addBulk.bind(queue);
+    queue.addBulk = async (jobs) =>
+      addBulk(
+        await Promise.all(
+          jobs.map(async (job) => ({ ...job, data: await tagOperatorJob(job.data) })),
+        ),
+      );
+  }
+  return queue;
 }
 
 async function upsertCronScheduler<TData>(
@@ -1506,6 +1520,8 @@ export async function closeConversationAgentQueue(): Promise<void> {
 }
 
 export interface ChatDeliveryJobData {
+  teamId?: string;
+  userId?: string;
   ciphertext: string;
   iv: string;
   tag: string;

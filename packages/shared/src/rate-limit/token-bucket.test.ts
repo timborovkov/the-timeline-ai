@@ -1,9 +1,10 @@
 import { expect } from '@timeline/test-support';
 import { describe, it } from 'bun:test';
 
+import { checkRateLimit, rateLimitKey } from '#src/rate-limit/token-bucket.js';
+
 import type { Redis } from 'ioredis';
 
-import { checkRateLimit, rateLimitKey } from '#src/rate-limit/token-bucket.js';
 interface BucketState {
   tokens: number;
   ts: number;

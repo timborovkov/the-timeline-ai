@@ -12,9 +12,6 @@ import {
 } from '@timeline/db';
 import { and, eq, gte, inArray, isNull, or, sql } from 'drizzle-orm';
 
-import type { BillingProvider, PolarUsageEvent } from '#src/billing/provider.js';
-import type { TeamRole } from '#src/team-scope.js';
-
 import { notifyBillingUsageAlerts } from '#src/billing/alerts.js';
 import {
   BILLING_ENTITLEMENTS_VERSION,
@@ -90,6 +87,9 @@ import {
 } from '#src/billing/status.js';
 import { getEnv } from '#src/env.js';
 import { childLogger } from '#src/logger.js';
+
+import type { BillingProvider, PolarUsageEvent } from '#src/billing/provider.js';
+import type { TeamRole } from '#src/team-scope.js';
 
 export type EnsureMember = (minRole?: TeamRole) => Promise<TeamRole>;
 

@@ -1,9 +1,11 @@
 import { calendarEvents, type Db } from '@timeline/db';
 import { childLogger, queue, withTeam } from '@timeline/shared';
+import { principalIsActive } from '@timeline/shared/platform-admin/runtime';
 import { Worker, type Job } from 'bullmq';
 import { and, asc, gt, isNotNull, isNull, type SQL } from 'drizzle-orm';
 
 import { captureWorkerJobFailure } from '#src/monitoring.js';
+import { guardWorkerProcessor } from '#src/platform-worker.js';
 
 const PSEUDO_USER = '00000000-0000-0000-0000-000000000000';
 const TEAM_PAGE_SIZE = 1000;
@@ -38,6 +40,7 @@ export async function processCalendarRecurrenceTick(
 
     pageCount += 1;
     for (const row of teams) {
+      if (!(await principalIsActive(deps.db, row.teamId))) continue;
       const scope = withTeam(deps.db, row.teamId, PSEUDO_USER, { skipMembershipCheck: true });
       materialized += await scope.calendar.materializeRecurringEvents();
     }
@@ -55,8 +58,9 @@ export function startCalendarRecurrenceWorker(
 ): Worker<queue.CalendarRecurrenceJobData> {
   const worker = new Worker<queue.CalendarRecurrenceJobData>(
     queue.QUEUE_NAMES.calendarRecurrence,
-    async (job: Job<queue.CalendarRecurrenceJobData>) =>
+    guardWorkerProcessor(deps.db, async (job: Job<queue.CalendarRecurrenceJobData>) =>
       processCalendarRecurrenceTick(deps, job.id),
+    ),
     {
       connection: queue.getRedisConnection(),
       concurrency: 1,

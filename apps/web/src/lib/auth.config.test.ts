@@ -32,6 +32,13 @@ function session(current = true): Session {
 }
 
 describe('hasCurrentLegalSession', () => {
+  it('keeps current pre-launch Privacy acknowledgment valid after disclosure edits', () => {
+    const previous = session();
+    previous.user.legalPrivacyVersion = '2026-11-01';
+    expect(previous.user.legalTermsVersion).toBe(TERMS_VERSION);
+    expect(hasCurrentLegalSession(previous.user)).toBe(true);
+    expect(hasCurrentLegalSession(session().user)).toBe(true);
+  });
   it('requires both current signed versions and an acceptance timestamp', () => {
     expect(hasCurrentLegalSession(session().user)).toBe(true);
     expect(hasCurrentLegalSession(session(false).user)).toBe(false);
@@ -40,6 +47,17 @@ describe('hasCurrentLegalSession', () => {
 });
 
 describe('authorizeProductRequest', () => {
+  it('allows exiting impersonation with stale legal acceptance', () => {
+    expect(
+      authorizeProductRequest({
+        auth: session(false),
+        request: request('/api/platform-admin/exit'),
+      }),
+    ).toBe(true);
+    expect(
+      authorizeProductRequest({ auth: session(false), request: request('/app/admin/users') }),
+    ).toBe(true);
+  });
   it('does not enforce an unpublished legal version in production', () => {
     vi.stubEnv('NODE_ENV', 'production');
     vi.stubEnv('LEGAL_PUBLICATION_READY', 'false');

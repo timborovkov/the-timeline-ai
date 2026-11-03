@@ -15,8 +15,6 @@ import {
 } from '@timeline/db';
 import { and, asc, eq, gte, inArray, isNull, ne, or, sql } from 'drizzle-orm';
 
-import type { BillingReserveFailureCode } from '#src/billing/admission.js';
-
 import { CAPACITY_BY_PLAN, PLAN_CATALOG, type BillingPlanId } from '#src/billing/catalog.js';
 import { BILLING_SYSTEM_USER_ID } from '#src/billing/context.js';
 import { BillingAdmissionError } from '#src/billing/errors.js';
@@ -25,6 +23,8 @@ import { recordBillingPlan } from '#src/billing/plan-history.js';
 import { createPolarBillingProvider } from '#src/billing/polar.js';
 import { createBillingScope } from '#src/billing/scope.js';
 import { billingStateAllowsReservation, type PlanCapacityUsageRow } from '#src/billing/status.js';
+
+import type { BillingReserveFailureCode } from '#src/billing/admission.js';
 
 const GIB = 1024 ** 3;
 

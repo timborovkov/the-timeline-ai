@@ -6,14 +6,14 @@ import {
 } from '@timeline/db';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 
-import type { IntegrationEvent } from '#src/integrations/types.js';
-
 import { buildEvidenceDedupeKey, reconciliationDedupeKey } from '#src/reconciliation/index.js';
 import {
   payloadDigestFromMetadata,
   sourcePayloadRefFromMetadata,
 } from '#src/reconciliation/source-snapshot.js';
 import { stableSha256Digest } from '#src/reconciliation/stable-digest.js';
+
+import type { IntegrationEvent } from '#src/integrations/types.js';
 
 const INTEGRATION_NORMALIZER_VERSION = 'integration-normalize-2026-06';
 const RAW_EVENT_NORMALIZER_VERSION = 'raw-event-normalize-2026-06';

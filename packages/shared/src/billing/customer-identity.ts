@@ -8,13 +8,14 @@ import {
 } from '@timeline/db';
 import { and, asc, eq, isNull } from 'drizzle-orm';
 
-import type { BillingProvider } from '#src/billing/provider.js';
-
 import {
   PolarIdentityError,
   type PolarIdentityApi,
   type PolarMemberIdentity,
 } from '#src/billing/polar-identity-api.js';
+import { requirePlatformActor, type PlatformActor } from '#src/platform-admin/index.js';
+
+import type { BillingProvider } from '#src/billing/provider.js';
 
 export interface TeamBillingIdentity {
   customerId: string;
@@ -319,6 +320,7 @@ export async function preparePolarMembershipChange(input: {
   actorUserId: string;
   userId: string;
   targetRole: string;
+  platformActor?: PlatformActor;
   provider: BillingProvider | null;
 }): Promise<void> {
   await input.db.transaction(async (tx) => {
@@ -339,8 +341,13 @@ export async function preparePolarMembershipChange(input: {
           isNull(teamMembers.removedAt),
         ),
       );
-    if (!actor || !['owner', 'admin'].includes(actor.role))
+    if (input.platformActor) {
+      if (input.platformActor.userId !== input.actorUserId)
+        throw new PolarIdentityError('forbidden', 'membership_change');
+      await requirePlatformActor(db, input.platformActor);
+    } else if (!actor || !['owner', 'admin'].includes(actor.role)) {
       throw new PolarIdentityError('forbidden', 'membership_change');
+    }
     const [target] = await db
       .select()
       .from(teamMembers)
@@ -351,6 +358,8 @@ export async function preparePolarMembershipChange(input: {
           isNull(teamMembers.removedAt),
         ),
       );
+    if (input.platformActor && (target?.role === 'owner' || input.targetRole === 'owner'))
+      throw new PolarIdentityError('forbidden', 'membership_change');
     if (
       !target ||
       target.role === 'member' ||
@@ -358,7 +367,8 @@ export async function preparePolarMembershipChange(input: {
       input.targetRole === 'owner'
     )
       return;
-    if (actor.role !== 'owner') throw new PolarIdentityError('forbidden', 'membership_change');
+    if (!input.platformActor && actor?.role !== 'owner')
+      throw new PolarIdentityError('forbidden', 'membership_change');
     const pending = await db
       .select()
       .from(billingPolarMembers)

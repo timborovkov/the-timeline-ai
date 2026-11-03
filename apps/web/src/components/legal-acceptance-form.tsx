@@ -7,7 +7,12 @@ import { useFormStatus } from 'react-dom';
 import { acceptLegalAction, type AcceptLegalState } from '@/app/actions/legal';
 import { FormActionToast } from '@/components/form-action-toast';
 import { Button } from '@/components/ui/button';
-import { LEGAL_EFFECTIVE_DATE, PRIVACY_VERSION, TERMS_VERSION } from '@/lib/legal-versions';
+import {
+  LEGAL_EFFECTIVE_DATE,
+  PRIVACY_EFFECTIVE_DATE,
+  PRIVACY_VERSION,
+  TERMS_VERSION,
+} from '@/lib/legal-versions';
 
 function SubmitButton() {
   const { pending } = useFormStatus();
@@ -35,8 +40,8 @@ export function LegalAcceptanceForm({ returnTo }: { returnTo?: string }) {
       <input type="hidden" name="privacyVersion" value={PRIVACY_VERSION} />
       <div className="rounded-sm border border-border bg-surface p-4 text-sm text-fg-muted">
         <p>
-          Current versions: Terms of Use {TERMS_VERSION}, Privacy Policy {PRIVACY_VERSION}.
-          Effective {LEGAL_EFFECTIVE_DATE}.
+          Current versions: Terms of Use {TERMS_VERSION} (effective {LEGAL_EFFECTIVE_DATE}); Privacy
+          Policy {PRIVACY_VERSION} (effective {PRIVACY_EFFECTIVE_DATE}).
         </p>
       </div>
       <label className="flex items-start gap-3 text-sm leading-6 text-fg">
