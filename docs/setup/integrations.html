@@ -151,37 +151,41 @@ GOOGLE_DRIVE_WEBHOOK_SECRET=...</code></pre>
           change lies entirely inside that window, it falls back to a conservative changed hunk.
           Full-text hashes still see edits past 20k chars. Formatting-only and tiny edits (Markdown
           markers, not signed amounts such as <code>-50000 USD</code>) skip the LLM. Tiny vs
-          substantive uses the intra-line edited span, not the hunk context kept for the judge, so a
-          punctuation or typo fix on a long line does not consume a processing slot. Remaining hunks
-          bill a small CRM-relevance judge through <code>llm.chatStructured</code> / the existing AI
-          meter. Deletion-only diffs emit bounded removed-text hunks. Nested-folder membership
-          caches fetched parent ids and the selected ancestor that admitted a path — never an early
-          "out of scope" boolean that would drop later files under the same folder. Linked-object
-          lookup uses that matched ancestor, the file id, parents, and a shared-drive id — and
-          applies the My Drive <code>root</code> object link only to My Drive descendants, never to
-          unlinked shared-drive or individually selected files outside My Drive. Snapshots, team
-          email domains, and those links load through <code>withTeam(...).integrations</code>.
-          Snapshots uniquely key content, comments, and permission fingerprints so comment-only and
-          share-only changes persist. Revisit of a retained fingerprint refreshes its ordering
-          timestamp so it becomes the latest baseline again; otherwise A→B→A would leave B latest
-          and a later edit back to B would be dropped as unchanged. Comment and ACL fingerprints
-          page <code>comments.list</code> / <code>permissions.list</code> (with
-          <code>supportsAllDrives</code>) up to the same 10×100 bound as folder listing —
-          shared-drive <code>files.get</code> never returns <code>permissions</code>. Bounded
-          comment event context ranks every <code>commentsHash</code> field change — added, edited,
-          removed, resolved, reopened, and other fingerprint fields such as
-          <code>modifiedTime</code> — ahead of unchanged comments so a transition past the first
-          eight still reaches the judged event. Live <code>comments.list</code> omits deleted
-          comments, so a withdrawn comment is recovered from the previous snapshot ids and labelled
-          <code>(removed)</code> in that window. The judged event is written before the snapshot
-          advances. Delayed <code>drive.file</code> and <code>drive.changes</code> jobs are kept
-          across integration and provider-budget pauses, persist to the continuation handoff table
-          when the per-integration lock is busy, and attach to quota or token-refresh failures so
-          capture resumes after the pause. A skipped tick cannot advance past unprocessed watch
-          work. Reactivating the same Drive sources keeps existing object links. PDF, Word, and
-          Google Slides text is extracted by the credential-thin
-          <code>document-extract-orchestrator</code> (ADR 0013) — the main worker must not copy
-          Daytona credentials. Extract cursors persist through
+          substantive uses the intra-line edited span, not the hunk context kept for the judge. Tiny
+          is only whitespace, punctuation-only, case-only, or a single-letter typo (edit distance 1)
+          inside one word longer than 3 characters; inserting or removing a whole word such as
+          <code>not</code> stays substantive. Remaining hunks bill a small CRM-relevance judge
+          through <code>llm.chatStructured</code> / the existing AI meter. Judged event text packs
+          comment evidence before hunks with a reserved budget so a long diff cannot drop comments
+          past the 4000-char cap, including the strong-signal path. Workspace object links resolve
+          through <code>withTeam(...).objects</code>. Deletion-only diffs emit bounded removed-text
+          hunks. Nested-folder membership caches fetched parent ids and the selected ancestor that
+          admitted a path — never an early "out of scope" boolean that would drop later files under
+          the same folder. Linked-object lookup uses that matched ancestor, the file id, parents,
+          and a shared-drive id — and applies the My Drive <code>root</code> object link only to My
+          Drive descendants, never to unlinked shared-drive or individually selected files outside
+          My Drive. Snapshots, team email domains, and those links load through
+          <code>withTeam(...).integrations</code>. Snapshots uniquely key content, comments, and
+          permission fingerprints so comment-only and share-only changes persist. Revisit of a
+          retained fingerprint refreshes its ordering timestamp so it becomes the latest baseline
+          again; otherwise A→B→A would leave B latest and a later edit back to B would be dropped as
+          unchanged. Comment and ACL fingerprints page <code>comments.list</code> /
+          <code>permissions.list</code> (with <code>supportsAllDrives</code>) up to the same 10×100
+          bound as folder listing — shared-drive <code>files.get</code> never returns
+          <code>permissions</code>. Bounded comment event context ranks every
+          <code>commentsHash</code> field change — added, edited, removed, resolved, reopened, and
+          other fingerprint fields such as <code>modifiedTime</code> — ahead of unchanged comments
+          so a transition past the first eight still reaches the judged event. Live
+          <code>comments.list</code> omits deleted comments, so a withdrawn comment is recovered
+          from the previous snapshot ids and labelled <code>(removed)</code> in that window. The
+          judged event is written before the snapshot advances. Delayed <code>drive.file</code> and
+          <code>drive.changes</code> jobs are kept across integration and provider-budget pauses,
+          persist to the continuation handoff table when the per-integration lock is busy, and
+          attach to quota or token-refresh failures so capture resumes after the pause. A skipped
+          tick cannot advance past unprocessed watch work. Reactivating the same Drive sources keeps
+          existing object links. PDF, Word, and Google Slides text is extracted by the
+          credential-thin <code>document-extract-orchestrator</code> (ADR 0013) — the main worker
+          must not copy Daytona credentials. Extract cursors persist through
           <code>withTeam(...).integrations</code> (not admin cursor helpers). Enqueue happens before
           the cursor write so a Redis failure cannot leave a forever-pending handoff. Extract
           cursors stamp the Drive revision of the uploaded bytes (<code>headRevisionId</code> / md5

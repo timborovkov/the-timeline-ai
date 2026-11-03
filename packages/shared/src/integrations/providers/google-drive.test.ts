@@ -24,7 +24,8 @@ await vi.mock(
 );
 
 const { resetEnvForTests } = await import('#src/env.js');
-const { googleDriveProvider } = await import('#src/integrations/providers/google-drive.js');
+const { DRIVE_EVENT_CONTENT_MAX_CHARS, googleDriveProvider, packDriveEventContent } =
+  await import('#src/integrations/providers/google-drive.js');
 const { DRIVE_FILE_DEBOUNCE_MS, DRIVE_TRANSIENT_RESULT_TOO_LARGE, hashDrivePayload } =
   await import('#src/integrations/google-drive-capture.js');
 const { driveCommentsHashEntries } = await import('#src/integrations/google-drive-comments.js');
@@ -131,6 +132,23 @@ function syncContext(
     ...overrides,
   };
 }
+
+describe('packDriveEventContent', () => {
+  it('keeps a changed comment ahead of ten 400-char hunks under the 4000-char cap', () => {
+    const hunks = Array.from(
+      { length: 10 },
+      (_, index) => `${'H'.repeat(400)}-${String(index)}`,
+    ).join('\n');
+    const packed = packDriveEventContent({
+      summary: 'Drive change on "SOW" (comment_changed)',
+      hunkPreview: hunks,
+      commentPreview: 'Ada (resolved): Please confirm the $48k annual term.',
+    });
+    expect(packed.length).toBeLessThanOrEqual(DRIVE_EVENT_CONTENT_MAX_CHARS);
+    expect(packed).toContain('Ada (resolved): Please confirm the $48k annual term.');
+    expect(packed.indexOf('Ada (resolved):')).toBeLessThan(packed.indexOf('H'.repeat(20)));
+  });
+});
 
 describe('googleDriveProvider', () => {
   beforeEach(() => {
@@ -1892,6 +1910,97 @@ describe('googleDriveProvider', () => {
     expect(preview.indexOf('Ada (resolved):')).toBeLessThan(preview.indexOf('Keep comment 1'));
     expect(preview).not.toContain('Keep comment 9');
     expect(preview).not.toContain('Keep comment 10');
+  });
+
+  it('keeps comment evidence when ten 400-char hunks would overflow the event cap', async () => {
+    const previousText = Array.from(
+      { length: 10 },
+      (_, index) => `Keep paragraph ${String(index + 1)}.`,
+    ).join('\n');
+    const nextText = Array.from(
+      { length: 10 },
+      (_, index) => `${'N'.repeat(400)}-${String(index)}`,
+    ).join('\n');
+    const previousComments = [
+      {
+        id: 'c1',
+        content: 'Looks good.',
+        resolved: false,
+        modifiedTime: '2026-06-19T00:00:00.000Z',
+        author: { displayName: 'Ada' },
+      },
+    ];
+    const nextComments = [
+      {
+        id: 'c1',
+        content: 'Please confirm the $48k annual term.',
+        resolved: true,
+        modifiedTime: '2026-06-20T10:00:00.000Z',
+        author: { displayName: 'Ada' },
+      },
+    ];
+    const fetch = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((input) => {
+      const url = requestUrl(input);
+      if (url.pathname.includes('/export')) {
+        return Promise.resolve(new Response(nextText, { status: 200 }));
+      }
+      if (url.pathname.endsWith('/comments')) {
+        return Promise.resolve(jsonResponse({ comments: nextComments }));
+      }
+      if (url.pathname.endsWith('/permissions')) {
+        return Promise.resolve(jsonResponse({ permissions: [] }));
+      }
+      if (url.pathname.endsWith('/files/file-1')) {
+        return Promise.resolve(
+          jsonResponse({
+            id: 'file-1',
+            name: 'SOW',
+            mimeType: 'application/vnd.google-apps.document',
+            parents: ['root'],
+            modifiedTime: '2026-06-20T10:00:00.000Z',
+          }),
+        );
+      }
+      return Promise.resolve(jsonResponse({ message: 'unexpected' }, { status: 404 }));
+    });
+    vi.stubGlobal('fetch', fetch);
+    const ctx = syncContext({
+      loadLatestDriveSnapshot: vi.fn().mockResolvedValue({
+        contentHash: hashDrivePayload(previousText),
+        snapshotText: previousText,
+        commentsHash: driveCommentsHash(previousComments),
+        permissionsHash: drivePermissionsHash([]),
+        commentsSnapshot: previousComments.map((comment) => ({
+          id: comment.id,
+          content: comment.content,
+          resolved: comment.resolved,
+          modifiedTime: comment.modifiedTime,
+          author: comment.author.displayName,
+        })),
+        mimeType: 'application/vnd.google-apps.document',
+      }),
+    });
+
+    await googleDriveProvider.incrementalSync({
+      integration: { id: 'integration-1', teamId: 'team-1' } as never,
+      tokens: { access_token: 'access-token', expires_at: Date.now() + 600_000 },
+      selections: [{ kind: 'drive.file', externalId: 'file-1' }],
+      ctx: ctx,
+      target: { resourceType: 'drive.file', externalId: 'file-1' },
+    });
+
+    const events: IntegrationEvent[] = (
+      ctx.writeEvents as unknown as { mock: { calls: [IntegrationEvent[]][] } }
+    ).mock.calls.flatMap(([batch]) => batch);
+    expect(events).toHaveLength(1);
+    const preview = events[0]?.contentText ?? '';
+    expect(preview.length).toBeLessThanOrEqual(DRIVE_EVENT_CONTENT_MAX_CHARS);
+    expect(preview).toContain('Ada (resolved): Please confirm the $48k annual term.');
+    expect(preview).toContain('comment_changed');
+    expect(preview.indexOf('Ada (resolved):')).toBeLessThan(preview.indexOf('N'.repeat(20)));
+    expect(ctx.judgeDriveChange).not.toHaveBeenCalled();
   });
 
   it('puts a deleted last-page comment first in the bounded event context', async () => {

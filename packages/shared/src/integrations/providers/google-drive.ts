@@ -69,6 +69,9 @@ const DRIVE_METADATA_PAGE_SIZE = '100';
 const DRIVE_METADATA_MAX_PAGES = 10;
 const FILE_FIELDS =
   'id,name,mimeType,modifiedTime,headRevisionId,md5Checksum,webViewLink,parents,driveId,owners(displayName,emailAddress),shortcutDetails(targetId,targetMimeType)';
+export const DRIVE_EVENT_CONTENT_MAX_CHARS = 4000;
+/** Comments are packed before hunks so a long diff cannot drop comment evidence. */
+const DRIVE_EVENT_COMMENT_BUDGET = 1200;
 
 interface DriveTokens {
   access_token: string;
@@ -854,6 +857,39 @@ function actorFromFile(file: DriveFile): IntegrationEvent['actor'] {
   };
 }
 
+function appendBounded(parts: string[], next: string, maxChars: number): void {
+  const trimmed = next.trim();
+  if (!trimmed) return;
+  const used = parts.join('\n\n').length;
+  const sep = parts.length > 0 ? 2 : 0;
+  const remaining = maxChars - used - sep;
+  if (remaining <= 0) return;
+  parts.push(trimmed.slice(0, remaining));
+}
+
+/** Pack Drive event text so comment evidence cannot be sliced off by hunks. */
+export function packDriveEventContent(input: {
+  summary: string;
+  hunkPreview: string;
+  commentPreview: string;
+  maxChars?: number;
+  commentBudget?: number;
+}): string {
+  const maxChars = input.maxChars ?? DRIVE_EVENT_CONTENT_MAX_CHARS;
+  const commentBudget = input.commentBudget ?? DRIVE_EVENT_COMMENT_BUDGET;
+  const parts: string[] = [];
+  appendBounded(parts, input.summary, maxChars);
+  const comment = input.commentPreview.trim();
+  if (comment) {
+    const used = parts.join('\n\n').length;
+    const sep = parts.length > 0 ? 2 : 0;
+    const reserved = Math.min(comment.length, commentBudget, Math.max(0, maxChars - used - sep));
+    appendBounded(parts, comment.slice(0, reserved), maxChars);
+  }
+  appendBounded(parts, input.hunkPreview, maxChars);
+  return parts.join('\n\n');
+}
+
 async function processDriveFile(
   integration: IntegrationRow,
   tokens: DriveTokens,
@@ -1033,10 +1069,11 @@ async function processDriveFile(
   const commentPreview = commentsChanged
     ? commentEventContext(comments, parseDriveCommentSnapshots(previous.commentsSnapshot))
     : '';
-  const contentText = [judge.summary, hunkPreview, commentPreview]
-    .filter(Boolean)
-    .join('\n\n')
-    .slice(0, 4000);
+  const contentText = packDriveEventContent({
+    summary: judge.summary,
+    hunkPreview,
+    commentPreview,
+  });
   const occurrence = driveFileContentRevision(file) ?? 'unknown';
   const event: IntegrationEvent = {
     dedupKey: driveFileChangeDedupKey({
