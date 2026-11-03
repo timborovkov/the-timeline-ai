@@ -112,6 +112,7 @@ function syncContext(
   | 'enqueueTransientDriveExtract'
   | 'loadTransientDriveExtract'
   | 'consumeTransientDriveExtract'
+  | 'cancelTransientDriveExtract'
   | 'takeDriveExtractSlot'
 > &
   Partial<SyncContext> {
@@ -133,6 +134,7 @@ function syncContext(
     enqueueTransientDriveExtract: vi.fn().mockResolvedValue(undefined),
     loadTransientDriveExtract: vi.fn().mockResolvedValue(null),
     consumeTransientDriveExtract: vi.fn().mockResolvedValue(undefined),
+    cancelTransientDriveExtract: vi.fn().mockResolvedValue(undefined),
     takeDriveExtractSlot: vi.fn().mockResolvedValue({ allowed: true }),
     ...overrides,
   };
@@ -2126,7 +2128,8 @@ describe('googleDriveProvider', () => {
       target: { resourceType: 'drive.file', externalId: 'file-1' },
     });
 
-    expect(ctx.consumeTransientDriveExtract).toHaveBeenCalledWith('file-1');
+    expect(ctx.cancelTransientDriveExtract).toHaveBeenCalledWith('file-1');
+    expect(ctx.consumeTransientDriveExtract).not.toHaveBeenCalled();
     expect(ctx.writeEvents).not.toHaveBeenCalled();
     expect(ctx.recordAudit).toHaveBeenCalledWith(
       'drive_file_missing',
@@ -2162,7 +2165,8 @@ describe('googleDriveProvider', () => {
       target: { resourceType: 'drive.file', externalId: 'file-1' },
     });
 
-    expect(ctx.consumeTransientDriveExtract).toHaveBeenCalledWith('file-1');
+    expect(ctx.cancelTransientDriveExtract).toHaveBeenCalledWith('file-1');
+    expect(ctx.consumeTransientDriveExtract).not.toHaveBeenCalled();
     expect(ctx.writeEvents).not.toHaveBeenCalled();
     expect(ctx.recordAudit).toHaveBeenCalledWith(
       'drive_file_out_of_scope',

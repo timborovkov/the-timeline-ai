@@ -50,6 +50,7 @@ import {
   driveTransientExtractKeys,
   driveTransientExtractResultBody,
   hashDrivePayload,
+  isDriveExtractCancelSettled,
   isDriveExtractCursorOrphan,
   isDriveExtractPendingStale,
   isDriveExtractResultTooLarge,
@@ -61,6 +62,7 @@ import {
   parseDriveExtractCursor,
   parseDriveTransientExtractResult,
   remainingDriveExtractObjectKeys,
+  retainDriveExtractCleanupCursor,
   saveDriveSnapshot,
   takeDriveExtractSlot,
   takeDriveProcessSlot,
@@ -255,8 +257,13 @@ describe('drive transient extract helpers', () => {
         enqueuedAt: '2026-11-02T12:00:00.000Z',
         cleanupPending: true,
         pendingDeleteKeys: ['source', 'result.json'],
+        cancelledAt: '2026-11-02T12:01:00.000Z',
       }),
-    ).toMatchObject({ cleanupPending: true, pendingDeleteKeys: ['source', 'result.json'] });
+    ).toMatchObject({
+      cleanupPending: true,
+      pendingDeleteKeys: ['source', 'result.json'],
+      cancelledAt: '2026-11-02T12:01:00.000Z',
+    });
     expect(cursor).not.toBeNull();
     if (!cursor) return;
     expect(isDriveExtractPendingStale(cursor, Date.parse('2026-11-02T12:05:00.000Z'))).toBe(false);
@@ -268,6 +275,37 @@ describe('drive transient extract helpers', () => {
     ).toBe(true);
     expect(isDriveExtractPendingStale({ ...cursor, enqueuedAt: 'not-a-date' })).toBe(true);
     expect(isDriveExtractPendingStale({ ...cursor, cleanupPending: true })).toBe(false);
+    expect(
+      retainDriveExtractCleanupCursor(cursor, [], { cancelledAt: '2026-11-02T12:01:00.000Z' }),
+    ).toMatchObject({
+      cleanupPending: true,
+      pendingDeleteKeys: ['source', 'result.json'],
+      cancelledAt: '2026-11-02T12:01:00.000Z',
+    });
+    expect(
+      isDriveExtractCancelSettled(
+        {
+          ...cursor,
+          cancelledAt: '2026-11-02T12:01:00.000Z',
+        },
+        Date.parse('2026-11-02T12:05:00.000Z'),
+      ),
+    ).toBe(false);
+    expect(
+      isDriveExtractCancelSettled(
+        {
+          ...cursor,
+          cancelledAt: '2026-11-02T12:01:00.000Z',
+        },
+        Date.parse('2026-11-02T12:01:00.000Z') + DRIVE_EXTRACT_PENDING_STALE_MS,
+      ),
+    ).toBe(true);
+    expect(
+      isDriveExtractCancelSettled(
+        cursor,
+        Date.parse('2026-11-02T12:00:00.000Z') + DRIVE_TRANSIENT_EXTRACT_ORPHAN_MS,
+      ),
+    ).toBe(true);
     const missing = Object.assign(new Error('missing'), { name: 'NoSuchKey' });
     expect(
       remainingDriveExtractObjectKeys(

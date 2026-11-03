@@ -50,6 +50,7 @@ export {
   driveFileChangeDedupKey,
   driveTransientExtractKeys,
   driveTransientExtractResultBody,
+  isDriveExtractCancelSettled,
   isDriveExtractCursorOrphan,
   isDriveExtractPendingStale,
   isDriveExtractResultTooLarge,

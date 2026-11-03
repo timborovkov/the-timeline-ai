@@ -3081,6 +3081,136 @@ describe('Drive transient extract handoff', () => {
     expect(scope.store.get(cursorKey)).not.toEqual({});
   });
 
+  it('keeps a cancel tombstone when S3 reports the extract result missing', async () => {
+    const enqueuedAt = '2026-11-02T12:00:00.000Z';
+    const now = new Date('2026-11-02T12:01:00.000Z');
+    const scope = extractScope(
+      new Map([
+        [
+          cursorKey,
+          {
+            extractId: 'ext-1',
+            objectKey: 'source',
+            resultObjectKey: 'result.json',
+            contentType: 'application/pdf',
+            filename: 'Notes.pdf',
+            enqueuedAt,
+          },
+        ],
+      ]),
+    );
+    const io = extractIO();
+    io.deleteDocumentObject.mockImplementation(() => {
+      const err = new Error('missing');
+      err.name = 'NoSuchKey';
+      return Promise.reject(err);
+    });
+    await clearDriveTransientExtract({
+      integrations: scope,
+      integrationId: INTEGRATION_ID,
+      fileId: FILE_ID,
+      io,
+      mode: 'cancel',
+      now,
+    });
+    expect(scope.saveCursor).toHaveBeenCalledWith(
+      INTEGRATION_ID,
+      cursorKey,
+      expect.objectContaining({
+        extractId: 'ext-1',
+        cleanupPending: true,
+        cancelledAt: now.toISOString(),
+        pendingDeleteKeys: ['source', 'result.json'],
+      }),
+    );
+    expect(scope.store.get(cursorKey)).not.toEqual({});
+  });
+
+  it('preserves cancelledAt when cancel cleanup retries before the producer wait elapses', async () => {
+    const cancelledAt = '2026-11-02T12:01:00.000Z';
+    const now = new Date('2026-11-02T12:05:00.000Z');
+    const scope = extractScope(
+      new Map([
+        [
+          cursorKey,
+          {
+            extractId: 'ext-1',
+            objectKey: 'source',
+            resultObjectKey: 'result.json',
+            contentType: 'application/pdf',
+            filename: 'Notes.pdf',
+            enqueuedAt: '2026-11-02T12:00:00.000Z',
+            cleanupPending: true,
+            cancelledAt,
+            pendingDeleteKeys: ['source', 'result.json'],
+          },
+        ],
+      ]),
+    );
+    const io = extractIO();
+    io.deleteDocumentObject.mockImplementation(() => {
+      const err = new Error('missing');
+      err.name = 'NoSuchKey';
+      return Promise.reject(err);
+    });
+    await clearDriveTransientExtract({
+      integrations: scope,
+      integrationId: INTEGRATION_ID,
+      fileId: FILE_ID,
+      io,
+      mode: 'cancel',
+      now,
+    });
+    expect(scope.saveCursor).toHaveBeenCalledWith(
+      INTEGRATION_ID,
+      cursorKey,
+      expect.objectContaining({
+        cleanupPending: true,
+        cancelledAt,
+        pendingDeleteKeys: ['source', 'result.json'],
+      }),
+    );
+    expect(scope.store.get(cursorKey)).not.toEqual({});
+  });
+
+  it('clears a cancel tombstone after the producer wait when extract objects stay gone', async () => {
+    const cancelledAt = '2026-11-02T12:01:00.000Z';
+    const now = new Date(Date.parse(cancelledAt) + integrations.DRIVE_EXTRACT_PENDING_STALE_MS);
+    const scope = extractScope(
+      new Map([
+        [
+          cursorKey,
+          {
+            extractId: 'ext-1',
+            objectKey: 'source',
+            resultObjectKey: 'result.json',
+            contentType: 'application/pdf',
+            filename: 'Notes.pdf',
+            enqueuedAt: '2026-11-02T12:00:00.000Z',
+            cleanupPending: true,
+            cancelledAt,
+            pendingDeleteKeys: ['source', 'result.json'],
+          },
+        ],
+      ]),
+    );
+    const io = extractIO();
+    io.deleteDocumentObject.mockImplementation(() => {
+      const err = new Error('missing');
+      err.name = 'NoSuchKey';
+      return Promise.reject(err);
+    });
+    await clearDriveTransientExtract({
+      integrations: scope,
+      integrationId: INTEGRATION_ID,
+      fileId: FILE_ID,
+      io,
+      mode: 'cancel',
+      now,
+    });
+    expect(scope.saveCursor).toHaveBeenCalledWith(INTEGRATION_ID, cursorKey, {});
+  });
+
   it('treats a missing S3 object as a successful extract delete', async () => {
     const scope = extractScope(
       new Map([

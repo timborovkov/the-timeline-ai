@@ -533,6 +533,10 @@ async function consumeReadyDriveExtract(
 }
 
 async function discardTransientDriveExtract(ctx: SyncContext, fileId: string): Promise<void> {
+  if (ctx.cancelTransientDriveExtract) {
+    await ctx.cancelTransientDriveExtract(fileId);
+    return;
+  }
   await ctx.consumeTransientDriveExtract?.(fileId);
 }
 

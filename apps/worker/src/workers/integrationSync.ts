@@ -591,8 +591,13 @@ export async function clearDriveTransientExtract(input: {
   integrationId: string;
   fileId: string;
   io?: DriveTransientExtractIO;
+  /** `consume` wipes once S3 deletes succeed. `cancel` keeps a tombstone until the producer wait elapses. */
+  mode?: 'consume' | 'cancel';
+  now?: Date;
 }): Promise<void> {
   const io = input.io ?? defaultDriveTransientExtractIO;
+  const mode = input.mode ?? 'consume';
+  const now = input.now ?? new Date();
   const cursor = await loadDriveExtractCursor(
     input.integrations,
     input.integrationId,
@@ -605,12 +610,20 @@ export async function clearDriveTransientExtract(input: {
       keys.map((key) => io.deleteDocumentObject({ bucket, key })),
     );
     const remaining = integrationsLib.remainingDriveExtractObjectKeys(keys, results);
-    if (remaining.length > 0) {
+    const cancelledAt =
+      mode === 'cancel' ? (cursor.cancelledAt ?? now.toISOString()) : cursor.cancelledAt;
+    const tombstone = integrationsLib.retainDriveExtractCleanupCursor(cursor, remaining, {
+      ...(cancelledAt ? { cancelledAt } : {}),
+    });
+    if (
+      remaining.length > 0 ||
+      (mode === 'cancel' && !integrationsLib.isDriveExtractCancelSettled(tombstone, now.getTime()))
+    ) {
       await saveDriveExtractCursor(
         input.integrations,
         input.integrationId,
         input.fileId,
-        integrationsLib.retainDriveExtractCleanupCursor(cursor, remaining),
+        tombstone,
       );
       return;
     }
@@ -645,6 +658,8 @@ export async function sweepOrphanDriveTransientExtracts(input: {
         integrations: scope.integrations,
         integrationId: row.integrationId,
         fileId: row.fileId,
+        mode: 'cancel',
+        now,
         ...(input.io ? { io: input.io } : {}),
       });
       cleared += 1;
@@ -1395,6 +1410,15 @@ export async function runOneIntegration(
           integrations: teamScope.integrations,
           integrationId,
           fileId,
+          mode: 'consume',
+        });
+      },
+      cancelTransientDriveExtract(fileId) {
+        return clearDriveTransientExtract({
+          integrations: teamScope.integrations,
+          integrationId,
+          fileId,
+          mode: 'cancel',
         });
       },
       loadLatestDriveSnapshot(fileId) {

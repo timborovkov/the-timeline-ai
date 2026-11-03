@@ -147,6 +147,12 @@ export interface DriveExtractCursor {
   cleanupPending?: boolean;
   /** Leftover keys from a replaced extract that still need delete. */
   pendingDeleteKeys?: string[];
+  /**
+   * Cancel/out-of-scope cleanup started. S3 DeleteObject treats a not-yet-written
+   * `result.json` as success, so the tombstone stays until the producer wait
+   * window elapses and the janitor can delete a late write.
+   */
+  cancelledAt?: string;
 }
 
 export function driveFileContentRevision(file: {
@@ -207,6 +213,9 @@ export function parseDriveExtractCursor(cursor: unknown): DriveExtractCursor | n
       : {}),
     ...(record.cleanupPending === true ? { cleanupPending: true } : {}),
     ...(pendingDeleteKeys.length > 0 ? { pendingDeleteKeys } : {}),
+    ...(typeof record.cancelledAt === 'string' && record.cancelledAt.length > 0
+      ? { cancelledAt: record.cancelledAt }
+      : {}),
   };
 }
 
@@ -251,12 +260,26 @@ export function remainingDriveExtractObjectKeys(
 export function retainDriveExtractCleanupCursor(
   cursor: DriveExtractCursor,
   remainingKeys: string[],
+  opts?: { cancelledAt?: string },
 ): DriveExtractCursor {
+  const cancelledAt = opts?.cancelledAt ?? cursor.cancelledAt;
   return {
     ...cursor,
     cleanupPending: true,
     pendingDeleteKeys: remainingKeys.length > 0 ? remainingKeys : driveExtractObjectKeys(cursor),
+    ...(cancelledAt ? { cancelledAt } : {}),
   };
+}
+
+/** True once a cancel tombstone has waited for a late orchestrator PUT. */
+export function isDriveExtractCancelSettled(cursor: DriveExtractCursor, now = Date.now()): boolean {
+  const enqueuedAtMs = Date.parse(cursor.enqueuedAt);
+  if (Number.isFinite(enqueuedAtMs) && now - enqueuedAtMs >= DRIVE_TRANSIENT_EXTRACT_ORPHAN_MS) {
+    return true;
+  }
+  const cancelledAtMs = Date.parse(cursor.cancelledAt ?? '');
+  if (!Number.isFinite(cancelledAtMs)) return false;
+  return now - cancelledAtMs >= DRIVE_EXTRACT_PENDING_STALE_MS;
 }
 
 export function isDriveExtractPendingStale(cursor: DriveExtractCursor, now = Date.now()): boolean {

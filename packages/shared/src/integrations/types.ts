@@ -203,6 +203,12 @@ export interface SyncContext {
   /** Delete the transient source/result objects and clear the extract cursor. */
   consumeTransientDriveExtract?(fileId: string): Promise<void>;
   /**
+   * Cancel an in-flight extract (missing/out-of-scope/unsupported). Keeps a
+   * cleanup tombstone until the producer wait window elapses so a late
+   * `result.json` is not orphaned after S3 404 is treated as success.
+   */
+  cancelTransientDriveExtract?(fileId: string): Promise<void>;
+  /**
    * Paid Drive extract budget, checked before Daytona/vision spend. Tests
    * inject this; production uses `takeDriveExtractSlot`.
    */

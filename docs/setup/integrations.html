@@ -185,19 +185,22 @@ GOOGLE_DRIVE_WEBHOOK_SECRET=...</code></pre>
           new event for the second return to B, while a retry of the same revision stays idempotent.
           Missing, out-of-scope, and disconnected files delete leftover transient extract objects; a
           failed S3 delete keeps a <code>cleanupPending</code> extract cursor until both objects are
-          gone. The janitor enumerates team ids then lists orphans through
-          <code>withTeam(...).integrations</code>, filtering populated extract cursors in SQL before
-          the page limit so leftover <code>{}</code> rows cannot stall the sweep, treating
-          <code>cleanupPending</code> cursors as immediately eligible, and disconnect paginates that
-          S3 cleanup. Extract JSON whose resume never ran is dropped after 24 hours. Extract
-          failures audit <code>drive_extract_failed</code>, clear that state, and retry within the
-          extract budget instead of skipping as empty, except an oversized result (shared 2&nbsp;MiB
-          write/read cap) which terminates without a retry loop. Saving Drive picker shares
-          invalidates every cached folder and search query for that account. Paid extract is gated
-          by its own daily budget (4 per file / 40 per connection) before sandbox or billed vision
-          spend; the post-diff judge stays at 8 processed files per doc and 200 per connection.
-          Baseline captures consume extract budget, not the judge cap. Full Drive copies are not
-          stored in the document drive. Apply <code>0096_google_drive_v1.sql</code> and
+          gone. Cancel and janitor cleanup keep that tombstone for the extract wait window because
+          S3 <code>DeleteObject</code> treats a not-yet-written <code>result.json</code> as success;
+          a ready extract consumed after persist still clears immediately. The janitor enumerates
+          team ids then lists orphans through <code>withTeam(...).integrations</code>, filtering
+          populated extract cursors in SQL before the page limit so leftover <code>{}</code> rows
+          cannot stall the sweep, treating <code>cleanupPending</code> cursors as immediately
+          eligible, and disconnect paginates that S3 cleanup. Extract JSON whose resume never ran is
+          dropped after 24 hours. Extract failures audit <code>drive_extract_failed</code>, clear
+          that state, and retry within the extract budget instead of skipping as empty, except an
+          oversized result (shared 2&nbsp;MiB write/read cap) which terminates without a retry loop.
+          Saving Drive picker shares invalidates every cached folder and search query for that
+          account. Paid extract is gated by its own daily budget (4 per file / 40 per connection)
+          before sandbox or billed vision spend; the post-diff judge stays at 8 processed files per
+          doc and 200 per connection. Baseline captures consume extract budget, not the judge cap.
+          Full Drive copies are not stored in the document drive. Apply
+          <code>0096_google_drive_v1.sql</code> and
           <code>0097_google_drive_snapshot_uniqueness.sql</code> with the usual migration path.
         </li>
         <li>
