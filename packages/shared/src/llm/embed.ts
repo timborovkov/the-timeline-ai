@@ -4,8 +4,6 @@ import { createRequire } from 'node:module';
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
 import { embed as aiEmbed, embedMany as aiEmbedMany, type EmbeddingModel } from 'ai';
 
-import type * as Cl100kBaseTokenizer from 'gpt-tokenizer/encoding/cl100k_base';
-
 import { isBillingAdmissionError } from '#src/billing/errors.js';
 import {
   attachOpenRouterFinish,
@@ -24,6 +22,8 @@ import {
   OPENROUTER_OFFICIAL_BASE_URL,
   openRouterPrivateProviderRouting,
 } from '#src/llm/privacy.js';
+
+import type * as Cl100kBaseTokenizer from 'gpt-tokenizer/encoding/cl100k_base';
 
 export interface EmbedInput {
   text: string;

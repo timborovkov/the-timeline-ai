@@ -1,5 +1,3 @@
-import type { SlackFile } from '#src/slack/types.js';
-
 import { deferChatDelivery } from '#src/conversation-surfaces/deferred-delivery.js';
 import { getEnv } from '#src/env.js';
 import {
@@ -8,6 +6,8 @@ import {
   providerFetch,
   withProviderRequestContext,
 } from '#src/integrations/request.js';
+
+import type { SlackFile } from '#src/slack/types.js';
 const externalFetch = providerFetch('slack');
 
 function slackFetch(

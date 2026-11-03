@@ -8,13 +8,13 @@ import {
 } from '@timeline/db';
 import { and, eq, isNull, or, sql } from 'drizzle-orm';
 
-import type { artifactEvidenceRole } from '@timeline/db';
-import type { SQL } from 'drizzle-orm';
-import type { AnyPgColumn } from 'drizzle-orm/pg-core';
-
 import { evaluateAuthorityPolicy } from '#src/reconciliation/authority.js';
 import { buildAssociationDedupeKey, type SourceRef } from '#src/reconciliation/index.js';
 import { normalizeRawEventsToEvidence } from '#src/reconciliation/normalization.js';
+
+import type { artifactEvidenceRole } from '@timeline/db';
+import type { SQL } from 'drizzle-orm';
+import type { AnyPgColumn } from 'drizzle-orm/pg-core';
 
 export type ArtifactType = (typeof artifactClusters.$inferSelect)['artifactType'];
 export type ArtifactClusterKind = (typeof artifactClusters.$inferSelect)['artifactClusterKind'];

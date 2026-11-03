@@ -1,9 +1,9 @@
 import { expect } from '@timeline/test-support';
 import { describe, it } from 'bun:test';
 
-import type { Db } from '@timeline/db';
-
 import { handlePolarWebhookEvent, type PolarWebhookPayload } from '#src/billing/polar-webhook.js';
+
+import type { Db } from '@timeline/db';
 
 // This regression must reject before *any* query, not merely catch a database error.
 const db = new Proxy(

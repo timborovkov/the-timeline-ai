@@ -2,11 +2,11 @@ import { createHash } from 'node:crypto';
 
 import { z } from 'zod';
 
-import type { TimelineMoment, TimelineMomentEvent } from '#src/timeline-moments/index.js';
-
 import { classifyCapturedEvent } from '#src/event-class.js';
 import { chatStructured as defaultChatStructured } from '#src/llm/chat.js';
 import { TIMELINE_MODELS } from '#src/llm/models.js';
+
+import type { TimelineMoment, TimelineMomentEvent } from '#src/timeline-moments/index.js';
 
 export const TIMELINE_MOMENT_PRESENTATION_PROMPT_VERSION = 'timeline_moment_presentation.v1';
 

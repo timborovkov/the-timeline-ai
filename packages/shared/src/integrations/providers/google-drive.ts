@@ -1,5 +1,10 @@
 import { createHmac, randomUUID } from 'node:crypto';
 
+import { getEnv } from '#src/env.js';
+import { providerFetch } from '#src/integrations/request.js';
+import { attachSyncContinuation, isProviderRateLimitError } from '#src/integrations/types.js';
+import { childLogger } from '#src/logger.js';
+
 import type {
   IntegrationEvent,
   IntegrationProvider,
@@ -10,11 +15,6 @@ import type {
   SyncContext,
   SyncResult,
 } from '#src/integrations/types.js';
-
-import { getEnv } from '#src/env.js';
-import { providerFetch } from '#src/integrations/request.js';
-import { attachSyncContinuation, isProviderRateLimitError } from '#src/integrations/types.js';
-import { childLogger } from '#src/logger.js';
 
 const fetch = providerFetch('google_drive');
 

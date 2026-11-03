@@ -4,13 +4,13 @@ import { expect } from '@timeline/test-support';
 import { afterEach, beforeEach, describe, it } from 'bun:test';
 import { drizzle } from 'drizzle-orm/pglite';
 
-import type { WorkspaceHub } from '#src/suggestions/hub-context.js';
-
 import {
   loadLinkedWorkspaceHubsForRawEvent,
   mergeInheritedLinkedHubs,
 } from '#src/suggestions/linked-hubs.js';
 import { applyDbMigrations } from '#src/test/pglite.js';
+
+import type { WorkspaceHub } from '#src/suggestions/hub-context.js';
 const faba: WorkspaceHub = {
   id: 'company-faba',
   type: 'company',

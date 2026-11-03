@@ -2,9 +2,6 @@ import { expect } from '@timeline/test-support';
 import { vi } from '@timeline/test-support';
 import { describe, it } from 'bun:test';
 
-import type { ChatStructuredInput, ChatStructuredResult } from '#src/llm/chat.js';
-import type { ZodType } from 'zod';
-
 import { resetEnvForTests } from '#src/env.js';
 import { TIMELINE_MODELS } from '#src/llm/models.js';
 import { buildTimelineMoments, type TimelineMomentEvent } from '#src/timeline-moments/index.js';
@@ -16,6 +13,9 @@ import {
   generateTimelineMomentPresentation,
   timelineMomentPresentationEligibility,
 } from '#src/timeline-moments/presentation.js';
+
+import type { ChatStructuredInput, ChatStructuredResult } from '#src/llm/chat.js';
+import type { ZodType } from 'zod';
 const ENV_BACKUP = { ...process.env };
 const liveOpenRouterIt =
   ENV_BACKUP.OPENROUTER_API_KEY && ENV_BACKUP.OPENROUTER_LIVE_TESTS === '1' ? it : it.skip;

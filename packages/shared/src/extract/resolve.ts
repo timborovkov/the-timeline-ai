@@ -2,11 +2,11 @@ import { type Db, entities } from '@timeline/db';
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import { z } from 'zod';
 
-import type { EntityMention, ExtractedEntityType } from '#src/extract/schema.js';
-
 import { chatStructured, type ChatDeps } from '#src/llm/chat.js';
 import { childLogger } from '#src/logger.js';
 import { enqueueEntityEmbedJob } from '#src/queue/queues.js';
+
+import type { EntityMention, ExtractedEntityType } from '#src/extract/schema.js';
 
 const embedLog = childLogger('extract:embed');
 

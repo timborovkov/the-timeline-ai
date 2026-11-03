@@ -10,8 +10,6 @@ import {
 } from '@timeline/db';
 import { and, asc, desc, eq, ilike, isNull, isNotNull, or, sql } from 'drizzle-orm';
 
-import type { BillingProvider, ExpireCheckoutResult } from '#src/billing/provider.js';
-
 import {
   BILLING_ENTITLEMENTS_VERSION,
   PLAN_CATALOG,
@@ -35,6 +33,8 @@ import {
 } from '#src/billing/operator.js';
 import { recordBillingPlan } from '#src/billing/plan-history.js';
 import { getEnv } from '#src/env.js';
+
+import type { BillingProvider, ExpireCheckoutResult } from '#src/billing/provider.js';
 
 /** Move a legacy JSON fee onto the column before a usage override replaces it. */
 function preservedEnterprisePlatformFee(existing: {

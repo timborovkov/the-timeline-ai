@@ -1,12 +1,12 @@
+import { getEnv } from '#src/env.js';
+import { childLogger } from '#src/logger.js';
+
 import type {
   JoinMeetingInput,
   JoinMeetingResult,
   MeetingBotProvider,
   MeetingBotStatus,
 } from '#src/meeting-bots/types.js';
-
-import { getEnv } from '#src/env.js';
-import { childLogger } from '#src/logger.js';
 
 // Recall.ai adapter: single bot per meeting, silent mode (no audio/video
 // output), realtime webhooks for transcript + status, and provider-bot-id
