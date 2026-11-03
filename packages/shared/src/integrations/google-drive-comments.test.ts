@@ -3,10 +3,14 @@ import { describe, it } from 'bun:test';
 
 import {
   DRIVE_COMMENT_EVENT_LIMIT,
+  DRIVE_COMMENT_HASH_FIELDS,
   commentEventContext,
   compactDriveComments,
   diffDriveComments,
+  driveCommentHashRecord,
   type DriveComment,
+  type DriveCommentChangeKind,
+  type DriveCommentHashField,
 } from '#src/integrations/google-drive-comments.js';
 
 function numberedComments(
@@ -32,14 +36,25 @@ describe('commentEventContext ranking', () => {
     expect(commentEventContext(numberedComments(10)).split('\n')).toHaveLength(8);
   });
 
-  const matrix: {
+  it('hashes exactly the ranked comment fields', () => {
+    expect(Object.keys(driveCommentHashRecord({ id: 'c1' })).sort()).toEqual(
+      [...DRIVE_COMMENT_HASH_FIELDS].sort(),
+    );
+  });
+
+  const lastOfTen: {
     name: string;
-    mutate: (comments: DriveComment[]) => DriveComment[];
+    kind: DriveCommentChangeKind;
+    hashField: DriveCommentHashField;
+    previous?: (comments: DriveComment[]) => DriveComment[];
+    next: (comments: DriveComment[]) => DriveComment[];
     needle: string;
   }[] = [
     {
       name: 'added last of 10',
-      mutate: (comments) => [
+      kind: 'added',
+      hashField: 'id',
+      next: (comments) => [
         ...comments,
         {
           id: 'c-new',
@@ -51,8 +66,17 @@ describe('commentEventContext ranking', () => {
       needle: 'Ada (open): Please confirm the $48k annual term.',
     },
     {
+      name: 'deleted last of 10',
+      kind: 'removed',
+      hashField: 'id',
+      next: (comments) => comments.slice(0, -1),
+      needle: 'Author 10 (removed): Keep comment 10',
+    },
+    {
       name: 'edited last of 10',
-      mutate: (comments) =>
+      kind: 'edited',
+      hashField: 'content',
+      next: (comments) =>
         comments.map((comment, index) =>
           index === comments.length - 1
             ? { ...comment, content: 'Please confirm the $48k annual term.' }
@@ -62,23 +86,50 @@ describe('commentEventContext ranking', () => {
     },
     {
       name: 'resolved last of 10',
-      mutate: (comments) =>
+      kind: 'resolved',
+      hashField: 'resolved',
+      next: (comments) =>
         comments.map((comment, index) =>
           index === comments.length - 1 ? { ...comment, resolved: true } : comment,
         ),
       needle: 'Author 10 (resolved): Keep comment 10',
     },
     {
-      name: 'deleted last of 10',
-      mutate: (comments) => comments.slice(0, -1),
-      needle: 'Author 10 (removed): Keep comment 10',
+      name: 'reopened last of 10',
+      kind: 'reopened',
+      hashField: 'resolved',
+      previous: (comments) =>
+        comments.map((comment, index) =>
+          index === comments.length - 1 ? { ...comment, resolved: true } : comment,
+        ),
+      next: (comments) => comments,
+      needle: 'Author 10 (reopened): Keep comment 10',
+    },
+    {
+      name: 'modifiedTime last of 10',
+      kind: 'updated',
+      hashField: 'modifiedTime',
+      next: (comments) =>
+        comments.map((comment, index) =>
+          index === comments.length - 1
+            ? { ...comment, modifiedTime: '2026-07-01T00:00:00.000Z' }
+            : comment,
+        ),
+      needle: 'Author 10 (updated): Keep comment 10',
     },
   ];
 
-  for (const row of matrix) {
+  it('covers every commentsHash field with a last-of-10 ranked transition', () => {
+    expect([...new Set(lastOfTen.map((row) => row.hashField))].sort()).toEqual(
+      [...DRIVE_COMMENT_HASH_FIELDS].sort(),
+    );
+  });
+
+  for (const row of lastOfTen) {
     it(`puts ${row.name} first in bounded context`, () => {
-      const previous = numberedComments(10);
-      const next = row.mutate(previous);
+      const base = numberedComments(10);
+      const previous = row.previous ? row.previous(base) : base;
+      const next = row.next(base);
       const context = commentEventContext(next, compactDriveComments(previous));
       const lines = context.split('\n');
       expect(lines).toHaveLength(DRIVE_COMMENT_EVENT_LIMIT);
@@ -86,7 +137,7 @@ describe('commentEventContext ranking', () => {
       expect(context).not.toContain('Keep comment 9');
       expect(
         diffDriveComments(compactDriveComments(previous), compactDriveComments(next))[0]?.kind,
-      ).not.toBe('unchanged');
+      ).toBe(row.kind);
     });
   }
 

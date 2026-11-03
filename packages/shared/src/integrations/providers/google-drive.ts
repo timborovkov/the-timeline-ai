@@ -14,6 +14,7 @@ import {
 import {
   commentEventContext,
   compactDriveComments,
+  driveCommentsHashEntries,
   parseDriveCommentSnapshots,
   type DriveComment,
 } from '#src/integrations/google-drive-comments.js';
@@ -680,16 +681,7 @@ async function listDrivePermissions(
 }
 
 function commentsFingerprint(comments: DriveComment[]): string {
-  return hashDrivePayload(
-    JSON.stringify(
-      comments.map((comment) => ({
-        id: comment.id ?? '',
-        resolved: Boolean(comment.resolved),
-        modified: comment.modifiedTime ?? '',
-        content: hashDrivePayload(comment.content ?? ''),
-      })),
-    ),
-  );
+  return hashDrivePayload(JSON.stringify(driveCommentsHashEntries(comments, hashDrivePayload)));
 }
 
 function permissionsFingerprint(permissions: DrivePermission[]): string {

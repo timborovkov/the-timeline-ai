@@ -1,13 +1,17 @@
 /**
  * Drive comment fingerprints hash every page. Event context is bounded, so
- * added / edited / resolved / removed comments must be ranked ahead of
- * unchanged ones or a change past the first eight never reaches the judged
- * event. `comments.list` omits deleted comments (`includeDeleted=false`), so
+ * every commentsHash field change must rank ahead of unchanged comments or a
+ * transition past the first eight never reaches the judged event.
+ * `comments.list` omits deleted comments (`includeDeleted=false`), so
  * removals are recovered by comparing previous snapshot ids to the next set.
  */
 
 export const DRIVE_COMMENT_EVENT_LIMIT = 8;
 const DRIVE_COMMENT_PREVIEW_CHARS = 240;
+
+/** Fields that feed `commentsHash`. Ranking must classify a change for each. */
+export const DRIVE_COMMENT_HASH_FIELDS = ['id', 'content', 'resolved', 'modifiedTime'] as const;
+export type DriveCommentHashField = (typeof DRIVE_COMMENT_HASH_FIELDS)[number];
 
 export interface DriveComment {
   id?: string;
@@ -25,7 +29,39 @@ export interface DriveCommentSnapshot {
   author: string;
 }
 
-type DriveCommentChangeKind = 'added' | 'edited' | 'resolved' | 'removed' | 'unchanged';
+export type DriveCommentHashRecord = {
+  [Field in DriveCommentHashField]: Field extends 'resolved' ? boolean : string;
+};
+
+export type DriveCommentChangeKind =
+  'added' | 'edited' | 'resolved' | 'reopened' | 'updated' | 'removed' | 'unchanged';
+
+export function driveCommentHashRecord(
+  comment: DriveComment | DriveCommentSnapshot,
+): DriveCommentHashRecord {
+  return {
+    id: comment.id ?? '',
+    content: comment.content ?? '',
+    resolved: Boolean(comment.resolved),
+    modifiedTime: comment.modifiedTime ?? '',
+  };
+}
+
+/** Stored hash JSON keeps `modified` so existing `commentsHash` values stay stable. */
+export function driveCommentsHashEntries(
+  comments: DriveComment[],
+  hashContent: (value: string) => string,
+): { id: string; resolved: boolean; modified: string; content: string }[] {
+  return comments.map((comment) => {
+    const record = driveCommentHashRecord(comment);
+    return {
+      id: record.id,
+      resolved: record.resolved,
+      modified: record.modifiedTime,
+      content: hashContent(record.content),
+    };
+  });
+}
 
 export function compactDriveComments(comments: DriveComment[]): DriveCommentSnapshot[] {
   return comments.map((comment) => ({
@@ -59,6 +95,22 @@ export function parseDriveCommentSnapshots(value: unknown): DriveCommentSnapshot
   return found;
 }
 
+function classifyDriveCommentChange(
+  previous: DriveCommentSnapshot | undefined,
+  next: DriveCommentSnapshot,
+): Exclude<DriveCommentChangeKind, 'removed'> {
+  if (!previous) return 'added';
+  const prior = driveCommentHashRecord(previous);
+  const current = driveCommentHashRecord(next);
+  if (prior.content !== current.content) return 'edited';
+  if (prior.resolved !== current.resolved) return current.resolved ? 'resolved' : 'reopened';
+  for (const field of DRIVE_COMMENT_HASH_FIELDS) {
+    if (field === 'id' || field === 'content' || field === 'resolved') continue;
+    if (prior[field] !== current[field]) return 'updated';
+  }
+  return 'unchanged';
+}
+
 export function diffDriveComments(
   previous: DriveCommentSnapshot[],
   next: DriveCommentSnapshot[],
@@ -76,19 +128,9 @@ export function diffDriveComments(
       seen.add(comment.id);
     }
     const prior = comment.id ? previousById.get(comment.id) : undefined;
-    if (!prior) {
-      changed.push({ comment, kind: 'added' });
-      continue;
-    }
-    if (comment.content !== prior.content) {
-      changed.push({ comment, kind: 'edited' });
-      continue;
-    }
-    if (comment.resolved && !prior.resolved) {
-      changed.push({ comment, kind: 'resolved' });
-      continue;
-    }
-    unchanged.push({ comment, kind: 'unchanged' });
+    const kind = classifyDriveCommentChange(prior, comment);
+    if (kind === 'unchanged') unchanged.push({ comment, kind });
+    else changed.push({ comment, kind });
   }
   for (const prior of previous) {
     if (!prior.id || seen.has(prior.id)) continue;
@@ -98,6 +140,13 @@ export function diffDriveComments(
   return [...removed, ...changed, ...unchanged];
 }
 
+function commentContextState(kind: DriveCommentChangeKind, comment: DriveCommentSnapshot): string {
+  if (kind === 'removed') return 'removed';
+  if (kind === 'reopened') return 'reopened';
+  if (kind === 'updated') return 'updated';
+  return comment.resolved ? 'resolved' : 'open';
+}
+
 export function commentEventContext(
   next: DriveComment[],
   previous: DriveCommentSnapshot[] = [],
@@ -105,7 +154,7 @@ export function commentEventContext(
   return diffDriveComments(previous, compactDriveComments(next))
     .slice(0, DRIVE_COMMENT_EVENT_LIMIT)
     .map(({ comment, kind }) => {
-      const state = kind === 'removed' ? 'removed' : comment.resolved ? 'resolved' : 'open';
+      const state = commentContextState(kind, comment);
       return comment.content
         ? `${comment.author} (${state}): ${comment.content}`
         : `${comment.author} (${state})`;

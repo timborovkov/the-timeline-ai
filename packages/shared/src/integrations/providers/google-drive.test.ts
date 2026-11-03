@@ -27,6 +27,7 @@ const { resetEnvForTests } = await import('#src/env.js');
 const { googleDriveProvider } = await import('#src/integrations/providers/google-drive.js');
 const { DRIVE_FILE_DEBOUNCE_MS, DRIVE_TRANSIENT_RESULT_TOO_LARGE, hashDrivePayload } =
   await import('#src/integrations/google-drive-capture.js');
+const { driveCommentsHashEntries } = await import('#src/integrations/google-drive-comments.js');
 const { DRIVE_BEYOND_SNAPSHOT_HUNK, DRIVE_SNAPSHOT_MAX_CHARS } =
   await import('#src/integrations/google-drive-diff.js');
 
@@ -51,16 +52,7 @@ function driveCommentsHash(
     modifiedTime?: string;
   }[],
 ): string {
-  return hashDrivePayload(
-    JSON.stringify(
-      comments.map((comment) => ({
-        id: comment.id,
-        resolved: Boolean(comment.resolved),
-        modified: comment.modifiedTime ?? '',
-        content: hashDrivePayload(comment.content ?? ''),
-      })),
-    ),
-  );
+  return hashDrivePayload(JSON.stringify(driveCommentsHashEntries(comments, hashDrivePayload)));
 }
 
 function drivePermissionsHash(
@@ -1982,6 +1974,83 @@ describe('googleDriveProvider', () => {
     const savedIds = savedSnapshot?.commentsSnapshot.map((comment) => comment.id) ?? [];
     expect(savedIds).toEqual(nextComments.map((comment) => comment.id));
     expect(savedIds).not.toContain('c10');
+  });
+
+  it('puts a reopened last-page comment first in the bounded event context', async () => {
+    const snapshotText = 'Contract amount is forty eight thousand dollars for Northstar.';
+    const contentHash = hashDrivePayload(snapshotText);
+    const previousComments = Array.from({ length: 10 }, (_, index) => ({
+      id: `c${String(index + 1)}`,
+      content: `Keep comment ${String(index + 1)}`,
+      resolved: index === 9,
+      modifiedTime: `2026-06-${String(index + 1).padStart(2, '0')}T00:00:00.000Z`,
+      author: { displayName: `Author ${String(index + 1)}` },
+    }));
+    const nextComments = previousComments.map((comment, index) =>
+      index === previousComments.length - 1 ? { ...comment, resolved: false } : comment,
+    );
+    const fetch = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((input) => {
+      const url = requestUrl(input);
+      if (url.pathname.includes('/export')) {
+        return Promise.resolve(new Response(snapshotText, { status: 200 }));
+      }
+      if (url.pathname.endsWith('/comments')) {
+        return Promise.resolve(jsonResponse({ comments: nextComments }));
+      }
+      if (url.pathname.endsWith('/permissions')) {
+        return Promise.resolve(jsonResponse({ permissions: [] }));
+      }
+      if (url.pathname.endsWith('/files/file-1')) {
+        return Promise.resolve(
+          jsonResponse({
+            id: 'file-1',
+            name: 'SOW',
+            mimeType: 'application/vnd.google-apps.document',
+            parents: ['root'],
+            modifiedTime: '2026-06-20T10:00:00.000Z',
+          }),
+        );
+      }
+      return Promise.resolve(jsonResponse({ message: 'unexpected' }, { status: 404 }));
+    });
+    vi.stubGlobal('fetch', fetch);
+    const ctx = syncContext({
+      loadLatestDriveSnapshot: vi.fn().mockResolvedValue({
+        contentHash,
+        snapshotText,
+        commentsHash: driveCommentsHash(previousComments),
+        permissionsHash: drivePermissionsHash([]),
+        mimeType: 'application/vnd.google-apps.document',
+        commentsSnapshot: previousComments.map((comment) => ({
+          id: comment.id,
+          content: comment.content,
+          resolved: comment.resolved,
+          modifiedTime: comment.modifiedTime,
+          author: comment.author.displayName,
+        })),
+      }),
+    });
+
+    await googleDriveProvider.incrementalSync({
+      integration: { id: 'integration-1', teamId: 'team-1' } as never,
+      tokens: { access_token: 'access-token', expires_at: Date.now() + 600_000 },
+      selections: [{ kind: 'drive.file', externalId: 'file-1' }],
+      ctx: ctx,
+      target: { resourceType: 'drive.file', externalId: 'file-1' },
+    });
+
+    const events: IntegrationEvent[] = (
+      ctx.writeEvents as unknown as { mock: { calls: [IntegrationEvent[]][] } }
+    ).mock.calls.flatMap(([batch]) => batch);
+    expect(events).toHaveLength(1);
+    const preview = events[0]?.contentText ?? '';
+    expect(preview).toContain('Author 10 (reopened): Keep comment 10');
+    expect(preview.indexOf('Author 10 (reopened):')).toBeLessThan(
+      preview.indexOf('Keep comment 1'),
+    );
+    expect(preview).not.toContain('Keep comment 9');
   });
 
   it('lists shared-drive permissions instead of files.get so share-only changes emit', async () => {
