@@ -23,8 +23,9 @@ import { and, asc, eq, gt, inArray, isNotNull, isNull, or, sql } from 'drizzle-o
 import { alias } from 'drizzle-orm/pg-core';
 
 import { captureWorkerException, captureWorkerJobFailure } from '#src/monitoring.js';
-import { guardWorkerProcessor } from '#src/platform-worker.js';
 import { sweepOrphanDriveTransientExtracts } from '#src/workers/integrationSync.js';
+
+import { guardWorkerProcessor } from '#src/platform-worker.js';
 
 // Keyset paging by id keeps memory bounded on a backlog that hasn't been
 // swept in a while. UUIDs sort lexicographically — total + stable, which

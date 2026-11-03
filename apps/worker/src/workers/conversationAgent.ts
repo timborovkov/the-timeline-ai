@@ -14,6 +14,7 @@ import { DelayedError, UnrecoverableError, Worker, type Job } from 'bullmq';
 
 import { trackProductEventBestEffort } from '#src/analytics.js';
 import { captureWorkerJobFailure } from '#src/monitoring.js';
+
 import { guardWorkerProcessor } from '#src/platform-worker.js';
 
 const log = childLogger('worker:conversation-agent');

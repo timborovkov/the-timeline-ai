@@ -7,7 +7,7 @@ import { describe, it } from 'bun:test';
 
 const webSrc = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
-const SKIP_APP_PREFIXES = ['app/app/', 'app/api/', 'app/dev/'];
+const SKIP_APP_PREFIXES = ['app/app/', 'app/(platform)/', 'app/api/', 'app/dev/'];
 const EXTRA_PUBLIC_MODULES = [
   'components/marketing',
   'components/help',

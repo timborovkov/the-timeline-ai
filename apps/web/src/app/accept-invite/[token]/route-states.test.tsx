@@ -1,6 +1,8 @@
 import { expect } from '@timeline/test-support';
 import { vi } from '@timeline/test-support';
 import { afterEach, describe, it } from 'bun:test';
+
+import type * as TimelineDb from '@timeline/db';
 // Test environment: happy-dom
 
 const fakes = vi.hoisted(() => ({ auth: vi.fn() }));
@@ -24,7 +26,10 @@ await vi.mock(
 );
 await vi.mock(
   import.meta.resolve('@timeline/db'),
-  () => ({ getDb: () => ({}), teamInvites: {}, teams: {} }),
+  async (importOriginal) => ({
+    ...(await importOriginal<typeof TimelineDb>()),
+    getDb: () => ({}),
+  }),
   () => import('@timeline/db'),
 );
 await vi.mock(

@@ -20,6 +20,7 @@ import { Worker } from 'bullmq';
 import { and, eq } from 'drizzle-orm';
 
 import { captureWorkerJobFailure } from '#src/monitoring.js';
+
 import { guardWorkerProcessor } from '#src/platform-worker.js';
 
 const log = childLogger('worker:team-export');

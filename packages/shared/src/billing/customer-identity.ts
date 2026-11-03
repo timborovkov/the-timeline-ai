@@ -17,8 +17,6 @@ import { requirePlatformActor, type PlatformActor } from '#src/platform-admin/in
 
 import type { BillingProvider } from '#src/billing/provider.js';
 
-import type { BillingProvider } from '#src/billing/provider.js';
-
 export interface TeamBillingIdentity {
   customerId: string;
   memberId: string;

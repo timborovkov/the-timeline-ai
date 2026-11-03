@@ -17,6 +17,7 @@ import { eq, sql } from 'drizzle-orm';
 
 import { withWorkerAiBilling, workerBillingJobOptions } from '#src/billing-context.js';
 import { captureWorkerException, captureWorkerJobFailure } from '#src/monitoring.js';
+
 import { guardWorkerProcessor } from '#src/platform-worker.js';
 
 const log = childLogger('worker:embed');

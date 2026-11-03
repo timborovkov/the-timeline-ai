@@ -5,6 +5,7 @@ import { Worker, type Job } from 'bullmq';
 import { and, asc, gt, isNotNull, isNull, type SQL } from 'drizzle-orm';
 
 import { captureWorkerJobFailure } from '#src/monitoring.js';
+
 import { guardWorkerProcessor } from '#src/platform-worker.js';
 
 const PSEUDO_USER = '00000000-0000-0000-0000-000000000000';
