@@ -1661,6 +1661,31 @@ export async function listObjects(
   return attachCommentCounts(db, scope, rows.map(toObjectRow));
 }
 
+export async function listObjectsLinkedToIntegration(
+  db: Db,
+  scope: TeamScopeCore,
+  input: { provider: string; ids: string[] },
+): Promise<{ id: string; integrationExternalId: string | null }[]> {
+  await scope.requireMembership();
+  const ids = [...new Set(input.ids.filter((id) => id.length > 0))];
+  if (ids.length === 0) return [];
+  const uuidIds = ids.filter((id) => UUID_RE.test(id));
+  const metadataMatch = and(
+    sql`(${entities.metadata} ->> 'integration_provider') = ${input.provider}`,
+    inArray(sql`(${entities.metadata} ->> 'integration_external_id')`, ids),
+  );
+  const match =
+    uuidIds.length > 0 ? or(inArray(entities.id, uuidIds), metadataMatch) : metadataMatch;
+  return db
+    .select({
+      id: entities.id,
+      integrationExternalId: sql<string | null>`${entities.metadata} ->> 'integration_external_id'`,
+    })
+    .from(entities)
+    .where(and(eq(entities.teamId, scope.teamId), isNull(entities.mergedIntoId), match))
+    .limit(Math.min(Math.max(ids.length, 1), OBJECT_QUERY_LIMIT_MAX));
+}
+
 export async function searchObjects(
   db: Db,
   scope: TeamScopeCore,
@@ -9803,6 +9828,8 @@ export async function rejectObjectChange(
 export function createObjectScope(db: Db, scope: TeamScopeCore) {
   return {
     listObjects: (filter?: ObjectListFilter) => listObjects(db, scope, filter),
+    listObjectsLinkedToIntegration: (input: { provider: string; ids: string[] }) =>
+      listObjectsLinkedToIntegration(db, scope, input),
     countObjects: (filter?: ObjectCountFilter) => countObjects(db, scope, filter),
     getTaskCategoryFilterRefreshState: (
       filter: ObjectCountFilter,

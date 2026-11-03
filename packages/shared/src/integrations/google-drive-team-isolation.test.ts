@@ -115,6 +115,16 @@ describe('Drive withTeam isolation guard', () => {
     expect(scanProductionDriveAccess()).toEqual([]);
   });
 
+  it('routes event-writer workspace object lookup through withTeam objects', () => {
+    const source = readFileSync(
+      join(REPO_ROOT, 'packages/shared/src/integrations/event-writer.ts'),
+      'utf8',
+    );
+    expect(source).not.toMatch(/\.from\(\s*entities\s*\)/);
+    expect(source).toContain('withTeam(');
+    expect(source).toContain('.objects.listObjectsLinkedToIntegration');
+  });
+
   it('forwards commentsSnapshot through the worker saveDriveSnapshot adapter', () => {
     const source = readFileSync(
       join(REPO_ROOT, 'apps/worker/src/workers/integrationSync.ts'),

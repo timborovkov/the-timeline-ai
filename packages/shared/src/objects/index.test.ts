@@ -990,6 +990,46 @@ describe('object scope — team ownership and audit behavior', () => {
     ).resolves.toEqual([]);
   });
 
+  it('lists integration-linked objects only within the team scope', async () => {
+    const scope = withTeam(db, TEAM_A, USER_OWNER).objects;
+    const linked = await scope.createObject({
+      type: 'task',
+      canonicalName: 'Linked GitHub PR',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    await db
+      .update(entities)
+      .set({
+        metadata: {
+          integration_provider: 'github',
+          integration_external_id: 'acme/app#12',
+        },
+      })
+      .where(eq(entities.id, linked.id));
+    const foreign = await withTeam(db, TEAM_B, USER_OTHER_TEAM).objects.createObject({
+      type: 'task',
+      canonicalName: 'Foreign GitHub PR',
+      actor: { kind: 'user', userId: USER_OTHER_TEAM },
+    });
+    await db
+      .update(entities)
+      .set({
+        metadata: {
+          integration_provider: 'github',
+          integration_external_id: 'acme/app#12',
+        },
+      })
+      .where(eq(entities.id, foreign.id));
+    await expect(
+      scope.listObjectsLinkedToIntegration({
+        provider: 'github',
+        ids: ['acme/app#12', linked.id, foreign.id],
+      }),
+    ).resolves.toEqual([
+      expect.objectContaining({ id: linked.id, integrationExternalId: 'acme/app#12' }),
+    ]);
+  });
+
   it('filters mixed due timestamps by workspace calendar date', async () => {
     const scope = withTeam(db, TEAM_A, USER_OWNER).objects;
     const rows = await Promise.all([

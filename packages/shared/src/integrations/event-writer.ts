@@ -3,7 +3,6 @@ import {
   calendarEvents,
   type Db,
   documentVersions,
-  entities,
   integrations,
   meetingTranscriptChunks,
   mondayConversationTombstoneInvalidations,
@@ -1385,29 +1384,22 @@ async function loadExistingWorkspaceObjectLinks(
   const candidateIds = [...new Set([...externalIds, ...linkedIds])];
   if (candidateIds.length === 0) return new Map();
 
+  const scope = withTeam(
+    db,
+    integration.teamId,
+    integration.connectedByUserId ?? TOMBSTONE_SYSTEM_ACTOR_ID,
+    {
+      skipMembershipCheck: true,
+    },
+  );
+  const rows = await scope.objects.listObjectsLinkedToIntegration({
+    provider: integration.provider,
+    ids: candidateIds,
+  });
   const entityByExternalId = new Map<string, string>();
-  const metadataRows = await db
-    .select({
-      id: entities.id,
-      externalId: sql<string>`${entities.metadata} ->> 'integration_external_id'`,
-    })
-    .from(entities)
-    .where(
-      and(
-        eq(entities.teamId, integration.teamId),
-        sql`(${entities.metadata} ->> 'integration_provider') = ${integration.provider}`,
-        inArray(sql`(${entities.metadata} ->> 'integration_external_id')`, [...candidateIds]),
-      ),
-    );
-  for (const row of metadataRows) entityByExternalId.set(row.externalId, row.id);
-
-  const entityIds = candidateIds.filter((id) => ENTITY_ID_RE.test(id));
-  if (entityIds.length > 0) {
-    const idRows = await db
-      .select({ id: entities.id })
-      .from(entities)
-      .where(and(eq(entities.teamId, integration.teamId), inArray(entities.id, entityIds)));
-    for (const row of idRows) entityByExternalId.set(row.id, row.id);
+  for (const row of rows) {
+    entityByExternalId.set(row.id, row.id);
+    if (row.integrationExternalId) entityByExternalId.set(row.integrationExternalId, row.id);
   }
   return entityByExternalId;
 }

@@ -2432,6 +2432,68 @@ describe('writeIntegrationEvents visibility', () => {
     ]);
   });
 
+  it('does not attach a Drive event to another team object id', async () => {
+    const otherTeamId = '22222222-2222-2222-2222-222222222222';
+    await pg.exec(`
+      INSERT INTO teams (id, slug, name) VALUES ('${otherTeamId}', 'team-b', 'Team B');
+    `);
+    const [integration] = await db
+      .insert(integrations)
+      .values({
+        teamId: TEAM_ID,
+        connectedByUserId: USER_ID,
+        provider: 'google_drive',
+        displayName: 'Google Drive',
+        externalAccountId: 'drive-acct-foreign-link',
+        visibilityDefault: 'team',
+      })
+      .returning();
+    if (!integration) throw new Error('integration insert failed');
+
+    const [foreign] = await db
+      .insert(entities)
+      .values({
+        teamId: otherTeamId,
+        type: 'company',
+        canonicalName: 'Other team Northstar',
+        status: 'open',
+      })
+      .returning();
+    if (!foreign) throw new Error('object insert failed');
+
+    await writeIntegrationEvents({
+      db: db as never,
+      integration,
+      events: [
+        {
+          dedupKey: 'google_drive:file:file-foreign:hash:comments:permissions',
+          provider: 'google_drive',
+          signalClass: 'communication',
+          eventClass: 'communication',
+          externalObjectId: 'file-foreign',
+          eventType: 'file.changed',
+          occurredAt: new Date('2026-06-20T12:00:00Z'),
+          contentText: 'Pricing section changed',
+          extra: { drive: { linked_object_id: foreign.id } },
+          objectMap: {
+            type: 'company',
+            canonicalName: 'Northstar',
+            externalId: 'file-foreign',
+            displayTitle: 'SOW',
+          },
+        },
+      ],
+    });
+
+    const clusters = await db.select().from(artifactClusters);
+    expect(clusters).toEqual([
+      expect.objectContaining({
+        canonicalEntityId: null,
+        artifactType: 'company',
+      }),
+    ]);
+  });
+
   it('clusters technical evidence across Sentry and GitHub when a shared incident key appears', async () => {
     const [sentryIntegration] = await db
       .insert(integrations)
