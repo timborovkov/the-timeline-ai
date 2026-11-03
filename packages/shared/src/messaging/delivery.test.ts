@@ -271,6 +271,59 @@ describe('Resend messaging adapter', () => {
     expect(JSON.stringify(invite.recorded)).not.toContain('invite-secret');
   });
 
+  it('encrypts password reset payloads and retries the original bytes without exposing tokens', async () => {
+    process.env.RESEND_API_KEY = 're_test';
+    process.env.TRANSACTIONAL_EMAIL_FROM = 'hello@example.test';
+    const original = {
+      to: 'tim@example.test',
+      resetUrl: 'https://timeline.test/reset-password?token=secret-token',
+      expiresAt: new Date('2026-11-01T10:00:00Z'),
+    };
+    const first = fakeDeliveryDb(null, { create: true });
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response('{}', { status: 503 }))
+      .mockResolvedValue(new Response(JSON.stringify({ id: 'sent-id' })));
+    await sendMessage('password_reset', original, {
+      db: first.db as never,
+      dedupeKey: 'reset-key',
+      fetch: fetchMock,
+    });
+    const metadata = first.recorded[0]?.metadata as Record<string, unknown>;
+    expect(metadata.email_payload).toBeUndefined();
+    expect(metadata.email_payload_encrypted).toBeDefined();
+    expect(JSON.stringify(first.recorded)).not.toContain('secret-token');
+    const retry = fakeDeliveryDb(
+      { id: 'new-delivery', status: 'failed', dedupeKey: 'reset-key' },
+      { metadata },
+    );
+    await expect(
+      sendMessage(
+        'password_reset',
+        { ...original, resetUrl: 'https://timeline.test/reset-password?token=changed-token' },
+        { db: retry.db as never, dedupeKey: 'reset-key', fetch: fetchMock },
+      ),
+    ).resolves.toMatchObject({ ok: true });
+    expect(fetchMock.mock.calls[1]?.[1]?.body).toBe(fetchMock.mock.calls[0]?.[1]?.body);
+    expect(fetchMock.mock.calls[1]?.[1]?.body).toContain('secret-token');
+    const damaged = fakeDeliveryDb(
+      { id: 'new-delivery', status: 'failed', dedupeKey: 'reset-key' },
+      {
+        metadata: {
+          email_payload_encrypted: { ciphertext: 'broken', iv: 'broken', tag: 'broken' },
+        },
+      },
+    );
+    await expect(
+      sendMessage('password_reset', original, {
+        db: damaged.db as never,
+        dedupeKey: 'reset-key',
+        fetch: fetchMock,
+      }),
+    ).resolves.toMatchObject({ ok: false, retryable: false });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
   it('does not persist or send verification tokens without an encryption key', async () => {
     delete process.env.SECRETS_ENCRYPTION_KEY;
     process.env.RESEND_API_KEY = 're_test';

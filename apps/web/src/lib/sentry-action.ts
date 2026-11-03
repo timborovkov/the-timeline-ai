@@ -5,6 +5,8 @@ const PRE_ACCEPTANCE_ACTIONS = new Set([
   'accept_legal',
   'resend_email_verification',
   'sign_in',
+  'request_password_reset',
+  'reset_password',
   'sign_in_with_git_hub',
   'sign_up',
   'submit_support_request',

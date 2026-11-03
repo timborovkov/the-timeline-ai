@@ -887,3 +887,23 @@ separate email while always retaining the owner member's email.
 ### Email provider change (2026-11-01)
 
 Resend handles outbound email and inbound capture. Signed webhooks queue only provider IDs; workers retrieve content and bounded attachments, applying sender rate-limit admission before attachment hydration. Email recovery metadata reads require an explicit internal ingest principal and are constrained to active email events in its team. Recovery fails closed for parents restricted to specific people before creating derived documents or audio. Verification and invitation retry payloads are encrypted at rest using the existing AES-256-GCM secrets helper; retries decrypt the original payload, and missing keys fail closed. Completed ingestion job identifiers remain for 24 hours, failures for seven days. Temporary download URLs and credentials are not persisted in jobs or source snapshots. The Privacy Policy version advances to 2026-11-01. G-09 remains open: no account retention, tracking, contractual, or deletion verification is claimed.
+
+### Password recovery controls
+
+Password recovery stores SHA-256 digests of random 32-byte, single-use tokens,
+with a 30-minute expiry, separately from email-verification tokens. Issuance and
+redemption serialize on the account row. Redemption atomically replaces the
+password hash, deletes reset tokens, and increments the login session version.
+Proxy and server Auth.js checks compare JWT versions against the database on use;
+legacy JWTs are version zero. Existing login sessions are invalidated on their
+next request; already-running requests and integration/MCP credentials are not
+revoked by this flow. Recovery does not change verification or legal acceptance.
+
+Request responses do not disclose whether an email has a password account. Redis
+rate limits apply before account lookup and fail closed when Redis is unavailable.
+Reset email retry payloads use the existing AES-256-GCM encrypted delivery format;
+Resend receives the reset URL to deliver the email. Recovery routes have no browser
+analytics, no-index/no-store/no-referrer policies, and sanitized error events.
+Provider-account tracking and retention evidence remains G-09; this feature makes
+no new provider-retention claim. Infrastructure access logs must not retain reset
+URL query parameters. Production delivery still requires operator verification.

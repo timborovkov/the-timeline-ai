@@ -1337,3 +1337,13 @@ owners/admins; members retain the existing limited warning view.
 Contractual Enterprise displays agreement-based limits instead of a local cap
 warning/editor. Cap warnings follow enforcement applicability; comped Enterprise
 keeps its enforced cap. Disabled enforcement is labeled as informational tracking.
+
+### Password recovery
+
+Sign-in places “Forgot password?” beside the password label. `/forgot-password`
+and `/reset-password` reuse AuthShell and the existing form controls. Request
+confirmation does not reveal whether an account exists and keeps the email form
+available for retry. Reset asks for matching new passwords (8–200 characters),
+announces pending/error/success states, and replaces expired or used links with a
+request-new-link action. Success directs the user to sign in again; recovery
+remains available without legal acceptance or new-account publication readiness.

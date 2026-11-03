@@ -230,4 +230,12 @@ describe('runSentryServerAction', () => {
       );
     }
   });
+  it('allows recovery before legal acceptance for both recovery actions', async () => {
+    mocks.headers.mockReturnValue(new Headers({ 'next-action': 'action-id' }));
+    for (const operation of ['request_password_reset', 'reset_password']) {
+      await expect(runSentryServerAction(operation, () => 'recovered')).resolves.toBe('recovered');
+    }
+    expect(mocks.auth).not.toHaveBeenCalled();
+    expect(mocks.redirect).not.toHaveBeenCalled();
+  });
 });

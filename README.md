@@ -259,3 +259,19 @@ and resumes extraction/transcription safely on retry. See
 variables and `bun run email:replay -- <received-email-uuid>`. Credentials, domain
 configuration, and live verification are operator-owned. No live email settings
 are supplied by the repository.
+
+### Password recovery
+
+Email/password users can follow “Forgot password?” from sign-in to request a
+single-use reset email. Links expire after 30 minutes; requesting another replaces
+the previous link. A successful reset signs out every existing application session
+and requires a fresh login. GitHub-only accounts continue using GitHub.
+
+Recovery uses the existing `RESEND_API_KEY`, `TRANSACTIONAL_EMAIL_FROM`,
+`SECRETS_ENCRYPTION_KEY`, trusted `AUTH_URL`, database, and Redis configuration.
+Apply migration `0093_password_recovery` before rolling out the web app. It adds
+reset-token storage, a user session version, and the reset-email message intent.
+Old JWTs remain valid as version zero until their account resets its password.
+Recovery emails bypass workspace email allowances; delivery failures use existing
+message-delivery records and sanitized monitoring events. Monitor failed deliveries
+and `password_reset_request_failed` / `password_reset_failed` events after rollout.

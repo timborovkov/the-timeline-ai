@@ -15,16 +15,6 @@ import {
 import { and, eq, isNull, lt } from 'drizzle-orm';
 import { z } from 'zod';
 
-import type {
-  DailyDigestPayload,
-  MessageChannel,
-  MessageDeliveryStatus,
-  MessageInput,
-  MessageIntent,
-  RenderedMessage,
-  SendMessageResult,
-} from '#src/messaging/types.js';
-
 import { emailRecipientCount } from '#src/billing/catalog.js';
 import { decryptJson, encryptJson } from '#src/crypto/secrets.js';
 import { resendRequest, ResendError, type EmailFetch } from '#src/email/resend-client.js';
@@ -46,6 +36,16 @@ import {
 import { renderMessage } from '#src/messaging/templates.js';
 import { sendTeamSlackDirectMessage, sendTeamSlackMessage } from '#src/slack/dispatcher.js';
 import { sendTelegramBotMessage } from '#src/telegram/api.js';
+
+import type {
+  DailyDigestPayload,
+  MessageChannel,
+  MessageDeliveryStatus,
+  MessageInput,
+  MessageIntent,
+  RenderedMessage,
+  SendMessageResult,
+} from '#src/messaging/types.js';
 
 interface ResendResult {
   ok: boolean;
@@ -260,6 +260,7 @@ export async function markDeliveryResult(input: {
 const UNMETERED_WORKSPACE_EMAIL_INTENTS = new Set<MessageIntent>([
   'billing_usage_alert',
   'email_verification',
+  'password_reset',
   'support_request',
 ]);
 
@@ -303,7 +304,7 @@ async function settleMeteredEmailBestEffort(input: {
 }
 
 function secretBearingIntent(intent: MessageIntent): boolean {
-  return intent === 'email_verification' || intent === 'team_invite';
+  return intent === 'email_verification' || intent === 'team_invite' || intent === 'password_reset';
 }
 
 function persistedEmailPayload(intent: MessageIntent, payload: z.infer<typeof sendPayloadSchema>) {
