@@ -20,12 +20,12 @@ import { afterAll, beforeAll, beforeEach, describe, it } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 
-import type { PGlite } from '@electric-sql/pglite';
-
 import {
   processReconciliationJob,
   type ReconciliationWorkerResult,
 } from '#src/workers/reconciliation.js';
+
+import type { PGlite } from '@electric-sql/pglite';
 
 const TEAM_ID = '11111111-1111-4111-8111-111111111111';
 const USER_ID = '22222222-2222-4222-8222-222222222222';
