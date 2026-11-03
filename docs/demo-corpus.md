@@ -103,7 +103,7 @@ The through-line:
 6. **Hiring**: product designer (Maya Chen, final round 15 August) and a reopened
    senior backend loop.
 
-Ask “what did the team achieve last week?” as Avery to walk the cited recap.
+Ask “what did the team achieve recently?” as Avery to walk the cited recap.
 
 Named dates in the story copy (19 August, 15 August, and so on) keep the original
 authoring voice. Column timestamps, ISO times in event content, calendar starts,
@@ -117,8 +117,8 @@ and digest windows follow the seed clock so the live workspace stays recent.
 | Objects | Tasks, deals, companies, people, decisions, incidents, hiring loops, follow-ups, projects |
 | Boards | Atlas Launch (tasks plus launch work), Customer dealflow, Series A funding |
 | Documents | Code of conduct, office rules, DPA excerpt, MSA excerpt, contractor excerpt, strategy memo, one-pager, pitch narrative, onboarding, brand voice, security FAQ, plus the Northstar handoff brief |
-| Meetings | Weekly standups across the last month, importer incident review, Northwind partner meeting, Brightline scoping, Maya Chen interview; saved weekly standup with auto-join and a scheduled occurrence a few days out |
-| Ask | Nine historic sessions with `[ev:…]` / `[ent:…]` citation chips, including last-week recap, Northstar status, a Northstar handoff brief, dealflow, hiring, webinar blockers, and the code of conduct |
+| Meetings | Daily product standups across the last month, importer incident review, Northwind partner meeting, Brightline scoping, Maya Chen interview; saved daily standup with auto-join and a scheduled occurrence a few days out |
+| Ask | Nine historic sessions with `[ev:…]` / `[ent:…]` citation chips, including recent activity recap, Northstar status, a Northstar handoff brief, dealflow, hiring, webinar blockers, and the code of conduct |
 | Approvals | Fourteen pending proposals plus one already-accepted CSV-replay decision |
 | Digests | Twenty weekdays of Avery’s daily digest history. The most recent digest includes Highlights / Status / Follow-ups, open tasks, and upcoming calendar. Live digest send stays off so the worker can run without Resend, Slack, or Telegram delivery. Team settings still show the default email destination plus disabled Slack `#product` and Telegram “Acme leadership” destinations. |
 | Setup | Team checklist completed and dismissed for Avery |
@@ -191,7 +191,7 @@ Email attachment: `Northstar pilot handoff brief.txt` (canonical search fixture)
 
 ### Recurring demo questions
 
-- “What did the team achieve last week?”
+- “What did the team achieve recently?”
 - “What is the current status of the Northstar pilot?”
 - “Who owns Series A diligence?”
 - “What is blocking the Atlas importer?”

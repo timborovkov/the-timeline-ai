@@ -538,11 +538,11 @@ function buildCorpusChats() {
     {
       id: CORPUS_UUID.chat(1),
       userId: CORPUS_PERSON.avery.id,
-      title: 'Last week recap',
+      title: 'Recent activity recap',
       createdAt: isoAt(0, '13:20:00'),
-      question: 'What did the team achieve last week?',
+      question: 'What did the team achieve recently?',
       answer: [
-        'Last week Acme shipped **atlas-0.8.0** with CSV preview replay [ev:EVENT_ATLAS].',
+        'Recently Acme shipped **atlas-0.8.0** with CSV preview replay [ev:EVENT_ATLAS].',
         'Avery opened the Northwind data room [ev:EVENT_DATAROOM].',
         'The Northstar pilot stayed on the CSV fallback after Elena Park delayed field-mapping [ev:EVENT_ELENA].',
         'Brightline Health moved to proposal on CSV plus evidence packs [ev:EVENT_BRIGHTLINE].',

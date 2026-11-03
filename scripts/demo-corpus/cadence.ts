@@ -768,10 +768,10 @@ export function buildCadenceBeats(): CadenceBeat[] {
     source: 'meeting',
     occurredAt: isoAt(-31, '09:32:00'),
     contentText:
-      'Meeting "Weekly product standup" completed on Google Meet. Importer 500s are the week-one fire. Northstar field-mapping is already the longer blocker.',
+      'Meeting "Daily product standup" completed on Google Meet. Importer 500s are the week-one fire. Northstar field-mapping is already the longer blocker.',
     extra: {
       provider: 'recall',
-      meeting_title: 'Weekly product standup',
+      meeting_title: 'Daily product standup',
       consent_confirmed: true,
     },
     payloadRef: 'inline://timeline/demo-seed/meeting/standup-2026-07-14',

@@ -1339,7 +1339,7 @@ async function insertMeetings(tx: SeedTx): Promise<void> {
         id: row.id,
         teamId: TEAM_ID,
         createdByUserId: row.createdByUserId,
-        savedMeetingId: row.title === 'Weekly product standup' ? CORPUS_SAVED_MEETING.id : null,
+        savedMeetingId: row.title === CORPUS_SAVED_MEETING.title ? CORPUS_SAVED_MEETING.id : null,
         provider: 'demo-fixture',
         platform: row.platform,
         meetingUrl: row.meetingUrl,
