@@ -67,6 +67,7 @@ import {
   takeDriveExtractSlot,
   takeDriveProcessSlot,
 } from '#src/integrations/google-drive-capture.js';
+import { buildDriveSnapshotLocate } from '#src/integrations/google-drive-diff.js';
 import { driveChangeJudgePrompt } from '#src/integrations/google-drive-judge.js';
 import { applyDbMigrations } from '#src/test/pglite.js';
 
@@ -602,6 +603,43 @@ describe('saveDriveSnapshot uniqueness', () => {
     const loaded = await scope.integrations.loadLatestDriveSnapshot(integration.id, 'file-9');
     expect(loaded).toMatchObject(snapshot);
     await expect(scope.integrations.listTeamEmailDomains()).resolves.toEqual(['example.com']);
+  });
+
+  it('persists and reloads the suffix plus chunk-hash locate index', async () => {
+    const [integration] = await db
+      .insert(integrations)
+      .values({
+        teamId: TEAM_ID,
+        connectedByUserId: USER_ID,
+        provider: 'google_drive',
+        displayName: 'Google Drive',
+        externalAccountId: 'drive-acct-locate',
+        visibilityDefault: 'team',
+      })
+      .returning();
+    if (!integration) throw new Error('integration insert failed');
+    const body = `${'A'.repeat(25_000)}Renewal amount is $48k for Northstar.`;
+    const snapshot = {
+      contentHash: hashDrivePayload(body),
+      snapshotText: body.slice(0, 20_000),
+      snapshotLocate: buildDriveSnapshotLocate(body),
+      commentsHash: 'comments-locate',
+      permissionsHash: 'permissions-locate',
+      mimeType: 'application/vnd.google-apps.document',
+    };
+    await saveDriveSnapshot(db as never, {
+      teamId: TEAM_ID,
+      integrationId: integration.id,
+      fileId: 'file-locate',
+      snapshot,
+    });
+    const loaded = await loadLatestDriveSnapshot(db as never, {
+      teamId: TEAM_ID,
+      integrationId: integration.id,
+      fileId: 'file-locate',
+    });
+    expect(loaded?.snapshotLocate).toEqual(snapshot.snapshotLocate);
+    expect(loaded?.snapshotLocate?.suffix).toContain('$48k');
   });
 
   it('resolves Drive object links for My Drive, shared drives, individual files, and missing ancestors', async () => {

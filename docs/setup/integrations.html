@@ -145,15 +145,17 @@ GOOGLE_DRIVE_WEBHOOK_SECRET=...</code></pre>
         </li>
         <li>
           File capture fetches text transiently, hashes the full extracted text, then stores a
-          truncated snapshot. Change detection diffs the full truncated 20k windows like-for-like
-          and always keeps added and removed hunks together. Prefix equivalence never proves the
-          suffix is unchanged: if the full-text hash moved and the stored window cannot prove the
-          change lies entirely inside that window, it falls back to a conservative changed hunk.
-          Full-text hashes still see edits past 20k chars. Formatting-only and tiny edits (Markdown
-          markers, not signed amounts such as <code>-50000 USD</code>) skip the LLM. Tiny vs
-          substantive uses the intra-line edited span, not the hunk context kept for the judge. Tiny
-          is only whitespace, punctuation-only, case-only, or a single-letter typo (edit distance 1)
-          inside one word longer than 3 characters; inserting or removing a whole word such as
+          truncated 20k prefix plus a suffix window and chunk-hash locate index. Change detection
+          diffs those stored windows like-for-like against the current full text and always keeps
+          added and removed hunks together. Prefix equivalence never proves the suffix is unchanged:
+          if the full-text hash moved, the suffix or chunk index locates the changed region and the
+          judge and event get bounded hunks taken from the current text — never a content-free
+          marker, and the baseline does not advance without that evidence. Full-text hashes still
+          see edits past 20k chars. Formatting-only and tiny edits (Markdown markers, not signed
+          amounts such as <code>-50000 USD</code>) skip the LLM. Tiny vs substantive uses the
+          intra-line edited span, not the hunk context kept for the judge. Tiny is only whitespace,
+          punctuation-only, case-only, or a single-letter typo (edit distance 1) inside one word
+          longer than 3 characters; inserting or removing a whole word such as
           <code>not</code> stays substantive. Remaining hunks bill a small CRM-relevance judge
           through <code>llm.chatStructured</code> / the existing AI meter. Judged event text packs
           comment evidence before hunks with a reserved budget so a long diff cannot drop comments
@@ -215,8 +217,9 @@ GOOGLE_DRIVE_WEBHOOK_SECRET=...</code></pre>
           before sandbox or billed vision spend; the post-diff judge stays at 8 processed files per
           doc and 200 per connection. Baseline captures consume extract budget, not the judge cap.
           Full Drive copies are not stored in the document drive. Apply
-          <code>0096_google_drive_v1.sql</code> and
-          <code>0097_google_drive_snapshot_uniqueness.sql</code> with the usual migration path.
+          <code>0096_google_drive_v1.sql</code>,
+          <code>0097_google_drive_snapshot_uniqueness.sql</code>, and
+          <code>0098_google_drive_snapshot_locate.sql</code> with the usual migration path.
         </li>
         <li>
           Google Cloud also needs the Drive API enabled, OAuth verification for

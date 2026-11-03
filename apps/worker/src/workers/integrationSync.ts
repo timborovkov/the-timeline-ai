@@ -1432,6 +1432,7 @@ export async function runOneIntegration(
           permissionsHash: input.permissionsHash ?? '',
           mimeType: input.mimeType,
           commentsSnapshot: Array.isArray(input.commentsSnapshot) ? input.commentsSnapshot : [],
+          snapshotLocate: input.snapshotLocate ?? null,
         });
       },
       listTeamEmailDomains() {

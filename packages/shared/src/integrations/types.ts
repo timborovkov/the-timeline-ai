@@ -225,6 +225,12 @@ export interface SyncContext {
     permissionsHash: string | null;
     mimeType: string | null;
     commentsSnapshot?: unknown;
+    snapshotLocate?: {
+      length: number;
+      suffix: string;
+      chunkSize: number;
+      chunkHashes: string[];
+    } | null;
   } | null>;
   saveDriveSnapshot?(input: {
     contentHash: string;
@@ -233,6 +239,12 @@ export interface SyncContext {
     permissionsHash: string | null;
     mimeType: string | null;
     commentsSnapshot?: unknown;
+    snapshotLocate?: {
+      length: number;
+      suffix: string;
+      chunkSize: number;
+      chunkHashes: string[];
+    } | null;
     fileId: string;
   }): Promise<void>;
   listTeamEmailDomains?(): Promise<string[]>;

@@ -2,18 +2,22 @@
  * Cheap deterministic Drive text comparison. Formatting-only and tiny edits
  * must never reach an LLM.
  *
- * Comparable text is the truncated 20k snapshot window. A last incomplete line
- * at the cap may be a clip artifact, but it is always inspected. Prefix
- * equivalence never proves the suffix is unchanged: if the full-text hash
- * moved and the stored window cannot prove the change lies entirely inside
- * that window, return changed (conservative). Added and removed hunks are
- * always collected together. The tiny/substantive threshold uses intra-line
- * edited spans, not hunk context kept for the judge. Tiny is only for edits
- * that are provably non-semantic: whitespace, punctuation-only, case-only, or
- * a single-letter typo (edit distance 1) inside one word longer than 3 chars.
- * Whole-word insertion or removal, digits, currency, and negation are
- * substantive even when the span is short.
+ * Stored evidence is a 20k prefix, a 20k suffix, and a chunk-hash index of the
+ * full extracted text. Capture always has the current full text, so the judge
+ * and event receive bounded hunks from that text around the changed region —
+ * never a content-free marker. Prefix equivalence never proves the suffix is
+ * unchanged. A hash change whose location is proven cosmetic (tiny/formatting)
+ * may skip. A hash change that cannot be located must not advance the baseline
+ * without real hunks. Added and removed hunks are always collected together.
+ * The tiny/substantive threshold uses intra-line edited spans, not hunk context
+ * kept for the judge. Tiny is only for edits that are provably non-semantic:
+ * whitespace, punctuation-only, case-only, or a single-letter typo (edit
+ * distance 1) inside one word longer than 3 chars. Whole-word insertion or
+ * removal, digits, currency, and negation are substantive even when the span
+ * is short.
  */
+
+import { createHash } from 'node:crypto';
 
 const WHITESPACE = /\s+/g;
 const MARKDOWN_MARKERS = /[_*`#>\[\]]/g;
@@ -22,11 +26,18 @@ const MARKDOWN_LINE_PREFIX = /^\s{0,3}(?:#{1,6}\s+|>\s+|[-*+]\s+)/;
 
 const DRIVE_DIFF_MIN_CHANGED_CHARS = 40;
 export const DRIVE_SNAPSHOT_MAX_CHARS = 20_000;
-export const DRIVE_BEYOND_SNAPSHOT_HUNK = 'Text changed past the stored snapshot window.';
+export const DRIVE_SNAPSHOT_CHUNK_CHARS = 4_096;
 const DRIVE_CAP_TAIL_SLACK = 1024;
 const DRIVE_HUNK_LINE_MAX = 400;
 const DRIVE_HUNK_HEAD_CHARS = 240;
 const DRIVE_HUNK_CONTEXT_CHARS = 80;
+
+export interface DriveSnapshotLocate {
+  length: number;
+  suffix: string;
+  chunkSize: number;
+  chunkHashes: string[];
+}
 
 type DriveDiffReason = 'identical' | 'formatting' | 'tiny' | 'substantive';
 
@@ -55,19 +66,52 @@ export function truncateDriveSnapshot(text: string, maxChars = DRIVE_SNAPSHOT_MA
   return text.slice(0, maxChars);
 }
 
-function beyondSnapshotDiff(): DriveTextDiff {
+function hashDriveChunk(text: string): string {
+  return createHash('sha256').update(text).digest('hex');
+}
+
+export function buildDriveSnapshotLocate(
+  text: string,
+  chunkSize = DRIVE_SNAPSHOT_CHUNK_CHARS,
+): DriveSnapshotLocate {
+  const size = chunkSize > 0 ? chunkSize : DRIVE_SNAPSHOT_CHUNK_CHARS;
+  const chunkHashes: string[] = [];
+  for (let offset = 0; offset < text.length; offset += size) {
+    chunkHashes.push(hashDriveChunk(text.slice(offset, offset + size)));
+  }
   return {
-    changed: true,
-    reason: 'substantive',
-    changedChars: 1,
-    hunks: [DRIVE_BEYOND_SNAPSHOT_HUNK],
+    length: text.length,
+    suffix: text.length <= DRIVE_SNAPSHOT_MAX_CHARS ? text : text.slice(-DRIVE_SNAPSHOT_MAX_CHARS),
+    chunkSize: size,
+    chunkHashes,
   };
 }
 
-function withProvenHunks(diff: DriveTextDiff): DriveTextDiff {
-  if (!diff.changed) return diff;
-  if (diff.hunks.length > 0) return diff;
-  return { ...diff, hunks: [DRIVE_BEYOND_SNAPSHOT_HUNK] };
+export function parseDriveSnapshotLocate(value: unknown): DriveSnapshotLocate | null {
+  if (!value || typeof value !== 'object') return null;
+  const record = value as Record<string, unknown>;
+  if (typeof record.length !== 'number' || !Number.isFinite(record.length) || record.length < 0) {
+    return null;
+  }
+  if (typeof record.suffix !== 'string') return null;
+  if (
+    typeof record.chunkSize !== 'number' ||
+    !Number.isFinite(record.chunkSize) ||
+    record.chunkSize <= 0
+  ) {
+    return null;
+  }
+  if (!Array.isArray(record.chunkHashes)) return null;
+  const chunkHashes = record.chunkHashes.filter(
+    (hash): hash is string => typeof hash === 'string' && hash.length > 0,
+  );
+  if (chunkHashes.length !== record.chunkHashes.length) return null;
+  return {
+    length: Math.floor(record.length),
+    suffix: record.suffix,
+    chunkSize: Math.floor(record.chunkSize),
+    chunkHashes,
+  };
 }
 
 /** Stored snapshots shorter than the cap are the entire extracted document. */
@@ -78,19 +122,34 @@ export function driveSnapshotWindowCoversFullText(previous: string, next: string
 /**
  * Prefix/window equivalence never proves the suffix is unchanged.
  *
- * A substantive window change already locates an edit inside the stored text.
- * Formatting-only or tiny window equivalence may skip only when the window is
- * the whole document, or when the full-text hash did not move. Otherwise a
- * hash change whose location cannot be proven returns a conservative hunk.
+ * A substantive prefix change already locates an edit inside the stored prefix.
+ * Formatting-only or tiny prefix equivalence may skip only when the stored
+ * windows cover the whole document, the full-text hash did not move, or the
+ * suffix/chunk index classified the remaining edit as skippable. A hash change
+ * that still needs evidence uses `locatedDiff` hunks taken from current text.
+ * Empty located hunks mean "do not advance the baseline".
  */
 export function resolveDriveSnapshotDiff(input: {
   windowDiff: DriveTextDiff;
   hashMoved: boolean;
   windowCoversFullText: boolean;
+  locatedDiff?: DriveTextDiff | null;
 }): DriveTextDiff {
-  if (input.windowDiff.changed) return withProvenHunks(input.windowDiff);
+  if (input.windowDiff.changed) return input.windowDiff;
   if (!input.hashMoved || input.windowCoversFullText) return input.windowDiff;
-  return beyondSnapshotDiff();
+  const located = input.locatedDiff;
+  if (!located) {
+    return { changed: true, reason: 'substantive', changedChars: 1, hunks: [] };
+  }
+  if (located.changed && located.hunks.length === 0) {
+    return { ...located, hunks: [] };
+  }
+  return located;
+}
+
+/** Skip classification is evidence; a changed diff needs at least one real hunk. */
+export function driveDiffHasEvidence(diff: DriveTextDiff): boolean {
+  return !diff.changed || diff.hunks.some((hunk) => hunk.trim().length > 0);
 }
 
 function splitCapWindow(text: string): { stable: string; tail: string } {
@@ -114,44 +173,20 @@ function tailsAreCapSlide(previousTail: string, nextTail: string): boolean {
 }
 
 function mergeWindowDiffs(stable: DriveTextDiff, tail: DriveTextDiff | null): DriveTextDiff {
-  if (!tail?.changed) return withProvenHunks(stable);
-  if (!stable.changed) return withProvenHunks(tail);
-  return withProvenHunks({
+  if (!tail?.changed) return stable;
+  if (!stable.changed) return tail;
+  return {
     changed: true,
     reason: 'substantive',
     changedChars: stable.changedChars + tail.changedChars,
     hunks: [...stable.hunks, ...tail.hunks].slice(0, 40),
-  });
+  };
 }
 
-/**
- * Compare stored snapshot text to the current truncated snapshot.
- *
- * Always inspect the full truncated window, including the last incomplete line
- * at the cap. That tail is ignored only when it is a clip/slide artifact.
- * Full-text hashes still see edits past 20k. `resolveDriveSnapshotDiff` is the
- * single invariant: a hash change the stored window cannot locate is changed.
- */
-export function diffDriveSnapshots(input: {
-  previousSnapshotText: string;
-  nextSnapshotText: string;
-  previousContentHash?: string | null;
-  nextContentHash: string;
-}): DriveTextDiff {
-  const previous = truncateDriveSnapshot(input.previousSnapshotText);
-  const next = truncateDriveSnapshot(input.nextSnapshotText);
-  const hashMoved =
-    Boolean(input.previousContentHash) && input.previousContentHash !== input.nextContentHash;
-  const windowCoversFullText = driveSnapshotWindowCoversFullText(previous, next);
-
+function diffPrefixWindows(previous: string, next: string): DriveTextDiff {
   if (previous === next) {
-    return resolveDriveSnapshotDiff({
-      windowDiff: { changed: false, reason: 'identical', changedChars: 0, hunks: [] },
-      hashMoved,
-      windowCoversFullText,
-    });
+    return { changed: false, reason: 'identical', changedChars: 0, hunks: [] };
   }
-
   const previousParts = splitCapWindow(previous);
   const nextParts = splitCapWindow(next);
   const stableDiff = diffDriveText(previousParts.stable, nextParts.stable);
@@ -161,10 +196,220 @@ export function diffDriveSnapshots(input: {
       ? null
       : diffDriveText(previousParts.tail, nextParts.tail);
   const provenUnchanged = !stableDiff.changed && (tailSlide || !tailDiff?.changed);
-  const windowDiff = provenUnchanged
-    ? stableDiff
-    : mergeWindowDiffs(stableDiff, tailSlide ? null : tailDiff);
-  return resolveDriveSnapshotDiff({ windowDiff, hashMoved, windowCoversFullText });
+  return provenUnchanged ? stableDiff : mergeWindowDiffs(stableDiff, tailSlide ? null : tailDiff);
+}
+
+function skipLocatedDiff(prefix: DriveTextDiff, suffix: DriveTextDiff | null): DriveTextDiff {
+  if (suffix && !suffix.changed && suffix.reason === 'tiny') return suffix;
+  if (!prefix.changed && prefix.reason === 'tiny') return prefix;
+  if (suffix && !suffix.changed && suffix.reason === 'formatting') return suffix;
+  if (!prefix.changed && prefix.reason === 'formatting') return prefix;
+  return prefix;
+}
+
+function collapseRepeatedRuns(text: string): string {
+  let result = '';
+  let index = 0;
+  while (index < text.length && result.length < DRIVE_HUNK_LINE_MAX) {
+    let end = index + 1;
+    while (end < text.length && text[end] === text[index]) end += 1;
+    const run = end - index;
+    if (run >= 32) {
+      result += (text[index] ?? '').repeat(8);
+    } else {
+      result += text.slice(index, end);
+    }
+    index = end;
+  }
+  return result;
+}
+
+function excerptAroundOffset(text: string, offset: number): string[] {
+  const chunk = text.slice(offset, offset + DRIVE_SNAPSHOT_CHUNK_CHARS);
+  const focused = collapseRepeatedRuns(chunk).trim();
+  if (focused.length > 0) return [truncateChangedLine(focused)];
+  const start = Math.max(0, offset - DRIVE_HUNK_CONTEXT_CHARS);
+  const end = Math.min(text.length, offset + DRIVE_SNAPSHOT_CHUNK_CHARS + DRIVE_HUNK_CONTEXT_CHARS);
+  const excerpt = text.slice(start, end).trim();
+  if (excerpt.length > 0) return [truncateChangedLine(excerpt)];
+  const tail = text.slice(Math.max(0, text.length - DRIVE_HUNK_LINE_MAX)).trim();
+  return tail.length > 0 ? [truncateChangedLine(tail)] : [];
+}
+
+/** Last-N suffix windows slide at the start when document length changes. */
+function alignCappedSuffix(
+  previousSuffix: string,
+  nextSuffix: string,
+  previousLength: number,
+  nextLength: number,
+): { previous: string; next: string } {
+  const delta = nextLength - previousLength;
+  if (delta === 0) return { previous: previousSuffix, next: nextSuffix };
+  if (
+    previousSuffix.length < DRIVE_SNAPSHOT_MAX_CHARS &&
+    nextSuffix.length < DRIVE_SNAPSHOT_MAX_CHARS
+  ) {
+    return { previous: previousSuffix, next: nextSuffix };
+  }
+  if (delta > 0 && previousSuffix.length >= DRIVE_SNAPSHOT_MAX_CHARS) {
+    return {
+      previous: previousSuffix.slice(Math.min(delta, previousSuffix.length)),
+      next: nextSuffix,
+    };
+  }
+  if (delta < 0 && nextSuffix.length >= DRIVE_SNAPSHOT_MAX_CHARS) {
+    return {
+      previous: previousSuffix,
+      next: nextSuffix.slice(Math.min(-delta, nextSuffix.length)),
+    };
+  }
+  return { previous: previousSuffix, next: nextSuffix };
+}
+
+function excerptPastPrefix(nextFull: string, prefixLength: number): DriveTextDiff {
+  const remaining = nextFull.slice(prefixLength);
+  const head = remaining.slice(0, DRIVE_HUNK_LINE_MAX).trim();
+  const tailStart = Math.max(prefixLength, nextFull.length - DRIVE_HUNK_LINE_MAX);
+  const tail = nextFull.slice(tailStart).trim();
+  const hunks = [
+    ...new Set(
+      [head, tail].filter((part) => part.length > 0).map((part) => truncateChangedLine(part)),
+    ),
+  ];
+  return {
+    changed: true,
+    reason: 'substantive',
+    changedChars: Math.max(1, remaining.length),
+    hunks,
+  };
+}
+
+function locateMiddleChange(
+  previous: DriveSnapshotLocate,
+  next: DriveSnapshotLocate,
+  nextFull: string,
+): DriveTextDiff | null {
+  const prefixEnd = Math.min(nextFull.length, DRIVE_SNAPSHOT_MAX_CHARS);
+  const suffixStart = Math.max(0, nextFull.length - DRIVE_SNAPSHOT_MAX_CHARS);
+  if (prefixEnd >= suffixStart) return null;
+  const chunkSize = previous.chunkSize > 0 ? previous.chunkSize : DRIVE_SNAPSHOT_CHUNK_CHARS;
+  const nextHashes =
+    next.chunkSize === chunkSize
+      ? next.chunkHashes
+      : buildDriveSnapshotLocate(nextFull, chunkSize).chunkHashes;
+  const first = Math.ceil(prefixEnd / chunkSize);
+  const lastExclusive = Math.floor(suffixStart / chunkSize);
+  for (let index = first; index < lastExclusive; index++) {
+    if (previous.chunkHashes[index] !== nextHashes[index]) {
+      const hunks = excerptAroundOffset(nextFull, index * chunkSize);
+      if (hunks.length === 0) return null;
+      return {
+        changed: true,
+        reason: 'substantive',
+        changedChars: Math.max(1, Math.abs(previous.length - nextFull.length) || chunkSize),
+        hunks,
+      };
+    }
+  }
+  if (previous.length !== nextFull.length) {
+    const hunks = excerptAroundOffset(nextFull, prefixEnd);
+    if (hunks.length === 0) return null;
+    return {
+      changed: true,
+      reason: 'substantive',
+      changedChars: Math.abs(previous.length - nextFull.length),
+      hunks,
+    };
+  }
+  return null;
+}
+
+function locateBeyondPrefix(input: {
+  prefixDiff: DriveTextDiff;
+  previousPrefix: string;
+  previousLocate: DriveSnapshotLocate | null;
+  nextFull: string;
+  nextLocate: DriveSnapshotLocate;
+}): DriveTextDiff {
+  const suffixCoversBeyondPrefix =
+    (input.previousLocate?.length ?? input.previousPrefix.length) > DRIVE_SNAPSHOT_MAX_CHARS ||
+    input.nextFull.length > DRIVE_SNAPSHOT_MAX_CHARS;
+  const suffixDiff = (() => {
+    if (!input.previousLocate || !suffixCoversBeyondPrefix) return null;
+    const raw = diffDriveText(input.previousLocate.suffix, input.nextLocate.suffix);
+    if (!raw.changed) return raw;
+    const aligned = alignCappedSuffix(
+      input.previousLocate.suffix,
+      input.nextLocate.suffix,
+      input.previousLocate.length,
+      input.nextLocate.length,
+    );
+    if (
+      aligned.previous === input.previousLocate.suffix &&
+      aligned.next === input.nextLocate.suffix
+    ) {
+      return raw;
+    }
+    const shifted = diffDriveText(aligned.previous, aligned.next);
+    if (!shifted.changed) return shifted;
+    return shifted.changedChars <= raw.changedChars ? shifted : raw;
+  })();
+  if (suffixDiff?.changed) return suffixDiff;
+  const skipped = skipLocatedDiff(input.prefixDiff, suffixDiff);
+  const middle =
+    input.previousLocate && suffixCoversBeyondPrefix
+      ? locateMiddleChange(input.previousLocate, input.nextLocate, input.nextFull)
+      : null;
+  if (middle?.changed && middle.hunks.length > 0) return middle;
+  if (input.previousLocate) return skipped;
+  const excerpt = excerptPastPrefix(input.nextFull, input.previousPrefix.length);
+  if (excerpt.hunks.length > 0) return excerpt;
+  return { changed: true, reason: 'substantive', changedChars: 1, hunks: [] };
+}
+
+/**
+ * Compare the previous stored windows to the current full extracted text.
+ *
+ * Always inspect the truncated prefix, including the last incomplete line at
+ * the cap. That tail is ignored only when it is a clip/slide artifact. When
+ * the prefix is skippable, locate the change in the stored suffix or chunk
+ * index and excerpt bounded hunks from the current text. `resolveDriveSnapshotDiff`
+ * is the single invariant: a hash change the stored windows cannot locate still
+ * needs real current-text hunks, never a content-free marker.
+ */
+export function diffDriveSnapshots(input: {
+  previousSnapshotText: string;
+  nextFullText: string;
+  nextSnapshotText?: string;
+  previousLocate?: DriveSnapshotLocate | null;
+  previousContentHash?: string | null;
+  nextContentHash: string;
+}): DriveTextDiff {
+  const nextFull = input.nextFullText;
+  const previous = truncateDriveSnapshot(input.previousSnapshotText);
+  const next = truncateDriveSnapshot(input.nextSnapshotText ?? nextFull);
+  const hashMoved =
+    Boolean(input.previousContentHash) && input.previousContentHash !== input.nextContentHash;
+  const previousLength = input.previousLocate?.length ?? previous.length;
+  const windowCoversFullText =
+    driveSnapshotWindowCoversFullText(previous, next) &&
+    previousLength < DRIVE_SNAPSHOT_MAX_CHARS &&
+    nextFull.length < DRIVE_SNAPSHOT_MAX_CHARS;
+  const prefixDiff = diffPrefixWindows(previous, next);
+  const nextLocate = buildDriveSnapshotLocate(nextFull);
+  const locatedDiff = locateBeyondPrefix({
+    prefixDiff,
+    previousPrefix: previous,
+    previousLocate: input.previousLocate ?? null,
+    nextFull,
+    nextLocate,
+  });
+  return resolveDriveSnapshotDiff({
+    windowDiff: prefixDiff,
+    hashMoved,
+    windowCoversFullText,
+    locatedDiff,
+  });
 }
 
 export function diffDriveText(previous: string, next: string): DriveTextDiff {
@@ -185,12 +430,12 @@ export function diffDriveText(previous: string, next: string): DriveTextDiff {
   ) {
     return { changed: false, reason: 'tiny', changedChars: edit.chars, hunks };
   }
-  return withProvenHunks({
+  return {
     changed: true,
     reason: 'substantive',
     changedChars: edit.chars,
     hunks,
-  });
+  };
 }
 
 function nonemptyLines(text: string): string[] {

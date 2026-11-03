@@ -29,7 +29,7 @@ const { DRIVE_EVENT_CONTENT_MAX_CHARS, googleDriveProvider, packDriveEventConten
 const { DRIVE_FILE_DEBOUNCE_MS, DRIVE_TRANSIENT_RESULT_TOO_LARGE, hashDrivePayload } =
   await import('#src/integrations/google-drive-capture.js');
 const { driveCommentsHashEntries } = await import('#src/integrations/google-drive-comments.js');
-const { DRIVE_BEYOND_SNAPSHOT_HUNK, DRIVE_SNAPSHOT_MAX_CHARS } =
+const { DRIVE_SNAPSHOT_MAX_CHARS, buildDriveSnapshotLocate } =
   await import('#src/integrations/google-drive-diff.js');
 
 const ORIGINAL_ENV = {
@@ -1270,6 +1270,7 @@ describe('googleDriveProvider', () => {
       loadLatestDriveSnapshot: vi.fn().mockResolvedValue({
         contentHash: hashDrivePayload(previousFull),
         snapshotText: prefix,
+        snapshotLocate: buildDriveSnapshotLocate(previousFull),
         commentsHash: driveCommentsHash([]),
         permissionsHash: drivePermissionsHash([]),
         mimeType: 'application/vnd.google-apps.document',
@@ -1291,12 +1292,22 @@ describe('googleDriveProvider', () => {
         mock: { calls: [{ hunks: string[] }][] };
       }
     ).mock.calls[0]?.[0];
-    expect(judgeInput?.hunks).toEqual([DRIVE_BEYOND_SNAPSHOT_HUNK]);
-    expect(judgeInput?.hunks.join(' ')).not.toContain('$48k');
+    expect(judgeInput?.hunks.join(' ')).toContain('$48k');
+    expect(judgeInput?.hunks.join(' ')).not.toContain(
+      'Text changed past the stored snapshot window.',
+    );
+    expect(ctx.writeEvents).toHaveBeenCalled();
+    const written = (
+      ctx.writeEvents as unknown as {
+        mock: { calls: [{ contentText: string }[]][] };
+      }
+    ).mock.calls[0]?.[0]?.[0];
+    expect(written?.contentText).toContain('$48k');
     expect(ctx.saveDriveSnapshot).toHaveBeenCalledWith(
       expect.objectContaining({
         contentHash: hashDrivePayload(nextFull),
         snapshotText: prefix,
+        snapshotLocate: buildDriveSnapshotLocate(nextFull),
       }),
     );
     const saved = (
@@ -1308,7 +1319,7 @@ describe('googleDriveProvider', () => {
     expect(saved?.contentHash).not.toBe(hashDrivePayload(prefix));
   });
 
-  it('judges a whitespace-only prefix edit on a document longer than the snapshot bound when the hash moved', async () => {
+  it('skips a whitespace-only prefix edit on a long document when the suffix window is unchanged', async () => {
     const paragraph = 'Contract amount is forty eight thousand dollars for Northstar.\n';
     const previousFull = paragraph.repeat(500);
     const nextFull = previousFull.replace('forty eight', 'forty  eight');
@@ -1341,6 +1352,62 @@ describe('googleDriveProvider', () => {
       loadLatestDriveSnapshot: vi.fn().mockResolvedValue({
         contentHash: hashDrivePayload(previousFull),
         snapshotText: previousFull.slice(0, DRIVE_SNAPSHOT_MAX_CHARS),
+        snapshotLocate: buildDriveSnapshotLocate(previousFull),
+        commentsHash: driveCommentsHash([]),
+        permissionsHash: drivePermissionsHash([]),
+        mimeType: 'application/vnd.google-apps.document',
+      }),
+    });
+
+    await googleDriveProvider.incrementalSync({
+      integration: { id: 'integration-1', teamId: 'team-1' } as never,
+      tokens: { access_token: 'access-token', expires_at: Date.now() + 600_000 },
+      selections: [{ kind: 'drive.file', externalId: 'file-1' }],
+      ctx: ctx,
+      target: { resourceType: 'drive.file', externalId: 'file-1' },
+    });
+
+    expect(ctx.judgeDriveChange).not.toHaveBeenCalled();
+    expect(ctx.writeEvents).not.toHaveBeenCalled();
+    expect(ctx.recordAudit).toHaveBeenCalledWith(
+      'drive_change_skipped',
+      expect.objectContaining({ reason: 'formatting' }),
+    );
+  });
+
+  it('judges a renewal amount changed at char 25k and writes it on the event', async () => {
+    const previousFull = `${'A'.repeat(25_000)}Renewal amount is $12k for Northstar.\n${'B'.repeat(200)}`;
+    const nextFull = `${'A'.repeat(25_000)}Renewal amount is $48k for Northstar.\n${'B'.repeat(200)}`;
+    expect(previousFull.indexOf('$12k')).toBeGreaterThan(DRIVE_SNAPSHOT_MAX_CHARS);
+    const fetch = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((input) => {
+      const url = requestUrl(input);
+      if (url.pathname.includes('/export')) {
+        return Promise.resolve(new Response(nextFull, { status: 200 }));
+      }
+      if (url.pathname.endsWith('/files/file-1')) {
+        return Promise.resolve(
+          jsonResponse({
+            id: 'file-1',
+            name: 'SOW',
+            mimeType: 'application/vnd.google-apps.document',
+            parents: ['root'],
+            modifiedTime: '2026-06-20T10:00:00.000Z',
+          }),
+        );
+      }
+      if (url.pathname.endsWith('/comments')) {
+        return Promise.resolve(jsonResponse({ comments: [] }));
+      }
+      return Promise.resolve(jsonResponse({ permissions: [] }));
+    });
+    vi.stubGlobal('fetch', fetch);
+    const ctx = syncContext({
+      loadLatestDriveSnapshot: vi.fn().mockResolvedValue({
+        contentHash: hashDrivePayload(previousFull),
+        snapshotText: previousFull.slice(0, DRIVE_SNAPSHOT_MAX_CHARS),
+        snapshotLocate: buildDriveSnapshotLocate(previousFull),
         commentsHash: driveCommentsHash([]),
         permissionsHash: drivePermissionsHash([]),
         mimeType: 'application/vnd.google-apps.document',
@@ -1361,8 +1428,72 @@ describe('googleDriveProvider', () => {
         mock: { calls: [{ hunks: string[] }][] };
       }
     ).mock.calls[0]?.[0];
-    expect(judgeInput?.hunks).toEqual([DRIVE_BEYOND_SNAPSHOT_HUNK]);
-    expect(ctx.writeEvents).toHaveBeenCalled();
+    expect(judgeInput?.hunks.join(' ')).toContain('$48k');
+    expect(judgeInput?.hunks.join(' ')).not.toContain(
+      'Text changed past the stored snapshot window.',
+    );
+    const written = (
+      ctx.writeEvents as unknown as {
+        mock: { calls: [{ contentText: string }[]][] };
+      }
+    ).mock.calls[0]?.[0]?.[0];
+    expect(written?.contentText).toContain('$48k');
+    expect(ctx.saveDriveSnapshot).toHaveBeenCalled();
+  });
+
+  it('skips a cosmetic suffix punctuation edit instead of judging it as substantive', async () => {
+    const previousFull = `${'A'.repeat(25_000)}Status is open\n${'B'.repeat(200)}`;
+    const nextFull = `${'A'.repeat(25_000)}Status is open.\n${'B'.repeat(200)}`;
+    const fetch = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((input) => {
+      const url = requestUrl(input);
+      if (url.pathname.includes('/export')) {
+        return Promise.resolve(new Response(nextFull, { status: 200 }));
+      }
+      if (url.pathname.endsWith('/files/file-1')) {
+        return Promise.resolve(
+          jsonResponse({
+            id: 'file-1',
+            name: 'SOW',
+            mimeType: 'application/vnd.google-apps.document',
+            parents: ['root'],
+            modifiedTime: '2026-06-20T10:00:00.000Z',
+          }),
+        );
+      }
+      if (url.pathname.endsWith('/comments')) {
+        return Promise.resolve(jsonResponse({ comments: [] }));
+      }
+      return Promise.resolve(jsonResponse({ permissions: [] }));
+    });
+    vi.stubGlobal('fetch', fetch);
+    const ctx = syncContext({
+      loadLatestDriveSnapshot: vi.fn().mockResolvedValue({
+        contentHash: hashDrivePayload(previousFull),
+        snapshotText: previousFull.slice(0, DRIVE_SNAPSHOT_MAX_CHARS),
+        snapshotLocate: buildDriveSnapshotLocate(previousFull),
+        commentsHash: driveCommentsHash([]),
+        permissionsHash: drivePermissionsHash([]),
+        mimeType: 'application/vnd.google-apps.document',
+      }),
+    });
+
+    await googleDriveProvider.incrementalSync({
+      integration: { id: 'integration-1', teamId: 'team-1' } as never,
+      tokens: { access_token: 'access-token', expires_at: Date.now() + 600_000 },
+      selections: [{ kind: 'drive.file', externalId: 'file-1' }],
+      ctx: ctx,
+      target: { resourceType: 'drive.file', externalId: 'file-1' },
+    });
+
+    expect(ctx.judgeDriveChange).not.toHaveBeenCalled();
+    expect(ctx.writeEvents).not.toHaveBeenCalled();
+    expect(ctx.recordAudit).toHaveBeenCalledWith(
+      'drive_change_skipped',
+      expect.objectContaining({ reason: 'tiny' }),
+    );
+    expect(ctx.saveDriveSnapshot).toHaveBeenCalled();
   });
 
   it('judges an appended contract-signing paragraph instead of saving it as formatting', async () => {

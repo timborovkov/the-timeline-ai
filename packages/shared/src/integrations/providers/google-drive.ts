@@ -18,7 +18,13 @@ import {
   parseDriveCommentSnapshots,
   type DriveComment,
 } from '#src/integrations/google-drive-comments.js';
-import { diffDriveSnapshots, truncateDriveSnapshot } from '#src/integrations/google-drive-diff.js';
+import {
+  buildDriveSnapshotLocate,
+  diffDriveSnapshots,
+  driveDiffHasEvidence,
+  parseDriveSnapshotLocate,
+  truncateDriveSnapshot,
+} from '#src/integrations/google-drive-diff.js';
 import {
   DRIVE_FILE_KIND,
   DRIVE_FOLDER_KIND,
@@ -732,6 +738,7 @@ async function persistDriveSnapshot(
     permissionsHash: string;
     mimeType: string;
     commentsSnapshot: ReturnType<typeof compactDriveComments>;
+    snapshotLocate: ReturnType<typeof buildDriveSnapshotLocate>;
   },
 ): Promise<void> {
   if (!ctx.saveDriveSnapshot) return;
@@ -969,6 +976,7 @@ async function processDriveFile(
 
   const fullText = loaded.text;
   const snapshotText = truncateDriveSnapshot(fullText);
+  const snapshotLocate = buildDriveSnapshotLocate(fullText);
   const contentHash = hashDrivePayload(fullText);
   const commentsHash = commentsFingerprint(comments);
   const permissionsHash = permissionsFingerprint(permissions);
@@ -982,13 +990,15 @@ async function processDriveFile(
   ];
   const diff = diffDriveSnapshots({
     previousSnapshotText: previous?.snapshotText ?? '',
-    nextSnapshotText: snapshotText,
+    previousLocate: parseDriveSnapshotLocate(previous?.snapshotLocate),
+    nextFullText: fullText,
     nextContentHash: contentHash,
     ...(previous?.contentHash ? { previousContentHash: previous.contentHash } : {}),
   });
   const snapshot = {
     contentHash,
     snapshotText,
+    snapshotLocate,
     commentsHash,
     permissionsHash,
     mimeType: file.mimeType,
@@ -1004,6 +1014,15 @@ async function processDriveFile(
     await persistDriveSnapshot(ctx, file.id, snapshot);
     await consumeReadyDriveExtract(ctx, file.id, loaded);
     await ctx.recordAudit('drive_baseline_saved', { file_id: fileId });
+    return;
+  }
+
+  if (!driveDiffHasEvidence(diff) && strongSignals.length === 0) {
+    await consumeReadyDriveExtract(ctx, file.id, loaded);
+    await ctx.recordAudit('drive_change_skipped', {
+      file_id: fileId,
+      reason: 'no_evidence',
+    });
     return;
   }
 

@@ -14,6 +14,10 @@ import { and, asc, desc, eq, gt, inArray, isNull, notInArray, or, sql } from 'dr
 
 import { parseDriveCommentSnapshots } from '#src/integrations/google-drive-comments.js';
 import {
+  parseDriveSnapshotLocate,
+  type DriveSnapshotLocate,
+} from '#src/integrations/google-drive-diff.js';
+import {
   checkRateLimit,
   RATE_LIMITS,
   rateLimitKey,
@@ -38,6 +42,7 @@ export interface DriveSnapshotRecord {
   permissionsHash: string;
   mimeType: string | null;
   commentsSnapshot?: unknown;
+  snapshotLocate?: DriveSnapshotLocate | null;
 }
 
 export function driveDebouncePlan(
@@ -555,6 +560,7 @@ export async function loadLatestDriveSnapshot(
       permissionsHash: googleDriveFileSnapshots.permissionsHash,
       commentsSnapshot: googleDriveFileSnapshots.commentsSnapshot,
       mimeType: googleDriveFileSnapshots.mimeType,
+      snapshotLocate: googleDriveFileSnapshots.snapshotLocate,
     })
     .from(googleDriveFileSnapshots)
     .where(
@@ -566,7 +572,11 @@ export async function loadLatestDriveSnapshot(
     )
     .orderBy(desc(googleDriveFileSnapshots.createdAt))
     .limit(1);
-  return row ?? null;
+  if (!row) return null;
+  return {
+    ...row,
+    snapshotLocate: parseDriveSnapshotLocate(row.snapshotLocate),
+  };
 }
 
 export async function saveDriveSnapshot(
@@ -590,6 +600,7 @@ export async function saveDriveSnapshot(
       permissionsHash: input.snapshot.permissionsHash,
       commentsSnapshot: parseDriveCommentSnapshots(input.snapshot.commentsSnapshot),
       mimeType: input.snapshot.mimeType,
+      snapshotLocate: parseDriveSnapshotLocate(input.snapshot.snapshotLocate),
     })
     .onConflictDoUpdate({
       target: [
@@ -601,6 +612,7 @@ export async function saveDriveSnapshot(
       ],
       set: {
         snapshotText: sql`excluded.snapshot_text`,
+        snapshotLocate: sql`excluded.snapshot_locate`,
         commentsSnapshot: sql`excluded.comments_snapshot`,
         mimeType: sql`excluded.mime_type`,
         // Revisit of a retained fingerprint must become the latest baseline.
