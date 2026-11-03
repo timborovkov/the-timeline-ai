@@ -72,7 +72,7 @@ codex
 
 Run this in the terminal you will use for Codex. The final command launches Codex with the key available; start a new task there.
 
-A default key exposes only team-visible retrieval. Private and specific-user events remain unavailable because the key represents the team, not a member. The optional **Allow Timeline agent** key setting adds `agent:ask`; it enables paid, stateless agent turns that may call enabled team-shared custom MCP tools and create proposals for human review, but it does not grant direct canonical writes. Third-party MCP tools may have their own external side effects.
+A default key exposes only team-visible retrieval. Private and specific-user events remain unavailable because the key represents the team, not a member. The optional **Allow Timeline agent** key setting adds `agent:ask`; it enables paid, stateless agent turns that may call enabled team-shared custom MCP tools and create proposals for human review, but it does not grant direct canonical writes. `timeline.remember` is available with the default `read` scope and stores cited ingest evidence only. Third-party MCP tools may have their own external side effects.
 
 Keep the key in an environment variable; do not paste it into agent chats, repository files, or shell command arguments. Some clients require the header in local JSON. Treat that file as a secret, keep it out of repositories and shared folders, and follow the client's secure credential-storage guidance.
 
@@ -102,4 +102,4 @@ claude plugin update timeline@timeline
 
 ## Included skill
 
-- [`timeline`](./timeline/SKILL.md) — route workspace questions to the relevant Timeline MCP tools, expand material evidence, and answer with citations and explicit uncertainty.
+- [`timeline`](./timeline/SKILL.md) — route workspace questions to `timeline.search`, `timeline.get`, `timeline.subject`, `timeline.ask`, and `timeline.remember`; expand material evidence; and answer with citations and explicit uncertainty.

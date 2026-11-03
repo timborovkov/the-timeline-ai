@@ -30,11 +30,14 @@ const { PGlite } = await import('@electric-sql/pglite');
 const {
   agentSuggestionItems,
   agentSuggestions,
+  entities,
   mcpOutboundKeys,
   mcpOutboundOAuthClients,
   mcpOutboundOAuthGrants,
   mcpOutboundOAuthTokens,
+  objectChanges,
   rawEvents,
+  reconciliationEvidence,
   teamMembers,
 } = await import('@timeline/db');
 const { and, eq } = await import('drizzle-orm');
@@ -69,6 +72,7 @@ const UNTRUSTED_EVENT = 'dddddddd-dddd-4ddd-8ddd-ddddddddddd4';
 const GITHUB_SEARCH_EVENT = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee1';
 const SENTRY_SEARCH_EVENT = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee2';
 const STALE_MONDAY_SEARCH_EVENT = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee3';
+const UUID_RE_TEST = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function handleMcpRequest(
   context: Omit<Parameters<typeof handleTimelineMcpRequest>[0], 'expectedResource'>,
@@ -222,6 +226,7 @@ async function callTool(
   db: ReturnType<typeof drizzle>,
   name: string,
   args: Record<string, unknown>,
+  deps: Parameters<typeof handleMcpRequest>[2] = {},
 ): Promise<unknown> {
   const response = await handleMcpRequest(
     { db: db as never, bearer: TOKEN },
@@ -231,6 +236,7 @@ async function callTool(
       method: 'tools/call',
       params: { name, arguments: args },
     },
+    deps,
   );
   if (!response || !('result' in response)) return response;
   const content = response.result as { content: { text: string }[] };
@@ -342,7 +348,7 @@ describe('handleMcpRequest', () => {
       result: {
         capabilities: { tools: {}, resources: {}, prompts: {} },
         protocolVersion: '2025-06-18',
-        serverInfo: { name: 'the-timeline', version: '0.2.0' },
+        serverInfo: { name: 'the-timeline', version: '0.3.0' },
       },
     });
   });
@@ -351,19 +357,17 @@ describe('handleMcpRequest', () => {
     const recap = await getPrompt(db, 'summarize_recent');
     const changed = await getPrompt(db, 'what_changed', { name: 'Northstar' });
 
-    expect(recap).toContain('timeline.resolve_time_context');
-    expect(recap).toContain('timeline.list_moments');
-    expect(recap).toContain('timeline.search_moments');
-    expect(recap).toContain('timeline.get_moment');
+    expect(recap).toContain('timePhrase="this week"');
+    expect(recap).toContain('surface="moments"');
+    expect(recap).toContain('timeline.get');
     expect(recap).toContain('discard semantic hits outside the resolved window');
     expect(recap).toContain('cite consequential claims');
     expect(recap).not.toContain('timeline.list_events');
     expect(recap).not.toContain('timeline.search_events');
 
-    expect(changed).toContain('timeline.retrieve_workspace_context for Northstar');
-    expect(changed).toContain('timeline.list_moments');
-    expect(changed).toContain('timeline.search_moments');
-    expect(changed).toContain('timeline.get_moment');
+    expect(changed).toContain('timeline.subject for Northstar');
+    expect(changed).toContain('surface="moments"');
+    expect(changed).toContain('timeline.get');
     expect(changed).toContain('discard semantic hits outside that window');
     expect(changed).toContain('canonical current state');
     expect(changed).toContain('cite visible evidence');
@@ -400,7 +404,8 @@ describe('handleMcpRequest', () => {
       },
     ]);
 
-    const result = await callTool(db, 'timeline.get_integration_resource', {
+    const result = await callTool(db, 'timeline.get', {
+      kind: 'integration_resource',
       provider: 'monday',
       externalObjectId: 'item-1',
     });
@@ -431,8 +436,9 @@ describe('handleMcpRequest', () => {
       },
     });
 
-    const getResult = (await callTool(db, 'timeline.get_event', {
-      id: UNTRUSTED_EVENT,
+    const getResult = (await callTool(db, 'timeline.get', {
+      kind: 'event',
+      ref: UNTRUSTED_EVENT,
     })) as {
       event: {
         id: string;
@@ -443,7 +449,8 @@ describe('handleMcpRequest', () => {
         source_metadata: string;
       };
     };
-    const listResult = (await callTool(db, 'timeline.list_events', {
+    const listResult = (await callTool(db, 'timeline.search', {
+      surface: 'events',
       source: 'integration',
     })) as {
       events: {
@@ -536,7 +543,8 @@ describe('handleMcpRequest', () => {
       },
     );
 
-    const result = (await callTool(db, 'timeline.search_integration_events', {
+    const result = (await callTool(db, 'timeline.search', {
+      surface: 'integrations',
       query: 'launch regression',
       provider: 'sentry',
       limit: 1,
@@ -567,7 +575,8 @@ describe('handleMcpRequest', () => {
       }),
     );
 
-    const genericResult = (await callTool(db, 'timeline.search_events', {
+    const genericResult = (await callTool(db, 'timeline.search', {
+      surface: 'events',
       query: 'launch regression',
       limit: 1,
     })) as { results: { event_id: string; citation: string }[] };
@@ -615,7 +624,8 @@ describe('handleMcpRequest', () => {
       },
     );
 
-    const result = (await callTool(db, 'timeline.search_integration_events', {
+    const result = (await callTool(db, 'timeline.search', {
+      surface: 'integrations',
       query: 'launch update',
     })) as {
       count: number;
@@ -673,7 +683,7 @@ describe('handleMcpRequest', () => {
     expect(initialized.payload).toMatchObject({
       result: {
         protocolVersion: '2025-11-25',
-        serverInfo: { name: 'the-timeline', version: '0.2.0' },
+        serverInfo: { name: 'the-timeline', version: '0.3.0' },
       },
     });
 
@@ -739,7 +749,7 @@ describe('handleMcpRequest', () => {
       id: 2,
       method: 'tools/call',
       params: {
-        name: 'timeline.ask_agent',
+        name: 'timeline.ask',
         arguments: { question: 'What changed?' },
         _meta: {
           'io.modelcontextprotocol/protocolVersion': '2026-07-28',
@@ -759,27 +769,27 @@ describe('handleMcpRequest', () => {
         body: JSON.stringify(requestBody),
       });
 
-    await expect(
-      isValidatedCurrentTimelineAgentCall(currentRequest('timeline.ask_agent')),
-    ).resolves.toBe(true);
+    await expect(isValidatedCurrentTimelineAgentCall(currentRequest('timeline.ask'))).resolves.toBe(
+      true,
+    );
     await expect(
       isValidatedCurrentTimelineAgentCall(
-        currentRequest(`=?base64?${Buffer.from('timeline.ask_agent').toString('base64')}?=`),
+        currentRequest(`=?base64?${Buffer.from('timeline.ask').toString('base64')}?=`),
       ),
     ).resolves.toBe(true);
     await expect(
       isValidatedCurrentTimelineAgentCall(
-        currentRequest('timeline.ask_agent', {
+        currentRequest('timeline.ask', {
           ...body,
-          params: { ...body.params, name: 'timeline.list_events' },
+          params: { ...body.params, name: 'timeline.search' },
         }),
       ),
     ).resolves.toBe(false);
     await expect(
       isValidatedCurrentTimelineAgentCall(
-        currentRequest('timeline.ask_agent', {
+        currentRequest('timeline.ask', {
           ...body,
-          params: { name: 'timeline.ask_agent', arguments: { question: 'What changed?' } },
+          params: { name: 'timeline.ask', arguments: { question: 'What changed?' } },
         }),
       ),
     ).resolves.toBe(false);
@@ -889,7 +899,7 @@ describe('handleMcpRequest', () => {
       jsonrpc: '2.0',
       id: 1,
       method: 'tools/call',
-      params: { name: 'timeline.ask_agent', arguments: { question: 'What changed?' } },
+      params: { name: 'timeline.ask', arguments: { question: 'What changed?' } },
     });
     const result = (response.payload?.result ?? {}) as {
       isError?: boolean;
@@ -923,7 +933,7 @@ describe('handleMcpRequest', () => {
       jsonrpc: '2.0',
       id: 1,
       method: 'tools/call',
-      params: { name: 'timeline.get_event', arguments: { id: privateEventId } },
+      params: { name: 'timeline.get', arguments: { kind: 'event', ref: privateEventId } },
     };
     const staticResult = await invokeHttp(db, principal('api_key'), request);
     const oauthResult = await invokeHttp(db, principal('oauth'), request);
@@ -947,7 +957,7 @@ describe('handleMcpRequest', () => {
     );
 
     const tools = toolsListResult(response).tools;
-    const askAgent = tools.find((tool) => tool.name === 'timeline.ask_agent');
+    const askAgent = tools.find((tool) => tool.name === 'timeline.ask');
     expect(askAgent).toMatchObject({
       title: 'Ask Timeline Agent',
       annotations: {
@@ -968,11 +978,11 @@ describe('handleMcpRequest', () => {
       minLength: 1,
       maxLength: 8_000,
     });
-    const listEvents = tools.find((tool) => tool.name === 'timeline.list_events');
-    expect(listEvents).toMatchObject({
-      title: 'List Timeline Events',
+    const search = tools.find((tool) => tool.name === 'timeline.search');
+    expect(search).toMatchObject({
+      title: 'Search Timeline',
       annotations: {
-        title: 'List Timeline Events',
+        title: 'Search Timeline',
         readOnlyHint: true,
         destructiveHint: false,
         idempotentHint: true,
@@ -981,43 +991,53 @@ describe('handleMcpRequest', () => {
       securitySchemes: [{ type: 'oauth2', scopes: ['read'] }],
       _meta: { securitySchemes: [{ type: 'oauth2', scopes: ['read'] }] },
     });
-    expect(listEvents?.outputSchema).toMatchObject({ type: 'object' });
-    expect(listEvents?.inputSchema.properties?.source?.enum).toEqual(
+    expect(search?.outputSchema).toMatchObject({ type: 'object' });
+    expect(search?.inputSchema.properties?.source?.enum).toEqual(
       expect.arrayContaining(['calendar', 'slack', 'ingest_webhook']),
     );
     const categories = [...TASK_CATEGORIES];
-    const searchObjects = tools.find((tool) => tool.name === 'timeline.search_objects');
-    const categorySchema = searchObjects?.inputSchema.properties?.category;
+    const categorySchema = search?.inputSchema.properties?.category;
     const searchCategorySchemas = categorySchema?.oneOf ?? categorySchema?.anyOf ?? [];
     expect(searchCategorySchemas[0]?.enum).toEqual(categories);
     expect(searchCategorySchemas[1]?.items?.enum).toEqual(categories);
-    for (const toolName of ['timeline.list_objects', 'timeline.list_tasks']) {
-      const tool = tools.find((candidate) => candidate.name === toolName);
-      expect(tool?.inputSchema.properties?.category?.enum).toEqual(categories);
-    }
-    expect(tools.map((tool) => tool.name)).toEqual(
-      expect.arrayContaining([
-        'timeline.retrieve_workspace_context',
-        'timeline.search_moments',
-        'timeline.list_moments',
-        'timeline.get_moment',
-        'timeline.get_object',
-        'timeline.search_objects',
-        'timeline.list_objects',
-        'timeline.list_tasks',
-        'timeline.search_boards',
-        'timeline.search_documents_structured',
-        'timeline.get_document',
-        'timeline.get_document_chunk',
-        'timeline.list_recent_document_changes',
-        'timeline.list_calendar_events',
-        'timeline.get_calendar_event',
-        'timeline.resolve_time_context',
-        'timeline.list_integrations',
-        'timeline.search_integration_events',
-        'timeline.get_integration_resource',
-      ]),
+    const remember = tools.find((tool) => tool.name === 'timeline.remember');
+    expect(remember).toMatchObject({
+      title: 'Remember In Timeline',
+      annotations: {
+        title: 'Remember In Timeline',
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: false,
+        openWorldHint: false,
+      },
+      securitySchemes: [{ type: 'oauth2', scopes: ['read'] }],
+    });
+    expect(tools.map((tool) => tool.name).sort()).toEqual(
+      [
+        'timeline.ask',
+        'timeline.get',
+        'timeline.remember',
+        'timeline.search',
+        'timeline.subject',
+      ].sort(),
     );
+    expect(tools.map((tool) => tool.name)).not.toContain('timeline.list_events');
+    expect(tools.map((tool) => tool.name)).not.toContain('timeline.ask_agent');
+  });
+
+  it('loads a subject hub without mutating workspace records', async () => {
+    const result = (await callTool(db, 'timeline.subject', { subject: 'Northstar' })) as {
+      subject: string;
+      entity: unknown;
+      object: unknown;
+      context: unknown;
+      moments: unknown;
+    };
+    expect(result.subject).toBe('Northstar');
+    expect(result).toHaveProperty('entity');
+    expect(result).toHaveProperty('object');
+    expect(result).toHaveProperty('context');
+    expect(result).toHaveProperty('moments');
   });
 
   it('exposes ask_agent for consent discovery and rejects a static read-only key', async () => {
@@ -1027,7 +1047,7 @@ describe('handleMcpRequest', () => {
         jsonrpc: '2.0',
         id: 1,
         method: 'tools/call',
-        params: { name: 'timeline.ask_agent', arguments: { question: 'What changed?' } },
+        params: { name: 'timeline.ask', arguments: { question: 'What changed?' } },
       },
     );
 
@@ -1071,7 +1091,7 @@ describe('handleMcpRequest', () => {
         jsonrpc: '2.0',
         id: 1,
         method: 'tools/call',
-        params: { name: 'timeline.ask_agent', arguments: { question: '  What changed?  ' } },
+        params: { name: 'timeline.ask', arguments: { question: '  What changed?  ' } },
       },
       { askAgent: askAgent as never, checkRateLimit },
     );
@@ -1170,7 +1190,7 @@ describe('handleMcpRequest', () => {
         jsonrpc: '2.0',
         id: 1,
         method: 'tools/call',
-        params: { name: 'timeline.ask_agent', arguments: { question: 'What changed?' } },
+        params: { name: 'timeline.ask', arguments: { question: 'What changed?' } },
       },
       { askAgent, checkRateLimit },
     );
@@ -1200,7 +1220,7 @@ describe('handleMcpRequest', () => {
         jsonrpc: '2.0',
         id: 1,
         method: 'tools/call',
-        params: { name: 'timeline.ask_agent', arguments: { question: 'What changed?' } },
+        params: { name: 'timeline.ask', arguments: { question: 'What changed?' } },
       },
       { askAgent, checkRateLimit },
     );
@@ -1259,7 +1279,7 @@ describe('handleMcpRequest', () => {
         jsonrpc: '2.0',
         id: 1,
         method: 'tools/call',
-        params: { name: 'timeline.ask_agent', arguments: { question: 'What changed?' } },
+        params: { name: 'timeline.ask', arguments: { question: 'What changed?' } },
       },
     );
     const challenge = (
@@ -1329,9 +1349,7 @@ describe('handleMcpRequest', () => {
       { jsonrpc: '2.0', id: 1, method: 'tools/list' },
     );
 
-    const askTool = toolsListResult(response).tools.find(
-      (tool) => tool.name === 'timeline.ask_agent',
-    );
+    const askTool = toolsListResult(response).tools.find((tool) => tool.name === 'timeline.ask');
     expect(askTool?.inputSchema.properties).toHaveProperty('question');
     expect(askTool?.securitySchemes).toEqual([{ type: 'oauth2', scopes: ['read', 'agent:ask'] }]);
   });
@@ -1341,7 +1359,7 @@ describe('handleMcpRequest', () => {
       jsonrpc: '2.0' as const,
       id: 1,
       method: 'tools/call',
-      params: { name: 'timeline.ask_agent', arguments: { question: 'What changed?' } },
+      params: { name: 'timeline.ask', arguments: { question: 'What changed?' } },
     };
     const output = async (
       context: Parameters<typeof handleMcpRequest>[0],
@@ -1400,7 +1418,7 @@ describe('handleMcpRequest', () => {
       { askAgent },
       {
         ...request,
-        params: { name: 'timeline.ask_agent', arguments: { question: '   ' } },
+        params: { name: 'timeline.ask', arguments: { question: '   ' } },
       },
     );
     expect(invalidQuestion).toMatchObject({ isError: true });
@@ -1436,7 +1454,7 @@ describe('handleMcpRequest', () => {
           id: 1,
           method: 'tools/call',
           params: {
-            name: 'timeline.ask_agent',
+            name: 'timeline.ask',
             arguments: { question: 'Summarize the launch.' },
           },
         },
@@ -1493,7 +1511,7 @@ describe('handleMcpRequest', () => {
         id: 1,
         method: 'tools/call',
         params: {
-          name: 'timeline.ask_agent',
+          name: 'timeline.ask',
           arguments: { question: 'Summarize the launch.' },
         },
       },
@@ -1558,7 +1576,8 @@ describe('handleMcpRequest', () => {
         );
     `);
 
-    const result = (await callTool(db, 'timeline.list_moments', {
+    const result = (await callTool(db, 'timeline.search', {
+      surface: 'moments',
       source: 'integration',
       from: '2026-06-27T00:00:00Z',
       to: '2026-06-28T00:00:00Z',
@@ -1634,7 +1653,8 @@ describe('handleMcpRequest', () => {
         );
     `);
 
-    const result = (await callTool(db, 'timeline.list_moments', {
+    const result = (await callTool(db, 'timeline.search', {
+      surface: 'moments',
       source: 'integration',
       limit: 2,
     })) as {
@@ -1692,7 +1712,8 @@ describe('handleMcpRequest', () => {
         );
     `);
 
-    const result = (await callTool(db, 'timeline.get_moment', {
+    const result = (await callTool(db, 'timeline.get', {
+      kind: 'moment',
       rawEventIds: [WORKFLOW_EVENT_A, WORKFLOW_PRIVATE_EVENT, WORKFLOW_EVENT_B],
     })) as {
       found: boolean;
@@ -1755,7 +1776,8 @@ describe('handleMcpRequest', () => {
         );
     `);
 
-    const result = (await callTool(db, 'timeline.get_moment', {
+    const result = (await callTool(db, 'timeline.get', {
+      kind: 'moment',
       rawEventIds: [WORKFLOW_EVENT_A],
     })) as {
       found: boolean;
@@ -1816,7 +1838,8 @@ describe('handleMcpRequest', () => {
         );
     `);
 
-    const result = (await callTool(db, 'timeline.get_moment', {
+    const result = (await callTool(db, 'timeline.get', {
+      kind: 'moment',
       momentId: 'moment:integration:github:workflow_run:timborovkov/audit-ai:CI:main:2026-06-27',
     })) as {
       found: boolean;
@@ -1882,7 +1905,8 @@ describe('handleMcpRequest', () => {
         );
     `);
 
-    const result = (await callTool(db, 'timeline.get_moment', {
+    const result = (await callTool(db, 'timeline.get', {
+      kind: 'moment',
       momentId: 'moment:integration:github:pr:timborovkov/audit-ai:292',
     })) as {
       found: boolean;
@@ -1931,7 +1955,7 @@ describe('handleMcpRequest', () => {
       actor: { kind: 'user', userId: USER_ID },
     });
 
-    await expect(callTool(db, 'timeline.list_tasks', {})).resolves.toMatchObject({
+    await expect(callTool(db, 'timeline.search', { surface: 'tasks' })).resolves.toMatchObject({
       count: 1,
       tasks: [
         expect.objectContaining({
@@ -1950,7 +1974,7 @@ describe('handleMcpRequest', () => {
         }),
       ],
     });
-    const objectResult = await callTool(db, 'timeline.get_object', { idOrName: 'Acme Corp' });
+    const objectResult = await callTool(db, 'timeline.get', { kind: 'object', name: 'Acme Corp' });
     expect(objectResult).toMatchObject({
       found: true,
       name: 'Acme Corp',
@@ -1977,7 +2001,8 @@ describe('handleMcpRequest', () => {
     });
 
     await expect(
-      callTool(db, 'timeline.list_calendar_events', {
+      callTool(db, 'timeline.search', {
+        surface: 'calendar',
         from: '2026-06-22T00:00:00Z',
         to: '2026-06-23T00:00:00Z',
       }),
@@ -1986,7 +2011,7 @@ describe('handleMcpRequest', () => {
       events: [expect.objectContaining({ id: event.id, title: 'Outbound MCP review' })],
     });
     await expect(
-      callTool(db, 'timeline.get_calendar_event', { id: event.id }),
+      callTool(db, 'timeline.get', { kind: 'calendar_event', ref: event.id }),
     ).resolves.toMatchObject({
       found: true,
       title: 'Outbound MCP review',
@@ -2003,20 +2028,25 @@ describe('handleMcpRequest', () => {
         ('${TEAM_ID}', 'ingest_webhook', 'webhook note', '2026-05-04T10:00:00Z', '{}');
     `);
 
-    const calendar = (await callTool(db, 'timeline.list_events', {
+    const calendar = (await callTool(db, 'timeline.search', {
+      surface: 'events',
       source: 'calendar',
     })) as { count: number; events: { source: string; content_text: string }[] };
     expect(calendar).toMatchObject({ count: 1, events: [{ source: 'calendar' }] });
     expect(calendar.events[0]?.content_text).toContain('>calendar note</external_content>');
 
-    const slack = (await callTool(db, 'timeline.list_events', { source: 'slack' })) as {
+    const slack = (await callTool(db, 'timeline.search', {
+      surface: 'events',
+      source: 'slack',
+    })) as {
       count: number;
       events: { source: string; content_text: string }[];
     };
     expect(slack).toMatchObject({ count: 1, events: [{ source: 'slack' }] });
     expect(slack.events[0]?.content_text).toContain('>slack note</external_content>');
 
-    const webhook = (await callTool(db, 'timeline.list_events', {
+    const webhook = (await callTool(db, 'timeline.search', {
+      surface: 'events',
       source: 'ingest_webhook',
     })) as { count: number; events: { source: string; content_text: string }[] };
     expect(webhook).toMatchObject({ count: 1, events: [{ source: 'ingest_webhook' }] });
@@ -2050,11 +2080,115 @@ describe('handleMcpRequest', () => {
         );
     `);
 
-    const result = (await callTool(db, 'timeline.list_events', {})) as {
+    const result = (await callTool(db, 'timeline.search', { surface: 'events' })) as {
       count: number;
       events: { content_text: string }[];
     };
     expect(result.count).toBe(1);
     expect(result.events[0]?.content_text).toContain('>team visible</external_content>');
+  });
+
+  it('stores remember notes as ingest evidence without mutating records', async () => {
+    const enqueueIngestProcessing = {
+      enqueueExtractJob: vi.fn().mockResolvedValue(undefined),
+      enqueueEmbedJob: vi.fn().mockResolvedValue(undefined),
+      enqueueSuggestionJob: vi.fn().mockResolvedValue({ enqueued: true }),
+    };
+    const beforeEntities = await db.select({ id: entities.id }).from(entities);
+    const beforeChanges = await db.select({ id: objectChanges.id }).from(objectChanges);
+
+    const result = (await callTool(
+      db,
+      'timeline.remember',
+      {
+        title: 'Northstar follow-up',
+        subject: 'Acme Corp',
+        text: 'Maya confirmed the runway note is ready for the Friday board.',
+      },
+      { enqueueIngestProcessing },
+    )) as {
+      ok: boolean;
+      status: string;
+      raw_event_id: string;
+      citation: string;
+      evidence_ids: string[];
+      billing_deferred: boolean;
+      proposals_enqueued: boolean;
+    };
+
+    expect(result).toMatchObject({
+      ok: true,
+      status: 'accepted',
+      billing_deferred: false,
+      proposals_enqueued: true,
+    });
+    expect(result.raw_event_id).toMatch(UUID_RE_TEST);
+    expect(result.citation).toBe(`[ev:${result.raw_event_id}]`);
+    expect(result.evidence_ids.length).toBeGreaterThan(0);
+
+    const [event] = await db.select().from(rawEvents).where(eq(rawEvents.id, result.raw_event_id));
+    expect(event).toMatchObject({
+      teamId: TEAM_ID,
+      source: 'ingest_webhook',
+      visibility: 'team',
+      authorUserId: null,
+    });
+    expect(event?.contentText).toContain('Maya confirmed the runway note is ready');
+    expect(event?.sourceMetadata).toMatchObject({
+      ingest_webhook_name: 'MCP remember',
+      ingest_origin: 'mcp_remember',
+      event_class: 'pulse',
+      proposal_generation_enabled: true,
+    });
+    const evidence = await db
+      .select()
+      .from(reconciliationEvidence)
+      .where(eq(reconciliationEvidence.rawEventId, result.raw_event_id));
+    expect(evidence.length).toBeGreaterThan(0);
+    expect(enqueueIngestProcessing.enqueueExtractJob).toHaveBeenCalledWith({
+      rawEventId: result.raw_event_id,
+      teamId: TEAM_ID,
+    });
+    expect(enqueueIngestProcessing.enqueueEmbedJob).toHaveBeenCalledWith({
+      rawEventId: result.raw_event_id,
+      teamId: TEAM_ID,
+    });
+    expect(enqueueIngestProcessing.enqueueSuggestionJob).toHaveBeenCalledWith({
+      rawEventId: result.raw_event_id,
+      teamId: TEAM_ID,
+    });
+    await expect(db.select({ id: entities.id }).from(entities)).resolves.toEqual(beforeEntities);
+    await expect(db.select({ id: objectChanges.id }).from(objectChanges)).resolves.toEqual(
+      beforeChanges,
+    );
+  });
+
+  it('rate-limits remember without storing a note', async () => {
+    const enqueueIngestProcessing = {
+      enqueueExtractJob: vi.fn().mockResolvedValue(undefined),
+      enqueueEmbedJob: vi.fn().mockResolvedValue(undefined),
+      enqueueSuggestionJob: vi.fn().mockResolvedValue({ enqueued: true }),
+    };
+    const result = (await callTool(
+      db,
+      'timeline.remember',
+      { text: 'should not persist' },
+      {
+        enqueueIngestProcessing,
+        checkRateLimit: vi.fn().mockResolvedValue({
+          ok: false,
+          remaining: 0,
+          retryAfterMs: 12_000,
+        }) as never,
+      },
+    )) as { ok: boolean; error: string; retry_after_seconds: number };
+
+    expect(result).toMatchObject({
+      ok: false,
+      error: 'rate_limited',
+      retry_after_seconds: 12,
+    });
+    await expect(db.select().from(rawEvents)).resolves.toEqual([]);
+    expect(enqueueIngestProcessing.enqueueExtractJob).not.toHaveBeenCalled();
   });
 });

@@ -40,7 +40,7 @@ revision, personal pins, approval-required `execute_*` tools, and every
 canonical mutation. A proposal never implies acceptance; a verified teammate
 must review it.
 
-Outbound MCP read principals can list `timeline.ask_agent` so clients can
+Outbound MCP read principals can list `timeline.ask` so clients can
 discover its `read agent:ask` security metadata. Call-time enforcement remains
 independent: a current-protocol read-only OAuth grant receives HTTP `403` with
 an `insufficient_scope` `WWW-Authenticate` challenge, while supported 2025

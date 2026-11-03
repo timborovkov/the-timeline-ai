@@ -236,7 +236,7 @@ describe('/api/mcp/server', () => {
           id: 3,
           method: 'tools/call',
           params: {
-            name: 'timeline.ask_agent',
+            name: 'timeline.ask',
             arguments: { question: 'What changed?' },
             _meta: {
               'io.modelcontextprotocol/protocolVersion': '2026-07-28',
@@ -247,7 +247,7 @@ describe('/api/mcp/server', () => {
         {
           authorization: 'Bearer mcp-token',
           'mcp-method': 'tools/call',
-          'mcp-name': 'timeline.ask_agent',
+          'mcp-name': 'timeline.ask',
           'mcp-protocol-version': '2026-07-28',
         },
       ),
@@ -284,7 +284,7 @@ describe('/api/mcp/server', () => {
           id: 31,
           method: 'tools/call',
           params: {
-            name: 'timeline.list_events',
+            name: 'timeline.search',
             arguments: {},
             _meta: {
               'io.modelcontextprotocol/protocolVersion': '2026-07-28',
@@ -295,7 +295,7 @@ describe('/api/mcp/server', () => {
         {
           authorization: 'Bearer mcp-token',
           'mcp-method': 'tools/call',
-          'mcp-name': 'timeline.ask_agent',
+          'mcp-name': 'timeline.ask',
           'mcp-protocol-version': '2026-07-28',
         },
       ),
@@ -314,12 +314,12 @@ describe('/api/mcp/server', () => {
           jsonrpc: '2.0',
           id: 4,
           method: 'tools/call',
-          params: { name: 'timeline.ask_agent', arguments: { question: 'What changed?' } },
+          params: { name: 'timeline.ask', arguments: { question: 'What changed?' } },
         }),
         {
           authorization: 'Bearer mcp-token',
           'mcp-method': 'tools/call',
-          'mcp-name': 'timeline.ask_agent',
+          'mcp-name': 'timeline.ask',
           'mcp-protocol-version': '2025-11-25',
         },
       ),

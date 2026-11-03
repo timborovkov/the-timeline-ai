@@ -52,6 +52,11 @@ import { sourceMetadataWithConversationArtifacts } from '#src/conversational/con
 import { reconcileLinkArtifactsForRawEvent } from '#src/conversational/link-artifacts.js';
 import { documentPresentation } from '#src/documents/presentation.js';
 import { createDocumentScope } from '#src/documents/scope.js';
+import {
+  acceptIngestWebhookEvidence,
+  type AcceptIngestWebhookEvidenceInput,
+  type AcceptIngestWebhookEvidenceResult,
+} from '#src/ingest-webhooks/accept.js';
 import { createIntegrationScope } from '#src/integrations/scope.js';
 import { createJobRecoveryScope } from '#src/job-recovery/index.js';
 import { embed as defaultEmbed, type EmbedResult } from '#src/llm/embed.js';
@@ -3397,6 +3402,18 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
           occurredAt: row.occurredAt,
         });
         return row;
+      },
+
+      /**
+       * Evidence-only ingest capture (ADR 0009). Stores a raw event, normalizes
+       * cited evidence, and enqueues extract/embed/suggestion jobs. Never updates
+       * canonical workspace records.
+       */
+      async captureIngestEvidence(
+        input: Omit<AcceptIngestWebhookEvidenceInput, 'db' | 'teamId'>,
+      ): Promise<AcceptIngestWebhookEvidenceResult> {
+        await ensureMember();
+        return acceptIngestWebhookEvidence({ ...input, db, teamId });
       },
 
       /**

@@ -864,7 +864,26 @@ codex mcp add timeline --url "&lt;copied MCP endpoint URL&gt;" --bearer-token-en
       <p>The MCP tools exposed are:</p>
       <ul>
         <li>
-          <code>timeline.ask_agent({ question })</code> — listed for every principal with
+          <code>timeline.search</code> — search or list visible evidence. Use
+          <code>surface</code> for workspace, moments, events, objects, tasks, boards, documents,
+          calendar, or integrations. Omit <code>query</code> to list recent matching records. Pass
+          <code>timePhrase</code> to resolve relative dates such as “this week”. Semantic
+          integration search still applies provider filtering and active Monday.com source
+          selections before limiting.
+        </li>
+        <li>
+          <code>timeline.get</code> — fetch one visible record by citation, UUID, moment id,
+          canonical name, or <code>provider</code> + <code>externalObjectId</code>. Raw content
+          stays fenced as untrusted external content. Moment expansion prefers returned raw event
+          IDs; supported deterministic moment IDs can still be expanded through bounded
+          source-metadata lookup.
+        </li>
+        <li>
+          <code>timeline.subject</code> — load the cited timeline, current state, and related
+          evidence for one client, project, topic, or other workspace record.
+        </li>
+        <li>
+          <code>timeline.ask({ question })</code> — listed for every principal with
           <code>read</code> so an OAuth client can discover the optional consent upgrade, but
           invocable only with <code>read agent:ask</code>. A current-protocol OAuth caller receives
           HTTP <code>403</code> with an <code>insufficient_scope</code>
@@ -873,51 +892,94 @@ codex mcp add timeline --url "&lt;copied MCP endpoint URL&gt;" --bearer-token-en
           receives a stable forbidden result. An authorized call runs a stateless, team-level
           Timeline agent over team-visible data and team-shared custom MCP tools. The structured
           result contains the concise cited answer, parsed artifact references, proposal IDs, and a
-          truncation flag. The caller carries any prior context into its next question.
+          truncation flag. The caller carries any prior context into its next question. Formerly
+          <code>timeline.ask_agent</code>.
         </li>
         <li>
-          <code>timeline.retrieve_workspace_context</code> — broad read-only retrieval across
-          objects, notes, events, tasks, boards, calendar, documents, and route guides
-        </li>
-        <li>
-          <code>timeline.search_events</code> — semantic search across raw events with fenced
-          snippets and stable event citations
-        </li>
-        <li>
-          <code>timeline.search_moments</code>, <code>timeline.list_moments</code>,
-          <code>timeline.get_moment</code> — retrieve bundled timeline moments first, then expand to
-          cited raw event evidence for audit; results include the versioned moment shape and stable
-          row anchor IDs. <code>timeline.get_moment</code> should prefer returned raw event IDs, but
-          supported deterministic moment IDs can be expanded directly through bounded or exact
-          source-metadata lookup.
-        </li>
-        <li>
-          <code>timeline.get_event</code> / <code>timeline.list_events</code> — fetch one event or
-          list bounded fenced raw event content with stable event citations
-        </li>
-        <li><code>timeline.get_entity</code> — lookup person / company / project / topic</li>
-        <li>
-          <code>timeline.get_object</code>, <code>timeline.search_objects</code>,
-          <code>timeline.list_objects</code>, <code>timeline.list_tasks</code> — read workspace
-          objects and tasks
-        </li>
-        <li><code>timeline.search_boards</code> — read boards and matching board items</li>
-        <li>
-          <code>timeline.list_calendar_events</code>, <code>timeline.get_calendar_event</code>,
-          <code>timeline.resolve_time_context</code> — read calendar state and resolve date ranges
-        </li>
-        <li>
-          <code>timeline.search_documents</code>, <code>timeline.search_documents_structured</code>,
-          <code>timeline.get_document</code>, <code>timeline.get_document_chunk</code>,
-          <code>timeline.list_recent_document_changes</code> — search and inspect team documents
-        </li>
-        <li>
-          <code>timeline.list_integrations</code>, <code>timeline.search_integration_events</code>,
-          <code>timeline.get_integration_resource</code> — inspect connected integrations and synced
-          external-resource history; integration-event results apply provider filtering and active
-          Monday.com source selections before semantic limiting, and include stable event citations
+          <code>timeline.remember</code> — store an agent note as cited ingest-webhook evidence
+          through the same path as <code>POST /api/webhooks/ingest</code>. Creates a team-visible
+          raw event and evidence, is billed on the accepted-source meter, is rate-limited per
+          credential, and never mutates canonical records. Suggestion and approval flows still
+          apply.
         </li>
       </ul>
+      <p>
+        Previous tool names are omitted from <code>tools/list</code> and are not callable. Map them
+        as follows:
+      </p>
+      <table>
+        <thead>
+          <tr>
+            <th>Previous name</th>
+            <th>Replacement</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>timeline.retrieve_workspace_context</code></td>
+            <td><code>timeline.search</code> <code>surface="workspace"</code></td>
+          </tr>
+          <tr>
+            <td><code>timeline.search_moments</code>, <code>timeline.list_moments</code></td>
+            <td><code>timeline.search</code> <code>surface="moments"</code></td>
+          </tr>
+          <tr>
+            <td><code>timeline.search_events</code>, <code>timeline.list_events</code></td>
+            <td><code>timeline.search</code> <code>surface="events"</code></td>
+          </tr>
+          <tr>
+            <td><code>timeline.search_objects</code>, <code>timeline.list_objects</code></td>
+            <td><code>timeline.search</code> <code>surface="objects"</code></td>
+          </tr>
+          <tr>
+            <td><code>timeline.list_tasks</code></td>
+            <td><code>timeline.search</code> <code>surface="tasks"</code></td>
+          </tr>
+          <tr>
+            <td><code>timeline.search_boards</code></td>
+            <td><code>timeline.search</code> <code>surface="boards"</code></td>
+          </tr>
+          <tr>
+            <td>
+              <code>timeline.search_documents</code>,
+              <code>timeline.search_documents_structured</code>,
+              <code>timeline.list_recent_document_changes</code>
+            </td>
+            <td><code>timeline.search</code> <code>surface="documents"</code></td>
+          </tr>
+          <tr>
+            <td>
+              <code>timeline.list_calendar_events</code>,
+              <code>timeline.resolve_time_context</code>
+            </td>
+            <td>
+              <code>timeline.search</code> <code>surface="calendar"</code> or
+              <code>timePhrase</code>
+            </td>
+          </tr>
+          <tr>
+            <td>
+              <code>timeline.list_integrations</code>,
+              <code>timeline.search_integration_events</code>
+            </td>
+            <td><code>timeline.search</code> <code>surface="integrations"</code></td>
+          </tr>
+          <tr>
+            <td>
+              <code>timeline.get_event</code>, <code>timeline.get_moment</code>,
+              <code>timeline.get_entity</code>, <code>timeline.get_object</code>,
+              <code>timeline.get_document</code>, <code>timeline.get_document_chunk</code>,
+              <code>timeline.get_calendar_event</code>,
+              <code>timeline.get_integration_resource</code>
+            </td>
+            <td><code>timeline.get</code></td>
+          </tr>
+          <tr>
+            <td><code>timeline.ask_agent</code></td>
+            <td><code>timeline.ask</code></td>
+          </tr>
+        </tbody>
+      </table>
       <p>
         <strong>Isolation:</strong> OAuth and static-key principals are deliberately different.
         OAuth resolves the consenting user's current membership and normal visibility in the chosen
@@ -927,20 +989,22 @@ codex mcp add timeline --url "&lt;copied MCP endpoint URL&gt;" --bearer-token-en
         are stored as SHA-256 hashes; plaintext credentials are returned only to their intended
         client. Search and moment tools fence raw snippets as external content; direct event tools
         and the recent-events resource also fence raw content, and
-        <code>timeline.get_event</code> serializes and fences source metadata. Stable ids, sources,
-        and timestamps remain structured.
+        <code>timeline.get</code> serializes and fences source metadata for events. Stable ids,
+        sources, and timestamps remain structured.
       </p>
       <p>
         Default OAuth grants and static keys have only <code>read</code>. They can discover
-        <code>timeline.ask_agent</code>, but they cannot execute it. An owner/admin-authorized OAuth
-        grant or agent-enabled key carries <code>read</code> plus <code>agent:ask</code>. The
+        <code>timeline.ask</code>, but they cannot execute it. They can call
+        <code>timeline.remember</code>, which stores cited evidence only. An owner/admin-authorized
+        OAuth grant or agent-enabled key carries <code>read</code> plus <code>agent:ask</code>. The
         delegated synthetic actor can create task, object-memory, object-change, calendar-create,
         and calendar-update/cancellation proposals, but cannot revise proposals, use personal pins,
         call approval-required mutation tools, or change canonical Timeline state. Enabled
         team-shared custom MCP tools can still cause external side effects. Every proposal still
         requires a teammate to accept it. Direct Timeline-agent delegation is bounded to one nested
         call, each turn has a 180-second deadline, and agent calls are limited to 10 per minute per
-        credential in addition to the endpoint IP limit.
+        credential in addition to the endpoint IP limit. Remember calls are limited to 30 per minute
+        per credential.
       </p>
       <p>
         Host and Origin validation allows the canonical Timeline origin plus the supported ChatGPT

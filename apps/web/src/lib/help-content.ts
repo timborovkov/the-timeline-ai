@@ -329,7 +329,7 @@ export const HELP_PAGES: HelpPage[] = [
       },
       {
         title: 'Know the access boundary',
-        body: 'The bundled skill uses read tools and preserves citations. The default OAuth grant cannot invoke timeline.ask_agent. A current team owner or admin may separately approve that scope for paid, stateless agent turns; it may call enabled team-shared custom MCP tools with external side effects and can create only Timeline proposals that still require human review.',
+        body: 'The bundled skill uses timeline.search, timeline.get, timeline.subject, timeline.ask, and timeline.remember, and preserves citations. The default OAuth grant can capture notes as cited evidence with timeline.remember; it cannot invoke timeline.ask. A current team owner or admin may separately approve that scope for paid, stateless agent turns; it may call enabled team-shared custom MCP tools with external side effects and can create only Timeline proposals that still require human review.',
         resourceLinks: [
           {
             href: 'https://github.com/timborovkov/the-timeline-ai/tree/main/plugins/timeline/skills',

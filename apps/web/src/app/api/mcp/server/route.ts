@@ -116,7 +116,7 @@ async function insufficientAgentScope(
   ) {
     return null;
   }
-  const description = 'Grant the agent:ask scope to use timeline.ask_agent';
+  const description = 'Grant the agent:ask scope to use timeline.ask';
   return Response.json(
     { error: 'insufficient_scope', error_description: description },
     {

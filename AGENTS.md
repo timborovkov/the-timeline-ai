@@ -268,7 +268,7 @@ Treat this file as an operating contract for agents, not a loose README.
   answer prompts or citation sanitizers. The external output-token ceiling is
   applied only in a no-tool final-answer pass; retrieval, visibility, grounding,
   and tool-call budgets remain unchanged.
-  Outbound `timeline.ask_agent` uses the separate compact `mcp_agent` profile,
+  Outbound `timeline.ask` uses the separate compact `mcp_agent` profile,
   which preserves inline Timeline citations and returns parsed artifact refs.
 - **Outbound MCP auth preserves its actor boundary.** Static `tla_`
   bearer keys use `withTeam(db, teamId, ZERO_UUID,
@@ -294,8 +294,10 @@ Treat this file as an operating contract for agents, not a loose README.
   proposals. They may not revise proposals, use personal pins, invoke
   approval-required `execute_*` tools, or mutate canonical Timeline state.
   Enabled third-party tools may still cause external side effects. Existing static MCP
-  keys remain read-only unless an admin explicitly grants `agent:ask`; OAuth grants require a
-  current owner/admin for that scope.
+  keys remain retrieval-only for canonical state unless an admin explicitly grants `agent:ask`;
+  OAuth grants require a current owner/admin for that scope. Hosted MCP
+  `timeline.remember` stores cited ingest evidence through `withTeam` and never mutates
+  canonical records.
 - **No SSRF from user-supplied or discovered URLs.** `validateMcpUrl`
   in [`packages/shared/src/mcp/auth.ts`](packages/shared/src/mcp/auth.ts)
   rejects loopback, RFC1918, RFC 3927 link-local (169.254/16 — cloud

@@ -64,7 +64,7 @@ export const TIMELINE_AGENT_ACCESS_FAQS = [
   {
     question: 'Can the plugin change canonical work?',
     answer:
-      'Not with the default read scope. A current team owner or admin can separately approve agent:ask for paid, stateless Timeline agent turns. It may call enabled team-shared custom MCP tools and create proposals for human review, but cannot write canonical Timeline state directly. Third-party tools may have external side effects.',
+      'Not with the default read scope. timeline.remember stores cited ingest evidence only; it never updates canonical records. A current team owner or admin can separately approve agent:ask for paid, stateless Timeline agent turns. It may call enabled team-shared custom MCP tools and create proposals for human review, but cannot write canonical Timeline state directly. Third-party tools may have external side effects.',
   },
   {
     question: 'What about self-hosted Timeline?',
