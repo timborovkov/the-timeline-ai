@@ -269,7 +269,7 @@ export const APP_GUIDE_ROUTES: readonly AppGuideRoute[] = [
       'set up a source',
     ],
     guide:
-      'Use Connections to see capture sources, native providers, and linked accounts. Person-owned provider logins live under Provider accounts. Admins activate shared team sources on the same Connections page. Telegram bot setup and inbound Email live in those provider sheets. Slack chat capture has its own setup page. Agent MCP, webhooks, audit, and job recovery sit in Advanced. MCP servers give the agent live tools without turning every call into timeline evidence.',
+      'Use Connections to see capture sources, native providers, and linked accounts. Sources lists Email, Telegram, and each native provider once; each opens a details sheet. Documents and Meetings live on their own sidebar pages. Person-owned provider logins live under Provider accounts. Admins activate shared team sources on the same Connections page. Slack chat capture has its own setup page. Agent tools holds MCP servers, the Timeline MCP endpoint, and coming-soon catalog rows. Developer holds ingest webhooks, integration audit, and job recovery. MCP servers give the agent live tools without turning every call into timeline evidence.',
     relatedRouteIds: [
       'me/connections',
       'team/integrations',

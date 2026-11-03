@@ -282,18 +282,67 @@ export function buildDirectoryProviders(input: {
   return { connected, available };
 }
 
+export const CONNECTIONS_TABS = ['sources', 'agent', 'developer'] as const;
+export type ConnectionsTab = (typeof CONNECTIONS_TABS)[number];
+const CONNECTIONS_TOOL_SHEETS = ['agent-mcp', 'timeline-mcp', 'webhooks'] as const;
+export type ConnectionsToolSheet = (typeof CONNECTIONS_TOOL_SHEETS)[number];
+
+const TOOL_SHEET_TAB: Record<ConnectionsToolSheet, ConnectionsTab> = {
+  'agent-mcp': 'agent',
+  'timeline-mcp': 'agent',
+  webhooks: 'developer',
+};
+
+export function isConnectionsToolSheet(
+  value: string | null | undefined,
+): value is ConnectionsToolSheet {
+  return CONNECTIONS_TOOL_SHEETS.some((sheet) => sheet === value);
+}
+
+export function connectionsTabFromSearch(tab?: string | null): ConnectionsTab {
+  return tab === 'agent' || tab === 'developer' ? tab : 'sources';
+}
+
+export function connectionsHref(tab: ConnectionsTab, hash?: string | null): string {
+  const search = tab === 'sources' ? '' : `?tab=${tab}`;
+  const fragment = hash ? `#${hash}` : '';
+  return `/app/sources${search}${fragment}`;
+}
+
+function isQuietComingSoonMcp(entry: { status?: string }): boolean {
+  return entry.status === 'coming_soon' || entry.status === 'mcp_local';
+}
+
+export function partitionAdvancedMcpCatalog<T extends { status?: string }>(
+  entries: readonly T[],
+): { connectable: T[]; comingSoon: T[] } {
+  const connectable: T[] = [];
+  const comingSoon: T[] = [];
+  for (const entry of entries) {
+    if (isQuietComingSoonMcp(entry)) comingSoon.push(entry);
+    else connectable.push(entry);
+  }
+  return { connectable, comingSoon };
+}
+
+export function filterByDirectoryQuery<
+  T extends { id: string; label: string; description?: string },
+>(items: readonly T[], query: string): T[] {
+  const needle = query.trim().toLowerCase();
+  if (!needle) return [...items];
+  return items.filter(
+    (item) =>
+      item.label.toLowerCase().includes(needle) ||
+      item.id.toLowerCase().includes(needle) ||
+      (item.description?.toLowerCase().includes(needle) ?? false),
+  );
+}
+
 export function filterAvailableProviders(
   providers: readonly DirectoryProvider[],
   query: string,
 ): DirectoryProvider[] {
-  const needle = query.trim().toLowerCase();
-  if (!needle) return [...providers];
-  return providers.filter(
-    (provider) =>
-      provider.label.toLowerCase().includes(needle) ||
-      provider.id.toLowerCase().includes(needle) ||
-      provider.description.toLowerCase().includes(needle),
-  );
+  return filterByDirectoryQuery(providers, query);
 }
 
 export function initialOpenProviderId(input: {
@@ -307,6 +356,38 @@ export function initialOpenProviderId(input: {
   if (!input.integrationId) return null;
   const row = input.connectedRows.find((item) => item.id === input.integrationId);
   return row?.provider ?? null;
+}
+
+export function parseConnectionsLocation(input: {
+  tab?: string | null;
+  hash?: string | null;
+  providers: readonly DirectoryProvider[];
+  connectedRows: IntegrationsPageModel['connectedRows'];
+  integrationId?: string;
+}): { tab: ConnectionsTab; hash: string | null } {
+  const hash = input.hash?.replace(/^#/, '') ?? '';
+  if (isConnectionsToolSheet(hash)) {
+    return { tab: TOOL_SHEET_TAB[hash], hash };
+  }
+  if (hash === 'audit' || hash === 'jobs') {
+    return { tab: 'developer', hash };
+  }
+  const providerId = initialOpenProviderId({
+    providers: input.providers,
+    connectedRows: input.connectedRows,
+    integrationId: hash ? undefined : input.integrationId,
+    hash,
+  });
+  if (providerId) return { tab: 'sources', hash: providerId };
+  if (!hash && input.integrationId) {
+    const fromId = initialOpenProviderId({
+      providers: input.providers,
+      connectedRows: input.connectedRows,
+      integrationId: input.integrationId,
+    });
+    if (fromId) return { tab: 'sources', hash: fromId };
+  }
+  return { tab: connectionsTabFromSearch(input.tab), hash: hash || null };
 }
 
 export function connectionHeaderMetadata(

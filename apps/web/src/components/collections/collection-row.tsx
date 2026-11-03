@@ -33,10 +33,17 @@ type CollectionRowProps = {
   | {
       onActivate: () => void;
       activateLabel: string;
+      href?: never;
+    }
+  | {
+      href: string;
+      activateLabel: string;
+      onActivate?: never;
     }
   | {
       onActivate?: undefined;
       activateLabel?: undefined;
+      href?: never;
     }
 );
 
@@ -57,6 +64,7 @@ export function CollectionRow({
   selected = false,
   onActivate,
   activateLabel,
+  href,
   className,
 }: CollectionRowProps) {
   const slots = readCollectionSlots(children, ROW_SLOTS);
@@ -73,11 +81,17 @@ export function CollectionRow({
       className={cn(
         'group/collection-row relative grid min-h-11 min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 border-b border-border/80 px-2 transition-[background-color,border-color] duration-150 hover:bg-surface focus-within:bg-surface motion-reduce:transition-none sm:px-3',
         selected && 'bg-signal-soft shadow-[inset_2px_0_0_var(--color-signal)]',
-        onActivate && 'cursor-pointer',
+        Boolean(onActivate ?? href) && 'cursor-pointer',
         className,
       )}
     >
-      {onActivate ? (
+      {href ? (
+        <a
+          href={href}
+          aria-label={activateLabel}
+          className="absolute inset-0 z-0 rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/50"
+        />
+      ) : onActivate ? (
         <button
           type="button"
           aria-label={activateLabel}

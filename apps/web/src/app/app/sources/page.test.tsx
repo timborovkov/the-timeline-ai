@@ -17,7 +17,10 @@ await vi.mock(
 await vi.mock(
   import.meta.resolve('next/image'),
   () => ({
-    default: (props: React.ImgHTMLAttributes<HTMLImageElement>) => (
+    default: ({
+      unoptimized: _unoptimized,
+      ...props
+    }: React.ImgHTMLAttributes<HTMLImageElement> & { unoptimized?: boolean }) => (
       <img {...props} alt={props.alt ?? ''} />
     ),
   }),
@@ -227,11 +230,11 @@ function model(
   };
 }
 
-async function expandAdvanced() {
+async function openTab(name: 'Sources' | 'Agent tools' | 'Developer') {
   const user = userEvent.setup();
-  const trigger = screen.getByRole('button', { name: /^Advanced / });
-  if (trigger.getAttribute('aria-expanded') === 'false') {
-    await user.click(trigger);
+  const tab = screen.getByRole('tab', { name });
+  if (tab.getAttribute('aria-selected') !== 'true') {
+    await user.click(tab);
   }
   return user;
 }
@@ -255,15 +258,54 @@ describe('SourcesPageView', () => {
     expect(document.querySelectorAll('#slack')).toHaveLength(1);
     expect(document.querySelectorAll('#telegram')).toHaveLength(1);
     expect(document.querySelectorAll('#email')).toHaveLength(1);
-    expect(screen.getByRole('button', { name: 'Set up: telegram' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Set up: telegram' })).toBeTruthy();
+    expect(screen.getByRole('tab', { name: 'Sources' }).getAttribute('aria-selected')).toBe('true');
+    expect(screen.getByRole('tab', { name: 'Agent tools' }).getAttribute('href')).toBe(
+      '/app/sources?tab=agent',
+    );
+    expect(screen.getByRole('tab', { name: 'Developer' }).getAttribute('href')).toBe(
+      '/app/sources?tab=developer',
+    );
     expect(screen.getByText('Connected providers')).toBeTruthy();
     expect(screen.getByText('Available providers')).toBeTruthy();
+    expect(screen.getByLabelText('Search sources')).toBeTruthy();
+    expect(screen.queryByRole('link', { name: 'Open Documents details' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Open Meetings details' })).toBeNull();
     expect(screen.queryByText('Active team sync')).toBeNull();
     expect(screen.queryByText('Available shared sources')).toBeNull();
     expect(screen.queryByRole('link', { name: 'Chat capture: Slack' })).toBeNull();
     expect(screen.getByRole('button', { name: 'Connect: google_drive' })).toBeTruthy();
     expect(screen.getByText('Needs attention')).toBeTruthy();
     expect(screen.getByText('Syncing for team')).toBeTruthy();
+  });
+
+  it('keeps Agent tools selected when the URL is restored without ?tab=', async () => {
+    window.history.replaceState({ next: true }, '', '/app/sources');
+    renderPage(
+      <SourcesPageView
+        params={{}}
+        active={{ teamName: 'Acme Labs' }}
+        isAdmin
+        summary={summary()}
+        model={model()}
+      />,
+    );
+
+    await openTab('Agent tools');
+    expect(screen.getByRole('tab', { name: 'Agent tools' }).getAttribute('aria-selected')).toBe(
+      'true',
+    );
+    expect(window.location.search).toBe('?tab=agent');
+    expect(window.history.state).toEqual({ next: true });
+
+    act(() => {
+      window.history.replaceState(window.history.state, '', '/app/sources');
+    });
+    expect(screen.getByRole('tab', { name: 'Agent tools' }).getAttribute('aria-selected')).toBe(
+      'true',
+    );
+    expect(screen.getByText('Agent access')).toBeTruthy();
+    expect(screen.queryByText('Connected providers')).toBeNull();
   });
 
   it('filters the available provider list by search', async () => {
@@ -278,10 +320,11 @@ describe('SourcesPageView', () => {
       />,
     );
 
-    await user.type(screen.getByLabelText('Search available providers'), 'drive');
+    await user.type(screen.getByLabelText('Search sources'), 'drive');
     expect(screen.getByText('Google Drive')).toBeTruthy();
     expect(screen.queryByText('Slack')).toBeNull();
-    expect(screen.queryByText('No matching providers.')).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Open GitHub details' })).toBeNull();
+    expect(screen.queryByText('No matching sources.')).toBeNull();
   });
 
   it('keeps native-named MCP catalog entries off the page until that provider sheet opens', async () => {
@@ -324,17 +367,17 @@ describe('SourcesPageView', () => {
     );
 
     expect(document.querySelectorAll('#linear')).toHaveLength(1);
-    expect(screen.getByRole('button', { name: /^Advanced / }).getAttribute('aria-expanded')).toBe(
-      'false',
-    );
+    expect(screen.queryByText('Notion')).toBeNull();
 
-    await expandAdvanced();
-    const advanced = screen.getByRole('button', { name: /^Advanced / }).closest('section');
-    if (!advanced) throw new Error('Expected Advanced section');
-    expect(within(advanced).getByText('Notion')).toBeTruthy();
-    expect(within(advanced).queryByText('Linear')).toBeNull();
+    await openTab('Agent tools');
+    await user.click(screen.getByRole('link', { name: 'Open Agent MCP servers details' }));
+    const agent = await screen.findByRole('dialog', { name: 'Agent MCP servers' });
+    expect(within(agent).getByText('Notion')).toBeTruthy();
+    expect(within(agent).queryByText('Linear')).toBeNull();
+    await user.keyboard('{Escape}');
 
-    await user.click(screen.getByRole('button', { name: 'Open Linear details' }));
+    await openTab('Sources');
+    await user.click(screen.getByRole('link', { name: 'Open Linear details' }));
     const dialog = await screen.findByRole('dialog', { name: 'Linear' });
     expect(within(dialog).getByText('MCP')).toBeTruthy();
   });
@@ -371,15 +414,14 @@ describe('SourcesPageView', () => {
     );
 
     expect(document.querySelectorAll('#linear')).toHaveLength(1);
-    expect(screen.getByRole('button', { name: 'Open Linear details' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Open Linear details' })).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Connect: linear' })).toBeNull();
 
-    await expandAdvanced();
-    const advanced = screen.getByRole('button', { name: /^Advanced / }).closest('section');
-    if (!advanced) throw new Error('Expected Advanced section');
-    expect(within(advanced).queryByText('Linear')).toBeNull();
+    await openTab('Agent tools');
+    expect(screen.queryByText('https://mcp.linear.app')).toBeNull();
+    await openTab('Sources');
 
-    await user.click(screen.getByRole('button', { name: 'Open Linear details' }));
+    await user.click(screen.getByRole('link', { name: 'Open Linear details' }));
     const dialog = await screen.findByRole('dialog', { name: 'Linear' });
     expect(within(dialog).getByText('MCP')).toBeTruthy();
     expect(within(dialog).getByText('https://mcp.linear.app')).toBeTruthy();
@@ -426,6 +468,74 @@ describe('SourcesPageView', () => {
     });
     const github = await screen.findByRole('dialog', { name: 'GitHub' });
     expect(within(github).getByText('Accounts')).toBeTruthy();
+
+    act(() => {
+      window.history.pushState(null, '', '/app/sources#agent-mcp');
+    });
+    const agent = await screen.findByRole('dialog', { name: 'Agent MCP servers' });
+    expect(within(agent).getByText(/live tool access/i)).toBeTruthy();
+    expect(
+      screen.getByRole('tab', { name: 'Agent tools', hidden: true }).getAttribute('aria-selected'),
+    ).toBe('true');
+  });
+
+  it('lists Figma and other local-only MCP entries as Coming soon without a connect action', async () => {
+    renderPage(
+      <SourcesPageView
+        params={{}}
+        active={{ teamName: 'Acme Labs' }}
+        isAdmin
+        summary={summary()}
+        model={model({
+          mcpCatalogAvailable: [
+            {
+              id: 'figma',
+              label: 'Figma',
+              description: 'Design file activity.',
+              logo: '/connectors/figma.svg',
+              category: 'productivity',
+              kind: 'mcp',
+              status: 'mcp_local',
+              ingestStatus: 'coming_soon',
+              featured: true,
+              examplePrompt: 'Show recent design changes.',
+            },
+            {
+              id: 'hubspot',
+              label: 'HubSpot',
+              description: 'CRM ingestion is planned.',
+              logo: '/connectors/hubspot.svg',
+              category: 'crm',
+              kind: 'mcp',
+              status: 'coming_soon',
+              ingestStatus: 'coming_soon',
+              featured: true,
+              examplePrompt: 'Which deals slipped?',
+            },
+          ],
+        })}
+      />,
+    );
+
+    expect(screen.queryByText('Figma')).toBeNull();
+    expect(screen.queryByText('Local setup only')).toBeNull();
+    const user = await openTab('Agent tools');
+    expect(screen.getByLabelText('Search agent tools')).toBeTruthy();
+    expect(screen.getAllByText('Coming soon').length).toBeGreaterThan(0);
+    expect(screen.getByText('Figma')).toBeTruthy();
+    expect(screen.getByText('HubSpot')).toBeTruthy();
+    await user.type(screen.getByLabelText('Search agent tools'), 'figma');
+    expect(screen.getByText('Figma')).toBeTruthy();
+    expect(screen.queryByText('HubSpot')).toBeNull();
+    await user.clear(screen.getByLabelText('Search agent tools'));
+    expect(screen.queryByText('Local setup only')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Local setup only' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Connect' })).toBeNull();
+
+    await user.click(screen.getByRole('link', { name: 'Open Agent MCP servers details' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Agent MCP servers' });
+    expect(within(dialog).queryByText('Figma')).toBeNull();
+    expect(within(dialog).queryByText('Local setup only')).toBeNull();
   });
 
   it('opens a provider details sheet with accounts, team sync, and visibility', async () => {
@@ -440,7 +550,7 @@ describe('SourcesPageView', () => {
       />,
     );
 
-    await user.click(screen.getByRole('button', { name: 'Open Linear details' }));
+    await user.click(screen.getByRole('link', { name: 'Open Linear details' }));
     const dialog = await screen.findByRole('dialog', { name: 'Linear' });
     expect(within(dialog).getByText('Accounts')).toBeTruthy();
     expect(within(dialog).getByText('Team sync')).toBeTruthy();
@@ -450,7 +560,7 @@ describe('SourcesPageView', () => {
     expect(within(dialog).getAllByText('Linear — Acme').length).toBeGreaterThan(0);
   });
 
-  it('moves Telegram and Email setup into provider sheets and keeps Advanced to agent MCP, webhooks, audit, and jobs', async () => {
+  it('moves Telegram and Email setup into provider sheets and keeps agent MCP, webhooks, audit, and jobs on their tabs', async () => {
     const user = userEvent.setup();
     renderPage(
       <SourcesPageView
@@ -475,33 +585,38 @@ describe('SourcesPageView', () => {
     expect(document.querySelectorAll('#email')).toHaveLength(1);
     expect(screen.queryByRole('link', { name: 'Telegram' })).toBeNull();
     expect(screen.queryByLabelText('Additional senders')).toBeNull();
-    expect(screen.getByRole('button', { name: /^Advanced / }).getAttribute('aria-expanded')).toBe(
-      'false',
-    );
+    expect(screen.queryByRole('button', { name: /^Advanced / })).toBeNull();
 
-    await user.click(screen.getByRole('button', { name: 'Open Telegram details' }));
+    await user.click(screen.getByRole('link', { name: 'Open Telegram details' }));
     const telegram = await screen.findByRole('dialog', { name: 'Telegram' });
     expect(within(telegram).getByText('Link a personal DM')).toBeTruthy();
     expect(within(telegram).getByText('Bind a group chat')).toBeTruthy();
     await user.keyboard('{Escape}');
 
-    await user.click(screen.getByRole('button', { name: 'Open Email details' }));
+    await user.click(screen.getByRole('link', { name: 'Open Email details' }));
     const email = await screen.findByRole('dialog', { name: 'Email' });
     expect(within(email).getByLabelText('Additional senders')).toBeTruthy();
     expect(within(email).getByText('vendor@example.test')).toBeTruthy();
     expect(within(email).getByDisplayValue('acme+archive@inbound.timeline.test')).toBeTruthy();
     await user.keyboard('{Escape}');
 
-    await expandAdvanced();
+    await openTab('Agent tools');
     expect(screen.queryByLabelText('Additional senders')).toBeNull();
     expect(screen.queryByRole('link', { name: 'Telegram' })).toBeNull();
     expect(screen.queryByRole('link', { name: 'Provider accounts' })).toBeNull();
     expect(screen.queryByRole('link', { name: 'Personal MCP' })).toBeNull();
-    expect(screen.getByRole('link', { name: 'Integration audit' })).toBeTruthy();
-    expect(screen.getByRole('link', { name: 'Job recovery' })).toBeTruthy();
-    expect(screen.getByRole('link', { name: 'Agent install guide' }).getAttribute('href')).toBe(
-      '/help/agents',
-    );
+    await user.click(screen.getByRole('link', { name: 'Open Timeline MCP endpoint details' }));
+    const timelineMcp = await screen.findByRole('dialog', { name: 'Timeline MCP endpoint' });
+    expect(
+      within(timelineMcp).getByRole('link', { name: 'Agent install guide' }).getAttribute('href'),
+    ).toBe('/help/agents');
+    await user.keyboard('{Escape}');
+
+    await openTab('Developer');
+    expect(screen.getByText('Admin tools')).toBeTruthy();
+    expect(screen.queryByLabelText('Search sources')).toBeNull();
+    expect(screen.getByRole('link', { name: 'Open Integration audit' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Open Job recovery' })).toBeTruthy();
   });
 
   it('keeps source actions contextual and rows responsive for keyboard and narrow-screen use', () => {
@@ -532,9 +647,10 @@ describe('SourcesPageView', () => {
         model={model()}
       />,
     );
-    await expandAdvanced();
-    expect(screen.getByRole('link', { name: 'Integration audit' })).toBeTruthy();
-    expect(screen.getByRole('link', { name: 'Job recovery' })).toBeTruthy();
+    await openTab('Developer');
+    expect(screen.getByText('Admin tools')).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Open Integration audit' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Open Job recovery' })).toBeTruthy();
 
     const queryClient = new QueryClient({
       defaultOptions: { queries: { retry: false } },
@@ -550,9 +666,10 @@ describe('SourcesPageView', () => {
         />
       </QueryClientProvider>,
     );
-    expect(screen.queryByRole('button', { name: /^Advanced / })).toBeNull();
-    expect(screen.queryByRole('link', { name: 'Integration audit' })).toBeNull();
-    expect(screen.queryByRole('link', { name: 'Job recovery' })).toBeNull();
+    await openTab('Developer');
+    expect(screen.queryByRole('link', { name: 'Open Integration audit' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Open Job recovery' })).toBeNull();
+    expect(screen.getByText('Developer tools are admin-only')).toBeTruthy();
   });
 
   it('keeps the shared-source recovery action inside the provider sheet', async () => {
@@ -585,7 +702,7 @@ describe('SourcesPageView', () => {
       />,
     );
 
-    await user.click(screen.getByRole('button', { name: 'Open GitHub details' }));
+    await user.click(screen.getByRole('link', { name: 'Open GitHub details' }));
     const dialog = await screen.findByRole('dialog', { name: 'GitHub' });
     expect(within(dialog).getByText(/No shared provider sources yet/i)).toBeTruthy();
     expect(
@@ -621,7 +738,7 @@ describe('SourcesPageView', () => {
     );
 
     expect(screen.getByText('Needs attention')).toBeTruthy();
-    await user.click(screen.getByRole('button', { name: 'Open GitHub details' }));
+    await user.click(screen.getByRole('link', { name: 'Open GitHub details' }));
     const dialog = await screen.findByRole('dialog', { name: 'GitHub' });
     expect(within(dialog).getByText(/Paused: GitHub hasn't responded/)).toBeTruthy();
     expect(within(dialog).getByRole('button', { name: 'Resume' })).toBeTruthy();

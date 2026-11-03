@@ -4,16 +4,19 @@ import { useState } from 'react';
 
 import { InlineError } from '@/components/inline-error';
 import { notifyAction } from '@/lib/notify';
+import { cn } from '@/lib/utils';
 import { connectionErrorMessage } from '@/lib/ux-errors';
 
 export function NativeProviderConnectButton({
   providerId,
   label,
   disabled = false,
+  className,
 }: {
   providerId: string;
   label: string;
   disabled?: boolean;
+  className?: string;
 }) {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<{ message: string; details: string } | null>(null);
@@ -61,7 +64,10 @@ export function NativeProviderConnectButton({
         aria-busy={pending || undefined}
         disabled={disabled || pending}
         onClick={() => void startConnect()}
-        className="inline-flex min-h-8 items-center rounded-sm px-2 text-xs text-fg-muted hover:bg-surface-2 hover:text-fg focus-visible:ring-2 focus-visible:ring-signal/50 disabled:cursor-not-allowed disabled:opacity-50"
+        className={cn(
+          'inline-flex min-h-8 items-center rounded-sm px-2 text-xs text-fg-muted hover:bg-surface-2 hover:text-fg focus-visible:ring-2 focus-visible:ring-signal/50 disabled:cursor-not-allowed disabled:opacity-50',
+          className,
+        )}
       >
         {pending ? busyLabel : label}
       </button>

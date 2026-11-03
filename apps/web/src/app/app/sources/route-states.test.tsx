@@ -34,7 +34,7 @@ describe('Connections route states', () => {
       render(<SourcesError error={new Error('route failed')} reset={reset} />);
 
       expect(screen.getAllByRole('heading', { level: 1, name: 'Connections' })).toHaveLength(1);
-      expect(screen.getByText('Provider accounts and team sync.')).toBeTruthy();
+      expect(screen.getByText('Connect the tools this team already uses.')).toBeTruthy();
       expect(
         screen.getByRole('heading', { level: 2, name: 'Unable to load connections' }),
       ).toBeTruthy();

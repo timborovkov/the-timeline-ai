@@ -4,18 +4,15 @@ import { redirect } from 'next/navigation';
 
 import type { Metadata } from 'next';
 
-import { AdvancedConnections } from '@/app/app/sources/advanced-connections';
 import {
   buildDirectoryProviders,
   connectionHeaderMetadata,
   EMPTY_TELEGRAM_SETUP,
-  initialOpenProviderId,
-  partitionMcpCatalog,
-  partitionMcpServers,
+  parseConnectionsLocation,
   type InboundEmailSettings,
   type TelegramSetupSnapshot,
 } from '@/app/app/sources/connection-directory';
-import { ConnectionsDirectory } from '@/app/app/sources/connections-directory';
+import { ConnectionsWorkspace } from '@/app/app/sources/connections-workspace';
 import {
   loadIntegrationsPageModel,
   type IntegrationsPageModel,
@@ -35,13 +32,14 @@ import { connectionErrorMessage } from '@/lib/ux-errors';
 
 export const metadata: Metadata = {
   title: 'Connections',
-  description: 'Provider accounts and team sync.',
+  description: 'Connect the tools this team already uses.',
 };
 
 interface SourcesPageParams {
   connected?: string;
   error?: string;
   integrationId?: string;
+  tab?: string;
 }
 
 function inboundEmailFromTeam(
@@ -89,27 +87,6 @@ async function loadTelegramSetup(scope: TeamScope): Promise<TelegramSetupSnapsho
     })),
     linkedUsers,
   };
-}
-
-function ConnectionHealthNotices({ model }: { model: IntegrationsPageModel }) {
-  return (
-    <>
-      {model.blockingAttentionCount > 0 ? (
-        <div role="alert" className="text-sm text-danger">
-          {String(model.blockingAttentionCount)} integration item
-          {model.blockingAttentionCount === 1 ? '' : 's'} need attention. Open the affected provider
-          to reconnect, replace the connection, or retry failed sync.
-        </div>
-      ) : null}
-      {model.webhookDegradedCount > 0 ? (
-        <output className="block text-sm text-fg-muted">
-          {String(model.webhookDegradedCount)} webhook subscription
-          {model.webhookDegradedCount === 1 ? '' : 's'} degraded. Reconciliation remains active
-          while provider webhook delivery is repaired.
-        </output>
-      ) : null}
-    </>
-  );
 }
 
 export default async function SourcesPage({
@@ -178,23 +155,22 @@ export function SourcesPageView({
     telegramWebhookConfigured: telegram.webhookConfigured,
     inboundEmail: emailSettings,
   });
-  const mcpCatalog = partitionMcpCatalog(model.mcpCatalogAvailable, model.nativeCatalog);
-  const mcpServers = partitionMcpServers(model.mcpServerRows, model.nativeCatalog);
   const attentionCount = directory.connected.filter(
     (provider) => provider.status === 'attention',
   ).length;
-  const openProviderId = initialOpenProviderId({
+  const location = parseConnectionsLocation({
+    tab: params.tab,
     providers: [...directory.connected, ...directory.available],
     connectedRows: model.connectedRows,
     integrationId: params.integrationId,
   });
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <PageHeader
         variant="collection"
         title="Connections"
-        subtitle="Provider accounts and team sync."
+        subtitle="Connect the tools this team already uses."
         srLabel={`Connections · ${active.teamName} · ${String(directory.connected.length)} connected · ${String(attentionCount)} need attention · ${String(directory.available.length)} available`}
         metadata={connectionHeaderMetadata(
           active.teamName,
@@ -210,21 +186,16 @@ export function SourcesPageView({
         success={params.connected ? 'MCP server connected' : null}
       />
 
-      <ConnectionHealthNotices model={model} />
-      <ConnectionsDirectory
+      <ConnectionsWorkspace
         isAdmin={isAdmin}
         model={model}
         connected={directory.connected}
         available={directory.available}
-        initialProviderId={openProviderId}
         inboundEmail={emailSettings}
         telegramSetup={telegram}
-      />
-      <AdvancedConnections
-        isAdmin={isAdmin}
-        model={model}
-        mcpServerRows={mcpServers.advanced}
-        mcpCatalog={mcpCatalog.advanced}
+        initialTab={location.tab}
+        initialHash={location.hash}
+        integrationId={params.integrationId}
       />
     </div>
   );

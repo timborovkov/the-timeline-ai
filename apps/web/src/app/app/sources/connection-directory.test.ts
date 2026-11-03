@@ -5,8 +5,11 @@ import type { IntegrationsPageModel } from '@/app/app/team/integrations/integrat
 
 import {
   buildDirectoryProviders,
+  connectionsHref,
   filterAvailableProviders,
   initialOpenProviderId,
+  parseConnectionsLocation,
+  partitionAdvancedMcpCatalog,
   partitionMcpCatalog,
   partitionMcpServers,
   providerRowStatus,
@@ -309,5 +312,53 @@ describe('connection directory helpers', () => {
         hash: '#telegram',
       }),
     ).toBe('telegram');
+  });
+
+  it('moves local-only and planned MCP catalog rows into Coming soon', () => {
+    const partitioned = partitionAdvancedMcpCatalog([
+      { id: 'notion', label: 'Notion', status: 'mcp_available' },
+      { id: 'figma', label: 'Figma', status: 'mcp_local' },
+      { id: 'hubspot', label: 'HubSpot', status: 'coming_soon' },
+    ]);
+    expect(partitioned.connectable.map((entry) => entry.id)).toEqual(['notion']);
+    expect(partitioned.comingSoon.map((entry) => entry.id)).toEqual(['figma', 'hubspot']);
+  });
+
+  it('routes hashes onto Sources, Agent tools, or Developer', () => {
+    const directory = buildDirectoryProviders({
+      model: model(),
+      slackConnections: 0,
+      telegramConnections: 0,
+    });
+    const providers = [...directory.connected, ...directory.available];
+    expect(
+      parseConnectionsLocation({
+        hash: '#email',
+        providers,
+        connectedRows: [],
+      }),
+    ).toEqual({ tab: 'sources', hash: 'email' });
+    expect(
+      parseConnectionsLocation({
+        hash: '#agent-mcp',
+        providers,
+        connectedRows: [],
+      }),
+    ).toEqual({ tab: 'agent', hash: 'agent-mcp' });
+    expect(
+      parseConnectionsLocation({
+        hash: '#webhooks',
+        providers,
+        connectedRows: [],
+      }),
+    ).toEqual({ tab: 'developer', hash: 'webhooks' });
+    expect(
+      parseConnectionsLocation({
+        tab: 'agent',
+        providers,
+        connectedRows: [],
+      }),
+    ).toEqual({ tab: 'agent', hash: null });
+    expect(connectionsHref('agent', 'timeline-mcp')).toBe('/app/sources?tab=agent#timeline-mcp');
   });
 });

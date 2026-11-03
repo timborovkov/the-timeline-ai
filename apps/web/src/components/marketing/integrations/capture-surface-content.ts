@@ -92,7 +92,7 @@ export const CAPTURE_SURFACES = [
       'JSON, form, CSV, XML, YAML, GraphQL, NDJSON, and other textual request bodies up to 1 MB.',
     boundary:
       'Webhook payloads can support an answer, but they cannot update or control records in the sending tool. Direct file or binary upload uses a separate route.',
-    setupHref: '/app/sources',
+    setupHref: '/app/sources?tab=developer#webhooks',
     setupLabel: 'Create a webhook',
     featured: false,
   },

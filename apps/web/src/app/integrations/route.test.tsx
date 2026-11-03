@@ -98,7 +98,7 @@ describe('public integration routes', () => {
       '/app/meetings',
     );
     expect(screen.getByRole('link', { name: 'Create a webhook' }).getAttribute('href')).toBe(
-      '/app/sources',
+      '/app/sources?tab=developer#webhooks',
     );
     expect(screen.getByRole('link', { name: 'Open connections' }).getAttribute('href')).toBe(
       '/app/sources',

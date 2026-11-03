@@ -17,12 +17,13 @@
         then activate team sync from the provider details sheet on <code>/app/sources</code>. Each
         native provider appears once; clicking a connected row opens accounts, resource selection,
         visibility, team sync, and disconnect. Native providers sync external activity into the
-        timeline as <code>source='integration'</code>. Team MCP servers in the collapsed Advanced
-        section of <code>/app/sources</code> give the agent live tool access; successful team-server
-        results become immutable team-visible integration evidence, while personal-server results
-        stay private to their owner. Passive provider activity still needs a native sync adapter or
-        custom ingestion layer. For tools that only need to push arbitrary evidence into Timeline,
-        admins can also create named ingest webhooks from <code>/app/sources</code>.
+        timeline as <code>source='integration'</code>. Team MCP servers on the
+        <strong>Agent tools</strong> tab of <code>/app/sources</code> give the agent live tool
+        access; successful team-server results become immutable team-visible integration evidence,
+        while personal-server results stay private to their owner. Passive provider activity still
+        needs a native sync adapter or custom ingestion layer. For tools that only need to push
+        arbitrary evidence into Timeline, admins can also create named ingest webhooks from the
+        <strong>Developer</strong> tab on <code>/app/sources</code>.
       </p>
 
       <h2 id="secrets">Encryption key (required first)</h2>
@@ -523,8 +524,8 @@ SENTRY_INTEGRATION_CLIENT_SECRET=...</code></pre>
       </p>
       <ol>
         <li>
-          Go to <code>/app/sources</code> as a team admin and open the collapsed
-          <strong>Advanced</strong> section.
+          Go to <code>/app/sources</code> as a team admin, open the <strong>Developer</strong> tab,
+          and open <strong>Ingest webhooks</strong>.
         </li>
         <li>
           Create a named webhook, for example <em>Pipedrive webhook</em>. Choose whether new events
@@ -566,20 +567,19 @@ SENTRY_INTEGRATION_CLIENT_SECRET=...</code></pre>
 
       <h2 id="mcp">Custom MCP servers (inbound)</h2>
       <p>
-        Bring tools from any MCP-compatible server into the agent's toolset. Visit the Advanced
-        integration tools section of <code>/app/sources</code> (team catalog — admins only) or
-        <code>/app/me/mcp-servers</code> (personal overlay — visible only to you, any member can
-        add). MCP servers are queried on demand during chat; they are not passive ingestion jobs.
-        Successful team-server results are captured as immutable team-visible
-        <code>source='integration'</code>, <code>provider='mcp'</code> evidence. Personal-server
-        results remain private to their owner. Captured results include an event citation for the
-        current answer and later reconciliation. Pick an auth mode:
+        Bring tools from any MCP-compatible server into the agent's toolset. Visit
+        <strong>Connections → Agent tools</strong> on <code>/app/sources</code> (team catalog —
+        admins add custom servers) or <code>/app/me/mcp-servers</code> (personal overlay — visible
+        only to you, any member can add). MCP servers are queried on demand during chat; they are
+        not passive ingestion jobs. Successful team-server results are captured as immutable
+        team-visible <code>source='integration'</code>, <code>provider='mcp'</code> evidence.
+        Personal-server results remain private to their owner. Captured results include an event
+        citation for the current answer and later reconciliation. Pick an auth mode:
       </p>
       <p>
-        Hosted catalog entries use production-safe HTTPS endpoints. The Figma desktop MCP entry is
-        explicitly local-only: its loopback endpoint can be connected only when a non-production
-        Timeline instance runs on the same machine. Hosted Timeline labels it
-        <em>Local setup only</em> and does not offer a Connect action.
+        Hosted catalog entries use production-safe HTTPS endpoints. Local-only MCP entries such as
+        the Figma desktop server appear under <strong>Coming soon</strong> on Connections and do not
+        offer a Connect action. Their loopback endpoints are not production-connectable.
       </p>
       <ul>
         <li><strong>None</strong> — public MCP servers with no auth.</li>
@@ -686,10 +686,10 @@ SENTRY_INTEGRATION_CLIENT_SECRET=...</code></pre>
       <h3 id="timeline-mcp-static-key">Static key setup</h3>
       <p>
         Use this path only for a client that needs an explicit header or for controlled developer
-        testing. An admin opens <strong>Connections</strong> (<code>/app/sources</code>), expands
-        <em>Advanced</em>, chooses <em>Manage MCP endpoint</em>, creates a key, and copies the
-        one-time plaintext. The optional <em>Allow Timeline agent</em> key setting adds
-        <code>agent:ask</code> and is off by default.
+        testing. An admin opens <strong>Connections</strong> (<code>/app/sources</code>), the
+        <em>Agent tools</em> tab, then <em>Timeline MCP endpoint</em>, chooses
+        <em>Manage endpoint</em>, creates a key, and copies the one-time plaintext. The optional
+        <em>Allow Timeline agent</em> key setting adds <code>agent:ask</code> and is off by default.
       </p>
       <p>For Codex CLI, keep the key in an environment variable:</p>
       <pre><code>printf 'Timeline MCP key: '
