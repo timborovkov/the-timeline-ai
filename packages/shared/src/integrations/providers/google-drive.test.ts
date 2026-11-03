@@ -1688,7 +1688,9 @@ describe('googleDriveProvider', () => {
     ).mock.calls.flatMap(([batch]) => batch);
     expect(events).toHaveLength(1);
     expect(events[0]?.dedupKey).toMatch(
-      new RegExp(`^google_drive:file:file-1:${contentHash}:[a-f0-9]{64}:[a-f0-9]{64}$`),
+      new RegExp(
+        `^google_drive:file:file-1:mod:2026-06-20T10:00:00\\.000Z:${contentHash}:[a-f0-9]{64}:[a-f0-9]{64}$`,
+      ),
     );
     expect(events[0]?.contentText).toContain('Please confirm the $48k annual term.');
     expect(events[0]?.contentText).toContain('Ada (resolved):');
@@ -2007,5 +2009,70 @@ describe('googleDriveProvider', () => {
         },
       ],
     });
+  });
+
+  it('clears a transient extract when the Drive file is missing', async () => {
+    const fetch = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((input) => {
+      const url = requestUrl(input);
+      if (url.pathname.endsWith('/files/file-1')) {
+        return Promise.resolve(jsonResponse({ error: 'not found' }, { status: 404 }));
+      }
+      return Promise.resolve(jsonResponse({ message: 'unexpected' }, { status: 404 }));
+    });
+    vi.stubGlobal('fetch', fetch);
+    const ctx = syncContext();
+
+    await googleDriveProvider.incrementalSync({
+      integration: { id: 'integration-1', teamId: 'team-1' } as never,
+      tokens: { access_token: 'access-token', expires_at: Date.now() + 600_000 },
+      selections: [{ kind: 'drive.file', externalId: 'file-1' }],
+      ctx: ctx,
+      target: { resourceType: 'drive.file', externalId: 'file-1' },
+    });
+
+    expect(ctx.consumeTransientDriveExtract).toHaveBeenCalledWith('file-1');
+    expect(ctx.writeEvents).not.toHaveBeenCalled();
+    expect(ctx.recordAudit).toHaveBeenCalledWith(
+      'drive_file_missing',
+      expect.objectContaining({ file_id: 'file-1' }),
+    );
+  });
+
+  it('clears a transient extract when the Drive file leaves the selected subtree', async () => {
+    const fetch = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((input) => {
+      const url = requestUrl(input);
+      if (url.pathname.endsWith('/files/file-1')) {
+        return Promise.resolve(
+          jsonResponse({
+            id: 'file-1',
+            name: 'Moved SOW',
+            mimeType: 'application/pdf',
+            parents: ['outside'],
+          }),
+        );
+      }
+      return Promise.resolve(jsonResponse({ message: 'unexpected' }, { status: 404 }));
+    });
+    vi.stubGlobal('fetch', fetch);
+    const ctx = syncContext();
+
+    await googleDriveProvider.incrementalSync({
+      integration: { id: 'integration-1', teamId: 'team-1' } as never,
+      tokens: { access_token: 'access-token', expires_at: Date.now() + 600_000 },
+      selections: [{ kind: 'drive.file', externalId: 'other-file' }],
+      ctx: ctx,
+      target: { resourceType: 'drive.file', externalId: 'file-1' },
+    });
+
+    expect(ctx.consumeTransientDriveExtract).toHaveBeenCalledWith('file-1');
+    expect(ctx.writeEvents).not.toHaveBeenCalled();
+    expect(ctx.recordAudit).toHaveBeenCalledWith(
+      'drive_file_out_of_scope',
+      expect.objectContaining({ file_id: 'file-1' }),
+    );
   });
 });

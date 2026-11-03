@@ -22,6 +22,7 @@ import { and, asc, eq, gt, inArray, isNotNull, isNull, or, sql } from 'drizzle-o
 import { alias } from 'drizzle-orm/pg-core';
 
 import { captureWorkerException, captureWorkerJobFailure } from '#src/monitoring.js';
+import { sweepOrphanDriveTransientExtracts } from '#src/workers/integrationSync.js';
 
 // Keyset paging by id keeps memory bounded on a backlog that hasn't been
 // swept in a while. UUIDs sort lexicographically — total + stable, which
@@ -59,6 +60,11 @@ interface JanitorDeps {
   enqueueTaskCategoryJob?: (data: queue.TaskCategoryJobData) => Promise<unknown>;
   taskCategoryEnabled?: boolean;
   taskCategoryAttemptLimit?: number;
+  sweepOrphanDriveTransientExtracts?: (input: {
+    db: Db;
+    now?: Date;
+    limit?: number;
+  }) => Promise<number>;
 }
 
 export interface JanitorTickResult {
@@ -70,6 +76,7 @@ export interface JanitorTickResult {
   mcpOAuthAuthorizationCodesDeleted: number;
   mcpOAuthTokensDeleted: number;
   mcpOAuthGrantsDeleted: number;
+  driveTransientExtractsCleared: number;
 }
 
 /**
@@ -110,6 +117,12 @@ export async function processJanitorTick(deps: JanitorDeps): Promise<JanitorTick
     : 0;
   const timelineMomentPinsDeleted = await sweepDeletedTimelineMomentPins(deps.db);
   const mcpOAuthDeleted = await sweepExpiredMcpOAuthCredentials(deps.db);
+  const sweepDriveExtracts =
+    deps.sweepOrphanDriveTransientExtracts ?? sweepOrphanDriveTransientExtracts;
+  const driveTransientExtractsCleared = await sweepDriveExtracts({
+    db: deps.db,
+    limit: PAGE_SIZE,
+  });
 
   return {
     documentVersionsRequeued,
@@ -120,6 +133,7 @@ export async function processJanitorTick(deps: JanitorDeps): Promise<JanitorTick
     mcpOAuthAuthorizationCodesDeleted: mcpOAuthDeleted.authorizationCodesDeleted,
     mcpOAuthTokensDeleted: mcpOAuthDeleted.tokensDeleted,
     mcpOAuthGrantsDeleted: mcpOAuthDeleted.grantsDeleted,
+    driveTransientExtractsCleared,
   };
 }
 

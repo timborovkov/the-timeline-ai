@@ -3,12 +3,14 @@ import { createHash } from 'node:crypto';
 import {
   entities,
   googleDriveFileSnapshots,
+  integrations as integrationsTable,
   integrationSelections,
+  integrationSyncState,
   teamMembers,
   users,
   type Db,
 } from '@timeline/db';
-import { and, desc, eq, inArray, isNull, notInArray, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, notInArray, sql } from 'drizzle-orm';
 
 import {
   checkRateLimit,
@@ -117,8 +119,16 @@ export function driveExtractCursorKey(fileId: string): string {
   return `drive.extract.${fileId}`;
 }
 
+export function driveExtractFileIdFromResourceType(resourceType: string): string | null {
+  if (!resourceType.startsWith('drive.extract.')) return null;
+  const fileId = resourceType.slice('drive.extract.'.length);
+  return fileId.length > 0 ? fileId : null;
+}
+
 /** Re-enqueue a missing result after the same quiet window as file debounce. */
 export const DRIVE_EXTRACT_PENDING_STALE_MS = 15 * 60 * 1000;
+/** Drop Drive transient extract objects whose resume never ran. */
+export const DRIVE_TRANSIENT_EXTRACT_ORPHAN_MS = 24 * 60 * 60 * 1000;
 
 export interface DriveExtractCursor {
   extractId: string;
@@ -189,6 +199,70 @@ export function isDriveExtractPendingStale(cursor: DriveExtractCursor, now = Dat
   const enqueuedAtMs = Date.parse(cursor.enqueuedAt);
   if (!Number.isFinite(enqueuedAtMs)) return true;
   return now - enqueuedAtMs >= DRIVE_EXTRACT_PENDING_STALE_MS;
+}
+
+export function isDriveExtractCursorOrphan(cursor: DriveExtractCursor, now = Date.now()): boolean {
+  const enqueuedAtMs = Date.parse(cursor.enqueuedAt);
+  if (!Number.isFinite(enqueuedAtMs)) return true;
+  return now - enqueuedAtMs >= DRIVE_TRANSIENT_EXTRACT_ORPHAN_MS;
+}
+
+export function driveFileChangeDedupKey(input: {
+  fileId: string;
+  occurrence: string;
+  contentHash: string;
+  commentsHash: string;
+  permissionsHash: string;
+}): string {
+  return `google_drive:file:${input.fileId}:${input.occurrence}:${input.contentHash}:${input.commentsHash}:${input.permissionsHash}`;
+}
+
+interface DriveExtractCursorRow {
+  teamId: string;
+  integrationId: string;
+  fileId: string;
+  cursor: DriveExtractCursor;
+}
+
+export async function listDriveExtractCursors(
+  db: Db,
+  input: {
+    integrationId?: string;
+    now?: Date;
+    orphanOnly?: boolean;
+    limit?: number;
+  } = {},
+): Promise<DriveExtractCursorRow[]> {
+  const limit = input.limit ?? 500;
+  const rows = await db
+    .select({
+      teamId: integrationsTable.teamId,
+      integrationId: integrationSyncState.integrationId,
+      resourceType: integrationSyncState.resourceType,
+      cursor: integrationSyncState.cursor,
+    })
+    .from(integrationSyncState)
+    .innerJoin(integrationsTable, eq(integrationsTable.id, integrationSyncState.integrationId))
+    .where(
+      and(
+        sql`${integrationSyncState.resourceType} LIKE 'drive.extract.%'`,
+        ...(input.integrationId
+          ? [eq(integrationSyncState.integrationId, input.integrationId)]
+          : []),
+      ),
+    )
+    .orderBy(asc(integrationSyncState.updatedAt), asc(integrationSyncState.id))
+    .limit(limit);
+  const now = (input.now ?? new Date()).getTime();
+  const found: DriveExtractCursorRow[] = [];
+  for (const row of rows) {
+    const fileId = driveExtractFileIdFromResourceType(row.resourceType);
+    const cursor = parseDriveExtractCursor(row.cursor);
+    if (!fileId || !cursor) continue;
+    if (input.orphanOnly && !isDriveExtractCursorOrphan(cursor, now)) continue;
+    found.push({ teamId: row.teamId, integrationId: row.integrationId, fileId, cursor });
+  }
+  return found;
 }
 
 export function driveTransientExtractKeys(input: {

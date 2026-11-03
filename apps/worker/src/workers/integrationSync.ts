@@ -410,6 +410,13 @@ async function requireDriveExtractIntegration(
   return integration;
 }
 
+async function findDriveExtractIntegration(
+  integrations: DriveExtractCursorScope,
+  integrationId: string,
+): Promise<{ id: string; teamId: string } | null> {
+  return integrations.getIntegration(integrationId);
+}
+
 function driveTransientExtractJob(input: {
   teamId: string;
   integrationId: string;
@@ -434,7 +441,8 @@ async function loadDriveExtractCursor(
   integrationId: string,
   fileId: string,
 ): Promise<integrationsLib.DriveExtractCursor | null> {
-  await requireDriveExtractIntegration(integrations, integrationId);
+  const integration = await findDriveExtractIntegration(integrations, integrationId);
+  if (!integration) return null;
   return integrationsLib.parseDriveExtractCursor(
     await integrations.loadCursor(integrationId, integrationsLib.driveExtractCursorKey(fileId)),
   );
@@ -446,7 +454,8 @@ async function saveDriveExtractCursor(
   fileId: string,
   cursor: integrationsLib.DriveExtractCursor | Record<string, never>,
 ): Promise<void> {
-  await requireDriveExtractIntegration(integrations, integrationId);
+  const integration = await findDriveExtractIntegration(integrations, integrationId);
+  if (!integration) return;
   await integrations.saveCursor(
     integrationId,
     integrationsLib.driveExtractCursorKey(fileId),
@@ -592,6 +601,31 @@ export async function clearDriveTransientExtract(input: {
     ]);
   }
   await saveDriveExtractCursor(input.integrations, input.integrationId, input.fileId, {});
+}
+
+export async function sweepOrphanDriveTransientExtracts(input: {
+  db: Db;
+  now?: Date;
+  limit?: number;
+  io?: DriveTransientExtractIO;
+}): Promise<number> {
+  const orphans = await integrationsLib.listDriveExtractCursors(input.db, {
+    orphanOnly: true,
+    ...(input.now ? { now: input.now } : {}),
+    ...(input.limit !== undefined ? { limit: input.limit } : {}),
+  });
+  let cleared = 0;
+  for (const row of orphans) {
+    const scope = withTeam(input.db, row.teamId, ZERO_UUID, { skipMembershipCheck: true });
+    await clearDriveTransientExtract({
+      integrations: scope.integrations,
+      integrationId: row.integrationId,
+      fileId: row.fileId,
+      ...(input.io ? { io: input.io } : {}),
+    });
+    cleared += 1;
+  }
+  return cleared;
 }
 
 export async function harvestIntegrationDocument(input: {

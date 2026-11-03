@@ -4,6 +4,7 @@ import {
   googleDriveFileSnapshots,
   integrations,
   integrationSelections,
+  integrationSyncState,
 } from '@timeline/db';
 import { expect } from '@timeline/test-support';
 import { afterEach, beforeEach, describe, it } from 'bun:test';
@@ -13,19 +14,24 @@ import {
   DRIVE_EXTRACT_PENDING_STALE_MS,
   DRIVE_FILE_DEBOUNCE_MS,
   DRIVE_FILE_MAX_LATENCY_MS,
+  DRIVE_TRANSIENT_EXTRACT_ORPHAN_MS,
   DRIVE_TRANSIENT_RESULT_MAX_BYTES,
   DRIVE_TRANSIENT_RESULT_TOO_LARGE,
   driveDebouncePlan,
   driveExtractCursorKey,
+  driveExtractFileIdFromResourceType,
   driveExtractMatchesFileRevision,
+  driveFileChangeDedupKey,
   driveFileContentRevision,
   driveObjectLinkCandidates,
   driveTransientExtractKeys,
   driveTransientExtractResultBody,
   hashDrivePayload,
+  isDriveExtractCursorOrphan,
   isDriveExtractPendingStale,
   isDriveExtractResultTooLarge,
   linkedObjectForDriveSelection,
+  listDriveExtractCursors,
   loadLatestDriveSnapshot,
   parseDriveExtractCursor,
   parseDriveTransientExtractResult,
@@ -150,6 +156,8 @@ describe('takeDriveExtractSlot', () => {
 describe('drive transient extract helpers', () => {
   it('builds per-extract object keys and parses visible failures', () => {
     expect(driveExtractCursorKey('file-1')).toBe('drive.extract.file-1');
+    expect(driveExtractFileIdFromResourceType('drive.extract.file-1')).toBe('file-1');
+    expect(driveExtractFileIdFromResourceType('drive.changes')).toBeNull();
     expect(
       driveTransientExtractKeys({
         teamId: 'team-1',
@@ -237,6 +245,58 @@ describe('drive transient extract helpers', () => {
     expect(driveFileContentRevision({ modifiedTime: '2026-06-20T10:00:00.000Z' })).toBe(
       'mod:2026-06-20T10:00:00.000Z',
     );
+    expect(
+      driveFileChangeDedupKey({
+        fileId: 'file-1',
+        occurrence: 'rev:b-2',
+        contentHash: 'hash-b',
+        commentsHash: 'comments',
+        permissionsHash: 'permissions',
+      }),
+    ).toBe('google_drive:file:file-1:rev:b-2:hash-b:comments:permissions');
+    expect(
+      driveFileChangeDedupKey({
+        fileId: 'file-1',
+        occurrence: 'rev:b-1',
+        contentHash: 'hash-b',
+        commentsHash: 'comments',
+        permissionsHash: 'permissions',
+      }),
+    ).not.toBe(
+      driveFileChangeDedupKey({
+        fileId: 'file-1',
+        occurrence: 'rev:b-2',
+        contentHash: 'hash-b',
+        commentsHash: 'comments',
+        permissionsHash: 'permissions',
+      }),
+    );
+    expect(
+      isDriveExtractCursorOrphan(
+        {
+          extractId: 'ext-1',
+          objectKey: 'source',
+          resultObjectKey: 'result.json',
+          contentType: 'application/pdf',
+          filename: 'Notes.pdf',
+          enqueuedAt: '2026-11-02T12:00:00.000Z',
+        },
+        Date.parse('2026-11-02T12:00:00.000Z') + DRIVE_TRANSIENT_EXTRACT_ORPHAN_MS,
+      ),
+    ).toBe(true);
+    expect(
+      isDriveExtractCursorOrphan(
+        {
+          extractId: 'ext-1',
+          objectKey: 'source',
+          resultObjectKey: 'result.json',
+          contentType: 'application/pdf',
+          filename: 'Notes.pdf',
+          enqueuedAt: '2026-11-02T12:00:00.000Z',
+        },
+        Date.parse('2026-11-02T12:00:00.000Z') + DRIVE_EXTRACT_PENDING_STALE_MS,
+      ),
+    ).toBe(false);
     expect(driveExtractMatchesFileRevision('rev:old', 'rev:new')).toBe(false);
     expect(driveExtractMatchesFileRevision('rev:same', 'rev:same')).toBe(true);
     expect(driveExtractMatchesFileRevision(undefined, 'rev:new')).toBe(true);
@@ -592,5 +652,74 @@ describe('saveDriveSnapshot uniqueness', () => {
         myDriveRootId: '0AMK-my-drive',
       }),
     ).resolves.toBeNull();
+  });
+
+  it('lists orphan Drive extract cursors and ignores fresh pending extracts', async () => {
+    const [integration] = await db
+      .insert(integrations)
+      .values({
+        teamId: TEAM_ID,
+        connectedByUserId: USER_ID,
+        provider: 'google_drive',
+        displayName: 'Google Drive',
+        externalAccountId: 'drive-acct-orphan',
+        visibilityDefault: 'team',
+      })
+      .returning();
+    if (!integration) throw new Error('integration insert failed');
+
+    const staleEnqueuedAt = new Date(
+      Date.parse('2026-11-03T00:00:00.000Z') - DRIVE_TRANSIENT_EXTRACT_ORPHAN_MS,
+    ).toISOString();
+    await db.insert(integrationSyncState).values([
+      {
+        integrationId: integration.id,
+        resourceType: driveExtractCursorKey('stale-file'),
+        cursor: {
+          extractId: 'ext-stale',
+          objectKey: 'stale-source',
+          resultObjectKey: 'stale-result.json',
+          contentType: 'application/pdf',
+          filename: 'Stale.pdf',
+          enqueuedAt: staleEnqueuedAt,
+        },
+        updatedAt: new Date('2026-11-01T00:00:00.000Z'),
+      },
+      {
+        integrationId: integration.id,
+        resourceType: driveExtractCursorKey('fresh-file'),
+        cursor: {
+          extractId: 'ext-fresh',
+          objectKey: 'fresh-source',
+          resultObjectKey: 'fresh-result.json',
+          contentType: 'application/pdf',
+          filename: 'Fresh.pdf',
+          enqueuedAt: '2026-11-03T00:00:00.000Z',
+        },
+        updatedAt: new Date('2026-11-03T00:00:00.000Z'),
+      },
+    ]);
+
+    const orphans = await listDriveExtractCursors(db as never, {
+      orphanOnly: true,
+      now: new Date('2026-11-03T00:00:00.000Z'),
+    });
+    expect(orphans).toHaveLength(1);
+    expect(orphans[0]).toMatchObject({
+      teamId: TEAM_ID,
+      integrationId: integration.id,
+      fileId: 'stale-file',
+      cursor: { extractId: 'ext-stale' },
+    });
+    const forIntegration = await listDriveExtractCursors(db as never, {
+      integrationId: integration.id,
+    });
+    expect(forIntegration.map((row) => row.fileId).sort()).toEqual(['fresh-file', 'stale-file']);
+
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    await expect(scope.integrations.deleteIntegration(integration.id)).resolves.toBeUndefined();
+    await expect(
+      listDriveExtractCursors(db as never, { integrationId: integration.id }),
+    ).resolves.toEqual([]);
   });
 });

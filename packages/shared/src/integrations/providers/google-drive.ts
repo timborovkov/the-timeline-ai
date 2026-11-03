@@ -4,6 +4,7 @@ import { getEnv } from '#src/env.js';
 import {
   driveDebouncePlan,
   driveExtractMatchesFileRevision,
+  driveFileChangeDedupKey,
   driveFileContentRevision,
   hashDrivePayload,
   isDriveExtractResultTooLarge,
@@ -533,6 +534,10 @@ async function consumeReadyDriveExtract(
   if (loaded.consumeReadyExtract) await ctx.consumeTransientDriveExtract?.(fileId);
 }
 
+async function discardTransientDriveExtract(ctx: SyncContext, fileId: string): Promise<void> {
+  await ctx.consumeTransientDriveExtract?.(fileId);
+}
+
 async function loadDriveText(
   integrationId: string,
   tokens: DriveTokens,
@@ -881,15 +886,18 @@ async function processDriveFile(
   // cursor so the next changes.watch ping starts a fresh 15-minute debounce.
   await ctx.saveCursor(driveDebounceCursorKey(fileId), {});
   if (!file) {
+    await discardTransientDriveExtract(ctx, fileId);
     await ctx.recordAudit('drive_file_missing', { file_id: fileId });
     return;
   }
   const membership = await fileInSelectedSubtree(tokens, file, scope, createDriveAncestryCache());
   if (!membership.inScope) {
+    await discardTransientDriveExtract(ctx, fileId);
     await ctx.recordAudit('drive_file_out_of_scope', { file_id: fileId });
     return;
   }
   if (!isSupportedDriveMimeType(file.mimeType)) {
+    await discardTransientDriveExtract(ctx, fileId);
     await ctx.recordAudit('drive_file_unsupported_mime', {
       file_id: fileId,
       mime_type: file.mimeType,
@@ -1042,13 +1050,20 @@ async function processDriveFile(
     .filter(Boolean)
     .join('\n\n')
     .slice(0, 4000);
+  const occurrence = driveFileContentRevision(file) ?? 'unknown';
   const event: IntegrationEvent = {
-    dedupKey: `google_drive:file:${file.id}:${contentHash}:${commentsHash}:${permissionsHash}`,
+    dedupKey: driveFileChangeDedupKey({
+      fileId: file.id,
+      occurrence,
+      contentHash,
+      commentsHash,
+      permissionsHash,
+    }),
     provider: 'google_drive',
     signalClass: 'communication',
     eventClass: 'communication',
     externalObjectId: file.id,
-    externalEventId: file.modifiedTime ?? null,
+    externalEventId: occurrence,
     eventType: 'file.changed',
     occurredAt: file.modifiedTime ? new Date(file.modifiedTime) : new Date(),
     actor: actorFromFile(file) ?? null,

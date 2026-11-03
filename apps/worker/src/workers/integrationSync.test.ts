@@ -3029,4 +3029,34 @@ describe('Drive transient extract handoff', () => {
     expect(scope.saveCursor).toHaveBeenCalledWith(INTEGRATION_ID, cursorKey, {});
     expect(fakes.adminSaveCursor).not.toHaveBeenCalled();
   });
+
+  it('does not throw when clearing an extract after the integration is gone', async () => {
+    const scope = extractScope(
+      new Map([
+        [
+          cursorKey,
+          {
+            extractId: 'ext-1',
+            objectKey: 'source',
+            resultObjectKey: 'result.json',
+            contentType: 'application/pdf',
+            filename: 'Notes.pdf',
+            enqueuedAt: '2026-11-02T12:00:00.000Z',
+          },
+        ],
+      ]),
+    );
+    scope.getIntegration.mockResolvedValue(null);
+    const io = extractIO();
+    await expect(
+      clearDriveTransientExtract({
+        integrations: scope,
+        integrationId: INTEGRATION_ID,
+        fileId: FILE_ID,
+        io,
+      }),
+    ).resolves.toBeUndefined();
+    expect(io.deleteDocumentObject).not.toHaveBeenCalled();
+    expect(scope.saveCursor).not.toHaveBeenCalled();
+  });
 });

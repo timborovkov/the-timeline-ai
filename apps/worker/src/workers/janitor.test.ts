@@ -631,6 +631,25 @@ describe('processJanitorTick — MCP OAuth retention', () => {
   });
 });
 
+describe('processJanitorTick — Drive transient extract orphans', () => {
+  it('clears extract objects whose resume never ran', async () => {
+    const sweepOrphanDriveTransientExtracts = vi.fn().mockResolvedValue(2);
+    const result = await processJanitorTick({
+      db: db as never,
+      enqueueDocumentExtractJob: vi.fn(),
+      enqueueMeetingFinalizeJob: vi.fn(),
+      taskCategoryEnabled: false,
+      sweepOrphanDriveTransientExtracts,
+    });
+    expect(sweepOrphanDriveTransientExtracts).toHaveBeenCalledWith({
+      db: db as never,
+      limit: 500,
+    });
+    expect(result.driveTransientExtractsCleared).toBe(2);
+    expect(janitorTickIsIdle(result)).toBe(false);
+  });
+});
+
 describe('janitorTickIsIdle', () => {
   const idleResult = {
     documentVersionsRequeued: 0,
@@ -641,6 +660,7 @@ describe('janitorTickIsIdle', () => {
     mcpOAuthAuthorizationCodesDeleted: 0,
     mcpOAuthTokensDeleted: 0,
     mcpOAuthGrantsDeleted: 0,
+    driveTransientExtractsCleared: 0,
   };
 
   it('treats a zero-result tick as idle', () => {

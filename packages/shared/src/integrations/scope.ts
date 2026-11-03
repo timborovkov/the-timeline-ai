@@ -28,6 +28,7 @@ import { decryptJson, encryptJson } from '#src/crypto/secrets.js';
 import { getEnv } from '#src/env.js';
 import {
   linkedObjectForDriveSelection as loadLinkedObjectForDriveSelection,
+  listDriveExtractCursors,
   listTeamEmailDomains as loadTeamEmailDomains,
   loadLatestDriveSnapshot,
   saveDriveSnapshot,
@@ -43,6 +44,8 @@ import {
 import { getProvider } from '#src/integrations/registry.js';
 import { childLogger } from '#src/logger.js';
 import { sendMessage } from '#src/messaging/delivery.js';
+import { getDocumentsBucket, getS3Client } from '#src/s3/client.js';
+import { deleteObject } from '#src/s3/objects.js';
 import { rawEventVisibleToUser, validateVisibilityUserIds } from '#src/visibility.js';
 
 import type {
@@ -150,6 +153,22 @@ const githubRateLimitedUntilKey = 'github_rate_limited_until';
 const integrationSyncContinuationHandoffLeaseMs = 2 * 60 * 1000;
 const integrationSyncContinuationHandoffClaimLimit = 100;
 const log = childLogger('integrations:scope');
+
+async function tryDeleteDriveTransientExtractObjects(cursor: {
+  objectKey: string;
+  resultObjectKey: string;
+}): Promise<void> {
+  try {
+    const client = getS3Client();
+    const bucket = getDocumentsBucket();
+    await Promise.allSettled([
+      deleteObject(client, bucket, cursor.objectKey),
+      deleteObject(client, bucket, cursor.resultObjectKey),
+    ]);
+  } catch (err) {
+    log.warn({ err }, 'drive transient extract cleanup skipped');
+  }
+}
 const integrationHealthReset = {
   healthConsecutiveFailures: 0,
   healthFirstFailedAt: null,
@@ -636,6 +655,12 @@ export function createIntegrationScope(deps: {
         .delete(integrationWebhookSubscriptions)
         .where(eq(integrationWebhookSubscriptions.integrationId, id));
       await tx.delete(integrationSelections).where(eq(integrationSelections.integrationId, id));
+      const extractCursors = await listDriveExtractCursors(tx as unknown as Db, {
+        integrationId: id,
+      });
+      await Promise.all(
+        extractCursors.map((row) => tryDeleteDriveTransientExtractObjects(row.cursor)),
+      );
       await tx.delete(integrationSyncState).where(eq(integrationSyncState.integrationId, id));
       await tx.delete(integrationAuditLog).where(eq(integrationAuditLog.integrationId, id));
       await tx
