@@ -109,8 +109,7 @@ const retrieveWorkspaceContextInput = z.object({
   includeCalendar: z.boolean().optional(),
 });
 
-const searchObjectsInput = z.object({
-  query: z.string().trim().min(1).max(300),
+const objectFilterInput = z.object({
   type: z.union([objectTypeSchema, z.array(objectTypeSchema).max(10)]).optional(),
   status: z
     .union([z.string().trim().max(40), z.array(z.string().trim().max(40)).max(20)])
@@ -126,6 +125,30 @@ const searchObjectsInput = z.object({
   dueAfter: z.iso.datetime().optional(),
   dueBefore: z.iso.datetime().optional(),
   archived: z.boolean().optional(),
+  limit: z.number().int().min(1).max(50).optional(),
+});
+
+const searchObjectsInput = objectFilterInput.extend({
+  query: z.string().trim().min(1).max(300),
+});
+
+const listTasksInput = objectFilterInput.pick({
+  status: true,
+  ownerUserId: true,
+  assigneeUserId: true,
+  category: true,
+  uncategorized: true,
+  primaryProjectId: true,
+  dueAfter: true,
+  dueBefore: true,
+  limit: true,
+});
+
+const searchEventsInput = z.object({
+  query: z.string().trim().min(1).max(500),
+  from: z.iso.datetime().optional(),
+  to: z.iso.datetime().optional(),
+  source: z.enum(EVENT_SOURCE_VALUES).optional(),
   limit: z.number().int().min(1).max(50).optional(),
 });
 
@@ -305,6 +328,45 @@ function dateInRange(value: Date | null | undefined, from?: string, to?: string)
   if (from && value < new Date(from)) return false;
   if (to && value >= new Date(to)) return false;
   return true;
+}
+
+function objectListFilterFromParsed(
+  input: z.infer<typeof objectFilterInput>,
+): objects.ObjectListFilter {
+  const filter: objects.ObjectListFilter = {};
+  if (input.limit !== undefined) filter.limit = input.limit;
+  if (input.type) filter.type = input.type;
+  if (input.status) filter.status = input.status;
+  if (input.stage) filter.stage = input.stage;
+  if (input.ownerUserId !== undefined) filter.ownerUserId = input.ownerUserId;
+  if (input.assigneeUserId !== undefined) filter.assigneeUserId = input.assigneeUserId;
+  if (input.category) filter.taskCategory = input.category;
+  if (input.uncategorized) filter.taskCategoryNull = true;
+  if (input.primaryProjectId) filter.primaryProjectId = input.primaryProjectId;
+  if (input.dueAfter) filter.dueAfter = new Date(input.dueAfter);
+  if (input.dueBefore) filter.dueBefore = new Date(input.dueBefore);
+  if (input.archived !== undefined) filter.archived = input.archived;
+  return filter;
+}
+
+function parsedEventSearch(
+  args: Record<string, unknown>,
+  defaultLimit: number,
+): {
+  query: string;
+  limit: number;
+  from?: Date;
+  to?: Date;
+  source?: (typeof EVENT_SOURCE_VALUES)[number];
+} {
+  const input = searchEventsInput.parse(args);
+  return {
+    query: input.query,
+    limit: input.limit ?? defaultLimit,
+    ...(input.from ? { from: new Date(input.from) } : {}),
+    ...(input.to ? { to: new Date(input.to) } : {}),
+    ...(input.source ? { source: input.source } : {}),
+  };
 }
 
 function fenceAttr(value: string): string {
@@ -710,9 +772,7 @@ async function executeReadCapability(
 ): Promise<unknown> {
   switch (toolName) {
     case 'timeline.search_events': {
-      const query = typeof args.query === 'string' ? args.query : '';
-      const limit = typeof args.limit === 'number' ? args.limit : 10;
-      const hits = await scope.timeline.searchEvents({ query, limit });
+      const hits = await scope.timeline.searchEvents(parsedEventSearch(args, 10));
       return {
         count: hits.length,
         results: hits.map((r) => ({
@@ -726,16 +786,7 @@ async function executeReadCapability(
       };
     }
     case 'timeline.search_moments': {
-      const input = z
-        .object({
-          query: z.string().trim().min(1).max(500),
-          limit: z.number().int().min(1).max(20).optional(),
-        })
-        .parse(args);
-      const hits = await scope.timeline.searchEvents({
-        query: input.query,
-        ...(input.limit ? { limit: input.limit } : {}),
-      });
+      const hits = await scope.timeline.searchEvents(parsedEventSearch(args, 20));
       const rows = await scope.timeline.getEventsByIds(hits.map((hit) => hit.eventId));
       const events = await hydrateCompleteMcpMomentEvents(scope, rows.map(timelineMomentEvent));
       const moments = await serializeMcpTimelineMoments(scope, hits, events);
@@ -971,20 +1022,10 @@ async function executeReadCapability(
     case 'timeline.search_objects': {
       const input = searchObjectsInput.parse(args);
       const filter: objects.ObjectSearchFilter = {
+        ...objectListFilterFromParsed(input),
         query: input.query,
         limit: input.limit ?? 20,
       };
-      if (input.type) filter.type = input.type;
-      if (input.status) filter.status = input.status;
-      if (input.stage) filter.stage = input.stage;
-      if (input.ownerUserId !== undefined) filter.ownerUserId = input.ownerUserId;
-      if (input.assigneeUserId !== undefined) filter.assigneeUserId = input.assigneeUserId;
-      if (input.category) filter.taskCategory = input.category;
-      if (input.uncategorized) filter.taskCategoryNull = true;
-      if (input.primaryProjectId) filter.primaryProjectId = input.primaryProjectId;
-      if (input.dueAfter) filter.dueAfter = new Date(input.dueAfter);
-      if (input.dueBefore) filter.dueBefore = new Date(input.dueBefore);
-      if (input.archived !== undefined) filter.archived = input.archived;
       const rows = await scope.objects.searchObjects(filter);
       return {
         count: rows.length,
@@ -993,54 +1034,23 @@ async function executeReadCapability(
       };
     }
     case 'timeline.list_objects': {
-      const input = z
-        .object({
-          type: z.string().max(40).optional(),
-          status: z.string().max(40).optional(),
-          stage: z.string().max(40).optional(),
-          ownerUserId: z.string().regex(UUID_RE).optional(),
-          category: taskCategorySchema.optional(),
-          uncategorized: z.boolean().optional(),
-          primaryProjectId: z.string().regex(UUID_RE).optional(),
-          archived: z.boolean().optional(),
-          limit: z.number().int().min(1).max(50).optional(),
-        })
-        .parse(args);
-      const filter: objects.ObjectListFilter = { limit: input.limit ?? 50 };
-      if (input.type && (objects.OBJECT_TYPES as readonly string[]).includes(input.type)) {
-        filter.type = input.type as objects.ObjectType;
-      }
-      if (input.status) filter.status = input.status;
-      if (input.stage) filter.stage = input.stage;
-      if (input.ownerUserId) filter.ownerUserId = input.ownerUserId;
-      if (input.category) filter.taskCategory = input.category;
-      if (input.uncategorized) filter.taskCategoryNull = true;
-      if (input.primaryProjectId) filter.primaryProjectId = input.primaryProjectId;
-      if (input.archived !== undefined) filter.archived = input.archived;
+      const input = objectFilterInput.parse(args);
+      const filter: objects.ObjectListFilter = {
+        ...objectListFilterFromParsed(input),
+        limit: input.limit ?? 50,
+      };
       const rows = await scope.objects.listObjects(filter);
       return { count: rows.length, objects: await serializeObjectRowsWithProjects(scope, rows) };
     }
     case 'timeline.list_tasks': {
-      const input = z
-        .object({
-          status: z.string().max(40).optional(),
-          ownerUserId: z.string().regex(UUID_RE).optional(),
-          category: taskCategorySchema.optional(),
-          uncategorized: z.boolean().optional(),
-          primaryProjectId: z.string().regex(UUID_RE).optional(),
-          limit: z.number().int().min(1).max(50).optional(),
-        })
-        .parse(args);
+      const input = listTasksInput.parse(args);
       const filter: objects.ObjectListFilter = {
+        ...objectListFilterFromParsed({ ...input, type: 'task', archived: false }),
         type: 'task',
         archived: false,
         limit: input.limit ?? 50,
         status: input.status ?? ['suggested', 'open', 'todo', 'doing', 'blocked'],
       };
-      if (input.ownerUserId) filter.ownerUserId = input.ownerUserId;
-      if (input.category) filter.taskCategory = input.category;
-      if (input.uncategorized) filter.taskCategoryNull = true;
-      if (input.primaryProjectId) filter.primaryProjectId = input.primaryProjectId;
       const rows = await scope.objects.listObjects(filter);
       return {
         count: rows.length,
@@ -1553,9 +1563,12 @@ async function searchWorkspace(scope: TeamScope, args: CallToolArgs): Promise<un
             ...(input.query ? { query: input.query, type: 'task' } : {}),
             ...(input.status ? { status: input.status } : {}),
             ...(input.ownerUserId !== undefined ? { ownerUserId: input.ownerUserId } : {}),
+            ...(input.assigneeUserId !== undefined ? { assigneeUserId: input.assigneeUserId } : {}),
             ...(input.category ? { category: input.category } : {}),
             ...(input.uncategorized ? { uncategorized: input.uncategorized } : {}),
             ...(input.primaryProjectId ? { primaryProjectId: input.primaryProjectId } : {}),
+            ...(input.dueAfter ? { dueAfter: input.dueAfter } : {}),
+            ...(input.dueBefore ? { dueBefore: input.dueBefore } : {}),
             ...(input.limit ? { limit: input.limit } : {}),
           },
         ),

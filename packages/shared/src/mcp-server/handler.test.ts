@@ -72,6 +72,8 @@ const UNTRUSTED_EVENT = 'dddddddd-dddd-4ddd-8ddd-ddddddddddd4';
 const GITHUB_SEARCH_EVENT = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee1';
 const SENTRY_SEARCH_EVENT = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee2';
 const STALE_MONDAY_SEARCH_EVENT = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee3';
+const FILTER_SLACK_EVENT = 'ffffffff-ffff-4fff-8fff-fffffffffff1';
+const FILTER_WEB_EVENT = 'ffffffff-ffff-4fff-8fff-fffffffffff2';
 const UUID_RE_TEST = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function handleMcpRequest(
@@ -278,6 +280,15 @@ async function getPrompt(
 }
 
 function integrationSearchHit(eventId: string, score: number): SearchHit {
+  return eventSearchHit(eventId, score, 'integration', '2026-06-21T10:00:00.000Z');
+}
+
+function eventSearchHit(
+  eventId: string,
+  score: number,
+  source: SearchHit['payload']['source'],
+  occurredAt: string,
+): SearchHit {
   return {
     id: eventId,
     score,
@@ -291,8 +302,8 @@ function integrationSearchHit(eventId: string, score: number): SearchHit {
       change_id: null,
       entity_id: null,
       entity_ids: [],
-      source: 'integration',
-      occurred_at: '2026-06-21T10:00:00.000Z',
+      source,
+      occurred_at: occurredAt,
       author_user_id: null,
       visibility: 'team',
       visibility_user_ids: null,
@@ -2051,6 +2062,166 @@ describe('handleMcpRequest', () => {
     })) as { count: number; events: { source: string; content_text: string }[] };
     expect(webhook).toMatchObject({ count: 1, events: [{ source: 'ingest_webhook' }] });
     expect(webhook.events[0]?.content_text).toContain('>webhook note</external_content>');
+  });
+
+  it('forwards source and date filters into semantic event and moment search', async () => {
+    await db.insert(rawEvents).values([
+      {
+        id: FILTER_SLACK_EVENT,
+        teamId: TEAM_ID,
+        source: 'slack',
+        contentText: 'slack release note',
+        occurredAt: new Date('2026-05-03T10:00:00Z'),
+      },
+      {
+        id: FILTER_WEB_EVENT,
+        teamId: TEAM_ID,
+        source: 'web',
+        contentText: 'older web release note',
+        occurredAt: new Date('2026-04-01T10:00:00Z'),
+      },
+    ]);
+    const rankedHits = [
+      eventSearchHit(FILTER_WEB_EVENT, 0.99, 'web', '2026-04-01T10:00:00.000Z'),
+      eventSearchHit(FILTER_SLACK_EVENT, 0.91, 'slack', '2026-05-03T10:00:00.000Z'),
+    ];
+    semanticSearchFakes.search.mockImplementation(
+      (_teamId: string, _userId: string, _vector: number[], opts: SearchOpts = {}) => {
+        const filtered = rankedHits.filter((hit) => {
+          if (opts.source && hit.payload.source !== opts.source) return false;
+          const occurred = new Date(hit.payload.occurred_at);
+          if (opts.from && occurred < opts.from) return false;
+          if (opts.to && occurred >= opts.to) return false;
+          return true;
+        });
+        return Promise.resolve(filtered.slice(0, opts.limit ?? 20));
+      },
+    );
+
+    const events = (await callTool(db, 'timeline.search', {
+      surface: 'events',
+      query: 'release',
+      source: 'slack',
+      from: '2026-05-01T00:00:00Z',
+      to: '2026-05-04T00:00:00Z',
+    })) as { count: number; results: { event_id: string; source: string }[] };
+    expect(events).toMatchObject({
+      count: 1,
+      results: [{ event_id: FILTER_SLACK_EVENT, source: 'slack' }],
+    });
+    expect(semanticSearchFakes.search).toHaveBeenCalledWith(
+      TEAM_ID,
+      '00000000-0000-0000-0000-000000000000',
+      [0.11, 0.22, 0.33],
+      expect.objectContaining({
+        source: 'slack',
+        from: new Date('2026-05-01T00:00:00Z'),
+        to: new Date('2026-05-04T00:00:00Z'),
+      }),
+    );
+
+    semanticSearchFakes.search.mockClear();
+    const moments = (await callTool(db, 'timeline.search', {
+      surface: 'moments',
+      query: 'release',
+      source: 'slack',
+      from: '2026-05-01T00:00:00Z',
+      to: '2026-05-04T00:00:00Z',
+    })) as { count: number; moments: { raw_event_ids?: string[] }[] };
+    expect(moments.count).toBe(1);
+    expect(moments.moments[0]?.raw_event_ids).toEqual([FILTER_SLACK_EVENT]);
+    expect(semanticSearchFakes.search).toHaveBeenCalledWith(
+      TEAM_ID,
+      '00000000-0000-0000-0000-000000000000',
+      [0.11, 0.22, 0.33],
+      expect.objectContaining({
+        source: 'slack',
+        from: new Date('2026-05-01T00:00:00Z'),
+        to: new Date('2026-05-04T00:00:00Z'),
+      }),
+    );
+  });
+
+  it('applies advertised queryless object and task filters', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const company = await scope.objects.createObject({
+      type: 'company',
+      canonicalName: 'Filter Corp',
+      status: 'active',
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    const project = await scope.objects.createObject({
+      type: 'project',
+      canonicalName: 'Filter Project',
+      status: 'open',
+      ownerUserId: USER_ID,
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    const openTask = await scope.objects.createObject({
+      type: 'task',
+      canonicalName: 'Open filter task',
+      status: 'open',
+      ownerUserId: USER_ID,
+      dueAt: new Date('2026-06-10T00:00:00Z'),
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    const blockedTask = await scope.objects.createObject({
+      type: 'task',
+      canonicalName: 'Blocked unowned task',
+      status: 'blocked',
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    const assignedTask = await scope.objects.createObject({
+      type: 'task',
+      canonicalName: 'Assigned doing task',
+      status: 'doing',
+      assigneeUserId: USER_ID,
+      dueAt: new Date('2026-01-01T00:00:00Z'),
+      actor: { kind: 'user', userId: USER_ID },
+    });
+
+    const typed = (await callTool(db, 'timeline.search', {
+      surface: 'objects',
+      type: ['project', 'company'],
+    })) as { count: number; objects: { id: string; type: string }[] };
+    expect(typed.objects.map((row) => row.id).sort()).toEqual([company.id, project.id].sort());
+
+    const unowned = (await callTool(db, 'timeline.search', {
+      surface: 'objects',
+      ownerUserId: null,
+    })) as { objects: { id: string }[] };
+    expect(unowned.objects.map((row) => row.id).sort()).toEqual(
+      [assignedTask.id, blockedTask.id, company.id].sort(),
+    );
+
+    const assigned = (await callTool(db, 'timeline.search', {
+      surface: 'objects',
+      assigneeUserId: USER_ID,
+    })) as { objects: { id: string }[] };
+    expect(assigned.objects.map((row) => row.id)).toEqual([assignedTask.id]);
+
+    const statuses = (await callTool(db, 'timeline.search', {
+      surface: 'tasks',
+      status: ['open', 'blocked'],
+    })) as { count: number; tasks: { id: string }[] };
+    expect(statuses.tasks.map((row) => row.id).sort()).toEqual(
+      [blockedTask.id, openTask.id].sort(),
+    );
+
+    const due = (await callTool(db, 'timeline.search', {
+      surface: 'tasks',
+      dueAfter: '2026-06-01T00:00:00Z',
+      dueBefore: '2026-06-30T00:00:00Z',
+    })) as { tasks: { id: string }[] };
+    expect(due.tasks.map((row) => row.id)).toEqual([openTask.id]);
+
+    const unownedTasks = (await callTool(db, 'timeline.search', {
+      surface: 'tasks',
+      ownerUserId: null,
+    })) as { tasks: { id: string }[] };
+    expect(unownedTasks.tasks.map((row) => row.id).sort()).toEqual(
+      [assignedTask.id, blockedTask.id].sort(),
+    );
   });
 
   it('excludes private and specific-user events for the zero-UUID MCP actor', async () => {
