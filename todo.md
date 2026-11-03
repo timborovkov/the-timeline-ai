@@ -45,6 +45,17 @@ applies only to My Drive descendants. Saving picker shares invalidates every cac
 search query. Extract cursors store the Drive revision of the uploaded bytes and re-request when it no longer matches.
 Change detection diffs the full truncated 20k windows like-for-like, always collecting added and removed hunks together. Hash-moved snapshots never skip as identical/formatting unless that full window is verifiably whitespace-equivalent; otherwise the fallback is a conservative changed hunk. Full-text hashes still see edits past 20k chars. A file that revisits a retained content/comments/permissions fingerprint refreshes that snapshot's ordering timestamp so it becomes the latest baseline again; otherwise A→B→A leaves B latest and a later edit back to B is dropped as unchanged. Event dedup keys include the Drive revision/occurrence so A→B→A→B emits a new event for the second B; retries of the same revision stay idempotent. A missing, out-of-scope, or disconnected file clears leftover transient extract objects, and the janitor drops extract JSON whose resume never ran after 24 hours. The janitor enumerates team ids then lists orphans through `withTeam(...).integrations`; SQL keeps only populated extract cursors before the page limit so leftover `{}` rows cannot stall the sweep, and disconnect paginates that S3 cleanup.
 
+## Platform administration rollout
+
+The platform admin panel, suspend/restore controls, and audited member impersonation
+are implemented on the feature branch. Before deployment, apply
+`0093_platform_admin` and `0094_platform_admin_retention`, then configure `PLATFORM_ADMIN_EMAILS` consistently on web and
+workers. Follow [the operator guide](docs/platform-admin.md); production approval
+and staff-access review evidence remain operational obligations. The legal owner
+approved the 30-day session/12-month audit retention policy. The product is not
+live, so the disclosure edits are a pre-launch revision: Privacy remains
+`2026-11-01`, Terms is unchanged, and no renewed acknowledgment is required.
+
 ## Billing identity follow-up
 
 - Polar sandbox currently ignores `CustomerUpdate.email = null`; track provider

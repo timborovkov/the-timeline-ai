@@ -61,6 +61,8 @@ async function seed(pg: PGlite): Promise<void> {
 async function insertSavedAndScheduled(
   db: ReturnType<typeof drizzle>,
   input: {
+    teamId?: string;
+    userId?: string;
     url?: string;
     consecutiveFailureCount?: number;
     autoJoinEnabled?: boolean;
@@ -75,13 +77,13 @@ async function insertSavedAndScheduled(
   const [saved] = await db
     .insert(savedMeetings)
     .values({
-      teamId: TEAM_ID,
-      createdByUserId: USER_ID,
+      teamId: input.teamId ?? TEAM_ID,
+      createdByUserId: input.userId ?? USER_ID,
       title: 'Daily',
       platform: 'meet',
       meetingUrl: input.url ?? 'https://meet.google.com/due-now-test',
       permissionConfirmedAt: new Date(),
-      permissionConfirmedByUserId: USER_ID,
+      permissionConfirmedByUserId: input.userId ?? USER_ID,
       scheduleConfig: {
         weekdays: [1],
         times: ['10:00'],
@@ -100,8 +102,8 @@ async function insertSavedAndScheduled(
   const [meeting] = await db
     .insert(meetings)
     .values({
-      teamId: TEAM_ID,
-      createdByUserId: USER_ID,
+      teamId: input.teamId ?? TEAM_ID,
+      createdByUserId: input.userId ?? USER_ID,
       savedMeetingId: saved.id,
       provider: 'recall',
       platform: 'meet',
@@ -141,6 +143,40 @@ describe('processMeetingSchedulerTick', () => {
   afterEach(async () => {
     await pg.close();
   });
+
+  it.each(['team', 'user'])(
+    'does not let 100 suspended %s candidates starve an active capture',
+    async (kind) => {
+      const activeTeam = randomUUID();
+      const activeUser = randomUUID();
+      await pg.exec(
+        `INSERT INTO teams (id,slug,name) VALUES ('${activeTeam}','active','Active'); INSERT INTO users (id,email) VALUES ('${activeUser}','active@example.test'); INSERT INTO team_members (team_id,user_id,role) VALUES ('${activeTeam}','${activeUser}','owner');`,
+      );
+      for (let i = 0; i < 100; i++) {
+        await insertSavedAndScheduled(db, {
+          url: `https://meet.google.com/inactive-${i}`,
+          noShowRetry: true,
+          scheduledStartAt: new Date(Date.now() - 60 * 60_000),
+          scheduledEndAt: new Date(Date.now() + 60 * 60_000),
+        });
+      }
+      if (kind === 'team')
+        await pg.exec(
+          `INSERT INTO team_billing_accounts (team_id,security_state) VALUES ('${TEAM_ID}','suspended')`,
+        );
+      else await pg.exec(`UPDATE users SET suspended_at = now() WHERE id = '${USER_ID}'`);
+      const { meeting } = await insertSavedAndScheduled(db, {
+        teamId: activeTeam,
+        userId: activeUser,
+      });
+      const result = await processMeetingSchedulerTick({ db: db as never });
+      expect(result.joined).toBe(1);
+      expect(joinMeetingMock).toHaveBeenCalledTimes(1);
+      expect(joinMeetingMock).toHaveBeenCalledWith(
+        expect.objectContaining({ meetingId: meeting.id, teamId: activeTeam }),
+      );
+    },
+  );
 
   it('starts due scheduled Saved Meeting captures and stores provider bot id', async () => {
     const { meeting } = await insertSavedAndScheduled(db);

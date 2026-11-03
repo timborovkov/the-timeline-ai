@@ -1,10 +1,14 @@
 import { MockLanguageModelV3 } from 'ai/test';
 
-import { askAgent } from '#src/agent/ask.js';
+import {
+  askAgent,
+  type AskAgentDeps,
+  type AskAgentInput,
+  type AskAgentResult,
+} from '#src/agent/ask.js';
 import { buildAgentTools } from '#src/agent/tools.js';
 import { withTeam } from '#src/team-scope.js';
 
-import type { AskAgentDeps, AskAgentInput, AskAgentResult } from '#src/agent/ask.js';
 import type { AgentTurnObservability } from '#src/agent/observability.js';
 import type { EmbedResult } from '#src/llm/embed.js';
 import type { SearchHit, SearchOpts } from '#src/qdrant/client.js';

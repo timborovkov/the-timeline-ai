@@ -71,6 +71,10 @@ describe('ingest webhook credentials', () => {
     });
 
     await expect(resolveCredential(db as never, 'tli_wrong')).resolves.toBeNull();
+    await pg.exec(`UPDATE users SET suspended_at = now() WHERE id = '${USER_ID}'`);
+    await expect(resolveCredential(db as never, TOKEN)).resolves.toBeNull();
+    await pg.exec(`UPDATE users SET suspended_at = NULL WHERE id = '${USER_ID}'`);
+    await expect(resolveCredential(db as never, TOKEN)).resolves.toBeDefined();
   });
 
   it('does not resolve revoked credentials or disabled webhooks', async () => {

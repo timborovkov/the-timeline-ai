@@ -2,6 +2,7 @@ import { expect } from '@timeline/test-support';
 import { vi } from '@timeline/test-support';
 import { beforeEach, describe, it } from 'bun:test';
 
+import type * as DbModule from '@timeline/db';
 import type { NextFetchEvent } from 'next/server';
 const mocks = vi.hoisted(() => ({
   migrateActiveTeamCookie: vi.fn().mockResolvedValue(undefined),
@@ -23,6 +24,16 @@ await vi.mock(
   () => import('@/lib/surface-request-analytics'),
 );
 
+const versionRow = vi.fn().mockResolvedValue([{ version: 0 }]);
+await vi.mock(
+  import.meta.resolve('@timeline/db'),
+  async (original) => ({
+    ...(await original<typeof DbModule>()),
+    getDb: () => ({ select: () => ({ from: () => ({ where: () => ({ limit: versionRow }) }) }) }),
+  }),
+  () => import('@timeline/db'),
+);
+const { encode } = await import('next-auth/jwt');
 const { NextRequest } = await import('next/server');
 const { proxy } = await import('@/proxy');
 
@@ -57,4 +68,32 @@ describe('proxy with installed Auth.js', () => {
     expect(response?.headers.get('set-cookie')).toContain('Max-Age=0');
     expect(mocks.migrateActiveTeamCookie).not.toHaveBeenCalled();
   });
+});
+
+it('rejects a revoked JWT in the real proxy and Auth.js session endpoint', async () => {
+  const cookieName = '__Secure-authjs.session-token';
+  const secret = process.env.AUTH_SECRET;
+  if (!secret) throw new Error('Test auth secret is required');
+  const jwt = await encode({
+    token: { sub: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', sessionVersion: 0 },
+    secret,
+    salt: cookieName,
+  });
+  versionRow.mockResolvedValue([{ version: 1 }]);
+  const request = new NextRequest('https://timeline.test/app/timeline', {
+    headers: { cookie: `${cookieName}=${jwt}` },
+  });
+  const response = await proxy(request, context());
+  expect(response?.status).toBe(307);
+  expect(response?.headers.get('location')).toContain('/sign-in');
+  expect(mocks.migrateActiveTeamCookie).not.toHaveBeenCalled();
+  const { default: NextAuth } = await import('next-auth');
+  const { authConfig } = await import('@/lib/auth.config');
+  const handler = NextAuth(authConfig).handlers.GET;
+  const sessionResponse = await handler(
+    new NextRequest('https://timeline.test/api/auth/session', {
+      headers: { cookie: `${cookieName}=${jwt}` },
+    }),
+  );
+  expect(await sessionResponse.json()).toBeNull();
 });

@@ -678,14 +678,35 @@
       "idx": 96,
       "version": "7",
       "when": 1795656100000,
-      "tag": "0093_google_drive_v1",
+      "tag": "0093_platform_admin",
       "breakpoints": true
     },
     {
       "idx": 97,
       "version": "7",
       "when": 1795656160000,
-      "tag": "0094_google_drive_snapshot_uniqueness",
+      "tag": "0094_platform_admin_retention",
+      "breakpoints": true
+    },
+    {
+      "idx": 98,
+      "version": "7",
+      "when": 1795656220000,
+      "tag": "0095_password_recovery",
+      "breakpoints": true
+    },
+    {
+      "idx": 99,
+      "version": "7",
+      "when": 1795656280000,
+      "tag": "0096_google_drive_v1",
+      "breakpoints": true
+    },
+    {
+      "idx": 100,
+      "version": "7",
+      "when": 1795656340000,
+      "tag": "0097_google_drive_snapshot_uniqueness",
       "breakpoints": true
     }
   ]

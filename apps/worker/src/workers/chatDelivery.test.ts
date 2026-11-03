@@ -1,5 +1,6 @@
 import { encryptJson, resetSecretsKeyCacheForTests } from '@timeline/shared/crypto';
 import { resetEnvForTests } from '@timeline/shared/env';
+import { SlackApi } from '@timeline/shared/slack';
 import { expect, vi } from '@timeline/test-support';
 import { afterEach, beforeEach, describe, it } from 'bun:test';
 
@@ -22,6 +23,7 @@ describe('deferred chat delivery', () => {
     resetSecretsKeyCacheForTests();
   });
   afterEach(() => {
+    vi.restoreAllMocks();
     vi.unstubAllGlobals();
     vi.unstubAllEnvs();
     resetEnvForTests();
@@ -51,6 +53,63 @@ describe('deferred chat delivery', () => {
       expect.objectContaining({ body: JSON.stringify({ chat_id: 123, text: 'Final answer' }) }),
     );
   });
+  it.each(['slack', 'telegram'] as const)(
+    'rechecks %s recipient and workspace after rate-limit deferral',
+    async (provider) => {
+      const principal = {
+        teamId: '11111111-1111-4111-8111-111111111111',
+        userId: '22222222-2222-4222-8222-222222222222',
+      };
+      let suspended = false;
+      let teamSuspended = false;
+      let query = 0;
+      const db = {
+        select: () => ({
+          from: () => ({
+            where: () =>
+              Promise.resolve(
+                ++query % 2 === 1
+                  ? [{ state: teamSuspended ? 'suspended' : 'active' }]
+                  : [{ suspendedAt: suspended ? new Date() : null }],
+              ),
+          }),
+        }),
+      };
+      const fetch = vi
+        .fn()
+        .mockResolvedValue(new Response(JSON.stringify({ ok: true, result: {} })));
+      vi.stubGlobal('fetch', fetch);
+      const send =
+        provider === 'slack'
+          ? vi.spyOn(SlackApi.prototype, 'postMessage').mockResolvedValue(undefined)
+          : fetch;
+      const data = {
+        ...principal,
+        ...job({
+          principal,
+          provider,
+          token: 'token',
+          method: 'send',
+          body:
+            provider === 'slack'
+              ? { channel: 'C1', text: 'Digest' }
+              : { chat_id: 123, text: 'Digest' },
+        }),
+      };
+      await processChatDelivery(data, db as never);
+      expect(send).toHaveBeenCalledTimes(1);
+      suspended = true;
+      await expect(processChatDelivery(data, db as never)).rejects.toThrow('Account is suspended');
+      expect(send).toHaveBeenCalledTimes(1);
+      suspended = false;
+      teamSuspended = true;
+      await expect(processChatDelivery(data, db as never)).rejects.toThrow(
+        'Workspace is suspended',
+      );
+      expect(send).toHaveBeenCalledTimes(1);
+    },
+  );
+
   it('does not retry a non-idempotent send after a timeout', async () => {
     const fetch = vi.fn().mockRejectedValue(new Error('timeout'));
     vi.stubGlobal('fetch', fetch);

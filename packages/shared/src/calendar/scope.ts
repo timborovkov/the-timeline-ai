@@ -35,6 +35,7 @@ import {
 import { TIMELINE_MODELS } from '#src/llm/models.js';
 import { childLogger } from '#src/logger.js';
 import { displayObjectTitle } from '#src/objects/types.js';
+import { principalIsActive } from '#src/platform-admin/runtime.js';
 import { getQdrantClient } from '#src/qdrant/client.js';
 import { buildPointId } from '#src/qdrant/point-id.js';
 import { enqueueCalendarEventEmbedJob } from '#src/queue/queues.js';
@@ -1792,6 +1793,14 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
 
         await db.transaction(async (tx) => {
           for (const parent of parents) {
+            if (
+              !(await principalIsActive(
+                tx as unknown as Db,
+                teamId,
+                parent.createdByUserId ?? undefined,
+              ))
+            )
+              continue;
             const ids = await materializeParent(tx, parent as CalendarEventRow, opts);
             count += ids.length;
             if (parent.visibility === 'team') teamVisibleIds.push(...ids);

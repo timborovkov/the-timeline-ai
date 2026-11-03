@@ -17,6 +17,7 @@ import { eq, sql } from 'drizzle-orm';
 
 import { withWorkerAiBilling, workerBillingJobOptions } from '#src/billing-context.js';
 import { captureWorkerException, captureWorkerJobFailure } from '#src/monitoring.js';
+import { guardWorkerProcessor } from '#src/platform-worker.js';
 
 const log = childLogger('worker:embed');
 const EMBEDDING_OVERLAP_TOKENS = 120;
@@ -554,7 +555,7 @@ export async function processEmbedJob(
 export function startEmbedWorker(deps: EmbedWorkerDeps): Worker<queue.EmbedJobData> {
   const worker = new Worker<queue.EmbedJobData>(
     queue.QUEUE_NAMES.embed,
-    async (job: Job<queue.EmbedJobData>, token?: string) => {
+    guardWorkerProcessor(deps.db, async (job: Job<queue.EmbedJobData>, token?: string) => {
       const result = await withWorkerAiBilling(
         deps.db,
         job.data.teamId,
@@ -576,7 +577,7 @@ export function startEmbedWorker(deps: EmbedWorkerDeps): Worker<queue.EmbedJobDa
         throw new DelayedError();
       }
       return result;
-    },
+    }),
     {
       connection: queue.getRedisConnection(),
       // Embedding is light on CPU per job but bound by OpenRouter latency.

@@ -21,6 +21,7 @@ import { and, asc, desc, eq, inArray, isNull, lt, sql } from 'drizzle-orm';
 
 import { withWorkerAiBilling, workerBillingJobOptions } from '#src/billing-context.js';
 import { captureWorkerException, captureWorkerJobFailure } from '#src/monitoring.js';
+import { guardWorkerProcessor } from '#src/platform-worker.js';
 
 const log = childLogger('worker:extract');
 const ZERO_UUID = '00000000-0000-0000-0000-000000000000';
@@ -550,7 +551,7 @@ function isBullMqStallFailure(err: unknown): boolean {
 export function startExtractWorker(deps: ExtractWorkerDeps): Worker<queue.ExtractJobData> {
   const worker = new Worker<queue.ExtractJobData>(
     queue.QUEUE_NAMES.extract,
-    async (job: Job<queue.ExtractJobData>, token?: string) => {
+    guardWorkerProcessor(deps.db, async (job: Job<queue.ExtractJobData>, token?: string) => {
       const result = await withWorkerAiBilling(
         deps.db,
         job.data.teamId,
@@ -563,7 +564,7 @@ export function startExtractWorker(deps: ExtractWorkerDeps): Worker<queue.Extrac
         throw new DelayedError();
       }
       return result;
-    },
+    }),
     {
       connection: queue.getRedisConnection(),
       // One in-flight extraction per process. Extraction is heavier than

@@ -1,5 +1,6 @@
 import { PGlite } from '@electric-sql/pglite';
 import {
+  teamBillingAccounts,
   agentSuggestionEvidence,
   agentSuggestionItems,
   agentSuggestions,
@@ -1302,6 +1303,23 @@ describe('processSuggestionJobForTests', () => {
         policy_version: 'proposal-v1',
       },
     });
+  });
+
+  it('continues global cleanup past suspended teams without creating their suggestions', async () => {
+    await db.insert(teamBillingAccounts).values({ teamId: TEAM_ID, securityState: 'suspended' });
+    for (const teamId of [TEAM_ID, OTHER_TEAM_ID]) {
+      await db.insert(entities).values([
+        { teamId, type: 'company', canonicalName: 'AuditAI' },
+        { teamId, type: 'vendor', canonicalName: 'Audit AI' },
+      ]);
+    }
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { scope: 'object_cleanup', teamId: '__all__', triggeredBy: 'daily' },
+    );
+    const bundles = await db.select({ teamId: agentSuggestions.teamId }).from(agentSuggestions);
+    expect(bundles.length).toBeGreaterThan(0);
+    expect(bundles.every((bundle) => bundle.teamId === OTHER_TEAM_ID)).toBe(true);
   });
 
   it('creates deduped object cleanup merge and archive suggestions across manual and daily scans', async () => {

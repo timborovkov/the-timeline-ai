@@ -16,12 +16,14 @@ import {
   flushDeferredAudioTranscription,
 } from '@timeline/shared/integrations';
 import { MCP_TEAM_ACTOR_USER_ID } from '@timeline/shared/mcp-server';
+import { prunePlatformAdminRecords } from '@timeline/shared/platform-admin/retention';
 import { withTeam } from '@timeline/shared/team-scope';
 import { Worker, type Job } from 'bullmq';
 import { and, asc, eq, gt, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 
 import { captureWorkerException, captureWorkerJobFailure } from '#src/monitoring.js';
+import { guardWorkerProcessor } from '#src/platform-worker.js';
 import { sweepOrphanDriveTransientExtracts } from '#src/workers/integrationSync.js';
 
 // Keyset paging by id keeps memory bounded on a backlog that hasn't been
@@ -429,8 +431,16 @@ async function sweepMeetings(
 export function startJanitorWorker(deps: { db: Db }): Worker<queue.JanitorJobData> {
   const worker = new Worker<queue.JanitorJobData>(
     queue.QUEUE_NAMES.janitor,
-    async (job: Job<queue.JanitorJobData>) => {
+    guardWorkerProcessor(deps.db, async (job: Job<queue.JanitorJobData>) => {
       const startedAt = Date.now();
+      try {
+        const retention = await prunePlatformAdminRecords(deps.db);
+        if (Object.values(retention).some((count) => count > 0))
+          log.info(retention, 'janitor: platform record retention completed');
+      } catch (err: unknown) {
+        log.error({ err }, 'janitor: platform record retention failed; next tick will retry');
+        captureWorkerException(err);
+      }
       const result = await processJanitorTick({ db: deps.db });
       try {
         await runBillingMaintenanceTick(deps.db);
@@ -447,7 +457,7 @@ export function startJanitorWorker(deps: { db: Db }): Worker<queue.JanitorJobDat
         log.info({ jobId: job.id, ...result, durationMs }, 'janitor: completed maintenance');
       }
       return { ...result, durationMs };
-    },
+    }),
     {
       connection: queue.getRedisConnection(),
       // Singleton — the sweep is cheap and concurrent runs would just

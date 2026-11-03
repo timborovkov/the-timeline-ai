@@ -5,6 +5,7 @@ import { Worker, DelayedError, type Job } from 'bullmq';
 
 import { withWorkerAiBilling, workerBillingJobOptions } from '#src/billing-context.js';
 import { captureWorkerJobFailure } from '#src/monitoring.js';
+import { guardWorkerProcessor } from '#src/platform-worker.js';
 
 const log = childLogger('worker:daily-digest');
 
@@ -138,7 +139,7 @@ function digestBillingTeamId(job: queue.DailyDigestJobData): string | undefined 
 export function startDailyDigestWorker(deps: { db: Db }): Worker<queue.DailyDigestJobData> {
   const worker = new Worker<queue.DailyDigestJobData>(
     queue.QUEUE_NAMES.dailyDigest,
-    async (job: Job<queue.DailyDigestJobData>, token?: string) => {
+    guardWorkerProcessor(deps.db, async (job: Job<queue.DailyDigestJobData>, token?: string) => {
       const startedAt = Date.now();
       const result = await withWorkerAiBilling(
         deps.db,
@@ -162,7 +163,7 @@ export function startDailyDigestWorker(deps: { db: Db }): Worker<queue.DailyDige
         'digest job complete',
       );
       return result;
-    },
+    }),
     { connection: queue.getRedisConnection(), concurrency: 2 },
   );
 
