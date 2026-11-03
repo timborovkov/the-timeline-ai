@@ -29,6 +29,17 @@ const { githubProvider } = await import('#src/integrations/providers/github.js')
 
 const ENV_BACKUP = { ...process.env };
 
+function installationTokens(id: string) {
+  return {
+    access_token: 'gho_token',
+    github_installation_id: id,
+    github_app_installations: [{ id, account_login: 'acme' }],
+    github_app_installation_tokens: {
+      [id]: { token: 'ghs_test_installation', expires_at: Date.now() + 3_600_000 },
+    },
+  };
+}
+
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
@@ -90,10 +101,7 @@ describe('github fetch logging', () => {
         id: '11111111-1111-4111-8111-111111111111',
         teamId: 'team-1',
       } as never,
-      tokens: {
-        access_token: 'gho_token',
-        github_installation_id: '4242',
-      },
+      tokens: installationTokens('4242'),
       selections: [{ kind: 'github.repo', externalId: 'acme/lost-repo' }],
       ctx: {
         writeEvents: vi.fn().mockResolvedValue([]),
@@ -112,6 +120,7 @@ describe('github fetch logging', () => {
     expect(prLine).toContain('installation=4242');
     expect(prLine).toContain('repo=acme/lost-repo');
     expect(prLine).not.toContain('gho_token');
+    expect(prLine).not.toContain('ghs_test_installation');
   });
 
   it('puts ExternalHttpError code and cause chain in the github fetch failed message', async () => {
@@ -136,7 +145,7 @@ describe('github fetch logging', () => {
 
     await githubProvider.incrementalSync({
       integration: { id: '22222222-2222-4222-8222-222222222222' } as never,
-      tokens: { access_token: 'gho_token', github_installation_id: '99' },
+      tokens: installationTokens('99'),
       selections: [{ kind: 'github.repo', externalId: 'acme/app' }],
       ctx: {
         writeEvents: vi.fn().mockResolvedValue([]),

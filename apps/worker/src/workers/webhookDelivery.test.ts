@@ -2,6 +2,7 @@ import { expect } from '@timeline/test-support';
 import { vi } from '@timeline/test-support';
 import { beforeEach, describe, it } from 'bun:test';
 const fakes = vi.hoisted(() => ({
+  adminListSelections: vi.fn(),
   loadWebhookDeliveryWork: vi.fn(),
   assertActive: vi.fn(),
   markWebhookDeliveryStatus: vi.fn(),
@@ -23,6 +24,7 @@ await vi.mock(
   () => ({
     childLogger: () => ({ info: vi.fn(), error: vi.fn() }),
     integrations: {
+      adminListSelections: fakes.adminListSelections,
       loadWebhookDeliveryWork: fakes.loadWebhookDeliveryWork,
       markWebhookDeliveryStatus: fakes.markWebhookDeliveryStatus,
       markWebhookDeliveryTargetProcessing: fakes.markWebhookDeliveryTargetProcessing,
@@ -86,6 +88,7 @@ const integration = {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  fakes.adminListSelections.mockResolvedValue([]);
   fakes.assertActive.mockResolvedValue(undefined);
   fakes.markWebhookDeliveryStatus.mockResolvedValue(undefined);
   fakes.markWebhookDeliveryTargetProcessing.mockResolvedValue(undefined);
@@ -111,6 +114,50 @@ beforeEach(() => {
 });
 
 describe('webhook delivery worker', () => {
+  it.each([
+    { selections: [] },
+    { selections: [{ kind: 'sentry.project', externalId: 'acme/other' }] },
+  ])('rejects queued Sentry evidence after deselection', async ({ selections }) => {
+    fakes.adminListSelections.mockResolvedValue(selections);
+    fakes.loadWebhookDeliveryWork.mockResolvedValueOnce({
+      delivery: {
+        ...delivery,
+        provider: 'sentry',
+        resourceKind: 'sentry.project',
+        externalResourceId: 'acme/web',
+      },
+      targets: [{ target, integration: { ...integration, provider: 'sentry' } }],
+    });
+    const result = await processWebhookDeliveryJob(
+      { db: {} as never, assertActive: fakes.assertActive },
+      { deliveryId: DELIVERY_ID },
+    );
+    expect(result.ignored).toBe(1);
+    expect(fakes.writeIntegrationEvents).not.toHaveBeenCalled();
+    expect(fakes.enqueueIntegrationSyncJob).not.toHaveBeenCalled();
+  });
+
+  it.each(['sentry.org', 'sentry.project'])('processes selected Sentry scope %s', async (kind) => {
+    fakes.adminListSelections.mockResolvedValue([
+      { kind: kind, externalId: kind === 'sentry.org' ? 'acme' : 'acme/web' },
+    ]);
+    fakes.loadWebhookDeliveryWork.mockResolvedValueOnce({
+      delivery: {
+        ...delivery,
+        provider: 'sentry',
+        resourceKind: 'sentry.project',
+        externalResourceId: 'acme/web',
+      },
+      targets: [{ target, integration: { ...integration, provider: 'sentry' } }],
+    });
+    const result = await processWebhookDeliveryJob(
+      { db: {} as never, assertActive: fakes.assertActive },
+      { deliveryId: DELIVERY_ID },
+    );
+    expect(result.processed).toBe(1);
+    expect(fakes.writeIntegrationEvents).toHaveBeenCalled();
+  });
+
   it('normalizes direct Linear deliveries without enqueuing a redundant catch-up', async () => {
     fakes.loadWebhookDeliveryWork.mockResolvedValueOnce({
       delivery,

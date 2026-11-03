@@ -2,6 +2,7 @@ import type { PublicSurface } from '@timeline/shared/analytics';
 
 export const PUBLIC_ANALYTICS_ROUTES = Object.freeze({
   '/': 'home',
+  '/pricing': 'pricing',
   '/how-it-works': 'how_it_works',
   '/integrations': 'integrations',
   '/integrations/slack': 'integration_slack',
@@ -19,6 +20,7 @@ export const PUBLIC_ANALYTICS_ROUTES = Object.freeze({
   '/solutions/crm-context-from-team-activity': 'solution_crm_context_team_activity',
   '/help': 'help',
   '/help/capture': 'help_capture',
+  '/help/billing': 'help_billing',
   '/help/work': 'help_work',
   '/help/documents': 'help_documents',
   '/help/boards': 'help_boards',

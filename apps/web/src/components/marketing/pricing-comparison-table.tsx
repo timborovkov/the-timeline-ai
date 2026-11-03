@@ -77,6 +77,31 @@ const INFRASTRUCTURE_ROWS: {
     value: (id) => formatStock(CAPACITY_BY_PLAN[id].agentTurnsPerMonth),
   },
   {
+    label: 'Inbound emails / month',
+    value: (id) => formatStock(CAPACITY_BY_PLAN[id].inboundEmailPerMonth),
+  },
+  {
+    label: 'Accepted sources / month',
+    value: (id) => formatStock(CAPACITY_BY_PLAN[id].acceptedSourcesPerMonth),
+  },
+  {
+    label: 'Webhook requests / month',
+    value: (id) => formatStock(CAPACITY_BY_PLAN[id].webhookRequestsPerMonth),
+  },
+  { label: 'Indexed chunks', value: (id) => formatStock(CAPACITY_BY_PLAN[id].indexedChunks) },
+  {
+    label: 'Semantic searches / month',
+    value: (id) => formatStock(CAPACITY_BY_PLAN[id].semanticSearchesPerMonth),
+  },
+  {
+    label: 'Meeting minutes / month',
+    value: (id) => formatStock(CAPACITY_BY_PLAN[id].recallMinutesPerMonth),
+  },
+  {
+    label: 'Concurrent processing jobs',
+    value: (id) => formatStock(CAPACITY_BY_PLAN[id].costlyWorkerConcurrency),
+  },
+  {
     label: 'Concurrent meeting notetakers',
     value: (id) => formatStock(CAPACITY_BY_PLAN[id].concurrentRecallBots),
   },

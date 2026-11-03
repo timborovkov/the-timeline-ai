@@ -160,7 +160,7 @@ describe('public integration routes', () => {
     expect(html).toContain('Timeline captures');
     expect(html).toContain('GitHub remains');
     expect(html).toContain('What enters the Timeline');
-    expect(html).toContain('Honest limitations');
+    expect(html).toContain('Read capture limits, history coverage and recovery behaviour');
     expect(html).toContain('Questions, answered');
     expect(html).not.toContain('02 / Questions');
     expect(html).not.toContain('09 / Related');

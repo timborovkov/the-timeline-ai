@@ -556,13 +556,6 @@ export function createBillingScope(deps: BillingScopeDeps) {
             }
           }
 
-          const nudge = deriveBillingNudge({
-            planId: commercial.planId,
-            canManageBilling,
-            utilization,
-            freeRemaining,
-            meteredSpendCents,
-          });
           const sidebar = deriveSidebarBillingSummary({
             planId: commercial.planId,
             canManageBilling,
@@ -611,6 +604,14 @@ export function createBillingScope(deps: BillingScopeDeps) {
             commercial.planId === 'business'
               ? { planTerms: { [commercial.planId]: previewTerms } }
               : {}),
+          });
+          const nudge = deriveBillingNudge({
+            planId: commercial.planId,
+            canManageBilling,
+            utilization,
+            freeRemaining,
+            meteredSpendCents,
+            planPreview,
           });
           const chargeWindowStart =
             (commercial.planId === 'free' ? null : account.periodStartedAt) ??

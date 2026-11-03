@@ -72,6 +72,7 @@ const PROVIDERS = [
   ],
   ['Daytona', 'Ephemeral isolated compute for document extraction'],
   ['Resend', 'Transactional and inbound email'],
+  ['Polar', 'Merchant of record for checkout, subscriptions, invoices and transaction taxes'],
   [
     'PostHog',
     'Personless surface totals, pseudonymous product events, and optional public-browser analytics after consent',

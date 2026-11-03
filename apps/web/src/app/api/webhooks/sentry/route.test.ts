@@ -291,7 +291,30 @@ describe('POST /api/webhooks/sentry', () => {
     expect(fakes.enqueueWebhookDeliveryJob).toHaveBeenCalledWith({ deliveryId: 'delivery-row-1' });
   });
 
-  it('routes alerts by remembered Sentry installation when the payload has no org slug', async () => {
+  it.each(['acme/other', 'other/web'])(
+    'rejects unselected project scope %s despite a remembered installation',
+    async (selected) => {
+      fakes.subscriptionIntegrationRows = [...fakes.integrationRows];
+      fakes.selectionRows = [
+        { integrationId: 'integration-1', selectionKind: 'sentry.project', externalId: selected },
+      ];
+      await POST(
+        signedRequest({
+          action: 'triggered',
+          installation: { uuid: 'installation-1' },
+          organization: { slug: 'acme' },
+          project: { slug: 'web' },
+          data: { event: { issue_id: 'issue-1', title: 'Failure' } },
+        }),
+      );
+      expect(fakes.recordWebhookDeliveryTargets).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ targets: [] }),
+      );
+    },
+  );
+
+  it('does not let a remembered installation bypass missing selection scope', async () => {
     fakes.integrationRows = [];
     fakes.subscriptionIntegrationRows = [
       {
@@ -322,13 +345,7 @@ describe('POST /api/webhooks/sentry', () => {
         externalAccountId: 'installation-1',
         resourceKind: 'sentry.installation',
         externalResourceId: 'installation-1',
-        targets: [
-          {
-            teamId: 'team-1',
-            integrationId: 'integration-1',
-            providerConnectionId: 'connection-1',
-          },
-        ],
+        targets: [],
       }),
     );
     expect(fakes.enqueueWebhookDeliveryJob).toHaveBeenCalledWith({ deliveryId: 'delivery-row-1' });

@@ -1178,3 +1178,7 @@ original bodies and attachment descriptors, never temporary download URLs or
 attachment bytes. RFC message IDs remain the threading and event-deduplication
 keys; provider IDs are audit metadata. Replays resume missing downstream work,
 including stable audio children, without rewriting captured source content.
+
+### Sentry delivery boundaries and chronology
+
+Sentry webhook receipt requires a selected organization/project; a remembered installation alone is not capture authorization. Delivery workers recheck the current selection before writing evidence or scheduling catch-up work. Persisted issue lifecycle and deployment deliveries use stable delivery identity to distinguish repeated transitions while retaining retry idempotency. Their timestamp basis is explicitly `webhook_received`, not an assertion of exact provider action time. Existing source rows remain immutable; identical payloads lacking a provider delivery ID can still coalesce at intake.

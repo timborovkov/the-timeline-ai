@@ -903,6 +903,15 @@ separate email while always retaining the owner member's email.
 
 Resend handles outbound email and inbound capture. Signed webhooks queue only provider IDs; workers retrieve content and bounded attachments, applying sender rate-limit admission before attachment hydration. Email recovery metadata reads require an explicit internal ingest principal and are constrained to active email events in its team. Recovery fails closed for parents restricted to specific people before creating derived documents or audio. Verification and invitation retry payloads are encrypted at rest using the existing AES-256-GCM secrets helper; retries decrypt the original payload, and missing keys fail closed. Completed ingestion job identifiers remain for 24 hours, failures for seven days. Temporary download URLs and credentials are not persisted in jobs or source snapshots. The Privacy Policy version advances to 2026-11-01. G-09 remains open: no account retention, tracking, contractual, or deletion verification is claimed.
 
+
+### Prelaunch billing and boundary changes (2026-11-03)
+
+Terms and Privacy versions advance to 2026-11-03 for paid-service terms and explicit Polar billing-data disclosure. The customer meter is variable euro-denominated AI usage; internal provider-cost conversion is not a public price promise. Cancellation stops future renewals under the portal terms; already-incurred usage and mandatory consumer rights remain applicable. This is a repository content change, not counsel approval, live Polar configuration evidence, or closure of G-20.
+
+Sentry intake and queued delivery now both require a currently selected organization/project. GitHub capture requires the matching App installation token and paginates installation discovery; missing mappings fail closed. These are code controls verified with synthetic tests, not production provider attestations. Sentry delivery receipt time is explicitly identified as receipt time, not the exact upstream action time.
+
+The authenticated `/api/health/ready` probe uses the existing `CRON_SECRET`, returns aggregate queue/worker information only, and never returns source content or job identifiers. Public liveness remains minimal. Pricing analytics adds only fixed public route/CTA values under the existing consent contract, without linking anonymous visitors to account identities.
+
 ### Password recovery controls
 
 Password recovery stores SHA-256 digests of random 32-byte, single-use tokens,

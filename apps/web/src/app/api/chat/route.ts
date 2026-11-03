@@ -3,7 +3,6 @@ import { bucketAnalyticsCount } from '@timeline/shared/analytics';
 import {
   askBillingUserMessage,
   askOperationId,
-  ASK_AI_RESERVE_CUSTOMER_CHARGE_CENTS,
   mapAskBillingError,
   openRouterUsdCostFromFinishEvent,
   openRouterUsdForCompletedStream,
@@ -781,7 +780,7 @@ export async function POST(req: Request): Promise<Response> {
     );
     streamedOpenRouterUsd = 0;
   };
-  const settleChatBilling = async (responseModelId?: string, opts?: { conservative?: boolean }) => {
+  const settleChatBilling = async (responseModelId?: string) => {
     if (billingFinalized) return;
     applyCompletedStreamCost();
     billingFinalized = true;
@@ -791,9 +790,6 @@ export async function POST(req: Request): Promise<Response> {
         openRouterUsd,
         deliverySurface: 'web',
         ...(responseModelId ? { model: responseModelId } : { model: modelId }),
-        ...(opts?.conservative
-          ? { minCustomerChargeCents: ASK_AI_RESERVE_CUSTOMER_CHARGE_CENTS }
-          : {}),
       });
     } catch (err) {
       log.warn({ err, teamId: active.teamId, billingOperationId }, 'chat billing settle failed');
@@ -816,7 +812,7 @@ export async function POST(req: Request): Promise<Response> {
   req.signal.addEventListener(
     'abort',
     () => {
-      void settleChatBilling(undefined, { conservative: true });
+      void settleChatBilling(undefined);
     },
     { once: true },
   );
@@ -893,7 +889,7 @@ export async function POST(req: Request): Promise<Response> {
     },
     onError: (e) => {
       if (isAiStreamAbort(e.error)) {
-        void settleChatBilling(undefined, { conservative: true });
+        void settleChatBilling(undefined);
         return;
       }
       if (openRouterUsd + streamedOpenRouterUsd > 0) {

@@ -313,3 +313,7 @@ features, or consent assumptions without privacy review and a same-change
 update to this interface. It must return the acceptance evidence above before
 requesting that G-03 or G-10 be closed or that a target behavior become a public
 claim.
+
+## November 2026 acquisition coverage
+
+Public pricing and billing help are explicitly allowlisted public surfaces. Pricing choices use only fixed `choose_free`, `choose_payg`, `choose_team` and `choose_business` CTA values under the existing consent gate. No plan query string, promo code, payment detail, customer identifier or visitor-to-account identity link is collected by this change.

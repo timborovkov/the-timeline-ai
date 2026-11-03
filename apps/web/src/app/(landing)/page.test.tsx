@@ -64,7 +64,8 @@ describe('LandingPage', () => {
     expect(html).toContain(
       'aria-label="Work events stream from six sources into The Timeline, where project history becomes working records and cited answers."',
     );
-    expect(html).not.toContain('Fictional Acme example, not customer data.');
+    expect(html).toContain('Fictional Acme example, not customer data.');
+    expect(html).toContain('<details');
     expect(html).toContain('The Timeline');
     expect(html).toContain('Project history');
     expect(html).toContain('Working records');
@@ -124,8 +125,8 @@ describe('LandingPage', () => {
     const webPage = graph['@graph'].find((node) => node['@type'] === 'WebPage');
     const application = graph['@graph'].find((node) => node['@type'] === 'SoftwareApplication');
     expect(webPage).toMatchObject({
-      dateModified: '2026-08-21',
-      lastReviewed: '2026-08-21',
+      dateModified: '2026-11-03',
+      lastReviewed: '2026-11-03',
     });
     expect(application?.featureList).toContain(
       'Native ingestion for GitHub, Linear, Google Drive, Monday.com, Slack, and Sentry',
@@ -158,8 +159,8 @@ describe('LandingPage', () => {
     expect(html).toContain('Send the work to Timeline.');
     expect(html).toContain('Connected tools');
     expect(html).toContain('Sync selected records.');
-    expect(html).toContain('Ready to connect');
-    expect(html).toContain('Admin setup needed');
+    expect(html).toContain('Setup and supported data');
+    expect(html).not.toContain('Admin setup needed');
     expect(html).toContain('use enabled custom MCP tools when you ask a question');
     expect(html).not.toMatch(
       /Capture contract|Deliberate capture|Provider record sync|Available here|MCP is live approved access/u,
@@ -183,15 +184,20 @@ describe('LandingPage', () => {
   it('renders the product, problem, workflow, and trust contract without implying passive capture', () => {
     const html = renderToStaticMarkup(<LandingPage />);
 
-    expect(html).toContain('Timeline is AI team memory for real projects.');
+    expect(html).toContain(
+      'Get a project update from the messages, meetings, documents, tickets and code your team',
+    );
+    expect(html).toContain('Start with one note or document.');
     expect(html).toContain(
       'Work can begin in a linked Telegram group or Slack channel, then spread through meetings, documents, tickets, code, automations, and email.',
     );
     expect(html).toContain(
       'Rebuilding status, handoffs, customer commitments, and decisions becomes slow—and the result is easy to get wrong.',
     );
-    expect(html).toContain('documents, tickets, and code you choose in one chronological record');
-    expect(html).toContain('trace each claim back to the source');
+    expect(html).toContain(
+      'chooses to share. Ask what changed, what is blocked and who owns the next step',
+    );
+    expect(html).toContain('open the sources behind the answer.');
     expect(html).toContain('preserves source, time, and visibility');
     expect(html).toContain(
       'Give me the current status, handoff, blockers, and customer commitments.',

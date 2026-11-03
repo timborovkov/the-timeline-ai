@@ -51,6 +51,11 @@ const fakes = vi.hoisted(() => ({
 }));
 
 await vi.mock(
+  import.meta.resolve('@/components/billing-restriction-notice'),
+  () => ({ BillingRestrictionNotice: ({ reason }: { reason: string }) => <p>{reason}</p> }),
+  () => import('@/components/billing-restriction-notice'),
+);
+await vi.mock(
   import.meta.resolve('next/navigation'),
   async () => ({
     ...(await import('next/navigation')),
@@ -75,6 +80,7 @@ await vi.mock(
   import.meta.resolve('@timeline/shared/team-scope'),
   () => ({
     withTeam: () => ({
+      documents: { listDocuments: () => Promise.resolve([]) },
       requireMembership: vi.fn().mockImplementation(() => Promise.resolve(fakes.role)),
       billing: { getDashboard: fakes.getDashboard },
       calendar: { getCalendarSettings: fakes.getCalendarSettings },
@@ -423,7 +429,7 @@ describe('HomeDashboardPage', () => {
     expect(fakes.getDashboard).toHaveBeenCalledWith({ canManageBilling: false });
   });
 
-  it('shows admins a one-line billing nudge', async () => {
+  it('shows admins the billing nudge explanation', async () => {
     fakes.role = 'owner';
     fakes.getDashboard.mockResolvedValue({
       nudge: {
@@ -441,7 +447,7 @@ describe('HomeDashboardPage', () => {
     expect(html).toContain('You are close to the Free allowance');
     expect(html).toContain('Review billing');
     expect(html).toContain('href="/app/team?section=billing"');
-    expect(html).not.toContain('Add a payment method before the next Ask.');
+    expect(html).toContain('Add a payment method before the next Ask.');
     expect(html).not.toContain('See pricing');
     expect(fakes.getDashboard).toHaveBeenCalledWith({ canManageBilling: true });
   });

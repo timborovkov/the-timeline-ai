@@ -12,7 +12,7 @@ describe('core public documents', () => {
       title: 'AI Team Memory With Cited Answers',
       description:
         'Timeline turns selected chats, meetings, documents, tickets, and code into a searchable project history. Ask questions and verify every claim at the source.',
-      dates: { modified: '2026-08-21', reviewed: '2026-08-21' },
+      dates: { modified: '2026-11-03', reviewed: '2026-11-03' },
     });
 
     const graph = buildPublicStructuredData(home, 'https://thetimeline.cc');

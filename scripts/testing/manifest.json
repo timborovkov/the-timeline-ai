@@ -107,6 +107,9 @@
   "apps/web/src/app/api/email/inbound/route.test.ts": {
     "group": "unit"
   },
+  "apps/web/src/app/api/health/ready/route.test.ts": {
+    "group": "unit"
+  },
   "apps/web/src/app/api/integrations/[provider]/callback/route.test.ts": {
     "group": "unit"
   },

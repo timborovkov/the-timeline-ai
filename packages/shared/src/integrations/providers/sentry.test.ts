@@ -900,3 +900,62 @@ describe('sentryProvider', () => {
     ]);
   });
 });
+
+describe('Sentry delivery identity', () => {
+  it('preserves repeated resolutions and deduplicates a replay without claiming receipt time is action time', async () => {
+    const normalize = async (key: string, receivedAt: Date) => {
+      const result = await sentryProvider.handleWebhook?.({
+        integration: { id: 'integration-1', teamId: 'team-1' } as never,
+        delivery: { key, receivedAt },
+        payload: {
+          action: 'resolved',
+          organization: { slug: 'acme' },
+          data: {
+            issue: {
+              id: 'issue-1',
+              status: 'resolved',
+              lastSeen: '2026-06-20T10:00:00Z',
+              project: { slug: 'web' },
+            },
+          },
+        },
+      });
+      return (Array.isArray(result) ? result : result?.events)?.[0];
+    };
+    const first = await normalize('delivery-1', new Date('2026-06-21T10:00:00Z'));
+    const replay = await normalize('delivery-1', new Date('2026-06-21T10:00:00Z'));
+    const later = await normalize('delivery-2', new Date('2026-06-22T10:00:00Z'));
+    expect(first?.dedupKey).toBe(replay?.dedupKey);
+    expect(first?.dedupKey).not.toBe(later?.dedupKey);
+    expect(later?.occurredAt.toISOString()).toBe('2026-06-22T10:00:00.000Z');
+    expect(later?.extra?.timestamp_basis).toBe('webhook_received');
+  });
+});
+
+it('preserves distinct deployments of one release while deduplicating delivery replay', async () => {
+  const normalize = async (key: string) => {
+    const result = await sentryProvider.handleWebhook?.({
+      integration: { id: 'integration-1', teamId: 'team-1' } as never,
+      delivery: { key, receivedAt: new Date('2026-06-22T10:00:00Z') },
+      payload: {
+        action: 'deployed',
+        organization: { slug: 'acme' },
+        data: {
+          release: {
+            version: 'web@1.2.4',
+            dateReleased: '2026-06-20T12:00:00Z',
+            projects: [{ slug: 'web' }],
+          },
+        },
+      },
+    });
+    return (Array.isArray(result) ? result : result?.events)?.[0];
+  };
+  const staging = await normalize('staging-deployment');
+  const production = await normalize('production-deployment');
+  const replay = await normalize('production-deployment');
+  expect(staging?.dedupKey).not.toBe(production?.dedupKey);
+  expect(production?.dedupKey).toBe(replay?.dedupKey);
+  expect(production?.occurredAt.toISOString()).toBe('2026-06-22T10:00:00.000Z');
+  expect(production?.extra?.timestamp_basis).toBe('webhook_received');
+});

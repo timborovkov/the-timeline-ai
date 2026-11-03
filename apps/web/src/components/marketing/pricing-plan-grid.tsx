@@ -41,12 +41,19 @@ export function PricingPlanGrid({ className }: { className?: string }) {
             </p>
             <PublicSessionBranch
               signedOut={
-                <Link href={plan.cta.href} className={ctaClassName}>
+                <Link
+                  data-public-analytics-cta={`choose_${planId}`}
+                  href={planId === 'free' ? plan.cta.href : `/sign-up?plan=${planId}`}
+                  className={ctaClassName}
+                >
                   {plan.cta.label}
                 </Link>
               }
               signedIn={
-                <Link href="/app/team?section=billing" className={ctaClassName}>
+                <Link
+                  href={`/app/team?section=billing&plan=${planId}#change-plan`}
+                  className={ctaClassName}
+                >
                   {planId === 'free' ? 'Open billing' : 'Manage plan'}
                 </Link>
               }

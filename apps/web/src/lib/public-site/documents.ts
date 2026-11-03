@@ -1,3 +1,5 @@
+import { PRIVACY_VERSION, TERMS_VERSION } from '@timeline/shared/legal-versions';
+
 import type { PublicDocument, PublicLlmsContentSection } from '@/lib/public-site/types';
 
 import { EDITORIAL_PUBLIC_DOCUMENTS } from '@/components/marketing/editorial/public-documents';
@@ -154,7 +156,7 @@ const coreDocuments = definePublicDocuments('public-core', [
     description:
       'Timeline turns selected chats, meetings, documents, tickets, and code into a searchable project history. Ask questions and verify every claim at the source.',
     indexability: 'index',
-    dates: { modified: '2026-08-21', reviewed: '2026-08-21' },
+    dates: { modified: '2026-11-03', reviewed: '2026-11-03' },
     capability: { kind: 'current-product' },
     sitemap: { changeFrequency: 'weekly', priority: 1 },
     structuredData: [
@@ -190,7 +192,7 @@ const coreDocuments = definePublicDocuments('public-core', [
     title: 'Help',
     description: 'Public help docs for The Timeline.',
     indexability: 'index',
-    dates: { modified: '2026-08-21', reviewed: '2026-08-21' },
+    dates: { modified: '2026-11-03', reviewed: '2026-11-03' },
     capability: { kind: 'current-product' },
     sitemap: { changeFrequency: 'weekly', priority: 0.8 },
     structuredData: [{ type: 'collection-page' }],
@@ -210,7 +212,7 @@ const coreDocuments = definePublicDocuments('public-core', [
     description:
       'Free, pay as you go, optional Team and Business commitments, and native AI, meeting, email, and storage meters. EUR, excl. VAT.',
     indexability: 'index',
-    dates: { modified: '2026-08-21', reviewed: '2026-08-21' },
+    dates: { modified: '2026-11-03', reviewed: '2026-11-03' },
     capability: { kind: 'current-product' },
     sitemap: { changeFrequency: 'weekly', priority: 0.9 },
     structuredData: [
@@ -238,7 +240,7 @@ const coreDocuments = definePublicDocuments('public-core', [
         },
         {
           title: 'Meters',
-          body: 'AI (provider cost × 4), Recall minutes, email units, storage GB-month, accepted sources. Display native units and euro values.',
+          body: 'AI usage in euros, meeting minutes, email units, storage GB-month, accepted sources. Display native units and euro values.',
         },
       ],
     },
@@ -312,7 +314,7 @@ const publicUtilityDocuments = definePublicDocuments('public-utility', [
     title: 'Terms of Use',
     description: 'Terms governing access to The Timeline.',
     indexability: 'index',
-    dates: { modified: '2026-08-21', reviewed: '2026-08-21' },
+    dates: { modified: TERMS_VERSION, reviewed: '2026-11-03' },
     capability: { kind: 'not-applicable' },
     sitemap: { changeFrequency: 'monthly', priority: 0.4 },
     structuredData: [{ type: 'web-page' }],
@@ -330,7 +332,7 @@ const publicUtilityDocuments = definePublicDocuments('public-utility', [
     title: 'Privacy Policy',
     description: 'How The Timeline processes personal data and team content.',
     indexability: 'index',
-    dates: { modified: '2026-10-24', reviewed: '2026-10-24' },
+    dates: { modified: PRIVACY_VERSION, reviewed: '2026-11-03' },
     capability: { kind: 'not-applicable' },
     sitemap: { changeFrequency: 'monthly', priority: 0.4 },
     structuredData: [{ type: 'web-page' }],
