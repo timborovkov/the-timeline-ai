@@ -15,7 +15,13 @@ import {
   getTeamCapacityUsage,
   releaseFreeGrantIfOwnerLeaves,
 } from '#src/billing/capacity.js';
-import { BYTES_PER_MIB, CAPACITY_BY_PLAN, FREE_STORAGE_MIB } from '#src/billing/catalog.js';
+import {
+  BYTES_PER_GIB,
+  BYTES_PER_MIB,
+  CAPACITY_BY_PLAN,
+  FREE_STORAGE_MIB,
+  storageChargeCents,
+} from '#src/billing/catalog.js';
 import { BillingAdmissionError } from '#src/billing/errors.js';
 import { createBillingScope } from '#src/billing/scope.js';
 import { createMcpScope } from '#src/mcp/scope.js';
@@ -354,10 +360,41 @@ describe('billing capacity (not Polar meters)', () => {
       ensureMember: () => Promise.resolve('owner'),
     });
     const dash = await billing.getDashboard({ canManageBilling: true });
-    expect(dash.meters.storage_gb_month?.nativeUnits).toBeCloseTo(storage?.used ?? 0, 8);
+    expect(dash.meters.storage_gb_month.nativeUnits).toBeCloseTo(storage?.used ?? 0, 8);
     expect(
       dash.presentation?.allowances.find((row) => row.meter === 'storage_gb_month')?.used,
-    ).toBe(dash.meters.storage_gb_month?.nativeUnits);
+    ).toBe(dash.meters.storage_gb_month.nativeUnits);
+  });
+
+  it('does not price live stored GiB as a full GB-month in the plan preview', async () => {
+    const liveGb = 25;
+    const now = new Date();
+    const periodYm = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}`;
+    await pg.exec(`
+      INSERT INTO documents (id, team_id, name)
+      VALUES ('cccccccc-dddd-4eee-8fff-000000000011', '${TEAM_ID}', 'archive.bin');
+      INSERT INTO document_versions (team_id, document_id, version, object_key, byte_size)
+      VALUES (
+        '${TEAM_ID}',
+        'cccccccc-dddd-4eee-8fff-000000000011',
+        1,
+        'team/docs/archive.bin',
+        ${liveGb * BYTES_PER_GIB}
+      );
+      INSERT INTO billing_usage_counters (team_id, period_ym, meter_id, native_units, customer_charge_cents)
+      VALUES ('${TEAM_ID}', '${periodYm}', 'storage_gb_month', 0, 0);
+    `);
+    const billing = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    const dash = await billing.getDashboard({ canManageBilling: true });
+    expect(dash.meters.storage_gb_month.nativeUnits).toBeCloseTo(liveGb, 8);
+    expect(storageChargeCents(liveGb)).toBeGreaterThan(0);
+    expect(dash.planPreview.bills.payg.meteredAfterDiscountCents).toBe(0);
+    expect(dash.planPreview.bills.payg.totalCents).toBe(0);
   });
 
   it('rejects adding a custom MCP server on the Free plan', async () => {

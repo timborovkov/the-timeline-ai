@@ -534,17 +534,22 @@ export function createBillingScope(deps: BillingScopeDeps) {
           const liveStorageGb = storageGbFromBytes(
             await sumTeamStoredBytes(tx as unknown as Db, teamId),
           );
-          byMeter.storage_gb_month = {
-            nativeUnits: liveStorageGb,
-            customerChargeCents: storageMeter?.customerChargeCents ?? 0,
-            capEligibleChargeCents: storageMeter?.capEligibleChargeCents ?? 0,
+          // Period GB-month counters stay on `byMeter` for plan-cost preview.
+          // Live GiB is display-only (usage meter, remaining, presentation).
+          const displayMeters = {
+            ...byMeter,
+            storage_gb_month: {
+              nativeUnits: liveStorageGb,
+              customerChargeCents: storageMeter?.customerChargeCents ?? 0,
+              capEligibleChargeCents: storageMeter?.capEligibleChargeCents ?? 0,
+            },
           };
           const meteredSpendCents = counters.reduce(
             (sum, row) => sum + row.capEligibleChargeCents,
             0,
           );
           const utilization = spendCapUtilization(meteredSpendCents, account.spendCapCents);
-          const freeRemaining = freeAllowanceRemaining(byMeter);
+          const freeRemaining = freeAllowanceRemaining(displayMeters);
           const canManageBilling = Boolean(
             options?.canManageBilling && (dashboardRole === 'owner' || dashboardRole === 'admin'),
           );
@@ -665,7 +670,7 @@ export function createBillingScope(deps: BillingScopeDeps) {
           const presentation = canManageBilling
             ? buildBillingPresentation({
                 account,
-                meters: byMeter,
+                meters: displayMeters,
                 meteredSpendCents,
                 activeMembers: activeMemberCount,
                 shadowBilling: accountUsesShadowBilling(account),
@@ -687,7 +692,7 @@ export function createBillingScope(deps: BillingScopeDeps) {
             sidebar,
             restrictionReason,
             periodYm: ym,
-            meters: byMeter,
+            meters: displayMeters,
             meteredSpendCents,
             activeMemberCount,
             planPreview,

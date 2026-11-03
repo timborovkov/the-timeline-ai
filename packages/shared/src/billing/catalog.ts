@@ -208,7 +208,7 @@ export const CAPACITY_BY_PLAN: Record<BillingPlanId, CapacityEntitlements> = {
     webhookRequestsPerMonth: 250_000,
     inboundEmailPerMonth: 5_000,
     storageGb: 25,
-    documents: 5_000,
+    documents: 10_000,
     indexedChunks: 50_000,
     semanticSearchesPerMonth: 20_000,
     recallMinutesPerMonth: 3_000,

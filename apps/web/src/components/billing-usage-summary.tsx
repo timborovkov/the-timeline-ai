@@ -28,9 +28,10 @@ const ALLOWANCE_METERS = [
 ] as const satisfies readonly BillingMeterId[];
 
 function AllowanceBar({ used, allowance }: { used: number; allowance: number }) {
-  const scale = Math.max(used, allowance, 1);
-  const included = (Math.min(Math.max(used, 0), allowance) / scale) * 100;
-  const over = (Math.max(0, used - allowance) / scale) * 100;
+  const scale = Math.max(used, allowance);
+  const safeScale = scale > 0 ? scale : 1;
+  const included = (Math.min(Math.max(used, 0), allowance) / safeScale) * 100;
+  const over = (Math.max(0, used - allowance) / safeScale) * 100;
   return (
     <div className="mt-1.5 flex h-1 w-full overflow-hidden rounded-sm bg-border" aria-hidden="true">
       <div className="h-full bg-fg-muted" style={{ width: `${included}%` }} />

@@ -68,6 +68,12 @@ describe('billing catalog', () => {
     expect(CAPACITY_BY_PLAN.free.storageGb).toBe(FREE_STORAGE_GB);
     expect(CAPACITY_BY_PLAN.free.documents).toBe(10_000);
     expect(CAPACITY_BY_PLAN.free.indexedChunks).toBe(20_000);
+    expect(CAPACITY_BY_PLAN.payg.documents).toBeGreaterThanOrEqual(
+      CAPACITY_BY_PLAN.free.documents ?? 0,
+    );
+    expect(CAPACITY_BY_PLAN.team.documents).toBeGreaterThanOrEqual(
+      CAPACITY_BY_PLAN.payg.documents ?? 0,
+    );
     expect(ASK_AI_RESERVE_CUSTOMER_CHARGE_CENTS).toBe(250);
     expect(MEETING_MAX_DURATION_MINUTES_BY_PLAN.free).toBe(120);
     expect(MEETING_MAX_DURATION_MINUTES_BY_PLAN.payg).toBe(240);
