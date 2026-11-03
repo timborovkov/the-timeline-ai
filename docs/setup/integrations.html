@@ -197,7 +197,7 @@ GOOGLE_DRIVE_WEBHOOK_SECRET=...</code></pre>
           by its own daily budget (4 per file / 40 per connection) before sandbox or billed vision
           spend; the post-diff judge stays at 8 processed files per doc and 200 per connection.
           Baseline captures consume extract budget, not the judge cap. Full Drive copies are not
-          stored in the document drive. Apply
+          stored in the document drive. Apply <code>0096_google_drive_v1.sql</code> and
           <code>0097_google_drive_snapshot_uniqueness.sql</code> with the usual migration path.
         </li>
         <li>
