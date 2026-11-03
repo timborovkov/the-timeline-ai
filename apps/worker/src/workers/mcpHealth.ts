@@ -5,7 +5,6 @@ import { Worker, type Job } from 'bullmq';
 import { and, eq, isNull, lte, or } from 'drizzle-orm';
 
 import { captureWorkerJobFailure } from '#src/monitoring.js';
-
 import { guardWorkerProcessor } from '#src/platform-worker.js';
 
 const log = childLogger('worker:mcp-health');

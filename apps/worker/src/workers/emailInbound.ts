@@ -4,10 +4,9 @@ import { getRedisConnection, QUEUE_NAMES, type EmailInboundJobData } from '@time
 import { DelayedError, UnrecoverableError, Worker, type Job } from 'bullmq';
 
 import { captureWorkerJobFailure } from '#src/monitoring.js';
+import { guardWorkerProcessor } from '#src/platform-worker.js';
 
 import type { Db } from '@timeline/db';
-
-import { guardWorkerProcessor } from '#src/platform-worker.js';
 
 const log = childLogger('worker:email-inbound');
 

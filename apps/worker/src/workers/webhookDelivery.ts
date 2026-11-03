@@ -4,7 +4,6 @@ import { assertActivePrincipal } from '@timeline/shared/platform-admin/runtime';
 import { DelayedError, Worker, type Job } from 'bullmq';
 
 import { captureWorkerJobFailure } from '#src/monitoring.js';
-
 import { guardWorkerProcessor } from '#src/platform-worker.js';
 
 const log = childLogger('worker:webhook-delivery');

@@ -34,7 +34,6 @@ import {
 } from 'drizzle-orm';
 
 import { captureWorkerException } from '#src/monitoring.js';
-
 import { guardWorkerProcessor } from '#src/platform-worker.js';
 
 const log = childLogger('worker:meeting-scheduler');

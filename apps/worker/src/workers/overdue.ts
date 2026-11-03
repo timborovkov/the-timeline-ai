@@ -5,7 +5,6 @@ import { Worker, type Job } from 'bullmq';
 import { and, asc, eq, gt, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
 
 import { captureWorkerJobFailure } from '#src/monitoring.js';
-
 import { guardWorkerProcessor } from '#src/platform-worker.js';
 
 // Page the overdue scan by entity id so a tenant with thousands of

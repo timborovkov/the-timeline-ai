@@ -7,7 +7,6 @@ import { DelayedError, Worker, type Job } from 'bullmq';
 
 import { withWorkerAiBilling, workerBillingJobOptions } from '#src/billing-context.js';
 import { captureWorkerJobFailure } from '#src/monitoring.js';
-
 import { guardWorkerProcessor } from '#src/platform-worker.js';
 
 const ZERO_UUID = '00000000-0000-0000-0000-000000000000';

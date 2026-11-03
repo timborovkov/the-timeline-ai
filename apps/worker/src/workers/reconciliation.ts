@@ -31,7 +31,6 @@ import { and, count, desc, eq, gte, inArray, lte, or, sql, type SQL } from 'driz
 
 import { withWorkerAiBilling, workerBillingJobOptions } from '#src/billing-context.js';
 import { captureWorkerJobFailure } from '#src/monitoring.js';
-
 import { guardWorkerProcessor } from '#src/platform-worker.js';
 
 const log = childLogger('worker:reconciliation');
