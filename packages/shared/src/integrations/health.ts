@@ -28,7 +28,7 @@ const ACCESS_REVOKED_RE =
 const CONNECTIVITY_RE =
   /\b(?:ECONNREFUSED|ETIMEDOUT|ENETUNREACH|EAI_AGAIN|ENOTFOUND|ECONNRESET|UND_ERR|UND_ERR_CONNECT_TIMEOUT|network_failure|socket hang up|connect timeout|fetch failed)\b/i;
 const AUTH_RE =
-  /\b(?:reconnect|expired|unauthorized|forbidden|invalid_grant|invalid_token|no tokens|token_expired)\b/i;
+  /\b(?:reconnect|expired|unauthorized|forbidden|invalid_grant|invalid_token|no tokens|token_expired|missing required scopes)\b/i;
 const PERMANENT_RE =
   /\b(?:410|451)\b|permanently(?:\s+\w+)?(?:\s+deleted)?|account suspended|application has been blocked|this app has been blocked/i;
 const TRANSIENT_RE = /\b(?:408|500|502|503|504|temporarily overloaded|try again later)\b/i;
@@ -85,6 +85,12 @@ export function attentionCategoryForHealthKind(
   if (kind === 'access_revoked') return 'access_revoked';
   if (kind === 'auth') return 'needs_reconnect';
   return null;
+}
+
+/** Auth and revoked-token failures need a human reconnect; BullMQ retries and Sentry are noise. */
+export function isReconnectWithoutRetryFailure(message: string): boolean {
+  const classified = classifyIntegrationHealthFailure(message);
+  return classified.counted && (classified.kind === 'auth' || classified.kind === 'access_revoked');
 }
 
 export function formatHealthPauseDuration(from: Date, to = new Date()): string {

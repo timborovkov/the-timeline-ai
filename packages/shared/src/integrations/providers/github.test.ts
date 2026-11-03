@@ -5196,6 +5196,45 @@ describe('GitHub capture authorization boundary', () => {
     }
   });
 
+  it('skips App installation listing on 403 and fails closed as reconnect', async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      Response.json(
+        {
+          message:
+            'You must authenticate with an access token authorized to a GitHub App in order to list installations',
+        },
+        { status: 403 },
+      ),
+    );
+    globalThis.fetch = Object.assign(fetchMock, { preconnect: vi.fn() });
+    const writeEvents = vi.fn();
+    await expect(
+      githubProvider.incrementalSync({
+        integration: {} as never,
+        tokens: { access_token: 'gho_oauth_app_token' },
+        selections: [{ kind: 'github.repo', externalId: 'acme/app' }],
+        ctx: {
+          writeEvents,
+          recordAudit: vi.fn(),
+          saveCursor: vi.fn(),
+          loadCursor: vi.fn().mockResolvedValue({}),
+          persistTokens: vi.fn(),
+        },
+      }),
+    ).rejects.toThrow('github_installation_missing');
+    expect(writeEvents).not.toHaveBeenCalled();
+    expect(
+      fetchMock.mock.calls.some(([url]) =>
+        (url instanceof Request ? url.url : url.toString()).includes('/user/installations'),
+      ),
+    ).toBe(true);
+    expect(
+      fetchMock.mock.calls.every(([url]) =>
+        (url instanceof Request ? url.url : url.toString()).includes('/user/installations'),
+      ),
+    ).toBe(true);
+  });
+
   it('fails closed instead of falling back to OAuth when no installation matches', async () => {
     const fetchMock = vi
       .fn<typeof fetch>()

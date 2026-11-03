@@ -1339,6 +1339,13 @@ export async function runOneIntegration(
           { integrationId },
         );
         if (health.newlyPaused) return;
+        if (integrationsLib.isReconnectWithoutRetryFailure(msg)) {
+          log.warn(
+            { err, integrationId, countedKind },
+            'integration sync needs reconnect; skipping retries',
+          );
+          return;
+        }
         throw err;
       }
       const transient = await integrationsLib.adminRecordTransientSyncFailure(

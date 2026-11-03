@@ -32,11 +32,11 @@ function session(current = true): Session {
 }
 
 describe('hasCurrentLegalSession', () => {
-  it('keeps current pre-launch Privacy acknowledgment valid after disclosure edits', () => {
+  it('does not treat a previous Privacy version as current', () => {
     const previous = session();
     previous.user.legalPrivacyVersion = '2026-11-01';
     expect(previous.user.legalTermsVersion).toBe(TERMS_VERSION);
-    expect(hasCurrentLegalSession(previous.user)).toBe(true);
+    expect(hasCurrentLegalSession(previous.user)).toBe(false);
     expect(hasCurrentLegalSession(session().user)).toBe(true);
   });
   it('requires both current signed versions and an acceptance timestamp', () => {

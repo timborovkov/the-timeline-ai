@@ -3,6 +3,7 @@ import {
   billingUnbilledAlerts,
   billingUsageLedger,
   teamBillingAccounts,
+  teams,
   type Db,
 } from '@timeline/db';
 import { and, eq, isNotNull, isNull, lte, ne } from 'drizzle-orm';
@@ -386,6 +387,33 @@ function polarCheckoutId(data: PolarWebhookPayload['data']): string | null {
 
 function teamIdFromPayload(payload: PolarWebhookPayload): string | null {
   return payload.data?.customer?.external_id ?? payload.data?.external_customer_id ?? null;
+}
+
+const POLAR_TEAM_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function isPolarWebhookTeamUuid(value: unknown): value is string {
+  return typeof value === 'string' && POLAR_TEAM_UUID_RE.test(value);
+}
+
+/** Polar sandbox/org fixtures can send non-UUID external ids. Never query with those. */
+export function isIgnorablePolarWebhookFailure(err: unknown): boolean {
+  const parts: string[] = [];
+  let current: unknown = err;
+  for (let depth = 0; depth < 4 && current; depth++) {
+    if (current instanceof Error) {
+      parts.push(current.message);
+      current = current.cause;
+      continue;
+    }
+    if (typeof current === 'string') parts.push(current);
+    break;
+  }
+  return /invalid input syntax for type uuid/i.test(parts.join(' '));
+}
+
+async function timelineTeamExists(db: Db, teamId: string): Promise<boolean> {
+  const [row] = await db.select({ id: teams.id }).from(teams).where(eq(teams.id, teamId)).limit(1);
+  return Boolean(row);
 }
 
 async function lockBillingAccount(db: Db, teamId: string) {
@@ -1035,17 +1063,39 @@ export async function handlePolarWebhookEvent(input: {
   const teamId = teamIdFromPayload(input.payload);
   // Polar organizations can contain customers unrelated to Timeline (including
   // sandbox fixtures). Never pass provider-controlled identifiers into a UUID query.
-  if (
-    teamId !== null &&
-    (typeof teamId !== 'string' ||
-      !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(teamId))
-  )
+  if (teamId !== null && !isPolarWebhookTeamUuid(teamId))
     return { ok: true, ignored: 'invalid_external_customer' };
   if (!teamId) {
-    if (input.provider?.identity)
-      throw new PolarIdentityError('identity_conflict', 'webhook_team_missing');
+    if (input.provider?.identity) {
+      log.warn({ type }, 'polar webhook missing team mapping; acknowledging');
+    }
     return { ok: true, ignored: 'missing_external_customer' };
   }
+  if (!(await timelineTeamExists(input.db, teamId))) {
+    log.warn({ teamId, type }, 'polar webhook for unknown Timeline team; acknowledging');
+    return { ok: true, ignored: 'unknown_team' };
+  }
+  try {
+    return await applyPolarWebhookEvent({ ...input, teamId, type });
+  } catch (err) {
+    if (isIgnorablePolarWebhookFailure(err)) {
+      log.warn({ err, teamId, type }, 'polar webhook ignored invalid team identifier');
+      return { ok: true, ignored: 'invalid_external_customer' };
+    }
+    throw err;
+  }
+}
+
+async function applyPolarWebhookEvent(input: {
+  db: Db;
+  payload: PolarWebhookPayload;
+  chargesEnabled: boolean;
+  products: PolarWebhookProductIds;
+  provider?: BillingProvider | null;
+  teamId: string;
+  type: string;
+}): Promise<{ ok: true; ignored?: string }> {
+  const { teamId, type } = input;
   if (input.provider?.identity) {
     const customerId = await assertStoredPolarIdentity(input.db, teamId, input.provider);
     const claimedCustomerId = input.payload.data?.customer?.id ?? input.payload.data?.customer_id;
