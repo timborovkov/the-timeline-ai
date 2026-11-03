@@ -8,39 +8,43 @@ import type {
   DirectoryProvider,
   InboundEmailSettings,
   TelegramSetupSnapshot,
-} from '@/app/app/sources/connection-directory';
+} from '@/app/app/connections/connection-directory';
 import type { IntegrationsPageModel } from '@/app/app/team/integrations/integrations-page-model';
 
 import {
-  connectionsHref,
   connectionsTabFromSearch,
+  connectionsTabHref,
   isConnectionsToolSheet,
   parseConnectionsLocation,
   partitionAdvancedMcpCatalog,
   partitionMcpCatalog,
   partitionMcpServers,
-} from '@/app/app/sources/connection-directory';
-import { ConnectionsDirectory } from '@/app/app/sources/connections-directory';
-import { ConnectionsTabs } from '@/app/app/sources/connections-tabs';
+} from '@/app/app/connections/connection-directory';
+import { ConnectionsDirectory } from '@/app/app/connections/connections-directory';
+import { ConnectionsTabs } from '@/app/app/connections/connections-tabs';
 import {
   ConnectionsAgentTools,
   ConnectionsDeveloper,
   ConnectionsToolSheets,
-} from '@/app/app/sources/connections-tool-panels';
-import { ProviderDetailsPanel } from '@/app/app/sources/provider-details-panel';
+} from '@/app/app/connections/connections-tool-panels';
+import { ProviderDetailsPanel } from '@/app/app/connections/provider-details-panel';
 import { subscribeToClientUrlChanges } from '@/lib/client-url-changes';
+import { connectionsTabFromPathname } from '@/lib/connections';
 
-function writeConnectionsUrl(tab: ConnectionsTab, hash: string | null) {
-  const next = connectionsHref(tab, hash);
+function writeConnectionsUrl(
+  tab: ConnectionsTab,
+  hash: string | null,
+  mode: 'assign' | 'replace' = 'assign',
+) {
+  const next = connectionsTabHref(tab, hash);
   const current = `${window.location.pathname}${window.location.search}${window.location.hash}`;
   if (current === next) return;
-  const nextPathAndSearch = next.split('#')[0] ?? next;
-  const currentPathAndSearch = `${window.location.pathname}${window.location.search}`;
-  if (currentPathAndSearch === nextPathAndSearch) {
+  if (window.location.pathname === next.split('#')[0]) {
     window.location.hash = hash ?? '';
     return;
   }
-  window.location.assign(next);
+  if (mode === 'replace') window.location.replace(next);
+  else window.location.assign(next);
 }
 
 function readConnectionsLocation(
@@ -49,7 +53,7 @@ function readConnectionsLocation(
   integrationId?: string,
 ) {
   return parseConnectionsLocation({
-    tab: new URLSearchParams(window.location.search).get('tab'),
+    tab: connectionsTabFromPathname(window.location.pathname),
     hash: window.location.hash,
     providers,
     connectedRows,
@@ -85,6 +89,7 @@ function ConnectionHealthNotices({ model }: { model: IntegrationsPageModel }) {
 export function ConnectionsWorkspace({
   isAdmin,
   model,
+  email,
   connected,
   available,
   inboundEmail,
@@ -95,6 +100,7 @@ export function ConnectionsWorkspace({
 }: {
   isAdmin: boolean;
   model: IntegrationsPageModel;
+  email: DirectoryProvider;
   connected: DirectoryProvider[];
   available: DirectoryProvider[];
   inboundEmail: InboundEmailSettings;
@@ -103,7 +109,10 @@ export function ConnectionsWorkspace({
   initialHash?: string | null;
   integrationId?: string;
 }) {
-  const providers = useMemo(() => [...connected, ...available], [available, connected]);
+  const providers = useMemo(
+    () => [email, ...connected, ...available],
+    [available, connected, email],
+  );
   const mcpByProvider = useMemo(
     () => partitionMcpCatalog(model.mcpCatalogAvailable, model.nativeCatalog),
     [model.mcpCatalogAvailable, model.nativeCatalog],
@@ -146,7 +155,14 @@ export function ConnectionsWorkspace({
       );
     const applyLocation = (mode: 'all' | 'hash') => {
       const parsed = read();
+      const pathTab = connectionsTabFromPathname(window.location.pathname);
       setHash(parsed.hash);
+      if (parsed.hash && parsed.tab !== pathTab) {
+        userTabRef.current = parsed.tab;
+        setTab(parsed.tab);
+        writeConnectionsUrl(parsed.tab, parsed.hash, 'replace');
+        return;
+      }
       if (parsed.hash) {
         userTabRef.current = parsed.tab;
         setTab(parsed.tab);
@@ -231,6 +247,7 @@ export function ConnectionsWorkspace({
       >
         {tab === 'sources' ? (
           <ConnectionsDirectory
+            email={email}
             connected={connected}
             available={available}
             query={query}

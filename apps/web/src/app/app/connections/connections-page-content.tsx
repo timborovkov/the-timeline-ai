@@ -7,12 +7,14 @@ import type { Metadata } from 'next';
 import {
   buildDirectoryProviders,
   connectionHeaderMetadata,
+  directoryProviderList,
   EMPTY_TELEGRAM_SETUP,
   parseConnectionsLocation,
+  type ConnectionsTab,
   type InboundEmailSettings,
   type TelegramSetupSnapshot,
-} from '@/app/app/sources/connection-directory';
-import { ConnectionsWorkspace } from '@/app/app/sources/connections-workspace';
+} from '@/app/app/connections/connection-directory';
+import { ConnectionsWorkspace } from '@/app/app/connections/connections-workspace';
 import {
   loadIntegrationsPageModel,
   type IntegrationsPageModel,
@@ -21,6 +23,7 @@ import { PageHeader } from '@/components/page-header';
 import { RedirectActionToast } from '@/components/redirect-action-toast';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
+import { connectionsHref, connectionsTabFromSearch } from '@/lib/connections';
 import { db } from '@/lib/db';
 import {
   displayInboundEmail,
@@ -89,9 +92,11 @@ async function loadTelegramSetup(scope: TeamScope): Promise<TelegramSetupSnapsho
   };
 }
 
-export default async function SourcesPage({
+export default async function ConnectionsPage({
+  tab,
   searchParams,
 }: {
+  tab: ConnectionsTab;
   searchParams: Promise<SourcesPageParams>;
 }) {
   const session = await auth();
@@ -110,9 +115,13 @@ export default async function SourcesPage({
     scope.timeline.team(),
     loadTelegramSetup(scope),
   ]);
+  if (params.tab && connectionsTabFromSearch(params.tab) !== tab) {
+    redirect(connectionsHref(params));
+  }
   const isAdmin = role === 'owner' || role === 'admin';
   return (
     <SourcesPageView
+      tab={tab}
       params={params}
       active={active}
       isAdmin={isAdmin}
@@ -125,6 +134,7 @@ export default async function SourcesPage({
 }
 
 export function SourcesPageView({
+  tab = 'sources',
   params,
   active,
   isAdmin,
@@ -133,6 +143,7 @@ export function SourcesPageView({
   inboundEmail,
   telegramSetup,
 }: {
+  tab?: ConnectionsTab;
   params: SourcesPageParams;
   active: { teamName: string };
   isAdmin: boolean;
@@ -155,12 +166,13 @@ export function SourcesPageView({
     telegramWebhookConfigured: telegram.webhookConfigured,
     inboundEmail: emailSettings,
   });
-  const attentionCount = directory.connected.filter(
-    (provider) => provider.status === 'attention',
-  ).length;
+  const providers = directoryProviderList(directory);
+  const connectedCount = directory.connected.length + (directory.email.connected ? 1 : 0);
+  const availableCount = directory.available.length + (directory.email.connected ? 0 : 1);
+  const attentionCount = providers.filter((provider) => provider.status === 'attention').length;
   const location = parseConnectionsLocation({
-    tab: params.tab,
-    providers: [...directory.connected, ...directory.available],
+    tab,
+    providers,
     connectedRows: model.connectedRows,
     integrationId: params.integrationId,
   });
@@ -171,12 +183,12 @@ export function SourcesPageView({
         variant="collection"
         title="Connections"
         subtitle="Connect the tools this team already uses."
-        srLabel={`Connections · ${active.teamName} · ${String(directory.connected.length)} connected · ${String(attentionCount)} need attention · ${String(directory.available.length)} available`}
+        srLabel={`Connections · ${active.teamName} · ${String(connectedCount)} connected · ${String(attentionCount)} need attention · ${String(availableCount)} available`}
         metadata={connectionHeaderMetadata(
           active.teamName,
-          directory.connected.length,
+          connectedCount,
           attentionCount,
-          directory.available.length,
+          availableCount,
         )}
       />
 
@@ -189,6 +201,7 @@ export function SourcesPageView({
       <ConnectionsWorkspace
         isAdmin={isAdmin}
         model={model}
+        email={directory.email}
         connected={directory.connected}
         available={directory.available}
         inboundEmail={emailSettings}

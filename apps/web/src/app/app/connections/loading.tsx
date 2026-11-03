@@ -60,6 +60,12 @@ export default function SourcesLoading() {
             <Skeleton className="mb-1.5 h-8 w-full sm:w-56" />
           </div>
           <div className="[&>section+section]:-mt-px">
+            <section>
+              <div className="flex min-h-8 items-center px-2 sm:px-3">
+                <Skeleton className="h-3 w-12" />
+              </div>
+              <ConnectionsRowSkeleton description />
+            </section>
             <ConnectionsGroupSkeleton rows={3} />
             <ConnectionsGroupSkeleton rows={4} description />
           </div>

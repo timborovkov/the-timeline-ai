@@ -9,6 +9,7 @@ import { z } from 'zod';
 
 import { trackProductEventBestEffort } from '@/lib/analytics';
 import { auth } from '@/lib/auth';
+import { connectionsHref } from '@/lib/connections';
 import { db } from '@/lib/db';
 import { publicApiError } from '@/lib/public-error';
 import { appUrl } from '@/lib/site-url';
@@ -69,7 +70,7 @@ export async function GET(
   const state = url.searchParams.get('state');
   const oauthError = url.searchParams.get('error');
   if (oauthError) {
-    return NextResponse.redirect(appUrl('/app/sources?error=oauth_denied'));
+    return NextResponse.redirect(appUrl(connectionsHref({ error: 'oauth_denied' })));
   }
   if (!code || !state) {
     return new Response('missing_code_or_state', { status: 400 });
@@ -124,7 +125,10 @@ export async function GET(
     });
     return NextResponse.redirect(
       appUrl(
-        `/app/sources?error=${failure.error}${failure.reference ? `&reference=${failure.reference}` : ''}`,
+        connectionsHref({
+          error: failure.error,
+          ...(failure.reference ? { reference: failure.reference } : {}),
+        }),
       ),
     );
   }

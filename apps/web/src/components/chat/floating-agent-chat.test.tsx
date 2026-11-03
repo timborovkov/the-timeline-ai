@@ -259,7 +259,7 @@ describe('FloatingAgentChat', () => {
     await user.click(screen.getByRole('button', { name: /Open floating agent chat/ }));
     expect(await screen.findByRole('heading', { name: 'Object' })).toBeTruthy();
 
-    fakes.pathname.mockReturnValue('/app/sources');
+    fakes.pathname.mockReturnValue('/app/connections');
     fakes.searchParams.mockReturnValue(new URLSearchParams());
     rerender(
       <ChatViewProvider>
@@ -272,7 +272,7 @@ describe('FloatingAgentChat', () => {
     const body = fakes.transports.at(-1)?.options.body?.() as {
       contextTrail?: { kind: string; href?: string }[];
     };
-    expect(body.contextTrail?.[0]).toMatchObject({ kind: 'page', href: '/app/sources' });
+    expect(body.contextTrail?.[0]).toMatchObject({ kind: 'page', href: '/app/connections' });
     expect(body.contextTrail?.some((ref) => ref.kind === 'object')).toBe(true);
   });
 
@@ -290,7 +290,7 @@ describe('FloatingAgentChat', () => {
     );
     expect(screen.queryByRole('button', { name: /Open floating agent chat/ })).toBeNull();
 
-    fakes.pathname.mockReturnValue('/app/sources');
+    fakes.pathname.mockReturnValue('/app/connections');
     rerender(
       <ChatViewProvider>
         <FloatingAgentChat teamId="team-1" teamName="AuditAI" />
@@ -314,8 +314,8 @@ describe('FloatingAgentChat', () => {
       'timeline:chat-handoff:team-1',
       JSON.stringify({
         createdAt: Date.now(),
-        context: { pathname: '/app/sources', routeKind: 'sources' },
-        contextTrail: [{ kind: 'page', href: '/app/sources', label: 'Connections' }],
+        context: { pathname: '/app/connections', routeKind: 'sources' },
+        contextTrail: [{ kind: 'page', href: '/app/connections', label: 'Connections' }],
       }),
     );
     const { rerender } = renderChat();

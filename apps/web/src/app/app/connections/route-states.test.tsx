@@ -13,8 +13,8 @@ await vi.mock(
 
 const { cleanup, render, screen } = await import('@testing-library/react');
 const { default: userEvent } = await import('@testing-library/user-event');
-const { default: SourcesError } = await import('@/app/app/sources/error');
-const { default: SourcesLoading } = await import('@/app/app/sources/loading');
+const { default: SourcesError } = await import('@/app/app/connections/error');
+const { default: SourcesLoading } = await import('@/app/app/connections/loading');
 
 afterEach(() => {
   cleanup();

@@ -7,6 +7,7 @@ import { revalidatePath } from 'next/cache';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { trackProductEventBestEffort } from '@/lib/analytics';
 import { auth } from '@/lib/auth';
+import { CONNECTIONS_HREF, CONNECTIONS_LEGACY_HREF } from '@/lib/connections';
 import { db } from '@/lib/db';
 import { safeMarkOnboardingStep } from '@/lib/onboarding';
 import { runSentryServerAction } from '@/lib/sentry-action';
@@ -34,7 +35,8 @@ function normalizeTgUsername(raw: FormDataEntryValue | null): string | null {
 }
 
 function revalidateTelegramSetup(): void {
-  revalidatePath('/app/sources');
+  revalidatePath(CONNECTIONS_HREF, 'layout');
+  revalidatePath(CONNECTIONS_LEGACY_HREF);
   revalidatePath('/app/team/telegram');
 }
 

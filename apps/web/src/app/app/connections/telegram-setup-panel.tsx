@@ -2,7 +2,7 @@
 
 import { Hash, Users } from 'lucide-react';
 
-import type { TelegramSetupSnapshot } from '@/app/app/sources/connection-directory';
+import type { TelegramSetupSnapshot } from '@/app/app/connections/connection-directory';
 import type { ReactNode } from 'react';
 
 import { revokeLinkTokenAction, unbindChatAction } from '@/app/actions/telegram';

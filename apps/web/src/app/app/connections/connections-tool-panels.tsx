@@ -4,14 +4,14 @@ import { ExternalLink, KeyRound, ScrollText, Server, Webhook, Wrench } from 'luc
 import Link from 'next/link';
 import { type ReactNode } from 'react';
 
-import type { ConnectionsToolSheet } from '@/app/app/sources/connection-directory';
+import type { ConnectionsToolSheet } from '@/app/app/connections/connection-directory';
 import type { IntegrationsPageModel } from '@/app/app/team/integrations/integrations-page-model';
 
-import { filterByDirectoryQuery } from '@/app/app/sources/connection-directory';
+import { filterByDirectoryQuery } from '@/app/app/connections/connection-directory';
 import {
   CONNECTIONS_ROW_ACTION_CLASS,
   ConnectionsEmptyHint,
-} from '@/app/app/sources/connections-directory';
+} from '@/app/app/connections/connections-directory';
 import { CollectionGroup } from '@/components/collections/collection-group';
 import { CollectionRow } from '@/components/collections/collection-row';
 import { CollectionStatus } from '@/components/collections/collection-status';

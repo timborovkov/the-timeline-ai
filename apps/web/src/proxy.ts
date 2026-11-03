@@ -4,6 +4,7 @@ import NextAuth from 'next-auth';
 import { migrateLegacyActiveTeamCookie } from '@/lib/active-team-cookie-migration';
 import { authConfig } from '@/lib/auth.config';
 import { canonicalHostRedirect } from '@/lib/canonical-host';
+import { connectionsLegacyRedirectLocation } from '@/lib/connections';
 import { rejectInvalidMultipartRequest } from '@/lib/multipart-request';
 import { schedulePersonlessSurfaceRequest } from '@/lib/surface-request-analytics';
 
@@ -21,6 +22,13 @@ const authProxy = NextAuth(authConfig).auth(async (request) => {
 export const proxy: ProxyHandler = async (request, context) => {
   const redirect = canonicalHostRedirect(request);
   if (redirect) return redirect;
+  const connectionsLocation = connectionsLegacyRedirectLocation(
+    request.nextUrl.pathname,
+    request.nextUrl.searchParams,
+  );
+  if (connectionsLocation) {
+    return NextResponse.redirect(new URL(connectionsLocation, request.url), 308);
+  }
   const invalidMultipart = rejectInvalidMultipartRequest(request);
   if (invalidMultipart) return invalidMultipart;
   const response = await authProxy(request, context);

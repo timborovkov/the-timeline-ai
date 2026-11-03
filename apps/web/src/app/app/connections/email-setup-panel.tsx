@@ -1,6 +1,6 @@
 'use client';
 
-import type { InboundEmailSettings } from '@/app/app/sources/connection-directory';
+import type { InboundEmailSettings } from '@/app/app/connections/connection-directory';
 
 import { CopyableTextField } from '@/components/copyable-text-field';
 import { InboundEmailPlaceholderNotice, InboundEmailWhitelistForm } from '@/components/team-forms';

@@ -70,7 +70,7 @@ const { act, cleanup, render, screen, within } = await import('@testing-library/
 const { default: userEvent } = await import('@testing-library/user-event');
 const { renderToString } = await import('react-dom/server');
 const { RedirectActionToast } = await import('@/components/redirect-action-toast');
-const { SourcesPageView } = await import('@/app/app/sources/sources-page-content');
+const { SourcesPageView } = await import('@/app/app/connections/connections-page-content');
 
 afterEach(() => {
   notify.notifyError.mockClear();
@@ -261,13 +261,16 @@ describe('SourcesPageView', () => {
     expect(screen.getByRole('link', { name: 'Set up: telegram' })).toBeTruthy();
     expect(screen.getByRole('tab', { name: 'Sources' }).getAttribute('aria-selected')).toBe('true');
     expect(screen.getByRole('tab', { name: 'Agent tools' }).getAttribute('href')).toBe(
-      '/app/sources?tab=agent',
+      '/app/connections/agent-tools',
     );
     expect(screen.getByRole('tab', { name: 'Developer' }).getAttribute('href')).toBe(
-      '/app/sources?tab=developer',
+      '/app/connections/developer',
     );
+    expect(screen.getByRole('heading', { name: 'Inbox' })).toBeTruthy();
     expect(screen.getByText('Connected providers')).toBeTruthy();
     expect(screen.getByText('Available providers')).toBeTruthy();
+    const available = screen.getByText('Available providers').closest('section');
+    expect(available?.textContent).toMatch(/Telegram[\s\S]*Slack/u);
     expect(screen.getByLabelText('Search sources')).toBeTruthy();
     expect(screen.queryByRole('link', { name: 'Open Documents details' })).toBeNull();
     expect(screen.queryByRole('link', { name: 'Open Meetings details' })).toBeNull();
@@ -279,8 +282,8 @@ describe('SourcesPageView', () => {
     expect(screen.getByText('Syncing for team')).toBeTruthy();
   });
 
-  it('keeps Agent tools selected when the URL is restored without ?tab=', async () => {
-    window.history.replaceState({ next: true }, '', '/app/sources');
+  it('writes Agent tools onto its own Connections route', async () => {
+    window.history.replaceState({ next: true }, '', '/app/connections/sources');
     renderPage(
       <SourcesPageView
         params={{}}
@@ -295,15 +298,8 @@ describe('SourcesPageView', () => {
     expect(screen.getByRole('tab', { name: 'Agent tools' }).getAttribute('aria-selected')).toBe(
       'true',
     );
-    expect(window.location.search).toBe('?tab=agent');
-    expect(window.history.state).toEqual({ next: true });
-
-    act(() => {
-      window.history.replaceState(window.history.state, '', '/app/sources');
-    });
-    expect(screen.getByRole('tab', { name: 'Agent tools' }).getAttribute('aria-selected')).toBe(
-      'true',
-    );
+    expect(window.location.pathname).toBe('/app/connections/agent-tools');
+    expect(window.location.search).toBe('');
     expect(screen.getByText('Agent access')).toBeTruthy();
     expect(screen.queryByText('Connected providers')).toBeNull();
   });
@@ -428,7 +424,7 @@ describe('SourcesPageView', () => {
   });
 
   it('opens and switches provider sheets on fragment-only navigation', async () => {
-    window.history.replaceState(null, '', '/app/sources');
+    window.history.replaceState(null, '', '/app/connections/sources');
     renderPage(
       <SourcesPageView
         params={{}}
@@ -451,13 +447,13 @@ describe('SourcesPageView', () => {
     expect(screen.queryByRole('dialog')).toBeNull();
 
     act(() => {
-      window.history.pushState(null, '', '/app/sources#telegram');
+      window.history.pushState(null, '', '/app/connections/sources#telegram');
     });
     const telegram = await screen.findByRole('dialog', { name: 'Telegram' });
     expect(within(telegram).getByText('Link a personal DM')).toBeTruthy();
 
     act(() => {
-      window.history.pushState(null, '', '/app/sources#email');
+      window.history.pushState(null, '', '/app/connections/sources#email');
     });
     const email = await screen.findByRole('dialog', { name: 'Email' });
     expect(within(email).getByLabelText('Additional senders')).toBeTruthy();
@@ -470,7 +466,7 @@ describe('SourcesPageView', () => {
     expect(within(github).getByText('Accounts')).toBeTruthy();
 
     act(() => {
-      window.history.pushState(null, '', '/app/sources#agent-mcp');
+      window.history.pushState(null, '', '/app/connections/sources#agent-mcp');
     });
     const agent = await screen.findByRole('dialog', { name: 'Agent MCP servers' });
     expect(within(agent).getByText(/live tool access/i)).toBeTruthy();

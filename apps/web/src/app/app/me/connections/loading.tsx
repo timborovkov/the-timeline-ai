@@ -11,7 +11,10 @@ export default function PersonalConnectionsLoading() {
       <div className="space-y-4" aria-busy="true" aria-label="Loading provider accounts">
         <h1 className="sr-only">Provider accounts</h1>
         <Breadcrumb
-          items={[{ label: 'Connections', href: '/app/sources' }, { label: 'Provider accounts' }]}
+          items={[
+            { label: 'Connections', href: '/app/connections' },
+            { label: 'Provider accounts' },
+          ]}
         />
         <div aria-hidden="true" className="space-y-4">
           <PageHeaderSkeleton variant="collection" />

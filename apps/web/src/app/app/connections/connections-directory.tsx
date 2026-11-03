@@ -1,8 +1,10 @@
 'use client';
 
-import type { DirectoryProvider } from '@/app/app/sources/connection-directory';
-
-import { filterByDirectoryQuery, providerStatusTone } from '@/app/app/sources/connection-directory';
+import {
+  filterByDirectoryQuery,
+  providerStatusTone,
+  type DirectoryProvider,
+} from '@/app/app/connections/connection-directory';
 import { CollectionGroup } from '@/components/collections/collection-group';
 import { CollectionRow } from '@/components/collections/collection-row';
 import { CollectionStatus } from '@/components/collections/collection-status';
@@ -99,21 +101,35 @@ function DirectoryProviderRow({
   );
 }
 
+function InboxSection({ email, selected }: { email: DirectoryProvider; selected: boolean }) {
+  return (
+    <section className="min-w-0">
+      <div className="flex min-h-8 items-center px-2 sm:px-3">
+        <h2 className="text-xs font-medium text-fg-muted">Inbox</h2>
+      </div>
+      <DirectoryProviderRow provider={email} selected={selected} showDescription />
+    </section>
+  );
+}
+
 export function ConnectionsDirectory({
+  email,
   connected,
   available,
   query,
   selectedId,
 }: {
+  email: DirectoryProvider;
   connected: DirectoryProvider[];
   available: DirectoryProvider[];
   query: string;
   selectedId: string | null;
 }) {
+  const visibleEmail = filterByDirectoryQuery([email], query)[0] ?? null;
   const visibleConnected = filterByDirectoryQuery(connected, query);
   const visibleAvailable = filterByDirectoryQuery(available, query);
 
-  if (visibleConnected.length === 0 && visibleAvailable.length === 0) {
+  if (!visibleEmail && visibleConnected.length === 0 && visibleAvailable.length === 0) {
     return (
       <ConnectionsEmptyHint>
         {query.trim() ? 'No matching sources.' : 'No sources available.'}
@@ -123,6 +139,10 @@ export function ConnectionsDirectory({
 
   return (
     <div className="[&>section+section]:-mt-px">
+      {visibleEmail ? (
+        <InboxSection email={visibleEmail} selected={selectedId === visibleEmail.id} />
+      ) : null}
+
       {visibleConnected.length > 0 ? (
         <CollectionGroup count={visibleConnected.length} title="Connected providers">
           {visibleConnected.map((provider) => (

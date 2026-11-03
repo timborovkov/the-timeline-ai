@@ -19,5 +19,7 @@ export default async function McpServersRedirect({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }): Promise<never> {
-  redirect(connectionsHref(await searchParams));
+  const params = { ...(await searchParams) };
+  params.tab ??= 'agent';
+  redirect(connectionsHref(params));
 }

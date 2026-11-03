@@ -3220,7 +3220,7 @@ describe('object scope — chat session isolation', () => {
     const afterArchive = await ownerScope.mergeChatSessionContextTrail(session.id, [
       {
         kind: 'page',
-        href: '/app/sources',
+        href: '/app/connections',
         label: 'Connections',
       },
     ]);

@@ -5,7 +5,8 @@ import type { IntegrationsPageModel } from '@/app/app/team/integrations/integrat
 
 import {
   buildDirectoryProviders,
-  connectionsHref,
+  connectionsTabHref,
+  directoryProviderList,
   filterAvailableProviders,
   initialOpenProviderId,
   parseConnectionsLocation,
@@ -14,7 +15,7 @@ import {
   partitionMcpServers,
   providerRowStatus,
   providerStatusLabel,
-} from '@/app/app/sources/connection-directory';
+} from '@/app/app/connections/connection-directory';
 
 const nativeCatalog = [
   {
@@ -117,8 +118,10 @@ describe('connection directory helpers', () => {
       slackConnections: 1,
     });
 
-    expect(directory.connected.map((row) => row.id)).toEqual(['github', 'linear', 'slack']);
-    expect(directory.available.map((row) => row.id)).toEqual(['telegram', 'email']);
+    expect(directory.connected.map((row) => row.id)).toEqual(['slack', 'github', 'linear']);
+    expect(directory.available.map((row) => row.id)).toEqual(['telegram']);
+    expect(directory.email.id).toBe('email');
+    expect(directory.email.connected).toBe(false);
     expect(directory.connected.filter((row) => row.id === 'linear')).toHaveLength(1);
     expect(directory.connected.find((row) => row.id === 'linear')?.statusLabel).toBe(
       'Syncing for team',
@@ -164,12 +167,8 @@ describe('connection directory helpers', () => {
       primaryAction: 'open',
       statusLabel: 'Connected',
     });
-    expect(directory.available.map((row) => row.id)).toEqual([
-      'github',
-      'slack',
-      'telegram',
-      'email',
-    ]);
+    expect(directory.available.map((row) => row.id)).toEqual(['telegram', 'slack', 'github']);
+    expect(directory.email.connected).toBe(false);
 
     const attention = buildDirectoryProviders({
       model: model({
@@ -216,7 +215,7 @@ describe('connection directory helpers', () => {
     expect(filterAvailableProviders(directory.available, 'tele').map((row) => row.id)).toEqual([
       'telegram',
     ]);
-    expect(filterAvailableProviders(directory.available, 'email').map((row) => row.id)).toEqual([
+    expect(filterAvailableProviders([directory.email], 'email').map((row) => row.id)).toEqual([
       'email',
     ]);
   });
@@ -234,20 +233,20 @@ describe('connection directory helpers', () => {
       },
     });
     expect(unconfigured.available.map((row) => row.id)).toEqual([
+      'telegram',
+      'slack',
       'github',
       'linear',
-      'slack',
-      'telegram',
-      'email',
     ]);
     expect(unconfigured.available.find((row) => row.id === 'telegram')).toMatchObject({
       kind: 'capture',
       primaryAction: 'setup',
       statusLabel: 'Not connected',
     });
-    expect(unconfigured.available.find((row) => row.id === 'email')).toMatchObject({
+    expect(unconfigured.email).toMatchObject({
       kind: 'capture',
       primaryAction: 'setup',
+      connected: false,
     });
 
     const configured = buildDirectoryProviders({
@@ -262,12 +261,15 @@ describe('connection directory helpers', () => {
         placeholderInbound: false,
       },
     });
-    expect(configured.connected.map((row) => row.id)).toEqual(['telegram', 'email']);
+    expect(configured.connected.map((row) => row.id)).toEqual(['telegram']);
     expect(configured.connected.find((row) => row.id === 'telegram')?.statusLabel).toBe(
       'Connected',
     );
-    expect(configured.connected.find((row) => row.id === 'email')?.statusLabel).toBe('Connected');
-    expect(configured.available.map((row) => row.id)).toEqual(['github', 'linear', 'slack']);
+    expect(configured.email).toMatchObject({
+      connected: true,
+      statusLabel: 'Connected',
+    });
+    expect(configured.available.map((row) => row.id)).toEqual(['slack', 'github', 'linear']);
   });
 
   it('opens a provider from an integration id or hash', () => {
@@ -291,27 +293,35 @@ describe('connection directory helpers', () => {
       slackConnections: 0,
       telegramConnections: 0,
     });
+    const providers = directoryProviderList(directory);
     expect(
       initialOpenProviderId({
-        providers: [...directory.connected, ...directory.available],
+        providers,
         connectedRows,
         integrationId: 'int-linear',
       }),
     ).toBe('linear');
     expect(
       initialOpenProviderId({
-        providers: [...directory.connected, ...directory.available],
+        providers,
         connectedRows,
         hash: '#github',
       }),
     ).toBe('github');
     expect(
       initialOpenProviderId({
-        providers: [...directory.connected, ...directory.available],
+        providers,
         connectedRows,
         hash: '#telegram',
       }),
     ).toBe('telegram');
+    expect(
+      initialOpenProviderId({
+        providers,
+        connectedRows,
+        hash: '#email',
+      }),
+    ).toBe('email');
   });
 
   it('moves local-only and planned MCP catalog rows into Coming soon', () => {
@@ -330,7 +340,7 @@ describe('connection directory helpers', () => {
       slackConnections: 0,
       telegramConnections: 0,
     });
-    const providers = [...directory.connected, ...directory.available];
+    const providers = directoryProviderList(directory);
     expect(
       parseConnectionsLocation({
         hash: '#email',
@@ -359,6 +369,8 @@ describe('connection directory helpers', () => {
         connectedRows: [],
       }),
     ).toEqual({ tab: 'agent', hash: null });
-    expect(connectionsHref('agent', 'timeline-mcp')).toBe('/app/sources?tab=agent#timeline-mcp');
+    expect(connectionsTabHref('agent', 'timeline-mcp')).toBe(
+      '/app/connections/agent-tools#timeline-mcp',
+    );
   });
 });

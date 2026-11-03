@@ -225,7 +225,7 @@ export const APP_GUIDE_ROUTES: readonly AppGuideRoute[] = [
     title: 'Connections',
     description:
       'Connect Drive, Linear, GitHub, Monday.com, Slack workspace, Sentry, custom ingest webhooks, and MCP tools.',
-    href: '/app/sources',
+    href: '/app/connections/sources',
     group: 'dashboard',
     minRole: 'admin',
     intents: [
@@ -257,7 +257,7 @@ export const APP_GUIDE_ROUTES: readonly AppGuideRoute[] = [
     id: 'connections',
     title: 'Connections',
     description: 'Personal provider accounts, Slack, Telegram, native providers, and MCP tools.',
-    href: '/app/sources',
+    href: '/app/connections/sources',
     group: 'dashboard',
     minRole: 'member',
     intents: [
@@ -269,7 +269,7 @@ export const APP_GUIDE_ROUTES: readonly AppGuideRoute[] = [
       'set up a source',
     ],
     guide:
-      'Use Connections to see capture sources, native providers, and linked accounts. Sources lists Email, Telegram, and each native provider once; each opens a details sheet. Documents and Meetings live on their own sidebar pages. Person-owned provider logins live under Provider accounts. Admins activate shared team sources on the same Connections page. Slack chat capture has its own setup page. Agent tools holds MCP servers, the Timeline MCP endpoint, and coming-soon catalog rows. Developer holds ingest webhooks, integration audit, and job recovery. MCP servers give the agent live tools without turning every call into timeline evidence.',
+      'Use Connections to see capture sources, native providers, and linked accounts. Sources lists Timeline Email in its own Inbox section, then Telegram, Slack, and the remaining providers. Each opens a details sheet. Documents and Meetings live on their own sidebar pages. Person-owned provider logins live under Provider accounts. Admins activate shared team sources on the same Connections page. Slack chat capture has its own setup page. Agent tools holds MCP servers, the Timeline MCP endpoint, and coming-soon catalog rows. Developer holds ingest webhooks, integration audit, and job recovery. MCP servers give the agent live tools without turning every call into timeline evidence.',
     relatedRouteIds: [
       'me/connections',
       'team/integrations',
@@ -314,7 +314,7 @@ export const APP_GUIDE_ROUTES: readonly AppGuideRoute[] = [
     id: 'team/telegram',
     title: 'Telegram Setup',
     description: 'Connect Telegram capture and direct-chat routing for this team.',
-    href: '/app/sources#telegram',
+    href: '/app/connections/sources#telegram',
     group: 'dashboard',
     minRole: 'member',
     intents: ['connect telegram', 'telegram bot', 'telegram capture'],
@@ -350,7 +350,7 @@ export const APP_GUIDE_ROUTES: readonly AppGuideRoute[] = [
     id: 'team/integrations/monday',
     title: 'Monday.com Integration',
     description: 'Connect Monday.com boards, subitems, updates, columns, records, and WorkDocs.',
-    href: '/app/sources#monday',
+    href: '/app/connections/sources#monday',
     group: 'dashboard',
     minRole: 'admin',
     intents: [

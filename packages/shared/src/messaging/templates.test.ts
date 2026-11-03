@@ -271,11 +271,11 @@ describe('messaging templates', () => {
       to: 'owner@example.test',
       teamName: 'Audit & AI',
       summary: 'Reconnect GitHub <now>',
-      actionUrl: 'https://timeline.test/app/sources',
+      actionUrl: 'https://timeline.test/app/connections',
     });
 
     expect(message.subject).toBe('Timeline integration needs attention for Audit & AI');
-    expect(message.textBody).toContain('Open Connections: https://timeline.test/app/sources');
+    expect(message.textBody).toContain('Open Connections: https://timeline.test/app/connections');
     expect(message.htmlBody).toContain('Reconnect GitHub &lt;now&gt;');
     expect(message.htmlBody).not.toContain('Reconnect GitHub <now>');
     expect(message.metadata).toMatchObject({ message_intent: 'connection_attention' });

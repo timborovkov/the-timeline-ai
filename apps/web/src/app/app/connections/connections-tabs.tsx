@@ -3,10 +3,10 @@
 import { Search } from 'lucide-react';
 import Link from 'next/link';
 
-import type { ConnectionsTab } from '@/app/app/sources/connection-directory';
+import type { ConnectionsTab } from '@/app/app/connections/connection-directory';
 import type { KeyboardEvent } from 'react';
 
-import { CONNECTIONS_TABS, connectionsHref } from '@/app/app/sources/connection-directory';
+import { CONNECTIONS_TABS, connectionsTabHref } from '@/app/app/connections/connection-directory';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 
@@ -115,10 +115,9 @@ export function ConnectionsTabs({
           return (
             <Link
               key={item}
-              href={connectionsHref(item)}
+              href={connectionsTabHref(item)}
               replace
               scroll={false}
-              prefetch={false}
               role="tab"
               id={`connections-tab-${item}`}
               aria-selected={selected}

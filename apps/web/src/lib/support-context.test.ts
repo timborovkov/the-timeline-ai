@@ -19,6 +19,11 @@ describe('support context', () => {
     ['/app/documents/captured', 'documents'],
     ['/app/meetings/meeting-secret-id', 'meeting_detail'],
     ['/app/team/integrations/audit', 'team_integration_audit'],
+    ['/app/sources', 'sources'],
+    ['/app/connections', 'sources'],
+    ['/app/connections/sources', 'sources'],
+    ['/app/connections/agent-tools', 'sources'],
+    ['/app/connections/developer', 'sources'],
     ['/app/team/reconciliation/clusters/cluster-secret-id', 'team_reconciliation'],
   ])('collapses %s to the allowlisted %s surface', (pathname, surface) => {
     expect(supportSurfaceForPath(pathname)).toBe(surface);
