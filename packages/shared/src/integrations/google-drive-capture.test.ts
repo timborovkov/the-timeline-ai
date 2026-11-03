@@ -58,6 +58,7 @@ import {
   forEachDriveExtractCursorPage,
   linkedObjectForDriveSelection,
   listDriveExtractCursors,
+  deleteDriveSnapshotsForFile,
   loadLatestDriveSnapshot,
   parseDriveExtractCursor,
   parseDriveTransientExtractResult,
@@ -640,6 +641,81 @@ describe('saveDriveSnapshot uniqueness', () => {
     });
     expect(loaded?.snapshotLocate).toEqual(snapshot.snapshotLocate);
     expect(loaded?.snapshotLocate?.suffix).toContain('$48k');
+  });
+
+  it('keeps extracted chunk text only on the latest snapshot and purges it on disconnect or file removal', async () => {
+    const [integration] = await db
+      .insert(integrations)
+      .values({
+        teamId: TEAM_ID,
+        connectedByUserId: USER_ID,
+        provider: 'google_drive',
+        displayName: 'Google Drive',
+        externalAccountId: 'drive-acct-chunk-text',
+        visibilityDefault: 'team',
+      })
+      .returning();
+    if (!integration) throw new Error('integration insert failed');
+    const bodyA = `${'A'.repeat(25_000)}Renewal amount is $12k for Northstar.`;
+    const bodyB = `${'B'.repeat(25_000)}Renewal amount is $48k for Northstar.`;
+    const bodyC = `${'C'.repeat(25_000)}Renewal amount is $96k for Northstar.`;
+    const save = (body: string, fileId = 'file-chunks') =>
+      saveDriveSnapshot(db as never, {
+        teamId: TEAM_ID,
+        integrationId: integration.id,
+        fileId,
+        snapshot: {
+          contentHash: hashDrivePayload(body),
+          snapshotText: body.slice(0, 20_000),
+          snapshotLocate: buildDriveSnapshotLocate(body),
+          commentsHash: 'comments-chunks',
+          permissionsHash: 'permissions-chunks',
+          mimeType: 'application/vnd.google-apps.document',
+        },
+      });
+
+    await save(bodyA);
+    await save(bodyB);
+    await save(bodyC);
+
+    const rows = await db.select().from(googleDriveFileSnapshots);
+    expect(rows).toHaveLength(3);
+    const latest = await loadLatestDriveSnapshot(db as never, {
+      teamId: TEAM_ID,
+      integrationId: integration.id,
+      fileId: 'file-chunks',
+    });
+    expect(latest?.snapshotLocate?.chunkTexts.join('')).toBe(bodyC);
+    const older = rows.filter((row) => row.contentHash !== latest?.contentHash);
+    expect(older).toHaveLength(2);
+    for (const row of older) {
+      expect(row.snapshotLocate?.chunkTexts ?? []).toEqual([]);
+      expect(row.snapshotLocate?.chunkHashes.length).toBeGreaterThan(0);
+    }
+
+    await deleteDriveSnapshotsForFile(db as never, {
+      teamId: TEAM_ID,
+      integrationId: integration.id,
+      fileId: 'file-chunks',
+    });
+    expect(
+      await db
+        .select()
+        .from(googleDriveFileSnapshots)
+        .then((found) => found.length),
+    ).toBe(0);
+
+    await save(bodyA, 'file-keep');
+    await save(bodyB, 'file-drop');
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    await scope.integrations.deleteDriveSnapshotsForFile(integration.id, 'file-drop');
+    const remaining = await db.select().from(googleDriveFileSnapshots);
+    expect(remaining).toHaveLength(1);
+    expect(remaining[0]?.fileId).toBe('file-keep');
+    expect(remaining[0]?.snapshotLocate?.chunkTexts.join('')).toBe(bodyA);
+
+    await expect(scope.integrations.deleteIntegration(integration.id)).resolves.toBeUndefined();
+    expect(await db.select().from(googleDriveFileSnapshots)).toEqual([]);
   });
 
   it('resolves Drive object links for My Drive, shared drives, individual files, and missing ancestors', async () => {

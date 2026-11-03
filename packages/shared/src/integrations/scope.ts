@@ -27,6 +27,8 @@ import { and, desc, eq, inArray, isNotNull, isNull, lte, ne, or, sql } from 'dri
 import { decryptJson, encryptJson } from '#src/crypto/secrets.js';
 import { getEnv } from '#src/env.js';
 import {
+  deleteDriveSnapshotsForFile as deleteDriveFileSnapshots,
+  deleteDriveSnapshotsForIntegration,
   driveExtractObjectKeys,
   forEachDriveExtractCursorPage,
   linkedObjectForDriveSelection as loadLinkedObjectForDriveSelection,
@@ -680,6 +682,10 @@ export function createIntegrationScope(deps: {
         onPage: async (page) => {
           await Promise.all(page.map((row) => tryDeleteDriveTransientExtractObjects(row.cursor)));
         },
+      });
+      await deleteDriveSnapshotsForIntegration(tx as unknown as Db, {
+        teamId,
+        integrationId: id,
       });
       await tx.delete(integrationSyncState).where(eq(integrationSyncState.integrationId, id));
       await tx.delete(integrationAuditLog).where(eq(integrationAuditLog.integrationId, id));
@@ -1679,6 +1685,12 @@ export function createIntegrationScope(deps: {
     await saveDriveSnapshot(db, { teamId, integrationId, fileId, snapshot });
   }
 
+  async function removeDriveSnapshotsForFile(integrationId: string, fileId: string): Promise<void> {
+    const integration = await getIntegration(integrationId);
+    if (!integration) return;
+    await deleteDriveFileSnapshots(db, { teamId, integrationId, fileId });
+  }
+
   async function listDriveTeamEmailDomains(): Promise<string[]> {
     await ensureMember();
     return loadTeamEmailDomains(db, teamId);
@@ -2026,6 +2038,7 @@ export function createIntegrationScope(deps: {
     listDriveExtractCursors: listTeamDriveExtractCursors,
     loadLatestDriveSnapshot: loadDriveSnapshot,
     saveDriveSnapshot: persistDriveSnapshot,
+    deleteDriveSnapshotsForFile: removeDriveSnapshotsForFile,
     listTeamEmailDomains: listDriveTeamEmailDomains,
     linkedObjectForDriveSelection,
     loadCursor,

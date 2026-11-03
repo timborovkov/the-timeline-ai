@@ -17,7 +17,7 @@ const ALLOWED_SNAPSHOT_TABLE_FILES = new Set([
 ]);
 
 const UNSCOPED_DRIVE_DB_CALL =
-  /\b(?:listDriveExtractCursors|forEachDriveExtractCursorPage|loadLatestDriveSnapshot|saveDriveSnapshot|linkedObjectForDriveSelection)\s*\(\s*(?:db|tx|input\.db)\b/;
+  /\b(?:listDriveExtractCursors|forEachDriveExtractCursorPage|loadLatestDriveSnapshot|saveDriveSnapshot|deleteDriveSnapshotsForFile|deleteDriveSnapshotsForIntegration|linkedObjectForDriveSelection)\s*\(\s*(?:db|tx|input\.db)\b/;
 const SNAPSHOT_TABLE = /\bgoogleDriveFileSnapshots\b/;
 const UNSCOPED_LIB_LIST = /\bintegrationsLib\.listDriveExtractCursors\b/;
 
@@ -134,5 +134,6 @@ describe('Drive withTeam isolation guard', () => {
     expect(adapter).toBeDefined();
     expect(adapter).toContain('commentsSnapshot');
     expect(adapter).toContain('snapshotLocate');
+    expect(source).toContain('deleteDriveSnapshotsForFile');
   });
 });

@@ -3,8 +3,9 @@
  * must never reach an LLM.
  *
  * Stored evidence is a 20k prefix, a 20k suffix, and a full-document locate
- * index: every chunk's hash and text, including straddlers of the prefix and
- * suffix bounds. Capture always has the current full text. Distinct changed
+ * index. The latest retained state stores every chunk's hash and extracted text,
+ * including straddlers of the prefix and suffix bounds; older retained states
+ * keep hashes only. Capture always has the current full text. Distinct changed
  * spans stay separate: a bounding first-to-last char-diff must not merge distant
  * edits into one truncated hunk. Hunks are centered on each span and truncated
  * around it. Every distinct span must appear in those hunks; if count or budget
@@ -105,6 +106,17 @@ export function buildDriveSnapshotLocate(
     chunkSize: size,
     chunkHashes,
     chunkTexts,
+  };
+}
+
+/** Older retained snapshots keep hashes for uniqueness; only the latest stores chunk text. */
+export function hashesOnlyDriveSnapshotLocate(locate: DriveSnapshotLocate): DriveSnapshotLocate {
+  return {
+    length: locate.length,
+    suffix: locate.suffix,
+    chunkSize: locate.chunkSize,
+    chunkHashes: locate.chunkHashes,
+    chunkTexts: [],
   };
 }
 

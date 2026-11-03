@@ -1436,6 +1436,9 @@ export async function runOneIntegration(
           snapshotLocate: input.snapshotLocate ?? null,
         });
       },
+      deleteDriveSnapshotsForFile(fileId) {
+        return teamScope.integrations.deleteDriveSnapshotsForFile(integrationId, fileId);
+      },
       listTeamEmailDomains() {
         return teamScope.integrations.listTeamEmailDomains();
       },

@@ -22,6 +22,7 @@ import {
   buildDriveSnapshotLocate,
   diffDriveSnapshots,
   driveDiffHasEvidence,
+  driveHunksContainChangedSpan,
   parseDriveSnapshotLocate,
   truncateDriveSnapshot,
 } from '#src/integrations/google-drive-diff.js';
@@ -594,7 +595,7 @@ async function loadDriveText(
         stored_revision: existing.revisionId ?? null,
         file_revision: fileRevisionId,
       });
-      await ctx.consumeTransientDriveExtract?.(file.id);
+      await discardTransientDriveExtract(ctx, file.id);
     }
   }
 
@@ -665,7 +666,7 @@ async function listDriveComments(tokens: DriveTokens, fileId: string): Promise<D
     `/files/${encodeURIComponent(fileId)}/comments`,
     {
       fields:
-        'nextPageToken,comments(id,content,resolved,modifiedTime,author(displayName,emailAddress))',
+        'nextPageToken,comments(id,content,resolved,modifiedTime,author(displayName,emailAddress),replies(id,content,modifiedTime,author(displayName,emailAddress)))',
       includeDeleted: 'false',
     },
     (page) => (Array.isArray(page?.comments) ? (page.comments as DriveComment[]) : []),
@@ -897,6 +898,102 @@ export function packDriveEventContent(input: {
   return parts.join('\n\n');
 }
 
+function packedHunksFitUntruncated(input: {
+  summary: string;
+  commentPreview: string;
+  hunks: string[];
+  maxChars: number;
+}): boolean {
+  const hunkPreview = input.hunks.join('\n');
+  if (!hunkPreview) return true;
+  const packed = packDriveEventContent({
+    summary: input.summary,
+    commentPreview: input.commentPreview,
+    hunkPreview,
+    maxChars: input.maxChars,
+  });
+  return packed.includes(hunkPreview);
+}
+
+/**
+ * Split Drive event text so every input hunk appears untruncated in some event.
+ * Comments pack into the first event. If a changed span would be dropped, return
+ * null so the caller does not advance the snapshot baseline.
+ */
+export function packDriveChangeEvents(input: {
+  summary: string;
+  hunks: string[];
+  commentPreview: string;
+  previousText: string;
+  nextText: string;
+  maxChars?: number;
+}): { contentText: string; hunks: string[] }[] | null {
+  const maxChars = input.maxChars ?? DRIVE_EVENT_CONTENT_MAX_CHARS;
+  const events: { contentText: string; hunks: string[] }[] = [];
+  let remaining = [...input.hunks];
+  let includeComments = true;
+  while (remaining.length > 0 || events.length === 0) {
+    const commentPreview = includeComments ? input.commentPreview : '';
+    const fitted: string[] = [];
+    for (const hunk of remaining) {
+      if (
+        packedHunksFitUntruncated({
+          summary: input.summary,
+          commentPreview,
+          hunks: [...fitted, hunk],
+          maxChars,
+        })
+      ) {
+        fitted.push(hunk);
+      } else {
+        break;
+      }
+    }
+    if (fitted.length === 0 && remaining.length > 0) {
+      if (includeComments && input.commentPreview.trim()) {
+        events.push({
+          contentText: packDriveEventContent({
+            summary: input.summary,
+            hunkPreview: '',
+            commentPreview: input.commentPreview,
+            maxChars,
+          }),
+          hunks: [],
+        });
+        includeComments = false;
+        continue;
+      }
+      return null;
+    }
+    events.push({
+      contentText: packDriveEventContent({
+        summary: input.summary,
+        hunkPreview: fitted.join('\n'),
+        commentPreview,
+        maxChars,
+      }),
+      hunks: fitted,
+    });
+    includeComments = false;
+    remaining = remaining.slice(fitted.length);
+    if (remaining.length === 0) break;
+    if (events.length > input.hunks.length + 1) return null;
+  }
+  const packedHunks = events.flatMap((event) => event.hunks);
+  if (packedHunks.length !== input.hunks.length) return null;
+  if (packedHunks.some((hunk, index) => hunk !== input.hunks[index])) return null;
+  const blob = events.map((event) => event.contentText).join('\n');
+  if (input.hunks.some((hunk) => hunk.length > 0 && !blob.includes(hunk))) return null;
+  if (
+    input.hunks.length > 0 &&
+    input.previousText !== input.nextText &&
+    !driveHunksContainChangedSpan(packedHunks, input.previousText, input.nextText)
+  ) {
+    return null;
+  }
+  return events;
+}
+
 async function processDriveFile(
   integration: IntegrationRow,
   tokens: DriveTokens,
@@ -913,12 +1010,14 @@ async function processDriveFile(
   // cursor so the next changes.watch ping starts a fresh 15-minute debounce.
   await ctx.saveCursor(driveDebounceCursorKey(fileId), {});
   if (!file) {
+    await ctx.deleteDriveSnapshotsForFile?.(fileId);
     await discardTransientDriveExtract(ctx, fileId);
     await ctx.recordAudit('drive_file_missing', { file_id: fileId });
     return;
   }
   const membership = await fileInSelectedSubtree(tokens, file, scope, createDriveAncestryCache());
   if (!membership.inScope) {
+    await ctx.deleteDriveSnapshotsForFile?.(fileId);
     await discardTransientDriveExtract(ctx, fileId);
     await ctx.recordAudit('drive_file_out_of_scope', { file_id: fileId });
     return;
@@ -1092,23 +1191,39 @@ async function processDriveFile(
         },
       )
     : null;
-  const hunkPreview = diff.hunks.slice(0, 12).join('\n');
+  const previousLocate = parseDriveSnapshotLocate(previous.snapshotLocate);
+  const previousFull =
+    previousLocate &&
+    previousLocate.chunkTexts.length === previousLocate.chunkHashes.length &&
+    previousLocate.chunkTexts.join('').length === previousLocate.length
+      ? previousLocate.chunkTexts.join('')
+      : previous.snapshotText;
   const commentPreview = commentsChanged
     ? commentEventContext(comments, parseDriveCommentSnapshots(previous.commentsSnapshot))
     : '';
-  const contentText = packDriveEventContent({
+  const packed = packDriveChangeEvents({
     summary: judge.summary,
-    hunkPreview,
+    hunks: diff.hunks,
     commentPreview,
+    previousText: previousFull,
+    nextText: fullText,
   });
+  if (!packed) {
+    await ctx.recordAudit('drive_pack_incomplete', {
+      file_id: fileId,
+      hunk_count: diff.hunks.length,
+    });
+    return;
+  }
   const occurrence = driveFileContentRevision(file) ?? 'unknown';
-  const event: IntegrationEvent = {
+  const events: IntegrationEvent[] = packed.map((part, index) => ({
     dedupKey: driveFileChangeDedupKey({
       fileId: file.id,
       occurrence,
       contentHash,
       commentsHash,
       permissionsHash,
+      ...(packed.length > 1 ? { part: index + 1 } : {}),
     }),
     provider: 'google_drive',
     signalClass: 'communication',
@@ -1118,7 +1233,7 @@ async function processDriveFile(
     eventType: 'file.changed',
     occurredAt: file.modifiedTime ? new Date(file.modifiedTime) : new Date(),
     actor: actorFromFile(file) ?? null,
-    contentText,
+    contentText: part.contentText,
     extra: {
       drive: {
         name: file.name,
@@ -1130,6 +1245,7 @@ async function processDriveFile(
         judge_reason: judge.reason,
         strong_signals: strongSignals,
         changed_chars: diff.changedChars,
+        ...(packed.length > 1 ? { part: index + 1, parts: packed.length } : {}),
         ...(linked ? { linked_object_id: linked.id } : {}),
       },
     },
@@ -1145,8 +1261,8 @@ async function processDriveFile(
           },
         }
       : {}),
-  };
-  await ctx.writeEvents([event]);
+  }));
+  await ctx.writeEvents(events);
   await persistDriveSnapshot(ctx, file.id, snapshot);
   await consumeReadyDriveExtract(ctx, file.id, loaded);
 }

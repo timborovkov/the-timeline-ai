@@ -117,6 +117,28 @@ describe('commentEventContext ranking', () => {
         ),
       needle: 'Author 10 (updated): Keep comment 10',
     },
+    {
+      name: 'reply last of 10',
+      kind: 'updated',
+      hashField: 'replies',
+      next: (comments) =>
+        comments.map((comment, index) =>
+          index === comments.length - 1
+            ? {
+                ...comment,
+                replies: [
+                  {
+                    id: 'r10',
+                    content: 'Confirm the $48k annual term.',
+                    modifiedTime: '2026-07-02T00:00:00.000Z',
+                    author: { displayName: 'Ada' },
+                  },
+                ],
+              }
+            : comment,
+        ),
+      needle: 'Ada (reply): Confirm the $48k annual term.',
+    },
   ];
 
   it('covers every commentsHash field with a last-of-10 ranked transition', () => {

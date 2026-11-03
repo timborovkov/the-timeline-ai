@@ -24,8 +24,12 @@ await vi.mock(
 );
 
 const { resetEnvForTests } = await import('#src/env.js');
-const { DRIVE_EVENT_CONTENT_MAX_CHARS, googleDriveProvider, packDriveEventContent } =
-  await import('#src/integrations/providers/google-drive.js');
+const {
+  DRIVE_EVENT_CONTENT_MAX_CHARS,
+  googleDriveProvider,
+  packDriveChangeEvents,
+  packDriveEventContent,
+} = await import('#src/integrations/providers/google-drive.js');
 const { DRIVE_FILE_DEBOUNCE_MS, DRIVE_TRANSIENT_RESULT_TOO_LARGE, hashDrivePayload } =
   await import('#src/integrations/google-drive-capture.js');
 const { driveCommentsHashEntries } = await import('#src/integrations/google-drive-comments.js');
@@ -106,6 +110,7 @@ function syncContext(
   | 'loadTransientDriveExtract'
   | 'consumeTransientDriveExtract'
   | 'cancelTransientDriveExtract'
+  | 'deleteDriveSnapshotsForFile'
   | 'takeDriveExtractSlot'
 > &
   Partial<SyncContext> {
@@ -128,6 +133,7 @@ function syncContext(
     loadTransientDriveExtract: vi.fn().mockResolvedValue(null),
     consumeTransientDriveExtract: vi.fn().mockResolvedValue(undefined),
     cancelTransientDriveExtract: vi.fn().mockResolvedValue(undefined),
+    deleteDriveSnapshotsForFile: vi.fn().mockResolvedValue(undefined),
     takeDriveExtractSlot: vi.fn().mockResolvedValue({ allowed: true }),
     ...overrides,
   };
@@ -147,6 +153,34 @@ describe('packDriveEventContent', () => {
     expect(packed.length).toBeLessThanOrEqual(DRIVE_EVENT_CONTENT_MAX_CHARS);
     expect(packed).toContain('Ada (resolved): Please confirm the $48k annual term.');
     expect(packed.indexOf('Ada (resolved):')).toBeLessThan(packed.indexOf('H'.repeat(20)));
+  });
+});
+
+describe('packDriveChangeEvents', () => {
+  it('splits so a comment plus passages 7 and 8 all appear untruncated', () => {
+    const hunks = Array.from({ length: 10 }, (_, index) => {
+      if (index === 6) return `${'N'.repeat(350)}-PASSAGE7-$48k`;
+      if (index === 7) return `${'N'.repeat(350)}-PASSAGE8-Northstar`;
+      return `${'N'.repeat(400)}-${String(index)}`;
+    });
+    const packed = packDriveChangeEvents({
+      summary: 'Drive change on "SOW" (comment_changed)',
+      hunks,
+      commentPreview: 'Ada (resolved): Please confirm the $48k annual term.',
+      previousText: hunks.map((_, index) => `Keep paragraph ${String(index + 1)}.`).join('\n'),
+      nextText: hunks.join('\n'),
+    });
+    expect(packed).not.toBeNull();
+    const parts = packed ?? [];
+    expect(parts.length).toBeGreaterThan(1);
+    const blob = parts.map((event) => event.contentText).join('\n');
+    expect(blob).toContain('Ada (resolved): Please confirm the $48k annual term.');
+    expect(blob).toContain('PASSAGE7-$48k');
+    expect(blob).toContain('PASSAGE8-Northstar');
+    for (const event of parts) {
+      expect(event.contentText.length).toBeLessThanOrEqual(DRIVE_EVENT_CONTENT_MAX_CHARS);
+    }
+    expect(parts.flatMap((event) => event.hunks)).toEqual(hunks);
   });
 });
 
@@ -956,7 +990,8 @@ describe('googleDriveProvider', () => {
       target: { resourceType: 'drive.file', externalId: 'file-1' },
     });
 
-    expect(ctx.consumeTransientDriveExtract).toHaveBeenCalledWith('file-1');
+    expect(ctx.cancelTransientDriveExtract).toHaveBeenCalledWith('file-1');
+    expect(ctx.consumeTransientDriveExtract).not.toHaveBeenCalled();
     expect(ctx.enqueueTransientDriveExtract).toHaveBeenCalledWith(
       expect.objectContaining({
         fileId: 'file-1',
@@ -1022,7 +1057,8 @@ describe('googleDriveProvider', () => {
       target: { resourceType: 'drive.file', externalId: 'file-1' },
     });
 
-    expect(ctx.consumeTransientDriveExtract).toHaveBeenCalledWith('file-1');
+    expect(ctx.cancelTransientDriveExtract).toHaveBeenCalledWith('file-1');
+    expect(ctx.consumeTransientDriveExtract).not.toHaveBeenCalled();
     expect(ctx.writeEvents).not.toHaveBeenCalled();
     expect(ctx.enqueueTransientDriveExtract).toHaveBeenCalledWith(
       expect.objectContaining({ revisionId: 'rev:rev-new' }),
@@ -2204,15 +2240,16 @@ describe('googleDriveProvider', () => {
     expect(preview).not.toContain('Keep comment 10');
   });
 
-  it('keeps comment evidence when ten 400-char hunks would overflow the event cap', async () => {
+  it('keeps comment evidence and passages 7-8 when ten 400-char hunks would overflow the event cap', async () => {
     const previousText = Array.from(
       { length: 10 },
       (_, index) => `Keep paragraph ${String(index + 1)}.`,
     ).join('\n');
-    const nextText = Array.from(
-      { length: 10 },
-      (_, index) => `${'N'.repeat(400)}-${String(index)}`,
-    ).join('\n');
+    const nextText = Array.from({ length: 10 }, (_, index) => {
+      if (index === 6) return `${'N'.repeat(350)}-PASSAGE7-$48k`;
+      if (index === 7) return `${'N'.repeat(350)}-PASSAGE8-Northstar`;
+      return `${'N'.repeat(400)}-${String(index)}`;
+    }).join('\n');
     const previousComments = [
       {
         id: 'c1',
@@ -2239,6 +2276,7 @@ describe('googleDriveProvider', () => {
         return Promise.resolve(new Response(nextText, { status: 200 }));
       }
       if (url.pathname.endsWith('/comments')) {
+        expect(url.searchParams.get('fields') ?? '').toContain('replies(');
         return Promise.resolve(jsonResponse({ comments: nextComments }));
       }
       if (url.pathname.endsWith('/permissions')) {
@@ -2286,13 +2324,19 @@ describe('googleDriveProvider', () => {
     const events: IntegrationEvent[] = (
       ctx.writeEvents as unknown as { mock: { calls: [IntegrationEvent[]][] } }
     ).mock.calls.flatMap(([batch]) => batch);
-    expect(events).toHaveLength(1);
-    const preview = events[0]?.contentText ?? '';
-    expect(preview.length).toBeLessThanOrEqual(DRIVE_EVENT_CONTENT_MAX_CHARS);
+    expect(events.length).toBeGreaterThan(1);
+    const preview = events.map((event) => event.contentText).join('\n');
+    for (const event of events) {
+      expect(event.contentText.length).toBeLessThanOrEqual(DRIVE_EVENT_CONTENT_MAX_CHARS);
+    }
     expect(preview).toContain('Ada (resolved): Please confirm the $48k annual term.');
     expect(preview).toContain('comment_changed');
-    expect(preview.indexOf('Ada (resolved):')).toBeLessThan(preview.indexOf('N'.repeat(20)));
+    expect(preview).toContain('PASSAGE7-$48k');
+    expect(preview).toContain('PASSAGE8-Northstar');
+    expect(preview.indexOf('Ada (resolved):')).toBeLessThan(preview.indexOf('PASSAGE7-$48k'));
+    expect(ctx.saveDriveSnapshot).toHaveBeenCalledOnce();
     expect(ctx.judgeDriveChange).not.toHaveBeenCalled();
+    expect(new Set(events.map((event) => event.dedupKey))).toHaveLength(events.length);
   });
 
   it('puts a deleted last-page comment first in the bounded event context', async () => {
@@ -2375,6 +2419,101 @@ describe('googleDriveProvider', () => {
     const savedIds = savedSnapshot?.commentsSnapshot.map((comment) => comment.id) ?? [];
     expect(savedIds).toEqual(nextComments.map((comment) => comment.id));
     expect(savedIds).not.toContain('c10');
+  });
+
+  it('includes a new reply in the event and only then advances the comment baseline', async () => {
+    const snapshotText = 'Contract amount is forty eight thousand dollars for Northstar.';
+    const contentHash = hashDrivePayload(snapshotText);
+    const previousComments = [
+      {
+        id: 'c1',
+        content: 'Looks good.',
+        resolved: false,
+        modifiedTime: '2026-06-19T00:00:00.000Z',
+        author: { displayName: 'Ada' },
+      },
+    ];
+    const nextComments = [
+      {
+        id: 'c1',
+        content: 'Looks good.',
+        resolved: false,
+        modifiedTime: '2026-06-19T00:00:00.000Z',
+        author: { displayName: 'Ada' },
+        replies: [
+          {
+            id: 'r1',
+            content: 'Please confirm the $48k annual term.',
+            modifiedTime: '2026-06-20T10:00:00.000Z',
+            author: { displayName: 'Sam' },
+          },
+        ],
+      },
+    ];
+    const fetch = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((input) => {
+      const url = requestUrl(input);
+      if (url.pathname.includes('/export')) {
+        return Promise.resolve(new Response(snapshotText, { status: 200 }));
+      }
+      if (url.pathname.endsWith('/comments')) {
+        expect(url.searchParams.get('fields') ?? '').toContain('replies(');
+        return Promise.resolve(jsonResponse({ comments: nextComments }));
+      }
+      if (url.pathname.endsWith('/permissions')) {
+        return Promise.resolve(jsonResponse({ permissions: [] }));
+      }
+      if (url.pathname.endsWith('/files/file-1')) {
+        return Promise.resolve(
+          jsonResponse({
+            id: 'file-1',
+            name: 'SOW',
+            mimeType: 'application/vnd.google-apps.document',
+            parents: ['root'],
+            modifiedTime: '2026-06-20T10:00:00.000Z',
+          }),
+        );
+      }
+      return Promise.resolve(jsonResponse({ message: 'unexpected' }, { status: 404 }));
+    });
+    vi.stubGlobal('fetch', fetch);
+    const ctx = syncContext({
+      loadLatestDriveSnapshot: vi.fn().mockResolvedValue({
+        contentHash,
+        snapshotText,
+        commentsHash: driveCommentsHash(previousComments),
+        permissionsHash: drivePermissionsHash([]),
+        commentsSnapshot: previousComments.map((comment) => ({
+          id: comment.id,
+          content: comment.content,
+          resolved: comment.resolved,
+          modifiedTime: comment.modifiedTime,
+          author: comment.author.displayName,
+          replies: [],
+        })),
+        mimeType: 'application/vnd.google-apps.document',
+      }),
+    });
+
+    await googleDriveProvider.incrementalSync({
+      integration: { id: 'integration-1', teamId: 'team-1' } as never,
+      tokens: { access_token: 'access-token', expires_at: Date.now() + 600_000 },
+      selections: [{ kind: 'drive.file', externalId: 'file-1' }],
+      ctx: ctx,
+      target: { resourceType: 'drive.file', externalId: 'file-1' },
+    });
+
+    const events: IntegrationEvent[] = (
+      ctx.writeEvents as unknown as { mock: { calls: [IntegrationEvent[]][] } }
+    ).mock.calls.flatMap(([batch]) => batch);
+    expect(events).toHaveLength(1);
+    expect(events[0]?.contentText).toContain('Sam (reply): Please confirm the $48k annual term.');
+    expect(ctx.saveDriveSnapshot).toHaveBeenCalledWith(
+      expect.objectContaining({
+        commentsHash: driveCommentsHash(nextComments),
+      }),
+    );
   });
 
   it('puts a reopened last-page comment first in the bounded event context', async () => {
@@ -2680,6 +2819,7 @@ describe('googleDriveProvider', () => {
       target: { resourceType: 'drive.file', externalId: 'file-1' },
     });
 
+    expect(ctx.deleteDriveSnapshotsForFile).toHaveBeenCalledWith('file-1');
     expect(ctx.cancelTransientDriveExtract).toHaveBeenCalledWith('file-1');
     expect(ctx.consumeTransientDriveExtract).not.toHaveBeenCalled();
     expect(ctx.writeEvents).not.toHaveBeenCalled();
@@ -2717,6 +2857,7 @@ describe('googleDriveProvider', () => {
       target: { resourceType: 'drive.file', externalId: 'file-1' },
     });
 
+    expect(ctx.deleteDriveSnapshotsForFile).toHaveBeenCalledWith('file-1');
     expect(ctx.cancelTransientDriveExtract).toHaveBeenCalledWith('file-1');
     expect(ctx.consumeTransientDriveExtract).not.toHaveBeenCalled();
     expect(ctx.writeEvents).not.toHaveBeenCalled();

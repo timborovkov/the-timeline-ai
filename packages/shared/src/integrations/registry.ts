@@ -227,7 +227,7 @@ const CATALOG_SEEDS: CatalogSeed[] = [
     id: 'google_drive',
     label: 'Google Drive',
     description:
-      'Selected Drive folders and files become cited timeline events after a quiet editing window. Timeline stores truncated snapshots for diffing, not full document copies.',
+      'Selected Drive folders and files become cited timeline events after a quiet editing window. Timeline keeps the latest extracted text to detect changes, then deletes it on disconnect or file removal.',
     logo: '/connectors/google-drive.svg',
     category: 'productivity',
     kind: 'native',

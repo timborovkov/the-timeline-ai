@@ -145,18 +145,20 @@ GOOGLE_DRIVE_WEBHOOK_SECRET=...</code></pre>
         </li>
         <li>
           File capture fetches text transiently, hashes the full extracted text, then stores a
-          truncated 20k prefix plus a suffix window and a full-document chunk locate index (hashes
-          and per-chunk text). Change detection diffs those stored windows like-for-like against the
-          current full text and always keeps added and removed hunks together. Prefix equivalence
-          never proves the suffix is unchanged: if the full-text hash moved, the result is never
-          classified identical: the suffix or full-document chunk index (hashes plus stored chunk
-          text) locates the changed region, including chunks that straddle the prefix and suffix
-          bounds. Each mismatched chunk is char-diffed against the stored previous chunk so hunks
-          are centered on every distinct changed span and truncated around that span — a
-          first-to-last bounding span is not used, because truncation would hide a middle edit. If
-          count or budget would drop any span, the baseline does not advance. Full-text hashes still
-          see edits past 20k chars. Formatting-only and tiny edits (Markdown markers, not signed
-          amounts such as
+          truncated 20k prefix plus a suffix window and a full-document chunk locate index. Only the
+          latest retained state keeps per-chunk extracted text to detect later edits; older states
+          keep hashes only. That latest extracted text is deleted on disconnect or file removal.
+          Change detection diffs those stored windows like-for-like against the current full text
+          and always keeps added and removed hunks together. Prefix equivalence never proves the
+          suffix is unchanged: if the full-text hash moved, the result is never classified
+          identical: the suffix or full-document chunk index (hashes plus stored chunk text) locates
+          the changed region, including chunks that straddle the prefix and suffix bounds. Each
+          mismatched chunk is char-diffed against the stored previous chunk so hunks are centered on
+          every distinct changed span and truncated around that span — a first-to-last bounding span
+          is not used, because truncation would hide a middle edit. If count or budget would drop
+          any span, or packed event text cannot keep every span, the baseline does not advance (the
+          capture splits across events or defers persist). Full-text hashes still see edits past 20k
+          chars. Formatting-only and tiny edits (Markdown markers, not signed amounts such as
           <code>-50000 USD</code>) skip the LLM. Tiny vs substantive uses the intra-line edited
           span, not the hunk context kept for the judge. Tiny is only whitespace, punctuation-only,
           case-only, or a single-letter typo (edit distance 1) inside one word longer than 3
@@ -164,7 +166,8 @@ GOOGLE_DRIVE_WEBHOOK_SECRET=...</code></pre>
           Remaining hunks bill a small CRM-relevance judge through <code>llm.chatStructured</code> /
           the existing AI meter. Judged event text packs comment evidence before hunks with a
           reserved budget so a long diff cannot drop comments past the 4000-char cap, including the
-          strong-signal path. Workspace object links resolve through
+          strong-signal path. Every changed span must still appear in that packed event (and in the
+          judge input when the judge runs). Workspace object links resolve through
           <code>withTeam(...).objects</code>. Deletion-only diffs emit bounded removed-text hunks.
           Nested-folder membership caches fetched parent ids and the selected ancestor that admitted
           a path — never an early "out of scope" boolean that would drop later files under the same
@@ -181,35 +184,37 @@ GOOGLE_DRIVE_WEBHOOK_SECRET=...</code></pre>
           bound as folder listing — shared-drive <code>files.get</code> never returns
           <code>permissions</code>. Bounded comment event context ranks every
           <code>commentsHash</code> field change — added, edited, removed, resolved, reopened, and
-          other fingerprint fields such as <code>modifiedTime</code> — ahead of unchanged comments
-          so a transition past the first eight still reaches the judged event. Live
-          <code>comments.list</code> omits deleted comments, so a withdrawn comment is recovered
-          from the previous snapshot ids and labelled <code>(removed)</code> in that window. The
-          judged event is written before the snapshot advances. Delayed <code>drive.file</code> and
-          <code>drive.changes</code> jobs are kept across integration and provider-budget pauses,
-          persist to the continuation handoff table when the per-integration lock is busy, keep the
-          continuation reason and a unique handoff job id so a lock-retry cannot collide with the
-          originating debounce job and get acked as a no-op, and attach to quota or token-refresh
-          failures so capture resumes after the pause. A skipped tick cannot advance past
-          unprocessed watch work. Reactivating the same Drive sources keeps existing object links.
-          PDF, Word, and Google Slides text is extracted by the credential-thin
-          <code>document-extract-orchestrator</code> (ADR 0013) — the main worker must not copy
-          Daytona credentials. Extract cursors persist through
+          other fingerprint fields such as <code>modifiedTime</code> and reply bodies fetched via
+          <code>replies[]</code> — ahead of unchanged comments so a transition past the first eight
+          still reaches the judged event. Live <code>comments.list</code> omits deleted comments, so
+          a withdrawn comment is recovered from the previous snapshot ids and labelled
+          <code>(removed)</code> in that window. The judged event is written before the snapshot
+          advances. Delayed <code>drive.file</code> and <code>drive.changes</code> jobs are kept
+          across integration and provider-budget pauses, persist to the continuation handoff table
+          when the per-integration lock is busy, keep the continuation reason and a unique handoff
+          job id so a lock-retry cannot collide with the originating debounce job and get acked as a
+          no-op, and attach to quota or token-refresh failures so capture resumes after the pause. A
+          skipped tick cannot advance past unprocessed watch work. Reactivating the same Drive
+          sources keeps existing object links. PDF, Word, and Google Slides text is extracted by the
+          credential-thin <code>document-extract-orchestrator</code> (ADR 0013) — the main worker
+          must not copy Daytona credentials. Extract cursors persist through
           <code>withTeam(...).integrations</code> (not admin cursor helpers). The extract cursor is
           written before enqueue and kept when enqueue fails so a late
           <code>result.json</code> always has a cleanup reference. Extract cursors stamp the Drive
           revision of the uploaded bytes (<code>headRevisionId</code> / md5 /
           <code>modifiedTime</code>) and re-request when the live file no longer matches, so an
-          in-flight extract cannot be accepted against a newer revision. Stale pending results are
-          re-enqueued. A ready extract is consumed only after the judged event and snapshot are
-          durably saved, so a later failure can reuse the paid result. Event
-          <code>dedup_key</code> values include the Drive revision so <code>A→B→A→B</code> emits a
-          new event for the second return to B, while a retry of the same revision stays idempotent.
-          Missing, out-of-scope, and disconnected files delete leftover transient extract objects; a
-          failed S3 delete keeps a <code>cleanupPending</code> extract cursor until both objects are
-          gone. Cancel and janitor cleanup keep that tombstone for the extract wait window because
-          S3 <code>DeleteObject</code> treats a not-yet-written <code>result.json</code> as success;
-          a ready extract consumed after persist still clears immediately. File-only
+          in-flight extract cannot be accepted against a newer revision. A superseded in-flight
+          extract is cancelled with a cleanup tombstone until its producer finishes, rather than
+          consumed immediately. Stale pending results are re-enqueued. A ready extract is consumed
+          only after the judged event and snapshot are durably saved, so a later failure can reuse
+          the paid result. Event <code>dedup_key</code> values include the Drive revision so
+          <code>A→B→A→B</code> emits a new event for the second return to B, while a retry of the
+          same revision stays idempotent. Missing, out-of-scope, and disconnected files delete
+          leftover snapshots and transient extract objects; a failed S3 delete keeps a
+          <code>cleanupPending</code> extract cursor until both objects are gone. Cancel and janitor
+          cleanup keep that tombstone for the extract wait window because S3
+          <code>DeleteObject</code> treats a not-yet-written <code>result.json</code> as success; a
+          ready extract consumed after persist still clears immediately. File-only
           <code>drive.file</code> captures keep the full watchable selection list for membership
           checks and leave <code>sync.recovery</code> alone so scheduled
           <code>changes.list</code> fallback still covers missed webhooks. The janitor enumerates

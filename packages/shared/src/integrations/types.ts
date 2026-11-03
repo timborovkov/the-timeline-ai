@@ -203,9 +203,10 @@ export interface SyncContext {
   /** Delete the transient source/result objects and clear the extract cursor. */
   consumeTransientDriveExtract?(fileId: string): Promise<void>;
   /**
-   * Cancel an in-flight extract (missing/out-of-scope/unsupported). Keeps a
-   * cleanup tombstone until the producer wait window elapses so a late
-   * `result.json` is not orphaned after S3 404 is treated as success.
+   * Cancel an in-flight extract (missing/out-of-scope/unsupported, or a
+   * superseded revision still producing). Keeps a cleanup tombstone until the
+   * producer wait window elapses so a late `result.json` is not orphaned after
+   * S3 404 is treated as success.
    */
   cancelTransientDriveExtract?(fileId: string): Promise<void>;
   /**
@@ -249,6 +250,8 @@ export interface SyncContext {
     } | null;
     fileId: string;
   }): Promise<void>;
+  /** Delete retained Drive snapshots for a missing or out-of-scope file. */
+  deleteDriveSnapshotsForFile?(fileId: string): Promise<void>;
   listTeamEmailDomains?(): Promise<string[]>;
   linkedObjectForDriveSelection?(
     fileId: string,

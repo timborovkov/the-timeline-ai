@@ -11,6 +11,7 @@ import {
   driveDiffHasEvidence,
   driveHunksContainChangedSpan,
   driveSnapshotWindowCoversFullText,
+  hashesOnlyDriveSnapshotLocate,
   normalizeDriveTextForCompare,
   parseDriveSnapshotLocate,
   resolveDriveSnapshotDiff,
@@ -360,14 +361,7 @@ function mixedDocumentWithPhrase(length: number, offset: number, phrase: string)
 }
 
 function hashesOnlyLocate(text: string): ReturnType<typeof buildDriveSnapshotLocate> {
-  const locate = buildDriveSnapshotLocate(text);
-  return {
-    length: locate.length,
-    suffix: locate.suffix,
-    chunkSize: locate.chunkSize,
-    chunkHashes: locate.chunkHashes,
-    chunkTexts: [],
-  };
+  return hashesOnlyDriveSnapshotLocate(buildDriveSnapshotLocate(text));
 }
 
 function mulberry32(seed: number): () => number {

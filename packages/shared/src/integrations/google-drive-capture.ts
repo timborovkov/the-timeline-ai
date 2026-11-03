@@ -14,6 +14,7 @@ import { and, asc, desc, eq, gt, inArray, isNull, notInArray, or, sql } from 'dr
 
 import { parseDriveCommentSnapshots } from '#src/integrations/google-drive-comments.js';
 import {
+  hashesOnlyDriveSnapshotLocate,
   parseDriveSnapshotLocate,
   type DriveSnapshotLocate,
 } from '#src/integrations/google-drive-diff.js';
@@ -307,8 +308,10 @@ export function driveFileChangeDedupKey(input: {
   contentHash: string;
   commentsHash: string;
   permissionsHash: string;
+  part?: number;
 }): string {
-  return `google_drive:file:${input.fileId}:${input.occurrence}:${input.contentHash}:${input.commentsHash}:${input.permissionsHash}`;
+  const base = `google_drive:file:${input.fileId}:${input.occurrence}:${input.contentHash}:${input.commentsHash}:${input.permissionsHash}`;
+  return input.part !== undefined ? `${base}:part:${String(input.part)}` : base;
 }
 
 export interface DriveExtractCursorRow {
@@ -624,7 +627,10 @@ export async function saveDriveSnapshot(
       },
     });
   const kept = await db
-    .select({ id: googleDriveFileSnapshots.id })
+    .select({
+      id: googleDriveFileSnapshots.id,
+      snapshotLocate: googleDriveFileSnapshots.snapshotLocate,
+    })
     .from(googleDriveFileSnapshots)
     .where(
       and(
@@ -645,6 +651,50 @@ export async function saveDriveSnapshot(
         eq(googleDriveFileSnapshots.integrationId, input.integrationId),
         eq(googleDriveFileSnapshots.fileId, input.fileId),
         notInArray(googleDriveFileSnapshots.id, keepIds),
+      ),
+    );
+  for (const row of kept.slice(1)) {
+    const locate = parseDriveSnapshotLocate(row.snapshotLocate);
+    if (!locate || locate.chunkTexts.length === 0) continue;
+    await db
+      .update(googleDriveFileSnapshots)
+      .set({ snapshotLocate: hashesOnlyDriveSnapshotLocate(locate) })
+      .where(
+        and(
+          eq(googleDriveFileSnapshots.id, row.id),
+          eq(googleDriveFileSnapshots.teamId, input.teamId),
+          eq(googleDriveFileSnapshots.integrationId, input.integrationId),
+          eq(googleDriveFileSnapshots.fileId, input.fileId),
+        ),
+      );
+  }
+}
+
+export async function deleteDriveSnapshotsForFile(
+  db: Db,
+  input: { teamId: string; integrationId: string; fileId: string },
+): Promise<void> {
+  await db
+    .delete(googleDriveFileSnapshots)
+    .where(
+      and(
+        eq(googleDriveFileSnapshots.teamId, input.teamId),
+        eq(googleDriveFileSnapshots.integrationId, input.integrationId),
+        eq(googleDriveFileSnapshots.fileId, input.fileId),
+      ),
+    );
+}
+
+export async function deleteDriveSnapshotsForIntegration(
+  db: Db,
+  input: { teamId: string; integrationId: string },
+): Promise<void> {
+  await db
+    .delete(googleDriveFileSnapshots)
+    .where(
+      and(
+        eq(googleDriveFileSnapshots.teamId, input.teamId),
+        eq(googleDriveFileSnapshots.integrationId, input.integrationId),
       ),
     );
 }

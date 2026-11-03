@@ -343,8 +343,10 @@ export const integrationSelections = pgTable(
 
 // Compact Drive text hashes for diffing. The document drive never stores a Drive
 // copy; snapshot_text is the truncated prefix. snapshot_locate holds the suffix
-// window plus per-chunk hashes and texts so edits past the prefix yield hunks
-// centered on the changed span. content_hash is sha256 of the full extracted text.
+// window plus per-chunk hashes. Only the latest retained state stores per-chunk
+// extracted text so later edits can be located; older states keep hashes only.
+// That latest extracted text is deleted on disconnect or file removal.
+// content_hash is sha256 of the full extracted text.
 export const googleDriveFileSnapshots = pgTable(
   'google_drive_file_snapshots',
   {
@@ -375,6 +377,12 @@ export const googleDriveFileSnapshots = pgTable(
           resolved: boolean;
           modifiedTime: string;
           author: string;
+          replies?: {
+            id: string;
+            content: string;
+            modifiedTime: string;
+            author: string;
+          }[];
         }[]
       >()
       .notNull()

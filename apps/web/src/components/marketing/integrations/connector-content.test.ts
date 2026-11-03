@@ -299,7 +299,9 @@ describe('connector content manifest', () => {
     expect(drive.permissions.join(' ')).toContain('primary email labels the connection');
     expect(drive.permissions.join(' ')).toContain('Limited Use');
     expect(publicClaims).toContain('Historical files are not enumerated');
-    expect(publicClaims).toContain('never a full Drive copy in the document drive');
+    expect(publicClaims).toContain('keeps the latest extracted text to detect later changes');
+    expect(publicClaims).toContain('deleted on disconnect or when the file is removed');
+    expect(publicClaims).toContain('does not harvest Drive files into the document drive');
     expect(publicClaims).toContain('quiet editing window of about 15 minutes');
     expect(publicClaims).toContain('at most one hour');
     expect(publicClaims).toContain('webhook-delivery worker');
