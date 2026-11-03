@@ -202,6 +202,13 @@ describe('platform administrator boundary', () => {
     await setPlatformSuspension(db, actor, 'team', TEAM, false, 'incident resolved');
     await assertActivePrincipal(db, TEAM);
   });
+  it('rechecks suspension on each operation even when reusing a team scope', async () => {
+    const { withTeam } = await import('#src/team-scope.js');
+    const scope = withTeam(db, TEAM, MEMBER);
+    expect((await scope.timeline.team())?.id).toBe(TEAM);
+    await setPlatformSuspension(db, actor, 'user', MEMBER, true, 'suspend between operations');
+    await expect(scope.timeline.team()).rejects.toThrow('Account is suspended');
+  });
   it('permits internal cleanup but rejects normal suspended work', async () => {
     await setPlatformSuspension(db, actor, 'team', TEAM, true, 'customer incident');
     const { withTeam } = await import('#src/team-scope.js');
@@ -289,6 +296,52 @@ describe('impersonation lifecycle', () => {
     ).rejects.toThrow('restricted');
     await expect(tagOperatorJob({ teamId: TEAM })).rejects.toThrow();
   });
+  it('retains document attribution when recovery reconstructs a job after operator exit', async () => {
+    const { token } = await startImpersonation(db, actor, input);
+    const { session } = await resolveImpersonation(db, actor, token);
+    registerOperatorContextResolver(() =>
+      Promise.resolve({
+        actorUserId: ADMIN,
+        actorEmail: actor.email,
+        effectiveUserId: MEMBER,
+        teamId: TEAM,
+        sessionId: session.id,
+        readOnly: false,
+      }),
+    );
+    const { withTeam } = await import('#src/team-scope.js');
+    const scope = withTeam(db, TEAM, MEMBER).documents;
+    const created = await scope.createDocument({
+      name: 'recovery.pdf',
+      filename: 'recovery.pdf',
+      contentType: 'application/pdf',
+      folderId: null,
+    });
+    await scope.finalizeDocumentVersion({
+      versionId: created.version.id,
+      byteSize: 10,
+      contentType: 'application/pdf',
+    });
+    registerOperatorContextResolver(() => Promise.resolve(null));
+    const recovered = { teamId: TEAM, documentVersionId: created.version.id };
+    expect(await runGuardedJob(recovered, () => Promise.resolve('authorized'), db)).toBe(
+      'authorized',
+    );
+    await endImpersonation(db, ADMIN, token);
+    let executed = false;
+    await expect(
+      runGuardedJob(
+        recovered,
+        () => {
+          executed = true;
+          return Promise.resolve();
+        },
+        db,
+      ),
+    ).rejects.toThrow('authorization expired');
+    expect(executed).toBe(false);
+  });
+
   it('rechecks impersonation before executing an attributed job', async () => {
     const { token } = await startImpersonation(db, actor, input);
     const { session } = await resolveImpersonation(db, actor, token);

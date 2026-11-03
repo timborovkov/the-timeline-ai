@@ -1520,6 +1520,8 @@ export async function closeConversationAgentQueue(): Promise<void> {
 }
 
 export interface ChatDeliveryJobData {
+  teamId?: string;
+  userId?: string;
   ciphertext: string;
   iv: string;
   tag: string;

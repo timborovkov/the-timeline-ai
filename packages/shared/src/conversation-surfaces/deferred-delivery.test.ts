@@ -5,7 +5,10 @@ import { Queue } from 'bullmq';
 import { afterAll, beforeAll, describe, it } from 'bun:test';
 import IORedis from 'ioredis';
 
-import { deferChatDelivery } from '#src/conversation-surfaces/deferred-delivery.js';
+import {
+  deferChatDelivery,
+  withChatDeliveryPrincipal,
+} from '#src/conversation-surfaces/deferred-delivery.js';
 import { decryptJson, resetSecretsKeyCacheForTests } from '#src/crypto/secrets.js';
 import { resetEnvForTests } from '#src/env.js';
 
@@ -74,6 +77,33 @@ describe.skipIf(!process.env.TEST_REDIS_URL)('durable quota-delayed chat', () =>
         body: expect.objectContaining({ text: 'private-old' }) as Record<string, unknown>,
       }),
     );
+  });
+  it('preserves the digest principal in queue metadata and the authenticated envelope', async () => {
+    const principal = { teamId: randomUUID(), userId: randomUUID() };
+    const error = Object.assign(new Error('quota'), { retryAt: new Date(Date.now() + 60_000) });
+    await withChatDeliveryPrincipal(principal, () =>
+      deferChatDelivery(
+        {
+          provider: 'telegram',
+          token: 'private-token',
+          method: 'send',
+          body: { chat_id: 1, text: 'private-digest' },
+        },
+        error,
+      ),
+    );
+    const jobs = await fake.queue?.getDelayed();
+    const data = jobs?.find((job) => job.data.teamId === principal.teamId)?.data;
+    expect(data).toMatchObject(principal);
+    if (!data) throw new Error('Missing deferred digest');
+    expect(
+      decryptJson({
+        ciphertext: Buffer.from(data.ciphertext, 'base64'),
+        iv: Buffer.from(data.iv, 'base64'),
+        tag: Buffer.from(data.tag, 'base64'),
+      }),
+    ).toMatchObject({ principal });
+    expect(JSON.stringify(data)).not.toContain('private-');
   });
   it('does not schedule ambiguous writes for replay', async () => {
     expect(

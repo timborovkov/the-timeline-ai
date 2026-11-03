@@ -2,13 +2,15 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 
 import {
   getDb,
+  documentVersions,
+  rawEvents,
   platformAdminAudit,
   platformImpersonationSessions,
   teamBillingAccounts,
   users,
   type Db,
 } from '@timeline/db';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 
 import {
   PlatformAccessError,
@@ -25,6 +27,7 @@ export interface OperatorContext {
   readOnly: boolean;
 }
 const contextStorage = new AsyncLocalStorage<OperatorContext>();
+const admissionStorage = new AsyncLocalStorage<{ teamId: string; userId: string }>();
 const maintenanceStorage = new AsyncLocalStorage<boolean>();
 let webResolver: (() => Promise<OperatorContext | null>) | undefined;
 export function registerOperatorContextResolver(resolver: () => Promise<OperatorContext | null>) {
@@ -60,6 +63,8 @@ export async function guardTeamAccess(db: Db, teamId: string, userId: string, sy
     if (context.readOnly) return;
   }
   if (!context && maintenanceStorage.getStore()) return;
+  const admitted = admissionStorage.getStore();
+  if (admitted?.teamId === teamId && admitted.userId === userId) return;
   await assertActivePrincipal(db, teamId, userId);
 }
 const READ_OPERATION =
@@ -112,7 +117,14 @@ export function guardOperatorScope<T extends object>(
             operation === 'pins.pruneDeletedTimelineMomentPins')
         )
           return maintenanceStorage.run(true, () => Reflect.apply(value, target, args) as unknown);
-        return Reflect.apply(value, target, args) as unknown;
+        // Nested helpers may run inside a transaction while closing over the outer
+        // connection. Reuse this operation's admission instead of querying that
+        // connection again (which deadlocks a single-connection transaction).
+        await guardTeamAccess(db, teamId, userId, system);
+        return admissionStorage.run(
+          { teamId, userId },
+          () => Reflect.apply(value, target, args) as unknown,
+        );
       };
     },
   });
@@ -133,12 +145,35 @@ export async function runGuardedJob<T>(
   db: Db = getDb(),
 ): Promise<T> {
   if (!data || typeof data !== 'object') return callback();
-  const payload = data as {
+  const payload = { ...data } as {
     teamId?: string;
     userId?: string;
     requestedByUserId?: string;
+    documentVersionId?: string;
     platformOperatorSessionId?: string;
   };
+  // Recovery may reconstruct an extraction job without queue attribution. Resolve
+  // its immutable upload event before choosing the effective execution identity.
+  if (payload.documentVersionId && payload.teamId) {
+    const [version] = await db
+      .select({ metadata: rawEvents.sourceMetadata, userId: documentVersions.uploadedByUserId })
+      .from(documentVersions)
+      .leftJoin(rawEvents, eq(rawEvents.id, documentVersions.sourceEventId))
+      .where(
+        and(
+          eq(documentVersions.id, payload.documentVersionId),
+          eq(documentVersions.teamId, payload.teamId),
+        ),
+      );
+    const durableSession = (version?.metadata as Record<string, unknown> | null)
+      ?.platformOperatorSessionId;
+    if (typeof durableSession === 'string') {
+      if (payload.platformOperatorSessionId && payload.platformOperatorSessionId !== durableSession)
+        throw new PlatformAccessError('Document job attribution does not match its upload');
+      payload.platformOperatorSessionId = durableSession;
+    }
+    if (!payload.userId && version?.userId) payload.userId = version.userId;
+  }
   const initiatingUser = payload.userId ?? payload.requestedByUserId;
   if (payload.teamId && /^[0-9a-f-]{36}$/i.test(payload.teamId))
     await assertActivePrincipal(db, payload.teamId, initiatingUser);

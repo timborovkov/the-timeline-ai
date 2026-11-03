@@ -56,7 +56,11 @@ export async function platformRequestGate(
     }
     // Session expiry must be revocable without re-entering the effective-user write guard.
     const impersonation = await resolveImpersonation(getDb(), actor, token);
-    if (impersonation.readOnly && !['GET', 'HEAD'].includes(request.method))
+    // Next dispatches read server actions via POST. The trusted operation name is
+    // checked in runSentryServerAction; the header alone never authorizes a mutation.
+    const serverAction =
+      request.method === 'POST' && path.startsWith('/app/') && request.headers.has('next-action');
+    if (impersonation.readOnly && !['GET', 'HEAD'].includes(request.method) && !serverAction)
       return new Response('Suspended inspection is read-only', { status: 403 });
     if (path.startsWith('/app') || path.startsWith('/api/')) {
       await db.insert(platformAdminAudit).values({

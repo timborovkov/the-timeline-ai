@@ -17,6 +17,7 @@ import { and, eq, isNull, lt } from 'drizzle-orm';
 import { z } from 'zod';
 
 import { emailRecipientCount } from '#src/billing/catalog.js';
+import { withChatDeliveryPrincipal } from '#src/conversation-surfaces/deferred-delivery.js';
 import { decryptJson, encryptJson } from '#src/crypto/secrets.js';
 import { resendRequest, ResendError, type EmailFetch } from '#src/email/resend-client.js';
 import { getEnv } from '#src/env.js';
@@ -941,7 +942,10 @@ async function deliverBotDigest(input: {
     }
   }
   try {
-    await input.send();
+    await withChatDeliveryPrincipal(
+      { teamId: input.teamId, ...(input.userId ? { userId: input.userId } : {}) },
+      input.send,
+    );
     if (deliveryId) {
       await markDeliveryResult({ db: input.db, deliveryId, status: 'sent' });
     }

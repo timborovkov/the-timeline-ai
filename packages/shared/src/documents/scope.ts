@@ -21,6 +21,7 @@ import { documentPresentation } from '#src/documents/presentation.js';
 import { embed as defaultEmbed, type EmbedResult } from '#src/llm/embed.js';
 import { childLogger } from '#src/logger.js';
 import { decodeCursor, pageWindow } from '#src/pagination.js';
+import { operatorContext } from '#src/platform-admin/runtime.js';
 import { getQdrantClient, type SearchHit, type SearchOpts } from '#src/qdrant/client.js';
 import { normalizeRawEventsToEvidence } from '#src/reconciliation/normalization.js';
 import {
@@ -1497,6 +1498,7 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
       action: 'upload' | 'new_version';
     }> {
       await ensureMember();
+      const operator = await operatorContext();
       const peekedRows = await db
         .select()
         .from(documentVersions)
@@ -1563,15 +1565,18 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
             folderId: document.folderId,
             visibility: document.visibility,
             visibilityUserIds: document.visibilityUserIds,
-            sourceMetadata: documentUploadSourceMetadata({
-              action,
-              document,
-              version,
-              byteSize: input.byteSize,
-              contentType: input.contentType,
-              checksumSha256: input.checksumSha256,
-              sourceMetadata: input.sourceMetadata,
-            }),
+            sourceMetadata: {
+              ...documentUploadSourceMetadata({
+                action,
+                document,
+                version,
+                byteSize: input.byteSize,
+                contentType: input.contentType,
+                checksumSha256: input.checksumSha256,
+                sourceMetadata: input.sourceMetadata,
+              }),
+              platformOperatorSessionId: operator?.sessionId ?? null,
+            },
           });
 
           const vUpdated = await tx

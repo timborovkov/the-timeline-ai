@@ -53,10 +53,24 @@ request, scoped operation, database-write, and job-admission boundaries block
 mutations and new work. Previously issued external signed URLs retain their
 existing expiry; suspension does not revoke a provider URL already issued.
 Read-only inspection includes team metadata and unread notification counts.
+Document preview/download server actions are explicitly classified as reads at
+the server-action boundary; POST alone does not imply a write. Other actions stay
+blocked, and normal scoped visibility checks still apply.
+Document finalization stores its initiating operator session in the immutable
+upload event. Extraction admission recovers that attribution from the document
+version even when janitor recovery reconstructs an otherwise unattributed job;
+expired, ended, or missing sessions cannot resume the work. Global object-cleanup
+sweeps skip suspended teams so active teams continue processing.
+Suspension admission runs at each scoped operation's entry. Nested helpers reuse
+that operation's admission to avoid querying an outer connection from inside a
+transaction; a later operation on the same scope checks current suspension again.
 Webhook suspension failures retain failed target status for the existing retry
 and recovery flow instead of stranding targets in processing. Digest delivery
 rechecks the stored recipient and workspace security state before selecting any
 delivery channel; already-generated digests are skipped if either is suspended.
+Rate-limited chat digests retain their team and recipient in the encrypted deferred
+delivery envelope and queue routing metadata. The retry worker checks suspension
+again before any Slack or Telegram request.
 
 Platform audit records cannot be edited and are deleted only under the retention
 rules below. They record management changes, support
