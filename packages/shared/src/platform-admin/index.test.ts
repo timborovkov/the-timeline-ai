@@ -337,6 +337,16 @@ describe('impersonation lifecycle', () => {
       spy.mockRestore();
     }
   });
+  it('does not wrap a nested database handle carried on the scope', async () => {
+    const originalSelect = Reflect.get(db, 'select');
+    const scope = guardOperatorScope(db, TEAM, MEMBER, {
+      postCommitDb: db,
+      readItem: () => Promise.resolve('ok'),
+    });
+    expect(scope.postCommitDb).toBe(db);
+    expect(Reflect.get(db, 'select')).toBe(originalSelect);
+    expect(await scope.readItem()).toBe('ok');
+  });
   it('retains document attribution when recovery reconstructs a job after operator exit', async () => {
     const { token } = await startImpersonation(db, actor, input);
     const { session } = await resolveImpersonation(db, actor, token);

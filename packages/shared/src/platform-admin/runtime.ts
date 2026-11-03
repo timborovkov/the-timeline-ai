@@ -74,12 +74,25 @@ const READ_OPERATION =
 // Read helpers without a conventional read prefix must be reviewed by full scope path.
 const ADDITIONAL_READ_OPERATIONS = new Set(['timeline.team', 'objects.unreadNotificationCount']);
 const guardedScopes = new WeakSet();
+const SKIP_NESTED_SCOPE_KEYS = new Set(['postCommitDb', 'postCommitEffects', 'teamId', 'userId']);
+
+function isPlainScopeRecord(value: object): boolean {
+  const proto: unknown = Object.getPrototypeOf(value);
+  return proto === Object.prototype || proto === null;
+}
+
+function isDatabaseHandle(value: object): boolean {
+  const record = value as { select?: unknown; transaction?: unknown };
+  return typeof record.select === 'function' && typeof record.transaction === 'function';
+}
 
 /**
  * Wrap enumerable own methods in place so later `spyOn` and closed-over nested
  * scopes (suggestions → objects) observe the same functions. A Proxy wrapper
  * would intercept callers of the returned object, but not `vi.spyOn` patches
- * on the original nested scope.
+ * on the original nested scope. Never wrap the Drizzle handle or other class
+ * instances: replacing `db.select` with a guard that itself queries `db`
+ * recurses until the process hangs.
  */
 export function guardOperatorScope<T extends object>(
   db: Db,
@@ -92,10 +105,12 @@ export function guardOperatorScope<T extends object>(
   if (guardedScopes.has(scope)) return scope;
   guardedScopes.add(scope);
   for (const key of Object.keys(scope)) {
+    if (SKIP_NESTED_SCOPE_KEYS.has(key)) continue;
     const value = (scope as Record<string, unknown>)[key];
     const operation = prefix ? `${prefix}.${key}` : key;
     if (value && typeof value === 'object' && !Array.isArray(value)) {
-      guardOperatorScope(db, teamId, userId, value, operation, system);
+      if (isPlainScopeRecord(value) && !isDatabaseHandle(value))
+        guardOperatorScope(db, teamId, userId, value, operation, system);
       continue;
     }
     if (typeof value !== 'function') continue;
