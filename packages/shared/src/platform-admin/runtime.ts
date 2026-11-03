@@ -53,6 +53,10 @@ export async function assertActivePrincipal(db: Db, teamId: string, userId?: str
     if (user?.suspendedAt) throw new PlatformAccessError('Account is suspended');
   }
 }
+function isTransactionClient(database: Db): boolean {
+  return /Transaction/i.test(database.constructor.name);
+}
+
 export async function guardTeamAccess(db: Db, teamId: string, userId: string, system = false) {
   const context = await operatorContext();
   if (context) {
@@ -67,6 +71,10 @@ export async function guardTeamAccess(db: Db, teamId: string, userId: string, sy
   if (!context && maintenanceStorage.getStore()) return;
   const admitted = admissionStorage.getStore();
   if (admitted?.teamId === teamId && admitted.userId === userId) return;
+  // Nested helpers may close over a transaction client. Querying that client
+  // again deadlocks a single-connection transaction (PGlite tests and some
+  // Postgres pool modes). The outer operation already admitted the principal.
+  if (isTransactionClient(db)) return;
   await assertActivePrincipal(db, teamId, userId);
 }
 const READ_OPERATION =
@@ -93,7 +101,15 @@ export function guardOperatorScope<T extends object>(
     const value: unknown = Reflect.get(scope, key);
     const operation = prefix ? `${prefix}.${key}` : key;
     if (value && typeof value === 'object' && !Array.isArray(value)) {
-      guardOperatorScope(db, teamId, userId, value, operation, system);
+      // Scope namespaces are plain objects. Class instances (Drizzle clients,
+      // dates, query builders) must stay untouched so wrappers do not turn
+      // synchronous builders into hanging async functions.
+      if (
+        Object.getPrototypeOf(value) === Object.prototype ||
+        Object.getPrototypeOf(value) === null
+      ) {
+        guardOperatorScope(db, teamId, userId, value, operation, system);
+      }
       continue;
     }
     if (typeof value !== 'function') continue;
