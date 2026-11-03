@@ -543,6 +543,12 @@
       "development": "./src/platform-admin/runtime.ts",
       "import": "./dist/platform-admin/runtime.js",
       "default": "./dist/platform-admin/runtime.js"
+    },
+    "./platform-admin/retention": {
+      "types": "./src/platform-admin/retention.ts",
+      "development": "./src/platform-admin/retention.ts",
+      "import": "./dist/platform-admin/retention.js",
+      "default": "./dist/platform-admin/retention.js"
     }
   },
   "main": "./dist/index.js",

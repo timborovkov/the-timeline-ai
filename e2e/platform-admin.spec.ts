@@ -176,3 +176,71 @@ test('expired and forged impersonation cookies can always be exited', async ({ p
     (await page.context().cookies()).some((cookie) => cookie.name === 'tl_platform_impersonation'),
   ).toBe(false);
 });
+
+test('the material staff-access notice requires renewed Privacy Policy acknowledgment', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  const { withE2eDataTransaction } = await import('./cleanup.js');
+  const { E2E_PASSWORD } = await import('./test-data.js');
+  const { PRIVACY_VERSION } = await import('@timeline/shared/legal-versions');
+  await withE2eDataTransaction(async (sql) => {
+    await sql`UPDATE users SET legal_privacy_version = '2026-11-01' WHERE id = ${e2eUsers.owner.id}`;
+  });
+  try {
+    await page.goto('/sign-in');
+    await page.getByLabel('Email').fill(e2eUsers.owner.email);
+    await page.getByLabel('Password').fill(E2E_PASSWORD);
+    await page.getByRole('button', { name: 'Sign in', exact: true }).click();
+    await expect(page).toHaveURL(/\/legal\/accept/);
+    await expect(
+      page.getByText(`Privacy Policy ${PRIVACY_VERSION}`, { exact: false }),
+    ).toBeVisible();
+    expect((await page.request.get('/api/timeline')).status()).toBe(428);
+    await page.getByRole('checkbox').check();
+    await page.getByRole('button', { name: 'Accept and continue', exact: true }).click();
+    await expect(page).toHaveURL(/\/app(?:\/|$)/);
+    expect((await page.request.get('/api/timeline')).status()).toBe(200);
+  } finally {
+    await withE2eDataTransaction(async (sql) => {
+      await sql`UPDATE users SET legal_privacy_version = ${PRIVACY_VERSION} WHERE id = ${e2eUsers.owner.id}`;
+    });
+  }
+});
+
+test('staff can exit impersonation before acknowledging a changed legal notice', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  const { withE2eDataTransaction } = await import('./cleanup.js');
+  const { PRIVACY_VERSION } = await import('@timeline/shared/legal-versions');
+  await signIn(page, e2eUsers.nonMember.email);
+  await page.goto(`/app/admin/users/${e2eUsers.member.id}`);
+  await page.getByText('Log in as this member', { exact: true }).click();
+  await page.getByLabel('Purpose', { exact: true }).fill('Verify legal notice recovery');
+  await page.getByLabel('Support ticket or incident reference').fill('E2E-LEGAL');
+  await page
+    .getByLabel('Customer authorization and approving person, or emergency incident context')
+    .fill('Synthetic test operator approval');
+  await page.getByRole('button', { name: 'Start 30-minute session' }).click();
+  await expect(page.getByRole('status').filter({ hasText: 'Viewing as' })).toBeVisible();
+  await withE2eDataTransaction(async (sql) => {
+    await sql`UPDATE users SET legal_privacy_version = '2026-11-01' WHERE id = ${e2eUsers.nonMember.id}`;
+  });
+  try {
+    await page.goto('/app/admin');
+    await expect(
+      page.getByRole('button', { name: 'Exit impersonation', exact: true }),
+    ).toBeVisible();
+    await expect(page.getByRole('checkbox')).toHaveCount(0);
+    await page.getByRole('button', { name: 'Exit impersonation', exact: true }).click();
+    await expect(page).toHaveURL(/\/legal\/accept/);
+    await page.getByRole('checkbox').check();
+    await page.getByRole('button', { name: 'Accept and continue', exact: true }).click();
+    await expect(page).toHaveURL(/\/app(?:\/|$)/);
+  } finally {
+    await withE2eDataTransaction(async (sql) => {
+      await sql`UPDATE users SET legal_privacy_version = ${PRIVACY_VERSION} WHERE id = ${e2eUsers.nonMember.id}`;
+    });
+  }
+});

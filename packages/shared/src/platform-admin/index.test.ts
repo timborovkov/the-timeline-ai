@@ -17,6 +17,11 @@ import {
   startImpersonation,
 } from '#src/platform-admin/index.js';
 import {
+  placePlatformRetentionHold,
+  releasePlatformRetentionHold,
+  prunePlatformAdminRecords,
+} from '#src/platform-admin/retention.js';
+import {
   assertActivePrincipal,
   operatorDatabase,
   guardOperatorScope,
@@ -59,6 +64,92 @@ afterEach(async () => {
 });
 
 describe('platform administrator boundary', () => {
+  it('bounds each retention sweep and preserves sessions still inside the retention window', async () => {
+    await startImpersonation(db, actor, input);
+    await pg.exec(`UPDATE platform_impersonation_sessions SET expires_at = now() - interval '29 days';
+      INSERT INTO platform_admin_audit (actor_user_id,action,created_at) SELECT '${ADMIN}','old-batch',now() - interval '13 months' FROM generate_series(1,501);`);
+    expect(await prunePlatformAdminRecords(db)).toEqual({
+      sessionsDeleted: 0,
+      auditRecordsDeleted: 500,
+      releasedHoldsDeleted: 0,
+    });
+    expect((await prunePlatformAdminRecords(db)).auditRecordsDeleted).toBe(1);
+  });
+  it('deletes only ended or expired sessions beyond 30 days and audits beyond 12 months', async () => {
+    await startImpersonation(db, actor, input);
+    await pg.exec(`UPDATE platform_impersonation_sessions SET expires_at = now() - interval '31 days';
+      INSERT INTO platform_admin_audit (actor_user_id,action,created_at) VALUES ('${ADMIN}','old',now() - interval '13 months'),('${ADMIN}','recent',now() - interval '11 months');`);
+    expect(await prunePlatformAdminRecords(db)).toEqual({
+      sessionsDeleted: 1,
+      auditRecordsDeleted: 1,
+      releasedHoldsDeleted: 0,
+    });
+    await startImpersonation(db, actor, input);
+    expect((await prunePlatformAdminRecords(db)).sessionsDeleted).toBe(0);
+    await pg.exec(
+      `UPDATE platform_impersonation_sessions SET ended_at = now() - interval '31 days'`,
+    );
+    expect((await prunePlatformAdminRecords(db)).sessionsDeleted).toBe(1);
+    expect(
+      (await db.select().from(platformAdminAudit)).some((row) => row.action === 'recent'),
+    ).toBe(true);
+  });
+  it('preserves held records, audits hold changes, and deletes after release', async () => {
+    await startImpersonation(db, actor, input);
+    await pg.exec(`UPDATE platform_impersonation_sessions SET expires_at = now() - interval '31 days';
+      INSERT INTO platform_admin_audit (actor_user_id,team_id,action,created_at) VALUES ('${ADMIN}','${TEAM}','held',now() - interval '13 months');`);
+    const hold = await placePlatformRetentionHold(db, actor, {
+      kind: 'team',
+      id: TEAM,
+      reason: 'Documented preservation request',
+      reference: 'LEGAL-1',
+    });
+    expect(await prunePlatformAdminRecords(db)).toEqual({
+      sessionsDeleted: 0,
+      auditRecordsDeleted: 0,
+      releasedHoldsDeleted: 0,
+    });
+    await expect(pg.exec("DELETE FROM platform_admin_audit WHERE action = 'held'")).rejects.toThrow(
+      'append-only',
+    );
+    await releasePlatformRetentionHold(db, actor, hold.id, 'Legal owner authorized release');
+    expect(await prunePlatformAdminRecords(db)).toEqual({
+      sessionsDeleted: 1,
+      auditRecordsDeleted: 1,
+      releasedHoldsDeleted: 0,
+    });
+    expect(
+      (await db.select().from(platformAdminAudit)).filter((row) =>
+        row.action.startsWith('retention.hold.'),
+      ).length,
+    ).toBe(2);
+    await pg.exec(
+      `UPDATE platform_admin_retention_holds SET released_at = now() - interval '13 months'`,
+    );
+    expect((await prunePlatformAdminRecords(db)).releasedHoldsDeleted).toBe(1);
+  });
+  it('protects user-targeted audit records under holds and rejects ordinary hold operators', async () => {
+    await expect(
+      placePlatformRetentionHold(
+        db,
+        { userId: MEMBER, email: 'member@example.test' },
+        { kind: 'user', id: MEMBER, reason: 'Not authorized', reference: 'LEGAL-2' },
+      ),
+    ).rejects.toThrow();
+    await pg.exec(
+      `INSERT INTO platform_admin_audit (actor_user_id,target_id,action,created_at) VALUES ('${ADMIN}','${MEMBER}','user-history',now() - interval '13 months');`,
+    );
+    await placePlatformRetentionHold(db, actor, {
+      kind: 'user',
+      id: MEMBER,
+      reason: 'User preservation request',
+      reference: 'LEGAL-2',
+    });
+    expect((await prunePlatformAdminRecords(db)).auditRecordsDeleted).toBe(0);
+    await expect(
+      pg.exec("UPDATE platform_admin_audit SET reason = 'tampered' WHERE action = 'user-history'"),
+    ).rejects.toThrow('append-only');
+  });
   it('authorizes a verified allowlisted user without any team memberships', async () => {
     expect((await requirePlatformActor(db, actor)).id).toBe(ADMIN);
   });

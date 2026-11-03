@@ -48,10 +48,12 @@ export async function platformRequestGate(
       PERSONAL_PATHS.test(path) ||
       path.startsWith('/app/team/switch/') ||
       path === '/workspace-suspended'
-    )
+    ) {
+      if (request.method === 'GET' && !path.startsWith('/api/')) return exitImpersonationResponse();
       return new Response('Exit impersonation before managing accounts or connections.', {
         status: 403,
       });
+    }
     // Session expiry must be revocable without re-entering the effective-user write guard.
     const impersonation = await resolveImpersonation(getDb(), actor, token);
     if (impersonation.readOnly && !['GET', 'HEAD'].includes(request.method))
@@ -71,14 +73,7 @@ export async function platformRequestGate(
     return null;
   } catch (error) {
     if (!(error instanceof PlatformAccessError)) throw error;
-    if (!admin && path.startsWith('/app'))
-      return new Response(
-        '<!doctype html><html lang="en"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Impersonation unavailable</title><main><h1>Impersonation unavailable</h1><p>This session has expired or its access has changed.</p><form method="post" action="/api/platform-admin/exit"><button type="submit">Exit impersonation</button></form></main></html>',
-        {
-          status: 403,
-          headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' },
-        },
-      );
+    if (!admin && path.startsWith('/app')) return exitImpersonationResponse();
     return new Response(
       admin
         ? 'Not found'
@@ -86,6 +81,16 @@ export async function platformRequestGate(
       { status: admin ? 404 : 403, headers: { 'Cache-Control': 'no-store' } },
     );
   }
+}
+
+function exitImpersonationResponse(): Response {
+  return new Response(
+    '<!doctype html><html lang="en"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Exit impersonation</title><main><h1>Exit impersonation to continue</h1><p>This action requires your own account, or the support session is no longer available. Exit before reviewing and acknowledging legal notices.</p><form method="post" action="/api/platform-admin/exit"><button type="submit">Exit impersonation</button></form></main></html>',
+    {
+      status: 403,
+      headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' },
+    },
+  );
 }
 
 async function suspendedWorkspaceResponse(

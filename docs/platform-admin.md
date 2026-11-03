@@ -53,7 +53,8 @@ request, scoped operation, database-write, and job-admission boundaries block
 mutations and new work. Previously issued external signed URLs retain their
 existing expiry; suspension does not revoke a provider URL already issued.
 
-Platform audit history is append-only and records management changes, support
+Platform audit records cannot be edited and are deleted only under the retention
+rules below. They record management changes, support
 session lifecycle, request attempts, scoped operations, and attributed job
 execution. It records real and effective actor identifiers without copying
 customer content, credentials, or request query strings into audit metadata.
@@ -62,8 +63,90 @@ time comparison even if no later request arrives.
 
 ## Implementation and rollout
 
-Apply migration `0093_platform_admin` before deploying web and worker changes.
+Apply migrations `0093_platform_admin` and `0094_platform_admin_retention` before
+deploying web and worker changes.
+Publish the updated Privacy notice and legal version together. Verify the existing
+`LEGAL_PUBLICATION_READY` production gate is enabled only after its contracting-entity
+readiness requirements are satisfied; renewed acknowledgment uses that existing gate.
 The shared platform-admin service owns global directory, session, and audit access;
 workspace content continues through `withTeam`. Configure the allowlist on the web
 and worker processes so queued impersonated work can verify the administrator.
 No production migration or deployment is implied by implementing this feature.
+
+## Record retention and legal holds
+
+Access expiry and record retention are separate. A support session permits access
+for at most 30 minutes. The janitor removes its record 30 days after the earlier
+of `ended_at` and `expires_at`. It removes platform audit records 12 calendar
+months after creation, including audit copies of purpose, reference, and
+authorization context that outlive the session row. Each tick removes at most 500 records of each kind; a
+backlog or failed tick is retried by subsequent scheduled maintenance. Monitor
+`janitor: platform record retention failed` errors and successful deletion counts.
+No customer workspace content, accounts, or subscriptions are deleted by this job.
+
+Audit updates remain prohibited. The database permits deletion only after the
+12-month period and only when no applicable active hold exists. Cleanup and hold
+changes serialize on the holds table to prevent a hold from being added between
+eligibility checking and deletion. All of this maintenance remains available for
+suspended accounts and teams.
+
+A documented legal hold can preserve records associated with a user (as staff
+actor, effective user, or audit target) or a team (as team or audit target). It
+preserves both session records and audit records and never extends access. Only
+a verified allowlisted operator can place or release a hold through the operator
+script. The script is for a trusted, named operations environment with database
+credentials, not an end-user API; actor arguments identify the responsible
+operator and do not replace infrastructure authentication. Both actions are
+audited. Keep reasons and references concise; do not include customer content or
+credentials. Review active holds at least quarterly and release them when the
+legal obligation ends. Released hold documentation is deleted after 12 months.
+
+With the approved environment already loaded, use:
+
+```sh
+bun --conditions=development scripts/platform-admin-retention.ts place \
+  --actor-user-id "$OPERATOR_USER_ID" --actor-email "$OPERATOR_EMAIL" \
+  --team "$SUBJECT_TEAM_ID" --reason 'Preserve records for documented legal matter' \
+  --reference 'LEGAL-123'
+
+bun --conditions=development scripts/platform-admin-retention.ts release \
+  --actor-user-id "$OPERATOR_USER_ID" --actor-email "$OPERATOR_EMAIL" \
+  --hold "$RETENTION_HOLD_ID" --reason 'Legal owner authorized release: LEGAL-123'
+```
+
+Use `--user` instead of `--team` for a user hold. Retain the returned hold ID in the
+restricted legal case record. Place required holds before retention cleanup runs;
+a hold cannot restore records already deleted. Privacy requests require a review
+of applicable retention obligations and holds; do not promise immediate erasure
+of security evidence. Backup and disaster-recovery retention remain separately
+controlled. Restore procedures must reapply current holds and rerun retention
+before restored records are made available for normal use.
+
+Apply `0094_platform_admin_retention` after `0093_platform_admin` and before
+starting the updated web and worker processes. This PR does not run production
+cleanup or apply production migrations.
+
+## Legal-owner decision — 3 November 2026
+
+The requester approved the retention periods and versioning recommendation as legal owner in the Codex task
+for PR #465 on 3 November 2026:
+
+- Session records: 30 days after access ends; audit records: 12 months, subject to
+  documented legal holds. Released hold documentation follows the 12-month audit
+  accountability period.
+- Treat the Privacy Policy disclosure of staff impersonation and its record
+  retention as material. Advance the Privacy Policy version/effective date to
+  `2026-11-03`; the existing per-user legal gate requires renewed acknowledgment.
+  This is acknowledgment of a privacy notice, not consent to optional processing.
+- Keep the Terms version `2026-08-21` unchanged: no Terms text or contractual
+  grounds for access or suspension change. Existing confidentiality, permitted
+  support access, and suspension clauses continue to apply.
+- Clarify Trust's distinction between customer team administrators and authorized
+  Timeline personnel. Update Trust and Cookies review dates to 3 November 2026.
+  There is no new processor or optional analytics purpose and no change to
+  optional analytics consent.
+
+This records the requester's legal-owner approval, not an independent counsel
+review or a production deployment attestation. Operational access reviews,
+customer authorization evidence, emergency review, and the open G-12 controls
+remain required.

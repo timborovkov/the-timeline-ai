@@ -413,6 +413,24 @@ function PrivacyDisclosureAndSecuritySections() {
         confidentiality. Product roles do not give a team administrator a general bypass into
         another member&apos;s private items.
       </p>
+      <p>
+        For those permitted purposes, specifically authorized Timeline personnel may use a temporary
+        support session as a selected member of one team. This can include reading that
+        member&apos;s private content and making changes within the member&apos;s permissions. The
+        session does not grant access to other members&apos; private content that the selected
+        member cannot see. This staff-access capability is separate from customer team-owner and
+        administrator roles.
+      </p>
+      <p>
+        These support sessions expire after 30 minutes and can be ended earlier. Ordinary support
+        requires customer authorization; emergency incident access is subject to subsequent review.
+        We record the purpose, ticket or incident reference, authorization or emergency context,
+        staff and member identities, selected team, session times, and relevant access and actions.
+        These records support accountability and incident investigation. Session expiry ends access;
+        it does not immediately delete the associated records. We do not copy workspace content or
+        credentials into these audit records. Inspection of suspended accounts or teams is
+        read-only.
+      </p>
 
       <h2>12. Security</h2>
       <p>
@@ -488,6 +506,24 @@ function PrivacyRetentionSections() {
             </td>
           </tr>
           <tr>
+            <td>Temporary staff support-session records</td>
+            <td>
+              Eligible for deletion 30 days after the session ends or expires, whichever happens
+              first. This includes the token digest and recorded purpose and authorization context;
+              session access itself lasts at most 30 minutes.
+            </td>
+          </tr>
+          <tr>
+            <td>Platform administration and staff-access audit records</td>
+            <td>
+              Eligible for deletion 12 months after each record is created. This includes recorded
+              staff and member identities, affected teams, purpose and authorization context, ticket
+              or incident references, management actions, and support-session access and activity.
+              This audit evidence can remain after the session record is deleted. We do not copy
+              workspace content or credentials into these records.
+            </td>
+          </tr>
+          <tr>
             <td>Operational, security, support, and email records</td>
             <td>
               Only as long as reasonably needed for the purpose, contractual commitments, fraud and
@@ -496,6 +532,13 @@ function PrivacyRetentionSections() {
           </tr>
         </tbody>
       </table>
+      <p>
+        Scheduled maintenance removes eligible platform support-session and audit records on its
+        next successful run. A documented legal hold delays deletion of affected records until the
+        hold is released; a hold does not extend session access. Hold documentation is retained
+        while active and becomes eligible for deletion 12 months after release. These periods apply
+        to active systems, not separately retained backup copies described below.
+      </p>
       <p>
         Deletion from an active system may not immediately remove data from backup or recovery
         copies where those copies are configured, or from immutable security records. The existence,

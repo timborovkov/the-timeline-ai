@@ -1,4 +1,5 @@
-import { index, jsonb, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
+import { sql } from 'drizzle-orm';
+import { check, index, jsonb, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 
 import { teams } from '#src/schema/teams.js';
 import { users } from '#src/schema/users.js';
@@ -47,5 +48,35 @@ export const platformImpersonationSessions = pgTable(
     endedAt: timestamp('ended_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [index('platform_impersonation_actor_idx').on(t.actorUserId)],
+  (t) => [
+    index('platform_impersonation_actor_idx').on(t.actorUserId),
+    index('platform_impersonation_retention_idx').on(
+      sql`LEAST(${t.expiresAt}, COALESCE(${t.endedAt}, ${t.expiresAt}))`,
+    ),
+  ],
+);
+
+export const platformAdminRetentionHolds = pgTable(
+  'platform_admin_retention_holds',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    teamId: uuid('team_id').references(() => teams.id),
+    userId: uuid('user_id').references(() => users.id),
+    actorUserId: uuid('actor_user_id')
+      .notNull()
+      .references(() => users.id),
+    reason: text('reason').notNull(),
+    reference: text('reference').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    releasedAt: timestamp('released_at', { withTimezone: true }),
+  },
+  (t) => [
+    check('platform_retention_hold_scope', sql`(${t.teamId} IS NULL) <> (${t.userId} IS NULL)`),
+    index('platform_retention_hold_team_idx')
+      .on(t.teamId)
+      .where(sql`${t.releasedAt} IS NULL`),
+    index('platform_retention_hold_user_idx')
+      .on(t.userId)
+      .where(sql`${t.releasedAt} IS NULL`),
+  ],
 );

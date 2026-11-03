@@ -16,6 +16,7 @@ import {
   flushDeferredAudioTranscription,
 } from '@timeline/shared/integrations';
 import { MCP_TEAM_ACTOR_USER_ID } from '@timeline/shared/mcp-server';
+import { prunePlatformAdminRecords } from '@timeline/shared/platform-admin/retention';
 import { withTeam } from '@timeline/shared/team-scope';
 import { Worker, type Job } from 'bullmq';
 import { and, asc, eq, gt, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
@@ -418,6 +419,14 @@ export function startJanitorWorker(deps: { db: Db }): Worker<queue.JanitorJobDat
     queue.QUEUE_NAMES.janitor,
     guardWorkerProcessor(deps.db, async (job: Job<queue.JanitorJobData>) => {
       const startedAt = Date.now();
+      try {
+        const retention = await prunePlatformAdminRecords(deps.db);
+        if (Object.values(retention).some((count) => count > 0))
+          log.info(retention, 'janitor: platform record retention completed');
+      } catch (err: unknown) {
+        log.error({ err }, 'janitor: platform record retention failed; next tick will retry');
+        captureWorkerException(err);
+      }
       const result = await processJanitorTick({ db: deps.db });
       try {
         await runBillingMaintenanceTick(deps.db);

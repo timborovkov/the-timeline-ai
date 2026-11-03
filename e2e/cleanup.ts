@@ -23,6 +23,7 @@ export async function withE2eDataTransaction(
 }
 
 export async function cleanupE2eDataWithinTransaction(sql: E2eTransaction): Promise<void> {
+  await sql`DELETE FROM platform_admin_retention_holds WHERE team_id IN (${e2eTeam.id}, ${e2eOtherTeam.id}) OR actor_user_id = ${e2eUsers.nonMember.id}`;
   await sql`DELETE FROM platform_impersonation_sessions WHERE team_id IN (${e2eTeam.id}, ${e2eOtherTeam.id}) OR actor_user_id = ${e2eUsers.nonMember.id}`;
   await sql`ALTER TABLE platform_admin_audit DISABLE TRIGGER platform_admin_audit_immutable`;
   try {
