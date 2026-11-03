@@ -970,10 +970,22 @@ function integrationSyncJobId(data: IntegrationSyncJobData): string | undefined 
     return bullmqCustomJobId(['integration-reconcile', data.integrationId]);
   }
   if (data.kind !== 'targeted') return undefined;
+  // Durable outbox handoffs keep a unique job id even when a lock-retry
+  // still carries `drive_watch`. Colliding with the originating debounce
+  // id would ack the handoff without enqueueing the continuation.
+  if (data.continuationHandoffId) {
+    if (data.reason === 'drive_transient_extract') {
+      return bullmqCustomJobId([
+        'integration-drive-extract-resume',
+        data.integrationId,
+        data.externalId,
+        data.continuationHandoffId,
+      ]);
+    }
+    return bullmqCustomJobId(['integration-pagination-continuation', data.continuationHandoffId]);
+  }
   if (data.reason === 'provider_pagination_continuation') {
-    return data.continuationHandoffId
-      ? bullmqCustomJobId(['integration-pagination-continuation', data.continuationHandoffId])
-      : undefined;
+    return undefined;
   }
   // Extract resumes must not share the originating `drive.file` debounce
   // id (`…|all`). If that job is still active, delayed, or waiting,
@@ -984,7 +996,7 @@ function integrationSyncJobId(data: IntegrationSyncJobData): string | undefined 
       'integration-drive-extract-resume',
       data.integrationId,
       data.externalId,
-      data.continuationHandoffId ?? data.surface ?? 'resume',
+      data.surface ?? 'resume',
     ]);
   }
   return bullmqCustomJobId([

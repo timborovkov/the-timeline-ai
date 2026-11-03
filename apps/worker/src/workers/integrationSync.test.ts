@@ -1295,7 +1295,13 @@ describe('runOneIntegration attention classification', () => {
     );
     expect(fakes.enqueueIntegrationSyncJob).toHaveBeenCalledWith(
       {
-        ...target,
+        kind: 'targeted',
+        integrationId: INTEGRATION_ID,
+        teamId: TEAM_ID,
+        triggeredBy: 'webhook',
+        resourceType: 'drive.file',
+        externalId: 'file-1',
+        reason: 'provider_pagination_continuation',
         continuationAttempt: 1,
         continuationHandoffId: continuationHandoffId(1),
       },
@@ -1330,7 +1336,13 @@ describe('runOneIntegration attention classification', () => {
 
     expect(fakes.enqueueIntegrationSyncJob).toHaveBeenCalledWith(
       {
-        ...target,
+        kind: 'targeted',
+        integrationId: INTEGRATION_ID,
+        teamId: TEAM_ID,
+        triggeredBy: 'webhook',
+        resourceType: 'drive.changes',
+        externalId: INTEGRATION_ID,
+        reason: 'provider_pagination_continuation',
         continuationAttempt: 1,
         continuationHandoffId: continuationHandoffId(1),
       },
@@ -2954,7 +2966,7 @@ describe('Drive transient extract handoff', () => {
     expect(scope.getIntegration).toHaveBeenCalledWith(INTEGRATION_ID);
     expect(fakes.adminSaveCursor).not.toHaveBeenCalled();
     expect(fakes.adminLoadCursor).not.toHaveBeenCalled();
-    expect(order).toEqual(['enqueue', 'cursor']);
+    expect(order).toEqual(['cursor', 'enqueue']);
     expect(io.enqueueDocumentExtractJob).toHaveBeenCalledWith(
       expect.objectContaining({
         kind: 'drive_transient',
@@ -2976,7 +2988,7 @@ describe('Drive transient extract handoff', () => {
     );
   });
 
-  it('does not persist a cursor when document-extract enqueue fails', async () => {
+  it('keeps extract tracking when document-extract enqueue fails', async () => {
     const scope = extractScope();
     const io = extractIO();
     io.enqueueDocumentExtractJob.mockRejectedValue(new Error('redis down'));
@@ -2994,8 +3006,15 @@ describe('Drive transient extract handoff', () => {
       }),
     ).rejects.toThrow('redis down');
 
-    expect(scope.saveCursor).not.toHaveBeenCalled();
-    expect(io.deleteDocumentObject).toHaveBeenCalled();
+    expect(scope.saveCursor).toHaveBeenCalledWith(
+      INTEGRATION_ID,
+      cursorKey,
+      expect.objectContaining({
+        filename: 'Notes.pdf',
+        contentType: 'application/pdf',
+      }),
+    );
+    expect(io.deleteDocumentObject).not.toHaveBeenCalled();
     expect(fakes.adminSaveCursor).not.toHaveBeenCalled();
   });
 

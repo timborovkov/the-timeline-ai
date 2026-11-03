@@ -113,7 +113,6 @@ async function rescheduleLockBlockedTarget(
           data: {
             ...job.data,
             ...(target.triggeredBy ? { triggeredBy: target.triggeredBy } : {}),
-            ...(target.reason ? { reason: target.reason } : {}),
           },
         };
       }
@@ -505,21 +504,23 @@ export async function putAndEnqueueDriveTransientExtract(input: {
     contentType: input.contentType,
   });
   try {
-    await io.enqueueDocumentExtractJob(
-      driveTransientExtractJob({
-        teamId: input.teamId,
-        integrationId: input.integrationId,
-        fileId: input.fileId,
-        cursor,
-      }),
-    );
+    // Persist the extract cursor before Redis sees the job so a late
+    // result.json always has a cleanup reference, including when enqueue fails.
+    await saveDriveExtractCursor(input.integrations, input.integrationId, input.fileId, cursor);
   } catch (err) {
     await Promise.allSettled([
       io.deleteDocumentObject({ bucket: io.getDocumentsBucket(), key: keys.objectKey }),
     ]);
     throw err;
   }
-  await saveDriveExtractCursor(input.integrations, input.integrationId, input.fileId, cursor);
+  await io.enqueueDocumentExtractJob(
+    driveTransientExtractJob({
+      teamId: input.teamId,
+      integrationId: input.integrationId,
+      fileId: input.fileId,
+      cursor,
+    }),
+  );
 }
 
 function withExtractRevision<T extends object>(

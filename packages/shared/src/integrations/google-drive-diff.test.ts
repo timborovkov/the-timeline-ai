@@ -2,6 +2,7 @@ import { expect } from '@timeline/test-support';
 import { describe, it } from 'bun:test';
 
 import {
+  DRIVE_CHANGED_SPAN_MAX,
   DRIVE_SNAPSHOT_CHUNK_CHARS,
   DRIVE_SNAPSHOT_MAX_CHARS,
   buildDriveSnapshotLocate,
@@ -738,6 +739,86 @@ describe('diffDriveSnapshots regression matrix', () => {
     expect(diff.hunks.join(' ')).toContain('rejected');
     expect(driveHunksContainChangedSpan(diff.hunks, previousFull, nextFull)).toBe(true);
     expect(driveDiffHasEvidence(diff)).toBe(true);
+  });
+
+  it('keeps a middle reversal when cosmetic edits bookend a 73,600-char doc', () => {
+    const previousFull = mixedDocumentWithPhrase(73_600, 22_000, APPROVED_RENEWAL);
+    const withMiddle = mixedDocumentWithPhrase(73_600, 22_000, REJECTED_RENEWAL);
+    const nextFull = `Note. ${withMiddle}.`;
+    const diff = diffDriveSnapshots(snapshotArgs(previousFull, nextFull));
+    expect(diff.changed).toBe(true);
+    expect(diff.reason).toBe('substantive');
+    expect(diff.hunks.join(' ')).toContain('rejected');
+    expect(diff.hunks.join(' ')).toContain('Note.');
+    expect(driveHunksContainChangedSpan(diff.hunks, previousFull, nextFull)).toBe(true);
+    expect(driveDiffHasEvidence(diff)).toBe(true);
+    const boundingOnly = [`${nextFull.slice(0, 240)}…${nextFull.slice(-(400 - 240 - 1))}`];
+    expect(driveHunksContainChangedSpan(boundingOnly, previousFull, nextFull)).toBe(false);
+  });
+
+  it('represents every distant edit in hunks across random offsets and lengths', () => {
+    const rng = mulberry32(445_902_4963);
+    const lengths = [25_000, 41_001, 73_600];
+    let checked = 0;
+    for (const length of lengths) {
+      for (let trial = 0; trial < 6; trial++) {
+        const previous = mixedFill(length);
+        const editCount = 3 + Math.floor(rng() * 3);
+        const tokens = Array.from({ length: editCount }, (_, index) => `[[E${index}]]`);
+        const minGap = 800;
+        const offsets: number[] = [];
+        let cursor = 40;
+        for (let index = 0; index < editCount; index++) {
+          const remaining = editCount - index;
+          const latest = length - remaining * minGap - 20;
+          if (cursor > latest) break;
+          const offset = cursor + Math.floor(rng() * Math.max(1, latest - cursor));
+          offsets.push(offset);
+          cursor = offset + minGap;
+        }
+        if (offsets.length !== editCount) continue;
+        let next = previous;
+        let shift = 0;
+        const expected: string[] = [];
+        for (const [index, offset] of offsets.entries()) {
+          const token = tokens[index] ?? '';
+          next = spliceAt(next, offset + shift, 1, token);
+          shift += token.length - 1;
+          expected.push(token);
+        }
+        const diff = diffDriveSnapshots(snapshotArgs(previous, next));
+        expect(diff.reason).not.toBe('identical');
+        expect(diff.changed).toBe(true);
+        expect(driveDiffHasEvidence(diff)).toBe(true);
+        expect(driveHunksContainChangedSpan(diff.hunks, previous, next)).toBe(true);
+        const blob = diff.hunks.join(' ');
+        for (const token of expected) {
+          expect(blob).toContain(token);
+        }
+        checked += 1;
+      }
+    }
+    expect(checked).toBeGreaterThan(10);
+  });
+
+  it('refuses persist when distinct changed spans exceed the cap', () => {
+    const spanCount = DRIVE_CHANGED_SPAN_MAX + 1;
+    const gap = 800;
+    const token = '[[DROP]]';
+    const length = 200 + spanCount * gap;
+    const previous = mixedFill(length);
+    let next = previous;
+    let shift = 0;
+    for (let index = 0; index < spanCount; index++) {
+      const offset = 40 + index * gap + shift;
+      next = spliceAt(next, offset, 1, `${token}${index}`);
+      shift += token.length + String(index).length - 1;
+    }
+    const diff = diffDriveSnapshots(snapshotArgs(previous, next));
+    expect(diff.changed).toBe(true);
+    expect(diff.hunks).toEqual([]);
+    expect(driveDiffHasEvidence(diff)).toBe(false);
+    expect(driveHunksContainChangedSpan(['kept filler'], previous, next)).toBe(false);
   });
 
   it('refuses a middle mixed-filler edit when previous chunk texts are missing', () => {

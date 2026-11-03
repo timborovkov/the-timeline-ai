@@ -4,14 +4,15 @@
  *
  * Stored evidence is a 20k prefix, a 20k suffix, and a full-document locate
  * index: every chunk's hash and text, including straddlers of the prefix and
- * suffix bounds. Capture always has the current full text. For each mismatched
- * unstored chunk the changed span is the char-diff of previous vs current chunk
- * text; hunks are centered on that span and truncated around it. Every emitted
- * hunk must contain those changed characters; otherwise the diff has no evidence
- * and the baseline does not advance. Prefix equivalence never proves the suffix
- * is unchanged. A hash change whose location is proven cosmetic (tiny/formatting)
- * may skip. When the full-text hash moved the result is never `identical`.
- * Added and removed hunks are always collected together.
+ * suffix bounds. Capture always has the current full text. Distinct changed
+ * spans stay separate: a bounding first-to-last char-diff must not merge distant
+ * edits into one truncated hunk. Hunks are centered on each span and truncated
+ * around it. Every distinct span must appear in those hunks; if count or budget
+ * would drop any span, the diff has no evidence and the baseline does not
+ * advance. Prefix equivalence never proves the suffix is unchanged. A hash
+ * change whose location is proven cosmetic (tiny/formatting) may skip. When the
+ * full-text hash moved the result is never `identical`. Added and removed hunks
+ * are always collected together.
  * The tiny/substantive threshold uses intra-line edited spans, not hunk context
  * kept for the judge. Tiny is only for edits that are provably non-semantic:
  * whitespace, punctuation-only, case-only, or a single-letter typo (edit
@@ -34,6 +35,18 @@ const DRIVE_CAP_TAIL_SLACK = 1024;
 const DRIVE_HUNK_LINE_MAX = 400;
 const DRIVE_HUNK_HEAD_CHARS = 240;
 const DRIVE_HUNK_CONTEXT_CHARS = 80;
+const DRIVE_HUNK_MAX = 40;
+/** Cap of distinct changed spans; exceeding it refuses persist rather than dropping a span. */
+export const DRIVE_CHANGED_SPAN_MAX = 20;
+const DRIVE_SPAN_RESYNC_CHARS = 32;
+const DRIVE_HUNK_BUDGET_CHARS = DRIVE_HUNK_MAX * DRIVE_HUNK_LINE_MAX;
+
+interface DriveChangedSpan {
+  startLeft: number;
+  endLeft: number;
+  startRight: number;
+  endRight: number;
+}
 
 export interface DriveSnapshotLocate {
   length: number;
@@ -187,10 +200,16 @@ function haystackContainsProbe(haystack: string, probe: string): boolean {
   return head.length > 0 && haystack.includes(head);
 }
 
+function mergeHunkLists(left: string[], right: string[]): string[] {
+  const hunks = [...left, ...right];
+  return hunks.length > DRIVE_HUNK_MAX ? [] : hunks;
+}
+
 /**
- * Every emitted hunk must contain the actual changed characters of `previous` vs
- * `next`. Truncation may keep a head of a long span; it may not drop the span
- * entirely. Callers that cannot satisfy this must return empty hunks.
+ * Every distinct changed span of `previous` vs `next` must appear in the emitted
+ * hunks. Truncation may keep a head of a long span; it may not drop a span, and
+ * a first-to-last bounding span must not stand in for distant middle edits.
+ * Callers that cannot satisfy this must return empty hunks.
  */
 export function driveHunksContainChangedSpan(
   hunks: string[],
@@ -199,21 +218,90 @@ export function driveHunksContainChangedSpan(
 ): boolean {
   if (previous === next) return true;
   if (!hunks.some((hunk) => hunk.trim().length > 0)) return false;
-  const span = differingSpan(previous, next);
-  const added = next.slice(span.start, span.endRight);
-  const removed = previous.slice(span.start, span.endLeft);
+  const spans = collectDistinctChangedSpans(previous, next);
+  if (spans.length === 0) return false;
+  if (spans.length > DRIVE_CHANGED_SPAN_MAX) return false;
   const currentBlob = hunks.filter((hunk) => !hunk.startsWith('- ')).join('\n');
   const removedBlob = hunks.filter((hunk) => hunk.startsWith('- ')).join('\n');
   const blob = hunks.join('\n');
-  if (added.length > 0) {
-    const probe = changeProbe(added);
-    if (!haystackContainsProbe(currentBlob.length > 0 ? currentBlob : blob, probe)) return false;
+  for (const span of spans) {
+    const added = next.slice(span.startRight, span.endRight);
+    const removed = previous.slice(span.startLeft, span.endLeft);
+    if (added.length > 0) {
+      const probe = changeProbe(added);
+      if (!haystackContainsProbe(currentBlob.length > 0 ? currentBlob : blob, probe)) return false;
+      continue;
+    }
+    if (removed.length > 0) {
+      const probe = changeProbe(removed);
+      if (!haystackContainsProbe(removedBlob.length > 0 ? removedBlob : blob, probe)) return false;
+    }
   }
-  if (removed.length > 0 && added.length === 0) {
-    const probe = changeProbe(removed);
-    if (!haystackContainsProbe(removedBlob.length > 0 ? removedBlob : blob, probe)) return false;
+  return true;
+}
+
+function collectDistinctChangedSpans(left: string, right: string): DriveChangedSpan[] {
+  if (left === right) return [];
+  const spans: DriveChangedSpan[] = [];
+  let i = 0;
+  let j = 0;
+  while (i < left.length || j < right.length) {
+    while (i < left.length && j < right.length && left[i] === right[j]) {
+      i += 1;
+      j += 1;
+    }
+    if (i >= left.length && j >= right.length) break;
+    if (i >= left.length) {
+      spans.push({ startLeft: i, endLeft: i, startRight: j, endRight: right.length });
+      break;
+    }
+    if (j >= right.length) {
+      spans.push({ startLeft: i, endLeft: left.length, startRight: j, endRight: j });
+      break;
+    }
+    const leftRemain = left.length - i;
+    const rightRemain = right.length - j;
+    if (leftRemain < DRIVE_SPAN_RESYNC_CHARS || rightRemain < DRIVE_SPAN_RESYNC_CHARS) {
+      spans.push({ startLeft: i, endLeft: left.length, startRight: j, endRight: right.length });
+      break;
+    }
+    const resync = findNearestResync(left, right, i, j, DRIVE_SPAN_RESYNC_CHARS);
+    if (!resync || (resync.i === i && resync.j === j)) {
+      spans.push({ startLeft: i, endLeft: left.length, startRight: j, endRight: right.length });
+      break;
+    }
+    spans.push({ startLeft: i, endLeft: resync.i, startRight: j, endRight: resync.j });
+    i = resync.i;
+    j = resync.j;
   }
-  return added.length > 0 || removed.length > 0;
+  return spans;
+}
+
+function findNearestResync(
+  left: string,
+  right: string,
+  leftStart: number,
+  rightStart: number,
+  minMatch: number,
+): { i: number; j: number } | null {
+  if (left.length - leftStart < minMatch || right.length - rightStart < minMatch) return null;
+  const leftPos = new Map<string, number>();
+  for (let li = leftStart; li <= left.length - minMatch; li++) {
+    const gram = left.slice(li, li + minMatch);
+    if (!leftPos.has(gram)) leftPos.set(gram, li);
+  }
+  let best: { i: number; j: number; cost: number } | null = null;
+  for (let rj = rightStart; rj <= right.length - minMatch; rj++) {
+    const minPossible = rj - rightStart;
+    if (best && minPossible >= best.cost) break;
+    const gram = right.slice(rj, rj + minMatch);
+    const li = leftPos.get(gram);
+    if (li === undefined) continue;
+    const cost = li - leftStart + (rj - rightStart);
+    if (cost === 0) continue;
+    if (!best || cost < best.cost) best = { i: li, j: rj, cost };
+  }
+  return best ? { i: best.i, j: best.j } : null;
 }
 
 function splitCapWindow(text: string): { stable: string; tail: string } {
@@ -243,7 +331,7 @@ function mergeWindowDiffs(stable: DriveTextDiff, tail: DriveTextDiff | null): Dr
     changed: true,
     reason: 'substantive',
     changedChars: stable.changedChars + tail.changedChars,
-    hunks: [...stable.hunks, ...tail.hunks].slice(0, 40),
+    hunks: mergeHunkLists(stable.hunks, tail.hunks),
   };
 }
 
@@ -315,24 +403,40 @@ function excerptCenteredOnSpan(text: string, start: number, end: number): string
   return truncateAroundChange(left, core, right);
 }
 
+function hunksForChangedSpans(
+  previous: string,
+  next: string,
+  nextFull: string,
+  nextOffset: number,
+): string[] {
+  const spans = collectDistinctChangedSpans(previous, next);
+  if (spans.length === 0) return [];
+  if (spans.length > DRIVE_CHANGED_SPAN_MAX) return [];
+  const hunks: string[] = [];
+  for (const span of spans) {
+    const addedHunk = excerptCenteredOnSpan(
+      nextFull,
+      nextOffset + span.startRight,
+      nextOffset + span.endRight,
+    );
+    const removedHunk = excerptCenteredOnSpan(previous, span.startLeft, span.endLeft);
+    if (addedHunk.length > 0) hunks.push(addedHunk);
+    if (removedHunk.length > 0) hunks.push(`- ${removedHunk}`);
+  }
+  if (hunks.length > DRIVE_HUNK_MAX) return [];
+  const budget = hunks.reduce((sum, hunk) => sum + hunk.length, 0);
+  if (budget > DRIVE_HUNK_BUDGET_CHARS) return [];
+  if (!driveHunksContainChangedSpan(hunks, previous, next)) return [];
+  return hunks;
+}
+
 function hunksCenteredOnChunkSpan(
   previousChunk: string,
   nextChunk: string,
   nextFull: string,
   chunkStart: number,
 ): string[] {
-  const span = differingSpan(previousChunk, nextChunk);
-  const addedHunk = excerptCenteredOnSpan(
-    nextFull,
-    chunkStart + span.start,
-    chunkStart + span.endRight,
-  );
-  const removedHunk = excerptCenteredOnSpan(previousChunk, span.start, span.endLeft);
-  const hunks: string[] = [];
-  if (addedHunk.length > 0) hunks.push(addedHunk);
-  if (removedHunk.length > 0) hunks.push(`- ${removedHunk}`);
-  if (!driveHunksContainChangedSpan(hunks, previousChunk, nextChunk)) return [];
-  return hunks;
+  return hunksForChangedSpans(previousChunk, nextChunk, nextFull, chunkStart);
 }
 
 /** Last-N suffix windows slide at the start when document length changes. */
@@ -392,10 +496,7 @@ function centeredHunksFromFullText(
 ): string[] | null {
   if (!locateIndexHasChunkTexts(previous)) return null;
   const previousFull = previous.chunkTexts.join('');
-  const hunks = hunksCenteredOnChunkSpan(previousFull, nextFull, nextFull, 0);
-  if (hunks.length === 0) return null;
-  if (!driveHunksContainChangedSpan(hunks, previousFull, nextFull)) return null;
-  return hunks;
+  return hunksForChangedSpans(previousFull, nextFull, nextFull, 0);
 }
 
 function unwitnessedHashMove(previousLength: number, nextLength: number): DriveTextDiff {
@@ -454,14 +555,17 @@ function locateByChunkHashes(
       return unwitnessedHashMove(previous.length, nextFull.length);
     }
     hunks.push(...chunkHunks);
-    if (hunks.length >= 40) break;
+    if (hunks.length > DRIVE_HUNK_MAX) {
+      return unwitnessedHashMove(previous.length, nextFull.length);
+    }
   }
   if (hunks.length > 0) {
+    if (hunks.length > DRIVE_HUNK_MAX) return unwitnessedHashMove(previous.length, nextFull.length);
     return {
       changed: true,
       reason: 'substantive',
       changedChars: Math.max(1, Math.abs(previous.length - nextFull.length) || chunkSize),
-      hunks: hunks.slice(0, 40),
+      hunks,
     };
   }
   if (mismatchedUnstored) return unwitnessedHashMove(previous.length, nextFull.length);
@@ -571,18 +675,11 @@ export function diffDriveSnapshots(input: {
     windowCoversFullText,
     locatedDiff,
   });
-  if (
-    resolved.changed &&
-    input.previousLocate &&
-    (prefixDiff.changed || prefixDiff.reason === 'identical')
-  ) {
+  if (resolved.changed && input.previousLocate) {
     const centered = centeredHunksFromFullText(input.previousLocate, nextFull);
-    if (centered && centered.length > 0) {
-      return { ...resolved, hunks: centered };
-    }
-    if (prefixDiff.changed) {
-      return { ...resolved, hunks: [] };
-    }
+    if (centered === null) return resolved;
+    if (centered.length > 0) return { ...resolved, hunks: centered };
+    return { ...resolved, hunks: [] };
   }
   return resolved;
 }
@@ -852,7 +949,7 @@ function changedHunks(previous: string, next: string): string[] {
   if (hunks.length === 0 && next !== previous) {
     hunks.push(...changedSpanHunks(previous, next));
   }
-  return hunks.slice(0, 40);
+  return hunks.length > DRIVE_HUNK_MAX ? [] : hunks;
 }
 
 function changedSpanHunks(previous: string, next: string): string[] {

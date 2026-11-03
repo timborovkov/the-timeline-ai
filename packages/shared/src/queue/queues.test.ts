@@ -444,6 +444,63 @@ describe('queue wrappers', () => {
     ]);
   });
 
+  it('gives a lock-blocked Drive file continuation its own job id instead of the debounce id', async () => {
+    const queues = await importQueues();
+    const originating = {
+      kind: 'targeted' as const,
+      integrationId: '11111111-1111-4111-8111-111111111111',
+      teamId: '22222222-2222-4222-8222-222222222222',
+      triggeredBy: 'webhook' as const,
+      resourceType: 'drive.file',
+      externalId: 'file-1',
+      reason: 'drive_watch',
+    };
+    const continuation = {
+      ...originating,
+      reason: 'provider_pagination_continuation' as const,
+      continuationAttempt: 1,
+      continuationHandoffId: '33333333-3333-4333-8333-333333333333',
+    };
+    const collidingWatchRetry = {
+      ...originating,
+      continuationAttempt: 1,
+      continuationHandoffId: '44444444-4444-4444-8444-444444444444',
+    };
+    const originatingJobId =
+      'integration-targeted|11111111-1111-4111-8111-111111111111|drive.file|file-1|all';
+
+    await queues.enqueueIntegrationSyncJob(originating, { delayMs: 15 * 60_000 });
+    const integrationQueue = fakes.queues[0];
+    integrationQueue?.jobStates.set(originatingJobId, 'delayed');
+
+    await queues.enqueueIntegrationSyncJob(continuation, { delayMs: 5_000 });
+    await queues.enqueueIntegrationSyncJob(collidingWatchRetry, { delayMs: 5_000 });
+
+    expect(integrationQueue?.addCalls).toEqual([
+      {
+        name: 'integration-sync',
+        data: originating,
+        opts: { jobId: originatingJobId, delay: 15 * 60_000 },
+      },
+      {
+        name: 'integration-sync',
+        data: continuation,
+        opts: {
+          jobId: 'integration-pagination-continuation|33333333-3333-4333-8333-333333333333',
+          delay: 5_000,
+        },
+      },
+      {
+        name: 'integration-sync',
+        data: collidingWatchRetry,
+        opts: {
+          jobId: 'integration-pagination-continuation|44444444-4444-4444-8444-444444444444',
+          delay: 5_000,
+        },
+      },
+    ]);
+  });
+
   it('gives Drive extract resumes an independent identity from the originating drive.file job', async () => {
     const queues = await importQueues();
     const originating = {
