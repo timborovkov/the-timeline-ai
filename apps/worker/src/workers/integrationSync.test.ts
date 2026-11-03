@@ -140,7 +140,7 @@ await vi.mock(
   import.meta.resolve('@timeline/shared/platform-admin/runtime'),
   async (importOriginal) => ({
     ...(await importOriginal<typeof PlatformAdminRuntime>()),
-    assertActivePrincipal: async () => undefined,
+    assertActivePrincipal: () => Promise.resolve(),
   }),
   () => import('@timeline/shared/platform-admin/runtime'),
 );
