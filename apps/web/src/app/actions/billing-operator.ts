@@ -17,7 +17,7 @@ import {
 import { getEnv } from '@timeline/shared/env';
 import { redirect } from 'next/navigation';
 
-import { auth } from '@/lib/auth';
+import { realAuth as auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { runSentryServerAction } from '@/lib/sentry-action';
 

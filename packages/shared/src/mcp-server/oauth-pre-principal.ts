@@ -33,6 +33,7 @@ import {
   type OAuthTokenResponse,
   withMcpOAuthTrustedAuthorizationRedirect,
 } from '#src/mcp-server/oauth-core.js';
+import { principalIsActive } from '#src/platform-admin/runtime.js';
 import { withTeam } from '#src/team-scope.js';
 
 const CLIENT_ID_PREFIX = 'tlc_';
@@ -513,6 +514,7 @@ async function resolveStaticBearerKey(db: Db, token: string): Promise<McpAuthPri
     .limit(1);
   const row = rows[0];
   if (!row || (row.expiresAt && row.expiresAt.getTime() < Date.now())) return null;
+  if (!(await principalIsActive(db, row.teamId, row.createdByUserId ?? undefined))) return null;
   const actual = Buffer.from(row.keyHash, 'hex');
   const expected = Buffer.from(hash, 'hex');
   if (actual.length !== expected.length || !timingSafeEqual(actual, expected)) return null;

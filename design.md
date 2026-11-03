@@ -1353,3 +1353,17 @@ owners/admins; members retain the existing limited warning view.
 Contractual Enterprise displays agreement-based limits instead of a local cap
 warning/editor. Cap warnings follow enforcement applicability; comped Enterprise
 keeps its enforced cap. Disabled enforcement is labeled as informational tracking.
+
+### Password recovery
+
+Sign-in places “Forgot password?” beside the password label. `/forgot-password`
+and `/reset-password` reuse AuthShell and the existing form controls. Request
+confirmation does not reveal whether an account exists and keeps the email form
+available for retry. Reset asks for matching new passwords (8–200 characters),
+announces pending/error/success states, and replaces expired or used links with a
+request-new-link action. Success directs the user to sign in again; recovery
+remains available without legal acceptance or new-account publication readiness.
+
+## Platform administration
+
+The platform panel uses the existing collection headers, quiet tables, and bordered settings forms. Users, Teams, Audit, and Billing form a compact admin navigation. Sensitive actions live in explicit disclosures with a reason and confirmation. Impersonation has a persistent banner naming the effective user and team, expiry, read-only status when applicable, and an always-visible exit action. Internal identifiers stay in technical-detail disclosures.

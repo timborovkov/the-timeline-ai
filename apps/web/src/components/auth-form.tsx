@@ -30,7 +30,12 @@ export function SignInForm({ callbackUrl }: { callbackUrl?: string }) {
         <Input id="email" name="email" type="email" autoComplete="email" required />
       </div>
       <div className="space-y-2">
-        <Label htmlFor="password">Password</Label>
+        <div className="flex items-center justify-between gap-3">
+          <Label htmlFor="password">Password</Label>
+          <Link href="/forgot-password" className="text-sm text-primary hover:underline">
+            Forgot password?
+          </Link>
+        </div>
         <Input
           id="password"
           name="password"

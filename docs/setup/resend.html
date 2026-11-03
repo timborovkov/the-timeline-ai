@@ -28,10 +28,18 @@ INBOUND_EMAIL_DOMAIN=</code></pre>
         credentials are supplied by the repository.
       </p>
       <p>
-        Verification and invitation retry payloads are encrypted with the existing
+        Verification, password-reset, and invitation retry payloads are encrypted with the existing
         <code>SECRETS_ENCRYPTION_KEY</code> (32 bytes, base64). Configure it wherever these emails
         are sent; missing keys fail closed. Retries decrypt the original payload to preserve
         idempotency without storing plaintext access links.
+      </p>
+      <p>
+        Password recovery uses <code>AUTH_URL</code> for trusted reset links. Apply migration
+        <code>0095_password_recovery</code> before deploying the web app. Reset links last 30
+        minutes, replace previous links, and sign out existing login sessions when redeemed. Verify
+        delivery with a controlled password account after deployment. Recovery emails bypass
+        workspace allowances; check failed <code>password_reset</code> delivery records without
+        copying decrypted links into logs or support messages.
       </p>
       <p>
         Team addresses are <code>&lt;slug&gt;@&lt;INBOUND_EMAIL_DOMAIN&gt;</code>. Use either your

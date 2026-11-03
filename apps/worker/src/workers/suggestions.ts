@@ -35,6 +35,7 @@ import {
   withTeam,
 } from '@timeline/shared';
 import { isBillingAdmissionError } from '@timeline/shared/billing';
+import { principalIsActive } from '@timeline/shared/platform-admin/runtime';
 import {
   RECONCILIATION_PLANNER_PROMPT_VERSION,
   planReconciliation,
@@ -49,6 +50,7 @@ import { z } from 'zod';
 
 import { withWorkerAiBilling, workerBillingJobOptions } from '#src/billing-context.js';
 import { captureWorkerJobFailure } from '#src/monitoring.js';
+import { guardWorkerProcessor } from '#src/platform-worker.js';
 
 const log = childLogger('worker:suggestions');
 const PSEUDO_USER = '00000000-0000-0000-0000-000000000000';
@@ -2454,6 +2456,7 @@ async function processObjectCleanupJob(
         ).map((row) => row.teamId)
       : [data.teamId];
   for (const teamId of teamIds) {
+    if (!(await principalIsActive(deps.db, teamId))) continue;
     await createObjectCleanupSuggestionsForTeam(deps.db, teamId, {
       triggeredBy: data.triggeredBy ?? 'daily',
       ...(data.objectId ? { objectId: data.objectId } : {}),
@@ -4542,7 +4545,7 @@ function buildPromptParts(args: {
 export function startSuggestionWorker(deps: SuggestionWorkerDeps): Worker<queue.SuggestionJobData> {
   const worker = new Worker<queue.SuggestionJobData>(
     queue.QUEUE_NAMES.suggestions,
-    async (job: Job<queue.SuggestionJobData>, token?: string) => {
+    guardWorkerProcessor(deps.db, async (job: Job<queue.SuggestionJobData>, token?: string) => {
       const result = await withWorkerAiBilling(
         deps.db,
         job.data.teamId,
@@ -4554,7 +4557,7 @@ export function startSuggestionWorker(deps: SuggestionWorkerDeps): Worker<queue.
         await job.moveToDelayed(Date.now() + result.retryAfterMs, token);
         throw new DelayedError();
       }
-    },
+    }),
     { connection: queue.getRedisConnection(), concurrency: 1 },
   );
   worker.on('failed', (job, err) => {

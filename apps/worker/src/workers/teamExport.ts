@@ -20,6 +20,7 @@ import { Worker } from 'bullmq';
 import { and, eq } from 'drizzle-orm';
 
 import { captureWorkerJobFailure } from '#src/monitoring.js';
+import { guardWorkerProcessor } from '#src/platform-worker.js';
 
 const log = childLogger('worker:team-export');
 
@@ -170,7 +171,7 @@ export async function processTeamExportJob(
 export function startTeamExportWorker(deps: TeamExportWorkerDeps): Worker<queue.TeamExportJobData> {
   const worker = new Worker<queue.TeamExportJobData>(
     queue.QUEUE_NAMES.teamExport,
-    async (job) => processTeamExportJob(deps, job.data),
+    guardWorkerProcessor(deps.db, async (job) => processTeamExportJob(deps, job.data)),
     { connection: queue.getRedisConnection(), concurrency: 1 },
   );
   worker.on('failed', (job, err) => {
