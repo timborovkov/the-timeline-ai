@@ -50,6 +50,9 @@
   "apps/web/src/app/actions/onboarding.test.ts": {
     "group": "unit"
   },
+  "apps/web/src/app/actions/password-recovery.test.ts": {
+    "group": "unit"
+  },
   "apps/web/src/app/actions/reconciliation.test.ts": {
     "group": "unit"
   },
@@ -863,6 +866,9 @@
   "apps/web/src/components/page-header.test.tsx": {
     "group": "dom"
   },
+  "apps/web/src/components/password-recovery-form.test.tsx": {
+    "group": "dom"
+  },
   "apps/web/src/components/pins/pin-controls.test.tsx": {
     "group": "dom"
   },
@@ -1125,6 +1131,9 @@
     "group": "unit"
   },
   "apps/web/src/lib/paginated-api.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/lib/password-recovery.test.ts": {
     "group": "unit"
   },
   "apps/web/src/lib/project-filter-options.test.ts": {

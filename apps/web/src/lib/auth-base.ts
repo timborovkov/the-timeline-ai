@@ -26,6 +26,7 @@ import { sendEmailVerification } from '@/lib/email-verification';
 import { isLegalPublicationReady } from '@/lib/legal-publication';
 import { readConsentedPublicAttributionCookie } from '@/lib/public-attribution-server';
 import { reportCaughtError } from '@/lib/sentry-report';
+import { validateSessionVersion } from '@/lib/session-version';
 import { checkCredentialsSignInRateLimit } from '@/lib/sign-in-rate-limit';
 import { getSiteUrl } from '@/lib/site-url';
 
@@ -63,7 +64,13 @@ const providers: NextAuthConfig['providers'] = [
       if (!user?.passwordHash || user.suspendedAt) return null;
       const ok = await verifyPassword(password, user.passwordHash);
       if (!ok) return null;
-      return { id: user.id, email: user.email, name: user.name, image: user.image };
+      return {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        image: user.image,
+        sessionVersion: user.sessionVersion,
+      };
     },
   }),
 ];
@@ -137,7 +144,7 @@ const nextAuth = NextAuth({
       // Auth.js' callback union types make `user` look required here, but the
       // runtime only supplies it during sign-in/sign-up, not normal refreshes.
       const callbackUser = user as typeof user | undefined;
-      if (callbackUser) token.sub = callbackUser.id;
+      if (!(await validateSessionVersion(token, callbackUser, db))) return null;
 
       // Never trust fields supplied to unstable_update(). A successful legal
       // acceptance refreshes the JWT by re-reading the server-side snapshot;

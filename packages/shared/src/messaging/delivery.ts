@@ -262,6 +262,7 @@ export async function markDeliveryResult(input: {
 const UNMETERED_WORKSPACE_EMAIL_INTENTS = new Set<MessageIntent>([
   'billing_usage_alert',
   'email_verification',
+  'password_reset',
   'support_request',
 ]);
 
@@ -305,7 +306,7 @@ async function settleMeteredEmailBestEffort(input: {
 }
 
 function secretBearingIntent(intent: MessageIntent): boolean {
-  return intent === 'email_verification' || intent === 'team_invite';
+  return intent === 'email_verification' || intent === 'team_invite' || intent === 'password_reset';
 }
 
 function persistedEmailPayload(intent: MessageIntent, payload: z.infer<typeof sendPayloadSchema>) {

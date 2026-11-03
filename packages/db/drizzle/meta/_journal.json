@@ -687,6 +687,13 @@
       "when": 1795656160000,
       "tag": "0094_platform_admin_retention",
       "breakpoints": true
+    },
+    {
+      "idx": 98,
+      "version": "7",
+      "when": 1795656220000,
+      "tag": "0095_password_recovery",
+      "breakpoints": true
     }
   ]
 }

@@ -12,6 +12,7 @@ export const users = pgTable('users', {
   emailVerified: timestamp('emailVerified', { mode: 'date', withTimezone: true }),
   image: text('image'),
   passwordHash: text('password_hash'),
+  sessionVersion: integer('session_version').default(0).notNull(),
   legalTermsVersion: text('legal_terms_version'),
   legalPrivacyVersion: text('legal_privacy_version'),
   legalAcceptedAt: timestamp('legal_accepted_at', { mode: 'date', withTimezone: true }),
@@ -73,3 +74,13 @@ export const authenticators = pgTable(
   },
   (table) => [primaryKey({ columns: [table.userId, table.credentialID] })],
 );
+
+// Global account recovery is a pre-authentication identity operation, not team data.
+export const passwordResetTokens = pgTable('password_reset_tokens', {
+  userId: uuid('user_id')
+    .primaryKey()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  tokenHash: text('token_hash').notNull().unique(),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+});
