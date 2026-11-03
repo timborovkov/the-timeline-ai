@@ -54,6 +54,39 @@ describe('diffDriveText', () => {
     });
   });
 
+  const LONG_SOW_SENTENCE =
+    'Northstar SOW covers implementation, training, and ongoing support for the 2026 pilot';
+
+  it('skips a punctuation edit on a long line as tiny without counting hunk context', () => {
+    expect(LONG_SOW_SENTENCE.length).toBeGreaterThan(60);
+    const diff = diffDriveText(LONG_SOW_SENTENCE, `${LONG_SOW_SENTENCE}.`);
+    expect(diff.changed).toBe(false);
+    expect(diff.reason).toBe('tiny');
+    expect(diff.changedChars).toBeLessThan(40);
+    expect(diff.hunks.join(' ').length).toBeGreaterThan(diff.changedChars);
+    expect(diff.hunks.join(' ')).toContain('pilot');
+  });
+
+  it('skips a one-letter typo on a long line as tiny', () => {
+    const diff = diffDriveText(
+      LONG_SOW_SENTENCE,
+      LONG_SOW_SENTENCE.replace('implementation', 'implementaton'),
+    );
+    expect(diff.changed).toBe(false);
+    expect(diff.reason).toBe('tiny');
+    expect(diff.changedChars).toBeLessThan(40);
+  });
+
+  it('keeps a contract-amount edit on a long line substantive', () => {
+    const diff = diffDriveText(
+      `${LONG_SOW_SENTENCE} at a $12k fee.`,
+      `${LONG_SOW_SENTENCE} at a $48k fee.`,
+    );
+    expect(diff.changed).toBe(true);
+    expect(diff.reason).toBe('substantive');
+    expect(diff.hunks.join(' ')).toContain('$48k');
+  });
+
   it('returns changed hunks for substantive edits', () => {
     const diff = diffDriveText(
       'Acme Labs is evaluating a $12k pilot.',

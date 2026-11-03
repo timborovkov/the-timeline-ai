@@ -150,7 +150,9 @@ GOOGLE_DRIVE_WEBHOOK_SECRET=...</code></pre>
           suffix is unchanged: if the full-text hash moved and the stored window cannot prove the
           change lies entirely inside that window, it falls back to a conservative changed hunk.
           Full-text hashes still see edits past 20k chars. Formatting-only and tiny edits (Markdown
-          markers, not signed amounts such as <code>-50000 USD</code>) skip the LLM. Remaining hunks
+          markers, not signed amounts such as <code>-50000 USD</code>) skip the LLM. Tiny vs
+          substantive uses the intra-line edited span, not the hunk context kept for the judge, so a
+          punctuation or typo fix on a long line does not consume a processing slot. Remaining hunks
           bill a small CRM-relevance judge through <code>llm.chatStructured</code> / the existing AI
           meter. Deletion-only diffs emit bounded removed-text hunks. Nested-folder membership
           caches fetched parent ids and the selected ancestor that admitted a path — never an early

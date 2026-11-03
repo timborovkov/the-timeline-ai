@@ -7,7 +7,8 @@
  * equivalence never proves the suffix is unchanged: if the full-text hash
  * moved and the stored window cannot prove the change lies entirely inside
  * that window, return changed (conservative). Added and removed hunks are
- * always collected together.
+ * always collected together. The tiny/substantive threshold uses intra-line
+ * edited spans, not hunk context kept for the judge.
  */
 
 const WHITESPACE = /\s+/g;
@@ -172,24 +173,149 @@ export function diffDriveText(previous: string, next: string): DriveTextDiff {
     return { changed: false, reason: 'formatting', changedChars: 0, hunks: [] };
   }
   const hunks = changedHunks(previous, next);
-  const changedChars = hunks.reduce((sum, hunk) => sum + hunk.length, 0);
-  if (changedChars < DRIVE_DIFF_MIN_CHANGED_CHARS && Math.abs(next.length - previous.length) < 20) {
-    return { changed: false, reason: 'tiny', changedChars, hunks };
+  const edit = measureEditedSpans(previous, next);
+  if (
+    edit.chars < DRIVE_DIFF_MIN_CHANGED_CHARS &&
+    Math.abs(next.length - previous.length) < 20 &&
+    edit.cosmetic
+  ) {
+    return { changed: false, reason: 'tiny', changedChars: edit.chars, hunks };
   }
-  return withProvenHunks({ changed: true, reason: 'substantive', changedChars, hunks });
+  return withProvenHunks({
+    changed: true,
+    reason: 'substantive',
+    changedChars: edit.chars,
+    hunks,
+  });
+}
+
+function nonemptyLines(text: string): string[] {
+  return text
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+}
+
+function changedLineLists(
+  previous: string,
+  next: string,
+): { addedLines: string[]; removedLines: string[] } {
+  const prevLines = nonemptyLines(previous);
+  const nextLines = nonemptyLines(next);
+  const prevSet = new Set(prevLines);
+  const nextSet = new Set(nextLines);
+  return {
+    addedLines: nextLines.filter((line) => !prevSet.has(line)),
+    removedLines: prevLines.filter((line) => !nextSet.has(line)),
+  };
+}
+
+function differingSpan(
+  left: string,
+  right: string,
+): { start: number; endLeft: number; endRight: number } {
+  const start = firstDifferingIndex(left, right);
+  let endLeft = left.length;
+  let endRight = right.length;
+  while (endLeft > start && endRight > start && left[endLeft - 1] === right[endRight - 1]) {
+    endLeft -= 1;
+    endRight -= 1;
+  }
+  return { start, endLeft, endRight };
+}
+
+function spanTouchesDigit(
+  left: string,
+  right: string,
+  span: ReturnType<typeof differingSpan>,
+): boolean {
+  const leftSpan = left.slice(span.start, span.endLeft);
+  const rightSpan = right.slice(span.start, span.endRight);
+  const neighborhood =
+    left.slice(Math.max(0, span.start - 1), Math.min(left.length, span.endLeft + 1)) +
+    right.slice(Math.max(0, span.start - 1), Math.min(right.length, span.endRight + 1));
+  return /\d/.test(leftSpan + rightSpan + neighborhood);
+}
+
+function levenshtein(left: string, right: string): number {
+  if (left === right) return 0;
+  if (left.length === 0) return right.length;
+  if (right.length === 0) return left.length;
+  if (left.length > 64 || right.length > 64) return 64;
+  const prev = Array.from({ length: right.length + 1 }, (_, index) => index);
+  const next = prev.slice();
+  for (let i = 0; i < left.length; i++) {
+    next[0] = i + 1;
+    for (let j = 0; j < right.length; j++) {
+      const cost = left[i] === right[j] ? 0 : 1;
+      next[j + 1] = Math.min((prev[j + 1] ?? 0) + 1, (next[j] ?? 0) + 1, (prev[j] ?? 0) + cost);
+    }
+    for (let j = 0; j <= right.length; j++) prev[j] = next[j] ?? 0;
+  }
+  return next[right.length] ?? 64;
+}
+
+function spanIsCosmetic(
+  left: string,
+  right: string,
+  span: ReturnType<typeof differingSpan>,
+): boolean {
+  if (spanTouchesDigit(left, right, span)) return false;
+  const from = left.slice(span.start, span.endLeft).trim();
+  const to = right.slice(span.start, span.endRight).trim();
+  if (!from || !to) return (from || to).replace(/\s+/g, '').length <= 3;
+  return levenshtein(from, to) <= 2;
+}
+
+function measureEditedSpans(previous: string, next: string): { chars: number; cosmetic: boolean } {
+  const { addedLines, removedLines } = changedLineLists(previous, next);
+  if (addedLines.length === 0 && removedLines.length === 0) {
+    const span = differingSpan(previous, next);
+    return {
+      chars: span.endLeft - span.start + (span.endRight - span.start),
+      cosmetic: spanIsCosmetic(previous, next, span),
+    };
+  }
+  const usedRemoved = new Set<number>();
+  let chars = 0;
+  let cosmetic = true;
+  for (const added of addedLines) {
+    let bestIndex = -1;
+    let bestChars = added.length;
+    for (const [index, removed] of removedLines.entries()) {
+      if (usedRemoved.has(index)) continue;
+      const span = differingSpan(removed, added);
+      const size = span.endLeft - span.start + (span.endRight - span.start);
+      if (size < bestChars) {
+        bestChars = size;
+        bestIndex = index;
+      }
+    }
+    if (bestIndex >= 0) {
+      usedRemoved.add(bestIndex);
+      const removed = removedLines[bestIndex] ?? '';
+      const span = differingSpan(removed, added);
+      chars += bestChars;
+      if (!spanIsCosmetic(removed, added, span)) cosmetic = false;
+      continue;
+    }
+    chars += added.length;
+    if (!spanIsCosmetic('', added, { start: 0, endLeft: 0, endRight: added.length })) {
+      cosmetic = false;
+    }
+  }
+  for (const [index, removed] of removedLines.entries()) {
+    if (usedRemoved.has(index)) continue;
+    chars += removed.length;
+    if (!spanIsCosmetic(removed, '', { start: 0, endLeft: removed.length, endRight: 0 })) {
+      cosmetic = false;
+    }
+  }
+  return { chars, cosmetic };
 }
 
 function changedHunks(previous: string, next: string): string[] {
-  const prevLines = previous.split('\n');
-  const nextLines = next.split('\n');
-  const prevSet = new Set(prevLines.map((line) => line.trim()).filter((line) => line.length > 0));
-  const nextSet = new Set(nextLines.map((line) => line.trim()).filter((line) => line.length > 0));
-  const addedLines = nextLines
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0 && !prevSet.has(line));
-  const removedLines = prevLines
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0 && !nextSet.has(line));
+  const { addedLines, removedLines } = changedLineLists(previous, next);
   const hunks: string[] = [];
   const pairedRemoved = new Set<number>();
   for (const added of addedLines) {
@@ -218,13 +344,7 @@ function changedHunks(previous: string, next: string): string[] {
 }
 
 function changedSpanHunks(previous: string, next: string): string[] {
-  const start = firstDifferingIndex(previous, next);
-  let endPrev = previous.length;
-  let endNext = next.length;
-  while (endPrev > start && endNext > start && previous[endPrev - 1] === next[endNext - 1]) {
-    endPrev -= 1;
-    endNext -= 1;
-  }
+  const { start, endLeft: endPrev, endRight: endNext } = differingSpan(previous, next);
   const contextStart = Math.max(0, start - DRIVE_HUNK_CONTEXT_CHARS);
   const addedEnd = Math.min(next.length, Math.max(endNext, start) + DRIVE_HUNK_CONTEXT_CHARS);
   const removedEnd = Math.min(previous.length, Math.max(endPrev, start) + DRIVE_HUNK_CONTEXT_CHARS);
