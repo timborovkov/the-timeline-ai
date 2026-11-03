@@ -3,10 +3,10 @@ import { childLogger } from '@timeline/shared/logger';
 import { getRedisConnection, QUEUE_NAMES, type EmailInboundJobData } from '@timeline/shared/queue';
 import { DelayedError, UnrecoverableError, Worker, type Job } from 'bullmq';
 
-import type { Db } from '@timeline/db';
-
 import { captureWorkerJobFailure } from '#src/monitoring.js';
 import { guardWorkerProcessor } from '#src/platform-worker.js';
+
+import type { Db } from '@timeline/db';
 
 const log = childLogger('worker:email-inbound');
 
