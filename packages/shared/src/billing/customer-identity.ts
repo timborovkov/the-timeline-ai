@@ -8,13 +8,13 @@ import {
 } from '@timeline/db';
 import { and, asc, eq, isNull } from 'drizzle-orm';
 
-import type { BillingProvider } from '#src/billing/provider.js';
-
 import {
   PolarIdentityError,
   type PolarIdentityApi,
   type PolarMemberIdentity,
 } from '#src/billing/polar-identity-api.js';
+
+import type { BillingProvider } from '#src/billing/provider.js';
 
 export interface TeamBillingIdentity {
   customerId: string;

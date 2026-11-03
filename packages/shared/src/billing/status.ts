@@ -1,8 +1,3 @@
-import type { BillingPresentation } from '#src/billing/presentation.js';
-/**
- * Derived billing status for dashboards, upgrade nudges, and admission UX.
- */
-
 import {
   FREE_ALLOWANCES,
   PLAN_CATALOG,
@@ -11,6 +6,11 @@ import {
   type BillingPlanId,
   formatEuroFromCents,
 } from '#src/billing/catalog.js';
+
+import type { BillingPresentation } from '#src/billing/presentation.js';
+/**
+ * Derived billing status for dashboards, upgrade nudges, and admission UX.
+ */
 
 export type SpendCapWarnLevel = (typeof SPEND_CAP_WARN_THRESHOLDS)[number] | null;
 

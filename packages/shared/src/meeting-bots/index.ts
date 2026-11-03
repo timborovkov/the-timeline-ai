@@ -1,9 +1,9 @@
 // Phase 10 — Meeting bots. One factory; provider tag drives backend choice.
 
-import type { MeetingBotProvider } from '#src/meeting-bots/types.js';
-
 import { getEnv } from '#src/env.js';
 import { createRecallProvider } from '#src/meeting-bots/recall.js';
+
+import type { MeetingBotProvider } from '#src/meeting-bots/types.js';
 
 export * from '#src/meeting-bots/types.js';
 export {

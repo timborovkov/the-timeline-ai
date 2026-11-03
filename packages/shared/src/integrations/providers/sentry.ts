@@ -1,3 +1,7 @@
+import { getEnv } from '#src/env.js';
+import { providerFetch } from '#src/integrations/request.js';
+import { attachSyncContinuation } from '#src/integrations/types.js';
+
 import type {
   IntegrationEvent,
   IntegrationProvider,
@@ -8,10 +12,6 @@ import type {
   SyncContext,
   SyncContinuation,
 } from '#src/integrations/types.js';
-
-import { getEnv } from '#src/env.js';
-import { providerFetch } from '#src/integrations/request.js';
-import { attachSyncContinuation } from '#src/integrations/types.js';
 
 const fetch = providerFetch('sentry');
 

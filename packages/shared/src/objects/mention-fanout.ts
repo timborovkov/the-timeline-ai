@@ -1,10 +1,10 @@
 import { type Db, notifications, objectNoteMentions, teamMembers, users } from '@timeline/db';
 import { and, eq, isNull } from 'drizzle-orm';
 
-import type { ActorKind } from '#src/objects/identity-facets.js';
-
 import { actorDisplayName, parseMentions, type MentionMember } from '#src/objects/mentions.js';
 import { buildObjectDiscussionAgentContext } from '#src/objects/object-discussion-context.js';
+
+import type { ActorKind } from '#src/objects/identity-facets.js';
 
 const MENTION_EXCERPT_LENGTH = 180;
 

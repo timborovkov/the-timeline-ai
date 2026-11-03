@@ -2,19 +2,6 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import type {
-  BillingUsageAlertMessageInput,
-  ConnectionAttentionMessageInput,
-  DailyDigestMessageInput,
-  EmailVerificationMessageInput,
-  MessageInput,
-  MessageIntent,
-  RenderedMessage,
-  SupportRequestMessageInput,
-  TeamInviteMessageInput,
-  WelcomeMessageInput,
-} from '#src/messaging/types.js';
-
 import {
   absoluteDigestAppUrl,
   digestActivityStats,
@@ -30,6 +17,19 @@ import {
   formatDigestTaskDetail,
   formatDigestWindowRange,
 } from '#src/messaging/digest-format.js';
+
+import type {
+  BillingUsageAlertMessageInput,
+  ConnectionAttentionMessageInput,
+  DailyDigestMessageInput,
+  EmailVerificationMessageInput,
+  MessageInput,
+  MessageIntent,
+  RenderedMessage,
+  SupportRequestMessageInput,
+  TeamInviteMessageInput,
+  WelcomeMessageInput,
+} from '#src/messaging/types.js';
 
 type TemplateName =
   | 'base'

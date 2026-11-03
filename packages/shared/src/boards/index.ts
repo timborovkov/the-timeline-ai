@@ -31,16 +31,6 @@ import {
   sql,
 } from 'drizzle-orm';
 
-import type {
-  ActorKind,
-  CreateObjectInput,
-  ObjectCountFilter,
-  ObjectRow,
-  ObjectType,
-} from '#src/objects/index.js';
-import type { TaskCategoryFilterKey } from '#src/task-categories/types.js';
-import type { TeamScopeCore } from '#src/team-scope.js';
-
 import {
   deleteDueDateCalendarEventEmbeddings,
   enqueueDueDateCalendarEventEmbeddings,
@@ -63,6 +53,16 @@ import {
 } from '#src/task-categories/filter-refresh.js';
 import { type DueDateRangeFilter, workspaceDueDateBoundaries } from '#src/time/index.js';
 import { rawEventVisibleToUser } from '#src/visibility.js';
+
+import type {
+  ActorKind,
+  CreateObjectInput,
+  ObjectCountFilter,
+  ObjectRow,
+  ObjectType,
+} from '#src/objects/index.js';
+import type { TaskCategoryFilterKey } from '#src/task-categories/types.js';
+import type { TeamScopeCore } from '#src/team-scope.js';
 
 type DbTx = Parameters<Parameters<Db['transaction']>[0]>[0];
 type DbOrTx = Db | DbTx;

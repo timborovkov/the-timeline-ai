@@ -15,16 +15,6 @@ import {
 import { and, eq, isNull, lt } from 'drizzle-orm';
 import { z } from 'zod';
 
-import type {
-  DailyDigestPayload,
-  MessageChannel,
-  MessageDeliveryStatus,
-  MessageInput,
-  MessageIntent,
-  RenderedMessage,
-  SendMessageResult,
-} from '#src/messaging/types.js';
-
 import { emailRecipientCount } from '#src/billing/catalog.js';
 import { decryptJson, encryptJson } from '#src/crypto/secrets.js';
 import { resendRequest, ResendError, type EmailFetch } from '#src/email/resend-client.js';
@@ -46,6 +36,16 @@ import {
 import { renderMessage } from '#src/messaging/templates.js';
 import { sendTeamSlackDirectMessage, sendTeamSlackMessage } from '#src/slack/dispatcher.js';
 import { sendTelegramBotMessage } from '#src/telegram/api.js';
+
+import type {
+  DailyDigestPayload,
+  MessageChannel,
+  MessageDeliveryStatus,
+  MessageInput,
+  MessageIntent,
+  RenderedMessage,
+  SendMessageResult,
+} from '#src/messaging/types.js';
 
 interface ResendResult {
   ok: boolean;

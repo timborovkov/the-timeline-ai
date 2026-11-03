@@ -6,13 +6,13 @@ import { afterEach, beforeEach, describe, it } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 
-import type { EmbeddingModel } from 'ai';
-
 import { runWorkerBilling } from '#src/billing/runtime.js';
 import { resetEnvForTests } from '#src/env.js';
 import { embedMany } from '#src/llm/embed.js';
 import { TIMELINE_MODELS } from '#src/llm/models.js';
 import { applyDbMigrations } from '#src/test/pglite.js';
+
+import type { EmbeddingModel } from 'ai';
 
 const TEAM_ID = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
 const USER_ID = '11111111-2222-4333-8444-555555555555';

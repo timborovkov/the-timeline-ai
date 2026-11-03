@@ -13,8 +13,6 @@ import {
 import { type Db } from '@timeline/db';
 import { z } from 'zod';
 
-import type * as boards from '#src/boards/index.js';
-
 import * as agent from '#src/agent/index.js';
 import { retrieveWorkspaceContext } from '#src/agent/retrieval.js';
 import { askBillingUserMessage } from '#src/billing/admission.js';
@@ -43,6 +41,8 @@ import {
   buildTimelineMomentPresentationCacheFingerprint,
   buildTimelineMomentPresentationCacheKey,
 } from '#src/timeline-moments/presentation.js';
+
+import type * as boards from '#src/boards/index.js';
 
 const log = childLogger('mcp-server');
 

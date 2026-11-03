@@ -1,5 +1,3 @@
-import type { TeamScope } from '#src/team-scope.js';
-
 import { fenceExternalContent } from '#src/agent/external-content.js';
 import { searchAppGuide } from '#src/app-guide.js';
 import { artifactRefCitation, parseCitations } from '#src/citation.js';
@@ -9,6 +7,8 @@ import {
   type EvidencePackMetrics,
 } from '#src/evidence-pack/index.js';
 import { type ObjectSummarySourceRef, sourceRefCitation } from '#src/objects/summaries.js';
+
+import type { TeamScope } from '#src/team-scope.js';
 
 export type RetrievalRecipe =
   | 'auto'

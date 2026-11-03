@@ -1,13 +1,3 @@
-import type {
-  DispatcherDeps,
-  EmailAttachmentDeps,
-  ExtractEnqueueDeps,
-  EmbedEnqueueDeps,
-  SuggestionEnqueueDeps,
-  EmailDocumentDeps,
-} from '#src/email/dispatcher.js';
-import type { Db } from '@timeline/db';
-
 import { getEnv } from '#src/env.js';
 import * as queue from '#src/queue/index.js';
 import {
@@ -17,6 +7,16 @@ import {
   getS3Client,
   putObject,
 } from '#src/s3/index.js';
+
+import type {
+  DispatcherDeps,
+  EmailAttachmentDeps,
+  ExtractEnqueueDeps,
+  EmbedEnqueueDeps,
+  SuggestionEnqueueDeps,
+  EmailDocumentDeps,
+} from '#src/email/dispatcher.js';
+import type { Db } from '@timeline/db';
 
 export function inboundDispatcherDeps(db: Db): DispatcherDeps {
   const env = getEnv();
