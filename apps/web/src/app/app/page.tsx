@@ -242,7 +242,7 @@ export default async function HomeDashboardPage() {
               ]
             : []),
           {
-            href: '/app/sources',
+            href: '/app/connections',
             label: 'Connection issues',
             count: connectionAttention.length,
             action: 'Repair connections',

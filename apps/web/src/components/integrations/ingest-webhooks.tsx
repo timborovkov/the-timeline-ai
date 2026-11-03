@@ -299,6 +299,7 @@ export function IngestWebhooksUi({ webhooks }: { webhooks: IngestWebhookRow[] })
         </p>
         <Button
           size="sm"
+          variant="outline"
           onClick={() => {
             dispatch({ type: 'showCreate', showCreate: !showCreate });
           }}

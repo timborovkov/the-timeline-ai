@@ -6,6 +6,7 @@ import { Worker, type Job } from 'bullmq';
 
 import { withWorkerAiBilling, workerBillingJobOptions } from '#src/billing-context.js';
 import { captureWorkerJobFailure } from '#src/monitoring.js';
+import { guardWorkerProcessor } from '#src/platform-worker.js';
 
 const ZERO_UUID = '00000000-0000-0000-0000-000000000000';
 
@@ -43,14 +44,17 @@ export function startTimelineMomentPresentationWorker(
 ): Worker<queue.TimelineMomentPresentationJobData> {
   const worker = new Worker<queue.TimelineMomentPresentationJobData>(
     queue.QUEUE_NAMES.timelineMomentPresentation,
-    async (job: Job<queue.TimelineMomentPresentationJobData>, token?: string) =>
-      withWorkerAiBilling(
-        deps.db,
-        job.data.teamId,
-        'presentation',
-        () => processTimelineMomentPresentationJobForTests(deps, job.data),
-        workerBillingJobOptions(job, token),
-      ),
+    guardWorkerProcessor(
+      deps.db,
+      async (job: Job<queue.TimelineMomentPresentationJobData>, token?: string) =>
+        withWorkerAiBilling(
+          deps.db,
+          job.data.teamId,
+          'presentation',
+          () => processTimelineMomentPresentationJobForTests(deps, job.data),
+          workerBillingJobOptions(job, token),
+        ),
+    ),
     {
       connection: queue.getRedisConnection(),
       concurrency: 2,

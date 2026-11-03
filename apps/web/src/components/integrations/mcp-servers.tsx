@@ -352,18 +352,26 @@ function AddCustomMcpServerForm({
   );
 }
 
-export function AddCustomMcpServerLauncher({ ownership }: { ownership: 'team' | 'personal' }) {
+export function AddCustomMcpServerLauncher({
+  ownership,
+  variant = 'default',
+  label = '+ Add custom MCP server',
+}: {
+  ownership: 'team' | 'personal';
+  variant?: 'default' | 'outline';
+  label?: string;
+}) {
   const [open, setOpen] = useState(false);
   return (
     <>
       <Button
         size="sm"
-        variant={open ? 'ghost' : 'default'}
+        variant={open ? 'ghost' : variant}
         onClick={() => {
           setOpen((v) => !v);
         }}
       >
-        {open ? 'Cancel' : '+ Add custom MCP server'}
+        {open ? 'Cancel' : label}
       </Button>
       {open ? (
         <div className="col-span-full mt-2 w-full">

@@ -32,7 +32,7 @@ export const CAPTURE_SURFACES = [
     captured: 'Explicit notes, linked group messages, files, images, audio, and voice memos.',
     boundary:
       'Plain text in a direct chat asks the agent; it does not silently become team evidence. Use /note for an explicit note. Telegram is not a passive account-history sync.',
-    setupHref: '/app/sources#telegram',
+    setupHref: '/app/connections/sources#telegram',
     setupLabel: 'Link Telegram',
     featured: true,
   },
@@ -62,7 +62,7 @@ export const CAPTURE_SURFACES = [
       'Message body, sender and recipient context, and supported file, document, and audio attachments.',
     boundary:
       'Email enters only when the team address is included. Accepted messages from unknown senders are retained as unverified evidence rather than silently mapped to a member. When the team sender whitelist is enabled, messages from unlisted senders are rejected.',
-    setupHref: '/app/sources#email',
+    setupHref: '/app/connections/sources#email',
     setupLabel: 'Set up email',
     featured: false,
   },
@@ -92,7 +92,7 @@ export const CAPTURE_SURFACES = [
       'JSON, form, CSV, XML, YAML, GraphQL, NDJSON, and other textual request bodies up to 1 MB.',
     boundary:
       'Webhook payloads can support an answer, but they cannot update or control records in the sending tool. Direct file or binary upload uses a separate route.',
-    setupHref: '/app/sources',
+    setupHref: '/app/connections/developer#webhooks',
     setupLabel: 'Create a webhook',
     featured: false,
   },

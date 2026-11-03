@@ -6,7 +6,7 @@
 | Applies to | Hosted Timeline, public Timeline surfaces, development, support, and vendor operations |
 | Service operator | Nyxone OÜ, Estonian registry code 16172329 |
 | Control owner | **TBD: named security/privacy owner** |
-| Version | 2026-10-24 |
+| Version | 2026-11-03 |
 | Last evidence review | 2026-08-27 |
 | Next scheduled review | **TBD: no later than 2026-11-27** |
 | Evidence memo | [Provider privacy and data-handling research](./research/provider-privacy-audit-2026-08-21.md) |
@@ -195,6 +195,21 @@ Personnel and contractors must not:
 Provider support access follows the same minimum-necessary principle and must be
 governed by the provider contract and account controls. Section 17 records the
 current gap in evidencing staff access, break-glass logging, and review.
+
+The platform panel implements named, time-limited support sessions under
+`PLATFORM_ADMIN_EMAILS`. Operators record purpose, ticket/incident reference, and
+authorization context. Impersonation retains the selected member's role and
+visibility, records both identities, and never grants a general private-content
+bypass. Suspended inspection is read-only. These repository controls do not close
+the operational access-review and approval-evidence gaps in G-12. Session records
+are eligible for deletion 30 days after access ends; platform audit records after
+12 months. Documented user/team legal holds delay deletion, without extending
+access. Scheduled maintenance applies these periods, retaining released hold
+documentation for 12 months. The legal owner approved these periods on 3 November
+2026 and clarified that the product is not live. These are pre-launch disclosure
+edits: Privacy stays at `2026-11-01`, Terms remains unchanged, and this revision
+does not trigger renewed acknowledgment. See
+[Platform administration](platform-admin.md).
 
 ## 6. User, team, and agent permissions
 
@@ -896,3 +911,23 @@ Terms and Privacy versions advance to 2026-11-03 for paid-service terms and expl
 Sentry intake and queued delivery now both require a currently selected organization/project. GitHub capture requires the matching App installation token and paginates installation discovery; missing mappings fail closed. These are code controls verified with synthetic tests, not production provider attestations. Sentry delivery receipt time is explicitly identified as receipt time, not the exact upstream action time.
 
 The authenticated `/api/health/ready` probe uses the existing `CRON_SECRET`, returns aggregate queue/worker information only, and never returns source content or job identifiers. Public liveness remains minimal. Pricing analytics adds only fixed public route/CTA values under the existing consent contract, without linking anonymous visitors to account identities.
+
+### Password recovery controls
+
+Password recovery stores SHA-256 digests of random 32-byte, single-use tokens,
+with a 30-minute expiry, separately from email-verification tokens. Issuance and
+redemption serialize on the account row. Redemption atomically replaces the
+password hash, deletes reset tokens, and increments the login session version.
+Proxy and server Auth.js checks compare JWT versions against the database on use;
+legacy JWTs are version zero. Existing login sessions are invalidated on their
+next request; already-running requests and integration/MCP credentials are not
+revoked by this flow. Recovery does not change verification or legal acceptance.
+
+Request responses do not disclose whether an email has a password account. Redis
+rate limits apply before account lookup and fail closed when Redis is unavailable.
+Reset email retry payloads use the existing AES-256-GCM encrypted delivery format;
+Resend receives the reset URL to deliver the email. Recovery routes have no browser
+analytics, no-index/no-store/no-referrer policies, and sanitized error events.
+Provider-account tracking and retention evidence remains G-09; this feature makes
+no new provider-retention claim. Infrastructure access logs must not retain reset
+URL query parameters. Production delivery still requires operator verification.

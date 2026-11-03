@@ -278,7 +278,7 @@ function McpCatalogSection({ catalog }: { catalog: IntegrationsPageModel['mcpCat
   );
 }
 
-export function AdvancedIntegrationSection({
+function AdvancedIntegrationSection({
   isAdmin,
   webhooks,
   mcpServerRows,

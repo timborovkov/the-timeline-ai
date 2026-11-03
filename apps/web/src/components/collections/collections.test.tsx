@@ -171,6 +171,18 @@ describe('collection primitives', () => {
     expect(onActivate).not.toHaveBeenCalled();
   });
 
+  it('uses a hash link overlay when href is provided', () => {
+    render(
+      <CollectionRow href="#github" activateLabel="Open GitHub details">
+        <CollectionRow.Title>GitHub</CollectionRow.Title>
+      </CollectionRow>,
+    );
+
+    expect(screen.getByRole('link', { name: 'Open GitHub details' }).getAttribute('href')).toBe(
+      '#github',
+    );
+  });
+
   it('activates the row from the keyboard when it is focused', async () => {
     const user = userEvent.setup();
     const onActivate = vi.fn();

@@ -163,6 +163,7 @@ Treat this file as an operating contract for agents, not a loose README.
   stop every vector writer, require the operator-only production acknowledgement,
   complete a source snapshot, and verify all teams plus total point coverage before
   switching collections. Retain the original collection and backup for rollback.
+- **Platform administration is a separate privilege boundary.** Global account/team directory, support-session, and platform-audit access goes through the verified `platform-admin` service. Impersonated content access still uses `withTeam` and the selected member’s role and visibility. Never replace the real login with the impersonated identity or omit its attribution from jobs.
 - **Captured raw event content is immutable.** Never `UPDATE` a source-ingested
   `raw_events` row's content. Derived facts can be re-extracted; the source is
   the source. Calendar raw-event rows are derived schedule mirrors and may

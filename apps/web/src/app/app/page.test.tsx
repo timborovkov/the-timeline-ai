@@ -293,7 +293,7 @@ describe('HomeDashboardPage', () => {
     expect(html).not.toContain('href="/app/tasks"');
     expect(html).not.toContain('href="/app/objects"');
     expect(html).not.toContain('href="/app/team/jobs"');
-    expect(html).not.toContain('href="/app/sources"');
+    expect(html).not.toContain('href="/app/connections"');
     expect(fakes.listRecoverableJobs).not.toHaveBeenCalled();
   });
 
@@ -313,7 +313,7 @@ describe('HomeDashboardPage', () => {
     expect(html).toContain('href="/app/approvals"');
     expect(html).toContain('href="/app/work"');
     expect(html).toContain('href="/app/team/jobs"');
-    expect(html).toContain('href="/app/sources"');
+    expect(html).toContain('href="/app/connections"');
     expect(html).toContain('pending approvals');
     expect(html).toContain('work needing attention');
     expect(html).toContain('recoverable jobs');

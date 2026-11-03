@@ -6,6 +6,7 @@ import { Worker, type Job } from 'bullmq';
 
 import { withWorkerAiBilling, workerBillingJobOptions } from '#src/billing-context.js';
 import { captureWorkerJobFailure } from '#src/monitoring.js';
+import { guardWorkerProcessor } from '#src/platform-worker.js';
 
 const ZERO_UUID = '00000000-0000-0000-0000-000000000000';
 
@@ -58,7 +59,7 @@ export function startObjectSummaryWorker(
 ): Worker<queue.ObjectSummaryJobData> {
   const worker = new Worker<queue.ObjectSummaryJobData>(
     queue.QUEUE_NAMES.objectSummary,
-    async (job: Job<queue.ObjectSummaryJobData>, token?: string) => {
+    guardWorkerProcessor(deps.db, async (job: Job<queue.ObjectSummaryJobData>, token?: string) => {
       const billingJobId = objectSummaryBillingJobId(job);
       return withWorkerAiBilling(
         deps.db,
@@ -70,7 +71,7 @@ export function startObjectSummaryWorker(
           ...(billingJobId ? { jobId: billingJobId } : {}),
         },
       );
-    },
+    }),
     {
       connection: queue.getRedisConnection(),
       concurrency: 2,

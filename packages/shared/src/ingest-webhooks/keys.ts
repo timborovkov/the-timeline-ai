@@ -4,6 +4,7 @@ import { type Db, ingestWebhookCredentials, ingestWebhooks } from '@timeline/db'
 import { and, eq, isNull } from 'drizzle-orm';
 
 import { isTimelineEventClass, type TimelineEventClass } from '#src/event-class.js';
+import { principalIsActive } from '#src/platform-admin/runtime.js';
 
 const PREFIX = 'tli_';
 
@@ -68,6 +69,7 @@ export async function resolveCredential(
     .limit(1);
   const row = rows[0];
   if (!row) return null;
+  if (!(await principalIsActive(db, row.teamId, row.ownerUserId ?? undefined))) return null;
   const a = Buffer.from(row.keyHash, 'hex');
   const b = Buffer.from(hash, 'hex');
   if (a.length !== b.length || !timingSafeEqual(a, b)) return null;

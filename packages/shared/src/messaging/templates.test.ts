@@ -271,11 +271,11 @@ describe('messaging templates', () => {
       to: 'owner@example.test',
       teamName: 'Audit & AI',
       summary: 'Reconnect GitHub <now>',
-      actionUrl: 'https://timeline.test/app/sources',
+      actionUrl: 'https://timeline.test/app/connections',
     });
 
     expect(message.subject).toBe('Timeline integration needs attention for Audit & AI');
-    expect(message.textBody).toContain('Open Connections: https://timeline.test/app/sources');
+    expect(message.textBody).toContain('Open Connections: https://timeline.test/app/connections');
     expect(message.htmlBody).toContain('Reconnect GitHub &lt;now&gt;');
     expect(message.htmlBody).not.toContain('Reconnect GitHub <now>');
     expect(message.metadata).toMatchObject({ message_intent: 'connection_attention' });
@@ -349,4 +349,17 @@ describe('messaging templates', () => {
     );
     expect(message.metadata).toMatchObject({ billing_alert_kind: 'subscription_past_due' });
   });
+});
+
+it('renders password recovery with a one-use link and ignore guidance', () => {
+  const message = renderMessage('password_reset', {
+    to: 'person@example.test',
+    resetUrl: 'https://timeline.test/reset-password?token=secret',
+    expiresAt: new Date('2026-11-03T12:30:00Z'),
+  });
+  expect(message.subject).toContain('Reset your password');
+  expect(message.textBody).toContain('30 minutes');
+  expect(message.textBody).toContain('ignore this email');
+  expect(message.htmlBody).toContain('can only be used once');
+  expect(message.htmlBody).toContain('https://timeline.test/reset-password?token=secret');
 });

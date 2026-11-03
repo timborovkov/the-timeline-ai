@@ -22,6 +22,17 @@ This file now tracks only remaining work and recurring operating obligations.
 Use the repository history, release notes, and phase PRs for shipped
 implementation detail.
 
+## Platform administration rollout
+
+The platform admin panel, suspend/restore controls, and audited member impersonation
+are implemented on the feature branch. Before deployment, apply
+`0093_platform_admin` and `0094_platform_admin_retention`, then configure `PLATFORM_ADMIN_EMAILS` consistently on web and
+workers. Follow [the operator guide](docs/platform-admin.md); production approval
+and staff-access review evidence remain operational obligations. The legal owner
+approved the 30-day session/12-month audit retention policy. The product is not
+live, so the disclosure edits are a pre-launch revision: Privacy remains
+`2026-11-01`, Terms is unchanged, and no renewed acknowledgment is required.
+
 ## Billing identity follow-up
 
 - Polar sandbox currently ignores `CustomerUpdate.email = null`; track provider

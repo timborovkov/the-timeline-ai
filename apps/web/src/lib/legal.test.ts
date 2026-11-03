@@ -29,10 +29,13 @@ describe('legal acceptance persistence', () => {
       CREATE TABLE users (
         id uuid PRIMARY KEY,
         name text,
+        suspended_at timestamptz,
+        suspension_reason text,
         email text NOT NULL UNIQUE,
         "emailVerified" timestamptz,
         image text,
         password_hash text,
+        session_version integer NOT NULL DEFAULT 0,
         legal_terms_version text,
         legal_privacy_version text,
         legal_accepted_at timestamptz,

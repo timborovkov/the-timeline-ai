@@ -14,7 +14,7 @@ export default function PersonalConnectionsError({
   return (
     <div className="space-y-8">
       <Breadcrumb
-        items={[{ label: 'Connections', href: '/app/sources' }, { label: 'Provider accounts' }]}
+        items={[{ label: 'Connections', href: '/app/connections' }, { label: 'Provider accounts' }]}
       />
       <PageHeader
         title="Provider accounts"

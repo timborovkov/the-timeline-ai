@@ -5,6 +5,7 @@ import { Worker, type Job } from 'bullmq';
 import { and, asc, eq, gt, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
 
 import { captureWorkerJobFailure } from '#src/monitoring.js';
+import { guardWorkerProcessor } from '#src/platform-worker.js';
 
 // Page the overdue scan by entity id so a tenant with thousands of
 // overdue tasks can't blow memory on a single SELECT, and the bulk
@@ -201,7 +202,7 @@ export async function processOverdueScanTick(
 export function startOverdueWorker(deps: OverdueWorkerDeps): Worker<queue.OverdueScanJobData> {
   const worker = new Worker<queue.OverdueScanJobData>(
     queue.QUEUE_NAMES.overdueScan,
-    async (job: Job<queue.OverdueScanJobData>) => {
+    guardWorkerProcessor(deps.db, async (job: Job<queue.OverdueScanJobData>) => {
       const startedAt = Date.now();
       const result = await processOverdueScanTick(deps, job.id);
       log.info(
@@ -214,7 +215,7 @@ export function startOverdueWorker(deps: OverdueWorkerDeps): Worker<queue.Overdu
         'overdue scan complete',
       );
       return result;
-    },
+    }),
     {
       connection: queue.getRedisConnection(),
       // Singleton consumer is fine — the scan is cheap and there's no value

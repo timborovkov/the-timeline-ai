@@ -50,6 +50,9 @@
   "apps/web/src/app/actions/onboarding.test.ts": {
     "group": "unit"
   },
+  "apps/web/src/app/actions/password-recovery.test.ts": {
+    "group": "unit"
+  },
   "apps/web/src/app/actions/reconciliation.test.ts": {
     "group": "unit"
   },
@@ -296,6 +299,18 @@
   "apps/web/src/app/app/chat/route-states.test.tsx": {
     "group": "dom"
   },
+  "apps/web/src/app/app/connections/connection-directory.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/app/app/connections/page.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/app/app/connections/redirects.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/app/app/connections/route-states.test.tsx": {
+    "group": "dom"
+  },
   "apps/web/src/app/app/digests/route-states.test.tsx": {
     "group": "dom"
   },
@@ -378,15 +393,6 @@
     "group": "unit"
   },
   "apps/web/src/app/app/search/route-states.test.tsx": {
-    "group": "dom"
-  },
-  "apps/web/src/app/app/sources/connection-directory.test.ts": {
-    "group": "unit"
-  },
-  "apps/web/src/app/app/sources/page.test.tsx": {
-    "group": "dom"
-  },
-  "apps/web/src/app/app/sources/route-states.test.tsx": {
     "group": "dom"
   },
   "apps/web/src/app/app/tasks/page.test.tsx": {
@@ -866,6 +872,9 @@
   "apps/web/src/components/page-header.test.tsx": {
     "group": "dom"
   },
+  "apps/web/src/components/password-recovery-form.test.tsx": {
+    "group": "dom"
+  },
   "apps/web/src/components/pins/pin-controls.test.tsx": {
     "group": "dom"
   },
@@ -1128,6 +1137,9 @@
     "group": "unit"
   },
   "apps/web/src/lib/paginated-api.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/lib/password-recovery.test.ts": {
     "group": "unit"
   },
   "apps/web/src/lib/project-filter-options.test.ts": {
@@ -2056,5 +2068,8 @@
   },
   "scripts/testing/runner.test.ts": {
     "group": "script"
+  },
+  "packages/shared/src/platform-admin/index.test.ts": {
+    "group": "integration"
   }
 }

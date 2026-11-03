@@ -94,7 +94,7 @@ const TRUST_SECTIONS = [
   },
   {
     title: 'Human access',
-    body: 'Timeline staff access policy prohibits routine browsing of customer workspaces. The policy permits access only for user-requested support, reliability, security response, legal compliance, or another documented operational need and requires access to be limited to what the task needs. Team administrators do not receive a general product bypass for private items.',
+    body: 'Timeline staff access policy prohibits routine browsing of customer workspaces. The policy permits access only for user-requested support, reliability, security response, legal compliance, or another documented operational need and requires access to be limited to what the task needs. Customer team administrators do not receive a general product bypass for private items. Separately authorized Timeline personnel can use audited support sessions lasting at most 30 minutes to read and act within a selected member’s permissions, including their private content. Ordinary support requires customer authorization. Session records are eligible for deletion after 30 days and platform audit records after 12 months, subject to documented legal holds; session expiry does not immediately delete records.',
   },
   {
     title: 'Meetings and files',

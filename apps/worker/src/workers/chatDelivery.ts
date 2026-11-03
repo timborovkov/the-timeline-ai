@@ -1,13 +1,18 @@
+import { getDb, type Db } from '@timeline/db';
 import { decryptJson } from '@timeline/shared/crypto';
 import { childLogger } from '@timeline/shared/logger';
+import { assertActivePrincipal } from '@timeline/shared/platform-admin/runtime';
 import { QUEUE_NAMES, getRedisConnection, type ChatDeliveryJobData } from '@timeline/shared/queue';
 import { SlackApi } from '@timeline/shared/slack';
 import { HttpTelegramApi } from '@timeline/shared/telegram';
 import { DelayedError, Worker, type Job } from 'bullmq';
 import { z } from 'zod';
 
+import { guardWorkerProcessor } from '#src/platform-worker.js';
+
 const log = childLogger('worker:chat-delivery');
 const deliverySchema = z.object({
+  principal: z.object({ teamId: z.uuid(), userId: z.uuid().optional() }).optional(),
   provider: z.enum(['slack', 'telegram']),
   token: z.string().min(1),
   accountId: z.string().optional(),
@@ -15,7 +20,7 @@ const deliverySchema = z.object({
   body: z.record(z.string(), z.unknown()),
 });
 
-export async function processChatDelivery(data: ChatDeliveryJobData): Promise<void> {
+export async function processChatDelivery(data: ChatDeliveryJobData, db?: Db): Promise<void> {
   const delivery = deliverySchema.parse(
     decryptJson({
       ciphertext: Buffer.from(data.ciphertext, 'base64'),
@@ -23,6 +28,16 @@ export async function processChatDelivery(data: ChatDeliveryJobData): Promise<vo
       tag: Buffer.from(data.tag, 'base64'),
     }),
   );
+  if (delivery.principal) {
+    // Use the authenticated envelope, even if queue routing metadata is missing or altered.
+    await assertActivePrincipal(
+      db ?? getDb(),
+      delivery.principal.teamId,
+      delivery.principal.userId,
+    );
+  } else if (data.teamId || data.userId) {
+    throw new Error('Chat delivery principal is missing from its encrypted envelope');
+  }
   if (delivery.provider === 'slack') {
     if (delivery.method !== 'send') throw new Error('Unsupported Slack delivery method');
     const body = z
@@ -71,7 +86,7 @@ export async function processChatDelivery(data: ChatDeliveryJobData): Promise<vo
 export function startChatDeliveryWorker(): Worker<ChatDeliveryJobData> {
   const worker = new Worker<ChatDeliveryJobData>(
     QUEUE_NAMES.chatDelivery,
-    async (job: Job<ChatDeliveryJobData>, token?: string) => {
+    guardWorkerProcessor(undefined, async (job: Job<ChatDeliveryJobData>, token?: string) => {
       try {
         await processChatDelivery(job.data);
       } catch (error) {
@@ -82,7 +97,7 @@ export function startChatDeliveryWorker(): Worker<ChatDeliveryJobData> {
         // One attempt: ambiguous writes are never automatically replayed.
         throw new Error('Chat delivery failed; automatic replay suppressed');
       }
-    },
+    }),
     {
       connection: getRedisConnection(),
       concurrency: 2,

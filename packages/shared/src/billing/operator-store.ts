@@ -81,10 +81,15 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
 export async function requirePlatformAdmin(db: Db, actor: BillingOperatorActor): Promise<void> {
   const [user] = await db
-    .select({ email: users.email, emailVerified: users.emailVerified })
+    .select({
+      email: users.email,
+      emailVerified: users.emailVerified,
+      suspendedAt: users.suspendedAt,
+    })
     .from(users)
     .where(eq(users.id, actor.userId))
     .limit(1);
+  if (user?.suspendedAt) throw new BillingOperatorError('Platform admin account is suspended.');
   const email = user?.email ?? '';
   if (email.toLowerCase() !== actor.email.trim().toLowerCase()) {
     throw new BillingOperatorError('Operator identity does not match a Timeline user.');

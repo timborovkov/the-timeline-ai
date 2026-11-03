@@ -5,6 +5,7 @@ export type MessageIntent =
   | 'support_request'
   | 'welcome'
   | 'email_verification'
+  | 'password_reset'
   | 'daily_digest'
   | 'connection_attention'
   | 'billing_usage_alert';
@@ -53,6 +54,12 @@ export interface WelcomeMessageInput {
   name: string | null;
   dashboardUrl: string;
   teamName: string;
+}
+
+export interface PasswordResetMessageInput {
+  to: string;
+  resetUrl: string;
+  expiresAt: Date;
 }
 
 export interface EmailVerificationMessageInput {
@@ -186,6 +193,7 @@ export interface MessageInputByIntent {
   support_request: SupportRequestMessageInput;
   welcome: WelcomeMessageInput;
   email_verification: EmailVerificationMessageInput;
+  password_reset: PasswordResetMessageInput;
   daily_digest: DailyDigestMessageInput;
   connection_attention: ConnectionAttentionMessageInput;
   billing_usage_alert: BillingUsageAlertMessageInput;

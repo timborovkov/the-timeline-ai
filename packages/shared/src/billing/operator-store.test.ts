@@ -7,6 +7,7 @@ import { drizzle } from 'drizzle-orm/pglite';
 
 import {
   BillingOperatorError,
+  readOperatorBillingAccount,
   assignCompedPlan,
   clearCompedPlan,
   clearTeamPriceOverride,
@@ -75,6 +76,33 @@ describe('billing operator store', () => {
         spendCapCents: 2_500,
         reason: 'owner attempt',
         expiresAt: null,
+      }),
+    ).rejects.toBeInstanceOf(BillingOperatorError);
+  });
+
+  it('allows verified operator billing on suspended teams without restoring customer access', async () => {
+    await db.insert(teamBillingAccounts).values({ teamId: TEAM_ID, securityState: 'suspended' });
+    const actor = { userId: ADMIN_ID, email: 'ops@example.test' };
+    expect((await readOperatorBillingAccount({ db, actor, teamId: TEAM_ID }))?.securityState).toBe(
+      'suspended',
+    );
+    await assignCompedPlan({
+      db,
+      actor,
+      teamId: TEAM_ID,
+      entitlementsPlanId: 'team',
+      spendCapCents: 2500,
+      reason: 'approved billing adjustment',
+      expiresAt: null,
+    });
+    const account = await readOperatorBillingAccount({ db, actor, teamId: TEAM_ID });
+    expect(account?.arrangement).toBe('comped');
+    expect(account?.securityState).toBe('suspended');
+    await expect(
+      readOperatorBillingAccount({
+        db,
+        actor: { userId: OWNER_ID, email: 'owner@example.test' },
+        teamId: TEAM_ID,
       }),
     ).rejects.toBeInstanceOf(BillingOperatorError);
   });

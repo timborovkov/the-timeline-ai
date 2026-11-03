@@ -53,6 +53,14 @@ test('public and authentication responses protect framing and publish security c
     expect(response.headers()['x-content-type-options']).toBe('nosniff');
     expect(response.headers()['content-security-policy']).toContain("frame-ancestors 'none'");
   }
+  for (const path of ['/forgot-password', '/reset-password']) {
+    const response = await request.get(path);
+    expect(response.ok()).toBe(true);
+    expect(response.headers()['x-frame-options']).toBe('DENY');
+    expect(response.headers()['referrer-policy']).toBe('no-referrer');
+    expect(response.headers()['cache-control']).toContain('no-store');
+    expect(response.headers()['x-robots-tag']).toBe('noindex, nofollow');
+  }
   const contact = await request.get('/.well-known/security.txt');
   expect(contact.ok()).toBe(true);
   expect(contact.headers()['content-type']).toContain('text/plain');

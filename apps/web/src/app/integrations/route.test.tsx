@@ -86,22 +86,22 @@ describe('public integration routes', () => {
     render(<IntegrationsPage />);
 
     expect(screen.getByRole('link', { name: 'Link Telegram' }).getAttribute('href')).toBe(
-      '/app/sources#telegram',
+      '/app/connections/sources#telegram',
     );
     expect(screen.getByRole('link', { name: 'Install Slack' }).getAttribute('href')).toBe(
       '/app/team/slack',
     );
     expect(screen.getByRole('link', { name: 'Set up email' }).getAttribute('href')).toBe(
-      '/app/sources#email',
+      '/app/connections/sources#email',
     );
     expect(screen.getByRole('link', { name: 'Open meetings' }).getAttribute('href')).toBe(
       '/app/meetings',
     );
     expect(screen.getByRole('link', { name: 'Create a webhook' }).getAttribute('href')).toBe(
-      '/app/sources',
+      '/app/connections/developer#webhooks',
     );
     expect(screen.getByRole('link', { name: 'Open connections' }).getAttribute('href')).toBe(
-      '/app/sources',
+      '/app/connections',
     );
   });
 
@@ -113,7 +113,7 @@ describe('public integration routes', () => {
     render(<ConnectorPage connector={connector} />);
 
     for (const link of screen.getAllByRole('link', { name: 'Connect GitHub' })) {
-      expect(link.getAttribute('href')).toBe('/app/sources');
+      expect(link.getAttribute('href')).toBe('/app/connections');
     }
   });
 

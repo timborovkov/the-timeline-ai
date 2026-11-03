@@ -8,6 +8,11 @@ const workspaceRoot = join(__dirname, '../..');
 
 const nextConfig: NextConfig = {
   output: 'standalone',
+  // Next 16 logs Server Function arguments by default, including auth form data.
+  logging: {
+    serverFunctions: false,
+    incomingRequests: { ignore: [/\/(?:forgot-password|reset-password)(?:[/?]|$)/] },
+  },
   outputFileTracingRoot: workspaceRoot,
   turbopack: {
     root: workspaceRoot,
@@ -28,6 +33,14 @@ const nextConfig: NextConfig = {
           ...(process.env.NODE_ENV === 'production'
             ? [{ key: 'Strict-Transport-Security', value: 'max-age=31536000' }]
             : []),
+        ],
+      },
+      {
+        source: '/:path(forgot-password|reset-password)',
+        headers: [
+          { key: 'Cache-Control', value: 'no-store' },
+          { key: 'Referrer-Policy', value: 'no-referrer' },
+          { key: 'X-Robots-Tag', value: 'noindex, nofollow' },
         ],
       },
       {

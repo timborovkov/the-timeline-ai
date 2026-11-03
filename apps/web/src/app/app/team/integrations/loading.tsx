@@ -14,7 +14,7 @@ export default function IntegrationsLoading() {
       >
         <h1 className="sr-only">Team integrations</h1>
         <Breadcrumb
-          items={[{ label: 'Connections', href: '/app/sources' }, { label: 'Integrations' }]}
+          items={[{ label: 'Connections', href: '/app/connections' }, { label: 'Integrations' }]}
         />
         <PageHeaderSkeleton />
       </div>

@@ -12,7 +12,7 @@ export default function SourcesError({
 }) {
   return (
     <div className="space-y-6">
-      <PageHeader title="Connections" subtitle="Provider accounts and team sync." />
+      <PageHeader title="Connections" subtitle="Connect the tools this team already uses." />
       <ErrorState
         title="Unable to load connections"
         description="Your connection settings and captured data have not changed. Check your connection, then try again."
