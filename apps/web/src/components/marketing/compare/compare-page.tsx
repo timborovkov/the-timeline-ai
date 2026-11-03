@@ -94,7 +94,7 @@ export function ComparePage({ page }: { page: ComparePageContent }) {
         <section className="border-t border-border">
           <div className="mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-24">
             <EditorialSectionHeading index="Also" title="Other comparisons." />
-            <div className="mt-10 grid gap-px bg-border sm:grid-cols-2">
+            <div className="mt-10 grid gap-px bg-border sm:grid-cols-2 sm:[&>:last-child:nth-child(odd)]:col-span-2">
               {related.map((item) => (
                 <Link
                   key={item.route}

@@ -102,7 +102,7 @@ export function WorksWithPage({ tool }: { tool: WorksWithTool }) {
                   <h2 id="related-tools" className="text-2xl font-semibold tracking-tight">
                     Other tools teams keep.
                   </h2>
-                  <div className="mt-7 grid gap-px bg-border sm:grid-cols-2">
+                  <div className="mt-7 grid gap-px bg-border sm:grid-cols-2 sm:[&>:last-child:nth-child(odd)]:col-span-2">
                     {related.map((item) => (
                       <Link
                         key={item.route}
