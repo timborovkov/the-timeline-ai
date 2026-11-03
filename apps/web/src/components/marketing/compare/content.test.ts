@@ -3,39 +3,57 @@ import { describe, it } from 'bun:test';
 
 import {
   COMPARE_HUB,
-  COMPARE_TOOLS,
-  findCompareTool,
-  findCompareToolByRoute,
+  COMPARE_PAGES,
+  COMPARE_SLUGS,
+  LEGACY_COMPARE_REDIRECTS,
+  findComparePage,
+  findComparePageByRoute,
+  isLegacyCompareSlug,
 } from '@/components/marketing/compare/content';
 import { COMPARE_NAV_ITEMS } from '@/components/marketing/copy';
+import { WORKS_WITH_TOOLS } from '@/components/marketing/integrations/works-with-content';
 
 describe('compare content', () => {
-  it('publishes a works-with hub without vs or switch language', () => {
+  it('publishes a hub, four cited head-to-head pages, and legacy works-with redirects', () => {
     expect(COMPARE_HUB.route).toBe('/compare');
-    expect(COMPARE_TOOLS).toHaveLength(4);
-    expect(COMPARE_NAV_ITEMS.map((item) => item.href)).toEqual(
-      COMPARE_TOOLS.map((tool) => tool.route),
-    );
+    expect(COMPARE_PAGES).toHaveLength(4);
+    expect(COMPARE_PAGES.map((page) => page.slug)).toEqual([...COMPARE_SLUGS]);
+    expect(COMPARE_NAV_ITEMS.map((item) => item.href)).toEqual([
+      ...COMPARE_PAGES.map((page) => page.route),
+      ...WORKS_WITH_TOOLS.map((tool) => tool.route),
+    ]);
 
-    const copy = JSON.stringify({ hub: COMPARE_HUB, tools: COMPARE_TOOLS });
-    expect(copy).not.toMatch(/\bvs\.?\b|switch from/iu);
+    expect(LEGACY_COMPARE_REDIRECTS).toEqual({
+      hubspot: '/integrations/hubspot',
+      jira: '/integrations/jira',
+      linear: '/integrations/linear',
+      notion: '/integrations/notion',
+    });
+    expect(isLegacyCompareSlug('hubspot')).toBe(true);
+    expect(isLegacyCompareSlug('the-timeline-vs-day-ai')).toBe(false);
 
-    for (const tool of COMPARE_TOOLS) {
-      expect(findCompareTool(tool.slug)).toBe(tool);
-      expect(findCompareToolByRoute(tool.route)).toBe(tool);
+    for (const page of COMPARE_PAGES) {
+      expect(findComparePage(page.slug)).toBe(page);
+      expect(findComparePageByRoute(page.route)).toBe(page);
     }
   });
 
-  it('states current Linear sync, Jira MCP lookup, and HubSpot coming soon', () => {
-    const linear = findCompareTool('linear');
-    const jira = findCompareTool('jira');
-    const hubspot = findCompareTool('hubspot');
-    const notion = findCompareTool('notion');
-    if (!linear || !jira || !hubspot || !notion) throw new Error('Compare tools are incomplete');
+  it('cites every competitor fact to that competitor’s own site', () => {
+    for (const page of COMPARE_PAGES) {
+      expect(page.facts.length).toBeGreaterThan(0);
+      expect(page.whenCompetitorBetter.toLowerCase()).toContain(
+        `choose ${page.name.toLowerCase()}`,
+      );
+      expect(page.whenCompetitorBetter).toContain(
+        page.competitorUrl.replace('https://www.', '').replace('https://', ''),
+      );
 
-    expect(linear.today).toMatch(/native Linear integration/i);
-    expect(jira.today).toMatch(/Atlassian MCP/i);
-    expect(hubspot.later).toMatch(/HubSpot, Attio and Pipedrive/i);
-    expect(notion.today).toMatch(/Notion MCP/i);
+      for (const fact of page.facts) {
+        const sourceHost = new URL(fact.source.href).hostname.replace(/^www\./u, '');
+        const competitorHost = new URL(page.competitorUrl).hostname.replace(/^www\./u, '');
+        expect(fact.source.href.startsWith('https://')).toBe(true);
+        expect(sourceHost).toBe(competitorHost);
+      }
+    }
   });
 });

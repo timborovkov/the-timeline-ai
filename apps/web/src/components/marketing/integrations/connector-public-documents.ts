@@ -6,6 +6,7 @@ import {
   type ConnectorContent,
 } from '@/components/marketing/integrations/connector-content';
 import { TELEGRAM_PAGE } from '@/components/marketing/integrations/telegram-content';
+import { findWorksWithTool } from '@/components/marketing/integrations/works-with-content';
 import { definePublicDocuments } from '@/lib/public-site/registry';
 
 export const INTEGRATION_DIRECTORY_DOCUMENT = {
@@ -95,6 +96,7 @@ const connectorDocuments = CONNECTORS.map((connector, index): PublicDocument => 
         body: `Current ${connector.name} ingestion boundaries:`,
         items: connector.limitations,
       },
+      ...worksWithLlmsSections(connector.slug),
     ],
   },
 }));
@@ -137,6 +139,15 @@ export const CONNECTOR_PUBLIC_DOCUMENTS = definePublicDocuments('native-connecto
   TELEGRAM_PUBLIC_DOCUMENT,
   ...connectorDocuments,
 ]);
+
+function worksWithLlmsSections(slug: string) {
+  const tool = findWorksWithTool(slug);
+  if (!tool) return [];
+  return [
+    { title: 'Just getting started', body: tool.gettingStarted },
+    { title: `When ${tool.name} alone is the better pick`, body: tool.whenAloneBetter },
+  ];
+}
 
 export function findConnectorPublicDocument(
   connector: Pick<ConnectorContent, 'slug'>,

@@ -92,11 +92,14 @@ describe('Header navigation', () => {
 
     await user.click(screen.getByText('Compare'));
     expect(screen.getByRole('link', { name: 'Compare hub' }).getAttribute('href')).toBe('/compare');
+    expect(screen.getByRole('link', { name: 'The Timeline vs Day AI' }).getAttribute('href')).toBe(
+      '/compare/the-timeline-vs-day-ai',
+    );
     expect(screen.getByRole('link', { name: 'Works with HubSpot' }).getAttribute('href')).toBe(
-      '/compare/hubspot',
+      '/integrations/hubspot',
     );
     expect(screen.getByRole('link', { name: 'Works with Linear' }).getAttribute('href')).toBe(
-      '/compare/linear',
+      '/integrations/linear',
     );
 
     const menu = container.querySelector('details');

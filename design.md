@@ -983,9 +983,14 @@ complete static story.
 The public header stays uncluttered: Product, Use cases, Compare, Agents, and
 Pricing. Use cases and Compare are `details` dropdowns on desktop and in the
 mobile menu. How it works, Integrations, Help, and Trust remain in the footer
-(and legal row). Compare pages are works-with pages, not versus or switch
-pages: Linear has native ingest, Jira and Notion are hosted MCP lookup, and
-HubSpot native ingest is coming soon.
+(and legal row). `/compare` is a hub for head-to-head pages versus Day AI,
+Folk, Glean, and Geekbot; every competitor fact on those pages cites and links
+that competitor's own site. Works-with pages live under `/integrations`
+(Linear, Jira, Notion, HubSpot, Attio, Pipedrive), not a separate `/works-with`
+section: Linear has native ingest, Jira and Notion are hosted MCP lookup, and
+HubSpot, Attio, and Pipedrive native ingest is coming soon. Retired
+`/compare/{hubspot,jira,linear,notion}` URLs permanent-redirect to the matching
+integrations page.
 
 Use-case pages extend this story for six jobs from one record: work record,
 team daily log, communication trail, CRM, task board, and onboarding and repeat
@@ -1346,6 +1351,7 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-11-02 | Connections as a flagship settings page | Splits Connections into Sources, Agent tools, and Developer tabs. Email stays a normal capture row; Documents and Meetings stay on their sidebar pages. Agent MCP, Timeline MCP, and webhooks open compact sheets. Figma and other local-only catalog entries sit in Coming soon. |
 | 2026-11-03 | Work-record marketing site | Leads public pages with the auto-updating work record, daily updates, and Start free. Adds a Use cases menu, six use-case pages, `/product-tour`, and `/integrations/telegram`. |
 | 2026-11-03 | Public Compare and Agents | Header stays Product, Use cases, Compare, Agents, Pricing, with mobile dropdowns. Adds `/compare` works-with pages, `/agents`, a copyable llms.txt command, a pricing FAQ, and a Slack-to-cited-answer landing scene. |
+| 2026-11-03 | Compare vs and works-with | Moves works-with pages under `/integrations/{hubspot,pipedrive,attio,linear,jira,notion}`. `/compare` becomes a hub plus `/compare/the-timeline-vs-{day-ai,folk,glean,geekbot}` pages that cite each competitor's site. |
 
 
 ### Billing benefits and recorded charges (2026-10-31)

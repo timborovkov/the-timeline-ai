@@ -470,6 +470,9 @@
   "apps/web/src/app/auth-route-states.test.tsx": {
     "group": "dom"
   },
+  "apps/web/src/app/compare/redirects.test.ts": {
+    "group": "unit"
+  },
   "apps/web/src/app/compare/route.test.tsx": {
     "group": "unit"
   },
@@ -840,6 +843,12 @@
     "group": "unit"
   },
   "apps/web/src/components/marketing/integrations/records-to-answer.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/components/marketing/integrations/works-with-content.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/components/marketing/integrations/works-with-public-documents.test.ts": {
     "group": "unit"
   },
   "apps/web/src/components/marketing/pricing-blocks.test.tsx": {

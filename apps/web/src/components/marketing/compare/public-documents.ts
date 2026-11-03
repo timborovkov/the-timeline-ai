@@ -1,20 +1,22 @@
-import type { PublicCapabilityState, PublicDocument } from '@/lib/public-site';
+import type { PublicDocument } from '@/lib/public-site';
 
 import {
   COMPARE_HUB,
   COMPARE_HUB_ROUTE,
-  COMPARE_TOOLS,
-  type CompareTool,
+  COMPARE_PAGES,
+  type ComparePageContent,
 } from '@/components/marketing/compare/content';
 import { definePublicDocuments } from '@/lib/public-site/registry';
 
 const REVIEW_DATE = '2026-11-03' as const;
 
-function compareCapability(tool: CompareTool): PublicCapabilityState {
-  if (tool.slug === 'linear') return { kind: 'native-ingestion', provider: 'linear' };
-  if (tool.slug === 'jira') return { kind: 'mcp-access', provider: 'jira' };
-  if (tool.slug === 'notion') return { kind: 'mcp-access', provider: 'notion' };
-  return { kind: 'current-product' };
+function uniqueCitations(sources: readonly ComparePageContent['facts'][number]['source'][]) {
+  const seen = new Set<string>();
+  return sources.filter((source) => {
+    if (seen.has(source.href)) return false;
+    seen.add(source.href);
+    return true;
+  });
 }
 
 export const COMPARE_PUBLIC_DOCUMENTS = definePublicDocuments('compare', [
@@ -40,24 +42,24 @@ export const COMPARE_PUBLIC_DOCUMENTS = definePublicDocuments('compare', [
     llms: {
       section: 'compare',
       order: 0,
-      label: 'Works with',
+      label: 'Compare',
       summary: COMPARE_HUB.seoDescription,
       sections: [
         {
           title: 'What Compare means here',
-          body: 'These pages describe how The Timeline works with tools teams already use. They are not switch or versus pages. Linear has native ingest; Jira and Notion are available through hosted MCP lookup; HubSpot, Attio and Pipedrive native ingest is coming soon.',
+          body: "Head-to-head pages compare The Timeline with Day AI, Folk, Glean and Geekbot. Every competitor fact cites that company's own site. Works-with pages for Linear, Jira, Notion, HubSpot, Attio and Pipedrive live under /integrations.",
         },
       ],
     },
   },
-  ...COMPARE_TOOLS.map((tool, index): PublicDocument => ({
-    canonicalPath: tool.route,
+  ...COMPARE_PAGES.map((page, index): PublicDocument => ({
+    canonicalPath: page.route,
     kind: 'product',
-    title: tool.title,
-    description: tool.summary,
+    title: page.seoTitle,
+    description: page.seoDescription,
     indexability: 'index',
     dates: { modified: REVIEW_DATE, reviewed: REVIEW_DATE },
-    capability: compareCapability(tool),
+    capability: { kind: 'current-product' },
     sitemap: { changeFrequency: 'monthly', priority: 0.7 },
     structuredData: [
       { type: 'web-page' },
@@ -66,30 +68,34 @@ export const COMPARE_PUBLIC_DOCUMENTS = definePublicDocuments('compare', [
         items: [
           { name: 'Home', path: '/' },
           { name: 'Compare', path: COMPARE_HUB_ROUTE },
-          { name: tool.navLabel, path: tool.route },
+          { name: page.navLabel, path: page.route },
         ],
       },
     ],
     llms: {
       section: 'compare',
       order: index + 1,
-      label: tool.navLabel,
-      summary: tool.summary,
+      label: page.navLabel,
+      summary: page.seoDescription,
       sections: [
-        { title: 'Keep the existing tool', body: tool.keepLine },
-        { title: 'What works today', body: tool.today },
-        { title: 'What is planned', body: tool.later },
+        {
+          title: `What ${page.name} publishes`,
+          body: page.facts.map((fact) => fact.claim).join(' '),
+          links: uniqueCitations(page.facts.map((fact) => fact.source)),
+        },
+        { title: 'What The Timeline is', body: page.timelineSide },
+        { title: `When ${page.name} is the better pick`, body: page.whenCompetitorBetter },
       ],
     },
   })),
 ]);
 
-export function findComparePublicDocument(tool: CompareTool): PublicDocument {
+export function findComparePublicDocument(page: ComparePageContent): PublicDocument {
   const document = COMPARE_PUBLIC_DOCUMENTS.documents.find(
-    (candidate) => candidate.canonicalPath === tool.route,
+    (candidate) => candidate.canonicalPath === page.route,
   );
   if (!document) {
-    throw new Error(`The public document registry is missing ${tool.route}`);
+    throw new Error(`The public document registry is missing ${page.route}`);
   }
   return document;
 }

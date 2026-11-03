@@ -1,7 +1,7 @@
 import { expect } from '@timeline/test-support';
 import { describe, it } from 'bun:test';
 
-import { COMPARE_HUB, COMPARE_TOOLS } from '@/components/marketing/compare/content';
+import { COMPARE_HUB, COMPARE_PAGES } from '@/components/marketing/compare/content';
 import {
   COMPARE_PUBLIC_DOCUMENTS,
   findCompareHubDocument,
@@ -14,10 +14,10 @@ import { buildPublicSitemap } from '@/lib/public-site/sitemap';
 const SITE_URL = 'https://thetimeline.cc';
 
 describe('compare public documents', () => {
-  it('registers the hub and four works-with pages for sitemap and LLM discovery', () => {
+  it('registers the hub and four head-to-head pages for sitemap and LLM discovery', () => {
     expect(COMPARE_PUBLIC_DOCUMENTS.documents.map((document) => document.canonicalPath)).toEqual([
       COMPARE_HUB.route,
-      ...COMPARE_TOOLS.map((tool) => tool.route),
+      ...COMPARE_PAGES.map((page) => page.route),
     ]);
     expect(PUBLIC_DOCUMENT_REGISTRY.get(COMPARE_HUB.route)).toBe(findCompareHubDocument());
 
@@ -25,9 +25,9 @@ describe('compare public documents', () => {
       (entry) => entry.url,
     );
     expect(sitemapUrls).toContain(`${SITE_URL}${COMPARE_HUB.route}`);
-    for (const tool of COMPARE_TOOLS) {
-      expect(PUBLIC_DOCUMENT_REGISTRY.get(tool.route)).toBe(findComparePublicDocument(tool));
-      expect(sitemapUrls).toContain(`${SITE_URL}${tool.route}`);
+    for (const page of COMPARE_PAGES) {
+      expect(PUBLIC_DOCUMENT_REGISTRY.get(page.route)).toBe(findComparePublicDocument(page));
+      expect(sitemapUrls).toContain(`${SITE_URL}${page.route}`);
     }
   });
 
@@ -35,9 +35,12 @@ describe('compare public documents', () => {
     const compact = buildLlmsTxt({ registry: PUBLIC_DOCUMENT_REGISTRY, siteUrl: SITE_URL });
     const full = buildLlmsFullTxt({ registry: PUBLIC_DOCUMENT_REGISTRY, siteUrl: SITE_URL });
 
-    expect(compact).toContain('## Works with');
-    expect(compact).toContain(`[Works with](${SITE_URL}/compare)`);
-    expect(compact).toContain(`[Works with Linear](${SITE_URL}/compare/linear)`);
-    expect(full).toContain(`URL: ${SITE_URL}/compare/hubspot`);
+    expect(compact).toContain('## Compare');
+    expect(compact).toContain(`[Compare](${SITE_URL}/compare)`);
+    expect(compact).toContain(
+      `[The Timeline vs Day AI](${SITE_URL}/compare/the-timeline-vs-day-ai)`,
+    );
+    expect(full).toContain(`URL: ${SITE_URL}/compare/the-timeline-vs-glean`);
+    expect(full).toContain('https://www.glean.com');
   });
 });

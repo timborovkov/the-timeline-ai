@@ -27,7 +27,7 @@ const KEYWORDS = [
 
 const CONTRIBUTED_LLM_SECTIONS = [
   { section: 'use-cases', heading: 'Use cases' },
-  { section: 'compare', heading: 'Works with' },
+  { section: 'compare', heading: 'Compare' },
   { section: 'solutions', heading: 'Solutions' },
   { section: 'integrations', heading: 'Integrations' },
   { section: 'how-it-works', heading: 'How Timeline works' },

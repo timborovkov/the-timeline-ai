@@ -11,6 +11,8 @@ const { renderToStaticMarkup } = await import('react-dom/server');
 const { CONNECTOR_SLUGS, findConnector } =
   await import('@/components/marketing/integrations/connector-content');
 const { ConnectorPage } = await import('@/components/marketing/integrations/connector-page');
+const { WORKS_WITH_PAGE_TOOLS, findWorksWithTool } =
+  await import('@/components/marketing/integrations/works-with-content');
 const { resetPublicSessionCache, setPublicSessionCache } = await import('@/lib/public-session');
 
 const { default: IntegrationsPage, metadata } = await import('@/app/integrations/page');
@@ -59,7 +61,11 @@ describe('public integration routes', () => {
     expect(text).toContain('Start with Meeting transcripts');
     expect(html).toMatch(/aria-current="page"[^>]*href="\/integrations"/u);
     expect(html).toContain('href="/how-it-works"');
-    expect(html).not.toContain('href="/integrations/notion"');
+    expect(html).toContain('href="/integrations/notion"');
+    expect(html).toContain('href="/integrations/jira"');
+    expect(html).toContain('href="/integrations/hubspot"');
+    expect(html).toContain('href="/integrations/attio"');
+    expect(html).toContain('href="/integrations/pipedrive"');
     expect(html).not.toMatch(/href="(?:\/(?:app\/)?demo|\/workspace\/demo|https?:\/\/t\.me\/)/u);
     expect(text).not.toMatch(/captures? (?:all|every) (?:chat|conversation|message)/iu);
     expect(html).toContain('compact');
@@ -172,7 +178,7 @@ describe('public integration routes', () => {
   });
 
   it('generates static parameters and provider metadata from the manifest', async () => {
-    expect(connectorRoute.generateStaticParams()).toHaveLength(6);
+    expect(connectorRoute.generateStaticParams()).toHaveLength(11);
     expect(connectorRoute.dynamicParams).toBe(false);
 
     const github = await connectorRoute.generateMetadata({
@@ -184,5 +190,41 @@ describe('public integration routes', () => {
 
     expect(metadata.alternates).toEqual({ canonical: '/integrations' });
     expect(metadata.title).toBe('Integrations and capture surfaces');
+
+    const hubspot = await connectorRoute.generateMetadata({
+      params: Promise.resolve({ slug: 'hubspot' }),
+    });
+    expect(hubspot.title).toBe('HubSpot and The Timeline');
+    expect(hubspot.alternates).toEqual({ canonical: '/integrations/hubspot' });
+  });
+
+  it.each(WORKS_WITH_PAGE_TOOLS)('renders $route with honest status and guidance', async (tool) => {
+    const html = renderToStaticMarkup(
+      await connectorRoute.default({ params: Promise.resolve({ slug: tool.slug }) }),
+    );
+    const text = visibleText(html);
+
+    expect(html.match(/<h1\b/g)).toHaveLength(1);
+    expect(html).toContain(`data-works-with-route="${tool.route}"`);
+    expect(html).toContain(tool.title);
+    expect(text).toContain(tool.statusLabel);
+    expect(text).toContain('Just getting started? You may not need one yet');
+    expect(text).toContain(`When ${tool.name} alone is the better pick`);
+    expect(html).toContain('Start free');
+  });
+
+  it('extends the native Linear page with works-with guidance', async () => {
+    const linear = findWorksWithTool('linear');
+    if (!linear) throw new Error('Linear works-with content is required');
+
+    const html = renderToStaticMarkup(
+      await connectorRoute.default({ params: Promise.resolve({ slug: 'linear' }) }),
+    );
+    const text = visibleText(html);
+
+    expect(html.match(/<h1\b/g)).toHaveLength(1);
+    expect(text).toContain('Just getting started? You may not need one yet');
+    expect(text).toContain('When Linear alone is the better pick');
+    expect(text).toContain(linear.gettingStarted);
   });
 });
