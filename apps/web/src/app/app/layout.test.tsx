@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, it } from 'bun:test';
 import type { ReactNode } from 'react';
 const fakes = vi.hoisted(() => ({
   auth: vi.fn(),
+  getRequestIdentity: vi.fn(),
   cookies: vi.fn(),
   getCalendarSettings: vi.fn(),
   getNavAttentionSummary: vi.fn(),
@@ -55,10 +56,14 @@ await vi.mock(
   import.meta.resolve('@timeline/shared/team-scope'),
   () => ({
     withTeam: () => ({
+      requireMembership: () => Promise.resolve('owner'),
       calendar: { getCalendarSettings: fakes.getCalendarSettings },
       objects: {
         listNotifications: fakes.listNotifications,
         unreadNotificationCount: fakes.unreadNotificationCount,
+      },
+      billing: {
+        getDashboard: () => Promise.resolve({ sidebar: null }),
       },
     }),
   }),
@@ -91,7 +96,7 @@ await vi.mock(
 );
 await vi.mock(
   import.meta.resolve('@/lib/auth'),
-  () => ({ auth: fakes.auth }),
+  () => ({ auth: fakes.auth, getRequestIdentity: fakes.getRequestIdentity }),
   () => import('@/lib/auth'),
 );
 await vi.mock(
@@ -131,7 +136,9 @@ beforeEach(() => {
     [{ email: 'tim@example.com', emailVerified: new Date('2026-01-01T00:00:00.000Z') }],
     [],
   );
-  fakes.auth.mockResolvedValue({ user: { id: 'user-1', name: 'Tim', email: 'tim@example.com' } });
+  const session = { user: { id: 'user-1', name: 'Tim', email: 'tim@example.com' } };
+  fakes.auth.mockResolvedValue(session);
+  fakes.getRequestIdentity.mockResolvedValue({ session, impersonation: null });
   fakes.cookies.mockResolvedValue({ get: () => undefined });
   fakes.getCalendarSettings.mockResolvedValue({ defaultTimezone: DEFAULT_TIMEZONE });
   fakes.getNavAttentionSummary.mockResolvedValue({});

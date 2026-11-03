@@ -6,7 +6,7 @@ import {
   users,
   type Db,
 } from '@timeline/db';
-import { expect } from '@timeline/test-support';
+import { expect, vi } from '@timeline/test-support';
 import { afterEach, beforeEach, describe, it } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
@@ -318,6 +318,24 @@ describe('impersonation lifecycle', () => {
       }).getItem(),
     ).rejects.toThrow('restricted');
     await expect(tagOperatorJob({ teamId: TEAM })).rejects.toThrow();
+  });
+  it('lets spies on nested methods intercept closed-over callers after wrapping', async () => {
+    const inner = { write: async () => await Promise.resolve('inner') };
+    const outer = {
+      inner,
+      callInner: async () => inner.write(),
+    };
+    const scope = guardOperatorScope(db, TEAM, MEMBER, outer);
+    const write = scope.inner.write;
+    const spy = vi.spyOn(scope.inner, 'write').mockImplementation(async () => {
+      await write();
+      return 'spy';
+    });
+    try {
+      expect(await scope.callInner()).toBe('spy');
+    } finally {
+      spy.mockRestore();
+    }
   });
   it('retains document attribution when recovery reconstructs a job after operator exit', async () => {
     const { token } = await startImpersonation(db, actor, input);
