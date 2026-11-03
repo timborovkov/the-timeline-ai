@@ -210,14 +210,14 @@ describe('platform administrator boundary', () => {
   });
   it('installs one wrapper on the underlying method so later replacements intercept it', async () => {
     const objects = {
-      setTaskProject: async (id: string) => `orig:${id}`,
+      setTaskProject: (id: string) => Promise.resolve(`orig:${id}`),
     };
     const scope = guardOperatorScope(db, TEAM, MEMBER, { objects });
     expect(scope.objects).toBe(scope.objects);
     expect(scope.objects.setTaskProject).toBe(objects.setTaskProject);
     let intercepted = false;
     const current = objects.setTaskProject;
-    objects.setTaskProject = async (id: string) => {
+    objects.setTaskProject = (id: string) => {
       intercepted = true;
       return current(id);
     };

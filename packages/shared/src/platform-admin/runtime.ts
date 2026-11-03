@@ -74,7 +74,7 @@ const READ_OPERATION =
 // Read helpers without a conventional read prefix must be reviewed by full scope path.
 const ADDITIONAL_READ_OPERATIONS = new Set(['timeline.team', 'objects.unreadNotificationCount']);
 const WRAPPED_OPERATOR_METHOD = Symbol('timeline.guardOperatorWrapped');
-const wrappedOperatorScopes = new WeakSet<object>();
+const wrappedOperatorScopes = new WeakSet();
 
 export function guardOperatorScope<T extends object>(
   db: Db,
@@ -89,8 +89,8 @@ export function guardOperatorScope<T extends object>(
   // the original nested namespace.
   if (wrappedOperatorScopes.has(scope)) return scope;
   wrappedOperatorScopes.add(scope);
-  for (const key of Object.keys(scope as object)) {
-    const value: unknown = Reflect.get(scope as object, key);
+  for (const key of Object.keys(scope)) {
+    const value: unknown = Reflect.get(scope, key);
     const operation = prefix ? `${prefix}.${key}` : key;
     if (value && typeof value === 'object' && !Array.isArray(value)) {
       guardOperatorScope(db, teamId, userId, value, operation, system);
@@ -100,7 +100,7 @@ export function guardOperatorScope<T extends object>(
     if (Reflect.get(value, WRAPPED_OPERATOR_METHOD) === true) continue;
     const original = value;
     Reflect.set(
-      scope as object,
+      scope,
       key,
       Object.assign(
         async (...args: unknown[]) => {
