@@ -12,6 +12,7 @@ import type {
 import type { IntegrationsPageModel } from '@/app/app/team/integrations/integrations-page-model';
 
 import {
+  connectionsIntegrationIdFallback,
   connectionsTabFromSearch,
   connectionsTabHref,
   directoryHashOwnerId,
@@ -140,23 +141,28 @@ export function ConnectionsWorkspace({
   const providersRef = useRef(providers);
   const connectedRowsRef = useRef(model.connectedRows);
   const integrationIdRef = useRef(integrationId);
+  const dismissedIntegrationIdRef = useRef(false);
   const userTabRef = useRef<ConnectionsTab | null>(null);
 
   useEffect(() => {
     providersRef.current = providers;
     connectedRowsRef.current = model.connectedRows;
-    integrationIdRef.current = integrationId;
+    if (!dismissedIntegrationIdRef.current) integrationIdRef.current = integrationId;
   }, [integrationId, model.connectedRows, providers]);
 
   useEffect(() => {
-    const read = () =>
+    const read = (source: 'initial' | 'hash' | 'popstate') =>
       readConnectionsLocation(
         providersRef.current,
         connectedRowsRef.current,
-        integrationIdRef.current,
+        connectionsIntegrationIdFallback({
+          source,
+          dismissed: dismissedIntegrationIdRef.current,
+          integrationId: integrationIdRef.current,
+        }),
       );
-    const applyLocation = (mode: 'all' | 'hash') => {
-      const parsed = read();
+    const applyLocation = (source: 'initial' | 'hash' | 'popstate') => {
+      const parsed = read(source);
       const pathTab = connectionsTabFromPathname(window.location.pathname);
       setHash(parsed.hash);
       if (parsed.hash && parsed.tab !== pathTab) {
@@ -170,17 +176,18 @@ export function ConnectionsWorkspace({
         setTab(parsed.tab);
         return;
       }
-      if (mode !== 'all' && userTabRef.current) {
+      if (source === 'hash' && userTabRef.current) {
         setTab(userTabRef.current);
         return;
       }
       userTabRef.current = parsed.tab;
       setTab(parsed.tab);
     };
-    applyLocation('all');
+    applyLocation('initial');
     const onPopState = () => {
       userTabRef.current = null;
-      applyLocation('all');
+      dismissedIntegrationIdRef.current = false;
+      applyLocation('popstate');
     };
     window.addEventListener('popstate', onPopState);
     const stop = subscribeToClientUrlChanges(() => {
@@ -227,6 +234,8 @@ export function ConnectionsWorkspace({
   }
 
   function closeSheet() {
+    dismissedIntegrationIdRef.current = true;
+    integrationIdRef.current = undefined;
     setHash(null);
     writeConnectionsUrl(tab, null);
   }

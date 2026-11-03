@@ -414,6 +414,16 @@ export function initialOpenProviderId(input: {
   return row?.provider ?? null;
 }
 
+/** Query-param sheet fallback is for the first navigation (and later popstate), not hash edits. */
+export function connectionsIntegrationIdFallback(input: {
+  source: 'initial' | 'hash' | 'popstate';
+  dismissed: boolean;
+  integrationId?: string;
+}): string | undefined {
+  if (input.dismissed || input.source === 'hash' || !input.integrationId) return undefined;
+  return input.integrationId;
+}
+
 export function parseConnectionsLocation(input: {
   tab?: string | null;
   hash?: string | null;

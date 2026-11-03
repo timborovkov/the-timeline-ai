@@ -787,6 +787,82 @@ describe('SourcesPageView', () => {
     expect(document.getElementById('github-team-sources')).toBeTruthy();
   });
 
+  it('does not reopen a ?integrationId= sheet after Escape from an in-sheet section', async () => {
+    const user = userEvent.setup();
+    window.history.replaceState(
+      null,
+      '',
+      '/app/connections/sources?integrationId=integration-needs-help',
+    );
+    const pageModel = model();
+    const firstConnectedRow = pageModel.connectedRows[0];
+    if (!firstConnectedRow) throw new Error('Expected connected row fixture');
+    pageModel.connectedRows[0] = {
+      ...firstConnectedRow,
+      attention: [
+        {
+          id: 'attention-2',
+          category: 'needs_new_owner',
+          summary: 'Choose a replacement connection before sync can continue.',
+          lastSeenAt: '2026-06-29T10:00:00.000Z',
+        },
+      ],
+    };
+
+    renderPage(
+      <SourcesPageView
+        params={{ integrationId: 'integration-needs-help' }}
+        active={{ teamName: 'Acme' }}
+        isAdmin
+        summary={summary()}
+        model={pageModel}
+      />,
+    );
+
+    const dialog = await screen.findByRole('dialog', { name: 'GitHub' });
+    await user.click(within(dialog).getByRole('link', { name: 'Choose replacement' }));
+    expect(window.location.hash).toBe('#github-team-sources');
+    expect(
+      within(await screen.findByRole('dialog', { name: 'GitHub' })).getByRole('heading', {
+        name: 'Team sync',
+      }),
+    ).toBeTruthy();
+
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(window.location.hash === '' || window.location.hash === '#').toBe(true);
+
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 80));
+    });
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('does not reopen a ?integrationId= sheet after the close button dismisses it', async () => {
+    const user = userEvent.setup();
+    window.history.replaceState(
+      null,
+      '',
+      '/app/connections/sources?integrationId=integration-needs-help',
+    );
+    renderPage(
+      <SourcesPageView
+        params={{ integrationId: 'integration-needs-help' }}
+        active={{ teamName: 'Acme' }}
+        isAdmin
+        summary={summary()}
+        model={model()}
+      />,
+    );
+    const dialog = await screen.findByRole('dialog', { name: 'GitHub' });
+    await user.click(within(dialog).getByRole('button', { name: 'Close' }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 80));
+    });
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
   it('places health-paused integrations in Needs attention with a Resume control in the sheet', async () => {
     const user = userEvent.setup();
     renderPage(

@@ -6,6 +6,7 @@ import type { IntegrationsPageModel } from '@/app/app/team/integrations/integrat
 import {
   agentMcpAccessMatchesQuery,
   buildDirectoryProviders,
+  connectionsIntegrationIdFallback,
   connectionsTabHref,
   directoryHashOwnerId,
   directoryProviderList,
@@ -412,6 +413,90 @@ describe('connection directory helpers', () => {
     expect(connectionsTabHref('agent', 'timeline-mcp')).toBe(
       '/app/connections/agent-tools#timeline-mcp',
     );
+  });
+
+  it('opens ?integrationId= only on initial navigation, not after the sheet is dismissed', () => {
+    const connectedRows = [
+      {
+        id: 'int-linear',
+        provider: 'linear',
+        displayName: 'Linear',
+        enabled: true,
+        lastSyncedAt: null,
+        lastError: null,
+        syncPause: null,
+        healthPause: null,
+        attention: [],
+        visibilityDefault: 'team' as const,
+        visibilityDefaultUserIds: null,
+      },
+    ];
+    const directory = buildDirectoryProviders({
+      model: model({ connectedRows }),
+      slackConnections: 0,
+      telegramConnections: 0,
+    });
+    const providers = directoryProviderList(directory);
+    expect(
+      parseConnectionsLocation({
+        hash: '',
+        providers,
+        connectedRows,
+        integrationId: connectionsIntegrationIdFallback({
+          source: 'initial',
+          dismissed: false,
+          integrationId: 'int-linear',
+        }),
+      }),
+    ).toEqual({ tab: 'sources', hash: 'linear' });
+    expect(
+      parseConnectionsLocation({
+        hash: 'linear-team-sources',
+        providers,
+        connectedRows,
+        integrationId: connectionsIntegrationIdFallback({
+          source: 'hash',
+          dismissed: false,
+          integrationId: 'int-linear',
+        }),
+      }),
+    ).toEqual({ tab: 'sources', hash: 'linear-team-sources' });
+    expect(
+      parseConnectionsLocation({
+        hash: '',
+        providers,
+        connectedRows,
+        integrationId: connectionsIntegrationIdFallback({
+          source: 'hash',
+          dismissed: false,
+          integrationId: 'int-linear',
+        }),
+      }),
+    ).toEqual({ tab: 'sources', hash: null });
+    expect(
+      parseConnectionsLocation({
+        hash: '',
+        providers,
+        connectedRows,
+        integrationId: connectionsIntegrationIdFallback({
+          source: 'initial',
+          dismissed: true,
+          integrationId: 'int-linear',
+        }),
+      }),
+    ).toEqual({ tab: 'sources', hash: null });
+    expect(
+      parseConnectionsLocation({
+        hash: '',
+        providers,
+        connectedRows,
+        integrationId: connectionsIntegrationIdFallback({
+          source: 'popstate',
+          dismissed: false,
+          integrationId: 'int-linear',
+        }),
+      }),
+    ).toEqual({ tab: 'sources', hash: 'linear' });
   });
 
   it('keeps the Agent MCP row when search matches a connectable catalog tool or connected server', () => {
