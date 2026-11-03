@@ -218,6 +218,7 @@ export interface SyncContext {
     commentsHash: string | null;
     permissionsHash: string | null;
     mimeType: string | null;
+    commentsSnapshot?: unknown;
   } | null>;
   saveDriveSnapshot?(input: {
     contentHash: string;
@@ -225,6 +226,7 @@ export interface SyncContext {
     commentsHash: string | null;
     permissionsHash: string | null;
     mimeType: string | null;
+    commentsSnapshot?: unknown;
     fileId: string;
   }): Promise<void>;
   listTeamEmailDomains?(): Promise<string[]>;

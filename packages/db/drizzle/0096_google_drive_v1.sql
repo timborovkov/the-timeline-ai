@@ -15,6 +15,7 @@ CREATE TABLE "google_drive_file_snapshots" (
   "snapshot_text" text NOT NULL DEFAULT '',
   "comments_hash" text,
   "permissions_hash" text,
+  "comments_snapshot" jsonb DEFAULT '[]'::jsonb NOT NULL,
   "mime_type" text,
   "created_at" timestamp with time zone DEFAULT now() NOT NULL
 );--> statement-breakpoint

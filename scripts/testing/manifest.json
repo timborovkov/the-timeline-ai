@@ -1736,6 +1736,9 @@
   "packages/shared/src/integrations/google-drive-capture.test.ts": {
     "group": "unit"
   },
+  "packages/shared/src/integrations/google-drive-comments.test.ts": {
+    "group": "unit"
+  },
   "packages/shared/src/integrations/google-drive-diff.test.ts": {
     "group": "unit"
   },

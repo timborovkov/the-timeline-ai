@@ -11,6 +11,12 @@ import {
   takeDriveExtractSlot,
   takeDriveProcessSlot,
 } from '#src/integrations/google-drive-capture.js';
+import {
+  commentEventContext,
+  compactDriveComments,
+  parseDriveCommentSnapshots,
+  type DriveComment,
+} from '#src/integrations/google-drive-comments.js';
 import { diffDriveSnapshots, truncateDriveSnapshot } from '#src/integrations/google-drive-diff.js';
 import {
   DRIVE_FILE_KIND,
@@ -41,7 +47,6 @@ import type {
   SyncResult,
   WebhookHandleResult,
 } from '#src/integrations/types.js';
-
 
 const fetch = providerFetch('google_drive');
 
@@ -104,14 +109,6 @@ interface DriveChangesPage {
 interface DriveCursor {
   page_token?: string;
   firstQueuedAt?: string;
-}
-
-interface DriveComment {
-  id?: string;
-  content?: string;
-  resolved?: boolean;
-  modifiedTime?: string;
-  author?: { displayName?: string; emailAddress?: string };
 }
 
 interface DrivePermission {
@@ -726,17 +723,6 @@ function commentSignals(comments: DriveComment[], commentsChanged: boolean): str
   return signals;
 }
 
-function commentEventContext(comments: DriveComment[]): string {
-  const lines: string[] = [];
-  for (const comment of comments.slice(0, 8)) {
-    const author = comment.author?.displayName ?? comment.author?.emailAddress ?? 'Someone';
-    const state = comment.resolved ? 'resolved' : 'open';
-    const text = (comment.content ?? '').replace(/\s+/g, ' ').trim().slice(0, 240);
-    lines.push(text ? `${author} (${state}): ${text}` : `${author} (${state})`);
-  }
-  return lines.join('\n');
-}
-
 async function persistDriveSnapshot(
   ctx: SyncContext,
   fileId: string,
@@ -746,6 +732,7 @@ async function persistDriveSnapshot(
     commentsHash: string;
     permissionsHash: string;
     mimeType: string;
+    commentsSnapshot: ReturnType<typeof compactDriveComments>;
   },
 ): Promise<void> {
   if (!ctx.saveDriveSnapshot) return;
@@ -973,6 +960,7 @@ async function processDriveFile(
     commentsHash,
     permissionsHash,
     mimeType: file.mimeType,
+    commentsSnapshot: compactDriveComments(comments),
   };
 
   if (previous?.contentHash === contentHash && !commentsChanged && !permissionsChanged) {
@@ -1046,7 +1034,9 @@ async function processDriveFile(
       )
     : null;
   const hunkPreview = diff.hunks.slice(0, 12).join('\n');
-  const commentPreview = commentsChanged ? commentEventContext(comments) : '';
+  const commentPreview = commentsChanged
+    ? commentEventContext(comments, parseDriveCommentSnapshots(previous.commentsSnapshot))
+    : '';
   const contentText = [judge.summary, hunkPreview, commentPreview]
     .filter(Boolean)
     .join('\n\n')

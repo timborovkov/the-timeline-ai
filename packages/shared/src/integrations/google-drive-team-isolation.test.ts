@@ -114,4 +114,14 @@ describe('Drive withTeam isolation guard', () => {
   it('keeps production Drive DB access on the withTeam integrations boundary', () => {
     expect(scanProductionDriveAccess()).toEqual([]);
   });
+
+  it('forwards commentsSnapshot through the worker saveDriveSnapshot adapter', () => {
+    const source = readFileSync(
+      join(REPO_ROOT, 'apps/worker/src/workers/integrationSync.ts'),
+      'utf8',
+    );
+    const adapter = /saveDriveSnapshot\(input\) \{[\s\S]*?\n      \},/.exec(source)?.[0];
+    expect(adapter).toBeDefined();
+    expect(adapter).toContain('commentsSnapshot');
+  });
 });

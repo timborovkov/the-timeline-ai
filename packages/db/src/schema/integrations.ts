@@ -359,6 +359,18 @@ export const googleDriveFileSnapshots = pgTable(
     snapshotText: text('snapshot_text').notNull().default(''),
     commentsHash: text('comments_hash').notNull().default(''),
     permissionsHash: text('permissions_hash').notNull().default(''),
+    commentsSnapshot: jsonb('comments_snapshot')
+      .$type<
+        {
+          id: string;
+          content: string;
+          resolved: boolean;
+          modifiedTime: string;
+          author: string;
+        }[]
+      >()
+      .notNull()
+      .default([]),
     mimeType: text('mime_type'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   },

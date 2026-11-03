@@ -144,10 +144,9 @@ GOOGLE_DRIVE_WEBHOOK_SECRET=...</code></pre>
         <li>
           File capture fetches text transiently, hashes the full extracted text, then stores a
           truncated snapshot. Change detection diffs the full truncated 20k windows like-for-like
-          and always keeps added and removed hunks together. It never reports identical or
-          formatting when content hashes differ unless that full window is verifiably
-          whitespace-equivalent; if the stored window cannot prove the hash change, it falls back to
-          a conservative changed hunk rather than dropping the last 1k of a capped snapshot.
+          and always keeps added and removed hunks together. Prefix equivalence never proves the
+          suffix is unchanged: if the full-text hash moved and the stored window cannot prove the
+          change lies entirely inside that window, it falls back to a conservative changed hunk.
           Full-text hashes still see edits past 20k chars. Formatting-only and tiny edits (Markdown
           markers, not signed amounts such as <code>-50000 USD</code>) skip the LLM. Remaining hunks
           bill a small CRM-relevance judge through <code>llm.chatStructured</code> / the existing AI
@@ -164,8 +163,10 @@ GOOGLE_DRIVE_WEBHOOK_SECRET=...</code></pre>
           and a later edit back to B would be dropped as unchanged. Comment and ACL fingerprints
           page <code>comments.list</code> / <code>permissions.list</code> (with
           <code>supportsAllDrives</code>) up to the same 10×100 bound as folder listing —
-          shared-drive <code>files.get</code> never returns <code>permissions</code>. The judged
-          event is written before the snapshot advances. Delayed <code>drive.file</code> and
+          shared-drive <code>files.get</code> never returns <code>permissions</code>. Bounded
+          comment event context ranks added, edited, or resolved comments ahead of unchanged ones so
+          a change past the first eight still reaches the judged event. The judged event is written
+          before the snapshot advances. Delayed <code>drive.file</code> and
           <code>drive.changes</code> jobs are kept across integration and provider-budget pauses,
           persist to the continuation handoff table when the per-integration lock is busy, and
           attach to quota or token-refresh failures so capture resumes after the pause. A skipped
@@ -182,19 +183,21 @@ GOOGLE_DRIVE_WEBHOOK_SECRET=...</code></pre>
           durably saved, so a later failure can reuse the paid result. Event
           <code>dedup_key</code> values include the Drive revision so <code>A→B→A→B</code> emits a
           new event for the second return to B, while a retry of the same revision stays idempotent.
-          Missing, out-of-scope, and disconnected files delete leftover transient extract objects;
-          the janitor enumerates team ids then lists orphans through
+          Missing, out-of-scope, and disconnected files delete leftover transient extract objects; a
+          failed S3 delete keeps a <code>cleanupPending</code> extract cursor until both objects are
+          gone. The janitor enumerates team ids then lists orphans through
           <code>withTeam(...).integrations</code>, filtering populated extract cursors in SQL before
-          the page limit so leftover <code>{}</code> rows cannot stall the sweep, and disconnect
-          paginates that S3 cleanup. Extract JSON whose resume never ran is dropped after 24 hours.
-          Extract failures audit <code>drive_extract_failed</code>, clear that state, and retry
-          within the extract budget instead of skipping as empty, except an oversized result (shared
-          2&nbsp;MiB write/read cap) which terminates without a retry loop. Saving Drive picker
-          shares invalidates every cached folder and search query for that account. Paid extract is
-          gated by its own daily budget (4 per file / 40 per connection) before sandbox or billed
-          vision spend; the post-diff judge stays at 8 processed files per doc and 200 per
-          connection. Baseline captures consume extract budget, not the judge cap. Full Drive copies
-          are not stored in the document drive. Apply
+          the page limit so leftover <code>{}</code> rows cannot stall the sweep, treating
+          <code>cleanupPending</code> cursors as immediately eligible, and disconnect paginates that
+          S3 cleanup. Extract JSON whose resume never ran is dropped after 24 hours. Extract
+          failures audit <code>drive_extract_failed</code>, clear that state, and retry within the
+          extract budget instead of skipping as empty, except an oversized result (shared 2&nbsp;MiB
+          write/read cap) which terminates without a retry loop. Saving Drive picker shares
+          invalidates every cached folder and search query for that account. Paid extract is gated
+          by its own daily budget (4 per file / 40 per connection) before sandbox or billed vision
+          spend; the post-diff judge stays at 8 processed files per doc and 200 per connection.
+          Baseline captures consume extract budget, not the judge cap. Full Drive copies are not
+          stored in the document drive. Apply
           <code>0097_google_drive_snapshot_uniqueness.sql</code> with the usual migration path.
         </li>
         <li>
