@@ -6,7 +6,7 @@ import {
   users,
   type Db,
 } from '@timeline/db';
-import { expect } from '@timeline/test-support';
+import { expect, vi } from '@timeline/test-support';
 import { afterEach, beforeEach, describe, it } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
@@ -208,6 +208,27 @@ describe('platform administrator boundary', () => {
     await setPlatformSuspension(db, actor, 'team', TEAM, false, 'incident resolved');
     await assertActivePrincipal(db, TEAM);
   });
+  it('installs one wrapper on the underlying method so later replacements intercept it', async () => {
+    const objects = {
+      setTaskProject: async (id: string) => `orig:${id}`,
+    };
+    const scope = guardOperatorScope(db, TEAM, MEMBER, { objects });
+    expect(scope.objects).toBe(scope.objects);
+    expect(scope.objects.setTaskProject).toBe(objects.setTaskProject);
+    let intercepted = false;
+    const current = objects.setTaskProject;
+    objects.setTaskProject = async (id: string) => {
+      intercepted = true;
+      return current(id);
+    };
+    expect(await scope.objects.setTaskProject('task-1')).toBe('orig:task-1');
+    expect(intercepted).toBe(true);
+    const spy = vi.spyOn(scope.objects, 'setTaskProject');
+    await scope.objects.setTaskProject('task-2');
+    expect(spy).toHaveBeenCalledWith('task-2');
+    spy.mockRestore();
+  });
+
   it('rechecks suspension on each operation even when reusing a team scope', async () => {
     const { withTeam } = await import('#src/team-scope.js');
     const scope = withTeam(db, TEAM, MEMBER);
