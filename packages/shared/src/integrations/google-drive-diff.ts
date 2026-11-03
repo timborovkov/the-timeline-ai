@@ -8,7 +8,11 @@
  * moved and the stored window cannot prove the change lies entirely inside
  * that window, return changed (conservative). Added and removed hunks are
  * always collected together. The tiny/substantive threshold uses intra-line
- * edited spans, not hunk context kept for the judge.
+ * edited spans, not hunk context kept for the judge. Tiny is only for edits
+ * that are provably non-semantic: whitespace, punctuation-only, case-only, or
+ * a single-letter typo (edit distance 1) inside one word longer than 3 chars.
+ * Whole-word insertion or removal, digits, currency, and negation are
+ * substantive even when the span is short.
  */
 
 const WHITESPACE = /\s+/g;
@@ -224,17 +228,85 @@ function differingSpan(
   return { start, endLeft, endRight };
 }
 
+function spanNeighborhood(
+  left: string,
+  right: string,
+  span: ReturnType<typeof differingSpan>,
+): string {
+  const leftSpan = left.slice(span.start, span.endLeft);
+  const rightSpan = right.slice(span.start, span.endRight);
+  return (
+    left.slice(Math.max(0, span.start - 1), Math.min(left.length, span.endLeft + 1)) +
+    right.slice(Math.max(0, span.start - 1), Math.min(right.length, span.endRight + 1)) +
+    leftSpan +
+    rightSpan
+  );
+}
+
 function spanTouchesDigit(
   left: string,
   right: string,
   span: ReturnType<typeof differingSpan>,
 ): boolean {
-  const leftSpan = left.slice(span.start, span.endLeft);
-  const rightSpan = right.slice(span.start, span.endRight);
-  const neighborhood =
-    left.slice(Math.max(0, span.start - 1), Math.min(left.length, span.endLeft + 1)) +
-    right.slice(Math.max(0, span.start - 1), Math.min(right.length, span.endRight + 1));
-  return /\d/.test(leftSpan + rightSpan + neighborhood);
+  return /\d/.test(spanNeighborhood(left, right, span));
+}
+
+function spanTouchesCurrency(
+  left: string,
+  right: string,
+  span: ReturnType<typeof differingSpan>,
+): boolean {
+  return /[$€£¥₹]/.test(spanNeighborhood(left, right, span));
+}
+
+function isWordChar(ch: string | undefined): boolean {
+  return Boolean(ch && /[0-9A-Za-z']/.test(ch));
+}
+
+function isPunctuationOrSpace(text: string): boolean {
+  return /^[\s\p{P}\p{S}]*$/u.test(text);
+}
+
+const NEGATION_WORDS = new Set([
+  'not',
+  'no',
+  'never',
+  'none',
+  'nor',
+  "n't",
+  'cannot',
+  "can't",
+  "don't",
+  "doesn't",
+  "won't",
+  "isn't",
+  "aren't",
+  "wasn't",
+  "weren't",
+  'without',
+]);
+
+function wordsIn(text: string): string[] {
+  return text.toLowerCase().match(/[a-z]+(?:n't|'[a-z]+)?/g) ?? [];
+}
+
+function spanHasWordChar(text: string, start: number, end: number): boolean {
+  for (let index = start; index < end; index++) {
+    if (isWordChar(text[index])) return true;
+  }
+  return false;
+}
+
+function containingWord(text: string, start: number, end: number): string | null {
+  const insertionInsideWord =
+    start === end && isWordChar(text[start - 1]) && isWordChar(text[start]);
+  if (!spanHasWordChar(text, start, end) && !insertionInsideWord) return null;
+  let wordStart = start;
+  let wordEnd = end;
+  while (wordStart > 0 && isWordChar(text[wordStart - 1])) wordStart -= 1;
+  while (wordEnd < text.length && isWordChar(text[wordEnd])) wordEnd += 1;
+  const word = text.slice(wordStart, wordEnd);
+  return word.length > 0 ? word : null;
 }
 
 function levenshtein(left: string, right: string): number {
@@ -261,10 +333,30 @@ function spanIsCosmetic(
   span: ReturnType<typeof differingSpan>,
 ): boolean {
   if (spanTouchesDigit(left, right, span)) return false;
-  const from = left.slice(span.start, span.endLeft).trim();
-  const to = right.slice(span.start, span.endRight).trim();
-  if (!from || !to) return (from || to).replace(/\s+/g, '').length <= 3;
-  return levenshtein(from, to) <= 2;
+  if (spanTouchesCurrency(left, right, span)) return false;
+  const from = left.slice(span.start, span.endLeft);
+  const to = right.slice(span.start, span.endRight);
+  if (from === to) return true;
+  if (from.replace(/\s+/g, '') === '' && to.replace(/\s+/g, '') === '') return true;
+  if (isPunctuationOrSpace(from) && isPunctuationOrSpace(to)) return true;
+  if (from.toLowerCase() === to.toLowerCase()) return true;
+
+  const fromWords = wordsIn(from);
+  const toWords = wordsIn(to);
+  if (
+    fromWords.some((word) => NEGATION_WORDS.has(word)) ||
+    toWords.some((word) => NEGATION_WORDS.has(word))
+  ) {
+    return false;
+  }
+
+  const leftWord = containingWord(left, span.start, span.endLeft);
+  const rightWord = containingWord(right, span.start, span.endRight);
+  if (!leftWord || !rightWord) return false;
+  if (wordsIn(leftWord).length !== 1 || wordsIn(rightWord).length !== 1) return false;
+  if (leftWord.length <= 3 || rightWord.length <= 3) return false;
+  if (/\d/.test(leftWord) || /\d/.test(rightWord)) return false;
+  return levenshtein(leftWord.toLowerCase(), rightWord.toLowerCase()) === 1;
 }
 
 function measureEditedSpans(previous: string, next: string): { chars: number; cosmetic: boolean } {

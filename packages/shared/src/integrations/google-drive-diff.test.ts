@@ -87,6 +87,79 @@ describe('diffDriveText', () => {
     expect(diff.hunks.join(' ')).toContain('$48k');
   });
 
+  it.each([
+    {
+      name: 'punctuation-only period',
+      previous: 'Status is open',
+      next: 'Status is open.',
+      reason: 'tiny' as const,
+    },
+    {
+      name: 'long-line punctuation',
+      previous: LONG_SOW_SENTENCE,
+      next: `${LONG_SOW_SENTENCE}.`,
+      reason: 'tiny' as const,
+    },
+    {
+      name: 'single-letter typo inside a long word',
+      previous: LONG_SOW_SENTENCE,
+      next: LONG_SOW_SENTENCE.replace('implementation', 'implementaton'),
+      reason: 'tiny' as const,
+    },
+    {
+      name: 'whitespace-only',
+      previous: 'Hello world',
+      next: 'Hello  world',
+      reason: 'formatting' as const,
+    },
+    {
+      name: 'case-only',
+      previous: 'Hello world',
+      next: 'hello world',
+      reason: 'formatting' as const,
+    },
+    {
+      name: 'whole-word not insertion',
+      previous: 'Customer approval is required before signing.',
+      next: 'Customer approval is not required before signing.',
+      reason: 'substantive' as const,
+    },
+    {
+      name: 'whole-word no insertion',
+      previous: 'The clause is binding after signature.',
+      next: 'The clause is no binding after signature.',
+      reason: 'substantive' as const,
+    },
+    {
+      name: 'whole-word never insertion',
+      previous: 'The customer may cancel after day 30.',
+      next: 'The customer may never cancel after day 30.',
+      reason: 'substantive' as const,
+    },
+    {
+      name: 'digit change',
+      previous: 'Term is 12 months for Northstar.',
+      next: 'Term is 24 months for Northstar.',
+      reason: 'substantive' as const,
+    },
+    {
+      name: 'currency change',
+      previous: `${LONG_SOW_SENTENCE} at a $12k fee.`,
+      next: `${LONG_SOW_SENTENCE} at a $48k fee.`,
+      reason: 'substantive' as const,
+    },
+    {
+      name: 'short word is not a typo',
+      previous: 'Pay the fee now.',
+      next: 'Pay teh fee now.',
+      reason: 'substantive' as const,
+    },
+  ])('classifies $name as $reason', ({ previous, next, reason }) => {
+    const diff = diffDriveText(previous, next);
+    expect(diff.reason).toBe(reason);
+    expect(diff.changed).toBe(reason === 'substantive');
+  });
+
   it('returns changed hunks for substantive edits', () => {
     const diff = diffDriveText(
       'Acme Labs is evaluating a $12k pilot.',
