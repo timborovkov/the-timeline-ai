@@ -35,11 +35,11 @@ describe('PublicNavigationDisclosure', () => {
     await user.click(screen.getByText('Menu'));
     expect(disclosure?.open).toBe(true);
 
-    const helpLink = screen.getByRole('link', { name: 'Help' });
-    helpLink.addEventListener('click', (event) => {
+    const pricingLink = screen.getByRole('link', { name: 'Pricing' });
+    pricingLink.addEventListener('click', (event) => {
       event.preventDefault();
     });
-    await user.click(helpLink);
+    await user.click(pricingLink);
 
     expect(disclosure?.open).toBe(false);
   });
@@ -59,28 +59,60 @@ describe('PublicNavigationDisclosure', () => {
   });
 });
 
-describe('Trust navigation', () => {
-  it('places Trust after How it works and marks the active page', () => {
-    render(<PublicNavigationItems currentSection="trust" />);
-    const links = screen.getAllByRole('link');
-    expect(links.map((link) => link.textContent)).toEqual([
-      'Product',
-      'Integrations',
-      'Pricing',
-      'How it works',
-      'Trust',
-      'Help',
-    ]);
-    expect(screen.getByRole('link', { name: 'Trust' }).getAttribute('href')).toBe('/trust');
-    expect(screen.getByRole('link', { name: 'Trust' }).getAttribute('aria-current')).toBe('page');
-    expect(screen.getByRole('link', { name: 'Help' }).hasAttribute('aria-current')).toBe(false);
+describe('Header navigation', () => {
+  it('keeps Product, Agents, and Pricing as top-level links', () => {
+    const { container } = render(<PublicNavigationItems currentSection="agents" />);
+    expect(screen.getByRole('link', { name: 'Product' }).getAttribute('href')).toBe('/');
+    expect(screen.getByRole('link', { name: 'Agents' }).getAttribute('href')).toBe('/agents');
+    expect(screen.getByRole('link', { name: 'Agents' }).getAttribute('aria-current')).toBe('page');
+    expect(screen.getByRole('link', { name: 'Pricing' }).getAttribute('href')).toBe('/pricing');
+    expect(container.querySelectorAll(':scope > ul > li > details > summary').length).toBe(2);
+    expect(
+      [...container.querySelectorAll(':scope > ul > li > details > summary')].map(
+        (node) => node.textContent,
+      ),
+    ).toEqual(['Use cases', 'Compare']);
   });
 
-  it('closes the mobile disclosure when Trust is activated by keyboard', async () => {
+  it('opens Use cases and Compare dropdowns, including on the mobile menu', async () => {
     const user = userEvent.setup();
-    const { container } = render(<PublicNavigationDisclosure currentSection="trust" />);
+    const { container } = render(<PublicNavigationDisclosure currentSection="product" />);
     await user.click(screen.getByText('Menu'));
-    const link = screen.getByRole('link', { name: 'Trust' });
+
+    const useCases = container.querySelector<HTMLDetailsElement>('nav details');
+    expect(useCases?.open).toBe(false);
+    await user.click(screen.getByText('Use cases'));
+    expect(useCases?.open).toBe(true);
+    expect(screen.getByRole('link', { name: 'All use cases' }).getAttribute('href')).toBe(
+      '/use-cases',
+    );
+    expect(screen.getByRole('link', { name: 'Work record' }).getAttribute('href')).toBe(
+      '/use-cases/work-record',
+    );
+
+    await user.click(screen.getByText('Compare'));
+    expect(screen.getByRole('link', { name: 'Compare hub' }).getAttribute('href')).toBe('/compare');
+    expect(screen.getByRole('link', { name: 'Works with HubSpot' }).getAttribute('href')).toBe(
+      '/compare/hubspot',
+    );
+    expect(screen.getByRole('link', { name: 'Works with Linear' }).getAttribute('href')).toBe(
+      '/compare/linear',
+    );
+
+    const menu = container.querySelector('details');
+    const pricing = screen.getByRole('link', { name: 'Pricing' });
+    pricing.addEventListener('click', (event) => {
+      event.preventDefault();
+    });
+    await user.click(pricing);
+    expect(menu?.open).toBe(false);
+  });
+
+  it('closes the mobile disclosure when Pricing is activated by keyboard', async () => {
+    const user = userEvent.setup();
+    const { container } = render(<PublicNavigationDisclosure currentSection="pricing" />);
+    await user.click(screen.getByText('Menu'));
+    const link = screen.getByRole('link', { name: 'Pricing' });
     link.addEventListener('click', (event) => {
       event.preventDefault();
     });

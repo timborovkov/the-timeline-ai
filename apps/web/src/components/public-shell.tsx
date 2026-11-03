@@ -5,6 +5,7 @@ import type { ReactNode } from 'react';
 import { CookieSettingsButton } from '@/components/public-analytics';
 import { PublicHeader } from '@/components/public-header';
 import {
+  PublicFooterCompareLinks,
   PublicFooterUseCaseLinks,
   PublicNavigationItems,
   type PublicNavigationSection,
@@ -53,6 +54,7 @@ export function PublicShell({
                 activeItemClassName="text-fg"
               />
               <PublicFooterUseCaseLinks itemClassName="rounded-sm outline-none hover:text-fg focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2" />
+              <PublicFooterCompareLinks itemClassName="rounded-sm outline-none hover:text-fg focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2" />
             </nav>
             <nav aria-label="Support and legal" className="flex flex-wrap gap-x-4 gap-y-3">
               <Link

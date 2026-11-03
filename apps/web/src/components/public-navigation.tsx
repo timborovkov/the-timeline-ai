@@ -5,20 +5,40 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useRef } from 'react';
 
-import { USE_CASE_NAV_ITEMS } from '@/components/marketing/copy';
+import { COMPARE_NAV_ITEMS, USE_CASE_NAV_ITEMS } from '@/components/marketing/copy';
 import styles from '@/components/public-navigation.module.css';
 import { PublicSessionBranch } from '@/components/public-session-branch';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { cn } from '@/lib/utils';
 
-const PUBLIC_NAVIGATION_ITEMS = [
+const HEADER_NAVIGATION_ITEMS = [
   { section: 'product', href: '/', label: 'Product' },
   {
     section: 'use-cases',
     href: '/use-cases',
     label: 'Use cases',
     analyticsCta: 'view_use_cases',
+    overviewLabel: 'All use cases',
     children: USE_CASE_NAV_ITEMS,
+  },
+  {
+    section: 'compare',
+    href: '/compare',
+    label: 'Compare',
+    analyticsCta: 'view_compare',
+    overviewLabel: 'Compare hub',
+    children: COMPARE_NAV_ITEMS,
+  },
+  { section: 'agents', href: '/agents', label: 'Agents', analyticsCta: 'view_agents' },
+  { section: 'pricing', href: '/pricing', label: 'Pricing', analyticsCta: 'view_pricing' },
+] as const;
+
+const FOOTER_EXTRA_NAVIGATION_ITEMS = [
+  {
+    section: 'how-it-works',
+    href: '/how-it-works',
+    label: 'How it works',
+    analyticsCta: 'view_how_it_works',
   },
   {
     section: 'integrations',
@@ -26,18 +46,16 @@ const PUBLIC_NAVIGATION_ITEMS = [
     label: 'Integrations',
     analyticsCta: 'view_integrations',
   },
-  { section: 'pricing', href: '/pricing', label: 'Pricing', analyticsCta: 'view_pricing' },
-  {
-    section: 'how-it-works',
-    href: '/how-it-works',
-    label: 'How it works',
-    analyticsCta: 'view_how_it_works',
-  },
-  { section: 'trust', href: '/trust', label: 'Trust' },
   { section: 'help', href: '/help', label: 'Help' },
 ] as const;
 
-export type PublicNavigationSection = (typeof PUBLIC_NAVIGATION_ITEMS)[number]['section'];
+export type PublicNavigationSection =
+  | (typeof HEADER_NAVIGATION_ITEMS)[number]['section']
+  | (typeof FOOTER_EXTRA_NAVIGATION_ITEMS)[number]['section']
+  | 'trust';
+
+type NavigationItem =
+  (typeof HEADER_NAVIGATION_ITEMS)[number] | (typeof FOOTER_EXTRA_NAVIGATION_ITEMS)[number];
 
 interface PublicNavigationItemsProps {
   currentSection?: PublicNavigationSection;
@@ -46,6 +64,13 @@ interface PublicNavigationItemsProps {
   activeItemClassName?: string;
   onNavigate?: () => void;
   variant?: 'menu' | 'simple' | 'footer';
+}
+
+function itemsForVariant(
+  variant: PublicNavigationItemsProps['variant'],
+): readonly NavigationItem[] {
+  if (variant === 'menu') return HEADER_NAVIGATION_ITEMS;
+  return [...HEADER_NAVIGATION_ITEMS, ...FOOTER_EXTRA_NAVIGATION_ITEMS];
 }
 
 export function PublicNavigationItems({
@@ -58,15 +83,16 @@ export function PublicNavigationItems({
 }: PublicNavigationItemsProps) {
   return (
     <ul className={listClassName}>
-      {PUBLIC_NAVIGATION_ITEMS.map((item) => {
+      {itemsForVariant(variant).map((item) => {
         const active = currentSection === item.section;
         const analyticsCta = 'analyticsCta' in item ? item.analyticsCta : undefined;
         if ('children' in item && variant === 'menu') {
           return (
-            <UseCasesMenu
+            <NavDropdown
               key={item.section}
               href={item.href}
               label={item.label}
+              overviewLabel={item.overviewLabel}
               childrenItems={item.children}
               active={active}
               itemClassName={itemClassName}
@@ -106,24 +132,28 @@ export function PublicNavigationItems({
   );
 }
 
-function UseCasesMenu({
+function NavDropdown({
   href,
   label,
+  overviewLabel,
   childrenItems,
   active,
   itemClassName,
   activeItemClassName,
   analyticsCta,
   onNavigate,
+  nested = false,
 }: {
   href: string;
   label: string;
+  overviewLabel: string;
   childrenItems: readonly { href: string; label: string }[];
   active: boolean;
   itemClassName?: string;
   activeItemClassName?: string;
   analyticsCta?: string;
   onNavigate?: () => void;
+  nested?: boolean;
 }) {
   const pathname = usePathname();
   const detailsRef = useRef<HTMLDetailsElement>(null);
@@ -132,8 +162,30 @@ function UseCasesMenu({
     if (detailsRef.current) detailsRef.current.open = false;
   }, [pathname]);
 
+  useEffect(() => {
+    const node = detailsRef.current;
+    if (!node) return;
+
+    const closeIfOutside = (event: PointerEvent) => {
+      if (!node.open) return;
+      if (event.target instanceof Node && node.contains(event.target)) return;
+      node.open = false;
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || !node.open) return;
+      node.open = false;
+    };
+
+    document.addEventListener('pointerdown', closeIfOutside);
+    document.addEventListener('keydown', closeOnEscape);
+    return () => {
+      document.removeEventListener('pointerdown', closeIfOutside);
+      document.removeEventListener('keydown', closeOnEscape);
+    };
+  }, []);
+
   return (
-    <li className={styles.dropdown}>
+    <li className={nested ? styles.mobileDropdown : styles.dropdown}>
       <details ref={detailsRef} className="group">
         <summary
           className={cn(styles.dropdownSummary, itemClassName, active && activeItemClassName)}
@@ -151,7 +203,7 @@ function UseCasesMenu({
                 data-public-analytics-cta={analyticsCta}
                 onClick={onNavigate}
               >
-                All use cases
+                {overviewLabel}
               </Link>
             </li>
             {childrenItems.map((child) => (
@@ -182,6 +234,26 @@ export function PublicFooterUseCaseLinks({
   return (
     <ul className={cn(styles.footerUseCases, className)}>
       {USE_CASE_NAV_ITEMS.map((item) => (
+        <li key={item.href}>
+          <Link href={item.href} className={itemClassName}>
+            {item.label}
+          </Link>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+export function PublicFooterCompareLinks({
+  className,
+  itemClassName,
+}: {
+  className?: string;
+  itemClassName?: string;
+}) {
+  return (
+    <ul className={cn(styles.footerUseCases, className)}>
+      {COMPARE_NAV_ITEMS.map((item) => (
         <li key={item.href}>
           <Link href={item.href} className={itemClassName}>
             {item.label}
@@ -254,12 +326,30 @@ function MobileNavigationItems({
   currentSection?: PublicNavigationSection;
   onNavigate: () => void;
 }) {
+  const linkClass =
+    'flex min-h-11 items-center rounded-sm px-3 text-sm font-medium text-fg-muted outline-none hover:bg-surface-2 hover:text-fg focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-bg';
+
   return (
     <ul className="grid gap-1">
-      {PUBLIC_NAVIGATION_ITEMS.map((item) => {
+      {HEADER_NAVIGATION_ITEMS.map((item) => {
         const active = currentSection === item.section;
-        const linkClass =
-          'flex min-h-11 items-center rounded-sm px-3 text-sm font-medium text-fg-muted outline-none hover:bg-surface-2 hover:text-fg focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-bg';
+        if ('children' in item) {
+          return (
+            <NavDropdown
+              key={item.section}
+              href={item.href}
+              label={item.label}
+              overviewLabel={item.overviewLabel}
+              childrenItems={item.children}
+              active={active}
+              itemClassName={cn(linkClass, active && 'bg-surface-2 text-fg')}
+              analyticsCta={'analyticsCta' in item ? item.analyticsCta : undefined}
+              onNavigate={onNavigate}
+              nested
+            />
+          );
+        }
+
         return (
           <li key={item.section}>
             <Link
@@ -271,17 +361,6 @@ function MobileNavigationItems({
             >
               {item.label}
             </Link>
-            {'children' in item ? (
-              <ul className={styles.nestedList}>
-                {item.children.map((child) => (
-                  <li key={child.href}>
-                    <Link href={child.href} className={linkClass} onClick={onNavigate}>
-                      {child.label}
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            ) : null}
           </li>
         );
       })}

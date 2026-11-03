@@ -23,6 +23,8 @@ const PUBLIC_ANALYTICS_CTA_VALUES = [
   'view_how_it_works',
   'view_pricing',
   'view_use_cases',
+  'view_compare',
+  'view_agents',
 ] as const;
 
 export type PublicAnalyticsCta = (typeof PUBLIC_ANALYTICS_CTA_VALUES)[number];

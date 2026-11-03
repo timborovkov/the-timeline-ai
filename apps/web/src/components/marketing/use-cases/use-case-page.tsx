@@ -1,6 +1,7 @@
-import { ArrowRight, ChevronRight } from 'lucide-react';
+import { ArrowRight } from 'lucide-react';
 import Link from 'next/link';
 
+import { EditorialBreadcrumb } from '@/components/marketing/editorial/editorial-breadcrumb';
 import { EditorialKicker } from '@/components/marketing/editorial/editorial-kicker';
 import { EditorialSectionHeading } from '@/components/marketing/editorial/editorial-section-heading';
 import { EditorialStructuredData } from '@/components/marketing/editorial/editorial-structured-data';
@@ -16,9 +17,6 @@ import { findUseCasePublicDocument } from '@/components/marketing/use-cases/publ
 import { buildPublicStructuredData } from '@/lib/public-site';
 import { getSiteUrl } from '@/lib/site-url';
 
-const focusLink =
-  'rounded-sm outline-none hover:text-fg focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2';
-
 export function UseCasePage({ useCase }: { useCase: UseCaseContent }) {
   const related = useCase.relatedRoutes.map(findUseCaseByRoute);
   const afterSubhead = useCase.screenshots.filter((shot) => shot.placement === 'after-subhead');
@@ -33,29 +31,13 @@ export function UseCasePage({ useCase }: { useCase: UseCaseContent }) {
       />
       <article>
         <header className="mx-auto max-w-6xl px-4 py-14 sm:px-6 sm:py-20">
-          <nav aria-label="Breadcrumb" className="mb-9">
-            <ol className="flex flex-wrap items-center gap-2 text-sm text-fg-muted">
-              <li>
-                <Link href="/" className={focusLink}>
-                  The Timeline
-                </Link>
-              </li>
-              <li aria-hidden="true">
-                <ChevronRight className="size-3.5" />
-              </li>
-              <li>
-                <Link href={USE_CASE_HUB.route} className={focusLink}>
-                  Use cases
-                </Link>
-              </li>
-              <li aria-hidden="true">
-                <ChevronRight className="size-3.5" />
-              </li>
-              <li aria-current="page" className="text-fg">
-                {useCase.navLabel}
-              </li>
-            </ol>
-          </nav>
+          <EditorialBreadcrumb
+            items={[
+              { href: '/', label: 'The Timeline' },
+              { href: USE_CASE_HUB.route, label: 'Use cases' },
+              { label: useCase.navLabel },
+            ]}
+          />
 
           <EditorialKicker>{useCase.eyebrow}</EditorialKicker>
           <h1 className={`${styles.guideTitle} mt-6`}>{useCase.title}</h1>

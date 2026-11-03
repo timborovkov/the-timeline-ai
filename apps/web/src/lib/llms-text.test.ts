@@ -37,6 +37,10 @@ describe('llms text files', () => {
     expect(text).toContain('[Trust and security](https://thetimeline.cc/trust)');
     expect(text).toContain('[Cookies and similar technologies](https://thetimeline.cc/cookies)');
     expect(text).toContain('[llms-full.txt](https://thetimeline.cc/llms-full.txt)');
+    expect(text).toContain('Set up The Timeline - https://thetimeline.cc/llms.txt');
+    expect(text).toContain('https://thetimeline.cc/api/mcp/server');
+    expect(text).toContain('plugins/timeline');
+    expect(text).toContain('POST https://thetimeline.cc/api/webhooks/ingest');
     expect(text).toContain('Signed-in app routes, auth routes, invite routes, and API routes');
     for (const page of HELP_PAGES) {
       expect(text).toContain(`[${page.title}](https://thetimeline.cc/help/${page.slug})`);

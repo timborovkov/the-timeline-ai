@@ -2,8 +2,11 @@ import { PRIVACY_VERSION, TERMS_VERSION } from '@timeline/shared/legal-versions'
 
 import type { PublicDocument, PublicLlmsContentSection } from '@/lib/public-site/types';
 
+import { AGENTS_PUBLIC_DOCUMENTS } from '@/components/marketing/agents/public-documents';
+import { COMPARE_PUBLIC_DOCUMENTS } from '@/components/marketing/compare/public-documents';
 import { EDITORIAL_PUBLIC_DOCUMENTS } from '@/components/marketing/editorial/public-documents';
 import { CONNECTOR_PUBLIC_DOCUMENTS } from '@/components/marketing/integrations/connector-public-documents';
+import { PRICING_FAQS } from '@/components/marketing/pricing-faq-content';
 import { SOLUTION_PUBLIC_DOCUMENTS } from '@/components/marketing/solutions/public-documents';
 import {
   PRODUCT_TOUR_DOCUMENT,
@@ -229,6 +232,7 @@ const coreDocuments = definePublicDocuments('public-core', [
           { name: 'Pricing', path: '/pricing' },
         ],
       },
+      { type: 'faq', entries: PRICING_FAQS },
     ],
     llms: {
       section: 'primary',
@@ -246,6 +250,11 @@ const coreDocuments = definePublicDocuments('public-core', [
         {
           title: 'Meters',
           body: 'AI usage in euros, meeting minutes, email units, storage GB-month, accepted sources. Display native units and euro values.',
+        },
+        {
+          title: 'Questions',
+          body: 'Current product boundaries for CRM, existing tools, data use, and the Free plan.',
+          items: PRICING_FAQS.map((faq) => `${faq.question} ${faq.answer}`),
         },
       ],
     },
@@ -414,5 +423,7 @@ export const PUBLIC_DOCUMENT_REGISTRY = createPublicDocumentRegistry(
   EDITORIAL_PUBLIC_DOCUMENTS,
   SOLUTION_PUBLIC_DOCUMENTS,
   USE_CASE_PUBLIC_DOCUMENTS,
+  COMPARE_PUBLIC_DOCUMENTS,
+  AGENTS_PUBLIC_DOCUMENTS,
   productTourDocuments,
 );

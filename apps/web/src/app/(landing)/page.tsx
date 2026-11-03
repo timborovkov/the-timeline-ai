@@ -10,8 +10,10 @@ import { LandingSkipLink } from '@/app/(landing)/_landing-skip-link';
 import styles from '@/app/(landing)/home.module.css';
 import { Logo } from '@/components/brand/logo';
 import { GitHubSourceLink } from '@/components/github-source-link';
+import { AgentSetupCard } from '@/components/marketing/agents/agent-setup-card';
 import {
   CTA_MICROCOPY_LEAD,
+  FICTIONAL_EXAMPLE_LABEL,
   SEE_IT_FIRST_HREF,
   SEE_IT_FIRST_LABEL,
   START_FREE_LABEL,
@@ -24,7 +26,11 @@ import { PUBLIC_DEMO_STORY } from '@/components/marketing/public-demo-story';
 import { USE_CASES } from '@/components/marketing/use-cases/content';
 import { CookieSettingsButton } from '@/components/public-analytics';
 import { PublicHeader } from '@/components/public-header';
-import { PublicFooterUseCaseLinks, PublicNavigationItems } from '@/components/public-navigation';
+import {
+  PublicFooterCompareLinks,
+  PublicFooterUseCaseLinks,
+  PublicNavigationItems,
+} from '@/components/public-navigation';
 import { PublicSessionBranch } from '@/components/public-session-branch';
 import {
   PUBLIC_DOCUMENT_REGISTRY,
@@ -144,6 +150,7 @@ export default function LandingPage() {
         <ClaimScene />
         <ChronologyScene nativeConnectors={nativeConnectors} />
         <AnswerScene />
+        <ThreadScene />
         <TrustScene />
         <CtaScene />
       </main>
@@ -253,6 +260,9 @@ function ClaimScene() {
         />
         <div className={styles.heroSourceLink}>
           <GitHubSourceLink />
+        </div>
+        <div className={styles.heroAgentSetup}>
+          <AgentSetupCard />
         </div>
       </div>
 
@@ -494,16 +504,129 @@ function AnswerScene() {
   );
 }
 
+function ThreadScene() {
+  return (
+    <section
+      id="chat-to-answer"
+      className={styles.scene}
+      aria-labelledby="thread-title"
+      data-scene="04-thread"
+    >
+      <SceneHeading
+        number="04"
+        label="Chat to cited answer"
+        id="thread-title"
+        title={
+          <>
+            Ask in Slack. An agent can ask <em>the same record.</em>
+          </>
+        }
+        copy="Someone asks @Timeline in Slack. The bot answers with numbered citations back to the call and the email. Claude can retrieve the same Northstar evidence over MCP."
+      />
+      <div className={styles.threadLayout} data-home-diagram data-chat-to-answer>
+        <article className={styles.slackThread} aria-label="Slack example">
+          <header className={styles.slackBar}>
+            <span>#northstar-pilot</span>
+            <span>Slack</span>
+          </header>
+          <div className={styles.slackMessage}>
+            <span className={styles.slackAvatar} aria-hidden="true">
+              M
+            </span>
+            <div>
+              <p className={styles.slackMeta}>
+                <strong>Casey Novak</strong>
+                <time dateTime="2026-07-08T16:12:00.000Z">16:12</time>
+              </p>
+              <p>
+                <span className={styles.slackMention}>@Timeline</span> what did we promise Northstar
+                on Tuesday's call?
+              </p>
+            </div>
+          </div>
+          <div className={styles.slackMessage}>
+            <span className={styles.slackBotAvatar} aria-hidden="true">
+              T
+            </span>
+            <div>
+              <p className={styles.slackMeta}>
+                <strong>Timeline</strong>
+                <span>APP</span>
+                <time dateTime="2026-07-08T16:12:08.000Z">16:12</time>
+              </p>
+              <p>
+                Northstar Works committed to send the final sample export by July 8
+                <ThreadCitation n={1} label="Email from Elena Park" />. On the Northstar pilot
+                handoff review, Avery handed export validation to Mika and the team decided to use
+                the CSV fallback
+                <ThreadCitation n={2} label="Call transcript" />.
+              </p>
+              <ol className={styles.threadSources}>
+                <li id="thread-source-1">
+                  <span>[1]</span>
+                  <strong>Email from Elena Park</strong>
+                  <small>Northstar pilot export commitment</small>
+                </li>
+                <li id="thread-source-2">
+                  <span>[2]</span>
+                  <strong>Call transcript</strong>
+                  <small>Northstar pilot handoff review</small>
+                </li>
+              </ol>
+            </div>
+          </div>
+        </article>
+
+        <article className={styles.mcpThread} aria-label="Claude MCP example">
+          <header className={styles.mcpBar}>
+            <span>Claude</span>
+            <span>MCP</span>
+          </header>
+          <p className={styles.mcpPrompt}>What did we promise Northstar?</p>
+          <ol className={styles.mcpCalls}>
+            <li>
+              <code>timeline.retrieve_workspace_context</code>
+              <span>target: Northstar</span>
+            </li>
+            <li>
+              <code>timeline.get_event</code>
+              <span>Northstar pilot handoff review</span>
+            </li>
+          </ol>
+          <p className={styles.mcpAnswer}>
+            Northstar Works committed to send the final sample export by July 8
+            <ThreadCitation n={1} label="Email from Elena Park" />. Avery handed export validation
+            to Mika, and the team decided to use the CSV fallback
+            <ThreadCitation n={2} label="Call transcript" />.
+          </p>
+        </article>
+        <p className={styles.threadDisclosure}>{FICTIONAL_EXAMPLE_LABEL}</p>
+      </div>
+    </section>
+  );
+}
+
+function ThreadCitation({ n, label }: { n: number; label: string }) {
+  return (
+    <a href={`#thread-source-${n}`} className={styles.superCitation}>
+      <sup aria-hidden="true">[{n}]</sup>
+      <span className="sr-only">
+        Source {n}: {label}
+      </span>
+    </a>
+  );
+}
+
 function TrustScene() {
   return (
     <section
       id="trust"
       className={styles.scene}
       aria-labelledby="trust-title"
-      data-scene="04-trust"
+      data-scene="05-trust"
     >
       <SceneHeading
-        number="04"
+        number="05"
         label="For teams"
         id="trust-title"
         title={
@@ -570,10 +693,10 @@ function CtaScene() {
     <section
       className={cn(styles.scene, styles.ctaScene)}
       aria-labelledby="cta-title"
-      data-scene="05-cta"
+      data-scene="06-cta"
     >
       <div className={styles.ctaInner} data-home-reveal>
-        <SceneIndex number="05" label="Start free" />
+        <SceneIndex number="06" label="Start free" />
         <h2 id="cta-title">
           Link one channel. <em>Watch the record fill in.</em>
         </h2>
@@ -632,7 +755,7 @@ function CtaScene() {
 function SceneIndex({ number, label }: { number: string; label: string }) {
   return (
     <div className={styles.sceneIndex}>
-      <span>{number} / 05</span>
+      <span>{number} / 06</span>
       <span>{label}</span>
     </div>
   );
@@ -692,6 +815,7 @@ function Footer() {
             activeItemClassName={styles.footerLinkActive}
           />
           <PublicFooterUseCaseLinks />
+          <PublicFooterCompareLinks />
         </nav>
         <nav aria-label="Support and legal">
           <GitHubSourceLink compact className={styles.footerGithub} />

@@ -3,6 +3,7 @@ import Link from 'next/link';
 import type { Metadata } from 'next';
 
 import { SEE_IT_FIRST_HREF, SEE_IT_FIRST_LABEL } from '@/components/marketing/copy';
+import { EditorialStructuredData } from '@/components/marketing/editorial/editorial-structured-data';
 import { MarketingContainer, MarketingSectionGrid } from '@/components/marketing/marketing-layout';
 import {
   PricingComparisonTable,
@@ -10,19 +11,29 @@ import {
   PricingMetersExplainer,
   PricingPlanGrid,
 } from '@/components/marketing/pricing-blocks';
+import { PricingFaq } from '@/components/marketing/pricing-faq';
 import { MarketingSectionIndex } from '@/components/marketing/section-index';
-import { publicMetadata } from '@/lib/public-metadata';
+import {
+  PUBLIC_DOCUMENT_REGISTRY,
+  buildPublicStructuredData,
+  metadataForPublicDocument,
+} from '@/lib/public-site';
+import { getSiteUrl } from '@/lib/site-url';
 
-export const metadata: Metadata = publicMetadata({
-  title: 'Pricing',
-  description:
-    'Start free for up to 3 members, no card. Then choose Pay as you go (€0 fee), Team (€49/mo, 25 members) or Business (€199/mo, 100 members). Prices in EUR, excluding VAT.',
-  path: '/pricing',
-});
+const PRICING_DOCUMENT = getPricingDocument();
+
+export const metadata: Metadata = metadataForPublicDocument(PRICING_DOCUMENT);
+
+function getPricingDocument() {
+  const document = PUBLIC_DOCUMENT_REGISTRY.get('/pricing');
+  if (!document) throw new Error('The public document registry is missing the pricing page');
+  return document;
+}
 
 export default function PricingPage() {
   return (
     <main id="main" tabIndex={-1}>
+      <EditorialStructuredData data={buildPublicStructuredData(PRICING_DOCUMENT, getSiteUrl())} />
       <section className="border-b border-border">
         <MarketingContainer className="py-16 sm:py-24 lg:py-28">
           <p className="text-sm font-medium text-fg-muted">Pricing</p>
@@ -123,6 +134,20 @@ export default function PricingPage() {
                   or balance is exhausted.
                 </li>
               </ul>
+            </div>
+          </MarketingSectionGrid>
+        </MarketingContainer>
+      </section>
+
+      <section className="border-t border-border bg-surface/45">
+        <MarketingContainer className="py-16 sm:py-20">
+          <MarketingSectionGrid>
+            <MarketingSectionIndex index="05" label="FAQ" />
+            <div>
+              <h2 className="max-w-[16ch] text-3xl font-semibold tracking-tight sm:text-4xl">
+                Common questions.
+              </h2>
+              <PricingFaq />
             </div>
           </MarketingSectionGrid>
         </MarketingContainer>

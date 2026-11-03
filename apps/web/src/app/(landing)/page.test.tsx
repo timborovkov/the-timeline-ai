@@ -40,7 +40,7 @@ describe('LandingPage', () => {
     );
   });
 
-  it('server-renders the five-scene evidence narrative in order', () => {
+  it('server-renders the six-scene evidence narrative in order', () => {
     const html = renderToStaticMarkup(<LandingPage />);
 
     expect(html.match(/<footer\b/g)).toHaveLength(1);
@@ -55,7 +55,7 @@ describe('LandingPage', () => {
       'The Timeline updates itself from your team&#x27;s Slack or Telegram, email, calls and docs.',
     );
 
-    const scenes = ['01-claim', '02-chronology', '03-answer', '04-trust', '05-cta'];
+    const scenes = ['01-claim', '02-chronology', '03-answer', '04-thread', '05-trust', '06-cta'];
     let previousIndex = -1;
     for (const scene of scenes) {
       const sceneIndex = html.indexOf(`data-scene="${scene}"`);
@@ -92,6 +92,15 @@ describe('LandingPage', () => {
     expect(html).toContain('aria-label="Public navigation"');
     expect(html).toContain('href="/integrations"');
     expect(html).toContain('href="/how-it-works"');
+    expect(html).toContain('href="/compare"');
+    expect(html).toContain('href="/agents"');
+    expect(html).toContain('Give this to your agent');
+    expect(html).toContain('Set up The Timeline - https://thetimeline.cc/llms.txt');
+    expect(html).toContain('what did we promise Northstar');
+    expect(html).toContain('timeline.retrieve_workspace_context');
+    expect(html).toContain('timeline.get_event');
+    expect(html).toContain('data-chat-to-answer');
+    expect(html).toContain('data-agent-setup');
     expect(html).toContain('aria-label="Public navigation menu"');
     expect(html).toContain('SSO blocks launch. Friday’s customer update is still due.');
     expect(html).toContain('Evidence behind this answer');
@@ -108,7 +117,7 @@ describe('LandingPage', () => {
     expect(html).toContain('<a href="/use-cases/crm"><span>04</span><h4>CRM</h4>');
     expect(html).toContain('Every answer carries its evidence chain.');
     expect(html).not.toContain('Northline');
-    expect(html.match(/data-home-diagram/g)).toHaveLength(6);
+    expect(html.match(/data-home-diagram/g)).toHaveLength(7);
     expect(html).not.toContain('data-home-ambient');
     expect(html).not.toContain('↘');
     expect(html).not.toContain('02-sources');
