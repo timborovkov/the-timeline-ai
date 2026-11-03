@@ -8,6 +8,7 @@ import {
   billingUsageReservations,
   teamBillingAccounts,
   teamMembers,
+  teams,
   users,
 } from '@timeline/db';
 import { and, eq, gte, inArray, isNull, or, sql } from 'drizzle-orm';
@@ -474,6 +475,16 @@ export function createBillingScope(deps: BillingScopeDeps) {
   }
 
   return {
+    async isExistingTeam() {
+      await ensureMember();
+      const [row] = await db
+        .select({ id: teams.id })
+        .from(teams)
+        .where(eq(teams.id, teamId))
+        .limit(1);
+      return Boolean(row);
+    },
+
     async getAccount() {
       await ensureMember();
       return ensureAccount();

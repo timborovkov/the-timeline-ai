@@ -3,13 +3,13 @@ import {
   billingUnbilledAlerts,
   billingUsageLedger,
   teamBillingAccounts,
-  teams,
   type Db,
 } from '@timeline/db';
 import { and, eq, isNotNull, isNull, lte, ne } from 'drizzle-orm';
 
 import { notifySubscriptionPastDue } from '#src/billing/alerts.js';
 import { PLAN_CATALOG, type BillingPlanId } from '#src/billing/catalog.js';
+import { BILLING_SYSTEM_USER_ID } from '#src/billing/context.js';
 import { assertStoredPolarIdentity } from '#src/billing/customer-identity.js';
 import {
   assertPriceOverride,
@@ -21,6 +21,7 @@ import { recordBillingPlan } from '#src/billing/plan-history.js';
 import { PolarIdentityError } from '#src/billing/polar-identity-api.js';
 import { TIMELINE_TOPUP_PRODUCT_NAME } from '#src/billing/polar-setup.js';
 import { childLogger } from '#src/logger.js';
+import { withTeam } from '#src/team-scope.js';
 
 import type { BillingProvider } from '#src/billing/provider.js';
 
@@ -412,8 +413,9 @@ export function isIgnorablePolarWebhookFailure(err: unknown): boolean {
 }
 
 async function timelineTeamExists(db: Db, teamId: string): Promise<boolean> {
-  const [row] = await db.select({ id: teams.id }).from(teams).where(eq(teams.id, teamId)).limit(1);
-  return Boolean(row);
+  return withTeam(db, teamId, BILLING_SYSTEM_USER_ID, {
+    skipMembershipCheck: true,
+  }).billing.isExistingTeam();
 }
 
 async function lockBillingAccount(db: Db, teamId: string) {
