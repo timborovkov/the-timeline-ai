@@ -1314,7 +1314,7 @@ function TaskKanbanColumns({
   return (
     <section
       aria-label="Task status columns"
-      className="flex min-h-0 flex-1 overflow-x-auto overflow-y-hidden px-2 pb-2 sm:px-3"
+      className="flex min-h-0 min-w-0 flex-1 overflow-x-auto overflow-y-hidden px-2 pb-2 sm:px-3"
     >
       {allColumns.map((column) => (
         <TaskColumn

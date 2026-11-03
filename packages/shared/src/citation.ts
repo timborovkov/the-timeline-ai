@@ -301,18 +301,25 @@ export function citationSuperscript(n: number): string {
     .join('');
 }
 
-export function numberCitations(text: string): Map<string, number> {
+export function numberArtifactRefs(refs: Iterable<ArtifactRef>): Map<string, number> {
   const numbers = new Map<string, number>();
   let next = 1;
-  for (const part of parseCitations(text)) {
-    if (part.type === 'text') continue;
-    const key = artifactRefCitation(citationPartToArtifactRef(part));
+  for (const ref of refs) {
+    const key = artifactRefCitation(ref);
     if (!numbers.has(key)) {
       numbers.set(key, next);
       next += 1;
     }
   }
   return numbers;
+}
+
+export function numberCitations(text: string): Map<string, number> {
+  return numberArtifactRefs(
+    parseCitations(text).flatMap((part) =>
+      part.type === 'text' ? [] : [citationPartToArtifactRef(part)],
+    ),
+  );
 }
 
 export function parseCitations(text: string): CitationPart[] {

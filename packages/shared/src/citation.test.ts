@@ -10,6 +10,7 @@ import {
   citationQuote,
   citationSuperscript,
   meetingDetailHref,
+  numberArtifactRefs,
   numberCitations,
   parseCitations,
   resolveArtifactPreviewActions,
@@ -175,6 +176,17 @@ describe('answer citation numbering', () => {
     expect(numbers.get(`[ent:${ENT}]`)).toBe(2);
     expect(numbers.get(`[doc:${DOC}#v1:chunk:${CHUNK}]`)).toBe(3);
     expect([...numbers.values()]).toEqual([1, 2, 3]);
+  });
+
+  it('numbers artifact refs in first-appearance order outside parsed answer text', () => {
+    const numbers = numberArtifactRefs([
+      { kind: 'fact', id: FACT },
+      { kind: 'timeline_event', id: EV },
+      { kind: 'fact', id: FACT },
+    ]);
+    expect(numbers.get(`[fact:${FACT}]`)).toBe(1);
+    expect(numbers.get(`[ev:${EV}]`)).toBe(2);
+    expect([...numbers.values()]).toEqual([1, 2]);
   });
 
   it('renders compact superscripts past single digits', () => {

@@ -16,6 +16,7 @@ import { CitationMarker } from '@/components/chat/citation-marker';
 
 interface Props {
   text: string;
+  numbers?: Map<string, number>;
 }
 
 /**
@@ -30,9 +31,9 @@ interface Props {
  * Parsing lives in @timeline/shared so the regex is unit-tested without
  * a React/Next render.
  */
-export function CitationText({ text }: Props) {
+export function CitationText({ text, numbers: numbersProp }: Props) {
   const blocks = parseMarkdownBlocks(text);
-  const numbers = useMemo(() => numberCitations(text), [text]);
+  const numbers = useMemo(() => numbersProp ?? numberCitations(text), [numbersProp, text]);
 
   return (
     <div className="space-y-3 leading-relaxed">

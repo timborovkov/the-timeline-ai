@@ -150,7 +150,7 @@ disclosures count source events. Conversation inspectors use evidence items;
 pulses use a compact activity log — do not pair moment and raw-event totals in
 the same chrome. The inspector keeps original source (message, email HTML,
 transcript, webhook/JSON payload) in a collapsed disclosure; attached documents
-link to the document drive. Ask answers cite those raw source events as numbered superscripts; the
+link to the document drive. Ask answers and object summaries cite those raw source events as numbered superscripts; the
 inspector evidence item shows the matching chip so a cited source can be
 identified without putting IDs on the timeline list. Citation cards open the
 matching workspace destination (transcript, document, calendar event, object,

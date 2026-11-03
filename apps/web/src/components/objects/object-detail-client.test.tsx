@@ -848,7 +848,10 @@ describe('ObjectDetailClient', () => {
               {
                 label: 'Timing',
                 text: 'The latest confirmed meeting date is June 30.',
-                sourceRefs: [{ kind: 'fact', id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' }],
+                sourceRefs: [
+                  { kind: 'fact', id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' },
+                  { kind: 'timeline_event', id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' },
+                ],
               },
             ],
             openQuestions: [],
@@ -880,6 +883,10 @@ describe('ObjectDetailClient', () => {
     expect(html.indexOf('Summary')).toBeLessThan(html.indexOf('Evidence'));
     expect(html).toContain('DFK has a confirmed June 30 pilot discussion.');
     expect(html).toContain('Timing');
+    expect(html.match(/aria-label="Citation 1"/g)?.length).toBe(2);
+    expect(html).toContain('aria-label="Citation 2"');
+    expect(html).not.toContain('>fact<');
+    expect(html).not.toContain('>event<');
     expect(html).not.toContain('Generate summary');
     expect(html).not.toContain('Not enough object memory yet.');
   });

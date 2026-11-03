@@ -166,8 +166,13 @@ describe('CuratedKanbanBoard', () => {
     );
 
     const boardColumns = screen.getByRole('region', { name: 'Board columns' });
+    expect(boardColumns.className).toContain('min-w-0');
+    expect(boardColumns.className).toContain('overflow-x-auto');
     expect(within(boardColumns).getByRole('region', { name: 'Open, board column 1' })).toBeTruthy();
     expect(within(boardColumns).getByRole('region', { name: 'Open, board column 2' })).toBeTruthy();
+    expect(
+      within(boardColumns).getByRole('region', { name: 'Open, board column 1' }).className,
+    ).toContain('flex-[1_1_12rem]');
   });
 
   it('wraps long card titles', () => {

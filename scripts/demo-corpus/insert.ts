@@ -1021,6 +1021,8 @@ async function insertObjects(tx: SeedTx): Promise<void> {
   const dataRoomEventId = corpusEventId('Avery sent Northwind the data-room link');
   const northstarDelayFactId = CORPUS_UUID.fact(7);
   const dataRoomFactId = CORPUS_UUID.fact(12);
+  const invoicePaidEventId = corpusEventId('invoice inv_2041 for Northstar Works paid');
+  const invoiceFactId = CORPUS_UUID.fact(15);
   await tx
     .insert(objectSummaries)
     .values([
@@ -1123,6 +1125,45 @@ async function insertObjects(tx: SeedTx): Promise<void> {
           notes: 1,
           relationships: 0,
           tasks: 1,
+          changes: 0,
+        },
+        generatedAt: seedNow(),
+        model: DEMO_FIXTURE_VERSION,
+        promptVersion: DEMO_FIXTURE_VERSION,
+      },
+      {
+        id: CORPUS_UUID.note(12),
+        teamId: TEAM_ID,
+        entityId: dealflowEntityId('Northstar Works'),
+        status: 'ready',
+        summary: {
+          overview: `Northstar Works is the design partner. Invoice inv_2041 is paid after a past-due scare on ${teamDate(DEMO_DATES.invoicePastDue, 'dm')}.`,
+          overviewSourceRefs: [
+            { kind: 'fact', id: invoiceFactId },
+            { kind: 'timeline_event', id: invoicePaidEventId },
+          ],
+          currentState: [
+            {
+              label: 'Billing',
+              text: `Invoice inv_2041 was past due on ${teamDate(DEMO_DATES.invoicePastDue, 'dm')} and later paid.`,
+              sourceRefs: [{ kind: 'fact', id: invoiceFactId }],
+            },
+          ],
+          openQuestions: [],
+          conflicts: [],
+        },
+        plainText: `Northstar Works is the design partner. Invoice inv_2041 was past due on ${teamDate(DEMO_DATES.invoicePastDue, 'dm')} and later paid.`,
+        sourceRefs: [
+          { kind: 'fact', id: invoiceFactId },
+          { kind: 'timeline_event', id: invoicePaidEventId },
+        ],
+        sourceCounts: {
+          fields: 0,
+          facts: 1,
+          events: 1,
+          notes: 0,
+          relationships: 0,
+          tasks: 0,
           changes: 0,
         },
         generatedAt: seedNow(),

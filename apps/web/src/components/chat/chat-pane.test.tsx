@@ -453,6 +453,44 @@ describe('ChatPane', () => {
     expect(html).not.toContain('- Follow-up');
   });
 
+  it('numbers citations across every text part of one assistant message', () => {
+    const eventId = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
+    const objectId = '11111111-2222-4333-8444-555555555555';
+    fakes.useChat.mockReturnValue({
+      messages: [
+        {
+          id: 'a1',
+          role: 'assistant',
+          parts: [
+            { type: 'text', text: `First source [ev:${eventId}].` },
+            {
+              type: 'text',
+              text: `Then another [ent:${objectId}] and the first again [ev:${eventId}].`,
+            },
+          ],
+        },
+      ],
+      sendMessage: vi.fn(),
+      status: 'ready',
+      error: null,
+    });
+
+    const html = renderToStaticMarkup(
+      createElement(ChatPane, {
+        teamId: 'team-1',
+        teamName: 'Acme',
+        sessionId: null,
+        initialMessages: [],
+        pinnedEntityId: null,
+        pinnedEntityName: null,
+      }),
+    );
+
+    expect(html.match(/aria-label="Citation 1"/g)?.length).toBe(2);
+    expect(html).toContain('aria-label="Citation 2"');
+    expect(html).not.toContain('aria-label="Citation 3"');
+  });
+
   it('preserves numeric labels and paragraph newlines in assistant text parts', () => {
     fakes.useChat.mockReturnValue({
       messages: [

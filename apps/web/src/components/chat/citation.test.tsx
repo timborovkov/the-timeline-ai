@@ -69,6 +69,16 @@ describe('CitationText artifact references', () => {
     expect(first[0]?.textContent).toBe('1');
     expect(first[1]?.textContent).toBe('1');
   });
+
+  it('accepts a shared numbering map from a parent message', () => {
+    const numbers = new Map<string, number>([
+      [`[ent:${B}]`, 1],
+      [`[ev:${A}]`, 2],
+    ]);
+    render(<CitationText numbers={numbers} text={`Later part [ev:${A}].`} />);
+    expect(screen.getByRole('button', { name: 'Citation 2' }).textContent).toBe('2');
+    expect(screen.queryByRole('button', { name: 'Citation 1' })).toBeNull();
+  });
 });
 
 describe('CitationText preview card', () => {
@@ -123,6 +133,39 @@ describe('CitationText preview card', () => {
       expect(screen.queryByRole('dialog')).toBeNull();
     });
     expect(marker.getAttribute('aria-expanded')).toBe('false');
+  });
+
+  it('closes after a desktop click when the next dismissal is an outside click', async () => {
+    vi.stubGlobal(
+      'matchMedia',
+      (query: string) =>
+        ({
+          matches: query.includes('hover: hover'),
+          media: query,
+          onchange: null,
+          addEventListener: vi.fn(),
+          removeEventListener: vi.fn(),
+          dispatchEvent: vi.fn(),
+        }) as unknown as MediaQueryList,
+    );
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => Promise.resolve(Response.json(previewPayload(A)))),
+    );
+    const user = userEvent.setup();
+    render(
+      <div>
+        <CitationText text={`Shipped [ev:${A}].`} />
+        <button type="button">Outside</button>
+      </div>,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Citation 1' }));
+    expect(await screen.findByRole('dialog')).toBeTruthy();
+    await user.click(screen.getByRole('button', { name: 'Outside' }));
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).toBeNull();
+    });
   });
 });
 

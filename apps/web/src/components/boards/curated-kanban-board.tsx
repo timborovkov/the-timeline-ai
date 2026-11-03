@@ -252,7 +252,7 @@ export function CuratedKanbanBoard({
       <div className="flex h-full min-h-0 min-w-0 flex-col">
         <section
           aria-label="Board columns"
-          className="flex min-h-0 flex-1 overflow-x-auto overflow-y-hidden px-2 pb-2 sm:px-3"
+          className="flex min-h-0 min-w-0 flex-1 overflow-x-auto overflow-y-hidden px-2 pb-2 sm:px-3"
         >
           {visibleLanes.map((lane, index) => (
             <KanbanColumn
@@ -309,7 +309,7 @@ function KanbanColumn({
       ref={setNodeRef}
       aria-label={`${lane.name}, board column ${ordinal}`}
       className={cn(
-        'flex h-full w-[min(280px,calc(100vw-3rem))] shrink-0 flex-col border-r border-border/80 px-2 py-1 last:border-r-0',
+        'flex h-full min-w-[min(12rem,calc(100vw-3rem))] flex-[1_1_12rem] flex-col border-r border-border/80 px-2 py-1 last:border-r-0',
         isOver && 'bg-signal-soft',
       )}
     >

@@ -1,5 +1,11 @@
 'use client';
+
 import { useQuery } from '@tanstack/react-query';
+import {
+  artifactRefCitation,
+  numberArtifactRefs,
+  type ArtifactRef,
+} from '@timeline/shared/citation';
 import { truncateFilenameMiddle } from '@timeline/shared/documents/presentation';
 import { presentDueDate } from '@timeline/shared/time';
 import Link from 'next/link';
@@ -20,7 +26,6 @@ import {
 
 import type { SaveState } from '@/lib/utils';
 import type * as boards from '@timeline/shared/boards';
-import type { ArtifactRef } from '@timeline/shared/citation';
 import type * as objects from '@timeline/shared/objects/types';
 
 import {
@@ -39,8 +44,8 @@ import {
   updateObjectAction,
 } from '@/app/actions/objects';
 import { ApprovalsClient } from '@/components/approvals/approvals-client';
-import { ArtifactReferenceChip } from '@/components/artifact-reference-chip';
 import { ChatViewContextBinder } from '@/components/chat/chat-view-context';
+import { CitationMarker } from '@/components/chat/citation-marker';
 import { CollectionStatus } from '@/components/collections/collection-status';
 import { priorityTone } from '@/components/collections/collection-status-tone';
 import { EditableMetadata } from '@/components/collections/editable-metadata';
@@ -1339,6 +1344,7 @@ function ObjectSummaryActions({
     </div>
   );
 }
+
 function GeneratedObjectSummary({
   generated,
 }: {
@@ -1350,15 +1356,33 @@ function GeneratedObjectSummary({
     conflicts: objects.ObjectSummaryClaim[];
   };
 }) {
+  const numbers = useMemo(
+    () =>
+      numberArtifactRefs(
+        [
+          ...generated.overviewSourceRefs,
+          ...generated.currentState.flatMap((item) => item.sourceRefs),
+          ...generated.openQuestions.flatMap((item) => item.sourceRefs),
+          ...generated.conflicts.flatMap((item) => item.sourceRefs),
+        ].flatMap((ref) => {
+          const artifactRef = summaryRefToArtifactRef(ref);
+          return artifactRef ? [artifactRef] : [];
+        }),
+      ),
+    [generated],
+  );
   return (
     <div className="space-y-1.5">
-      <p className={`max-w-4xl ${DETAIL_BODY_CLASS}`}>{generated.overview}</p>
+      <p className={`max-w-4xl ${DETAIL_BODY_CLASS}`}>
+        {generated.overview}
+        <SourceMarkers numbers={numbers} refs={generated.overviewSourceRefs} />
+      </p>
       {generated.currentState.length > 0 ? (
         <ul className="space-y-1">
           {generated.currentState.map((item) => (
             <li key={`${item.label}:${item.text}`} className="text-sm leading-5 text-fg-muted">
               <span className="text-fg">{item.label}:</span> {item.text}
-              <SourceChips refs={item.sourceRefs} />
+              <SourceMarkers numbers={numbers} refs={item.sourceRefs} />
             </li>
           ))}
         </ul>
@@ -1368,7 +1392,7 @@ function GeneratedObjectSummary({
           {[...generated.conflicts, ...generated.openQuestions].map((item) => (
             <p key={`${item.label}:${item.text}`} className="text-sm leading-5 text-fg-muted">
               <span className="text-fg">{item.label}:</span> {item.text}
-              <SourceChips refs={item.sourceRefs} />
+              <SourceMarkers numbers={numbers} refs={item.sourceRefs} />
             </p>
           ))}
         </div>
@@ -1376,28 +1400,34 @@ function GeneratedObjectSummary({
     </div>
   );
 }
-function SourceChips({ refs }: { refs: objects.ObjectSummarySourceRef[] }) {
-  if (refs.length === 0) return null;
+
+function SourceMarkers({
+  numbers,
+  refs,
+}: {
+  numbers: Map<string, number>;
+  refs: objects.ObjectSummarySourceRef[];
+}) {
+  const markers: { key: string; number: number; refValue: ArtifactRef }[] = [];
+  const seen = new Set<string>();
+  for (const ref of refs) {
+    const refValue = summaryRefToArtifactRef(ref);
+    if (!refValue) continue;
+    const citation = artifactRefCitation(refValue);
+    if (seen.has(citation)) continue;
+    seen.add(citation);
+    markers.push({
+      key: `${ref.kind}:${ref.id}`,
+      number: numbers.get(citation) ?? 1,
+      refValue,
+    });
+  }
+  if (markers.length === 0) return null;
   return (
-    <span className="ml-2 inline-flex flex-wrap gap-1 align-middle">
-      {refs.slice(0, 3).map((ref) => {
-        const artifactRef = summaryRefToArtifactRef(ref);
-        const className = `${DETAIL_ACTION_CLASS} px-0`;
-        return artifactRef ? (
-          <ArtifactReferenceChip
-            key={`${ref.kind}:${ref.id}`}
-            refValue={artifactRef}
-            className={className}
-            title={`Open ${sourceLabel(ref)} source`}
-          >
-            {sourceLabel(ref)}
-          </ArtifactReferenceChip>
-        ) : (
-          <span key={`${ref.kind}:${ref.id}`} className={className}>
-            {sourceLabel(ref)}
-          </span>
-        );
-      })}
+    <span className="ml-0.5 inline">
+      {markers.map((marker) => (
+        <CitationMarker key={marker.key} number={marker.number} refValue={marker.refValue} />
+      ))}
     </span>
   );
 }
@@ -1419,14 +1449,6 @@ function summaryRefToArtifactRef(ref: objects.ObjectSummarySourceRef): ArtifactR
     };
   }
   return null;
-}
-
-function sourceLabel(ref: objects.ObjectSummarySourceRef): string {
-  if (ref.kind === 'timeline_event') return 'event';
-  if (ref.kind === 'object_note') return 'note';
-  if (ref.kind === 'object_change') return 'change';
-  if (ref.kind === 'document_chunk') return 'document';
-  return ref.kind;
 }
 
 function ObjectDetailHeader({

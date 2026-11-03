@@ -112,7 +112,6 @@ export function CitationMarker({ number, refValue }: Props) {
   function handleClick(event: MouseEvent<HTMLButtonElement>) {
     if (canHover()) {
       event.preventDefault();
-      ignoreNextClose.current = true;
       openCard();
       return;
     }

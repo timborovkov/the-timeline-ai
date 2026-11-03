@@ -129,7 +129,7 @@ are one to three days late. Daily digests never land in the future.
 | Surface | What you should see |
 | --- | --- |
 | Timeline | ~2,500 events across a month of use. Weekdays carry ~90–100 raw events that collapse into fewer moments (GitHub workflows/PRs, Slack threads in `#eng` `#product` `#gtm` `#hiring`, Linear/Monday/Sentry/Drive, email threads, Telegram bursts, notes, documents, and the Ledger webhook). Weekends stay lighter. |
-| Objects | Tasks, deals, companies, people, decisions, incidents, hiring loops, follow-ups, projects |
+| Objects | Tasks, deals, companies, people, decisions, incidents, hiring loops, follow-ups, projects. Northstar Works, the Northstar pilot, and Series A process summaries use numbered source markers. |
 | Boards | Atlas Launch (tasks plus launch work), Customer dealflow, Series A funding |
 | Documents | Code of conduct, office rules, DPA excerpt, MSA excerpt, contractor excerpt, strategy memo, one-pager, pitch narrative, onboarding, brand voice, security FAQ, plus the Northstar handoff brief |
 | Meetings | Daily product standups across the last month, importer incident review, Northwind partner meeting, Brightline scoping, Maya Chen interview; saved daily standup with auto-join and a scheduled occurrence a few days out |
