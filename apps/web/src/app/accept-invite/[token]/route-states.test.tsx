@@ -1,6 +1,7 @@
-import type * as TimelineDb from '@timeline/db';
 import { expect, vi } from '@timeline/test-support';
 import { afterEach, describe, it } from 'bun:test';
+
+import type * as TimelineDb from '@timeline/db';
 // Test environment: happy-dom
 
 const fakes = vi.hoisted(() => ({ auth: vi.fn() }));

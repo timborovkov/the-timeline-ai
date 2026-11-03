@@ -4,7 +4,9 @@ import { afterEach, beforeEach, describe, it } from 'bun:test';
 
 import type { ReactNode } from 'react';
 const fakes = vi.hoisted(() => ({
-  auth: vi.fn(),
+  auth: vi.fn((): Promise<{ user: { id: string; name: string; email: string } } | null> =>
+    Promise.resolve(null),
+  ),
   getRequestIdentity: vi.fn(),
   cookies: vi.fn(),
   getCalendarSettings: vi.fn(),
@@ -135,10 +137,9 @@ beforeEach(() => {
     [],
   );
   fakes.auth.mockResolvedValue({ user: { id: 'user-1', name: 'Tim', email: 'tim@example.com' } });
-  fakes.getRequestIdentity.mockImplementation(async () => ({
-    session: await fakes.auth(),
-    impersonation: null,
-  }));
+  fakes.getRequestIdentity.mockImplementation(() =>
+    fakes.auth().then((session) => ({ session, impersonation: null })),
+  );
   fakes.cookies.mockResolvedValue({ get: () => undefined });
   fakes.getCalendarSettings.mockResolvedValue({ defaultTimezone: DEFAULT_TIMEZONE });
   fakes.getNavAttentionSummary.mockResolvedValue({});
