@@ -177,15 +177,13 @@ test('expired and forged impersonation cookies can always be exited', async ({ p
   ).toBe(false);
 });
 
-test('the material staff-access notice requires renewed Privacy Policy acknowledgment', async ({
-  page,
-}) => {
+test('an outdated Privacy version requires acknowledgment', async ({ page }) => {
   test.setTimeout(120_000);
   const { withE2eDataTransaction } = await import('./cleanup.js');
   const { E2E_PASSWORD } = await import('./test-data.js');
   const { PRIVACY_VERSION } = await import('@timeline/shared/legal-versions');
   await withE2eDataTransaction(async (sql) => {
-    await sql`UPDATE users SET legal_privacy_version = '2026-11-01' WHERE id = ${e2eUsers.owner.id}`;
+    await sql`UPDATE users SET legal_privacy_version = 'older-privacy' WHERE id = ${e2eUsers.owner.id}`;
   });
   try {
     await page.goto('/sign-in');
@@ -225,7 +223,7 @@ test('staff can exit impersonation before acknowledging a changed legal notice',
   await page.getByRole('button', { name: 'Start 30-minute session' }).click();
   await expect(page.getByRole('status').filter({ hasText: 'Viewing as' })).toBeVisible();
   await withE2eDataTransaction(async (sql) => {
-    await sql`UPDATE users SET legal_privacy_version = '2026-11-01' WHERE id = ${e2eUsers.nonMember.id}`;
+    await sql`UPDATE users SET legal_privacy_version = 'older-privacy' WHERE id = ${e2eUsers.nonMember.id}`;
   });
   try {
     await page.goto('/app/admin');

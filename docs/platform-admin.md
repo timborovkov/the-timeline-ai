@@ -67,7 +67,7 @@ Apply migrations `0093_platform_admin` and `0094_platform_admin_retention` befor
 deploying web and worker changes.
 Publish the updated Privacy notice and legal version together. Verify the existing
 `LEGAL_PUBLICATION_READY` production gate is enabled only after its contracting-entity
-readiness requirements are satisfied; renewed acknowledgment uses that existing gate.
+readiness requirements are satisfied. This pre-launch revision does not trigger renewed acknowledgment.
 The shared platform-admin service owns global directory, session, and audit access;
 workspace content continues through `withTeam`. Configure the allowlist on the web
 and worker processes so queued impersonated work can verify the administrator.
@@ -128,16 +128,17 @@ cleanup or apply production migrations.
 
 ## Legal-owner decision — 3 November 2026
 
-The requester approved the retention periods and versioning recommendation as legal owner in the Codex task
-for PR #465 on 3 November 2026:
+The requester approved the retention periods as legal owner in the Codex task
+for PR #465 on 3 November 2026, then clarified that the product is not live.
+That clarification supersedes the earlier material-update/version-bump decision:
 
 - Session records: 30 days after access ends; audit records: 12 months, subject to
   documented legal holds. Released hold documentation follows the 12-month audit
   accountability period.
-- Treat the Privacy Policy disclosure of staff impersonation and its record
-  retention as material. Advance the Privacy Policy version/effective date to
-  `2026-11-03`; the existing per-user legal gate requires renewed acknowledgment.
-  This is acknowledgment of a privacy notice, not consent to optional processing.
+- Treat the staff-access and retention disclosures as a pre-launch policy revision.
+  Keep Privacy version `2026-11-01` and its effective date unchanged; this change
+  does not require renewed acknowledgment. The normal initial acceptance flow and
+  future version-change gates remain in place.
 - Keep the Terms version `2026-08-21` unchanged: no Terms text or contractual
   grounds for access or suspension change. Existing confidentiality, permitted
   support access, and suspension clauses continue to apply.

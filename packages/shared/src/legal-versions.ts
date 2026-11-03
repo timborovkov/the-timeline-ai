@@ -5,6 +5,6 @@
  * every fixture that snapshots accepted versions.
  */
 export const TERMS_VERSION = '2026-08-21';
-export const PRIVACY_VERSION = '2026-11-03';
-export const PRIVACY_EFFECTIVE_DATE = 'November 3, 2026';
+export const PRIVACY_VERSION = '2026-11-01';
+export const PRIVACY_EFFECTIVE_DATE = 'November 1, 2026';
 export const LEGAL_EFFECTIVE_DATE = 'August 21, 2026';

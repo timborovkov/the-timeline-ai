@@ -205,8 +205,10 @@ the operational access-review and approval-evidence gaps in G-12. Session record
 are eligible for deletion 30 days after access ends; platform audit records after
 12 months. Documented user/team legal holds delay deletion, without extending
 access. Scheduled maintenance applies these periods, retaining released hold
-documentation for 12 months. The legal owner approved these periods and material
-Privacy Policy version `2026-11-03` on 3 November 2026; Terms remain unchanged. See
+documentation for 12 months. The legal owner approved these periods on 3 November
+2026 and clarified that the product is not live. These are pre-launch disclosure
+edits: Privacy stays at `2026-11-01`, Terms remains unchanged, and this revision
+does not trigger renewed acknowledgment. See
 [Platform administration](platform-admin.md).
 
 ## 6. User, team, and agent permissions
