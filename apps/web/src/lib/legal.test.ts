@@ -35,6 +35,7 @@ describe('legal acceptance persistence', () => {
         "emailVerified" timestamptz,
         image text,
         password_hash text,
+        session_version integer NOT NULL DEFAULT 0,
         legal_terms_version text,
         legal_privacy_version text,
         legal_accepted_at timestamptz,

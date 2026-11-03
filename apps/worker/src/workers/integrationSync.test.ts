@@ -135,6 +135,15 @@ await vi.mock(
   () => import('@timeline/shared'),
 );
 
+await vi.mock(
+  import.meta.resolve('@timeline/shared/platform-admin/runtime'),
+  async (importOriginal) => ({
+    ...(await importOriginal()),
+    assertActivePrincipal: async () => undefined,
+  }),
+  () => import('@timeline/shared/platform-admin/runtime'),
+);
+
 const { handleTick, runOneIntegration } = await import('./integrationSync.js');
 const { integrations } = await import('@timeline/shared');
 

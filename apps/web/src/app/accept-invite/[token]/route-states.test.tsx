@@ -24,7 +24,10 @@ await vi.mock(
 );
 await vi.mock(
   import.meta.resolve('@timeline/db'),
-  () => ({ getDb: () => ({}), teamInvites: {}, teams: {} }),
+  async (importOriginal) => ({
+    ...(await importOriginal()),
+    getDb: () => ({}),
+  }),
   () => import('@timeline/db'),
 );
 await vi.mock(

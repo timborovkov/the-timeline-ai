@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, it } from 'bun:test';
 import type { ReactNode } from 'react';
 const fakes = vi.hoisted(() => ({
   auth: vi.fn(),
+  getRequestIdentity: vi.fn(),
   cookies: vi.fn(),
   getCalendarSettings: vi.fn(),
   getNavAttentionSummary: vi.fn(),
@@ -55,6 +56,8 @@ await vi.mock(
   import.meta.resolve('@timeline/shared/team-scope'),
   () => ({
     withTeam: () => ({
+      requireMembership: vi.fn().mockResolvedValue('owner'),
+      billing: { getDashboard: vi.fn().mockResolvedValue({ sidebar: null }) },
       calendar: { getCalendarSettings: fakes.getCalendarSettings },
       objects: {
         listNotifications: fakes.listNotifications,
@@ -91,7 +94,7 @@ await vi.mock(
 );
 await vi.mock(
   import.meta.resolve('@/lib/auth'),
-  () => ({ auth: fakes.auth }),
+  () => ({ auth: fakes.auth, getRequestIdentity: fakes.getRequestIdentity }),
   () => import('@/lib/auth'),
 );
 await vi.mock(
@@ -132,6 +135,10 @@ beforeEach(() => {
     [],
   );
   fakes.auth.mockResolvedValue({ user: { id: 'user-1', name: 'Tim', email: 'tim@example.com' } });
+  fakes.getRequestIdentity.mockImplementation(async () => ({
+    session: await fakes.auth(),
+    impersonation: null,
+  }));
   fakes.cookies.mockResolvedValue({ get: () => undefined });
   fakes.getCalendarSettings.mockResolvedValue({ defaultTimezone: DEFAULT_TIMEZONE });
   fakes.getNavAttentionSummary.mockResolvedValue({});
