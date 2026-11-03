@@ -5,7 +5,8 @@
  *
  * The historical fixture was authored against 14 August 2026 18:00 UTC. Tests
  * keep that anchor so cadence floors stay deterministic; `dev:seed` swaps in
- * the real current instant.
+ * the real current instant and persists it as `demo_seed_now` so `demo:verify`
+ * rebuilds the same fixtures instead of comparing against the August clock.
  */
 import { dateFromInstant, zonedDateTimeFromDate } from '@timeline/shared/time';
 
@@ -14,6 +15,7 @@ export const DEMO_CADENCE_SPAN_DAYS = 31;
 export const DEMO_TOKEN_EXPIRY_DAYS = 180;
 export const DEMO_TEAM_TIMEZONE = 'Europe/Helsinki';
 export const DEMO_DIGEST_HOUR = 7;
+export const DEMO_SEED_NOW_METADATA_KEY = 'demo_seed_now';
 
 /** Story beats as local-day offsets from seed "today" in the team timezone. */
 export const DEMO_DATES = {
@@ -60,6 +62,50 @@ export function getDemoSeedNow(): Date {
 export function setDemoSeedNow(now: Date): void {
   if (Number.isNaN(now.getTime())) throw new Error('Demo seed clock requires a valid Date');
   seedNow = now;
+}
+
+export function demoSeedNowIso(now = getDemoSeedNow()): string {
+  return now.toISOString();
+}
+
+export function demoSeedNowMetadata(now = getDemoSeedNow()): { demo_seed_now: string } {
+  return { [DEMO_SEED_NOW_METADATA_KEY]: demoSeedNowIso(now) };
+}
+
+export function parseDemoSeedNow(value: unknown): Date {
+  if (typeof value !== 'string' || value.length === 0) {
+    throw new Error('Demo seed is missing persisted clock demo_seed_now');
+  }
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    throw new Error(`Invalid persisted demo seed clock ${value}`);
+  }
+  return date;
+}
+
+export function readDemoSeedNowFromMetadata(
+  metadata: Record<string, unknown> | null | undefined,
+): Date | null {
+  if (!metadata || !(DEMO_SEED_NOW_METADATA_KEY in metadata)) return null;
+  return parseDemoSeedNow(metadata[DEMO_SEED_NOW_METADATA_KEY]);
+}
+
+/** Shift a stored instant from one story offset to another in the team timezone. */
+export function resolveDemoOffsetFromReference(
+  referenceIso: string,
+  referenceOffset: DemoTimeOffset,
+  targetOffset: DemoTimeOffset,
+  timezone = DEMO_TEAM_TIMEZONE,
+): Date {
+  const reference = new Date(referenceIso);
+  if (Number.isNaN(reference.getTime())) {
+    throw new Error(`Invalid demo reference timestamp ${referenceIso}`);
+  }
+  const { hours, minutes, seconds } = parseUtcTime(targetOffset.time);
+  const zoned = zonedDateTimeFromDate(reference, timezone)
+    .add({ days: targetOffset.days - referenceOffset.days })
+    .with({ hour: hours, minute: minutes, second: seconds, millisecond: 0, microsecond: 0 });
+  return dateFromInstant(zoned.toInstant());
 }
 
 export function parseUtcTime(time: string): { hours: number; minutes: number; seconds: number } {

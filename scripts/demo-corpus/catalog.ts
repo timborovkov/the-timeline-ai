@@ -2,8 +2,20 @@ import { createHash } from 'node:crypto';
 
 import { classifyCapturedEvent } from '@timeline/shared/event-class';
 
-import { DEMO_DATES, DEMO_TEAM_TIMEZONE, isoAt, teamClock, teamDate } from '../demo-clock.js';
-import { DEMO_FIXTURE_VERSION, DEMO_IDS, DEMO_LOGIN_PASSWORD } from '../demo-fixture.js';
+import {
+  DEMO_DATES,
+  DEMO_TEAM_TIMEZONE,
+  demoSeedNowMetadata,
+  isoAt,
+  teamClock,
+  teamDate,
+} from '../demo-clock.js';
+import {
+  DEMO_EVENTS,
+  DEMO_FIXTURE_VERSION,
+  DEMO_IDS,
+  DEMO_LOGIN_PASSWORD,
+} from '../demo-fixture.js';
 
 import {
   buildCadenceBeats,
@@ -163,6 +175,7 @@ function objectId(n: number): string {
 function meta(extra: Record<string, unknown>, payloadRef: string): Record<string, unknown> {
   return {
     fixture_version: CORPUS_FIXTURE_VERSION,
+    ...demoSeedNowMetadata(),
     source_payload_ref: payloadRef,
     payload_digest: `sha256:demo-seed:${payloadRef}`,
     ...extra,
@@ -1044,9 +1057,11 @@ function buildStoryEvents(): CorpusEvent[] {
 }
 
 function buildRawCorpusEvents(): CorpusEvent[] {
+  const story = buildStoryEvents();
+  const minBeatCount = CORPUS_VOLUME_FLOORS.events - story.length - DEMO_EVENTS.length;
   return [
-    ...buildStoryEvents(),
-    ...buildCadenceBeats().map((beat) =>
+    ...story,
+    ...buildCadenceBeats(minBeatCount).map((beat) =>
       event(
         beat.n,
         beat.author,

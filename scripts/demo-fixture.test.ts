@@ -6,12 +6,16 @@ import { fileURLToPath } from 'node:url';
 import {
   DEMO_CLOCK_ANCHOR,
   DEMO_DATES,
+  DEMO_SEED_NOW_METADATA_KEY,
   DEMO_TIME_OFFSETS,
   dateAt,
+  demoSeedNowIso,
   demoTimes,
   isoAt,
   latestDigestDayOffset,
   localDay,
+  readDemoSeedNowFromMetadata,
+  resolveDemoOffsetFromReference,
   setDemoSeedNow,
   teamDate,
 } from './demo-clock.js';
@@ -32,6 +36,7 @@ import {
   DEMO_IDS,
   EMPTY_DEMO_LOGIN,
   getDemoTimes,
+  hydrateDemoSeedClock,
   refreshDemoFixture,
   type DemoFixtureSnapshot,
   type EmptyDemoWorkspaceSnapshot,
@@ -696,6 +701,7 @@ function validSnapshot(): DemoFixtureSnapshot {
       visibilityUserIds: null,
       sourceMetadata: {
         fixture_version: DEMO_FIXTURE_VERSION,
+        [DEMO_SEED_NOW_METADATA_KEY]: demoSeedNowIso(),
         source_payload_ref: event.sourcePayloadRef,
         embedded_at: '2026-07-10T00:00:00.000Z',
         embedding_model: 'openai/text-embedding-3-small',
@@ -1038,3 +1044,113 @@ assertSeedContentHasNoFrozenDates(DEMO_CLOCK_ANCHOR);
 assert.equal(CADENCE_RANGE.start, '2026-07-14');
 assert.equal(CADENCE_RANGE.end, '2026-08-14');
 assert.equal(getDemoTimes().meeting, '2026-07-08T12:00:00.000Z');
+
+function cadenceEventSerial(id: string): number {
+  return Number.parseInt(id.split('-').at(-1) ?? '', 16);
+}
+
+function assertCadenceVolumeAndChronology(now: Date): void {
+  setDemoSeedNow(now);
+  refreshDemoFixture();
+  refreshDemoCorpus();
+  assert.ok(
+    CORPUS_EVENTS.length + DEMO_EVENTS.length >= CORPUS_VOLUME_FLOORS.events,
+    `${now.toISOString()} event count ${String(CORPUS_EVENTS.length + DEMO_EVENTS.length)}`,
+  );
+  const cadenceEvents = CORPUS_EVENTS.filter((row) => {
+    const serial = cadenceEventSerial(row.id);
+    return serial >= 61 && serial < 3000;
+  });
+  const weekdayEvents = new Map<string, typeof cadenceEvents>();
+  for (const event of cadenceEvents) {
+    const day = event.occurredAt.slice(0, 10);
+    const weekday = new Date(`${day}T00:00:00.000Z`).getUTCDay();
+    if (weekday === 0 || weekday === 6) continue;
+    const rows = weekdayEvents.get(day) ?? [];
+    rows.push(event);
+    weekdayEvents.set(day, rows);
+  }
+  assert.ok(weekdayEvents.size >= 20, `${now.toISOString()} weekday coverage`);
+  for (const [day, rows] of weekdayEvents) {
+    assert.ok(
+      rows.length >= CADENCE_WEEKDAY_EVENT_FLOOR,
+      `${now.toISOString()} ${day} cadence events ${String(rows.length)}`,
+    );
+    const groups = new Set(
+      rows.map((row) =>
+        cadenceBeatGroupKey({
+          n: cadenceEventSerial(row.id),
+          author: 'jordan',
+          source: row.source,
+          occurredAt: row.occurredAt,
+          contentText: row.contentText,
+          extra: row.sourceMetadata,
+          payloadRef: String(row.sourceMetadata.source_payload_ref ?? ''),
+        }),
+      ),
+    );
+    assert.ok(
+      groups.size <= CADENCE_WEEKDAY_MOMENT_CEILING,
+      `${now.toISOString()} ${day} cadence moments ${String(groups.size)}`,
+    );
+  }
+  const times = getDemoTimes();
+  assert.equal(
+    times.email,
+    resolveDemoOffsetFromReference(
+      times.note,
+      DEMO_TIME_OFFSETS.note,
+      DEMO_TIME_OFFSETS.email,
+    ).toISOString(),
+  );
+  assert.equal(
+    times.meeting,
+    resolveDemoOffsetFromReference(
+      times.note,
+      DEMO_TIME_OFFSETS.note,
+      DEMO_TIME_OFFSETS.meeting,
+    ).toISOString(),
+  );
+  assert.equal(
+    times.provider,
+    resolveDemoOffsetFromReference(
+      times.meeting,
+      DEMO_TIME_OFFSETS.meeting,
+      DEMO_TIME_OFFSETS.provider,
+    ).toISOString(),
+  );
+  assert.equal(
+    times.meetingEnd,
+    resolveDemoOffsetFromReference(
+      times.meeting,
+      DEMO_TIME_OFFSETS.meeting,
+      DEMO_TIME_OFFSETS.meetingEnd,
+    ).toISOString(),
+  );
+  const stamped = CORPUS_EVENTS.map((row) => readDemoSeedNowFromMetadata(row.sourceMetadata));
+  assert.ok(stamped.every((value) => value?.toISOString() === now.toISOString()));
+  setDemoSeedNow(DEMO_CLOCK_ANCHOR);
+  refreshDemoFixture();
+  const restored = hydrateDemoSeedClock(CORPUS_EVENTS);
+  refreshDemoCorpus();
+  assert.equal(restored.toISOString(), now.toISOString());
+  assert.equal(getDemoTimes().meeting, times.meeting);
+}
+
+const VOLUME_ANCHORS = [
+  DEMO_CLOCK_ANCHOR,
+  new Date('2026-10-03T18:00:00.000Z'),
+  new Date('2026-11-03T18:00:00.000Z'),
+  new Date('2026-11-30T18:00:00.000Z'),
+  new Date('2027-01-01T00:00:00.000Z'),
+  new Date('2027-03-15T12:00:00.000Z'),
+];
+try {
+  for (const now of VOLUME_ANCHORS) {
+    assertCadenceVolumeAndChronology(now);
+  }
+} finally {
+  setDemoSeedNow(DEMO_CLOCK_ANCHOR);
+  refreshDemoFixture();
+  refreshDemoCorpus();
+}

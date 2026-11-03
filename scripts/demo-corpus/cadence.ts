@@ -453,6 +453,7 @@ function pushWorkday(
   push: (beat: Omit<CadenceBeat, 'n'>) => void,
   day: string,
   dayIndex: number,
+  extraImporterCount = 0,
 ): void {
   const prNumber = 190 + dayIndex;
   const commit = pick(ENG_COMMITS, dayIndex);
@@ -469,7 +470,7 @@ function pushWorkday(
     author: 'jordan',
     startHour: 8,
     startMinute: 6,
-    count: 8,
+    count: 8 + extraImporterCount,
   });
   pushWorkflows(push, {
     day,
@@ -766,7 +767,7 @@ function pushWeekend(
   });
 }
 
-export function buildCadenceBeats(): CadenceBeat[] {
+export function buildCadenceBeats(minBeatCount = 0): CadenceBeat[] {
   const beats: CadenceBeat[] = [];
   let n = 61;
   const push = (beat: Omit<CadenceBeat, 'n'>): void => {
@@ -789,11 +790,38 @@ export function buildCadenceBeats(): CadenceBeat[] {
   });
 
   const range = getCadenceRange();
-  for (const [dayIndex, day] of weekdayDates(range.start, range.end).entries()) {
-    pushWorkday(push, day, dayIndex);
+  const weekdays = weekdayDates(range.start, range.end);
+  const weekends = weekendDates(range.start, range.end);
+  const extraImporterCount =
+    weekdays.length === 0 || minBeatCount <= 0
+      ? 0
+      : Math.max(
+          0,
+          Math.ceil(
+            (minBeatCount - (1 + weekdays.length * 100 + weekends.length * 9)) / weekdays.length,
+          ),
+        );
+  for (const [dayIndex, day] of weekdays.entries()) {
+    pushWorkday(push, day, dayIndex, extraImporterCount);
   }
-  for (const [dayIndex, day] of weekendDates(range.start, range.end).entries()) {
+  for (const [dayIndex, day] of weekends.entries()) {
     pushWeekend(push, day, dayIndex);
+  }
+  let pad = 0;
+  while (beats.length < minBeatCount) {
+    const day = weekdays[pad % weekdays.length];
+    if (!day) throw new Error('Cannot pad cadence beats without weekdays');
+    const slot = Math.floor(pad / Math.max(weekdays.length, 1));
+    push({
+      author: 'jordan',
+      source: 'integration',
+      occurredAt: at(day, 8, 6, slot % 60),
+      contentText: `GitHub workflow "Importer" #${String(9000 + pad)} on ${REPO} success`,
+      extra: githubWorkflow('Importer'),
+      payloadRef: `inline://timeline/demo-seed/github/importer-pad-${day}-${String(slot)}-${String(pad)}`,
+    });
+    pad += 1;
+    if (pad > 5000) throw new Error('Cadence padding exceeded 5000 extra beats');
   }
 
   return beats;

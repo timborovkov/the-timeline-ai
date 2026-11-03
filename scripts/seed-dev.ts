@@ -45,7 +45,16 @@ import { hashPassword } from '@timeline/shared/passwords';
 import { getAudioBucket, getDocumentsBucket, getS3Client, putObject } from '@timeline/shared/s3';
 import { and, eq, inArray, ne, or, sql } from 'drizzle-orm';
 
-import { dateAt, DEMO_DATES, demoTimes, isoAt, setDemoSeedNow, teamDate } from './demo-clock.js';
+import {
+  dateAt,
+  DEMO_DATES,
+  demoSeedNowIso,
+  demoSeedNowMetadata,
+  demoTimes,
+  isoAt,
+  setDemoSeedNow,
+  teamDate,
+} from './demo-clock.js';
 import {
   CORPUS_DOCUMENTS,
   CORPUS_PEOPLE,
@@ -862,6 +871,7 @@ async function main(): Promise<void> {
             visibility: 'team',
             sourceMetadata: {
               fixture_version: DEMO_FIXTURE_VERSION,
+              ...demoSeedNowMetadata(),
               capture_kind: 'explicit_chat_note',
               command: '/timeline note',
               slack_event_id: 'EvDEMOSEEDNORTHSTAR001',
@@ -880,6 +890,7 @@ async function main(): Promise<void> {
             visibility: 'team',
             sourceMetadata: {
               fixture_version: DEMO_FIXTURE_VERSION,
+              ...demoSeedNowMetadata(),
               message_id: 'demo-seed-northstar-export-commitment-001',
               from: 'elena.park@northstar.example',
               subject: 'Northstar pilot export commitment',
@@ -907,6 +918,7 @@ async function main(): Promise<void> {
             visibility: 'team',
             sourceMetadata: {
               fixture_version: DEMO_FIXTURE_VERSION,
+              ...demoSeedNowMetadata(),
               meeting_id: DEMO_IDS.meeting,
               platform: 'meet',
               title: 'Northstar pilot handoff review',
@@ -925,6 +937,7 @@ async function main(): Promise<void> {
             visibility: 'team',
             sourceMetadata: {
               fixture_version: DEMO_FIXTURE_VERSION,
+              ...demoSeedNowMetadata(),
               provider: 'linear',
               integration_id: DEMO_IDS.linearIntegration,
               selection_external_id: 'LIN-TL',
@@ -936,6 +949,18 @@ async function main(): Promise<void> {
           },
         ])
         .onConflictDoNothing();
+
+      for (const event of DEMO_EVENTS) {
+        await tx
+          .update(rawEvents)
+          .set({
+            contentText: event.contentText,
+            occurredAt: new Date(event.occurredAt),
+            createdAt: new Date(event.occurredAt),
+            sourceMetadata: sql`jsonb_set(coalesce(${rawEvents.sourceMetadata}, '{}'::jsonb), '{demo_seed_now}', to_jsonb(${demoSeedNowIso()}::text), true)`,
+          })
+          .where(and(eq(rawEvents.teamId, DEMO_IDS.team), eq(rawEvents.id, event.id)));
+      }
 
       await tx
         .insert(documents)

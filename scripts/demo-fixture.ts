@@ -3,11 +3,14 @@ import { createHash } from 'node:crypto';
 import { PRIVACY_VERSION, TERMS_VERSION } from '@timeline/shared/legal-versions';
 
 import {
-  DEMO_CLOCK_ANCHOR,
   DEMO_DATES,
+  DEMO_SEED_NOW_METADATA_KEY,
   DEMO_TIME_OFFSETS,
+  demoSeedNowIso,
   isoAt,
-  resolveDemoTime,
+  readDemoSeedNowFromMetadata,
+  resolveDemoOffsetFromReference,
+  setDemoSeedNow,
   teamDate,
   type DemoTimeOffset,
 } from './demo-clock.js';
@@ -189,6 +192,20 @@ export function refreshDemoFixture(): void {
   DEMO_FACTS = buildDemoFacts();
   DEMO_SUPPORT = buildDemoSupport();
   DEMO_EVENTS = buildDemoEvents();
+}
+
+export function hydrateDemoSeedClock(
+  events: ReadonlyArray<{ sourceMetadata: Record<string, unknown> }>,
+): Date {
+  const stamped = events
+    .map((row) => readDemoSeedNowFromMetadata(row.sourceMetadata))
+    .find((value): value is Date => value !== null);
+  if (!stamped) {
+    throw new Error('Demo fixture is missing persisted demo_seed_now on seeded events');
+  }
+  setDemoSeedNow(stamped);
+  refreshDemoFixture();
+  return stamped;
 }
 
 export const DEMO_ENTITIES = [
@@ -438,6 +455,13 @@ export interface EmptyDemoWorkspaceSnapshot {
 }
 
 export function assertDemoFixture(snapshot: DemoFixtureSnapshot): void {
+  try {
+    hydrateDemoSeedClock(snapshot.events);
+  } catch (error) {
+    throw new Error(
+      `Demo fixture verification failed:\n- ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
   const errors: string[] = [];
   const fail = (message: string): void => {
     errors.push(message);
@@ -457,15 +481,13 @@ export function assertDemoFixture(snapshot: DemoFixtureSnapshot): void {
       fail(`${label}: missing timestamp`);
       return;
     }
-    const dummy = DEMO_CLOCK_ANCHOR;
-    const actualDelta = Date.parse(actualIso) - Date.parse(referenceIso);
-    const expectedDelta =
-      resolveDemoTime(dummy, actualOffset).getTime() -
-      resolveDemoTime(dummy, referenceOffset).getTime();
-    if (actualDelta !== expectedDelta) {
-      fail(
-        `${label}: expected ${String(expectedDelta)}ms from reference, got ${String(actualDelta)}ms`,
-      );
+    const expectedIso = resolveDemoOffsetFromReference(
+      referenceIso,
+      referenceOffset,
+      actualOffset,
+    ).toISOString();
+    if (actualIso !== expectedIso) {
+      fail(`${label}: expected ${expectedIso} from local offset, got ${actualIso}`);
     }
   };
 
@@ -536,6 +558,11 @@ export function assertDemoFixture(snapshot: DemoFixtureSnapshot): void {
       `${expected.id} fixture version`,
       row.sourceMetadata.fixture_version,
       DEMO_FIXTURE_VERSION,
+    );
+    expectValue(
+      `${expected.id} persisted seed clock`,
+      row.sourceMetadata[DEMO_SEED_NOW_METADATA_KEY],
+      demoSeedNowIso(),
     );
     expectValue(
       `${expected.id} source payload ref`,
@@ -805,10 +832,10 @@ export function assertDemoFixture(snapshot: DemoFixtureSnapshot): void {
   const meetingEndedAt =
     meetingEvent === undefined
       ? null
-      : new Date(
-          Date.parse(meetingEvent.occurredAt) +
-            (resolveDemoTime(DEMO_CLOCK_ANCHOR, DEMO_TIME_OFFSETS.meetingEnd).getTime() -
-              resolveDemoTime(DEMO_CLOCK_ANCHOR, DEMO_TIME_OFFSETS.meeting).getTime()),
+      : resolveDemoOffsetFromReference(
+          meetingEvent.occurredAt,
+          DEMO_TIME_OFFSETS.meeting,
+          DEMO_TIME_OFFSETS.meetingEnd,
         ).toISOString();
   expectValue('meeting ended_at', snapshot.meeting?.endedAt, meetingEndedAt);
   expectValue('meeting chunk id', snapshot.meeting?.chunkId, DEMO_IDS.meetingChunk);

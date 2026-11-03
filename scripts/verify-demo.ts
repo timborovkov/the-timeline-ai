@@ -48,6 +48,7 @@ import {
   CORPUS_PEOPLE,
   CORPUS_SLACK,
   CORPUS_WEBHOOK,
+  refreshDemoCorpus,
 } from './demo-corpus/index.js';
 import { readEmptyDemoWorkspaceSnapshot } from './demo-empty-team.js';
 import {
@@ -61,6 +62,7 @@ import {
   DEMO_IDS,
   DEMO_LOGINS,
   DEMO_LOGIN_PASSWORD,
+  hydrateDemoSeedClock,
   type DemoFixtureSnapshot,
 } from './demo-fixture.js';
 
@@ -712,7 +714,10 @@ async function readExpandedDemoCorpusSnapshot(): Promise<
 async function main(): Promise<void> {
   assertDemoVectorEnvironment();
   try {
-    assertDemoFixture(await readDemoFixtureSnapshot());
+    const snapshot = await readDemoFixtureSnapshot();
+    hydrateDemoSeedClock(snapshot.events);
+    refreshDemoCorpus();
+    assertDemoFixture(snapshot);
     assertExpandedDemoCorpus(await readExpandedDemoCorpusSnapshot());
     assertEmptyDemoWorkspace(await readEmptyDemoWorkspaceSnapshot(getDb()));
     console.log('[demo:verify] deterministic demo fixture is intact');
