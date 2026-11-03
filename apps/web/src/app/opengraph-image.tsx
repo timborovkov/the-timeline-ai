@@ -1,6 +1,6 @@
 import { ImageResponse } from 'next/og';
 
-export const alt = 'The Timeline — your work record, kept up to date from your conversations';
+export const alt = "The Timeline — your team's work, written down for you";
 export const size = { width: 1200, height: 630 };
 export const contentType = 'image/png';
 
@@ -56,9 +56,8 @@ export default function OpengraphImage() {
               flexDirection: 'column',
             }}
           >
-            <span>Your work record,</span>
-            <span>kept up to date</span>
-            <span style={{ color: '#b5ea4a' }}>from your conversations.</span>
+            <span>Your team's work,</span>
+            <span style={{ color: '#b5ea4a' }}>written down for you</span>
           </div>
         </div>
       </div>

@@ -56,7 +56,7 @@ const commitMono = localFont({
 export const metadata: Metadata = {
   metadataBase: new URL(getSiteUrl()),
   title: {
-    default: 'Your work record, kept up to date · The Timeline',
+    default: "Your team's work, written down for you · The Timeline",
     template: '%s · The Timeline',
   },
   description:
@@ -88,7 +88,7 @@ export const metadata: Metadata = {
   },
   appleWebApp,
   openGraph: {
-    title: 'Your work record, kept up to date · The Timeline',
+    title: "Your team's work, written down for you · The Timeline",
     description:
       'The Timeline keeps client, deal, task and decision records up to date from Slack, Telegram, email and calls. Every line has its source, and you approve each change.',
     url: '/',
@@ -98,7 +98,7 @@ export const metadata: Metadata = {
         url: '/opengraph-image',
         width: 1200,
         height: 630,
-        alt: 'The Timeline — your work record, kept up to date from your conversations',
+        alt: "The Timeline — your team's work, written down for you",
       },
     ],
     locale: 'en_US',
@@ -106,8 +106,9 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'Your work record, kept up to date · The Timeline',
-    description: 'Your work record, kept up to date from your conversations.',
+    title: "Your team's work, written down for you · The Timeline",
+    description:
+      "The Timeline updates itself from your team's Slack or Telegram, email, calls and docs.",
     images: ['/twitter-image'],
   },
   robots: {

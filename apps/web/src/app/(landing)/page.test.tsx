@@ -50,7 +50,10 @@ describe('LandingPage', () => {
     expect(html.match(/>Source on GitHub</g)).toHaveLength(1);
     expect(html).toContain('href="/cookies"');
     expect(html.match(/<h1\b/g)).toHaveLength(1);
-    expect(html).toContain('Your work record, <em>kept up to date</em> from your conversations.');
+    expect(html).toContain('Your team&#x27;s work, <em>written down for you</em>');
+    expect(html).toContain(
+      'The Timeline updates itself from your team&#x27;s Slack or Telegram, email, calls and docs.',
+    );
 
     const scenes = ['01-claim', '02-chronology', '03-answer', '04-trust', '05-cta'];
     let previousIndex = -1;
@@ -131,7 +134,7 @@ describe('LandingPage', () => {
       'Human approval before inferred durable workspace changes',
     );
     expect(metadata).toMatchObject({
-      title: 'Your work record, kept up to date',
+      title: "Your team's work, written down for you",
       description:
         'The Timeline keeps client, deal, task and decision records up to date from Slack, Telegram, email and calls. Every line has its source, and you approve each change.',
       alternates: { canonical: '/' },
@@ -181,7 +184,7 @@ describe('LandingPage', () => {
     const html = renderToStaticMarkup(<LandingPage />);
 
     expect(html).toContain(
-      'The Timeline turns what is said in Slack, Telegram, email and calls into current client',
+      'The Timeline updates itself from your team&#x27;s Slack or Telegram, email, calls and docs.',
     );
     expect(html).toContain('Link one channel. <em>Watch the record fill in.</em>');
     expect(html).toContain(

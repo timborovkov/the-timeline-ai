@@ -210,12 +210,10 @@ function ClaimScene() {
       <div className={styles.heroCopy} data-home-reveal>
         <SceneIndex number="01" label="The auto-updating work record" />
         <h1 id="claim-title" className={styles.heroTitle}>
-          Your work record, <em>kept up to date</em> from your conversations.
+          Your team's work, <em>written down for you</em>
         </h1>
         <p className={styles.heroIntro}>
-          The Timeline turns what is said in Slack, Telegram, email and calls into current client,
-          deal, task and decision records, with the source for every line and your approval before
-          anything changes.
+          The Timeline updates itself from your team's Slack or Telegram, email, calls and docs.
         </p>
         <div className={styles.heroActions}>
           <PublicSessionBranch

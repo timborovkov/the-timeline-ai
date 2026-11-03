@@ -156,7 +156,7 @@ const coreDocuments = definePublicDocuments('public-core', [
   {
     canonicalPath: '/',
     kind: 'landing',
-    title: 'Your work record, kept up to date',
+    title: "Your team's work, written down for you",
     description:
       'The Timeline keeps client, deal, task and decision records up to date from Slack, Telegram, email and calls. Every line has its source, and you approve each change.',
     indexability: 'index',
