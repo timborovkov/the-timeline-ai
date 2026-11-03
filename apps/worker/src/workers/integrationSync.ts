@@ -22,6 +22,7 @@ import { and, eq, sql } from 'drizzle-orm';
 
 import { withWorkerAiBilling, workerBillingJobOptions } from '#src/billing-context.js';
 import { captureWorkerException, captureWorkerJobFailure } from '#src/monitoring.js';
+
 import { guardWorkerProcessor } from '#src/platform-worker.js';
 
 // Phase 11 — Integration sync worker.
@@ -378,20 +379,6 @@ const defaultDriveTransientExtractIO: DriveTransientExtractIO = {
 
 const DRIVE_TRANSIENT_RESULT_MAX_BYTES = integrationsLib.DRIVE_TRANSIENT_RESULT_MAX_BYTES;
 
-function isMissingObjectError(err: unknown): boolean {
-  if (!err || typeof err !== 'object') return false;
-  const name = 'name' in err && typeof err.name === 'string' ? err.name : '';
-  const code = 'Code' in err && typeof err.Code === 'string' ? err.Code : '';
-  const status =
-    '$metadata' in err &&
-    err.$metadata &&
-    typeof err.$metadata === 'object' &&
-    'httpStatusCode' in err.$metadata
-      ? err.$metadata.httpStatusCode
-      : undefined;
-  return name === 'NoSuchKey' || name === 'NotFound' || code === 'NoSuchKey' || status === 404;
-}
-
 interface DriveExtractCursorScope {
   getIntegration: (id: string) => Promise<{ id: string; teamId: string } | null>;
   loadCursor: (integrationId: string, resourceType: string) => Promise<unknown>;
@@ -486,6 +473,22 @@ export async function putAndEnqueueDriveTransientExtract(input: {
     fileId: input.fileId,
     extractId,
   });
+  const existing = await loadDriveExtractCursor(
+    input.integrations,
+    input.integrationId,
+    input.fileId,
+  );
+  let pendingDeleteKeys: string[] = [];
+  if (existing) {
+    const leftoverKeys = integrationsLib.driveExtractObjectKeys(existing);
+    const leftoverResults = await Promise.allSettled(
+      leftoverKeys.map((key) => io.deleteDocumentObject({ bucket: io.getDocumentsBucket(), key })),
+    );
+    pendingDeleteKeys = integrationsLib.remainingDriveExtractObjectKeys(
+      leftoverKeys,
+      leftoverResults,
+    );
+  }
   const cursor: integrationsLib.DriveExtractCursor = {
     extractId,
     objectKey: keys.objectKey,
@@ -494,6 +497,7 @@ export async function putAndEnqueueDriveTransientExtract(input: {
     filename: input.filename,
     enqueuedAt: (input.now ?? new Date()).toISOString(),
     ...(input.revisionId ? { revisionId: input.revisionId } : {}),
+    ...(pendingDeleteKeys.length > 0 ? { pendingDeleteKeys } : {}),
   };
   await io.putDocumentObject({
     bucket: io.getDocumentsBucket(),
@@ -545,7 +549,7 @@ export async function readDriveTransientExtract(input: {
     input.integrationId,
     input.fileId,
   );
-  if (!cursor) return null;
+  if (!cursor || cursor.cleanupPending) return null;
   try {
     const fetched = await io.getDocumentObject({
       bucket: io.getDocumentsBucket(),
@@ -558,7 +562,7 @@ export async function readDriveTransientExtract(input: {
     }
     return withExtractRevision({ status: 'failed' as const, error: parsed.error }, cursor);
   } catch (err) {
-    if (!isMissingObjectError(err)) {
+    if (!integrationsLib.isMissingS3ObjectError(err)) {
       const message = err instanceof Error ? err.message : String(err);
       const error = integrationsLib.isDriveExtractResultTooLarge(message)
         ? integrationsLib.DRIVE_TRANSIENT_RESULT_TOO_LARGE
@@ -597,10 +601,20 @@ export async function clearDriveTransientExtract(input: {
   );
   if (cursor) {
     const bucket = io.getDocumentsBucket();
-    await Promise.allSettled([
-      io.deleteDocumentObject({ bucket, key: cursor.objectKey }),
-      io.deleteDocumentObject({ bucket, key: cursor.resultObjectKey }),
-    ]);
+    const keys = integrationsLib.driveExtractObjectKeys(cursor);
+    const results = await Promise.allSettled(
+      keys.map((key) => io.deleteDocumentObject({ bucket, key })),
+    );
+    const remaining = integrationsLib.remainingDriveExtractObjectKeys(keys, results);
+    if (remaining.length > 0) {
+      await saveDriveExtractCursor(
+        input.integrations,
+        input.integrationId,
+        input.fileId,
+        integrationsLib.retainDriveExtractCleanupCursor(cursor, remaining),
+      );
+      return;
+    }
   }
   await saveDriveExtractCursor(input.integrations, input.integrationId, input.fileId, {});
 }
@@ -1394,6 +1408,7 @@ export async function runOneIntegration(
           commentsHash: input.commentsHash ?? '',
           permissionsHash: input.permissionsHash ?? '',
           mimeType: input.mimeType,
+          commentsSnapshot: Array.isArray(input.commentsSnapshot) ? input.commentsSnapshot : [],
         });
       },
       listTeamEmailDomains() {

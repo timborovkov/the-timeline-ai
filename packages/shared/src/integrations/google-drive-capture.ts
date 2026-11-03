@@ -12,6 +12,7 @@ import {
 } from '@timeline/db';
 import { and, asc, desc, eq, gt, inArray, isNull, notInArray, or, sql } from 'drizzle-orm';
 
+import { parseDriveCommentSnapshots } from '#src/integrations/google-drive-comments.js';
 import {
   checkRateLimit,
   RATE_LIMITS,
@@ -36,6 +37,7 @@ export interface DriveSnapshotRecord {
   commentsHash: string;
   permissionsHash: string;
   mimeType: string | null;
+  commentsSnapshot?: unknown;
 }
 
 export function driveDebouncePlan(
@@ -141,6 +143,10 @@ export interface DriveExtractCursor {
   enqueuedAt: string;
   /** Drive `headRevisionId` / md5 / modifiedTime of the bytes sent to extract. */
   revisionId?: string;
+  /** S3 deletes failed; janitor retries until both objects are gone. */
+  cleanupPending?: boolean;
+  /** Leftover keys from a replaced extract that still need delete. */
+  pendingDeleteKeys?: string[];
 }
 
 export function driveFileContentRevision(file: {
@@ -184,6 +190,11 @@ export function parseDriveExtractCursor(cursor: unknown): DriveExtractCursor | n
   ) {
     return null;
   }
+  const pendingDeleteKeys = Array.isArray(record.pendingDeleteKeys)
+    ? record.pendingDeleteKeys.filter(
+        (key): key is string => typeof key === 'string' && key.length > 0,
+      )
+    : [];
   return {
     extractId: record.extractId,
     objectKey: record.objectKey,
@@ -194,16 +205,69 @@ export function parseDriveExtractCursor(cursor: unknown): DriveExtractCursor | n
     ...(typeof record.revisionId === 'string' && record.revisionId.length > 0
       ? { revisionId: record.revisionId }
       : {}),
+    ...(record.cleanupPending === true ? { cleanupPending: true } : {}),
+    ...(pendingDeleteKeys.length > 0 ? { pendingDeleteKeys } : {}),
+  };
+}
+
+export function isMissingS3ObjectError(err: unknown): boolean {
+  if (!err || typeof err !== 'object') return false;
+  const name = 'name' in err && typeof err.name === 'string' ? err.name : '';
+  const code = 'Code' in err && typeof err.Code === 'string' ? err.Code : '';
+  const httpStatus =
+    '$metadata' in err &&
+    err.$metadata &&
+    typeof err.$metadata === 'object' &&
+    'httpStatusCode' in err.$metadata
+      ? err.$metadata.httpStatusCode
+      : undefined;
+  return name === 'NoSuchKey' || name === 'NotFound' || code === 'NoSuchKey' || httpStatus === 404;
+}
+
+export function driveExtractObjectKeys(cursor: DriveExtractCursor): string[] {
+  return [
+    ...new Set(
+      [cursor.objectKey, cursor.resultObjectKey, ...(cursor.pendingDeleteKeys ?? [])].filter(
+        (key) => key.length > 0,
+      ),
+    ),
+  ];
+}
+
+function driveExtractDeleteSucceeded(result: PromiseSettledResult<unknown>): boolean {
+  return result.status === 'fulfilled' || isMissingS3ObjectError(result.reason);
+}
+
+export function remainingDriveExtractObjectKeys(
+  keys: string[],
+  results: PromiseSettledResult<unknown>[],
+): string[] {
+  return keys.filter((_, index) => {
+    const result = results[index];
+    return !result || !driveExtractDeleteSucceeded(result);
+  });
+}
+
+export function retainDriveExtractCleanupCursor(
+  cursor: DriveExtractCursor,
+  remainingKeys: string[],
+): DriveExtractCursor {
+  return {
+    ...cursor,
+    cleanupPending: true,
+    pendingDeleteKeys: remainingKeys.length > 0 ? remainingKeys : driveExtractObjectKeys(cursor),
   };
 }
 
 export function isDriveExtractPendingStale(cursor: DriveExtractCursor, now = Date.now()): boolean {
+  if (cursor.cleanupPending) return false;
   const enqueuedAtMs = Date.parse(cursor.enqueuedAt);
   if (!Number.isFinite(enqueuedAtMs)) return true;
   return now - enqueuedAtMs >= DRIVE_EXTRACT_PENDING_STALE_MS;
 }
 
 export function isDriveExtractCursorOrphan(cursor: DriveExtractCursor, now = Date.now()): boolean {
+  if (cursor.cleanupPending) return true;
   const enqueuedAtMs = Date.parse(cursor.enqueuedAt);
   if (!Number.isFinite(enqueuedAtMs)) return true;
   return now - enqueuedAtMs >= DRIVE_TRANSIENT_EXTRACT_ORPHAN_MS;
@@ -248,9 +312,11 @@ function driveExtractCursorPopulatedSql() {
 
 function driveExtractCursorOrphanSql(now: Date) {
   const cutoff = new Date(now.getTime() - DRIVE_TRANSIENT_EXTRACT_ORPHAN_MS).toISOString();
-  const enqueuedAt = sql`${integrationSyncState.cursor} ->> ${sql.raw("'enqueuedAt'")}`;
+  const cursor = integrationSyncState.cursor;
+  const enqueuedAt = sql`${cursor} ->> ${sql.raw("'enqueuedAt'")}`;
   return sql`(
-    ${enqueuedAt} !~ ${'^[0-9]{4}-[0-9]{2}-[0-9]{2}T'}
+    (${cursor} ->> ${sql.raw("'cleanupPending'")}) = ${'true'}
+    OR ${enqueuedAt} !~ ${'^[0-9]{4}-[0-9]{2}-[0-9]{2}T'}
     OR ${enqueuedAt} <= ${cutoff}
   )`;
 }
@@ -464,6 +530,7 @@ export async function loadLatestDriveSnapshot(
       snapshotText: googleDriveFileSnapshots.snapshotText,
       commentsHash: googleDriveFileSnapshots.commentsHash,
       permissionsHash: googleDriveFileSnapshots.permissionsHash,
+      commentsSnapshot: googleDriveFileSnapshots.commentsSnapshot,
       mimeType: googleDriveFileSnapshots.mimeType,
     })
     .from(googleDriveFileSnapshots)
@@ -498,6 +565,7 @@ export async function saveDriveSnapshot(
       snapshotText: input.snapshot.snapshotText,
       commentsHash: input.snapshot.commentsHash,
       permissionsHash: input.snapshot.permissionsHash,
+      commentsSnapshot: parseDriveCommentSnapshots(input.snapshot.commentsSnapshot),
       mimeType: input.snapshot.mimeType,
     })
     .onConflictDoUpdate({
@@ -510,6 +578,7 @@ export async function saveDriveSnapshot(
       ],
       set: {
         snapshotText: sql`excluded.snapshot_text`,
+        commentsSnapshot: sql`excluded.comments_snapshot`,
         mimeType: sql`excluded.mime_type`,
         // Revisit of a retained fingerprint must become the latest baseline.
         // `onConflictDoNothing` left the later distinct snapshot as latest, so

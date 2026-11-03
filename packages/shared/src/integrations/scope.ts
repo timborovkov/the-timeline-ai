@@ -27,11 +27,13 @@ import { and, desc, eq, inArray, isNotNull, isNull, lte, ne, or, sql } from 'dri
 import { decryptJson, encryptJson } from '#src/crypto/secrets.js';
 import { getEnv } from '#src/env.js';
 import {
+  driveExtractObjectKeys,
   forEachDriveExtractCursorPage,
   linkedObjectForDriveSelection as loadLinkedObjectForDriveSelection,
   listDriveExtractCursors,
   listTeamEmailDomains as loadTeamEmailDomains,
   loadLatestDriveSnapshot,
+  remainingDriveExtractObjectKeys,
   saveDriveSnapshot,
 } from '#src/integrations/google-drive-capture.js';
 import {
@@ -158,16 +160,29 @@ const log = childLogger('integrations:scope');
 async function tryDeleteDriveTransientExtractObjects(cursor: {
   objectKey: string;
   resultObjectKey: string;
+  pendingDeleteKeys?: string[];
 }): Promise<void> {
+  let client;
   try {
-    const client = getS3Client();
-    const bucket = getDocumentsBucket();
-    await Promise.allSettled([
-      deleteObject(client, bucket, cursor.objectKey),
-      deleteObject(client, bucket, cursor.resultObjectKey),
-    ]);
+    client = getS3Client();
   } catch (err) {
     log.warn({ err }, 'drive transient extract cleanup skipped');
+    return;
+  }
+  const bucket = getDocumentsBucket();
+  const keys = driveExtractObjectKeys({
+    extractId: 'disconnect',
+    objectKey: cursor.objectKey,
+    resultObjectKey: cursor.resultObjectKey,
+    contentType: 'application/octet-stream',
+    filename: 'disconnect',
+    enqueuedAt: new Date(0).toISOString(),
+    ...(cursor.pendingDeleteKeys ? { pendingDeleteKeys: cursor.pendingDeleteKeys } : {}),
+  });
+  const results = await Promise.allSettled(keys.map((key) => deleteObject(client, bucket, key)));
+  const remaining = remainingDriveExtractObjectKeys(keys, results);
+  if (remaining.length > 0) {
+    throw new Error(`drive transient extract objects remain: ${remaining.join(',')}`);
   }
 }
 const integrationHealthReset = {

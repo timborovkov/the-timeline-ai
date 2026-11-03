@@ -38,6 +38,7 @@ import {
   loadLatestDriveSnapshot,
   parseDriveExtractCursor,
   parseDriveTransientExtractResult,
+  remainingDriveExtractObjectKeys,
   saveDriveSnapshot,
   takeDriveExtractSlot,
   takeDriveProcessSlot,
@@ -221,6 +222,18 @@ describe('drive transient extract helpers', () => {
       enqueuedAt: '2026-11-02T12:00:00.000Z',
     });
     expect(parseDriveExtractCursor({ extractId: 'ext-1' })).toBeNull();
+    expect(
+      parseDriveExtractCursor({
+        extractId: 'ext-1',
+        objectKey: 'source',
+        resultObjectKey: 'result.json',
+        contentType: 'application/pdf',
+        filename: 'Notes.pdf',
+        enqueuedAt: '2026-11-02T12:00:00.000Z',
+        cleanupPending: true,
+        pendingDeleteKeys: ['source', 'result.json'],
+      }),
+    ).toMatchObject({ cleanupPending: true, pendingDeleteKeys: ['source', 'result.json'] });
     expect(cursor).not.toBeNull();
     if (!cursor) return;
     expect(isDriveExtractPendingStale(cursor, Date.parse('2026-11-02T12:05:00.000Z'))).toBe(false);
@@ -231,6 +244,26 @@ describe('drive transient extract helpers', () => {
       ),
     ).toBe(true);
     expect(isDriveExtractPendingStale({ ...cursor, enqueuedAt: 'not-a-date' })).toBe(true);
+    expect(isDriveExtractPendingStale({ ...cursor, cleanupPending: true })).toBe(false);
+    const missing = Object.assign(new Error('missing'), { name: 'NoSuchKey' });
+    expect(
+      remainingDriveExtractObjectKeys(
+        ['source', 'result.json'],
+        [
+          { status: 'fulfilled', value: undefined },
+          { status: 'rejected', reason: missing },
+        ],
+      ),
+    ).toEqual([]);
+    expect(
+      remainingDriveExtractObjectKeys(
+        ['source', 'result.json'],
+        [
+          { status: 'fulfilled', value: undefined },
+          { status: 'rejected', reason: new Error('AccessDenied') },
+        ],
+      ),
+    ).toEqual(['result.json']);
   });
 
   it('stamps extract revisions from Drive headRevisionId, md5, then modifiedTime', () => {
@@ -302,6 +335,17 @@ describe('drive transient extract helpers', () => {
         Date.parse('2026-11-02T12:00:00.000Z') + DRIVE_EXTRACT_PENDING_STALE_MS,
       ),
     ).toBe(false);
+    expect(
+      isDriveExtractCursorOrphan({
+        extractId: 'ext-1',
+        objectKey: 'source',
+        resultObjectKey: 'result.json',
+        contentType: 'application/pdf',
+        filename: 'Notes.pdf',
+        enqueuedAt: '2026-11-02T12:00:00.000Z',
+        cleanupPending: true,
+      }),
+    ).toBe(true);
     expect(driveExtractMatchesFileRevision('rev:old', 'rev:new')).toBe(false);
     expect(driveExtractMatchesFileRevision('rev:same', 'rev:same')).toBe(true);
     expect(driveExtractMatchesFileRevision(undefined, 'rev:new')).toBe(true);
@@ -781,6 +825,44 @@ describe('saveDriveSnapshot uniqueness', () => {
     await expect(
       adminListTeamIdsWithDriveExtractCursors(db as never, { orphanOnly: true, now }),
     ).resolves.toEqual([TEAM_ID]);
+  });
+
+  it('lists cleanupPending extract cursors as orphans without waiting 24 hours', async () => {
+    const [integration] = await db
+      .insert(integrations)
+      .values({
+        teamId: TEAM_ID,
+        connectedByUserId: USER_ID,
+        provider: 'google_drive',
+        displayName: 'Google Drive',
+        externalAccountId: 'drive-acct-cleanup',
+        visibilityDefault: 'team',
+      })
+      .returning();
+    if (!integration) throw new Error('integration insert failed');
+    await db.insert(integrationSyncState).values({
+      integrationId: integration.id,
+      resourceType: driveExtractCursorKey('cleanup-file'),
+      cursor: {
+        extractId: 'ext-cleanup',
+        objectKey: 'cleanup-source',
+        resultObjectKey: 'cleanup-result.json',
+        contentType: 'application/pdf',
+        filename: 'Cleanup.pdf',
+        enqueuedAt: '2026-11-03T00:00:00.000Z',
+        cleanupPending: true,
+        pendingDeleteKeys: ['cleanup-result.json'],
+      },
+      updatedAt: new Date('2026-11-03T00:00:00.000Z'),
+    });
+    const now = new Date('2026-11-03T00:05:00.000Z');
+    const orphans = await listDriveExtractCursors(db as never, {
+      teamId: TEAM_ID,
+      orphanOnly: true,
+      now,
+    });
+    expect(orphans.map((row) => row.fileId)).toEqual(['cleanup-file']);
+    expect(orphans[0]?.cursor.cleanupPending).toBe(true);
   });
 
   it('paginates populated extract cursors so disconnect cleanup can walk past a full page', async () => {

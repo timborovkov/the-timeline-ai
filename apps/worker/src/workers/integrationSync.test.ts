@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, it } from 'bun:test';
 
 import type * as TimelineDb from '@timeline/db';
 import type * as TimelineShared from '@timeline/shared';
+import type * as PlatformAdminRuntime from '@timeline/shared/platform-admin/runtime';
 type TestSyncContinuation = TimelineShared.integrations.SyncContinuation;
 type TestCheckpointInput = TimelineShared.integrations.CommitIntegrationSyncCheckpointInput;
 
@@ -76,6 +77,15 @@ await vi.mock(
     getDbClient: fakes.getDbClient,
   }),
   () => import('@timeline/db'),
+);
+
+await vi.mock(
+  import.meta.resolve('@timeline/shared/platform-admin/runtime'),
+  async (importOriginal) => ({
+    ...(await importOriginal<typeof PlatformAdminRuntime>()),
+    assertActivePrincipal: () => Promise.resolve(),
+  }),
+  () => import('@timeline/shared/platform-admin/runtime'),
 );
 
 await vi.mock(
@@ -183,7 +193,14 @@ beforeEach(() => {
   fakes.reserved.mockClear();
   fakes.reserved.mockImplementation(() => Promise.resolve([{ locked: true }]));
   fakes.reserved.release.mockClear();
-  fakes.getDbClient.mockReturnValue({ reserve: vi.fn(() => Promise.resolve(fakes.reserved)) });
+  fakes.getDbClient.mockReturnValue({
+    reserve: vi.fn(() => Promise.resolve(fakes.reserved)),
+    select: vi.fn(() => ({
+      from: () => ({
+        where: () => Promise.resolve([]),
+      }),
+    })),
+  });
   fakes.adminLoadIntegration.mockResolvedValue(integration);
   fakes.adminListEnabledIntegrations.mockResolvedValue([]);
   fakes.adminVerifyTeamMember.mockResolvedValue(true);
@@ -2832,7 +2849,7 @@ describe('Drive transient extract handoff', () => {
         err.name = 'NoSuchKey';
         return Promise.reject(err);
       }),
-      deleteDocumentObject: vi.fn(() => Promise.resolve()),
+      deleteDocumentObject: vi.fn((_input: { bucket: string; key: string }) => Promise.resolve()),
       enqueueDocumentExtractJob: vi.fn(() => Promise.resolve()),
     };
   }
@@ -3028,6 +3045,71 @@ describe('Drive transient extract handoff', () => {
     expect(io.deleteDocumentObject).toHaveBeenCalledTimes(2);
     expect(scope.saveCursor).toHaveBeenCalledWith(INTEGRATION_ID, cursorKey, {});
     expect(fakes.adminSaveCursor).not.toHaveBeenCalled();
+  });
+
+  it('keeps a retryable cleanup cursor when an S3 delete fails', async () => {
+    const cursor = {
+      extractId: 'ext-1',
+      objectKey: 'source',
+      resultObjectKey: 'result.json',
+      contentType: 'application/pdf',
+      filename: 'Notes.pdf',
+      enqueuedAt: '2026-11-02T12:00:00.000Z',
+    };
+    const scope = extractScope(new Map([[cursorKey, cursor]]));
+    const io = extractIO();
+    io.deleteDocumentObject.mockImplementation(({ key }: { key: string }) => {
+      if (key === 'source') return Promise.resolve();
+      return Promise.reject(new Error('AccessDenied'));
+    });
+    await clearDriveTransientExtract({
+      integrations: scope,
+      integrationId: INTEGRATION_ID,
+      fileId: FILE_ID,
+      io,
+    });
+    expect(io.deleteDocumentObject).toHaveBeenCalledTimes(2);
+    expect(scope.saveCursor).toHaveBeenCalledWith(
+      INTEGRATION_ID,
+      cursorKey,
+      expect.objectContaining({
+        extractId: 'ext-1',
+        cleanupPending: true,
+        pendingDeleteKeys: ['result.json'],
+      }),
+    );
+    expect(scope.store.get(cursorKey)).not.toEqual({});
+  });
+
+  it('treats a missing S3 object as a successful extract delete', async () => {
+    const scope = extractScope(
+      new Map([
+        [
+          cursorKey,
+          {
+            extractId: 'ext-1',
+            objectKey: 'source',
+            resultObjectKey: 'result.json',
+            contentType: 'application/pdf',
+            filename: 'Notes.pdf',
+            enqueuedAt: '2026-11-02T12:00:00.000Z',
+          },
+        ],
+      ]),
+    );
+    const io = extractIO();
+    io.deleteDocumentObject.mockImplementation(() => {
+      const err = new Error('missing');
+      err.name = 'NoSuchKey';
+      return Promise.reject(err);
+    });
+    await clearDriveTransientExtract({
+      integrations: scope,
+      integrationId: INTEGRATION_ID,
+      fileId: FILE_ID,
+      io,
+    });
+    expect(scope.saveCursor).toHaveBeenCalledWith(INTEGRATION_ID, cursorKey, {});
   });
 
   it('does not throw when clearing an extract after the integration is gone', async () => {
