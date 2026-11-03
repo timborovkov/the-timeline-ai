@@ -1745,6 +1745,9 @@
   "packages/shared/src/integrations/google-drive-diff.test.ts": {
     "group": "unit"
   },
+  "packages/shared/src/integrations/google-drive-evidence.test.ts": {
+    "group": "unit"
+  },
   "packages/shared/src/integrations/google-drive-scope.test.ts": {
     "group": "unit"
   },

@@ -33,7 +33,7 @@ const {
 const { DRIVE_FILE_DEBOUNCE_MS, DRIVE_TRANSIENT_RESULT_TOO_LARGE, hashDrivePayload } =
   await import('#src/integrations/google-drive-capture.js');
 const { driveCommentsHashEntries } = await import('#src/integrations/google-drive-comments.js');
-const { DRIVE_SNAPSHOT_MAX_CHARS, buildDriveSnapshotLocate } =
+const { DRIVE_CHANGED_SPAN_MAX, DRIVE_SNAPSHOT_MAX_CHARS, buildDriveSnapshotLocate } =
   await import('#src/integrations/google-drive-diff.js');
 
 const ORIGINAL_ENV = {
@@ -1113,6 +1113,59 @@ describe('googleDriveProvider', () => {
       ([input]) => requestUrl(input).searchParams.get('alt') === 'media',
     );
     expect(mediaCall).toBeUndefined();
+    expect(ctx.scheduleTargetedSync).not.toHaveBeenCalledWith(
+      expect.objectContaining({ reason: 'drive_transient_extract' }),
+      expect.anything(),
+    );
+  });
+
+  it('reschedules an unpublished pending extract immediately instead of waiting for debounce', async () => {
+    const fetch = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((input) => {
+      const url = requestUrl(input);
+      if (url.pathname.endsWith('/files/file-1')) {
+        return Promise.resolve(
+          jsonResponse({
+            id: 'file-1',
+            name: 'Notes',
+            mimeType: 'application/pdf',
+            parents: ['root'],
+            headRevisionId: 'rev-same',
+          }),
+        );
+      }
+      if (url.pathname.endsWith('/comments')) {
+        return Promise.resolve(jsonResponse({ comments: [] }));
+      }
+      return Promise.resolve(jsonResponse({ permissions: [] }));
+    });
+    vi.stubGlobal('fetch', fetch);
+    const ctx = syncContext({
+      loadTransientDriveExtract: vi.fn().mockResolvedValue({
+        status: 'pending',
+        revisionId: 'rev:rev-same',
+        reschedule: true,
+      }),
+    });
+
+    await googleDriveProvider.incrementalSync({
+      integration: { id: 'integration-1', teamId: 'team-1' } as never,
+      tokens: { access_token: 'access-token', expires_at: Date.now() + 600_000 },
+      selections: [{ kind: 'drive.file', externalId: 'file-1' }],
+      ctx: ctx,
+      target: { resourceType: 'drive.file', externalId: 'file-1' },
+    });
+
+    expect(ctx.scheduleTargetedSync).toHaveBeenCalledWith(
+      expect.objectContaining({
+        resourceType: 'drive.file',
+        externalId: 'file-1',
+        reason: 'drive_transient_extract',
+      }),
+      expect.objectContaining({ delayMs: 0 }),
+    );
+    expect(ctx.saveDriveSnapshot).not.toHaveBeenCalled();
   });
 
   it('audits a visible Drive extract failure then retries after clearing failed state', async () => {
@@ -2238,6 +2291,86 @@ describe('googleDriveProvider', () => {
     expect(preview.indexOf('Ada (resolved):')).toBeLessThan(preview.indexOf('Keep comment 1'));
     expect(preview).not.toContain('Keep comment 9');
     expect(preview).not.toContain('Keep comment 10');
+  });
+
+  it('does not advance the text baseline when more than 20 spans ride along with a comment change', async () => {
+    const gap = 800;
+    const spanCount = DRIVE_CHANGED_SPAN_MAX + 1;
+    const length = 200 + spanCount * gap;
+    const token = 'Northstar SOW covers implementation, training, and support. #';
+    const previousText = token.repeat(Math.ceil(length / token.length)).slice(0, length);
+    let nextText = previousText;
+    let shift = 0;
+    for (let index = 0; index < spanCount; index++) {
+      const offset = 40 + index * gap + shift;
+      const insert = `[[DROP${String(index)}]]`;
+      nextText = `${nextText.slice(0, offset)}${insert}${nextText.slice(offset + 1)}`;
+      shift += insert.length - 1;
+    }
+    const previousHash = hashDrivePayload(previousText);
+    const fetch = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((input) => {
+      const url = requestUrl(input);
+      if (url.pathname.includes('/export')) {
+        return Promise.resolve(new Response(nextText, { status: 200 }));
+      }
+      if (url.pathname.endsWith('/files/file-1')) {
+        return Promise.resolve(
+          jsonResponse({
+            id: 'file-1',
+            name: 'SOW',
+            mimeType: 'application/vnd.google-apps.document',
+            parents: ['root'],
+            modifiedTime: '2026-06-20T10:00:00.000Z',
+          }),
+        );
+      }
+      if (url.pathname.endsWith('/comments')) {
+        return Promise.resolve(
+          jsonResponse({
+            comments: [
+              {
+                id: 'c1',
+                content: 'Please confirm the $48k annual term.',
+                resolved: true,
+                author: { displayName: 'Ada' },
+              },
+            ],
+          }),
+        );
+      }
+      return Promise.resolve(jsonResponse({ permissions: [] }));
+    });
+    vi.stubGlobal('fetch', fetch);
+    const ctx = syncContext({
+      loadLatestDriveSnapshot: vi.fn().mockResolvedValue({
+        contentHash: previousHash,
+        snapshotText: previousText.slice(0, DRIVE_SNAPSHOT_MAX_CHARS),
+        snapshotLocate: buildDriveSnapshotLocate(previousText),
+        commentsHash: driveCommentsHash([]),
+        permissionsHash: drivePermissionsHash([]),
+        mimeType: 'application/vnd.google-apps.document',
+      }),
+    });
+
+    await googleDriveProvider.incrementalSync({
+      integration: { id: 'integration-1', teamId: 'team-1' } as never,
+      tokens: { access_token: 'access-token', expires_at: Date.now() + 600_000 },
+      selections: [{ kind: 'drive.file', externalId: 'file-1' }],
+      ctx: ctx,
+      target: { resourceType: 'drive.file', externalId: 'file-1' },
+    });
+
+    expect(ctx.writeEvents).toHaveBeenCalled();
+    const saved = (
+      ctx.saveDriveSnapshot as unknown as {
+        mock: { calls: [{ contentHash: string; commentsHash: string }][] };
+      }
+    ).mock.calls[0]?.[0];
+    expect(saved?.contentHash).toBe(previousHash);
+    expect(saved?.commentsHash).not.toBe(driveCommentsHash([]));
+    expect(ctx.judgeDriveChange).not.toHaveBeenCalled();
   });
 
   it('keeps comment evidence and passages 7-8 when ten 400-char hunks would overflow the event cap', async () => {

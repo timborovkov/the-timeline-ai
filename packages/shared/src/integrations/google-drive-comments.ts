@@ -4,8 +4,9 @@
  * transition past the first eight never reaches the judged event.
  * `comments.list` omits deleted comments (`includeDeleted=false`), so
  * removals are recovered by comparing previous snapshot ids to the next set.
- * Reply bodies are part of the fingerprint: a reply change must rank and appear
- * in event context before `commentsHash` advances.
+ * Reply bodies are part of the fingerprint: new or changed replies rank first
+ * inside the comment line, and `commentsHash` advances only when every changed
+ * reply appears in packed event context.
  */
 
 export const DRIVE_COMMENT_EVENT_LIMIT = 8;
@@ -229,6 +230,104 @@ export function diffDriveComments(
   return [...removed, ...changed, ...unchanged];
 }
 
+type DriveCommentReplyChangeKind = 'added' | 'edited' | 'removed';
+
+export interface DriveCommentReplyChange {
+  commentId: string;
+  reply: DriveCommentReplySnapshot;
+  kind: DriveCommentReplyChangeKind;
+}
+
+function replyFingerprint(reply: DriveCommentReplySnapshot): string {
+  return JSON.stringify({
+    id: reply.id,
+    content: reply.content,
+    modifiedTime: reply.modifiedTime,
+  });
+}
+
+function replyContextFragment(
+  reply: DriveCommentReplySnapshot,
+  kind: DriveCommentReplyChangeKind,
+): string {
+  const label = kind === 'removed' ? 'reply removed' : 'reply';
+  return reply.content
+    ? `${reply.author} (${label}): ${reply.content}`
+    : `${reply.author} (${label})`;
+}
+
+function classifyDriveCommentReplyChange(
+  previous: DriveCommentReplySnapshot | undefined,
+  next: DriveCommentReplySnapshot,
+): DriveCommentReplyChangeKind | 'unchanged' {
+  if (!previous) return 'added';
+  return replyFingerprint(previous) === replyFingerprint(next) ? 'unchanged' : 'edited';
+}
+
+type RankedReplyKind = DriveCommentReplyChangeKind | 'unchanged';
+
+function rankDriveCommentReplies(
+  previous: DriveCommentReplySnapshot[],
+  next: DriveCommentReplySnapshot[],
+  commentKind: DriveCommentChangeKind,
+): { reply: DriveCommentReplySnapshot; kind: RankedReplyKind }[] {
+  if (commentKind === 'removed') {
+    return previous.map((reply) => ({ reply, kind: 'removed' as const }));
+  }
+  const previousById = new Map(
+    previous.filter((reply) => reply.id).map((reply) => [reply.id, reply]),
+  );
+  const seen = new Set<string>();
+  const changed: { reply: DriveCommentReplySnapshot; kind: RankedReplyKind }[] = [];
+  const unchanged: { reply: DriveCommentReplySnapshot; kind: RankedReplyKind }[] = [];
+  for (const reply of next) {
+    if (reply.id) {
+      if (seen.has(reply.id)) continue;
+      seen.add(reply.id);
+    }
+    const kind = classifyDriveCommentReplyChange(
+      reply.id ? previousById.get(reply.id) : undefined,
+      reply,
+    );
+    if (kind === 'unchanged') unchanged.push({ reply, kind });
+    else changed.push({ reply, kind });
+  }
+  const removed = previous
+    .filter((reply) => reply.id && !seen.has(reply.id))
+    .map((reply) => ({ reply, kind: 'removed' as const }));
+  return [...removed, ...changed, ...unchanged];
+}
+
+export function changedDriveCommentReplies(
+  previous: DriveCommentSnapshot[],
+  next: DriveCommentSnapshot[],
+): DriveCommentReplyChange[] {
+  const previousById = new Map(
+    previous.filter((comment) => comment.id).map((comment) => [comment.id, comment]),
+  );
+  const seen = new Set<string>();
+  const changed: DriveCommentReplyChange[] = [];
+  for (const comment of next) {
+    if (comment.id) {
+      if (seen.has(comment.id)) continue;
+      seen.add(comment.id);
+    }
+    const prior = comment.id ? previousById.get(comment.id) : undefined;
+    for (const entry of rankDriveCommentReplies(prior?.replies ?? [], comment.replies, 'updated')) {
+      if (entry.kind === 'unchanged') continue;
+      changed.push({ commentId: comment.id, reply: entry.reply, kind: entry.kind });
+    }
+  }
+  for (const prior of previous) {
+    if (!prior.id || seen.has(prior.id)) continue;
+    seen.add(prior.id);
+    for (const reply of prior.replies) {
+      changed.push({ commentId: prior.id, reply, kind: 'removed' });
+    }
+  }
+  return changed;
+}
+
 function commentContextState(kind: DriveCommentChangeKind, comment: DriveCommentSnapshot): string {
   if (kind === 'removed') return 'removed';
   if (kind === 'reopened') return 'reopened';
@@ -236,15 +335,20 @@ function commentContextState(kind: DriveCommentChangeKind, comment: DriveComment
   return comment.resolved ? 'resolved' : 'open';
 }
 
-function commentContextLine(comment: DriveCommentSnapshot, kind: DriveCommentChangeKind): string {
+function commentContextLine(
+  comment: DriveCommentSnapshot,
+  kind: DriveCommentChangeKind,
+  previous?: DriveCommentSnapshot,
+): string {
   const state = commentContextState(kind, comment);
   const head = comment.content
     ? `${comment.author} (${state}): ${comment.content}`
     : `${comment.author} (${state})`;
-  if (comment.replies.length === 0) return head;
-  const replies = comment.replies
-    .map((reply) =>
-      reply.content ? `${reply.author} (reply): ${reply.content}` : `${reply.author} (reply)`,
+  const ranked = rankDriveCommentReplies(previous?.replies ?? [], comment.replies, kind);
+  if (ranked.length === 0) return head;
+  const replies = ranked
+    .map(({ reply, kind: replyKind }) =>
+      replyContextFragment(reply, replyKind === 'unchanged' ? 'added' : replyKind),
     )
     .join(' / ');
   return replies ? `${head} — ${replies}` : head;
@@ -254,8 +358,39 @@ export function commentEventContext(
   next: DriveComment[],
   previous: DriveCommentSnapshot[] = [],
 ): string {
+  const previousById = new Map(
+    previous.filter((comment) => comment.id).map((comment) => [comment.id, comment]),
+  );
   return diffDriveComments(previous, compactDriveComments(next))
     .slice(0, DRIVE_COMMENT_EVENT_LIMIT)
-    .map(({ comment, kind }) => commentContextLine(comment, kind))
+    .map(({ comment, kind }) =>
+      commentContextLine(comment, kind, comment.id ? previousById.get(comment.id) : undefined),
+    )
     .join('\n');
+}
+
+function commentNeedle(comment: DriveCommentSnapshot, kind: DriveCommentChangeKind): string {
+  if (comment.content) return comment.content;
+  return `${comment.author} (${commentContextState(kind, comment)})`;
+}
+
+/** Packed context must contain every changed comment and every changed reply. */
+export function driveCommentChangeIsWitnessed(
+  context: string,
+  previous: DriveCommentSnapshot[],
+  next: DriveCommentSnapshot[],
+): boolean {
+  if (!context.trim()) return false;
+  const ranked = diffDriveComments(previous, next).filter((entry) => entry.kind !== 'unchanged');
+  const replyChanges = changedDriveCommentReplies(previous, next);
+  if (ranked.length === 0 && replyChanges.length === 0) return false;
+  for (const entry of ranked) {
+    if (!context.includes(commentNeedle(entry.comment, entry.kind))) return false;
+  }
+  for (const change of replyChanges) {
+    const fragment = replyContextFragment(change.reply, change.kind);
+    const fallback = change.reply.content || change.reply.author;
+    if (!context.includes(fragment) && !context.includes(fallback)) return false;
+  }
+  return true;
 }

@@ -2966,7 +2966,7 @@ describe('Drive transient extract handoff', () => {
     expect(scope.getIntegration).toHaveBeenCalledWith(INTEGRATION_ID);
     expect(fakes.adminSaveCursor).not.toHaveBeenCalled();
     expect(fakes.adminLoadCursor).not.toHaveBeenCalled();
-    expect(order).toEqual(['cursor', 'enqueue']);
+    expect(order).toEqual(['cursor', 'enqueue', 'cursor']);
     expect(io.enqueueDocumentExtractJob).toHaveBeenCalledWith(
       expect.objectContaining({
         kind: 'drive_transient',
@@ -3012,10 +3012,87 @@ describe('Drive transient extract handoff', () => {
       expect.objectContaining({
         filename: 'Notes.pdf',
         contentType: 'application/pdf',
+        jobPublished: false,
       }),
     );
     expect(io.deleteDocumentObject).not.toHaveBeenCalled();
     expect(fakes.adminSaveCursor).not.toHaveBeenCalled();
+  });
+
+  it('carries replaced extract ids as tombstones even when S3 delete reports success', async () => {
+    const previous = {
+      extractId: 'ext-old',
+      objectKey: 'source-old',
+      resultObjectKey: 'result-old.json',
+      contentType: 'application/pdf',
+      filename: 'Notes.pdf',
+      enqueuedAt: '2026-11-02T11:00:00.000Z',
+    };
+    const scope = extractScope(new Map([[cursorKey, previous]]));
+    const io = extractIO();
+
+    await putAndEnqueueDriveTransientExtract({
+      integrations: scope,
+      teamId: TEAM_ID,
+      integrationId: INTEGRATION_ID,
+      fileId: FILE_ID,
+      filename: 'Notes.pdf',
+      contentType: 'application/pdf',
+      body: Buffer.from('%PDF-1.4'),
+      io,
+      now: new Date('2026-11-02T12:00:00.000Z'),
+    });
+
+    const saved = scope.saveCursor.mock.calls.at(-1)?.[2] as {
+      extractId: string;
+      tombstones?: { extractId: string; objectKey: string }[];
+      jobPublished?: boolean;
+    };
+    expect(saved.extractId).not.toBe('ext-old');
+    expect(saved.tombstones).toEqual([
+      expect.objectContaining({
+        extractId: 'ext-old',
+        objectKey: 'source-old',
+        resultObjectKey: 'result-old.json',
+      }),
+    ]);
+    expect(saved.jobPublished).toBeUndefined();
+    expect(io.deleteDocumentObject).toHaveBeenCalledWith(
+      expect.objectContaining({ key: 'source-old' }),
+    );
+  });
+
+  it('re-enqueues an unpublished pending extract immediately instead of waiting 15 minutes', async () => {
+    const scope = extractScope(
+      new Map([
+        [
+          cursorKey,
+          {
+            extractId: 'ext-unpublished',
+            objectKey: 'source',
+            resultObjectKey: 'result.json',
+            contentType: 'application/pdf',
+            filename: 'Notes.pdf',
+            enqueuedAt: '2026-11-02T12:00:00.000Z',
+            jobPublished: false,
+          },
+        ],
+      ]),
+    );
+    const io = extractIO();
+    await expect(
+      readDriveTransientExtract({
+        integrations: scope,
+        teamId: TEAM_ID,
+        integrationId: INTEGRATION_ID,
+        fileId: FILE_ID,
+        io,
+        now: new Date('2026-11-02T12:00:05.000Z'),
+      }),
+    ).resolves.toEqual({ status: 'pending', reschedule: true });
+    expect(io.enqueueDocumentExtractJob).toHaveBeenCalledWith(
+      expect.objectContaining({ extractId: 'ext-unpublished' }),
+    );
   });
 
   it('re-enqueues stale pending extracts and leaves fresh pending alone', async () => {
@@ -3060,7 +3137,7 @@ describe('Drive transient extract handoff', () => {
         io: staleIo,
         now: new Date('2026-11-02T12:00:00.000Z'),
       }),
-    ).resolves.toEqual({ status: 'pending', revisionId: 'rev:rev-9' });
+    ).resolves.toEqual({ status: 'pending', revisionId: 'rev:rev-9', reschedule: true });
     expect(staleIo.enqueueDocumentExtractJob).toHaveBeenCalledWith(
       expect.objectContaining({ extractId: 'ext-stale', objectKey: 'source-stale' }),
     );

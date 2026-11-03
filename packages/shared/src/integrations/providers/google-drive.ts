@@ -26,6 +26,7 @@ import {
   parseDriveSnapshotLocate,
   truncateDriveSnapshot,
 } from '#src/integrations/google-drive-diff.js';
+import { decideDriveSnapshotAdvance } from '#src/integrations/google-drive-evidence.js';
 import {
   DRIVE_FILE_KIND,
   DRIVE_FOLDER_KIND,
@@ -533,6 +534,7 @@ interface LoadedDriveText {
   extractError?: string;
   extractCapReason?: 'file' | 'connection';
   consumeReadyExtract?: boolean;
+  rescheduleExtract?: boolean;
 }
 
 async function consumeReadyDriveExtract(
@@ -586,7 +588,11 @@ async function loadDriveText(
       // Fall through: take a new extract slot (the daily budget is the bound)
       // and enqueue again after a config fix or a later edit.
     } else if (existing?.status === 'pending' && revisionMatches) {
-      return { text: '', skippedReason: 'extract_pending' };
+      return {
+        text: '',
+        skippedReason: 'extract_pending',
+        ...(existing.reschedule ? { rescheduleExtract: true } : {}),
+      };
     } else if (existing && !revisionMatches) {
       await ctx.recordAudit('drive_extract_stale_revision', {
         file_id: file.id,
@@ -746,6 +752,26 @@ async function persistDriveSnapshot(
   await ctx.saveDriveSnapshot({ fileId, ...snapshot });
 }
 
+function snapshotFromAdvanceDecision(
+  decision: ReturnType<typeof decideDriveSnapshotAdvance>,
+  nextLocate: ReturnType<typeof buildDriveSnapshotLocate>,
+  mimeType: string,
+): Parameters<typeof persistDriveSnapshot>[2] {
+  const locate = decision.advanceText
+    ? (decision.snapshot.snapshotLocate ?? nextLocate)
+    : (decision.snapshot.snapshotLocate ??
+      buildDriveSnapshotLocate(decision.snapshot.snapshotText));
+  return {
+    contentHash: decision.snapshot.contentHash,
+    snapshotText: decision.snapshot.snapshotText,
+    commentsHash: decision.snapshot.commentsHash,
+    permissionsHash: decision.snapshot.permissionsHash,
+    mimeType,
+    commentsSnapshot: decision.snapshot.commentsSnapshot,
+    snapshotLocate: locate,
+  };
+}
+
 function driveDebounceCursorKey(fileId: string): string {
   return `drive.debounce.${fileId}`;
 }
@@ -774,6 +800,38 @@ async function scheduleFileCapture(
     },
     { delayMs: plan.delayMs, replaceDelayed: true },
   );
+}
+
+async function scheduleExtractResume(
+  integration: IntegrationRow,
+  fileId: string,
+  ctx: SyncContext,
+): Promise<void> {
+  if (!ctx.scheduleTargetedSync) return;
+  await ctx.scheduleTargetedSync(
+    {
+      integrationId: integration.id,
+      teamId: integration.teamId,
+      triggeredBy: 'webhook',
+      resourceType: DRIVE_FILE_KIND,
+      externalId: fileId,
+      reason: 'drive_transient_extract',
+    },
+    { delayMs: 0 },
+  );
+}
+
+function packDriveEvidence(input: {
+  summary: string;
+  hunks: string[];
+  commentPreview: string;
+  previousText: string;
+  nextText: string;
+}): ReturnType<typeof packDriveChangeEvents> {
+  const packed = packDriveChangeEvents(input);
+  if (packed) return packed;
+  if (!input.commentPreview.trim()) return null;
+  return packDriveChangeEvents({ ...input, hunks: [] });
 }
 
 async function fetchChanges(
@@ -1045,6 +1103,7 @@ async function processDriveFile(
   }
   if (loaded.skippedReason === 'extract_pending') {
     await ctx.recordAudit('drive_extract_pending', { file_id: fileId, mime_type: file.mimeType });
+    if (loaded.rescheduleExtract) await scheduleExtractResume(integration, fileId, ctx);
     return;
   }
   if (loaded.skippedReason === 'extract_failed') {
@@ -1120,11 +1179,49 @@ async function processDriveFile(
     return;
   }
 
+  const previousLocate = parseDriveSnapshotLocate(previous.snapshotLocate);
+  const previousFull =
+    previousLocate &&
+    previousLocate.chunkTexts.length === previousLocate.chunkHashes.length &&
+    previousLocate.chunkTexts.join('').length === previousLocate.length
+      ? previousLocate.chunkTexts.join('')
+      : previous.snapshotText;
+  const previousComments = parseDriveCommentSnapshots(previous.commentsSnapshot);
+  const commentPreview = commentsChanged ? commentEventContext(comments, previousComments) : '';
+  const previousFields = {
+    contentHash: previous.contentHash,
+    snapshotText: previous.snapshotText,
+    snapshotLocate: previousLocate,
+    commentsHash: previous.commentsHash ?? '',
+    commentsSnapshot: previousComments,
+    permissionsHash: previous.permissionsHash ?? '',
+    mimeType: previous.mimeType,
+  };
+
+  const decideFromPacked = (packed: ReturnType<typeof packDriveChangeEvents>) =>
+    decideDriveSnapshotAdvance({
+      previous: previousFields,
+      next: snapshot,
+      diff,
+      previousText: previousFull,
+      nextText: fullText,
+      packedEvents: packed,
+    });
+
   if (
+    strongSignals.length === 0 &&
+    !permissionsChanged &&
     (!driveDiffHasEvidence(diff) ||
-      (diff.reason === 'identical' && previous.contentHash !== contentHash)) &&
-    strongSignals.length === 0
+      (diff.reason === 'identical' && previous.contentHash !== contentHash))
   ) {
+    const decision = decideFromPacked(null);
+    if (decision.persist) {
+      await persistDriveSnapshot(
+        ctx,
+        file.id,
+        snapshotFromAdvanceDecision(decision, snapshot.snapshotLocate, file.mimeType),
+      );
+    }
     await consumeReadyDriveExtract(ctx, file.id, loaded);
     await ctx.recordAudit('drive_change_skipped', {
       file_id: fileId,
@@ -1134,7 +1231,14 @@ async function processDriveFile(
   }
 
   if (!diff.changed && strongSignals.length === 0) {
-    await persistDriveSnapshot(ctx, file.id, snapshot);
+    const decision = decideFromPacked(null);
+    if (decision.persist) {
+      await persistDriveSnapshot(
+        ctx,
+        file.id,
+        snapshotFromAdvanceDecision(decision, snapshot.snapshotLocate, file.mimeType),
+      );
+    }
     await consumeReadyDriveExtract(ctx, file.id, loaded);
     await ctx.recordAudit('drive_change_skipped', {
       file_id: fileId,
@@ -1173,10 +1277,55 @@ async function processDriveFile(
     return;
   }
 
+  const packed = packDriveEvidence({
+    summary: judge.summary,
+    hunks: diff.hunks,
+    commentPreview,
+    previousText: previousFull,
+    nextText: fullText,
+  });
+  const decision = decideFromPacked(packed);
+
   if (!judge.matters || judge.reason === 'noise') {
-    await persistDriveSnapshot(ctx, file.id, snapshot);
+    if (decision.persist) {
+      await persistDriveSnapshot(
+        ctx,
+        file.id,
+        snapshotFromAdvanceDecision(decision, snapshot.snapshotLocate, file.mimeType),
+      );
+    }
     await consumeReadyDriveExtract(ctx, file.id, loaded);
     await ctx.recordAudit('drive_change_noise', { file_id: fileId, reason: judge.reason });
+    return;
+  }
+
+  if (!packed) {
+    await ctx.recordAudit('drive_pack_incomplete', {
+      file_id: fileId,
+      hunk_count: diff.hunks.length,
+    });
+    if (decision.persist) {
+      await persistDriveSnapshot(
+        ctx,
+        file.id,
+        snapshotFromAdvanceDecision(decision, snapshot.snapshotLocate, file.mimeType),
+      );
+    }
+    await consumeReadyDriveExtract(ctx, file.id, loaded);
+    return;
+  }
+
+  if (
+    !decision.persist &&
+    !decision.advanceText &&
+    !decision.advanceComments &&
+    !permissionsChanged
+  ) {
+    await consumeReadyDriveExtract(ctx, file.id, loaded);
+    await ctx.recordAudit('drive_change_skipped', {
+      file_id: fileId,
+      reason: 'no_evidence',
+    });
     return;
   }
 
@@ -1191,38 +1340,14 @@ async function processDriveFile(
         },
       )
     : null;
-  const previousLocate = parseDriveSnapshotLocate(previous.snapshotLocate);
-  const previousFull =
-    previousLocate &&
-    previousLocate.chunkTexts.length === previousLocate.chunkHashes.length &&
-    previousLocate.chunkTexts.join('').length === previousLocate.length
-      ? previousLocate.chunkTexts.join('')
-      : previous.snapshotText;
-  const commentPreview = commentsChanged
-    ? commentEventContext(comments, parseDriveCommentSnapshots(previous.commentsSnapshot))
-    : '';
-  const packed = packDriveChangeEvents({
-    summary: judge.summary,
-    hunks: diff.hunks,
-    commentPreview,
-    previousText: previousFull,
-    nextText: fullText,
-  });
-  if (!packed) {
-    await ctx.recordAudit('drive_pack_incomplete', {
-      file_id: fileId,
-      hunk_count: diff.hunks.length,
-    });
-    return;
-  }
   const occurrence = driveFileContentRevision(file) ?? 'unknown';
   const events: IntegrationEvent[] = packed.map((part, index) => ({
     dedupKey: driveFileChangeDedupKey({
       fileId: file.id,
       occurrence,
-      contentHash,
-      commentsHash,
-      permissionsHash,
+      contentHash: decision.snapshot.contentHash,
+      commentsHash: decision.snapshot.commentsHash,
+      permissionsHash: decision.snapshot.permissionsHash,
       ...(packed.length > 1 ? { part: index + 1 } : {}),
     }),
     provider: 'google_drive',
@@ -1263,7 +1388,13 @@ async function processDriveFile(
       : {}),
   }));
   await ctx.writeEvents(events);
-  await persistDriveSnapshot(ctx, file.id, snapshot);
+  if (decision.persist) {
+    await persistDriveSnapshot(
+      ctx,
+      file.id,
+      snapshotFromAdvanceDecision(decision, snapshot.snapshotLocate, file.mimeType),
+    );
+  }
   await consumeReadyDriveExtract(ctx, file.id, loaded);
 }
 

@@ -4,9 +4,11 @@ import { describe, it } from 'bun:test';
 import {
   DRIVE_COMMENT_EVENT_LIMIT,
   DRIVE_COMMENT_HASH_FIELDS,
+  changedDriveCommentReplies,
   commentEventContext,
   compactDriveComments,
   diffDriveComments,
+  driveCommentChangeIsWitnessed,
   driveCommentHashRecord,
   type DriveComment,
   type DriveCommentChangeKind,
@@ -176,6 +178,79 @@ describe('commentEventContext ranking', () => {
     const context = commentEventContext(next, compactDriveComments(previous));
     expect(context.split('\n')[0]).toBe('Ada (removed): Approved — $48k annual term.');
     expect(context).not.toContain('Keep comment 9');
+  });
+
+  it('puts a new reply ahead of unchanged replies in the comment line', () => {
+    for (let insertAt = 0; insertAt <= 6; insertAt++) {
+      const older = Array.from({ length: 6 }, (_, index) => ({
+        id: `old-${String(index)}`,
+        content: `Older reply ${String(index)} stays in place.`,
+        author: { displayName: 'Ada' },
+      }));
+      const added = {
+        id: 'r-new',
+        content: 'Confirm the $48k annual term.',
+        modifiedTime: '2026-07-02T00:00:00.000Z',
+        author: { displayName: 'Bea' },
+      };
+      const previous = numberedComments(1, { 1: { replies: older } });
+      const next = numberedComments(1, {
+        1: { replies: [...older.slice(0, insertAt), added, ...older.slice(insertAt)] },
+      });
+      const context = commentEventContext(next, compactDriveComments(previous));
+      const replySection = context.split(' — ')[1] ?? '';
+      expect(replySection.startsWith('Bea (reply): Confirm the $48k annual term.')).toBe(true);
+      expect(replySection.indexOf('Bea (reply):')).toBeLessThan(
+        replySection.indexOf('Older reply 0'),
+      );
+      const replyChanges = changedDriveCommentReplies(
+        compactDriveComments(previous),
+        compactDriveComments(next),
+      );
+      expect(replyChanges).toHaveLength(1);
+      expect(replyChanges[0]?.commentId).toBe('c1');
+      expect(replyChanges[0]?.kind).toBe('added');
+      expect(replyChanges[0]?.reply.id).toBe('r-new');
+    }
+  });
+
+  it('advances commentsHash only when every changed reply is in context', () => {
+    const previous = compactDriveComments(
+      numberedComments(1, {
+        1: {
+          replies: [{ id: 'r1', content: 'Older reply stays.', author: { displayName: 'Ada' } }],
+        },
+      }),
+    );
+    const next = compactDriveComments(
+      numberedComments(1, {
+        1: {
+          replies: [
+            { id: 'r1', content: 'Older reply stays.', author: { displayName: 'Ada' } },
+            { id: 'r2', content: 'Confirm the $48k annual term.', author: { displayName: 'Bea' } },
+          ],
+        },
+      }),
+    );
+    const full = commentEventContext(
+      numberedComments(1, {
+        1: {
+          replies: [
+            { id: 'r1', content: 'Older reply stays.', author: { displayName: 'Ada' } },
+            { id: 'r2', content: 'Confirm the $48k annual term.', author: { displayName: 'Bea' } },
+          ],
+        },
+      }),
+      previous,
+    );
+    expect(driveCommentChangeIsWitnessed(full, previous, next)).toBe(true);
+    expect(
+      driveCommentChangeIsWitnessed(
+        'Ada (updated): Keep comment 1 — Ada (reply): Older reply stays.',
+        previous,
+        next,
+      ),
+    ).toBe(false);
   });
 
   it('ranks a removal ahead of an addition in the bounded window', () => {

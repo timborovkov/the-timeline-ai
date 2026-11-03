@@ -195,7 +195,7 @@ export interface SyncContext {
   loadTransientDriveExtract?(
     fileId: string,
   ): Promise<
-    | { status: 'pending'; revisionId?: string }
+    | { status: 'pending'; revisionId?: string; reschedule?: boolean }
     | { status: 'ready'; text: string; revisionId?: string }
     | { status: 'failed'; error: string; revisionId?: string }
     | null

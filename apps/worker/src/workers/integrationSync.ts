@@ -450,6 +450,35 @@ async function saveDriveExtractCursor(
   );
 }
 
+async function expireDriveExtractTombstones(
+  io: DriveTransientExtractIO,
+  cursor: integrationsLib.DriveExtractCursor,
+  nowMs: number,
+): Promise<integrationsLib.DriveExtractCursor> {
+  const tombstones = cursor.tombstones ?? [];
+  if (tombstones.length === 0) return cursor;
+  const { settled } = integrationsLib.partitionDriveExtractTombstones(tombstones, nowMs);
+  const remainingKeysByExtractId = new Map<string, string[]>();
+  for (const tombstone of settled) {
+    const keys = integrationsLib.driveExtractTombstoneKeys(tombstone);
+    const results = await Promise.allSettled(
+      keys.map((key) => io.deleteDocumentObject({ bucket: io.getDocumentsBucket(), key })),
+    );
+    remainingKeysByExtractId.set(
+      tombstone.extractId,
+      integrationsLib.remainingDriveExtractObjectKeys(keys, results),
+    );
+  }
+  return integrationsLib.applyDriveExtractTombstoneDeletes(cursor, remainingKeysByExtractId, nowMs);
+}
+
+function publishedDriveExtractCursor(
+  cursor: integrationsLib.DriveExtractCursor,
+): integrationsLib.DriveExtractCursor {
+  const { jobPublished: _published, ...rest } = cursor;
+  return rest;
+}
+
 export async function putAndEnqueueDriveTransientExtract(input: {
   integrations: DriveExtractCursorScope;
   teamId: string;
@@ -476,27 +505,29 @@ export async function putAndEnqueueDriveTransientExtract(input: {
     input.integrationId,
     input.fileId,
   );
-  let pendingDeleteKeys: string[] = [];
+  const now = input.now ?? new Date();
+  const nowIso = now.toISOString();
+  const nowMs = now.getTime();
+  let tombstones: integrationsLib.DriveExtractTombstone[] = [];
   if (existing) {
+    tombstones = integrationsLib.carryDriveExtractTombstones(existing, nowIso);
     const leftoverKeys = integrationsLib.driveExtractObjectKeys(existing);
-    const leftoverResults = await Promise.allSettled(
+    await Promise.allSettled(
       leftoverKeys.map((key) => io.deleteDocumentObject({ bucket: io.getDocumentsBucket(), key })),
     );
-    pendingDeleteKeys = integrationsLib.remainingDriveExtractObjectKeys(
-      leftoverKeys,
-      leftoverResults,
-    );
   }
-  const cursor: integrationsLib.DriveExtractCursor = {
+  let cursor: integrationsLib.DriveExtractCursor = {
     extractId,
     objectKey: keys.objectKey,
     resultObjectKey: keys.resultObjectKey,
     contentType: input.contentType,
     filename: input.filename,
-    enqueuedAt: (input.now ?? new Date()).toISOString(),
+    enqueuedAt: nowIso,
+    jobPublished: false,
     ...(input.revisionId ? { revisionId: input.revisionId } : {}),
-    ...(pendingDeleteKeys.length > 0 ? { pendingDeleteKeys } : {}),
+    ...(tombstones.length > 0 ? { tombstones } : {}),
   };
+  cursor = await expireDriveExtractTombstones(io, cursor, nowMs);
   await io.putDocumentObject({
     bucket: io.getDocumentsBucket(),
     key: keys.objectKey,
@@ -513,13 +544,24 @@ export async function putAndEnqueueDriveTransientExtract(input: {
     ]);
     throw err;
   }
-  await io.enqueueDocumentExtractJob(
-    driveTransientExtractJob({
-      teamId: input.teamId,
-      integrationId: input.integrationId,
-      fileId: input.fileId,
-      cursor,
-    }),
+  try {
+    await io.enqueueDocumentExtractJob(
+      driveTransientExtractJob({
+        teamId: input.teamId,
+        integrationId: input.integrationId,
+        fileId: input.fileId,
+        cursor,
+      }),
+    );
+  } catch (err) {
+    // Leave jobPublished: false so the 15-minute stale check cannot block retry.
+    throw err;
+  }
+  await saveDriveExtractCursor(
+    input.integrations,
+    input.integrationId,
+    input.fileId,
+    publishedDriveExtractCursor(cursor),
   );
 }
 
@@ -538,18 +580,21 @@ export async function readDriveTransientExtract(input: {
   io?: DriveTransientExtractIO;
   now?: Date;
 }): Promise<
-  | { status: 'pending'; revisionId?: string }
+  | { status: 'pending'; revisionId?: string; reschedule?: boolean }
   | { status: 'ready'; text: string; revisionId?: string }
   | { status: 'failed'; error: string; revisionId?: string }
   | null
 > {
   const io = input.io ?? defaultDriveTransientExtractIO;
-  const cursor = await loadDriveExtractCursor(
-    input.integrations,
-    input.integrationId,
-    input.fileId,
-  );
+  const now = input.now ?? new Date();
+  let cursor = await loadDriveExtractCursor(input.integrations, input.integrationId, input.fileId);
   if (!cursor || cursor.cleanupPending) return null;
+  const tombstoneCount = cursor.tombstones?.length ?? 0;
+  cursor = await expireDriveExtractTombstones(io, cursor, now.getTime());
+  const tombstonesChanged = (cursor.tombstones?.length ?? 0) !== tombstoneCount;
+  if (tombstonesChanged) {
+    await saveDriveExtractCursor(input.integrations, input.integrationId, input.fileId, cursor);
+  }
   try {
     const fetched = await io.getDocumentObject({
       bucket: io.getDocumentsBucket(),
@@ -569,21 +614,34 @@ export async function readDriveTransientExtract(input: {
         : message.slice(0, 500);
       return withExtractRevision({ status: 'failed' as const, error }, cursor);
     }
-    if (integrationsLib.isDriveExtractPendingStale(cursor, (input.now ?? new Date()).getTime())) {
-      await io.enqueueDocumentExtractJob(
-        driveTransientExtractJob({
-          teamId: input.teamId,
-          integrationId: input.integrationId,
-          fileId: input.fileId,
-          cursor,
-        }),
-      );
-      await saveDriveExtractCursor(input.integrations, input.integrationId, input.fileId, {
-        ...cursor,
-        enqueuedAt: (input.now ?? new Date()).toISOString(),
-      });
+    const stale = integrationsLib.isDriveExtractPendingStale(cursor, now.getTime());
+    if (stale) {
+      try {
+        await io.enqueueDocumentExtractJob(
+          driveTransientExtractJob({
+            teamId: input.teamId,
+            integrationId: input.integrationId,
+            fileId: input.fileId,
+            cursor,
+          }),
+        );
+        await saveDriveExtractCursor(
+          input.integrations,
+          input.integrationId,
+          input.fileId,
+          publishedDriveExtractCursor({ ...cursor, enqueuedAt: now.toISOString() }),
+        );
+      } catch {
+        await saveDriveExtractCursor(input.integrations, input.integrationId, input.fileId, {
+          ...cursor,
+          jobPublished: false,
+        });
+      }
     }
-    return withExtractRevision({ status: 'pending' as const }, cursor);
+    return withExtractRevision(
+      { status: 'pending' as const, ...(stale ? { reschedule: true as const } : {}) },
+      cursor,
+    );
   }
 }
 
@@ -606,26 +664,35 @@ export async function clearDriveTransientExtract(input: {
   );
   if (cursor) {
     const bucket = io.getDocumentsBucket();
-    const keys = integrationsLib.driveExtractObjectKeys(cursor);
-    const results = await Promise.allSettled(
-      keys.map((key) => io.deleteDocumentObject({ bucket, key })),
+    const currentKeys = [
+      ...new Set(
+        [cursor.objectKey, cursor.resultObjectKey, ...(cursor.pendingDeleteKeys ?? [])].filter(
+          (key) => key.length > 0,
+        ),
+      ),
+    ];
+    const currentResults = await Promise.allSettled(
+      currentKeys.map((key) => io.deleteDocumentObject({ bucket, key })),
     );
-    const remaining = integrationsLib.remainingDriveExtractObjectKeys(keys, results);
+    const remainingCurrent = integrationsLib.remainingDriveExtractObjectKeys(
+      currentKeys,
+      currentResults,
+    );
     const cancelledAt =
       mode === 'cancel' ? (cursor.cancelledAt ?? now.toISOString()) : cursor.cancelledAt;
-    const tombstone = integrationsLib.retainDriveExtractCleanupCursor(cursor, remaining, {
-      ...(cancelledAt ? { cancelledAt } : {}),
-    });
-    if (
-      remaining.length > 0 ||
-      (mode === 'cancel' && !integrationsLib.isDriveExtractCancelSettled(tombstone, now.getTime()))
-    ) {
-      await saveDriveExtractCursor(
-        input.integrations,
-        input.integrationId,
-        input.fileId,
-        tombstone,
-      );
+    let next: integrationsLib.DriveExtractCursor = integrationsLib.retainDriveExtractCleanupCursor(
+      cursor,
+      remainingCurrent,
+      {
+        ...(cancelledAt ? { cancelledAt } : {}),
+      },
+    );
+    next = await expireDriveExtractTombstones(io, next, now.getTime());
+    const keepCancel =
+      mode === 'cancel' && !integrationsLib.isDriveExtractCancelSettled(next, now.getTime());
+    const keepTombstones = (next.tombstones?.length ?? 0) > 0;
+    if (remainingCurrent.length > 0 || keepCancel || keepTombstones) {
+      await saveDriveExtractCursor(input.integrations, input.integrationId, input.fileId, next);
       return;
     }
   }

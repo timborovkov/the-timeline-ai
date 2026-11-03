@@ -140,6 +140,15 @@ export const DRIVE_TRANSIENT_EXTRACT_ORPHAN_MS = 24 * 60 * 60 * 1000;
 /** Bounded page for orphan sweeps and disconnect S3 cleanup. */
 export const DRIVE_EXTRACT_CURSOR_PAGE_SIZE = 500;
 
+export interface DriveExtractTombstone {
+  extractId: string;
+  objectKey: string;
+  resultObjectKey: string;
+  enqueuedAt: string;
+  cancelledAt: string;
+  pendingDeleteKeys: string[];
+}
+
 export interface DriveExtractCursor {
   extractId: string;
   objectKey: string;
@@ -159,6 +168,17 @@ export interface DriveExtractCursor {
    * window elapses and the janitor can delete a late write.
    */
   cancelledAt?: string;
+  /**
+   * False until the document-extract job is accepted. Unpublished cursors are
+   * immediately stale so publish failures retry instead of waiting 15 minutes.
+   * Legacy cursors omit the field and are treated as published.
+   */
+  jobPublished?: boolean;
+  /**
+   * Every extract id this cursor replaced. Kept until the producer wait/TTL
+   * elapses even when DeleteObject reported success (including S3 404).
+   */
+  tombstones?: DriveExtractTombstone[];
 }
 
 export function driveFileContentRevision(file: {
@@ -207,6 +227,7 @@ export function parseDriveExtractCursor(cursor: unknown): DriveExtractCursor | n
         (key): key is string => typeof key === 'string' && key.length > 0,
       )
     : [];
+  const tombstones = parseDriveExtractTombstones(record.tombstones);
   return {
     extractId: record.extractId,
     objectKey: record.objectKey,
@@ -222,7 +243,52 @@ export function parseDriveExtractCursor(cursor: unknown): DriveExtractCursor | n
     ...(typeof record.cancelledAt === 'string' && record.cancelledAt.length > 0
       ? { cancelledAt: record.cancelledAt }
       : {}),
+    ...(record.jobPublished === false ? { jobPublished: false } : {}),
+    ...(tombstones.length > 0 ? { tombstones } : {}),
   };
+}
+
+function parseDriveExtractTombstones(value: unknown): DriveExtractTombstone[] {
+  if (!Array.isArray(value)) return [];
+  const found: DriveExtractTombstone[] = [];
+  const seen = new Set<string>();
+  for (const item of value) {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) continue;
+    const record = item as Record<string, unknown>;
+    if (
+      typeof record.extractId !== 'string' ||
+      record.extractId.length === 0 ||
+      typeof record.objectKey !== 'string' ||
+      record.objectKey.length === 0 ||
+      typeof record.resultObjectKey !== 'string' ||
+      record.resultObjectKey.length === 0 ||
+      typeof record.enqueuedAt !== 'string' ||
+      record.enqueuedAt.length === 0 ||
+      typeof record.cancelledAt !== 'string' ||
+      record.cancelledAt.length === 0
+    ) {
+      continue;
+    }
+    if (seen.has(record.extractId)) continue;
+    seen.add(record.extractId);
+    const pendingDeleteKeys = Array.isArray(record.pendingDeleteKeys)
+      ? record.pendingDeleteKeys.filter(
+          (key): key is string => typeof key === 'string' && key.length > 0,
+        )
+      : [record.objectKey, record.resultObjectKey];
+    found.push({
+      extractId: record.extractId,
+      objectKey: record.objectKey,
+      resultObjectKey: record.resultObjectKey,
+      enqueuedAt: record.enqueuedAt,
+      cancelledAt: record.cancelledAt,
+      pendingDeleteKeys:
+        pendingDeleteKeys.length > 0
+          ? pendingDeleteKeys
+          : [record.objectKey, record.resultObjectKey],
+    });
+  }
+  return found;
 }
 
 export function isMissingS3ObjectError(err: unknown): boolean {
@@ -239,12 +305,25 @@ export function isMissingS3ObjectError(err: unknown): boolean {
   return name === 'NoSuchKey' || name === 'NotFound' || code === 'NoSuchKey' || httpStatus === 404;
 }
 
+export function driveExtractTombstoneKeys(tombstone: DriveExtractTombstone): string[] {
+  return [
+    ...new Set(
+      [tombstone.objectKey, tombstone.resultObjectKey, ...tombstone.pendingDeleteKeys].filter(
+        (key) => key.length > 0,
+      ),
+    ),
+  ];
+}
+
 export function driveExtractObjectKeys(cursor: DriveExtractCursor): string[] {
   return [
     ...new Set(
-      [cursor.objectKey, cursor.resultObjectKey, ...(cursor.pendingDeleteKeys ?? [])].filter(
-        (key) => key.length > 0,
-      ),
+      [
+        cursor.objectKey,
+        cursor.resultObjectKey,
+        ...(cursor.pendingDeleteKeys ?? []),
+        ...(cursor.tombstones ?? []).flatMap((tombstone) => driveExtractTombstoneKeys(tombstone)),
+      ].filter((key) => key.length > 0),
     ),
   ];
 }
@@ -269,12 +348,94 @@ export function retainDriveExtractCleanupCursor(
   opts?: { cancelledAt?: string },
 ): DriveExtractCursor {
   const cancelledAt = opts?.cancelledAt ?? cursor.cancelledAt;
+  const currentKeys = [cursor.objectKey, cursor.resultObjectKey];
+  const remainingCurrent = remainingKeys.filter((key) => currentKeys.includes(key));
   return {
     ...cursor,
     cleanupPending: true,
-    pendingDeleteKeys: remainingKeys.length > 0 ? remainingKeys : driveExtractObjectKeys(cursor),
+    pendingDeleteKeys: remainingCurrent.length > 0 ? remainingCurrent : currentKeys,
     ...(cancelledAt ? { cancelledAt } : {}),
+    ...(cursor.tombstones && cursor.tombstones.length > 0 ? { tombstones: cursor.tombstones } : {}),
   };
+}
+
+/** Always keep a replaced extract id, even when DeleteObject reported success. */
+export function carryDriveExtractTombstones(
+  existing: DriveExtractCursor,
+  nowIso: string,
+): DriveExtractTombstone[] {
+  const self: DriveExtractTombstone = {
+    extractId: existing.extractId,
+    objectKey: existing.objectKey,
+    resultObjectKey: existing.resultObjectKey,
+    enqueuedAt: existing.enqueuedAt,
+    cancelledAt: existing.cancelledAt ?? nowIso,
+    pendingDeleteKeys: driveExtractTombstoneKeys({
+      extractId: existing.extractId,
+      objectKey: existing.objectKey,
+      resultObjectKey: existing.resultObjectKey,
+      enqueuedAt: existing.enqueuedAt,
+      cancelledAt: existing.cancelledAt ?? nowIso,
+      pendingDeleteKeys: [
+        existing.objectKey,
+        existing.resultObjectKey,
+        ...(existing.pendingDeleteKeys ?? []),
+      ],
+    }),
+  };
+  const byId = new Map<string, DriveExtractTombstone>();
+  for (const tombstone of [...(existing.tombstones ?? []), self]) {
+    byId.set(tombstone.extractId, tombstone);
+  }
+  return [...byId.values()];
+}
+
+export function partitionDriveExtractTombstones(
+  tombstones: DriveExtractTombstone[],
+  now = Date.now(),
+): { settled: DriveExtractTombstone[]; live: DriveExtractTombstone[] } {
+  const settled: DriveExtractTombstone[] = [];
+  const live: DriveExtractTombstone[] = [];
+  for (const tombstone of tombstones) {
+    if (
+      isDriveExtractCancelSettled(
+        {
+          extractId: tombstone.extractId,
+          objectKey: tombstone.objectKey,
+          resultObjectKey: tombstone.resultObjectKey,
+          contentType: 'application/octet-stream',
+          filename: 'tombstone',
+          enqueuedAt: tombstone.enqueuedAt,
+          cancelledAt: tombstone.cancelledAt,
+        },
+        now,
+      )
+    ) {
+      settled.push(tombstone);
+    } else {
+      live.push(tombstone);
+    }
+  }
+  return { settled, live };
+}
+
+/** Drop TTL-expired tombstones whose keys deleted (or 404'd); keep failed deletes. */
+export function applyDriveExtractTombstoneDeletes(
+  cursor: DriveExtractCursor,
+  remainingKeysByExtractId: Map<string, string[]>,
+  now = Date.now(),
+): DriveExtractCursor {
+  const { settled, live } = partitionDriveExtractTombstones(cursor.tombstones ?? [], now);
+  const next: DriveExtractTombstone[] = [...live];
+  for (const tombstone of settled) {
+    const remaining = remainingKeysByExtractId.get(tombstone.extractId) ?? [];
+    if (remaining.length > 0) next.push({ ...tombstone, pendingDeleteKeys: remaining });
+  }
+  if (next.length === 0) {
+    const { tombstones: _dropped, ...rest } = cursor;
+    return rest;
+  }
+  return { ...cursor, tombstones: next };
 }
 
 /** True once a cancel tombstone has waited for a late orchestrator PUT. */
@@ -290,6 +451,7 @@ export function isDriveExtractCancelSettled(cursor: DriveExtractCursor, now = Da
 
 export function isDriveExtractPendingStale(cursor: DriveExtractCursor, now = Date.now()): boolean {
   if (cursor.cleanupPending) return false;
+  if (cursor.jobPublished === false) return true;
   const enqueuedAtMs = Date.parse(cursor.enqueuedAt);
   if (!Number.isFinite(enqueuedAtMs)) return true;
   return now - enqueuedAtMs >= DRIVE_EXTRACT_PENDING_STALE_MS;

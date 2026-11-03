@@ -64,6 +64,9 @@ import {
   parseDriveTransientExtractResult,
   remainingDriveExtractObjectKeys,
   retainDriveExtractCleanupCursor,
+  applyDriveExtractTombstoneDeletes,
+  carryDriveExtractTombstones,
+  partitionDriveExtractTombstones,
   saveDriveSnapshot,
   takeDriveExtractSlot,
   takeDriveProcessSlot,
@@ -278,6 +281,12 @@ describe('drive transient extract helpers', () => {
     expect(isDriveExtractPendingStale({ ...cursor, enqueuedAt: 'not-a-date' })).toBe(true);
     expect(isDriveExtractPendingStale({ ...cursor, cleanupPending: true })).toBe(false);
     expect(
+      isDriveExtractPendingStale(
+        { ...cursor, jobPublished: false },
+        Date.parse('2026-11-02T12:00:01.000Z'),
+      ),
+    ).toBe(true);
+    expect(
       retainDriveExtractCleanupCursor(cursor, [], { cancelledAt: '2026-11-02T12:01:00.000Z' }),
     ).toMatchObject({
       cleanupPending: true,
@@ -327,6 +336,77 @@ describe('drive transient extract helpers', () => {
         ],
       ),
     ).toEqual(['result.json']);
+  });
+
+  it('carries extract tombstones across replacements and drops them only after TTL deletes', () => {
+    const unpublished = parseDriveExtractCursor({
+      extractId: 'ext-1',
+      objectKey: 'source-1',
+      resultObjectKey: 'result-1.json',
+      contentType: 'application/pdf',
+      filename: 'Notes.pdf',
+      enqueuedAt: '2026-11-02T12:00:00.000Z',
+      jobPublished: false,
+      pendingDeleteKeys: ['source-1', 'result-1.json', 'source-1-extra'],
+    });
+    expect(unpublished?.jobPublished).toBe(false);
+    if (!unpublished) throw new Error('expected unpublished extract cursor');
+    expect(isDriveExtractPendingStale(unpublished, Date.parse('2026-11-02T12:00:01.000Z'))).toBe(
+      true,
+    );
+
+    const states: { extractId: string; tombstoneIds: string[] }[] = [];
+    let current = unpublished;
+    const firstTombstones = carryDriveExtractTombstones(current, '2026-11-02T12:02:00.000Z');
+    expect(firstTombstones[0]?.pendingDeleteKeys).toEqual([
+      'source-1',
+      'result-1.json',
+      'source-1-extra',
+    ]);
+    for (let generation = 2; generation <= 5; generation++) {
+      const nowIso = `2026-11-02T12:0${String(generation)}:00.000Z`;
+      const tombstones = carryDriveExtractTombstones(current, nowIso);
+      current = {
+        extractId: `ext-${String(generation)}`,
+        objectKey: `source-${String(generation)}`,
+        resultObjectKey: `result-${String(generation)}.json`,
+        contentType: 'application/pdf',
+        filename: 'Notes.pdf',
+        enqueuedAt: nowIso,
+        jobPublished: false,
+        tombstones,
+      };
+      states.push({
+        extractId: current.extractId,
+        tombstoneIds: tombstones.map((tombstone) => tombstone.extractId),
+      });
+    }
+    expect(states.map((state) => state.tombstoneIds)).toEqual([
+      ['ext-1'],
+      ['ext-1', 'ext-2'],
+      ['ext-1', 'ext-2', 'ext-3'],
+      ['ext-1', 'ext-2', 'ext-3', 'ext-4'],
+    ]);
+    const settledNow = Date.parse('2026-11-02T12:05:00.000Z') + DRIVE_EXTRACT_PENDING_STALE_MS;
+    const { settled, live } = partitionDriveExtractTombstones(current.tombstones ?? [], settledNow);
+    expect(live).toEqual([]);
+    expect(settled.map((tombstone) => tombstone.extractId)).toEqual([
+      'ext-1',
+      'ext-2',
+      'ext-3',
+      'ext-4',
+    ]);
+    const remaining = new Map<string, string[]>(
+      settled.map((tombstone) => [tombstone.extractId, []]),
+    );
+    const expired = applyDriveExtractTombstoneDeletes(current, remaining, settledNow);
+    expect(expired.tombstones).toBeUndefined();
+    const blocked = applyDriveExtractTombstoneDeletes(
+      current,
+      new Map([['ext-1', ['result-1.json']]]),
+      settledNow,
+    );
+    expect(blocked.tombstones?.map((tombstone) => tombstone.extractId)).toEqual(['ext-1']);
   });
 
   it('stamps extract revisions from Drive headRevisionId, md5, then modifiedTime', () => {
