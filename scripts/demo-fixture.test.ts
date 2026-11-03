@@ -472,7 +472,7 @@ function createValidExpandedSnapshot(): ExpandedDemoCorpusSnapshot {
     meetings: 11,
     pendingProposals: 14,
     boardItems: 17,
-    chatSessions: 8,
+    chatSessions: 9,
     digests: 20,
     facts: 24,
     slackWorkspaces: 1,

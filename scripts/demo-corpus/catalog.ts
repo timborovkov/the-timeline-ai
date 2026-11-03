@@ -25,7 +25,7 @@ export const CORPUS_VOLUME_FLOORS = {
   meetings: 11,
   pendingProposals: 14,
   boardItems: 17,
-  chatSessions: 8,
+  chatSessions: 9,
   digests: 20,
   facts: 24,
 } as const;
@@ -53,6 +53,7 @@ export interface CorpusEvent {
   source: EventSource;
   occurredAt: string;
   contentText: string;
+  contentAudioUrl?: string | null;
   sourceMetadata: Record<string, unknown>;
 }
 
@@ -119,6 +120,33 @@ function eventId(n: number): string {
   return CORPUS_UUID.event(n);
 }
 
+function buildSilentWav(durationMs = 900): Buffer {
+  const sampleRate = 8_000;
+  const samples = Math.max(1, Math.floor((sampleRate * durationMs) / 1_000));
+  const dataSize = samples * 2;
+  const buffer = Buffer.alloc(44 + dataSize);
+  buffer.write('RIFF', 0);
+  buffer.writeUInt32LE(36 + dataSize, 4);
+  buffer.write('WAVE', 8);
+  buffer.write('fmt ', 12);
+  buffer.writeUInt32LE(16, 16);
+  buffer.writeUInt16LE(1, 20);
+  buffer.writeUInt16LE(1, 22);
+  buffer.writeUInt32LE(sampleRate, 24);
+  buffer.writeUInt32LE(sampleRate * 2, 28);
+  buffer.writeUInt16LE(2, 32);
+  buffer.writeUInt16LE(16, 34);
+  buffer.write('data', 36);
+  buffer.writeUInt32LE(dataSize, 40);
+  return buffer;
+}
+
+export const DEMO_VOICE_AUDIO = {
+  key: `teams/${TEAM_ID}/telegram/710000001/4001-AwDEMOVOICE.wav`,
+  contentType: 'audio/wav',
+  bytes: buildSilentWav(),
+} as const;
+
 function objectId(n: number): string {
   return CORPUS_UUID.object(n);
 }
@@ -140,6 +168,7 @@ function event(
   contentText: string,
   extra: Record<string, unknown>,
   payloadRef: string,
+  audioKey?: string,
 ): CorpusEvent {
   return {
     id: eventId(n),
@@ -147,6 +176,7 @@ function event(
     source,
     occurredAt,
     contentText,
+    ...(audioKey ? { contentAudioUrl: audioKey } : {}),
     sourceMetadata: meta(extra, payloadRef),
   };
 }
@@ -962,6 +992,43 @@ const STORY_EVENTS: CorpusEvent[] = [
       calendar_event_id: CORPUS_UUID.calendar(5),
     },
     'inline://timeline/demo-seed/calendar/northwind-diligence',
+  ),
+  event(
+    4000,
+    'avery',
+    'telegram',
+    '2026-08-14T07:40:00.000Z',
+    'Telegram DM Avery → Timeline: capturing a walk-through of the Northstar CSV fallback for Mika before the 19 August confirmation.',
+    {
+      capture_kind: 'direct_message',
+      tg_chat_type: 'private',
+      tg_chat_id: '710000001',
+      tg_sender_name: 'Avery Timeline',
+      tg_username: 'averytimeline',
+      tg_user_id: 710000001,
+    },
+    'inline://timeline/demo-seed/telegram/avery-dm-csv-fallback',
+  ),
+  event(
+    4001,
+    'avery',
+    'telegram',
+    '2026-08-14T07:42:00.000Z',
+    'Voice memo from Avery: Northstar stays on the CSV fallback. Do not reopen live importer previews before Elena confirms field-mapping on 19 August.',
+    {
+      capture_kind: 'direct_message',
+      tg_chat_type: 'private',
+      tg_chat_id: '710000001',
+      tg_sender_name: 'Avery Timeline',
+      tg_username: 'averytimeline',
+      tg_user_id: 710000001,
+      audio_kind: 'voice',
+      audio_mime_type: DEMO_VOICE_AUDIO.contentType,
+      transcribed_at: '2026-08-14T07:42:18.000Z',
+      tg_file_id: 'AwDEMOVOICE',
+    },
+    'inline://timeline/demo-seed/telegram/avery-voice-northstar',
+    DEMO_VOICE_AUDIO.key,
   ),
 ];
 
@@ -2084,9 +2151,19 @@ function enrichCaptureMetadata(row: CorpusEvent): CorpusEvent {
     };
   }
   if (row.source === 'telegram') {
-    extra.tg_chat_id ??= '-100710000003';
-    extra.tg_chat_title ??= extra.telegram_chat_title ?? 'Acme leadership';
     extra.tg_update_id ??= String(710_000_000 + eventSerial(row.id));
+    const isDirect = extra.tg_chat_type === 'private' || extra.capture_kind === 'direct_message';
+    extra.tg_chat_type ??= isDirect ? 'private' : 'supergroup';
+    if (extra.tg_chat_type === 'private') {
+      extra.tg_chat_id ??= '710000001';
+      extra.tg_chat_title = extra.tg_chat_title ?? null;
+      extra.tg_user_id ??= 710000001;
+      extra.tg_username ??= 'averytimeline';
+      extra.tg_sender_name ??= 'Avery Timeline';
+    } else {
+      extra.tg_chat_id ??= '-100710000003';
+      extra.tg_chat_title ??= extra.telegram_chat_title ?? 'Acme leadership';
+    }
   }
   if (row.source === 'ingest_webhook') {
     extra.ingest_webhook_id ??= CORPUS_UUID.webhook(1);

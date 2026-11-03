@@ -520,26 +520,50 @@ export const CORPUS_EVENT_NEEDLES = [
   'dealflow this week',
   'Webinar dry-run blocked on Avery quote',
   'Harbor Peak courtesy call stays off the lead slide',
+  'Voice memo from Avery',
+  'Telegram DM Avery → Timeline',
 ] as const;
 
 export const CORPUS_CHATS = [
   {
     id: CORPUS_UUID.chat(1),
     userId: CORPUS_PERSON.avery.id,
-    title: 'What did the team achieve last week?',
+    title: 'Last week recap',
     createdAt: '2026-08-14T13:20:00.000Z',
     question: 'What did the team achieve last week?',
-    answer:
-      'Last week Acme shipped atlas-0.8.0 with CSV preview replay, opened the Northwind data room, kept the Northstar pilot on the CSV fallback after Elena Park delayed field-mapping, and moved Brightline Health to proposal. The webinar is still 20 August; Avery still owes Riley a quote.',
+    answer: [
+      'Last week Acme shipped **atlas-0.8.0** with CSV preview replay [ev:EVENT_ATLAS].',
+      'Avery opened the Northwind data room [ev:EVENT_DATAROOM].',
+      'The Northstar pilot stayed on the CSV fallback after Elena Park delayed field-mapping [ev:EVENT_ELENA].',
+      'Brightline Health moved to proposal on CSV plus evidence packs [ev:EVENT_BRIGHTLINE].',
+      '',
+      'The webinar is still 20 August; Avery still owes Riley a quote [ev:EVENT_WEBINAR].',
+    ]
+      .join('\n')
+      .replaceAll('EVENT_ATLAS', corpusEventId('GitHub release atlas-0.8.0 tagged'))
+      .replaceAll('EVENT_DATAROOM', corpusEventId('Avery sent Northwind the data-room link'))
+      .replaceAll('EVENT_ELENA', corpusEventId('field-mapping confirmation is delayed'))
+      .replaceAll('EVENT_BRIGHTLINE', corpusEventId('accepted CSV + evidence packs'))
+      .replaceAll('EVENT_WEBINAR', corpusEventId('Need 40-minute run of show')),
   },
   {
     id: CORPUS_UUID.chat(2),
-    userId: CORPUS_PERSON.mika.id,
-    title: 'Status of the Northstar pilot?',
+    userId: CORPUS_PERSON.avery.id,
+    title: 'Northstar status',
     createdAt: '2026-08-12T10:05:00.000Z',
     question: 'What is the current status of the Northstar pilot?',
-    answer:
-      'The Northstar pilot remains blocked on field-mapping confirmation. Elena Park moved that to 19 August and asked to shift the review to 26 August. The team already accepted the CSV fallback. Invoice inv_2041 is paid.',
+    answer: [
+      '**Current state:** blocked on field-mapping confirmation [ev:EVENT_ELENA].',
+      'Elena Park moved that to 19 August and asked to shift the review to 26 August [ev:EVENT_REVIEW].',
+      'The team already accepted the CSV fallback [ev:EVENT_CSV]. Avery’s voice memo the morning of 14 August repeats that instruction [ev:EVENT_VOICE].',
+      'Invoice inv_2041 is paid [ev:EVENT_INVOICE].',
+    ]
+      .join('\n')
+      .replaceAll('EVENT_ELENA', corpusEventId('field-mapping confirmation is delayed'))
+      .replaceAll('EVENT_REVIEW', corpusEventId('Pilot review should move'))
+      .replaceAll('EVENT_CSV', corpusEventId('we keep the CSV fallback decision'))
+      .replaceAll('EVENT_VOICE', corpusEventId('Voice memo from Avery'))
+      .replaceAll('EVENT_INVOICE', corpusEventId('invoice inv_2041 for Northstar Works paid')),
   },
   {
     id: CORPUS_UUID.chat(3),
@@ -547,8 +571,13 @@ export const CORPUS_CHATS = [
     title: 'Who owns Series A diligence?',
     createdAt: '2026-08-13T19:00:00.000Z',
     question: 'Who owns Series A diligence questions from Northwind?',
-    answer:
-      'Harper owns diligence Q&A. Avery sent the data-room link. Product questions route to Mika. Northwind is the lead; Linden will follow the same room; Harbor Peak stays a catch-up, not a lead.',
+    answer: [
+      'Harper owns diligence Q&A. Avery sent the data-room link [ev:EVENT_DATAROOM].',
+      'Product questions route to Mika. Northwind is the lead; Linden will follow the same room; Harbor Peak stays a catch-up, not a lead [ent:ENT_PROCESS].',
+    ]
+      .join('\n')
+      .replaceAll('EVENT_DATAROOM', corpusEventId('Avery sent Northwind the data-room link'))
+      .replaceAll('ENT_PROCESS', objectByName('Series A process')),
   },
   {
     id: CORPUS_UUID.chat(4),
@@ -556,8 +585,13 @@ export const CORPUS_CHATS = [
     title: 'What is blocking the Atlas importer?',
     createdAt: '2026-07-22T08:15:00.000Z',
     question: 'What is blocking the Atlas importer?',
-    answer:
-      'The live importer 500s on CSV preview (ATLAS-218) were the internal blocker; that is resolved by replaying stored bytes. The customer-facing blocker is still Northstar field-mapping, tracked on NORTH-42.',
+    answer: [
+      'The live importer 500s on CSV preview were the internal blocker; that is resolved by replaying stored bytes [ev:EVENT_REVIEW].',
+      'The customer-facing blocker is still Northstar field-mapping [ev:EVENT_ELENA].',
+    ]
+      .join('\n')
+      .replaceAll('EVENT_REVIEW', corpusEventId('Importer incident review transcript'))
+      .replaceAll('EVENT_ELENA', corpusEventId('field-mapping confirmation is delayed')),
   },
   {
     id: CORPUS_UUID.chat(5),
@@ -565,8 +599,13 @@ export const CORPUS_CHATS = [
     title: 'Show the dealflow pipeline',
     createdAt: '2026-08-14T16:55:00.000Z',
     question: 'Show the dealflow pipeline.',
-    answer:
-      'Customer dealflow is Helio and Moss in Qualified, Orchard in Scoping, Brightline in Proposal, Northstar Active, and Kite Lost. Polar Studio is inbound and waiting on an add-to-board approval. Series A is Northwind in Diligence, Linden and Harbor Peak in Intro.',
+    answer: [
+      'Customer dealflow is Helio and Moss in Qualified, Orchard in Scoping, Brightline in Proposal, Northstar Active, and Kite Lost [ev:EVENT_DEALFLOW].',
+      'Polar Studio is inbound and waiting on an add-to-board approval [ev:EVENT_POLAR]. Series A is Northwind in Diligence, Linden and Harbor Peak in Intro.',
+    ]
+      .join('\n')
+      .replaceAll('EVENT_DEALFLOW', corpusEventId('dealflow this week'))
+      .replaceAll('EVENT_POLAR', corpusEventId('Polar Studio asked')),
   },
   {
     id: CORPUS_UUID.chat(6),
@@ -583,8 +622,13 @@ export const CORPUS_CHATS = [
     title: 'Where is Maya Chen in the designer loop?',
     createdAt: '2026-08-12T16:10:00.000Z',
     question: 'Where is Maya Chen in the designer loop?',
-    answer:
-      'Maya Chen is in the product designer final round on 15 August. Sam owns craft. Quinn owns the loop. The backend engineer loop produced no offer and reopens on 18 August.',
+    answer: [
+      'Maya Chen is in the product designer final round on 15 August [ev:EVENT_MAYA].',
+      'Sam owns craft. Quinn owns the loop. The backend engineer loop produced no offer and reopens on 18 August [ev:EVENT_BACKEND].',
+    ]
+      .join('\n')
+      .replaceAll('EVENT_MAYA', corpusEventId('Designer final round with Maya Chen is August 15'))
+      .replaceAll('EVENT_BACKEND', corpusEventId('backend engineer loop')),
   },
   {
     id: CORPUS_UUID.chat(8),
@@ -592,8 +636,38 @@ export const CORPUS_CHATS = [
     title: 'What is still blocking the webinar?',
     createdAt: '2026-08-14T12:10:00.000Z',
     question: 'What is still blocking the Atlas beta webinar?',
-    answer:
-      'The webinar stays 20 August. Riley still needs Avery’s quote, a cropped Northstar screenshot, and a 40-minute run of show by 18 August. Brand voice is quiet and citation-first.',
+    answer: [
+      'The webinar stays 20 August. Riley still needs Avery’s quote, a cropped Northstar screenshot, and a 40-minute run of show by 18 August [ev:EVENT_WEBINAR].',
+      'Brand voice is quiet and citation-first.',
+    ]
+      .join('\n')
+      .replaceAll('EVENT_WEBINAR', corpusEventId('Need 40-minute run of show')),
+  },
+  {
+    id: CORPUS_UUID.chat(9),
+    userId: CORPUS_PERSON.avery.id,
+    title: 'Northstar handoff brief',
+    createdAt: '2026-08-14T17:10:00.000Z',
+    question: 'Write a handoff brief for the incoming owner of the Northstar pilot.',
+    answer: [
+      '## Northstar pilot handoff',
+      '',
+      '**Account:** Northstar Works, design partner [ent:ENT_COMPANY].',
+      '**Owner in flight:** Mika, with Casey on the customer thread.',
+      '',
+      '**Current state.** Field-mapping confirmation is delayed to 19 August [ev:EVENT_ELENA]. The CSV fallback already stands [ev:EVENT_CSV]. Avery’s 14 August voice memo tells engineering not to reopen live importer previews [ev:EVENT_VOICE].',
+      '',
+      '**Commitments.** Invoice inv_2041 is paid [ev:EVENT_INVOICE]. Review should move to 26 August [ev:EVENT_REVIEW]. Elena’s next confirmation is the gate, not a new importer build.',
+      '',
+      '**Open gap.** NORTH-42 stays blocked until Elena confirms the field map. Do not treat Slack speculation as a status change.',
+    ]
+      .join('\n')
+      .replaceAll('ENT_COMPANY', objectByName('Northstar Works'))
+      .replaceAll('EVENT_ELENA', corpusEventId('field-mapping confirmation is delayed'))
+      .replaceAll('EVENT_CSV', corpusEventId('we keep the CSV fallback decision'))
+      .replaceAll('EVENT_VOICE', corpusEventId('Voice memo from Avery'))
+      .replaceAll('EVENT_INVOICE', corpusEventId('invoice inv_2041 for Northstar Works paid'))
+      .replaceAll('EVENT_REVIEW', corpusEventId('Pilot review should move')),
   },
 ] as const;
 

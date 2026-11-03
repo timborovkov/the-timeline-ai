@@ -105,6 +105,7 @@ import {
   CORPUS_SECRETS,
   TEAM_ID,
   corpusEventId,
+  corpusObjectId,
 } from './catalog.js';
 import { CORPUS_PEOPLE, CORPUS_PERSON, CORPUS_PASSWORD } from './people.js';
 import { CORPUS_UUID } from './ids.js';
@@ -458,7 +459,7 @@ async function insertConnections(tx: SeedTx): Promise<void> {
       cachedTools: [{ name: 'ledger.list_invoices', description: 'List fictional invoices' }],
       toolsCachedAt: NOW,
       lastConnectedAt: new Date('2026-07-24T06:00:00.000Z'),
-      lastError: 'Demo seed: outbound MCP sync stays disabled',
+      lastError: null,
     })
     .onConflictDoUpdate({
       target: mcpServers.id,
@@ -724,6 +725,7 @@ async function insertEventsAndFacts(tx: SeedTx): Promise<void> {
         authorUserId: row.authorId,
         source: row.source,
         contentText: row.contentText,
+        contentAudioUrl: row.contentAudioUrl ?? null,
         occurredAt: new Date(row.occurredAt),
         createdAt: new Date(row.occurredAt),
         visibility: 'team' as const,
@@ -1002,6 +1004,12 @@ async function insertObjects(tx: SeedTx): Promise<void> {
     )
     .onConflictDoNothing();
 
+  const northstarDelayEventId = corpusEventId('field-mapping confirmation is delayed');
+  const northstarCsvEventId = corpusEventId('we keep the CSV fallback decision');
+  const northstarVoiceEventId = corpusEventId('Voice memo from Avery');
+  const dataRoomEventId = corpusEventId('Avery sent Northwind the data-room link');
+  const northstarDelayFactId = CORPUS_UUID.fact(7);
+  const dataRoomFactId = CORPUS_UUID.fact(12);
   await tx
     .insert(objectSummaries)
     .values([
@@ -1011,16 +1019,44 @@ async function insertObjects(tx: SeedTx): Promise<void> {
         entityId: dealflowEntityId('Series A process'),
         status: 'ready',
         summary: {
-          overview: 'Northwind is the lead. Data room is open. No term sheet yet.',
-          overviewSourceRefs: [],
-          currentState: 'Diligence',
-          openQuestions: ['Northstar proof date'],
+          overview:
+            'Northwind Capital is the Series A lead. Avery sent the data room on 13 August. Linden will follow the same room. Harbor Peak is only a catch-up.',
+          overviewSourceRefs: [
+            { kind: 'timeline_event', id: dataRoomEventId },
+            { kind: 'fact', id: dataRoomFactId },
+          ],
+          currentState: [
+            {
+              label: 'Diligence',
+              text: 'The data room is open. No term sheet this meeting.',
+              sourceRefs: [{ kind: 'timeline_event', id: dataRoomEventId }],
+            },
+          ],
+          openQuestions: [
+            {
+              label: 'Proof date',
+              text: 'Priya still wants Northstar proof before a term sheet.',
+              sourceRefs: [{ kind: 'fact', id: CORPUS_UUID.fact(5) }],
+            },
+          ],
           conflicts: [],
         },
         plainText:
           'Northwind Capital is the Series A lead. Avery sent the data room on 13 August. Linden will follow. Harbor Peak is only a catch-up.',
-        sourceRefs: [],
-        sourceCounts: { events: 6 },
+        sourceRefs: [
+          { kind: 'timeline_event', id: dataRoomEventId },
+          { kind: 'fact', id: dataRoomFactId },
+          { kind: 'fact', id: CORPUS_UUID.fact(5) },
+        ],
+        sourceCounts: {
+          events: 6,
+          facts: 2,
+          fields: 0,
+          notes: 0,
+          relationships: 0,
+          tasks: 0,
+          changes: 0,
+        },
         generatedAt: NOW,
         model: DEMO_FIXTURE_VERSION,
         promptVersion: DEMO_FIXTURE_VERSION,
@@ -1031,16 +1067,57 @@ async function insertObjects(tx: SeedTx): Promise<void> {
         entityId: DEMO_IDS.objectPilot,
         status: 'ready',
         summary: {
-          overview: 'Northstar remains the design partner proof. Field-mapping is delayed.',
-          overviewSourceRefs: [],
-          currentState: 'Blocked',
-          openQuestions: ['Elena Park confirmation'],
+          overview:
+            'Northstar remains the design-partner proof. Field-mapping confirmation is delayed to 19 August. The CSV fallback stands, and Avery’s voice memo tells engineering not to reopen live importer previews.',
+          overviewSourceRefs: [
+            { kind: 'timeline_event', id: northstarDelayEventId },
+            { kind: 'timeline_event', id: northstarCsvEventId },
+            { kind: 'timeline_event', id: northstarVoiceEventId },
+            { kind: 'fact', id: northstarDelayFactId },
+          ],
+          currentState: [
+            {
+              label: 'Blocked',
+              text: 'Elena Park delayed field-mapping confirmation until 19 August.',
+              sourceRefs: [
+                { kind: 'timeline_event', id: northstarDelayEventId },
+                { kind: 'fact', id: northstarDelayFactId },
+              ],
+            },
+            {
+              label: 'Fallback',
+              text: 'CSV replay from stored bytes is the supported path until confirmation lands.',
+              sourceRefs: [{ kind: 'timeline_event', id: northstarCsvEventId }],
+            },
+          ],
+          openQuestions: [
+            {
+              label: 'Review date',
+              text: 'Elena asked to move the pilot review to 26 August after confirmation.',
+              sourceRefs: [
+                { kind: 'timeline_event', id: corpusEventId('Pilot review should move') },
+              ],
+            },
+          ],
           conflicts: [],
         },
         plainText:
           'The Northstar pilot is still blocked on field-mapping. CSV fallback stands. Review should move to 26 August.',
-        sourceRefs: [],
-        sourceCounts: { events: 8 },
+        sourceRefs: [
+          { kind: 'timeline_event', id: northstarDelayEventId },
+          { kind: 'timeline_event', id: northstarCsvEventId },
+          { kind: 'timeline_event', id: northstarVoiceEventId },
+          { kind: 'fact', id: northstarDelayFactId },
+        ],
+        sourceCounts: {
+          events: 8,
+          facts: 2,
+          fields: 0,
+          notes: 1,
+          relationships: 0,
+          tasks: 1,
+          changes: 0,
+        },
         generatedAt: NOW,
         model: DEMO_FIXTURE_VERSION,
         promptVersion: DEMO_FIXTURE_VERSION,
@@ -1052,6 +1129,8 @@ async function insertObjects(tx: SeedTx): Promise<void> {
         summary: sql`excluded.summary`,
         plainText: sql`excluded.plain_text`,
         entityId: sql`excluded.entity_id`,
+        sourceRefs: sql`excluded.source_refs`,
+        sourceCounts: sql`excluded.source_counts`,
       },
     });
 
@@ -1707,12 +1786,16 @@ async function insertDigests(tx: SeedTx): Promise<void> {
         sentAt: sql`excluded.sent_at`,
       },
     });
+  const webinarTaskId = corpusObjectId('Lock webinar run of show');
+  const quoteTaskId = corpusObjectId('Write Avery webinar quote');
+  const elenaTaskId = corpusObjectId('Ping Elena Park on field-mapping');
   await tx
     .insert(dailyDigests)
     .values(
       CORPUS_DIGEST_WINDOWS.map((row, index) => {
         const start = new Date(row.start);
         const end = new Date(start.getTime() + 24 * 60 * 60 * 1000);
+        const isLatest = index === CORPUS_DIGEST_WINDOWS.length - 1;
         return {
           id: CORPUS_UUID.digest(index + 1),
           teamId: TEAM_ID,
@@ -1727,14 +1810,88 @@ async function insertDigests(tx: SeedTx): Promise<void> {
             windowStart: start.toISOString(),
             windowEnd: end.toISOString(),
             summary: row.summary,
+            sections: isLatest
+              ? [
+                  {
+                    title: 'Highlights' as const,
+                    body: 'Pitch narrative landed in Documents. Dealflow recap captured. Northstar stays on the CSV fallback.',
+                    items: [],
+                  },
+                  {
+                    title: 'Status' as const,
+                    body: 'Field-mapping confirmation is still due 19 August. Invoice inv_2041 is paid. Polar Studio remains inbound, not on the board.',
+                    items: [],
+                  },
+                  {
+                    title: 'Follow-ups' as const,
+                    body: 'Riley still needs Avery’s webinar quote and a cropped Northstar screenshot before the 18 August dry run.',
+                    items: [],
+                  },
+                ]
+              : [
+                  {
+                    title: 'Status' as const,
+                    body: row.summary,
+                    items: [],
+                  },
+                ],
             pendingApprovals: CORPUS_PROPOSALS.length,
-            eventCount: 6,
-            sourceDistribution: { slack: 2, email: 1, meeting: 1, integration: 2 },
+            eventCount: isLatest ? 18 : 6,
+            momentCount: isLatest ? 9 : 4,
+            activity: {
+              newMoments: isLatest ? 9 : 4,
+              newProposals: isLatest ? 2 : 1,
+              pendingApprovals: CORPUS_PROPOSALS.length,
+              newTasks: isLatest ? 1 : 0,
+              completedTasks: 0,
+              newProjects: 0,
+              newObjectsByType: isLatest ? { deal: 1, document: 1 } : { task: 1 },
+            },
+            sourceDistribution: { slack: 4, email: 2, meeting: 1, telegram: 2, integration: 3 },
             objectChangesByType: { deal: 1, task: 1 },
             newTeamMembers: [],
-            tasks: [],
-            upcomingCalendar: [],
-            links: [{ label: 'Open Timeline', href: '/app' }],
+            tasks: isLatest
+              ? [
+                  {
+                    id: elenaTaskId,
+                    title: 'Ping Elena Park on field-mapping',
+                    status: 'todo',
+                    dueAt: '2026-08-19T15:00:00.000Z',
+                    href: `/app/objects/${elenaTaskId}`,
+                  },
+                  {
+                    id: quoteTaskId,
+                    title: 'Write Avery webinar quote',
+                    status: 'todo',
+                    dueAt: '2026-08-18T12:00:00.000Z',
+                    href: `/app/objects/${quoteTaskId}`,
+                  },
+                  {
+                    id: webinarTaskId,
+                    title: 'Lock webinar run of show',
+                    status: 'todo',
+                    dueAt: '2026-08-18T13:00:00.000Z',
+                    href: `/app/objects/${webinarTaskId}`,
+                  },
+                ]
+              : [],
+            upcomingCalendar: isLatest
+              ? CORPUS_CALENDAR_EVENTS.filter(
+                  (event) => event.startAt >= '2026-08-15T00:00:00.000Z',
+                )
+                  .slice(0, 4)
+                  .map((event) => ({
+                    id: event.id,
+                    title: event.title,
+                    startAt: event.startAt,
+                    endAt: event.endAt,
+                    href: `/app/calendar?event=${event.id}`,
+                  }))
+              : [],
+            links: [
+              { label: 'Open Timeline', href: '/app' },
+              { label: 'Approvals', href: '/app/approvals' },
+            ],
           },
           status: 'sent' as const,
           deliveryId: deliveries[index]?.id,

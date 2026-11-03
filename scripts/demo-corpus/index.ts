@@ -6,6 +6,7 @@ export {
   CORPUS_MEETINGS,
   CORPUS_OBJECTS,
   CORPUS_VOLUME_FLOORS,
+  DEMO_VOICE_AUDIO,
   corpusEventId,
   corpusObjectId,
 } from './catalog.js';

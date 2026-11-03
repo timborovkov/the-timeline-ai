@@ -42,10 +42,10 @@ import { encryptJson } from '@timeline/shared/crypto';
 import { PRIVACY_VERSION, TERMS_VERSION } from '@timeline/shared/legal-versions';
 import { normalizeIdentityFacet } from '@timeline/shared/objects/identity-facets';
 import { hashPassword } from '@timeline/shared/passwords';
-import { getDocumentsBucket, getS3Client, putObject } from '@timeline/shared/s3';
+import { getAudioBucket, getDocumentsBucket, getS3Client, putObject } from '@timeline/shared/s3';
 import { and, eq, inArray, ne, or, sql } from 'drizzle-orm';
 
-import { CORPUS_DOCUMENTS, CORPUS_PEOPLE } from './demo-corpus/index.js';
+import { CORPUS_DOCUMENTS, CORPUS_PEOPLE, DEMO_VOICE_AUDIO } from './demo-corpus/index.js';
 import { insertExpandedDemoCorpus } from './demo-corpus/insert.js';
 import {
   assertDemoSeedEnvironment,
@@ -321,6 +321,12 @@ async function main(): Promise<void> {
         contentType: document.contentType,
       });
     }
+    await putObject(getS3Client(), {
+      bucket: getAudioBucket(),
+      key: DEMO_VOICE_AUDIO.key,
+      body: DEMO_VOICE_AUDIO.bytes,
+      contentType: DEMO_VOICE_AUDIO.contentType,
+    });
 
     await db.transaction(async (tx) => {
       await tx
