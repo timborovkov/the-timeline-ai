@@ -87,27 +87,28 @@ The through-line:
 
 1. **Northstar Works** is the design partner. Elena Park committed to a sample export,
    Avery handed validation to Mika, the team accepted a CSV fallback, and Linear
-   `NORTH-42` is still blocked on field-mapping. Elena later delayed confirmation to
-   19 August.
+   `NORTH-42` is still blocked on field-mapping. Elena later delayed confirmation a
+   few days out from seed day.
 2. **Importer reliability** shipped as `atlas-0.8.0` after Sentry `ATLAS-218` (CSV
    preview 500s). Decision: replay previews from stored bytes, never the live vendor
    endpoint.
 3. **Series A** is in diligence with **Northwind Capital** (Priya Shah) as lead.
    Linden Ventures will follow. Harbor Peak is only a catch-up. The data room opened
-   13 August.
+   the day before seed day.
 4. **Dealflow** is live: Helio Retail, Brightline Health, Moss & Co, Orchard Finance,
    and a lost Kite Logistics on-prem request. Polar Studio is inbound and waiting on
    an add-to-board approval, not a live dealflow card.
-5. **GTM** is heading to an Atlas beta webinar on 20 August. Brand voice is quiet and
-   citation-first.
-6. **Hiring**: product designer (Maya Chen, final round 15 August) and a reopened
-   senior backend loop.
+5. **GTM** is heading to an Atlas beta webinar about a week after seed day. Brand voice
+   is quiet and citation-first.
+6. **Hiring**: product designer (Maya Chen, final round the day after seed day) and a
+   reopened senior backend loop.
 
 Ask “what did the team achieve recently?” as Avery to walk the cited recap.
 
-Named dates in the story copy (19 August, 15 August, and so on) keep the original
-authoring voice. Column timestamps, ISO times in event content, calendar starts,
-and digest windows follow the seed clock so the live workspace stays recent.
+Every seeded date — timestamps, calendar starts, digest windows, object due dates, and
+dates written inside notes, emails, Ask answers, and documents — is a relative offset
+from seed time, rendered in the Acme Labs timezone (`Europe/Helsinki`). Overdue tasks
+are one to three days late. Daily digests never land in the future.
 
 ## Seeded surfaces
 
@@ -159,12 +160,12 @@ These are not production secrets. They exist so settings screens look configured
 
 ### Companies and deals
 
-- **Northstar Works** — design partner. The dealflow Active lane holds the Northstar Works company; invoice `inv_2041` paid. The object discussion includes Casey’s confirmation of the 26 August review and an `@The Timeline Bot` ping to summarize blockers. A pending proposal offers adding a company phone contact.
-- **Helio Retail** — Qualified, technical validation 21 August
+- **Northstar Works** — design partner. The dealflow Active lane holds the Northstar Works company; invoice `inv_2041` paid. The object discussion includes Casey’s confirmation of the shifted Northstar review and an `@The Timeline Bot` ping to summarize blockers. A pending proposal offers adding a company phone contact.
+- **Helio Retail** — Qualified, technical validation about a week after seed day
 - **Brightline Health** — Proposal, CSV + evidence packs only. The company record is **Brightline Health account**.
 - **Moss & Co** — Qualified, wants to keep Monday.com
 - **Orchard Finance** — Scoping, 12-seat research workspace
-- **Polar Studio** — inbound logo, founder demo 19 August, pending add-to-board proposal
+- **Polar Studio** — inbound logo, founder demo a few days after seed day, pending add-to-board proposal
 - **Kite Logistics** — Lost (on-prem)
 - **Northwind Capital lead** — Diligence
 - **Linden Ventures follow** — Intro, same data room

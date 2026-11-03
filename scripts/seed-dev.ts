@@ -45,7 +45,7 @@ import { hashPassword } from '@timeline/shared/passwords';
 import { getAudioBucket, getDocumentsBucket, getS3Client, putObject } from '@timeline/shared/s3';
 import { and, eq, inArray, ne, or, sql } from 'drizzle-orm';
 
-import { dateAt, demoTimes, isoAt, setDemoSeedNow } from './demo-clock.js';
+import { dateAt, DEMO_DATES, demoTimes, isoAt, setDemoSeedNow, teamDate } from './demo-clock.js';
 import {
   CORPUS_DOCUMENTS,
   CORPUS_PEOPLE,
@@ -670,8 +670,7 @@ async function main(): Promise<void> {
             teamId: IDS.team,
             authorUserId: IDS.owner,
             source: 'web',
-            contentText:
-              'Kickoff note: Acme Labs is launching Project Atlas to unify customer timelines before the July beta.',
+            contentText: `Kickoff note: Acme Labs is launching Project Atlas to unify customer timelines before the ${teamDate(DEMO_DATES.webinar, 'month')} beta.`,
             occurredAt: dateAt(-58, '09:00:00'),
             visibility: 'team',
             sourceMetadata: {
@@ -1181,7 +1180,7 @@ async function main(): Promise<void> {
             priority: 2,
             ownerUserId: IDS.member,
             assigneeUserId: IDS.member,
-            dueAt: dateAt(-56, '17:00:00'),
+            dueAt: dateAt(DEMO_DATES.overdueVendor, '17:00:00'),
             taskCategory: 'legal_compliance',
             taskCategoryMode: 'automatic',
             taskCategorySource: 'llm',
@@ -1233,7 +1232,7 @@ async function main(): Promise<void> {
             metadata: {
               fixture_version: DEMO_FIXTURE_VERSION,
               customer: 'Northstar Works',
-              reviewDate: '2026-07-15',
+              reviewDate: teamDate(DEMO_DATES.incidentReview, 'iso'),
             },
             status: DEMO_ENTITIES[0].status,
             stage: DEMO_ENTITIES[0].stage,
@@ -1258,7 +1257,7 @@ async function main(): Promise<void> {
             priority: 1,
             ownerUserId: DEMO_ENTITIES[1].ownerUserId,
             assigneeUserId: DEMO_ENTITIES[1].assigneeUserId,
-            dueAt: dateAt(-33, '17:00:00'),
+            dueAt: dateAt(DEMO_DATES.overdueNorthstar, '17:00:00'),
             taskCategory: 'engineering',
             taskCategoryMode: 'automatic',
             taskCategorySource: 'llm',
@@ -1347,7 +1346,7 @@ async function main(): Promise<void> {
             id: IDS.factKickoff,
             teamId: IDS.team,
             rawEventId: IDS.eventKickoff,
-            statement: 'Project Atlas aims to unify customer timelines before the July beta.',
+            statement: `Project Atlas aims to unify customer timelines before the ${teamDate(DEMO_DATES.webinar, 'month')} beta.`,
             confidence: 0.96,
             modelVersion: DEMO_FIXTURE_VERSION,
             extractedAt: now,
@@ -1557,7 +1556,7 @@ async function main(): Promise<void> {
             actor: { user_id: IDS.owner },
             contentDigest: 'sha256:dev-seed-kickoff-note',
             title: 'Project Atlas kickoff note',
-            summary: 'Acme Labs is launching Project Atlas before the July beta.',
+            summary: `Acme Labs is launching Project Atlas before the ${teamDate(DEMO_DATES.webinar, 'month')} beta.`,
             metadata: { seed: true, target_entity_id: IDS.objectProject },
             normalizerVersion: 'dev-seed-reconciliation-2026-07',
             replayState: 'full',
@@ -1623,7 +1622,7 @@ async function main(): Promise<void> {
             actor: { user_id: DEMO_IDS.owner },
             contentDigest: 'sha256:demo-seed-northstar-note',
             title: 'Northstar pilot kickoff note',
-            summary: 'The pilot review is July 15 and the export path should stay narrow.',
+            summary: `The pilot review is ${teamDate(DEMO_DATES.incidentReview, 'md')} and the export path should stay narrow.`,
             metadata: { fixture_version: DEMO_FIXTURE_VERSION },
             normalizerVersion: DEMO_FIXTURE_VERSION,
             replayState: 'full',
@@ -2224,7 +2223,7 @@ async function main(): Promise<void> {
             laneId: IDS.laneDoing,
             position: 0,
             responsibleUserId: IDS.member,
-            dueAt: dateAt(-56, '17:00:00'),
+            dueAt: dateAt(DEMO_DATES.overdueVendor, '17:00:00'),
             priority: 2,
             nextStep: 'Send security appendix to legal for final read.',
             notes: 'Seeded demo task from the inbound email event.',

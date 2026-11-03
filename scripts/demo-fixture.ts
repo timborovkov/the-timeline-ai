@@ -4,9 +4,11 @@ import { PRIVACY_VERSION, TERMS_VERSION } from '@timeline/shared/legal-versions'
 
 import {
   DEMO_CLOCK_ANCHOR,
+  DEMO_DATES,
   DEMO_TIME_OFFSETS,
   isoAt,
   resolveDemoTime,
+  teamDate,
   type DemoTimeOffset,
 } from './demo-clock.js';
 
@@ -101,12 +103,26 @@ export const DEMO_LOGINS = [
   },
 ] as const;
 
-export const DEMO_DOCUMENT_TEXT =
-  'Northstar pilot handoff: Avery transfers export validation to Mika. Customer launch review is July 15. CSV fallback is approved; field-mapping confirmation is still required.';
 export const DEMO_DOCUMENT_OBJECT_KEY = `${DEMO_IDS.team}/documents/demo-seed/northstar-handoff/v1.txt`;
 export const DEMO_DOCUMENT_CONTENT_TYPE = 'text/plain';
-export const DEMO_DOCUMENT_BYTE_SIZE = Buffer.byteLength(DEMO_DOCUMENT_TEXT);
-export const DEMO_DOCUMENT_CHECKSUM_SHA256 = createHash('sha256')
+
+function buildDemoDocumentText(): string {
+  return `Northstar pilot handoff: Avery transfers export validation to Mika. Customer launch review is ${teamDate(DEMO_DATES.incidentReview, 'md')}. CSV fallback is approved; field-mapping confirmation is still required.`;
+}
+
+function buildDemoFacts() {
+  return {
+    commitment: `Northstar Works committed to send the final sample export by ${teamDate(DEMO_DATES.exportDue, 'md')}.`,
+    handoff: 'Avery handed Northstar export validation to Mika.',
+    decision: 'The team decided to use the CSV fallback for the Northstar pilot.',
+    blocker: 'Northstar export validation is blocked pending field-mapping confirmation.',
+    status: 'The Northstar pilot export task is currently blocked and owned by Mika.',
+  } as const;
+}
+
+export let DEMO_DOCUMENT_TEXT = buildDemoDocumentText();
+export let DEMO_DOCUMENT_BYTE_SIZE = Buffer.byteLength(DEMO_DOCUMENT_TEXT);
+export let DEMO_DOCUMENT_CHECKSUM_SHA256 = createHash('sha256')
   .update(DEMO_DOCUMENT_TEXT)
   .digest('hex');
 
@@ -117,13 +133,7 @@ export const DEMO_SOURCE_REFS = {
   provider: 'inline://timeline/demo-seed/linear/NORTH-42',
 } as const;
 
-export const DEMO_FACTS = {
-  commitment: 'Northstar Works committed to send the final sample export by July 8.',
-  handoff: 'Avery handed Northstar export validation to Mika.',
-  decision: 'The team decided to use the CSV fallback for the Northstar pilot.',
-  blocker: 'Northstar export validation is blocked pending field-mapping confirmation.',
-  status: 'The Northstar pilot export task is currently blocked and owned by Mika.',
-} as const;
+export let DEMO_FACTS = buildDemoFacts();
 
 export interface DemoSeedEvent {
   id: string;
@@ -139,16 +149,14 @@ function buildDemoEvents(): DemoSeedEvent[] {
     {
       id: DEMO_IDS.eventNote,
       source: 'slack',
-      contentText:
-        'Explicit note from Avery: Northstar pilot review is July 15. Keep the export path narrow and evidence-backed.',
+      contentText: `Explicit note from Avery: Northstar pilot review is ${teamDate(DEMO_DATES.incidentReview, 'md')}. Keep the export path narrow and evidence-backed.`,
       occurredAt: times.note,
       sourcePayloadRef: DEMO_SOURCE_REFS.note,
     },
     {
       id: DEMO_IDS.eventEmail,
       source: 'email',
-      contentText:
-        'Email from Elena Park at Northstar Works: We will send the final sample export by July 8 for the pilot review. Attached: Northstar pilot handoff brief.',
+      contentText: `Email from Elena Park at Northstar Works: We will send the final sample export by ${teamDate(DEMO_DATES.exportDue, 'md')} for the pilot review. Attached: Northstar pilot handoff brief.`,
       occurredAt: times.email,
       sourcePayloadRef: DEMO_SOURCE_REFS.email,
     },
@@ -175,6 +183,11 @@ export let DEMO_EVENTS = buildDemoEvents();
 
 export function refreshDemoFixture(): void {
   DEMO_TIMES = getDemoTimes();
+  DEMO_DOCUMENT_TEXT = buildDemoDocumentText();
+  DEMO_DOCUMENT_BYTE_SIZE = Buffer.byteLength(DEMO_DOCUMENT_TEXT);
+  DEMO_DOCUMENT_CHECKSUM_SHA256 = createHash('sha256').update(DEMO_DOCUMENT_TEXT).digest('hex');
+  DEMO_FACTS = buildDemoFacts();
+  DEMO_SUPPORT = buildDemoSupport();
   DEMO_EVENTS = buildDemoEvents();
 }
 
@@ -208,63 +221,67 @@ export const DEMO_ENTITIES = [
   },
 ] as const;
 
-const DEMO_SUPPORT = [
-  {
-    label: 'customer commitment',
-    factId: DEMO_IDS.factCommitment,
-    statement: DEMO_FACTS.commitment,
-    eventId: DEMO_IDS.eventEmail,
-    entityId: DEMO_IDS.objectPilot,
-    evidenceId: DEMO_IDS.evidenceEmail,
-    associationId: DEMO_IDS.associationCommitment,
-    clusterId: DEMO_IDS.clusterPilot,
-    associationRole: 'update',
-  },
-  {
-    label: 'handoff',
-    factId: DEMO_IDS.factHandoff,
-    statement: DEMO_FACTS.handoff,
-    eventId: DEMO_IDS.eventMeeting,
-    entityId: DEMO_IDS.objectDelivery,
-    evidenceId: DEMO_IDS.evidenceMeeting,
-    associationId: DEMO_IDS.associationHandoff,
-    clusterId: DEMO_IDS.clusterDelivery,
-    associationRole: 'update',
-  },
-  {
-    label: 'decision',
-    factId: DEMO_IDS.factDecision,
-    statement: DEMO_FACTS.decision,
-    eventId: DEMO_IDS.eventMeeting,
-    entityId: DEMO_IDS.objectDecision,
-    evidenceId: DEMO_IDS.evidenceMeeting,
-    associationId: DEMO_IDS.associationDecision,
-    clusterId: DEMO_IDS.clusterDecision,
-    associationRole: 'decision',
-  },
-  {
-    label: 'unresolved blocker',
-    factId: DEMO_IDS.factBlocker,
-    statement: DEMO_FACTS.blocker,
-    eventId: DEMO_IDS.eventProvider,
-    entityId: DEMO_IDS.objectDelivery,
-    evidenceId: DEMO_IDS.evidenceProvider,
-    associationId: DEMO_IDS.associationBlocker,
-    clusterId: DEMO_IDS.clusterDelivery,
-    associationRole: 'blocker',
-  },
-  {
-    label: 'current status',
-    factId: DEMO_IDS.factStatus,
-    statement: DEMO_FACTS.status,
-    eventId: DEMO_IDS.eventProvider,
-    entityId: DEMO_IDS.objectDelivery,
-    evidenceId: DEMO_IDS.evidenceProvider,
-    associationId: DEMO_IDS.associationStatus,
-    clusterId: DEMO_IDS.clusterDelivery,
-    associationRole: 'lifecycle_update',
-  },
-] as const;
+function buildDemoSupport() {
+  return [
+    {
+      label: 'customer commitment',
+      factId: DEMO_IDS.factCommitment,
+      statement: DEMO_FACTS.commitment,
+      eventId: DEMO_IDS.eventEmail,
+      entityId: DEMO_IDS.objectPilot,
+      evidenceId: DEMO_IDS.evidenceEmail,
+      associationId: DEMO_IDS.associationCommitment,
+      clusterId: DEMO_IDS.clusterPilot,
+      associationRole: 'update',
+    },
+    {
+      label: 'handoff',
+      factId: DEMO_IDS.factHandoff,
+      statement: DEMO_FACTS.handoff,
+      eventId: DEMO_IDS.eventMeeting,
+      entityId: DEMO_IDS.objectDelivery,
+      evidenceId: DEMO_IDS.evidenceMeeting,
+      associationId: DEMO_IDS.associationHandoff,
+      clusterId: DEMO_IDS.clusterDelivery,
+      associationRole: 'update',
+    },
+    {
+      label: 'decision',
+      factId: DEMO_IDS.factDecision,
+      statement: DEMO_FACTS.decision,
+      eventId: DEMO_IDS.eventMeeting,
+      entityId: DEMO_IDS.objectDecision,
+      evidenceId: DEMO_IDS.evidenceMeeting,
+      associationId: DEMO_IDS.associationDecision,
+      clusterId: DEMO_IDS.clusterDecision,
+      associationRole: 'decision',
+    },
+    {
+      label: 'unresolved blocker',
+      factId: DEMO_IDS.factBlocker,
+      statement: DEMO_FACTS.blocker,
+      eventId: DEMO_IDS.eventProvider,
+      entityId: DEMO_IDS.objectDelivery,
+      evidenceId: DEMO_IDS.evidenceProvider,
+      associationId: DEMO_IDS.associationBlocker,
+      clusterId: DEMO_IDS.clusterDelivery,
+      associationRole: 'blocker',
+    },
+    {
+      label: 'current status',
+      factId: DEMO_IDS.factStatus,
+      statement: DEMO_FACTS.status,
+      eventId: DEMO_IDS.eventProvider,
+      entityId: DEMO_IDS.objectDelivery,
+      evidenceId: DEMO_IDS.evidenceProvider,
+      associationId: DEMO_IDS.associationStatus,
+      clusterId: DEMO_IDS.clusterDelivery,
+      associationRole: 'lifecycle_update',
+    },
+  ] as const;
+}
+
+let DEMO_SUPPORT = buildDemoSupport();
 
 export interface DemoEventSnapshot {
   id: string;

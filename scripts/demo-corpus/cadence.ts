@@ -1,6 +1,6 @@
 import { timelineGroupKey } from '@timeline/shared/timeline-moments';
 
-import { cadenceRange, isoAt } from '../demo-clock.js';
+import { cadenceRange, DEMO_DATES, isoAt, isoOnLocalDay, teamDate } from '../demo-clock.js';
 
 import { CORPUS_UUID } from './ids.js';
 import type { CorpusPerson } from './people.js';
@@ -97,36 +97,45 @@ const SLACK_PRODUCT = [
   'Harper: diligence answers stay in the Fundraising folder.',
 ] as const;
 
-const SLACK_GTM = [
-  'Riley: CTA variants still lead with evidence before the status update.',
-  'Casey: Helio remains Qualified until the validation attendees are named.',
-  'Riley: quieter Atlas mark, no gradient on the webinar slide.',
-  'Casey: Moss wants to keep Monday.com. Map keep-vs-replace before a proposal.',
-  'Riley: Polar inbound is waiting on the add-to-board approval, not a live card.',
-  'Casey: Orchard stays in Scoping. Twelve seats, September budget owner.',
-  'Riley: Kite stays Lost unless they accept EU SaaS.',
-  'Harper: Northwind wants 11 months of runway in the room, not 18.',
-] as const;
+function slackGtm() {
+  return [
+    'Riley: CTA variants still lead with evidence before the status update.',
+    'Casey: Helio remains Qualified until the validation attendees are named.',
+    'Riley: quieter Atlas mark, no gradient on the webinar slide.',
+    'Casey: Moss wants to keep Monday.com. Map keep-vs-replace before a proposal.',
+    'Riley: Polar inbound is waiting on the add-to-board approval, not a live card.',
+    `Casey: Orchard stays in Scoping. Twelve seats, ${teamDate(DEMO_DATES.orchardBudget, 'month')} budget owner.`,
+    'Riley: Kite stays Lost unless they accept EU SaaS.',
+    'Harper: Northwind wants 11 months of runway in the room, not 18.',
+  ] as const;
+}
 
-const SLACK_HIRING = [
-  'Quinn: Maya Chen final round is on the calendar. Craft loop is Sam.',
-  'Sam: systems craft is strong, product narrative still thin.',
-  'Quinn: backend sourcing reopens after the designer final, not before.',
-  'Jordan: no on-prem customers in the backend scorecard.',
-  'Quinn: keep the packet on the hiring_loop object.',
-  'Avery: offers target 22 August if the loops stay on the objects.',
-] as const;
+function slackHiring() {
+  return [
+    'Quinn: Maya Chen final round is on the calendar. Craft loop is Sam.',
+    'Sam: systems craft is strong, product narrative still thin.',
+    'Quinn: backend sourcing reopens after the designer final, not before.',
+    'Jordan: no on-prem customers in the backend scorecard.',
+    'Quinn: keep the packet on the hiring_loop object.',
+    `Avery: offers target ${teamDate(DEMO_DATES.offerTarget, 'dm')} if the loops stay on the objects.`,
+  ] as const;
+}
 
-const LINEAR_ISSUES = [
-  { id: 'NORTH-42', text: 'still blocked on field-mapping confirmation.' },
-  { id: 'ATL-12', text: 'CSV preview replay checklist moved to In Review.' },
-  { id: 'ATL-19', text: 'release atlas-0.8.0 tagged after stored-byte preview.' },
-  { id: 'GTM-4', text: 'webinar run-of-show is blocked on Avery quote.' },
-  { id: 'HIR-7', text: 'Maya Chen final-round packet attached.' },
-  { id: 'HIR-8', text: 'senior backend loop reopened, no on-prem customers.' },
-  { id: 'FUN-3', text: 'Northwind data-room checklist assigned to Harper.' },
-  { id: 'SAL-9', text: 'Helio validation window is 21 August, attendees TBD.' },
-] as const;
+function linearIssues() {
+  return [
+    { id: 'NORTH-42', text: 'still blocked on field-mapping confirmation.' },
+    { id: 'ATL-12', text: 'CSV preview replay checklist moved to In Review.' },
+    { id: 'ATL-19', text: 'release atlas-0.8.0 tagged after stored-byte preview.' },
+    { id: 'GTM-4', text: 'webinar run-of-show is blocked on Avery quote.' },
+    { id: 'HIR-7', text: 'Maya Chen final-round packet attached.' },
+    { id: 'HIR-8', text: 'senior backend loop reopened, no on-prem customers.' },
+    { id: 'FUN-3', text: 'Northwind data-room checklist assigned to Harper.' },
+    {
+      id: 'SAL-9',
+      text: `Helio validation window is ${teamDate(DEMO_DATES.helioValidation, 'dm')}, attendees TBD.`,
+    },
+  ] as const;
+}
 
 const LINEAR_COMMENTS = [
   'Owner left a checklist comment.',
@@ -207,40 +216,42 @@ const EMAIL_THREADS = [
   },
 ] as const;
 
-const NOTES = [
-  {
-    author: 'avery' as const,
-    text: 'Explicit note from Avery: Harbor Peak is a courtesy catch-up. Do not add them to the lead path.',
-  },
-  {
-    author: 'harper' as const,
-    text: 'Explicit note from Harper: runway is 11.4 months if we do not pull the Series A. Diligence answers stay in Fundraising.',
-  },
-  {
-    author: 'quinn' as const,
-    text: 'Explicit note from Quinn: Maya Chen final round is 15 August. Backend loop reopens after that, not before.',
-  },
-  {
-    author: 'riley' as const,
-    text: 'Explicit note from Riley: webinar copy stays citation-first. Avery still owes the quote.',
-  },
-  {
-    author: 'casey' as const,
-    text: 'Explicit note from Casey: Moss wants to keep Monday.com. Map keep-vs-replace before a proposal.',
-  },
-  {
-    author: 'sam' as const,
-    text: 'Explicit note from Sam: do not put the uncropped Northstar screenshot on the webinar deck.',
-  },
-  {
-    author: 'jordan' as const,
-    text: 'Explicit note from Jordan: preview replay reads stored bytes. Live vendor calls stay out of CI.',
-  },
-  {
-    author: 'mika' as const,
-    text: 'Explicit note from Mika: v1 is importer reliability and one design-partner launch. Dashboards stay out.',
-  },
-] as const;
+function notes() {
+  return [
+    {
+      author: 'avery' as const,
+      text: 'Explicit note from Avery: Harbor Peak is a courtesy catch-up. Do not add them to the lead path.',
+    },
+    {
+      author: 'harper' as const,
+      text: 'Explicit note from Harper: runway is 11.4 months if we do not pull the Series A. Diligence answers stay in Fundraising.',
+    },
+    {
+      author: 'quinn' as const,
+      text: `Explicit note from Quinn: Maya Chen final round is ${teamDate(DEMO_DATES.mayaFinal, 'dm')}. Backend loop reopens after that, not before.`,
+    },
+    {
+      author: 'riley' as const,
+      text: 'Explicit note from Riley: webinar copy stays citation-first. Avery still owes the quote.',
+    },
+    {
+      author: 'casey' as const,
+      text: 'Explicit note from Casey: Moss wants to keep Monday.com. Map keep-vs-replace before a proposal.',
+    },
+    {
+      author: 'sam' as const,
+      text: 'Explicit note from Sam: do not put the uncropped Northstar screenshot on the webinar deck.',
+    },
+    {
+      author: 'jordan' as const,
+      text: 'Explicit note from Jordan: preview replay reads stored bytes. Live vendor calls stay out of CI.',
+    },
+    {
+      author: 'mika' as const,
+      text: 'Explicit note from Mika: v1 is importer reliability and one design-partner launch. Dashboards stay out.',
+    },
+  ] as const;
+}
 
 const TELEGRAM = [
   'Avery told Harper to keep Harbor Peak off the lead slide.',
@@ -292,7 +303,7 @@ function pick<T>(items: readonly T[], index: number): T {
 }
 
 function at(day: string, hours: number, minutes: number, seconds = 0): string {
-  return `${day}T${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}.000Z`;
+  return isoOnLocalDay(day, hours, minutes, seconds);
 }
 
 function stamp(day: string): string {
@@ -445,7 +456,7 @@ function pushWorkday(
 ): void {
   const prNumber = 190 + dayIndex;
   const commit = pick(ENG_COMMITS, dayIndex);
-  const linear = pick(LINEAR_ISSUES, dayIndex);
+  const linear = pick(linearIssues(), dayIndex);
   const monday = pick(MONDAY_ITEMS, dayIndex);
   const sentry = pick(SENTRY_ISSUES, dayIndex);
   const email = pick(EMAIL_THREADS, dayIndex);
@@ -572,7 +583,7 @@ function pushWorkday(
     threadKey: '1230',
     startHour: 12,
     startMinute: 30,
-    lines: Array.from({ length: 8 }, (_, index) => pick(SLACK_GTM, dayIndex + index)),
+    lines: Array.from({ length: 8 }, (_, index) => pick(slackGtm(), dayIndex + index)),
     authors: ['riley', 'casey', 'harper'],
   });
 
@@ -599,7 +610,7 @@ function pushWorkday(
     threadKey: '1410',
     startHour: 14,
     startMinute: 10,
-    lines: Array.from({ length: 6 }, (_, index) => pick(SLACK_HIRING, dayIndex + index)),
+    lines: Array.from({ length: 6 }, (_, index) => pick(slackHiring(), dayIndex + index)),
     authors: ['quinn', 'sam', 'jordan'],
   });
 
@@ -635,7 +646,7 @@ function pushWorkday(
   }
 
   for (let index = 0; index < 4; index += 1) {
-    const note = pick(NOTES, dayIndex + index);
+    const note = pick(notes(), dayIndex + index);
     push({
       author: note.author,
       source: 'web',
@@ -700,7 +711,7 @@ function pushWeekend(
       author: pick(['riley', 'casey'] as const, index),
       source: 'slack',
       occurredAt,
-      contentText: `Slack #gtm: ${pick(SLACK_GTM, dayIndex + index)} Weekend catch-up only.`,
+      contentText: `Slack #gtm: ${pick(slackGtm(), dayIndex + index)} Weekend catch-up only.`,
       extra: slackMeta(
         'C0GTM',
         '#gtm',
@@ -726,7 +737,7 @@ function pushWeekend(
       payloadRef: `inline://timeline/demo-seed/telegram/weekend-${day}-${String(index)}`,
     });
   }
-  const note = pick(NOTES, dayIndex);
+  const note = pick(notes(), dayIndex);
   push({
     author: note.author,
     source: 'web',
@@ -766,7 +777,7 @@ export function buildCadenceBeats(): CadenceBeat[] {
   push({
     author: 'avery',
     source: 'meeting',
-    occurredAt: isoAt(-31, '09:32:00'),
+    occurredAt: isoAt(-31, '12:32:00'),
     contentText:
       'Meeting "Daily product standup" completed on Google Meet. Importer 500s are the week-one fire. Northstar field-mapping is already the longer blocker.',
     extra: {

@@ -66,7 +66,15 @@ import { normalizeIdentityFacet } from '@timeline/shared/objects/identity-facets
 import { hashPassword } from '@timeline/shared/passwords';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 
-import { dateAt, DEMO_TOKEN_EXPIRY_DAYS, getDemoSeedNow, isoAt } from '../demo-clock.js';
+import {
+  dateAt,
+  DEMO_DATES,
+  DEMO_TEAM_TIMEZONE,
+  DEMO_TOKEN_EXPIRY_DAYS,
+  getDemoSeedNow,
+  isoAt,
+  teamDate,
+} from '../demo-clock.js';
 import { DEMO_FIXTURE_VERSION, DEMO_IDS, DEMO_LEGAL_ACCEPTED_AT } from '../demo-fixture.js';
 import { seedCurrentLegalAcceptances } from '../demo-legal.js';
 
@@ -1022,8 +1030,7 @@ async function insertObjects(tx: SeedTx): Promise<void> {
         entityId: dealflowEntityId('Series A process'),
         status: 'ready',
         summary: {
-          overview:
-            'Northwind Capital is the Series A lead. Avery sent the data room on 13 August. Linden will follow the same room. Harbor Peak is only a catch-up.',
+          overview: `Northwind Capital is the Series A lead. Avery sent the data room on ${teamDate(DEMO_DATES.dataRoom, 'dm')}. Linden will follow the same room. Harbor Peak is only a catch-up.`,
           overviewSourceRefs: [
             { kind: 'timeline_event', id: dataRoomEventId },
             { kind: 'fact', id: dataRoomFactId },
@@ -1044,8 +1051,7 @@ async function insertObjects(tx: SeedTx): Promise<void> {
           ],
           conflicts: [],
         },
-        plainText:
-          'Northwind Capital is the Series A lead. Avery sent the data room on 13 August. Linden will follow. Harbor Peak is only a catch-up.',
+        plainText: `Northwind Capital is the Series A lead. Avery sent the data room on ${teamDate(DEMO_DATES.dataRoom, 'dm')}. Linden will follow. Harbor Peak is only a catch-up.`,
         sourceRefs: [
           { kind: 'timeline_event', id: dataRoomEventId },
           { kind: 'fact', id: dataRoomFactId },
@@ -1070,8 +1076,7 @@ async function insertObjects(tx: SeedTx): Promise<void> {
         entityId: DEMO_IDS.objectPilot,
         status: 'ready',
         summary: {
-          overview:
-            'Northstar remains the design-partner proof. Field-mapping confirmation is delayed to 19 August. The CSV fallback stands, and Avery’s voice memo tells engineering not to reopen live importer previews.',
+          overview: `Northstar remains the design-partner proof. Field-mapping confirmation is delayed to ${teamDate(DEMO_DATES.elenaConfirm, 'dm')}. The CSV fallback stands, and Avery’s voice memo tells engineering not to reopen live importer previews.`,
           overviewSourceRefs: [
             { kind: 'timeline_event', id: northstarDelayEventId },
             { kind: 'timeline_event', id: northstarCsvEventId },
@@ -1081,7 +1086,7 @@ async function insertObjects(tx: SeedTx): Promise<void> {
           currentState: [
             {
               label: 'Blocked',
-              text: 'Elena Park delayed field-mapping confirmation until 19 August.',
+              text: `Elena Park delayed field-mapping confirmation until ${teamDate(DEMO_DATES.elenaConfirm, 'dm')}.`,
               sourceRefs: [
                 { kind: 'timeline_event', id: northstarDelayEventId },
                 { kind: 'fact', id: northstarDelayFactId },
@@ -1096,7 +1101,7 @@ async function insertObjects(tx: SeedTx): Promise<void> {
           openQuestions: [
             {
               label: 'Review date',
-              text: 'Elena asked to move the pilot review to 26 August after confirmation.',
+              text: `Elena asked to move the pilot review to ${teamDate(DEMO_DATES.pilotReview, 'dm')} after confirmation.`,
               sourceRefs: [
                 { kind: 'timeline_event', id: corpusEventId('Pilot review should move') },
               ],
@@ -1104,8 +1109,7 @@ async function insertObjects(tx: SeedTx): Promise<void> {
           ],
           conflicts: [],
         },
-        plainText:
-          'The Northstar pilot is still blocked on field-mapping. CSV fallback stands. Review should move to 26 August.',
+        plainText: `The Northstar pilot is still blocked on field-mapping. CSV fallback stands. Review should move to ${teamDate(DEMO_DATES.pilotReview, 'dm')}.`,
         sourceRefs: [
           { kind: 'timeline_event', id: northstarDelayEventId },
           { kind: 'timeline_event', id: northstarCsvEventId },
@@ -1537,7 +1541,7 @@ async function insertCalendar(tx: SeedTx): Promise<void> {
         title: row.title,
         startAt: new Date(row.startAt),
         endAt: new Date(row.endAt),
-        timezone: 'Europe/Helsinki',
+        timezone: DEMO_TEAM_TIMEZONE,
         visibility: 'team' as const,
         source: 'internal' as const,
         metadata: { fixture_version: DEMO_FIXTURE_VERSION },
@@ -1649,7 +1653,7 @@ async function insertProposals(tx: SeedTx): Promise<void> {
       source: 'background',
       status: 'accepted',
       title: 'Record the CSV preview replay decision',
-      summary: 'Accepted after the 15 July incident review.',
+      summary: `Accepted after the ${teamDate(DEMO_DATES.incidentReview, 'dm')} incident review.`,
       dedupeKey: 'demo-seed:proposal:accepted-csv-replay',
       visibility: 'team',
       resolvedByUserId: CORPUS_PERSON.mika.id,
@@ -1770,13 +1774,13 @@ async function insertDigests(tx: SeedTx): Promise<void> {
     teamId: TEAM_ID,
     userId: DEMO_IDS.owner,
     recipientEmail: CORPUS_PERSON.avery.email,
-    subject: `Daily digest — ${row.start.slice(0, 10)}`,
+    subject: `Daily digest — ${row.localDate}`,
     status: 'sent' as const,
     provider: 'demo-seed',
-    dedupeKey: `demo-seed:digest-delivery:${row.start}`,
-    sentAt: new Date(row.start),
-    createdAt: new Date(row.start),
-    updatedAt: new Date(row.start),
+    dedupeKey: `demo-seed:digest-delivery:${row.localDate}`,
+    sentAt: new Date(row.windowEnd),
+    createdAt: new Date(row.windowEnd),
+    updatedAt: new Date(row.windowEnd),
   }));
   await tx
     .insert(messageDeliveries)
@@ -1796,8 +1800,8 @@ async function insertDigests(tx: SeedTx): Promise<void> {
     .insert(dailyDigests)
     .values(
       CORPUS_DIGEST_WINDOWS.map((row, index) => {
-        const start = new Date(row.start);
-        const end = new Date(start.getTime() + 24 * 60 * 60 * 1000);
+        const start = new Date(row.windowStart);
+        const end = new Date(row.windowEnd);
         const isLatest = index === CORPUS_DIGEST_WINDOWS.length - 1;
         return {
           id: CORPUS_UUID.digest(index + 1),
@@ -1809,7 +1813,7 @@ async function insertDigests(tx: SeedTx): Promise<void> {
           payload: {
             teamName: 'Acme Labs',
             userName: CORPUS_PERSON.avery.name,
-            timezone: 'Europe/Helsinki',
+            timezone: DEMO_TEAM_TIMEZONE,
             windowStart: start.toISOString(),
             windowEnd: end.toISOString(),
             summary: row.summary,
@@ -1822,12 +1826,12 @@ async function insertDigests(tx: SeedTx): Promise<void> {
                   },
                   {
                     title: 'Status' as const,
-                    body: 'Field-mapping confirmation is still due 19 August. Invoice inv_2041 is paid. Polar Studio remains inbound, not on the board.',
+                    body: `Field-mapping confirmation is still due ${teamDate(DEMO_DATES.elenaConfirm, 'dm')}. Invoice inv_2041 is paid. Polar Studio remains inbound, not on the board.`,
                     items: [],
                   },
                   {
                     title: 'Follow-ups' as const,
-                    body: 'Riley still needs Avery’s webinar quote and a cropped Northstar screenshot before the 18 August dry run.',
+                    body: `Riley still needs Avery’s webinar quote and a cropped Northstar screenshot before the ${teamDate(DEMO_DATES.dryRun, 'dm')} dry run.`,
                     items: [],
                   },
                 ]
@@ -1896,8 +1900,8 @@ async function insertDigests(tx: SeedTx): Promise<void> {
           },
           status: 'sent' as const,
           deliveryId: deliveries[index]?.id,
-          generatedAt: start,
-          sentAt: start,
+          generatedAt: end,
+          sentAt: end,
         };
       }),
     )

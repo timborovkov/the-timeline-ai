@@ -1,20 +1,53 @@
 /**
- * Demo seed clock. Fixture times are stored as day offsets from "now" plus a
- * UTC clock time, then resolved when the seed runs so the workspace always
- * looks recent while relative order stays the same.
+ * Demo seed clock. Fixture times are day offsets from "now" plus a clock time
+ * in the Acme Labs team timezone, resolved when the seed runs so the workspace
+ * always looks recent while relative order stays the same.
  *
  * The historical fixture was authored against 14 August 2026 18:00 UTC. Tests
  * keep that anchor so cadence floors stay deterministic; `dev:seed` swaps in
  * the real current instant.
  */
+import { dateFromInstant, zonedDateTimeFromDate } from '@timeline/shared/time';
+
 export const DEMO_CLOCK_ANCHOR = new Date('2026-08-14T18:00:00.000Z');
 export const DEMO_CADENCE_SPAN_DAYS = 31;
 export const DEMO_TOKEN_EXPIRY_DAYS = 180;
+export const DEMO_TEAM_TIMEZONE = 'Europe/Helsinki';
+export const DEMO_DIGEST_HOUR = 7;
+
+/** Story beats as local-day offsets from seed "today" in the team timezone. */
+export const DEMO_DATES = {
+  exportDue: -37,
+  firstStandup: -31,
+  incidentReview: -30,
+  fieldMappingBlockedStandup: -24,
+  invoicePastDue: -21,
+  dpaSigned: -17,
+  designerInterviews: -15,
+  partnerWeek: -10,
+  northwindMeeting: -8,
+  brightlineScoping: -7,
+  dataRoom: -1,
+  today: 0,
+  mayaFinal: 1,
+  dryRun: 4,
+  elenaConfirm: 5,
+  polarDemo: 5,
+  webinar: 6,
+  helioValidation: 7,
+  offerTarget: 8,
+  pilotReview: 12,
+  orchardBudget: 25,
+  overdueVendor: -3,
+  overdueNorthstar: -2,
+} as const;
+
+export type TeamDateKind = 'md' | 'dm' | 'dmy' | 'iso' | 'month';
 
 export interface DemoTimeOffset {
-  /** Whole UTC days relative to the seed clock's UTC date. Negative is the past. */
+  /** Whole local days relative to the seed clock's team-timezone date. Negative is the past. */
   days: number;
-  /** UTC clock time `HH:MM` or `HH:MM:SS`. */
+  /** Team-timezone clock time `HH:MM` or `HH:MM:SS`. */
   time: string;
 }
 
@@ -31,29 +64,26 @@ export function setDemoSeedNow(now: Date): void {
 
 export function parseUtcTime(time: string): { hours: number; minutes: number; seconds: number } {
   const match = /^(\d{2}):(\d{2})(?::(\d{2}))?$/.exec(time);
-  if (!match) throw new Error(`Invalid demo UTC time ${time}`);
+  if (!match) throw new Error(`Invalid demo clock time ${time}`);
   const hours = Number(match[1]);
   const minutes = Number(match[2]);
   const seconds = Number(match[3] ?? '0');
   if (hours > 23 || minutes > 59 || seconds > 59) {
-    throw new Error(`Invalid demo UTC time ${time}`);
+    throw new Error(`Invalid demo clock time ${time}`);
   }
   return { hours, minutes, seconds };
 }
 
-export function resolveDemoTime(now: Date, offset: DemoTimeOffset): Date {
+export function resolveDemoTime(
+  now: Date,
+  offset: DemoTimeOffset,
+  timezone = DEMO_TEAM_TIMEZONE,
+): Date {
   const { hours, minutes, seconds } = parseUtcTime(offset.time);
-  return new Date(
-    Date.UTC(
-      now.getUTCFullYear(),
-      now.getUTCMonth(),
-      now.getUTCDate() + offset.days,
-      hours,
-      minutes,
-      seconds,
-      0,
-    ),
-  );
+  const zoned = zonedDateTimeFromDate(now, timezone)
+    .add({ days: offset.days })
+    .with({ hour: hours, minute: minutes, second: seconds, millisecond: 0, microsecond: 0 });
+  return dateFromInstant(zoned.toInstant());
 }
 
 export function isoAt(days: number, time: string, now = getDemoSeedNow()): string {
@@ -64,12 +94,89 @@ export function dateAt(days: number, time: string, now = getDemoSeedNow()): Date
   return resolveDemoTime(now, { days, time });
 }
 
-export function utcDay(days: number, now = getDemoSeedNow()): string {
-  return isoAt(days, '00:00:00', now).slice(0, 10);
+export function localDay(days: number, now = getDemoSeedNow()): string {
+  return teamDate(days, 'iso', now);
 }
 
 export function cadenceRange(now = getDemoSeedNow()): { start: string; end: string } {
-  return { start: utcDay(-DEMO_CADENCE_SPAN_DAYS, now), end: utcDay(0, now) };
+  return { start: localDay(-DEMO_CADENCE_SPAN_DAYS, now), end: localDay(0, now) };
+}
+
+export function isoOnLocalDay(
+  day: string,
+  hours: number,
+  minutes: number,
+  seconds = 0,
+  now = getDemoSeedNow(),
+): string {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) throw new Error(`Invalid local day ${day}`);
+  const [year, month, date] = day.split('-').map(Number);
+  const zoned = zonedDateTimeFromDate(now, DEMO_TEAM_TIMEZONE).with({
+    year,
+    month,
+    day: date,
+    hour: hours,
+    minute: minutes,
+    second: seconds,
+    millisecond: 0,
+    microsecond: 0,
+  });
+  return dateFromInstant(zoned.toInstant()).toISOString();
+}
+
+export function latestDigestDayOffset(now = getDemoSeedNow()): number {
+  return dateAt(0, `${String(DEMO_DIGEST_HOUR).padStart(2, '0')}:00:00`, now).getTime() <=
+    now.getTime()
+    ? 0
+    : -1;
+}
+
+export function teamDate(days: number, kind: TeamDateKind = 'dm', now = getDemoSeedNow()): string {
+  const instant = dateAt(days, '12:00:00', now);
+  if (kind === 'iso') {
+    return zonedDateTimeFromDate(instant, DEMO_TEAM_TIMEZONE).toPlainDate().toString();
+  }
+  if (kind === 'month') {
+    return new Intl.DateTimeFormat('en-GB', {
+      month: 'long',
+      timeZone: DEMO_TEAM_TIMEZONE,
+    }).format(instant);
+  }
+  if (kind === 'md') {
+    return new Intl.DateTimeFormat('en-US', {
+      month: 'long',
+      day: 'numeric',
+      timeZone: DEMO_TEAM_TIMEZONE,
+    }).format(instant);
+  }
+  if (kind === 'dmy') {
+    return new Intl.DateTimeFormat('en-GB', {
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric',
+      timeZone: DEMO_TEAM_TIMEZONE,
+    }).format(instant);
+  }
+  return new Intl.DateTimeFormat('en-GB', {
+    day: 'numeric',
+    month: 'long',
+    timeZone: DEMO_TEAM_TIMEZONE,
+  }).format(instant);
+}
+
+export function teamClock(
+  days: number,
+  time: string,
+  timezone = DEMO_TEAM_TIMEZONE,
+  now = getDemoSeedNow(),
+): string {
+  const instant = dateAt(days, time, now);
+  return new Intl.DateTimeFormat('en-GB', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+    timeZone: timezone,
+  }).format(instant);
 }
 
 export const DEMO_TIME_OFFSETS = {
@@ -83,7 +190,7 @@ export const DEMO_TIME_OFFSETS = {
   githubPr: { days: -57, time: '08:40:00' },
   linearIssue: { days: -57, time: '08:45:00' },
   seedNowLegacy: { days: -57, time: '09:00:00' },
-  vendorDue: { days: -56, time: '17:00:00' },
+  vendorDue: { days: DEMO_DATES.overdueVendor, time: '17:00:00' },
   note: { days: -39, time: '09:00:00' },
   email: { days: -38, time: '10:30:00' },
   meeting: { days: -37, time: '15:00:00' },

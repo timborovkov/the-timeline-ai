@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 
 import { classifyCapturedEvent } from '@timeline/shared/event-class';
 
-import { isoAt } from '../demo-clock.js';
+import { DEMO_DATES, DEMO_TEAM_TIMEZONE, isoAt, teamClock, teamDate } from '../demo-clock.js';
 import { DEMO_FIXTURE_VERSION, DEMO_IDS, DEMO_LOGIN_PASSWORD } from '../demo-fixture.js';
 
 import {
@@ -17,6 +17,14 @@ import { CORPUS_PERSON, type CorpusPerson } from './people.js';
 
 export const CORPUS_FIXTURE_VERSION = DEMO_FIXTURE_VERSION;
 export const TEAM_ID = DEMO_IDS.team;
+
+const D = DEMO_DATES;
+const md = (days: number): string => teamDate(days, 'md');
+const dm = (days: number): string => teamDate(days, 'dm');
+const dmy = (days: number): string => teamDate(days, 'dmy');
+const month = (days: number): string => teamDate(days, 'month');
+const when = (days: number, start: string, end: string): string =>
+  `${md(days)} ${teamClock(days, start)}–${teamClock(days, end)} (${DEMO_TEAM_TIMEZONE})`;
 
 export const CORPUS_VOLUME_FLOORS = {
   people: 8,
@@ -202,7 +210,7 @@ function buildStoryEvents(): CorpusEvent[] {
       'riley',
       'slack',
       isoAt(-35, '14:40:00'),
-      'Slack #gtm: Riley posted the Atlas beta landing-page outline. Hero line is "Evidence before the status update." Launch webinar target is August 20.',
+      `Slack #gtm: Riley posted the Atlas beta landing-page outline. Hero line is "Evidence before the status update." Launch webinar target is ${md(D.webinar)}.`,
       {
         slack_channel_name: '#gtm',
         slack_event_id: 'EvDEMOSEEDGTM001',
@@ -215,7 +223,7 @@ function buildStoryEvents(): CorpusEvent[] {
       'avery',
       'email',
       isoAt(-32, '09:05:00'),
-      'Email from Priya Shah at Northwind Capital: We would like a first partner meeting the week of August 4 to discuss a Series A lead. Please send the one-pager and the Northstar design-partner snapshot.',
+      `Email from Priya Shah at Northwind Capital: We would like a first partner meeting the week of ${md(D.partnerWeek)} to discuss a Series A lead. Please send the one-pager and the Northstar design-partner snapshot.`,
       {
         message_id: 'demo-seed-northwind-intro-001',
         from: 'priya.shah@northwind.example',
@@ -277,7 +285,7 @@ function buildStoryEvents(): CorpusEvent[] {
       'riley',
       'integration',
       isoAt(-29, '10:30:00'),
-      'Monday.com Launch board: "Beta webinar" moved to In progress. Owner Riley. Due August 20.',
+      `Monday.com Launch board: "Beta webinar" moved to In progress. Owner Riley. Due ${md(D.webinar)}.`,
       {
         provider: 'monday',
         event_type: 'item.status_changed',
@@ -290,11 +298,11 @@ function buildStoryEvents(): CorpusEvent[] {
       'harper',
       'email',
       isoAt(-29, '15:18:00'),
-      'Email from Harper: August cash forecast is 11.4 months of runway if we close Northwind as lead. Legal wants the vendor DPA signed before the diligence room opens.',
+      `Email from Harper: ${month(D.today)} cash forecast is 11.4 months of runway if we close Northwind as lead. Legal wants the vendor DPA signed before the diligence room opens.`,
       {
         message_id: 'demo-seed-runway-forecast-001',
         from: 'harper@timeline.dev',
-        subject: 'August runway and diligence room',
+        subject: `${month(D.today)} runway and diligence room`,
       },
       'inline://timeline/demo-seed/email/runway-forecast',
     ),
@@ -303,7 +311,7 @@ function buildStoryEvents(): CorpusEvent[] {
       'quinn',
       'web',
       isoAt(-28, '08:50:00'),
-      'Explicit note from Quinn: open hiring loops this month are Senior backend engineer and Product designer. Target offers by August 22.',
+      `Explicit note from Quinn: open hiring loops this month are Senior backend engineer and Product designer. Target offers by ${md(D.offerTarget)}.`,
       { capture_kind: 'explicit_chat_note', command: '/timeline note', surface: 'manual_note' },
       'inline://timeline/demo-seed/note/hiring-loops',
     ),
@@ -311,8 +319,8 @@ function buildStoryEvents(): CorpusEvent[] {
       11,
       'avery',
       'meeting',
-      isoAt(-24, '09:30:00'),
-      'Daily product standup transcript: importer 500s are mitigated. Northstar field-mapping still blocks the pilot. Riley will freeze webinar copy after the August 4 Northwind meeting.',
+      isoAt(-24, '12:30:00'),
+      `Daily product standup transcript: importer 500s are mitigated. Northstar field-mapping still blocks the pilot. Riley will freeze webinar copy after the ${md(D.partnerWeek)} Northwind meeting.`,
       { platform: 'meet', title: 'Daily product standup' },
       'inline://timeline/demo-seed/meeting/standup-2026-07-21',
     ),
@@ -334,7 +342,7 @@ function buildStoryEvents(): CorpusEvent[] {
       'casey',
       'email',
       isoAt(-23, '13:40:00'),
-      'Email from Dana Cole at Brightline Health: we can do a scoping call August 7. They need HIPAA language in the MSA and a sample export from a clinical ops workspace.',
+      `Email from Dana Cole at Brightline Health: we can do a scoping call ${md(D.brightlineScoping)}. They need HIPAA language in the MSA and a sample export from a clinical ops workspace.`,
       {
         message_id: 'demo-seed-brightline-scoping-001',
         from: 'dana.cole@brightline.example',
@@ -404,7 +412,7 @@ function buildStoryEvents(): CorpusEvent[] {
       'quinn',
       'email',
       isoAt(-18, '09:10:00'),
-      'Email from Quinn to the team: designer interviews start July 30. Loop owners are Sam (craft) and Mika (product sense). Please keep scorecards in the hiring object, not in Slack.',
+      `Email from Quinn to the team: designer interviews start ${md(D.designerInterviews)}. Loop owners are Sam (craft) and Mika (product sense). Please keep scorecards in the hiring object, not in Slack.`,
       {
         message_id: 'demo-seed-designer-interviews-001',
         from: 'quinn@timeline.dev',
@@ -416,7 +424,7 @@ function buildStoryEvents(): CorpusEvent[] {
       20,
       'avery',
       'meeting',
-      isoAt(-17, '09:30:00'),
+      isoAt(-17, '12:30:00'),
       'Daily product standup transcript: Northstar still waiting on field-mapping. Helio and Brightline are real pipeline. Diligence room opens after the DPA signature.',
       { platform: 'meet', title: 'Daily product standup' },
       'inline://timeline/demo-seed/meeting/standup-2026-07-28',
@@ -452,7 +460,7 @@ function buildStoryEvents(): CorpusEvent[] {
       'riley',
       'email',
       isoAt(-16, '19:40:00'),
-      'Email from Riley: webinar landing page is in review. Need Avery quote, Northstar anonymized timeline screenshot, and the August 20 date locked on the calendar.',
+      `Email from Riley: webinar landing page is in review. Need Avery quote, Northstar anonymized timeline screenshot, and the ${md(D.webinar)} date locked on the calendar.`,
       {
         message_id: 'demo-seed-webinar-review-001',
         from: 'riley@timeline.dev',
@@ -496,11 +504,11 @@ function buildStoryEvents(): CorpusEvent[] {
       'avery',
       'email',
       isoAt(-11, '08:15:00'),
-      'Email from Avery to Priya Shah: attaching the investor one-pager and confirming August 6 16:00 Helsinki / 09:00 New York for the Northwind partner meeting. Consent noted for Timeline bot join.',
+      `Email from Avery to Priya Shah: attaching the investor one-pager and confirming ${md(D.northwindMeeting)} ${teamClock(D.northwindMeeting, '16:00:00')} Helsinki / ${teamClock(D.northwindMeeting, '16:00:00', 'America/New_York')} New York for the Northwind partner meeting. Consent noted for Timeline bot join.`,
       {
         message_id: 'demo-seed-northwind-confirm-001',
         from: 'owner@timeline.dev',
-        subject: 'Confirmed: Northwind partner meeting 6 Aug',
+        subject: `Confirmed: Northwind partner meeting ${md(D.northwindMeeting)}`,
       },
       'inline://timeline/demo-seed/email/northwind-confirm',
     ),
@@ -523,7 +531,7 @@ function buildStoryEvents(): CorpusEvent[] {
       29,
       'avery',
       'meeting',
-      isoAt(-10, '09:30:00'),
+      isoAt(-10, '12:30:00'),
       'Daily product standup transcript: importer is calm. Diligence room checklist is Harper plus Quinn. Casey will send Brightline the MSA excerpt, not a new template.',
       { platform: 'meet', title: 'Daily product standup' },
       'inline://timeline/demo-seed/meeting/standup-2026-08-04',
@@ -546,7 +554,7 @@ function buildStoryEvents(): CorpusEvent[] {
       'casey',
       'email',
       isoAt(-9, '15:05:00'),
-      'Email from Luca Moretti at Orchard Finance: they want a proposal for a 12-seat research workspace. Budget owner is in September. Keep them in Scoping.',
+      `Email from Luca Moretti at Orchard Finance: they want a proposal for a 12-seat research workspace. Budget owner is in ${month(D.orchardBudget)}. Keep them in Scoping.`,
       {
         message_id: 'demo-seed-orchard-proposal-001',
         from: 'luca.moretti@orchard.example',
@@ -558,8 +566,8 @@ function buildStoryEvents(): CorpusEvent[] {
       32,
       'avery',
       'meeting',
-      isoAt(-8, '13:00:00'),
-      'Northwind Capital partner meeting transcript: Priya asked for Northstar proof, runway, and hiring plan. Avery committed to a data-room link by August 13. No term sheet this meeting.',
+      isoAt(-8, '16:00:00'),
+      `Northwind Capital partner meeting transcript: Priya asked for Northstar proof, runway, and hiring plan. Avery committed to a data-room link by ${md(D.dataRoom)}. No term sheet this meeting.`,
       { platform: 'meet', title: 'Northwind Capital partner meeting' },
       'inline://timeline/demo-seed/meeting/northwind-2026-08-06',
     ),
@@ -603,7 +611,7 @@ function buildStoryEvents(): CorpusEvent[] {
       'casey',
       'slack',
       isoAt(-4, '17:36:00'),
-      'Slack #gtm: Polar Studio asked for a founder-led demo on August 19. Tiny deal, useful logo. Casey wants them in New once the board proposal lands.',
+      `Slack #gtm: Polar Studio asked for a founder-led demo on ${md(D.polarDemo)}. Tiny deal, useful logo. Casey wants them in New once the board proposal lands.`,
       {
         slack_channel_name: '#gtm',
         slack_event_id: 'EvDEMOSEEDGTM006',
@@ -628,8 +636,8 @@ function buildStoryEvents(): CorpusEvent[] {
       38,
       'avery',
       'meeting',
-      isoAt(-3, '09:30:00'),
-      'Daily product standup transcript: Northstar is still the proof point for Northwind. Field-mapping email has not arrived. Webinar stays August 20. Designer loop: Maya Chen to final round.',
+      isoAt(-3, '12:30:00'),
+      `Daily product standup transcript: Northstar is still the proof point for Northwind. Field-mapping email has not arrived. Webinar stays ${md(D.webinar)}. Designer loop: Maya Chen to final round.`,
       { platform: 'meet', title: 'Daily product standup' },
       'inline://timeline/demo-seed/meeting/standup-2026-08-11',
     ),
@@ -651,7 +659,7 @@ function buildStoryEvents(): CorpusEvent[] {
       'avery',
       'email',
       isoAt(-2, '08:40:00'),
-      'Email from Elena Park at Northstar Works: field-mapping confirmation is delayed until August 19 because their data team is in a freeze. Pilot review should move to August 26.',
+      `Email from Elena Park at Northstar Works: field-mapping confirmation is delayed until ${md(D.elenaConfirm)} because their data team is in a freeze. Pilot review should move to ${md(D.pilotReview)}.`,
       {
         message_id: 'demo-seed-northstar-delay-001',
         from: 'elena.park@northstar.example',
@@ -677,7 +685,7 @@ function buildStoryEvents(): CorpusEvent[] {
       'quinn',
       'web',
       isoAt(-2, '15:47:00'),
-      'Explicit note from Quinn: backend engineer loop produced no offer this week. Reopen sourcing on August 18. Designer final round with Maya Chen is August 15.',
+      `Explicit note from Quinn: backend engineer loop produced no offer this week. Reopen sourcing on ${md(D.dryRun)}. Designer final round with Maya Chen is ${md(D.mayaFinal)}.`,
       { capture_kind: 'explicit_chat_note', command: '/timeline note', surface: 'manual_note' },
       'inline://timeline/demo-seed/note/hiring-status',
     ),
@@ -686,7 +694,7 @@ function buildStoryEvents(): CorpusEvent[] {
       'casey',
       'email',
       isoAt(-1, '16:02:00'),
-      'Email from Casey to Helio Retail: sharing the anonymized Northstar handoff brief and proposing a technical validation on August 21. They remain in Qualified.',
+      `Email from Casey to Helio Retail: sharing the anonymized Northstar handoff brief and proposing a technical validation on ${md(D.helioValidation)}. They remain in Qualified.`,
       {
         message_id: 'demo-seed-helio-followup-001',
         from: 'casey@timeline.dev',
@@ -721,7 +729,7 @@ function buildStoryEvents(): CorpusEvent[] {
       'riley',
       'calendar',
       isoAt(0, '09:00:00'),
-      `Atlas beta webinar | public launch event | ${isoAt(6, '15:00:00')} to ${isoAt(6, '16:00:00')} | (Europe/Helsinki)`,
+      `Atlas beta webinar | public launch event | ${when(D.webinar, '15:00:00', '16:00:00')}`,
       {
         provider: 'calendar',
         action: 'scheduled',
@@ -757,7 +765,7 @@ function buildStoryEvents(): CorpusEvent[] {
       'jordan',
       'integration',
       isoAt(0, '14:44:00'),
-      'Linear issue NORTH-42 comment: still blocked on Northstar field-mapping confirmation. Due date moved to August 26 to match Elena Park email.',
+      `Linear issue NORTH-42 comment: still blocked on Northstar field-mapping confirmation. Due date moved to ${md(D.pilotReview)} to match Elena Park email.`,
       {
         provider: 'linear',
         event_type: 'comment.created',
@@ -848,8 +856,8 @@ function buildStoryEvents(): CorpusEvent[] {
       57,
       'avery',
       'calendar',
-      isoAt(-8, '12:55:00'),
-      `Northwind Capital partner meeting | ${isoAt(-8, '13:00:00')} to ${isoAt(-8, '13:45:00')} | (Europe/Helsinki)`,
+      isoAt(-8, '15:55:00'),
+      `Northwind Capital partner meeting | ${when(D.northwindMeeting, '16:00:00', '16:45:00')}`,
       {
         provider: 'calendar',
         action: 'event',
@@ -876,7 +884,7 @@ function buildStoryEvents(): CorpusEvent[] {
       'riley',
       'integration',
       isoAt(-2, '16:30:00'),
-      'Monday.com Launch board comment on Beta webinar: speakers are Avery and Mika. Riley hosts. Need 40-minute run of show by August 18.',
+      `Monday.com Launch board comment on Beta webinar: speakers are Avery and Mika. Riley hosts. Need 40-minute run of show by ${md(D.dryRun)}.`,
       {
         provider: 'monday',
         event_type: 'update.created',
@@ -916,7 +924,7 @@ function buildStoryEvents(): CorpusEvent[] {
       'riley',
       'calendar',
       isoAt(0, '12:00:00'),
-      `Webinar dry-run blocked on Avery quote | ${isoAt(4, '13:00:00')} to ${isoAt(4, '13:40:00')} | (Europe/Helsinki)`,
+      `Webinar dry-run blocked on Avery quote | ${when(D.dryRun, '13:00:00', '13:40:00')}`,
       {
         provider: 'calendar',
         action: 'scheduled',
@@ -930,7 +938,7 @@ function buildStoryEvents(): CorpusEvent[] {
       'avery',
       'calendar',
       isoAt(-28, '18:00:00'),
-      `Harbor Peak courtesy call stays off the lead slide | ${isoAt(-21, '14:00:00')} to ${isoAt(-21, '14:20:00')} | (Europe/Helsinki)`,
+      `Harbor Peak courtesy call stays off the lead slide | ${when(-21, '14:00:00', '14:20:00')}`,
       {
         provider: 'calendar',
         action: 'scheduled',
@@ -944,7 +952,7 @@ function buildStoryEvents(): CorpusEvent[] {
       'quinn',
       'calendar',
       isoAt(-6, '10:20:00'),
-      `Maya Chen final round | ${isoAt(1, '13:00:00')} to ${isoAt(1, '14:00:00')} | (Europe/Helsinki)`,
+      `Maya Chen final round | ${when(D.mayaFinal, '13:00:00', '14:00:00')}`,
       {
         provider: 'calendar',
         action: 'scheduled',
@@ -958,7 +966,7 @@ function buildStoryEvents(): CorpusEvent[] {
       'casey',
       'calendar',
       isoAt(-1, '16:40:00'),
-      `Helio Retail technical validation | ${isoAt(7, '15:00:00')} to ${isoAt(7, '16:00:00')} | (Europe/Helsinki)`,
+      `Helio Retail technical validation | ${when(D.helioValidation, '15:00:00', '16:00:00')}`,
       {
         provider: 'calendar',
         action: 'scheduled',
@@ -972,7 +980,7 @@ function buildStoryEvents(): CorpusEvent[] {
       'casey',
       'calendar',
       isoAt(-10, '15:55:00'),
-      `Polar Studio founder demo | ${isoAt(5, '14:00:00')} to ${isoAt(5, '14:30:00')} | (Europe/Helsinki)`,
+      `Polar Studio founder demo | ${when(D.polarDemo, '14:00:00', '14:30:00')}`,
       {
         provider: 'calendar',
         action: 'scheduled',
@@ -986,7 +994,7 @@ function buildStoryEvents(): CorpusEvent[] {
       'harper',
       'calendar',
       isoAt(-1, '18:45:00'),
-      `Northwind diligence working session | ${isoAt(5, '09:00:00')} to ${isoAt(5, '10:30:00')} | (Europe/Helsinki)`,
+      `Northwind diligence working session | ${when(5, '09:00:00', '10:30:00')}`,
       {
         provider: 'calendar',
         action: 'scheduled',
@@ -1000,7 +1008,7 @@ function buildStoryEvents(): CorpusEvent[] {
       'avery',
       'telegram',
       isoAt(0, '07:40:00'),
-      'Telegram DM Avery → Timeline: capturing a walk-through of the Northstar CSV fallback for Mika before the 19 August confirmation.',
+      `Telegram DM Avery → Timeline: capturing a walk-through of the Northstar CSV fallback for Mika before the ${dm(D.elenaConfirm)} confirmation.`,
       {
         capture_kind: 'direct_message',
         tg_chat_type: 'private',
@@ -1016,7 +1024,7 @@ function buildStoryEvents(): CorpusEvent[] {
       'avery',
       'telegram',
       isoAt(0, '07:42:00'),
-      'Voice memo from Avery: Northstar stays on the CSV fallback. Do not reopen live importer previews before Elena confirms field-mapping on 19 August.',
+      `Voice memo from Avery: Northstar stays on the CSV fallback. Do not reopen live importer previews before Elena confirms field-mapping on ${dm(D.elenaConfirm)}.`,
       {
         capture_kind: 'direct_message',
         tg_chat_type: 'private',
@@ -1302,7 +1310,7 @@ function buildObjectDefs(): Array<Omit<CorpusObject, 'id'> & { n: number }> {
     {
       n: 28,
       type: 'task',
-      canonicalName: 'Move Northstar pilot review to August 26',
+      canonicalName: `Move Northstar pilot review to ${md(D.pilotReview)}`,
       status: 'todo',
       stage: 'todo',
       ownerUserId: CORPUS_PERSON.mika.id,
@@ -1332,7 +1340,7 @@ function buildObjectDefs(): Array<Omit<CorpusObject, 'id'> & { n: number }> {
     {
       n: 31,
       type: 'follow_up',
-      canonicalName: 'Helio technical validation August 21',
+      canonicalName: `Helio technical validation ${md(D.helioValidation)}`,
       status: 'todo',
       ownerUserId: CORPUS_PERSON.casey.id,
       dueAt: isoAt(7, '16:00:00'),
@@ -1559,156 +1567,162 @@ export function corpusObjectId(name: string, type?: CorpusObject['type']): strin
   return matches[0].id;
 }
 
-export const CORPUS_FACTS = [
-  {
-    id: CORPUS_UUID.fact(1),
-    rawEventId: eventId(3),
-    entityId: objectId(8),
-    statement: 'Northwind Capital asked for a Series A partner meeting the week of August 4.',
-  },
-  {
-    id: CORPUS_UUID.fact(2),
-    rawEventId: eventId(6),
-    entityId: objectId(17),
-    statement: 'Sentry issue ATLAS-218 captured a spike of CSV preview 500s.',
-  },
-  {
-    id: CORPUS_UUID.fact(3),
-    rawEventId: eventId(11),
-    entityId: DEMO_IDS.objectDelivery,
-    statement: 'As of July 21 the Northstar field-mapping confirmation still blocked the pilot.',
-  },
-  {
-    id: CORPUS_UUID.fact(4),
-    rawEventId: eventId(18),
-    entityId: objectId(13),
-    statement: 'Moss & Co was qualified after a 30-minute intro and wants to keep Monday.com.',
-  },
-  {
-    id: CORPUS_UUID.fact(5),
-    rawEventId: eventId(32),
-    entityId: objectId(8),
-    statement: 'Avery committed to send Northwind a data-room link by August 13.',
-  },
-  {
-    id: CORPUS_UUID.fact(6),
-    rawEventId: eventId(34),
-    entityId: objectId(12),
-    statement: 'Brightline Health accepted CSV plus evidence packs and no clinical template in v1.',
-  },
-  {
-    id: CORPUS_UUID.fact(7),
-    rawEventId: eventId(40),
-    entityId: DEMO_IDS.objectPilot,
-    statement: 'Elena Park delayed Northstar field-mapping confirmation until August 19.',
-  },
-  {
-    id: CORPUS_UUID.fact(8),
-    rawEventId: eventId(37),
-    entityId: objectId(34),
-    statement: 'Acme tagged atlas-0.8.0 with CSV preview replay and quieter import errors.',
-  },
-  {
-    id: CORPUS_UUID.fact(9),
-    rawEventId: eventId(20),
-    entityId: objectId(7),
-    statement: 'The diligence room stays closed until the vendor DPA PDF is in Documents.',
-  },
-  {
-    id: CORPUS_UUID.fact(10),
-    rawEventId: eventId(24),
-    entityId: objectId(15),
-    statement: 'Kite Logistics is lost unless they accept the EU SaaS posture instead of on-prem.',
-  },
-  {
-    id: CORPUS_UUID.fact(11),
-    rawEventId: eventId(42),
-    entityId: objectId(22),
-    statement: 'Maya Chen is in the product designer final round on August 15.',
-  },
-  {
-    id: CORPUS_UUID.fact(12),
-    rawEventId: eventId(45),
-    entityId: objectId(8),
-    statement: 'Avery sent the Northwind data-room link on August 13.',
-  },
-  {
-    id: CORPUS_UUID.fact(13),
-    rawEventId: eventId(48),
-    entityId: DEMO_IDS.objectPilot,
-    statement:
-      'Recently Acme shipped atlas-0.8.0, opened the Northwind data room, and kept Northstar on CSV fallback.',
-  },
-  {
-    id: CORPUS_UUID.fact(14),
-    rawEventId: eventId(56),
-    entityId: objectId(18),
-    statement:
-      'The team decided to replay CSV preview from stored bytes, not the live vendor endpoint.',
-  },
-  {
-    id: CORPUS_UUID.fact(15),
-    rawEventId: eventId(16),
-    entityId: objectId(1),
-    statement: 'Northstar Works invoice inv_2041 was past due on July 24 and later paid.',
-  },
-  {
-    id: CORPUS_UUID.fact(16),
-    rawEventId: eventId(10),
-    entityId: objectId(21),
-    statement: 'Open hiring loops this month are Senior backend engineer and Product designer.',
-  },
-  {
-    id: CORPUS_UUID.fact(17),
-    rawEventId: eventId(61),
-    entityId: objectId(34),
-    statement: 'The 14 July standup named importer 500s as the week-one fire.',
-  },
-  {
-    id: CORPUS_UUID.fact(18),
-    rawEventId: eventId(51),
-    entityId: objectId(50),
-    statement:
-      'The Record asked for a backgrounder and can wait until the one-pager is public-safe.',
-  },
-  {
-    id: CORPUS_UUID.fact(19),
-    rawEventId: eventId(50),
-    entityId: objectId(52),
-    statement: 'Harbor Peak is a courtesy catch-up and is not on the Series A lead path.',
-  },
-  {
-    id: CORPUS_UUID.fact(20),
-    rawEventId: eventId(45),
-    entityId: objectId(47),
-    statement: 'Harper owns Northwind diligence Q&A from the data room.',
-  },
-  {
-    id: CORPUS_UUID.fact(21),
-    rawEventId: eventId(18),
-    entityId: objectId(51),
-    statement:
-      'Moss & Co wants to keep Monday.com; keep-vs-replace must be mapped before a proposal.',
-  },
-  {
-    id: CORPUS_UUID.fact(22),
-    rawEventId: eventId(60),
-    entityId: objectId(16),
-    statement: 'Polar Studio is inbound and not yet on the dealflow board.',
-  },
-  {
-    id: CORPUS_UUID.fact(23),
-    rawEventId: eventId(3000),
-    entityId: objectId(12),
-    statement: 'Brightline scoping confirmed CSV plus evidence packs and no clinical template.',
-  },
-  {
-    id: CORPUS_UUID.fact(24),
-    rawEventId: eventId(3001),
-    entityId: objectId(23),
-    statement: 'Maya Chen advanced to the designer final round after the 30 July interview.',
-  },
-] as const;
+function buildCorpusFacts() {
+  return [
+    {
+      id: CORPUS_UUID.fact(1),
+      rawEventId: eventId(3),
+      entityId: objectId(8),
+      statement: `Northwind Capital asked for a Series A partner meeting the week of ${md(D.partnerWeek)}.`,
+    },
+    {
+      id: CORPUS_UUID.fact(2),
+      rawEventId: eventId(6),
+      entityId: objectId(17),
+      statement: 'Sentry issue ATLAS-218 captured a spike of CSV preview 500s.',
+    },
+    {
+      id: CORPUS_UUID.fact(3),
+      rawEventId: eventId(11),
+      entityId: DEMO_IDS.objectDelivery,
+      statement: `As of ${md(D.fieldMappingBlockedStandup)} the Northstar field-mapping confirmation still blocked the pilot.`,
+    },
+    {
+      id: CORPUS_UUID.fact(4),
+      rawEventId: eventId(18),
+      entityId: objectId(13),
+      statement: 'Moss & Co was qualified after a 30-minute intro and wants to keep Monday.com.',
+    },
+    {
+      id: CORPUS_UUID.fact(5),
+      rawEventId: eventId(32),
+      entityId: objectId(8),
+      statement: `Avery committed to send Northwind a data-room link by ${md(D.dataRoom)}.`,
+    },
+    {
+      id: CORPUS_UUID.fact(6),
+      rawEventId: eventId(34),
+      entityId: objectId(12),
+      statement:
+        'Brightline Health accepted CSV plus evidence packs and no clinical template in v1.',
+    },
+    {
+      id: CORPUS_UUID.fact(7),
+      rawEventId: eventId(40),
+      entityId: DEMO_IDS.objectPilot,
+      statement: `Elena Park delayed Northstar field-mapping confirmation until ${md(D.elenaConfirm)}.`,
+    },
+    {
+      id: CORPUS_UUID.fact(8),
+      rawEventId: eventId(37),
+      entityId: objectId(34),
+      statement: 'Acme tagged atlas-0.8.0 with CSV preview replay and quieter import errors.',
+    },
+    {
+      id: CORPUS_UUID.fact(9),
+      rawEventId: eventId(20),
+      entityId: objectId(7),
+      statement: 'The diligence room stays closed until the vendor DPA PDF is in Documents.',
+    },
+    {
+      id: CORPUS_UUID.fact(10),
+      rawEventId: eventId(24),
+      entityId: objectId(15),
+      statement:
+        'Kite Logistics is lost unless they accept the EU SaaS posture instead of on-prem.',
+    },
+    {
+      id: CORPUS_UUID.fact(11),
+      rawEventId: eventId(42),
+      entityId: objectId(22),
+      statement: `Maya Chen is in the product designer final round on ${md(D.mayaFinal)}.`,
+    },
+    {
+      id: CORPUS_UUID.fact(12),
+      rawEventId: eventId(45),
+      entityId: objectId(8),
+      statement: `Avery sent the Northwind data-room link on ${md(D.dataRoom)}.`,
+    },
+    {
+      id: CORPUS_UUID.fact(13),
+      rawEventId: eventId(48),
+      entityId: DEMO_IDS.objectPilot,
+      statement:
+        'Recently Acme shipped atlas-0.8.0, opened the Northwind data room, and kept Northstar on CSV fallback.',
+    },
+    {
+      id: CORPUS_UUID.fact(14),
+      rawEventId: eventId(56),
+      entityId: objectId(18),
+      statement:
+        'The team decided to replay CSV preview from stored bytes, not the live vendor endpoint.',
+    },
+    {
+      id: CORPUS_UUID.fact(15),
+      rawEventId: eventId(16),
+      entityId: objectId(1),
+      statement: `Northstar Works invoice inv_2041 was past due on ${md(D.invoicePastDue)} and later paid.`,
+    },
+    {
+      id: CORPUS_UUID.fact(16),
+      rawEventId: eventId(10),
+      entityId: objectId(21),
+      statement: 'Open hiring loops this month are Senior backend engineer and Product designer.',
+    },
+    {
+      id: CORPUS_UUID.fact(17),
+      rawEventId: eventId(61),
+      entityId: objectId(34),
+      statement: `The ${dm(D.firstStandup)} standup named importer 500s as the week-one fire.`,
+    },
+    {
+      id: CORPUS_UUID.fact(18),
+      rawEventId: eventId(51),
+      entityId: objectId(50),
+      statement:
+        'The Record asked for a backgrounder and can wait until the one-pager is public-safe.',
+    },
+    {
+      id: CORPUS_UUID.fact(19),
+      rawEventId: eventId(50),
+      entityId: objectId(52),
+      statement: 'Harbor Peak is a courtesy catch-up and is not on the Series A lead path.',
+    },
+    {
+      id: CORPUS_UUID.fact(20),
+      rawEventId: eventId(45),
+      entityId: objectId(47),
+      statement: 'Harper owns Northwind diligence Q&A from the data room.',
+    },
+    {
+      id: CORPUS_UUID.fact(21),
+      rawEventId: eventId(18),
+      entityId: objectId(51),
+      statement:
+        'Moss & Co wants to keep Monday.com; keep-vs-replace must be mapped before a proposal.',
+    },
+    {
+      id: CORPUS_UUID.fact(22),
+      rawEventId: eventId(60),
+      entityId: objectId(16),
+      statement: 'Polar Studio is inbound and not yet on the dealflow board.',
+    },
+    {
+      id: CORPUS_UUID.fact(23),
+      rawEventId: eventId(3000),
+      entityId: objectId(12),
+      statement: 'Brightline scoping confirmed CSV plus evidence packs and no clinical template.',
+    },
+    {
+      id: CORPUS_UUID.fact(24),
+      rawEventId: eventId(3001),
+      entityId: objectId(23),
+      statement: `Maya Chen advanced to the designer final round after the ${dm(D.designerInterviews)} interview.`,
+    },
+  ];
+}
+
+export let CORPUS_FACTS = buildCorpusFacts();
 
 function documentSpec(input: {
   n: number;
@@ -1804,7 +1818,7 @@ function buildCorpusDocuments(): CorpusDocument[] {
         'Design partner: Northstar Works, currently blocked on field-mapping confirmation, CSV fallback already accepted.',
         'Traction: Helio, Moss, Orchard, Brightline, and Northstar on dealflow; Polar inbound pending an add-to-board approval; one paid design-partner invoice; importer reliability shipped in atlas-0.8.0.',
         'Ask: Northwind Capital to lead a Series A. Runway at current burn is 11.4 months. Hiring two roles: backend and design.',
-        'Use of proceeds: capture reliability, approval-backed CRM memory, and a quieter launch webinar on 20 August.',
+        `Use of proceeds: capture reliability, approval-backed CRM memory, and a quieter launch webinar on ${dm(D.webinar)}.`,
       ],
     }),
     documentSpec({
@@ -1850,7 +1864,7 @@ function buildCorpusDocuments(): CorpusDocument[] {
         'This excerpt is fictional. Subprocessors for Atlas demo data are Postgres, Qdrant, and object storage in the EU.',
         'Customer content is team-scoped. Private events are invisible to outbound MCP bearer keys.',
         'Deletion follows team export plus wipe. Diligence reviewers see only documents in the Fundraising folder.',
-        'Signature block: Acme Labs Oy / Harper Singh / 28 July 2026.',
+        `Signature block: Acme Labs Oy / Harper Singh / ${dmy(D.dpaSigned)}.`,
       ],
     }),
     documentSpec({
@@ -1864,7 +1878,7 @@ function buildCorpusDocuments(): CorpusDocument[] {
       paragraphs: [
         'Pilot term: 90 days. Seats: 25. Export format: CSV fallback with field-mapping confirmation still outstanding.',
         'HIPAA language is not in this Northstar MSA. Brightline requires a separate excerpt.',
-        'Invoice inv_2041 was past due on 24 July and paid on 13 August.',
+        `Invoice inv_2041 was past due on ${dm(D.invoicePastDue)} and paid on ${dm(D.dataRoom)}.`,
         'Governing law: Finland. Design-partner reference rights require Elena Park approval.',
       ],
     }),
@@ -1976,8 +1990,8 @@ function buildCorpusMeetings(): CorpusMeeting[] {
       title: 'Daily product standup',
       platform: 'meet',
       meetingUrl: 'https://meet.example.test/acme-daily-standup',
-      startedAt: isoAt(-24, '09:30:00'),
-      endedAt: isoAt(-24, '10:00:00'),
+      startedAt: isoAt(-24, '12:30:00'),
+      endedAt: isoAt(-24, '13:00:00'),
       createdByUserId: CORPUS_PERSON.avery.id,
       transcript: standupTranscript([
         'Importer 500s are mitigated. Northstar field-mapping is still the blocker.',
@@ -1991,8 +2005,8 @@ function buildCorpusMeetings(): CorpusMeeting[] {
       title: 'Daily product standup',
       platform: 'meet',
       meetingUrl: 'https://meet.example.test/acme-daily-standup',
-      startedAt: isoAt(-17, '09:30:00'),
-      endedAt: isoAt(-17, '10:05:00'),
+      startedAt: isoAt(-17, '12:30:00'),
+      endedAt: isoAt(-17, '13:05:00'),
       createdByUserId: CORPUS_PERSON.avery.id,
       transcript: standupTranscript([
         'Helio and Brightline are real pipeline. Diligence room waits on the DPA PDF.',
@@ -2006,8 +2020,8 @@ function buildCorpusMeetings(): CorpusMeeting[] {
       title: 'Daily product standup',
       platform: 'meet',
       meetingUrl: 'https://meet.example.test/acme-daily-standup',
-      startedAt: isoAt(-10, '09:30:00'),
-      endedAt: isoAt(-10, '10:00:00'),
+      startedAt: isoAt(-10, '12:30:00'),
+      endedAt: isoAt(-10, '13:00:00'),
       createdByUserId: CORPUS_PERSON.avery.id,
       transcript: standupTranscript([
         'Importer is calm. Harper and Quinn own the diligence checklist.',
@@ -2021,8 +2035,8 @@ function buildCorpusMeetings(): CorpusMeeting[] {
       title: 'Northwind Capital partner meeting',
       platform: 'meet',
       meetingUrl: 'https://meet.example.test/northwind-partner',
-      startedAt: isoAt(-8, '13:00:00'),
-      endedAt: isoAt(-8, '13:45:00'),
+      startedAt: isoAt(-8, '16:00:00'),
+      endedAt: isoAt(-8, '16:45:00'),
       createdByUserId: CORPUS_PERSON.avery.id,
       transcript: [
         {
@@ -2033,7 +2047,7 @@ function buildCorpusMeetings(): CorpusMeeting[] {
         },
         {
           speaker: 'Avery Timeline',
-          text: 'You will have a data-room link by August 13. Runway is 11.4 months. Designer hire is in flight.',
+          text: `You will have a data-room link by ${md(D.dataRoom)}. Runway is 11.4 months. Designer hire is in flight.`,
           startMs: 30_000,
           endMs: 48_000,
         },
@@ -2046,11 +2060,11 @@ function buildCorpusMeetings(): CorpusMeeting[] {
       title: 'Daily product standup',
       platform: 'meet',
       meetingUrl: 'https://meet.example.test/acme-daily-standup',
-      startedAt: isoAt(-3, '09:30:00'),
-      endedAt: isoAt(-3, '10:02:00'),
+      startedAt: isoAt(-3, '12:30:00'),
+      endedAt: isoAt(-3, '13:02:00'),
       createdByUserId: CORPUS_PERSON.avery.id,
       transcript: standupTranscript([
-        'Northstar remains the proof point. Field-mapping email still missing. Webinar stays August 20.',
+        `Northstar remains the proof point. Field-mapping email still missing. Webinar stays ${md(D.webinar)}.`,
         'Maya Chen goes to final round. Backend loop reopens next week.',
       ]),
     },
@@ -2061,8 +2075,8 @@ function buildCorpusMeetings(): CorpusMeeting[] {
       title: 'Daily product standup',
       platform: 'meet',
       meetingUrl: 'https://meet.example.test/acme-daily-standup',
-      startedAt: isoAt(-31, '09:30:00'),
-      endedAt: isoAt(-31, '10:00:00'),
+      startedAt: isoAt(-31, '12:30:00'),
+      endedAt: isoAt(-31, '13:00:00'),
       createdByUserId: CORPUS_PERSON.avery.id,
       transcript: standupTranscript([
         'Importer 500s are the week-one fire. Do not start webinar polish until replay is in.',
@@ -2259,8 +2273,8 @@ export let CORPUS_SAVED_MEETING = {
   },
   upcoming: {
     id: CORPUS_UUID.meeting(21),
-    scheduledStartAt: isoAt(4, '09:30:00'),
-    scheduledEndAt: isoAt(4, '10:00:00'),
+    scheduledStartAt: isoAt(4, '12:30:00'),
+    scheduledEndAt: isoAt(4, '13:00:00'),
   },
 };
 
@@ -2276,6 +2290,7 @@ export function corpusEventId(needle: string): string {
 
 export function refreshDemoCatalog(): void {
   refreshCorpusObjects();
+  CORPUS_FACTS = buildCorpusFacts();
   CORPUS_DOCUMENTS = buildCorpusDocuments();
   CORPUS_MEETINGS = buildCorpusMeetings();
   CORPUS_EVENTS = buildRawCorpusEvents().map(enrichCaptureMetadata);
@@ -2293,8 +2308,8 @@ export function refreshDemoCatalog(): void {
     },
     upcoming: {
       id: CORPUS_UUID.meeting(21),
-      scheduledStartAt: isoAt(4, '09:30:00'),
-      scheduledEndAt: isoAt(4, '10:00:00'),
+      scheduledStartAt: isoAt(4, '12:30:00'),
+      scheduledEndAt: isoAt(4, '13:00:00'),
     },
   };
 }
