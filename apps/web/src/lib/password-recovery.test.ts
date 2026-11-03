@@ -32,11 +32,11 @@ let originalHash: string;
 
 beforeAll(async () => {
   await pg.exec(
-    `CREATE TYPE message_intent AS ENUM ('email_verification'); CREATE TABLE users (id uuid PRIMARY KEY, name text, email text UNIQUE NOT NULL, \"emailVerified\" timestamptz, image text, password_hash text, legal_terms_version text, legal_privacy_version text, legal_accepted_at timestamptz, created_at timestamptz DEFAULT now(), updated_at timestamptz DEFAULT now());`,
+    `CREATE TYPE message_intent AS ENUM ('email_verification'); CREATE TABLE users (id uuid PRIMARY KEY, name text, email text UNIQUE NOT NULL, \"emailVerified\" timestamptz, image text, password_hash text, suspended_at timestamptz, suspension_reason text, legal_terms_version text, legal_privacy_version text, legal_accepted_at timestamptz, created_at timestamptz DEFAULT now(), updated_at timestamptz DEFAULT now());`,
   );
   await pg.exec(
     readFileSync(
-      new URL('../../../../packages/db/drizzle/0093_password_recovery.sql', import.meta.url),
+      new URL('../../../../packages/db/drizzle/0095_password_recovery.sql', import.meta.url),
       'utf8',
     ),
   );

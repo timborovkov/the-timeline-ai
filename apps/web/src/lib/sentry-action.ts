@@ -12,6 +12,16 @@ const PRE_ACCEPTANCE_ACTIONS = new Set([
   'submit_support_request',
 ]);
 
+// These actions authenticate the real actor with requireAdmin inside their callback.
+const PLATFORM_ADMIN_ACTIONS = new Set([
+  'platform_admin_rename',
+  'platform_admin_suspend',
+  'platform_admin_membership',
+  'platform_admin_impersonate',
+]);
+
+const SUSPENDED_READ_ACTIONS = new Set(['get_document_download_url', 'get_document_preview_url']);
+
 const SENTRY_TRACE_HEADER = /^[0-9a-f]{32}-[0-9a-f]{16}(?:-[01])?$/i;
 
 export async function runSentryServerAction<T>(
@@ -27,6 +37,19 @@ export async function runSentryServerAction<T>(
     async () => {
       if (!PRE_ACCEPTANCE_ACTIONS.has(operation)) {
         await requireCurrentLegalSession(requestHeaders);
+      }
+      if ((await requestHeaders).has('next-action') && !PLATFORM_ADMIN_ACTIONS.has(operation)) {
+        const { getRequestIdentity } = await import('@/lib/auth');
+        const { impersonation } = await getRequestIdentity();
+        if (
+          impersonation &&
+          ((impersonation.readOnly && !SUSPENDED_READ_ACTIONS.has(operation)) ||
+            /(?:sign_|legal|verification|invite|create_team|switch_team|leave_team|billing|mcp|oauth|integration|telegram|slack|connection|password|link_token|unbind_chat)/.test(
+              operation,
+            ))
+        ) {
+          throw new Error('Exit impersonation before performing this account action');
+        }
       }
       return callback();
     },

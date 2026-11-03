@@ -66,6 +66,12 @@ import { createOnboardingScope } from '#src/onboarding/index.js';
 import { decodeCursor, encodeCursor, pageWindow } from '#src/pagination.js';
 import { createPinScope } from '#src/pins/scope.js';
 import {
+  guardTeamAccess,
+  guardOperatorScope,
+  operatorDatabase,
+  recordScopedReadAudit,
+} from '#src/platform-admin/runtime.js';
+import {
   getQdrantClient,
   type SearchHit,
   type SearchOpts,
@@ -583,12 +589,14 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
  * to require a higher role than `member` (e.g. for admin-only operations).
  */
 export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScopeDeps = {}) {
+  db = operatorDatabase(db);
   const visibilityFilter = rawEventVisibleToUser(userId);
   const activeRawEventFilter = rawEventIsActive();
 
   let membershipPromise: Promise<TeamRole> | undefined;
 
-  function ensureMember(minRole: TeamRole = 'member'): Promise<TeamRole> {
+  async function ensureMember(minRole: TeamRole = 'member'): Promise<TeamRole> {
+    await guardTeamAccess(db, teamId, userId, deps.skipMembershipCheck);
     if (deps.skipMembershipCheck) {
       // Trusted-caller path (Phase 11 outbound MCP): membership has
       // already been proven by the bearer-key resolution. Resolve as
@@ -2810,7 +2818,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
     getTimezone: async () => (await calendarScope.getCalendarSettings()).defaultTimezone,
   });
 
-  return {
+  const guardedScope = {
     ...core,
     timeline: {
       /** Internal recovery metadata, never a user-visible event read. */
@@ -3625,7 +3633,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
         const senderMap = await resolveSenderContexts([event]);
         const senderInfo = senderMap.get(event.id);
         if (event.visibility !== 'team') {
-          await db.insert(auditLog).values({
+          await recordScopedReadAudit(db, {
             teamId,
             actorUserId: userId,
             action: 'event.detail_read',
@@ -4281,6 +4289,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
     audit: auditScope,
     telegram: telegramScope,
   };
+  return guardOperatorScope(db, teamId, userId, guardedScope, '', deps.skipMembershipCheck);
 }
 
 export type TeamScope = ReturnType<typeof withTeam>;

@@ -10,6 +10,7 @@ import {
   queue,
   withTeam,
 } from '@timeline/shared';
+import { assertActivePrincipal } from '@timeline/shared/platform-admin/runtime';
 import {
   payloadDigestFromMetadata,
   sourcePayloadRefFromMetadata,
@@ -18,6 +19,7 @@ import { Worker, type Job } from 'bullmq';
 import { and, eq, sql } from 'drizzle-orm';
 
 import { captureWorkerException, captureWorkerJobFailure } from '#src/monitoring.js';
+import { guardWorkerProcessor } from '#src/platform-worker.js';
 
 // Phase 11 — Integration sync worker.
 //
@@ -646,6 +648,7 @@ export async function runOneIntegration(
       log.warn({ integrationId }, 'integration not found');
       return;
     }
+    await assertActivePrincipal(db, integration.teamId, integration.connectedByUserId ?? undefined);
     if (!integration.enabled) {
       log.debug({ integrationId }, 'integration disabled — skipping');
       return;
@@ -1616,7 +1619,7 @@ export function startIntegrationSyncWorker(
 ): Worker<queue.IntegrationSyncJobData> {
   const worker = new Worker<queue.IntegrationSyncJobData>(
     queue.QUEUE_NAMES.integrationSync,
-    async (job: Job<queue.IntegrationSyncJobData>) => {
+    guardWorkerProcessor(deps.db, async (job: Job<queue.IntegrationSyncJobData>) => {
       const startedAt = Date.now();
       const data = job.data;
       if (data.integrationId === '__tick__') {
@@ -1635,7 +1638,7 @@ export function startIntegrationSyncWorker(
         kind: data.kind,
         durationMs: Date.now() - startedAt,
       };
-    },
+    }),
     {
       connection: queue.getRedisConnection(),
       concurrency: 2,

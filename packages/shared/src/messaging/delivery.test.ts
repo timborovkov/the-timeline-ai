@@ -96,7 +96,9 @@ function fakeDeliveryDb(
   };
 }
 
-function fakeDailyDigestDbWithPendingDelivery() {
+function fakeDailyDigestDbWithPendingDelivery(
+  recipientState: { suspendedAt?: Date; securityState?: string } = {},
+) {
   let selectCount = 0;
   const updates: unknown[] = [];
   const payload = {
@@ -126,6 +128,7 @@ function fakeDailyDigestDbWithPendingDelivery() {
             where: vi.fn(() => ({
               limit: vi.fn().mockResolvedValue([
                 {
+                  ...recipientState,
                   email: 'current@example.test',
                   removedAt: null,
                   dailyDigestEnabled: true,
@@ -813,6 +816,28 @@ describe('Resend messaging adapter', () => {
     });
     expect(fetchMock).toHaveBeenCalledOnce();
     expect(billingFakes.settleEmailUnits).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([
+    { suspendedAt: new Date(), error: 'Recipient is suspended.' },
+    { securityState: 'suspended', error: 'Workspace is suspended.' },
+    { securityState: 'terminated', error: 'Workspace is suspended.' },
+  ])('blocks an already generated digest after suspension: $error', async (state) => {
+    const { db, updates } = fakeDailyDigestDbWithPendingDelivery(state);
+    const fetchMock = vi.fn();
+    await expect(
+      sendDailyDigest({
+        db: db as never,
+        digestId: 'digest-1',
+        to: 'tim@example.test',
+        digestUrl: 'https://timeline.test/app',
+        fetch: fetchMock,
+      }),
+    ).resolves.toMatchObject({ ok: true, skipped: true });
+    expect(updates).toContainEqual({ status: 'skipped', error: state.error });
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(db.insert).not.toHaveBeenCalled();
+    expect(db.select).toHaveBeenCalledTimes(2);
   });
 
   it('does not mark a digest sent when its delivery is skipped because another send is pending', async () => {

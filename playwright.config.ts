@@ -41,6 +41,7 @@ export default defineConfig({
       PORT: e2eEnv.E2E_WEB_PORT,
       E2E_NAMESPACE: e2eEnv.E2E_NAMESPACE,
       AUTH_SECRET: e2eEnv.AUTH_SECRET,
+      PLATFORM_ADMIN_EMAILS: e2eEnv.PLATFORM_ADMIN_EMAILS,
       AUTH_GITHUB_ID: 'e2e-auth-github-client-id',
       AUTH_GITHUB_SECRET: 'e2e-auth-github-client-secret',
       SECRETS_ENCRYPTION_KEY: e2eEnv.SECRETS_ENCRYPTION_KEY,

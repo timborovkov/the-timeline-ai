@@ -6,6 +6,8 @@ import { boolean, integer, pgTable, primaryKey, text, timestamp, uuid } from 'dr
 export const users = pgTable('users', {
   id: uuid('id').defaultRandom().primaryKey(),
   name: text('name'),
+  suspendedAt: timestamp('suspended_at', { withTimezone: true }),
+  suspensionReason: text('suspension_reason'),
   email: text('email').notNull().unique(),
   emailVerified: timestamp('emailVerified', { mode: 'date', withTimezone: true }),
   image: text('image'),

@@ -35,7 +35,7 @@ INBOUND_EMAIL_DOMAIN=</code></pre>
       </p>
       <p>
         Password recovery uses <code>AUTH_URL</code> for trusted reset links. Apply migration
-        <code>0093_password_recovery</code> before deploying the web app. Reset links last 30
+        <code>0095_password_recovery</code> before deploying the web app. Reset links last 30
         minutes, replace previous links, and sign out existing login sessions when redeemed. Verify
         delivery with a controlled password account after deployment. Recovery emails bypass
         workspace allowances; check failed <code>password_reset</code> delivery records without

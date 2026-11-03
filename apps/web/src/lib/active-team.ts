@@ -1,4 +1,5 @@
 import { teamMembers, teams } from '@timeline/db';
+import { operatorContext, assertActivePrincipal } from '@timeline/shared/platform-admin/runtime';
 import { and, asc, eq, isNull } from 'drizzle-orm';
 import { cookies } from 'next/headers';
 
@@ -49,7 +50,10 @@ async function listMemberships(userId: string): Promise<TeamMembership[]> {
 export async function resolveActiveTeam(
   userId: string,
 ): Promise<{ active: TeamMembership | null; memberships: TeamMembership[] }> {
-  const memberships = await listMemberships(userId);
+  const context = await operatorContext();
+  const memberships = (await listMemberships(userId)).filter(
+    (m) => !context || (context.effectiveUserId === userId && m.teamId === context.teamId),
+  );
   if (memberships.length === 0) return { active: null, memberships };
   const cookieStore = await cookies();
   const cookieTeamId = parseActiveTeamCookie(cookieStore.get(ACTIVE_TEAM_COOKIE)?.value)?.teamId;
@@ -58,6 +62,9 @@ export async function resolveActiveTeam(
 }
 
 export async function verifyMembership(userId: string, teamId: string): Promise<boolean> {
+  const context = await operatorContext();
+  if (context && (context.teamId !== teamId || context.effectiveUserId !== userId)) return false;
+  if (!context?.readOnly) await assertActivePrincipal(db, teamId, userId);
   const rows = await db
     .select({ teamId: teamMembers.teamId })
     .from(teamMembers)

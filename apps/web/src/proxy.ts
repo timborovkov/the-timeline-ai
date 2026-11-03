@@ -5,6 +5,7 @@ import { migrateLegacyActiveTeamCookie } from '@/lib/active-team-cookie-migratio
 import { authConfig } from '@/lib/auth.config';
 import { canonicalHostRedirect } from '@/lib/canonical-host';
 import { rejectInvalidMultipartRequest } from '@/lib/multipart-request';
+import { platformRequestGate } from '@/lib/platform-request-gate';
 import { schedulePersonlessSurfaceRequest } from '@/lib/surface-request-analytics';
 
 type ProxyHandler = (
@@ -13,7 +14,12 @@ type ProxyHandler = (
 ) => Response | null | Promise<Response | null>;
 
 const authProxy = NextAuth(authConfig).auth(async (request) => {
-  const response = NextResponse.next();
+  const denied = await platformRequestGate(request, request.auth);
+  if (denied) return denied;
+  const requestHeaders = new Headers(request.headers);
+  requestHeaders.set('x-timeline-path', request.nextUrl.pathname);
+  requestHeaders.set('x-timeline-method', request.method);
+  const response = NextResponse.next({ request: { headers: requestHeaders } });
   await migrateLegacyActiveTeamCookie(request, response);
   return response;
 }) as unknown as ProxyHandler;

@@ -35,6 +35,7 @@ import {
   type ParsedAddress,
 } from '#src/email/parser.js';
 import { childLogger } from '#src/logger.js';
+import { principalIsActive } from '#src/platform-admin/runtime.js';
 import { inlineSourceSnapshotMetadata } from '#src/reconciliation/source-snapshot.js';
 import { withTeam } from '#src/team-scope.js';
 
@@ -385,6 +386,7 @@ async function ingestForTeam(
   attachments: DecodedAttachment[],
   droppedAttachments: { filename: string; reason: string }[],
 ): Promise<boolean> {
+  if (!(await principalIsActive(deps.db, team.id))) return false;
   // Two distinct identifiers travel with every inbound email:
   //   - The RFC 5322 `Message-ID:` header — the value sending MUAs reference
   //     in `In-Reply-to:` and `References:` for threading. Stable across
@@ -440,6 +442,8 @@ async function ingestForTeam(
     }
   }
 
+  if (authorUserId && !(await principalIsActive(deps.db, team.id, authorUserId))) return false;
+
   if (senderUnverified) {
     // Structured log line — Phase 7 v1 ships this in place of an
     // owner-digest email. Future Phase 8 outbound mail subscribes here.
@@ -462,7 +466,14 @@ async function ingestForTeam(
   const memberRow = await deps.db
     .select({ userId: teamMembers.userId })
     .from(teamMembers)
-    .where(and(eq(teamMembers.teamId, team.id), isNull(teamMembers.removedAt)))
+    .innerJoin(users, eq(users.id, teamMembers.userId))
+    .where(
+      and(
+        eq(teamMembers.teamId, team.id),
+        isNull(teamMembers.removedAt),
+        isNull(users.suspendedAt),
+      ),
+    )
     .limit(1);
   const callerUserId = memberRow[0]?.userId;
   if (!callerUserId) {

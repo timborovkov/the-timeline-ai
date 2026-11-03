@@ -1,13 +1,5 @@
 import { MockLanguageModelV3 } from 'ai/test';
 
-interface MockFinishReason {
-  unified: 'stop' | 'tool-calls';
-  raw: undefined;
-}
-
-const MOCK_STOP_FINISH: MockFinishReason = { unified: 'stop', raw: undefined };
-const MOCK_TOOL_CALLS_FINISH: MockFinishReason = { unified: 'tool-calls', raw: undefined };
-
 import {
   askAgent,
   type AskAgentDeps,
@@ -21,6 +13,14 @@ import type { AgentTurnObservability } from '#src/agent/observability.js';
 import type { EmbedResult } from '#src/llm/embed.js';
 import type { SearchHit, SearchOpts } from '#src/qdrant/client.js';
 import type { LanguageModel } from 'ai';
+
+interface MockFinishReason {
+  unified: 'stop' | 'tool-calls';
+  raw: undefined;
+}
+
+const MOCK_STOP_FINISH: MockFinishReason = { unified: 'stop', raw: undefined };
+const MOCK_TOOL_CALLS_FINISH: MockFinishReason = { unified: 'tool-calls', raw: undefined };
 
 type HitSource = SearchHit['payload']['source'];
 

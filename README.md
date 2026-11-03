@@ -269,9 +269,13 @@ and requires a fresh login. GitHub-only accounts continue using GitHub.
 
 Recovery uses the existing `RESEND_API_KEY`, `TRANSACTIONAL_EMAIL_FROM`,
 `SECRETS_ENCRYPTION_KEY`, trusted `AUTH_URL`, database, and Redis configuration.
-Apply migration `0093_password_recovery` before rolling out the web app. It adds
+Apply migration `0095_password_recovery` before rolling out the web app. It adds
 reset-token storage, a user session version, and the reset-email message intent.
 Old JWTs remain valid as version zero until their account resets its password.
 Recovery emails bypass workspace email allowances; delivery failures use existing
 message-delivery records and sanitized monitoring events. Monitor failed deliveries
 and `password_reset_request_failed` / `password_reset_failed` events after rollout.
+
+### Platform administration
+
+Verified accounts in `PLATFORM_ADMIN_EMAILS` can open `/app/admin` to browse and manage users and teams, suspend/restore access, and start audited 30-minute user impersonation sessions. See [Platform administration](docs/platform-admin.md) for access boundaries, migration, and operator guidance.
