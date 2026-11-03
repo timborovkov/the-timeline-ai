@@ -209,7 +209,7 @@ Treat this file as an operating contract for agents, not a loose README.
   corpus so infinite-scroll fetches and virtualization have enough volume. The fake
   integrations stay disabled for sync so local workers do not call real
   providers. Live daily-digest send stays off; historical digest rows are still seeded.
-  Keep the credential list in [README.md](README.md) and the glossary in
+  Keep the credential list and glossary in
   [docs/demo-corpus.md](docs/demo-corpus.md) current when
   the seed changes.
 - **Monday helper-board repair is dry-run first.** Use `bun run repair:monday --
@@ -385,12 +385,12 @@ Phased build plan and current state: [todo.md](todo.md). Product vision:
 - Local Compose uses PostgreSQL 18. Existing PostgreSQL 16 volumes must follow [the dump/restore runbook](docs/setup/postgres18.md). Keep `POSTGRES_DATA_VOLUME=postgres_data` until migration; use `postgres18_data` only for the verified destination. Never delete a database volume to fix a major-version startup error.
 
 - Infra (Postgres, Redis, Qdrant, RustFS) is started with `docker compose up -d` from the repo root. Dockerd is not managed by systemd here — if containers are down, ensure `dockerd` is running first, then compose up. Confirm health with `docker compose ps`.
-- App processes: web (`apps/web`, Next.js on `:3000`) + worker (`apps/worker`, BullMQ). Standard commands are in [README.md](README.md) (`bun run dev`, `bun run db:migrate`, `bun run demo:seed`, `bun run demo:verify`, `bun run demo:reset`, `bun run validate`, `bun run test`, `bun run doctor`).
+- App processes: web (`apps/web`, Next.js on `:3000`) + worker (`apps/worker`, BullMQ). Standard commands are in [the local setup guide](docs/setup/local.html) (`bun run dev`, `bun run db:migrate`, `bun run demo:seed`, `bun run demo:verify`, `bun run demo:reset`, `bun run validate`, `bun run test`, `bun run doctor`).
 - Seeded demo logins (after `bun run db:migrate` + `bun run demo:seed`): `owner@timeline.dev`, `member@timeline.dev`, `jordan@timeline.dev`, `sam@timeline.dev`, `riley@timeline.dev`, `casey@timeline.dev`, `quinn@timeline.dev`, `harper@timeline.dev`, password `timeline-dev`. Full glossary: [docs/demo-corpus.md](docs/demo-corpus.md).
 
 ### Non-obvious env / startup gotchas
 
-- **Use Bun 1.4.4 from `.bun-version`.** Keep `engines.bun`, `packageManager`, CI, and every Docker stage aligned with that pin. Run `bun --version` before checks. Application execution and tests must not fall back to Node; record any required build/analysis exception in `README.md`.
+- **Use Bun 1.4.4 from `.bun-version`.** Keep `engines.bun`, `packageManager`, CI, and every Docker stage aligned with that pin. Run `bun --version` before checks. Application execution and tests must not fall back to Node; record any required build/analysis exception in the local validation evidence, not the public README.
 - **The repository disables Bun’s automatic `.env` loading with `bunfig.toml` (`env = false`); offline tests also use `--no-env-file` and an environment allowlist. Production commands use `--no-env-file`.** Next.js loads `apps/web/.env` (symlink to `../../.env`). Before `bun run db:migrate`, `bun run demo:seed`, or running the worker, export the root env into the shell, e.g. `set -a; . ./.env; set +a`. Quote any values that contain spaces (for example `RECALL_BOT_DISPLAY_NAME="Timeline Bot"`) or bash will try to execute the trailing words when sourcing.
 - **The root `bun run dev` script must keep `--env-mode=loose`.** Turbo's strict default strips unlisted env vars from the worker task even after sourcing `.env`. Alternatively run packages separately with env already exported: `bun run --filter @timeline/web dev` and `bun run --filter @timeline/worker dev`.
 - Optional URL keys left blank in `.env.example` must use `emptyStringAsUnset` in the shared env schema so the documented shell export flow remains valid.
