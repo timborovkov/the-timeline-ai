@@ -166,9 +166,11 @@ GOOGLE_DRIVE_WEBHOOK_SECRET=...</code></pre>
           page <code>comments.list</code> / <code>permissions.list</code> (with
           <code>supportsAllDrives</code>) up to the same 10×100 bound as folder listing —
           shared-drive <code>files.get</code> never returns <code>permissions</code>. Bounded
-          comment event context ranks added, edited, or resolved comments ahead of unchanged ones so
-          a change past the first eight still reaches the judged event. The judged event is written
-          before the snapshot advances. Delayed <code>drive.file</code> and
+          comment event context ranks added, edited, resolved, or removed comments ahead of
+          unchanged ones so a change past the first eight still reaches the judged event. Live
+          <code>comments.list</code> omits deleted comments, so a withdrawn comment is recovered
+          from the previous snapshot ids and labelled <code>(removed)</code> in that window. The
+          judged event is written before the snapshot advances. Delayed <code>drive.file</code> and
           <code>drive.changes</code> jobs are kept across integration and provider-budget pauses,
           persist to the continuation handoff table when the per-integration lock is busy, and
           attach to quota or token-refresh failures so capture resumes after the pause. A skipped

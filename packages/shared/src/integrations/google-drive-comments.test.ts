@@ -68,6 +68,11 @@ describe('commentEventContext ranking', () => {
         ),
       needle: 'Author 10 (resolved): Keep comment 10',
     },
+    {
+      name: 'deleted last of 10',
+      mutate: (comments) => comments.slice(0, -1),
+      needle: 'Author 10 (removed): Keep comment 10',
+    },
   ];
 
   for (const row of matrix) {
@@ -84,4 +89,37 @@ describe('commentEventContext ranking', () => {
       ).not.toBe('unchanged');
     });
   }
+
+  it('labels a withdrawn comment when the live list omits it', () => {
+    const previous = numberedComments(10, {
+      10: {
+        content: 'Approved — $48k annual term.',
+        author: { displayName: 'Ada' },
+      },
+    });
+    const next = previous.slice(0, -1);
+    const ranked = diffDriveComments(compactDriveComments(previous), compactDriveComments(next));
+    expect(ranked[0]).toMatchObject({ kind: 'removed', comment: { id: 'c10' } });
+    const context = commentEventContext(next, compactDriveComments(previous));
+    expect(context.split('\n')[0]).toBe('Ada (removed): Approved — $48k annual term.');
+    expect(context).not.toContain('Keep comment 9');
+  });
+
+  it('ranks a removal ahead of an addition in the bounded window', () => {
+    const previous = numberedComments(10);
+    const next = [
+      ...previous.slice(0, -1),
+      {
+        id: 'c-new',
+        content: 'Please confirm the $48k annual term.',
+        resolved: false,
+        author: { displayName: 'Ada' },
+      },
+    ];
+    const ranked = diffDriveComments(compactDriveComments(previous), compactDriveComments(next));
+    expect(ranked.map((entry) => entry.kind).slice(0, 2)).toEqual(['removed', 'added']);
+    const lines = commentEventContext(next, compactDriveComments(previous)).split('\n');
+    expect(lines[0]).toBe('Author 10 (removed): Keep comment 10');
+    expect(lines[1]).toBe('Ada (open): Please confirm the $48k annual term.');
+  });
 });

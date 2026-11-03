@@ -1902,6 +1902,88 @@ describe('googleDriveProvider', () => {
     expect(preview).not.toContain('Keep comment 10');
   });
 
+  it('puts a deleted last-page comment first in the bounded event context', async () => {
+    const snapshotText = 'Contract amount is forty eight thousand dollars for Northstar.';
+    const contentHash = hashDrivePayload(snapshotText);
+    const previousComments = Array.from({ length: 10 }, (_, index) => ({
+      id: `c${String(index + 1)}`,
+      content: index === 9 ? 'Approved — $48k annual term.' : `Keep comment ${String(index + 1)}`,
+      resolved: false,
+      modifiedTime: `2026-06-${String(index + 1).padStart(2, '0')}T00:00:00.000Z`,
+      author: { displayName: index === 9 ? 'Ada' : `Author ${String(index + 1)}` },
+    }));
+    const nextComments = previousComments.slice(0, -1);
+    const fetch = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((input) => {
+      const url = requestUrl(input);
+      if (url.pathname.includes('/export')) {
+        return Promise.resolve(new Response(snapshotText, { status: 200 }));
+      }
+      if (url.pathname.endsWith('/comments')) {
+        expect(url.searchParams.get('includeDeleted')).toBe('false');
+        return Promise.resolve(jsonResponse({ comments: nextComments }));
+      }
+      if (url.pathname.endsWith('/permissions')) {
+        return Promise.resolve(jsonResponse({ permissions: [] }));
+      }
+      if (url.pathname.endsWith('/files/file-1')) {
+        return Promise.resolve(
+          jsonResponse({
+            id: 'file-1',
+            name: 'SOW',
+            mimeType: 'application/vnd.google-apps.document',
+            parents: ['root'],
+            modifiedTime: '2026-06-20T10:00:00.000Z',
+          }),
+        );
+      }
+      return Promise.resolve(jsonResponse({ message: 'unexpected' }, { status: 404 }));
+    });
+    vi.stubGlobal('fetch', fetch);
+    const ctx = syncContext({
+      loadLatestDriveSnapshot: vi.fn().mockResolvedValue({
+        contentHash,
+        snapshotText,
+        commentsHash: driveCommentsHash(previousComments),
+        permissionsHash: drivePermissionsHash([]),
+        mimeType: 'application/vnd.google-apps.document',
+        commentsSnapshot: previousComments.map((comment) => ({
+          id: comment.id,
+          content: comment.content,
+          resolved: comment.resolved,
+          modifiedTime: comment.modifiedTime,
+          author: comment.author.displayName,
+        })),
+      }),
+    });
+
+    await googleDriveProvider.incrementalSync({
+      integration: { id: 'integration-1', teamId: 'team-1' } as never,
+      tokens: { access_token: 'access-token', expires_at: Date.now() + 600_000 },
+      selections: [{ kind: 'drive.file', externalId: 'file-1' }],
+      ctx: ctx,
+      target: { resourceType: 'drive.file', externalId: 'file-1' },
+    });
+
+    const events: IntegrationEvent[] = (
+      ctx.writeEvents as unknown as { mock: { calls: [IntegrationEvent[]][] } }
+    ).mock.calls.flatMap(([batch]) => batch);
+    expect(events).toHaveLength(1);
+    const preview = events[0]?.contentText ?? '';
+    expect(preview).toContain('Ada (removed): Approved — $48k annual term.');
+    expect(preview.indexOf('Ada (removed):')).toBeLessThan(preview.indexOf('Keep comment 1'));
+    expect(preview).not.toContain('Keep comment 9');
+    const savedSnapshot = (
+      ctx.saveDriveSnapshot as unknown as {
+        mock: { calls: [{ commentsSnapshot: { id: string }[] }][] };
+      }
+    ).mock.calls[0]?.[0];
+    const savedIds = savedSnapshot?.commentsSnapshot.map((comment) => comment.id) ?? [];
+    expect(savedIds).toEqual(nextComments.map((comment) => comment.id));
+    expect(savedIds).not.toContain('c10');
+  });
+
   it('lists shared-drive permissions instead of files.get so share-only changes emit', async () => {
     const snapshotText = 'Contract amount is forty eight thousand dollars for Northstar.';
     const contentHash = hashDrivePayload(snapshotText);

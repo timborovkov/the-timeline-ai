@@ -1,7 +1,9 @@
 /**
  * Drive comment fingerprints hash every page. Event context is bounded, so
- * added / edited / resolved comments must be ranked ahead of unchanged ones
- * or a change past the first eight never reaches the judged event.
+ * added / edited / resolved / removed comments must be ranked ahead of
+ * unchanged ones or a change past the first eight never reaches the judged
+ * event. `comments.list` omits deleted comments (`includeDeleted=false`), so
+ * removals are recovered by comparing previous snapshot ids to the next set.
  */
 
 export const DRIVE_COMMENT_EVENT_LIMIT = 8;
@@ -23,7 +25,7 @@ export interface DriveCommentSnapshot {
   author: string;
 }
 
-type DriveCommentChangeKind = 'added' | 'edited' | 'resolved' | 'unchanged';
+type DriveCommentChangeKind = 'added' | 'edited' | 'resolved' | 'removed' | 'unchanged';
 
 export function compactDriveComments(comments: DriveComment[]): DriveCommentSnapshot[] {
   return comments.map((comment) => ({
@@ -65,6 +67,7 @@ export function diffDriveComments(
     previous.filter((comment) => comment.id).map((comment) => [comment.id, comment]),
   );
   const changed: { comment: DriveCommentSnapshot; kind: DriveCommentChangeKind }[] = [];
+  const removed: { comment: DriveCommentSnapshot; kind: DriveCommentChangeKind }[] = [];
   const unchanged: { comment: DriveCommentSnapshot; kind: DriveCommentChangeKind }[] = [];
   const seen = new Set<string>();
   for (const comment of next) {
@@ -87,7 +90,12 @@ export function diffDriveComments(
     }
     unchanged.push({ comment, kind: 'unchanged' });
   }
-  return [...changed, ...unchanged];
+  for (const prior of previous) {
+    if (!prior.id || seen.has(prior.id)) continue;
+    seen.add(prior.id);
+    removed.push({ comment: prior, kind: 'removed' });
+  }
+  return [...removed, ...changed, ...unchanged];
 }
 
 export function commentEventContext(
@@ -96,8 +104,8 @@ export function commentEventContext(
 ): string {
   return diffDriveComments(previous, compactDriveComments(next))
     .slice(0, DRIVE_COMMENT_EVENT_LIMIT)
-    .map(({ comment }) => {
-      const state = comment.resolved ? 'resolved' : 'open';
+    .map(({ comment, kind }) => {
+      const state = kind === 'removed' ? 'removed' : comment.resolved ? 'resolved' : 'open';
       return comment.content
         ? `${comment.author} (${state}): ${comment.content}`
         : `${comment.author} (${state})`;
