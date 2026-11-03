@@ -6,9 +6,31 @@ import {
   integrationSelections,
   integrationSyncState,
 } from '@timeline/db';
-import { expect } from '@timeline/test-support';
+import { expect, vi } from '@timeline/test-support';
 import { afterEach, beforeEach, describe, it } from 'bun:test';
 import { drizzle } from 'drizzle-orm/pglite';
+
+const s3Fakes = vi.hoisted(() => ({
+  deleteObject: vi.fn().mockResolvedValue(undefined),
+}));
+
+await vi.mock(
+  import.meta.resolve('#src/s3/objects.js'),
+  () => ({
+    deleteObject: async (...args: unknown[]) => {
+      await s3Fakes.deleteObject(...args);
+    },
+  }),
+  () => import('#src/s3/objects.js'),
+);
+await vi.mock(
+  import.meta.resolve('#src/s3/client.js'),
+  () => ({
+    getS3Client: () => ({}),
+    getDocumentsBucket: () => 'timeline-documents',
+  }),
+  () => import('#src/s3/client.js'),
+);
 
 import {
   DRIVE_EXTRACT_CURSOR_PAGE_SIZE,
@@ -44,8 +66,9 @@ import {
   takeDriveProcessSlot,
 } from '#src/integrations/google-drive-capture.js';
 import { driveChangeJudgePrompt } from '#src/integrations/google-drive-judge.js';
-import { withTeam } from '#src/team-scope.js';
 import { applyDbMigrations } from '#src/test/pglite.js';
+
+const { withTeam } = await import('#src/team-scope.js');
 
 const TEAM_ID = '11111111-1111-1111-1111-111111111111';
 const OTHER_TEAM_ID = '22222222-2222-4222-8222-222222222222';
@@ -391,6 +414,8 @@ describe('saveDriveSnapshot uniqueness', () => {
   let db: ReturnType<typeof drizzle>;
 
   beforeEach(async () => {
+    s3Fakes.deleteObject.mockReset();
+    s3Fakes.deleteObject.mockResolvedValue(undefined);
     pg = new PGlite();
     await applyDbMigrations(pg);
     db = drizzle(pg);
@@ -769,9 +794,49 @@ describe('saveDriveSnapshot uniqueness', () => {
     expect(forIntegration.map((row) => row.fileId).sort()).toEqual(['fresh-file', 'stale-file']);
 
     await expect(scope.integrations.deleteIntegration(integration.id)).resolves.toBeUndefined();
+    expect(s3Fakes.deleteObject).toHaveBeenCalled();
     await expect(
       listDriveExtractCursors(db as never, { teamId: TEAM_ID, integrationId: integration.id }),
     ).resolves.toEqual([]);
+  });
+
+  it('keeps extract cursors when disconnect cannot delete transient S3 objects', async () => {
+    const [integration] = await db
+      .insert(integrations)
+      .values({
+        teamId: TEAM_ID,
+        connectedByUserId: USER_ID,
+        provider: 'google_drive',
+        displayName: 'Google Drive',
+        externalAccountId: 'drive-acct-s3-fail',
+        visibilityDefault: 'team',
+      })
+      .returning();
+    if (!integration) throw new Error('integration insert failed');
+    await db.insert(integrationSyncState).values({
+      integrationId: integration.id,
+      resourceType: driveExtractCursorKey('stuck-file'),
+      cursor: {
+        extractId: 'ext-stuck',
+        objectKey: 'stuck-source',
+        resultObjectKey: 'stuck-result.json',
+        contentType: 'application/pdf',
+        filename: 'Stuck.pdf',
+        enqueuedAt: '2026-11-03T00:00:00.000Z',
+      },
+    });
+    s3Fakes.deleteObject.mockRejectedValue(new Error('AccessDenied'));
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    await expect(scope.integrations.deleteIntegration(integration.id)).rejects.toThrow(
+      'drive transient extract objects remain',
+    );
+    const remaining = await listDriveExtractCursors(db as never, {
+      teamId: TEAM_ID,
+      integrationId: integration.id,
+    });
+    expect(remaining).toHaveLength(1);
+    expect(remaining[0]?.fileId).toBe('stuck-file');
+    expect(remaining[0]?.cursor.extractId).toBe('ext-stuck');
   });
 
   it('filters cleared extract cursors in SQL before the page limit', async () => {
