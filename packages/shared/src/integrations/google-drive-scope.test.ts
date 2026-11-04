@@ -3,6 +3,7 @@ import { describe, it } from 'bun:test';
 
 import {
   createDriveAncestryCache,
+  driveAncestorKindFromSelectionKind,
   driveAncestryIds,
   driveFileCoverage,
   driveFileScopeHint,
@@ -488,5 +489,382 @@ describe('resolveDriveFileMembership', () => {
     expect(nested).toMatchObject({ inScope: true, matchedAncestorId: 'inner' });
     expect(nested.ancestryIds).toEqual(expect.arrayContaining(['doc', 'inner', 'outer']));
     expect(fetched).toEqual(['inner', 'outer']);
+  });
+
+  it('walks ancestors of an explicit unlinked file so a nested linked folder stays on the path', async () => {
+    const scope = driveScopeFromSelections([
+      { kind: 'drive.file', externalId: 'doc' },
+      { kind: 'drive.folder', externalId: 'outer' },
+    ]);
+    const cache = createDriveAncestryCache();
+    const fetched: string[] = [];
+    const membership = await resolveDriveFileMembership({
+      fileId: 'doc',
+      parents: ['nested'],
+      scope,
+      cache,
+      getParents: (folderId) => {
+        fetched.push(folderId);
+        if (folderId === 'nested') return Promise.resolve(['outer']);
+        return Promise.resolve(null);
+      },
+    });
+
+    expect(membership).toMatchObject({ inScope: true, matchedAncestorId: 'doc' });
+    expect(membership.ancestryIds).toEqual(expect.arrayContaining(['doc', 'nested', 'outer']));
+    expect(fetched).toEqual(['nested', 'outer']);
+  });
+});
+
+describe('Drive membership and inherited-link resolver matrix', () => {
+  const tree: Record<string, string[] | null> = {
+    nested: ['inner'],
+    inner: ['outer'],
+    outer: ['drive-9'],
+    'folder-a': ['drive-9'],
+    'folder-b': ['root'],
+    'other-tree': ['drive-9'],
+    'shared-folder': ['drive-9'],
+    clients: ['0AMK-my-drive'],
+    '0AMK-my-drive': ['root'],
+    'drive-9': null,
+    root: null,
+  };
+  const OBJECT_A = 'object-a';
+  const OBJECT_B = 'object-b';
+
+  const cases: {
+    name: string;
+    selections: { kind: string; externalId: string; linked?: string | null }[];
+    fileId: string;
+    parents?: string[];
+    driveId?: string;
+    inScope: boolean;
+    matchedAncestorId: string | null;
+    ancestryContains?: string[];
+    ancestryOmits?: string[];
+    fetched?: string[];
+    inheritedFrom: string | null;
+  }[] = [
+    {
+      name: 'explicit unlinked file under nested subfolder of linked folder',
+      selections: [
+        { kind: 'drive.file', externalId: 'doc' },
+        { kind: 'drive.folder', externalId: 'outer', linked: OBJECT_A },
+      ],
+      fileId: 'doc',
+      parents: ['nested'],
+      inScope: true,
+      matchedAncestorId: 'doc',
+      ancestryContains: ['doc', 'nested', 'outer'],
+      inheritedFrom: 'outer',
+    },
+    {
+      name: 'explicit linked file under nested linked folder keeps the file object',
+      selections: [
+        { kind: 'drive.file', externalId: 'doc', linked: OBJECT_B },
+        { kind: 'drive.folder', externalId: 'outer', linked: OBJECT_A },
+      ],
+      fileId: 'doc',
+      parents: ['nested'],
+      inScope: true,
+      matchedAncestorId: 'doc',
+      ancestryContains: ['outer'],
+      inheritedFrom: 'doc',
+    },
+    {
+      name: 'inherited file under nested of linked folder',
+      selections: [{ kind: 'drive.folder', externalId: 'outer', linked: OBJECT_A }],
+      fileId: 'doc',
+      parents: ['nested'],
+      inScope: true,
+      matchedAncestorId: 'outer',
+      ancestryContains: ['doc', 'nested', 'inner', 'outer'],
+      inheritedFrom: 'outer',
+    },
+    {
+      name: 'explicit file with no selected containers does not walk',
+      selections: [{ kind: 'drive.file', externalId: 'doc' }],
+      fileId: 'doc',
+      parents: ['nested'],
+      inScope: true,
+      matchedAncestorId: 'doc',
+      ancestryContains: ['doc', 'nested'],
+      ancestryOmits: ['outer'],
+      fetched: [],
+      inheritedFrom: null,
+    },
+    {
+      name: 'inner unlinked selected folder does not hide outer linked folder',
+      selections: [
+        { kind: 'drive.folder', externalId: 'inner' },
+        { kind: 'drive.folder', externalId: 'outer', linked: OBJECT_A },
+      ],
+      fileId: 'doc',
+      parents: ['nested'],
+      inScope: true,
+      matchedAncestorId: 'inner',
+      ancestryContains: ['outer'],
+      inheritedFrom: 'outer',
+    },
+    {
+      name: 'explicit unlinked file, inner unlinked folder, outer linked folder',
+      selections: [
+        { kind: 'drive.file', externalId: 'doc' },
+        { kind: 'drive.folder', externalId: 'inner' },
+        { kind: 'drive.folder', externalId: 'outer', linked: OBJECT_A },
+      ],
+      fileId: 'doc',
+      parents: ['nested'],
+      inScope: true,
+      matchedAncestorId: 'doc',
+      ancestryContains: ['inner', 'outer'],
+      inheritedFrom: 'outer',
+    },
+    {
+      name: 'inherited file under linked shared drive via nested folder',
+      selections: [{ kind: 'drive.shared_drive', externalId: 'drive-9', linked: OBJECT_A }],
+      fileId: 'doc',
+      parents: ['nested'],
+      driveId: 'drive-9',
+      inScope: true,
+      matchedAncestorId: 'drive-9',
+      ancestryContains: ['drive-9'],
+      inheritedFrom: 'drive-9',
+    },
+    {
+      name: 'folder beats shared drive for inherited nested file',
+      selections: [
+        { kind: 'drive.folder', externalId: 'outer', linked: OBJECT_B },
+        { kind: 'drive.shared_drive', externalId: 'drive-9', linked: OBJECT_A },
+      ],
+      fileId: 'doc',
+      parents: ['nested'],
+      driveId: 'drive-9',
+      inScope: true,
+      matchedAncestorId: 'outer',
+      inheritedFrom: 'outer',
+    },
+    {
+      name: 'explicit unlinked file under nested folder of linked shared drive',
+      selections: [
+        { kind: 'drive.file', externalId: 'doc' },
+        { kind: 'drive.shared_drive', externalId: 'drive-9', linked: OBJECT_A },
+      ],
+      fileId: 'doc',
+      parents: ['nested'],
+      driveId: 'drive-9',
+      inScope: true,
+      matchedAncestorId: 'doc',
+      ancestryContains: ['drive-9'],
+      inheritedFrom: 'drive-9',
+    },
+    {
+      name: 'explicit linked file beats linked shared drive',
+      selections: [
+        { kind: 'drive.file', externalId: 'doc', linked: OBJECT_B },
+        { kind: 'drive.shared_drive', externalId: 'drive-9', linked: OBJECT_A },
+      ],
+      fileId: 'doc',
+      parents: ['nested'],
+      driveId: 'drive-9',
+      inScope: true,
+      matchedAncestorId: 'doc',
+      inheritedFrom: 'doc',
+    },
+    {
+      name: 'out of scope nested file does not inherit a sibling tree',
+      selections: [{ kind: 'drive.folder', externalId: 'folder-b', linked: OBJECT_A }],
+      fileId: 'doc',
+      parents: ['nested'],
+      inScope: false,
+      matchedAncestorId: null,
+      ancestryOmits: ['folder-b'],
+      inheritedFrom: null,
+    },
+    {
+      name: 'move from linked folder A to linked folder B',
+      selections: [
+        { kind: 'drive.folder', externalId: 'folder-a', linked: OBJECT_A },
+        { kind: 'drive.folder', externalId: 'folder-b', linked: OBJECT_B },
+      ],
+      fileId: 'doc',
+      parents: ['folder-b'],
+      inScope: true,
+      matchedAncestorId: 'folder-b',
+      ancestryContains: ['folder-b'],
+      ancestryOmits: ['folder-a'],
+      inheritedFrom: 'folder-b',
+    },
+    {
+      name: 'move explicit unlinked file from folder A into nested of folder B',
+      selections: [
+        { kind: 'drive.file', externalId: 'doc' },
+        { kind: 'drive.folder', externalId: 'folder-a', linked: OBJECT_A },
+        { kind: 'drive.folder', externalId: 'outer', linked: OBJECT_B },
+      ],
+      fileId: 'doc',
+      parents: ['nested'],
+      inScope: true,
+      matchedAncestorId: 'doc',
+      ancestryContains: ['outer'],
+      inheritedFrom: 'outer',
+    },
+    {
+      name: 'explicit unlinked file immediate child of linked folder',
+      selections: [
+        { kind: 'drive.file', externalId: 'doc' },
+        { kind: 'drive.folder', externalId: 'outer', linked: OBJECT_A },
+      ],
+      fileId: 'doc',
+      parents: ['outer'],
+      inScope: true,
+      matchedAncestorId: 'doc',
+      ancestryContains: ['doc', 'outer'],
+      inheritedFrom: 'outer',
+    },
+    {
+      name: 'My Drive root linked, explicit unlinked nested file',
+      selections: [
+        { kind: 'drive.file', externalId: 'doc' },
+        { kind: 'drive.folder', externalId: 'root', linked: OBJECT_A },
+      ],
+      fileId: 'doc',
+      parents: ['clients'],
+      inScope: true,
+      matchedAncestorId: 'doc',
+      ancestryContains: ['root'],
+      inheritedFrom: 'root',
+    },
+    {
+      name: 'shared-drive parent does not skip selected folder on other path',
+      selections: [
+        { kind: 'drive.folder', externalId: 'outer', linked: OBJECT_B },
+        { kind: 'drive.shared_drive', externalId: 'drive-9', linked: OBJECT_A },
+      ],
+      fileId: 'doc',
+      parents: ['drive-9', 'nested'],
+      driveId: 'drive-9',
+      inScope: true,
+      matchedAncestorId: 'outer',
+      inheritedFrom: 'outer',
+    },
+    {
+      name: 'unlinked explicit file and unlinked folder inherit nothing',
+      selections: [
+        { kind: 'drive.file', externalId: 'doc' },
+        { kind: 'drive.folder', externalId: 'outer' },
+      ],
+      fileId: 'doc',
+      parents: ['nested'],
+      inScope: true,
+      matchedAncestorId: 'doc',
+      ancestryContains: ['outer'],
+      inheritedFrom: null,
+    },
+    {
+      name: 'sibling linked folder does not steal a file under a different tree',
+      selections: [
+        { kind: 'drive.folder', externalId: 'folder-b', linked: OBJECT_B },
+        { kind: 'drive.folder', externalId: 'outer', linked: OBJECT_A },
+      ],
+      fileId: 'doc',
+      parents: ['nested'],
+      inScope: true,
+      matchedAncestorId: 'outer',
+      inheritedFrom: 'outer',
+    },
+    {
+      name: 'three-deep nested folders, only outermost linked',
+      selections: [{ kind: 'drive.folder', externalId: 'outer', linked: OBJECT_A }],
+      fileId: 'doc',
+      parents: ['nested'],
+      inScope: true,
+      matchedAncestorId: 'outer',
+      ancestryContains: ['nested', 'inner', 'outer'],
+      inheritedFrom: 'outer',
+    },
+    {
+      name: 'move inherited file from shared drive into linked folder',
+      selections: [
+        { kind: 'drive.folder', externalId: 'folder-b', linked: OBJECT_B },
+        { kind: 'drive.shared_drive', externalId: 'drive-9', linked: OBJECT_A },
+      ],
+      fileId: 'doc',
+      parents: ['folder-b'],
+      driveId: 'drive-9',
+      inScope: true,
+      matchedAncestorId: 'folder-b',
+      inheritedFrom: 'folder-b',
+    },
+    {
+      name: 'explicit unlinked file moved under linked shared drive',
+      selections: [
+        { kind: 'drive.file', externalId: 'doc' },
+        { kind: 'drive.folder', externalId: 'folder-b', linked: OBJECT_B },
+        { kind: 'drive.shared_drive', externalId: 'drive-9', linked: OBJECT_A },
+      ],
+      fileId: 'doc',
+      parents: ['shared-folder'],
+      driveId: 'drive-9',
+      inScope: true,
+      matchedAncestorId: 'doc',
+      ancestryContains: ['drive-9'],
+      ancestryOmits: ['folder-b'],
+      inheritedFrom: 'drive-9',
+    },
+  ];
+
+  it('walks ancestry and picks the nearest linked selected ancestor', async () => {
+    for (const testCase of cases) {
+      const scope = driveScopeFromSelections(testCase.selections);
+      const fetched: string[] = [];
+      const membership = await resolveDriveFileMembership({
+        fileId: testCase.fileId,
+        scope,
+        cache: createDriveAncestryCache(),
+        getParents: (folderId) => {
+          fetched.push(folderId);
+          return Promise.resolve(folderId in tree ? (tree[folderId] ?? null) : null);
+        },
+        ...(testCase.parents ? { parents: testCase.parents } : {}),
+        ...(testCase.driveId ? { driveId: testCase.driveId } : {}),
+      });
+      const linkedById = new Map(
+        testCase.selections
+          .filter(
+            (selection) => typeof selection.linked === 'string' && selection.linked.length > 0,
+          )
+          .map((selection) => [selection.externalId, selection]),
+      );
+      const inheritedFrom = pickMostSpecificDriveAncestor(membership.ancestryIds, (id) => {
+        const hit = linkedById.get(id);
+        return hit ? driveAncestorKindFromSelectionKind(hit.kind) : null;
+      });
+      const problems: string[] = [];
+      if (membership.inScope !== testCase.inScope) {
+        problems.push(`inScope=${String(membership.inScope)}`);
+      }
+      if (membership.matchedAncestorId !== testCase.matchedAncestorId) {
+        problems.push(`matchedAncestorId=${String(membership.matchedAncestorId)}`);
+      }
+      if (inheritedFrom !== testCase.inheritedFrom) {
+        problems.push(`inheritedFrom=${String(inheritedFrom)}`);
+      }
+      for (const id of testCase.ancestryContains ?? []) {
+        if (!membership.ancestryIds.includes(id)) problems.push(`missing ancestry ${id}`);
+      }
+      for (const id of testCase.ancestryOmits ?? []) {
+        if (membership.ancestryIds.includes(id)) problems.push(`unexpected ancestry ${id}`);
+      }
+      if (testCase.fetched && fetched.join(',') !== testCase.fetched.join(',')) {
+        problems.push(`fetched=${fetched.join(',')}`);
+      }
+      if (problems.length > 0) {
+        throw new Error(
+          `${testCase.name}: ${problems.join('; ')} ancestry=${membership.ancestryIds.join(',')}`,
+        );
+      }
+    }
   });
 });

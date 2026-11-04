@@ -264,6 +264,12 @@ function selectedFolderOnPath(id: string, scope: DriveScopeSets): boolean {
   return scope.folders.has(id) || (id === 'root' && scope.watchesRoot);
 }
 
+/**
+ * `inScope` / `matchedAncestorId` are the most specific selected ancestor
+ * (explicit file, then folder, then shared drive). `ancestryIds` is the full
+ * walked path, including unlinked selected ancestors, so inherited object-link
+ * lookup can pick the nearest *linked* ancestor along that path.
+ */
 export interface DriveFileMembership {
   inScope: boolean;
   matchedAncestorId: string | null;
@@ -314,16 +320,17 @@ export async function resolveDriveFileMembership(input: {
   getParents: (folderId: string) => Promise<string[] | null>;
   depthCap?: number;
 }): Promise<DriveFileMembership> {
-  if (input.scope.files.has(input.fileId)) {
-    return membershipResult(input, [], input.fileId, true);
-  }
-
-  const shouldWalk =
-    (input.parents?.length ?? 0) > 0 &&
-    (input.scope.folders.size > 0 || input.scope.sharedDrives.size > 0 || input.scope.watchesRoot);
+  const explicitFile = input.scope.files.has(input.fileId);
+  const shouldWalk = (input.parents?.length ?? 0) > 0 && hasDriveContainers(input.scope);
   const walked = shouldWalk
     ? await walkNearestSelectedAncestor(input)
     : { selectedId: null, ancestryIds: [] };
+
+  // Explicit files stay in-scope as themselves, but still walk ancestors so an
+  // unlinked file can inherit a linked folder or shared drive further up.
+  if (explicitFile) {
+    return membershipResult(input, walked.ancestryIds, input.fileId, true);
+  }
 
   if (walked.selectedId) {
     return membershipResult(input, walked.ancestryIds, walked.selectedId, true);

@@ -2869,6 +2869,71 @@ describe('googleDriveProvider', () => {
     );
   });
 
+  it('walks ancestors of an explicit file so nested linked-folder inheritance still resolves', async () => {
+    const snapshotText = 'Contract amount is forty eight thousand dollars for Northstar.';
+    const fetch = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((input) => {
+      const url = requestUrl(input);
+      if (url.pathname.includes('/export')) {
+        return Promise.resolve(new Response(`${snapshotText} Signed.`, { status: 200 }));
+      }
+      if (url.pathname.endsWith('/files/nested')) {
+        return Promise.resolve(jsonResponse({ parents: ['selected-folder'] }));
+      }
+      if (url.pathname.endsWith('/files/selected-folder')) {
+        return Promise.resolve(jsonResponse({ parents: [] }));
+      }
+      if (url.pathname.endsWith('/files/file-nested')) {
+        return Promise.resolve(
+          jsonResponse({
+            id: 'file-nested',
+            name: 'SOW',
+            mimeType: 'application/vnd.google-apps.document',
+            parents: ['nested'],
+            modifiedTime: '2026-06-20T10:00:00.000Z',
+          }),
+        );
+      }
+      if (url.pathname.endsWith('/comments'))
+        return Promise.resolve(jsonResponse({ comments: [] }));
+      return Promise.resolve(jsonResponse({ permissions: [] }));
+    });
+    vi.stubGlobal('fetch', fetch);
+    const ctx = syncContext({
+      loadLatestDriveSnapshot: vi.fn().mockResolvedValue({
+        contentHash: 'old',
+        snapshotText,
+        commentsHash: 'old-comments',
+        permissionsHash: 'old-permissions',
+        mimeType: 'application/vnd.google-apps.document',
+      }),
+      linkedObjectForDriveSelection: vi.fn().mockResolvedValue({
+        id: '11111111-1111-4111-8111-111111111111',
+        canonicalName: 'Northstar',
+        type: 'company',
+      }),
+    });
+
+    await googleDriveProvider.incrementalSync({
+      integration: { id: 'integration-1', teamId: 'team-1' } as never,
+      tokens: { access_token: 'access-token', expires_at: Date.now() + 600_000 },
+      selections: [
+        { kind: 'drive.file', externalId: 'file-nested' },
+        { kind: 'drive.folder', externalId: 'selected-folder' },
+      ],
+      ctx: ctx,
+      target: { resourceType: 'drive.file', externalId: 'file-nested' },
+    });
+
+    expect(ctx.linkedObjectForDriveSelection).toHaveBeenCalledWith(
+      'file-nested',
+      expect.arrayContaining(['nested', 'selected-folder']),
+      'file-nested',
+      {},
+    );
+  });
+
   it('persists a Drive changes resume token when the page safety cap is hit', async () => {
     const fetch = vi.fn<
       (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
