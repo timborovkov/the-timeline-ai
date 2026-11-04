@@ -1061,6 +1061,8 @@ inherits that warm paper palette in light mode and the landing's warm near-black
 palette in dark mode, while each page group keeps its own content structure.
 Auth-neutral loading and error boundaries keep the same masthead but omit
 account actions rather than guessing the visitor's session state.
+The landing main landmark remains focusable for skip navigation but suppresses
+the browser's page-sized focus outline; interactive controls retain their focus indicators.
 The masthead exposes the same six primary destinations in the same order:
 Product (`/`), Integrations (`/integrations`), Pricing (`/pricing`), How it works (`/how-it-works`),
 Trust (`/trust`), and Help (`/help`). Desktop headers show them directly, compact widths use a native
