@@ -61,6 +61,7 @@ describe('landing route group', () => {
     expect(headerStyles).toContain('@media (prefers-reduced-motion: reduce)');
     expect(styles).toContain('--home-meta-size: 0.75rem');
     expect(Math.min(...remFontSizeMinimums)).toBeGreaterThanOrEqual(0.75);
+    expect(agentSetupStyles).toMatch(/\.marks\s*\{[^}]*flex-wrap:\s*nowrap;/s);
     expect(styles).toMatch(/\.slackMeta span\s*\{[^}]*font-size:\s*var\(--home-meta-size\);/s);
     expect(styles).toMatch(/\.mcpCalls code\s*\{[^}]*font-size:\s*var\(--home-meta-size\);/s);
     expect(styles).not.toContain('translateX(0.35rem)');

@@ -935,8 +935,11 @@ follows the shared due-date vocabulary above.
 The public landing page is an editorial, six-scene acquisition narrative:
 claim, evidence and chronology, cited answer, Slack-to-cited-answer with an MCP
 example, audience fit with trust, and a Start free CTA. The claim scene also
-includes a dark “Give this to your agent” card with the copyable
-`Set up The Timeline - https://thetimeline.cc/llms.txt` command. The claim defines The Timeline as an auto-updating work record:
+includes a compact “Give this to your agent” card: one-line lede, official
+Claude, ChatGPT, Cursor, Grok, OpenClaw, and Hermes marks on white tiles in a
+single row, and the copyable
+`Set up The Timeline - https://thetimeline.cc/llms.txt` command. The card follows
+landing `--home-*` tokens in both themes and does not use letter discs. The claim defines The Timeline as an auto-updating work record:
 what is said in Slack, Telegram, email and calls becomes current client, deal,
 task and decision records, with the source for every line and human approval
 before anything changes. Audience copy describes how teams work (chat-run teams
@@ -1370,6 +1373,7 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-11-04 | Hosted MCP public copy | Agents, llms.txt, the home MCP example, and the pricing FAQ teach five tools, the default-on capture scope, remember counting toward accepted sources, and Free 100 MB / 10,000 documents / 20,000 chunks. |
 | 2026-11-03 | Connect your agent | `/app/connect-agent` is the OAuth-first MCP setup screen. Agent tabs, connected grants, add-memory email/webhook, SKILL.md, and collapsed static keys live there. `/app/team/mcp-share` redirects. Provider logos stay on white tiles; allowed senders stay a list editor. |
 | 2026-11-04 | Connect your agent client picker | `/app/connect-agent` leads with a CollectionRow client list and one install path. Official vendor marks sit on white tiles. Connected agents, add-memory, SKILL.md, and static keys share one disclosure stack with no nested cards or stacked `border-y` sections. Admin grant rows show the consenting member next to the client. |
+| 2026-11-04 | Agent setup card marks | Replaces letter discs with official agent logos on white tiles, one short lede, and a single logo row on the landing and `/agents` cards. |
 
 
 ### Billing benefits and recorded charges (2026-10-31)
