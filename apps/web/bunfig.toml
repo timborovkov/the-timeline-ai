@@ -1,0 +1,6 @@
+# Bun subprocesses start in this directory and do not inherit the root bunfig.
+# Let Next.js own env loading; isolated E2E sets __NEXT_PROCESSED_ENV.
+env = false
+
+[run]
+bun = true

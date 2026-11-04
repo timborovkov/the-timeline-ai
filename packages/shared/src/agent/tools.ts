@@ -15,6 +15,7 @@ import {
 } from '#src/objects/tool-serialization.js';
 import { OBJECT_TYPES } from '#src/objects/types.js';
 import { PIN_TARGET_KINDS } from '#src/pins/index.js';
+import { withQdrantOperation, QdrantUnavailableError } from '#src/qdrant/operation.js';
 import { recordMcpToolResultEvidence } from '#src/reconciliation/mcp-capture.js';
 import { suggestionDedupeKey, type CreateSuggestionInput } from '#src/suggestions/index.js';
 import {
@@ -867,6 +868,13 @@ async function safe<T>(
   try {
     return await fn();
   } catch (err) {
+    if (err instanceof QdrantUnavailableError) {
+      return {
+        error: err.outcomeUnknown
+          ? 'operation_outcome_unknown: Could not confirm whether the change completed. Check current state before retrying.'
+          : 'retrieval_unavailable: Evidence could not be retrieved. Tell the user search is temporarily unavailable; this is not evidence that no matching information exists.',
+      };
+    }
     const safeError = sanitizeError?.(err) ?? err;
     log.error({ err: safeError, tool: label }, 'tool failed');
     onToolError?.(safeError, { tool: label });
@@ -1302,7 +1310,12 @@ export function userApprovalForTools(tools: ToolSet): Record<string, 'user-appro
 
 export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}): ToolSet {
   const runSafe = <T>(label: string, fn: () => Promise<T>): Promise<T | { error: string }> =>
-    safe(label, fn, options.onToolError, options.sanitizeError);
+    safe(
+      label,
+      () => withQdrantOperation({ signal: options.abortSignal }, fn, label),
+      options.onToolError,
+      options.sanitizeError,
+    );
   const tools: ToolSet = {
     list_pins: tool({
       description:
