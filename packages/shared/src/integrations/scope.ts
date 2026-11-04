@@ -47,6 +47,8 @@ import {
   DRIVE_FILE_KIND,
   DRIVE_FOLDER_KIND,
   DRIVE_SHARED_DRIVE_KIND,
+  driveFileScopeHint,
+  driveScopeFromSelections,
 } from '#src/integrations/google-drive-scope.js';
 import {
   formatHealthPauseNotice,
@@ -1684,6 +1686,7 @@ export function createIntegrationScope(deps: {
               ),
             );
         };
+        const remainingScope = driveScopeFromSelections(selections);
         for (const row of dropped) {
           if (row.selectionKind === DRIVE_FILE_KIND || isDriveContainerKind(row.selectionKind)) {
             await rebindDriveSelectionArtifactLink(scopedTx, {
@@ -1699,7 +1702,13 @@ export function createIntegrationScope(deps: {
                 .map((container) => container.externalId),
             });
           }
-          if (row.selectionKind === DRIVE_FILE_KIND) await discardTrackedFile(row.externalId);
+          if (row.selectionKind === DRIVE_FILE_KIND) {
+            const remainingCoverage = driveFileScopeHint({
+              fileId: row.externalId,
+              scope: remainingScope,
+            });
+            if (remainingCoverage === 'out') await discardTrackedFile(row.externalId);
+          }
         }
         const remainingDriveContainers = selections.some((selection) =>
           isDriveContainerKind(selection.kind),
@@ -1890,13 +1899,15 @@ export function createIntegrationScope(deps: {
             Boolean(row.linkedObjectId),
         )
         .map((row) => row.externalId);
+      const previousObjectId = current.linkedObjectId;
       const preserveContainerIds = siblings
-        .filter(
-          (row) =>
-            isDriveContainerKind(row.selectionKind) &&
-            row.id !== selectionId &&
-            row.linkedObjectId === current.linkedObjectId,
-        )
+        .filter((row) => {
+          if (!isDriveContainerKind(row.selectionKind) || row.id === selectionId) return false;
+          // Assigning a previously unlinked container must not treat other
+          // unlinked siblings (`null === null`) as remaining owners.
+          if (previousObjectId) return row.linkedObjectId === previousObjectId;
+          return Boolean(row.linkedObjectId);
+        })
         .map((row) => row.externalId);
       await rebindDriveSelectionArtifactLink(db, {
         teamId,

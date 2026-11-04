@@ -1220,6 +1220,69 @@ describe('saveDriveSnapshot uniqueness', () => {
     );
   });
 
+  it('keeps snapshots and extract when a dropped file remains in folder scope', async () => {
+    const [integration] = await db
+      .insert(integrations)
+      .values({
+        teamId: TEAM_ID,
+        connectedByUserId: USER_ID,
+        provider: 'google_drive',
+        displayName: 'Google Drive',
+        externalAccountId: 'drive-acct-drop-file-keep-folder',
+        visibilityDefault: 'team',
+      })
+      .returning();
+    if (!integration) throw new Error('integration insert failed');
+    await db.insert(integrationSelections).values([
+      {
+        integrationId: integration.id,
+        selectionKind: 'drive.file',
+        externalId: 'file-keep',
+      },
+      {
+        integrationId: integration.id,
+        selectionKind: 'drive.folder',
+        externalId: 'folder-1',
+      },
+    ]);
+    await saveDriveSnapshot(db as never, {
+      teamId: TEAM_ID,
+      integrationId: integration.id,
+      fileId: 'file-keep',
+      snapshot: {
+        contentHash: hashDrivePayload('keep-body'),
+        snapshotText: 'keep-body',
+        commentsHash: 'comments-keep',
+        permissionsHash: 'permissions-keep',
+        mimeType: 'application/pdf',
+      },
+    });
+    await db.insert(integrationSyncState).values({
+      integrationId: integration.id,
+      resourceType: driveExtractCursorKey('file-keep'),
+      cursor: {
+        extractId: 'ext-keep',
+        objectKey: 'keep-source',
+        resultObjectKey: 'keep-result.json',
+        contentType: 'application/pdf',
+        filename: 'Keep.pdf',
+        enqueuedAt: '2026-11-03T00:00:00.000Z',
+      },
+    });
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    await scope.integrations.setSelections(integration.id, [
+      { kind: 'drive.folder', externalId: 'folder-1' },
+    ]);
+    const snapshots = await db.select().from(googleDriveFileSnapshots);
+    expect(snapshots.map((row) => row.fileId)).toEqual(['file-keep']);
+    const extractCursors = await listDriveExtractCursors(db as never, {
+      teamId: TEAM_ID,
+      integrationId: integration.id,
+    });
+    expect(extractCursors.map((row) => row.fileId)).toEqual(['file-keep']);
+    expect(s3Fakes.deleteObject).not.toHaveBeenCalled();
+  });
+
   it('purges leftover folder-file snapshots when no Drive container remains', async () => {
     const [integration] = await db
       .insert(integrations)
@@ -1517,6 +1580,114 @@ describe('saveDriveSnapshot uniqueness', () => {
       .from(artifactClusters)
       .where(eq(artifactClusters.id, unbound?.clusterId ?? ''));
     expect(unboundCluster?.canonicalEntityId).toBeNull();
+  });
+
+  it('assigns a previously unlinked folder from unbound inherited file anchors', async () => {
+    const [integration] = await db
+      .insert(integrations)
+      .values({
+        teamId: TEAM_ID,
+        connectedByUserId: USER_ID,
+        provider: 'google_drive',
+        displayName: 'Google Drive',
+        externalAccountId: 'drive-acct-relink-folder',
+        visibilityDefault: 'team',
+      })
+      .returning();
+    if (!integration) throw new Error('integration insert failed');
+    const [northstar] = await db
+      .insert(entities)
+      .values({
+        teamId: TEAM_ID,
+        type: 'company',
+        canonicalName: 'Northstar',
+        status: 'open',
+      })
+      .returning();
+    const [acme] = await db
+      .insert(entities)
+      .values({
+        teamId: TEAM_ID,
+        type: 'company',
+        canonicalName: 'Acme Labs',
+        status: 'open',
+      })
+      .returning();
+    if (!northstar || !acme) throw new Error('company insert failed');
+    const [folderOne] = await db
+      .insert(integrationSelections)
+      .values({
+        integrationId: integration.id,
+        selectionKind: 'drive.folder',
+        externalId: 'folder-1',
+        linkedObjectId: null,
+      })
+      .returning();
+    await db.insert(integrationSelections).values({
+      integrationId: integration.id,
+      selectionKind: 'drive.folder',
+      externalId: 'folder-2',
+      linkedObjectId: northstar.id,
+    });
+    if (!folderOne) throw new Error('selection insert failed');
+    const [source] = await db
+      .insert(artifactClusters)
+      .values({
+        teamId: TEAM_ID,
+        artifactType: 'company',
+        canonicalName: 'Northstar',
+        canonicalEntityId: northstar.id,
+      })
+      .returning();
+    const [unbound] = await db
+      .insert(artifactClusters)
+      .values({
+        teamId: TEAM_ID,
+        artifactType: 'company',
+        canonicalName: 'Unbound Drive files',
+        canonicalEntityId: null,
+      })
+      .returning();
+    if (!source || !unbound) throw new Error('cluster insert failed');
+    await db.insert(artifactClusterAnchors).values([
+      {
+        teamId: TEAM_ID,
+        clusterId: unbound.id,
+        anchorType: 'provider_object',
+        anchorValue: 'google_drive:file-folder-1',
+        strength: 'hard',
+        metadata: {
+          drive_inherited_from: 'folder-1',
+          drive_inherited_candidates: ['file-folder-1', 'folder-1'],
+          drive_integration_id: integration.id,
+        },
+      },
+      {
+        teamId: TEAM_ID,
+        clusterId: source.id,
+        anchorType: 'provider_object',
+        anchorValue: 'google_drive:file-folder-2',
+        strength: 'hard',
+        metadata: {
+          drive_inherited_from: 'folder-2',
+          drive_inherited_candidates: ['file-folder-2', 'folder-2'],
+          drive_integration_id: integration.id,
+        },
+      },
+    ]);
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    await scope.integrations.setSelectionLinkedObject(integration.id, folderOne.id, acme.id);
+    const [acmeCluster] = await db
+      .select()
+      .from(artifactClusters)
+      .where(eq(artifactClusters.canonicalEntityId, acme.id));
+    const anchors = await db.select().from(artifactClusterAnchors);
+    expect(anchors.find((row) => row.anchorValue === 'google_drive:file-folder-1')?.clusterId).toBe(
+      acmeCluster?.id,
+    );
+    expect(anchors.find((row) => row.anchorValue === 'google_drive:file-folder-2')?.clusterId).toBe(
+      source.id,
+    );
   });
 
   it('keeps extract cursors when disconnect cannot delete transient S3 objects', async () => {

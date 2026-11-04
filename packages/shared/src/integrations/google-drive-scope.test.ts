@@ -25,6 +25,23 @@ describe('driveFileScopeHint', () => {
     expect(driveFileScopeHint({ fileId: 'c', parents: ['nested'], scope })).toBe('unknown');
   });
 
+  it('keeps a dropped explicit file in remaining folder or shared-drive scope', () => {
+    const remainingFolder = driveScopeFromSelections([
+      { kind: 'drive.folder', externalId: 'folder-1' },
+    ]);
+    expect(
+      driveFileScopeHint({ fileId: 'doc-1', parents: ['folder-1'], scope: remainingFolder }),
+    ).toBe('in');
+    expect(driveFileScopeHint({ fileId: 'doc-1', scope: remainingFolder })).toBe('unknown');
+    const remainingDrive = driveScopeFromSelections([
+      { kind: 'drive.shared_drive', externalId: 'drive-9' },
+    ]);
+    expect(driveFileScopeHint({ fileId: 'doc-1', scope: remainingDrive })).toBe('unknown');
+    expect(driveFileScopeHint({ fileId: 'doc-1', driveId: 'drive-9', scope: remainingDrive })).toBe(
+      'in',
+    );
+  });
+
   it('treats My Drive root as in-scope only when the parent is root', () => {
     const scope = driveScopeFromSelections([{ kind: 'drive.folder', externalId: 'root' }]);
     expect(driveFileScopeHint({ fileId: 'mine', parents: ['root'], scope })).toBe('in');

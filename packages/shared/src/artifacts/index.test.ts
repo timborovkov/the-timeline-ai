@@ -1216,4 +1216,149 @@ describe('artifact reconciliation', () => {
     expect(await anchorCluster('file-from-event')).toBe(await clusterIdFor(acme.id));
     expect(await anchorCluster('file-other-folder')).toBe(source.id);
   });
+
+  async function insertUnboundCluster(name: string) {
+    const [cluster] = await db
+      .insert(artifactClusters)
+      .values({
+        teamId: TEAM_ID,
+        artifactType: 'company',
+        canonicalName: name,
+        canonicalEntityId: null,
+      })
+      .returning();
+    if (!cluster) throw new Error('unbound cluster insert failed');
+    return cluster;
+  }
+
+  it('assigns a previously unlinked folder by rebinding inherited files from unbound clusters', async () => {
+    const acme = await insertCompany('Acme Labs');
+    const unbound = await insertUnboundCluster('Unbound Drive files');
+    await insertDriveFileAnchor({
+      clusterId: unbound.id,
+      fileId: 'file-folder-1',
+      inheritedFrom: 'folder-1',
+      candidates: ['file-folder-1', 'folder-1'],
+      integrationId: INTEGRATION_ID,
+    });
+    await insertDriveFileAnchor({
+      clusterId: unbound.id,
+      fileId: 'file-folder-2',
+      inheritedFrom: 'folder-2',
+      candidates: ['file-folder-2', 'folder-2'],
+      integrationId: INTEGRATION_ID,
+    });
+
+    await rebindDriveSelectionArtifactLink(db as never, {
+      teamId: TEAM_ID,
+      integrationId: INTEGRATION_ID,
+      selectionKind: 'drive.folder',
+      externalId: 'folder-1',
+      previousObjectId: null,
+      nextObjectId: acme.id,
+    });
+
+    expect(await anchorCluster('file-folder-1')).toBe(await clusterIdFor(acme.id));
+    expect(await anchorCluster('file-folder-2')).toBe(unbound.id);
+  });
+
+  it('does not steal another unlinked folder file when assigning from an unbound cluster', async () => {
+    const northstar = await insertCompany('Northstar');
+    const acme = await insertCompany('Acme Labs');
+    const source = await insertCluster(northstar);
+    const unbound = await insertUnboundCluster('Unbound folder-1 files');
+    await insertDriveFileAnchor({
+      clusterId: unbound.id,
+      fileId: 'file-folder-1',
+      inheritedFrom: 'folder-1',
+      candidates: ['file-folder-1', 'folder-1'],
+      integrationId: INTEGRATION_ID,
+    });
+    await insertDriveFileAnchor({
+      clusterId: source.id,
+      fileId: 'file-folder-2',
+      inheritedFrom: 'folder-2',
+      candidates: ['file-folder-2', 'folder-2'],
+      integrationId: INTEGRATION_ID,
+    });
+
+    await rebindDriveSelectionArtifactLink(db as never, {
+      teamId: TEAM_ID,
+      integrationId: INTEGRATION_ID,
+      selectionKind: 'drive.folder',
+      externalId: 'folder-1',
+      previousObjectId: null,
+      nextObjectId: acme.id,
+      preserveContainerIds: ['folder-2'],
+    });
+
+    expect(await anchorCluster('file-folder-1')).toBe(await clusterIdFor(acme.id));
+    expect(await anchorCluster('file-folder-2')).toBe(source.id);
+  });
+
+  it('moves unstamped unbound files only when no linked sibling container remains', async () => {
+    const acme = await insertCompany('Acme Labs');
+    const unbound = await insertUnboundCluster('Unbound unstamped files');
+    await insertDriveFileAnchor({ clusterId: unbound.id, fileId: 'unstamped-last' });
+
+    await rebindDriveSelectionArtifactLink(db as never, {
+      teamId: TEAM_ID,
+      integrationId: INTEGRATION_ID,
+      selectionKind: 'drive.folder',
+      externalId: 'folder-1',
+      previousObjectId: null,
+      nextObjectId: acme.id,
+    });
+
+    expect(await anchorCluster('unstamped-last')).toBe(await clusterIdFor(acme.id));
+  });
+
+  it('leaves unstamped unbound files unbound when a linked sibling container remains', async () => {
+    const acme = await insertCompany('Acme Labs');
+    const unbound = await insertUnboundCluster('Unbound unstamped files');
+    await insertDriveFileAnchor({ clusterId: unbound.id, fileId: 'unstamped-sibling' });
+
+    await rebindDriveSelectionArtifactLink(db as never, {
+      teamId: TEAM_ID,
+      integrationId: INTEGRATION_ID,
+      selectionKind: 'drive.folder',
+      externalId: 'folder-1',
+      previousObjectId: null,
+      nextObjectId: acme.id,
+      preserveContainerIds: ['folder-2'],
+    });
+
+    expect(await anchorCluster('unstamped-sibling')).toBe(unbound.id);
+  });
+
+  it('assigns a previously unlinked shared drive from unbound clusters', async () => {
+    const acme = await insertCompany('Acme Labs');
+    const unbound = await insertUnboundCluster('Unbound shared-drive files');
+    await insertDriveFileAnchor({
+      clusterId: unbound.id,
+      fileId: 'shared-file',
+      inheritedFrom: 'shared-drive',
+      candidates: ['shared-file', 'shared-drive'],
+      integrationId: INTEGRATION_ID,
+    });
+    await insertDriveFileAnchor({
+      clusterId: unbound.id,
+      fileId: 'folder-file',
+      inheritedFrom: 'folder-1',
+      candidates: ['folder-file', 'folder-1'],
+      integrationId: INTEGRATION_ID,
+    });
+
+    await rebindDriveSelectionArtifactLink(db as never, {
+      teamId: TEAM_ID,
+      integrationId: INTEGRATION_ID,
+      selectionKind: 'drive.shared_drive',
+      externalId: 'shared-drive',
+      previousObjectId: null,
+      nextObjectId: acme.id,
+    });
+
+    expect(await anchorCluster('shared-file')).toBe(await clusterIdFor(acme.id));
+    expect(await anchorCluster('folder-file')).toBe(unbound.id);
+  });
 });
