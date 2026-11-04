@@ -1,0 +1,83 @@
+// Bun Snapshot v1, https://bun.sh/docs/test/snapshots
+
+exports[`agent markdown routes serves setup.md as text/markdown with a stable snapshot 1`] = `
+"# Set up The Timeline
+
+You are connecting your human's agent to The Timeline, their team's auto-updating work record. It is a cited history of decisions, owners and next steps from their chat, email, calls and docs. You will be able to recall it with citations and add new notes to it.
+
+Never ask for, accept or paste any key or token in chat. Sign-in is OAuth in the human's browser. Static \`tla_\` keys belong only under Advanced in Timeline, never in chat.
+
+The hosted MCP server advertises five tools: \`timeline.search\`, \`timeline.get\`, \`timeline.subject\`, \`timeline.ask\`, and \`timeline.remember\`. Default OAuth is \`read\`. \`timeline.remember\` needs the \`capture\` scope. \`timeline.ask\` needs \`agent:ask\` (owner or admin only).
+
+## 1. Identify where you run. The steps differ.
+
+**Hosted assistant (ChatGPT, claude.ai, Claude Desktop): install nothing.**
+Tell the human to add a custom MCP connector, then stop.
+
+- URL: https://thetimeline.cc/api/mcp/server
+- Auth: OAuth
+- ChatGPT: Plugins → + → Add custom MCP server → name it "The Timeline" → OAuth → Create as a plugin → install.
+- Claude (claude.ai, Desktop): Customize → Connectors → Add custom connector. Free plans get one custom connector.
+- They sign in to The Timeline, choose the team, and approve \`read\`. Approve \`capture\` as well if they want you to add notes. Then stop.
+
+**Grok Bot:** add a custom MCP server named "timeline" at https://thetimeline.cc/api/mcp/server using Streamable HTTP and start its OAuth sign-in card. After the human approves, save the skill from https://thetimeline.cc/agents/SKILL.md into the bot's skill store.
+
+**Local coding agent (Claude Code, Codex, Cursor):**
+
+- Claude Code: \`claude plugin marketplace add timborovkov/the-timeline-ai\` then \`claude plugin install timeline@timeline\`. Or MCP only: \`claude mcp add --transport http timeline https://thetimeline.cc/api/mcp/server\`.
+- Codex: \`codex plugin marketplace add timborovkov/the-timeline-ai --ref main --sparse .agents/plugins --sparse plugins/timeline\` then \`codex plugin add timeline@timeline\`. Or MCP only: \`codex mcp add timeline --url "https://thetimeline.cc/api/mcp/server"\`.
+- Cursor: add \`{"mcpServers":{"timeline":{"url":"https://thetimeline.cc/api/mcp/server"}}}\` to \`~/.cursor/mcp.json\`, or open cursor://anysphere.cursor-deeplink/mcp/install?name=timeline&config=eyJ1cmwiOiJodHRwczovL3RoZXRpbWVsaW5lLmNjL2FwaS9tY3Avc2VydmVyIn0=. Copy the skill from https://thetimeline.cc/agents/SKILL.md into \`.cursor/skills/timeline/SKILL.md\`.
+
+Then tell the human to restart, start a new task or conversation, and complete sign-in in the browser.
+
+**Self-hosted agent (Hermes Agent, OpenClaw):**
+
+- Hermes: add this under \`mcp_servers\` in \`~/.hermes/config.yaml\`, then run \`/reload-mcp\`. Save the skill to \`~/.hermes/skills/timeline/SKILL.md\`.
+
+\`\`\`yaml
+mcp_servers:
+  timeline:
+    url: "https://thetimeline.cc/api/mcp/server"
+    auth: oauth
+    trust: untrusted
+\`\`\`
+
+- OpenClaw: add this under \`mcp.servers\` in \`~/.openclaw/openclaw.json\`, then run \`openclaw mcp login timeline\` and \`openclaw mcp probe\`. Save the skill to \`~/.openclaw/workspace/skills/timeline/SKILL.md\`.
+
+\`\`\`json
+{
+  "mcp": {
+    "servers": {
+      "timeline": {
+        "url": "https://thetimeline.cc/api/mcp/server",
+        "transport": "streamable-http",
+        "auth": "oauth"
+      }
+    }
+  }
+}
+\`\`\`
+
+**Sandboxed agent:** if https://thetimeline.cc is unreachable, tell the human the network policy blocks it, offer the hosted-connector route, and stop. Do not retry other hosts.
+
+## 2. Check the connection
+
+Call \`timeline.search\` with a small limit. If it returns nothing, the team may have no captured work yet. That is fine.
+
+Offer a test \`timeline.remember\` only with the human's OK. If remember is unavailable, the grant may be missing \`capture\`; ask the human to re-approve with that scope.
+
+## 3. Optional push methods
+
+Use these only when the human asks you to record something.
+
+- **remember:** one self-contained note per fact cluster. Lead with the subject, then who, the decision, the next step, the owner, and the date. Rate-limited to 30 notes per minute. Needs the \`capture\` scope.
+- **Team email:** send, forward, CC or BCC to the team address shown on The Timeline Home → Team email. The sending address must be a team member or an allowed sender.
+- **Webhook:** POST text or JSON (1 MB or less) to https://thetimeline.cc/api/webhooks/ingest with \`Authorization: Bearer $TIMELINE_INGEST_TOKEN\`. Keep the token in the environment. Never print the token.
+
+Recorded items become cited evidence only. Any proposals still need human approval. Tell the human what was recorded.
+
+## 4. Report a doorway, not an install log
+
+One line: "The Timeline is connected: I can now answer questions about your team's work with citations." Then offer three things, for example: "What did we decide about <project> this month?", "Draft a client update for <client> from the record", "What's still open for <person>?"
+"
+`;

@@ -125,6 +125,12 @@ names when its source module loads.
 
 ## Crawl and indexing policy
 
+`/agents/setup.md` and `/agents/SKILL.md` are machine-readable Markdown routes.
+They are registered as public machine documents with `llms: false` so the
+hand-authored `## For agents` block in `llms.txt` / `llms-full.txt` is the
+discovery entry. `SKILL.md` is served from
+`plugins/timeline/skills/timeline/SKILL.md` and must stay byte-identical.
+
 `sitemap.xml` and `robots.txt` are generated at request time so their absolute
 URLs use the runtime `AUTH_URL`. Prerendered public HTML (`metadataBase`, JSON-LD)
 bakes the origin at `next build`. The web Docker image defaults `AUTH_URL` to

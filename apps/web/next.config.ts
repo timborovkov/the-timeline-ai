@@ -14,6 +14,9 @@ const nextConfig: NextConfig = {
     incomingRequests: { ignore: [/\/(?:forgot-password|reset-password)(?:[/?]|$)/] },
   },
   outputFileTracingRoot: workspaceRoot,
+  outputFileTracingIncludes: {
+    '/agents/[doc]': ['../../plugins/timeline/skills/timeline/SKILL.md'],
+  },
   turbopack: {
     root: workspaceRoot,
   },
