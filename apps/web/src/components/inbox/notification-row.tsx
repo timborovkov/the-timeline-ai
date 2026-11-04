@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Suspense, useEffect, useLayoutEffect, useRef, useState, useTransition } from 'react';
+import { Suspense, useEffect, useState, useTransition } from 'react';
 
 import { markNotificationReadAction } from '@/app/actions/objects';
 import { RelativeTimestamp } from '@/components/relative-timestamp';
@@ -42,46 +42,17 @@ function NotificationRowContent({
 }: Props) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
-  // Optimistic read state so clicking through to an object instantly
-  // clears the unread dot — the server action runs async without
-  // blocking the navigation.
-  const [read, setRead] = useState(initiallyRead);
-  const readRef = useRef(initiallyRead);
-  const latestInitiallyReadRef = useRef(initiallyRead);
-  const individuallyReadRef = useRef(initiallyRead);
-  const bulkReadRef = useRef(false);
-  const previousInitiallyReadRef = useRef(initiallyRead);
-  // Sync from props when the parent refreshes (e.g. MarkAllReadButton
-  // calls router.refresh() and notifications now report as read). Only
-  // ratchet toward "read" — never override a local optimistic-read back
-  // to unread, since the user's click is the authoritative intent and
-  // the server may not have caught up yet.
-  useLayoutEffect(() => {
-    latestInitiallyReadRef.current = initiallyRead;
-    if (initiallyRead !== previousInitiallyReadRef.current) {
-      previousInitiallyReadRef.current = initiallyRead;
-      if (initiallyRead) {
-        individuallyReadRef.current = true;
-        readRef.current = true;
-        setRead(true);
-      }
-    }
-  }, [initiallyRead]);
+  // Optimistic local flags only. The visible read state is derived so a
+  // parent refresh (Mark all read → router.refresh()) can ratchet the row
+  // toward read without copying `initiallyRead` into an effect.
+  const [individuallyRead, setIndividuallyRead] = useState(false);
+  const [bulkRead, setBulkRead] = useState(false);
+  const read = initiallyRead || individuallyRead || bulkRead;
 
   useEffect(() => {
     function onAllRead(event: Event): void {
       if (!(event instanceof CustomEvent) || typeof event.detail !== 'boolean') return;
-      if (event.detail) {
-        bulkReadRef.current = bulkReadRef.current || !readRef.current;
-        readRef.current = true;
-        setRead(true);
-        return;
-      }
-      if (!bulkReadRef.current) return;
-      bulkReadRef.current = false;
-      const next = individuallyReadRef.current || latestInitiallyReadRef.current;
-      readRef.current = next;
-      setRead(next);
+      setBulkRead(event.detail);
     }
     window.addEventListener('timeline:notifications-read-all', onAllRead);
     return () => {
@@ -90,15 +61,8 @@ function NotificationRowContent({
   }, []);
 
   function markRead(): void {
-    if (
-      read &&
-      (individuallyReadRef.current || latestInitiallyReadRef.current || !bulkReadRef.current)
-    ) {
-      return;
-    }
-    individuallyReadRef.current = true;
-    readRef.current = true;
-    setRead(true);
+    if (initiallyRead || individuallyRead) return;
+    setIndividuallyRead(true);
     startTransition(async () => {
       const result = await notifyAction({
         id: `inbox:${id}:read`,
@@ -115,15 +79,10 @@ function NotificationRowContent({
         router.refresh();
         return;
       }
-      // Action failed (DB blip, scope mismatch). Roll back the
-      // optimistic state so the UI reflects what the server
-      // actually recorded — otherwise the row shows as read while
-      // the server still has it as unread, and on ?unread=1 it'd
-      // linger with read styling but never drop out.
-      individuallyReadRef.current = latestInitiallyReadRef.current;
-      const next = latestInitiallyReadRef.current || bulkReadRef.current;
-      readRef.current = next;
-      setRead(next);
+      // Action failed (DB blip, scope mismatch). Drop the individual
+      // optimistic flag so derived read falls back to server props or a
+      // still-in-flight bulk mark-all.
+      setIndividuallyRead(false);
     });
   }
 
