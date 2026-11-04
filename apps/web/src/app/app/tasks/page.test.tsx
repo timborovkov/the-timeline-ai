@@ -408,6 +408,7 @@ describe('TasksPage', () => {
     expect(html).toContain('Task 79');
     expect(html).not.toContain('Task 80');
     expect(html).toContain('data-app-layout="full-bleed"');
+    expect(html).toContain('flex min-h-0 min-w-0 flex-1 flex-col');
     expect(html).toContain('total 501');
     expect(html).not.toContain('cursor none');
     expect(fakes.listObjects).toHaveBeenCalledWith({

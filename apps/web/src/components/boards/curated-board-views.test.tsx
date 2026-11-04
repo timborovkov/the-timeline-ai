@@ -144,6 +144,16 @@ describe('CuratedBoardList', () => {
     expect(title.className).toContain('truncate');
   });
 
+  it('uses a height-constrained flex column so grouped rows can scroll', () => {
+    const { container } = render(
+      <CuratedBoardList boardId="board-1" view="list" lanes={LANES} items={[boardItem()]} />,
+    );
+
+    const root = container.firstElementChild;
+    expect(root?.className).toContain('flex h-full min-h-0 flex-1 flex-col');
+    expect(container.querySelector('.min-h-0.flex-1.overflow-y-auto')).toBeTruthy();
+  });
+
   it('keeps grouped list rows on the full-bleed canvas without a Move control', () => {
     const { container } = render(
       <CuratedBoardList

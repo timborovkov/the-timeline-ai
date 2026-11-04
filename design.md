@@ -1,7 +1,7 @@
 # The Timeline — Design System
 
-**Version:** v3.32 · Connect your agent client picker (2026-11-04).
-Replaces v3.31 Connections as a flagship settings page.
+**Version:** v3.34 · Object citations and pipeline lanes (2026-11-03).
+Replaces v3.33 Numbered answer citations.
 
 This is the visual and interaction contract for the product. If a screen
 disagrees with it, fix the screen. If the language intentionally changes,
@@ -63,7 +63,7 @@ next before seeing how the system represented it.
 - Every route has exactly one `<h1>`.
 - Switzer is the default face for navigation, headings, body, labels, statuses,
   buttons, and form controls.
-- Commit Mono is reserved for timestamps, citations, shortcuts, counts, code,
+- Commit Mono is reserved for timestamps, citation markers, shortcuts, counts, code,
   filenames, and recognizable public external identifiers such as `TL-101` and
   `PR #42`.
 - Internal database identifiers are implementation details. UUIDs, hashes, raw
@@ -434,12 +434,16 @@ pulses. Opening a row shows a human source summary first. Original source
 collapsed inspector disclosure with a readable preview: HTML in a sandboxed
 frame, text as prose, JSON in Commit Mono. Attached documents link to the
 document drive. Exact timestamps, ownership/visibility internals, source IDs,
-and other implementation keys stay inside `TechnicalDetails`. Ask answers cite
-raw source events as lime `[ev:…]` chips, objects as `[ent:…]`, and notes as
-`[note:…]`. Those tokens do not appear on timeline rows. Each inspector
-evidence item shows the matching copyable `[ev:…]` chip so a cited source can
-be identified without putting database IDs on the archive list. Clicking a
-citation opens a preview with the same evidence-first layout as the inspector:
+and other implementation keys stay inside `TechnicalDetails`. Ask answers and
+object summaries cite sources as small lime superscript numbers in first-appearance
+order, reusing the number when the same source is cited again. Raw `[ev:…]`
+tokens stay out of the answer and off client/project summaries. Hovering on desktop, tapping on mobile, or
+keyboard focus opens a compact preview card: source icon, author, date, a
+one-line quote, and the existing named destination. Provider logos sit on a
+white tile in both themes. Escape closes the card. Those tokens do not appear
+on timeline rows. Each inspector evidence item shows the matching copyable
+`[ev:…]` chip so a cited source can be identified without putting database IDs
+on the archive list. Inspector chips still open the evidence-first preview:
 the readable excerpt, a collapsed original-source disclosure (HTML, text, or
 JSON payload), and named destinations instead of a generic “Open full page.”
 A meeting citation’s primary action is the transcript page, with calendar and
@@ -571,7 +575,8 @@ actions stay visible without hover, using the shared item-action primitives.
 ### Ask
 
 Ask uses a standard sans header. Human/assistant role labels are quiet 12px
-text; citations remain mono and lime. Tool execution is collapsed. Ask object
+text; inline citations are mono lime superscripts, not raw chips. Tool
+execution is collapsed. Ask object
 bindings always have a human label and read **About {name}**, not Pin. Prompts
 handed off from Home are stored
 briefly in team-scoped session storage and never in the URL.
@@ -599,10 +604,10 @@ a capped trail of earlier views from the same conversation. Full Ask shows
 those views as compact linked badges on the conversation.
 
 The web Ask surface is the rich research view: answers may be thorough and use
-sections, lists, or tables, while inline citations remain inspectable links to
-evidence. Citation previews reuse the inspector’s original-source viewer and
-named destinations (transcript, calendar, documents, Timeline moment) rather
-than a single unlabeled page jump. External chat delivery uses the same retrieval and grounding but a
+sections, lists, or tables, while inline citations remain inspectable numbered
+markers. The answer card keeps the named destination (transcript, calendar,
+documents, Timeline moment) rather than a single unlabeled page jump. The
+inspector chip dialog still reuses the original-source viewer. External chat delivery uses the same retrieval and grounding but a
 compact plain-text presentation, normally one short paragraph or three to five
 bullets. Telegram, Slack, and future external chat providers never expose
 Timeline citation syntax, raw-event IDs, or generic source footers. Explicit
@@ -637,7 +642,9 @@ metadata row, with no redundant type label. Curated boards use the same
 full-bleed work canvas in kanban and grouped list — no boxed inner
 container around the collection. Board kanban cards stay compact: a clamped
 title, optional next-step line directly under the title, and one metadata row.
-Kanban lanes use a hairline divider, not boxed column chrome. Card title and
+Kanban lanes use a hairline divider, not boxed column chrome. Pipeline boards
+keep a readable lane min-width and scroll horizontally when the columns do not
+fit, including 1280 and 1440 canvases; they do not clip the last lanes. Card title and
 metadata share the same left edge: compact 20px chips, no extra type/metadata
 padding, and no wrapping priority row. The drag handle sits with the card
 actions on the right. Cards have no Move control; the drag handle is the
@@ -1358,6 +1365,8 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-11-03 | Work-record marketing site | Leads public pages with the auto-updating work record, daily updates, and Start free. Adds a Use cases menu, six use-case pages, `/product-tour`, and `/integrations/telegram`. |
 | 2026-11-03 | Public Compare and Agents | Header stays Product, Use cases, Compare, Agents, Pricing, with mobile dropdowns. Adds `/compare` works-with pages, `/agents`, a copyable llms.txt command, a pricing FAQ, and a Slack-to-cited-answer landing scene. |
 | 2026-11-03 | Compare vs and works-with | Moves works-with pages under `/integrations/{hubspot,pipedrive,attio,linear,jira,notion}`. `/compare` becomes a hub plus `/compare/the-timeline-vs-{day-ai,folk,glean,geekbot}` pages that cite each competitor's site. |
+| 2026-11-03 | Numbered answer citations | Replaces Ask `[ev:…]` chips with superscript numbers, a hover/tap source card, reused numbers for the same source, and keyboard/Escape access. Inspector copy chips stay as they are. |
+| 2026-11-03 | Object and board citation/lane polish | Object summaries use the same numbered source markers as Ask. Pipeline kanban lanes scroll instead of clipping at 1440. |
 | 2026-11-04 | Hosted MCP public copy | Agents, llms.txt, the home MCP example, and the pricing FAQ teach five tools, the default-on capture scope, remember counting toward accepted sources, and Free 100 MB / 10,000 documents / 20,000 chunks. |
 | 2026-11-03 | Connect your agent | `/app/connect-agent` is the OAuth-first MCP setup screen. Agent tabs, connected grants, add-memory email/webhook, SKILL.md, and collapsed static keys live there. `/app/team/mcp-share` redirects. Provider logos stay on white tiles; allowed senders stay a list editor. |
 | 2026-11-04 | Connect your agent client picker | `/app/connect-agent` leads with a CollectionRow client list and one install path. Official vendor marks sit on white tiles. Connected agents, add-memory, SKILL.md, and static keys share one disclosure stack with no nested cards or stacked `border-y` sections. Admin grant rows show the consenting member next to the client. |

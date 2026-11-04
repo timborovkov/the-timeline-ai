@@ -282,102 +282,104 @@ export function BoardDetailClient({
 
   return (
     <TaskCategoryPollingProvider tasks={categoryPollingTasks}>
-      <PageHeader
-        variant="collection"
-        title={boardName}
-        subtitle={description ?? undefined}
-        leading={boardHeaderLeading}
-        className="w-full shrink-0 px-4 md:px-8"
-        trailing={boardHeaderTrailing}
-      />
-      <WorkSubnav current={`/app/boards/${boardId}`} className="shrink-0 px-4 md:px-8" />
+      <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+        <PageHeader
+          variant="collection"
+          title={boardName}
+          subtitle={description ?? undefined}
+          leading={boardHeaderLeading}
+          className="w-full shrink-0 px-4 md:px-8"
+          trailing={boardHeaderTrailing}
+        />
+        <WorkSubnav current={`/app/boards/${boardId}`} className="shrink-0 px-4 md:px-8" />
 
-      <WorkFilterBar
-        mode="board"
-        basePath={`/app/boards/${boardId}`}
-        filters={filters}
-        active={activeFilters}
-        resultCount={items.length}
-        totalCount={itemCount ?? items.length}
-        hiddenParams={{ view }}
-        members={members}
-        projects={projectOptions}
-        lanes={lanes}
-        typeLabels={typeLabels}
-        className="shrink-0"
-        viewControls={
-          <CollectionViewToggle
-            label="Board view"
-            views={['kanban', 'list'] as const}
-            current={view}
-            hrefFor={(nextView) => boardViewHref(boardId, nextView, selectedItemId, filterParams)}
-          />
-        }
-        actions={
-          <BoardAddItemForm
-            boardId={boardId}
-            defaultLaneId={defaultLaneId}
-            candidates={availableCandidates}
-            recommendedTypes={recommendedTypes}
-            onOptimisticItem={addOptimisticItem}
-            onItemAdded={commitAddedItem}
-            onItemAddFailed={rollbackAddedItem}
-          />
-        }
-      />
+        <WorkFilterBar
+          mode="board"
+          basePath={`/app/boards/${boardId}`}
+          filters={filters}
+          active={activeFilters}
+          resultCount={items.length}
+          totalCount={itemCount ?? items.length}
+          hiddenParams={{ view }}
+          members={members}
+          projects={projectOptions}
+          lanes={lanes}
+          typeLabels={typeLabels}
+          className="shrink-0"
+          viewControls={
+            <CollectionViewToggle
+              label="Board view"
+              views={['kanban', 'list'] as const}
+              current={view}
+              hrefFor={(nextView) => boardViewHref(boardId, nextView, selectedItemId, filterParams)}
+            />
+          }
+          actions={
+            <BoardAddItemForm
+              boardId={boardId}
+              defaultLaneId={defaultLaneId}
+              candidates={availableCandidates}
+              recommendedTypes={recommendedTypes}
+              onOptimisticItem={addOptimisticItem}
+              onItemAdded={commitAddedItem}
+              onItemAddFailed={rollbackAddedItem}
+            />
+          }
+        />
 
-      <div
-        className={
-          selectedItem
-            ? 'grid min-h-0 flex-1 gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(22rem,0.35fr)]'
-            : 'min-h-0 flex-1'
-        }
-      >
-        <div className="h-full min-h-0 min-w-0">
-          {view === 'kanban' && (
-            <CuratedKanbanBoard
-              boardId={boardId}
-              lanes={lanes}
-              items={items}
-              selectedItemId={selectedItemId}
-              members={members}
-              filterParams={filterParams}
-            />
-          )}
-          {view === 'list' && (
-            <CuratedBoardList
-              boardId={boardId}
-              view={view}
-              lanes={lanes}
-              items={items}
-              members={members}
-              onUpdateItem={updateItem}
-              filterParams={filterParams}
-            />
-          )}
-        </div>
-        {selectedItem ? (
-          <div className="min-h-0 overflow-y-auto pr-4 md:pr-8">
-            <BoardCardDetail
-              key={selectedItem.id}
-              boardId={boardId}
-              view={view}
-              item={selectedItem}
-              connectedWork={selectedObjectContext}
-              notes={selectedObjectNotes}
-              recentChanges={selectedObjectRecentChanges}
-              relationships={selectedObjectRelationships}
-              objectType={selectedObjectType}
-              currentUserId={currentUserId}
-              history={history}
-              lanes={lanes}
-              members={members}
-              onUpdateItem={updateItem}
-              onItemRemoved={removeLocalItem}
-              filterParams={filterParams}
-            />
+        <div
+          className={
+            selectedItem
+              ? 'grid min-h-0 min-w-0 flex-1 gap-4 overflow-hidden xl:grid-cols-[minmax(0,1fr)_minmax(22rem,0.35fr)]'
+              : 'flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden'
+          }
+        >
+          <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+            {view === 'kanban' && (
+              <CuratedKanbanBoard
+                boardId={boardId}
+                lanes={lanes}
+                items={items}
+                selectedItemId={selectedItemId}
+                members={members}
+                filterParams={filterParams}
+              />
+            )}
+            {view === 'list' && (
+              <CuratedBoardList
+                boardId={boardId}
+                view={view}
+                lanes={lanes}
+                items={items}
+                members={members}
+                onUpdateItem={updateItem}
+                filterParams={filterParams}
+              />
+            )}
           </div>
-        ) : null}
+          {selectedItem ? (
+            <div className="min-h-0 overflow-y-auto pr-4 md:pr-8">
+              <BoardCardDetail
+                key={selectedItem.id}
+                boardId={boardId}
+                view={view}
+                item={selectedItem}
+                connectedWork={selectedObjectContext}
+                notes={selectedObjectNotes}
+                recentChanges={selectedObjectRecentChanges}
+                relationships={selectedObjectRelationships}
+                objectType={selectedObjectType}
+                currentUserId={currentUserId}
+                history={history}
+                lanes={lanes}
+                members={members}
+                onUpdateItem={updateItem}
+                onItemRemoved={removeLocalItem}
+                filterParams={filterParams}
+              />
+            </div>
+          ) : null}
+        </div>
       </div>
     </TaskCategoryPollingProvider>
   );

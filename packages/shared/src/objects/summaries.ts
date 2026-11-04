@@ -215,8 +215,8 @@ function summaryPlainText(summary: GeneratedObjectSummary): string {
   return [
     summary.overview,
     ...summary.currentState.map((item) => `${item.label}: ${item.text}`),
-    ...summary.openQuestions.map((item) => `${item.label}: ${item.text}`),
     ...summary.conflicts.map((item) => `${item.label}: ${item.text}`),
+    ...summary.openQuestions.map((item) => `${item.label}: ${item.text}`),
   ]
     .filter(Boolean)
     .join('\n');
@@ -226,8 +226,8 @@ function allSummaryRefs(summary: GeneratedObjectSummary): ObjectSummarySourceRef
   return uniqueRefs([
     ...summary.overviewSourceRefs,
     ...summary.currentState.flatMap((item) => item.sourceRefs),
-    ...summary.openQuestions.flatMap((item) => item.sourceRefs),
     ...summary.conflicts.flatMap((item) => item.sourceRefs),
+    ...summary.openQuestions.flatMap((item) => item.sourceRefs),
   ]);
 }
 

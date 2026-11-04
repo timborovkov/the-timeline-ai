@@ -328,6 +328,7 @@ function renderClient(
     view?: 'kanban' | 'list';
     purpose?: string;
     itemCount?: number;
+    lanes?: boards.BoardLaneRow[];
   } = {},
 ) {
   return (
@@ -338,7 +339,7 @@ function renderClient(
       pinned={false}
       itemCount={options.itemCount}
       view={options.view ?? 'list'}
-      lanes={[]}
+      lanes={options.lanes ?? []}
       initialItems={items}
       initialCandidates={[]}
       recommendedTypes={['company']}
@@ -551,6 +552,72 @@ describe('BoardDetailClient', () => {
         'P2',
       );
     });
+  });
+
+  it('keeps the kanban canvas shrinkable so pipeline lanes can scroll', () => {
+    const html = renderToStaticMarkup(
+      renderClient(
+        [
+          boardItem({
+            id: 'item-1',
+            entityId: 'object-1',
+            canonicalName: 'Alpha',
+          }),
+        ],
+        {
+          view: 'kanban',
+          lanes: [
+            {
+              id: 'lane-1',
+              boardId: 'board-1',
+              name: 'Open',
+              position: 0,
+              kind: 'active',
+              archivedAt: null,
+            },
+          ],
+        },
+      ),
+    );
+
+    expect(html).toContain('flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden');
+    expect(html).toContain('flex h-full min-h-0 min-w-0 flex-1 flex-col');
+  });
+
+  it('keeps the list canvas a height-constrained flex column so rows can scroll', () => {
+    const html = renderToStaticMarkup(
+      renderClient(
+        [
+          boardItem({
+            id: 'item-1',
+            entityId: 'object-1',
+            canonicalName: 'Alpha',
+          }),
+          boardItem({
+            id: 'item-2',
+            entityId: 'object-2',
+            canonicalName: 'Beta',
+          }),
+        ],
+        {
+          view: 'list',
+          lanes: [
+            {
+              id: 'lane-1',
+              boardId: 'board-1',
+              name: 'Open',
+              position: 0,
+              kind: 'active',
+              archivedAt: null,
+            },
+          ],
+        },
+      ),
+    );
+
+    expect(html).toContain('flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden');
+    expect(html).toContain('flex h-full min-h-0 flex-1 flex-col');
+    expect(html).toContain('min-h-0 flex-1 overflow-y-auto');
   });
 
   it('does not link optimistic list rows to temporary ids', () => {

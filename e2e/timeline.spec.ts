@@ -24,8 +24,8 @@ function literalPattern(value: string): RegExp {
   return new RegExp(value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
 }
 
-function referenceButtonPattern(kind: 'ent' | 'ev'): RegExp {
-  return new RegExp(`Open reference \\[${kind}:`);
+function citationButtonPattern(): RegExp {
+  return /Citation \d+/;
 }
 
 async function uploadTextDocument(page: Page, name: string, text: string): Promise<void> {
@@ -2144,11 +2144,7 @@ test('chat answers timeline questions with citations and reloadable tool history
     ownerPage.getByText(`Searched timeline for "${question}" — 1 result`).first(),
   ).toBeVisible();
   await expect(ownerPage.getByText(chatFact).last()).toBeVisible();
-  await expect(
-    ownerPage.getByRole('button', {
-      name: `Open reference [ev:${rawEventId.slice(0, 8)}]`,
-    }),
-  ).toBeVisible();
+  await expect(ownerPage.getByRole('button', { name: citationButtonPattern() })).toBeVisible();
 
   await expect(ownerPage).toHaveURL(/\/app\/chat\?session=/);
   const sessionUrl = ownerPage.url();
@@ -2159,20 +2155,14 @@ test('chat answers timeline questions with citations and reloadable tool history
     ownerPage.getByText(`Searched timeline for "${question}" — 1 result`).first(),
   ).toBeVisible();
   await expect(ownerPage.getByText(chatFact).last()).toBeVisible();
-  await expect(
-    ownerPage.getByRole('button', {
-      name: `Open reference [ev:${rawEventId.slice(0, 8)}]`,
-    }),
-  ).toBeVisible();
+  await expect(ownerPage.getByRole('button', { name: citationButtonPattern() })).toBeVisible();
 
   await ownerPage.getByPlaceholder('Ask the timeline…').fill('degraded chat check');
   await ownerPage.getByRole('button', { name: 'Send', exact: true }).click();
   await expect(
     ownerPage.getByText("I couldn't verify that from the accessible timeline."),
   ).toBeVisible();
-  await expect(ownerPage.getByRole('button', { name: referenceButtonPattern('ev') })).toHaveCount(
-    1,
-  );
+  await expect(ownerPage.getByRole('button', { name: citationButtonPattern() })).toHaveCount(1);
 
   await ownerPage.context().close();
 });
@@ -2188,17 +2178,13 @@ test('chat respects private and specific-user timeline visibility', async ({ bro
   await expect(
     memberPage.getByText("I couldn't verify that from the accessible timeline."),
   ).toBeVisible();
-  await expect(memberPage.getByRole('button', { name: referenceButtonPattern('ev') })).toHaveCount(
-    0,
-  );
+  await expect(memberPage.getByRole('button', { name: citationButtonPattern() })).toHaveCount(0);
 
   const specificQuestion = `What does the timeline say about ${e2eSeedEvents.specificForMember}?`;
   await memberPage.getByPlaceholder('Ask the timeline…').fill(specificQuestion);
   await memberPage.getByRole('button', { name: 'Send', exact: true }).click();
   await expect(memberPage.getByText(e2eSeedEvents.specificForMember).last()).toBeVisible();
-  await expect(
-    memberPage.getByRole('button', { name: referenceButtonPattern('ev') }),
-  ).toBeVisible();
+  await expect(memberPage.getByRole('button', { name: citationButtonPattern() })).toBeVisible();
 
   await ownerPage.goto('/app/chat');
   await ownerPage.getByPlaceholder('Ask the timeline…').fill(specificQuestion);
@@ -2206,9 +2192,7 @@ test('chat respects private and specific-user timeline visibility', async ({ bro
   await expect(
     ownerPage.getByText("I couldn't verify that from the accessible timeline."),
   ).toBeVisible();
-  await expect(ownerPage.getByRole('button', { name: referenceButtonPattern('ev') })).toHaveCount(
-    0,
-  );
+  await expect(ownerPage.getByRole('button', { name: citationButtonPattern() })).toHaveCount(0);
 
   await ownerPage.context().close();
   await memberPage.context().close();
@@ -2289,7 +2273,7 @@ test.describe.serial('chat answers from accepted durable task calendar and objec
     await expect(ownerPage.getByText(objectName).last()).toBeVisible();
     await expect(ownerPage.getByText('Calendar:').last()).toBeVisible();
     await expect(
-      ownerPage.getByRole('button', { name: referenceButtonPattern('ent') }).first(),
+      ownerPage.getByRole('button', { name: citationButtonPattern() }).first(),
     ).toBeVisible();
 
     await expect(ownerPage).toHaveURL(/\/app\/chat\?session=/);
