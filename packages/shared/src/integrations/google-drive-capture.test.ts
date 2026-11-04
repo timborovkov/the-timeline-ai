@@ -52,6 +52,8 @@ import {
   driveFileContentRevision,
   driveObjectLinkCandidates,
   driveFileInheritsChangedSelection,
+  driveSelectionsWithChangedLink,
+  resolveDriveFileObjectLink,
   driveTransientExtractKeys,
   driveTransientExtractResultBody,
   hashDrivePayload,
@@ -64,6 +66,7 @@ import {
   survivingLinkedObjectForDriveFile,
   adminListTeamIdsWithDriveExtractCursors,
   forEachDriveExtractCursorPage,
+  latestDriveObjectLinkHints,
   linkedObjectForDriveSelection,
   listDriveExtractCursors,
   deleteDriveSnapshotsForFile,
@@ -141,62 +144,143 @@ describe('driveObjectLinkCandidates', () => {
 });
 
 describe('driveFileInheritsChangedSelection', () => {
-  it('rebinds only files whose current object link comes from the changed selection', () => {
-    expect(
-      driveFileInheritsChangedSelection({
+  it('rebinds only when the changed selection is first in live-capture precedence', () => {
+    const cases: {
+      name: string;
+      fileId: string;
+      changedExternalId: string;
+      remainingLinkedExternalIds?: string[];
+      preserveFileIds?: string[];
+      candidates?: string[];
+      parentIds?: string[];
+      matchedAncestorId?: string;
+      inherit: boolean;
+    }[] = [
+      {
+        name: 'single folder',
         fileId: 'file-a',
         changedExternalId: 'folder-1',
         candidates: ['file-a', 'folder-1'],
-      }),
-    ).toBe(true);
-    expect(
-      driveFileInheritsChangedSelection({
+        inherit: true,
+      },
+      {
+        name: 'sibling folder only',
         fileId: 'file-b',
         changedExternalId: 'folder-1',
         remainingLinkedExternalIds: ['folder-2'],
         candidates: ['file-b', 'folder-2'],
-      }),
-    ).toBe(false);
-    expect(
-      driveFileInheritsChangedSelection({
+        inherit: false,
+      },
+      {
+        name: 'two folders, earlier changed',
         fileId: 'file-both',
         changedExternalId: 'folder-1',
         remainingLinkedExternalIds: ['folder-2'],
         candidates: ['file-both', 'folder-1', 'folder-2'],
-      }),
-    ).toBe(false);
-    expect(
-      driveFileInheritsChangedSelection({
+        inherit: true,
+      },
+      {
+        name: 'two folders, later changed',
+        fileId: 'file-both',
+        changedExternalId: 'folder-2',
+        remainingLinkedExternalIds: ['folder-1'],
+        candidates: ['file-both', 'folder-1', 'folder-2'],
+        inherit: false,
+      },
+      {
+        name: 'nested ancestor',
         fileId: 'file-nested',
         changedExternalId: 'folder-1',
         parentIds: ['nested', 'folder-1'],
         matchedAncestorId: 'folder-1',
-      }),
-    ).toBe(true);
-    expect(
-      driveFileInheritsChangedSelection({
+        inherit: true,
+      },
+      {
+        name: 'shared drive with no earlier folder',
         fileId: 'shared-file',
         changedExternalId: 'shared-drive',
         remainingLinkedExternalIds: ['folder-1'],
         candidates: ['shared-file', 'shared-drive'],
-      }),
-    ).toBe(true);
-    expect(
-      driveFileInheritsChangedSelection({
+        inherit: true,
+      },
+      {
+        name: 'folder earlier than shared drive, relink shared drive',
         fileId: 'folder-file',
         changedExternalId: 'shared-drive',
         remainingLinkedExternalIds: ['folder-1'],
         candidates: ['folder-file', 'folder-1', 'shared-drive'],
-      }),
-    ).toBe(false);
-    expect(
-      driveFileInheritsChangedSelection({
+        inherit: false,
+      },
+      {
+        name: 'folder earlier than shared drive, relink folder',
+        fileId: 'folder-file',
+        changedExternalId: 'folder-1',
+        remainingLinkedExternalIds: ['shared-drive'],
+        candidates: ['folder-file', 'folder-1', 'shared-drive'],
+        inherit: true,
+      },
+      {
+        name: 'explicit file link',
         fileId: 'file-keep',
         changedExternalId: 'folder-1',
         preserveFileIds: ['file-keep'],
         candidates: ['file-keep', 'folder-1'],
+        inherit: false,
+      },
+    ];
+    for (const testCase of cases) {
+      const actual = driveFileInheritsChangedSelection({
+        fileId: testCase.fileId,
+        changedExternalId: testCase.changedExternalId,
+        ...(testCase.remainingLinkedExternalIds
+          ? { remainingLinkedExternalIds: testCase.remainingLinkedExternalIds }
+          : {}),
+        ...(testCase.preserveFileIds ? { preserveFileIds: testCase.preserveFileIds } : {}),
+        ...(testCase.candidates ? { candidates: testCase.candidates } : {}),
+        ...(testCase.parentIds ? { parentIds: testCase.parentIds } : {}),
+        ...(testCase.matchedAncestorId ? { matchedAncestorId: testCase.matchedAncestorId } : {}),
+      });
+      if (actual !== testCase.inherit) {
+        throw new Error(`${testCase.name}: expected inherit=${String(testCase.inherit)}`);
+      }
+    }
+  });
+});
+
+describe('resolveDriveFileObjectLink', () => {
+  it('keeps a later shared drive from blocking a folder relink, and falls through on unlink', () => {
+    const folderAndDrive = [
+      { kind: 'drive.folder', externalId: 'folder-1', linkedObjectId: 'object-b' },
+      { kind: 'drive.shared_drive', externalId: 'shared-drive', linkedObjectId: 'object-a' },
+    ];
+    expect(
+      resolveDriveFileObjectLink({
+        fileId: 'nested-file',
+        selections: folderAndDrive,
+        candidates: ['nested-file', 'folder-1', 'shared-drive'],
       }),
-    ).toBe(false);
+    ).toEqual({ kind: 'object', objectId: 'object-b', via: 'folder-1' });
+    const afterUnlinkFolder = driveSelectionsWithChangedLink(folderAndDrive, {
+      kind: 'drive.folder',
+      externalId: 'folder-1',
+      linkedObjectId: null,
+    });
+    expect(
+      resolveDriveFileObjectLink({
+        fileId: 'nested-file',
+        selections: afterUnlinkFolder,
+        candidates: ['nested-file', 'folder-1', 'shared-drive'],
+      }),
+    ).toEqual({ kind: 'object', objectId: 'object-a', via: 'shared-drive' });
+    expect(
+      resolveDriveFileObjectLink({
+        fileId: 'nested-file',
+        selections: folderAndDrive,
+        candidates: ['nested-file', 'folder-1', 'shared-drive'],
+        fallback: 'last_container',
+        changedExternalId: 'shared-drive',
+      }),
+    ).toEqual({ kind: 'object', objectId: 'object-b', via: 'folder-1' });
   });
 });
 
@@ -1452,6 +1536,13 @@ describe('saveDriveSnapshot uniqueness', () => {
         drive: { parents: ['folder-1'], inherited_from: 'folder-1' },
       },
     });
+    expect(
+      await latestDriveObjectLinkHints(db as never, {
+        teamId: TEAM_ID,
+        integrationId: integration.id,
+        fileId: 'file-b',
+      }),
+    ).toMatchObject({ parentIds: ['folder-1'], matchedAncestorId: 'folder-1' });
     const scope = withTeam(db as never, TEAM_ID, USER_ID);
     await scope.integrations.setSelections(integration.id, [
       { kind: 'drive.folder', externalId: 'folder-1' },
@@ -1691,6 +1782,195 @@ describe('saveDriveSnapshot uniqueness', () => {
     expect(anchors.find((row) => row.anchorValue === 'google_drive:file-folder-2')?.clusterId).toBe(
       source.id,
     );
+  });
+
+  it('relinks a folder even when its shared drive still points at the previous object', async () => {
+    const [integration] = await db
+      .insert(integrations)
+      .values({
+        teamId: TEAM_ID,
+        connectedByUserId: USER_ID,
+        provider: 'google_drive',
+        displayName: 'Google Drive',
+        externalAccountId: 'drive-acct-folder-shared-drive',
+        visibilityDefault: 'team',
+      })
+      .returning();
+    if (!integration) throw new Error('integration insert failed');
+    const [northstar] = await db
+      .insert(entities)
+      .values({
+        teamId: TEAM_ID,
+        type: 'company',
+        canonicalName: 'Northstar',
+        status: 'open',
+      })
+      .returning();
+    const [acme] = await db
+      .insert(entities)
+      .values({
+        teamId: TEAM_ID,
+        type: 'company',
+        canonicalName: 'Acme Labs',
+        status: 'open',
+      })
+      .returning();
+    if (!northstar || !acme) throw new Error('company insert failed');
+    const [folder] = await db
+      .insert(integrationSelections)
+      .values({
+        integrationId: integration.id,
+        selectionKind: 'drive.folder',
+        externalId: 'folder-1',
+        linkedObjectId: northstar.id,
+      })
+      .returning();
+    await db.insert(integrationSelections).values({
+      integrationId: integration.id,
+      selectionKind: 'drive.shared_drive',
+      externalId: 'shared-drive',
+      linkedObjectId: northstar.id,
+    });
+    if (!folder) throw new Error('selection insert failed');
+    const [source] = await db
+      .insert(artifactClusters)
+      .values({
+        teamId: TEAM_ID,
+        artifactType: 'company',
+        canonicalName: 'Northstar',
+        canonicalEntityId: northstar.id,
+      })
+      .returning();
+    if (!source) throw new Error('cluster insert failed');
+    await db.insert(artifactClusterAnchors).values({
+      teamId: TEAM_ID,
+      clusterId: source.id,
+      anchorType: 'provider_object',
+      anchorValue: 'google_drive:nested-file',
+      strength: 'hard',
+      metadata: {
+        drive_inherited_from: 'folder-1',
+        drive_inherited_candidates: ['nested-file', 'folder-1', 'shared-drive'],
+        drive_integration_id: integration.id,
+      },
+    });
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    await scope.integrations.setSelectionLinkedObject(integration.id, folder.id, acme.id);
+    const [acmeCluster] = await db
+      .select()
+      .from(artifactClusters)
+      .where(eq(artifactClusters.canonicalEntityId, acme.id));
+    const [anchor] = await db.select().from(artifactClusterAnchors);
+    expect(anchor?.clusterId).toBe(acmeCluster?.id);
+    expect(anchor?.clusterId).not.toBe(source.id);
+  });
+
+  it('rolls back a Drive selection link when rebind fails, then retries', async () => {
+    const [integration] = await db
+      .insert(integrations)
+      .values({
+        teamId: TEAM_ID,
+        connectedByUserId: USER_ID,
+        provider: 'google_drive',
+        displayName: 'Google Drive',
+        externalAccountId: 'drive-acct-rebind-tx',
+        visibilityDefault: 'team',
+      })
+      .returning();
+    if (!integration) throw new Error('integration insert failed');
+    const [northstar] = await db
+      .insert(entities)
+      .values({
+        teamId: TEAM_ID,
+        type: 'company',
+        canonicalName: 'Northstar',
+        status: 'open',
+      })
+      .returning();
+    const [acme] = await db
+      .insert(entities)
+      .values({
+        teamId: TEAM_ID,
+        type: 'company',
+        canonicalName: 'Acme Labs',
+        status: 'open',
+      })
+      .returning();
+    if (!northstar || !acme) throw new Error('company insert failed');
+    const [selection] = await db
+      .insert(integrationSelections)
+      .values({
+        integrationId: integration.id,
+        selectionKind: 'drive.file',
+        externalId: 'file-tx',
+        linkedObjectId: northstar.id,
+      })
+      .returning();
+    if (!selection) throw new Error('selection insert failed');
+    const [source] = await db
+      .insert(artifactClusters)
+      .values({
+        teamId: TEAM_ID,
+        artifactType: 'company',
+        canonicalName: 'Northstar',
+        canonicalEntityId: northstar.id,
+      })
+      .returning();
+    if (!source) throw new Error('cluster insert failed');
+    await db.insert(artifactClusterAnchors).values({
+      teamId: TEAM_ID,
+      clusterId: source.id,
+      anchorType: 'provider_object',
+      anchorValue: 'google_drive:file-tx',
+      strength: 'hard',
+    });
+    const failNextAnchorMove = { current: true };
+    const wrapDb = (inner: typeof db): typeof db =>
+      new Proxy(inner, {
+        get(target, prop, receiver) {
+          if (prop === 'transaction') {
+            return async (fn: (tx: typeof db) => Promise<unknown>) =>
+              target.transaction((tx) => fn(wrapDb(tx as unknown as typeof db)));
+          }
+          if (prop === 'update') {
+            return (table: Parameters<typeof db.update>[0]) => {
+              if (failNextAnchorMove.current && table === artifactClusterAnchors) {
+                failNextAnchorMove.current = false;
+                throw new Error('simulated rebind failure');
+              }
+              return target.update(table);
+            };
+          }
+          const value: unknown = Reflect.get(target, prop, receiver);
+          if (typeof value === 'function') {
+            return (value as (...args: never[]) => unknown).bind(target);
+          }
+          return value;
+        },
+      });
+    const scope = withTeam(wrapDb(db) as never, TEAM_ID, USER_ID);
+    await expect(
+      scope.integrations.setSelectionLinkedObject(integration.id, selection.id, acme.id),
+    ).rejects.toThrow('simulated rebind failure');
+    const [rolledBack] = await db
+      .select()
+      .from(integrationSelections)
+      .where(eq(integrationSelections.id, selection.id));
+    expect(rolledBack?.linkedObjectId).toBe(northstar.id);
+    const [stuck] = await db.select().from(artifactClusterAnchors);
+    expect(stuck?.clusterId).toBe(source.id);
+    await scope.integrations.setSelectionLinkedObject(integration.id, selection.id, acme.id);
+    const [committed] = await db
+      .select()
+      .from(integrationSelections)
+      .where(eq(integrationSelections.id, selection.id));
+    expect(committed?.linkedObjectId).toBe(acme.id);
+    const [acmeCluster] = await db
+      .select()
+      .from(artifactClusters)
+      .where(eq(artifactClusters.canonicalEntityId, acme.id));
+    const [moved] = await db.select().from(artifactClusterAnchors);
+    expect(moved?.clusterId).toBe(acmeCluster?.id);
   });
 
   it('dropping one of two folders unbinds only files that inherited that folder', async () => {

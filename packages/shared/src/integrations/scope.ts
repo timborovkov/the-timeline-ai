@@ -34,7 +34,6 @@ import {
   driveExtractCursorKey,
   driveExtractObjectKeys,
   forEachDriveExtractCursorPage,
-  latestDriveObjectLinkHints,
   linkedObjectForDriveSelection as loadLinkedObjectForDriveSelection,
   listDriveExtractCursors,
   listTeamEmailDomains as loadTeamEmailDomains,
@@ -44,7 +43,6 @@ import {
   retainDriveExtractCleanupCursor,
   saveDriveSnapshot,
   shouldRetainDriveExtractCleanup,
-  survivingLinkedObjectForDriveFile,
   type DriveExtractTombstone,
 } from '#src/integrations/google-drive-capture.js';
 import {
@@ -1665,20 +1663,6 @@ export function createIntegrationScope(deps: {
       const dropped = existing.filter(
         (row) => !nextKeys.has(`${row.selectionKind}\x00${row.externalId}`),
       );
-      const preservedFileIds = existing
-        .filter(
-          (row) =>
-            row.selectionKind === DRIVE_FILE_KIND &&
-            nextKeys.has(`${row.selectionKind}\x00${row.externalId}`) &&
-            row.linkedObjectId,
-        )
-        .map((row) => row.externalId);
-      const remainingContainers = existing.filter(
-        (row) =>
-          isDriveContainerKind(row.selectionKind) &&
-          nextKeys.has(`${row.selectionKind}\x00${row.externalId}`) &&
-          row.linkedObjectId,
-      );
       if (integration.provider === 'google_drive') {
         const scopedTx = tx as unknown as Db;
         const remainingSelectionLinks = selections.map((selection) => ({
@@ -1745,44 +1729,13 @@ export function createIntegrationScope(deps: {
         const remainingScope = driveScopeFromSelections(selections);
         for (const row of dropped) {
           if (row.selectionKind === DRIVE_FILE_KIND || isDriveContainerKind(row.selectionKind)) {
-            let nextObjectId: string | null = null;
-            if (row.selectionKind === DRIVE_FILE_KIND) {
-              const remainingCoverage = driveFileScopeHint({
-                fileId: row.externalId,
-                scope: remainingScope,
-              });
-              if (remainingCoverage !== 'out') {
-                const hints = await latestDriveObjectLinkHints(scopedTx, {
-                  teamId,
-                  integrationId,
-                  fileId: row.externalId,
-                });
-                nextObjectId =
-                  survivingLinkedObjectForDriveFile({
-                    fileId: row.externalId,
-                    remainingSelections: remainingSelectionLinks,
-                    parentIds: hints.parentIds,
-                    ...(hints.matchedAncestorId
-                      ? { matchedAncestorId: hints.matchedAncestorId }
-                      : {}),
-                    ...(hints.driveId ? { driveId: hints.driveId } : {}),
-                    ...(hints.inheritedCandidates
-                      ? { inheritedCandidates: hints.inheritedCandidates }
-                      : {}),
-                  }) ?? row.linkedObjectId;
-              }
-            }
             await rebindDriveSelectionArtifactLink(scopedTx, {
               teamId,
               integrationId,
               selectionKind: row.selectionKind,
               externalId: row.externalId,
               previousObjectId: row.linkedObjectId,
-              nextObjectId,
-              preserveFileIds: preservedFileIds,
-              preserveContainerIds: remainingContainers
-                .filter((container) => container.linkedObjectId === row.linkedObjectId)
-                .map((container) => container.externalId),
+              selections: remainingSelectionLinks,
             });
           }
           if (row.selectionKind === DRIVE_FILE_KIND) {
@@ -1947,62 +1900,62 @@ export function createIntegrationScope(deps: {
       )
       .limit(1);
     if (!current) throw new Error('Selection not found');
-    await db
-      .update(integrationSelections)
-      .set({ linkedObjectId: objectId })
-      .where(
-        and(
-          eq(integrationSelections.id, selectionId),
-          eq(integrationSelections.integrationId, integrationId),
-        ),
-      );
-    if (integration.provider === 'google_drive') {
-      const siblings = await db
+    await db.transaction(async (tx) => {
+      const [locked] = await tx
         .select({
+          selectionKind: integrationSelections.selectionKind,
           externalId: integrationSelections.externalId,
           linkedObjectId: integrationSelections.linkedObjectId,
-          selectionKind: integrationSelections.selectionKind,
-          id: integrationSelections.id,
         })
         .from(integrationSelections)
-        .where(eq(integrationSelections.integrationId, integrationId));
-      const preserveFileIds = siblings
-        .filter(
-          (row) =>
-            row.selectionKind === DRIVE_FILE_KIND &&
-            row.id !== selectionId &&
-            Boolean(row.linkedObjectId),
+        .where(
+          and(
+            eq(integrationSelections.id, selectionId),
+            eq(integrationSelections.integrationId, integrationId),
+          ),
         )
-        .map((row) => row.externalId);
-      const previousObjectId = current.linkedObjectId;
-      const preserveContainerIds = siblings
-        .filter((row) => {
-          if (!isDriveContainerKind(row.selectionKind) || row.id === selectionId) return false;
-          // Assigning a previously unlinked container must not treat other
-          // unlinked siblings (`null === null`) as remaining owners.
-          if (previousObjectId) return row.linkedObjectId === previousObjectId;
-          return Boolean(row.linkedObjectId);
-        })
-        .map((row) => row.externalId);
-      await rebindDriveSelectionArtifactLink(db, {
+        .limit(1);
+      if (!locked) throw new Error('Selection not found');
+      await tx
+        .update(integrationSelections)
+        .set({ linkedObjectId: objectId })
+        .where(
+          and(
+            eq(integrationSelections.id, selectionId),
+            eq(integrationSelections.integrationId, integrationId),
+          ),
+        );
+      if (integration.provider === 'google_drive') {
+        const siblings = await tx
+          .select({
+            externalId: integrationSelections.externalId,
+            linkedObjectId: integrationSelections.linkedObjectId,
+            selectionKind: integrationSelections.selectionKind,
+          })
+          .from(integrationSelections)
+          .where(eq(integrationSelections.integrationId, integrationId));
+        await rebindDriveSelectionArtifactLink(tx as unknown as Db, {
+          teamId,
+          integrationId,
+          selectionKind: locked.selectionKind,
+          externalId: locked.externalId,
+          previousObjectId: locked.linkedObjectId,
+          selections: siblings.map((row) => ({
+            kind: row.selectionKind,
+            externalId: row.externalId,
+            linkedObjectId: row.linkedObjectId,
+          })),
+        });
+      }
+      await tx.insert(auditLog).values({
         teamId,
-        integrationId,
-        selectionKind: current.selectionKind,
-        externalId: current.externalId,
-        previousObjectId: current.linkedObjectId,
-        nextObjectId: objectId,
-        preserveFileIds,
-        preserveContainerIds,
+        actorUserId: userId,
+        action: 'integration.settings_change',
+        targetType: 'integration',
+        targetId: integrationId,
+        targetVisibility: 'team',
+        metadata: { field: 'selection_linked_object', selection_id: selectionId },
       });
-    }
-    await db.insert(auditLog).values({
-      teamId,
-      actorUserId: userId,
-      action: 'integration.settings_change',
-      targetType: 'integration',
-      targetId: integrationId,
-      targetVisibility: 'team',
-      metadata: { field: 'selection_linked_object', selection_id: selectionId },
     });
   }
 

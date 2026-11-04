@@ -10,8 +10,11 @@ import {
 import { and, eq, inArray, isNull, or, sql } from 'drizzle-orm';
 
 import {
-  driveFileInheritsChangedSelection,
+  driveFileObjectIdFromResolution,
   driveObjectLinkCandidates,
+  driveSelectionsWithChangedLink,
+  resolveDriveFileObjectLink,
+  type DriveSelectionObjectLink,
 } from '#src/integrations/google-drive-capture.js';
 import { evaluateAuthorityPolicy } from '#src/reconciliation/authority.js';
 import { buildAssociationDedupeKey, type SourceRef } from '#src/reconciliation/index.js';
@@ -935,14 +938,9 @@ async function collectInheritedDriveFilesForSelection(
   input: {
     teamId: string;
     integrationId: string;
-    externalId: string;
     previousObjectId: string | null;
-    preserveFileIds: string[];
-    preserveContainerIds: string[];
   },
-): Promise<string[]> {
-  const preserveFileIds = input.preserveFileIds;
-  const remainingLinkedExternalIds = [...preserveFileIds, ...input.preserveContainerIds];
+): Promise<Map<string, string[] | null>> {
   const inherited = await db
     .select({
       anchorValue: artifactClusterAnchors.anchorValue,
@@ -998,36 +996,51 @@ async function collectInheritedDriveFilesForSelection(
       candidatesByFileId.set(fileId, fromEvent.candidates);
     }
   }
-  const lastContainer = input.preserveContainerIds.length === 0;
-  const preserve = new Set(preserveFileIds.map((fileId) => fileId.trim().toLowerCase()));
-  const fileIds: string[] = [];
-  for (const [fileId, candidates] of candidatesByFileId) {
-    if (preserve.has(fileId.trim().toLowerCase())) continue;
-    if (candidates) {
-      if (
-        driveFileInheritsChangedSelection({
-          fileId,
-          changedExternalId: input.externalId,
-          remainingLinkedExternalIds,
-          preserveFileIds,
-          candidates,
-        })
-      ) {
-        fileIds.push(fileId);
-      }
-      continue;
-    }
-    if (lastContainer) fileIds.push(fileId);
-  }
-  return fileIds;
+  return candidatesByFileId;
+}
+
+function resolveDriveFileLinkAfterChange(input: {
+  fileId: string;
+  selectionKind: string;
+  changedExternalId: string;
+  previousObjectId: string | null;
+  selections: DriveSelectionObjectLink[];
+  candidates?: string[] | null;
+}): { nextObjectId: string | null; skip: boolean } {
+  const changed = {
+    kind: input.selectionKind,
+    externalId: input.changedExternalId,
+    linkedObjectId: input.previousObjectId,
+  };
+  const previousSelections = driveSelectionsWithChangedLink(input.selections, changed);
+  const fallback = input.selectionKind === 'drive.file' ? 'unique_container' : 'last_container';
+  const previous = resolveDriveFileObjectLink({
+    fileId: input.fileId,
+    selections: previousSelections,
+    ...(input.candidates !== undefined ? { candidates: input.candidates } : {}),
+    fallback,
+    changedExternalId: input.changedExternalId,
+  });
+  const next = resolveDriveFileObjectLink({
+    fileId: input.fileId,
+    selections: input.selections,
+    ...(input.candidates !== undefined ? { candidates: input.candidates } : {}),
+    fallback,
+    changedExternalId: input.changedExternalId,
+  });
+  if (next.kind === 'keep') return { nextObjectId: input.previousObjectId, skip: true };
+  const previousObjectId = driveFileObjectIdFromResolution(previous, input.previousObjectId);
+  const nextObjectId = driveFileObjectIdFromResolution(next, input.previousObjectId);
+  return { nextObjectId, skip: previousObjectId === nextObjectId };
 }
 
 /**
- * When a Drive selection's workspace object link changes, move that file's
- * artifact anchors — or only files that inherited this folder/shared-drive
- * selection's link — onto the new object's cluster. Assigning a previously
- * unlinked folder or shared drive rebinds inherited file anchors from
- * unbound clusters (`canonicalEntityId` null).
+ * When a Drive selection's workspace object link changes, move each affected
+ * file onto the object that live-capture precedence would pick from the
+ * post-change selection set. A remaining overlapping container keeps the
+ * previous object only when it appears earlier in the candidate walk.
+ * Assigning a previously unlinked folder or shared drive rebinds inherited
+ * file anchors from unbound clusters (`canonicalEntityId` null).
  */
 export async function rebindDriveSelectionArtifactLink(
   db: Db,
@@ -1037,43 +1050,83 @@ export async function rebindDriveSelectionArtifactLink(
     selectionKind: string;
     externalId: string;
     previousObjectId: string | null;
-    nextObjectId: string | null;
-    preserveFileIds?: string[];
-    preserveContainerIds?: string[];
+    selections?: DriveSelectionObjectLink[];
   },
 ): Promise<string[]> {
-  if (input.previousObjectId === input.nextObjectId) return [];
-  const targetClusterId = await clusterForLinkedObject(db, {
-    teamId: input.teamId,
-    objectId: input.nextObjectId,
-  });
-  const fileIds = new Set<string>();
-  if (input.selectionKind === 'drive.file') fileIds.add(input.externalId);
+  const selections = input.selections ?? [];
+  const candidatesByFileId = new Map<string, string[] | null>();
+  if (input.selectionKind === 'drive.file') candidatesByFileId.set(input.externalId, null);
   if (input.selectionKind === 'drive.folder' || input.selectionKind === 'drive.shared_drive') {
-    for (const fileId of await collectInheritedDriveFilesForSelection(db, {
+    for (const [fileId, candidates] of await collectInheritedDriveFilesForSelection(db, {
       teamId: input.teamId,
       integrationId: input.integrationId,
-      externalId: input.externalId,
       previousObjectId: input.previousObjectId,
-      preserveFileIds: input.preserveFileIds ?? [],
-      preserveContainerIds: input.preserveContainerIds ?? [],
     })) {
-      fileIds.add(fileId);
+      candidatesByFileId.set(fileId, candidates);
     }
   }
-  const rebound = [...fileIds];
-  if (input.nextObjectId) {
-    if (!targetClusterId) return rebound;
-    for (const fileId of rebound) {
+  if (candidatesByFileId.size === 0) return [];
+  const unknownFileIds = [...candidatesByFileId]
+    .filter(([, candidates]) => !candidates)
+    .map(([fileId]) => fileId);
+  if (unknownFileIds.length > 0) {
+    const extras = await latestDriveSourceMetadataByFileId(db, {
+      teamId: input.teamId,
+      integrationId: input.integrationId,
+      fileIds: unknownFileIds,
+    });
+    for (const fileId of unknownFileIds) {
+      if (candidatesByFileId.get(fileId)) continue;
+      const fromEvent = driveInheritanceCandidatesFromSourceMetadata(
+        extras.get(fileId.trim().toLowerCase()),
+        fileId,
+      );
+      candidatesByFileId.set(fileId, fromEvent.candidates);
+    }
+  }
+  const clusterByObjectId = new Map<string | null, string | null>();
+  const rebound: string[] = [];
+  for (const [fileId, candidates] of candidatesByFileId) {
+    const resolved = resolveDriveFileLinkAfterChange({
+      fileId,
+      selectionKind: input.selectionKind,
+      changedExternalId: input.externalId,
+      previousObjectId: input.previousObjectId,
+      selections,
+      candidates,
+    });
+    if (resolved.skip) continue;
+    rebound.push(fileId);
+    const nextObjectId = resolved.nextObjectId;
+    let targetClusterId = clusterByObjectId.get(nextObjectId);
+    if (targetClusterId === undefined) {
+      if (nextObjectId) {
+        targetClusterId = await clusterForLinkedObject(db, {
+          teamId: input.teamId,
+          objectId: nextObjectId,
+        });
+      } else {
+        targetClusterId = null;
+      }
+      clusterByObjectId.set(nextObjectId, targetClusterId ?? null);
+    }
+    if (nextObjectId) {
+      if (!targetClusterId) continue;
       await moveDriveFileAnchors(db, {
         teamId: input.teamId,
         fileId,
         targetClusterId,
       });
+      continue;
     }
-    return rebound;
-  }
-  for (const fileId of rebound) {
+    if (targetClusterId) {
+      await moveDriveFileAnchors(db, {
+        teamId: input.teamId,
+        fileId,
+        targetClusterId,
+      });
+      continue;
+    }
     const current = await findClusterByAnchors(db, input.teamId, driveFileAnchorValues(fileId));
     if (!current) continue;
     const [source] = await db
@@ -1095,6 +1148,7 @@ export async function rebindDriveSelectionArtifactLink(
       role: 'related_context',
       strength: 'hard',
     });
+    clusterByObjectId.set(null, unbound.clusterId);
     await moveDriveFileAnchors(db, {
       teamId: input.teamId,
       fileId,

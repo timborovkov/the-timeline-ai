@@ -753,7 +753,7 @@ describe('artifact reconciliation', () => {
       selectionKind: 'drive.file',
       externalId: 'file-1',
       previousObjectId: northstar.id,
-      nextObjectId: acme.id,
+      selections: [{ kind: 'drive.file', externalId: 'file-1', linkedObjectId: acme.id }],
     });
 
     const [northstarCluster] = await db
@@ -823,7 +823,7 @@ describe('artifact reconciliation', () => {
       selectionKind: 'drive.file',
       externalId: 'file-2',
       previousObjectId: northstar.id,
-      nextObjectId: null,
+      selections: [{ kind: 'drive.file', externalId: 'file-2', linkedObjectId: null }],
     });
 
     const [northstarCluster] = await db
@@ -964,8 +964,10 @@ describe('artifact reconciliation', () => {
       selectionKind: 'drive.folder',
       externalId: 'folder-1',
       previousObjectId: northstar.id,
-      nextObjectId: acme.id,
-      preserveFileIds: ['file-keep'],
+      selections: [
+        { kind: 'drive.file', externalId: 'file-keep', linkedObjectId: northstar.id },
+        { kind: 'drive.folder', externalId: 'folder-1', linkedObjectId: acme.id },
+      ],
     });
 
     const [acmeCluster] = await db
@@ -1009,8 +1011,10 @@ describe('artifact reconciliation', () => {
       selectionKind: 'drive.folder',
       externalId: 'folder-1',
       previousObjectId: northstar.id,
-      nextObjectId: acme.id,
-      preserveContainerIds: ['folder-2'],
+      selections: [
+        { kind: 'drive.folder', externalId: 'folder-1', linkedObjectId: acme.id },
+        { kind: 'drive.folder', externalId: 'folder-2', linkedObjectId: northstar.id },
+      ],
     });
 
     expect(await anchorCluster('file-folder-1')).toBe(await clusterIdFor(acme.id));
@@ -1041,8 +1045,10 @@ describe('artifact reconciliation', () => {
       selectionKind: 'drive.folder',
       externalId: 'folder-1',
       previousObjectId: northstar.id,
-      nextObjectId: null,
-      preserveContainerIds: ['folder-2'],
+      selections: [
+        { kind: 'drive.folder', externalId: 'folder-1', linkedObjectId: null },
+        { kind: 'drive.folder', externalId: 'folder-2', linkedObjectId: northstar.id },
+      ],
     });
 
     expect(await anchorCluster('file-folder-2')).toBe(source.id);
@@ -1055,7 +1061,7 @@ describe('artifact reconciliation', () => {
     expect(unbound?.canonicalEntityId).toBeNull();
   });
 
-  it('keeps a file that also belongs to a remaining sibling folder on the previous object', async () => {
+  it('rebinds a file onto the earlier overlapping folder when that folder is relinked', async () => {
     const northstar = await insertCompany('Northstar');
     const acme = await insertCompany('Acme Labs');
     const source = await insertCluster(northstar);
@@ -1073,11 +1079,94 @@ describe('artifact reconciliation', () => {
       selectionKind: 'drive.folder',
       externalId: 'folder-1',
       previousObjectId: northstar.id,
-      nextObjectId: acme.id,
-      preserveContainerIds: ['folder-2'],
+      selections: [
+        { kind: 'drive.folder', externalId: 'folder-1', linkedObjectId: acme.id },
+        { kind: 'drive.folder', externalId: 'folder-2', linkedObjectId: northstar.id },
+      ],
+    });
+
+    expect(await anchorCluster('file-both')).toBe(await clusterIdFor(acme.id));
+  });
+
+  it('keeps a file when an earlier remaining folder still links the previous object', async () => {
+    const northstar = await insertCompany('Northstar');
+    const acme = await insertCompany('Acme Labs');
+    const source = await insertCluster(northstar);
+    await insertDriveFileAnchor({
+      clusterId: source.id,
+      fileId: 'file-both',
+      inheritedFrom: 'folder-2',
+      candidates: ['file-both', 'folder-1', 'folder-2'],
+      integrationId: INTEGRATION_ID,
+    });
+
+    await rebindDriveSelectionArtifactLink(db as never, {
+      teamId: TEAM_ID,
+      integrationId: INTEGRATION_ID,
+      selectionKind: 'drive.folder',
+      externalId: 'folder-2',
+      previousObjectId: northstar.id,
+      selections: [
+        { kind: 'drive.folder', externalId: 'folder-1', linkedObjectId: northstar.id },
+        { kind: 'drive.folder', externalId: 'folder-2', linkedObjectId: acme.id },
+      ],
     });
 
     expect(await anchorCluster('file-both')).toBe(source.id);
+  });
+
+  it('rebinds nested files when a folder is relinked even if the shared drive still points at A', async () => {
+    const northstar = await insertCompany('Northstar');
+    const acme = await insertCompany('Acme Labs');
+    const source = await insertCluster(northstar);
+    await insertDriveFileAnchor({
+      clusterId: source.id,
+      fileId: 'nested-file',
+      inheritedFrom: 'folder-1',
+      candidates: ['nested-file', 'folder-1', 'shared-drive'],
+      integrationId: INTEGRATION_ID,
+    });
+
+    await rebindDriveSelectionArtifactLink(db as never, {
+      teamId: TEAM_ID,
+      integrationId: INTEGRATION_ID,
+      selectionKind: 'drive.folder',
+      externalId: 'folder-1',
+      previousObjectId: northstar.id,
+      selections: [
+        { kind: 'drive.folder', externalId: 'folder-1', linkedObjectId: acme.id },
+        { kind: 'drive.shared_drive', externalId: 'shared-drive', linkedObjectId: northstar.id },
+      ],
+    });
+
+    expect(await anchorCluster('nested-file')).toBe(await clusterIdFor(acme.id));
+  });
+
+  it('keeps nested files on A when the earlier folder still links A and the shared drive is relinked', async () => {
+    const northstar = await insertCompany('Northstar');
+    const acme = await insertCompany('Acme Labs');
+    const source = await insertCluster(northstar);
+    await insertDriveFileAnchor({
+      clusterId: source.id,
+      fileId: 'nested-file',
+      inheritedFrom: 'folder-1',
+      candidates: ['nested-file', 'folder-1', 'shared-drive'],
+      integrationId: INTEGRATION_ID,
+    });
+
+    await rebindDriveSelectionArtifactLink(db as never, {
+      teamId: TEAM_ID,
+      integrationId: INTEGRATION_ID,
+      selectionKind: 'drive.shared_drive',
+      externalId: 'shared-drive',
+      previousObjectId: northstar.id,
+      selections: [
+        { kind: 'drive.folder', externalId: 'folder-1', linkedObjectId: northstar.id },
+        { kind: 'drive.shared_drive', externalId: 'shared-drive', linkedObjectId: acme.id },
+      ],
+    });
+
+    expect(await anchorCluster('nested-file')).toBe(source.id);
   });
 
   it('moves nested-folder files with the selected ancestor and ignores another integration files', async () => {
@@ -1105,7 +1194,7 @@ describe('artifact reconciliation', () => {
       selectionKind: 'drive.folder',
       externalId: 'folder-1',
       previousObjectId: northstar.id,
-      nextObjectId: acme.id,
+      selections: [{ kind: 'drive.folder', externalId: 'folder-1', linkedObjectId: acme.id }],
     });
 
     expect(await anchorCluster('file-nested')).toBe(await clusterIdFor(acme.id));
@@ -1137,8 +1226,10 @@ describe('artifact reconciliation', () => {
       selectionKind: 'drive.shared_drive',
       externalId: 'shared-drive',
       previousObjectId: northstar.id,
-      nextObjectId: acme.id,
-      preserveContainerIds: ['folder-1'],
+      selections: [
+        { kind: 'drive.shared_drive', externalId: 'shared-drive', linkedObjectId: acme.id },
+        { kind: 'drive.folder', externalId: 'folder-1', linkedObjectId: northstar.id },
+      ],
     });
 
     expect(await anchorCluster('shared-file')).toBe(await clusterIdFor(acme.id));
@@ -1158,8 +1249,10 @@ describe('artifact reconciliation', () => {
       selectionKind: 'drive.folder',
       externalId: 'folder-1',
       previousObjectId: northstar.id,
-      nextObjectId: acme.id,
-      preserveContainerIds: ['folder-2'],
+      selections: [
+        { kind: 'drive.folder', externalId: 'folder-1', linkedObjectId: acme.id },
+        { kind: 'drive.folder', externalId: 'folder-2', linkedObjectId: northstar.id },
+      ],
     });
 
     expect(await anchorCluster('unstamped-a')).toBe(source.id);
@@ -1209,8 +1302,10 @@ describe('artifact reconciliation', () => {
       selectionKind: 'drive.folder',
       externalId: 'folder-1',
       previousObjectId: northstar.id,
-      nextObjectId: acme.id,
-      preserveContainerIds: ['folder-2'],
+      selections: [
+        { kind: 'drive.folder', externalId: 'folder-1', linkedObjectId: acme.id },
+        { kind: 'drive.folder', externalId: 'folder-2', linkedObjectId: northstar.id },
+      ],
     });
 
     expect(await anchorCluster('file-from-event')).toBe(await clusterIdFor(acme.id));
@@ -1255,7 +1350,7 @@ describe('artifact reconciliation', () => {
       selectionKind: 'drive.folder',
       externalId: 'folder-1',
       previousObjectId: null,
-      nextObjectId: acme.id,
+      selections: [{ kind: 'drive.folder', externalId: 'folder-1', linkedObjectId: acme.id }],
     });
 
     expect(await anchorCluster('file-folder-1')).toBe(await clusterIdFor(acme.id));
@@ -1288,8 +1383,10 @@ describe('artifact reconciliation', () => {
       selectionKind: 'drive.folder',
       externalId: 'folder-1',
       previousObjectId: null,
-      nextObjectId: acme.id,
-      preserveContainerIds: ['folder-2'],
+      selections: [
+        { kind: 'drive.folder', externalId: 'folder-1', linkedObjectId: acme.id },
+        { kind: 'drive.folder', externalId: 'folder-2', linkedObjectId: northstar.id },
+      ],
     });
 
     expect(await anchorCluster('file-folder-1')).toBe(await clusterIdFor(acme.id));
@@ -1307,7 +1404,7 @@ describe('artifact reconciliation', () => {
       selectionKind: 'drive.folder',
       externalId: 'folder-1',
       previousObjectId: null,
-      nextObjectId: acme.id,
+      selections: [{ kind: 'drive.folder', externalId: 'folder-1', linkedObjectId: acme.id }],
     });
 
     expect(await anchorCluster('unstamped-last')).toBe(await clusterIdFor(acme.id));
@@ -1324,8 +1421,10 @@ describe('artifact reconciliation', () => {
       selectionKind: 'drive.folder',
       externalId: 'folder-1',
       previousObjectId: null,
-      nextObjectId: acme.id,
-      preserveContainerIds: ['folder-2'],
+      selections: [
+        { kind: 'drive.folder', externalId: 'folder-1', linkedObjectId: acme.id },
+        { kind: 'drive.folder', externalId: 'folder-2', linkedObjectId: acme.id },
+      ],
     });
 
     expect(await anchorCluster('unstamped-sibling')).toBe(unbound.id);
@@ -1355,7 +1454,9 @@ describe('artifact reconciliation', () => {
       selectionKind: 'drive.shared_drive',
       externalId: 'shared-drive',
       previousObjectId: null,
-      nextObjectId: acme.id,
+      selections: [
+        { kind: 'drive.shared_drive', externalId: 'shared-drive', linkedObjectId: acme.id },
+      ],
     });
 
     expect(await anchorCluster('shared-file')).toBe(await clusterIdFor(acme.id));

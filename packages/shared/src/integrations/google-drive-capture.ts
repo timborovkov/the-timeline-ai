@@ -771,11 +771,173 @@ export interface DriveLinkedObject {
   inheritedCandidates: string[];
 }
 
+export interface DriveSelectionObjectLink {
+  kind: string;
+  externalId: string;
+  linkedObjectId: string | null;
+}
+
+export type DriveFileObjectLinkResolution =
+  { kind: 'object'; objectId: string; via: string } | { kind: 'unbind' } | { kind: 'keep' };
+
+function isDriveContainerSelectionKind(kind: string): boolean {
+  return kind === DRIVE_FOLDER_KIND || kind === DRIVE_SHARED_DRIVE_KIND;
+}
+
+function selectionKey(externalId: string): string {
+  return externalId.trim().toLowerCase();
+}
+
+function linkedDriveSelectionsByExternalId(
+  selections: DriveSelectionObjectLink[],
+): Map<string, { externalId: string; linkedObjectId: string; kind: string }> {
+  const byId = new Map<string, { externalId: string; linkedObjectId: string; kind: string }>();
+  for (const selection of selections) {
+    if (typeof selection.linkedObjectId !== 'string' || selection.linkedObjectId.length === 0) {
+      continue;
+    }
+    const key = selectionKey(selection.externalId);
+    if (!key) continue;
+    byId.set(key, {
+      externalId: selection.externalId,
+      linkedObjectId: selection.linkedObjectId,
+      kind: selection.kind,
+    });
+  }
+  return byId;
+}
+
+function driveLinkCandidates(input: {
+  fileId: string;
+  candidates?: string[] | null;
+  parentIds?: string[];
+  matchedAncestorId?: string | null;
+  driveId?: string | null;
+  myDriveRootId?: string | null;
+}): { ids: string[]; known: boolean } {
+  if (input.candidates === null) return { ids: [], known: false };
+  if (input.candidates && input.candidates.length > 0) {
+    return {
+      ids: input.candidates.filter((id) => id.trim().length > 0),
+      known: true,
+    };
+  }
+  const ids = driveObjectLinkCandidates({
+    fileId: input.fileId,
+    parentIds: input.parentIds ?? [],
+    ...(input.matchedAncestorId !== undefined
+      ? { matchedAncestorId: input.matchedAncestorId }
+      : {}),
+    ...(input.driveId !== undefined ? { driveId: input.driveId } : {}),
+    ...(input.myDriveRootId !== undefined ? { myDriveRootId: input.myDriveRootId } : {}),
+  }).filter((id) => id.trim().length > 0);
+  const hasAncestry =
+    (input.parentIds?.length ?? 0) > 0 ||
+    Boolean(input.matchedAncestorId) ||
+    Boolean(input.driveId) ||
+    Boolean(input.myDriveRootId);
+  return { ids, known: hasAncestry };
+}
+
+function uniqueLinkedDriveContainerObject(selections: DriveSelectionObjectLink[]): string | null {
+  const objectIds = [
+    ...new Set(
+      selections
+        .filter(
+          (selection): selection is DriveSelectionObjectLink & { linkedObjectId: string } =>
+            isDriveContainerSelectionKind(selection.kind) &&
+            typeof selection.linkedObjectId === 'string' &&
+            selection.linkedObjectId.length > 0,
+        )
+        .map((selection) => selection.linkedObjectId),
+    ),
+  ];
+  return objectIds.length === 1 ? (objectIds[0] ?? null) : null;
+}
+
+function linkedDriveContainerCount(selections: DriveSelectionObjectLink[]): number {
+  return selections.filter(
+    (selection) =>
+      isDriveContainerSelectionKind(selection.kind) &&
+      typeof selection.linkedObjectId === 'string' &&
+      selection.linkedObjectId.length > 0,
+  ).length;
+}
+
+/** Overlay one selection's object link onto a selection set (omit the row when unlinked). */
+export function driveSelectionsWithChangedLink(
+  selections: DriveSelectionObjectLink[],
+  changed: DriveSelectionObjectLink,
+): DriveSelectionObjectLink[] {
+  const key = selectionKey(changed.externalId);
+  const rest = selections.filter((selection) => selectionKey(selection.externalId) !== key);
+  if (typeof changed.linkedObjectId !== 'string' || changed.linkedObjectId.length === 0) {
+    return rest;
+  }
+  return [...rest, changed];
+}
+
+/**
+ * Live-capture precedence: first candidate with a linked selection wins.
+ * Later overlapping containers (shared drive after a folder) do not keep the
+ * previous object. Unstamped files fall back to a unique remaining container
+ * object, or keep when two containers still disagree.
+ */
+export function resolveDriveFileObjectLink(input: {
+  fileId: string;
+  selections: DriveSelectionObjectLink[];
+  candidates?: string[] | null;
+  parentIds?: string[];
+  matchedAncestorId?: string | null;
+  driveId?: string | null;
+  myDriveRootId?: string | null;
+  fallback?: 'unique_container' | 'last_container';
+  changedExternalId?: string;
+}): DriveFileObjectLinkResolution {
+  const byId = linkedDriveSelectionsByExternalId(input.selections);
+  const candidates = driveLinkCandidates(input);
+  const walk = candidates.known
+    ? candidates.ids
+    : [
+        input.fileId,
+        ...candidates.ids.filter((id) => selectionKey(id) !== selectionKey(input.fileId)),
+      ];
+  for (const candidate of walk) {
+    const hit = byId.get(selectionKey(candidate));
+    if (hit) return { kind: 'object', objectId: hit.linkedObjectId, via: hit.externalId };
+  }
+  if (candidates.known) return { kind: 'unbind' };
+  const unique = uniqueLinkedDriveContainerObject(input.selections);
+  if (input.fallback === 'last_container') {
+    const changed = input.changedExternalId ? selectionKey(input.changedExternalId) : '';
+    const otherContainers = linkedDriveContainerCount(
+      input.selections.filter((selection) => selectionKey(selection.externalId) !== changed),
+    );
+    if (otherContainers > 0) return { kind: 'keep' };
+    const changedLink = changed ? (byId.get(changed)?.linkedObjectId ?? null) : null;
+    return changedLink
+      ? { kind: 'object', objectId: changedLink, via: input.changedExternalId ?? 'changed' }
+      : { kind: 'unbind' };
+  }
+  if (unique) return { kind: 'object', objectId: unique, via: 'unique_container' };
+  if (linkedDriveContainerCount(input.selections) === 0) return { kind: 'unbind' };
+  return { kind: 'keep' };
+}
+
+export function driveFileObjectIdFromResolution(
+  resolution: DriveFileObjectLinkResolution,
+  keepObjectId: string | null,
+): string | null {
+  if (resolution.kind === 'object') return resolution.objectId;
+  if (resolution.kind === 'keep') return keepObjectId;
+  return null;
+}
+
 /**
  * A Drive file inherited the changed folder/shared-drive selection when that
- * selection is the first live object-link candidate and no remaining sibling
- * selection that still points at the previous object appears in the same
- * candidate walk. Explicit file links are never inherited rebinds.
+ * selection is the first live object-link candidate. A remaining selection
+ * keeps the previous object only when it appears earlier in that walk.
+ * Explicit file links are never inherited rebinds.
  */
 export function driveFileInheritsChangedSelection(input: {
   fileId: string;
@@ -793,44 +955,29 @@ export function driveFileInheritsChangedSelection(input: {
   if ((input.preserveFileIds ?? []).some((id) => id.trim().toLowerCase() === fileKey)) {
     return false;
   }
-  const changed = input.changedExternalId.trim().toLowerCase();
+  const changed = input.changedExternalId.trim();
   if (!changed) return false;
-  const remaining = new Set(
-    (input.remainingLinkedExternalIds ?? [])
-      .map((id) => id.trim().toLowerCase())
-      .filter((id) => id.length > 0 && id !== changed),
-  );
-  const candidates = (
-    input.candidates && input.candidates.length > 0
-      ? input.candidates
-      : driveObjectLinkCandidates({
-          fileId: input.fileId,
-          parentIds: input.parentIds ?? [],
-          ...(input.matchedAncestorId !== undefined
-            ? { matchedAncestorId: input.matchedAncestorId }
-            : {}),
-          ...(input.driveId !== undefined ? { driveId: input.driveId } : {}),
-          ...(input.myDriveRootId !== undefined ? { myDriveRootId: input.myDriveRootId } : {}),
-        })
-  )
-    .map((id) => id.trim().toLowerCase())
-    .filter((id) => id.length > 0);
-  if (candidates.length === 0) return false;
-  for (const candidate of candidates) {
-    if (candidate === changed) return !candidates.some((id) => remaining.has(id));
-    if (remaining.has(candidate)) return false;
-  }
-  return false;
-}
-
-export interface DriveSelectionObjectLink {
-  kind: string;
-  externalId: string;
-  linkedObjectId: string | null;
-}
-
-function isDriveContainerSelectionKind(kind: string): boolean {
-  return kind === DRIVE_FOLDER_KIND || kind === DRIVE_SHARED_DRIVE_KIND;
+  const winner = resolveDriveFileObjectLink({
+    fileId: input.fileId,
+    selections: [
+      { kind: DRIVE_FOLDER_KIND, externalId: changed, linkedObjectId: 'changed' },
+      ...(input.remainingLinkedExternalIds ?? [])
+        .filter((id) => selectionKey(id) !== selectionKey(changed))
+        .map((id) => ({
+          kind: DRIVE_FOLDER_KIND,
+          externalId: id,
+          linkedObjectId: 'remaining',
+        })),
+    ],
+    ...(input.candidates !== undefined ? { candidates: input.candidates } : {}),
+    ...(input.parentIds !== undefined ? { parentIds: input.parentIds } : {}),
+    ...(input.matchedAncestorId !== undefined
+      ? { matchedAncestorId: input.matchedAncestorId }
+      : {}),
+    ...(input.driveId !== undefined ? { driveId: input.driveId } : {}),
+    ...(input.myDriveRootId !== undefined ? { myDriveRootId: input.myDriveRootId } : {}),
+  });
+  return winner.kind === 'object' && selectionKey(winner.via) === selectionKey(changed);
 }
 
 /**
@@ -846,38 +993,18 @@ export function survivingLinkedObjectForDriveFile(input: {
   driveId?: string | null;
   inheritedCandidates?: string[] | null;
 }): string | null {
-  const remainingLinked = input.remainingSelections.filter(
-    (selection): selection is DriveSelectionObjectLink & { linkedObjectId: string } =>
-      typeof selection.linkedObjectId === 'string' && selection.linkedObjectId.length > 0,
-  );
-  if (remainingLinked.length === 0) return null;
-  const candidates = (
-    input.inheritedCandidates && input.inheritedCandidates.length > 0
-      ? input.inheritedCandidates
-      : driveObjectLinkCandidates({
-          fileId: input.fileId,
-          parentIds: input.parentIds ?? [],
-          ...(input.matchedAncestorId !== undefined
-            ? { matchedAncestorId: input.matchedAncestorId }
-            : {}),
-          ...(input.driveId !== undefined ? { driveId: input.driveId } : {}),
-        })
-  ).filter((id) => id.length > 0);
-  const byExternalId = new Map(
-    remainingLinked.map((selection) => [selection.externalId, selection.linkedObjectId]),
-  );
-  for (const candidate of candidates) {
-    const hit = byExternalId.get(candidate);
-    if (hit) return hit;
-  }
-  const containerObjectIds = [
-    ...new Set(
-      remainingLinked
-        .filter((selection) => isDriveContainerSelectionKind(selection.kind))
-        .map((selection) => selection.linkedObjectId),
-    ),
-  ];
-  return containerObjectIds.length === 1 ? (containerObjectIds[0] ?? null) : null;
+  const resolution = resolveDriveFileObjectLink({
+    fileId: input.fileId,
+    selections: input.remainingSelections,
+    ...(input.inheritedCandidates !== undefined ? { candidates: input.inheritedCandidates } : {}),
+    ...(input.parentIds !== undefined ? { parentIds: input.parentIds } : {}),
+    ...(input.matchedAncestorId !== undefined
+      ? { matchedAncestorId: input.matchedAncestorId }
+      : {}),
+    ...(input.driveId !== undefined ? { driveId: input.driveId } : {}),
+    fallback: 'unique_container',
+  });
+  return resolution.kind === 'object' ? resolution.objectId : null;
 }
 
 function asLinkHintRecord(value: unknown): Record<string, unknown> | null {
