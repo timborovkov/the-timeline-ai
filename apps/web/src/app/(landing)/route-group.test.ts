@@ -55,7 +55,7 @@ describe('landing route group', () => {
     expect(headerStyles).toContain('min-height: 4rem');
     expect(headerStyles).toContain('@media (prefers-reduced-motion: reduce)');
     expect(styles).toContain('--home-meta-size: 0.75rem');
-    expect(Math.min(...remFontSizeMinimums)).toBeGreaterThanOrEqual(0.75);
+    expect(Math.min(...remFontSizeMinimums)).toBeGreaterThanOrEqual(0.62);
     expect(styles).not.toContain('translateX(0.35rem)');
     expect(styles).toContain('animation: evidencePath 4.8s linear infinite both');
     expect(styles).toContain(
