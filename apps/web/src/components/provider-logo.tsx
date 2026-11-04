@@ -35,7 +35,7 @@ export function ProviderLogo({
         alt=""
         width={spec.img}
         height={spec.img}
-        unoptimized={src.endsWith('.svg')}
+        unoptimized={src.endsWith('.svg') || src.endsWith('.png')}
         loading="eager"
         draggable={false}
         className={cn('object-contain', spec.imgClass)}

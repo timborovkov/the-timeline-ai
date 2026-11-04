@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+
 import { PGlite } from '@electric-sql/pglite';
 import { expect, vi } from '@timeline/test-support';
 import { afterEach, beforeEach, describe, it } from 'bun:test';
@@ -410,11 +412,14 @@ describe('document scope — visibility filter', () => {
           },
         }) as SearchHit,
     );
+    const seen: SearchOpts[] = [];
     const scope = withTeam(db, TEAM_ID, USER_A, {
       embed: ({ text }): Promise<EmbedResult> =>
         Promise.resolve({ vector: [text.length], model: 'test-embedding-model' }),
-      qdrantSearch: (_teamId: string, _userId: string, _vector: number[], _opts: SearchOpts) =>
-        Promise.resolve(hits),
+      qdrantSearch: (_teamId: string, _userId: string, _vector: number[], opts: SearchOpts) => {
+        seen.push(opts);
+        return Promise.resolve(hits);
+      },
     }).documents;
 
     const page = await scope.searchDocumentChunksPage({
@@ -424,8 +429,186 @@ describe('document scope — visibility filter', () => {
       limit: 10,
     });
 
+    expect(seen.at(-1)).toMatchObject({
+      from: new Date('2026-06-01T00:00:00.000Z'),
+      to: new Date('2026-07-01T00:00:00.000Z'),
+    });
     expect(page.items.map((item) => item.documentName)).toEqual(['June launch notes']);
     expect(page.items[0]?.createdAt).toEqual(new Date('2026-06-12T00:00:00.000Z'));
+  });
+
+  it('applies version date bounds in Qdrant before the semantic limit', async () => {
+    const inRangeDoc = await pg.query<{ id: string }>(
+      `INSERT INTO documents (team_id, file_kind, folder_id, name, owner_user_id, visibility, metadata)
+       VALUES ($1, 'document', null, 'June launch notes', $2, 'team', '{}'::jsonb)
+       RETURNING id`,
+      [TEAM_ID, USER_A],
+    );
+    const inRangeVersion = await pg.query<{ id: string }>(
+      `INSERT INTO document_versions (
+         team_id, document_id, version, object_key, byte_size, content_type, uploaded_by_user_id, processing_status, created_at
+       )
+       VALUES ($1, $2, 1, 'team/docs/june.txt', 128, 'text/plain', $3, 'chunked', '2026-06-12T00:00:00.000Z')
+       RETURNING id`,
+      [TEAM_ID, inRangeDoc.rows[0]?.id, USER_A],
+    );
+    const inRangeChunk = await pg.query<{ id: string }>(
+      `INSERT INTO document_chunks (team_id, document_id, document_version_id, chunk_index, representation_kind, text, token_count)
+       VALUES ($1, $2, $3, 0, 'source_text', 'June launch plan', 3)
+       RETURNING id`,
+      [TEAM_ID, inRangeDoc.rows[0]?.id, inRangeVersion.rows[0]?.id],
+    );
+    await pg.query(`UPDATE documents SET current_version_id = $1 WHERE id = $2`, [
+      inRangeVersion.rows[0]?.id,
+      inRangeDoc.rows[0]?.id,
+    ]);
+
+    const inRangeHit = {
+      id: 'in-range',
+      score: 0.01,
+      payload: {
+        team_id: TEAM_ID,
+        source_kind: 'doc_chunk',
+        document_chunk_id: inRangeChunk.rows[0]?.id,
+        occurred_at: '2026-06-12T00:00:00.000Z',
+      },
+    } as SearchHit;
+    const distractors = Array.from({ length: 50 }, (_, index) => {
+      return {
+        id: `stale-${index}`,
+        score: 1 - index / 100,
+        payload: {
+          team_id: TEAM_ID,
+          source_kind: 'doc_chunk',
+          document_chunk_id: randomUUID(),
+          occurred_at: '2026-05-03T10:00:00.000Z',
+        },
+      } as SearchHit;
+    });
+    const ranked = [...distractors, inRangeHit];
+    const seen: SearchOpts[] = [];
+    const scope = withTeam(db, TEAM_ID, USER_A, {
+      embed: ({ text }): Promise<EmbedResult> =>
+        Promise.resolve({ vector: [text.length], model: 'test-embedding-model' }),
+      qdrantSearch: (_teamId, _userId, _vector, opts) => {
+        seen.push(opts);
+        return Promise.resolve(
+          ranked
+            .filter((hit) => {
+              const occurred = new Date(hit.payload.occurred_at);
+              if (opts.from && occurred < opts.from) return false;
+              if (opts.to && occurred >= opts.to) return false;
+              return true;
+            })
+            .slice(0, opts.limit ?? 10),
+        );
+      },
+    }).documents;
+
+    const page = await scope.searchDocumentChunksPage({
+      query: 'launch plan',
+      from: new Date('2026-06-01T00:00:00.000Z'),
+      to: new Date('2026-07-01T00:00:00.000Z'),
+      limit: 10,
+    });
+
+    expect(seen.at(-1)?.from).toEqual(new Date('2026-06-01T00:00:00.000Z'));
+    expect(seen.at(-1)?.to).toEqual(new Date('2026-07-01T00:00:00.000Z'));
+    expect(page.items.map((item) => item.documentName)).toEqual(['June launch notes']);
+  });
+
+  it('restricts semantic chunk search to named and root-folder documents before the limit', async () => {
+    const folder = await withTeam(db, TEAM_ID, USER_A).documents.createFolder({
+      name: 'Specs',
+      parentFolderId: null,
+    });
+    const folderDoc = await pg.query<{ id: string }>(
+      `INSERT INTO documents (team_id, file_kind, folder_id, name, owner_user_id, visibility, metadata)
+       VALUES ($1, 'document', $2, 'Alpha spec.pdf', $3, 'team', '{}'::jsonb)
+       RETURNING id`,
+      [TEAM_ID, folder.id, USER_A],
+    );
+    const rootDoc = await pg.query<{ id: string }>(
+      `INSERT INTO documents (team_id, file_kind, folder_id, name, owner_user_id, visibility, metadata)
+       VALUES ($1, 'document', null, 'Beta notes.pdf', $2, 'team', '{}'::jsonb)
+       RETURNING id`,
+      [TEAM_ID, USER_A],
+    );
+    const seen: SearchOpts[] = [];
+    const scope = withTeam(db, TEAM_ID, USER_A, {
+      embed: ({ text }): Promise<EmbedResult> =>
+        Promise.resolve({ vector: [text.length], model: 'test-embedding-model' }),
+      qdrantSearch: (_teamId, _userId, _vector, opts) => {
+        seen.push(opts);
+        return Promise.resolve([]);
+      },
+    }).documents;
+
+    await scope.searchDocumentChunks({ query: 'runway', name: 'Beta notes' });
+    expect(seen.at(-1)).toMatchObject({ documentId: rootDoc.rows[0]?.id });
+
+    seen.length = 0;
+    await scope.searchDocumentChunks({ query: 'runway', rootFolder: true });
+    expect(seen.at(-1)).toMatchObject({ rootFolder: true });
+    expect(seen.at(-1)?.folderIds).toBeUndefined();
+
+    seen.length = 0;
+    await scope.searchDocumentChunks({
+      query: 'runway',
+      name: 'Alpha spec',
+      folderIds: [folder.id],
+    });
+    expect(seen.at(-1)).toMatchObject({ documentId: folderDoc.rows[0]?.id });
+
+    seen.length = 0;
+    const empty = await scope.searchDocumentChunks({ query: 'runway', name: 'Missing title' });
+    expect(empty).toEqual([]);
+    expect(seen).toEqual([]);
+  });
+
+  it('includes every name-matching document in semantic search, not only the 100 newest', async () => {
+    const docs = Array.from({ length: 101 }, (_, index) => ({
+      id: randomUUID(),
+      name: `Stale notes ${String(index).padStart(3, '0')}.pdf`,
+      updatedAt:
+        index === 0
+          ? '2020-01-01T00:00:00.000Z'
+          : new Date(Date.UTC(2026, 5, 1) + index * 1000).toISOString(),
+    }));
+    const values = docs
+      .map(
+        (doc) =>
+          `('${doc.id}', '${TEAM_ID}', 'document', null, '${doc.name}', '${USER_A}', 'team', '{}'::jsonb, '${doc.updatedAt}')`,
+      )
+      .join(',\n');
+    await pg.exec(`
+      INSERT INTO documents (id, team_id, file_kind, folder_id, name, owner_user_id, visibility, metadata, updated_at)
+      VALUES
+        ${values};
+    `);
+    const oldestId = docs[0]?.id;
+    const seen: SearchOpts[] = [];
+    const scope = withTeam(db, TEAM_ID, USER_A, {
+      embed: ({ text }): Promise<EmbedResult> =>
+        Promise.resolve({ vector: [text.length], model: 'test-embedding-model' }),
+      qdrantSearch: (_teamId, _userId, _vector, opts) => {
+        seen.push(opts);
+        return Promise.resolve([]);
+      },
+    }).documents;
+
+    const empty = await scope.searchDocumentChunks({ query: 'notes', name: 'Stale notes' });
+    const requested = new Set(
+      seen.flatMap((opts) => [
+        ...(opts.documentId ? [opts.documentId] : []),
+        ...(opts.documentIds ?? []),
+      ]),
+    );
+
+    expect(empty).toEqual([]);
+    expect(requested.size).toBe(101);
+    expect(requested.has(oldestId ?? '')).toBe(true);
+    expect(seen.length).toBeGreaterThan(1);
   });
 
   it('promotes an existing captured file without losing source provenance', async () => {

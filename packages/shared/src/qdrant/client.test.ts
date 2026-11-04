@@ -777,6 +777,35 @@ describe('createQdrantClient', () => {
     });
   });
 
+  it('sourceKind=doc_chunk search threads documentIds and rootFolder into must', async () => {
+    const { fetcher, calls } = makeFetcher({ collectionExists: true });
+    const client = createQdrantClient({ fetcher });
+    await client.search('team-A', 'user-1', [0, 0, 0, 0], {
+      sourceKind: 'doc_chunk',
+      documentIds: ['doc-1', 'doc-2'],
+      rootFolder: true,
+    });
+    const search = calls.find((c) => c.url.endsWith('/points/search'));
+    if (!search) throw new Error('no search call captured');
+    const body = search.body as {
+      filter: {
+        must: unknown[];
+      };
+    };
+    const should = body.filter.must.find(
+      (m): m is { should: { must?: unknown[] }[] } =>
+        (m as { should?: unknown }).should !== undefined,
+    );
+    const docBranch = should?.should.find((branch) => Array.isArray(branch.must));
+    expect(docBranch?.must).toContainEqual({
+      key: 'document_id',
+      match: { any: ['doc-1', 'doc-2'] },
+    });
+    expect(docBranch?.must).toContainEqual({
+      should: [{ is_null: { key: 'folder_id' } }, { is_empty: { key: 'folder_id' } }],
+    });
+  });
+
   it('sourceKind=doc_chunk search threads documentId and folderIds into must', async () => {
     const { fetcher, calls } = makeFetcher({ collectionExists: true });
     const client = createQdrantClient({ fetcher });
@@ -864,7 +893,11 @@ describe('createQdrantClient', () => {
     // documents via a typo).
     const { fetcher, calls } = makeFetcher({ collectionExists: true });
     const client = createQdrantClient({ fetcher });
-    await client.search('team-A', 'user-1', [0, 0, 0, 0], { documentId: 'doc-1' });
+    await client.search('team-A', 'user-1', [0, 0, 0, 0], {
+      documentId: 'doc-1',
+      documentIds: ['doc-2'],
+      rootFolder: true,
+    });
     const search = calls.find((c) => c.url.endsWith('/points/search'));
     if (!search) throw new Error('no search call captured');
     const body = search.body as {
@@ -877,6 +910,8 @@ describe('createQdrantClient', () => {
     const hasFolder = body.filter.must.some((m) => m.key === 'folder_id');
     expect(hasDocId).toBe(false);
     expect(hasFolder).toBe(false);
+    expect(JSON.stringify(body.filter)).not.toContain('folder_id');
+    expect(JSON.stringify(body.filter)).not.toContain('document_id');
     // must_not still excludes doc_chunk so the timeline-flavoured search
     // semantics are preserved.
     expect(body.filter.must_not).toBeDefined();
