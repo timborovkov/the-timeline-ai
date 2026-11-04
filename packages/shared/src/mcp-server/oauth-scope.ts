@@ -6,6 +6,7 @@ import {
   mcpOutboundOAuthGrants,
   mcpOutboundOAuthTokens,
   teamMembers,
+  users,
 } from '@timeline/db';
 import { and, desc, eq, inArray, isNull, lte, notExists } from 'drizzle-orm';
 
@@ -596,12 +597,16 @@ export function createMcpOAuthScope({ db, teamId, userId }: McpOAuthScopeDeps) {
         scopes: mcpOutboundOAuthGrants.scopes,
         createdAt: mcpOutboundOAuthGrants.createdAt,
         lastUsedAt: mcpOutboundOAuthGrants.lastUsedAt,
+        ownerUserId: mcpOutboundOAuthGrants.userId,
+        ownerName: users.name,
+        ownerEmail: users.email,
       })
       .from(mcpOutboundOAuthGrants)
       .innerJoin(
         mcpOutboundOAuthClients,
         eq(mcpOutboundOAuthClients.clientId, mcpOutboundOAuthGrants.clientId),
       )
+      .innerJoin(users, eq(users.id, mcpOutboundOAuthGrants.userId))
       .where(
         actor === 'admin'
           ? and(eq(mcpOutboundOAuthGrants.teamId, teamId), isNull(mcpOutboundOAuthGrants.revokedAt))

@@ -10,10 +10,12 @@ export function McpOutboundKeyForm({
   keyNameRef,
   name,
   nameError,
+  allowCapture,
   allowAgent,
   busy,
   allowAgentDescription,
   onNameChange,
+  onAllowCaptureChange,
   onAllowAgentChange,
   onSubmit,
 }: {
@@ -22,10 +24,12 @@ export function McpOutboundKeyForm({
   keyNameRef: RefObject<HTMLInputElement | null>;
   name: string;
   nameError: string | null;
+  allowCapture: boolean;
   allowAgent: boolean;
   busy: boolean;
   allowAgentDescription: string;
   onNameChange: (value: string) => void;
+  onAllowCaptureChange: (value: boolean) => void;
   onAllowAgentChange: (value: boolean) => void;
   onSubmit: (event: SyntheticEvent<HTMLFormElement>) => void;
 }) {
@@ -60,6 +64,24 @@ export function McpOutboundKeyForm({
           </p>
         ) : null}
       </div>
+      <label className="flex min-h-11 cursor-pointer items-start gap-3 rounded-sm border border-border bg-surface-2 p-3">
+        <input
+          type="checkbox"
+          name="allow-capture"
+          className="mt-0.5 size-4 shrink-0"
+          checked={allowCapture}
+          onChange={(event) => {
+            onAllowCaptureChange(event.currentTarget.checked);
+          }}
+        />
+        <span className="space-y-1">
+          <span className="block text-sm font-medium text-fg">Allow capture notes</span>
+          <span className="block text-xs leading-5 text-fg-muted">
+            This key can store cited Timeline evidence with timeline.remember. Capture is on by
+            default. Uncheck it for a read-only key.
+          </span>
+        </span>
+      </label>
       <label className="flex min-h-11 cursor-pointer items-start gap-3 rounded-sm border border-border bg-surface-2 p-3">
         <input
           type="checkbox"

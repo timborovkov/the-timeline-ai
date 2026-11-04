@@ -1,9 +1,11 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
+import { ADVERTISED_MCP_TOOL_NAMES } from '@timeline/shared/mcp-server';
 import { expect } from '@timeline/test-support';
 import { describe, it } from 'bun:test';
 
+import { TIMELINE_PLUGIN_INSTALL_PROMPT } from '@/lib/agent-install-content';
 import {
   CONNECT_AGENT_GUIDES,
   CONNECT_AGENT_SETUP_PROMPT,
@@ -35,11 +37,23 @@ describe('connect-agent content', () => {
       'timeline.ask',
       'timeline.remember',
     ]);
+    expect([...TIMELINE_MCP_TOOLS].sort()).toEqual([...ADVERTISED_MCP_TOOL_NAMES].sort());
     expect(CONNECT_AGENT_SKILL_MARKDOWN).toContain('timeline.search');
     expect(CONNECT_AGENT_SKILL_MARKDOWN).toContain('timeline.remember');
     expect(CONNECT_AGENT_SKILL_MARKDOWN).toContain('capture');
+    expect(CONNECT_AGENT_SKILL_MARKDOWN).toContain('include capture by default');
     expect(CONNECT_AGENT_SKILL_MARKDOWN).not.toContain('timeline.ask_agent');
     expect(mcpScopeLabel('capture')).toBe('Remember');
+  });
+
+  it('tells installers that capture is on by default', () => {
+    const steps = CONNECT_AGENT_GUIDES.flatMap((guide) => guide.steps).join('\n');
+    expect(steps).toContain('Capture is on by default');
+    expect(steps).not.toContain('The default scope is read');
+    expect(CONNECT_AGENT_GUIDES.find((guide) => guide.id === 'codex')?.copy?.value('')).toBe(
+      TIMELINE_PLUGIN_INSTALL_PROMPT,
+    );
+    expect(TIMELINE_PLUGIN_INSTALL_PROMPT).toContain('capture checkbox is on by default');
   });
 
   it('builds the Cursor MCP install deeplink', () => {

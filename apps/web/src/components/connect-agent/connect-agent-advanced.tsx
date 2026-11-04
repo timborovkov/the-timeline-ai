@@ -22,6 +22,7 @@ interface AdvancedState {
   showCreate: boolean;
   name: string;
   nameError: string | null;
+  allowCapture: boolean;
   allowAgent: boolean;
   busy: boolean;
   mintedKey: { name: string; plaintext: string } | null;
@@ -49,17 +50,16 @@ export function ConnectAgentAdvanced({
   const focusNameOnError = useRef(false);
   const busyKeyIds = useRef<Set<string> | null>(null);
   const [keyMutations, setKeyMutations] = useState<Record<string, { busy: boolean }>>({});
-  const [{ showCreate, name, nameError, allowAgent, busy, mintedKey }, update] = useReducer(
-    patchState,
-    {
+  const [{ showCreate, name, nameError, allowCapture, allowAgent, busy, mintedKey }, update] =
+    useReducer(patchState, {
       showCreate: false,
       name: '',
       nameError: null,
+      allowCapture: true,
       allowAgent: false,
       busy: false,
       mintedKey: null,
-    },
-  );
+    });
 
   function activeBusyKeyIds(): Set<string> {
     busyKeyIds.current ??= new Set();
@@ -99,7 +99,7 @@ export function ConnectAgentAdvanced({
             const res = await fetch('/api/team/mcp-keys', {
               method: 'POST',
               headers: { 'content-type': 'application/json' },
-              body: JSON.stringify({ name, allowAgent }),
+              body: JSON.stringify({ name, allowCapture, allowAgent }),
             });
             if (!res.ok) {
               return {
@@ -110,6 +110,7 @@ export function ConnectAgentAdvanced({
             update({
               mintedKey: { name: data.name, plaintext: data.plaintext },
               name: '',
+              allowCapture: true,
               allowAgent: false,
               showCreate: false,
             });
@@ -241,11 +242,15 @@ export function ConnectAgentAdvanced({
               keyNameRef={keyNameRef}
               name={name}
               nameError={nameError}
+              allowCapture={allowCapture}
               allowAgent={allowAgent}
               busy={busy}
               allowAgentDescription="This key can start paid agent turns. Remember from a static key is still authored as the team actor."
               onNameChange={(value) => {
                 update({ name: value, nameError: null });
+              }}
+              onAllowCaptureChange={(value) => {
+                update({ allowCapture: value });
               }}
               onAllowAgentChange={(value) => {
                 update({ allowAgent: value });

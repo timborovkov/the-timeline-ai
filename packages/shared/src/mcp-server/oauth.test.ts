@@ -217,8 +217,19 @@ describe('Timeline MCP OAuth server', () => {
 
     const memberAgents = await withTeam(db, TEAM_ID, MEMBER_ID).mcpOAuth.listConnectedAgents();
     expect(memberAgents).toHaveLength(1);
+    expect(memberAgents[0]).toMatchObject({
+      ownerUserId: MEMBER_ID,
+      ownerName: 'OAuth Member',
+      ownerEmail: 'member@example.test',
+    });
     const adminAgents = await withTeam(db, TEAM_ID, USER_ID).mcpOAuth.listConnectedAgents();
     expect(adminAgents).toHaveLength(1);
+    expect(adminAgents[0]).toMatchObject({
+      clientName: 'Test MCP client',
+      ownerUserId: MEMBER_ID,
+      ownerName: 'OAuth Member',
+      ownerEmail: 'member@example.test',
+    });
 
     const grantId = adminAgents[0]?.id;
     if (!grantId) throw new Error('expected connected agent grant');

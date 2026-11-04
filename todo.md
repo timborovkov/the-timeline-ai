@@ -108,9 +108,11 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       waiting copy for proposals, notifications, and captured work.
 - [x] Connect your agent: `/app/connect-agent` consolidates Timeline-as-MCP
       setup (OAuth-first client picker, connected grants with revoke, add-memory
-      email/webhook, SKILL.md, collapsed `tla_` keys). `/app/team/mcp-share`
-      redirects. New empty teams get a skippable Home card that does not return
-      once skipped.
+      email/webhook, SKILL.md, collapsed `tla_` keys). Admin grant rows show the
+      consenting member next to the client. Advertised tools and default-on
+      `capture` match the hosted MCP server. `/app/team/mcp-share` redirects.
+      New empty teams get a skippable Home card that does not return once
+      skipped.
 - [ ] Timeline moments redesign: turn `/app/timeline` from a raw activity log
       into bundled, evidence-backed work moments with deterministic grouping,
       source-specific adapters, AI-assisted titles/summaries, and an advanced

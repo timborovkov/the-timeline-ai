@@ -688,8 +688,9 @@ recovery.
 Connect your agent is a client picker plus one install path: official vendor
 marks on white tiles, a CollectionRow list, and a single selected setup. Add
 memory, Timeline skill, connected grants, and static keys stay in one closed
-hairline disclosure stack. Do not nest cards, stack `border-y` sections, or
-invent connector logos.
+hairline disclosure stack. Admin grant rows show the consenting member next to
+the client so Revoke is unambiguous. Do not nest cards, stack `border-y`
+sections, or invent connector logos.
 Those tools open sheets or their existing admin pages — they are not an
 expanded dump. Sheets close with Escape and trap focus. There is no separate
 Integrations row, and no provider is listed twice. Status uses
@@ -1359,7 +1360,7 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-11-03 | Compare vs and works-with | Moves works-with pages under `/integrations/{hubspot,pipedrive,attio,linear,jira,notion}`. `/compare` becomes a hub plus `/compare/the-timeline-vs-{day-ai,folk,glean,geekbot}` pages that cite each competitor's site. |
 | 2026-11-04 | Hosted MCP public copy | Agents, llms.txt, the home MCP example, and the pricing FAQ teach five tools, the default-on capture scope, remember counting toward accepted sources, and Free 100 MB / 10,000 documents / 20,000 chunks. |
 | 2026-11-03 | Connect your agent | `/app/connect-agent` is the OAuth-first MCP setup screen. Agent tabs, connected grants, add-memory email/webhook, SKILL.md, and collapsed static keys live there. `/app/team/mcp-share` redirects. Provider logos stay on white tiles; allowed senders stay a list editor. |
-| 2026-11-04 | Connect your agent client picker | `/app/connect-agent` leads with a CollectionRow client list and one install path. Official vendor marks sit on white tiles. Connected agents, add-memory, SKILL.md, and static keys share one disclosure stack with no nested cards or stacked `border-y` sections. |
+| 2026-11-04 | Connect your agent client picker | `/app/connect-agent` leads with a CollectionRow client list and one install path. Official vendor marks sit on white tiles. Connected agents, add-memory, SKILL.md, and static keys share one disclosure stack with no nested cards or stacked `border-y` sections. Admin grant rows show the consenting member next to the client. |
 
 
 ### Billing benefits and recorded charges (2026-10-31)

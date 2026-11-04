@@ -13,6 +13,14 @@ export interface ConnectAgentGrant {
   scopes: string[];
   createdAt: string;
   lastUsedAt: string | null;
+  ownerUserId: string;
+  ownerName: string | null;
+  ownerEmail: string;
+}
+
+function grantOwnerLabel(grant: ConnectAgentGrant): string {
+  const name = grant.ownerName?.trim();
+  return name && name.length > 0 ? name : grant.ownerEmail;
 }
 
 function clientHostname(clientId: string): string | null {
@@ -27,9 +35,11 @@ function clientHostname(clientId: string): string | null {
 export function ConnectAgentAgents({
   grants,
   teamId,
+  isAdmin = false,
 }: {
   grants: ConnectAgentGrant[];
   teamId: string;
+  isAdmin?: boolean;
 }) {
   if (grants.length === 0) {
     return (
@@ -47,7 +57,11 @@ export function ConnectAgentAgents({
           <li key={grant.id}>
             <CollectionRow>
               <CollectionRow.Title>{grant.clientName}</CollectionRow.Title>
-              <CollectionRow.Subtitle>{host ?? 'Registered MCP client'}</CollectionRow.Subtitle>
+              <CollectionRow.Subtitle>
+                {isAdmin
+                  ? `${grantOwnerLabel(grant)} · ${host ?? 'Registered MCP client'}`
+                  : (host ?? 'Registered MCP client')}
+              </CollectionRow.Subtitle>
               <CollectionRow.Context>
                 <span className="inline-flex flex-wrap items-center gap-x-2">
                   <RelativeTimestamp prefix="authorized" value={grant.createdAt} />
@@ -66,7 +80,13 @@ export function ConnectAgentAgents({
                 ))}
               </CollectionRow.Metadata>
               <CollectionRow.Actions>
-                <ItemActionGroup label={`Actions for ${grant.clientName}`}>
+                <ItemActionGroup
+                  label={
+                    isAdmin
+                      ? `Actions for ${grant.clientName} (${grantOwnerLabel(grant)})`
+                      : `Actions for ${grant.clientName}`
+                  }
+                >
                   <form action={revokeMcpOAuthGrantAction}>
                     <input type="hidden" name="grant_id" value={grant.id} />
                     <input type="hidden" name="team_id" value={teamId} />

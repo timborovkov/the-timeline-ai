@@ -73,7 +73,7 @@ export function ConnectAgentScreen({
           }
           defaultOpen={grants.length > 0}
         >
-          <ConnectAgentAgents grants={grants} teamId={teamId} />
+          <ConnectAgentAgents grants={grants} teamId={teamId} isAdmin={isAdmin} />
         </ConnectAgentDisclosure>
         <ConnectAgentDisclosure title="Add memory">
           <ConnectAgentMemory

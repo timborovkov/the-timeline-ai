@@ -86,6 +86,9 @@ export default async function ConnectAgentPage({
           scopes: asScopes(grant.scopes),
           createdAt: grant.createdAt.toISOString(),
           lastUsedAt: grant.lastUsedAt ? grant.lastUsedAt.toISOString() : null,
+          ownerUserId: grant.ownerUserId,
+          ownerName: grant.ownerName,
+          ownerEmail: grant.ownerEmail,
         }))}
         keys={keys.map((key) => ({
           id: key.id,

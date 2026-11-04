@@ -643,8 +643,10 @@ SENTRY_INTEGRATION_CLIENT_SECRET=...</code></pre>
         </li>
         <li>
           Revoke an approved AI app from <strong>Connect your agent</strong>
-          (<code>/app/connect-agent</code>). Token revocation and team membership removal take
-          effect at authorization resolution rather than waiting for a plugin reinstall.
+          (<code>/app/connect-agent</code>). Owners and admins see every team grant with the
+          consenting member next to the client, so Revoke is tied to that member’s access. Token
+          revocation and team membership removal take effect at authorization resolution rather than
+          waiting for a plugin reinstall.
         </li>
       </ol>
       <p>
@@ -697,12 +699,13 @@ SENTRY_INTEGRATION_CLIENT_SECRET=...</code></pre>
       <h3 id="timeline-mcp-static-key">Static key setup</h3>
       <p>
         Use this path only for a client that needs an explicit header or for controlled developer
-        testing. An admin opens <strong>Connect your agent</strong>
-        (<code>/app/connect-agent</code>), expands <em>Advanced</em>, creates a key, and copies the
-        one-time plaintext. Static-key remember is authored as the team actor, not a member. The
-        optional <em>Allow capture notes</em> key setting adds <code>capture</code> and is on by
-        default. The optional <em>Allow Timeline agent</em> key setting adds
-        <code>agent:ask</code> and is off by default. Prefer OAuth.
+        testing. An admin opens
+        <strong>Connect your agent</strong> (<code>/app/connect-agent</code>), expands
+        <em>Advanced</em>, creates a key, and copies the one-time plaintext. Static-key remember is
+        authored as the team actor, not a member. The optional <em>Allow capture notes</em> key
+        setting adds <code>capture</code> and is on by default. The optional
+        <em>Allow Timeline agent</em> key setting adds <code>agent:ask</code> and is off by default.
+        Prefer OAuth.
       </p>
       <p>For Codex CLI, keep the key in an environment variable:</p>
       <pre><code>printf 'Timeline MCP key: '

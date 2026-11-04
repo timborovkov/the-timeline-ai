@@ -1,3 +1,8 @@
+import {
+  TIMELINE_CLAUDE_PLUGIN_INSTALL_COMMAND,
+  TIMELINE_HOSTED_MCP_TOOLS,
+  TIMELINE_PLUGIN_INSTALL_PROMPT,
+} from '@/lib/agent-install-content';
 import { CANONICAL_PUBLIC_ORIGIN } from '@/lib/site-url';
 
 export const CONNECT_AGENT_HREF = '/app/connect-agent';
@@ -6,13 +11,7 @@ const LLMS_TXT_URL = `${CANONICAL_PUBLIC_ORIGIN}/llms.txt`;
 const MCP_SERVER_PATH = '/api/mcp/server';
 export const AGENT_MEMORY_WEBHOOK_NAME = 'Agent memory';
 
-export const TIMELINE_MCP_TOOLS = [
-  'timeline.search',
-  'timeline.get',
-  'timeline.subject',
-  'timeline.ask',
-  'timeline.remember',
-] as const;
+export const TIMELINE_MCP_TOOLS = TIMELINE_HOSTED_MCP_TOOLS;
 
 export const CONNECT_AGENT_SETUP_PROMPT = `Set up The Timeline - ${LLMS_TXT_URL}`;
 
@@ -106,7 +105,7 @@ Do not fan out across every surface by default. Start broad only when the reques
 
 ## Capture notes
 
-Use \`timeline.remember\` to store a note as team-visible ingest evidence. It creates a cited raw event and evidence through the same path as Timeline ingest webhooks. It never updates canonical objects, tasks, or other records. Suggestion and approval flows still apply; treat any later proposal as unapproved until a teammate accepts it. Remember uses the \`capture\` scope. A static \`tla_\` key authors remember as the team actor, not a member.
+Use \`timeline.remember\` to store a note as team-visible ingest evidence. It creates a cited raw event and evidence through the same path as Timeline ingest webhooks. It never updates canonical objects, tasks, or other records. Suggestion and approval flows still apply; treat any later proposal as unapproved until a teammate accepts it. Remember uses the \`capture\` scope. OAuth consent and static \`tla_\` keys include capture by default; uncheck it for a read-only grant. A static key authors remember as the team actor, not a member.
 
 ## Build an evidence-backed answer
 
@@ -129,24 +128,6 @@ Adapt the answer to the request rather than switching skills. For a status updat
 
 If a Timeline-dependent request has no \`timeline.*\` tools available, stop and direct the user to Connect your agent at ${CANONICAL_PUBLIC_ORIGIN}${CONNECT_AGENT_HREF}.
 `;
-
-const CLAUDE_CODE_INSTALL_COMMAND = `claude plugin marketplace add timborovkov/the-timeline-ai
-claude plugin install timeline@timeline`;
-
-const CODEX_INSTALL_PROMPT = `Install The Timeline plugin for this Codex environment.
-
-Run these commands:
-codex plugin marketplace add timborovkov/the-timeline-ai \\
-  --ref main \\
-  --sparse .agents/plugins \\
-  --sparse plugins/timeline
-codex plugin add timeline@timeline
-
-Then verify that the timeline skill is installed.
-
-The bundled MCP connection uses Timeline OAuth and does not need a bearer key in the plugin manifest. Fully restart Codex, start a new task, and complete the browser flow when prompted: sign in to Timeline, choose the team to share, review the requested scopes, and approve or deny access. The default scope is read. Grant capture to use timeline.remember. Never request agent:ask unless I explicitly ask for paid, proposal-only Timeline agent turns and the consent screen shows that scope.
-
-When setup is ready, tell me to start a new task so Codex loads the plugin and begins OAuth authorization.`;
 
 export type ConnectAgentId =
   'claude-code' | 'codex' | 'chatgpt' | 'claude' | 'cursor' | 'grok' | 'hermes' | 'openclaw';
@@ -177,10 +158,13 @@ export const CONNECT_AGENT_GUIDES: readonly ConnectAgentGuide[] = [
     steps: [
       'Run the marketplace commands in a terminal.',
       'Fully restart Claude Code and start a new conversation.',
-      'Sign in, choose this team, and approve read. Add capture for timeline.remember.',
+      'Sign in, choose this team, and approve. Capture is on by default for timeline.remember.',
       'Ask Claude to search with timeline.search.',
     ],
-    copy: { label: 'Copy Claude Code commands', value: () => CLAUDE_CODE_INSTALL_COMMAND },
+    copy: {
+      label: 'Copy Claude Code commands',
+      value: () => TIMELINE_CLAUDE_PLUGIN_INSTALL_COMMAND,
+    },
   },
   {
     id: 'codex',
@@ -190,10 +174,10 @@ export const CONNECT_AGENT_GUIDES: readonly ConnectAgentGuide[] = [
     steps: [
       'Paste the Codex install prompt into a new task.',
       'Fully restart Codex and start a new task so the plugin loads.',
-      'Complete sign-in, choose this team, and review scopes. Read is the default; capture enables timeline.remember.',
+      'Complete sign-in, choose this team, and review scopes. Capture is on by default for timeline.remember.',
       'Use timeline.search, timeline.get, and timeline.subject.',
     ],
-    copy: { label: 'Copy Codex install prompt', value: () => CODEX_INSTALL_PROMPT },
+    copy: { label: 'Copy Codex install prompt', value: () => TIMELINE_PLUGIN_INSTALL_PROMPT },
   },
   {
     id: 'chatgpt',
@@ -204,7 +188,7 @@ export const CONNECT_AGENT_GUIDES: readonly ConnectAgentGuide[] = [
       'Open ChatGPT Settings, then Apps.',
       'Create an app or add a connector named Timeline.',
       'Paste the Streamable HTTP MCP server URL.',
-      'Sign in with Timeline OAuth and approve read plus capture for remember.',
+      'Sign in with Timeline OAuth. Capture is on by default for timeline.remember.',
     ],
     copy: { label: 'Copy ChatGPT details', value: (mcpUrl) => chatGptConnectorDetails(mcpUrl) },
   },
@@ -217,7 +201,7 @@ export const CONNECT_AGENT_GUIDES: readonly ConnectAgentGuide[] = [
       'On claude.ai, open Settings → Connectors and add a custom connector.',
       'In Claude Desktop, add a remote MCP server with Streamable HTTP.',
       'Use the hosted Timeline MCP URL. Do not paste a static key unless the client cannot complete OAuth.',
-      'Sign in, choose this team, and approve read. Add capture for timeline.remember.',
+      'Sign in, choose this team, and approve. Capture is on by default for timeline.remember.',
     ],
     copy: { label: 'Copy MCP URL', value: (mcpUrl) => mcpUrl },
   },
@@ -229,7 +213,7 @@ export const CONNECT_AGENT_GUIDES: readonly ConnectAgentGuide[] = [
     steps: [
       'Click Add to Cursor, or open Settings → MCP and add a new server.',
       'Cursor opens the hosted Timeline MCP URL over Streamable HTTP.',
-      'Sign in, choose this team, and approve read. Add capture for timeline.remember.',
+      'Sign in, choose this team, and approve. Capture is on by default for timeline.remember.',
       'Start a new agent chat and call timeline.search.',
     ],
     copy: { label: 'Copy MCP URL', value: (mcpUrl) => mcpUrl },
@@ -243,7 +227,7 @@ export const CONNECT_AGENT_GUIDES: readonly ConnectAgentGuide[] = [
     steps: [
       'Open Grok Bot settings and add an MCP server.',
       'Choose Streamable HTTP and paste the Timeline MCP URL.',
-      'Sign in with Timeline OAuth, choose this team, and approve read plus capture.',
+      'Sign in with Timeline OAuth, choose this team. Capture is on by default for timeline.remember.',
       'Ask Grok to use timeline.search.',
     ],
     copy: { label: 'Copy MCP URL', value: (mcpUrl) => mcpUrl },
@@ -257,7 +241,7 @@ export const CONNECT_AGENT_GUIDES: readonly ConnectAgentGuide[] = [
       'Open Hermes MCP or tools settings.',
       'Add a remote Streamable HTTP server named Timeline.',
       'Paste the hosted MCP URL. Prefer OAuth; do not paste a tla_ key into chat.',
-      'Approve read, then capture if you want timeline.remember from this agent.',
+      'Approve access. Capture is on by default for timeline.remember.',
     ],
     copy: { label: 'Copy MCP URL', value: (mcpUrl) => mcpUrl },
   },
@@ -270,7 +254,7 @@ export const CONNECT_AGENT_GUIDES: readonly ConnectAgentGuide[] = [
       'Open OpenClaw MCP configuration.',
       'Add a remote server with Streamable HTTP and the Timeline MCP URL.',
       'Complete the browser sign-in and choose this team.',
-      'Grant read for search and get, capture for timeline.remember, and agent:ask only for paid Timeline agent turns.',
+      'Grant read and capture (on by default) for remember. Grant agent:ask only for paid Timeline agent turns.',
     ],
     copy: { label: 'Copy MCP URL', value: (mcpUrl) => mcpUrl },
   },

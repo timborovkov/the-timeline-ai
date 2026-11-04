@@ -677,6 +677,9 @@
   "apps/web/src/components/collections/virtual-list.test.tsx": {
     "group": "dom"
   },
+  "apps/web/src/components/connect-agent/connect-agent-advanced.test.tsx": {
+    "group": "dom"
+  },
   "apps/web/src/components/connect-agent/connect-agent-agents.test.tsx": {
     "group": "dom"
   },
