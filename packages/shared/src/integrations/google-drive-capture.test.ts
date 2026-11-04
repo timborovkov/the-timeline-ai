@@ -109,7 +109,7 @@ describe('driveObjectLinkCandidates', () => {
         matchedAncestorId: '0AMK-my-drive',
         myDriveRootId: '0AMK-my-drive',
       }),
-    ).toEqual(['nested-doc', '0AMK-my-drive', 'clients', 'root']);
+    ).toEqual(['nested-doc', 'clients', '0AMK-my-drive', 'root']);
     expect(
       driveObjectLinkCandidates({
         fileId: 'shared-doc',
@@ -118,7 +118,7 @@ describe('driveObjectLinkCandidates', () => {
         driveId: 'shared-drive',
         myDriveRootId: '0AMK-my-drive',
       }),
-    ).toEqual(['shared-doc', 'shared-drive', 'shared-folder']);
+    ).toEqual(['shared-doc', 'shared-folder', 'shared-drive']);
     expect(
       driveObjectLinkCandidates({
         fileId: 'picked-file',
@@ -133,7 +133,7 @@ describe('driveObjectLinkCandidates', () => {
         matchedAncestorId: 'shared-picked',
         driveId: 'shared-drive',
       }),
-    ).toEqual(['shared-picked', 'shared-drive', 'team-folder']);
+    ).toEqual(['shared-picked', 'team-folder', 'shared-drive']);
     expect(
       driveObjectLinkCandidates({
         fileId: 'orphan',
@@ -279,6 +279,13 @@ describe('resolveDriveFileObjectLink', () => {
         candidates: ['nested-file', 'folder-1', 'shared-drive'],
         fallback: 'last_container',
         changedExternalId: 'shared-drive',
+      }),
+    ).toEqual({ kind: 'object', objectId: 'object-b', via: 'folder-1' });
+    expect(
+      resolveDriveFileObjectLink({
+        fileId: 'nested-file',
+        selections: folderAndDrive,
+        candidates: ['nested-file', 'shared-drive', 'folder-1'],
       }),
     ).toEqual({ kind: 'object', objectId: 'object-b', via: 'folder-1' });
   });
@@ -1143,6 +1150,7 @@ describe('saveDriveSnapshot uniqueness', () => {
         fileId: 'nested-file',
         parentIds: ['nested'],
         matchedAncestorId: 'selected-folder',
+        driveId: 'shared-drive',
       }),
     ).resolves.toMatchObject({ id: northstar.id, canonicalName: 'Northstar', type: 'company' });
     await expect(
@@ -1608,6 +1616,206 @@ describe('saveDriveSnapshot uniqueness', () => {
     expect(extractCursors.map((row) => row.fileId)).toEqual(['nested-file']);
     expect(extractCursors[0]?.cursor.cleanupPending).toBe(true);
     expect(extractCursors[0]?.cursor.cancelledAt).toEqual(expect.any(String));
+  });
+
+  it('deletes snapshots for files only under a removed folder when a sibling folder remains', async () => {
+    const [integration] = await db
+      .insert(integrations)
+      .values({
+        teamId: TEAM_ID,
+        connectedByUserId: USER_ID,
+        provider: 'google_drive',
+        displayName: 'Google Drive',
+        externalAccountId: 'drive-acct-drop-one-folder-snapshots',
+        visibilityDefault: 'team',
+      })
+      .returning();
+    if (!integration) throw new Error('integration insert failed');
+    await db.insert(integrationSelections).values([
+      {
+        integrationId: integration.id,
+        selectionKind: 'drive.folder',
+        externalId: 'folder-1',
+      },
+      {
+        integrationId: integration.id,
+        selectionKind: 'drive.folder',
+        externalId: 'folder-2',
+      },
+    ]);
+    const snapshot = {
+      commentsHash: 'comments',
+      permissionsHash: 'permissions',
+      mimeType: 'application/pdf' as const,
+    };
+    await saveDriveSnapshot(db as never, {
+      teamId: TEAM_ID,
+      integrationId: integration.id,
+      fileId: 'file-folder-1',
+      snapshot: {
+        ...snapshot,
+        contentHash: hashDrivePayload('folder-1-body'),
+        snapshotText: 'folder-1-body',
+      },
+    });
+    await saveDriveSnapshot(db as never, {
+      teamId: TEAM_ID,
+      integrationId: integration.id,
+      fileId: 'file-folder-2',
+      snapshot: {
+        ...snapshot,
+        contentHash: hashDrivePayload('folder-2-body'),
+        snapshotText: 'folder-2-body',
+      },
+    });
+    await db.insert(rawEvents).values([
+      {
+        teamId: TEAM_ID,
+        authorUserId: USER_ID,
+        source: 'integration',
+        contentText: 'Folder 1 file',
+        occurredAt: new Date('2026-06-20T10:00:00Z'),
+        visibility: 'team',
+        sourceMetadata: {
+          provider: 'google_drive',
+          integration_id: integration.id,
+          external_object_id: 'file-folder-1',
+          drive: {
+            parents: ['folder-1'],
+            inherited_from: 'folder-1',
+            inherited_candidates: ['file-folder-1', 'folder-1'],
+          },
+        },
+      },
+      {
+        teamId: TEAM_ID,
+        authorUserId: USER_ID,
+        source: 'integration',
+        contentText: 'Folder 2 file',
+        occurredAt: new Date('2026-06-20T11:00:00Z'),
+        visibility: 'team',
+        sourceMetadata: {
+          provider: 'google_drive',
+          integration_id: integration.id,
+          external_object_id: 'file-folder-2',
+          drive: {
+            parents: ['folder-2'],
+            inherited_from: 'folder-2',
+            inherited_candidates: ['file-folder-2', 'folder-2'],
+          },
+        },
+      },
+    ]);
+    await db.insert(integrationSyncState).values([
+      {
+        integrationId: integration.id,
+        resourceType: driveExtractCursorKey('file-folder-1'),
+        cursor: {
+          extractId: 'ext-folder-1',
+          objectKey: 'folder-1-source',
+          resultObjectKey: 'folder-1-result.json',
+          contentType: 'application/pdf',
+          filename: 'One.pdf',
+          enqueuedAt: new Date().toISOString(),
+        },
+      },
+      {
+        integrationId: integration.id,
+        resourceType: driveExtractCursorKey('file-folder-2'),
+        cursor: {
+          extractId: 'ext-folder-2',
+          objectKey: 'folder-2-source',
+          resultObjectKey: 'folder-2-result.json',
+          contentType: 'application/pdf',
+          filename: 'Two.pdf',
+          enqueuedAt: '2026-11-03T00:00:00.000Z',
+        },
+      },
+    ]);
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    await scope.integrations.setSelections(integration.id, [
+      { kind: 'drive.folder', externalId: 'folder-2' },
+    ]);
+    const snapshots = await db.select().from(googleDriveFileSnapshots);
+    expect(snapshots.map((row) => row.fileId)).toEqual(['file-folder-2']);
+    const extractCursors = await listDriveExtractCursors(db as never, {
+      teamId: TEAM_ID,
+      integrationId: integration.id,
+    });
+    expect(extractCursors.map((row) => row.fileId).sort()).toEqual([
+      'file-folder-1',
+      'file-folder-2',
+    ]);
+    expect(
+      extractCursors.find((row) => row.fileId === 'file-folder-1')?.cursor.cleanupPending,
+    ).toBe(true);
+    expect(
+      extractCursors.find((row) => row.fileId === 'file-folder-2')?.cursor.cleanupPending,
+    ).not.toBe(true);
+  });
+
+  it('keeps nested-folder snapshots when a remaining shared drive still covers them', async () => {
+    const [integration] = await db
+      .insert(integrations)
+      .values({
+        teamId: TEAM_ID,
+        connectedByUserId: USER_ID,
+        provider: 'google_drive',
+        displayName: 'Google Drive',
+        externalAccountId: 'drive-acct-drop-folder-keep-drive',
+        visibilityDefault: 'team',
+      })
+      .returning();
+    if (!integration) throw new Error('integration insert failed');
+    await db.insert(integrationSelections).values([
+      {
+        integrationId: integration.id,
+        selectionKind: 'drive.folder',
+        externalId: 'folder-1',
+      },
+      {
+        integrationId: integration.id,
+        selectionKind: 'drive.shared_drive',
+        externalId: 'shared-drive',
+      },
+    ]);
+    await saveDriveSnapshot(db as never, {
+      teamId: TEAM_ID,
+      integrationId: integration.id,
+      fileId: 'nested-file',
+      snapshot: {
+        contentHash: hashDrivePayload('nested-body'),
+        snapshotText: 'nested-body',
+        commentsHash: 'comments-nested',
+        permissionsHash: 'permissions-nested',
+        mimeType: 'application/vnd.google-apps.document',
+      },
+    });
+    await db.insert(rawEvents).values({
+      teamId: TEAM_ID,
+      authorUserId: USER_ID,
+      source: 'integration',
+      contentText: 'Nested file',
+      occurredAt: new Date('2026-06-20T10:00:00Z'),
+      visibility: 'team',
+      sourceMetadata: {
+        provider: 'google_drive',
+        integration_id: integration.id,
+        external_object_id: 'nested-file',
+        drive: {
+          drive_id: 'shared-drive',
+          parents: ['nested'],
+          inherited_from: 'folder-1',
+          inherited_candidates: ['nested-file', 'nested', 'folder-1', 'shared-drive'],
+        },
+      },
+    });
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    await scope.integrations.setSelections(integration.id, [
+      { kind: 'drive.shared_drive', externalId: 'shared-drive' },
+    ]);
+    const snapshots = await db.select().from(googleDriveFileSnapshots);
+    expect(snapshots.map((row) => row.fileId)).toEqual(['nested-file']);
   });
 
   it('rebinds Drive file artifact anchors when the selection object link changes', async () => {

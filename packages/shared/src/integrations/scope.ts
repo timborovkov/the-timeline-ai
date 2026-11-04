@@ -28,14 +28,15 @@ import { rebindDriveSelectionArtifactLink } from '#src/artifacts/index.js';
 import { decryptJson, encryptJson } from '#src/crypto/secrets.js';
 import { getEnv } from '#src/env.js';
 import {
-  deleteDriveSnapshotsExceptFiles,
   deleteDriveSnapshotsForFile as deleteDriveFileSnapshots,
   deleteDriveSnapshotsForIntegration,
   driveExtractCursorKey,
   driveExtractObjectKeys,
   forEachDriveExtractCursorPage,
+  latestDriveObjectLinkHintsByFileIds,
   linkedObjectForDriveSelection as loadLinkedObjectForDriveSelection,
   listDriveExtractCursors,
+  listDriveSnapshotFileIds,
   listTeamEmailDomains as loadTeamEmailDomains,
   loadLatestDriveSnapshot,
   parseDriveExtractCursor,
@@ -49,7 +50,7 @@ import {
   DRIVE_FILE_KIND,
   DRIVE_FOLDER_KIND,
   DRIVE_SHARED_DRIVE_KIND,
-  driveFileScopeHint,
+  driveFileCoverage,
   driveScopeFromSelections,
 } from '#src/integrations/google-drive-scope.js';
 import {
@@ -1738,37 +1739,48 @@ export function createIntegrationScope(deps: {
               selections: remainingSelectionLinks,
             });
           }
-          if (row.selectionKind === DRIVE_FILE_KIND) {
-            const remainingCoverage = driveFileScopeHint({
-              fileId: row.externalId,
-              scope: remainingScope,
-            });
-            if (remainingCoverage === 'out') await discardTrackedFile(row.externalId);
-          }
         }
-        const remainingDriveContainers = selections.some((selection) =>
-          isDriveContainerKind(selection.kind),
-        );
-        if (!remainingDriveContainers) {
-          const keepFileIds = selections
-            .filter((selection) => selection.kind === DRIVE_FILE_KIND)
-            .map((selection) => selection.externalId);
-          await deleteDriveSnapshotsExceptFiles(scopedTx, {
-            teamId,
-            integrationId,
-            keepFileIds,
-          });
-          const keepFileIdSet = new Set(keepFileIds);
+        if (dropped.length > 0) {
+          const keepFileIds = new Set(
+            selections
+              .filter((selection) => selection.kind === DRIVE_FILE_KIND)
+              .map((selection) => selection.externalId),
+          );
+          const trackedFileIds = new Set(
+            await listDriveSnapshotFileIds(scopedTx, {
+              teamId,
+              integrationId,
+            }),
+          );
           await forEachDriveExtractCursorPage(scopedTx, {
             teamId,
             integrationId,
-            onPage: async (page) => {
-              for (const row of page) {
-                if (keepFileIdSet.has(row.fileId)) continue;
-                await cancelTrackedExtract(row.fileId);
-              }
+            onPage: (page) => {
+              for (const row of page) trackedFileIds.add(row.fileId);
+              return Promise.resolve();
             },
           });
+          for (const row of dropped) {
+            if (row.selectionKind === DRIVE_FILE_KIND) trackedFileIds.add(row.externalId);
+          }
+          const hints = await latestDriveObjectLinkHintsByFileIds(scopedTx, {
+            teamId,
+            integrationId,
+            fileIds: [...trackedFileIds],
+          });
+          for (const fileId of trackedFileIds) {
+            if (keepFileIds.has(fileId)) continue;
+            const hint = hints.get(fileId);
+            const coverage = driveFileCoverage({
+              fileId,
+              scope: remainingScope,
+              ...(hint?.parentIds.length ? { parents: hint.parentIds } : {}),
+              ...(hint?.driveId ? { driveId: hint.driveId } : {}),
+              ...(hint?.matchedAncestorId ? { matchedAncestorId: hint.matchedAncestorId } : {}),
+              ...(hint?.inheritedCandidates ? { candidates: hint.inheritedCandidates } : {}),
+            });
+            if (coverage === 'out') await discardTrackedFile(fileId);
+          }
         }
       }
       await tx

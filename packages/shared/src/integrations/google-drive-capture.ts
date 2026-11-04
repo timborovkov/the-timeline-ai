@@ -22,6 +22,9 @@ import {
 import {
   DRIVE_FOLDER_KIND,
   DRIVE_SHARED_DRIVE_KIND,
+  driveAncestryIds,
+  driveAncestorKindFromSelectionKind,
+  pickMostSpecificDriveAncestor,
 } from '#src/integrations/google-drive-scope.js';
 import {
   checkRateLimit,
@@ -756,11 +759,15 @@ export function driveObjectLinkCandidates(input: {
   driveId?: string | null;
   myDriveRootId?: string | null;
 }): string[] {
-  const ids = [input.fileId, input.matchedAncestorId, input.driveId, ...input.parentIds].filter(
-    (id): id is string => typeof id === 'string' && id.length > 0,
-  );
-  if (driveFileIsMyDriveDescendant(input)) ids.push('root');
-  return [...new Set(ids)];
+  return driveAncestryIds({
+    fileId: input.fileId,
+    parentIds: input.parentIds,
+    ...(input.matchedAncestorId !== undefined
+      ? { matchedAncestorId: input.matchedAncestorId }
+      : {}),
+    ...(input.driveId !== undefined ? { driveId: input.driveId } : {}),
+    ...(input.myDriveRootId !== undefined ? { myDriveRootId: input.myDriveRootId } : {}),
+  });
 }
 
 export interface DriveLinkedObject {
@@ -878,10 +885,10 @@ export function driveSelectionsWithChangedLink(
 }
 
 /**
- * Live-capture precedence: first candidate with a linked selection wins.
- * Later overlapping containers (shared drive after a folder) do not keep the
- * previous object. Unstamped files fall back to a unique remaining container
- * object, or keep when two containers still disagree.
+ * Live-capture precedence: the most specific selected ancestor wins
+ * (file, then folder, then shared drive) even when a shared drive appears
+ * earlier in a stamped candidate list. Unstamped files fall back to a unique
+ * remaining container object, or keep when two containers still disagree.
  */
 export function resolveDriveFileObjectLink(input: {
   fileId: string;
@@ -902,8 +909,12 @@ export function resolveDriveFileObjectLink(input: {
         input.fileId,
         ...candidates.ids.filter((id) => selectionKey(id) !== selectionKey(input.fileId)),
       ];
-  for (const candidate of walk) {
-    const hit = byId.get(selectionKey(candidate));
+  const winner = pickMostSpecificDriveAncestor(walk, (id) => {
+    const hit = byId.get(selectionKey(id));
+    return hit ? driveAncestorKindFromSelectionKind(hit.kind) : null;
+  });
+  if (winner) {
+    const hit = byId.get(selectionKey(winner));
     if (hit) return { kind: 'object', objectId: hit.linkedObjectId, via: hit.externalId };
   }
   if (candidates.known) return { kind: 'unbind' };
@@ -1017,19 +1028,19 @@ function stringList(value: unknown): string[] {
   return value.filter((item): item is string => typeof item === 'string' && item.length > 0);
 }
 
-export async function latestDriveObjectLinkHints(
-  db: Db,
-  input: { teamId: string; integrationId: string; fileId: string },
-): Promise<{
+export interface DriveObjectLinkHints {
   parentIds: string[];
   driveId: string | null;
   matchedAncestorId: string | null;
   inheritedCandidates: string[] | null;
-}> {
+}
+
+export async function latestDriveObjectLinkHints(
+  db: Db,
+  input: { teamId: string; integrationId: string; fileId: string },
+): Promise<DriveObjectLinkHints> {
   const fileId = input.fileId.trim();
-  if (!fileId) {
-    return { parentIds: [], driveId: null, matchedAncestorId: null, inheritedCandidates: null };
-  }
+  if (!fileId) return emptyDriveObjectLinkHints();
   const [latest] = await db
     .select({
       sourceMetadata: rawEvents.sourceMetadata,
@@ -1047,11 +1058,17 @@ export async function latestDriveObjectLinkHints(
     )
     .orderBy(desc(rawEvents.occurredAt))
     .limit(1);
-  const metadata = asLinkHintRecord(latest?.sourceMetadata);
+  return driveObjectLinkHintsFromSourceMetadata(latest?.sourceMetadata);
+}
+
+function emptyDriveObjectLinkHints(): DriveObjectLinkHints {
+  return { parentIds: [], driveId: null, matchedAncestorId: null, inheritedCandidates: null };
+}
+
+function driveObjectLinkHintsFromSourceMetadata(value: unknown): DriveObjectLinkHints {
+  const metadata = asLinkHintRecord(value);
   const drive = asLinkHintRecord(metadata?.drive);
-  if (!drive) {
-    return { parentIds: [], driveId: null, matchedAncestorId: null, inheritedCandidates: null };
-  }
+  if (!drive) return emptyDriveObjectLinkHints();
   const inheritedCandidates = stringList(drive.inherited_candidates);
   const inheritedFrom = typeof drive.inherited_from === 'string' ? drive.inherited_from : null;
   const matchedAncestorId =
@@ -1065,19 +1082,65 @@ export async function latestDriveObjectLinkHints(
   };
 }
 
-function driveFileIsMyDriveDescendant(input: {
-  fileId: string;
-  parentIds: string[];
-  matchedAncestorId?: string | null;
-  driveId?: string | null;
-  myDriveRootId?: string | null;
-}): boolean {
-  if (typeof input.driveId === 'string' && input.driveId.length > 0) return false;
-  const rootIds = new Set<string>(['root']);
-  if (input.myDriveRootId) rootIds.add(input.myDriveRootId);
-  if (rootIds.has(input.fileId)) return true;
-  if (input.matchedAncestorId && rootIds.has(input.matchedAncestorId)) return true;
-  return input.parentIds.some((id) => rootIds.has(id));
+export async function latestDriveObjectLinkHintsByFileIds(
+  db: Db,
+  input: { teamId: string; integrationId: string; fileIds: string[] },
+): Promise<Map<string, DriveObjectLinkHints>> {
+  const fileIds = [...new Set(input.fileIds.map((fileId) => fileId.trim()).filter(Boolean))];
+  const hints = new Map<string, DriveObjectLinkHints>();
+  if (fileIds.length === 0) return hints;
+  const rows = await db
+    .select({
+      sourceMetadata: rawEvents.sourceMetadata,
+      occurredAt: rawEvents.occurredAt,
+    })
+    .from(rawEvents)
+    .where(
+      and(
+        eq(rawEvents.teamId, input.teamId),
+        eq(rawEvents.source, 'integration'),
+        sql`${rawEvents.sourceMetadata} ->> 'provider' = 'google_drive'`,
+        sql`${rawEvents.sourceMetadata} ->> 'integration_id' = ${input.integrationId}`,
+        inArray(
+          sql`lower(${rawEvents.sourceMetadata} ->> 'external_object_id')`,
+          fileIds.map((fileId) => fileId.toLowerCase()),
+        ),
+      ),
+    );
+  const latest = new Map<string, { occurredAt: Date; sourceMetadata: unknown }>();
+  for (const row of rows) {
+    const metadata = asLinkHintRecord(row.sourceMetadata);
+    const fileId =
+      typeof metadata?.external_object_id === 'string'
+        ? metadata.external_object_id.trim().toLowerCase()
+        : '';
+    if (!fileId) continue;
+    const previous = latest.get(fileId);
+    if (!previous || previous.occurredAt < row.occurredAt) {
+      latest.set(fileId, { occurredAt: row.occurredAt, sourceMetadata: row.sourceMetadata });
+    }
+  }
+  for (const fileId of fileIds) {
+    const row = latest.get(fileId.toLowerCase());
+    hints.set(fileId, driveObjectLinkHintsFromSourceMetadata(row?.sourceMetadata));
+  }
+  return hints;
+}
+
+export async function listDriveSnapshotFileIds(
+  db: Db,
+  input: { teamId: string; integrationId: string },
+): Promise<string[]> {
+  const rows = await db
+    .select({ fileId: googleDriveFileSnapshots.fileId })
+    .from(googleDriveFileSnapshots)
+    .where(
+      and(
+        eq(googleDriveFileSnapshots.teamId, input.teamId),
+        eq(googleDriveFileSnapshots.integrationId, input.integrationId),
+      ),
+    );
+  return [...new Set(rows.map((row) => row.fileId))];
 }
 
 export async function loadLatestDriveSnapshot(
@@ -1228,28 +1291,6 @@ export async function deleteDriveSnapshotsForIntegration(
     );
 }
 
-export async function deleteDriveSnapshotsExceptFiles(
-  db: Db,
-  input: { teamId: string; integrationId: string; keepFileIds: string[] },
-): Promise<void> {
-  if (input.keepFileIds.length === 0) {
-    await deleteDriveSnapshotsForIntegration(db, {
-      teamId: input.teamId,
-      integrationId: input.integrationId,
-    });
-    return;
-  }
-  await db
-    .delete(googleDriveFileSnapshots)
-    .where(
-      and(
-        eq(googleDriveFileSnapshots.teamId, input.teamId),
-        eq(googleDriveFileSnapshots.integrationId, input.integrationId),
-        notInArray(googleDriveFileSnapshots.fileId, input.keepFileIds),
-      ),
-    );
-}
-
 export async function listTeamEmailDomains(db: Db, teamId: string): Promise<string[]> {
   const rows = await db
     .select({ email: users.email })
@@ -1281,6 +1322,7 @@ export async function linkedObjectForDriveSelection(
   const rows = await db
     .select({
       externalId: integrationSelections.externalId,
+      selectionKind: integrationSelections.selectionKind,
       objectId: integrationSelections.linkedObjectId,
       canonicalName: entities.canonicalName,
       type: entities.type,
@@ -1295,17 +1337,18 @@ export async function linkedObjectForDriveSelection(
       ),
     );
   const byId = new Map(rows.map((row) => [row.externalId, row]));
-  for (const candidate of candidates) {
-    const hit = byId.get(candidate);
-    if (hit?.objectId) {
-      return {
-        id: hit.objectId,
-        canonicalName: hit.canonicalName,
-        type: hit.type,
-        inheritedFrom: candidate,
-        inheritedCandidates: candidates,
-      };
-    }
-  }
-  return null;
+  const winner = pickMostSpecificDriveAncestor(candidates, (id) => {
+    const hit = byId.get(id);
+    return hit?.objectId ? driveAncestorKindFromSelectionKind(hit.selectionKind) : null;
+  });
+  if (!winner) return null;
+  const hit = byId.get(winner);
+  if (!hit?.objectId) return null;
+  return {
+    id: hit.objectId,
+    canonicalName: hit.canonicalName,
+    type: hit.type,
+    inheritedFrom: winner,
+    inheritedCandidates: candidates,
+  };
 }
