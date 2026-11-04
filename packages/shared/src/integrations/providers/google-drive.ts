@@ -7,6 +7,7 @@ import {
   driveFileChangeDedupKey,
   driveFileContentRevision,
   driveObjectLinkCandidates,
+  driveObjectLinkHintsEqual,
   driveSnapshotAncestryFromMembership,
   hashDrivePayload,
   isDriveExtractResultTooLarge,
@@ -1305,7 +1306,9 @@ async function processDriveFile(
 
   if (previous?.contentHash === contentHash && !commentsChanged && !permissionsChanged) {
     const previousLocate = parseDriveSnapshotLocate(previous.snapshotLocate);
-    if (!previousLocate || previousLocate.chunkTexts.length === 0) {
+    const needsChunkBackfill = !previousLocate || previousLocate.chunkTexts.length === 0;
+    const needsAncestryRefresh = !driveObjectLinkHintsEqual(previous.ancestry, snapshotAncestry);
+    if (needsChunkBackfill || needsAncestryRefresh) {
       await persistDriveSnapshot(ctx, file.id, snapshot, snapshotAncestry);
     }
     await consumeReadyDriveExtract(ctx, file.id, loaded);

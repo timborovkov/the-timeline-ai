@@ -233,6 +233,12 @@ export interface SyncContext {
       chunkHashes: string[];
       chunkTexts: string[];
     } | null;
+    ancestry?: {
+      parentIds: string[];
+      driveId: string | null;
+      matchedAncestorId: string | null;
+      inheritedCandidates: string[] | null;
+    } | null;
   } | null>;
   saveDriveSnapshot?(input: {
     contentHash: string;

@@ -1089,6 +1089,48 @@ function driveObjectLinkHintsHaveAncestry(hints: DriveObjectLinkHints): boolean 
   );
 }
 
+function sameDriveIdList(left: readonly string[], right: readonly string[]): boolean {
+  if (left.length !== right.length) return false;
+  return left.every((id, index) => id === right[index]);
+}
+
+/** True when both stamps name the same walked membership. */
+export function driveObjectLinkHintsEqual(
+  left: DriveObjectLinkHints | null | undefined,
+  right: DriveObjectLinkHints | null | undefined,
+): boolean {
+  const previous = left ?? emptyDriveObjectLinkHints();
+  const next = right ?? emptyDriveObjectLinkHints();
+  return (
+    previous.driveId === next.driveId &&
+    previous.matchedAncestorId === next.matchedAncestorId &&
+    sameDriveIdList(previous.parentIds, next.parentIds) &&
+    sameDriveIdList(previous.inheritedCandidates ?? [], next.inheritedCandidates ?? [])
+  );
+}
+
+/**
+ * One source of truth for current Drive membership used by coverage and
+ * cleanup: the newest snapshot ancestry or event hint, not event-only.
+ */
+export function pickNewestDriveTrackedAncestry(input: {
+  event?: { at: Date; hints: DriveObjectLinkHints };
+  snapshot?: { at: Date; hints: DriveObjectLinkHints };
+}): DriveObjectLinkHints {
+  const event =
+    input.event && driveObjectLinkHintsHaveAncestry(input.event.hints) ? input.event : null;
+  const snapshot =
+    input.snapshot && driveObjectLinkHintsHaveAncestry(input.snapshot.hints)
+      ? input.snapshot
+      : null;
+  if (event && snapshot) {
+    return snapshot.at.getTime() >= event.at.getTime() ? snapshot.hints : event.hints;
+  }
+  if (snapshot) return snapshot.hints;
+  if (event) return event.hints;
+  return emptyDriveObjectLinkHints();
+}
+
 export async function latestDriveObjectLinkHints(
   db: Db,
   input: { teamId: string; integrationId: string; fileId: string },
@@ -1149,7 +1191,7 @@ export async function latestDriveObjectLinkHintsByFileIds(
         ),
       ),
     );
-  const latest = new Map<string, { occurredAt: Date; sourceMetadata: unknown }>();
+  const latestEvent = new Map<string, { at: Date; hints: DriveObjectLinkHints }>();
   for (const row of rows) {
     const metadata = asLinkHintRecord(row.sourceMetadata);
     const fileId =
@@ -1157,20 +1199,14 @@ export async function latestDriveObjectLinkHintsByFileIds(
         ? metadata.external_object_id.trim().toLowerCase()
         : '';
     if (!fileId) continue;
-    const previous = latest.get(fileId);
-    if (!previous || previous.occurredAt < row.occurredAt) {
-      latest.set(fileId, { occurredAt: row.occurredAt, sourceMetadata: row.sourceMetadata });
+    const previous = latestEvent.get(fileId);
+    if (!previous || previous.at < row.occurredAt) {
+      latestEvent.set(fileId, {
+        at: row.occurredAt,
+        hints: driveObjectLinkHintsFromSourceMetadata(row.sourceMetadata),
+      });
     }
   }
-  for (const fileId of fileIds) {
-    const row = latest.get(fileId.toLowerCase());
-    hints.set(fileId, driveObjectLinkHintsFromSourceMetadata(row?.sourceMetadata));
-  }
-  const missing = fileIds.filter((fileId) => {
-    const current = hints.get(fileId);
-    return !current || !driveObjectLinkHintsHaveAncestry(current);
-  });
-  if (missing.length === 0) return hints;
   const snapshots = await db
     .select({
       fileId: googleDriveFileSnapshots.fileId,
@@ -1182,19 +1218,28 @@ export async function latestDriveObjectLinkHintsByFileIds(
       and(
         eq(googleDriveFileSnapshots.teamId, input.teamId),
         eq(googleDriveFileSnapshots.integrationId, input.integrationId),
-        inArray(googleDriveFileSnapshots.fileId, missing),
+        inArray(googleDriveFileSnapshots.fileId, fileIds),
       ),
     );
-  const latestSnapshot = new Map<string, { createdAt: Date; ancestry: unknown }>();
+  const latestSnapshot = new Map<string, { at: Date; hints: DriveObjectLinkHints }>();
   for (const row of snapshots) {
+    const parsed = parseDriveSnapshotAncestry(row.ancestry);
+    if (!parsed) continue;
     const previous = latestSnapshot.get(row.fileId);
-    if (!previous || previous.createdAt < row.createdAt) {
-      latestSnapshot.set(row.fileId, { createdAt: row.createdAt, ancestry: row.ancestry });
+    if (!previous || previous.at < row.createdAt) {
+      latestSnapshot.set(row.fileId, { at: row.createdAt, hints: parsed });
     }
   }
-  for (const fileId of missing) {
-    const parsed = parseDriveSnapshotAncestry(latestSnapshot.get(fileId)?.ancestry);
-    if (parsed) hints.set(fileId, parsed);
+  for (const fileId of fileIds) {
+    const event = latestEvent.get(fileId.toLowerCase());
+    const snapshot = latestSnapshot.get(fileId);
+    hints.set(
+      fileId,
+      pickNewestDriveTrackedAncestry({
+        ...(event ? { event } : {}),
+        ...(snapshot ? { snapshot } : {}),
+      }),
+    );
   }
   return hints;
 }
@@ -1228,6 +1273,7 @@ export async function loadLatestDriveSnapshot(
       commentsSnapshot: googleDriveFileSnapshots.commentsSnapshot,
       mimeType: googleDriveFileSnapshots.mimeType,
       snapshotLocate: googleDriveFileSnapshots.snapshotLocate,
+      ancestry: googleDriveFileSnapshots.ancestry,
     })
     .from(googleDriveFileSnapshots)
     .where(
@@ -1241,8 +1287,14 @@ export async function loadLatestDriveSnapshot(
     .limit(1);
   if (!row) return null;
   return {
-    ...row,
+    contentHash: row.contentHash,
+    snapshotText: row.snapshotText,
+    commentsHash: row.commentsHash,
+    permissionsHash: row.permissionsHash,
+    commentsSnapshot: row.commentsSnapshot,
+    mimeType: row.mimeType,
     snapshotLocate: parseDriveSnapshotLocate(row.snapshotLocate),
+    ancestry: parseDriveSnapshotAncestry(row.ancestry),
   };
 }
 
@@ -1466,7 +1518,9 @@ export async function discardDriveTrackedFile(
  * Coverage-aware snapshot/extract cleanup after a selection set narrows.
  * Remaining empty means every tracked file is uncovered. Force-discard ids
  * (live out-of-scope/missing/removed) are dropped even if stored ancestry
- * still matches a remaining selection.
+ * still matches a remaining selection. Coverage reads
+ * `latestDriveObjectLinkHintsByFileIds` — the newest snapshot or event
+ * ancestry, not event hints alone.
  */
 export async function cleanupUncoveredDriveTrackedFiles(
   db: Db,

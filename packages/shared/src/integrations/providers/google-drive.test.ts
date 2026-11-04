@@ -145,6 +145,37 @@ function drivePermissionsHash(
   );
 }
 
+function selectedFileAncestry(fileId = 'file-1'): {
+  parentIds: string[];
+  driveId: null;
+  matchedAncestorId: string;
+  inheritedCandidates: string[];
+} {
+  return {
+    parentIds: ['root'],
+    driveId: null,
+    matchedAncestorId: fileId,
+    inheritedCandidates: [fileId, 'root'],
+  };
+}
+
+function folderAncestry(
+  fileId: string,
+  folderId: string,
+): {
+  parentIds: string[];
+  driveId: null;
+  matchedAncestorId: string;
+  inheritedCandidates: string[];
+} {
+  return {
+    parentIds: [folderId],
+    driveId: null,
+    matchedAncestorId: folderId,
+    inheritedCandidates: [fileId, folderId],
+  };
+}
+
 function requestUrl(
   input: Parameters<
     (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
@@ -1654,6 +1685,7 @@ describe('googleDriveProvider', () => {
         commentsHash: driveCommentsHash([]),
         permissionsHash: drivePermissionsHash([]),
         mimeType: 'application/vnd.google-apps.spreadsheet',
+        ancestry: selectedFileAncestry(),
       }),
     });
 
@@ -1780,6 +1812,7 @@ describe('googleDriveProvider', () => {
         commentsHash: driveCommentsHash([]),
         permissionsHash: drivePermissionsHash([]),
         mimeType: 'application/vnd.google-apps.document',
+        ancestry: selectedFileAncestry(),
       }),
     });
 
@@ -1794,6 +1827,69 @@ describe('googleDriveProvider', () => {
     expect(ctx.judgeDriveChange).not.toHaveBeenCalled();
     expect(ctx.writeEvents).not.toHaveBeenCalled();
     expect(ctx.saveDriveSnapshot).not.toHaveBeenCalled();
+  });
+
+  it('persists live ancestry on an unchanged-content move from folder A to B', async () => {
+    const document = 'Contract amount is forty eight thousand dollars for Northstar.\n';
+    const fetch = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((input) => {
+      const url = requestUrl(input);
+      if (isGoogleDocsGet(url)) {
+        return Promise.resolve(googleDocsPlainResponse(document));
+      }
+      if (url.pathname.endsWith('/files/file-1')) {
+        return Promise.resolve(
+          jsonResponse({
+            id: 'file-1',
+            name: 'SOW',
+            mimeType: 'application/vnd.google-apps.document',
+            parents: ['folder-b'],
+            modifiedTime: '2026-06-20T10:00:00.000Z',
+          }),
+        );
+      }
+      if (url.pathname.endsWith('/files/folder-b') || url.pathname.endsWith('/files/folder-a')) {
+        return Promise.resolve(jsonResponse({ id: url.pathname.split('/').pop(), parents: [] }));
+      }
+      if (url.pathname.endsWith('/comments')) {
+        return Promise.resolve(jsonResponse({ comments: [] }));
+      }
+      return Promise.resolve(jsonResponse({ permissions: [] }));
+    });
+    vi.stubGlobal('fetch', fetch);
+    const ctx = syncContext({
+      loadLatestDriveSnapshot: vi.fn().mockResolvedValue({
+        contentHash: hashDrivePayload(document),
+        snapshotText: document,
+        snapshotLocate: buildDriveSnapshotLocate(document),
+        commentsHash: driveCommentsHash([]),
+        permissionsHash: drivePermissionsHash([]),
+        mimeType: 'application/vnd.google-apps.document',
+        ancestry: folderAncestry('file-1', 'folder-a'),
+      }),
+    });
+
+    await googleDriveProvider.incrementalSync({
+      integration: { id: 'integration-1', teamId: 'team-1' } as never,
+      tokens: { access_token: 'access-token', expires_at: Date.now() + 600_000 },
+      selections: [
+        { kind: 'drive.folder', externalId: 'folder-a' },
+        { kind: 'drive.folder', externalId: 'folder-b' },
+      ],
+      ctx: ctx,
+      target: { resourceType: 'drive.file', externalId: 'file-1' },
+    });
+
+    expect(ctx.judgeDriveChange).not.toHaveBeenCalled();
+    expect(ctx.writeEvents).not.toHaveBeenCalled();
+    expect(ctx.saveDriveSnapshot).toHaveBeenCalledOnce();
+    expect(ctx.saveDriveSnapshot).toHaveBeenCalledWith(
+      expect.objectContaining({
+        contentHash: hashDrivePayload(document),
+        ancestry: folderAncestry('file-1', 'folder-b'),
+      }),
+    );
   });
 
   it('skips a whitespace-only prefix edit on a long document when the suffix window is unchanged', async () => {

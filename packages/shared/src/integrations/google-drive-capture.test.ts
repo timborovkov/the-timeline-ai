@@ -67,9 +67,11 @@ import {
   survivingLinkedObjectForDriveFile,
   adminListTeamIdsWithDriveExtractCursors,
   forEachDriveExtractCursorPage,
+  driveObjectLinkHintsEqual,
   latestDriveObjectLinkHints,
   latestDriveObjectLinkHintsByFileIds,
   linkedObjectForDriveSelection,
+  pickNewestDriveTrackedAncestry,
   listDriveExtractCursors,
   cleanupUncoveredDriveTrackedFiles,
   deleteDriveSnapshotsForFile,
@@ -95,6 +97,78 @@ const TEAM_ID = '11111111-1111-1111-1111-111111111111';
 const OTHER_TEAM_ID = '22222222-2222-4222-8222-222222222222';
 const USER_ID = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
 const OTHER_USER_ID = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+
+function folderAncestryHints(fileId: string, folderId: string) {
+  return {
+    parentIds: [folderId],
+    driveId: null,
+    matchedAncestorId: folderId,
+    inheritedCandidates: [fileId, folderId],
+  };
+}
+
+describe('pickNewestDriveTrackedAncestry', () => {
+  const folderA = folderAncestryHints('moved-file', 'folder-a');
+  const folderB = folderAncestryHints('moved-file', 'folder-b');
+
+  it('uses the newest snapshot or event, and the snapshot on a tie', () => {
+    const older = new Date('2026-06-20T10:00:00.000Z');
+    const newer = new Date('2026-06-21T10:00:00.000Z');
+    expect(
+      pickNewestDriveTrackedAncestry({
+        event: { at: older, hints: folderA },
+        snapshot: { at: newer, hints: folderB },
+      }),
+    ).toEqual(folderB);
+    expect(
+      pickNewestDriveTrackedAncestry({
+        event: { at: newer, hints: folderA },
+        snapshot: { at: older, hints: folderB },
+      }),
+    ).toEqual(folderA);
+    expect(
+      pickNewestDriveTrackedAncestry({
+        event: { at: newer, hints: folderA },
+        snapshot: { at: newer, hints: folderB },
+      }),
+    ).toEqual(folderB);
+    expect(pickNewestDriveTrackedAncestry({ event: { at: older, hints: folderA } })).toEqual(
+      folderA,
+    );
+    expect(pickNewestDriveTrackedAncestry({ snapshot: { at: newer, hints: folderB } })).toEqual(
+      folderB,
+    );
+  });
+
+  it('ignores stamps that do not carry ancestry', () => {
+    expect(
+      pickNewestDriveTrackedAncestry({
+        event: {
+          at: new Date('2026-06-21T10:00:00.000Z'),
+          hints: {
+            parentIds: [],
+            driveId: null,
+            matchedAncestorId: null,
+            inheritedCandidates: null,
+          },
+        },
+        snapshot: { at: new Date('2026-06-20T10:00:00.000Z'), hints: folderA },
+      }),
+    ).toEqual(folderA);
+  });
+});
+
+describe('driveObjectLinkHintsEqual', () => {
+  it('compares walked membership, not object identity', () => {
+    const folderA = folderAncestryHints('moved-file', 'folder-a');
+    expect(driveObjectLinkHintsEqual(folderA, { ...folderA })).toBe(true);
+    expect(driveObjectLinkHintsEqual(folderA, folderAncestryHints('moved-file', 'folder-b'))).toBe(
+      false,
+    );
+    expect(driveObjectLinkHintsEqual(undefined, folderA)).toBe(false);
+    expect(driveObjectLinkHintsEqual(undefined, undefined)).toBe(true);
+  });
+});
 
 describe('driveObjectLinkCandidates', () => {
   it('covers My Drive, shared drives, individual files, and missing ancestors', () => {
@@ -896,6 +970,50 @@ describe('saveDriveSnapshot uniqueness', () => {
     });
     const [row] = await db.select().from(googleDriveFileSnapshots);
     expect(row?.ancestry).toEqual(ancestry);
+  });
+
+  it('refreshes snapshot ancestry when a same-hash save includes a new walk', async () => {
+    const [integration] = await db
+      .insert(integrations)
+      .values({
+        teamId: TEAM_ID,
+        connectedByUserId: USER_ID,
+        provider: 'google_drive',
+        displayName: 'Google Drive',
+        externalAccountId: 'drive-acct-ancestry-move',
+        visibilityDefault: 'team',
+      })
+      .returning();
+    if (!integration) throw new Error('integration insert failed');
+    const snapshot = {
+      contentHash: hashDrivePayload('same-body'),
+      snapshotText: 'same-body',
+      commentsHash: 'comments-1',
+      permissionsHash: 'permissions-1',
+      mimeType: 'application/vnd.google-apps.document',
+      ancestry: folderAncestryHints('file-1', 'folder-a'),
+    };
+    await saveDriveSnapshot(db as never, {
+      teamId: TEAM_ID,
+      integrationId: integration.id,
+      fileId: 'file-1',
+      snapshot,
+    });
+    await saveDriveSnapshot(db as never, {
+      teamId: TEAM_ID,
+      integrationId: integration.id,
+      fileId: 'file-1',
+      snapshot: {
+        ...snapshot,
+        ancestry: folderAncestryHints('file-1', 'folder-b'),
+      },
+    });
+    const latest = await loadLatestDriveSnapshot(db as never, {
+      teamId: TEAM_ID,
+      integrationId: integration.id,
+      fileId: 'file-1',
+    });
+    expect(latest?.ancestry).toEqual(folderAncestryHints('file-1', 'folder-b'));
   });
 
   it('makes a revisited fingerprint the latest baseline across A→B→A→B', async () => {
@@ -2182,6 +2300,160 @@ describe('saveDriveSnapshot uniqueness', () => {
       parentIds: ['folder-1'],
       matchedAncestorId: 'folder-1',
     });
+  });
+
+  async function insertDriveAncestryEvent(input: {
+    integrationId: string;
+    fileId: string;
+    folderId: string;
+    occurredAt: Date;
+  }) {
+    await db.insert(rawEvents).values({
+      teamId: TEAM_ID,
+      authorUserId: USER_ID,
+      source: 'integration',
+      contentText: `${input.fileId} changed`,
+      occurredAt: input.occurredAt,
+      visibility: 'team',
+      sourceMetadata: {
+        provider: 'google_drive',
+        integration_id: input.integrationId,
+        external_object_id: input.fileId,
+        drive: {
+          parents: [input.folderId],
+          inherited_from: input.folderId,
+          inherited_candidates: [input.fileId, input.folderId],
+        },
+      },
+    });
+  }
+
+  async function seedMovedFileCoverage(externalAccountId: string) {
+    const [integration] = await db
+      .insert(integrations)
+      .values({
+        teamId: TEAM_ID,
+        connectedByUserId: USER_ID,
+        provider: 'google_drive',
+        displayName: 'Google Drive',
+        externalAccountId,
+        visibilityDefault: 'team',
+      })
+      .returning();
+    if (!integration) throw new Error('integration insert failed');
+    await db.insert(integrationSelections).values([
+      {
+        integrationId: integration.id,
+        selectionKind: 'drive.folder',
+        externalId: 'folder-a',
+      },
+      {
+        integrationId: integration.id,
+        selectionKind: 'drive.folder',
+        externalId: 'folder-b',
+      },
+    ]);
+    return integration;
+  }
+
+  it('uses a newer snapshot after a move even when the last event still names folder A', async () => {
+    const integration = await seedMovedFileCoverage('drive-acct-move-snapshot-newer');
+    await insertDriveAncestryEvent({
+      integrationId: integration.id,
+      fileId: 'moved-file',
+      folderId: 'folder-a',
+      occurredAt: new Date('2026-06-20T10:00:00.000Z'),
+    });
+    await saveDriveSnapshot(db as never, {
+      teamId: TEAM_ID,
+      integrationId: integration.id,
+      fileId: 'moved-file',
+      snapshot: {
+        contentHash: hashDrivePayload('same-body'),
+        snapshotText: 'same-body',
+        commentsHash: 'comments',
+        permissionsHash: 'permissions',
+        mimeType: 'application/vnd.google-apps.document',
+        ancestry: folderAncestryHints('moved-file', 'folder-b'),
+      },
+    });
+    expect(
+      await latestDriveObjectLinkHints(db as never, {
+        teamId: TEAM_ID,
+        integrationId: integration.id,
+        fileId: 'moved-file',
+      }),
+    ).toEqual(folderAncestryHints('moved-file', 'folder-b'));
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    await scope.integrations.setSelections(integration.id, [
+      { kind: 'drive.folder', externalId: 'folder-b' },
+    ]);
+    expect((await db.select().from(googleDriveFileSnapshots)).map((row) => row.fileId)).toEqual([
+      'moved-file',
+    ]);
+  });
+
+  it('discards a moved file when the remaining folder matches only the older event', async () => {
+    const integration = await seedMovedFileCoverage('drive-acct-move-deselect-b');
+    await insertDriveAncestryEvent({
+      integrationId: integration.id,
+      fileId: 'moved-file',
+      folderId: 'folder-a',
+      occurredAt: new Date('2026-06-20T10:00:00.000Z'),
+    });
+    await saveDriveSnapshot(db as never, {
+      teamId: TEAM_ID,
+      integrationId: integration.id,
+      fileId: 'moved-file',
+      snapshot: {
+        contentHash: hashDrivePayload('same-body'),
+        snapshotText: 'same-body',
+        commentsHash: 'comments',
+        permissionsHash: 'permissions',
+        mimeType: 'application/vnd.google-apps.document',
+        ancestry: folderAncestryHints('moved-file', 'folder-b'),
+      },
+    });
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    await scope.integrations.setSelections(integration.id, [
+      { kind: 'drive.folder', externalId: 'folder-a' },
+    ]);
+    expect(await db.select().from(googleDriveFileSnapshots)).toEqual([]);
+  });
+
+  it('uses a newer judged event after a cosmetic snapshot still names folder A', async () => {
+    const integration = await seedMovedFileCoverage('drive-acct-cosmetic-then-event');
+    await saveDriveSnapshot(db as never, {
+      teamId: TEAM_ID,
+      integrationId: integration.id,
+      fileId: 'moved-file',
+      snapshot: {
+        contentHash: hashDrivePayload('same-body'),
+        snapshotText: 'same-body',
+        commentsHash: 'comments',
+        permissionsHash: 'permissions',
+        mimeType: 'application/vnd.google-apps.document',
+        ancestry: folderAncestryHints('moved-file', 'folder-a'),
+      },
+    });
+    await insertDriveAncestryEvent({
+      integrationId: integration.id,
+      fileId: 'moved-file',
+      folderId: 'folder-b',
+      occurredAt: new Date('2026-12-01T10:00:00.000Z'),
+    });
+    expect(
+      await latestDriveObjectLinkHints(db as never, {
+        teamId: TEAM_ID,
+        integrationId: integration.id,
+        fileId: 'moved-file',
+      }),
+    ).toEqual(folderAncestryHints('moved-file', 'folder-b'));
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    await scope.integrations.setSelections(integration.id, [
+      { kind: 'drive.folder', externalId: 'folder-a' },
+    ]);
+    expect(await db.select().from(googleDriveFileSnapshots)).toEqual([]);
   });
 
   it('deletes baseline-only snapshots under a removed folder when a sibling folder remains', async () => {
