@@ -7,8 +7,12 @@ import {
   reconciliationEvidence,
   type Db,
 } from '@timeline/db';
-import { and, eq, isNull, or, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNull, or, sql } from 'drizzle-orm';
 
+import {
+  driveFileInheritsChangedSelection,
+  driveObjectLinkCandidates,
+} from '#src/integrations/google-drive-capture.js';
 import { evaluateAuthorityPolicy } from '#src/reconciliation/authority.js';
 import { buildAssociationDedupeKey, type SourceRef } from '#src/reconciliation/index.js';
 import { normalizeRawEventsToEvidence } from '#src/reconciliation/normalization.js';
@@ -324,6 +328,7 @@ async function claimAnchors(
       })),
     )
     .onConflictDoNothing();
+  await refreshDriveInheritanceAnchorMetadata(db, input.teamId, anchors);
 
   if (claimableAnchors.length === 0) return clusterId;
   const clauses = claimableAnchors.map(
@@ -788,9 +793,147 @@ async function moveDriveFileAnchors(
     );
 }
 
+async function refreshDriveInheritanceAnchorMetadata(
+  db: Db,
+  teamId: string,
+  anchors: ArtifactAnchorInput[],
+): Promise<void> {
+  for (const anchor of anchors) {
+    const patch = driveInheritanceMetadataPatch(anchor.metadata);
+    if (!patch) continue;
+    await db
+      .update(artifactClusterAnchors)
+      .set({
+        metadata: sql`COALESCE(${artifactClusterAnchors.metadata}, '{}'::jsonb) || ${JSON.stringify(
+          patch,
+        )}::jsonb`,
+      })
+      .where(
+        and(
+          eq(artifactClusterAnchors.teamId, teamId),
+          eq(artifactClusterAnchors.anchorType, anchor.type),
+          eq(artifactClusterAnchors.anchorValue, anchor.value),
+        ),
+      );
+  }
+}
+
+function driveInheritanceMetadataPatch(
+  metadata: Record<string, unknown> | undefined,
+): Record<string, unknown> | null {
+  if (!metadata) return null;
+  const inheritedFrom =
+    typeof metadata.drive_inherited_from === 'string' ? metadata.drive_inherited_from : null;
+  const candidates = stringArray(metadata.drive_inherited_candidates);
+  const integrationId =
+    typeof metadata.drive_integration_id === 'string' ? metadata.drive_integration_id : null;
+  if (!inheritedFrom && candidates.length === 0 && !integrationId) return null;
+  return {
+    ...(inheritedFrom ? { drive_inherited_from: inheritedFrom } : {}),
+    ...(candidates.length > 0 ? { drive_inherited_candidates: candidates } : {}),
+    ...(integrationId ? { drive_integration_id: integrationId } : {}),
+  };
+}
+
+function stringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0);
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
+}
+
+function driveInheritanceCandidatesFromAnchorMetadata(metadata: unknown): {
+  candidates: string[] | null;
+  integrationId: string | null;
+} {
+  const record = asRecord(metadata);
+  if (!record) return { candidates: null, integrationId: null };
+  const integrationId =
+    typeof record.drive_integration_id === 'string' ? record.drive_integration_id : null;
+  const candidates = stringArray(record.drive_inherited_candidates);
+  if (candidates.length > 0) return { candidates, integrationId };
+  const inheritedFrom =
+    typeof record.drive_inherited_from === 'string' ? record.drive_inherited_from : null;
+  if (inheritedFrom) return { candidates: [inheritedFrom], integrationId };
+  return { candidates: null, integrationId };
+}
+
+function driveInheritanceCandidatesFromSourceMetadata(
+  metadata: unknown,
+  fileId: string,
+): { candidates: string[] | null; integrationId: string | null } {
+  const record = asRecord(metadata);
+  if (!record) return { candidates: null, integrationId: null };
+  const integrationId = typeof record.integration_id === 'string' ? record.integration_id : null;
+  const drive = asRecord(record.drive);
+  if (!drive) return { candidates: null, integrationId };
+  const stamped = stringArray(drive.inherited_candidates);
+  if (stamped.length > 0) return { candidates: stamped, integrationId };
+  const inheritedFrom = typeof drive.inherited_from === 'string' ? drive.inherited_from : null;
+  const matchedAncestorId =
+    typeof drive.matched_ancestor_id === 'string' ? drive.matched_ancestor_id : null;
+  const driveId = typeof drive.drive_id === 'string' ? drive.drive_id : null;
+  const parents = stringArray(drive.parents);
+  if (!inheritedFrom && !matchedAncestorId && !driveId && parents.length === 0) {
+    return { candidates: null, integrationId };
+  }
+  return {
+    candidates: driveObjectLinkCandidates({
+      fileId,
+      parentIds: parents,
+      matchedAncestorId: matchedAncestorId ?? inheritedFrom,
+      ...(driveId ? { driveId } : {}),
+    }),
+    integrationId,
+  };
+}
+
+async function latestDriveSourceMetadataByFileId(
+  db: Db,
+  input: { teamId: string; integrationId: string; fileIds: string[] },
+): Promise<Map<string, unknown>> {
+  const fileIds = [...new Set(input.fileIds.map((fileId) => fileId.trim().toLowerCase()))].filter(
+    Boolean,
+  );
+  if (fileIds.length === 0) return new Map();
+  const rows = await db
+    .select({
+      sourceMetadata: rawEvents.sourceMetadata,
+      occurredAt: rawEvents.occurredAt,
+    })
+    .from(rawEvents)
+    .where(
+      and(
+        eq(rawEvents.teamId, input.teamId),
+        eq(rawEvents.source, 'integration'),
+        sql`${rawEvents.sourceMetadata} ->> 'provider' = 'google_drive'`,
+        sql`${rawEvents.sourceMetadata} ->> 'integration_id' = ${input.integrationId}`,
+        inArray(sql`lower(${rawEvents.sourceMetadata} ->> 'external_object_id')`, fileIds),
+      ),
+    );
+  const latest = new Map<string, { occurredAt: Date; sourceMetadata: unknown }>();
+  for (const row of rows) {
+    const metadata = asRecord(row.sourceMetadata);
+    const fileId =
+      typeof metadata?.external_object_id === 'string'
+        ? metadata.external_object_id.trim().toLowerCase()
+        : '';
+    if (!fileId) continue;
+    const previous = latest.get(fileId);
+    if (!previous || previous.occurredAt < row.occurredAt) {
+      latest.set(fileId, { occurredAt: row.occurredAt, sourceMetadata: row.sourceMetadata });
+    }
+  }
+  return new Map([...latest].map(([fileId, row]) => [fileId, row.sourceMetadata]));
+}
+
 /**
  * When a Drive selection's workspace object link changes, move that file's
- * (or inherited folder files') artifact anchors onto the new object's cluster.
+ * artifact anchors — or only files that inherited this folder/shared-drive
+ * selection's link — onto the new object's cluster.
  */
 export async function rebindDriveSelectionArtifactLink(
   db: Db,
@@ -802,6 +945,7 @@ export async function rebindDriveSelectionArtifactLink(
     previousObjectId: string | null;
     nextObjectId: string | null;
     preserveFileIds?: string[];
+    preserveContainerIds?: string[];
   },
 ): Promise<string[]> {
   if (input.previousObjectId === input.nextObjectId) return [];
@@ -809,16 +953,19 @@ export async function rebindDriveSelectionArtifactLink(
     teamId: input.teamId,
     objectId: input.nextObjectId,
   });
-  const fileIds = new Set<string>([input.externalId]);
+  const fileIds = new Set<string>();
+  if (input.selectionKind === 'drive.file') fileIds.add(input.externalId);
   if (
     input.previousObjectId &&
     (input.selectionKind === 'drive.folder' || input.selectionKind === 'drive.shared_drive')
   ) {
-    const preserve = new Set(
-      (input.preserveFileIds ?? []).map((fileId) => fileId.trim().toLowerCase()),
-    );
+    const preserveFileIds = input.preserveFileIds ?? [];
+    const remainingLinkedExternalIds = [...preserveFileIds, ...(input.preserveContainerIds ?? [])];
     const inherited = await db
-      .select({ anchorValue: artifactClusterAnchors.anchorValue })
+      .select({
+        anchorValue: artifactClusterAnchors.anchorValue,
+        metadata: artifactClusterAnchors.metadata,
+      })
       .from(artifactClusterAnchors)
       .innerJoin(
         artifactClusters,
@@ -835,10 +982,57 @@ export async function rebindDriveSelectionArtifactLink(
           sql`${artifactClusterAnchors.anchorValue} LIKE ${'google_drive:%'}`,
         ),
       );
+    const candidatesByFileId = new Map<string, string[] | null>();
+    const unknownFileIds: string[] = [];
     for (const row of inherited) {
       const fileId = row.anchorValue.slice('google_drive:'.length);
-      if (!fileId || preserve.has(fileId.trim().toLowerCase())) continue;
-      fileIds.add(fileId);
+      if (!fileId) continue;
+      const stamp = driveInheritanceCandidatesFromAnchorMetadata(row.metadata);
+      if (
+        stamp.integrationId &&
+        stamp.integrationId.trim().toLowerCase() !== input.integrationId.trim().toLowerCase()
+      ) {
+        continue;
+      }
+      if (stamp.candidates) {
+        candidatesByFileId.set(fileId, stamp.candidates);
+        continue;
+      }
+      unknownFileIds.push(fileId);
+    }
+    if (unknownFileIds.length > 0) {
+      const extras = await latestDriveSourceMetadataByFileId(db, {
+        teamId: input.teamId,
+        integrationId: input.integrationId,
+        fileIds: unknownFileIds,
+      });
+      for (const fileId of unknownFileIds) {
+        const fromEvent = driveInheritanceCandidatesFromSourceMetadata(
+          extras.get(fileId.trim().toLowerCase()),
+          fileId,
+        );
+        candidatesByFileId.set(fileId, fromEvent.candidates);
+      }
+    }
+    const lastContainer = (input.preserveContainerIds ?? []).length === 0;
+    const preserve = new Set(preserveFileIds.map((fileId) => fileId.trim().toLowerCase()));
+    for (const [fileId, candidates] of candidatesByFileId) {
+      if (preserve.has(fileId.trim().toLowerCase())) continue;
+      if (candidates) {
+        if (
+          driveFileInheritsChangedSelection({
+            fileId,
+            changedExternalId: input.externalId,
+            remainingLinkedExternalIds,
+            preserveFileIds,
+            candidates,
+          })
+        ) {
+          fileIds.add(fileId);
+        }
+        continue;
+      }
+      if (lastContainer) fileIds.add(fileId);
     }
   }
   const rebound = [...fileIds];

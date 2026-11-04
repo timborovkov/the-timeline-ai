@@ -2432,6 +2432,115 @@ describe('writeIntegrationEvents visibility', () => {
     ]);
   });
 
+  it('stamps and refreshes Drive inheritance metadata on the file artifact anchor', async () => {
+    const [integration] = await db
+      .insert(integrations)
+      .values({
+        teamId: TEAM_ID,
+        connectedByUserId: USER_ID,
+        provider: 'google_drive',
+        displayName: 'Google Drive',
+        externalAccountId: 'drive-acct-inherit-stamp',
+        visibilityDefault: 'team',
+      })
+      .returning();
+    if (!integration) throw new Error('integration insert failed');
+    const [existing] = await db
+      .insert(entities)
+      .values({
+        teamId: TEAM_ID,
+        type: 'company',
+        canonicalName: 'Northstar',
+        status: 'open',
+      })
+      .returning();
+    if (!existing) throw new Error('object insert failed');
+
+    await writeIntegrationEvents({
+      db: db as never,
+      integration,
+      events: [
+        {
+          dedupKey: 'google_drive:file:file-stamp:hash1:comments:permissions',
+          provider: 'google_drive',
+          signalClass: 'communication',
+          eventClass: 'communication',
+          externalObjectId: 'file-stamp',
+          eventType: 'file.changed',
+          occurredAt: new Date('2026-06-20T10:00:00Z'),
+          contentText: 'First capture',
+          extra: {
+            drive: {
+              linked_object_id: existing.id,
+              inherited_from: 'folder-1',
+              inherited_candidates: ['file-stamp', 'folder-1'],
+              integration_id: integration.id,
+            },
+          },
+          objectMap: {
+            type: 'company',
+            canonicalName: 'Northstar',
+            externalId: existing.id,
+            displayTitle: 'SOW',
+            aliases: ['file-stamp'],
+          },
+        },
+      ],
+    });
+    const first = await db
+      .select()
+      .from(artifactClusterAnchors)
+      .where(eq(artifactClusterAnchors.anchorType, 'provider_object'));
+    const firstFile = first.find((row) => row.anchorValue === 'google_drive:file-stamp');
+    expect(firstFile?.metadata).toEqual({
+      drive_inherited_from: 'folder-1',
+      drive_inherited_candidates: ['file-stamp', 'folder-1'],
+      drive_integration_id: integration.id,
+    });
+
+    await writeIntegrationEvents({
+      db: db as never,
+      integration,
+      events: [
+        {
+          dedupKey: 'google_drive:file:file-stamp:hash2:comments:permissions',
+          provider: 'google_drive',
+          signalClass: 'communication',
+          eventClass: 'communication',
+          externalObjectId: 'file-stamp',
+          eventType: 'file.changed',
+          occurredAt: new Date('2026-06-20T11:00:00Z'),
+          contentText: 'Moved to folder 2',
+          extra: {
+            drive: {
+              linked_object_id: existing.id,
+              inherited_from: 'folder-2',
+              inherited_candidates: ['file-stamp', 'folder-2'],
+              integration_id: integration.id,
+            },
+          },
+          objectMap: {
+            type: 'company',
+            canonicalName: 'Northstar',
+            externalId: existing.id,
+            displayTitle: 'SOW',
+            aliases: ['file-stamp'],
+          },
+        },
+      ],
+    });
+    const refreshed = await db
+      .select()
+      .from(artifactClusterAnchors)
+      .where(eq(artifactClusterAnchors.anchorType, 'provider_object'));
+    const refreshedFile = refreshed.find((row) => row.anchorValue === 'google_drive:file-stamp');
+    expect(refreshedFile?.metadata).toEqual({
+      drive_inherited_from: 'folder-2',
+      drive_inherited_candidates: ['file-stamp', 'folder-2'],
+      drive_integration_id: integration.id,
+    });
+  });
+
   it('does not attach a Drive event to another team object id', async () => {
     const otherTeamId = '22222222-2222-2222-2222-222222222222';
     await pg.exec(`

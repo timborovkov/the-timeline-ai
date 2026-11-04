@@ -6,6 +6,7 @@ import {
   driveExtractMatchesFileRevision,
   driveFileChangeDedupKey,
   driveFileContentRevision,
+  driveObjectLinkCandidates,
   hashDrivePayload,
   isDriveExtractResultTooLarge,
   takeDriveExtractSlot,
@@ -1377,11 +1378,29 @@ async function processDriveFile(
         modified_time: file.modifiedTime ?? null,
         drive_id: file.driveId ?? null,
         parents: file.parents ?? [],
+        integration_id: integration.id,
         judge_reason: judge.reason,
         strong_signals: strongSignals,
         changed_chars: diff.changedChars,
         ...(packed.length > 1 ? { part: index + 1, parts: packed.length } : {}),
-        ...(linked ? { linked_object_id: linked.id } : {}),
+        ...(linked
+          ? {
+              linked_object_id: linked.id,
+              inherited_from: linked.inheritedFrom ?? membership.matchedAncestorId ?? file.id,
+              inherited_candidates:
+                linked.inheritedCandidates ??
+                driveObjectLinkCandidates({
+                  fileId: file.id,
+                  parentIds: file.parents ?? [],
+                  matchedAncestorId: membership.matchedAncestorId,
+                  ...(file.driveId ? { driveId: file.driveId } : {}),
+                  ...(scope.myDriveRootId ? { myDriveRootId: scope.myDriveRootId } : {}),
+                }),
+              ...(membership.matchedAncestorId
+                ? { matched_ancestor_id: membership.matchedAncestorId }
+                : {}),
+            }
+          : {}),
       },
     },
     ...(linked

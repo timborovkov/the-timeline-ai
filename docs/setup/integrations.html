@@ -167,8 +167,11 @@ GOOGLE_DRIVE_WEBHOOK_SECRET=...</code></pre>
           replies. Comment context puts new or changed replies first, and
           <code>commentsHash</code> advances only when every changed reply is in that packed
           context. Replacing a Drive selection's workspace object link moves that file's artifact
-          anchors onto the new object's cluster without rewriting the previous company's canonical
-          entity. Dropping a <code>drive.file</code> selection, or the last folder/shared-drive
+          anchors onto the new object's cluster, or only files that inherited the changed
+          folder/shared-drive selection's link when sibling containers still point at the previous
+          object, without rewriting the previous company's canonical entity. Captured Drive events
+          stamp the winning selection and candidate walk so a later rebind can tell those files
+          apart. Dropping a <code>drive.file</code> selection, or the last folder/shared-drive
           container, deletes leftover snapshots and extract objects, including extract tombstones.
           Full-text hashes still see edits past 20k chars. Formatting-only and tiny edits (Markdown
           markers, not signed amounts such as <code>-50000 USD</code>) skip the LLM. Tiny vs

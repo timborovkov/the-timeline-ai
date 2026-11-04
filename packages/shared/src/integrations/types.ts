@@ -258,7 +258,13 @@ export interface SyncContext {
     parentIds: string[],
     matchedAncestorId?: string | null,
     linkContext?: { driveId?: string | null; myDriveRootId?: string | null },
-  ): Promise<{ id: string; canonicalName: string; type: string } | null>;
+  ): Promise<{
+    id: string;
+    canonicalName: string;
+    type: string;
+    inheritedFrom?: string;
+    inheritedCandidates?: string[];
+  } | null>;
   /**
    * Optional Drive CRM-relevance judge. Tests inject this; the worker leaves
    * it unset so the provider bills through `llm.chatStructured`.

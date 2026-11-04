@@ -2087,7 +2087,14 @@ describe('googleDriveProvider', () => {
     expect(events[0]?.contentText).toContain('Please confirm the $48k annual term.');
     expect(events[0]?.contentText).toContain('Ada (resolved):');
     expect(events[0]?.extra).toMatchObject({
-      drive: { linked_object_id: '11111111-1111-4111-8111-111111111111' },
+      drive: {
+        linked_object_id: '11111111-1111-4111-8111-111111111111',
+        inherited_from: 'file-1',
+        inherited_candidates: ['file-1', 'root'],
+        matched_ancestor_id: 'file-1',
+        integration_id: 'integration-1',
+        parents: ['root'],
+      },
     });
     expect(events[0]?.objectMap).toMatchObject({
       type: 'company',

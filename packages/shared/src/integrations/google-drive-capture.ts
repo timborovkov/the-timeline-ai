@@ -698,6 +698,66 @@ export function driveObjectLinkCandidates(input: {
   return [...new Set(ids)];
 }
 
+export interface DriveLinkedObject {
+  id: string;
+  canonicalName: string;
+  type: string;
+  inheritedFrom: string;
+  inheritedCandidates: string[];
+}
+
+/**
+ * A Drive file inherited the changed folder/shared-drive selection when that
+ * selection is the first live object-link candidate and no remaining sibling
+ * selection that still points at the previous object appears in the same
+ * candidate walk. Explicit file links are never inherited rebinds.
+ */
+export function driveFileInheritsChangedSelection(input: {
+  fileId: string;
+  changedExternalId: string;
+  remainingLinkedExternalIds?: string[];
+  preserveFileIds?: string[];
+  candidates?: string[] | null;
+  parentIds?: string[];
+  matchedAncestorId?: string | null;
+  driveId?: string | null;
+  myDriveRootId?: string | null;
+}): boolean {
+  const fileKey = input.fileId.trim().toLowerCase();
+  if (!fileKey) return false;
+  if ((input.preserveFileIds ?? []).some((id) => id.trim().toLowerCase() === fileKey)) {
+    return false;
+  }
+  const changed = input.changedExternalId.trim().toLowerCase();
+  if (!changed) return false;
+  const remaining = new Set(
+    (input.remainingLinkedExternalIds ?? [])
+      .map((id) => id.trim().toLowerCase())
+      .filter((id) => id.length > 0 && id !== changed),
+  );
+  const candidates = (
+    input.candidates && input.candidates.length > 0
+      ? input.candidates
+      : driveObjectLinkCandidates({
+          fileId: input.fileId,
+          parentIds: input.parentIds ?? [],
+          ...(input.matchedAncestorId !== undefined
+            ? { matchedAncestorId: input.matchedAncestorId }
+            : {}),
+          ...(input.driveId !== undefined ? { driveId: input.driveId } : {}),
+          ...(input.myDriveRootId !== undefined ? { myDriveRootId: input.myDriveRootId } : {}),
+        })
+  )
+    .map((id) => id.trim().toLowerCase())
+    .filter((id) => id.length > 0);
+  if (candidates.length === 0) return false;
+  for (const candidate of candidates) {
+    if (candidate === changed) return !candidates.some((id) => remaining.has(id));
+    if (remaining.has(candidate)) return false;
+  }
+  return false;
+}
+
 function driveFileIsMyDriveDescendant(input: {
   fileId: string;
   parentIds: string[];
@@ -908,7 +968,7 @@ export async function linkedObjectForDriveSelection(
     driveId?: string | null;
     myDriveRootId?: string | null;
   },
-): Promise<{ id: string; canonicalName: string; type: string } | null> {
+): Promise<DriveLinkedObject | null> {
   const candidates = driveObjectLinkCandidates(input);
   if (candidates.length === 0) return null;
   const rows = await db
@@ -931,7 +991,13 @@ export async function linkedObjectForDriveSelection(
   for (const candidate of candidates) {
     const hit = byId.get(candidate);
     if (hit?.objectId) {
-      return { id: hit.objectId, canonicalName: hit.canonicalName, type: hit.type };
+      return {
+        id: hit.objectId,
+        canonicalName: hit.canonicalName,
+        type: hit.type,
+        inheritedFrom: candidate,
+        inheritedCandidates: candidates,
+      };
     }
   }
   return null;
