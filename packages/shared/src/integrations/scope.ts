@@ -24,20 +24,26 @@ import {
 } from '@timeline/db';
 import { and, desc, eq, inArray, isNotNull, isNull, lte, ne, or, sql } from 'drizzle-orm';
 
+import { rebindDriveSelectionArtifactLink } from '#src/artifacts/index.js';
 import { decryptJson, encryptJson } from '#src/crypto/secrets.js';
 import { getEnv } from '#src/env.js';
 import {
+  deleteDriveSnapshotsExceptFiles,
   deleteDriveSnapshotsForFile as deleteDriveFileSnapshots,
   deleteDriveSnapshotsForIntegration,
+  driveExtractCursorKey,
   driveExtractObjectKeys,
   forEachDriveExtractCursorPage,
   linkedObjectForDriveSelection as loadLinkedObjectForDriveSelection,
   listDriveExtractCursors,
   listTeamEmailDomains as loadTeamEmailDomains,
   loadLatestDriveSnapshot,
+  parseDriveExtractCursor,
   remainingDriveExtractObjectKeys,
   saveDriveSnapshot,
+  type DriveExtractTombstone,
 } from '#src/integrations/google-drive-capture.js';
+import { DRIVE_FILE_KIND } from '#src/integrations/google-drive-scope.js';
 import {
   formatHealthPauseNotice,
   healthPauseNotificationDedupeKey,
@@ -163,6 +169,7 @@ async function tryDeleteDriveTransientExtractObjects(cursor: {
   objectKey: string;
   resultObjectKey: string;
   pendingDeleteKeys?: string[];
+  tombstones?: DriveExtractTombstone[];
 }): Promise<void> {
   let client;
   try {
@@ -180,6 +187,7 @@ async function tryDeleteDriveTransientExtractObjects(cursor: {
     filename: 'disconnect',
     enqueuedAt: new Date(0).toISOString(),
     ...(cursor.pendingDeleteKeys ? { pendingDeleteKeys: cursor.pendingDeleteKeys } : {}),
+    ...(cursor.tombstones && cursor.tombstones.length > 0 ? { tombstones: cursor.tombstones } : {}),
   });
   const results = await Promise.allSettled(keys.map((key) => deleteObject(client, bucket, key)));
   const remaining = remainingDriveExtractObjectKeys(keys, results);
@@ -1619,6 +1627,101 @@ export function createIntegrationScope(deps: {
       const links = new Map(
         existing.map((row) => [`${row.selectionKind}\x00${row.externalId}`, row.linkedObjectId]),
       );
+      const nextKeys = new Set(selections.map((s) => `${s.kind}\x00${s.externalId}`));
+      const dropped = existing.filter(
+        (row) => !nextKeys.has(`${row.selectionKind}\x00${row.externalId}`),
+      );
+      const preservedFileIds = existing
+        .filter(
+          (row) =>
+            row.selectionKind === DRIVE_FILE_KIND &&
+            nextKeys.has(`${row.selectionKind}\x00${row.externalId}`) &&
+            row.linkedObjectId,
+        )
+        .map((row) => row.externalId);
+      if (integration.provider === 'google_drive') {
+        const scopedTx = tx as unknown as Db;
+        const discardTrackedFile = async (fileId: string) => {
+          await deleteDriveFileSnapshots(scopedTx, {
+            teamId,
+            integrationId,
+            fileId,
+          });
+          const extractType = driveExtractCursorKey(fileId);
+          const [extractRow] = await tx
+            .select({ cursor: integrationSyncState.cursor })
+            .from(integrationSyncState)
+            .where(
+              and(
+                eq(integrationSyncState.integrationId, integrationId),
+                eq(integrationSyncState.resourceType, extractType),
+              ),
+            )
+            .limit(1);
+          const extractCursor = parseDriveExtractCursor(extractRow?.cursor);
+          if (!extractCursor) return;
+          await tryDeleteDriveTransientExtractObjects(extractCursor);
+          await tx
+            .delete(integrationSyncState)
+            .where(
+              and(
+                eq(integrationSyncState.integrationId, integrationId),
+                eq(integrationSyncState.resourceType, extractType),
+              ),
+            );
+        };
+        for (const row of dropped) {
+          if (
+            row.selectionKind === DRIVE_FILE_KIND ||
+            row.selectionKind === 'drive.folder' ||
+            row.selectionKind === 'drive.shared_drive'
+          ) {
+            await rebindDriveSelectionArtifactLink(scopedTx, {
+              teamId,
+              integrationId,
+              selectionKind: row.selectionKind,
+              externalId: row.externalId,
+              previousObjectId: row.linkedObjectId,
+              nextObjectId: null,
+              preserveFileIds: preservedFileIds,
+            });
+          }
+          if (row.selectionKind === DRIVE_FILE_KIND) await discardTrackedFile(row.externalId);
+        }
+        const remainingContainers = selections.some(
+          (selection) =>
+            selection.kind === 'drive.folder' || selection.kind === 'drive.shared_drive',
+        );
+        if (!remainingContainers) {
+          const keepFileIds = selections
+            .filter((selection) => selection.kind === DRIVE_FILE_KIND)
+            .map((selection) => selection.externalId);
+          await deleteDriveSnapshotsExceptFiles(scopedTx, {
+            teamId,
+            integrationId,
+            keepFileIds,
+          });
+          const keepFileIdSet = new Set(keepFileIds);
+          await forEachDriveExtractCursorPage(scopedTx, {
+            teamId,
+            integrationId,
+            onPage: async (page) => {
+              for (const row of page) {
+                if (keepFileIdSet.has(row.fileId)) continue;
+                await tryDeleteDriveTransientExtractObjects(row.cursor);
+                await tx
+                  .delete(integrationSyncState)
+                  .where(
+                    and(
+                      eq(integrationSyncState.integrationId, integrationId),
+                      eq(integrationSyncState.resourceType, driveExtractCursorKey(row.fileId)),
+                    ),
+                  );
+              }
+            },
+          });
+        }
+      }
       await tx
         .delete(integrationSelections)
         .where(eq(integrationSelections.integrationId, integrationId));
@@ -1733,7 +1836,22 @@ export function createIntegrationScope(deps: {
         .limit(1);
       if (!object) throw new Error('Object not found');
     }
-    const updated = await db
+    const [current] = await db
+      .select({
+        selectionKind: integrationSelections.selectionKind,
+        externalId: integrationSelections.externalId,
+        linkedObjectId: integrationSelections.linkedObjectId,
+      })
+      .from(integrationSelections)
+      .where(
+        and(
+          eq(integrationSelections.id, selectionId),
+          eq(integrationSelections.integrationId, integrationId),
+        ),
+      )
+      .limit(1);
+    if (!current) throw new Error('Selection not found');
+    await db
       .update(integrationSelections)
       .set({ linkedObjectId: objectId })
       .where(
@@ -1741,9 +1859,36 @@ export function createIntegrationScope(deps: {
           eq(integrationSelections.id, selectionId),
           eq(integrationSelections.integrationId, integrationId),
         ),
+      );
+    if (integration.provider === 'google_drive') {
+      const preserveFileIds = (
+        await db
+          .select({
+            externalId: integrationSelections.externalId,
+            linkedObjectId: integrationSelections.linkedObjectId,
+            selectionKind: integrationSelections.selectionKind,
+            id: integrationSelections.id,
+          })
+          .from(integrationSelections)
+          .where(eq(integrationSelections.integrationId, integrationId))
       )
-      .returning({ id: integrationSelections.id });
-    if (updated.length === 0) throw new Error('Selection not found');
+        .filter(
+          (row) =>
+            row.selectionKind === DRIVE_FILE_KIND &&
+            row.id !== selectionId &&
+            Boolean(row.linkedObjectId),
+        )
+        .map((row) => row.externalId);
+      await rebindDriveSelectionArtifactLink(db, {
+        teamId,
+        integrationId,
+        selectionKind: current.selectionKind,
+        externalId: current.externalId,
+        previousObjectId: current.linkedObjectId,
+        nextObjectId: objectId,
+        preserveFileIds,
+      });
+    }
     await db.insert(auditLog).values({
       teamId,
       actorUserId: userId,

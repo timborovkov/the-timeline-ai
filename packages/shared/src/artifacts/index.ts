@@ -2,6 +2,7 @@ import {
   artifactEvidenceAssociations,
   artifactClusterAnchors,
   artifactClusters,
+  entities,
   rawEvents,
   reconciliationEvidence,
   type Db,
@@ -723,4 +724,162 @@ export async function findArtifactClustersByAnchors(
     .where(
       and(eq(artifactClusterAnchors.teamId, input.teamId), sql.join(clauses, sql.raw(' OR '))),
     );
+}
+
+async function clusterForLinkedObject(
+  db: Db,
+  input: { teamId: string; objectId: string | null },
+): Promise<string | null> {
+  if (!input.objectId) return null;
+  const existing = await findClusterByEntity(db, input.teamId, input.objectId);
+  if (existing) return existing;
+  const [object] = await db
+    .select({
+      id: entities.id,
+      type: entities.type,
+      canonicalName: entities.canonicalName,
+    })
+    .from(entities)
+    .where(and(eq(entities.id, input.objectId), eq(entities.teamId, input.teamId)))
+    .limit(1);
+  if (!object) return null;
+  const created = await createCluster(db, {
+    teamId: input.teamId,
+    artifactType: object.type,
+    canonicalName: object.canonicalName,
+    canonicalEntityId: object.id,
+    role: 'related_context',
+    strength: 'hard',
+  });
+  return created.clusterId;
+}
+
+function driveFileAnchorValues(fileId: string): ArtifactAnchorInput[] {
+  return uniqueAnchors([
+    { type: 'provider_object', value: `google_drive:${fileId}`, strength: 'hard' },
+  ]);
+}
+
+async function moveDriveFileAnchors(
+  db: Db,
+  input: { teamId: string; fileId: string; targetClusterId: string },
+): Promise<void> {
+  const anchors = driveFileAnchorValues(input.fileId);
+  const fileValue = uniqueAnchors([
+    { type: 'alias:file', value: input.fileId, strength: 'structured' },
+  ])[0]?.value;
+  const clauses = [
+    ...anchors.map(
+      (anchor) =>
+        sql`(${artifactClusterAnchors.anchorType} = ${anchor.type} AND ${artifactClusterAnchors.anchorValue} = ${anchor.value})`,
+    ),
+    ...(fileValue
+      ? [
+          sql`(${artifactClusterAnchors.anchorType} LIKE ${'alias:%'} AND ${artifactClusterAnchors.anchorValue} = ${fileValue})`,
+        ]
+      : []),
+  ];
+  if (clauses.length === 0) return;
+  await db
+    .update(artifactClusterAnchors)
+    .set({ clusterId: input.targetClusterId })
+    .where(
+      and(eq(artifactClusterAnchors.teamId, input.teamId), sql.join(clauses, sql.raw(' OR '))),
+    );
+}
+
+/**
+ * When a Drive selection's workspace object link changes, move that file's
+ * (or inherited folder files') artifact anchors onto the new object's cluster.
+ */
+export async function rebindDriveSelectionArtifactLink(
+  db: Db,
+  input: {
+    teamId: string;
+    integrationId: string;
+    selectionKind: string;
+    externalId: string;
+    previousObjectId: string | null;
+    nextObjectId: string | null;
+    preserveFileIds?: string[];
+  },
+): Promise<string[]> {
+  if (input.previousObjectId === input.nextObjectId) return [];
+  const targetClusterId = await clusterForLinkedObject(db, {
+    teamId: input.teamId,
+    objectId: input.nextObjectId,
+  });
+  const fileIds = new Set<string>([input.externalId]);
+  if (
+    input.previousObjectId &&
+    (input.selectionKind === 'drive.folder' || input.selectionKind === 'drive.shared_drive')
+  ) {
+    const preserve = new Set(
+      (input.preserveFileIds ?? []).map((fileId) => fileId.trim().toLowerCase()),
+    );
+    const inherited = await db
+      .select({ anchorValue: artifactClusterAnchors.anchorValue })
+      .from(artifactClusterAnchors)
+      .innerJoin(
+        artifactClusters,
+        and(
+          eq(artifactClusters.id, artifactClusterAnchors.clusterId),
+          eq(artifactClusters.teamId, input.teamId),
+        ),
+      )
+      .where(
+        and(
+          eq(artifactClusters.teamId, input.teamId),
+          eq(artifactClusters.canonicalEntityId, input.previousObjectId),
+          eq(artifactClusterAnchors.anchorType, 'provider_object'),
+          sql`${artifactClusterAnchors.anchorValue} LIKE ${'google_drive:%'}`,
+        ),
+      );
+    for (const row of inherited) {
+      const fileId = row.anchorValue.slice('google_drive:'.length);
+      if (!fileId || preserve.has(fileId.trim().toLowerCase())) continue;
+      fileIds.add(fileId);
+    }
+  }
+  const rebound = [...fileIds];
+  if (input.nextObjectId) {
+    if (!targetClusterId) return rebound;
+    for (const fileId of rebound) {
+      await moveDriveFileAnchors(db, {
+        teamId: input.teamId,
+        fileId,
+        targetClusterId,
+      });
+    }
+    return rebound;
+  }
+  for (const fileId of rebound) {
+    const current = await findClusterByAnchors(db, input.teamId, driveFileAnchorValues(fileId));
+    if (!current) continue;
+    const [source] = await db
+      .select({
+        id: artifactClusters.id,
+        artifactType: artifactClusters.artifactType,
+        canonicalName: artifactClusters.canonicalName,
+        canonicalEntityId: artifactClusters.canonicalEntityId,
+      })
+      .from(artifactClusters)
+      .where(and(eq(artifactClusters.teamId, input.teamId), eq(artifactClusters.id, current)))
+      .limit(1);
+    if (!source?.canonicalEntityId) continue;
+    const unbound = await createCluster(db, {
+      teamId: input.teamId,
+      artifactType: source.artifactType,
+      canonicalName: source.canonicalName,
+      canonicalEntityId: null,
+      role: 'related_context',
+      strength: 'hard',
+    });
+    await moveDriveFileAnchors(db, {
+      teamId: input.teamId,
+      fileId,
+      targetClusterId: unbound.clusterId,
+    });
+  }
+  return rebound;
 }

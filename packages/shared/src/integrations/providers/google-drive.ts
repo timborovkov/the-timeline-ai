@@ -553,6 +553,17 @@ async function discardTransientDriveExtract(ctx: SyncContext, fileId: string): P
   await ctx.consumeTransientDriveExtract?.(fileId);
 }
 
+async function discardTrackedDriveFile(
+  ctx: SyncContext,
+  fileId: string,
+  reason: 'missing' | 'out_of_scope' | 'removed' | 'unsupported_mime',
+  extra: Record<string, unknown> = {},
+): Promise<void> {
+  await ctx.deleteDriveSnapshotsForFile?.(fileId);
+  await discardTransientDriveExtract(ctx, fileId);
+  await ctx.recordAudit(`drive_file_${reason}`, { file_id: fileId, ...extra });
+}
+
 async function loadDriveText(
   integrationId: string,
   tokens: DriveTokens,
@@ -870,18 +881,25 @@ async function fetchChanges(
         supportsAllDrives: 'true',
       });
       for (const change of page.changes ?? []) {
-        if (change.removed || !change.fileId) continue;
+        const fileId = change.fileId;
+        if (!fileId) continue;
+        if (change.removed) {
+          await discardTrackedDriveFile(ctx, fileId, 'removed');
+          continue;
+        }
         const file = change.file;
         if (!file) continue;
         const mimeType = file.shortcutDetails?.targetMimeType ?? file.mimeType;
-        if (
-          mimeType !== 'application/vnd.google-apps.folder' &&
-          !isSupportedDriveMimeType(mimeType)
-        ) {
+        if (mimeType === 'application/vnd.google-apps.folder') continue;
+        if (!isSupportedDriveMimeType(mimeType)) {
+          await discardTrackedDriveFile(ctx, fileId, 'unsupported_mime', { mime_type: mimeType });
           continue;
         }
         const membership = await fileInSelectedSubtree(tokens, file, scope, ancestorCache);
-        if (!membership.inScope) continue;
+        if (!membership.inScope) {
+          await discardTrackedDriveFile(ctx, fileId, 'out_of_scope');
+          continue;
+        }
         await scheduleFileCapture(integration, file.id, ctx, 'drive_watch');
       }
       if (page.nextPageToken) {
@@ -1068,24 +1086,16 @@ async function processDriveFile(
   // cursor so the next changes.watch ping starts a fresh 15-minute debounce.
   await ctx.saveCursor(driveDebounceCursorKey(fileId), {});
   if (!file) {
-    await ctx.deleteDriveSnapshotsForFile?.(fileId);
-    await discardTransientDriveExtract(ctx, fileId);
-    await ctx.recordAudit('drive_file_missing', { file_id: fileId });
+    await discardTrackedDriveFile(ctx, fileId, 'missing');
     return;
   }
   const membership = await fileInSelectedSubtree(tokens, file, scope, createDriveAncestryCache());
   if (!membership.inScope) {
-    await ctx.deleteDriveSnapshotsForFile?.(fileId);
-    await discardTransientDriveExtract(ctx, fileId);
-    await ctx.recordAudit('drive_file_out_of_scope', { file_id: fileId });
+    await discardTrackedDriveFile(ctx, fileId, 'out_of_scope');
     return;
   }
   if (!isSupportedDriveMimeType(file.mimeType)) {
-    await discardTransientDriveExtract(ctx, fileId);
-    await ctx.recordAudit('drive_file_unsupported_mime', {
-      file_id: fileId,
-      mime_type: file.mimeType,
-    });
+    await discardTrackedDriveFile(ctx, fileId, 'unsupported_mime', { mime_type: file.mimeType });
     return;
   }
 

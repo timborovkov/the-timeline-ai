@@ -1,5 +1,7 @@
 import { PGlite } from '@electric-sql/pglite';
 import {
+  artifactClusterAnchors,
+  artifactClusters,
   entities,
   googleDriveFileSnapshots,
   integrations,
@@ -8,6 +10,7 @@ import {
 } from '@timeline/db';
 import { expect, vi } from '@timeline/test-support';
 import { afterEach, beforeEach, describe, it } from 'bun:test';
+import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 
 const s3Fakes = vi.hoisted(() => ({
@@ -1030,6 +1033,236 @@ describe('saveDriveSnapshot uniqueness', () => {
     await expect(
       listDriveExtractCursors(db as never, { teamId: TEAM_ID, integrationId: integration.id }),
     ).resolves.toEqual([]);
+  });
+
+  it('deletes extract tombstone objects when disconnecting Drive', async () => {
+    const [integration] = await db
+      .insert(integrations)
+      .values({
+        teamId: TEAM_ID,
+        connectedByUserId: USER_ID,
+        provider: 'google_drive',
+        displayName: 'Google Drive',
+        externalAccountId: 'drive-acct-tombstone-disconnect',
+        visibilityDefault: 'team',
+      })
+      .returning();
+    if (!integration) throw new Error('integration insert failed');
+    await db.insert(integrationSyncState).values({
+      integrationId: integration.id,
+      resourceType: driveExtractCursorKey('live-file'),
+      cursor: {
+        extractId: 'ext-live',
+        objectKey: 'live-source',
+        resultObjectKey: 'live-result.json',
+        contentType: 'application/pdf',
+        filename: 'Live.pdf',
+        enqueuedAt: '2026-11-03T00:00:00.000Z',
+        tombstones: [
+          {
+            extractId: 'ext-old',
+            objectKey: 'old-source',
+            resultObjectKey: 'old-result.json',
+            enqueuedAt: '2026-11-02T00:00:00.000Z',
+            cancelledAt: '2026-11-02T00:01:00.000Z',
+            pendingDeleteKeys: ['old-source', 'old-result.json', 'old-extra'],
+          },
+        ],
+      },
+    });
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    await expect(scope.integrations.deleteIntegration(integration.id)).resolves.toBeUndefined();
+    const deletedKeys = s3Fakes.deleteObject.mock.calls.map((call) =>
+      typeof call[2] === 'string' ? call[2] : '',
+    );
+    expect(deletedKeys).toEqual(
+      expect.arrayContaining([
+        'live-source',
+        'live-result.json',
+        'old-source',
+        'old-result.json',
+        'old-extra',
+      ]),
+    );
+  });
+
+  it('purges snapshots and extract when a Drive file selection is dropped', async () => {
+    const [integration] = await db
+      .insert(integrations)
+      .values({
+        teamId: TEAM_ID,
+        connectedByUserId: USER_ID,
+        provider: 'google_drive',
+        displayName: 'Google Drive',
+        externalAccountId: 'drive-acct-drop-file',
+        visibilityDefault: 'team',
+      })
+      .returning();
+    if (!integration) throw new Error('integration insert failed');
+    await db.insert(integrationSelections).values({
+      integrationId: integration.id,
+      selectionKind: 'drive.file',
+      externalId: 'file-drop',
+    });
+    await saveDriveSnapshot(db as never, {
+      teamId: TEAM_ID,
+      integrationId: integration.id,
+      fileId: 'file-drop',
+      snapshot: {
+        contentHash: hashDrivePayload('drop-body'),
+        snapshotText: 'drop-body',
+        commentsHash: 'comments-drop',
+        permissionsHash: 'permissions-drop',
+        mimeType: 'application/pdf',
+      },
+    });
+    await db.insert(integrationSyncState).values({
+      integrationId: integration.id,
+      resourceType: driveExtractCursorKey('file-drop'),
+      cursor: {
+        extractId: 'ext-drop',
+        objectKey: 'drop-source',
+        resultObjectKey: 'drop-result.json',
+        contentType: 'application/pdf',
+        filename: 'Drop.pdf',
+        enqueuedAt: '2026-11-03T00:00:00.000Z',
+        tombstones: [
+          {
+            extractId: 'ext-drop-old',
+            objectKey: 'drop-old-source',
+            resultObjectKey: 'drop-old-result.json',
+            enqueuedAt: '2026-11-02T00:00:00.000Z',
+            cancelledAt: '2026-11-02T00:01:00.000Z',
+            pendingDeleteKeys: ['drop-old-source'],
+          },
+        ],
+      },
+    });
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    await scope.integrations.setSelections(integration.id, []);
+    expect(await db.select().from(googleDriveFileSnapshots)).toEqual([]);
+    expect(
+      await listDriveExtractCursors(db as never, {
+        teamId: TEAM_ID,
+        integrationId: integration.id,
+      }),
+    ).toEqual([]);
+    const deletedKeys = s3Fakes.deleteObject.mock.calls.map((call) =>
+      typeof call[2] === 'string' ? call[2] : '',
+    );
+    expect(deletedKeys).toEqual(
+      expect.arrayContaining(['drop-source', 'drop-result.json', 'drop-old-source']),
+    );
+  });
+
+  it('purges leftover folder-file snapshots when no Drive container remains', async () => {
+    const [integration] = await db
+      .insert(integrations)
+      .values({
+        teamId: TEAM_ID,
+        connectedByUserId: USER_ID,
+        provider: 'google_drive',
+        displayName: 'Google Drive',
+        externalAccountId: 'drive-acct-drop-folder',
+        visibilityDefault: 'team',
+      })
+      .returning();
+    if (!integration) throw new Error('integration insert failed');
+    await db.insert(integrationSelections).values({
+      integrationId: integration.id,
+      selectionKind: 'drive.folder',
+      externalId: 'folder-1',
+    });
+    await saveDriveSnapshot(db as never, {
+      teamId: TEAM_ID,
+      integrationId: integration.id,
+      fileId: 'nested-file',
+      snapshot: {
+        contentHash: hashDrivePayload('nested-body'),
+        snapshotText: 'nested-body',
+        commentsHash: 'comments-nested',
+        permissionsHash: 'permissions-nested',
+        mimeType: 'application/vnd.google-apps.document',
+      },
+    });
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    await scope.integrations.setSelections(integration.id, []);
+    expect(await db.select().from(googleDriveFileSnapshots)).toEqual([]);
+  });
+
+  it('rebinds Drive file artifact anchors when the selection object link changes', async () => {
+    const [integration] = await db
+      .insert(integrations)
+      .values({
+        teamId: TEAM_ID,
+        connectedByUserId: USER_ID,
+        provider: 'google_drive',
+        displayName: 'Google Drive',
+        externalAccountId: 'drive-acct-rebind',
+        visibilityDefault: 'team',
+      })
+      .returning();
+    if (!integration) throw new Error('integration insert failed');
+    const [northstar] = await db
+      .insert(entities)
+      .values({
+        teamId: TEAM_ID,
+        type: 'company',
+        canonicalName: 'Northstar',
+        status: 'open',
+      })
+      .returning();
+    const [acme] = await db
+      .insert(entities)
+      .values({
+        teamId: TEAM_ID,
+        type: 'company',
+        canonicalName: 'Acme Labs',
+        status: 'open',
+      })
+      .returning();
+    if (!northstar || !acme) throw new Error('company insert failed');
+    const [selection] = await db
+      .insert(integrationSelections)
+      .values({
+        integrationId: integration.id,
+        selectionKind: 'drive.file',
+        externalId: 'file-rebind',
+        linkedObjectId: northstar.id,
+      })
+      .returning();
+    if (!selection) throw new Error('selection insert failed');
+    const [source] = await db
+      .insert(artifactClusters)
+      .values({
+        teamId: TEAM_ID,
+        artifactType: 'company',
+        canonicalName: 'Northstar',
+        canonicalEntityId: northstar.id,
+      })
+      .returning();
+    if (!source) throw new Error('cluster insert failed');
+    await db.insert(artifactClusterAnchors).values({
+      teamId: TEAM_ID,
+      clusterId: source.id,
+      anchorType: 'provider_object',
+      anchorValue: 'google_drive:file-rebind',
+      strength: 'hard',
+    });
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    await scope.integrations.setSelectionLinkedObject(integration.id, selection.id, acme.id);
+    const [northstarCluster] = await db
+      .select()
+      .from(artifactClusters)
+      .where(eq(artifactClusters.id, source.id));
+    expect(northstarCluster?.canonicalEntityId).toBe(northstar.id);
+    const [acmeCluster] = await db
+      .select()
+      .from(artifactClusters)
+      .where(eq(artifactClusters.canonicalEntityId, acme.id));
+    const [anchor] = await db.select().from(artifactClusterAnchors);
+    expect(anchor?.clusterId).toBe(acmeCluster?.id);
+    expect(anchor?.clusterId).not.toBe(source.id);
   });
 
   it('keeps extract cursors when disconnect cannot delete transient S3 objects', async () => {

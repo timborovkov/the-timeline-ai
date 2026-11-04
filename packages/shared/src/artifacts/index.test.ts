@@ -17,6 +17,7 @@ import {
   findArtifactClustersByAnchors,
   listArtifactClusterEvidence,
   reconcileArtifactEvidence,
+  rebindDriveSelectionArtifactLink,
 } from '#src/artifacts/index.js';
 import { applyDbMigrations } from '#src/test/pglite.js';
 const TEAM_ID = '11111111-1111-1111-1111-111111111111';
@@ -697,5 +698,221 @@ describe('artifact reconciliation', () => {
         role: 'discussion',
       }),
     ]);
+  });
+
+  it('moves Drive file anchors onto the replacement object cluster without rewriting the previous entity', async () => {
+    const [northstar] = await db
+      .insert(entities)
+      .values({
+        teamId: TEAM_ID,
+        type: 'company',
+        canonicalName: 'Northstar',
+        status: 'open',
+      })
+      .returning();
+    const [acme] = await db
+      .insert(entities)
+      .values({
+        teamId: TEAM_ID,
+        type: 'company',
+        canonicalName: 'Acme Labs',
+        status: 'open',
+      })
+      .returning();
+    if (!northstar || !acme) throw new Error('company insert failed');
+    const [source] = await db
+      .insert(artifactClusters)
+      .values({
+        teamId: TEAM_ID,
+        artifactType: 'company',
+        canonicalName: 'Northstar',
+        canonicalEntityId: northstar.id,
+      })
+      .returning();
+    if (!source) throw new Error('cluster insert failed');
+    await db.insert(artifactClusterAnchors).values([
+      {
+        teamId: TEAM_ID,
+        clusterId: source.id,
+        anchorType: 'provider_object',
+        anchorValue: 'google_drive:file-1',
+        strength: 'hard',
+      },
+      {
+        teamId: TEAM_ID,
+        clusterId: source.id,
+        anchorType: 'alias:company',
+        anchorValue: 'file-1',
+        strength: 'structured',
+      },
+    ]);
+
+    await rebindDriveSelectionArtifactLink(db as never, {
+      teamId: TEAM_ID,
+      integrationId: '33333333-3333-4333-8333-333333333333',
+      selectionKind: 'drive.file',
+      externalId: 'file-1',
+      previousObjectId: northstar.id,
+      nextObjectId: acme.id,
+    });
+
+    const [northstarCluster] = await db
+      .select()
+      .from(artifactClusters)
+      .where(eq(artifactClusters.id, source.id));
+    expect(northstarCluster?.canonicalEntityId).toBe(northstar.id);
+    const [acmeCluster] = await db
+      .select()
+      .from(artifactClusters)
+      .where(eq(artifactClusters.canonicalEntityId, acme.id));
+    expect(acmeCluster?.id).toBeDefined();
+    expect(acmeCluster?.id).not.toBe(source.id);
+    const moved = await db
+      .select()
+      .from(artifactClusterAnchors)
+      .where(eq(artifactClusterAnchors.teamId, TEAM_ID));
+    expect(moved).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          clusterId: acmeCluster?.id,
+          anchorType: 'provider_object',
+          anchorValue: 'google_drive:file-1',
+        }),
+        expect.objectContaining({
+          clusterId: acmeCluster?.id,
+          anchorType: 'alias:company',
+          anchorValue: 'file-1',
+        }),
+      ]),
+    );
+    expect(moved.every((row) => row.clusterId !== source.id)).toBe(true);
+  });
+
+  it('unbinds Drive file anchors onto a new cluster instead of nulling the company cluster', async () => {
+    const [northstar] = await db
+      .insert(entities)
+      .values({
+        teamId: TEAM_ID,
+        type: 'company',
+        canonicalName: 'Northstar',
+        status: 'open',
+      })
+      .returning();
+    if (!northstar) throw new Error('company insert failed');
+    const [source] = await db
+      .insert(artifactClusters)
+      .values({
+        teamId: TEAM_ID,
+        artifactType: 'company',
+        canonicalName: 'Northstar',
+        canonicalEntityId: northstar.id,
+      })
+      .returning();
+    if (!source) throw new Error('cluster insert failed');
+    await db.insert(artifactClusterAnchors).values({
+      teamId: TEAM_ID,
+      clusterId: source.id,
+      anchorType: 'provider_object',
+      anchorValue: 'google_drive:file-2',
+      strength: 'hard',
+    });
+
+    await rebindDriveSelectionArtifactLink(db as never, {
+      teamId: TEAM_ID,
+      integrationId: '33333333-3333-4333-8333-333333333333',
+      selectionKind: 'drive.file',
+      externalId: 'file-2',
+      previousObjectId: northstar.id,
+      nextObjectId: null,
+    });
+
+    const [northstarCluster] = await db
+      .select()
+      .from(artifactClusters)
+      .where(eq(artifactClusters.id, source.id));
+    expect(northstarCluster?.canonicalEntityId).toBe(northstar.id);
+    const [anchor] = await db
+      .select()
+      .from(artifactClusterAnchors)
+      .where(eq(artifactClusterAnchors.anchorValue, 'google_drive:file-2'));
+    expect(anchor?.clusterId).not.toBe(source.id);
+    const [unbound] = await db
+      .select()
+      .from(artifactClusters)
+      .where(eq(artifactClusters.id, anchor?.clusterId ?? ''));
+    expect(unbound?.canonicalEntityId).toBeNull();
+  });
+
+  it('moves inherited folder file anchors except files that keep their own object link', async () => {
+    const [northstar] = await db
+      .insert(entities)
+      .values({
+        teamId: TEAM_ID,
+        type: 'company',
+        canonicalName: 'Northstar',
+        status: 'open',
+      })
+      .returning();
+    const [acme] = await db
+      .insert(entities)
+      .values({
+        teamId: TEAM_ID,
+        type: 'company',
+        canonicalName: 'Acme Labs',
+        status: 'open',
+      })
+      .returning();
+    if (!northstar || !acme) throw new Error('company insert failed');
+    const [source] = await db
+      .insert(artifactClusters)
+      .values({
+        teamId: TEAM_ID,
+        artifactType: 'company',
+        canonicalName: 'Northstar',
+        canonicalEntityId: northstar.id,
+      })
+      .returning();
+    if (!source) throw new Error('cluster insert failed');
+    await db.insert(artifactClusterAnchors).values([
+      {
+        teamId: TEAM_ID,
+        clusterId: source.id,
+        anchorType: 'provider_object',
+        anchorValue: 'google_drive:file-keep',
+        strength: 'hard',
+      },
+      {
+        teamId: TEAM_ID,
+        clusterId: source.id,
+        anchorType: 'provider_object',
+        anchorValue: 'google_drive:file-move',
+        strength: 'hard',
+      },
+    ]);
+
+    await rebindDriveSelectionArtifactLink(db as never, {
+      teamId: TEAM_ID,
+      integrationId: '33333333-3333-4333-8333-333333333333',
+      selectionKind: 'drive.folder',
+      externalId: 'folder-1',
+      previousObjectId: northstar.id,
+      nextObjectId: acme.id,
+      preserveFileIds: ['file-keep'],
+    });
+
+    const [acmeCluster] = await db
+      .select()
+      .from(artifactClusters)
+      .where(eq(artifactClusters.canonicalEntityId, acme.id));
+    const anchors = await db
+      .select()
+      .from(artifactClusterAnchors)
+      .where(eq(artifactClusterAnchors.teamId, TEAM_ID));
+    expect(anchors.find((row) => row.anchorValue === 'google_drive:file-keep')?.clusterId).toBe(
+      source.id,
+    );
+    expect(anchors.find((row) => row.anchorValue === 'google_drive:file-move')?.clusterId).toBe(
+      acmeCluster?.id,
+    );
   });
 });

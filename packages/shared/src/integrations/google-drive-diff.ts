@@ -40,6 +40,8 @@ const DRIVE_HUNK_MAX = 40;
 /** Cap of distinct changed spans; exceeding it refuses persist rather than dropping a span. */
 export const DRIVE_CHANGED_SPAN_MAX = 20;
 const DRIVE_SPAN_RESYNC_CHARS = 32;
+/** Bound each resync scan so a long doc with thousands of edits cannot rebuild a full remaining-text map. */
+const DRIVE_SPAN_RESYNC_WINDOW = 8_192;
 const DRIVE_HUNK_BUDGET_CHARS = DRIVE_HUNK_MAX * DRIVE_HUNK_LINE_MAX;
 
 interface DriveChangedSpan {
@@ -258,11 +260,21 @@ function collectDistinctChangedSpans(left: string, right: string): DriveChangedS
   let i = 0;
   let j = 0;
   while (i < left.length || j < right.length) {
+    if (spans.length > DRIVE_CHANGED_SPAN_MAX) return spans;
     while (i < left.length && j < right.length && left[i] === right[j]) {
       i += 1;
       j += 1;
     }
     if (i >= left.length && j >= right.length) break;
+    if (spans.length >= DRIVE_CHANGED_SPAN_MAX) {
+      spans.push({
+        startLeft: i,
+        endLeft: left.length,
+        startRight: j,
+        endRight: right.length,
+      });
+      return spans;
+    }
     if (i >= left.length) {
       spans.push({ startLeft: i, endLeft: i, startRight: j, endRight: right.length });
       break;
@@ -297,13 +309,15 @@ function findNearestResync(
   minMatch: number,
 ): { i: number; j: number } | null {
   if (left.length - leftStart < minMatch || right.length - rightStart < minMatch) return null;
+  const leftLimit = Math.min(left.length - minMatch, leftStart + DRIVE_SPAN_RESYNC_WINDOW);
+  const rightLimit = Math.min(right.length - minMatch, rightStart + DRIVE_SPAN_RESYNC_WINDOW);
   const leftPos = new Map<string, number>();
-  for (let li = leftStart; li <= left.length - minMatch; li++) {
+  for (let li = leftStart; li <= leftLimit; li++) {
     const gram = left.slice(li, li + minMatch);
     if (!leftPos.has(gram)) leftPos.set(gram, li);
   }
   let best: { i: number; j: number; cost: number } | null = null;
-  for (let rj = rightStart; rj <= right.length - minMatch; rj++) {
+  for (let rj = rightStart; rj <= rightLimit; rj++) {
     const minPossible = rj - rightStart;
     if (best && minPossible >= best.cost) break;
     const gram = right.slice(rj, rj + minMatch);

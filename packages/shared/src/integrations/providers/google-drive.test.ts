@@ -2999,4 +2999,80 @@ describe('googleDriveProvider', () => {
       expect.objectContaining({ file_id: 'file-1' }),
     );
   });
+
+  it('deletes snapshots and cancels extract for a removed changes-feed file before saving the cursor', async () => {
+    const fetch = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((input) => {
+      const url = requestUrl(input);
+      if (url.pathname.endsWith('/changes')) {
+        return Promise.resolve(
+          jsonResponse({
+            changes: [
+              {
+                changeType: 'file',
+                removed: true,
+                fileId: 'file-removed',
+              },
+              {
+                changeType: 'file',
+                fileId: 'file-video',
+                file: {
+                  id: 'file-video',
+                  name: 'Clip',
+                  mimeType: 'video/mp4',
+                  parents: ['root'],
+                },
+              },
+            ],
+            newStartPageToken: 'page-2',
+          }),
+        );
+      }
+      return Promise.resolve(jsonResponse({ message: 'unexpected' }, { status: 404 }));
+    });
+    vi.stubGlobal('fetch', fetch);
+    const order: string[] = [];
+    const ctx = syncContext({
+      loadCursor: vi.fn().mockResolvedValue({ page_token: 'page-1' }),
+      deleteDriveSnapshotsForFile: vi.fn((fileId: string) => {
+        order.push(`delete:${fileId}`);
+        return Promise.resolve();
+      }),
+      cancelTransientDriveExtract: vi.fn((fileId: string) => {
+        order.push(`cancel:${fileId}`);
+        return Promise.resolve();
+      }),
+      saveCursor: vi.fn(() => {
+        order.push('save');
+        return Promise.resolve();
+      }),
+    });
+
+    await googleDriveProvider.incrementalSync({
+      integration: { id: 'integration-1', teamId: 'team-1' } as never,
+      tokens: { access_token: 'access-token', expires_at: Date.now() + 600_000 },
+      selections: [{ kind: 'drive.folder', externalId: 'root' }],
+      ctx: ctx,
+    });
+
+    expect(ctx.scheduleTargetedSync).not.toHaveBeenCalled();
+    expect(ctx.deleteDriveSnapshotsForFile).toHaveBeenCalledWith('file-removed');
+    expect(ctx.deleteDriveSnapshotsForFile).toHaveBeenCalledWith('file-video');
+    expect(ctx.cancelTransientDriveExtract).toHaveBeenCalledWith('file-removed');
+    expect(ctx.cancelTransientDriveExtract).toHaveBeenCalledWith('file-video');
+    expect(ctx.consumeTransientDriveExtract).not.toHaveBeenCalled();
+    expect(ctx.recordAudit).toHaveBeenCalledWith(
+      'drive_file_removed',
+      expect.objectContaining({ file_id: 'file-removed' }),
+    );
+    expect(ctx.recordAudit).toHaveBeenCalledWith(
+      'drive_file_unsupported_mime',
+      expect.objectContaining({ file_id: 'file-video', mime_type: 'video/mp4' }),
+    );
+    expect(order.indexOf('delete:file-removed')).toBeGreaterThanOrEqual(0);
+    expect(order.indexOf('delete:file-removed')).toBeLessThan(order.indexOf('save'));
+    expect(order.indexOf('cancel:file-removed')).toBeLessThan(order.indexOf('save'));
+    expect(ctx.saveCursor).toHaveBeenCalledWith('drive.changes', { page_token: 'page-2' });
+  });
 });

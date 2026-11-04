@@ -861,6 +861,28 @@ export async function deleteDriveSnapshotsForIntegration(
     );
 }
 
+export async function deleteDriveSnapshotsExceptFiles(
+  db: Db,
+  input: { teamId: string; integrationId: string; keepFileIds: string[] },
+): Promise<void> {
+  if (input.keepFileIds.length === 0) {
+    await deleteDriveSnapshotsForIntegration(db, {
+      teamId: input.teamId,
+      integrationId: input.integrationId,
+    });
+    return;
+  }
+  await db
+    .delete(googleDriveFileSnapshots)
+    .where(
+      and(
+        eq(googleDriveFileSnapshots.teamId, input.teamId),
+        eq(googleDriveFileSnapshots.integrationId, input.integrationId),
+        notInArray(googleDriveFileSnapshots.fileId, input.keepFileIds),
+      ),
+    );
+}
+
 export async function listTeamEmailDomains(db: Db, teamId: string): Promise<string[]> {
   const rows = await db
     .select({ email: users.email })

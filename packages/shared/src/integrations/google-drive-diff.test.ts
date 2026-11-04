@@ -815,6 +815,26 @@ describe('diffDriveSnapshots regression matrix', () => {
     expect(driveHunksContainChangedSpan(['kept filler'], previous, next)).toBe(false);
   });
 
+  it('aborts a 124k document with 2,000 edits without blocking the event loop', () => {
+    const editCount = 2_000;
+    const targetLength = 124_000;
+    const paragraphs = Array.from({ length: editCount }, (_, index) => {
+      const n = String(index);
+      return `Keep paragraph ${n} unique-id-${n} ${'x'.repeat(20)}\n`;
+    });
+    const body = paragraphs.join('');
+    const previous = `${body}${'Z'.repeat(Math.max(0, targetLength - body.length))}`;
+    expect(previous.length).toBeGreaterThanOrEqual(targetLength);
+    const next = previous.replaceAll('unique-id-', 'changed-id-');
+    const started = performance.now();
+    const diff = diffDriveText(previous, next);
+    const elapsedMs = performance.now() - started;
+    expect(elapsedMs).toBeLessThan(2_000);
+    expect(diff.changed).toBe(true);
+    expect(diff.hunks).toEqual([]);
+    expect(driveDiffHasEvidence(diff)).toBe(false);
+  });
+
   it('refuses a middle mixed-filler edit when previous chunk texts are missing', () => {
     const previousFull = mixedDocumentWithPhrase(73_600, 22_000, APPROVED_RENEWAL);
     const nextFull = mixedDocumentWithPhrase(73_600, 22_000, REJECTED_RENEWAL);

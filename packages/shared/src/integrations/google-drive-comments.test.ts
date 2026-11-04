@@ -4,6 +4,7 @@ import { describe, it } from 'bun:test';
 import {
   DRIVE_COMMENT_EVENT_LIMIT,
   DRIVE_COMMENT_HASH_FIELDS,
+  DRIVE_COMMENT_PREVIEW_CHARS,
   changedDriveCommentReplies,
   commentEventContext,
   compactDriveComments,
@@ -251,6 +252,103 @@ describe('commentEventContext ranking', () => {
         next,
       ),
     ).toBe(false);
+  });
+
+  it('hashes and ranks a reply that only changes after the packed preview', () => {
+    const prefix = 'P'.repeat(DRIVE_COMMENT_PREVIEW_CHARS);
+    const previousComments: DriveComment[] = numberedComments(1, {
+      1: {
+        replies: [
+          {
+            id: 'r1',
+            content: `${prefix}tail-old`,
+            modifiedTime: '2026-07-01T00:00:00.000Z',
+            author: { displayName: 'Ada' },
+          },
+        ],
+      },
+    });
+    const nextComments: DriveComment[] = numberedComments(1, {
+      1: {
+        replies: [
+          {
+            id: 'r1',
+            content: `${prefix}tail-new-$48k`,
+            modifiedTime: '2026-07-02T00:00:00.000Z',
+            author: { displayName: 'Ada' },
+          },
+        ],
+      },
+    });
+    const previous = compactDriveComments(previousComments);
+    const next = compactDriveComments(nextComments);
+    const previousComment = previous[0];
+    const nextComment = next[0];
+    if (!previousComment || !nextComment) throw new Error('expected compacted comments');
+    expect(previousComment.replies[0]?.content.endsWith('tail-old')).toBe(true);
+    expect(nextComment.replies[0]?.content).toContain('tail-new-$48k');
+    expect(nextComment.replies[0]?.content.length).toBeGreaterThan(DRIVE_COMMENT_PREVIEW_CHARS);
+    expect(driveCommentHashRecord(previousComment).replies).not.toBe(
+      driveCommentHashRecord(nextComment).replies,
+    );
+    expect(diffDriveComments(previous, next).map((entry) => entry.kind)).toEqual(['updated']);
+    const replyChanges = changedDriveCommentReplies(previous, next);
+    expect(replyChanges).toHaveLength(1);
+    expect(replyChanges[0]?.kind).toBe('edited');
+    const context = commentEventContext(nextComments, previous);
+    expect(context).toContain('tail-new-$48k');
+    expect(driveCommentChangeIsWitnessed(context, previous, next)).toBe(true);
+  });
+
+  it('keeps a comment-body tail after the packed preview in change detection', () => {
+    const prefix = 'B'.repeat(DRIVE_COMMENT_PREVIEW_CHARS);
+    const previousComments: DriveComment[] = numberedComments(1, {
+      1: { content: `${prefix}old-end` },
+    });
+    const nextComments: DriveComment[] = numberedComments(1, {
+      1: { content: `${prefix}new-end-$48k` },
+    });
+    const previous = compactDriveComments(previousComments);
+    const next = compactDriveComments(nextComments);
+    expect(previous[0]?.content.endsWith('old-end')).toBe(true);
+    expect(next[0]?.content).toContain('new-end-$48k');
+    expect(diffDriveComments(previous, next).map((entry) => entry.kind)).toEqual(['edited']);
+    const context = commentEventContext(nextComments, previous);
+    expect(context).toContain('new-end-$48k');
+    expect(driveCommentChangeIsWitnessed(context, previous, next)).toBe(true);
+  });
+
+  it('preview-truncates unchanged replies while packing the full changed reply', () => {
+    const unchanged = `${'U'.repeat(400)} stays in place.`;
+    const prefix = 'P'.repeat(DRIVE_COMMENT_PREVIEW_CHARS);
+    const previousComments: DriveComment[] = numberedComments(1, {
+      1: {
+        replies: [
+          { id: 'r-old', content: unchanged, author: { displayName: 'Ada' } },
+          {
+            id: 'r-edit',
+            content: `${prefix}tail-old`,
+            author: { displayName: 'Bea' },
+          },
+        ],
+      },
+    });
+    const nextComments: DriveComment[] = numberedComments(1, {
+      1: {
+        replies: [
+          { id: 'r-old', content: unchanged, author: { displayName: 'Ada' } },
+          {
+            id: 'r-edit',
+            content: `${prefix}tail-new-$48k`,
+            author: { displayName: 'Bea' },
+          },
+        ],
+      },
+    });
+    const context = commentEventContext(nextComments, compactDriveComments(previousComments));
+    expect(context).toContain('tail-new-$48k');
+    expect(context).toContain(unchanged.slice(0, DRIVE_COMMENT_PREVIEW_CHARS));
+    expect(context).not.toContain(unchanged.slice(DRIVE_COMMENT_PREVIEW_CHARS));
   });
 
   it('ranks a removal ahead of an addition in the bounded window', () => {

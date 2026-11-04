@@ -6,11 +6,13 @@
  * removals are recovered by comparing previous snapshot ids to the next set.
  * Reply bodies are part of the fingerprint: new or changed replies rank first
  * inside the comment line, and `commentsHash` advances only when every changed
- * reply appears in packed event context.
+ * reply appears in packed event context. Full compacted comment and reply text
+ * is kept through hashing and change detection; packed event context
+ * preview-truncates only unchanged comments and replies.
  */
 
 export const DRIVE_COMMENT_EVENT_LIMIT = 8;
-const DRIVE_COMMENT_PREVIEW_CHARS = 240;
+export const DRIVE_COMMENT_PREVIEW_CHARS = 240;
 
 /** Fields that feed `commentsHash`. Ranking must classify a change for each. */
 export const DRIVE_COMMENT_HASH_FIELDS = [
@@ -62,7 +64,12 @@ export type DriveCommentChangeKind =
   'added' | 'edited' | 'resolved' | 'reopened' | 'updated' | 'removed' | 'unchanged';
 
 function compactPreview(value: string): string {
-  return value.replace(/\s+/g, ' ').trim().slice(0, DRIVE_COMMENT_PREVIEW_CHARS);
+  return compactReplyText(value).slice(0, DRIVE_COMMENT_PREVIEW_CHARS);
+}
+
+/** Collapse whitespace but keep the full reply for hashing and change detection. */
+function compactReplyText(value: string): string {
+  return value.replace(/\s+/g, ' ').trim();
 }
 
 function replyAuthor(reply: DriveCommentReply | DriveCommentReplySnapshot): string {
@@ -79,7 +86,7 @@ function compactDriveCommentReplies(
   if (!Array.isArray(replies)) return [];
   return replies.map((reply) => ({
     id: reply.id ?? '',
-    content: compactPreview(reply.content ?? ''),
+    content: compactReplyText(reply.content ?? ''),
     modifiedTime: reply.modifiedTime ?? '',
     author: replyAuthor(reply),
   }));
@@ -140,7 +147,7 @@ export function driveCommentsHashEntries(
 export function compactDriveComments(comments: DriveComment[]): DriveCommentSnapshot[] {
   return comments.map((comment) => ({
     id: comment.id ?? '',
-    content: compactPreview(comment.content ?? ''),
+    content: compactReplyText(comment.content ?? ''),
     resolved: Boolean(comment.resolved),
     modifiedTime: comment.modifiedTime ?? '',
     author: comment.author?.displayName ?? comment.author?.emailAddress ?? 'Someone',
@@ -341,15 +348,18 @@ function commentContextLine(
   previous?: DriveCommentSnapshot,
 ): string {
   const state = commentContextState(kind, comment);
-  const head = comment.content
-    ? `${comment.author} (${state}): ${comment.content}`
+  const packedContent = kind === 'unchanged' ? compactPreview(comment.content) : comment.content;
+  const head = packedContent
+    ? `${comment.author} (${state}): ${packedContent}`
     : `${comment.author} (${state})`;
   const ranked = rankDriveCommentReplies(previous?.replies ?? [], comment.replies, kind);
   if (ranked.length === 0) return head;
   const replies = ranked
-    .map(({ reply, kind: replyKind }) =>
-      replyContextFragment(reply, replyKind === 'unchanged' ? 'added' : replyKind),
-    )
+    .map(({ reply, kind: replyKind }) => {
+      const packed =
+        replyKind === 'unchanged' ? { ...reply, content: compactPreview(reply.content) } : reply;
+      return replyContextFragment(packed, replyKind === 'unchanged' ? 'added' : replyKind);
+    })
     .join(' / ');
   return replies ? `${head} — ${replies}` : head;
 }
