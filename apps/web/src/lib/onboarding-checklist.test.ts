@@ -53,6 +53,7 @@ function checklistState(input: {
       dailyDigests: 0,
       ingestWebhooks: 0,
       outboundMcpKeys: 0,
+      oauthGrants: 0,
     },
   };
 }

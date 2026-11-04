@@ -612,10 +612,13 @@ SENTRY_INTEGRATION_CLIENT_SECRET=...</code></pre>
       <p>
         Expose Timeline as a remote MCP server so external agents can query events, entities,
         objects, tasks, boards, calendar, documents, and connected integration activity. The
-        endpoint is <code>&lt;your Timeline origin&gt;/api/mcp/server</code>. In this repository,
-        bundled Codex and Claude Code connections declare only this URL, so OAuth discovery and
-        member consent are the default path after the corresponding server release is deployed;
-        static bearer keys remain available for manual and developer clients.
+        endpoint is <code>&lt;your Timeline origin&gt;/api/mcp/server</code>. The in-app setup
+        screen is <strong>Connect your agent</strong> (<code>/app/connect-agent</code>): pick a
+        client, complete OAuth, then expand Add memory, Timeline skill, or Advanced for the rest.
+        <code>/app/team/mcp-share</code> redirects there. In this repository, bundled Codex and
+        Claude Code connections declare only this URL, so OAuth discovery and member consent are the
+        default path after the corresponding server release is deployed; static bearer keys remain
+        available for manual and developer clients.
       </p>
 
       <h3 id="timeline-mcp-oauth">OAuth discovery and consent</h3>
@@ -639,9 +642,11 @@ SENTRY_INTEGRATION_CLIENT_SECRET=...</code></pre>
           invalidates that elevated scope.
         </li>
         <li>
-          Revoke an approved AI app from <strong>Provider accounts</strong>
-          (<code>/app/me/connections</code>). Token revocation and team membership removal take
-          effect at authorization resolution rather than waiting for a plugin reinstall.
+          Revoke an approved AI app from <strong>Connect your agent</strong>
+          (<code>/app/connect-agent</code>). Owners and admins see every team grant with the
+          consenting member next to the client, so Revoke is tied to that member’s access. Token
+          revocation and team membership removal take effect at authorization resolution rather than
+          waiting for a plugin reinstall.
         </li>
       </ol>
       <p>
@@ -699,12 +704,12 @@ SENTRY_INTEGRATION_CLIENT_SECRET=...</code></pre>
       <p>
         Use this path only for a client that needs an explicit header or for controlled developer
         testing. An admin opens
-        <strong>Connections</strong> (<code>/app/connections/sources</code>), the
-        <em>Agent tools</em> tab, then <em>Timeline MCP endpoint</em>, chooses
-        <em>Manage endpoint</em>, creates a key, and copies the one-time plaintext. The optional
-        <em>Allow capture notes</em> key setting adds <code>capture</code> and is on by default. The
-        optional <em>Allow Timeline agent</em> key setting adds <code>agent:ask</code> and is off by
-        default.
+        <strong>Connect your agent</strong> (<code>/app/connect-agent</code>), expands
+        <em>Advanced</em>, creates a key, and copies the one-time plaintext. Static-key remember is
+        authored as the team actor, not a member. The optional <em>Allow capture notes</em> key
+        setting adds <code>capture</code> and is on by default. The optional
+        <em>Allow Timeline agent</em> key setting adds <code>agent:ask</code> and is off by default.
+        Prefer OAuth.
       </p>
       <p>For Codex CLI, keep the key in an environment variable:</p>
       <pre><code>printf 'Timeline MCP key: '

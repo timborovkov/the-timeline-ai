@@ -100,6 +100,7 @@ const NAV_ITEMS: readonly NavItem[] = [
       '/app/team/integrations',
       '/app/team/mcp-servers',
       '/app/team/mcp-share',
+      '/app/connect-agent',
       '/app/me/connections',
       '/app/me/mcp-servers',
     ],

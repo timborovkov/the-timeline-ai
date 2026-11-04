@@ -3,41 +3,17 @@ import { vi } from '@timeline/test-support';
 import { beforeEach, describe, it } from 'bun:test';
 /**
  * Route-handler tests for revoking outbound MCP bearer keys. The route owns
- * admin gates, team-scoped lookup, idempotent soft revoke behavior, and audit
- * write intent.
+ * admin gates and maps withTeam.mcpOutbound.revokeKey onto HTTP.
  */
 
 const fakes = vi.hoisted(() => ({
   auth: vi.fn(),
   resolveActiveTeam: vi.fn(),
   requireMembership: vi.fn(),
-  existingRow: null as { id: string; revokedAt: Date | null } | null,
-  updateRows: [] as unknown[],
-  insertValues: [] as unknown[],
+  revokeKey: vi.fn(),
   trackProductEventBestEffort: vi.fn(),
 }));
 
-await vi.mock(
-  import.meta.resolve('@timeline/db'),
-  () => ({
-    auditLog: { table: 'audit_log' },
-    mcpOutboundKeys: {
-      table: 'mcp_outbound_keys',
-      id: 'id',
-      teamId: 'team_id',
-      revokedAt: 'revoked_at',
-    },
-  }),
-  () => import('@timeline/db'),
-);
-await vi.mock(
-  import.meta.resolve('drizzle-orm'),
-  () => ({
-    and: (...args: unknown[]) => ({ op: 'and', args }),
-    eq: (...args: unknown[]) => ({ op: 'eq', args }),
-  }),
-  () => import('drizzle-orm'),
-);
 await vi.mock(
   import.meta.resolve('@/lib/auth'),
   () => ({ auth: fakes.auth }),
@@ -58,47 +34,16 @@ await vi.mock(
 await vi.mock(
   import.meta.resolve('@timeline/shared/team-scope'),
   () => ({
-    withTeam: () => ({ requireMembership: fakes.requireMembership }),
+    withTeam: () => ({
+      requireMembership: fakes.requireMembership,
+      mcpOutbound: { revokeKey: fakes.revokeKey },
+    }),
   }),
   () => import('@timeline/shared/team-scope'),
 );
 await vi.mock(
   import.meta.resolve('@/lib/db'),
-  () => ({
-    db: {
-      transaction: vi
-        .fn()
-        .mockImplementation(async (callback: (tx: unknown) => Promise<unknown>) => {
-          const tx = {
-            select: () => ({
-              from: () => ({
-                where: () => ({
-                  limit: () => ({
-                    for: vi.fn().mockResolvedValue(fakes.existingRow ? [fakes.existingRow] : []),
-                  }),
-                }),
-              }),
-            }),
-            update: (table: unknown) => ({
-              set: (value: unknown) => ({
-                where: () => ({
-                  returning: vi.fn().mockResolvedValue(fakes.updateRows),
-                  _table: table,
-                  _value: value,
-                }),
-              }),
-            }),
-            insert: (table: unknown) => ({
-              values: (value: unknown) => {
-                fakes.insertValues.push({ table, value });
-                return Promise.resolve();
-              },
-            }),
-          };
-          return callback(tx);
-        }),
-    },
-  }),
+  () => ({ db: {} }),
   () => import('@/lib/db'),
 );
 
@@ -117,9 +62,7 @@ beforeEach(() => {
   fakes.auth.mockResolvedValue({ user: { id: USER_ID } });
   fakes.resolveActiveTeam.mockResolvedValue({ active: { teamId: TEAM_ID } });
   fakes.requireMembership.mockResolvedValue('admin');
-  fakes.existingRow = { id: KEY_ID, revokedAt: null };
-  fakes.updateRows = [{ id: KEY_ID }];
-  fakes.insertValues = [];
+  fakes.revokeKey.mockResolvedValue({ found: true, revokedNow: true });
 });
 
 describe('DELETE /api/team/mcp-keys/[id]', () => {
@@ -141,56 +84,35 @@ describe('DELETE /api/team/mcp-keys/[id]', () => {
   });
 
   it('returns not_found when the key is not in the active team', async () => {
-    fakes.existingRow = null;
+    fakes.revokeKey.mockResolvedValueOnce({ found: false, revokedNow: false });
 
     const response = await DELETE(new Request('https://timeline.test'), ctx());
 
     expect(response.status).toBe(404);
     await expect(response.json()).resolves.toEqual({ error: 'not_found' });
-    expect(fakes.insertValues).toEqual([]);
-  });
-
-  it('treats already-revoked keys as idempotent success without a second audit write', async () => {
-    fakes.existingRow = { id: KEY_ID, revokedAt: new Date('2026-06-01T00:00:00.000Z') };
-
-    const response = await DELETE(new Request('https://timeline.test'), ctx());
-
-    expect(response.status).toBe(200);
-    await expect(response.json()).resolves.toEqual({ ok: true });
-    expect(fakes.insertValues).toEqual([]);
     expect(fakes.trackProductEventBestEffort).not.toHaveBeenCalled();
   });
 
-  it('soft revokes open keys and writes audit intent', async () => {
+  it('treats already-revoked keys as idempotent success without a second audit write', async () => {
+    fakes.revokeKey.mockResolvedValueOnce({ found: true, revokedNow: false });
+
     const response = await DELETE(new Request('https://timeline.test'), ctx());
 
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({ ok: true });
-    expect(fakes.insertValues).toHaveLength(1);
-    expect(fakes.insertValues[0]).toMatchObject({
-      value: {
-        teamId: TEAM_ID,
-        actorUserId: USER_ID,
-        action: 'mcp.disconnect',
-        targetType: 'mcp_outbound_key',
-        targetId: KEY_ID,
-        targetVisibility: 'team',
-        metadata: { surface: 'timeline_as_mcp_server' },
-      },
-    });
+    expect(fakes.trackProductEventBestEffort).not.toHaveBeenCalled();
+  });
+
+  it('soft revokes open keys through withTeam', async () => {
+    const response = await DELETE(new Request('https://timeline.test'), ctx());
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ ok: true });
+    expect(fakes.revokeKey).toHaveBeenCalledWith(KEY_ID);
     expect(fakes.trackProductEventBestEffort).toHaveBeenCalledWith(
       { kind: 'user', teamId: TEAM_ID, userId: USER_ID },
       'integration_management_action_completed',
       { action: 'mcp_key_revoke', kind: 'mcp_outbound' },
     );
-  });
-
-  it('returns not_found if the revoke update races and returns no row', async () => {
-    fakes.updateRows = [];
-
-    const response = await DELETE(new Request('https://timeline.test'), ctx());
-
-    expect(response.status).toBe(404);
-    await expect(response.json()).resolves.toEqual({ error: 'not_found' });
   });
 });

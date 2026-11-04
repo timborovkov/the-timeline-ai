@@ -7,6 +7,7 @@ import {
   ingestWebhooks,
   integrations,
   mcpOutboundKeys,
+  mcpOutboundOAuthGrants,
   mcpServers,
   meetings,
   rawEvents,
@@ -30,6 +31,7 @@ import type { TeamRole } from '#src/team-scope.js';
 
 export const ONBOARDING_STEPS = [
   'billing_setup',
+  'connect_agent',
   'first_note',
   'invite_teammate',
   'telegram',
@@ -86,6 +88,7 @@ export interface OnboardingChecklistState {
     dailyDigests: number;
     ingestWebhooks: number;
     outboundMcpKeys: number;
+    oauthGrants: number;
   };
 }
 
@@ -137,6 +140,7 @@ export function createOnboardingScope({ db, teamId, userId, ensureMember }: Onbo
         digestRows,
         webhookRows,
         outboundKeys,
+        oauthGrantRows,
         billingAccounts,
       ] = await Promise.all([
         db
@@ -239,6 +243,15 @@ export function createOnboardingScope({ db, teamId, userId, ensureMember }: Onbo
           .from(mcpOutboundKeys)
           .where(and(eq(mcpOutboundKeys.teamId, teamId), isNull(mcpOutboundKeys.revokedAt))),
         db
+          .select({ total: count() })
+          .from(mcpOutboundOAuthGrants)
+          .where(
+            and(
+              eq(mcpOutboundOAuthGrants.teamId, teamId),
+              isNull(mcpOutboundOAuthGrants.revokedAt),
+            ),
+          ),
+        db
           .select()
           .from(teamBillingAccounts)
           .where(eq(teamBillingAccounts.teamId, teamId))
@@ -263,6 +276,7 @@ export function createOnboardingScope({ db, teamId, userId, ensureMember }: Onbo
         dailyDigests: firstCount(digestRows),
         ingestWebhooks: firstCount(webhookRows),
         outboundMcpKeys: firstCount(outboundKeys),
+        oauthGrants: firstCount(oauthGrantRows),
       };
       const inferred = new Set<OnboardingStep>();
       const billing = billingAccounts[0];
@@ -275,6 +289,9 @@ export function createOnboardingScope({ db, teamId, userId, ensureMember }: Onbo
             )))
       ) {
         inferred.add('billing_setup');
+      }
+      if (connectionCounts.outboundMcpKeys > 0 || connectionCounts.oauthGrants > 0) {
+        inferred.add('connect_agent');
       }
       if (firstCount(capturedEvents) > 0) inferred.add('first_note');
       if (connectionCounts.activeMembers > 1 || connectionCounts.pendingInvites > 0) {

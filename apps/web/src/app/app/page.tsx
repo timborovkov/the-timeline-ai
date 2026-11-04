@@ -12,6 +12,7 @@ import type { Metadata } from 'next';
 import { BillingRestrictionNotice } from '@/components/billing-restriction-notice';
 import { BillingUpgradeNudge } from '@/components/billing-upgrade-nudge';
 import { CaptureForm } from '@/components/capture-form';
+import { ConnectAgentOnboardingCard } from '@/components/connect-agent/connect-agent-onboarding';
 import { CaptureDialog } from '@/components/home/capture-dialog';
 import { DailyDigestBlock } from '@/components/home/daily-digest-block';
 import { HomeAskComposer } from '@/components/home/home-ask-composer';
@@ -220,6 +221,7 @@ export default async function HomeDashboardPage() {
         }
       />
 
+      <ConnectAgentOnboardingCard initialData={initialChecklist} />
       <OnboardingChecklist initialData={initialChecklist} />
 
       {isAdmin && billingDashboard?.nudge ? (

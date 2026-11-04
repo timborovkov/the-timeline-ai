@@ -1241,15 +1241,18 @@ test('Timeline MCP bearer keys expose only team-visible events', async ({ page }
   try {
     await signIn(page, e2eUsers.owner.email);
     await page.goto('/app/team/mcp-share');
-    await expect(page.getByRole('heading', { name: 'Timeline as MCP server' })).toBeVisible();
-    await expect(page.getByText('Team-visible only')).toBeVisible();
+    await expect(page).toHaveURL(/\/app\/connect-agent/);
+    await expect(page.getByRole('heading', { name: 'Connect your agent' })).toBeVisible();
+    await page.locator('summary').filter({ hasText: 'Advanced' }).click();
+    await expect(page.getByText(/team-visible only/i)).toBeVisible();
+    await expect(page.getByText(/authored as the team actor/i)).toBeVisible();
 
     await page.getByRole('button', { name: 'New key' }).click();
     await page.getByPlaceholder('Claude Desktop · personal mac').fill(`${MCP_SHARE_PREFIX} key`);
     await waitForPost(
       page,
       '/api/team/mcp-keys',
-      () => page.getByRole('button', { name: 'Create' }).click(),
+      () => page.getByRole('button', { name: 'Create key' }).click(),
       (res) => res.ok(),
     );
 

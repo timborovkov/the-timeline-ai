@@ -60,11 +60,12 @@ function oauthCommand(mcpUrl: string): string {
 
 function chatGptConnectorDetails(mcpUrl: string): string {
   return [
-    'Settings -> Apps -> Advanced Settings -> Developer Mode',
-    'Create a development app',
+    'Settings → Apps',
+    'Create an app or add a connector',
     'App name: Timeline',
     `MCP server URL: ${mcpUrl}`,
-    'Protocol: Streaming HTTP / Streamable HTTP',
+    'Protocol: Streamable HTTP',
+    'Sign in with Timeline OAuth when prompted',
   ].join('\n');
 }
 
@@ -263,8 +264,8 @@ function McpClientGuides({ mcpUrl, mintedKey }: { mcpUrl: string; mintedKey: Min
             </Badge>
           </div>
           <p className="text-sm text-fg-muted">
-            ChatGPT Developer Mode can create an app from this remote MCP server. Use this endpoint
-            as the MCP server URL. ChatGPT discovers Timeline&apos;s OAuth metadata, opens the
+            ChatGPT can create an app from this remote MCP server. Use this endpoint as the MCP
+            server URL. ChatGPT discovers Timeline&apos;s OAuth metadata, opens the
             sign-in/team-consent flow, and uses the approved member-scoped grant.
           </p>
           <div className="overflow-hidden rounded-sm border border-border bg-surface-2">
@@ -273,10 +274,9 @@ function McpClientGuides({ mcpUrl, mintedKey }: { mcpUrl: string; mintedKey: Min
             </pre>
           </div>
           <p className="text-xs leading-5 text-fg-dim">
-            A private Developer Mode app and an OpenAI universal Plugins Directory
-            <strong> With MCP</strong> submission use the same remote endpoint. The public draft
-            also bundles the Timeline skill and still requires separate provider review and
-            publication.
+            A ChatGPT app and an OpenAI Apps Directory submission use the same remote endpoint. The
+            public draft also bundles the Timeline skill and still requires separate provider review
+            and publication.
           </p>
           <CopyButton value={chatGptConnectorDetails(mcpUrl)} label="Copy details" />
         </div>

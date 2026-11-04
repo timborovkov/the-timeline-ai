@@ -185,6 +185,9 @@
   "apps/web/src/app/api/team/calendar-subscription/route.test.ts": {
     "group": "unit"
   },
+  "apps/web/src/app/api/team/ingest-webhooks/agent-memory/route.test.ts": {
+    "group": "unit"
+  },
   "apps/web/src/app/api/team/ingest-webhooks/route.test.ts": {
     "group": "unit"
   },
@@ -304,6 +307,12 @@
   },
   "apps/web/src/app/app/chat/route-states.test.tsx": {
     "group": "dom"
+  },
+  "apps/web/src/app/app/connect-agent/route-states.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/app/app/connect-agent/skill/route.test.ts": {
+    "group": "unit"
   },
   "apps/web/src/app/app/connections/connection-directory.test.ts": {
     "group": "unit"
@@ -669,6 +678,21 @@
     "group": "dom"
   },
   "apps/web/src/components/collections/virtual-list.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/connect-agent/connect-agent-advanced.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/connect-agent/connect-agent-agents.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/connect-agent/connect-agent-memory.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/connect-agent/connect-agent-onboarding.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/connect-agent/connect-agent-tabs.test.tsx": {
     "group": "dom"
   },
   "apps/web/src/components/copy-button.test.tsx": {
@@ -1110,6 +1134,9 @@
     "group": "dom"
   },
   "apps/web/src/lib/collection-count.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/lib/connect-agent-content.test.ts": {
     "group": "unit"
   },
   "apps/web/src/lib/connections.test.ts": {
@@ -1742,6 +1769,9 @@
   "packages/shared/src/ingest-webhooks/keys.test.ts": {
     "group": "integration"
   },
+  "packages/shared/src/ingest-webhooks/scope.test.ts": {
+    "group": "integration"
+  },
   "packages/shared/src/integrations/canary.test.ts": {
     "group": "unit"
   },
@@ -1864,6 +1894,9 @@
   },
   "packages/shared/src/mcp-server/shipped-install-content.test.ts": {
     "group": "unit"
+  },
+  "packages/shared/src/mcp-server/outbound.test.ts": {
+    "group": "integration"
   },
   "packages/shared/src/mcp/auth.test.ts": {
     "group": "unit"

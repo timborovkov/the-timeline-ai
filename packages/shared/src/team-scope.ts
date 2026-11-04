@@ -57,6 +57,7 @@ import {
   type AcceptIngestWebhookEvidenceInput,
   type AcceptIngestWebhookEvidenceResult,
 } from '#src/ingest-webhooks/accept.js';
+import { createIngestWebhookScope } from '#src/ingest-webhooks/scope.js';
 import { createIntegrationScope } from '#src/integrations/scope.js';
 import { createJobRecoveryScope } from '#src/job-recovery/index.js';
 import { embed as defaultEmbed, type EmbedResult } from '#src/llm/embed.js';
@@ -64,6 +65,7 @@ import { TIMELINE_MODELS } from '#src/llm/models.js';
 import { childLogger } from '#src/logger.js';
 import { createMcpScope } from '#src/mcp/scope.js';
 import { createMcpOAuthScope } from '#src/mcp-server/oauth-scope.js';
+import { createMcpOutboundScope } from '#src/mcp-server/outbound.js';
 import { createMeetingScope } from '#src/meetings/scope.js';
 import { createObjectScope, normalizeIdentityFacet } from '#src/objects/index.js';
 import { invalidateObjectSummariesForRawEvent } from '#src/objects/summaries.js';
@@ -1704,6 +1706,20 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
     db,
     teamId,
     userId,
+  });
+
+  const mcpOutboundScope = createMcpOutboundScope({
+    db,
+    teamId,
+    userId,
+    ensureMember,
+  });
+
+  const ingestWebhookScope = createIngestWebhookScope({
+    db,
+    teamId,
+    userId,
+    ensureMember,
   });
 
   const calendarScope = createCalendarScope({
@@ -4298,6 +4314,8 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
     integrations: integrationScope,
     mcp: mcpScope,
     mcpOAuth: mcpOAuthScope,
+    mcpOutbound: mcpOutboundScope,
+    ingestWebhooks: ingestWebhookScope,
     onboarding: onboardingScope,
     billing: billingScope,
     billingOperator: createBillingOperatorScope({ db, teamId }),

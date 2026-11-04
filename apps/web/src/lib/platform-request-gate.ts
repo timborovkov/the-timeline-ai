@@ -14,7 +14,7 @@ import { ACTIVE_TEAM_COOKIE, parseActiveTeamCookie } from '@/lib/active-team-coo
 import { db } from '@/lib/db';
 
 const PERSONAL_PATHS =
-  /\/(?:oauth|auth|mcp-keys|ingest-webhooks|calendar-subscription|integrations|connections|mcp-servers|mcp-share|telegram|slack|legal|billing)(?:\/|$)/;
+  /\/(?:oauth|auth|mcp-keys|ingest-webhooks|calendar-subscription|integrations|connections|mcp-servers|mcp-share|connect-agent|telegram|slack|legal|billing)(?:\/|$)/;
 export async function platformRequestGate(
   request: NextRequest,
   session: Session | null,

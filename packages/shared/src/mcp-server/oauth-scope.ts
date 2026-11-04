@@ -6,6 +6,7 @@ import {
   mcpOutboundOAuthGrants,
   mcpOutboundOAuthTokens,
   teamMembers,
+  users,
 } from '@timeline/db';
 import { and, desc, eq, inArray, isNull, lte, notExists } from 'drizzle-orm';
 
@@ -30,6 +31,8 @@ import {
   type ValidatedAuthorizationRequest,
   type OAuthTokenResponse,
 } from '#src/mcp-server/oauth-core.js';
+
+type TeamGrantActor = 'self' | 'admin';
 
 interface McpOAuthScopeDeps {
   db: Db;
@@ -513,7 +516,10 @@ export function createMcpOAuthScope({ db, teamId, userId }: McpOAuthScopeDeps) {
   }
 
   async function revokeGrant(grantId: string): Promise<boolean> {
-    if (!(await activeMembership())) throw new Error('Not a member of this team');
+    const membership = await activeMembership();
+    if (!membership) throw new Error('Not a member of this team');
+    const actor: TeamGrantActor =
+      membership.role === 'owner' || membership.role === 'admin' ? 'admin' : 'self';
     const now = new Date();
     return db.transaction(async (rawTx) => {
       const tx = rawTx as unknown as Db;
@@ -521,12 +527,18 @@ export function createMcpOAuthScope({ db, teamId, userId }: McpOAuthScopeDeps) {
         .update(mcpOutboundOAuthGrants)
         .set({ revokedAt: now, updatedAt: now })
         .where(
-          and(
-            eq(mcpOutboundOAuthGrants.id, grantId),
-            eq(mcpOutboundOAuthGrants.userId, userId),
-            eq(mcpOutboundOAuthGrants.teamId, teamId),
-            isNull(mcpOutboundOAuthGrants.revokedAt),
-          ),
+          actor === 'admin'
+            ? and(
+                eq(mcpOutboundOAuthGrants.id, grantId),
+                eq(mcpOutboundOAuthGrants.teamId, teamId),
+                isNull(mcpOutboundOAuthGrants.revokedAt),
+              )
+            : and(
+                eq(mcpOutboundOAuthGrants.id, grantId),
+                eq(mcpOutboundOAuthGrants.userId, userId),
+                eq(mcpOutboundOAuthGrants.teamId, teamId),
+                isNull(mcpOutboundOAuthGrants.revokedAt),
+              ),
         )
         .returning({ id: mcpOutboundOAuthGrants.id });
       if (updated.length === 0) return false;
@@ -568,6 +580,41 @@ export function createMcpOAuthScope({ db, teamId, userId }: McpOAuthScopeDeps) {
           eq(mcpOutboundOAuthGrants.teamId, teamId),
           isNull(mcpOutboundOAuthGrants.revokedAt),
         ),
+      )
+      .orderBy(desc(mcpOutboundOAuthGrants.updatedAt));
+  }
+
+  async function listConnectedAgents() {
+    const membership = await activeMembership();
+    if (!membership) throw new Error('Not a member of this team');
+    const actor: TeamGrantActor =
+      membership.role === 'owner' || membership.role === 'admin' ? 'admin' : 'self';
+    return db
+      .select({
+        id: mcpOutboundOAuthGrants.id,
+        clientId: mcpOutboundOAuthGrants.clientId,
+        clientName: mcpOutboundOAuthClients.clientName,
+        scopes: mcpOutboundOAuthGrants.scopes,
+        createdAt: mcpOutboundOAuthGrants.createdAt,
+        lastUsedAt: mcpOutboundOAuthGrants.lastUsedAt,
+        ownerUserId: mcpOutboundOAuthGrants.userId,
+        ownerName: users.name,
+        ownerEmail: users.email,
+      })
+      .from(mcpOutboundOAuthGrants)
+      .innerJoin(
+        mcpOutboundOAuthClients,
+        eq(mcpOutboundOAuthClients.clientId, mcpOutboundOAuthGrants.clientId),
+      )
+      .innerJoin(users, eq(users.id, mcpOutboundOAuthGrants.userId))
+      .where(
+        actor === 'admin'
+          ? and(eq(mcpOutboundOAuthGrants.teamId, teamId), isNull(mcpOutboundOAuthGrants.revokedAt))
+          : and(
+              eq(mcpOutboundOAuthGrants.userId, userId),
+              eq(mcpOutboundOAuthGrants.teamId, teamId),
+              isNull(mcpOutboundOAuthGrants.revokedAt),
+            ),
       )
       .orderBy(desc(mcpOutboundOAuthGrants.updatedAt));
   }
@@ -710,6 +757,7 @@ export function createMcpOAuthScope({ db, teamId, userId }: McpOAuthScopeDeps) {
     rotateRefreshToken,
     revokeGrant,
     listGrants,
+    listConnectedAgents,
     authorizeCurrentGrant,
     resolveAccessToken,
   };
