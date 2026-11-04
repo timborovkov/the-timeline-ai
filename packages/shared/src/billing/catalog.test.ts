@@ -5,7 +5,10 @@ import { describe, it } from 'bun:test';
 
 import {
   BILLING_ENTITLEMENTS_VERSION,
+  CAPACITY_BY_PLAN,
   FREE_ALLOWANCES,
+  FREE_STORAGE_GB,
+  FREE_STORAGE_MIB,
   OVERAGE_RATES,
   PLAN_CATALOG,
   PUBLIC_PLAN_ORDER,
@@ -15,6 +18,7 @@ import {
   emailChargeCents,
   emailRecipientCount,
   formatEuroFromCents,
+  formatStorageGb,
   parseEuroAmountToCents,
   polarEventNameForMeter,
   ASK_AI_RESERVE_CUSTOMER_CHARGE_CENTS,
@@ -22,6 +26,7 @@ import {
   MEETING_MAX_DURATION_MINUTES_BY_PLAN,
   recallChargeCents,
   storageChargeCents,
+  storageGbFromBytes,
 } from '#src/billing/catalog.js';
 import {
   createPlanChangeSession,
@@ -58,6 +63,17 @@ describe('billing catalog', () => {
     expect(PLAN_CATALOG.business.includedUsageDiscountCents).toBe(25_000);
     expect(FREE_ALLOWANCES.aiChargeCents).toBe(500);
     expect(FREE_ALLOWANCES.recallMinutes).toBe(60);
+    expect(FREE_ALLOWANCES.storageGb).toBe(FREE_STORAGE_GB);
+    expect(FREE_STORAGE_MIB).toBe(100);
+    expect(CAPACITY_BY_PLAN.free.storageGb).toBe(FREE_STORAGE_GB);
+    expect(CAPACITY_BY_PLAN.free.documents).toBe(10_000);
+    expect(CAPACITY_BY_PLAN.free.indexedChunks).toBe(20_000);
+    expect(CAPACITY_BY_PLAN.payg.documents).toBeGreaterThanOrEqual(
+      CAPACITY_BY_PLAN.free.documents ?? 0,
+    );
+    expect(CAPACITY_BY_PLAN.team.documents).toBeGreaterThanOrEqual(
+      CAPACITY_BY_PLAN.payg.documents ?? 0,
+    );
     expect(ASK_AI_RESERVE_CUSTOMER_CHARGE_CENTS).toBe(250);
     expect(MEETING_MAX_DURATION_MINUTES_BY_PLAN.free).toBe(120);
     expect(MEETING_MAX_DURATION_MINUTES_BY_PLAN.payg).toBe(240);
@@ -69,6 +85,11 @@ describe('billing catalog', () => {
     expect(emailRecipientCount('a@x.test, b@y.test')).toBe(2);
     expect(BACKGROUND_AI_RESERVE_CUSTOMER_CHARGE_CENTS).toBe(100);
     expect(storageChargeCents(2)).toBe(50);
+    expect(formatStorageGb(0)).toBe('0 MB');
+    expect(formatStorageGb(storageGbFromBytes(20 * 1024 * 1024))).toBe('20 MB');
+    expect(formatStorageGb(FREE_STORAGE_GB)).toBe('100 MB');
+    expect(formatStorageGb(1)).toBe('1 GB');
+    expect(formatStorageGb(25)).toBe('25 GB');
     expect(acceptedSourcesChargeCents(2_000)).toBe(100);
     expect(OVERAGE_RATES.aiCustomerMultiplier).toBe(4);
     expect(formatEuroFromCents(4_900)).toMatch(/€/);

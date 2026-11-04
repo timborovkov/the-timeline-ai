@@ -43,16 +43,45 @@ export const OVERAGE_RATES = {
   additionalMemberCentsPerMonth: 200,
 } as const;
 
+/** Binary MiB/GiB used by storage capacity, meters, and copy. */
+export const BYTES_PER_MIB = 1024 ** 2;
+export const BYTES_PER_GIB = 1024 ** 3;
+
+/** Free storage ceiling (also the PAYG included floor): 100 MiB. */
+export const FREE_STORAGE_MIB = 100;
+export const FREE_STORAGE_GB = FREE_STORAGE_MIB / 1024;
+
 /** Free-plan native allowances (also the PAYG included floor before overage). */
 export const FREE_ALLOWANCES = {
   aiChargeCents: 500,
   recallMinutes: 60,
   emailUnits: 500,
-  storageGb: 1,
+  storageGb: FREE_STORAGE_GB,
   acceptedSources: 1_000,
   agentTurns: 100,
   activeMembers: 3,
 } as const;
+
+/** Convert stored bytes into GiB for capacity and the storage meter. */
+export function storageGbFromBytes(bytes: number): number {
+  if (!Number.isFinite(bytes) || bytes <= 0) return 0;
+  return bytes / BYTES_PER_GIB;
+}
+
+/**
+ * Format a GiB quantity. Values below 1 GiB use MB so 20 MiB is not "0 GB".
+ */
+export function formatStorageGb(gb: number): string {
+  if (!Number.isFinite(gb) || gb === 0) return '0 MB';
+  const abs = Math.abs(gb);
+  if (abs < 1) {
+    const mb = gb * 1024;
+    const rounded = Math.abs(mb) >= 10 ? mb.toFixed(0) : mb.toFixed(1);
+    return `${Number(rounded).toLocaleString('en-IE')} MB`;
+  }
+  const rounded = abs >= 10 ? gb.toFixed(0) : gb.toFixed(2);
+  return `${Number(rounded).toLocaleString('en-IE')} GB`;
+}
 
 export const PLAN_CATALOG: Record<BillingPlanId, PlanCommercial> = {
   free: {
@@ -164,9 +193,9 @@ export const CAPACITY_BY_PLAN: Record<BillingPlanId, CapacityEntitlements> = {
     acceptedSourcesPerMonth: 1_000,
     webhookRequestsPerMonth: 10_000,
     inboundEmailPerMonth: 100,
-    storageGb: 1,
-    documents: 100,
-    indexedChunks: 2_000,
+    storageGb: FREE_STORAGE_GB,
+    documents: 10_000,
+    indexedChunks: 20_000,
     semanticSearchesPerMonth: 2_000,
     recallMinutesPerMonth: 60,
     concurrentRecallBots: 1,
@@ -179,7 +208,7 @@ export const CAPACITY_BY_PLAN: Record<BillingPlanId, CapacityEntitlements> = {
     webhookRequestsPerMonth: 250_000,
     inboundEmailPerMonth: 5_000,
     storageGb: 25,
-    documents: 5_000,
+    documents: 10_000,
     indexedChunks: 50_000,
     semanticSearchesPerMonth: 20_000,
     recallMinutesPerMonth: 3_000,

@@ -1,8 +1,4 @@
-import {
-  exhaustedFreeAllowanceNotice,
-  getTeamCapacityUsage,
-  resolveTeamCommercialTerms,
-} from '@timeline/shared/billing';
+import { exhaustedFreeAllowanceNotice, resolveTeamCommercialTerms } from '@timeline/shared/billing';
 import { withTeam } from '@timeline/shared/team-scope';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
@@ -25,7 +21,8 @@ export const metadata: Metadata = {
 };
 
 export default async function UsagePage() {
-  const { canManage, planId, dashboard, notice, state, active, commercial } = await loadUsagePage();
+  const { canManage, planId, dashboard, notice, state, commercial, capacityUsage } =
+    await loadUsagePage();
 
   if (!canManage) {
     const meterNotice =
@@ -42,12 +39,6 @@ export default async function UsagePage() {
       </div>
     );
   }
-
-  const capacityUsage = await getTeamCapacityUsage({
-    db,
-    teamId: active.teamId,
-    planId,
-  });
 
   return (
     <div className="space-y-5">
@@ -118,6 +109,7 @@ async function loadUsagePage() {
     warnPercent: dashboard.utilization.percent,
   });
   const notice = state ? BILLING_NOTICE_TITLE[state] : null;
+  const capacityUsage = canManage ? await scope.billing.getCapacityUsage() : [];
 
-  return { canManage, planId, dashboard, notice, state, active, commercial };
+  return { canManage, planId, dashboard, notice, state, active, commercial, capacityUsage };
 }

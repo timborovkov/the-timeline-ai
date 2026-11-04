@@ -5,6 +5,7 @@ import {
   type BillingMeterId,
   type BillingPlanId,
   formatEuroFromCents,
+  storageChargeCents,
 } from '#src/billing/catalog.js';
 import { shouldShowPlanRecommendation, type CheapestPlanPreview } from '#src/billing/preview.js';
 
@@ -367,7 +368,7 @@ export function freeAllowanceFloorCents(): number {
     FREE_ALLOWANCES.aiChargeCents +
     FREE_ALLOWANCES.recallMinutes * 3 +
     Math.round((FREE_ALLOWANCES.emailUnits * 250) / 1000) +
-    FREE_ALLOWANCES.storageGb * 25 +
+    storageChargeCents(FREE_ALLOWANCES.storageGb) +
     Math.round((FREE_ALLOWANCES.acceptedSources * 50) / 1000)
   );
 }

@@ -1,3 +1,4 @@
+import { FREE_STORAGE_GB } from '@timeline/shared/billing/catalog';
 import { expect } from '@timeline/test-support';
 import { describe, it } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -128,4 +129,37 @@ it('preserves accrued paid charges after a downgrade to Free', () => {
     />,
   );
   expect(html).toContain('>€5</span>');
+});
+
+it('formats sub-gigabyte storage from the same live bytes as infrastructure limits', () => {
+  const liveGb = 20 / 1024;
+  const html = renderToStaticMarkup(
+    <BillingUsageSummary
+      planId="free"
+      meters={{ storage_gb_month: { nativeUnits: 0, customerChargeCents: 0 } }}
+      capacityUsage={[
+        { kind: 'storage_gb', label: 'Storage', used: liveGb, limit: FREE_STORAGE_GB },
+      ]}
+    />,
+  );
+  expect(html).toContain('Used: 20 MB');
+  expect(html).toContain('Included: 100 MB');
+  expect(html).toContain('20 MB of 100 MB');
+  expect(html).toMatch(/style="width:20%"/);
+  expect(html).not.toContain('Used: 0 GB');
+  expect(html).not.toContain('0.02 GB');
+});
+
+it('fills the storage allowance bar when the 100 MB floor is used up', () => {
+  const html = renderToStaticMarkup(
+    <BillingUsageSummary
+      planId="free"
+      meters={{ storage_gb_month: { nativeUnits: 0, customerChargeCents: 0 } }}
+      capacityUsage={[
+        { kind: 'storage_gb', label: 'Storage', used: FREE_STORAGE_GB, limit: FREE_STORAGE_GB },
+      ]}
+    />,
+  );
+  expect(html).toContain('Used: 100 MB');
+  expect(html).toMatch(/style="width:100%"/);
 });

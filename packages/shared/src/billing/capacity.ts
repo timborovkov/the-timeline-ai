@@ -2,7 +2,6 @@ import {
   billingFreeGrants,
   billingUsageReservations,
   documentChunks,
-  documentVersions,
   documents,
   mcpServers,
   meetings,
@@ -15,7 +14,12 @@ import {
 } from '@timeline/db';
 import { and, asc, eq, gte, inArray, isNull, ne, or, sql } from 'drizzle-orm';
 
-import { CAPACITY_BY_PLAN, PLAN_CATALOG, type BillingPlanId } from '#src/billing/catalog.js';
+import {
+  CAPACITY_BY_PLAN,
+  PLAN_CATALOG,
+  storageGbFromBytes,
+  type BillingPlanId,
+} from '#src/billing/catalog.js';
 import { BILLING_SYSTEM_USER_ID } from '#src/billing/context.js';
 import { BillingAdmissionError } from '#src/billing/errors.js';
 import { effectiveBillingPlanId } from '#src/billing/operator.js';
@@ -23,10 +27,9 @@ import { recordBillingPlan } from '#src/billing/plan-history.js';
 import { createPolarBillingProvider } from '#src/billing/polar.js';
 import { createBillingScope } from '#src/billing/scope.js';
 import { billingStateAllowsReservation, type PlanCapacityUsageRow } from '#src/billing/status.js';
+import { sumTeamStoredBytes } from '#src/billing/stored-bytes.js';
 
 import type { BillingReserveFailureCode } from '#src/billing/admission.js';
-
-const GIB = 1024 ** 3;
 
 function admissionCodeForPlan(planId: string): BillingReserveFailureCode {
   return planId === 'free' ? 'free_allowance_reached' : 'usage_limit_reached';
@@ -154,21 +157,8 @@ export async function assertTeamWriteCapacity(input: {
   }
 
   if (cap.storageGb !== null) {
-    const [row] = await input.db
-      .select({
-        bytes: sql<string | number>`COALESCE(SUM(${documentVersions.byteSize})::bigint, 0)`,
-      })
-      .from(documentVersions)
-      .innerJoin(documents, eq(documents.id, documentVersions.documentId))
-      .where(
-        and(
-          eq(documentVersions.teamId, input.teamId),
-          isNull(documents.deletedAt),
-          sql`${documentVersions.byteSize} IS NOT NULL`,
-        ),
-      );
-    const usedBytes = Number(row?.bytes ?? 0);
-    const gb = (usedBytes + (input.additionalBytes ?? 0)) / GIB;
+    const usedBytes = await sumTeamStoredBytes(input.db, input.teamId);
+    const gb = storageGbFromBytes(usedBytes + (input.additionalBytes ?? 0));
     if (gb > cap.storageGb) {
       throw new BillingAdmissionError(code, 'Storage limit reached for this plan');
     }
@@ -299,27 +289,14 @@ export async function getTeamCapacityUsage(input: {
   const cap = CAPACITY_BY_PLAN[input.planId];
   const maxMembers = PLAN_CATALOG[input.planId].maxActiveMembers;
   const periodStart = utcMonthStart();
-  const [documentRow, storageRow, chunkRow, memberRow, inviteRow, mcpRow, recallRow, turnRow] =
+  const [documentRow, storedBytes, chunkRow, memberRow, inviteRow, mcpRow, recallRow, turnRow] =
     await Promise.all([
       input.db
         .select({ n: sql<number>`count(*)::int` })
         .from(documents)
         .where(and(eq(documents.teamId, input.teamId), isNull(documents.deletedAt)))
         .then((rows) => rows[0]),
-      input.db
-        .select({
-          bytes: sql<number>`COALESCE(SUM(${documentVersions.byteSize}), 0)`,
-        })
-        .from(documentVersions)
-        .innerJoin(documents, eq(documents.id, documentVersions.documentId))
-        .where(
-          and(
-            eq(documentVersions.teamId, input.teamId),
-            isNull(documents.deletedAt),
-            sql`${documentVersions.byteSize} IS NOT NULL`,
-          ),
-        )
-        .then((rows) => rows[0]),
+      sumTeamStoredBytes(input.db, input.teamId),
       input.db
         .select({ n: sql<number>`count(*)::int` })
         .from(documentChunks)
@@ -368,7 +345,7 @@ export async function getTeamCapacityUsage(input: {
         .then((rows) => rows[0]),
     ]);
 
-  const storageGbUsed = (storageRow?.bytes ?? 0) / GIB;
+  const storageGbUsed = storageGbFromBytes(storedBytes);
   const memberSeatsUsed = countOrZero(memberRow) + countOrZero(inviteRow);
 
   return [

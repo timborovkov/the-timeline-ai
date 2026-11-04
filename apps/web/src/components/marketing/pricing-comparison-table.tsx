@@ -4,6 +4,7 @@ import {
   SELF_SERVE_PLAN_ORDER,
   type BillingPlanId,
   formatEuroFromCents,
+  formatStorageGb,
 } from '@timeline/shared/billing/catalog';
 
 import { cn } from '@/lib/utils';
@@ -115,7 +116,10 @@ const INFRASTRUCTURE_ROWS: {
   },
   {
     label: 'File storage',
-    value: (id) => formatStock(CAPACITY_BY_PLAN[id].storageGb, { unit: 'GB' }),
+    value: (id) => {
+      const gb = CAPACITY_BY_PLAN[id].storageGb;
+      return gb === null ? 'Custom' : formatStorageGb(gb);
+    },
   },
 ];
 
