@@ -340,6 +340,29 @@ const checks = [
     },
   },
   {
+    name: '@timeline/shared qdrant recovery exports',
+    run: async () => {
+      const qdrant = await import('@timeline/shared/qdrant');
+      if (typeof qdrant.withQdrantOperation !== 'function') {
+        throw new Error('withQdrantOperation export is missing');
+      }
+      if (typeof qdrant.QdrantUnavailableError !== 'function') {
+        throw new Error('QdrantUnavailableError export is missing');
+      }
+      if (typeof qdrant.createQdrantClient !== 'function') {
+        throw new Error('createQdrantClient export is missing');
+      }
+      const error = new qdrant.QdrantUnavailableError('search', 503);
+      if (error.outcomeUnknown || !error.message.includes('temporarily unavailable')) {
+        throw new Error('QdrantUnavailableError must describe unavailable evidence, not replay');
+      }
+      const unknown = new qdrant.QdrantUnavailableError('upsert', 0, true);
+      if (!unknown.outcomeUnknown || !unknown.message.includes('unknown')) {
+        throw new Error('Ambiguous Qdrant mutations must stay unreplayed');
+      }
+    },
+  },
+  {
     name: '@timeline/shared telegram commands',
     run: async () => {
       const commands = await import('@timeline/shared/telegram/commands');

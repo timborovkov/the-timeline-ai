@@ -1,5 +1,4 @@
-import { vi } from '@timeline/test-support';
-import { expect } from '@timeline/test-support';
+import { expect, vi } from '@timeline/test-support';
 import { afterEach, beforeEach, describe, it } from 'bun:test';
 
 import { resetEnvForTests } from '#src/env.js';
@@ -15,6 +14,7 @@ import {
   QdrantUnavailableError,
   type QdrantOperationContext,
 } from '#src/qdrant/operation.js';
+
 function fetchUrl(input: Parameters<typeof fetch>[0]): string {
   return typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
 }
@@ -1148,29 +1148,26 @@ describe('Qdrant cold-start recovery', () => {
     await vi.advanceTimersByTimeAsync(30_000);
     expect(await pending).toBeInstanceOf(QdrantUnavailableError);
   });
-});
 
-it('fails closed when point verification returns malformed data or collection-not-found', async () => {
-  for (const response of [
-    Response.json({ result: null }),
-    new Response('not found', { status: 404 }),
-  ]) {
-    const base = makeFetcher({ collectionExists: true });
-    const fetcher: (
-      ...args: Parameters<typeof globalThis.fetch>
-    ) => ReturnType<typeof globalThis.fetch> = (url, init) =>
-      init?.method === 'POST' && fetchUrl(url).endsWith('/points')
-        ? Promise.resolve(response)
-        : base.fetcher(url, init);
-    await expect(
-      createQdrantClient({ fetcher }).deletePoints(['id'], { verifyDeleted: true }),
-    ).rejects.toThrow('verification failed');
-  }
-});
+  it('fails closed when point verification returns malformed data or collection-not-found', async () => {
+    for (const response of [
+      Response.json({ result: null }),
+      new Response('not found', { status: 404 }),
+    ]) {
+      const base = makeFetcher({ collectionExists: true });
+      const fetcher: (
+        ...args: Parameters<typeof globalThis.fetch>
+      ) => ReturnType<typeof globalThis.fetch> = (url, init) =>
+        init?.method === 'POST' && fetchUrl(url).endsWith('/points')
+          ? Promise.resolve(response)
+          : base.fetcher(url, init);
+      await expect(
+        createQdrantClient({ fetcher }).deletePoints(['id'], { verifyDeleted: true }),
+      ).rejects.toThrow('verification failed');
+    }
+  });
 
-it('allows long writes and snapshots their separate execution budgets without replay', async () => {
-  vi.useFakeTimers();
-  try {
+  it('allows long writes and snapshots their separate execution budgets without replay', async () => {
     for (const snapshot of [false, true]) {
       const base = makeFetcher({ collectionExists: true });
       let writes = 0;
@@ -1200,14 +1197,9 @@ it('allows long writes and snapshots their separate execution budgets without re
       expect(await result).toMatchObject({ outcomeUnknown: true });
       expect(writes).toBe(1);
     }
-  } finally {
-    vi.useRealTimers();
-  }
-});
+  });
 
-it('verifies deletion after a long mutation inside an agent operation', async () => {
-  vi.useFakeTimers();
-  try {
+  it('verifies deletion after a long mutation inside an agent operation', async () => {
     const base = makeFetcher({ collectionExists: true });
     let verified = false;
     const fetcher: (...args: Parameters<typeof fetch>) => ReturnType<typeof fetch> = async (
@@ -1230,7 +1222,5 @@ it('verifies deletion after a long mutation inside an agent operation', async ()
     await vi.advanceTimersByTimeAsync(45_000);
     await expect(result).resolves.toBeUndefined();
     expect(verified).toBe(true);
-  } finally {
-    vi.useRealTimers();
-  }
+  });
 });

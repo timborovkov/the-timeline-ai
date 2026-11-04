@@ -11,7 +11,7 @@
     <main id="main">
       <h1>Railway deployment</h1>
       <div class="meta">
-        <span class="kind">Operations</span><span>Last updated 2026-10-24</span>
+        <span class="kind">Operations</span><span>Last updated 2026-11-04</span>
       </div>
       <p class="tldr">
         How the Timeline's web + worker + plugin + custom services are arranged on Railway, and what
@@ -813,10 +813,9 @@ rclone sync s3:timeline-exports backblaze-b2:timeline-backup-exports
         seven-day query also contained a pre-restart 18.98 GB sample; the normal-operation cap does
         not establish capacity for that historical workload. Plan temporary headroom and retest
         before full reindexing, collection copies, snapshots, or increasing ingestion concurrency.
-        Preserve the rollback collection and snapshots until their retention window ends. Before
-        considering a smaller limit, repeat the measurements after retiring the rollback collection
-        under the maintenance procedure. A memory limit bounds consumption; it does not reserve or
-        bill its full value while unused.
+        The unused rollback collection was removed on 2026-11-04 after a verified snapshot. Before
+        considering a smaller limit, repeat the measurements on the remaining active collection. A
+        memory limit bounds consumption; it does not reserve or bill its full value while unused.
       </p>
       <p>
         Watch volume sizing — Railway storage is more expensive than the compute. For prod beyond a

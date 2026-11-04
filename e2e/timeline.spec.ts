@@ -3296,18 +3296,94 @@ test('document search stays pending during recovery and offers a retry after una
     await input.fill('serverless recovery fixture');
     await page.getByRole('button', { name: 'Search', exact: true }).click();
     await expect(page.getByRole('button', { name: 'Searching', exact: true })).toBeDisabled();
-    await expect(page.getByText(/No matches for/)).toHaveCount(0);
+    await expect(
+      page.getByText('No matches for “serverless recovery fixture”', { exact: true }),
+    ).toHaveCount(0);
     release();
     await expect(
       page.getByText('Search is temporarily unavailable. Try again in a moment.'),
     ).toBeVisible();
     expect(calls).toBe(1);
     await expect(input).toHaveValue('serverless recovery fixture');
+    await page.screenshot({
+      path: test.info().outputPath('document-search-unavailability-desktop.png'),
+      fullPage: true,
+    });
+    await page.setViewportSize({ width: 390, height: 844 });
+    await expect(
+      page.getByText('Search is temporarily unavailable. Try again in a moment.'),
+    ).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Retry search', exact: true })).toBeVisible();
+    await page.screenshot({
+      path: test.info().outputPath('document-search-unavailability-390.png'),
+      fullPage: true,
+    });
     await page.getByRole('button', { name: 'Retry search', exact: true }).click();
-    await expect(page.getByText(/No matches for/)).toBeVisible();
+    await expect(
+      page.getByText('No matches for “serverless recovery fixture”', { exact: true }),
+    ).toBeVisible();
     expect(calls).toBe(2);
   } finally {
     release();
+    await context.close();
+  }
+});
+
+test('global search keeps lexical results when semantic sources are unavailable', async ({
+  browser,
+}) => {
+  const page = await newSignedInPage(browser, 'owner');
+  const context = page.context();
+  await page.route('**/api/search/global', async (route) => {
+    const body = route.request().postDataJSON() as { query?: string };
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        ok: true,
+        query: body.query ?? '',
+        mode: 'full',
+        warnings: [
+          { source: 'timeline_event', message: 'Timeline search is temporarily unavailable.' },
+          { source: 'document_chunk', message: 'Document search is temporarily unavailable.' },
+        ],
+        results: [
+          {
+            id: 'github-integration',
+            kind: 'object',
+            title: 'GitHub integration',
+            snippet: 'Migrate the GitHub connector.',
+            href: '/app/objects/github-integration',
+            score: 2,
+            scoreParts: { lexical: 1 },
+            metadata: { type: 'project' },
+          },
+        ],
+      }),
+    });
+  });
+  try {
+    await page.goto('/app/search?q=github');
+    await expect(
+      page.getByRole('heading', { name: 'Search', level: 1, exact: true }),
+    ).toBeVisible();
+    await expect(page.getByText('GitHub integration')).toBeVisible();
+    await expect(page.getByText('Timeline search is temporarily unavailable.')).toBeVisible();
+    await expect(page.getByText('Document search is temporarily unavailable.')).toBeVisible();
+    await expect(page.getByText('1 result · some sources unavailable').first()).toBeVisible();
+    await expect(page.getByText('No matches found')).toHaveCount(0);
+    await page.screenshot({
+      path: test.info().outputPath('global-search-partial-desktop.png'),
+      fullPage: true,
+    });
+    await page.setViewportSize({ width: 390, height: 844 });
+    await expect(page.getByText('GitHub integration')).toBeVisible();
+    await expect(page.getByText('Timeline search is temporarily unavailable.')).toBeVisible();
+    await page.screenshot({
+      path: test.info().outputPath('global-search-partial-390.png'),
+      fullPage: true,
+    });
+  } finally {
     await context.close();
   }
 });

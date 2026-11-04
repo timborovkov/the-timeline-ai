@@ -1,5 +1,4 @@
-import { expect } from '@timeline/test-support';
-import { vi } from '@timeline/test-support';
+import { expect, vi } from '@timeline/test-support';
 import { afterEach, beforeEach, describe, it } from 'bun:test';
 
 import { buildAgentTools, userApprovalForTools } from '#src/agent/tools.js';
@@ -3243,38 +3242,40 @@ describe('buildAgentTools — document tools (Phase 9)', () => {
   });
 });
 
-it('reports unavailable evidence instead of an empty successful search', async () => {
-  const { QdrantUnavailableError } = await import('#src/qdrant/operation.js');
-  const scope = makeFakeScope();
-  scope.timeline.searchEvents.mockRejectedValue(new QdrantUnavailableError('search', 502));
-  const tools = buildAgentTools(scope as unknown as TeamScope);
-  const execute = tools.search_timeline?.execute as (
-    input: unknown,
-    opts: unknown,
-  ) => Promise<unknown>;
-  const result = await execute({ query: 'launch status' }, {});
-  expect(result).toHaveProperty('error', expect.stringContaining('retrieval_unavailable'));
-  expect(result).not.toHaveProperty('count');
-});
+describe('buildAgentTools — Qdrant unavailability', () => {
+  it('reports unavailable evidence instead of an empty successful search', async () => {
+    const { QdrantUnavailableError } = await import('#src/qdrant/operation.js');
+    const scope = makeFakeScope();
+    scope.timeline.searchEvents.mockRejectedValue(new QdrantUnavailableError('search', 502));
+    const tools = buildAgentTools(scope as unknown as TeamScope);
+    const execute = tools.search_timeline?.execute as (
+      input: unknown,
+      opts: unknown,
+    ) => Promise<unknown>;
+    const result = await execute({ query: 'launch status' }, {});
+    expect(result).toHaveProperty('error', expect.stringContaining('retrieval_unavailable'));
+    expect(result).not.toHaveProperty('count');
+  });
 
-it('reports an ambiguous mutation outcome without inviting an automatic retry', async () => {
-  const { QdrantUnavailableError } = await import('#src/qdrant/operation.js');
-  const scope = makeFakeScope();
-  scope.calendar.getCalendarEvent.mockResolvedValue(calendarEventFixture());
-  scope.calendar.updateCalendarEvent.mockRejectedValue(
-    new QdrantUnavailableError('write', undefined, true),
-  );
-  const execute = buildAgentTools(scope as unknown as TeamScope).execute_calendar_update
-    ?.execute as (input: unknown, opts: unknown) => Promise<unknown>;
-  const result = await execute(
-    {
-      id: CALENDAR_EVENT_ID,
-      expectedCurrent: { title: 'Daily standup' },
-      patch: { title: 'Daily sync' },
-      reason: 'User asked to rename it.',
-    },
-    {},
-  );
-  expect(result).toHaveProperty('error', expect.stringContaining('operation_outcome_unknown'));
-  expect(scope.calendar.updateCalendarEvent).toHaveBeenCalledTimes(1);
+  it('reports an ambiguous mutation outcome without inviting an automatic retry', async () => {
+    const { QdrantUnavailableError } = await import('#src/qdrant/operation.js');
+    const scope = makeFakeScope();
+    scope.calendar.getCalendarEvent.mockResolvedValue(calendarEventFixture());
+    scope.calendar.updateCalendarEvent.mockRejectedValue(
+      new QdrantUnavailableError('write', undefined, true),
+    );
+    const execute = buildAgentTools(scope as unknown as TeamScope).execute_calendar_update
+      ?.execute as (input: unknown, opts: unknown) => Promise<unknown>;
+    const result = await execute(
+      {
+        id: CALENDAR_EVENT_ID,
+        expectedCurrent: { title: 'Daily standup' },
+        patch: { title: 'Daily sync' },
+        reason: 'User asked to rename it.',
+      },
+      {},
+    );
+    expect(result).toHaveProperty('error', expect.stringContaining('operation_outcome_unknown'));
+    expect(scope.calendar.updateCalendarEvent).toHaveBeenCalledTimes(1);
+  });
 });
