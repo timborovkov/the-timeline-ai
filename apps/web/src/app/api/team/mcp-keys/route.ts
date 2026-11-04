@@ -18,6 +18,7 @@ export const dynamic = 'force-dynamic';
 const createSchema = z.object({
   name: z.string().min(1).max(80),
   allowAgent: z.boolean().optional().default(false),
+  allowCapture: z.boolean().optional().default(true),
 });
 
 const log = childLogger('web:mcp-keys');
@@ -81,7 +82,10 @@ export async function POST(req: Request): Promise<Response> {
           name: parsed.data.name,
           keyHash: minted.hash,
           keyPrefix: minted.prefix,
-          scopes: parsed.data.allowAgent ? ['read', 'agent:ask'] : ['read'],
+          scopes: mcpServer.mcpStaticKeyScopes({
+            allowCapture: parsed.data.allowCapture,
+            allowAgent: parsed.data.allowAgent,
+          }),
         })
         .returning();
       const created = rows[0];

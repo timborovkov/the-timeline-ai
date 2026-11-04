@@ -32,7 +32,7 @@ function session(current = true): Session {
 }
 
 describe('hasCurrentLegalSession', () => {
-  it('does not treat a previous Privacy version as current', () => {
+  it('requires renewed acknowledgment after the published Privacy version changes', () => {
     const previous = session();
     previous.user.legalPrivacyVersion = '2026-11-01';
     expect(previous.user.legalTermsVersion).toBe(TERMS_VERSION);

@@ -4,7 +4,7 @@ import { type Db, legalAcceptances, type LegalAcceptanceSource, users } from '@t
 import { and, eq } from 'drizzle-orm';
 
 import { db } from '@/lib/db';
-import { PRIVACY_VERSION, TERMS_VERSION } from '@/lib/legal-versions';
+import { PRIVACY_VERSION, TERMS_VERSION, isCurrentPrivacyVersion } from '@/lib/legal-versions';
 import { clientIpFromHeaders } from '@/lib/request-ip';
 
 export type LegalAcceptanceTransaction = Parameters<Parameters<Db['transaction']>[0]>[0];
@@ -37,7 +37,7 @@ export function hasCurrentLegalAcceptance(user: {
 }): boolean {
   return (
     user.legalTermsVersion === TERMS_VERSION &&
-    user.legalPrivacyVersion === PRIVACY_VERSION &&
+    isCurrentPrivacyVersion(user.legalPrivacyVersion) &&
     Boolean(user.legalAcceptedAt)
   );
 }

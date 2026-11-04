@@ -114,13 +114,16 @@ for (const file of selected) {
           ')$',
       );
     }
-    // Parameterized/computed names and test() aliases are not extracted above.
-    // Run their complement too, so chunking never silently drops those cases.
-    patterns.push(
-      '^(?!.*(?:' +
-        uniqueNames.map((name) => name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|') +
-        ')$)',
-    );
+    // Parameterized/computed names skip chunking above. test() aliases are not
+    // extracted, so run their complement only when the file uses that API.
+    // Bun still errors on a skipped-only complement even with --pass-with-no-tests.
+    if (/\btest\s*\(/.test(source)) {
+      patterns.push(
+        '^(?!.*(?:' +
+          uniqueNames.map((name) => name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|') +
+          ')$)',
+      );
+    }
   } else patterns.push(undefined);
   for (const pattern of patterns) {
     console.log(`[bun-tests] ${file}${pattern ? ' (chunk)' : ''}`);

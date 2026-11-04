@@ -48,6 +48,11 @@ const scopeDescriptions: Record<McpOAuthScope, { title: string; description: str
     description:
       'Read Timeline data you can access in the selected team, including private items and items shared specifically with you.',
   },
+  capture: {
+    title: 'Capture notes in Timeline',
+    description:
+      'Store agent notes as cited Timeline evidence with timeline.remember. Capture is on by default; uncheck it for a read-only grant.',
+  },
   'agent:ask': {
     title: 'Ask the Timeline agent',
     description:
@@ -269,14 +274,16 @@ function OAuthConsentPage({
       <div className="space-y-3">
         <h2 className="text-sm font-semibold text-fg">Requested access</h2>
         <ul className="space-y-2">
-          {request.scopes.map((scope) => (
-            <li key={scope} className="rounded-md border border-border p-3">
-              <p className="text-sm font-medium text-fg">{scopeDescriptions[scope].title}</p>
-              <p className="mt-1 text-xs leading-5 text-fg-muted">
-                {scopeDescriptions[scope].description}
-              </p>
-            </li>
-          ))}
+          {request.scopes
+            .filter((scope) => scope !== 'capture')
+            .map((scope) => (
+              <li key={scope} className="rounded-md border border-border p-3">
+                <p className="text-sm font-medium text-fg">{scopeDescriptions[scope].title}</p>
+                <p className="mt-1 text-xs leading-5 text-fg-muted">
+                  {scopeDescriptions[scope].description}
+                </p>
+              </li>
+            ))}
         </ul>
       </div>
 
@@ -369,6 +376,23 @@ function OAuthConsentForm({
           })}
         </div>
       </fieldset>
+      <label className="flex min-h-11 cursor-pointer items-start gap-3 rounded-md border border-border p-3">
+        <input
+          type="checkbox"
+          name="grant_capture"
+          value="1"
+          defaultChecked
+          className="mt-0.5 size-4 shrink-0 accent-primary"
+        />
+        <span className="space-y-1">
+          <span className="block text-sm font-medium text-fg">
+            {scopeDescriptions.capture.title}
+          </span>
+          <span className="block text-xs leading-5 text-fg-muted">
+            {scopeDescriptions.capture.description}
+          </span>
+        </span>
+      </label>
       <Button type="submit" className="w-full" disabled={!defaultTeamId}>
         Allow access
       </Button>

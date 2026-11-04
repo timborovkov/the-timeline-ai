@@ -1371,3 +1371,11 @@ remains available without legal acceptance or new-account publication readiness.
 ## Platform administration
 
 The platform panel uses the existing collection headers, quiet tables, and bordered settings forms. Users, Teams, Audit, and Billing form a compact admin navigation. Sensitive actions live in explicit disclosures with a reason and confirmation. Impersonation has a persistent banner naming the effective user and team, expiry, read-only status when applicable, and an always-visible exit action. Internal identifiers stay in technical-detail disclosures.
+
+
+### Optional PAYG follow-up
+
+On Home, Free-plan owners/admins who have a persisted assistant answer can see a
+quiet PAYG suggestion. Do not show it before an answer, alongside a restriction,
+or instead of an existing billing warning. “Not now” dismisses this suggestion
+for that user/team in the current browser. The CTA opens plan selection only.

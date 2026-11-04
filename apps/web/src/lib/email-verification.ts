@@ -9,6 +9,8 @@ import {
 import { sendMessage } from '@timeline/shared/messaging';
 import { and, eq, lt, sql } from 'drizzle-orm';
 
+import { trackProductEventBestEffort } from '@/lib/analytics';
+import { selectedPlanFromCallback } from '@/lib/auth-redirect';
 import { getSiteUrl } from '@/lib/site-url';
 
 const EMAIL_VERIFICATION_TTL_MS = 24 * 60 * 60 * 1000;
@@ -22,6 +24,7 @@ export async function sendEmailVerification(input: {
   userId: string;
   email: string;
   teamId?: string | null;
+  callbackUrl?: string | undefined;
   now?: Date;
 }): Promise<{ ok: boolean; error?: string }> {
   const now = input.now ?? new Date();
@@ -40,9 +43,10 @@ export async function sendEmailVerification(input: {
     expires: expiresAt,
   });
 
+  const plan = selectedPlanFromCallback(input.callbackUrl);
   const verificationUrl = `${getSiteUrl()}/verify-email/${encodeURIComponent(
     rawToken,
-  )}?email=${encodeURIComponent(email)}`;
+  )}?email=${encodeURIComponent(email)}${plan ? `&plan=${plan}` : ''}`;
 
   const result = await sendMessage(
     'email_verification',
@@ -116,5 +120,6 @@ export async function verifyEmailToken(input: {
   } catch {
     // Billing access retries verification + member sync before any new portal session.
   }
+  trackProductEventBestEffort({ kind: 'user', userId }, 'email_verified', {});
   return 'verified';
 }

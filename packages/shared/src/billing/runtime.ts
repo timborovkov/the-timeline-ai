@@ -29,6 +29,7 @@ import {
   PLAN_CATALOG,
   customerAiChargeCentsFromOpenRouterUsd,
   recallChargeCents,
+  storageGbFromBytes,
 } from '#src/billing/catalog.js';
 import {
   cumulativeChargeDeltaCents,
@@ -65,7 +66,6 @@ import { createBillingScope, flushPendingPolarUsageIngest } from '#src/billing/s
 import { shadowBillingFromChargesEnabled } from '#src/billing/shadow.js';
 import { childLogger } from '#src/logger.js';
 
-const GIB = 1024 ** 3;
 const log = childLogger('billing:runtime');
 
 export function periodYm(date = new Date()): string {
@@ -898,7 +898,7 @@ async function storageGbOnUtcDay(db: Db, teamId: string, day: string): Promise<n
   const endOfDay = new Date(`${day}T23:59:59.999Z`);
   const [row] = await db
     .select({
-      bytes: sql<number>`COALESCE(SUM(${documentVersions.byteSize}), 0)`,
+      bytes: sql<string | number>`COALESCE(SUM(${documentVersions.byteSize})::bigint, 0)`,
     })
     .from(documentVersions)
     .innerJoin(documents, eq(documents.id, documentVersions.documentId))
@@ -922,7 +922,7 @@ async function storageGbOnUtcDay(db: Db, teamId: string, day: string): Promise<n
         )`,
       ),
     );
-  return (row?.bytes ?? 0) / GIB;
+  return storageGbFromBytes(Number(row?.bytes ?? 0));
 }
 
 /** Days in the trailing 31-day window, including the previous calendar month. */
@@ -1486,6 +1486,7 @@ export async function settlePendingBillingReservations(db: Db): Promise<number> 
         operationId: row.operationId,
         openRouterUsd,
         deliverySurface,
+        ...(metadata.provider_usage_incomplete === true ? { providerUsageIncomplete: true } : {}),
         ...(model ? { model } : {}),
       });
       settled += 1;

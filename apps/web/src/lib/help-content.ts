@@ -264,7 +264,7 @@ export const HELP_PAGES: HelpPage[] = [
         items: [
           'The default path uses browser-based OAuth: sign in, choose a team, review the requested scopes, and approve or deny access.',
           'Codex and Claude Code users can install the full plugin from this repository. Other compatible clients can connect to the same production URL directly.',
-          'The default OAuth read scope follows the member’s existing visibility, including private and specifically shared evidence that member can access. Timeline agent access is a separate, optional owner/admin-approved scope for paid, proposal-only turns.',
+          'The default OAuth grant is read plus capture (on by default). Read follows the member’s existing visibility, including private and specifically shared evidence that member can access. Capture authorizes timeline.remember; unchecking it issues a read-only grant. Timeline agent access is a separate, optional owner/admin-approved scope for paid, proposal-only turns.',
           'Static team keys remain available as a compatibility fallback for manual clients.',
         ],
         appLink: { href: '/app/team/mcp-share', label: 'Manage Timeline MCP' },
@@ -288,7 +288,7 @@ export const HELP_PAGES: HelpPage[] = [
       'Connect Codex, Claude, ChatGPT, or another compatible agent to evidence-backed Timeline work.',
     icon: Bot,
     related: ['integrations', 'work', 'objects'],
-    updatedAt: '2026-08-26',
+    updatedAt: '2026-11-03',
     sections: [
       {
         title: 'Install in Codex or Claude Code',
@@ -314,7 +314,7 @@ export const HELP_PAGES: HelpPage[] = [
         title: 'Connect Timeline MCP',
         body: 'Use the single /api/mcp/server URL with Streamable HTTP. Compatible clients discover Timeline OAuth from the endpoint, then open a browser for explicit sign-in, team selection, and scope consent.',
         items: [
-          'The default OAuth read grant follows the signed-in member’s current team membership and visibility, including private and specifically shared evidence that member can access.',
+          'The default OAuth grant is read plus capture (on by default). Read follows the signed-in member’s current team membership and visibility, including private and specifically shared evidence that member can access. Uncheck capture for a read-only grant.',
           'Approved AI-app access can be reviewed and revoked from Provider accounts.',
           'Static team keys remain available for manual clients and see team-visible data only.',
           'Self-hosted users install the standalone Timeline skill and point their compatible client at their own Timeline origin.',
@@ -329,7 +329,7 @@ export const HELP_PAGES: HelpPage[] = [
       },
       {
         title: 'Know the access boundary',
-        body: 'The bundled skill uses read tools and preserves citations. The default OAuth grant cannot invoke timeline.ask_agent. A current team owner or admin may separately approve that scope for paid, stateless agent turns; it may call enabled team-shared custom MCP tools with external side effects and can create only Timeline proposals that still require human review.',
+        body: 'The bundled skill uses timeline.search, timeline.get, timeline.subject, timeline.ask, and timeline.remember, and preserves citations. The default OAuth grant includes read plus capture (on by default) so timeline.remember can store cited evidence; unchecking capture makes the grant read-only. It cannot invoke timeline.ask. A current team owner or admin may separately approve that scope for paid, stateless agent turns; it may call enabled team-shared custom MCP tools with external side effects and can create only Timeline proposals that still require human review.',
         resourceLinks: [
           {
             href: 'https://github.com/timborovkov/the-timeline-ai/tree/main/plugins/timeline/skills',

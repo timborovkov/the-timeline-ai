@@ -7,6 +7,7 @@ import {
 } from '@timeline/db';
 import { and, eq, isNotNull, isNull, lte, ne } from 'drizzle-orm';
 
+import { captureConfiguredProductEvent } from '#src/analytics/posthog-node.js';
 import { notifySubscriptionPastDue } from '#src/billing/alerts.js';
 import { PLAN_CATALOG, type BillingPlanId } from '#src/billing/catalog.js';
 import { BILLING_SYSTEM_USER_ID } from '#src/billing/context.js';
@@ -499,6 +500,7 @@ async function upsertPaidSubscription(input: {
   cancelEffectiveAt?: Date | null;
 }): Promise<{
   applied: boolean;
+  activated?: boolean;
   duplicate?: DuplicateSubscription;
   compedIncoming?: CompedIncomingSubscription;
 }> {
@@ -642,16 +644,20 @@ async function upsertPaidSubscription(input: {
       now,
       existing ? { planId: existing.planId, effectiveAt: existing.createdAt } : undefined,
     );
+    const activated =
+      billingState.endsWith('_active') &&
+      (existing?.billingState !== billingState || existing.planId !== input.plan);
     if (trackedSubscriptionId && polarSubscriptionId) {
       return {
         applied: true,
+        activated,
         duplicate: {
           keptSubscriptionId: polarSubscriptionId,
           extraSubscriptionId: trackedSubscriptionId,
         },
       };
     }
-    return { applied: true };
+    return { applied: true, activated };
   });
 }
 
@@ -1152,6 +1158,10 @@ async function applyPolarWebhookEvent(input: {
           chargesEnabled: input.chargesEnabled,
           ...(scheduledEnd !== undefined ? { cancelEffectiveAt: scheduledEnd } : {}),
         });
+        if (result.activated)
+          await captureConfiguredProductEvent({ kind: 'team', teamId }, 'billing_plan_activated', {
+            plan,
+          });
         if (result.compedIncoming) {
           await reconcileCompedIncomingSubscription({
             db: input.db,

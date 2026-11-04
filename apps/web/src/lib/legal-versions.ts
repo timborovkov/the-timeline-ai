@@ -3,6 +3,7 @@ export {
   PRIVACY_EFFECTIVE_DATE,
   PRIVACY_VERSION,
   TERMS_VERSION,
+  isCurrentPrivacyVersion,
 } from '@timeline/shared/legal-versions';
 
 export const LEGAL_PROVIDER = 'Nyxone OÜ';

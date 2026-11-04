@@ -15,6 +15,7 @@ import { drizzle } from 'drizzle-orm/pglite';
 
 import { reserveAskAi } from '#src/billing/admission.js';
 import { scopedAiOperationId } from '#src/billing/ai-call.js';
+import { BYTES_PER_GIB, BYTES_PER_MIB, FREE_STORAGE_GB } from '#src/billing/catalog.js';
 import {
   daysInPeriodYm,
   memberDayChargeDelta,
@@ -1068,7 +1069,7 @@ describe('billing runtime', () => {
         'cccccccc-dddd-4eee-8fff-000000000001',
         1,
         'team/docs/store.bin',
-        1073741824,
+        ${50 * BYTES_PER_MIB},
         '${twoDaysAgo}T00:00:00Z'
       );
     `);
@@ -2208,7 +2209,7 @@ describe('billing runtime', () => {
           included_discount_remaining_cents = 100, spend_cap_cents = 100000
       WHERE team_id = '${TEAM_ID}';
       INSERT INTO billing_usage_counters (team_id, period_ym, meter_id, native_units, customer_charge_cents)
-      VALUES ('${TEAM_ID}', '2026-09', 'storage_gb_month', 1, 0);
+      VALUES ('${TEAM_ID}', '2026-09', 'storage_gb_month', ${FREE_STORAGE_GB}, 0);
       INSERT INTO documents (id, team_id, name)
       VALUES ('cccccccc-dddd-4eee-8fff-000000000041', '${TEAM_ID}', 'prior.bin');
       INSERT INTO document_versions (id, team_id, document_id, version, object_key, byte_size, created_at)
@@ -2218,7 +2219,7 @@ describe('billing runtime', () => {
         'cccccccc-dddd-4eee-8fff-000000000041',
         1,
         'team/docs/prior.bin',
-        1073741824,
+        ${BYTES_PER_GIB},
         '${day}T00:00:00Z'
       );
     `);

@@ -3,7 +3,15 @@
 import { ExternalLink, KeyRound } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useEffect, useId, useReducer, useRef, useState, type SyntheticEvent } from 'react';
+import {
+  useEffect,
+  useId,
+  useReducer,
+  useRef,
+  useState,
+  type RefObject,
+  type SyntheticEvent,
+} from 'react';
 
 import { CollectionRow } from '@/components/collections/collection-row';
 import { CopyButton } from '@/components/copy-button';
@@ -68,6 +76,7 @@ interface McpShareState {
   showCreate: boolean;
   name: string;
   nameError: string | null;
+  allowCapture: boolean;
   allowAgent: boolean;
   busy: boolean;
   mintedKey: MintedKey | null;
@@ -83,7 +92,11 @@ function McpStatusGrid() {
     <section className="grid gap-3 md:grid-cols-4">
       {[
         ['Transport', 'Streamable HTTP', 'The SDK negotiates current and legacy revisions.'],
-        ['Default OAuth', 'Member-scoped read', 'Consent follows the member’s current visibility.'],
+        [
+          'Default OAuth',
+          'Member-scoped read + capture',
+          'Consent follows the member’s current visibility. Capture is on by default.',
+        ],
         ['Agent access', 'Separate consent', 'Owners and admins may approve paid agent turns.'],
         ['Static keys', 'Team-visible only', 'Manual-client keys never inherit private access.'],
       ].map(([label, value, description]) => (
@@ -113,8 +126,9 @@ function McpEndpointCard({ mcpUrl }: { mcpUrl: string }) {
       </p>
       <p className="text-sm text-fg-muted">
         Every key exposes team-level retrieval for workspace context, timeline events, entities,
-        objects, tasks, boards, calendar, documents, and connected integration activity. You can
-        separately allow a key to ask the Timeline agent and create proposals for human review.
+        objects, tasks, boards, calendar, documents, and connected integration activity. Capture is
+        on by default so a key can store cited notes with timeline.remember. You can separately
+        allow a key to ask the Timeline agent and create proposals for human review.
       </p>
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
         <code className="flex-1 break-all rounded-sm border border-border bg-surface-2 px-2 py-1.5 font-mono text-xs">
@@ -137,8 +151,8 @@ function McpRetrievalSummary() {
       <div className="text-xs text-fg-muted">Available retrieval</div>
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
         {[
-          ['Workspace context', 'retrieve_workspace_context for broad cross-surface questions.'],
-          ['Objects and tasks', 'get/search/list objects, active tasks, and board state.'],
+          ['Workspace context', 'timeline.search for broad cross-surface questions.'],
+          ['Objects and tasks', 'timeline.search surfaces for objects, tasks, and board state.'],
           ['Calendar and time', 'list/get events and resolve workspace-relative dates.'],
           ['Docs and integrations', 'semantic and structured document plus integration search.'],
           [
@@ -285,16 +299,19 @@ export function McpShareUi({ keys, mcpUrl: initialMcpUrl }: { keys: KeyRow[]; mc
     busyKeyIds.current ??= new Set();
     return busyKeyIds.current;
   }
-  const [{ showCreate, name, nameError, allowAgent, busy, mintedKey, mcpUrl }, patchState] =
-    useReducer(patchMcpShareState, {
-      showCreate: false,
-      name: '',
-      nameError: null,
-      allowAgent: false,
-      busy: false,
-      mintedKey: null,
-      mcpUrl: initialMcpUrl,
-    });
+  const [
+    { showCreate, name, nameError, allowCapture, allowAgent, busy, mintedKey, mcpUrl },
+    patchState,
+  ] = useReducer(patchMcpShareState, {
+    showCreate: false,
+    name: '',
+    nameError: null,
+    allowCapture: true,
+    allowAgent: false,
+    busy: false,
+    mintedKey: null,
+    mcpUrl: initialMcpUrl,
+  });
 
   useEffect(() => {
     if (initialMcpUrl) return;
@@ -329,13 +346,14 @@ export function McpShareUi({ keys, mcpUrl: initialMcpUrl }: { keys: KeyRow[]; mc
         const res = await fetch('/api/team/mcp-keys', {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ name, allowAgent }),
+          body: JSON.stringify({ name, allowCapture, allowAgent }),
         });
         if (!res.ok) return { error: 'failed' };
         const data = (await res.json()) as { name: string; plaintext: string };
         patchState({
           mintedKey: { name: data.name, plaintext: data.plaintext },
           name: '',
+          allowCapture: true,
           allowAgent: false,
           showCreate: false,
         });
@@ -390,37 +408,12 @@ export function McpShareUi({ keys, mcpUrl: initialMcpUrl }: { keys: KeyRow[]; mc
       <McpClientGuides mcpUrl={mcpUrl} mintedKey={mintedKey} />
 
       {mintedKey ? (
-        <div className="space-y-3 border-y border-signal/40 py-4">
-          <div>
-            <div className="text-sm font-medium">
-              New key: keep this open until your client is connected
-            </div>
-            <p className="text-sm text-fg-muted">
-              The plaintext for <span className="font-mono">{mintedKey.name}</span> is shown below
-              once. We store only the hash; if you lose it you&apos;ll need to mint a new one.
-            </p>
-            <p className="mt-2 text-sm text-fg-muted">
-              For a static-key client, copy the generated JSON above or store this value in the
-              client&apos;s protected credential field. Dismiss it only after that client is
-              connected.
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <code className="flex-1 break-all rounded-sm border border-signal/40 bg-surface-2 px-2 py-1.5 font-mono text-xs">
-              {mintedKey.plaintext}
-            </code>
-            <CopyButton value={mintedKey.plaintext} />
-          </div>
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={() => {
-              patchState({ mintedKey: null });
-            }}
-          >
-            Connected — dismiss key
-          </Button>
-        </div>
+        <McpMintedKeyBanner
+          mintedKey={mintedKey}
+          onDismiss={() => {
+            patchState({ mintedKey: null });
+          }}
+        />
       ) : null}
 
       <div className="flex items-center justify-between">
@@ -436,117 +429,241 @@ export function McpShareUi({ keys, mcpUrl: initialMcpUrl }: { keys: KeyRow[]; mc
       </div>
 
       {showCreate ? (
-        <form
-          className="space-y-3 border-y border-border py-4"
-          noValidate
+        <McpCreateKeyForm
+          busy={busy}
+          name={name}
+          nameError={nameError}
+          allowCapture={allowCapture}
+          allowAgent={allowAgent}
+          keyNameId={keyNameId}
+          keyNameErrorId={keyNameErrorId}
+          keyNameRef={keyNameRef}
+          onNameChange={(value) => {
+            patchState({ name: value, nameError: null });
+          }}
+          onAllowCaptureChange={(checked) => {
+            patchState({ allowCapture: checked });
+          }}
+          onAllowAgentChange={(checked) => {
+            patchState({ allowAgent: checked });
+          }}
           onSubmit={submitCreate}
-          aria-busy={busy}
-        >
-          <div className="space-y-1">
-            <Label htmlFor={keyNameId}>
-              Label <span aria-hidden="true">(required)</span>
-            </Label>
-            <Input
-              ref={keyNameRef}
-              id={keyNameId}
-              name="mcp-key-label"
-              autoComplete="off"
-              required
-              value={name}
-              onChange={(e) => {
-                patchState({ name: e.target.value, nameError: null });
-              }}
-              placeholder="Claude Desktop · personal mac"
-              aria-invalid={nameError ? true : undefined}
-              aria-describedby={nameError ? keyNameErrorId : undefined}
-            />
-            {nameError ? (
-              <p id={keyNameErrorId} role="alert" className="text-xs text-danger">
-                {nameError}
-              </p>
-            ) : null}
-          </div>
-          <label className="flex min-h-11 cursor-pointer items-start gap-3 rounded-sm border border-border bg-surface-2 p-3">
-            <input
-              type="checkbox"
-              name="allow-agent"
-              className="mt-0.5 size-4 shrink-0"
-              checked={allowAgent}
-              onChange={(event) => {
-                patchState({ allowAgent: event.currentTarget.checked });
-              }}
-            />
-            <span className="space-y-1">
-              <span className="block text-sm font-medium text-fg">Allow Timeline agent</span>
-              <span className="block text-xs leading-5 text-fg-muted">
-                This key can start paid agent turns, use enabled team MCP tools, and create
-                team-visible proposals. A teammate must still approve every proposal.
-              </span>
-            </span>
-          </label>
-          <Button type="submit" size="sm" disabled={busy}>
-            {busy ? 'Create key · creating…' : 'Create key'}
-          </Button>
-        </form>
+        />
       ) : null}
 
-      {keys.length === 0 ? (
-        <EmptyState
-          icon={KeyRound}
-          size="inset"
-          title="No active keys"
-          body="Create a retrieval key, with optional access to the Timeline agent."
-        />
-      ) : (
-        <ul className="divide-y divide-border border-y border-border">
-          {keys.map((k) => {
-            const mutation = keyMutations[k.id] ?? { busy: false };
-            return (
-              <li key={k.id}>
-                <CollectionRow>
-                  <CollectionRow.Title>{k.name}</CollectionRow.Title>
-                  <CollectionRow.Context>
-                    <span className="inline-flex flex-wrap items-center gap-x-1">
-                      <span>{k.prefix}…</span>
-                      <RelativeTimestamp prefix="created" value={k.createdAt} />
-                      {k.lastUsedAt ? (
-                        <RelativeTimestamp prefix="last used" value={k.lastUsedAt} />
-                      ) : (
-                        <span>never used</span>
-                      )}
-                    </span>
-                  </CollectionRow.Context>
-                  <CollectionRow.Metadata>
-                    <Badge variant="outline" className="rounded-sm">
-                      Retrieval
-                    </Badge>
-                    {k.scopes.includes('agent:ask') ? (
-                      <Badge variant="outline" className="rounded-sm">
-                        Timeline agent
-                      </Badge>
-                    ) : null}
-                  </CollectionRow.Metadata>
-                  <CollectionRow.Actions>
-                    <ItemActionGroup label={`Actions for ${k.name}`}>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        disabled={mutation.busy}
-                        onClick={() => {
-                          void revoke(k.id, k.name);
-                        }}
-                      >
-                        {mutation.busy ? 'Revoking…' : 'Revoke'}
-                      </Button>
-                    </ItemActionGroup>
-                  </CollectionRow.Actions>
-                </CollectionRow>
-              </li>
-            );
-          })}
-        </ul>
-      )}
+      <McpActiveKeyList keys={keys} keyMutations={keyMutations} onRevoke={revoke} />
       {dialog.node}
     </div>
+  );
+}
+
+function McpMintedKeyBanner({
+  mintedKey,
+  onDismiss,
+}: {
+  mintedKey: MintedKey;
+  onDismiss: () => void;
+}) {
+  return (
+    <div className="space-y-3 border-y border-signal/40 py-4">
+      <div>
+        <div className="text-sm font-medium">
+          New key: keep this open until your client is connected
+        </div>
+        <p className="text-sm text-fg-muted">
+          The plaintext for <span className="font-mono">{mintedKey.name}</span> is shown below once.
+          We store only the hash; if you lose it you&apos;ll need to mint a new one.
+        </p>
+        <p className="mt-2 text-sm text-fg-muted">
+          For a static-key client, copy the generated JSON above or store this value in the
+          client&apos;s protected credential field. Dismiss it only after that client is connected.
+        </p>
+      </div>
+      <div className="flex items-center gap-2">
+        <code className="flex-1 break-all rounded-sm border border-signal/40 bg-surface-2 px-2 py-1.5 font-mono text-xs">
+          {mintedKey.plaintext}
+        </code>
+        <CopyButton value={mintedKey.plaintext} />
+      </div>
+      <Button size="sm" variant="ghost" onClick={onDismiss}>
+        Connected — dismiss key
+      </Button>
+    </div>
+  );
+}
+
+function McpCreateKeyForm({
+  busy,
+  name,
+  nameError,
+  allowCapture,
+  allowAgent,
+  keyNameId,
+  keyNameErrorId,
+  keyNameRef,
+  onNameChange,
+  onAllowCaptureChange,
+  onAllowAgentChange,
+  onSubmit,
+}: {
+  busy: boolean;
+  name: string;
+  nameError: string | null;
+  allowCapture: boolean;
+  allowAgent: boolean;
+  keyNameId: string;
+  keyNameErrorId: string;
+  keyNameRef: RefObject<HTMLInputElement | null>;
+  onNameChange: (value: string) => void;
+  onAllowCaptureChange: (checked: boolean) => void;
+  onAllowAgentChange: (checked: boolean) => void;
+  onSubmit: (event: SyntheticEvent<HTMLFormElement>) => void;
+}) {
+  return (
+    <form
+      className="space-y-3 border-y border-border py-4"
+      noValidate
+      onSubmit={onSubmit}
+      aria-busy={busy}
+    >
+      <div className="space-y-1">
+        <Label htmlFor={keyNameId}>
+          Label <span aria-hidden="true">(required)</span>
+        </Label>
+        <Input
+          ref={keyNameRef}
+          id={keyNameId}
+          name="mcp-key-label"
+          autoComplete="off"
+          required
+          value={name}
+          onChange={(event) => {
+            onNameChange(event.target.value);
+          }}
+          placeholder="Claude Desktop · personal mac"
+          aria-invalid={nameError ? true : undefined}
+          aria-describedby={nameError ? keyNameErrorId : undefined}
+        />
+        {nameError ? (
+          <p id={keyNameErrorId} role="alert" className="text-xs text-danger">
+            {nameError}
+          </p>
+        ) : null}
+      </div>
+      <label className="flex min-h-11 cursor-pointer items-start gap-3 rounded-sm border border-border bg-surface-2 p-3">
+        <input
+          type="checkbox"
+          name="allow-capture"
+          className="mt-0.5 size-4 shrink-0"
+          checked={allowCapture}
+          onChange={(event) => {
+            onAllowCaptureChange(event.currentTarget.checked);
+          }}
+        />
+        <span className="space-y-1">
+          <span className="block text-sm font-medium text-fg">Allow capture notes</span>
+          <span className="block text-xs leading-5 text-fg-muted">
+            This key can store cited Timeline evidence with timeline.remember. Capture is on by
+            default. Uncheck it for a read-only key.
+          </span>
+        </span>
+      </label>
+      <label className="flex min-h-11 cursor-pointer items-start gap-3 rounded-sm border border-border bg-surface-2 p-3">
+        <input
+          type="checkbox"
+          name="allow-agent"
+          className="mt-0.5 size-4 shrink-0"
+          checked={allowAgent}
+          onChange={(event) => {
+            onAllowAgentChange(event.currentTarget.checked);
+          }}
+        />
+        <span className="space-y-1">
+          <span className="block text-sm font-medium text-fg">Allow Timeline agent</span>
+          <span className="block text-xs leading-5 text-fg-muted">
+            This key can start paid agent turns, use enabled team MCP tools, and create team-visible
+            proposals. A teammate must still approve every proposal.
+          </span>
+        </span>
+      </label>
+      <Button type="submit" size="sm" disabled={busy}>
+        {busy ? 'Create key · creating…' : 'Create key'}
+      </Button>
+    </form>
+  );
+}
+
+function McpActiveKeyList({
+  keys,
+  keyMutations,
+  onRevoke,
+}: {
+  keys: KeyRow[];
+  keyMutations: Record<string, { busy: boolean }>;
+  onRevoke: (id: string, label: string) => Promise<void>;
+}) {
+  if (keys.length === 0) {
+    return (
+      <EmptyState
+        icon={KeyRound}
+        size="inset"
+        title="No active keys"
+        body="Create a retrieval key. Capture is on by default; Timeline agent access is optional."
+      />
+    );
+  }
+  return (
+    <ul className="divide-y divide-border border-y border-border">
+      {keys.map((k) => {
+        const mutation = keyMutations[k.id] ?? { busy: false };
+        return (
+          <li key={k.id}>
+            <CollectionRow>
+              <CollectionRow.Title>{k.name}</CollectionRow.Title>
+              <CollectionRow.Context>
+                <span className="inline-flex flex-wrap items-center gap-x-1">
+                  <span>{k.prefix}…</span>
+                  <RelativeTimestamp prefix="created" value={k.createdAt} />
+                  {k.lastUsedAt ? (
+                    <RelativeTimestamp prefix="last used" value={k.lastUsedAt} />
+                  ) : (
+                    <span>never used</span>
+                  )}
+                </span>
+              </CollectionRow.Context>
+              <CollectionRow.Metadata>
+                <Badge variant="outline" className="rounded-sm">
+                  Retrieval
+                </Badge>
+                {k.scopes.includes('capture') ? (
+                  <Badge variant="outline" className="rounded-sm">
+                    Capture
+                  </Badge>
+                ) : null}
+                {k.scopes.includes('agent:ask') ? (
+                  <Badge variant="outline" className="rounded-sm">
+                    Timeline agent
+                  </Badge>
+                ) : null}
+              </CollectionRow.Metadata>
+              <CollectionRow.Actions>
+                <ItemActionGroup label={`Actions for ${k.name}`}>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    disabled={mutation.busy}
+                    onClick={() => {
+                      void onRevoke(k.id, k.name);
+                    }}
+                  >
+                    {mutation.busy ? 'Revoking…' : 'Revoke'}
+                  </Button>
+                </ItemActionGroup>
+              </CollectionRow.Actions>
+            </CollectionRow>
+          </li>
+        );
+      })}
+    </ul>
   );
 }

@@ -53,7 +53,7 @@ export function HomeAskComposer({
           </h2>
           <p className="mt-1 text-sm text-fg-muted">
             {hasSources
-              ? 'Ask a specific question, then open a citation to check the evidence.'
+              ? 'Ask a specific question, then open a citation to check the evidence. Newly added sources may still be processing; check Documents or Connections if an answer cannot find them.'
               : 'Add one source before your first question: capture a project note or upload a document. Wait for processing so Ask can find it.'}
           </p>
         </div>

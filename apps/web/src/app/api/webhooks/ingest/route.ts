@@ -1,15 +1,6 @@
-import { createHash } from 'node:crypto';
-
-import { rawEvents } from '@timeline/db';
-import { admitAcceptedSourceEnrichment } from '@timeline/shared/billing';
-import { sourceMetadataWithConversationArtifacts } from '@timeline/shared/conversational/contact-artifacts';
-import { reconcileLinkArtifactsForRawEvent } from '@timeline/shared/conversational/link-artifacts';
 import * as ingestWebhooks from '@timeline/shared/ingest-webhooks';
 import { childLogger } from '@timeline/shared/logger';
 import * as rateLimit from '@timeline/shared/rate-limit';
-import { inlineSourceSnapshotMetadata } from '@timeline/shared/reconciliation';
-import { normalizeRawEventsToEvidence } from '@timeline/shared/reconciliation/normalization';
-import { and, eq, sql } from 'drizzle-orm';
 
 import { db } from '@/lib/db';
 import { requireRedisQueue } from '@/lib/queue';
@@ -21,7 +12,6 @@ export const dynamic = 'force-dynamic';
 
 const MAX_TEXT_BYTES = 1024 * 1024;
 const log = childLogger('web:api:ingest-webhook');
-const INGEST_WEBHOOK_SOURCE_SNAPSHOT_VERSION = 'ingest-webhook-source-snapshot-2026-07';
 
 const SENSITIVE_HEADER_RE = /authorization|cookie|secret|signature|token|key/i;
 const TEXTUAL_CONTENT_TYPES = [
@@ -99,165 +89,48 @@ export async function handlePost(req: Request, pathToken?: string): Promise<Resp
     return Response.json({ ok: false, reason: 'payload_too_large' }, { status: 413 });
   }
   const body = bodyResult.text;
-  const bodyHash = createHash('sha256').update(body).digest('hex');
   const receivedAt = new Date();
-  const dedupKey = dedupKeyFor(resolved.webhookId, bodyHash, receivedAt);
-  const contentText = renderWebhookContent({
-    webhookName: resolved.name,
-    contentType,
-    body,
-  });
-  const requestHeaders = redactedHeaders(req.headers);
-  const sourceMetadata = sourceMetadataWithConversationArtifacts(
-    {
-      ingest_webhook_id: resolved.webhookId,
-      ingest_webhook_credential_id: resolved.credentialId,
-      ingest_webhook_name: resolved.name,
-      ingest_webhook_body_sha256: bodyHash,
-      ingest_webhook_dedup_key: dedupKey,
-      content_type: contentType,
-      method: 'POST',
-      received_at: receivedAt.toISOString(),
-      request_headers: requestHeaders,
-      proposal_generation_enabled: resolved.proposalGenerationEnabled,
-      ...ingestWebhookSourcePayloadMetadata({
-        webhookId: resolved.webhookId,
-        credentialId: resolved.credentialId,
-        webhookName: resolved.name,
-        contentType,
-        method: 'POST',
-        receivedAt,
-        body,
-        bodyHash,
-        dedupKey,
-        requestHeaders,
-        proposalGenerationEnabled: resolved.proposalGenerationEnabled,
-      }),
-      event_class: resolved.eventClass,
-    },
-    contentText,
-  );
   const visibility = ingestVisibilityFor(resolved.visibilityDefault, resolved.ownerUserId);
 
-  const rows = await db
-    .insert(rawEvents)
-    .values({
-      teamId: resolved.teamId,
-      authorUserId: null,
-      visibilityOwnerUserId: visibility.ownerUserId,
-      source: 'ingest_webhook',
-      contentText,
-      occurredAt: receivedAt,
-      visibility: visibility.value,
-      sourceMetadata,
-    })
-    .onConflictDoNothing()
-    .returning({ id: rawEvents.id, teamId: rawEvents.teamId });
-  const event = rows[0];
-  if (!event) {
-    const duplicate = await findDedupedEvent(resolved.teamId, dedupKey);
-    if (duplicate) {
-      await Promise.all([
-        normalizeRawEventEvidence(duplicate),
-        reconcileIngestWebhookLinks(duplicate, contentText, receivedAt),
-        enqueueProcessing(duplicate, resolved.proposalGenerationEnabled),
-      ]);
-    }
+  let enqueue: ingestWebhooks.IngestEvidenceEnqueue | undefined;
+  let queueUnavailable: unknown;
+  try {
+    enqueue = await requireRedisQueue();
+  } catch (err) {
+    queueUnavailable = err;
+    log.error({ err, teamId: resolved.teamId }, 'ingest webhook queue unavailable');
+    reportCaughtError(err, { surface: 'api', operation: 'ingest_webhook_enqueue_queue' });
+  }
+
+  const accepted = await ingestWebhooks.acceptIngestWebhookEvidence({
+    db,
+    teamId: resolved.teamId,
+    webhookId: resolved.webhookId,
+    webhookName: resolved.name,
+    credentialId: resolved.credentialId,
+    contentType,
+    body,
+    eventClass: resolved.eventClass,
+    visibility: visibility.value,
+    visibilityOwnerUserId: visibility.ownerUserId,
+    authorUserId: null,
+    proposalGenerationEnabled: resolved.proposalGenerationEnabled,
+    receivedAt,
+    requestHeaders: redactedHeaders(req.headers),
+    ...(enqueue ? { enqueue } : {}),
+    ...(queueUnavailable !== undefined ? { queueUnavailable } : {}),
+  });
+
+  if (accepted.status === 'duplicate') {
     return Response.json(
-      { ok: true, status: 'duplicate', rawEventId: duplicate?.id ?? null },
+      { ok: true, status: 'duplicate', rawEventId: accepted.rawEventId },
       { status: 200 },
     );
   }
-
-  await Promise.all([
-    normalizeRawEventEvidence(event),
-    reconcileIngestWebhookLinks(event, contentText, receivedAt),
-    enqueueProcessing(event, resolved.proposalGenerationEnabled),
-  ]);
-  return Response.json({ ok: true, status: 'accepted', rawEventId: event.id }, { status: 202 });
-}
-
-function ingestWebhookSourcePayloadMetadata(input: {
-  webhookId: string;
-  credentialId: string;
-  webhookName: string;
-  contentType: string;
-  method: string;
-  receivedAt: Date;
-  body: string;
-  bodyHash: string;
-  dedupKey: string;
-  requestHeaders: Record<string, string>;
-  proposalGenerationEnabled: boolean;
-}): Record<string, unknown> {
-  const snapshot = {
-    provider: 'ingest_webhook',
-    webhook_id: input.webhookId,
-    credential_id: input.credentialId,
-    webhook_name: input.webhookName,
-    content_type: input.contentType,
-    method: input.method,
-    received_at: input.receivedAt.toISOString(),
-    body_sha256: input.bodyHash,
-    body: input.body,
-    dedup_key: input.dedupKey,
-    request_headers: input.requestHeaders,
-    proposal_generation_enabled: input.proposalGenerationEnabled,
-  };
-  return inlineSourceSnapshotMetadata({
-    snapshot,
-    kind: 'ingest_webhook_payload',
-    version: INGEST_WEBHOOK_SOURCE_SNAPSHOT_VERSION,
-    ref: () => `inline://timeline/ingest-webhook/${input.webhookId}/${input.bodyHash}`,
-  });
-}
-
-async function normalizeRawEventEvidence(event: { id: string; teamId: string }): Promise<void> {
-  try {
-    await normalizeRawEventsToEvidence({ db, teamId: event.teamId, rawEventIds: [event.id] });
-  } catch (err) {
-    log.warn(
-      { err, teamId: event.teamId, rawEventId: event.id },
-      'ingest webhook reconciliation evidence normalization failed',
-    );
-  }
-}
-
-async function reconcileIngestWebhookLinks(
-  event: { id: string; teamId: string },
-  contentText: string,
-  occurredAt: Date,
-): Promise<void> {
-  await reconcileLinkArtifactsForRawEvent(db, {
-    teamId: event.teamId,
-    rawEventId: event.id,
-    text: contentText,
-    occurredAt,
-  }).catch((err: unknown) => {
-    log.error({ err, rawEventId: event.id }, 'ingest webhook link artifact reconciliation failed');
-    reportCaughtError(err, {
-      surface: 'api',
-      operation: 'ingest_webhook_link_artifact_reconcile',
-    });
-  });
-}
-
-async function findDedupedEvent(
-  teamId: string,
-  dedupKey: string,
-): Promise<{ id: string; teamId: string } | null> {
-  const rows = await db
-    .select({ id: rawEvents.id, teamId: rawEvents.teamId })
-    .from(rawEvents)
-    .where(
-      and(
-        eq(rawEvents.teamId, teamId),
-        eq(rawEvents.source, 'ingest_webhook'),
-        sql`${rawEvents.sourceMetadata} ->> 'ingest_webhook_dedup_key' = ${dedupKey}`,
-      ),
-    )
-    .limit(1);
-  return rows[0] ?? null;
+  return Response.json(
+    { ok: true, status: 'accepted', rawEventId: accepted.rawEventId },
+    { status: 202 },
+  );
 }
 
 function tokenFromRequest(req: Request, pathToken?: string): string | null {
@@ -295,28 +168,6 @@ function redactedHeaders(headers: Headers): Record<string, string> {
   return result;
 }
 
-function renderWebhookContent(input: {
-  webhookName: string;
-  contentType: string;
-  body: string;
-}): string {
-  return [
-    `Ingest webhook: ${input.webhookName}`,
-    `Content-Type: ${input.contentType}`,
-    '',
-    input.body.length > 0 ? input.body : '[empty payload]',
-  ].join('\n');
-}
-
-function dedupKeyFor(webhookId: string, bodyHash: string, receivedAt: Date): string {
-  return `${webhookId}:${receivedAt.toISOString().slice(0, 10)}:${bodyHash}`;
-}
-
-function clientIpFromHeaders(headers: Headers): string {
-  const forwarded = headers.get('x-forwarded-for')?.split(',')[0]?.trim();
-  return forwarded ?? headers.get('x-real-ip') ?? 'unknown';
-}
-
 function ingestVisibilityFor(
   visibilityDefault: 'private' | 'team' | 'specific_users',
   ownerUserId: string | null,
@@ -335,58 +186,7 @@ async function checkInvalidCredentialLimit(req: Request): Promise<{ ok: boolean 
   });
 }
 
-async function enqueueProcessing(
-  event: { id: string; teamId: string },
-  proposalGenerationEnabled: boolean,
-): Promise<void> {
-  const admitted = await admitAcceptedSourceEnrichment({
-    db,
-    teamId: event.teamId,
-    rawEventId: event.id,
-  });
-  if (!admitted) return;
-  let queueModule: Awaited<ReturnType<typeof requireRedisQueue>>;
-  try {
-    queueModule = await requireRedisQueue();
-  } catch (err) {
-    await markProcessingFailure(event.id, 'queue', err);
-    return;
-  }
-  await Promise.all([
-    queueModule
-      .enqueueExtractJob({ rawEventId: event.id, teamId: event.teamId })
-      .catch((err: unknown) => markProcessingFailure(event.id, 'extraction', err)),
-    queueModule
-      .enqueueEmbedJob({ rawEventId: event.id, teamId: event.teamId })
-      .catch((err: unknown) => markProcessingFailure(event.id, 'embedding', err)),
-    proposalGenerationEnabled
-      ? queueModule
-          .enqueueSuggestionJob({ rawEventId: event.id, teamId: event.teamId })
-          .catch((err: unknown) => markProcessingFailure(event.id, 'suggestions', err))
-      : Promise.resolve(),
-  ]);
-}
-
-async function markProcessingFailure(
-  rawEventId: string,
-  stage: 'queue' | 'extraction' | 'embedding' | 'suggestions',
-  err: unknown,
-): Promise<void> {
-  log.error({ err, rawEventId, stage }, 'ingest webhook processing enqueue failed');
-  reportCaughtError(err, { surface: 'api', operation: `ingest_webhook_enqueue_${stage}` });
-  const patch = JSON.stringify({
-    [`${stage}_failed_at`]: new Date().toISOString(),
-    [`${stage}_error`]: `enqueue failed: ${
-      err instanceof Error ? err.message.slice(0, 480) : 'unknown'
-    }`,
-  });
-  await db
-    .update(rawEvents)
-    .set({
-      sourceMetadata: sql`COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) || ${patch}::jsonb`,
-    })
-    .where(sql`${rawEvents.id} = ${rawEventId}`)
-    .catch((markErr: unknown) => {
-      log.error({ err: markErr, rawEventId, stage }, 'failed to mark ingest webhook failure');
-    });
+function clientIpFromHeaders(headers: Headers): string {
+  const forwarded = headers.get('x-forwarded-for')?.split(',')[0]?.trim();
+  return forwarded ?? headers.get('x-real-ip') ?? 'unknown';
 }

@@ -15,6 +15,7 @@ import { isBillingAdmissionError } from '@timeline/shared/billing';
 import { DelayedError, UnrecoverableError, Worker, type Job } from 'bullmq';
 import { eq, sql } from 'drizzle-orm';
 
+import { trackProductEventBestEffort } from '#src/analytics.js';
 import { withWorkerAiBilling, workerBillingJobOptions } from '#src/billing-context.js';
 import { captureWorkerException, captureWorkerJobFailure } from '#src/monitoring.js';
 import { guardWorkerProcessor } from '#src/platform-worker.js';
@@ -372,6 +373,10 @@ async function finalizeSourceEmbedding(input: {
       })
       .where(eq(rawEvents.id, input.data.rawEventId));
   }
+  if (input.scope === 'event')
+    trackProductEventBestEffort({ kind: 'team', teamId: input.data.teamId }, 'source_indexed', {
+      source: 'event',
+    });
 }
 
 export async function processEmbedJob(

@@ -301,7 +301,15 @@ PLATFORM_ADMIN_EMAILS=
         <li><code>timeline_ai_eur_cents</code> — customer AI charge in euro cents</li>
         <li><code>timeline_recall_minutes</code></li>
         <li><code>timeline_email_units</code></li>
-        <li><code>timeline_storage_gb_month</code></li>
+        <li>
+          <code>timeline_storage_gb_month</code> — original-file GiB-month. Polar
+          <code>unit_amount</code> stays €0.25 per GB-month. Setup does not configure Polar included
+          or credited units; the Free/PAYG floor is the local
+          <code>FREE_ALLOWANCES.storageGb</code> (100 MiB). Do not change production Polar products
+          for this floor. If a Polar meter was given 1 included GB in the dashboard, leave
+          production untouched here and later set credited units to 0 so Polar does not double-apply
+          a 1 GB credit on top of the local 100 MiB floor.
+        </li>
         <li><code>timeline_accepted_sources</code></li>
         <li>
           <code>timeline_extra_member_days</code> — extra active members, summed as fractions of a
@@ -578,6 +586,13 @@ PLATFORM_ADMIN_EMAILS=
         members are directed to team owners. The checklist cache may take up to 30 seconds to
         reflect activation. Optional billing retains its own guidance and action while the next
         incomplete product step keeps its guidance and manual completion controls.
+      </p>
+      <p>
+        After a persisted Ask answer, unrestricted Free owners/admins can see a dismissible PAYG
+        suggestion on Home. It opens plan selection and retains the €25 default monthly cap;
+        dismissal is local to that user/team and browser. An existing billing warning takes
+        precedence. Self-serve plan intent survives email verification through an allowlisted plan
+        name and a fixed billing destination, including when sign-in is required again.
       </p>
       <p>
         Restricted Free owners see their actual setup issue: an unverified email offers a

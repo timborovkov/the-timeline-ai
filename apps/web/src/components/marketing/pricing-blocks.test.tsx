@@ -47,6 +47,8 @@ describe('pricing blocks', () => {
     expect(html).toContain('Concurrent meeting notetakers');
     expect(html).toContain('Custom MCP servers');
     expect(html).toContain('Not included');
-    expect(html).toContain('1 GB');
+    expect(html).toContain('100 MB');
+    expect(html).toContain('10,000');
+    expect(html).toContain('20,000');
   });
 });

@@ -2,6 +2,7 @@ import {
   FREE_ALLOWANCES,
   OVERAGE_RATES,
   formatEuroFromCents,
+  formatStorageGb,
 } from '@timeline/shared/billing/catalog';
 import Link from 'next/link';
 
@@ -60,10 +61,11 @@ export function PricingMetersExplainer({ className }: { className?: string }) {
         <p className="mt-2 max-w-3xl text-sm leading-6 text-fg-muted">
           Every verified person receives the Free monthly floor on one owned workspace:{' '}
           {formatEuroFromCents(FREE_ALLOWANCES.aiChargeCents)} AI, {FREE_ALLOWANCES.recallMinutes}{' '}
-          meeting minutes, {FREE_ALLOWANCES.emailUnits} email units, {FREE_ALLOWANCES.storageGb} GB
-          storage, and {FREE_ALLOWANCES.acceptedSources.toLocaleString()} accepted sources — no card
-          required. Additional owned workspaces stay restricted until you add a payment method. Pay
-          as you go keeps that allowance after you add a payment method.
+          meeting minutes, {FREE_ALLOWANCES.emailUnits} email units,{' '}
+          {formatStorageGb(FREE_ALLOWANCES.storageGb)} storage, and{' '}
+          {FREE_ALLOWANCES.acceptedSources.toLocaleString()} accepted sources — no card required.
+          Additional owned workspaces stay restricted until you add a payment method. Pay as you go
+          keeps that allowance after you add a payment method.
         </p>
         <p className="mt-3 text-sm text-fg-muted">
           Capacity limits also apply: an allowance does not guarantee a fixed number of answers.{' '}

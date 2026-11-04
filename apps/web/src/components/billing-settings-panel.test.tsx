@@ -1,4 +1,5 @@
 import { cleanup, fireEvent, render, waitFor } from '@testing-library/react';
+import { FREE_ALLOWANCES } from '@timeline/shared/billing/catalog';
 import { expect, vi } from '@timeline/test-support';
 import { afterEach, describe, it } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -82,7 +83,7 @@ function panelElement(overrides: Partial<BillingSettingsPanelProps> = {}) {
         aiChargeCents: 500,
         recallMinutes: 60,
         emailUnits: 500,
-        storageGb: 1,
+        storageGb: FREE_ALLOWANCES.storageGb,
         acceptedSources: 1000,
       }}
       costBearingPaused={false}
@@ -258,7 +259,7 @@ describe('billing restriction banners', () => {
     aiChargeCents: 100,
     recallMinutes: 10,
     emailUnits: 10,
-    storageGb: 1,
+    storageGb: FREE_ALLOWANCES.storageGb,
     acceptedSources: 10,
   };
   const input = {

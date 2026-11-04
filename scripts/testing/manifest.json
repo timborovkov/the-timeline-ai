@@ -875,6 +875,9 @@
   "apps/web/src/components/password-recovery-form.test.tsx": {
     "group": "dom"
   },
+  "apps/web/src/components/payg-value-nudge.test.tsx": {
+    "group": "dom"
+  },
   "apps/web/src/components/pins/pin-controls.test.tsx": {
     "group": "dom"
   },
@@ -1813,6 +1816,9 @@
   },
   "packages/shared/src/mcp-server/oauth.test.ts": {
     "group": "integration"
+  },
+  "packages/shared/src/mcp-server/shipped-install-content.test.ts": {
+    "group": "unit"
   },
   "packages/shared/src/mcp/auth.test.ts": {
     "group": "unit"

@@ -29,7 +29,16 @@ await vi.mock(
     }
     return {
       McpOAuthError,
-      MCP_OAUTH_SCOPES: ['read', 'agent:ask'],
+      MCP_OAUTH_SCOPES: ['read', 'capture', 'agent:ask'],
+      resolveMcpOAuthConsentScopes: (
+        requested: string[],
+        options: { grantCapture: boolean },
+      ): string[] => {
+        const scopes = ['read'];
+        if (options.grantCapture) scopes.push('capture');
+        if (requested.includes('agent:ask')) scopes.push('agent:ask');
+        return scopes;
+      },
       validateMcpAuthorizationRequest: fakes.validate,
       createMcpAuthorizationCode: fakes.createCode,
       revokeMcpOAuthGrant: fakes.revokeGrant,
@@ -145,6 +154,7 @@ describe('MCP OAuth consent actions', () => {
       request: VALIDATED_REQUEST,
       userId: USER_ID,
       teamId: TEAM_ID,
+      grantedScopes: ['read', 'agent:ask'],
     });
     const destination = String(fakes.redirect.mock.calls.at(-1)?.[0]);
     const url = new URL(destination);
@@ -152,6 +162,20 @@ describe('MCP OAuth consent actions', () => {
     expect(url.searchParams.get('code')).toBe('tlc_code_once');
     expect(url.searchParams.get('state')).toBe('state-value');
     expect(url.searchParams.get('iss')).toBe('https://timeline.example');
+  });
+
+  it('grants capture when the consent checkbox is checked', async () => {
+    const formData = consentForm();
+    formData.set('grant_capture', '1');
+
+    await expect(approveMcpOAuthAction(formData)).rejects.toThrow('REDIRECT:');
+
+    expect(fakes.createCode).toHaveBeenCalledWith(expect.anything(), {
+      request: VALIDATED_REQUEST,
+      userId: USER_ID,
+      teamId: TEAM_ID,
+      grantedScopes: ['read', 'capture', 'agent:ask'],
+    });
   });
 
   it('denies only after revalidating the registered redirect URI', async () => {
