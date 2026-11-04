@@ -2,19 +2,6 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import type {
-  BillingUsageAlertMessageInput,
-  ConnectionAttentionMessageInput,
-  DailyDigestMessageInput,
-  EmailVerificationMessageInput,
-  MessageInput,
-  MessageIntent,
-  RenderedMessage,
-  SupportRequestMessageInput,
-  TeamInviteMessageInput,
-  WelcomeMessageInput,
-} from '#src/messaging/types.js';
-
 import {
   absoluteDigestAppUrl,
   digestActivityStats,
@@ -31,11 +18,26 @@ import {
   formatDigestWindowRange,
 } from '#src/messaging/digest-format.js';
 
+import type {
+  BillingUsageAlertMessageInput,
+  ConnectionAttentionMessageInput,
+  DailyDigestMessageInput,
+  EmailVerificationMessageInput,
+  MessageInput,
+  MessageIntent,
+  PasswordResetMessageInput,
+  RenderedMessage,
+  SupportRequestMessageInput,
+  TeamInviteMessageInput,
+  WelcomeMessageInput,
+} from '#src/messaging/types.js';
+
 type TemplateName =
   | 'base'
   | 'billing-usage-alert'
   | 'daily-digest'
   | 'email-verification'
+  | 'password-reset'
   | 'support-request'
   | 'team-invite'
   | 'welcome';
@@ -356,6 +358,38 @@ function renderEmailVerification(input: EmailVerificationMessageInput): Rendered
   };
 }
 
+function renderPasswordReset(input: PasswordResetMessageInput): RenderedMessage {
+  const expires = input.expiresAt.toUTCString();
+  const subject = 'Reset your password for The Timeline';
+  const preview = 'Choose a new password for your Timeline account.';
+  const textBody = [
+    'Reset your password for The Timeline.',
+    '',
+    `Reset password: ${input.resetUrl}`,
+    '',
+    `This link expires on ${expires} (30 minutes after the request).`,
+    'If you did not request this, you can ignore this email. Your password has not changed.',
+  ].join('\n');
+  const htmlBody = htmlLayout({
+    preview,
+    title: 'Reset your password',
+    body: renderBody('password-reset', {
+      expires,
+      resetUrl: input.resetUrl,
+    }),
+    cta: { href: input.resetUrl, label: 'Reset password' },
+  });
+  return {
+    intent: 'password_reset',
+    to: input.to,
+    subject,
+    textBody,
+    htmlBody,
+    previewText: preview,
+    metadata: { message_intent: 'password_reset' },
+  };
+}
+
 function renderDailyDigest(input: DailyDigestMessageInput): RenderedMessage {
   const p = input.payload;
   const subject = `Daily digest for ${p.teamName}`;
@@ -473,7 +507,7 @@ function renderConnectionAttention(input: ConnectionAttentionMessageInput): Rend
   const textBody = [
     input.summary,
     '',
-    `Open integrations: ${input.actionUrl}`,
+    `Open Connections: ${input.actionUrl}`,
     '',
     'Existing timeline events remain available; this only affects future sync.',
   ].join('\n');
@@ -484,7 +518,7 @@ function renderConnectionAttention(input: ConnectionAttentionMessageInput): Rend
       `<p style="font-size: 14px; line-height: 1.55;">${escapeHtml(input.summary)}</p>`,
       '<p style="font-size: 13px; color: #747b7b;">Existing timeline events remain available; this only affects future sync.</p>',
     ].join('\n'),
-    cta: { href: input.actionUrl, label: 'Open integrations' },
+    cta: { href: input.actionUrl, label: 'Open Connections' },
   });
   return {
     intent: 'connection_attention',
@@ -623,6 +657,8 @@ export function renderMessage<TIntent extends MessageIntent>(
       return renderSupportRequest(input as SupportRequestMessageInput);
     case 'welcome':
       return renderWelcome(input as WelcomeMessageInput);
+    case 'password_reset':
+      return renderPasswordReset(input as PasswordResetMessageInput);
     case 'email_verification':
       return renderEmailVerification(input as EmailVerificationMessageInput);
     case 'daily_digest':

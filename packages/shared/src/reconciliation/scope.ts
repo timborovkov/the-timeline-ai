@@ -1,7 +1,5 @@
 import { reconciliationRuns, type Db } from '@timeline/db';
 
-import type { TeamRole, TeamScopeCore } from '#src/team-scope.js';
-
 import {
   getReconciliationClusterDetail,
   getReconciliationDashboardSnapshot,
@@ -15,6 +13,8 @@ import {
   productionSamplingRunMetrics,
   type RecordProductionSamplingEvalReportInput,
 } from '#src/reconciliation/production-sampling.js';
+
+import type { TeamRole, TeamScopeCore } from '#src/team-scope.js';
 
 interface ReconciliationScopeDeps {
   db: Db;

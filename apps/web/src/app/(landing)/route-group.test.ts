@@ -31,6 +31,10 @@ describe('landing route group', () => {
 
   it('keeps public-page preferences, metadata, and motion usable', () => {
     const styles = readFileSync(landingRouteFile('home.module.css'), 'utf8');
+    const agentSetupStyles = readFileSync(
+      new URL('../../components/marketing/agents/agent-setup-card.module.css', import.meta.url),
+      'utf8',
+    );
     const headerStyles = readFileSync(
       new URL('../../components/public-header.module.css', import.meta.url),
       'utf8',
@@ -45,9 +49,10 @@ describe('landing route group', () => {
       narrowViewportStart,
     );
     const narrowViewportStyles = headerStyles.slice(narrowViewportStart, narrowViewportEnd);
-    const remFontSizeMinimums = [...styles.matchAll(/font-size:\s*(?:clamp\()?([\d.]+)rem/g)].map(
-      ([, size]) => Number(size),
-    );
+    const remFontSizeMinimums = [
+      ...styles.matchAll(/font-size:\s*(?:clamp\()?([\d.]+)rem/g),
+      ...agentSetupStyles.matchAll(/font-size:\s*(?:clamp\()?([\d.]+)rem/g),
+    ].map(([, size]) => Number(size));
 
     expect(narrowViewportStyles).toContain('.signInLink');
     expect(narrowViewportStyles).toContain('.themeToggle');
@@ -56,6 +61,9 @@ describe('landing route group', () => {
     expect(headerStyles).toContain('@media (prefers-reduced-motion: reduce)');
     expect(styles).toContain('--home-meta-size: 0.75rem');
     expect(Math.min(...remFontSizeMinimums)).toBeGreaterThanOrEqual(0.75);
+    expect(agentSetupStyles).toMatch(/\.marks\s*\{[^}]*flex-wrap:\s*nowrap;/s);
+    expect(styles).toMatch(/\.slackMeta span\s*\{[^}]*font-size:\s*var\(--home-meta-size\);/s);
+    expect(styles).toMatch(/\.mcpCalls code\s*\{[^}]*font-size:\s*var\(--home-meta-size\);/s);
     expect(styles).not.toContain('translateX(0.35rem)');
     expect(styles).toContain('animation: evidencePath 4.8s linear infinite both');
     expect(styles).toContain(

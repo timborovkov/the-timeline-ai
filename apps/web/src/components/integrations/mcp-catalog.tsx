@@ -1,7 +1,6 @@
 'use client';
 
 import { Search } from 'lucide-react';
-import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { useMemo, useReducer, useState } from 'react';
 
@@ -9,6 +8,7 @@ import type { ActionDispatch } from 'react';
 
 import { CollectionRow } from '@/components/collections/collection-row';
 import { EmptyState } from '@/components/empty-state';
+import { ProviderLogo } from '@/components/provider-logo';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -260,13 +260,7 @@ function CatalogCard({
     <div>
       <CollectionRow>
         <CollectionRow.Leading>
-          <Image
-            src={entry.logo}
-            alt=""
-            width={28}
-            height={28}
-            className="size-7 rounded-sm bg-surface-2 p-1"
-          />
+          <ProviderLogo src={entry.logo} />
         </CollectionRow.Leading>
         <CollectionRow.Title>{entry.label}</CollectionRow.Title>
         <CollectionRow.Context>{entry.description}</CollectionRow.Context>

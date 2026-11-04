@@ -5,6 +5,7 @@ import type { PublicDocument } from '@/lib/public-site';
 
 import {
   TIMELINE_AGENT_ACCESS_FAQS,
+  TIMELINE_AGENT_SETUP_PROMPT,
   TIMELINE_CLAUDE_PLUGIN_INSTALL_COMMAND,
   TIMELINE_MCP_COMMAND,
   TIMELINE_PLUGIN_INSTALL_PROMPT,
@@ -33,10 +34,24 @@ describe('llms text files', () => {
     const text = buildLlmsTxt();
 
     expect(text).toContain('# The Timeline');
+    expect(text.split('\n').slice(0, 3).join('\n')).toContain(
+      'https://thetimeline.cc/agents/setup.md',
+    );
+    expect(text).toContain('## For agents');
+    expect(text).toContain('[Agent setup](https://thetimeline.cc/agents/setup.md)');
     expect(text).toContain('[Landing page](https://thetimeline.cc/)');
     expect(text).toContain('[Trust and security](https://thetimeline.cc/trust)');
     expect(text).toContain('[Cookies and similar technologies](https://thetimeline.cc/cookies)');
     expect(text).toContain('[llms-full.txt](https://thetimeline.cc/llms-full.txt)');
+    expect(text).toContain('Set up The Timeline - https://thetimeline.cc/llms.txt');
+    expect(text).toContain('https://thetimeline.cc/api/mcp/server');
+    expect(text).toContain(
+      'timeline.search, timeline.get, timeline.subject, timeline.ask, timeline.remember',
+    );
+    expect(text).toContain('Capture is a separate consent checkbox, on by default');
+    expect(text).toContain('counts toward the accepted-sources meter');
+    expect(text).toContain('plugins/timeline');
+    expect(text).toContain('POST https://thetimeline.cc/api/webhooks/ingest');
     expect(text).toContain('Signed-in app routes, auth routes, invite routes, and API routes');
     for (const page of HELP_PAGES) {
       expect(text).toContain(`[${page.title}](https://thetimeline.cc/help/${page.slug})`);
@@ -80,6 +95,12 @@ describe('llms text files', () => {
     expect(text).toContain(
       '[Install in Claude Code](https://github.com/timborovkov/the-timeline-ai/tree/main/plugins/timeline/skills#install-in-claude-code)',
     );
+    expect(text.split('\n').slice(0, 3).join('\n')).toContain(
+      'https://thetimeline.cc/agents/setup.md',
+    );
+    expect(text).toContain('## For agents');
+    expect(text).toContain('[Timeline skill](https://thetimeline.cc/agents/SKILL.md)');
+    expect(text).toContain(TIMELINE_AGENT_SETUP_PROMPT);
     expect(text).toContain(TIMELINE_PLUGIN_INSTALL_PROMPT);
     expect(text).toContain(TIMELINE_CLAUDE_PLUGIN_INSTALL_COMMAND);
     expect(text).toContain(TIMELINE_SKILL_INSTALL_PROMPT);
@@ -92,13 +113,35 @@ describe('llms text files', () => {
 
   it('tracks machine-document changes in their registry dates', () => {
     expect(PUBLIC_DOCUMENT_REGISTRY.get('/llms-full.txt')?.dates).toEqual({
-      modified: '2026-08-26',
-      reviewed: '2026-08-26',
+      modified: '2026-11-03',
+      reviewed: '2026-11-03',
     });
     expect(PUBLIC_DOCUMENT_REGISTRY.get('/sitemap.xml')?.dates).toEqual({
-      modified: '2026-08-26',
-      reviewed: '2026-08-26',
+      modified: '2026-11-03',
+      reviewed: '2026-11-03',
     });
+    expect(PUBLIC_DOCUMENT_REGISTRY.get('/agents/setup.md')?.dates).toEqual({
+      modified: '2026-11-03',
+      reviewed: '2026-11-03',
+    });
+    expect(PUBLIC_DOCUMENT_REGISTRY.get('/agents/SKILL.md')?.dates).toEqual({
+      modified: '2026-11-03',
+      reviewed: '2026-11-03',
+    });
+  });
+
+  it('keeps the For agents block free of summary and keyword copy owned elsewhere', () => {
+    const compact = buildLlmsTxt({ siteUrl: 'https://thetimeline.cc' });
+    const full = buildLlmsFullTxt({ siteUrl: 'https://thetimeline.cc' });
+
+    for (const text of [compact, full]) {
+      const start = text.indexOf('## For agents');
+      const end = text.indexOf('\n## ', start + 1);
+      const section = text.slice(start, end);
+      expect(section).toContain('/agents/setup.md');
+      expect(section).not.toContain('AI team memory');
+      expect(section).not.toMatch(/\bweekly\b/i);
+    }
   });
 
   it('uses the selected-work, cited-answer, and human-approval positioning hierarchy', () => {
@@ -106,9 +149,9 @@ describe('llms text files', () => {
     const full = buildLlmsFullTxt({ siteUrl: 'https://thetimeline.cc' });
 
     for (const text of [compact, full]) {
-      expect(text).toContain('AI team memory');
-      expect(text).toContain('selected work');
-      expect(text).toContain('chronological project history');
+      expect(text).toContain('auto-updating work record');
+      expect(text).toContain('Slack, Telegram, email and calls');
+      expect(text).toContain('current work record');
       expect(text).toMatch(/citation|cite the source/iu);
       expect(text).toContain('human approval');
       expect(text).not.toContain('operations log your team can talk to');

@@ -196,7 +196,7 @@ test('normal seeded product views hide UUIDs and do not overflow at 320px', asyn
     '/app/objects',
     '/app/boards',
     '/app/meetings',
-    '/app/sources',
+    '/app/connections',
   ]) {
     await page.goto(path);
     await expect(page.locator('h1')).toHaveCount(1);
@@ -261,7 +261,7 @@ const headingRouteGroups = {
     '/app/documents',
     '/app/documents/captured',
     '/app/meetings',
-    '/app/sources',
+    '/app/connections',
   ],
   team: [
     '/app/team',
@@ -272,6 +272,7 @@ const headingRouteGroups = {
     '/app/team/integrations/audit',
     '/app/team/mcp-servers',
     '/app/team/mcp-share',
+    '/app/connect-agent',
   ],
 };
 

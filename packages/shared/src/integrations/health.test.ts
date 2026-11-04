@@ -9,6 +9,7 @@ import {
   healthPauseNotificationDedupeKey,
   highestCountedHealthKind,
   integrationHealthPauseAfterMs,
+  isReconnectWithoutRetryFailure,
 } from '#src/integrations/health.js';
 describe('integration health classification', () => {
   it('counts 401/403/404 and lost GitHub access as access_revoked', () => {
@@ -75,6 +76,23 @@ describe('integration health classification', () => {
   });
 
   it('counts expired tokens as auth and gone resources as permanent', () => {
+    expect(classifyIntegrationHealthFailure('invalid_grant')).toEqual({
+      counted: true,
+      kind: 'auth',
+    });
+    expect(
+      classifyIntegrationHealthFailure(
+        "Unauthorized to load field 'Query.account', Reason: missing required scopes.",
+      ),
+    ).toEqual({ counted: true, kind: 'auth' });
+    expect(
+      classifyIntegrationHealthFailure(
+        'github_installation_missing: install the GitHub App for the selected repository and reconnect',
+      ),
+    ).toEqual({ counted: true, kind: 'auth' });
+    expect(isReconnectWithoutRetryFailure('invalid_grant')).toBe(true);
+    expect(isReconnectWithoutRetryFailure('GitHub GET /repos/acme/app: 403 forbidden')).toBe(true);
+    expect(isReconnectWithoutRetryFailure('GitHub GET /repos/acme/app: 503')).toBe(false);
     expect(classifyIntegrationHealthFailure('No tokens — reconnect required')).toEqual({
       counted: true,
       kind: 'auth',

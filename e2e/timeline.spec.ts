@@ -24,8 +24,8 @@ function literalPattern(value: string): RegExp {
   return new RegExp(value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
 }
 
-function referenceButtonPattern(kind: 'ent' | 'ev'): RegExp {
-  return new RegExp(`Open reference \\[${kind}:`);
+function citationButtonPattern(): RegExp {
+  return /Citation \d+/;
 }
 
 async function uploadTextDocument(page: Page, name: string, text: string): Promise<void> {
@@ -1453,10 +1453,11 @@ test('inbound email sender whitelist blocks and allows Resend capture from the b
   try {
     await page.goto('/app/team?section=email');
 
-    const whitelistForm = page.locator('form').filter({ hasText: 'Additional allowed senders' });
+    const whitelistForm = page.locator('form').filter({ hasText: 'Additional senders' });
     await expect(whitelistForm).toBeVisible();
     await whitelistForm.getByRole('checkbox', { name: 'Enable sender whitelist' }).check();
-    await whitelistForm.getByLabel('Additional allowed senders').fill(allowedSender);
+    await whitelistForm.getByLabel('Additional senders').fill(allowedSender);
+    await whitelistForm.getByRole('button', { name: 'Add' }).click();
     await waitForPost(page, '/app/team', async () => {
       await whitelistForm.getByRole('button', { name: 'Save email settings' }).click();
     });
@@ -2143,11 +2144,7 @@ test('chat answers timeline questions with citations and reloadable tool history
     ownerPage.getByText(`Searched timeline for "${question}" — 1 result`).first(),
   ).toBeVisible();
   await expect(ownerPage.getByText(chatFact).last()).toBeVisible();
-  await expect(
-    ownerPage.getByRole('button', {
-      name: `Open reference [ev:${rawEventId.slice(0, 8)}]`,
-    }),
-  ).toBeVisible();
+  await expect(ownerPage.getByRole('button', { name: citationButtonPattern() })).toBeVisible();
 
   await expect(ownerPage).toHaveURL(/\/app\/chat\?session=/);
   const sessionUrl = ownerPage.url();
@@ -2158,20 +2155,14 @@ test('chat answers timeline questions with citations and reloadable tool history
     ownerPage.getByText(`Searched timeline for "${question}" — 1 result`).first(),
   ).toBeVisible();
   await expect(ownerPage.getByText(chatFact).last()).toBeVisible();
-  await expect(
-    ownerPage.getByRole('button', {
-      name: `Open reference [ev:${rawEventId.slice(0, 8)}]`,
-    }),
-  ).toBeVisible();
+  await expect(ownerPage.getByRole('button', { name: citationButtonPattern() })).toBeVisible();
 
   await ownerPage.getByPlaceholder('Ask the timeline…').fill('degraded chat check');
   await ownerPage.getByRole('button', { name: 'Send', exact: true }).click();
   await expect(
     ownerPage.getByText("I couldn't verify that from the accessible timeline."),
   ).toBeVisible();
-  await expect(ownerPage.getByRole('button', { name: referenceButtonPattern('ev') })).toHaveCount(
-    1,
-  );
+  await expect(ownerPage.getByRole('button', { name: citationButtonPattern() })).toHaveCount(1);
 
   await ownerPage.context().close();
 });
@@ -2187,17 +2178,13 @@ test('chat respects private and specific-user timeline visibility', async ({ bro
   await expect(
     memberPage.getByText("I couldn't verify that from the accessible timeline."),
   ).toBeVisible();
-  await expect(memberPage.getByRole('button', { name: referenceButtonPattern('ev') })).toHaveCount(
-    0,
-  );
+  await expect(memberPage.getByRole('button', { name: citationButtonPattern() })).toHaveCount(0);
 
   const specificQuestion = `What does the timeline say about ${e2eSeedEvents.specificForMember}?`;
   await memberPage.getByPlaceholder('Ask the timeline…').fill(specificQuestion);
   await memberPage.getByRole('button', { name: 'Send', exact: true }).click();
   await expect(memberPage.getByText(e2eSeedEvents.specificForMember).last()).toBeVisible();
-  await expect(
-    memberPage.getByRole('button', { name: referenceButtonPattern('ev') }),
-  ).toBeVisible();
+  await expect(memberPage.getByRole('button', { name: citationButtonPattern() })).toBeVisible();
 
   await ownerPage.goto('/app/chat');
   await ownerPage.getByPlaceholder('Ask the timeline…').fill(specificQuestion);
@@ -2205,9 +2192,7 @@ test('chat respects private and specific-user timeline visibility', async ({ bro
   await expect(
     ownerPage.getByText("I couldn't verify that from the accessible timeline."),
   ).toBeVisible();
-  await expect(ownerPage.getByRole('button', { name: referenceButtonPattern('ev') })).toHaveCount(
-    0,
-  );
+  await expect(ownerPage.getByRole('button', { name: citationButtonPattern() })).toHaveCount(0);
 
   await ownerPage.context().close();
   await memberPage.context().close();
@@ -2288,7 +2273,7 @@ test.describe.serial('chat answers from accepted durable task calendar and objec
     await expect(ownerPage.getByText(objectName).last()).toBeVisible();
     await expect(ownerPage.getByText('Calendar:').last()).toBeVisible();
     await expect(
-      ownerPage.getByRole('button', { name: referenceButtonPattern('ent') }).first(),
+      ownerPage.getByRole('button', { name: citationButtonPattern() }).first(),
     ).toBeVisible();
 
     await expect(ownerPage).toHaveURL(/\/app\/chat\?session=/);
@@ -3259,5 +3244,130 @@ test('document search returns worker-embedded chunks and opens the cited chunk',
       `;
     }
     await ownerPage.context().close();
+  }
+});
+
+test('document search stays pending during recovery and offers a retry after unavailability', async ({
+  browser,
+}) => {
+  const page = await newSignedInPage(browser, 'owner');
+  const context = page.context();
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let calls = 0;
+  await page.route('**/api/documents/search', async (route) => {
+    calls++;
+    if (calls === 1) {
+      await held;
+      await route.fulfill({
+        status: 503,
+        contentType: 'application/json',
+        body: JSON.stringify({ error: 'qdrant_failed' }),
+      });
+    } else {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ items: [], nextOffset: null }),
+      });
+    }
+  });
+  try {
+    await page.goto('/app/documents');
+    const input = page.getByRole('searchbox', { name: 'Search document chunks' });
+    await input.fill('serverless recovery fixture');
+    await page.getByRole('button', { name: 'Search', exact: true }).click();
+    await expect(page.getByRole('button', { name: 'Searching', exact: true })).toBeDisabled();
+    await expect(
+      page.getByText('No matches for “serverless recovery fixture”', { exact: true }),
+    ).toHaveCount(0);
+    release();
+    await expect(
+      page.getByText('Search is temporarily unavailable. Try again in a moment.'),
+    ).toBeVisible();
+    expect(calls).toBe(1);
+    await expect(input).toHaveValue('serverless recovery fixture');
+    await page.screenshot({
+      path: test.info().outputPath('document-search-unavailability-desktop.png'),
+      fullPage: true,
+    });
+    await page.setViewportSize({ width: 390, height: 844 });
+    await expect(
+      page.getByText('Search is temporarily unavailable. Try again in a moment.'),
+    ).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Retry search', exact: true })).toBeVisible();
+    await page.screenshot({
+      path: test.info().outputPath('document-search-unavailability-390.png'),
+      fullPage: true,
+    });
+    await page.getByRole('button', { name: 'Retry search', exact: true }).click();
+    await expect(
+      page.getByText('No matches for “serverless recovery fixture”', { exact: true }),
+    ).toBeVisible();
+    expect(calls).toBe(2);
+  } finally {
+    release();
+    await context.close();
+  }
+});
+
+test('global search keeps lexical results when semantic sources are unavailable', async ({
+  browser,
+}) => {
+  const page = await newSignedInPage(browser, 'owner');
+  const context = page.context();
+  await page.route('**/api/search/global', async (route) => {
+    const body = route.request().postDataJSON() as { query?: string };
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        ok: true,
+        query: body.query ?? '',
+        mode: 'full',
+        warnings: [
+          { source: 'timeline_event', message: 'Timeline search is temporarily unavailable.' },
+          { source: 'document_chunk', message: 'Document search is temporarily unavailable.' },
+        ],
+        results: [
+          {
+            id: 'github-integration',
+            kind: 'object',
+            title: 'GitHub integration',
+            snippet: 'Migrate the GitHub connector.',
+            href: '/app/objects/github-integration',
+            score: 2,
+            scoreParts: { lexical: 1 },
+            metadata: { type: 'project' },
+          },
+        ],
+      }),
+    });
+  });
+  try {
+    await page.goto('/app/search?q=github');
+    await expect(
+      page.getByRole('heading', { name: 'Search', level: 1, exact: true }),
+    ).toBeVisible();
+    await expect(page.getByText('GitHub integration')).toBeVisible();
+    await expect(page.getByText('Timeline search is temporarily unavailable.')).toBeVisible();
+    await expect(page.getByText('Document search is temporarily unavailable.')).toBeVisible();
+    await expect(page.getByText('1 result · some sources unavailable').first()).toBeVisible();
+    await expect(page.getByText('No matches found')).toHaveCount(0);
+    await page.screenshot({
+      path: test.info().outputPath('global-search-partial-desktop.png'),
+      fullPage: true,
+    });
+    await page.setViewportSize({ width: 390, height: 844 });
+    await expect(page.getByText('GitHub integration')).toBeVisible();
+    await expect(page.getByText('Timeline search is temporarily unavailable.')).toBeVisible();
+    await page.screenshot({
+      path: test.info().outputPath('global-search-partial-390.png'),
+      fullPage: true,
+    });
+  } finally {
+    await context.close();
   }
 });

@@ -42,6 +42,7 @@ export interface BillingSettingsPanelProps {
   presentation?: BillingPresentation | null;
   checkoutReturned?: boolean;
   checkoutPlan?: string;
+  selectedPlan?: string;
   planId: BillingPlanId;
   planName: string;
   billingState: string;
@@ -458,7 +459,11 @@ function BillingPlanControls({
         {selfServe ? (
           <details
             id="change-plan"
-            open={props.restrictionReason === 'free_grant_elsewhere' || undefined}
+            open={
+              props.restrictionReason === 'free_grant_elsewhere' ||
+              ['payg', 'team', 'business'].includes(props.selectedPlan ?? '') ||
+              undefined
+            }
           >
             <summary
               className={`ml-auto w-fit ${
@@ -467,35 +472,44 @@ function BillingPlanControls({
             >
               Change plan
             </summary>
-            <div className="mt-3 space-y-2">
-              <label htmlFor="billing-promo-code" className="block text-sm text-fg-muted">
-                Promo code
-              </label>
-              <input
-                id="billing-promo-code"
-                name="discountCode"
-                type="text"
-                autoComplete="off"
-                value={form.discountCode}
-                disabled={pending || props.hasActiveTeamDiscount}
-                aria-describedby="billing-promo-help"
-                onChange={(event) => {
-                  updateForm({ discountCode: event.target.value });
-                }}
-                className="block w-full rounded-sm border border-border bg-bg px-3 py-2 text-sm text-fg disabled:opacity-60"
-              />
-              <p id="billing-promo-help" className="max-w-sm text-sm text-fg-muted">
-                {props.hasActiveTeamDiscount
-                  ? 'Your assigned team discount takes priority. Promo codes cannot be combined with it.'
-                  : 'Optional. Polar checks eligibility for the selected plan. An active team discount takes priority; discounts do not stack.'}
-              </p>
-              {props.hasPolarSubscription ? (
-                <p className="max-w-sm text-sm text-fg-muted">
-                  Polar applies discount changes to existing subscriptions from the next billing
-                  cycle.
+            <p className="mt-3 max-w-sm text-sm text-fg-muted">
+              Pay as you go has no platform fee and keeps your Free allowances. Usage above those
+              allowances and members beyond the first three are charged. Extra members cost €2/month
+              each. The default PAYG spending limit is €25/month; platform fees and tax are outside
+              the cap. Review your limit in Billing before starting additional work.
+            </p>
+            <details className="mt-3">
+              <summary className="cursor-pointer text-sm text-fg-muted">Have a promo code?</summary>
+              <div className="mt-3 space-y-2">
+                <label htmlFor="billing-promo-code" className="block text-sm text-fg-muted">
+                  Promo code
+                </label>
+                <input
+                  id="billing-promo-code"
+                  name="discountCode"
+                  type="text"
+                  autoComplete="off"
+                  value={form.discountCode}
+                  disabled={pending || props.hasActiveTeamDiscount}
+                  aria-describedby="billing-promo-help"
+                  onChange={(event) => {
+                    updateForm({ discountCode: event.target.value });
+                  }}
+                  className="block w-full rounded-sm border border-border bg-bg px-3 py-2 text-sm text-fg disabled:opacity-60"
+                />
+                <p id="billing-promo-help" className="max-w-sm text-sm text-fg-muted">
+                  {props.hasActiveTeamDiscount
+                    ? 'Your assigned team discount takes priority. Promo codes cannot be combined with it.'
+                    : 'Optional. Polar checks eligibility for the selected plan. An active team discount takes priority; discounts do not stack.'}
                 </p>
-              ) : null}
-            </div>
+                {props.hasPolarSubscription ? (
+                  <p className="max-w-sm text-sm text-fg-muted">
+                    Polar applies discount changes to existing subscriptions from the next billing
+                    cycle.
+                  </p>
+                ) : null}
+              </div>
+            </details>
             <div className="mt-2 flex flex-wrap justify-end gap-2">
               {(
                 [
@@ -506,6 +520,9 @@ function BillingPlanControls({
               ).map(([plan, label]) => (
                 <button
                   key={plan}
+                  aria-label={
+                    props.selectedPlan === plan ? `${label} (selected on pricing)` : undefined
+                  }
                   type="button"
                   disabled={
                     pending ||
@@ -519,6 +536,7 @@ function BillingPlanControls({
                   className={PLAN_BUTTON_CLASS}
                 >
                   {label}
+                  {props.selectedPlan === plan ? ' · Your selection' : ''}
                 </button>
               ))}
             </div>

@@ -206,3 +206,11 @@ describe('Sentry web config helpers', () => {
     );
   });
 });
+
+it('removes reset tokens from recovery URLs in monitoring events', () => {
+  const event = scrubSentryEvent({
+    type: undefined,
+    request: { url: 'https://timeline.test/reset-password?token=secret-recovery-token' },
+  });
+  expect(JSON.stringify(event)).not.toContain('secret-recovery-token');
+});

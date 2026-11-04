@@ -1,5 +1,4 @@
 import { ArrowRight, Check, CircleDotDashed, Mail, Video, Webhook, Wrench } from 'lucide-react';
-import Image from 'next/image';
 import Link from 'next/link';
 
 import {
@@ -12,8 +11,10 @@ import {
 } from '@/components/marketing/integrations/connector-content';
 import { DirectoryStructuredData } from '@/components/marketing/integrations/connector-seo';
 import { RecordsToAnswer } from '@/components/marketing/integrations/records-to-answer';
+import { WORKS_WITH_TOOLS } from '@/components/marketing/integrations/works-with-content';
 import { MarketingContainer, MarketingSectionGrid } from '@/components/marketing/marketing-layout';
 import { MarketingSectionIndex } from '@/components/marketing/section-index';
+import { ProviderLogo } from '@/components/provider-logo';
 import { PublicSessionBranch } from '@/components/public-session-branch';
 import { PublicShell } from '@/components/public-shell';
 import { Button } from '@/components/ui/button';
@@ -51,14 +52,14 @@ export function IntegrationDirectory() {
                   signedOut={
                     <Button asChild size="lg" className="mt-7">
                       <Link href="/sign-up">
-                        Create your Timeline
+                        Start free
                         <ArrowRight aria-hidden="true" />
                       </Link>
                     </Button>
                   }
                   signedIn={
                     <Button asChild size="lg" className="mt-7">
-                      <Link href="/app/sources">
+                      <Link href="/app/connections">
                         Open connections
                         <ArrowRight aria-hidden="true" />
                       </Link>
@@ -131,17 +132,7 @@ export function IntegrationDirectory() {
                       className="group flex min-h-64 flex-col bg-bg p-6 outline-none transition-colors hover:bg-surface focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:p-8"
                     >
                       <div className="flex items-start justify-between gap-4">
-                        <div
-                          className={`grid size-12 place-items-center rounded-md border border-border bg-surface ${connector.lightLogoTileInDarkMode ? 'dark:bg-white' : ''}`}
-                        >
-                          <Image
-                            src={connector.logo}
-                            alt=""
-                            width={30}
-                            height={30}
-                            className="size-7"
-                          />
-                        </div>
+                        <ProviderLogo src={connector.logo} size="md" />
                         <span className="font-mono text-[11px] text-fg-dim">0{index + 1}</span>
                       </div>
                       <h3 className="mt-8 text-2xl font-semibold tracking-tight text-fg">
@@ -227,6 +218,35 @@ export function IntegrationDirectory() {
                     body={capabilityTiers.plannedProviders.join(', ')}
                   />
                 </div>
+                <div className="mt-10 grid gap-px border border-border bg-border sm:grid-cols-2 lg:grid-cols-3">
+                  {WORKS_WITH_TOOLS.map((tool) => (
+                    <Link
+                      key={tool.route}
+                      href={tool.route}
+                      className="group flex flex-col bg-bg p-6 outline-none hover:bg-surface focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                    >
+                      <span className="flex items-center gap-3">
+                        <ProviderLogo src={tool.logo} size="sm" />
+                        <span className="font-mono text-[0.65rem] tracking-[0.14em] text-signal uppercase">
+                          {tool.statusLabel}
+                        </span>
+                      </span>
+                      <h3 className="mt-5 text-xl font-semibold tracking-tight text-fg">
+                        {tool.navLabel}
+                      </h3>
+                      <p className="mt-3 grow text-sm leading-relaxed text-fg-muted">
+                        {tool.summary}
+                      </p>
+                      <span className="mt-5 inline-flex items-center gap-2 text-sm font-semibold text-fg">
+                        How {tool.name} plugs in
+                        <ArrowRight
+                          aria-hidden="true"
+                          className="size-4 motion-safe:transition-transform motion-safe:group-hover:translate-x-1"
+                        />
+                      </span>
+                    </Link>
+                  ))}
+                </div>
               </div>
             </MarketingSectionGrid>
           </MarketingContainer>
@@ -258,7 +278,7 @@ function FeaturedCaptureSurface({ surface }: { surface: CaptureSurfaceContent })
       <PublicSessionBranch
         signedOut={
           <Link
-            href="/sign-up"
+            href={surface.publicHref ?? '/sign-up'}
             className="group mt-7 inline-flex w-fit items-center gap-2 text-sm font-semibold text-fg outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             {`Start with ${surface.name}`}
@@ -298,7 +318,7 @@ function CaptureSurfaceRow({ surface }: { surface: CaptureSurfaceContent }) {
         <PublicSessionBranch
           signedOut={
             <Link
-              href="/sign-up"
+              href={surface.publicHref ?? '/sign-up'}
               className="group mt-5 inline-flex w-fit items-center gap-2 text-sm font-semibold text-fg outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               {`Start with ${surface.name}`}
@@ -337,15 +357,10 @@ function CaptureSurfaceRow({ surface }: { surface: CaptureSurfaceContent }) {
 function CaptureSurfaceIcon({ surface }: { surface: CaptureSurfaceContent }) {
   if (surface.icon === 'telegram' || surface.icon === 'slack') {
     return (
-      <div className="grid size-12 place-items-center rounded-md border border-border bg-surface dark:bg-white">
-        <Image
-          src={`/connectors/${surface.icon === 'telegram' ? 'telegram' : 'slack'}.svg`}
-          alt=""
-          width={30}
-          height={30}
-          className="size-7"
-        />
-      </div>
+      <ProviderLogo
+        src={`/connectors/${surface.icon === 'telegram' ? 'telegram' : 'slack'}.svg`}
+        size="md"
+      />
     );
   }
 

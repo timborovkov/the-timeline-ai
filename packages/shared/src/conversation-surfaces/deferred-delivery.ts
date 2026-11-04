@@ -1,8 +1,23 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { randomUUID } from 'node:crypto';
 
 import { encryptJson } from '#src/crypto/secrets.js';
 import { getEnv } from '#src/env.js';
 import { requestBudgetIdentity } from '#src/integrations/request-budget.js';
+
+interface ChatDeliveryPrincipal {
+  teamId: string;
+  userId?: string;
+}
+const principalStorage = new AsyncLocalStorage<ChatDeliveryPrincipal>();
+
+/** Keep recipient authorization attached through provider rate-limit deferral. */
+export function withChatDeliveryPrincipal<T>(
+  principal: ChatDeliveryPrincipal,
+  send: () => Promise<T>,
+): Promise<T> {
+  return principalStorage.run(principal, send);
+}
 
 export interface DeferredChatDelivery {
   provider: 'slack' | 'telegram';
@@ -24,7 +39,8 @@ export async function deferChatDelivery(
     !(error.retryAt instanceof Date)
   )
     return false;
-  const encrypted = encryptJson(input);
+  const principal = principalStorage.getStore();
+  const encrypted = encryptJson({ ...input, ...(principal ? { principal } : {}) });
   const { getChatDeliveryQueue } = await import('#src/queue/queues.js');
   const delay = Math.max(1000, error.retryAt.getTime() - Date.now());
   const chat = input.body.chat_id ?? input.body.channel;
@@ -36,6 +52,7 @@ export async function deferChatDelivery(
   await getChatDeliveryQueue().add(
     'deliver',
     {
+      ...principal,
       ciphertext: encrypted.ciphertext.toString('base64'),
       iv: encrypted.iv.toString('base64'),
       tag: encrypted.tag.toString('base64'),

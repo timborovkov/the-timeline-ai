@@ -36,7 +36,7 @@ describe('McpOAuthGrants', () => {
             id: '22222222-2222-4222-8222-222222222222',
             clientId: 'https://claude.ai/api/mcp/auth',
             clientName: 'Claude',
-            scopes: ['read', 'agent:ask'],
+            scopes: ['read', 'capture', 'agent:ask'],
             createdAt: new Date('2026-10-01T00:00:00.000Z'),
             lastUsedAt: null,
           },
@@ -47,6 +47,7 @@ describe('McpOAuthGrants', () => {
     expect(screen.getByRole('heading', { name: 'Claude' })).toBeTruthy();
     expect(screen.getByText('claude.ai')).toBeTruthy();
     expect(screen.getByText('Read Timeline data')).toBeTruthy();
+    expect(screen.getByText('Capture notes')).toBeTruthy();
     expect(screen.getByText('Ask Timeline agent')).toBeTruthy();
     expect(screen.getByText(/Not used yet/)).toBeTruthy();
 

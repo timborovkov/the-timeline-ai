@@ -148,18 +148,22 @@ bun run dev:seed:heavy         # optional extra volume for infinite-scroll / vir
         <code>ALLOW_DEV_SEED_STORAGE=I_UNDERSTAND_THIS_WRITES_DEMO_DATA_TO_ISOLATED_STORAGE</code>;
         neither override permits <code>NODE_ENV=production</code>. The full command requires
         <code>AUTH_SECRET</code>, <code>DATABASE_URL</code>, <code>SECRETS_ENCRYPTION_KEY</code>,
-        <code>OPENROUTER_API_KEY</code>, and <code>QDRANT_URL</code>. It creates eight Acme Labs
-        logins, all with password <code>timeline-dev</code>: <code>owner@timeline.dev</code>,
+        <code>OPENROUTER_API_KEY</code>, and <code>QDRANT_URL</code>. Fixture times are relative
+        offsets resolved from the current date on the first seed; later reruns reuse the persisted
+        <code>demo_seed_now</code> clock. It creates eight Acme Labs logins, all with password
+        <code>timeline-dev</code>: <code>owner@timeline.dev</code>,
         <code>member@timeline.dev</code>, <code>jordan@timeline.dev</code>,
         <code>sam@timeline.dev</code>, <code>riley@timeline.dev</code>,
         <code>casey@timeline.dev</code>, <code>quinn@timeline.dev</code>, and
-        <code>harper@timeline.dev</code>. The seeded GitHub, Linear, Monday.com, Sentry, and Google
-        Drive credentials are fake, encrypted, and disabled for sync. The timeline is a month of
-        weekday-scale capture: about a hundred raw events per workday that group into fewer moments.
-        Daily digest send stays disabled so the worker can run without outbound email or chat-bot
-        configuration. Seed still creates the default email digest destination for the team, plus
-        disabled Slack and Telegram destinations, and twenty weekdays of digest history.
-        Verification checks all eight login identities, active team roles, and password usability
+        <code>harper@timeline.dev</code>, plus an empty first-run workspace at
+        <code>onboarding@timeline.dev</code> (Noah Blake's Team) with nothing connected. The seeded
+        GitHub, Linear, Monday.com, Sentry, and Google Drive credentials are fake, encrypted, and
+        disabled for sync. The timeline is a month of weekday-scale capture: about a hundred raw
+        events per workday that group into fewer moments. Daily digest send stays disabled so the
+        worker can run without outbound email or chat-bot configuration. Seed still creates the
+        default email digest destination for the team, plus disabled Slack and Telegram
+        destinations, and twenty weekdays of digest history. Verification checks all eight Acme Labs
+        login identities plus the empty-team login, active team roles, and password usability
         without printing password hashes. It downloads seeded RustFS objects and verifies their
         actual SHA-256 bytes, then uses a real query embedding and team/user-scoped Qdrant searches
         to confirm every expected Northstar raw-event, fact, document-chunk, and meeting-chunk
@@ -318,7 +322,9 @@ docker compose down -v                # nuke local data
         <code>E2E_AUTH_SECRET</code>, <code>E2E_SECRETS_ENCRYPTION_KEY</code>,
         <code>E2E_S3_ACCESS_KEY_ID</code>, <code>E2E_S3_SECRET_ACCESS_KEY</code>, and
         <code>E2E_QDRANT_API_KEY</code>. Setup and cleanup enforce the service guard before opening
-        a database transaction.
+        a database transaction. Keep <code>apps/web/bunfig.toml</code>: it prevents Bun subprocesses
+        from loading the developer environment before the isolated E2E environment reaches Next.js.
+        The E2E launcher separately disables Next.js environment-file loading.
       </p>
       <p>
         The static CI job runs formatting, TypeScript compilation, linting, Knip, the offline Bun

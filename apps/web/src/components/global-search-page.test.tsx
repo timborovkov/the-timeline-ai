@@ -283,6 +283,66 @@ describe('GlobalSearchPage', () => {
     const external = screen.getByRole('link', { name: /Public help docs/ });
     expect(external.getAttribute('href')).toBe('/help');
     expect(external.getAttribute('target')).toBe('_blank');
+    expect(screen.getAllByText('2 results · some sources unavailable').length).toBeGreaterThan(0);
+  });
+
+  it('keeps lexical results visible when semantic recovery is exhausted', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        jsonResponse({
+          ok: true,
+          query: 'github',
+          mode: 'full',
+          warnings: [
+            { source: 'timeline_event', message: 'Timeline search is temporarily unavailable.' },
+            { source: 'document_chunk', message: 'Document search is temporarily unavailable.' },
+          ],
+          results: [
+            {
+              id: 'github-integration',
+              kind: 'object',
+              title: 'GitHub integration',
+              snippet: 'Migrate the GitHub connector.',
+              href: '/app/objects/github-integration',
+              score: 2,
+              scoreParts: { lexical: 1 },
+              metadata: { type: 'project' },
+            },
+          ],
+        }),
+      ),
+    );
+
+    render(<GlobalSearchPage initialQuery="github" />);
+
+    expect(await screen.findByText('GitHub integration')).toBeTruthy();
+    expect(screen.getByText(/Timeline search is temporarily unavailable/)).toBeTruthy();
+    expect(screen.getByText(/Document search is temporarily unavailable/)).toBeTruthy();
+    expect(screen.queryByText('No matches found')).toBeNull();
+  });
+
+  it('does not claim there are no matches when only semantic sources failed', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        jsonResponse({
+          ok: true,
+          query: 'launch',
+          mode: 'full',
+          warnings: [
+            { source: 'timeline_event', message: 'Timeline search is temporarily unavailable.' },
+          ],
+          results: [],
+        }),
+      ),
+    );
+
+    render(<GlobalSearchPage initialQuery="launch" />);
+
+    expect(await screen.findByText('Some sources are unavailable')).toBeTruthy();
+    expect(screen.queryByText('No matches found')).toBeNull();
+    expect(screen.getAllByText('0 results · some sources unavailable').length).toBeGreaterThan(0);
   });
 
   it('renders due metadata for schedulable results without adding it to snippets', async () => {

@@ -410,7 +410,7 @@ describe('ChatPane', () => {
     });
   });
 
-  it('renders assistant markdown text parts with citation chips', () => {
+  it('renders assistant markdown text parts with numbered citation markers', () => {
     const eventId = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
     fakes.useChat.mockReturnValue({
       messages: [
@@ -446,10 +446,49 @@ describe('ChatPane', () => {
     expect(html).toContain('<ul');
     expect(html).toContain('list-disc');
     expect(html).toContain('<li');
-    expect(html).toContain('[ev:aaaaaaaa]');
-    expect(html).toContain(`Open reference [ev:aaaaaaaa]`);
+    expect(html).toContain('Citation 1');
+    expect(html).not.toContain('[ev:aaaaaaaa]');
+    expect(html).not.toContain('Open reference [ev:aaaaaaaa]');
     expect(html).not.toContain('**Sales');
     expect(html).not.toContain('- Follow-up');
+  });
+
+  it('numbers citations across every text part of one assistant message', () => {
+    const eventId = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
+    const objectId = '11111111-2222-4333-8444-555555555555';
+    fakes.useChat.mockReturnValue({
+      messages: [
+        {
+          id: 'a1',
+          role: 'assistant',
+          parts: [
+            { type: 'text', text: `First source [ev:${eventId}].` },
+            {
+              type: 'text',
+              text: `Then another [ent:${objectId}] and the first again [ev:${eventId}].`,
+            },
+          ],
+        },
+      ],
+      sendMessage: vi.fn(),
+      status: 'ready',
+      error: null,
+    });
+
+    const html = renderToStaticMarkup(
+      createElement(ChatPane, {
+        teamId: 'team-1',
+        teamName: 'Acme',
+        sessionId: null,
+        initialMessages: [],
+        pinnedEntityId: null,
+        pinnedEntityName: null,
+      }),
+    );
+
+    expect(html.match(/aria-label="Citation 1"/g)?.length).toBe(2);
+    expect(html).toContain('aria-label="Citation 2"');
+    expect(html).not.toContain('aria-label="Citation 3"');
   });
 
   it('preserves numeric labels and paragraph newlines in assistant text parts', () => {
@@ -562,7 +601,8 @@ describe('ChatPane', () => {
     expect(html).toContain('<td');
     expect(html).toContain('<strong');
     expect(html).toContain('Register domains');
-    expect(html).toContain('[ev:aaaaaaaa]');
+    expect(html).toContain('Citation 1');
+    expect(html).not.toContain('[ev:aaaaaaaa]');
     expect(html).not.toContain('|---|--------|-------|------|');
   });
 
@@ -663,9 +703,9 @@ describe('ChatPane', () => {
       chatHandoffKey('team-1'),
       JSON.stringify({
         createdAt: Date.now(),
-        context: { pathname: '/app/sources', routeKind: 'sources' },
+        context: { pathname: '/app/connections', routeKind: 'sources' },
         contextTrail: [
-          { kind: 'page', href: '/app/sources', label: 'Connections' },
+          { kind: 'page', href: '/app/connections', label: 'Connections' },
           {
             kind: 'object',
             href: '/app/objects/44444444-4444-4444-8444-444444444444',
@@ -754,7 +794,7 @@ describe('ChatPane', () => {
       chatHandoffKey('team-1'),
       JSON.stringify({
         createdAt: Date.now(),
-        contextTrail: [{ kind: 'page', href: '/app/sources', label: 'Connections' }],
+        contextTrail: [{ kind: 'page', href: '/app/connections', label: 'Connections' }],
       }),
     );
 

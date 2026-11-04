@@ -61,7 +61,15 @@ export function UserMenu({ user }: Props) {
         {isUnverified ? (
           <>
             <DropdownMenuSeparator />
-            <form action={resendVerification}>
+            <form
+              action={(formData) => {
+                formData.set(
+                  'callbackUrl',
+                  window.location.pathname + window.location.search + window.location.hash,
+                );
+                resendVerification(formData);
+              }}
+            >
               <DropdownMenuItem
                 asChild
                 onSelect={(event) => {

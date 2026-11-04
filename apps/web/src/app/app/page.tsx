@@ -9,14 +9,17 @@ import { redirect } from 'next/navigation';
 
 import type { Metadata } from 'next';
 
+import { BillingRestrictionNotice } from '@/components/billing-restriction-notice';
 import { BillingUpgradeNudge } from '@/components/billing-upgrade-nudge';
 import { CaptureForm } from '@/components/capture-form';
+import { ConnectAgentOnboardingCard } from '@/components/connect-agent/connect-agent-onboarding';
 import { CaptureDialog } from '@/components/home/capture-dialog';
 import { DailyDigestBlock } from '@/components/home/daily-digest-block';
 import { HomeAskComposer } from '@/components/home/home-ask-composer';
 import { HomeAttention } from '@/components/home/home-attention';
 import { HomeTeamEmail } from '@/components/home/home-team-email';
 import { OnboardingChecklist } from '@/components/onboarding-checklist';
+import { PaygValueNudge } from '@/components/payg-value-nudge';
 import { PinnedWorkspacePreview } from '@/components/pins/pinned-workspace-preview';
 import { TimelineFeed } from '@/components/timeline-feed';
 import { resolveActiveTeam } from '@/lib/active-team';
@@ -67,6 +70,28 @@ async function signAudio(events: { id: string; contentAudioUrl: string | null }[
   return audioUrls;
 }
 
+async function shouldShowPaygSuggestion(input: {
+  isAdmin: boolean;
+  dashboard: {
+    account?: { planId: string };
+    restrictionReason?: string | null;
+    nudge?: unknown;
+  } | null;
+  hasAnswer: () => Promise<boolean>;
+}): Promise<boolean> {
+  if (
+    !input.isAdmin ||
+    input.dashboard?.account?.planId !== 'free' ||
+    input.dashboard.restrictionReason ||
+    input.dashboard.nudge
+  )
+    return false;
+  return input.hasAnswer().catch((err: unknown) => {
+    reportCaughtError(err, { surface: 'render', operation: 'payg_suggestion' });
+    return false;
+  });
+}
+
 export default async function HomeDashboardPage() {
   const session = await auth();
   if (!session?.user) redirect('/sign-in');
@@ -94,6 +119,7 @@ export default async function HomeDashboardPage() {
     recoverableJobs,
     billingDashboard,
     teamRow,
+    sourceDocuments,
   ] = await Promise.all([
     getWorkAttentionSummary(scope, now, calendarSettings.defaultTimezone),
     getHomeOpenObjectCounts(scope),
@@ -122,7 +148,13 @@ export default async function HomeDashboardPage() {
       .where(eq(teams.id, active.teamId))
       .limit(1)
       .then((rows) => rows[0] ?? null),
+    scope.documents.listDocuments({ limit: 1 }),
   ]);
+  const showPaygSuggestion = await shouldShowPaygSuggestion({
+    isAdmin,
+    dashboard: billingDashboard,
+    hasAnswer: () => scope.objects.hasCompletedChatAnswer(),
+  });
   const inboundEmail = displayInboundEmail(teamRow);
   const events = eventPage.items;
   const pendingApprovals = workAttention.pendingApprovals;
@@ -168,8 +200,12 @@ export default async function HomeDashboardPage() {
   return (
     <div className="space-y-8">
       <h1 className="sr-only">Home</h1>
+      {billingDashboard?.restrictionReason ? (
+        <BillingRestrictionNotice reason={billingDashboard.restrictionReason} />
+      ) : null}
       <HomeAskComposer
         teamId={active.teamId}
+        hasSources={events.length > 0 || sourceDocuments.length > 0}
         actions={
           <CaptureDialog>
             <CaptureForm
@@ -185,10 +221,18 @@ export default async function HomeDashboardPage() {
         }
       />
 
+      <ConnectAgentOnboardingCard initialData={initialChecklist} />
       <OnboardingChecklist initialData={initialChecklist} />
 
       {isAdmin && billingDashboard?.nudge ? (
         <BillingUpgradeNudge nudge={billingDashboard.nudge} />
+      ) : null}
+
+      {showPaygSuggestion ? (
+        <PaygValueNudge
+          key={`${session.user.id}:${active.teamId}`}
+          storageKey={`tl-coachmark:payg:${session.user.id}:${active.teamId}`}
+        />
       ) : null}
 
       <HomeAttention
@@ -235,7 +279,7 @@ export default async function HomeDashboardPage() {
               ]
             : []),
           {
-            href: '/app/sources',
+            href: '/app/connections',
             label: 'Connection issues',
             count: connectionAttention.length,
             action: 'Repair connections',

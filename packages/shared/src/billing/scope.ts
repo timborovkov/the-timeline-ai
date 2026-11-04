@@ -8,13 +8,12 @@ import {
   billingUsageReservations,
   teamBillingAccounts,
   teamMembers,
+  teams,
   users,
 } from '@timeline/db';
 import { and, eq, gte, inArray, isNull, or, sql } from 'drizzle-orm';
 
-import type { BillingProvider, PolarUsageEvent } from '#src/billing/provider.js';
-import type { TeamRole } from '#src/team-scope.js';
-
+import { captureConfiguredProductEvent } from '#src/analytics/posthog-node.js';
 import { notifyBillingUsageAlerts } from '#src/billing/alerts.js';
 import {
   BILLING_ENTITLEMENTS_VERSION,
@@ -24,6 +23,7 @@ import {
   FREE_ALLOWANCES,
   PLAN_CATALOG,
   polarEventNameForMeter,
+  storageGbFromBytes,
 } from '#src/billing/catalog.js';
 import {
   capEligibleCustomerChargeCents,
@@ -88,8 +88,12 @@ import {
   restoredPaidBillingStateAfterWalletOrCapRecovery,
   spendCapUtilization,
 } from '#src/billing/status.js';
+import { sumTeamStoredBytes } from '#src/billing/stored-bytes.js';
 import { getEnv } from '#src/env.js';
 import { childLogger } from '#src/logger.js';
+
+import type { BillingProvider, PolarUsageEvent } from '#src/billing/provider.js';
+import type { TeamRole } from '#src/team-scope.js';
 
 export type EnsureMember = (minRole?: TeamRole) => Promise<TeamRole>;
 
@@ -474,9 +478,30 @@ export function createBillingScope(deps: BillingScopeDeps) {
   }
 
   return {
+    async isExistingTeam() {
+      await ensureMember();
+      const [row] = await db
+        .select({ id: teams.id })
+        .from(teams)
+        .where(eq(teams.id, teamId))
+        .limit(1);
+      return Boolean(row);
+    },
+
     async getAccount() {
       await ensureMember();
       return ensureAccount();
+    },
+
+    async getCapacityUsage() {
+      await ensureMember();
+      const account = await ensureAccount();
+      const { getTeamCapacityUsage } = await import('#src/billing/capacity.js');
+      return getTeamCapacityUsage({
+        db,
+        teamId,
+        planId: effectiveBillingPlanId(account),
+      });
     },
 
     async getDashboard(options?: { canManageBilling?: boolean }) {
@@ -516,12 +541,26 @@ export function createBillingScope(deps: BillingScopeDeps) {
               { nativeUnits: number; customerChargeCents: number; capEligibleChargeCents: number }
             >
           >;
+          const storageMeter = byMeter.storage_gb_month;
+          const liveStorageGb = storageGbFromBytes(
+            await sumTeamStoredBytes(tx as unknown as Db, teamId),
+          );
+          // Period GB-month counters stay on `byMeter` for plan-cost preview.
+          // Live GiB is display-only (usage meter, remaining, presentation).
+          const displayMeters = {
+            ...byMeter,
+            storage_gb_month: {
+              nativeUnits: liveStorageGb,
+              customerChargeCents: storageMeter?.customerChargeCents ?? 0,
+              capEligibleChargeCents: storageMeter?.capEligibleChargeCents ?? 0,
+            },
+          };
           const meteredSpendCents = counters.reduce(
             (sum, row) => sum + row.capEligibleChargeCents,
             0,
           );
           const utilization = spendCapUtilization(meteredSpendCents, account.spendCapCents);
-          const freeRemaining = freeAllowanceRemaining(byMeter);
+          const freeRemaining = freeAllowanceRemaining(displayMeters);
           const canManageBilling = Boolean(
             options?.canManageBilling && (dashboardRole === 'owner' || dashboardRole === 'admin'),
           );
@@ -556,13 +595,6 @@ export function createBillingScope(deps: BillingScopeDeps) {
             }
           }
 
-          const nudge = deriveBillingNudge({
-            planId: commercial.planId,
-            canManageBilling,
-            utilization,
-            freeRemaining,
-            meteredSpendCents,
-          });
           const sidebar = deriveSidebarBillingSummary({
             planId: commercial.planId,
             canManageBilling,
@@ -612,6 +644,14 @@ export function createBillingScope(deps: BillingScopeDeps) {
               ? { planTerms: { [commercial.planId]: previewTerms } }
               : {}),
           });
+          const nudge = deriveBillingNudge({
+            planId: commercial.planId,
+            canManageBilling,
+            utilization,
+            freeRemaining,
+            meteredSpendCents,
+            planPreview,
+          });
           const chargeWindowStart =
             (commercial.planId === 'free' ? null : account.periodStartedAt) ??
             new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
@@ -641,7 +681,7 @@ export function createBillingScope(deps: BillingScopeDeps) {
           const presentation = canManageBilling
             ? buildBillingPresentation({
                 account,
-                meters: byMeter,
+                meters: displayMeters,
                 meteredSpendCents,
                 activeMembers: activeMemberCount,
                 shadowBilling: accountUsesShadowBilling(account),
@@ -663,7 +703,7 @@ export function createBillingScope(deps: BillingScopeDeps) {
             sidebar,
             restrictionReason,
             periodYm: ym,
-            meters: byMeter,
+            meters: displayMeters,
             meteredSpendCents,
             activeMemberCount,
             planPreview,
@@ -1724,6 +1764,15 @@ export function createBillingScope(deps: BillingScopeDeps) {
         return { ok: true as const, duplicate: true as const };
       }
       if (!settled.ledger) throw new Error('Missing settlement ledger');
+      const settlementMetadata = settled.ledger.metadata;
+      if (
+        settlementMetadata.presentation_chargeable === true &&
+        Number(settlementMetadata.invoice_cents) > 0
+      ) {
+        await captureConfiguredProductEvent({ kind: 'team', teamId }, 'paid_usage_recorded', {
+          meter: input.meterId,
+        });
+      }
 
       try {
         const ymNow = periodYm();

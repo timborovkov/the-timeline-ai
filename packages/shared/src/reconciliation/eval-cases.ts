@@ -1,12 +1,12 @@
+import {
+  reconciliationEvalIngestionSurfaces,
+  reconciliationEvalScenarioFamilies,
+} from '#src/reconciliation/index.js';
+
 import type {
   DeterministicEvalCase,
   ReconciliationEvalIngestionSurface,
   ReconciliationEvalScenarioFamily,
-} from '#src/reconciliation/index.js';
-
-import {
-  reconciliationEvalIngestionSurfaces,
-  reconciliationEvalScenarioFamilies,
 } from '#src/reconciliation/index.js';
 
 const TEAM_VISIBILITY = { visibility: 'team' as const };

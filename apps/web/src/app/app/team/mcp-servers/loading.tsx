@@ -17,7 +17,7 @@ export default function McpServersLoading() {
         <Breadcrumb
           items={[
             { label: 'Team', href: '/app/team' },
-            { label: 'Integrations', href: '/app/team/integrations' },
+            { label: 'Connections', href: '/app/connections' },
             { label: 'Team MCP servers' },
           ]}
         />

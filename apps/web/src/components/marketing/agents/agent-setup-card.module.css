@@ -1,0 +1,79 @@
+.card {
+  display: grid;
+  gap: 0.7rem;
+  min-width: 0;
+  padding: 0.9rem 1rem;
+  border: 1px solid var(--home-line-strong, var(--border));
+  border-radius: 0.45rem;
+  background: var(--home-panel, var(--surface));
+  color: var(--home-paper, var(--fg));
+}
+
+.kicker {
+  margin: 0;
+  color: var(--home-signal, var(--signal));
+  font-family: var(--font-mono);
+  font-size: var(--home-meta-size, 0.75rem);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.title {
+  margin: 0.25rem 0 0;
+  font-size: 1.05rem;
+  font-weight: 600;
+  letter-spacing: -0.03em;
+}
+
+.lede {
+  margin: 0.25rem 0 0;
+  color: var(--home-muted, var(--fg-muted));
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+.marks {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 0.35rem;
+  align-items: center;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.mark {
+  display: flex;
+  flex-shrink: 0;
+}
+
+.commandRow {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 0.5rem;
+  align-items: center;
+  min-width: 0;
+  padding: 0.4rem 0.45rem 0.4rem 0.75rem;
+  border-radius: 0.4rem;
+  background: var(--home-ink, var(--bg));
+}
+
+.command {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--home-paper, var(--fg));
+  font-family: var(--font-mono);
+  font-size: var(--home-meta-size, 0.75rem);
+  line-height: 1.45;
+}
+
+.copyButton {
+  flex-shrink: 0;
+  color: var(--home-paper, var(--fg)) !important;
+}
+
+.copyButton:hover {
+  background: color-mix(in oklch, var(--home-paper, var(--fg)) 8%, transparent) !important;
+}

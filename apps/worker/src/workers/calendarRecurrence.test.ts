@@ -21,6 +21,11 @@ const { processCalendarRecurrenceTick } = await import('#src/workers/calendarRec
 
 function makeDb(pages: { teamId: string }[][]) {
   return {
+    select: vi.fn(() => ({
+      from: vi.fn(() => ({
+        where: vi.fn(() => Promise.resolve([])),
+      })),
+    })),
     selectDistinct: vi.fn(() => ({
       from: vi.fn(() => ({
         where: vi.fn(() => ({

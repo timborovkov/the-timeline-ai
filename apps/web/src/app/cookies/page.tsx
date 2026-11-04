@@ -55,6 +55,17 @@ function CurrentBrowserStorage() {
           </tr>
           <tr>
             <td>
+              <strong>tl_platform_impersonation</strong>, a host-only, HTTP-only, SameSite=Lax
+              cookie lasting at most 30 minutes. It is Secure in production.
+            </td>
+            <td>
+              Keep an authorized platform administrator's temporary support session separate from
+              their own sign-in. The server rechecks access on every request; exiting impersonation
+              removes the cookie and revokes the session.
+            </td>
+          </tr>
+          <tr>
+            <td>
               <strong>tl_active_team</strong>, a host-only, HTTP-only, SameSite=Lax cookie lasting
               up to 30 days. It is Secure in production and available across the service path.
             </td>

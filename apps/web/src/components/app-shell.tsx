@@ -39,6 +39,8 @@ interface Props {
   sidebarInitiallyExpanded: boolean;
   workspaceTimezone: string;
   billingSummary?: SidebarBillingSummary | null;
+  platformAdmin?: boolean;
+  impersonation?: { email: string; teamName: string; readOnly: boolean; expiresAt: string } | null;
   children: ReactNode;
 }
 
@@ -63,6 +65,8 @@ export function AppShell({
   sidebarInitiallyExpanded,
   workspaceTimezone,
   billingSummary = null,
+  platformAdmin = false,
+  impersonation = null,
   children,
 }: Props) {
   return (
@@ -86,6 +90,23 @@ export function AppShell({
 
             {/* ── Main column ─────────────────────────────────────────── */}
             <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+              {impersonation && (
+                <div
+                  role="status"
+                  className="flex flex-wrap items-center justify-between gap-2 border-b border-border bg-surface-2 px-4 py-2 text-sm"
+                >
+                  <p>
+                    Viewing as <strong>{impersonation.email}</strong> · {impersonation.teamName}
+                    {impersonation.readOnly ? ' · Read-only' : ''} · Ends{' '}
+                    {new Date(impersonation.expiresAt).toISOString().slice(11, 16)} UTC
+                  </p>
+                  <form action="/api/platform-admin/exit" method="post">
+                    <button type="submit" className="min-h-11 rounded-sm border border-border px-3">
+                      Exit impersonation
+                    </button>
+                  </form>
+                </div>
+              )}
               <header className="sticky top-0 z-30 flex h-12 items-center gap-2 border-b border-border bg-bg/90 px-3 backdrop-blur md:px-4">
                 <div className="flex items-center gap-2 md:hidden">
                   <MobileNav
@@ -113,6 +134,11 @@ export function AppShell({
                   <TeamSetupChecklistChip />
                   <InspectorToggle />
                   <ThemeToggle />
+                  {platformAdmin && (
+                    <Link href="/app/admin" className="px-2 py-3 text-sm hover:underline">
+                      Platform admin
+                    </Link>
+                  )}
                   <UserMenu user={user} />
                 </div>
               </header>
@@ -121,12 +147,12 @@ export function AppShell({
               an inner prose region, but not their outer frame. */}
               <main
                 id={APP_MAIN_SCROLL_ID}
-                className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-24 pt-6 md:px-8 md:py-8"
+                className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain px-4 pb-24 pt-6 md:px-8 md:py-8"
               >
                 <AppMainScrollRestoration />
                 <div
                   data-slot="app-page-container"
-                  className="app-page-container mx-auto w-full max-w-6xl"
+                  className="app-page-container mx-auto w-full min-w-0 max-w-6xl"
                 >
                   {children}
                 </div>

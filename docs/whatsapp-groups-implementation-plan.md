@@ -61,7 +61,7 @@
 **Files:**
 - Create: `docs/setup/whatsapp.html`
 - Modify: `.env.example`
-- Modify: `apps/web/src/app/app/sources/page.tsx`
+- Modify: `apps/web/src/app/app/connections/sources/page.tsx`
 - Modify: `apps/web/src/lib/hub-status.ts`
 
 **Steps:**
@@ -198,7 +198,7 @@
 - Create: `apps/web/src/app/actions/whatsapp.ts`
 - Create: `apps/web/src/components/whatsapp-forms.tsx`
 - Create: matching `*.test.tsx` / `*.test.ts` files
-- Modify: `apps/web/src/app/app/sources/page.tsx`
+- Modify: `apps/web/src/app/app/connections/sources/page.tsx`
 - Modify: `apps/web/src/lib/hub-status.ts`
 - Modify: `apps/web/src/lib/onboarding.ts`
 

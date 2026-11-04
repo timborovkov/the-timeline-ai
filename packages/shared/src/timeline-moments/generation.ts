@@ -1,8 +1,6 @@
 import { type Db, users } from '@timeline/db';
 import { inArray } from 'drizzle-orm';
 
-import type { TeamScope } from '#src/team-scope.js';
-
 import { buildTimelineMoments, type TimelineMomentEvent } from '#src/timeline-moments/index.js';
 import {
   buildTimelineMomentPresentationCacheFingerprint,
@@ -12,6 +10,8 @@ import {
   type GenerateTimelineMomentPresentationOptions,
   type TimelineMomentPresentationCacheKey,
 } from '#src/timeline-moments/presentation.js';
+
+import type { TeamScope } from '#src/team-scope.js';
 
 export type TimelineMomentPresentationGenerationResult =
   | { status: 'stored'; cacheFingerprint: string; momentId: string }

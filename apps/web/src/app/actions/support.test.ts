@@ -275,7 +275,7 @@ describe('support request action', () => {
       name: 'Ada Lovelace',
       email: 'ada@example.test',
       message: 'The export page fails after I click the retry button.',
-      currentPage: '/app/team/integrations',
+      currentPage: '/app/connections/sources',
       userId: USER_ID,
       teamId: TEAM_ID,
     });

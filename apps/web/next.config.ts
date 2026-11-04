@@ -8,13 +8,44 @@ const workspaceRoot = join(__dirname, '../..');
 
 const nextConfig: NextConfig = {
   output: 'standalone',
+  // Next 16 logs Server Function arguments by default, including auth form data.
+  logging: {
+    serverFunctions: false,
+    incomingRequests: { ignore: [/\/(?:forgot-password|reset-password)(?:[/?]|$)/] },
+  },
   outputFileTracingRoot: workspaceRoot,
+  outputFileTracingIncludes: {
+    '/agents/[doc]': ['../../plugins/timeline/skills/timeline/SKILL.md'],
+  },
   turbopack: {
     root: workspaceRoot,
   },
   transpilePackages: ['@timeline/shared', '@timeline/db'],
   headers() {
     return Promise.resolve([
+      {
+        source: '/:path*',
+        headers: [
+          {
+            key: 'Content-Security-Policy',
+            value: "frame-ancestors 'none'; base-uri 'self'",
+          },
+          { key: 'X-Frame-Options', value: 'DENY' },
+          { key: 'X-Content-Type-Options', value: 'nosniff' },
+          { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
+          ...(process.env.NODE_ENV === 'production'
+            ? [{ key: 'Strict-Transport-Security', value: 'max-age=31536000' }]
+            : []),
+        ],
+      },
+      {
+        source: '/:path(forgot-password|reset-password)',
+        headers: [
+          { key: 'Cache-Control', value: 'no-store' },
+          { key: 'Referrer-Policy', value: 'no-referrer' },
+          { key: 'X-Robots-Tag', value: 'noindex, nofollow' },
+        ],
+      },
       {
         source: '/oauth/authorize',
         headers: [

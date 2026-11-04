@@ -14,7 +14,10 @@ export default function PersonalMcpServersError({
   return (
     <div className="max-w-3xl space-y-8">
       <Breadcrumb
-        items={[{ label: 'Connections', href: '/app/sources' }, { label: 'Personal MCP servers' }]}
+        items={[
+          { label: 'Connections', href: '/app/connections' },
+          { label: 'Personal MCP servers' },
+        ]}
       />
       <PageHeader
         title="Personal MCP servers"

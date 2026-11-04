@@ -24,13 +24,6 @@ import {
 } from '@timeline/db';
 import { and, desc, eq, inArray, isNotNull, isNull, lte, ne, or, sql } from 'drizzle-orm';
 
-import type {
-  IntegrationRow,
-  ProviderConnectionRow,
-  SyncContinuation,
-  WebhookSubscription,
-} from '#src/integrations/types.js';
-
 import { decryptJson, encryptJson } from '#src/crypto/secrets.js';
 import { getEnv } from '#src/env.js';
 import {
@@ -45,6 +38,13 @@ import { getProvider } from '#src/integrations/registry.js';
 import { childLogger } from '#src/logger.js';
 import { sendMessage } from '#src/messaging/delivery.js';
 import { rawEventVisibleToUser, validateVisibilityUserIds } from '#src/visibility.js';
+
+import type {
+  IntegrationRow,
+  ProviderConnectionRow,
+  SyncContinuation,
+  WebhookSubscription,
+} from '#src/integrations/types.js';
 
 // Phase 11 — Team-scoped integration helpers. Every read/write goes
 // through `withTeam`-style membership enforcement so a forged team_id
@@ -2452,7 +2452,7 @@ async function notifyHealthPauseOwnerOnce(
         to: recipient.email,
         teamName: teamRow?.name ?? 'Timeline',
         summary,
-        actionUrl: `${process.env.AUTH_URL ?? process.env.NEXTAUTH_URL ?? 'https://thetimeline.cc'}/app/team/integrations`,
+        actionUrl: `${process.env.AUTH_URL ?? process.env.NEXTAUTH_URL ?? 'https://thetimeline.cc'}/app/connections/sources`,
       },
       {
         db,
@@ -3015,7 +3015,7 @@ async function emailConnectionAttentionActors(
     .select({ id: users.id, email: users.email })
     .from(users)
     .where(inArray(users.id, recipientIds));
-  const actionUrl = `${process.env.AUTH_URL ?? process.env.NEXTAUTH_URL ?? 'https://thetimeline.cc'}/app/team/integrations`;
+  const actionUrl = `${process.env.AUTH_URL ?? process.env.NEXTAUTH_URL ?? 'https://thetimeline.cc'}/app/connections/sources`;
   const results = await Promise.all(
     recipients.map((recipient) =>
       sendMessage(

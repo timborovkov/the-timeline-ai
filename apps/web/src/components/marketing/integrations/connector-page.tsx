@@ -1,5 +1,4 @@
 import { ArrowRight, Check, LockKeyhole, Minus, Sparkles } from 'lucide-react';
-import Image from 'next/image';
 import Link from 'next/link';
 
 import {
@@ -8,7 +7,10 @@ import {
 } from '@/components/marketing/integrations/connector-content';
 import { ConnectorStructuredData } from '@/components/marketing/integrations/connector-seo';
 import { RecordsToAnswer } from '@/components/marketing/integrations/records-to-answer';
+import { findWorksWithTool } from '@/components/marketing/integrations/works-with-content';
+import { WorksWithGuidance } from '@/components/marketing/integrations/works-with-sections';
 import { PUBLIC_DEMO_DISCLOSURE } from '@/components/marketing/public-demo-story';
+import { ProviderLogo } from '@/components/provider-logo';
 import { PublicSessionBranch } from '@/components/public-session-branch';
 import { PublicShell } from '@/components/public-shell';
 import { Button } from '@/components/ui/button';
@@ -21,6 +23,7 @@ export function ConnectorPage({ connector }: { connector: ConnectorContent }) {
         <ConnectorHero connector={connector} />
         <div className="mx-auto max-w-6xl px-4 sm:px-6">
           <TruthBoundary connector={connector} />
+          <ConnectorWorksWithGuidance slug={connector.slug} />
           <Questions connector={connector} />
           <WorkedScenario connector={connector} />
           <CapturedRecords connector={connector} />
@@ -36,6 +39,12 @@ export function ConnectorPage({ connector }: { connector: ConnectorContent }) {
   );
 }
 
+function ConnectorWorksWithGuidance({ slug }: { slug: string }) {
+  const tool = findWorksWithTool(slug);
+  if (!tool) return null;
+  return <WorksWithGuidance tool={tool} />;
+}
+
 function ConnectorHero({ connector }: { connector: ConnectorContent }) {
   return (
     <section className="overflow-hidden border-b border-border bg-bg">
@@ -49,17 +58,7 @@ function ConnectorHero({ connector }: { connector: ConnectorContent }) {
         <div className="grid items-end gap-10 lg:grid-cols-[1.3fr_0.7fr]">
           <div>
             <div className="mb-7 flex items-center gap-4">
-              <div
-                className={`grid size-14 place-items-center rounded-md border border-border bg-surface sm:size-16 ${connector.lightLogoTileInDarkMode ? 'dark:bg-white' : ''}`}
-              >
-                <Image
-                  src={connector.logo}
-                  alt=""
-                  width={38}
-                  height={38}
-                  className="size-8 sm:size-10"
-                />
-              </div>
+              <ProviderLogo src={connector.logo} size="lg" />
               <div>
                 <p className="text-sm font-medium text-fg-muted">Integration</p>
                 <p className="mt-1 text-sm font-semibold text-fg">{connector.name}</p>
@@ -78,14 +77,14 @@ function ConnectorHero({ connector }: { connector: ConnectorContent }) {
                 signedOut={
                   <Button asChild size="lg">
                     <Link href="/sign-up">
-                      Create your Timeline
+                      Start free
                       <ArrowRight aria-hidden="true" />
                     </Link>
                   </Button>
                 }
                 signedIn={
                   <Button asChild size="lg">
-                    <Link href="/app/team/integrations">
+                    <Link href="/app/connections">
                       {`Connect ${connector.name}`}
                       <ArrowRight aria-hidden="true" />
                     </Link>
@@ -309,22 +308,27 @@ function Limitations({ connector }: { connector: ConnectorContent }) {
         <SectionLabel label="Limits" />
         <div>
           <h2 id="limitations" className="text-3xl font-semibold tracking-tight sm:text-4xl">
-            Honest limitations
+            Capture limits and recovery
           </h2>
           <p className="mt-4 max-w-[62ch] text-base leading-relaxed text-fg-muted">
             Review these capture and recovery boundaries before connecting your account.
           </p>
-          <ul className="mt-8 border-t border-border">
-            {connector.limitations.map((limitation) => (
-              <li
-                key={limitation}
-                className="grid grid-cols-[1.5rem_1fr] gap-4 border-b border-border py-5"
-              >
-                <Minus aria-hidden="true" className="mt-1 size-4 text-fg-dim" />
-                <span className="text-base leading-relaxed text-fg">{limitation}</span>
-              </li>
-            ))}
-          </ul>
+          <details className="mt-6 border-t border-border pt-4">
+            <summary className="cursor-pointer text-base font-medium text-fg">
+              Read capture limits, history coverage and recovery behaviour
+            </summary>
+            <ul className="mt-4 border-t border-border">
+              {connector.limitations.map((limitation) => (
+                <li
+                  key={limitation}
+                  className="grid grid-cols-[1.5rem_1fr] gap-4 border-b border-border py-5"
+                >
+                  <Minus aria-hidden="true" className="mt-1 size-4 text-fg-dim" />
+                  <span className="text-base leading-relaxed text-fg">{limitation}</span>
+                </li>
+              ))}
+            </ul>
+          </details>
         </div>
       </div>
     </section>
@@ -414,14 +418,14 @@ function FinalCta({ connector }: { connector: ConnectorContent }) {
             signedOut={
               <Button asChild size="lg" className="mt-8">
                 <Link href="/sign-up">
-                  Create your Timeline
+                  Start free
                   <ArrowRight aria-hidden="true" />
                 </Link>
               </Button>
             }
             signedIn={
               <Button asChild size="lg" className="mt-8">
-                <Link href="/app/team/integrations">
+                <Link href="/app/connections">
                   {`Connect ${connector.name}`}
                   <ArrowRight aria-hidden="true" />
                 </Link>

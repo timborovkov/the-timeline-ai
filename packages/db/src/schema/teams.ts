@@ -29,6 +29,7 @@ export const teams = pgTable('teams', {
   id: uuid('id').defaultRandom().primaryKey(),
   slug: text('slug').notNull().unique(),
   name: text('name').notNull(),
+  suspensionPreviousState: text('suspension_previous_state'),
   // Phase 7: per-team inbound email address. Format is `<slug>@<INBOUND_EMAIL_DOMAIN>`,
   // populated at team creation. Nullable because legacy rows (created before
   // Phase 7) backfill via migration but new teams should never be NULL — the

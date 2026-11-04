@@ -232,7 +232,7 @@ describe('OnboardingChecklist', () => {
     expect(screen.getByText('Capture one timeline event')).toBeTruthy();
     expect(screen.getByText('Upload a document')).toBeTruthy();
     expect(screen.getByRole('link', { name: 'Connect an integration' }).getAttribute('href')).toBe(
-      '/app/sources',
+      '/app/connections',
     );
     expect(screen.getByRole('link', { name: 'Upload' }).getAttribute('href')).toBe(
       '/app/documents',
@@ -247,6 +247,21 @@ describe('OnboardingChecklist', () => {
     expect(mutateChecklist).toHaveBeenCalledWith({ action: 'complete', key: 'first_document' });
   });
 
+  it('points Connect your agent at the connect-agent screen', () => {
+    renderChecklist({
+      dismissed: false,
+      items: [
+        { key: 'first_note', label: 'Capture one timeline event', completed: true },
+        { key: 'connect_agent', label: 'Connect your agent', completed: false },
+      ],
+    });
+
+    expect(screen.getByRole('link', { name: 'Connect' }).getAttribute('href')).toBe(
+      '/app/connect-agent',
+    );
+    expect(screen.getByText(/remember works now/i)).toBeTruthy();
+  });
+
   it('opens the capture dialog hash directly for the first note step', () => {
     renderChecklist({
       dismissed: false,
@@ -258,7 +273,7 @@ describe('OnboardingChecklist', () => {
     expect(window.location.hash).toBe('#capture');
   });
 
-  it('links the email forwarding step to the Home team email section', () => {
+  it('links the email forwarding step to the Email provider sheet', () => {
     renderChecklist({
       dismissed: false,
       items: [
@@ -266,8 +281,8 @@ describe('OnboardingChecklist', () => {
       ],
     });
 
-    expect(screen.getByRole('link', { name: 'View team email' }).getAttribute('href')).toBe(
-      '/app#team-email',
+    expect(screen.getByRole('link', { name: 'Set up email' }).getAttribute('href')).toBe(
+      '/app/connections/sources#email',
     );
   });
 

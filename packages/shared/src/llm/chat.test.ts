@@ -1561,3 +1561,35 @@ describe('streamChat', () => {
     expect(finishCost).toBeCloseTo(0.13);
   });
 });
+
+it('forwards terminal abort callbacks so callers can settle completed stream steps', async () => {
+  const controller = new AbortController();
+  const onAbort = vi.fn();
+  const model = new MockLanguageModelV3({
+    doStream: (() =>
+      Promise.resolve({
+        stream: new ReadableStream({
+          start(stream) {
+            stream.enqueue({ type: 'text-start', id: 'text' });
+            stream.enqueue({ type: 'text-delta', id: 'text', delta: 'Partial' });
+            setTimeout(() => {
+              controller.abort();
+            }, 0);
+          },
+        }),
+      })) as never,
+  });
+  const result = streamChat(
+    {
+      instructions: 'sys',
+      messages: [{ role: 'user', content: 'hi' }],
+      tools: {},
+      abortSignal: controller.signal,
+      onAbort,
+    },
+    { model },
+  );
+  await result.consumeStream();
+  expect(onAbort).toHaveBeenCalledTimes(1);
+  expect(onAbort).toHaveBeenCalledWith(expect.objectContaining({ steps: [] }));
+});

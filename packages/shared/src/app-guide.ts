@@ -222,10 +222,10 @@ export const APP_GUIDE_ROUTES: readonly AppGuideRoute[] = [
   },
   {
     id: 'team/integrations',
-    title: 'Integrations',
+    title: 'Connections',
     description:
       'Connect Drive, Linear, GitHub, Monday.com, Slack workspace, Sentry, custom ingest webhooks, and MCP tools.',
-    href: '/app/team/integrations',
+    href: '/app/connections/sources',
     group: 'dashboard',
     minRole: 'admin',
     intents: [
@@ -250,14 +250,14 @@ export const APP_GUIDE_ROUTES: readonly AppGuideRoute[] = [
       'ingest webhooks',
     ],
     guide:
-      'Use Team Integrations to connect native sources, activate shared provider resources, manage ingest webhooks, and add MCP tools. Monday.com board selection captures items, updates, columns, and subitems from the parent board; choose WorkDocs separately when docs should become cited evidence. Provider connections are person-owned, admins activate shared team sources, and MCP provides live tool/context access with private evidence capture for successful tool calls.',
+      'Use Connections to connect native sources, activate shared provider resources, manage ingest webhooks, and add MCP tools. Monday.com board selection captures items, updates, columns, and subitems from the parent board; choose WorkDocs separately when docs should become cited evidence. Provider connections are person-owned, admins activate shared team sources, and MCP provides live tool/context access with private evidence capture for successful tool calls.',
     relatedRouteIds: ['help/integrations', 'team', 'connections', 'me/connections'],
   },
   {
     id: 'connections',
     title: 'Connections',
-    description: 'Personal provider accounts, Slack, Telegram, team integrations, and MCP tools.',
-    href: '/app/sources',
+    description: 'Personal provider accounts, Slack, Telegram, native providers, and MCP tools.',
+    href: '/app/connections/sources',
     group: 'dashboard',
     minRole: 'member',
     intents: [
@@ -269,7 +269,7 @@ export const APP_GUIDE_ROUTES: readonly AppGuideRoute[] = [
       'set up a source',
     ],
     guide:
-      'Use Connections to see capture sources and linked accounts. Person-owned provider logins live under Provider accounts. Admins activate shared team sources on Team Integrations. Slack and Telegram have their own setup pages. MCP servers give the agent live tools without turning every call into timeline evidence.',
+      'Use Connections to see capture sources, native providers, and linked accounts. Sources lists Timeline Email in its own Inbox section, then Telegram, Slack, and the remaining providers. Each opens a details sheet. Documents and Meetings live on their own sidebar pages. Person-owned provider logins live under Provider accounts. Admins activate shared team sources on the same Connections page. Slack chat capture has its own setup page. Agent tools holds MCP servers, the Timeline MCP endpoint, and coming-soon catalog rows. Developer holds ingest webhooks, integration audit, and job recovery. MCP servers give the agent live tools without turning every call into timeline evidence.',
     relatedRouteIds: [
       'me/connections',
       'team/integrations',
@@ -295,7 +295,7 @@ export const APP_GUIDE_ROUTES: readonly AppGuideRoute[] = [
       'linear account',
     ],
     guide:
-      'Use Provider accounts to connect a personal login for Drive, GitHub, Linear, Monday.com, or Sentry. Connecting an account does not share it with the team until an admin activates a resource on Team Integrations.',
+      'Use Provider accounts to connect a personal login for Drive, GitHub, Linear, Monday.com, or Sentry. Connecting an account does not share it with the team until an admin activates a resource on Connections.',
     relatedRouteIds: ['connections', 'team/integrations', 'help/integrations'],
   },
   {
@@ -314,12 +314,12 @@ export const APP_GUIDE_ROUTES: readonly AppGuideRoute[] = [
     id: 'team/telegram',
     title: 'Telegram Setup',
     description: 'Connect Telegram capture and direct-chat routing for this team.',
-    href: '/app/team/telegram',
+    href: '/app/connections/sources#telegram',
     group: 'dashboard',
     minRole: 'member',
     intents: ['connect telegram', 'telegram bot', 'telegram capture'],
     guide:
-      'Use Telegram setup to connect the bot and route your Telegram account to this team. Direct chats with the bot are agent conversations; groups remain capture unless someone uses /ask.',
+      'Open Connections and the Telegram provider sheet to connect the bot and route your Telegram account to this team. Direct chats with the bot are agent conversations; groups remain capture unless someone uses /ask.',
     relatedRouteIds: ['connections', 'help/capture', 'chat'],
   },
   {
@@ -344,13 +344,34 @@ export const APP_GUIDE_ROUTES: readonly AppGuideRoute[] = [
     intents: ['team mcp', 'shared mcp', 'workspace mcp'],
     guide:
       'Use Team MCP servers to add MCP tools the whole team can invoke from Ask. Admins control the server list and shared credentials.',
-    relatedRouteIds: ['me/mcp-servers', 'help/integrations', 'chat'],
+    relatedRouteIds: ['me/mcp-servers', 'help/integrations', 'chat', 'connect-agent'],
+  },
+  {
+    id: 'connect-agent',
+    title: 'Connect your agent',
+    description: 'Connect Claude, Codex, ChatGPT, Cursor, or another MCP client to this team.',
+    href: '/app/connect-agent',
+    group: 'dashboard',
+    minRole: 'member',
+    intents: [
+      'connect agent',
+      'mcp share',
+      'timeline mcp',
+      'claude',
+      'codex',
+      'chatgpt',
+      'cursor',
+      'oauth',
+    ],
+    guide:
+      'Open Connect your agent to copy a setup prompt, finish OAuth, revoke connected agents, add memory by email or webhook, and download SKILL.md. Prefer OAuth. Static tla_ keys remain a fallback and author remember as the team actor.',
+    relatedRouteIds: ['help/integrations', 'me/connections', 'team/mcp-servers'],
   },
   {
     id: 'team/integrations/monday',
     title: 'Monday.com Integration',
     description: 'Connect Monday.com boards, subitems, updates, columns, records, and WorkDocs.',
-    href: '/app/team/integrations#monday',
+    href: '/app/connections/sources#monday',
     group: 'dashboard',
     minRole: 'admin',
     intents: [

@@ -40,9 +40,6 @@ import {
 } from '@timeline/db';
 import { and, asc, desc, eq, gte, inArray, isNull, lt, ne, notInArray, or, sql } from 'drizzle-orm';
 
-import type { chatStructured } from '#src/llm/chat.js';
-import type { TimelineMomentLookupPlan } from '#src/timeline-moments/index.js';
-
 import { createAuditScope } from '#src/audit/scope.js';
 import { getBillingContext, runWithBillingContext } from '#src/billing/context.js';
 import { createBillingOperatorScope } from '#src/billing/operator-store.js';
@@ -55,6 +52,12 @@ import { sourceMetadataWithConversationArtifacts } from '#src/conversational/con
 import { reconcileLinkArtifactsForRawEvent } from '#src/conversational/link-artifacts.js';
 import { documentPresentation } from '#src/documents/presentation.js';
 import { createDocumentScope } from '#src/documents/scope.js';
+import {
+  acceptIngestWebhookEvidence,
+  type AcceptIngestWebhookEvidenceInput,
+  type AcceptIngestWebhookEvidenceResult,
+} from '#src/ingest-webhooks/accept.js';
+import { createIngestWebhookScope } from '#src/ingest-webhooks/scope.js';
 import { createIntegrationScope } from '#src/integrations/scope.js';
 import { createJobRecoveryScope } from '#src/job-recovery/index.js';
 import { embed as defaultEmbed, type EmbedResult } from '#src/llm/embed.js';
@@ -62,12 +65,19 @@ import { TIMELINE_MODELS } from '#src/llm/models.js';
 import { childLogger } from '#src/logger.js';
 import { createMcpScope } from '#src/mcp/scope.js';
 import { createMcpOAuthScope } from '#src/mcp-server/oauth-scope.js';
+import { createMcpOutboundScope } from '#src/mcp-server/outbound.js';
 import { createMeetingScope } from '#src/meetings/scope.js';
 import { createObjectScope, normalizeIdentityFacet } from '#src/objects/index.js';
 import { invalidateObjectSummariesForRawEvent } from '#src/objects/summaries.js';
 import { createOnboardingScope } from '#src/onboarding/index.js';
 import { decodeCursor, encodeCursor, pageWindow } from '#src/pagination.js';
 import { createPinScope } from '#src/pins/scope.js';
+import {
+  guardTeamAccess,
+  guardOperatorScope,
+  operatorDatabase,
+  recordScopedReadAudit,
+} from '#src/platform-admin/runtime.js';
 import {
   getQdrantClient,
   type SearchHit,
@@ -82,6 +92,7 @@ import {
   sourcePayloadRefFromMetadata,
 } from '#src/reconciliation/source-snapshot.js';
 import { createSuggestionScope } from '#src/suggestions/index.js';
+import { createTelegramScope } from '#src/telegram/scope.js';
 import {
   buildTimelineMomentPresentationCacheFingerprint,
   timelineMomentPresentationCacheKeyMatches,
@@ -95,6 +106,10 @@ import {
   rawEventIsActive,
   rawEventVisibleToUser,
 } from '#src/visibility.js';
+
+import type { chatStructured } from '#src/llm/chat.js';
+import type { QdrantOperationContext } from '#src/qdrant/operation.js';
+import type { TimelineMomentLookupPlan } from '#src/timeline-moments/index.js';
 
 // Note: `teamRole` value is referenced at runtime by drizzle elsewhere; keeping
 // the value import lets us derive the union type from the enum definition.
@@ -294,6 +309,7 @@ export interface CreateEmailEventResult {
 }
 
 export interface SearchEventsInput {
+  operation?: QdrantOperationContext;
   query: string;
   /** Reuse a previously embedded query when scanning multiple semantic pages. */
   queryVector?: number[];
@@ -582,12 +598,14 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
  * to require a higher role than `member` (e.g. for admin-only operations).
  */
 export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScopeDeps = {}) {
+  db = operatorDatabase(db);
   const visibilityFilter = rawEventVisibleToUser(userId);
   const activeRawEventFilter = rawEventIsActive();
 
   let membershipPromise: Promise<TeamRole> | undefined;
 
-  function ensureMember(minRole: TeamRole = 'member'): Promise<TeamRole> {
+  async function ensureMember(minRole: TeamRole = 'member'): Promise<TeamRole> {
+    await guardTeamAccess(db, teamId, userId, deps.skipMembershipCheck);
     if (deps.skipMembershipCheck) {
       // Trusted-caller path (Phase 11 outbound MCP): membership has
       // already been proven by the bearer-key resolution. Resolve as
@@ -1692,6 +1710,20 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
     userId,
   });
 
+  const mcpOutboundScope = createMcpOutboundScope({
+    db,
+    teamId,
+    userId,
+    ensureMember,
+  });
+
+  const ingestWebhookScope = createIngestWebhookScope({
+    db,
+    teamId,
+    userId,
+    ensureMember,
+  });
+
   const calendarScope = createCalendarScope({
     db,
     teamId,
@@ -1739,6 +1771,12 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
   }
 
   const jobRecoveryScope = createJobRecoveryScope({
+    db,
+    teamId,
+    userId,
+    ensureMember,
+  });
+  const telegramScope = createTelegramScope({
     db,
     teamId,
     userId,
@@ -2803,7 +2841,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
     getTimezone: async () => (await calendarScope.getCalendarSettings()).defaultTimezone,
   });
 
-  return {
+  const guardedScope = {
     ...core,
     timeline: {
       /** Internal recovery metadata, never a user-visible event read. */
@@ -3385,6 +3423,18 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
       },
 
       /**
+       * Evidence-only ingest capture (ADR 0009). Stores a raw event, normalizes
+       * cited evidence, and enqueues extract/embed/suggestion jobs. Never updates
+       * canonical workspace records.
+       */
+      async captureIngestEvidence(
+        input: Omit<AcceptIngestWebhookEvidenceInput, 'db' | 'teamId'>,
+      ): Promise<AcceptIngestWebhookEvidenceResult> {
+        await ensureMember();
+        return acceptIngestWebhookEvidence({ ...input, db, teamId });
+      },
+
+      /**
        * Phase 7 email-specific create that wraps insert + thread-root lookup
        * in one transaction so the email dispatcher cannot bypass team isolation
        * or forget to thread-link. Idempotent against the partial unique index
@@ -3618,7 +3668,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
         const senderMap = await resolveSenderContexts([event]);
         const senderInfo = senderMap.get(event.id);
         if (event.visibility !== 'team') {
-          await db.insert(auditLog).values({
+          await recordScopedReadAudit(db, {
             teamId,
             actorUserId: userId,
             action: 'event.detail_read',
@@ -3885,6 +3935,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
         if (input.eventIds?.length === 0) return [];
 
         const searchOpts: SearchOpts = {
+          operation: input.operation ?? {},
           limit: input.limit ?? 20,
         };
         if (input.offset) searchOpts.offset = input.offset;
@@ -4116,6 +4167,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
       },
 
       async searchObjectNotes(input: {
+        operation?: QdrantOperationContext;
         query: string;
         objectId?: string;
         limit?: number;
@@ -4133,6 +4185,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
         const { vector } = await withSearchEmbeddingBilling(() => embedFn({ text: input.query }));
         const hits = await searchFn(teamId, userId, vector, {
           limit: limit * 3,
+          operation: input.operation ?? {},
           sourceKind: 'object_note',
         });
 
@@ -4266,13 +4319,17 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
     integrations: integrationScope,
     mcp: mcpScope,
     mcpOAuth: mcpOAuthScope,
+    mcpOutbound: mcpOutboundScope,
+    ingestWebhooks: ingestWebhookScope,
     onboarding: onboardingScope,
     billing: billingScope,
     billingOperator: createBillingOperatorScope({ db, teamId }),
     calendar: calendarScope,
     jobRecovery: jobRecoveryScope,
     audit: auditScope,
+    telegram: telegramScope,
   };
+  return guardOperatorScope(db, teamId, userId, guardedScope, '', deps.skipMembershipCheck);
 }
 
 export type TeamScope = ReturnType<typeof withTeam>;

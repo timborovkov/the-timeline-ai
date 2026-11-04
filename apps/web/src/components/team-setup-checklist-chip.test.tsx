@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, it } from 'bun:test';
 
 const fakes = vi.hoisted(() => ({
   useOnboardingChecklistQuery: vi.fn(),
-  pathname: '/app/sources',
+  pathname: '/app/connections',
 }));
 
 await vi.mock(
@@ -32,7 +32,7 @@ const { TeamSetupChecklistChip } = await import('./team-setup-checklist-chip.js'
 
 beforeEach(() => {
   vi.clearAllMocks();
-  fakes.pathname = '/app/sources';
+  fakes.pathname = '/app/connections';
 });
 
 afterEach(() => {

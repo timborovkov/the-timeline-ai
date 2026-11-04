@@ -24,6 +24,8 @@ export const PUBLIC_LLM_SECTIONS = [
   'primary',
   'product-guides',
   'solutions',
+  'use-cases',
+  'compare',
   'integrations',
   'how-it-works',
   'companion',

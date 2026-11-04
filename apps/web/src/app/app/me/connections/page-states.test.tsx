@@ -42,7 +42,7 @@ describe('Personal Connections route states', () => {
     );
     expect(screen.getAllByRole('heading', { name: 'Provider accounts', level: 1 })).toHaveLength(1);
     expect(screen.getByRole('link', { name: 'Connections' }).getAttribute('href')).toBe(
-      '/app/sources',
+      '/app/connections',
     );
     expect(
       screen.getByLabelText('Loading provider accounts').querySelector('[aria-hidden="true"]'),
@@ -62,7 +62,7 @@ describe('Personal Connections route states', () => {
 
     expect(screen.getByRole('heading', { name: 'Provider accounts', level: 1 })).toBeTruthy();
     expect(screen.getByRole('link', { name: 'Connections' }).getAttribute('href')).toBe(
-      '/app/sources',
+      '/app/connections',
     );
     expect(
       screen.getByRole('heading', { name: 'Unable to load provider accounts', level: 2 }),

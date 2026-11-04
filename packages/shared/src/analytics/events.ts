@@ -55,6 +55,7 @@ export const CAPTURE_DURATION_BUCKETS = ['under_1m', '1m_to_5m', '5m_to_15m', '1
 
 export const PUBLIC_ANALYTICS_SURFACES = [
   'home',
+  'pricing',
   'how_it_works',
   'integrations',
   'integration_slack',
@@ -63,6 +64,26 @@ export const PUBLIC_ANALYTICS_SURFACES = [
   'integration_google_drive',
   'integration_monday',
   'integration_sentry',
+  'integration_telegram',
+  'integration_hubspot',
+  'integration_pipedrive',
+  'integration_attio',
+  'integration_jira',
+  'integration_notion',
+  'product_tour',
+  'use_cases',
+  'compare',
+  'compare_day_ai',
+  'compare_folk',
+  'compare_glean',
+  'compare_geekbot',
+  'agents',
+  'use_case_work_record',
+  'use_case_team_daily_log',
+  'use_case_communication_trail',
+  'use_case_crm',
+  'use_case_task_board',
+  'use_case_onboarding',
   'guide_search_slack_google_drive',
   'guide_weekly_engineering_updates',
   'guide_sentry_incidents',
@@ -71,6 +92,7 @@ export const PUBLIC_ANALYTICS_SURFACES = [
   'solution_crm_context_team_activity',
   'help',
   'help_capture',
+  'help_billing',
   'help_work',
   'help_documents',
   'help_boards',
@@ -143,6 +165,25 @@ const PRODUCT_EVENT_SCHEMAS = {
       attributionCampaign: z.enum(PUBLIC_ATTRIBUTION_CAMPAIGNS).optional(),
     })
     .strict(),
+  billing_checkout_created: z.object({ plan: z.enum(['payg', 'team', 'business']) }).strict(),
+  billing_plan_activated: z
+    .object({ plan: z.enum(['payg', 'team', 'business', 'enterprise']) })
+    .strict(),
+  paid_usage_recorded: z
+    .object({
+      meter: z.enum([
+        'ai',
+        'recall_minutes',
+        'email_units',
+        'storage_gb_month',
+        'member_days',
+        'accepted_sources',
+      ]),
+    })
+    .strict(),
+  source_indexed: z.object({ source: z.enum(['event', 'fact', 'object', 'other']) }).strict(),
+  reference_preview_loaded: z.object({}).strict(),
+  email_verified: z.object({}).strict(),
   authentication_succeeded: z.object({ method: z.enum(['credentials', 'github']) }).strict(),
   team_created: z
     .object({ source: z.enum(['signup', 'oauth', 'manual', 'invite_fallback']) })
@@ -290,6 +331,7 @@ const PRODUCT_EVENT_SCHEMAS = {
   onboarding_step_completed: z
     .object({
       step: z.enum([
+        'connect_agent',
         'first_note',
         'invite_teammate',
         'telegram',
@@ -335,6 +377,30 @@ function metadata(purpose: string, trigger: string): ProductEventMetadata {
 
 export const PRODUCT_EVENT_METADATA: Record<ProductEventName, ProductEventMetadata> = {
   account_registered: metadata('Measure account acquisition.', 'An account is created.'),
+  billing_checkout_created: metadata(
+    'Understand paid-plan intent.',
+    'A self-serve billing session is created successfully; not a confirmed purchase.',
+  ),
+  billing_plan_activated: metadata(
+    'Understand paid-plan adoption.',
+    'A committed Polar webhook changes the account into an active plan.',
+  ),
+  paid_usage_recorded: metadata(
+    'Understand chargeable usage adoption.',
+    'A new non-shadow ledger settlement has a positive invoice amount; not proof of payment collection.',
+  ),
+  source_indexed: metadata(
+    'Understand capture availability.',
+    'All embedding chunks for a timeline event are persisted successfully; reindexing may repeat this event.',
+  ),
+  reference_preview_loaded: metadata(
+    'Understand use of supporting evidence.',
+    'An authorized artifact preview is returned; cached reopenings are not counted.',
+  ),
+  email_verified: metadata(
+    'Understand verification completion.',
+    'An email verification token is accepted.',
+  ),
   authentication_succeeded: metadata(
     'Measure successful authentication.',
     'Auth.js completes a sign-in.',

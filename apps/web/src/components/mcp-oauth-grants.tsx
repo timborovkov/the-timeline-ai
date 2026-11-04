@@ -35,6 +35,7 @@ function clientHostname(clientId: string): string | null {
 
 function scopeLabel(scope: string): string {
   if (scope === 'read') return 'Read Timeline data';
+  if (scope === 'capture') return 'Capture notes';
   if (scope === 'agent:ask') return 'Ask Timeline agent';
   return scope;
 }

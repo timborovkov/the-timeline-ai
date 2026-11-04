@@ -13,14 +13,16 @@ export default function IntegrationsError({
 }) {
   return (
     <div className="space-y-8">
-      <Breadcrumb items={[{ label: 'Team', href: '/app/team' }, { label: 'Integrations' }]} />
+      <Breadcrumb
+        items={[{ label: 'Connections', href: '/app/connections' }, { label: 'Integrations' }]}
+      />
       <PageHeader
         title="Team integrations"
-        subtitle="Manage provider sync, source access, and integration recovery for this team."
+        subtitle="Team integration settings now live on Connections."
       />
       <ErrorState
-        title="Unable to load team integrations"
-        description="Your team’s existing provider connections, shared sources, and sync settings have not changed. Check your connection, then try again."
+        title="Unable to open team integrations"
+        description="This failed redirect did not change your provider connections, shared sources, or sync settings. Check your connection, then try again."
         error={error}
         reset={reset}
       />

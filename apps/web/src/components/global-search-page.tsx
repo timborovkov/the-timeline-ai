@@ -162,6 +162,14 @@ function kindLabel(kind: GlobalSearchKind): string {
   return kind.charAt(0).toUpperCase() + kind.slice(1);
 }
 
+function searchResultStatus(state: SearchViewState): string {
+  if (state.loading) return 'Searching…';
+  if (state.error) return 'Search unavailable';
+  const count = state.results.length;
+  const label = `${String(count)} ${count === 1 ? 'result' : 'results'}`;
+  return state.warnings.length > 0 ? `${label} · some sources unavailable` : label;
+}
+
 function resultDate(result: GlobalSearchResult): string | null {
   const value = result.occurredAt ?? result.updatedAt ?? result.startAt;
   if (!value) return null;
@@ -233,7 +241,7 @@ function DateFilterInput({
 }) {
   return (
     <label className="min-w-36">
-      <span className="mb-1 block text-[11px] text-fg-dim">{label}</span>
+      <span className="mb-1 block text-xs text-fg-dim">{label}</span>
       <input
         type="date"
         value={value}
@@ -276,7 +284,7 @@ function SearchResultRow({ result }: { result: GlobalSearchResult }) {
       <CollectionRow.Context>{result.snippet}</CollectionRow.Context>
       <CollectionRow.Metadata>
         <>
-          <span className="text-[11px] text-fg-dim">{kindLabel(result.kind)}</span>
+          <span className="text-xs text-fg-dim">{kindLabel(result.kind)}</span>
           {date ? <span>{date}</span> : null}
           {result.metadata?.source ? <span>{result.metadata.source}</span> : null}
           {result.metadata?.type ? <span>{result.metadata.type}</span> : null}
@@ -284,7 +292,7 @@ function SearchResultRow({ result }: { result: GlobalSearchResult }) {
             <DueDateDisplay value={dueAt} variant="compact" />
           ) : null}
           {relatedEvidence ? (
-            <span className="truncate text-[11px] text-fg-dim">Evidence · {relatedEvidence}</span>
+            <span className="truncate text-xs text-fg-dim">Evidence · {relatedEvidence}</span>
           ) : null}
         </>
       </CollectionRow.Metadata>
@@ -432,11 +440,7 @@ export function GlobalSearchPage({
     (state.from ? 1 : 0) +
     (state.to ? 1 : 0);
   const hasSearchCriteria = Boolean(state.query || filterCount > 0);
-  const resultStatus = state.loading
-    ? 'Searching…'
-    : state.error
-      ? 'Search unavailable'
-      : `${state.results.length} results`;
+  const resultStatus = searchResultStatus(state);
 
   const searchHref = searchPath({
     query: state.query,
@@ -614,6 +618,7 @@ export function GlobalSearchPage({
         error={state.error}
         results={state.results}
         hasSearchCriteria={hasSearchCriteria}
+        hasSourceWarnings={state.warnings.length > 0}
         onRetry={() => {
           dispatch({ type: 'search_retry' });
         }}
@@ -628,6 +633,7 @@ function SearchResultsPanel({
   error,
   results,
   hasSearchCriteria,
+  hasSourceWarnings,
   onRetry,
 }: {
   resultStatus: string;
@@ -635,6 +641,7 @@ function SearchResultsPanel({
   error: string | null;
   results: GlobalSearchResult[];
   hasSearchCriteria: boolean;
+  hasSourceWarnings: boolean;
   onRetry: () => void;
 }) {
   return (
@@ -667,7 +674,10 @@ function SearchResultsPanel({
       ) : loading && results.length === 0 ? (
         <SearchResultsLoading />
       ) : results.length === 0 && !loading ? (
-        <SearchEmptyState hasSearchCriteria={hasSearchCriteria} />
+        <SearchEmptyState
+          hasSearchCriteria={hasSearchCriteria}
+          hasSourceWarnings={hasSourceWarnings}
+        />
       ) : (
         <ul>
           {results.map((result) => (
@@ -679,16 +689,30 @@ function SearchResultsPanel({
   );
 }
 
-function SearchEmptyState({ hasSearchCriteria }: { hasSearchCriteria: boolean }) {
+function SearchEmptyState({
+  hasSearchCriteria,
+  hasSourceWarnings,
+}: {
+  hasSearchCriteria: boolean;
+  hasSourceWarnings: boolean;
+}) {
   return (
     <EmptyState
       icon={Search}
       size="inset"
-      title={hasSearchCriteria ? 'No matches found' : 'Start with a search'}
+      title={
+        hasSourceWarnings
+          ? 'Some sources are unavailable'
+          : hasSearchCriteria
+            ? 'No matches found'
+            : 'Start with a search'
+      }
       body={
-        hasSearchCriteria
-          ? 'Try different words or adjust the filters.'
-          : 'Enter words, then narrow results by type, source, or date.'
+        hasSourceWarnings
+          ? 'Try again in a moment. Matches from sources that are still up may appear here.'
+          : hasSearchCriteria
+            ? 'Try different words or adjust the filters.'
+            : 'Enter words, then narrow results by type, source, or date.'
       }
     />
   );

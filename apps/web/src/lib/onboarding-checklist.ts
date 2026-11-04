@@ -6,6 +6,7 @@ export const ONBOARDING_CHECKLIST_CACHE_TTL_SECONDS = 30;
 
 const ONBOARDING_STEP_LABELS: Record<OnboardingStep, string> = {
   billing_setup: 'Set up billing (optional on Free)',
+  connect_agent: 'Connect your agent',
   first_note: 'Capture one timeline event',
   invite_teammate: 'Invite a teammate',
   telegram: 'Link Telegram',

@@ -117,8 +117,10 @@ describe('InboundEmailWhitelistForm', () => {
     expect(
       screen.getByRole<HTMLInputElement>('checkbox', { name: 'Enable sender whitelist' }).checked,
     ).toBe(true);
-    expect(screen.getByLabelText<HTMLTextAreaElement>('Additional allowed senders').value).toBe(
-      'ada@example.com, vendor@example.net',
+    expect(screen.getByText('ada@example.com')).toBeTruthy();
+    expect(screen.getByText('vendor@example.net')).toBeTruthy();
+    expect(document.querySelector('input[name="senders"]')?.getAttribute('value')).toBe(
+      'ada@example.com\nvendor@example.net',
     );
     expect(screen.queryByText(/placeholder \(@inbound\.invalid\)/)).toBeNull();
   });
@@ -232,7 +234,7 @@ describe('Team form field hover treatment', () => {
       </>,
     );
 
-    expect(screen.getByLabelText('Additional allowed senders').className).toContain(
+    expect(screen.getByLabelText('Additional senders').className).toContain(
       'hover:border-border-strong',
     );
     expect(screen.getByLabelText('Email').className).toContain('hover:border-border-strong');

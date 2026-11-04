@@ -27,12 +27,13 @@ type Icon = ComponentType<SVGProps<SVGSVGElement>>;
 interface PaletteViewState {
   loading: boolean;
   results: GlobalSearchResult[];
+  warnings: string[];
   error: string | null;
   activeIndex: number;
 }
 type PaletteViewAction =
   | { type: 'search_start' }
-  | { type: 'search_success'; results: GlobalSearchResult[] }
+  | { type: 'search_success'; results: GlobalSearchResult[]; warnings: string[] }
   | { type: 'search_error'; error: string }
   | { type: 'active'; value: number }
   | { type: 'reset_active' };
@@ -40,12 +41,18 @@ type PaletteViewAction =
 const GROUP_ORDER = ['Go to', 'Work', 'Timeline', 'Documents', 'Calendar', 'Other'] as const;
 
 function paletteViewReducer(state: PaletteViewState, action: PaletteViewAction): PaletteViewState {
-  if (action.type === 'search_start') return { ...state, loading: true, error: null };
+  if (action.type === 'search_start') return { ...state, loading: true, error: null, warnings: [] };
   if (action.type === 'search_success') {
-    return { loading: false, results: action.results, error: null, activeIndex: -1 };
+    return {
+      loading: false,
+      results: action.results,
+      warnings: action.warnings,
+      error: null,
+      activeIndex: -1,
+    };
   }
   if (action.type === 'search_error') {
-    return { loading: false, results: [], error: action.error, activeIndex: -1 };
+    return { loading: false, results: [], warnings: [], error: action.error, activeIndex: -1 };
   }
   if (action.type === 'active') return { ...state, activeIndex: action.value };
   return { ...state, activeIndex: -1 };
@@ -96,6 +103,7 @@ export function GlobalSearchPalette({ hint, className }: Props) {
   const [view, dispatchView] = useReducer(paletteViewReducer, {
     loading: false,
     results: [],
+    warnings: [],
     error: null,
     activeIndex: -1,
   });
@@ -137,7 +145,11 @@ export function GlobalSearchPalette({ hint, className }: Props) {
         signal: controller.signal,
       })
         .then((response) => {
-          dispatchView({ type: 'search_success', results: response.results });
+          dispatchView({
+            type: 'search_success',
+            results: response.results,
+            warnings: response.warnings.map((warning) => warning.message),
+          });
         })
         .catch((err: unknown) => {
           if (controller.signal.aborted) return;
@@ -288,13 +300,16 @@ function SearchPaletteResults({
     <div className="absolute left-0 right-0 top-12 z-50 max-h-[min(34rem,calc(100vh-5rem))] overflow-y-auto rounded-sm border border-border bg-bg shadow-xl">
       {view.error ? (
         <p className="p-3 text-sm text-destructive">{view.error}</p>
-      ) : grouped.length === 0 && !view.loading ? (
+      ) : grouped.length === 0 && !view.loading && view.warnings.length === 0 ? (
         <p className="p-3 text-sm text-fg-muted">No matches.</p>
       ) : (
         <div className="py-2">
+          {view.warnings.length > 0 ? (
+            <p className="px-3 py-2 text-xs text-fg-muted">{view.warnings.join(' ')}</p>
+          ) : null}
           {grouped.map(([group, items]) => (
             <div key={group} className="py-1">
-              <p className="px-3 py-1 text-[11px] text-fg-dim">{group}</p>
+              <p className="px-3 py-1 text-xs text-fg-dim">{group}</p>
               {items.map((result) => {
                 const index = selectableResults.indexOf(result);
                 const IconComponent = resultIcon(result.kind);
@@ -335,7 +350,7 @@ function SearchPaletteResults({
                           />
                         ) : null}
                       </span>
-                      <span className="shrink-0 text-[11px] text-fg-dim">
+                      <span className="shrink-0 text-xs text-fg-dim">
                         {result.externalHref ? 'new tab' : resultKindLabel(result.kind)}
                       </span>
                     </button>

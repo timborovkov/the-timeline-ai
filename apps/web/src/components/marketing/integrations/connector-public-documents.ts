@@ -5,6 +5,8 @@ import {
   CONNECTORS,
   type ConnectorContent,
 } from '@/components/marketing/integrations/connector-content';
+import { TELEGRAM_PAGE } from '@/components/marketing/integrations/telegram-content';
+import { findWorksWithTool } from '@/components/marketing/integrations/works-with-content';
 import { definePublicDocuments } from '@/lib/public-site/registry';
 
 export const INTEGRATION_DIRECTORY_DOCUMENT = {
@@ -12,9 +14,9 @@ export const INTEGRATION_DIRECTORY_DOCUMENT = {
   kind: 'product',
   title: 'Integrations and capture surfaces',
   description:
-    'Explore Telegram, Slack, email, meeting, and webhook capture alongside native Timeline record sync for GitHub, Linear, Google Drive, Monday.com, Slack, and Sentry.',
+    'Link Slack channels and Telegram groups, forward email and add calls, then sync GitHub, Linear, Google Drive, Monday.com and Sentry. The Timeline keeps the source of every record.',
   indexability: 'index',
-  dates: { modified: '2026-08-15', reviewed: '2026-08-15' },
+  dates: { modified: '2026-11-03', reviewed: '2026-11-03' },
   capability: { kind: 'current-product' },
   sitemap: { changeFrequency: 'weekly', priority: 0.9 },
   structuredData: [{ type: 'collection-page' }],
@@ -94,14 +96,58 @@ const connectorDocuments = CONNECTORS.map((connector, index): PublicDocument => 
         body: `Current ${connector.name} ingestion boundaries:`,
         items: connector.limitations,
       },
+      ...worksWithLlmsSections(connector.slug),
     ],
   },
 }));
 
+export const TELEGRAM_PUBLIC_DOCUMENT = {
+  canonicalPath: TELEGRAM_PAGE.route,
+  kind: 'product',
+  title: TELEGRAM_PAGE.seoTitle,
+  description: TELEGRAM_PAGE.seoDescription,
+  indexability: 'index',
+  dates: { modified: '2026-11-03', reviewed: '2026-11-03' },
+  capability: { kind: 'current-product' },
+  sitemap: { changeFrequency: 'monthly', priority: 0.8 },
+  structuredData: [
+    { type: 'web-page' },
+    {
+      type: 'breadcrumbs',
+      items: [
+        { name: 'Integrations', path: '/integrations' },
+        { name: 'Telegram', path: TELEGRAM_PAGE.route },
+      ],
+    },
+  ],
+  llms: {
+    section: 'integrations',
+    order: 5,
+    label: 'Telegram integration',
+    summary: TELEGRAM_PAGE.seoDescription,
+    fullSummary: TELEGRAM_PAGE.summary,
+    sections: [
+      { title: 'What it captures', body: TELEGRAM_PAGE.captured },
+      { title: 'What to know', body: TELEGRAM_PAGE.boundary },
+      { title: 'Daily update', body: TELEGRAM_PAGE.dailyUpdate },
+    ],
+  },
+} as const satisfies PublicDocument;
+
 export const CONNECTOR_PUBLIC_DOCUMENTS = definePublicDocuments('native-connectors', [
   INTEGRATION_DIRECTORY_DOCUMENT,
+  TELEGRAM_PUBLIC_DOCUMENT,
   ...connectorDocuments,
 ]);
+
+function worksWithLlmsSections(slug: string) {
+  const tool = findWorksWithTool(slug);
+  if (!tool) return [];
+  return [
+    { title: 'Just getting started', body: tool.gettingStarted },
+    { title: `When ${tool.name} alone is the better pick`, body: tool.whenAloneBetter },
+  ];
+}
 
 export function findConnectorPublicDocument(
   connector: Pick<ConnectorContent, 'slug'>,

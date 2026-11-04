@@ -101,15 +101,15 @@ export const EDITORIAL_GUIDES: readonly EditorialGuide[] = [
     summary:
       'A practical workflow for turning shared Slack conversations and newly captured Google Drive files into one visibility-aware, cited answer.',
     machineSummary:
-      'Activate selected Slack channels plus a shared drive or My Drive root, ask a bounded question across evidence captured after activation, and verify the answer through citations and Timeline visibility controls.',
+      'Activate supported Slack and Drive sources, confirm the needed evidence has been captured, then ask a bounded question and inspect its citations.',
     topics: ['cross-tool search', 'Slack search', 'Google Drive search', 'cited answers'],
     nativeConnectors: ['Slack', 'Google Drive'],
     answer: {
       title: 'Bring both sources into one evidence set, then ask one bounded question.',
-      body: 'Connect Slack and Google Drive as native sources. Share only the Slack channels and Drive sources available today (My Drive root or selected shared drives) that contain the project, then ask Timeline a question with a named project, time window, and desired output. The useful result is not a blended blob: it is an answer whose claims point back to the conversation or file that supports them.',
+      body: 'Connect Slack and Google Drive as native sources. Review the supported selection and capture limits on each connector page, then share the sources that contain the project, then ask Timeline a question with a named project, time window, and desired output. The useful result is not a blended blob: it is an answer whose claims point back to the conversation or file that supports them.',
       checklist: [
-        'Choose the Slack channels and activated Drive root or shared drives that contain the project.',
-        'Allow new Slack activity and supported Drive files changed after activation to enter the team history.',
+        'Choose supported Slack and Drive sources and review who will see their captured evidence.',
+        'Confirm a useful message or supported file snapshot appears in Timeline before asking about it.',
         'Ask for a specific decision, change, owner, or unresolved question.',
         'Open the citations before treating the answer as settled fact.',
       ],
@@ -122,13 +122,13 @@ export const EDITORIAL_GUIDES: readonly EditorialGuide[] = [
       {
         index: '01',
         title: 'Set the evidence boundary',
-        body: 'Start with one real project. Select the Slack channels where the work is discussed, then activate the My Drive root or shared drives that contain its documents. Use the project name and stable identifiers in the query to narrow the broader Drive source.',
+        body: 'Start with one real project. Select the Slack channels where the work is discussed, then review the current Drive connector selection options before activating its sources. A project name in a question narrows retrieval; it is not a capture-permission boundary.',
         output: 'A named project scope inside explicit Slack and Drive sources.',
       },
       {
         index: '02',
         title: 'Capture the source history',
-        body: 'Slack messages, threads, edits, reactions, and shared-file signals from selected channels become source events. After Drive activation, supported files that change inside the activated root or shared drives can be mirrored into the document library, while their changes remain visible in event history.',
+        body: 'Slack messages, threads, edits, reactions, and shared-file signals from selected channels become source events. Drive contributes supported file snapshots observed by sync, subject to the connector’s selection, filtering and size limits. It is not a complete document archive or a record of every intermediate edit.',
         output: 'Separate, time-addressable evidence captured after activation.',
       },
       {
@@ -165,10 +165,9 @@ export const EDITORIAL_GUIDES: readonly EditorialGuide[] = [
       {
         provider: 'Google Drive',
         role: 'Durable document context',
-        includes:
-          'Supported file bodies and file-change history captured after activation from My Drive root or selected shared drives.',
+        includes: 'Supported file snapshots and change metadata that sync actually captured.',
         boundary:
-          'Existing files that never change after activation are not backfilled. Unsupported or oversized files may contribute metadata without searchable body text; Drive comment activity is not part of the native evidence described here.',
+          'Check the Google Drive connector page for current selection, history and comment coverage. Unsupported or oversized files may contribute metadata without searchable body text. Upload a needed document directly when connector coverage is insufficient.',
       },
     ],
     interpretation: {
@@ -180,7 +179,7 @@ export const EDITORIAL_GUIDES: readonly EditorialGuide[] = [
     },
     limitations: [
       'The search boundary is the material your team connected and shared, not every item in either provider.',
-      'Drive capture begins with changes after activation; an older file that never changes is not available to this workflow.',
+      'Connecting Drive does not prove an older file is searchable. Check the captured evidence; upload the file directly if it is missing.',
       'A cited answer can expose disagreement; it cannot turn disagreement into approval.',
       'Provider sync and extraction may lag behind the moment a message or file changes.',
       'Ambiguous project names, duplicated documents, and renamed channels require a more explicit query.',
@@ -195,7 +194,7 @@ export const EDITORIAL_GUIDES: readonly EditorialGuide[] = [
       {
         question: 'Can Timeline see every Slack channel and Drive folder after I connect?',
         answer:
-          'No. A connection owner shares Slack channels and either My Drive root or shared drives, then a team admin activates those sources. Once evidence is captured, Timeline’s team, private, or specific-user visibility determines who can retrieve it; Timeline does not mirror each viewer’s provider membership.',
+          'Connection alone does not make every file searchable. The connector page explains the current selectable sources and capture boundaries; a connection owner shares sources and a team admin activates them. Once evidence is captured, Timeline’s team, private, or specific-user visibility determines who can retrieve it; Timeline does not mirror each viewer’s provider membership.',
       },
       {
         question: 'What if Slack and the document disagree?',
@@ -207,33 +206,33 @@ export const EDITORIAL_GUIDES: readonly EditorialGuide[] = [
     cta: {
       title: 'Try it on one project, not the whole company.',
       body: 'Activate one channel and the smallest Drive source available, ask a question about newly changed material that you already know how to verify, and inspect every citation.',
-      label: 'Start with one project',
+      label: 'Start free',
       href: '/sign-up',
     },
   },
   {
     slug: 'weekly-engineering-updates-from-slack-linear-and-github',
     route: GUIDE_ROUTES.weeklyEngineeringUpdates,
-    title: 'How to create weekly engineering and project updates from Slack, Linear, and GitHub',
-    shortTitle: 'Build weekly engineering updates',
+    title: 'How to create engineering and project updates from Slack, Linear, and GitHub',
+    shortTitle: 'Build engineering updates',
     summary:
       'A source-aware method for compiling decisions, movement, shipped work, blockers, and next steps without flattening three systems into one status list.',
     machineSummary:
-      'Generate a weekly project or engineering update by combining selected Slack discussions, Linear issue and project activity, and GitHub pull request, review, default-branch commit, release, and workflow evidence into a cited, human-reviewed brief.',
-    topics: ['weekly update', 'engineering status', 'project reporting', 'delivery evidence'],
+      'Generate a project or engineering update by combining selected Slack discussions, Linear issue and project activity, and GitHub pull request, review, default-branch commit, release, and workflow evidence into a cited, human-reviewed brief.',
+    topics: ['project update', 'engineering status', 'project reporting', 'delivery evidence'],
     nativeConnectors: ['Slack', 'Linear', 'GitHub'],
     answer: {
       title: 'Use one reporting contract across three evidence roles.',
-      body: 'Let Slack explain decisions and blockers, Linear describe planned work and status movement, and GitHub show code review, merge, release, and CI activity. Ask for the same four sections every week: outcomes, decisions, blockers, and next commitments. Require citations, then have the project owner review the update before it is distributed.',
+      body: 'Let Slack explain decisions and blockers, Linear describe planned work and status movement, and GitHub show code review, merge, release, and CI activity. Ask for the same four sections: outcomes, decisions, blockers, and next commitments. Require citations, then have the project owner review the update before it is distributed.',
       checklist: [
         'Map one project to its channels, Linear teams, and repositories.',
-        'Use a precise weekly time window and a stable four-part output shape.',
+        'Use a precise time window and a stable four-part output shape.',
         'Distinguish issue movement, merged code, released code, and business outcome.',
         'Review mismatches instead of hiding them in a smooth summary.',
       ],
     },
     context: [
-      'A weekly update fails when it treats every tool as a duplicate task list. The useful details are usually distributed by role: intent and coordination in Slack, declared state in Linear, and implementation evidence in GitHub.',
+      'A status update fails when it treats every tool as a duplicate task list. The useful details are usually distributed by role: intent and coordination in Slack, declared state in Linear, and implementation evidence in GitHub.',
       'The goal is not to count activity. It is to explain what meaningfully changed, which evidence supports that conclusion, and where the systems disagree about the state of the work.',
     ],
     workflow: [
@@ -246,7 +245,7 @@ export const EDITORIAL_GUIDES: readonly EditorialGuide[] = [
       {
         index: '02',
         title: 'Fix the reporting window',
-        body: 'Use explicit dates and the team timezone. “From Monday 09:00 through Friday 16:00” is auditable; “this week” becomes ambiguous around weekends, distributed teams, and scheduled delivery.',
+        body: 'Use explicit dates and the team timezone. “From 3 November 09:00 to 4 November 09:00” is auditable; “recently” becomes ambiguous around weekends, distributed teams and scheduled delivery.',
         output: 'A repeatable temporal boundary.',
       },
       {
@@ -276,7 +275,7 @@ export const EDITORIAL_GUIDES: readonly EditorialGuide[] = [
     ],
     diagram: PUBLIC_DEMO_STORY.editorial.weeklyEngineering,
     prompt:
-      'Create the weekly update for [project] from [start date and time] through [end date and time] in [timezone]. Use selected Slack, Linear, and GitHub evidence. Return four sections: outcomes, decisions, blockers, and next commitments. Distinguish issue completion, merge, release, and verified outcome. Cite every claim, list source mismatches, and say when evidence is missing.',
+      'Create the update for [project] from [start date and time] through [end date and time] in [timezone]. Use selected Slack, Linear, and GitHub evidence. Return four sections: outcomes, decisions, blockers, and next commitments. Distinguish issue completion, merge, release, and verified outcome. Cite every claim, list source mismatches, and say when evidence is missing.',
     boundaries: [
       {
         provider: 'Slack',
@@ -337,7 +336,7 @@ export const EDITORIAL_GUIDES: readonly EditorialGuide[] = [
     cta: {
       title: 'Build one update you can audit.',
       body: 'Connect the channels, Linear scope, and repositories for one active project. Generate the update, then challenge every sentence against its citations.',
-      label: 'Create a cited update',
+      label: 'Start free',
       href: '/sign-up',
     },
   },
@@ -469,7 +468,7 @@ export const EDITORIAL_GUIDES: readonly EditorialGuide[] = [
     cta: {
       title: 'Reconstruct one incident without erasing uncertainty.',
       body: 'Connect one Sentry project, its repository, and the response channel. Start with an incident your team already understands, then compare the dossier with the original evidence.',
-      label: 'Build an incident timeline',
+      label: 'Start free',
       href: '/sign-up',
     },
   },

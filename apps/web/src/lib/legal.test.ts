@@ -6,6 +6,7 @@ import { asc, eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 
 import {
+  hasCurrentLegalAcceptance,
   legalAcceptanceRequestMetadata,
   type LegalAcceptanceTransaction,
   recordCurrentLegalAcceptance,
@@ -29,10 +30,13 @@ describe('legal acceptance persistence', () => {
       CREATE TABLE users (
         id uuid PRIMARY KEY,
         name text,
+        suspended_at timestamptz,
+        suspension_reason text,
         email text NOT NULL UNIQUE,
         "emailVerified" timestamptz,
         image text,
         password_hash text,
+        session_version integer NOT NULL DEFAULT 0,
         legal_terms_version text,
         legal_privacy_version text,
         legal_accepted_at timestamptz,
@@ -151,6 +155,32 @@ describe('legal acceptance persistence', () => {
       .from(users)
       .where(eq(users.id, USER_ID));
     expect(snapshot).toEqual([{ acceptedAt: firstAcceptedAt }]);
+  });
+});
+
+describe('hasCurrentLegalAcceptance', () => {
+  it('keeps current pre-launch Privacy acknowledgment valid after disclosure edits', () => {
+    expect(
+      hasCurrentLegalAcceptance({
+        legalTermsVersion: TERMS_VERSION,
+        legalPrivacyVersion: '2026-11-01',
+        legalAcceptedAt: new Date('2026-08-21T10:00:00.000Z'),
+      }),
+    ).toBe(true);
+    expect(
+      hasCurrentLegalAcceptance({
+        legalTermsVersion: TERMS_VERSION,
+        legalPrivacyVersion: PRIVACY_VERSION,
+        legalAcceptedAt: new Date('2026-08-21T10:00:00.000Z'),
+      }),
+    ).toBe(true);
+    expect(
+      hasCurrentLegalAcceptance({
+        legalTermsVersion: TERMS_VERSION,
+        legalPrivacyVersion: 'older-privacy',
+        legalAcceptedAt: new Date('2026-08-21T10:00:00.000Z'),
+      }),
+    ).toBe(false);
   });
 });
 

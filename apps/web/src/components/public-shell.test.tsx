@@ -44,22 +44,36 @@ describe('PublicShell', () => {
 
   it('keeps every public destination available in desktop, mobile, and footer navigation', () => {
     const html = renderToStaticMarkup(
-      <PublicShell currentSection="integrations">
+      <PublicShell currentSection="agents">
         <main id="main">Public content</main>
       </PublicShell>,
     );
 
-    for (const href of ['/', '/integrations', '/pricing', '/how-it-works', '/help']) {
+    for (const href of ['/', '/use-cases', '/compare', '/agents', '/pricing', '/product-tour']) {
       expect(
         html.match(new RegExp(`href="${href.replace('/', '\\/')}"`, 'gu'))?.length,
       ).toBeGreaterThanOrEqual(3);
     }
+    for (const href of ['/integrations', '/how-it-works', '/help']) {
+      expect(html).toContain(`href="${href}"`);
+    }
     expect(html).toContain('aria-label="Public navigation"');
     expect(html).toContain('aria-label="Public navigation menu"');
     expect(html).toContain('aria-label="Explore The Timeline"');
-    expect(html.match(/aria-current="page"[^>]*href="\/integrations"/g)).toHaveLength(3);
+    expect(html.match(/aria-current="page"[^>]*href="\/agents"/g)).toHaveLength(3);
     expect(html).toContain('<summary');
     expect(html).toContain('>Menu</span>');
+    expect(html).toContain('Works with HubSpot');
+  });
+
+  it('marks the Trust legal link as the current page', () => {
+    const html = renderToStaticMarkup(
+      <PublicShell currentSection="trust">
+        <main id="main">Trust</main>
+      </PublicShell>,
+    );
+
+    expect(html).toMatch(/<a(?=[^>]*href="\/trust")(?=[^>]*aria-current="page")[^>]*>/);
   });
 
   it('uses the landing CTA state for signed-in public routes', () => {

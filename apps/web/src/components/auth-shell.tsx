@@ -42,7 +42,7 @@ export function AuthShell({
           </Link>
           <ThemeToggle className="text-fg-muted hover:text-fg" />
         </div>
-        <p className="mt-8 text-xs text-fg-muted">Secure access · Cited team memory</p>
+        <p className="mt-8 text-xs text-fg-muted">Secure access · Your work record</p>
         <div className="mt-4 rounded-lg border border-border bg-surface/95 p-6 backdrop-blur-sm sm:p-8">
           <header className="space-y-2 border-b border-border pb-6">
             <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>

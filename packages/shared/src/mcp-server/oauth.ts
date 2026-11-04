@@ -1,16 +1,22 @@
-import type { ValidatedAuthorizationRequest } from '#src/mcp-server/oauth-core.js';
-import type { Db } from '@timeline/db';
-
+import {
+  applyMcpOAuthConsentScopes,
+  type ValidatedAuthorizationRequest,
+} from '#src/mcp-server/oauth-core.js';
 import { withTeam } from '#src/team-scope.js';
 
+import type { Db } from '@timeline/db';
+
 export {
+  applyMcpOAuthConsentScopes,
   McpOAuthError,
   MCP_OAUTH_DEFAULT_SCOPE,
   MCP_OAUTH_SCOPES,
   MCP_TEAM_ACTOR_USER_ID,
   isLoopbackHostname,
+  mcpStaticKeyScopes,
   normalizeMcpResource,
   parseMcpOAuthScopes,
+  resolveMcpOAuthConsentScopes,
   type McpAuthPrincipal,
   type McpOAuthErrorCode,
   type McpOAuthScope,
@@ -37,9 +43,13 @@ export function createMcpAuthorizationCode(
     request: ValidatedAuthorizationRequest;
     userId: string;
     teamId: string;
+    grantedScopes?: ValidatedAuthorizationRequest['scopes'];
   },
 ): Promise<string> {
-  return withTeam(db, input.teamId, input.userId).mcpOAuth.createAuthorizationCode(input.request);
+  const request = input.grantedScopes
+    ? applyMcpOAuthConsentScopes(input.request, input.grantedScopes)
+    : input.request;
+  return withTeam(db, input.teamId, input.userId).mcpOAuth.createAuthorizationCode(request);
 }
 
 /** Compatibility adapter for signed-in grant revocation callers. */

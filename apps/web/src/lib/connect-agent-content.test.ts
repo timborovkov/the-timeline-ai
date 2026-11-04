@@ -1,0 +1,98 @@
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
+
+import { ADVERTISED_MCP_TOOL_NAMES } from '@timeline/shared/mcp-server';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
+
+import { TIMELINE_PLUGIN_INSTALL_PROMPT } from '@/lib/agent-install-content';
+import {
+  CONNECT_AGENT_GUIDES,
+  CONNECT_AGENT_SETUP_PROMPT,
+  CONNECT_AGENT_SKILL_MARKDOWN,
+  TIMELINE_MCP_TOOLS,
+  chatGptConnectorDetails,
+  connectAgentTeamPrompt,
+  cursorMcpInstallUrl,
+  ingestWebhookCurlExample,
+  mcpScopeLabel,
+} from '@/lib/connect-agent-content';
+
+describe('connect-agent content', () => {
+  it('keeps the public setup prompt and team email variant', () => {
+    expect(CONNECT_AGENT_SETUP_PROMPT).toBe(
+      'Set up The Timeline - https://thetimeline.cc/llms.txt',
+    );
+    expect(connectAgentTeamPrompt(null)).toBe(CONNECT_AGENT_SETUP_PROMPT);
+    expect(connectAgentTeamPrompt('acme@inbound.thetimeline.cc')).toContain(
+      'Team email: acme@inbound.thetimeline.cc',
+    );
+  });
+
+  it('uses the five timeline.* tools and capture for remember', () => {
+    expect(TIMELINE_MCP_TOOLS).toEqual([
+      'timeline.search',
+      'timeline.get',
+      'timeline.subject',
+      'timeline.ask',
+      'timeline.remember',
+    ]);
+    expect([...TIMELINE_MCP_TOOLS].sort()).toEqual([...ADVERTISED_MCP_TOOL_NAMES].sort());
+    expect(CONNECT_AGENT_SKILL_MARKDOWN).toContain('timeline.search');
+    expect(CONNECT_AGENT_SKILL_MARKDOWN).toContain('timeline.remember');
+    expect(CONNECT_AGENT_SKILL_MARKDOWN).toContain('capture');
+    expect(CONNECT_AGENT_SKILL_MARKDOWN).toContain('include capture by default');
+    expect(CONNECT_AGENT_SKILL_MARKDOWN).not.toContain('timeline.ask_agent');
+    expect(mcpScopeLabel('capture')).toBe('Remember');
+  });
+
+  it('tells installers that capture is on by default', () => {
+    const steps = CONNECT_AGENT_GUIDES.flatMap((guide) => guide.steps).join('\n');
+    expect(steps).toContain('Capture is on by default');
+    expect(steps).not.toContain('The default scope is read');
+    expect(CONNECT_AGENT_GUIDES.find((guide) => guide.id === 'codex')?.copy?.value('')).toBe(
+      TIMELINE_PLUGIN_INSTALL_PROMPT,
+    );
+    expect(TIMELINE_PLUGIN_INSTALL_PROMPT).toContain('capture checkbox is on by default');
+  });
+
+  it('builds the Cursor MCP install deeplink', () => {
+    const href = cursorMcpInstallUrl('https://thetimeline.cc/api/mcp/server');
+    expect(href.startsWith('cursor://anysphere.cursor-deeplink/mcp/install?')).toBe(true);
+    expect(href).toContain('name=timeline');
+    expect(href).toContain('config=');
+  });
+
+  it('does not mention Developer Mode in ChatGPT setup', () => {
+    expect(chatGptConnectorDetails('https://thetimeline.cc/api/mcp/server')).toContain(
+      'Settings → Apps',
+    );
+    expect(chatGptConnectorDetails('https://thetimeline.cc/api/mcp/server')).not.toContain(
+      'Developer Mode',
+    );
+  });
+
+  it('shows a one-shot ingest curl example', () => {
+    expect(ingestWebhookCurlExample('https://thetimeline.cc/api/webhooks/ingest/token')).toContain(
+      'curl -X POST https://thetimeline.cc/api/webhooks/ingest/token',
+    );
+  });
+
+  it('uses official vendor marks stored in public/connectors', () => {
+    expect(CONNECT_AGENT_GUIDES.map((guide) => ({ id: guide.id, logo: guide.logo }))).toEqual([
+      { id: 'claude-code', logo: '/connectors/claude-code.svg' },
+      { id: 'codex', logo: '/connectors/openai.svg' },
+      { id: 'chatgpt', logo: '/connectors/openai.svg' },
+      { id: 'claude', logo: '/connectors/claude.svg' },
+      { id: 'cursor', logo: '/connectors/cursor.svg' },
+      { id: 'grok', logo: '/connectors/xai.svg' },
+      { id: 'hermes', logo: '/connectors/hermes.png' },
+      { id: 'openclaw', logo: '/connectors/openclaw.svg' },
+    ]);
+    for (const guide of CONNECT_AGENT_GUIDES) {
+      if (!guide.logo) continue;
+      const file = join(import.meta.dirname, '../../public', guide.logo.replace(/^\//, ''));
+      expect(existsSync(file)).toBe(true);
+    }
+  });
+});

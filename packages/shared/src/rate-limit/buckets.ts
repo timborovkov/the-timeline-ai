@@ -3,6 +3,9 @@
  * Tune here, not at call sites.
  */
 export const RATE_LIMITS = {
+  passwordResetEmail: { capacity: 5, refillPerSec: 5 / 3600 },
+  passwordResetIp: { capacity: 20, refillPerSec: 20 / 3600 },
+  passwordResetRedeem: { capacity: 20, refillPerSec: 20 / 900 },
   /** Email/password signup: 5/min per source IP and per submitted email. */
   signup: { capacity: 5, refillPerSec: 5 / 60 },
   /** Email/password signin: 10/min per source IP and per submitted email. */
@@ -55,6 +58,8 @@ export const RATE_LIMITS = {
   mcpServer: { capacity: 600, refillPerSec: 600 / 60 },
   /** Paid Timeline-agent turns through MCP: 10/min per outbound key. */
   mcpAgentAsk: { capacity: 10, refillPerSec: 10 / 60 },
+  /** MCP remember/capture writes: 30/min per outbound key. */
+  mcpRemember: { capacity: 30, refillPerSec: 30 / 60 },
   /** Generic ingest webhooks: 300/min per credential for provider bursts. */
   ingestWebhook: { capacity: 300, refillPerSec: 300 / 60 },
   /** Per-connection extract LLM for conversational integrations (Slack, Drive).

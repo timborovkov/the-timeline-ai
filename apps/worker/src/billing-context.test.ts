@@ -1,5 +1,5 @@
 import { expect, vi } from '@timeline/test-support';
-import { DelayedError } from 'bullmq';
+import { DelayedError, UnrecoverableError } from 'bullmq';
 import { beforeEach, describe, it } from 'bun:test';
 
 const runWorkerBilling = vi.hoisted(() =>
@@ -41,5 +41,18 @@ describe('withWorkerAiBilling', () => {
       ),
     ).rejects.toBeInstanceOf(DelayedError);
     expect(delayJob).toHaveBeenCalledWith(15_000);
+  });
+
+  it('stops retrying usage_limit_reached without treating it as an unexpected failure', async () => {
+    await expect(
+      withWorkerAiBilling({} as never, TEAM_ID, 'embedding', () => {
+        throw new BillingAdmissionError('usage_limit_reached');
+      }),
+    ).rejects.toBeInstanceOf(UnrecoverableError);
+    await expect(
+      withWorkerAiBilling({} as never, TEAM_ID, 'embedding', () => {
+        throw new BillingAdmissionError('usage_limit_reached');
+      }),
+    ).rejects.toMatchObject({ message: 'Billing admission failed: usage_limit_reached' });
   });
 });

@@ -4,6 +4,7 @@ import {
   SELF_SERVE_PLAN_ORDER,
   type BillingPlanId,
   formatEuroFromCents,
+  formatStorageGb,
 } from '@timeline/shared/billing/catalog';
 
 import { cn } from '@/lib/utils';
@@ -77,6 +78,31 @@ const INFRASTRUCTURE_ROWS: {
     value: (id) => formatStock(CAPACITY_BY_PLAN[id].agentTurnsPerMonth),
   },
   {
+    label: 'Inbound emails / month',
+    value: (id) => formatStock(CAPACITY_BY_PLAN[id].inboundEmailPerMonth),
+  },
+  {
+    label: 'Accepted sources / month',
+    value: (id) => formatStock(CAPACITY_BY_PLAN[id].acceptedSourcesPerMonth),
+  },
+  {
+    label: 'Webhook requests / month',
+    value: (id) => formatStock(CAPACITY_BY_PLAN[id].webhookRequestsPerMonth),
+  },
+  { label: 'Indexed chunks', value: (id) => formatStock(CAPACITY_BY_PLAN[id].indexedChunks) },
+  {
+    label: 'Semantic searches / month',
+    value: (id) => formatStock(CAPACITY_BY_PLAN[id].semanticSearchesPerMonth),
+  },
+  {
+    label: 'Meeting minutes / month',
+    value: (id) => formatStock(CAPACITY_BY_PLAN[id].recallMinutesPerMonth),
+  },
+  {
+    label: 'Concurrent processing jobs',
+    value: (id) => formatStock(CAPACITY_BY_PLAN[id].costlyWorkerConcurrency),
+  },
+  {
     label: 'Concurrent meeting notetakers',
     value: (id) => formatStock(CAPACITY_BY_PLAN[id].concurrentRecallBots),
   },
@@ -90,7 +116,10 @@ const INFRASTRUCTURE_ROWS: {
   },
   {
     label: 'File storage',
-    value: (id) => formatStock(CAPACITY_BY_PLAN[id].storageGb, { unit: 'GB' }),
+    value: (id) => {
+      const gb = CAPACITY_BY_PLAN[id].storageGb;
+      return gb === null ? 'Custom' : formatStorageGb(gb);
+    },
   },
 ];
 
@@ -136,7 +165,11 @@ export function PricingComparisonTable({ className }: { className?: string }) {
   return (
     <div className={cn('space-y-4', className)}>
       <ComparisonTable rows={COMMERCIAL_ROWS} caption="Commercial plan comparison" />
-      <details data-pricing-infrastructure className="border border-border bg-bg">
+      <details
+        id="pricing-infrastructure"
+        data-pricing-infrastructure
+        className="border border-border bg-bg"
+      >
         <summary className="cursor-pointer px-4 py-3 text-sm font-medium text-fg-muted hover:text-fg">
           Infrastructure limits
         </summary>

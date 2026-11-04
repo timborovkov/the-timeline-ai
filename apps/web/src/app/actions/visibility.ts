@@ -6,6 +6,7 @@ import { z } from 'zod';
 
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
+import { CONNECTIONS_HREF, CONNECTIONS_LEGACY_HREF } from '@/lib/connections';
 import { db } from '@/lib/db';
 import { publicActionError } from '@/lib/public-error';
 import { runSentryServerAction } from '@/lib/sentry-action';
@@ -140,7 +141,8 @@ export async function setIntegrationVisibilityDefaultAction(
         parsed.data.visibility,
         idsFromForm(formData, 'visibilityUserIds'),
       );
-      revalidatePath('/app/team/integrations');
+      revalidatePath(CONNECTIONS_HREF, 'layout');
+      revalidatePath(CONNECTIONS_LEGACY_HREF);
       return { ok: true };
     } catch (err) {
       log.error({ err }, 'integration_visibility_default_update_failed');

@@ -12,7 +12,8 @@ import {
 
 import type { LucideIcon } from 'lucide-react';
 
-type HelpSlug = 'capture' | 'work' | 'documents' | 'boards' | 'integrations' | 'agents' | 'objects';
+type HelpSlug =
+  'capture' | 'work' | 'documents' | 'boards' | 'integrations' | 'agents' | 'objects' | 'billing';
 
 interface HelpLink {
   href: string;
@@ -40,14 +41,68 @@ interface HelpPage {
 
 export const HELP_PAGES: HelpPage[] = [
   {
+    slug: 'billing',
+    title: 'Billing and spending limits',
+    description: 'Understand Free, pay as you go, usage limits and payment settings.',
+    icon: LifeBuoy,
+    related: ['capture', 'integrations'],
+    updatedAt: '2026-11-03',
+    sections: [
+      {
+        title: 'Enable pay as you go',
+        body: 'A team owner or admin manages billing for the current workspace. Pay as you go has no platform fee and keeps the included Free allowances; usage above them and additional members can create charges.',
+        items: [
+          'Open Team settings → Billing and check the workspace name.',
+          'Choose Change plan → Pay as you go. Review the rates, included members and spending limit before continuing to payment.',
+          'After checkout, wait for Billing to confirm activation. Returning from checkout alone does not mean the plan is active.',
+          'Review Usage to see recorded charges. Three active members are included; additional members cost €2 per member per month.',
+        ],
+        appLink: { href: '/app/team?section=billing', label: 'Open Billing' },
+      },
+      {
+        title: 'Understand the spending limit',
+        body: 'The default PAYG spending limit is €25 per month. Owners and admins can change it in Billing. The cap applies to metered spend; platform fees and tax are outside it. On commitment plans, the cap is checked before included usage credit.',
+        items: [
+          'Free has both usage allowances and capacity limits; reaching either can pause a task.',
+          'Work in progress can reserve allowance temporarily. If Ask cannot start, let other jobs finish and check Usage.',
+          'Meeting minutes include joining and waiting-room time. Capturing sources can also trigger separately metered AI extraction and indexing.',
+        ],
+        appLink: { href: '/app/usage', label: 'Review Usage' },
+      },
+      {
+        title: 'Invoices, payment changes and cancellation',
+        body: 'Open Manage payment in Billing to use the payment provider’s customer portal. Review its confirmation for the effective cancellation date and any outstanding charges. Disconnecting a source or deleting data is not a billing cancellation. Fees and consumed usage are generally non-refundable, except where law requires otherwise or a refund is agreed. Report suspected billing errors with the workspace and invoice reference; mandatory consumer rights remain unaffected.',
+        items: [
+          'Check the active workspace before opening its payment portal.',
+          'Use the portal to review invoices, payment details and available subscription actions.',
+          'Return to Billing and verify the updated subscription state. If the portal does not offer the action you need or the state does not update, contact support.',
+        ],
+        appLink: { href: '/help/support', label: 'Contact billing support' },
+      },
+    ],
+  },
+
+  {
     slug: 'capture',
     title: 'Capture surfaces',
     description:
       'Send raw work into Timeline from web, Slack, Telegram, email, meetings, and uploads.',
     icon: Inbox,
     related: ['work', 'integrations'],
-    updatedAt: '2026-08-21',
+    updatedAt: '2026-11-03',
     sections: [
+      {
+        title: 'Get your first cited answer',
+        body: 'Start with one source you are allowed to share. You do not need to connect every tool or invite teammates.',
+        items: [
+          'Open Home and capture a short note about a real project, including a decision or next step. Alternatively, upload an existing document in Documents.',
+          'Choose who can see it before saving. Wait for processing; if a document fails, open its status and retry or use a supported file.',
+          'Open Ask and ask a specific question the source can answer, such as “What next step did we agree for this project?”',
+          'Open the answer’s citation and check that it supports the claim. If no evidence is found, check source visibility and processing before adding more connections.',
+        ],
+        appLink: { href: '/app', label: 'Start on Home' },
+      },
+
       {
         title: 'What gets captured',
         body: 'Timeline preserves selected notes and source records as events, extracts facts, and can propose objects or tasks for review. Every searchable citation stays linked to the captured source.',
@@ -59,6 +114,15 @@ export const HELP_PAGES: HelpPage[] = [
           'Document uploads that become searchable chunks after extraction.',
         ],
         appLink: { href: '/app/timeline', label: 'Open timeline capture' },
+      },
+      {
+        title: 'Connections, sources and evidence',
+        body: 'A connection authorizes access to a provider account. A source is the channel, project, folder or other resource selected for capture. Captured records become evidence that Ask can cite after processing. Connecting an account alone does not import everything.',
+        items: [
+          'Check source selection and team visibility before activating capture.',
+          'Timeline’s stored record is separate from the original tool; disconnecting does not erase earlier captures.',
+          'A proposed change is a suggestion for review. Approving it updates Timeline’s work record. Enabled external tools may have separate effects in other services.',
+        ],
       },
       {
         title: 'Good capture habits',
@@ -73,26 +137,23 @@ export const HELP_PAGES: HelpPage[] = [
   },
   {
     slug: 'work',
+    updatedAt: '2026-11-03',
     title: 'Work surface',
     description:
-      'Use tasks, boards, objects, updates, digests, and handoffs that stay current from evidence.',
+      'Use tasks, boards, objects, the daily update, on-demand updates and handoffs that stay current from evidence.',
     icon: ClipboardList,
     related: ['capture', 'objects', 'boards'],
     sections: [
       {
         title: 'What Work is',
-        body: 'Work is the operating surface Timeline keeps current from captured evidence. It brings tasks, boards, objects, comments, updates, digests, and handoffs together without asking teammates to maintain a separate tracker.',
+        body: 'Work is the operating surface The Timeline keeps current from captured evidence. The daily update, on-demand updates and handoffs are generated from the current work state with citations. It brings tasks, boards, objects, comments, updates and handoffs together without asking teammates to maintain a separate tracker.',
         items: [
-          'Overview leads with mixed pinned work, then team boards, then the work queue for due and assigned items.',
-          'Pin objects, boards, documents, meetings, and calendar events to Home; Work → Pinned is the manager. Ask bindings say About {name}, not Pin.',
-          'Queue rows keep the object type off the metadata chips; status, assignee, due date, and priority change inline.',
-          'Home opens the team setup checklist under Ask for new teams; after Hide it stays as a quiet Team setup checklist toggle. Other app pages keep a quiet header chip back to that panel until setup is done or hidden.',
-          'Home lists open tasks and one open-objects count (people, companies, projects, deals, and follow-ups) when those counts are not zero.',
-          'Tasks and boards show owners, status, blockers, due dates, and source evidence.',
-          'Object pages keep people, companies, projects, deals, documents, and tasks tied to the event history, with discussion comments and @mentions.',
-          'Updates, digests, and handoffs are generated from the current work state with citations.',
-          'On dashboard pages other than Home, floating Ask (⌘J / Ctrl+J) asks about the current view and keeps one thread until New. Home still opens the full Ask page.',
-          'Work → Digests lists every stored daily briefing as collapsed rows so a teammate can open a specific day.',
+          'Open Work to find tasks assigned to you and work that needs attention.',
+          'Open a task or object to inspect its source evidence before changing status, owner or due date.',
+          'Pin frequently used objects, boards or documents so you can return to them from Home.',
+          'Review proposed changes in Approvals. Accept the changes you agree with; reject unsupported suggestions.',
+          'Work → Digests lists every daily update as collapsed rows so a teammate can open a specific day, then follow citations to check the underlying work.',
+          'Use Ask about a specific project or decision. Check its citations before sharing the answer.',
         ],
         appLink: { href: '/app/work', label: 'Open Work' },
       },
@@ -183,7 +244,7 @@ export const HELP_PAGES: HelpPage[] = [
           'Slack, Telegram, email, and meeting bots are capture surfaces for conversations and calls.',
           'Custom MCP servers expose approved live tools and context to the agent; successful team-shared results become team-visible evidence, while personal-server results stay private to their owner. Passive provider activity still needs native sync or custom ingestion.',
         ],
-        appLink: { href: '/app/sources', label: 'Open connections' },
+        appLink: { href: '/app/connections', label: 'Open connections' },
       },
       {
         title: 'Security model',
@@ -199,14 +260,14 @@ export const HELP_PAGES: HelpPage[] = [
       },
       {
         title: 'Use Timeline from an agent',
-        body: 'External agents connect through Timeline’s hosted MCP endpoint. Codex and Claude Code can install the Timeline plugin using the instructions below. Other MCP-compatible clients can connect directly.',
+        body: 'External agents connect through Timeline’s hosted MCP endpoint. Codex and Claude Code can install the Timeline plugin using the instructions below. Other MCP-compatible clients can connect directly. Give an agent https://thetimeline.cc/agents/setup.md.',
         items: [
           'The default path uses browser-based OAuth: sign in, choose a team, review the requested scopes, and approve or deny access.',
           'Codex and Claude Code users can install the full plugin from this repository. Other compatible clients can connect to the same production URL directly.',
-          'The default OAuth read scope follows the member’s existing visibility, including private and specifically shared evidence that member can access. Timeline agent access is a separate, optional owner/admin-approved scope for paid, proposal-only turns.',
-          'Static team keys remain available as a compatibility fallback for manual clients.',
+          'The hosted tools are timeline.search, timeline.get, timeline.subject, timeline.ask, and timeline.remember. The default OAuth grant is read plus capture (on by default). Capture authorizes timeline.remember; unchecking it issues a read-only grant. Timeline agent access is a separate, optional owner/admin-approved agent:ask scope for paid, proposal-only turns.',
+          'Static tla_ team keys remain an Advanced compatibility fallback for manual clients and must never be pasted in chat.',
         ],
-        appLink: { href: '/app/team/mcp-share', label: 'Manage Timeline MCP' },
+        appLink: { href: '/app/connect-agent', label: 'Connect your agent' },
         resourceLinks: [
           {
             href: 'https://github.com/timborovkov/the-timeline-ai/tree/main/plugins/timeline/skills#install-in-codex',
@@ -224,21 +285,25 @@ export const HELP_PAGES: HelpPage[] = [
     slug: 'agents',
     title: 'Timeline for agents',
     description:
-      'Connect Codex, Claude, ChatGPT, or another compatible agent to evidence-backed Timeline work.',
+      'Connect Codex, Claude, ChatGPT, Cursor, Grok Bot, Hermes, OpenClaw, or another compatible agent to evidence-backed Timeline work.',
     icon: Bot,
     related: ['integrations', 'work', 'objects'],
-    updatedAt: '2026-08-26',
+    updatedAt: '2026-11-03',
     sections: [
       {
         title: 'Install in Codex or Claude Code',
-        body: 'Use the copy-ready prompt for Codex or the repository marketplace commands for Claude Code. Both packages add the general Timeline skill and hosted Streamable HTTP MCP endpoint. The bundled connection uses browser-based OAuth instead of embedding a bearer key.',
+        body: 'Give your agent https://thetimeline.cc/agents/setup.md, or use the copy-ready prompt for Codex or the repository marketplace commands for Claude Code. Both packages add the general Timeline skill and hosted Streamable HTTP MCP endpoint. The bundled connection uses browser-based OAuth instead of embedding a bearer key.',
         items: [
-          'timeline chooses between broad context, moments, raw events, and structured workspace tools based on the request.',
+          'The hosted tools are timeline.search, timeline.get, timeline.subject, timeline.ask, and timeline.remember.',
           'The same skill adapts to status updates, exact lookups, recaps, and incident analysis without competing triggers.',
           'It distinguishes current canonical state from activity, expands material sources, and preserves citations and uncertainty.',
           'Restart Codex or Claude Code after installation, start a new task or conversation, and complete Timeline sign-in, team selection, and scope consent when prompted.',
         ],
         resourceLinks: [
+          {
+            href: 'https://thetimeline.cc/agents/setup.md',
+            label: 'Agent setup markdown',
+          },
           {
             href: 'https://github.com/timborovkov/the-timeline-ai/tree/main/plugins/timeline/skills#install-in-codex',
             label: 'Install in Codex',
@@ -253,13 +318,17 @@ export const HELP_PAGES: HelpPage[] = [
         title: 'Connect Timeline MCP',
         body: 'Use the single /api/mcp/server URL with Streamable HTTP. Compatible clients discover Timeline OAuth from the endpoint, then open a browser for explicit sign-in, team selection, and scope consent.',
         items: [
-          'The default OAuth read grant follows the signed-in member’s current team membership and visibility, including private and specifically shared evidence that member can access.',
+          'The default OAuth grant is read plus capture (on by default). Read follows the signed-in member’s current team membership and visibility, including private and specifically shared evidence that member can access. Uncheck capture for a read-only grant.',
           'Approved AI-app access can be reviewed and revoked from Provider accounts.',
-          'Static team keys remain available for manual clients and see team-visible data only.',
+          'Static tla_ team keys remain an Advanced fallback for manual clients and see team-visible data only. Never paste them in chat.',
           'Self-hosted users install the standalone Timeline skill and point their compatible client at their own Timeline origin.',
         ],
         appLink: { href: '/app/me/connections', label: 'Manage approved AI apps' },
         resourceLinks: [
+          {
+            href: 'https://thetimeline.cc/agents/setup.md',
+            label: 'Read agent setup',
+          },
           {
             href: 'https://github.com/timborovkov/the-timeline-ai/tree/main/plugins/timeline/skills#connect-timeline-mcp',
             label: 'Read MCP setup',
@@ -268,10 +337,10 @@ export const HELP_PAGES: HelpPage[] = [
       },
       {
         title: 'Know the access boundary',
-        body: 'The bundled skill uses read tools and preserves citations. The default OAuth grant cannot invoke timeline.ask_agent. A current team owner or admin may separately approve that scope for paid, stateless agent turns; it may call enabled team-shared custom MCP tools with external side effects and can create only Timeline proposals that still require human review.',
+        body: 'The bundled skill uses timeline.search, timeline.get, timeline.subject, timeline.ask, and timeline.remember, and preserves citations. The default OAuth grant includes read plus capture (on by default) so timeline.remember can store cited evidence; unchecking capture makes the grant read-only. It cannot invoke timeline.ask. A current team owner or admin may separately approve agent:ask for paid, stateless agent turns; it may call enabled team-shared custom MCP tools with external side effects and can create only Timeline proposals that still require human review.',
         resourceLinks: [
           {
-            href: 'https://github.com/timborovkov/the-timeline-ai/tree/main/plugins/timeline/skills',
+            href: 'https://thetimeline.cc/agents/SKILL.md',
             label: 'Browse the Timeline skill',
           },
         ],

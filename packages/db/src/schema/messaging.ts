@@ -21,6 +21,7 @@ export const messageIntent = pgEnum('message_intent', [
   'support_request',
   'welcome',
   'email_verification',
+  'password_reset',
   'daily_digest',
   'connection_attention',
   'billing_usage_alert',

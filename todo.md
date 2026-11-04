@@ -22,6 +22,17 @@ This file now tracks only remaining work and recurring operating obligations.
 Use the repository history, release notes, and phase PRs for shipped
 implementation detail.
 
+## Platform administration rollout
+
+The platform admin panel, suspend/restore controls, and audited member impersonation
+are implemented on the feature branch. Before deployment, apply
+`0093_platform_admin` and `0094_platform_admin_retention`, then configure `PLATFORM_ADMIN_EMAILS` consistently on web and
+workers. Follow [the operator guide](docs/platform-admin.md); production approval
+and staff-access review evidence remain operational obligations. The legal owner
+approved the 30-day session/12-month audit retention policy. The product is not
+live, so the disclosure edits are a pre-launch revision: Privacy remains
+`2026-11-01`, Terms is unchanged, and no renewed acknowledgment is required.
+
 ## Billing identity follow-up
 
 - Polar sandbox currently ignores `CustomerUpdate.email = null`; track provider
@@ -95,6 +106,13 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
 - [x] Shared collection empty states: one `EmptyState` for indexes, queues,
       and directories, with quiet dim icons, create/recover actions, and
       waiting copy for proposals, notifications, and captured work.
+- [x] Connect your agent: `/app/connect-agent` consolidates Timeline-as-MCP
+      setup (OAuth-first client picker, connected grants with revoke, add-memory
+      email/webhook, SKILL.md, collapsed `tla_` keys). Admin grant rows show the
+      consenting member next to the client. Advertised tools and default-on
+      `capture` match the hosted MCP server. `/app/team/mcp-share` redirects.
+      New empty teams get a skippable Home card that does not return once
+      skipped.
 - [ ] Timeline moments redesign: turn `/app/timeline` from a raw activity log
       into bundled, evidence-backed work moments with deterministic grouping,
       source-specific adapters, AI-assisted titles/summaries, and an advanced
@@ -102,8 +120,9 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       First slice shipped the Moments/All events mode split, quieter chrome,
       weighted rows (story / record / pulse), Linear-style single-icon rows,
       a wider family-aware inspector with collapsed original-source viewers,
-      Ask citation previews that name transcript/calendar/document/Timeline
-      destinations and reuse that original-source viewer,
+      Ask and object-summary numbered superscript citations with compact source cards that keep
+      transcript/calendar/document/Timeline destinations (inspector chips still
+      reuse the original-source viewer),
       sentinel infinite scroll with virtualized archive rows and no inventory
       chip,
       GitHub workflow bundling, and the
@@ -388,10 +407,15 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
 - [x] Add repository plugin and marketplace packaging for Codex and Claude Code
       with the hosted Timeline MCP connection, one general cited-workspace skill,
       standalone installation guidance, and links from public help and MCP setup.
+- [x] Publish `/agents/setup.md` and `/agents/SKILL.md` as `text/markdown`, add a
+      `## For agents` pointer in `llms.txt` / `llms-full.txt`, document remember,
+      team email, and ingest-webhook push in the Timeline skill, and bump the
+      plugin to 0.3.1. Remember documents the `capture` OAuth scope landing with
+      the five-tool MCP surface.
 - [x] Implement the outbound MCP OAuth and current transport path in the repository:
       RFC 9728/8414 discovery, CIMD-first client resolution with constrained DCR,
-      PKCE S256, member/team consent and revocation, `read` plus owner/admin-only
-      `agent:ask`, official MCP SDK v2 Streamable HTTP negotiation, tool
+      PKCE S256, member/team consent and revocation, `read` plus default-on
+      `capture` and owner/admin-only `agent:ask`, official MCP SDK v2 Streamable HTTP negotiation, tool
       annotations/output schemas, and standards-compatible 401 discovery.
 - [ ] Deploy this marketplace-readiness release, apply migration 0075, and pass
       the production OAuth/MCP smoke matrix from every intended host.
@@ -415,7 +439,7 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       and other native integrations) need a separate encrypted, reversible store
       with per-workspace installs and uninstall webhooks; do not reuse the
       hashed MCP grant/token tables for them.
-- [ ] Keep `MCP_OAUTH_SCOPES` MCP-only (`read`, `agent:ask`). Do not add CRM or
+- [ ] Keep `MCP_OAUTH_SCOPES` MCP-only (`read`, `capture`, `agent:ask`). Do not add CRM or
       other provider-app scopes to the outbound MCP authorization server.
 - [ ] After testing with real ChatGPT and Claude against production, consider
       leniency on OAuth `state` and `resource` for less strict hosts. Do not
@@ -658,6 +682,9 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
 - [x] Billing foundation: entitlements catalog, Polar products/meters (sandbox),
       `team_billing_*` ledger, `/pricing`, team Billing settings, webhook verify,
       shadow mode (`BILLING_CHARGES_ENABLED=false`). See ADR 0018.
+- [x] Public monthly pricing calculator: paired sliders and exact fields compare PAYG,
+      Team and Business using shared billing previews, native allowances and pooled
+      credits; itemized estimates flag measured capacity limits and exclude VAT.
 - [x] Pricing UX: self-serve plan grid (no Enterprise column); gray Enterprise
       contact nudge; `/app/usage` is a meter, amount, and cost table (infrastructure limits stay
       folded); team Billing shows remaining benefits, recorded charges, the separate plan fee and spend cap, and
@@ -761,8 +788,7 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       do not pause auto-join as consecutive failures. Document writes require a reservable billing state.
       Free-grant claims skip removed owners; storage admission converts aggregated bytes before
       adding a new upload. Janitor included-discount resets lock the billing account against a
-      newer Polar plan/period. Ask streams that abort after work starts settle the reserved
-      customer charge. Document-extract allowlists `BILLING_CHARGES_ENABLED`. Deferred
+      newer Polar plan/period. Ask streams that abort settle recorded usage without a reservation-based minimum. Document-extract allowlists `BILLING_CHARGES_ENABLED`. Deferred
       accepted-source flush rotates past still-blocked rows. Document restore rechecks capacity;
       document create serializes the Free count under lock key 1. Failed structured-output
       attempts still contribute OpenRouter `usage.cost`. Recall minutes that span UTC months
@@ -833,7 +859,8 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       [per-service caps](docs/railway.html#resource-caps), including Qdrant after the on-disk + int8 layout, and
       plan a move to sharded or managed Qdrant before it becomes painful. The
       2026-10-24 restart and search/ingestion probes informed an initial 3 GB
-      production RAM limit (plus a 2 vCPU cap) with the rollback collection retained; remeasure peaks
+      production RAM limit (plus a 2 vCPU cap). The rollback collection was removed on
+      2026-11-04 after a verified snapshot; remeasure peaks
       before lowering it or performing full reindexing (see
       [production memory measurements](docs/railway.html#qdrant-memory)). New
       collections already store original vectors on disk; copy any older in-RAM

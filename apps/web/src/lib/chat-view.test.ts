@@ -78,6 +78,24 @@ describe('buildChatView', () => {
     });
     expect(
       buildChatView({
+        pathname: '/app/connections/sources',
+        searchParams: new URLSearchParams(),
+      }).current,
+    ).toMatchObject({ kind: 'page', label: 'Connections' });
+    expect(
+      buildChatView({
+        pathname: '/app/connections/agent-tools',
+        searchParams: new URLSearchParams(),
+      }).current,
+    ).toMatchObject({ kind: 'page', label: 'Connections' });
+    expect(
+      buildChatView({
+        pathname: '/app/team/integrations',
+        searchParams: new URLSearchParams(),
+      }).current,
+    ).toMatchObject({ kind: 'page', label: 'Connections' });
+    expect(
+      buildChatView({
         pathname: '/app/me/connections',
         searchParams: new URLSearchParams(),
       }).current,

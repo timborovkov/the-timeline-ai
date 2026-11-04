@@ -1,5 +1,22 @@
 const checks = [
   {
+    name: '@timeline/shared platform admin exports',
+    run: async () => {
+      const service = await import('@timeline/shared/platform-admin');
+      const runtime = await import('@timeline/shared/platform-admin/runtime');
+      const retention = await import('@timeline/shared/platform-admin/retention');
+      if (typeof retention.prunePlatformAdminRecords !== 'function') {
+        throw new Error('Platform retention maintenance export is missing');
+      }
+      if (
+        typeof service.requirePlatformActor !== 'function' ||
+        typeof runtime.runGuardedJob !== 'function'
+      ) {
+        throw new Error('Platform admin authorization exports are missing');
+      }
+    },
+  },
+  {
     name: '@timeline/shared legal versions',
     run: async () => {
       const legalVersions = await import('@timeline/shared/legal-versions');
@@ -319,6 +336,29 @@ const checks = [
         source.includes('node:fs')
       ) {
         throw new Error('messaging/format compiled output pulled Node digest generation');
+      }
+    },
+  },
+  {
+    name: '@timeline/shared qdrant recovery exports',
+    run: async () => {
+      const qdrant = await import('@timeline/shared/qdrant');
+      if (typeof qdrant.withQdrantOperation !== 'function') {
+        throw new Error('withQdrantOperation export is missing');
+      }
+      if (typeof qdrant.QdrantUnavailableError !== 'function') {
+        throw new Error('QdrantUnavailableError export is missing');
+      }
+      if (typeof qdrant.createQdrantClient !== 'function') {
+        throw new Error('createQdrantClient export is missing');
+      }
+      const error = new qdrant.QdrantUnavailableError('search', 503);
+      if (error.outcomeUnknown || !error.message.includes('temporarily unavailable')) {
+        throw new Error('QdrantUnavailableError must describe unavailable evidence, not replay');
+      }
+      const unknown = new qdrant.QdrantUnavailableError('upsert', 0, true);
+      if (!unknown.outcomeUnknown || !unknown.message.includes('unknown')) {
+        throw new Error('Ambiguous Qdrant mutations must stay unreplayed');
       }
     },
   },

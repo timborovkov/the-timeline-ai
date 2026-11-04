@@ -6,7 +6,7 @@
 | Applies to | Hosted Timeline, public Timeline surfaces, development, support, and vendor operations |
 | Service operator | Nyxone OÜ, Estonian registry code 16172329 |
 | Control owner | **TBD: named security/privacy owner** |
-| Version | 2026-10-24 |
+| Version | 2026-11-03 |
 | Last evidence review | 2026-08-27 |
 | Next scheduled review | **TBD: no later than 2026-11-27** |
 | Evidence memo | [Provider privacy and data-handling research](./research/provider-privacy-audit-2026-08-21.md) |
@@ -196,6 +196,21 @@ Provider support access follows the same minimum-necessary principle and must be
 governed by the provider contract and account controls. Section 17 records the
 current gap in evidencing staff access, break-glass logging, and review.
 
+The platform panel implements named, time-limited support sessions under
+`PLATFORM_ADMIN_EMAILS`. Operators record purpose, ticket/incident reference, and
+authorization context. Impersonation retains the selected member's role and
+visibility, records both identities, and never grants a general private-content
+bypass. Suspended inspection is read-only. These repository controls do not close
+the operational access-review and approval-evidence gaps in G-12. Session records
+are eligible for deletion 30 days after access ends; platform audit records after
+12 months. Documented user/team legal holds delay deletion, without extending
+access. Scheduled maintenance applies these periods, retaining released hold
+documentation for 12 months. The legal owner approved these periods on 3 November
+2026 and clarified that the product is not live. These are pre-launch disclosure
+edits: Privacy stays at `2026-11-01`, Terms remains unchanged, and this revision
+does not trigger renewed acknowledgment. See
+[Platform administration](platform-admin.md).
+
 ## 6. User, team, and agent permissions
 
 Every data path must enforce both boundaries:
@@ -369,7 +384,7 @@ services and volumes, not Qdrant Cloud or RustFS Cloud subprocessors.
 | --- | --- | --- |
 | PostgreSQL | Accounts, membership, customer records, content, permissions, job state, audit data | Team-scoped queries, least-privileged credentials, migration review, backup/restore control |
 | Redis/BullMQ | Rate limits, caches, queues, transient job payloads | Minimized payloads, bounded lifetime, no unnecessary source content, private network |
-| Qdrant | Embeddings and visibility metadata | `team_id` plus visibility filters, derived-data deletion, no public endpoint |
+| Qdrant | Embeddings and visibility metadata | `team_id` plus visibility filters and derived-data deletion; application traffic uses private networking, while an API-key-protected public operator endpoint remains |
 | RustFS | Voice notes, attachments, documents, and exports | Non-public buckets, team-authorized short-lived signed URLs, scoped object keys, deletion and backup controls |
 
 Internal service traffic should use Railway private networking. Public exposure
@@ -887,3 +902,46 @@ separate email while always retaining the owner member's email.
 ### Email provider change (2026-11-01)
 
 Resend handles outbound email and inbound capture. Signed webhooks queue only provider IDs; workers retrieve content and bounded attachments, applying sender rate-limit admission before attachment hydration. Email recovery metadata reads require an explicit internal ingest principal and are constrained to active email events in its team. Recovery fails closed for parents restricted to specific people before creating derived documents or audio. Verification and invitation retry payloads are encrypted at rest using the existing AES-256-GCM secrets helper; retries decrypt the original payload, and missing keys fail closed. Completed ingestion job identifiers remain for 24 hours, failures for seven days. Temporary download URLs and credentials are not persisted in jobs or source snapshots. The Privacy Policy version advances to 2026-11-01. G-09 remains open: no account retention, tracking, contractual, or deletion verification is claimed.
+
+
+### Prelaunch billing and boundary changes (2026-11-03)
+
+Terms and Privacy versions advance to 2026-11-03 for paid-service terms and explicit Polar billing-data disclosure. The customer meter is variable euro-denominated AI usage; internal provider-cost conversion is not a public price promise. Cancellation stops future renewals under the portal terms; already-incurred usage and mandatory consumer rights remain applicable. This is a repository content change, not counsel approval, live Polar configuration evidence, or closure of G-20.
+
+Sentry intake and queued delivery now both require a currently selected organization/project. GitHub capture requires the matching App installation token and paginates installation discovery; missing mappings fail closed. These are code controls verified with synthetic tests, not production provider attestations. Sentry delivery receipt time is explicitly identified as receipt time, not the exact upstream action time.
+
+The authenticated `/api/health/ready` probe uses the existing `CRON_SECRET`, returns aggregate queue/worker information only, and never returns source content or job identifiers. Public liveness remains minimal. Pricing analytics adds only fixed public route/CTA values under the existing consent contract, without linking anonymous visitors to account identities.
+
+### Password recovery controls
+
+Password recovery stores SHA-256 digests of random 32-byte, single-use tokens,
+with a 30-minute expiry, separately from email-verification tokens. Issuance and
+redemption serialize on the account row. Redemption atomically replaces the
+password hash, deletes reset tokens, and increments the login session version.
+Proxy and server Auth.js checks compare JWT versions against the database on use;
+legacy JWTs are version zero. Existing login sessions are invalidated on their
+next request; already-running requests and integration/MCP credentials are not
+revoked by this flow. Recovery does not change verification or legal acceptance.
+
+Request responses do not disclose whether an email has a password account. Redis
+rate limits apply before account lookup and fail closed when Redis is unavailable.
+Reset email retry payloads use the existing AES-256-GCM encrypted delivery format;
+Resend receives the reset URL to deliver the email. Recovery routes have no browser
+analytics, no-index/no-store/no-referrer policies, and sanitized error events.
+Provider-account tracking and retention evidence remains G-09; this feature makes
+no new provider-retention claim. Infrastructure access logs must not retain reset
+URL query parameters. Production delivery still requires operator verification.
+
+
+### MVP follow-up (2026-11-03)
+
+Verification emails may carry an allowlisted self-serve plan name, never an arbitrary
+redirect URL. The verified page routes through sign-in with a fixed billing destination;
+this does not authorize checkout. Product events remain on the existing content-free,
+pseudonymized server/worker path; see the analytics interface for exact limitations.
+The device-local PAYG dismissal is a UI preference, not analytics storage.
+
+Interrupted web Ask settlement waits for the SDK abort callback so completed-step
+usage is included. Unreported partial-step usage is marked incomplete in billing
+metadata and is not estimated from the reservation. Recovering costs the provider
+never reports remains unverified; no exact-cost guarantee is added.

@@ -1,5 +1,3 @@
-import type { IntegrationProvider, NativeProviderId } from '#src/integrations/types.js';
-
 import { getEnv } from '#src/env.js';
 import { githubProvider } from '#src/integrations/providers/github.js';
 import { googleDriveProvider } from '#src/integrations/providers/google-drive.js';
@@ -8,6 +6,8 @@ import { mondayProvider } from '#src/integrations/providers/monday.js';
 import { sentryProvider } from '#src/integrations/providers/sentry.js';
 import { slackProvider } from '#src/integrations/providers/slack.js';
 import { withProviderRequestContext } from '#src/integrations/request.js';
+
+import type { IntegrationProvider, NativeProviderId } from '#src/integrations/types.js';
 
 // Phase 11 — Provider registry + integration catalog.
 //
@@ -159,8 +159,8 @@ export interface CatalogEntry {
   ingestStatus: IntegrationIngestStatus;
   /** True when shown on the landing-page integration cloud. */
   featured: boolean;
-  /** Native adapters expose Connect on `/app/team/integrations`. */
-  connectablePath?: '/app/team/integrations' | '/app/team/mcp-servers';
+  /** Native adapters expose Connect on `/app/connections/sources`. */
+  connectablePath?: '/app/connections/sources' | '/app/connections/agent-tools';
   /** MCP server URL for `mcp_available` and `mcp_local` entries. */
   mcpUrl?: string;
   /**
@@ -198,7 +198,7 @@ const CATALOG_SEEDS: CatalogSeed[] = [
     category: 'dev-tools',
     kind: 'native',
     featured: true,
-    connectablePath: '/app/team/integrations',
+    connectablePath: '/app/connections/sources',
     ingestStatus: 'implemented',
     examplePrompt: 'What shipped in last week’s releases?',
     envCheck: () => {
@@ -215,7 +215,7 @@ const CATALOG_SEEDS: CatalogSeed[] = [
     category: 'project-management',
     kind: 'native',
     featured: true,
-    connectablePath: '/app/team/integrations',
+    connectablePath: '/app/connections/sources',
     ingestStatus: 'implemented',
     examplePrompt: 'Which ENG issues did Alice complete this week?',
     envCheck: () => {
@@ -232,7 +232,7 @@ const CATALOG_SEEDS: CatalogSeed[] = [
     category: 'productivity',
     kind: 'native',
     featured: true,
-    connectablePath: '/app/team/integrations',
+    connectablePath: '/app/connections/sources',
     ingestStatus: 'implemented',
     examplePrompt: 'Summarize the latest version of the partnership agreement.',
     envCheck: () => {
@@ -249,7 +249,7 @@ const CATALOG_SEEDS: CatalogSeed[] = [
     category: 'project-management',
     kind: 'native',
     featured: true,
-    connectablePath: '/app/team/integrations',
+    connectablePath: '/app/connections/sources',
     ingestStatus: 'implemented',
     examplePrompt: 'Which launch board records changed this week?',
     envCheck: () => {
@@ -266,7 +266,7 @@ const CATALOG_SEEDS: CatalogSeed[] = [
     category: 'communication',
     kind: 'native',
     featured: true,
-    connectablePath: '/app/team/integrations',
+    connectablePath: '/app/connections/sources',
     ingestStatus: 'implemented',
     examplePrompt: 'What did the team decide about pricing in #leadership last week?',
     envCheck: () => {
@@ -283,7 +283,7 @@ const CATALOG_SEEDS: CatalogSeed[] = [
     category: 'dev-tools',
     kind: 'native',
     featured: true,
-    connectablePath: '/app/team/integrations',
+    connectablePath: '/app/connections/sources',
     ingestStatus: 'implemented',
     examplePrompt: 'What broke after yesterday’s deploy?',
     envCheck: () => {
@@ -302,7 +302,7 @@ const CATALOG_SEEDS: CatalogSeed[] = [
     category: 'productivity',
     kind: 'mcp',
     featured: true,
-    connectablePath: '/app/team/mcp-servers',
+    connectablePath: '/app/connections/agent-tools',
     ingestStatus: 'coming_soon',
     mcpUrl: 'https://mcp.notion.com/mcp',
     mcpAuthType: 'oauth',
@@ -318,7 +318,7 @@ const CATALOG_SEEDS: CatalogSeed[] = [
     category: 'project-management',
     kind: 'mcp',
     featured: true,
-    connectablePath: '/app/team/mcp-servers',
+    connectablePath: '/app/connections/agent-tools',
     ingestStatus: 'coming_soon',
     mcpUrl: 'https://mcp.atlassian.com/v1/sse',
     mcpAuthType: 'oauth',
@@ -334,7 +334,7 @@ const CATALOG_SEEDS: CatalogSeed[] = [
     category: 'productivity',
     kind: 'mcp',
     featured: false,
-    connectablePath: '/app/team/mcp-servers',
+    connectablePath: '/app/connections/agent-tools',
     mcpUrl: 'https://mcp.atlassian.com/v1/sse',
     mcpAuthType: 'oauth',
     ingestStatus: 'coming_soon',
@@ -350,7 +350,7 @@ const CATALOG_SEEDS: CatalogSeed[] = [
     category: 'productivity',
     kind: 'mcp',
     featured: true,
-    connectablePath: '/app/team/mcp-servers',
+    connectablePath: '/app/connections/agent-tools',
     ingestStatus: 'coming_soon',
     mcpUrl: 'http://127.0.0.1:3845/sse',
     mcpAuthType: 'none',
@@ -367,7 +367,7 @@ const CATALOG_SEEDS: CatalogSeed[] = [
     category: 'analytics',
     kind: 'mcp',
     featured: true,
-    connectablePath: '/app/team/mcp-servers',
+    connectablePath: '/app/connections/agent-tools',
     ingestStatus: 'coming_soon',
     mcpUrl: 'https://mcp.stripe.com',
     mcpAuthType: 'bearer',
@@ -386,7 +386,7 @@ const CATALOG_SEEDS: CatalogSeed[] = [
     category: 'crm',
     kind: 'mcp',
     featured: true,
-    connectablePath: '/app/team/mcp-servers',
+    connectablePath: '/app/connections/agent-tools',
     ingestStatus: 'coming_soon',
     examplePrompt: 'Which Q3 deals slipped to Q4?',
     staticStatus: 'coming_soon',
@@ -399,7 +399,7 @@ const CATALOG_SEEDS: CatalogSeed[] = [
     category: 'crm',
     kind: 'mcp',
     featured: true,
-    connectablePath: '/app/team/mcp-servers',
+    connectablePath: '/app/connections/agent-tools',
     ingestStatus: 'coming_soon',
     examplePrompt: 'What did we discuss with Acme on our last call?',
     staticStatus: 'coming_soon',
@@ -413,7 +413,7 @@ const CATALOG_SEEDS: CatalogSeed[] = [
     category: 'crm',
     kind: 'mcp',
     featured: false,
-    connectablePath: '/app/team/mcp-servers',
+    connectablePath: '/app/connections/agent-tools',
     ingestStatus: 'coming_soon',
     examplePrompt: 'List all customers we onboarded in May.',
     staticStatus: 'coming_soon',
@@ -427,7 +427,7 @@ const CATALOG_SEEDS: CatalogSeed[] = [
     category: 'project-management',
     kind: 'mcp',
     featured: false,
-    connectablePath: '/app/team/mcp-servers',
+    connectablePath: '/app/connections/agent-tools',
     ingestStatus: 'coming_soon',
     examplePrompt: 'What’s blocking the launch checklist?',
     staticStatus: 'coming_soon',
@@ -440,7 +440,7 @@ const CATALOG_SEEDS: CatalogSeed[] = [
     category: 'project-management',
     kind: 'mcp',
     featured: false,
-    connectablePath: '/app/team/mcp-servers',
+    connectablePath: '/app/connections/agent-tools',
     ingestStatus: 'coming_soon',
     examplePrompt: 'What cards moved to Done yesterday?',
     staticStatus: 'coming_soon',
@@ -454,7 +454,7 @@ const CATALOG_SEEDS: CatalogSeed[] = [
     category: 'project-management',
     kind: 'mcp',
     featured: false,
-    connectablePath: '/app/team/mcp-servers',
+    connectablePath: '/app/connections/agent-tools',
     ingestStatus: 'coming_soon',
     examplePrompt: 'What changed in the client rollout project?',
     staticStatus: 'coming_soon',
@@ -467,7 +467,7 @@ const CATALOG_SEEDS: CatalogSeed[] = [
     category: 'dev-tools',
     kind: 'mcp',
     featured: false,
-    connectablePath: '/app/team/mcp-servers',
+    connectablePath: '/app/connections/agent-tools',
     ingestStatus: 'coming_soon',
     examplePrompt: 'Which MRs are awaiting review on the infra team?',
     staticStatus: 'coming_soon',
@@ -481,7 +481,7 @@ const CATALOG_SEEDS: CatalogSeed[] = [
     category: 'dev-tools',
     kind: 'mcp',
     featured: false,
-    connectablePath: '/app/team/mcp-servers',
+    connectablePath: '/app/connections/agent-tools',
     ingestStatus: 'coming_soon',
     examplePrompt: 'Which Bitbucket pull requests are blocked?',
     staticStatus: 'coming_soon',
@@ -495,7 +495,7 @@ const CATALOG_SEEDS: CatalogSeed[] = [
     category: 'dev-tools',
     kind: 'mcp',
     featured: false,
-    connectablePath: '/app/team/mcp-servers',
+    connectablePath: '/app/connections/agent-tools',
     ingestStatus: 'coming_soon',
     examplePrompt: 'What incidents affected checkout this month?',
     staticStatus: 'coming_soon',
@@ -509,7 +509,7 @@ const CATALOG_SEEDS: CatalogSeed[] = [
     category: 'communication',
     kind: 'mcp',
     featured: false,
-    connectablePath: '/app/team/mcp-servers',
+    connectablePath: '/app/connections/agent-tools',
     ingestStatus: 'coming_soon',
     examplePrompt: 'What did the community moderators decide last week?',
     staticStatus: 'coming_soon',
@@ -523,7 +523,7 @@ const CATALOG_SEEDS: CatalogSeed[] = [
     category: 'crm',
     kind: 'mcp',
     featured: false,
-    connectablePath: '/app/team/mcp-servers',
+    connectablePath: '/app/connections/agent-tools',
     ingestStatus: 'coming_soon',
     examplePrompt: 'Which deals moved stages this week?',
     staticStatus: 'coming_soon',
@@ -536,7 +536,7 @@ const CATALOG_SEEDS: CatalogSeed[] = [
     category: 'crm',
     kind: 'mcp',
     featured: false,
-    connectablePath: '/app/team/mcp-servers',
+    connectablePath: '/app/connections/agent-tools',
     ingestStatus: 'coming_soon',
     examplePrompt: 'Which prospects need follow-up after recent calls?',
     staticStatus: 'coming_soon',
@@ -550,7 +550,7 @@ const CATALOG_SEEDS: CatalogSeed[] = [
     category: 'other',
     kind: 'mcp',
     featured: false,
-    connectablePath: '/app/team/mcp-servers',
+    connectablePath: '/app/connections/agent-tools',
     ingestStatus: 'coming_soon',
     examplePrompt: 'Which support tickets mention onboarding friction?',
     staticStatus: 'coming_soon',
@@ -564,7 +564,7 @@ const CATALOG_SEEDS: CatalogSeed[] = [
     category: 'communication',
     kind: 'mcp',
     featured: false,
-    connectablePath: '/app/team/mcp-servers',
+    connectablePath: '/app/connections/agent-tools',
     ingestStatus: 'coming_soon',
     examplePrompt: 'What are customers asking about billing this week?',
     staticStatus: 'coming_soon',

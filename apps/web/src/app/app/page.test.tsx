@@ -11,6 +11,7 @@ const fakes = vi.hoisted(() => ({
   captureVisibility: null as 'private' | 'team' | null,
   getCalendarSettings: vi.fn(),
   getDashboard: vi.fn(),
+  hasCompletedChatAnswer: vi.fn(),
   getWorkAttentionSummary: vi.fn(),
   getHomeOpenObjectCounts: vi.fn(),
   isPinnedMany: vi.fn(),
@@ -51,6 +52,17 @@ const fakes = vi.hoisted(() => ({
 }));
 
 await vi.mock(
+  import.meta.resolve('@/components/payg-value-nudge'),
+  () => ({ PaygValueNudge: () => <p>Optional PAYG suggestion</p> }),
+  () => import('@/components/payg-value-nudge'),
+);
+
+await vi.mock(
+  import.meta.resolve('@/components/billing-restriction-notice'),
+  () => ({ BillingRestrictionNotice: ({ reason }: { reason: string }) => <p>{reason}</p> }),
+  () => import('@/components/billing-restriction-notice'),
+);
+await vi.mock(
   import.meta.resolve('next/navigation'),
   async () => ({
     ...(await import('next/navigation')),
@@ -75,6 +87,8 @@ await vi.mock(
   import.meta.resolve('@timeline/shared/team-scope'),
   () => ({
     withTeam: () => ({
+      objects: { hasCompletedChatAnswer: fakes.hasCompletedChatAnswer },
+      documents: { listDocuments: () => Promise.resolve([]) },
       requireMembership: vi.fn().mockImplementation(() => Promise.resolve(fakes.role)),
       billing: { getDashboard: fakes.getDashboard },
       calendar: { getCalendarSettings: fakes.getCalendarSettings },
@@ -121,6 +135,15 @@ await vi.mock(
     HomeAskComposer: ({ actions }: { actions?: ReactNode }) => <div>{actions}</div>,
   }),
   () => import('@/components/home/home-ask-composer'),
+);
+await vi.mock(
+  import.meta.resolve('@/components/connect-agent/connect-agent-onboarding'),
+  () => ({
+    ConnectAgentOnboardingCard: () => (
+      <div data-testid="home-connect-agent">Connect your agent</div>
+    ),
+  }),
+  () => import('@/components/connect-agent/connect-agent-onboarding'),
 );
 await vi.mock(
   import.meta.resolve('@/components/onboarding-checklist'),
@@ -238,6 +261,7 @@ beforeEach(() => {
   fakes.resolveActiveTeam.mockResolvedValue({ active: { teamId: 'team-1' } });
   fakes.getCalendarSettings.mockResolvedValue({ defaultTimezone: 'UTC' });
   fakes.getDashboard.mockResolvedValue({ nudge: null });
+  fakes.hasCompletedChatAnswer.mockResolvedValue(false);
   fakes.getWorkAttentionSummary.mockResolvedValue({
     attention: 0,
     overdueTasks: 0,
@@ -287,7 +311,7 @@ describe('HomeDashboardPage', () => {
     expect(html).not.toContain('href="/app/tasks"');
     expect(html).not.toContain('href="/app/objects"');
     expect(html).not.toContain('href="/app/team/jobs"');
-    expect(html).not.toContain('href="/app/sources"');
+    expect(html).not.toContain('href="/app/connections"');
     expect(fakes.listRecoverableJobs).not.toHaveBeenCalled();
   });
 
@@ -307,7 +331,7 @@ describe('HomeDashboardPage', () => {
     expect(html).toContain('href="/app/approvals"');
     expect(html).toContain('href="/app/work"');
     expect(html).toContain('href="/app/team/jobs"');
-    expect(html).toContain('href="/app/sources"');
+    expect(html).toContain('href="/app/connections"');
     expect(html).toContain('pending approvals');
     expect(html).toContain('work needing attention');
     expect(html).toContain('recoverable jobs');
@@ -423,7 +447,7 @@ describe('HomeDashboardPage', () => {
     expect(fakes.getDashboard).toHaveBeenCalledWith({ canManageBilling: false });
   });
 
-  it('shows admins a one-line billing nudge', async () => {
+  it('shows admins the billing nudge explanation', async () => {
     fakes.role = 'owner';
     fakes.getDashboard.mockResolvedValue({
       nudge: {
@@ -441,7 +465,7 @@ describe('HomeDashboardPage', () => {
     expect(html).toContain('You are close to the Free allowance');
     expect(html).toContain('Review billing');
     expect(html).toContain('href="/app/team?section=billing"');
-    expect(html).not.toContain('Add a payment method before the next Ask.');
+    expect(html).toContain('Add a payment method before the next Ask.');
     expect(html).not.toContain('See pricing');
     expect(fakes.getDashboard).toHaveBeenCalledWith({ canManageBilling: true });
   });
@@ -458,4 +482,49 @@ describe('HomeDashboardPage', () => {
       operation: 'billing_dashboard',
     });
   });
+});
+
+it('keeps Home usable when optional PAYG eligibility cannot be loaded', async () => {
+  fakes.role = 'owner';
+  fakes.getDashboard.mockResolvedValue({
+    account: { planId: 'free' },
+    nudge: null,
+    restrictionReason: null,
+  });
+  fakes.hasCompletedChatAnswer.mockRejectedValue(new Error('lookup unavailable'));
+  const html = renderToStaticMarkup(await HomeDashboardPage());
+  expect(html).toContain('<h1 class="sr-only">Home</h1>');
+  expect(html).not.toContain('Optional PAYG suggestion');
+  expect(fakes.reportCaughtError).toHaveBeenCalledWith(expect.any(Error), {
+    surface: 'render',
+    operation: 'payg_suggestion',
+  });
+});
+
+it('shows optional PAYG followup only for an unrestricted Free admin with an answer', async () => {
+  fakes.role = 'owner';
+  fakes.getDashboard.mockResolvedValue({
+    account: { planId: 'free' },
+    nudge: null,
+    restrictionReason: null,
+  });
+  fakes.hasCompletedChatAnswer.mockResolvedValue(false);
+  expect(renderToStaticMarkup(await HomeDashboardPage())).not.toContain('Optional PAYG suggestion');
+  fakes.hasCompletedChatAnswer.mockResolvedValue(true);
+  expect(renderToStaticMarkup(await HomeDashboardPage())).toContain('Optional PAYG suggestion');
+  fakes.role = 'member';
+  expect(renderToStaticMarkup(await HomeDashboardPage())).not.toContain('Optional PAYG suggestion');
+  fakes.role = 'owner';
+  fakes.getDashboard.mockResolvedValue({
+    account: { planId: 'free' },
+    nudge: null,
+    restrictionReason: 'email_unverified',
+  });
+  expect(renderToStaticMarkup(await HomeDashboardPage())).not.toContain('Optional PAYG suggestion');
+  fakes.getDashboard.mockResolvedValue({
+    account: { planId: 'payg' },
+    nudge: null,
+    restrictionReason: null,
+  });
+  expect(renderToStaticMarkup(await HomeDashboardPage())).not.toContain('Optional PAYG suggestion');
 });

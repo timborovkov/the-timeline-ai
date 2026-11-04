@@ -1,7 +1,7 @@
 # The Timeline — Design System
 
-**Version:** v3.30 · Privacy-conscious analytics and usage billing (2026-10-24).
-Replaces v3.29 Installed-app splash.
+**Version:** v3.35 · Public monthly pricing calculator (2026-11-04).
+Replaces v3.34 Object citations and pipeline lanes.
 
 This is the visual and interaction contract for the product. If a screen
 disagrees with it, fix the screen. If the language intentionally changes,
@@ -63,7 +63,7 @@ next before seeing how the system represented it.
 - Every route has exactly one `<h1>`.
 - Switzer is the default face for navigation, headings, body, labels, statuses,
   buttons, and form controls.
-- Commit Mono is reserved for timestamps, citations, shortcuts, counts, code,
+- Commit Mono is reserved for timestamps, citation markers, shortcuts, counts, code,
   filenames, and recognizable public external identifiers such as `TL-101` and
   `PR #42`.
 - Internal database identifiers are implementation details. UUIDs, hashes, raw
@@ -103,7 +103,7 @@ The neutral OKLCH palette and single lime signal remain. Tokens live in
 | `--border-strong` | Focus and emphasized boundaries |
 | `--fg` | Primary text |
 | `--fg-muted` | Supporting text |
-| `--fg-dim` | Non-essential metadata |
+| `--fg-dim` | Non-essential metadata; light-mode lightness 0.50 to preserve small-text contrast on all three surfaces |
 | `--signal` / `--signal-soft` | Primary action, active route, citation |
 | `--danger` | Failure, destructive state, overdue work |
 | `--status-progress` | Active, doing, and in-progress work |
@@ -434,12 +434,16 @@ pulses. Opening a row shows a human source summary first. Original source
 collapsed inspector disclosure with a readable preview: HTML in a sandboxed
 frame, text as prose, JSON in Commit Mono. Attached documents link to the
 document drive. Exact timestamps, ownership/visibility internals, source IDs,
-and other implementation keys stay inside `TechnicalDetails`. Ask answers cite
-raw source events as lime `[ev:…]` chips, objects as `[ent:…]`, and notes as
-`[note:…]`. Those tokens do not appear on timeline rows. Each inspector
-evidence item shows the matching copyable `[ev:…]` chip so a cited source can
-be identified without putting database IDs on the archive list. Clicking a
-citation opens a preview with the same evidence-first layout as the inspector:
+and other implementation keys stay inside `TechnicalDetails`. Ask answers and
+object summaries cite sources as small lime superscript numbers in first-appearance
+order, reusing the number when the same source is cited again. Raw `[ev:…]`
+tokens stay out of the answer and off client/project summaries. Hovering on desktop, tapping on mobile, or
+keyboard focus opens a compact preview card: source icon, author, date, a
+one-line quote, and the existing named destination. Provider logos sit on a
+white tile in both themes. Escape closes the card. Those tokens do not appear
+on timeline rows. Each inspector evidence item shows the matching copyable
+`[ev:…]` chip so a cited source can be identified without putting database IDs
+on the archive list. Inspector chips still open the evidence-first preview:
 the readable excerpt, a collapsed original-source disclosure (HTML, text, or
 JSON payload), and named destinations instead of a generic “Open full page.”
 A meeting citation’s primary action is the transcript page, with calendar and
@@ -571,7 +575,8 @@ actions stay visible without hover, using the shared item-action primitives.
 ### Ask
 
 Ask uses a standard sans header. Human/assistant role labels are quiet 12px
-text; citations remain mono and lime. Tool execution is collapsed. Ask object
+text; inline citations are mono lime superscripts, not raw chips. Tool
+execution is collapsed. Ask object
 bindings always have a human label and read **About {name}**, not Pin. Prompts
 handed off from Home are stored
 briefly in team-scoped session storage and never in the URL.
@@ -599,10 +604,10 @@ a capped trail of earlier views from the same conversation. Full Ask shows
 those views as compact linked badges on the conversation.
 
 The web Ask surface is the rich research view: answers may be thorough and use
-sections, lists, or tables, while inline citations remain inspectable links to
-evidence. Citation previews reuse the inspector’s original-source viewer and
-named destinations (transcript, calendar, documents, Timeline moment) rather
-than a single unlabeled page jump. External chat delivery uses the same retrieval and grounding but a
+sections, lists, or tables, while inline citations remain inspectable numbered
+markers. The answer card keeps the named destination (transcript, calendar,
+documents, Timeline moment) rather than a single unlabeled page jump. The
+inspector chip dialog still reuses the original-source viewer. External chat delivery uses the same retrieval and grounding but a
 compact plain-text presentation, normally one short paragraph or three to five
 bullets. Telegram, Slack, and future external chat providers never expose
 Timeline citation syntax, raw-event IDs, or generic source footers. Explicit
@@ -637,7 +642,9 @@ metadata row, with no redundant type label. Curated boards use the same
 full-bleed work canvas in kanban and grouped list — no boxed inner
 container around the collection. Board kanban cards stay compact: a clamped
 title, optional next-step line directly under the title, and one metadata row.
-Kanban lanes use a hairline divider, not boxed column chrome. Card title and
+Kanban lanes use a hairline divider, not boxed column chrome. Pipeline boards
+keep a readable lane min-width and scroll horizontally when the columns do not
+fit, including 1280 and 1440 canvases; they do not clip the last lanes. Card title and
 metadata share the same left edge: compact 20px chips, no extra type/metadata
 padding, and no wrapping priority row. The drag handle sits with the card
 actions on the right. Cards have no Move control; the drag handle is the
@@ -663,12 +670,43 @@ forms, with hairline section structure, 12px muted labels, compact `sm`
 outline saves, and at most one filled primary action per view (Rename, Create
 invite, Start export). Select and checkbox preferences may save immediately.
 
-Connections is a collection directory. Provider and capture surfaces are
-`CollectionGroup` + `CollectionRow` rows (icon, name, status, one context
-line, quiet action). They are not bordered `p-4` cards. Status uses
-`CollectionStatus` or readable sentence-case text, not uppercase chips.
-Slack, Telegram, provider accounts, and connected integrations reuse the same
-row density.
+Connections is a flagship settings directory with Sources, Agent tools, and
+Developer as real routes (`/app/connections/sources`,
+`/app/connections/agent-tools`, `/app/connections/developer`) — the same
+hairline tab chrome as Meetings. `/app/connections` redirects to Sources.
+Inbound Email sits in its own quiet Inbox section at the top of Sources because
+it is Timeline’s team inbox, not a third-party provider. Telegram, Slack, and
+the remaining providers follow as `CollectionGroup` + `CollectionRow` (white
+padded logo tile, name, one status — Connected, Syncing for team, Needs
+attention, or Not connected — and one primary action). They are not bordered
+`p-4` cards. Documents uploads and meeting notetakers stay on their own sidebar
+pages, not on Connections. Clicking a source row opens a details sheet with
+that provider’s accounts, resource picker (repos, projects, channels, folders),
+default team visibility, team-sync activation, matching MCP server, recent
+activity, and disconnect. Telegram setup (bot link tokens, group bindings,
+linked users) and inbound Email (team address and list-style allowed senders)
+live in those sheets. A Drive folder picker replaces the generic checkbox list
+inside that resource-picker slot. Available providers sit below as a Connect /
+Set up list. A quiet search on the tab chrome filters the open section. Agent
+tools holds compact rows for Agent MCP servers and Connect your agent;
+local-only and unroutable catalog entries such as Figma sit in Coming soon with
+no Connect action. Developer holds ingest webhooks, integration audit, and job
+recovery.
+Connect your agent is a client picker plus one install path: official vendor
+marks on white tiles, a CollectionRow list, and a single selected setup. Add
+memory, Timeline skill, connected grants, and static keys stay in one closed
+hairline disclosure stack. Admin grant rows show the consenting member next to
+the client so Revoke is unambiguous. Do not nest cards, stack `border-y`
+sections, or invent connector logos.
+Those tools open sheets or their existing admin pages — they are not an
+expanded dump. Sheets close with Escape and trap focus. There is no separate
+Integrations row, and no provider is listed twice. Status uses
+`CollectionStatus` or readable sentence-case text, not uppercase chips. Provider
+logos always sit on a white padded rounded tile. Fragment links such as
+`/app/connections/sources#email`, `/app/connections/agent-tools#agent-mcp`, and
+`/app/connections/developer#webhooks` open the matching tab and sheet. Legacy
+`/app/sources` (including hashes), `/app/team/integrations`, and
+`/app/team/telegram` redirect to the matching Connections route and sheet.
 
 Meetings keep the collection header and rows. Capture and saved-meeting setup
 forms sit in a closed disclosure so the list is the default view. The Saved tab
@@ -894,21 +932,28 @@ follows the shared due-date vocabulary above.
 
 ### Marketing and public pages
 
-The public landing page is an editorial, five-scene acquisition narrative:
-claim, evidence and chronology, cited answer, audience fit with trust, and a
-one-project CTA. The claim defines Timeline as AI team memory: selected work
-becomes a chronological, source-linked project history that can answer questions
-with citations. The chronology scene names the cost of rebuilding status, handoffs,
-customer commitments, and decisions across Telegram, Slack, meetings,
-documents, tickets, code, and email before showing how selected work becomes an
-inspectable record. Its signature example project, Acme rollout, shows five
-cited work sources converging into one project history, with a linked Telegram
-group as the first source. Captured work settles onto a chronological rail,
-connects to project, person, task, and calendar context, and resolves into an
-answer with tangible source links. Suggested durable workspace
-changes remain approval-backed; the diagram never implies that evidence silently
-rewrites canonical objects. Acme rollout is the
-canonical fictional public demo corpus across landing, connector, and guide
+The public landing page is an editorial, six-scene acquisition narrative:
+claim, evidence and chronology, cited answer, Slack-to-cited-answer with an MCP
+example, audience fit with trust, and a Start free CTA. The claim scene also
+includes a compact “Give this to your agent” card: one-line lede, official
+Claude, ChatGPT, Cursor, Grok, OpenClaw, and Hermes marks on white tiles in a
+single row, and the copyable
+`Set up The Timeline - https://thetimeline.cc/llms.txt` command. The card follows
+landing `--home-*` tokens in both themes and does not use letter discs. The claim defines The Timeline as an auto-updating work record:
+what is said in Slack, Telegram, email and calls becomes current client, deal,
+task and decision records, with the source for every line and human approval
+before anything changes. Audience copy describes how teams work (chat-run teams
+on Slack or Telegram, with the rest of the work spread across email, calls and
+documents), not team size or role. Updates are daily, with no weekly framing.
+The chronology scene names the cost of rebuilding status, promises and decisions
+from conversation before showing how selected work becomes an inspectable record.
+Its signature example project, Acme rollout, shows five cited work sources
+converging into one work record, with a linked Telegram group as the first source.
+Captured work settles onto a chronological rail, connects to project, person,
+task, and calendar context, and resolves into an answer with tangible source
+links. Suggested durable workspace changes remain approval-backed; the diagram
+never implies that evidence silently rewrites canonical objects. Acme rollout is
+the canonical fictional public demo corpus across landing, connector, and guide
 examples; every rendered example states that it is illustrative and not
 customer data. Provider pages may show distinct slices, but people, identifiers,
 records, and outcomes stay coherent across the journey. Connector capability belongs with the
@@ -924,7 +969,7 @@ cream reads like paper and near-black retains its tactile texture.
 The landing hero keeps the observatory composition: six compact source cards sit
 around a square grid and stream packets along visible curved paths into the
 official Timeline mark. The centered diamond is labelled **The Timeline** and
-**Project history**; one quiet rail then resolves into **Working records** and
+**Work record**; one quiet rail then resolves into **Daily update** and
 **Cited answers**. It does not reproduce the expanded timeline, record cards, or
 assistant exchange. Every moving packet reuses the exact path drawn behind it,
 the animation restarts only when the diagram enters view, and reduced motion
@@ -951,16 +996,33 @@ grid without decorative connectors, and narrow containers stack stages with
 vertical packet tracks. Reduced-motion mode hides packets and preserves the
 complete static story.
 
-Outcome-led solution pages extend this story for distinct search intents without
-joining the primary navigation. `/solutions/client-project-handoffs`,
-`/solutions/weekly-project-updates`, and
-`/solutions/crm-context-from-team-activity` each own a concrete job, workflow,
-example, evidence boundary, and next step. They are substantive public pages,
-not title-swapped landing variants: the home audience rail links to them, they
-cross-link where useful, and the public registry exposes them to the sitemap,
-structured data, and machine-readable discovery files. Their visible copy must
-stay consistent with deliberate capture, source-linked claims, and human review
-before inferred durable workspace changes.
+The public header stays uncluttered: Product, Use cases, Compare, Agents, and
+Pricing. Use cases and Compare are `details` dropdowns on desktop and in the
+mobile menu. How it works, Integrations, Help, and Trust remain in the footer
+(and legal row). `/compare` is a hub for head-to-head pages versus Day AI,
+Folk, Glean, and Geekbot; every competitor fact on those pages cites and links
+that competitor's own site. Works-with pages live under `/integrations`
+(Linear, Jira, Notion, HubSpot, Attio, Pipedrive), not a separate `/works-with`
+section: Linear has native ingest, Jira and Notion are hosted MCP lookup, and
+HubSpot, Attio, and Pipedrive native ingest is coming soon. Retired
+`/compare/{hubspot,jira,linear,notion}` URLs permanent-redirect to the matching
+integrations page.
+
+Use-case pages extend this story for six jobs from one record: work record,
+team daily log, communication trail, CRM, task board, and onboarding and repeat
+questions. They live under `/use-cases`, appear in the public Use cases menu,
+and are registered for sitemap and LLM discovery. `/compare` and `/agents` are
+indexable hubs for the Compare dropdown and the agent setup card. Retired solution URLs
+`/solutions/weekly-project-updates` and `/solutions/crm-context-from-team-activity`
+permanent-redirect to the matching use-case pages. Client project handoffs remain
+at `/solutions/client-project-handoffs` with related use-case links. `/product-tour`
+is a screenshot walkthrough linked from the home hero as See it first and from
+pricing; `/integrations/telegram` is the public Telegram capture page. Product
+screenshots live in `apps/web/public/marketing/screenshots` under the filenames
+from the website copy plan so they can be swapped after the citation redesign.
+Visible copy must stay consistent with deliberate capture, source-linked claims,
+daily (not weekly) updates, and human review before inferred durable workspace
+changes. Do not claim WhatsApp, Teams chat, or Slack Connect.
 
 Public pages may use oversized Switzer display type, denser Commit Mono source
 metadata, a near-black evidence-instrument canvas, and more cinematic spacing
@@ -1002,6 +1064,8 @@ inherits that warm paper palette in light mode and the landing's warm near-black
 palette in dark mode, while each page group keeps its own content structure.
 Auth-neutral loading and error boundaries keep the same masthead but omit
 account actions rather than guessing the visitor's session state.
+The landing main landmark remains focusable for skip navigation but suppresses
+the browser's page-sized focus outline; interactive controls retain their focus indicators.
 The masthead exposes the same six primary destinations in the same order:
 Product (`/`), Integrations (`/integrations`), Pricing (`/pricing`), How it works (`/how-it-works`),
 Trust (`/trust`), and Help (`/help`). Desktop headers show them directly, compact widths use a native
@@ -1302,6 +1366,17 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-08-28 | Object detail typography | Shares `object-detail-type` roles: 13px semibold section titles, medium 14px row titles, Commit Mono counts/timestamps, and medium rail labels. |
 | 2026-10-30 | Polar promo codes | Change plan includes an optional promo field with inline eligibility/provider errors. An active assigned team discount disables the field and explains precedence; discounts never stack. Invoice previews remain local estimates before Polar campaign savings. |
 | 2026-10-23 | Quiet customer billing | Team Billing separates remaining benefits, recorded usage charges, recurring fee, and monthly spend cap. Usage is a meter table. Cap, payment, and comp states are one banner each. Members only see a limit notice. Platform admin billing stays dense. |
+| 2026-11-02 | Connections as a flagship settings page | Splits Connections into Sources, Agent tools, and Developer tabs. Email stays a normal capture row; Documents and Meetings stay on their sidebar pages. Agent MCP, Timeline MCP, and webhooks open compact sheets. Figma and other local-only catalog entries sit in Coming soon. |
+| 2026-11-03 | Work-record marketing site | Leads public pages with the auto-updating work record, daily updates, and Start free. Adds a Use cases menu, six use-case pages, `/product-tour`, and `/integrations/telegram`. |
+| 2026-11-03 | Public Compare and Agents | Header stays Product, Use cases, Compare, Agents, Pricing, with mobile dropdowns. Adds `/compare` works-with pages, `/agents`, a copyable llms.txt command, a pricing FAQ, and a Slack-to-cited-answer landing scene. |
+| 2026-11-03 | Compare vs and works-with | Moves works-with pages under `/integrations/{hubspot,pipedrive,attio,linear,jira,notion}`. `/compare` becomes a hub plus `/compare/the-timeline-vs-{day-ai,folk,glean,geekbot}` pages that cite each competitor's site. |
+| 2026-11-03 | Numbered answer citations | Replaces Ask `[ev:…]` chips with superscript numbers, a hover/tap source card, reused numbers for the same source, and keyboard/Escape access. Inspector copy chips stay as they are. |
+| 2026-11-03 | Object and board citation/lane polish | Object summaries use the same numbered source markers as Ask. Pipeline kanban lanes scroll instead of clipping at 1440. |
+| 2026-11-04 | Hosted MCP public copy | Agents, llms.txt, the home MCP example, and the pricing FAQ teach five tools, the default-on capture scope, remember counting toward accepted sources, and Free 100 MB / 10,000 documents / 20,000 chunks. |
+| 2026-11-03 | Connect your agent | `/app/connect-agent` is the OAuth-first MCP setup screen. Agent tabs, connected grants, add-memory email/webhook, SKILL.md, and collapsed static keys live there. `/app/team/mcp-share` redirects. Provider logos stay on white tiles; allowed senders stay a list editor. |
+| 2026-11-04 | Connect your agent client picker | `/app/connect-agent` leads with a CollectionRow client list and one install path. Official vendor marks sit on white tiles. Connected agents, add-memory, SKILL.md, and static keys share one disclosure stack with no nested cards or stacked `border-y` sections. Admin grant rows show the consenting member next to the client. |
+| 2026-11-04 | Agent setup card marks | Replaces letter discs with official agent logos on white tiles, one short lede, and a single logo row on the landing and `/agents` cards. |
+| 2026-11-04 | Public monthly calculator | `/pricing` Usage compares PAYG, Team, and Business from paired sliders and exact fields. One hairline results panel, 12px metadata, and the shared billing preview. |
 
 
 ### Billing benefits and recorded charges (2026-10-31)
@@ -1327,3 +1402,43 @@ owners/admins; members retain the existing limited warning view.
 Contractual Enterprise displays agreement-based limits instead of a local cap
 warning/editor. Cap warnings follow enforcement applicability; comped Enterprise
 keeps its enforced cap. Disabled enforcement is labeled as informational tracking.
+
+Light-mode signal controls use `oklch(0.51 0.15 130)` with near-white foreground; the signal background must retain normal-text contrast. Homepage overrides require separate verification.
+
+Dark-theme dim text uses OKLCH lightness 0.64 (rather than 0.48). Browser sRGB measurement puts it above 5:1 on the secondary dark surface; dim is a hierarchy treatment, not permission for unreadable body text. The pricing browser regression checks both themes’ dim-text surfaces and primary-button pair at 4.5:1 or better.
+
+### Password recovery
+
+Sign-in places “Forgot password?” beside the password label. `/forgot-password`
+and `/reset-password` reuse AuthShell and the existing form controls. Request
+confirmation does not reveal whether an account exists and keeps the email form
+available for retry. Reset asks for matching new passwords (8–200 characters),
+announces pending/error/success states, and replaces expired or used links with a
+request-new-link action. Success directs the user to sign in again; recovery
+remains available without legal acceptance or new-account publication readiness.
+
+## Platform administration
+
+The platform panel uses the existing collection headers, quiet tables, and bordered settings forms. Users, Teams, Audit, and Billing form a compact admin navigation. Sensitive actions live in explicit disclosures with a reason and confirmation. Impersonation has a persistent banner naming the effective user and team, expiry, read-only status when applicable, and an always-visible exit action. Internal identifiers stay in technical-detail disclosures.
+
+
+### Optional PAYG follow-up
+
+On Home, Free-plan owners/admins who have a persisted assistant answer can see a
+quiet PAYG suggestion. Do not show it before an answer, alongside a restriction,
+or instead of an existing billing warning. “Not now” dismisses this suggestion
+for that user/team in the current browser. The CTA opens plan selection only.
+
+### Public pricing calculator
+
+The pricing Usage section compares PAYG, Team and Business through paired native
+sliders and exact number fields. A labelled editable example renders on the server.
+Desktop inputs sit beside a single hairline results panel; mobile stacks them.
+Plan totals share one border with the selected breakdown underneath — no nested
+cards or extra plan-card chrome. PAYG shows native allowances per meter; Team
+and Business show a pooled usage-credit deduction. Capacity warnings exclude
+unsuitable plans from the lowest-estimated-cost badge. Accepted sources live in
+Advanced usage with their value visible when closed. Metadata stays at the 12px
+floor. Rates and workspace eligibility remain in the closed How this estimate
+works disclosure. Inputs stay local; the calculator neither changes billing nor
+collects telemetry.

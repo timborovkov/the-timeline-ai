@@ -1,7 +1,7 @@
-import type { Redis } from 'ioredis';
-
 import { childLogger } from '#src/logger.js';
 import { getRedisConnection } from '#src/queue/connection.js';
+
+import type { Redis } from 'ioredis';
 
 const log = childLogger('shared:rate-limit');
 

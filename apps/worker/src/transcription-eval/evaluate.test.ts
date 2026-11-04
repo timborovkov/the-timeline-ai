@@ -13,6 +13,7 @@ import type { LoadedTranscriptionEvalManifest } from '#src/transcription-eval/ma
 
 import { runTranscriptionQualityEval } from '#src/transcription-eval/evaluate.js';
 import { buildValidTranscriptionEvalManifest } from '#src/transcription-eval/test-fixtures.js';
+
 /**
  * The provider-backed bake-off must spend only on ZDR-listed candidates, enforce
  * every quality/latency/error gate against the retained baseline, and rank passing

@@ -2,16 +2,16 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
 
 import { z } from 'zod';
 
+import { createPolarIdentityApi, PolarIdentityError } from '#src/billing/polar-identity-api.js';
+import { TIMELINE_METERED_EVENT_NAMES } from '#src/billing/polar-setup.js';
+import { getEnv } from '#src/env.js';
+
 import type {
   BillingProvider,
   CreateCheckoutInput,
   PolarUsageEvent,
   UpdateSubscriptionInput,
 } from '#src/billing/provider.js';
-
-import { createPolarIdentityApi, PolarIdentityError } from '#src/billing/polar-identity-api.js';
-import { TIMELINE_METERED_EVENT_NAMES } from '#src/billing/polar-setup.js';
-import { getEnv } from '#src/env.js';
 
 export type PolarServer = 'sandbox' | 'production';
 

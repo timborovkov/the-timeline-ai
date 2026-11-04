@@ -163,7 +163,7 @@ function DocumentSearchResults({
                 className="block border-b border-border py-3 text-sm last:border-b-0 hover:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
               >
                 <span className="font-medium">{hit.documentDisplayTitle}</span>
-                <p className="mt-1 text-[11px] text-fg-dim">
+                <p className="mt-1 text-xs text-fg-dim">
                   v{String(hit.version)} · {hit.fileKind}
                   {hit.pageNumber !== null ? ` · page ${String(hit.pageNumber)}` : ''}
                 </p>

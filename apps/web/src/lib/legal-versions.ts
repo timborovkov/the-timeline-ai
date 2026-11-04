@@ -3,6 +3,7 @@ export {
   PRIVACY_EFFECTIVE_DATE,
   PRIVACY_VERSION,
   TERMS_VERSION,
+  isCurrentPrivacyVersion,
 } from '@timeline/shared/legal-versions';
 
 export const LEGAL_PROVIDER = 'Nyxone OÜ';
@@ -13,5 +14,5 @@ export const LEGAL_ADDRESS =
 
 export { getSupportEmail as getLegalContactEmail } from '@/lib/support-email';
 
-export const COOKIES_REVIEW_DATE = '24 October 2026';
-export const TRUST_REVIEW_DATE = '21 August 2026';
+export const COOKIES_REVIEW_DATE = '3 November 2026';
+export const TRUST_REVIEW_DATE = '3 November 2026';

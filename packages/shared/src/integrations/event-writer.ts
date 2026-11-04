@@ -17,8 +17,6 @@ import {
 } from '@timeline/db';
 import { and, asc, eq, inArray, isNotNull, sql } from 'drizzle-orm';
 
-import type { IntegrationEvent, IntegrationRow, ObjectMapping } from '#src/integrations/types.js';
-
 import {
   reconcileArtifactEvidence,
   type ArtifactAnchorInput,
@@ -47,6 +45,7 @@ import {
 import { compactObjectMap, resolveSignalClassForEvent } from '#src/integrations/signal-class.js';
 import { childLogger } from '#src/logger.js';
 import { invalidateObjectSummariesForRawEvent } from '#src/objects/summaries.js';
+import { assertActivePrincipal } from '#src/platform-admin/runtime.js';
 import {
   enqueueDocumentExtractJob,
   enqueueEmbedJob,
@@ -72,6 +71,8 @@ import {
   sourcePayloadRefFromMetadata,
 } from '#src/reconciliation/source-snapshot.js';
 import { withTeam } from '#src/team-scope.js';
+
+import type { IntegrationEvent, IntegrationRow, ObjectMapping } from '#src/integrations/types.js';
 
 const log = childLogger('integrations:event-writer');
 
@@ -196,6 +197,7 @@ export async function writeIntegrationEvents(deps: {
 
   const visibility = deps.integration.visibilityDefault;
   const teamId = deps.integration.teamId;
+  await assertActivePrincipal(deps.db, teamId, deps.integration.connectedByUserId ?? undefined);
   // Attribute integration rows to the user who connected the integration.
   // Private visibility matches either author_user_id or visibility_owner_user_id;
   // using the connector owner for both preserves old private-row semantics and

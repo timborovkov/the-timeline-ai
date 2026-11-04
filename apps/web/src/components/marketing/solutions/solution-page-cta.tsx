@@ -31,7 +31,7 @@ export function SolutionPageCta({ cta }: { cta: SolutionContent['cta'] }) {
             <ArrowRight aria-hidden="true" className="size-4" />
           </Link>
           <p className="max-w-xs text-sm leading-6 text-fg-muted lg:text-right">
-            Free to start · no card required ·{' '}
+            Free for up to 3 members · no card required ·{' '}
             <Link
               href="/pricing"
               className={`${focusLink} underline decoration-border-strong underline-offset-4 hover:decoration-fg`}

@@ -45,8 +45,8 @@ describe('Integration audit route states', () => {
     expect(loadingState.className).toContain('motion-reduce:[&_.animate-pulse]:animate-none');
     expect(screen.getAllByRole('heading', { level: 1, name: 'Integration audit' })).toHaveLength(1);
     expect(screen.getByRole('link', { name: 'Team' }).getAttribute('href')).toBe('/app/team');
-    expect(screen.getByRole('link', { name: 'Integrations' }).getAttribute('href')).toBe(
-      '/app/team/integrations',
+    expect(screen.getByRole('link', { name: 'Connections' }).getAttribute('href')).toBe(
+      '/app/connections',
     );
 
     const visualPlaceholder = loadingState.querySelector('[inert][aria-hidden="true"]');
@@ -67,8 +67,8 @@ describe('Integration audit route states', () => {
 
     expect(screen.getAllByRole('heading', { level: 1, name: 'Integration audit' })).toHaveLength(1);
     expect(screen.getByRole('link', { name: 'Team' }).getAttribute('href')).toBe('/app/team');
-    expect(screen.getByRole('link', { name: 'Integrations' }).getAttribute('href')).toBe(
-      '/app/team/integrations',
+    expect(screen.getByRole('link', { name: 'Connections' }).getAttribute('href')).toBe(
+      '/app/connections',
     );
     expect(
       screen.getByRole('heading', { level: 2, name: 'Unable to load integration audit' }),

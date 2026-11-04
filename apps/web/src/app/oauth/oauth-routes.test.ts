@@ -22,7 +22,7 @@ await vi.mock(
     }
     return {
       McpOAuthError,
-      MCP_OAUTH_SCOPES: ['read', 'agent:ask'],
+      MCP_OAUTH_SCOPES: ['read', 'capture', 'agent:ask'],
       registerMcpOAuthClient: fakes.register,
       exchangeMcpAuthorizationCode: fakes.exchange,
       rotateMcpRefreshToken: fakes.rotate,

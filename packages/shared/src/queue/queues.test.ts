@@ -76,6 +76,9 @@ class FakeQueue {
     }
     return Promise.resolve();
   });
+  addBulk = vi.fn(async (jobs: AddCall[]) => {
+    for (const job of jobs) await this.add(job.name, job.data);
+  });
   upsertJobScheduler = vi.fn((id: string, repeatOpts: unknown, template?: unknown) => {
     this.schedulerCalls.push({ id, repeatOpts, template });
     return Promise.resolve();

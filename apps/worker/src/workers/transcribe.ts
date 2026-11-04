@@ -22,6 +22,7 @@ import ffmpegPath from 'ffmpeg-static';
 
 import { withWorkerAiBilling, workerBillingJobOptions } from '#src/billing-context.js';
 import { captureWorkerException, captureWorkerJobFailure } from '#src/monitoring.js';
+import { guardWorkerProcessor } from '#src/platform-worker.js';
 
 const log = childLogger('worker:transcribe');
 
@@ -433,7 +434,7 @@ export async function markTranscribeFailureForTests(
 export function startTranscribeWorker(deps: TranscribeWorkerDeps): Worker<queue.TranscribeJobData> {
   const worker = new Worker<queue.TranscribeJobData>(
     queue.QUEUE_NAMES.transcribe,
-    async (job: Job<queue.TranscribeJobData>, token?: string) =>
+    guardWorkerProcessor(deps.db, async (job: Job<queue.TranscribeJobData>, token?: string) =>
       withWorkerAiBilling(
         deps.db,
         job.data.teamId,
@@ -447,6 +448,7 @@ export function startTranscribeWorker(deps: TranscribeWorkerDeps): Worker<queue.
           ),
         workerBillingJobOptions(job, token),
       ),
+    ),
     {
       connection: queue.getRedisConnection(),
       // Phase 3: one in-flight transcription per worker process. Bump once

@@ -848,7 +848,10 @@ describe('ObjectDetailClient', () => {
               {
                 label: 'Timing',
                 text: 'The latest confirmed meeting date is June 30.',
-                sourceRefs: [{ kind: 'fact', id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' }],
+                sourceRefs: [
+                  { kind: 'fact', id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' },
+                  { kind: 'timeline_event', id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' },
+                ],
               },
             ],
             openQuestions: [],
@@ -880,8 +883,98 @@ describe('ObjectDetailClient', () => {
     expect(html.indexOf('Summary')).toBeLessThan(html.indexOf('Evidence'));
     expect(html).toContain('DFK has a confirmed June 30 pilot discussion.');
     expect(html).toContain('Timing');
+    expect(html.match(/aria-label="Citation 1"/g)?.length).toBe(2);
+    expect(html).toContain('aria-label="Citation 2"');
+    expect(html).not.toContain('>fact<');
+    expect(html).not.toContain('>event<');
     expect(html).not.toContain('Generate summary');
     expect(html).not.toContain('Not enough object memory yet.');
+  });
+
+  it('numbers object-summary citations in rendered first-appearance order', () => {
+    const html = renderObjectDetail({
+      detail: {
+        ...detail,
+        summary: {
+          status: 'ready',
+          summary: {
+            overview: 'Pilot is scheduled for June.',
+            overviewSourceRefs: [{ kind: 'fact', id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' }],
+            currentState: [
+              {
+                label: 'Timing',
+                text: 'The latest confirmed meeting date is June 30.',
+                sourceRefs: [
+                  { kind: 'timeline_event', id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' },
+                ],
+              },
+            ],
+            openQuestions: [
+              {
+                label: 'Kickoff owner',
+                text: 'Who confirms kickoff attendance?',
+                sourceRefs: [
+                  { kind: 'timeline_event', id: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd' },
+                ],
+              },
+            ],
+            conflicts: [
+              {
+                label: 'Field-mapping scope',
+                text: 'Sources disagree on whether field-mapping is in scope.',
+                sourceRefs: [{ kind: 'fact', id: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc' }],
+              },
+            ],
+          },
+          plainText: 'Pilot is scheduled for June.',
+          sourceRefs: [
+            { kind: 'fact', id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' },
+            { kind: 'timeline_event', id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' },
+            { kind: 'fact', id: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc' },
+            { kind: 'timeline_event', id: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd' },
+          ],
+          sourceCounts: {
+            fields: 0,
+            facts: 2,
+            events: 2,
+            notes: 0,
+            relationships: 0,
+            tasks: 0,
+            changes: 0,
+          },
+          generatedAt: new Date('2026-06-16T10:00:00.000Z'),
+          staleAt: null,
+          lastAttemptedAt: new Date('2026-06-16T10:00:00.000Z'),
+          lastErrorCode: null,
+          canGenerate: true,
+          cannotGenerateReason: null,
+        },
+      },
+      userId: 'user-1',
+      suggestions: [],
+    });
+
+    const overviewAt = html.indexOf('Pilot is scheduled for June.');
+    const timingAt = html.indexOf('The latest confirmed meeting date is June 30.');
+    const conflictAt = html.indexOf('Sources disagree on whether field-mapping is in scope.');
+    const questionAt = html.indexOf('Who confirms kickoff attendance?');
+    const citation1 = html.indexOf('aria-label="Citation 1"');
+    const citation2 = html.indexOf('aria-label="Citation 2"');
+    const citation3 = html.indexOf('aria-label="Citation 3"');
+    const citation4 = html.indexOf('aria-label="Citation 4"');
+
+    expect(overviewAt).toBeGreaterThan(-1);
+    expect(timingAt).toBeGreaterThan(overviewAt);
+    expect(conflictAt).toBeGreaterThan(timingAt);
+    expect(questionAt).toBeGreaterThan(conflictAt);
+    expect(citation1).toBeGreaterThan(overviewAt);
+    expect(citation1).toBeLessThan(timingAt);
+    expect(citation2).toBeGreaterThan(timingAt);
+    expect(citation2).toBeLessThan(conflictAt);
+    expect(citation3).toBeGreaterThan(conflictAt);
+    expect(citation3).toBeLessThan(questionAt);
+    expect(citation4).toBeGreaterThan(questionAt);
+    expect(html).not.toContain('aria-label="Citation 5"');
   });
 
   it('renders accepted source provenance for generated tasks', () => {

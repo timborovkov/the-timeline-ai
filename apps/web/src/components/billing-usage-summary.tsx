@@ -1,6 +1,7 @@
 import {
   FREE_ALLOWANCES,
   formatEuroFromCents,
+  formatStorageGb,
   type BillingMeterId,
 } from '@timeline/shared/billing/catalog';
 
@@ -27,9 +28,10 @@ const ALLOWANCE_METERS = [
 ] as const satisfies readonly BillingMeterId[];
 
 function AllowanceBar({ used, allowance }: { used: number; allowance: number }) {
-  const scale = Math.max(used, allowance, 1);
-  const included = (Math.min(Math.max(used, 0), allowance) / scale) * 100;
-  const over = (Math.max(0, used - allowance) / scale) * 100;
+  const scale = Math.max(used, allowance);
+  const safeScale = scale > 0 ? scale : 1;
+  const included = (Math.min(Math.max(used, 0), allowance) / safeScale) * 100;
+  const over = (Math.max(0, used - allowance) / safeScale) * 100;
   return (
     <div className="mt-1.5 flex h-1 w-full overflow-hidden rounded-sm bg-border" aria-hidden="true">
       <div className="h-full bg-fg-muted" style={{ width: `${included}%` }} />
@@ -39,10 +41,7 @@ function AllowanceBar({ used, allowance }: { used: number; allowance: number }) 
 }
 
 function formatCapacityNumber(kind: PlanCapacityKind, value: number): string {
-  if (kind === 'storage_gb') {
-    const rounded = value >= 10 ? value.toFixed(0) : value.toFixed(2);
-    return `${Number(rounded).toLocaleString('en-IE')} GB`;
-  }
+  if (kind === 'storage_gb') return formatStorageGb(value);
   return Math.round(value).toLocaleString('en-IE');
 }
 
@@ -78,10 +77,7 @@ function allowanceLimit(meter: BillingMeterId): number | null {
 function amountLabel(meter: BillingMeterId, nativeUnits: number): string {
   if (meter === 'ai') return formatEuroFromCents(nativeUnits);
   if (meter === 'recall_minutes') return `${nativeUnits.toLocaleString('en-IE')} min`;
-  if (meter === 'storage_gb_month') {
-    const rounded = nativeUnits >= 10 ? nativeUnits.toFixed(0) : nativeUnits.toFixed(2);
-    return `${Number(rounded).toLocaleString('en-IE')} GB`;
-  }
+  if (meter === 'storage_gb_month') return formatStorageGb(nativeUnits);
   return nativeUnits.toLocaleString('en-IE');
 }
 
@@ -131,11 +127,15 @@ export function BillingUsageSummary({
   additionalMemberCents?: number | null;
   className?: string;
 }) {
+  const liveStorage = capacityUsage.find((item) => item.kind === 'storage_gb');
   const rows = (Object.keys(METER_LABELS) as BillingMeterId[])
     .map((meter) => {
       const row = meters[meter];
       const balance = allowanceBalances?.find((item) => item.meter === meter);
-      const nativeUnits = balance?.used ?? row?.nativeUnits ?? 0;
+      const nativeUnits =
+        meter === 'storage_gb_month' && liveStorage
+          ? liveStorage.used
+          : (balance?.used ?? row?.nativeUnits ?? 0);
       const customerChargeCents =
         row?.capEligibleChargeCents ?? (planId === 'free' ? 0 : (row?.customerChargeCents ?? 0));
       const active = nativeUnits > 0 || customerChargeCents > 0;

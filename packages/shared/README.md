@@ -63,6 +63,15 @@ const { object } = await llm.chatStructured({
 });
 ```
 
+Semantic retrieval accepts an optional `operation` context with an `AbortSignal`
+and absolute `deadlineMs`. Reuse the context across sequential reads, or wrap a
+server-side retrieval in `withQdrantOperation` from `@timeline/shared/qdrant`.
+The default Qdrant budget starts at the first network request and lasts 30 seconds.
+The same export provides `QdrantUnavailableError`; handle it as unavailable
+evidence, never as an empty result set. The transport retries reads centrally,
+while mutations execute once after an availability check. See the
+[Serverless runbook](../../docs/railway.html#qdrant-serverless).
+
 Workspace commands:
 
 ```bash

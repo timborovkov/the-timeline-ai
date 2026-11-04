@@ -50,7 +50,7 @@ export default async function PersonalConnectionsPage({
   return (
     <div className="space-y-4">
       <Breadcrumb
-        items={[{ label: 'Connections', href: '/app/sources' }, { label: 'Provider accounts' }]}
+        items={[{ label: 'Connections', href: '/app/connections' }, { label: 'Provider accounts' }]}
       />
 
       <PageHeader
@@ -66,7 +66,7 @@ export default async function PersonalConnectionsPage({
       />
 
       <div className="flex flex-wrap items-center gap-x-1 gap-y-1 border-y border-border py-1.5">
-        <ActionChip href="/app/sources" label="View connections" />
+        <ActionChip href="/app/connections" label="View connections" />
         <ActionChip href="/app/me/mcp-servers" label="Manage personal MCP" />
       </div>
 

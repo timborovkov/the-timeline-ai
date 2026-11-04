@@ -235,7 +235,29 @@ describe('onboarding checklist scope', () => {
     `);
 
     expect(completedKeys(await scope().getChecklistState())).toContain('first_integration');
+    expect(completedKeys(await scope().getChecklistState())).toContain('connect_agent');
     expect((await scope().getChecklistState()).connectionCounts.outboundMcpKeys).toBe(1);
+  });
+
+  it('infers connect_agent from an OAuth grant', async () => {
+    await pg.exec(`
+      INSERT INTO mcp_outbound_oauth_clients (client_id, client_name, redirect_uris)
+      VALUES ('https://claude.ai/mcp', 'Claude', '["https://claude.ai/callback"]'::jsonb);
+      INSERT INTO mcp_outbound_oauth_grants
+        (client_id, team_id, user_id, membership_authorization_epoch, scopes, resource)
+      VALUES (
+        'https://claude.ai/mcp',
+        '${TEAM_ID}',
+        '${OWNER_ID}',
+        gen_random_uuid(),
+        '["read"]'::jsonb,
+        'https://thetimeline.cc/api/mcp/server'
+      );
+    `);
+
+    const state = await scope().getChecklistState();
+    expect(completedKeys(state)).toContain('connect_agent');
+    expect(state.connectionCounts.oauthGrants).toBe(1);
   });
 });
 

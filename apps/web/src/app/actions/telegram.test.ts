@@ -5,8 +5,9 @@ const fakes = vi.hoisted(() => ({
   auth: vi.fn(),
   resolveActiveTeam: vi.fn(),
   requireMembership: vi.fn(),
-  dbInsert: vi.fn(),
-  dbDelete: vi.fn(),
+  createLinkToken: vi.fn(),
+  revokeLinkToken: vi.fn(),
+  unbindChat: vi.fn(),
   randomToken: vi.fn(),
   safeMarkOnboardingStep: vi.fn(),
   trackProductEventBestEffort: vi.fn(),
@@ -26,12 +27,7 @@ await vi.mock(
 );
 await vi.mock(
   import.meta.resolve('@/lib/db'),
-  () => ({
-    db: {
-      insert: fakes.dbInsert,
-      delete: fakes.dbDelete,
-    },
-  }),
+  () => ({ db: {} }),
   () => import('@/lib/db'),
 );
 await vi.mock(
@@ -73,6 +69,11 @@ await vi.mock(
   () => ({
     withTeam: () => ({
       requireMembership: fakes.requireMembership,
+      telegram: {
+        createLinkToken: fakes.createLinkToken,
+        revokeLinkToken: fakes.revokeLinkToken,
+        unbindChat: fakes.unbindChat,
+      },
     }),
   }),
   () => import('@timeline/shared/team-scope'),
@@ -96,26 +97,9 @@ function form(values: Record<string, string>): FormData {
   return fd;
 }
 
-function okInsertChain(records: unknown[]): void {
-  fakes.dbInsert.mockReturnValue({
-    values: vi.fn((value: unknown) => {
-      records.push(value);
-      return Promise.resolve();
-    }),
-  });
-}
-
-function okDeleteChain(): void {
-  fakes.dbDelete.mockReturnValue({
-    where: vi.fn(() => Promise.resolve()),
-  });
-}
-
 interface LinkTokenInsert {
   token: string;
-  teamId: string;
   scope: 'personal' | 'group';
-  issuedByUserId: string;
   targetTgUsername: string;
   expiresAt: Date;
 }
@@ -139,8 +123,11 @@ beforeEach(() => {
   fakes.requireMembership.mockResolvedValue('admin');
   fakes.randomToken.mockReturnValue('telegram-link-token');
   fakes.safeMarkOnboardingStep.mockResolvedValue(false);
-  okInsertChain([]);
-  okDeleteChain();
+  fakes.createLinkToken.mockImplementation((value: unknown) => {
+    return Promise.resolve(value);
+  });
+  fakes.revokeLinkToken.mockResolvedValue(undefined);
+  fakes.unbindChat.mockResolvedValue(undefined);
 });
 
 describe('Telegram server actions', () => {
@@ -158,13 +145,11 @@ describe('Telegram server actions', () => {
     const invalidUsername = await generatePersonalLinkTokenAction({}, form({ tgUsername: '1bad' }));
     expect(invalidUsername.fieldError).toContain('Enter your Telegram @username');
 
-    expect(fakes.dbInsert).not.toHaveBeenCalled();
+    expect(fakes.createLinkToken).not.toHaveBeenCalled();
     expect(fakes.revalidatePath).not.toHaveBeenCalled();
   });
 
   it('creates a personal link token for members and completes onboarding once', async () => {
-    const inserts: unknown[] = [];
-    okInsertChain(inserts);
     fakes.safeMarkOnboardingStep.mockResolvedValueOnce(true);
 
     const result = await generatePersonalLinkTokenAction({}, form({ tgUsername: 'Timeline_User' }));
@@ -175,13 +160,11 @@ describe('Telegram server actions', () => {
     });
     expect(typeof result.expiresAt).toBe('string');
     expect(fakes.requireMembership).toHaveBeenCalledWith('member');
-    expect(inserts).toHaveLength(1);
-    const insert = linkTokenInsert(inserts[0]);
+    expect(fakes.createLinkToken).toHaveBeenCalledTimes(1);
+    const insert = linkTokenInsert(fakes.createLinkToken.mock.calls[0]?.[0]);
     expect(insert).toMatchObject({
       token: 'telegram-link-token',
-      teamId: TEAM_ID,
       scope: 'personal',
-      issuedByUserId: USER_ID,
       targetTgUsername: 'timeline_user',
     });
     expect(insert.expiresAt).toBeInstanceOf(Date);
@@ -197,6 +180,8 @@ describe('Telegram server actions', () => {
         source: 'automatic',
       },
     );
+    expect(fakes.revalidatePath).toHaveBeenCalledWith('/app/connections', 'layout');
+    expect(fakes.revalidatePath).toHaveBeenCalledWith('/app/sources');
     expect(fakes.revalidatePath).toHaveBeenCalledWith('/app/team/telegram');
     expect(fakes.revalidatePath).toHaveBeenCalledWith('/app/timeline');
   });
@@ -214,19 +199,16 @@ describe('Telegram server actions', () => {
       surface: 'server_action',
       operation: 'telegram_group_link_token_membership',
     });
-    expect(fakes.dbInsert).not.toHaveBeenCalled();
+    expect(fakes.createLinkToken).not.toHaveBeenCalled();
     expect(fakes.revalidatePath).not.toHaveBeenCalled();
   });
 
   it('creates group link tokens for admins', async () => {
-    const inserts: unknown[] = [];
-    okInsertChain(inserts);
-
     const result = await generateGroupLinkTokenAction({}, form({ tgUsername: '@TeamGroup' }));
 
     expect(result).toMatchObject({ token: 'telegram-link-token', scope: 'group' });
     expect(fakes.requireMembership).toHaveBeenCalledWith('admin');
-    expect(inserts[0]).toMatchObject({
+    expect(fakes.createLinkToken.mock.calls[0]?.[0]).toMatchObject({
       scope: 'group',
       targetTgUsername: 'teamgroup',
     });
@@ -238,8 +220,10 @@ describe('Telegram server actions', () => {
 
     expect(fakes.requireMembership).toHaveBeenNthCalledWith(1, 'admin');
     expect(fakes.requireMembership).toHaveBeenNthCalledWith(2, 'admin');
-    expect(fakes.dbDelete).toHaveBeenCalledTimes(2);
-    expect(fakes.revalidatePath).toHaveBeenCalledTimes(2);
+    expect(fakes.revokeLinkToken).toHaveBeenCalledWith(TOKEN_ID);
+    expect(fakes.unbindChat).toHaveBeenCalledWith(CHAT_BINDING_ID);
+    expect(fakes.revalidatePath).toHaveBeenCalledWith('/app/connections', 'layout');
+    expect(fakes.revalidatePath).toHaveBeenCalledWith('/app/sources');
     expect(fakes.revalidatePath).toHaveBeenCalledWith('/app/team/telegram');
   });
 
@@ -259,7 +243,8 @@ describe('Telegram server actions', () => {
       surface: 'server_action',
       operation: 'unbind_chat_auth',
     });
-    expect(fakes.dbDelete).not.toHaveBeenCalled();
+    expect(fakes.revokeLinkToken).not.toHaveBeenCalled();
+    expect(fakes.unbindChat).not.toHaveBeenCalled();
     expect(fakes.revalidatePath).not.toHaveBeenCalled();
   });
 });

@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useActionState } from 'react';
+import { useActionState, useReducer } from 'react';
 import { useFormStatus } from 'react-dom';
 
 import { signInAction, signUpAction, type SignInState, type SignUpState } from '@/app/actions/auth';
@@ -30,7 +30,12 @@ export function SignInForm({ callbackUrl }: { callbackUrl?: string }) {
         <Input id="email" name="email" type="email" autoComplete="email" required />
       </div>
       <div className="space-y-2">
-        <Label htmlFor="password">Password</Label>
+        <div className="flex items-center justify-between gap-3">
+          <Label htmlFor="password">Password</Label>
+          <Link href="/forgot-password" className="text-sm text-primary hover:underline">
+            Forgot password?
+          </Link>
+        </div>
         <Input
           id="password"
           name="password"
@@ -50,17 +55,26 @@ export function SignInForm({ callbackUrl }: { callbackUrl?: string }) {
 }
 
 export function SignUpForm({
+  callbackUrl,
   inviteToken,
   legalPublicationReady = true,
   requiresTurnstile,
   turnstileSiteKey,
 }: {
+  callbackUrl?: string;
   inviteToken?: string;
   legalPublicationReady?: boolean;
   requiresTurnstile: boolean;
   turnstileSiteKey?: string;
 }) {
   const [state, action] = useActionState<SignUpState, FormData>(signUpAction, {});
+  const [identity, updateIdentity] = useReducer(
+    (
+      current: { name: string; email: string },
+      update: Partial<{ name: string; email: string }>,
+    ) => ({ ...current, ...update }),
+    { name: '', email: '' },
+  );
   if (!legalPublicationReady) {
     return (
       <p role="status" className="text-sm leading-6 text-muted-foreground">
@@ -71,16 +85,36 @@ export function SignUpForm({
   }
   return (
     <form action={action} className="space-y-4">
+      {callbackUrl ? <input type="hidden" name="callbackUrl" value={callbackUrl} /> : null}
       {inviteToken ? <input type="hidden" name="inviteToken" value={inviteToken} /> : null}
       <input type="hidden" name="termsVersion" value={TERMS_VERSION} />
       <input type="hidden" name="privacyVersion" value={PRIVACY_VERSION} />
       <div className="space-y-2">
         <Label htmlFor="name">Name</Label>
-        <Input id="name" name="name" autoComplete="name" required />
+        <Input
+          id="name"
+          name="name"
+          autoComplete="name"
+          value={identity.name}
+          onChange={(event) => {
+            updateIdentity({ name: event.target.value });
+          }}
+          required
+        />
       </div>
       <div className="space-y-2">
         <Label htmlFor="email">Email</Label>
-        <Input id="email" name="email" type="email" autoComplete="email" required />
+        <Input
+          id="email"
+          name="email"
+          type="email"
+          autoComplete="email"
+          value={identity.email}
+          onChange={(event) => {
+            updateIdentity({ email: event.target.value });
+          }}
+          required
+        />
       </div>
       <div className="space-y-2">
         <Label htmlFor="password">Password</Label>
@@ -90,8 +124,12 @@ export function SignUpForm({
           type="password"
           autoComplete="new-password"
           minLength={8}
+          aria-describedby="signup-password-hint"
           required
         />
+        <p id="signup-password-hint" className="text-xs text-muted-foreground">
+          Use at least 8 characters. A longer, unique password is safer.
+        </p>
       </div>
       <label className="flex items-start gap-3 text-sm leading-6 text-muted-foreground">
         <input

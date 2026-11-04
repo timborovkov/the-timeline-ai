@@ -531,6 +531,30 @@
       "development": "./src/objects/identity-facets.ts",
       "import": "./dist/objects/identity-facets.js",
       "default": "./dist/objects/identity-facets.js"
+    },
+    "./platform-admin": {
+      "types": "./src/platform-admin/index.ts",
+      "development": "./src/platform-admin/index.ts",
+      "import": "./dist/platform-admin/index.js",
+      "default": "./dist/platform-admin/index.js"
+    },
+    "./platform-admin/runtime": {
+      "types": "./src/platform-admin/runtime.ts",
+      "development": "./src/platform-admin/runtime.ts",
+      "import": "./dist/platform-admin/runtime.js",
+      "default": "./dist/platform-admin/runtime.js"
+    },
+    "./platform-admin/retention": {
+      "types": "./src/platform-admin/retention.ts",
+      "development": "./src/platform-admin/retention.ts",
+      "import": "./dist/platform-admin/retention.js",
+      "default": "./dist/platform-admin/retention.js"
+    },
+    "./qdrant": {
+      "types": "./src/qdrant/index.ts",
+      "development": "./src/qdrant/index.ts",
+      "import": "./dist/qdrant/index.js",
+      "default": "./dist/qdrant/index.js"
     }
   },
   "main": "./dist/index.js",

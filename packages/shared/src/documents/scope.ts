@@ -21,6 +21,7 @@ import { documentPresentation } from '#src/documents/presentation.js';
 import { embed as defaultEmbed, type EmbedResult } from '#src/llm/embed.js';
 import { childLogger } from '#src/logger.js';
 import { decodeCursor, pageWindow } from '#src/pagination.js';
+import { operatorContext, recordScopedReadAudit } from '#src/platform-admin/runtime.js';
 import { getQdrantClient, type SearchHit, type SearchOpts } from '#src/qdrant/client.js';
 import { normalizeRawEventsToEvidence } from '#src/reconciliation/normalization.js';
 import {
@@ -31,6 +32,8 @@ import { stableSha256Digest } from '#src/reconciliation/stable-digest.js';
 import { getDocumentsBucket, getS3Client } from '#src/s3/client.js';
 import { deleteObject } from '#src/s3/objects.js';
 import { rawEventVisibleToUser, validateVisibilityUserIds } from '#src/visibility.js';
+
+import type { QdrantOperationContext } from '#src/qdrant/operation.js';
 
 // drizzle's transaction callback gives a PgTransaction that has the same
 // fluent methods we use here (`insert`, `select`, `update`) but is not
@@ -62,6 +65,8 @@ type RepresentationKind = 'source_text' | 'transcript' | 'visual_description' | 
 const log = childLogger('documents:scope');
 const DOCUMENT_UPLOAD_SOURCE_SNAPSHOT_VERSION = 'document-upload-source-snapshot-2026-07';
 const DOCUMENT_LIFECYCLE_SOURCE_SNAPSHOT_VERSION = 'document-lifecycle-source-snapshot-2026-07';
+/** Qdrant `match.any` batches for name-scoped doc_chunk search. */
+const DOCUMENT_ID_SEARCH_BATCH = 100;
 
 export interface DocumentScopeDeps {
   db: Db;
@@ -242,9 +247,12 @@ export interface PromoteCapturedFileResult {
 }
 
 export interface SearchDocumentChunksInput {
+  operation?: QdrantOperationContext;
   query: string;
   documentId?: string;
   folderIds?: string[];
+  rootFolder?: boolean;
+  name?: string;
   fileKinds?: FileKind[];
   from?: Date;
   to?: Date;
@@ -278,6 +286,33 @@ export interface DocumentChunkSearchPage {
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function searchOptsForDocumentIds(base: SearchOpts, ids: string[]): SearchOpts {
+  if (ids.length === 1) {
+    const [documentId] = ids;
+    return documentId ? { ...base, documentId } : base;
+  }
+  return { ...base, documentIds: ids };
+}
+
+function mergeRankedSearchHits(pages: SearchHit[][], take: number): SearchHit[] {
+  const merged: SearchHit[] = [];
+  const seen = new Set<string>();
+  for (const page of pages) {
+    for (const hit of page) {
+      const chunkId = hit.payload.document_chunk_id;
+      const key = typeof chunkId === 'string' && chunkId.length > 0 ? chunkId : hit.id;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      merged.push(hit);
+    }
+  }
+  merged.sort((left, right) => {
+    if (right.score !== left.score) return right.score - left.score;
+    return left.id.localeCompare(right.id);
+  });
+  return merged.slice(0, take);
+}
 
 export function createDocumentScope(deps: DocumentScopeDeps) {
   const { db, teamId, userId, ensureMember, requireTeamMember } = deps;
@@ -837,6 +872,32 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
     );
   }
 
+  function escapeSqlLike(value: string): string {
+    return value.replace(/[\\%_]/g, (match) => `\\${match}`);
+  }
+
+  async function matchingDocumentIds(input: SearchDocumentChunksInput): Promise<string[]> {
+    const name = input.name?.trim();
+    if (!name) return [];
+    const needle = `%${escapeSqlLike(name.toLowerCase())}%`;
+    const fileKinds = input.fileKinds ?? ['document'];
+    const conditions: SQL[] = [
+      eq(documents.teamId, teamId),
+      isNull(documents.deletedAt),
+      inArray(documents.fileKind, fileKinds),
+      sql`lower(${documents.name}) LIKE ${needle} ESCAPE '\\'`,
+    ];
+    if (documentVisibility) conditions.push(documentVisibility);
+    if (input.rootFolder) conditions.push(isNull(documents.folderId));
+    else if (input.folderIds?.length) conditions.push(inArray(documents.folderId, input.folderIds));
+    if (input.documentId) conditions.push(eq(documents.id, input.documentId));
+    const rows = await db
+      .select({ id: documents.id })
+      .from(documents)
+      .where(and(...conditions));
+    return rows.map((row) => row.id);
+  }
+
   async function searchDocumentChunksPage(
     input: SearchDocumentChunksInput,
   ): Promise<DocumentChunkSearchPage> {
@@ -849,18 +910,51 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
         return client.search(tId, uId, vector, opts);
       });
 
+    async function searchNamedDocumentChunks(
+      ids: string[],
+      vector: number[],
+      opts: SearchOpts,
+    ): Promise<SearchHit[]> {
+      const take = opts.limit ?? 12;
+      if (ids.length <= DOCUMENT_ID_SEARCH_BATCH) {
+        return searchFn(teamId, userId, vector, searchOptsForDocumentIds(opts, ids));
+      }
+      const batches: string[][] = [];
+      for (let start = 0; start < ids.length; start += DOCUMENT_ID_SEARCH_BATCH) {
+        batches.push(ids.slice(start, start + DOCUMENT_ID_SEARCH_BATCH));
+      }
+      const pages = await Promise.all(
+        batches.map((batch) =>
+          searchFn(teamId, userId, vector, searchOptsForDocumentIds(opts, batch)),
+        ),
+      );
+      return mergeRankedSearchHits(pages, take);
+    }
+
     const limit = input.limit ?? 12;
     const offset = input.offset ?? 0;
+    const namedIds = input.name ? await matchingDocumentIds(input) : null;
+    if (namedIds?.length === 0) return { items: [], nextOffset: null };
     const { vector } = await withSearchEmbeddingBilling(() => embedFn({ text: input.query }));
     const searchOpts: SearchOpts = {
+      operation: input.operation ?? {},
       limit: offset + limit + 1,
       sourceKind: 'doc_chunk',
     };
-    if (input.documentId) searchOpts.documentId = input.documentId;
-    if (input.folderIds) searchOpts.folderIds = input.folderIds;
+    if (input.from) searchOpts.from = input.from;
+    if (input.to) searchOpts.to = input.to;
+    if (input.rootFolder) searchOpts.rootFolder = true;
+    else if (input.folderIds) searchOpts.folderIds = input.folderIds;
     searchOpts.fileKinds = input.fileKinds ?? ['document'];
 
-    const hits = await searchFn(teamId, userId, vector, searchOpts);
+    const hits = namedIds
+      ? await searchNamedDocumentChunks(namedIds, vector, searchOpts)
+      : await searchFn(
+          teamId,
+          userId,
+          vector,
+          input.documentId ? { ...searchOpts, documentId: input.documentId } : searchOpts,
+        );
     if (hits.length === 0) return { items: [], nextOffset: null };
     const uncappedNextOffset = offset + limit;
     const nextOffset =
@@ -1209,7 +1303,7 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
       await ensureMember();
       const document = await getDocumentRaw(id);
       if (document && document.visibility !== 'team' && options.auditDetailRead !== false) {
-        await db.insert(auditLog).values({
+        await recordScopedReadAudit(db, {
           teamId,
           actorUserId: userId,
           action: 'document.detail_read',
@@ -1497,6 +1591,7 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
       action: 'upload' | 'new_version';
     }> {
       await ensureMember();
+      const operator = await operatorContext();
       const peekedRows = await db
         .select()
         .from(documentVersions)
@@ -1563,15 +1658,18 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
             folderId: document.folderId,
             visibility: document.visibility,
             visibilityUserIds: document.visibilityUserIds,
-            sourceMetadata: documentUploadSourceMetadata({
-              action,
-              document,
-              version,
-              byteSize: input.byteSize,
-              contentType: input.contentType,
-              checksumSha256: input.checksumSha256,
-              sourceMetadata: input.sourceMetadata,
-            }),
+            sourceMetadata: {
+              ...documentUploadSourceMetadata({
+                action,
+                document,
+                version,
+                byteSize: input.byteSize,
+                contentType: input.contentType,
+                checksumSha256: input.checksumSha256,
+                sourceMetadata: input.sourceMetadata,
+              }),
+              platformOperatorSessionId: operator?.sessionId ?? null,
+            },
           });
 
           const vUpdated = await tx

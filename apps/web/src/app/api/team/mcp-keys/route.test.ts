@@ -2,47 +2,21 @@ import { expect } from '@timeline/test-support';
 import { vi } from '@timeline/test-support';
 import { beforeEach, describe, it } from 'bun:test';
 /**
- * Route-handler tests for outbound Timeline-as-MCP-server bearer keys. The
- * shared key helper owns key generation; this route owns admin gates, active
- * key serialization, transaction/audit intent, and one-time plaintext return.
+ * Route-handler tests for outbound Timeline-as-MCP-server bearer keys. Key
+ * minting and audit writes live in withTeam.mcpOutbound; this route owns
+ * admin gates, serialization, and one-time plaintext return.
  */
 
 const fakes = vi.hoisted(() => ({
   auth: vi.fn(),
   resolveActiveTeam: vi.fn(),
   requireMembership: vi.fn(),
-  mintKey: vi.fn(),
+  listKeys: vi.fn(),
+  createKey: vi.fn(),
   loggerError: vi.fn(),
-  selectRows: [] as unknown[],
-  insertValues: [] as unknown[],
-  returningRow: null as Record<string, unknown> | null,
-  transactionError: null as Error | null,
   trackProductEventBestEffort: vi.fn(),
 }));
 
-await vi.mock(
-  import.meta.resolve('@timeline/db'),
-  () => ({
-    auditLog: { table: 'audit_log' },
-    mcpOutboundKeys: {
-      table: 'mcp_outbound_keys',
-      teamId: 'team_id',
-      revokedAt: 'revoked_at',
-      createdAt: 'created_at',
-    },
-  }),
-  () => import('@timeline/db'),
-);
-await vi.mock(
-  import.meta.resolve('drizzle-orm'),
-  () => ({
-    and: (...args: unknown[]) => ({ op: 'and', args }),
-    desc: (arg: unknown) => ({ op: 'desc', arg }),
-    eq: (...args: unknown[]) => ({ op: 'eq', args }),
-    isNull: (arg: unknown) => ({ op: 'isNull', arg }),
-  }),
-  () => import('drizzle-orm'),
-);
 await vi.mock(
   import.meta.resolve('@/lib/auth'),
   () => ({ auth: fakes.auth }),
@@ -70,46 +44,24 @@ await vi.mock(
 await vi.mock(
   import.meta.resolve('@timeline/shared/team-scope'),
   () => ({
-    withTeam: () => ({ requireMembership: fakes.requireMembership }),
+    withTeam: () => ({
+      requireMembership: fakes.requireMembership,
+      mcpOutbound: {
+        listKeys: fakes.listKeys,
+        createKey: fakes.createKey,
+      },
+    }),
   }),
   () => import('@timeline/shared/team-scope'),
 );
 await vi.mock(
-  import.meta.resolve('@timeline/shared/mcp-server'),
-  () => ({ mintKey: fakes.mintKey }),
-  () => import('@timeline/shared/mcp-server'),
+  import.meta.resolve('@/lib/sentry-report'),
+  () => ({ reportCaughtError: vi.fn() }),
+  () => import('@/lib/sentry-report'),
 );
 await vi.mock(
   import.meta.resolve('@/lib/db'),
-  () => ({
-    db: {
-      select: () => ({
-        from: () => ({
-          where: () => ({
-            orderBy: vi.fn().mockImplementation(() => Promise.resolve(fakes.selectRows)),
-          }),
-        }),
-      }),
-      transaction: vi
-        .fn()
-        .mockImplementation(async (callback: (tx: unknown) => Promise<unknown>) => {
-          if (fakes.transactionError) throw fakes.transactionError;
-          const tx = {
-            insert: (table: unknown) => ({
-              values: (value: unknown) => {
-                fakes.insertValues.push({ table, value });
-                return {
-                  returning: vi
-                    .fn()
-                    .mockResolvedValue(fakes.returningRow ? [fakes.returningRow] : []),
-                };
-              },
-            }),
-          };
-          return callback(tx);
-        }),
-    },
-  }),
+  () => ({ db: {} }),
   () => import('@/lib/db'),
 );
 
@@ -130,32 +82,25 @@ beforeEach(() => {
   fakes.auth.mockResolvedValue({ user: { id: USER_ID } });
   fakes.resolveActiveTeam.mockResolvedValue({ active: { teamId: TEAM_ID } });
   fakes.requireMembership.mockResolvedValue('admin');
-  fakes.mintKey.mockReturnValue({
-    plaintext: 'tla_plaintext_once',
-    hash: 'hashed',
-    prefix: 'tla_pref',
-  });
-  fakes.selectRows = [
+  fakes.listKeys.mockResolvedValue([
     {
       id: 'key-1',
       name: 'Claude',
-      keyPrefix: 'tla_pref',
+      prefix: 'tla_pref',
       scopes: ['tools:list'],
       lastUsedAt: new Date('2026-06-01T00:00:00.000Z'),
       expiresAt: null,
       createdAt: new Date('2026-05-01T00:00:00.000Z'),
-      keyHash: 'not serialized',
     },
-  ];
-  fakes.returningRow = {
+  ]);
+  fakes.createKey.mockResolvedValue({
     id: 'key-2',
     name: 'Cursor',
-    keyPrefix: 'tla_cur',
-    scopes: ['read'],
+    prefix: 'tla_cur',
+    plaintext: 'tla_plaintext_once',
+    scopes: ['read', 'capture'],
     createdAt: new Date('2026-06-02T00:00:00.000Z'),
-  };
-  fakes.insertValues = [];
-  fakes.transactionError = null;
+  });
 });
 
 describe('/api/team/mcp-keys', () => {
@@ -201,10 +146,10 @@ describe('/api/team/mcp-keys', () => {
     expect(response.status).toBe(400);
     const payload = (await response.json()) as { error: string };
     expect(payload.error).toBe('bad_request');
-    expect(fakes.mintKey).not.toHaveBeenCalled();
+    expect(fakes.createKey).not.toHaveBeenCalled();
   });
 
-  it('mints keys, writes the key row plus audit intent, and returns plaintext once', async () => {
+  it('mints keys through withTeam and returns plaintext once', async () => {
     const response = await POST(request({ name: 'Cursor' }));
 
     expect(response.status).toBe(200);
@@ -213,28 +158,13 @@ describe('/api/team/mcp-keys', () => {
       name: 'Cursor',
       prefix: 'tla_cur',
       plaintext: 'tla_plaintext_once',
-      scopes: ['read'],
+      scopes: ['read', 'capture'],
       createdAt: '2026-06-02T00:00:00.000Z',
     });
-    expect(fakes.insertValues[0]).toMatchObject({
-      value: {
-        teamId: TEAM_ID,
-        createdByUserId: USER_ID,
-        name: 'Cursor',
-        keyHash: 'hashed',
-        keyPrefix: 'tla_pref',
-        scopes: ['read'],
-      },
-    });
-    expect(fakes.insertValues[1]).toMatchObject({
-      value: {
-        teamId: TEAM_ID,
-        actorUserId: USER_ID,
-        action: 'mcp.connect',
-        targetType: 'mcp_outbound_key',
-        targetId: 'key-2',
-        targetVisibility: 'team',
-      },
+    expect(fakes.createKey).toHaveBeenCalledWith({
+      name: 'Cursor',
+      allowCapture: true,
+      allowAgent: false,
     });
     expect(fakes.trackProductEventBestEffort).toHaveBeenCalledWith(
       { kind: 'user', teamId: TEAM_ID, userId: USER_ID },
@@ -244,24 +174,53 @@ describe('/api/team/mcp-keys', () => {
   });
 
   it('grants agent access only when an admin explicitly opts in', async () => {
-    fakes.returningRow = {
-      ...fakes.returningRow,
-      scopes: ['read', 'agent:ask'],
-    };
+    fakes.createKey.mockResolvedValueOnce({
+      id: 'key-2',
+      name: 'Operator',
+      prefix: 'tla_cur',
+      plaintext: 'tla_plaintext_once',
+      scopes: ['read', 'capture', 'agent:ask'],
+      createdAt: new Date('2026-06-02T00:00:00.000Z'),
+    });
 
     const response = await POST(request({ name: 'Operator', allowAgent: true }));
 
     expect(response.status).toBe(200);
-    expect(fakes.insertValues[0]).toMatchObject({
-      value: { scopes: ['read', 'agent:ask'] },
+    expect(fakes.createKey).toHaveBeenCalledWith({
+      name: 'Operator',
+      allowCapture: true,
+      allowAgent: true,
     });
     await expect(response.json()).resolves.toMatchObject({
-      scopes: ['read', 'agent:ask'],
+      scopes: ['read', 'capture', 'agent:ask'],
     });
   });
 
-  it('maps transaction failures to create_failed without leaking key material', async () => {
-    fakes.transactionError = new Error('db down');
+  it('omits capture when an admin explicitly opts out', async () => {
+    fakes.createKey.mockResolvedValueOnce({
+      id: 'key-2',
+      name: 'Readonly',
+      prefix: 'tla_cur',
+      plaintext: 'tla_plaintext_once',
+      scopes: ['read'],
+      createdAt: new Date('2026-06-02T00:00:00.000Z'),
+    });
+
+    const response = await POST(request({ name: 'Readonly', allowCapture: false }));
+
+    expect(response.status).toBe(200);
+    expect(fakes.createKey).toHaveBeenCalledWith({
+      name: 'Readonly',
+      allowCapture: false,
+      allowAgent: false,
+    });
+    await expect(response.json()).resolves.toMatchObject({
+      scopes: ['read'],
+    });
+  });
+
+  it('maps create failures without leaking key material', async () => {
+    fakes.createKey.mockRejectedValueOnce(new Error('db down'));
 
     const response = await POST(request({ name: 'Cursor' }));
 

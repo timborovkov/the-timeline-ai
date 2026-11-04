@@ -1,7 +1,7 @@
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 
 /** MCP authorization-server scopes only. Do not add CRM or other provider-app scopes. */
-export const MCP_OAUTH_SCOPES = ['read', 'agent:ask'] as const;
+export const MCP_OAUTH_SCOPES = ['read', 'capture', 'agent:ask'] as const;
 export const MCP_OAUTH_DEFAULT_SCOPE = 'read';
 export const MCP_TEAM_ACTOR_USER_ID = '00000000-0000-0000-0000-000000000000';
 
@@ -191,7 +191,7 @@ export function parseMcpOAuthScopes(raw: string | null | undefined): McpOAuthSco
   if (
     unique.length === 0 ||
     unique.some((scope) => !MCP_OAUTH_SCOPES.includes(scope as McpOAuthScope)) ||
-    (unique.includes('agent:ask') && !unique.includes('read'))
+    ((unique.includes('agent:ask') || unique.includes('capture')) && !unique.includes('read'))
   ) {
     throw new McpOAuthError(
       'invalid_scope',
@@ -199,6 +199,37 @@ export function parseMcpOAuthScopes(raw: string | null | undefined): McpOAuthSco
     );
   }
   return unique as McpOAuthScope[];
+}
+
+export function resolveMcpOAuthConsentScopes(
+  requested: readonly McpOAuthScope[],
+  options: { grantCapture: boolean },
+): McpOAuthScope[] {
+  const scopes: McpOAuthScope[] = ['read'];
+  if (options.grantCapture) scopes.push('capture');
+  if (requested.includes('agent:ask')) scopes.push('agent:ask');
+  return scopes;
+}
+
+export function applyMcpOAuthConsentScopes(
+  request: ValidatedAuthorizationRequest,
+  grantedScopes: readonly McpOAuthScope[],
+): ValidatedAuthorizationRequest {
+  const parsed = parseMcpOAuthScopes(grantedScopes.join(' '));
+  if (parsed.includes('agent:ask') && !request.scopes.includes('agent:ask')) {
+    throw new McpOAuthError('invalid_scope', 'The granted scopes exceed the authorization request');
+  }
+  return { ...request, scopes: parsed };
+}
+
+export function mcpStaticKeyScopes(options: {
+  allowCapture: boolean;
+  allowAgent: boolean;
+}): McpOAuthScope[] {
+  const scopes: McpOAuthScope[] = ['read'];
+  if (options.allowCapture) scopes.push('capture');
+  if (options.allowAgent) scopes.push('agent:ask');
+  return scopes;
 }
 
 export function isValidPkceS256Challenge(value: string): boolean {

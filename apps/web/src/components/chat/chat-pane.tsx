@@ -6,6 +6,7 @@ import {
   mergeChatContextTrail,
   type ChatContextRef,
 } from '@timeline/shared/chat-context';
+import { numberCitations } from '@timeline/shared/citation';
 import {
   DefaultChatTransport,
   lastAssistantMessageIsCompleteWithApprovalResponses,
@@ -533,6 +534,13 @@ function ChatMessage({
   onToolApprovalResponse: (input: { id: string; approved: boolean; reason?: string }) => void;
 }) {
   const isUser = message.role === 'user';
+  const citationNumbers = useMemo(
+    () =>
+      numberCitations(
+        message.parts.flatMap((part) => (part.type === 'text' ? [part.text] : [])).join('\n'),
+      ),
+    [message.parts],
+  );
   return (
     <li className={cn('flex flex-col gap-1.5', isUser ? 'items-end' : 'items-start')}>
       <span className="px-1 text-xs text-fg-dim">{isUser ? 'You' : 'Agent'}</span>
@@ -548,6 +556,7 @@ function ChatMessage({
           {message.parts.map((part, idx) => (
             <ChatMessagePart
               key={`${message.id}-${String(idx)}`}
+              citationNumbers={citationNumbers}
               part={part}
               onToolApprovalResponse={onToolApprovalResponse}
             />
@@ -559,14 +568,16 @@ function ChatMessage({
 }
 
 function ChatMessagePart({
+  citationNumbers,
   part,
   onToolApprovalResponse,
 }: {
+  citationNumbers: Map<string, number>;
   part: UIMessage['parts'][number];
   onToolApprovalResponse: (input: { id: string; approved: boolean; reason?: string }) => void;
 }) {
   if (part.type === 'text') {
-    return <CitationText text={part.text} />;
+    return <CitationText numbers={citationNumbers} text={part.text} />;
   }
   if (!part.type.startsWith('tool-')) return null;
   const toolPart = part as unknown as {

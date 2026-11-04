@@ -28,7 +28,7 @@ const fakes = vi.hoisted(() => {
     clientIpFromHeaders: vi.fn(),
     checkRateLimit: vi.fn(),
     validateTimelineMcpRequestHeaders: vi.fn(),
-    isValidatedCurrentTimelineAgentCall: vi.fn(),
+    isValidatedCurrentTimelineToolCall: vi.fn(),
     resolveMcpBearer: vi.fn(),
     buildTimelineMcpAuthInfo: vi.fn(),
     timelineMcpResourceMetadataUrl: vi.fn(),
@@ -66,7 +66,9 @@ await vi.mock(
   import.meta.resolve('@timeline/shared/mcp-server'),
   () => ({
     validateTimelineMcpRequestHeaders: fakes.validateTimelineMcpRequestHeaders,
-    isValidatedCurrentTimelineAgentCall: fakes.isValidatedCurrentTimelineAgentCall,
+    isValidatedCurrentTimelineToolCall: fakes.isValidatedCurrentTimelineToolCall,
+    ASK_TOOL_NAME: 'timeline.ask',
+    REMEMBER_TOOL_NAME: 'timeline.remember',
     resolveMcpBearer: fakes.resolveMcpBearer,
     buildTimelineMcpAuthInfo: fakes.buildTimelineMcpAuthInfo,
     timelineMcpResourceMetadataUrl: fakes.timelineMcpResourceMetadataUrl,
@@ -101,7 +103,7 @@ beforeEach(() => {
   fakes.clientIpFromHeaders.mockReturnValue('203.0.113.10');
   fakes.checkRateLimit.mockResolvedValue({ ok: true, remaining: 9, retryAfterMs: 0 });
   fakes.validateTimelineMcpRequestHeaders.mockReturnValue(undefined);
-  fakes.isValidatedCurrentTimelineAgentCall.mockResolvedValue(false);
+  fakes.isValidatedCurrentTimelineToolCall.mockResolvedValue(false);
   fakes.resolveMcpBearer.mockResolvedValue(PRINCIPAL);
   fakes.buildTimelineMcpAuthInfo.mockReturnValue(AUTH_INFO);
   fakes.httpFetch.mockResolvedValue(Response.json({ jsonrpc: '2.0', id: 1, result: { ok: true } }));
@@ -227,7 +229,9 @@ describe('/api/mcp/server', () => {
   });
 
   it('returns a current MCP 403 scope challenge before an OAuth ask_agent call', async () => {
-    fakes.isValidatedCurrentTimelineAgentCall.mockResolvedValueOnce(true);
+    fakes.isValidatedCurrentTimelineToolCall.mockImplementation(
+      (_request, name) => name === 'timeline.ask',
+    );
     const response = await POST(
       request(
         'POST',
@@ -236,7 +240,7 @@ describe('/api/mcp/server', () => {
           id: 3,
           method: 'tools/call',
           params: {
-            name: 'timeline.ask_agent',
+            name: 'timeline.ask',
             arguments: { question: 'What changed?' },
             _meta: {
               'io.modelcontextprotocol/protocolVersion': '2026-07-28',
@@ -247,7 +251,7 @@ describe('/api/mcp/server', () => {
         {
           authorization: 'Bearer mcp-token',
           'mcp-method': 'tools/call',
-          'mcp-name': 'timeline.ask_agent',
+          'mcp-name': 'timeline.ask',
           'mcp-protocol-version': '2026-07-28',
         },
       ),
@@ -260,7 +264,45 @@ describe('/api/mcp/server', () => {
       `resource_metadata="${METADATA_URL}"`,
     );
     expect(response.headers.get('access-control-allow-origin')).toBe('https://chatgpt.com');
-    expect(fakes.isValidatedCurrentTimelineAgentCall).toHaveBeenCalledOnce();
+    expect(fakes.isValidatedCurrentTimelineToolCall).toHaveBeenCalled();
+    expect(fakes.httpFetch).not.toHaveBeenCalled();
+  });
+
+  it('returns a current MCP 403 scope challenge before a read-only remember call', async () => {
+    fakes.isValidatedCurrentTimelineToolCall.mockImplementation(
+      (_request, name) => name === 'timeline.remember',
+    );
+    const response = await POST(
+      request(
+        'POST',
+        JSON.stringify({
+          jsonrpc: '2.0',
+          id: 4,
+          method: 'tools/call',
+          params: {
+            name: 'timeline.remember',
+            arguments: { text: 'should not persist' },
+            _meta: {
+              'io.modelcontextprotocol/protocolVersion': '2026-07-28',
+              'io.modelcontextprotocol/clientCapabilities': {},
+            },
+          },
+        }),
+        {
+          authorization: 'Bearer mcp-token',
+          'mcp-method': 'tools/call',
+          'mcp-name': 'timeline.remember',
+          'mcp-protocol-version': '2026-07-28',
+        },
+      ),
+    );
+
+    expect(response.status).toBe(403);
+    expect(response.headers.get('www-authenticate')).toContain('error="insufficient_scope"');
+    expect(response.headers.get('www-authenticate')).toContain('scope="read capture"');
+    expect(response.headers.get('www-authenticate')).toContain(
+      `resource_metadata="${METADATA_URL}"`,
+    );
     expect(fakes.httpFetch).not.toHaveBeenCalled();
   });
 
@@ -284,7 +326,7 @@ describe('/api/mcp/server', () => {
           id: 31,
           method: 'tools/call',
           params: {
-            name: 'timeline.list_events',
+            name: 'timeline.search',
             arguments: {},
             _meta: {
               'io.modelcontextprotocol/protocolVersion': '2026-07-28',
@@ -295,14 +337,14 @@ describe('/api/mcp/server', () => {
         {
           authorization: 'Bearer mcp-token',
           'mcp-method': 'tools/call',
-          'mcp-name': 'timeline.ask_agent',
+          'mcp-name': 'timeline.ask',
           'mcp-protocol-version': '2026-07-28',
         },
       ),
     );
 
     expect(response.status).toBe(400);
-    expect(fakes.isValidatedCurrentTimelineAgentCall).toHaveBeenCalledOnce();
+    expect(fakes.isValidatedCurrentTimelineToolCall).toHaveBeenCalled();
     expect(fakes.httpFetch).toHaveBeenCalledOnce();
   });
 
@@ -314,12 +356,12 @@ describe('/api/mcp/server', () => {
           jsonrpc: '2.0',
           id: 4,
           method: 'tools/call',
-          params: { name: 'timeline.ask_agent', arguments: { question: 'What changed?' } },
+          params: { name: 'timeline.ask', arguments: { question: 'What changed?' } },
         }),
         {
           authorization: 'Bearer mcp-token',
           'mcp-method': 'tools/call',
-          'mcp-name': 'timeline.ask_agent',
+          'mcp-name': 'timeline.ask',
           'mcp-protocol-version': '2025-11-25',
         },
       ),

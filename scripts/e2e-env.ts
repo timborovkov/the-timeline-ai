@@ -186,6 +186,7 @@ export function buildE2eEnv(input: Env = process.env, options: BuildE2eEnvOption
   env.S3_BUCKET_EXPORTS ??= 'timeline-exports';
   env.E2E_NAMESPACE ??= env.E2E_RUN_ID ?? defaultRunId(workspaceHashValue);
   env.E2E_WEB_PORT ??= defaultWebPort(workspaceHashValue);
+  env.PLATFORM_ADMIN_EMAILS = `timeline-e2e-${env.E2E_NAMESPACE}-non-member@example.test`;
   env.E2E_DETERMINISTIC_CHAT ??= '1';
   env.E2E_DETERMINISTIC_EMBEDDINGS ??= 'true';
   env.E2E_DETERMINISTIC_SLACK_API ??= '1';

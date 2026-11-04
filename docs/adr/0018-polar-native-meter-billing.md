@@ -25,7 +25,9 @@ credit hides margin and confuses prospects.
    from that env flag so flipping it to true does not wait for the next Polar
    webhook.
 5. Public catalog lives at `/pricing` (self-serve Free/PAYG/Team/Business columns;
-   Enterprise is a quiet contact nudge). Team usage is at `/app/usage`; admins
+   Enterprise is a quiet contact nudge). The Usage section is an illustrative
+   monthly calculator that calls the same `cheapestPlanPreview` / catalog rates as
+   billing; it does not mutate billing. Team usage is at `/app/usage`; admins
    manage plan/spend cap at `/app/team?section=billing`. Free hard-stops apply
    even while `shadowBilling` is true; paid spend-cap blocking applies when
    charges are enabled.
@@ -47,6 +49,12 @@ credit hides margin and confuses prospects.
      User document uploads stay on write capacity. Inbound email stays on
      `email_units`.
    - `storage_gb_month` — daily GB-month snapshot from original document bytes.
+     `/app/usage` Storage used/remaining shows live stored bytes (same query as
+     infrastructure limits), formatted in MB below 1 GiB, so a 20 MiB workspace is
+     not "Used: 0 GB". Polar still receives GB-month slices from those bytes;
+     sub-cent rounds stay local until they become a cent. Polar meters define no
+     included units in code; the Free/PAYG floor is `FREE_ALLOWANCES.storageGb`
+     (100 MiB). Production Polar products are not changed for that floor.
    - `member_days` — extra active-member proration on paid plans. Counted on the
      local spend cap and ingested as `timeline_extra_member_days` (member-month
      fractions against the €2 catalog price on PAYG, Team, and Business).
@@ -512,3 +520,23 @@ credit. All financial presentation is authorized server-side for owners/admins.
 Cap presentation uses the same applicability helper as enforcement. Standard
 contractual Enterprise and shadow billing do not display local pause/reached
 states. Comped Enterprise retains its enforced local cap.
+
+## Review follow-up: Free storage 100 MiB and live usage display (2026-11-03)
+
+Free storage is 100 MiB (`FREE_ALLOWANCES.storageGb` / `CAPACITY_BY_PLAN.free.storageGb`).
+Free documents are 10,000. PAYG documents are also 10,000 so adding a payment
+method does not lower a workspace that already used the Free document ceiling.
+Indexed chunks scale to 20,000 so Telegram image
+documents (typically one or two chunks) are not capped by vectors before the
+document ceiling. Polar meter `unit_amount` for storage is unchanged
+(€0.25/GB-month). Setup still does not set Polar included/credited units; do
+not change production Polar products for this floor. If a Polar meter was
+manually given 1 included GB, leave production as-is in this change and later
+set credited units to 0 so Polar does not hide PAYG overage between 100 MiB and
+1 GB.
+
+`/app/usage` Storage used reads live stored bytes through `withTeam` billing
+scope (same `sumTeamStoredBytes` query as infrastructure limits). Values below
+1 GiB format as MB. Daily GB-month snapshots still settle those bytes; sub-cent
+rounds stay local until they become a Polar cent. Plan-cost preview keeps the
+period GB-month counter and does not treat live GiB as a full month of usage.

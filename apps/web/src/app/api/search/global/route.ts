@@ -1,5 +1,6 @@
 import { bucketSearchResultCount } from '@timeline/shared/analytics';
 import { getEnv } from '@timeline/shared/env';
+import { withQdrantOperation } from '@timeline/shared/qdrant';
 import * as rateLimit from '@timeline/shared/rate-limit';
 import {
   GLOBAL_SEARCH_KINDS,
@@ -437,7 +438,11 @@ async function searchCalendar(input: Parsed, scope: Scope): Promise<GlobalSearch
   return rankGlobalSearchResults(results).slice(0, sourceLimit(input, 8));
 }
 
-export async function POST(req: Request): Promise<Response> {
+export function POST(req: Request): Promise<Response> {
+  return withQdrantOperation({ signal: req.signal }, () => searchResponse(req));
+}
+
+async function searchResponse(req: Request): Promise<Response> {
   const session = await auth();
   if (!session?.user) {
     return Response.json({ ok: false, error: 'unauthenticated' }, { status: 401 });

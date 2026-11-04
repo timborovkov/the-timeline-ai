@@ -1,7 +1,10 @@
 import { teamInvites, teams, users } from '@timeline/db';
+import { isPlatformAdminEmail } from '@timeline/shared/billing/operator';
+import { getEnv } from '@timeline/shared/env';
 import { withTeam } from '@timeline/shared/team-scope';
 import { and, eq, gt, isNull, ne, sql } from 'drizzle-orm';
 import { cookies } from 'next/headers';
+import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
 import type { Metadata } from 'next';
@@ -11,7 +14,7 @@ import { AppShell } from '@/components/app-shell';
 import { QueryProvider } from '@/components/query-provider';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { appMetadataForTeam } from '@/lib/app-metadata';
-import { auth } from '@/lib/auth';
+import { auth, getRequestIdentity } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { retryOwnedTeamFreeGrantsAfterSignIn } from '@/lib/email-verification';
 import { getNavAttentionSummary } from '@/lib/hub-status';
@@ -38,6 +41,7 @@ export default async function AppLayout({
   children: ReactNode;
   modal: ReactNode;
 }) {
+  const { impersonation, session: realSession } = await getRequestIdentity();
   const session = await auth();
   if (!session?.user) redirect('/sign-in');
 
@@ -58,7 +62,7 @@ export default async function AppLayout({
   const { active, memberships } = activeTeam;
   const currentUser = currentUsers[0];
   const currentEmail = currentUser?.email ? currentUser.email.toLowerCase() : null;
-  if (currentUser?.emailVerified) {
+  if (currentUser?.emailVerified && !impersonation) {
     try {
       await retryOwnedTeamFreeGrantsAfterSignIn({
         db,
@@ -98,6 +102,9 @@ export default async function AppLayout({
     return (
       <main className="mx-auto max-w-md px-6 py-16">
         <h1 className="text-xl font-semibold">No team yet</h1>
+        {showPlatformAdmin(currentUser, realSession?.user.email, false) && (
+          <Link href="/app/admin">Platform admin</Link>
+        )}
         <p className="mt-2 text-sm text-muted-foreground">
           Sign out and create a new account, or ask a teammate for an invite link.
         </p>
@@ -146,6 +153,7 @@ export default async function AppLayout({
         return DEFAULT_TIMEZONE;
       }),
     (async () => {
+      if (impersonation?.readOnly) return null;
       try {
         const role = await scope.requireMembership();
         const canManage = role === 'owner' || role === 'admin';
@@ -185,10 +193,37 @@ export default async function AppLayout({
         workspaceTimezone={workspaceTimezone}
         sidebarInitiallyExpanded={sidebarInitiallyExpanded}
         billingSummary={billingSummary}
+        platformAdmin={showPlatformAdmin(
+          currentUser,
+          realSession?.user.email,
+          Boolean(impersonation),
+        )}
+        impersonation={
+          impersonation
+            ? {
+                email: impersonation.user.email,
+                teamName: impersonation.teamName,
+                readOnly: impersonation.readOnly,
+                expiresAt: impersonation.session.expiresAt.toISOString(),
+              }
+            : null
+        }
       >
         {children}
         {modal}
       </AppShell>
     </QueryProvider>
+  );
+}
+function showPlatformAdmin(
+  user: { email: string; emailVerified: Date | null } | undefined,
+  realEmail: string | null | undefined,
+  impersonating: boolean,
+): boolean {
+  return Boolean(
+    !impersonating &&
+    user?.emailVerified &&
+    realEmail?.toLowerCase() === user.email.toLowerCase() &&
+    isPlatformAdminEmail(user.email, getEnv().PLATFORM_ADMIN_EMAILS),
   );
 }

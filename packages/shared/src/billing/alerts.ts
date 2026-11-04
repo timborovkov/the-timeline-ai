@@ -1,12 +1,11 @@
 import { type Db, teamMembers, teams, users } from '@timeline/db';
 import { and, eq, isNull } from 'drizzle-orm';
 
-import type { BillingUsageAlertKind } from '#src/messaging/types.js';
-
 import {
   FREE_ALLOWANCES,
   PLAN_CATALOG,
   formatEuroFromCents,
+  formatStorageGb,
   type BillingPlanId,
 } from '#src/billing/catalog.js';
 import {
@@ -16,6 +15,8 @@ import {
 } from '#src/billing/status.js';
 import { childLogger } from '#src/logger.js';
 import { sendMessage } from '#src/messaging/delivery.js';
+
+import type { BillingUsageAlertKind } from '#src/messaging/types.js';
 
 const log = childLogger('billing:alerts');
 
@@ -92,7 +93,7 @@ function detailLineForKind(
       return `Metered this period: ${formatEuroFromCents(input.meteredSpendCents)} of ${formatEuroFromCents(input.spendCapCents)}.`;
     case 'free_near_limit':
     case 'free_exhausted':
-      return `Remaining Free floor — AI ${formatEuroFromCents(input.freeRemaining.aiChargeCents)}, meetings ${String(input.freeRemaining.recallMinutes)} min, email ${String(input.freeRemaining.emailUnits)}, storage ${String(input.freeRemaining.storageGb)} GB, sources ${String(input.freeRemaining.acceptedSources)}.`;
+      return `Remaining Free floor — AI ${formatEuroFromCents(input.freeRemaining.aiChargeCents)}, meetings ${String(input.freeRemaining.recallMinutes)} min, email ${String(input.freeRemaining.emailUnits)}, storage ${formatStorageGb(input.freeRemaining.storageGb)}, sources ${String(input.freeRemaining.acceptedSources)}.`;
     case 'subscription_past_due':
       return 'The subscription payment failed. New cost-bearing work is paused until the card on file succeeds.';
   }

@@ -22,14 +22,14 @@ import {
 import { and, desc, eq, inArray, isNull, ne, or, sql } from 'drizzle-orm';
 import { z } from 'zod';
 
-import type { TeamScopeCore } from '#src/team-scope.js';
-
 import { rethrowBillingAdmission } from '#src/billing/errors.js';
 import { artifactRefCitation } from '#src/citation.js';
 import { listRelatedCuratedDocumentChunks } from '#src/documents/related-chunks.js';
 import { chatStructured } from '#src/llm/chat.js';
 import { TIMELINE_MODELS, truncateTextToTokenBudget } from '#src/llm/models.js';
 import * as queue from '#src/queue/queues.js';
+
+import type { TeamScopeCore } from '#src/team-scope.js';
 
 const OBJECT_SUMMARY_PROMPT_VERSION = 'object-summary-v1';
 const OBJECT_SUMMARY_AUTO_DELAY_MS = 2 * 60 * 1000;
@@ -215,8 +215,8 @@ function summaryPlainText(summary: GeneratedObjectSummary): string {
   return [
     summary.overview,
     ...summary.currentState.map((item) => `${item.label}: ${item.text}`),
-    ...summary.openQuestions.map((item) => `${item.label}: ${item.text}`),
     ...summary.conflicts.map((item) => `${item.label}: ${item.text}`),
+    ...summary.openQuestions.map((item) => `${item.label}: ${item.text}`),
   ]
     .filter(Boolean)
     .join('\n');
@@ -226,8 +226,8 @@ function allSummaryRefs(summary: GeneratedObjectSummary): ObjectSummarySourceRef
   return uniqueRefs([
     ...summary.overviewSourceRefs,
     ...summary.currentState.flatMap((item) => item.sourceRefs),
-    ...summary.openQuestions.flatMap((item) => item.sourceRefs),
     ...summary.conflicts.flatMap((item) => item.sourceRefs),
+    ...summary.openQuestions.flatMap((item) => item.sourceRefs),
   ]);
 }
 

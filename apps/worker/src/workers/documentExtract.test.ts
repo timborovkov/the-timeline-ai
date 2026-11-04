@@ -30,6 +30,7 @@ import {
   processDocumentExtractJob,
   shouldAcceptSandboxPdfText,
 } from '#src/workers/documentExtract.js';
+
 /**
  * Real-DB integration tests for the documentExtract worker handler.
  * Uses pglite for Postgres + injected fakes for S3 and the embed queue

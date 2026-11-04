@@ -16,4 +16,5 @@ Admins choose a Timeline type (`communication`, `work_record`, `pulse`,
 presentation-only: it stamps `source_metadata.event_class`, chooses visual
 weight, and never promotes `objectMap` into workspace object identity. Unknown
 or unset types default to pulse. ADR 0009 still holds even when the webhook is
-typed as a work record.
+typed as a work record. Hosted MCP `timeline.remember` uses this same
+evidence-only accept path; it never writes canonical objects.

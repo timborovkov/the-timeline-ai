@@ -1,8 +1,21 @@
-export const TIMELINE_SKILLS_URL =
+import {
+  TIMELINE_AGENT_SETUP_PATH,
+  TIMELINE_AGENT_SKILL_PATH,
+  TIMELINE_CURSOR_INSTALL_DEEPLINK,
+  TIMELINE_MCP_SERVER_URL,
+} from '@/lib/agent-setup';
+import { CANONICAL_PUBLIC_ORIGIN } from '@/lib/site-url';
+
+const TIMELINE_SKILLS_URL =
   'https://github.com/timborovkov/the-timeline-ai/tree/main/plugins/timeline/skills';
 
 export const TIMELINE_CODEX_PLUGIN_INSTALL_URL = `${TIMELINE_SKILLS_URL}#install-in-codex`;
 export const TIMELINE_CLAUDE_PLUGIN_INSTALL_URL = `${TIMELINE_SKILLS_URL}#install-in-claude-code`;
+
+export const TIMELINE_AGENT_SETUP_URL = `${CANONICAL_PUBLIC_ORIGIN}${TIMELINE_AGENT_SETUP_PATH}`;
+export const TIMELINE_AGENT_SKILL_URL = `${CANONICAL_PUBLIC_ORIGIN}${TIMELINE_AGENT_SKILL_PATH}`;
+
+export const TIMELINE_AGENT_SETUP_PROMPT = `Set up The Timeline: ${TIMELINE_AGENT_SETUP_URL}`;
 
 export const TIMELINE_PLUGIN_INSTALL_PROMPT = `Install The Timeline plugin for this Codex environment.
 
@@ -15,7 +28,7 @@ codex plugin add timeline@timeline
 
 Then verify that the timeline skill is installed.
 
-The bundled MCP connection uses Timeline OAuth and does not need a bearer key in the plugin manifest. Fully restart Codex, start a new task, and complete the browser flow when prompted: sign in to Timeline, choose the team to share, review the requested scopes, and approve or deny access. The default scope is read. Never request agent:ask unless I explicitly ask for paid, proposal-only Timeline agent turns and the consent screen shows that scope.
+The hosted tools are timeline.search, timeline.get, timeline.subject, timeline.ask, and timeline.remember. The bundled MCP connection uses Timeline OAuth and does not need a bearer key in the plugin manifest. Fully restart Codex, start a new task, and complete the browser flow when prompted: sign in to Timeline, choose the team to share, review the requested scopes, and approve or deny access. The default grant is read plus capture (the capture checkbox is on by default). Uncheck capture for a read-only grant. Never request agent:ask unless I explicitly ask for paid, proposal-only Timeline agent turns and the consent screen shows that scope. Never paste a tla_ key or ingest token in chat.
 
 When setup is ready, tell me to start a new task so Codex loads the plugin and begins OAuth authorization.`;
 
@@ -26,27 +39,48 @@ export const TIMELINE_SKILL_INSTALL_PROMPT = `$skill-installer Install this Time
 - https://github.com/timborovkov/the-timeline-ai/tree/main/plugins/timeline/skills/timeline`;
 
 export const TIMELINE_MCP_COMMAND = `codex mcp add timeline \\
-  --url "https://thetimeline.cc/api/mcp/server"`;
+  --url "${TIMELINE_MCP_SERVER_URL}"`;
+
+const TIMELINE_CLAUDE_MCP_COMMAND = `claude mcp add --transport http timeline ${TIMELINE_MCP_SERVER_URL}`;
+
+const TIMELINE_CURSOR_MCP_JSON = `{
+  "mcpServers": {
+    "timeline": {
+      "url": "${TIMELINE_MCP_SERVER_URL}"
+    }
+  }
+}`;
+
+/** Advertised hosted MCP tools. Previous names stay callable aliases, not install copy. */
+export const TIMELINE_HOSTED_MCP_TOOLS = [
+  'timeline.search',
+  'timeline.get',
+  'timeline.subject',
+  'timeline.ask',
+  'timeline.remember',
+] as const;
+
+export const TIMELINE_HOSTED_MCP_TOOLS_LIST = TIMELINE_HOSTED_MCP_TOOLS.join(', ');
 
 export const TIMELINE_AGENT_SKILL = {
   id: 'timeline',
   name: 'Timeline',
   description:
-    'Choose the right Timeline MCP tools, expand source evidence, distinguish current state from activity, and cite consequential claims.',
+    'Choose timeline.search, timeline.get, timeline.subject, timeline.ask, or timeline.remember, expand source evidence, and cite consequential claims.',
 } as const;
 
 export const TIMELINE_AGENT_INSTALL_STEPS = [
   {
     title: 'Install for your agent',
-    body: 'Use the Codex install prompt or run the Claude Code marketplace commands. Both packages include the Timeline skill and hosted MCP connection.',
+    body: `Give your agent ${TIMELINE_AGENT_SETUP_URL}, or use the Codex install prompt or Claude Code marketplace commands. The plugin includes the Timeline skill and hosted MCP connection.`,
   },
   {
     title: 'Authorize Timeline',
-    body: 'Sign in when the browser opens, choose the team to share, review the requested scopes, and approve or deny access.',
+    body: 'Sign in when the browser opens, choose the team to share, review the requested scopes, and approve or deny access. Default is read plus capture (on by default). Uncheck capture for a read-only grant. Static tla_ keys stay under Advanced.',
   },
   {
     title: 'Start a Timeline-backed task',
-    body: 'After consent, start a new task or conversation so your agent uses the installed skill to retrieve and cite workspace evidence.',
+    body: 'After consent, start a new task or conversation so your agent uses timeline.search, timeline.get, timeline.subject, timeline.ask, and timeline.remember to retrieve and cite workspace evidence.',
   },
 ] as const;
 
@@ -59,12 +93,12 @@ export const TIMELINE_AGENT_ACCESS_FAQS = [
   {
     question: 'Should I paste a key into the prompt?',
     answer:
-      'No. The normal plugin and direct-URL flows use browser-based OAuth. Static keys are a compatibility fallback for manual clients; keep one only in that client’s protected credential storage and never paste it into chat or a repository.',
+      'No. The normal plugin and direct-URL flows use browser-based OAuth. Static tla_ keys are an Advanced compatibility fallback for manual clients; keep one only in that client’s protected credential storage and never paste it into chat or a repository.',
   },
   {
     question: 'Can the plugin change canonical work?',
     answer:
-      'Not with the default read scope. A current team owner or admin can separately approve agent:ask for paid, stateless Timeline agent turns. It may call enabled team-shared custom MCP tools and create proposals for human review, but cannot write canonical Timeline state directly. Third-party tools may have external side effects.',
+      'Not for canonical records. The default grant includes capture so timeline.remember can store cited ingest evidence; unchecking capture makes the token read-only and remember returns insufficient_scope. A current team owner or admin can separately approve agent:ask for paid, stateless Timeline agent turns. It may call enabled team-shared custom MCP tools and create proposals for human review, but cannot write canonical Timeline state directly. Third-party tools may have external side effects.',
   },
   {
     question: 'What about self-hosted Timeline?',
@@ -85,12 +119,20 @@ export const TIMELINE_AGENT_HELP_SEARCH_TEXT = [
   'Prefer a narrower setup? Install only the skill, or connect the MCP endpoint without the plugin.',
   'Skill only. Best for self-hosted Timeline or agents that already have an MCP connection.',
   'MCP only. Add the hosted Timeline URL, then sign in, choose a team, and approve the requested OAuth scopes in the browser.',
-  'One skill, the whole workspace. It routes each request to the relevant Timeline tools and preserves citations, uncertainty, visibility, and evidence boundaries.',
+  'One skill, the whole workspace. It routes each request to timeline.search, timeline.get, timeline.subject, timeline.ask, and timeline.remember and preserves citations, uncertainty, visibility, and evidence boundaries.',
   'Access, without surprises. The install path and access boundary are intentionally separate.',
+  'Give this to your agent.',
+  TIMELINE_AGENT_SETUP_PROMPT,
+  TIMELINE_AGENT_SETUP_URL,
+  TIMELINE_AGENT_SKILL_URL,
+  TIMELINE_CURSOR_INSTALL_DEEPLINK,
   TIMELINE_PLUGIN_INSTALL_PROMPT,
   TIMELINE_CLAUDE_PLUGIN_INSTALL_COMMAND,
   TIMELINE_SKILL_INSTALL_PROMPT,
   TIMELINE_MCP_COMMAND,
+  TIMELINE_HOSTED_MCP_TOOLS_LIST,
+  TIMELINE_CLAUDE_MCP_COMMAND,
+  TIMELINE_CURSOR_MCP_JSON,
   TIMELINE_AGENT_SKILL.id,
   TIMELINE_AGENT_SKILL.name,
   TIMELINE_AGENT_SKILL.description,

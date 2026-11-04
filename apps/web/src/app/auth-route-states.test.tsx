@@ -59,7 +59,7 @@ const authRoutes = [
     loadingLabel: 'Account creation loading placeholder',
     loadingText: 'Loading account creation',
     subtitle:
-      'Free for small teams — no card required. We’ll create your first team automatically.',
+      'Free for up to 3 members — no card required. We’ll create your first team automatically.',
     title: 'Create your account',
   },
 ] as const;

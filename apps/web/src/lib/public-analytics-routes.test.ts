@@ -8,6 +8,7 @@ import {
 describe('public analytics route registry', () => {
   it('classifies only reviewed public documents', () => {
     expect(classifyPublicAnalyticsPath('/')).toBe('home');
+    expect(classifyPublicAnalyticsPath('/pricing')).toBe('pricing');
     expect(classifyPublicAnalyticsPath('/integrations/google-drive')).toBe(
       'integration_google_drive',
     );
@@ -24,7 +25,16 @@ describe('public analytics route registry', () => {
     expect(classifyPublicAnalyticsPath('/solutions/crm-context-from-team-activity')).toBe(
       'solution_crm_context_team_activity',
     );
-    expect(Object.keys(PUBLIC_ANALYTICS_ROUTES)).toHaveLength(27);
+    expect(classifyPublicAnalyticsPath('/use-cases')).toBe('use_cases');
+    expect(classifyPublicAnalyticsPath('/compare')).toBe('compare');
+    expect(classifyPublicAnalyticsPath('/compare/the-timeline-vs-day-ai')).toBe('compare_day_ai');
+    expect(classifyPublicAnalyticsPath('/integrations/hubspot')).toBe('integration_hubspot');
+    expect(classifyPublicAnalyticsPath('/integrations/notion')).toBe('integration_notion');
+    expect(classifyPublicAnalyticsPath('/agents')).toBe('agents');
+    expect(classifyPublicAnalyticsPath('/use-cases/work-record')).toBe('use_case_work_record');
+    expect(classifyPublicAnalyticsPath('/product-tour')).toBe('product_tour');
+    expect(classifyPublicAnalyticsPath('/integrations/telegram')).toBe('integration_telegram');
+    expect(Object.keys(PUBLIC_ANALYTICS_ROUTES)).toHaveLength(49);
   });
 
   it.each([
@@ -37,6 +47,9 @@ describe('public analytics route registry', () => {
     '/record',
     '/accept-invite/secret',
     '/verify-email/secret',
+    '/forgot-password',
+    '/reset-password',
+    '/reset-password?token=secret',
     '/legal/accept',
     '/api/auth/session',
     '/integrations/not-reviewed',

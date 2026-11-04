@@ -162,29 +162,6 @@ function sentryDeliveryDedupKey(body: string, externalDeliveryId: string | null)
   return `sentry:body:${createHash('sha256').update(body).digest('hex')}`;
 }
 
-async function loadTargetsByInstallation(
-  installationUuid: string,
-): Promise<SentryIntegrationRow[]> {
-  const rows = await db
-    .select({ integration: integrationsTable })
-    .from(integrationWebhookSubscriptions)
-    .innerJoin(
-      integrationsTable,
-      eq(integrationWebhookSubscriptions.integrationId, integrationsTable.id),
-    )
-    .where(
-      and(
-        eq(integrationWebhookSubscriptions.provider, 'sentry'),
-        eq(integrationWebhookSubscriptions.resourceKind, 'sentry.installation'),
-        eq(integrationWebhookSubscriptions.externalSubscriptionId, installationUuid),
-        eq(integrationWebhookSubscriptions.status, 'active'),
-        eq(integrationsTable.provider, 'sentry'),
-        eq(integrationsTable.enabled, true),
-      ),
-    );
-  return rows.map((row) => row.integration);
-}
-
 async function loadTargetsByOrgSelection(
   orgSlug: string,
   projectSlug: string | null,
@@ -227,12 +204,6 @@ async function loadTargetsByOrgSelection(
       return projectExternalId !== null && selection.externalId === projectExternalId;
     });
   });
-}
-
-function uniqueTargets(rows: SentryIntegrationRow[]): SentryIntegrationRow[] {
-  const byId = new Map<string, SentryIntegrationRow>();
-  for (const row of rows) byId.set(row.id, row);
-  return [...byId.values()];
 }
 
 async function rememberSentryInstallation(
@@ -312,12 +283,11 @@ export async function POST(req: Request): Promise<Response> {
   const externalDeliveryId = req.headers.get('request-id');
   const timestamp = req.headers.get('sentry-hook-timestamp');
   const routing = extractSentryRouting(payload);
-  const targets = uniqueTargets([
-    ...(routing.installationUuid ? await loadTargetsByInstallation(routing.installationUuid) : []),
-    ...(routing.orgSlug
-      ? await loadTargetsByOrgSelection(routing.orgSlug, routing.projectSlug)
-      : []),
-  ]);
+  // An installation identifies a delivery source, not permission to capture
+  // every project. Ambiguous scope must not bypass current selections.
+  const targets = routing.orgSlug
+    ? await loadTargetsByOrgSelection(routing.orgSlug, routing.projectSlug)
+    : [];
 
   try {
     await rememberSentryInstallation(routing.installationUuid, routing.orgSlug, targets);

@@ -33,35 +33,33 @@ afterEach(() => {
 });
 
 describe('Team integrations route states', () => {
-  it.each([
-    {
-      heading: 'Team integrations',
-      loadingLabel: 'Loading team integrations',
-      placeholderLabel: 'Team integrations loading placeholder',
-      Loading: IntegrationsLoading,
-    },
-    {
-      heading: 'Integration audit',
-      loadingLabel: 'Loading integration audit',
-      placeholderLabel: 'Integration audit loading placeholder',
-      Loading: IntegrationAuditLoading,
-      hiddenPlaceholder: true,
-    },
-  ])(
-    'announces $heading loading outside its busy, route-shaped placeholder',
-    ({ heading, loadingLabel, placeholderLabel, Loading, hiddenPlaceholder = false }) => {
-      render(<Loading />);
+  it('announces that the legacy route is opening Connections', () => {
+    render(<IntegrationsLoading />);
 
-      const announcement = screen.getByRole('status');
-      expect(announcement.textContent).toBe(loadingLabel);
-      expect(announcement.parentElement?.getAttribute('aria-busy')).toBeNull();
-      expect(screen.getByLabelText(loadingLabel).getAttribute('aria-busy')).toBe('true');
-      expect(screen.getAllByRole('heading', { level: 1, name: heading })).toHaveLength(1);
-      const placeholder = screen.queryByRole('region', { name: placeholderLabel });
-      expect(placeholder ? !hiddenPlaceholder : hiddenPlaceholder).toBe(true);
-      expect(screen.queryByRole('button')).toBeNull();
-    },
-  );
+    expect(screen.getByLabelText('Opening connections')).toBeTruthy();
+    expect(screen.getByRole('status').textContent).toBe('Opening connections');
+    expect(screen.getByRole('heading', { name: 'Team integrations', level: 1 })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Connections' }).getAttribute('href')).toBe(
+      '/app/connections',
+    );
+    expect(screen.queryByRole('button')).toBeNull();
+  });
+
+  it('announces audit loading outside its busy, route-shaped placeholder', () => {
+    render(<IntegrationAuditLoading />);
+
+    const announcement = screen.getByRole('status');
+    expect(announcement.textContent).toBe('Loading integration audit');
+    expect(announcement.parentElement?.getAttribute('aria-busy')).toBeNull();
+    expect(screen.getByLabelText('Loading integration audit').getAttribute('aria-busy')).toBe(
+      'true',
+    );
+    expect(screen.getAllByRole('heading', { level: 1, name: 'Integration audit' })).toHaveLength(1);
+    expect(
+      screen.queryByRole('region', { name: 'Integration audit loading placeholder' }),
+    ).toBeNull();
+    expect(screen.queryByRole('button')).toBeNull();
+  });
 
   it.each([
     { name: 'Enter', keys: '{Enter}' },
@@ -74,12 +72,15 @@ describe('Team integrations route states', () => {
 
     expect(screen.getAllByRole('heading', { level: 1, name: 'Team integrations' })).toHaveLength(1);
     expect(screen.getByRole('navigation', { name: 'Breadcrumb' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Connections' }).getAttribute('href')).toBe(
+      '/app/connections',
+    );
     expect(
-      screen.getByRole('heading', { level: 2, name: 'Unable to load team integrations' }),
+      screen.getByRole('heading', { level: 2, name: 'Unable to open team integrations' }),
     ).toBeTruthy();
     expect(
       screen.getByText(
-        'Your team’s existing provider connections, shared sources, and sync settings have not changed. Check your connection, then try again.',
+        'This failed redirect did not change your provider connections, shared sources, or sync settings. Check your connection, then try again.',
       ),
     ).toBeTruthy();
 
@@ -101,8 +102,8 @@ describe('Team integrations route states', () => {
 
     expect(screen.getAllByRole('heading', { level: 1, name: 'Integration audit' })).toHaveLength(1);
     expect(screen.getByRole('navigation', { name: 'Breadcrumb' })).toBeTruthy();
-    expect(screen.getByRole('link', { name: 'Integrations' }).getAttribute('href')).toBe(
-      '/app/team/integrations',
+    expect(screen.getByRole('link', { name: 'Connections' }).getAttribute('href')).toBe(
+      '/app/connections',
     );
     expect(
       screen.getByRole('heading', { level: 2, name: 'Unable to load integration audit' }),

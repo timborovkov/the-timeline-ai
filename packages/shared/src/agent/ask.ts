@@ -30,7 +30,6 @@ import {
   settleAskAiFromOpenRouterUsd,
   type AskBillingError,
 } from '#src/billing/admission.js';
-import { ASK_AI_RESERVE_CUSTOMER_CHARGE_CENTS } from '#src/billing/catalog.js';
 import { isBillingAdmissionError } from '#src/billing/errors.js';
 import {
   openRouterUsdCostFromFinishEvent,
@@ -424,7 +423,7 @@ export async function askAgent(
     );
     streamedOpenRouterUsd = 0;
   };
-  const settleBilling = async (model?: string, opts?: { conservative?: boolean }) => {
+  const settleBilling = async (model?: string) => {
     if (billingFinalized) return;
     applyCompletedStreamCost();
     billingFinalized = true;
@@ -434,9 +433,6 @@ export async function askAgent(
         openRouterUsd,
         deliverySurface: input.deliverySurface,
         ...(model ? { model } : {}),
-        ...(opts?.conservative
-          ? { minCustomerChargeCents: ASK_AI_RESERVE_CUSTOMER_CHARGE_CENTS }
-          : {}),
       });
     } catch (err) {
       const safeError = deps.sanitizeError?.(err) ?? err;
@@ -604,7 +600,7 @@ export async function askAgent(
     if (isBillingAdmissionError(err)) throw err;
     const aborted = isAskAbortError(err);
     if (aborted || openRouterUsd + streamedOpenRouterUsd > 0) {
-      await settleBilling(undefined, { conservative: aborted });
+      await settleBilling(undefined);
     } else {
       await releaseBilling();
     }

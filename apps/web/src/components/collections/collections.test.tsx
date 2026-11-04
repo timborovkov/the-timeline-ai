@@ -50,6 +50,19 @@ describe('collection primitives', () => {
     expect(screen.getByText('Group contents').closest('[hidden]')).toBeTruthy();
   });
 
+  it('can start a group collapsed', () => {
+    render(
+      <CollectionGroup title="Advanced" count={4} defaultOpen={false}>
+        <p>Folded tools</p>
+      </CollectionGroup>,
+    );
+
+    expect(screen.getByRole('button', { name: /Advanced 4/ }).getAttribute('aria-expanded')).toBe(
+      'false',
+    );
+    expect(screen.getByText('Folded tools').closest('[hidden]')).toBeTruthy();
+  });
+
   it('shows selection chrome only while items are selected', () => {
     const clear = vi.fn();
     const view = render(
@@ -156,6 +169,18 @@ describe('collection primitives', () => {
     onActivate.mockClear();
     await user.click(screen.getByRole('button', { name: 'Keep' }));
     expect(onActivate).not.toHaveBeenCalled();
+  });
+
+  it('uses a hash link overlay when href is provided', () => {
+    render(
+      <CollectionRow href="#github" activateLabel="Open GitHub details">
+        <CollectionRow.Title>GitHub</CollectionRow.Title>
+      </CollectionRow>,
+    );
+
+    expect(screen.getByRole('link', { name: 'Open GitHub details' }).getAttribute('href')).toBe(
+      '#github',
+    );
   });
 
   it('activates the row from the keyboard when it is focused', async () => {

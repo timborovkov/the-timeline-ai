@@ -34,9 +34,18 @@ describe('Landing route states', () => {
     expect(screen.getByText('Evidence interrupted')).toBeTruthy();
     expect(screen.getByRole('link', { name: 'The Timeline home' }).getAttribute('href')).toBe('/');
     const navigation = screen.getByRole('navigation', { name: 'Public navigation' });
-    expect(within(navigation).getByRole('link', { name: 'Help' }).getAttribute('href')).toBe(
-      '/help',
+    expect(within(navigation).getByRole('link', { name: 'Product' }).getAttribute('href')).toBe(
+      '/',
     );
+    expect(within(navigation).getByRole('link', { name: 'Agents' }).getAttribute('href')).toBe(
+      '/agents',
+    );
+    expect(within(navigation).getByRole('link', { name: 'Pricing' }).getAttribute('href')).toBe(
+      '/pricing',
+    );
+    expect(within(navigation).queryByRole('link', { name: 'Help' })).toBeNull();
+    const footer = screen.getByRole('navigation', { name: 'Landing footer' });
+    expect(within(footer).getByRole('link', { name: 'Help' }).getAttribute('href')).toBe('/help');
     expect(screen.getByRole('link', { name: 'Contact' }).getAttribute('href')).toBe(
       '/help/support',
     );
@@ -83,9 +92,13 @@ describe('Landing route states', () => {
 
     expect(html).toContain('focus:z-[90]');
     expect(html).toContain('>Product</a>');
-    expect(html).toContain('>Integrations</a>');
-    expect(html).toContain('>How it works</a>');
+    expect(html).toContain('>Agents</a>');
+    expect(html).toContain('>Pricing</a>');
     expect(html).toContain('>Help</a>');
+    expect(html).not.toContain('>Integrations</a>');
+    expect(html).not.toContain('>How it works</a>');
+    expect(html).toContain('href="/use-cases"');
+    expect(html).toContain('href="/compare"');
     expect(html).toContain('aria-label="The Timeline source code on GitHub"');
     expect(html).toContain('aria-label="Public navigation"');
     expect(html).toContain('aria-label="Public navigation menu"');

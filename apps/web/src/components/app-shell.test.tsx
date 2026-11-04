@@ -155,10 +155,10 @@ describe('AppShell', () => {
     expect(html).toContain('data-testid="desktop-sidebar" data-expanded="false"');
     expect(html).toContain('flex min-h-0 min-w-0 flex-1 flex-col');
     expect(html).toContain(
-      'min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-24 pt-6 md:px-8 md:py-8',
+      'min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain px-4 pb-24 pt-6 md:px-8 md:py-8',
     );
     expect(html).toContain(
-      'data-slot="app-page-container" class="app-page-container mx-auto w-full max-w-6xl"',
+      'data-slot="app-page-container" class="app-page-container mx-auto w-full min-w-0 max-w-6xl"',
     );
     expect(html).toContain('data-testid="floating-agent-chat"');
   });

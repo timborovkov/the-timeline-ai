@@ -16,7 +16,7 @@ export default function IntegrationAuditError({
       <Breadcrumb
         items={[
           { label: 'Team', href: '/app/team' },
-          { label: 'Integrations', href: '/app/team/integrations' },
+          { label: 'Connections', href: '/app/connections' },
           { label: 'Audit log' },
         ]}
       />

@@ -16,9 +16,8 @@ import { afterEach, beforeEach, describe, it } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 
-import type { InboundEmail } from '#src/email/inbound-schema.js';
-
 import { insertRestrictedFreeBillingAccount } from '#src/billing/capacity.js';
+import { CAPACITY_BY_PLAN } from '#src/billing/catalog.js';
 import { createBillingScope } from '#src/billing/scope.js';
 import {
   flushDeferredEmailEnrichment,
@@ -28,6 +27,10 @@ import {
 import { withTeam } from '#src/team-scope.js';
 import { applyDbMigrations } from '#src/test/pglite.js';
 import { textQueueDeps } from '#src/test/queue-deps.js';
+
+import type { InboundEmail } from '#src/email/inbound-schema.js';
+
+const FREE_DOCUMENT_CAP = CAPACITY_BY_PLAN.free.documents ?? 0;
 const TEAM_ID = '11111111-1111-1111-1111-111111111111';
 const OTHER_TEAM_ID = '22222222-2222-2222-2222-222222222222';
 const USER_ID = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
@@ -965,7 +968,7 @@ describe('email dispatcher', () => {
   it('refuses a captured email attachment when the document cap is reached', async () => {
     await pg.exec(`
       INSERT INTO documents (team_id, name)
-      SELECT '${TEAM_ID}', 'cap-' || g FROM generate_series(1, 100) AS g;
+      SELECT '${TEAM_ID}', 'cap-' || g FROM generate_series(1, ${FREE_DOCUMENT_CAP}) AS g;
     `);
     const queues = textQueueDeps();
     const attachments = attachmentDeps();
@@ -989,7 +992,7 @@ describe('email dispatcher', () => {
     expect(document.upload).not.toHaveBeenCalled();
     expect(document.enqueueExtract).not.toHaveBeenCalled();
     const captured = await db.select().from(documents).where(eq(documents.teamId, TEAM_ID));
-    expect(captured).toHaveLength(100);
+    expect(captured).toHaveLength(FREE_DOCUMENT_CAP);
     const [parent] = await db.select().from(rawEvents).where(eq(rawEvents.source, 'email'));
     expect(parent?.sourceMetadata).toMatchObject({
       attachments: [

@@ -285,4 +285,66 @@ describe('GlobalSearchPalette', () => {
 
     expect(await screen.findByText(/Search is cooling down/)).toBeTruthy();
   });
+
+  it('keeps preview results and shows source warnings when semantic recovery is exhausted', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        jsonResponse({
+          ok: true,
+          query: 'github',
+          mode: 'preview',
+          warnings: [
+            { source: 'timeline_event', message: 'Timeline search is temporarily unavailable.' },
+          ],
+          results: [
+            {
+              id: 'github-integration',
+              kind: 'object',
+              title: 'GitHub integration',
+              snippet: 'Migrate the GitHub connector.',
+              href: '/app/objects/github-integration',
+              score: 2,
+              scoreParts: { lexical: 1 },
+              metadata: { type: 'project' },
+            },
+          ],
+        }),
+      ),
+    );
+    const user = userEvent.setup();
+    render(<GlobalSearchPalette />);
+
+    await user.click(screen.getByRole('searchbox', { name: 'Search or jump' }));
+    await user.keyboard('github');
+
+    expect(await screen.findByRole('button', { name: /GitHub integration/ })).toBeTruthy();
+    expect(screen.getByText(/Timeline search is temporarily unavailable/)).toBeTruthy();
+    expect(screen.queryByText('No matches.')).toBeNull();
+  });
+
+  it('does not say no matches when preview search only returns source warnings', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        jsonResponse({
+          ok: true,
+          query: 'launch',
+          mode: 'preview',
+          warnings: [
+            { source: 'document_chunk', message: 'Document search is temporarily unavailable.' },
+          ],
+          results: [],
+        }),
+      ),
+    );
+    const user = userEvent.setup();
+    render(<GlobalSearchPalette />);
+
+    await user.click(screen.getByRole('searchbox', { name: 'Search or jump' }));
+    await user.keyboard('launch');
+
+    expect(await screen.findByText('Document search is temporarily unavailable.')).toBeTruthy();
+    expect(screen.queryByText('No matches.')).toBeNull();
+  });
 });

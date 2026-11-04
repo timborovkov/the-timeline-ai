@@ -11,12 +11,11 @@
     <main id="main">
       <h1>The Timeline — Product Brief</h1>
       <div class="meta">
-        <span class="kind">Product brief</span><span>Last updated 2026-10-24</span>
+        <span class="kind">Product brief</span><span>Last updated 2026-11-03</span>
       </div>
       <p class="tldr">
-        AI team memory that preserves deliberately routed work and selected provider records as
-        chronological project history, then generates cited updates, handoffs, and answers from the
-        evidence.
+        An auto-updating work record that preserves deliberately routed work and selected provider
+        records, then generates cited updates, handoffs, and answers from the evidence.
       </p>
 
       <nav class="toc" aria-label="On this page">
@@ -41,12 +40,12 @@
 
       <h2 id="what-were-building">What we're building</h2>
       <p>
-        AI team memory that turns selected work into chronological project history, cited updates,
-        digests, handoffs, answers, and object memory. Team members deliberately send voice notes
-        after a call, forwarded email, explicit text notes, files, and meeting transcripts, while
-        teams select which Slack channels and provider records should enter. The Timeline compiles
-        that evidence into a searchable event history of who did what, talked to whom, decided what,
-        what changed, and why the system believes it.
+        An auto-updating work record that turns selected work into chronological project history,
+        cited updates, digests, handoffs, answers, and object memory. Team members deliberately send
+        voice notes after a call, forwarded email, explicit text notes, files, and meeting
+        transcripts, while teams select which Slack channels and provider records should enter. The
+        Timeline compiles that evidence into a searchable event history of who did what, talked to
+        whom, decided what, what changed, and why the system believes it.
       </p>
       <p>
         The interaction model is voice-first and chat-first. People resist updating systems of
@@ -116,10 +115,10 @@
 
       <h2 id="target-user">Target user</h2>
       <p>
-        Small to mid-sized teams (5–50 people) doing knowledge work where context compounds: growth,
-        consulting, product, implementation, customer success, and founder-led operations. The kind
-        of team where one person being out of the loop on a client or project conversation creates
-        real friction.
+        Teams that run their day in Slack or Telegram, then spread the rest of the work across
+        email, calls and documents. That includes consultancies, agencies, client delivery, product
+        and operations teams, at any size. The kind of team where one person being out of the loop
+        on a client or project conversation creates real friction.
       </p>
 
       <h2 id="core-principles">Core principles</h2>
@@ -571,7 +570,8 @@
       </ul>
       <p>
         The deployment design routes service-to-service references through Railway private
-        networking, gives Qdrant no public endpoint, and keeps RustFS buckets non-public. RustFS
+        networking and keeps RustFS buckets non-public. Qdrant application traffic uses the private
+        network; production also retains an API-key-protected public operator endpoint. RustFS
         additionally needs an external HTTPS endpoint for team-authorized, short-lived signed
         browser uploads and downloads. Current production networking and public exposure require
         separate verification. See <a href="./railway.html">docs/railway.html</a> for the full
