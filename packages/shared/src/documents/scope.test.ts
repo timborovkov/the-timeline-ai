@@ -495,7 +495,7 @@ describe('document scope — visibility filter', () => {
         return Promise.resolve(
           ranked
             .filter((hit) => {
-              const occurred = new Date(String(hit.payload.occurred_at));
+              const occurred = new Date(hit.payload.occurred_at);
               if (opts.from && occurred < opts.from) return false;
               if (opts.to && occurred >= opts.to) return false;
               return true;
