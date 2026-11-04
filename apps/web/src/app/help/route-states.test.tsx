@@ -297,7 +297,7 @@ describe('Help route states', () => {
     expect(TIMELINE_PLUGIN_INSTALL_PROMPT).toContain(
       'sign in to Timeline, choose the team to share',
     );
-    expect(TIMELINE_PLUGIN_INSTALL_PROMPT).toContain('The default scope is read');
+    expect(TIMELINE_PLUGIN_INSTALL_PROMPT).toContain('The default grant is read plus capture');
     expect(TIMELINE_PLUGIN_INSTALL_PROMPT).toContain(
       'Never request agent:ask unless I explicitly ask',
     );
