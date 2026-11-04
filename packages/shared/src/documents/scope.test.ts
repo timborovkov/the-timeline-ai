@@ -428,6 +428,55 @@ describe('document scope — visibility filter', () => {
     expect(page.items[0]?.createdAt).toEqual(new Date('2026-06-12T00:00:00.000Z'));
   });
 
+  it('restricts semantic chunk search to named and root-folder documents before the limit', async () => {
+    const folder = await withTeam(db, TEAM_ID, USER_A).documents.createFolder({
+      name: 'Specs',
+      parentFolderId: null,
+    });
+    const folderDoc = await pg.query<{ id: string }>(
+      `INSERT INTO documents (team_id, file_kind, folder_id, name, owner_user_id, visibility, metadata)
+       VALUES ($1, 'document', $2, 'Alpha spec.pdf', $3, 'team', '{}'::jsonb)
+       RETURNING id`,
+      [TEAM_ID, folder.id, USER_A],
+    );
+    const rootDoc = await pg.query<{ id: string }>(
+      `INSERT INTO documents (team_id, file_kind, folder_id, name, owner_user_id, visibility, metadata)
+       VALUES ($1, 'document', null, 'Beta notes.pdf', $2, 'team', '{}'::jsonb)
+       RETURNING id`,
+      [TEAM_ID, USER_A],
+    );
+    const seen: SearchOpts[] = [];
+    const scope = withTeam(db, TEAM_ID, USER_A, {
+      embed: ({ text }): Promise<EmbedResult> =>
+        Promise.resolve({ vector: [text.length], model: 'test-embedding-model' }),
+      qdrantSearch: (_teamId, _userId, _vector, opts) => {
+        seen.push(opts);
+        return Promise.resolve([]);
+      },
+    }).documents;
+
+    await scope.searchDocumentChunks({ query: 'runway', name: 'Beta notes' });
+    expect(seen.at(-1)).toMatchObject({ documentId: rootDoc.rows[0]?.id });
+
+    seen.length = 0;
+    await scope.searchDocumentChunks({ query: 'runway', rootFolder: true });
+    expect(seen.at(-1)).toMatchObject({ rootFolder: true });
+    expect(seen.at(-1)?.folderIds).toBeUndefined();
+
+    seen.length = 0;
+    await scope.searchDocumentChunks({
+      query: 'runway',
+      name: 'Alpha spec',
+      folderIds: [folder.id],
+    });
+    expect(seen.at(-1)).toMatchObject({ documentId: folderDoc.rows[0]?.id });
+
+    seen.length = 0;
+    const empty = await scope.searchDocumentChunks({ query: 'runway', name: 'Missing title' });
+    expect(empty).toEqual([]);
+    expect(seen).toEqual([]);
+  });
+
   it('promotes an existing captured file without losing source provenance', async () => {
     const sourceEvent = await pg.query<{ id: string }>(
       `INSERT INTO raw_events (team_id, author_user_id, source, content_text, visibility, source_metadata)

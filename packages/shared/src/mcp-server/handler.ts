@@ -1003,24 +1003,17 @@ async function executeReadCapability(
     }
     case 'timeline.search_documents': {
       const input = searchDocumentsInput.parse(args);
-      const limit = input.limit ?? 10;
-      const needsPostFilter = Boolean(input.name) || input.folderId === null;
       const searchArgs: Parameters<typeof scope.documents.searchDocumentChunks>[0] = {
         query: input.query,
-        limit: needsPostFilter ? Math.max(limit, 50) : limit,
+        limit: input.limit ?? 10,
       };
       if (typeof input.folderId === 'string') searchArgs.folderIds = [input.folderId];
+      if (input.folderId === null) searchArgs.rootFolder = true;
       if (input.fileKind) searchArgs.fileKinds = [input.fileKind];
+      if (input.name) searchArgs.name = input.name;
       if (input.from) searchArgs.from = new Date(input.from);
       if (input.to) searchArgs.to = new Date(input.to);
-      const hits = await scope.documents.searchDocumentChunks(searchArgs);
-      const results = hits
-        .filter((hit) => {
-          if (input.folderId === null && hit.folderId !== null) return false;
-          if (input.name && !textMatches(hit.documentName, input.name)) return false;
-          return true;
-        })
-        .slice(0, limit);
+      const results = await scope.documents.searchDocumentChunks(searchArgs);
       return { count: results.length, results };
     }
     case 'timeline.retrieve_workspace_context': {
@@ -1314,15 +1307,14 @@ async function executeReadCapability(
     }
     case 'timeline.list_calendar_events': {
       const input = listCalendarEventsInput.parse(args);
-      const limit = input.limit ?? 50;
-      const opts: Parameters<typeof scope.calendar.listCalendarEvents>[0] = {};
+      const opts: Parameters<typeof scope.calendar.listCalendarEventPage>[0] = {
+        limit: input.limit ?? 50,
+      };
       if (input.from) opts.from = new Date(input.from);
       if (input.to) opts.to = new Date(input.to);
       if (!input.from && !input.to) opts.from = new Date();
-      opts.limit = input.query ? Math.min(200, Math.max(limit, 50)) : limit;
-      const events = (await scope.calendar.listCalendarEvents(opts))
-        .filter((event) => textMatches(event.title, input.query))
-        .slice(0, limit);
+      if (input.query) opts.search = input.query;
+      const events = (await scope.calendar.listCalendarEventPage(opts)).events;
       return {
         count: events.length,
         events: events.map((e) => ({

@@ -164,6 +164,10 @@ export interface SearchOpts {
    *  already flattened to a list of folder ids. Only meaningful when
    *  `sourceKind` includes `'doc_chunk'`. */
   folderIds?: string[];
+  /** Restrict doc_chunk search to team-root documents (`folder_id` is null). */
+  rootFolder?: boolean;
+  /** Restrict doc_chunk search to one or more documents. */
+  documentIds?: string[];
   /** Restrict doc_chunk search by captured/document row kind. */
   fileKinds?: ('captured' | 'document')[];
   /** Restrict results to points written by one embedding model. Useful for
@@ -642,10 +646,20 @@ export function createQdrantClient(opts: QdrantClientOptions = {}): QdrantClient
       const wantsDocChunk = kinds.includes('doc_chunk');
       const docChunkConstraints: unknown[] = [];
       if (wantsDocChunk) {
-        if (searchOpts.documentId) {
-          docChunkConstraints.push({ key: 'document_id', match: { value: searchOpts.documentId } });
+        const documentIds = [
+          ...(searchOpts.documentId ? [searchOpts.documentId] : []),
+          ...(searchOpts.documentIds ?? []),
+        ].filter((id, index, ids) => ids.indexOf(id) === index);
+        if (documentIds.length === 1) {
+          docChunkConstraints.push({ key: 'document_id', match: { value: documentIds[0] } });
+        } else if (documentIds.length > 1) {
+          docChunkConstraints.push({ key: 'document_id', match: { any: documentIds } });
         }
-        if (searchOpts.folderIds && searchOpts.folderIds.length > 0) {
+        if (searchOpts.rootFolder) {
+          docChunkConstraints.push({
+            should: [{ is_null: { key: 'folder_id' } }, { is_empty: { key: 'folder_id' } }],
+          });
+        } else if (searchOpts.folderIds && searchOpts.folderIds.length > 0) {
           docChunkConstraints.push({ key: 'folder_id', match: { any: searchOpts.folderIds } });
         }
         if (searchOpts.fileKinds && searchOpts.fileKinds.length > 0) {

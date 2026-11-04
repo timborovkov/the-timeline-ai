@@ -246,6 +246,8 @@ export interface SearchDocumentChunksInput {
   query: string;
   documentId?: string;
   folderIds?: string[];
+  rootFolder?: boolean;
+  name?: string;
   fileKinds?: FileKind[];
   from?: Date;
   to?: Date;
@@ -838,6 +840,34 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
     );
   }
 
+  function escapeSqlLike(value: string): string {
+    return value.replace(/[\\%_]/g, (match) => `\\${match}`);
+  }
+
+  async function matchingDocumentIds(input: SearchDocumentChunksInput): Promise<string[]> {
+    const name = input.name?.trim();
+    if (!name) return [];
+    const needle = `%${escapeSqlLike(name.toLowerCase())}%`;
+    const fileKinds = input.fileKinds ?? ['document'];
+    const conditions: SQL[] = [
+      eq(documents.teamId, teamId),
+      isNull(documents.deletedAt),
+      inArray(documents.fileKind, fileKinds),
+      sql`lower(${documents.name}) LIKE ${needle} ESCAPE '\\'`,
+    ];
+    if (documentVisibility) conditions.push(documentVisibility);
+    if (input.rootFolder) conditions.push(isNull(documents.folderId));
+    else if (input.folderIds?.length) conditions.push(inArray(documents.folderId, input.folderIds));
+    if (input.documentId) conditions.push(eq(documents.id, input.documentId));
+    const rows = await db
+      .select({ id: documents.id })
+      .from(documents)
+      .where(and(...conditions))
+      .orderBy(desc(documents.updatedAt), desc(documents.id))
+      .limit(100);
+    return rows.map((row) => row.id);
+  }
+
   async function searchDocumentChunksPage(
     input: SearchDocumentChunksInput,
   ): Promise<DocumentChunkSearchPage> {
@@ -852,13 +882,22 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
 
     const limit = input.limit ?? 12;
     const offset = input.offset ?? 0;
+    const namedIds = input.name ? await matchingDocumentIds(input) : null;
+    if (namedIds?.length === 0) return { items: [], nextOffset: null };
     const { vector } = await withSearchEmbeddingBilling(() => embedFn({ text: input.query }));
     const searchOpts: SearchOpts = {
       limit: offset + limit + 1,
       sourceKind: 'doc_chunk',
     };
-    if (input.documentId) searchOpts.documentId = input.documentId;
-    if (input.folderIds) searchOpts.folderIds = input.folderIds;
+    if (namedIds) {
+      const [namedId] = namedIds;
+      if (namedId && namedIds.length === 1) searchOpts.documentId = namedId;
+      else searchOpts.documentIds = namedIds;
+    } else if (input.documentId) {
+      searchOpts.documentId = input.documentId;
+    }
+    if (input.rootFolder) searchOpts.rootFolder = true;
+    else if (input.folderIds) searchOpts.folderIds = input.folderIds;
     searchOpts.fileKinds = input.fileKinds ?? ['document'];
 
     const hits = await searchFn(teamId, userId, vector, searchOpts);

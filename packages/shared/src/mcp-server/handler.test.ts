@@ -2092,6 +2092,97 @@ describe('handleMcpRequest', () => {
     });
   });
 
+  it('finds a calendar title match past the listing SQL limit', async () => {
+    const noise = Array.from({ length: 50 }, (_, index) => {
+      const minute = String(index).padStart(2, '0');
+      return `('${TEAM_ID}', '${USER_ID}', 'Daily noise ${index}', '2026-06-22T10:${minute}:00Z', '2026-06-22T10:${minute}:30Z', 'UTC', 'team')`;
+    }).join(',\n');
+    await pg.exec(`
+      INSERT INTO calendar_events (team_id, created_by_user_id, title, start_at, end_at, timezone, visibility)
+      VALUES
+        ${noise},
+        ('${TEAM_ID}', '${USER_ID}', 'Standup needle', '2026-06-22T23:00:00Z', '2026-06-22T23:15:00Z', 'UTC', 'team');
+    `);
+
+    const result = (await callTool(db, 'timeline.search', {
+      surface: 'calendar',
+      query: 'needle',
+      from: '2026-06-22T00:00:00Z',
+      to: '2026-06-23T00:00:00Z',
+    })) as { events: { title: string }[] };
+    expect(result.events.map((row) => row.title)).toEqual(['Standup needle']);
+  });
+
+  it('applies document name and root-folder filters before the semantic limit', async () => {
+    const folder = await withTeam(db as never, TEAM_ID, USER_ID).documents.createFolder({
+      name: 'Overflow specs',
+      parentFolderId: null,
+    });
+    const folderDoc = await insertChunkedDocument(db, {
+      name: 'Alpha spec.pdf',
+      text: 'Alpha runway note',
+      folderId: folder.id,
+    });
+    const rootDoc = await insertChunkedDocument(db, {
+      name: 'Beta notes.pdf',
+      text: 'Beta follow-up note',
+    });
+    semanticSearchFakes.search.mockImplementation(
+      (_teamId: string, _userId: string, _vector: number[], opts: SearchOpts = {}) => {
+        const distractors = Array.from({ length: 50 }, (_, index) =>
+          docChunkHit({
+            chunkId: folderDoc.chunkId,
+            documentId: folderDoc.documentId,
+            folderId: folder.id,
+            fileKind: 'document',
+            score: 1 - index / 100,
+          }),
+        );
+        const rootHit = docChunkHit({
+          chunkId: rootDoc.chunkId,
+          documentId: rootDoc.documentId,
+          folderId: null,
+          fileKind: 'document',
+          score: 0.01,
+        });
+        return Promise.resolve(
+          [...distractors, rootHit]
+            .filter((hit) => {
+              if (opts.rootFolder && hit.payload.folder_id !== null) return false;
+              const documentIds = [
+                ...(opts.documentId ? [opts.documentId] : []),
+                ...(opts.documentIds ?? []),
+              ];
+              if (
+                documentIds.length > 0 &&
+                (!hit.payload.document_id || !documentIds.includes(hit.payload.document_id))
+              ) {
+                return false;
+              }
+              return true;
+            })
+            .slice(0, opts.limit ?? 10),
+        );
+      },
+    );
+
+    const rooted = (await callTool(db, 'timeline.search', {
+      surface: 'documents',
+      query: 'runway',
+      folderId: null,
+    })) as { results: { documentId: string }[] };
+    expect(lastSearchOpts()).toMatchObject({ rootFolder: true });
+    expect(rooted.results.map((row) => row.documentId)).toEqual([rootDoc.documentId]);
+
+    const named = (await callTool(db, 'timeline.search', {
+      surface: 'documents',
+      query: 'runway',
+      name: 'Beta notes',
+    })) as { results: { documentId: string }[] };
+    expect(lastSearchOpts()).toMatchObject({ documentId: rootDoc.documentId });
+    expect(named.results.map((row) => row.documentId)).toEqual([rootDoc.documentId]);
+  });
+
   it('pushes supported source filters into list_events', async () => {
     await pg.exec(`
       INSERT INTO raw_events (team_id, source, content_text, occurred_at, source_metadata)
@@ -2882,14 +2973,28 @@ describe('advertised MCP parameters', () => {
             hits
               .filter((hit) => {
                 if (opts.folderIds?.length) {
-                  return (
-                    hit.payload.folder_id !== null && opts.folderIds.includes(hit.payload.folder_id)
-                  );
+                  if (
+                    hit.payload.folder_id === null ||
+                    !opts.folderIds.includes(hit.payload.folder_id)
+                  ) {
+                    return false;
+                  }
+                }
+                if (opts.rootFolder && hit.payload.folder_id !== null) return false;
+                const documentIds = [
+                  ...(opts.documentId ? [opts.documentId] : []),
+                  ...(opts.documentIds ?? []),
+                ];
+                if (
+                  documentIds.length > 0 &&
+                  (!hit.payload.document_id || !documentIds.includes(hit.payload.document_id))
+                ) {
+                  return false;
                 }
                 if (opts.fileKinds?.length) {
-                  return Boolean(
-                    hit.payload.file_kind && opts.fileKinds.includes(hit.payload.file_kind),
-                  );
+                  if (!hit.payload.file_kind || !opts.fileKinds.includes(hit.payload.file_kind)) {
+                    return false;
+                  }
                 }
                 return true;
               })
