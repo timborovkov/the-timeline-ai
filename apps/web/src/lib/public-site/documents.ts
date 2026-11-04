@@ -225,9 +225,9 @@ const coreDocuments = definePublicDocuments('public-core', [
     kind: 'guide-index',
     title: 'Pricing',
     description:
-      'Start free for up to 3 members, no card. Then choose Pay as you go (€0 fee), Team (€49/mo, 25 members) or Business (€199/mo, 100 members). Prices in EUR, excluding VAT.',
+      'Start free for up to 3 members, no card. Then choose Pay as you go (€0 fee), Team (€49/mo, 25 members) or Business (€199/mo, 100 members). Compare monthly estimates from the same usage. Prices in EUR, excluding VAT.',
     indexability: 'index',
-    dates: { modified: '2026-11-03', reviewed: '2026-11-03' },
+    dates: { modified: '2026-11-04', reviewed: '2026-11-04' },
     capability: { kind: 'current-product' },
     sitemap: { changeFrequency: 'weekly', priority: 0.9 },
     structuredData: [
@@ -256,7 +256,7 @@ const coreDocuments = definePublicDocuments('public-core', [
         },
         {
           title: 'Meters',
-          body: 'AI usage in euros, meeting minutes, email units, storage GB-month, accepted sources. Display native units and euro values.',
+          body: 'AI usage in euros, meeting minutes, email units, storage GB-month, accepted sources. Display native units and euro values. The public calculator reuses the shared billing preview; it does not invent rates.',
         },
         {
           title: 'Questions',

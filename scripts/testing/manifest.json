@@ -884,6 +884,9 @@
   "apps/web/src/components/marketing/pricing-blocks.test.tsx": {
     "group": "dom"
   },
+  "apps/web/src/components/marketing/pricing-calculator.test.tsx": {
+    "group": "dom"
+  },
   "apps/web/src/components/marketing/solutions/content.test.ts": {
     "group": "unit"
   },
@@ -1221,6 +1224,9 @@
     "group": "unit"
   },
   "apps/web/src/lib/password-recovery.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/lib/pricing-calculator.test.ts": {
     "group": "unit"
   },
   "apps/web/src/lib/project-filter-options.test.ts": {

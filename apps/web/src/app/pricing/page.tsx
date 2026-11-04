@@ -11,6 +11,7 @@ import {
   PricingMetersExplainer,
   PricingPlanGrid,
 } from '@/components/marketing/pricing-blocks';
+import { PricingCalculator } from '@/components/marketing/pricing-calculator';
 import { PricingFaq } from '@/components/marketing/pricing-faq';
 import { MarketingSectionIndex } from '@/components/marketing/section-index';
 import {
@@ -85,13 +86,14 @@ export default function PricingPage() {
             <MarketingSectionIndex index="02" label="Usage" />
             <div>
               <h2 className="max-w-[20ch] text-3xl font-semibold tracking-tight sm:text-4xl">
-                Usage-based pricing.
+                Estimate your monthly cost.
               </h2>
               <p className="mt-4 max-w-[64ch] text-base leading-relaxed text-fg-muted">
-                See what AI, meetings, email, and storage cost. Your Usage page shows how much
-                you’ve used and the corresponding cost in euros.
+                Compare Pay as you go, Team and Business using the same monthly usage. Adjust the
+                example to see what is included and what you would pay.
               </p>
-              <PricingMetersExplainer className="mt-10" />
+              <PricingCalculator />
+              <PricingMetersExplainer className="mt-8" />
             </div>
           </MarketingSectionGrid>
         </MarketingContainer>
