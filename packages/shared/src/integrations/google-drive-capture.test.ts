@@ -7,6 +7,7 @@ import {
   integrations,
   integrationSelections,
   integrationSyncState,
+  rawEvents,
 } from '@timeline/db';
 import { expect, vi } from '@timeline/test-support';
 import { afterEach, beforeEach, describe, it } from 'bun:test';
@@ -58,6 +59,9 @@ import {
   isDriveExtractCursorOrphan,
   isDriveExtractPendingStale,
   isDriveExtractResultTooLarge,
+  isRetryableDriveExtractStorageError,
+  shouldRetainDriveExtractCleanup,
+  survivingLinkedObjectForDriveFile,
   adminListTeamIdsWithDriveExtractCursors,
   forEachDriveExtractCursorPage,
   linkedObjectForDriveSelection,
@@ -192,6 +196,70 @@ describe('driveFileInheritsChangedSelection', () => {
         preserveFileIds: ['file-keep'],
         candidates: ['file-keep', 'folder-1'],
       }),
+    ).toBe(false);
+  });
+});
+
+describe('survivingLinkedObjectForDriveFile', () => {
+  it('rebinds a dropped explicit file onto the remaining folder object', () => {
+    expect(
+      survivingLinkedObjectForDriveFile({
+        fileId: 'file-b',
+        remainingSelections: [
+          { kind: 'drive.folder', externalId: 'folder-1', linkedObjectId: 'object-a' },
+        ],
+        parentIds: ['folder-1'],
+      }),
+    ).toBe('object-a');
+    expect(
+      survivingLinkedObjectForDriveFile({
+        fileId: 'file-b',
+        remainingSelections: [
+          { kind: 'drive.folder', externalId: 'folder-1', linkedObjectId: 'object-a' },
+        ],
+      }),
+    ).toBe('object-a');
+    expect(
+      survivingLinkedObjectForDriveFile({
+        fileId: 'file-b',
+        remainingSelections: [
+          { kind: 'drive.folder', externalId: 'folder-1', linkedObjectId: 'object-a' },
+          { kind: 'drive.folder', externalId: 'folder-2', linkedObjectId: 'object-c' },
+        ],
+        inheritedCandidates: ['file-b', 'folder-1'],
+      }),
+    ).toBe('object-a');
+    expect(
+      survivingLinkedObjectForDriveFile({
+        fileId: 'file-b',
+        remainingSelections: [
+          { kind: 'drive.folder', externalId: 'folder-1', linkedObjectId: 'object-a' },
+          { kind: 'drive.folder', externalId: 'folder-2', linkedObjectId: 'object-c' },
+        ],
+      }),
+    ).toBeNull();
+  });
+});
+
+describe('isRetryableDriveExtractStorageError', () => {
+  it('retries timeout and 5xx storage faults, not missing or oversized results', () => {
+    const timeout = Object.assign(new Error('RequestTimeout'), {
+      name: 'TimeoutError',
+      $metadata: { httpStatusCode: 503 },
+    });
+    const server = Object.assign(new Error('InternalError'), {
+      name: 'InternalError',
+      $metadata: { httpStatusCode: 500 },
+    });
+    const missing = Object.assign(new Error('missing'), { name: 'NoSuchKey' });
+    expect(isRetryableDriveExtractStorageError(timeout)).toBe(true);
+    expect(isRetryableDriveExtractStorageError(server)).toBe(true);
+    expect(isRetryableDriveExtractStorageError(new Error('socket hang up ECONNRESET'))).toBe(true);
+    expect(isRetryableDriveExtractStorageError(missing)).toBe(false);
+    expect(
+      isRetryableDriveExtractStorageError(
+        new Error('S3 object docs/result.json exceeds 2097152 bytes'),
+      ),
     ).toBe(false);
   });
 });
@@ -375,6 +443,27 @@ describe('drive transient extract helpers', () => {
         Date.parse('2026-11-02T12:01:00.000Z') + DRIVE_EXTRACT_PENDING_STALE_MS,
       ),
     ).toBe(true);
+    const cancelled = retainDriveExtractCleanupCursor(cursor, [], {
+      cancelledAt: '2026-11-02T12:01:00.000Z',
+    });
+    expect(
+      shouldRetainDriveExtractCleanup(cancelled, [], {
+        mode: 'cancel',
+        now: Date.parse('2026-11-02T12:05:00.000Z'),
+      }),
+    ).toBe(true);
+    expect(
+      shouldRetainDriveExtractCleanup(cancelled, [], {
+        mode: 'cancel',
+        now: Date.parse('2026-11-02T12:01:00.000Z') + DRIVE_EXTRACT_PENDING_STALE_MS,
+      }),
+    ).toBe(false);
+    expect(
+      shouldRetainDriveExtractCleanup(cancelled, [], {
+        mode: 'consume',
+        now: Date.parse('2026-11-02T12:05:00.000Z'),
+      }),
+    ).toBe(false);
     expect(
       isDriveExtractCancelSettled(
         cursor,
@@ -1190,7 +1279,7 @@ describe('saveDriveSnapshot uniqueness', () => {
         resultObjectKey: 'drop-result.json',
         contentType: 'application/pdf',
         filename: 'Drop.pdf',
-        enqueuedAt: '2026-11-03T00:00:00.000Z',
+        enqueuedAt: new Date().toISOString(),
         tombstones: [
           {
             extractId: 'ext-drop-old',
@@ -1206,12 +1295,15 @@ describe('saveDriveSnapshot uniqueness', () => {
     const scope = withTeam(db as never, TEAM_ID, USER_ID);
     await scope.integrations.setSelections(integration.id, []);
     expect(await db.select().from(googleDriveFileSnapshots)).toEqual([]);
-    expect(
-      await listDriveExtractCursors(db as never, {
-        teamId: TEAM_ID,
-        integrationId: integration.id,
-      }),
-    ).toEqual([]);
+    const extractCursors = await listDriveExtractCursors(db as never, {
+      teamId: TEAM_ID,
+      integrationId: integration.id,
+    });
+    expect(extractCursors).toHaveLength(1);
+    expect(extractCursors[0]?.fileId).toBe('file-drop');
+    expect(extractCursors[0]?.cursor.extractId).toBe('ext-drop');
+    expect(extractCursors[0]?.cursor.cleanupPending).toBe(true);
+    expect(extractCursors[0]?.cursor.cancelledAt).toEqual(expect.any(String));
     const deletedKeys = s3Fakes.deleteObject.mock.calls.map((call) =>
       typeof call[2] === 'string' ? call[2] : '',
     );
@@ -1283,6 +1375,96 @@ describe('saveDriveSnapshot uniqueness', () => {
     expect(s3Fakes.deleteObject).not.toHaveBeenCalled();
   });
 
+  it('rebinds a dropped explicit file onto the remaining folder object link', async () => {
+    const [integration] = await db
+      .insert(integrations)
+      .values({
+        teamId: TEAM_ID,
+        connectedByUserId: USER_ID,
+        provider: 'google_drive',
+        displayName: 'Google Drive',
+        externalAccountId: 'drive-acct-drop-file-rebind',
+        visibilityDefault: 'team',
+      })
+      .returning();
+    if (!integration) throw new Error('integration insert failed');
+    const [northstar] = await db
+      .insert(entities)
+      .values({
+        teamId: TEAM_ID,
+        type: 'company',
+        canonicalName: 'Northstar',
+        status: 'open',
+      })
+      .returning();
+    const [acme] = await db
+      .insert(entities)
+      .values({
+        teamId: TEAM_ID,
+        type: 'company',
+        canonicalName: 'Acme Labs',
+        status: 'open',
+      })
+      .returning();
+    if (!northstar || !acme) throw new Error('company insert failed');
+    await db.insert(integrationSelections).values([
+      {
+        integrationId: integration.id,
+        selectionKind: 'drive.file',
+        externalId: 'file-b',
+        linkedObjectId: acme.id,
+      },
+      {
+        integrationId: integration.id,
+        selectionKind: 'drive.folder',
+        externalId: 'folder-1',
+        linkedObjectId: northstar.id,
+      },
+    ]);
+    const [source] = await db
+      .insert(artifactClusters)
+      .values({
+        teamId: TEAM_ID,
+        artifactType: 'company',
+        canonicalName: 'Acme Labs',
+        canonicalEntityId: acme.id,
+      })
+      .returning();
+    if (!source) throw new Error('cluster insert failed');
+    await db.insert(artifactClusterAnchors).values({
+      teamId: TEAM_ID,
+      clusterId: source.id,
+      anchorType: 'provider_object',
+      anchorValue: 'google_drive:file-b',
+      strength: 'hard',
+    });
+    await db.insert(rawEvents).values({
+      teamId: TEAM_ID,
+      authorUserId: USER_ID,
+      source: 'integration',
+      contentText: 'File b changed',
+      occurredAt: new Date('2026-06-20T10:00:00Z'),
+      visibility: 'team',
+      sourceMetadata: {
+        provider: 'google_drive',
+        integration_id: integration.id,
+        external_object_id: 'file-b',
+        drive: { parents: ['folder-1'], inherited_from: 'folder-1' },
+      },
+    });
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    await scope.integrations.setSelections(integration.id, [
+      { kind: 'drive.folder', externalId: 'folder-1' },
+    ]);
+    const [northstarCluster] = await db
+      .select()
+      .from(artifactClusters)
+      .where(eq(artifactClusters.canonicalEntityId, northstar.id));
+    const [anchor] = await db.select().from(artifactClusterAnchors);
+    expect(anchor?.clusterId).toBe(northstarCluster?.id);
+    expect(anchor?.clusterId).not.toBe(source.id);
+  });
+
   it('purges leftover folder-file snapshots when no Drive container remains', async () => {
     const [integration] = await db
       .insert(integrations)
@@ -1313,9 +1495,28 @@ describe('saveDriveSnapshot uniqueness', () => {
         mimeType: 'application/vnd.google-apps.document',
       },
     });
+    await db.insert(integrationSyncState).values({
+      integrationId: integration.id,
+      resourceType: driveExtractCursorKey('nested-file'),
+      cursor: {
+        extractId: 'ext-nested',
+        objectKey: 'nested-source',
+        resultObjectKey: 'nested-result.json',
+        contentType: 'application/pdf',
+        filename: 'Nested.pdf',
+        enqueuedAt: new Date().toISOString(),
+      },
+    });
     const scope = withTeam(db as never, TEAM_ID, USER_ID);
     await scope.integrations.setSelections(integration.id, []);
     expect(await db.select().from(googleDriveFileSnapshots)).toEqual([]);
+    const extractCursors = await listDriveExtractCursors(db as never, {
+      teamId: TEAM_ID,
+      integrationId: integration.id,
+    });
+    expect(extractCursors.map((row) => row.fileId)).toEqual(['nested-file']);
+    expect(extractCursors[0]?.cursor.cleanupPending).toBe(true);
+    expect(extractCursors[0]?.cursor.cancelledAt).toEqual(expect.any(String));
   });
 
   it('rebinds Drive file artifact anchors when the selection object link changes', async () => {

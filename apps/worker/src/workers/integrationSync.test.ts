@@ -3185,6 +3185,37 @@ describe('Drive transient extract handoff', () => {
     expect(io.enqueueDocumentExtractJob).not.toHaveBeenCalled();
   });
 
+  it('rethrows retryable S3 timeouts so the extract cursor and result stay intact', async () => {
+    const cursor = {
+      extractId: 'ext-1',
+      objectKey: 'source',
+      resultObjectKey: 'result.json',
+      contentType: 'application/pdf',
+      filename: 'Notes.pdf',
+      enqueuedAt: '2026-11-02T12:00:00.000Z',
+    };
+    const scope = extractScope(new Map([[cursorKey, cursor]]));
+    const io = extractIO();
+    const timeout = Object.assign(new Error('RequestTimeout'), {
+      name: 'TimeoutError',
+      $metadata: { httpStatusCode: 503 },
+    });
+    io.getDocumentObject.mockRejectedValue(timeout);
+
+    await expect(
+      readDriveTransientExtract({
+        integrations: scope,
+        teamId: TEAM_ID,
+        integrationId: INTEGRATION_ID,
+        fileId: FILE_ID,
+        io,
+      }),
+    ).rejects.toBe(timeout);
+    expect(scope.saveCursor).not.toHaveBeenCalled();
+    expect(io.enqueueDocumentExtractJob).not.toHaveBeenCalled();
+    expect(scope.store.get(cursorKey)).toEqual(cursor);
+  });
+
   it('clears failed extract objects through team-scoped cursors', async () => {
     const scope = extractScope(
       new Map([

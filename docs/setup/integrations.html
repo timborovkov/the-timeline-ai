@@ -172,11 +172,12 @@ GOOGLE_DRIVE_WEBHOOK_SECRET=...</code></pre>
           object, without rewriting the previous company's canonical entity. Assigning a previously
           unlinked folder or shared drive rebinds those inherited file anchors from unbound
           clusters. Captured Drive events stamp the winning selection and candidate walk so a later
-          rebind can tell those files apart. Dropping a <code>drive.file</code> selection deletes
-          leftover snapshots and extract objects only when remaining selections no longer cover that
-          file (a remaining folder or shared drive keeps them); dropping the last
-          folder/shared-drive container still deletes leftover folder-file snapshots, including
-          extract tombstones. Full-text hashes still see edits past 20k chars. Formatting-only and
+          rebind can tell those files apart. Dropping a <code>drive.file</code> selection that
+          remaining folders or shared drives still cover keeps snapshots/extract and rebinds the
+          file onto the surviving inherited object link instead of unbinding it. Uncovered drops,
+          including last-container leftover extracts, delete snapshots and keep a cancellation
+          tombstone until the producer wait window settles so a late <code>result.json</code> still
+          has a janitor handle. Full-text hashes still see edits past 20k chars. Formatting-only and
           tiny edits (Markdown markers, not signed amounts such as <code>-50000 USD</code>) skip the
           LLM. Tiny vs substantive uses the intra-line edited span, not the hunk context kept for
           the judge. Tiny is only whitespace, punctuation-only, case-only, or a single-letter typo
@@ -232,19 +233,20 @@ GOOGLE_DRIVE_WEBHOOK_SECRET=...</code></pre>
           / md5 / <code>modifiedTime</code>) and re-request when the live file no longer matches, so
           an in-flight extract cannot be accepted against a newer revision. A superseded in-flight
           extract is cancelled with a cleanup tombstone until its producer finishes, rather than
-          consumed immediately. Stale pending results are re-enqueued. A ready extract is consumed
-          only after the judged event and snapshot are durably saved, so a later failure can reuse
-          the paid result. Event <code>dedup_key</code> values include the Drive revision so
-          <code>A→B→A→B</code> emits a new event for the second return to B, while a retry of the
-          same revision stays idempotent. Missing, out-of-scope, removed, unsupported-mime,
-          unselected, and disconnected files delete leftover snapshots and transient extract objects
-          before the changes cursor advances; a failed S3 delete keeps a
-          <code>cleanupPending</code> extract cursor until both objects are gone. Cancel and janitor
-          cleanup keep that tombstone for the extract wait window because S3
-          <code>DeleteObject</code> treats a not-yet-written <code>result.json</code> as success; a
-          ready extract consumed after persist still clears immediately. File-only
-          <code>drive.file</code> captures keep the full watchable selection list for membership
-          checks and leave <code>sync.recovery</code> alone so scheduled
+          consumed immediately. Stale pending results are re-enqueued. Transient S3 timeouts and 5xx
+          reads of a valid <code>result.json</code> retry the job without consuming the result or a
+          paid extract slot. A ready extract is consumed only after the judged event and snapshot
+          are durably saved, so a later failure can reuse the paid result. Event
+          <code>dedup_key</code> values include the Drive revision so <code>A→B→A→B</code> emits a
+          new event for the second return to B, while a retry of the same revision stays idempotent.
+          Missing, out-of-scope, removed, unsupported-mime, unselected, and disconnected files
+          delete leftover snapshots and transient extract objects before the changes cursor
+          advances; a failed S3 delete keeps a <code>cleanupPending</code> extract cursor until both
+          objects are gone. Cancel and janitor cleanup keep that tombstone for the extract wait
+          window because S3 <code>DeleteObject</code> treats a not-yet-written
+          <code>result.json</code> as success; a ready extract consumed after persist still clears
+          immediately. File-only <code>drive.file</code> captures keep the full watchable selection
+          list for membership checks and leave <code>sync.recovery</code> alone so scheduled
           <code>changes.list</code> fallback still covers missed webhooks. The janitor enumerates
           team ids then lists orphans through <code>withTeam(...).integrations</code>, filtering
           populated extract cursors in SQL before the page limit so leftover <code>{}</code> rows

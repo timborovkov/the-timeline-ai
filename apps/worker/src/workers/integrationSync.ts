@@ -607,6 +607,7 @@ export async function readDriveTransientExtract(input: {
     }
     return withExtractRevision({ status: 'failed' as const, error: parsed.error }, cursor);
   } catch (err) {
+    if (integrationsLib.isRetryableDriveExtractStorageError(err)) throw err;
     if (!integrationsLib.isMissingS3ObjectError(err)) {
       const message = err instanceof Error ? err.message : String(err);
       const error = integrationsLib.isDriveExtractResultTooLarge(message)
@@ -688,10 +689,12 @@ export async function clearDriveTransientExtract(input: {
       },
     );
     next = await expireDriveExtractTombstones(io, next, now.getTime());
-    const keepCancel =
-      mode === 'cancel' && !integrationsLib.isDriveExtractCancelSettled(next, now.getTime());
-    const keepTombstones = (next.tombstones?.length ?? 0) > 0;
-    if (remainingCurrent.length > 0 || keepCancel || keepTombstones) {
+    if (
+      integrationsLib.shouldRetainDriveExtractCleanup(next, remainingCurrent, {
+        mode,
+        now: now.getTime(),
+      })
+    ) {
       await saveDriveExtractCursor(input.integrations, input.integrationId, input.fileId, next);
       return;
     }

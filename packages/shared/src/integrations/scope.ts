@@ -34,13 +34,17 @@ import {
   driveExtractCursorKey,
   driveExtractObjectKeys,
   forEachDriveExtractCursorPage,
+  latestDriveObjectLinkHints,
   linkedObjectForDriveSelection as loadLinkedObjectForDriveSelection,
   listDriveExtractCursors,
   listTeamEmailDomains as loadTeamEmailDomains,
   loadLatestDriveSnapshot,
   parseDriveExtractCursor,
   remainingDriveExtractObjectKeys,
+  retainDriveExtractCleanupCursor,
   saveDriveSnapshot,
+  shouldRetainDriveExtractCleanup,
+  survivingLinkedObjectForDriveFile,
   type DriveExtractTombstone,
 } from '#src/integrations/google-drive-capture.js';
 import {
@@ -171,18 +175,29 @@ const integrationSyncContinuationHandoffLeaseMs = 2 * 60 * 1000;
 const integrationSyncContinuationHandoffClaimLimit = 100;
 const log = childLogger('integrations:scope');
 
-async function tryDeleteDriveTransientExtractObjects(cursor: {
+async function deleteDriveTransientExtractObjects(cursor: {
   objectKey: string;
   resultObjectKey: string;
   pendingDeleteKeys?: string[];
   tombstones?: DriveExtractTombstone[];
-}): Promise<void> {
+}): Promise<string[]> {
   let client;
   try {
     client = getS3Client();
   } catch (err) {
     log.warn({ err }, 'drive transient extract cleanup skipped');
-    return;
+    return driveExtractObjectKeys({
+      extractId: 'disconnect',
+      objectKey: cursor.objectKey,
+      resultObjectKey: cursor.resultObjectKey,
+      contentType: 'application/octet-stream',
+      filename: 'disconnect',
+      enqueuedAt: new Date(0).toISOString(),
+      ...(cursor.pendingDeleteKeys ? { pendingDeleteKeys: cursor.pendingDeleteKeys } : {}),
+      ...(cursor.tombstones && cursor.tombstones.length > 0
+        ? { tombstones: cursor.tombstones }
+        : {}),
+    });
   }
   const bucket = getDocumentsBucket();
   const keys = driveExtractObjectKeys({
@@ -196,7 +211,16 @@ async function tryDeleteDriveTransientExtractObjects(cursor: {
     ...(cursor.tombstones && cursor.tombstones.length > 0 ? { tombstones: cursor.tombstones } : {}),
   });
   const results = await Promise.allSettled(keys.map((key) => deleteObject(client, bucket, key)));
-  const remaining = remainingDriveExtractObjectKeys(keys, results);
+  return remainingDriveExtractObjectKeys(keys, results);
+}
+
+async function tryDeleteDriveTransientExtractObjects(cursor: {
+  objectKey: string;
+  resultObjectKey: string;
+  pendingDeleteKeys?: string[];
+  tombstones?: DriveExtractTombstone[];
+}): Promise<void> {
+  const remaining = await deleteDriveTransientExtractObjects(cursor);
   if (remaining.length > 0) {
     throw new Error(`drive transient extract objects remain: ${remaining.join(',')}`);
   }
@@ -1657,12 +1681,12 @@ export function createIntegrationScope(deps: {
       );
       if (integration.provider === 'google_drive') {
         const scopedTx = tx as unknown as Db;
-        const discardTrackedFile = async (fileId: string) => {
-          await deleteDriveFileSnapshots(scopedTx, {
-            teamId,
-            integrationId,
-            fileId,
-          });
+        const remainingSelectionLinks = selections.map((selection) => ({
+          kind: selection.kind,
+          externalId: selection.externalId,
+          linkedObjectId: links.get(`${selection.kind}\x00${selection.externalId}`) ?? null,
+        }));
+        const cancelTrackedExtract = async (fileId: string) => {
           const extractType = driveExtractCursorKey(fileId);
           const [extractRow] = await tx
             .select({ cursor: integrationSyncState.cursor })
@@ -1676,7 +1700,31 @@ export function createIntegrationScope(deps: {
             .limit(1);
           const extractCursor = parseDriveExtractCursor(extractRow?.cursor);
           if (!extractCursor) return;
-          await tryDeleteDriveTransientExtractObjects(extractCursor);
+          const remainingKeys = await deleteDriveTransientExtractObjects(extractCursor);
+          const remainingCurrent = remainingKeys.filter(
+            (key) => key === extractCursor.objectKey || key === extractCursor.resultObjectKey,
+          );
+          const now = new Date();
+          const next = retainDriveExtractCleanupCursor(extractCursor, remainingCurrent, {
+            cancelledAt: extractCursor.cancelledAt ?? now.toISOString(),
+          });
+          if (
+            shouldRetainDriveExtractCleanup(next, remainingCurrent, {
+              mode: 'cancel',
+              now: now.getTime(),
+            })
+          ) {
+            await tx
+              .update(integrationSyncState)
+              .set({ cursor: next, updatedAt: now })
+              .where(
+                and(
+                  eq(integrationSyncState.integrationId, integrationId),
+                  eq(integrationSyncState.resourceType, extractType),
+                ),
+              );
+            return;
+          }
           await tx
             .delete(integrationSyncState)
             .where(
@@ -1686,16 +1734,51 @@ export function createIntegrationScope(deps: {
               ),
             );
         };
+        const discardTrackedFile = async (fileId: string) => {
+          await deleteDriveFileSnapshots(scopedTx, {
+            teamId,
+            integrationId,
+            fileId,
+          });
+          await cancelTrackedExtract(fileId);
+        };
         const remainingScope = driveScopeFromSelections(selections);
         for (const row of dropped) {
           if (row.selectionKind === DRIVE_FILE_KIND || isDriveContainerKind(row.selectionKind)) {
+            let nextObjectId: string | null = null;
+            if (row.selectionKind === DRIVE_FILE_KIND) {
+              const remainingCoverage = driveFileScopeHint({
+                fileId: row.externalId,
+                scope: remainingScope,
+              });
+              if (remainingCoverage !== 'out') {
+                const hints = await latestDriveObjectLinkHints(scopedTx, {
+                  teamId,
+                  integrationId,
+                  fileId: row.externalId,
+                });
+                nextObjectId =
+                  survivingLinkedObjectForDriveFile({
+                    fileId: row.externalId,
+                    remainingSelections: remainingSelectionLinks,
+                    parentIds: hints.parentIds,
+                    ...(hints.matchedAncestorId
+                      ? { matchedAncestorId: hints.matchedAncestorId }
+                      : {}),
+                    ...(hints.driveId ? { driveId: hints.driveId } : {}),
+                    ...(hints.inheritedCandidates
+                      ? { inheritedCandidates: hints.inheritedCandidates }
+                      : {}),
+                  }) ?? row.linkedObjectId;
+              }
+            }
             await rebindDriveSelectionArtifactLink(scopedTx, {
               teamId,
               integrationId,
               selectionKind: row.selectionKind,
               externalId: row.externalId,
               previousObjectId: row.linkedObjectId,
-              nextObjectId: null,
+              nextObjectId,
               preserveFileIds: preservedFileIds,
               preserveContainerIds: remainingContainers
                 .filter((container) => container.linkedObjectId === row.linkedObjectId)
@@ -1729,15 +1812,7 @@ export function createIntegrationScope(deps: {
             onPage: async (page) => {
               for (const row of page) {
                 if (keepFileIdSet.has(row.fileId)) continue;
-                await tryDeleteDriveTransientExtractObjects(row.cursor);
-                await tx
-                  .delete(integrationSyncState)
-                  .where(
-                    and(
-                      eq(integrationSyncState.integrationId, integrationId),
-                      eq(integrationSyncState.resourceType, driveExtractCursorKey(row.fileId)),
-                    ),
-                  );
+                await cancelTrackedExtract(row.fileId);
               }
             },
           });

@@ -6,6 +6,7 @@ import {
   integrations as integrationsTable,
   integrationSelections,
   integrationSyncState,
+  rawEvents,
   teamMembers,
   users,
   type Db,
@@ -18,6 +19,10 @@ import {
   parseDriveSnapshotLocate,
   type DriveSnapshotLocate,
 } from '#src/integrations/google-drive-diff.js';
+import {
+  DRIVE_FOLDER_KIND,
+  DRIVE_SHARED_DRIVE_KIND,
+} from '#src/integrations/google-drive-scope.js';
 import {
   checkRateLimit,
   RATE_LIMITS,
@@ -291,18 +296,78 @@ function parseDriveExtractTombstones(value: unknown): DriveExtractTombstone[] {
   return found;
 }
 
-export function isMissingS3ObjectError(err: unknown): boolean {
-  if (!err || typeof err !== 'object') return false;
-  const name = 'name' in err && typeof err.name === 'string' ? err.name : '';
-  const code = 'Code' in err && typeof err.Code === 'string' ? err.Code : '';
-  const httpStatus =
+function s3ErrorHttpStatus(err: unknown): number | undefined {
+  if (!err || typeof err !== 'object') return undefined;
+  if (
     '$metadata' in err &&
     err.$metadata &&
     typeof err.$metadata === 'object' &&
-    'httpStatusCode' in err.$metadata
-      ? err.$metadata.httpStatusCode
-      : undefined;
-  return name === 'NoSuchKey' || name === 'NotFound' || code === 'NoSuchKey' || httpStatus === 404;
+    'httpStatusCode' in err.$metadata &&
+    typeof err.$metadata.httpStatusCode === 'number'
+  ) {
+    return err.$metadata.httpStatusCode;
+  }
+  if ('statusCode' in err && typeof err.statusCode === 'number') return err.statusCode;
+  return undefined;
+}
+
+function s3ErrorCode(err: unknown): string {
+  if (!err || typeof err !== 'object') return '';
+  if ('name' in err && typeof err.name === 'string' && err.name.length > 0) return err.name;
+  if ('Code' in err && typeof err.Code === 'string') return err.Code;
+  if ('code' in err && typeof err.code === 'string') return err.code;
+  return '';
+}
+
+export function isMissingS3ObjectError(err: unknown): boolean {
+  const code = s3ErrorCode(err);
+  const httpStatus = s3ErrorHttpStatus(err);
+  return code === 'NoSuchKey' || code === 'NotFound' || httpStatus === 404;
+}
+
+const RETRYABLE_DRIVE_EXTRACT_STORAGE_CODES = new Set([
+  'Timeout',
+  'TimeoutError',
+  'RequestTimeout',
+  'RequestTimeoutException',
+  'InternalError',
+  'InternalServerError',
+  'ServiceUnavailable',
+  'SlowDown',
+  'Throttling',
+  'ThrottlingException',
+  'TooManyRequestsException',
+  'NetworkingError',
+  'ECONNRESET',
+  'ETIMEDOUT',
+  'EAI_AGAIN',
+  'ENOTFOUND',
+]);
+
+/** Transient S3/network faults while reading a valid extract result. Do not consume the slot. */
+export function isRetryableDriveExtractStorageError(err: unknown): boolean {
+  if (isMissingS3ObjectError(err)) return false;
+  const message = err instanceof Error ? err.message : String(err);
+  if (isDriveExtractResultTooLarge(message)) return false;
+  const httpStatus = s3ErrorHttpStatus(err);
+  if (httpStatus === 429 || (typeof httpStatus === 'number' && httpStatus >= 500)) return true;
+  const code = s3ErrorCode(err);
+  if (RETRYABLE_DRIVE_EXTRACT_STORAGE_CODES.has(code)) return true;
+  return /timeout|timed out|ECONNRESET|ETIMEDOUT|SlowDown|throttl|service unavailable|\b50[0234]\b/iu.test(
+    message,
+  );
+}
+
+/** Keep a cancel tombstone until remaining keys, live tombstones, or the producer wait remain. */
+export function shouldRetainDriveExtractCleanup(
+  cursor: DriveExtractCursor,
+  remainingCurrentKeys: string[],
+  opts: { mode: 'consume' | 'cancel'; now?: number },
+): boolean {
+  if (remainingCurrentKeys.length > 0) return true;
+  if ((cursor.tombstones?.length ?? 0) > 0) return true;
+  if (opts.mode !== 'cancel') return false;
+  return !isDriveExtractCancelSettled(cursor, opts.now ?? Date.now());
 }
 
 export function driveExtractTombstoneKeys(tombstone: DriveExtractTombstone): string[] {
@@ -756,6 +821,121 @@ export function driveFileInheritsChangedSelection(input: {
     if (remaining.has(candidate)) return false;
   }
   return false;
+}
+
+export interface DriveSelectionObjectLink {
+  kind: string;
+  externalId: string;
+  linkedObjectId: string | null;
+}
+
+function isDriveContainerSelectionKind(kind: string): boolean {
+  return kind === DRIVE_FOLDER_KIND || kind === DRIVE_SHARED_DRIVE_KIND;
+}
+
+/**
+ * After an explicit `drive.file` selection is dropped, resolve the object
+ * link the file still inherits from remaining folder/shared-drive (or file)
+ * selections. Candidate order matches live capture lookup.
+ */
+export function survivingLinkedObjectForDriveFile(input: {
+  fileId: string;
+  remainingSelections: DriveSelectionObjectLink[];
+  parentIds?: string[];
+  matchedAncestorId?: string | null;
+  driveId?: string | null;
+  inheritedCandidates?: string[] | null;
+}): string | null {
+  const remainingLinked = input.remainingSelections.filter(
+    (selection): selection is DriveSelectionObjectLink & { linkedObjectId: string } =>
+      typeof selection.linkedObjectId === 'string' && selection.linkedObjectId.length > 0,
+  );
+  if (remainingLinked.length === 0) return null;
+  const candidates = (
+    input.inheritedCandidates && input.inheritedCandidates.length > 0
+      ? input.inheritedCandidates
+      : driveObjectLinkCandidates({
+          fileId: input.fileId,
+          parentIds: input.parentIds ?? [],
+          ...(input.matchedAncestorId !== undefined
+            ? { matchedAncestorId: input.matchedAncestorId }
+            : {}),
+          ...(input.driveId !== undefined ? { driveId: input.driveId } : {}),
+        })
+  ).filter((id) => id.length > 0);
+  const byExternalId = new Map(
+    remainingLinked.map((selection) => [selection.externalId, selection.linkedObjectId]),
+  );
+  for (const candidate of candidates) {
+    const hit = byExternalId.get(candidate);
+    if (hit) return hit;
+  }
+  const containerObjectIds = [
+    ...new Set(
+      remainingLinked
+        .filter((selection) => isDriveContainerSelectionKind(selection.kind))
+        .map((selection) => selection.linkedObjectId),
+    ),
+  ];
+  return containerObjectIds.length === 1 ? (containerObjectIds[0] ?? null) : null;
+}
+
+function asLinkHintRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
+}
+
+function stringList(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is string => typeof item === 'string' && item.length > 0);
+}
+
+export async function latestDriveObjectLinkHints(
+  db: Db,
+  input: { teamId: string; integrationId: string; fileId: string },
+): Promise<{
+  parentIds: string[];
+  driveId: string | null;
+  matchedAncestorId: string | null;
+  inheritedCandidates: string[] | null;
+}> {
+  const fileId = input.fileId.trim();
+  if (!fileId) {
+    return { parentIds: [], driveId: null, matchedAncestorId: null, inheritedCandidates: null };
+  }
+  const [latest] = await db
+    .select({
+      sourceMetadata: rawEvents.sourceMetadata,
+      occurredAt: rawEvents.occurredAt,
+    })
+    .from(rawEvents)
+    .where(
+      and(
+        eq(rawEvents.teamId, input.teamId),
+        eq(rawEvents.source, 'integration'),
+        sql`${rawEvents.sourceMetadata} ->> 'provider' = 'google_drive'`,
+        sql`${rawEvents.sourceMetadata} ->> 'integration_id' = ${input.integrationId}`,
+        sql`lower(${rawEvents.sourceMetadata} ->> 'external_object_id') = ${fileId.toLowerCase()}`,
+      ),
+    )
+    .orderBy(desc(rawEvents.occurredAt))
+    .limit(1);
+  const metadata = asLinkHintRecord(latest?.sourceMetadata);
+  const drive = asLinkHintRecord(metadata?.drive);
+  if (!drive) {
+    return { parentIds: [], driveId: null, matchedAncestorId: null, inheritedCandidates: null };
+  }
+  const inheritedCandidates = stringList(drive.inherited_candidates);
+  const inheritedFrom = typeof drive.inherited_from === 'string' ? drive.inherited_from : null;
+  const matchedAncestorId =
+    typeof drive.matched_ancestor_id === 'string' ? drive.matched_ancestor_id : inheritedFrom;
+  const driveId = typeof drive.drive_id === 'string' ? drive.drive_id : null;
+  return {
+    parentIds: stringList(drive.parents),
+    driveId,
+    matchedAncestorId,
+    inheritedCandidates: inheritedCandidates.length > 0 ? inheritedCandidates : null,
+  };
 }
 
 function driveFileIsMyDriveDescendant(input: {

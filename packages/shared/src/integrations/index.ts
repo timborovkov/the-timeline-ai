@@ -58,6 +58,8 @@ export {
   isDriveExtractPendingStale,
   isDriveExtractResultTooLarge,
   isMissingS3ObjectError,
+  isRetryableDriveExtractStorageError,
+  shouldRetainDriveExtractCleanup,
   parseDriveExtractCursor,
   parseDriveTransientExtractResult,
   partitionDriveExtractTombstones,
