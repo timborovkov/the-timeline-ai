@@ -7,17 +7,17 @@ import {
   transcribeAudio,
 } from '@timeline/shared/llm';
 
-import {
-  TranscriptionEvalRequestError,
-  TranscriptionQualityEvalError,
-} from '#src/transcription-eval/evaluate.js';
-
 import type {
   TranscriptionEvalTransport,
   TranscriptionEvalTransportRequest,
   TranscriptionEvalZdrRoutes,
 } from '#src/transcription-eval/evaluate.js';
 import type { TranscriptionEvalTransportSuccess } from '#src/transcription-eval/metrics.js';
+
+import {
+  TranscriptionEvalRequestError,
+  TranscriptionQualityEvalError,
+} from '#src/transcription-eval/evaluate.js';
 
 export const OPENROUTER_TRANSCRIPTION_EVAL_BASE_URL = 'https://openrouter.ai/api/v1';
 
