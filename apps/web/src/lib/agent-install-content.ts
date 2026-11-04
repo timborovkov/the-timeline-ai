@@ -28,6 +28,17 @@ export const TIMELINE_SKILL_INSTALL_PROMPT = `$skill-installer Install this Time
 export const TIMELINE_MCP_COMMAND = `codex mcp add timeline \\
   --url "https://thetimeline.cc/api/mcp/server"`;
 
+/** Advertised hosted MCP tools. Previous names stay callable aliases, not install copy. */
+export const TIMELINE_HOSTED_MCP_TOOLS = [
+  'timeline.search',
+  'timeline.get',
+  'timeline.subject',
+  'timeline.ask',
+  'timeline.remember',
+] as const;
+
+export const TIMELINE_HOSTED_MCP_TOOLS_LIST = TIMELINE_HOSTED_MCP_TOOLS.join(', ');
+
 export const TIMELINE_AGENT_SKILL = {
   id: 'timeline',
   name: 'Timeline',
@@ -91,6 +102,7 @@ export const TIMELINE_AGENT_HELP_SEARCH_TEXT = [
   TIMELINE_CLAUDE_PLUGIN_INSTALL_COMMAND,
   TIMELINE_SKILL_INSTALL_PROMPT,
   TIMELINE_MCP_COMMAND,
+  TIMELINE_HOSTED_MCP_TOOLS_LIST,
   TIMELINE_AGENT_SKILL.id,
   TIMELINE_AGENT_SKILL.name,
   TIMELINE_AGENT_SKILL.description,

@@ -97,8 +97,10 @@ describe('LandingPage', () => {
     expect(html).toContain('Give this to your agent');
     expect(html).toContain('Set up The Timeline - https://thetimeline.cc/llms.txt');
     expect(html).toContain('what did we promise Northstar');
-    expect(html).toContain('timeline.retrieve_workspace_context');
-    expect(html).toContain('timeline.get_event');
+    expect(html).toContain('timeline.subject');
+    expect(html).toContain('timeline.get');
+    expect(html).not.toContain('timeline.retrieve_workspace_context');
+    expect(html).not.toContain('timeline.get_event');
     expect(html).toContain('data-chat-to-answer');
     expect(html).toContain('data-agent-setup');
     expect(html).toContain('aria-label="Public navigation menu"');

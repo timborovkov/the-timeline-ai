@@ -1,4 +1,4 @@
-import { CAPACITY_BY_PLAN, PLAN_CATALOG } from '@timeline/shared/billing/catalog';
+import { CAPACITY_BY_PLAN, PLAN_CATALOG, formatStorageGb } from '@timeline/shared/billing/catalog';
 
 import { TRUST_AI_PRIVACY_SUMMARY } from '@/lib/trust-claims';
 
@@ -22,6 +22,6 @@ export const PRICING_FAQS = [
   },
   {
     question: 'What happens on the free plan?',
-    answer: `The ${free.name} plan is ${free.tagline.charAt(0).toLowerCase()}${free.tagline.slice(1)} The platform fee is €0, with a €0 spend cap that hard-stops metered usage. Included capacity is ${freeCapacity.agentTurnsPerMonth} Ask turns, ${freeCapacity.acceptedSourcesPerMonth?.toLocaleString('en-IE')} accepted sources, ${freeCapacity.recallMinutesPerMonth} meeting minutes, ${freeCapacity.inboundEmailPerMonth} inbound emails, ${freeCapacity.documents} documents and ${freeCapacity.storageGb} GB of file storage per month. Custom MCP servers are not included. Support is ${free.supportLabel.toLowerCase()}.`,
+    answer: `The ${free.name} plan is ${free.tagline.charAt(0).toLowerCase()}${free.tagline.slice(1)} The platform fee is €0, with a €0 spend cap that hard-stops metered usage. Included capacity is ${freeCapacity.agentTurnsPerMonth} Ask turns, ${freeCapacity.acceptedSourcesPerMonth?.toLocaleString('en-IE')} accepted sources (timeline.remember notes count toward that meter, like other ingest evidence), ${freeCapacity.recallMinutesPerMonth} meeting minutes, ${freeCapacity.inboundEmailPerMonth} inbound emails, ${freeCapacity.documents?.toLocaleString('en-IE')} documents, ${freeCapacity.indexedChunks?.toLocaleString('en-IE')} indexed chunks and ${formatStorageGb(freeCapacity.storageGb ?? 0)} of file storage per month. Custom MCP servers are not included. Support is ${free.supportLabel.toLowerCase()}.`,
   },
 ] as const;

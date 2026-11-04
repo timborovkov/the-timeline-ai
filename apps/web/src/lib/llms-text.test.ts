@@ -39,6 +39,11 @@ describe('llms text files', () => {
     expect(text).toContain('[llms-full.txt](https://thetimeline.cc/llms-full.txt)');
     expect(text).toContain('Set up The Timeline - https://thetimeline.cc/llms.txt');
     expect(text).toContain('https://thetimeline.cc/api/mcp/server');
+    expect(text).toContain(
+      'timeline.search, timeline.get, timeline.subject, timeline.ask, timeline.remember',
+    );
+    expect(text).toContain('Capture is a separate consent checkbox, on by default');
+    expect(text).toContain('counts toward the accepted-sources meter');
     expect(text).toContain('plugins/timeline');
     expect(text).toContain('POST https://thetimeline.cc/api/webhooks/ingest');
     expect(text).toContain('Signed-in app routes, auth routes, invite routes, and API routes');

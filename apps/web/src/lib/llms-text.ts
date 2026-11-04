@@ -1,6 +1,7 @@
 import type { PublicDocument, PublicDocumentRegistry } from '@/lib/public-site';
 
 import { TIMELINE_AGENT_SETUP_COMMAND } from '@/components/marketing/copy';
+import { TIMELINE_HOSTED_MCP_TOOLS_LIST } from '@/lib/agent-install-content';
 import { PUBLIC_DOCUMENT_REGISTRY, canonicalPublicUrl } from '@/lib/public-site';
 import { getSiteUrl } from '@/lib/site-url';
 
@@ -42,7 +43,9 @@ const AGENT_SETUP_SECTION = [
   '',
   '## Connect The Timeline',
   '',
-  '- Hosted MCP server (Streamable HTTP): https://thetimeline.cc/api/mcp/server. Compatible clients use browser OAuth: sign in, choose a team, and approve scopes. Static team keys (`tla_`) are a manual-client fallback and see team-visible data only.',
+  '- Hosted MCP server (Streamable HTTP): https://thetimeline.cc/api/mcp/server. Compatible clients use browser OAuth: sign in, choose a team, and approve scopes. Capture is a separate consent checkbox, on by default, so `timeline.remember` can store cited notes; unchecking it is read-only. `timeline.ask` needs a separate owner/admin `agent:ask` scope. Static team keys (`tla_`) are a manual-client fallback and see team-visible data only.',
+  `- Advertised tools: ${TIMELINE_HOSTED_MCP_TOOLS_LIST}. Previous names remain callable aliases and are omitted from tools/list.`,
+  '- `timeline.remember` stores cited ingest evidence and counts toward the accepted-sources meter, like other ingest. It does not mutate canonical records.',
   '- Timeline skill: `plugins/timeline`. The Codex and Claude Code marketplace packages include the skill and the hosted MCP connection.',
   '- Ingest email: forward, CC, or BCC mail to the team inbound address (`<team-slug>@<INBOUND_EMAIL_DOMAIN>`).',
   '- Ingest webhook: authenticated `POST https://thetimeline.cc/api/webhooks/ingest` with a Bearer `tli_` key, or a one-time URL under `/api/webhooks/ingest/<token>`.',

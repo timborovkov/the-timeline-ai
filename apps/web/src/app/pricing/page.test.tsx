@@ -22,5 +22,12 @@ describe('pricing page FAQ', () => {
     expect(html).toContain('does not train or fine-tune models on Customer Content');
     expect(html).toContain('€0 spend cap');
     expect(html).toContain('100 Ask turns');
+    expect(html).toContain('1,000 accepted sources');
+    expect(html).toContain('timeline.remember notes count toward that meter');
+    expect(html).toContain('10,000 documents');
+    expect(html).toContain('20,000 indexed chunks');
+    expect(html).toContain('100 MB of file storage');
+    expect(html).not.toContain('0.097');
+    expect(html).not.toContain('1 GB of file storage');
   });
 });

@@ -585,12 +585,12 @@ function ThreadScene() {
           <p className={styles.mcpPrompt}>What did we promise Northstar?</p>
           <ol className={styles.mcpCalls}>
             <li>
-              <code>timeline.retrieve_workspace_context</code>
-              <span>target: Northstar</span>
+              <code>timeline.subject</code>
+              <span>subject: Northstar</span>
             </li>
             <li>
-              <code>timeline.get_event</code>
-              <span>Northstar pilot handoff review</span>
+              <code>timeline.get</code>
+              <span>name: Northstar pilot handoff review</span>
             </li>
           </ol>
           <p className={styles.mcpAnswer}>

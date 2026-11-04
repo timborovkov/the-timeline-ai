@@ -8,7 +8,7 @@ import styles from '@/components/marketing/editorial/editorial.module.css';
 import { MarketingContainer, MarketingSectionGrid } from '@/components/marketing/marketing-layout';
 import { MarketingSectionIndex } from '@/components/marketing/section-index';
 import { MarketingCtaBand } from '@/components/marketing/start-free-cta';
-import { TIMELINE_MCP_COMMAND } from '@/lib/agent-install-content';
+import { TIMELINE_HOSTED_MCP_TOOLS_LIST, TIMELINE_MCP_COMMAND } from '@/lib/agent-install-content';
 import { buildPublicStructuredData } from '@/lib/public-site';
 import { getSiteUrl } from '@/lib/site-url';
 
@@ -53,6 +53,24 @@ export function AgentsHubPage() {
                 {TIMELINE_MCP_COMMAND}
               </pre>
               <ul className="mt-6 list-disc space-y-3 pl-5 text-base leading-7 text-fg-muted">
+                <li>
+                  The hosted server advertises five tools:{' '}
+                  <code className="font-mono text-sm text-fg">
+                    {TIMELINE_HOSTED_MCP_TOOLS_LIST}
+                  </code>
+                  .
+                </li>
+                <li>
+                  OAuth consent has a separate capture checkbox, on by default, so{' '}
+                  <code className="font-mono text-sm text-fg">timeline.remember</code> can store a
+                  cited note. Uncheck it for a read-only grant.{' '}
+                  <code className="font-mono text-sm text-fg">timeline.ask</code> needs a separate
+                  owner or admin <code className="font-mono text-sm text-fg">agent:ask</code> scope.
+                </li>
+                <li>
+                  Remember notes use the same ingest path as other accepted sources, so they count
+                  toward the Free plan accepted-sources meter. They never change canonical records.
+                </li>
                 <li>
                   The Timeline skill lives in{' '}
                   <code className="font-mono text-sm text-fg">plugins/timeline</code> and is bundled
