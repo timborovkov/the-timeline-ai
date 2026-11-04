@@ -1,7 +1,7 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useActionState, useId, useState } from 'react';
+import { useActionState, useState } from 'react';
 
 import { updateInboundEmailWhitelistAction } from '@/app/actions/teams';
 import { AllowedSendersEditor } from '@/components/allowed-senders-editor';
@@ -33,7 +33,6 @@ export function ConnectAgentMemory({
   agentWebhookConfigured: boolean;
 }) {
   const router = useRouter();
-  const headingId = useId();
   const [busy, setBusy] = useState(false);
   const [createdUrl, setCreatedUrl] = useState<string | null>(null);
   const webhookConfigured = agentWebhookConfigured || createdUrl !== null;
@@ -84,16 +83,11 @@ export function ConnectAgentMemory({
   }
 
   return (
-    <section className="space-y-4" aria-labelledby={headingId}>
-      <div className="space-y-1">
-        <h2 id={headingId} className="text-base font-semibold tracking-tight text-fg">
-          Add memory
-        </h2>
-        <p className="text-sm leading-6 text-fg-muted">
-          Email the team address or POST the agent webhook. Both create cited evidence through the
-          existing ingest path. They never write canonical objects or tasks.
-        </p>
-      </div>
+    <div className="space-y-4">
+      <p className="text-sm leading-6 text-fg-muted">
+        Email the team address or POST the agent webhook. Both create cited evidence through the
+        existing ingest path. They never write canonical objects or tasks.
+      </p>
       <CopyableTextField
         id="connect-agent-team-email"
         label="Team email"
@@ -103,7 +97,7 @@ export function ConnectAgentMemory({
         description="Forward, CC, or BCC a note to capture it. Members can always send from their account email."
       />
       {isAdmin ? (
-        <div className="space-y-4 border-y border-border py-4">
+        <div className="space-y-5">
           <AllowedSenderShortcut
             extraSenders={extraSenders}
             shortcutSenders={shortcutSenders}
@@ -116,7 +110,13 @@ export function ConnectAgentMemory({
               <code className="font-mono text-xs">ok: true</code> so agents can validate it. The
               secret URL is shown once.
             </p>
-            <Button type="button" size="sm" disabled={busy} onClick={() => void createWebhook()}>
+            <Button
+              type="button"
+              size="sm"
+              variant={webhookConfigured ? 'outline' : 'default'}
+              disabled={busy}
+              onClick={() => void createWebhook()}
+            >
               {busy
                 ? 'Creating webhook…'
                 : webhookConfigured
@@ -130,12 +130,19 @@ export function ConnectAgentMemory({
               </p>
             ) : null}
             {createdUrl ? (
-              <div className="space-y-2 rounded-sm border border-signal/40 bg-surface p-3">
-                <p className="text-sm font-medium text-fg">Webhook URL — copy it now</p>
-                <code className="block break-all font-mono text-xs text-fg">{createdUrl}</code>
+              <div className="space-y-3">
+                <p className="text-sm text-fg-muted">
+                  Webhook URL — copy it now. It is shown once.
+                </p>
                 <pre
                   translate="no"
-                  className="overflow-x-auto whitespace-pre-wrap break-words font-mono text-xs leading-5 text-fg"
+                  className="overflow-x-auto whitespace-pre-wrap break-words rounded-sm border border-border bg-surface-2 p-3 font-mono text-xs leading-5 text-fg"
+                >
+                  <code>{createdUrl}</code>
+                </pre>
+                <pre
+                  translate="no"
+                  className="overflow-x-auto whitespace-pre-wrap break-words rounded-sm border border-border bg-surface-2 p-3 font-mono text-xs leading-5 text-fg"
                 >
                   <code>{ingestWebhookCurlExample(createdUrl)}</code>
                 </pre>
@@ -162,7 +169,7 @@ export function ConnectAgentMemory({
           Ask a team admin to add extra allowed senders or create the agent webhook.
         </p>
       )}
-    </section>
+    </div>
   );
 }
 

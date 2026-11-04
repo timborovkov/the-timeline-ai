@@ -154,7 +154,14 @@ export type ConnectAgentId =
 export interface ConnectAgentGuide {
   id: ConnectAgentId;
   label: string;
-  logo: string;
+  /**
+   * Official vendor mark on a white tile, or null for a text-only row.
+   * Claude / Claude Code: Simple Icons (Anthropic). ChatGPT / Codex: Simple Icons
+   * OpenAI blossom. Cursor: Simple Icons Cursor from cursor.com/brand. Grok Bot:
+   * Wikimedia Commons XAI-Logo.svg. Hermes: official PNG from
+   * hermes-agent.nousresearch.com. OpenClaw: official pixel lobster.
+   */
+  logo: string | null;
   summary: string;
   steps: string[];
   copy?: { label: string; value: (mcpUrl: string) => string };
@@ -165,39 +172,39 @@ export const CONNECT_AGENT_GUIDES: readonly ConnectAgentGuide[] = [
   {
     id: 'claude-code',
     label: 'Claude Code',
-    logo: '/connectors/claude.svg',
-    summary: 'Install the Timeline plugin, restart, then approve OAuth in the browser.',
+    logo: '/connectors/claude-code.svg',
+    summary: 'Install the plugin, restart, then approve OAuth.',
     steps: [
       'Run the marketplace commands in a terminal.',
       'Fully restart Claude Code and start a new conversation.',
       'Sign in, choose this team, and approve read. Add capture for timeline.remember.',
-      'Ask Claude to search Timeline with timeline.search. Answers appear once work is captured; remember works now.',
+      'Ask Claude to search with timeline.search.',
     ],
     copy: { label: 'Copy Claude Code commands', value: () => CLAUDE_CODE_INSTALL_COMMAND },
   },
   {
     id: 'codex',
     label: 'Codex',
-    logo: '/connectors/codex.svg',
-    summary: 'Paste the install prompt, restart, then finish browser OAuth.',
+    logo: '/connectors/openai.svg',
+    summary: 'Paste the install prompt, restart, then finish OAuth.',
     steps: [
       'Paste the Codex install prompt into a new task.',
       'Fully restart Codex and start a new task so the plugin loads.',
       'Complete sign-in, choose this team, and review scopes. Read is the default; capture enables timeline.remember.',
-      'Use timeline.search, timeline.get, and timeline.subject. Use timeline.remember to store a note.',
+      'Use timeline.search, timeline.get, and timeline.subject.',
     ],
     copy: { label: 'Copy Codex install prompt', value: () => CODEX_INSTALL_PROMPT },
   },
   {
     id: 'chatgpt',
     label: 'ChatGPT',
-    logo: '/connectors/chatgpt.svg',
-    summary: 'Add Timeline as a ChatGPT app connector with Streamable HTTP and OAuth.',
+    logo: '/connectors/openai.svg',
+    summary: 'Add a ChatGPT app connector with Streamable HTTP.',
     steps: [
       'Open ChatGPT Settings, then Apps.',
       'Create an app or add a connector named Timeline.',
       'Paste the Streamable HTTP MCP server URL.',
-      'Sign in with Timeline OAuth, choose this team, and approve read plus capture for remember.',
+      'Sign in with Timeline OAuth and approve read plus capture for remember.',
     ],
     copy: { label: 'Copy ChatGPT details', value: (mcpUrl) => chatGptConnectorDetails(mcpUrl) },
   },
@@ -205,7 +212,7 @@ export const CONNECT_AGENT_GUIDES: readonly ConnectAgentGuide[] = [
     id: 'claude',
     label: 'Claude Desktop / claude.ai',
     logo: '/connectors/claude.svg',
-    summary: 'Add a custom connector on claude.ai or Claude Desktop, then approve OAuth.',
+    summary: 'Add a custom connector, then approve OAuth.',
     steps: [
       'On claude.ai, open Settings → Connectors and add a custom connector.',
       'In Claude Desktop, add a remote MCP server with Streamable HTTP.',
@@ -218,12 +225,12 @@ export const CONNECT_AGENT_GUIDES: readonly ConnectAgentGuide[] = [
     id: 'cursor',
     label: 'Cursor',
     logo: '/connectors/cursor.svg',
-    summary: 'Install with the Cursor deeplink, then complete Timeline OAuth.',
+    summary: 'Install with the Cursor deeplink, then complete OAuth.',
     steps: [
       'Click Add to Cursor, or open Settings → MCP and add a new server.',
       'Cursor opens the hosted Timeline MCP URL over Streamable HTTP.',
       'Sign in, choose this team, and approve read. Add capture for timeline.remember.',
-      'Start a new agent chat and call timeline.search. Remember works before other work is captured.',
+      'Start a new agent chat and call timeline.search.',
     ],
     copy: { label: 'Copy MCP URL', value: (mcpUrl) => mcpUrl },
     deeplink: { label: 'Add to Cursor', href: (mcpUrl) => cursorMcpInstallUrl(mcpUrl) },
@@ -231,21 +238,21 @@ export const CONNECT_AGENT_GUIDES: readonly ConnectAgentGuide[] = [
   {
     id: 'grok',
     label: 'Grok Bot',
-    logo: '/connectors/grok.svg',
-    summary: 'Add Timeline as a remote MCP server in Grok, then approve OAuth.',
+    logo: '/connectors/xai.svg',
+    summary: 'Add a remote Streamable HTTP server, then approve OAuth.',
     steps: [
       'Open Grok Bot settings and add an MCP server.',
       'Choose Streamable HTTP and paste the Timeline MCP URL.',
       'Sign in with Timeline OAuth, choose this team, and approve read plus capture.',
-      'Ask Grok to use timeline.search. Use timeline.remember to store a note as evidence.',
+      'Ask Grok to use timeline.search.',
     ],
     copy: { label: 'Copy MCP URL', value: (mcpUrl) => mcpUrl },
   },
   {
     id: 'hermes',
     label: 'Hermes',
-    logo: '/connectors/hermes.svg',
-    summary: 'Point Hermes at the hosted Timeline MCP URL and finish OAuth.',
+    logo: '/connectors/hermes.png',
+    summary: 'Point Hermes at the hosted MCP URL and finish OAuth.',
     steps: [
       'Open Hermes MCP or tools settings.',
       'Add a remote Streamable HTTP server named Timeline.',
@@ -258,7 +265,7 @@ export const CONNECT_AGENT_GUIDES: readonly ConnectAgentGuide[] = [
     id: 'openclaw',
     label: 'OpenClaw',
     logo: '/connectors/openclaw.svg',
-    summary: 'Add the hosted Timeline URL as a remote MCP server, then complete OAuth.',
+    summary: 'Add the hosted URL as a remote MCP server, then complete OAuth.',
     steps: [
       'Open OpenClaw MCP configuration.',
       'Add a remote server with Streamable HTTP and the Timeline MCP URL.',

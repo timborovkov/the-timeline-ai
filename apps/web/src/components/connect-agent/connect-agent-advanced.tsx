@@ -168,99 +168,97 @@ export function ConnectAgentAdvanced({
   }
 
   return (
-    <details className="border-y border-border py-4">
-      <summary className="cursor-pointer text-sm font-medium text-fg">Advanced</summary>
-      <div className="mt-4 space-y-6">
-        <p className="text-sm leading-6 text-fg-muted">
-          Static <span className="font-mono">tla_</span> keys are a fallback for clients that cannot
-          complete OAuth. They are team-visible only. Static-key remember is authored as the team
-          actor, not a member. Prefer OAuth.
-        </p>
-        <div className="space-y-2">
-          <Label htmlFor={jsonId} size="sm">
-            JSON config
-          </Label>
-          <pre
-            id={jsonId}
-            translate="no"
-            className="overflow-x-auto whitespace-pre-wrap break-words rounded-sm border border-border bg-surface-2 p-3 font-mono text-xs leading-5 text-fg"
-          >
-            <code>{jsonSnippet}</code>
-          </pre>
-          {mintedKey ? (
-            <CopyButton value={jsonSnippet} label="Copy JSON" />
-          ) : (
-            <p className="text-xs leading-5 text-fg-dim">
-              Create a key to fill the Authorization header. Direct Codex OAuth:{' '}
-              <code className="font-mono">{oauthSnippet}</code>
-            </p>
-          )}
-        </div>
-        {isAdmin ? (
-          <>
-            {mintedKey ? (
-              <div className="space-y-3 border-y border-signal/40 py-4">
-                <div className="text-sm font-medium">
-                  New key: keep this open until your client is connected
-                </div>
-                <p className="text-sm text-fg-muted">
-                  The plaintext for <span className="font-mono">{mintedKey.name}</span> is shown
-                  below once. We store only the hash.
-                </p>
-                <div className="flex items-center gap-2">
-                  <code className="flex-1 break-all rounded-sm border border-signal/40 bg-surface-2 px-2 py-1.5 font-mono text-xs">
-                    {mintedKey.plaintext}
-                  </code>
-                  <CopyButton value={mintedKey.plaintext} />
-                </div>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => {
-                    update({ mintedKey: null });
-                  }}
-                >
-                  Connected — dismiss key
-                </Button>
-              </div>
-            ) : null}
-            <div className="flex items-center justify-between">
-              <div className="text-xs text-fg-muted">Active keys ({keys.length})</div>
-              <Button
-                size="sm"
-                onClick={() => {
-                  update({ showCreate: !showCreate, nameError: null });
-                }}
-              >
-                {showCreate ? 'Cancel' : 'New key'}
-              </Button>
-            </div>
-            {showCreate ? (
-              <McpOutboundKeyForm
-                keyNameId={keyNameId}
-                keyNameErrorId={keyNameErrorId}
-                keyNameRef={keyNameRef}
-                name={name}
-                nameError={nameError}
-                allowAgent={allowAgent}
-                busy={busy}
-                allowAgentDescription="This key can start paid agent turns. Remember from a static key is still authored as the team actor."
-                onNameChange={(value) => {
-                  update({ name: value, nameError: null });
-                }}
-                onAllowAgentChange={(value) => {
-                  update({ allowAgent: value });
-                }}
-                onSubmit={submitCreate}
-              />
-            ) : null}
-            <McpOutboundKeyList keys={keys} keyMutations={keyMutations} onRevoke={revoke} />
-          </>
+    <div className="space-y-5">
+      <p className="text-sm leading-6 text-fg-muted">
+        Static <span className="font-mono">tla_</span> keys are a fallback for clients that cannot
+        complete OAuth. They are team-visible only. Static-key remember is authored as the team
+        actor, not a member. Prefer OAuth.
+      </p>
+      <div className="space-y-2">
+        <Label htmlFor={jsonId} size="sm">
+          JSON config
+        </Label>
+        <pre
+          id={jsonId}
+          translate="no"
+          className="overflow-x-auto whitespace-pre-wrap break-words rounded-sm border border-border bg-surface-2 p-3 font-mono text-xs leading-5 text-fg"
+        >
+          <code>{jsonSnippet}</code>
+        </pre>
+        {mintedKey ? (
+          <CopyButton value={jsonSnippet} label="Copy JSON" />
         ) : (
-          <p className="text-sm text-fg-muted">Ask a team admin to mint a static key.</p>
+          <p className="text-xs leading-5 text-fg-dim">
+            Create a key to fill the Authorization header. Direct Codex OAuth:{' '}
+            <code className="font-mono">{oauthSnippet}</code>
+          </p>
         )}
       </div>
+      {isAdmin ? (
+        <>
+          {mintedKey ? (
+            <div className="space-y-3">
+              <div className="text-sm font-medium">
+                New key: keep this open until your client is connected
+              </div>
+              <p className="text-sm text-fg-muted">
+                The plaintext for <span className="font-mono">{mintedKey.name}</span> is shown below
+                once. We store only the hash.
+              </p>
+              <div className="flex items-center gap-2">
+                <code className="flex-1 break-all rounded-sm border border-border bg-surface-2 px-2 py-1.5 font-mono text-xs">
+                  {mintedKey.plaintext}
+                </code>
+                <CopyButton value={mintedKey.plaintext} />
+              </div>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => {
+                  update({ mintedKey: null });
+                }}
+              >
+                Connected — dismiss key
+              </Button>
+            </div>
+          ) : null}
+          <div className="flex items-center justify-between">
+            <div className="text-xs text-fg-muted">Active keys ({keys.length})</div>
+            <Button
+              size="sm"
+              variant={showCreate ? 'ghost' : 'default'}
+              onClick={() => {
+                update({ showCreate: !showCreate, nameError: null });
+              }}
+            >
+              {showCreate ? 'Cancel' : 'New key'}
+            </Button>
+          </div>
+          {showCreate ? (
+            <McpOutboundKeyForm
+              keyNameId={keyNameId}
+              keyNameErrorId={keyNameErrorId}
+              keyNameRef={keyNameRef}
+              name={name}
+              nameError={nameError}
+              allowAgent={allowAgent}
+              busy={busy}
+              allowAgentDescription="This key can start paid agent turns. Remember from a static key is still authored as the team actor."
+              onNameChange={(value) => {
+                update({ name: value, nameError: null });
+              }}
+              onAllowAgentChange={(value) => {
+                update({ allowAgent: value });
+              }}
+              onSubmit={submitCreate}
+            />
+          ) : null}
+          <McpOutboundKeyList keys={keys} keyMutations={keyMutations} onRevoke={revoke} />
+        </>
+      ) : (
+        <p className="text-sm text-fg-muted">Ask a team admin to mint a static key.</p>
+      )}
       {dialog.node}
-    </details>
+    </div>
   );
 }

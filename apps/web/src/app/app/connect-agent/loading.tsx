@@ -1,5 +1,5 @@
 import { Breadcrumb } from '@/components/breadcrumb';
-import { PageHeaderSkeleton } from '@/components/loading-states';
+import { CollectionRowSkeleton, PageHeaderSkeleton } from '@/components/loading-states';
 import { Skeleton } from '@/components/ui/skeleton';
 
 export default function ConnectAgentLoading() {
@@ -9,7 +9,7 @@ export default function ConnectAgentLoading() {
         Loading Connect your agent
       </output>
       <div
-        className="space-y-8 motion-reduce:[&_.animate-pulse]:animate-none"
+        className="space-y-6 motion-reduce:[&_.animate-pulse]:animate-none"
         aria-busy="true"
         aria-label="Loading Connect your agent"
       >
@@ -20,25 +20,24 @@ export default function ConnectAgentLoading() {
             { label: 'Connect your agent' },
           ]}
         />
-        <PageHeaderSkeleton />
-        <section aria-label="Connect your agent loading placeholder" className="space-y-6">
-          <div aria-hidden="true" className="space-y-3 border-y border-border py-4">
-            <Skeleton className="h-5 w-40 motion-reduce:animate-none" />
-            <Skeleton className="h-4 w-full max-w-2xl motion-reduce:animate-none" />
-            <Skeleton className="h-16 w-full motion-reduce:animate-none" />
+        <PageHeaderSkeleton showMetadata={false} />
+        <section aria-label="Connect your agent loading placeholder" className="space-y-5">
+          <div aria-hidden="true" className="space-y-2">
+            <Skeleton className="h-5 w-36 motion-reduce:animate-none" />
+            <Skeleton className="h-4 w-full max-w-xl motion-reduce:animate-none" />
           </div>
-          <div
-            aria-hidden="true"
-            className="flex min-w-0 gap-2 overflow-hidden border-b border-border pb-2"
-          >
+          <div aria-hidden="true" className="border-t border-border">
             {Array.from({ length: 8 }).map((_, index) => (
-              <Skeleton key={index} className="h-9 w-28 shrink-0 motion-reduce:animate-none" />
+              <CollectionRowSkeleton key={index} leading metadata={0} />
             ))}
           </div>
-          <div aria-hidden="true" className="space-y-3">
-            <Skeleton className="h-5 w-36 motion-reduce:animate-none" />
-            <Skeleton className="h-16 w-full motion-reduce:animate-none" />
-            <Skeleton className="h-16 w-full motion-reduce:animate-none" />
+          <div aria-hidden="true" className="divide-y divide-border border-y border-border">
+            {Array.from({ length: 4 }).map((_, index) => (
+              <div key={index} className="flex min-h-11 items-center gap-2 py-4">
+                <Skeleton className="size-3.5 shrink-0 motion-reduce:animate-none" />
+                <Skeleton className="h-4 w-32 motion-reduce:animate-none" />
+              </div>
+            ))}
           </div>
         </section>
       </div>

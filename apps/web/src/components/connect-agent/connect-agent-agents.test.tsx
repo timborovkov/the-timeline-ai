@@ -45,4 +45,11 @@ describe('ConnectAgentAgents', () => {
       '/app/connect-agent',
     );
   });
+
+  it('explains the empty grant list without extra chrome', () => {
+    render(<ConnectAgentAgents teamId="11111111-1111-4111-8111-111111111111" grants={[]} />);
+
+    expect(screen.getByText(/No agents connected yet/)).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Revoke' })).toBeNull();
+  });
 });

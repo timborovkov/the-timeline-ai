@@ -25,21 +25,39 @@ afterEach(() => {
 });
 
 describe('ConnectAgentTabs', () => {
-  it('renders agent guides with copy actions and the Cursor deeplink', () => {
-    render(<ConnectAgentTabs mcpUrl={MCP_URL} />);
+  it('renders a client picker with official logos, copy actions, and the Cursor deeplink', () => {
+    render(<ConnectAgentTabs mcpUrl={MCP_URL} teamEmail={null} />);
 
-    expect(screen.getByRole('tablist', { name: 'Agent setup guides' })).toBeTruthy();
-    expect(screen.getByRole('tab', { name: 'Claude Code' }).getAttribute('aria-selected')).toBe(
-      'true',
+    expect(screen.getByRole('heading', { name: 'Choose a client' })).toBeTruthy();
+    expect(screen.getByRole('list', { name: 'Agent clients' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Copy setup prompt' })).toBeTruthy();
+
+    const claudeCode = screen.getByRole('button', { name: 'Claude Code' });
+    expect(claudeCode.closest('li')?.querySelector('img')?.getAttribute('src')).toBe(
+      '/connectors/claude-code.svg',
     );
     expect(screen.getByRole('button', { name: 'Copy Claude Code commands' })).toBeTruthy();
     expect(screen.queryByText(/Developer Mode/)).toBeNull();
 
-    fireEvent.click(screen.getByRole('tab', { name: 'ChatGPT' }));
+    fireEvent.click(screen.getByRole('button', { name: 'ChatGPT' }));
     expect(screen.getByText(/Settings → Apps/)).toBeTruthy();
+    expect(
+      screen
+        .getByRole('button', { name: 'ChatGPT' })
+        .closest('li')
+        ?.querySelector('img')
+        ?.getAttribute('src'),
+    ).toBe('/connectors/openai.svg');
     expect(screen.queryByText(/Developer Mode/)).toBeNull();
 
-    fireEvent.click(screen.getByRole('tab', { name: 'Cursor' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Cursor' }));
+    expect(
+      screen
+        .getByRole('button', { name: 'Cursor' })
+        .closest('li')
+        ?.querySelector('img')
+        ?.getAttribute('src'),
+    ).toBe('/connectors/cursor.svg');
     const deeplink = screen.getByRole('link', { name: 'Add to Cursor' });
     expect(deeplink.getAttribute('href') ?? '').toContain(
       'cursor://anysphere.cursor-deeplink/mcp/install',

@@ -1,8 +1,5 @@
-import { KeyRound } from 'lucide-react';
-
 import { CollectionRow } from '@/components/collections/collection-row';
 import { McpOutboundKeyMeta } from '@/components/connect-agent/mcp-outbound-key-meta';
-import { EmptyState } from '@/components/empty-state';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ItemActionGroup } from '@/components/ui/item-actions';
@@ -28,17 +25,14 @@ export function McpOutboundKeyList({
 }) {
   if (keys.length === 0) {
     return (
-      <EmptyState
-        icon={KeyRound}
-        size="inset"
-        title="No active keys"
-        body="Create a retrieval key only when a client cannot complete OAuth."
-      />
+      <p className="text-sm leading-6 text-fg-muted">
+        No static keys. Create one only when a client cannot complete OAuth.
+      </p>
     );
   }
 
   return (
-    <ul className="divide-y divide-border border-y border-border">
+    <ul className="border-t border-border">
       {keys.map((key) => {
         const mutation = keyMutations[key.id] ?? { busy: false };
         return (

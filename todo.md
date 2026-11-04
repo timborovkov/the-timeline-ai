@@ -107,7 +107,7 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       and directories, with quiet dim icons, create/recover actions, and
       waiting copy for proposals, notifications, and captured work.
 - [x] Connect your agent: `/app/connect-agent` consolidates Timeline-as-MCP
-      setup (OAuth-first agent tabs, connected grants with revoke, add-memory
+      setup (OAuth-first client picker, connected grants with revoke, add-memory
       email/webhook, SKILL.md, collapsed `tla_` keys). `/app/team/mcp-share`
       redirects. New empty teams get a skippable Home card that does not return
       once skipped.

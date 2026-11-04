@@ -1,1 +1,60 @@
-<svg fill="#C2410C" role="img" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><title>OpenClaw</title><path d="M12 3c3.2 0 5.8 2.2 5.8 5.1 0 1.6-.8 3-2.1 4l2.8 6.4h-2.5l-2.3-5.3H12v5.3H9.8V12.5H8.3L6 17.8H3.5l2.8-6.4C5 11.1 4.2 9.7 4.2 8.1 4.2 5.2 6.8 3 12 3zm0 2.1c-2.1 0-3.6 1.2-3.6 3 0 1.8 1.5 3 3.6 3s3.6-1.2 3.6-3c0-1.8-1.5-3-3.6-3z"/></svg>
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 16 16" role="img" aria-label="Pixel lobster">
+  <rect width="16" height="16" fill="none"/>
+  <!-- outline -->
+  <g fill="#3a0a0d">
+    <rect x="1" y="5" width="1" height="3"/>
+    <rect x="2" y="4" width="1" height="1"/>
+    <rect x="2" y="8" width="1" height="1"/>
+    <rect x="3" y="3" width="1" height="1"/>
+    <rect x="3" y="9" width="1" height="1"/>
+    <rect x="4" y="2" width="1" height="1"/>
+    <rect x="4" y="10" width="1" height="1"/>
+    <rect x="5" y="2" width="6" height="1"/>
+    <rect x="11" y="2" width="1" height="1"/>
+    <rect x="12" y="3" width="1" height="1"/>
+    <rect x="12" y="9" width="1" height="1"/>
+    <rect x="13" y="4" width="1" height="1"/>
+    <rect x="13" y="8" width="1" height="1"/>
+    <rect x="14" y="5" width="1" height="3"/>
+    <rect x="5" y="11" width="6" height="1"/>
+    <rect x="4" y="12" width="1" height="1"/>
+    <rect x="11" y="12" width="1" height="1"/>
+    <rect x="3" y="13" width="1" height="1"/>
+    <rect x="12" y="13" width="1" height="1"/>
+    <rect x="5" y="14" width="6" height="1"/>
+  </g>
+
+  <!-- body -->
+  <g fill="#ff4f40">
+    <rect x="5" y="3" width="6" height="1"/>
+    <rect x="4" y="4" width="8" height="1"/>
+    <rect x="3" y="5" width="10" height="1"/>
+    <rect x="3" y="6" width="10" height="1"/>
+    <rect x="3" y="7" width="10" height="1"/>
+    <rect x="4" y="8" width="8" height="1"/>
+    <rect x="5" y="9" width="6" height="1"/>
+    <rect x="5" y="12" width="6" height="1"/>
+    <rect x="6" y="13" width="4" height="1"/>
+  </g>
+
+  <!-- claws -->
+  <g fill="#ff775f">
+    <rect x="1" y="6" width="2" height="1"/>
+    <rect x="2" y="5" width="1" height="1"/>
+    <rect x="2" y="7" width="1" height="1"/>
+    <rect x="13" y="6" width="2" height="1"/>
+    <rect x="13" y="5" width="1" height="1"/>
+    <rect x="13" y="7" width="1" height="1"/>
+  </g>
+
+  <!-- eyes -->
+  <g fill="#081016">
+    <rect x="6" y="5" width="1" height="1"/>
+    <rect x="9" y="5" width="1" height="1"/>
+  </g>
+  <g fill="#f5fbff">
+    <rect x="6" y="4" width="1" height="1"/>
+    <rect x="9" y="4" width="1" height="1"/>
+  </g>
+</svg>
+

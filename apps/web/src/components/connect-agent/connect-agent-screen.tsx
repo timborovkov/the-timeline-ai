@@ -9,8 +9,8 @@ import {
   ConnectAgentAgents,
   type ConnectAgentGrant,
 } from '@/components/connect-agent/connect-agent-agents';
+import { ConnectAgentDisclosure } from '@/components/connect-agent/connect-agent-disclosure';
 import { ConnectAgentMemory } from '@/components/connect-agent/connect-agent-memory';
-import { ConnectAgentPromptBar } from '@/components/connect-agent/connect-agent-prompt-bar';
 import { ConnectAgentTabs } from '@/components/connect-agent/connect-agent-tabs';
 import { RedirectActionToast } from '@/components/redirect-action-toast';
 import { Button } from '@/components/ui/button';
@@ -60,45 +60,56 @@ export function ConnectAgentScreen({
             : null
         }
       />
-      <ConnectAgentPromptBar teamEmail={teamEmail} />
-      <ConnectAgentTabs mcpUrl={mcpUrl} />
-      <ConnectAgentAgents
-        grants={grants}
-        teamId={teamId}
-        revokedNotice={revokedNotice}
-        revokeError={revokeError}
-      />
-      <ConnectAgentMemory
-        origin={origin}
-        isAdmin={isAdmin}
-        teamEmail={teamEmail}
-        currentUserEmail={currentUserEmail}
-        extraSenders={extraSenders}
-        agentWebhookConfigured={agentWebhookConfigured}
-      />
-      <section
-        className="space-y-3 border-y border-border py-4"
-        aria-labelledby="connect-agent-skill"
-      >
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="min-w-0 max-w-2xl space-y-1">
-            <h2 id="connect-agent-skill" className="text-base font-semibold tracking-tight text-fg">
-              Timeline skill
-            </h2>
-            <p className="text-sm leading-6 text-fg-muted">
-              Download SKILL.md for clients that install a local skill. Tools:{' '}
-              {TIMELINE_MCP_TOOLS.join(', ')}.
-            </p>
-          </div>
+      <ConnectAgentTabs mcpUrl={mcpUrl} teamEmail={teamEmail} />
+      <div className="divide-y divide-border border-y border-border">
+        <ConnectAgentDisclosure
+          title={
+            <>
+              Connected agents
+              {grants.length > 0 ? (
+                <span className="font-mono text-xs font-normal text-fg-dim">{grants.length}</span>
+              ) : null}
+            </>
+          }
+          defaultOpen={grants.length > 0}
+        >
+          <ConnectAgentAgents grants={grants} teamId={teamId} />
+        </ConnectAgentDisclosure>
+        <ConnectAgentDisclosure title="Add memory">
+          <ConnectAgentMemory
+            origin={origin}
+            isAdmin={isAdmin}
+            teamEmail={teamEmail}
+            currentUserEmail={currentUserEmail}
+            extraSenders={extraSenders}
+            agentWebhookConfigured={agentWebhookConfigured}
+          />
+        </ConnectAgentDisclosure>
+        <ConnectAgentDisclosure title="Timeline skill">
+          <p className="text-sm leading-6 text-fg-muted">
+            Download SKILL.md for clients that install a local skill. Tools:{' '}
+            {TIMELINE_MCP_TOOLS.join(', ')}.
+          </p>
           <Button asChild size="sm" variant="outline">
             <Link href={CONNECT_AGENT_SKILL_HREF} prefetch={false}>
               <Download aria-hidden="true" />
               Download SKILL.md
             </Link>
           </Button>
-        </div>
-      </section>
-      <ConnectAgentAdvanced keys={keys} mcpUrl={mcpUrl} isAdmin={isAdmin} />
+        </ConnectAgentDisclosure>
+        <ConnectAgentDisclosure
+          title={
+            <>
+              Advanced
+              {keys.length > 0 ? (
+                <span className="font-mono text-xs font-normal text-fg-dim">{keys.length}</span>
+              ) : null}
+            </>
+          }
+        >
+          <ConnectAgentAdvanced keys={keys} mcpUrl={mcpUrl} isAdmin={isAdmin} />
+        </ConnectAgentDisclosure>
+      </div>
     </div>
   );
 }

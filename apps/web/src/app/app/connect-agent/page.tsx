@@ -60,7 +60,7 @@ export default async function ConnectAgentPage({
   const revokeError = firstQueryValue(params.mcpError);
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       <Breadcrumb
         items={[
           { label: 'Connections', href: '/app/connections' },
@@ -69,12 +69,7 @@ export default async function ConnectAgentPage({
       />
       <PageHeader
         title="Connect your agent"
-        subtitle="OAuth first. Answers appear once work is captured; remember works now."
-        srLabel={`Connect your agent · ${String(grants.length)} connected`}
-        metadata={[
-          { label: 'team', value: active.teamName, signal: true },
-          { label: 'connected', value: grants.length },
-        ]}
+        subtitle="Pick a client, then sign in with OAuth. Answers appear once work is captured; remember works now."
       />
       <ConnectAgentScreen
         teamId={active.teamId}

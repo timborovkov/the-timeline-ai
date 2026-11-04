@@ -1,7 +1,11 @@
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
+
 import { expect } from '@timeline/test-support';
 import { describe, it } from 'bun:test';
 
 import {
+  CONNECT_AGENT_GUIDES,
   CONNECT_AGENT_SETUP_PROMPT,
   CONNECT_AGENT_SKILL_MARKDOWN,
   TIMELINE_MCP_TOOLS,
@@ -58,5 +62,23 @@ describe('connect-agent content', () => {
     expect(ingestWebhookCurlExample('https://thetimeline.cc/api/webhooks/ingest/token')).toContain(
       'curl -X POST https://thetimeline.cc/api/webhooks/ingest/token',
     );
+  });
+
+  it('uses official vendor marks stored in public/connectors', () => {
+    expect(CONNECT_AGENT_GUIDES.map((guide) => ({ id: guide.id, logo: guide.logo }))).toEqual([
+      { id: 'claude-code', logo: '/connectors/claude-code.svg' },
+      { id: 'codex', logo: '/connectors/openai.svg' },
+      { id: 'chatgpt', logo: '/connectors/openai.svg' },
+      { id: 'claude', logo: '/connectors/claude.svg' },
+      { id: 'cursor', logo: '/connectors/cursor.svg' },
+      { id: 'grok', logo: '/connectors/xai.svg' },
+      { id: 'hermes', logo: '/connectors/hermes.png' },
+      { id: 'openclaw', logo: '/connectors/openclaw.svg' },
+    ]);
+    for (const guide of CONNECT_AGENT_GUIDES) {
+      if (!guide.logo) continue;
+      const file = join(import.meta.dirname, '../../public', guide.logo.replace(/^\//, ''));
+      expect(existsSync(file)).toBe(true);
+    }
   });
 });
