@@ -2,13 +2,13 @@ import { expect } from '@timeline/test-support';
 import { vi } from '@timeline/test-support';
 import { describe, it } from 'bun:test';
 
-import type { WriteProductionSamplingEvalReportInput } from '@timeline/shared/reconciliation/production-sampling';
-
 import {
   parseArgs,
   ReconciliationProductionSamplingUsageError,
   runReconciliationProductionSamplingCli,
 } from '#src/scripts/reconciliation-production-sampling.js';
+
+import type { WriteProductionSamplingEvalReportInput } from '@timeline/shared/reconciliation/production-sampling';
 
 describe('reconciliation production sampling script', () => {
   it('parses repeatable inputs and the failure gate', () => {
