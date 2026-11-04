@@ -14,7 +14,7 @@
   margin: 0;
   color: oklch(0.82 0.16 130);
   font-family: var(--font-mono);
-  font-size: 0.68rem;
+  font-size: 0.75rem;
   letter-spacing: 0.14em;
   text-transform: uppercase;
 }
@@ -53,20 +53,20 @@
   border-radius: 999px;
   background: color-mix(in oklch, white 6%, transparent);
   color: color-mix(in oklch, white 88%, transparent);
-  font-size: 0.72rem;
+  font-size: 0.75rem;
   letter-spacing: 0.01em;
 }
 
 .mark span {
   display: grid;
-  width: 1.35rem;
-  height: 1.35rem;
+  width: 1.6rem;
+  height: 1.6rem;
   place-items: center;
   border-radius: 999px;
   background: oklch(0.32 0.02 145);
   color: oklch(0.94 0.14 130);
   font-family: var(--font-mono);
-  font-size: 0.62rem;
+  font-size: 0.75rem;
   font-weight: 650;
 }
 
