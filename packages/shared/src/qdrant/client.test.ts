@@ -938,6 +938,43 @@ describe('Qdrant cold-start recovery', () => {
     expect(JSON.stringify(search?.body)).toContain('user-1');
   });
 
+  it('retries Bun ConnectionRefused and ConnectionReset errors then searches', async () => {
+    for (const code of ['ConnectionRefused', 'ConnectionReset']) {
+      const base = makeFetcher({ collectionExists: true });
+      let calls = 0;
+      const fetcher: (
+        ...args: Parameters<typeof globalThis.fetch>
+      ) => ReturnType<typeof globalThis.fetch> = (...args) => {
+        calls++;
+        if (calls === 1) {
+          return Promise.reject(Object.assign(new Error('Qdrant is asleep'), { code }));
+        }
+        return base.fetcher(...args);
+      };
+      const pending = createQdrantClient({ fetcher }).search('team-A', 'user-1', [1]);
+      await vi.advanceTimersByTimeAsync(2000);
+      expect(await pending).toEqual([]);
+      expect(calls).toBeGreaterThan(1);
+      const search = base.calls.find((c) => c.url.endsWith('/search'));
+      expect(JSON.stringify(search?.body)).toContain('team-A');
+      expect(JSON.stringify(search?.body)).toContain('user-1');
+    }
+  });
+
+  it('turns a persistent Bun ConnectionRefused error into unavailability instead of leaking it', async () => {
+    const fetcher = vi.fn(() =>
+      Promise.reject(Object.assign(new Error('Qdrant is asleep'), { code: 'ConnectionRefused' })),
+    );
+    const pending = createQdrantClient({ fetcher })
+      .search('t', 'u', [1])
+      .catch((e: unknown) => e);
+    await vi.advanceTimersByTimeAsync(30_000);
+    const error = await pending;
+    expect(error).toBeInstanceOf(QdrantUnavailableError);
+    expect(error).not.toHaveProperty('code', 'ConnectionRefused');
+    expect(fetcher.mock.calls.length).toBeGreaterThan(1);
+  });
+
   it('shares a 30-second deadline across sequential requests and stops retrying', async () => {
     const fetcher = vi.fn(() => Promise.resolve(new Response('offline', { status: 503 })));
     const context: QdrantOperationContext = {};

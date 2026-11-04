@@ -1997,6 +1997,9 @@
   "packages/shared/src/qdrant/point-id.test.ts": {
     "group": "unit"
   },
+  "packages/shared/src/qdrant/transport.test.ts": {
+    "group": "unit"
+  },
   "packages/shared/src/queue/queues.test.ts": {
     "group": "unit"
   },

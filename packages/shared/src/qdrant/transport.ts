@@ -6,29 +6,48 @@ import {
 
 export type QdrantRequestKind = 'read' | 'initialization' | 'write' | 'snapshot';
 
-function transientNetworkError(error: unknown): boolean {
+const TRANSIENT_NETWORK_CODES = new Set([
+  'ECONNRESET',
+  'ECONNREFUSED',
+  'ECONNABORTED',
+  'ETIMEDOUT',
+  'EAI_AGAIN',
+  'ENOTFOUND',
+  'EPIPE',
+  'EHOSTUNREACH',
+  'ENETUNREACH',
+  'UND_ERR_SOCKET',
+  'UND_ERR_CONNECT_TIMEOUT',
+  'UND_ERR_HEADERS_TIMEOUT',
+  'UND_ERR_BODY_TIMEOUT',
+  // Bun http::Error::name() and older fetch mappings: plain Error, not TypeError.
+  'ConnectionRefused',
+  'ConnectionReset',
+  'ConnectionClosed',
+  'ConnectionTimedOut',
+  'FailedToOpenSocket',
+  'HostNotFound',
+  'HostUnreachable',
+  'NetworkUnreachable',
+  'Timeout',
+]);
+
+function networkErrorCode(error: unknown): string | undefined {
+  let current: unknown = error;
+  for (let depth = 0; depth < 3 && current && typeof current === 'object'; depth++) {
+    const coded = current as { code?: unknown; cause?: unknown };
+    if (typeof coded.code === 'string' && TRANSIENT_NETWORK_CODES.has(coded.code))
+      return coded.code;
+    current = coded.cause;
+  }
+  return undefined;
+}
+
+export function isTransientQdrantNetworkError(error: unknown): boolean {
   if (!(error instanceof Error)) return false;
   if (error.name === 'TimeoutError') return true;
-  const code =
-    (error as Error & { code?: string; cause?: { code?: string } }).code ??
-    (error as Error & { cause?: { code?: string } }).cause?.code;
-  return (
-    Boolean(
-      code &&
-      [
-        'ECONNRESET',
-        'ECONNREFUSED',
-        'ETIMEDOUT',
-        'EAI_AGAIN',
-        'ENOTFOUND',
-        'EPIPE',
-        'UND_ERR_SOCKET',
-        'UND_ERR_CONNECT_TIMEOUT',
-      ].includes(code),
-    ) ||
-    (error instanceof TypeError &&
-      /fetch failed|failed to fetch|network|connection|socket/i.test(error.message))
-  );
+  if (networkErrorCode(error)) return true;
+  return /fetch failed|failed to fetch|network|connect|socket/i.test(error.message);
 }
 
 function retryAfterMs(value: string | null): number | undefined {
@@ -124,7 +143,7 @@ export async function qdrantRequest(input: {
       pause = result.pause;
     } catch (error) {
       signal?.throwIfAborted();
-      if (!transientNetworkError(error)) throw error;
+      if (!isTransientQdrantNetworkError(error)) throw error;
       if (input.kind !== 'read')
         throw new QdrantUnavailableError(operation.category, operation.status, true);
     } finally {
