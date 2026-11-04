@@ -1,6 +1,6 @@
 import { expect } from '@timeline/test-support';
 import { vi } from '@timeline/test-support';
-import { afterEach, beforeEach, describe, it } from 'bun:test';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, it } from 'bun:test';
 
 import type { McpAuthPrincipal } from '#src/mcp-server/oauth.js';
 import type { SearchHit, SearchOpts } from '#src/qdrant/client.js';
@@ -31,7 +31,11 @@ const {
   agentSuggestionItems,
   agentSuggestions,
   billingUsageLedger,
+  documentChunks,
+  documents,
+  documentVersions,
   entities,
+  integrations,
   mcpOutboundKeys,
   mcpOutboundOAuthClients,
   mcpOutboundOAuthGrants,
@@ -338,6 +342,42 @@ function eventSearchHit(
       speaker: null,
     },
   };
+}
+
+function docChunkHit(input: {
+  chunkId: string;
+  documentId: string;
+  folderId: string | null;
+  fileKind: 'document' | 'captured';
+  score?: number;
+}): SearchHit {
+  const base = eventSearchHit(
+    input.chunkId,
+    input.score ?? 0.9,
+    'document',
+    '2026-05-03T10:00:00.000Z',
+  );
+  return {
+    ...base,
+    payload: {
+      ...base.payload,
+      source_kind: 'doc_chunk',
+      document_id: input.documentId,
+      document_chunk_id: input.chunkId,
+      folder_id: input.folderId,
+      file_kind: input.fileKind,
+    },
+  };
+}
+
+function lastSearchOpts(): SearchOpts {
+  const call = semanticSearchFakes.search.mock.calls.at(-1);
+  if (!call) throw new Error('expected qdrant search');
+  return (call[3] ?? {}) as SearchOpts;
+}
+
+function searchCalls(): SearchOpts[] {
+  return semanticSearchFakes.search.mock.calls.map((call) => (call[3] ?? {}) as SearchOpts);
 }
 
 describe('handleMcpRequest', () => {
@@ -2451,5 +2491,1090 @@ describe('handleMcpRequest', () => {
     });
     await expect(db.select().from(rawEvents)).resolves.toEqual([]);
     expect(enqueueIngestProcessing.enqueueExtractJob).not.toHaveBeenCalled();
+  });
+});
+
+const PARAM_RESOURCE_A = 'a1a1a1a1-a1a1-41a1-81a1-a1a1a1a1a1a1';
+const PARAM_RESOURCE_B = 'b2b2b2b2-b2b2-42b2-82b2-b2b2b2b2b2b2';
+const PARAM_RESOURCE_C = 'c3c3c3c3-c3c3-43c3-83c3-c3c3c3c3c3c3';
+const PARAM_DOC_CHANGE_OLD = 'd0d0d0d0-d0d0-40d0-80d0-d0d0d0d0d0d0';
+const PARAM_DOC_CHANGE_NEW = 'd1d1d1d1-d1d1-41d1-81d1-d1d1d1d1d1d1';
+const PARAM_CAPTURED_EVENT = 'd2d2d2d2-d2d2-42d2-82d2-d2d2d2d2d2d2';
+
+interface AdvertisedFixtures {
+  project: { id: string; name: string };
+  company: { id: string };
+  openTask: { id: string };
+  archivedTask: { id: string };
+  assignedTask: { id: string };
+  uncategorizedTask: { id: string };
+  folder: { id: string };
+  folderDoc: { id: string; chunkId: string; name: string };
+  rootDoc: { id: string; chunkId: string; name: string };
+  capturedDoc: { id: string; chunkId: string };
+  deletedDoc: { id: string };
+  reviewEvent: { id: string };
+  standupEvent: { id: string };
+  pipeline: { id: string; laneId: string };
+  engineeringBoard: { id: string };
+  githubIntegration: { id: string };
+}
+
+async function insertChunkedDocument(
+  db: ReturnType<typeof drizzle>,
+  input: {
+    name: string;
+    text: string;
+    folderId?: string | null;
+    fileKind?: 'document' | 'captured';
+  },
+): Promise<{ documentId: string; chunkId: string }> {
+  const [document] = await db
+    .insert(documents)
+    .values({
+      teamId: TEAM_ID,
+      ownerUserId: USER_ID,
+      name: input.name,
+      fileKind: input.fileKind ?? 'document',
+      folderId: input.folderId ?? null,
+      visibility: 'team',
+    })
+    .returning({ id: documents.id });
+  if (!document) throw new Error('failed to insert document');
+  const [version] = await db
+    .insert(documentVersions)
+    .values({
+      teamId: TEAM_ID,
+      documentId: document.id,
+      version: 1,
+      objectKey: `${TEAM_ID}/${document.id}/v1/${input.name}`,
+      contentType: 'application/pdf',
+    })
+    .returning({ id: documentVersions.id });
+  if (!version) throw new Error('failed to insert version');
+  await db
+    .update(documents)
+    .set({ currentVersionId: version.id })
+    .where(eq(documents.id, document.id));
+  const [chunk] = await db
+    .insert(documentChunks)
+    .values({
+      teamId: TEAM_ID,
+      documentId: document.id,
+      documentVersionId: version.id,
+      chunkIndex: 0,
+      text: input.text,
+      tokenCount: 12,
+    })
+    .returning({ id: documentChunks.id });
+  if (!chunk) throw new Error('failed to insert chunk');
+  return { documentId: document.id, chunkId: chunk.id };
+}
+
+async function seedAdvertisedFixtures(db: ReturnType<typeof drizzle>): Promise<AdvertisedFixtures> {
+  const scope = withTeam(db as never, TEAM_ID, USER_ID);
+  const company = await scope.objects.createObject({
+    type: 'company',
+    canonicalName: 'Filter Corp',
+    status: 'active',
+    actor: { kind: 'user', userId: USER_ID },
+  });
+  const project = await scope.objects.createObject({
+    type: 'project',
+    canonicalName: 'Project Alpha',
+    status: 'open',
+    stage: 'discovery',
+    ownerUserId: USER_ID,
+    actor: { kind: 'user', userId: USER_ID },
+  });
+  const openTask = await scope.objects.createObject({
+    type: 'task',
+    canonicalName: 'Open filter task',
+    status: 'open',
+    ownerUserId: USER_ID,
+    dueAt: new Date('2026-06-10T00:00:00Z'),
+    parentObjectId: project.id,
+    actor: { kind: 'user', userId: USER_ID },
+  });
+  await scope.objects.setTaskCategory(openTask.id, 'engineering', {
+    kind: 'user',
+    userId: USER_ID,
+  });
+  const archivedTask = await scope.objects.createObject({
+    type: 'task',
+    canonicalName: 'Archived filter task',
+    status: 'open',
+    actor: { kind: 'user', userId: USER_ID },
+  });
+  await scope.objects.archiveObject(archivedTask.id, { kind: 'user', userId: USER_ID });
+  const assignedTask = await scope.objects.createObject({
+    type: 'task',
+    canonicalName: 'Assigned doing task',
+    status: 'doing',
+    assigneeUserId: USER_ID,
+    dueAt: new Date('2026-01-01T00:00:00Z'),
+    actor: { kind: 'user', userId: USER_ID },
+  });
+  const uncategorizedTask = await scope.objects.createObject({
+    type: 'task',
+    canonicalName: 'Uncategorized inbox task',
+    status: 'todo',
+    actor: { kind: 'user', userId: USER_ID },
+  });
+  const folder = await scope.documents.createFolder({ name: 'Specs', parentFolderId: null });
+  const folderDoc = await insertChunkedDocument(db, {
+    name: 'Alpha spec.pdf',
+    text: 'Alpha runway note',
+    folderId: folder.id,
+  });
+  const rootDoc = await insertChunkedDocument(db, {
+    name: 'Beta notes.pdf',
+    text: 'Beta follow-up note',
+  });
+  const capturedDoc = await insertChunkedDocument(db, {
+    name: 'Captured slack.pdf',
+    text: 'Captured runway snippet',
+    fileKind: 'captured',
+  });
+  await db.insert(rawEvents).values({
+    id: PARAM_CAPTURED_EVENT,
+    teamId: TEAM_ID,
+    source: 'document',
+    contentText: 'Captured slack.pdf',
+    occurredAt: new Date('2026-05-03T10:00:00Z'),
+  });
+  await db
+    .update(documentVersions)
+    .set({ sourceEventId: PARAM_CAPTURED_EVENT })
+    .where(eq(documentVersions.documentId, capturedDoc.documentId));
+  await db
+    .update(documents)
+    .set({ sourceRawEventId: PARAM_CAPTURED_EVENT })
+    .where(eq(documents.id, capturedDoc.documentId));
+  const deleted = await insertChunkedDocument(db, {
+    name: 'Deleted draft.pdf',
+    text: 'Deleted draft body',
+  });
+  await scope.documents.softDeleteDocument(deleted.documentId);
+  const reviewEvent = await scope.calendar.createCalendarEvent({
+    title: 'Outbound MCP review',
+    description: 'Review retrieval tools',
+    startAt: new Date('2026-06-22T10:00:00Z'),
+    endAt: new Date('2026-06-22T10:30:00Z'),
+    timezone: 'UTC',
+    allDay: false,
+    location: null,
+    showAs: 'busy',
+    rrule: null,
+    visibility: 'team',
+    visibilityUserIds: null,
+    reminderMinutes: null,
+  });
+  const standupEvent = await scope.calendar.createCalendarEvent({
+    title: 'Team standup',
+    description: 'Daily standup',
+    startAt: new Date('2026-06-22T15:00:00Z'),
+    endAt: new Date('2026-06-22T15:15:00Z'),
+    timezone: 'UTC',
+    allDay: false,
+    location: null,
+    showAs: 'busy',
+    rrule: null,
+    visibility: 'team',
+    visibilityUserIds: null,
+    reminderMinutes: null,
+  });
+  await scope.calendar.createCalendarEvent({
+    title: 'Upcoming sync',
+    description: 'Near-term calendar fixture',
+    startAt: new Date(Date.now() + 60 * 60 * 1000),
+    endAt: new Date(Date.now() + 2 * 60 * 60 * 1000),
+    timezone: 'UTC',
+    allDay: false,
+    location: null,
+    showAs: 'busy',
+    rrule: null,
+    visibility: 'team',
+    visibilityUserIds: null,
+    reminderMinutes: null,
+  });
+  const pipeline = await scope.boards.createBoard({
+    name: 'Sales pipeline',
+    purpose: 'Track deals',
+    templateKind: 'pipeline',
+    lanes: [{ name: 'Discussed', kind: 'active' }],
+  });
+  const pipelineLaneId = pipeline.lanes[0]?.id;
+  if (!pipelineLaneId) throw new Error('expected pipeline lane');
+  await scope.boards.addBoardItem(pipeline.id, {
+    entityId: project.id,
+    laneId: pipelineLaneId,
+    responsibleUserId: USER_ID,
+    dueAt: new Date('2026-06-15T00:00:00Z'),
+    priority: 2,
+    nextStep: 'Send proposal',
+    actor: { kind: 'user', userId: USER_ID },
+  });
+  const engineeringBoard = await scope.boards.createBoard({
+    name: 'Engineering board',
+    templateKind: 'task_board',
+    lanes: [{ name: 'Todo', kind: 'active' }],
+  });
+  await scope.pins.pin({ kind: 'board', key: pipeline.id });
+  const [githubIntegration] = await db
+    .insert(integrations)
+    .values([
+      { teamId: TEAM_ID, provider: 'github', displayName: 'GitHub' },
+      { teamId: TEAM_ID, provider: 'slack', displayName: 'Slack' },
+    ])
+    .returning({ id: integrations.id });
+  if (!githubIntegration) throw new Error('expected github integration');
+  await db.insert(rawEvents).values([
+    {
+      id: FILTER_SLACK_EVENT,
+      teamId: TEAM_ID,
+      source: 'slack',
+      contentText: 'slack release note',
+      occurredAt: new Date('2026-05-03T10:00:00Z'),
+    },
+    {
+      id: FILTER_WEB_EVENT,
+      teamId: TEAM_ID,
+      source: 'web',
+      contentText: 'older web release note',
+      occurredAt: new Date('2026-04-01T10:00:00Z'),
+    },
+    {
+      id: WORKFLOW_EVENT_A,
+      teamId: TEAM_ID,
+      source: 'integration',
+      contentText: 'GitHub workflow "CI" #1603 on timborovkov/audit-ai success',
+      occurredAt: new Date('2026-06-27T18:32:00Z'),
+      sourceMetadata: {
+        provider: 'github',
+        event_type: 'workflow_run.success',
+        github: { type: 'workflow_run', repo: 'timborovkov/audit-ai', head_branch: 'main' },
+      },
+    },
+    {
+      id: WORKFLOW_EVENT_B,
+      teamId: TEAM_ID,
+      source: 'integration',
+      contentText: 'GitHub workflow "CI" #1602 on timborovkov/audit-ai success',
+      occurredAt: new Date('2026-06-27T18:08:00Z'),
+      sourceMetadata: {
+        provider: 'github',
+        event_type: 'workflow_run.success',
+        github: { type: 'workflow_run', repo: 'timborovkov/audit-ai', head_branch: 'main' },
+      },
+    },
+    {
+      id: PARAM_RESOURCE_A,
+      teamId: TEAM_ID,
+      source: 'integration',
+      contentText: 'GitHub issue first',
+      occurredAt: new Date('2026-06-20T10:00:00Z'),
+      sourceMetadata: {
+        provider: 'github',
+        event_type: 'issue.updated',
+        external_object_id: 'issue-1',
+      },
+    },
+    {
+      id: PARAM_RESOURCE_B,
+      teamId: TEAM_ID,
+      source: 'integration',
+      contentText: 'GitHub issue second',
+      occurredAt: new Date('2026-06-21T10:00:00Z'),
+      sourceMetadata: {
+        provider: 'github',
+        event_type: 'issue.updated',
+        external_object_id: 'issue-1',
+      },
+    },
+    {
+      id: PARAM_RESOURCE_C,
+      teamId: TEAM_ID,
+      source: 'integration',
+      contentText: 'GitHub issue third',
+      occurredAt: new Date('2026-06-22T10:00:00Z'),
+      sourceMetadata: {
+        provider: 'github',
+        event_type: 'issue.updated',
+        external_object_id: 'issue-1',
+      },
+    },
+    {
+      id: PARAM_DOC_CHANGE_OLD,
+      teamId: TEAM_ID,
+      source: 'document',
+      contentText: 'Uploaded old spec',
+      occurredAt: new Date('2026-04-01T10:00:00Z'),
+      sourceMetadata: { action: 'upload', document_id: rootDoc.documentId },
+    },
+    {
+      id: PARAM_DOC_CHANGE_NEW,
+      teamId: TEAM_ID,
+      source: 'document',
+      contentText: 'Uploaded new spec',
+      occurredAt: new Date('2026-05-20T10:00:00Z'),
+      sourceMetadata: { action: 'upload', document_id: folderDoc.documentId, folder_id: folder.id },
+    },
+  ]);
+  return {
+    project: { id: project.id, name: project.canonicalName },
+    company: { id: company.id },
+    openTask: { id: openTask.id },
+    archivedTask: { id: archivedTask.id },
+    assignedTask: { id: assignedTask.id },
+    uncategorizedTask: { id: uncategorizedTask.id },
+    folder: { id: folder.id },
+    folderDoc: { id: folderDoc.documentId, chunkId: folderDoc.chunkId, name: 'Alpha spec.pdf' },
+    rootDoc: { id: rootDoc.documentId, chunkId: rootDoc.chunkId, name: 'Beta notes.pdf' },
+    capturedDoc: { id: capturedDoc.documentId, chunkId: capturedDoc.chunkId },
+    deletedDoc: { id: deleted.documentId },
+    reviewEvent: { id: reviewEvent.id },
+    standupEvent: { id: standupEvent.id },
+    pipeline: { id: pipeline.id, laneId: pipelineLaneId },
+    engineeringBoard: { id: engineeringBoard.id },
+    githubIntegration: { id: githubIntegration.id },
+  };
+}
+
+describe('advertised MCP parameters', () => {
+  let pg: PGlite;
+  let db: ReturnType<typeof drizzle>;
+  let fx: AdvertisedFixtures;
+
+  function installSearchFakes() {
+    semanticSearchFakes.embed.mockReset();
+    semanticSearchFakes.embed.mockResolvedValue({
+      vector: [0.11, 0.22, 0.33],
+      model: 'test-embedding-model',
+    });
+    semanticSearchFakes.search.mockReset();
+    semanticSearchFakes.search.mockImplementation(
+      (_teamId: string, _userId: string, _vector: number[], opts: SearchOpts = {}) => {
+        if (opts.sourceKind === 'doc_chunk') {
+          const hits = [
+            docChunkHit({
+              chunkId: fx.folderDoc.chunkId,
+              documentId: fx.folderDoc.id,
+              folderId: fx.folder.id,
+              fileKind: 'document',
+            }),
+            docChunkHit({
+              chunkId: fx.rootDoc.chunkId,
+              documentId: fx.rootDoc.id,
+              folderId: null,
+              fileKind: 'document',
+              score: 0.8,
+            }),
+            docChunkHit({
+              chunkId: fx.capturedDoc.chunkId,
+              documentId: fx.capturedDoc.id,
+              folderId: null,
+              fileKind: 'captured',
+              score: 0.7,
+            }),
+          ];
+          return Promise.resolve(
+            hits
+              .filter((hit) => {
+                if (opts.folderIds?.length) {
+                  return (
+                    hit.payload.folder_id !== null && opts.folderIds.includes(hit.payload.folder_id)
+                  );
+                }
+                if (opts.fileKinds?.length) {
+                  return Boolean(
+                    hit.payload.file_kind && opts.fileKinds.includes(hit.payload.file_kind),
+                  );
+                }
+                return true;
+              })
+              .slice(0, opts.limit ?? 20),
+          );
+        }
+        const hits = [
+          eventSearchHit(FILTER_WEB_EVENT, 0.99, 'web', '2026-04-01T10:00:00.000Z'),
+          eventSearchHit(FILTER_SLACK_EVENT, 0.91, 'slack', '2026-05-03T10:00:00.000Z'),
+          eventSearchHit(WORKFLOW_EVENT_A, 0.8, 'integration', '2026-06-27T18:32:00.000Z'),
+        ];
+        return Promise.resolve(
+          hits
+            .filter((hit) => {
+              if (opts.source && hit.payload.source !== opts.source) return false;
+              const occurred = new Date(hit.payload.occurred_at);
+              if (opts.from && occurred < opts.from) return false;
+              if (opts.to && occurred >= opts.to) return false;
+              return true;
+            })
+            .slice(0, opts.limit ?? 20),
+        );
+      },
+    );
+  }
+
+  beforeAll(async () => {
+    pg = new PGlite();
+    await applyDbMigrations(pg);
+    db = drizzle(pg);
+    await seed(pg, db);
+    fx = await seedAdvertisedFixtures(db);
+  }, 60_000);
+
+  beforeEach(() => {
+    installSearchFakes();
+  });
+
+  afterAll(async () => {
+    await pg.close();
+  });
+
+  describe('timeline.search', () => {
+    it('query', async () => {
+      const objects = (await callTool(db, 'timeline.search', {
+        surface: 'objects',
+        query: 'Alpha',
+      })) as { objects: { id: string }[] };
+      expect(objects.objects.map((row) => row.id)).toEqual([fx.project.id]);
+      const calendar = (await callTool(db, 'timeline.search', {
+        surface: 'calendar',
+        query: 'standup',
+        from: '2026-06-22T00:00:00Z',
+        to: '2026-06-23T00:00:00Z',
+      })) as { events: { title: string }[] };
+      expect(calendar.events.map((row) => row.title)).toEqual(['Team standup']);
+    });
+
+    it('surface', async () => {
+      const events = (await callTool(db, 'timeline.search', { surface: 'events' })) as {
+        events: unknown[];
+      };
+      const moments = (await callTool(db, 'timeline.search', { surface: 'moments' })) as {
+        moments: unknown[];
+      };
+      expect(Array.isArray(events.events)).toBe(true);
+      expect(Array.isArray(moments.moments)).toBe(true);
+    });
+
+    it('timePhrase', async () => {
+      await callTool(db, 'timeline.search', {
+        surface: 'events',
+        query: 'release',
+        timePhrase: 'this week',
+        referenceDate: '2026-05-06T12:00:00Z',
+      });
+      expect(lastSearchOpts().from).toBeInstanceOf(Date);
+      expect(lastSearchOpts().to).toBeInstanceOf(Date);
+    });
+
+    it('referenceDate', async () => {
+      await callTool(db, 'timeline.search', {
+        surface: 'events',
+        query: 'release',
+        timePhrase: 'this week',
+        referenceDate: '2026-05-06T12:00:00Z',
+      });
+      const first = lastSearchOpts().from?.toISOString();
+      await callTool(db, 'timeline.search', {
+        surface: 'events',
+        query: 'release',
+        timePhrase: 'this week',
+        referenceDate: '2026-05-20T12:00:00Z',
+      });
+      expect(lastSearchOpts().from?.toISOString()).not.toBe(first);
+    });
+
+    it('from', async () => {
+      const result = (await callTool(db, 'timeline.search', {
+        surface: 'events',
+        query: 'release',
+        from: '2026-05-01T00:00:00Z',
+      })) as { results: { event_id: string }[] };
+      expect(lastSearchOpts()).toMatchObject({ from: new Date('2026-05-01T00:00:00Z') });
+      expect(result.results.map((row) => row.event_id)).toEqual([
+        FILTER_SLACK_EVENT,
+        WORKFLOW_EVENT_A,
+      ]);
+    });
+
+    it('to', async () => {
+      const result = (await callTool(db, 'timeline.search', {
+        surface: 'events',
+        query: 'release',
+        to: '2026-05-01T00:00:00Z',
+      })) as { results: { event_id: string }[] };
+      expect(lastSearchOpts()).toMatchObject({ to: new Date('2026-05-01T00:00:00Z') });
+      expect(result.results.map((row) => row.event_id)).toEqual([FILTER_WEB_EVENT]);
+    });
+
+    it('source', async () => {
+      const result = (await callTool(db, 'timeline.search', {
+        surface: 'events',
+        query: 'release',
+        source: 'slack',
+      })) as { results: { event_id: string }[] };
+      expect(lastSearchOpts()).toMatchObject({ source: 'slack' });
+      expect(result.results.map((row) => row.event_id)).toEqual([FILTER_SLACK_EVENT]);
+    });
+
+    it('type', async () => {
+      const result = (await callTool(db, 'timeline.search', {
+        surface: 'objects',
+        type: 'project',
+      })) as { objects: { id: string }[] };
+      expect(result.objects.map((row) => row.id)).toEqual([fx.project.id]);
+    });
+
+    it('status', async () => {
+      const result = (await callTool(db, 'timeline.search', {
+        surface: 'tasks',
+        status: 'doing',
+      })) as { tasks: { id: string }[] };
+      expect(result.tasks.map((row) => row.id)).toEqual([fx.assignedTask.id]);
+    });
+
+    it('stage', async () => {
+      const result = (await callTool(db, 'timeline.search', {
+        surface: 'objects',
+        stage: 'discovery',
+      })) as { objects: { id: string }[] };
+      expect(result.objects.map((row) => row.id)).toEqual([fx.project.id]);
+    });
+
+    it('ownerUserId', async () => {
+      const result = (await callTool(db, 'timeline.search', {
+        surface: 'objects',
+        type: 'project',
+        ownerUserId: USER_ID,
+      })) as { objects: { id: string }[] };
+      expect(result.objects.map((row) => row.id)).toEqual([fx.project.id]);
+    });
+
+    it('assigneeUserId', async () => {
+      const result = (await callTool(db, 'timeline.search', {
+        surface: 'objects',
+        assigneeUserId: USER_ID,
+      })) as { objects: { id: string }[] };
+      expect(result.objects.map((row) => row.id)).toEqual([fx.assignedTask.id]);
+    });
+
+    it('category', async () => {
+      const result = (await callTool(db, 'timeline.search', {
+        surface: 'tasks',
+        category: 'engineering',
+      })) as { tasks: { id: string }[] };
+      expect(result.tasks.map((row) => row.id)).toEqual([fx.openTask.id]);
+    });
+
+    it('uncategorized', async () => {
+      const result = (await callTool(db, 'timeline.search', {
+        surface: 'tasks',
+        uncategorized: true,
+      })) as { tasks: { id: string }[] };
+      const ids = result.tasks.map((row) => row.id);
+      expect(ids).toContain(fx.uncategorizedTask.id);
+      expect(ids).not.toContain(fx.openTask.id);
+    });
+
+    it('primaryProjectId', async () => {
+      const result = (await callTool(db, 'timeline.search', {
+        surface: 'tasks',
+        primaryProjectId: fx.project.id,
+      })) as { tasks: { id: string }[] };
+      expect(result.tasks.map((row) => row.id)).toEqual([fx.openTask.id]);
+    });
+
+    it('archived', async () => {
+      const hidden = (await callTool(db, 'timeline.search', {
+        surface: 'tasks',
+        archived: false,
+      })) as { tasks: { id: string }[] };
+      const shown = (await callTool(db, 'timeline.search', {
+        surface: 'tasks',
+        archived: true,
+      })) as { tasks: { id: string }[] };
+      expect(hidden.tasks.map((row) => row.id)).not.toContain(fx.archivedTask.id);
+      expect(shown.tasks.map((row) => row.id)).toEqual([fx.archivedTask.id]);
+    });
+
+    it('dueAfter', async () => {
+      const result = (await callTool(db, 'timeline.search', {
+        surface: 'tasks',
+        dueAfter: '2026-06-01T00:00:00Z',
+      })) as { tasks: { id: string }[] };
+      expect(result.tasks.map((row) => row.id)).toEqual([fx.openTask.id]);
+    });
+
+    it('dueBefore', async () => {
+      const result = (await callTool(db, 'timeline.search', {
+        surface: 'tasks',
+        dueBefore: '2026-02-01T00:00:00Z',
+      })) as { tasks: { id: string }[] };
+      expect(result.tasks.map((row) => row.id)).toEqual([fx.assignedTask.id]);
+    });
+
+    it('provider', async () => {
+      const listed = (await callTool(db, 'timeline.search', {
+        surface: 'integrations',
+        provider: 'github',
+      })) as { integrations: { provider: string }[] };
+      expect(listed.integrations.map((row) => row.provider)).toEqual(['github']);
+    });
+
+    it('boardId', async () => {
+      const result = (await callTool(db, 'timeline.search', {
+        surface: 'boards',
+        boardId: fx.pipeline.id,
+      })) as { results: { board: { id: string } }[] };
+      expect(result.results.map((row) => row.board.id)).toEqual([fx.pipeline.id]);
+    });
+
+    it('templateKind', async () => {
+      const result = (await callTool(db, 'timeline.search', {
+        surface: 'boards',
+        templateKind: 'pipeline',
+      })) as { results: { board: { id: string } }[] };
+      expect(result.results.map((row) => row.board.id)).toEqual([fx.pipeline.id]);
+    });
+
+    it('pinned', async () => {
+      const { payload } = await invokeHttp(db, principal('oauth'), {
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'tools/call',
+        params: {
+          name: 'timeline.search',
+          arguments: { surface: 'boards', pinned: true },
+        },
+      });
+      const text =
+        payload && 'result' in payload
+          ? ((payload.result as { content: { text: string }[] }).content[0]?.text ?? '{}')
+          : '{}';
+      const result = JSON.parse(text) as { results: { board: { id: string } }[] };
+      expect(result.results.map((row) => row.board.id)).toEqual([fx.pipeline.id]);
+    });
+
+    it('objectId', async () => {
+      const result = (await callTool(db, 'timeline.search', {
+        surface: 'boards',
+        objectId: fx.project.id,
+      })) as { results: { board: { id: string } }[] };
+      expect(result.results.map((row) => row.board.id)).toEqual([fx.pipeline.id]);
+    });
+
+    it('laneId', async () => {
+      const result = (await callTool(db, 'timeline.search', {
+        surface: 'boards',
+        laneId: fx.pipeline.laneId,
+      })) as { results: { board: { id: string } }[] };
+      expect(result.results.map((row) => row.board.id)).toEqual([fx.pipeline.id]);
+    });
+
+    it('responsibleUserId', async () => {
+      const result = (await callTool(db, 'timeline.search', {
+        surface: 'boards',
+        responsibleUserId: USER_ID,
+      })) as { results: { board: { id: string } }[] };
+      expect(result.results.map((row) => row.board.id)).toEqual([fx.pipeline.id]);
+    });
+
+    it('priority', async () => {
+      const result = (await callTool(db, 'timeline.search', {
+        surface: 'boards',
+        priority: 2,
+      })) as { results: { board: { id: string } }[] };
+      expect(result.results.map((row) => row.board.id)).toEqual([fx.pipeline.id]);
+    });
+
+    it('itemText', async () => {
+      const result = (await callTool(db, 'timeline.search', {
+        surface: 'boards',
+        itemText: 'proposal',
+      })) as { results: { board: { id: string } }[] };
+      expect(result.results.map((row) => row.board.id)).toEqual([fx.pipeline.id]);
+    });
+
+    it('name', async () => {
+      const result = (await callTool(db, 'timeline.search', {
+        surface: 'documents',
+        name: 'Beta notes',
+      })) as { documents: { document_id: string }[] };
+      expect(result.documents.map((row) => row.document_id)).toEqual([fx.rootDoc.id]);
+    });
+
+    it('folderId', async () => {
+      const result = (await callTool(db, 'timeline.search', {
+        surface: 'documents',
+        query: 'runway',
+        folderId: fx.folder.id,
+      })) as { results: { documentId: string }[] };
+      expect(lastSearchOpts()).toMatchObject({
+        sourceKind: 'doc_chunk',
+        folderIds: [fx.folder.id],
+      });
+      expect(result.results.map((row) => row.documentId)).toEqual([fx.folderDoc.id]);
+    });
+
+    it('fileKind', async () => {
+      const result = (await callTool(db, 'timeline.search', {
+        surface: 'documents',
+        query: 'runway',
+        fileKind: 'captured',
+      })) as { results: { documentId: string }[] };
+      expect(lastSearchOpts()).toMatchObject({
+        sourceKind: 'doc_chunk',
+        fileKinds: ['captured'],
+      });
+      expect(result.results.map((row) => row.documentId)).toEqual([fx.capturedDoc.id]);
+    });
+
+    it('includeDeleted', async () => {
+      const hidden = (await callTool(db, 'timeline.search', {
+        surface: 'documents',
+        includeDeleted: false,
+      })) as { documents: { document_id: string }[] };
+      const shown = (await callTool(db, 'timeline.search', {
+        surface: 'documents',
+        includeDeleted: true,
+      })) as { documents: { document_id: string }[] };
+      expect(hidden.documents.map((row) => row.document_id)).not.toContain(fx.deletedDoc.id);
+      expect(shown.documents.map((row) => row.document_id)).toContain(fx.deletedDoc.id);
+    });
+
+    it('includeDocuments', async () => {
+      await callTool(db, 'timeline.search', {
+        surface: 'workspace',
+        query: 'runway evidence',
+        recipe: 'timeline_evidence',
+        includeDocuments: true,
+      });
+      expect(searchCalls().some((opts) => opts.sourceKind === 'doc_chunk')).toBe(true);
+      semanticSearchFakes.search.mockClear();
+      await callTool(db, 'timeline.search', {
+        surface: 'workspace',
+        query: 'runway evidence',
+        recipe: 'timeline_evidence',
+        includeDocuments: false,
+      });
+      expect(searchCalls().some((opts) => opts.sourceKind === 'doc_chunk')).toBe(false);
+    });
+
+    it('includeCalendar', async () => {
+      const included = (await callTool(db, 'timeline.search', {
+        surface: 'workspace',
+        query: 'review',
+        recipe: 'timeline_evidence',
+        includeCalendar: true,
+      })) as { calendarEvents: unknown[] };
+      const excluded = (await callTool(db, 'timeline.search', {
+        surface: 'workspace',
+        query: 'review',
+        recipe: 'timeline_evidence',
+        includeCalendar: false,
+      })) as { calendarEvents: unknown[] };
+      expect(included.calendarEvents.length).toBeGreaterThan(0);
+      expect(excluded.calendarEvents).toEqual([]);
+    });
+
+    it('recipe', async () => {
+      const result = (await callTool(db, 'timeline.search', {
+        surface: 'workspace',
+        query: 'how do boards work',
+        recipe: 'product_guide',
+      })) as { recipe: string };
+      expect(result.recipe).toBe('product_guide');
+    });
+
+    it('since', async () => {
+      const result = (await callTool(db, 'timeline.search', {
+        surface: 'documents',
+        since: '2026-05-01T00:00:00Z',
+      })) as { changes: { event_id: string }[] };
+      const ids = result.changes.map((row) => row.event_id);
+      expect(ids).toContain(PARAM_DOC_CHANGE_NEW);
+      expect(ids).not.toContain(PARAM_DOC_CHANGE_OLD);
+    });
+
+    it('limit', async () => {
+      const result = (await callTool(db, 'timeline.search', {
+        surface: 'events',
+        limit: 1,
+      })) as { events: unknown[] };
+      expect(result.events).toHaveLength(1);
+    });
+  });
+
+  describe('timeline.get', () => {
+    it('ref', async () => {
+      const result = (await callTool(db, 'timeline.get', { ref: 'Project Alpha' })) as {
+        found?: boolean;
+        id?: string;
+        entity?: { id?: string };
+      };
+      expect(result).not.toEqual({ found: false });
+      expect(result.id ?? result.entity?.id).toBe(fx.project.id);
+    });
+
+    it('name', async () => {
+      const result = (await callTool(db, 'timeline.get', { name: 'Project Alpha' })) as {
+        found?: boolean;
+        id?: string;
+        entity?: { id?: string };
+      };
+      expect(result).not.toEqual({ found: false });
+      expect(result.id ?? result.entity?.id).toBe(fx.project.id);
+    });
+
+    it('kind', async () => {
+      const object = await callTool(db, 'timeline.get', {
+        kind: 'object',
+        ref: 'Project Alpha',
+      });
+      expect(object).toMatchObject({ found: true, id: fx.project.id, name: 'Project Alpha' });
+      const missing = await callTool(db, 'timeline.get', {
+        kind: 'entity',
+        ref: 'Missing Subject',
+      });
+      expect(missing).toEqual({ found: false });
+    });
+
+    it('provider', async () => {
+      const result = (await callTool(db, 'timeline.get', {
+        provider: 'github',
+        externalObjectId: 'issue-1',
+      })) as { found: boolean; history: { event_id: string }[] };
+      expect(result.found).toBe(true);
+      expect(result.history.map((row) => row.event_id)).toEqual([
+        PARAM_RESOURCE_C,
+        PARAM_RESOURCE_B,
+        PARAM_RESOURCE_A,
+      ]);
+    });
+
+    it('externalObjectId', async () => {
+      const result = (await callTool(db, 'timeline.get', {
+        provider: 'github',
+        externalObjectId: 'missing-issue',
+      })) as { found: boolean };
+      expect(result).toEqual({ found: false });
+    });
+
+    it('historyLimit', async () => {
+      const result = (await callTool(db, 'timeline.get', {
+        provider: 'github',
+        externalObjectId: 'issue-1',
+        historyLimit: 1,
+      })) as { history: { event_id: string }[] };
+      expect(result.history.map((row) => row.event_id)).toEqual([PARAM_RESOURCE_C]);
+    });
+
+    it('momentId', async () => {
+      const listed = (await callTool(db, 'timeline.search', {
+        surface: 'moments',
+        source: 'integration',
+      })) as { moments: { moment_id: string }[] };
+      const momentId = listed.moments[0]?.moment_id;
+      expect(momentId).toBeTruthy();
+      const result = (await callTool(db, 'timeline.get', { momentId })) as { found: boolean };
+      expect(result.found).toBe(true);
+    });
+
+    it('rawEventIds', async () => {
+      const result = (await callTool(db, 'timeline.get', {
+        rawEventIds: [WORKFLOW_EVENT_A, WORKFLOW_EVENT_B],
+      })) as { found: boolean; moment: { raw_event_ids: string[] } };
+      expect(result.found).toBe(true);
+      expect(result.moment.raw_event_ids).toEqual([WORKFLOW_EVENT_A, WORKFLOW_EVENT_B]);
+    });
+  });
+
+  describe('timeline.subject', () => {
+    it('subject', async () => {
+      const result = (await callTool(db, 'timeline.subject', { subject: 'Project Alpha' })) as {
+        subject: string;
+        object: { id?: string; found?: boolean };
+      };
+      expect(result.subject).toBe('Project Alpha');
+      expect(result.object).toMatchObject({ found: true, id: fx.project.id });
+    });
+
+    it('timePhrase', async () => {
+      await callTool(db, 'timeline.subject', {
+        subject: 'Project Alpha',
+        timePhrase: 'this week',
+        referenceDate: '2026-05-06T12:00:00Z',
+      });
+      const momentSearch = searchCalls().find(
+        (opts) => opts.sourceKind !== 'doc_chunk' && opts.from,
+      );
+      expect(momentSearch?.from).toBeInstanceOf(Date);
+      expect(momentSearch?.to).toBeInstanceOf(Date);
+    });
+
+    it('referenceDate', async () => {
+      await callTool(db, 'timeline.subject', {
+        subject: 'Project Alpha',
+        timePhrase: 'this week',
+        referenceDate: '2026-05-06T12:00:00Z',
+      });
+      const first = searchCalls()
+        .find((opts) => opts.from)
+        ?.from?.toISOString();
+      semanticSearchFakes.search.mockClear();
+      await callTool(db, 'timeline.subject', {
+        subject: 'Project Alpha',
+        timePhrase: 'this week',
+        referenceDate: '2026-05-20T12:00:00Z',
+      });
+      expect(
+        searchCalls()
+          .find((opts) => opts.from)
+          ?.from?.toISOString(),
+      ).not.toBe(first);
+    });
+
+    it('from', async () => {
+      await callTool(db, 'timeline.subject', {
+        subject: 'Project Alpha',
+        from: '2026-05-01T00:00:00Z',
+      });
+      expect(
+        searchCalls().some(
+          (opts) => opts.from?.toISOString() === new Date('2026-05-01T00:00:00Z').toISOString(),
+        ),
+      ).toBe(true);
+    });
+
+    it('to', async () => {
+      await callTool(db, 'timeline.subject', {
+        subject: 'Project Alpha',
+        to: '2026-05-04T00:00:00Z',
+      });
+      expect(
+        searchCalls().some(
+          (opts) => opts.to?.toISOString() === new Date('2026-05-04T00:00:00Z').toISOString(),
+        ),
+      ).toBe(true);
+    });
+
+    it('limit', async () => {
+      await callTool(db, 'timeline.subject', { subject: 'Project Alpha', limit: 1 });
+      expect(searchCalls().some((opts) => opts.limit === 1)).toBe(true);
+    });
+  });
+
+  describe('timeline.ask', () => {
+    it('question', async () => {
+      const askAgent = vi.fn().mockResolvedValue({
+        ok: true,
+        answer: 'Nothing changed.',
+        truncated: false,
+        profile: 'mcp_agent',
+      });
+      const checkRateLimit = vi.fn().mockResolvedValue({ ok: true, remaining: 9, retryAfterMs: 0 });
+      const response = await handleMcpRequest(
+        { db: db as never, bearer: AGENT_TOKEN, agentDelegationDepth: 1 },
+        {
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'tools/call',
+          params: { name: 'timeline.ask', arguments: { question: '  What changed?  ' } },
+        },
+        { askAgent: askAgent as never, checkRateLimit: checkRateLimit as never },
+      );
+      expect(askAgent).toHaveBeenCalledWith(
+        expect.objectContaining({ question: 'What changed?' }),
+        expect.anything(),
+      );
+      expect(response).toMatchObject({ result: { isError: false } });
+    });
+  });
+
+  describe('timeline.remember', () => {
+    const enqueueIngestProcessing = {
+      enqueueExtractJob: vi.fn().mockResolvedValue(undefined),
+      enqueueEmbedJob: vi.fn().mockResolvedValue(undefined),
+      enqueueSuggestionJob: vi.fn().mockResolvedValue({ enqueued: true }),
+    };
+
+    it('text', async () => {
+      const result = (await callTool(
+        db,
+        'timeline.remember',
+        { text: 'Remember the advertised text parameter.' },
+        { enqueueIngestProcessing },
+        CAPTURE_TOKEN,
+      )) as { ok: boolean; raw_event_id: string };
+      expect(result.ok).toBe(true);
+      const [event] = await db
+        .select()
+        .from(rawEvents)
+        .where(eq(rawEvents.id, result.raw_event_id));
+      expect(event?.contentText).toContain('Remember the advertised text parameter.');
+    });
+
+    it('title', async () => {
+      const result = (await callTool(
+        db,
+        'timeline.remember',
+        { text: 'Body for title parameter.', title: 'Advertised title' },
+        { enqueueIngestProcessing },
+        CAPTURE_TOKEN,
+      )) as { raw_event_id: string };
+      const [event] = await db
+        .select()
+        .from(rawEvents)
+        .where(eq(rawEvents.id, result.raw_event_id));
+      expect(event?.contentText).toContain('Advertised title');
+    });
+
+    it('subject', async () => {
+      const result = (await callTool(
+        db,
+        'timeline.remember',
+        { text: 'Body for subject parameter.', subject: 'Project Alpha' },
+        { enqueueIngestProcessing },
+        CAPTURE_TOKEN,
+      )) as { raw_event_id: string };
+      const [event] = await db
+        .select()
+        .from(rawEvents)
+        .where(eq(rawEvents.id, result.raw_event_id));
+      expect(event?.contentText).toContain('Project Alpha');
+    });
+
+    it('eventClass', async () => {
+      const result = (await callTool(
+        db,
+        'timeline.remember',
+        { text: 'Body for eventClass parameter.', eventClass: 'communication' },
+        { enqueueIngestProcessing },
+        CAPTURE_TOKEN,
+      )) as { raw_event_id: string };
+      const [event] = await db
+        .select()
+        .from(rawEvents)
+        .where(eq(rawEvents.id, result.raw_event_id));
+      expect(event?.sourceMetadata).toMatchObject({ event_class: 'communication' });
+    });
+
+    it('occurredAt', async () => {
+      const result = (await callTool(
+        db,
+        'timeline.remember',
+        { text: 'Body for occurredAt parameter.', occurredAt: '2026-01-02T03:04:05.000Z' },
+        { enqueueIngestProcessing },
+        CAPTURE_TOKEN,
+      )) as { raw_event_id: string };
+      const [event] = await db
+        .select()
+        .from(rawEvents)
+        .where(eq(rawEvents.id, result.raw_event_id));
+      expect(event?.occurredAt.toISOString()).toBe('2026-01-02T03:04:05.000Z');
+    });
   });
 });
