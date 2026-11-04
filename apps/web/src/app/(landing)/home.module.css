@@ -23,6 +23,12 @@
   z-index: 90;
 }
 
+/* The skip-link target is a landmark, not a control. Keep it focusable without
+   letting the browser draw a page-sized ring beneath the sticky navigation. */
+.page > main:focus {
+  outline: none;
+}
+
 :global(.dark) .page {
   --home-ink: oklch(0.13 0.008 135);
   --home-panel: oklch(0.165 0.009 135);
