@@ -267,7 +267,7 @@ export const HELP_PAGES: HelpPage[] = [
           'The default OAuth grant is read plus capture (on by default). Read follows the member’s existing visibility, including private and specifically shared evidence that member can access. Capture authorizes timeline.remember; unchecking it issues a read-only grant. Timeline agent access is a separate, optional owner/admin-approved scope for paid, proposal-only turns.',
           'Static team keys remain available as a compatibility fallback for manual clients.',
         ],
-        appLink: { href: '/app/team/mcp-share', label: 'Manage Timeline MCP' },
+        appLink: { href: '/app/connect-agent', label: 'Connect your agent' },
         resourceLinks: [
           {
             href: 'https://github.com/timborovkov/the-timeline-ai/tree/main/plugins/timeline/skills#install-in-codex',

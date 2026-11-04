@@ -77,11 +77,9 @@ describe('McpShareUi', () => {
     expect(screen.getByText(/Generated JSON contains the bearer key/)).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Copy OAuth command' })).toBeTruthy();
     expect(screen.getByText(`codex mcp add timeline --url "${MCP_URL}"`)).toBeTruthy();
-    expect(
-      screen.getByText(/Settings -> Apps -> Advanced Settings -> Developer Mode/),
-    ).toBeTruthy();
-    expect(screen.getByText(/OpenAI universal Plugins Directory/)).toBeTruthy();
-    expect(screen.getByText(/With MCP/)).toBeTruthy();
+    expect(screen.getByText(/Settings → Apps/)).toBeTruthy();
+    expect(screen.queryByText(/Developer Mode/)).toBeNull();
+    expect(screen.getByText(/OpenAI Apps Directory/)).toBeTruthy();
     expect(
       screen.getByRole('heading', { name: 'Agent plugins and OAuth' }).parentElement?.textContent,
     ).toMatch(/browser sign-in and consent/i);

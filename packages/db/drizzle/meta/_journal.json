@@ -694,6 +694,13 @@
       "when": 1795656220000,
       "tag": "0095_password_recovery",
       "breakpoints": true
+    },
+    {
+      "idx": 99,
+      "version": "7",
+      "when": 1795656280000,
+      "tag": "0096_connect_agent_onboarding",
+      "breakpoints": true
     }
   ]
 }

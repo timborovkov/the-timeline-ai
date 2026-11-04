@@ -57,7 +57,7 @@ Use Streamable HTTP, not legacy SSE. The endpoint returns a standards-compatible
 
 ### Static key setup for manual clients
 
-Static keys remain available for clients that need an explicit Authorization header or for controlled developer testing. As a Timeline team admin, open [Manage Timeline MCP endpoint](https://thetimeline.cc/app/team/mcp-share), create a key, and copy its one-time plaintext. Read it silently into the terminal that will launch the client:
+Static keys remain available for clients that need an explicit Authorization header or for controlled developer testing. As a Timeline team admin, open [Connect your agent](https://thetimeline.cc/app/connect-agent), create a key under Advanced, and copy its one-time plaintext. Static-key remember is authored as the team actor. Read it silently into the terminal that will launch the client:
 
 ```bash
 printf 'Timeline MCP key: '

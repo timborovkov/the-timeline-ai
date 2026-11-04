@@ -33,6 +33,7 @@ const STATIC_APP_ROUTES = Object.freeze({
   '/app/team/jobs': 'team_jobs',
   '/app/team/mcp-servers': 'team_mcp',
   '/app/team/mcp-share': 'team_share',
+  '/app/connect-agent': 'team_share',
   '/app/team/reconciliation': 'team_reconciliation',
   '/app/team/slack': 'team_slack',
   '/app/team/telegram': 'team_telegram',

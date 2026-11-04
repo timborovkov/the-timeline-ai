@@ -63,7 +63,7 @@ const surfacePaths: Record<SupportSurface, string> = {
   team_integrations: '/app/connections/sources',
   team_integration_audit: '/app/team/integrations/audit',
   team_mcp: '/app/team/mcp-servers',
-  team_mcp_share: '/app/team/mcp-share',
+  team_mcp_share: '/app/connect-agent',
   team_jobs: '/app/team/jobs',
   team_audit: '/app/team/audit',
   team_reconciliation: '/app/team/reconciliation',
@@ -136,6 +136,8 @@ export function supportSurfaceForPath(pathname: string | null): SupportSurface |
       if (detail === 'slack') return 'team_slack';
       if (detail === 'telegram') return 'team_telegram';
       return 'team';
+    case 'connect-agent':
+      return 'team_mcp_share';
     default:
       return null;
   }

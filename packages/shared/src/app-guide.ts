@@ -344,7 +344,28 @@ export const APP_GUIDE_ROUTES: readonly AppGuideRoute[] = [
     intents: ['team mcp', 'shared mcp', 'workspace mcp'],
     guide:
       'Use Team MCP servers to add MCP tools the whole team can invoke from Ask. Admins control the server list and shared credentials.',
-    relatedRouteIds: ['me/mcp-servers', 'help/integrations', 'chat'],
+    relatedRouteIds: ['me/mcp-servers', 'help/integrations', 'chat', 'connect-agent'],
+  },
+  {
+    id: 'connect-agent',
+    title: 'Connect your agent',
+    description: 'Connect Claude, Codex, ChatGPT, Cursor, or another MCP client to this team.',
+    href: '/app/connect-agent',
+    group: 'dashboard',
+    minRole: 'member',
+    intents: [
+      'connect agent',
+      'mcp share',
+      'timeline mcp',
+      'claude',
+      'codex',
+      'chatgpt',
+      'cursor',
+      'oauth',
+    ],
+    guide:
+      'Open Connect your agent to copy a setup prompt, finish OAuth, revoke connected agents, add memory by email or webhook, and download SKILL.md. Prefer OAuth. Static tla_ keys remain a fallback and author remember as the team actor.',
+    relatedRouteIds: ['help/integrations', 'me/connections', 'team/mcp-servers'],
   },
   {
     id: 'team/integrations/monday',

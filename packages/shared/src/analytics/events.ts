@@ -331,6 +331,7 @@ const PRODUCT_EVENT_SCHEMAS = {
   onboarding_step_completed: z
     .object({
       step: z.enum([
+        'connect_agent',
         'first_note',
         'invite_teammate',
         'telegram',

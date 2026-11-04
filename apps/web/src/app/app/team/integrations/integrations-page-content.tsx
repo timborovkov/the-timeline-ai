@@ -130,7 +130,7 @@ function McpEndpointSection() {
       </p>
       <div className="flex flex-wrap gap-2">
         <Button asChild variant="outline" size="sm">
-          <Link href="/app/team/mcp-share">Manage MCP endpoint</Link>
+          <Link href="/app/connect-agent">Connect your agent</Link>
         </Button>
         <Button asChild variant="ghost" size="sm">
           <Link href="/help/agents">Agent install guide</Link>

@@ -439,6 +439,13 @@ function onboardingMeta(key: string): { href: string; cta: string; description: 
         description:
           'An owner or admin can add a payment method with Pay as you go, or choose another plan. Eligible teams can continue on Free.',
       };
+    case 'connect_agent':
+      return {
+        href: '/app/connect-agent',
+        cta: 'Connect',
+        description:
+          'Point an agent at this team. Answers appear once work is captured; remember works now.',
+      };
     case 'first_note':
       return {
         href: '/app#capture',

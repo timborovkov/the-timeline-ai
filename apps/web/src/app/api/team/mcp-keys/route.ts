@@ -1,8 +1,5 @@
-import { auditLog, mcpOutboundKeys } from '@timeline/db';
 import { childLogger } from '@timeline/shared/logger';
-import * as mcpServer from '@timeline/shared/mcp-server';
 import { withTeam } from '@timeline/shared/team-scope';
-import { and, desc, eq, isNull } from 'drizzle-orm';
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 
@@ -34,20 +31,16 @@ export async function GET(): Promise<Response> {
   } catch {
     return NextResponse.json({ error: 'forbidden' }, { status: 403 });
   }
-  const rows = await db
-    .select()
-    .from(mcpOutboundKeys)
-    .where(and(eq(mcpOutboundKeys.teamId, active.teamId), isNull(mcpOutboundKeys.revokedAt)))
-    .orderBy(desc(mcpOutboundKeys.createdAt));
+  const keys = await scope.mcpOutbound.listKeys();
   return NextResponse.json({
-    keys: rows.map((r) => ({
-      id: r.id,
-      name: r.name,
-      prefix: r.keyPrefix,
-      scopes: r.scopes,
-      lastUsedAt: r.lastUsedAt,
-      expiresAt: r.expiresAt,
-      createdAt: r.createdAt,
+    keys: keys.map((key) => ({
+      id: key.id,
+      name: key.name,
+      prefix: key.prefix,
+      scopes: key.scopes,
+      lastUsedAt: key.lastUsedAt,
+      expiresAt: key.expiresAt,
+      createdAt: key.createdAt,
     })),
   });
 }
@@ -71,60 +64,32 @@ export async function POST(req: Request): Promise<Response> {
       { status: 400 },
     );
   }
-  const minted = mcpServer.mintKey();
-  const row = await db
-    .transaction(async (tx) => {
-      const rows = await tx
-        .insert(mcpOutboundKeys)
-        .values({
-          teamId: active.teamId,
-          createdByUserId: session.user.id,
-          name: parsed.data.name,
-          keyHash: minted.hash,
-          keyPrefix: minted.prefix,
-          scopes: mcpServer.mcpStaticKeyScopes({
-            allowCapture: parsed.data.allowCapture,
-            allowAgent: parsed.data.allowAgent,
-          }),
-        })
-        .returning();
-      const created = rows[0];
-      if (!created) throw new Error('create_failed');
-      await tx.insert(auditLog).values({
-        teamId: active.teamId,
-        actorUserId: session.user.id,
-        action: 'mcp.connect',
-        targetType: 'mcp_outbound_key',
-        targetId: created.id,
-        targetVisibility: 'team',
-        metadata: {
-          surface: 'timeline_as_mcp_server',
-          scope_count: Array.isArray(created.scopes) ? created.scopes.length : 0,
-        },
-      });
-      return created;
-    })
-    .catch((err: unknown) => {
-      log.error(
-        { err, teamId: active.teamId, actorUserId: session.user.id },
-        'Failed to create outbound MCP key',
-      );
-      reportCaughtError(err, { surface: 'api', operation: 'create_outbound_mcp_key' });
-      return null;
+  try {
+    const row = await scope.mcpOutbound.createKey({
+      name: parsed.data.name,
+      allowCapture: parsed.data.allowCapture,
+      allowAgent: parsed.data.allowAgent,
     });
-  if (!row) return NextResponse.json({ error: 'create_failed' }, { status: 500 });
-  trackProductEventBestEffort(
-    { kind: 'user', userId: session.user.id, teamId: active.teamId },
-    'integration_management_action_completed',
-    { action: 'mcp_key_mint', kind: 'mcp_outbound' },
-  );
-  // One-time plaintext — the only response that ever contains it.
-  return NextResponse.json({
-    id: row.id,
-    name: row.name,
-    prefix: row.keyPrefix,
-    plaintext: minted.plaintext,
-    scopes: row.scopes,
-    createdAt: row.createdAt,
-  });
+    trackProductEventBestEffort(
+      { kind: 'user', userId: session.user.id, teamId: active.teamId },
+      'integration_management_action_completed',
+      { action: 'mcp_key_mint', kind: 'mcp_outbound' },
+    );
+    // One-time plaintext — the only response that ever contains it.
+    return NextResponse.json({
+      id: row.id,
+      name: row.name,
+      prefix: row.prefix,
+      plaintext: row.plaintext,
+      scopes: row.scopes,
+      createdAt: row.createdAt,
+    });
+  } catch (err: unknown) {
+    log.error(
+      { err, teamId: active.teamId, actorUserId: session.user.id },
+      'Failed to create outbound MCP key',
+    );
+    reportCaughtError(err, { surface: 'api', operation: 'create_outbound_mcp_key' });
+    return NextResponse.json({ error: 'create_failed' }, { status: 500 });
+  }
 }

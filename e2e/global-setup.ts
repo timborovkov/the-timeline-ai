@@ -54,6 +54,7 @@ export default async function globalSetup(config: FullConfig): Promise<void> {
       `/app/team/reconciliation/clusters/${taskId}`,
       '/app/team/jobs',
       '/app/team/mcp-share',
+      '/app/connect-agent',
       '/app/team/mcp-servers',
       '/app/team/audit',
       '/api/chat',

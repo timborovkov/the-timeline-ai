@@ -681,7 +681,7 @@ linked users) and inbound Email (team address and list-style allowed senders)
 live in those sheets. A Drive folder picker replaces the generic checkbox list
 inside that resource-picker slot. Available providers sit below as a Connect /
 Set up list. A quiet search on the tab chrome filters the open section. Agent
-tools holds compact rows for Agent MCP servers and the Timeline MCP endpoint;
+tools holds compact rows for Agent MCP servers and Connect your agent;
 local-only and unroutable catalog entries such as Figma sit in Coming soon with
 no Connect action. Developer holds ingest webhooks, integration audit, and job
 recovery.
@@ -1353,6 +1353,7 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-11-03 | Public Compare and Agents | Header stays Product, Use cases, Compare, Agents, Pricing, with mobile dropdowns. Adds `/compare` works-with pages, `/agents`, a copyable llms.txt command, a pricing FAQ, and a Slack-to-cited-answer landing scene. |
 | 2026-11-03 | Compare vs and works-with | Moves works-with pages under `/integrations/{hubspot,pipedrive,attio,linear,jira,notion}`. `/compare` becomes a hub plus `/compare/the-timeline-vs-{day-ai,folk,glean,geekbot}` pages that cite each competitor's site. |
 | 2026-11-04 | Hosted MCP public copy | Agents, llms.txt, the home MCP example, and the pricing FAQ teach five tools, the default-on capture scope, remember counting toward accepted sources, and Free 100 MB / 10,000 documents / 20,000 chunks. |
+| 2026-11-03 | Connect your agent | `/app/connect-agent` is the OAuth-first MCP setup screen. Agent tabs, connected grants, add-memory email/webhook, SKILL.md, and collapsed static keys live there. `/app/team/mcp-share` redirects. Provider logos stay on white tiles; allowed senders stay a list editor. |
 
 
 ### Billing benefits and recorded charges (2026-10-31)

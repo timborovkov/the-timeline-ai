@@ -3,15 +3,13 @@ import { vi } from '@timeline/test-support';
 import { afterEach, describe, it } from 'bun:test';
 // Test environment: happy-dom
 
-// Team admins need confidence that a failed MCP settings load has not changed
-// bearer-key access, while assistive technology needs the route-specific context.
-
-const fakes = vi.hoisted(() => ({ back: vi.fn(), reportCaughtError: vi.fn() }));
+const fakes = vi.hoisted(() => ({ back: vi.fn(), redirect: vi.fn(), reportCaughtError: vi.fn() }));
 
 await vi.mock(
   import.meta.resolve('next/navigation'),
   async () => ({
     ...(await import('next/navigation')),
+    redirect: fakes.redirect,
     useRouter: () => ({ back: fakes.back }),
   }),
   () => import('next/navigation'),
@@ -26,6 +24,7 @@ const { cleanup, render, screen } = await import('@testing-library/react');
 const { default: userEvent } = await import('@testing-library/user-event');
 const { default: McpShareError } = await import('@/app/app/team/mcp-share/error');
 const { default: McpShareLoading } = await import('@/app/app/team/mcp-share/loading');
+const { default: McpShareRedirect } = await import('@/app/app/team/mcp-share/page');
 
 afterEach(() => {
   cleanup();
@@ -33,45 +32,20 @@ afterEach(() => {
 });
 
 describe('Timeline as MCP server route states', () => {
-  it('announces a route-shaped loading state outside the busy placeholder', () => {
+  it('announces that the legacy route is opening Connect your agent', () => {
     render(<McpShareLoading />);
 
     const announcement = screen.getByRole('status');
-    expect(announcement.textContent).toBe('Loading Timeline as MCP server');
+    expect(announcement.textContent).toBe('Opening Connect your agent');
     expect(announcement.parentElement?.getAttribute('aria-busy')).toBeNull();
-    expect(screen.getByLabelText('Loading Timeline as MCP server').getAttribute('aria-busy')).toBe(
+    expect(screen.getByLabelText('Opening Connect your agent').getAttribute('aria-busy')).toBe(
       'true',
     );
-    expect(
-      screen.getAllByRole('heading', { level: 1, name: 'Timeline as MCP server' }),
-    ).toHaveLength(1);
+    expect(screen.getByRole('heading', { level: 1, name: 'Timeline as MCP server' })).toBeTruthy();
     expect(screen.getByRole('navigation', { name: 'Breadcrumb' })).toBeTruthy();
     expect(screen.getByRole('link', { name: 'Connections' }).getAttribute('href')).toBe(
       '/app/connections',
     );
-    const loadingPlaceholder = screen.getByRole('region', {
-      name: 'Timeline as MCP server loading placeholder',
-    });
-    expect(document.querySelectorAll('.md\\:grid-cols-4')).toHaveLength(1);
-    expect(document.querySelectorAll('.xl\\:grid-cols-4')).toHaveLength(1);
-    expect(document.querySelectorAll('.lg\\:grid-cols-3')).toHaveLength(1);
-    expect(
-      screen.getByTestId('mcp-endpoint-placeholder').querySelectorAll('.animate-pulse'),
-    ).toHaveLength(9);
-    expect(
-      [...document.querySelectorAll('.animate-pulse')].every((element) =>
-        Boolean(element.closest('[class*="motion-reduce"]')),
-      ),
-    ).toBe(true);
-    const retrievalGrid = loadingPlaceholder.querySelector('.xl\\:grid-cols-4');
-    const clientGuideGrid = loadingPlaceholder.querySelector('.lg\\:grid-cols-3');
-    if (!retrievalGrid || !clientGuideGrid) throw new Error('Expected route-shaped loading grids.');
-    expect(retrievalGrid.compareDocumentPosition(clientGuideGrid)).toBe(
-      Node.DOCUMENT_POSITION_FOLLOWING,
-    );
-    expect(
-      clientGuideGrid.compareDocumentPosition(screen.getByTestId('active-keys-placeholder')),
-    ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
   });
 
   it.each([
@@ -83,19 +57,17 @@ describe('Timeline as MCP server route states', () => {
 
     render(<McpShareError error={new Error('route failed')} reset={reset} />);
 
-    expect(
-      screen.getAllByRole('heading', { level: 1, name: 'Timeline as MCP server' }),
-    ).toHaveLength(1);
+    expect(screen.getByRole('heading', { level: 1, name: 'Timeline as MCP server' })).toBeTruthy();
     expect(screen.getByRole('navigation', { name: 'Breadcrumb' })).toBeTruthy();
     expect(screen.getByRole('link', { name: 'Connections' }).getAttribute('href')).toBe(
-      '/app/connections',
+      '/app/connect-agent',
     );
     expect(
-      screen.getByRole('heading', { level: 2, name: 'Unable to load Timeline as MCP server' }),
+      screen.getByRole('heading', { level: 2, name: 'Unable to open Timeline as MCP server' }),
     ).toBeTruthy();
     expect(
       screen.getByText(
-        'This failed load did not change your MCP settings. If you just created or revoked a key, that change may already have succeeded. Check your connection, then try again.',
+        'This failed redirect did not change your MCP settings. Check your connection, then try again.',
       ),
     ).toBeTruthy();
 
@@ -104,5 +76,10 @@ describe('Timeline as MCP server route states', () => {
     await user.keyboard(keys);
 
     expect(reset).toHaveBeenCalledOnce();
+  });
+
+  it('redirects the legacy MCP share route to Connect your agent', () => {
+    McpShareRedirect();
+    expect(fakes.redirect).toHaveBeenCalledWith('/app/connect-agent');
   });
 });

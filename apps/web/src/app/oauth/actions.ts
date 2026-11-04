@@ -27,10 +27,24 @@ import {
 } from '@/lib/mcp-oauth-server';
 import { reportCaughtError } from '@/lib/sentry-report';
 
+const CONNECT_AGENT_RETURN = '/app/connect-agent';
+const PERSONAL_CONNECTIONS_RETURN = '/app/me/connections';
+
 const grantFormSchema = z.object({
   grantId: z.uuid(),
   teamId: z.uuid(),
+  returnTo: z.enum([CONNECT_AGENT_RETURN, PERSONAL_CONNECTIONS_RETURN]).optional(),
 });
+
+function mcpGrantReturnPath(
+  returnTo: string | undefined,
+  query:
+    'mcpError=invalid_request' | 'mcpError=revoke_failed' | 'mcpError=not_found' | 'mcpRevoked=1',
+): string {
+  const base =
+    returnTo === CONNECT_AGENT_RETURN ? CONNECT_AGENT_RETURN : PERSONAL_CONNECTIONS_RETURN;
+  return `${base}?${query}`;
+}
 
 function consentFailurePath(input: ReturnType<typeof authorizationInputFromFormData>): string {
   return mcpAuthorizationPath(input, MCP_AUTHORIZATION_NOTICES.requestFailed);
@@ -165,9 +179,12 @@ export async function denyMcpOAuthAction(formData: FormData): Promise<void> {
 export async function revokeMcpOAuthGrantAction(formData: FormData): Promise<void> {
   const session = await auth();
   if (!session?.user.id) redirect('/sign-in');
+  const returnToValue = formData.get('return_to');
   const parsed = grantFormSchema.safeParse({
     grantId: formData.get('grant_id'),
     teamId: formData.get('team_id'),
+    returnTo:
+      typeof returnToValue === 'string' && returnToValue.length > 0 ? returnToValue : undefined,
   });
   if (!parsed.success) redirect('/app/me/connections?mcpError=invalid_request');
   let revoked = false;
@@ -186,9 +203,15 @@ export async function revokeMcpOAuthGrantAction(formData: FormData): Promise<voi
       surface: 'server_action',
       operation: 'mcp_oauth_grant_revoke',
     });
-    redirect('/app/me/connections?mcpError=revoke_failed');
+    // react-doctor-disable-next-line react-doctor/clickjacking-redirect-risk -- Destination is an allowlisted Timeline path, either Connect your agent or personal connections.
+    redirect(mcpGrantReturnPath(parsed.data.returnTo, 'mcpError=revoke_failed'));
   }
-  if (!revoked) redirect('/app/me/connections?mcpError=not_found');
+  if (!revoked) {
+    // react-doctor-disable-next-line react-doctor/clickjacking-redirect-risk -- Destination is an allowlisted Timeline path, either Connect your agent or personal connections.
+    redirect(mcpGrantReturnPath(parsed.data.returnTo, 'mcpError=not_found'));
+  }
   revalidatePath('/app/me/connections');
-  redirect('/app/me/connections?mcpRevoked=1');
+  revalidatePath('/app/connect-agent');
+  // react-doctor-disable-next-line react-doctor/clickjacking-redirect-risk -- Destination is an allowlisted Timeline path, either Connect your agent or personal connections.
+  redirect(mcpGrantReturnPath(parsed.data.returnTo, 'mcpRevoked=1'));
 }
