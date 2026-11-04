@@ -249,7 +249,7 @@ export function CuratedKanbanBoard({
         screenReaderInstructions: DRAG_INSTRUCTIONS,
       }}
     >
-      <div className="flex h-full min-h-0 min-w-0 flex-col">
+      <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col">
         <section
           aria-label="Board columns"
           className="flex min-h-0 min-w-0 flex-1 overflow-x-auto overflow-y-hidden px-2 pb-2 sm:px-3"

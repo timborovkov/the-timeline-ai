@@ -166,6 +166,9 @@ describe('CuratedKanbanBoard', () => {
     );
 
     const boardColumns = screen.getByRole('region', { name: 'Board columns' });
+    expect(boardColumns.parentElement?.className).toContain(
+      'flex h-full min-h-0 min-w-0 flex-1 flex-col',
+    );
     expect(boardColumns.className).toContain('min-w-0');
     expect(boardColumns.className).toContain('overflow-x-auto');
     expect(within(boardColumns).getByRole('region', { name: 'Open, board column 1' })).toBeTruthy();

@@ -992,8 +992,8 @@ function TaskBoardView({
     <div
       className={
         selectedTask
-          ? 'grid h-full min-h-0 gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(22rem,0.34fr)]'
-          : 'h-full min-h-0'
+          ? 'grid h-full min-h-0 min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(22rem,0.34fr)]'
+          : 'flex h-full min-h-0 min-w-0 flex-col'
       }
     >
       <DndContext
@@ -1003,7 +1003,7 @@ function TaskBoardView({
         onDragStart={handleDragStart}
         onDragEnd={handleDragEnd}
       >
-        <div className="flex h-full min-h-0 min-w-0 flex-col">
+        <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col">
           {view === 'kanban' ? (
             <TaskKanbanColumns
               allColumns={allColumns}
@@ -1421,7 +1421,7 @@ function TaskListView({
   }
 
   return (
-    <div data-task-list className="flex min-h-0 flex-1 flex-col">
+    <div data-task-list className="flex h-full min-h-0 flex-1 flex-col">
       <TaskBulkToolbar
         columns={columns}
         members={members}
