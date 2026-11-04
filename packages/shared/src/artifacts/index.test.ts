@@ -1379,6 +1379,137 @@ describe('artifact reconciliation', () => {
     return cluster;
   }
 
+  it('assigns a nested unlinked folder by rebinding files already on the outer folder object', async () => {
+    const northstar = await insertCompany('Northstar');
+    const acme = await insertCompany('Acme Labs');
+    const source = await insertCluster(northstar);
+    await insertDriveFileAnchor({
+      clusterId: source.id,
+      fileId: 'nested-file',
+      inheritedFrom: 'folder-outer',
+      candidates: ['nested-file', 'folder-inner', 'folder-outer'],
+      integrationId: INTEGRATION_ID,
+    });
+    await insertDriveFileAnchor({
+      clusterId: source.id,
+      fileId: 'outer-only-file',
+      inheritedFrom: 'folder-outer',
+      candidates: ['outer-only-file', 'folder-outer'],
+      integrationId: INTEGRATION_ID,
+    });
+
+    await rebindDriveSelectionArtifactLink(db as never, {
+      teamId: TEAM_ID,
+      integrationId: INTEGRATION_ID,
+      selectionKind: 'drive.folder',
+      externalId: 'folder-inner',
+      previousObjectId: null,
+      selections: [
+        { kind: 'drive.folder', externalId: 'folder-inner', linkedObjectId: acme.id },
+        { kind: 'drive.folder', externalId: 'folder-outer', linkedObjectId: northstar.id },
+      ],
+    });
+
+    expect(await anchorCluster('nested-file')).toBe(await clusterIdFor(acme.id));
+    expect(await anchorCluster('outer-only-file')).toBe(source.id);
+  });
+
+  it('assigns a nested unlinked folder under a linked shared drive without moving sibling drive files', async () => {
+    const northstar = await insertCompany('Northstar');
+    const acme = await insertCompany('Acme Labs');
+    const source = await insertCluster(northstar);
+    await insertDriveFileAnchor({
+      clusterId: source.id,
+      fileId: 'nested-file',
+      inheritedFrom: 'shared-drive',
+      candidates: ['nested-file', 'folder-inner', 'shared-drive'],
+      integrationId: INTEGRATION_ID,
+    });
+    await insertDriveFileAnchor({
+      clusterId: source.id,
+      fileId: 'drive-file',
+      inheritedFrom: 'shared-drive',
+      candidates: ['drive-file', 'shared-drive'],
+      integrationId: INTEGRATION_ID,
+    });
+
+    await rebindDriveSelectionArtifactLink(db as never, {
+      teamId: TEAM_ID,
+      integrationId: INTEGRATION_ID,
+      selectionKind: 'drive.folder',
+      externalId: 'folder-inner',
+      previousObjectId: null,
+      selections: [
+        { kind: 'drive.folder', externalId: 'folder-inner', linkedObjectId: acme.id },
+        { kind: 'drive.shared_drive', externalId: 'shared-drive', linkedObjectId: northstar.id },
+      ],
+    });
+
+    expect(await anchorCluster('nested-file')).toBe(await clusterIdFor(acme.id));
+    expect(await anchorCluster('drive-file')).toBe(source.id);
+  });
+
+  it('assigns a nested unlinked folder from event ancestry when the file is already on A', async () => {
+    const northstar = await insertCompany('Northstar');
+    const acme = await insertCompany('Acme Labs');
+    const source = await insertCluster(northstar);
+    await insertDriveFileAnchor({ clusterId: source.id, fileId: 'nested-from-event' });
+    await insertDriveFileAnchor({ clusterId: source.id, fileId: 'outer-from-event' });
+    await db.insert(rawEvents).values([
+      {
+        teamId: TEAM_ID,
+        authorUserId: USER_ID,
+        source: 'integration',
+        contentText: 'Nested file changed',
+        occurredAt: new Date('2026-06-20T10:00:00Z'),
+        visibility: 'team',
+        sourceMetadata: {
+          provider: 'google_drive',
+          integration_id: INTEGRATION_ID,
+          external_object_id: 'nested-from-event',
+          drive: {
+            parents: ['folder-inner'],
+            inherited_from: 'folder-outer',
+            inherited_candidates: ['nested-from-event', 'folder-inner', 'folder-outer'],
+          },
+        },
+      },
+      {
+        teamId: TEAM_ID,
+        authorUserId: USER_ID,
+        source: 'integration',
+        contentText: 'Outer file changed',
+        occurredAt: new Date('2026-06-20T11:00:00Z'),
+        visibility: 'team',
+        sourceMetadata: {
+          provider: 'google_drive',
+          integration_id: INTEGRATION_ID,
+          external_object_id: 'outer-from-event',
+          drive: {
+            parents: ['folder-outer'],
+            inherited_from: 'folder-outer',
+            inherited_candidates: ['outer-from-event', 'folder-outer'],
+          },
+        },
+      },
+    ]);
+
+    await rebindDriveSelectionArtifactLink(db as never, {
+      teamId: TEAM_ID,
+      integrationId: INTEGRATION_ID,
+      selectionKind: 'drive.folder',
+      externalId: 'folder-inner',
+      previousObjectId: null,
+      selections: [
+        { kind: 'drive.folder', externalId: 'folder-inner', linkedObjectId: acme.id },
+        { kind: 'drive.folder', externalId: 'folder-outer', linkedObjectId: northstar.id },
+      ],
+    });
+
+    expect(await anchorCluster('nested-from-event')).toBe(await clusterIdFor(acme.id));
+    expect(await anchorCluster('outer-from-event')).toBe(source.id);
+  });
+
   it('assigns a previously unlinked folder by rebinding inherited files from unbound clusters', async () => {
     const acme = await insertCompany('Acme Labs');
     const unbound = await insertUnboundCluster('Unbound Drive files');

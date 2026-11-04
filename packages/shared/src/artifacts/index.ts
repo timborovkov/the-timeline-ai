@@ -7,13 +7,15 @@ import {
   reconciliationEvidence,
   type Db,
 } from '@timeline/db';
-import { and, eq, inArray, isNull, or, sql } from 'drizzle-orm';
+import { and, eq, isNull, or, sql } from 'drizzle-orm';
 
 import {
   driveFileObjectIdFromResolution,
   driveObjectLinkCandidates,
   driveSelectionsWithChangedLink,
+  latestDriveObjectLinkHintsByFileIds,
   resolveDriveFileObjectLink,
+  type DriveObjectLinkHints,
   type DriveSelectionObjectLink,
 } from '#src/integrations/google-drive-capture.js';
 import { evaluateAuthorityPolicy } from '#src/reconciliation/authority.js';
@@ -864,73 +866,56 @@ function driveInheritanceCandidatesFromAnchorMetadata(metadata: unknown): {
   return { candidates: null, integrationId };
 }
 
-function driveInheritanceCandidatesFromSourceMetadata(
-  metadata: unknown,
-  fileId: string,
-): { candidates: string[] | null; integrationId: string | null } {
-  const record = asRecord(metadata);
-  if (!record) return { candidates: null, integrationId: null };
-  const integrationId = typeof record.integration_id === 'string' ? record.integration_id : null;
-  const drive = asRecord(record.drive);
-  if (!drive) return { candidates: null, integrationId };
-  const stamped = stringArray(drive.inherited_candidates);
-  if (stamped.length > 0) return { candidates: stamped, integrationId };
-  const inheritedFrom = typeof drive.inherited_from === 'string' ? drive.inherited_from : null;
-  const matchedAncestorId =
-    typeof drive.matched_ancestor_id === 'string' ? drive.matched_ancestor_id : null;
-  const driveId = typeof drive.drive_id === 'string' ? drive.drive_id : null;
-  const parents = stringArray(drive.parents);
-  if (!inheritedFrom && !matchedAncestorId && !driveId && parents.length === 0) {
-    return { candidates: null, integrationId };
-  }
-  return {
-    candidates: driveObjectLinkCandidates({
-      fileId,
-      parentIds: parents,
-      matchedAncestorId: matchedAncestorId ?? inheritedFrom,
-      ...(driveId ? { driveId } : {}),
-    }),
-    integrationId,
-  };
+function emptyDriveObjectLinkHints(): DriveObjectLinkHints {
+  return { parentIds: [], driveId: null, matchedAncestorId: null, inheritedCandidates: null };
 }
 
-async function latestDriveSourceMetadataByFileId(
+function driveAncestryIncludesSelection(
+  candidates: readonly string[] | null | undefined,
+  changedExternalId: string,
+): boolean {
+  const changed = changedExternalId.trim().toLowerCase();
+  if (!changed || !candidates) return false;
+  return candidates.some((id) => id.trim().toLowerCase() === changed);
+}
+
+function candidatesFromDriveLinkHints(
+  fileId: string,
+  hints: DriveObjectLinkHints,
+): string[] | null {
+  if (hints.inheritedCandidates && hints.inheritedCandidates.length > 0) {
+    return hints.inheritedCandidates;
+  }
+  if (hints.parentIds.length === 0 && !hints.driveId && !hints.matchedAncestorId) return null;
+  return driveObjectLinkCandidates({
+    fileId,
+    parentIds: hints.parentIds,
+    ...(hints.matchedAncestorId ? { matchedAncestorId: hints.matchedAncestorId } : {}),
+    ...(hints.driveId ? { driveId: hints.driveId } : {}),
+  });
+}
+
+async function fillMissingDriveFileCandidates(
   db: Db,
   input: { teamId: string; integrationId: string; fileIds: string[] },
-): Promise<Map<string, unknown>> {
-  const fileIds = [...new Set(input.fileIds.map((fileId) => fileId.trim().toLowerCase()))].filter(
-    Boolean,
-  );
-  if (fileIds.length === 0) return new Map();
-  const rows = await db
-    .select({
-      sourceMetadata: rawEvents.sourceMetadata,
-      occurredAt: rawEvents.occurredAt,
-    })
-    .from(rawEvents)
-    .where(
-      and(
-        eq(rawEvents.teamId, input.teamId),
-        eq(rawEvents.source, 'integration'),
-        sql`${rawEvents.sourceMetadata} ->> 'provider' = 'google_drive'`,
-        sql`${rawEvents.sourceMetadata} ->> 'integration_id' = ${input.integrationId}`,
-        inArray(sql`lower(${rawEvents.sourceMetadata} ->> 'external_object_id')`, fileIds),
-      ),
+  candidatesByFileId: Map<string, string[] | null>,
+): Promise<void> {
+  const missing = [
+    ...new Set(input.fileIds.filter((fileId) => !candidatesByFileId.get(fileId))),
+  ].filter(Boolean);
+  if (missing.length === 0) return;
+  const hints = await latestDriveObjectLinkHintsByFileIds(db, {
+    teamId: input.teamId,
+    integrationId: input.integrationId,
+    fileIds: missing,
+  });
+  for (const fileId of missing) {
+    if (candidatesByFileId.get(fileId)) continue;
+    candidatesByFileId.set(
+      fileId,
+      candidatesFromDriveLinkHints(fileId, hints.get(fileId) ?? emptyDriveObjectLinkHints()),
     );
-  const latest = new Map<string, { occurredAt: Date; sourceMetadata: unknown }>();
-  for (const row of rows) {
-    const metadata = asRecord(row.sourceMetadata);
-    const fileId =
-      typeof metadata?.external_object_id === 'string'
-        ? metadata.external_object_id.trim().toLowerCase()
-        : '';
-    if (!fileId) continue;
-    const previous = latest.get(fileId);
-    if (!previous || previous.occurredAt < row.occurredAt) {
-      latest.set(fileId, { occurredAt: row.occurredAt, sourceMetadata: row.sourceMetadata });
-    }
   }
-  return new Map([...latest].map(([fileId, row]) => [fileId, row.sourceMetadata]));
 }
 
 async function collectInheritedDriveFilesForSelection(
@@ -939,12 +924,14 @@ async function collectInheritedDriveFilesForSelection(
     teamId: string;
     integrationId: string;
     previousObjectId: string | null;
+    changedExternalId: string;
   },
 ): Promise<Map<string, string[] | null>> {
   const inherited = await db
     .select({
       anchorValue: artifactClusterAnchors.anchorValue,
       metadata: artifactClusterAnchors.metadata,
+      canonicalEntityId: artifactClusters.canonicalEntityId,
     })
     .from(artifactClusterAnchors)
     .innerJoin(
@@ -957,15 +944,13 @@ async function collectInheritedDriveFilesForSelection(
     .where(
       and(
         eq(artifactClusters.teamId, input.teamId),
-        input.previousObjectId
-          ? eq(artifactClusters.canonicalEntityId, input.previousObjectId)
-          : isNull(artifactClusters.canonicalEntityId),
         eq(artifactClusterAnchors.anchorType, 'provider_object'),
         sql`${artifactClusterAnchors.anchorValue} LIKE ${'google_drive:%'}`,
       ),
     );
   const candidatesByFileId = new Map<string, string[] | null>();
-  const unknownFileIds: string[] = [];
+  const unresolvedFileIds: string[] = [];
+  const unstampedOnPreviousCluster = new Set<string>();
   for (const row of inherited) {
     const fileId = row.anchorValue.slice('google_drive:'.length);
     if (!fileId) continue;
@@ -976,24 +961,36 @@ async function collectInheritedDriveFilesForSelection(
     ) {
       continue;
     }
-    if (stamp.candidates) {
+    const onPreviousCluster = input.previousObjectId
+      ? row.canonicalEntityId === input.previousObjectId
+      : row.canonicalEntityId === null;
+    if (
+      stamp.candidates &&
+      driveAncestryIncludesSelection(stamp.candidates, input.changedExternalId)
+    ) {
       candidatesByFileId.set(fileId, stamp.candidates);
       continue;
     }
-    unknownFileIds.push(fileId);
+    unresolvedFileIds.push(fileId);
+    if (onPreviousCluster && !stamp.candidates) unstampedOnPreviousCluster.add(fileId);
   }
-  if (unknownFileIds.length > 0) {
-    const extras = await latestDriveSourceMetadataByFileId(db, {
+  if (unresolvedFileIds.length > 0) {
+    const hints = await latestDriveObjectLinkHintsByFileIds(db, {
       teamId: input.teamId,
       integrationId: input.integrationId,
-      fileIds: unknownFileIds,
+      fileIds: unresolvedFileIds,
     });
-    for (const fileId of unknownFileIds) {
-      const fromEvent = driveInheritanceCandidatesFromSourceMetadata(
-        extras.get(fileId.trim().toLowerCase()),
+    for (const fileId of unresolvedFileIds) {
+      if (candidatesByFileId.has(fileId)) continue;
+      const fromHints = candidatesFromDriveLinkHints(
         fileId,
+        hints.get(fileId) ?? emptyDriveObjectLinkHints(),
       );
-      candidatesByFileId.set(fileId, fromEvent.candidates);
+      if (driveAncestryIncludesSelection(fromHints, input.changedExternalId)) {
+        candidatesByFileId.set(fileId, fromHints);
+        continue;
+      }
+      if (unstampedOnPreviousCluster.has(fileId)) candidatesByFileId.set(fileId, fromHints);
     }
   }
   return candidatesByFileId;
@@ -1079,8 +1076,9 @@ export async function rebindDriveFileObjectLink(
  * file onto the object that live-capture precedence would pick from the
  * post-change selection set. A remaining overlapping container keeps the
  * previous object only when it appears earlier in the candidate walk.
- * Assigning a previously unlinked folder or shared drive rebinds inherited
- * file anchors from unbound clusters (`canonicalEntityId` null).
+ * Assigning a previously unlinked folder or shared drive rebinds files whose
+ * ancestry includes that selection, including files already on an outer folder
+ * or shared-drive object, then applies live-capture before/after precedence.
  */
 export async function rebindDriveSelectionArtifactLink(
   db: Db,
@@ -1101,6 +1099,7 @@ export async function rebindDriveSelectionArtifactLink(
       teamId: input.teamId,
       integrationId: input.integrationId,
       previousObjectId: input.previousObjectId,
+      changedExternalId: input.externalId,
     })) {
       candidatesByFileId.set(fileId, candidates);
     }
@@ -1110,19 +1109,15 @@ export async function rebindDriveSelectionArtifactLink(
     .filter(([, candidates]) => !candidates)
     .map(([fileId]) => fileId);
   if (unknownFileIds.length > 0) {
-    const extras = await latestDriveSourceMetadataByFileId(db, {
-      teamId: input.teamId,
-      integrationId: input.integrationId,
-      fileIds: unknownFileIds,
-    });
-    for (const fileId of unknownFileIds) {
-      if (candidatesByFileId.get(fileId)) continue;
-      const fromEvent = driveInheritanceCandidatesFromSourceMetadata(
-        extras.get(fileId.trim().toLowerCase()),
-        fileId,
-      );
-      candidatesByFileId.set(fileId, fromEvent.candidates);
-    }
+    await fillMissingDriveFileCandidates(
+      db,
+      {
+        teamId: input.teamId,
+        integrationId: input.integrationId,
+        fileIds: unknownFileIds,
+      },
+      candidatesByFileId,
+    );
   }
   const clusterByObjectId = new Map<string | null, string | null>();
   const rebound: string[] = [];

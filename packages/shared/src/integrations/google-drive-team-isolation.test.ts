@@ -10,6 +10,10 @@ const SCAN_ROOTS = ['apps/web/src', 'apps/worker/src', 'packages/shared/src'];
 const ALLOWED_DB_HELPER_FILES = new Set([
   'packages/shared/src/integrations/google-drive-capture.ts',
   'packages/shared/src/integrations/scope.ts',
+  // Artifact rebind already receives the withTeam db and filters every query by
+  // teamId; it reuses the capture ancestry helper so nested-folder assignment
+  // sees the same newest snapshot/event walk as live coverage.
+  'packages/shared/src/artifacts/index.ts',
 ]);
 const ALLOWED_SNAPSHOT_TABLE_FILES = new Set([
   'packages/shared/src/integrations/google-drive-capture.ts',
