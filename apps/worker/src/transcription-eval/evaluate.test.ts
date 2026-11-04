@@ -5,14 +5,13 @@ import { expect } from '@timeline/test-support';
 import { vi } from '@timeline/test-support';
 import { describe, it } from 'bun:test';
 
-import { runTranscriptionQualityEval } from '#src/transcription-eval/evaluate.js';
-import { buildValidTranscriptionEvalManifest } from '#src/transcription-eval/test-fixtures.js';
-
 import type {
   TranscriptionEvalTransport,
   TranscriptionEvalZdrRoutes,
 } from '#src/transcription-eval/evaluate.js';
 import type { LoadedTranscriptionEvalManifest } from '#src/transcription-eval/manifest.js';
+import { runTranscriptionQualityEval } from '#src/transcription-eval/evaluate.js';
+import { buildValidTranscriptionEvalManifest } from '#src/transcription-eval/test-fixtures.js';
 
 /**
  * The provider-backed bake-off must spend only on ZDR-listed candidates, enforce

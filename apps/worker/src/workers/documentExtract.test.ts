@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
+import type { PGlite } from '@electric-sql/pglite';
 import {
   type Db,
   documentChunks,
@@ -29,8 +30,6 @@ import {
   processDocumentExtractJob,
   shouldAcceptSandboxPdfText,
 } from '#src/workers/documentExtract.js';
-
-import type { PGlite } from '@electric-sql/pglite';
 
 /**
  * Real-DB integration tests for the documentExtract worker handler.
