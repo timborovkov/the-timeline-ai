@@ -65,6 +65,7 @@ export function PublicShell({
               </Link>
               <Link
                 href="/trust"
+                aria-current={currentSection === 'trust' ? 'page' : undefined}
                 className="rounded-sm outline-none hover:text-fg focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
               >
                 Trust
