@@ -19,6 +19,8 @@ import { afterAll, beforeAll, beforeEach, describe, it } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 
+import type { PGlite } from '@electric-sql/pglite';
+
 import { DaytonaNotConfiguredError } from '#src/document-ingestion/types.js';
 import {
   type DocumentExtractIO,
@@ -28,8 +30,6 @@ import {
   processDocumentExtractJob,
   shouldAcceptSandboxPdfText,
 } from '#src/workers/documentExtract.js';
-
-import type { PGlite } from '@electric-sql/pglite';
 
 /**
  * Real-DB integration tests for the documentExtract worker handler.
