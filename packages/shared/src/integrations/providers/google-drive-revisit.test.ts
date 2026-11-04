@@ -127,8 +127,23 @@ describe('Drive A→B→A→B revisit', () => {
       (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
     >((input) => {
       const url = requestUrl(input);
-      if (url.pathname.includes('/export')) {
-        return Promise.resolve(new Response(current.text, { status: 200 }));
+      if (url.hostname === 'docs.googleapis.com' && url.pathname.includes('/documents/')) {
+        return Promise.resolve(
+          jsonResponse({
+            tabs: [
+              {
+                tabProperties: { title: 'Tab 1' },
+                documentTab: {
+                  body: {
+                    content: [
+                      { paragraph: { elements: [{ textRun: { content: current.text } }] } },
+                    ],
+                  },
+                },
+              },
+            ],
+          }),
+        );
       }
       if (url.pathname.endsWith('/files/file-1')) {
         return Promise.resolve(

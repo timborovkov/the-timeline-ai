@@ -29,6 +29,10 @@ import {
   parseDriveSnapshotLocate,
   truncateDriveSnapshot,
 } from '#src/integrations/google-drive-diff.js';
+import {
+  formatDriveDocumentFromApi,
+  type DriveDocumentApiResource,
+} from '#src/integrations/google-drive-document.js';
 import { decideDriveSnapshotAdvance } from '#src/integrations/google-drive-evidence.js';
 import {
   DRIVE_FILE_KIND,
@@ -79,6 +83,7 @@ const SCOPES = [
 const AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth';
 const TOKEN_URL = 'https://oauth2.googleapis.com/token';
 const DRIVE_BASE = 'https://www.googleapis.com/drive/v3';
+const DOCS_BASE = 'https://docs.googleapis.com/v1/documents';
 const SHEETS_BASE = 'https://sheets.googleapis.com/v4/spreadsheets';
 /** Repeated `ranges` query params stay well under typical URL length limits. */
 const SHEETS_BATCH_RANGE_LIMIT = 40;
@@ -465,13 +470,6 @@ async function fileInSelectedSubtree(
 function exportSpec(
   mimeType: string,
 ): { urlPath: string; contentType: string; suffix: string } | null {
-  if (mimeType === 'application/vnd.google-apps.document') {
-    return {
-      urlPath: `/files/{id}/export?mimeType=${encodeURIComponent('text/plain')}`,
-      contentType: 'text/plain',
-      suffix: '.txt',
-    };
-  }
   if (mimeType === 'application/vnd.google-apps.presentation') {
     return {
       urlPath: `/files/{id}/export?mimeType=${encodeURIComponent('application/pdf')}`,
@@ -502,7 +500,7 @@ interface SheetsValueRange {
   values?: unknown[][];
 }
 
-async function sheetsFetchJson<T>(tokens: DriveTokens, url: URL): Promise<T> {
+async function googleJsonFetch<T>(tokens: DriveTokens, url: URL, label: string): Promise<T> {
   const res = await fetch(
     url.toString(),
     { headers: { authorization: `Bearer ${tokens.access_token}` } },
@@ -510,9 +508,31 @@ async function sheetsFetchJson<T>(tokens: DriveTokens, url: URL): Promise<T> {
   );
   const text = await res.text();
   if (!res.ok) {
-    throw new Error(`Sheets GET ${url.pathname} ${String(res.status)}: ${text}`);
+    throw new Error(`${label} GET ${url.pathname} ${String(res.status)}: ${text}`);
   }
   return JSON.parse(text) as T;
+}
+
+async function downloadDocumentTabs(
+  tokens: DriveTokens,
+  fileId: string,
+): Promise<{ body: Buffer; contentType: string; filenameSuffix: string } | null> {
+  try {
+    const url = new URL(`${DOCS_BASE}/${encodeURIComponent(fileId)}`);
+    url.searchParams.set('includeTabsContent', 'true');
+    const doc = await googleJsonFetch<DriveDocumentApiResource>(tokens, url, 'Docs');
+    const formatted = formatDriveDocumentFromApi(doc);
+    const body = Buffer.from(formatted, 'utf8');
+    if (body.byteLength > MAX_HARVEST_BYTES) return null;
+    return { body, contentType: 'text/plain', filenameSuffix: '.txt' };
+  } catch (error) {
+    if (isResponseTooLarge(error)) return null;
+    throw error;
+  }
+}
+
+async function sheetsFetchJson<T>(tokens: DriveTokens, url: URL): Promise<T> {
+  return googleJsonFetch<T>(tokens, url, 'Sheets');
 }
 
 async function sheetsBatchGetValues(
@@ -577,6 +597,9 @@ async function downloadFileBody(
   fileId: string,
   mimeType: string,
 ): Promise<{ body: Buffer; contentType: string; filenameSuffix: string } | null> {
+  if (mimeType === 'application/vnd.google-apps.document') {
+    return downloadDocumentTabs(tokens, fileId);
+  }
   if (mimeType === 'application/vnd.google-apps.spreadsheet') {
     return downloadSpreadsheetWorkbook(tokens, fileId);
   }

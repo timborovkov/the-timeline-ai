@@ -35,6 +35,7 @@ const { DRIVE_FILE_DEBOUNCE_MS, DRIVE_TRANSIENT_RESULT_TOO_LARGE, hashDrivePaylo
 const { driveCommentsHashEntries } = await import('#src/integrations/google-drive-comments.js');
 const { DRIVE_CHANGED_SPAN_MAX, DRIVE_SNAPSHOT_MAX_CHARS, buildDriveSnapshotLocate } =
   await import('#src/integrations/google-drive-diff.js');
+const { formatDriveDocumentTabs } = await import('#src/integrations/google-drive-document.js');
 const { formatDriveSpreadsheetWorkbook, sheetValuesToCsv } =
   await import('#src/integrations/google-drive-spreadsheet.js');
 
@@ -49,6 +50,66 @@ function jsonResponse(body: unknown, init: ResponseInit = {}): Response {
     headers: { 'content-type': 'application/json' },
     ...init,
   });
+}
+
+function isGoogleDocsGet(url: URL): boolean {
+  return url.hostname === 'docs.googleapis.com' && url.pathname.includes('/documents/');
+}
+
+interface GoogleDocsTabFixture {
+  title: string;
+  text: string;
+  childTabs?: GoogleDocsTabFixture[];
+}
+
+function googleDocsTabResource(tab: GoogleDocsTabFixture): Record<string, unknown> {
+  return {
+    tabProperties: { title: tab.title },
+    documentTab: {
+      body: {
+        content: [{ paragraph: { elements: [{ textRun: { content: tab.text } }] } }],
+      },
+    },
+    childTabs: (tab.childTabs ?? []).map((child) => googleDocsTabResource(child)),
+  };
+}
+
+function googleDocsPlainResponse(text: string, title = 'Tab 1'): Response {
+  return jsonResponse({ tabs: [googleDocsTabResource({ title, text })] });
+}
+
+function driveDocumentFetch(options: {
+  fileId?: string;
+  name?: string;
+  tabs: GoogleDocsTabFixture[];
+}): (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch> {
+  const fileId = options.fileId ?? 'file-1';
+  return (input) => {
+    const url = requestUrl(input);
+    if (isGoogleDocsGet(url)) {
+      return Promise.resolve(
+        jsonResponse({ tabs: options.tabs.map((tab) => googleDocsTabResource(tab)) }),
+      );
+    }
+    if (url.pathname.includes('/export')) {
+      return Promise.resolve(
+        new Response('first-tab-only export should not be used', { status: 500 }),
+      );
+    }
+    if (url.pathname.endsWith(`/files/${fileId}`)) {
+      return Promise.resolve(
+        jsonResponse({
+          id: fileId,
+          name: options.name ?? 'SOW',
+          mimeType: 'application/vnd.google-apps.document',
+          parents: ['root'],
+          modifiedTime: '2026-06-20T10:00:00.000Z',
+        }),
+      );
+    }
+    if (url.pathname.endsWith('/comments')) return Promise.resolve(jsonResponse({ comments: [] }));
+    return Promise.resolve(jsonResponse({ permissions: [] }));
+  };
 }
 
 function driveCommentsHash(
@@ -1410,8 +1471,8 @@ describe('googleDriveProvider', () => {
       (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
     >((input) => {
       const url = requestUrl(input);
-      if (url.pathname.includes('/export')) {
-        return Promise.resolve(new Response(nextFull, { status: 200 }));
+      if (isGoogleDocsGet(url)) {
+        return Promise.resolve(googleDocsPlainResponse(nextFull));
       }
       if (url.pathname.endsWith('/files/file-1')) {
         return Promise.resolve(
@@ -1609,6 +1670,132 @@ describe('googleDriveProvider', () => {
     expect(ctx.saveDriveSnapshot).not.toHaveBeenCalled();
   });
 
+  it('hashes every Google Doc tab so a later-tab edit is not dropped as unchanged', async () => {
+    const first = 'Meeting notes for Northstar.\n';
+    const previousSecond = 'Transcript: signed $12k.\n';
+    const nextSecond = 'Transcript: signed $48k.\n';
+    const previousDocument = formatDriveDocumentTabs([
+      { title: 'Notes', text: first },
+      { title: 'Transcript', text: previousSecond },
+    ]);
+    const nextDocument = formatDriveDocumentTabs([
+      { title: 'Notes', text: first },
+      { title: 'Transcript', text: nextSecond },
+    ]);
+    expect(hashDrivePayload(first)).toBe(
+      hashDrivePayload(formatDriveDocumentTabs([{ title: 'Notes', text: first }])),
+    );
+    expect(hashDrivePayload(previousDocument)).not.toBe(hashDrivePayload(nextDocument));
+
+    const fetch = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >(
+      driveDocumentFetch({
+        name: 'SOW',
+        tabs: [
+          { title: 'Notes', text: first },
+          { title: 'Transcript', text: nextSecond },
+        ],
+      }),
+    );
+    vi.stubGlobal('fetch', fetch);
+    const ctx = syncContext({
+      loadLatestDriveSnapshot: vi.fn().mockResolvedValue({
+        contentHash: hashDrivePayload(previousDocument),
+        snapshotText: previousDocument,
+        snapshotLocate: buildDriveSnapshotLocate(previousDocument),
+        commentsHash: driveCommentsHash([]),
+        permissionsHash: drivePermissionsHash([]),
+        mimeType: 'application/vnd.google-apps.document',
+      }),
+    });
+
+    await googleDriveProvider.incrementalSync({
+      integration: { id: 'integration-1', teamId: 'team-1' } as never,
+      tokens: { access_token: 'access-token', expires_at: Date.now() + 600_000 },
+      selections: [{ kind: 'drive.file', externalId: 'file-1' }],
+      ctx: ctx,
+      target: { resourceType: 'drive.file', externalId: 'file-1' },
+    });
+
+    const requested = fetch.mock.calls.map(([input]) => requestUrl(input));
+    expect(
+      requested.some(
+        (url) => url.hostname === 'www.googleapis.com' && url.pathname.includes('/export'),
+      ),
+    ).toBe(false);
+    expect(
+      requested.some(
+        (url) =>
+          url.hostname === 'docs.googleapis.com' &&
+          url.pathname.endsWith('/documents/file-1') &&
+          url.searchParams.get('includeTabsContent') === 'true',
+      ),
+    ).toBe(true);
+    expect(ctx.enqueueTransientDriveExtract).not.toHaveBeenCalled();
+    expect(ctx.judgeDriveChange).toHaveBeenCalled();
+    expect(ctx.writeEvents).toHaveBeenCalled();
+    expect(ctx.saveDriveSnapshot).toHaveBeenCalledWith(
+      expect.objectContaining({
+        contentHash: hashDrivePayload(nextDocument),
+        snapshotText: nextDocument,
+      }),
+    );
+    const saved = (
+      ctx.saveDriveSnapshot as unknown as {
+        mock: { calls: [{ contentHash: string }][] };
+      }
+    ).mock.calls[0]?.[0];
+    expect(saved?.contentHash).not.toBe(hashDrivePayload(first));
+    expect(saved?.contentHash).not.toBe(hashDrivePayload(previousDocument));
+  });
+
+  it('takes the unchanged-snapshot branch when every Doc tab is unchanged', async () => {
+    const document = formatDriveDocumentTabs([
+      { title: 'Notes', text: 'ok\n' },
+      {
+        title: 'Transcript',
+        text: 'same\n',
+      },
+    ]);
+    const fetch = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >(
+      driveDocumentFetch({
+        tabs: [
+          {
+            title: 'Notes',
+            text: 'ok\n',
+            childTabs: [{ title: 'Transcript', text: 'same\n' }],
+          },
+        ],
+      }),
+    );
+    vi.stubGlobal('fetch', fetch);
+    const ctx = syncContext({
+      loadLatestDriveSnapshot: vi.fn().mockResolvedValue({
+        contentHash: hashDrivePayload(document),
+        snapshotText: document,
+        snapshotLocate: buildDriveSnapshotLocate(document),
+        commentsHash: driveCommentsHash([]),
+        permissionsHash: drivePermissionsHash([]),
+        mimeType: 'application/vnd.google-apps.document',
+      }),
+    });
+
+    await googleDriveProvider.incrementalSync({
+      integration: { id: 'integration-1', teamId: 'team-1' } as never,
+      tokens: { access_token: 'access-token', expires_at: Date.now() + 600_000 },
+      selections: [{ kind: 'drive.file', externalId: 'file-1' }],
+      ctx: ctx,
+      target: { resourceType: 'drive.file', externalId: 'file-1' },
+    });
+
+    expect(ctx.judgeDriveChange).not.toHaveBeenCalled();
+    expect(ctx.writeEvents).not.toHaveBeenCalled();
+    expect(ctx.saveDriveSnapshot).not.toHaveBeenCalled();
+  });
+
   it('skips a whitespace-only prefix edit on a long document when the suffix window is unchanged', async () => {
     const paragraph = 'Contract amount is forty eight thousand dollars for Northstar.\n';
     const previousFull = paragraph.repeat(500);
@@ -1618,8 +1805,8 @@ describe('googleDriveProvider', () => {
       (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
     >((input) => {
       const url = requestUrl(input);
-      if (url.pathname.includes('/export')) {
-        return Promise.resolve(new Response(nextFull, { status: 200 }));
+      if (isGoogleDocsGet(url)) {
+        return Promise.resolve(googleDocsPlainResponse(nextFull));
       }
       if (url.pathname.endsWith('/files/file-1')) {
         return Promise.resolve(
@@ -1673,8 +1860,8 @@ describe('googleDriveProvider', () => {
       (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
     >((input) => {
       const url = requestUrl(input);
-      if (url.pathname.includes('/export')) {
-        return Promise.resolve(new Response(nextFull, { status: 200 }));
+      if (isGoogleDocsGet(url)) {
+        return Promise.resolve(googleDocsPlainResponse(nextFull));
       }
       if (url.pathname.endsWith('/files/file-1')) {
         return Promise.resolve(
@@ -1742,8 +1929,8 @@ describe('googleDriveProvider', () => {
       (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
     >((input) => {
       const url = requestUrl(input);
-      if (url.pathname.includes('/export')) {
-        return Promise.resolve(new Response(nextFull, { status: 200 }));
+      if (isGoogleDocsGet(url)) {
+        return Promise.resolve(googleDocsPlainResponse(nextFull));
       }
       if (url.pathname.endsWith('/files/file-1')) {
         return Promise.resolve(
@@ -1829,8 +2016,8 @@ describe('googleDriveProvider', () => {
       (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
     >((input) => {
       const url = requestUrl(input);
-      if (url.pathname.includes('/export')) {
-        return Promise.resolve(new Response(nextFull, { status: 200 }));
+      if (isGoogleDocsGet(url)) {
+        return Promise.resolve(googleDocsPlainResponse(nextFull));
       }
       if (url.pathname.endsWith('/files/file-1')) {
         return Promise.resolve(
@@ -1899,8 +2086,8 @@ describe('googleDriveProvider', () => {
       (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
     >((input) => {
       const url = requestUrl(input);
-      if (url.pathname.includes('/export')) {
-        return Promise.resolve(new Response(nextFull, { status: 200 }));
+      if (isGoogleDocsGet(url)) {
+        return Promise.resolve(googleDocsPlainResponse(nextFull));
       }
       if (url.pathname.endsWith('/files/file-1')) {
         return Promise.resolve(
@@ -1955,8 +2142,8 @@ describe('googleDriveProvider', () => {
       (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
     >((input) => {
       const url = requestUrl(input);
-      if (url.pathname.includes('/export')) {
-        return Promise.resolve(new Response(nextFull, { status: 200 }));
+      if (isGoogleDocsGet(url)) {
+        return Promise.resolve(googleDocsPlainResponse(nextFull));
       }
       if (url.pathname.endsWith('/files/file-1')) {
         return Promise.resolve(
@@ -2015,8 +2202,8 @@ describe('googleDriveProvider', () => {
       (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
     >((input) => {
       const url = requestUrl(input);
-      if (url.pathname.includes('/export')) {
-        return Promise.resolve(new Response(nextFull, { status: 200 }));
+      if (isGoogleDocsGet(url)) {
+        return Promise.resolve(googleDocsPlainResponse(nextFull));
       }
       if (url.pathname.endsWith('/files/file-1')) {
         return Promise.resolve(
@@ -2115,8 +2302,8 @@ describe('googleDriveProvider', () => {
       (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
     >((input) => {
       const url = requestUrl(input);
-      if (url.pathname.includes('/export')) {
-        return Promise.resolve(new Response('Initial contract draft', { status: 200 }));
+      if (isGoogleDocsGet(url)) {
+        return Promise.resolve(googleDocsPlainResponse('Initial contract draft'));
       }
       if (url.pathname.endsWith('/files/file-1')) {
         return Promise.resolve(
@@ -2168,8 +2355,8 @@ describe('googleDriveProvider', () => {
       (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
     >((input) => {
       const url = requestUrl(input);
-      if (url.pathname.includes('/export')) {
-        return Promise.resolve(new Response(`${snapshotText} Signed.`, { status: 200 }));
+      if (isGoogleDocsGet(url)) {
+        return Promise.resolve(googleDocsPlainResponse(`${snapshotText} Signed.`));
       }
       if (url.pathname.endsWith('/files/file-1')) {
         return Promise.resolve(
@@ -2217,8 +2404,8 @@ describe('googleDriveProvider', () => {
       (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
     >((input) => {
       const url = requestUrl(input);
-      if (url.pathname.includes('/export')) {
-        return Promise.resolve(new Response(snapshotText, { status: 200 }));
+      if (isGoogleDocsGet(url)) {
+        return Promise.resolve(googleDocsPlainResponse(snapshotText));
       }
       if (url.pathname.endsWith('/comments')) {
         return Promise.resolve(
@@ -2367,8 +2554,8 @@ describe('googleDriveProvider', () => {
       (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
     >((input) => {
       const url = requestUrl(input);
-      if (url.pathname.includes('/export')) {
-        return Promise.resolve(new Response(snapshotText, { status: 200 }));
+      if (isGoogleDocsGet(url)) {
+        return Promise.resolve(googleDocsPlainResponse(snapshotText));
       }
       if (url.pathname.endsWith('/comments')) {
         expect(url.searchParams.get('fields')).toContain('nextPageToken');
@@ -2453,8 +2640,8 @@ describe('googleDriveProvider', () => {
       (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
     >((input) => {
       const url = requestUrl(input);
-      if (url.pathname.includes('/export')) {
-        return Promise.resolve(new Response(snapshotText, { status: 200 }));
+      if (isGoogleDocsGet(url)) {
+        return Promise.resolve(googleDocsPlainResponse(snapshotText));
       }
       if (url.pathname.endsWith('/comments')) {
         return Promise.resolve(jsonResponse({ comments: nextComments }));
@@ -2531,8 +2718,8 @@ describe('googleDriveProvider', () => {
       (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
     >((input) => {
       const url = requestUrl(input);
-      if (url.pathname.includes('/export')) {
-        return Promise.resolve(new Response(nextText, { status: 200 }));
+      if (isGoogleDocsGet(url)) {
+        return Promise.resolve(googleDocsPlainResponse(nextText));
       }
       if (url.pathname.endsWith('/files/file-1')) {
         return Promise.resolve(
@@ -2624,8 +2811,8 @@ describe('googleDriveProvider', () => {
       (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
     >((input) => {
       const url = requestUrl(input);
-      if (url.pathname.includes('/export')) {
-        return Promise.resolve(new Response(nextText, { status: 200 }));
+      if (isGoogleDocsGet(url)) {
+        return Promise.resolve(googleDocsPlainResponse(nextText));
       }
       if (url.pathname.endsWith('/comments')) {
         expect(url.searchParams.get('fields') ?? '').toContain('replies(');
@@ -2706,8 +2893,8 @@ describe('googleDriveProvider', () => {
       (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
     >((input) => {
       const url = requestUrl(input);
-      if (url.pathname.includes('/export')) {
-        return Promise.resolve(new Response(snapshotText, { status: 200 }));
+      if (isGoogleDocsGet(url)) {
+        return Promise.resolve(googleDocsPlainResponse(snapshotText));
       }
       if (url.pathname.endsWith('/comments')) {
         expect(url.searchParams.get('includeDeleted')).toBe('false');
@@ -2806,8 +2993,8 @@ describe('googleDriveProvider', () => {
       (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
     >((input) => {
       const url = requestUrl(input);
-      if (url.pathname.includes('/export')) {
-        return Promise.resolve(new Response(snapshotText, { status: 200 }));
+      if (isGoogleDocsGet(url)) {
+        return Promise.resolve(googleDocsPlainResponse(snapshotText));
       }
       if (url.pathname.endsWith('/comments')) {
         expect(url.searchParams.get('fields') ?? '').toContain('replies(');
@@ -2885,8 +3072,8 @@ describe('googleDriveProvider', () => {
       (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
     >((input) => {
       const url = requestUrl(input);
-      if (url.pathname.includes('/export')) {
-        return Promise.resolve(new Response(snapshotText, { status: 200 }));
+      if (isGoogleDocsGet(url)) {
+        return Promise.resolve(googleDocsPlainResponse(snapshotText));
       }
       if (url.pathname.endsWith('/comments')) {
         return Promise.resolve(jsonResponse({ comments: nextComments }));
@@ -2958,8 +3145,8 @@ describe('googleDriveProvider', () => {
       (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
     >((input) => {
       const url = requestUrl(input);
-      if (url.pathname.includes('/export')) {
-        return Promise.resolve(new Response(snapshotText, { status: 200 }));
+      if (isGoogleDocsGet(url)) {
+        return Promise.resolve(googleDocsPlainResponse(snapshotText));
       }
       if (url.pathname.endsWith('/comments')) {
         return Promise.resolve(jsonResponse({ comments: [] }));
@@ -3028,8 +3215,8 @@ describe('googleDriveProvider', () => {
       (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
     >((input) => {
       const url = requestUrl(input);
-      if (url.pathname.includes('/export')) {
-        return Promise.resolve(new Response(`${snapshotText} Signed.`, { status: 200 }));
+      if (isGoogleDocsGet(url)) {
+        return Promise.resolve(googleDocsPlainResponse(`${snapshotText} Signed.`));
       }
       if (url.pathname.endsWith('/files/nested')) {
         return Promise.resolve(jsonResponse({ parents: ['selected-folder'] }));
@@ -3087,8 +3274,8 @@ describe('googleDriveProvider', () => {
       (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
     >((input) => {
       const url = requestUrl(input);
-      if (url.pathname.includes('/export')) {
-        return Promise.resolve(new Response(`${snapshotText} Signed.`, { status: 200 }));
+      if (isGoogleDocsGet(url)) {
+        return Promise.resolve(googleDocsPlainResponse(`${snapshotText} Signed.`));
       }
       if (url.pathname.endsWith('/files/nested')) {
         return Promise.resolve(jsonResponse({ parents: ['selected-folder'] }));
