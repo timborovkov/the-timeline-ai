@@ -185,6 +185,7 @@ describe('Drive A→B→A→B revisit', () => {
           mimeType: input.mimeType,
           commentsSnapshot: Array.isArray(input.commentsSnapshot) ? input.commentsSnapshot : [],
           snapshotLocate: input.snapshotLocate ?? null,
+          ancestry: input.ancestry ?? null,
         }),
       listTeamEmailDomains: vi.fn().mockResolvedValue(['acme.test']),
       judgeDriveChange: vi.fn().mockResolvedValue({

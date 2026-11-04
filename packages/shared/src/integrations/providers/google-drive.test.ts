@@ -1943,6 +1943,17 @@ describe('googleDriveProvider', () => {
     });
 
     expect(ctx.saveDriveSnapshot).toHaveBeenCalledOnce();
+    expect(ctx.saveDriveSnapshot).toHaveBeenCalledWith(
+      expect.objectContaining({
+        snapshotText: 'Initial contract draft',
+        ancestry: {
+          parentIds: ['root'],
+          driveId: null,
+          matchedAncestorId: 'root',
+          inheritedCandidates: ['file-1', 'root'],
+        },
+      }),
+    );
     expect(ctx.judgeDriveChange).not.toHaveBeenCalled();
     expect(ctx.writeEvents).not.toHaveBeenCalled();
     expect(ctx.takeDriveExtractSlot).not.toHaveBeenCalled();

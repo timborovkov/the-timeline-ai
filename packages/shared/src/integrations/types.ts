@@ -248,6 +248,12 @@ export interface SyncContext {
       chunkHashes: string[];
       chunkTexts: string[];
     } | null;
+    ancestry?: {
+      parentIds: string[];
+      driveId: string | null;
+      matchedAncestorId: string | null;
+      inheritedCandidates: string[] | null;
+    } | null;
     fileId: string;
   }): Promise<void>;
   /** Delete retained Drive snapshots for a missing or out-of-scope file. */

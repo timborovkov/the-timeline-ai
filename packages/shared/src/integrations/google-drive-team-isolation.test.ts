@@ -134,6 +134,7 @@ describe('Drive withTeam isolation guard', () => {
     expect(adapter).toBeDefined();
     expect(adapter).toContain('commentsSnapshot');
     expect(adapter).toContain('snapshotLocate');
+    expect(adapter).toContain('ancestry');
     expect(source).toContain('deleteDriveSnapshotsForFile');
   });
 });

@@ -346,7 +346,9 @@ export const integrationSelections = pgTable(
 // window plus per-chunk hashes. Only the latest retained state stores per-chunk
 // extracted text so later edits can be located; older states keep hashes only.
 // That latest extracted text is deleted on disconnect or file removal.
-// content_hash is sha256 of the full extracted text.
+// content_hash is sha256 of the full extracted text. ancestry is the walked
+// parent/drive/matched-ancestor path from capture so deselection can classify
+// baseline-only files that never emitted a raw event.
 export const googleDriveFileSnapshots = pgTable(
   'google_drive_file_snapshots',
   {
@@ -366,6 +368,12 @@ export const googleDriveFileSnapshots = pgTable(
       chunkSize: number;
       chunkHashes: string[];
       chunkTexts: string[];
+    } | null>(),
+    ancestry: jsonb('ancestry').$type<{
+      parentIds: string[];
+      driveId: string | null;
+      matchedAncestorId: string | null;
+      inheritedCandidates: string[] | null;
     } | null>(),
     commentsHash: text('comments_hash').notNull().default(''),
     permissionsHash: text('permissions_hash').notNull().default(''),

@@ -52,6 +52,7 @@ export interface DriveSnapshotRecord {
   mimeType: string | null;
   commentsSnapshot?: unknown;
   snapshotLocate?: DriveSnapshotLocate | null;
+  ancestry?: DriveObjectLinkHints | null;
 }
 
 export function driveDebouncePlan(
@@ -1035,30 +1036,68 @@ export interface DriveObjectLinkHints {
   inheritedCandidates: string[] | null;
 }
 
+export function driveSnapshotAncestryFromMembership(input: {
+  parents?: string[];
+  driveId?: string | null;
+  matchedAncestorId: string | null;
+  ancestryIds: string[];
+}): DriveObjectLinkHints {
+  return {
+    parentIds: [...(input.parents ?? [])],
+    driveId: input.driveId ?? null,
+    matchedAncestorId: input.matchedAncestorId,
+    inheritedCandidates: input.ancestryIds.length > 0 ? [...input.ancestryIds] : null,
+  };
+}
+
+function parseDriveSnapshotAncestry(value: unknown): DriveObjectLinkHints | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+  const parentIds = stringList(record.parentIds);
+  const inheritedCandidates = stringList(record.inheritedCandidates);
+  const matchedAncestorId =
+    typeof record.matchedAncestorId === 'string' && record.matchedAncestorId.length > 0
+      ? record.matchedAncestorId
+      : null;
+  const driveId =
+    typeof record.driveId === 'string' && record.driveId.length > 0 ? record.driveId : null;
+  if (
+    parentIds.length === 0 &&
+    !driveId &&
+    !matchedAncestorId &&
+    inheritedCandidates.length === 0
+  ) {
+    return null;
+  }
+  return {
+    parentIds,
+    driveId,
+    matchedAncestorId,
+    inheritedCandidates: inheritedCandidates.length > 0 ? inheritedCandidates : null,
+  };
+}
+
+function driveObjectLinkHintsHaveAncestry(hints: DriveObjectLinkHints): boolean {
+  return (
+    hints.parentIds.length > 0 ||
+    Boolean(hints.driveId) ||
+    Boolean(hints.matchedAncestorId) ||
+    Boolean(hints.inheritedCandidates && hints.inheritedCandidates.length > 0)
+  );
+}
+
 export async function latestDriveObjectLinkHints(
   db: Db,
   input: { teamId: string; integrationId: string; fileId: string },
 ): Promise<DriveObjectLinkHints> {
   const fileId = input.fileId.trim();
   if (!fileId) return emptyDriveObjectLinkHints();
-  const [latest] = await db
-    .select({
-      sourceMetadata: rawEvents.sourceMetadata,
-      occurredAt: rawEvents.occurredAt,
-    })
-    .from(rawEvents)
-    .where(
-      and(
-        eq(rawEvents.teamId, input.teamId),
-        eq(rawEvents.source, 'integration'),
-        sql`${rawEvents.sourceMetadata} ->> 'provider' = 'google_drive'`,
-        sql`${rawEvents.sourceMetadata} ->> 'integration_id' = ${input.integrationId}`,
-        sql`lower(${rawEvents.sourceMetadata} ->> 'external_object_id') = ${fileId.toLowerCase()}`,
-      ),
-    )
-    .orderBy(desc(rawEvents.occurredAt))
-    .limit(1);
-  return driveObjectLinkHintsFromSourceMetadata(latest?.sourceMetadata);
+  const hints = await latestDriveObjectLinkHintsByFileIds(db, {
+    teamId: input.teamId,
+    integrationId: input.integrationId,
+    fileIds: [fileId],
+  });
+  return hints.get(fileId) ?? emptyDriveObjectLinkHints();
 }
 
 function emptyDriveObjectLinkHints(): DriveObjectLinkHints {
@@ -1123,6 +1162,36 @@ export async function latestDriveObjectLinkHintsByFileIds(
   for (const fileId of fileIds) {
     const row = latest.get(fileId.toLowerCase());
     hints.set(fileId, driveObjectLinkHintsFromSourceMetadata(row?.sourceMetadata));
+  }
+  const missing = fileIds.filter((fileId) => {
+    const current = hints.get(fileId);
+    return !current || !driveObjectLinkHintsHaveAncestry(current);
+  });
+  if (missing.length === 0) return hints;
+  const snapshots = await db
+    .select({
+      fileId: googleDriveFileSnapshots.fileId,
+      ancestry: googleDriveFileSnapshots.ancestry,
+      createdAt: googleDriveFileSnapshots.createdAt,
+    })
+    .from(googleDriveFileSnapshots)
+    .where(
+      and(
+        eq(googleDriveFileSnapshots.teamId, input.teamId),
+        eq(googleDriveFileSnapshots.integrationId, input.integrationId),
+        inArray(googleDriveFileSnapshots.fileId, missing),
+      ),
+    );
+  const latestSnapshot = new Map<string, { createdAt: Date; ancestry: unknown }>();
+  for (const row of snapshots) {
+    const previous = latestSnapshot.get(row.fileId);
+    if (!previous || previous.createdAt < row.createdAt) {
+      latestSnapshot.set(row.fileId, { createdAt: row.createdAt, ancestry: row.ancestry });
+    }
+  }
+  for (const fileId of missing) {
+    const parsed = parseDriveSnapshotAncestry(latestSnapshot.get(fileId)?.ancestry);
+    if (parsed) hints.set(fileId, parsed);
   }
   return hints;
 }
@@ -1196,6 +1265,7 @@ export async function saveDriveSnapshot(
       commentsSnapshot: parseDriveCommentSnapshots(input.snapshot.commentsSnapshot),
       mimeType: input.snapshot.mimeType,
       snapshotLocate: parseDriveSnapshotLocate(input.snapshot.snapshotLocate),
+      ancestry: parseDriveSnapshotAncestry(input.snapshot.ancestry),
     })
     .onConflictDoUpdate({
       target: [
@@ -1210,6 +1280,7 @@ export async function saveDriveSnapshot(
         snapshotLocate: sql`excluded.snapshot_locate`,
         commentsSnapshot: sql`excluded.comments_snapshot`,
         mimeType: sql`excluded.mime_type`,
+        ancestry: sql`coalesce(excluded.ancestry, google_drive_file_snapshots.ancestry)`,
         // Revisit of a retained fingerprint must become the latest baseline.
         // `onConflictDoNothing` left the later distinct snapshot as latest, so
         // A→B→A compared later captures against B and a later edit back to B

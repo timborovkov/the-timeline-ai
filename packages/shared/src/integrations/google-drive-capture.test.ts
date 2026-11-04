@@ -67,6 +67,7 @@ import {
   adminListTeamIdsWithDriveExtractCursors,
   forEachDriveExtractCursorPage,
   latestDriveObjectLinkHints,
+  latestDriveObjectLinkHintsByFileIds,
   linkedObjectForDriveSelection,
   listDriveExtractCursors,
   deleteDriveSnapshotsForFile,
@@ -844,6 +845,55 @@ describe('saveDriveSnapshot uniqueness', () => {
     });
     expect(latest?.commentsHash).toBe('comments-2');
     expect(latest?.contentHash).toBe(snapshot.contentHash);
+  });
+
+  it('persists snapshot ancestry and keeps it when a later save omits it', async () => {
+    const [integration] = await db
+      .insert(integrations)
+      .values({
+        teamId: TEAM_ID,
+        connectedByUserId: USER_ID,
+        provider: 'google_drive',
+        displayName: 'Google Drive',
+        externalAccountId: 'drive-acct-ancestry',
+        visibilityDefault: 'team',
+      })
+      .returning();
+    if (!integration) throw new Error('integration insert failed');
+    const ancestry = {
+      parentIds: ['folder-1'],
+      driveId: null,
+      matchedAncestorId: 'folder-1',
+      inheritedCandidates: ['file-1', 'folder-1'],
+    };
+    const snapshot = {
+      contentHash: hashDrivePayload('same-body'),
+      snapshotText: 'same-body',
+      commentsHash: 'comments-1',
+      permissionsHash: 'permissions-1',
+      mimeType: 'application/vnd.google-apps.document',
+      ancestry,
+    };
+    await saveDriveSnapshot(db as never, {
+      teamId: TEAM_ID,
+      integrationId: integration.id,
+      fileId: 'file-1',
+      snapshot,
+    });
+    await saveDriveSnapshot(db as never, {
+      teamId: TEAM_ID,
+      integrationId: integration.id,
+      fileId: 'file-1',
+      snapshot: {
+        contentHash: snapshot.contentHash,
+        snapshotText: snapshot.snapshotText,
+        commentsHash: snapshot.commentsHash,
+        permissionsHash: snapshot.permissionsHash,
+        mimeType: snapshot.mimeType,
+      },
+    });
+    const [row] = await db.select().from(googleDriveFileSnapshots);
+    expect(row?.ancestry).toEqual(ancestry);
   });
 
   it('makes a revisited fingerprint the latest baseline across A→B→A→B', async () => {
@@ -1856,6 +1906,170 @@ describe('saveDriveSnapshot uniqueness', () => {
         },
       },
     ]);
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    await scope.integrations.setSelections(integration.id, [
+      { kind: 'drive.folder', externalId: 'folder-2' },
+    ]);
+    const snapshots = await db.select().from(googleDriveFileSnapshots);
+    expect(snapshots.map((row) => row.fileId)).toEqual(['file-folder-2']);
+    const extractCursors = await listDriveExtractCursors(db as never, {
+      teamId: TEAM_ID,
+      integrationId: integration.id,
+    });
+    expect(extractCursors.map((row) => row.fileId).sort()).toEqual([
+      'file-folder-1',
+      'file-folder-2',
+    ]);
+    expect(
+      extractCursors.find((row) => row.fileId === 'file-folder-1')?.cursor.cleanupPending,
+    ).toBe(true);
+    expect(
+      extractCursors.find((row) => row.fileId === 'file-folder-2')?.cursor.cleanupPending,
+    ).not.toBe(true);
+  });
+
+  it('reads snapshot ancestry when a baseline file has no Drive raw event', async () => {
+    const [integration] = await db
+      .insert(integrations)
+      .values({
+        teamId: TEAM_ID,
+        connectedByUserId: USER_ID,
+        provider: 'google_drive',
+        displayName: 'Google Drive',
+        externalAccountId: 'drive-acct-baseline-ancestry',
+        visibilityDefault: 'team',
+      })
+      .returning();
+    if (!integration) throw new Error('integration insert failed');
+    await saveDriveSnapshot(db as never, {
+      teamId: TEAM_ID,
+      integrationId: integration.id,
+      fileId: 'baseline-file',
+      snapshot: {
+        contentHash: hashDrivePayload('baseline-body'),
+        snapshotText: 'baseline-body',
+        commentsHash: 'comments-baseline',
+        permissionsHash: 'permissions-baseline',
+        mimeType: 'application/pdf',
+        ancestry: {
+          parentIds: ['folder-1'],
+          driveId: null,
+          matchedAncestorId: 'folder-1',
+          inheritedCandidates: ['baseline-file', 'folder-1'],
+        },
+      },
+    });
+    expect(
+      await latestDriveObjectLinkHints(db as never, {
+        teamId: TEAM_ID,
+        integrationId: integration.id,
+        fileId: 'baseline-file',
+      }),
+    ).toMatchObject({
+      parentIds: ['folder-1'],
+      matchedAncestorId: 'folder-1',
+      inheritedCandidates: ['baseline-file', 'folder-1'],
+    });
+    const byIds = await latestDriveObjectLinkHintsByFileIds(db as never, {
+      teamId: TEAM_ID,
+      integrationId: integration.id,
+      fileIds: ['baseline-file'],
+    });
+    expect(byIds.get('baseline-file')).toMatchObject({
+      parentIds: ['folder-1'],
+      matchedAncestorId: 'folder-1',
+    });
+  });
+
+  it('deletes baseline-only snapshots under a removed folder when a sibling folder remains', async () => {
+    const [integration] = await db
+      .insert(integrations)
+      .values({
+        teamId: TEAM_ID,
+        connectedByUserId: USER_ID,
+        provider: 'google_drive',
+        displayName: 'Google Drive',
+        externalAccountId: 'drive-acct-drop-baseline-folder',
+        visibilityDefault: 'team',
+      })
+      .returning();
+    if (!integration) throw new Error('integration insert failed');
+    await db.insert(integrationSelections).values([
+      {
+        integrationId: integration.id,
+        selectionKind: 'drive.folder',
+        externalId: 'folder-1',
+      },
+      {
+        integrationId: integration.id,
+        selectionKind: 'drive.folder',
+        externalId: 'folder-2',
+      },
+    ]);
+    const snapshot = {
+      commentsHash: 'comments',
+      permissionsHash: 'permissions',
+      mimeType: 'application/pdf' as const,
+    };
+    await saveDriveSnapshot(db as never, {
+      teamId: TEAM_ID,
+      integrationId: integration.id,
+      fileId: 'file-folder-1',
+      snapshot: {
+        ...snapshot,
+        contentHash: hashDrivePayload('folder-1-body'),
+        snapshotText: 'folder-1-body',
+        ancestry: {
+          parentIds: ['folder-1'],
+          driveId: null,
+          matchedAncestorId: 'folder-1',
+          inheritedCandidates: ['file-folder-1', 'folder-1'],
+        },
+      },
+    });
+    await saveDriveSnapshot(db as never, {
+      teamId: TEAM_ID,
+      integrationId: integration.id,
+      fileId: 'file-folder-2',
+      snapshot: {
+        ...snapshot,
+        contentHash: hashDrivePayload('folder-2-body'),
+        snapshotText: 'folder-2-body',
+        ancestry: {
+          parentIds: ['folder-2'],
+          driveId: null,
+          matchedAncestorId: 'folder-2',
+          inheritedCandidates: ['file-folder-2', 'folder-2'],
+        },
+      },
+    });
+    await db.insert(integrationSyncState).values([
+      {
+        integrationId: integration.id,
+        resourceType: driveExtractCursorKey('file-folder-1'),
+        cursor: {
+          extractId: 'ext-baseline-1',
+          objectKey: 'baseline-1-source',
+          resultObjectKey: 'baseline-1-result.json',
+          contentType: 'application/pdf',
+          filename: 'One.pdf',
+          enqueuedAt: new Date().toISOString(),
+        },
+      },
+      {
+        integrationId: integration.id,
+        resourceType: driveExtractCursorKey('file-folder-2'),
+        cursor: {
+          extractId: 'ext-baseline-2',
+          objectKey: 'baseline-2-source',
+          resultObjectKey: 'baseline-2-result.json',
+          contentType: 'application/pdf',
+          filename: 'Two.pdf',
+          enqueuedAt: '2026-11-03T00:00:00.000Z',
+        },
+      },
+    ]);
+    expect(await db.select().from(rawEvents)).toEqual([]);
     const scope = withTeam(db as never, TEAM_ID, USER_ID);
     await scope.integrations.setSelections(integration.id, [
       { kind: 'drive.folder', externalId: 'folder-2' },

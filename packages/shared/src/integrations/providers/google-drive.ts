@@ -7,10 +7,12 @@ import {
   driveFileChangeDedupKey,
   driveFileContentRevision,
   driveObjectLinkCandidates,
+  driveSnapshotAncestryFromMembership,
   hashDrivePayload,
   isDriveExtractResultTooLarge,
   takeDriveExtractSlot,
   takeDriveProcessSlot,
+  type DriveObjectLinkHints,
 } from '#src/integrations/google-drive-capture.js';
 import {
   commentEventContext,
@@ -760,9 +762,10 @@ async function persistDriveSnapshot(
     commentsSnapshot: ReturnType<typeof compactDriveComments>;
     snapshotLocate: ReturnType<typeof buildDriveSnapshotLocate>;
   },
+  ancestry: DriveObjectLinkHints,
 ): Promise<void> {
   if (!ctx.saveDriveSnapshot) return;
-  await ctx.saveDriveSnapshot({ fileId, ...snapshot });
+  await ctx.saveDriveSnapshot({ fileId, ...snapshot, ancestry });
 }
 
 function snapshotFromAdvanceDecision(
@@ -1092,6 +1095,12 @@ async function processDriveFile(
     return;
   }
   const membership = await fileInSelectedSubtree(tokens, file, scope, createDriveAncestryCache());
+  const snapshotAncestry = driveSnapshotAncestryFromMembership({
+    ...(file.parents ? { parents: file.parents } : {}),
+    ...(file.driveId ? { driveId: file.driveId } : {}),
+    matchedAncestorId: membership.matchedAncestorId,
+    ancestryIds: membership.ancestryIds,
+  });
   if (!membership.inScope) {
     await discardTrackedDriveFile(ctx, fileId, 'out_of_scope');
     return;
@@ -1178,14 +1187,14 @@ async function processDriveFile(
   if (previous?.contentHash === contentHash && !commentsChanged && !permissionsChanged) {
     const previousLocate = parseDriveSnapshotLocate(previous.snapshotLocate);
     if (!previousLocate || previousLocate.chunkTexts.length === 0) {
-      await persistDriveSnapshot(ctx, file.id, snapshot);
+      await persistDriveSnapshot(ctx, file.id, snapshot, snapshotAncestry);
     }
     await consumeReadyDriveExtract(ctx, file.id, loaded);
     return;
   }
 
   if (!previous) {
-    await persistDriveSnapshot(ctx, file.id, snapshot);
+    await persistDriveSnapshot(ctx, file.id, snapshot, snapshotAncestry);
     await consumeReadyDriveExtract(ctx, file.id, loaded);
     await ctx.recordAudit('drive_baseline_saved', { file_id: fileId });
     return;
@@ -1232,6 +1241,7 @@ async function processDriveFile(
         ctx,
         file.id,
         snapshotFromAdvanceDecision(decision, snapshot.snapshotLocate, file.mimeType),
+        snapshotAncestry,
       );
     }
     await consumeReadyDriveExtract(ctx, file.id, loaded);
@@ -1249,6 +1259,7 @@ async function processDriveFile(
         ctx,
         file.id,
         snapshotFromAdvanceDecision(decision, snapshot.snapshotLocate, file.mimeType),
+        snapshotAncestry,
       );
     }
     await consumeReadyDriveExtract(ctx, file.id, loaded);
@@ -1304,6 +1315,7 @@ async function processDriveFile(
         ctx,
         file.id,
         snapshotFromAdvanceDecision(decision, snapshot.snapshotLocate, file.mimeType),
+        snapshotAncestry,
       );
     }
     await consumeReadyDriveExtract(ctx, file.id, loaded);
@@ -1321,6 +1333,7 @@ async function processDriveFile(
         ctx,
         file.id,
         snapshotFromAdvanceDecision(decision, snapshot.snapshotLocate, file.mimeType),
+        snapshotAncestry,
       );
     }
     await consumeReadyDriveExtract(ctx, file.id, loaded);
@@ -1423,6 +1436,7 @@ async function processDriveFile(
       ctx,
       file.id,
       snapshotFromAdvanceDecision(decision, snapshot.snapshotLocate, file.mimeType),
+      snapshotAncestry,
     );
   }
   await consumeReadyDriveExtract(ctx, file.id, loaded);

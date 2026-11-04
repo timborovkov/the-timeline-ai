@@ -1504,6 +1504,7 @@ export async function runOneIntegration(
           mimeType: input.mimeType,
           commentsSnapshot: Array.isArray(input.commentsSnapshot) ? input.commentsSnapshot : [],
           snapshotLocate: input.snapshotLocate ?? null,
+          ancestry: input.ancestry ?? null,
         });
       },
       deleteDriveSnapshotsForFile(fileId) {
