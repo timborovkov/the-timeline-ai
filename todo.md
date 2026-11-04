@@ -35,7 +35,7 @@ credential-thin `document-extract-orchestrator` (ADR 0013) with a separate paid
 extract budget before Daytona/vision spend. Native Google Sheets stay on the free
 text path: capture snapshots every tab (including hidden) via Sheets API
 `spreadsheets.get` + `values.batchGet` under existing `drive.readonly`, because
-Drive `files.export` `text/csv` is first-sheet-only, and native Google Docs snapshot every tab (including nested child tabs) via Docs API `documents.get?includeTabsContent=true` under existing `drive.readonly` because Drive `files.export` `text/plain` is not documented as covering the Docs tabs feature and Docs API without that flag is first-tab-only. Full Drive copies are not harvested into the document
+Drive `files.export` `text/csv` is first-sheet-only, and native Google Docs snapshot every tab (including nested child tabs) via Docs API `documents.get?includeTabsContent=true` under existing `drive.readonly` because Drive `files.export` `text/plain` is not documented as covering the Docs tabs feature and Docs API without that flag is first-tab-only, serializing person smart chips (name/email) and rich/resource links rather than only `textRun`. Full Drive copies are not harvested into the document
 drive. Daytona misconfiguration is a visible `drive_extract_failed` audit; failed extract state is
 cleared and retried within the extract budget. Extract cursors go through `withTeam` integrations
 scope; cursor-before-enqueue plus stale-pending re-enqueue keeps the orchestrator handoff recoverable.

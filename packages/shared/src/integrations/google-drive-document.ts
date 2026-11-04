@@ -4,6 +4,8 @@
  * Docs tabs feature, including nested child tabs). Docs API `documents.get`
  * without `includeTabsContent=true` returns the first tab only. Capture lists
  * every tab in UI order and formats a stable document text before `contentHash`.
+ * Paragraph extract keeps person smart chips (name/email), rich/resource links,
+ * and inline objects — not only `textRun` — so an ownership chip change hashes.
  */
 
 export interface DriveDocumentTab {
@@ -100,9 +102,52 @@ function driveDocumentTabTitle(title: string | undefined): string {
   return trimmed.length > 0 ? trimmed : 'Untitled tab';
 }
 
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
+}
+
+function stringField(record: Record<string, unknown> | null, key: string): string {
+  const value = record?.[key];
+  return typeof value === 'string' ? value : '';
+}
+
 function readParagraphElement(element: unknown): string {
-  if (!element || typeof element !== 'object') return '';
-  const textRun = (element as { textRun?: { content?: unknown } }).textRun;
-  if (!textRun || typeof textRun.content !== 'string') return '';
-  return textRun.content;
+  const record = asRecord(element);
+  if (!record) return '';
+  const textRun = asRecord(record.textRun);
+  if (textRun && typeof textRun.content === 'string') return textRun.content;
+  const person = serializePersonChip(asRecord(record.person));
+  if (person) return person;
+  const link = serializeRichLink(asRecord(record.richLink));
+  if (link) return link;
+  const objectId = stringField(asRecord(record.inlineObjectElement), 'inlineObjectId').trim();
+  return objectId ? `[object:${objectId}]` : '';
+}
+
+function serializePersonChip(person: Record<string, unknown> | null): string {
+  const properties = asRecord(person?.personProperties);
+  const name = stringField(properties, 'name').trim();
+  const email = stringField(properties, 'email').trim();
+  if (name && email) return `@${name} <${email}>`;
+  if (email) return `@<${email}>`;
+  if (name) return `@${name}`;
+  const personId = stringField(person, 'personId').trim();
+  return personId ? `@[${personId}]` : '';
+}
+
+function serializeRichLink(link: Record<string, unknown> | null): string {
+  const properties = asRecord(link?.richLinkProperties);
+  const title = stringField(properties, 'title').trim();
+  const uri = stringField(properties, 'uri').trim();
+  const mimeType = stringField(properties, 'mimeType').trim();
+  if (!title && !uri && !mimeType) {
+    const richLinkId = stringField(link, 'richLinkId').trim();
+    return richLinkId ? `[link:${richLinkId}]` : '';
+  }
+  const label = title || uri;
+  const href = uri && uri !== label ? `(${uri})` : '';
+  const mime = mimeType ? ` {${mimeType}}` : '';
+  if (href) return `[${label}]${href}${mime}`;
+  return `[${label}]${mime}`;
 }

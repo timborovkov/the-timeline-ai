@@ -30,6 +30,92 @@ describe('extractDriveDocumentStructuralText', () => {
     ]);
     expect(text).toBe('Intro\nAcme48kTOC\n');
   });
+
+  it('hashes a person smart chip so Alice→Bob is not identical', () => {
+    const owner = (name: string, email: string) =>
+      extractDriveDocumentStructuralText([
+        {
+          paragraph: {
+            elements: [
+              { textRun: { content: 'Owner: ' } },
+              { person: { personProperties: { name, email } } },
+            ],
+          },
+        },
+      ]);
+    const alice = owner('Alice', 'alice@acme.test');
+    const bob = owner('Bob', 'bob@acme.test');
+    expect(alice).toBe('Owner: @Alice <alice@acme.test>');
+    expect(bob).toBe('Owner: @Bob <bob@acme.test>');
+    expect(hashDrivePayload(alice)).not.toBe(hashDrivePayload(bob));
+  });
+
+  it('hashes rich and resource links so a retargeted chip is not identical', () => {
+    const linked = (title: string, uri: string, mimeType?: string) =>
+      extractDriveDocumentStructuralText([
+        {
+          paragraph: {
+            elements: [
+              { textRun: { content: 'See ' } },
+              {
+                richLink: {
+                  richLinkProperties: {
+                    title,
+                    uri,
+                    ...(mimeType ? { mimeType } : {}),
+                  },
+                },
+              },
+            ],
+          },
+        },
+      ]);
+    const brief = linked('Northstar brief', 'https://docs.google.com/document/d/aaa');
+    const sow = linked(
+      'Northstar SOW',
+      'https://drive.google.com/file/d/bbb',
+      'application/vnd.google-apps.document',
+    );
+    expect(brief).toBe('See [Northstar brief](https://docs.google.com/document/d/aaa)');
+    expect(sow).toContain('Northstar SOW');
+    expect(sow).toContain('application/vnd.google-apps.document');
+    expect(hashDrivePayload(brief)).not.toBe(hashDrivePayload(sow));
+  });
+
+  it('keeps person chips inside table cells so an owner swap still hashes', () => {
+    const cell = (name: string) =>
+      extractDriveDocumentStructuralText([
+        {
+          table: {
+            tableRows: [
+              {
+                tableCells: [
+                  {
+                    content: [
+                      {
+                        paragraph: {
+                          elements: [
+                            {
+                              person: {
+                                personProperties: {
+                                  name,
+                                  email: `${name.toLowerCase()}@acme.test`,
+                                },
+                              },
+                            },
+                          ],
+                        },
+                      },
+                    ],
+                  },
+                ],
+              },
+            ],
+          },
+        },
+      ]);
+    expect(hashDrivePayload(cell('Alice'))).not.toBe(hashDrivePayload(cell('Bob')));
+  });
 });
 
 describe('flattenDriveDocumentTabs', () => {
