@@ -12,11 +12,11 @@ import type {
   TranscriptionEvalTransportRequest,
   TranscriptionEvalZdrRoutes,
 } from '#src/transcription-eval/evaluate.js';
-import type { TranscriptionEvalTransportSuccess } from '#src/transcription-eval/metrics.js';
 import {
   TranscriptionEvalRequestError,
   TranscriptionQualityEvalError,
 } from '#src/transcription-eval/evaluate.js';
+import type { TranscriptionEvalTransportSuccess } from '#src/transcription-eval/metrics.js';
 
 export const OPENROUTER_TRANSCRIPTION_EVAL_BASE_URL = 'https://openrouter.ai/api/v1';
 

@@ -1,10 +1,10 @@
+import type * as TimelineDb from '@timeline/db';
+import type * as TimelineShared from '@timeline/shared';
+import type * as PlatformAdminRuntime from '@timeline/shared/platform-admin/runtime';
 import { expect } from '@timeline/test-support';
 import { vi } from '@timeline/test-support';
 import { afterEach, beforeEach, describe, it } from 'bun:test';
 
-import type * as TimelineDb from '@timeline/db';
-import type * as TimelineShared from '@timeline/shared';
-import type * as PlatformAdminRuntime from '@timeline/shared/platform-admin/runtime';
 type TestSyncContinuation = TimelineShared.integrations.SyncContinuation;
 type TestCheckpointInput = TimelineShared.integrations.CommitIntegrationSyncCheckpointInput;
 

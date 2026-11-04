@@ -16,6 +16,7 @@
 import { pathToFileURL } from 'node:url';
 
 import { closeDb, getDb } from '@timeline/db';
+import type { Db } from '@timeline/db';
 import {
   auditReconciliationEvidenceCoverage,
   backfillReconciliationEvidence,
@@ -23,7 +24,6 @@ import {
   type ReconciliationEvidenceSource,
 } from '@timeline/shared/reconciliation/backfill';
 
-import type { Db } from '@timeline/db';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
