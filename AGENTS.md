@@ -194,10 +194,12 @@ Treat this file as an operating contract for agents, not a loose README.
 - **Use the verified demo seed for recorded demos and local regression checks.** `bun run demo:seed`
   runs the idempotent `bun run dev:seed`, indexes every deterministic fixture source through the real
   embed worker/OpenRouter/Qdrant path, and then runs `bun run demo:verify`. It creates the
-  documented Acme Labs team, eight fake login users, a month of timeline events, objects, custom
-  boards, documents, meetings, Ask history, pending proposals, digest history, and the
-  deterministic fictional Northstar evidence corpus with encrypted fake integration credentials after
-  migrations. `bun run demo:reset` is `bun run dev:wipe && bun run demo:seed`. `bun run demo:verify` fails closed on all eight login identities, active memberships,
+  documented Acme Labs team, eight fake login users,   a month of timeline events whose timestamps are
+  relative offsets resolved at first seed time and persisted as `demo_seed_now` so reruns and `demo:verify` reuse that clock, objects, custom
+  boards, documents, meetings, Ask history, pending proposals, digest history, the
+  deterministic fictional Northstar evidence corpus with encrypted fake integration credentials, and a
+  second empty team (`onboarding@timeline.dev` / Noah Blake's Team) for first-run onboarding screens after
+  migrations. `bun run demo:reset` is `bun run dev:wipe && bun run demo:seed`. `bun run demo:verify` fails closed on all eight Acme Labs login identities plus the empty-team login, active memberships,
   password usability, current legal-version snapshots with matching immutable acceptance evidence,
   downloaded document-byte checksums, scoped Qdrant
   discoverability for Northstar raw events/facts/document chunks/meeting chunks, expanded-corpus
@@ -390,7 +392,7 @@ Phased build plan and current state: [todo.md](todo.md). Product vision:
 
 - Infra (Postgres, Redis, Qdrant, RustFS) is started with `docker compose up -d` from the repo root. Dockerd is not managed by systemd here — if containers are down, ensure `dockerd` is running first, then compose up. Confirm health with `docker compose ps`.
 - App processes: web (`apps/web`, Next.js on `:3000`) + worker (`apps/worker`, BullMQ). Standard commands are in [the local setup guide](docs/setup/local.html) (`bun run dev`, `bun run db:migrate`, `bun run demo:seed`, `bun run demo:verify`, `bun run demo:reset`, `bun run validate`, `bun run test`, `bun run doctor`).
-- Seeded demo logins (after `bun run db:migrate` + `bun run demo:seed`): `owner@timeline.dev`, `member@timeline.dev`, `jordan@timeline.dev`, `sam@timeline.dev`, `riley@timeline.dev`, `casey@timeline.dev`, `quinn@timeline.dev`, `harper@timeline.dev`, password `timeline-dev`. Full glossary: [docs/demo-corpus.md](docs/demo-corpus.md).
+- Seeded demo logins (after `bun run db:migrate` + `bun run demo:seed`): Acme Labs `owner@timeline.dev`, `member@timeline.dev`, `jordan@timeline.dev`, `sam@timeline.dev`, `riley@timeline.dev`, `casey@timeline.dev`, `quinn@timeline.dev`, `harper@timeline.dev`; empty onboarding team `onboarding@timeline.dev`. Password for every login is `timeline-dev`. Full glossary: [docs/demo-corpus.md](docs/demo-corpus.md).
 
 ### Non-obvious env / startup gotchas
 

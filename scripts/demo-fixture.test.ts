@@ -1,10 +1,29 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
+import {
+  DEMO_CLOCK_ANCHOR,
+  DEMO_DATES,
+  DEMO_SEED_NOW_METADATA_KEY,
+  DEMO_TIME_OFFSETS,
+  dateAt,
+  demoSeedNowIso,
+  demoTimes,
+  isoAt,
+  latestDigestDayOffset,
+  localDay,
+  readDemoSeedNowFromMetadata,
+  resolveDemoOffsetFromReference,
+  setDemoSeedNow,
+  teamDate,
+} from './demo-clock.js';
 import {
   assertDemoFixture,
   assertDemoSeedEnvironment,
   assertDemoVectorEnvironment,
+  assertEmptyDemoWorkspace,
   DEMO_DOCUMENT_BYTE_SIZE,
   DEMO_DOCUMENT_CHECKSUM_SHA256,
   DEMO_DOCUMENT_CONTENT_TYPE,
@@ -15,7 +34,13 @@ import {
   DEMO_FACTS,
   DEMO_FIXTURE_VERSION,
   DEMO_IDS,
+  EMPTY_DEMO_LOGIN,
+  adoptDemoSeedClock,
+  getDemoTimes,
+  hydrateDemoSeedClock,
+  refreshDemoFixture,
   type DemoFixtureSnapshot,
+  type EmptyDemoWorkspaceSnapshot,
 } from './demo-fixture.js';
 import {
   buildCadenceBeats,
@@ -28,11 +53,13 @@ import {
 import {
   assertExpandedDemoCorpus,
   CORPUS_CALENDAR_EVENTS,
+  CORPUS_DIGEST_WINDOWS,
   CORPUS_DOCUMENTS,
   CORPUS_EVENT_NEEDLES,
   CORPUS_EVENTS,
   CORPUS_FACTS,
   CORPUS_MEETINGS,
+  CORPUS_NOTES,
   CORPUS_OBJECTS,
   CORPUS_PEOPLE,
   CORPUS_PROPOSALS,
@@ -41,6 +68,7 @@ import {
   DEALFLOW_ITEMS,
   corpusEventId,
   corpusObjectId,
+  refreshDemoCorpus,
   type ExpandedDemoCorpusSnapshot,
 } from './demo-corpus/index.js';
 
@@ -164,7 +192,8 @@ corruptionFails('login password usability', (snapshot) => {
 
 corruptionFails('source chronology', (snapshot) => {
   const provider = snapshot.events.find((row) => row.id === DEMO_IDS.eventProvider);
-  if (provider) provider.occurredAt = '2026-07-08T14:59:00.000Z';
+  const meeting = snapshot.events.find((row) => row.id === DEMO_IDS.eventMeeting);
+  if (provider && meeting) provider.occurredAt = meeting.occurredAt;
 });
 
 corruptionFails('visibility', (snapshot) => {
@@ -472,7 +501,7 @@ function createValidExpandedSnapshot(): ExpandedDemoCorpusSnapshot {
     meetings: 11,
     pendingProposals: 14,
     boardItems: 17,
-    chatSessions: 8,
+    chatSessions: 9,
     digests: 20,
     facts: 24,
     slackWorkspaces: 1,
@@ -673,6 +702,7 @@ function validSnapshot(): DemoFixtureSnapshot {
       visibilityUserIds: null,
       sourceMetadata: {
         fixture_version: DEMO_FIXTURE_VERSION,
+        [DEMO_SEED_NOW_METADATA_KEY]: demoSeedNowIso(),
         source_payload_ref: event.sourcePayloadRef,
         embedded_at: '2026-07-10T00:00:00.000Z',
         embedding_model: 'openai/text-embedding-3-small',
@@ -783,8 +813,8 @@ function validSnapshot(): DemoFixtureSnapshot {
       teamId: DEMO_IDS.team,
       status: 'completed',
       defaultVisibility: 'team',
-      startedAt: '2026-07-08T15:00:00.000Z',
-      endedAt: '2026-07-08T15:30:00.000Z',
+      startedAt: getDemoTimes().meeting,
+      endedAt: getDemoTimes().meetingEnd,
       chunkId: DEMO_IDS.meetingChunk,
       chunkMeetingId: DEMO_IDS.meeting,
       chunkRawEventId: DEMO_IDS.eventMeeting,
@@ -804,3 +834,467 @@ function validSnapshot(): DemoFixtureSnapshot {
     },
   };
 }
+
+function validEmptySnapshot(): EmptyDemoWorkspaceSnapshot {
+  return {
+    workspace: {
+      id: DEMO_IDS.emptyTeam,
+      slug: EMPTY_DEMO_LOGIN.teamSlug,
+      name: EMPTY_DEMO_LOGIN.teamName,
+    },
+    login: {
+      id: EMPTY_DEMO_LOGIN.id,
+      name: EMPTY_DEMO_LOGIN.name,
+      email: EMPTY_DEMO_LOGIN.email,
+      teamId: DEMO_IDS.emptyTeam,
+      role: EMPTY_DEMO_LOGIN.role,
+      membershipActive: true,
+      passwordUsable: true,
+    },
+    eventCount: 0,
+    documentCount: 0,
+    meetingCount: 0,
+    objectCount: 0,
+    integrationCount: 0,
+    ownedConnectionCount: 0,
+    pendingProposalCount: 0,
+    calendarEventCount: 0,
+    onboardingDismissed: false,
+    completedOnboardingSteps: [],
+    billingPlanId: 'free',
+    billingState: 'free',
+  };
+}
+
+assert.doesNotThrow(() => assertEmptyDemoWorkspace(validEmptySnapshot()));
+
+{
+  const snapshot = validEmptySnapshot();
+  snapshot.eventCount = 1;
+  assert.throws(() => assertEmptyDemoWorkspace(snapshot), /empty workspace events/);
+}
+
+{
+  const snapshot = validEmptySnapshot();
+  snapshot.completedOnboardingSteps = ['first_note'];
+  assert.throws(() => assertEmptyDemoWorkspace(snapshot), /empty workspace completed onboarding/);
+}
+
+{
+  const snapshot = validEmptySnapshot();
+  if (snapshot.login) snapshot.login.email = 'owner@timeline.dev';
+  assert.throws(() => assertEmptyDemoWorkspace(snapshot), /empty login email/);
+}
+
+const anchoredTimes = demoTimes(DEMO_CLOCK_ANCHOR);
+assert.equal(isoAt(-39, '09:00:00', DEMO_CLOCK_ANCHOR), '2026-07-06T06:00:00.000Z');
+assert.equal(isoAt(-38, '10:30:00', DEMO_CLOCK_ANCHOR), '2026-07-07T07:30:00.000Z');
+assert.equal(isoAt(-37, '15:00:00', DEMO_CLOCK_ANCHOR), '2026-07-08T12:00:00.000Z');
+assert.equal(isoAt(-37, '15:30:00', DEMO_CLOCK_ANCHOR), '2026-07-08T12:30:00.000Z');
+assert.equal(isoAt(-36, '16:15:00', DEMO_CLOCK_ANCHOR), '2026-07-09T13:15:00.000Z');
+assert.ok(anchoredTimes.note.getTime() < anchoredTimes.email.getTime());
+assert.ok(anchoredTimes.email.getTime() < anchoredTimes.meeting.getTime());
+assert.ok(anchoredTimes.meeting.getTime() < anchoredTimes.meetingEnd.getTime());
+assert.ok(anchoredTimes.meetingEnd.getTime() < anchoredTimes.provider.getTime());
+assert.equal(anchoredTimes.meetingEnd.getTime() - anchoredTimes.meeting.getTime(), 30 * 60 * 1000);
+
+const MONTH_NAME =
+  'January|February|March|April|May|June|July|August|September|October|November|December';
+const MONTH_ABBR = 'Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec';
+const ABSOLUTE_DATE_LITERAL = new RegExp(
+  String.raw`\b(?:(?:${MONTH_NAME}|${MONTH_ABBR})\.?\s+\d{1,2}(?:st|nd|rd|th)?(?:,?\s+\d{4}\b(?!-))?|\d{1,2}(?:st|nd|rd|th)?\s+(?:${MONTH_NAME}|${MONTH_ABBR})\.?(?:\s+\d{4}\b(?!-))?)\b`,
+  'gi',
+);
+const ISO_DATE_LITERAL = /\b\d{4}-\d{2}-\d{2}\b/g;
+
+function collectSeedContent(): string {
+  return [
+    ...DEMO_EVENTS.map((row) => row.contentText),
+    DEMO_DOCUMENT_TEXT,
+    ...Object.values(DEMO_FACTS),
+    ...CORPUS_EVENTS.flatMap((row) => [
+      row.contentText,
+      typeof row.sourceMetadata.subject === 'string' ? row.sourceMetadata.subject : '',
+      typeof row.sourceMetadata.title === 'string' ? row.sourceMetadata.title : '',
+    ]),
+    ...CORPUS_FACTS.map((row) => row.statement),
+    ...CORPUS_DOCUMENTS.flatMap((doc) => [doc.name, doc.body]),
+    ...CORPUS_MEETINGS.flatMap((meeting) => [
+      meeting.title,
+      ...meeting.transcript.map((turn) => turn.text),
+    ]),
+    ...CORPUS_OBJECTS.map(
+      (row) => `${row.canonicalName}\n${row.dueAt ?? ''}\n${JSON.stringify(row.metadata ?? {})}`,
+    ),
+    ...CORPUS_PROPOSALS.flatMap((row) => [
+      row.title,
+      row.summary,
+      JSON.stringify(row.proposedPayload),
+    ]),
+    ...CORPUS_NOTES.map((row) => row.body),
+    ...DEALFLOW_ITEMS.map((row) => row.nextStep),
+    ...CORPUS_CALENDAR_EVENTS.flatMap((row) => [row.title, row.startAt, row.endAt]),
+    ...CORPUS_DIGEST_WINDOWS.flatMap((row) => [row.summary, row.localDate, row.windowEnd]),
+    ...buildCadenceBeats().map((row) => row.contentText),
+  ].join('\n');
+}
+
+function allowedDisplayDates(now: Date): Set<string> {
+  const allowed = new Set<string>();
+  for (let days = -60; days <= 30; days += 1) {
+    allowed.add(teamDate(days, 'md', now));
+    allowed.add(teamDate(days, 'dm', now));
+    allowed.add(teamDate(days, 'dmy', now));
+    allowed.add(teamDate(days, 'month', now));
+    allowed.add(localDay(days, now));
+  }
+  return allowed;
+}
+
+function assertSeedContentHasNoFrozenDates(now: Date): void {
+  setDemoSeedNow(now);
+  refreshDemoFixture();
+  refreshDemoCorpus();
+  const content = collectSeedContent();
+  const allowed = allowedDisplayDates(now);
+  for (const match of content.matchAll(ABSOLUTE_DATE_LITERAL)) {
+    assert.ok(
+      allowed.has(match[0]),
+      `frozen date literal ${JSON.stringify(match[0])} in seed content at ${now.toISOString()}`,
+    );
+  }
+  const earliestMs = dateAt(-61, '00:00:00', now).getTime();
+  const latestMs = dateAt(31, '23:59:59', now).getTime();
+  for (const match of content.matchAll(ISO_DATE_LITERAL)) {
+    const iso = match[0];
+    const ms = Date.parse(`${iso}T12:00:00.000Z`);
+    assert.ok(
+      Number.isFinite(ms) && ms >= earliestMs && ms <= latestMs,
+      `frozen ISO date ${iso} in seed content at ${now.toISOString()}`,
+    );
+  }
+  for (const row of CORPUS_DIGEST_WINDOWS) {
+    assert.ok(
+      Date.parse(row.windowEnd) <= now.getTime(),
+      `digest windowEnd ${row.windowEnd} is in the future`,
+    );
+  }
+  assert.equal(latestDigestDayOffset(now) === 0 || latestDigestDayOffset(now) === -1, true);
+  assert.ok(DEMO_DATES.overdueVendor >= -3 && DEMO_DATES.overdueVendor <= -1);
+  assert.ok(DEMO_DATES.overdueNorthstar >= -3 && DEMO_DATES.overdueNorthstar <= -1);
+}
+
+function assertSeedSourcesHaveNoAbsoluteDateLiterals(): void {
+  const root = dirname(fileURLToPath(import.meta.url));
+  const files = [
+    join(root, 'demo-clock.ts'),
+    join(root, 'demo-fixture.ts'),
+    join(root, 'seed-dev.ts'),
+    ...readdirSync(join(root, 'demo-corpus'))
+      .filter((name) => name.endsWith('.ts'))
+      .map((name) => join(root, 'demo-corpus', name)),
+  ];
+  for (const file of files) {
+    const source = readFileSync(file, 'utf8')
+      .split('\n')
+      .filter((line) => !line.trimStart().startsWith('*') && !line.trimStart().startsWith('//'))
+      .filter((line) => !line.includes('inline://') && !line.includes('DEMO_CLOCK_ANCHOR'))
+      .join('\n');
+    const hit = source.match(ABSOLUTE_DATE_LITERAL);
+    assert.equal(
+      hit,
+      null,
+      `${file} still contains absolute date literal ${JSON.stringify(hit?.[0])}`,
+    );
+  }
+}
+
+const shiftedNow = new Date('2026-11-03T18:00:00.000Z');
+try {
+  setDemoSeedNow(shiftedNow);
+  refreshDemoFixture();
+  refreshDemoCorpus();
+  const shifted = getDemoTimes();
+  assert.equal(
+    shifted.note,
+    isoAt(DEMO_TIME_OFFSETS.note.days, DEMO_TIME_OFFSETS.note.time, shiftedNow),
+  );
+  assert.equal(shifted.meeting, '2026-09-27T12:00:00.000Z');
+  assert.equal(CADENCE_RANGE.end, '2026-11-03');
+  assert.equal(CADENCE_RANGE.start, '2026-10-03');
+  assert.equal(isoAt(0, '20:00:00', shiftedNow), shiftedNow.toISOString());
+  const noteMs = Date.parse(shifted.note);
+  const emailMs = Date.parse(shifted.email);
+  const meetingMs = Date.parse(shifted.meeting);
+  assert.ok(noteMs < emailMs);
+  assert.ok(emailMs < meetingMs);
+  assert.equal(teamDate(DEMO_DATES.webinar, 'md', shiftedNow), 'November 9');
+  assert.match(collectSeedContent(), /November 9|9 November/);
+  assert.doesNotMatch(collectSeedContent(), /August 20|20 August|19 August|August 19/);
+  assertSeedContentHasNoFrozenDates(shiftedNow);
+  assertSeedContentHasNoFrozenDates(new Date('2027-03-15T12:00:00.000Z'));
+} finally {
+  setDemoSeedNow(DEMO_CLOCK_ANCHOR);
+  refreshDemoFixture();
+  refreshDemoCorpus();
+}
+
+assertSeedSourcesHaveNoAbsoluteDateLiterals();
+assertSeedContentHasNoFrozenDates(DEMO_CLOCK_ANCHOR);
+
+assert.equal(CADENCE_RANGE.start, '2026-07-14');
+assert.equal(CADENCE_RANGE.end, '2026-08-14');
+assert.equal(getDemoTimes().meeting, '2026-07-08T12:00:00.000Z');
+
+function cadenceEventSerial(id: string): number {
+  return Number.parseInt(id.split('-').at(-1) ?? '', 16);
+}
+
+function assertCadenceVolumeAndChronology(now: Date): void {
+  setDemoSeedNow(now);
+  refreshDemoFixture();
+  refreshDemoCorpus();
+  assert.ok(
+    CORPUS_EVENTS.length + DEMO_EVENTS.length >= CORPUS_VOLUME_FLOORS.events,
+    `${now.toISOString()} event count ${String(CORPUS_EVENTS.length + DEMO_EVENTS.length)}`,
+  );
+  const cadenceEvents = CORPUS_EVENTS.filter((row) => {
+    const serial = cadenceEventSerial(row.id);
+    return serial >= 61 && serial < 3000;
+  });
+  const weekdayEvents = new Map<string, typeof cadenceEvents>();
+  for (const event of cadenceEvents) {
+    const day = event.occurredAt.slice(0, 10);
+    const weekday = new Date(`${day}T00:00:00.000Z`).getUTCDay();
+    if (weekday === 0 || weekday === 6) continue;
+    const rows = weekdayEvents.get(day) ?? [];
+    rows.push(event);
+    weekdayEvents.set(day, rows);
+  }
+  assert.ok(weekdayEvents.size >= 20, `${now.toISOString()} weekday coverage`);
+  for (const [day, rows] of weekdayEvents) {
+    assert.ok(
+      rows.length >= CADENCE_WEEKDAY_EVENT_FLOOR,
+      `${now.toISOString()} ${day} cadence events ${String(rows.length)}`,
+    );
+    const groups = new Set(
+      rows.map((row) =>
+        cadenceBeatGroupKey({
+          n: cadenceEventSerial(row.id),
+          author: 'jordan',
+          source: row.source,
+          occurredAt: row.occurredAt,
+          contentText: row.contentText,
+          extra: row.sourceMetadata,
+          payloadRef: String(row.sourceMetadata.source_payload_ref ?? ''),
+        }),
+      ),
+    );
+    assert.ok(
+      groups.size <= CADENCE_WEEKDAY_MOMENT_CEILING,
+      `${now.toISOString()} ${day} cadence moments ${String(groups.size)}`,
+    );
+  }
+  const times = getDemoTimes();
+  assert.equal(
+    times.email,
+    resolveDemoOffsetFromReference(
+      times.note,
+      DEMO_TIME_OFFSETS.note,
+      DEMO_TIME_OFFSETS.email,
+    ).toISOString(),
+  );
+  assert.equal(
+    times.meeting,
+    resolveDemoOffsetFromReference(
+      times.note,
+      DEMO_TIME_OFFSETS.note,
+      DEMO_TIME_OFFSETS.meeting,
+    ).toISOString(),
+  );
+  assert.equal(
+    times.provider,
+    resolveDemoOffsetFromReference(
+      times.meeting,
+      DEMO_TIME_OFFSETS.meeting,
+      DEMO_TIME_OFFSETS.provider,
+    ).toISOString(),
+  );
+  assert.equal(
+    times.meetingEnd,
+    resolveDemoOffsetFromReference(
+      times.meeting,
+      DEMO_TIME_OFFSETS.meeting,
+      DEMO_TIME_OFFSETS.meetingEnd,
+    ).toISOString(),
+  );
+  const stamped = CORPUS_EVENTS.map((row) => readDemoSeedNowFromMetadata(row.sourceMetadata));
+  assert.ok(stamped.every((value) => value?.toISOString() === now.toISOString()));
+  setDemoSeedNow(DEMO_CLOCK_ANCHOR);
+  refreshDemoFixture();
+  const restored = hydrateDemoSeedClock(CORPUS_EVENTS);
+  refreshDemoCorpus();
+  assert.equal(restored.toISOString(), now.toISOString());
+  assert.equal(getDemoTimes().meeting, times.meeting);
+}
+
+const VOLUME_ANCHORS = [
+  DEMO_CLOCK_ANCHOR,
+  new Date('2026-10-03T18:00:00.000Z'),
+  new Date('2026-11-03T18:00:00.000Z'),
+  new Date('2026-11-30T18:00:00.000Z'),
+  new Date('2027-01-01T00:00:00.000Z'),
+  new Date('2027-03-15T12:00:00.000Z'),
+];
+try {
+  for (const now of VOLUME_ANCHORS) {
+    assertCadenceVolumeAndChronology(now);
+  }
+} finally {
+  setDemoSeedNow(DEMO_CLOCK_ANCHOR);
+  refreshDemoFixture();
+  refreshDemoCorpus();
+}
+
+function assertSeedRerunReusesPersistedClock(): void {
+  const firstNow = new Date('2026-08-14T18:00:00.000Z');
+  const laterNow = new Date('2026-11-03T18:00:00.000Z');
+  try {
+    const firstClock = adoptDemoSeedClock([], firstNow);
+    refreshDemoCorpus();
+    assert.equal(firstClock.toISOString(), firstNow.toISOString());
+    const firstSnapshot = validSnapshot();
+    const firstEvents = firstSnapshot.events.map((row) => ({
+      ...row,
+      sourceMetadata: { ...row.sourceMetadata },
+    }));
+    const firstMeetingStart = firstSnapshot.meeting?.startedAt;
+    const firstDocumentText = firstSnapshot.document?.chunkText;
+    const firstCommitment = firstSnapshot.facts.find(
+      (row) => row.id === DEMO_IDS.factCommitment,
+    )?.statement;
+    assert.equal(firstMeetingStart, getDemoTimes().meeting);
+    assert.equal(
+      firstEvents[0]?.sourceMetadata[DEMO_SEED_NOW_METADATA_KEY],
+      firstNow.toISOString(),
+    );
+
+    setDemoSeedNow(laterNow);
+    refreshDemoFixture();
+    refreshDemoCorpus();
+    const drifted = validSnapshot();
+    drifted.events = firstEvents;
+    assert.notEqual(drifted.meeting?.startedAt, firstMeetingStart);
+    assert.notEqual(drifted.document?.chunkText, firstDocumentText);
+    assert.throws(
+      () => assertDemoFixture(drifted),
+      /meeting started_at: expected "2026-07-08T12:00:00.000Z", got "2026-09-27T12:00:00.000Z"/,
+    );
+
+    const reused = adoptDemoSeedClock(firstEvents, laterNow);
+    refreshDemoCorpus();
+    assert.equal(reused.toISOString(), firstNow.toISOString());
+    assert.equal(getDemoTimes().meeting, firstMeetingStart);
+    const rerun = validSnapshot();
+    assert.equal(rerun.meeting?.startedAt, firstMeetingStart);
+    assert.equal(rerun.document?.chunkText, firstDocumentText);
+    assert.equal(
+      rerun.facts.find((row) => row.id === DEMO_IDS.factCommitment)?.statement,
+      firstCommitment,
+    );
+    assert.doesNotThrow(() => assertDemoFixture(rerun));
+    assert.doesNotThrow(() =>
+      assertDemoFixture({
+        ...rerun,
+        events: firstEvents,
+      }),
+    );
+  } finally {
+    setDemoSeedNow(DEMO_CLOCK_ANCHOR);
+    refreshDemoFixture();
+    refreshDemoCorpus();
+  }
+}
+
+assertSeedRerunReusesPersistedClock();
+
+function assertVerifyRestoresClockBeforeDocumentDownload(): void {
+  const laterNow = new Date('2026-11-03T18:00:00.000Z');
+  const root = dirname(fileURLToPath(import.meta.url));
+  const verifySource = readFileSync(join(root, 'verify-demo.ts'), 'utf8');
+  const snapshotFn = verifySource.slice(
+    verifySource.indexOf('async function readDemoFixtureSnapshot'),
+  );
+  const hydrateAt = snapshotFn.indexOf('hydrateDemoSeedClock');
+  const downloadAt = snapshotFn.indexOf('readDemoDocumentObject()');
+  assert.ok(hydrateAt >= 0, 'verify-demo restores the seed clock in readDemoFixtureSnapshot');
+  assert.ok(
+    downloadAt > hydrateAt,
+    'verify-demo must restore the seed clock before downloading the Northstar document',
+  );
+  try {
+    setDemoSeedNow(DEMO_CLOCK_ANCHOR);
+    refreshDemoFixture();
+    const augustLimit = DEMO_DOCUMENT_BYTE_SIZE;
+    setDemoSeedNow(laterNow);
+    refreshDemoFixture();
+    const laterSize = DEMO_DOCUMENT_BYTE_SIZE;
+    const laterText = DEMO_DOCUMENT_TEXT;
+    const laterEvents = validSnapshot().events;
+    assert.ok(
+      laterSize > augustLimit,
+      `later seed document ${String(laterSize)} should exceed August download cap ${String(augustLimit)}`,
+    );
+
+    setDemoSeedNow(DEMO_CLOCK_ANCHOR);
+    refreshDemoFixture();
+    assert.equal(DEMO_DOCUMENT_BYTE_SIZE, augustLimit);
+    hydrateDemoSeedClock(laterEvents);
+    assert.equal(DEMO_DOCUMENT_BYTE_SIZE, laterSize);
+    assert.equal(DEMO_DOCUMENT_TEXT, laterText);
+  } finally {
+    setDemoSeedNow(DEMO_CLOCK_ANCHOR);
+    refreshDemoFixture();
+    refreshDemoCorpus();
+  }
+}
+
+function assertDailyDigestConflictUpdatesWindows(): void {
+  const root = dirname(fileURLToPath(import.meta.url));
+  const source = readFileSync(join(root, 'demo-corpus', 'insert.ts'), 'utf8');
+  const start = source.indexOf('async function insertDigests');
+  const end = source.indexOf('async function insertPinsNotesOnboarding');
+  assert.ok(start >= 0 && end > start, 'insertDigests conflict handler is present');
+  const block = source.slice(start, end);
+  assert.match(block, /windowStart:\s*sql`excluded\.window_start`/);
+  assert.match(block, /windowEnd:\s*sql`excluded\.window_end`/);
+  assert.match(block, /generatedAt:\s*sql`excluded\.generated_at`/);
+
+  const laterNow = new Date('2026-11-03T18:00:00.000Z');
+  try {
+    setDemoSeedNow(DEMO_CLOCK_ANCHOR);
+    refreshDemoCorpus();
+    const firstWindows = CORPUS_DIGEST_WINDOWS.map((row) => ({
+      start: row.windowStart,
+      end: row.windowEnd,
+    }));
+    setDemoSeedNow(laterNow);
+    refreshDemoCorpus();
+    const laterWindows = CORPUS_DIGEST_WINDOWS.map((row) => ({
+      start: row.windowStart,
+      end: row.windowEnd,
+    }));
+    assert.notDeepEqual(
+      firstWindows,
+      laterWindows,
+      'reseed digest windows move with the clock and must be written on conflict',
+    );
+  } finally {
+    setDemoSeedNow(DEMO_CLOCK_ANCHOR);
+    refreshDemoFixture();
+    refreshDemoCorpus();
+  }
+}
+
+assertVerifyRestoresClockBeforeDocumentDownload();
+assertDailyDigestConflictUpdatesWindows();

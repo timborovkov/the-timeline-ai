@@ -66,6 +66,15 @@ import { normalizeIdentityFacet } from '@timeline/shared/objects/identity-facets
 import { hashPassword } from '@timeline/shared/passwords';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 
+import {
+  dateAt,
+  DEMO_DATES,
+  DEMO_TEAM_TIMEZONE,
+  DEMO_TOKEN_EXPIRY_DAYS,
+  getDemoSeedNow,
+  isoAt,
+  teamDate,
+} from '../demo-clock.js';
 import { DEMO_FIXTURE_VERSION, DEMO_IDS, DEMO_LEGAL_ACCEPTED_AT } from '../demo-fixture.js';
 import { seedCurrentLegalAcceptances } from '../demo-legal.js';
 
@@ -105,6 +114,7 @@ import {
   CORPUS_SECRETS,
   TEAM_ID,
   corpusEventId,
+  corpusObjectId,
 } from './catalog.js';
 import { CORPUS_PEOPLE, CORPUS_PERSON, CORPUS_PASSWORD } from './people.js';
 import { CORPUS_UUID } from './ids.js';
@@ -155,7 +165,9 @@ function clusterIdForEntity(entityId: string): string {
   return CORPUS_UUID.cluster(index + 1);
 }
 
-const NOW = new Date('2026-08-14T18:00:00.000Z');
+function seedNow(): Date {
+  return getDemoSeedNow();
+}
 
 export async function insertExpandedDemoCorpus(tx: SeedTx): Promise<void> {
   const passwordHash = await hashPassword(CORPUS_PASSWORD);
@@ -187,7 +199,7 @@ async function insertPeople(tx: SeedTx, passwordHash: string): Promise<void> {
         id: person.id,
         name: person.name,
         email: person.email,
-        emailVerified: NOW,
+        emailVerified: seedNow(),
         passwordHash,
         legalTermsVersion: TERMS_VERSION,
         legalPrivacyVersion: PRIVACY_VERSION,
@@ -203,7 +215,7 @@ async function insertPeople(tx: SeedTx, passwordHash: string): Promise<void> {
         legalTermsVersion: sql`excluded.legal_terms_version`,
         legalPrivacyVersion: sql`excluded.legal_privacy_version`,
         legalAcceptedAt: sql`excluded.legal_accepted_at`,
-        updatedAt: NOW,
+        updatedAt: seedNow(),
       },
     });
 
@@ -245,7 +257,7 @@ async function insertPeople(tx: SeedTx, passwordHash: string): Promise<void> {
         dailyDigestEnabled: sql`excluded.daily_digest_enabled`,
         dailyDigestHour: sql`excluded.daily_digest_hour`,
         timezone: sql`excluded.timezone`,
-        updatedAt: NOW,
+        updatedAt: seedNow(),
       },
     });
 }
@@ -253,16 +265,16 @@ async function insertPeople(tx: SeedTx, passwordHash: string): Promise<void> {
 async function insertConnections(tx: SeedTx): Promise<void> {
   const mondaySecret = encryptJson({
     access_token: CORPUS_SECRETS.mondayAccess,
-    expires_at: '2026-12-31T23:59:59.000Z',
+    expires_at: isoAt(DEMO_TOKEN_EXPIRY_DAYS, '23:59:59'),
   });
   const sentrySecret = encryptJson({
     access_token: CORPUS_SECRETS.sentryAccess,
-    expires_at: '2026-12-31T23:59:59.000Z',
+    expires_at: isoAt(DEMO_TOKEN_EXPIRY_DAYS, '23:59:59'),
   });
   const driveSecret = encryptJson({
     access_token: CORPUS_SECRETS.driveAccess,
     refresh_token: '1//dev_seed_drive_refresh',
-    expires_at: '2026-12-31T23:59:59.000Z',
+    expires_at: isoAt(DEMO_TOKEN_EXPIRY_DAYS, '23:59:59'),
   });
   const mcpAuth = encryptJson({ token: CORPUS_SECRETS.mcpInboundBearer });
 
@@ -279,7 +291,7 @@ async function insertConnections(tx: SeedTx): Promise<void> {
         authSecretCiphertext: mondaySecret.ciphertext,
         authSecretIv: mondaySecret.iv,
         authSecretTag: mondaySecret.tag,
-        lastConnectedAt: NOW,
+        lastConnectedAt: seedNow(),
       },
       {
         id: CORPUS_CONNECTIONS.sentry,
@@ -291,7 +303,7 @@ async function insertConnections(tx: SeedTx): Promise<void> {
         authSecretCiphertext: sentrySecret.ciphertext,
         authSecretIv: sentrySecret.iv,
         authSecretTag: sentrySecret.tag,
-        lastConnectedAt: NOW,
+        lastConnectedAt: seedNow(),
       },
       {
         id: CORPUS_CONNECTIONS.drive,
@@ -303,7 +315,7 @@ async function insertConnections(tx: SeedTx): Promise<void> {
         authSecretCiphertext: driveSecret.ciphertext,
         authSecretIv: driveSecret.iv,
         authSecretTag: driveSecret.tag,
-        lastConnectedAt: NOW,
+        lastConnectedAt: seedNow(),
       },
     ])
     .onConflictDoNothing();
@@ -321,7 +333,7 @@ async function insertConnections(tx: SeedTx): Promise<void> {
         externalAccountId: 'monday-account-acme-dev',
         visibilityDefault: 'team',
         enabled: false,
-        lastSyncedAt: new Date('2026-08-12T16:30:00.000Z'),
+        lastSyncedAt: dateAt(-2, '16:30:00'),
       },
       {
         id: CORPUS_INTEGRATIONS.sentry,
@@ -333,7 +345,7 @@ async function insertConnections(tx: SeedTx): Promise<void> {
         externalAccountId: 'sentry-org-acme-dev',
         visibilityDefault: 'team',
         enabled: false,
-        lastSyncedAt: new Date('2026-08-03T09:50:00.000Z'),
+        lastSyncedAt: dateAt(-11, '09:50:00'),
       },
       {
         id: CORPUS_INTEGRATIONS.drive,
@@ -345,7 +357,7 @@ async function insertConnections(tx: SeedTx): Promise<void> {
         externalAccountId: 'drive-user-avery-dev',
         visibilityDefault: 'team',
         enabled: false,
-        lastSyncedAt: new Date('2026-08-11T13:20:00.000Z'),
+        lastSyncedAt: dateAt(-3, '13:20:00'),
       },
     ])
     .onConflictDoUpdate({
@@ -427,16 +439,16 @@ async function insertConnections(tx: SeedTx): Promise<void> {
         id: CORPUS_UUID.sync(1),
         integrationId: CORPUS_INTEGRATIONS.monday,
         resourceType: 'monday.board',
-        cursor: { since: '2026-08-12T16:30:00.000Z' },
-        lastRunAt: new Date('2026-08-12T16:30:00.000Z'),
+        cursor: { since: isoAt(-2, '16:30:00') },
+        lastRunAt: dateAt(-2, '16:30:00'),
         lastStatus: 'ok',
       },
       {
         id: CORPUS_UUID.sync(2),
         integrationId: CORPUS_INTEGRATIONS.sentry,
         resourceType: 'sentry.project:acme/atlas',
-        cursor: { since: '2026-08-03T09:50:00.000Z' },
-        lastRunAt: new Date('2026-08-03T09:50:00.000Z'),
+        cursor: { since: isoAt(-11, '09:50:00') },
+        lastRunAt: dateAt(-11, '09:50:00'),
         lastStatus: 'ok',
       },
     ])
@@ -456,9 +468,9 @@ async function insertConnections(tx: SeedTx): Promise<void> {
       authConfigTag: mcpAuth.tag,
       enabled: false,
       cachedTools: [{ name: 'ledger.list_invoices', description: 'List fictional invoices' }],
-      toolsCachedAt: NOW,
-      lastConnectedAt: new Date('2026-07-24T06:00:00.000Z'),
-      lastError: 'Demo seed: outbound MCP sync stays disabled',
+      toolsCachedAt: seedNow(),
+      lastConnectedAt: dateAt(-21, '06:00:00'),
+      lastError: null,
     })
     .onConflictDoUpdate({
       target: mcpServers.id,
@@ -654,7 +666,7 @@ async function insertCaptureSurfaces(tx: SeedTx): Promise<void> {
         visibilityDefault: sql`excluded.visibility_default`,
         proposalGenerationEnabled: sql`excluded.proposal_generation_enabled`,
         disabledAt: null,
-        updatedAt: NOW,
+        updatedAt: seedNow(),
       },
     });
   await tx
@@ -666,7 +678,7 @@ async function insertCaptureSurfaces(tx: SeedTx): Promise<void> {
       createdByUserId: CORPUS_PERSON.jordan.id,
       keyHash: hashCredential(CORPUS_SECRETS.ingestWebhook),
       keyPrefix: CORPUS_SECRETS.ingestWebhook.slice(0, 12),
-      lastUsedAt: new Date('2026-08-13T07:05:00.000Z'),
+      lastUsedAt: dateAt(-1, '07:05:00'),
     })
     .onConflictDoNothing();
 
@@ -724,6 +736,7 @@ async function insertEventsAndFacts(tx: SeedTx): Promise<void> {
         authorUserId: row.authorId,
         source: row.source,
         contentText: row.contentText,
+        contentAudioUrl: row.contentAudioUrl ?? null,
         occurredAt: new Date(row.occurredAt),
         createdAt: new Date(row.occurredAt),
         visibility: 'team' as const,
@@ -742,7 +755,7 @@ async function insertEventsAndFacts(tx: SeedTx): Promise<void> {
         statement: row.statement,
         confidence: 0.94,
         modelVersion: DEMO_FIXTURE_VERSION,
-        extractedAt: NOW,
+        extractedAt: seedNow(),
       })),
     )
     .onConflictDoUpdate({
@@ -808,7 +821,7 @@ async function insertObjects(tx: SeedTx): Promise<void> {
         ownerUserId: row.ownerUserId ?? null,
         assigneeUserId: row.assigneeUserId ?? null,
         dueAt: row.dueAt ? new Date(row.dueAt) : null,
-        archivedAt: row.status === 'archived' ? NOW : null,
+        archivedAt: row.status === 'archived' ? seedNow() : null,
         sourceEventId: null,
         ...(row.type === 'task' && row.taskCategory
           ? {
@@ -818,7 +831,7 @@ async function insertObjects(tx: SeedTx): Promise<void> {
               taskCategoryStatus: 'ready' as const,
               taskCategoryAppliedInputHash: `demo-seed-task-${row.id}`,
               taskCategoryTaxonomyVersion: 'task-categories-v1',
-              taskCategoryUpdatedAt: NOW,
+              taskCategoryUpdatedAt: seedNow(),
             }
           : {}),
       })),
@@ -844,7 +857,7 @@ async function insertObjects(tx: SeedTx): Promise<void> {
         taskCategoryTaxonomyVersion: sql`excluded.task_category_taxonomy_version`,
         taskCategoryUpdatedAt: sql`excluded.task_category_updated_at`,
         sourceEventId: null,
-        updatedAt: NOW,
+        updatedAt: seedNow(),
       },
     });
 
@@ -881,7 +894,7 @@ async function insertObjects(tx: SeedTx): Promise<void> {
           normalizedValue: sql`excluded.normalized_value`,
           status: sql`excluded.status`,
           source: sql`excluded.source`,
-          updatedAt: NOW,
+          updatedAt: seedNow(),
           archivedAt: null,
         },
       });
@@ -951,8 +964,8 @@ async function insertObjects(tx: SeedTx): Promise<void> {
         entityId: row.entityId,
         authorUserId: row.authorUserId,
         body: row.body,
-        createdAt: NOW,
-        updatedAt: NOW,
+        createdAt: seedNow(),
+        updatedAt: seedNow(),
       })),
     )
     .onConflictDoUpdate({
@@ -960,7 +973,7 @@ async function insertObjects(tx: SeedTx): Promise<void> {
       set: {
         body: sql`excluded.body`,
         entityId: sql`excluded.entity_id`,
-        updatedAt: NOW,
+        updatedAt: seedNow(),
       },
     });
 
@@ -976,7 +989,7 @@ async function insertObjects(tx: SeedTx): Promise<void> {
         kind: row.kind,
         startOffset: row.startOffset,
         endOffset: row.endOffset,
-        createdAt: NOW,
+        createdAt: seedNow(),
       })),
     )
     .onConflictDoNothing();
@@ -997,11 +1010,17 @@ async function insertObjects(tx: SeedTx): Promise<void> {
           actor_user_id: row.actorUserId,
           actor_name: row.actorName,
         },
-        createdAt: NOW,
+        createdAt: seedNow(),
       })),
     )
     .onConflictDoNothing();
 
+  const northstarDelayEventId = corpusEventId('field-mapping confirmation is delayed');
+  const northstarCsvEventId = corpusEventId('we keep the CSV fallback decision');
+  const northstarVoiceEventId = corpusEventId('Voice memo from Avery');
+  const dataRoomEventId = corpusEventId('Avery sent Northwind the data-room link');
+  const northstarDelayFactId = CORPUS_UUID.fact(7);
+  const dataRoomFactId = CORPUS_UUID.fact(12);
   await tx
     .insert(objectSummaries)
     .values([
@@ -1011,17 +1030,43 @@ async function insertObjects(tx: SeedTx): Promise<void> {
         entityId: dealflowEntityId('Series A process'),
         status: 'ready',
         summary: {
-          overview: 'Northwind is the lead. Data room is open. No term sheet yet.',
-          overviewSourceRefs: [],
-          currentState: 'Diligence',
-          openQuestions: ['Northstar proof date'],
+          overview: `Northwind Capital is the Series A lead. Avery sent the data room on ${teamDate(DEMO_DATES.dataRoom, 'dm')}. Linden will follow the same room. Harbor Peak is only a catch-up.`,
+          overviewSourceRefs: [
+            { kind: 'timeline_event', id: dataRoomEventId },
+            { kind: 'fact', id: dataRoomFactId },
+          ],
+          currentState: [
+            {
+              label: 'Diligence',
+              text: 'The data room is open. No term sheet this meeting.',
+              sourceRefs: [{ kind: 'timeline_event', id: dataRoomEventId }],
+            },
+          ],
+          openQuestions: [
+            {
+              label: 'Proof date',
+              text: 'Priya still wants Northstar proof before a term sheet.',
+              sourceRefs: [{ kind: 'fact', id: CORPUS_UUID.fact(5) }],
+            },
+          ],
           conflicts: [],
         },
-        plainText:
-          'Northwind Capital is the Series A lead. Avery sent the data room on 13 August. Linden will follow. Harbor Peak is only a catch-up.',
-        sourceRefs: [],
-        sourceCounts: { events: 6 },
-        generatedAt: NOW,
+        plainText: `Northwind Capital is the Series A lead. Avery sent the data room on ${teamDate(DEMO_DATES.dataRoom, 'dm')}. Linden will follow. Harbor Peak is only a catch-up.`,
+        sourceRefs: [
+          { kind: 'timeline_event', id: dataRoomEventId },
+          { kind: 'fact', id: dataRoomFactId },
+          { kind: 'fact', id: CORPUS_UUID.fact(5) },
+        ],
+        sourceCounts: {
+          events: 6,
+          facts: 2,
+          fields: 0,
+          notes: 0,
+          relationships: 0,
+          tasks: 0,
+          changes: 0,
+        },
+        generatedAt: seedNow(),
         model: DEMO_FIXTURE_VERSION,
         promptVersion: DEMO_FIXTURE_VERSION,
       },
@@ -1031,17 +1076,56 @@ async function insertObjects(tx: SeedTx): Promise<void> {
         entityId: DEMO_IDS.objectPilot,
         status: 'ready',
         summary: {
-          overview: 'Northstar remains the design partner proof. Field-mapping is delayed.',
-          overviewSourceRefs: [],
-          currentState: 'Blocked',
-          openQuestions: ['Elena Park confirmation'],
+          overview: `Northstar remains the design-partner proof. Field-mapping confirmation is delayed to ${teamDate(DEMO_DATES.elenaConfirm, 'dm')}. The CSV fallback stands, and Avery’s voice memo tells engineering not to reopen live importer previews.`,
+          overviewSourceRefs: [
+            { kind: 'timeline_event', id: northstarDelayEventId },
+            { kind: 'timeline_event', id: northstarCsvEventId },
+            { kind: 'timeline_event', id: northstarVoiceEventId },
+            { kind: 'fact', id: northstarDelayFactId },
+          ],
+          currentState: [
+            {
+              label: 'Blocked',
+              text: `Elena Park delayed field-mapping confirmation until ${teamDate(DEMO_DATES.elenaConfirm, 'dm')}.`,
+              sourceRefs: [
+                { kind: 'timeline_event', id: northstarDelayEventId },
+                { kind: 'fact', id: northstarDelayFactId },
+              ],
+            },
+            {
+              label: 'Fallback',
+              text: 'CSV replay from stored bytes is the supported path until confirmation lands.',
+              sourceRefs: [{ kind: 'timeline_event', id: northstarCsvEventId }],
+            },
+          ],
+          openQuestions: [
+            {
+              label: 'Review date',
+              text: `Elena asked to move the pilot review to ${teamDate(DEMO_DATES.pilotReview, 'dm')} after confirmation.`,
+              sourceRefs: [
+                { kind: 'timeline_event', id: corpusEventId('Pilot review should move') },
+              ],
+            },
+          ],
           conflicts: [],
         },
-        plainText:
-          'The Northstar pilot is still blocked on field-mapping. CSV fallback stands. Review should move to 26 August.',
-        sourceRefs: [],
-        sourceCounts: { events: 8 },
-        generatedAt: NOW,
+        plainText: `The Northstar pilot is still blocked on field-mapping. CSV fallback stands. Review should move to ${teamDate(DEMO_DATES.pilotReview, 'dm')}.`,
+        sourceRefs: [
+          { kind: 'timeline_event', id: northstarDelayEventId },
+          { kind: 'timeline_event', id: northstarCsvEventId },
+          { kind: 'timeline_event', id: northstarVoiceEventId },
+          { kind: 'fact', id: northstarDelayFactId },
+        ],
+        sourceCounts: {
+          events: 8,
+          facts: 2,
+          fields: 0,
+          notes: 1,
+          relationships: 0,
+          tasks: 1,
+          changes: 0,
+        },
+        generatedAt: seedNow(),
         model: DEMO_FIXTURE_VERSION,
         promptVersion: DEMO_FIXTURE_VERSION,
       },
@@ -1052,6 +1136,8 @@ async function insertObjects(tx: SeedTx): Promise<void> {
         summary: sql`excluded.summary`,
         plainText: sql`excluded.plain_text`,
         entityId: sql`excluded.entity_id`,
+        sourceRefs: sql`excluded.source_refs`,
+        sourceCounts: sql`excluded.source_counts`,
       },
     });
 
@@ -1219,7 +1305,7 @@ async function insertMeetings(tx: SeedTx): Promise<void> {
       teamId: TEAM_ID,
       meetingMinutesCap: 600,
       requireHostConsent: true,
-      updatedAt: NOW,
+      updatedAt: seedNow(),
     })
     .onConflictDoNothing();
 
@@ -1257,7 +1343,7 @@ async function insertMeetings(tx: SeedTx): Promise<void> {
         id: row.id,
         teamId: TEAM_ID,
         createdByUserId: row.createdByUserId,
-        savedMeetingId: row.title === 'Weekly product standup' ? CORPUS_SAVED_MEETING.id : null,
+        savedMeetingId: row.title === CORPUS_SAVED_MEETING.title ? CORPUS_SAVED_MEETING.id : null,
         provider: 'demo-fixture',
         platform: row.platform,
         meetingUrl: row.meetingUrl,
@@ -1290,8 +1376,8 @@ async function insertMeetings(tx: SeedTx): Promise<void> {
         metadata: { fixture_version: DEMO_FIXTURE_VERSION, silent: true, consent_confirmed: true },
         scheduledStartAt: new Date(CORPUS_SAVED_MEETING.upcoming.scheduledStartAt),
         scheduledEndAt: new Date(CORPUS_SAVED_MEETING.upcoming.scheduledEndAt),
-        createdAt: NOW,
-        updatedAt: NOW,
+        createdAt: seedNow(),
+        updatedAt: seedNow(),
       },
     ])
     .onConflictDoUpdate({
@@ -1305,7 +1391,7 @@ async function insertMeetings(tx: SeedTx): Promise<void> {
         endedAt: sql`excluded.ended_at`,
         scheduledStartAt: sql`excluded.scheduled_start_at`,
         scheduledEndAt: sql`excluded.scheduled_end_at`,
-        updatedAt: NOW,
+        updatedAt: seedNow(),
       },
     });
 
@@ -1455,7 +1541,7 @@ async function insertCalendar(tx: SeedTx): Promise<void> {
         title: row.title,
         startAt: new Date(row.startAt),
         endAt: new Date(row.endAt),
-        timezone: 'Europe/Helsinki',
+        timezone: DEMO_TEAM_TIMEZONE,
         visibility: 'team' as const,
         source: 'internal' as const,
         metadata: { fixture_version: DEMO_FIXTURE_VERSION },
@@ -1495,8 +1581,8 @@ async function insertProposals(tx: SeedTx): Promise<void> {
         dedupeKey: `demo-seed:proposal:${row.id}`,
         visibility: 'team' as const,
         metadata: { fixture_version: DEMO_FIXTURE_VERSION },
-        createdAt: NOW,
-        updatedAt: NOW,
+        createdAt: seedNow(),
+        updatedAt: seedNow(),
       })),
     )
     .onConflictDoUpdate({
@@ -1507,7 +1593,7 @@ async function insertProposals(tx: SeedTx): Promise<void> {
         reason: sql`excluded.reason`,
         source: sql`excluded.source`,
         status: sql`excluded.status`,
-        updatedAt: NOW,
+        updatedAt: seedNow(),
       },
     });
   await tx
@@ -1567,11 +1653,11 @@ async function insertProposals(tx: SeedTx): Promise<void> {
       source: 'background',
       status: 'accepted',
       title: 'Record the CSV preview replay decision',
-      summary: 'Accepted after the 15 July incident review.',
+      summary: `Accepted after the ${teamDate(DEMO_DATES.incidentReview, 'dm')} incident review.`,
       dedupeKey: 'demo-seed:proposal:accepted-csv-replay',
       visibility: 'team',
       resolvedByUserId: CORPUS_PERSON.mika.id,
-      resolvedAt: new Date('2026-07-15T14:00:00.000Z'),
+      resolvedAt: dateAt(-30, '14:00:00'),
       metadata: { fixture_version: DEMO_FIXTURE_VERSION },
     })
     .onConflictDoNothing();
@@ -1594,7 +1680,7 @@ async function insertProposals(tx: SeedTx): Promise<void> {
         status: 'accepted',
       },
       resolvedByUserId: CORPUS_PERSON.mika.id,
-      resolvedAt: new Date('2026-07-15T14:00:00.000Z'),
+      resolvedAt: dateAt(-30, '14:00:00'),
     })
     .onConflictDoNothing();
 
@@ -1607,7 +1693,7 @@ async function insertProposals(tx: SeedTx): Promise<void> {
       source: 'slack',
       status: 'pending',
       lastRawEventId: reviewEventId,
-      quietUntil: new Date('2026-08-14T18:30:00.000Z'),
+      quietUntil: dateAt(0, '18:30:00'),
       metadata: { fixture_version: DEMO_FIXTURE_VERSION, title: '#gtm' },
     })
     .onConflictDoUpdate({
@@ -1688,13 +1774,13 @@ async function insertDigests(tx: SeedTx): Promise<void> {
     teamId: TEAM_ID,
     userId: DEMO_IDS.owner,
     recipientEmail: CORPUS_PERSON.avery.email,
-    subject: `Daily digest — ${row.start.slice(0, 10)}`,
+    subject: `Daily digest — ${row.localDate}`,
     status: 'sent' as const,
     provider: 'demo-seed',
-    dedupeKey: `demo-seed:digest-delivery:${row.start}`,
-    sentAt: new Date(row.start),
-    createdAt: new Date(row.start),
-    updatedAt: new Date(row.start),
+    dedupeKey: `demo-seed:digest-delivery:${row.localDate}`,
+    sentAt: new Date(row.windowEnd),
+    createdAt: new Date(row.windowEnd),
+    updatedAt: new Date(row.windowEnd),
   }));
   await tx
     .insert(messageDeliveries)
@@ -1707,12 +1793,16 @@ async function insertDigests(tx: SeedTx): Promise<void> {
         sentAt: sql`excluded.sent_at`,
       },
     });
+  const webinarTaskId = corpusObjectId('Lock webinar run of show');
+  const quoteTaskId = corpusObjectId('Write Avery webinar quote');
+  const elenaTaskId = corpusObjectId('Ping Elena Park on field-mapping');
   await tx
     .insert(dailyDigests)
     .values(
       CORPUS_DIGEST_WINDOWS.map((row, index) => {
-        const start = new Date(row.start);
-        const end = new Date(start.getTime() + 24 * 60 * 60 * 1000);
+        const start = new Date(row.windowStart);
+        const end = new Date(row.windowEnd);
+        const isLatest = index === CORPUS_DIGEST_WINDOWS.length - 1;
         return {
           id: CORPUS_UUID.digest(index + 1),
           teamId: TEAM_ID,
@@ -1723,23 +1813,95 @@ async function insertDigests(tx: SeedTx): Promise<void> {
           payload: {
             teamName: 'Acme Labs',
             userName: CORPUS_PERSON.avery.name,
-            timezone: 'Europe/Helsinki',
+            timezone: DEMO_TEAM_TIMEZONE,
             windowStart: start.toISOString(),
             windowEnd: end.toISOString(),
             summary: row.summary,
+            sections: isLatest
+              ? [
+                  {
+                    title: 'Highlights' as const,
+                    body: 'Pitch narrative landed in Documents. Dealflow recap captured. Northstar stays on the CSV fallback.',
+                    items: [],
+                  },
+                  {
+                    title: 'Status' as const,
+                    body: `Field-mapping confirmation is still due ${teamDate(DEMO_DATES.elenaConfirm, 'dm')}. Invoice inv_2041 is paid. Polar Studio remains inbound, not on the board.`,
+                    items: [],
+                  },
+                  {
+                    title: 'Follow-ups' as const,
+                    body: `Riley still needs Avery’s webinar quote and a cropped Northstar screenshot before the ${teamDate(DEMO_DATES.dryRun, 'dm')} dry run.`,
+                    items: [],
+                  },
+                ]
+              : [
+                  {
+                    title: 'Status' as const,
+                    body: row.summary,
+                    items: [],
+                  },
+                ],
             pendingApprovals: CORPUS_PROPOSALS.length,
-            eventCount: 6,
-            sourceDistribution: { slack: 2, email: 1, meeting: 1, integration: 2 },
+            eventCount: isLatest ? 18 : 6,
+            momentCount: isLatest ? 9 : 4,
+            activity: {
+              newMoments: isLatest ? 9 : 4,
+              newProposals: isLatest ? 2 : 1,
+              pendingApprovals: CORPUS_PROPOSALS.length,
+              newTasks: isLatest ? 1 : 0,
+              completedTasks: 0,
+              newProjects: 0,
+              newObjectsByType: isLatest ? { deal: 1, document: 1 } : { task: 1 },
+            },
+            sourceDistribution: { slack: 4, email: 2, meeting: 1, telegram: 2, integration: 3 },
             objectChangesByType: { deal: 1, task: 1 },
             newTeamMembers: [],
-            tasks: [],
-            upcomingCalendar: [],
-            links: [{ label: 'Open Timeline', href: '/app' }],
+            tasks: isLatest
+              ? [
+                  {
+                    id: elenaTaskId,
+                    title: 'Ping Elena Park on field-mapping',
+                    status: 'todo',
+                    dueAt: isoAt(5, '15:00:00'),
+                    href: `/app/objects/${elenaTaskId}`,
+                  },
+                  {
+                    id: quoteTaskId,
+                    title: 'Write Avery webinar quote',
+                    status: 'todo',
+                    dueAt: isoAt(4, '12:00:00'),
+                    href: `/app/objects/${quoteTaskId}`,
+                  },
+                  {
+                    id: webinarTaskId,
+                    title: 'Lock webinar run of show',
+                    status: 'todo',
+                    dueAt: isoAt(4, '13:00:00'),
+                    href: `/app/objects/${webinarTaskId}`,
+                  },
+                ]
+              : [],
+            upcomingCalendar: isLatest
+              ? CORPUS_CALENDAR_EVENTS.filter((event) => event.startAt >= isoAt(1, '00:00:00'))
+                  .slice(0, 4)
+                  .map((event) => ({
+                    id: event.id,
+                    title: event.title,
+                    startAt: event.startAt,
+                    endAt: event.endAt,
+                    href: `/app/calendar?event=${event.id}`,
+                  }))
+              : [],
+            links: [
+              { label: 'Open Timeline', href: '/app' },
+              { label: 'Approvals', href: '/app/approvals' },
+            ],
           },
           status: 'sent' as const,
           deliveryId: deliveries[index]?.id,
-          generatedAt: start,
-          sentAt: start,
+          generatedAt: end,
+          sentAt: end,
         };
       }),
     )
@@ -1751,6 +1913,9 @@ async function insertDigests(tx: SeedTx): Promise<void> {
         status: sql`excluded.status`,
         deliveryId: sql`excluded.delivery_id`,
         sentAt: sql`excluded.sent_at`,
+        windowStart: sql`excluded.window_start`,
+        windowEnd: sql`excluded.window_end`,
+        generatedAt: sql`excluded.generated_at`,
       },
     });
 }
@@ -1777,7 +1942,7 @@ async function insertPinsNotesOnboarding(tx: SeedTx): Promise<void> {
         teamId: TEAM_ID,
         step,
         completedByUserId: DEMO_IDS.owner,
-        completedAt: new Date('2026-07-10T12:00:00.000Z'),
+        completedAt: dateAt(-35, '12:00:00'),
       })),
     )
     .onConflictDoNothing();
@@ -1787,7 +1952,7 @@ async function insertPinsNotesOnboarding(tx: SeedTx): Promise<void> {
     .values({
       teamId: TEAM_ID,
       userId: DEMO_IDS.owner,
-      dismissedAt: new Date('2026-07-10T12:05:00.000Z'),
+      dismissedAt: dateAt(-35, '12:05:00'),
     })
     .onConflictDoNothing();
 }
