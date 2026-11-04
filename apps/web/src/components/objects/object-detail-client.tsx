@@ -1345,6 +1345,13 @@ function ObjectSummaryActions({
   );
 }
 
+function objectSummaryLaterClaims(generated: {
+  conflicts: objects.ObjectSummaryClaim[];
+  openQuestions: objects.ObjectSummaryClaim[];
+}): objects.ObjectSummaryClaim[] {
+  return [...generated.conflicts, ...generated.openQuestions];
+}
+
 function GeneratedObjectSummary({
   generated,
 }: {
@@ -1356,14 +1363,14 @@ function GeneratedObjectSummary({
     conflicts: objects.ObjectSummaryClaim[];
   };
 }) {
+  const laterClaims = objectSummaryLaterClaims(generated);
   const numbers = useMemo(
     () =>
       numberArtifactRefs(
         [
           ...generated.overviewSourceRefs,
           ...generated.currentState.flatMap((item) => item.sourceRefs),
-          ...generated.openQuestions.flatMap((item) => item.sourceRefs),
-          ...generated.conflicts.flatMap((item) => item.sourceRefs),
+          ...objectSummaryLaterClaims(generated).flatMap((item) => item.sourceRefs),
         ].flatMap((ref) => {
           const artifactRef = summaryRefToArtifactRef(ref);
           return artifactRef ? [artifactRef] : [];
@@ -1387,9 +1394,9 @@ function GeneratedObjectSummary({
           ))}
         </ul>
       ) : null}
-      {generated.conflicts.length > 0 || generated.openQuestions.length > 0 ? (
+      {laterClaims.length > 0 ? (
         <div className="space-y-1">
-          {[...generated.conflicts, ...generated.openQuestions].map((item) => (
+          {laterClaims.map((item) => (
             <p key={`${item.label}:${item.text}`} className="text-sm leading-5 text-fg-muted">
               <span className="text-fg">{item.label}:</span> {item.text}
               <SourceMarkers numbers={numbers} refs={item.sourceRefs} />
