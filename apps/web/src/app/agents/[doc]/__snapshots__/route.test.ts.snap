@@ -7,7 +7,7 @@ You are connecting your human's agent to The Timeline, their team's auto-updatin
 
 Never ask for, accept or paste any key or token in chat. Sign-in is OAuth in the human's browser. Static \`tla_\` keys belong only under Advanced in Timeline, never in chat.
 
-The hosted MCP server advertises five tools: \`timeline.search\`, \`timeline.get\`, \`timeline.subject\`, \`timeline.ask\`, and \`timeline.remember\`. Default OAuth is \`read\`. \`timeline.remember\` needs the \`capture\` scope. \`timeline.ask\` needs \`agent:ask\` (owner or admin only).
+The hosted MCP server advertises five tools: \`timeline.search\`, \`timeline.get\`, \`timeline.subject\`, \`timeline.ask\`, and \`timeline.remember\`. Default OAuth is \`read\` plus \`capture\` (the capture checkbox is on by default). \`timeline.remember\` needs the \`capture\` scope; uncheck it for a read-only grant. \`timeline.ask\` needs \`agent:ask\` (owner or admin only).
 
 ## 1. Identify where you run. The steps differ.
 
@@ -18,7 +18,7 @@ Tell the human to add a custom MCP connector, then stop.
 - Auth: OAuth
 - ChatGPT: Plugins → + → Add custom MCP server → name it "The Timeline" → OAuth → Create as a plugin → install.
 - Claude (claude.ai, Desktop): Customize → Connectors → Add custom connector. Free plans get one custom connector.
-- They sign in to The Timeline, choose the team, and approve \`read\`. Approve \`capture\` as well if they want you to add notes. Then stop.
+- They sign in to The Timeline, choose the team, and approve. Capture is on by default so remember works; uncheck it for read-only. Then stop.
 
 **Grok Bot:** add a custom MCP server named "timeline" at https://thetimeline.cc/api/mcp/server using Streamable HTTP and start its OAuth sign-in card. After the human approves, save the skill from https://thetimeline.cc/agents/SKILL.md into the bot's skill store.
 
@@ -64,7 +64,7 @@ mcp_servers:
 
 Call \`timeline.search\` with a small limit. If it returns nothing, the team may have no captured work yet. That is fine.
 
-Offer a test \`timeline.remember\` only with the human's OK. If remember is unavailable, the grant may be missing \`capture\`; ask the human to re-approve with that scope.
+Offer a test \`timeline.remember\` only with the human's OK. If remember is unavailable, the grant may be missing \`capture\`; ask the human to re-approve with the capture checkbox on.
 
 ## 3. Optional push methods
 
@@ -72,7 +72,7 @@ Use these only when the human asks you to record something.
 
 - **remember:** one self-contained note per fact cluster. Lead with the subject, then who, the decision, the next step, the owner, and the date. Rate-limited to 30 notes per minute. Needs the \`capture\` scope.
 - **Team email:** send, forward, CC or BCC to the team address shown on The Timeline Home → Team email. The sending address must be a team member or an allowed sender.
-- **Webhook:** POST text or JSON (1 MB or less) to https://thetimeline.cc/api/webhooks/ingest with \`Authorization: Bearer $TIMELINE_INGEST_TOKEN\`. Keep the token in the environment. Never print the token.
+- **Webhook:** POST text or JSON (1 MB or less) to this Timeline deployment's \`/api/webhooks/ingest\` with \`Authorization: Bearer $TIMELINE_INGEST_TOKEN\`. Hosted Timeline uses https://thetimeline.cc/api/webhooks/ingest. Self-hosted Timeline must use that deployment's own origin; posting to the hosted URL returns 401. Keep the token in the environment. Never print the token.
 
 Recorded items become cited evidence only. Any proposals still need human approval. Tell the human what was recorded.
 
