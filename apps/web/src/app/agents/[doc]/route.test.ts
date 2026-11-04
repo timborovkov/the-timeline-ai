@@ -1,7 +1,11 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { MCP_OAUTH_SCOPES } from '@timeline/shared/mcp-server';
+import {
+  MCP_OAUTH_SCOPES,
+  mcpStaticKeyScopes,
+  resolveMcpOAuthConsentScopes,
+} from '@timeline/shared/mcp-server';
 import { expect } from '@timeline/test-support';
 import { describe, it } from 'bun:test';
 
@@ -14,6 +18,7 @@ import {
   buildAgentSetupMarkdown,
 } from '@/lib/agent-setup';
 import { readTimelineSkillMarkdown, timelineSkillMarkdownPath } from '@/lib/agent-setup-skill';
+import { CANONICAL_PUBLIC_ORIGIN } from '@/lib/site-url';
 
 async function getDoc(doc: string) {
   return GET(new Request(`https://thetimeline.cc/agents/${doc}`), {
@@ -111,22 +116,36 @@ describe('shipped agent surfaces', () => {
   });
 
   it('documents the live capture OAuth scope and default-on consent', () => {
-    expect(MCP_OAUTH_SCOPES).toContain('capture');
+    expect(MCP_OAUTH_SCOPES).toEqual(['read', 'capture', 'agent:ask']);
+    expect(resolveMcpOAuthConsentScopes(['read'], { grantCapture: true })).toEqual([
+      'read',
+      'capture',
+    ]);
+    expect(resolveMcpOAuthConsentScopes(['read'], { grantCapture: false })).toEqual(['read']);
+    expect(mcpStaticKeyScopes({ allowCapture: true, allowAgent: false })).toEqual([
+      'read',
+      'capture',
+    ]);
+    expect(mcpStaticKeyScopes({ allowCapture: false, allowAgent: false })).toEqual(['read']);
     const setup = buildAgentSetupMarkdown();
     const skill = readTimelineSkillMarkdown();
     for (const text of [setup, skill]) {
       expect(text).toContain('`capture`');
       expect(text).toContain('on by default');
     }
+    expect(setup).toContain('Default OAuth is `read` plus `capture`');
     expect(setup).toContain('uncheck it for a read-only grant');
     expect(setup).toContain('capture checkbox');
+    expect(setup).toContain('`timeline.remember` needs the `capture` scope');
   });
 
   it('points ingest webhooks at this deployment instead of only hosted Timeline', () => {
     const skill = readTimelineSkillMarkdown();
     const setup = buildAgentSetupMarkdown();
+    const hostedWebhook = `${CANONICAL_PUBLIC_ORIGIN}/api/webhooks/ingest`;
     for (const text of [skill, setup]) {
-      expect(text).toContain('/api/webhooks/ingest');
+      expect(text).toContain("this Timeline deployment's `/api/webhooks/ingest`");
+      expect(text).toContain(hostedWebhook);
       expect(text).toMatch(/self-hosted/i);
       expect(text).toContain("deployment's own origin");
       expect(text).toContain('returns 401');
