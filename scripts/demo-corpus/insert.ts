@@ -1913,6 +1913,9 @@ async function insertDigests(tx: SeedTx): Promise<void> {
         status: sql`excluded.status`,
         deliveryId: sql`excluded.delivery_id`,
         sentAt: sql`excluded.sent_at`,
+        windowStart: sql`excluded.window_start`,
+        windowEnd: sql`excluded.window_end`,
+        generatedAt: sql`excluded.generated_at`,
       },
     });
 }

@@ -1217,3 +1217,84 @@ function assertSeedRerunReusesPersistedClock(): void {
 }
 
 assertSeedRerunReusesPersistedClock();
+
+function assertVerifyRestoresClockBeforeDocumentDownload(): void {
+  const laterNow = new Date('2026-11-03T18:00:00.000Z');
+  const root = dirname(fileURLToPath(import.meta.url));
+  const verifySource = readFileSync(join(root, 'verify-demo.ts'), 'utf8');
+  const snapshotFn = verifySource.slice(
+    verifySource.indexOf('async function readDemoFixtureSnapshot'),
+  );
+  const hydrateAt = snapshotFn.indexOf('hydrateDemoSeedClock');
+  const downloadAt = snapshotFn.indexOf('readDemoDocumentObject()');
+  assert.ok(hydrateAt >= 0, 'verify-demo restores the seed clock in readDemoFixtureSnapshot');
+  assert.ok(
+    downloadAt > hydrateAt,
+    'verify-demo must restore the seed clock before downloading the Northstar document',
+  );
+  try {
+    setDemoSeedNow(DEMO_CLOCK_ANCHOR);
+    refreshDemoFixture();
+    const augustLimit = DEMO_DOCUMENT_BYTE_SIZE;
+    setDemoSeedNow(laterNow);
+    refreshDemoFixture();
+    const laterSize = DEMO_DOCUMENT_BYTE_SIZE;
+    const laterText = DEMO_DOCUMENT_TEXT;
+    const laterEvents = validSnapshot().events;
+    assert.ok(
+      laterSize > augustLimit,
+      `later seed document ${String(laterSize)} should exceed August download cap ${String(augustLimit)}`,
+    );
+
+    setDemoSeedNow(DEMO_CLOCK_ANCHOR);
+    refreshDemoFixture();
+    assert.equal(DEMO_DOCUMENT_BYTE_SIZE, augustLimit);
+    hydrateDemoSeedClock(laterEvents);
+    assert.equal(DEMO_DOCUMENT_BYTE_SIZE, laterSize);
+    assert.equal(DEMO_DOCUMENT_TEXT, laterText);
+  } finally {
+    setDemoSeedNow(DEMO_CLOCK_ANCHOR);
+    refreshDemoFixture();
+    refreshDemoCorpus();
+  }
+}
+
+function assertDailyDigestConflictUpdatesWindows(): void {
+  const root = dirname(fileURLToPath(import.meta.url));
+  const source = readFileSync(join(root, 'demo-corpus', 'insert.ts'), 'utf8');
+  const start = source.indexOf('async function insertDigests');
+  const end = source.indexOf('async function insertPinsNotesOnboarding');
+  assert.ok(start >= 0 && end > start, 'insertDigests conflict handler is present');
+  const block = source.slice(start, end);
+  assert.match(block, /windowStart:\s*sql`excluded\.window_start`/);
+  assert.match(block, /windowEnd:\s*sql`excluded\.window_end`/);
+  assert.match(block, /generatedAt:\s*sql`excluded\.generated_at`/);
+
+  const laterNow = new Date('2026-11-03T18:00:00.000Z');
+  try {
+    setDemoSeedNow(DEMO_CLOCK_ANCHOR);
+    refreshDemoCorpus();
+    const firstWindows = CORPUS_DIGEST_WINDOWS.map((row) => ({
+      start: row.windowStart,
+      end: row.windowEnd,
+    }));
+    setDemoSeedNow(laterNow);
+    refreshDemoCorpus();
+    const laterWindows = CORPUS_DIGEST_WINDOWS.map((row) => ({
+      start: row.windowStart,
+      end: row.windowEnd,
+    }));
+    assert.notDeepEqual(
+      firstWindows,
+      laterWindows,
+      'reseed digest windows move with the clock and must be written on conflict',
+    );
+  } finally {
+    setDemoSeedNow(DEMO_CLOCK_ANCHOR);
+    refreshDemoFixture();
+    refreshDemoCorpus();
+  }
+}
+
+assertVerifyRestoresClockBeforeDocumentDownload();
+assertDailyDigestConflictUpdatesWindows();

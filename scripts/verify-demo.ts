@@ -92,11 +92,38 @@ async function readDemoFixtureSnapshot(): Promise<DemoFixtureSnapshot> {
     DEMO_IDS.associationStatus,
   ];
 
+  const eventRows = await db
+    .select({
+      id: rawEvents.id,
+      teamId: rawEvents.teamId,
+      source: rawEvents.source,
+      contentText: rawEvents.contentText,
+      occurredAt: rawEvents.occurredAt,
+      visibility: rawEvents.visibility,
+      visibilityOwnerUserId: rawEvents.visibilityOwnerUserId,
+      visibilityUserIds: rawEvents.visibilityUserIds,
+      sourceMetadata: rawEvents.sourceMetadata,
+    })
+    .from(rawEvents)
+    .where(
+      inArray(rawEvents.id, [
+        DEMO_IDS.eventNote,
+        DEMO_IDS.eventEmail,
+        DEMO_IDS.eventMeeting,
+        DEMO_IDS.eventProvider,
+      ]),
+    );
+  hydrateDemoSeedClock(
+    eventRows.map((row) => ({
+      sourceMetadata: row.sourceMetadata as Record<string, unknown>,
+    })),
+  );
+  refreshDemoCorpus();
+
   const [
     workspaceRows,
     loginRows,
     integrationRows,
-    eventRows,
     entityRows,
     clusterRows,
     factRows,
@@ -146,25 +173,6 @@ async function readDemoFixtureSnapshot(): Promise<DemoFixtureSnapshot> {
       .from(integrations)
       .leftJoin(integrationSelections, eq(integrationSelections.id, DEMO_IDS.linearSelection))
       .where(eq(integrations.id, DEMO_IDS.linearIntegration)),
-    db
-      .select({
-        id: rawEvents.id,
-        teamId: rawEvents.teamId,
-        source: rawEvents.source,
-        contentText: rawEvents.contentText,
-        occurredAt: rawEvents.occurredAt,
-        visibility: rawEvents.visibility,
-        visibilityOwnerUserId: rawEvents.visibilityOwnerUserId,
-        visibilityUserIds: rawEvents.visibilityUserIds,
-        sourceMetadata: rawEvents.sourceMetadata,
-      })
-      .from(rawEvents)
-      .where(
-        inArray(
-          rawEvents.id,
-          DEMO_EVENTS.map((row) => row.id),
-        ),
-      ),
     db
       .select({
         id: entities.id,
@@ -715,8 +723,6 @@ async function main(): Promise<void> {
   assertDemoVectorEnvironment();
   try {
     const snapshot = await readDemoFixtureSnapshot();
-    hydrateDemoSeedClock(snapshot.events);
-    refreshDemoCorpus();
     assertDemoFixture(snapshot);
     assertExpandedDemoCorpus(await readExpandedDemoCorpusSnapshot());
     assertEmptyDemoWorkspace(await readEmptyDemoWorkspaceSnapshot(getDb()));
