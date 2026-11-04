@@ -350,6 +350,7 @@ async function processDriveTransientExtract(
     const fetched = await io.fetchBlob(data.objectKey, MAX_DOCUMENT_BYTES);
     body = fetched.body;
   } catch (err: unknown) {
+    if (integrations.isRetryableDriveExtractStorageError(err)) throw err;
     await handoffPersistedDriveTransientResult(io, data, {
       ok: false,
       error: (err instanceof Error ? err.message : String(err)).slice(0, 500),

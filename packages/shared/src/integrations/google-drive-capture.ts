@@ -20,10 +20,13 @@ import {
   type DriveSnapshotLocate,
 } from '#src/integrations/google-drive-diff.js';
 import {
+  DRIVE_FILE_KIND,
   DRIVE_FOLDER_KIND,
   DRIVE_SHARED_DRIVE_KIND,
   driveAncestryIds,
   driveAncestorKindFromSelectionKind,
+  driveFileCoverage,
+  driveScopeFromSelections,
   pickMostSpecificDriveAncestor,
 } from '#src/integrations/google-drive-scope.js';
 import {
@@ -1196,7 +1199,7 @@ export async function latestDriveObjectLinkHintsByFileIds(
   return hints;
 }
 
-export async function listDriveSnapshotFileIds(
+async function listDriveSnapshotFileIds(
   db: Db,
   input: { teamId: string; integrationId: string },
 ): Promise<string[]> {
@@ -1346,6 +1349,183 @@ export async function deleteDriveSnapshotsForFile(
         eq(googleDriveFileSnapshots.fileId, input.fileId),
       ),
     );
+}
+
+export type DriveTrackedExtractObjectDeleter = (cursor: {
+  objectKey: string;
+  resultObjectKey: string;
+  pendingDeleteKeys?: string[];
+  tombstones?: DriveExtractTombstone[];
+}) => Promise<string[]>;
+
+export type DriveTrackedFileDiscarder = (fileId: string) => Promise<void>;
+
+/** Cancel an in-flight extract. `cancel` keeps a tombstone; `disconnect` fails closed. */
+async function cancelDriveTrackedExtract(
+  db: Db,
+  input: {
+    teamId: string;
+    integrationId: string;
+    fileId: string;
+    deleteExtractObjects: DriveTrackedExtractObjectDeleter;
+    now?: Date;
+    mode: 'cancel' | 'disconnect';
+  },
+): Promise<void> {
+  const extractType = driveExtractCursorKey(input.fileId);
+  const [extractRow] = await db
+    .select({ cursor: integrationSyncState.cursor })
+    .from(integrationSyncState)
+    .innerJoin(integrationsTable, eq(integrationsTable.id, integrationSyncState.integrationId))
+    .where(
+      and(
+        eq(integrationsTable.teamId, input.teamId),
+        eq(integrationSyncState.integrationId, input.integrationId),
+        eq(integrationSyncState.resourceType, extractType),
+      ),
+    )
+    .limit(1);
+  const extractCursor = parseDriveExtractCursor(extractRow?.cursor);
+  if (!extractCursor) return;
+  const remainingKeys = await input.deleteExtractObjects(extractCursor);
+  if (input.mode === 'disconnect') {
+    if (remainingKeys.length > 0) {
+      throw new Error(`drive transient extract objects remain: ${remainingKeys.join(',')}`);
+    }
+    await db
+      .delete(integrationSyncState)
+      .where(
+        and(
+          eq(integrationSyncState.integrationId, input.integrationId),
+          eq(integrationSyncState.resourceType, extractType),
+        ),
+      );
+    return;
+  }
+  const remainingCurrent = remainingKeys.filter(
+    (key) => key === extractCursor.objectKey || key === extractCursor.resultObjectKey,
+  );
+  const now = input.now ?? new Date();
+  const next = retainDriveExtractCleanupCursor(extractCursor, remainingCurrent, {
+    cancelledAt: extractCursor.cancelledAt ?? now.toISOString(),
+  });
+  if (
+    shouldRetainDriveExtractCleanup(next, remainingCurrent, {
+      mode: 'cancel',
+      now: now.getTime(),
+    })
+  ) {
+    await db
+      .update(integrationSyncState)
+      .set({ cursor: next, updatedAt: now })
+      .where(
+        and(
+          eq(integrationSyncState.integrationId, input.integrationId),
+          eq(integrationSyncState.resourceType, extractType),
+        ),
+      );
+    return;
+  }
+  await db
+    .delete(integrationSyncState)
+    .where(
+      and(
+        eq(integrationSyncState.integrationId, input.integrationId),
+        eq(integrationSyncState.resourceType, extractType),
+      ),
+    );
+}
+
+export async function discardDriveTrackedFile(
+  db: Db,
+  input: {
+    teamId: string;
+    integrationId: string;
+    fileId: string;
+    deleteExtractObjects: DriveTrackedExtractObjectDeleter;
+    now?: Date;
+    mode?: 'cancel' | 'disconnect';
+  },
+): Promise<void> {
+  await deleteDriveSnapshotsForFile(db, {
+    teamId: input.teamId,
+    integrationId: input.integrationId,
+    fileId: input.fileId,
+  });
+  await cancelDriveTrackedExtract(db, {
+    teamId: input.teamId,
+    integrationId: input.integrationId,
+    fileId: input.fileId,
+    deleteExtractObjects: input.deleteExtractObjects,
+    mode: input.mode ?? 'cancel',
+    ...(input.now ? { now: input.now } : {}),
+  });
+}
+
+/**
+ * Coverage-aware snapshot/extract cleanup after a selection set narrows.
+ * Remaining empty means every tracked file is uncovered. Force-discard ids
+ * (live out-of-scope/missing/removed) are dropped even if stored ancestry
+ * still matches a remaining selection.
+ */
+export async function cleanupUncoveredDriveTrackedFiles(
+  db: Db,
+  input: {
+    teamId: string;
+    integrationId: string;
+    remainingSelections: { kind: string; externalId: string }[];
+    extraTrackedFileIds?: string[];
+    forceDiscardFileIds?: string[];
+    discardFile: DriveTrackedFileDiscarder;
+  },
+): Promise<string[]> {
+  const remainingScope = driveScopeFromSelections(input.remainingSelections);
+  const keepFileIds = new Set(
+    input.remainingSelections
+      .filter((selection) => selection.kind === DRIVE_FILE_KIND)
+      .map((selection) => selection.externalId),
+  );
+  const forceDiscardFileIds = new Set(input.forceDiscardFileIds ?? []);
+  const trackedFileIds = new Set(
+    await listDriveSnapshotFileIds(db, {
+      teamId: input.teamId,
+      integrationId: input.integrationId,
+    }),
+  );
+  await forEachDriveExtractCursorPage(db, {
+    teamId: input.teamId,
+    integrationId: input.integrationId,
+    onPage: (page) => {
+      for (const row of page) trackedFileIds.add(row.fileId);
+      return Promise.resolve();
+    },
+  });
+  for (const fileId of input.extraTrackedFileIds ?? []) trackedFileIds.add(fileId);
+  for (const fileId of forceDiscardFileIds) trackedFileIds.add(fileId);
+  const hints = await latestDriveObjectLinkHintsByFileIds(db, {
+    teamId: input.teamId,
+    integrationId: input.integrationId,
+    fileIds: [...trackedFileIds],
+  });
+  const discarded: string[] = [];
+  for (const fileId of trackedFileIds) {
+    if (!forceDiscardFileIds.has(fileId) && keepFileIds.has(fileId)) continue;
+    const hint = hints.get(fileId);
+    const coverage = forceDiscardFileIds.has(fileId)
+      ? 'out'
+      : driveFileCoverage({
+          fileId,
+          scope: remainingScope,
+          ...(hint?.parentIds.length ? { parents: hint.parentIds } : {}),
+          ...(hint?.driveId ? { driveId: hint.driveId } : {}),
+          ...(hint?.matchedAncestorId ? { matchedAncestorId: hint.matchedAncestorId } : {}),
+          ...(hint?.inheritedCandidates ? { candidates: hint.inheritedCandidates } : {}),
+        });
+    if (coverage !== 'out') continue;
+    await input.discardFile(fileId);
+    discarded.push(fileId);
+  }
+  return discarded;
 }
 
 export async function deleteDriveSnapshotsForIntegration(

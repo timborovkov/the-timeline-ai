@@ -185,53 +185,55 @@ GOOGLE_DRIVE_WEBHOOK_SECRET=...</code></pre>
           folder or shared drive computes coverage for that container's tracked files against
           remaining selections; uncovered files, including last-container leftovers, delete
           snapshots and keep a cancellation tombstone until the producer wait window settles so a
-          late <code>result.json</code> still has a janitor handle. A remaining sibling container
-          does not keep extracted text for files only under the removed folder, including
-          baseline-only files that never emitted a raw event: capture stamps walked ancestry on the
-          snapshot so deselection can classify those files without <code>getParents</code>.
-          Full-text hashes still see edits past 20k chars. Formatting-only and tiny edits (Markdown
-          markers, not signed amounts such as <code>-50000 USD</code>) skip the LLM. Tiny vs
-          substantive uses the intra-line edited span, not the hunk context kept for the judge. Tiny
-          is only whitespace, punctuation-only, case-only, or a one-letter insert/delete typo (edit
-          distance 1, lengths differ) inside one word longer than 3 characters; equal-length
-          substitutions such as <code>hiring</code>→<code>firing</code> stay substantive, as does
-          inserting or removing a whole word such as <code>not</code>. Remaining hunks bill a small
-          CRM-relevance judge through <code>llm.chatStructured</code> / the existing AI meter.
-          Judged event text packs comment evidence before hunks with a reserved budget so a long
-          diff cannot drop comments past the 4000-char cap, including the strong-signal path. Every
-          changed span must still appear in that packed event (and in the judge input when the judge
-          runs). Workspace object links resolve through <code>withTeam(...).objects</code>.
-          Deletion-only diffs emit bounded removed-text hunks. Nested-folder membership walks the
-          full ancestry past unlinked selected folders so an outer linked ancestor remains on the
-          path, including when the file itself is an unlinked explicit selection; it caches fetched
-          parent ids and the nearest selected ancestor for in-scope — never an early "out of scope"
-          boolean that would drop later files under the same folder, and never a shared-drive
-          short-circuit that would skip a nearer selected folder. Linked-object lookup uses that
-          full walked ancestry and picks the nearest linked selected ancestor (file, then folder,
-          then shared drive) — and applies the My Drive <code>root</code> object link only to My
-          Drive descendants, never to unlinked shared-drive or individually selected files outside
-          My Drive. Snapshots, team email domains, and those links load through
-          <code>withTeam(...).integrations</code>. Snapshots uniquely key content, comments, and
-          permission fingerprints so comment-only and share-only changes persist. Revisit of a
-          retained fingerprint refreshes its ordering timestamp so it becomes the latest baseline
-          again; otherwise A→B→A would leave B latest and a later edit back to B would be dropped as
-          unchanged. Comment and ACL fingerprints page <code>comments.list</code> /
-          <code>permissions.list</code> (with <code>supportsAllDrives</code>) up to the same 10×100
-          bound as folder listing — shared-drive <code>files.get</code> never returns
-          <code>permissions</code>. Bounded comment event context ranks every
-          <code>commentsHash</code> field change — added, edited, removed, resolved, reopened, and
-          other fingerprint fields such as <code>modifiedTime</code> and reply bodies fetched via
-          <code>replies[]</code> — ahead of unchanged comments, and new or changed replies ahead of
-          unchanged replies on the same line, so a transition past the first eight still reaches the
-          judged event. <code>commentsHash</code> advances only when every changed reply appears in
-          that packed context. Live <code>comments.list</code> omits deleted comments, so a
-          withdrawn comment is recovered from the previous snapshot ids and labelled
-          <code>(removed)</code> in that window. The judged event is written before the snapshot
-          advances. Delayed <code>drive.file</code> and <code>drive.changes</code> jobs are kept
-          across integration and provider-budget pauses, persist to the continuation handoff table
-          when the per-integration lock is busy, keep the continuation reason and a unique handoff
-          job id so a lock-retry cannot collide with the originating debounce job and get acked as a
-          no-op, and attach to quota or token-refresh failures so capture resumes after the pause. A
+          late <code>result.json</code> still has a janitor handle. Share revoke, activate-source
+          narrowing, last-selection incrementalSync, and disconnect use that same coverage-aware
+          cleanup rather than deleting selection rows alone. A remaining sibling container does not
+          keep extracted text for files only under the removed folder, including baseline-only files
+          that never emitted a raw event: capture stamps walked ancestry on the snapshot so
+          deselection can classify those files without <code>getParents</code>. Full-text hashes
+          still see edits past 20k chars. Formatting-only and tiny edits (Markdown markers, not
+          signed amounts such as <code>-50000 USD</code>) skip the LLM. Tiny vs substantive uses the
+          intra-line edited span, not the hunk context kept for the judge. Tiny is only whitespace,
+          punctuation-only, case-only, or a one-letter insert/delete typo (edit distance 1, lengths
+          differ) inside one word longer than 3 characters; equal-length substitutions such as
+          <code>hiring</code>→<code>firing</code> stay substantive, as does inserting or removing a
+          whole word such as <code>not</code>. Remaining hunks bill a small CRM-relevance judge
+          through <code>llm.chatStructured</code> / the existing AI meter. Judged event text packs
+          comment evidence before hunks with a reserved budget so a long diff cannot drop comments
+          past the 4000-char cap, including the strong-signal path. Every changed span must still
+          appear in that packed event (and in the judge input when the judge runs). Workspace object
+          links resolve through <code>withTeam(...).objects</code>. Deletion-only diffs emit bounded
+          removed-text hunks. Nested-folder membership walks the full ancestry past unlinked
+          selected folders so an outer linked ancestor remains on the path, including when the file
+          itself is an unlinked explicit selection; it caches fetched parent ids and the nearest
+          selected ancestor for in-scope — never an early "out of scope" boolean that would drop
+          later files under the same folder, and never a shared-drive short-circuit that would skip
+          a nearer selected folder. Linked-object lookup uses that full walked ancestry and picks
+          the nearest linked selected ancestor (file, then folder, then shared drive) — and applies
+          the My Drive <code>root</code> object link only to My Drive descendants, never to unlinked
+          shared-drive or individually selected files outside My Drive. Snapshots, team email
+          domains, and those links load through <code>withTeam(...).integrations</code>. Snapshots
+          uniquely key content, comments, and permission fingerprints so comment-only and share-only
+          changes persist. Revisit of a retained fingerprint refreshes its ordering timestamp so it
+          becomes the latest baseline again; otherwise A→B→A would leave B latest and a later edit
+          back to B would be dropped as unchanged. Comment and ACL fingerprints page
+          <code>comments.list</code> / <code>permissions.list</code> (with
+          <code>supportsAllDrives</code>) up to the same 10×100 bound as folder listing —
+          shared-drive <code>files.get</code> never returns <code>permissions</code>. Bounded
+          comment event context ranks every <code>commentsHash</code> field change — added, edited,
+          removed, resolved, reopened, and other fingerprint fields such as
+          <code>modifiedTime</code> and reply bodies fetched via <code>replies[]</code> — ahead of
+          unchanged comments, and new or changed replies ahead of unchanged replies on the same
+          line, so a transition past the first eight still reaches the judged event.
+          <code>commentsHash</code> advances only when every changed reply appears in that packed
+          context. Live <code>comments.list</code> omits deleted comments, so a withdrawn comment is
+          recovered from the previous snapshot ids and labelled <code>(removed)</code> in that
+          window. The judged event is written before the snapshot advances. Delayed
+          <code>drive.file</code> and <code>drive.changes</code> jobs are kept across integration
+          and provider-budget pauses, persist to the continuation handoff table when the
+          per-integration lock is busy, keep the continuation reason and a unique handoff job id so
+          a lock-retry cannot collide with the originating debounce job and get acked as a no-op,
+          and attach to quota or token-refresh failures so capture resumes after the pause. A
           skipped tick cannot advance past unprocessed watch work. Reactivating the same Drive
           sources keeps existing object links. PDF, Word, and Google Slides text is extracted by the
           credential-thin <code>document-extract-orchestrator</code> (ADR 0013) — the main worker
@@ -250,9 +252,10 @@ GOOGLE_DRIVE_WEBHOOK_SECRET=...</code></pre>
           an in-flight extract cannot be accepted against a newer revision. A superseded in-flight
           extract is cancelled with a cleanup tombstone until its producer finishes, rather than
           consumed immediately. Stale pending results are re-enqueued. Transient S3 timeouts and 5xx
-          reads of a valid <code>result.json</code> retry the job without consuming the result or a
-          paid extract slot. A ready extract is consumed only after the judged event and snapshot
-          are durably saved, so a later failure can reuse the paid result. Event
+          reads of a valid <code>result.json</code> or the source blob retry the job without writing
+          a failed extract, resuming capture, deleting the blob, or consuming the result or a paid
+          extract slot. A ready extract is consumed only after the judged event and snapshot are
+          durably saved, so a later failure can reuse the paid result. Event
           <code>dedup_key</code> values include the Drive revision so <code>A→B→A→B</code> emits a
           new event for the second return to B, while a retry of the same revision stays idempotent.
           Missing, out-of-scope, removed, unsupported-mime, unselected, and disconnected files

@@ -258,6 +258,15 @@ export interface SyncContext {
   }): Promise<void>;
   /** Delete retained Drive snapshots for a missing or out-of-scope file. */
   deleteDriveSnapshotsForFile?(fileId: string): Promise<void>;
+  /**
+   * Coverage-aware snapshot/extract cleanup after the watchable selection set
+   * empties or narrows (share revoke, last selection, disconnect leftovers).
+   */
+  cleanupUncoveredDriveTrackedFiles?(
+    remainingSelections: { kind: string; externalId: string }[],
+  ): Promise<void>;
+  /** Snapshot delete plus extract cancel for one tracked Drive file. */
+  discardDriveTrackedFile?(fileId: string): Promise<void>;
   listTeamEmailDomains?(): Promise<string[]>;
   linkedObjectForDriveSelection?(
     fileId: string,

@@ -563,8 +563,12 @@ async function discardTrackedDriveFile(
   reason: 'missing' | 'out_of_scope' | 'removed' | 'unsupported_mime',
   extra: Record<string, unknown> = {},
 ): Promise<void> {
-  await ctx.deleteDriveSnapshotsForFile?.(fileId);
-  await discardTransientDriveExtract(ctx, fileId);
+  if (ctx.discardDriveTrackedFile) {
+    await ctx.discardDriveTrackedFile(fileId);
+  } else {
+    await ctx.deleteDriveSnapshotsForFile?.(fileId);
+    await discardTransientDriveExtract(ctx, fileId);
+  }
   await ctx.recordAudit(`drive_file_${reason}`, { file_id: fileId, ...extra });
 }
 
@@ -1568,7 +1572,15 @@ export const googleDriveProvider: IntegrationProvider = {
   },
 
   async incrementalSync({ integration, tokens, selections, ctx, target }) {
-    if (!selections.some((selection) => driveSelectionIsWatchable(selection.kind))) return;
+    if (!selections.some((selection) => driveSelectionIsWatchable(selection.kind))) {
+      await ctx.cleanupUncoveredDriveTrackedFiles?.(
+        selections.map((selection) => ({
+          kind: selection.kind,
+          externalId: selection.externalId,
+        })),
+      );
+      return;
+    }
     if (target?.resourceType === DRIVE_FILE_KIND) {
       try {
         const refreshed = await refreshForSync(tokens, ctx);

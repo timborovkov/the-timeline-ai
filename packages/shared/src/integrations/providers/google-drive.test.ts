@@ -111,6 +111,8 @@ function syncContext(
   | 'consumeTransientDriveExtract'
   | 'cancelTransientDriveExtract'
   | 'deleteDriveSnapshotsForFile'
+  | 'cleanupUncoveredDriveTrackedFiles'
+  | 'discardDriveTrackedFile'
   | 'takeDriveExtractSlot'
 > &
   Partial<SyncContext> {
@@ -134,6 +136,7 @@ function syncContext(
     consumeTransientDriveExtract: vi.fn().mockResolvedValue(undefined),
     cancelTransientDriveExtract: vi.fn().mockResolvedValue(undefined),
     deleteDriveSnapshotsForFile: vi.fn().mockResolvedValue(undefined),
+    cleanupUncoveredDriveTrackedFiles: vi.fn().mockResolvedValue(undefined),
     takeDriveExtractSlot: vi.fn().mockResolvedValue({ allowed: true }),
     ...overrides,
   };
@@ -445,6 +448,19 @@ describe('googleDriveProvider', () => {
       selections: [],
       ctx: ctx,
     });
+    expect(ctx.loadCursor).not.toHaveBeenCalled();
+    expect(ctx.writeEvents).not.toHaveBeenCalled();
+  });
+
+  it('cleans uncovered snapshots when incrementalSync has no watchable selections', async () => {
+    const ctx = syncContext();
+    await googleDriveProvider.incrementalSync({
+      integration: { id: 'integration-1', teamId: 'team-1' } as never,
+      tokens: { access_token: 'access-token', expires_at: Date.now() + 600_000 },
+      selections: [],
+      ctx: ctx,
+    });
+    expect(ctx.cleanupUncoveredDriveTrackedFiles).toHaveBeenCalledWith([]);
     expect(ctx.loadCursor).not.toHaveBeenCalled();
     expect(ctx.writeEvents).not.toHaveBeenCalled();
   });
@@ -3077,6 +3093,45 @@ describe('googleDriveProvider', () => {
     expect(ctx.cancelTransientDriveExtract).toHaveBeenCalledWith('file-1');
     expect(ctx.consumeTransientDriveExtract).not.toHaveBeenCalled();
     expect(ctx.writeEvents).not.toHaveBeenCalled();
+    expect(ctx.recordAudit).toHaveBeenCalledWith(
+      'drive_file_out_of_scope',
+      expect.objectContaining({ file_id: 'file-1' }),
+    );
+  });
+
+  it('uses discardDriveTrackedFile when the sync context supplies the shared primitive', async () => {
+    const fetch = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((input) => {
+      const url = requestUrl(input);
+      if (url.pathname.endsWith('/files/file-1')) {
+        return Promise.resolve(
+          jsonResponse({
+            id: 'file-1',
+            name: 'Moved SOW',
+            mimeType: 'application/pdf',
+            parents: ['outside'],
+          }),
+        );
+      }
+      return Promise.resolve(jsonResponse({ message: 'unexpected' }, { status: 404 }));
+    });
+    vi.stubGlobal('fetch', fetch);
+    const ctx = syncContext({
+      discardDriveTrackedFile: vi.fn().mockResolvedValue(undefined),
+    });
+
+    await googleDriveProvider.incrementalSync({
+      integration: { id: 'integration-1', teamId: 'team-1' } as never,
+      tokens: { access_token: 'access-token', expires_at: Date.now() + 600_000 },
+      selections: [{ kind: 'drive.file', externalId: 'other-file' }],
+      ctx: ctx,
+      target: { resourceType: 'drive.file', externalId: 'file-1' },
+    });
+
+    expect(ctx.discardDriveTrackedFile).toHaveBeenCalledWith('file-1');
+    expect(ctx.deleteDriveSnapshotsForFile).not.toHaveBeenCalled();
+    expect(ctx.cancelTransientDriveExtract).not.toHaveBeenCalled();
     expect(ctx.recordAudit).toHaveBeenCalledWith(
       'drive_file_out_of_scope',
       expect.objectContaining({ file_id: 'file-1' }),

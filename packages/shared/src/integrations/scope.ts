@@ -28,30 +28,23 @@ import { rebindDriveSelectionArtifactLink } from '#src/artifacts/index.js';
 import { decryptJson, encryptJson } from '#src/crypto/secrets.js';
 import { getEnv } from '#src/env.js';
 import {
+  cleanupUncoveredDriveTrackedFiles,
   deleteDriveSnapshotsForFile as deleteDriveFileSnapshots,
   deleteDriveSnapshotsForIntegration,
-  driveExtractCursorKey,
+  discardDriveTrackedFile,
   driveExtractObjectKeys,
-  forEachDriveExtractCursorPage,
-  latestDriveObjectLinkHintsByFileIds,
   linkedObjectForDriveSelection as loadLinkedObjectForDriveSelection,
   listDriveExtractCursors,
-  listDriveSnapshotFileIds,
   listTeamEmailDomains as loadTeamEmailDomains,
   loadLatestDriveSnapshot,
-  parseDriveExtractCursor,
   remainingDriveExtractObjectKeys,
-  retainDriveExtractCleanupCursor,
   saveDriveSnapshot,
-  shouldRetainDriveExtractCleanup,
   type DriveExtractTombstone,
 } from '#src/integrations/google-drive-capture.js';
 import {
   DRIVE_FILE_KIND,
   DRIVE_FOLDER_KIND,
   DRIVE_SHARED_DRIVE_KIND,
-  driveFileCoverage,
-  driveScopeFromSelections,
 } from '#src/integrations/google-drive-scope.js';
 import {
   formatHealthPauseNotice,
@@ -213,17 +206,6 @@ async function deleteDriveTransientExtractObjects(cursor: {
   return remainingDriveExtractObjectKeys(keys, results);
 }
 
-async function tryDeleteDriveTransientExtractObjects(cursor: {
-  objectKey: string;
-  resultObjectKey: string;
-  pendingDeleteKeys?: string[];
-  tombstones?: DriveExtractTombstone[];
-}): Promise<void> {
-  const remaining = await deleteDriveTransientExtractObjects(cursor);
-  if (remaining.length > 0) {
-    throw new Error(`drive transient extract objects remain: ${remaining.join(',')}`);
-  }
-}
 const integrationHealthReset = {
   healthConsecutiveFailures: 0,
   healthFirstFailedAt: null,
@@ -289,6 +271,18 @@ function isDriveContainerKind(kind: string): boolean {
   return kind === DRIVE_FOLDER_KIND || kind === DRIVE_SHARED_DRIVE_KIND;
 }
 
+interface DriveSelectionLink {
+  kind: string;
+  externalId: string;
+  linkedObjectId: string | null;
+}
+
+interface DriveSelectionRow {
+  selectionKind: string;
+  externalId: string;
+  linkedObjectId: string | null;
+}
+
 export function createIntegrationScope(deps: {
   db: Db;
   teamId: string;
@@ -297,6 +291,130 @@ export function createIntegrationScope(deps: {
   requireTeamMember?: (otherUserId: string) => Promise<void>;
 }) {
   const { db, teamId, userId, ensureMember } = deps;
+
+  async function loadIntegrationSelectionRows(
+    scopedDb: Db,
+    integrationId: string,
+  ): Promise<DriveSelectionRow[]> {
+    return scopedDb
+      .select({
+        selectionKind: integrationSelections.selectionKind,
+        externalId: integrationSelections.externalId,
+        linkedObjectId: integrationSelections.linkedObjectId,
+      })
+      .from(integrationSelections)
+      .where(eq(integrationSelections.integrationId, integrationId));
+  }
+
+  async function applyDriveSelectionCoverageCleanup(
+    scopedDb: Db,
+    input: {
+      integrationId: string;
+      remainingSelections: DriveSelectionLink[];
+      extraTrackedFileIds?: string[];
+      forceDiscardFileIds?: string[];
+      droppedSelections?: DriveSelectionRow[];
+      mode?: 'cancel' | 'disconnect';
+    },
+  ): Promise<void> {
+    const remainingSelectionLinks = input.remainingSelections.map((selection) => ({
+      kind: selection.kind,
+      externalId: selection.externalId,
+      linkedObjectId: selection.linkedObjectId ?? null,
+    }));
+    for (const row of input.droppedSelections ?? []) {
+      if (row.selectionKind === DRIVE_FILE_KIND || isDriveContainerKind(row.selectionKind)) {
+        await rebindDriveSelectionArtifactLink(scopedDb, {
+          teamId,
+          integrationId: input.integrationId,
+          selectionKind: row.selectionKind,
+          externalId: row.externalId,
+          previousObjectId: row.linkedObjectId ?? null,
+          selections: remainingSelectionLinks,
+        });
+      }
+    }
+    const extraTrackedFileIds = [
+      ...(input.extraTrackedFileIds ?? []),
+      ...(input.droppedSelections ?? [])
+        .filter((row) => row.selectionKind === DRIVE_FILE_KIND)
+        .map((row) => row.externalId),
+    ];
+    await cleanupUncoveredDriveTrackedFiles(scopedDb, {
+      teamId,
+      integrationId: input.integrationId,
+      remainingSelections: input.remainingSelections,
+      ...(extraTrackedFileIds.length > 0 ? { extraTrackedFileIds } : {}),
+      ...(input.forceDiscardFileIds ? { forceDiscardFileIds: input.forceDiscardFileIds } : {}),
+      discardFile: (fileId) =>
+        discardDriveTrackedFile(scopedDb, {
+          teamId,
+          integrationId: input.integrationId,
+          fileId,
+          deleteExtractObjects: deleteDriveTransientExtractObjects,
+          mode: input.mode ?? 'cancel',
+        }),
+    });
+  }
+
+  async function applyDriveCleanupAfterSelectionMutation(
+    scopedDb: Db,
+    previousByIntegration: Map<string, DriveSelectionRow[]>,
+    mode: 'cancel' | 'disconnect' = 'cancel',
+  ): Promise<void> {
+    const integrationIds = [...previousByIntegration.keys()];
+    if (integrationIds.length === 0) return;
+    const providers = await scopedDb
+      .select({ id: integrationsTable.id, provider: integrationsTable.provider })
+      .from(integrationsTable)
+      .where(
+        and(eq(integrationsTable.teamId, teamId), inArray(integrationsTable.id, integrationIds)),
+      );
+    const driveIds = new Set(
+      providers.filter((row) => row.provider === 'google_drive').map((row) => row.id),
+    );
+    for (const integrationId of integrationIds) {
+      if (!driveIds.has(integrationId)) continue;
+      const remaining = await loadIntegrationSelectionRows(scopedDb, integrationId);
+      const remainingKeys = new Set(
+        remaining.map((row) => `${row.selectionKind}\x00${row.externalId}`),
+      );
+      const previous = previousByIntegration.get(integrationId) ?? [];
+      const dropped = previous.filter(
+        (row) => !remainingKeys.has(`${row.selectionKind}\x00${row.externalId}`),
+      );
+      await applyDriveSelectionCoverageCleanup(scopedDb, {
+        integrationId,
+        remainingSelections: remaining.map((row) => ({
+          kind: row.selectionKind,
+          externalId: row.externalId,
+          linkedObjectId: row.linkedObjectId ?? null,
+        })),
+        droppedSelections: dropped,
+        mode,
+      });
+    }
+  }
+
+  async function snapshotSelectionsForShareIds(
+    scopedDb: Db,
+    shareIds: string[],
+  ): Promise<Map<string, DriveSelectionRow[]>> {
+    const previousByIntegration = new Map<string, DriveSelectionRow[]>();
+    if (shareIds.length === 0) return previousByIntegration;
+    const affected = await scopedDb
+      .select({ integrationId: integrationSelections.integrationId })
+      .from(integrationSelections)
+      .where(inArray(integrationSelections.resourceShareId, shareIds));
+    const integrationIds = [...new Set(affected.map((row) => row.integrationId))];
+    for (const integrationId of integrationIds) {
+      previousByIntegration.set(
+        integrationId,
+        await loadIntegrationSelectionRows(scopedDb, integrationId),
+      );
+    }
+    return previousByIntegration;
+  }
 
   async function listIntegrations(): Promise<IntegrationRow[]> {
     await ensureMember();
@@ -714,15 +832,13 @@ export function createIntegrationScope(deps: {
         .delete(integrationWebhookSubscriptions)
         .where(eq(integrationWebhookSubscriptions.integrationId, id));
       await tx.delete(integrationSelections).where(eq(integrationSelections.integrationId, id));
-      // Paginate so leftover `{}` cursors cannot hide later extract objects
-      // from S3 cleanup. The helper is team-bound by this withTeam scope; we
-      // pass `tx` so deletes stay in the disconnect transaction.
-      await forEachDriveExtractCursorPage(tx as unknown as Db, {
-        teamId,
+      // Coverage-aware discard with remaining=[] deletes every snapshot and
+      // extract. `disconnect` fails closed if S3 objects remain; leftover `{}`
+      // cursors cannot hide later objects because the helper pages extracts.
+      await applyDriveSelectionCoverageCleanup(tx as unknown as Db, {
         integrationId: id,
-        onPage: async (page) => {
-          await Promise.all(page.map((row) => tryDeleteDriveTransientExtractObjects(row.cursor)));
-        },
+        remainingSelections: [],
+        mode: 'disconnect',
       });
       await deleteDriveSnapshotsForIntegration(tx as unknown as Db, {
         teamId,
@@ -821,6 +937,10 @@ export function createIntegrationScope(deps: {
         (share) => !keepKeys.has(`${share.resourceKind}\x00${share.externalId}`),
       );
       revokedForAttention.push(...revokedShares);
+      const previousByIntegration = await snapshotSelectionsForShareIds(
+        tx as unknown as Db,
+        revokedShares.map((share) => share.id),
+      );
       for (const share of revokedShares) {
         await tx
           .update(teamProviderResourceShares)
@@ -830,6 +950,7 @@ export function createIntegrationScope(deps: {
           .delete(integrationSelections)
           .where(eq(integrationSelections.resourceShareId, share.id));
       }
+      await applyDriveCleanupAfterSelectionMutation(tx as unknown as Db, previousByIntegration);
       if (resources.length > 0) {
         await tx
           .insert(teamProviderResourceShares)
@@ -923,6 +1044,9 @@ export function createIntegrationScope(deps: {
     const row = rows[0];
     if (!row) throw new Error('Resource share not found');
     await db.transaction(async (tx) => {
+      const previousByIntegration = await snapshotSelectionsForShareIds(tx as unknown as Db, [
+        resourceShareId,
+      ]);
       await tx
         .update(teamProviderResourceShares)
         .set({ revokedAt: new Date(), updatedAt: new Date() })
@@ -930,6 +1054,7 @@ export function createIntegrationScope(deps: {
       await tx
         .delete(integrationSelections)
         .where(eq(integrationSelections.resourceShareId, resourceShareId));
+      await applyDriveCleanupAfterSelectionMutation(tx as unknown as Db, previousByIntegration);
       await tx.insert(auditLog).values({
         teamId,
         actorUserId: userId,
@@ -1537,14 +1662,14 @@ export function createIntegrationScope(deps: {
         (selection) =>
           !selectedSelectionKeys.has(`${selection.selectionKind}\x00${selection.externalId}`),
       ).length;
-      await tx
-        .delete(integrationSelections)
-        .where(eq(integrationSelections.integrationId, integration.id));
+      const previousByIntegration = new Map<string, DriveSelectionRow[]>();
+      previousByIntegration.set(integration.id, existingSelections);
       const teamIntegrationRows = await tx
         .select({ id: integrationsTable.id })
         .from(integrationsTable)
         .where(eq(integrationsTable.teamId, teamId));
       const teamIntegrationIds = teamIntegrationRows.map((row) => row.id);
+      const duplicateIntegrationIds = new Set<string>();
       for (const share of shares) {
         const duplicateRows = await tx
           .select({ integrationId: integrationSelections.integrationId })
@@ -1559,8 +1684,20 @@ export function createIntegrationScope(deps: {
         for (const duplicate of duplicateRows) {
           if (duplicate.integrationId !== integration.id) {
             replacedIntegrationIds.add(duplicate.integrationId);
+            duplicateIntegrationIds.add(duplicate.integrationId);
           }
         }
+      }
+      for (const replacedId of duplicateIntegrationIds) {
+        previousByIntegration.set(
+          replacedId,
+          await loadIntegrationSelectionRows(tx as unknown as Db, replacedId),
+        );
+      }
+      await tx
+        .delete(integrationSelections)
+        .where(eq(integrationSelections.integrationId, integration.id));
+      for (const share of shares) {
         await tx
           .delete(integrationSelections)
           .where(
@@ -1583,6 +1720,7 @@ export function createIntegrationScope(deps: {
           })),
         );
       }
+      await applyDriveCleanupAfterSelectionMutation(tx as unknown as Db, previousByIntegration);
       await tx.insert(auditLog).values({
         teamId,
         actorUserId: userId,
@@ -1665,123 +1803,15 @@ export function createIntegrationScope(deps: {
         (row) => !nextKeys.has(`${row.selectionKind}\x00${row.externalId}`),
       );
       if (integration.provider === 'google_drive') {
-        const scopedTx = tx as unknown as Db;
-        const remainingSelectionLinks = selections.map((selection) => ({
-          kind: selection.kind,
-          externalId: selection.externalId,
-          linkedObjectId: links.get(`${selection.kind}\x00${selection.externalId}`) ?? null,
-        }));
-        const cancelTrackedExtract = async (fileId: string) => {
-          const extractType = driveExtractCursorKey(fileId);
-          const [extractRow] = await tx
-            .select({ cursor: integrationSyncState.cursor })
-            .from(integrationSyncState)
-            .where(
-              and(
-                eq(integrationSyncState.integrationId, integrationId),
-                eq(integrationSyncState.resourceType, extractType),
-              ),
-            )
-            .limit(1);
-          const extractCursor = parseDriveExtractCursor(extractRow?.cursor);
-          if (!extractCursor) return;
-          const remainingKeys = await deleteDriveTransientExtractObjects(extractCursor);
-          const remainingCurrent = remainingKeys.filter(
-            (key) => key === extractCursor.objectKey || key === extractCursor.resultObjectKey,
-          );
-          const now = new Date();
-          const next = retainDriveExtractCleanupCursor(extractCursor, remainingCurrent, {
-            cancelledAt: extractCursor.cancelledAt ?? now.toISOString(),
-          });
-          if (
-            shouldRetainDriveExtractCleanup(next, remainingCurrent, {
-              mode: 'cancel',
-              now: now.getTime(),
-            })
-          ) {
-            await tx
-              .update(integrationSyncState)
-              .set({ cursor: next, updatedAt: now })
-              .where(
-                and(
-                  eq(integrationSyncState.integrationId, integrationId),
-                  eq(integrationSyncState.resourceType, extractType),
-                ),
-              );
-            return;
-          }
-          await tx
-            .delete(integrationSyncState)
-            .where(
-              and(
-                eq(integrationSyncState.integrationId, integrationId),
-                eq(integrationSyncState.resourceType, extractType),
-              ),
-            );
-        };
-        const discardTrackedFile = async (fileId: string) => {
-          await deleteDriveFileSnapshots(scopedTx, {
-            teamId,
-            integrationId,
-            fileId,
-          });
-          await cancelTrackedExtract(fileId);
-        };
-        const remainingScope = driveScopeFromSelections(selections);
-        for (const row of dropped) {
-          if (row.selectionKind === DRIVE_FILE_KIND || isDriveContainerKind(row.selectionKind)) {
-            await rebindDriveSelectionArtifactLink(scopedTx, {
-              teamId,
-              integrationId,
-              selectionKind: row.selectionKind,
-              externalId: row.externalId,
-              previousObjectId: row.linkedObjectId,
-              selections: remainingSelectionLinks,
-            });
-          }
-        }
-        if (dropped.length > 0) {
-          const keepFileIds = new Set(
-            selections
-              .filter((selection) => selection.kind === DRIVE_FILE_KIND)
-              .map((selection) => selection.externalId),
-          );
-          const trackedFileIds = new Set(
-            await listDriveSnapshotFileIds(scopedTx, {
-              teamId,
-              integrationId,
-            }),
-          );
-          await forEachDriveExtractCursorPage(scopedTx, {
-            teamId,
-            integrationId,
-            onPage: (page) => {
-              for (const row of page) trackedFileIds.add(row.fileId);
-              return Promise.resolve();
-            },
-          });
-          for (const row of dropped) {
-            if (row.selectionKind === DRIVE_FILE_KIND) trackedFileIds.add(row.externalId);
-          }
-          const hints = await latestDriveObjectLinkHintsByFileIds(scopedTx, {
-            teamId,
-            integrationId,
-            fileIds: [...trackedFileIds],
-          });
-          for (const fileId of trackedFileIds) {
-            if (keepFileIds.has(fileId)) continue;
-            const hint = hints.get(fileId);
-            const coverage = driveFileCoverage({
-              fileId,
-              scope: remainingScope,
-              ...(hint?.parentIds.length ? { parents: hint.parentIds } : {}),
-              ...(hint?.driveId ? { driveId: hint.driveId } : {}),
-              ...(hint?.matchedAncestorId ? { matchedAncestorId: hint.matchedAncestorId } : {}),
-              ...(hint?.inheritedCandidates ? { candidates: hint.inheritedCandidates } : {}),
-            });
-            if (coverage === 'out') await discardTrackedFile(fileId);
-          }
-        }
+        await applyDriveSelectionCoverageCleanup(tx as unknown as Db, {
+          integrationId,
+          remainingSelections: selections.map((selection) => ({
+            kind: selection.kind,
+            externalId: selection.externalId,
+            linkedObjectId: links.get(`${selection.kind}\x00${selection.externalId}`) ?? null,
+          })),
+          droppedSelections: dropped,
+        });
       }
       await tx
         .delete(integrationSelections)
@@ -1853,6 +1883,37 @@ export function createIntegrationScope(deps: {
     const integration = await getIntegration(integrationId);
     if (!integration) return;
     await deleteDriveFileSnapshots(db, { teamId, integrationId, fileId });
+  }
+
+  async function cleanupUncoveredDriveTrackedFilesForIntegration(
+    integrationId: string,
+    remainingSelections: { kind: string; externalId: string }[],
+  ): Promise<void> {
+    const integration = await getIntegration(integrationId);
+    if (integration?.provider !== 'google_drive') return;
+    await applyDriveSelectionCoverageCleanup(db, {
+      integrationId,
+      remainingSelections: remainingSelections.map((selection) => ({
+        kind: selection.kind,
+        externalId: selection.externalId,
+        linkedObjectId: null,
+      })),
+    });
+  }
+
+  async function discardTrackedDriveFileForIntegration(
+    integrationId: string,
+    fileId: string,
+  ): Promise<void> {
+    const integration = await getIntegration(integrationId);
+    if (!integration) return;
+    await discardDriveTrackedFile(db, {
+      teamId,
+      integrationId,
+      fileId,
+      deleteExtractObjects: deleteDriveTransientExtractObjects,
+      mode: 'cancel',
+    });
   }
 
   async function listDriveTeamEmailDomains(): Promise<string[]> {
@@ -2255,6 +2316,8 @@ export function createIntegrationScope(deps: {
     loadLatestDriveSnapshot: loadDriveSnapshot,
     saveDriveSnapshot: persistDriveSnapshot,
     deleteDriveSnapshotsForFile: removeDriveSnapshotsForFile,
+    cleanupUncoveredDriveTrackedFiles: cleanupUncoveredDriveTrackedFilesForIntegration,
+    discardDriveTrackedFile: discardTrackedDriveFileForIntegration,
     listTeamEmailDomains: listDriveTeamEmailDomains,
     linkedObjectForDriveSelection,
     loadCursor,

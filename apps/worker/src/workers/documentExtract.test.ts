@@ -1578,6 +1578,38 @@ describe('processDocumentExtractJob — Drive transient extract', () => {
     expect(h.fetchBlob).not.toHaveBeenCalled();
   });
 
+  it('rethrows retryable source-blob S3 timeouts so BullMQ retries without burning the extract', async () => {
+    h = await makeHarness(Buffer.from('%PDF-1.4'));
+    h.fetchBlob.mockRejectedValueOnce(new Error('S3 timeout'));
+    await expect(processDocumentExtractJob({ db: h.db }, driveJob, h.io)).rejects.toThrow(
+      /S3 timeout/,
+    );
+    expect(h.writeDriveTransientResult).not.toHaveBeenCalled();
+    expect(h.resumeDriveFile).not.toHaveBeenCalled();
+    expect(h.deleteBlob).not.toHaveBeenCalled();
+  });
+
+  it('records a terminal Drive source-blob miss without retrying', async () => {
+    h = await makeHarness(Buffer.from('%PDF-1.4'));
+    const missing = Object.assign(new Error('The specified key does not exist.'), {
+      name: 'NoSuchKey',
+    });
+    h.fetchBlob.mockRejectedValueOnce(missing);
+    const result = await processDocumentExtractJob({ db: h.db }, driveJob, h.io);
+    expect(result).toMatchObject({
+      driveFileId: 'file-1',
+      skipped: true,
+      reason: 'drive_transient_fetch_failed',
+    });
+    const written = JSON.parse(
+      (h.writeDriveTransientResult.mock.calls[0]?.[1] as Buffer).toString('utf8'),
+    ) as { ok: boolean; error?: string };
+    expect(written.ok).toBe(false);
+    expect(written.error).toContain('specified key does not exist');
+    expect(h.resumeDriveFile).toHaveBeenCalledOnce();
+    expect(h.deleteBlob).toHaveBeenCalledWith('drive-transient/source');
+  });
+
   it('persists a visible Daytona misconfiguration instead of returning empty text', async () => {
     h = await makeHarness(Buffer.from('%PDF-1.4'), {
       sandboxPdfThrows: new DaytonaNotConfiguredError('PDF'),

@@ -17,7 +17,7 @@ const ALLOWED_SNAPSHOT_TABLE_FILES = new Set([
 ]);
 
 const UNSCOPED_DRIVE_DB_CALL =
-  /\b(?:listDriveExtractCursors|forEachDriveExtractCursorPage|loadLatestDriveSnapshot|saveDriveSnapshot|deleteDriveSnapshotsForFile|deleteDriveSnapshotsForIntegration|linkedObjectForDriveSelection|latestDriveObjectLinkHints|latestDriveObjectLinkHintsByFileIds|listDriveSnapshotFileIds)\s*\(\s*(?:db|tx|input\.db)\b/;
+  /\b(?:listDriveExtractCursors|forEachDriveExtractCursorPage|loadLatestDriveSnapshot|saveDriveSnapshot|deleteDriveSnapshotsForFile|deleteDriveSnapshotsForIntegration|linkedObjectForDriveSelection|latestDriveObjectLinkHints|latestDriveObjectLinkHintsByFileIds|listDriveSnapshotFileIds|cleanupUncoveredDriveTrackedFiles|discardDriveTrackedFile|cancelDriveTrackedExtract)\s*\(\s*(?:db|tx|input\.db)\b/;
 const SNAPSHOT_TABLE = /\bgoogleDriveFileSnapshots\b/;
 const UNSCOPED_LIB_LIST = /\bintegrationsLib\.listDriveExtractCursors\b/;
 
@@ -136,5 +136,41 @@ describe('Drive withTeam isolation guard', () => {
     expect(adapter).toContain('snapshotLocate');
     expect(adapter).toContain('ancestry');
     expect(source).toContain('deleteDriveSnapshotsForFile');
+    expect(source).toContain('cleanupUncoveredDriveTrackedFiles');
+    expect(source).toContain('discardDriveTrackedFile');
+  });
+
+  it('routes every Drive selection-narrowing path through coverage-aware cleanup', () => {
+    const scopeSource = readFileSync(
+      join(REPO_ROOT, 'packages/shared/src/integrations/scope.ts'),
+      'utf8',
+    );
+    expect(scopeSource).toContain('async function applyDriveSelectionCoverageCleanup');
+    for (const name of [
+      'async function shareProviderResources',
+      'async function revokeProviderResourceShare',
+      'async function activateSharedResources',
+      'async function setSelections',
+      'async function deleteIntegration',
+    ]) {
+      const start = scopeSource.indexOf(name);
+      expect(start).toBeGreaterThanOrEqual(0);
+      const next = scopeSource.indexOf('\n  async function ', start + name.length);
+      const body = scopeSource.slice(start, next === -1 ? undefined : next);
+      expect(body).toMatch(
+        /applyDriveSelectionCoverageCleanup|applyDriveCleanupAfterSelectionMutation/,
+      );
+    }
+    const providerSource = readFileSync(
+      join(REPO_ROOT, 'packages/shared/src/integrations/providers/google-drive.ts'),
+      'utf8',
+    );
+    expect(providerSource).toContain('cleanupUncoveredDriveTrackedFiles');
+    expect(providerSource).toContain('discardDriveTrackedFile');
+    const extractSource = readFileSync(
+      join(REPO_ROOT, 'apps/worker/src/workers/documentExtract.ts'),
+      'utf8',
+    );
+    expect(extractSource).toContain('isRetryableDriveExtractStorageError');
   });
 });

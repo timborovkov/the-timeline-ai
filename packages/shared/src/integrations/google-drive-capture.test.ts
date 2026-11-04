@@ -7,6 +7,7 @@ import {
   integrations,
   integrationSelections,
   integrationSyncState,
+  providerConnections,
   rawEvents,
 } from '@timeline/db';
 import { expect, vi } from '@timeline/test-support';
@@ -70,6 +71,7 @@ import {
   latestDriveObjectLinkHintsByFileIds,
   linkedObjectForDriveSelection,
   listDriveExtractCursors,
+  cleanupUncoveredDriveTrackedFiles,
   deleteDriveSnapshotsForFile,
   loadLatestDriveSnapshot,
   parseDriveExtractCursor,
@@ -1926,6 +1928,207 @@ describe('saveDriveSnapshot uniqueness', () => {
     expect(
       extractCursors.find((row) => row.fileId === 'file-folder-2')?.cursor.cleanupPending,
     ).not.toBe(true);
+  });
+
+  async function insertDriveConnection(externalAccountId: string) {
+    const [connection] = await db
+      .insert(providerConnections)
+      .values({
+        ownerUserId: USER_ID,
+        provider: 'google_drive',
+        displayName: 'Google Drive',
+        externalAccountId,
+        authSecretCiphertext: Buffer.from('00', 'hex'),
+        authSecretIv: Buffer.from('01', 'hex'),
+        authSecretTag: Buffer.from('02', 'hex'),
+      })
+      .returning();
+    if (!connection) throw new Error('provider connection insert failed');
+    return connection;
+  }
+
+  async function seedTrackedFolderFile(
+    integrationId: string,
+    fileId: string,
+    folderId: string,
+    prefix: string,
+  ) {
+    await saveDriveSnapshot(db as never, {
+      teamId: TEAM_ID,
+      integrationId,
+      fileId,
+      snapshot: {
+        contentHash: hashDrivePayload(`${prefix}-body`),
+        snapshotText: `${prefix}-body`,
+        commentsHash: `comments-${prefix}`,
+        permissionsHash: `permissions-${prefix}`,
+        mimeType: 'application/pdf',
+        ancestry: {
+          parentIds: [folderId],
+          driveId: null,
+          matchedAncestorId: folderId,
+          inheritedCandidates: [fileId, folderId],
+        },
+      },
+    });
+    await db.insert(integrationSyncState).values({
+      integrationId,
+      resourceType: driveExtractCursorKey(fileId),
+      cursor: {
+        extractId: `ext-${prefix}`,
+        objectKey: `${prefix}-source`,
+        resultObjectKey: `${prefix}-result.json`,
+        contentType: 'application/pdf',
+        filename: `${prefix}.pdf`,
+        enqueuedAt: new Date().toISOString(),
+      },
+    });
+  }
+
+  it('purges snapshots and extract when a Drive share PUT omits a selected folder', async () => {
+    const connection = await insertDriveConnection('drive-acct-share-put-revoke');
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    await scope.integrations.shareProviderResources(connection.id, [
+      { kind: 'drive.folder', externalId: 'folder-1', label: 'One' },
+      { kind: 'drive.folder', externalId: 'folder-2', label: 'Two' },
+    ]);
+    const shares = await scope.integrations.listOwnedTeamResourceShares();
+    const share1 = shares.find((row) => row.share.externalId === 'folder-1')?.share;
+    const share2 = shares.find((row) => row.share.externalId === 'folder-2')?.share;
+    if (!share1 || !share2) throw new Error('Expected Drive shares');
+    const integration = await scope.integrations.activateSharedResources({
+      providerConnectionId: connection.id,
+      resourceShareIds: [share1.id, share2.id],
+    });
+    await seedTrackedFolderFile(integration.id, 'file-folder-1', 'folder-1', 'share-put-1');
+    await seedTrackedFolderFile(integration.id, 'file-folder-2', 'folder-2', 'share-put-2');
+    await scope.integrations.shareProviderResources(connection.id, [
+      { kind: 'drive.folder', externalId: 'folder-2', label: 'Two' },
+    ]);
+    const snapshots = await db.select().from(googleDriveFileSnapshots);
+    expect(snapshots.map((row) => row.fileId)).toEqual(['file-folder-2']);
+    const extractCursors = await listDriveExtractCursors(db as never, {
+      teamId: TEAM_ID,
+      integrationId: integration.id,
+    });
+    expect(extractCursors.map((row) => row.fileId).sort()).toEqual([
+      'file-folder-1',
+      'file-folder-2',
+    ]);
+    expect(
+      extractCursors.find((row) => row.fileId === 'file-folder-1')?.cursor.cleanupPending,
+    ).toBe(true);
+    expect(
+      extractCursors.find((row) => row.fileId === 'file-folder-2')?.cursor.cleanupPending,
+    ).not.toBe(true);
+    expect(
+      (await scope.integrations.listSelections(integration.id)).map((row) => row.externalId),
+    ).toEqual(['folder-2']);
+  });
+
+  it('purges snapshots and extract when revokeProviderResourceShare drops a folder', async () => {
+    const connection = await insertDriveConnection('drive-acct-share-revoke-fn');
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    await scope.integrations.shareProviderResources(connection.id, [
+      { kind: 'drive.folder', externalId: 'folder-1', label: 'One' },
+      { kind: 'drive.folder', externalId: 'folder-2', label: 'Two' },
+    ]);
+    const shares = await scope.integrations.listOwnedTeamResourceShares();
+    const share1 = shares.find((row) => row.share.externalId === 'folder-1')?.share;
+    const share2 = shares.find((row) => row.share.externalId === 'folder-2')?.share;
+    if (!share1 || !share2) throw new Error('Expected Drive shares');
+    const integration = await scope.integrations.activateSharedResources({
+      providerConnectionId: connection.id,
+      resourceShareIds: [share1.id, share2.id],
+    });
+    await seedTrackedFolderFile(integration.id, 'file-folder-1', 'folder-1', 'share-revoke-1');
+    await seedTrackedFolderFile(integration.id, 'file-folder-2', 'folder-2', 'share-revoke-2');
+    await scope.integrations.revokeProviderResourceShare(share1.id);
+    const snapshots = await db.select().from(googleDriveFileSnapshots);
+    expect(snapshots.map((row) => row.fileId)).toEqual(['file-folder-2']);
+    const extractCursors = await listDriveExtractCursors(db as never, {
+      teamId: TEAM_ID,
+      integrationId: integration.id,
+    });
+    expect(
+      extractCursors.find((row) => row.fileId === 'file-folder-1')?.cursor.cleanupPending,
+    ).toBe(true);
+    expect(
+      extractCursors.find((row) => row.fileId === 'file-folder-2')?.cursor.cleanupPending,
+    ).not.toBe(true);
+  });
+
+  it('purges snapshots and extract when activateSharedResources narrows coverage', async () => {
+    const connection = await insertDriveConnection('drive-acct-activate-narrow');
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    await scope.integrations.shareProviderResources(connection.id, [
+      { kind: 'drive.folder', externalId: 'folder-1', label: 'One' },
+      { kind: 'drive.folder', externalId: 'folder-2', label: 'Two' },
+    ]);
+    const shares = await scope.integrations.listOwnedTeamResourceShares();
+    const share1 = shares.find((row) => row.share.externalId === 'folder-1')?.share;
+    const share2 = shares.find((row) => row.share.externalId === 'folder-2')?.share;
+    if (!share1 || !share2) throw new Error('Expected Drive shares');
+    const integration = await scope.integrations.activateSharedResources({
+      providerConnectionId: connection.id,
+      resourceShareIds: [share1.id, share2.id],
+    });
+    await seedTrackedFolderFile(integration.id, 'file-folder-1', 'folder-1', 'activate-1');
+    await seedTrackedFolderFile(integration.id, 'file-folder-2', 'folder-2', 'activate-2');
+    await scope.integrations.activateSharedResources({
+      providerConnectionId: connection.id,
+      resourceShareIds: [share2.id],
+    });
+    const snapshots = await db.select().from(googleDriveFileSnapshots);
+    expect(snapshots.map((row) => row.fileId)).toEqual(['file-folder-2']);
+    const extractCursors = await listDriveExtractCursors(db as never, {
+      teamId: TEAM_ID,
+      integrationId: integration.id,
+    });
+    expect(
+      extractCursors.find((row) => row.fileId === 'file-folder-1')?.cursor.cleanupPending,
+    ).toBe(true);
+    expect(
+      extractCursors.find((row) => row.fileId === 'file-folder-2')?.cursor.cleanupPending,
+    ).not.toBe(true);
+  });
+
+  it('force-discards a file whose stored ancestry still matches remaining scope', async () => {
+    const [integration] = await db
+      .insert(integrations)
+      .values({
+        teamId: TEAM_ID,
+        connectedByUserId: USER_ID,
+        provider: 'google_drive',
+        displayName: 'Google Drive',
+        externalAccountId: 'drive-acct-force-discard',
+        visibilityDefault: 'team',
+      })
+      .returning();
+    if (!integration) throw new Error('integration insert failed');
+    await db.insert(integrationSelections).values({
+      integrationId: integration.id,
+      selectionKind: 'drive.folder',
+      externalId: 'folder-1',
+    });
+    await seedTrackedFolderFile(integration.id, 'moved-file', 'folder-1', 'force-discard');
+    const discarded: string[] = [];
+    await cleanupUncoveredDriveTrackedFiles(db as never, {
+      teamId: TEAM_ID,
+      integrationId: integration.id,
+      remainingSelections: [{ kind: 'drive.folder', externalId: 'folder-1' }],
+      forceDiscardFileIds: ['moved-file'],
+      discardFile: async (fileId) => {
+        discarded.push(fileId);
+        await deleteDriveSnapshotsForFile(db as never, {
+          teamId: TEAM_ID,
+          integrationId: integration.id,
+          fileId,
+        });
+      },
+    });
+    expect(discarded).toEqual(['moved-file']);
+    expect(await db.select().from(googleDriveFileSnapshots)).toEqual([]);
   });
 
   it('reads snapshot ancestry when a baseline file has no Drive raw event', async () => {

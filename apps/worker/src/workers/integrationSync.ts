@@ -1510,6 +1510,15 @@ export async function runOneIntegration(
       deleteDriveSnapshotsForFile(fileId) {
         return teamScope.integrations.deleteDriveSnapshotsForFile(integrationId, fileId);
       },
+      cleanupUncoveredDriveTrackedFiles(remainingSelections) {
+        return teamScope.integrations.cleanupUncoveredDriveTrackedFiles(
+          integrationId,
+          remainingSelections,
+        );
+      },
+      discardDriveTrackedFile(fileId) {
+        return teamScope.integrations.discardDriveTrackedFile(integrationId, fileId);
+      },
       listTeamEmailDomains() {
         return teamScope.integrations.listTeamEmailDomains();
       },
