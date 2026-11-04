@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+
 import { expect } from '@timeline/test-support';
 import { vi } from '@timeline/test-support';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, it } from 'bun:test';
@@ -350,12 +352,13 @@ function docChunkHit(input: {
   folderId: string | null;
   fileKind: 'document' | 'captured';
   score?: number;
+  occurredAt?: string;
 }): SearchHit {
   const base = eventSearchHit(
     input.chunkId,
     input.score ?? 0.9,
     'document',
-    '2026-05-03T10:00:00.000Z',
+    input.occurredAt ?? '2026-05-03T10:00:00.000Z',
   );
   return {
     ...base,
@@ -2183,6 +2186,59 @@ describe('handleMcpRequest', () => {
     expect(named.results.map((row) => row.documentId)).toEqual([rootDoc.documentId]);
   });
 
+  it('applies document from/to bounds before the semantic limit', async () => {
+    const inRange = await insertChunkedDocument(db, {
+      name: 'June launch notes.pdf',
+      text: 'June launch plan',
+      createdAt: new Date('2026-06-12T00:00:00.000Z'),
+    });
+    semanticSearchFakes.search.mockImplementation(
+      (_teamId: string, _userId: string, _vector: number[], opts: SearchOpts = {}) => {
+        const distractors = Array.from({ length: 50 }, (_, index) =>
+          docChunkHit({
+            chunkId: randomUUID(),
+            documentId: randomUUID(),
+            folderId: null,
+            fileKind: 'document',
+            score: 1 - index / 100,
+            occurredAt: '2026-05-03T10:00:00.000Z',
+          }),
+        );
+        const inRangeHit = docChunkHit({
+          chunkId: inRange.chunkId,
+          documentId: inRange.documentId,
+          folderId: null,
+          fileKind: 'document',
+          score: 0.01,
+          occurredAt: '2026-06-12T00:00:00.000Z',
+        });
+        return Promise.resolve(
+          [...distractors, inRangeHit]
+            .filter((hit) => {
+              const occurred = new Date(hit.payload.occurred_at);
+              if (opts.from && occurred < opts.from) return false;
+              if (opts.to && occurred >= opts.to) return false;
+              return true;
+            })
+            .slice(0, opts.limit ?? 10),
+        );
+      },
+    );
+
+    const result = (await callTool(db, 'timeline.search', {
+      surface: 'documents',
+      query: 'launch',
+      from: '2026-06-01T00:00:00Z',
+      to: '2026-07-01T00:00:00Z',
+    })) as { results: { documentId: string }[] };
+
+    expect(lastSearchOpts()).toMatchObject({
+      from: new Date('2026-06-01T00:00:00.000Z'),
+      to: new Date('2026-07-01T00:00:00.000Z'),
+    });
+    expect(result.results.map((row) => row.documentId)).toEqual([inRange.documentId]);
+  });
+
   it('pushes supported source filters into list_events', async () => {
     await pg.exec(`
       INSERT INTO raw_events (team_id, source, content_text, occurred_at, source_metadata)
@@ -2618,6 +2674,7 @@ async function insertChunkedDocument(
     text: string;
     folderId?: string | null;
     fileKind?: 'document' | 'captured';
+    createdAt?: Date;
   },
 ): Promise<{ documentId: string; chunkId: string }> {
   const [document] = await db
@@ -2640,6 +2697,7 @@ async function insertChunkedDocument(
       version: 1,
       objectKey: `${TEAM_ID}/${document.id}/v1/${input.name}`,
       contentType: 'application/pdf',
+      ...(input.createdAt ? { createdAt: input.createdAt } : {}),
     })
     .returning({ id: documentVersions.id });
   if (!version) throw new Error('failed to insert version');
@@ -2996,6 +3054,9 @@ describe('advertised MCP parameters', () => {
                     return false;
                   }
                 }
+                const occurred = new Date(hit.payload.occurred_at);
+                if (opts.from && occurred < opts.from) return false;
+                if (opts.to && occurred >= opts.to) return false;
                 return true;
               })
               .slice(0, opts.limit ?? 20),
