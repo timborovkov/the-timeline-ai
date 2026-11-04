@@ -116,7 +116,7 @@ Starter prompts:
 Nothing is submitted to OpenAI or Anthropic, and no public connector is saved,
 until this release is deployed and every check below passes. The hard discovery
 signal is `GET https://thetimeline.cc/.well-known/oauth-authorization-server`
-returning HTTP 200 with PKCE `S256` and scopes `read` plus `agent:ask`.
+returning HTTP 200 with PKCE `S256` and scopes `read`, `capture`, plus `agent:ask`.
 Production still returned 404 for that document on 2026-08-27.
 
 1. Merge and deploy the release containing migration 0075 and the matching web
@@ -206,12 +206,12 @@ not clear provider identity, account-plan, or production deployment gates.
 - `bun run test:eval` and `bun run test:dist-imports` passed on that revision.
 - Local `GET /.well-known/oauth-authorization-server` and
   `GET /.well-known/oauth-protected-resource/api/mcp/server` returned `200` with
-  `read` plus `agent:ask`, PKCE `S256`, public-client token auth `none`, and
+  `read`, `capture`, plus `agent:ask`, PKCE `S256`, public-client token auth `none`, and
   revocation advertised.
 - Local unauthenticated `POST /api/mcp/server` returned `401` with
   `WWW-Authenticate` pointing at the protected-resource metadata document.
 - Browser consent for a local public client showed team selection, explicit
-  `read` and optional owner/admin `agent:ask`, the loopback-HTTP warning, and
+  `read`, default-on `capture`, and optional owner/admin `agent:ask`, the loopback-HTTP warning, and
   the granted AI app with a revoke control on Provider accounts.
 
 Plugin validators and isolated Codex/Claude installs were not re-run in this
@@ -507,7 +507,7 @@ Verification matrix:
 | OAuth discovery | Claude opens Timeline sign-in and consent | Pending |
 | Client identity | Consent shows the expected Claude client and callback | Pending |
 | Team selection | Reviewer chooses exactly one active team | Pending |
-| Default scope | `read` is shown and approved explicitly | Pending |
+| Default scope | `read` is shown; `capture` is a default-on checkbox; unchecking it issues a read-only grant | Pending |
 | Tool discovery | Claude lists Timeline read tools with accurate annotations | Pending |
 | Read call | A cited Northstar query succeeds | Pending |
 | Scope upgrade | Owner/admin can separately approve `agent:ask` | Pending |

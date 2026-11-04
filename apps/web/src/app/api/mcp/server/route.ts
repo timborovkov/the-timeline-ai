@@ -105,28 +105,38 @@ function invalidBearer(description: string): Response {
   );
 }
 
-async function insufficientAgentScope(
-  request: Request,
-  principal: mcpServer.McpAuthPrincipal,
-): Promise<Response | null> {
-  if (
-    principal.authType !== 'oauth' ||
-    principal.scopes.includes('agent:ask') ||
-    !(await mcpServer.isValidatedCurrentTimelineAgentCall(request))
-  ) {
-    return null;
-  }
-  const description = 'Grant the agent:ask scope to use timeline.ask';
+function insufficientScopeResponse(description: string, scope: string): Response {
   return Response.json(
     { error: 'insufficient_scope', error_description: description },
     {
       status: 403,
       headers: {
         'cache-control': 'no-store',
-        'www-authenticate': `Bearer error="insufficient_scope", error_description="${description}", scope="read agent:ask", resource_metadata="${MCP_RESOURCE_METADATA_URL}"`,
+        'www-authenticate': `Bearer error="insufficient_scope", error_description="${description}", scope="${scope}", resource_metadata="${MCP_RESOURCE_METADATA_URL}"`,
       },
     },
   );
+}
+
+async function insufficientScope(
+  request: Request,
+  principal: mcpServer.McpAuthPrincipal,
+): Promise<Response | null> {
+  if (await mcpServer.isValidatedCurrentTimelineToolCall(request, mcpServer.ASK_TOOL_NAME)) {
+    if (principal.authType !== 'oauth' || principal.scopes.includes('agent:ask')) return null;
+    return insufficientScopeResponse(
+      'Grant the agent:ask scope to use timeline.ask',
+      'read agent:ask',
+    );
+  }
+  if (await mcpServer.isValidatedCurrentTimelineToolCall(request, mcpServer.REMEMBER_TOOL_NAME)) {
+    if (principal.scopes.includes('capture')) return null;
+    return insufficientScopeResponse(
+      'Grant the capture scope to use timeline.remember',
+      'read capture',
+    );
+  }
+  return null;
 }
 
 function delegationDepth(request: Request): number {
@@ -192,7 +202,7 @@ async function dispatch(request: Request): Promise<Response> {
   if (!principal) {
     return withCors(request, invalidBearer('Invalid, expired, or revoked bearer token'));
   }
-  const scopeChallenge = await insufficientAgentScope(request, principal);
+  const scopeChallenge = await insufficientScope(request, principal);
   if (scopeChallenge) return withCors(request, scopeChallenge);
 
   const authInfo = mcpServer.buildTimelineMcpAuthInfo({

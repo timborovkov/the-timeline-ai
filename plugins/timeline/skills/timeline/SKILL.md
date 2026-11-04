@@ -31,7 +31,7 @@ Do not fan out across every surface by default. Start broad only when the reques
 
 ## Capture notes
 
-Use `timeline.remember` to store a note as team-visible ingest evidence. It creates a cited raw event and evidence through the same path as Timeline ingest webhooks. It never updates canonical objects, tasks, or other records. Suggestion and approval flows still apply; treat any later proposal as unapproved until a teammate accepts it.
+Use `timeline.remember` to store a note as team-visible ingest evidence. It requires the `capture` scope (on by default for new OAuth grants and static keys). It creates a cited raw event and evidence through the same path as Timeline ingest webhooks. It never updates canonical objects, tasks, or other records. Suggestion and approval flows still apply; treat any later proposal as unapproved until a teammate accepts it.
 
 ## Build an evidence-backed answer
 
@@ -52,22 +52,6 @@ Use `timeline.remember` to store a note as team-visible ingest evidence. It crea
 
 Adapt the answer to the request rather than switching skills. For a status update, distinguish outcomes, decisions, blockers, commitments, and source mismatches. For an incident, build the chronology first and label causal claims as confirmed, likely, or unknown. For an exact lookup, answer tersely once the record is verified.
 
-## Deprecated tool names
-
-`tools/list` advertises only the five tools above. If you remember a previous name, use its replacement instead of retrying the old tool.
-
-| Previous name | Use instead |
-| --- | --- |
-| `timeline.retrieve_workspace_context` | `timeline.search` `surface="workspace"` |
-| `timeline.search_moments`, `timeline.list_moments` | `timeline.search` `surface="moments"` |
-| `timeline.search_events`, `timeline.list_events` | `timeline.search` `surface="events"` |
-| `timeline.search_objects`, `timeline.list_objects` | `timeline.search` `surface="objects"` |
-| `timeline.list_tasks` | `timeline.search` `surface="tasks"` |
-| `timeline.search_boards` | `timeline.search` `surface="boards"` |
-| `timeline.search_documents`, `timeline.search_documents_structured`, `timeline.list_recent_document_changes` | `timeline.search` `surface="documents"` |
-| `timeline.list_calendar_events`, `timeline.resolve_time_context` | `timeline.search` `surface="calendar"` or `timePhrase` |
-| `timeline.list_integrations`, `timeline.search_integration_events` | `timeline.search` `surface="integrations"` |
-| `timeline.get_event`, `timeline.get_moment`, `timeline.get_entity`, `timeline.get_object`, `timeline.get_document`, `timeline.get_document_chunk`, `timeline.get_calendar_event`, `timeline.get_integration_resource` | `timeline.get` |
-| `timeline.ask_agent` | `timeline.ask` |
+`tools/list` advertises only the five tools above. Prefer those names for new work.
 
 If a Timeline-dependent request has no `timeline.*` tools available, stop and direct the user to the [Timeline installation guide](https://github.com/timborovkov/the-timeline-ai/tree/main/plugins/timeline/skills#connect-timeline-mcp).

@@ -586,7 +586,7 @@ const rememberOutput = z.looseObject({
 
 const READ_SECURITY_SCHEMES = [{ type: 'oauth2', scopes: ['read'] }] as const;
 const AGENT_SECURITY_SCHEMES = [{ type: 'oauth2', scopes: ['read', 'agent:ask'] }] as const;
-const WRITE_SECURITY_SCHEMES = [{ type: 'oauth2', scopes: ['read'] }] as const;
+const CAPTURE_SECURITY_SCHEMES = [{ type: 'oauth2', scopes: ['read', 'capture'] }] as const;
 
 function readAnnotations(title: string): ToolAnnotations {
   return {
@@ -654,12 +654,47 @@ const TOOLS: TimelineToolDefinition[] = [
 
 export const ASK_TOOL_NAME = 'timeline.ask';
 export const REMEMBER_TOOL_NAME = 'timeline.remember';
+export const ASK_TOOL_COMPAT_NAME = 'timeline.ask_agent';
+export const ADVERTISED_MCP_TOOL_NAMES = [
+  'timeline.search',
+  'timeline.get',
+  'timeline.subject',
+  REMEMBER_TOOL_NAME,
+  ASK_TOOL_NAME,
+] as const;
+export const COMPAT_MCP_TOOL_NAMES = [
+  'timeline.retrieve_workspace_context',
+  'timeline.search_moments',
+  'timeline.list_moments',
+  'timeline.search_events',
+  'timeline.list_events',
+  'timeline.search_objects',
+  'timeline.list_objects',
+  'timeline.list_tasks',
+  'timeline.search_boards',
+  'timeline.search_documents',
+  'timeline.search_documents_structured',
+  'timeline.list_recent_document_changes',
+  'timeline.list_calendar_events',
+  'timeline.resolve_time_context',
+  'timeline.list_integrations',
+  'timeline.search_integration_events',
+  'timeline.get_event',
+  'timeline.get_moment',
+  'timeline.get_entity',
+  'timeline.get_object',
+  'timeline.get_document',
+  'timeline.get_document_chunk',
+  'timeline.get_calendar_event',
+  'timeline.get_integration_resource',
+  ASK_TOOL_COMPAT_NAME,
+] as const;
 
 const ASK_TOOL: TimelineToolDefinition = {
   name: ASK_TOOL_NAME,
   title: 'Ask Timeline Agent',
   description:
-    'Ask the synthetic team-level Timeline agent a stateless question. It sees team-visible data, may create additive approval-queue proposals, and may invoke enabled team-shared external tools with external side effects. Formerly timeline.ask_agent.',
+    'Ask the synthetic team-level Timeline agent a stateless question. It sees team-visible data, may create additive approval-queue proposals, and may invoke enabled team-shared external tools with external side effects.',
   inputSchema: askAgentInput,
   outputSchema: askAgentOutput,
   annotations: {
@@ -687,8 +722,8 @@ const REMEMBER_TOOL: TimelineToolDefinition = {
     idempotentHint: false,
     openWorldHint: false,
   },
-  securitySchemes: WRITE_SECURITY_SCHEMES,
-  _meta: { securitySchemes: WRITE_SECURITY_SCHEMES },
+  securitySchemes: CAPTURE_SECURITY_SCHEMES,
+  _meta: { securitySchemes: CAPTURE_SECURITY_SCHEMES },
 };
 
 // Resources surface a discovery view of stable URIs the client can read
@@ -762,8 +797,8 @@ async function callTool(
 
 /**
  * Folded read capabilities behind the advertised five-tool surface.
- * `tools/list` no longer exposes these names. Prefer timeline.search,
- * timeline.get, and timeline.subject.
+ * `tools/list` advertises only the five names; previous names stay callable
+ * as compatibility aliases so existing installs keep working.
  */
 async function executeReadCapability(
   scope: TeamScope,
@@ -1825,13 +1860,44 @@ function rememberError(
   return { ok: false, error, ...extra };
 }
 
+function rememberScopeError(
+  principal: McpAuthPrincipal,
+  resourceMetadataUrl?: string,
+): McpToolExecutionResult {
+  if (!principal.scopes.includes('read'))
+    return { output: rememberError('forbidden'), isError: true };
+  const challenge = [
+    'Bearer error="insufficient_scope"',
+    'error_description="Grant the capture scope to use timeline.remember"',
+    'scope="read capture"',
+    ...(resourceMetadataUrl ? [`resource_metadata="${resourceMetadataUrl}"`] : []),
+  ].join(', ');
+  return {
+    output: rememberError('forbidden'),
+    isError: true,
+    meta: { 'mcp/www_authenticate': [challenge] },
+  };
+}
+
+async function callRememberNote(
+  ctx: HandleContext,
+  args: CallToolArgs,
+  deps: HandleMcpRequestDeps,
+): Promise<McpToolExecutionResult> {
+  const { principal } = ctx;
+  if (!principal.scopes.includes('read') || !principal.scopes.includes('capture')) {
+    return rememberScopeError(principal, ctx.resourceMetadataUrl);
+  }
+  const output = await rememberNote(withMcpScope(ctx.db, principal), principal, args, deps);
+  return { output, isError: output.ok === false };
+}
+
 async function rememberNote(
   scope: TeamScope,
   principal: McpAuthPrincipal,
   args: CallToolArgs,
   deps: HandleMcpRequestDeps,
 ): Promise<Record<string, unknown>> {
-  if (!principal.scopes.includes('read')) return rememberError('forbidden');
   const parsed = rememberInput.safeParse(args);
   if (!parsed.success) return rememberError('failed', { message: 'invalid_note' });
 
@@ -2151,11 +2217,15 @@ function decodeMcpNameHeader(value: string | null): string | undefined {
 }
 
 /**
- * Recognize a fully classified current-protocol timeline.ask request before the
- * web route emits an HTTP scope challenge. Any malformed or disagreeing
- * request falls through to the SDK so its validation ladder owns the error.
+ * Recognize a fully classified current-protocol tools/call for one Timeline
+ * tool before the web route emits an HTTP scope challenge. Any malformed or
+ * disagreeing request falls through to the SDK so its validation ladder owns
+ * the error.
  */
-export async function isValidatedCurrentTimelineAgentCall(request: Request): Promise<boolean> {
+export async function isValidatedCurrentTimelineToolCall(
+  request: Request,
+  toolName: string,
+): Promise<boolean> {
   let body: unknown;
   try {
     body = await request.clone().json();
@@ -2183,9 +2253,13 @@ export async function isValidatedCurrentTimelineAgentCall(request: Request): Pro
   }
   const params = classified.message.params as Record<string, unknown> | undefined;
   return (
-    params?.name === ASK_TOOL_NAME &&
+    params?.name === toolName &&
     decodeMcpNameHeader(request.headers.get('mcp-name')) === params.name
   );
+}
+
+export async function isValidatedCurrentTimelineAgentCall(request: Request): Promise<boolean> {
+  return isValidatedCurrentTimelineToolCall(request, ASK_TOOL_NAME);
 }
 
 function timelineAuthExtra(authInfo: AuthInfo | undefined): ValidatedTimelineAuth {
@@ -2315,32 +2389,63 @@ export function createTimelineMcpServer(input: {
       },
       ({ name }) => requiredPrompt('what_changed', { name }),
     );
-    registerTimelineTool(server, REMEMBER_TOOL, async (args) => {
-      const output = structuredOutput(
-        await callTool(input.db, principal, REMEMBER_TOOL.name, args, input.deps ?? {}),
-      );
-      return toolResult(output, output.ok === false);
-    });
-    registerTimelineTool(server, ASK_TOOL, async (args, requestContext) => {
-      const executed = await callTimelineAgent(
-        {
-          db: input.db,
-          principal,
-          token,
-          expectedResource,
-          signal: requestSignal ?? requestContext.mcpReq.signal,
-          agentDelegationDepth,
-          ...(input.authInfo?.resource
-            ? {
-                resourceMetadataUrl: timelineMcpResourceMetadataUrl(input.authInfo.resource.href),
-              }
-            : {}),
-        },
+    const agentContext = (requestSignalFromCall?: AbortSignal): HandleContext => {
+      const signal = requestSignal ?? requestSignalFromCall;
+      return {
+        db: input.db,
+        principal,
+        token,
+        expectedResource,
+        agentDelegationDepth,
+        ...(signal ? { signal } : {}),
+        ...(input.authInfo?.resource
+          ? {
+              resourceMetadataUrl: timelineMcpResourceMetadataUrl(input.authInfo.resource.href),
+            }
+          : {}),
+      };
+    };
+    registerTimelineTool(server, REMEMBER_TOOL, async (args, requestContext) => {
+      const executed = await callRememberNote(
+        agentContext(requestContext.mcpReq.signal),
         args,
         input.deps ?? {},
       );
       return toolResult(structuredOutput(executed.output), executed.isError, executed.meta);
     });
+    const askCallback = async (args: CallToolArgs, requestContext: ServerContext) => {
+      const executed = await callTimelineAgent(
+        agentContext(requestContext.mcpReq.signal),
+        args,
+        input.deps ?? {},
+      );
+      return toolResult(structuredOutput(executed.output), executed.isError, executed.meta);
+    };
+    registerTimelineTool(server, ASK_TOOL, askCallback);
+    for (const name of COMPAT_MCP_TOOL_NAMES) {
+      if (name === ASK_TOOL_COMPAT_NAME) {
+        registerTimelineTool(server, { ...ASK_TOOL, name }, askCallback);
+        continue;
+      }
+      registerTimelineTool(
+        server,
+        {
+          name,
+          title: name,
+          description:
+            'Compatibility alias for an earlier Timeline MCP tool name. Prefer the advertised Timeline tools.',
+          inputSchema: z.looseObject({}),
+          outputSchema: looseItemOutput,
+          annotations: readAnnotations(name),
+          securitySchemes: READ_SECURITY_SCHEMES,
+          _meta: { securitySchemes: READ_SECURITY_SCHEMES },
+        },
+        async (args) => {
+          const output = structuredOutput(await callTool(input.db, principal, name, args));
+          return toolResult(output);
+        },
+      );
+    }
   }
 
   return server;
@@ -2381,6 +2486,8 @@ async function isToolsListRequest(request: Request): Promise<boolean> {
   }
 }
 
+const ADVERTISED_MCP_TOOL_NAME_SET = new Set<string>(ADVERTISED_MCP_TOOL_NAMES);
+
 function injectToolSecuritySchemes(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(injectToolSecuritySchemes);
   if (!value || typeof value !== 'object') return value;
@@ -2391,14 +2498,20 @@ function injectToolSecuritySchemes(value: unknown): unknown {
     ]),
   );
   if (Array.isArray(record.tools)) {
-    record.tools = record.tools.map((tool: unknown) => {
-      if (!tool || typeof tool !== 'object' || Array.isArray(tool)) return tool;
+    record.tools = record.tools.flatMap((tool: unknown) => {
+      if (!tool || typeof tool !== 'object' || Array.isArray(tool)) return [tool];
       const descriptor = tool as Record<string, unknown>;
+      if (
+        typeof descriptor.name === 'string' &&
+        !ADVERTISED_MCP_TOOL_NAME_SET.has(descriptor.name)
+      ) {
+        return [];
+      }
       const schemes =
         typeof descriptor.name === 'string'
           ? TOOL_SECURITY_SCHEMES.get(descriptor.name)
           : undefined;
-      return schemes ? { ...descriptor, securitySchemes: schemes } : descriptor;
+      return [schemes ? { ...descriptor, securitySchemes: schemes } : descriptor];
     });
   }
   return record;

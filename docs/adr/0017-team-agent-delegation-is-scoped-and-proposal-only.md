@@ -41,11 +41,13 @@ canonical mutation. A proposal never implies acceptance; a verified teammate
 must review it.
 
 Outbound MCP read principals can list `timeline.ask` so clients can
-discover its `read agent:ask` security metadata. Call-time enforcement remains
-independent: a current-protocol read-only OAuth grant receives HTTP `403` with
-an `insufficient_scope` `WWW-Authenticate` challenge, while supported 2025
-clients receive equivalent in-band compatibility metadata and a read-only
-static key receives a stable forbidden result. A static key needs explicit
+discover its `read agent:ask` security metadata, and `timeline.remember` so
+clients can discover `read capture`. Call-time enforcement remains
+independent: a current-protocol token missing the required scope receives HTTP
+`403` with an `insufficient_scope` `WWW-Authenticate` challenge, while supported
+2025 clients receive equivalent in-band compatibility metadata. A read-only
+static key receives a stable forbidden result for `timeline.ask` and
+`insufficient_scope` for `timeline.remember`. A static key needs explicit
 admin-enabled `agent:ask`; an OAuth grant needs approval from a current owner or
 admin, and role demotion invalidates that scope. Authorized agent calls are
 stateless and return a bounded cited answer, parsed artifact references,

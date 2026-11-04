@@ -1814,6 +1814,9 @@
   "packages/shared/src/mcp-server/oauth.test.ts": {
     "group": "integration"
   },
+  "packages/shared/src/mcp-server/shipped-install-content.test.ts": {
+    "group": "unit"
+  },
   "packages/shared/src/mcp/auth.test.ts": {
     "group": "unit"
   },

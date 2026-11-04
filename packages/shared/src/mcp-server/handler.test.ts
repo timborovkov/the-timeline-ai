@@ -30,6 +30,7 @@ const { PGlite } = await import('@electric-sql/pglite');
 const {
   agentSuggestionItems,
   agentSuggestions,
+  billingUsageLedger,
   entities,
   mcpOutboundKeys,
   mcpOutboundOAuthClients,
@@ -45,10 +46,14 @@ const { drizzle } = await import('drizzle-orm/pglite');
 const { EXTERNAL_AGENT_TURN_TIMEOUT_MS } = await import('#src/agent/timeout.js');
 const { buildAgentTools } = await import('#src/agent/tools.js');
 const {
+  ADVERTISED_MCP_TOOL_NAMES,
+  ASK_TOOL_COMPAT_NAME,
+  COMPAT_MCP_TOOL_NAMES,
   buildTimelineMcpAuthInfo,
   createTimelineMcpHttpHandler,
   handleMcpRequest: handleTimelineMcpRequest,
   isValidatedCurrentTimelineAgentCall,
+  isValidatedCurrentTimelineToolCall,
   validateTimelineMcpRequestHeaders,
 } = await import('#src/mcp-server/handler.js');
 const { hashKey } = await import('#src/mcp-server/keys.js');
@@ -61,6 +66,7 @@ const TEAM_ID = '11111111-1111-1111-1111-111111111111';
 const USER_ID = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
 const MCP_RESOURCE = 'https://timeline.test/api/mcp/server';
 const TOKEN = 'tla_test_outbound_mcp_key_for_handler_tests';
+const CAPTURE_TOKEN = 'tla_test_capture_enabled_key_for_handler_tests';
 const AGENT_TOKEN = 'tla_test_agent_enabled_key_for_handler_tests';
 const WORKFLOW_EVENT_A = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1';
 const WORKFLOW_EVENT_B = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb2';
@@ -216,6 +222,14 @@ async function seed(pg: PGlite, db: ReturnType<typeof drizzle>): Promise<void> {
     {
       teamId: TEAM_ID,
       createdByUserId: USER_ID,
+      name: 'Capture-enabled handler key',
+      keyHash: hashKey(CAPTURE_TOKEN),
+      keyPrefix: CAPTURE_TOKEN.slice(0, 12),
+      scopes: ['read', 'capture'],
+    },
+    {
+      teamId: TEAM_ID,
+      createdByUserId: USER_ID,
       name: 'Agent-enabled handler key',
       keyHash: hashKey(AGENT_TOKEN),
       keyPrefix: AGENT_TOKEN.slice(0, 12),
@@ -229,9 +243,10 @@ async function callTool(
   name: string,
   args: Record<string, unknown>,
   deps: Parameters<typeof handleMcpRequest>[2] = {},
+  bearer = TOKEN,
 ): Promise<unknown> {
   const response = await handleMcpRequest(
-    { db: db as never, bearer: TOKEN },
+    { db: db as never, bearer },
     {
       jsonrpc: '2.0',
       id: 1,
@@ -780,6 +795,19 @@ describe('handleMcpRequest', () => {
         body: JSON.stringify(requestBody),
       });
 
+    await expect(
+      isValidatedCurrentTimelineToolCall(
+        currentRequest('timeline.remember', {
+          ...body,
+          params: {
+            ...body.params,
+            name: 'timeline.remember',
+            arguments: { text: 'note' },
+          },
+        }),
+        'timeline.remember',
+      ),
+    ).resolves.toBe(true);
     await expect(isValidatedCurrentTimelineAgentCall(currentRequest('timeline.ask'))).resolves.toBe(
       true,
     );
@@ -1021,19 +1049,14 @@ describe('handleMcpRequest', () => {
         idempotentHint: false,
         openWorldHint: false,
       },
-      securitySchemes: [{ type: 'oauth2', scopes: ['read'] }],
+      securitySchemes: [{ type: 'oauth2', scopes: ['read', 'capture'] }],
     });
-    expect(tools.map((tool) => tool.name).sort()).toEqual(
-      [
-        'timeline.ask',
-        'timeline.get',
-        'timeline.remember',
-        'timeline.search',
-        'timeline.subject',
-      ].sort(),
-    );
+    expect(tools.map((tool) => tool.name).sort()).toEqual([...ADVERTISED_MCP_TOOL_NAMES].sort());
     expect(tools.map((tool) => tool.name)).not.toContain('timeline.list_events');
     expect(tools.map((tool) => tool.name)).not.toContain('timeline.ask_agent');
+    for (const name of COMPAT_MCP_TOOL_NAMES) {
+      expect(tools.map((tool) => tool.name)).not.toContain(name);
+    }
   });
 
   it('loads a subject hub without mutating workspace records', async () => {
@@ -2259,6 +2282,64 @@ describe('handleMcpRequest', () => {
     expect(result.events[0]?.content_text).toContain('>team visible</external_content>');
   });
 
+  it('rejects remember without capture using insufficient_scope', async () => {
+    const request = {
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'tools/call',
+      params: { name: 'timeline.remember', arguments: { text: 'should not persist' } },
+    };
+    const staticResult = await invokeHttp(db, principal('api_key', ['read']), request);
+    const oauthResult = await invokeHttp(db, principal('oauth', ['read']), request);
+    const challenge = (payload: Record<string, unknown> | null) =>
+      (payload?.result ?? {}) as {
+        isError?: boolean;
+        _meta?: { 'mcp/www_authenticate'?: string[] };
+        structuredContent?: Record<string, unknown>;
+      };
+
+    expect(challenge(staticResult.payload)).toMatchObject({
+      isError: true,
+      structuredContent: { ok: false, error: 'forbidden' },
+    });
+    expect(challenge(staticResult.payload)._meta?.['mcp/www_authenticate']?.[0]).toContain(
+      'error="insufficient_scope"',
+    );
+    expect(challenge(staticResult.payload)._meta?.['mcp/www_authenticate']?.[0]).toContain(
+      'scope="read capture"',
+    );
+    expect(challenge(oauthResult.payload)._meta?.['mcp/www_authenticate']?.[0]).toContain(
+      'error="insufficient_scope"',
+    );
+    await expect(db.select().from(rawEvents)).resolves.toEqual([]);
+  });
+
+  it('keeps previous tool names callable without advertising them', async () => {
+    const listed = toolsListResult(
+      await handleMcpRequest(
+        { db: db as never, bearer: TOKEN },
+        { jsonrpc: '2.0', id: 1, method: 'tools/list' },
+      ),
+    ).tools.map((tool) => tool.name);
+    expect(listed.sort()).toEqual([...ADVERTISED_MCP_TOOL_NAMES].sort());
+    expect(listed).not.toContain(ASK_TOOL_COMPAT_NAME);
+
+    const events = (await callTool(db, 'timeline.list_events', { limit: 5 })) as {
+      events: unknown[];
+    };
+    expect(Array.isArray(events.events)).toBe(true);
+
+    const askAlias = await invokeHttp(db, principal('api_key', ['read']), {
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'tools/call',
+      params: { name: ASK_TOOL_COMPAT_NAME, arguments: { question: 'What changed?' } },
+    });
+    expect(askAlias.payload).toMatchObject({
+      result: { isError: true, structuredContent: { ok: false, error: 'forbidden' } },
+    });
+  });
+
   it('stores remember notes as ingest evidence without mutating records', async () => {
     const enqueueIngestProcessing = {
       enqueueExtractJob: vi.fn().mockResolvedValue(undefined),
@@ -2277,6 +2358,7 @@ describe('handleMcpRequest', () => {
         text: 'Maya confirmed the runway note is ready for the Friday board.',
       },
       { enqueueIngestProcessing },
+      CAPTURE_TOKEN,
     )) as {
       ok: boolean;
       status: string;
@@ -2332,6 +2414,13 @@ describe('handleMcpRequest', () => {
     await expect(db.select({ id: objectChanges.id }).from(objectChanges)).resolves.toEqual(
       beforeChanges,
     );
+    const ledger = await db
+      .select({ operationId: billingUsageLedger.operationId, meterId: billingUsageLedger.meterId })
+      .from(billingUsageLedger)
+      .where(eq(billingUsageLedger.operationId, `accepted_source:${result.raw_event_id}`));
+    expect(ledger).toEqual([
+      { operationId: `accepted_source:${result.raw_event_id}`, meterId: 'accepted_sources' },
+    ]);
   });
 
   it('rate-limits remember without storing a note', async () => {
@@ -2352,6 +2441,7 @@ describe('handleMcpRequest', () => {
           retryAfterMs: 12_000,
         }) as never,
       },
+      CAPTURE_TOKEN,
     )) as { ok: boolean; error: string; retry_after_seconds: number };
 
     expect(result).toMatchObject({

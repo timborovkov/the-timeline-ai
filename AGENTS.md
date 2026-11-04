@@ -277,9 +277,10 @@ Treat this file as an operating contract for agents, not a loose README.
   those events stay invisible; static keys represent a team, not a user.
   OAuth grants instead resolve the consenting member and use normal membership
   checks, so they may read private or specifically shared data that member can
-  access in the selected team. Only an owner/admin may grant OAuth `agent:ask`,
-  and token resolution invalidates that scope after demotion. Never collapse
-  these principals or role rules.
+  access in the selected team. Capture is a separate consent/key checkbox, on by
+  default, and is required for hosted `timeline.remember`. Only an owner/admin may
+  grant OAuth `agent:ask`, and token resolution invalidates that scope after
+  demotion. Never collapse these principals or role rules.
 - **Outbound MCP OAuth has one pre-principal seam.**
   [`oauth-pre-principal.ts`](packages/shared/src/mcp-server/oauth-pre-principal.ts)
   alone owns the global public-client registry, opaque authorization-code/access-token/
@@ -296,7 +297,8 @@ Treat this file as an operating contract for agents, not a loose README.
   Enabled third-party tools may still cause external side effects. Existing static MCP
   keys remain retrieval-only for canonical state unless an admin explicitly grants `agent:ask`;
   OAuth grants require a current owner/admin for that scope. Hosted MCP
-  `timeline.remember` stores cited ingest evidence through `withTeam` and never mutates
+  `timeline.remember` requires the `capture` scope, stores cited ingest evidence through
+  `withTeam`, meters accepted sources like other ingest, and never mutates
   canonical records.
 - **No SSRF from user-supplied or discovered URLs.** `validateMcpUrl`
   in [`packages/shared/src/mcp/auth.ts`](packages/shared/src/mcp/auth.ts)
