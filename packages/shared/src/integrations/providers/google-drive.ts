@@ -44,6 +44,10 @@ import {
   type DriveFileMembership,
   type DriveScopeSets,
 } from '#src/integrations/google-drive-scope.js';
+import {
+  formatDriveSpreadsheetWorkbook,
+  quoteSheetsA1SheetName,
+} from '#src/integrations/google-drive-spreadsheet.js';
 import { providerFetch } from '#src/integrations/request.js';
 import { attachSyncContinuation, isProviderRateLimitError } from '#src/integrations/types.js';
 import { childLogger } from '#src/logger.js';
@@ -75,6 +79,9 @@ const SCOPES = [
 const AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth';
 const TOKEN_URL = 'https://oauth2.googleapis.com/token';
 const DRIVE_BASE = 'https://www.googleapis.com/drive/v3';
+const SHEETS_BASE = 'https://sheets.googleapis.com/v4/spreadsheets';
+/** Repeated `ranges` query params stay well under typical URL length limits. */
+const SHEETS_BATCH_RANGE_LIMIT = 40;
 const MAX_HARVEST_BYTES = 20 * 1024 * 1024;
 /** Same page size and page cap as folder listing so comment/ACL fingerprints stay bounded. */
 const DRIVE_METADATA_PAGE_SIZE = '100';
@@ -465,13 +472,6 @@ function exportSpec(
       suffix: '.txt',
     };
   }
-  if (mimeType === 'application/vnd.google-apps.spreadsheet') {
-    return {
-      urlPath: `/files/{id}/export?mimeType=${encodeURIComponent('text/csv')}`,
-      contentType: 'text/csv',
-      suffix: '.csv',
-    };
-  }
   if (mimeType === 'application/vnd.google-apps.presentation') {
     return {
       urlPath: `/files/{id}/export?mimeType=${encodeURIComponent('application/pdf')}`,
@@ -483,11 +483,103 @@ function exportSpec(
   return { urlPath: `/files/{id}?alt=media`, contentType: mimeType, suffix: '' };
 }
 
+function isResponseTooLarge(error: unknown): boolean {
+  return Boolean(
+    error && typeof error === 'object' && 'code' in error && error.code === 'response_too_large',
+  );
+}
+
+interface SheetsTabProperties {
+  title?: string;
+  index?: number;
+}
+
+interface SheetsSpreadsheetMeta {
+  sheets?: { properties?: SheetsTabProperties }[];
+}
+
+interface SheetsValueRange {
+  values?: unknown[][];
+}
+
+async function sheetsFetchJson<T>(tokens: DriveTokens, url: URL): Promise<T> {
+  const res = await fetch(
+    url.toString(),
+    { headers: { authorization: `Bearer ${tokens.access_token}` } },
+    { maxResponseBytes: MAX_HARVEST_BYTES },
+  );
+  const text = await res.text();
+  if (!res.ok) {
+    throw new Error(`Sheets GET ${url.pathname} ${String(res.status)}: ${text}`);
+  }
+  return JSON.parse(text) as T;
+}
+
+async function sheetsBatchGetValues(
+  tokens: DriveTokens,
+  spreadsheetId: string,
+  titles: string[],
+): Promise<unknown[][][]> {
+  const rowsByTitle: unknown[][][] = titles.map(() => []);
+  for (let offset = 0; offset < titles.length; offset += SHEETS_BATCH_RANGE_LIMIT) {
+    const chunk = titles.slice(offset, offset + SHEETS_BATCH_RANGE_LIMIT);
+    const url = new URL(`${SHEETS_BASE}/${encodeURIComponent(spreadsheetId)}/values:batchGet`);
+    url.searchParams.set('majorDimension', 'ROWS');
+    url.searchParams.set('valueRenderOption', 'FORMATTED_VALUE');
+    for (const title of chunk) {
+      url.searchParams.append('ranges', quoteSheetsA1SheetName(title));
+    }
+    const page = await sheetsFetchJson<{ valueRanges?: SheetsValueRange[] }>(tokens, url);
+    const valueRanges = page.valueRanges ?? [];
+    for (let index = 0; index < chunk.length; index++) {
+      rowsByTitle[offset + index] = valueRanges[index]?.values ?? [];
+    }
+  }
+  return rowsByTitle;
+}
+
+async function downloadSpreadsheetWorkbook(
+  tokens: DriveTokens,
+  fileId: string,
+): Promise<{ body: Buffer; contentType: string; filenameSuffix: string } | null> {
+  try {
+    const metaUrl = new URL(`${SHEETS_BASE}/${encodeURIComponent(fileId)}`);
+    metaUrl.searchParams.set('fields', 'sheets.properties(title,index)');
+    const meta = await sheetsFetchJson<SheetsSpreadsheetMeta>(tokens, metaUrl);
+    const tabs = [...(meta.sheets ?? [])]
+      .map((sheet) => sheet.properties)
+      .filter((properties): properties is SheetsTabProperties & { title: string } =>
+        Boolean(properties?.title),
+      )
+      .sort((left, right) => (left.index ?? 0) - (right.index ?? 0));
+    const values =
+      tabs.length > 0
+        ? await sheetsBatchGetValues(
+            tokens,
+            fileId,
+            tabs.map((tab) => tab.title),
+          )
+        : [];
+    const workbook = formatDriveSpreadsheetWorkbook(
+      tabs.map((tab, index) => ({ title: tab.title, rows: values[index] ?? [] })),
+    );
+    const body = Buffer.from(workbook, 'utf8');
+    if (body.byteLength > MAX_HARVEST_BYTES) return null;
+    return { body, contentType: 'text/plain', filenameSuffix: '.txt' };
+  } catch (error) {
+    if (isResponseTooLarge(error)) return null;
+    throw error;
+  }
+}
+
 async function downloadFileBody(
   tokens: DriveTokens,
   fileId: string,
   mimeType: string,
 ): Promise<{ body: Buffer; contentType: string; filenameSuffix: string } | null> {
+  if (mimeType === 'application/vnd.google-apps.spreadsheet') {
+    return downloadSpreadsheetWorkbook(tokens, fileId);
+  }
   const spec = exportSpec(mimeType);
   if (!spec) return null;
   const url = `${DRIVE_BASE}${spec.urlPath.replace('{id}', encodeURIComponent(fileId))}`;
@@ -499,7 +591,7 @@ async function downloadFileBody(
       { maxResponseBytes: MAX_HARVEST_BYTES },
     );
   } catch (err) {
-    if (err && typeof err === 'object' && 'code' in err && err.code === 'response_too_large') {
+    if (isResponseTooLarge(err)) {
       return null;
     }
     throw err;

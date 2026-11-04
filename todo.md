@@ -32,7 +32,10 @@ caches parent metadata rather than early negatives, lock-busy and quota/token-re
 persistence of `drive.file` / `drive.changes` targets, contextual Markdown
 normalization that keeps signed amounts, and PDF/Word/Slides text via the
 credential-thin `document-extract-orchestrator` (ADR 0013) with a separate paid
-extract budget before Daytona/vision spend. Full Drive copies are not harvested into the document
+extract budget before Daytona/vision spend. Native Google Sheets stay on the free
+text path: capture snapshots every tab (including hidden) via Sheets API
+`spreadsheets.get` + `values.batchGet` under existing `drive.readonly`, because
+Drive `files.export` `text/csv` is first-sheet-only. Full Drive copies are not harvested into the document
 drive. Daytona misconfiguration is a visible `drive_extract_failed` audit; failed extract state is
 cleared and retried within the extract budget. Extract cursors go through `withTeam` integrations
 scope; cursor-before-enqueue plus stale-pending re-enqueue keeps the orchestrator handoff recoverable.

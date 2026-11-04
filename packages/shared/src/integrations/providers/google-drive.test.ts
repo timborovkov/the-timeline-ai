@@ -35,6 +35,8 @@ const { DRIVE_FILE_DEBOUNCE_MS, DRIVE_TRANSIENT_RESULT_TOO_LARGE, hashDrivePaylo
 const { driveCommentsHashEntries } = await import('#src/integrations/google-drive-comments.js');
 const { DRIVE_CHANGED_SPAN_MAX, DRIVE_SNAPSHOT_MAX_CHARS, buildDriveSnapshotLocate } =
   await import('#src/integrations/google-drive-diff.js');
+const { formatDriveSpreadsheetWorkbook, sheetValuesToCsv } =
+  await import('#src/integrations/google-drive-spreadsheet.js');
 
 const ORIGINAL_ENV = {
   GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID,
@@ -90,6 +92,63 @@ function requestUrl(
   return new URL(
     typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url,
   );
+}
+
+function unquoteSheetsA1Range(range: string): string {
+  const sheetPart = range.split('!')[0] ?? range;
+  if (sheetPart.startsWith("'") && sheetPart.endsWith("'") && sheetPart.length >= 2) {
+    return sheetPart.slice(1, -1).replaceAll("''", "'");
+  }
+  return sheetPart;
+}
+
+function driveSpreadsheetFetch(options: {
+  fileId?: string;
+  name?: string;
+  sheets: { title: string; index?: number; values?: unknown[][] }[];
+}): (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch> {
+  const fileId = options.fileId ?? 'file-1';
+  return (input) => {
+    const url = requestUrl(input);
+    if (url.hostname === 'sheets.googleapis.com') {
+      if (url.pathname.endsWith(`/spreadsheets/${fileId}`)) {
+        return Promise.resolve(
+          jsonResponse({
+            sheets: options.sheets.map((sheet, index) => ({
+              properties: { title: sheet.title, index: sheet.index ?? index },
+            })),
+          }),
+        );
+      }
+      if (url.pathname.endsWith('/values:batchGet')) {
+        const valueRanges = url.searchParams.getAll('ranges').map((range) => {
+          const title = unquoteSheetsA1Range(range);
+          const sheet = options.sheets.find((candidate) => candidate.title === title);
+          return { range, values: sheet?.values ?? [] };
+        });
+        return Promise.resolve(jsonResponse({ valueRanges }));
+      }
+      return Promise.resolve(new Response('unexpected Sheets path', { status: 500 }));
+    }
+    if (url.pathname.includes('/export')) {
+      return Promise.resolve(
+        new Response('first-sheet-only csv should not be used', { status: 500 }),
+      );
+    }
+    if (url.pathname.endsWith(`/files/${fileId}`)) {
+      return Promise.resolve(
+        jsonResponse({
+          id: fileId,
+          name: options.name ?? 'Budget',
+          mimeType: 'application/vnd.google-apps.spreadsheet',
+          parents: ['root'],
+          modifiedTime: '2026-06-20T10:00:00.000Z',
+        }),
+      );
+    }
+    if (url.pathname.endsWith('/comments')) return Promise.resolve(jsonResponse({ comments: [] }));
+    return Promise.resolve(jsonResponse({ permissions: [] }));
+  };
 }
 
 function syncContext(
@@ -1422,6 +1481,132 @@ describe('googleDriveProvider', () => {
     ).mock.calls[0]?.[0];
     expect(saved?.snapshotText).toHaveLength(DRIVE_SNAPSHOT_MAX_CHARS);
     expect(saved?.contentHash).not.toBe(hashDrivePayload(prefix));
+  });
+
+  it('hashes every Google Sheet tab so a later-tab edit is not dropped as unchanged', async () => {
+    const firstSheet = [
+      ['item', 'amount'],
+      ['Widgets', '12k'],
+    ];
+    const previousSecond = [['deal'], ['Northstar 12k']];
+    const nextSecond = [['deal'], ['Northstar 48k']];
+    const firstSheetCsv = sheetValuesToCsv(firstSheet);
+    const previousWorkbook = formatDriveSpreadsheetWorkbook([
+      { title: 'Summary', rows: firstSheet },
+      { title: 'Hidden pipeline', rows: previousSecond },
+    ]);
+    const nextWorkbook = formatDriveSpreadsheetWorkbook([
+      { title: 'Summary', rows: firstSheet },
+      { title: 'Hidden pipeline', rows: nextSecond },
+    ]);
+    expect(hashDrivePayload(firstSheetCsv)).toBe(hashDrivePayload(sheetValuesToCsv(firstSheet)));
+    expect(hashDrivePayload(previousWorkbook)).not.toBe(hashDrivePayload(nextWorkbook));
+
+    const fetch = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >(
+      driveSpreadsheetFetch({
+        name: 'Budget',
+        sheets: [
+          { title: 'Summary', values: firstSheet },
+          { title: 'Hidden pipeline', index: 1, values: nextSecond },
+        ],
+      }),
+    );
+    vi.stubGlobal('fetch', fetch);
+    const ctx = syncContext({
+      loadLatestDriveSnapshot: vi.fn().mockResolvedValue({
+        contentHash: hashDrivePayload(previousWorkbook),
+        snapshotText: previousWorkbook,
+        snapshotLocate: buildDriveSnapshotLocate(previousWorkbook),
+        commentsHash: driveCommentsHash([]),
+        permissionsHash: drivePermissionsHash([]),
+        mimeType: 'application/vnd.google-apps.spreadsheet',
+      }),
+    });
+
+    await googleDriveProvider.incrementalSync({
+      integration: { id: 'integration-1', teamId: 'team-1' } as never,
+      tokens: { access_token: 'access-token', expires_at: Date.now() + 600_000 },
+      selections: [{ kind: 'drive.file', externalId: 'file-1' }],
+      ctx: ctx,
+      target: { resourceType: 'drive.file', externalId: 'file-1' },
+    });
+
+    const requested = fetch.mock.calls.map(([input]) => requestUrl(input));
+    expect(
+      requested.some(
+        (url) => url.hostname === 'www.googleapis.com' && url.pathname.includes('/export'),
+      ),
+    ).toBe(false);
+    expect(
+      requested.some(
+        (url) =>
+          url.hostname === 'sheets.googleapis.com' && url.pathname.endsWith('/spreadsheets/file-1'),
+      ),
+    ).toBe(true);
+    expect(
+      requested.some(
+        (url) =>
+          url.hostname === 'sheets.googleapis.com' && url.pathname.endsWith('/values:batchGet'),
+      ),
+    ).toBe(true);
+    expect(ctx.enqueueTransientDriveExtract).not.toHaveBeenCalled();
+    expect(ctx.judgeDriveChange).toHaveBeenCalled();
+    expect(ctx.writeEvents).toHaveBeenCalled();
+    expect(ctx.saveDriveSnapshot).toHaveBeenCalledWith(
+      expect.objectContaining({
+        contentHash: hashDrivePayload(nextWorkbook),
+        snapshotText: nextWorkbook,
+      }),
+    );
+    const saved = (
+      ctx.saveDriveSnapshot as unknown as {
+        mock: { calls: [{ contentHash: string }][] };
+      }
+    ).mock.calls[0]?.[0];
+    expect(saved?.contentHash).not.toBe(hashDrivePayload(firstSheetCsv));
+    expect(saved?.contentHash).not.toBe(hashDrivePayload(previousWorkbook));
+  });
+
+  it('takes the unchanged-snapshot branch when every Sheet tab is unchanged', async () => {
+    const workbook = formatDriveSpreadsheetWorkbook([
+      { title: 'Summary', rows: [['ok']] },
+      { title: 'Notes', rows: [['same']] },
+    ]);
+    const fetch = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >(
+      driveSpreadsheetFetch({
+        sheets: [
+          { title: 'Summary', values: [['ok']] },
+          { title: 'Notes', index: 1, values: [['same']] },
+        ],
+      }),
+    );
+    vi.stubGlobal('fetch', fetch);
+    const ctx = syncContext({
+      loadLatestDriveSnapshot: vi.fn().mockResolvedValue({
+        contentHash: hashDrivePayload(workbook),
+        snapshotText: workbook,
+        snapshotLocate: buildDriveSnapshotLocate(workbook),
+        commentsHash: driveCommentsHash([]),
+        permissionsHash: drivePermissionsHash([]),
+        mimeType: 'application/vnd.google-apps.spreadsheet',
+      }),
+    });
+
+    await googleDriveProvider.incrementalSync({
+      integration: { id: 'integration-1', teamId: 'team-1' } as never,
+      tokens: { access_token: 'access-token', expires_at: Date.now() + 600_000 },
+      selections: [{ kind: 'drive.file', externalId: 'file-1' }],
+      ctx: ctx,
+      target: { resourceType: 'drive.file', externalId: 'file-1' },
+    });
+
+    expect(ctx.judgeDriveChange).not.toHaveBeenCalled();
+    expect(ctx.writeEvents).not.toHaveBeenCalled();
+    expect(ctx.saveDriveSnapshot).not.toHaveBeenCalled();
   });
 
   it('skips a whitespace-only prefix edit on a long document when the suffix window is unchanged', async () => {

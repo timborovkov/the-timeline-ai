@@ -1835,6 +1835,9 @@
   "packages/shared/src/integrations/google-drive-scope.test.ts": {
     "group": "unit"
   },
+  "packages/shared/src/integrations/google-drive-spreadsheet.test.ts": {
+    "group": "unit"
+  },
   "packages/shared/src/integrations/google-drive-team-isolation.test.ts": {
     "group": "unit"
   },

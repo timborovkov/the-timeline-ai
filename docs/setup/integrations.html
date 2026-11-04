@@ -95,7 +95,13 @@
           <code>https://thetimeline.cc/api/integrations/google_drive/callback</code>. Authorized
           JavaScript origins are not used by Timeline's server-side callback flow.
         </li>
-        <li>Enable the Google Drive API for the project.</li>
+        <li>
+          Enable the Google Drive API and the Google Sheets API for the project. Native Sheets
+          capture reads every tab through Sheets API
+          <code>spreadsheets.get</code> / <code>values.batchGet</code> under existing
+          <code>drive.readonly</code> (Drive <code>files.export</code> <code>text/csv</code> is
+          first-sheet-only). No extra OAuth scope is requested.
+        </li>
         <li>
           Ensure the OAuth consent screen allows these scopes:
           <code>openid</code>, <code>email</code>,
@@ -145,35 +151,40 @@ GOOGLE_DRIVE_WEBHOOK_SECRET=...</code></pre>
         </li>
         <li>
           File capture fetches text transiently, hashes the full extracted text, then stores a
-          truncated 20k prefix plus a suffix window and a full-document chunk locate index. Only the
-          latest retained state keeps per-chunk extracted text to detect later edits; older states
-          keep hashes only. That latest extracted text is deleted on disconnect or file removal.
-          Change detection diffs those stored windows like-for-like against the current full text
-          and always keeps added and removed hunks together. Prefix equivalence never proves the
-          suffix is unchanged: if the full-text hash moved, the result is never classified
-          identical: the suffix or full-document chunk index (hashes plus stored chunk text) locates
-          the changed region, including chunks that straddle the prefix and suffix bounds. Each
-          mismatched chunk is char-diffed against the stored previous chunk so hunks are centered on
-          every distinct changed span and truncated around that span — a first-to-last bounding span
-          is not used, because truncation would hide a middle edit. Span collection aborts once more
-          than 20 spans are found so persist is refused rather than dropping a later span, and each
-          resync scan stays inside an 8k window so a long document with thousands of edits cannot
-          rebuild a full remaining-text map. If count or budget would drop any span, or packed event
-          text cannot keep every span, the text baseline does not advance (the capture splits across
-          events or defers persist). One persist guard enforces that invariant on every path,
-          including strong-signal comments: more than 20 spans plus a comment change cannot advance
-          the text hash. Comment and reply fingerprints keep the full compacted body through hashing
-          and change detection; packed event context preview-truncates only unchanged comments and
-          replies. Comment context puts new or changed replies first, and
-          <code>commentsHash</code> advances only when every changed reply is in that packed
-          context. Replacing a Drive selection's workspace object link moves that file's artifact
-          anchors onto the object the most-specific remaining selected ancestor would pick (file,
-          then folder, then shared drive). A remaining overlapping container keeps the previous
-          object only when it is more specific than the changed selection. Membership walks the full
-          ancestry past unlinked selected folders so an outer linked folder stays on the candidate
-          path, still walks parents even when a shared drive already matches so a selected folder
-          inside that drive wins, and still walks ancestors of an explicitly selected file so an
-          unlinked file under a nested subfolder of a linked folder inherits that folder. Live
+          truncated 20k prefix plus a suffix window and a full-document chunk locate index. Native
+          Google Sheets stay on that free text path: capture snapshots every tab (including hidden)
+          through Sheets API <code>spreadsheets.get</code> / <code>values.batchGet</code> under
+          existing <code>drive.readonly</code>, because Drive <code>files.export</code>
+          <code>text/csv</code> is first-sheet-only, then hashes the combined
+          <code># Sheet:</code> CSV workbook so a later-tab edit is not dropped as unchanged. Only
+          the latest retained state keeps per-chunk extracted text to detect later edits; older
+          states keep hashes only. That latest extracted text is deleted on disconnect or file
+          removal. Change detection diffs those stored windows like-for-like against the current
+          full text and always keeps added and removed hunks together. Prefix equivalence never
+          proves the suffix is unchanged: if the full-text hash moved, the result is never
+          classified identical: the suffix or full-document chunk index (hashes plus stored chunk
+          text) locates the changed region, including chunks that straddle the prefix and suffix
+          bounds. Each mismatched chunk is char-diffed against the stored previous chunk so hunks
+          are centered on every distinct changed span and truncated around that span — a
+          first-to-last bounding span is not used, because truncation would hide a middle edit. Span
+          collection aborts once more than 20 spans are found so persist is refused rather than
+          dropping a later span, and each resync scan stays inside an 8k window so a long document
+          with thousands of edits cannot rebuild a full remaining-text map. If count or budget would
+          drop any span, or packed event text cannot keep every span, the text baseline does not
+          advance (the capture splits across events or defers persist). One persist guard enforces
+          that invariant on every path, including strong-signal comments: more than 20 spans plus a
+          comment change cannot advance the text hash. Comment and reply fingerprints keep the full
+          compacted body through hashing and change detection; packed event context
+          preview-truncates only unchanged comments and replies. Comment context puts new or changed
+          replies first, and <code>commentsHash</code> advances only when every changed reply is in
+          that packed context. Replacing a Drive selection's workspace object link moves that file's
+          artifact anchors onto the object the most-specific remaining selected ancestor would pick
+          (file, then folder, then shared drive). A remaining overlapping container keeps the
+          previous object only when it is more specific than the changed selection. Membership walks
+          the full ancestry past unlinked selected folders so an outer linked folder stays on the
+          candidate path, still walks parents even when a shared drive already matches so a selected
+          folder inside that drive wins, and still walks ancestors of an explicitly selected file so
+          an unlinked file under a nested subfolder of a linked folder inherits that folder. Live
           capture rebinds that file's anchors onto the newly resolved object before evidence attach,
           without moving sibling files. The selection-row update and every rebind write share one
           transaction, without rewriting the previous company's canonical entity. Assigning a
