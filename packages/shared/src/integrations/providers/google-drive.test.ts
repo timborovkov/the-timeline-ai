@@ -2105,7 +2105,7 @@ describe('googleDriveProvider', () => {
     });
     expect(ctx.linkedObjectForDriveSelection).toHaveBeenCalledWith(
       'file-1',
-      ['root'],
+      ['file-1', 'root'],
       'file-1',
       {},
     );
@@ -2863,7 +2863,7 @@ describe('googleDriveProvider', () => {
 
     expect(ctx.linkedObjectForDriveSelection).toHaveBeenCalledWith(
       'file-nested',
-      ['nested'],
+      expect.arrayContaining(['nested', 'selected-folder']),
       'selected-folder',
       {},
     );

@@ -264,6 +264,47 @@ function selectedFolderOnPath(id: string, scope: DriveScopeSets): boolean {
   return scope.folders.has(id) || (id === 'root' && scope.watchesRoot);
 }
 
+export interface DriveFileMembership {
+  inScope: boolean;
+  matchedAncestorId: string | null;
+  ancestryIds: string[];
+}
+
+function membershipAncestryIds(
+  input: {
+    fileId: string;
+    parents?: string[];
+    driveId?: string | null;
+    matchedAncestorId?: string | null;
+    myDriveRootId?: string | null;
+    scope: DriveScopeSets;
+  },
+  walked: string[],
+): string[] {
+  return driveAncestryIds({
+    fileId: input.fileId,
+    parentIds: [...(input.parents ?? []), ...walked],
+    ...(input.matchedAncestorId !== undefined
+      ? { matchedAncestorId: input.matchedAncestorId }
+      : {}),
+    ...(input.driveId !== undefined ? { driveId: input.driveId } : {}),
+    myDriveRootId: input.myDriveRootId ?? input.scope.myDriveRootId,
+  });
+}
+
+function membershipResult(
+  input: Parameters<typeof membershipAncestryIds>[0],
+  walked: string[],
+  matchedAncestorId: string | null,
+  inScope: boolean,
+): DriveFileMembership {
+  return {
+    inScope,
+    matchedAncestorId,
+    ancestryIds: membershipAncestryIds(input, walked),
+  };
+}
+
 export async function resolveDriveFileMembership(input: {
   fileId: string;
   parents?: string[];
@@ -272,39 +313,36 @@ export async function resolveDriveFileMembership(input: {
   cache: DriveAncestryCache;
   getParents: (folderId: string) => Promise<string[] | null>;
   depthCap?: number;
-}): Promise<{ inScope: boolean; matchedAncestorId: string | null }> {
+}): Promise<DriveFileMembership> {
   if (input.scope.files.has(input.fileId)) {
-    return { inScope: true, matchedAncestorId: input.fileId };
+    return membershipResult(input, [], input.fileId, true);
+  }
+
+  const shouldWalk =
+    (input.parents?.length ?? 0) > 0 &&
+    (input.scope.folders.size > 0 || input.scope.sharedDrives.size > 0 || input.scope.watchesRoot);
+  const walked = shouldWalk
+    ? await walkNearestSelectedAncestor(input)
+    : { selectedId: null, ancestryIds: [] };
+
+  if (walked.selectedId) {
+    return membershipResult(input, walked.ancestryIds, walked.selectedId, true);
   }
 
   const payloadAncestor = driveMostSpecificSelectedAncestor(input);
-  const payloadIsImmediateFolder = Boolean(
-    payloadAncestor &&
-    selectedFolderOnPath(payloadAncestor, input.scope) &&
-    (payloadAncestor === input.fileId || (input.parents ?? []).includes(payloadAncestor)),
-  );
-  const shouldWalkForMoreSpecificFolder =
-    input.scope.folders.size > 0 && (input.parents?.length ?? 0) > 0 && !payloadIsImmediateFolder;
-
-  if (shouldWalkForMoreSpecificFolder) {
-    const walked = await walkNearestSelectedAncestor(input);
-    if (walked) return { inScope: true, matchedAncestorId: walked };
-  }
-
-  if (payloadAncestor) return { inScope: true, matchedAncestorId: payloadAncestor };
+  if (payloadAncestor) return membershipResult(input, walked.ancestryIds, payloadAncestor, true);
 
   const hint = driveFileCoverage(input);
-  if (hint === 'out') return { inScope: false, matchedAncestorId: null };
+  if (hint === 'out') return membershipResult(input, walked.ancestryIds, null, false);
   if (hint === 'in') {
-    return {
-      inScope: true,
-      matchedAncestorId: driveMostSpecificSelectedAncestor(input),
-    };
+    return membershipResult(
+      input,
+      walked.ancestryIds,
+      driveMostSpecificSelectedAncestor(input),
+      true,
+    );
   }
-
-  const walked = await walkNearestSelectedAncestor(input);
-  if (walked) return { inScope: true, matchedAncestorId: walked };
-  return { inScope: false, matchedAncestorId: null };
+  return membershipResult(input, walked.ancestryIds, null, false);
 }
 
 async function walkNearestSelectedAncestor(input: {
@@ -315,13 +353,15 @@ async function walkNearestSelectedAncestor(input: {
   cache: DriveAncestryCache;
   getParents: (folderId: string) => Promise<string[] | null>;
   depthCap?: number;
-}): Promise<string | null> {
+}): Promise<{ selectedId: string | null; ancestryIds: string[] }> {
   const depthCap = input.depthCap ?? 32;
   const queue: { id: string; path: string[] }[] = (input.parents ?? []).map((id) => ({
     id,
     path: [id],
   }));
   const seen = new Set<string>();
+  const ancestryIds: string[] = [];
+  let nearestFolder: { id: string; path: string[] } | null = null;
   let nearestSharedDrive: { id: string; path: string[] } | null = null;
   let depth = 0;
   while (queue.length > 0 && depth++ < depthCap) {
@@ -329,14 +369,14 @@ async function walkNearestSelectedAncestor(input: {
     if (!node) break;
     if (seen.has(node.id)) continue;
     seen.add(node.id);
+    ancestryIds.push(node.id);
     if (selectedFolderOnPath(node.id, input.scope)) {
-      rememberSelectedAncestor(input.cache, node.path, node.id);
-      return node.id;
-    }
-    const knownSelected = input.cache.selectedAncestorById.get(node.id);
-    if (knownSelected && selectedFolderOnPath(knownSelected, input.scope)) {
-      rememberSelectedAncestor(input.cache, node.path, knownSelected);
-      return knownSelected;
+      nearestFolder ??= node;
+    } else {
+      const knownSelected = input.cache.selectedAncestorById.get(node.id);
+      if (knownSelected && selectedFolderOnPath(knownSelected, input.scope)) {
+        nearestFolder ??= { id: knownSelected, path: [...node.path, knownSelected] };
+      }
     }
     if (input.scope.sharedDrives.has(node.id)) {
       nearestSharedDrive ??= node;
@@ -357,13 +397,15 @@ async function walkNearestSelectedAncestor(input: {
       queue.push({ id: parent, path: [...node.path, parent] });
     }
   }
-  if (nearestSharedDrive) {
-    rememberSelectedAncestor(input.cache, nearestSharedDrive.path, nearestSharedDrive.id);
-    return nearestSharedDrive.id;
+  const selected = nearestFolder ?? nearestSharedDrive;
+  if (selected) {
+    rememberSelectedAncestor(input.cache, selected.path, selected.id);
+    return { selectedId: selected.id, ancestryIds };
   }
   if (input.driveId && input.scope.sharedDrives.has(input.driveId)) {
     rememberSelectedAncestor(input.cache, input.parents ?? [], input.driveId);
-    return input.driveId;
+    if (!ancestryIds.includes(input.driveId)) ancestryIds.push(input.driveId);
+    return { selectedId: input.driveId, ancestryIds };
   }
-  return null;
+  return { selectedId: null, ancestryIds };
 }

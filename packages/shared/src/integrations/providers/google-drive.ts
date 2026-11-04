@@ -39,6 +39,7 @@ import {
   isSupportedDriveMimeType,
   resolveDriveFileMembership,
   type DriveAncestryCache,
+  type DriveFileMembership,
   type DriveScopeSets,
 } from '#src/integrations/google-drive-scope.js';
 import { providerFetch } from '#src/integrations/request.js';
@@ -433,7 +434,7 @@ async function fileInSelectedSubtree(
   file: Pick<DriveFile, 'id' | 'parents' | 'driveId'>,
   scope: DriveScopeSets,
   cache: DriveAncestryCache,
-): Promise<{ inScope: boolean; matchedAncestorId: string | null }> {
+): Promise<DriveFileMembership> {
   return resolveDriveFileMembership({
     fileId: file.id,
     scope,
@@ -1343,7 +1344,7 @@ async function processDriveFile(
   const linked = ctx.linkedObjectForDriveSelection
     ? await ctx.linkedObjectForDriveSelection(
         file.id,
-        file.parents ?? [],
+        membership.ancestryIds.length > 0 ? membership.ancestryIds : (file.parents ?? []),
         membership.matchedAncestorId,
         {
           ...(file.driveId ? { driveId: file.driveId } : {}),

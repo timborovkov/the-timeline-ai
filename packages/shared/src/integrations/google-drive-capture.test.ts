@@ -1209,6 +1209,68 @@ describe('saveDriveSnapshot uniqueness', () => {
     ).resolves.toBeNull();
   });
 
+  it('picks the nearest linked selected ancestor when a closer selected folder is unlinked', async () => {
+    const [integration] = await db
+      .insert(integrations)
+      .values({
+        teamId: TEAM_ID,
+        connectedByUserId: USER_ID,
+        provider: 'google_drive',
+        displayName: 'Google Drive',
+        externalAccountId: 'drive-acct-inner-unlinked',
+        visibilityDefault: 'team',
+      })
+      .returning();
+    if (!integration) throw new Error('integration insert failed');
+    const [northstar] = await db
+      .insert(entities)
+      .values({
+        teamId: TEAM_ID,
+        type: 'company',
+        canonicalName: 'Northstar',
+        status: 'open',
+      })
+      .returning();
+    if (!northstar) throw new Error('object insert failed');
+    await db.insert(integrationSelections).values([
+      {
+        integrationId: integration.id,
+        selectionKind: 'drive.folder',
+        externalId: 'inner',
+        linkedObjectId: null,
+      },
+      {
+        integrationId: integration.id,
+        selectionKind: 'drive.folder',
+        externalId: 'outer',
+        linkedObjectId: northstar.id,
+      },
+    ]);
+
+    await expect(
+      linkedObjectForDriveSelection(db as never, {
+        teamId: TEAM_ID,
+        integrationId: integration.id,
+        fileId: 'doc',
+        parentIds: ['nested', 'inner', 'outer'],
+        matchedAncestorId: 'inner',
+      }),
+    ).resolves.toMatchObject({
+      id: northstar.id,
+      inheritedFrom: 'outer',
+      inheritedCandidates: ['doc', 'nested', 'inner', 'outer'],
+    });
+    await expect(
+      linkedObjectForDriveSelection(db as never, {
+        teamId: TEAM_ID,
+        integrationId: integration.id,
+        fileId: 'doc',
+        parentIds: ['nested'],
+        matchedAncestorId: 'inner',
+      }),
+    ).resolves.toBeNull();
+  });
+
   it('lists orphan Drive extract cursors and ignores fresh pending extracts', async () => {
     const [integration] = await db
       .insert(integrations)

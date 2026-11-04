@@ -17,6 +17,7 @@ import {
   findArtifactClustersByAnchors,
   listArtifactClusterEvidence,
   reconcileArtifactEvidence,
+  rebindDriveFileObjectLink,
   rebindDriveSelectionArtifactLink,
 } from '#src/artifacts/index.js';
 import { applyDbMigrations } from '#src/test/pglite.js';
@@ -910,6 +911,58 @@ describe('artifact reconciliation', () => {
       .where(eq(artifactClusterAnchors.anchorValue, `google_drive:${fileId}`));
     return row?.clusterId;
   }
+
+  it('rebinds one Drive file onto the live resolver object without moving sibling files', async () => {
+    const northstar = await insertCompany('Northstar');
+    const acme = await insertCompany('Acme Labs');
+    const source = await insertCluster(northstar);
+    const target = await insertCluster(acme);
+    await insertDriveFileAnchor({
+      clusterId: source.id,
+      fileId: 'file-1',
+      inheritedFrom: 'folder-a',
+      candidates: ['file-1', 'folder-a'],
+    });
+    await insertDriveFileAnchor({
+      clusterId: source.id,
+      fileId: 'file-other',
+      inheritedFrom: 'folder-a',
+      candidates: ['file-other', 'folder-a'],
+    });
+
+    await rebindDriveFileObjectLink(db as never, {
+      teamId: TEAM_ID,
+      fileId: 'file-1',
+      nextObjectId: acme.id,
+      metadata: {
+        drive_inherited_from: 'folder-b',
+        drive_inherited_candidates: ['file-1', 'folder-b'],
+      },
+    });
+
+    expect(await anchorCluster('file-1')).toBe(target.id);
+    expect(await anchorCluster('file-other')).toBe(source.id);
+    const [moved] = await db
+      .select()
+      .from(artifactClusterAnchors)
+      .where(eq(artifactClusterAnchors.anchorValue, 'google_drive:file-1'));
+    expect(moved?.metadata).toEqual(
+      expect.objectContaining({
+        drive_inherited_from: 'folder-b',
+        drive_inherited_candidates: ['file-1', 'folder-b'],
+      }),
+    );
+    const [sibling] = await db
+      .select()
+      .from(artifactClusterAnchors)
+      .where(eq(artifactClusterAnchors.anchorValue, 'google_drive:file-other'));
+    expect(sibling?.metadata).toEqual(
+      expect.objectContaining({
+        drive_inherited_from: 'folder-a',
+        drive_inherited_candidates: ['file-other', 'folder-a'],
+      }),
+    );
+  });
 
   it('moves inherited folder file anchors except files that keep their own object link', async () => {
     const [northstar] = await db

@@ -316,10 +316,11 @@ describe('resolveDriveFileMembership', () => {
       getParents,
     });
 
-    expect(first).toEqual({ inScope: true, matchedAncestorId: 'selected' });
-    expect(second).toEqual({ inScope: true, matchedAncestorId: 'selected' });
-    expect(fetched).toEqual(['nested']);
+    expect(first).toMatchObject({ inScope: true, matchedAncestorId: 'selected' });
+    expect(second).toMatchObject({ inScope: true, matchedAncestorId: 'selected' });
+    expect(fetched).toEqual(['nested', 'selected']);
     expect(cache.parents.get('nested')).toEqual(['selected']);
+    expect(cache.parents.get('selected')).toBeNull();
     expect(cache.selectedAncestorById.get('nested')).toBe('selected');
     expect(cache.parents.has('file-a')).toBe(false);
   });
@@ -391,9 +392,9 @@ describe('resolveDriveFileMembership', () => {
       },
     });
 
-    expect(nested).toEqual({ inScope: true, matchedAncestorId: 'folder-a' });
-    expect(sibling).toEqual({ inScope: true, matchedAncestorId: 'drive-9' });
-    expect(fetched).toEqual(['nested', 'other-tree']);
+    expect(nested).toMatchObject({ inScope: true, matchedAncestorId: 'folder-a' });
+    expect(sibling).toMatchObject({ inScope: true, matchedAncestorId: 'drive-9' });
+    expect(fetched).toEqual(['nested', 'folder-a', 'other-tree']);
   });
 
   it('walks past a shared-drive parent to a selected folder on another ancestor path', async () => {
@@ -417,7 +418,75 @@ describe('resolveDriveFileMembership', () => {
       },
     });
 
-    expect(nested).toEqual({ inScope: true, matchedAncestorId: 'folder-a' });
-    expect(fetched).toEqual(['nested']);
+    expect(nested).toMatchObject({ inScope: true, matchedAncestorId: 'folder-a' });
+    expect(fetched).toEqual(['nested', 'folder-a']);
+  });
+
+  it('keeps walking past an inner selected folder so an outer selected ancestor stays on the path', async () => {
+    const scope = driveScopeFromSelections([
+      { kind: 'drive.folder', externalId: 'inner' },
+      { kind: 'drive.folder', externalId: 'outer' },
+    ]);
+    const cache = createDriveAncestryCache();
+    const fetched: string[] = [];
+    const nested = await resolveDriveFileMembership({
+      fileId: 'doc',
+      parents: ['nested'],
+      scope,
+      cache,
+      getParents: (folderId) => {
+        fetched.push(folderId);
+        if (folderId === 'nested') return Promise.resolve(['inner']);
+        if (folderId === 'inner') return Promise.resolve(['outer']);
+        if (folderId === 'outer') return Promise.resolve(['drive-9']);
+        return Promise.resolve(null);
+      },
+    });
+
+    expect(nested.inScope).toBe(true);
+    expect(nested.matchedAncestorId).toBe('inner');
+    expect(nested.ancestryIds).toEqual(
+      expect.arrayContaining(['doc', 'nested', 'inner', 'outer', 'drive-9']),
+    );
+    expect(fetched).toEqual(['nested', 'inner', 'outer', 'drive-9']);
+
+    const again = await resolveDriveFileMembership({
+      fileId: 'doc-2',
+      parents: ['nested'],
+      scope,
+      cache,
+      getParents: (folderId) => {
+        fetched.push(folderId);
+        return Promise.resolve(null);
+      },
+    });
+    expect(again.matchedAncestorId).toBe('inner');
+    expect(again.ancestryIds).toEqual(expect.arrayContaining(['outer']));
+    expect(fetched).toEqual(['nested', 'inner', 'outer', 'drive-9']);
+  });
+
+  it('walks past an immediate selected parent so an outer selected ancestor stays on the path', async () => {
+    const scope = driveScopeFromSelections([
+      { kind: 'drive.folder', externalId: 'inner' },
+      { kind: 'drive.folder', externalId: 'outer' },
+    ]);
+    const cache = createDriveAncestryCache();
+    const fetched: string[] = [];
+    const nested = await resolveDriveFileMembership({
+      fileId: 'doc',
+      parents: ['inner'],
+      scope,
+      cache,
+      getParents: (folderId) => {
+        fetched.push(folderId);
+        if (folderId === 'inner') return Promise.resolve(['outer']);
+        if (folderId === 'outer') return Promise.resolve(null);
+        return Promise.resolve(null);
+      },
+    });
+
+    expect(nested).toMatchObject({ inScope: true, matchedAncestorId: 'inner' });
+    expect(nested.ancestryIds).toEqual(expect.arrayContaining(['doc', 'inner', 'outer']));
+    expect(fetched).toEqual(['inner', 'outer']);
   });
 });

@@ -17,6 +17,7 @@ import {
 import { and, asc, eq, inArray, isNotNull, sql } from 'drizzle-orm';
 
 import {
+  rebindDriveFileObjectLink,
   reconcileArtifactEvidence,
   type ArtifactAnchorInput,
   type ArtifactClusterKind,
@@ -1417,7 +1418,17 @@ async function reconcileIntegrationArtifacts(deps: {
     const entityId =
       deps.entityByExternalId.get(event.objectMap.externalId) ??
       (linkedId ? deps.entityByExternalId.get(linkedId) : undefined);
+    const nextObjectId = linkedId ?? entityId ?? null;
     if (!rawEventId) continue;
+    if (event.provider === 'google_drive' && event.externalObjectId && nextObjectId) {
+      const inheritance = driveInheritanceAnchorMetadata(event);
+      await rebindDriveFileObjectLink(deps.db, {
+        teamId: deps.integration.teamId,
+        fileId: event.externalObjectId,
+        nextObjectId,
+        ...(inheritance ? { metadata: inheritance } : {}),
+      });
+    }
     const role = evidenceRoleForIntegrationEvent(event);
     const strength = evidenceStrengthForIntegrationEvent(event);
     const authoritative = integrationEventIsAuthoritative(event);

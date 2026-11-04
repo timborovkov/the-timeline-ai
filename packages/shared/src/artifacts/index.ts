@@ -1035,6 +1035,46 @@ function resolveDriveFileLinkAfterChange(input: {
 }
 
 /**
+ * Move one Drive file's artifact anchors onto the cluster for `nextObjectId`.
+ * Capture uses this when the live resolver picks a different linked ancestor
+ * (file moved between folders) so later evidence attach follows that object.
+ * Other files on the previous cluster are left in place.
+ */
+export async function rebindDriveFileObjectLink(
+  db: Db,
+  input: {
+    teamId: string;
+    fileId: string;
+    nextObjectId: string;
+    metadata?: Record<string, unknown>;
+  },
+): Promise<void> {
+  const current = await findClusterByAnchors(db, input.teamId, driveFileAnchorValues(input.fileId));
+  if (!current) return;
+  const targetClusterId = await clusterForLinkedObject(db, {
+    teamId: input.teamId,
+    objectId: input.nextObjectId,
+  });
+  if (!targetClusterId) return;
+  if (current !== targetClusterId) {
+    await moveDriveFileAnchors(db, {
+      teamId: input.teamId,
+      fileId: input.fileId,
+      targetClusterId,
+    });
+  }
+  if (!input.metadata) return;
+  await refreshDriveInheritanceAnchorMetadata(db, input.teamId, [
+    {
+      type: 'provider_object',
+      value: `google_drive:${input.fileId}`,
+      strength: 'hard',
+      metadata: input.metadata,
+    },
+  ]);
+}
+
+/**
  * When a Drive selection's workspace object link changes, move each affected
  * file onto the object that live-capture precedence would pick from the
  * post-change selection set. A remaining overlapping container keeps the
