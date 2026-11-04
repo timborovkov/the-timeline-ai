@@ -1425,3 +1425,15 @@ On Home, Free-plan owners/admins who have a persisted assistant answer can see a
 quiet PAYG suggestion. Do not show it before an answer, alongside a restriction,
 or instead of an existing billing warning. “Not now” dismisses this suggestion
 for that user/team in the current browser. The CTA opens plan selection only.
+
+### Public pricing calculator
+
+The pricing Usage section compares PAYG, Team and Business through paired native
+sliders and exact number fields. A labelled editable example renders on the server.
+Desktop inputs sit beside plan totals and a selectable breakdown; mobile stacks
+them. PAYG shows native allowances per meter; Team and Business show a pooled
+usage-credit deduction. Capacity warnings exclude unsuitable plans from the
+lowest-estimated-cost badge. Accepted sources live in Advanced usage with their
+value visible when closed. Rates and workspace eligibility remain in the closed
+How this estimate works disclosure. Inputs stay local; the calculator neither
+changes billing nor collects telemetry.

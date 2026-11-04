@@ -682,6 +682,9 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
 - [x] Billing foundation: entitlements catalog, Polar products/meters (sandbox),
       `team_billing_*` ledger, `/pricing`, team Billing settings, webhook verify,
       shadow mode (`BILLING_CHARGES_ENABLED=false`). See ADR 0018.
+- [x] Public monthly pricing calculator: paired sliders and exact fields compare PAYG,
+      Team and Business using shared billing previews, native allowances and pooled
+      credits; itemized estimates flag measured capacity limits and exclude VAT.
 - [x] Pricing UX: self-serve plan grid (no Enterprise column); gray Enterprise
       contact nudge; `/app/usage` is a meter, amount, and cost table (infrastructure limits stay
       folded); team Billing shows remaining benefits, recorded charges, the separate plan fee and spend cap, and
