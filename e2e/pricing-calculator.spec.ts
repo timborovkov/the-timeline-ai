@@ -1,4 +1,10 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
+
+async function expectNoHorizontalOverflow(page: Page) {
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
+    true,
+  );
+}
 
 test('pricing calculator compares plans and preserves precise input', async ({ page }) => {
   const errors: string[] = [];
@@ -8,6 +14,7 @@ test('pricing calculator compares plans and preserves precise input', async ({ p
   await expect(calculator.getByRole('heading', { name: 'Pay as you go breakdown' })).toBeVisible();
   await expect(calculator.getByText('€37.18', { exact: true })).toHaveCount(2);
   await expect(calculator.locator('details')).not.toHaveAttribute('open', '');
+  await expect(calculator.getByRole('status')).toHaveAttribute('aria-live', 'polite');
   await calculator.getByRole('radio', { name: 'Team', exact: true }).check();
   await calculator.getByLabel('Assumed AI usage', { exact: true }).fill('650.25');
   await expect(calculator.getByLabel('Assumed AI usage slider')).toHaveValue('500');
@@ -31,9 +38,38 @@ test('pricing calculator compares plans and preserves precise input', async ({ p
   await expect(
     page.getByRole('link', { name: 'Infrastructure limits', exact: true }),
   ).toBeVisible();
-  await expect(page.locator('body')).toHaveJSProperty(
-    'scrollWidth',
-    await page.locator('body').evaluate((body) => body.clientWidth),
-  );
+  await expectNoHorizontalOverflow(page);
   expect(errors).toEqual([]);
+});
+
+test('pricing calculator fits desktop 1440 and mobile 390', async ({ page }) => {
+  for (const viewport of [
+    { width: 1440, height: 1000 },
+    { width: 390, height: 844 },
+  ]) {
+    await page.setViewportSize(viewport);
+    await page.goto('/pricing');
+    const calculator = page.locator('[data-pricing-calculator]');
+    await expect(
+      calculator.getByRole('heading', { name: 'Pay as you go breakdown' }),
+    ).toBeVisible();
+    await expect(calculator.getByText('€37.18', { exact: true })).toHaveCount(2);
+    await expectNoHorizontalOverflow(page);
+  }
+});
+
+test.describe('without JavaScript', () => {
+  test.use({ javaScriptEnabled: false });
+
+  test('renders the example estimate from the server', async ({ page }) => {
+    await page.goto('/pricing');
+    const calculator = page.locator('[data-pricing-calculator]');
+    await expect(
+      calculator.getByRole('heading', { name: 'Pay as you go breakdown' }),
+    ).toBeVisible();
+    await expect(calculator.getByText('€37.18', { exact: true })).toHaveCount(2);
+    await expect(calculator.locator('details')).not.toHaveAttribute('open', '');
+    await expect(calculator.getByLabel('Assumed AI usage', { exact: true })).toHaveValue('20');
+    await expect(calculator.getByLabel('Active members', { exact: true })).toHaveValue('5');
+  });
 });

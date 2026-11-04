@@ -11,7 +11,9 @@ describe('pricing calculator', () => {
     const html = renderToStaticMarkup(<PricingCalculator />);
     expect(html).toContain('€37.18');
     expect(html).toContain('2,000 accepted sources');
+    expect(html).toContain('aria-live="polite"');
     expect(html).not.toMatch(/<details[^>]*\sopen/);
+    expect(html).not.toMatch(/text-\[[0-9.]+(?:px|rem)\]/);
   });
   it('keeps exact fields and sliders synchronized without truncating larger values', () => {
     const view = render(<PricingCalculator />);

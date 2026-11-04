@@ -9,6 +9,8 @@ import type { SelfServePaidPlanId } from '@timeline/shared/billing/preview';
 import {
   CALCULATOR_PLANS,
   EXAMPLE_USAGE,
+  MAX_USAGE_VALUE,
+  SOURCES_FIELD,
   USAGE_FIELDS,
   estimatePricing,
   parseUsage,
@@ -18,7 +20,9 @@ import {
 import { cn } from '@/lib/utils';
 
 const CONTROL =
-  'rounded border border-border bg-bg px-3 py-2 text-fg outline-none focus-visible:ring-2 focus-visible:ring-ring';
+  'h-9 rounded-sm border border-border bg-surface-2 px-2.5 text-sm text-fg tabular-nums outline-none focus-visible:ring-2 focus-visible:ring-ring';
+const SLIDER =
+  'block h-6 w-full cursor-pointer appearance-none bg-transparent outline-none focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-slider-runnable-track]:h-0.5 [&::-webkit-slider-runnable-track]:rounded-full [&::-webkit-slider-runnable-track]:bg-border-strong [&::-webkit-slider-thumb]:-mt-1.5 [&::-webkit-slider-thumb]:size-3.5 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-signal [&::-moz-range-track]:h-0.5 [&::-moz-range-track]:rounded-full [&::-moz-range-track]:bg-border-strong [&::-moz-range-thumb]:size-3.5 [&::-moz-range-thumb]:appearance-none [&::-moz-range-thumb]:border-0 [&::-moz-range-thumb]:bg-signal';
 
 function UsageControl({
   field,
@@ -34,7 +38,7 @@ function UsageControl({
   const id = `pricing-${field.key}`;
   return (
     <div className="space-y-2">
-      <div className="flex flex-wrap items-center justify-between gap-2">
+      <div className="flex items-center justify-between gap-3">
         <label htmlFor={id} className="text-sm font-medium text-fg">
           {field.label}
         </label>
@@ -43,7 +47,7 @@ function UsageControl({
             id={id}
             type="number"
             min={field.min}
-            max={1_000_000_000}
+            max={MAX_USAGE_VALUE}
             step={field.decimals ? 0.01 : 1}
             value={value}
             onChange={(event) => {
@@ -51,9 +55,9 @@ function UsageControl({
             }}
             aria-invalid={Boolean(error)}
             aria-describedby={`${id}-hint${error ? ` ${id}-error` : ''}`}
-            className={cn(CONTROL, 'w-32 text-right tabular-nums')}
+            className={cn(CONTROL, 'w-[7.25rem] text-right')}
           />
-          <span className="w-14 text-xs text-fg-muted">{field.unit}</span>
+          <span className="w-14 shrink-0 text-xs leading-4 text-fg-muted">{field.unit}</span>
         </div>
       </div>
       <input
@@ -67,9 +71,9 @@ function UsageControl({
         }}
         aria-label={`${field.label} slider`}
         aria-describedby={`${id}-hint`}
-        className="block h-6 w-full cursor-pointer accent-current text-signal outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className={SLIDER}
       />
-      <p id={`${id}-hint`} className="text-xs leading-5 text-fg-muted">
+      <p id={`${id}-hint`} className="text-xs leading-4 text-fg-muted">
         {field.hint}
       </p>
       {error && (
@@ -94,46 +98,101 @@ function PlanResults({
   const plan = PLAN_CATALOG[selected];
   const grossCents = estimate.breakdown.reduce((sum, row) => sum + row.grossCents, 0);
   return (
-    <div className="min-w-0 space-y-6">
+    <div className="min-w-0 space-y-4">
       <fieldset>
         <legend className="mb-3 text-sm font-medium">Compare monthly estimates</legend>
-        <div className="grid gap-2 sm:grid-cols-3">
-          {CALCULATOR_PLANS.map((id) => (
-            <label
-              key={id}
-              className={cn(
-                'cursor-pointer rounded-lg border p-3 text-sm',
-                selected === id ? 'border-signal bg-signal-soft' : 'border-border bg-bg',
-              )}
-            >
-              <span className="flex items-center gap-2">
-                <input
-                  type="radio"
-                  name="pricing-plan"
-                  aria-label={PLAN_CATALOG[id].name}
-                  value={id}
-                  checked={selected === id}
-                  onChange={() => {
-                    onSelect(id);
-                  }}
-                  className="accent-current focus-visible:ring-2 focus-visible:ring-ring"
-                />
-                {PLAN_CATALOG[id].name}
-              </span>
-              <span className="mt-3 block text-xl font-semibold tabular-nums">
-                {formatEuroFromCents(estimate.bills[id].totalCents)}
-              </span>
-              <span className="text-xs text-fg-muted">/month, excl. VAT</span>
-              {estimate.cheapest === id && (
-                <span className="mt-2 block text-xs font-medium text-signal">
-                  Lowest estimated cost
+        <div className="border border-border bg-bg">
+          <div className="grid sm:grid-cols-3 sm:divide-x sm:divide-y-0 divide-y divide-border">
+            {CALCULATOR_PLANS.map((id) => (
+              <label
+                key={id}
+                className={cn(
+                  'cursor-pointer p-4 text-sm',
+                  selected === id ? 'bg-signal-soft' : 'bg-bg',
+                )}
+              >
+                <span className="flex items-center gap-2">
+                  <input
+                    type="radio"
+                    name="pricing-plan"
+                    aria-label={PLAN_CATALOG[id].name}
+                    value={id}
+                    checked={selected === id}
+                    onChange={() => {
+                      onSelect(id);
+                    }}
+                    className="accent-current focus-visible:ring-2 focus-visible:ring-ring"
+                  />
+                  {PLAN_CATALOG[id].name}
                 </span>
+                <span className="mt-2 block text-xl font-semibold tabular-nums">
+                  {formatEuroFromCents(estimate.bills[id].totalCents)}
+                </span>
+                <span className="text-xs leading-4 text-fg-muted">/month, excl. VAT</span>
+                {estimate.cheapest === id && (
+                  <span className="mt-2 block text-xs font-medium leading-4 text-signal">
+                    Lowest estimated cost
+                  </span>
+                )}
+                {estimate.capacityWarnings[id].length > 0 && (
+                  <span className="mt-2 block text-xs leading-4">Exceeds measured capacity</span>
+                )}
+              </label>
+            ))}
+          </div>
+          <div className="border-t border-border p-5">
+            <h3 className="text-lg font-semibold">{plan.name} breakdown</h3>
+            <dl className="mt-4 space-y-3 text-sm">
+              <CostRow label="Platform fee" cents={bill.platformFeeCents} />
+              <CostRow
+                label="Extra members"
+                hint={`${plan.includedActiveMembers} members included`}
+                cents={bill.extraMemberCents}
+              />
+              {estimate.breakdown.map((row) => (
+                <CostRow
+                  key={row.id}
+                  label={row.label}
+                  hint={selected === 'payg' ? row.allowance : 'Before pooled usage credit'}
+                  cents={selected === 'payg' ? row.paygCents : row.grossCents}
+                />
+              ))}
+              {selected !== 'payg' && (
+                <CostRow
+                  label="Included usage credit"
+                  hint={`Up to ${formatEuroFromCents(plan.includedUsageDiscountCents)} across usage`}
+                  cents={
+                    grossCents === 0 ? 0 : -Math.min(grossCents, plan.includedUsageDiscountCents)
+                  }
+                />
               )}
-              {estimate.capacityWarnings[id].length > 0 && (
-                <span className="mt-2 block text-xs">Exceeds measured capacity</span>
-              )}
-            </label>
-          ))}
+              <div className="flex justify-between gap-4 border-t border-border pt-4 font-semibold">
+                <dt>
+                  Estimated monthly total
+                  <span className="block text-xs font-normal leading-4 text-fg-muted">
+                    Excluding VAT
+                  </span>
+                </dt>
+                <dd className="text-xl tabular-nums">{formatEuroFromCents(bill.totalCents)}</dd>
+              </div>
+            </dl>
+            {estimate.capacityWarnings[selected].length > 0 && (
+              <p className="mt-4 text-sm">
+                This estimate exceeds this plan’s capacity:{' '}
+                {estimate.capacityWarnings[selected].join(', ')}. The price is illustrative; this
+                plan cannot support all entered usage.
+              </p>
+            )}
+            {estimate.cheapest === null && (
+              <p className="mt-4 text-sm">
+                Your usage exceeds the measured limits of all self-serve plans.{' '}
+                <Link href="/help/support" className="underline">
+                  Contact sales
+                </Link>
+                .
+              </p>
+            )}
+          </div>
         </div>
       </fieldset>
       <p role="status" aria-live="polite" aria-atomic="true" className="sr-only">
@@ -143,56 +202,7 @@ function PlanResults({
         ).join(', ')}
         . Excluding VAT.
       </p>
-      <div className="rounded-lg border border-border bg-bg p-5">
-        <h3 className="text-lg font-semibold">{plan.name} breakdown</h3>
-        <dl className="mt-4 space-y-3 text-sm">
-          <CostRow label="Platform fee" cents={bill.platformFeeCents} />
-          <CostRow
-            label="Extra members"
-            hint={`${plan.includedActiveMembers} members included`}
-            cents={bill.extraMemberCents}
-          />
-          {estimate.breakdown.map((row) => (
-            <CostRow
-              key={row.id}
-              label={row.label}
-              hint={selected === 'payg' ? row.allowance : 'Before pooled usage credit'}
-              cents={selected === 'payg' ? row.paygCents : row.grossCents}
-            />
-          ))}
-          {selected !== 'payg' && (
-            <CostRow
-              label="Included usage credit"
-              hint={`Up to ${formatEuroFromCents(plan.includedUsageDiscountCents)} across usage`}
-              cents={grossCents === 0 ? 0 : -Math.min(grossCents, plan.includedUsageDiscountCents)}
-            />
-          )}
-          <div className="flex justify-between gap-4 border-t border-border pt-4 font-semibold">
-            <dt>
-              Estimated monthly total
-              <span className="block text-xs font-normal text-fg-muted">Excluding VAT</span>
-            </dt>
-            <dd className="text-xl tabular-nums">{formatEuroFromCents(bill.totalCents)}</dd>
-          </div>
-        </dl>
-        {estimate.capacityWarnings[selected].length > 0 && (
-          <p className="mt-4 text-sm">
-            This estimate exceeds this plan’s capacity:{' '}
-            {estimate.capacityWarnings[selected].join(', ')}. The price is illustrative; this plan
-            cannot support all entered usage.
-          </p>
-        )}
-        {estimate.cheapest === null && (
-          <p className="mt-4 text-sm">
-            Your usage exceeds the measured limits of all self-serve plans.{' '}
-            <Link href="/help/support" className="underline">
-              Contact sales
-            </Link>
-            .
-          </p>
-        )}
-      </div>
-      <p className="text-xs leading-5 text-fg-muted">
+      <p className="text-xs leading-4 text-fg-muted">
         Estimates assume a full month at standard published prices on one eligible workspace. Actual
         AI charges vary. Other capacity limits apply, including inbound email, agent turns and
         concurrent meetings. Usage may require raising your spend cap; the estimate is not capped.
@@ -207,7 +217,7 @@ function CostRow({ label, hint, cents }: { label: string; hint?: string; cents: 
     <div className="flex justify-between gap-4">
       <dt>
         {label}
-        {hint && <span className="block text-xs text-fg-muted">{hint}</span>}
+        {hint && <span className="block text-xs leading-4 text-fg-muted">{hint}</span>}
       </dt>
       <dd className="shrink-0 tabular-nums">{formatEuroFromCents(cents)}</dd>
     </div>
@@ -233,13 +243,13 @@ export function PricingCalculator() {
           onClick={() => {
             setDraft(EXAMPLE_USAGE);
           }}
-          className={cn(CONTROL, 'text-sm hover:bg-surface-2')}
+          className="rounded-sm text-sm text-fg-muted underline decoration-border-strong underline-offset-4 outline-none hover:text-fg hover:decoration-fg focus-visible:ring-2 focus-visible:ring-ring"
         >
           Reset example
         </button>
       </div>
-      <div className="grid items-start gap-8 xl:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)]">
-        <div className="space-y-6">
+      <div className="grid items-start gap-10 xl:grid-cols-[minmax(0,20rem)_minmax(0,1fr)]">
+        <div className="space-y-5">
           {USAGE_FIELDS.filter((field) => field.key !== 'sources').map((field) => (
             <UsageControl
               key={field.key}
@@ -260,7 +270,7 @@ export function PricingCalculator() {
             </summary>
             <div className="mt-4">
               <UsageControl
-                field={USAGE_FIELDS[5]}
+                field={SOURCES_FIELD}
                 value={draft.sources}
                 error={errors.sources}
                 onChange={(value) => {
@@ -273,7 +283,11 @@ export function PricingCalculator() {
         {estimate ? (
           <PlanResults estimate={estimate} selected={selected} onSelect={setSelected} />
         ) : (
-          <p role="status" className="rounded-lg border border-border p-5 text-sm">
+          <p
+            role="status"
+            aria-live="polite"
+            className="border border-border bg-bg p-5 text-sm text-fg"
+          >
             Complete all usage fields with valid numbers to see your estimates.
           </p>
         )}

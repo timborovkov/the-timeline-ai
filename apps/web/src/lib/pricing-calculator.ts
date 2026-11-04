@@ -13,6 +13,8 @@ import {
 import { cheapestPlanPreview, type SelfServePaidPlanId } from '@timeline/shared/billing/preview';
 
 export const CALCULATOR_PLANS = ['payg', 'team', 'business'] as const;
+/** Exact fields may exceed slider ranges; this is the parse ceiling, not a billed cap. */
+export const MAX_USAGE_VALUE = 1_000_000_000;
 export const USAGE_FIELDS = [
   {
     key: 'members',
@@ -86,6 +88,9 @@ export const EXAMPLE_USAGE: UsageDraft = {
   storage: '1',
   sources: '2000',
 };
+const sourcesField = USAGE_FIELDS.find((field) => field.key === 'sources');
+if (!sourcesField) throw new Error('Accepted sources must remain a calculator field');
+export const SOURCES_FIELD = sourcesField;
 
 export function parseUsage(draft: UsageDraft) {
   const values = {} as UsageValues;
@@ -99,10 +104,10 @@ export function parseUsage(draft: UsageDraft) {
       !pattern.test(raw) ||
       !Number.isFinite(value) ||
       value < field.min ||
-      value > 1_000_000_000
+      value > MAX_USAGE_VALUE
     ) {
       errors[field.key] =
-        `Enter ${field.decimals === 0 ? 'a whole number' : 'a number with up to two decimals'} from ${field.min} to 1,000,000,000.`;
+        `Enter ${field.decimals === 0 ? 'a whole number' : 'a number with up to two decimals'} from ${field.min} to ${MAX_USAGE_VALUE.toLocaleString('en-IE')}.`;
     } else values[field.key] = value;
   }
   return { values: Object.keys(errors).length ? null : values, errors };

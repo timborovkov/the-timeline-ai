@@ -1,4 +1,4 @@
-import { FREE_ALLOWANCES } from '@timeline/shared/billing/catalog';
+import { FREE_ALLOWANCES, PLAN_CATALOG } from '@timeline/shared/billing/catalog';
 import { expect } from '@timeline/test-support';
 import { describe, it } from 'bun:test';
 
@@ -48,10 +48,8 @@ describe('pricing estimates', () => {
       expect(result.breakdown.reduce((sum, row) => sum + row.paygCents, 0)).toBe(
         result.bills.payg.meteredAfterDiscountCents,
       );
-      for (const [id, credit] of [
-        ['team', 6000],
-        ['business', 25000],
-      ] as const) {
+      for (const id of ['team', 'business'] as const) {
+        const credit = PLAN_CATALOG[id].includedUsageDiscountCents;
         expect(
           Math.max(0, result.breakdown.reduce((sum, row) => sum + row.grossCents, 0) - credit),
         ).toBe(result.bills[id].meteredAfterDiscountCents);
