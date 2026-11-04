@@ -194,18 +194,41 @@ export function refreshDemoFixture(): void {
   DEMO_EVENTS = buildDemoEvents();
 }
 
+function readStampedDemoSeedNow(events: ReadonlyArray<{ sourceMetadata?: unknown }>): Date | null {
+  return events
+    .map((row) =>
+      readDemoSeedNowFromMetadata(
+        row.sourceMetadata && typeof row.sourceMetadata === 'object'
+          ? (row.sourceMetadata as Record<string, unknown>)
+          : null,
+      ),
+    )
+    .find((value): value is Date => value !== null);
+}
+
+/**
+ * First `dev:seed` uses `now`. A later rerun reuses persisted `demo_seed_now`
+ * so onConflictDoNothing Northstar events stay aligned with meetings, facts,
+ * and document bytes that would otherwise refresh against a new clock.
+ */
+export function adoptDemoSeedClock(
+  events: ReadonlyArray<{ sourceMetadata?: unknown }>,
+  now = new Date(),
+): Date {
+  const clock = readStampedDemoSeedNow(events) ?? now;
+  setDemoSeedNow(clock);
+  refreshDemoFixture();
+  return clock;
+}
+
 export function hydrateDemoSeedClock(
   events: ReadonlyArray<{ sourceMetadata: Record<string, unknown> }>,
 ): Date {
-  const stamped = events
-    .map((row) => readDemoSeedNowFromMetadata(row.sourceMetadata))
-    .find((value): value is Date => value !== null);
+  const stamped = readStampedDemoSeedNow(events);
   if (!stamped) {
     throw new Error('Demo fixture is missing persisted demo_seed_now on seeded events');
   }
-  setDemoSeedNow(stamped);
-  refreshDemoFixture();
-  return stamped;
+  return adoptDemoSeedClock(events, stamped);
 }
 
 export const DEMO_ENTITIES = [

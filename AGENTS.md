@@ -195,7 +195,7 @@ Treat this file as an operating contract for agents, not a loose README.
   runs the idempotent `bun run dev:seed`, indexes every deterministic fixture source through the real
   embed worker/OpenRouter/Qdrant path, and then runs `bun run demo:verify`. It creates the
   documented Acme Labs team, eight fake login users,   a month of timeline events whose timestamps are
-  relative offsets resolved at seed time and persisted as `demo_seed_now` for `demo:verify`, objects, custom
+  relative offsets resolved at first seed time and persisted as `demo_seed_now` so reruns and `demo:verify` reuse that clock, objects, custom
   boards, documents, meetings, Ask history, pending proposals, digest history, the
   deterministic fictional Northstar evidence corpus with encrypted fake integration credentials, and a
   second empty team (`onboarding@timeline.dev` / Noah Blake's Team) for first-run onboarding screens after

@@ -35,6 +35,7 @@ import {
   DEMO_FIXTURE_VERSION,
   DEMO_IDS,
   EMPTY_DEMO_LOGIN,
+  adoptDemoSeedClock,
   getDemoTimes,
   hydrateDemoSeedClock,
   refreshDemoFixture,
@@ -1154,3 +1155,65 @@ try {
   refreshDemoFixture();
   refreshDemoCorpus();
 }
+
+function assertSeedRerunReusesPersistedClock(): void {
+  const firstNow = new Date('2026-08-14T18:00:00.000Z');
+  const laterNow = new Date('2026-11-03T18:00:00.000Z');
+  try {
+    const firstClock = adoptDemoSeedClock([], firstNow);
+    refreshDemoCorpus();
+    assert.equal(firstClock.toISOString(), firstNow.toISOString());
+    const firstSnapshot = validSnapshot();
+    const firstEvents = firstSnapshot.events.map((row) => ({
+      ...row,
+      sourceMetadata: { ...row.sourceMetadata },
+    }));
+    const firstMeetingStart = firstSnapshot.meeting?.startedAt;
+    const firstDocumentText = firstSnapshot.document?.chunkText;
+    const firstCommitment = firstSnapshot.facts.find(
+      (row) => row.id === DEMO_IDS.factCommitment,
+    )?.statement;
+    assert.equal(firstMeetingStart, getDemoTimes().meeting);
+    assert.equal(
+      firstEvents[0]?.sourceMetadata[DEMO_SEED_NOW_METADATA_KEY],
+      firstNow.toISOString(),
+    );
+
+    setDemoSeedNow(laterNow);
+    refreshDemoFixture();
+    refreshDemoCorpus();
+    const drifted = validSnapshot();
+    drifted.events = firstEvents;
+    assert.notEqual(drifted.meeting?.startedAt, firstMeetingStart);
+    assert.notEqual(drifted.document?.chunkText, firstDocumentText);
+    assert.throws(
+      () => assertDemoFixture(drifted),
+      /meeting started_at: expected "2026-07-08T12:00:00.000Z", got "2026-09-27T12:00:00.000Z"/,
+    );
+
+    const reused = adoptDemoSeedClock(firstEvents, laterNow);
+    refreshDemoCorpus();
+    assert.equal(reused.toISOString(), firstNow.toISOString());
+    assert.equal(getDemoTimes().meeting, firstMeetingStart);
+    const rerun = validSnapshot();
+    assert.equal(rerun.meeting?.startedAt, firstMeetingStart);
+    assert.equal(rerun.document?.chunkText, firstDocumentText);
+    assert.equal(
+      rerun.facts.find((row) => row.id === DEMO_IDS.factCommitment)?.statement,
+      firstCommitment,
+    );
+    assert.doesNotThrow(() => assertDemoFixture(rerun));
+    assert.doesNotThrow(() =>
+      assertDemoFixture({
+        ...rerun,
+        events: firstEvents,
+      }),
+    );
+  } finally {
+    setDemoSeedNow(DEMO_CLOCK_ANCHOR);
+    refreshDemoFixture();
+    refreshDemoCorpus();
+  }
+}
+
+assertSeedRerunReusesPersistedClock();

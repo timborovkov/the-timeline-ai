@@ -52,7 +52,6 @@ import {
   demoSeedNowMetadata,
   demoTimes,
   isoAt,
-  setDemoSeedNow,
   teamDate,
 } from './demo-clock.js';
 import {
@@ -64,6 +63,7 @@ import {
 import { insertExpandedDemoCorpus } from './demo-corpus/insert.js';
 import { assertSeededEmptyOnboardingTeam, seedEmptyOnboardingTeam } from './demo-empty-team.js';
 import {
+  adoptDemoSeedClock,
   assertDemoSeedEnvironment,
   DEMO_DOCUMENT_BYTE_SIZE,
   DEMO_DOCUMENT_CHECKSUM_SHA256,
@@ -80,7 +80,6 @@ import {
   DEMO_SOURCE_REFS,
   DEMO_TIMES,
   EMPTY_DEMO_LOGIN,
-  refreshDemoFixture,
 } from './demo-fixture.js';
 import { seedCurrentLegalAcceptances } from './demo-legal.js';
 import { seedHeavyAcmeLabs } from './seed-dev-heavy.js';
@@ -323,18 +322,35 @@ function demoAssociation(input: {
   };
 }
 
+async function readExistingNorthstarEvents(
+  db: ReturnType<typeof getDb>,
+): Promise<Array<{ sourceMetadata: unknown }>> {
+  return db
+    .select({ sourceMetadata: rawEvents.sourceMetadata })
+    .from(rawEvents)
+    .where(
+      and(
+        eq(rawEvents.teamId, DEMO_IDS.team),
+        inArray(rawEvents.id, [
+          DEMO_IDS.eventNote,
+          DEMO_IDS.eventEmail,
+          DEMO_IDS.eventMeeting,
+          DEMO_IDS.eventProvider,
+        ]),
+      ),
+    );
+}
+
 async function main(): Promise<void> {
   assertDemoSeedEnvironment();
   const heavy = process.argv.includes('--heavy');
-  setDemoSeedNow(new Date());
-  refreshDemoFixture();
+  const db = getDb();
+  await assertReservedSeedRowsAreCompatible(db);
+  adoptDemoSeedClock(await readExistingNorthstarEvents(db), new Date());
   refreshDemoCorpus();
   const times = demoTimes();
   const now = times.seedNowLegacy;
   const tokenExpiry = times.tokenExpiry.toISOString();
-
-  const db = getDb();
-  await assertReservedSeedRowsAreCompatible(db);
   const passwordHash = await hashPassword(DEMO_LOGIN_PASSWORD);
   const githubSecret = encryptJson({
     access_token: 'gho_dev_seed_access_token_123',

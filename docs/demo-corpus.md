@@ -17,8 +17,11 @@ chunk, and meeting chunk through the production embed worker, then runs `demo:ve
 Vector indexing requires all nine original Acme Labs events and their three facts,
 as well as the Northstar and expanded-corpus source sets, and rejects unexpected fixture IDs.
 Verification rebuilds dated fixtures from the persisted `demo_seed_now` clock.
-`demo:seed` is safe to rerun. Use `bun run demo:reset` when you need the workspace restored
-to the exact canonical fixture after local edits.
+`demo:seed` is safe to rerun: a later run reuses the persisted `demo_seed_now`
+clock so Northstar raw events (kept by `onConflictDoNothing`) stay aligned with
+meetings, facts, and document bytes. Use `bun run demo:reset` when you need the
+workspace restored to the exact canonical fixture after local edits, or when you
+want the timeline re-anchored to today.
 
 ```bash
 bun run demo:verify   # re-check a previously seeded workspace
@@ -45,8 +48,9 @@ empty onboarding team has no events, integrations, or completed checklist steps.
 Fixture timestamps are relative offsets from seed time (meeting 37 days ago, follow-up
 email the next morning, cadence covering the last 31 local days). Related times stay in
 the same order when the clock moves, including across Helsinki daylight-saving changes.
-The seed persists that clock as `demo_seed_now` on fixture events so `demo:verify`
-rebuilds the same dated copy instead of comparing against the August authoring anchor.
+The seed persists that clock as `demo_seed_now` on fixture events. `demo:verify`
+and a later `dev:seed` rerun rebuild from that stamp instead of the August
+authoring anchor or the current date.
 Cadence adds extra weekday importer pulses when a window has fewer weekdays, so the
 2,500-event floor holds for every seed date. Tests pin the historical authoring
 anchor (14 August 2026 18:00 UTC) and also check later clocks, including DST

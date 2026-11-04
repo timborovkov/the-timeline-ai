@@ -4,9 +4,10 @@
  * always looks recent while relative order stays the same.
  *
  * The historical fixture was authored against 14 August 2026 18:00 UTC. Tests
- * keep that anchor so cadence floors stay deterministic; `dev:seed` swaps in
- * the real current instant and persists it as `demo_seed_now` so `demo:verify`
- * rebuilds the same fixtures instead of comparing against the August clock.
+ * keep that anchor so cadence floors stay deterministic; the first `dev:seed`
+ * swaps in the real current instant and persists it as `demo_seed_now`. Later
+ * reruns reuse that stamp so `demo:verify` and onConflictDoNothing Northstar
+ * events stay aligned with meetings, facts, and document bytes.
  */
 import { dateFromInstant, zonedDateTimeFromDate } from '@timeline/shared/time';
 

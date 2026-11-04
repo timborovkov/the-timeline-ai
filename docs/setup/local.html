@@ -149,8 +149,9 @@ bun run dev:seed:heavy         # optional extra volume for infinite-scroll / vir
         neither override permits <code>NODE_ENV=production</code>. The full command requires
         <code>AUTH_SECRET</code>, <code>DATABASE_URL</code>, <code>SECRETS_ENCRYPTION_KEY</code>,
         <code>OPENROUTER_API_KEY</code>, and <code>QDRANT_URL</code>. Fixture times are relative
-        offsets resolved from the current date when the seed runs. It creates eight Acme Labs
-        logins, all with password <code>timeline-dev</code>: <code>owner@timeline.dev</code>,
+        offsets resolved from the current date on the first seed; later reruns reuse the persisted
+        <code>demo_seed_now</code> clock. It creates eight Acme Labs logins, all with password
+        <code>timeline-dev</code>: <code>owner@timeline.dev</code>,
         <code>member@timeline.dev</code>, <code>jordan@timeline.dev</code>,
         <code>sam@timeline.dev</code>, <code>riley@timeline.dev</code>,
         <code>casey@timeline.dev</code>, <code>quinn@timeline.dev</code>, and
