@@ -8,7 +8,7 @@ import {
 } from '../demo-clock.js';
 import { DEMO_IDS } from '../demo-fixture.js';
 
-import { CORPUS_OBJECTS, corpusEventId, corpusObjectId } from './catalog.js';
+import { CORPUS_DOCUMENTS, CORPUS_OBJECTS, corpusEventId, corpusObjectId } from './catalog.js';
 import { CORPUS_UUID } from './ids.js';
 import { CORPUS_PERSON } from './people.js';
 
@@ -556,6 +556,15 @@ function buildCorpusEventNeedles() {
 
 export let CORPUS_EVENT_NEEDLES = buildCorpusEventNeedles();
 
+function citeDocument(name: string, chunkIndex = 0): string {
+  const document = CORPUS_DOCUMENTS.find((row) => row.name === name);
+  const chunkId = document?.chunkIds[chunkIndex];
+  if (!document || !chunkId) {
+    throw new Error(`Missing demo document citation for ${name} chunk ${String(chunkIndex)}`);
+  }
+  return `[doc:${document.id}#v1:chunk:${chunkId}]`;
+}
+
 function buildCorpusChats() {
   return [
     {
@@ -646,8 +655,7 @@ function buildCorpusChats() {
       title: 'What does the code of conduct say about private events?',
       createdAt: isoAt(-6, '11:00:00'),
       question: 'What does the code of conduct say about private events?',
-      answer:
-        'The code of conduct says not to share customer evidence outside the people named on the object. Quiet forwarding of private Timeline events is a firing offense. Report issues to Quinn or Avery.',
+      answer: `The code of conduct says not to share customer evidence outside the people named on the object ${citeDocument('Code of conduct.pdf')}. Quiet forwarding of private Timeline events is a firing offense ${citeDocument('Code of conduct.pdf', 1)}. Report issues to Quinn or Avery.`,
     },
     {
       id: CORPUS_UUID.chat(7),
@@ -674,7 +682,7 @@ function buildCorpusChats() {
       question: 'What is still blocking the Atlas beta webinar?',
       answer: [
         `The webinar stays ${dm(D.webinar)}. Riley still needs Avery’s quote, a cropped Northstar screenshot, and a 40-minute run of show by ${dm(D.dryRun)} [ev:EVENT_WEBINAR].`,
-        'Brand voice is quiet and citation-first.',
+        `Brand voice is quiet and citation-first [ev:${corpusEventId('brand voice for the webinar is quiet')}].`,
       ]
         .join('\n')
         .replaceAll('EVENT_WEBINAR', corpusEventId('Need 40-minute run of show')),

@@ -34,7 +34,7 @@ describe('collection loading skeletons', () => {
 
   it('renders compact kanban lanes and matching card skeletons', () => {
     const kanban = render(<CompactKanbanSkeleton />);
-    expect(kanban.container.querySelectorAll('[class*="min(280px"]').length).toBe(3);
+    expect(kanban.container.querySelectorAll('[class*="min(12rem"]').length).toBe(3);
     expect(kanban.container.querySelectorAll('.rounded-sm.border').length).toBe(9);
     kanban.unmount();
 

@@ -1133,6 +1133,9 @@
   "apps/web/src/lib/chat-view.test.ts": {
     "group": "unit"
   },
+  "apps/web/src/lib/citation-source.test.ts": {
+    "group": "unit"
+  },
   "apps/web/src/lib/client-url-changes.test.ts": {
     "group": "dom"
   },

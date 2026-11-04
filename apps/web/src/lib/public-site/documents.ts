@@ -80,7 +80,7 @@ const LANDING_SECTIONS = [
   },
   {
     title: 'Trust model',
-    body: 'Raw events are immutable source evidence. Agent answers surface citation chips that point back to raw messages, voice memos, emails, transcripts, calendar events, or document versions.',
+    body: 'Raw events are immutable source evidence. Agent answers surface numbered citations that point back to raw messages, voice memos, emails, transcripts, calendar events, or document versions.',
   },
   {
     title: 'Privacy model',

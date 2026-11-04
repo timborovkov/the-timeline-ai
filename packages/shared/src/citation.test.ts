@@ -7,7 +7,11 @@ import {
   artifactRefLabel,
   attachArtifactPreviewActions,
   citationPartToArtifactRef,
+  citationQuote,
+  citationSuperscript,
   meetingDetailHref,
+  numberArtifactRefs,
+  numberCitations,
   parseCitations,
   resolveArtifactPreviewActions,
   timelineEventFocusHref,
@@ -161,6 +165,38 @@ describe('parseCitations', () => {
       `[chg:${CHG}]`,
       '[route:team]',
     ]);
+  });
+});
+
+describe('answer citation numbering', () => {
+  it('numbers sources in first-appearance order and reuses the same number', () => {
+    const text = `Ready [ev:${EV}] then [ent:${ENT}] and [ev:${EV}] again, plus [doc:${DOC}#v1:chunk:${CHUNK}].`;
+    const numbers = numberCitations(text);
+    expect(numbers.get(`[ev:${EV}]`)).toBe(1);
+    expect(numbers.get(`[ent:${ENT}]`)).toBe(2);
+    expect(numbers.get(`[doc:${DOC}#v1:chunk:${CHUNK}]`)).toBe(3);
+    expect([...numbers.values()]).toEqual([1, 2, 3]);
+  });
+
+  it('numbers artifact refs in first-appearance order outside parsed answer text', () => {
+    const numbers = numberArtifactRefs([
+      { kind: 'fact', id: FACT },
+      { kind: 'timeline_event', id: EV },
+      { kind: 'fact', id: FACT },
+    ]);
+    expect(numbers.get(`[fact:${FACT}]`)).toBe(1);
+    expect(numbers.get(`[ev:${EV}]`)).toBe(2);
+    expect([...numbers.values()]).toEqual([1, 2]);
+  });
+
+  it('renders compact superscripts past single digits', () => {
+    expect(citationSuperscript(1)).toBe('¹');
+    expect(citationSuperscript(2)).toBe('²');
+    expect(citationSuperscript(10)).toBe('¹⁰');
+    expect(citationQuote('  Slack line\nwith wrap  ', 20)).toBe('Slack line with wrap');
+    expect(citationQuote('A longer quoted sentence that should clip.', 18)).toBe(
+      'A longer quoted…',
+    );
   });
 });
 

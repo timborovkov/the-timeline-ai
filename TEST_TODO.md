@@ -430,7 +430,7 @@ Current local coverage includes core product journeys:
   calendar suggestions, owner accepts the approval bundle, and the durable task
   is visible to another team member.
 - Browser chat journey: owner asks about a seeded team-visible timeline event,
-  sees deterministic `search_timeline` tool activity, an Event citation, and
+  sees deterministic `search_timeline` tool activity, a numbered citation, and
   the persisted answer after session reload.
 - Browser chat visibility journey: member cannot retrieve owner-private
   evidence, can retrieve specific-user evidence when allowed, owner cannot
@@ -763,7 +763,7 @@ tests and evals carry the branch coverage and model/tool behavior.
     the real suggestion worker path, create grounded task proposals, and verify
     private conversation rows stay out of prompts and evidence.
   - Browser chat E2E for seeded timeline retrieval, visible `search_timeline`
-    tool activity, Event citation chips, citation links, persisted session
+    tool activity, numbered citations, citation cards, persisted session
     reload, private/specific-user visibility, and degraded no-citation answers.
   - Browser object-update approval E2E proving an accepted object update targets
     the existing object, changes the detail page, and does not create a

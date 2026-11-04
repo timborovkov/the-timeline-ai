@@ -66,6 +66,16 @@ describe('PublicShell', () => {
     expect(html).toContain('Works with HubSpot');
   });
 
+  it('marks the Trust legal link as the current page', () => {
+    const html = renderToStaticMarkup(
+      <PublicShell currentSection="trust">
+        <main id="main">Trust</main>
+      </PublicShell>,
+    );
+
+    expect(html).toMatch(/<a(?=[^>]*href="\/trust")(?=[^>]*aria-current="page")[^>]*>/);
+  });
+
   it('uses the landing CTA state for signed-in public routes', () => {
     setPublicSessionCache({ status: 'signed-in' });
     render(
