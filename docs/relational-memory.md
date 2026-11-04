@@ -8,7 +8,7 @@ fourth model.
 **Audience:** Product, engineering, and anyone changing ingest, proposals,
 retrieval, or object memory.
 
-**Last updated:** 2026-08-17
+**Last updated:** 2026-11-03
 
 This is the single narrative for how Timeline turns mixed source events into
 durable workspace memory. Decision records stay in ADRs. Object UI, routes, and
@@ -749,7 +749,8 @@ Provenance tiers ([ADR 0010](./adr/0010-artifact-provenance-is-tiered-and-eviden
 | New Timeline object from a finding or one-off mention | Never | Stay on the parent hub or as fact text |
 
 Generic ingest webhooks are evidence-only
-([ADR 0009](./adr/0009-ingest-webhooks-are-evidence-only.md)).
+([ADR 0009](./adr/0009-ingest-webhooks-are-evidence-only.md)). Hosted MCP
+`timeline.remember` stores agent notes through that same path.
 
 ## Data stores
 

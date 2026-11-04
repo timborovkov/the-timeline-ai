@@ -2,6 +2,7 @@
 
 import {
   createMcpAuthorizationCode,
+  resolveMcpOAuthConsentScopes,
   revokeMcpOAuthGrant,
   validateMcpAuthorizationRequest,
   withMcpOAuthTrustedAuthorizationRedirect,
@@ -83,6 +84,10 @@ export async function approveMcpOAuthAction(formData: FormData): Promise<void> {
     redirect(mcpAuthorizationPath(input, MCP_AUTHORIZATION_NOTICES.invalidTeam));
   }
 
+  const grantCapture =
+    formData.get('grant_capture') === '1' || formData.get('grant_capture') === 'on';
+  const grantedScopes = resolveMcpOAuthConsentScopes(request.scopes, { grantCapture });
+
   let issuance: { ok: true; code: string } | { ok: false; destination: string };
   try {
     issuance = {
@@ -91,6 +96,7 @@ export async function approveMcpOAuthAction(formData: FormData): Promise<void> {
         request,
         userId: session.user.id,
         teamId,
+        grantedScopes,
       }),
     };
   } catch (error) {

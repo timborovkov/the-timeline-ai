@@ -401,8 +401,8 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       standalone installation guidance, and links from public help and MCP setup.
 - [x] Implement the outbound MCP OAuth and current transport path in the repository:
       RFC 9728/8414 discovery, CIMD-first client resolution with constrained DCR,
-      PKCE S256, member/team consent and revocation, `read` plus owner/admin-only
-      `agent:ask`, official MCP SDK v2 Streamable HTTP negotiation, tool
+      PKCE S256, member/team consent and revocation, `read` plus default-on
+      `capture` and owner/admin-only `agent:ask`, official MCP SDK v2 Streamable HTTP negotiation, tool
       annotations/output schemas, and standards-compatible 401 discovery.
 - [ ] Deploy this marketplace-readiness release, apply migration 0075, and pass
       the production OAuth/MCP smoke matrix from every intended host.
@@ -426,7 +426,7 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       and other native integrations) need a separate encrypted, reversible store
       with per-workspace installs and uninstall webhooks; do not reuse the
       hashed MCP grant/token tables for them.
-- [ ] Keep `MCP_OAUTH_SCOPES` MCP-only (`read`, `agent:ask`). Do not add CRM or
+- [ ] Keep `MCP_OAUTH_SCOPES` MCP-only (`read`, `capture`, `agent:ask`). Do not add CRM or
       other provider-app scopes to the outbound MCP authorization server.
 - [ ] After testing with real ChatGPT and Claude against production, consider
       leniency on OAuth `state` and `resource` for less strict hosts. Do not

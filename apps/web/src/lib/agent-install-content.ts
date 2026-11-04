@@ -15,7 +15,7 @@ codex plugin add timeline@timeline
 
 Then verify that the timeline skill is installed.
 
-The bundled MCP connection uses Timeline OAuth and does not need a bearer key in the plugin manifest. Fully restart Codex, start a new task, and complete the browser flow when prompted: sign in to Timeline, choose the team to share, review the requested scopes, and approve or deny access. The default scope is read. Never request agent:ask unless I explicitly ask for paid, proposal-only Timeline agent turns and the consent screen shows that scope.
+The bundled MCP connection uses Timeline OAuth and does not need a bearer key in the plugin manifest. Fully restart Codex, start a new task, and complete the browser flow when prompted: sign in to Timeline, choose the team to share, review the requested scopes, and approve or deny access. The default grant is read plus capture (the capture checkbox is on by default). Uncheck capture for a read-only grant. Never request agent:ask unless I explicitly ask for paid, proposal-only Timeline agent turns and the consent screen shows that scope.
 
 When setup is ready, tell me to start a new task so Codex loads the plugin and begins OAuth authorization.`;
 
@@ -64,7 +64,7 @@ export const TIMELINE_AGENT_ACCESS_FAQS = [
   {
     question: 'Can the plugin change canonical work?',
     answer:
-      'Not with the default read scope. A current team owner or admin can separately approve agent:ask for paid, stateless Timeline agent turns. It may call enabled team-shared custom MCP tools and create proposals for human review, but cannot write canonical Timeline state directly. Third-party tools may have external side effects.',
+      'Not for canonical records. The default grant includes capture so timeline.remember can store cited ingest evidence; unchecking capture makes the token read-only and remember returns insufficient_scope. A current team owner or admin can separately approve agent:ask for paid, stateless Timeline agent turns. It may call enabled team-shared custom MCP tools and create proposals for human review, but cannot write canonical Timeline state directly. Third-party tools may have external side effects.',
   },
   {
     question: 'What about self-hosted Timeline?',

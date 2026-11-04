@@ -6,6 +6,7 @@ import { asc, eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 
 import {
+  hasCurrentLegalAcceptance,
   legalAcceptanceRequestMetadata,
   type LegalAcceptanceTransaction,
   recordCurrentLegalAcceptance,
@@ -154,6 +155,32 @@ describe('legal acceptance persistence', () => {
       .from(users)
       .where(eq(users.id, USER_ID));
     expect(snapshot).toEqual([{ acceptedAt: firstAcceptedAt }]);
+  });
+});
+
+describe('hasCurrentLegalAcceptance', () => {
+  it('keeps current pre-launch Privacy acknowledgment valid after disclosure edits', () => {
+    expect(
+      hasCurrentLegalAcceptance({
+        legalTermsVersion: TERMS_VERSION,
+        legalPrivacyVersion: '2026-11-01',
+        legalAcceptedAt: new Date('2026-08-21T10:00:00.000Z'),
+      }),
+    ).toBe(true);
+    expect(
+      hasCurrentLegalAcceptance({
+        legalTermsVersion: TERMS_VERSION,
+        legalPrivacyVersion: PRIVACY_VERSION,
+        legalAcceptedAt: new Date('2026-08-21T10:00:00.000Z'),
+      }),
+    ).toBe(true);
+    expect(
+      hasCurrentLegalAcceptance({
+        legalTermsVersion: TERMS_VERSION,
+        legalPrivacyVersion: 'older-privacy',
+        legalAcceptedAt: new Date('2026-08-21T10:00:00.000Z'),
+      }),
+    ).toBe(false);
   });
 });
 

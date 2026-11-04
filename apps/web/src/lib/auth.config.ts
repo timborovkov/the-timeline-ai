@@ -8,7 +8,7 @@ import {
   shouldExpireUnverifiedActiveTeamCookie,
 } from '@/lib/active-team-cookie';
 import { isLegalPublicationReady } from '@/lib/legal-publication';
-import { PRIVACY_VERSION, TERMS_VERSION } from '@/lib/legal-versions';
+import { TERMS_VERSION, isCurrentPrivacyVersion } from '@/lib/legal-versions';
 import { nonEmptyEnv } from '@/lib/safe-redirect';
 
 const localAuthSecret =
@@ -44,7 +44,7 @@ export function hasCurrentLegalSession(
 ): boolean {
   return (
     user?.legalTermsVersion === TERMS_VERSION &&
-    user.legalPrivacyVersion === PRIVACY_VERSION &&
+    isCurrentPrivacyVersion(user.legalPrivacyVersion) &&
     Boolean(user.legalAcceptedAt)
   );
 }

@@ -24,6 +24,7 @@ import {
   McpOAuthError,
   MCP_TEAM_ACTOR_USER_ID,
   parseMcpOAuthScopes,
+  resolveMcpOAuthConsentScopes,
   registerMcpOAuthClient,
   revokeMcpOAuthToken,
   resolveMcpBearer as resolveTimelineMcpBearer,
@@ -389,6 +390,28 @@ describe('Timeline MCP OAuth server', () => {
     await expect(
       resolveMcpBearer(db, tokens.access_token, 'https://other.example/api/mcp/server'),
     ).resolves.toBeNull();
+  });
+
+  it('records capture on the grant when consent adds it', async () => {
+    const { client, request } = await createDcrAuthorization(db, 'read');
+    const code = await createMcpAuthorizationCode(db, {
+      request,
+      userId: USER_ID,
+      teamId: TEAM_ID,
+      grantedScopes: ['read', 'capture'],
+    });
+    const tokens = await exchangeMcpAuthorizationCode(db, {
+      code,
+      clientId: client.client_id,
+      redirectUri: REDIRECT_URI,
+      codeVerifier: VERIFIER,
+      resource: RESOURCE,
+      expectedResource: RESOURCE,
+    });
+    expect(tokens.scope).toBe('read capture');
+    await expect(resolveMcpBearer(db, tokens.access_token)).resolves.toMatchObject({
+      scopes: ['read', 'capture'],
+    });
   });
 
   it('rotates refresh tokens and revokes the grant when an old token is replayed', async () => {
@@ -901,6 +924,16 @@ describe('Timeline MCP OAuth server', () => {
 
   it('rejects unsafe or mismatched client metadata and incomplete scope sets', async () => {
     expect(() => parseMcpOAuthScopes('agent:ask')).toThrow(McpOAuthError);
+    expect(() => parseMcpOAuthScopes('capture')).toThrow(McpOAuthError);
+    expect(parseMcpOAuthScopes('read capture')).toEqual(['read', 'capture']);
+    expect(resolveMcpOAuthConsentScopes(['read'], { grantCapture: true })).toEqual([
+      'read',
+      'capture',
+    ]);
+    expect(resolveMcpOAuthConsentScopes(['read', 'agent:ask'], { grantCapture: false })).toEqual([
+      'read',
+      'agent:ask',
+    ]);
     vi.stubEnv('NODE_ENV', 'production');
     await expect(
       validateMcpAuthorizationRequest(

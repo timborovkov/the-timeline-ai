@@ -281,12 +281,12 @@ describe('reconciliation cutover contracts', () => {
     const writerFiles = rawEventWriterFiles();
 
     expect(writerFiles).toEqual([
-      'apps/web/src/app/api/webhooks/ingest/route.ts',
       'apps/worker/src/workers/meetingFinalize.ts',
       'packages/shared/src/boards/index.ts',
       'packages/shared/src/calendar/raw-events.ts',
       'packages/shared/src/calendar/scope.ts',
       'packages/shared/src/documents/scope.ts',
+      'packages/shared/src/ingest-webhooks/accept.ts',
       'packages/shared/src/integrations/event-writer.ts',
       'packages/shared/src/objects/index.ts',
       'packages/shared/src/reconciliation/mcp-capture.ts',

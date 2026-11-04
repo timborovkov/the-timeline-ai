@@ -76,7 +76,21 @@ await vi.mock(
 );
 await vi.mock(
   import.meta.resolve('@timeline/shared/mcp-server'),
-  () => ({ mintKey: fakes.mintKey }),
+  () => ({
+    mintKey: fakes.mintKey,
+    mcpStaticKeyScopes: ({
+      allowCapture,
+      allowAgent,
+    }: {
+      allowCapture: boolean;
+      allowAgent: boolean;
+    }) => {
+      const scopes = ['read'];
+      if (allowCapture) scopes.push('capture');
+      if (allowAgent) scopes.push('agent:ask');
+      return scopes;
+    },
+  }),
   () => import('@timeline/shared/mcp-server'),
 );
 await vi.mock(
@@ -151,7 +165,7 @@ beforeEach(() => {
     id: 'key-2',
     name: 'Cursor',
     keyPrefix: 'tla_cur',
-    scopes: ['read'],
+    scopes: ['read', 'capture'],
     createdAt: new Date('2026-06-02T00:00:00.000Z'),
   };
   fakes.insertValues = [];
@@ -213,7 +227,7 @@ describe('/api/team/mcp-keys', () => {
       name: 'Cursor',
       prefix: 'tla_cur',
       plaintext: 'tla_plaintext_once',
-      scopes: ['read'],
+      scopes: ['read', 'capture'],
       createdAt: '2026-06-02T00:00:00.000Z',
     });
     expect(fakes.insertValues[0]).toMatchObject({
@@ -223,7 +237,7 @@ describe('/api/team/mcp-keys', () => {
         name: 'Cursor',
         keyHash: 'hashed',
         keyPrefix: 'tla_pref',
-        scopes: ['read'],
+        scopes: ['read', 'capture'],
       },
     });
     expect(fakes.insertValues[1]).toMatchObject({
@@ -246,17 +260,34 @@ describe('/api/team/mcp-keys', () => {
   it('grants agent access only when an admin explicitly opts in', async () => {
     fakes.returningRow = {
       ...fakes.returningRow,
-      scopes: ['read', 'agent:ask'],
+      scopes: ['read', 'capture', 'agent:ask'],
     };
 
     const response = await POST(request({ name: 'Operator', allowAgent: true }));
 
     expect(response.status).toBe(200);
     expect(fakes.insertValues[0]).toMatchObject({
-      value: { scopes: ['read', 'agent:ask'] },
+      value: { scopes: ['read', 'capture', 'agent:ask'] },
     });
     await expect(response.json()).resolves.toMatchObject({
-      scopes: ['read', 'agent:ask'],
+      scopes: ['read', 'capture', 'agent:ask'],
+    });
+  });
+
+  it('omits capture when an admin explicitly opts out', async () => {
+    fakes.returningRow = {
+      ...fakes.returningRow,
+      scopes: ['read'],
+    };
+
+    const response = await POST(request({ name: 'Readonly', allowCapture: false }));
+
+    expect(response.status).toBe(200);
+    expect(fakes.insertValues[0]).toMatchObject({
+      value: { scopes: ['read'] },
+    });
+    await expect(response.json()).resolves.toMatchObject({
+      scopes: ['read'],
     });
   });
 
