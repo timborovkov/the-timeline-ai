@@ -13,6 +13,7 @@ describe('connector public documents', () => {
   it('contributes the directory and six native connector routes to public discovery', () => {
     expect(CONNECTOR_PUBLIC_DOCUMENTS.documents.map((document) => document.canonicalPath)).toEqual([
       '/integrations',
+      '/integrations/telegram',
       ...CONNECTORS.map((connector) => `/integrations/${connector.slug}`),
     ]);
     expect(
@@ -27,13 +28,13 @@ describe('connector public documents', () => {
     const serialized = JSON.stringify(INTEGRATION_DIRECTORY_DOCUMENT);
 
     expect(INTEGRATION_DIRECTORY_DOCUMENT.dates).toEqual({
-      modified: '2026-08-15',
-      reviewed: '2026-08-15',
+      modified: '2026-11-03',
+      reviewed: '2026-11-03',
     });
     for (const surface of CAPTURE_SURFACES) {
       expect(serialized).toContain(surface.name);
     }
-    expect(CONNECTOR_PUBLIC_DOCUMENTS.documents).toHaveLength(CONNECTORS.length + 1);
+    expect(CONNECTOR_PUBLIC_DOCUMENTS.documents).toHaveLength(CONNECTORS.length + 2);
   });
 
   it('derives metadata, capability, structured data, and LLM content from connector truth', () => {

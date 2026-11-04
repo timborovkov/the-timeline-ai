@@ -17,7 +17,8 @@ const supportLinkClass =
 
 export const metadata: Metadata = publicMetadata({
   title: 'Help',
-  description: 'Public help docs for The Timeline.',
+  description:
+    'Guides for The Timeline: capture Slack, Telegram, email and calls, keep records current, and trace every answer to its source.',
   path: '/help',
 });
 

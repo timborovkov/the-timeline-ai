@@ -54,15 +54,22 @@ composition edit is the integration seam for sitemap and LLM discovery. Route
 modules can resolve their document by canonical path and pass it to
 `metadataForPublicDocument` and `buildPublicStructuredData`; serialize JSON-LD
 with `stringifyJsonLdForHtml` before embedding it in a script element.
-`solutions`, `integrations`, and `how-it-works` contributions receive their own
-stable sections in both LLM files. Empty contribution sections are omitted, so
-adding the first document is what makes its section appear.
+`use-cases`, `compare`, `solutions`, `integrations`, and `how-it-works` contributions receive
+their own stable sections in both LLM files. Empty contribution sections are
+omitted, so adding the first document is what makes its section appear.
 
-Outcome-led solution documents live beside their shared page content under
-[`components/marketing/solutions`](../apps/web/src/components/marketing/solutions).
-They stay out of the four-item primary navigation, but must remain reachable from
-relevant public-page context, carry distinct workflows and evidence boundaries,
-and cross-link to related solutions. Do not create title-swapped or orphaned
+Use-case documents live beside their shared page content under
+[`components/marketing/use-cases`](../apps/web/src/components/marketing/use-cases)
+and appear in the public Use cases menu. Compare/works-with documents live beside
+their shared page content under
+[`components/marketing/compare`](../apps/web/src/components/marketing/compare)
+and appear in the public Compare menu as head-to-head pages. Works-with pages for
+Linear, Jira, Notion, HubSpot, Attio, and Pipedrive live under
+[`/integrations`](../apps/web/src/app/integrations) and also appear in that
+Compare menu. The agents hub and product-tour documents
+are registered with the core public pages. Outcome-led solution documents remain under
+[`components/marketing/solutions`](../apps/web/src/components/marketing/solutions)
+for the remaining client-handoff page. Do not create title-swapped or orphaned
 search variants.
 
 Do not register speculative routes. A registry entry asserts that its canonical

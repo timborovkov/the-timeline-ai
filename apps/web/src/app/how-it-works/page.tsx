@@ -28,14 +28,15 @@ export default function HowItWorksPage() {
       <EditorialStructuredData data={buildHowItWorksStructuredData()} />
       <section data-how-it-works-hero className="border-b border-border">
         <MarketingContainer className="py-16 sm:py-24 lg:py-28">
-          <p className="text-sm font-medium text-fg-muted">How Timeline works</p>
+          <p className="text-sm font-medium text-fg-muted">How it works</p>
           <div className="mt-6 grid items-end gap-10 lg:grid-cols-[1.25fr_0.75fr]">
             <h1 className="max-w-[13ch] break-words text-balance text-[3rem] font-semibold leading-[0.95] tracking-[-0.05em] text-fg sm:text-[clamp(3.5rem,5vw,5.5rem)]">
-              From scattered work to a cited answer.
+              From conversation to current record.
             </h1>
             <p className="max-w-[44ch] text-base leading-relaxed text-fg-muted sm:text-lg">
-              See how selected work becomes source-linked history, working records, and
-              evidence-backed answers—without replacing the tools your team already uses.
+              Connect the chats, email and calls where work happens. The Timeline captures them in
+              order, proposes updates to your records, and you approve what changes. You don’t have
+              to replace the tools your team already uses.
             </p>
           </div>
         </MarketingContainer>
@@ -119,7 +120,7 @@ export default function HowItWorksPage() {
           <div>
             <p className="text-sm font-medium text-fg-muted">Start with the answer</p>
             <h2 className="mt-5 max-w-3xl text-balance text-3xl font-semibold tracking-[-0.04em] sm:text-4xl">
-              Start with one project and one question.
+              Start with one channel.
             </h2>
             <p className="mt-5 max-w-2xl text-base leading-7 text-fg-muted sm:text-lg">
               Use one project, the smallest useful source set, and a question whose answer you can
@@ -131,11 +132,11 @@ export default function HowItWorksPage() {
               href="/sign-up"
               className="inline-flex min-h-12 items-center gap-6 rounded-sm bg-signal px-5 font-semibold text-signal-fg outline-none hover:brightness-95 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
             >
-              Try one real project
+              Start free
               <ArrowRight aria-hidden="true" className="size-4" />
             </Link>
             <p className="max-w-xs text-sm leading-6 text-fg-muted lg:text-right">
-              Free to start · no card required ·{' '}
+              Free for up to 3 members · no card required ·{' '}
               <Link
                 href="/pricing"
                 className="underline decoration-border-strong underline-offset-4 hover:decoration-fg"

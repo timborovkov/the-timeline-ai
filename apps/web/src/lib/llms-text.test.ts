@@ -37,6 +37,15 @@ describe('llms text files', () => {
     expect(text).toContain('[Trust and security](https://thetimeline.cc/trust)');
     expect(text).toContain('[Cookies and similar technologies](https://thetimeline.cc/cookies)');
     expect(text).toContain('[llms-full.txt](https://thetimeline.cc/llms-full.txt)');
+    expect(text).toContain('Set up The Timeline - https://thetimeline.cc/llms.txt');
+    expect(text).toContain('https://thetimeline.cc/api/mcp/server');
+    expect(text).toContain(
+      'timeline.search, timeline.get, timeline.subject, timeline.ask, timeline.remember',
+    );
+    expect(text).toContain('Capture is a separate consent checkbox, on by default');
+    expect(text).toContain('counts toward the accepted-sources meter');
+    expect(text).toContain('plugins/timeline');
+    expect(text).toContain('POST https://thetimeline.cc/api/webhooks/ingest');
     expect(text).toContain('Signed-in app routes, auth routes, invite routes, and API routes');
     for (const page of HELP_PAGES) {
       expect(text).toContain(`[${page.title}](https://thetimeline.cc/help/${page.slug})`);
@@ -92,12 +101,12 @@ describe('llms text files', () => {
 
   it('tracks machine-document changes in their registry dates', () => {
     expect(PUBLIC_DOCUMENT_REGISTRY.get('/llms-full.txt')?.dates).toEqual({
-      modified: '2026-08-26',
-      reviewed: '2026-08-26',
+      modified: '2026-11-03',
+      reviewed: '2026-11-03',
     });
     expect(PUBLIC_DOCUMENT_REGISTRY.get('/sitemap.xml')?.dates).toEqual({
-      modified: '2026-08-26',
-      reviewed: '2026-08-26',
+      modified: '2026-11-03',
+      reviewed: '2026-11-03',
     });
   });
 
@@ -106,9 +115,9 @@ describe('llms text files', () => {
     const full = buildLlmsFullTxt({ siteUrl: 'https://thetimeline.cc' });
 
     for (const text of [compact, full]) {
-      expect(text).toContain('AI team memory');
-      expect(text).toContain('selected work');
-      expect(text).toContain('chronological project history');
+      expect(text).toContain('auto-updating work record');
+      expect(text).toContain('Slack, Telegram, email and calls');
+      expect(text).toContain('current work record');
       expect(text).toMatch(/citation|cite the source/iu);
       expect(text).toContain('human approval');
       expect(text).not.toContain('operations log your team can talk to');

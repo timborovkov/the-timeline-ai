@@ -206,33 +206,33 @@ export const EDITORIAL_GUIDES: readonly EditorialGuide[] = [
     cta: {
       title: 'Try it on one project, not the whole company.',
       body: 'Activate one channel and the smallest Drive source available, ask a question about newly changed material that you already know how to verify, and inspect every citation.',
-      label: 'Start with one project',
+      label: 'Start free',
       href: '/sign-up',
     },
   },
   {
     slug: 'weekly-engineering-updates-from-slack-linear-and-github',
     route: GUIDE_ROUTES.weeklyEngineeringUpdates,
-    title: 'How to create weekly engineering and project updates from Slack, Linear, and GitHub',
-    shortTitle: 'Build weekly engineering updates',
+    title: 'How to create engineering and project updates from Slack, Linear, and GitHub',
+    shortTitle: 'Build engineering updates',
     summary:
       'A source-aware method for compiling decisions, movement, shipped work, blockers, and next steps without flattening three systems into one status list.',
     machineSummary:
-      'Generate a weekly project or engineering update by combining selected Slack discussions, Linear issue and project activity, and GitHub pull request, review, default-branch commit, release, and workflow evidence into a cited, human-reviewed brief.',
-    topics: ['weekly update', 'engineering status', 'project reporting', 'delivery evidence'],
+      'Generate a project or engineering update by combining selected Slack discussions, Linear issue and project activity, and GitHub pull request, review, default-branch commit, release, and workflow evidence into a cited, human-reviewed brief.',
+    topics: ['project update', 'engineering status', 'project reporting', 'delivery evidence'],
     nativeConnectors: ['Slack', 'Linear', 'GitHub'],
     answer: {
       title: 'Use one reporting contract across three evidence roles.',
-      body: 'Let Slack explain decisions and blockers, Linear describe planned work and status movement, and GitHub show code review, merge, release, and CI activity. Ask for the same four sections every week: outcomes, decisions, blockers, and next commitments. Require citations, then have the project owner review the update before it is distributed.',
+      body: 'Let Slack explain decisions and blockers, Linear describe planned work and status movement, and GitHub show code review, merge, release, and CI activity. Ask for the same four sections: outcomes, decisions, blockers, and next commitments. Require citations, then have the project owner review the update before it is distributed.',
       checklist: [
         'Map one project to its channels, Linear teams, and repositories.',
-        'Use a precise weekly time window and a stable four-part output shape.',
+        'Use a precise time window and a stable four-part output shape.',
         'Distinguish issue movement, merged code, released code, and business outcome.',
         'Review mismatches instead of hiding them in a smooth summary.',
       ],
     },
     context: [
-      'A weekly update fails when it treats every tool as a duplicate task list. The useful details are usually distributed by role: intent and coordination in Slack, declared state in Linear, and implementation evidence in GitHub.',
+      'A status update fails when it treats every tool as a duplicate task list. The useful details are usually distributed by role: intent and coordination in Slack, declared state in Linear, and implementation evidence in GitHub.',
       'The goal is not to count activity. It is to explain what meaningfully changed, which evidence supports that conclusion, and where the systems disagree about the state of the work.',
     ],
     workflow: [
@@ -245,7 +245,7 @@ export const EDITORIAL_GUIDES: readonly EditorialGuide[] = [
       {
         index: '02',
         title: 'Fix the reporting window',
-        body: 'Use explicit dates and the team timezone. “From Monday 09:00 through Friday 16:00” is auditable; “this week” becomes ambiguous around weekends, distributed teams, and scheduled delivery.',
+        body: 'Use explicit dates and the team timezone. “From 3 November 09:00 to 4 November 09:00” is auditable; “recently” becomes ambiguous around weekends, distributed teams and scheduled delivery.',
         output: 'A repeatable temporal boundary.',
       },
       {
@@ -275,7 +275,7 @@ export const EDITORIAL_GUIDES: readonly EditorialGuide[] = [
     ],
     diagram: PUBLIC_DEMO_STORY.editorial.weeklyEngineering,
     prompt:
-      'Create the weekly update for [project] from [start date and time] through [end date and time] in [timezone]. Use selected Slack, Linear, and GitHub evidence. Return four sections: outcomes, decisions, blockers, and next commitments. Distinguish issue completion, merge, release, and verified outcome. Cite every claim, list source mismatches, and say when evidence is missing.',
+      'Create the update for [project] from [start date and time] through [end date and time] in [timezone]. Use selected Slack, Linear, and GitHub evidence. Return four sections: outcomes, decisions, blockers, and next commitments. Distinguish issue completion, merge, release, and verified outcome. Cite every claim, list source mismatches, and say when evidence is missing.',
     boundaries: [
       {
         provider: 'Slack',
@@ -336,7 +336,7 @@ export const EDITORIAL_GUIDES: readonly EditorialGuide[] = [
     cta: {
       title: 'Build one update you can audit.',
       body: 'Connect the channels, Linear scope, and repositories for one active project. Generate the update, then challenge every sentence against its citations.',
-      label: 'Create a cited update',
+      label: 'Start free',
       href: '/sign-up',
     },
   },
@@ -468,7 +468,7 @@ export const EDITORIAL_GUIDES: readonly EditorialGuide[] = [
     cta: {
       title: 'Reconstruct one incident without erasing uncertainty.',
       body: 'Connect one Sentry project, its repository, and the response channel. Start with an incident your team already understands, then compare the dossier with the original evidence.',
-      label: 'Build an incident timeline',
+      label: 'Start free',
       href: '/sign-up',
     },
   },

@@ -7,7 +7,7 @@ export default function manifest(): MetadataRoute.Manifest {
     name: 'The Timeline',
     short_name: 'Timeline',
     description:
-      'AI team memory that turns selected work into a searchable project history with cited answers.',
+      'The Timeline keeps client, deal, task and decision records up to date from Slack, Telegram, email and calls.',
     // Stable identity for existing installs; browsers fall back to start_url when id is absent.
     id: '/',
     start_url: '/app',

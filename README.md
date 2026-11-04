@@ -5,7 +5,7 @@
 <h1 align="center">The Timeline</h1>
 
 <p align="center">
-  AI team memory for real projects, with cited answers.
+  An auto-updating work record from Slack, Telegram, email and calls, with cited answers.
 </p>
 
 <p align="center">
@@ -18,9 +18,9 @@
   <a href="./docs/index.html">Developer docs</a>
 </p>
 
-The Timeline brings selected messages, meetings, documents and connected work into
-one searchable team memory. Ask questions, get answers with source citations, and
-review proposed facts and decisions before they become durable workspace changes.
+The Timeline keeps client, deal, task and decision records up to date from Slack,
+Telegram, email and calls. Every line has its source, and suggested durable
+workspace changes wait for human approval.
 
 ## Features
 

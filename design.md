@@ -919,21 +919,25 @@ follows the shared due-date vocabulary above.
 
 ### Marketing and public pages
 
-The public landing page is an editorial, five-scene acquisition narrative:
-claim, evidence and chronology, cited answer, audience fit with trust, and a
-one-project CTA. The claim defines Timeline as AI team memory: selected work
-becomes a chronological, source-linked project history that can answer questions
-with citations. The chronology scene names the cost of rebuilding status, handoffs,
-customer commitments, and decisions across Telegram, Slack, meetings,
-documents, tickets, code, and email before showing how selected work becomes an
-inspectable record. Its signature example project, Acme rollout, shows five
-cited work sources converging into one project history, with a linked Telegram
-group as the first source. Captured work settles onto a chronological rail,
-connects to project, person, task, and calendar context, and resolves into an
-answer with tangible source links. Suggested durable workspace
-changes remain approval-backed; the diagram never implies that evidence silently
-rewrites canonical objects. Acme rollout is the
-canonical fictional public demo corpus across landing, connector, and guide
+The public landing page is an editorial, six-scene acquisition narrative:
+claim, evidence and chronology, cited answer, Slack-to-cited-answer with an MCP
+example, audience fit with trust, and a Start free CTA. The claim scene also
+includes a dark “Give this to your agent” card with the copyable
+`Set up The Timeline - https://thetimeline.cc/llms.txt` command. The claim defines The Timeline as an auto-updating work record:
+what is said in Slack, Telegram, email and calls becomes current client, deal,
+task and decision records, with the source for every line and human approval
+before anything changes. Audience copy describes how teams work (chat-run teams
+on Slack or Telegram, with the rest of the work spread across email, calls and
+documents), not team size or role. Updates are daily, with no weekly framing.
+The chronology scene names the cost of rebuilding status, promises and decisions
+from conversation before showing how selected work becomes an inspectable record.
+Its signature example project, Acme rollout, shows five cited work sources
+converging into one work record, with a linked Telegram group as the first source.
+Captured work settles onto a chronological rail, connects to project, person,
+task, and calendar context, and resolves into an answer with tangible source
+links. Suggested durable workspace changes remain approval-backed; the diagram
+never implies that evidence silently rewrites canonical objects. Acme rollout is
+the canonical fictional public demo corpus across landing, connector, and guide
 examples; every rendered example states that it is illustrative and not
 customer data. Provider pages may show distinct slices, but people, identifiers,
 records, and outcomes stay coherent across the journey. Connector capability belongs with the
@@ -949,7 +953,7 @@ cream reads like paper and near-black retains its tactile texture.
 The landing hero keeps the observatory composition: six compact source cards sit
 around a square grid and stream packets along visible curved paths into the
 official Timeline mark. The centered diamond is labelled **The Timeline** and
-**Project history**; one quiet rail then resolves into **Working records** and
+**Work record**; one quiet rail then resolves into **Daily update** and
 **Cited answers**. It does not reproduce the expanded timeline, record cards, or
 assistant exchange. Every moving packet reuses the exact path drawn behind it,
 the animation restarts only when the diagram enters view, and reduced motion
@@ -976,16 +980,33 @@ grid without decorative connectors, and narrow containers stack stages with
 vertical packet tracks. Reduced-motion mode hides packets and preserves the
 complete static story.
 
-Outcome-led solution pages extend this story for distinct search intents without
-joining the primary navigation. `/solutions/client-project-handoffs`,
-`/solutions/weekly-project-updates`, and
-`/solutions/crm-context-from-team-activity` each own a concrete job, workflow,
-example, evidence boundary, and next step. They are substantive public pages,
-not title-swapped landing variants: the home audience rail links to them, they
-cross-link where useful, and the public registry exposes them to the sitemap,
-structured data, and machine-readable discovery files. Their visible copy must
-stay consistent with deliberate capture, source-linked claims, and human review
-before inferred durable workspace changes.
+The public header stays uncluttered: Product, Use cases, Compare, Agents, and
+Pricing. Use cases and Compare are `details` dropdowns on desktop and in the
+mobile menu. How it works, Integrations, Help, and Trust remain in the footer
+(and legal row). `/compare` is a hub for head-to-head pages versus Day AI,
+Folk, Glean, and Geekbot; every competitor fact on those pages cites and links
+that competitor's own site. Works-with pages live under `/integrations`
+(Linear, Jira, Notion, HubSpot, Attio, Pipedrive), not a separate `/works-with`
+section: Linear has native ingest, Jira and Notion are hosted MCP lookup, and
+HubSpot, Attio, and Pipedrive native ingest is coming soon. Retired
+`/compare/{hubspot,jira,linear,notion}` URLs permanent-redirect to the matching
+integrations page.
+
+Use-case pages extend this story for six jobs from one record: work record,
+team daily log, communication trail, CRM, task board, and onboarding and repeat
+questions. They live under `/use-cases`, appear in the public Use cases menu,
+and are registered for sitemap and LLM discovery. `/compare` and `/agents` are
+indexable hubs for the Compare dropdown and the agent setup card. Retired solution URLs
+`/solutions/weekly-project-updates` and `/solutions/crm-context-from-team-activity`
+permanent-redirect to the matching use-case pages. Client project handoffs remain
+at `/solutions/client-project-handoffs` with related use-case links. `/product-tour`
+is a screenshot walkthrough linked from the home hero as See it first and from
+pricing; `/integrations/telegram` is the public Telegram capture page. Product
+screenshots live in `apps/web/public/marketing/screenshots` under the filenames
+from the website copy plan so they can be swapped after the citation redesign.
+Visible copy must stay consistent with deliberate capture, source-linked claims,
+daily (not weekly) updates, and human review before inferred durable workspace
+changes. Do not claim WhatsApp, Teams chat, or Slack Connect.
 
 Public pages may use oversized Switzer display type, denser Commit Mono source
 metadata, a near-black evidence-instrument canvas, and more cinematic spacing
@@ -1328,6 +1349,10 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-10-30 | Polar promo codes | Change plan includes an optional promo field with inline eligibility/provider errors. An active assigned team discount disables the field and explains precedence; discounts never stack. Invoice previews remain local estimates before Polar campaign savings. |
 | 2026-10-23 | Quiet customer billing | Team Billing separates remaining benefits, recorded usage charges, recurring fee, and monthly spend cap. Usage is a meter table. Cap, payment, and comp states are one banner each. Members only see a limit notice. Platform admin billing stays dense. |
 | 2026-11-02 | Connections as a flagship settings page | Splits Connections into Sources, Agent tools, and Developer tabs. Email stays a normal capture row; Documents and Meetings stay on their sidebar pages. Agent MCP, Timeline MCP, and webhooks open compact sheets. Figma and other local-only catalog entries sit in Coming soon. |
+| 2026-11-03 | Work-record marketing site | Leads public pages with the auto-updating work record, daily updates, and Start free. Adds a Use cases menu, six use-case pages, `/product-tour`, and `/integrations/telegram`. |
+| 2026-11-03 | Public Compare and Agents | Header stays Product, Use cases, Compare, Agents, Pricing, with mobile dropdowns. Adds `/compare` works-with pages, `/agents`, a copyable llms.txt command, a pricing FAQ, and a Slack-to-cited-answer landing scene. |
+| 2026-11-03 | Compare vs and works-with | Moves works-with pages under `/integrations/{hubspot,pipedrive,attio,linear,jira,notion}`. `/compare` becomes a hub plus `/compare/the-timeline-vs-{day-ai,folk,glean,geekbot}` pages that cite each competitor's site. |
+| 2026-11-04 | Hosted MCP public copy | Agents, llms.txt, the home MCP example, and the pricing FAQ teach five tools, the default-on capture scope, remember counting toward accepted sources, and Free 100 MB / 10,000 documents / 20,000 chunks. |
 
 
 ### Billing benefits and recorded charges (2026-10-31)

@@ -1,6 +1,6 @@
 import { ImageResponse } from 'next/og';
 
-export const alt = 'The Timeline — AI team memory with cited answers';
+export const alt = "The Timeline — your team's work, written down for you";
 export const size = { width: 1200, height: 630 };
 export const contentType = 'image/png';
 
@@ -31,7 +31,7 @@ export default function OpengraphImage() {
           textTransform: 'uppercase',
         }}
       >
-        <span>THE TIMELINE · AI TEAM MEMORY · v1</span>
+        <span>THE TIMELINE · WORK RECORD · v1</span>
         <span>thetimeline.cc</span>
       </div>
 
@@ -56,9 +56,8 @@ export default function OpengraphImage() {
               flexDirection: 'column',
             }}
           >
-            <span>Scattered work.</span>
-            <span>One project history.</span>
-            <span style={{ color: '#b5ea4a' }}>Answers with receipts.</span>
+            <span>Your team's work,</span>
+            <span style={{ color: '#b5ea4a' }}>written down for you</span>
           </div>
         </div>
       </div>

@@ -7,6 +7,8 @@ import {
 } from '@/components/marketing/integrations/connector-content';
 import { ConnectorStructuredData } from '@/components/marketing/integrations/connector-seo';
 import { RecordsToAnswer } from '@/components/marketing/integrations/records-to-answer';
+import { findWorksWithTool } from '@/components/marketing/integrations/works-with-content';
+import { WorksWithGuidance } from '@/components/marketing/integrations/works-with-sections';
 import { PUBLIC_DEMO_DISCLOSURE } from '@/components/marketing/public-demo-story';
 import { ProviderLogo } from '@/components/provider-logo';
 import { PublicSessionBranch } from '@/components/public-session-branch';
@@ -21,6 +23,7 @@ export function ConnectorPage({ connector }: { connector: ConnectorContent }) {
         <ConnectorHero connector={connector} />
         <div className="mx-auto max-w-6xl px-4 sm:px-6">
           <TruthBoundary connector={connector} />
+          <ConnectorWorksWithGuidance slug={connector.slug} />
           <Questions connector={connector} />
           <WorkedScenario connector={connector} />
           <CapturedRecords connector={connector} />
@@ -34,6 +37,12 @@ export function ConnectorPage({ connector }: { connector: ConnectorContent }) {
       </main>
     </PublicShell>
   );
+}
+
+function ConnectorWorksWithGuidance({ slug }: { slug: string }) {
+  const tool = findWorksWithTool(slug);
+  if (!tool) return null;
+  return <WorksWithGuidance tool={tool} />;
 }
 
 function ConnectorHero({ connector }: { connector: ConnectorContent }) {
@@ -68,7 +77,7 @@ function ConnectorHero({ connector }: { connector: ConnectorContent }) {
                 signedOut={
                   <Button asChild size="lg">
                     <Link href="/sign-up">
-                      Create your Timeline
+                      Start free
                       <ArrowRight aria-hidden="true" />
                     </Link>
                   </Button>
@@ -409,7 +418,7 @@ function FinalCta({ connector }: { connector: ConnectorContent }) {
             signedOut={
               <Button asChild size="lg" className="mt-8">
                 <Link href="/sign-up">
-                  Create your Timeline
+                  Start free
                   <ArrowRight aria-hidden="true" />
                 </Link>
               </Button>

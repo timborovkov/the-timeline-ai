@@ -101,7 +101,7 @@ function HeroTimelineFlow({ disclosure }: { readonly disclosure?: string }) {
     <figure
       className={styles.observatory}
       data-home-diagram
-      aria-label="Work events stream from six sources into The Timeline, where project history becomes working records and cited answers."
+      aria-label="Work events stream from six sources into The Timeline, where the work record becomes a daily update and cited answers."
     >
       <div className={styles.orbitOuter} aria-hidden="true" />
       <div className={styles.orbitInner} aria-hidden="true" />
@@ -133,15 +133,15 @@ function HeroTimelineFlow({ disclosure }: { readonly disclosure?: string }) {
         <div className={styles.memoryCoreInner}>
           <Logo ariaHidden className={styles.memoryCoreMark} />
           <strong>The Timeline</strong>
-          <span>Project history</span>
+          <span>Work record</span>
         </div>
       </div>
 
       <div
         className={styles.heroOutcome}
-        aria-label="Project history becomes working records and cited answers"
+        aria-label="Work record becomes a daily update and cited answers"
       >
-        <span>Working records</span>
+        <span>Daily update</span>
         <span>Cited answers</span>
       </div>
 
@@ -210,7 +210,7 @@ function ExpandedTimelineFlow({ id }: { readonly id: string }) {
           <FlowStageHeading
             index="01"
             label="Evidence"
-            title="Events stream in as evidence"
+            title="Connect"
             subtitle="Chats, files, meetings and system events keep their source."
           />
           <ul className={styles.flowSourceList} aria-label="Grouped Timeline evidence sources">
@@ -236,7 +236,7 @@ function ExpandedTimelineFlow({ id }: { readonly id: string }) {
           <FlowStageHeading
             index="02"
             label="Timeline"
-            title="Events join The Timeline"
+            title="Capture"
             subtitle="Timestamped, source-linked and kept in order."
           />
           <div className={styles.flowTimelineViewport}>
@@ -263,7 +263,7 @@ function ExpandedTimelineFlow({ id }: { readonly id: string }) {
           <FlowStageHeading
             index="03"
             label="Workspace"
-            title="Build useful records from history"
+            title="Approve"
             subtitle="History becomes records your team can run."
           />
           <ul className={styles.flowRecordGrid} aria-label="Example Timeline working context">
@@ -280,6 +280,10 @@ function ExpandedTimelineFlow({ id }: { readonly id: string }) {
             <small>Use the same records in</small>
             <p>{FLOW_STORY.workspaceViews.join(' · ')}</p>
           </div>
+          <p className={styles.flowStageBoundary}>
+            When a conversation points to a lasting change, such as a new task, owner or deal stage,
+            The Timeline proposes it and a person approves it.
+          </p>
         </article>
 
         <FlowConnector label="assist" kind="assist" />
@@ -288,7 +292,7 @@ function ExpandedTimelineFlow({ id }: { readonly id: string }) {
           <FlowStageHeading
             index="04"
             label="Assistants"
-            title="Ask in Timeline—or your own agent"
+            title="Stay current and ask"
             subtitle="Web, chat and your own agent use the same evidence."
           />
           <ul

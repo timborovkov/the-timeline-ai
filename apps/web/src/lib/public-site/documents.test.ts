@@ -9,9 +9,9 @@ describe('core public documents', () => {
     if (!home) throw new Error('Home public document is not registered');
 
     expect(home).toMatchObject({
-      title: 'AI Team Memory With Cited Answers',
+      title: "Your team's work, written down for you",
       description:
-        'Timeline turns selected chats, meetings, documents, tickets, and code into a searchable project history. Ask questions and verify every claim at the source.',
+        'The Timeline keeps client, deal, task and decision records up to date from Slack, Telegram, email and calls. Every line has its source, and you approve each change.',
       dates: { modified: '2026-11-03', reviewed: '2026-11-03' },
     });
 

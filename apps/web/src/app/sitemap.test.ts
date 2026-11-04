@@ -29,6 +29,10 @@ describe('sitemap', () => {
         'https://thetimeline.cc/privacy',
         'https://thetimeline.cc/cookies',
         ...HELP_PAGES.map((page) => `https://thetimeline.cc/help/${page.slug}`),
+        'https://thetimeline.cc/use-cases',
+        'https://thetimeline.cc/use-cases/work-record',
+        'https://thetimeline.cc/product-tour',
+        'https://thetimeline.cc/integrations/telegram',
       ]),
     );
   });
@@ -42,7 +46,9 @@ describe('sitemap', () => {
 
     expect(second).toEqual(first);
     expect(byUrl.get('https://thetimeline.cc/')).toBe('2026-11-03');
-    expect(byUrl.get('https://thetimeline.cc/integrations')).toBe('2026-08-15');
+    expect(byUrl.get('https://thetimeline.cc/integrations')).toBe('2026-11-03');
+    expect(byUrl.get('https://thetimeline.cc/use-cases')).toBe('2026-11-03');
+    expect(byUrl.get('https://thetimeline.cc/product-tour')).toBe('2026-11-03');
     expect(byUrl.get('https://thetimeline.cc/help')).toBe('2026-11-03');
     expect(byUrl.get('https://thetimeline.cc/trust')).toBe('2026-11-03');
     expect(byUrl.get('https://thetimeline.cc/terms')).toBe('2026-11-03');

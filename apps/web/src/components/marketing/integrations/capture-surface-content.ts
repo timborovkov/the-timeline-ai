@@ -12,6 +12,7 @@ export interface CaptureSurfaceContent {
   boundary: string;
   setupHref: string;
   setupLabel: string;
+  publicHref?: string;
   featured: boolean;
 }
 
@@ -32,6 +33,7 @@ export const CAPTURE_SURFACES = [
     captured: 'Explicit notes, linked group messages, files, images, audio, and voice memos.',
     boundary:
       'Plain text in a direct chat asks the agent; it does not silently become team evidence. Use /note for an explicit note. Telegram is not a passive account-history sync.',
+    publicHref: '/integrations/telegram',
     setupHref: '/app/connections/sources#telegram',
     setupLabel: 'Link Telegram',
     featured: true,
@@ -69,7 +71,7 @@ export const CAPTURE_SURFACES = [
   {
     id: 'meetings',
     name: 'Meeting transcripts',
-    category: 'Google Meet · Microsoft Teams · Zoom',
+    category: 'Google Meet · Microsoft Teams calls · Zoom',
     icon: 'video',
     summary:
       'Invite a silent notetaker to a live call, then keep the transcript, speakers, summary, and action items with the rest of the work.',
