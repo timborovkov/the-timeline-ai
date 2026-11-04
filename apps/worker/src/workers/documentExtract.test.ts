@@ -31,6 +31,7 @@ import {
 } from '#src/workers/documentExtract.js';
 
 import type { PGlite } from '@electric-sql/pglite';
+
 /**
  * Real-DB integration tests for the documentExtract worker handler.
  * Uses pglite for Postgres + injected fakes for S3 and the embed queue

@@ -9,14 +9,18 @@ import {
 import { definePublicDocuments } from '@/lib/public-site/registry';
 
 const EDITORIAL_REVIEW_DATE = '2026-08-15' as const;
-const HOW_IT_WORKS_REVIEW_DATE = '2026-08-21' as const;
+const HOW_IT_WORKS_REVIEW_DATE = '2026-11-03' as const;
+const REFRESHED_GUIDE_SLUGS = new Set([
+  'search-slack-and-google-drive-together',
+  'weekly-engineering-updates-from-slack-linear-and-github',
+]);
 
 const howItWorksDocument = {
   canonicalPath: HOW_IT_WORKS_ROUTE,
   kind: 'guide-index',
-  title: EDITORIAL_PUBLICATION_NAME,
+  title: 'How it works: from conversation to current record',
   description:
-    'See how Timeline preserves selected work as an evidence-backed chronology, answers with citations, and keeps durable changes human-approved.',
+    'See how The Timeline turns Slack, Telegram, email and call conversations into current records, cites the source for every line, and waits for your approval before anything changes.',
   indexability: 'index',
   dates: { modified: HOW_IT_WORKS_REVIEW_DATE, reviewed: HOW_IT_WORKS_REVIEW_DATE },
   capability: { kind: 'current-product' },
@@ -36,7 +40,7 @@ const howItWorksDocument = {
     order: 0,
     label: EDITORIAL_PUBLICATION_NAME,
     summary:
-      'See how Timeline preserves selected work as an evidence-backed chronology, answers with citations, and keeps durable changes human-approved.',
+      'See how The Timeline turns Slack, Telegram, email and call conversations into current records, cites the source for every line, and waits for your approval before anything changes.',
     sections: [
       {
         title: 'Questions covered',
@@ -57,7 +61,14 @@ const guideDocuments = EDITORIAL_GUIDES.map((guide, index): PublicDocument => ({
   title: guide.title,
   description: guide.summary,
   indexability: 'index',
-  dates: { modified: EDITORIAL_REVIEW_DATE, reviewed: EDITORIAL_REVIEW_DATE },
+  dates: {
+    modified: REFRESHED_GUIDE_SLUGS.has(guide.slug)
+      ? HOW_IT_WORKS_REVIEW_DATE
+      : EDITORIAL_REVIEW_DATE,
+    reviewed: REFRESHED_GUIDE_SLUGS.has(guide.slug)
+      ? HOW_IT_WORKS_REVIEW_DATE
+      : EDITORIAL_REVIEW_DATE,
+  },
   capability: { kind: 'current-product' },
   sitemap: { changeFrequency: 'monthly', priority: 0.7 },
   structuredData: [

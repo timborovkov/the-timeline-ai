@@ -12,7 +12,7 @@ import { readPendingInvite } from '@/lib/pending-invite';
 
 export const metadata: Metadata = {
   title: 'Sign in',
-  description: 'Sign in to your Timeline AI workspace.',
+  description: 'Sign in to your workspace on The Timeline.',
   robots: { index: false, follow: false },
 };
 

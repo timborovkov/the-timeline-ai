@@ -904,6 +904,15 @@ separate email while always retaining the owner member's email.
 
 Resend handles outbound email and inbound capture. Signed webhooks queue only provider IDs; workers retrieve content and bounded attachments, applying sender rate-limit admission before attachment hydration. Email recovery metadata reads require an explicit internal ingest principal and are constrained to active email events in its team. Recovery fails closed for parents restricted to specific people before creating derived documents or audio. Verification and invitation retry payloads are encrypted at rest using the existing AES-256-GCM secrets helper; retries decrypt the original payload, and missing keys fail closed. Completed ingestion job identifiers remain for 24 hours, failures for seven days. Temporary download URLs and credentials are not persisted in jobs or source snapshots. The Privacy Policy version advances to 2026-11-01. G-09 remains open: no account retention, tracking, contractual, or deletion verification is claimed.
 
+
+### Prelaunch billing and boundary changes (2026-11-03)
+
+Terms and Privacy versions advance to 2026-11-03 for paid-service terms and explicit Polar billing-data disclosure. The customer meter is variable euro-denominated AI usage; internal provider-cost conversion is not a public price promise. Cancellation stops future renewals under the portal terms; already-incurred usage and mandatory consumer rights remain applicable. This is a repository content change, not counsel approval, live Polar configuration evidence, or closure of G-20.
+
+Sentry intake and queued delivery now both require a currently selected organization/project. GitHub capture requires the matching App installation token and paginates installation discovery; missing mappings fail closed. These are code controls verified with synthetic tests, not production provider attestations. Sentry delivery receipt time is explicitly identified as receipt time, not the exact upstream action time.
+
+The authenticated `/api/health/ready` probe uses the existing `CRON_SECRET`, returns aggregate queue/worker information only, and never returns source content or job identifiers. Public liveness remains minimal. Pricing analytics adds only fixed public route/CTA values under the existing consent contract, without linking anonymous visitors to account identities.
+
 ### Password recovery controls
 
 Password recovery stores SHA-256 digests of random 32-byte, single-use tokens,
@@ -923,3 +932,17 @@ analytics, no-index/no-store/no-referrer policies, and sanitized error events.
 Provider-account tracking and retention evidence remains G-09; this feature makes
 no new provider-retention claim. Infrastructure access logs must not retain reset
 URL query parameters. Production delivery still requires operator verification.
+
+
+### MVP follow-up (2026-11-03)
+
+Verification emails may carry an allowlisted self-serve plan name, never an arbitrary
+redirect URL. The verified page routes through sign-in with a fixed billing destination;
+this does not authorize checkout. Product events remain on the existing content-free,
+pseudonymized server/worker path; see the analytics interface for exact limitations.
+The device-local PAYG dismissal is a UI preference, not analytics storage.
+
+Interrupted web Ask settlement waits for the SDK abort callback so completed-step
+usage is included. Unreported partial-step usage is marked incomplete in billing
+metadata and is not estimated from the reservation. Recovering costs the provider
+never reports remains unverified; no exact-cost guarantee is added.

@@ -24,6 +24,16 @@ const { ProviderRateLimitError } = await import('#src/integrations/types.js');
 
 const ENV_BACKUP = { ...process.env };
 
+function installedTestTokens(accessToken = 'gho_token') {
+  return {
+    access_token: accessToken,
+    github_app_installations: [{ id: 'test-installation', account_login: 'acme' }],
+    github_app_installation_tokens: {
+      'test-installation': { token: 'ghs_test_installation', expires_at: Date.now() + 3_600_000 },
+    },
+  };
+}
+
 interface TestGithubCursor {
   prs_since?: string;
   issues_since?: string;
@@ -1488,7 +1498,7 @@ describe('githubProvider.backfill', () => {
 
     await githubProvider.backfill({
       integration: {} as never,
-      tokens: { access_token: 'gho_token' },
+      tokens: installedTestTokens(),
       selections: [{ kind: 'github.repo', externalId: 'acme/app' }],
       ctx: {
         writeEvents,
@@ -1649,7 +1659,7 @@ describe('githubProvider selected-repository conversation sync', () => {
       const saveCursor = vi.fn<SyncContext['saveCursor']>().mockResolvedValue(undefined);
       const input = {
         integration: {} as never,
-        tokens: { access_token: 'gho_token' },
+        tokens: installedTestTokens(),
         selections: [{ kind: 'github.repo', externalId: 'acme/app' }],
         ctx: {
           writeEvents,
@@ -1797,7 +1807,7 @@ describe('githubProvider.incrementalSync', () => {
     await expect(
       githubProvider.incrementalSync({
         integration: {} as never,
-        tokens: { access_token: 'token' },
+        tokens: installedTestTokens('token'),
         selections: [{ kind: 'github.repo', externalId: 'acme/app' }],
         ctx,
       }),
@@ -2073,7 +2083,7 @@ describe('githubProvider.incrementalSync', () => {
 
     await githubProvider.incrementalSync({
       integration: {} as never,
-      tokens: { access_token: 'gho_token' },
+      tokens: installedTestTokens(),
       selections: [{ kind: 'github.repo', externalId: 'acme/app' }],
       ctx: {
         writeEvents,
@@ -2217,7 +2227,7 @@ describe('githubProvider.incrementalSync', () => {
 
     await githubProvider.incrementalSync({
       integration: {} as never,
-      tokens: { access_token: 'gho_token' },
+      tokens: installedTestTokens(),
       selections: [{ kind: 'github.repo', externalId: 'acme/app' }],
       ctx: {
         writeEvents,
@@ -2327,7 +2337,7 @@ describe('githubProvider.incrementalSync', () => {
 
     const result = await githubProvider.incrementalSync({
       integration: {} as never,
-      tokens: { access_token: 'gho_token' },
+      tokens: installedTestTokens(),
       selections: [{ kind: 'github.repo', externalId: 'acme/app' }],
       ctx: {
         writeEvents,
@@ -2445,7 +2455,7 @@ describe('githubProvider.incrementalSync', () => {
     const sync = () =>
       githubProvider.incrementalSync({
         integration: {} as never,
-        tokens: { access_token: 'gho_token' },
+        tokens: installedTestTokens(),
         selections: [{ kind: 'github.repo', externalId: 'acme/app' }],
         ctx: {
           writeEvents: vi.fn().mockResolvedValue([]),
@@ -2571,7 +2581,7 @@ describe('githubProvider.incrementalSync', () => {
     const sync = () =>
       githubProvider.incrementalSync({
         integration: {} as never,
-        tokens: { access_token: 'gho_token' },
+        tokens: installedTestTokens(),
         selections: [{ kind: 'github.repo', externalId: 'acme/app' }],
         ctx: {
           writeEvents,
@@ -2722,7 +2732,7 @@ describe('githubProvider.incrementalSync', () => {
     const sync = () =>
       githubProvider.incrementalSync({
         integration: {} as never,
-        tokens: { access_token: 'gho_token' },
+        tokens: installedTestTokens(),
         selections: [{ kind: 'github.repo', externalId: 'acme/app' }],
         ctx: {
           writeEvents: vi.fn().mockResolvedValue([]),
@@ -2797,7 +2807,7 @@ describe('githubProvider.incrementalSync', () => {
     const sync = () =>
       githubProvider.incrementalSync({
         integration: {} as never,
-        tokens: { access_token: 'gho_token' },
+        tokens: installedTestTokens(),
         selections: [{ kind: 'github.repo', externalId: 'acme/app' }],
         ctx: {
           writeEvents: vi.fn().mockResolvedValue([]),
@@ -2887,7 +2897,7 @@ describe('githubProvider.incrementalSync', () => {
 
     const result = await githubProvider.incrementalSync({
       integration: {} as never,
-      tokens: { access_token: 'gho_token' },
+      tokens: installedTestTokens(),
       selections: [{ kind: 'github.repo', externalId: 'acme/app' }],
       ctx: {
         writeEvents: vi.fn().mockResolvedValue([]),
@@ -2976,7 +2986,7 @@ describe('githubProvider.incrementalSync', () => {
     try {
       const result = await githubProvider.incrementalSync({
         integration: {} as never,
-        tokens: { access_token: 'gho_token' },
+        tokens: installedTestTokens(),
         selections: [{ kind: 'github.repo', externalId: 'acme/app' }],
         ctx: {
           writeEvents: vi.fn().mockResolvedValue([]),
@@ -3043,7 +3053,7 @@ describe('githubProvider.incrementalSync', () => {
     await expect(
       githubProvider.incrementalSync({
         integration: {} as never,
-        tokens: { access_token: 'gho_token' },
+        tokens: installedTestTokens(),
         selections: [{ kind: 'github.repo', externalId: 'acme/app' }],
         target: {
           resourceType: 'github.repo',
@@ -3110,7 +3120,7 @@ describe('githubProvider.incrementalSync', () => {
     await expect(
       githubProvider.incrementalSync({
         integration: {} as never,
-        tokens: { access_token: 'gho_token' },
+        tokens: installedTestTokens(),
         selections: [{ kind: 'github.repo', externalId: 'acme/app' }],
         ctx: {
           writeEvents: vi.fn().mockResolvedValue([]),
@@ -3201,7 +3211,7 @@ describe('githubProvider.incrementalSync', () => {
     const sync = () =>
       githubProvider.incrementalSync({
         integration: {} as never,
-        tokens: { access_token: 'gho_token' },
+        tokens: installedTestTokens(),
         selections: [{ kind: 'github.repo', externalId: 'acme/app' }],
         ctx: {
           writeEvents,
@@ -3388,7 +3398,7 @@ describe('githubProvider.incrementalSync', () => {
 
     await githubProvider.incrementalSync({
       integration: {} as never,
-      tokens: { access_token: 'gho_token' },
+      tokens: installedTestTokens(),
       selections: [{ kind: 'github.repo', externalId: 'acme/app' }],
       ctx: {
         writeEvents,
@@ -3453,7 +3463,7 @@ describe('githubProvider.incrementalSync', () => {
 
     await githubProvider.incrementalSync({
       integration: {} as never,
-      tokens: { access_token: 'gho_token' },
+      tokens: installedTestTokens(),
       selections: [{ kind: 'github.repo', externalId: 'acme/app' }],
       ctx: {
         writeEvents,
@@ -3507,7 +3517,7 @@ describe('githubProvider.incrementalSync', () => {
 
     const result = await githubProvider.incrementalSync({
       integration: {} as never,
-      tokens: { access_token: 'gho_token' },
+      tokens: installedTestTokens(),
       selections: [{ kind: 'github.repo', externalId: 'acme/app' }],
       ctx: {
         writeEvents,
@@ -3581,7 +3591,7 @@ describe('githubProvider.incrementalSync', () => {
 
     await githubProvider.incrementalSync({
       integration: {} as never,
-      tokens: { access_token: 'gho_token' },
+      tokens: installedTestTokens(),
       selections: [
         { kind: 'github.repo', externalId: 'acme/app' },
         { kind: 'github.org', externalId: 'acme' },
@@ -3662,7 +3672,7 @@ describe('githubProvider.incrementalSync', () => {
 
     await githubProvider.incrementalSync({
       integration: {} as never,
-      tokens: { access_token: 'gho_token' },
+      tokens: installedTestTokens(),
       selections: [{ kind: 'github.org', externalId: 'acme' }],
       ctx: {
         writeEvents: vi.fn().mockResolvedValue([]),
@@ -3709,7 +3719,7 @@ describe('githubProvider.incrementalSync', () => {
     await expect(
       githubProvider.incrementalSync({
         integration: {} as never,
-        tokens: { access_token: 'gho_token' },
+        tokens: installedTestTokens(),
         selections: [{ kind: 'github.repo', externalId: 'acme/app' }],
         ctx: {
           writeEvents: vi.fn().mockResolvedValue([]),
@@ -3760,7 +3770,7 @@ describe('githubProvider.incrementalSync', () => {
 
     await githubProvider.incrementalSync({
       integration: {} as never,
-      tokens: { access_token: 'gho_token' },
+      tokens: installedTestTokens(),
       selections: [{ kind: 'github.repo', externalId: 'acme/app' }],
       ctx: {
         writeEvents,
@@ -3824,7 +3834,7 @@ describe('githubProvider.incrementalSync', () => {
 
     await githubProvider.incrementalSync({
       integration: {} as never,
-      tokens: { access_token: 'gho_token' },
+      tokens: installedTestTokens(),
       selections: [{ kind: 'github.repo', externalId: 'acme/app' }],
       ctx: {
         writeEvents,
@@ -3878,7 +3888,7 @@ describe('githubProvider.incrementalSync', () => {
 
     await githubProvider.incrementalSync({
       integration: {} as never,
-      tokens: { access_token: 'gho_token' },
+      tokens: installedTestTokens(),
       selections: [{ kind: 'github.repo', externalId: 'acme/app' }],
       ctx: {
         writeEvents,
@@ -3923,7 +3933,7 @@ describe('githubProvider.incrementalSync', () => {
 
     await githubProvider.incrementalSync({
       integration: {} as never,
-      tokens: { access_token: 'gho_token' },
+      tokens: installedTestTokens(),
       selections: [{ kind: 'github.repo', externalId: 'acme/app' }],
       ctx: {
         writeEvents: vi.fn().mockResolvedValue([]),
@@ -3977,7 +3987,7 @@ describe('githubProvider.incrementalSync', () => {
     await expect(
       githubProvider.incrementalSync({
         integration: {} as never,
-        tokens: { access_token: 'gho_token' },
+        tokens: installedTestTokens(),
         selections: [{ kind: 'github.repo', externalId: 'acme/app' }],
         ctx: {
           writeEvents: vi.fn(),
@@ -4020,7 +4030,7 @@ describe('githubProvider.incrementalSync', () => {
 
     const result = await githubProvider.incrementalSync({
       integration: {} as never,
-      tokens: { access_token: 'gho_token' },
+      tokens: installedTestTokens(),
       selections: [{ kind: 'github.repo', externalId: 'acme/app' }],
       ctx: {
         writeEvents: vi.fn().mockResolvedValue([]),
@@ -4075,7 +4085,7 @@ describe('githubProvider.incrementalSync', () => {
 
     await githubProvider.incrementalSync({
       integration: {} as never,
-      tokens: { access_token: 'gho_token' },
+      tokens: installedTestTokens(),
       selections: [{ kind: 'github.repo', externalId: 'acme/app' }],
       ctx: {
         writeEvents,
@@ -4118,7 +4128,7 @@ describe('githubProvider.incrementalSync', () => {
 
     await githubProvider.incrementalSync({
       integration: {} as never,
-      tokens: { access_token: 'gho_token' },
+      tokens: installedTestTokens(),
       selections: [{ kind: 'github.repo', externalId: 'acme/app' }],
       ctx: {
         writeEvents,
@@ -4187,7 +4197,7 @@ describe('githubProvider.incrementalSync', () => {
 
     await githubProvider.incrementalSync({
       integration: {} as never,
-      tokens: { access_token: 'gho_token' },
+      tokens: installedTestTokens(),
       selections: [{ kind: 'github.repo', externalId: 'acme/app' }],
       ctx: {
         writeEvents,
@@ -4252,7 +4262,7 @@ describe('githubProvider.incrementalSync', () => {
 
     await githubProvider.incrementalSync({
       integration: {} as never,
-      tokens: { access_token: 'gho_token' },
+      tokens: installedTestTokens(),
       selections: [{ kind: 'github.repo', externalId: 'acme/app' }],
       ctx: {
         writeEvents,
@@ -4297,7 +4307,7 @@ describe('githubProvider.incrementalSync', () => {
 
     await githubProvider.incrementalSync({
       integration: {} as never,
-      tokens: { access_token: 'gho_token' },
+      tokens: installedTestTokens(),
       selections: [{ kind: 'github.repo', externalId: 'acme/app' }],
       ctx: {
         writeEvents: vi.fn().mockResolvedValue([]),
@@ -4348,7 +4358,7 @@ describe('githubProvider.incrementalSync', () => {
 
     await githubProvider.incrementalSync({
       integration: {} as never,
-      tokens: { access_token: 'gho_token' },
+      tokens: installedTestTokens(),
       selections: [{ kind: 'github.repo', externalId: 'acme/app' }],
       ctx: {
         writeEvents,
@@ -4414,7 +4424,7 @@ describe('githubProvider.incrementalSync', () => {
 
     await githubProvider.incrementalSync({
       integration: {} as never,
-      tokens: { access_token: 'gho_token' },
+      tokens: installedTestTokens(),
       selections: [{ kind: 'github.repo', externalId: 'acme/app' }],
       ctx: {
         writeEvents,
@@ -4468,7 +4478,7 @@ describe('githubProvider.incrementalSync', () => {
 
     await githubProvider.incrementalSync({
       integration: {} as never,
-      tokens: { access_token: 'gho_token' },
+      tokens: installedTestTokens(),
       selections: [{ kind: 'github.repo', externalId: 'acme/app' }],
       ctx: {
         writeEvents: vi.fn().mockResolvedValue([]),
@@ -4514,7 +4524,7 @@ describe('githubProvider.incrementalSync', () => {
 
     await githubProvider.incrementalSync({
       integration: {} as never,
-      tokens: { access_token: 'gho_token' },
+      tokens: installedTestTokens(),
       selections: [{ kind: 'github.repo', externalId: 'acme/app' }],
       ctx: {
         writeEvents: vi.fn().mockResolvedValue([]),
@@ -4574,7 +4584,7 @@ describe('githubProvider.incrementalSync', () => {
 
     const result = await githubProvider.incrementalSync({
       integration: {} as never,
-      tokens: { access_token: 'gho_token' },
+      tokens: installedTestTokens(),
       selections: [{ kind: 'github.repo', externalId: 'acme/app' }],
       ctx: {
         writeEvents: vi.fn().mockResolvedValue([]),
@@ -4647,7 +4657,7 @@ describe('githubProvider.incrementalSync', () => {
 
     const result = await githubProvider.incrementalSync({
       integration: {} as never,
-      tokens: { access_token: 'gho_token' },
+      tokens: installedTestTokens(),
       selections: [{ kind: 'github.repo', externalId: repo }],
       ctx: {
         writeEvents: vi.fn().mockResolvedValue([]),
@@ -4690,7 +4700,7 @@ describe('githubProvider.incrementalSync', () => {
 
     await githubProvider.incrementalSync({
       integration: {} as never,
-      tokens: { access_token: 'gho_token' },
+      tokens: installedTestTokens(),
       selections: [{ kind: 'github.repo', externalId: 'acme/app' }],
       ctx: {
         writeEvents,
@@ -4741,7 +4751,7 @@ describe('githubProvider.incrementalSync', () => {
 
     await githubProvider.incrementalSync({
       integration: {} as never,
-      tokens: { access_token: 'gho_token' },
+      tokens: installedTestTokens(),
       selections: [{ kind: 'github.repo', externalId: 'acme/app' }],
       ctx: {
         writeEvents,
@@ -4811,7 +4821,7 @@ describe('githubProvider.incrementalSync', () => {
 
     await githubProvider.incrementalSync({
       integration: {} as never,
-      tokens: { access_token: 'gho_token' },
+      tokens: installedTestTokens(),
       selections: [{ kind: 'github.repo', externalId: 'acme/app' }],
       ctx: {
         writeEvents,
@@ -4886,7 +4896,7 @@ describe('githubProvider.incrementalSync', () => {
 
     await githubProvider.incrementalSync({
       integration: {} as never,
-      tokens: { access_token: 'gho_token' },
+      tokens: installedTestTokens(),
       selections: [{ kind: 'github.repo', externalId: 'acme/app' }],
       ctx: {
         writeEvents,
@@ -4936,7 +4946,7 @@ describe('githubProvider.incrementalSync', () => {
 
     await githubProvider.incrementalSync({
       integration: {} as never,
-      tokens: { access_token: 'gho_token' },
+      tokens: installedTestTokens(),
       selections: [{ kind: 'github.repo', externalId: 'acme/app' }],
       ctx: {
         writeEvents,
@@ -4978,7 +4988,7 @@ describe('githubProvider.incrementalSync', () => {
 
     await githubProvider.incrementalSync({
       integration: {} as never,
-      tokens: { access_token: 'gho_token' },
+      tokens: installedTestTokens(),
       selections: [{ kind: 'github.repo', externalId: 'acme/app' }],
       ctx: {
         writeEvents: vi.fn().mockResolvedValue([]),
@@ -5020,7 +5030,7 @@ describe('githubProvider.incrementalSync', () => {
 
     await githubProvider.incrementalSync({
       integration: {} as never,
-      tokens: { access_token: 'gho_token' },
+      tokens: installedTestTokens(),
       selections: [{ kind: 'github.repo', externalId: 'acme/app' }],
       ctx: {
         writeEvents: vi.fn().mockResolvedValue([]),
@@ -5069,7 +5079,7 @@ describe('githubProvider.incrementalSync', () => {
 
     await githubProvider.incrementalSync({
       integration: {} as never,
-      tokens: { access_token: 'gho_token' },
+      tokens: installedTestTokens(),
       selections: [{ kind: 'github.repo', externalId: 'acme/app' }],
       ctx: {
         writeEvents: vi.fn().mockResolvedValue([]),
@@ -5118,7 +5128,7 @@ describe('githubProvider.incrementalSync', () => {
 
     await githubProvider.incrementalSync({
       integration: {} as never,
-      tokens: { access_token: 'gho_token' },
+      tokens: installedTestTokens(),
       selections: [{ kind: 'github.repo', externalId: 'acme/app' }],
       ctx: {
         writeEvents: vi.fn().mockResolvedValue([]),
@@ -5142,5 +5152,116 @@ describe('githubProvider.incrementalSync', () => {
     expect(typeof auditPayload?.summary === 'string' ? auditPayload.summary : undefined).toContain(
       'acme/app:issues:issues',
     );
+  });
+});
+
+describe('GitHub capture authorization boundary', () => {
+  const originalFetch = globalThis.fetch;
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+  });
+  it('discovers installations beyond the first page during OAuth', async () => {
+    process.env.GITHUB_APP_CLIENT_ID = 'client-id';
+    process.env.GITHUB_APP_CLIENT_SECRET = 'client-secret';
+    resetEnvForTests();
+    const fetchMock = vi
+      .fn<(input: string | URL | Request) => Promise<Response>>()
+      .mockImplementation((input) => {
+        const url = new URL(input instanceof Request ? input.url : input.toString());
+        if (url.pathname === '/login/oauth/access_token')
+          return Promise.resolve(Response.json({ access_token: 'ghu_user' }));
+        if (url.pathname === '/user')
+          return Promise.resolve(Response.json({ id: 12, login: 'owner' }));
+        const installations =
+          url.searchParams.get('page') === '1'
+            ? Array.from({ length: 100 }, (_, i) => ({ id: i + 1, account: { login: `org-${i}` } }))
+            : [{ id: 101, account: { login: 'acme' } }];
+        return Promise.resolve(Response.json({ installations }));
+      });
+    globalThis.fetch = Object.assign(fetchMock, { preconnect: vi.fn() });
+    try {
+      const result = await githubProvider.handleOAuthCallback({
+        code: 'real-callback-code',
+        redirectUri: 'https://timeline.test/callback',
+      });
+      expect(result.tokens.github_app_installations).toHaveLength(101);
+      expect(
+        fetchMock.mock.calls.some(([url]) =>
+          (url instanceof Request ? url.url : url.toString()).includes('page=2'),
+        ),
+      ).toBe(true);
+    } finally {
+      process.env = { ...ENV_BACKUP };
+      resetEnvForTests();
+    }
+  });
+
+  it('skips App installation listing on 403 and fails closed as reconnect', async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      Response.json(
+        {
+          message:
+            'You must authenticate with an access token authorized to a GitHub App in order to list installations',
+        },
+        { status: 403 },
+      ),
+    );
+    globalThis.fetch = Object.assign(fetchMock, { preconnect: vi.fn() });
+    const writeEvents = vi.fn();
+    await expect(
+      githubProvider.incrementalSync({
+        integration: {} as never,
+        tokens: { access_token: 'gho_oauth_app_token' },
+        selections: [{ kind: 'github.repo', externalId: 'acme/app' }],
+        ctx: {
+          writeEvents,
+          recordAudit: vi.fn(),
+          saveCursor: vi.fn(),
+          loadCursor: vi.fn().mockResolvedValue({}),
+          persistTokens: vi.fn(),
+        },
+      }),
+    ).rejects.toThrow('github_installation_missing');
+    expect(writeEvents).not.toHaveBeenCalled();
+    expect(
+      fetchMock.mock.calls.some(([url]) =>
+        (url instanceof Request ? url.url : url.toString()).includes('/user/installations'),
+      ),
+    ).toBe(true);
+    expect(
+      fetchMock.mock.calls.every(([url]) =>
+        (url instanceof Request ? url.url : url.toString()).includes('/user/installations'),
+      ),
+    ).toBe(true);
+  });
+
+  it('fails closed instead of falling back to OAuth when no installation matches', async () => {
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(
+        Response.json({ installations: [{ id: 1, account: { login: 'unrelated' } }] }),
+      );
+    globalThis.fetch = Object.assign(fetchMock, { preconnect: vi.fn() });
+    const writeEvents = vi.fn();
+    await expect(
+      githubProvider.incrementalSync({
+        integration: {} as never,
+        tokens: { access_token: 'broad-user-token' },
+        selections: [{ kind: 'github.repo', externalId: 'acme/app' }],
+        ctx: {
+          writeEvents,
+          recordAudit: vi.fn(),
+          saveCursor: vi.fn(),
+          loadCursor: vi.fn().mockResolvedValue({}),
+          persistTokens: vi.fn(),
+        },
+      }),
+    ).rejects.toThrow('github_installation_missing');
+    expect(writeEvents).not.toHaveBeenCalled();
+    expect(
+      fetchMock.mock.calls.every(([url]) =>
+        (url instanceof Request ? url.url : url.toString()).includes('/user/installations'),
+      ),
+    ).toBe(true);
   });
 });

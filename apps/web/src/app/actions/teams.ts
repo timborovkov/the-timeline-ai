@@ -321,6 +321,7 @@ export async function updateInboundEmailWhitelistAction(
     );
 
     revalidatePath('/app/team');
+    revalidatePath('/app/connect-agent');
     revalidatePath(CONNECTIONS_HREF, 'layout');
     revalidatePath(CONNECTIONS_LEGACY_HREF);
     return { ok: true };

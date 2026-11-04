@@ -6,7 +6,7 @@ import { publicMetadata } from '@/lib/public-metadata';
 
 export const metadata: Metadata = publicMetadata({
   title: 'Contact',
-  description: 'Contact the Timeline AI team for support.',
+  description: 'Contact The Timeline team for support.',
   path: '/help/support',
   robots: { index: false, follow: true },
 });

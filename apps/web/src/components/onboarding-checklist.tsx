@@ -52,6 +52,8 @@ export function OnboardingChecklist({
       if (checklistMutationFailed) {
         retryButtonRef.current?.focus();
       } else if (nextActionRef.current) {
+        const disclosure = nextActionRef.current.closest('details');
+        if (disclosure) disclosure.open = true;
         nextActionRef.current.focus();
       } else {
         dismissButtonRef.current?.focus();
@@ -183,7 +185,30 @@ export function OnboardingChecklist({
       </>
     );
   }
-  const nextItem = data.items.find((item) => !item.completed && item.key !== 'billing_setup');
+  const coreKeys = ['first_note', 'first_ask'];
+  const orderedItems = [...data.items].sort((a, b) => {
+    const rank = (key: string) =>
+      coreKeys.includes(key) ? coreKeys.indexOf(key) : coreKeys.length;
+    return rank(a.key) - rank(b.key);
+  });
+  const nextItem = orderedItems.find((item) => !item.completed && item.key !== 'billing_setup');
+
+  const checklistRows = orderedItems.map((item, index) => (
+    <ChecklistStep
+      key={item.key}
+      item={item}
+      index={index}
+      isNext={nextItem?.key === item.key}
+      canManageBilling={data.canManageBilling}
+      pending={checklistPending}
+      nextActionRef={nextActionRef}
+      onComplete={() => {
+        lastMutationKind.current = 'complete';
+        pendingFocusTarget.current = 'next-action';
+        mutateChecklist({ action: 'complete', key: item.key });
+      }}
+    />
+  ));
 
   return (
     <>
@@ -221,89 +246,24 @@ export function OnboardingChecklist({
           </QuietTextButton>
         </div>
         <ol className="mt-3 divide-y divide-border border-t border-border">
-          {data.items.map((item, index) => {
-            const meta =
-              item.key === 'billing_setup' && data.canManageBilling === false
-                ? {
-                    href: '/app/team?section=members',
-                    cta: 'View team owners',
-                    description:
-                      'Ask a team owner or admin to set up billing. Eligible teams can continue on Free.',
-                  }
-                : onboardingMeta(item.key);
-            const isNext = nextItem?.key === item.key;
-            return (
-              <li key={item.key} className="flex items-start gap-3 py-3">
-                <span
-                  aria-hidden="true"
-                  className={cn(
-                    'mt-0.5 grid size-5 shrink-0 place-items-center rounded-full border font-mono text-[10px]',
-                    item.completed
-                      ? 'border-signal/40 text-signal'
-                      : isNext
-                        ? 'border-border-strong text-fg'
-                        : 'border-border text-fg-dim',
-                  )}
-                >
-                  {item.completed ? <Check className="size-3" /> : index + 1}
-                </span>
-                <div className="min-w-0 flex-1">
-                  {item.completed ? (
-                    <p className="text-sm text-fg-muted">{item.label}</p>
-                  ) : isNext ? (
-                    <p className="text-sm font-medium text-fg">{item.label}</p>
-                  ) : (
-                    <p className="text-sm text-fg-dim">
-                      <Link
-                        href={meta.href}
-                        className="underline decoration-fg-dim underline-offset-2 transition-colors hover:text-fg hover:decoration-fg"
-                      >
-                        {item.label}
-                      </Link>
-                    </p>
-                  )}
-                  {isNext || (item.key === 'billing_setup' && !item.completed) ? (
-                    <>
-                      <p className="mt-0.5 text-xs text-fg-muted">{meta.description}</p>
-                      <div className="mt-2 flex flex-wrap items-center gap-2">
-                        {item.key === 'first_note' ? (
-                          <Button
-                            type="button"
-                            onClick={() => {
-                              window.location.hash = 'capture';
-                            }}
-                            variant="outline"
-                            size="sm"
-                          >
-                            {meta.cta}
-                          </Button>
-                        ) : (
-                          <Button asChild variant="outline" size="sm">
-                            <Link href={meta.href}>{meta.cta}</Link>
-                          </Button>
-                        )}
-                        {item.key !== 'billing_setup' ? (
-                          <QuietTextButton
-                            ref={nextActionRef}
-                            disabled={checklistPending}
-                            aria-label={`Mark ${item.label} complete`}
-                            onClick={() => {
-                              lastMutationKind.current = 'complete';
-                              pendingFocusTarget.current = 'next-action';
-                              mutateChecklist({ action: 'complete', key: item.key });
-                            }}
-                          >
-                            Mark complete
-                          </QuietTextButton>
-                        ) : null}
-                      </div>
-                    </>
-                  ) : null}
-                </div>
-              </li>
-            );
-          })}
+          {checklistRows.filter((_, index) => coreKeys.includes(orderedItems[index]?.key ?? ''))}
         </ol>
+        <p className="mt-2 text-sm text-fg-muted">
+          Start with a note or{' '}
+          <Link href="/app/documents" className="underline">
+            upload a document
+          </Link>
+          . Once it is searchable, ask a question and open its citations. This checklist records
+          team setup, not answer quality.
+        </p>
+        <details className="mt-3">
+          <summary className="cursor-pointer text-sm text-fg-muted">
+            Optional setup: sources, teammates and billing
+          </summary>
+          <ol className="mt-2 divide-y divide-border">
+            {checklistRows.filter((_, index) => !coreKeys.includes(orderedItems[index]?.key ?? ''))}
+          </ol>
+        </details>
         <ChecklistMutationFailure
           failed={checklistMutationFailed}
           pending={checklistPending}
@@ -312,6 +272,112 @@ export function OnboardingChecklist({
         />
       </section>
     </>
+  );
+}
+
+function ChecklistStep({
+  item,
+  index,
+  isNext,
+  canManageBilling,
+  pending,
+  nextActionRef,
+  onComplete,
+}: {
+  item: OnboardingChecklistView['items'][number];
+  index: number;
+  isNext: boolean;
+  canManageBilling?: boolean;
+  pending: boolean;
+  nextActionRef: RefObject<HTMLButtonElement | null>;
+  onComplete: () => void;
+}) {
+  const meta =
+    item.key === 'billing_setup' && canManageBilling === false
+      ? {
+          href: '/app/team?section=members',
+          cta: 'View team owners',
+          description:
+            'Ask a team owner or admin to set up billing. Eligible teams can continue on Free.',
+        }
+      : onboardingMeta(item.key);
+  return (
+    <li key={item.key} className="flex items-start gap-3 py-3">
+      <span
+        aria-hidden="true"
+        className={cn(
+          'mt-0.5 grid size-5 shrink-0 place-items-center rounded-full border font-mono text-[10px]',
+          item.completed
+            ? 'border-signal/40 text-signal'
+            : isNext
+              ? 'border-border-strong text-fg'
+              : 'border-border text-fg-dim',
+        )}
+      >
+        {item.completed ? <Check className="size-3" /> : index + 1}
+      </span>
+      <div className="min-w-0 flex-1">
+        <ChecklistStepLabel item={item} isNext={isNext} href={meta.href} />
+        {isNext || (item.key === 'billing_setup' && !item.completed) ? (
+          <>
+            <p className="mt-0.5 text-xs text-fg-muted">{meta.description}</p>
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              {item.key === 'first_note' ? (
+                <Button
+                  type="button"
+                  onClick={() => {
+                    window.location.hash = 'capture';
+                  }}
+                  variant="outline"
+                  size="sm"
+                >
+                  {meta.cta}
+                </Button>
+              ) : (
+                <Button asChild variant="outline" size="sm">
+                  <Link href={meta.href}>{meta.cta}</Link>
+                </Button>
+              )}
+              {item.key !== 'billing_setup' ? (
+                <QuietTextButton
+                  ref={nextActionRef}
+                  disabled={pending}
+                  aria-label={`Mark ${item.label} complete`}
+                  onClick={() => {
+                    onComplete();
+                  }}
+                >
+                  Mark complete
+                </QuietTextButton>
+              ) : null}
+            </div>
+          </>
+        ) : null}
+      </div>
+    </li>
+  );
+}
+
+function ChecklistStepLabel({
+  item,
+  isNext,
+  href,
+}: {
+  item: OnboardingChecklistView['items'][number];
+  isNext: boolean;
+  href: string;
+}) {
+  if (item.completed) return <p className="text-sm text-fg-muted">{item.label}</p>;
+  if (isNext) return <p className="text-sm font-medium text-fg">{item.label}</p>;
+  return (
+    <p className="text-sm text-fg-dim">
+      <Link
+        href={href}
+        className="underline decoration-fg-dim underline-offset-2 transition-colors hover:text-fg hover:decoration-fg"
+      >
+        {item.label}
+      </Link>
+    </p>
   );
 }
 
@@ -372,6 +438,13 @@ function onboardingMeta(key: string): { href: string; cta: string; description: 
         cta: 'Set up billing',
         description:
           'An owner or admin can add a payment method with Pay as you go, or choose another plan. Eligible teams can continue on Free.',
+      };
+    case 'connect_agent':
+      return {
+        href: '/app/connect-agent',
+        cta: 'Connect',
+        description:
+          'Point an agent at this team. Answers appear once work is captured; remember works now.',
       };
     case 'first_note':
       return {

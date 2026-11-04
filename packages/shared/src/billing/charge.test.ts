@@ -1,6 +1,7 @@
 import { expect } from '@timeline/test-support';
 import { describe, it } from 'bun:test';
 
+import { FREE_ALLOWANCES } from '#src/billing/catalog.js';
 import {
   capEligibleCustomerChargeCents,
   cumulativeChargeDeltaCents,
@@ -987,7 +988,7 @@ describe('costBearingPausedFromAccount', () => {
     aiChargeCents: 500,
     recallMinutes: 60,
     emailUnits: 500,
-    storageGb: 1,
+    storageGb: FREE_ALLOWANCES.storageGb,
     acceptedSources: 1_000,
   };
 

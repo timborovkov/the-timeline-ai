@@ -350,6 +350,14 @@ function PrivacyAiAndProviderSections() {
 function PrivacyDisclosureAndSecuritySections() {
   return (
     <>
+      <p>
+        For paid workspaces, Polar handles checkout, payment methods, invoices, tax and subscription
+        administration as merchant of record. We send account contact details, workspace
+        identifiers, selected plan and billing usage needed to administer the purchase. Polar
+        processes payment and billing records under its own legal obligations and{' '}
+        <a href="https://polar.sh/legal/privacy">privacy policy</a>. Timeline receives subscription
+        and payment status; do not send payment-card details through support.
+      </p>
       <h2>9. When we disclose data</h2>
       <p>We may disclose personal data:</p>
       <ul>

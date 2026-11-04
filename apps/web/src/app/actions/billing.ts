@@ -17,6 +17,7 @@ import { withTeam } from '@timeline/shared/team-scope';
 import { redirect } from 'next/navigation';
 
 import { resolveActiveTeam } from '@/lib/active-team';
+import { trackProductEventBestEffort } from '@/lib/analytics';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { runSentryServerAction } from '@/lib/sentry-action';
@@ -80,7 +81,7 @@ export async function startBillingCheckout(input: {
       return { ok: false, error: 'Enter a valid promo code.' };
     }
     try {
-      return await withTeamBillingIdentity(
+      const checkoutResult = await withTeamBillingIdentity(
         { db, provider, teamId: gate.active.teamId, userId: gate.userId },
         async (identity, { account: current }) => {
           if (compSuppressesPolarCharges(current)) {
@@ -116,6 +117,13 @@ export async function startBillingCheckout(input: {
           return { ok: true as const, url: checkout.url };
         },
       );
+      if (checkoutResult.ok)
+        trackProductEventBestEffort(
+          { kind: 'user', userId: gate.userId, teamId: gate.active.teamId },
+          'billing_checkout_created',
+          { plan },
+        );
+      return checkoutResult;
     } catch (error) {
       return {
         ok: false,

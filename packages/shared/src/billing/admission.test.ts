@@ -79,7 +79,7 @@ describe('billing admission helpers', () => {
     expect(ASK_AI_RESERVE_CUSTOMER_CHARGE_CENTS).toBe(250);
   });
 
-  it('settles aborted Ask usage at the reserved customer floor', async () => {
+  it('does not turn an unused Ask reservation into a customer charge', async () => {
     const billing = createBillingScope({
       db,
       teamId: TEAM_ID,
@@ -96,11 +96,32 @@ describe('billing admission helpers', () => {
       operationId,
       openRouterUsd: 0,
       deliverySurface: 'web',
-      minCustomerChargeCents: ASK_AI_RESERVE_CUSTOMER_CHARGE_CENTS,
     });
     const dash = await billing.getDashboard();
-    expect(dash.meters.ai?.customerChargeCents).toBe(ASK_AI_RESERVE_CUSTOMER_CHARGE_CENTS);
-    expect(dash.meters.ai?.nativeUnits).toBe(ASK_AI_RESERVE_CUSTOMER_CHARGE_CENTS);
+    expect(dash.meters.ai?.customerChargeCents).toBe(0);
+    expect(dash.meters.ai?.nativeUnits).toBe(0);
+  });
+
+  it('ignores legacy cancellation floors when retrying settlement and remains idempotent', async () => {
+    const billing = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    const operationId = askOperationId('web', 'legacy-abort');
+    await reserveAskAi(billing, { operationId, deliverySurface: 'web' });
+    await billing.patchReservationMetadata(operationId, {
+      pending_settlement: true,
+      pending_openrouter_usd: 0,
+      pending_delivery_surface: 'web',
+      pending_min_customer_charge_cents: 250,
+    });
+    expect(await settlePendingBillingReservations(db)).toBe(1);
+    expect(await settlePendingBillingReservations(db)).toBe(0);
+    const dash = await billing.getDashboard();
+    expect(dash.meters.ai?.nativeUnits).toBe(0);
+    expect(dash.meters.ai?.customerChargeCents).toBe(0);
   });
 
   it('records Ask usage on the reservation before settlement', async () => {
@@ -122,6 +143,7 @@ describe('billing admission helpers', () => {
           operationId,
           openRouterUsd: 0.05,
           deliverySurface: 'web',
+          providerUsageIncomplete: true,
         },
       ),
     ).rejects.toThrow('ledger down');
@@ -134,6 +156,16 @@ describe('billing admission helpers', () => {
       pending_settlement: true,
       pending_openrouter_usd: 0.05,
       pending_delivery_surface: 'web',
+      provider_usage_incomplete: true,
+    });
+    expect(await settlePendingBillingReservations(db)).toBe(1);
+    const [ledger] = await db
+      .select()
+      .from(billingUsageLedger)
+      .where(eq(billingUsageLedger.operationId, operationId));
+    expect(ledger?.metadata).toMatchObject({
+      openrouter_usd: 0.05,
+      provider_usage_incomplete: true,
     });
   });
 

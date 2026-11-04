@@ -405,11 +405,44 @@ function normalizeGithubInstallations(body: unknown): GithubInstallationSummary[
   return normalized;
 }
 
+function isGithubAppInstallationListForbidden(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  return (
+    /GitHub GET \/user\/installations\b/.test(err.message) &&
+    (/\bstatus 401\b/.test(err.message) ||
+      /\bstatus 403\b/.test(err.message) ||
+      /must authenticate with an access token authorized to a GitHub App/i.test(err.message))
+  );
+}
+
 async function loadGithubAppInstallations(
   tokens: GithubTokens,
 ): Promise<GithubInstallationSummary[]> {
-  const body = await ghGet<unknown>(tokens, '/user/installations?per_page=100', undefined, 'user');
-  return normalizeGithubInstallations(body);
+  const installations: GithubInstallationSummary[] = [];
+  try {
+    for (let page = 1; page <= 100; page++) {
+      const body = await ghGet<unknown>(
+        tokens,
+        `/user/installations?per_page=100&page=${page}`,
+        undefined,
+        'user',
+      );
+      const batch = normalizeGithubInstallations(body);
+      installations.push(...batch);
+      if (batch.length < 100) return installations;
+    }
+  } catch (err) {
+    if (isGithubRateLimitError(err)) throw err;
+    if (isGithubAppInstallationListForbidden(err)) {
+      // Legacy OAuth-app user tokens and other non-App credentials cannot list
+      // installations. Skip discovery so sync can mark needs-reconnect instead
+      // of failing the job on a 403 from GET /user/installations.
+      warnGithubFetch('GitHub App installation listing is not authorized for this token', { err });
+      return installations;
+    }
+    throw err;
+  }
+  throw new Error('github_installation_discovery_incomplete: reconnect after reviewing App access');
 }
 
 function installationIdForRepo(tokens: GithubTokens, repo: string): string | null {
@@ -421,7 +454,6 @@ function installationIdForRepo(tokens: GithubTokens, repo: string): string | nul
     );
     if (match) return match.id;
   }
-  if (installations.length === 1) return installations[0]?.id ?? null;
   return null;
 }
 
@@ -429,10 +461,16 @@ async function ensureGithubInstallationAccessToken(
   tokens: GithubTokens,
   repo: string,
 ): Promise<GithubTokens> {
-  const env = getEnv();
-  if (!env.GITHUB_APP_ID || !env.GITHUB_APP_PRIVATE_KEY) return tokens;
+  // Repository capture must always use App installation permissions. A user
+  // token is for discovery/identity, never a fallback capture credential.
+  if (!installationIdForRepo(tokens, repo)) {
+    tokens = { ...tokens, github_app_installations: await loadGithubAppInstallations(tokens) };
+  }
   const installationId = installationIdForRepo(tokens, repo);
-  if (!installationId) return tokens;
+  if (!installationId)
+    throw new Error(
+      'github_installation_missing: install the GitHub App for the selected repository and reconnect',
+    );
   const cached = tokens.github_app_installation_tokens?.[installationId];
   if (cached && cached.expires_at > Date.now() + 60_000) {
     return {

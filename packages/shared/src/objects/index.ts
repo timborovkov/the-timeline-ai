@@ -9050,6 +9050,26 @@ function dedupeStoredChatTitle(title: string, existingTitles: string[]): string 
     .slice(-3)}`;
 }
 
+export async function hasCompletedChatAnswer(db: Db, scope: TeamScopeCore): Promise<boolean> {
+  await scope.requireMembership();
+  const rows = await db
+    .select({ id: chatMessages.id })
+    .from(chatMessages)
+    .innerJoin(chatSessions, eq(chatMessages.sessionId, chatSessions.id))
+    .where(
+      and(
+        eq(chatMessages.teamId, scope.teamId),
+        eq(chatSessions.teamId, scope.teamId),
+        eq(chatSessions.createdBy, scope.userId),
+        isNull(chatSessions.archivedAt),
+        eq(chatMessages.role, 'assistant'),
+        sql`length(trim(coalesce(${chatMessages.content}->>'text', ''))) > 0`,
+      ),
+    )
+    .limit(1);
+  return rows.length > 0;
+}
+
 export async function listChatSessions(
   db: Db,
   scope: TeamScopeCore,
@@ -9940,6 +9960,7 @@ export function createObjectScope(db: Db, scope: TeamScopeCore) {
     unreadNotificationCount: () => unreadNotificationCount(db, scope),
     markNotificationRead: (id: string) => markNotificationRead(db, scope, id),
     markAllNotificationsRead: () => markAllNotificationsRead(db, scope),
+    hasCompletedChatAnswer: () => hasCompletedChatAnswer(db, scope),
     listChatSessions: (filter?: Parameters<typeof listChatSessions>[2]) =>
       listChatSessions(db, scope, filter),
     createChatSession: (input?: Parameters<typeof createChatSession>[2]) =>

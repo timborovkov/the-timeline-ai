@@ -1,5 +1,9 @@
+import Link from 'next/link';
+
 import type { Metadata } from 'next';
 
+import { SEE_IT_FIRST_HREF, SEE_IT_FIRST_LABEL } from '@/components/marketing/copy';
+import { EditorialStructuredData } from '@/components/marketing/editorial/editorial-structured-data';
 import { MarketingContainer, MarketingSectionGrid } from '@/components/marketing/marketing-layout';
 import {
   PricingComparisonTable,
@@ -7,19 +11,29 @@ import {
   PricingMetersExplainer,
   PricingPlanGrid,
 } from '@/components/marketing/pricing-blocks';
+import { PricingFaq } from '@/components/marketing/pricing-faq';
 import { MarketingSectionIndex } from '@/components/marketing/section-index';
-import { publicMetadata } from '@/lib/public-metadata';
+import {
+  PUBLIC_DOCUMENT_REGISTRY,
+  buildPublicStructuredData,
+  metadataForPublicDocument,
+} from '@/lib/public-site';
+import { getSiteUrl } from '@/lib/site-url';
 
-export const metadata: Metadata = publicMetadata({
-  title: 'Pricing',
-  description:
-    'Start free or choose Pay as you go, Team, or Business. Compare included usage and prices for AI, meetings, email, and storage. Prices in EUR, excluding VAT.',
-  path: '/pricing',
-});
+const PRICING_DOCUMENT = getPricingDocument();
+
+export const metadata: Metadata = metadataForPublicDocument(PRICING_DOCUMENT);
+
+function getPricingDocument() {
+  const document = PUBLIC_DOCUMENT_REGISTRY.get('/pricing');
+  if (!document) throw new Error('The public document registry is missing the pricing page');
+  return document;
+}
 
 export default function PricingPage() {
   return (
     <main id="main" tabIndex={-1}>
+      <EditorialStructuredData data={buildPublicStructuredData(PRICING_DOCUMENT, getSiteUrl())} />
       <section className="border-b border-border">
         <MarketingContainer className="py-16 sm:py-24 lg:py-28">
           <p className="text-sm font-medium text-fg-muted">Pricing</p>
@@ -27,11 +41,22 @@ export default function PricingPage() {
             <h1 className="max-w-[14ch] break-words text-balance text-[3rem] font-semibold leading-[0.95] tracking-[-0.05em] text-fg sm:text-[clamp(3.5rem,5vw,5.5rem)]">
               Start free. Pay for what you use.
             </h1>
-            <p className="max-w-[44ch] text-base leading-relaxed text-fg-muted sm:text-lg">
-              Start with Free, with no card required. Pay as you go keeps the Free allowance and
-              charges for usage beyond it. Choose Team or Business for more included usage and
-              members.
-            </p>
+            <div className="max-w-[44ch] space-y-4 text-base leading-relaxed text-fg-muted sm:text-lg">
+              <p>
+                Start with Free, with no card required. Pay as you go keeps the Free allowance and
+                charges for usage beyond it. Choose Team or Business for more included usage and
+                members.
+              </p>
+              <p>
+                Not sure yet?{' '}
+                <Link
+                  href={SEE_IT_FIRST_HREF}
+                  className="rounded-sm font-medium text-fg underline decoration-border-strong underline-offset-4 outline-none hover:decoration-fg focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  {SEE_IT_FIRST_LABEL}
+                </Link>
+              </p>
+            </div>
           </div>
         </MarketingContainer>
       </section>
@@ -109,6 +134,20 @@ export default function PricingPage() {
                   or balance is exhausted.
                 </li>
               </ul>
+            </div>
+          </MarketingSectionGrid>
+        </MarketingContainer>
+      </section>
+
+      <section className="border-t border-border bg-surface/45">
+        <MarketingContainer className="py-16 sm:py-20">
+          <MarketingSectionGrid>
+            <MarketingSectionIndex index="05" label="FAQ" />
+            <div>
+              <h2 className="max-w-[16ch] text-3xl font-semibold tracking-tight sm:text-4xl">
+                Common questions.
+              </h2>
+              <PricingFaq />
             </div>
           </MarketingSectionGrid>
         </MarketingContainer>

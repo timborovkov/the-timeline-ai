@@ -15,6 +15,13 @@ import {
   getTeamCapacityUsage,
   releaseFreeGrantIfOwnerLeaves,
 } from '#src/billing/capacity.js';
+import {
+  BYTES_PER_GIB,
+  BYTES_PER_MIB,
+  CAPACITY_BY_PLAN,
+  FREE_STORAGE_MIB,
+  storageChargeCents,
+} from '#src/billing/catalog.js';
 import { BillingAdmissionError } from '#src/billing/errors.js';
 import { createBillingScope } from '#src/billing/scope.js';
 import { createMcpScope } from '#src/mcp/scope.js';
@@ -49,7 +56,7 @@ describe('billing capacity (not Polar meters)', () => {
   it('enforces Free document, member, MCP, and concurrent Recall stock limits', async () => {
     await pg.exec(`
       INSERT INTO documents (team_id, name)
-      SELECT '${TEAM_ID}', 'doc-' || g FROM generate_series(1, 100) AS g;
+      SELECT '${TEAM_ID}', 'doc-' || g FROM generate_series(1, ${CAPACITY_BY_PLAN.free.documents}) AS g;
     `);
     await expect(
       assertTeamWriteCapacity({ db, teamId: TEAM_ID, additionalDocuments: 1 }),
@@ -292,7 +299,7 @@ describe('billing capacity (not Polar meters)', () => {
         'cccccccc-dddd-4eee-8fff-000000000000',
         1,
         'team/docs/big.bin',
-        1073741824
+        ${FREE_STORAGE_MIB * BYTES_PER_MIB}
       );
     `);
     await assertTeamWriteCapacity({ db, teamId: TEAM_ID, additionalBytes: 0 });
@@ -315,7 +322,79 @@ describe('billing capacity (not Polar meters)', () => {
     expect(byKind.agent_turns).toMatchObject({ used: 1, limit: 100 });
     expect(byKind.active_members).toMatchObject({ used: 1, limit: 3 });
     expect(byKind.custom_mcp_servers).toMatchObject({ used: 0, limit: 0 });
-    expect(byKind.documents).toMatchObject({ used: 0, limit: 100 });
+    expect(byKind.documents).toMatchObject({ used: 0, limit: CAPACITY_BY_PLAN.free.documents });
+    expect(byKind.storage_gb).toMatchObject({ used: 0, limit: CAPACITY_BY_PLAN.free.storageGb });
+    expect(byKind.indexed_chunks).toMatchObject({
+      used: 0,
+      limit: CAPACITY_BY_PLAN.free.indexedChunks,
+    });
+  });
+
+  it('uses live stored bytes for capacity and the dashboard storage meter', async () => {
+    const bytes = 20 * BYTES_PER_MIB;
+    const now = new Date();
+    const periodYm = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}`;
+    await pg.exec(`
+      INSERT INTO documents (id, team_id, name)
+      VALUES ('cccccccc-dddd-4eee-8fff-000000000010', '${TEAM_ID}', 'photo.bin');
+      INSERT INTO document_versions (team_id, document_id, version, object_key, byte_size)
+      VALUES (
+        '${TEAM_ID}',
+        'cccccccc-dddd-4eee-8fff-000000000010',
+        1,
+        'team/docs/photo.bin',
+        ${bytes}
+      );
+      INSERT INTO billing_usage_counters (team_id, period_ym, meter_id, native_units, customer_charge_cents)
+      VALUES ('${TEAM_ID}', '${periodYm}', 'storage_gb_month', 0, 0);
+    `);
+    const rows = await getTeamCapacityUsage({ db, teamId: TEAM_ID, planId: 'free' });
+    const storage = rows.find((row) => row.kind === 'storage_gb');
+    expect(storage?.used).toBeCloseTo(bytes / 1024 ** 3, 8);
+    expect(storage?.limit).toBe(CAPACITY_BY_PLAN.free.storageGb);
+
+    const billing = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    const dash = await billing.getDashboard({ canManageBilling: true });
+    expect(dash.meters.storage_gb_month.nativeUnits).toBeCloseTo(storage?.used ?? 0, 8);
+    expect(
+      dash.presentation?.allowances.find((row) => row.meter === 'storage_gb_month')?.used,
+    ).toBe(dash.meters.storage_gb_month.nativeUnits);
+  });
+
+  it('does not price live stored GiB as a full GB-month in the plan preview', async () => {
+    const liveGb = 25;
+    const now = new Date();
+    const periodYm = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}`;
+    await pg.exec(`
+      INSERT INTO documents (id, team_id, name)
+      VALUES ('cccccccc-dddd-4eee-8fff-000000000011', '${TEAM_ID}', 'archive.bin');
+      INSERT INTO document_versions (team_id, document_id, version, object_key, byte_size)
+      VALUES (
+        '${TEAM_ID}',
+        'cccccccc-dddd-4eee-8fff-000000000011',
+        1,
+        'team/docs/archive.bin',
+        ${liveGb * BYTES_PER_GIB}
+      );
+      INSERT INTO billing_usage_counters (team_id, period_ym, meter_id, native_units, customer_charge_cents)
+      VALUES ('${TEAM_ID}', '${periodYm}', 'storage_gb_month', 0, 0);
+    `);
+    const billing = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    const dash = await billing.getDashboard({ canManageBilling: true });
+    expect(dash.meters.storage_gb_month.nativeUnits).toBeCloseTo(liveGb, 8);
+    expect(storageChargeCents(liveGb)).toBeGreaterThan(0);
+    expect(dash.planPreview.bills.payg.meteredAfterDiscountCents).toBe(0);
+    expect(dash.planPreview.bills.payg.totalCents).toBe(0);
   });
 
   it('rejects adding a custom MCP server on the Free plan', async () => {
@@ -384,12 +463,12 @@ describe('billing capacity (not Polar meters)', () => {
       INSERT INTO document_chunks (team_id, document_id, document_version_id, chunk_index, representation_kind, text, token_count)
       SELECT '${TEAM_ID}', 'cccccccc-dddd-4eee-8fff-000000000001',
              'cccccccc-dddd-4eee-8fff-000000000002', g, 'source_text', 'chunk', 1
-      FROM generate_series(1, 2000) AS g;
+      FROM generate_series(1, ${CAPACITY_BY_PLAN.free.indexedChunks}) AS g;
     `);
     await assertTeamWriteCapacity({ db, teamId: TEAM_ID, additionalChunks: 1 });
     const rows = await getTeamCapacityUsage({ db, teamId: TEAM_ID, planId: 'free' });
     const chunks = rows.find((row) => row.kind === 'indexed_chunks');
-    expect(chunks).toMatchObject({ used: 0, limit: 2000 });
+    expect(chunks).toMatchObject({ used: 0, limit: CAPACITY_BY_PLAN.free.indexedChunks });
   });
 
   it('unassigns the Free grant when its owner leaves the assigned team', async () => {

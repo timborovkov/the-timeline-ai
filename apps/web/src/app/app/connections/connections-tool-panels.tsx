@@ -310,9 +310,9 @@ export function ConnectionsDeveloper({
 function TimelineMcpDestinations() {
   const destinations = [
     {
-      href: '/app/team/mcp-share',
-      label: 'Manage endpoint',
-      description: 'OAuth grants and team keys for outbound MCP.',
+      href: '/app/connect-agent',
+      label: 'Connect your agent',
+      description: 'OAuth grants, agent setup, and team keys for outbound MCP.',
       external: false,
     },
     {

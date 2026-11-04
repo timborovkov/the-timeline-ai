@@ -30,7 +30,8 @@ describe('pricing blocks', () => {
     const html = renderToStaticMarkup(<PricingMetersExplainer />);
     expect(html).toContain('AI');
     expect(html).toContain('Meetings');
-    expect(html).toMatch(/provider token cost/i);
+    expect(html).toMatch(/recorded charges by model and operation/i);
+    expect(html).not.toMatch(/provider (token )?cost|×\s*4/i);
     expect(html).toMatch(/one owned workspace/i);
     expect(html).toMatch(/restricted until you add a payment method/i);
   });
@@ -46,6 +47,8 @@ describe('pricing blocks', () => {
     expect(html).toContain('Concurrent meeting notetakers');
     expect(html).toContain('Custom MCP servers');
     expect(html).toContain('Not included');
-    expect(html).toContain('1 GB');
+    expect(html).toContain('100 MB');
+    expect(html).toContain('10,000');
+    expect(html).toContain('20,000');
   });
 });

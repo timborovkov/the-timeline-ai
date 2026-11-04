@@ -1,6 +1,7 @@
 'use client';
 
 import { Send } from 'lucide-react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useRef, useState, type ReactNode } from 'react';
 
@@ -12,7 +13,15 @@ import {
 
 const SUGGESTIONS = ['What changed today?', 'What is blocked?', 'What needs attention?'] as const;
 
-export function HomeAskComposer({ teamId, actions }: { teamId: string; actions?: ReactNode }) {
+export function HomeAskComposer({
+  teamId,
+  actions,
+  hasSources = true,
+}: {
+  teamId: string;
+  actions?: ReactNode;
+  hasSources?: boolean;
+}) {
   const router = useRouter();
   const promptRef = useRef<HTMLInputElement>(null);
   const [prompt, setPrompt] = useState('');
@@ -43,11 +52,18 @@ export function HomeAskComposer({ teamId, actions }: { teamId: string; actions?:
             Ask the timeline
           </h2>
           <p className="mt-1 text-sm text-fg-muted">
-            Ask what changed, what is blocked, or what needs attention.
+            {hasSources
+              ? 'Ask a specific question, then open a citation to check the evidence. Newly added sources may still be processing; check Documents or Connections if an answer cannot find them.'
+              : 'Add one source before your first question: capture a project note or upload a document. Wait for processing so Ask can find it.'}
           </p>
         </div>
         {actions ? <div className="shrink-0">{actions}</div> : null}
       </div>
+      {!hasSources ? (
+        <Link href="/app/documents" className="inline-block text-sm underline">
+          Upload your first document
+        </Link>
+      ) : null}
       <div>
         <div className="relative rounded-sm border border-border bg-surface focus-within:border-border-strong focus-within:ring-2 focus-within:ring-signal/40 focus-within:ring-offset-2 focus-within:ring-offset-bg">
           <label htmlFor="home-ask-prompt" className="sr-only">
@@ -89,7 +105,7 @@ export function HomeAskComposer({ teamId, actions }: { teamId: string; actions?:
         </p>
       ) : null}
       <div className="mt-3 flex flex-wrap gap-2">
-        {SUGGESTIONS.map((suggestion) => (
+        {(hasSources ? SUGGESTIONS : []).map((suggestion) => (
           <button
             key={suggestion}
             type="button"

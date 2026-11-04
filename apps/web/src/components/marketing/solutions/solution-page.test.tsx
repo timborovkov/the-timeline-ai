@@ -18,11 +18,11 @@ describe('solution page template', () => {
     expect(html).toContain('aria-label="Breadcrumb"');
     expect(html).toContain(`href="${solution.cta.href}"`);
     expect(html).toContain('href="/pricing"');
-    expect(html).toContain('Free to start · no card required');
+    expect(html).toContain('Free for up to 3 members · no card required');
     expect(html).toContain('motion-safe:group-hover:translate-x-1');
 
-    for (const relatedRoute of solution.relatedRoutes) {
-      expect(html).toContain(`href="${relatedRoute}"`);
+    for (const related of solution.related) {
+      expect(html).toContain(`href="${related.href}"`);
     }
     for (const faq of solution.faqs) {
       expect(html).toContain(faq.question);

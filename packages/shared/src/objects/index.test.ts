@@ -3029,6 +3029,24 @@ describe('object scope — notes and suggestions', () => {
 });
 
 describe('object scope — chat session isolation', () => {
+  it('offers value followup only after an answer in the current user and team', async () => {
+    const owner = withTeam(db, TEAM_A, USER_OWNER).objects;
+    const member = withTeam(db, TEAM_A, USER_MEMBER).objects;
+    const other = withTeam(db, TEAM_B, USER_OTHER_TEAM).objects;
+    expect(await owner.hasCompletedChatAnswer()).toBe(false);
+    const session = await owner.createChatSession();
+    await owner.appendChatMessages(session.id, [{ role: 'user', content: 'Question' }]);
+    expect(await owner.hasCompletedChatAnswer()).toBe(false);
+    await owner.appendChatMessages(session.id, [{ role: 'assistant', content: { text: '  ' } }]);
+    expect(await owner.hasCompletedChatAnswer()).toBe(false);
+    await owner.appendChatMessages(session.id, [
+      { role: 'assistant', content: { text: 'Answer' } },
+    ]);
+    expect(await owner.hasCompletedChatAnswer()).toBe(true);
+    expect(await member.hasCompletedChatAnswer()).toBe(false);
+    expect(await other.hasCompletedChatAnswer()).toBe(false);
+  });
+
   it('only lets the creator read, append to, pin, and archive their chat sessions', async () => {
     const ownerScope = withTeam(db, TEAM_A, USER_OWNER).objects;
     const memberScope = withTeam(db, TEAM_A, USER_MEMBER).objects;

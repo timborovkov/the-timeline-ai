@@ -24,7 +24,7 @@ await vi.mock(
     }
     return {
       McpOAuthError,
-      MCP_OAUTH_SCOPES: ['read', 'agent:ask'],
+      MCP_OAUTH_SCOPES: ['read', 'capture', 'agent:ask'],
       validateMcpAuthorizationRequest: fakes.validate,
       isLoopbackHostname: (hostname: string) =>
         hostname === 'localhost' ||
@@ -160,6 +160,9 @@ describe('MCP OAuth consent page', () => {
     expect(html).toContain('member · unavailable');
     expect(html).toContain('name="team_id"');
     expect(html).toContain('Acme');
+    expect(html).toContain('Capture notes in Timeline');
+    expect(html).toContain('name="grant_capture"');
+    expect(html).toMatch(/name="grant_capture"[^>]*checked|checked[^>]*name="grant_capture"/);
     expect(html).toContain('Allow access');
     expect(html).toContain('Deny access');
     expect(html).toContain('may process or retain it under its own terms and privacy policy');

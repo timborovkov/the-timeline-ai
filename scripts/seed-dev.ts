@@ -42,12 +42,28 @@ import { encryptJson } from '@timeline/shared/crypto';
 import { PRIVACY_VERSION, TERMS_VERSION } from '@timeline/shared/legal-versions';
 import { normalizeIdentityFacet } from '@timeline/shared/objects/identity-facets';
 import { hashPassword } from '@timeline/shared/passwords';
-import { getDocumentsBucket, getS3Client, putObject } from '@timeline/shared/s3';
+import { getAudioBucket, getDocumentsBucket, getS3Client, putObject } from '@timeline/shared/s3';
 import { and, eq, inArray, ne, or, sql } from 'drizzle-orm';
 
-import { CORPUS_DOCUMENTS, CORPUS_PEOPLE } from './demo-corpus/index.js';
-import { insertExpandedDemoCorpus } from './demo-corpus/insert.js';
 import {
+  dateAt,
+  DEMO_DATES,
+  demoSeedNowIso,
+  demoSeedNowMetadata,
+  demoTimes,
+  isoAt,
+  teamDate,
+} from './demo-clock.js';
+import {
+  CORPUS_DOCUMENTS,
+  CORPUS_PEOPLE,
+  DEMO_VOICE_AUDIO,
+  refreshDemoCorpus,
+} from './demo-corpus/index.js';
+import { insertExpandedDemoCorpus } from './demo-corpus/insert.js';
+import { assertSeededEmptyOnboardingTeam, seedEmptyOnboardingTeam } from './demo-empty-team.js';
+import {
+  adoptDemoSeedClock,
   assertDemoSeedEnvironment,
   DEMO_DOCUMENT_BYTE_SIZE,
   DEMO_DOCUMENT_CHECKSUM_SHA256,
@@ -63,6 +79,7 @@ import {
   DEMO_LEGAL_ACCEPTED_AT,
   DEMO_SOURCE_REFS,
   DEMO_TIMES,
+  EMPTY_DEMO_LOGIN,
 } from './demo-fixture.js';
 import { seedCurrentLegalAcceptances } from './demo-legal.js';
 import { seedHeavyAcmeLabs } from './seed-dev-heavy.js';
@@ -126,7 +143,6 @@ const IDS = {
   outputDecision: 'a2000000-0000-4000-8000-000000000003',
 } as const;
 
-const now = new Date('2026-06-18T09:00:00.000Z');
 async function assertReservedSeedRowsAreCompatible(db: ReturnType<typeof getDb>): Promise<void> {
   const [reservedUsers, reservedTeams, reservedConnections, reservedIntegrations] =
     await Promise.all([
@@ -135,20 +151,24 @@ async function assertReservedSeedRowsAreCompatible(db: ReturnType<typeof getDb>)
         .from(users)
         .where(
           or(
-            inArray(
-              users.id,
-              CORPUS_PEOPLE.map((person) => person.id),
-            ),
-            inArray(
-              users.email,
-              CORPUS_PEOPLE.map((person) => person.email),
-            ),
+            inArray(users.id, [...CORPUS_PEOPLE.map((person) => person.id), EMPTY_DEMO_LOGIN.id]),
+            inArray(users.email, [
+              ...CORPUS_PEOPLE.map((person) => person.email),
+              EMPTY_DEMO_LOGIN.email,
+            ]),
           ),
         ),
       db
         .select({ id: teams.id, slug: teams.slug })
         .from(teams)
-        .where(or(eq(teams.id, IDS.team), eq(teams.slug, 'acme-labs'))),
+        .where(
+          or(
+            eq(teams.id, IDS.team),
+            eq(teams.slug, 'acme-labs'),
+            eq(teams.id, DEMO_IDS.emptyTeam),
+            eq(teams.slug, EMPTY_DEMO_LOGIN.teamSlug),
+          ),
+        ),
       db
         .select({
           id: providerConnections.id,
@@ -196,13 +216,17 @@ async function assertReservedSeedRowsAreCompatible(db: ReturnType<typeof getDb>)
     ]);
 
   for (const row of reservedUsers) {
-    const expected = CORPUS_PEOPLE.find((person) => person.email === row.email);
+    const expected =
+      CORPUS_PEOPLE.find((person) => person.email === row.email) ??
+      (row.email === EMPTY_DEMO_LOGIN.email ? EMPTY_DEMO_LOGIN : undefined);
     if (expected && row.id !== expected.id) {
       throw new Error(
         `Cannot seed: ${row.email} already exists with id ${row.id}. Run bun run dev:wipe or remove the conflicting dev row first.`,
       );
     }
-    const reserved = CORPUS_PEOPLE.find((person) => person.id === row.id);
+    const reserved =
+      CORPUS_PEOPLE.find((person) => person.id === row.id) ??
+      (row.id === EMPTY_DEMO_LOGIN.id ? EMPTY_DEMO_LOGIN : undefined);
     if (reserved && row.email !== reserved.email) {
       throw new Error(
         `Cannot seed: reserved user id ${reserved.id} already belongs to ${row.email}.`,
@@ -218,6 +242,16 @@ async function assertReservedSeedRowsAreCompatible(db: ReturnType<typeof getDb>)
     }
     if (row.id === IDS.team && row.slug !== 'acme-labs') {
       throw new Error(`Cannot seed: reserved team id ${IDS.team} already belongs to ${row.slug}.`);
+    }
+    if (row.slug === EMPTY_DEMO_LOGIN.teamSlug && row.id !== DEMO_IDS.emptyTeam) {
+      throw new Error(
+        `Cannot seed: ${EMPTY_DEMO_LOGIN.teamSlug} already exists with id ${row.id}. Run bun run dev:wipe or remove the conflicting dev row first.`,
+      );
+    }
+    if (row.id === DEMO_IDS.emptyTeam && row.slug !== EMPTY_DEMO_LOGIN.teamSlug) {
+      throw new Error(
+        `Cannot seed: reserved team id ${DEMO_IDS.emptyTeam} already belongs to ${row.slug}.`,
+      );
     }
   }
 
@@ -288,22 +322,45 @@ function demoAssociation(input: {
   };
 }
 
+async function readExistingNorthstarEvents(
+  db: ReturnType<typeof getDb>,
+): Promise<Array<{ sourceMetadata: unknown }>> {
+  return db
+    .select({ sourceMetadata: rawEvents.sourceMetadata })
+    .from(rawEvents)
+    .where(
+      and(
+        eq(rawEvents.teamId, DEMO_IDS.team),
+        inArray(rawEvents.id, [
+          DEMO_IDS.eventNote,
+          DEMO_IDS.eventEmail,
+          DEMO_IDS.eventMeeting,
+          DEMO_IDS.eventProvider,
+        ]),
+      ),
+    );
+}
+
 async function main(): Promise<void> {
   assertDemoSeedEnvironment();
   const heavy = process.argv.includes('--heavy');
-
   const db = getDb();
   await assertReservedSeedRowsAreCompatible(db);
+  adoptDemoSeedClock(await readExistingNorthstarEvents(db), new Date());
+  refreshDemoCorpus();
+  const times = demoTimes();
+  const now = times.seedNowLegacy;
+  const tokenExpiry = times.tokenExpiry.toISOString();
   const passwordHash = await hashPassword(DEMO_LOGIN_PASSWORD);
   const githubSecret = encryptJson({
     access_token: 'gho_dev_seed_access_token_123',
     refresh_token: 'ghr_dev_seed_refresh_token_123',
-    expires_at: '2026-12-31T23:59:59.000Z',
+    expires_at: tokenExpiry,
   });
   const linearSecret = encryptJson({
     access_token: 'lin_api_dev_seed_access_token_456',
     refresh_token: 'lin_refresh_dev_seed_refresh_token_456',
-    expires_at: '2026-12-31T23:59:59.000Z',
+    expires_at: tokenExpiry,
   });
 
   try {
@@ -321,6 +378,12 @@ async function main(): Promise<void> {
         contentType: document.contentType,
       });
     }
+    await putObject(getS3Client(), {
+      bucket: getAudioBucket(),
+      key: DEMO_VOICE_AUDIO.key,
+      body: DEMO_VOICE_AUDIO.bytes,
+      contentType: DEMO_VOICE_AUDIO.contentType,
+    });
 
     await db.transaction(async (tx) => {
       await tx
@@ -520,7 +583,7 @@ async function main(): Promise<void> {
             visibilityDefault: 'team',
             enabled: false,
             lastError: null,
-            lastSyncedAt: new Date('2026-06-18T08:40:00.000Z'),
+            lastSyncedAt: dateAt(-57, '08:40:00'),
           },
           {
             id: IDS.linearIntegration,
@@ -537,7 +600,7 @@ async function main(): Promise<void> {
             visibilityDefault: 'team',
             enabled: false,
             lastError: null,
-            lastSyncedAt: new Date('2026-06-18T08:45:00.000Z'),
+            lastSyncedAt: dateAt(-57, '08:45:00'),
           },
         ])
         .onConflictDoUpdate({
@@ -609,16 +672,16 @@ async function main(): Promise<void> {
             id: IDS.githubSyncState,
             integrationId: IDS.githubIntegration,
             resourceType: 'github.pull_requests',
-            cursor: { since: '2026-06-18T08:40:00.000Z' },
-            lastRunAt: new Date('2026-06-18T08:40:00.000Z'),
+            cursor: { since: isoAt(-57, '08:40:00') },
+            lastRunAt: dateAt(-57, '08:40:00'),
             lastStatus: 'ok',
           },
           {
             id: IDS.linearSyncState,
             integrationId: IDS.linearIntegration,
             resourceType: 'linear.issues',
-            cursor: { updatedAfter: '2026-06-18T08:45:00.000Z' },
-            lastRunAt: new Date('2026-06-18T08:45:00.000Z'),
+            cursor: { updatedAfter: isoAt(-57, '08:45:00') },
+            lastRunAt: dateAt(-57, '08:45:00'),
             lastStatus: 'ok',
           },
         ])
@@ -632,9 +695,8 @@ async function main(): Promise<void> {
             teamId: IDS.team,
             authorUserId: IDS.owner,
             source: 'web',
-            contentText:
-              'Kickoff note: Acme Labs is launching Project Atlas to unify customer timelines before the July beta.',
-            occurredAt: new Date('2026-06-17T09:00:00.000Z'),
+            contentText: `Kickoff note: Acme Labs is launching Project Atlas to unify customer timelines before the ${teamDate(DEMO_DATES.webinar, 'month')} beta.`,
+            occurredAt: dateAt(-58, '09:00:00'),
             visibility: 'team',
             sourceMetadata: {
               seed: true,
@@ -650,7 +712,7 @@ async function main(): Promise<void> {
             source: 'email',
             contentText:
               'Email from Mika: Vendor contract review is due Friday, and the security appendix still needs approval.',
-            occurredAt: new Date('2026-06-17T11:15:00.000Z'),
+            occurredAt: dateAt(-58, '11:15:00'),
             visibility: 'team',
             sourceMetadata: {
               seed: true,
@@ -680,7 +742,7 @@ async function main(): Promise<void> {
             source: 'slack',
             contentText:
               'Slack #product: Avery confirmed that Atlas beta onboarding should prioritize importer reliability over dashboards.',
-            occurredAt: new Date('2026-06-17T14:20:00.000Z'),
+            occurredAt: dateAt(-58, '14:20:00'),
             visibility: 'team',
             sourceMetadata: {
               seed: true,
@@ -697,7 +759,7 @@ async function main(): Promise<void> {
             source: 'meeting',
             contentText:
               'Meeting transcript summary: the team decided to keep Recall.ai bots transcript-only and consent-gated for the beta.',
-            occurredAt: new Date('2026-06-18T07:30:00.000Z'),
+            occurredAt: dateAt(-57, '07:30:00'),
             visibility: 'team',
             sourceMetadata: {
               seed: true,
@@ -715,7 +777,7 @@ async function main(): Promise<void> {
             source: 'integration',
             contentText:
               'GitHub PR timborovkov/the-timeline-ai#42 updated: Add dev seed script and README instructions.',
-            occurredAt: new Date('2026-06-18T08:40:00.000Z'),
+            occurredAt: dateAt(-57, '08:40:00'),
             visibility: 'team',
             sourceMetadata: {
               seed: true,
@@ -737,7 +799,7 @@ async function main(): Promise<void> {
             source: 'integration',
             contentText:
               'GitHub PR timborovkov/the-timeline-ai#42 review (COMMENTED): The seed now demonstrates bundled timeline moments.',
-            occurredAt: new Date('2026-06-18T08:39:00.000Z'),
+            occurredAt: dateAt(-57, '08:39:00'),
             visibility: 'team',
             sourceMetadata: {
               seed: true,
@@ -759,7 +821,7 @@ async function main(): Promise<void> {
             authorUserId: IDS.owner,
             source: 'integration',
             contentText: 'GitHub workflow "CI" #1042 on timborovkov/the-timeline-ai success',
-            occurredAt: new Date('2026-06-18T08:37:00.000Z'),
+            occurredAt: dateAt(-57, '08:37:00'),
             visibility: 'team',
             sourceMetadata: {
               seed: true,
@@ -781,7 +843,7 @@ async function main(): Promise<void> {
             authorUserId: IDS.owner,
             source: 'integration',
             contentText: 'GitHub workflow "CI" #1041 on timborovkov/the-timeline-ai success',
-            occurredAt: new Date('2026-06-18T08:31:00.000Z'),
+            occurredAt: dateAt(-57, '08:31:00'),
             visibility: 'team',
             sourceMetadata: {
               seed: true,
@@ -804,7 +866,7 @@ async function main(): Promise<void> {
             source: 'integration',
             contentText:
               'Linear issue TL-101 moved to In Progress: Polish seeded object pages for demo data.',
-            occurredAt: new Date('2026-06-18T08:45:00.000Z'),
+            occurredAt: dateAt(-57, '08:45:00'),
             visibility: 'team',
             sourceMetadata: {
               seed: true,
@@ -825,6 +887,7 @@ async function main(): Promise<void> {
             visibility: 'team',
             sourceMetadata: {
               fixture_version: DEMO_FIXTURE_VERSION,
+              ...demoSeedNowMetadata(),
               capture_kind: 'explicit_chat_note',
               command: '/timeline note',
               slack_event_id: 'EvDEMOSEEDNORTHSTAR001',
@@ -843,6 +906,7 @@ async function main(): Promise<void> {
             visibility: 'team',
             sourceMetadata: {
               fixture_version: DEMO_FIXTURE_VERSION,
+              ...demoSeedNowMetadata(),
               message_id: 'demo-seed-northstar-export-commitment-001',
               from: 'elena.park@northstar.example',
               subject: 'Northstar pilot export commitment',
@@ -870,6 +934,7 @@ async function main(): Promise<void> {
             visibility: 'team',
             sourceMetadata: {
               fixture_version: DEMO_FIXTURE_VERSION,
+              ...demoSeedNowMetadata(),
               meeting_id: DEMO_IDS.meeting,
               platform: 'meet',
               title: 'Northstar pilot handoff review',
@@ -888,6 +953,7 @@ async function main(): Promise<void> {
             visibility: 'team',
             sourceMetadata: {
               fixture_version: DEMO_FIXTURE_VERSION,
+              ...demoSeedNowMetadata(),
               provider: 'linear',
               integration_id: DEMO_IDS.linearIntegration,
               selection_external_id: 'LIN-TL',
@@ -899,6 +965,18 @@ async function main(): Promise<void> {
           },
         ])
         .onConflictDoNothing();
+
+      for (const event of DEMO_EVENTS) {
+        await tx
+          .update(rawEvents)
+          .set({
+            contentText: event.contentText,
+            occurredAt: new Date(event.occurredAt),
+            createdAt: new Date(event.occurredAt),
+            sourceMetadata: sql`jsonb_set(coalesce(${rawEvents.sourceMetadata}, '{}'::jsonb), '{demo_seed_now}', to_jsonb(${demoSeedNowIso()}::text), true)`,
+          })
+          .where(and(eq(rawEvents.teamId, DEMO_IDS.team), eq(rawEvents.id, event.id)));
+      }
 
       await tx
         .insert(documents)
@@ -1064,7 +1142,7 @@ async function main(): Promise<void> {
             source_payload_ref: DEMO_SOURCE_REFS.meeting,
           },
           startedAt: new Date(DEMO_TIMES.meeting),
-          endedAt: new Date('2026-07-08T15:30:00.000Z'),
+          endedAt: times.meetingEnd,
           createdAt: new Date(DEMO_TIMES.meeting),
           updatedAt: new Date(DEMO_TIMES.meeting),
         })
@@ -1143,14 +1221,14 @@ async function main(): Promise<void> {
             priority: 2,
             ownerUserId: IDS.member,
             assigneeUserId: IDS.member,
-            dueAt: new Date('2026-06-19T17:00:00.000Z'),
+            dueAt: dateAt(DEMO_DATES.overdueVendor, '17:00:00'),
             taskCategory: 'legal_compliance',
             taskCategoryMode: 'automatic',
             taskCategorySource: 'llm',
             taskCategoryStatus: 'ready',
             taskCategoryAppliedInputHash: 'dev-seed-task-category-v1',
             taskCategoryTaxonomyVersion: 'task-categories-v1',
-            taskCategoryUpdatedAt: new Date('2026-06-18T09:00:00.000Z'),
+            taskCategoryUpdatedAt: dateAt(-57, '09:00:00'),
             sourceEventId: null,
           },
           {
@@ -1195,7 +1273,7 @@ async function main(): Promise<void> {
             metadata: {
               fixture_version: DEMO_FIXTURE_VERSION,
               customer: 'Northstar Works',
-              reviewDate: '2026-07-15',
+              reviewDate: teamDate(DEMO_DATES.incidentReview, 'iso'),
             },
             status: DEMO_ENTITIES[0].status,
             stage: DEMO_ENTITIES[0].stage,
@@ -1220,7 +1298,7 @@ async function main(): Promise<void> {
             priority: 1,
             ownerUserId: DEMO_ENTITIES[1].ownerUserId,
             assigneeUserId: DEMO_ENTITIES[1].assigneeUserId,
-            dueAt: new Date('2026-07-12T17:00:00.000Z'),
+            dueAt: dateAt(DEMO_DATES.overdueNorthstar, '17:00:00'),
             taskCategory: 'engineering',
             taskCategoryMode: 'automatic',
             taskCategorySource: 'llm',
@@ -1309,7 +1387,7 @@ async function main(): Promise<void> {
             id: IDS.factKickoff,
             teamId: IDS.team,
             rawEventId: IDS.eventKickoff,
-            statement: 'Project Atlas aims to unify customer timelines before the July beta.',
+            statement: `Project Atlas aims to unify customer timelines before the ${teamDate(DEMO_DATES.webinar, 'month')} beta.`,
             confidence: 0.96,
             modelVersion: DEMO_FIXTURE_VERSION,
             extractedAt: now,
@@ -1512,14 +1590,14 @@ async function main(): Promise<void> {
             payloadDigest: 'sha256:dev-seed-kickoff-note-payload',
             source: 'web',
             eventType: 'manual_note.created',
-            occurredAt: new Date('2026-06-17T09:00:00.000Z'),
+            occurredAt: dateAt(-58, '09:00:00'),
             visibility: 'team',
             visibilityOwnerUserId: null,
             visibilityUserIds: null,
             actor: { user_id: IDS.owner },
             contentDigest: 'sha256:dev-seed-kickoff-note',
             title: 'Project Atlas kickoff note',
-            summary: 'Acme Labs is launching Project Atlas before the July beta.',
+            summary: `Acme Labs is launching Project Atlas before the ${teamDate(DEMO_DATES.webinar, 'month')} beta.`,
             metadata: { seed: true, target_entity_id: IDS.objectProject },
             normalizerVersion: 'dev-seed-reconciliation-2026-07',
             replayState: 'full',
@@ -1534,7 +1612,7 @@ async function main(): Promise<void> {
             source: 'email',
             externalEventId: 'dev-seed-email-contract-001',
             eventType: 'email.received',
-            occurredAt: new Date('2026-06-17T11:15:00.000Z'),
+            occurredAt: dateAt(-58, '11:15:00'),
             visibility: 'team',
             visibilityOwnerUserId: null,
             visibilityUserIds: null,
@@ -1556,7 +1634,7 @@ async function main(): Promise<void> {
             source: 'meeting',
             externalEventId: 'dev-seed-meeting-001',
             eventType: 'meeting.transcript_summary',
-            occurredAt: new Date('2026-06-18T07:30:00.000Z'),
+            occurredAt: dateAt(-57, '07:30:00'),
             visibility: 'team',
             visibilityOwnerUserId: null,
             visibilityUserIds: null,
@@ -1585,7 +1663,7 @@ async function main(): Promise<void> {
             actor: { user_id: DEMO_IDS.owner },
             contentDigest: 'sha256:demo-seed-northstar-note',
             title: 'Northstar pilot kickoff note',
-            summary: 'The pilot review is July 15 and the export path should stay narrow.',
+            summary: `The pilot review is ${teamDate(DEMO_DATES.incidentReview, 'md')} and the export path should stay narrow.`,
             metadata: { fixture_version: DEMO_FIXTURE_VERSION },
             normalizerVersion: DEMO_FIXTURE_VERSION,
             replayState: 'full',
@@ -2186,7 +2264,7 @@ async function main(): Promise<void> {
             laneId: IDS.laneDoing,
             position: 0,
             responsibleUserId: IDS.member,
-            dueAt: new Date('2026-06-19T17:00:00.000Z'),
+            dueAt: dateAt(DEMO_DATES.overdueVendor, '17:00:00'),
             priority: 2,
             nextStep: 'Send security appendix to legal for final read.',
             notes: 'Seeded demo task from the inbound email event.',
@@ -2228,7 +2306,7 @@ async function main(): Promise<void> {
             actorUserId: IDS.owner,
             kind: 'connect',
             payload: { seed: true, provider: 'github' },
-            createdAt: new Date('2026-06-18T08:35:00.000Z'),
+            createdAt: dateAt(-57, '08:35:00'),
           },
           {
             id: IDS.auditSynced,
@@ -2237,13 +2315,16 @@ async function main(): Promise<void> {
             actorUserId: IDS.owner,
             kind: 'sync_success',
             payload: { seed: true, provider: 'linear', events: 1 },
-            createdAt: new Date('2026-06-18T08:45:00.000Z'),
+            createdAt: dateAt(-57, '08:45:00'),
           },
         ])
         .onConflictDoNothing();
 
       await insertExpandedDemoCorpus(tx);
+      await seedEmptyOnboardingTeam(tx, passwordHash);
     });
+
+    await assertSeededEmptyOnboardingTeam(db);
 
     if (heavy) {
       await db.transaction(async (tx) => {
@@ -2265,6 +2346,10 @@ async function main(): Promise<void> {
     for (const person of CORPUS_PEOPLE) {
       console.log(`[seed-dev]   ${person.email} (${person.role}, ${person.title})`);
     }
+    console.log('[seed-dev] seeded empty onboarding workspace');
+    console.log(
+      `[seed-dev]   ${EMPTY_DEMO_LOGIN.email} (${EMPTY_DEMO_LOGIN.role}, ${EMPTY_DEMO_LOGIN.teamName})`,
+    );
     console.log('[seed-dev] fake GitHub access token: gho_dev_seed_access_token_123');
     console.log('[seed-dev] fake Linear access token: lin_api_dev_seed_access_token_456');
     console.log('[seed-dev] extra fake tokens are listed in docs/demo-corpus.md');

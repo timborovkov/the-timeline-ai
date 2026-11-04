@@ -194,10 +194,12 @@ Treat this file as an operating contract for agents, not a loose README.
 - **Use the verified demo seed for recorded demos and local regression checks.** `bun run demo:seed`
   runs the idempotent `bun run dev:seed`, indexes every deterministic fixture source through the real
   embed worker/OpenRouter/Qdrant path, and then runs `bun run demo:verify`. It creates the
-  documented Acme Labs team, eight fake login users, a month of timeline events, objects, custom
-  boards, documents, meetings, Ask history, pending proposals, digest history, and the
-  deterministic fictional Northstar evidence corpus with encrypted fake integration credentials after
-  migrations. `bun run demo:reset` is `bun run dev:wipe && bun run demo:seed`. `bun run demo:verify` fails closed on all eight login identities, active memberships,
+  documented Acme Labs team, eight fake login users,   a month of timeline events whose timestamps are
+  relative offsets resolved at first seed time and persisted as `demo_seed_now` so reruns and `demo:verify` reuse that clock, objects, custom
+  boards, documents, meetings, Ask history, pending proposals, digest history, the
+  deterministic fictional Northstar evidence corpus with encrypted fake integration credentials, and a
+  second empty team (`onboarding@timeline.dev` / Noah Blake's Team) for first-run onboarding screens after
+  migrations. `bun run demo:reset` is `bun run dev:wipe && bun run demo:seed`. `bun run demo:verify` fails closed on all eight Acme Labs login identities plus the empty-team login, active memberships,
   password usability, current legal-version snapshots with matching immutable acceptance evidence,
   downloaded document-byte checksums, scoped Qdrant
   discoverability for Northstar raw events/facts/document chunks/meeting chunks, expanded-corpus
@@ -209,7 +211,7 @@ Treat this file as an operating contract for agents, not a loose README.
   corpus so infinite-scroll fetches and virtualization have enough volume. The fake
   integrations stay disabled for sync so local workers do not call real
   providers. Live daily-digest send stays off; historical digest rows are still seeded.
-  Keep the credential list in [README.md](README.md) and the glossary in
+  Keep the credential list and glossary in
   [docs/demo-corpus.md](docs/demo-corpus.md) current when
   the seed changes.
 - **Monday helper-board repair is dry-run first.** Use `bun run repair:monday --
@@ -268,7 +270,7 @@ Treat this file as an operating contract for agents, not a loose README.
   answer prompts or citation sanitizers. The external output-token ceiling is
   applied only in a no-tool final-answer pass; retrieval, visibility, grounding,
   and tool-call budgets remain unchanged.
-  Outbound `timeline.ask_agent` uses the separate compact `mcp_agent` profile,
+  Outbound `timeline.ask` uses the separate compact `mcp_agent` profile,
   which preserves inline Timeline citations and returns parsed artifact refs.
 - **Outbound MCP auth preserves its actor boundary.** Static `tla_`
   bearer keys use `withTeam(db, teamId, ZERO_UUID,
@@ -277,9 +279,10 @@ Treat this file as an operating contract for agents, not a loose README.
   those events stay invisible; static keys represent a team, not a user.
   OAuth grants instead resolve the consenting member and use normal membership
   checks, so they may read private or specifically shared data that member can
-  access in the selected team. Only an owner/admin may grant OAuth `agent:ask`,
-  and token resolution invalidates that scope after demotion. Never collapse
-  these principals or role rules.
+  access in the selected team. Capture is a separate consent/key checkbox, on by
+  default, and is required for hosted `timeline.remember`. Only an owner/admin may
+  grant OAuth `agent:ask`, and token resolution invalidates that scope after
+  demotion. Never collapse these principals or role rules.
 - **Outbound MCP OAuth has one pre-principal seam.**
   [`oauth-pre-principal.ts`](packages/shared/src/mcp-server/oauth-pre-principal.ts)
   alone owns the global public-client registry, opaque authorization-code/access-token/
@@ -294,8 +297,11 @@ Treat this file as an operating contract for agents, not a loose README.
   proposals. They may not revise proposals, use personal pins, invoke
   approval-required `execute_*` tools, or mutate canonical Timeline state.
   Enabled third-party tools may still cause external side effects. Existing static MCP
-  keys remain read-only unless an admin explicitly grants `agent:ask`; OAuth grants require a
-  current owner/admin for that scope.
+  keys remain retrieval-only for canonical state unless an admin explicitly grants `agent:ask`;
+  OAuth grants require a current owner/admin for that scope. Hosted MCP
+  `timeline.remember` requires the `capture` scope, stores cited ingest evidence through
+  `withTeam`, meters accepted sources like other ingest, and never mutates
+  canonical records.
 - **No SSRF from user-supplied or discovered URLs.** `validateMcpUrl`
   in [`packages/shared/src/mcp/auth.ts`](packages/shared/src/mcp/auth.ts)
   rejects loopback, RFC1918, RFC 3927 link-local (169.254/16 — cloud
@@ -385,12 +391,12 @@ Phased build plan and current state: [todo.md](todo.md). Product vision:
 - Local Compose uses PostgreSQL 18. Existing PostgreSQL 16 volumes must follow [the dump/restore runbook](docs/setup/postgres18.md). Keep `POSTGRES_DATA_VOLUME=postgres_data` until migration; use `postgres18_data` only for the verified destination. Never delete a database volume to fix a major-version startup error.
 
 - Infra (Postgres, Redis, Qdrant, RustFS) is started with `docker compose up -d` from the repo root. Dockerd is not managed by systemd here — if containers are down, ensure `dockerd` is running first, then compose up. Confirm health with `docker compose ps`.
-- App processes: web (`apps/web`, Next.js on `:3000`) + worker (`apps/worker`, BullMQ). Standard commands are in [README.md](README.md) (`bun run dev`, `bun run db:migrate`, `bun run demo:seed`, `bun run demo:verify`, `bun run demo:reset`, `bun run validate`, `bun run test`, `bun run doctor`).
-- Seeded demo logins (after `bun run db:migrate` + `bun run demo:seed`): `owner@timeline.dev`, `member@timeline.dev`, `jordan@timeline.dev`, `sam@timeline.dev`, `riley@timeline.dev`, `casey@timeline.dev`, `quinn@timeline.dev`, `harper@timeline.dev`, password `timeline-dev`. Full glossary: [docs/demo-corpus.md](docs/demo-corpus.md).
+- App processes: web (`apps/web`, Next.js on `:3000`) + worker (`apps/worker`, BullMQ). Standard commands are in [the local setup guide](docs/setup/local.html) (`bun run dev`, `bun run db:migrate`, `bun run demo:seed`, `bun run demo:verify`, `bun run demo:reset`, `bun run validate`, `bun run test`, `bun run doctor`).
+- Seeded demo logins (after `bun run db:migrate` + `bun run demo:seed`): Acme Labs `owner@timeline.dev`, `member@timeline.dev`, `jordan@timeline.dev`, `sam@timeline.dev`, `riley@timeline.dev`, `casey@timeline.dev`, `quinn@timeline.dev`, `harper@timeline.dev`; empty onboarding team `onboarding@timeline.dev`. Password for every login is `timeline-dev`. Full glossary: [docs/demo-corpus.md](docs/demo-corpus.md).
 
 ### Non-obvious env / startup gotchas
 
-- **Use Bun 1.4.4 from `.bun-version`.** Keep `engines.bun`, `packageManager`, CI, and every Docker stage aligned with that pin. Run `bun --version` before checks. Application execution and tests must not fall back to Node; record any required build/analysis exception in `README.md`.
+- **Use Bun 1.4.4 from `.bun-version`.** Keep `engines.bun`, `packageManager`, CI, and every Docker stage aligned with that pin. Run `bun --version` before checks. Application execution and tests must not fall back to Node; record any required build/analysis exception in the local validation evidence, not the public README.
 - **The repository disables Bun’s automatic `.env` loading with `bunfig.toml` (`env = false`); offline tests also use `--no-env-file` and an environment allowlist. Production commands use `--no-env-file`.** Next.js loads `apps/web/.env` (symlink to `../../.env`). Before `bun run db:migrate`, `bun run demo:seed`, or running the worker, export the root env into the shell, e.g. `set -a; . ./.env; set +a`. Quote any values that contain spaces (for example `RECALL_BOT_DISPLAY_NAME="Timeline Bot"`) or bash will try to execute the trailing words when sourcing.
 - **The root `bun run dev` script must keep `--env-mode=loose`.** Turbo's strict default strips unlisted env vars from the worker task even after sourcing `.env`. Alternatively run packages separately with env already exported: `bun run --filter @timeline/web dev` and `bun run --filter @timeline/worker dev`.
 - Optional URL keys left blank in `.env.example` must use `emptyStringAsUnset` in the shared env schema so the documented shell export flow remains valid.

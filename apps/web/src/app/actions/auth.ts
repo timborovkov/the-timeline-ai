@@ -41,6 +41,7 @@ const signUpSchema = z.object({
   email: z.email().toLowerCase(),
   password: z.string().min(8).max(200),
   inviteToken: z.string().optional(),
+  callbackUrl: z.string().max(2048).optional(),
   legalAccepted: z.literal('on'),
   termsVersion: z.literal(TERMS_VERSION),
   privacyVersion: z.literal(PRIVACY_VERSION),
@@ -78,6 +79,7 @@ export async function signUpAction(_prev: SignUpState, formData: FormData): Prom
       email: formData.get('email'),
       password: formData.get('password'),
       inviteToken: formData.get('inviteToken') ?? undefined,
+      callbackUrl: formData.get('callbackUrl') ?? undefined,
       legalAccepted: formData.get('legalAccepted'),
       termsVersion: submittedTermsVersion,
       privacyVersion: submittedPrivacyVersion,
@@ -324,6 +326,7 @@ export async function signUpAction(_prev: SignUpState, formData: FormData): Prom
         userId: createdAccount.userId,
         email,
         teamId: createdAccount.activeTeamId,
+        callbackUrl: inviteToken ? undefined : safeCallbackUrl(parsed.data.callbackUrl),
       }).catch((err: unknown) => {
         reportCaughtError(err, { surface: 'server_action', operation: 'signup_verify_email' });
       }),
@@ -348,9 +351,15 @@ export async function signUpAction(_prev: SignUpState, formData: FormData): Prom
         throw e;
       }
     }
-    if (signInFailed) redirect('/sign-in');
+    const destination = inviteToken ? '/app' : safeCallbackUrl(parsed.data.callbackUrl);
+    if (signInFailed)
+      redirect(
+        destination === '/app'
+          ? '/sign-in'
+          : `/sign-in?callbackUrl=${encodeURIComponent(destination)}`,
+      );
 
-    redirect('/app');
+    redirect(destination);
   });
 }
 
@@ -420,7 +429,7 @@ export async function signInWithGitHubAction(formData: FormData): Promise<void> 
 
 export async function resendEmailVerificationAction(
   _prev: EmailVerificationState,
-  _formData: FormData,
+  formData: FormData,
 ): Promise<EmailVerificationState> {
   return runSentryServerAction('resend_email_verification', async () => {
     const session = await auth();
@@ -454,10 +463,12 @@ export async function resendEmailVerificationAction(
       };
     }
 
+    const callbackUrl = formData.get('callbackUrl');
     const result = await sendEmailVerification({
       db,
       userId: session.user.id,
       email: user.email,
+      callbackUrl: typeof callbackUrl === 'string' ? callbackUrl : undefined,
     });
     if (!result.ok) return { error: result.error ?? 'Failed to send verification email.' };
     return { ok: true };

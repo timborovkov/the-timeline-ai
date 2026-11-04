@@ -31,6 +31,8 @@ await vi.mock(
       verifyPolarWebhookSignature(...args) as boolean,
     handlePolarWebhookEvent: (...args: unknown[]) => handlePolarWebhookEvent(...args) as unknown,
     createPolarBillingProvider: () => createPolarBillingProvider(),
+    isIgnorablePolarWebhookFailure: (err: unknown) =>
+      /invalid input syntax for type uuid/i.test(err instanceof Error ? err.message : String(err)),
   }),
   () => import('@timeline/shared/billing'),
 );
@@ -118,6 +120,33 @@ describe('POST /api/webhooks/polar', () => {
     );
     expect(res.status).toBe(400);
     expect(handlePolarWebhookEvent).not.toHaveBeenCalled();
+  });
+
+  it('acknowledges invalid UUID team identifiers so Polar stops retrying', async () => {
+    handlePolarWebhookEvent.mockRejectedValueOnce(
+      new Error(
+        'invalid input syntax for type uuid: "timeline-identity-test-c122cebd-a917-4929-9a76-66fab9d28be6-0"',
+      ),
+    );
+    const { POST } = await import('./route');
+    const res = await POST(
+      new Request('http://localhost/api/webhooks/polar', {
+        method: 'POST',
+        body: JSON.stringify({
+          type: 'subscription.active',
+          data: {
+            customer: {
+              external_id: 'timeline-identity-test-c122cebd-a917-4929-9a76-66fab9d28be6-0',
+            },
+          },
+        }),
+      }),
+    );
+    expect(res.status).toBe(200);
+    await expect(res.json()).resolves.toEqual({
+      ok: true,
+      ignored: 'invalid_external_customer',
+    });
   });
 
   it('rejects an oversized body before signature verify or parse', async () => {

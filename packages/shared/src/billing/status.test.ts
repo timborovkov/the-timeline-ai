@@ -2,6 +2,7 @@ import { expect } from '@timeline/test-support';
 import { describe, it } from 'bun:test';
 
 import { FREE_ALLOWANCES, PLAN_CATALOG } from '#src/billing/catalog.js';
+import { cheapestPlanPreview } from '#src/billing/preview.js';
 import {
   deriveBillingNudge,
   deriveSidebarBillingSummary,
@@ -52,7 +53,7 @@ describe('billing status', () => {
         aiChargeCents: 50,
         recallMinutes: 60,
         emailUnits: 500,
-        storageGb: 1,
+        storageGb: FREE_ALLOWANCES.storageGb,
         acceptedSources: 1000,
       },
       meteredSpendCents: 450,
@@ -104,8 +105,27 @@ describe('billing status', () => {
       },
       meteredSpendCents: Math.ceil(PLAN_CATALOG.team.includedUsageDiscountCents * 0.7),
     });
-    expect(commitment?.kind).toBe('suggest_commitment');
-    expect(commitment?.href).toBe('/pricing');
+    expect(commitment).toBeNull(); // A spend threshold alone is not evidence of savings.
+  });
+
+  it('recommends a different plan only when the shared preview demonstrates savings', () => {
+    const common = {
+      canManageBilling: true,
+      utilization: spendCapUtilization(100, 100000),
+      freeRemaining: freeAllowanceRemaining({}),
+      meteredSpendCents: 4200,
+    };
+    expect(
+      deriveBillingNudge({
+        ...common,
+        planId: 'team',
+        planPreview: cheapestPlanPreview({ activeMembers: 3, meteredSpendCents: 4200 }),
+      })?.title,
+    ).not.toBe('Compare Business');
+    const preview = cheapestPlanPreview({ activeMembers: 25, meteredSpendCents: 10000 });
+    const nudge = deriveBillingNudge({ ...common, planId: 'payg', planPreview: preview });
+    expect(nudge?.kind).toBe('suggest_commitment');
+    expect(nudge?.href).toBe('/app/team?section=billing');
   });
 
   it('builds a sidebar summary with overage for PAYG', () => {

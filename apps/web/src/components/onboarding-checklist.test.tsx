@@ -247,6 +247,21 @@ describe('OnboardingChecklist', () => {
     expect(mutateChecklist).toHaveBeenCalledWith({ action: 'complete', key: 'first_document' });
   });
 
+  it('points Connect your agent at the connect-agent screen', () => {
+    renderChecklist({
+      dismissed: false,
+      items: [
+        { key: 'first_note', label: 'Capture one timeline event', completed: true },
+        { key: 'connect_agent', label: 'Connect your agent', completed: false },
+      ],
+    });
+
+    expect(screen.getByRole('link', { name: 'Connect' }).getAttribute('href')).toBe(
+      '/app/connect-agent',
+    );
+    expect(screen.getByText(/remember works now/i)).toBeTruthy();
+  });
+
   it('opens the capture dialog hash directly for the first note step', () => {
     renderChecklist({
       dismissed: false,

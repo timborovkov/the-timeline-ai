@@ -103,12 +103,12 @@ describe('connector content manifest', () => {
     const limitations = slack.limitations.join(' ');
     expect(limitations).toContain('looks back 14 days');
     expect(limitations).toContain('new replies whose thread root is older than that window');
-    expect(limitations).toContain('at most 25 history pages, or 5,000 messages');
-    expect(limitations).toContain('without persisting a continuation for an unprocessed gap');
-    expect(limitations).toContain('can be omitted and later age out of the lookback');
+    expect(limitations).toContain('Slack history is processed in bounded batches');
+    expect(limitations).toContain('Unfinished pages retain a continuation');
+    expect(limitations).toContain('14-day recent lookback still limits recovery');
     expect(limitations).toContain('remain the first-observed snapshot');
-    expect(limitations).toContain('first 2,000 replies returned');
-    expect(limitations).toContain('replies beyond that cap remain absent');
+    expect(limitations).toContain('Slack thread replies retain a page continuation');
+    expect(limitations).toContain('Large threads can take multiple jobs');
     expect(limitations).toContain('at most 2,000 non-archived channels');
     expect(slack.capturedRecords).toContain(
       'Messages in selected public channels where the Slack app is a member',
@@ -166,8 +166,8 @@ describe('connector content manifest', () => {
     expect(githubClaims).toContain('returns to a previously captured combination');
     expect(githubClaims).toContain('reuses the earlier immutable row');
     expect(githubClaims).toContain('scheduled reconciliation runs every six hours');
-    expect(githubClaims).toContain('first 100 installations returned during OAuth');
-    expect(githubClaims).toContain('fall back to the connection owner’s broad OAuth token');
+    expect(githubClaims).toContain('GitHub App installation discovery is paginated');
+    expect(githubClaims).toContain('No broader OAuth credential is substituted');
 
     expect(linear.limitations.join(' ')).toContain(
       'history begins when Timeline starts observing the selected team',
@@ -176,16 +176,10 @@ describe('connector content manifest', () => {
       'move between Linear workflow states that normalize to the same Timeline bucket',
     );
     expect(linear.limitations.join(' ')).toContain('first 2,000 teams returned by the API');
-    expect(linear.limitations.join(' ')).toContain(
-      '2,500 issues, 2,500 comments, and 2,500 projects across the complete selected-team set',
-    );
-    expect(linear.limitations.join(' ')).toContain('every incremental recovery pass');
-    expect(linear.limitations.join(' ')).toContain(
-      'advances that surface’s updated-at cursor to the newest fetched timestamp',
-    );
-    expect(linear.limitations.join(' ')).toContain(
-      'overflowed older changes are not revisited and can be permanently absent',
-    );
+    expect(linear.limitations.join(' ')).toContain('bounded batches across the selected teams');
+    expect(linear.limitations.join(' ')).toContain('Page checkpoints preserve unfinished scans');
+    expect(linear.limitations.join(' ')).toContain('continuation');
+    expect(linear.limitations.join(' ')).toContain('multiple jobs');
     expect(linear.limitations.join(' ')).toContain('runs every six hours');
     expect(linear.limitations.join(' ')).toContain(
       'retains issue status for at most 5,000 issue IDs',
@@ -196,8 +190,8 @@ describe('connector content manifest', () => {
     expect(monday.limitations.join(' ')).toContain(
       'Initial board activity-log backfill requests the preceding 30 days',
     );
-    expect(monday.limitations.join(' ')).toContain('first default response page');
-    expect(monday.limitations.join(' ')).toContain('does not paginate the activity log');
+    expect(monday.limitations.join(' ')).toContain('saved continuation progress');
+    expect(monday.limitations.join(' ')).toContain('Activity-log pages are processed');
     expect(monday.limitations.join(' ')).toContain('lag Monday.com by up to 24 hours');
     expect(monday.limitations.join(' ')).toContain(
       'Scheduled Monday.com board reconciliation runs every hour',
@@ -256,15 +250,17 @@ describe('connector content manifest', () => {
     expect(claims).toContain(
       'A missed resolve or ignore webhook for a quiet issue may not be recovered',
     );
-    expect(claims).toContain('repeated closed transition does not create a new lifecycle row');
-    expect(claims).toContain('one immutable deployed key per release');
-    expect(claims).toContain('later deployment does not create a new row');
+    expect(claims).toContain('including repeated resolutions');
+    expect(claims).toContain('Deployment records distinguish persisted deliveries');
+    expect(claims).toContain('Retrying a delivery remains idempotent');
     expect(claims).toContain('lifecycle state for at most 5,000 issue IDs');
     expect(claims).toContain('missed regression webhook can be lost');
     expect(claims).toContain('Scheduled Sentry reconciliation runs every 24 hours');
-    expect(claims).toContain('later deliveries for another project in that installation');
-    expect(claims).toContain('bypass project-selection checks');
-    expect(claims).toContain('do not preserve the later action time');
+    expect(claims).toContain(
+      'Webhook capture requires an activated organization or matching project',
+    );
+    expect(claims).not.toContain('bypass project-selection checks');
+    expect(claims).toContain('Receipt time is not a guarantee of the exact time');
     expect(claims).not.toContain('reconciliation recovers missed activity');
     expect(sentry.diagram.answer).toContain(
       'does not establish when the resolution action occurred',

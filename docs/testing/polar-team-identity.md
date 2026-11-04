@@ -262,3 +262,14 @@ and UI regressions cover both arrangements and disabled enforcement.
 Follow-up validation: all 46 affected presentation, billing UI, sidebar and status
 tests passed, along with the full build, scoped lint/formatting, compiled imports,
 and five-plan desktop/320px visual overflow checks.
+
+## Conversion command
+
+`bun run billing:polar-convert --team-id=<uuid> --actor-email=<verified-platform-admin>`
+preflights an existing team's Polar customer; add `--apply` for in-place team/member
+conversion. Apply migration `0091_polar_team_identity.sql` first. Conversion currently
+reports Polar's unsupported customer-email clearing step explicitly. Legacy
+customer-level access must be cleared before member revocation can complete; the
+required owner member email remains present. Interrupted conversions can recover
+an unambiguous verified owner mapping on retry. See
+the evidence and limitations above.

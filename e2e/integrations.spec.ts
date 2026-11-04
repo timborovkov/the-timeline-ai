@@ -275,7 +275,7 @@ async function cleanupMcpShareSeed(): Promise<void> {
   await sql`
     DELETE FROM raw_events
     WHERE team_id = ${e2eTeam.id}
-      AND content_text LIKE ${`${MCP_SHARE_PREFIX}%`}
+      AND content_text LIKE ${`%${MCP_SHARE_PREFIX}%`}
   `;
   await sql`
     DELETE FROM mcp_outbound_keys
@@ -1241,15 +1241,18 @@ test('Timeline MCP bearer keys expose only team-visible events', async ({ page }
   try {
     await signIn(page, e2eUsers.owner.email);
     await page.goto('/app/team/mcp-share');
-    await expect(page.getByRole('heading', { name: 'Timeline as MCP server' })).toBeVisible();
-    await expect(page.getByText('Team-visible only')).toBeVisible();
+    await expect(page).toHaveURL(/\/app\/connect-agent/);
+    await expect(page.getByRole('heading', { name: 'Connect your agent' })).toBeVisible();
+    await page.locator('summary').filter({ hasText: 'Advanced' }).click();
+    await expect(page.getByText(/team-visible only/i)).toBeVisible();
+    await expect(page.getByText(/authored as the team actor/i)).toBeVisible();
 
     await page.getByRole('button', { name: 'New key' }).click();
     await page.getByPlaceholder('Claude Desktop · personal mac').fill(`${MCP_SHARE_PREFIX} key`);
     await waitForPost(
       page,
       '/api/team/mcp-keys',
-      () => page.getByRole('button', { name: 'Create' }).click(),
+      () => page.getByRole('button', { name: 'Create key' }).click(),
       (res) => res.ok(),
     );
 
@@ -1271,8 +1274,9 @@ test('Timeline MCP bearer keys expose only team-visible events', async ({ page }
         id: 1,
         method: 'tools/call',
         params: {
-          name: 'timeline.list_events',
+          name: 'timeline.search',
           arguments: {
+            surface: 'events',
             source: 'web',
             from: '2030-01-02T00:00:00Z',
             to: '2030-01-03T00:00:00Z',
@@ -1309,6 +1313,127 @@ test('Timeline MCP bearer keys expose only team-visible events', async ({ page }
     ]);
     expect(texts.join('\n')).not.toContain(privateText);
     expect(texts.join('\n')).not.toContain(memberSpecificText);
+  } finally {
+    await cleanupMcpShareSeed();
+  }
+});
+
+test('Timeline MCP remember stores ingest evidence without mutating records', async ({ page }) => {
+  const stamp = Date.now();
+  const noteText = `${MCP_SHARE_PREFIX} remember note ${stamp}`;
+  await cleanupMcpShareSeed();
+
+  try {
+    await signIn(page, e2eUsers.owner.email);
+    await page.goto('/app/team/mcp-share');
+    await expect(page.getByRole('heading', { name: 'Timeline as MCP server' })).toBeVisible();
+
+    await page.getByRole('button', { name: 'New key' }).click();
+    await page
+      .getByPlaceholder('Claude Desktop · personal mac')
+      .fill(`${MCP_SHARE_PREFIX} remember key`);
+    await waitForPost(
+      page,
+      '/api/team/mcp-keys',
+      () => page.getByRole('button', { name: 'Create' }).click(),
+      (res) => res.ok(),
+    );
+
+    const keyTitle = page.getByText('New key: keep this open until your client is connected', {
+      exact: true,
+    });
+    const keyCard = keyTitle.locator('xpath=ancestor::div[.//code][1]');
+    await expect(keyCard).toBeVisible();
+    const plaintext = (await keyCard.locator('code').first().innerText()).trim();
+    expect(plaintext).toMatch(/^tla_/);
+
+    const sql = getDbClient();
+    const [{ entityCount: beforeEntities }] = await sql<{ entityCount: number }[]>`
+      SELECT count(*)::int AS "entityCount" FROM entities WHERE team_id = ${e2eTeam.id}
+    `;
+    const [{ changeCount: beforeChanges }] = await sql<{ changeCount: number }[]>`
+      SELECT count(*)::int AS "changeCount" FROM object_changes WHERE team_id = ${e2eTeam.id}
+    `;
+
+    const response = await page.request.post('/api/mcp/server', {
+      headers: {
+        authorization: `Bearer ${plaintext}`,
+        accept: 'application/json, text/event-stream',
+      },
+      data: {
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'tools/call',
+        params: {
+          name: 'timeline.remember',
+          arguments: {
+            title: 'E2E remember note',
+            text: noteText,
+          },
+        },
+      },
+    });
+    expect(response.ok()).toBe(true);
+    const body = await response.text();
+    const data = response.headers()['content-type']?.includes('text/event-stream')
+      ? body
+          .split(/\r?\n/)
+          .filter((line) => line.startsWith('data:'))
+          .at(-1)
+          ?.slice(5)
+          .trim()
+      : body;
+    expect(data).toBeTruthy();
+    const rpc = JSON.parse(data ?? '') as {
+      error?: unknown;
+      result?: { content?: { text?: string }[] };
+    };
+    expect(rpc.error).toBeUndefined();
+    const payload = JSON.parse(rpc.result?.content?.[0]?.text ?? '{}') as {
+      ok: boolean;
+      status: string;
+      raw_event_id: string;
+      citation: string;
+      evidence_ids: string[];
+    };
+    expect(payload.ok).toBe(true);
+    expect(payload.status).toBe('accepted');
+    expect(payload.raw_event_id).toMatch(/^[0-9a-f-]{36}$/i);
+    expect(payload.citation).toBe(`[ev:${payload.raw_event_id}]`);
+    expect(payload.evidence_ids.length).toBeGreaterThan(0);
+
+    const [event] = await sql<
+      {
+        id: string;
+        source: string;
+        visibility: string;
+        content_text: string;
+      }[]
+    >`
+      SELECT id, source, visibility, content_text
+      FROM raw_events
+      WHERE id = ${payload.raw_event_id}
+    `;
+    expect(event).toMatchObject({
+      id: payload.raw_event_id,
+      source: 'ingest_webhook',
+      visibility: 'team',
+    });
+    expect(event?.content_text).toContain(noteText);
+
+    const evidence = await sql<{ id: string }[]>`
+      SELECT id FROM reconciliation_evidence WHERE raw_event_id = ${payload.raw_event_id}
+    `;
+    expect(evidence.length).toBeGreaterThan(0);
+
+    const [{ entityCount: afterEntities }] = await sql<{ entityCount: number }[]>`
+      SELECT count(*)::int AS "entityCount" FROM entities WHERE team_id = ${e2eTeam.id}
+    `;
+    const [{ changeCount: afterChanges }] = await sql<{ changeCount: number }[]>`
+      SELECT count(*)::int AS "changeCount" FROM object_changes WHERE team_id = ${e2eTeam.id}
+    `;
+    expect(afterEntities).toBe(beforeEntities);
+    expect(afterChanges).toBe(beforeChanges);
   } finally {
     await cleanupMcpShareSeed();
   }

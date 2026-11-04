@@ -52,6 +52,12 @@ import { sourceMetadataWithConversationArtifacts } from '#src/conversational/con
 import { reconcileLinkArtifactsForRawEvent } from '#src/conversational/link-artifacts.js';
 import { documentPresentation } from '#src/documents/presentation.js';
 import { createDocumentScope } from '#src/documents/scope.js';
+import {
+  acceptIngestWebhookEvidence,
+  type AcceptIngestWebhookEvidenceInput,
+  type AcceptIngestWebhookEvidenceResult,
+} from '#src/ingest-webhooks/accept.js';
+import { createIngestWebhookScope } from '#src/ingest-webhooks/scope.js';
 import { createIntegrationScope } from '#src/integrations/scope.js';
 import { createJobRecoveryScope } from '#src/job-recovery/index.js';
 import { embed as defaultEmbed, type EmbedResult } from '#src/llm/embed.js';
@@ -59,6 +65,7 @@ import { TIMELINE_MODELS } from '#src/llm/models.js';
 import { childLogger } from '#src/logger.js';
 import { createMcpScope } from '#src/mcp/scope.js';
 import { createMcpOAuthScope } from '#src/mcp-server/oauth-scope.js';
+import { createMcpOutboundScope } from '#src/mcp-server/outbound.js';
 import { createMeetingScope } from '#src/meetings/scope.js';
 import { createObjectScope, normalizeIdentityFacet } from '#src/objects/index.js';
 import { invalidateObjectSummariesForRawEvent } from '#src/objects/summaries.js';
@@ -1699,6 +1706,20 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
     db,
     teamId,
     userId,
+  });
+
+  const mcpOutboundScope = createMcpOutboundScope({
+    db,
+    teamId,
+    userId,
+    ensureMember,
+  });
+
+  const ingestWebhookScope = createIngestWebhookScope({
+    db,
+    teamId,
+    userId,
+    ensureMember,
   });
 
   const calendarScope = createCalendarScope({
@@ -3400,6 +3421,18 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
       },
 
       /**
+       * Evidence-only ingest capture (ADR 0009). Stores a raw event, normalizes
+       * cited evidence, and enqueues extract/embed/suggestion jobs. Never updates
+       * canonical workspace records.
+       */
+      async captureIngestEvidence(
+        input: Omit<AcceptIngestWebhookEvidenceInput, 'db' | 'teamId'>,
+      ): Promise<AcceptIngestWebhookEvidenceResult> {
+        await ensureMember();
+        return acceptIngestWebhookEvidence({ ...input, db, teamId });
+      },
+
+      /**
        * Phase 7 email-specific create that wraps insert + thread-root lookup
        * in one transaction so the email dispatcher cannot bypass team isolation
        * or forget to thread-link. Idempotent against the partial unique index
@@ -4281,6 +4314,8 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
     integrations: integrationScope,
     mcp: mcpScope,
     mcpOAuth: mcpOAuthScope,
+    mcpOutbound: mcpOutboundScope,
+    ingestWebhooks: ingestWebhookScope,
     onboarding: onboardingScope,
     billing: billingScope,
     billingOperator: createBillingOperatorScope({ db, teamId }),

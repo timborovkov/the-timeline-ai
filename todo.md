@@ -129,6 +129,13 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
 - [x] Shared collection empty states: one `EmptyState` for indexes, queues,
       and directories, with quiet dim icons, create/recover actions, and
       waiting copy for proposals, notifications, and captured work.
+- [x] Connect your agent: `/app/connect-agent` consolidates Timeline-as-MCP
+      setup (OAuth-first client picker, connected grants with revoke, add-memory
+      email/webhook, SKILL.md, collapsed `tla_` keys). Admin grant rows show the
+      consenting member next to the client. Advertised tools and default-on
+      `capture` match the hosted MCP server. `/app/team/mcp-share` redirects.
+      New empty teams get a skippable Home card that does not return once
+      skipped.
 - [ ] Timeline moments redesign: turn `/app/timeline` from a raw activity log
       into bundled, evidence-backed work moments with deterministic grouping,
       source-specific adapters, AI-assisted titles/summaries, and an advanced
@@ -422,10 +429,15 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
 - [x] Add repository plugin and marketplace packaging for Codex and Claude Code
       with the hosted Timeline MCP connection, one general cited-workspace skill,
       standalone installation guidance, and links from public help and MCP setup.
+- [x] Publish `/agents/setup.md` and `/agents/SKILL.md` as `text/markdown`, add a
+      `## For agents` pointer in `llms.txt` / `llms-full.txt`, document remember,
+      team email, and ingest-webhook push in the Timeline skill, and bump the
+      plugin to 0.3.1. Remember documents the `capture` OAuth scope landing with
+      the five-tool MCP surface.
 - [x] Implement the outbound MCP OAuth and current transport path in the repository:
       RFC 9728/8414 discovery, CIMD-first client resolution with constrained DCR,
-      PKCE S256, member/team consent and revocation, `read` plus owner/admin-only
-      `agent:ask`, official MCP SDK v2 Streamable HTTP negotiation, tool
+      PKCE S256, member/team consent and revocation, `read` plus default-on
+      `capture` and owner/admin-only `agent:ask`, official MCP SDK v2 Streamable HTTP negotiation, tool
       annotations/output schemas, and standards-compatible 401 discovery.
 - [ ] Deploy this marketplace-readiness release, apply migration 0075, and pass
       the production OAuth/MCP smoke matrix from every intended host.
@@ -449,7 +461,7 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       and other native integrations) need a separate encrypted, reversible store
       with per-workspace installs and uninstall webhooks; do not reuse the
       hashed MCP grant/token tables for them.
-- [ ] Keep `MCP_OAUTH_SCOPES` MCP-only (`read`, `agent:ask`). Do not add CRM or
+- [ ] Keep `MCP_OAUTH_SCOPES` MCP-only (`read`, `capture`, `agent:ask`). Do not add CRM or
       other provider-app scopes to the outbound MCP authorization server.
 - [ ] After testing with real ChatGPT and Claude against production, consider
       leniency on OAuth `state` and `resource` for less strict hosts. Do not
@@ -795,8 +807,7 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       do not pause auto-join as consecutive failures. Document writes require a reservable billing state.
       Free-grant claims skip removed owners; storage admission converts aggregated bytes before
       adding a new upload. Janitor included-discount resets lock the billing account against a
-      newer Polar plan/period. Ask streams that abort after work starts settle the reserved
-      customer charge. Document-extract allowlists `BILLING_CHARGES_ENABLED`. Deferred
+      newer Polar plan/period. Ask streams that abort settle recorded usage without a reservation-based minimum. Document-extract allowlists `BILLING_CHARGES_ENABLED`. Deferred
       accepted-source flush rotates past still-blocked rows. Document restore rechecks capacity;
       document create serializes the Free count under lock key 1. Failed structured-output
       attempts still contribute OpenRouter `usage.cost`. Recall minutes that span UTC months

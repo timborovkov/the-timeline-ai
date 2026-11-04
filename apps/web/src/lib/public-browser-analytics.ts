@@ -11,11 +11,20 @@ export const PUBLIC_POSTHOG_CONSENT_KEY = 'tl_posthog_consent_v1';
 
 const PUBLIC_ANALYTICS_CTA_VALUES = [
   'try_project',
+  'start_free',
+  'choose_free',
+  'choose_payg',
+  'choose_team',
+  'choose_business',
   'sign_in',
   'open_dashboard',
   'contact_support',
   'view_integrations',
   'view_how_it_works',
+  'view_pricing',
+  'view_use_cases',
+  'view_compare',
+  'view_agents',
 ] as const;
 
 export type PublicAnalyticsCta = (typeof PUBLIC_ANALYTICS_CTA_VALUES)[number];

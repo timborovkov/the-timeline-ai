@@ -32,6 +32,8 @@ await vi.mock(
 
 const { documentVersions, documents, reconciliationEvidence, reconciliationEvidenceAnchors } =
   await import('@timeline/db');
+const { BYTES_PER_MIB, CAPACITY_BY_PLAN, FREE_STORAGE_MIB } =
+  await import('#src/billing/catalog.js');
 const { BillingAdmissionError } = await import('#src/billing/errors.js');
 const { withTeam } = await import('#src/team-scope.js');
 const { applyDbMigrations } = await import('#src/test/pglite.js');
@@ -782,10 +784,10 @@ describe('document scope — visibility filter', () => {
     expect(targeted.items[0]?.id).toBe(target.document.id);
   });
 
-  it('refuses a 101st document on the Free plan', async () => {
+  it('refuses the next document after the Free cap', async () => {
     await pg.exec(`
       INSERT INTO documents (team_id, name)
-      SELECT '${TEAM_ID}', 'cap-' || g FROM generate_series(1, 100) AS g;
+      SELECT '${TEAM_ID}', 'cap-' || g FROM generate_series(1, ${CAPACITY_BY_PLAN.free.documents}) AS g;
     `);
     const scope = withTeam(db, TEAM_ID, USER_A).documents;
     await expect(
@@ -798,10 +800,10 @@ describe('document scope — visibility filter', () => {
     ).rejects.toBeInstanceOf(BillingAdmissionError);
   });
 
-  it('serializes document capacity so a concurrent 101st create cannot both succeed', async () => {
+  it('serializes document capacity so a concurrent create above the Free cap cannot both succeed', async () => {
     await pg.exec(`
       INSERT INTO documents (team_id, name)
-      SELECT '${TEAM_ID}', 'cap-' || g FROM generate_series(1, 99) AS g;
+      SELECT '${TEAM_ID}', 'cap-' || g FROM generate_series(1, ${(CAPACITY_BY_PLAN.free.documents ?? 0) - 1}) AS g;
     `);
     const scope = withTeam(db, TEAM_ID, USER_A).documents;
     const results = await Promise.allSettled([
@@ -837,7 +839,7 @@ describe('document scope — visibility filter', () => {
     });
     await scope.finalizeDocumentVersion({
       versionId: original.version.id,
-      byteSize: 1024 ** 3,
+      byteSize: FREE_STORAGE_MIB * BYTES_PER_MIB,
       contentType: 'application/octet-stream',
     });
     const extra = await scope.createDocument({
@@ -989,7 +991,7 @@ describe('document scope — soft delete + audit trail', () => {
   });
 
   it('refuses restore when the restored bytes would exceed Free storage', async () => {
-    const gib = 1024 ** 3;
+    const full = FREE_STORAGE_MIB * BYTES_PER_MIB;
     const scope = withTeam(db, TEAM_ID, USER_A).documents;
     const original = await scope.createDocument({
       name: 'full.bin',
@@ -999,7 +1001,7 @@ describe('document scope — soft delete + audit trail', () => {
     });
     await scope.finalizeDocumentVersion({
       versionId: original.version.id,
-      byteSize: gib,
+      byteSize: full,
       contentType: 'application/octet-stream',
     });
     await scope.softDeleteDocument(original.document.id);
@@ -1039,7 +1041,7 @@ describe('document scope — soft delete + audit trail', () => {
     await pg.exec(`
       INSERT INTO document_chunks (team_id, document_id, document_version_id, chunk_index, representation_kind, text, token_count)
       SELECT '${TEAM_ID}', '${live.document.id}', '${live.version.id}', g, 'source_text', 'chunk', 1
-      FROM generate_series(1, 2000) AS g;
+      FROM generate_series(1, ${CAPACITY_BY_PLAN.free.indexedChunks}) AS g;
       INSERT INTO document_chunks (team_id, document_id, document_version_id, chunk_index, representation_kind, text, token_count)
       VALUES (
         '${TEAM_ID}',

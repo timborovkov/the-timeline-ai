@@ -38,7 +38,15 @@ export function BillingRestrictionNotice({ reason }: { reason: BillingRestrictio
   return (
     <div className="space-y-2">
       <BillingStateBanner title="Verify your email to check eligibility for Free access on this team.">
-        <form action={resend}>
+        <form
+          action={(formData) => {
+            formData.set(
+              'callbackUrl',
+              window.location.pathname + window.location.search + window.location.hash,
+            );
+            resend(formData);
+          }}
+        >
           <button
             type="submit"
             disabled={pending}

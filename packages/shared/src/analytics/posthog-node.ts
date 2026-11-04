@@ -172,3 +172,26 @@ export async function capturePostHogPersonlessSurfaceRequest(
     },
   });
 }
+
+/** Content-free lifecycle events from committed server/worker transitions. */
+export async function captureConfiguredProductEvent<Name extends ProductEventName>(
+  actor: AnalyticsActor,
+  event: Name,
+  properties: ProductEventPayloads[Name],
+): Promise<void> {
+  const host = process.env.POSTHOG_HOST
+    ? reviewedPostHogHost(process.env.POSTHOG_HOST)
+    : REVIEWED_POSTHOG_EU_ORIGIN;
+  await capturePostHogProductEvent(
+    {
+      key: host ? process.env.POSTHOG_PROJECT_KEY : undefined,
+      host: host ?? REVIEWED_POSTHOG_EU_ORIGIN,
+      ...(process.env.ANALYTICS_PSEUDONYMIZATION_KEY
+        ? { pseudonymizationKey: process.env.ANALYTICS_PSEUDONYMIZATION_KEY }
+        : {}),
+    },
+    actor,
+    event,
+    properties,
+  ).catch(() => undefined);
+}

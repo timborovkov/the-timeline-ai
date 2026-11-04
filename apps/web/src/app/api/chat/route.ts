@@ -3,7 +3,6 @@ import { bucketAnalyticsCount } from '@timeline/shared/analytics';
 import {
   askBillingUserMessage,
   askOperationId,
-  ASK_AI_RESERVE_CUSTOMER_CHARGE_CENTS,
   mapAskBillingError,
   openRouterUsdCostFromFinishEvent,
   openRouterUsdForCompletedStream,
@@ -781,7 +780,7 @@ export async function POST(req: Request): Promise<Response> {
     );
     streamedOpenRouterUsd = 0;
   };
-  const settleChatBilling = async (responseModelId?: string, opts?: { conservative?: boolean }) => {
+  const settleChatBilling = async (responseModelId?: string, providerUsageIncomplete = false) => {
     if (billingFinalized) return;
     applyCompletedStreamCost();
     billingFinalized = true;
@@ -790,10 +789,8 @@ export async function POST(req: Request): Promise<Response> {
         operationId: billingOperationId,
         openRouterUsd,
         deliverySurface: 'web',
+        ...(providerUsageIncomplete ? { providerUsageIncomplete: true } : {}),
         ...(responseModelId ? { model: responseModelId } : { model: modelId }),
-        ...(opts?.conservative
-          ? { minCustomerChargeCents: ASK_AI_RESERVE_CUSTOMER_CHARGE_CENTS }
-          : {}),
       });
     } catch (err) {
       log.warn({ err, teamId: active.teamId, billingOperationId }, 'chat billing settle failed');
@@ -813,13 +810,6 @@ export async function POST(req: Request): Promise<Response> {
     await releaseChatBilling();
     return Response.json({ ok: false, error: 'aborted' }, { status: 499 });
   }
-  req.signal.addEventListener(
-    'abort',
-    () => {
-      void settleChatBilling(undefined, { conservative: true });
-    },
-    { once: true },
-  );
 
   let memory: Awaited<ReturnType<typeof llm.compressMessagesForContext>>;
   try {
@@ -848,6 +838,13 @@ export async function POST(req: Request): Promise<Response> {
       },
       'chat history compressed',
     );
+  }
+
+  // The signal can change while awaiting context compression.
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+  if (req.signal.aborted) {
+    await settleChatBilling();
+    return Response.json({ ok: false, error: 'aborted' }, { status: 499 });
   }
 
   // The "latest user turn" is the trailing user message in the array. We
@@ -891,11 +888,17 @@ export async function POST(req: Request): Promise<Response> {
     onStepEnd: (step) => {
       streamedOpenRouterUsd += openRouterUsdCostFromFinishEvent(step);
     },
+    // Settle only after the SDK has drained completed steps. The HTTP abort
+    // signal can arrive before the final step's usage callback.
+    onAbort: async ({ steps }) => {
+      streamedOpenRouterUsd = Math.max(
+        streamedOpenRouterUsd,
+        steps.reduce((total, step) => total + openRouterUsdCostFromFinishEvent(step), 0),
+      );
+      await settleChatBilling(undefined, true);
+    },
     onError: (e) => {
-      if (isAiStreamAbort(e.error)) {
-        void settleChatBilling(undefined, { conservative: true });
-        return;
-      }
+      if (isAiStreamAbort(e.error)) return;
       if (openRouterUsd + streamedOpenRouterUsd > 0) {
         void settleChatBilling();
       } else {
@@ -915,7 +918,7 @@ export async function POST(req: Request): Promise<Response> {
     onEnd: async (e) => {
       const modelAttribution = llm.streamChatModelAttribution(e, modelId);
       applyCompletedStreamCost(e);
-      if (shouldTitleSession && sessionId) {
+      if (!req.signal.aborted && shouldTitleSession && sessionId) {
         try {
           openRouterUsd += await titleChatSession({ scope, sessionId, titleSourceMessage });
         } catch (err) {

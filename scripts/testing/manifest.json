@@ -77,6 +77,12 @@
   "apps/web/src/app/actions/visibility.test.ts": {
     "group": "unit"
   },
+  "apps/web/src/app/agents/route.test.tsx": {
+    "group": "unit"
+  },
+  "apps/web/src/app/agents/[doc]/route.test.ts": {
+    "group": "unit"
+  },
   "apps/web/src/app/api/artifacts/preview/route.test.ts": {
     "group": "unit"
   },
@@ -105,6 +111,9 @@
     "group": "unit"
   },
   "apps/web/src/app/api/email/inbound/route.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/app/api/health/ready/route.test.ts": {
     "group": "unit"
   },
   "apps/web/src/app/api/integrations/[provider]/callback/route.test.ts": {
@@ -177,6 +186,9 @@
     "group": "unit"
   },
   "apps/web/src/app/api/team/calendar-subscription/route.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/app/api/team/ingest-webhooks/agent-memory/route.test.ts": {
     "group": "unit"
   },
   "apps/web/src/app/api/team/ingest-webhooks/route.test.ts": {
@@ -298,6 +310,12 @@
   },
   "apps/web/src/app/app/chat/route-states.test.tsx": {
     "group": "dom"
+  },
+  "apps/web/src/app/app/connect-agent/route-states.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/app/app/connect-agent/skill/route.test.ts": {
+    "group": "unit"
   },
   "apps/web/src/app/app/connections/connection-directory.test.ts": {
     "group": "unit"
@@ -467,6 +485,12 @@
   "apps/web/src/app/auth-route-states.test.tsx": {
     "group": "dom"
   },
+  "apps/web/src/app/compare/redirects.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/app/compare/route.test.tsx": {
+    "group": "unit"
+  },
   "apps/web/src/app/cookies/page.test.tsx": {
     "group": "unit"
   },
@@ -478,6 +502,9 @@
   },
   "apps/web/src/app/integrations/route.test.tsx": {
     "group": "dom"
+  },
+  "apps/web/src/app/integrations/telegram/route.test.tsx": {
+    "group": "unit"
   },
   "apps/web/src/app/layout-analytics.test.ts": {
     "group": "unit"
@@ -500,11 +527,17 @@
   "apps/web/src/app/oauth/oauth-routes.test.ts": {
     "group": "unit"
   },
+  "apps/web/src/app/pricing/page.test.tsx": {
+    "group": "unit"
+  },
   "apps/web/src/app/privacy/page.test.tsx": {
     "group": "unit"
   },
   "apps/web/src/app/privacy/route-states.test.tsx": {
     "group": "dom"
+  },
+  "apps/web/src/app/product-tour/route.test.tsx": {
+    "group": "unit"
   },
   "apps/web/src/app/record/editorial-routes.test.tsx": {
     "group": "unit"
@@ -518,11 +551,17 @@
   "apps/web/src/app/sitemap.test.ts": {
     "group": "unit"
   },
+  "apps/web/src/app/solutions/redirects.test.ts": {
+    "group": "unit"
+  },
   "apps/web/src/app/terms/page.test.tsx": {
     "group": "unit"
   },
   "apps/web/src/app/trust/page.test.tsx": {
     "group": "dom"
+  },
+  "apps/web/src/app/use-cases/route.test.tsx": {
+    "group": "unit"
   },
   "apps/web/src/app/verify-email/[token]/route-states.test.tsx": {
     "group": "dom"
@@ -642,6 +681,21 @@
     "group": "dom"
   },
   "apps/web/src/components/collections/virtual-list.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/connect-agent/connect-agent-advanced.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/connect-agent/connect-agent-agents.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/connect-agent/connect-agent-memory.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/connect-agent/connect-agent-onboarding.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/connect-agent/connect-agent-tabs.test.tsx": {
     "group": "dom"
   },
   "apps/web/src/components/copy-button.test.tsx": {
@@ -785,6 +839,12 @@
   "apps/web/src/components/loading-states.test.tsx": {
     "group": "dom"
   },
+  "apps/web/src/components/marketing/compare/content.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/components/marketing/compare/public-documents.test.ts": {
+    "group": "unit"
+  },
   "apps/web/src/components/marketing/editorial/content.test.ts": {
     "group": "unit"
   },
@@ -815,6 +875,12 @@
   "apps/web/src/components/marketing/integrations/records-to-answer.test.ts": {
     "group": "unit"
   },
+  "apps/web/src/components/marketing/integrations/works-with-content.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/components/marketing/integrations/works-with-public-documents.test.ts": {
+    "group": "unit"
+  },
   "apps/web/src/components/marketing/pricing-blocks.test.tsx": {
     "group": "dom"
   },
@@ -825,6 +891,12 @@
     "group": "unit"
   },
   "apps/web/src/components/marketing/solutions/solution-page.test.tsx": {
+    "group": "unit"
+  },
+  "apps/web/src/components/marketing/use-cases/content.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/components/marketing/use-cases/public-documents.test.ts": {
     "group": "unit"
   },
   "apps/web/src/components/mcp-oauth-grants.test.tsx": {
@@ -873,6 +945,9 @@
     "group": "dom"
   },
   "apps/web/src/components/password-recovery-form.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/payg-value-nudge.test.tsx": {
     "group": "dom"
   },
   "apps/web/src/components/pins/pin-controls.test.tsx": {
@@ -1062,6 +1137,9 @@
     "group": "dom"
   },
   "apps/web/src/lib/collection-count.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/lib/connect-agent-content.test.ts": {
     "group": "unit"
   },
   "apps/web/src/lib/connections.test.ts": {
@@ -1697,6 +1775,9 @@
   "packages/shared/src/ingest-webhooks/keys.test.ts": {
     "group": "integration"
   },
+  "packages/shared/src/ingest-webhooks/scope.test.ts": {
+    "group": "integration"
+  },
   "packages/shared/src/integrations/canary.test.ts": {
     "group": "unit"
   },
@@ -1836,6 +1917,12 @@
     "group": "integration"
   },
   "packages/shared/src/mcp-server/oauth.test.ts": {
+    "group": "integration"
+  },
+  "packages/shared/src/mcp-server/shipped-install-content.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/mcp-server/outbound.test.ts": {
     "group": "integration"
   },
   "packages/shared/src/mcp/auth.test.ts": {

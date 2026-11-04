@@ -52,10 +52,19 @@ export function captureWorkerException(
   });
 }
 
+const EXPECTED_BILLING_ADMISSION_FAILURE_RE =
+  /Billing admission failed: (?:usage_limit_reached|free_allowance_reached|spend_cap_reached)\b/;
+
+function isExpectedWorkerJobFailure(err: unknown): boolean {
+  const message = err instanceof Error ? err.message : String(err);
+  return EXPECTED_BILLING_ADMISSION_FAILURE_RE.test(message);
+}
+
 function shouldCaptureWorkerJobFailure(
   job: Pick<Job, 'attemptsMade' | 'opts'> | undefined,
   err: unknown,
 ): boolean {
+  if (isExpectedWorkerJobFailure(err)) return false;
   if (err instanceof UnrecoverableError) return true;
   if (!job) return true;
   const maxAttempts = job.opts.attempts ?? 1;
@@ -75,6 +84,22 @@ export function captureWorkerJobFailure(
   tags: Record<string, string | number | boolean | null | undefined> = {},
 ): void {
   const terminal = isTerminalWorkerJobFailure(job, err);
+  if (isExpectedWorkerJobFailure(err)) {
+    if (!isWorkerSentryConfigured()) return;
+    Sentry.addBreadcrumb({
+      category: 'billing',
+      level: 'warning',
+      message: err instanceof Error ? err.message : String(err),
+      data: {
+        queueName: job?.queueName,
+        jobName: job?.name,
+        jobId: job?.id,
+        attemptsMade: job?.attemptsMade,
+        terminal,
+      },
+    });
+    return;
+  }
   captureWorkerException(err, {
     component: 'worker_job',
     queueName: job?.queueName,

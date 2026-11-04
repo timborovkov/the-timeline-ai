@@ -72,16 +72,14 @@ describe('McpShareUi', () => {
     expect(screen.getByText('Team-visible only')).toBeTruthy();
     expect(screen.getByText('Manual-client keys never inherit private access.')).toBeTruthy();
     expect(screen.getByText('No active keys')).toBeTruthy();
-    expect(screen.getByText(/Create a retrieval key, with optional access/)).toBeTruthy();
+    expect(screen.getByText(/Create a retrieval key. Capture is on by default/)).toBeTruthy();
     expect(screen.getByText(/Bearer <create a key first>/)).toBeTruthy();
     expect(screen.getByText(/Generated JSON contains the bearer key/)).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Copy OAuth command' })).toBeTruthy();
     expect(screen.getByText(`codex mcp add timeline --url "${MCP_URL}"`)).toBeTruthy();
-    expect(
-      screen.getByText(/Settings -> Apps -> Advanced Settings -> Developer Mode/),
-    ).toBeTruthy();
-    expect(screen.getByText(/OpenAI universal Plugins Directory/)).toBeTruthy();
-    expect(screen.getByText(/With MCP/)).toBeTruthy();
+    expect(screen.getByText(/Settings → Apps/)).toBeTruthy();
+    expect(screen.queryByText(/Developer Mode/)).toBeNull();
+    expect(screen.getByText(/OpenAI Apps Directory/)).toBeTruthy();
     expect(
       screen.getByRole('heading', { name: 'Agent plugins and OAuth' }).parentElement?.textContent,
     ).toMatch(/browser sign-in and consent/i);
@@ -117,7 +115,7 @@ describe('McpShareUi', () => {
       expect(fetchMock).toHaveBeenCalledWith('/api/team/mcp-keys', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ name: 'Claude Desktop', allowAgent: false }),
+        body: JSON.stringify({ name: 'Claude Desktop', allowCapture: true, allowAgent: false }),
       });
     });
     expect(routerRefresh).toHaveBeenCalledOnce();
@@ -174,7 +172,11 @@ describe('McpShareUi', () => {
       expect(fetchMock).toHaveBeenCalledWith('/api/team/mcp-keys', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ name: '   Claude Desktop', allowAgent: false }),
+        body: JSON.stringify({
+          name: '   Claude Desktop',
+          allowCapture: true,
+          allowAgent: false,
+        }),
       });
     });
     expect(await screen.findByText(/New key: keep this open/)).toBeTruthy();
@@ -194,6 +196,10 @@ describe('McpShareUi', () => {
     render(<McpShareUi keys={[]} mcpUrl={MCP_URL} />);
 
     await user.click(screen.getByRole('button', { name: 'New key' }));
+    const allowCapture = screen.getByRole<HTMLInputElement>('checkbox', {
+      name: /Allow capture notes/,
+    });
+    expect(allowCapture.checked).toBe(true);
     const allowAgent = screen.getByRole<HTMLInputElement>('checkbox', {
       name: /Allow Timeline agent/,
     });
@@ -208,7 +214,7 @@ describe('McpShareUi', () => {
       expect(fetchMock).toHaveBeenCalledWith('/api/team/mcp-keys', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ name: 'Operator', allowAgent: true }),
+        body: JSON.stringify({ name: 'Operator', allowCapture: true, allowAgent: true }),
       });
     });
   });

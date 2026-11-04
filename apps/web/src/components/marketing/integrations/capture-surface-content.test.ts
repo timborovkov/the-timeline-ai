@@ -19,6 +19,9 @@ describe('capture surface content', () => {
       'slack-chat',
     ]);
     expect(CAPTURE_SURFACE_SUMMARY.canonicalPath).toBe('/integrations');
+    expect(CAPTURE_SURFACES.find((surface) => surface.id === 'telegram')?.publicHref).toBe(
+      '/integrations/telegram',
+    );
   });
 
   it('states the important provider and evidence boundaries', () => {

@@ -40,7 +40,7 @@ describe('LandingPage', () => {
     );
   });
 
-  it('server-renders the five-scene evidence narrative in order', () => {
+  it('server-renders the six-scene evidence narrative in order', () => {
     const html = renderToStaticMarkup(<LandingPage />);
 
     expect(html.match(/<footer\b/g)).toHaveLength(1);
@@ -50,9 +50,12 @@ describe('LandingPage', () => {
     expect(html.match(/>Source on GitHub</g)).toHaveLength(1);
     expect(html).toContain('href="/cookies"');
     expect(html.match(/<h1\b/g)).toHaveLength(1);
-    expect(html).toContain('Scattered work. <em>Cited answers.</em>');
+    expect(html).toContain('Your team&#x27;s work, <em>written down for you</em>');
+    expect(html).toContain(
+      'The Timeline updates itself from your team&#x27;s Slack or Telegram, email, calls and docs.',
+    );
 
-    const scenes = ['01-claim', '02-chronology', '03-answer', '04-trust', '05-cta'];
+    const scenes = ['01-claim', '02-chronology', '03-answer', '04-thread', '05-trust', '06-cta'];
     let previousIndex = -1;
     for (const scene of scenes) {
       const sceneIndex = html.indexOf(`data-scene="${scene}"`);
@@ -62,12 +65,13 @@ describe('LandingPage', () => {
 
     expect(html).toContain('Acme rollout / Last 7 days');
     expect(html).toContain(
-      'aria-label="Work events stream from six sources into The Timeline, where project history becomes working records and cited answers."',
+      'aria-label="Work events stream from six sources into The Timeline, where the work record becomes a daily update and cited answers."',
     );
-    expect(html).not.toContain('Fictional Acme example, not customer data.');
+    expect(html).toContain('Fictional Acme example, not customer data.');
+    expect(html).toContain('<details');
     expect(html).toContain('The Timeline');
-    expect(html).toContain('Project history');
-    expect(html).toContain('Working records');
+    expect(html).toContain('Work record');
+    expect(html).toContain('Daily update');
     expect(html).toContain('Cited answers');
     expect(html).not.toContain('How scattered work becomes useful context.');
     expect(html).not.toContain('Connected, not used in this answer');
@@ -88,27 +92,34 @@ describe('LandingPage', () => {
     expect(html).toContain('aria-label="Public navigation"');
     expect(html).toContain('href="/integrations"');
     expect(html).toContain('href="/how-it-works"');
+    expect(html).toContain('href="/compare"');
+    expect(html).toContain('href="/agents"');
+    expect(html).toContain('Give this to your agent');
+    expect(html).toContain('Set up The Timeline - https://thetimeline.cc/llms.txt');
+    expect(html).toContain('what did we promise Northstar');
+    expect(html).toContain('timeline.subject');
+    expect(html).toContain('timeline.get');
+    expect(html).not.toContain('timeline.retrieve_workspace_context');
+    expect(html).not.toContain('timeline.get_event');
+    expect(html).toContain('data-chat-to-answer');
+    expect(html).toContain('data-agent-setup');
     expect(html).toContain('aria-label="Public navigation menu"');
     expect(html).toContain('SSO blocks launch. Friday’s customer update is still due.');
     expect(html).toContain('Evidence behind this answer');
     expect(html).toContain('href="#acme-source-01"');
     expect(html).toContain('Source 01: Telegram group message');
-    expect(html).toContain('Teams that owe someone a reliable answer.');
-    expect(html).toContain('href="/solutions/crm-context-from-team-activity"');
-    expect(html).toContain('href="/solutions/client-project-handoffs"');
-    expect(html).toContain('href="/solutions/weekly-project-updates"');
+    expect(html).toContain('Built for teams that run their work <em>through chat.</em>');
+    expect(html).toContain('href="/use-cases/work-record"');
+    expect(html).toContain('href="/use-cases/team-daily-log"');
+    expect(html).toContain('href="/use-cases/crm"');
+    expect(html).toContain('<a href="/use-cases/work-record"><span>01</span><h4>Work record</h4>');
     expect(html).toContain(
-      '<a href="/solutions/client-project-handoffs"><span>01</span><h4>Client delivery</h4>',
+      '<a href="/use-cases/team-daily-log"><span>02</span><h4>Team daily log</h4>',
     );
-    expect(html).toContain(
-      '<a href="/solutions/crm-context-from-team-activity"><span>02</span><h4>Sales and account teams</h4>',
-    );
-    expect(html).toContain(
-      '<a href="/solutions/weekly-project-updates"><span>03</span><h4>Product and engineering</h4>',
-    );
+    expect(html).toContain('<a href="/use-cases/crm"><span>04</span><h4>CRM</h4>');
     expect(html).toContain('Every answer carries its evidence chain.');
     expect(html).not.toContain('Northline');
-    expect(html.match(/data-home-diagram/g)).toHaveLength(6);
+    expect(html.match(/data-home-diagram/g)).toHaveLength(7);
     expect(html).not.toContain('data-home-ambient');
     expect(html).not.toContain('↘');
     expect(html).not.toContain('02-sources');
@@ -124,8 +135,8 @@ describe('LandingPage', () => {
     const webPage = graph['@graph'].find((node) => node['@type'] === 'WebPage');
     const application = graph['@graph'].find((node) => node['@type'] === 'SoftwareApplication');
     expect(webPage).toMatchObject({
-      dateModified: '2026-08-21',
-      lastReviewed: '2026-08-21',
+      dateModified: '2026-11-03',
+      lastReviewed: '2026-11-03',
     });
     expect(application?.featureList).toContain(
       'Native ingestion for GitHub, Linear, Google Drive, Monday.com, Slack, and Sentry',
@@ -134,13 +145,13 @@ describe('LandingPage', () => {
       'Human approval before inferred durable workspace changes',
     );
     expect(metadata).toMatchObject({
-      title: 'AI Team Memory With Cited Answers',
+      title: "Your team's work, written down for you",
       description:
-        'Timeline turns selected chats, meetings, documents, tickets, and code into a searchable project history. Ask questions and verify every claim at the source.',
+        'The Timeline keeps client, deal, task and decision records up to date from Slack, Telegram, email and calls. Every line has its source, and you approve each change.',
       alternates: { canonical: '/' },
       openGraph: {
         description:
-          'Timeline turns selected chats, meetings, documents, tickets, and code into a searchable project history. Ask questions and verify every claim at the source.',
+          'The Timeline keeps client, deal, task and decision records up to date from Slack, Telegram, email and calls. Every line has its source, and you approve each change.',
       },
     });
   });
@@ -158,8 +169,8 @@ describe('LandingPage', () => {
     expect(html).toContain('Send the work to Timeline.');
     expect(html).toContain('Connected tools');
     expect(html).toContain('Sync selected records.');
-    expect(html).toContain('Ready to connect');
-    expect(html).toContain('Admin setup needed');
+    expect(html).toContain('Setup and supported data');
+    expect(html).not.toContain('Admin setup needed');
     expect(html).toContain('use enabled custom MCP tools when you ask a question');
     expect(html).not.toMatch(
       /Capture contract|Deliberate capture|Provider record sync|Available here|MCP is live approved access/u,
@@ -183,16 +194,17 @@ describe('LandingPage', () => {
   it('renders the product, problem, workflow, and trust contract without implying passive capture', () => {
     const html = renderToStaticMarkup(<LandingPage />);
 
-    expect(html).toContain('Timeline is AI team memory for real projects.');
     expect(html).toContain(
-      'Work can begin in a linked Telegram group or Slack channel, then spread through meetings, documents, tickets, code, automations, and email.',
+      'The Timeline updates itself from your team&#x27;s Slack or Telegram, email, calls and docs.',
+    );
+    expect(html).toContain('Link one channel. <em>Watch the record fill in.</em>');
+    expect(html).toContain(
+      'Your team runs its work in Slack or Telegram, then spreads it across email, calls and documents.',
     );
     expect(html).toContain(
-      'Rebuilding status, handoffs, customer commitments, and decisions becomes slow—and the result is easy to get wrong.',
+      'The Timeline keeps the record current from those conversations, with the source, time and visibility of every line.',
     );
-    expect(html).toContain('documents, tickets, and code you choose in one chronological record');
-    expect(html).toContain('trace each claim back to the source');
-    expect(html).toContain('preserves source, time, and visibility');
+    expect(html).toContain('Ask the question you normally answer by searching four tools');
     expect(html).toContain(
       'Give me the current status, handoff, blockers, and customer commitments.',
     );
@@ -214,6 +226,9 @@ describe('LandingPage', () => {
 
     expect(html.match(/href="\/sign-up"/g)).toHaveLength(3);
     expect(html).toContain('data-public-analytics-cta="try_project"');
+    expect(html).toContain('data-public-analytics-cta="start_free"');
+    expect(html).toContain('href="/product-tour"');
+    expect(html).toContain('See it first');
     expect(html).toContain('data-public-analytics-cta="sign_in"');
     expect(html).toContain('data-public-analytics-cta="contact_support"');
     expect(html).toContain('href="/how-it-works"');

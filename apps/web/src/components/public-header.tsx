@@ -62,7 +62,7 @@ export function PublicHeader({
                 href="/sign-up"
                 data-public-analytics-cta="try_project"
                 className={styles.navCta}
-                title="Free to start — no card required"
+                title="Free for up to 3 members — no card required"
               >
                 Start free
               </Link>

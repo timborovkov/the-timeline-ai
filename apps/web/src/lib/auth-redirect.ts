@@ -21,3 +21,21 @@ export function signedInAuthRedirect(input: {
   if (input.pendingInviteToken) return inviteRedirectPath(input.pendingInviteToken);
   return callbackPath;
 }
+
+/** Pricing intent is navigation only; it never authorizes a purchase. */
+export function selectedPlanCallback(plan: unknown): string | undefined {
+  return plan === 'payg' || plan === 'team' || plan === 'business'
+    ? `/app/team?section=billing&plan=${plan}#change-plan`
+    : undefined;
+}
+
+/** Only carry the fixed pricing destination, never an arbitrary email-link redirect. */
+export function selectedPlanFromCallback(callback: unknown): string | undefined {
+  if (typeof callback !== 'string') return undefined;
+  const path = safeSameOriginPath(callback, APP_FALLBACK, { blockedPaths: AUTH_PATHS });
+  const url = new URL(path, 'https://intent.invalid');
+  if (url.pathname !== '/app/team' || url.searchParams.get('section') !== 'billing')
+    return undefined;
+  const plan = url.searchParams.get('plan');
+  return plan === 'payg' || plan === 'team' || plan === 'business' ? plan : undefined;
+}

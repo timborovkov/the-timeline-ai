@@ -8,7 +8,7 @@ fourth model.
 **Audience:** Product, engineering, and anyone changing ingest, proposals,
 retrieval, or object memory.
 
-**Last updated:** 2026-08-17
+**Last updated:** 2026-11-03
 
 This is the single narrative for how Timeline turns mixed source events into
 durable workspace memory. Decision records stay in ADRs. Object UI, routes, and
@@ -752,7 +752,8 @@ Provenance tiers ([ADR 0010](./adr/0010-artifact-provenance-is-tiered-and-eviden
 | New Timeline object from a finding or one-off mention | Never | Stay on the parent hub or as fact text |
 
 Generic ingest webhooks are evidence-only
-([ADR 0009](./adr/0009-ingest-webhooks-are-evidence-only.md)).
+([ADR 0009](./adr/0009-ingest-webhooks-are-evidence-only.md)). Hosted MCP
+`timeline.remember` stores agent notes through that same path.
 
 ## Data stores
 
@@ -1181,3 +1182,7 @@ original bodies and attachment descriptors, never temporary download URLs or
 attachment bytes. RFC message IDs remain the threading and event-deduplication
 keys; provider IDs are audit metadata. Replays resume missing downstream work,
 including stable audio children, without rewriting captured source content.
+
+### Sentry delivery boundaries and chronology
+
+Sentry webhook receipt requires a selected organization/project; a remembered installation alone is not capture authorization. Delivery workers recheck the current selection before writing evidence or scheduling catch-up work. Persisted issue lifecycle and deployment deliveries use stable delivery identity to distinguish repeated transitions while retaining retry idempotency. Their timestamp basis is explicitly `webhook_received`, not an assertion of exact provider action time. Existing source rows remain immutable; identical payloads lacking a provider delivery ID can still coalesce at intake.

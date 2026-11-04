@@ -34,7 +34,7 @@ describe('how-it-works and guide routes', () => {
     const html = renderToStaticMarkup(<HowItWorksPage />);
 
     expect(html.match(/<h1\b/g)).toHaveLength(1);
-    expect(html).toContain('From scattered work to a cited answer.');
+    expect(html).toContain('From conversation to current record.');
     expect(html).toContain('data-how-it-works-hero="true"');
     expect(html).toContain('data-how-it-works-flow="true"');
     expect(html).toContain('data-how-it-works-evidence="true"');
@@ -51,17 +51,16 @@ describe('how-it-works and guide routes', () => {
     expect(html).toContain('How Timeline works');
     expect(html).not.toContain('Last reviewed');
     expect(html).not.toContain('product overview');
-    expect(html).toContain('See how selected work becomes source-linked history');
-    expect(html).toContain('without replacing the tools your team already uses');
+    expect(html).toContain('You don’t have to replace the tools your team already uses.');
     expect(html).toContain('How scattered work becomes useful context.');
     expect(html).toContain('Trace one answer to its evidence.');
     expect(html).toContain('Three source records become one answer you can verify.');
     expect(html).toMatch(
       /<h2[^>]*>The review date and owner are set; pricing is still unresolved\.<\/h2>/,
     );
-    expect(html).toContain('Start with one project and one question.');
+    expect(html).toContain('Start with one channel.');
     expect(html).toContain('href="/sign-up"');
-    expect(html).toContain('Try one real project');
+    expect(html).toContain('Start free');
     expect(html).toContain('Read the first walkthrough');
     expect(html).not.toContain('<video');
     expect(html).not.toMatch(/watch (?:the )?demo|interactive demo/iu);

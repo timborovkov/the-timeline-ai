@@ -61,6 +61,8 @@ export const TIMELINE_METER_SPECS = [
     key: 'storage_gb_month',
     eventName: 'timeline_storage_gb_month',
     name: 'Timeline Storage',
+    // Polar meters have no included/credited units. The Free/PAYG floor is
+    // FREE_ALLOWANCES.storageGb (100 MiB), applied locally before ingest.
     unitAmount: String(OVERAGE_RATES.storageCentsPerGbMonth),
     unit: 'scalar',
   },

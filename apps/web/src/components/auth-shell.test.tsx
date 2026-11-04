@@ -49,7 +49,7 @@ describe('AuthShell', () => {
       </AuthShell>,
     );
 
-    expect(html).toContain('Secure access · Cited team memory');
+    expect(html).toContain('Secure access · Your work record');
     expect(html).toContain('Welcome back');
     expect(html).toContain('href="/sign-up"');
     expect(html).toContain('Create one');

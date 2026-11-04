@@ -14,6 +14,8 @@ import {
 } from '@timeline/db';
 import { eq } from 'drizzle-orm';
 
+import { dateAt } from './demo-clock.js';
+
 function heavyUuid(bucket: string, index: number): string {
   return `${bucket}-0000-4000-8000-${index.toString(16).padStart(12, '0')}`;
 }
@@ -39,7 +41,7 @@ export interface HeavySeedIds {
 type SeedTx = Pick<ReturnType<typeof getDb>, 'insert' | 'update'>;
 
 export async function seedHeavyAcmeLabs(tx: SeedTx, ids: HeavySeedIds): Promise<void> {
-  const now = new Date('2026-08-17T12:00:00.000Z');
+  const now = dateAt(3, '12:00:00');
   const taskStatuses = ['todo', 'doing', 'done', 'blocked'] as const;
   const lanes = [ids.laneTodo, ids.laneDoing, ids.laneDone];
 

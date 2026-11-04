@@ -15,7 +15,7 @@ describe('editorial metadata', () => {
     const metadata = createHowItWorksMetadata();
 
     const description =
-      'See how Timeline preserves selected work as an evidence-backed chronology, answers with citations, and keeps durable changes human-approved.';
+      'See how The Timeline turns Slack, Telegram, email and call conversations into current records, cites the source for every line, and waits for your approval before anything changes.';
     expect(metadata.description).toBe(description);
     expect(metadata.alternates).toEqual({ canonical: HOW_IT_WORKS_ROUTE });
     expect(metadata.openGraph).toMatchObject({

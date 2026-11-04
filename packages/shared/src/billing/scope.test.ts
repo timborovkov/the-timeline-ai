@@ -84,6 +84,32 @@ function enableCoveredPolar(plan: keyof typeof POLAR_PRODUCT_IDS): string {
 }
 
 describe('billing scope', () => {
+  it('reports whether the scoped team exists after membership is proven', async () => {
+    const scope = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    expect(await scope.isExistingTeam()).toBe(true);
+
+    const missing = createBillingScope({
+      db,
+      teamId: 'bbbbbbbb-cccc-4ddd-8eee-ffffffffffff',
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    expect(await missing.isExistingTeam()).toBe(false);
+
+    const unauthorized = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.reject(new Error('not a member')),
+    });
+    await expect(unauthorized.isExistingTeam()).rejects.toThrow('not a member');
+  });
+
   it('only bypasses billing admission for completed work and retains security and membership checks', async () => {
     let member = true;
     const scope = createBillingScope({

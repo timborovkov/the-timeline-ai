@@ -24,6 +24,7 @@ import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { z } from 'zod';
 
 import { resolveActiveTeam } from '@/lib/active-team';
+import { trackProductEventBestEffort } from '@/lib/analytics';
 import { getArtifactRoutePreview } from '@/lib/artifact-routes';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
@@ -796,5 +797,11 @@ export async function POST(req: Request): Promise<Response> {
   } catch {
     preview = null;
   }
+  if (preview)
+    trackProductEventBestEffort(
+      { kind: 'user', userId: session.user.id, teamId: active.teamId },
+      'reference_preview_loaded',
+      {},
+    );
   return preview ? Response.json({ preview }) : notFound();
 }

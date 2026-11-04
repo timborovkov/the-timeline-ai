@@ -6,6 +6,7 @@ const setTag = vi.fn();
 const setScopeTag = vi.fn();
 const setScopeContext = vi.fn();
 const captureException = vi.fn();
+const addBreadcrumb = vi.fn();
 const flush = vi.fn();
 const withScope = vi.fn(
   (fn: (scope: { setTag: typeof setScopeTag; setContext: typeof setScopeContext }) => void) => {
@@ -47,6 +48,7 @@ await vi.mock(
     setTag,
     withScope,
     captureException,
+    addBreadcrumb,
     flush,
   }),
   () => import('@sentry/node'),
@@ -256,6 +258,31 @@ describe('worker Sentry monitoring', () => {
     expect(setScopeTag).toHaveBeenCalledWith('terminal', 'true');
     expect(setScopeTag).toHaveBeenCalledWith('rawEventId', 'raw-1');
     expect(setScopeTag).toHaveBeenCalledWith('teamId', 'team-1');
+  });
+
+  it('records expected billing admission failures as breadcrumbs instead of errors', async () => {
+    process.env.SENTRY_DSN = 'https://example@sentry.invalid/1';
+    const monitoring = await import('#src/monitoring.js');
+
+    monitoring.captureWorkerJobFailure(
+      new MockUnrecoverableError('Billing admission failed: usage_limit_reached'),
+      {
+        id: '133867',
+        name: 'embed',
+        queueName: 'embed',
+        attemptsMade: 1,
+        opts: { attempts: 6 },
+      },
+    );
+
+    expect(captureException).not.toHaveBeenCalled();
+    expect(addBreadcrumb).toHaveBeenCalledWith(
+      expect.objectContaining({
+        category: 'billing',
+        level: 'warning',
+        message: 'Billing admission failed: usage_limit_reached',
+      }),
+    );
   });
 
   it('captures unrecoverable worker job failures immediately', async () => {

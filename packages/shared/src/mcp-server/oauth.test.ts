@@ -24,6 +24,7 @@ import {
   McpOAuthError,
   MCP_TEAM_ACTOR_USER_ID,
   parseMcpOAuthScopes,
+  resolveMcpOAuthConsentScopes,
   registerMcpOAuthClient,
   revokeMcpOAuthToken,
   resolveMcpBearer as resolveTimelineMcpBearer,
@@ -178,8 +179,10 @@ describe('Timeline MCP OAuth server', () => {
       }),
     ).resolves.toBe(true);
 
+    await expect(scope.listConnectedAgents()).resolves.toHaveLength(1);
     await expect(scope.revokeGrant(grantId)).resolves.toBe(true);
     await expect(scope.listGrants()).resolves.toEqual([]);
+    await expect(scope.listConnectedAgents()).resolves.toEqual([]);
     await expect(
       scope.authorizeCurrentGrant({
         grantId,
@@ -187,6 +190,54 @@ describe('Timeline MCP OAuth server', () => {
         expectedResource: RESOURCE,
       }),
     ).resolves.toBe(false);
+  });
+
+  it('lets an admin revoke another member grant so the next bearer call fails', async () => {
+    await testDb.pg.exec(`
+      INSERT INTO users (id, email, name)
+      VALUES ('${MEMBER_ID}', 'member@example.test', 'OAuth Member');
+      INSERT INTO team_members (team_id, user_id, role)
+      VALUES ('${TEAM_ID}', '${MEMBER_ID}', 'member');
+    `);
+    const { client, request } = await createDcrAuthorization(db, 'read');
+    const code = await createMcpAuthorizationCode(db, {
+      request,
+      userId: MEMBER_ID,
+      teamId: TEAM_ID,
+    });
+    const tokens = await exchangeMcpAuthorizationCode(db, {
+      code,
+      clientId: client.client_id,
+      redirectUri: REDIRECT_URI,
+      codeVerifier: VERIFIER,
+      resource: RESOURCE,
+      expectedResource: RESOURCE,
+    });
+    expect(await resolveMcpBearer(db, tokens.access_token)).toMatchObject({ userId: MEMBER_ID });
+
+    const memberAgents = await withTeam(db, TEAM_ID, MEMBER_ID).mcpOAuth.listConnectedAgents();
+    expect(memberAgents).toHaveLength(1);
+    expect(memberAgents[0]).toMatchObject({
+      ownerUserId: MEMBER_ID,
+      ownerName: 'OAuth Member',
+      ownerEmail: 'member@example.test',
+    });
+    const adminAgents = await withTeam(db, TEAM_ID, USER_ID).mcpOAuth.listConnectedAgents();
+    expect(adminAgents).toHaveLength(1);
+    expect(adminAgents[0]).toMatchObject({
+      clientName: 'Test MCP client',
+      ownerUserId: MEMBER_ID,
+      ownerName: 'OAuth Member',
+      ownerEmail: 'member@example.test',
+    });
+
+    const grantId = adminAgents[0]?.id;
+    if (!grantId) throw new Error('expected connected agent grant');
+    await expect(withTeam(db, TEAM_ID, USER_ID).mcpOAuth.revokeGrant(grantId)).resolves.toBe(true);
+    expect(await resolveMcpBearer(db, tokens.access_token)).toBeNull();
+    await expect(withTeam(db, TEAM_ID, MEMBER_ID).mcpOAuth.listConnectedAgents()).resolves.toEqual(
+      [],
+    );
   });
 
   it('prunes OAuth records only after their security windows in the exact system team scope', async () => {
@@ -389,6 +440,28 @@ describe('Timeline MCP OAuth server', () => {
     await expect(
       resolveMcpBearer(db, tokens.access_token, 'https://other.example/api/mcp/server'),
     ).resolves.toBeNull();
+  });
+
+  it('records capture on the grant when consent adds it', async () => {
+    const { client, request } = await createDcrAuthorization(db, 'read');
+    const code = await createMcpAuthorizationCode(db, {
+      request,
+      userId: USER_ID,
+      teamId: TEAM_ID,
+      grantedScopes: ['read', 'capture'],
+    });
+    const tokens = await exchangeMcpAuthorizationCode(db, {
+      code,
+      clientId: client.client_id,
+      redirectUri: REDIRECT_URI,
+      codeVerifier: VERIFIER,
+      resource: RESOURCE,
+      expectedResource: RESOURCE,
+    });
+    expect(tokens.scope).toBe('read capture');
+    await expect(resolveMcpBearer(db, tokens.access_token)).resolves.toMatchObject({
+      scopes: ['read', 'capture'],
+    });
   });
 
   it('rotates refresh tokens and revokes the grant when an old token is replayed', async () => {
@@ -901,6 +974,16 @@ describe('Timeline MCP OAuth server', () => {
 
   it('rejects unsafe or mismatched client metadata and incomplete scope sets', async () => {
     expect(() => parseMcpOAuthScopes('agent:ask')).toThrow(McpOAuthError);
+    expect(() => parseMcpOAuthScopes('capture')).toThrow(McpOAuthError);
+    expect(parseMcpOAuthScopes('read capture')).toEqual(['read', 'capture']);
+    expect(resolveMcpOAuthConsentScopes(['read'], { grantCapture: true })).toEqual([
+      'read',
+      'capture',
+    ]);
+    expect(resolveMcpOAuthConsentScopes(['read', 'agent:ask'], { grantCapture: false })).toEqual([
+      'read',
+      'agent:ask',
+    ]);
     vi.stubEnv('NODE_ENV', 'production');
     await expect(
       validateMcpAuthorizationRequest(

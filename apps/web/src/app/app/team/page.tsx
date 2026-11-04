@@ -80,6 +80,7 @@ export default async function TeamSettingsPage({
     checkout?: string;
     checkoutTeam?: string;
     checkoutPlan?: string;
+    plan?: string;
   }>;
 }) {
   const {
@@ -373,6 +374,7 @@ function TeamBillingSettings({
         (!query.checkoutTeam || query.checkoutTeam === active.teamId)
       }
       checkoutPlan={query.checkoutPlan}
+      selectedPlan={query.plan}
       planId={entitlementsPlanId}
       planName={PLAN_CATALOG[entitlementsPlanId].name}
       billingState={billingDashboard.account.billingState}
@@ -464,6 +466,7 @@ async function loadTeamSettingsPage({
     checkout?: string;
     checkoutTeam?: string;
     checkoutPlan?: string;
+    plan?: string;
   }>;
 }) {
   const session = await auth();

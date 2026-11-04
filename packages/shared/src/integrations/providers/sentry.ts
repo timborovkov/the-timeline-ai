@@ -457,8 +457,10 @@ function issueWebhookEvent(input: {
   issue: SentryIssue;
   action: string;
   actor: Record<string, unknown> | null;
+  delivery?: { key: string; receivedAt: Date };
 }): IntegrationEvent {
-  const occurredAt = dateValue(input.issue.lastSeen ?? input.issue.firstSeen);
+  const occurredAt =
+    input.delivery?.receivedAt ?? dateValue(input.issue.lastSeen ?? input.issue.firstSeen);
   const title =
     input.issue.title ??
     input.issue.culprit ??
@@ -475,7 +477,9 @@ function issueWebhookEvent(input: {
         ? issueLifecycleBucket(input.action)
         : issueStatusBucket(input.issue.status ?? input.action);
   return {
-    dedupKey: issueDedupKey(input.issue.id, lifecycleBucket),
+    dedupKey: input.delivery
+      ? `sentry:issue:${input.issue.id}:${input.action}:delivery:${input.delivery.key}`
+      : issueDedupKey(input.issue.id, lifecycleBucket),
     provider: 'sentry',
     externalObjectId: input.issue.id,
     eventType,
@@ -496,6 +500,7 @@ function issueWebhookEvent(input: {
       sentry_issue_id: input.issue.id,
       sentry_short_id: input.issue.shortId ?? null,
       webhook_action: input.action || null,
+      timestamp_basis: input.delivery ? 'webhook_received' : 'issue_occurrence',
       external_url: permalink,
       level: input.issue.level ?? null,
       status: input.issue.status ?? null,
@@ -533,12 +538,16 @@ function releaseEvent(
   projectSlug: string,
   release: SentryRelease,
   action = 'created',
+  delivery?: { key: string; receivedAt: Date },
 ): IntegrationEvent {
-  const occurredAt = dateValue(release.dateReleased ?? release.dateCreated ?? release.dateAdded);
+  const occurredAt =
+    action === 'deployed' && delivery
+      ? delivery.receivedAt
+      : dateValue(release.dateReleased ?? release.dateCreated ?? release.dateAdded);
   return {
     // Version + action only — not release timestamp — so repeated sync/webhook
     // delivery for the same release does not mint another extract job.
-    dedupKey: `sentry:release:${orgSlug}:${projectSlug}:${release.version}:${action}`,
+    dedupKey: `sentry:release:${orgSlug}:${projectSlug}:${release.version}:${action}${action === 'deployed' && delivery ? `:delivery:${delivery.key}` : ''}`,
     provider: 'sentry',
     externalObjectId: `${orgSlug}/${projectSlug}/release/${release.version}`,
     eventType: action === 'deployed' ? 'release.deployed' : 'release.created',
@@ -549,6 +558,8 @@ function releaseEvent(
       sentry_project_slug: projectSlug,
       release_version: release.version,
       webhook_action: action,
+      timestamp_basis:
+        action === 'deployed' && delivery ? 'webhook_received' : 'release_occurrence',
       new_groups: release.newGroups ?? null,
       external_url: release.url ?? null,
     },
@@ -943,7 +954,7 @@ export const sentryProvider: IntegrationProvider = {
   },
 
   // eslint-disable-next-line @typescript-eslint/require-await
-  async handleWebhook({ integration, payload }) {
+  async handleWebhook({ integration, payload, delivery }) {
     const record = recordValue(payload);
     if (!record) return [];
     const data = nestedRecord(record, 'data') ?? {};
@@ -962,6 +973,7 @@ export const sentryProvider: IntegrationProvider = {
             issue,
             action,
             actor,
+            ...(delivery ? { delivery } : {}),
           }),
         ],
         syncTasks: projectSyncTask({
@@ -975,7 +987,9 @@ export const sentryProvider: IntegrationProvider = {
     const release = sentryReleaseFromRecord(nestedRecord(data, 'release'));
     if (release && orgProject.orgSlug && orgProject.projectSlug) {
       return {
-        events: [releaseEvent(orgProject.orgSlug, orgProject.projectSlug, release, action)],
+        events: [
+          releaseEvent(orgProject.orgSlug, orgProject.projectSlug, release, action, delivery),
+        ],
         syncTasks: projectSyncTask({
           integrationId: integration.id,
           teamId: integration.teamId,

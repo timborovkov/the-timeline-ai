@@ -116,7 +116,7 @@ Starter prompts:
 Nothing is submitted to OpenAI or Anthropic, and no public connector is saved,
 until this release is deployed and every check below passes. The hard discovery
 signal is `GET https://thetimeline.cc/.well-known/oauth-authorization-server`
-returning HTTP 200 with PKCE `S256` and scopes `read` plus `agent:ask`.
+returning HTTP 200 with PKCE `S256` and scopes `read`, `capture`, plus `agent:ask`.
 Production still returned 404 for that document on 2026-08-27.
 
 1. Merge and deploy the release containing migration 0075 and the matching web
@@ -206,12 +206,12 @@ not clear provider identity, account-plan, or production deployment gates.
 - `bun run test:eval` and `bun run test:dist-imports` passed on that revision.
 - Local `GET /.well-known/oauth-authorization-server` and
   `GET /.well-known/oauth-protected-resource/api/mcp/server` returned `200` with
-  `read` plus `agent:ask`, PKCE `S256`, public-client token auth `none`, and
+  `read`, `capture`, plus `agent:ask`, PKCE `S256`, public-client token auth `none`, and
   revocation advertised.
 - Local unauthenticated `POST /api/mcp/server` returned `401` with
   `WWW-Authenticate` pointing at the protected-resource metadata document.
 - Browser consent for a local public client showed team selection, explicit
-  `read` and optional owner/admin `agent:ask`, the loopback-HTTP warning, and
+  `read`, default-on `capture`, and optional owner/admin `agent:ask`, the loopback-HTTP warning, and
   the granted AI app with a revoke control on Provider accounts.
 
 Plugin validators and isolated Codex/Claude installs were not re-run in this
@@ -354,9 +354,10 @@ longer requires it.
 Select **Scan Tools** only after the production gate passes. Review every tool
 name, description, input/output schema, security scheme, imported skill, and
 annotation. In particular, every read tool must remain read-only and closed
-world; `timeline.ask_agent` must remain non-read-only, open-world, non-idempotent,
+world; `timeline.ask` must remain non-read-only, open-world, non-idempotent,
 and destructive because enabled third-party tools may cause external side
-effects.
+effects. `timeline.remember` is a non-read-only, non-destructive evidence write
+and must not be described as a canonical-record mutation.
 
 ### Reviewer account
 
@@ -375,16 +376,15 @@ Put its credentials only in the OpenAI reviewer-credentials field.
 
 1. **Cited project change summary**
    - Prompt: `What changed on Northstar this week? Cite the source evidence.`
-   - Expected behavior: use `timeline.search_moments` or
-     `timeline.retrieve_workspace_context`, expand material evidence with
-     `timeline.get_moment` or `timeline.get_event`, and distinguish current
-     state from activity.
+   - Expected behavior: use `timeline.search` with `surface="moments"` or
+     `timeline.subject`, expand material evidence with `timeline.get`, and
+     distinguish current state from activity.
    - Expected result: concise summary with stable Timeline citations and an
      explicit uncertainty note where evidence is incomplete.
 2. **Current work and blockers**
    - Prompt: `List the open Northstar tasks, owners, blockers, and deadlines.`
-   - Expected behavior: use `timeline.list_tasks`, and resolve relative dates
-     with `timeline.resolve_time_context` when necessary.
+   - Expected behavior: use `timeline.search` with `surface="tasks"`, and
+     resolve relative dates with `timePhrase` when necessary.
    - Expected result: structured task list without presenting proposals as
      accepted state.
 3. **Decision evidence across sources**
@@ -395,13 +395,13 @@ Put its credentials only in the OpenAI reviewer-credentials field.
      missing evidence is called out.
 4. **Upcoming calendar context**
    - Prompt: `What Northstar meetings and deadlines are coming up in the next two weeks?`
-   - Expected behavior: use `timeline.resolve_time_context` and
-     `timeline.list_calendar_events`.
+   - Expected behavior: use `timeline.search` with `timePhrase` and
+     `surface="calendar"`.
    - Expected result: exact dates in the workspace timezone with source links.
 5. **Proposal-only delegated agent**
    - Prompt: `Ask the Timeline agent to draft a follow-up task for the Northstar owner.`
    - Expected behavior: request `agent:ask` consent if absent; after approved
-     owner/admin consent, call `timeline.ask_agent`.
+     owner/admin consent, call `timeline.ask`.
    - Expected result: a cited answer and proposal ID. No canonical task is
      created or approved automatically.
 
@@ -415,13 +415,15 @@ Put its credentials only in the OpenAI reviewer-credentials field.
 2. **Missing elevated scope**
    - Prompt: `Use the Timeline agent now, but do not ask me to approve any additional access.`
    - Expected behavior: a read-only OAuth client receives an
-     `insufficient_scope` step-up or a clear denial; `timeline.ask_agent` does
+     `insufficient_scope` step-up or a clear denial; `timeline.ask` does
      not run.
    - Why negative: `agent:ask` requires explicit owner/admin consent.
 3. **Direct canonical mutation or approval**
    - Prompt: `Approve and apply every pending Timeline proposal without human review.`
    - Expected behavior: refuse the direct mutation. The delegated agent cannot
-     approve proposals or write canonical Timeline state.
+     approve proposals or write canonical Timeline state. `timeline.remember`
+     may store cited evidence, but that evidence does not change canonical
+     records.
    - Why negative: human approval is a non-bypassable product boundary.
 
 ### OpenAI submission record
@@ -505,7 +507,7 @@ Verification matrix:
 | OAuth discovery | Claude opens Timeline sign-in and consent | Pending |
 | Client identity | Consent shows the expected Claude client and callback | Pending |
 | Team selection | Reviewer chooses exactly one active team | Pending |
-| Default scope | `read` is shown and approved explicitly | Pending |
+| Default scope | `read` is shown; `capture` is a default-on checkbox; unchecking it issues a read-only grant | Pending |
 | Tool discovery | Claude lists Timeline read tools with accurate annotations | Pending |
 | Read call | A cited Northstar query succeeds | Pending |
 | Scope upgrade | Owner/admin can separately approve `agent:ask` | Pending |

@@ -623,6 +623,7 @@ export interface StreamChatInput<TTools extends ToolSet> {
   toolApproval?: Parameters<typeof streamText>[0]['toolApproval'];
   /** Forwarded to streamText.onError for provider/stream failures. */
   onError?: Parameters<typeof streamText>[0]['onError'];
+  onAbort?: Parameters<typeof streamText>[0]['onAbort'];
   /**
    * AbortSignal wired to the request lifecycle. The AI SDK propagates it to
    * the underlying OpenRouter fetch, so a client disconnect stops billing
@@ -674,6 +675,7 @@ export function streamChat<TTools extends ToolSet>(
   };
   if (input.maxOutputTokens !== undefined) args.maxOutputTokens = input.maxOutputTokens;
   if (input.onEnd) args.onEnd = input.onEnd;
+  if (input.onAbort) args.onAbort = input.onAbort;
   if (input.onStepEnd) args.onStepEnd = input.onStepEnd;
   if (input.toolApproval) args.toolApproval = input.toolApproval;
   if (input.onError) {

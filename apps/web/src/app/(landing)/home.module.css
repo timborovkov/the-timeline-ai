@@ -100,6 +100,7 @@
 .primaryCta,
 .footer a,
 .citation,
+.superCitation,
 .receiptLedger a {
   border-radius: 2px;
   outline-offset: 4px;
@@ -109,6 +110,7 @@
 .primaryCta:focus-visible,
 .footer a:focus-visible,
 .citation:focus-visible,
+.superCitation:focus-visible,
 .receiptLedger a:focus-visible {
   outline: 2px solid var(--home-signal);
 }
@@ -164,10 +166,10 @@
 }
 
 .heroTitle {
-  max-width: 8.5ch;
+  max-width: 18ch;
   margin-block: 1.5rem 2rem;
-  font-size: clamp(4.4rem, 9.3vw, 9.4rem);
-  line-height: 0.8;
+  font-size: clamp(3.1rem, 6.6vw, 6.4rem);
+  line-height: 0.9;
 }
 
 .heroTitle em,
@@ -225,6 +227,11 @@
 
 .heroSourceLink {
   margin-top: 1.5rem;
+}
+
+.heroAgentSetup {
+  margin-top: 1.75rem;
+  max-width: 36rem;
 }
 
 .heroSourceLink > a {
@@ -1385,6 +1392,202 @@
   color: var(--home-ink);
 }
 
+.threadLayout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(18rem, 0.72fr);
+  gap: 1px;
+  border: 1px solid var(--home-line);
+  background: var(--home-line);
+}
+
+.slackThread,
+.mcpThread {
+  min-width: 0;
+  background: var(--home-panel);
+}
+
+.slackBar,
+.mcpBar {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.85rem 1rem;
+  border-bottom: 1px solid var(--home-line);
+  color: var(--home-dim);
+  font-family: var(--font-mono);
+  font-size: var(--home-meta-size);
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+}
+
+.slackMessage {
+  display: grid;
+  grid-template-columns: 2.25rem minmax(0, 1fr);
+  gap: 0.75rem;
+  padding: 1rem 1.1rem;
+}
+
+.slackMessage + .slackMessage {
+  border-top: 1px solid var(--home-line);
+}
+
+.slackAvatar,
+.slackBotAvatar {
+  display: grid;
+  width: 2.25rem;
+  height: 2.25rem;
+  place-items: center;
+  border-radius: 0.4rem;
+  background: var(--home-panel-2);
+  color: var(--home-muted);
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  font-weight: 650;
+}
+
+.slackBotAvatar {
+  background: var(--home-signal);
+  color: var(--home-ink);
+}
+
+.slackMeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem 0.7rem;
+  align-items: baseline;
+  margin: 0 0 0.35rem;
+  color: var(--home-dim);
+  font-size: 0.78rem;
+}
+
+.slackMeta strong {
+  color: var(--home-paper);
+  font-size: 0.92rem;
+}
+
+.slackMeta span {
+  padding: 0.05rem 0.3rem;
+  border: 1px solid var(--home-line-strong);
+  border-radius: 0.2rem;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  letter-spacing: 0.08em;
+}
+
+.slackMessage p {
+  margin: 0;
+  color: var(--home-muted);
+  font-size: 0.95rem;
+  line-height: 1.65;
+}
+
+.slackMention {
+  color: var(--home-signal);
+  font-weight: 650;
+}
+
+.superCitation {
+  margin-inline: 0.08rem;
+  color: var(--home-signal);
+  font-family: var(--font-mono);
+  font-size: 0.78em;
+  text-decoration: none;
+  vertical-align: super;
+}
+
+.superCitation:hover {
+  text-decoration: underline;
+}
+
+.threadSources {
+  display: grid;
+  gap: 0.45rem;
+  margin: 0.9rem 0 0;
+  padding: 0.7rem 0.8rem;
+  border: 1px solid var(--home-line);
+  border-radius: 0.45rem;
+  background: var(--home-ink);
+  list-style: none;
+}
+
+.threadSources li {
+  display: grid;
+  grid-template-columns: 1.6rem minmax(0, 1fr);
+  gap: 0.15rem 0.5rem;
+}
+
+.threadSources span {
+  grid-row: 1 / 3;
+  color: var(--home-signal);
+  font-family: var(--font-mono);
+  font-size: var(--home-meta-size);
+}
+
+.threadSources strong {
+  color: var(--home-paper);
+  font-size: 0.82rem;
+}
+
+.threadSources small {
+  color: var(--home-dim);
+  font-size: 0.75rem;
+}
+
+.mcpPrompt {
+  margin: 0;
+  padding: 1rem 1.1rem 0.35rem;
+  color: var(--home-paper);
+  font-size: 0.95rem;
+}
+
+.mcpCalls {
+  display: grid;
+  gap: 0.45rem;
+  margin: 0.5rem 1.1rem 0;
+  padding: 0;
+  list-style: none;
+}
+
+.mcpCalls li {
+  display: grid;
+  gap: 0.15rem;
+  padding: 0.65rem 0.75rem;
+  border: 1px dashed var(--home-line-strong);
+  border-radius: 0.4rem;
+  background: var(--home-ink);
+}
+
+.mcpCalls code {
+  color: var(--home-signal);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+}
+
+.mcpCalls span {
+  color: var(--home-dim);
+  font-size: 0.78rem;
+}
+
+.mcpAnswer {
+  margin: 0;
+  padding: 1rem 1.1rem 1.25rem;
+  color: var(--home-muted);
+  font-size: 0.92rem;
+  line-height: 1.65;
+}
+
+.threadDisclosure {
+  grid-column: 1 / -1;
+  margin: 0;
+  padding: 0.7rem 1rem;
+  background: var(--home-ink);
+  color: var(--home-dim);
+  font-family: var(--font-mono);
+  font-size: var(--home-meta-size);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
 .answerFooter {
   flex-wrap: wrap;
   justify-content: flex-start;
@@ -2288,6 +2491,18 @@
     animation-delay: 380ms;
   }
 
+  .motionReady .fitPanel.visible .audienceRail a:nth-child(4) {
+    animation-delay: 500ms;
+  }
+
+  .motionReady .fitPanel.visible .audienceRail a:nth-child(5) {
+    animation-delay: 620ms;
+  }
+
+  .motionReady .fitPanel.visible .audienceRail a:nth-child(6) {
+    animation-delay: 740ms;
+  }
+
   .motionReady .trustFlowPanel.visible .trustFlow::before {
     animation: trustPathDraw 1.15s 300ms cubic-bezier(0.22, 1, 0.36, 1) both;
   }
@@ -2714,6 +2929,7 @@
   .claimScene,
   .recoveryScene,
   .answerLayout,
+  .threadLayout,
   .fitPanel,
   .connectorPaths {
     grid-template-columns: 1fr;
@@ -2838,7 +3054,8 @@
   }
 
   .heroTitle {
-    font-size: clamp(4rem, 22vw, 6.3rem);
+    max-width: 100%;
+    font-size: clamp(2.2rem, 9vw, 3.4rem);
   }
 
   .recoveryTitle {
@@ -3071,7 +3288,7 @@
 
 @media (max-width: 22rem) {
   .heroTitle {
-    font-size: 3.8rem;
+    font-size: 2.05rem;
   }
 
   .memoryCore span {
