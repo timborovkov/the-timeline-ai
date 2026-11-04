@@ -44,6 +44,8 @@ import { cn } from '@/lib/utils';
 
 const SITE_NAME = 'The Timeline';
 const CONTACT_HREF = '/help/support';
+const HERO_INTRO =
+  "The Timeline updates itself from your team's Slack or Telegram, email, calls, docs and wherever else work happens. Who did what, what was promised, and what's next, always current.";
 const HOME_DOCUMENT = getHomeDocument();
 
 export const metadata: Metadata = {
@@ -219,9 +221,7 @@ function ClaimScene() {
         <h1 id="claim-title" className={styles.heroTitle}>
           Your team's work, <em>written down for you</em>
         </h1>
-        <p className={styles.heroIntro}>
-          The Timeline updates itself from your team's Slack or Telegram, email, calls and docs.
-        </p>
+        <p className={styles.heroIntro}>{HERO_INTRO}</p>
         <div className={styles.heroActions}>
           <PublicSessionBranch
             signedOut={

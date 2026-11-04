@@ -52,7 +52,7 @@ describe('LandingPage', () => {
     expect(html.match(/<h1\b/g)).toHaveLength(1);
     expect(html).toContain('Your team&#x27;s work, <em>written down for you</em>');
     expect(html).toContain(
-      'The Timeline updates itself from your team&#x27;s Slack or Telegram, email, calls and docs.',
+      'The Timeline updates itself from your team&#x27;s Slack or Telegram, email, calls, docs and wherever else work happens. Who did what, what was promised, and what&#x27;s next, always current.',
     );
 
     const scenes = ['01-claim', '02-chronology', '03-answer', '04-thread', '05-trust', '06-cta'];
@@ -195,7 +195,7 @@ describe('LandingPage', () => {
     const html = renderToStaticMarkup(<LandingPage />);
 
     expect(html).toContain(
-      'The Timeline updates itself from your team&#x27;s Slack or Telegram, email, calls and docs.',
+      'The Timeline updates itself from your team&#x27;s Slack or Telegram, email, calls, docs and wherever else work happens. Who did what, what was promised, and what&#x27;s next, always current.',
     );
     expect(html).toContain('Link one channel. <em>Watch the record fill in.</em>');
     expect(html).toContain(
