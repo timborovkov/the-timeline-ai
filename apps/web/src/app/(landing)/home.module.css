@@ -1470,7 +1470,7 @@
   border: 1px solid var(--home-line-strong);
   border-radius: 0.2rem;
   font-family: var(--font-mono);
-  font-size: 0.62rem;
+  font-size: 0.75rem;
   letter-spacing: 0.08em;
 }
 
@@ -1560,7 +1560,7 @@
 .mcpCalls code {
   color: var(--home-signal);
   font-family: var(--font-mono);
-  font-size: 0.74rem;
+  font-size: 0.75rem;
 }
 
 .mcpCalls span {

@@ -80,6 +80,9 @@
   "apps/web/src/app/agents/route.test.tsx": {
     "group": "unit"
   },
+  "apps/web/src/app/agents/[doc]/route.test.ts": {
+    "group": "unit"
+  },
   "apps/web/src/app/api/artifacts/preview/route.test.ts": {
     "group": "unit"
   },

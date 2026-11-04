@@ -2,6 +2,7 @@ import type { PublicDocument, PublicDocumentRegistry } from '@/lib/public-site';
 
 import { TIMELINE_AGENT_SETUP_COMMAND } from '@/components/marketing/copy';
 import { TIMELINE_HOSTED_MCP_TOOLS_LIST } from '@/lib/agent-install-content';
+import { buildLlmsAgentSetupPointer, buildLlmsForAgentsSection } from '@/lib/agent-setup';
 import { PUBLIC_DOCUMENT_REGISTRY, canonicalPublicUrl } from '@/lib/public-site';
 import { getSiteUrl } from '@/lib/site-url';
 
@@ -79,11 +80,14 @@ export function buildLlmsTxt(options: LlmsTextOptions = {}): string {
   return [
     '# The Timeline',
     '',
+    buildLlmsAgentSetupPointer(siteUrl),
+    '',
     PRODUCT_SUMMARY,
     '',
     'Teams deliberately send work to The Timeline or select provider records to preserve. That work becomes a current work record; cited answers retain source, time, and visibility, and suggested durable workspace changes require human approval.',
     '',
     AGENT_SETUP_SECTION,
+    ...buildLlmsForAgentsSection(siteUrl),
     '## Primary pages',
     ...primaryLinks,
     '',
@@ -120,11 +124,14 @@ export function buildLlmsFullTxt(options: LlmsTextOptions = {}): string {
   return [
     '# The Timeline',
     '',
+    buildLlmsAgentSetupPointer(siteUrl),
+    '',
     PRODUCT_SUMMARY,
     '',
     'Teams deliberately send work to The Timeline or select provider records to preserve. The Timeline keeps that evidence as a current work record, answers questions with source citations, and leaves suggested durable workspace changes pending until a person approves them.',
     '',
     AGENT_SETUP_SECTION,
+    ...buildLlmsForAgentsSection(siteUrl),
     '## Canonical URLs',
     link(landing, llmsContent(landing).fullSummary ?? llmsContent(landing).summary, siteUrl),
     link(helpIndex, llmsContent(helpIndex).fullSummary ?? llmsContent(helpIndex).summary, siteUrl),

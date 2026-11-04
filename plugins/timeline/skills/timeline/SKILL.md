@@ -33,6 +33,15 @@ Do not fan out across every surface by default. Start broad only when the reques
 
 Use `timeline.remember` to store a note as team-visible ingest evidence. It requires the `capture` scope (on by default for new OAuth grants and static keys). It creates a cited raw event and evidence through the same path as Timeline ingest webhooks. It never updates canonical objects, tasks, or other records. Suggestion and approval flows still apply; treat any later proposal as unapproved until a teammate accepts it.
 
+## Add memory
+
+Use this section only when the user asks you to record something, or has told you to log your work.
+
+- `timeline.remember`: one self-contained note per fact cluster. Lead with the subject, then who, the decision, the next step, the owner, and the date. Rate-limited to 30 notes per minute. Needs the `capture` scope. It stores cited ingest evidence only.
+- Email: send, forward, CC or BCC to the team address (Home → Team email). This works only if the sending address is a team member or an allowed sender.
+- Webhook: POST plain text or JSON (1 MB or less) to this Timeline deployment's `/api/webhooks/ingest` with `Authorization: Bearer $TIMELINE_INGEST_TOKEN`. Hosted Timeline uses `https://thetimeline.cc/api/webhooks/ingest`. Self-hosted Timeline must use that deployment's own origin; posting to the hosted URL returns 401. Never print the token. Keep it in the environment.
+- Tell the user what you recorded. Everything becomes cited evidence only. Any resulting proposals still need human approval.
+
 ## Build an evidence-backed answer
 
 1. Retrieve enough context to identify the relevant records.
@@ -54,4 +63,4 @@ Adapt the answer to the request rather than switching skills. For a status updat
 
 `tools/list` advertises only the five tools above. Prefer those names for new work.
 
-If a Timeline-dependent request has no `timeline.*` tools available, stop and direct the user to the [Timeline installation guide](https://github.com/timborovkov/the-timeline-ai/tree/main/plugins/timeline/skills#connect-timeline-mcp).
+If a Timeline-dependent request has no `timeline.*` tools available, stop and direct the user to [agent setup](https://thetimeline.cc/agents/setup.md).

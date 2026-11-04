@@ -7,14 +7,16 @@ import { Button } from '@/components/ui/button';
 import {
   TIMELINE_AGENT_ACCESS_FAQS,
   TIMELINE_AGENT_INSTALL_STEPS,
+  TIMELINE_AGENT_SETUP_PROMPT,
+  TIMELINE_AGENT_SETUP_URL,
   TIMELINE_AGENT_SKILL,
+  TIMELINE_AGENT_SKILL_URL,
   TIMELINE_CLAUDE_PLUGIN_INSTALL_COMMAND,
   TIMELINE_CLAUDE_PLUGIN_INSTALL_URL,
   TIMELINE_CODEX_PLUGIN_INSTALL_URL,
   TIMELINE_MCP_COMMAND,
   TIMELINE_PLUGIN_INSTALL_PROMPT,
   TIMELINE_SKILL_INSTALL_PROMPT,
-  TIMELINE_SKILLS_URL,
 } from '@/lib/agent-install-content';
 
 function CopyPanel({
@@ -101,6 +103,26 @@ export function AgentInstallGuide() {
           </ul>
         </div>
         <div className="space-y-4 p-5 sm:p-7">
+          <article className="space-y-4 rounded-sm border border-border p-4 sm:p-5">
+            <div className="space-y-1">
+              <h3 className="font-semibold text-fg">Give this to your agent</h3>
+              <p className="text-sm leading-5 text-fg-muted">
+                The agent fetches the setup doc, branches by where it runs, and uses OAuth. Never
+                paste a key in chat.
+              </p>
+            </div>
+            <CopyPanel
+              value={TIMELINE_AGENT_SETUP_PROMPT}
+              copyLabel="Copy agent setup prompt"
+              context="Paste into any agent"
+            />
+            <Button asChild size="sm" variant="outline">
+              <a href={TIMELINE_AGENT_SETUP_URL} target="_blank" rel="noreferrer">
+                Open setup.md
+                <ExternalLink aria-hidden="true" />
+              </a>
+            </Button>
+          </article>
           <div className="grid gap-4 xl:grid-cols-2 xl:items-start">
             <article className="space-y-4 rounded-sm border border-border p-4 sm:p-5">
               <div className="space-y-1">
@@ -240,7 +262,7 @@ export function AgentInstallGuide() {
           </code>
           <p className="mt-4 text-sm leading-6 text-fg-muted">{TIMELINE_AGENT_SKILL.description}</p>
           <a
-            href={`${TIMELINE_SKILLS_URL}/${TIMELINE_AGENT_SKILL.id}`}
+            href={TIMELINE_AGENT_SKILL_URL}
             target="_blank"
             rel="noreferrer"
             className="mt-5 inline-flex min-h-10 items-center gap-2 self-start rounded-sm text-sm font-medium text-fg transition-colors hover:text-signal focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-fg focus-visible:ring-offset-2 focus-visible:ring-offset-bg forced-colors:focus-visible:outline forced-colors:focus-visible:outline-2"

@@ -16,6 +16,7 @@ import {
 import {
   TIMELINE_AGENT_ACCESS_FAQS,
   TIMELINE_AGENT_INSTALL_STEPS,
+  TIMELINE_AGENT_SETUP_PROMPT,
   TIMELINE_CLAUDE_PLUGIN_INSTALL_COMMAND,
   TIMELINE_MCP_COMMAND,
   TIMELINE_PLUGIN_INSTALL_PROMPT,
@@ -28,6 +29,11 @@ import { TRUST_AI_MODEL_ITEMS, TRUST_AI_PRIVACY_SUMMARY } from '@/lib/trust-clai
 const LAST_REVIEWED = '2026-08-12' as const;
 
 const AGENT_INSTALL_LLM_SECTIONS = [
+  {
+    title: 'Give this to your agent',
+    body: 'Paste this one-liner so the agent can fetch /agents/setup.md and connect over OAuth.',
+    codeBlock: { content: TIMELINE_AGENT_SETUP_PROMPT, language: 'text' },
+  },
   {
     title: 'Copy-ready plugin install prompt',
     body: 'Paste this prompt into a Codex task to install the complete Timeline plugin.',
@@ -378,6 +384,32 @@ const publicUtilityDocuments = definePublicDocuments('public-utility', [
       fullSummary:
         'Cookie, local-storage, and session-storage inventory; notice-versus-consent boundary; public-only browser analytics and withdrawal controls; personless server surface streams; and separate Sentry, Turnstile, and logging paths.',
     },
+  },
+  {
+    canonicalPath: '/agents/setup.md',
+    kind: 'machine',
+    title: 'Agent setup',
+    description:
+      'Agent-readable Markdown that branches MCP and skill setup by ChatGPT, Claude, Claude Code, Codex, Cursor, Grok Bot, Hermes, and OpenClaw.',
+    indexability: 'index',
+    dates: { modified: '2026-11-03', reviewed: '2026-11-03' },
+    capability: { kind: 'current-product' },
+    sitemap: false,
+    structuredData: [],
+    llms: false,
+  },
+  {
+    canonicalPath: '/agents/SKILL.md',
+    kind: 'machine',
+    title: 'Timeline skill',
+    description:
+      'The published Timeline SKILL.md, byte-identical to the repository plugin skill file.',
+    indexability: 'index',
+    dates: { modified: '2026-11-03', reviewed: '2026-11-03' },
+    capability: { kind: 'current-product' },
+    sitemap: false,
+    structuredData: [],
+    llms: false,
   },
   {
     canonicalPath: '/llms-full.txt',

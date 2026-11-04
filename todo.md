@@ -399,6 +399,11 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
 - [x] Add repository plugin and marketplace packaging for Codex and Claude Code
       with the hosted Timeline MCP connection, one general cited-workspace skill,
       standalone installation guidance, and links from public help and MCP setup.
+- [x] Publish `/agents/setup.md` and `/agents/SKILL.md` as `text/markdown`, add a
+      `## For agents` pointer in `llms.txt` / `llms-full.txt`, document remember,
+      team email, and ingest-webhook push in the Timeline skill, and bump the
+      plugin to 0.3.1. Remember documents the `capture` OAuth scope landing with
+      the five-tool MCP surface.
 - [x] Implement the outbound MCP OAuth and current transport path in the repository:
       RFC 9728/8414 discovery, CIMD-first client resolution with constrained DCR,
       PKCE S256, member/team consent and revocation, `read` plus default-on

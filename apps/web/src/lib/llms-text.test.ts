@@ -5,6 +5,7 @@ import type { PublicDocument } from '@/lib/public-site';
 
 import {
   TIMELINE_AGENT_ACCESS_FAQS,
+  TIMELINE_AGENT_SETUP_PROMPT,
   TIMELINE_CLAUDE_PLUGIN_INSTALL_COMMAND,
   TIMELINE_MCP_COMMAND,
   TIMELINE_PLUGIN_INSTALL_PROMPT,
@@ -33,6 +34,11 @@ describe('llms text files', () => {
     const text = buildLlmsTxt();
 
     expect(text).toContain('# The Timeline');
+    expect(text.split('\n').slice(0, 3).join('\n')).toContain(
+      'https://thetimeline.cc/agents/setup.md',
+    );
+    expect(text).toContain('## For agents');
+    expect(text).toContain('[Agent setup](https://thetimeline.cc/agents/setup.md)');
     expect(text).toContain('[Landing page](https://thetimeline.cc/)');
     expect(text).toContain('[Trust and security](https://thetimeline.cc/trust)');
     expect(text).toContain('[Cookies and similar technologies](https://thetimeline.cc/cookies)');
@@ -89,6 +95,12 @@ describe('llms text files', () => {
     expect(text).toContain(
       '[Install in Claude Code](https://github.com/timborovkov/the-timeline-ai/tree/main/plugins/timeline/skills#install-in-claude-code)',
     );
+    expect(text.split('\n').slice(0, 3).join('\n')).toContain(
+      'https://thetimeline.cc/agents/setup.md',
+    );
+    expect(text).toContain('## For agents');
+    expect(text).toContain('[Timeline skill](https://thetimeline.cc/agents/SKILL.md)');
+    expect(text).toContain(TIMELINE_AGENT_SETUP_PROMPT);
     expect(text).toContain(TIMELINE_PLUGIN_INSTALL_PROMPT);
     expect(text).toContain(TIMELINE_CLAUDE_PLUGIN_INSTALL_COMMAND);
     expect(text).toContain(TIMELINE_SKILL_INSTALL_PROMPT);
@@ -108,6 +120,28 @@ describe('llms text files', () => {
       modified: '2026-11-03',
       reviewed: '2026-11-03',
     });
+    expect(PUBLIC_DOCUMENT_REGISTRY.get('/agents/setup.md')?.dates).toEqual({
+      modified: '2026-11-03',
+      reviewed: '2026-11-03',
+    });
+    expect(PUBLIC_DOCUMENT_REGISTRY.get('/agents/SKILL.md')?.dates).toEqual({
+      modified: '2026-11-03',
+      reviewed: '2026-11-03',
+    });
+  });
+
+  it('keeps the For agents block free of summary and keyword copy owned elsewhere', () => {
+    const compact = buildLlmsTxt({ siteUrl: 'https://thetimeline.cc' });
+    const full = buildLlmsFullTxt({ siteUrl: 'https://thetimeline.cc' });
+
+    for (const text of [compact, full]) {
+      const start = text.indexOf('## For agents');
+      const end = text.indexOf('\n## ', start + 1);
+      const section = text.slice(start, end);
+      expect(section).toContain('/agents/setup.md');
+      expect(section).not.toContain('AI team memory');
+      expect(section).not.toMatch(/\bweekly\b/i);
+    }
   });
 
   it('uses the selected-work, cited-answer, and human-approval positioning hierarchy', () => {
