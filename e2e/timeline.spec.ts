@@ -3262,3 +3262,52 @@ test('document search returns worker-embedded chunks and opens the cited chunk',
     await ownerPage.context().close();
   }
 });
+
+test('document search stays pending during recovery and offers a retry after unavailability', async ({
+  browser,
+}) => {
+  const page = await newSignedInPage(browser, 'owner');
+  const context = page.context();
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let calls = 0;
+  await page.route('**/api/documents/search', async (route) => {
+    calls++;
+    if (calls === 1) {
+      await held;
+      await route.fulfill({
+        status: 503,
+        contentType: 'application/json',
+        body: JSON.stringify({ error: 'qdrant_failed' }),
+      });
+    } else {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ items: [], nextOffset: null }),
+      });
+    }
+  });
+  try {
+    await page.goto('/app/documents');
+    const input = page.getByRole('searchbox', { name: 'Search document chunks' });
+    await input.fill('serverless recovery fixture');
+    await page.getByRole('button', { name: 'Search', exact: true }).click();
+    await expect(page.getByRole('button', { name: 'Searching', exact: true })).toBeDisabled();
+    await expect(page.getByText(/No matches for/)).toHaveCount(0);
+    release();
+    await expect(
+      page.getByText('Search is temporarily unavailable. Try again in a moment.'),
+    ).toBeVisible();
+    expect(calls).toBe(1);
+    await expect(input).toHaveValue('serverless recovery fixture');
+    await page.getByRole('button', { name: 'Retry search', exact: true }).click();
+    await expect(page.getByText(/No matches for/)).toBeVisible();
+    expect(calls).toBe(2);
+  } finally {
+    release();
+    await context.close();
+  }
+});

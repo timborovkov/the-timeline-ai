@@ -33,6 +33,8 @@ import { getDocumentsBucket, getS3Client } from '#src/s3/client.js';
 import { deleteObject } from '#src/s3/objects.js';
 import { rawEventVisibleToUser, validateVisibilityUserIds } from '#src/visibility.js';
 
+import type { QdrantOperationContext } from '#src/qdrant/operation.js';
+
 // drizzle's transaction callback gives a PgTransaction that has the same
 // fluent methods we use here (`insert`, `select`, `update`) but is not
 // assignable to the top-level Db type. Extract it so `writeDocumentEvent`
@@ -243,6 +245,7 @@ export interface PromoteCapturedFileResult {
 }
 
 export interface SearchDocumentChunksInput {
+  operation?: QdrantOperationContext;
   query: string;
   documentId?: string;
   folderIds?: string[];
@@ -854,6 +857,7 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
     const offset = input.offset ?? 0;
     const { vector } = await withSearchEmbeddingBilling(() => embedFn({ text: input.query }));
     const searchOpts: SearchOpts = {
+      operation: input.operation ?? {},
       limit: offset + limit + 1,
       sourceKind: 'doc_chunk',
     };

@@ -1,5 +1,6 @@
 import { cacheKey, cachedJson } from '@timeline/shared/cache';
 import { getEnv } from '@timeline/shared/env';
+import { withQdrantOperation, QdrantUnavailableError } from '@timeline/shared/qdrant';
 import * as rateLimit from '@timeline/shared/rate-limit';
 import { withTeam } from '@timeline/shared/team-scope';
 import { z } from 'zod';
@@ -23,6 +24,17 @@ const schema = z.object({
 });
 
 export async function POST(req: Request): Promise<Response> {
+  try {
+    return await withQdrantOperation({ signal: req.signal }, () => searchResponse(req));
+  } catch (error) {
+    if (error instanceof QdrantUnavailableError) {
+      return Response.json({ error: 'qdrant_failed' }, { status: 503 });
+    }
+    throw error;
+  }
+}
+
+async function searchResponse(req: Request): Promise<Response> {
   const session = await auth();
   if (!session?.user) return Response.json({ error: 'unauthenticated' }, { status: 401 });
   const env = getEnv();

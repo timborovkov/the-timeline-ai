@@ -6,7 +6,9 @@ import {
   qdrantSearchQuantizationParams,
   type QdrantQuantizationSettings,
 } from '#src/qdrant/collection-config.js';
+import { withQdrantOperation, type QdrantOperationContext } from '#src/qdrant/operation.js';
 import { buildPointId, type PointScope } from '#src/qdrant/point-id.js';
+import { qdrantRequest, type QdrantRequestKind } from '#src/qdrant/transport.js';
 
 /**
  * Payload schema stored alongside every vector. Every field is used by the
@@ -140,6 +142,7 @@ export interface QdrantPayload {
 }
 
 export interface SearchOpts {
+  operation?: QdrantOperationContext;
   from?: Date;
   to?: Date;
   source?: QdrantPayload['source'];
@@ -191,6 +194,7 @@ export interface QdrantPointRecord {
 }
 
 export interface ScrollPointsInput {
+  operation?: QdrantOperationContext;
   filter?: Record<string, unknown>;
   limit?: number;
   offset?: unknown;
@@ -324,10 +328,6 @@ export interface QdrantClientOptions {
   repairTenantIndex?: boolean;
 }
 
-interface QdrantHttpError extends Error {
-  status?: number;
-}
-
 function buildHeaders(apiKey: string | undefined): Record<string, string> {
   const headers: Record<string, string> = { 'content-type': 'application/json' };
   if (apiKey) headers['api-key'] = apiKey;
@@ -434,38 +434,30 @@ export function createQdrantClient(opts: QdrantClientOptions = {}): QdrantClient
   const quantization = qdrantQuantizationFromEnv(env);
   const headers = buildHeaders(env.QDRANT_API_KEY);
 
-  let ensurePromise: Promise<void> | undefined;
+  let collectionEnsured = false;
 
   async function request(
+    kind: QdrantRequestKind,
     method: string,
     path: string,
     body?: unknown,
   ): Promise<{ status: number; data: unknown }> {
-    const init: RequestInit = { method, headers };
-    if (body !== undefined) init.body = JSON.stringify(body);
-    const res = await fetcher(`${baseUrl}${path}`, init);
-    let data: unknown = null;
-    const text = await res.text();
-    if (text) {
-      try {
-        data = JSON.parse(text);
-      } catch {
-        data = text;
-      }
+    if (kind !== 'read') {
+      await qdrantRequest({
+        fetcher,
+        url: baseUrl + '/collections/' + encodeURIComponent(collection),
+        headers,
+        method: 'GET',
+        kind: 'read',
+      });
     }
-    if (!res.ok && res.status !== 404) {
-      const err: QdrantHttpError = new Error(
-        `Qdrant ${method} ${path} failed: ${String(res.status)} ${typeof data === 'string' ? data : JSON.stringify(data)}`,
-      );
-      err.status = res.status;
-      throw err;
-    }
-    return { status: res.status, data };
+    return qdrantRequest({ fetcher, url: baseUrl + path, headers, method, kind, body });
   }
 
   async function ensureCollection(): Promise<void> {
-    ensurePromise ??= (async () => {
-      const head = await request('GET', `/collections/${encodeURIComponent(collection)}`);
+    if (collectionEnsured) return;
+    await (async () => {
+      const head = await request('read', 'GET', `/collections/${encodeURIComponent(collection)}`);
       if (head.status === 200) {
         const existingVectorSize = collectionVectorSize(head.data);
         if (existingVectorSize !== null && existingVectorSize !== vectorSize) {
@@ -492,40 +484,40 @@ export function createQdrantClient(opts: QdrantClientOptions = {}): QdrantClient
           `Qdrant collection '${collection}' does not exist and requireExisting=true. Create it explicitly per the re-embed or on-disk collection-copy procedure.`,
         );
       }
-      // 404 → create. Existing collections are left untouched (no PATCH of
-      // on-disk / quantization). PUT is idempotent in Qdrant when two
-      // concurrent boots race on a missing collection.
-      const create = await request(
-        'PUT',
-        `/collections/${encodeURIComponent(collection)}`,
-        qdrantCollectionCreateBody(vectorSize, quantization.kind),
-      );
-      if (create.status !== 200 && create.status !== 201) {
-        // 409-ish "already exists" responses come back as 200 here; if we still
-        // see a non-success, throw so the caller (worker boot) fails loudly.
-        throw new Error(
-          `Qdrant create collection failed: ${String(create.status)} ${JSON.stringify(create.data)}`,
+      // Concurrent callers initialize independently so one caller's cancellation
+      // cannot poison another. A known create conflict is resolved by inspection.
+      let create: { status: number; data: unknown };
+      try {
+        create = await request(
+          'initialization',
+          'PUT',
+          `/collections/${encodeURIComponent(collection)}`,
+          qdrantCollectionCreateBody(vectorSize, quantization.kind),
         );
+      } catch (error) {
+        if (error instanceof Error && 'status' in error && error.status === 409) {
+          await ensureCollection();
+          return;
+        }
+        throw error;
+      }
+      if (create.status !== 200 && create.status !== 201) {
+        throw new Error(`Qdrant create collection failed: ${String(create.status)}`);
       }
       await ensureTenantPayloadIndex();
-    })().catch((err: unknown) => {
-      // Reset on failure so the next call can retry (e.g. transient network).
-      ensurePromise = undefined;
-      throw err;
-    });
-    await ensurePromise;
+    })();
+    collectionEnsured = true;
   }
 
   async function ensureTenantPayloadIndex(): Promise<void> {
     const index = await request(
+      'initialization',
       'PUT',
       `/collections/${encodeURIComponent(collection)}/index`,
       tenantPayloadIndexBody(),
     );
     if (index.status !== 200 && index.status !== 201) {
-      throw new Error(
-        `Qdrant create team_id payload index failed: ${String(index.status)} ${JSON.stringify(index.data)}`,
-      );
+      throw new Error(`Qdrant create team_id payload index failed: ${String(index.status)}`);
     }
   }
 
@@ -546,12 +538,13 @@ export function createQdrantClient(opts: QdrantClientOptions = {}): QdrantClient
     }
     await ensureCollection();
     const res = await request(
+      'write',
       'PUT',
       `/collections/${encodeURIComponent(collection)}/points?wait=true`,
       { points },
     );
     if (res.status !== 200 && res.status !== 202) {
-      throw new Error(`Qdrant upsert failed: ${String(res.status)} ${JSON.stringify(res.data)}`);
+      throw new Error(`Qdrant upsert failed: ${String(res.status)}`);
     }
   }
 
@@ -707,6 +700,7 @@ export function createQdrantClient(opts: QdrantClientOptions = {}): QdrantClient
     }
 
     const res = await request(
+      'read',
       'POST',
       `/collections/${encodeURIComponent(collection)}/points/search`,
       {
@@ -719,12 +713,13 @@ export function createQdrantClient(opts: QdrantClientOptions = {}): QdrantClient
       },
     );
     if (res.status !== 200) {
-      throw new Error(`Qdrant search failed: ${String(res.status)} ${JSON.stringify(res.data)}`);
+      throw new Error(`Qdrant search failed: ${String(res.status)}`);
     }
     const body = (res.data ?? {}) as {
       result?: { id: string; score: number; payload: QdrantPayload }[];
     };
-    return (body.result ?? []).map((hit) => ({
+    if (!Array.isArray(body.result)) throw new Error('Invalid Qdrant search result');
+    return body.result.map((hit) => ({
       id: hit.id,
       score: hit.score,
       payload: hit.payload,
@@ -745,6 +740,7 @@ export function createQdrantClient(opts: QdrantClientOptions = {}): QdrantClient
     await ensureCollection();
 
     const res = await request(
+      'read',
       'POST',
       `/collections/${encodeURIComponent(collection)}/points/scroll`,
       {
@@ -773,17 +769,16 @@ export function createQdrantClient(opts: QdrantClientOptions = {}): QdrantClient
       },
     );
     if (res.status !== 200) {
-      throw new Error(
-        `Qdrant stored-vector lookup failed: ${String(res.status)} ${JSON.stringify(res.data)}`,
-      );
+      throw new Error(`Qdrant stored-vector lookup failed: ${String(res.status)}`);
     }
     const body = (res.data ?? {}) as {
       result?: {
         points?: { vector?: unknown; payload?: QdrantPayload }[];
       };
     };
+    if (!Array.isArray(body.result?.points)) throw new Error('Invalid Qdrant stored-vector result');
     const vectorsByEventId = new Map<string, number[]>();
-    for (const point of body.result?.points ?? []) {
+    for (const point of body.result.points) {
       if (point.payload?.team_id !== teamId) continue;
       const eventId = point.payload.event_id;
       if (!eventId || !uniqueQueryIds.includes(eventId)) continue;
@@ -817,7 +812,7 @@ export function createQdrantClient(opts: QdrantClientOptions = {}): QdrantClient
   async function deletePoints(ids: string[], opts: DeletePointsOpts = {}): Promise<void> {
     if (ids.length === 0) return;
     await ensureCollection();
-    await request('POST', `/collections/${encodeURIComponent(collection)}/points/delete`, {
+    await request('write', 'POST', `/collections/${encodeURIComponent(collection)}/points/delete`, {
       points: ids,
     });
     if (opts.verifyDeleted) {
@@ -861,7 +856,7 @@ export function createQdrantClient(opts: QdrantClientOptions = {}): QdrantClient
     verifyDeleted?: boolean;
   }): Promise<void> {
     await ensureCollection();
-    await request('POST', `/collections/${encodeURIComponent(collection)}/points/delete`, {
+    await request('write', 'POST', `/collections/${encodeURIComponent(collection)}/points/delete`, {
       filter: sourceFilter(input),
     });
     if (input.verifyDeleted) {
@@ -885,7 +880,7 @@ export function createQdrantClient(opts: QdrantClientOptions = {}): QdrantClient
       throw new Error('Qdrant stale chunk cleanup requires a non-negative integer minChunkIndex');
     }
     await ensureCollection();
-    await request('POST', `/collections/${encodeURIComponent(collection)}/points/delete`, {
+    await request('write', 'POST', `/collections/${encodeURIComponent(collection)}/points/delete`, {
       filter: sourceFilter(input),
     });
   }
@@ -893,13 +888,20 @@ export function createQdrantClient(opts: QdrantClientOptions = {}): QdrantClient
   async function pointsExist(ids: string[]): Promise<Set<string>> {
     if (ids.length === 0) return new Set();
     await ensureCollection();
-    const res = await request('POST', `/collections/${encodeURIComponent(collection)}/points`, {
-      ids,
-      with_payload: false,
-      with_vector: false,
-    });
+    const res = await request(
+      'read',
+      'POST',
+      `/collections/${encodeURIComponent(collection)}/points`,
+      {
+        ids,
+        with_payload: false,
+        with_vector: false,
+      },
+    );
     const body = (res.data ?? {}) as { result?: { id: string }[] };
-    return new Set((body.result ?? []).map((p) => p.id));
+    if (res.status !== 200 || !Array.isArray(body.result))
+      throw new Error('Qdrant point verification failed');
+    return new Set(body.result.map((p) => p.id));
   }
 
   async function countPoints(
@@ -921,6 +923,7 @@ export function createQdrantClient(opts: QdrantClientOptions = {}): QdrantClient
 
   async function countWithFilter(filter?: Record<string, unknown>): Promise<number> {
     const res = await request(
+      'read',
       'POST',
       `/collections/${encodeURIComponent(collection)}/points/count`,
       {
@@ -929,10 +932,16 @@ export function createQdrantClient(opts: QdrantClientOptions = {}): QdrantClient
       },
     );
     if (res.status !== 200) {
-      throw new Error(`Qdrant count failed: ${String(res.status)} ${JSON.stringify(res.data)}`);
+      throw new Error(`Qdrant count failed: ${String(res.status)}`);
     }
     const body = (res.data ?? {}) as { result?: { count?: number } };
-    return body.result?.count ?? 0;
+    if (
+      typeof body.result?.count !== 'number' ||
+      !Number.isSafeInteger(body.result.count) ||
+      body.result.count < 0
+    )
+      throw new Error('Invalid Qdrant count result');
+    return body.result.count;
   }
 
   async function scrollPoints(input: ScrollPointsInput = {}): Promise<ScrollPointsPage> {
@@ -950,12 +959,13 @@ export function createQdrantClient(opts: QdrantClientOptions = {}): QdrantClient
     if (input.filter) body.filter = input.filter;
     if (input.offset !== undefined && input.offset !== null) body.offset = input.offset;
     const res = await request(
+      'read',
       'POST',
       `/collections/${encodeURIComponent(collection)}/points/scroll`,
       body,
     );
     if (res.status !== 200) {
-      throw new Error(`Qdrant scroll failed: ${String(res.status)} ${JSON.stringify(res.data)}`);
+      throw new Error(`Qdrant scroll failed: ${String(res.status)}`);
     }
     const result = (res.data ?? {}) as {
       result?: {
@@ -963,14 +973,15 @@ export function createQdrantClient(opts: QdrantClientOptions = {}): QdrantClient
         next_page_offset?: unknown;
       };
     };
-    const points = (result.result?.points ?? [])
+    if (!Array.isArray(result.result?.points)) throw new Error('Invalid Qdrant scroll result');
+    const points = result.result.points
       .map((point) => {
         const id = pointIdFromUnknown(point.id);
         if (id === null) return null;
         return { id, vector: point.vector, payload: point.payload };
       })
       .filter((point): point is NonNullable<typeof point> => point !== null);
-    return { points, nextOffset: result.result?.next_page_offset ?? null };
+    return { points, nextOffset: result.result.next_page_offset ?? null };
   }
 
   async function patchOptimizers(input: {
@@ -994,48 +1005,56 @@ export function createQdrantClient(opts: QdrantClientOptions = {}): QdrantClient
       body.hnsw_config = { full_scan_threshold: input.fullScanThreshold };
     }
     await ensureCollection();
-    const res = await request('PATCH', `/collections/${encodeURIComponent(collection)}`, body);
+    const res = await request(
+      'write',
+      'PATCH',
+      `/collections/${encodeURIComponent(collection)}`,
+      body,
+    );
     if (res.status !== 200) {
-      throw new Error(
-        `Qdrant patch optimizers failed: ${String(res.status)} ${JSON.stringify(res.data)}`,
-      );
+      throw new Error(`Qdrant patch optimizers failed: ${String(res.status)}`);
     }
   }
 
   async function collectionInfo(): Promise<unknown> {
     await ensureCollection();
-    const res = await request('GET', `/collections/${encodeURIComponent(collection)}`);
+    const res = await request('read', 'GET', `/collections/${encodeURIComponent(collection)}`);
     if (res.status !== 200) {
-      throw new Error(
-        `Qdrant collection info failed: ${String(res.status)} ${JSON.stringify(res.data)}`,
-      );
+      throw new Error(`Qdrant collection info failed: ${String(res.status)}`);
     }
     return res.data;
   }
 
   async function collectionMemory(): Promise<unknown> {
     await ensureCollection();
-    const res = await request('GET', `/collections/${encodeURIComponent(collection)}/memory`);
+    const res = await request(
+      'read',
+      'GET',
+      `/collections/${encodeURIComponent(collection)}/memory`,
+    );
     if (res.status !== 200) {
-      throw new Error(
-        `Qdrant collection memory failed: ${String(res.status)} ${JSON.stringify(res.data)}`,
-      );
+      throw new Error(`Qdrant collection memory failed: ${String(res.status)}`);
     }
     return res.data;
   }
 
   async function metricsText(): Promise<string> {
-    const res = await fetcher(`${baseUrl}/metrics`, { headers });
-    const text = await res.text();
-    if (!res.ok) {
-      throw new Error(`Qdrant metrics failed: ${String(res.status)} ${text}`);
-    }
-    return text;
+    const result = await qdrantRequest({
+      fetcher,
+      url: baseUrl + '/metrics',
+      headers,
+      method: 'GET',
+      kind: 'read',
+      text: true,
+    });
+    if (result.status !== 200) throw new Error('Qdrant metrics unavailable');
+    return String(result.data);
   }
 
   async function createSnapshot(): Promise<{ name: string; size: number }> {
     await ensureCollection();
     const res = await request(
+      'snapshot',
       'POST',
       `/collections/${encodeURIComponent(collection)}/snapshots?wait=true`,
     );
@@ -1128,31 +1147,57 @@ export function createQdrantClient(opts: QdrantClientOptions = {}): QdrantClient
   }
 
   return {
-    ensureCollection,
-    upsertVector,
-    search,
-    searchByStoredEventVectors,
-    deletePoints,
-    deletePointsForSource,
-    deletePointsForSourceFromChunk,
-    pointsExist,
-    countPoints,
-    countDistinctSources,
-    countAllPoints,
-    scrollPoints,
-    upsertPoints,
-    patchOptimizers,
-    collectionInfo,
-    collectionMemory,
-    createSnapshot,
-    metricsText,
+    ensureCollection: (...args: Parameters<typeof ensureCollection>) =>
+      withQdrantOperation({}, () => ensureCollection(...args), 'ensureCollection'),
+    upsertVector: (...args: Parameters<typeof upsertVector>) =>
+      withQdrantOperation({}, () => upsertVector(...args), 'upsertVector'),
+    search: (...args: Parameters<typeof search>) =>
+      withQdrantOperation(args[3]?.operation ?? {}, () => search(...args), 'search'),
+    searchByStoredEventVectors: (...args: Parameters<typeof searchByStoredEventVectors>) =>
+      withQdrantOperation(
+        {},
+        () => searchByStoredEventVectors(...args),
+        'searchByStoredEventVectors',
+      ),
+    deletePoints: (...args: Parameters<typeof deletePoints>) =>
+      withQdrantOperation({}, () => deletePoints(...args), 'deletePoints'),
+    deletePointsForSource: (...args: Parameters<typeof deletePointsForSource>) =>
+      withQdrantOperation({}, () => deletePointsForSource(...args), 'deletePointsForSource'),
+    deletePointsForSourceFromChunk: (...args: Parameters<typeof deletePointsForSourceFromChunk>) =>
+      withQdrantOperation(
+        {},
+        () => deletePointsForSourceFromChunk(...args),
+        'deletePointsForSourceFromChunk',
+      ),
+    pointsExist: (...args: Parameters<typeof pointsExist>) =>
+      withQdrantOperation({}, () => pointsExist(...args), 'pointsExist'),
+    countPoints: (...args: Parameters<typeof countPoints>) =>
+      withQdrantOperation({}, () => countPoints(...args), 'countPoints'),
+    countDistinctSources: (...args: Parameters<typeof countDistinctSources>) =>
+      withQdrantOperation({}, () => countDistinctSources(...args), 'countDistinctSources'),
+    countAllPoints: (...args: Parameters<typeof countAllPoints>) =>
+      withQdrantOperation({}, () => countAllPoints(...args), 'countAllPoints'),
+    scrollPoints: (...args: Parameters<typeof scrollPoints>) =>
+      withQdrantOperation(args[0]?.operation ?? {}, () => scrollPoints(...args), 'scrollPoints'),
+    upsertPoints: (...args: Parameters<typeof upsertPoints>) =>
+      withQdrantOperation({}, () => upsertPoints(...args), 'upsertPoints'),
+    patchOptimizers: (...args: Parameters<typeof patchOptimizers>) =>
+      withQdrantOperation({}, () => patchOptimizers(...args), 'patchOptimizers'),
+    collectionInfo: (...args: Parameters<typeof collectionInfo>) =>
+      withQdrantOperation({}, () => collectionInfo(...args), 'collectionInfo'),
+    collectionMemory: (...args: Parameters<typeof collectionMemory>) =>
+      withQdrantOperation({}, () => collectionMemory(...args), 'collectionMemory'),
+    createSnapshot: (...args: Parameters<typeof createSnapshot>) =>
+      withQdrantOperation({}, () => createSnapshot(...args), 'createSnapshot'),
+    metricsText: (...args: Parameters<typeof metricsText>) =>
+      withQdrantOperation({}, () => metricsText(...args), 'metricsText'),
     collectionName: () => collection,
   };
 }
 
 // Module-level cache so callers that hit `getQdrantClient()` repeatedly
 // (per-request search calls, per-job in the embed worker) reuse a single
-// client per collection. Each cached client retains its own `ensurePromise`
+// client per collection. Each cached client retains its own successful collection-initialization
 // memo, so the collection-existence check fires once per process lifetime
 // per collection — not once per request/job. A reembed of thousands of
 // rows previously paid thousands of redundant HEAD requests; now it pays one.

@@ -193,7 +193,9 @@ describe('withTeam timeline semantic search', () => {
       hit(OTHER_TEAM_EVENT, 0.98, { team_id: TEAM_B, fact_id: OTHER_TEAM_FACT }),
     ];
 
+    const operation = { signal: new AbortController().signal, deadlineMs: Date.now() + 30_000 };
     const results = await scopeFor(OWNER).timeline.searchEvents({
+      operation,
       query: 'Acme proposal',
       limit: 5,
       from: new Date('2026-06-01T00:00:00Z'),
@@ -210,6 +212,7 @@ describe('withTeam timeline semantic search', () => {
         userId: OWNER,
         vector: [0.11, 0.22, 0.33],
         opts: {
+          operation,
           limit: 5,
           from: new Date('2026-06-01T00:00:00Z'),
           to: new Date('2026-06-02T00:00:00Z'),

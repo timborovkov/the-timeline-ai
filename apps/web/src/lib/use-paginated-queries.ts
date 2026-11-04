@@ -225,11 +225,14 @@ export function useDocumentSearchQuery(query: string, filters: Record<string, st
   return useInfiniteQuery({
     queryKey: queryKeys.documentSearch(query, filters),
     enabled: query.trim().length > 0,
+    // The server owns the bounded Qdrant recovery budget.
+    retry: false,
     initialPageParam: 0,
-    queryFn: async ({ pageParam }) =>
+    queryFn: async ({ pageParam, signal }) =>
       readJson<{ items: DocumentSearchHit[]; nextOffset: number | null }>(
         await fetch('/api/documents/search', {
           method: 'POST',
+          signal,
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify({ query, offset: pageParam, ...filters }),
         }),

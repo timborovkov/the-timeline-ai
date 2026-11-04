@@ -888,3 +888,15 @@ describe('POST /api/search/global', () => {
     expect(fakes.fakeResolveActiveTeam).not.toHaveBeenCalled();
   });
 });
+
+it('retains lexical results with warnings when semantic recovery is exhausted', async () => {
+  const { QdrantUnavailableError } = await import('@timeline/shared/qdrant');
+  fakes.fakeSearchEvents.mockRejectedValue(new QdrantUnavailableError('search', 503));
+  fakes.fakeSearchDocumentChunksPage.mockRejectedValue(new QdrantUnavailableError('search', 503));
+  const response = await POST(request({ query: 'github', mode: 'full' }));
+  const data = (await response.json()) as { results: unknown[]; warnings: unknown[] };
+  expect(response.status).toBe(200);
+  expect(data.results).toContainEqual(expect.objectContaining({ id: 'github-integration' }));
+  expect(data.warnings).toContainEqual(expect.objectContaining({ source: 'timeline_event' }));
+  expect(data.warnings).toContainEqual(expect.objectContaining({ source: 'document_chunk' }));
+});

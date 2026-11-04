@@ -5,7 +5,7 @@ export function searchErrorMessage(error: string | undefined, status?: number): 
     case 'search_failed':
     case 'embed_failed':
     case 'qdrant_failed':
-      return 'Search is temporarily unavailable. Your timeline is still saved; try again after processing recovers.';
+      return 'Search is temporarily unavailable. Try again in a moment.';
     case 'rate_limited':
       return 'Search is cooling down for this account. Wait a moment, then try again.';
     case 'unauthenticated':

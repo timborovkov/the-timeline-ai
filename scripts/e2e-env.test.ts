@@ -346,3 +346,25 @@ assert.throws(
 );
 
 console.log('e2e-env tests passed');
+
+// Next's Bun child processes can start in apps/web without --no-env-file.
+// The app-local config must prevent Bun from loading credentials before Next's marker is read.
+{
+  const dir = mkdtempSync(path.join(tmpdir(), 'timeline-e2e-bun-env-'));
+  try {
+    writeFileSync(path.join(dir, '.env'), 'E2E_DOTENV_SECRET=must-not-be-loaded\n');
+    writeFileSync(path.join(dir, 'bunfig.toml'), readFileSync('apps/web/bunfig.toml'));
+    const result = spawnSync(
+      process.execPath,
+      ['-e', 'if (process.env.E2E_DOTENV_SECRET !== undefined) process.exit(1)'],
+      {
+        cwd: dir,
+        env: { PATH: process.env.PATH },
+        encoding: 'utf8',
+      },
+    );
+    assert.equal(result.status, 0, result.stderr);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}

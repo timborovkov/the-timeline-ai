@@ -754,7 +754,38 @@ rclone sync s3:timeline-exports backblaze-b2:timeline-backup-exports
         <a href="https://docs.railway.com/deployments/scaling">Railway scaling</a> and
         <a href="https://docs.railway.com/pricing/understanding-your-bill">billing</a>.
       </p>
+      <h3 id="qdrant-serverless">Qdrant Serverless rollout</h3>
+      <p>
+        Deploy the shared-client recovery changes to web and worker before enabling Serverless on
+        Qdrant. Reads tolerate transient connection and gateway failures within a 30-second Qdrant
+        budget; embedding/model time is separate. Writes first check availability, then execute once
+        with a 120-second timeout (ten minutes for snapshots). Ambiguous writes are not replayed by
+        the transport; existing embedding queue retries remain in place.
+      </p>
+      <p>
+        Set <code>QDRANT__TELEMETRY_DISABLED=true</code> on the Qdrant service, enable Serverless,
+        and redeploy it: changing the setting alone does not update a running container. Retain
+        private networking, the persistent storage mount, the active collection, and the 3 GB cap.
+        Observe sleep through Railway rather than polling Qdrant. Verify a real private-network
+        search and a separate isolated embedding cycle after sleep. Necessary integration and
+        recovery work may prevent sleeping; do not disable it without reviewing its purpose. Volume
+        charges remain while asleep.
+      </p>
+      <p>
+        If first-request recovery fails or exceeds the budget, disable Serverless and redeploy
+        Qdrant. Keep the resilience code. Record deployment and cold-start acceptance results in the
+        release PR; this runbook alone is not proof that Serverless has been enabled.
+      </p>
       <h3 id="qdrant-memory">Qdrant memory</h3>
+      <p>
+        On 2026-11-04, the unused <code>events</code> rollback collection was removed with operator
+        authorization after a fresh snapshot was downloaded and checksum-verified. Production now
+        contains only <code>events_ondisk</code>, verified green with 74,461 points. Recovery of the
+        retired collection requires restoring the local snapshot; the active collection was
+        unchanged. The checksum-verified snapshot is retained in the operator’s local Qdrant backup
+        directory dated 2026-11-04. The measurements below describe the earlier two-collection
+        state.
+      </p>
       <p>
         On 2026-10-24, production Qdrant 1.20.0 held 74,170 points in each of
         <code>events_ondisk</code> (active) and <code>events</code> (rollback). Restarting reduced

@@ -549,6 +549,12 @@
       "development": "./src/platform-admin/retention.ts",
       "import": "./dist/platform-admin/retention.js",
       "default": "./dist/platform-admin/retention.js"
+    },
+    "./qdrant": {
+      "types": "./src/qdrant/index.ts",
+      "development": "./src/qdrant/index.ts",
+      "import": "./dist/qdrant/index.js",
+      "default": "./dist/qdrant/index.js"
     }
   },
   "main": "./dist/index.js",

@@ -384,7 +384,7 @@ services and volumes, not Qdrant Cloud or RustFS Cloud subprocessors.
 | --- | --- | --- |
 | PostgreSQL | Accounts, membership, customer records, content, permissions, job state, audit data | Team-scoped queries, least-privileged credentials, migration review, backup/restore control |
 | Redis/BullMQ | Rate limits, caches, queues, transient job payloads | Minimized payloads, bounded lifetime, no unnecessary source content, private network |
-| Qdrant | Embeddings and visibility metadata | `team_id` plus visibility filters, derived-data deletion, no public endpoint |
+| Qdrant | Embeddings and visibility metadata | `team_id` plus visibility filters and derived-data deletion; application traffic uses private networking, while an API-key-protected public operator endpoint remains |
 | RustFS | Voice notes, attachments, documents, and exports | Non-public buckets, team-authorized short-lived signed URLs, scoped object keys, deletion and backup controls |
 
 Internal service traffic should use Railway private networking. Public exposure
