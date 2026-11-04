@@ -165,7 +165,11 @@ export function PricingComparisonTable({ className }: { className?: string }) {
   return (
     <div className={cn('space-y-4', className)}>
       <ComparisonTable rows={COMMERCIAL_ROWS} caption="Commercial plan comparison" />
-      <details data-pricing-infrastructure className="border border-border bg-bg">
+      <details
+        id="pricing-infrastructure"
+        data-pricing-infrastructure
+        className="border border-border bg-bg"
+      >
         <summary className="cursor-pointer px-4 py-3 text-sm font-medium text-fg-muted hover:text-fg">
           Infrastructure limits
         </summary>

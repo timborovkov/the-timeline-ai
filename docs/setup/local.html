@@ -322,7 +322,9 @@ docker compose down -v                # nuke local data
         <code>E2E_AUTH_SECRET</code>, <code>E2E_SECRETS_ENCRYPTION_KEY</code>,
         <code>E2E_S3_ACCESS_KEY_ID</code>, <code>E2E_S3_SECRET_ACCESS_KEY</code>, and
         <code>E2E_QDRANT_API_KEY</code>. Setup and cleanup enforce the service guard before opening
-        a database transaction.
+        a database transaction. Keep <code>apps/web/bunfig.toml</code>: it prevents Bun subprocesses
+        from loading the developer environment before the isolated E2E environment reaches Next.js.
+        The E2E launcher separately disables Next.js environment-file loading.
       </p>
       <p>
         The static CI job runs formatting, TypeScript compilation, linting, Knip, the offline Bun

@@ -1,4 +1,4 @@
-import { expect } from '@timeline/test-support';
+import { expect, vi } from '@timeline/test-support';
 import { afterEach, beforeEach, describe, it } from 'bun:test';
 
 import { resetEnvForTests } from '#src/env.js';
@@ -9,6 +9,16 @@ import {
   resetQdrantClientCacheForTests,
   type QdrantPayload,
 } from '#src/qdrant/client.js';
+import {
+  withQdrantOperation,
+  QdrantUnavailableError,
+  type QdrantOperationContext,
+} from '#src/qdrant/operation.js';
+
+function fetchUrl(input: Parameters<typeof fetch>[0]): string {
+  return typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+}
+
 const ENV_BACKUP = { ...process.env };
 
 interface CapturedCall {
@@ -777,6 +787,35 @@ describe('createQdrantClient', () => {
     });
   });
 
+  it('sourceKind=doc_chunk search threads documentIds and rootFolder into must', async () => {
+    const { fetcher, calls } = makeFetcher({ collectionExists: true });
+    const client = createQdrantClient({ fetcher });
+    await client.search('team-A', 'user-1', [0, 0, 0, 0], {
+      sourceKind: 'doc_chunk',
+      documentIds: ['doc-1', 'doc-2'],
+      rootFolder: true,
+    });
+    const search = calls.find((c) => c.url.endsWith('/points/search'));
+    if (!search) throw new Error('no search call captured');
+    const body = search.body as {
+      filter: {
+        must: unknown[];
+      };
+    };
+    const should = body.filter.must.find(
+      (m): m is { should: { must?: unknown[] }[] } =>
+        (m as { should?: unknown }).should !== undefined,
+    );
+    const docBranch = should?.should.find((branch) => Array.isArray(branch.must));
+    expect(docBranch?.must).toContainEqual({
+      key: 'document_id',
+      match: { any: ['doc-1', 'doc-2'] },
+    });
+    expect(docBranch?.must).toContainEqual({
+      should: [{ is_null: { key: 'folder_id' } }, { is_empty: { key: 'folder_id' } }],
+    });
+  });
+
   it('sourceKind=doc_chunk search threads documentId and folderIds into must', async () => {
     const { fetcher, calls } = makeFetcher({ collectionExists: true });
     const client = createQdrantClient({ fetcher });
@@ -864,7 +903,11 @@ describe('createQdrantClient', () => {
     // documents via a typo).
     const { fetcher, calls } = makeFetcher({ collectionExists: true });
     const client = createQdrantClient({ fetcher });
-    await client.search('team-A', 'user-1', [0, 0, 0, 0], { documentId: 'doc-1' });
+    await client.search('team-A', 'user-1', [0, 0, 0, 0], {
+      documentId: 'doc-1',
+      documentIds: ['doc-2'],
+      rootFolder: true,
+    });
     const search = calls.find((c) => c.url.endsWith('/points/search'));
     if (!search) throw new Error('no search call captured');
     const body = search.body as {
@@ -877,6 +920,8 @@ describe('createQdrantClient', () => {
     const hasFolder = body.filter.must.some((m) => m.key === 'folder_id');
     expect(hasDocId).toBe(false);
     expect(hasFolder).toBe(false);
+    expect(JSON.stringify(body.filter)).not.toContain('folder_id');
+    expect(JSON.stringify(body.filter)).not.toContain('document_id');
     // must_not still excludes doc_chunk so the timeline-flavoured search
     // semantics are preserved.
     expect(body.filter.must_not).toBeDefined();
@@ -895,5 +940,359 @@ describe('createQdrantClient', () => {
     const client = createQdrantClient({ fetcher });
     await client.ensureCollection();
     expect(capturedHeaders?.get('api-key')).toBe('test-key');
+  });
+});
+
+describe('Qdrant cold-start recovery', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.spyOn(Math, 'random').mockReturnValue(1);
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  it('retries initialization and read-only POSTs without losing isolation', async () => {
+    const base = makeFetcher({ collectionExists: true });
+    let calls = 0;
+    const fetcher: (
+      ...args: Parameters<typeof globalThis.fetch>
+    ) => ReturnType<typeof globalThis.fetch> = (...args) => {
+      calls++;
+      if (calls === 1) return Promise.reject(new TypeError('fetch failed'));
+      if (calls === 3) return Promise.resolve(new Response('gateway', { status: 502 }));
+      return base.fetcher(...args);
+    };
+    const pending = createQdrantClient({ fetcher }).search('team-A', 'user-1', [1]);
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(await pending).toEqual([]);
+    expect(calls).toBe(4);
+    const search = base.calls.find((c) => c.url.endsWith('/search'));
+    expect(JSON.stringify(search?.body)).toContain('team-A');
+    expect(JSON.stringify(search?.body)).toContain('user-1');
+  });
+
+  it('retries Bun ConnectionRefused and ConnectionReset errors then searches', async () => {
+    for (const code of ['ConnectionRefused', 'ConnectionReset']) {
+      const base = makeFetcher({ collectionExists: true });
+      let calls = 0;
+      const fetcher: (
+        ...args: Parameters<typeof globalThis.fetch>
+      ) => ReturnType<typeof globalThis.fetch> = (...args) => {
+        calls++;
+        if (calls === 1) {
+          return Promise.reject(Object.assign(new Error('Qdrant is asleep'), { code }));
+        }
+        return base.fetcher(...args);
+      };
+      const pending = createQdrantClient({ fetcher }).search('team-A', 'user-1', [1]);
+      await vi.advanceTimersByTimeAsync(2000);
+      expect(await pending).toEqual([]);
+      expect(calls).toBeGreaterThan(1);
+      const search = base.calls.find((c) => c.url.endsWith('/search'));
+      expect(JSON.stringify(search?.body)).toContain('team-A');
+      expect(JSON.stringify(search?.body)).toContain('user-1');
+    }
+  });
+
+  it('turns a persistent Bun ConnectionRefused error into unavailability instead of leaking it', async () => {
+    const fetcher = vi.fn(() =>
+      Promise.reject(Object.assign(new Error('Qdrant is asleep'), { code: 'ConnectionRefused' })),
+    );
+    const pending = createQdrantClient({ fetcher })
+      .search('t', 'u', [1])
+      .catch((e: unknown) => e);
+    await vi.advanceTimersByTimeAsync(30_000);
+    const error = await pending;
+    expect(error).toBeInstanceOf(QdrantUnavailableError);
+    expect(error).not.toHaveProperty('code', 'ConnectionRefused');
+    expect(fetcher.mock.calls.length).toBeGreaterThan(1);
+  });
+
+  it('shares a 30-second deadline across sequential requests and stops retrying', async () => {
+    const fetcher = vi.fn(() => Promise.resolve(new Response('offline', { status: 503 })));
+    const context: QdrantOperationContext = {};
+    const client = createQdrantClient({ fetcher });
+    const pending = client
+      .search('team-A', 'user-1', [1], { operation: context })
+      .catch((e: unknown) => e);
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(await pending).toBeInstanceOf(QdrantUnavailableError);
+    const count = fetcher.mock.calls.length;
+    await expect(
+      client.search('team-A', 'user-1', [1], { operation: context }),
+    ).rejects.toBeInstanceOf(QdrantUnavailableError);
+    expect(fetcher.mock.calls.length).toBe(count);
+  });
+
+  it('bounds initialization writes to one interactive attempt without replaying them', async () => {
+    const base = makeFetcher();
+    let writes = 0;
+    const fetcher: (
+      ...args: Parameters<typeof globalThis.fetch>
+    ) => ReturnType<typeof globalThis.fetch> = (...args) => {
+      if (args[1]?.method === 'PUT') {
+        writes++;
+        return new Promise(() => {
+          /* Intentionally pending until the operation aborts. */
+        });
+      }
+      return base.fetcher(...args);
+    };
+    const pending = createQdrantClient({ fetcher })
+      .search('t', 'u', [1])
+      .catch((e: unknown) => e);
+    await vi.advanceTimersByTimeAsync(10_000);
+    const error = await pending;
+    expect(error).toBeInstanceOf(QdrantUnavailableError);
+    expect(error).toHaveProperty('outcomeUnknown', true);
+    expect(writes).toBe(1);
+  });
+
+  it('recovers concurrent collection creation by inspecting a known conflict', async () => {
+    const base = makeFetcher();
+    let creates = 0;
+    const fetcher: (
+      ...args: Parameters<typeof globalThis.fetch>
+    ) => ReturnType<typeof globalThis.fetch> = (...args) => {
+      if (args[1]?.method === 'PUT' && fetchUrl(args[0]).endsWith('/collections/events')) {
+        creates++;
+        if (creates === 2) return Promise.resolve(new Response('already exists', { status: 409 }));
+      }
+      return base.fetcher(...args);
+    };
+    const client = createQdrantClient({ fetcher, collection: 'events' });
+    expect(await Promise.all([client.search('a', 'u', [1]), client.search('b', 'u', [1])])).toEqual(
+      [[], []],
+    );
+    expect(creates).toBe(2);
+  });
+
+  it('cancels an in-flight request immediately', async () => {
+    const controller = new AbortController();
+    const fetcher = vi.fn(
+      () =>
+        new Promise<Response>(() => {
+          /* Intentionally pending until the operation aborts. */
+        }),
+    );
+    const pending = createQdrantClient({ fetcher })
+      .search('t', 'u', [1], { operation: { signal: controller.signal } })
+      .catch((e: unknown) => e);
+    await vi.advanceTimersByTimeAsync(1);
+    controller.abort();
+    expect(await pending).toHaveProperty('name', 'AbortError');
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('honors Retry-After and refuses a delay beyond the operation deadline', async () => {
+    const base = makeFetcher({ collectionExists: true });
+    const fetcher = vi
+      .fn(base.fetcher)
+      .mockResolvedValueOnce(new Response('', { status: 503, headers: { 'Retry-After': '2' } }));
+    const pending = createQdrantClient({ fetcher }).search('team-A', 'user-1', [1]);
+    await vi.advanceTimersByTimeAsync(1999);
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1);
+    await pending;
+    const blocked = vi.fn(() =>
+      Promise.resolve(new Response('', { status: 429, headers: { 'Retry-After': '60' } })),
+    );
+    await expect(
+      createQdrantClient({ fetcher: blocked }).ensureCollection(),
+    ).rejects.toBeInstanceOf(QdrantUnavailableError);
+    expect(blocked).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not retry auth errors or malformed success responses and does not leak bodies', async () => {
+    for (const response of [
+      new Response('private secret', { status: 401 }),
+      new Response('private secret'),
+      Response.json({ unexpected: 'private secret' }),
+    ]) {
+      const fetcher = vi.fn(() => Promise.resolve(response));
+      const error = await createQdrantClient({ fetcher })
+        .ensureCollection()
+        .catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(Error);
+      expect(String(error)).not.toContain('private secret');
+      expect(fetcher).toHaveBeenCalledTimes(1);
+    }
+  });
+
+  it('cancels hanging body reads and leaves subsequent initialization usable', async () => {
+    const base = makeFetcher({ collectionExists: true });
+    const fetcher = vi.fn(base.fetcher).mockResolvedValueOnce(new Response(new ReadableStream()));
+    const client = createQdrantClient({ fetcher });
+    const controller = new AbortController();
+    const pending = client
+      .search('team-A', 'user-1', [1], { operation: { signal: controller.signal } })
+      .catch((e: unknown) => e);
+    await vi.advanceTimersByTimeAsync(0);
+    controller.abort();
+    expect(await pending).toHaveProperty('name', 'AbortError');
+    expect(await client.search('team-A', 'user-1', [1])).toEqual([]);
+  });
+
+  it('cancels during backoff without another attempt', async () => {
+    const controller = new AbortController();
+    const fetcher = vi.fn(() => Promise.resolve(new Response('', { status: 502 })));
+    const pending = createQdrantClient({ fetcher })
+      .search('t', 'u', [1], { operation: { signal: controller.signal } })
+      .catch((e: unknown) => e);
+    await vi.advanceTimersByTimeAsync(100);
+    controller.abort();
+    expect(await pending).toHaveProperty('name', 'AbortError');
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
+  it('bounds an unresponsive fetch by the operation deadline', async () => {
+    const signals: AbortSignal[] = [];
+    const fetcher: (
+      ...args: Parameters<typeof globalThis.fetch>
+    ) => ReturnType<typeof globalThis.fetch> = (_url, init) => {
+      if (!init?.signal) throw new Error('Expected request cancellation signal');
+      signals.push(init.signal);
+      return new Promise(() => {
+        /* Intentionally pending until the operation aborts. */
+      });
+    };
+    const pending = createQdrantClient({ fetcher })
+      .search('t', 'u', [1])
+      .catch((e: unknown) => e);
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(await pending).toBeInstanceOf(QdrantUnavailableError);
+    expect(signals.every((s) => s.aborted)).toBe(true);
+  });
+
+  it('isolates cancellation between concurrent initializations', async () => {
+    const base = makeFetcher({ collectionExists: true });
+    const controller = new AbortController();
+    const client = createQdrantClient({ fetcher: base.fetcher });
+    const cancelled = client
+      .search('t', 'u', [1], { operation: { signal: controller.signal } })
+      .catch((e: unknown) => e);
+    const successful = client.search('t', 'u', [1]);
+    controller.abort();
+    expect(await cancelled).toHaveProperty('name', 'AbortError');
+    expect(await successful).toEqual([]);
+  });
+
+  it('preflights mutations but never replays an ambiguous write or snapshot', async () => {
+    for (const snapshot of [false, true]) {
+      const base = makeFetcher({ collectionExists: true });
+      let writes = 0;
+      const fetcher: (
+        ...args: Parameters<typeof globalThis.fetch>
+      ) => ReturnType<typeof globalThis.fetch> = (url, init) => {
+        if (init?.method !== 'GET') {
+          writes++;
+          return Promise.reject(new TypeError('fetch failed'));
+        }
+        return base.fetcher(url, init);
+      };
+      const client = createQdrantClient({ fetcher });
+      const error = await (snapshot ? client.createSnapshot() : client.deletePoints(['id'])).catch(
+        (e: unknown) => e,
+      );
+      expect(error).toBeInstanceOf(QdrantUnavailableError);
+      expect(error).toHaveProperty('outcomeUnknown', true);
+      expect(writes).toBe(1);
+      expect(base.calls.length).toBe(2);
+    }
+  });
+
+  it('does not report deletion success when verification is unavailable', async () => {
+    const base = makeFetcher({ collectionExists: true });
+    const fetcher: (
+      ...args: Parameters<typeof globalThis.fetch>
+    ) => ReturnType<typeof globalThis.fetch> = (url, init) => {
+      if (init?.method === 'POST' && fetchUrl(url).endsWith('/points'))
+        return Promise.resolve(new Response('', { status: 503 }));
+      return base.fetcher(url, init);
+    };
+    const pending = createQdrantClient({ fetcher })
+      .deletePoints(['id'], { verifyDeleted: true })
+      .catch((e: unknown) => e);
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(await pending).toBeInstanceOf(QdrantUnavailableError);
+  });
+
+  it('fails closed when point verification returns malformed data or collection-not-found', async () => {
+    for (const response of [
+      Response.json({ result: null }),
+      new Response('not found', { status: 404 }),
+    ]) {
+      const base = makeFetcher({ collectionExists: true });
+      const fetcher: (
+        ...args: Parameters<typeof globalThis.fetch>
+      ) => ReturnType<typeof globalThis.fetch> = (url, init) =>
+        init?.method === 'POST' && fetchUrl(url).endsWith('/points')
+          ? Promise.resolve(response)
+          : base.fetcher(url, init);
+      await expect(
+        createQdrantClient({ fetcher }).deletePoints(['id'], { verifyDeleted: true }),
+      ).rejects.toThrow('verification failed');
+    }
+  });
+
+  it('allows long writes and snapshots their separate execution budgets without replay', async () => {
+    for (const snapshot of [false, true]) {
+      const base = makeFetcher({ collectionExists: true });
+      let writes = 0;
+      const fetcher: (
+        ...args: Parameters<typeof globalThis.fetch>
+      ) => ReturnType<typeof globalThis.fetch> = (url, init) => {
+        if (init?.method !== 'GET') {
+          writes++;
+          return new Promise(() => {
+            /* Intentionally pending until the operation aborts. */
+          });
+        }
+        return base.fetcher(url, init);
+      };
+      const client = createQdrantClient({ fetcher });
+      let settled = false;
+      const result = withQdrantOperation<unknown>({}, () =>
+        snapshot ? client.createSnapshot() : client.deletePoints(['id']),
+      )
+        .catch((e: unknown) => e)
+        .finally(() => {
+          settled = true;
+        });
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(settled).toBe(false);
+      await vi.advanceTimersByTimeAsync((snapshot ? 600_000 : 120_000) - 30_000);
+      expect(await result).toMatchObject({ outcomeUnknown: true });
+      expect(writes).toBe(1);
+    }
+  });
+
+  it('verifies deletion after a long mutation inside an agent operation', async () => {
+    const base = makeFetcher({ collectionExists: true });
+    let verified = false;
+    const fetcher: (...args: Parameters<typeof fetch>) => ReturnType<typeof fetch> = async (
+      url,
+      init,
+    ) => {
+      if (fetchUrl(url).endsWith('/points/delete')) {
+        await new Promise((resolve) => setTimeout(resolve, 45_000));
+        return new Response(JSON.stringify({ result: true }));
+      }
+      if (fetchUrl(url).endsWith('/points') && init?.method === 'POST') {
+        verified = true;
+        return new Response(JSON.stringify({ result: [] }));
+      }
+      return base.fetcher(url, init);
+    };
+    const result = withQdrantOperation({}, () =>
+      createQdrantClient({ fetcher }).deletePoints(['id'], { verifyDeleted: true }),
+    );
+    await vi.advanceTimersByTimeAsync(45_000);
+    await expect(result).resolves.toBeUndefined();
+    expect(verified).toBe(true);
   });
 });

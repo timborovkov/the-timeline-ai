@@ -839,6 +839,9 @@
   "apps/web/src/components/loading-states.test.tsx": {
     "group": "dom"
   },
+  "apps/web/src/components/marketing/agents/agent-setup-card.test.tsx": {
+    "group": "unit"
+  },
   "apps/web/src/components/marketing/compare/content.test.ts": {
     "group": "unit"
   },
@@ -882,6 +885,9 @@
     "group": "unit"
   },
   "apps/web/src/components/marketing/pricing-blocks.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/marketing/pricing-calculator.test.tsx": {
     "group": "dom"
   },
   "apps/web/src/components/marketing/solutions/content.test.ts": {
@@ -1221,6 +1227,9 @@
     "group": "unit"
   },
   "apps/web/src/lib/password-recovery.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/lib/pricing-calculator.test.ts": {
     "group": "unit"
   },
   "apps/web/src/lib/project-filter-options.test.ts": {
@@ -2028,6 +2037,9 @@
     "group": "unit"
   },
   "packages/shared/src/qdrant/point-id.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/qdrant/transport.test.ts": {
     "group": "unit"
   },
   "packages/shared/src/queue/queues.test.ts": {

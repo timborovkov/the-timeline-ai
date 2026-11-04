@@ -108,6 +108,7 @@ import {
 } from '#src/visibility.js';
 
 import type { chatStructured } from '#src/llm/chat.js';
+import type { QdrantOperationContext } from '#src/qdrant/operation.js';
 import type { TimelineMomentLookupPlan } from '#src/timeline-moments/index.js';
 
 // Note: `teamRole` value is referenced at runtime by drizzle elsewhere; keeping
@@ -308,6 +309,7 @@ export interface CreateEmailEventResult {
 }
 
 export interface SearchEventsInput {
+  operation?: QdrantOperationContext;
   query: string;
   /** Reuse a previously embedded query when scanning multiple semantic pages. */
   queryVector?: number[];
@@ -3933,6 +3935,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
         if (input.eventIds?.length === 0) return [];
 
         const searchOpts: SearchOpts = {
+          operation: input.operation ?? {},
           limit: input.limit ?? 20,
         };
         if (input.offset) searchOpts.offset = input.offset;
@@ -4164,6 +4167,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
       },
 
       async searchObjectNotes(input: {
+        operation?: QdrantOperationContext;
         query: string;
         objectId?: string;
         limit?: number;
@@ -4181,6 +4185,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
         const { vector } = await withSearchEmbeddingBilling(() => embedFn({ text: input.query }));
         const hits = await searchFn(teamId, userId, vector, {
           limit: limit * 3,
+          operation: input.operation ?? {},
           sourceKind: 'object_note',
         });
 

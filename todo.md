@@ -708,6 +708,9 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
 - [x] Billing foundation: entitlements catalog, Polar products/meters (sandbox),
       `team_billing_*` ledger, `/pricing`, team Billing settings, webhook verify,
       shadow mode (`BILLING_CHARGES_ENABLED=false`). See ADR 0018.
+- [x] Public monthly pricing calculator: paired sliders and exact fields compare PAYG,
+      Team and Business using shared billing previews, native allowances and pooled
+      credits; itemized estimates flag measured capacity limits and exclude VAT.
 - [x] Pricing UX: self-serve plan grid (no Enterprise column); gray Enterprise
       contact nudge; `/app/usage` is a meter, amount, and cost table (infrastructure limits stay
       folded); team Billing shows remaining benefits, recorded charges, the separate plan fee and spend cap, and
@@ -882,7 +885,8 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       [per-service caps](docs/railway.html#resource-caps), including Qdrant after the on-disk + int8 layout, and
       plan a move to sharded or managed Qdrant before it becomes painful. The
       2026-10-24 restart and search/ingestion probes informed an initial 3 GB
-      production RAM limit (plus a 2 vCPU cap) with the rollback collection retained; remeasure peaks
+      production RAM limit (plus a 2 vCPU cap). The rollback collection was removed on
+      2026-11-04 after a verified snapshot; remeasure peaks
       before lowering it or performing full reindexing (see
       [production memory measurements](docs/railway.html#qdrant-memory)). New
       collections already store original vectors on disk; copy any older in-RAM

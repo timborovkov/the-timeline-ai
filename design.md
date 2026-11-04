@@ -1,7 +1,7 @@
 # The Timeline — Design System
 
-**Version:** v3.34 · Object citations and pipeline lanes (2026-11-03).
-Replaces v3.33 Numbered answer citations.
+**Version:** v3.35 · Public monthly pricing calculator (2026-11-04).
+Replaces v3.34 Object citations and pipeline lanes.
 
 This is the visual and interaction contract for the product. If a screen
 disagrees with it, fix the screen. If the language intentionally changes,
@@ -935,8 +935,11 @@ follows the shared due-date vocabulary above.
 The public landing page is an editorial, six-scene acquisition narrative:
 claim, evidence and chronology, cited answer, Slack-to-cited-answer with an MCP
 example, audience fit with trust, and a Start free CTA. The claim scene also
-includes a dark “Give this to your agent” card with the copyable
-`Set up The Timeline - https://thetimeline.cc/llms.txt` command. The claim defines The Timeline as an auto-updating work record:
+includes a compact “Give this to your agent” card: one-line lede, official
+Claude, ChatGPT, Cursor, Grok, OpenClaw, and Hermes marks on white tiles in a
+single row, and the copyable
+`Set up The Timeline - https://thetimeline.cc/llms.txt` command. The card follows
+landing `--home-*` tokens in both themes and does not use letter discs. The claim defines The Timeline as an auto-updating work record:
 what is said in Slack, Telegram, email and calls becomes current client, deal,
 task and decision records, with the source for every line and human approval
 before anything changes. Audience copy describes how teams work (chat-run teams
@@ -1370,6 +1373,8 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-11-04 | Hosted MCP public copy | Agents, llms.txt, the home MCP example, and the pricing FAQ teach five tools, the default-on capture scope, remember counting toward accepted sources, and Free 100 MB / 10,000 documents / 20,000 chunks. |
 | 2026-11-03 | Connect your agent | `/app/connect-agent` is the OAuth-first MCP setup screen. Agent tabs, connected grants, add-memory email/webhook, SKILL.md, and collapsed static keys live there. `/app/team/mcp-share` redirects. Provider logos stay on white tiles; allowed senders stay a list editor. |
 | 2026-11-04 | Connect your agent client picker | `/app/connect-agent` leads with a CollectionRow client list and one install path. Official vendor marks sit on white tiles. Connected agents, add-memory, SKILL.md, and static keys share one disclosure stack with no nested cards or stacked `border-y` sections. Admin grant rows show the consenting member next to the client. |
+| 2026-11-04 | Agent setup card marks | Replaces letter discs with official agent logos on white tiles, one short lede, and a single logo row on the landing and `/agents` cards. |
+| 2026-11-04 | Public monthly calculator | `/pricing` Usage compares PAYG, Team, and Business from paired sliders and exact fields. One hairline results panel, 12px metadata, and the shared billing preview. |
 
 
 ### Billing benefits and recorded charges (2026-10-31)
@@ -1421,3 +1426,17 @@ On Home, Free-plan owners/admins who have a persisted assistant answer can see a
 quiet PAYG suggestion. Do not show it before an answer, alongside a restriction,
 or instead of an existing billing warning. “Not now” dismisses this suggestion
 for that user/team in the current browser. The CTA opens plan selection only.
+
+### Public pricing calculator
+
+The pricing Usage section compares PAYG, Team and Business through paired native
+sliders and exact number fields. A labelled editable example renders on the server.
+Desktop inputs sit beside a single hairline results panel; mobile stacks them.
+Plan totals share one border with the selected breakdown underneath — no nested
+cards or extra plan-card chrome. PAYG shows native allowances per meter; Team
+and Business show a pooled usage-credit deduction. Capacity warnings exclude
+unsuitable plans from the lowest-estimated-cost badge. Accepted sources live in
+Advanced usage with their value visible when closed. Metadata stays at the 12px
+floor. Rates and workspace eligibility remain in the closed How this estimate
+works disclosure. Inputs stay local; the calculator neither changes billing nor
+collects telemetry.

@@ -570,7 +570,8 @@
       </ul>
       <p>
         The deployment design routes service-to-service references through Railway private
-        networking, gives Qdrant no public endpoint, and keeps RustFS buckets non-public. RustFS
+        networking and keeps RustFS buckets non-public. Qdrant application traffic uses the private
+        network; production also retains an API-key-protected public operator endpoint. RustFS
         additionally needs an external HTTPS endpoint for team-authorized, short-lived signed
         browser uploads and downloads. Current production networking and public exposure require
         separate verification. See <a href="./railway.html">docs/railway.html</a> for the full

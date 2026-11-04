@@ -108,7 +108,7 @@ export const metadata: Metadata = {
     card: 'summary_large_image',
     title: "Your team's work, written down for you · The Timeline",
     description:
-      "The Timeline updates itself from your team's Slack or Telegram, email, calls and docs.",
+      "The Timeline updates itself from your team's Slack or Telegram, email, calls, docs and wherever else work happens. Who did what, what was promised, and what's next, always current.",
     images: ['/twitter-image'],
   },
   robots: {
