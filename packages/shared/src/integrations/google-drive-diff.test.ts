@@ -83,6 +83,16 @@ describe('diffDriveText', () => {
     expect(diff.changedChars).toBeLessThan(40);
   });
 
+  it('treats an equal-length one-letter word substitution as substantive', () => {
+    const diff = diffDriveText(
+      `${LONG_SOW_SENTENCE} for hiring.`,
+      `${LONG_SOW_SENTENCE} for firing.`,
+    );
+    expect(diff.changed).toBe(true);
+    expect(diff.reason).toBe('substantive');
+    expect(diff.hunks.join(' ')).toContain('firing');
+  });
+
   it('keeps a contract-amount edit on a long line substantive', () => {
     const diff = diffDriveText(
       `${LONG_SOW_SENTENCE} at a $12k fee.`,
@@ -111,6 +121,18 @@ describe('diffDriveText', () => {
       previous: LONG_SOW_SENTENCE,
       next: LONG_SOW_SENTENCE.replace('implementation', 'implementaton'),
       reason: 'tiny' as const,
+    },
+    {
+      name: 'equal-length hiring to firing substitution',
+      previous: `${LONG_SOW_SENTENCE} for hiring.`,
+      next: `${LONG_SOW_SENTENCE} for firing.`,
+      reason: 'substantive' as const,
+    },
+    {
+      name: 'equal-length then to than substitution',
+      previous: 'Approve the renewal then sign.',
+      next: 'Approve the renewal than sign.',
+      reason: 'substantive' as const,
     },
     {
       name: 'whitespace-only',

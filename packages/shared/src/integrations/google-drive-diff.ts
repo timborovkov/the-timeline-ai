@@ -16,10 +16,11 @@
  * are always collected together.
  * The tiny/substantive threshold uses intra-line edited spans, not hunk context
  * kept for the judge. Tiny is only for edits that are provably non-semantic:
- * whitespace, punctuation-only, case-only, or a single-letter typo (edit
- * distance 1) inside one word longer than 3 chars. Whole-word insertion or
- * removal, digits, currency, and negation are substantive even when the span
- * is short.
+ * whitespace, punctuation-only, case-only, or a one-letter insert/delete typo
+ * (edit distance 1, lengths differ) inside one word longer than 3 chars.
+ * Equal-length one-letter substitutions (`hiring`→`firing`) are ambiguous word
+ * swaps, not typos, and stay substantive. Whole-word insertion or removal,
+ * digits, currency, and negation are substantive even when the span is short.
  */
 
 import { createHash } from 'node:crypto';
@@ -899,6 +900,9 @@ function spanIsCosmetic(
   if (wordsIn(leftWord).length !== 1 || wordsIn(rightWord).length !== 1) return false;
   if (leftWord.length <= 3 || rightWord.length <= 3) return false;
   if (/\d/.test(leftWord) || /\d/.test(rightWord)) return false;
+  // Equal-length substitutions (hiring→firing) change the word, not a missing
+  // or extra letter. Only insert/delete distance 1 is typo evidence.
+  if (leftWord.length === rightWord.length) return false;
   return levenshtein(leftWord.toLowerCase(), rightWord.toLowerCase()) === 1;
 }
 
