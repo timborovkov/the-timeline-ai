@@ -34,9 +34,11 @@ function session(current = true): Session {
 describe('hasCurrentLegalSession', () => {
   it('requires renewed acknowledgment after the published Privacy version changes', () => {
     const previous = session();
-    previous.user.legalPrivacyVersion = '2026-11-01';
+    previous.user.legalPrivacyVersion = 'older-privacy';
     expect(previous.user.legalTermsVersion).toBe(TERMS_VERSION);
     expect(hasCurrentLegalSession(previous.user)).toBe(false);
+    previous.user.legalPrivacyVersion = '2026-11-01';
+    expect(hasCurrentLegalSession(previous.user)).toBe(true);
     expect(hasCurrentLegalSession(session().user)).toBe(true);
   });
   it('requires both current signed versions and an acceptance timestamp', () => {

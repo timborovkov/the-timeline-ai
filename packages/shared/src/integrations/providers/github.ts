@@ -405,20 +405,42 @@ function normalizeGithubInstallations(body: unknown): GithubInstallationSummary[
   return normalized;
 }
 
+function isGithubAppInstallationListForbidden(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  return (
+    /GitHub GET \/user\/installations\b/.test(err.message) &&
+    (/\bstatus 401\b/.test(err.message) ||
+      /\bstatus 403\b/.test(err.message) ||
+      /must authenticate with an access token authorized to a GitHub App/i.test(err.message))
+  );
+}
+
 async function loadGithubAppInstallations(
   tokens: GithubTokens,
 ): Promise<GithubInstallationSummary[]> {
   const installations: GithubInstallationSummary[] = [];
-  for (let page = 1; page <= 100; page++) {
-    const body = await ghGet<unknown>(
-      tokens,
-      `/user/installations?per_page=100&page=${page}`,
-      undefined,
-      'user',
-    );
-    const batch = normalizeGithubInstallations(body);
-    installations.push(...batch);
-    if (batch.length < 100) return installations;
+  try {
+    for (let page = 1; page <= 100; page++) {
+      const body = await ghGet<unknown>(
+        tokens,
+        `/user/installations?per_page=100&page=${page}`,
+        undefined,
+        'user',
+      );
+      const batch = normalizeGithubInstallations(body);
+      installations.push(...batch);
+      if (batch.length < 100) return installations;
+    }
+  } catch (err) {
+    if (isGithubRateLimitError(err)) throw err;
+    if (isGithubAppInstallationListForbidden(err)) {
+      // Legacy OAuth-app user tokens and other non-App credentials cannot list
+      // installations. Skip discovery so sync can mark needs-reconnect instead
+      // of failing the job on a 403 from GET /user/installations.
+      warnGithubFetch('GitHub App installation listing is not authorized for this token', { err });
+      return installations;
+    }
+    throw err;
   }
   throw new Error('github_installation_discovery_incomplete: reconnect after reviewing App access');
 }

@@ -1,9 +1,11 @@
 import {
   createPolarBillingProvider,
   handlePolarWebhookEvent,
+  isIgnorablePolarWebhookFailure,
   verifyPolarWebhookSignature,
 } from '@timeline/shared/billing';
 import { getEnv } from '@timeline/shared/env';
+import { childLogger } from '@timeline/shared/logger';
 
 import { db } from '@/lib/db';
 import {
@@ -13,6 +15,8 @@ import {
 } from '@/lib/request-body';
 
 export const runtime = 'nodejs';
+
+const log = childLogger('web:api:polar-webhook');
 
 export async function POST(req: Request): Promise<Response> {
   const env = getEnv();
@@ -42,17 +46,25 @@ export async function POST(req: Request): Promise<Response> {
 
   const provider = createPolarBillingProvider();
   if (!provider) return Response.json({ error: 'provider_not_configured' }, { status: 503 });
-  const result = await handlePolarWebhookEvent({
-    db,
-    payload: payload as Parameters<typeof handlePolarWebhookEvent>[0]['payload'],
-    chargesEnabled: env.BILLING_CHARGES_ENABLED,
-    products: {
-      ...(env.POLAR_PRODUCT_ID_PAYG ? { payg: env.POLAR_PRODUCT_ID_PAYG } : {}),
-      ...(env.POLAR_PRODUCT_ID_TEAM ? { team: env.POLAR_PRODUCT_ID_TEAM } : {}),
-      ...(env.POLAR_PRODUCT_ID_BUSINESS ? { business: env.POLAR_PRODUCT_ID_BUSINESS } : {}),
-      ...(env.POLAR_PRODUCT_ID_ENTERPRISE ? { enterprise: env.POLAR_PRODUCT_ID_ENTERPRISE } : {}),
-    },
-    provider,
-  });
-  return Response.json(result);
+  try {
+    const result = await handlePolarWebhookEvent({
+      db,
+      payload: payload as Parameters<typeof handlePolarWebhookEvent>[0]['payload'],
+      chargesEnabled: env.BILLING_CHARGES_ENABLED,
+      products: {
+        ...(env.POLAR_PRODUCT_ID_PAYG ? { payg: env.POLAR_PRODUCT_ID_PAYG } : {}),
+        ...(env.POLAR_PRODUCT_ID_TEAM ? { team: env.POLAR_PRODUCT_ID_TEAM } : {}),
+        ...(env.POLAR_PRODUCT_ID_BUSINESS ? { business: env.POLAR_PRODUCT_ID_BUSINESS } : {}),
+        ...(env.POLAR_PRODUCT_ID_ENTERPRISE ? { enterprise: env.POLAR_PRODUCT_ID_ENTERPRISE } : {}),
+      },
+      provider,
+    });
+    return Response.json(result);
+  } catch (err) {
+    if (isIgnorablePolarWebhookFailure(err)) {
+      log.warn({ err }, 'polar webhook acknowledged invalid team identifier');
+      return Response.json({ ok: true, ignored: 'invalid_external_customer' });
+    }
+    throw err;
+  }
 }

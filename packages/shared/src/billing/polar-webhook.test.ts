@@ -231,6 +231,27 @@ describe('Polar webhook helpers', () => {
 });
 
 describe('handlePolarWebhookEvent', () => {
+  it('acknowledges unknown Timeline teams so Polar stops retrying', async () => {
+    const unknownTeam = 'bbbbbbbb-cccc-4ddd-8eee-ffffffffffff';
+    await expect(
+      handlePolarWebhookEvent({
+        db,
+        chargesEnabled: true,
+        products: PRODUCTS,
+        provider: createFakeBillingProvider({ teamIdentity: true }),
+        payload: {
+          type: 'subscription.active',
+          data: {
+            id: 'sub_unknown',
+            status: 'active',
+            product_id: 'prod_team',
+            customer: { id: 'cus_unknown', external_id: unknownTeam },
+          },
+        },
+      }),
+    ).resolves.toEqual({ ok: true, ignored: 'unknown_team' });
+  });
+
   it('applies shadowBilling on insert and conflict, and does not refill discount on retries', async () => {
     await handlePolarWebhookEvent({
       db,

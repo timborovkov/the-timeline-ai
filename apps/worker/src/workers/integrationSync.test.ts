@@ -1442,9 +1442,9 @@ describe('runOneIntegration attention classification', () => {
       new Error('GitHub GET /repos/acme/app: 403 forbidden'),
     );
 
-    await expect(runOneIntegration({} as never, INTEGRATION_ID, 'incremental')).rejects.toThrow(
-      '403 forbidden',
-    );
+    await expect(
+      runOneIntegration({} as never, INTEGRATION_ID, 'incremental'),
+    ).resolves.toBeUndefined();
 
     expect(fakes.adminRecordConnectionAttention).toHaveBeenCalledWith(
       expect.anything(),
@@ -1461,6 +1461,66 @@ describe('runOneIntegration attention classification', () => {
       expect.objectContaining({
         kind: 'access_revoked',
         error: 'GitHub GET /repos/acme/app: 403 forbidden',
+      }),
+    );
+  });
+
+  it('marks GitHub App installation 403 as needs-reconnect without failing the job', async () => {
+    fakes.incrementalSync.mockRejectedValueOnce(
+      new Error(
+        'github_installation_missing: install the GitHub App for the selected repository and reconnect',
+      ),
+    );
+
+    await expect(
+      runOneIntegration({} as never, INTEGRATION_ID, 'incremental'),
+    ).resolves.toBeUndefined();
+
+    expect(fakes.adminRecordConnectionAttention).toHaveBeenCalledWith(
+      expect.anything(),
+      TEAM_ID,
+      expect.objectContaining({
+        providerConnectionId: CONNECTION_ID,
+        integrationId: INTEGRATION_ID,
+        category: 'needs_reconnect',
+        summary:
+          'github_installation_missing: install the GitHub App for the selected repository and reconnect',
+      }),
+    );
+  });
+
+  it('marks invalid_grant and missing scopes as needs-reconnect without failing the job', async () => {
+    fakes.incrementalSync.mockRejectedValueOnce(
+      new Error('Google Drive 400: {"error":"invalid_grant"}'),
+    );
+
+    await expect(
+      runOneIntegration({} as never, INTEGRATION_ID, 'incremental'),
+    ).resolves.toBeUndefined();
+
+    expect(fakes.adminRecordConnectionAttention).toHaveBeenCalledWith(
+      expect.anything(),
+      TEAM_ID,
+      expect.objectContaining({
+        category: 'needs_reconnect',
+        summary: 'Google Drive 400: {"error":"invalid_grant"}',
+      }),
+    );
+
+    fakes.incrementalSync.mockRejectedValueOnce(
+      new Error("Unauthorized to load field 'Query.account', Reason: missing required scopes."),
+    );
+
+    await expect(
+      runOneIntegration({} as never, INTEGRATION_ID, 'incremental'),
+    ).resolves.toBeUndefined();
+
+    expect(fakes.adminRecordConnectionAttention).toHaveBeenCalledWith(
+      expect.anything(),
+      TEAM_ID,
+      expect.objectContaining({
+        category: 'needs_reconnect',
+        summary: "Unauthorized to load field 'Query.account', Reason: missing required scopes.",
       }),
     );
   });
