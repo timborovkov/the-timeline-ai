@@ -521,6 +521,8 @@ async function downloadDocumentTabs(
   try {
     const url = new URL(`${DOCS_BASE}/${encodeURIComponent(fileId)}`);
     url.searchParams.set('includeTabsContent', 'true');
+    // Reject pending suggestions so suggested inserts are not hashed as committed text.
+    url.searchParams.set('suggestionsViewMode', 'PREVIEW_WITHOUT_SUGGESTIONS');
     const doc = await googleJsonFetch<DriveDocumentApiResource>(tokens, url, 'Docs');
     const formatted = formatDriveDocumentFromApi(doc);
     const body = Buffer.from(formatted, 'utf8');

@@ -101,10 +101,14 @@
           <code>spreadsheets.get</code> / <code>values.batchGet</code> under existing
           <code>drive.readonly</code> (Drive <code>files.export</code> <code>text/csv</code> is
           first-sheet-only). Native Docs capture reads every tab, including nested child tabs,
-          through Docs API <code>documents.get?includeTabsContent=true</code> under the same scope
-          (Drive <code>files.export</code> <code>text/plain</code> is not documented as covering the
-          Docs tabs feature; Docs API without that flag is first-tab-only). No extra OAuth scope is
-          requested.
+          through Docs API
+          <code
+            >documents.get?includeTabsContent=true&amp;suggestionsViewMode=PREVIEW_WITHOUT_SUGGESTIONS</code
+          >
+          under the same scope (Drive <code>files.export</code> <code>text/plain</code> is not
+          documented as covering the Docs tabs feature; Docs API without that flag is
+          first-tab-only; omitting <code>suggestionsViewMode</code> would hash pending suggested
+          inserts as committed). No extra OAuth scope is requested.
         </li>
         <li>
           Ensure the OAuth consent screen allows these scopes:
@@ -167,9 +171,13 @@ GOOGLE_DRIVE_WEBHOOK_SECRET=...</code></pre>
           <code>text/plain</code> is not documented as covering the Docs tabs feature and Docs API
           without that flag is first-tab-only, then hashes the combined <code># Tab:</code> document
           so a later-tab edit is not dropped as unchanged. That document text includes person smart
-          chips (name/email) and rich/resource links, not only <code>textRun</code>, so an owner
-          chip change is not hashed as identical, and compare-normalize keeps those link
-          destinations so a same-title URI retarget is judged. Only the latest retained state keeps
+          chips (name/email), rich/resource links, and ordinary
+          <code>textStyle.link</code> destinations, not only plain <code>textRun</code> content, so
+          an owner chip or URL-only hyperlink change is not hashed as identical, and
+          compare-normalize keeps those link destinations so a same-title URI retarget is judged.
+          Capture requests <code>suggestionsViewMode=PREVIEW_WITHOUT_SUGGESTIONS</code> so pending
+          suggested inserts are not hashed as committed. Artifact rebind parenthesizes
+          provider/alias matches inside the team filter. Only the latest retained state keeps
           per-chunk extracted text to detect later edits; older states keep hashes only. That latest
           extracted text is deleted on disconnect or file removal. Change detection diffs those
           stored windows like-for-like against the current full text and always keeps added and

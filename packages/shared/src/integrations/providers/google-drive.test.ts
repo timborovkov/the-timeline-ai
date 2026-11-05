@@ -1762,7 +1762,8 @@ describe('googleDriveProvider', () => {
         (url) =>
           url.hostname === 'docs.googleapis.com' &&
           url.pathname.endsWith('/documents/file-1') &&
-          url.searchParams.get('includeTabsContent') === 'true',
+          url.searchParams.get('includeTabsContent') === 'true' &&
+          url.searchParams.get('suggestionsViewMode') === 'PREVIEW_WITHOUT_SUGGESTIONS',
       ),
     ).toBe(true);
     expect(ctx.enqueueTransientDriveExtract).not.toHaveBeenCalled();

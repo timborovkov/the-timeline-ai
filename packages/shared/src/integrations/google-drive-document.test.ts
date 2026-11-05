@@ -116,6 +116,62 @@ describe('extractDriveDocumentStructuralText', () => {
     expect(diff.hunks.join(' ')).toContain('signed');
   });
 
+  it('hashes ordinary textStyle hyperlinks so a same-text URL retarget is not identical', () => {
+    const linked = (url: string) =>
+      extractDriveDocumentStructuralText([
+        {
+          paragraph: {
+            elements: [
+              {
+                textRun: {
+                  content: 'Northstar SOW',
+                  textStyle: { link: { url } },
+                },
+              },
+            ],
+          },
+        },
+      ]);
+    const draft = linked('https://docs.google.com/document/d/draft');
+    const signed = linked('https://docs.google.com/document/d/signed');
+    expect(draft).toBe('[Northstar SOW](https://docs.google.com/document/d/draft)');
+    expect(signed).toBe('[Northstar SOW](https://docs.google.com/document/d/signed)');
+    expect(hashDrivePayload(draft)).not.toBe(hashDrivePayload(signed));
+    expect(normalizeDriveTextForCompare(draft)).not.toBe(normalizeDriveTextForCompare(signed));
+    const diff = diffDriveText(draft, signed);
+    expect(diff.changed).toBe(true);
+    expect(diff.reason).not.toBe('formatting');
+    expect(diff.reason).toBe('substantive');
+    expect(diff.hunks.join(' ')).toContain('signed');
+  });
+
+  it('omits suggested insertions so pending chip or link text is not hashed as committed', () => {
+    const withoutSuggestion = extractDriveDocumentStructuralText([
+      {
+        paragraph: {
+          elements: [{ textRun: { content: 'Budget is 12k.\n' } }],
+        },
+      },
+    ]);
+    const withSuggestion = extractDriveDocumentStructuralText([
+      {
+        paragraph: {
+          elements: [
+            { textRun: { content: 'Budget is 12k.\n' } },
+            {
+              textRun: {
+                content: ' Suggested $48k.',
+                suggestedInsertionIds: ['suggest-1'],
+              },
+            },
+          ],
+        },
+      },
+    ]);
+    expect(withSuggestion).toBe(withoutSuggestion);
+    expect(hashDrivePayload(withSuggestion)).toBe(hashDrivePayload(withoutSuggestion));
+  });
+
   it('keeps person chips inside table cells so an owner swap still hashes', () => {
     const cell = (name: string) =>
       extractDriveDocumentStructuralText([

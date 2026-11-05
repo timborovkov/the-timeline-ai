@@ -4,9 +4,10 @@
  * Docs tabs feature, including nested child tabs). Docs API `documents.get`
  * without `includeTabsContent=true` returns the first tab only. Capture lists
  * every tab in UI order and formats a stable document text before `contentHash`.
- * Paragraph extract keeps person smart chips (name/email), rich/resource links,
- * and inline objects — not only `textRun` — so an ownership chip change hashes
- * and a retargeted link destination remains in the serialized text.
+ * One paragraph serializer keeps person smart chips (name/email), rich/resource
+ * links, ordinary `textStyle.link` destinations, and inline objects — not only
+ * plain `textRun.content` — so an ownership chip, retargeted chip, or URL-only
+ * hyperlink change hashes. Suggested insertions are omitted.
  */
 
 export interface DriveDocumentTab {
@@ -52,7 +53,7 @@ export function extractDriveDocumentStructuralText(
     };
     if (value.paragraph?.elements) {
       for (const paragraphElement of value.paragraph.elements) {
-        text += readParagraphElement(paragraphElement);
+        text += serializeDriveDocumentParagraphElement(paragraphElement);
       }
       continue;
     }
@@ -113,17 +114,60 @@ function stringField(record: Record<string, unknown> | null, key: string): strin
   return typeof value === 'string' ? value : '';
 }
 
-function readParagraphElement(element: unknown): string {
+function isSuggestedInsertion(record: Record<string, unknown> | null): boolean {
+  const ids = record?.suggestedInsertionIds;
+  return Array.isArray(ids) && ids.some((id) => typeof id === 'string' && id.length > 0);
+}
+
+function serializeDestination(input: { label: string; uri: string; mimeType?: string }): string {
+  const label = input.label.trim();
+  const uri = input.uri.trim();
+  const mimeType = input.mimeType?.trim() ?? '';
+  if (!label && !uri && !mimeType) return '';
+  const text = label || uri;
+  const href = uri && uri !== text ? `(${uri})` : '';
+  const mime = mimeType ? ` {${mimeType}}` : '';
+  if (href) return `[${text}]${href}${mime}`;
+  return `[${text}]${mime}`;
+}
+
+/**
+ * Single serializer for every meaningful non-plain Docs destination: person
+ * chips, rich/resource links, ordinary textStyle hyperlinks, and inline objects.
+ */
+function serializeDriveDocumentParagraphElement(element: unknown): string {
   const record = asRecord(element);
   if (!record) return '';
   const textRun = asRecord(record.textRun);
-  if (textRun && typeof textRun.content === 'string') return textRun.content;
-  const person = serializePersonChip(asRecord(record.person));
-  if (person) return person;
-  const link = serializeRichLink(asRecord(record.richLink));
-  if (link) return link;
-  const objectId = stringField(asRecord(record.inlineObjectElement), 'inlineObjectId').trim();
+  if (textRun) return serializeTextRun(textRun);
+  const person = asRecord(record.person);
+  if (person) {
+    if (isSuggestedInsertion(person)) return '';
+    const serialized = serializePersonChip(person);
+    if (serialized) return serialized;
+  }
+  const richLink = asRecord(record.richLink);
+  if (richLink) {
+    if (isSuggestedInsertion(richLink)) return '';
+    const serialized = serializeRichLink(richLink);
+    if (serialized) return serialized;
+  }
+  const inline = asRecord(record.inlineObjectElement);
+  if (!inline || isSuggestedInsertion(inline)) return '';
+  const objectId = stringField(inline, 'inlineObjectId').trim();
   return objectId ? `[object:${objectId}]` : '';
+}
+
+function serializeTextRun(textRun: Record<string, unknown>): string {
+  if (isSuggestedInsertion(textRun)) return '';
+  const content = typeof textRun.content === 'string' ? textRun.content : '';
+  const url = stringField(asRecord(asRecord(textRun.textStyle)?.link), 'url').trim();
+  if (!url) return content;
+  const newline = content.endsWith('\n') ? '\n' : '';
+  const label = newline ? content.slice(0, -1) : content;
+  if (!label) return content;
+  if (url === label.trim()) return content;
+  return `${serializeDestination({ label, uri: url })}${newline}`;
 }
 
 function serializePersonChip(person: Record<string, unknown> | null): string {
@@ -146,9 +190,5 @@ function serializeRichLink(link: Record<string, unknown> | null): string {
     const richLinkId = stringField(link, 'richLinkId').trim();
     return richLinkId ? `[link:${richLinkId}]` : '';
   }
-  const label = title || uri;
-  const href = uri && uri !== label ? `(${uri})` : '';
-  const mime = mimeType ? ` {${mimeType}}` : '';
-  if (href) return `[${label}]${href}${mime}`;
-  return `[${label}]${mime}`;
+  return serializeDestination({ label: title, uri, mimeType });
 }

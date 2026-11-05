@@ -104,6 +104,11 @@ function uniqueAnchors(inputs: ArtifactAnchorInput[]): ArtifactAnchorInput[] {
   return result;
 }
 
+function teamScopedAnchorWhere(teamId: string, matchClauses: SQL[]): SQL | undefined {
+  if (matchClauses.length === 0) return undefined;
+  return and(eq(artifactClusterAnchors.teamId, teamId), or(...matchClauses));
+}
+
 async function findClusterByAnchors(
   db: Db,
   teamId: string,
@@ -115,13 +120,15 @@ async function findClusterByAnchors(
     (anchor) =>
       sql`(${artifactClusterAnchors.anchorType} = ${anchor.type} AND ${artifactClusterAnchors.anchorValue} = ${anchor.value})`,
   );
+  const where = teamScopedAnchorWhere(teamId, clauses);
+  if (!where) return null;
   const rows = await db
     .select({
       clusterId: artifactClusterAnchors.clusterId,
       createdAt: artifactClusterAnchors.createdAt,
     })
     .from(artifactClusterAnchors)
-    .where(and(eq(artifactClusterAnchors.teamId, teamId), sql.join(clauses, sql.raw(' OR '))))
+    .where(where)
     .orderBy(artifactClusterAnchors.createdAt)
     .limit(1);
   return rows[0]?.clusterId ?? null;
@@ -340,13 +347,15 @@ async function claimAnchors(
     (anchor) =>
       sql`(${artifactClusterAnchors.anchorType} = ${anchor.type} AND ${artifactClusterAnchors.anchorValue} = ${anchor.value})`,
   );
+  const where = teamScopedAnchorWhere(input.teamId, clauses);
+  if (!where) return clusterId;
   const rows = await db
     .select({
       clusterId: artifactClusterAnchors.clusterId,
       createdAt: artifactClusterAnchors.createdAt,
     })
     .from(artifactClusterAnchors)
-    .where(and(eq(artifactClusterAnchors.teamId, input.teamId), sql.join(clauses, sql.raw(' OR '))))
+    .where(where)
     .orderBy(artifactClusterAnchors.createdAt)
     .limit(1);
   return rows[0]?.clusterId ?? clusterId;
@@ -714,6 +723,8 @@ export async function findArtifactClustersByAnchors(
     (anchor) =>
       sql`(${artifactClusterAnchors.anchorType} = ${anchor.type} AND ${artifactClusterAnchors.anchorValue} = ${anchor.value})`,
   );
+  const where = teamScopedAnchorWhere(input.teamId, clauses);
+  if (!where) return [];
   return db
     .select({
       id: artifactClusters.id,
@@ -731,9 +742,7 @@ export async function findArtifactClustersByAnchors(
         eq(artifactClusters.teamId, input.teamId),
       ),
     )
-    .where(
-      and(eq(artifactClusterAnchors.teamId, input.teamId), sql.join(clauses, sql.raw(' OR '))),
-    );
+    .where(where);
 }
 
 async function clusterForLinkedObject(
@@ -789,13 +798,9 @@ async function moveDriveFileAnchors(
         ]
       : []),
   ];
-  if (clauses.length === 0) return;
-  await db
-    .update(artifactClusterAnchors)
-    .set({ clusterId: input.targetClusterId })
-    .where(
-      and(eq(artifactClusterAnchors.teamId, input.teamId), sql.join(clauses, sql.raw(' OR '))),
-    );
+  const where = teamScopedAnchorWhere(input.teamId, clauses);
+  if (!where) return;
+  await db.update(artifactClusterAnchors).set({ clusterId: input.targetClusterId }).where(where);
 }
 
 async function refreshDriveInheritanceAnchorMetadata(

@@ -10,7 +10,7 @@ import {
 } from '@timeline/db';
 import { expect } from '@timeline/test-support';
 import { afterEach, beforeEach, describe, it } from 'bun:test';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 
 import {
@@ -847,11 +847,11 @@ describe('artifact reconciliation', () => {
   const INTEGRATION_ID = '33333333-3333-4333-8333-333333333333';
   const OTHER_INTEGRATION_ID = '44444444-4444-4444-8444-444444444444';
 
-  async function insertCompany(name: string) {
+  async function insertCompany(name: string, teamId = TEAM_ID) {
     const [company] = await db
       .insert(entities)
       .values({
-        teamId: TEAM_ID,
+        teamId,
         type: 'company',
         canonicalName: name,
         status: 'open',
@@ -861,11 +861,11 @@ describe('artifact reconciliation', () => {
     return company;
   }
 
-  async function insertCluster(company: { id: string; canonicalName: string }) {
+  async function insertCluster(company: { id: string; canonicalName: string }, teamId = TEAM_ID) {
     const [cluster] = await db
       .insert(artifactClusters)
       .values({
-        teamId: TEAM_ID,
+        teamId,
         artifactType: 'company',
         canonicalName: company.canonicalName,
         canonicalEntityId: company.id,
@@ -881,9 +881,10 @@ describe('artifact reconciliation', () => {
     inheritedFrom?: string;
     candidates?: string[];
     integrationId?: string;
+    teamId?: string;
   }) {
     await db.insert(artifactClusterAnchors).values({
-      teamId: TEAM_ID,
+      teamId: input.teamId ?? TEAM_ID,
       clusterId: input.clusterId,
       anchorType: 'provider_object',
       anchorValue: `google_drive:${input.fileId}`,
@@ -904,11 +905,16 @@ describe('artifact reconciliation', () => {
     return row?.id;
   }
 
-  async function anchorCluster(fileId: string) {
+  async function anchorCluster(fileId: string, teamId = TEAM_ID) {
     const [row] = await db
       .select({ clusterId: artifactClusterAnchors.clusterId })
       .from(artifactClusterAnchors)
-      .where(eq(artifactClusterAnchors.anchorValue, `google_drive:${fileId}`));
+      .where(
+        and(
+          eq(artifactClusterAnchors.teamId, teamId),
+          eq(artifactClusterAnchors.anchorValue, `google_drive:${fileId}`),
+        ),
+      );
     return row?.clusterId;
   }
 
@@ -962,6 +968,57 @@ describe('artifact reconciliation', () => {
         drive_inherited_candidates: ['file-other', 'folder-a'],
       }),
     );
+  });
+
+  it('does not rebind another team’s Drive file anchors that share the same file id', async () => {
+    const northstar = await insertCompany('Northstar');
+    const acme = await insertCompany('Acme Labs');
+    const source = await insertCluster(northstar);
+    const target = await insertCluster(acme);
+    await insertDriveFileAnchor({
+      clusterId: source.id,
+      fileId: 'file-1',
+      inheritedFrom: 'folder-a',
+      candidates: ['file-1', 'folder-a'],
+    });
+
+    const otherCompany = await insertCompany('Other Co', TEAM_B_ID);
+    const otherCluster = await insertCluster(otherCompany, TEAM_B_ID);
+    await insertDriveFileAnchor({
+      teamId: TEAM_B_ID,
+      clusterId: otherCluster.id,
+      fileId: 'file-1',
+      inheritedFrom: 'folder-other',
+      candidates: ['file-1', 'folder-other'],
+    });
+    await db.insert(artifactClusterAnchors).values({
+      teamId: TEAM_B_ID,
+      clusterId: otherCluster.id,
+      anchorType: 'alias:file',
+      anchorValue: 'file-1',
+      strength: 'structured',
+      metadata: {},
+    });
+
+    await rebindDriveFileObjectLink(db as never, {
+      teamId: TEAM_ID,
+      fileId: 'file-1',
+      nextObjectId: acme.id,
+    });
+
+    expect(await anchorCluster('file-1')).toBe(target.id);
+    expect(await anchorCluster('file-1', TEAM_B_ID)).toBe(otherCluster.id);
+    const [otherAlias] = await db
+      .select({ clusterId: artifactClusterAnchors.clusterId })
+      .from(artifactClusterAnchors)
+      .where(
+        and(
+          eq(artifactClusterAnchors.teamId, TEAM_B_ID),
+          eq(artifactClusterAnchors.anchorType, 'alias:file'),
+          eq(artifactClusterAnchors.anchorValue, 'file-1'),
+        ),
+      );
+    expect(otherAlias?.clusterId).toBe(otherCluster.id);
   });
 
   it('moves inherited folder file anchors except files that keep their own object link', async () => {
