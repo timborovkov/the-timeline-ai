@@ -637,8 +637,10 @@ rclone sync s3:timeline-exports backblaze-b2:timeline-backup-exports
             to the PostgreSQL service's internal hostname and uses plain TCP. If you ever point this
             at the <em>external</em> Postgres proxy (e.g., to run
             <code>bun run db:migrate</code> from your laptop against staging), append
-            <code>?sslmode=require</code> to the URL — <code>postgres-js</code> follows the
-            connection string, not an out-of-band env var.
+            <code>?sslmode=require</code> to the URL — postgres.js 4 still follows the connection
+            string, not an out-of-band env var. <code>channel_binding</code> defaults to
+            <code>prefer</code> and only applies over TLS, so internal Railway connections are
+            unchanged.
           </p>
         </li>
         <li>
