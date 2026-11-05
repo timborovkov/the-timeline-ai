@@ -1,4 +1,5 @@
 import * as Sentry from '@sentry/node';
+import { stampSentryRuntimeContext } from '@timeline/shared/monitoring/sentry-runtime';
 import {
   RESTRICTED_SENTRY_DATA_COLLECTION,
   scrubSentryBreadcrumb,
@@ -24,7 +25,7 @@ export function initWorkerSentry(): boolean {
     tracesSampleRate: sampleRate('SENTRY_TRACES_SAMPLE_RATE'),
     dataCollection: RESTRICTED_SENTRY_DATA_COLLECTION,
     beforeSend(event) {
-      return scrubSentryRequestEvent(event);
+      return stampSentryRuntimeContext(scrubSentryRequestEvent(event));
     },
     beforeSendSpan(span) {
       return scrubSentrySpan(span);

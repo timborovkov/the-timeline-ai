@@ -116,6 +116,9 @@
   "apps/web/src/app/api/health/ready/route.test.ts": {
     "group": "unit"
   },
+  "apps/web/src/app/api/health/route.test.ts": {
+    "group": "unit"
+  },
   "apps/web/src/app/api/integrations/[provider]/callback/route.test.ts": {
     "group": "unit"
   },
@@ -1995,6 +1998,9 @@
     "group": "unit"
   },
   "packages/shared/src/messaging/templates.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/monitoring/sentry-runtime.test.ts": {
     "group": "unit"
   },
   "packages/shared/src/monitoring/sentry-scrub.test.ts": {

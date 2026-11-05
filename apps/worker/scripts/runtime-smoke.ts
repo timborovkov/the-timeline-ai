@@ -8,6 +8,7 @@ import { createServer } from 'node:http';
 import { Queue, QueueEvents, Worker } from 'bullmq';
 import * as Sentry from '@sentry/node';
 import ffmpeg from 'ffmpeg-static';
+import { stampSentryRuntimeContext } from '@timeline/shared/monitoring/sentry-runtime';
 
 // This check never contacts providers and only accepts a local disposable Redis.
 const redisUrl = new URL(process.env.RUNTIME_SMOKE_REDIS_URL ?? 'redis://127.0.0.1:6379');
@@ -152,24 +153,31 @@ try {
   server.close();
 }
 
-let envelopes = 0;
+assert(typeof process.versions.bun === 'string' && process.versions.bun.length > 0);
+let errorEvents = 0;
+let stampedRuntime: { name?: string; version?: string } | undefined;
 Sentry.init({
   dsn: 'https://public@example.invalid/1',
   defaultIntegrations: false,
   sendClientReports: false,
+  beforeSend(event) {
+    const stamped = stampSentryRuntimeContext(event);
+    stampedRuntime = stamped.contexts?.runtime;
+    errorEvents++;
+    return stamped;
+  },
   transport: () => ({
-    send: async () => {
-      envelopes++;
-      return { statusCode: 200 };
-    },
+    send: async () => ({ statusCode: 200 }),
     flush: async () => true,
   }),
 });
 Sentry.captureException(new Error('synthetic Bun runtime smoke'));
 assert.equal(await Sentry.flush(5_000), true);
-assert.equal(envelopes, 1);
+assert.equal(errorEvents, 1);
+assert.equal(stampedRuntime?.name, 'bun');
+assert.equal(stampedRuntime?.version, process.versions.bun);
 await Sentry.close(5_000);
-console.log('Sentry reporting and flush passed (in-memory transport)');
+console.log('Sentry reporting and flush passed (in-memory transport, runtime=bun)');
 
 const fixture = mkdtempSync(join(tmpdir(), 'bun-startup-'));
 try {
@@ -178,26 +186,36 @@ try {
   mkdirSync(app, { recursive: true });
   mkdirSync(db, { recursive: true });
   copyFileSync(new URL('../../web/start.mjs', import.meta.url), join(app, 'start.mjs'));
-  writeFileSync(join(db, 'migrate.js'), 'process.exit(7);');
+  writeFileSync(
+    join(db, 'migrate.js'),
+    'if (!process.execArgv.includes("--bun")) process.exit(11); process.exit(7);',
+  );
   writeFileSync(join(app, 'server.js'), 'throw new Error("server must not start");');
-  const failed = spawnSync(process.execPath, ['--no-env-file', join(app, 'start.mjs')], {
+  const failed = spawnSync(process.execPath, ['--bun', '--no-env-file', join(app, 'start.mjs')], {
     encoding: 'utf8',
     timeout: 10_000,
   });
   assert.equal(failed.status, 7, failed.stderr);
   assert(!failed.stderr.includes('server must not start'));
-  writeFileSync(join(db, 'migrate.js'), 'console.log("migration-complete");');
+  writeFileSync(
+    join(db, 'migrate.js'),
+    'if (!process.execArgv.includes("--bun")) process.exit(11); console.log("migration-complete");',
+  );
   writeFileSync(join(app, 'server.js'), 'process.exit(9);');
-  const serverFailed = spawnSync(process.execPath, ['--no-env-file', join(app, 'start.mjs')], {
-    encoding: 'utf8',
-    timeout: 10_000,
-  });
+  const serverFailed = spawnSync(
+    process.execPath,
+    ['--bun', '--no-env-file', join(app, 'start.mjs')],
+    {
+      encoding: 'utf8',
+      timeout: 10_000,
+    },
+  );
   assert.equal(serverFailed.status, 9, serverFailed.stderr);
   writeFileSync(
     join(app, 'server.js'),
     'process.on("SIGTERM", () => { console.log("signal-received"); process.exit(0); }); console.log("server-ready"); setInterval(() => {}, 1000);',
   );
-  const child = spawn(process.execPath, ['--no-env-file', join(app, 'start.mjs')], {
+  const child = spawn(process.execPath, ['--bun', '--no-env-file', join(app, 'start.mjs')], {
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   const exited = once(child, 'exit');

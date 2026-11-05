@@ -104,6 +104,8 @@ async function main(): Promise<void> {
   await queue.scheduleDailyDigest();
   log.info(
     {
+      runtime: typeof process.versions.bun === 'string' ? 'bun' : 'node',
+      bunVersion: process.versions.bun,
       taskCategoryWorkerEnabled: taskCategoryWorker !== null,
       documentExtractEnabled,
     },

@@ -275,6 +275,12 @@
       "import": "./dist/monitoring/sentry-scrub.js",
       "default": "./dist/monitoring/sentry-scrub.js"
     },
+    "./monitoring/sentry-runtime": {
+      "types": "./src/monitoring/sentry-runtime.ts",
+      "development": "./src/monitoring/sentry-runtime.ts",
+      "import": "./dist/monitoring/sentry-runtime.js",
+      "default": "./dist/monitoring/sentry-runtime.js"
+    },
     "./meetings": {
       "types": "./src/meetings/index.ts",
       "development": "./src/meetings/index.ts",

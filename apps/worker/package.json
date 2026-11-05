@@ -14,7 +14,7 @@
     "build": "bun x --bun --no-install tsc -p tsconfig.json && bun run sentry:sourcemaps",
     "sentry:sourcemaps": "bun scripts/upload-sentry-sourcemaps.mjs",
     "dev": "bun --conditions=development --watch src/index.ts",
-    "start": "bun dist/index.js",
+    "start": "bun --bun --no-env-file dist/index.js",
     "reextract": "bun --conditions=development src/scripts/reextract.ts",
     "reembed": "bun --conditions=development src/scripts/reembed.ts",
     "qdrant-migrate-collection": "bun --conditions=development src/scripts/qdrant-migrate-collection.ts",
@@ -35,7 +35,7 @@
     "ensure-document-extract-snapshot": "bun --conditions=development scripts/create-document-extract-snapshot.ts",
     "cleanup-document-extract-snapshots": "bun --conditions=development scripts/cleanup-document-extract-snapshots.ts",
     "dev:extract": "WORKER_MODE=document-extract bun --conditions=development --watch src/extract-main.ts",
-    "start:extract": "WORKER_MODE=document-extract bun dist/extract-main.js",
+    "start:extract": "WORKER_MODE=document-extract bun --bun --no-env-file dist/extract-main.js",
     "lint": "bun x --bun --no-install eslint src",
     "test": "bun ../../scripts/testing/run.ts apps/worker",
     "typecheck": "bun x --bun --no-install tsc -p tsconfig.json --noEmit"

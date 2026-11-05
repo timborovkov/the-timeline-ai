@@ -68,4 +68,4 @@ ENV PORT=3000
 ENV HOSTNAME=0.0.0.0
 USER bun
 EXPOSE 3000
-CMD ["bun", "--no-env-file", "apps/web/start.mjs"]
+CMD ["bun", "--bun", "--no-env-file", "apps/web/start.mjs"]
