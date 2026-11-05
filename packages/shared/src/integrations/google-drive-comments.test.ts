@@ -34,9 +34,22 @@ function numberedComments(
 }
 
 describe('commentEventContext ranking', () => {
-  it('keeps a bounded window', () => {
+  it('packs every changed comment and only bounds unchanged context', () => {
     expect(DRIVE_COMMENT_EVENT_LIMIT).toBe(8);
-    expect(commentEventContext(numberedComments(10)).split('\n')).toHaveLength(8);
+    const nineNew = numberedComments(9);
+    const nineContext = commentEventContext(nineNew);
+    expect(nineContext.split('\n')).toHaveLength(9);
+    expect(driveCommentChangeIsWitnessed(nineContext, [], compactDriveComments(nineNew))).toBe(
+      true,
+    );
+    const previous = numberedComments(10);
+    const next = numberedComments(10, {
+      10: { content: 'Please confirm the $48k annual term.', author: { displayName: 'Ada' } },
+    });
+    const mixed = commentEventContext(next, compactDriveComments(previous));
+    expect(mixed.split('\n')).toHaveLength(DRIVE_COMMENT_EVENT_LIMIT);
+    expect(mixed).toContain('Please confirm the $48k annual term.');
+    expect(mixed).not.toContain('Keep comment 9');
   });
 
   it('hashes exactly the ranked comment fields', () => {

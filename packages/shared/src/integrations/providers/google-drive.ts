@@ -1247,7 +1247,7 @@ async function processDriveFile(
   selections: { kind: string; externalId: string }[],
   ctx: SyncContext,
   fileId: string,
-): Promise<void> {
+): Promise<SyncResult | undefined> {
   const scope = await resolveDriveScope(tokens, selections);
   const file = await driveGetOptional<DriveFile>(tokens, `/files/${encodeURIComponent(fileId)}`, {
     fields: FILE_FIELDS,
@@ -1438,13 +1438,24 @@ async function processDriveFile(
     return;
   }
 
-  const slot = await takeDriveProcessSlot({ integrationId: integration.id, fileId: file.id });
+  const slot = ctx.takeDriveProcessSlot
+    ? await ctx.takeDriveProcessSlot({ integrationId: integration.id, fileId: file.id })
+    : await takeDriveProcessSlot({ integrationId: integration.id, fileId: file.id });
   if (!slot.allowed) {
     await ctx.recordAudit('drive_process_capped', {
       file_id: fileId,
       reason: slot.reason,
+      retry_after_ms: slot.retryAfterMs,
     });
-    return;
+    return {
+      continuations: [
+        {
+          resourceType: DRIVE_FILE_KIND,
+          externalId: fileId,
+          retryAt: new Date(Date.now() + slot.retryAfterMs),
+        },
+      ],
+    };
   }
 
   let judge: DriveChangeJudge;
@@ -1748,8 +1759,7 @@ export const googleDriveProvider: IntegrationProvider = {
     if (target?.resourceType === DRIVE_FILE_KIND) {
       try {
         const refreshed = await refreshForSync(tokens, ctx);
-        await processDriveFile(integration, refreshed, selections, ctx, target.externalId);
-        return undefined;
+        return await processDriveFile(integration, refreshed, selections, ctx, target.externalId);
       } catch (error) {
         if (error instanceof Error) {
           throw attachSyncContinuation(error, {

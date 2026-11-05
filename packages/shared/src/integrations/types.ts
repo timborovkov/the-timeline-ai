@@ -219,6 +219,17 @@ export interface SyncContext {
   }): Promise<
     { allowed: true } | { allowed: false; reason: 'file' | 'connection'; retryAfterMs: number }
   >;
+  /**
+   * Post-diff Drive processing budget (8/file/day, 200/connection/day). Tests
+   * inject this; production uses `takeDriveProcessSlot`. Exhaustion must
+   * return a delayed continuation rather than completing the targeted capture.
+   */
+  takeDriveProcessSlot?(input: {
+    integrationId: string;
+    fileId: string;
+  }): Promise<
+    { allowed: true } | { allowed: false; reason: 'file' | 'connection'; retryAfterMs: number }
+  >;
   loadLatestDriveSnapshot?(fileId: string): Promise<{
     contentHash: string;
     snapshotText: string;

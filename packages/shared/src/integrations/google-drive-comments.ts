@@ -1,7 +1,9 @@
 /**
- * Drive comment fingerprints hash every page. Event context is bounded, so
- * every commentsHash field change must rank ahead of unchanged comments or a
- * transition past the first eight never reaches the judged event.
+ * Drive comment fingerprints hash every page. Event context ranks every
+ * commentsHash field change ahead of unchanged comments so a transition past
+ * the first eight still reaches the judged event. All changed comments are
+ * packed (the event splitter can span events); only unchanged context is
+ * limited to eight.
  * `comments.list` omits deleted comments (`includeDeleted=false`), so
  * removals are recovered by comparing previous snapshot ids to the next set.
  * Reply bodies are part of the fingerprint: new or changed replies rank first
@@ -371,8 +373,11 @@ export function commentEventContext(
   const previousById = new Map(
     previous.filter((comment) => comment.id).map((comment) => [comment.id, comment]),
   );
-  return diffDriveComments(previous, compactDriveComments(next))
-    .slice(0, DRIVE_COMMENT_EVENT_LIMIT)
+  const ranked = diffDriveComments(previous, compactDriveComments(next));
+  const changed = ranked.filter((entry) => entry.kind !== 'unchanged');
+  const unchanged = ranked.filter((entry) => entry.kind === 'unchanged');
+  const unchangedRoom = Math.max(0, DRIVE_COMMENT_EVENT_LIMIT - changed.length);
+  return [...changed, ...unchanged.slice(0, unchangedRoom)]
     .map(({ comment, kind }) =>
       commentContextLine(comment, kind, comment.id ? previousById.get(comment.id) : undefined),
     )

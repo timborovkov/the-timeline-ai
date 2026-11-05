@@ -181,6 +181,7 @@ describe('Drive A→B→A→B revisit', () => {
       | 'loadTransientDriveExtract'
       | 'consumeTransientDriveExtract'
       | 'takeDriveExtractSlot'
+      | 'takeDriveProcessSlot'
     > = {
       loadCursor: vi.fn().mockResolvedValue({}),
       saveCursor: vi.fn().mockResolvedValue(undefined),
@@ -212,6 +213,7 @@ describe('Drive A→B→A→B revisit', () => {
       loadTransientDriveExtract: vi.fn().mockResolvedValue(null),
       consumeTransientDriveExtract,
       takeDriveExtractSlot: vi.fn().mockResolvedValue({ allowed: true }),
+      takeDriveProcessSlot: vi.fn().mockResolvedValue({ allowed: true }),
     };
 
     async function capture(next: typeof current): Promise<void> {

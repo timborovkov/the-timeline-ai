@@ -306,4 +306,46 @@ describe('decideDriveSnapshotAdvance', () => {
     expect(decision.persist).toBe(true);
     expect(decision.snapshot.commentsHash).toBe('comments-new');
   });
+
+  it('advances a comment-only snapshot when nine short comments are added', () => {
+    const text = 'Contract amount is forty eight thousand dollars for Northstar.';
+    const nextCommentsRaw = Array.from({ length: 9 }, (_, index) => ({
+      id: `c${String(index + 1)}`,
+      content: `Keep comment ${String(index + 1)}`,
+      author: { displayName: `Author ${String(index + 1)}` },
+    }));
+    const previousComments = compactDriveComments([]);
+    const nextComments = compactDriveComments(nextCommentsRaw);
+    const commentPreview = commentEventContext(nextCommentsRaw, previousComments);
+    expect(commentPreview.split('\n')).toHaveLength(9);
+    expect(commentPreview).toContain('Keep comment 9');
+    const previousFields = fieldsFromText(text, previousComments, 'comments-old', 'perm');
+    const nextFields = fieldsFromText(text, nextComments, 'comments-new', 'perm');
+    const diff = diffDriveSnapshots({
+      previousSnapshotText: text,
+      previousLocate: previousFields.snapshotLocate,
+      nextFullText: text,
+      previousContentHash: previousFields.contentHash,
+      nextContentHash: nextFields.contentHash,
+    });
+    const packed = packDriveChangeEvents({
+      summary: 'Drive change on "SOW" (comment)',
+      hunks: [],
+      commentPreview,
+      previousText: text,
+      nextText: text,
+    });
+    expect(packed).not.toBeNull();
+    const decision = decideDriveSnapshotAdvance({
+      previous: previousFields,
+      next: nextFields,
+      diff,
+      previousText: text,
+      nextText: text,
+      packedEvents: packed,
+    });
+    expect(decision.advanceComments).toBe(true);
+    expect(decision.persist).toBe(true);
+    expect(decision.snapshot.commentsHash).toBe('comments-new');
+  });
 });
