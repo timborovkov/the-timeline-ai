@@ -5,6 +5,9 @@ import { fileURLToPath } from 'node:url';
 
 const appRoot = dirname(fileURLToPath(import.meta.url));
 const SIGNAL_EXIT_CODES = { SIGINT: 130, SIGTERM: 143 };
+// Next standalone `server.js` has a Node shebang. `bun --bun` keeps the child
+// on the Bun runtime so Sentry reports bun instead of Node 26.3.0 compat.
+const bunRuntimeArgs = ['--bun', '--no-env-file'];
 
 let currentChild;
 let receivedSignal;
@@ -51,9 +54,9 @@ const serverPath = firstExisting([
   resolve(appRoot, '.next/standalone/apps/web/server.js'),
 ]);
 
-const migrationResult = await run(process.execPath, ['--no-env-file', migratePath]);
+const migrationResult = await run(process.execPath, [...bunRuntimeArgs, migratePath]);
 if (migrationResult.code !== 0 || receivedSignal) {
   process.exit(receivedSignal ? SIGNAL_EXIT_CODES[receivedSignal] : migrationResult.code);
 }
-const result = await run(process.execPath, ['--no-env-file', serverPath]);
+const result = await run(process.execPath, [...bunRuntimeArgs, serverPath]);
 process.exit(receivedSignal ? SIGNAL_EXIT_CODES[receivedSignal] : result.code);

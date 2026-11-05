@@ -12,6 +12,10 @@ export async function GET(): Promise<Response> {
   } catch {
     dbOk = false;
   }
-  const body = { ok: dbOk, db: dbOk ? 'up' : 'down' };
+  const body = {
+    ok: dbOk,
+    db: dbOk ? 'up' : 'down',
+    runtime: typeof process.versions.bun === 'string' ? 'bun' : 'node',
+  };
   return Response.json(body, { status: dbOk ? 200 : 503 });
 }

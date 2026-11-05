@@ -19,13 +19,14 @@ describe('Railway web config', () => {
     expect(config.build?.builder).toBe('DOCKERFILE');
     expect(config.build?.dockerfilePath).toBe('docker/web.Dockerfile');
     expect(config.deploy?.preDeployCommand).toEqual([
-      'env NODE_ENV=production bun --no-env-file packages/db/dist/migrate.js',
+      'env NODE_ENV=production bun --bun --no-env-file packages/db/dist/migrate.js',
     ]);
     expect(config.deploy?.startCommand).toBe(
-      'env NODE_ENV=production bun --no-env-file apps/web/start.mjs',
+      'env NODE_ENV=production bun --bun --no-env-file apps/web/start.mjs',
     );
     expect(config.deploy?.preDeployCommand?.join(' ')).not.toContain('pnpm');
     expect(config.deploy?.startCommand).not.toContain('pnpm');
+    expect(config.deploy?.startCommand).not.toMatch(/\bnode\b/);
     expect(config.deploy?.startCommand).not.toContain('NODE_ENV=staging');
   });
 
@@ -73,6 +74,19 @@ describe('Railway web config', () => {
     expect(dockerfile).toContain('ENV NEXT_PUBLIC_SENTRY_DSN=$NEXT_PUBLIC_SENTRY_DSN');
     expect(dockerfile).toContain('ARG NEXT_PUBLIC_POSTHOG_KEY');
     expect(dockerfile).toContain('ENV NEXT_PUBLIC_POSTHOG_KEY=$NEXT_PUBLIC_POSTHOG_KEY');
+    expect(dockerfile).toContain('FROM oven/bun:1.4.4-debian AS base');
+    expect(dockerfile).toContain('CMD ["bun", "--bun", "--no-env-file", "apps/web/start.mjs"]');
+  });
+
+  it('stamps Bun on the Node server Sentry path and keeps Edge/browser free of process.versions', () => {
+    const server = readFileSync(new URL('./sentry.server.config.ts', import.meta.url), 'utf8');
+    const edge = readFileSync(new URL('./sentry.edge.config.ts', import.meta.url), 'utf8');
+    const client = readFileSync(new URL('./instrumentation-client.ts', import.meta.url), 'utf8');
+
+    expect(server).toContain("from '@timeline/shared/monitoring/sentry-runtime'");
+    expect(server).toContain('stampSentryRuntimeContext');
+    expect(edge).not.toContain('sentry-runtime');
+    expect(client).not.toContain('sentry-runtime');
   });
 
   it('supplies the canonical public origin while prerendering the web image', () => {

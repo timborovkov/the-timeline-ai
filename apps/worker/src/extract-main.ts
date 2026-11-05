@@ -50,7 +50,13 @@ async function main(): Promise<void> {
 
   const db = getDb();
   const documentExtractWorker = startDocumentExtractWorker({ db });
-  log.info('document-extract service started');
+  log.info(
+    {
+      runtime: typeof process.versions.bun === 'string' ? 'bun' : 'node',
+      bunVersion: process.versions.bun,
+    },
+    'document-extract service started',
+  );
 
   const shutdown = async (signal: string): Promise<void> => {
     log.info({ signal }, 'received shutdown signal');
