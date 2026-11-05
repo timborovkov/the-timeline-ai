@@ -158,8 +158,12 @@ let errorEvents = 0;
 let stampedRuntime: { name?: string; version?: string } | undefined;
 Sentry.init({
   dsn: 'https://public@example.invalid/1',
+  // CI injects GITHUB_SHA, which the SDK treats as a release and can flush a
+  // session envelope alongside the captured exception. Disable defaults so this
+  // smoke test counts only the beforeSend exception path.
   defaultIntegrations: false,
   sendClientReports: false,
+  release: 'bun-runtime-smoke',
   beforeSend(event) {
     const stamped = stampSentryRuntimeContext(event);
     stampedRuntime = stamped.contexts?.runtime;

@@ -1097,6 +1097,9 @@
   "apps/web/src/hooks/use-project-search.test.tsx": {
     "group": "dom"
   },
+  "apps/web/src/lib/active-team.test.ts": {
+    "group": "unit"
+  },
   "apps/web/src/lib/active-team-cookie-migration.test.ts": {
     "group": "unit"
   },

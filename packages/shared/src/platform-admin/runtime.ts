@@ -38,12 +38,16 @@ export function registerOperatorContextResolver(resolver: () => Promise<Operator
 export async function operatorContext(): Promise<OperatorContext | null> {
   return contextStorage.getStore() ?? (webResolver ? await webResolver() : null);
 }
+export function isInactiveWorkspaceSecurityState(state: string | null | undefined): boolean {
+  return state === 'suspended' || state === 'terminated';
+}
+
 export async function assertActivePrincipal(db: Db, teamId: string, userId?: string) {
   const [account] = await db
     .select({ state: teamBillingAccounts.securityState })
     .from(teamBillingAccounts)
     .where(eq(teamBillingAccounts.teamId, teamId));
-  if (account?.state === 'suspended' || account?.state === 'terminated')
+  if (isInactiveWorkspaceSecurityState(account?.state))
     throw new PlatformAccessError('Workspace is suspended');
   if (userId) {
     const [user] = await db
