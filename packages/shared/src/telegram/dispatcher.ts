@@ -5,6 +5,7 @@ import {
   documents,
   type Db,
   rawEvents,
+  teamBillingAccounts,
   teamMembers,
   teams,
   teamVisibilityDefaults,
@@ -13,7 +14,7 @@ import {
   telegramUsers,
   telegramUserTeams,
 } from '@timeline/db';
-import { and, asc, desc, eq, isNull, ne, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, ne, notExists, sql } from 'drizzle-orm';
 
 import { askAgent, TEAM_BOT_ACTOR_USER_ID, type AskAgentDeps } from '#src/agent/ask.js';
 import {
@@ -610,7 +611,23 @@ async function cmdTeamDm(ctx: DmContext, arg: string): Promise<void> {
         eq(telegramUserTeams.teamId, teamMembers.teamId),
       ),
     )
-    .where(and(eq(teamMembers.userId, ctx.tgUserRow.userId), isNull(teamMembers.removedAt)))
+    .where(
+      and(
+        eq(teamMembers.userId, ctx.tgUserRow.userId),
+        isNull(teamMembers.removedAt),
+        notExists(
+          ctx.db
+            .select({ teamId: teamBillingAccounts.teamId })
+            .from(teamBillingAccounts)
+            .where(
+              and(
+                eq(teamBillingAccounts.teamId, teamMembers.teamId),
+                inArray(teamBillingAccounts.securityState, ['suspended', 'terminated']),
+              ),
+            ),
+        ),
+      ),
+    )
     .orderBy(asc(teamMembers.createdAt), asc(teamMembers.teamId));
 
   if (memberships.length === 0) {
@@ -838,6 +855,17 @@ async function activateTelegramTeam(ctx: DmContext, teamId: string): Promise<boo
           eq(teamMembers.teamId, teamId),
           eq(teamMembers.userId, userId),
           isNull(teamMembers.removedAt),
+          notExists(
+            tx
+              .select({ teamId: teamBillingAccounts.teamId })
+              .from(teamBillingAccounts)
+              .where(
+                and(
+                  eq(teamBillingAccounts.teamId, teamMembers.teamId),
+                  inArray(teamBillingAccounts.securityState, ['suspended', 'terminated']),
+                ),
+              ),
+          ),
         ),
       )
       .limit(1);

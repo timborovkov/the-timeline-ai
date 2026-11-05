@@ -8,10 +8,11 @@ import {
   slackUserTeams,
   slackWorkspaces,
   slackWorkspaceTeams,
+  teamBillingAccounts,
   teamMembers,
   teams,
 } from '@timeline/db';
-import { and, asc, desc, eq, isNull, ne, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, ne, notExists, sql } from 'drizzle-orm';
 
 import { askAgent, TEAM_BOT_ACTOR_USER_ID, type AskAgentDeps } from '#src/agent/ask.js';
 import { type AgentToolErrorReporter } from '#src/agent/tools.js';
@@ -636,7 +637,23 @@ async function listEligibleSlackTeams(
         eq(slackUserTeams.teamId, teamMembers.teamId),
       ),
     )
-    .where(and(eq(teamMembers.userId, userId), isNull(teamMembers.removedAt)))
+    .where(
+      and(
+        eq(teamMembers.userId, userId),
+        isNull(teamMembers.removedAt),
+        notExists(
+          db
+            .select({ teamId: teamBillingAccounts.teamId })
+            .from(teamBillingAccounts)
+            .where(
+              and(
+                eq(teamBillingAccounts.teamId, teamMembers.teamId),
+                inArray(teamBillingAccounts.securityState, ['suspended', 'terminated']),
+              ),
+            ),
+        ),
+      ),
+    )
     .orderBy(asc(teamMembers.createdAt), asc(teamMembers.teamId));
   return rows.map((row) => ({ ...row, isActive: row.isActive ?? false }));
 }
@@ -669,6 +686,17 @@ async function activateSlackTeam(input: {
           eq(teamMembers.teamId, input.teamId),
           eq(teamMembers.userId, input.userId),
           isNull(teamMembers.removedAt),
+          notExists(
+            tx
+              .select({ teamId: teamBillingAccounts.teamId })
+              .from(teamBillingAccounts)
+              .where(
+                and(
+                  eq(teamBillingAccounts.teamId, teamMembers.teamId),
+                  inArray(teamBillingAccounts.securityState, ['suspended', 'terminated']),
+                ),
+              ),
+          ),
         ),
       )
       .limit(1);
