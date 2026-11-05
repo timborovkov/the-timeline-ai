@@ -75,6 +75,13 @@ test('sign-in Google button holds at desktop and 390px in light and dark', async
         'font-size',
         '14px',
       );
+      await expect(page.getByRole('button', { name: 'Continue with GitHub' })).toHaveCSS(
+        'font-size',
+        '14px',
+      );
+      await expect(
+        page.getByRole('button', { name: 'Continue with GitHub' }).locator('svg'),
+      ).toBeVisible();
       const localPath = path.join(LOCAL_SHOT_DIR, shot.name);
       await page.screenshot({ path: localPath, fullPage: true });
       saveSignInScreenshot(localPath, shot.name);

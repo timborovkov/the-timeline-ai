@@ -1,6 +1,6 @@
 # The Timeline — Design System
 
-**Version:** v3.36 · Google sign-in vendor mark (2026-11-04).
+**Version:** v3.36 · Google and GitHub sign-in vendor marks (2026-11-05).
 Replaces v3.35 Public monthly pricing calculator.
 
 This is the visual and interaction contract for the product. If a screen
@@ -1378,6 +1378,7 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-11-04 | Agent setup card marks | Replaces letter discs with official agent logos on white tiles, one short lede, and a single logo row on the landing and `/agents` cards. |
 | 2026-11-04 | Public monthly calculator | `/pricing` Usage compares PAYG, Team, and Business from paired sliders and exact fields. One hairline results panel, 12px metadata, and the shared billing preview. |
 | 2026-11-04 | Google sign-in | Sign-in and sign-up use the official Google G on a borderless white tile inside the existing outline control, at or above the 12px type floor, with Google above GitHub. Drive connection stays on Connections. |
+| 2026-11-05 | GitHub sign-in mark | Continue with GitHub uses the official Invertocat on the same borderless white tile as Google so the mark stays visible in dark mode. |
 
 
 ### Billing benefits and recorded charges (2026-10-31)

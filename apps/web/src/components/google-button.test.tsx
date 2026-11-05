@@ -12,6 +12,7 @@ await vi.mock(
 );
 
 const { cleanup, render, screen } = await import('@testing-library/react');
+const { GitHubSignInButton } = await import('./github-button.js');
 const { GoogleSignInButton } = await import('./google-button.js');
 const { OAuthSignInButtons } = await import('./oauth-buttons.js');
 
@@ -33,6 +34,26 @@ describe('GoogleSignInButton', () => {
     const logo = tile?.querySelector('svg');
     expect(logo?.getAttribute('aria-hidden')).toBe('true');
     expect(logo?.getAttribute('viewBox')).toBe('0 0 48 48');
+  });
+});
+
+describe('GitHubSignInButton', () => {
+  it('uses the official Invertocat on a borderless white tile at or above the 12px type floor', () => {
+    render(<GitHubSignInButton callbackUrl="/app" />);
+
+    const button = screen.getByRole('button', { name: 'Continue with GitHub' });
+    expect(button.className).toContain('text-sm');
+    expect(button.className).not.toMatch(/text-xs|text-\[1[01]px\]/);
+
+    const tile = button.querySelector('span.bg-white');
+    expect(tile).toBeTruthy();
+    expect(tile?.className).toContain('bg-white');
+    expect(tile?.className).not.toMatch(/border/);
+
+    const logo = tile?.querySelector('svg');
+    expect(logo?.getAttribute('aria-hidden')).toBe('true');
+    expect(logo?.getAttribute('viewBox')).toBe('0 0 24 24');
+    expect(logo?.getAttribute('fill')).toBe('#181717');
   });
 });
 
