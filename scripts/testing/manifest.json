@@ -1403,6 +1403,9 @@
   "apps/worker/src/railway-config.test.ts": {
     "group": "unit"
   },
+  "apps/worker/src/runtime-sentry-envelopes.test.ts": {
+    "group": "unit"
+  },
   "apps/worker/src/scripts/dedupe-calendar-events.test.ts": {
     "group": "unit"
   },

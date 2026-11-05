@@ -152,12 +152,45 @@ try {
   server.close();
 }
 
-let envelopes = 0;
+const ALLOWED_SENTRY_ITEM_TYPES = new Set(['event', 'session', 'client_report']);
+
+function sentryEnvelopeItems(envelope: unknown): { type: string; payload: unknown }[] {
+  if (!Array.isArray(envelope) || !Array.isArray(envelope[1])) return [];
+  return envelope[1].map((item) => {
+    if (!Array.isArray(item) || item[0] === null || typeof item[0] !== 'object') {
+      return { type: 'unknown', payload: undefined };
+    }
+    const header = item[0] as { type?: unknown };
+    const type = typeof header.type === 'string' ? header.type : 'unknown';
+    return { type, payload: item[1] };
+  });
+}
+
+function sentryEventExceptionText(payload: unknown): string {
+  if (!payload || typeof payload !== 'object' || !('exception' in payload)) return '';
+  const exception = payload.exception;
+  if (!exception || typeof exception !== 'object' || !('values' in exception)) return '';
+  if (!Array.isArray(exception.values)) return '';
+  return exception.values
+    .map((value) => {
+      if (!value || typeof value !== 'object') return '';
+      const type = 'type' in value && typeof value.type === 'string' ? value.type : '';
+      const message = 'value' in value && typeof value.value === 'string' ? value.value : '';
+      return `${type}: ${message}`;
+    })
+    .join('\n');
+}
+
+// Node Sentry's default processSessionIntegration sends a release-health
+// session envelope once a release is known. GitHub Actions (and Railway)
+// populate commit SHAs that the SDK treats as that release, so CI sees
+// session + event. Count captured error events, not raw transport calls.
+const sentryItems: { type: string; payload: unknown }[] = [];
 Sentry.init({
   dsn: 'https://public@example.invalid/1',
   transport: () => ({
-    send: async () => {
-      envelopes++;
+    send: async (envelope) => {
+      sentryItems.push(...sentryEnvelopeItems(envelope));
       return { statusCode: 200 };
     },
     flush: async () => true,
@@ -165,7 +198,21 @@ Sentry.init({
 });
 Sentry.captureException(new Error('synthetic Bun runtime smoke'));
 assert.equal(await Sentry.flush(5_000), true);
-assert.equal(envelopes, 1);
+const sentryItemTypes = sentryItems.map((item) => item.type);
+const sentryEvents = sentryItems.filter((item) => item.type === 'event');
+assert.equal(
+  sentryEvents.length,
+  1,
+  `expected one error event, got types=${sentryItemTypes.join(',') || '(none)'}`,
+);
+assert(
+  sentryItemTypes.every((type) => ALLOWED_SENTRY_ITEM_TYPES.has(type)),
+  `unexpected Sentry envelope item types: ${sentryItemTypes.join(',')}`,
+);
+assert(
+  sentryEventExceptionText(sentryEvents[0]?.payload).includes('synthetic Bun runtime smoke'),
+  'captured event must be the synthetic smoke exception',
+);
 await Sentry.close(5_000);
 console.log('Sentry reporting and flush passed (in-memory transport)');
 
