@@ -34,7 +34,11 @@ import {
   formatDriveDocumentFromApi,
   type DriveDocumentApiResource,
 } from '#src/integrations/google-drive-document.js';
-import { decideDriveSnapshotAdvance } from '#src/integrations/google-drive-evidence.js';
+import {
+  decideDriveSnapshotAdvance,
+  packedCommentContext,
+  type DrivePackedChangeEvent,
+} from '#src/integrations/google-drive-evidence.js';
 import {
   DRIVE_FILE_KIND,
   DRIVE_FOLDER_KIND,
@@ -1081,17 +1085,26 @@ function actorFromFile(file: DriveFile): IntegrationEvent['actor'] {
   };
 }
 
-function appendBounded(parts: string[], next: string, maxChars: number): void {
-  const trimmed = next.trim();
-  if (!trimmed) return;
+function appendEventPart(
+  parts: string[],
+  next: string,
+  maxChars: number,
+  whitespace: 'trim' | 'exact',
+): void {
+  const text = whitespace === 'trim' ? next.trim() : next;
+  if (text.length === 0) return;
   const used = parts.join('\n\n').length;
   const sep = parts.length > 0 ? 2 : 0;
   const remaining = maxChars - used - sep;
   if (remaining <= 0) return;
-  parts.push(trimmed.slice(0, remaining));
+  parts.push(text.slice(0, remaining));
 }
 
-/** Pack Drive event text so comment evidence cannot be sliced off by hunks. */
+/**
+ * Pack Drive event text so comment evidence cannot be sliced off by hunks.
+ * Comment slices keep their original whitespace; trimming would drop a space
+ * that falls on a split boundary and break the rejoined-preview invariant.
+ */
 export function packDriveEventContent(input: {
   summary: string;
   hunkPreview: string;
@@ -1101,18 +1114,39 @@ export function packDriveEventContent(input: {
 }): string {
   const maxChars = input.maxChars ?? DRIVE_EVENT_CONTENT_MAX_CHARS;
   const parts: string[] = [];
-  appendBounded(parts, input.summary, maxChars);
-  const comment = input.commentPreview.trim();
-  if (comment) {
+  appendEventPart(parts, input.summary, maxChars, 'trim');
+  if (input.commentPreview.length > 0) {
     const used = parts.join('\n\n').length;
     const sep = parts.length > 0 ? 2 : 0;
     const remaining = Math.max(0, maxChars - used - sep);
     const budget = input.commentBudget ?? remaining;
-    const reserved = Math.min(comment.length, budget, remaining);
-    appendBounded(parts, comment.slice(0, reserved), maxChars);
+    const reserved = Math.min(input.commentPreview.length, budget, remaining);
+    appendEventPart(parts, input.commentPreview.slice(0, reserved), maxChars, 'exact');
   }
-  appendBounded(parts, input.hunkPreview, maxChars);
+  appendEventPart(parts, input.hunkPreview, maxChars, 'trim');
   return parts.join('\n\n');
+}
+
+function assembleDriveEventContent(input: {
+  summary: string;
+  commentFragment: string;
+  hunkPreview: string;
+  maxChars: number;
+}): string | null {
+  const packed = packDriveEventContent({
+    summary: input.summary,
+    commentPreview: input.commentFragment,
+    hunkPreview: input.hunkPreview,
+    maxChars: input.maxChars,
+    commentBudget: input.commentFragment.length,
+  });
+  if (packed.length > input.maxChars) return null;
+  const summaryText = input.summary.trim();
+  const prefix = summaryText && input.commentFragment.length > 0 ? `${summaryText}\n\n` : '';
+  if (input.commentFragment.length > 0 && !packed.startsWith(`${prefix}${input.commentFragment}`)) {
+    return null;
+  }
+  return packed;
 }
 
 function packedHunksFitUntruncated(input: {
@@ -1135,8 +1169,10 @@ function packedHunksFitUntruncated(input: {
 /**
  * Split Drive event text so every input hunk appears untruncated in some event.
  * Changed comments take remaining space in the 4000-char cap and continue in
- * later events when they are longer than one event. If a changed span would be
- * dropped, return null so the caller does not advance the snapshot baseline.
+ * later events when they are longer than one event. Continuation slices keep
+ * original whitespace so `commentFragment` values rejoin to the exact preview.
+ * If a changed span would be dropped, return null so the caller does not
+ * advance the snapshot baseline.
  */
 export function packDriveChangeEvents(input: {
   summary: string;
@@ -1145,11 +1181,11 @@ export function packDriveChangeEvents(input: {
   previousText: string;
   nextText: string;
   maxChars?: number;
-}): { contentText: string; hunks: string[] }[] | null {
+}): DrivePackedChangeEvent[] | null {
   const maxChars = input.maxChars ?? DRIVE_EVENT_CONTENT_MAX_CHARS;
-  const events: { contentText: string; hunks: string[] }[] = [];
+  const events: DrivePackedChangeEvent[] = [];
   let remainingHunks = [...input.hunks];
-  let remainingComment = input.commentPreview.trim();
+  let remainingComment = input.commentPreview;
   let includeSummary = true;
   const commentEventBudget = Math.max(
     2,
@@ -1162,15 +1198,14 @@ export function packDriveChangeEvents(input: {
     const commentRoom = Math.max(0, maxChars - summaryText.length - commentSep);
     if (remainingComment.length > 0 && commentRoom === 0) {
       if (includeSummary && summaryText.length > 0) {
-        events.push({
-          contentText: packDriveEventContent({
-            summary,
-            hunkPreview: '',
-            commentPreview: '',
-            maxChars,
-          }),
-          hunks: [],
+        const contentText = assembleDriveEventContent({
+          summary,
+          commentFragment: '',
+          hunkPreview: '',
+          maxChars,
         });
+        if (contentText === null) return null;
+        events.push({ contentText, hunks: [], commentFragment: '' });
         includeSummary = false;
         continue;
       }
@@ -1197,28 +1232,30 @@ export function packDriveChangeEvents(input: {
     }
     if (fitted.length === 0 && remainingHunks.length > 0 && commentSlice.length === 0) {
       if (remainingComment.length > 0 && commentRoom === 0 && includeSummary) {
-        events.push({
-          contentText: packDriveEventContent({
-            summary,
-            hunkPreview: '',
-            commentPreview: '',
-            maxChars,
-          }),
-          hunks: [],
+        const contentText = assembleDriveEventContent({
+          summary,
+          commentFragment: '',
+          hunkPreview: '',
+          maxChars,
         });
+        if (contentText === null) return null;
+        events.push({ contentText, hunks: [], commentFragment: '' });
         includeSummary = false;
         continue;
       }
       return null;
     }
+    const contentText = assembleDriveEventContent({
+      summary,
+      commentFragment: commentSlice,
+      hunkPreview: fitted.join('\n'),
+      maxChars,
+    });
+    if (contentText === null) return null;
     events.push({
-      contentText: packDriveEventContent({
-        summary,
-        hunkPreview: fitted.join('\n'),
-        commentPreview: commentSlice,
-        maxChars,
-      }),
+      contentText,
       hunks: fitted,
+      commentFragment: commentSlice,
     });
     remainingComment = remainingComment.slice(commentSlice.length);
     remainingHunks = remainingHunks.slice(fitted.length);
@@ -1226,6 +1263,7 @@ export function packDriveChangeEvents(input: {
     if (remainingHunks.length === 0 && remainingComment.length === 0) break;
     if (events.length > input.hunks.length + commentEventBudget + 2) return null;
   }
+  if (packedCommentContext(events) !== input.commentPreview) return null;
   const packedHunks = events.flatMap((event) => event.hunks);
   if (packedHunks.length !== input.hunks.length) return null;
   if (packedHunks.some((hunk, index) => hunk !== input.hunks[index])) return null;

@@ -5,6 +5,7 @@ import { hashDrivePayload } from '#src/integrations/google-drive-capture.js';
 import {
   commentEventContext,
   compactDriveComments,
+  driveCommentChangeIsWitnessed,
 } from '#src/integrations/google-drive-comments.js';
 import {
   DRIVE_CHANGED_SPAN_MAX,
@@ -14,10 +15,14 @@ import {
 } from '#src/integrations/google-drive-diff.js';
 import {
   decideDriveSnapshotAdvance,
+  packedCommentContext,
   type DrivePackedChangeEvent,
   type DriveSnapshotAdvanceFields,
 } from '#src/integrations/google-drive-evidence.js';
-import { packDriveChangeEvents } from '#src/integrations/providers/google-drive.js';
+import {
+  DRIVE_EVENT_CONTENT_MAX_CHARS,
+  packDriveChangeEvents,
+} from '#src/integrations/providers/google-drive.js';
 
 function filler(length: number): string {
   const token = 'Northstar SOW covers implementation, training, and support. #';
@@ -246,6 +251,7 @@ describe('decideDriveSnapshotAdvance', () => {
       {
         contentText: 'Ada (updated): Keep the annual term. — Ada (reply): Older reply stays.',
         hunks: [],
+        commentFragment: 'Ada (updated): Keep the annual term. — Ada (reply): Older reply stays.',
       },
     ];
     const decision = decideDriveSnapshotAdvance({
@@ -294,6 +300,10 @@ describe('decideDriveSnapshotAdvance', () => {
       nextText: text,
     });
     expect(packed).not.toBeNull();
+    expect(packedCommentContext(packed)).toBe(commentPreview);
+    expect(
+      driveCommentChangeIsWitnessed(packedCommentContext(packed), previousComments, nextComments),
+    ).toBe(true);
     const decision = decideDriveSnapshotAdvance({
       previous: previousFields,
       next: nextFields,
@@ -336,6 +346,156 @@ describe('decideDriveSnapshotAdvance', () => {
       nextText: text,
     });
     expect(packed).not.toBeNull();
+    expect(packedCommentContext(packed)).toBe(commentPreview);
+    expect(
+      driveCommentChangeIsWitnessed(packedCommentContext(packed), previousComments, nextComments),
+    ).toBe(true);
+    const decision = decideDriveSnapshotAdvance({
+      previous: previousFields,
+      next: nextFields,
+      diff,
+      previousText: text,
+      nextText: text,
+      packedEvents: packed,
+    });
+    expect(decision.advanceComments).toBe(true);
+    expect(decision.persist).toBe(true);
+    expect(decision.snapshot.commentsHash).toBe('comments-new');
+  });
+
+  function spaceSplitCommentBody(aCount = 3_976, bCount = 100): string {
+    return `${'a'.repeat(aCount)} ${'b'.repeat(bCount)}`;
+  }
+
+  function expectPackedCommentsRejoin(
+    packed: ReturnType<typeof packDriveChangeEvents>,
+    preview: string,
+    previous: ReturnType<typeof compactDriveComments>,
+    next: ReturnType<typeof compactDriveComments>,
+  ): void {
+    expect(packed).not.toBeNull();
+    expect(packedCommentContext(packed)).toBe(preview);
+    expect(driveCommentChangeIsWitnessed(packedCommentContext(packed), previous, next)).toBe(true);
+  }
+
+  it('rejoins split-at-space comment fragments to the exact original body', () => {
+    const text = 'Contract amount is forty eight thousand dollars for Northstar.';
+    const body = spaceSplitCommentBody();
+    const nextCommentsRaw = [{ id: 'c-split', content: body, author: { displayName: 'Alice' } }];
+    const previousComments = compactDriveComments([]);
+    const nextComments = compactDriveComments(nextCommentsRaw);
+    const commentPreview = commentEventContext(nextCommentsRaw, previousComments);
+    expect(commentPreview).toContain(` ${'b'.repeat(100)}`);
+    const previousFields = fieldsFromText(text, previousComments, 'comments-old', 'perm');
+    const nextFields = fieldsFromText(text, nextComments, 'comments-new', 'perm');
+    const diff = diffDriveSnapshots({
+      previousSnapshotText: text,
+      previousLocate: previousFields.snapshotLocate,
+      nextFullText: text,
+      previousContentHash: previousFields.contentHash,
+      nextContentHash: nextFields.contentHash,
+    });
+    const packed = packDriveChangeEvents({
+      summary: 'Summary',
+      hunks: [],
+      commentPreview,
+      previousText: text,
+      nextText: text,
+    });
+    expect(packed).not.toBeNull();
+    expect((packed ?? []).length).toBeGreaterThan(1);
+    expectPackedCommentsRejoin(packed, commentPreview, previousComments, nextComments);
+    expect(packed?.[0]?.commentFragment.endsWith(' ')).toBe(true);
+    const trimmedJoin = (packed ?? []).map((event) => event.commentFragment.trim()).join('');
+    expect(trimmedJoin).not.toBe(commentPreview);
+    expect(driveCommentChangeIsWitnessed(trimmedJoin, previousComments, nextComments)).toBe(false);
+    const decision = decideDriveSnapshotAdvance({
+      previous: previousFields,
+      next: nextFields,
+      diff,
+      previousText: text,
+      nextText: text,
+      packedEvents: packed,
+    });
+    expect(decision.advanceComments).toBe(true);
+    expect(decision.persist).toBe(true);
+    expect(decision.snapshot.commentsHash).toBe('comments-new');
+  });
+
+  it('rejoins a space that falls at the start of a continuation fragment', () => {
+    const text = 'Contract amount is forty eight thousand dollars for Northstar.';
+    const body = spaceSplitCommentBody();
+    const nextCommentsRaw = [{ id: 'c-split', content: body, author: { displayName: 'Alice' } }];
+    const previousComments = compactDriveComments([]);
+    const nextComments = compactDriveComments(nextCommentsRaw);
+    const commentPreview = commentEventContext(nextCommentsRaw, previousComments);
+    const spaceAt = commentPreview.indexOf(` ${'b'.repeat(100)}`);
+    expect(spaceAt).toBeGreaterThan(0);
+    const summary = 'S'.repeat(DRIVE_EVENT_CONTENT_MAX_CHARS - 2 - spaceAt);
+    const previousFields = fieldsFromText(text, previousComments, 'comments-old', 'perm');
+    const nextFields = fieldsFromText(text, nextComments, 'comments-new', 'perm');
+    const diff = diffDriveSnapshots({
+      previousSnapshotText: text,
+      previousLocate: previousFields.snapshotLocate,
+      nextFullText: text,
+      previousContentHash: previousFields.contentHash,
+      nextContentHash: nextFields.contentHash,
+    });
+    const packed = packDriveChangeEvents({
+      summary,
+      hunks: [],
+      commentPreview,
+      previousText: text,
+      nextText: text,
+    });
+    expectPackedCommentsRejoin(packed, commentPreview, previousComments, nextComments);
+    expect(packed?.[0]?.commentFragment.endsWith('a')).toBe(true);
+    expect(packed?.[1]?.commentFragment.startsWith(' ')).toBe(true);
+    const decision = decideDriveSnapshotAdvance({
+      previous: previousFields,
+      next: nextFields,
+      diff,
+      previousText: text,
+      nextText: text,
+      packedEvents: packed,
+    });
+    expect(decision.advanceComments).toBe(true);
+  });
+
+  it('advances mixed long and many changed comments including a split-at-space body', () => {
+    const text = 'Contract amount is forty eight thousand dollars for Northstar.';
+    const longBody = spaceSplitCommentBody();
+    const nextCommentsRaw = [
+      { id: 'c-long', content: longBody, author: { displayName: 'Alice' } },
+      ...Array.from({ length: 8 }, (_, index) => ({
+        id: `c${String(index + 1)}`,
+        content: `Keep comment ${String(index + 1)}`,
+        author: { displayName: `Author ${String(index + 1)}` },
+      })),
+    ];
+    const previousComments = compactDriveComments([]);
+    const nextComments = compactDriveComments(nextCommentsRaw);
+    const commentPreview = commentEventContext(nextCommentsRaw, previousComments);
+    expect(commentPreview.split('\n')).toHaveLength(9);
+    expect(commentPreview).toContain(longBody);
+    expect(commentPreview).toContain('Keep comment 8');
+    const previousFields = fieldsFromText(text, previousComments, 'comments-old', 'perm');
+    const nextFields = fieldsFromText(text, nextComments, 'comments-new', 'perm');
+    const diff = diffDriveSnapshots({
+      previousSnapshotText: text,
+      previousLocate: previousFields.snapshotLocate,
+      nextFullText: text,
+      previousContentHash: previousFields.contentHash,
+      nextContentHash: nextFields.contentHash,
+    });
+    const packed = packDriveChangeEvents({
+      summary: 'Summary',
+      hunks: [],
+      commentPreview,
+      previousText: text,
+      nextText: text,
+    });
+    expectPackedCommentsRejoin(packed, commentPreview, previousComments, nextComments);
     const decision = decideDriveSnapshotAdvance({
       previous: previousFields,
       next: nextFields,

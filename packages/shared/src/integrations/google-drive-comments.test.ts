@@ -381,4 +381,15 @@ describe('commentEventContext ranking', () => {
     expect(lines[0]).toBe('Author 10 (removed): Keep comment 10');
     expect(lines[1]).toBe('Ada (open): Please confirm the $48k annual term.');
   });
+
+  it('requires the exact comment body including a split-boundary space', () => {
+    const body = `${'a'.repeat(3_976)} ${'b'.repeat(100)}`;
+    const nextRaw = [{ id: 'c-split', content: body, author: { displayName: 'Alice' } }];
+    const next = compactDriveComments(nextRaw);
+    const preview = commentEventContext(nextRaw);
+    expect(driveCommentChangeIsWitnessed(preview, [], next)).toBe(true);
+    const missingSplitSpace = preview.replace(` ${'b'.repeat(100)}`, 'b'.repeat(100));
+    expect(missingSplitSpace).not.toBe(preview);
+    expect(driveCommentChangeIsWitnessed(missingSplitSpace, [], next)).toBe(false);
+  });
 });

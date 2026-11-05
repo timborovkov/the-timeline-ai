@@ -3,8 +3,11 @@
  * strong-signal comments and judge-noise — must run through
  * `decideDriveSnapshotAdvance`. A changed text hash advances only when every
  * distinct span is witnessed in the hunks and in packed event text. Comment
- * fingerprints advance only when every changed reply appears in that packed
- * context. Otherwise the field is deferred; it is never advanced unwitnessed.
+ * fingerprints advance only when every changed comment and reply appears in
+ * the packed comment stream. Packing and this guard share one invariant:
+ * `commentFragment` values rejoin to the exact original preview, including
+ * whitespace at split boundaries. Otherwise the field is deferred; it is
+ * never advanced unwitnessed.
  */
 
 import {
@@ -20,6 +23,18 @@ import {
 export interface DrivePackedChangeEvent {
   contentText: string;
   hunks: string[];
+  /**
+   * Exact slice of `commentPreview` written into this event. Concatenating
+   * these across events must equal the original preview, including spaces
+   * that fall on a split boundary. Do not trim.
+   */
+  commentFragment: string;
+}
+
+/** Rejoin packed comment slices. This is the stream the witnessed check reads. */
+export function packedCommentContext(events: DrivePackedChangeEvent[] | null): string {
+  if (!events || events.length === 0) return '';
+  return events.map((event) => event.commentFragment).join('');
 }
 
 export interface DriveSnapshotAdvanceFields {
@@ -97,7 +112,7 @@ function canAdvanceDriveCommentsBaseline(input: {
   packedEvents: DrivePackedChangeEvent[] | null;
 }): boolean {
   if (input.previousHash === input.nextHash) return true;
-  const context = packedBlob(input.packedEvents);
+  const context = packedCommentContext(input.packedEvents);
   if (!context.trim()) return false;
   return driveCommentChangeIsWitnessed(context, input.previousComments, input.nextComments);
 }

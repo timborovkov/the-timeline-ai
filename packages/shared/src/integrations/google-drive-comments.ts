@@ -2,7 +2,8 @@
  * Drive comment fingerprints hash every page. Event context ranks every
  * commentsHash field change ahead of unchanged comments so a transition past
  * the first eight still reaches the judged event. All changed comments are
- * packed (the event splitter can span events); only unchanged context is
+ * packed (the event splitter can span events and must rejoin to the exact
+ * original preview, including whitespace); only unchanged context is
  * limited to eight.
  * `comments.list` omits deleted comments (`includeDeleted=false`), so
  * removals are recovered by comparing previous snapshot ids to the next set.
@@ -389,7 +390,12 @@ function commentNeedle(comment: DriveCommentSnapshot, kind: DriveCommentChangeKi
   return `${comment.author} (${commentContextState(kind, comment)})`;
 }
 
-/** Packed context must contain every changed comment and every changed reply. */
+/**
+ * Packed context must contain every changed comment and every changed reply.
+ * Callers must pass the rejoined comment stream (`packedCommentContext`), not
+ * concatenated event bodies: fragments have to reconstruct the exact original
+ * preview, including whitespace at split boundaries.
+ */
 export function driveCommentChangeIsWitnessed(
   context: string,
   previous: DriveCommentSnapshot[],

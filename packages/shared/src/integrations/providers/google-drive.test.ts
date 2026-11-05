@@ -32,7 +32,13 @@ const {
 } = await import('#src/integrations/providers/google-drive.js');
 const { DRIVE_FILE_DEBOUNCE_MS, DRIVE_TRANSIENT_RESULT_TOO_LARGE, hashDrivePayload } =
   await import('#src/integrations/google-drive-capture.js');
-const { driveCommentsHashEntries } = await import('#src/integrations/google-drive-comments.js');
+const {
+  commentEventContext,
+  compactDriveComments,
+  driveCommentChangeIsWitnessed,
+  driveCommentsHashEntries,
+} = await import('#src/integrations/google-drive-comments.js');
+const { packedCommentContext } = await import('#src/integrations/google-drive-evidence.js');
 const { DRIVE_CHANGED_SPAN_MAX, DRIVE_SNAPSHOT_MAX_CHARS, buildDriveSnapshotLocate } =
   await import('#src/integrations/google-drive-diff.js');
 const { extractDriveDocumentStructuralText, formatDriveDocumentTabs } =
@@ -354,6 +360,7 @@ describe('packDriveChangeEvents', () => {
     });
     expect(packed).not.toBeNull();
     const blob = (packed ?? []).map((event) => event.contentText).join('');
+    expect(packedCommentContext(packed)).toBe(commentPreview);
     expect(blob).toContain(body);
     expect(blob).toContain('APPROVED-$48k');
     for (const event of packed ?? []) {
@@ -375,10 +382,47 @@ describe('packDriveChangeEvents', () => {
     expect(packed).not.toBeNull();
     const parts = packed ?? [];
     expect(parts.length).toBeGreaterThan(1);
+    expect(packedCommentContext(packed)).toBe(commentPreview);
     const blob = parts.map((event) => event.contentText).join('');
     expect(blob).toContain(body);
     expect(blob).toContain('APPROVED-$48k');
     for (const event of parts) {
+      expect(event.contentText.length).toBeLessThanOrEqual(DRIVE_EVENT_CONTENT_MAX_CHARS);
+    }
+  });
+
+  it('keeps the space when a long comment splits exactly on whitespace', () => {
+    const body = `${'a'.repeat(3_976)} ${'b'.repeat(100)}`;
+    const nextComments = [{ id: 'c-split', content: body, author: { displayName: 'Alice' } }];
+    const commentPreview = commentEventContext(nextComments);
+    const packed = packDriveChangeEvents({
+      summary: 'Summary',
+      hunks: [],
+      commentPreview,
+      previousText: 'Keep the annual term.',
+      nextText: 'Keep the annual term.',
+    });
+    expect(packed).not.toBeNull();
+    expect((packed ?? []).length).toBeGreaterThan(1);
+    expect(packedCommentContext(packed)).toBe(commentPreview);
+    expect(
+      driveCommentChangeIsWitnessed(
+        packedCommentContext(packed),
+        compactDriveComments([]),
+        compactDriveComments(nextComments),
+      ),
+    ).toBe(true);
+    const trimmedJoin = (packed ?? []).map((event) => event.commentFragment.trim()).join('');
+    expect(trimmedJoin).not.toBe(commentPreview);
+    expect(
+      driveCommentChangeIsWitnessed(
+        trimmedJoin,
+        compactDriveComments([]),
+        compactDriveComments(nextComments),
+      ),
+    ).toBe(false);
+    expect(packedCommentContext(packed)).toContain(` ${'b'.repeat(100)}`);
+    for (const event of packed ?? []) {
       expect(event.contentText.length).toBeLessThanOrEqual(DRIVE_EVENT_CONTENT_MAX_CHARS);
     }
   });
@@ -3159,6 +3203,163 @@ describe('googleDriveProvider', () => {
         .calls[0]?.[0] ?? [];
     const blob = events.map((event) => event.contentText).join('');
     expect(blob).toContain('Keep comment 9');
+    expect(ctx.saveDriveSnapshot).toHaveBeenCalledWith(
+      expect.objectContaining({
+        commentsHash: driveCommentsHash(comments),
+      }),
+    );
+  });
+
+  it('captures a comment that splits on a space instead of skipping as no_evidence', async () => {
+    const snapshotText = 'Contract amount is forty eight thousand dollars for Northstar.';
+    const contentHash = hashDrivePayload(snapshotText);
+    const longComment = `${'a'.repeat(3_976)} ${'b'.repeat(100)}`;
+    const comments = [
+      {
+        id: 'c-split',
+        content: longComment,
+        resolved: false,
+        modifiedTime: '2026-06-20T10:00:00.000Z',
+        author: { displayName: 'Alice' },
+      },
+    ];
+    const fetch = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((input) => {
+      const url = requestUrl(input);
+      if (isGoogleDocsGet(url)) {
+        return Promise.resolve(googleDocsPlainResponse(snapshotText));
+      }
+      if (url.pathname.endsWith('/comments')) {
+        return Promise.resolve(jsonResponse({ comments }));
+      }
+      if (url.pathname.endsWith('/permissions')) {
+        return Promise.resolve(jsonResponse({ permissions: [] }));
+      }
+      if (url.pathname.endsWith('/files/file-1')) {
+        return Promise.resolve(
+          jsonResponse({
+            id: 'file-1',
+            name: 'SOW',
+            mimeType: 'application/vnd.google-apps.document',
+            parents: ['root'],
+            modifiedTime: '2026-06-20T10:00:00.000Z',
+          }),
+        );
+      }
+      return Promise.resolve(jsonResponse({ message: 'unexpected' }, { status: 404 }));
+    });
+    vi.stubGlobal('fetch', fetch);
+    const ctx = syncContext({
+      loadLatestDriveSnapshot: vi.fn().mockResolvedValue({
+        contentHash,
+        snapshotText,
+        commentsHash: driveCommentsHash([]),
+        permissionsHash: drivePermissionsHash([]),
+        mimeType: 'application/vnd.google-apps.document',
+      }),
+    });
+
+    await googleDriveProvider.incrementalSync({
+      integration: { id: 'integration-1', teamId: 'team-1' } as never,
+      tokens: { access_token: 'access-token', expires_at: Date.now() + 600_000 },
+      selections: [{ kind: 'drive.file', externalId: 'file-1' }],
+      ctx: ctx,
+      target: { resourceType: 'drive.file', externalId: 'file-1' },
+    });
+
+    expect(ctx.recordAudit).not.toHaveBeenCalledWith(
+      'drive_change_skipped',
+      expect.objectContaining({ reason: 'no_evidence' }),
+    );
+    const events: IntegrationEvent[] =
+      (ctx.writeEvents as unknown as { mock: { calls: [IntegrationEvent[]][] } }).mock
+        .calls[0]?.[0] ?? [];
+    expect(events.length).toBeGreaterThan(1);
+    const blob = events.map((event) => event.contentText).join('');
+    expect(blob).toContain(longComment);
+    expect(ctx.saveDriveSnapshot).toHaveBeenCalledWith(
+      expect.objectContaining({
+        commentsHash: driveCommentsHash(comments),
+      }),
+    );
+  });
+
+  it('captures nine comments including a split-at-space body instead of skipping as no_evidence', async () => {
+    const snapshotText = 'Contract amount is forty eight thousand dollars for Northstar.';
+    const contentHash = hashDrivePayload(snapshotText);
+    const longComment = `${'a'.repeat(3_976)} ${'b'.repeat(100)}`;
+    const comments = [
+      {
+        id: 'c-long',
+        content: longComment,
+        resolved: false,
+        modifiedTime: '2026-06-01T00:00:00.000Z',
+        author: { displayName: 'Alice' },
+      },
+      ...Array.from({ length: 8 }, (_, index) => ({
+        id: `c${String(index + 1)}`,
+        content: `Keep comment ${String(index + 1)}`,
+        resolved: false,
+        modifiedTime: `2026-06-${String(index + 2).padStart(2, '0')}T00:00:00.000Z`,
+        author: { displayName: `Author ${String(index + 1)}` },
+      })),
+    ];
+    const fetch = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((input) => {
+      const url = requestUrl(input);
+      if (isGoogleDocsGet(url)) {
+        return Promise.resolve(googleDocsPlainResponse(snapshotText));
+      }
+      if (url.pathname.endsWith('/comments')) {
+        return Promise.resolve(jsonResponse({ comments }));
+      }
+      if (url.pathname.endsWith('/permissions')) {
+        return Promise.resolve(jsonResponse({ permissions: [] }));
+      }
+      if (url.pathname.endsWith('/files/file-1')) {
+        return Promise.resolve(
+          jsonResponse({
+            id: 'file-1',
+            name: 'SOW',
+            mimeType: 'application/vnd.google-apps.document',
+            parents: ['root'],
+            modifiedTime: '2026-06-20T10:00:00.000Z',
+          }),
+        );
+      }
+      return Promise.resolve(jsonResponse({ message: 'unexpected' }, { status: 404 }));
+    });
+    vi.stubGlobal('fetch', fetch);
+    const ctx = syncContext({
+      loadLatestDriveSnapshot: vi.fn().mockResolvedValue({
+        contentHash,
+        snapshotText,
+        commentsHash: driveCommentsHash([]),
+        permissionsHash: drivePermissionsHash([]),
+        mimeType: 'application/vnd.google-apps.document',
+      }),
+    });
+
+    await googleDriveProvider.incrementalSync({
+      integration: { id: 'integration-1', teamId: 'team-1' } as never,
+      tokens: { access_token: 'access-token', expires_at: Date.now() + 600_000 },
+      selections: [{ kind: 'drive.file', externalId: 'file-1' }],
+      ctx: ctx,
+      target: { resourceType: 'drive.file', externalId: 'file-1' },
+    });
+
+    expect(ctx.recordAudit).not.toHaveBeenCalledWith(
+      'drive_change_skipped',
+      expect.objectContaining({ reason: 'no_evidence' }),
+    );
+    const events: IntegrationEvent[] =
+      (ctx.writeEvents as unknown as { mock: { calls: [IntegrationEvent[]][] } }).mock
+        .calls[0]?.[0] ?? [];
+    const blob = events.map((event) => event.contentText).join('');
+    expect(blob).toContain(longComment);
+    expect(blob).toContain('Keep comment 8');
     expect(ctx.saveDriveSnapshot).toHaveBeenCalledWith(
       expect.objectContaining({
         commentsHash: driveCommentsHash(comments),
