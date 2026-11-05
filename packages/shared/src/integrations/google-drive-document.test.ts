@@ -3,6 +3,10 @@ import { describe, it } from 'bun:test';
 
 import { hashDrivePayload } from '#src/integrations/google-drive-capture.js';
 import {
+  diffDriveText,
+  normalizeDriveTextForCompare,
+} from '#src/integrations/google-drive-diff.js';
+import {
   extractDriveDocumentStructuralText,
   flattenDriveDocumentTabs,
   formatDriveDocumentFromApi,
@@ -80,6 +84,36 @@ describe('extractDriveDocumentStructuralText', () => {
     expect(sow).toContain('Northstar SOW');
     expect(sow).toContain('application/vnd.google-apps.document');
     expect(hashDrivePayload(brief)).not.toBe(hashDrivePayload(sow));
+  });
+
+  it('does not treat a same-title rich-link URI retarget as formatting-only', () => {
+    const linked = (uri: string) =>
+      extractDriveDocumentStructuralText([
+        {
+          paragraph: {
+            elements: [
+              { textRun: { content: 'See ' } },
+              {
+                richLink: {
+                  richLinkProperties: {
+                    title: 'Northstar SOW',
+                    uri,
+                  },
+                },
+              },
+            ],
+          },
+        },
+      ]);
+    const draft = linked('https://docs.google.com/document/d/draft');
+    const signed = linked('https://docs.google.com/document/d/signed');
+    expect(draft).toBe('See [Northstar SOW](https://docs.google.com/document/d/draft)');
+    expect(normalizeDriveTextForCompare(draft)).not.toBe(normalizeDriveTextForCompare(signed));
+    const diff = diffDriveText(draft, signed);
+    expect(diff.changed).toBe(true);
+    expect(diff.reason).not.toBe('formatting');
+    expect(diff.reason).toBe('substantive');
+    expect(diff.hunks.join(' ')).toContain('signed');
   });
 
   it('keeps person chips inside table cells so an owner swap still hashes', () => {

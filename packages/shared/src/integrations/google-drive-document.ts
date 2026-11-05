@@ -5,7 +5,8 @@
  * without `includeTabsContent=true` returns the first tab only. Capture lists
  * every tab in UI order and formats a stable document text before `contentHash`.
  * Paragraph extract keeps person smart chips (name/email), rich/resource links,
- * and inline objects — not only `textRun` — so an ownership chip change hashes.
+ * and inline objects — not only `textRun` — so an ownership chip change hashes
+ * and a retargeted link destination remains in the serialized text.
  */
 
 export interface DriveDocumentTab {

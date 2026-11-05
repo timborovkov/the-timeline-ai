@@ -21,13 +21,16 @@
  * Equal-length one-letter substitutions (`hiring`→`firing`) are ambiguous word
  * swaps, not typos, and stay substantive. Whole-word insertion or removal,
  * digits, currency, and negation are substantive even when the span is short.
+ * Markdown heading/list/whitespace still fold as formatting, but link
+ * destinations stay in the normalized compare so a same-title URI retarget
+ * (draft→signed) is judged rather than skipped.
  */
 
 import { createHash } from 'node:crypto';
 
 const WHITESPACE = /\s+/g;
 const MARKDOWN_MARKERS = /[_*`#>\[\]]/g;
-const MARKDOWN_LINK = /!?\[([^\]]*)\]\([^)]*\)/g;
+const MARKDOWN_LINK = /!?\[([^\]]*)\]\(([^)]*)\)/g;
 const MARKDOWN_LINE_PREFIX = /^\s{0,3}(?:#{1,6}\s+|>\s+|[-*+]\s+)/;
 
 const DRIVE_DIFF_MIN_CHANGED_CHARS = 40;
@@ -70,7 +73,7 @@ export interface DriveTextDiff {
 }
 
 export function normalizeDriveTextForCompare(text: string): string {
-  const withoutLinks = text.replace(MARKDOWN_LINK, '$1');
+  const withoutLinks = text.replace(MARKDOWN_LINK, '$1 $2');
   const withoutLineMarkup = withoutLinks
     .split('\n')
     .map((line) => line.replace(MARKDOWN_LINE_PREFIX, ''))

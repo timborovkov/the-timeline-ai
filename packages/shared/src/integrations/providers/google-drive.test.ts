@@ -35,7 +35,8 @@ const { DRIVE_FILE_DEBOUNCE_MS, DRIVE_TRANSIENT_RESULT_TOO_LARGE, hashDrivePaylo
 const { driveCommentsHashEntries } = await import('#src/integrations/google-drive-comments.js');
 const { DRIVE_CHANGED_SPAN_MAX, DRIVE_SNAPSHOT_MAX_CHARS, buildDriveSnapshotLocate } =
   await import('#src/integrations/google-drive-diff.js');
-const { formatDriveDocumentTabs } = await import('#src/integrations/google-drive-document.js');
+const { extractDriveDocumentStructuralText, formatDriveDocumentTabs } =
+  await import('#src/integrations/google-drive-document.js');
 const { formatDriveSpreadsheetWorkbook, sheetValuesToCsv } =
   await import('#src/integrations/google-drive-spreadsheet.js');
 
@@ -2287,6 +2288,112 @@ describe('googleDriveProvider', () => {
       'drive_change_skipped',
       expect.objectContaining({ reason: 'formatting' }),
     );
+  });
+
+  it('judges a same-title rich-link URI retarget instead of skipping it as formatting', async () => {
+    const linked = (uri: string) =>
+      extractDriveDocumentStructuralText([
+        {
+          paragraph: {
+            elements: [
+              { textRun: { content: 'See ' } },
+              {
+                richLink: {
+                  richLinkProperties: {
+                    title: 'Northstar SOW',
+                    uri,
+                  },
+                },
+              },
+            ],
+          },
+        },
+      ]);
+    const previousFull = linked('https://docs.google.com/document/d/draft');
+    const nextFull = linked('https://docs.google.com/document/d/signed');
+    const fetch = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((input) => {
+      const url = requestUrl(input);
+      if (isGoogleDocsGet(url)) {
+        return Promise.resolve(
+          jsonResponse({
+            tabs: [
+              {
+                tabProperties: { title: 'Tab 1' },
+                documentTab: {
+                  body: {
+                    content: [
+                      {
+                        paragraph: {
+                          elements: [
+                            { textRun: { content: 'See ' } },
+                            {
+                              richLink: {
+                                richLinkProperties: {
+                                  title: 'Northstar SOW',
+                                  uri: 'https://docs.google.com/document/d/signed',
+                                },
+                              },
+                            },
+                          ],
+                        },
+                      },
+                    ],
+                  },
+                },
+              },
+            ],
+          }),
+        );
+      }
+      if (url.pathname.endsWith('/files/file-1')) {
+        return Promise.resolve(
+          jsonResponse({
+            id: 'file-1',
+            name: 'SOW',
+            mimeType: 'application/vnd.google-apps.document',
+            parents: ['root'],
+            modifiedTime: '2026-06-20T10:00:00.000Z',
+          }),
+        );
+      }
+      if (url.pathname.endsWith('/comments')) {
+        return Promise.resolve(jsonResponse({ comments: [] }));
+      }
+      return Promise.resolve(jsonResponse({ permissions: [] }));
+    });
+    vi.stubGlobal('fetch', fetch);
+    const ctx = syncContext({
+      loadLatestDriveSnapshot: vi.fn().mockResolvedValue({
+        contentHash: hashDrivePayload(previousFull),
+        snapshotText: previousFull,
+        commentsHash: driveCommentsHash([]),
+        permissionsHash: drivePermissionsHash([]),
+        mimeType: 'application/vnd.google-apps.document',
+      }),
+    });
+
+    await googleDriveProvider.incrementalSync({
+      integration: { id: 'integration-1', teamId: 'team-1' } as never,
+      tokens: { access_token: 'access-token', expires_at: Date.now() + 600_000 },
+      selections: [{ kind: 'drive.file', externalId: 'file-1' }],
+      ctx: ctx,
+      target: { resourceType: 'drive.file', externalId: 'file-1' },
+    });
+
+    expect(ctx.judgeDriveChange).toHaveBeenCalled();
+    const judgeInput = (
+      ctx.judgeDriveChange as unknown as {
+        mock: { calls: [{ hunks: string[] }][] };
+      }
+    ).mock.calls[0]?.[0];
+    expect(judgeInput?.hunks.join(' ')).toContain('signed');
+    expect(ctx.recordAudit).not.toHaveBeenCalledWith(
+      'drive_change_skipped',
+      expect.objectContaining({ reason: 'formatting' }),
+    );
+    expect(nextFull).toBe('See [Northstar SOW](https://docs.google.com/document/d/signed)');
   });
 
   it('judges a deleted tail paragraph on a short doc', async () => {

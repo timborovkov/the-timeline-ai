@@ -42,6 +42,26 @@ describe('diffDriveText', () => {
     expect(normalizeDriveTextForCompare('# Hello')).toBe('hello');
   });
 
+  it('keeps markdown link destinations so a same-title URI retarget is not formatting-only', () => {
+    const draft = 'See [Northstar SOW](https://docs.google.com/document/d/draft)';
+    const signed = 'See [Northstar SOW](https://docs.google.com/document/d/signed)';
+    expect(normalizeDriveTextForCompare(draft)).toContain(
+      'https://docs.google.com/document/d/draft',
+    );
+    expect(normalizeDriveTextForCompare(draft)).not.toBe(normalizeDriveTextForCompare(signed));
+    const sameDestination = diffDriveText(
+      draft,
+      'See Northstar SOW https://docs.google.com/document/d/draft',
+    );
+    expect(sameDestination).toMatchObject({ changed: false, reason: 'formatting' });
+    const diff = diffDriveText(draft, signed);
+    expect(diff.changed).toBe(true);
+    expect(diff.reason).not.toBe('formatting');
+    expect(diff.reason).toBe('substantive');
+    expect(diff.hunks.join(' ')).toContain('signed');
+    expect(driveDiffHasEvidence(diff)).toBe(true);
+  });
+
   it('keeps signed amounts instead of treating hyphens as markdown', () => {
     expect(normalizeDriveTextForCompare('-50000 USD')).toBe('-50000 usd');
     const diff = diffDriveText(
@@ -459,6 +479,14 @@ describe('diffDriveSnapshots regression matrix', () => {
       nextFull: `Title\n${short.replaceAll('\n\n', '\n')}`,
       changed: false,
       reason: 'formatting',
+    },
+    {
+      name: '<20k same-title markdown link URI retarget',
+      previousFull: `See [Northstar SOW](https://docs.google.com/document/d/draft)\n${short}`,
+      nextFull: `See [Northstar SOW](https://docs.google.com/document/d/signed)\n${short}`,
+      changed: true,
+      reason: 'substantive',
+      hunkIncludes: 'signed',
     },
     {
       name: '<20k tiny punctuation',
