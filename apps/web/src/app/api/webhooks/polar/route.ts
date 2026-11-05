@@ -2,6 +2,7 @@ import {
   createPolarBillingProvider,
   handlePolarWebhookEvent,
   isIgnorablePolarWebhookFailure,
+  resolvePolarWebhookTeamId,
   verifyPolarWebhookSignature,
 } from '@timeline/shared/billing';
 import { getEnv } from '@timeline/shared/env';
@@ -13,10 +14,23 @@ import {
   readCappedTextBody,
   REQUEST_BODY_LIMITS,
 } from '@/lib/request-body';
+import { reportHandledEvent } from '@/lib/sentry-report';
 
 export const runtime = 'nodejs';
 
 const log = childLogger('web:api:polar-webhook');
+
+function acknowledgeIgnoredPolarWebhook(ignored: string): Response {
+  log.warn({ ignored }, 'polar webhook acknowledged');
+  reportHandledEvent({
+    message: 'polar_webhook_ignored',
+    surface: 'api',
+    operation: 'polar_webhook',
+    level: 'warning',
+    tags: { reason: ignored },
+  });
+  return Response.json({ ok: true, ignored });
+}
 
 export async function POST(req: Request): Promise<Response> {
   const env = getEnv();
@@ -46,6 +60,12 @@ export async function POST(req: Request): Promise<Response> {
 
   const provider = createPolarBillingProvider();
   if (!provider) return Response.json({ error: 'provider_not_configured' }, { status: 503 });
+
+  const resolvedTeam = resolvePolarWebhookTeamId(payload);
+  if ('ignored' in resolvedTeam && resolvedTeam.ignored === 'invalid_external_customer') {
+    return acknowledgeIgnoredPolarWebhook(resolvedTeam.ignored);
+  }
+
   try {
     const result = await handlePolarWebhookEvent({
       db,
@@ -59,11 +79,13 @@ export async function POST(req: Request): Promise<Response> {
       },
       provider,
     });
+    if (result.ignored === 'invalid_external_customer' || result.ignored === 'unknown_team') {
+      return acknowledgeIgnoredPolarWebhook(result.ignored);
+    }
     return Response.json(result);
   } catch (err) {
     if (isIgnorablePolarWebhookFailure(err)) {
-      log.warn({ err }, 'polar webhook acknowledged invalid team identifier');
-      return Response.json({ ok: true, ignored: 'invalid_external_customer' });
+      return acknowledgeIgnoredPolarWebhook('invalid_external_customer');
     }
     throw err;
   }
