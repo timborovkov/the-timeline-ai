@@ -155,6 +155,12 @@ try {
 let envelopes = 0;
 Sentry.init({
   dsn: 'https://public@example.invalid/1',
+  // CI injects GITHUB_SHA, which the SDK treats as a release and flushes a
+  // session envelope alongside the captured exception. Disable defaults so this
+  // smoke test counts only the in-memory exception transport.
+  defaultIntegrations: false,
+  sendClientReports: false,
+  release: 'bun-runtime-smoke',
   transport: () => ({
     send: async () => {
       envelopes++;
