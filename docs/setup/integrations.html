@@ -153,8 +153,10 @@ GOOGLE_DRIVE_WEBHOOK_SECRET=...</code></pre>
           targeted <code>drive.changes</code> job (the same webhook-delivery + targeted
           <code>integration-sync</code> path GitHub and Monday use). The Drive changes job lists the
           account feed, keeps in-scope files, and enqueues one delayed <code>drive.file</code> job
-          per file. BullMQ <code>jobId</code> coalesces bursts; <code>replaceDelayed</code> extends
-          the quiet window the same way conversation-review bumps <code>quietUntil</code>
+          per file. Folder ACL changes schedule permission refreshes for tracked descendants whose
+          stored ancestry includes that folder rather than discarding the folder change. BullMQ
+          <code>jobId</code> coalesces bursts; <code>replaceDelayed</code> extends the quiet window
+          the same way conversation-review bumps <code>quietUntil</code>
           (about 15 minutes, at most one hour from the first notification).
         </li>
         <li>
@@ -174,66 +176,71 @@ GOOGLE_DRIVE_WEBHOOK_SECRET=...</code></pre>
           chips (name/email), rich/resource links, and ordinary
           <code>textStyle.link</code> destinations, not only plain <code>textRun</code> content, so
           an owner chip or URL-only hyperlink change is not hashed as identical, and
-          compare-normalize keeps those link destinations so a same-title URI retarget is judged.
-          Capture requests <code>suggestionsViewMode=PREVIEW_WITHOUT_SUGGESTIONS</code> so pending
-          suggested inserts are not hashed as committed. Artifact rebind parenthesizes
-          provider/alias matches inside the team filter. Only the latest retained state keeps
-          per-chunk extracted text to detect later edits; older states keep hashes only. That latest
-          extracted text is deleted on disconnect or file removal. Change detection diffs those
-          stored windows like-for-like against the current full text and always keeps added and
-          removed hunks together. Prefix equivalence never proves the suffix is unchanged: if the
-          full-text hash moved, the result is never classified identical: the suffix or
-          full-document chunk index (hashes plus stored chunk text) locates the changed region,
-          including chunks that straddle the prefix and suffix bounds. Each mismatched chunk is
-          char-diffed against the stored previous chunk so hunks are centered on every distinct
-          changed span and truncated around that span — a first-to-last bounding span is not used,
-          because truncation would hide a middle edit. Span collection aborts once more than 20
-          spans are found so persist is refused rather than dropping a later span, and each resync
-          scan stays inside an 8k window so a long document with thousands of edits cannot rebuild a
-          full remaining-text map. If count or budget would drop any span, or packed event text
-          cannot keep every span, the text baseline does not advance (the capture splits across
-          events or defers persist). One persist guard enforces that invariant on every path,
-          including strong-signal comments: more than 20 spans plus a comment change cannot advance
-          the text hash. Comment and reply fingerprints keep the full compacted body through hashing
-          and change detection; packed event context preview-truncates only unchanged comments and
-          replies. Comment context puts new or changed replies first, and
-          <code>commentsHash</code> advances only when every changed reply is in that packed
-          context. Replacing a Drive selection's workspace object link moves that file's artifact
-          anchors onto the object the most-specific remaining selected ancestor would pick (file,
-          then folder, then shared drive). A remaining overlapping container keeps the previous
-          object only when it is more specific than the changed selection. Membership walks the full
-          ancestry past unlinked selected folders so an outer linked folder stays on the candidate
-          path, still walks parents even when a shared drive already matches so a selected folder
-          inside that drive wins, and still walks ancestors of an explicitly selected file so an
-          unlinked file under a nested subfolder of a linked folder inherits that folder. Live
-          capture rebinds that file's anchors onto the newly resolved object before evidence attach,
-          without moving sibling files. The selection-row update and every rebind write share one
-          transaction, without rewriting the previous company's canonical entity. Assigning a
-          previously unlinked folder or shared drive rebinds files whose ancestry includes that
-          selection, including files already on an outer folder or shared-drive object, then applies
-          live-capture before/after precedence. Captured Drive events stamp the winning selection
-          and candidate walk so a later rebind can tell those files apart. Dropping a
-          <code>drive.file</code> selection that remaining folders or shared drives still cover
-          keeps snapshots/extract and rebinds the file onto the surviving inherited object link
-          instead of unbinding it. Removing a folder or shared drive computes coverage for that
-          container's tracked files against remaining selections; uncovered files, including
-          last-container leftovers, delete snapshots and keep a cancellation tombstone until the
-          producer wait window settles so a late <code>result.json</code> still has a janitor
-          handle. Share revoke, activate-source narrowing, last-selection incrementalSync, and
-          disconnect use that same coverage-aware cleanup rather than deleting selection rows alone.
-          A remaining sibling container does not keep extracted text for files only under the
-          removed folder, including baseline-only files that never emitted a raw event: capture
-          stamps walked ancestry on the snapshot so deselection can classify those files without
-          <code>getParents</code>. Unchanged-content recaptures still persist that live walk, so a
-          move from folder A to B is not lost. Coverage and cleanup read the newest tracked ancestry
-          (snapshot or event), not event hints alone. Full-text hashes still see edits past 20k
-          chars. Formatting-only and tiny edits (Markdown markers, not signed amounts such as
-          <code>-50000 USD</code> and not markdown link destinations) skip the LLM. A same-title
-          rich-link URI retarget (draft→signed) stays in the normalized compare so the judge sees
-          it. Tiny vs substantive uses the intra-line edited span, not the hunk context kept for the
-          judge. Tiny is only whitespace, punctuation-only, case-only, or a one-letter insert/delete
-          typo (edit distance 1, lengths differ) inside one word longer than 3 characters;
-          equal-length substitutions such as <code>hiring</code>→<code>firing</code> stay
+          compare-normalize stashes destinations before marker stripping and case folding so a
+          same-title URI retarget, <code>customer_a</code> vs <code>customera</code>, or destination
+          case is judged rather than skipped as formatting or tiny. Capture requests
+          <code>suggestionsViewMode=PREVIEW_WITHOUT_SUGGESTIONS</code> so pending suggested inserts
+          are not hashed as committed. Artifact rebind parenthesizes provider/alias matches inside
+          the team filter. Only the latest retained state keeps per-chunk extracted text to detect
+          later edits; older states keep hashes only. That latest extracted text is deleted on
+          disconnect or file removal. Change detection diffs those stored windows like-for-like
+          against the current full text and always keeps added and removed hunks together. Prefix
+          equivalence never proves the suffix is unchanged: if the full-text hash moved, the result
+          is never classified identical: the suffix or full-document chunk index (hashes plus stored
+          chunk text) locates the changed region, including chunks that straddle the prefix and
+          suffix bounds. Each mismatched chunk is char-diffed against the stored previous chunk so
+          hunks are centered on every distinct changed span and truncated around that span — a
+          first-to-last bounding span is not used, because truncation would hide a middle edit. Span
+          collection aborts once more than 20 spans are found so persist is refused rather than
+          dropping a later span, and each resync scan stays inside an 8k window so a long document
+          with thousands of edits cannot rebuild a full remaining-text map. If count or budget would
+          drop any span, or packed event text cannot keep every span, the text baseline does not
+          advance (the capture splits across events or defers persist). One persist guard enforces
+          that invariant on every path, including strong-signal comments: more than 20 spans plus a
+          comment change cannot advance the text hash. Comment and reply fingerprints keep the full
+          compacted body through hashing and change detection; packed event context
+          preview-truncates only unchanged comments and replies. Comment context puts new or changed
+          replies first, and <code>commentsHash</code> advances only when every changed reply is in
+          that packed context. Replacing a Drive selection's workspace object link moves that file's
+          artifact anchors onto the object the most-specific remaining selected ancestor would pick
+          (file, then folder, then shared drive). Merging workspace objects remaps
+          <code>linkedObjectId</code> onto the survivor and rebinds those Drive anchors; capture
+          lookup walks <code>mergedIntoId</code> so a stale loser id cannot be stamped. A remaining
+          overlapping container keeps the previous object only when it is more specific than the
+          changed selection. Membership walks the full ancestry past unlinked selected folders so an
+          outer linked folder stays on the candidate path, still walks parents even when a shared
+          drive already matches so a selected folder inside that drive wins, and still walks
+          ancestors of an explicitly selected file so an unlinked file under a nested subfolder of a
+          linked folder inherits that folder. Live capture rebinds that file's anchors onto the
+          newly resolved object before evidence attach, without moving sibling files. The
+          selection-row update and every rebind write share one transaction, without rewriting the
+          previous company's canonical entity. Assigning a previously unlinked folder or shared
+          drive rebinds files whose ancestry includes that selection, including files already on an
+          outer folder or shared-drive object, then applies live-capture before/after precedence.
+          Captured Drive events stamp the winning selection and candidate walk so a later rebind can
+          tell those files apart. Dropping a <code>drive.file</code> selection that remaining
+          folders or shared drives still cover keeps snapshots/extract and rebinds the file onto the
+          surviving inherited object link instead of unbinding it. Removing a folder or shared drive
+          computes coverage for that container's tracked files against remaining selections;
+          uncovered files, including last-container leftovers, delete snapshots and keep a
+          cancellation tombstone until the producer wait window settles so a late
+          <code>result.json</code> still has a janitor handle. Share revoke, activate-source
+          narrowing, last-selection incrementalSync, and disconnect use that same coverage-aware
+          cleanup rather than deleting selection rows alone. A remaining sibling container does not
+          keep extracted text for files only under the removed folder, including baseline-only files
+          that never emitted a raw event: capture stamps walked ancestry on the snapshot so
+          deselection can classify those files without <code>getParents</code>. Unchanged-content
+          recaptures still persist that live walk, so a move from folder A to B is not lost.
+          Coverage and cleanup read the newest tracked ancestry (snapshot or event), not event hints
+          alone. Full-text hashes still see edits past 20k chars. Formatting-only and tiny edits
+          (Markdown markers, not signed amounts such as <code>-50000 USD</code> and not destination
+          URIs, emails, or ids) skip the LLM. A same-title rich-link URI retarget (draft→signed) and
+          destination punctuation or case (<code>customer_a</code> vs <code>customera</code>) stay
+          in the normalized compare so the judge sees them. Tiny vs substantive uses the intra-line
+          edited span, not the hunk context kept for the judge. Tiny is only whitespace,
+          punctuation-only, case-only, or a one-letter insert/delete typo (edit distance 1, lengths
+          differ) inside one word longer than 3 characters; destination punctuation or case is not
+          tiny. Equal-length substitutions such as <code>hiring</code>→<code>firing</code> stay
           substantive, as does inserting or removing a whole word such as <code>not</code>.
           Remaining hunks bill a small CRM-relevance judge through <code>llm.chatStructured</code> /
           the existing AI meter. Judged event text packs comment evidence before hunks with a

@@ -21,7 +21,7 @@ const ALLOWED_SNAPSHOT_TABLE_FILES = new Set([
 ]);
 
 const UNSCOPED_DRIVE_DB_CALL =
-  /\b(?:listDriveExtractCursors|forEachDriveExtractCursorPage|loadLatestDriveSnapshot|saveDriveSnapshot|deleteDriveSnapshotsForFile|deleteDriveSnapshotsForIntegration|linkedObjectForDriveSelection|latestDriveObjectLinkHints|latestDriveObjectLinkHintsByFileIds|listDriveSnapshotFileIds|cleanupUncoveredDriveTrackedFiles|discardDriveTrackedFile|cancelDriveTrackedExtract)\s*\(\s*(?:db|tx|input\.db)\b/;
+  /\b(?:listDriveExtractCursors|forEachDriveExtractCursorPage|loadLatestDriveSnapshot|saveDriveSnapshot|deleteDriveSnapshotsForFile|deleteDriveSnapshotsForIntegration|linkedObjectForDriveSelection|latestDriveObjectLinkHints|latestDriveObjectLinkHintsByFileIds|listDriveSnapshotFileIds|listDriveTrackedDescendantFileIds|cleanupUncoveredDriveTrackedFiles|discardDriveTrackedFile|cancelDriveTrackedExtract)\s*\(\s*(?:db|tx|input\.db)\b/;
 const SNAPSHOT_TABLE = /\bgoogleDriveFileSnapshots\b/;
 const UNSCOPED_LIB_LIST = /\bintegrationsLib\.listDriveExtractCursors\b/;
 
@@ -142,6 +142,7 @@ describe('Drive withTeam isolation guard', () => {
     expect(source).toContain('deleteDriveSnapshotsForFile');
     expect(source).toContain('cleanupUncoveredDriveTrackedFiles');
     expect(source).toContain('discardDriveTrackedFile');
+    expect(source).toContain('listDriveTrackedDescendantFileIds');
   });
 
   it('routes every Drive selection-narrowing path through coverage-aware cleanup', () => {

@@ -62,6 +62,32 @@ describe('diffDriveText', () => {
     expect(driveDiffHasEvidence(diff)).toBe(true);
   });
 
+  it('does not collapse destination punctuation or case while folding surrounding prose', () => {
+    const underscore = 'See [Northstar SOW](https://docs.google.com/document/d/customer_a)';
+    const collapsed = 'See [Northstar SOW](https://docs.google.com/document/d/customera)';
+    const cased = 'See [Northstar SOW](https://docs.google.com/document/d/SOW)';
+    const lower = 'See [Northstar SOW](https://docs.google.com/document/d/sow)';
+    expect(normalizeDriveTextForCompare(underscore)).toContain('customer_a');
+    expect(normalizeDriveTextForCompare(underscore)).not.toBe(
+      normalizeDriveTextForCompare(collapsed),
+    );
+    expect(normalizeDriveTextForCompare(cased)).not.toBe(normalizeDriveTextForCompare(lower));
+    expect(diffDriveText(underscore, collapsed)).toMatchObject({
+      changed: true,
+      reason: 'substantive',
+    });
+    expect(diffDriveText(cased, lower)).toMatchObject({
+      changed: true,
+      reason: 'substantive',
+    });
+    expect(
+      diffDriveText(underscore, 'See Northstar SOW https://docs.google.com/document/d/customer_a'),
+    ).toMatchObject({ changed: false, reason: 'formatting' });
+    expect(normalizeDriveTextForCompare('@Alice <alice_b@acme.com>')).not.toBe(
+      normalizeDriveTextForCompare('@Alice <aliceb@acme.com>'),
+    );
+  });
+
   it('keeps signed amounts instead of treating hyphens as markdown', () => {
     expect(normalizeDriveTextForCompare('-50000 USD')).toBe('-50000 usd');
     const diff = diffDriveText(

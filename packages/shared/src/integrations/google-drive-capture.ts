@@ -1260,6 +1260,73 @@ async function listDriveSnapshotFileIds(
   return [...new Set(rows.map((row) => row.fileId))];
 }
 
+function driveAncestryIncludesAncestor(
+  hints: DriveObjectLinkHints | null | undefined,
+  ancestorId: string,
+): boolean {
+  const needle = ancestorId.trim().toLowerCase();
+  if (!needle) return false;
+  const ids = [
+    ...(hints?.parentIds ?? []),
+    ...(hints?.inheritedCandidates ?? []),
+    hints?.matchedAncestorId,
+    hints?.driveId,
+  ];
+  return ids.some((id) => typeof id === 'string' && id.trim().toLowerCase() === needle);
+}
+
+/** Tracked files whose stored walk includes `ancestorId` (folder or shared drive). */
+export async function listDriveTrackedDescendantFileIds(
+  db: Db,
+  input: { teamId: string; integrationId: string; ancestorId: string },
+): Promise<string[]> {
+  const ancestorId = input.ancestorId.trim();
+  if (!ancestorId) return [];
+  const fileIds = await listDriveSnapshotFileIds(db, {
+    teamId: input.teamId,
+    integrationId: input.integrationId,
+  });
+  if (fileIds.length === 0) return [];
+  const hints = await latestDriveObjectLinkHintsByFileIds(db, {
+    teamId: input.teamId,
+    integrationId: input.integrationId,
+    fileIds,
+  });
+  return fileIds.filter(
+    (fileId) =>
+      fileId.trim().toLowerCase() !== ancestorId.toLowerCase() &&
+      driveAncestryIncludesAncestor(hints.get(fileId), ancestorId),
+  );
+}
+
+async function resolveLiveLinkedEntity(
+  db: Db,
+  teamId: string,
+  objectId: string,
+): Promise<{ id: string; canonicalName: string; type: string } | null> {
+  const seen = new Set<string>();
+  let currentId = objectId;
+  for (;;) {
+    if (seen.has(currentId)) return null;
+    seen.add(currentId);
+    const [row] = await db
+      .select({
+        id: entities.id,
+        canonicalName: entities.canonicalName,
+        type: entities.type,
+        mergedIntoId: entities.mergedIntoId,
+      })
+      .from(entities)
+      .where(and(eq(entities.id, currentId), eq(entities.teamId, teamId)))
+      .limit(1);
+    if (!row) return null;
+    if (!row.mergedIntoId) {
+      return { id: row.id, canonicalName: row.canonicalName, type: row.type };
+    }
+    currentId = row.mergedIntoId;
+  }
+}
+
 export async function loadLatestDriveSnapshot(
   db: Db,
   input: { teamId: string; integrationId: string; fileId: string },
@@ -1649,10 +1716,12 @@ export async function linkedObjectForDriveSelection(
   if (!winner) return null;
   const hit = byId.get(winner);
   if (!hit?.objectId) return null;
+  const live = await resolveLiveLinkedEntity(db, input.teamId, hit.objectId);
+  if (!live) return null;
   return {
-    id: hit.objectId,
-    canonicalName: hit.canonicalName,
-    type: hit.type,
+    id: live.id,
+    canonicalName: live.canonicalName,
+    type: live.type,
     inheritedFrom: winner,
     inheritedCandidates: candidates,
   };

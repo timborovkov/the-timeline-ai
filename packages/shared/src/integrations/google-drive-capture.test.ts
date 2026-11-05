@@ -71,6 +71,7 @@ import {
   latestDriveObjectLinkHints,
   latestDriveObjectLinkHintsByFileIds,
   linkedObjectForDriveSelection,
+  listDriveTrackedDescendantFileIds,
   pickNewestDriveTrackedAncestry,
   listDriveExtractCursors,
   cleanupUncoveredDriveTrackedFiles,
@@ -1016,6 +1017,58 @@ describe('saveDriveSnapshot uniqueness', () => {
     expect(latest?.ancestry).toEqual(folderAncestryHints('file-1', 'folder-b'));
   });
 
+  it('lists tracked descendants whose stored ancestry includes a folder', async () => {
+    const [integration] = await db
+      .insert(integrations)
+      .values({
+        teamId: TEAM_ID,
+        connectedByUserId: USER_ID,
+        provider: 'google_drive',
+        displayName: 'Google Drive',
+        externalAccountId: 'drive-acct-descendants',
+        visibilityDefault: 'team',
+      })
+      .returning();
+    if (!integration) throw new Error('integration insert failed');
+    await saveDriveSnapshot(db as never, {
+      teamId: TEAM_ID,
+      integrationId: integration.id,
+      fileId: 'in-folder',
+      snapshot: {
+        contentHash: hashDrivePayload('in'),
+        snapshotText: 'in',
+        commentsHash: 'c1',
+        permissionsHash: 'p1',
+        mimeType: 'application/vnd.google-apps.document',
+        ancestry: folderAncestryHints('in-folder', 'clients'),
+      },
+    });
+    await saveDriveSnapshot(db as never, {
+      teamId: TEAM_ID,
+      integrationId: integration.id,
+      fileId: 'elsewhere',
+      snapshot: {
+        contentHash: hashDrivePayload('out'),
+        snapshotText: 'out',
+        commentsHash: 'c1',
+        permissionsHash: 'p1',
+        mimeType: 'application/vnd.google-apps.document',
+        ancestry: folderAncestryHints('elsewhere', 'other'),
+      },
+    });
+    await expect(
+      listDriveTrackedDescendantFileIds(db as never, {
+        teamId: TEAM_ID,
+        integrationId: integration.id,
+        ancestorId: 'clients',
+      }),
+    ).resolves.toEqual(['in-folder']);
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    await expect(
+      scope.integrations.listDriveTrackedDescendantFileIds(integration.id, 'clients'),
+    ).resolves.toEqual(['in-folder']);
+  });
+
   it('makes a revisited fingerprint the latest baseline across A→B→A→B', async () => {
     const [integration] = await db
       .insert(integrations)
@@ -1377,6 +1430,62 @@ describe('saveDriveSnapshot uniqueness', () => {
         myDriveRootId: '0AMK-my-drive',
       }),
     ).resolves.toBeNull();
+  });
+
+  it('resolves a merged selection link to the surviving object', async () => {
+    const [integration] = await db
+      .insert(integrations)
+      .values({
+        teamId: TEAM_ID,
+        connectedByUserId: USER_ID,
+        provider: 'google_drive',
+        displayName: 'Google Drive',
+        externalAccountId: 'drive-acct-merged-link',
+        visibilityDefault: 'team',
+      })
+      .returning();
+    if (!integration) throw new Error('integration insert failed');
+    const [survivor] = await db
+      .insert(entities)
+      .values({
+        teamId: TEAM_ID,
+        type: 'company',
+        canonicalName: 'Northstar',
+        status: 'open',
+      })
+      .returning();
+    const [loser] = await db
+      .insert(entities)
+      .values({
+        teamId: TEAM_ID,
+        type: 'company',
+        canonicalName: 'North Star Inc',
+        status: 'open',
+        mergedIntoId: survivor?.id,
+      })
+      .returning();
+    if (!survivor || !loser) throw new Error('object insert failed');
+    await db.insert(integrationSelections).values({
+      integrationId: integration.id,
+      selectionKind: 'drive.folder',
+      externalId: 'clients',
+      linkedObjectId: loser.id,
+    });
+
+    await expect(
+      linkedObjectForDriveSelection(db as never, {
+        teamId: TEAM_ID,
+        integrationId: integration.id,
+        fileId: 'sow',
+        parentIds: ['clients'],
+        matchedAncestorId: 'clients',
+      }),
+    ).resolves.toMatchObject({
+      id: survivor.id,
+      canonicalName: 'Northstar',
+      type: 'company',
+      inheritedFrom: 'clients',
+    });
   });
 
   it('picks the nearest linked selected ancestor when a closer selected folder is unlinked', async () => {

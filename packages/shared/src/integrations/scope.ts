@@ -35,6 +35,7 @@ import {
   driveExtractObjectKeys,
   linkedObjectForDriveSelection as loadLinkedObjectForDriveSelection,
   listDriveExtractCursors,
+  listDriveTrackedDescendantFileIds as loadListDriveTrackedDescendantFileIds,
   listTeamEmailDomains as loadTeamEmailDomains,
   loadLatestDriveSnapshot,
   remainingDriveExtractObjectKeys,
@@ -1921,6 +1922,16 @@ export function createIntegrationScope(deps: {
     return loadTeamEmailDomains(db, teamId);
   }
 
+  async function listDriveTrackedDescendantFileIds(integrationId: string, ancestorId: string) {
+    const integration = await getIntegration(integrationId);
+    if (!integration) return [];
+    return loadListDriveTrackedDescendantFileIds(db, {
+      teamId,
+      integrationId,
+      ancestorId,
+    });
+  }
+
   async function linkedObjectForDriveSelection(input: {
     integrationId: string;
     fileId: string;
@@ -2319,6 +2330,7 @@ export function createIntegrationScope(deps: {
     cleanupUncoveredDriveTrackedFiles: cleanupUncoveredDriveTrackedFilesForIntegration,
     discardDriveTrackedFile: discardTrackedDriveFileForIntegration,
     listTeamEmailDomains: listDriveTeamEmailDomains,
+    listDriveTrackedDescendantFileIds,
     linkedObjectForDriveSelection,
     loadCursor,
     saveCursor,

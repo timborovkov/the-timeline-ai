@@ -20,10 +20,12 @@
  * (edit distance 1, lengths differ) inside one word longer than 3 chars.
  * Equal-length one-letter substitutions (`hiring`→`firing`) are ambiguous word
  * swaps, not typos, and stay substantive. Whole-word insertion or removal,
- * digits, currency, and negation are substantive even when the span is short.
- * Markdown heading/list/whitespace still fold as formatting, but link
- * destinations stay in the normalized compare so a same-title URI retarget
- * (draft→signed) is judged rather than skipped.
+ * digits, currency, negation, and destination edits (URI/email/id punctuation
+ * or case) are substantive even when the span is short.
+ * Markdown heading/list/whitespace still fold as formatting. Every
+ * destination (markdown URIs, bare URLs, person-chip emails, object/link
+ * ids) is stashed before marker stripping and case folding so
+ * `customer_a` vs `customera` or `SOW` vs `sow` cannot collapse.
  */
 
 import { createHash } from 'node:crypto';
@@ -32,6 +34,11 @@ const WHITESPACE = /\s+/g;
 const MARKDOWN_MARKERS = /[_*`#>\[\]]/g;
 const MARKDOWN_LINK = /!?\[([^\]]*)\]\(([^)]*)\)/g;
 const MARKDOWN_LINE_PREFIX = /^\s{0,3}(?:#{1,6}\s+|>\s+|[-*+]\s+)/;
+const ANGLE_EMAIL = /<([^<>\s]+@[^<>\s]+)>/g;
+const INLINE_DESTINATION = /\[(?:object|link):([^\]]+)\]/g;
+const PERSON_ID_DESTINATION = /@\[([^\]]+)\]/g;
+const BARE_URL = /https?:\/\/[^\s<>\]]+/g;
+const DESTINATION_TOKEN = /\u0000d(\d+)\u0000/g;
 
 const DRIVE_DIFF_MIN_CHANGED_CHARS = 40;
 export const DRIVE_SNAPSHOT_MAX_CHARS = 20_000;
@@ -72,17 +79,59 @@ export interface DriveTextDiff {
   hunks: string[];
 }
 
+function stashDriveDestination(destinations: string[], value: string): string {
+  const index = destinations.length;
+  destinations.push(value);
+  return `\u0000d${String(index)}\u0000`;
+}
+
+/**
+ * Pull every meaningful non-plain destination out of hashed Docs/Drive text
+ * before prose normalize. Tokens survive marker stripping and lowercasing;
+ * restore puts the original URI/email/id back so destination-only edits hash.
+ */
+function protectDriveCompareDestinations(text: string): {
+  masked: string;
+  destinations: string[];
+} {
+  const destinations: string[] = [];
+  const stash = (value: string) => stashDriveDestination(destinations, value);
+  let masked = text.replace(
+    MARKDOWN_LINK,
+    (_match, label: string, uri: string) => `${label} ${stash(uri)}`,
+  );
+  masked = masked.replace(ANGLE_EMAIL, (_match, email: string) => `<${stash(email)}>`);
+  masked = masked.replace(INLINE_DESTINATION, (match, id: string) => match.replace(id, stash(id)));
+  masked = masked.replace(PERSON_ID_DESTINATION, (_match, id: string) => `@[${stash(id)}]`);
+  masked = masked.replace(BARE_URL, (url) => stash(url));
+  return { masked, destinations };
+}
+
+function restoreDriveCompareDestinations(masked: string, destinations: string[]): string {
+  return masked.replace(DESTINATION_TOKEN, (_match, index: string) => {
+    return destinations[Number(index)] ?? '';
+  });
+}
+
 export function normalizeDriveTextForCompare(text: string): string {
-  const withoutLinks = text.replace(MARKDOWN_LINK, '$1 $2');
-  const withoutLineMarkup = withoutLinks
+  const protectedText = protectDriveCompareDestinations(text);
+  const withoutLineMarkup = protectedText.masked
     .split('\n')
     .map((line) => line.replace(MARKDOWN_LINE_PREFIX, ''))
     .join(' ');
-  return withoutLineMarkup
+  const prose = withoutLineMarkup
     .replace(MARKDOWN_MARKERS, '')
     .replace(WHITESPACE, ' ')
     .trim()
     .toLowerCase();
+  return restoreDriveCompareDestinations(prose, protectedText.destinations);
+}
+
+function driveCompareDestinationsMoved(previous: string, next: string): boolean {
+  const left = protectDriveCompareDestinations(previous).destinations;
+  const right = protectDriveCompareDestinations(next).destinations;
+  if (left.length !== right.length) return true;
+  return left.some((value, index) => value !== right[index]);
 }
 
 export function truncateDriveSnapshot(text: string, maxChars = DRIVE_SNAPSHOT_MAX_CHARS): string {
@@ -728,7 +777,8 @@ export function diffDriveText(previous: string, next: string): DriveTextDiff {
   if (
     edit.chars < DRIVE_DIFF_MIN_CHANGED_CHARS &&
     Math.abs(next.length - previous.length) < 20 &&
-    edit.cosmetic
+    edit.cosmetic &&
+    !driveCompareDestinationsMoved(previous, next)
   ) {
     return { changed: false, reason: 'tiny', changedChars: edit.chars, hunks };
   }

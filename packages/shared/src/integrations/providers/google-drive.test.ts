@@ -723,6 +723,71 @@ describe('googleDriveProvider', () => {
     expect(ctx.saveCursor).toHaveBeenCalledWith('drive.changes', { page_token: 'page-3' });
   });
 
+  it('schedules permission refreshes for tracked descendants when a folder ACL changes', async () => {
+    const fetch = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((input) => {
+      const url = requestUrl(input);
+      if (url.pathname.endsWith('/changes')) {
+        return Promise.resolve(
+          jsonResponse({
+            changes: [
+              {
+                changeType: 'file',
+                time: '2026-06-20T10:00:00.000Z',
+                fileId: 'clients-folder',
+                file: {
+                  id: 'clients-folder',
+                  name: 'Clients',
+                  mimeType: 'application/vnd.google-apps.folder',
+                  parents: ['root'],
+                },
+              },
+            ],
+            newStartPageToken: 'page-2',
+          }),
+        );
+      }
+      return Promise.resolve(jsonResponse({ message: 'unexpected' }, { status: 404 }));
+    });
+    vi.stubGlobal('fetch', fetch);
+    const listDriveTrackedDescendantFileIds = vi
+      .fn()
+      .mockResolvedValue(['sow-doc', 'pricing-sheet']);
+    const ctx = syncContext({
+      loadCursor: vi.fn().mockResolvedValue({ page_token: 'page-1' }),
+      listDriveTrackedDescendantFileIds,
+    });
+
+    await googleDriveProvider.incrementalSync({
+      integration: { id: 'integration-1', teamId: 'team-1' } as never,
+      tokens: { access_token: 'access-token', expires_at: Date.now() + 600_000 },
+      selections: [{ kind: 'drive.file', externalId: 'sow-doc' }],
+      ctx: ctx,
+    });
+
+    expect(listDriveTrackedDescendantFileIds).toHaveBeenCalledWith('clients-folder');
+    expect(ctx.scheduleTargetedSync).toHaveBeenCalledWith(
+      expect.objectContaining({
+        resourceType: 'drive.file',
+        externalId: 'sow-doc',
+        reason: 'drive_folder_acl',
+      }),
+      expect.objectContaining({ delayMs: DRIVE_FILE_DEBOUNCE_MS, replaceDelayed: true }),
+    );
+    expect(ctx.scheduleTargetedSync).toHaveBeenCalledWith(
+      expect.objectContaining({
+        externalId: 'pricing-sheet',
+        reason: 'drive_folder_acl',
+      }),
+      expect.objectContaining({ replaceDelayed: true }),
+    );
+    expect(ctx.scheduleTargetedSync).not.toHaveBeenCalledWith(
+      expect.objectContaining({ externalId: 'clients-folder' }),
+      expect.anything(),
+    );
+  });
+
   it('does not admit Shared with me files when My Drive root is selected', async () => {
     const fetch = vi.fn<
       (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>

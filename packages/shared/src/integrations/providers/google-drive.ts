@@ -914,6 +914,18 @@ function driveDebounceCursorKey(fileId: string): string {
   return `drive.debounce.${fileId}`;
 }
 
+async function scheduleTrackedDescendantsForFolderAcl(
+  integration: IntegrationRow,
+  folderId: string,
+  ctx: SyncContext,
+): Promise<void> {
+  if (!ctx.listDriveTrackedDescendantFileIds) return;
+  const fileIds = await ctx.listDriveTrackedDescendantFileIds(folderId);
+  for (const fileId of fileIds) {
+    await scheduleFileCapture(integration, fileId, ctx, 'drive_folder_acl');
+  }
+}
+
 async function scheduleFileCapture(
   integration: IntegrationRow,
   fileId: string,
@@ -1017,7 +1029,10 @@ async function fetchChanges(
         const file = change.file;
         if (!file) continue;
         const mimeType = file.shortcutDetails?.targetMimeType ?? file.mimeType;
-        if (mimeType === 'application/vnd.google-apps.folder') continue;
+        if (mimeType === 'application/vnd.google-apps.folder') {
+          await scheduleTrackedDescendantsForFolderAcl(integration, fileId, ctx);
+          continue;
+        }
         if (!isSupportedDriveMimeType(mimeType)) {
           await discardTrackedDriveFile(ctx, fileId, 'unsupported_mime', { mime_type: mimeType });
           continue;

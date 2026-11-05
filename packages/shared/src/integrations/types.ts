@@ -274,6 +274,8 @@ export interface SyncContext {
   /** Snapshot delete plus extract cancel for one tracked Drive file. */
   discardDriveTrackedFile?(fileId: string): Promise<void>;
   listTeamEmailDomains?(): Promise<string[]>;
+  /** Tracked Drive files whose stored ancestry includes this folder or shared drive. */
+  listDriveTrackedDescendantFileIds?(ancestorId: string): Promise<string[]>;
   linkedObjectForDriveSelection?(
     fileId: string,
     parentIds: string[],

@@ -1522,6 +1522,9 @@ export async function runOneIntegration(
       listTeamEmailDomains() {
         return teamScope.integrations.listTeamEmailDomains();
       },
+      listDriveTrackedDescendantFileIds(ancestorId) {
+        return teamScope.integrations.listDriveTrackedDescendantFileIds(integrationId, ancestorId);
+      },
       linkedObjectForDriveSelection(fileId, parentIds, matchedAncestorId, linkContext) {
         return teamScope.integrations.linkedObjectForDriveSelection({
           integrationId,
