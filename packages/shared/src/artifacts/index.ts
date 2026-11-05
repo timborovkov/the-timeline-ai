@@ -7,7 +7,7 @@ import {
   reconciliationEvidence,
   type Db,
 } from '@timeline/db';
-import { and, eq, isNull, or, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNull, or, sql } from 'drizzle-orm';
 
 import {
   driveFileObjectIdFromResolution,
@@ -776,28 +776,96 @@ async function clusterForLinkedObject(
 function driveFileAnchorValues(fileId: string): ArtifactAnchorInput[] {
   return uniqueAnchors([
     { type: 'provider_object', value: `google_drive:${fileId}`, strength: 'hard' },
+    { type: 'provider_external:google_drive', value: fileId, strength: 'hard' },
+    { type: 'alias:file', value: fileId, strength: 'structured' },
   ]);
+}
+
+function driveProviderObjectFileId(value: string): string | null {
+  const normalized = value.trim().toLowerCase();
+  const prefix = 'google_drive:';
+  if (!normalized.startsWith(prefix)) return null;
+  const fileId = normalized.slice(prefix.length).trim();
+  return fileId || null;
+}
+
+function driveFileOwnsAnchorValue(value: string, fileId: string): boolean {
+  const needle = fileId.trim().toLowerCase();
+  const hay = value.trim().toLowerCase();
+  if (!needle || !hay) return false;
+  if (hay === needle || hay === `google_drive:${needle}`) return true;
+  try {
+    const url = new URL(value);
+    const parts = url.pathname
+      .split('/')
+      .filter(Boolean)
+      .map((part) => part.toLowerCase());
+    if (parts.includes(needle)) return true;
+    return url.searchParams.get('id')?.toLowerCase() === needle;
+  } catch {
+    return false;
+  }
 }
 
 async function moveDriveFileAnchors(
   db: Db,
   input: { teamId: string; fileId: string; targetClusterId: string },
 ): Promise<void> {
-  const anchors = driveFileAnchorValues(input.fileId);
-  const fileValue = uniqueAnchors([
+  const fileId = uniqueAnchors([
     { type: 'alias:file', value: input.fileId, strength: 'structured' },
   ])[0]?.value;
-  const clauses = [
-    ...anchors.map(
-      (anchor) =>
-        sql`(${artifactClusterAnchors.anchorType} = ${anchor.type} AND ${artifactClusterAnchors.anchorValue} = ${anchor.value})`,
-    ),
-    ...(fileValue
-      ? [
-          sql`(${artifactClusterAnchors.anchorType} LIKE ${'alias:%'} AND ${artifactClusterAnchors.anchorValue} = ${fileValue})`,
-        ]
-      : []),
-  ];
+  if (!fileId) return;
+  const candidates = await db
+    .select({
+      clusterId: artifactClusterAnchors.clusterId,
+      anchorType: artifactClusterAnchors.anchorType,
+      anchorValue: artifactClusterAnchors.anchorValue,
+      strength: artifactClusterAnchors.strength,
+    })
+    .from(artifactClusterAnchors)
+    .where(
+      and(
+        eq(artifactClusterAnchors.teamId, input.teamId),
+        sql`position(${fileId} in ${artifactClusterAnchors.anchorValue}) > 0`,
+      ),
+    );
+  const owned = candidates.filter(
+    (row) => row.strength !== 'semantic' && driveFileOwnsAnchorValue(row.anchorValue, fileId),
+  );
+  if (owned.length === 0) return;
+  const clusterIds = [...new Set(owned.map((row) => row.clusterId))];
+  const siblingRows =
+    clusterIds.length > 0
+      ? await db
+          .select({
+            clusterId: artifactClusterAnchors.clusterId,
+            anchorValue: artifactClusterAnchors.anchorValue,
+          })
+          .from(artifactClusterAnchors)
+          .where(
+            and(
+              eq(artifactClusterAnchors.teamId, input.teamId),
+              inArray(artifactClusterAnchors.clusterId, clusterIds),
+              eq(artifactClusterAnchors.anchorType, 'provider_object'),
+            ),
+          )
+      : [];
+  const siblingIdsByCluster = new Map<string, string[]>();
+  for (const row of siblingRows) {
+    const siblingId = driveProviderObjectFileId(row.anchorValue);
+    if (!siblingId || siblingId === fileId) continue;
+    const siblings = siblingIdsByCluster.get(row.clusterId) ?? [];
+    siblings.push(siblingId);
+    siblingIdsByCluster.set(row.clusterId, siblings);
+  }
+  const movable = owned.filter((row) => {
+    const siblings = siblingIdsByCluster.get(row.clusterId) ?? [];
+    return !siblings.some((siblingId) => driveFileOwnsAnchorValue(row.anchorValue, siblingId));
+  });
+  const clauses = movable.map(
+    (row) =>
+      sql`(${artifactClusterAnchors.anchorType} = ${row.anchorType} AND ${artifactClusterAnchors.anchorValue} = ${row.anchorValue})`,
+  );
   const where = teamScopedAnchorWhere(input.teamId, clauses);
   if (!where) return;
   await db.update(artifactClusterAnchors).set({ clusterId: input.targetClusterId }).where(where);

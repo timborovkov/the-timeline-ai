@@ -259,4 +259,51 @@ describe('decideDriveSnapshotAdvance', () => {
     expect(decision.advanceComments).toBe(false);
     expect(decision.snapshot.commentsHash).toBe('comments-old');
   });
+
+  it('advances a comment-only snapshot when the new comment is longer than 1,200 characters', () => {
+    const text = 'Contract amount is forty eight thousand dollars for Northstar.';
+    const body = `${'A'.repeat(1500)}APPROVED-$48k`;
+    const previousComments = compactDriveComments([]);
+    const nextComments = compactDriveComments([
+      {
+        id: 'c-long',
+        content: body,
+        author: { displayName: 'Ada' },
+      },
+    ]);
+    const commentPreview = commentEventContext(
+      [{ id: 'c-long', content: body, author: { displayName: 'Ada' } }],
+      previousComments,
+    );
+    expect(commentPreview.length).toBeGreaterThan(1_200);
+    expect(commentPreview).toContain('APPROVED-$48k');
+    const previousFields = fieldsFromText(text, previousComments, 'comments-old', 'perm');
+    const nextFields = fieldsFromText(text, nextComments, 'comments-new', 'perm');
+    const diff = diffDriveSnapshots({
+      previousSnapshotText: text,
+      previousLocate: previousFields.snapshotLocate,
+      nextFullText: text,
+      previousContentHash: previousFields.contentHash,
+      nextContentHash: nextFields.contentHash,
+    });
+    const packed = packDriveChangeEvents({
+      summary: 'Drive change on "SOW" (comment)',
+      hunks: [],
+      commentPreview,
+      previousText: text,
+      nextText: text,
+    });
+    expect(packed).not.toBeNull();
+    const decision = decideDriveSnapshotAdvance({
+      previous: previousFields,
+      next: nextFields,
+      diff,
+      previousText: text,
+      nextText: text,
+      packedEvents: packed,
+    });
+    expect(decision.advanceComments).toBe(true);
+    expect(decision.persist).toBe(true);
+    expect(decision.snapshot.commentsHash).toBe('comments-new');
+  });
 });

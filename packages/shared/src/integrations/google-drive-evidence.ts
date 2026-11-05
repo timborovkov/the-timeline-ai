@@ -42,7 +42,7 @@ export interface DriveSnapshotAdvanceDecision {
 
 function packedBlob(events: DrivePackedChangeEvent[] | null): string {
   if (!events || events.length === 0) return '';
-  return events.map((event) => event.contentText).join('\n');
+  return events.map((event) => event.contentText).join('');
 }
 
 function packedHunks(events: DrivePackedChangeEvent[] | null): string[] {

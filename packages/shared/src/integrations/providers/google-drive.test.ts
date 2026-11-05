@@ -337,6 +337,49 @@ describe('packDriveChangeEvents', () => {
     }
     expect(parts.flatMap((event) => event.hunks)).toEqual(hunks);
   });
+
+  it('keeps a 1,600-char comment-only change untruncated so the snapshot can advance', () => {
+    const body = `${'A'.repeat(1500)}APPROVED-$48k`;
+    const commentPreview = `Ada (added): ${body}`;
+    expect(commentPreview.length).toBeGreaterThan(1_200);
+    expect(commentPreview.length).toBeLessThan(DRIVE_EVENT_CONTENT_MAX_CHARS);
+    const packed = packDriveChangeEvents({
+      summary: 'Drive change on "SOW" (comment)',
+      hunks: [],
+      commentPreview,
+      previousText: 'Contract amount is forty eight thousand dollars for Northstar.',
+      nextText: 'Contract amount is forty eight thousand dollars for Northstar.',
+    });
+    expect(packed).not.toBeNull();
+    const blob = (packed ?? []).map((event) => event.contentText).join('');
+    expect(blob).toContain(body);
+    expect(blob).toContain('APPROVED-$48k');
+    for (const event of packed ?? []) {
+      expect(event.contentText.length).toBeLessThanOrEqual(DRIVE_EVENT_CONTENT_MAX_CHARS);
+    }
+  });
+
+  it('splits a comment longer than one event and still keeps the full body', () => {
+    const body = `${'B'.repeat(4_500)}APPROVED-$48k`;
+    const commentPreview = `Ada (added): ${body}`;
+    expect(commentPreview.length).toBeGreaterThan(DRIVE_EVENT_CONTENT_MAX_CHARS);
+    const packed = packDriveChangeEvents({
+      summary: 'Drive change on "SOW" (comment)',
+      hunks: [],
+      commentPreview,
+      previousText: 'Keep the annual term.',
+      nextText: 'Keep the annual term.',
+    });
+    expect(packed).not.toBeNull();
+    const parts = packed ?? [];
+    expect(parts.length).toBeGreaterThan(1);
+    const blob = parts.map((event) => event.contentText).join('');
+    expect(blob).toContain(body);
+    expect(blob).toContain('APPROVED-$48k');
+    for (const event of parts) {
+      expect(event.contentText.length).toBeLessThanOrEqual(DRIVE_EVENT_CONTENT_MAX_CHARS);
+    }
+  });
 });
 
 describe('googleDriveProvider', () => {
@@ -2883,6 +2926,81 @@ describe('googleDriveProvider', () => {
     expect(events[0]?.extra).toMatchObject({
       drive: { strong_signals: ['comment_changed', 'comment_resolved'] },
     });
+  });
+
+  it('captures a 1,600-char comment-only approval instead of skipping as no_evidence', async () => {
+    const snapshotText = 'Contract amount is forty eight thousand dollars for Northstar.';
+    const contentHash = hashDrivePayload(snapshotText);
+    const longComment = `${'A'.repeat(1500)}APPROVED-$48k`;
+    const comments = [
+      {
+        id: 'c-long',
+        content: longComment,
+        resolved: false,
+        modifiedTime: '2026-06-20T10:00:00.000Z',
+        author: { displayName: 'Ada' },
+      },
+    ];
+    const fetch = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((input) => {
+      const url = requestUrl(input);
+      if (isGoogleDocsGet(url)) {
+        return Promise.resolve(googleDocsPlainResponse(snapshotText));
+      }
+      if (url.pathname.endsWith('/comments')) {
+        return Promise.resolve(jsonResponse({ comments }));
+      }
+      if (url.pathname.endsWith('/permissions')) {
+        return Promise.resolve(jsonResponse({ permissions: [] }));
+      }
+      if (url.pathname.endsWith('/files/file-1')) {
+        return Promise.resolve(
+          jsonResponse({
+            id: 'file-1',
+            name: 'SOW',
+            mimeType: 'application/vnd.google-apps.document',
+            parents: ['root'],
+            modifiedTime: '2026-06-20T10:00:00.000Z',
+          }),
+        );
+      }
+      return Promise.resolve(jsonResponse({ message: 'unexpected' }, { status: 404 }));
+    });
+    vi.stubGlobal('fetch', fetch);
+    const ctx = syncContext({
+      loadLatestDriveSnapshot: vi.fn().mockResolvedValue({
+        contentHash,
+        snapshotText,
+        commentsHash: driveCommentsHash([]),
+        permissionsHash: drivePermissionsHash([]),
+        mimeType: 'application/vnd.google-apps.document',
+      }),
+    });
+
+    await googleDriveProvider.incrementalSync({
+      integration: { id: 'integration-1', teamId: 'team-1' } as never,
+      tokens: { access_token: 'access-token', expires_at: Date.now() + 600_000 },
+      selections: [{ kind: 'drive.file', externalId: 'file-1' }],
+      ctx: ctx,
+      target: { resourceType: 'drive.file', externalId: 'file-1' },
+    });
+
+    expect(ctx.recordAudit).not.toHaveBeenCalledWith(
+      'drive_change_skipped',
+      expect.objectContaining({ reason: 'no_evidence' }),
+    );
+    const events: IntegrationEvent[] =
+      (ctx.writeEvents as unknown as { mock: { calls: [IntegrationEvent[]][] } }).mock
+        .calls[0]?.[0] ?? [];
+    const blob = events.map((event) => event.contentText).join('');
+    expect(blob).toContain('APPROVED-$48k');
+    expect(blob).toContain(longComment);
+    expect(ctx.saveDriveSnapshot).toHaveBeenCalledWith(
+      expect.objectContaining({
+        commentsHash: driveCommentsHash(comments),
+      }),
+    );
   });
 
   it('puts a last-page comment change first in the bounded event context', async () => {

@@ -95,8 +95,6 @@ const DRIVE_METADATA_MAX_PAGES = 10;
 const FILE_FIELDS =
   'id,name,mimeType,modifiedTime,headRevisionId,md5Checksum,webViewLink,parents,driveId,owners(displayName,emailAddress),shortcutDetails(targetId,targetMimeType)';
 export const DRIVE_EVENT_CONTENT_MAX_CHARS = 4000;
-/** Comments are packed before hunks so a long diff cannot drop comment evidence. */
-const DRIVE_EVENT_COMMENT_BUDGET = 1200;
 
 interface DriveTokens {
   access_token: string;
@@ -1102,14 +1100,15 @@ export function packDriveEventContent(input: {
   commentBudget?: number;
 }): string {
   const maxChars = input.maxChars ?? DRIVE_EVENT_CONTENT_MAX_CHARS;
-  const commentBudget = input.commentBudget ?? DRIVE_EVENT_COMMENT_BUDGET;
   const parts: string[] = [];
   appendBounded(parts, input.summary, maxChars);
   const comment = input.commentPreview.trim();
   if (comment) {
     const used = parts.join('\n\n').length;
     const sep = parts.length > 0 ? 2 : 0;
-    const reserved = Math.min(comment.length, commentBudget, Math.max(0, maxChars - used - sep));
+    const remaining = Math.max(0, maxChars - used - sep);
+    const budget = input.commentBudget ?? remaining;
+    const reserved = Math.min(comment.length, budget, remaining);
     appendBounded(parts, comment.slice(0, reserved), maxChars);
   }
   appendBounded(parts, input.hunkPreview, maxChars);
@@ -1135,8 +1134,9 @@ function packedHunksFitUntruncated(input: {
 
 /**
  * Split Drive event text so every input hunk appears untruncated in some event.
- * Comments pack into the first event. If a changed span would be dropped, return
- * null so the caller does not advance the snapshot baseline.
+ * Changed comments take remaining space in the 4000-char cap and continue in
+ * later events when they are longer than one event. If a changed span would be
+ * dropped, return null so the caller does not advance the snapshot baseline.
  */
 export function packDriveChangeEvents(input: {
   summary: string;
@@ -1148,59 +1148,88 @@ export function packDriveChangeEvents(input: {
 }): { contentText: string; hunks: string[] }[] | null {
   const maxChars = input.maxChars ?? DRIVE_EVENT_CONTENT_MAX_CHARS;
   const events: { contentText: string; hunks: string[] }[] = [];
-  let remaining = [...input.hunks];
-  let includeComments = true;
-  while (remaining.length > 0 || events.length === 0) {
-    const commentPreview = includeComments ? input.commentPreview : '';
-    const fitted: string[] = [];
-    for (const hunk of remaining) {
-      if (
-        packedHunksFitUntruncated({
-          summary: input.summary,
-          commentPreview,
-          hunks: [...fitted, hunk],
-          maxChars,
-        })
-      ) {
-        fitted.push(hunk);
-      } else {
-        break;
-      }
-    }
-    if (fitted.length === 0 && remaining.length > 0) {
-      if (includeComments && input.commentPreview.trim()) {
+  let remainingHunks = [...input.hunks];
+  let remainingComment = input.commentPreview.trim();
+  let includeSummary = true;
+  const commentEventBudget = Math.max(
+    2,
+    Math.ceil((remainingComment.length || 1) / Math.max(1, maxChars - 8)),
+  );
+  while (remainingHunks.length > 0 || remainingComment.length > 0 || events.length === 0) {
+    const summary = includeSummary ? input.summary : '';
+    const summaryText = summary.trim();
+    const commentSep = summaryText.length > 0 && remainingComment.length > 0 ? 2 : 0;
+    const commentRoom = Math.max(0, maxChars - summaryText.length - commentSep);
+    if (remainingComment.length > 0 && commentRoom === 0) {
+      if (includeSummary && summaryText.length > 0) {
         events.push({
           contentText: packDriveEventContent({
-            summary: input.summary,
+            summary,
             hunkPreview: '',
-            commentPreview: input.commentPreview,
+            commentPreview: '',
             maxChars,
           }),
           hunks: [],
         });
-        includeComments = false;
+        includeSummary = false;
+        continue;
+      }
+      return null;
+    }
+    const commentSlice = remainingComment.slice(0, commentRoom);
+    const commentOverflow = remainingComment.length > commentSlice.length;
+    const fitted: string[] = [];
+    if (!commentOverflow) {
+      for (const hunk of remainingHunks) {
+        if (
+          packedHunksFitUntruncated({
+            summary,
+            commentPreview: commentSlice,
+            hunks: [...fitted, hunk],
+            maxChars,
+          })
+        ) {
+          fitted.push(hunk);
+        } else {
+          break;
+        }
+      }
+    }
+    if (fitted.length === 0 && remainingHunks.length > 0 && commentSlice.length === 0) {
+      if (remainingComment.length > 0 && commentRoom === 0 && includeSummary) {
+        events.push({
+          contentText: packDriveEventContent({
+            summary,
+            hunkPreview: '',
+            commentPreview: '',
+            maxChars,
+          }),
+          hunks: [],
+        });
+        includeSummary = false;
         continue;
       }
       return null;
     }
     events.push({
       contentText: packDriveEventContent({
-        summary: input.summary,
+        summary,
         hunkPreview: fitted.join('\n'),
-        commentPreview,
+        commentPreview: commentSlice,
         maxChars,
       }),
       hunks: fitted,
     });
-    includeComments = false;
-    remaining = remaining.slice(fitted.length);
-    if (remaining.length === 0) break;
-    if (events.length > input.hunks.length + 1) return null;
+    remainingComment = remainingComment.slice(commentSlice.length);
+    remainingHunks = remainingHunks.slice(fitted.length);
+    includeSummary = false;
+    if (remainingHunks.length === 0 && remainingComment.length === 0) break;
+    if (events.length > input.hunks.length + commentEventBudget + 2) return null;
   }
   const packedHunks = events.flatMap((event) => event.hunks);
   if (packedHunks.length !== input.hunks.length) return null;
   if (packedHunks.some((hunk, index) => hunk !== input.hunks[index])) return null;
-  const blob = events.map((event) => event.contentText).join('\n');
+  const blob = events.map((event) => event.contentText).join('');
   if (input.hunks.some((hunk) => hunk.length > 0 && !blob.includes(hunk))) return null;
   if (
     input.hunks.length > 0 &&

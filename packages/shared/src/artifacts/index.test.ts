@@ -1021,6 +1021,93 @@ describe('artifact reconciliation', () => {
     expect(otherAlias?.clusterId).toBe(otherCluster.id);
   });
 
+  it('moves every Drive file-owned hard anchor together and leaves sibling and object anchors', async () => {
+    const northstar = await insertCompany('Northstar');
+    const acme = await insertCompany('Acme Labs');
+    const source = await insertCluster(northstar);
+    const fileUrl = 'https://docs.google.com/document/d/file-hard-1';
+    await db.insert(artifactClusterAnchors).values([
+      {
+        teamId: TEAM_ID,
+        clusterId: source.id,
+        anchorType: 'provider_object',
+        anchorValue: 'google_drive:file-hard-1',
+        strength: 'hard',
+      },
+      {
+        teamId: TEAM_ID,
+        clusterId: source.id,
+        anchorType: 'provider_external:google_drive',
+        anchorValue: 'file-hard-1',
+        strength: 'hard',
+      },
+      {
+        teamId: TEAM_ID,
+        clusterId: source.id,
+        anchorType: 'alias:company',
+        anchorValue: 'file-hard-1',
+        strength: 'structured',
+      },
+      {
+        teamId: TEAM_ID,
+        clusterId: source.id,
+        anchorType: 'url',
+        anchorValue: fileUrl,
+        strength: 'hard',
+      },
+      {
+        teamId: TEAM_ID,
+        clusterId: source.id,
+        anchorType: 'provider_object',
+        anchorValue: 'google_drive:file-other',
+        strength: 'hard',
+      },
+      {
+        teamId: TEAM_ID,
+        clusterId: source.id,
+        anchorType: 'object',
+        anchorValue: northstar.id,
+        strength: 'hard',
+      },
+    ]);
+
+    await rebindDriveFileObjectLink(db as never, {
+      teamId: TEAM_ID,
+      fileId: 'file-hard-1',
+      nextObjectId: acme.id,
+    });
+
+    const targetId = await clusterIdFor(acme.id);
+    expect(targetId).toBeDefined();
+    expect(targetId).not.toBe(source.id);
+    const anchors = await db
+      .select()
+      .from(artifactClusterAnchors)
+      .where(eq(artifactClusterAnchors.teamId, TEAM_ID));
+    const owned = ['google_drive:file-hard-1', 'file-hard-1', fileUrl];
+    expect(
+      anchors
+        .filter((row) => owned.includes(row.anchorValue))
+        .every((row) => row.clusterId === targetId),
+    ).toBe(true);
+    expect(anchors.find((row) => row.anchorValue === 'google_drive:file-other')?.clusterId).toBe(
+      source.id,
+    );
+    expect(anchors.find((row) => row.anchorValue === northstar.id)?.clusterId).toBe(source.id);
+
+    const matched = await findArtifactClustersByAnchors(db as never, {
+      teamId: TEAM_ID,
+      anchors: [
+        { type: 'provider_object', value: 'google_drive:file-hard-1', strength: 'hard' },
+        { type: 'provider_external:google_drive', value: 'file-hard-1', strength: 'hard' },
+        { type: 'url', value: fileUrl, strength: 'hard' },
+        { type: 'alias:company', value: 'file-hard-1', strength: 'structured' },
+      ],
+    });
+    expect(matched.every((row) => row.id === targetId)).toBe(true);
+    expect(matched.some((row) => row.id === source.id)).toBe(false);
+  });
+
   it('moves inherited folder file anchors except files that keep their own object link', async () => {
     const [northstar] = await db
       .insert(entities)

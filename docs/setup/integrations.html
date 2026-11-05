@@ -211,8 +211,9 @@ GOOGLE_DRIVE_WEBHOOK_SECRET=...</code></pre>
           outer linked folder stays on the candidate path, still walks parents even when a shared
           drive already matches so a selected folder inside that drive wins, and still walks
           ancestors of an explicitly selected file so an unlinked file under a nested subfolder of a
-          linked folder inherits that folder. Live capture rebinds that file's anchors onto the
-          newly resolved object before evidence attach, without moving sibling files. The
+          linked folder inherits that folder. Live capture rebinds that file's own hard anchors
+          (including <code>provider_external</code> and file URLs) onto the newly resolved object
+          before evidence attach, without moving sibling files or canonical-object anchors. The
           selection-row update and every rebind write share one transaction, without rewriting the
           previous company's canonical entity. Assigning a previously unlinked folder or shared
           drive rebinds files whose ancestry includes that selection, including files already on an
@@ -243,25 +244,26 @@ GOOGLE_DRIVE_WEBHOOK_SECRET=...</code></pre>
           tiny. Equal-length substitutions such as <code>hiring</code>→<code>firing</code> stay
           substantive, as does inserting or removing a whole word such as <code>not</code>.
           Remaining hunks bill a small CRM-relevance judge through <code>llm.chatStructured</code> /
-          the existing AI meter. Judged event text packs comment evidence before hunks with a
-          reserved budget so a long diff cannot drop comments past the 4000-char cap, including the
-          strong-signal path. Every changed span must still appear in that packed event (and in the
-          judge input when the judge runs). Workspace object links resolve through
-          <code>withTeam(...).objects</code>. Deletion-only diffs emit bounded removed-text hunks.
-          Nested-folder membership walks the full ancestry past unlinked selected folders so an
-          outer linked ancestor remains on the path, including when the file itself is an unlinked
-          explicit selection; it caches fetched parent ids and the nearest selected ancestor for
-          in-scope — never an early "out of scope" boolean that would drop later files under the
-          same folder, and never a shared-drive short-circuit that would skip a nearer selected
-          folder. Linked-object lookup uses that full walked ancestry and picks the nearest linked
-          selected ancestor (file, then folder, then shared drive) — and applies the My Drive
-          <code>root</code> object link only to My Drive descendants, never to unlinked shared-drive
-          or individually selected files outside My Drive. Snapshots, team email domains, and those
-          links load through <code>withTeam(...).integrations</code>. Snapshots uniquely key
-          content, comments, and permission fingerprints so comment-only and share-only changes
-          persist. Revisit of a retained fingerprint refreshes its ordering timestamp so it becomes
-          the latest baseline again; otherwise A→B→A would leave B latest and a later edit back to B
-          would be dropped as unchanged. Comment and ACL fingerprints page
+          the existing AI meter. Judged event text packs comment evidence before hunks using
+          remaining space in the 4000-char cap, splitting a longer comment across events, so a long
+          diff cannot drop comments and a long comment-only change cannot stick on
+          <code>no_evidence</code>, including the strong-signal path. Every changed span must still
+          appear in that packed event (and in the judge input when the judge runs). Workspace object
+          links resolve through <code>withTeam(...).objects</code>. Deletion-only diffs emit bounded
+          removed-text hunks. Nested-folder membership walks the full ancestry past unlinked
+          selected folders so an outer linked ancestor remains on the path, including when the file
+          itself is an unlinked explicit selection; it caches fetched parent ids and the nearest
+          selected ancestor for in-scope — never an early "out of scope" boolean that would drop
+          later files under the same folder, and never a shared-drive short-circuit that would skip
+          a nearer selected folder. Linked-object lookup uses that full walked ancestry and picks
+          the nearest linked selected ancestor (file, then folder, then shared drive) — and applies
+          the My Drive <code>root</code> object link only to My Drive descendants, never to unlinked
+          shared-drive or individually selected files outside My Drive. Snapshots, team email
+          domains, and those links load through <code>withTeam(...).integrations</code>. Snapshots
+          uniquely key content, comments, and permission fingerprints so comment-only and share-only
+          changes persist. Revisit of a retained fingerprint refreshes its ordering timestamp so it
+          becomes the latest baseline again; otherwise A→B→A would leave B latest and a later edit
+          back to B would be dropped as unchanged. Comment and ACL fingerprints page
           <code>comments.list</code> / <code>permissions.list</code> (with
           <code>supportsAllDrives</code>) up to the same 10×100 bound as folder listing —
           shared-drive <code>files.get</code> never returns <code>permissions</code>. Bounded
