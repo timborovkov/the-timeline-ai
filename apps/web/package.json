@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "bun x --bun --no-install next dev",
     "build": "bun x --bun --no-install next build && bun scripts/prepare-standalone.mjs",
-    "start": "bun start.mjs",
+    "start": "bun --bun --no-env-file start.mjs",
     "lint": "bun x --bun --no-install eslint src",
     "test": "bun ../../scripts/testing/run.ts apps/web",
     "typecheck": "bun x --bun --no-install next typegen && bun x --bun --no-install tsc --noEmit",
