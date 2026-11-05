@@ -2,7 +2,7 @@ import { expect } from '@timeline/test-support';
 import { vi } from '@timeline/test-support';
 import { afterEach, beforeEach, describe, it } from 'bun:test';
 
-import type { IntegrationEvent, SyncContext } from '#src/integrations/types.js';
+import type { IntegrationEvent, SyncContext, SyncResult } from '#src/integrations/types.js';
 
 const externalFetchMock = vi.hoisted(() =>
   vi.fn(
@@ -300,6 +300,52 @@ function syncContext(
     takeDriveProcessSlot: vi.fn().mockResolvedValue({ allowed: true }),
     ...overrides,
   };
+}
+
+function expectDelayedDriveFileContinuation(
+  result: SyncResult | undefined,
+  before: number,
+  retryAfterMs: number,
+) {
+  expect(result?.continuations).toHaveLength(1);
+  expect(result?.continuations?.[0]).toEqual(
+    expect.objectContaining({
+      resourceType: 'drive.file',
+      externalId: 'file-1',
+    }),
+  );
+  const retryAt = result?.continuations?.[0]?.retryAt;
+  expect(retryAt).toBeInstanceOf(Date);
+  expect(retryAt?.getTime()).toBeGreaterThanOrEqual(before + retryAfterMs);
+  expect(retryAt?.getTime()).toBeLessThan(before + retryAfterMs + 2_000);
+}
+
+function paidExtractFileFetch(mimeType: string, name: string) {
+  return vi.fn<
+    (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+  >((input) => {
+    const url = requestUrl(input);
+    if (url.pathname.includes('/export')) {
+      return Promise.resolve(new Response(Buffer.from('%PDF-1.4 slides'), { status: 200 }));
+    }
+    if (url.pathname.endsWith('/files/file-1')) {
+      if (url.searchParams.get('alt') === 'media') {
+        return Promise.resolve(new Response(Buffer.from('%PDF-1.4 body'), { status: 200 }));
+      }
+      return Promise.resolve(
+        jsonResponse({
+          id: 'file-1',
+          name,
+          mimeType,
+          parents: ['root'],
+        }),
+      );
+    }
+    if (url.pathname.endsWith('/comments')) {
+      return Promise.resolve(jsonResponse({ comments: [] }));
+    }
+    return Promise.resolve(jsonResponse({ permissions: [] }));
+  });
 }
 
 describe('packDriveEventContent', () => {
@@ -1551,7 +1597,7 @@ describe('googleDriveProvider', () => {
     );
   });
 
-  it('does not retry a failed Drive extract when the extract budget is exhausted', async () => {
+  it('does not enqueue a failed Drive extract when the extract budget is exhausted', async () => {
     const body = Buffer.from('%PDF-1.4 retry');
     const fetch = vi.fn<
       (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
@@ -1587,8 +1633,9 @@ describe('googleDriveProvider', () => {
         retryAfterMs: 1_000,
       }),
     });
+    const before = Date.now();
 
-    await googleDriveProvider.incrementalSync({
+    const result = await googleDriveProvider.incrementalSync({
       integration: { id: 'integration-1', teamId: 'team-1' } as never,
       tokens: { access_token: 'access-token', expires_at: Date.now() + 600_000 },
       selections: [{ kind: 'drive.file', externalId: 'file-1' }],
@@ -1598,56 +1645,69 @@ describe('googleDriveProvider', () => {
 
     expect(ctx.consumeTransientDriveExtract).toHaveBeenCalledWith('file-1');
     expect(ctx.enqueueTransientDriveExtract).not.toHaveBeenCalled();
+    expect(ctx.writeEvents).not.toHaveBeenCalled();
+    expect(ctx.saveDriveSnapshot).not.toHaveBeenCalled();
+    expect(ctx.scheduleTargetedSync).not.toHaveBeenCalled();
     expect(ctx.recordAudit).toHaveBeenCalledWith(
       'drive_extract_capped',
-      expect.objectContaining({ file_id: 'file-1', reason: 'file' }),
-    );
-  });
-
-  it('gates paid Drive extraction before enqueueing the orchestrator', async () => {
-    const fetch = vi.fn<
-      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
-    >((input) => {
-      const url = requestUrl(input);
-      if (url.pathname.endsWith('/files/file-1')) {
-        return Promise.resolve(
-          jsonResponse({
-            id: 'file-1',
-            name: 'Notes',
-            mimeType: 'application/pdf',
-            parents: ['root'],
-          }),
-        );
-      }
-      if (url.pathname.endsWith('/comments')) {
-        return Promise.resolve(jsonResponse({ comments: [] }));
-      }
-      return Promise.resolve(jsonResponse({ permissions: [] }));
-    });
-    vi.stubGlobal('fetch', fetch);
-    const ctx = syncContext({
-      takeDriveExtractSlot: vi.fn().mockResolvedValue({
-        allowed: false,
-        reason: 'connection',
-        retryAfterMs: 1_000,
+      expect.objectContaining({
+        file_id: 'file-1',
+        reason: 'file',
+        retry_after_ms: 1_000,
       }),
-    });
-
-    await googleDriveProvider.incrementalSync({
-      integration: { id: 'integration-1', teamId: 'team-1' } as never,
-      tokens: { access_token: 'access-token', expires_at: Date.now() + 600_000 },
-      selections: [{ kind: 'drive.file', externalId: 'file-1' }],
-      ctx: ctx,
-      target: { resourceType: 'drive.file', externalId: 'file-1' },
-    });
-
-    expect(ctx.enqueueTransientDriveExtract).not.toHaveBeenCalled();
-    expect(ctx.judgeDriveChange).not.toHaveBeenCalled();
-    expect(ctx.recordAudit).toHaveBeenCalledWith(
-      'drive_extract_capped',
-      expect.objectContaining({ file_id: 'file-1', reason: 'connection' }),
     );
+    expectDelayedDriveFileContinuation(result, before, 1_000);
   });
+
+  for (const { reason, mimeType, name } of [
+    { reason: 'file' as const, mimeType: 'application/pdf', name: 'Notes.pdf' },
+    { reason: 'connection' as const, mimeType: 'application/pdf', name: 'Notes.pdf' },
+    {
+      reason: 'file' as const,
+      mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      name: 'SOW.docx',
+    },
+    {
+      reason: 'connection' as const,
+      mimeType: 'application/vnd.google-apps.presentation',
+      name: 'Deck',
+    },
+  ]) {
+    it(`reschedules file capture when the ${reason} extract budget is exhausted (${mimeType})`, async () => {
+      vi.stubGlobal('fetch', paidExtractFileFetch(mimeType, name));
+      const ctx = syncContext({
+        takeDriveExtractSlot: vi.fn().mockResolvedValue({
+          allowed: false,
+          reason,
+          retryAfterMs: 1_000,
+        }),
+      });
+      const before = Date.now();
+
+      const result = await googleDriveProvider.incrementalSync({
+        integration: { id: 'integration-1', teamId: 'team-1' } as never,
+        tokens: { access_token: 'access-token', expires_at: Date.now() + 600_000 },
+        selections: [{ kind: 'drive.file', externalId: 'file-1' }],
+        ctx: ctx,
+        target: { resourceType: 'drive.file', externalId: 'file-1' },
+      });
+
+      expect(ctx.enqueueTransientDriveExtract).not.toHaveBeenCalled();
+      expect(ctx.judgeDriveChange).not.toHaveBeenCalled();
+      expect(ctx.writeEvents).not.toHaveBeenCalled();
+      expect(ctx.saveDriveSnapshot).not.toHaveBeenCalled();
+      expect(ctx.scheduleTargetedSync).not.toHaveBeenCalled();
+      expect(ctx.recordAudit).toHaveBeenCalledWith(
+        'drive_extract_capped',
+        expect.objectContaining({
+          file_id: 'file-1',
+          reason,
+          retry_after_ms: 1_000,
+        }),
+      );
+      expectDelayedDriveFileContinuation(result, before, 1_000);
+    });
+  }
 
   for (const reason of ['file', 'connection'] as const) {
     it(`reschedules file capture when the ${reason} processing budget is exhausted`, async () => {
@@ -1725,17 +1785,7 @@ describe('googleDriveProvider', () => {
           retry_after_ms: 5_000,
         }),
       );
-      expect(result?.continuations).toHaveLength(1);
-      expect(result?.continuations?.[0]).toEqual(
-        expect.objectContaining({
-          resourceType: 'drive.file',
-          externalId: 'file-1',
-        }),
-      );
-      const retryAt = result?.continuations?.[0]?.retryAt;
-      expect(retryAt).toBeInstanceOf(Date);
-      expect(retryAt?.getTime()).toBeGreaterThanOrEqual(before + 5_000);
-      expect(retryAt?.getTime()).toBeLessThan(before + 7_000);
+      expectDelayedDriveFileContinuation(result, before, 5_000);
     });
   }
 

@@ -210,8 +210,10 @@ export interface SyncContext {
    */
   cancelTransientDriveExtract?(fileId: string): Promise<void>;
   /**
-   * Paid Drive extract budget, checked before Daytona/vision spend. Tests
-   * inject this; production uses `takeDriveExtractSlot`.
+   * Paid Drive extract budget (4/file/day, 40/connection/day), checked before
+   * Daytona/vision spend. Tests inject this; production uses
+   * `takeDriveExtractSlot`. Exhaustion must return a delayed continuation
+   * rather than completing the targeted capture.
    */
   takeDriveExtractSlot?(input: {
     integrationId: string;

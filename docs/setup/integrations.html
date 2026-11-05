@@ -327,8 +327,8 @@ GOOGLE_DRIVE_WEBHOOK_SECRET=...</code></pre>
           cap) which terminates without a retry loop. Saving Drive picker shares invalidates every
           cached folder and search query for that account. Paid extract is gated by its own daily
           budget (4 per file / 40 per connection) before sandbox or billed vision spend; the
-          post-diff judge stays at 8 processed files per doc and 200 per connection. Exhausting that
-          processing budget schedules a durable <code>drive.file</code> continuation with
+          post-diff judge stays at 8 processed files per doc and 200 per connection. Exhausting
+          either budget schedules a durable <code>drive.file</code> continuation from
           <code>retryAfterMs</code> instead of completing the targeted capture after the changes
           cursor has already advanced. Baseline captures consume extract budget, not the judge cap.
           Full Drive copies are not stored in the document drive. Apply

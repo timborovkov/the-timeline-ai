@@ -484,7 +484,7 @@ describe('takeDriveExtractSlot', () => {
         fileId: 'file-1',
         checkRateLimit,
       }),
-    ).resolves.toMatchObject({ allowed: false, reason: 'connection' });
+    ).resolves.toMatchObject({ allowed: false, reason: 'connection', retryAfterMs: 2_000 });
     expect(seen.some((key) => key.includes('drive-extract'))).toBe(true);
     expect(seen.some((key) => key.includes('drive-process'))).toBe(false);
   });

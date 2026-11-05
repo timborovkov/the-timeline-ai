@@ -657,8 +657,22 @@ interface LoadedDriveText {
   skippedReason?: string;
   extractError?: string;
   extractCapReason?: 'file' | 'connection';
+  extractRetryAfterMs?: number;
   consumeReadyExtract?: boolean;
   rescheduleExtract?: boolean;
+}
+
+/** Targeted `drive.file` jobs must not complete when a refillable budget is empty. */
+function delayedDriveFileCapture(fileId: string, retryAfterMs: number): SyncResult {
+  return {
+    continuations: [
+      {
+        resourceType: DRIVE_FILE_KIND,
+        externalId: fileId,
+        retryAt: new Date(Date.now() + retryAfterMs),
+      },
+    ],
+  };
 }
 
 async function consumeReadyDriveExtract(
@@ -765,6 +779,7 @@ async function loadDriveText(
         text: '',
         skippedReason: 'extract_capped',
         extractCapReason: extractSlot.reason,
+        extractRetryAfterMs: extractSlot.retryAfterMs,
       };
     }
     if (!ctx.enqueueTransientDriveExtract) {
@@ -1340,12 +1355,14 @@ async function processDriveFile(
     return;
   }
   if (loaded.skippedReason === 'extract_capped') {
+    const retryAfterMs = Math.max(250, loaded.extractRetryAfterMs ?? 0);
     await ctx.recordAudit('drive_extract_capped', {
       file_id: fileId,
       mime_type: file.mimeType,
       reason: loaded.extractCapReason ?? 'connection',
+      retry_after_ms: retryAfterMs,
     });
-    return;
+    return delayedDriveFileCapture(fileId, retryAfterMs);
   }
   if (loaded.skippedReason) {
     await consumeReadyDriveExtract(ctx, file.id, loaded);
@@ -1485,15 +1502,7 @@ async function processDriveFile(
       reason: slot.reason,
       retry_after_ms: slot.retryAfterMs,
     });
-    return {
-      continuations: [
-        {
-          resourceType: DRIVE_FILE_KIND,
-          externalId: fileId,
-          retryAt: new Date(Date.now() + slot.retryAfterMs),
-        },
-      ],
-    };
+    return delayedDriveFileCapture(fileId, slot.retryAfterMs);
   }
 
   let judge: DriveChangeJudge;
