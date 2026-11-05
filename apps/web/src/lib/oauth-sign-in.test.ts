@@ -26,6 +26,16 @@ describe('oauthClientConfigured', () => {
 });
 
 describe('Google sign-in scopes', () => {
+  it('splits space-separated identity scopes instead of treating s as a separator', () => {
+    expect(googleSignInScopeList('openid email profile')).toEqual(['openid', 'email', 'profile']);
+    expect(googleSignInScopeList('openid+email+profile')).toEqual(['openid', 'email', 'profile']);
+    expect(googleSignInScopeList('openid email profile').sort()).toEqual([
+      'email',
+      'openid',
+      'profile',
+    ]);
+  });
+
   it('requests only OpenID identity scopes and never Drive access', () => {
     const params = googleSignInAuthorizationParams();
     expect(params.scope.split(' ')).toEqual([...GOOGLE_SIGN_IN_SCOPES]);

@@ -19,7 +19,7 @@ test('sign-in offers Google with identity scopes only', async ({ page }) => {
   ]);
 
   const url = new URL(request.url());
-  const scopes = (url.searchParams.get('scope') ?? '').split(/[+\s]/).filter(Boolean).sort();
+  const scopes = (url.searchParams.get('scope') ?? '').split(/[\s+]/).filter(Boolean).sort();
   expect(scopes).toEqual(['email', 'openid', 'profile']);
   expect(url.searchParams.get('scope') ?? '').not.toMatch(/drive/i);
   expect(url.searchParams.get('redirect_uri')).toMatch(/\/api\/auth\/callback\/google$/);

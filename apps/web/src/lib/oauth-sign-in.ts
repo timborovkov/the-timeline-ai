@@ -30,7 +30,8 @@ export function googleSignInAuthorizationParams(): {
 }
 
 export function googleSignInScopeList(scope: string | null | undefined): string[] {
-  return (scope ?? '').split(/[+\s]/).filter(Boolean);
+  // `\s` is the whitespace class. `/[+\\s]/` would match `+`, `\`, or `s`.
+  return (scope ?? '').split(/[\s+]/).filter(Boolean);
 }
 
 export function googleSignInRequestsDriveAccess(scope: string | null | undefined): boolean {
