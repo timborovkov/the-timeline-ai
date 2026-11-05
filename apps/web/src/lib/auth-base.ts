@@ -4,6 +4,7 @@ import {
   authenticators,
   getDb,
   sessions,
+  teamMembers,
   teams,
   users,
   verificationTokens,
@@ -12,11 +13,12 @@ import { createPolarBillingProvider, synchronizePolarBillingUser } from '@timeli
 import { childLogger } from '@timeline/shared/logger';
 import { sendMessage } from '@timeline/shared/messaging';
 import { verifyPassword } from '@timeline/shared/passwords';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, isNull } from 'drizzle-orm';
 import { cookies } from 'next/headers';
 import NextAuth, { CredentialsSignin, type NextAuthConfig } from 'next-auth';
 import Credentials from 'next-auth/providers/credentials';
 import GitHub from 'next-auth/providers/github';
+import Google from 'next-auth/providers/google';
 import { z } from 'zod';
 
 import { trackProductEventBestEffort } from '@/lib/analytics';
@@ -29,6 +31,15 @@ import { authConfig } from '@/lib/auth.config';
 import { ensureSoloTeam } from '@/lib/default-team';
 import { sendEmailVerification } from '@/lib/email-verification';
 import { isLegalPublicationReady } from '@/lib/legal-publication';
+import {
+  authenticationMethod,
+  decideOAuthSignIn,
+  googleSignInAuthorizationParams,
+  isGoogleEmailVerified,
+  oauthClientConfigured,
+  rememberOAuthRegistration,
+  takeOAuthRegistration,
+} from '@/lib/oauth-sign-in';
 import { readConsentedPublicAttributionCookie } from '@/lib/public-attribution-server';
 import { reportCaughtError } from '@/lib/sentry-report';
 import { validateSessionVersion } from '@/lib/session-version';
@@ -80,13 +91,31 @@ const providers: NextAuthConfig['providers'] = [
   }),
 ];
 
-export const hasGitHubAuth = Boolean(process.env.AUTH_GITHUB_ID && process.env.AUTH_GITHUB_SECRET);
+export const hasGitHubAuth = oauthClientConfigured(
+  process.env.AUTH_GITHUB_ID,
+  process.env.AUTH_GITHUB_SECRET,
+);
+export const hasGoogleAuth = oauthClientConfigured(
+  process.env.GOOGLE_CLIENT_ID,
+  process.env.GOOGLE_CLIENT_SECRET,
+);
 
 if (hasGitHubAuth) {
   providers.push(
     GitHub({
       clientId: process.env.AUTH_GITHUB_ID,
       clientSecret: process.env.AUTH_GITHUB_SECRET,
+    }),
+  );
+}
+
+if (hasGoogleAuth) {
+  providers.push(
+    Google({
+      clientId: process.env.GOOGLE_CLIENT_ID,
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+      allowDangerousEmailAccountLinking: true,
+      authorization: { params: googleSignInAuthorizationParams() },
     }),
   );
 }
@@ -103,9 +132,10 @@ const nextAuth = NextAuth({
   providers,
   callbacks: {
     ...authConfig.callbacks,
-    async signIn({ account, user }) {
+    async signIn({ account, user, profile }) {
       // New OAuth profiles can carry provider IDs rather than database UUIDs.
       // Resolve existing connections before considering the authenticated DB identity.
+      let alreadyLinked = false;
       if (account && account.provider !== 'credentials') {
         const [linked] = await db
           .select({ suspendedAt: users.suspendedAt })
@@ -118,6 +148,7 @@ const nextAuth = NextAuth({
             ),
           );
         if (linked?.suspendedAt) return false;
+        alreadyLinked = Boolean(linked);
       }
       if (user.id && z.uuid().safeParse(user.id).success) {
         const [current] = await db
@@ -126,24 +157,37 @@ const nextAuth = NextAuth({
           .where(eq(users.id, user.id));
         if (current?.suspendedAt) return false;
       }
-      if (account?.provider !== 'github' || isLegalPublicationReady()) return true;
 
-      // Auth.js invokes signIn before handleLoginOrRegister creates a new OAuth
-      // user. While publication is blocked, permit an existing GitHub account
-      // to sign in but reject the first-time adapter write. Match the provider
-      // account rather than profile email because an existing GitHub user may
-      // keep their email private.
-      const existing = await db
-        .select({ userId: accounts.userId })
-        .from(accounts)
-        .where(
-          and(
-            eq(accounts.provider, account.provider),
-            eq(accounts.providerAccountId, account.providerAccountId),
-          ),
-        )
-        .limit(1);
-      return existing.length > 0;
+      const provider = account?.provider;
+      if (provider !== 'github' && provider !== 'google') return true;
+
+      const email = typeof user.email === 'string' ? user.email.toLowerCase() : '';
+      let existingEmailOwnerVerified: boolean | null = null;
+      if (provider === 'google' && email) {
+        const [existingByEmail] = await db
+          .select({ emailVerified: users.emailVerified })
+          .from(users)
+          .where(eq(users.email, email))
+          .limit(1);
+        if (existingByEmail) existingEmailOwnerVerified = existingByEmail.emailVerified !== null;
+      }
+
+      const allowed = decideOAuthSignIn({
+        provider,
+        alreadyLinked,
+        legalPublicationReady: isLegalPublicationReady(),
+        hasEmail: email.length > 0,
+        googleEmailVerified: isGoogleEmailVerified(profile),
+        existingEmailOwnerVerified,
+      });
+      if (allowed && !alreadyLinked) {
+        rememberOAuthRegistration(
+          email,
+          provider,
+          existingEmailOwnerVerified === null ? 'new' : 'link',
+        );
+      }
+      return allowed;
     },
     async jwt({ token, user, trigger }) {
       // Auth.js' callback union types make `user` look required here, but the
@@ -193,7 +237,7 @@ const nextAuth = NextAuth({
     signIn({ user, account }) {
       if (!user.id) return;
       trackProductEventBestEffort({ kind: 'user', userId: user.id }, 'authentication_succeeded', {
-        method: account?.provider === 'github' ? 'github' : 'credentials',
+        method: authenticationMethod(account?.provider),
       });
     },
     // OAuth signups land here after the adapter inserts the user. Credentials
@@ -203,6 +247,26 @@ const nextAuth = NextAuth({
     async createUser({ user }) {
       const userId = user.id;
       if (!userId) return;
+      const registration = takeOAuthRegistration(user.email);
+      // Auth.js fires createUser when linking Google onto an existing verified
+      // email. That user already has a workspace; do not register them again.
+      if (registration?.kind === 'link') return;
+      const [membership] = await db
+        .select({ teamId: teamMembers.teamId })
+        .from(teamMembers)
+        .where(and(eq(teamMembers.userId, userId), isNull(teamMembers.removedAt)))
+        .limit(1);
+      if (membership) return;
+      const [oauthAccount] = await db
+        .select({ provider: accounts.provider })
+        .from(accounts)
+        .where(eq(accounts.userId, userId))
+        .limit(1);
+      const source =
+        registration?.provider ??
+        (oauthAccount?.provider === 'google' || oauthAccount?.provider === 'github'
+          ? oauthAccount.provider
+          : 'github');
       // OAuth signups that arrived via an invite link must NOT get a default
       // solo team — they'll be added to the invited team when the callback
       // lands on /accept-invite/<token>. Creating a solo team here would
@@ -239,7 +303,7 @@ const nextAuth = NextAuth({
       }
       if (pendingInvite) {
         trackProductEventBestEffort({ kind: 'user', userId }, 'account_registered', {
-          source: 'github',
+          source,
           joinedViaInvite: true,
           ...(attribution?.source ? { attributionSource: attribution.source } : {}),
           ...(attribution?.medium ? { attributionMedium: attribution.medium } : {}),
@@ -252,7 +316,7 @@ const nextAuth = NextAuth({
         ? ({ kind: 'user', userId, teamId } as const)
         : ({ kind: 'user', userId } as const);
       trackProductEventBestEffort(actor, 'account_registered', {
-        source: 'github',
+        source,
         joinedViaInvite: false,
         ...(attribution?.source ? { attributionSource: attribution.source } : {}),
         ...(attribution?.medium ? { attributionMedium: attribution.medium } : {}),

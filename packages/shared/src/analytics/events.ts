@@ -158,7 +158,7 @@ const analyticsActorSchema = z.discriminatedUnion('kind', [
 const PRODUCT_EVENT_SCHEMAS = {
   account_registered: z
     .object({
-      source: z.enum(['credentials', 'github']),
+      source: z.enum(['credentials', 'github', 'google']),
       joinedViaInvite: z.boolean(),
       attributionSource: z.enum(PUBLIC_ATTRIBUTION_SOURCES).optional(),
       attributionMedium: z.enum(PUBLIC_ATTRIBUTION_MEDIA).optional(),
@@ -184,7 +184,9 @@ const PRODUCT_EVENT_SCHEMAS = {
   source_indexed: z.object({ source: z.enum(['event', 'fact', 'object', 'other']) }).strict(),
   reference_preview_loaded: z.object({}).strict(),
   email_verified: z.object({}).strict(),
-  authentication_succeeded: z.object({ method: z.enum(['credentials', 'github']) }).strict(),
+  authentication_succeeded: z
+    .object({ method: z.enum(['credentials', 'github', 'google']) })
+    .strict(),
   team_created: z
     .object({ source: z.enum(['signup', 'oauth', 'manual', 'invite_fallback']) })
     .strict(),

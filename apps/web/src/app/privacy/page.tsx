@@ -310,6 +310,14 @@ function PrivacyAiAndProviderSections() {
               from a team&apos;s optional GitHub content integration.
             </td>
           </tr>
+          <tr>
+            <td>Google (authentication, when configured)</td>
+            <td>
+              OpenID email and profile identifiers used to sign in. Sign-in requests only{' '}
+              <code>openid</code>, <code>email</code>, and <code>profile</code> — never Google Drive
+              scopes. Connecting Drive remains a separate Connections flow.
+            </td>
+          </tr>
         </tbody>
       </table>
 

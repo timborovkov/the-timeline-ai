@@ -594,6 +594,7 @@ describe('googleDriveProvider', () => {
       'https://www.googleapis.com/auth/drive.metadata.readonly',
     ]);
     expect(url.searchParams.get('access_type')).toBe('offline');
+    expect(url.searchParams.get('redirect_uri')).not.toMatch(/\/api\/auth\/callback\/google$/);
   });
 
   it('exchanges an OAuth code and resolves the stable Google subject id', async () => {

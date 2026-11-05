@@ -77,11 +77,39 @@
         Recall meeting bots, and custom MCP servers are not on this scheduled sync path.
       </p>
 
+      <h2 id="google-sign-in">Google sign-in</h2>
+      <p>
+        Sign in with Google uses the same OAuth web client as Google Drive (<code
+          >GOOGLE_CLIENT_ID</code
+        >
+        / <code>GOOGLE_CLIENT_SECRET</code>). Auth.js handles the callback at
+        <code>/api/auth/callback/google</code>. The sign-in request asks only for
+        <code>openid</code>, <code>email</code>, and <code>profile</code>. It never requests Drive
+        scopes, never sets <code>access_type=offline</code>, and does not inherit previously granted
+        Drive access. Connecting Drive stays a separate flow on Connections. The Google button
+        appears on sign-in and sign-up only when both client values are configured.
+      </p>
+      <p>
+        Account linking follows the existing Auth.js rule, tightened for Google: a Google profile
+        may attach to an existing Timeline user only when Google asserts a verified email
+        <em>and</em> that Timeline email is already verified. Unverified emails are never linked
+        automatically. New Google users and workspaces follow the same first-time OAuth path as
+        GitHub (solo team, welcome and verification email, invite cookie, publication gate).
+      </p>
+      <p>
+        Add both production redirect URIs on the shared client:
+        <code>https://thetimeline.cc/api/auth/callback/google</code> and
+        <code>https://thetimeline.cc/api/integrations/google_drive/callback</code>. Local
+        development also needs <code>http://localhost:3000/api/auth/callback/google</code>.
+      </p>
+
       <h2 id="google-drive">Google Drive</h2>
       <p>
         Timeline uses a server-side OAuth web flow and requests Drive read-only access. Google
         scopes are requested by the authorize URL, but the OAuth consent screen must be configured
-        for external/internal use before non-test users can connect.
+        for external/internal use before non-test users can connect. Use the same OAuth client as
+        <a href="#google-sign-in">Google sign-in</a>; Drive still requests its own read-only scopes
+        from Connections and does not share the sign-in callback.
       </p>
       <ol>
         <li>
@@ -92,8 +120,9 @@
         </li>
         <li>
           Under <strong>Authorized redirect URIs</strong>, add:
-          <code>https://thetimeline.cc/api/integrations/google_drive/callback</code>. Authorized
-          JavaScript origins are not used by Timeline's server-side callback flow.
+          <code>https://thetimeline.cc/api/auth/callback/google</code> (sign-in) and
+          <code>https://thetimeline.cc/api/integrations/google_drive/callback</code> (Drive).
+          Authorized JavaScript origins are not used by Timeline's server-side callback flow.
         </li>
         <li>
           Enable the Google Drive API, the Google Sheets API, and the Google Docs API for the
@@ -112,11 +141,13 @@
         </li>
         <li>
           Ensure the OAuth consent screen allows these scopes:
-          <code>openid</code>, <code>email</code>,
+          <code>openid</code>, <code>email</code>, <code>profile</code>,
           <code>https://www.googleapis.com/auth/drive.readonly</code>, and
-          <code>https://www.googleapis.com/auth/drive.metadata.readonly</code>.
-          <code>openid</code> supplies the stable Google subject identifier used to reconnect the
-          same account; <code>email</code> supplies its display label.
+          <code>https://www.googleapis.com/auth/drive.metadata.readonly</code>. Sign-in uses
+          <code>openid</code>, <code>email</code>, and <code>profile</code> only. Drive additionally
+          uses the Drive read-only scopes. <code>openid</code> supplies the stable Google subject
+          identifier used to reconnect the same account; <code>email</code> supplies its display
+          label.
         </li>
         <li>Copy the OAuth client id and client secret from the credential details page.</li>
         <li>

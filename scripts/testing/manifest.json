@@ -755,6 +755,9 @@
   "apps/web/src/components/global-search-palette.test.tsx": {
     "group": "dom"
   },
+  "apps/web/src/components/google-button.test.tsx": {
+    "group": "dom"
+  },
   "apps/web/src/components/help/support-form.test.tsx": {
     "group": "dom"
   },
@@ -1224,6 +1227,9 @@
     "group": "unit"
   },
   "apps/web/src/lib/object-title.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/lib/oauth-sign-in.test.ts": {
     "group": "unit"
   },
   "apps/web/src/lib/onboarding-checklist.test.ts": {

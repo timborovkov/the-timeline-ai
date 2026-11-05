@@ -1,7 +1,7 @@
 # The Timeline — Design System
 
-**Version:** v3.35 · Public monthly pricing calculator (2026-11-04).
-Replaces v3.34 Object citations and pipeline lanes.
+**Version:** v3.36 · Google sign-in vendor mark (2026-11-04).
+Replaces v3.35 Public monthly pricing calculator.
 
 This is the visual and interaction contract for the product. If a screen
 disagrees with it, fix the screen. If the language intentionally changes,
@@ -1377,6 +1377,7 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-11-04 | Connect your agent client picker | `/app/connect-agent` leads with a CollectionRow client list and one install path. Official vendor marks sit on white tiles. Connected agents, add-memory, SKILL.md, and static keys share one disclosure stack with no nested cards or stacked `border-y` sections. Admin grant rows show the consenting member next to the client. |
 | 2026-11-04 | Agent setup card marks | Replaces letter discs with official agent logos on white tiles, one short lede, and a single logo row on the landing and `/agents` cards. |
 | 2026-11-04 | Public monthly calculator | `/pricing` Usage compares PAYG, Team, and Business from paired sliders and exact fields. One hairline results panel, 12px metadata, and the shared billing preview. |
+| 2026-11-04 | Google sign-in | Sign-in and sign-up use the official Google G on a borderless white tile inside the existing outline control, at or above the 12px type floor, with Google above GitHub. Drive connection stays on Connections. |
 
 
 ### Billing benefits and recorded charges (2026-10-31)

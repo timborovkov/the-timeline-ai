@@ -1,7 +1,7 @@
 import { AuthShell } from '@/components/auth-shell';
 import { AuthProviderDividerSkeleton } from '@/components/loading-states';
 import { Skeleton } from '@/components/ui/skeleton';
-import { hasGitHubAuth } from '@/lib/auth';
+import { hasGitHubAuth, hasGoogleAuth } from '@/lib/auth';
 
 export default function SignUpLoading() {
   return (
@@ -18,7 +18,9 @@ export default function SignUpLoading() {
         className="space-y-4"
       >
         <div aria-hidden="true" className="space-y-4">
-          {hasGitHubAuth ? <AuthProviderDividerSkeleton /> : null}
+          {hasGoogleAuth || hasGitHubAuth ? (
+            <AuthProviderDividerSkeleton buttons={Number(hasGoogleAuth) + Number(hasGitHubAuth)} />
+          ) : null}
           <div className="space-y-2">
             <Skeleton className="h-4 w-10 motion-reduce:animate-none" />
             <Skeleton className="h-9 w-full motion-reduce:animate-none" />
