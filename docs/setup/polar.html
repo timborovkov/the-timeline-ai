@@ -136,7 +136,13 @@ bun run billing:polar-convert --team-id=&lt;team-uuid&gt; --actor-email=&lt;veri
         Railway deploys <code>main</code> to production and the <code>staging</code> branch to
         staging, so a feature branch has no preview URL. The webhook defaults to
         <code>https://thetimeline.cc/api/webhooks/polar</code>. That route has to be deployed before
-        Polar deliveries succeed. Copy the printed product and webhook variables onto the web and
+        Polar deliveries succeed. Polar sandbox and production organizations are separate APIs, but
+        a sandbox webhook whose URL is that production endpoint still delivers there; the handler
+        does not inspect <code>POLAR_SERVER</code>. It validates <code>external_id</code>/<code
+          >metadata.team_id</code
+        >
+        as a UUID before any database query and returns 2xx for invalid or unknown team identifiers
+        so Polar stops retrying. Copy the printed product and webhook variables onto the web and
         worker services. <code>document-extract-orchestrator</code> stays credential-thin and only
         needs <code>BILLING_CHARGES_ENABLED</code>.
       </p>
