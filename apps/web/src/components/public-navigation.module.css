@@ -74,8 +74,38 @@
   border-inline-start: 1px solid var(--border);
 }
 
-.footerUseCases {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.75rem 1.25rem;
+.footerColumns {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(9.5rem, 1fr));
+  gap: 2rem 1.75rem;
+  width: 100%;
+}
+
+.footerColumnTitle {
+  margin: 0 0 0.85rem;
+  color: var(--fg);
+  font-size: 0.68rem;
+  font-weight: 650;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.footerColumnList {
+  display: grid;
+  gap: 0.55rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+@media (max-width: 64rem) {
+  .footerColumns {
+    grid-template-columns: repeat(2, minmax(10rem, 1fr));
+  }
+}
+
+@media (max-width: 30rem) {
+  .footerColumns {
+    grid-template-columns: 1fr;
+  }
 }

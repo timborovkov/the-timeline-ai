@@ -4,12 +4,7 @@ import type { ReactNode } from 'react';
 
 import { CookieSettingsButton } from '@/components/public-analytics';
 import { PublicHeader } from '@/components/public-header';
-import {
-  PublicFooterCompareLinks,
-  PublicFooterUseCaseLinks,
-  PublicNavigationItems,
-  type PublicNavigationSection,
-} from '@/components/public-navigation';
+import { PublicFooterColumns, type PublicNavigationSection } from '@/components/public-navigation';
 import publicSiteStyles from '@/components/public-site.module.css';
 import { SkipLink } from '@/components/skip-link';
 import { cn } from '@/lib/utils';
@@ -21,6 +16,9 @@ interface PublicShellProps {
   footerLabel?: string;
   currentSection?: PublicNavigationSection;
 }
+
+const FOOTER_LINK_CLASS =
+  'rounded-sm outline-none hover:text-fg focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2';
 
 export function PublicShell({
   children,
@@ -39,58 +37,54 @@ export function PublicShell({
       <footer className="border-t border-border">
         <div
           className={cn(
-            'mx-auto flex flex-col gap-3 px-4 py-8 text-sm text-fg-muted sm:flex-row sm:items-center sm:justify-between sm:px-6',
+            'mx-auto flex flex-col gap-10 px-4 py-10 text-sm text-fg-muted sm:px-6',
             widthClass,
           )}
         >
           <span>{footerLabel}</span>
-          <div className="flex flex-col gap-4 sm:items-end">
-            <nav aria-label="Explore The Timeline" className="grid gap-3">
-              <PublicNavigationItems
-                currentSection={currentSection}
-                variant="simple"
-                listClassName="flex flex-wrap gap-x-4 gap-y-3"
-                itemClassName="rounded-sm outline-none hover:text-fg focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                activeItemClassName="text-fg"
-              />
-              <PublicFooterUseCaseLinks itemClassName="rounded-sm outline-none hover:text-fg focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2" />
-              <PublicFooterCompareLinks itemClassName="rounded-sm outline-none hover:text-fg focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2" />
-            </nav>
-            <nav aria-label="Support and legal" className="flex flex-wrap gap-x-4 gap-y-3">
-              <Link
-                href="/help/support"
-                className="rounded-sm outline-none hover:text-fg focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-              >
-                Support
-              </Link>
-              <Link
-                href="/trust"
-                aria-current={currentSection === 'trust' ? 'page' : undefined}
-                className="rounded-sm outline-none hover:text-fg focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-              >
-                Trust
-              </Link>
-              <Link
-                href="/terms"
-                className="rounded-sm outline-none hover:text-fg focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-              >
-                Terms
-              </Link>
-              <Link
-                href="/privacy"
-                className="rounded-sm outline-none hover:text-fg focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-              >
-                Privacy
-              </Link>
-              <Link
-                href="/cookies"
-                className="rounded-sm outline-none hover:text-fg focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-              >
-                Cookies
-              </Link>
-              <CookieSettingsButton />
-            </nav>
-          </div>
+          <nav aria-label="Explore The Timeline">
+            <PublicFooterColumns
+              currentSection={currentSection}
+              itemClassName={FOOTER_LINK_CLASS}
+              activeItemClassName="text-fg"
+              legalItems={
+                <>
+                  <li>
+                    <Link href="/help/support" className={FOOTER_LINK_CLASS}>
+                      Support
+                    </Link>
+                  </li>
+                  <li>
+                    <Link
+                      href="/trust"
+                      aria-current={currentSection === 'trust' ? 'page' : undefined}
+                      className={cn(FOOTER_LINK_CLASS, currentSection === 'trust' && 'text-fg')}
+                    >
+                      Trust
+                    </Link>
+                  </li>
+                  <li>
+                    <Link href="/terms" className={FOOTER_LINK_CLASS}>
+                      Terms
+                    </Link>
+                  </li>
+                  <li>
+                    <Link href="/privacy" className={FOOTER_LINK_CLASS}>
+                      Privacy
+                    </Link>
+                  </li>
+                  <li>
+                    <Link href="/cookies" className={FOOTER_LINK_CLASS}>
+                      Cookies
+                    </Link>
+                  </li>
+                  <li>
+                    <CookieSettingsButton />
+                  </li>
+                </>
+              }
+            />
+          </nav>
         </div>
       </footer>
     </div>

@@ -26,11 +26,7 @@ import { PUBLIC_DEMO_STORY } from '@/components/marketing/public-demo-story';
 import { USE_CASES } from '@/components/marketing/use-cases/content';
 import { CookieSettingsButton } from '@/components/public-analytics';
 import { PublicHeader } from '@/components/public-header';
-import {
-  PublicFooterCompareLinks,
-  PublicFooterUseCaseLinks,
-  PublicNavigationItems,
-} from '@/components/public-navigation';
+import { PublicFooterColumns } from '@/components/public-navigation';
 import { PublicSessionBranch } from '@/components/public-session-branch';
 import {
   PUBLIC_DOCUMENT_REGISTRY,
@@ -800,47 +796,61 @@ function Footer() {
   const year = new Date().getFullYear();
   return (
     <footer className={styles.footer}>
-      <div>
+      <div className={styles.footerBrandRow}>
         <span className={styles.footerBrand}>
           <Logo ariaHidden /> The Timeline
         </span>
         <span>© {year}</span>
       </div>
-      <div className={styles.footerNavigation}>
-        <nav aria-label="Explore The Timeline" className="grid gap-3">
-          <PublicNavigationItems
-            currentSection="product"
-            variant="simple"
-            listClassName={styles.footerLinks}
-            activeItemClassName={styles.footerLinkActive}
-          />
-          <PublicFooterUseCaseLinks />
-          <PublicFooterCompareLinks />
-        </nav>
-        <nav aria-label="Support and legal">
-          <GitHubSourceLink compact className={styles.footerGithub} />
-          <Link href="/trust">Trust</Link>
-          <Link href="/terms">Terms</Link>
-          <Link href="/privacy">Privacy</Link>
-          <Link href="/cookies">Cookies</Link>
-          <CookieSettingsButton />
-          <Link href={CONTACT_HREF} data-public-analytics-cta="contact_support">
-            Contact
-          </Link>
-          <PublicSessionBranch
-            signedOut={
-              <Link href="/sign-in" data-public-analytics-cta="sign_in">
-                Sign in
-              </Link>
-            }
-            signedIn={
-              <Link href="/app" data-public-analytics-cta="open_dashboard">
-                Dashboard
-              </Link>
-            }
-          />
-        </nav>
-      </div>
+      <nav aria-label="Explore The Timeline">
+        <PublicFooterColumns
+          currentSection="product"
+          className={styles.footerColumns}
+          headingClassName={styles.footerColumnTitle}
+          activeItemClassName={styles.footerLinkActive}
+          legalItems={
+            <>
+              <li>
+                <GitHubSourceLink compact className={styles.footerGithub} />
+              </li>
+              <li>
+                <Link href="/trust">Trust</Link>
+              </li>
+              <li>
+                <Link href="/terms">Terms</Link>
+              </li>
+              <li>
+                <Link href="/privacy">Privacy</Link>
+              </li>
+              <li>
+                <Link href="/cookies">Cookies</Link>
+              </li>
+              <li>
+                <CookieSettingsButton />
+              </li>
+              <li>
+                <Link href={CONTACT_HREF} data-public-analytics-cta="contact_support">
+                  Contact
+                </Link>
+              </li>
+              <li>
+                <PublicSessionBranch
+                  signedOut={
+                    <Link href="/sign-in" data-public-analytics-cta="sign_in">
+                      Sign in
+                    </Link>
+                  }
+                  signedIn={
+                    <Link href="/app" data-public-analytics-cta="open_dashboard">
+                      Dashboard
+                    </Link>
+                  }
+                />
+              </li>
+            </>
+          }
+        />
+      </nav>
     </footer>
   );
 }

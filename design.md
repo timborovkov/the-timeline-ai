@@ -1003,23 +1003,27 @@ grid without decorative connectors, and narrow containers stack stages with
 vertical packet tracks. Reduced-motion mode hides packets and preserves the
 complete static story.
 
-The public header stays uncluttered: Product, Use cases, Compare, Agents, and
-Pricing. Use cases and Compare are `details` dropdowns on desktop and in the
-mobile menu. How it works, Integrations, Help, and Trust remain in the footer
-(and legal row). `/compare` is a hub for head-to-head pages versus Day AI,
-Folk, Glean, and Geekbot; every competitor fact on those pages cites and links
-that competitor's own site. Works-with pages live under `/integrations`
-(Linear, Jira, Notion, HubSpot, Attio, Pipedrive), not a separate `/works-with`
-section: Linear has native ingest, Jira and Notion are hosted MCP lookup, and
-HubSpot, Attio, and Pipedrive native ingest is coming soon. Retired
-`/compare/{hubspot,jira,linear,notion}` URLs permanent-redirect to the matching
-integrations page.
+The public header stays uncluttered: Product, Use cases, Integrations, Agents,
+and Pricing. Use cases and Integrations are `details` dropdowns on desktop and
+in the mobile menu. The Integrations dropdown is the hub plus works-with pages
+only; each child is labelled for what ships today (native sync, MCP lookup, or
+coming soon) so a planned connector is never implied as live. How it works,
+Help, Trust, and head-to-head Compare pages remain in the footer. The footer is
+columnar: Product, Use cases, Integrations, Compare, and Legal. `/compare` is a
+thin hub for head-to-head pages versus Day AI, Folk, Glean, and Geekbot; every
+competitor fact on those pages cites and links that competitor's own site.
+Works-with pages live under `/integrations` (Linear, Jira, Notion, HubSpot,
+Attio, Pipedrive), not under Compare: Linear has native ingest, Jira and Notion
+are hosted MCP lookup, and HubSpot, Attio, and Pipedrive native ingest is
+coming soon. Retired `/compare/{hubspot,jira,linear,notion}` URLs
+permanent-redirect to the matching integrations page.
 
 Use-case pages extend this story for six jobs from one record: work record,
 team daily log, communication trail, CRM, task board, and onboarding and repeat
 questions. They live under `/use-cases`, appear in the public Use cases menu,
-and are registered for sitemap and LLM discovery. `/compare` and `/agents` are
-indexable hubs for the Compare dropdown and the agent setup card. Retired solution URLs
+and are registered for sitemap and LLM discovery. `/compare` remains an
+indexable vs-only hub reachable from the footer; `/agents` is the agent setup
+card. Retired solution URLs
 `/solutions/weekly-project-updates` and `/solutions/crm-context-from-team-activity`
 permanent-redirect to the matching use-case pages. Client project handoffs remain
 at `/solutions/client-project-handoffs` with related use-case links. `/product-tour`
@@ -1073,10 +1077,10 @@ Auth-neutral loading and error boundaries keep the same masthead but omit
 account actions rather than guessing the visitor's session state.
 The landing main landmark remains focusable for skip navigation but suppresses
 the browser's page-sized focus outline; interactive controls retain their focus indicators.
-The masthead exposes the same six primary destinations in the same order:
-Product (`/`), Integrations (`/integrations`), Pricing (`/pricing`), How it works (`/how-it-works`),
-Trust (`/trust`), and Help (`/help`). Desktop headers show them directly, compact widths use a native
-menu disclosure, and footers repeat them for recovery at the end of a page. The
+The masthead exposes five primary destinations in this order:
+Product (`/`), Use cases (`/use-cases`), Integrations (`/integrations`), Agents (`/agents`),
+and Pricing (`/pricing`). Desktop headers show them directly, compact widths use a native
+menu disclosure, and the columnar footer repeats them plus How it works, Help, Compare, and Legal. The
 current destination uses `aria-current="page"`. At phone widths, sign-in and
 theme controls move into the disclosure instead of disappearing, and the
 disclosure closes after link activation or a persisted-layout route change.
@@ -1386,6 +1390,7 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-11-04 | Public monthly calculator | `/pricing` Usage compares PAYG, Team, and Business from paired sliders and exact fields. One hairline results panel, 12px metadata, and the shared billing preview. |
 | 2026-11-04 | Google sign-in | Sign-in and sign-up use the official Google G on a borderless white tile inside the existing outline control, at or above the 12px type floor, with Google above GitHub. Drive connection stays on Connections. |
 | 2026-11-05 | GitHub sign-in mark | Continue with GitHub uses the official Invertocat on the same borderless white tile as Google so the mark stays visible in dark mode. |
+| 2026-11-06 | Public nav IA | Header is Product, Use cases, Integrations, Agents, Pricing. Integrations dropdown is works-with only, with live vs coming-soon labels. Footer becomes Product / Use cases / Integrations / Compare / Legal columns. `/compare` is a thin vs-only hub. |
 | 2026-11-06 | OAuth auto-verify, team support ids, Drive picker | Google/GitHub sign-in stamps `emailVerified` when the provider asserts a verified email. Team → General shows readonly copyable team id and slug. Drive sharing drops the dense green callout, overlapping helper copy, and nested picker borders. |
 
 
