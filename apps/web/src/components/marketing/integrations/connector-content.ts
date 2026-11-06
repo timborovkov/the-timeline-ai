@@ -82,6 +82,8 @@ export interface ConnectorRouteSummary {
   description: string;
 }
 
+// Shared default for connectors last checked together. Drive lastReviewed is
+// set per-connector when that page is re-audited against product truth.
 const LAST_REVIEWED = '2026-11-03' as const;
 const DEMO_CONNECTORS = PUBLIC_DEMO_STORY.connectors;
 
@@ -397,18 +399,18 @@ export const CONNECTORS: readonly ConnectorContent[] = [
     eyebrow: 'File change becomes durable evidence',
     hero: 'Turn selected Drive changes into cited timeline evidence.',
     intro:
-      'Timeline watches the folders and files you pick, then records CRM-relevant Docs, Sheets, Slides, PDF, and Word changes as cited timeline events. Nothing outside that selection is read, including Shared with me.',
+      'Timeline watches the folders and files you pick, then records CRM-relevant Docs, Sheets, Slides, PDF, and Word changes as cited timeline events. Nothing outside that selection is read. Selecting My Drive does not admit Shared with me.',
     seoTitle: 'Google Drive integration for cited document answers',
     seoDescription:
       'Capture selected Google Drive Docs, Sheets, Slides, PDF, and Word changes in The Timeline as cited evidence, using Drive push notifications and a quiet-window debounce.',
     logo: '/connectors/google-drive.svg',
     lightLogoTileInDarkMode: false,
     capability: 'Native integration',
-    lastReviewed: LAST_REVIEWED,
+    lastReviewed: '2026-11-06',
     captureStatement:
-      'Timeline records selected Drive changes as cited events after a quiet editing window. It stores a compact text snapshot for diffing, not a full document copy.',
+      'Timeline records selected Drive changes as cited events after a quiet editing window. It keeps the latest extracted text to detect later edits, then deletes that text on disconnect or when the file leaves the selection. It does not copy Drive files into the document drive.',
     providerStatement:
-      'Google Drive remains the place where files are authored, shared, organized, and permissioned. Timeline reads changed content included by the selected source; it does not replace Drive collaboration or rewrite source files.',
+      'Google Drive remains the place where files are authored, shared, organized, and permissioned. Stay in Drive alone for day-to-day editing, comments, and sharing. Timeline reads selected CRM-relevant changes into the cited work record beside Slack and Linear; it is not a second Docs editor and does not rewrite source files.',
     diagram: DEMO_CONNECTORS.googleDrive.diagram,
     exampleQuestions: [
       'Summarize the latest partnership agreement.',
@@ -418,12 +420,12 @@ export const CONNECTORS: readonly ConnectorContent[] = [
     ],
     scenario: DEMO_CONNECTORS.googleDrive.scenario,
     capturedRecords: [
-      'CRM-relevant edits to activated Docs, Sheets, Slides, PDF, and Word files after the Drive changes cursor is set',
-      'New or resolved comments and sharing with domains outside the Timeline team as strong signals',
+      'CRM-relevant edits to activated Docs, Sheets, Slides, PDF, and Word files after the Drive changes cursor is set. Native Docs include every tab, including nested child tabs; native Sheets include every tab, including hidden tabs',
+      'New or resolved comments, replies, and sharing with domains outside the Timeline team as strong signals',
       'Optional links from a watched folder or file to an existing Timeline object',
       'File names, MIME types, modification times, owners, and source links',
       'Changed sections sent to a small billed model that first judges CRM relevance',
-      'Truncated text snapshots used only to skip formatting-only and tiny edits',
+      'Latest extracted text used to detect later edits; formatting-only and tiny edits are skipped before any LLM call',
     ],
     recipes: [
       {
@@ -446,7 +448,7 @@ export const CONNECTORS: readonly ConnectorContent[] = [
       'Connect Google Drive with a person-owned OAuth connection.',
       'Pick My Drive, folders, shared drives, and/or specific Docs, Sheets, Slides, PDF, or Word files to share with the team.',
       'Have a Timeline team admin activate those sources, and optionally link a watched folder or file to a Timeline object.',
-      'Register the Drive push-notification domain for `/api/webhooks/google-drive`. Timeline uses `changes.watch`; file capture waits for a quiet editing window of about 15 minutes and at most one hour.',
+      'Register the Drive push-notification domain for `/api/webhooks/google-drive`. Timeline uses `changes.watch`; file capture waits for a quiet editing window of about 15 minutes and at most one hour. A scheduled `changes.list` pass recovers missed notifications about once a day.',
     ],
     permissions: [
       'OAuth requests read-only Drive content and metadata plus openid and email. Google’s stable subject identifier anchors the provider account identity, and its primary email labels the connection.',
@@ -457,11 +459,13 @@ export const CONNECTORS: readonly ConnectorContent[] = [
       'Timeline’s use of information received from Google APIs adheres to the Google API Services User Data Policy, including the Limited Use requirements. Drive content is used only to provide and improve the user-facing capture features described here.',
     ],
     limitations: [
-      'Activation sets a Drive changes cursor and registers `changes.watch`. Historical files are not enumerated. Changes before that cursor are never returned.',
+      'Activation sets a Drive changes cursor and registers `changes.watch`. Historical files are not enumerated. Changes before that cursor are never returned. The first time Timeline sees a selected file after that cursor, it stores a baseline snapshot without writing an event.',
       'Drive push notifications do not include file ids. The webhook-delivery worker records the channel ping, then a targeted `drive.changes` job lists changes and enqueues one delayed `drive.file` job per in-scope file, coalesced by BullMQ job id. Trailing debounce extends that delayed job up to one hour from the first notification.',
-      'Formatting-only and tiny edits are skipped before any LLM call. Remaining hunks go to a small billed model that first judges CRM relevance. Daily caps apply per file and per connection, and paid PDF/Word/Slides extraction has its own tighter budget.',
-      'Timeline hashes the full extracted text and keeps the latest extracted text to detect later changes, plus a truncated prefix and suffix. Older retained states keep hashes only. That latest extracted text is deleted on disconnect or when the file is removed. Timeline does not harvest Drive files into the document drive. PDF, Word, and Slides text is extracted transiently by the document-extract service.',
-      'Files over 20 MB and unsupported Google-native formats are skipped. Comments are used as signals, not stored as a full comment archive. Timeline does not edit files, change sharing, or replace Google Docs collaboration.',
+      'A scheduled `changes.list` pass recovers missed push notifications about once a day. Without a matching push notification or another targeted sync, a recoverable edit can remain stale for nearly a day. The changes feed is processed in bounded pages; unfinished scans continue on a later job.',
+      'Formatting-only and tiny edits are skipped before any LLM call. Remaining hunks go to a small billed model that first judges CRM relevance. At most 8 judged files per document per day and 200 judged files per connection per day. Paid PDF, Word, and Slides extraction is separately capped at 4 per file per day and 40 per connection per day. Exhausted budgets reschedule instead of dropping the pending edit.',
+      'Timeline hashes the full extracted text and keeps the latest extracted text to detect later changes, plus a truncated prefix and suffix. Older retained states keep hashes only. That latest extracted text is deleted on disconnect, when the file is removed, or when remaining selections no longer cover it. Timeline does not harvest Drive files into the document drive. PDF, Word, and Slides text is extracted transiently by the document-extract service.',
+      'Files over 20 MB and unsupported Google-native formats are skipped. Pending suggested inserts in Google Docs are not treated as committed text until they are accepted. Comments and replies are snapshotted for change detection and packed into events when they change; Timeline is not a Drive comments archive. Timeline does not edit files, change sharing, or replace Google Docs collaboration.',
+      'The folder picker lists at most 1,000 children per folder. Name search returns at most 50 matching files. The top-level shared-drive list is capped at 100.',
     ],
     faqs: [
       {
@@ -472,17 +476,17 @@ export const CONNECTORS: readonly ConnectorContent[] = [
       {
         question: 'Does Timeline store a copy of each document?',
         answer:
-          'Timeline hashes and diffs the full extracted text and keeps the latest extracted text so later edits can be detected. That text is deleted on disconnect or when the file is removed or leaves the selected folder. Older retained states keep hashes only. Timeline does not harvest Drive files into the document drive.',
+          'Timeline hashes and diffs the full extracted text and keeps the latest extracted text so later edits can be detected. That text is deleted on disconnect, when the file is removed, or when remaining selections no longer cover it. Older retained states keep hashes only. Timeline does not harvest Drive files into the document drive.',
       },
       {
         question: 'How quickly do edits appear?',
         answer:
-          'Drive notifies Timeline through `changes.watch`. Capture waits until the document has been quiet for about 15 minutes, and never longer than one hour from the first notification in that burst, so an editing session is processed once.',
+          'Drive notifies Timeline through `changes.watch`. Capture waits until the document has been quiet for about 15 minutes, and never longer than one hour from the first notification in that burst, so an editing session is processed once. A scheduled `changes.list` pass recovers missed notifications about once a day.',
       },
       {
         question: 'Does Timeline write changes back to Drive?',
         answer:
-          'No. Drive remains authoritative for document content, collaboration, and permissions. The integration is a read and capture path.',
+          'No. Stay in Drive for editing, comments, and permissions. Drive remains authoritative. The integration is a read and capture path, not a second Docs editor.',
       },
     ],
     related: ['slack', 'linear', 'monday'],

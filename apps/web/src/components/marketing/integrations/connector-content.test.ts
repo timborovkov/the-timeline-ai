@@ -286,22 +286,36 @@ describe('connector content manifest', () => {
 
     const publicClaims = JSON.stringify(drive);
 
+    expect(drive.slug).toBe('google-drive');
+    expect(drive.lastReviewed).toBe('2026-11-06');
     expect(publicClaims).toContain('My Drive');
     expect(publicClaims).toContain('shared drives');
     expect(publicClaims).toContain('changes.watch');
     expect(publicClaims).toContain('does not admit Shared with me');
+    expect(drive.intro).not.toContain('including Shared with me');
     expect(drive.permissions.join(' ')).toContain('openid and email');
     expect(drive.permissions.join(' ')).toContain('stable subject identifier');
     expect(drive.permissions.join(' ')).toContain('primary email labels the connection');
     expect(drive.permissions.join(' ')).toContain('Limited Use');
     expect(publicClaims).toContain('Historical files are not enumerated');
+    expect(publicClaims).toContain('baseline snapshot without writing an event');
     expect(publicClaims).toContain('keeps the latest extracted text to detect later changes');
-    expect(publicClaims).toContain('deleted on disconnect or when the file is removed');
+    expect(publicClaims).toContain('remaining selections no longer cover it');
     expect(publicClaims).toContain('does not harvest Drive files into the document drive');
     expect(publicClaims).toContain('quiet editing window of about 15 minutes');
     expect(publicClaims).toContain('at most one hour');
     expect(publicClaims).toContain('webhook-delivery worker');
     expect(publicClaims).toContain('delayed `drive.file` job');
+    expect(publicClaims).toContain('changes.list');
+    expect(publicClaims).toContain('about once a day');
+    expect(publicClaims).toContain('every tab, including nested child tabs');
+    expect(publicClaims).toContain('including hidden tabs');
+    expect(publicClaims).toContain('Pending suggested inserts');
+    expect(publicClaims).toContain('Stay in Drive alone');
+    expect(publicClaims).toContain('8 judged files per document per day');
+    expect(publicClaims).toContain('1,000 children per folder');
+    expect(publicClaims).not.toContain('compact text snapshot');
+    expect(publicClaims).not.toContain('Truncated text snapshots used only');
     expect(publicClaims).not.toContain(
       'Selecting My Drive root currently admits any changed file the connected account can access',
     );
