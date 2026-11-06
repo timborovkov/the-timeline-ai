@@ -133,8 +133,12 @@ names when its source module loads.
 
 `/agents/setup.md` and `/agents/SKILL.md` are machine-readable Markdown routes.
 They are registered as public machine documents with `llms: false` so the
-hand-authored `## For agents` block in `llms.txt` / `llms-full.txt` is the
-discovery entry. `SKILL.md` is served from
+hand-authored agent links in `llms.txt` / `llms-full.txt` provide discovery.
+The compact index starts with product context and routes research, existing-account
+setup, new-account setup, and already-connected agents separately. Installation
+steps belong in `setup.md`; tool selection and operating rules belong in `SKILL.md`.
+Product, guide, integration, pricing, trust, and support links come from the registry.
+Use cases, solutions, comparisons, and companion references appear under `Optional`. `SKILL.md` is served from
 `plugins/timeline/skills/timeline/SKILL.md` and must stay byte-identical.
 
 `sitemap.xml` and `robots.txt` are generated at request time so their absolute
@@ -159,3 +163,5 @@ verification routes. Publicly reachable HTML that declares `noindex` remains
 crawlable so search engines can observe that directive and process redirects.
 Use page metadata and the registry's `indexability` field to prevent indexing;
 do not add ordinary noindex pages to the robots disallow list.
+
+`/agents/provisioning.md` is a machine document linked from setup, excluded from the sitemap and automatic llms registry expansion, with a brief discovery link in llms.txt. The public skill and signed-in skill download read the canonical plugin SKILL.md. Discovery remains useful without an account or connection.

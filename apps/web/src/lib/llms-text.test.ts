@@ -34,34 +34,41 @@ describe('llms text files', () => {
     const text = buildLlmsTxt();
 
     expect(text).toContain('# The Timeline');
-    expect(text.split('\n').slice(0, 3).join('\n')).toContain(
-      'https://thetimeline.cc/agents/setup.md',
-    );
-    expect(text).toContain('## For agents');
+    expect(text).toContain('> The Timeline');
+    expect(text).toContain('## Start here');
+    expect(text).toContain('Researching Timeline');
+    expect(text).toContain('Connecting an agent to an existing account');
+    expect(text).toContain('signup creates your first team automatically');
+    expect(text).toContain('Already connected');
+    expect(text).toContain('[Timeline skill](https://thetimeline.cc/agents/SKILL.md)');
     expect(text).toContain('[Agent setup](https://thetimeline.cc/agents/setup.md)');
     expect(text).toContain('[Landing page](https://thetimeline.cc/)');
     expect(text).toContain('[Trust and security](https://thetimeline.cc/trust)');
     expect(text).toContain('[Cookies and similar technologies](https://thetimeline.cc/cookies)');
     expect(text).toContain('[llms-full.txt](https://thetimeline.cc/llms-full.txt)');
-    expect(text).toContain('Set up The Timeline - https://thetimeline.cc/llms.txt');
-    expect(text).toContain(
-      'Give your agents the work record — and let them write back like teammates.',
-    );
-    expect(text).toContain('## Report in');
-    expect(text).toContain('## Read out');
-    expect(text).toContain('not a dedicated Grok Bot product');
-    expect(text).toContain('https://thetimeline.cc/api/mcp/server');
-    expect(text).toContain(
-      'timeline.search, timeline.get, timeline.subject, timeline.ask, timeline.remember',
-    );
-    expect(text).toContain('Capture is a separate consent checkbox, on by default');
-    expect(text).toContain('counts toward the accepted-sources meter');
-    expect(text).toContain('plugins/timeline');
-    expect(text).toContain('POST https://thetimeline.cc/api/webhooks/ingest');
+    expect(text).toContain('Capture and live access are different capabilities');
+    expect(text).toContain('does not automatically import');
+    expect(text).toContain('## Optional');
+    expect(text).not.toContain('Set up The Timeline -');
+    expect(text).not.toContain('## Keywords');
+    expect(text).not.toContain('<INBOUND_EMAIL_DOMAIN>');
+    expect(text).not.toContain('human approval before anything changes');
     expect(text).toContain('Signed-in app routes, auth routes, invite routes, and API routes');
     for (const page of HELP_PAGES) {
       expect(text).toContain(`[${page.title}](https://thetimeline.cc/help/${page.slug})`);
     }
+  });
+
+  it('keeps entry-point links on the configured origin and optional research after core guidance', () => {
+    const text = buildLlmsTxt({ siteUrl: 'https://timeline.example/base' });
+    expect(text).toContain('[Agent setup](https://timeline.example/agents/setup.md)');
+    expect(text).toContain('[Timeline skill](https://timeline.example/agents/SKILL.md)');
+    expect(text).toContain('[create a free account](https://timeline.example/sign-up)');
+    expect(text).toContain('[MCP endpoint](https://timeline.example/api/mcp/server)');
+    expect(text).not.toContain('https://thetimeline.cc/');
+    expect(text.indexOf('Already connected')).toBeLessThan(text.indexOf('## Product guides'));
+    expect(text.indexOf('## For agents')).toBeLessThan(text.indexOf('## Optional'));
+    expect(text.indexOf('## Optional')).toBeLessThan(text.indexOf('/compare)'));
   });
 
   it('builds an expanded llms-full.txt with help page bodies', () => {
@@ -119,20 +126,20 @@ describe('llms text files', () => {
 
   it('tracks machine-document changes in their registry dates', () => {
     expect(PUBLIC_DOCUMENT_REGISTRY.get('/llms-full.txt')?.dates).toEqual({
-      modified: '2026-11-03',
-      reviewed: '2026-11-03',
+      modified: '2026-11-06',
+      reviewed: '2026-11-06',
     });
     expect(PUBLIC_DOCUMENT_REGISTRY.get('/sitemap.xml')?.dates).toEqual({
       modified: '2026-11-03',
       reviewed: '2026-11-03',
     });
     expect(PUBLIC_DOCUMENT_REGISTRY.get('/agents/setup.md')?.dates).toEqual({
-      modified: '2026-11-03',
-      reviewed: '2026-11-03',
+      modified: '2026-11-06',
+      reviewed: '2026-11-06',
     });
     expect(PUBLIC_DOCUMENT_REGISTRY.get('/agents/SKILL.md')?.dates).toEqual({
-      modified: '2026-11-03',
-      reviewed: '2026-11-03',
+      modified: '2026-11-06',
+      reviewed: '2026-11-06',
     });
   });
 

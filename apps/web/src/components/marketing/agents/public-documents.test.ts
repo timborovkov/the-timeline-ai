@@ -43,8 +43,7 @@ describe('agents public documents', () => {
     const full = buildLlmsFullTxt({ registry: PUBLIC_DOCUMENT_REGISTRY, siteUrl: SITE_URL });
 
     expect(compact).toContain(`[Agents](${SITE_URL}/agents): ${AGENTS_HUB.llmsSummary}`);
-    expect(compact).toContain(AGENT_SETUP_CARD.title);
-    expect(compact).toContain(AGENTS_HUB.example.boundary);
+    expect(compact).toContain('Agents can contribute progress notes as cited evidence');
     expect(full).toContain(AGENT_SETUP_CARD.title);
     expect(full).toContain('not a dedicated Grok Bot product');
   });
