@@ -1,3 +1,5 @@
+import { WORKS_WITH_TOOLS } from '@/components/marketing/integrations/works-with-content';
+
 export const START_FREE_LABEL = 'Start free';
 export const START_FREE_HREF = '/sign-up' as const;
 export const SEE_IT_FIRST_LABEL = 'See it first';
@@ -24,12 +26,17 @@ export const COMPARE_NAV_ITEMS = [
   { href: '/compare/the-timeline-vs-folk', label: 'The Timeline vs Folk' },
   { href: '/compare/the-timeline-vs-glean', label: 'The Timeline vs Glean' },
   { href: '/compare/the-timeline-vs-geekbot', label: 'The Timeline vs Geekbot' },
-  { href: '/integrations/linear', label: 'Works with Linear' },
-  { href: '/integrations/jira', label: 'Works with Jira' },
-  { href: '/integrations/notion', label: 'Works with Notion' },
-  { href: '/integrations/hubspot', label: 'Works with HubSpot' },
-  { href: '/integrations/attio', label: 'Works with Attio' },
-  { href: '/integrations/pipedrive', label: 'Works with Pipedrive' },
 ] as const;
+
+export const INTEGRATION_NAV_ITEMS = WORKS_WITH_TOOLS.map((tool) => ({
+  href: tool.route,
+  label: tool.name,
+  statusLabel: tool.statusLabel,
+  status: tool.status,
+}));
+
+export function publicNavItemLabel(item: { label: string; statusLabel?: string }): string {
+  return item.statusLabel ? `${item.label} · ${item.statusLabel}` : item.label;
+}
 
 export const TIMELINE_AGENT_SETUP_COMMAND = 'Set up The Timeline - https://thetimeline.cc/llms.txt';

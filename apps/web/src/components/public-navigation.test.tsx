@@ -71,10 +71,10 @@ describe('Header navigation', () => {
       [...container.querySelectorAll(':scope > ul > li > details > summary')].map(
         (node) => node.textContent,
       ),
-    ).toEqual(['Use cases', 'Compare']);
+    ).toEqual(['Use cases', 'Integrations']);
   });
 
-  it('opens Use cases and Compare dropdowns, including on the mobile menu', async () => {
+  it('opens Use cases and Integrations dropdowns, including on the mobile menu', async () => {
     const user = userEvent.setup();
     const { container } = render(<PublicNavigationDisclosure currentSection="product" />);
     await user.click(screen.getByText('Menu'));
@@ -90,17 +90,21 @@ describe('Header navigation', () => {
       '/use-cases/work-record',
     );
 
-    await user.click(screen.getByText('Compare'));
-    expect(screen.getByRole('link', { name: 'Compare hub' }).getAttribute('href')).toBe('/compare');
-    expect(screen.getByRole('link', { name: 'The Timeline vs Day AI' }).getAttribute('href')).toBe(
-      '/compare/the-timeline-vs-day-ai',
+    await user.click(screen.getByText('Integrations'));
+    expect(screen.getByRole('link', { name: 'Integrations hub' }).getAttribute('href')).toBe(
+      '/integrations',
     );
-    expect(screen.getByRole('link', { name: 'Works with HubSpot' }).getAttribute('href')).toBe(
-      '/integrations/hubspot',
-    );
-    expect(screen.getByRole('link', { name: 'Works with Linear' }).getAttribute('href')).toBe(
+    expect(screen.getByRole('link', { name: 'Linear · Native sync' }).getAttribute('href')).toBe(
       '/integrations/linear',
     );
+    expect(screen.getByRole('link', { name: 'Jira · MCP lookup' }).getAttribute('href')).toBe(
+      '/integrations/jira',
+    );
+    expect(screen.getByRole('link', { name: 'HubSpot · Coming soon' }).getAttribute('href')).toBe(
+      '/integrations/hubspot',
+    );
+    expect(screen.queryByRole('link', { name: 'The Timeline vs Day AI' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Compare hub' })).toBeNull();
 
     const menu = container.querySelector('details');
     const pricing = screen.getByRole('link', { name: 'Pricing' });

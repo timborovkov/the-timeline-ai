@@ -8,7 +8,7 @@ import { COMPARE_PAGES } from '@/components/marketing/compare/content';
 import { WORKS_WITH_TOOLS } from '@/components/marketing/integrations/works-with-content';
 
 describe('compare routes', () => {
-  it('renders the hub with head-to-head and works-with cards', () => {
+  it('renders a thin hub of head-to-head pages only', () => {
     const html = renderToStaticMarkup(<CompareHubPage />);
 
     expect(html.match(/<h1\b/g)).toHaveLength(1);
@@ -16,14 +16,14 @@ describe('compare routes', () => {
     expect(html).toContain('data-compare-hub');
     expect(html).toContain('Start free');
     expect(html).toContain('Head to head');
-    expect(html).toContain('Works with');
+    expect(html).toContain('href="/integrations"');
+    expect(html).not.toContain('Works with');
     for (const page of COMPARE_PAGES) {
       expect(html).toContain(`href="${page.route}"`);
       expect(html).toContain(page.navLabel);
     }
     for (const tool of WORKS_WITH_TOOLS) {
-      expect(html).toContain(`href="${tool.route}"`);
-      expect(html).toContain(tool.name);
+      expect(html).not.toContain(`href="${tool.route}"`);
     }
   });
 

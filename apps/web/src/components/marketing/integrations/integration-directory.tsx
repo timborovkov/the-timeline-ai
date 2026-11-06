@@ -232,7 +232,7 @@ export function IntegrationDirectory() {
                         </span>
                       </span>
                       <h3 className="mt-5 text-xl font-semibold tracking-tight text-fg">
-                        {tool.navLabel}
+                        {tool.name}
                       </h3>
                       <p className="mt-3 grow text-sm leading-relaxed text-fg-muted">
                         {tool.summary}

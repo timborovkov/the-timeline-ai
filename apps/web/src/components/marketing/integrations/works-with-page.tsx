@@ -113,7 +113,7 @@ export function WorksWithPage({ tool }: { tool: WorksWithTool }) {
                           {item.statusLabel}
                         </p>
                         <h3 className="mt-5 text-xl font-semibold tracking-[-0.025em]">
-                          {item.navLabel}
+                          {item.name}
                         </h3>
                         <p className="mt-3 text-sm leading-7 text-fg-muted">{item.summary}</p>
                       </Link>

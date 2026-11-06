@@ -10,7 +10,7 @@ import {
   findComparePageByRoute,
   isLegacyCompareSlug,
 } from '@/components/marketing/compare/content';
-import { COMPARE_NAV_ITEMS } from '@/components/marketing/copy';
+import { COMPARE_NAV_ITEMS, INTEGRATION_NAV_ITEMS } from '@/components/marketing/copy';
 import { WORKS_WITH_TOOLS } from '@/components/marketing/integrations/works-with-content';
 
 describe('compare content', () => {
@@ -18,10 +18,15 @@ describe('compare content', () => {
     expect(COMPARE_HUB.route).toBe('/compare');
     expect(COMPARE_PAGES).toHaveLength(4);
     expect(COMPARE_PAGES.map((page) => page.slug)).toEqual([...COMPARE_SLUGS]);
-    expect(COMPARE_NAV_ITEMS.map((item) => item.href)).toEqual([
-      ...COMPARE_PAGES.map((page) => page.route),
-      ...WORKS_WITH_TOOLS.map((tool) => tool.route),
-    ]);
+    expect(COMPARE_NAV_ITEMS.map((item) => item.href)).toEqual(
+      COMPARE_PAGES.map((page) => page.route),
+    );
+    expect(INTEGRATION_NAV_ITEMS.map((item) => item.href)).toEqual(
+      WORKS_WITH_TOOLS.map((tool) => tool.route),
+    );
+    expect(INTEGRATION_NAV_ITEMS.map((item) => `${item.label} · ${item.statusLabel}`)).toEqual(
+      WORKS_WITH_TOOLS.map((tool) => `${tool.name} · ${tool.statusLabel}`),
+    );
 
     expect(LEGACY_COMPARE_REDIRECTS).toEqual({
       hubspot: '/integrations/hubspot',
