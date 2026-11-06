@@ -1012,8 +1012,10 @@ lookup). Coming-soon tools stay on the integrations hub cards and their pages,
 not in the header dropdown or footer Integrations column. How it works,
 Help, Trust, and head-to-head Compare pages remain in the footer. The footer is
 columnar: Product, Use cases, Integrations, Compare, and Legal. `/compare` is a
-thin hub for head-to-head pages versus Day AI, Folk, Glean, and Geekbot; every
-competitor fact on those pages cites and links that competitor's own site.
+thin hub for head-to-head pages versus Day AI, Folk, Glean, and Geekbot. Those
+pages keep the honest “vs” framing and also target “[competitor] alternatives”
+on the existing URLs rather than extra doorway routes; every competitor fact
+cites and links that competitor's own site.
 Works-with pages live under `/integrations` (Linear, Jira, Notion, HubSpot,
 Attio, Pipedrive), not under Compare: Linear has native ingest, Jira and Notion
 are hosted MCP lookup, and HubSpot, Attio, and Pipedrive native ingest is
@@ -1395,6 +1397,7 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-11-05 | GitHub sign-in mark | Continue with GitHub uses the official Invertocat on the same borderless white tile as Google so the mark stays visible in dark mode. |
 | 2026-11-06 | Public nav IA | Header is Product, Use cases, Integrations, Agents, Pricing. Integrations dropdown is the hub plus Slack, Telegram, Google Drive, GitHub, Linear, Monday.com, Jira, and Notion, labelled for native sync, capture, or MCP lookup. Coming-soon CRM pages stay on the hub, not in the dropdown or footer column. Footer is Product / Use cases / Integrations / Compare / Legal. `/compare` is a thin vs-only hub. |
 | 2026-11-06 | Agents as teammates | Landing and `/agents` treat agents as teammates who read the cited work record and write notes back. The setup card keeps the llms.txt command. `/agents` splits report-in (remember / email / webhook) from read-out (hosted MCP tools) and labels the Grok Bot progress-note as an illustrative example. |
+| 2026-11-06 | Compare alternatives SEO | Existing `/compare/the-timeline-vs-{day-ai,folk,glean,geekbot}` pages keep the vs H1 and add “[competitor] alternatives” to SEO title, meta description, and intro. The hub names those alternative queries without extra URLs. |
 | 2026-11-06 | OAuth auto-verify, team support ids, Drive picker | Google/GitHub sign-in stamps `emailVerified` when the provider asserts a verified email. Team → General shows readonly copyable team id and slug. Drive sharing drops the dense green callout, overlapping helper copy, and nested picker borders. |
 
 
