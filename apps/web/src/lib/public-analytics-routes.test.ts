@@ -28,13 +28,18 @@ describe('public analytics route registry', () => {
     expect(classifyPublicAnalyticsPath('/use-cases')).toBe('use_cases');
     expect(classifyPublicAnalyticsPath('/compare')).toBe('compare');
     expect(classifyPublicAnalyticsPath('/compare/the-timeline-vs-day-ai')).toBe('compare_day_ai');
+    expect(classifyPublicAnalyticsPath('/compare/the-timeline-vs-suda')).toBe('compare_suda');
+    expect(classifyPublicAnalyticsPath('/compare/the-timeline-vs-memorycrow')).toBe(
+      'compare_memorycrow',
+    );
+    expect(classifyPublicAnalyticsPath('/compare/the-timeline-vs-achiral')).toBe('compare_achiral');
     expect(classifyPublicAnalyticsPath('/integrations/hubspot')).toBe('integration_hubspot');
     expect(classifyPublicAnalyticsPath('/integrations/notion')).toBe('integration_notion');
     expect(classifyPublicAnalyticsPath('/agents')).toBe('agents');
     expect(classifyPublicAnalyticsPath('/use-cases/work-record')).toBe('use_case_work_record');
     expect(classifyPublicAnalyticsPath('/product-tour')).toBe('product_tour');
     expect(classifyPublicAnalyticsPath('/integrations/telegram')).toBe('integration_telegram');
-    expect(Object.keys(PUBLIC_ANALYTICS_ROUTES)).toHaveLength(49);
+    expect(Object.keys(PUBLIC_ANALYTICS_ROUTES)).toHaveLength(52);
   });
 
   it.each([
