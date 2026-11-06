@@ -75,10 +75,18 @@ describe('PublicShell', () => {
     expect(html.match(/aria-current="page"[^>]*href="\/agents"/g)).toHaveLength(3);
     expect(html).toContain('<summary');
     expect(html).toContain('>Menu</span>');
-    expect(html).toContain('HubSpot · Coming soon');
+    expect(html).toContain('Slack · Native sync');
+    expect(html).toContain('Telegram · Capture');
+    expect(html).toContain('Google Drive · Native sync');
+    expect(html).toContain('GitHub · Native sync');
     expect(html).toContain('Linear · Native sync');
+    expect(html).toContain('Monday.com · Native sync');
     expect(html).toContain('Jira · MCP lookup');
+    expect(html).toContain('Notion · MCP lookup');
     expect(html).toContain('The Timeline vs Day AI');
+    expect(html).not.toContain('HubSpot · Coming soon');
+    expect(html).not.toContain('Attio · Coming soon');
+    expect(html).not.toContain('Pipedrive · Coming soon');
     expect(html).not.toContain('Works with HubSpot');
   });
 

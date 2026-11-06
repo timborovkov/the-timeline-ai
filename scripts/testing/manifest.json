@@ -860,6 +860,9 @@
   "apps/web/src/components/marketing/compare/public-documents.test.ts": {
     "group": "unit"
   },
+  "apps/web/src/components/marketing/copy.test.ts": {
+    "group": "unit"
+  },
   "apps/web/src/components/marketing/editorial/content.test.ts": {
     "group": "unit"
   },

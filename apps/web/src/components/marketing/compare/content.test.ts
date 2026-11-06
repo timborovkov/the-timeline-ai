@@ -10,8 +10,7 @@ import {
   findComparePageByRoute,
   isLegacyCompareSlug,
 } from '@/components/marketing/compare/content';
-import { COMPARE_NAV_ITEMS, INTEGRATION_NAV_ITEMS } from '@/components/marketing/copy';
-import { WORKS_WITH_TOOLS } from '@/components/marketing/integrations/works-with-content';
+import { COMPARE_NAV_ITEMS } from '@/components/marketing/copy';
 
 describe('compare content', () => {
   it('publishes a hub, four cited head-to-head pages, and legacy works-with redirects', () => {
@@ -20,12 +19,6 @@ describe('compare content', () => {
     expect(COMPARE_PAGES.map((page) => page.slug)).toEqual([...COMPARE_SLUGS]);
     expect(COMPARE_NAV_ITEMS.map((item) => item.href)).toEqual(
       COMPARE_PAGES.map((page) => page.route),
-    );
-    expect(INTEGRATION_NAV_ITEMS.map((item) => item.href)).toEqual(
-      WORKS_WITH_TOOLS.map((tool) => tool.route),
-    );
-    expect(INTEGRATION_NAV_ITEMS.map((item) => `${item.label} · ${item.statusLabel}`)).toEqual(
-      WORKS_WITH_TOOLS.map((tool) => `${tool.name} · ${tool.statusLabel}`),
     );
 
     expect(LEGACY_COMPARE_REDIRECTS).toEqual({

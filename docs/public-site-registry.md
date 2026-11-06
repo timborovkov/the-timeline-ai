@@ -63,11 +63,13 @@ Use-case documents live beside their shared page content under
 and appear in the public Use cases menu. Compare documents live beside
 their shared page content under
 [`components/marketing/compare`](../apps/web/src/components/marketing/compare)
-and appear in the footer Compare column as head-to-head pages. Works-with pages for
-Linear, Jira, Notion, HubSpot, Attio, and Pipedrive live under
-[`/integrations`](../apps/web/src/app/integrations) and appear in the Integrations
-header dropdown and footer column, labelled for native sync, MCP lookup, or coming
-soon. The agents hub and product-tour documents
+and appear in the footer Compare column as head-to-head pages. The Integrations
+header dropdown and matching footer column list the hub plus live destinations:
+Slack, Telegram, Google Drive, GitHub, Linear, Monday.com, Jira, and Notion,
+labelled for native sync, capture, or MCP lookup. Works-with pages for Linear,
+Jira, Notion, HubSpot, Attio, and Pipedrive still live under
+[`/integrations`](../apps/web/src/app/integrations); coming-soon CRM pages stay
+on the hub cards, not in that nav list. The agents hub and product-tour documents
 are registered with the core public pages. Outcome-led solution documents remain under
 [`components/marketing/solutions`](../apps/web/src/components/marketing/solutions)
 for the remaining client-handoff page. Do not create title-swapped or orphaned

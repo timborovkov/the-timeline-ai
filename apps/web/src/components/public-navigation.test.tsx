@@ -94,15 +94,33 @@ describe('Header navigation', () => {
     expect(screen.getByRole('link', { name: 'Integrations hub' }).getAttribute('href')).toBe(
       '/integrations',
     );
+    expect(screen.getByRole('link', { name: 'Slack · Native sync' }).getAttribute('href')).toBe(
+      '/integrations/slack',
+    );
+    expect(screen.getByRole('link', { name: 'Telegram · Capture' }).getAttribute('href')).toBe(
+      '/integrations/telegram',
+    );
+    expect(
+      screen.getByRole('link', { name: 'Google Drive · Native sync' }).getAttribute('href'),
+    ).toBe('/integrations/google-drive');
+    expect(screen.getByRole('link', { name: 'GitHub · Native sync' }).getAttribute('href')).toBe(
+      '/integrations/github',
+    );
     expect(screen.getByRole('link', { name: 'Linear · Native sync' }).getAttribute('href')).toBe(
       '/integrations/linear',
     );
+    expect(
+      screen.getByRole('link', { name: 'Monday.com · Native sync' }).getAttribute('href'),
+    ).toBe('/integrations/monday');
     expect(screen.getByRole('link', { name: 'Jira · MCP lookup' }).getAttribute('href')).toBe(
       '/integrations/jira',
     );
-    expect(screen.getByRole('link', { name: 'HubSpot · Coming soon' }).getAttribute('href')).toBe(
-      '/integrations/hubspot',
+    expect(screen.getByRole('link', { name: 'Notion · MCP lookup' }).getAttribute('href')).toBe(
+      '/integrations/notion',
     );
+    expect(screen.queryByRole('link', { name: 'HubSpot · Coming soon' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Attio · Coming soon' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Pipedrive · Coming soon' })).toBeNull();
     expect(screen.queryByRole('link', { name: 'The Timeline vs Day AI' })).toBeNull();
     expect(screen.queryByRole('link', { name: 'Compare hub' })).toBeNull();
 

@@ -1,3 +1,4 @@
+import { TELEGRAM_PAGE } from '@/components/marketing/integrations/telegram-content';
 import { WORKS_WITH_TOOLS } from '@/components/marketing/integrations/works-with-content';
 
 export const START_FREE_LABEL = 'Start free';
@@ -28,12 +29,35 @@ export const COMPARE_NAV_ITEMS = [
   { href: '/compare/the-timeline-vs-geekbot', label: 'The Timeline vs Geekbot' },
 ] as const;
 
-export const INTEGRATION_NAV_ITEMS = WORKS_WITH_TOOLS.map((tool) => ({
-  href: tool.route,
-  label: tool.name,
-  statusLabel: tool.statusLabel,
-  status: tool.status,
-}));
+const FEATURED_INTEGRATION_NAV_ITEMS = [
+  { href: '/integrations/slack' as const, label: 'Slack', statusLabel: 'Native sync' },
+  { href: TELEGRAM_PAGE.route, label: 'Telegram', statusLabel: 'Capture' },
+  {
+    href: '/integrations/google-drive' as const,
+    label: 'Google Drive',
+    statusLabel: 'Native sync',
+  },
+  { href: '/integrations/github' as const, label: 'GitHub', statusLabel: 'Native sync' },
+] as const;
+
+const MONDAY_NAV_ITEM = {
+  href: '/integrations/monday' as const,
+  label: 'Monday.com',
+  statusLabel: 'Native sync',
+} as const;
+
+export const INTEGRATION_NAV_ITEMS = [
+  ...FEATURED_INTEGRATION_NAV_ITEMS,
+  ...WORKS_WITH_TOOLS.flatMap((tool) => {
+    if (tool.status === 'coming-soon') return [];
+    const item = {
+      href: tool.route,
+      label: tool.name,
+      statusLabel: tool.statusLabel,
+    };
+    return tool.slug === 'linear' ? [item, MONDAY_NAV_ITEM] : [item];
+  }),
+];
 
 export function publicNavItemLabel(item: { label: string; statusLabel?: string }): string {
   return item.statusLabel ? `${item.label} · ${item.statusLabel}` : item.label;
