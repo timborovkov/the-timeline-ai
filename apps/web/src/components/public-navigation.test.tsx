@@ -1,7 +1,20 @@
+import { readFileSync } from 'node:fs';
+
 import { expect } from '@timeline/test-support';
 import { vi } from '@timeline/test-support';
 import { afterEach, beforeEach, describe, it } from 'bun:test';
+
+import navStyles from '@/components/public-navigation.module.css';
 // Test environment: happy-dom
+
+const NAV_STYLESHEET = readFileSync(
+  new URL('./public-navigation.module.css', import.meta.url),
+  'utf8',
+);
+const DROPDOWN_CHEVRON_CLASS = navStyles.dropdownChevron;
+if (!DROPDOWN_CHEVRON_CLASS) {
+  throw new Error('public-navigation stylesheet is missing dropdownChevron');
+}
 
 const route = vi.hoisted(() => ({ pathname: '/help/article' }));
 
@@ -131,6 +144,70 @@ describe('Header navigation', () => {
     });
     await user.click(pricing);
     expect(menu?.open).toBe(false);
+  });
+
+  it('flips expandable mobile-nav chevrons from down when collapsed to up when expanded', async () => {
+    const openChevronRule =
+      /details\[open\]\s*>\s*summary\s+\.dropdownChevron\s*\{(?<body>[\s\S]*?)\n\}/u.exec(
+        NAV_STYLESHEET,
+      );
+    expect(openChevronRule?.groups?.body).toContain('transform: rotate(180deg)');
+    expect(NAV_STYLESHEET).not.toMatch(/group-open/);
+
+    const sheet = document.createElement('style');
+    sheet.textContent = NAV_STYLESHEET;
+    document.head.append(sheet);
+
+    const chevronTransform = (dropdown: HTMLDetailsElement | undefined) => {
+      const chevron = dropdown?.querySelector('summary svg');
+      return chevron ? getComputedStyle(chevron).transform : '';
+    };
+
+    try {
+      const user = userEvent.setup();
+      const { container } = render(<PublicNavigationDisclosure currentSection="product" />);
+      await user.click(screen.getByText('Menu'));
+      expect(container.querySelector('details')?.open).toBe(true);
+
+      const dropdowns = [...container.querySelectorAll<HTMLDetailsElement>('nav details')];
+      expect(
+        dropdowns.map((dropdown) => dropdown.querySelector('summary')?.childNodes[0]?.textContent),
+      ).toEqual(['Use cases', 'Integrations']);
+
+      for (const dropdown of dropdowns) {
+        expect(dropdown.open).toBe(false);
+        const chevron = dropdown.querySelector('summary svg');
+        expect(chevron?.classList.contains('lucide-chevron-down')).toBe(true);
+        expect(chevron?.classList.contains(DROPDOWN_CHEVRON_CLASS)).toBe(true);
+        expect(chevron?.className).not.toContain('group-open');
+        expect(chevron?.className).not.toContain('rotate-180');
+        expect(chevronTransform(dropdown)).not.toContain('180');
+      }
+
+      for (const name of ['Product', 'Agents', 'Pricing', 'Sign in'] as const) {
+        const row = screen.getByRole('link', { name });
+        expect(row.querySelector('svg.lucide-chevron-down') ?? null).toBeNull();
+        expect(row.querySelector(`svg.${DROPDOWN_CHEVRON_CLASS}`) ?? null).toBeNull();
+      }
+
+      expect(dropdowns).toHaveLength(2);
+      const useCases = dropdowns[0];
+      const integrations = dropdowns[1];
+      await user.click(screen.getByText('Use cases'));
+      expect(useCases?.open).toBe(true);
+      expect(integrations?.open).toBe(false);
+      expect(chevronTransform(useCases)).toContain('rotate(180deg)');
+      expect(chevronTransform(integrations)).not.toContain('180');
+      expect(
+        useCases?.querySelector('summary svg')?.classList.contains('lucide-chevron-down'),
+      ).toBe(true);
+
+      await user.click(screen.getByText('Use cases'));
+      expect(useCases?.open).toBe(false);
+      expect(chevronTransform(useCases)).not.toContain('180');
+    } finally {
+      sheet.remove();
+    }
   });
 
   it('closes the mobile disclosure when Pricing is activated by keyboard', async () => {
