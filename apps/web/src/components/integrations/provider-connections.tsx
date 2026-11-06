@@ -131,9 +131,7 @@ const providerSourceHints: Partial<
     body: 'Choose individual Sentry projects for a fixed list, or choose an organization to include all projects your Sentry account can access there.',
   },
   google_drive: {
-    body: 'Choose My Drive, a folder, a shared drive, or specific Docs/Sheets/Slides/PDF/Word files. Timeline reads only those selections — not Shared with me or other unselected files.',
-    detail:
-      'Push notifications wake a changes.watch channel. File capture waits for a quiet editing window (about 15 minutes, at most one hour) before extracting a compact text snapshot.',
+    body: 'Choose My Drive, a folder, a shared drive, or specific Docs, Sheets, Slides, PDFs, or Word files. Timeline captures only those selections.',
   },
 };
 
@@ -325,7 +323,6 @@ function TeamConnectionHeader({ connection }: { connection: TeamShareRow['connec
 }
 
 function PersonalConnectionToolbar({
-  selectedSize,
   busy,
   isSourcesLoading,
   hasSourceLoadError,
@@ -334,7 +331,6 @@ function PersonalConnectionToolbar({
   onSave,
   onDelete,
 }: {
-  selectedSize: number;
   busy: SourcePickerState['busy'];
   isSourcesLoading: boolean;
   hasSourceLoadError: boolean;
@@ -345,46 +341,20 @@ function PersonalConnectionToolbar({
 }) {
   const canSave = !isSourcesLoading && !hasSourceLoadError;
   return (
-    <div className="flex flex-wrap items-center gap-2">
-      <div className="min-w-0 flex-1 basis-full sm:basis-auto">
-        {isSourcesLoading ? (
-          <>
-            <p className="text-sm font-medium text-fg">Loading shared sources</p>
-            <p className="text-xs text-fg-muted">Saving will be available when sources load.</p>
-          </>
-        ) : hasSourceLoadError ? (
-          <>
-            <p className="text-sm font-medium text-fg">Unable to load shared sources</p>
-            <p className="text-xs text-fg-muted">Retry loading sources before saving changes.</p>
-          </>
-        ) : (
-          <>
-            <p className="text-sm font-medium text-fg">
-              {String(selectedSize)} source{selectedSize === 1 ? '' : 's'} shared to this team
-            </p>
-            <p className="text-xs text-fg-muted">
-              Sharing allows team admins to activate sync later. Captured evidence uses Timeline
-              visibility, which can differ from access in the original tool. Disconnecting stops
-              future capture; it does not delete existing records.
-            </p>
-          </>
-        )}
-      </div>
-      <ItemActionGroup label="Actions for this provider account" className="sm:ml-auto">
-        <Button size="sm" className="min-h-9" disabled={busy !== null || !canSave} onClick={onSave}>
-          {busy === 'save' ? 'Saving' : 'Save sharing'}
-        </Button>
-        <ItemOverflowMenu targetLabel="this provider account" triggerRef={deleteButtonRef}>
-          <DropdownMenuItem
-            disabled={busy !== null || confirmingDeletion}
-            className="text-destructive focus:text-destructive"
-            onSelect={onDelete}
-          >
-            Delete account
-          </DropdownMenuItem>
-        </ItemOverflowMenu>
-      </ItemActionGroup>
-    </div>
+    <ItemActionGroup label="Actions for this provider account" className="shrink-0">
+      <Button size="sm" className="min-h-9" disabled={busy !== null || !canSave} onClick={onSave}>
+        {busy === 'save' ? 'Saving' : 'Save sharing'}
+      </Button>
+      <ItemOverflowMenu targetLabel="this provider account" triggerRef={deleteButtonRef}>
+        <DropdownMenuItem
+          disabled={busy !== null || confirmingDeletion}
+          className="text-destructive focus:text-destructive"
+          onSelect={onDelete}
+        >
+          Delete account
+        </DropdownMenuItem>
+      </ItemOverflowMenu>
+    </ItemActionGroup>
   );
 }
 
@@ -736,80 +706,47 @@ function ConnectionSourcesPanel({
       aria-label={`${providerLabel(connection.provider)} account ${connection.displayName}`}
       className="border-y border-border"
     >
-      <div className="flex flex-wrap items-center gap-2 border-b border-border px-3 py-2">
+      <div className="flex flex-wrap items-center gap-2 px-3 py-2">
         <div className="min-w-0 flex-1">
           <PersonalConnectionHeader connection={connection} />
         </div>
-        {connection.lastError ? (
-          <>
-            <span className="rounded-sm border border-destructive/40 px-1.5 py-0.5 text-xs text-destructive">
-              Needs reconnect
-            </span>
-            <Button size="sm" variant="outline" disabled={busy !== null} onClick={onReconnect}>
-              {busy === 'reconnect' ? 'Redirecting…' : 'Reconnect'}
-            </Button>
-          </>
-        ) : null}
-        <span className="text-xs text-fg-muted">
-          Shared {String([...selected].length)} source{selected.size === 1 ? '' : 's'}
-        </span>
+        <ConnectionReconnectControls
+          lastError={connection.lastError}
+          busy={busy}
+          onReconnect={onReconnect}
+        />
+        <SharedSourceCount
+          selectedSize={selected.size}
+          isLoading={picker.isLoading}
+          sourceLoadError={sourceLoadError}
+        />
+        <PersonalConnectionToolbar
+          busy={busy}
+          isSourcesLoading={picker.isLoading}
+          hasSourceLoadError={Boolean(sourceLoadError)}
+          confirmingDeletion={confirmDelete}
+          deleteButtonRef={deleteButtonRef}
+          onSave={onSave}
+          onDelete={onDelete}
+        />
       </div>
-      <div className="space-y-3 p-3">
+      {confirmDelete ? (
+        <ProviderAccountDeleteConfirmation
+          id={deleteConfirmationId}
+          busy={busy}
+          onConfirm={onConfirmDelete}
+          onCancel={onCancelDelete}
+        />
+      ) : null}
+      <div className="space-y-2.5 border-t border-border px-3 py-3">
         {compact ? null : <ProviderAccountHint provider={connection.provider} />}
         {compact ? null : <ProviderSourceHint provider={connection.provider} />}
-        <div
-          className={
-            compact ? 'space-y-2' : 'grid gap-2 md:grid-cols-[minmax(0,1fr)_auto] md:items-end'
-          }
-        >
-          <div className="min-w-0 space-y-1.5">
-            <label htmlFor={searchInputId} className="block text-xs font-medium text-fg">
-              Search sources
-            </label>
-            <Input
-              ref={searchInputRef}
-              id={searchInputId}
-              className="text-base sm:text-sm"
-              placeholder="Search by name or type"
-              value={query}
-              onChange={(event) => {
-                onQueryChange(event.currentTarget.value);
-              }}
-            />
-          </div>
-          <PersonalConnectionToolbar
-            selectedSize={selected.size}
-            busy={busy}
-            isSourcesLoading={picker.isLoading}
-            hasSourceLoadError={Boolean(sourceLoadError)}
-            confirmingDeletion={confirmDelete}
-            deleteButtonRef={deleteButtonRef}
-            onSave={onSave}
-            onDelete={onDelete}
-          />
-        </div>
-        {confirmDelete ? (
-          <section
-            id={deleteConfirmationId}
-            aria-label="Confirm provider account deletion"
-            className="flex flex-wrap items-center gap-2 rounded-sm border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm"
-          >
-            <p role="status" className="min-w-0 flex-1 text-destructive">
-              Deleting this provider account stops team sync that depends on it.
-            </p>
-            <Button
-              size="sm"
-              variant="destructive"
-              disabled={busy !== null}
-              onClick={onConfirmDelete}
-            >
-              {busy === 'delete' ? 'Deleting' : 'Delete provider account'}
-            </Button>
-            <Button size="sm" variant="outline" disabled={busy !== null} onClick={onCancelDelete}>
-              Cancel
-            </Button>
-          </section>
-        ) : null}
+        <SourceSearchField
+          id={searchInputId}
+          inputRef={searchInputRef}
+          query={query}
+          onQueryChange={onQueryChange}
+        />
         {error ? (
           <InlineError
             message={connectionErrorMessage(error)}
@@ -820,46 +757,13 @@ function ConnectionSourcesPanel({
           />
         ) : null}
         {picker.isLoading ? <SourcePickerLoading /> : null}
-        <div data-slot="provider-resource-picker" data-provider={connection.provider}>
-          {driveBrowse ? (
-            <nav
-              aria-label="Google Drive folders"
-              className="flex flex-wrap items-center gap-1 text-xs"
-            >
-              {driveBrowse.crumbs.map((crumb, index) => (
-                <span key={crumb.id || 'drive-root'} className="inline-flex items-center gap-1">
-                  {index > 0 ? (
-                    <ChevronRight aria-hidden="true" className="size-3 text-fg-muted" />
-                  ) : null}
-                  <button
-                    type="button"
-                    className="text-signal hover:underline"
-                    onClick={() => {
-                      driveBrowse.onCrumb(crumb.id);
-                    }}
-                  >
-                    {crumb.label}
-                  </button>
-                </span>
-              ))}
-            </nav>
-          ) : null}
-          {grouped.map((group) => (
-            <ResourceGroup
-              key={group.kind}
-              title={group.label}
-              resources={group.resources}
-              selected={selected}
-              onToggle={onToggle}
-              onOpen={
-                driveBrowse &&
-                (group.kind === 'drive.folder' || group.kind === 'drive.shared_drive')
-                  ? driveBrowse.onOpenFolder
-                  : undefined
-              }
-            />
-          ))}
-        </div>
+        <SourceResourcePicker
+          provider={connection.provider}
+          grouped={grouped}
+          selected={selected}
+          driveBrowse={driveBrowse}
+          onToggle={onToggle}
+        />
         {picker.showEmptyResult ? (
           <SourcePickerEmptyState
             query={query}
@@ -869,6 +773,172 @@ function ConnectionSourcesPanel({
         ) : null}
       </div>
     </section>
+  );
+}
+
+function ConnectionReconnectControls({
+  lastError,
+  busy,
+  onReconnect,
+}: {
+  lastError: string | null;
+  busy: SourcePickerState['busy'];
+  onReconnect: () => void;
+}) {
+  if (!lastError) return null;
+  return (
+    <>
+      <span className="rounded-sm border border-destructive/40 px-1.5 py-0.5 text-xs text-destructive">
+        Needs reconnect
+      </span>
+      <Button size="sm" variant="outline" disabled={busy !== null} onClick={onReconnect}>
+        {busy === 'reconnect' ? 'Redirecting…' : 'Reconnect'}
+      </Button>
+    </>
+  );
+}
+
+function SharedSourceCount({
+  selectedSize,
+  isLoading,
+  sourceLoadError,
+}: {
+  selectedSize: number;
+  isLoading: boolean;
+  sourceLoadError: string | null;
+}) {
+  const label = isLoading
+    ? 'Loading sources'
+    : sourceLoadError
+      ? 'Unable to load sources'
+      : `${String(selectedSize)} source${selectedSize === 1 ? '' : 's'} shared`;
+  return <p className="text-xs text-fg-muted">{label}</p>;
+}
+
+function ProviderAccountDeleteConfirmation({
+  id,
+  busy,
+  onConfirm,
+  onCancel,
+}: {
+  id: string;
+  busy: SourcePickerState['busy'];
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <section
+      id={id}
+      aria-label="Confirm provider account deletion"
+      className="flex flex-wrap items-center gap-2 border-t border-destructive/40 bg-destructive/10 px-3 py-2 text-sm"
+    >
+      <p role="status" className="min-w-0 flex-1 text-destructive">
+        Deleting this provider account stops team sync that depends on it.
+      </p>
+      <Button size="sm" variant="destructive" disabled={busy !== null} onClick={onConfirm}>
+        {busy === 'delete' ? 'Deleting' : 'Delete provider account'}
+      </Button>
+      <Button size="sm" variant="outline" disabled={busy !== null} onClick={onCancel}>
+        Cancel
+      </Button>
+    </section>
+  );
+}
+
+function SourceSearchField({
+  id,
+  inputRef,
+  query,
+  onQueryChange,
+}: {
+  id: string;
+  inputRef: RefObject<HTMLInputElement | null>;
+  query: string;
+  onQueryChange: (query: string) => void;
+}) {
+  return (
+    <div className="min-w-0 space-y-1.5">
+      <label htmlFor={id} className="block text-xs font-medium text-fg">
+        Search sources
+      </label>
+      <Input
+        ref={inputRef}
+        id={id}
+        className="text-base sm:text-sm"
+        placeholder="Search by name or type"
+        value={query}
+        onChange={(event) => {
+          onQueryChange(event.currentTarget.value);
+        }}
+      />
+    </div>
+  );
+}
+
+function DriveFolderBreadcrumb({
+  crumbs,
+  onCrumb,
+}: {
+  crumbs: { id: string; label: string }[];
+  onCrumb: (id: string) => void;
+}) {
+  return (
+    <nav aria-label="Google Drive folders" className="flex flex-wrap items-center gap-1 text-xs">
+      {crumbs.map((crumb, index) => (
+        <span key={crumb.id || 'drive-root'} className="inline-flex items-center gap-1">
+          {index > 0 ? <ChevronRight aria-hidden="true" className="size-3 text-fg-muted" /> : null}
+          <button
+            type="button"
+            className="text-signal hover:underline"
+            onClick={() => {
+              onCrumb(crumb.id);
+            }}
+          >
+            {crumb.label}
+          </button>
+        </span>
+      ))}
+    </nav>
+  );
+}
+
+function SourceResourcePicker({
+  provider,
+  grouped,
+  selected,
+  driveBrowse,
+  onToggle,
+}: {
+  provider: string;
+  grouped: ReturnType<typeof groupResourcesByKind>;
+  selected: Set<string>;
+  driveBrowse: {
+    crumbs: { id: string; label: string }[];
+    onOpenFolder: (resource: ProviderResource) => void;
+    onCrumb: (id: string) => void;
+  } | null;
+  onToggle: (resource: ProviderResource) => void;
+}) {
+  return (
+    <div data-slot="provider-resource-picker" data-provider={provider}>
+      {driveBrowse ? (
+        <DriveFolderBreadcrumb crumbs={driveBrowse.crumbs} onCrumb={driveBrowse.onCrumb} />
+      ) : null}
+      {grouped.map((group) => (
+        <ResourceGroup
+          key={group.kind}
+          title={group.label}
+          resources={group.resources}
+          selected={selected}
+          onToggle={onToggle}
+          onOpen={
+            driveBrowse && (group.kind === 'drive.folder' || group.kind === 'drive.shared_drive')
+              ? driveBrowse.onOpenFolder
+              : undefined
+          }
+        />
+      ))}
+    </div>
   );
 }
 
@@ -925,22 +995,20 @@ function ProviderSourceHint({ provider }: { provider: string }) {
   const hint = providerSourceHints[provider];
   if (!hint) return null;
   return (
-    <div className="rounded-sm border border-signal/30 bg-signal-soft px-3 py-2 text-sm text-fg">
-      <div className="flex flex-wrap items-start gap-2">
-        <p className="min-w-0 flex-1">{hint.body}</p>
-        {hint.link ? (
-          <a
-            className="inline-flex shrink-0 items-center gap-1 text-[11px] text-signal hover:underline"
-            href={hint.link.href}
-            target="_blank"
-            rel="noreferrer"
-          >
-            {hint.link.label}
-            <ExternalLink aria-hidden="true" className="size-3" />
-          </a>
-        ) : null}
-      </div>
-      {hint.detail ? <p className="mt-1 text-fg-muted">{hint.detail}</p> : null}
+    <div className="space-y-1 text-sm text-fg-muted">
+      <p>{hint.body}</p>
+      {hint.detail ? <p>{hint.detail}</p> : null}
+      {hint.link ? (
+        <a
+          className="inline-flex items-center gap-1 text-xs text-signal hover:underline"
+          href={hint.link.href}
+          target="_blank"
+          rel="noreferrer"
+        >
+          {hint.link.label}
+          <ExternalLink aria-hidden="true" className="size-3" />
+        </a>
+      ) : null}
     </div>
   );
 }
@@ -962,27 +1030,29 @@ function ResourceGroup({
   return (
     <div className="space-y-1">
       <h3 className="text-xs text-fg-muted">{title}</h3>
-      <div className="max-h-72 overflow-auto rounded-sm border border-border">
+      <div className="max-h-72 overflow-auto">
         {resources.map((resource) => {
           const key = `${resource.kind}\x00${resource.externalId}`;
+          const description = resourceKindDescription(resource.kind);
           return (
             <div
               key={key}
-              className="flex items-center gap-2 border-b border-border px-2 py-1.5 text-sm last:border-b-0"
+              className="flex items-start gap-2 border-t border-border py-1.5 text-sm first:border-t-0"
             >
-              <label className="flex min-w-0 flex-1 cursor-pointer items-center gap-2">
+              <label className="flex min-w-0 flex-1 cursor-pointer items-start gap-2">
                 <input
                   type="checkbox"
                   checked={selected.has(key)}
+                  className="mt-0.5 size-4 shrink-0 rounded-sm border-input accent-signal"
                   onChange={() => {
                     onToggle(resource);
                   }}
                 />
                 <span className="min-w-0 flex-1">
                   <span className="block break-words">{resource.label}</span>
-                  <span className="block break-words text-xs text-fg-muted">
-                    {resourceKindDescription(resource.kind)}
-                  </span>
+                  {description ? (
+                    <span className="block break-words text-xs text-fg-muted">{description}</span>
+                  ) : null}
                 </span>
               </label>
               {onOpen ? (
@@ -1008,11 +1078,11 @@ function ResourceGroup({
 function resourceKindDescription(kind: string): string {
   switch (kind) {
     case 'drive.folder':
-      return 'Folder whose Docs, Sheets, Slides, PDF, and Word files become timeline evidence';
+      return 'Folder';
     case 'drive.file':
-      return 'Single Doc, Sheet, Slide, PDF, or Word file watched for CRM-relevant changes';
+      return 'File';
     case 'drive.shared_drive':
-      return 'Shared drive whose supported files become timeline evidence';
+      return 'Shared drive';
     case 'monday.board':
       return 'Board items, updates, columns, and subitems';
     case 'monday.doc':

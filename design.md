@@ -1,7 +1,7 @@
 # The Timeline — Design System
 
-**Version:** v3.36 · Google and GitHub sign-in vendor marks (2026-11-05).
-Replaces v3.35 Public monthly pricing calculator.
+**Version:** v3.37 · OAuth auto-verify, team support ids, Drive share picker (2026-11-06).
+Replaces v3.36 Google and GitHub sign-in vendor marks.
 
 This is the visual and interaction contract for the product. If a screen
 disagrees with it, fix the screen. If the language intentionally changes,
@@ -69,7 +69,8 @@ next before seeing how the system represented it.
 - Internal database identifiers are implementation details. UUIDs, hashes, raw
   event IDs, output IDs, payload references, source references, cursors, and
   JSON appear only in a closed `TechnicalDetails` disclosure or an explicit
-  audit export.
+  audit export. Team → General is the exception for support: the workspace id
+  and slug are readonly copyable fields, not ordinary chrome.
 - Sentence case is the default. Uppercase is limited to short audit/index codes
   and literal citation syntax.
 - One lime primary action per view. A secondary action is outline, ghost, or
@@ -661,6 +662,9 @@ stay vertically centered with the row. Do not style board lanes as badges. Team
 settings render one URL-selected section at a time. Field validation stays on
 the edited form; pending, success, and server failures use the shared action
 toast. Member, object, source, and artifact labels never fall back to UUIDs.
+Team → General keeps identity as a form (rename for admins) plus two readonly
+copyable support fields — team id and slug — with hairline section structure
+and no nested cards.
 
 Team → Members is a collection: compact header, `CollectionRow` members with
 visible role and quiet actions, not a padded card list. Role changes save on
@@ -686,7 +690,10 @@ default team visibility, team-sync activation, matching MCP server, recent
 activity, and disconnect. Telegram setup (bot link tokens, group bindings,
 linked users) and inbound Email (team address and list-style allowed senders)
 live in those sheets. A Drive folder picker replaces the generic checkbox list
-inside that resource-picker slot. Available providers sit below as a Connect /
+inside that resource-picker slot: one account header with the share count and
+Save sharing control, short user-facing copy (no webhook or API jargon), a
+full-width search field, and a single checkbox list without nested cards or
+orphan checkboxes. Provider logos stay on white tiles. Available providers sit below as a Connect /
 Set up list. A quiet search on the tab chrome filters the open section. Agent
 tools holds compact rows for Agent MCP servers and Connect your agent;
 local-only and unroutable catalog entries such as Figma sit in Coming soon with
@@ -1379,6 +1386,7 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-11-04 | Public monthly calculator | `/pricing` Usage compares PAYG, Team, and Business from paired sliders and exact fields. One hairline results panel, 12px metadata, and the shared billing preview. |
 | 2026-11-04 | Google sign-in | Sign-in and sign-up use the official Google G on a borderless white tile inside the existing outline control, at or above the 12px type floor, with Google above GitHub. Drive connection stays on Connections. |
 | 2026-11-05 | GitHub sign-in mark | Continue with GitHub uses the official Invertocat on the same borderless white tile as Google so the mark stays visible in dark mode. |
+| 2026-11-06 | OAuth auto-verify, team support ids, Drive picker | Google/GitHub sign-in stamps `emailVerified` when the provider asserts a verified email. Team → General shows readonly copyable team id and slug. Drive sharing drops the dense green callout, overlapping helper copy, and nested picker borders. |
 
 
 ### Billing benefits and recorded charges (2026-10-31)

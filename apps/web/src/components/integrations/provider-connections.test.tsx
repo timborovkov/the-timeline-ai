@@ -471,8 +471,6 @@ describe('PersonalConnectionsUi', () => {
     expect(await screen.findByText('No sources match “missing”')).toBeTruthy();
 
     await user.tab();
-    await user.tab();
-    await user.tab();
     expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Clear search' }));
 
     await user.keyboard('{Enter}');
@@ -512,14 +510,49 @@ describe('PersonalConnectionsUi', () => {
       />,
     );
 
-    expect(
-      await screen.findByText(/Folder whose Docs, Sheets, Slides, PDF, and Word files/i),
-    ).toBeTruthy();
-    expect(
-      screen.getByText(/Shared drive whose supported files become timeline evidence/i),
-    ).toBeTruthy();
+    expect(await screen.findByText('Folder')).toBeTruthy();
+    expect(screen.getByText('Shared drive')).toBeTruthy();
     expect(screen.getByText(/Team issues, projects, comments, and workflow changes/i)).toBeTruthy();
     expect(screen.getByText(/All accessible projects in this organization/i)).toBeTruthy();
+  });
+
+  it('keeps Drive sharing copy short and the save control next to the account header', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          resources: [{ kind: 'drive.folder', externalId: 'root', label: 'My Drive (root)' }],
+          shares: [],
+        }),
+        { status: 200 },
+      ),
+    );
+
+    renderWithQueryClient(
+      <PersonalConnectionsUi
+        connections={[
+          {
+            id: 'conn-drive',
+            provider: 'google_drive',
+            displayName: 'Google Drive — Tim',
+            lastError: null,
+            lastConnectedAt: '2026-06-01T00:00:00.000Z',
+          },
+        ]}
+      />,
+    );
+
+    const region = await screen.findByRole('region', {
+      name: 'Google Drive account Google Drive — Tim',
+    });
+    expect(await screen.findByRole('checkbox', { name: /My Drive \(root\)/i })).toBeTruthy();
+    expect(screen.getByText('0 sources shared')).toBeTruthy();
+    expect(screen.getByText(/Choose My Drive, a folder, a shared drive/i)).toBeTruthy();
+    expect(screen.queryByText(/changes\.watch/i)).toBeNull();
+    expect(screen.queryByText(/quiet editing window/i)).toBeNull();
+    expect(screen.queryByText(/Shared with me/i)).toBeNull();
+    expect(region.querySelector('[class*="bg-signal-soft"]')).toBeNull();
+    expect(region.querySelector('[class*="rounded-sm border"][class*="max-h-72"]')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Save sharing' })).toBeTruthy();
   });
 
   it('browses Drive folders through parentId', async () => {
