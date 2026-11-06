@@ -2092,9 +2092,10 @@
 
 .footer {
   display: flex;
-  justify-content: space-between;
-  gap: 2rem;
-  padding: 2rem 3vw;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2.5rem;
+  padding: 2.5rem 3vw;
   border-top: 1px solid var(--home-line);
   color: var(--home-muted);
   font-family: var(--font-mono);
@@ -2103,8 +2104,7 @@
   text-transform: uppercase;
 }
 
-.footer > div,
-.footer nav,
+.footerBrandRow,
 .footerBrand {
   display: flex;
   flex-wrap: wrap;
@@ -2112,33 +2112,34 @@
   gap: 1.2rem;
 }
 
-.footerNavigation {
-  flex-direction: column;
-  align-items: flex-end !important;
-  gap: 0.85rem !important;
+.footer > nav[aria-label='Explore The Timeline'] {
+  display: block;
+  width: 100%;
 }
 
-.footerLinks {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 1.2rem;
-  margin: 0;
-  padding: 0;
-  list-style: none;
+.footerColumns {
+  width: 100%;
+}
+
+.footerColumnTitle {
+  color: var(--home-paper);
 }
 
 .footerLinkActive {
   color: var(--home-signal) !important;
 }
 
-.footer nav {
-  justify-content: flex-end;
-}
-
 .footerBrand {
   gap: 0.5rem;
   color: var(--home-paper);
+}
+
+.footer > div:not(.footerBrandRow),
+.footer > nav[aria-label='Landing footer'] {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 1.2rem;
 }
 
 .footerBrand svg {
@@ -3279,15 +3280,7 @@
     flex-direction: column;
   }
 
-  .footer nav {
-    justify-content: flex-start;
-  }
-
-  .footerNavigation {
-    align-items: flex-start !important;
-  }
-
-  .footerLinks {
+  .footer > nav[aria-label='Landing footer'] {
     justify-content: flex-start;
   }
 }

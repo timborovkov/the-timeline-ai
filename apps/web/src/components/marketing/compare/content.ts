@@ -47,10 +47,10 @@ export const COMPARE_HUB = {
   route: COMPARE_HUB_ROUTE,
   title: 'See how The Timeline sits next to other tools.',
   summary:
-    "Head-to-head pages cite each competitor's own site. Works-with pages explain how tools you already use plug into The Timeline, including what ships today and what is still coming.",
+    "Head-to-head pages cite each competitor's own site. Unverified claims are left out. How existing tools plug in lives under Integrations.",
   seoTitle: 'Compare The Timeline',
   seoDescription:
-    "Compare The Timeline with Day AI, Folk, Glean and Geekbot, with facts cited from each competitor's own site. Also see how Linear, Jira, Notion, HubSpot, Attio and Pipedrive plug in.",
+    "Compare The Timeline with Day AI, Folk, Glean and Geekbot, with facts cited from each competitor's own site.",
 } as const;
 
 export const COMPARE_PAGES: readonly ComparePageContent[] = [

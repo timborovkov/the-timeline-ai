@@ -49,21 +49,37 @@ describe('PublicShell', () => {
       </PublicShell>,
     );
 
-    for (const href of ['/', '/use-cases', '/compare', '/agents', '/pricing', '/product-tour']) {
+    for (const href of [
+      '/',
+      '/use-cases',
+      '/integrations',
+      '/agents',
+      '/pricing',
+      '/product-tour',
+    ]) {
       expect(
         html.match(new RegExp(`href="${href.replace('/', '\\/')}"`, 'gu'))?.length,
       ).toBeGreaterThanOrEqual(3);
     }
-    for (const href of ['/integrations', '/how-it-works', '/help']) {
+    for (const href of ['/compare', '/how-it-works', '/help']) {
       expect(html).toContain(`href="${href}"`);
     }
     expect(html).toContain('aria-label="Public navigation"');
     expect(html).toContain('aria-label="Public navigation menu"');
     expect(html).toContain('aria-label="Explore The Timeline"');
+    expect(html).toContain('aria-label="Product"');
+    expect(html).toContain('aria-label="Use cases"');
+    expect(html).toContain('aria-label="Integrations"');
+    expect(html).toContain('aria-label="Compare"');
+    expect(html).toContain('aria-label="Support and legal"');
     expect(html.match(/aria-current="page"[^>]*href="\/agents"/g)).toHaveLength(3);
     expect(html).toContain('<summary');
     expect(html).toContain('>Menu</span>');
-    expect(html).toContain('Works with HubSpot');
+    expect(html).toContain('HubSpot · Coming soon');
+    expect(html).toContain('Linear · Native sync');
+    expect(html).toContain('Jira · MCP lookup');
+    expect(html).toContain('The Timeline vs Day AI');
+    expect(html).not.toContain('Works with HubSpot');
   });
 
   it('marks the Trust legal link as the current page', () => {

@@ -3,9 +3,14 @@
 import { ChevronDown, Menu } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, type ReactNode } from 'react';
 
-import { COMPARE_NAV_ITEMS, USE_CASE_NAV_ITEMS } from '@/components/marketing/copy';
+import {
+  COMPARE_NAV_ITEMS,
+  INTEGRATION_NAV_ITEMS,
+  USE_CASE_NAV_ITEMS,
+  publicNavItemLabel,
+} from '@/components/marketing/copy';
 import styles from '@/components/public-navigation.module.css';
 import { PublicSessionBranch } from '@/components/public-session-branch';
 import { ThemeToggle } from '@/components/theme-toggle';
@@ -22,40 +27,51 @@ const HEADER_NAVIGATION_ITEMS = [
     children: USE_CASE_NAV_ITEMS,
   },
   {
-    section: 'compare',
-    href: '/compare',
-    label: 'Compare',
-    analyticsCta: 'view_compare',
-    overviewLabel: 'Compare hub',
-    children: COMPARE_NAV_ITEMS,
+    section: 'integrations',
+    href: '/integrations',
+    label: 'Integrations',
+    analyticsCta: 'view_integrations',
+    overviewLabel: 'Integrations hub',
+    children: INTEGRATION_NAV_ITEMS,
   },
   { section: 'agents', href: '/agents', label: 'Agents', analyticsCta: 'view_agents' },
   { section: 'pricing', href: '/pricing', label: 'Pricing', analyticsCta: 'view_pricing' },
 ] as const;
 
-const FOOTER_EXTRA_NAVIGATION_ITEMS = [
+const FOOTER_PRODUCT_ITEMS = [
+  { href: '/', label: 'Product', section: 'product' as const },
   {
-    section: 'how-it-works',
     href: '/how-it-works',
     label: 'How it works',
+    section: 'how-it-works' as const,
     analyticsCta: 'view_how_it_works',
   },
   {
-    section: 'integrations',
-    href: '/integrations',
-    label: 'Integrations',
-    analyticsCta: 'view_integrations',
+    href: '/pricing',
+    label: 'Pricing',
+    section: 'pricing' as const,
+    analyticsCta: 'view_pricing',
   },
-  { section: 'help', href: '/help', label: 'Help' },
+  {
+    href: '/agents',
+    label: 'Agents',
+    section: 'agents' as const,
+    analyticsCta: 'view_agents',
+  },
+  { href: '/help', label: 'Help', section: 'help' as const },
 ] as const;
 
 export type PublicNavigationSection =
   | (typeof HEADER_NAVIGATION_ITEMS)[number]['section']
-  | (typeof FOOTER_EXTRA_NAVIGATION_ITEMS)[number]['section']
+  | (typeof FOOTER_PRODUCT_ITEMS)[number]['section']
+  | 'compare'
   | 'trust';
 
-type NavigationItem =
-  (typeof HEADER_NAVIGATION_ITEMS)[number] | (typeof FOOTER_EXTRA_NAVIGATION_ITEMS)[number];
+interface NavChild {
+  href: string;
+  label: string;
+  statusLabel?: string;
+}
 
 interface PublicNavigationItemsProps {
   currentSection?: PublicNavigationSection;
@@ -63,14 +79,6 @@ interface PublicNavigationItemsProps {
   itemClassName?: string;
   activeItemClassName?: string;
   onNavigate?: () => void;
-  variant?: 'menu' | 'simple' | 'footer';
-}
-
-function itemsForVariant(
-  variant: PublicNavigationItemsProps['variant'],
-): readonly NavigationItem[] {
-  if (variant === 'menu') return HEADER_NAVIGATION_ITEMS;
-  return [...HEADER_NAVIGATION_ITEMS, ...FOOTER_EXTRA_NAVIGATION_ITEMS];
 }
 
 export function PublicNavigationItems({
@@ -79,14 +87,13 @@ export function PublicNavigationItems({
   itemClassName,
   activeItemClassName,
   onNavigate,
-  variant = 'menu',
 }: PublicNavigationItemsProps) {
   return (
     <ul className={listClassName}>
-      {itemsForVariant(variant).map((item) => {
+      {HEADER_NAVIGATION_ITEMS.map((item) => {
         const active = currentSection === item.section;
         const analyticsCta = 'analyticsCta' in item ? item.analyticsCta : undefined;
-        if ('children' in item && variant === 'menu') {
+        if ('children' in item) {
           return (
             <NavDropdown
               key={item.section}
@@ -114,17 +121,6 @@ export function PublicNavigationItems({
             >
               {item.label}
             </Link>
-            {variant === 'footer' && 'children' in item ? (
-              <ul className={cn(styles.footerUseCases, 'mt-2')}>
-                {item.children.map((child) => (
-                  <li key={child.href}>
-                    <Link href={child.href} className={itemClassName} onClick={onNavigate}>
-                      {child.label}
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            ) : null}
           </li>
         );
       })}
@@ -147,7 +143,7 @@ function NavDropdown({
   href: string;
   label: string;
   overviewLabel: string;
-  childrenItems: readonly { href: string; label: string }[];
+  childrenItems: readonly NavChild[];
   active: boolean;
   itemClassName?: string;
   activeItemClassName?: string;
@@ -213,7 +209,7 @@ function NavDropdown({
                   className={cn(itemClassName, 'w-full')}
                   onClick={onNavigate}
                 >
-                  {child.label}
+                  {publicNavItemLabel(child)}
                 </Link>
               </li>
             ))}
@@ -224,43 +220,147 @@ function NavDropdown({
   );
 }
 
-export function PublicFooterUseCaseLinks({
+export function PublicFooterColumns({
+  currentSection,
   className,
+  headingClassName,
   itemClassName,
+  activeItemClassName,
+  legalItems,
 }: {
+  currentSection?: PublicNavigationSection;
   className?: string;
+  headingClassName?: string;
   itemClassName?: string;
+  activeItemClassName?: string;
+  legalItems: ReactNode;
 }) {
   return (
-    <ul className={cn(styles.footerUseCases, className)}>
-      {USE_CASE_NAV_ITEMS.map((item) => (
-        <li key={item.href}>
-          <Link href={item.href} className={itemClassName}>
-            {item.label}
-          </Link>
-        </li>
-      ))}
-    </ul>
+    <div className={cn(styles.footerColumns, className)}>
+      <section aria-label="Product">
+        <p className={cn(styles.footerColumnTitle, headingClassName)}>Product</p>
+        <ul className={styles.footerColumnList}>
+          {FOOTER_PRODUCT_ITEMS.map((item) => (
+            <li key={item.href}>
+              <FooterNavLink
+                href={item.href}
+                label={item.label}
+                active={currentSection === item.section}
+                itemClassName={itemClassName}
+                activeItemClassName={activeItemClassName}
+                analyticsCta={'analyticsCta' in item ? item.analyticsCta : undefined}
+              />
+            </li>
+          ))}
+        </ul>
+      </section>
+      <section aria-label="Use cases">
+        <p className={cn(styles.footerColumnTitle, headingClassName)}>Use cases</p>
+        <ul className={styles.footerColumnList}>
+          <li>
+            <FooterNavLink
+              href="/use-cases"
+              label="All use cases"
+              active={currentSection === 'use-cases'}
+              itemClassName={itemClassName}
+              activeItemClassName={activeItemClassName}
+              analyticsCta="view_use_cases"
+            />
+          </li>
+          {USE_CASE_NAV_ITEMS.map((item) => (
+            <li key={item.href}>
+              <FooterNavLink
+                href={item.href}
+                label={item.label}
+                itemClassName={itemClassName}
+                activeItemClassName={activeItemClassName}
+              />
+            </li>
+          ))}
+        </ul>
+      </section>
+      <section aria-label="Integrations">
+        <p className={cn(styles.footerColumnTitle, headingClassName)}>Integrations</p>
+        <ul className={styles.footerColumnList}>
+          <li>
+            <FooterNavLink
+              href="/integrations"
+              label="Integrations hub"
+              active={currentSection === 'integrations'}
+              itemClassName={itemClassName}
+              activeItemClassName={activeItemClassName}
+              analyticsCta="view_integrations"
+            />
+          </li>
+          {INTEGRATION_NAV_ITEMS.map((item) => (
+            <li key={item.href}>
+              <FooterNavLink
+                href={item.href}
+                label={publicNavItemLabel(item)}
+                itemClassName={itemClassName}
+                activeItemClassName={activeItemClassName}
+              />
+            </li>
+          ))}
+        </ul>
+      </section>
+      <section aria-label="Compare">
+        <p className={cn(styles.footerColumnTitle, headingClassName)}>Compare</p>
+        <ul className={styles.footerColumnList}>
+          <li>
+            <FooterNavLink
+              href="/compare"
+              label="Compare hub"
+              active={currentSection === 'compare'}
+              itemClassName={itemClassName}
+              activeItemClassName={activeItemClassName}
+              analyticsCta="view_compare"
+            />
+          </li>
+          {COMPARE_NAV_ITEMS.map((item) => (
+            <li key={item.href}>
+              <FooterNavLink
+                href={item.href}
+                label={item.label}
+                itemClassName={itemClassName}
+                activeItemClassName={activeItemClassName}
+              />
+            </li>
+          ))}
+        </ul>
+      </section>
+      <section aria-label="Support and legal">
+        <p className={cn(styles.footerColumnTitle, headingClassName)}>Legal</p>
+        <ul className={styles.footerColumnList}>{legalItems}</ul>
+      </section>
+    </div>
   );
 }
 
-export function PublicFooterCompareLinks({
-  className,
+function FooterNavLink({
+  href,
+  label,
+  active = false,
   itemClassName,
+  activeItemClassName,
+  analyticsCta,
 }: {
-  className?: string;
+  href: string;
+  label: string;
+  active?: boolean;
   itemClassName?: string;
+  activeItemClassName?: string;
+  analyticsCta?: string;
 }) {
   return (
-    <ul className={cn(styles.footerUseCases, className)}>
-      {COMPARE_NAV_ITEMS.map((item) => (
-        <li key={item.href}>
-          <Link href={item.href} className={itemClassName}>
-            {item.label}
-          </Link>
-        </li>
-      ))}
-    </ul>
+    <Link
+      href={href}
+      aria-current={active ? 'page' : undefined}
+      className={cn(itemClassName, active && activeItemClassName)}
+      data-public-analytics-cta={analyticsCta}
+    >
+      {label}
+    </Link>
   );
 }
 
