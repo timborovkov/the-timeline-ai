@@ -1005,7 +1005,9 @@ complete static story.
 
 The public header stays uncluttered: Product, Use cases, Integrations, Agents,
 and Pricing. Use cases and Integrations are `details` dropdowns on desktop and
-in the mobile menu. The Integrations dropdown is the hub plus live destinations:
+in the mobile menu. Expandable rows show a down chevron when collapsed and an up
+chevron when expanded; the mobile Menu overlay must not invert those icons.
+The Integrations dropdown is the hub plus live destinations:
 Slack, Telegram, Google Drive, GitHub, Linear, Monday.com, Jira, and Notion.
 Each child is labelled for what ships today (native sync, capture, or MCP
 lookup). Coming-soon tools stay on the integrations hub cards and their pages,
@@ -1396,6 +1398,7 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-11-04 | Google sign-in | Sign-in and sign-up use the official Google G on a borderless white tile inside the existing outline control, at or above the 12px type floor, with Google above GitHub. Drive connection stays on Connections. |
 | 2026-11-05 | GitHub sign-in mark | Continue with GitHub uses the official Invertocat on the same borderless white tile as Google so the mark stays visible in dark mode. |
 | 2026-11-06 | Public nav IA | Header is Product, Use cases, Integrations, Agents, Pricing. Integrations dropdown is the hub plus Slack, Telegram, Google Drive, GitHub, Linear, Monday.com, Jira, and Notion, labelled for native sync, capture, or MCP lookup. Coming-soon CRM pages stay on the hub, not in the dropdown or footer column. Footer is Product / Use cases / Integrations / Compare / Legal. `/compare` is a thin vs-only hub. |
+| 2026-11-06 | Public mobile nav chevrons | Expandable Use cases and Integrations rows point down when collapsed and up when expanded. The mobile Menu overlay does not invert those chevrons. |
 | 2026-11-06 | Agents as teammates | Landing and `/agents` treat agents as teammates who read the cited work record and write notes back. The setup card keeps the llms.txt command. `/agents` splits report-in (remember / email / webhook) from read-out (hosted MCP tools) and labels the Grok Bot progress-note as an illustrative example. |
 | 2026-11-06 | Compare alternatives SEO | Existing `/compare/the-timeline-vs-{day-ai,folk,glean,geekbot}` pages keep the vs H1 and add “[competitor] alternatives” to SEO title, meta description, and intro. The hub names those alternative queries without extra URLs. |
 | 2026-11-06 | OAuth auto-verify, team support ids, Drive picker | Google/GitHub sign-in stamps `emailVerified` when the provider asserts a verified email. Team → General shows readonly copyable team id and slug. Drive sharing drops the dense green callout, overlapping helper copy, and nested picker borders. |
