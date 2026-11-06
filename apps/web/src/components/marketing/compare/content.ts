@@ -5,6 +5,9 @@ export const COMPARE_SLUGS = [
   'the-timeline-vs-folk',
   'the-timeline-vs-glean',
   'the-timeline-vs-geekbot',
+  'the-timeline-vs-suda',
+  'the-timeline-vs-memorycrow',
+  'the-timeline-vs-achiral',
 ] as const;
 
 type CompareSlug = (typeof COMPARE_SLUGS)[number];
@@ -47,10 +50,10 @@ export const COMPARE_HUB = {
   route: COMPARE_HUB_ROUTE,
   title: 'See how The Timeline sits next to other tools.',
   summary:
-    "Looking for Day AI, Folk, Glean or Geekbot alternatives? Head-to-head pages cite each competitor's own site. Unverified claims are left out. How existing tools plug in lives under Integrations.",
+    "Looking for Day AI, Folk, Glean, Geekbot, Suda, MemoryCrow or Achiral alternatives? Head-to-head pages cite each competitor's own site. Unverified claims are left out. How existing tools plug in lives under Integrations.",
   seoTitle: 'Compare The Timeline',
   seoDescription:
-    "Looking for Day AI, Folk, Glean or Geekbot alternatives? Compare each with The Timeline. Every competitor fact cites that company's own site.",
+    "Looking for Day AI, Folk, Glean, Geekbot, Suda, MemoryCrow or Achiral alternatives? Compare each with The Timeline. Facts cite each company's own site.",
 } as const;
 
 export const COMPARE_PAGES: readonly ComparePageContent[] = [
@@ -190,6 +193,138 @@ export const COMPARE_PAGES: readonly ComparePageContent[] = [
       'The Timeline records selected Slack channels, Telegram groups, forwarded email and calls. It can send a daily update from that record. It does not run standup questionnaires, polls or surveys inside Slack or Microsoft Teams, and it does not offer Microsoft Teams chat capture.',
     whenCompetitorBetter:
       'Choose Geekbot when you want a bot to run async standups, polls and surveys in Slack or Microsoft Teams. That is the product Geekbot publishes on geekbot.com.',
+  },
+  {
+    slug: 'the-timeline-vs-suda',
+    route: '/compare/the-timeline-vs-suda',
+    name: 'Suda',
+    navLabel: 'The Timeline vs Suda',
+    title: 'The Timeline vs Suda',
+    summary:
+      'Suda publishes a company brain: a permissioned context graph from tools such as Notion, Slack and Linear that people and AI agents query over MCP. The Timeline is a Suda alternative only as a cited work record from Slack, Telegram, email and calls, with Ask receipts and human approval before lasting changes, not as a 700-source context graph.',
+    seoTitle: 'Suda alternatives: The Timeline vs Suda',
+    seoDescription:
+      'Looking for Suda alternatives? Compare The Timeline vs Suda. Suda publishes a permissioned company-brain context graph for people and AI agents. The Timeline is a cited work record. Facts from suda.so.',
+    competitorUrl: 'https://suda.so',
+    facts: [
+      {
+        claim:
+          'Suda describes itself as the company brain for a team and enterprise: one permissioned context graph that people and AI agents can read.',
+        source: { href: 'https://suda.so/', label: 'suda.so' },
+      },
+      {
+        claim:
+          'Suda says it turns what is scattered across tools such as Notion, Slack and Linear into a living context graph, and that it ingests from more than 700 sources.',
+        source: { href: 'https://suda.so/', label: 'suda.so' },
+      },
+      {
+        claim:
+          'Suda says any AI that speaks MCP can query the graph, and that people can also ask context from Slack.',
+        source: { href: 'https://suda.so/', label: 'suda.so' },
+      },
+      {
+        claim:
+          'Suda says the graph is self-updating: stale facts retire and conflicting facts resolve automatically.',
+        source: { href: 'https://suda.so/', label: 'suda.so' },
+      },
+      {
+        claim:
+          'Suda publishes Free at $0 with 1,000 credits and 1 to 5 seats, Business at $20 per user per month with 12,000 credits and up to 50 seats (top-up $10 per 10,000 credits), and custom Enterprise billing.',
+        source: { href: 'https://suda.so/', label: 'suda.so' },
+      },
+    ],
+    timelineSide:
+      'The Timeline captures selected Slack, Telegram, email and calls into an auto-updating work record of decisions, promises and handoffs, with the source on every line. People Ask in the product or Slack. Agents read that record over MCP and contribute notes through timeline.remember, ingest email or an ingest webhook. Lasting record changes wait for a person to approve them. It is not a 700-source context graph for any MCP client.',
+    whenCompetitorBetter:
+      'Choose Suda when you want context infrastructure that feeds the agents already in your stack over MCP, with a graph that retires stale facts and that people can also query, including from Slack. That is the product Suda publishes on suda.so.',
+  },
+  {
+    slug: 'the-timeline-vs-memorycrow',
+    route: '/compare/the-timeline-vs-memorycrow',
+    name: 'MemoryCrow',
+    navLabel: 'The Timeline vs MemoryCrow',
+    title: 'The Timeline vs MemoryCrow',
+    summary:
+      'MemoryCrow is a permission-safe memory layer: Claude, ChatGPT, Cursor and MCP clients recall current, cited answers only from sources the asker can see. The Timeline is a MemoryCrow alternative only as a dated work record of decisions, promises and handoffs from chat-led work, with a daily update and human approval before lasting changes, not as a memory layer whose main job is recall inside those AI clients.',
+    seoTitle: 'MemoryCrow alternatives: The Timeline vs MemoryCrow',
+    seoDescription:
+      'Looking for MemoryCrow alternatives? Compare The Timeline vs MemoryCrow. MemoryCrow publishes a permission-safe memory layer for Claude, ChatGPT, Cursor and MCP. The Timeline is a cited work record. Facts from memorycrow.com.',
+    competitorUrl: 'https://memorycrow.com',
+    facts: [
+      {
+        claim:
+          'MemoryCrow describes itself as one team memory for every AI: connect Slack, docs, tickets and code, then ask from Claude, ChatGPT or Cursor and get the current answer with citations and permissions intact.',
+        source: { href: 'https://memorycrow.com/', label: 'memorycrow.com' },
+      },
+      {
+        claim:
+          'MemoryCrow says it does not replace Slack, Notion, GitHub or Linear: those tools stay where work happens, and MemoryCrow is a memory layer beside them.',
+        source: { href: 'https://memorycrow.com/faq/', label: 'memorycrow.com/faq' },
+      },
+      {
+        claim:
+          'MemoryCrow says Claude, Cursor, ChatGPT and other MCP-compatible clients can connect, and that agents can write useful facts, decisions and handoffs into memory with a selected scope.',
+        source: { href: 'https://memorycrow.com/faq/', label: 'memorycrow.com/faq' },
+      },
+      {
+        claim:
+          'MemoryCrow says if it cannot prove an answer it abstains, rather than inventing a confident answer.',
+        source: { href: 'https://memorycrow.com/', label: 'memorycrow.com' },
+      },
+      {
+        claim:
+          'MemoryCrow publishes plans that meter stored memory, not questions: Personal includes 150 memories a month, Team includes 500 memories a month for up to 50 members on flat workspace pricing, recall is unlimited, one-time packs start at $15 for 100 memories, and a 7-day trial is offered. Personal and Team list prices are on the pricing page.',
+        source: { href: 'https://memorycrow.com/pricing/', label: 'memorycrow.com/pricing' },
+      },
+    ],
+    timelineSide:
+      'The Timeline keeps a chronology of who said what, when, with sources, from selected Slack channels, Telegram groups, forwarded email and calls. People Ask with citations, read a daily workspace update, and approve lasting record changes. Agents read the same cited record over MCP and can add notes. It is not a memory layer whose primary surface is recall inside Claude, ChatGPT or Cursor.',
+    whenCompetitorBetter:
+      'Choose MemoryCrow when you mainly need trusted recall inside the AI tools the team already uses, with answers scoped to the asker and abstention when proof is missing. That is the product MemoryCrow publishes on memorycrow.com.',
+  },
+  {
+    slug: 'the-timeline-vs-achiral',
+    route: '/compare/the-timeline-vs-achiral',
+    name: 'Achiral',
+    navLabel: 'The Timeline vs Achiral',
+    title: 'The Timeline vs Achiral',
+    summary:
+      'Achiral publishes ACT-R-inspired emergent memory for teams of people and agents, with org-wide Chiro, personal assistants, and human confirmation before a memory becomes durable. The Timeline is an Achiral alternative only as a cited work record from Slack, Telegram, email and calls, not as an emergent-memory platform of personal assistants and Chiro.',
+    seoTitle: 'Achiral alternatives: The Timeline vs Achiral',
+    seoDescription:
+      'Looking for Achiral alternatives? Compare The Timeline vs Achiral. Achiral publishes ACT-R-inspired emergent memory for people and agents, with Chiro and personal assistants. The Timeline is a cited work record. Facts from achiral.ai.',
+    competitorUrl: 'https://achiral.ai',
+    facts: [
+      {
+        claim:
+          'Achiral describes itself as an AI memory platform for teams of people and agents. Inspired by ACT-R, a research model of how people remember and forget, memory forms from daily work, strengthens with reuse, fades when unused, and is available through chat, the API, apps and agents.',
+        source: { href: 'https://achiral.ai/', label: 'achiral.ai' },
+      },
+      {
+        claim:
+          'Achiral lists connectors including Slack, Microsoft Teams, Notion, Google Workspace, Linear, Asana, GitHub, Jira, HubSpot, Salesforce, Zendesk and Intercom.',
+        source: { href: 'https://achiral.ai/', label: 'achiral.ai' },
+      },
+      {
+        claim:
+          'Achiral says memories form by passive capture from everyday work, stay current with mathematical decay, and that nothing becomes a durable core memory without human confirmation. It also names MCP extensions among the ways it works with a stack.',
+        source: { href: 'https://achiral.ai/', label: 'achiral.ai' },
+      },
+      {
+        claim:
+          'Achiral says every member gets a personal executive assistant and the organization gets one shared Chiro, which draft work and act on shared memory with approval.',
+        source: { href: 'https://achiral.ai/pricing', label: 'achiral.ai/pricing' },
+      },
+      {
+        claim:
+          'Achiral publishes Founder free for up to 2 seats, Team from $30 per seat per month with rates that step down by tier, plus add-ons of $10 per agent per month and $19 per published app per month.',
+        source: { href: 'https://achiral.ai/pricing', label: 'achiral.ai/pricing' },
+      },
+    ],
+    timelineSide:
+      'The Timeline builds a cited chronology of decisions, promises and handoffs from Slack, Telegram, email, calls and docs. People Ask with receipts and approve lasting record changes. Agents read and contribute to that same record through MCP, remember, email or webhook. It is not an emergent-memory platform of personal executive assistants plus org-wide Chiro, and it does not model memory as ACT-R decay and activation.',
+    whenCompetitorBetter:
+      'Choose Achiral when you want organic org memory plus collaborative assistants (shared Chiro and a personal assistant per member), a decay and activation lifecycle, and connectors across Slack, Teams, Notion, HubSpot and more. That is the product Achiral publishes on achiral.ai.',
   },
 ];
 
