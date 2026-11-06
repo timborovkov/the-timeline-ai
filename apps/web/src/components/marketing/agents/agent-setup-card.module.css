@@ -20,17 +20,18 @@
 
 .title {
   margin: 0.25rem 0 0;
+  text-wrap: balance;
   font-size: 1.05rem;
   font-weight: 600;
+  line-height: 1.25;
   letter-spacing: -0.03em;
 }
 
 .lede {
-  margin: 0.25rem 0 0;
+  margin: 0.35rem 0 0;
   color: var(--home-muted, var(--fg-muted));
   font-size: 0.8125rem;
-  line-height: 1.4;
-  white-space: nowrap;
+  line-height: 1.45;
 }
 
 .marks {
@@ -41,6 +42,7 @@
   margin: 0;
   padding: 0;
   list-style: none;
+  white-space: nowrap;
 }
 
 .mark {
