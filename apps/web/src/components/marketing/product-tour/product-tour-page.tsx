@@ -62,6 +62,7 @@ export function ProductTourPage() {
                     alt={step.alt}
                     caption={step.caption}
                     reshoot={step.reshoot}
+                    frame="portrait"
                   />
                 </div>
               ) : null}

@@ -1026,7 +1026,8 @@ at `/solutions/client-project-handoffs` with related use-case links. `/product-t
 is a screenshot walkthrough linked from the home hero as See it first and from
 pricing; `/integrations/telegram` is the public Telegram capture page. Product
 screenshots live in `apps/web/public/marketing/screenshots` under the filenames
-from the website copy plan so they can be swapped after the citation redesign.
+from the website copy plan. Landscape slots use a 16×10 top crop; mobile
+portrait slots keep the full capture so Ask citations stay in frame.
 Visible copy must stay consistent with deliberate capture, source-linked claims,
 daily (not weekly) updates, and human review before inferred durable workspace
 changes. Do not claim WhatsApp, Teams chat, or Slack Connect.
@@ -1386,6 +1387,7 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-11-04 | Public monthly calculator | `/pricing` Usage compares PAYG, Team, and Business from paired sliders and exact fields. One hairline results panel, 12px metadata, and the shared billing preview. |
 | 2026-11-06 | Public nav IA | Header is Product, Use cases, Integrations, Agents, Pricing. Integrations dropdown is the hub plus Slack, Telegram, Google Drive, GitHub, Linear, Monday.com, Jira, and Notion, labelled for native sync, capture, or MCP lookup. Coming-soon CRM pages stay on the hub, not in the dropdown or footer column. Footer is Product / Use cases / Integrations / Compare / Legal. `/compare` is a thin vs-only hub. |
 | 2026-11-06 | Agents as teammates | Landing and `/agents` treat agents as teammates who read the cited work record and write notes back. The setup card keeps the llms.txt command. `/agents` splits report-in (remember / email / webhook) from read-out (hosted MCP tools) and labels the Grok Bot progress-note as an illustrative example. |
+| 2026-11-06 | Product-tour mobile frames | `/product-tour` mobile portrait shots (`*-mobile.png`) use a 390×844 contain frame instead of the landscape 16×10 top crop, so Ask recap citations stay visible. |
 
 
 ### Billing benefits and recorded charges (2026-10-31)
