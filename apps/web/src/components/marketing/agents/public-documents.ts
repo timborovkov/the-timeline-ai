@@ -1,17 +1,17 @@
 import type { PublicDocument } from '@/lib/public-site';
 
-import { TIMELINE_AGENT_SETUP_COMMAND } from '@/components/marketing/copy';
-import { TIMELINE_HOSTED_MCP_TOOLS_LIST, TIMELINE_MCP_COMMAND } from '@/lib/agent-install-content';
+import { AGENTS_HUB } from '@/components/marketing/agents/content';
+import { AGENT_SETUP_CARD, TIMELINE_AGENT_SETUP_COMMAND } from '@/components/marketing/copy';
+import { TIMELINE_MCP_COMMAND } from '@/lib/agent-install-content';
 import { definePublicDocuments } from '@/lib/public-site/registry';
 
-const REVIEW_DATE = '2026-11-04' as const;
+const REVIEW_DATE = '2026-11-06' as const;
 
 export const AGENTS_HUB_DOCUMENT = {
-  canonicalPath: '/agents',
+  canonicalPath: AGENTS_HUB.route,
   kind: 'product',
-  title: 'Give this to your agent',
-  description:
-    'Paste one setup line into Claude, ChatGPT, Cursor, Grok, OpenClaw or Hermes. The Timeline MCP server, OAuth, ingest email, webhooks and the timeline skill are documented at llms.txt.',
+  title: AGENTS_HUB.seoTitle,
+  description: AGENTS_HUB.seoDescription,
   indexability: 'index',
   dates: { modified: REVIEW_DATE, reviewed: REVIEW_DATE },
   capability: { kind: 'current-product' },
@@ -22,7 +22,7 @@ export const AGENTS_HUB_DOCUMENT = {
       type: 'breadcrumbs',
       items: [
         { name: 'Home', path: '/' },
-        { name: 'Agents', path: '/agents' },
+        { name: 'Agents', path: AGENTS_HUB.route },
       ],
     },
   ],
@@ -30,17 +30,25 @@ export const AGENTS_HUB_DOCUMENT = {
     section: 'primary',
     order: 18,
     label: 'Agents',
-    summary:
-      'One copyable setup command for Claude, ChatGPT, Cursor, Grok, OpenClaw and Hermes, plus the hosted Timeline MCP server, five advertised tools, capture scope, ingest email, webhooks and the plugins/timeline skill.',
+    summary: AGENTS_HUB.llmsSummary,
     sections: [
       {
-        title: 'Give this to your agent',
-        body: 'Paste this command into a compatible agent, then follow llms.txt.',
+        title: AGENT_SETUP_CARD.title,
+        body: AGENT_SETUP_CARD.body,
         codeBlock: { content: TIMELINE_AGENT_SETUP_COMMAND, language: 'text' },
       },
       {
-        title: 'Hosted MCP',
-        body: `Streamable HTTP MCP lives at https://thetimeline.cc/api/mcp/server. Compatible clients use browser OAuth: sign in, choose a team, and approve scopes. Capture is a separate consent checkbox, on by default, so timeline.remember can store cited notes; unchecking it is read-only. timeline.ask needs a separate owner/admin agent:ask scope. Static team keys (tla_) are a manual-client fallback and see team-visible data only. Advertised tools: ${TIMELINE_HOSTED_MCP_TOOLS_LIST}. Remember notes count toward the accepted-sources meter and do not mutate canonical records.`,
+        title: AGENTS_HUB.reportIn.title,
+        body: AGENTS_HUB.reportIn.body,
+        items: AGENTS_HUB.reportIn.paths.map((path) => `${path.name}: ${path.body}`),
+      },
+      {
+        title: AGENTS_HUB.example.label,
+        body: `${AGENTS_HUB.example.title} ${AGENTS_HUB.example.body} ${AGENTS_HUB.example.boundary}`,
+      },
+      {
+        title: AGENTS_HUB.readOut.title,
+        body: `Hosted MCP lives at ${AGENTS_HUB.readOut.endpoint}. ${AGENTS_HUB.readOut.body} ${AGENTS_HUB.readOut.toolsIntro} ${AGENTS_HUB.readOut.facts.join(' ')}`,
         codeBlock: { content: TIMELINE_MCP_COMMAND, language: 'bash' },
       },
     ],

@@ -94,7 +94,12 @@ describe('LandingPage', () => {
     expect(html).toContain('href="/how-it-works"');
     expect(html).toContain('href="/compare"');
     expect(html).toContain('href="/agents"');
-    expect(html).toContain('Give this to your agent');
+    expect(html).toContain(
+      'Give your agents the work record — and let them write back like teammates.',
+    );
+    expect(html).toContain(
+      'They read what the team said in Slack, email, calls and docs, then add their own notes to the same cited log.',
+    );
     expect(html).toContain('Set up The Timeline - https://thetimeline.cc/llms.txt');
     expect(html).toContain('what did we promise Northstar');
     expect(html).toContain('timeline.subject');

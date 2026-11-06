@@ -40,3 +40,9 @@ export function publicNavItemLabel(item: { label: string; statusLabel?: string }
 }
 
 export const TIMELINE_AGENT_SETUP_COMMAND = 'Set up The Timeline - https://thetimeline.cc/llms.txt';
+
+export const AGENT_SETUP_CARD = {
+  kicker: 'For agents',
+  title: 'Give your agents the work record — and let them write back like teammates.',
+  body: 'They read what the team said in Slack, email, calls and docs, then add their own notes to the same cited log.',
+} as const;

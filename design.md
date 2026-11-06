@@ -1,7 +1,7 @@
 # The Timeline — Design System
 
-**Version:** v3.37 · OAuth auto-verify, team support ids, Drive share picker (2026-11-06).
-Replaces v3.36 Google and GitHub sign-in vendor marks.
+**Version:** v3.38 · OAuth auto-verify, team support ids, Drive share picker (2026-11-06).
+Replaces v3.37 Agents as teammates.
 
 This is the visual and interaction contract for the product. If a screen
 disagrees with it, fix the screen. If the language intentionally changes,
@@ -942,9 +942,9 @@ follows the shared due-date vocabulary above.
 The public landing page is an editorial, six-scene acquisition narrative:
 claim, evidence and chronology, cited answer, Slack-to-cited-answer with an MCP
 example, audience fit with trust, and a Start free CTA. The claim scene also
-includes a compact “Give this to your agent” card: one-line lede, official
-Claude, ChatGPT, Cursor, Grok, OpenClaw, and Hermes marks on white tiles in a
-single row, and the copyable
+includes a compact For agents card: title and body that agents read the work
+record and write notes back like teammates, official Claude, ChatGPT, Cursor,
+Grok, OpenClaw, and Hermes marks on white tiles in a single row, and the copyable
 `Set up The Timeline - https://thetimeline.cc/llms.txt` command. The card follows
 landing `--home-*` tokens in both themes and does not use letter discs. The claim defines The Timeline as an auto-updating work record:
 what is said in Slack, Telegram, email and calls becomes current client, deal,
@@ -1022,8 +1022,9 @@ Use-case pages extend this story for six jobs from one record: work record,
 team daily log, communication trail, CRM, task board, and onboarding and repeat
 questions. They live under `/use-cases`, appear in the public Use cases menu,
 and are registered for sitemap and LLM discovery. `/compare` remains an
-indexable vs-only hub reachable from the footer; `/agents` is the agent setup
-card. Retired solution URLs
+indexable vs-only hub reachable from the footer. `/agents` leads with agents as
+teammates who report work into the record and read cited context back over MCP,
+plus the same copyable setup card as the landing page. Retired solution URLs
 `/solutions/weekly-project-updates` and `/solutions/crm-context-from-team-activity`
 permanent-redirect to the matching use-case pages. Client project handoffs remain
 at `/solutions/client-project-handoffs` with related use-case links. `/product-tour`
@@ -1391,6 +1392,7 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-11-04 | Google sign-in | Sign-in and sign-up use the official Google G on a borderless white tile inside the existing outline control, at or above the 12px type floor, with Google above GitHub. Drive connection stays on Connections. |
 | 2026-11-05 | GitHub sign-in mark | Continue with GitHub uses the official Invertocat on the same borderless white tile as Google so the mark stays visible in dark mode. |
 | 2026-11-06 | Public nav IA | Header is Product, Use cases, Integrations, Agents, Pricing. Integrations dropdown is works-with only, with live vs coming-soon labels. Footer becomes Product / Use cases / Integrations / Compare / Legal columns. `/compare` is a thin vs-only hub. |
+| 2026-11-06 | Agents as teammates | Landing and `/agents` treat agents as teammates who read the cited work record and write notes back. The setup card keeps the llms.txt command. `/agents` splits report-in (remember / email / webhook) from read-out (hosted MCP tools) and labels the Grok Bot progress-note as an illustrative example. |
 | 2026-11-06 | OAuth auto-verify, team support ids, Drive picker | Google/GitHub sign-in stamps `emailVerified` when the provider asserts a verified email. Team → General shows readonly copyable team id and slug. Drive sharing drops the dense green callout, overlapping helper copy, and nested picker borders. |
 
 

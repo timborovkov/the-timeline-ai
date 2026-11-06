@@ -848,6 +848,12 @@
   "apps/web/src/components/marketing/agents/agent-setup-card.test.tsx": {
     "group": "unit"
   },
+  "apps/web/src/components/marketing/agents/content.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/components/marketing/agents/public-documents.test.ts": {
+    "group": "unit"
+  },
   "apps/web/src/components/marketing/compare/content.test.ts": {
     "group": "unit"
   },
