@@ -561,6 +561,12 @@
       "development": "./src/qdrant/index.ts",
       "import": "./dist/qdrant/index.js",
       "default": "./dist/qdrant/index.js"
+    },
+    "./agent-provisioning": {
+      "types": "./src/agent-provisioning/index.ts",
+      "development": "./src/agent-provisioning/index.ts",
+      "import": "./dist/agent-provisioning/index.js",
+      "default": "./dist/agent-provisioning/index.js"
     }
   },
   "main": "./dist/index.js",

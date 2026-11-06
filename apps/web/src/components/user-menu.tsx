@@ -1,6 +1,7 @@
 'use client';
 
 import { LifeBuoy, LogOut, MailWarning, User } from 'lucide-react';
+import Link from 'next/link';
 import { useActionState } from 'react';
 
 import { resendEmailVerificationAction, type EmailVerificationState } from '@/app/actions/auth';
@@ -90,6 +91,9 @@ export function UserMenu({ user }: Props) {
           </>
         ) : null}
         <DropdownMenuSeparator />
+        <DropdownMenuItem asChild>
+          <Link href="/app/agent-provisioning">Agent provisioning</Link>
+        </DropdownMenuItem>
         <form action={reopenOnboardingChecklistAction}>
           <DropdownMenuItem asChild>
             <button type="submit" className="flex w-full items-center gap-2">

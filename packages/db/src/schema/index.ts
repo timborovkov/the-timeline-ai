@@ -44,3 +44,4 @@ export * from '#src/schema/task-category-assignments.js';
 export * from '#src/schema/pins.js';
 export * from '#src/schema/billing.js';
 export * from '#src/schema/platform-admin.js';
+export * from '#src/schema/agent-provisioning.js';

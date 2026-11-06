@@ -1559,6 +1559,9 @@
   "packages/db/src/schema-contracts.test.ts": {
     "group": "unit"
   },
+  "packages/shared/src/agent-provisioning/index.test.ts": {
+    "group": "integration"
+  },
   "packages/shared/src/agent/ask.test.ts": {
     "group": "integration"
   },
