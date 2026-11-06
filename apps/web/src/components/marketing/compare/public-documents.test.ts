@@ -26,7 +26,10 @@ describe('compare public documents', () => {
     );
     expect(sitemapUrls).toContain(`${SITE_URL}${COMPARE_HUB.route}`);
     for (const page of COMPARE_PAGES) {
-      expect(PUBLIC_DOCUMENT_REGISTRY.get(page.route)).toBe(findComparePublicDocument(page));
+      const document = findComparePublicDocument(page);
+      expect(PUBLIC_DOCUMENT_REGISTRY.get(page.route)).toBe(document);
+      expect(document.title).toBe(page.seoTitle);
+      expect(document.description).toBe(page.seoDescription);
       expect(sitemapUrls).toContain(`${SITE_URL}${page.route}`);
     }
   });
@@ -40,6 +43,9 @@ describe('compare public documents', () => {
     expect(compact).toContain(
       `[The Timeline vs Day AI](${SITE_URL}/compare/the-timeline-vs-day-ai)`,
     );
+    expect(compact).toContain('Day AI, Folk, Glean or Geekbot alternatives');
+    expect(compact).toContain('Looking for Geekbot alternatives?');
+    expect(full).toContain('Geekbot alternatives: The Timeline vs Geekbot');
     expect(full).toContain(`URL: ${SITE_URL}/compare/the-timeline-vs-glean`);
     expect(full).toContain('https://www.glean.com');
   });

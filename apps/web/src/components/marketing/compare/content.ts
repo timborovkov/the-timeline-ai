@@ -47,10 +47,10 @@ export const COMPARE_HUB = {
   route: COMPARE_HUB_ROUTE,
   title: 'See how The Timeline sits next to other tools.',
   summary:
-    "Head-to-head pages cite each competitor's own site. Unverified claims are left out. How existing tools plug in lives under Integrations.",
+    "Looking for Day AI, Folk, Glean or Geekbot alternatives? Head-to-head pages cite each competitor's own site. Unverified claims are left out. How existing tools plug in lives under Integrations.",
   seoTitle: 'Compare The Timeline',
   seoDescription:
-    "Compare The Timeline with Day AI, Folk, Glean and Geekbot, with facts cited from each competitor's own site.",
+    "Looking for Day AI, Folk, Glean or Geekbot alternatives? Compare each with The Timeline. Every competitor fact cites that company's own site.",
 } as const;
 
 export const COMPARE_PAGES: readonly ComparePageContent[] = [
@@ -61,10 +61,10 @@ export const COMPARE_PAGES: readonly ComparePageContent[] = [
     navLabel: 'The Timeline vs Day AI',
     title: 'The Timeline vs Day AI',
     summary:
-      'Day AI is a go-to-market context graph and agent control plane. The Timeline is a cited work record from Slack, Telegram, email and calls.',
-    seoTitle: 'The Timeline vs Day AI',
+      'Day AI is a go-to-market context graph and agent control plane. The Timeline is a Day AI alternative only as a cited work record from Slack, Telegram, email and calls, not as a GTM control plane.',
+    seoTitle: 'Day AI alternatives: The Timeline vs Day AI',
     seoDescription:
-      'Day AI publishes a GTM context graph and agent control plane. The Timeline writes down team conversations as a cited work record. Facts about Day AI are cited from day.ai.',
+      'Looking for Day AI alternatives? Compare The Timeline vs Day AI. Day AI publishes a GTM context graph and agent control plane. The Timeline is a cited work record. Facts from day.ai.',
     competitorUrl: 'https://day.ai',
     facts: [
       {
@@ -95,10 +95,10 @@ export const COMPARE_PAGES: readonly ComparePageContent[] = [
     navLabel: 'The Timeline vs Folk',
     title: 'The Timeline vs Folk',
     summary:
-      'Folk is an AI CRM for the sales motion. The Timeline is a cited work record from conversations, not a prospecting CRM.',
-    seoTitle: 'The Timeline vs Folk',
+      'Folk is an AI CRM for the sales motion. The Timeline is a Folk alternative only as a cited work record from conversations, not as a prospecting CRM.',
+    seoTitle: 'Folk alternatives: The Timeline vs Folk',
     seoDescription:
-      'Folk publishes an AI CRM for the sales motion. The Timeline writes down team conversations as a cited work record. Facts about Folk are cited from folk.app.',
+      'Looking for Folk alternatives? Compare The Timeline vs Folk. Folk publishes an AI CRM for the sales motion. The Timeline is a cited work record, not a prospecting CRM. Facts from folk.app.',
     competitorUrl: 'https://www.folk.app',
     facts: [
       {
@@ -132,10 +132,10 @@ export const COMPARE_PAGES: readonly ComparePageContent[] = [
     navLabel: 'The Timeline vs Glean',
     title: 'The Timeline vs Glean',
     summary:
-      'Glean is enterprise AI over company knowledge at scale. The Timeline is a deliberate work record from the conversations and tools you choose to capture.',
-    seoTitle: 'The Timeline vs Glean',
+      'Glean is enterprise AI over company knowledge at scale. The Timeline is a Glean alternative only as a deliberate work record from the conversations and tools you choose to capture, not as search across hundreds of apps.',
+    seoTitle: 'Glean alternatives: The Timeline vs Glean',
     seoDescription:
-      'Glean publishes enterprise AI with permission-aware access across company knowledge. The Timeline writes down selected conversations as a cited work record. Facts about Glean are cited from glean.com.',
+      'Looking for Glean alternatives? Compare The Timeline vs Glean. Glean publishes enterprise AI over company knowledge. The Timeline is a cited work record from selected conversations. Facts from glean.com.',
     competitorUrl: 'https://www.glean.com',
     facts: [
       {
@@ -165,10 +165,10 @@ export const COMPARE_PAGES: readonly ComparePageContent[] = [
     navLabel: 'The Timeline vs Geekbot',
     title: 'The Timeline vs Geekbot',
     summary:
-      'Geekbot runs async standups, polls and surveys in Slack and Microsoft Teams. The Timeline writes down what was already said, then answers from that record.',
-    seoTitle: 'The Timeline vs Geekbot',
+      'Geekbot runs async standups, polls and surveys in Slack and Microsoft Teams. The Timeline is a Geekbot alternative that writes down what was already said, then answers from that record, rather than running standup questionnaires.',
+    seoTitle: 'Geekbot alternatives: The Timeline vs Geekbot',
     seoDescription:
-      'Geekbot publishes async standups, polls and surveys in Slack and Microsoft Teams. The Timeline is a cited work record from conversations. Facts about Geekbot are cited from geekbot.com.',
+      'Looking for Geekbot alternatives? Compare The Timeline vs Geekbot. Geekbot publishes async standups, polls and surveys in Slack and Teams. The Timeline is a cited work record. Facts from geekbot.com.',
     competitorUrl: 'https://geekbot.com',
     facts: [
       {
