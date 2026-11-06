@@ -17,6 +17,7 @@ export const PUBLIC_ANALYTICS_ROUTES = Object.freeze({
   '/integrations/attio': 'integration_attio',
   '/integrations/jira': 'integration_jira',
   '/integrations/notion': 'integration_notion',
+  '/integrations/mcp': 'integration_mcp',
   '/product-tour': 'product_tour',
   '/use-cases': 'use_cases',
   '/compare': 'compare',

@@ -37,17 +37,55 @@ details[open] > summary .dropdownChevron {
 
 .dropdownPanel {
   position: absolute;
-  top: calc(100% - 0.2rem);
+  top: calc(100% + 0.35rem);
   left: 0;
   z-index: 60;
-  min-width: 19rem;
+  min-width: 16.5rem;
   max-height: min(70vh, 36rem);
   overflow-y: auto;
-  padding: 0.4rem;
+  padding: 0.35rem;
   border: 1px solid var(--border);
   border-radius: 6px;
   background: var(--bg);
-  box-shadow: 0 16px 40px color-mix(in oklch, var(--fg) 12%, transparent);
+  box-shadow:
+    0 1px 2px color-mix(in oklch, black 8%, transparent),
+    0 8px 18px color-mix(in oklch, black 12%, transparent);
+}
+
+:global(html.dark) .dropdownPanel {
+  box-shadow:
+    0 1px 0 color-mix(in oklch, var(--border) 80%, transparent),
+    0 8px 18px color-mix(in oklch, black 42%, transparent);
+}
+
+.dropdownLink {
+  width: 100%;
+  justify-content: flex-start;
+  padding-block: 0.45rem;
+  padding-inline: 0.7rem;
+  border-radius: 4px;
+}
+
+.dropdownLink:hover {
+  background: var(--surface);
+  color: var(--fg);
+}
+
+:global(html.dark) .dropdownLink:hover {
+  background: var(--surface-2);
+}
+
+.dropdownOverview {
+  font-weight: 600;
+  color: var(--fg);
+}
+
+.dropdownRule {
+  height: 1px;
+  margin: 0.3rem 0.55rem;
+  padding: 0;
+  list-style: none;
+  background: var(--border);
 }
 
 .mobileDropdown .dropdownSummary {
@@ -75,7 +113,7 @@ details[open] > summary .dropdownChevron {
 .dropdownList,
 .nestedList {
   display: grid;
-  gap: 0.15rem;
+  gap: 0.1rem;
   margin: 0;
   padding: 0;
   list-style: none;
