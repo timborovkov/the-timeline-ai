@@ -7,7 +7,7 @@ import {
   createPolarBillingProvider,
 } from '@timeline/shared/billing';
 import { sendMessage } from '@timeline/shared/messaging';
-import { and, eq, lt, sql } from 'drizzle-orm';
+import { and, eq, isNull, lt, sql } from 'drizzle-orm';
 
 import { trackProductEventBestEffort } from '@/lib/analytics';
 import { selectedPlanFromCallback } from '@/lib/auth-redirect';
@@ -70,6 +70,43 @@ export async function retryOwnedTeamFreeGrantsAfterSignIn(input: {
   await claimOwnedTeamFreeGrantsForVerifiedUser({ db: input.db, userId: input.userId });
 }
 
+async function runPostEmailVerificationSideEffects(input: {
+  db: Db;
+  userId: string;
+}): Promise<void> {
+  try {
+    await claimOwnedTeamFreeGrantsForVerifiedUser({ db: input.db, userId: input.userId });
+  } catch {
+    // Email is already verified; grant claim retries on the next signed-in load.
+  }
+  try {
+    await synchronizePolarBillingUser({
+      db: input.db,
+      userId: input.userId,
+      provider: createPolarBillingProvider(),
+    });
+  } catch {
+    // Billing access retries verification + member sync before any new portal session.
+  }
+  trackProductEventBestEffort({ kind: 'user', userId: input.userId }, 'email_verified', {});
+}
+
+export async function markEmailVerifiedFromTrustedOAuth(input: {
+  db: Db;
+  userId: string;
+  now?: Date;
+}): Promise<boolean> {
+  const now = input.now ?? new Date();
+  const updated = await input.db
+    .update(users)
+    .set({ emailVerified: now, updatedAt: now })
+    .where(and(eq(users.id, input.userId), isNull(users.emailVerified)))
+    .returning({ id: users.id });
+  if (!updated[0]?.id) return false;
+  await runPostEmailVerificationSideEffects({ db: input.db, userId: input.userId });
+  return true;
+}
+
 export async function verifyEmailToken(input: {
   db: Db;
   email: string;
@@ -106,20 +143,6 @@ export async function verifyEmailToken(input: {
   });
   const userId = updated[0]?.id;
   if (!userId) return 'invalid';
-  try {
-    await claimOwnedTeamFreeGrantsForVerifiedUser({ db: input.db, userId });
-  } catch {
-    // Email is already verified; grant claim retries on the next signed-in load.
-  }
-  try {
-    await synchronizePolarBillingUser({
-      db: input.db,
-      userId,
-      provider: createPolarBillingProvider(),
-    });
-  } catch {
-    // Billing access retries verification + member sync before any new portal session.
-  }
-  trackProductEventBestEffort({ kind: 'user', userId }, 'email_verified', {});
+  await runPostEmailVerificationSideEffects({ db: input.db, userId });
   return 'verified';
 }

@@ -29,14 +29,19 @@ import {
 } from '@/lib/auth-redirect';
 import { authConfig } from '@/lib/auth.config';
 import { ensureSoloTeam } from '@/lib/default-team';
-import { sendEmailVerification } from '@/lib/email-verification';
+import { markEmailVerifiedFromTrustedOAuth, sendEmailVerification } from '@/lib/email-verification';
 import { isLegalPublicationReady } from '@/lib/legal-publication';
 import {
   authenticationMethod,
   decideOAuthSignIn,
   googleSignInAuthorizationParams,
+  isGitHubEmailVerified,
   isGoogleEmailVerified,
   oauthClientConfigured,
+  oauthCreateUserAlreadyVerified,
+  oauthProviderAssertsVerifiedEmail,
+  planOAuthCreateUserEmail,
+  readGitHubOAuthProfile,
   rememberOAuthRegistration,
   takeOAuthRegistration,
 } from '@/lib/oauth-sign-in';
@@ -105,6 +110,12 @@ if (hasGitHubAuth) {
     GitHub({
       clientId: process.env.AUTH_GITHUB_ID,
       clientSecret: process.env.AUTH_GITHUB_SECRET,
+      userinfo: {
+        url: 'https://api.github.com/user',
+        async request({ tokens }: { tokens: { access_token?: string } }) {
+          return readGitHubOAuthProfile({ accessToken: tokens.access_token ?? '' });
+        },
+      },
     }),
   );
 }
@@ -172,12 +183,14 @@ const nextAuth = NextAuth({
         if (existingByEmail) existingEmailOwnerVerified = existingByEmail.emailVerified !== null;
       }
 
+      const googleEmailVerified = isGoogleEmailVerified(profile);
+      const githubEmailVerified = isGitHubEmailVerified(profile);
       const allowed = decideOAuthSignIn({
         provider,
         alreadyLinked,
         legalPublicationReady: isLegalPublicationReady(),
         hasEmail: email.length > 0,
-        googleEmailVerified: isGoogleEmailVerified(profile),
+        googleEmailVerified,
         existingEmailOwnerVerified,
       });
       if (allowed && !alreadyLinked) {
@@ -185,6 +198,11 @@ const nextAuth = NextAuth({
           email,
           provider,
           existingEmailOwnerVerified === null ? 'new' : 'link',
+          oauthProviderAssertsVerifiedEmail({
+            provider,
+            googleEmailVerified,
+            githubEmailVerified,
+          }),
         );
       }
       return allowed;
@@ -248,15 +266,6 @@ const nextAuth = NextAuth({
       const userId = user.id;
       if (!userId) return;
       const registration = takeOAuthRegistration(user.email);
-      // Auth.js fires createUser when linking Google onto an existing verified
-      // email. That user already has a workspace; do not register them again.
-      if (registration?.kind === 'link') return;
-      const [membership] = await db
-        .select({ teamId: teamMembers.teamId })
-        .from(teamMembers)
-        .where(and(eq(teamMembers.userId, userId), isNull(teamMembers.removedAt)))
-        .limit(1);
-      if (membership) return;
       const [oauthAccount] = await db
         .select({ provider: accounts.provider })
         .from(accounts)
@@ -267,6 +276,36 @@ const nextAuth = NextAuth({
         (oauthAccount?.provider === 'google' || oauthAccount?.provider === 'github'
           ? oauthAccount.provider
           : 'github');
+      const alreadyVerified = oauthCreateUserAlreadyVerified(user);
+      const emailPlan = planOAuthCreateUserEmail({
+        kind: registration?.kind ?? null,
+        emailVerifiedByProvider: registration?.emailVerifiedByProvider ?? source === 'google',
+        alreadyVerified,
+      });
+      let stampedVerified = false;
+      if (emailPlan.stampVerified) {
+        try {
+          stampedVerified = await markEmailVerifiedFromTrustedOAuth({ db, userId });
+        } catch (err) {
+          reportCaughtError(err, {
+            surface: 'server_action',
+            operation: 'oauth_auto_verify_email',
+          });
+        }
+      }
+      const sendVerificationEmail =
+        !alreadyVerified &&
+        !stampedVerified &&
+        (emailPlan.sendVerificationEmail || emailPlan.stampVerified);
+      // Auth.js fires createUser when linking Google onto an existing verified
+      // email. That user already has a workspace; do not register them again.
+      if (registration?.kind === 'link') return;
+      const [membership] = await db
+        .select({ teamId: teamMembers.teamId })
+        .from(teamMembers)
+        .where(and(eq(teamMembers.userId, userId), isNull(teamMembers.removedAt)))
+        .limit(1);
+      if (membership) return;
       // OAuth signups that arrived via an invite link must NOT get a default
       // solo team — they'll be added to the invited team when the callback
       // lands on /accept-invite/<token>. Creating a solo team here would
@@ -331,7 +370,7 @@ const nextAuth = NextAuth({
         const teamName = teamRows[0]?.name ?? 'your team';
         trackProductEventBestEffort(actor, 'team_created', { source: 'oauth' });
         if (user.email) {
-          await Promise.all([
+          const outbound = [
             sendMessage(
               'welcome',
               {
@@ -347,19 +386,24 @@ const nextAuth = NextAuth({
                 operation: 'oauth_welcome_email',
               });
             }),
-            sendEmailVerification({
-              db,
-              userId,
-              email: user.email,
-              teamId,
-              callbackUrl: verificationCallbackUrl,
-            }).catch((err: unknown) => {
-              reportCaughtError(err, {
-                surface: 'server_action',
-                operation: 'oauth_verify_email',
-              });
-            }),
-          ]);
+          ];
+          if (sendVerificationEmail) {
+            outbound.push(
+              sendEmailVerification({
+                db,
+                userId,
+                email: user.email,
+                teamId,
+                callbackUrl: verificationCallbackUrl,
+              }).catch((err: unknown) => {
+                reportCaughtError(err, {
+                  surface: 'server_action',
+                  operation: 'oauth_verify_email',
+                });
+              }),
+            );
+          }
+          await Promise.all(outbound);
         }
       }
     },

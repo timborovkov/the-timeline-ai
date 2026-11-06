@@ -8,10 +8,16 @@ import {
   googleSignInRequestsDriveAccess,
   googleSignInScopeList,
   GOOGLE_SIGN_IN_SCOPES,
+  isGitHubEmailVerified,
   isGoogleEmailVerified,
   oauthClientConfigured,
+  oauthCreateUserAlreadyVerified,
+  oauthProviderAssertsVerifiedEmail,
   oauthSignInErrorMessage,
+  planOAuthCreateUserEmail,
+  readGitHubOAuthProfile,
   rememberOAuthRegistration,
+  selectGitHubAccountEmail,
   takeOAuthRegistration,
 } from '@/lib/oauth-sign-in';
 
@@ -66,6 +72,108 @@ describe('isGoogleEmailVerified', () => {
     expect(isGoogleEmailVerified({ email_verified: 'true' })).toBe(false);
     expect(isGoogleEmailVerified({})).toBe(false);
     expect(isGoogleEmailVerified(null)).toBe(false);
+  });
+});
+
+describe('GitHub account email', () => {
+  it('prefers a verified primary address and ignores unverified emails', () => {
+    expect(
+      selectGitHubAccountEmail([
+        { email: 'old@example.com', primary: true, verified: false },
+        { email: 'work@example.com', primary: false, verified: true },
+      ]),
+    ).toEqual({ email: 'work@example.com', verified: true });
+    expect(
+      selectGitHubAccountEmail([
+        { email: 'private@example.com', primary: true, verified: true },
+        { email: 'other@example.com', primary: false, verified: true },
+      ]),
+    ).toEqual({ email: 'private@example.com', verified: true });
+    expect(
+      selectGitHubAccountEmail([
+        { email: 'unverified@example.com', primary: true, verified: false },
+      ]),
+    ).toBeNull();
+  });
+
+  it('treats only a boolean true email_verified claim as GitHub verification', () => {
+    expect(isGitHubEmailVerified({ email_verified: true })).toBe(true);
+    expect(isGitHubEmailVerified({ email_verified: false })).toBe(false);
+    expect(isGitHubEmailVerified({ email: 'user@example.com' })).toBe(false);
+  });
+
+  it('copies a verified GitHub email onto the OAuth profile', async () => {
+    const fetchImpl = (href: string) => {
+      if (href.endsWith('/user')) {
+        return Promise.resolve(
+          new Response(JSON.stringify({ id: 1, login: 'ada', email: null }), { status: 200 }),
+        );
+      }
+      return Promise.resolve(
+        new Response(
+          JSON.stringify([{ email: 'ada@example.com', primary: true, verified: true }]),
+          { status: 200 },
+        ),
+      );
+    };
+
+    await expect(
+      readGitHubOAuthProfile({
+        accessToken: 'token',
+        userUrl: 'https://api.github.com/user',
+        emailsUrl: 'https://api.github.com/user/emails',
+        fetchImpl,
+      }),
+    ).resolves.toEqual(expect.objectContaining({ email: 'ada@example.com', email_verified: true }));
+  });
+});
+
+describe('planOAuthCreateUserEmail', () => {
+  it('stamps verified OAuth signups and skips the verification email', () => {
+    expect(
+      planOAuthCreateUserEmail({
+        kind: 'new',
+        emailVerifiedByProvider: true,
+        alreadyVerified: false,
+      }),
+    ).toEqual({ stampVerified: true, sendVerificationEmail: false });
+    expect(
+      planOAuthCreateUserEmail({
+        kind: 'new',
+        emailVerifiedByProvider: false,
+        alreadyVerified: false,
+      }),
+    ).toEqual({ stampVerified: false, sendVerificationEmail: true });
+  });
+
+  it('does not unverify a linked Timeline account or send another token email', () => {
+    expect(
+      planOAuthCreateUserEmail({
+        kind: 'link',
+        emailVerifiedByProvider: true,
+        alreadyVerified: true,
+      }),
+    ).toEqual({ stampVerified: false, sendVerificationEmail: false });
+    expect(
+      planOAuthCreateUserEmail({
+        kind: 'link',
+        emailVerifiedByProvider: true,
+        alreadyVerified: false,
+      }),
+    ).toEqual({ stampVerified: true, sendVerificationEmail: false });
+  });
+
+  it('leaves credentials-style unverified signups on the token path', () => {
+    expect(oauthCreateUserAlreadyVerified({ emailVerified: null })).toBe(false);
+    expect(oauthCreateUserAlreadyVerified({ emailVerified: new Date() })).toBe(true);
+    expect(oauthProviderAssertsVerifiedEmail({ provider: 'credentials' })).toBe(false);
+    expect(
+      planOAuthCreateUserEmail({
+        kind: null,
+        emailVerifiedByProvider: false,
+        alreadyVerified: false,
+      }),
+    ).toEqual({ stampVerified: false, sendVerificationEmail: true });
   });
 });
 
@@ -196,15 +304,20 @@ describe('decideOAuthSignIn', () => {
 
 describe('pending OAuth registration source', () => {
   it('records and consumes provider plus new-versus-link kind by email', () => {
-    rememberOAuthRegistration('Ada@Example.com', 'google', 'new');
+    rememberOAuthRegistration('Ada@Example.com', 'google', 'new', true);
     expect(takeOAuthRegistration('ada@example.com')).toEqual({
       provider: 'google',
       kind: 'new',
+      emailVerifiedByProvider: true,
     });
     expect(takeOAuthRegistration('ada@example.com')).toBeNull();
 
-    rememberOAuthRegistration('owner@example.com', 'google', 'link');
-    expect(takeOAuthRegistration('owner@example.com')?.kind).toBe('link');
+    rememberOAuthRegistration('owner@example.com', 'google', 'link', true);
+    expect(takeOAuthRegistration('owner@example.com')).toEqual({
+      provider: 'google',
+      kind: 'link',
+      emailVerifiedByProvider: true,
+    });
   });
 });
 

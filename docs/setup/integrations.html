@@ -94,7 +94,11 @@
         may attach to an existing Timeline user only when Google asserts a verified email
         <em>and</em> that Timeline email is already verified. Unverified emails are never linked
         automatically. New Google users and workspaces follow the same first-time OAuth path as
-        GitHub (solo team, welcome and verification email, invite cookie, publication gate).
+        GitHub (solo team, welcome email, invite cookie, publication gate). When Google asserts
+        <code>email_verified</code>, Timeline stamps <code>users.emailVerified</code> and skips the
+        verification-email token. Credentials sign-up still requires that token. The same stamp
+        unlocks the person-level Free grant. GitHub sign-up does the same when GitHub provides a
+        verified primary (or other verified) email.
       </p>
       <p>
         Add both production redirect URIs on the shared client:
