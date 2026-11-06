@@ -91,6 +91,9 @@ describe('PublicShell', () => {
     expect(html).not.toContain('href="/integrations/jira"');
     expect(html).not.toContain('href="/integrations/notion"');
     expect(html).toContain('The Timeline vs Day AI');
+    expect(html).toContain('The Timeline vs Suda');
+    expect(html).toContain('The Timeline vs MemoryCrow');
+    expect(html).toContain('The Timeline vs Achiral');
     expect(html).not.toContain('HubSpot · Coming soon');
     expect(html).not.toContain('Attio · Coming soon');
     expect(html).not.toContain('Pipedrive · Coming soon');

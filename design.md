@@ -1010,10 +1010,11 @@ on the integrations hub cards and their pages, not in the header dropdown or
 footer Integrations column. How it works, Help, Trust, and head-to-head Compare
 pages remain in the footer. The footer is columnar: Product, Use cases,
 Integrations, Compare, and Legal. `/compare` is a thin hub for head-to-head
-pages versus Day AI, Folk, Glean, and Geekbot. Those pages keep the honest “vs”
-framing and also target “[competitor] alternatives” on the existing URLs rather
-than extra doorway routes; every competitor fact cites and links that
-competitor's own site.
+pages versus Day AI, Folk, Glean, Geekbot, Suda, MemoryCrow, and Achiral. Those
+pages keep the honest “vs” framing and also target “[competitor] alternatives”
+on the existing URLs rather than extra doorway routes; every competitor fact
+cites and links that competitor's own site. Notion stays under Integrations,
+never as a vs page.
 Works-with pages live under `/integrations` (Linear, Jira, Notion, HubSpot,
 Attio, Pipedrive), not under Compare: Linear has native ingest, Jira and Notion
 explain hosted MCP lookup and link to `/integrations/mcp`, and HubSpot, Attio,
@@ -1399,6 +1400,7 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-11-06 | Public mobile nav chevrons | Expandable Use cases and Integrations rows point down when collapsed and up when expanded. The mobile Menu overlay does not invert those chevrons. |
 | 2026-11-06 | Agents as teammates | Landing and `/agents` treat agents as teammates who read the cited work record and write notes back. The setup card keeps the llms.txt command. `/agents` splits report-in (remember / email / webhook) from read-out (hosted MCP tools) and labels the Grok Bot progress-note as an illustrative example. |
 | 2026-11-06 | Compare alternatives SEO | Existing `/compare/the-timeline-vs-{day-ai,folk,glean,geekbot}` pages keep the vs H1 and add “[competitor] alternatives” to SEO title, meta description, and intro. The hub names those alternative queries without extra URLs. |
+| 2026-11-06 | Company-brain compare pages | Adds `/compare/the-timeline-vs-{suda,memorycrow,achiral}` with the same vs H1 and “[competitor] alternatives” SEO. Footer Compare column lists them; header stays Integrations-only for Notion. |
 | 2026-11-06 | Product-tour mobile frames | `/product-tour` mobile portrait shots (`*-mobile.png`) use a 390×844 contain frame instead of the landscape 16×10 top crop, so Ask recap citations stay visible. |
 
 

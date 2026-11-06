@@ -26,6 +26,9 @@ export const COMPARE_NAV_ITEMS = [
   { href: '/compare/the-timeline-vs-folk', label: 'The Timeline vs Folk' },
   { href: '/compare/the-timeline-vs-glean', label: 'The Timeline vs Glean' },
   { href: '/compare/the-timeline-vs-geekbot', label: 'The Timeline vs Geekbot' },
+  { href: '/compare/the-timeline-vs-suda', label: 'The Timeline vs Suda' },
+  { href: '/compare/the-timeline-vs-memorycrow', label: 'The Timeline vs MemoryCrow' },
+  { href: '/compare/the-timeline-vs-achiral', label: 'The Timeline vs Achiral' },
 ] as const;
 
 const NATIVE_AND_CAPTURE_NAV_ITEMS = [
