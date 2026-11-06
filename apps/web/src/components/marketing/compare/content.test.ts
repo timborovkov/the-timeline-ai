@@ -36,6 +36,21 @@ describe('compare content', () => {
     }
   });
 
+  it('targets competitor-alternatives queries on existing vs URLs without changing the H1', () => {
+    expect(COMPARE_HUB.seoDescription.toLowerCase()).toContain('alternatives');
+    expect(COMPARE_HUB.summary.toLowerCase()).toContain('alternatives');
+    expect(new Set(COMPARE_PAGES.map((page) => page.seoTitle)).size).toBe(COMPARE_PAGES.length);
+
+    for (const page of COMPARE_PAGES) {
+      const alternative = `${page.name} alternative`;
+      expect(page.title).toBe(`The Timeline vs ${page.name}`);
+      expect(page.navLabel).toBe(`The Timeline vs ${page.name}`);
+      expect(page.seoTitle).toBe(`${page.name} alternatives: The Timeline vs ${page.name}`);
+      expect(page.seoDescription.toLowerCase()).toContain(`${alternative.toLowerCase()}s`);
+      expect(page.summary.toLowerCase()).toContain(alternative.toLowerCase());
+    }
+  });
+
   it('cites every competitor fact to that competitor’s own site', () => {
     for (const page of COMPARE_PAGES) {
       expect(page.facts.length).toBeGreaterThan(0);

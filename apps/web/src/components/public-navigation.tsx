@@ -182,12 +182,12 @@ function NavDropdown({
 
   return (
     <li className={nested ? styles.mobileDropdown : styles.dropdown}>
-      <details ref={detailsRef} className="group">
+      <details ref={detailsRef}>
         <summary
           className={cn(styles.dropdownSummary, itemClassName, active && activeItemClassName)}
         >
           {label}
-          <ChevronDown aria-hidden="true" className="size-3.5 opacity-70 group-open:rotate-180" />
+          <ChevronDown aria-hidden="true" className={styles.dropdownChevron} />
         </summary>
         <div className={styles.dropdownPanel}>
           <ul className={styles.dropdownList}>
@@ -384,7 +384,7 @@ export function PublicNavigationDisclosure({
   }, [pathname]);
 
   return (
-    <details ref={disclosureRef} className={cn('group relative', className)}>
+    <details ref={disclosureRef} className={cn('relative', className)}>
       <summary className="flex min-h-11 cursor-pointer list-none items-center gap-2 rounded-sm border border-border bg-bg px-3 text-sm font-medium text-fg outline-none hover:bg-surface focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-bg [&::-webkit-details-marker]:hidden">
         <Menu aria-hidden="true" className="size-4" />
         <span>Menu</span>
