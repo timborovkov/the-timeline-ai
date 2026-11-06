@@ -998,18 +998,23 @@ complete static story.
 
 The public header stays uncluttered: Product, Use cases, Integrations, Agents,
 and Pricing. Use cases and Integrations are `details` dropdowns on desktop and
-in the mobile menu. The Integrations dropdown is the hub plus works-with pages
-only; each child is labelled for what ships today (native sync, MCP lookup, or
-coming soon) so a planned connector is never implied as live. How it works,
-Help, Trust, and head-to-head Compare pages remain in the footer. The footer is
-columnar: Product, Use cases, Integrations, Compare, and Legal. `/compare` is a
-thin hub for head-to-head pages versus Day AI, Folk, Glean, and Geekbot; every
-competitor fact on those pages cites and links that competitor's own site.
-Works-with pages live under `/integrations` (Linear, Jira, Notion, HubSpot,
-Attio, Pipedrive), not under Compare: Linear has native ingest, Jira and Notion
-are hosted MCP lookup, and HubSpot, Attio, and Pipedrive native ingest is
-coming soon. Retired `/compare/{hubspot,jira,linear,notion}` URLs
-permanent-redirect to the matching integrations page.
+in the mobile menu. The Integrations dropdown is the hub, then Slack and
+Telegram, then works-with pages. Each child is labelled for what ships today
+(native sync, capture, MCP lookup, or coming soon) so a planned connector is
+never implied as live and Telegram is never implied as passive account-history
+sync. How it works, Help, Trust, and head-to-head Compare pages remain in the
+footer. The footer is columnar: Product, Use cases, Integrations, Compare, and
+Legal. `/compare` is a thin hub for head-to-head pages versus Day AI, Folk,
+Glean, and Geekbot; every competitor fact on those pages cites and links that
+competitor's own site. Slack (`/integrations/slack`) is native channel-history
+sync on the same Slack app that also handles conversational capture. Telegram
+(`/integrations/telegram`) is deliberate capture from a linked DM or group.
+Works-with pages also live under `/integrations` (Linear, Jira, Notion,
+HubSpot, Attio, Pipedrive), not under Compare: Linear has native ingest, Jira
+and Notion are hosted MCP lookup, and HubSpot, Attio, and Pipedrive native
+ingest is coming soon. GitHub and Google Drive keep dedicated hub cards rather
+than joining this short nav list. Retired `/compare/{hubspot,jira,linear,notion}`
+URLs permanent-redirect to the matching integrations page.
 
 Use-case pages extend this story for six jobs from one record: work record,
 team daily log, communication trail, CRM, task board, and onboarding and repeat
@@ -1383,6 +1388,7 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-11-04 | Agent setup card marks | Replaces letter discs with official agent logos on white tiles, one short lede, and a single logo row on the landing and `/agents` cards. |
 | 2026-11-04 | Public monthly calculator | `/pricing` Usage compares PAYG, Team, and Business from paired sliders and exact fields. One hairline results panel, 12px metadata, and the shared billing preview. |
 | 2026-11-06 | Public nav IA | Header is Product, Use cases, Integrations, Agents, Pricing. Integrations dropdown is works-with only, with live vs coming-soon labels. Footer becomes Product / Use cases / Integrations / Compare / Legal columns. `/compare` is a thin vs-only hub. |
+| 2026-11-06 | Integrations chat nav | Integrations dropdown and footer prepend Slack (`Native sync`) and Telegram (`Capture`) ahead of works-with pages. Drive and GitHub stay on the hub. |
 | 2026-11-06 | Agents as teammates | Landing and `/agents` treat agents as teammates who read the cited work record and write notes back. The setup card keeps the llms.txt command. `/agents` splits report-in (remember / email / webhook) from read-out (hosted MCP tools) and labels the Grok Bot progress-note as an illustrative example. |
 
 

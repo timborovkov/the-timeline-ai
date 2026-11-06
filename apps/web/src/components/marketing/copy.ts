@@ -1,3 +1,5 @@
+import { findConnector } from '@/components/marketing/integrations/connector-content';
+import { TELEGRAM_PAGE } from '@/components/marketing/integrations/telegram-content';
 import { WORKS_WITH_TOOLS } from '@/components/marketing/integrations/works-with-content';
 
 export const START_FREE_LABEL = 'Start free';
@@ -28,12 +30,35 @@ export const COMPARE_NAV_ITEMS = [
   { href: '/compare/the-timeline-vs-geekbot', label: 'The Timeline vs Geekbot' },
 ] as const;
 
-export const INTEGRATION_NAV_ITEMS = WORKS_WITH_TOOLS.map((tool) => ({
-  href: tool.route,
-  label: tool.name,
-  statusLabel: tool.statusLabel,
-  status: tool.status,
-}));
+const slackConnector = findConnector('slack');
+if (!slackConnector) {
+  throw new Error('Slack connector content is required for public navigation');
+}
+
+const PRIMARY_CHAT_NAV_ITEMS = [
+  {
+    href: `/integrations/${slackConnector.slug}` as const,
+    label: slackConnector.name,
+    statusLabel: 'Native sync' as const,
+    status: 'native-sync' as const,
+  },
+  {
+    href: TELEGRAM_PAGE.route,
+    label: 'Telegram',
+    statusLabel: 'Capture' as const,
+    status: 'capture' as const,
+  },
+];
+
+export const INTEGRATION_NAV_ITEMS = [
+  ...PRIMARY_CHAT_NAV_ITEMS,
+  ...WORKS_WITH_TOOLS.map((tool) => ({
+    href: tool.route,
+    label: tool.name,
+    statusLabel: tool.statusLabel,
+    status: tool.status,
+  })),
+];
 
 export function publicNavItemLabel(item: { label: string; statusLabel?: string }): string {
   return item.statusLabel ? `${item.label} · ${item.statusLabel}` : item.label;

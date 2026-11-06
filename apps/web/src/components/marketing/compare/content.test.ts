@@ -21,11 +21,19 @@ describe('compare content', () => {
     expect(COMPARE_NAV_ITEMS.map((item) => item.href)).toEqual(
       COMPARE_PAGES.map((page) => page.route),
     );
-    expect(INTEGRATION_NAV_ITEMS.map((item) => item.href)).toEqual(
-      WORKS_WITH_TOOLS.map((tool) => tool.route),
-    );
-    expect(INTEGRATION_NAV_ITEMS.map((item) => `${item.label} · ${item.statusLabel}`)).toEqual(
-      WORKS_WITH_TOOLS.map((tool) => `${tool.name} · ${tool.statusLabel}`),
+    expect(INTEGRATION_NAV_ITEMS.map((item) => item.href)).toEqual([
+      '/integrations/slack',
+      '/integrations/telegram',
+      ...WORKS_WITH_TOOLS.map((tool) => tool.route),
+    ]);
+    expect(INTEGRATION_NAV_ITEMS.map((item) => `${item.label} · ${item.statusLabel}`)).toEqual([
+      'Slack · Native sync',
+      'Telegram · Capture',
+      ...WORKS_WITH_TOOLS.map((tool) => `${tool.name} · ${tool.statusLabel}`),
+    ]);
+    expect(INTEGRATION_NAV_ITEMS.map((item) => item.href)).not.toContain('/integrations/github');
+    expect(INTEGRATION_NAV_ITEMS.map((item) => item.href)).not.toContain(
+      '/integrations/google-drive',
     );
 
     expect(LEGACY_COMPARE_REDIRECTS).toEqual({
