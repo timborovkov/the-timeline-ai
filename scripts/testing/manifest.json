@@ -1043,6 +1043,9 @@
   "apps/web/src/components/team-setup-checklist-chip.test.tsx": {
     "group": "dom"
   },
+  "apps/web/src/components/team-support-metadata.test.tsx": {
+    "group": "dom"
+  },
   "apps/web/src/components/team-switcher.test.tsx": {
     "group": "dom"
   },
