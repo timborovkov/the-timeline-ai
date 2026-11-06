@@ -1931,6 +1931,9 @@
   "packages/shared/src/mcp-server/outbound.test.ts": {
     "group": "integration"
   },
+  "packages/shared/src/mcp-server/reporting.test.ts": {
+    "group": "integration"
+  },
   "packages/shared/src/mcp-server/shipped-install-content.test.ts": {
     "group": "unit"
   },

@@ -1459,3 +1459,7 @@ Advanced usage with their value visible when closed. Metadata stays at the 12px
 floor. Rates and workspace eligibility remain in the closed How this estimate
 works disclosure. Inputs stay local; the calculator neither changes billing nor
 collects telemetry.
+
+### Coworker account and reporting controls
+
+Connect your agent includes workspace reporting defaults and connection-specific overrides, with explicit on-request/meaningful-handoffs modes and a required ongoing work scope. Account → Agent provisioning shows grant expiry, allowance, capture permission, usage and audit history. Credentials appear once; revocation clearly leaves created workspaces and their independently managed connections intact.

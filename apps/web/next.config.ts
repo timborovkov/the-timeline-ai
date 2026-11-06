@@ -15,6 +15,7 @@ const nextConfig: NextConfig = {
   },
   outputFileTracingRoot: workspaceRoot,
   outputFileTracingIncludes: {
+    '/app/connect-agent/skill': ['../../plugins/timeline/skills/timeline/SKILL.md'],
     '/agents/[doc]': ['../../plugins/timeline/skills/timeline/SKILL.md'],
   },
   turbopack: {

@@ -260,7 +260,7 @@ export const HELP_PAGES: HelpPage[] = [
       },
       {
         title: 'Use Timeline from an agent',
-        body: 'External agents connect through Timeline’s hosted MCP endpoint. Codex and Claude Code can install the Timeline plugin using the instructions below. Other MCP-compatible clients can connect directly. Give an agent https://thetimeline.cc/agents/setup.md.',
+        body: 'External agents connect through Timeline’s hosted MCP endpoint. Codex and Claude Code can install the Timeline plugin using the instructions below. Other MCP-compatible clients can connect directly. Give an agent https://thetimeline.cc/agents/setup.md. Already-connected agents read their connection context and follow the canonical coworker skill. Owners/admins choose on-request or scoped handoff reporting in Connect your agent; capture permission remains separate. Verified owners can create limited provisioning grants from the account menu for unattended creation of new workspaces.',
         items: [
           'The default path uses browser-based OAuth: sign in, choose a team, review the requested scopes, and approve or deny access.',
           'Codex and Claude Code users can install the full plugin from this repository. Other compatible clients can connect to the same production URL directly.',

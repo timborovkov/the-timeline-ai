@@ -715,6 +715,13 @@
       "when": 1795656400000,
       "tag": "0098_agent_provisioning",
       "breakpoints": true
+    },
+    {
+      "idx": 102,
+      "version": "7",
+      "when": 1795656460000,
+      "tag": "0099_agent_reporting",
+      "breakpoints": true
     }
   ]
 }

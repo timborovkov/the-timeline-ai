@@ -6,10 +6,10 @@ import { expect } from '@timeline/test-support';
 import { describe, it } from 'bun:test';
 
 import { TIMELINE_PLUGIN_INSTALL_PROMPT } from '@/lib/agent-install-content';
+import { readTimelineSkillMarkdown } from '@/lib/agent-setup-skill';
 import {
   CONNECT_AGENT_GUIDES,
   CONNECT_AGENT_SETUP_PROMPT,
-  CONNECT_AGENT_SKILL_MARKDOWN,
   TIMELINE_MCP_TOOLS,
   chatGptConnectorDetails,
   connectAgentTeamPrompt,
@@ -38,11 +38,11 @@ describe('connect-agent content', () => {
       'timeline.remember',
     ]);
     expect([...TIMELINE_MCP_TOOLS].sort()).toEqual([...ADVERTISED_MCP_TOOL_NAMES].sort());
-    expect(CONNECT_AGENT_SKILL_MARKDOWN).toContain('timeline.search');
-    expect(CONNECT_AGENT_SKILL_MARKDOWN).toContain('timeline.remember');
-    expect(CONNECT_AGENT_SKILL_MARKDOWN).toContain('capture');
-    expect(CONNECT_AGENT_SKILL_MARKDOWN).toContain('include capture by default');
-    expect(CONNECT_AGENT_SKILL_MARKDOWN).not.toContain('timeline.ask_agent');
+    expect(readTimelineSkillMarkdown()).toContain('timeline.search');
+    expect(readTimelineSkillMarkdown()).toContain('timeline.remember');
+    expect(readTimelineSkillMarkdown()).toContain('capture');
+    expect(readTimelineSkillMarkdown()).toContain('capture');
+    expect(readTimelineSkillMarkdown()).not.toContain('timeline.ask_agent');
     expect(mcpScopeLabel('capture')).toBe('Remember');
   });
 

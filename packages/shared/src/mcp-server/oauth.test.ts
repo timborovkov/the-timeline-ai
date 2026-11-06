@@ -583,6 +583,12 @@ describe('Timeline MCP OAuth server', () => {
       resource: RESOURCE,
       expectedResource: RESOURCE,
     });
+    const originalPrincipal = await resolveMcpBearer(db, first.access_token);
+    if (!originalPrincipal) throw new Error('Missing authorized principal');
+    await withTeam(db, TEAM_ID, USER_ID).agentReporting.update(
+      { type: 'oauth', id: originalPrincipal.keyId },
+      { mode: 'handoffs', scope: 'Reauthorization project' },
+    );
     const rotated = await rotateMcpRefreshToken(db, {
       refreshToken: first.refresh_token,
       clientId: client.client_id,
@@ -605,6 +611,15 @@ describe('Timeline MCP OAuth server', () => {
       expectedResource: RESOURCE,
     });
 
+    const resumedPrincipal = await resolveMcpBearer(db, reauthorized.access_token);
+    if (!resumedPrincipal) throw new Error('Missing reauthorized principal');
+    expect(resumedPrincipal.keyId).toBe(originalPrincipal.keyId);
+    expect(
+      await withTeam(db, TEAM_ID, USER_ID).agentReporting.current(resumedPrincipal),
+    ).toMatchObject({
+      reporting: { mode: 'handoffs', scope: 'Reauthorization project' },
+      scopes: ['read'],
+    });
     await expect(
       rotateMcpRefreshToken(db, {
         refreshToken: first.refresh_token,
