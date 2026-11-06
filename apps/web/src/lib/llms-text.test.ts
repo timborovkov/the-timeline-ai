@@ -44,6 +44,12 @@ describe('llms text files', () => {
     expect(text).toContain('[Cookies and similar technologies](https://thetimeline.cc/cookies)');
     expect(text).toContain('[llms-full.txt](https://thetimeline.cc/llms-full.txt)');
     expect(text).toContain('Set up The Timeline - https://thetimeline.cc/llms.txt');
+    expect(text).toContain(
+      'Give your agents the work record — and let them write back like teammates.',
+    );
+    expect(text).toContain('## Report in');
+    expect(text).toContain('## Read out');
+    expect(text).toContain('not a dedicated Grok Bot product');
     expect(text).toContain('https://thetimeline.cc/api/mcp/server');
     expect(text).toContain(
       'timeline.search, timeline.get, timeline.subject, timeline.ask, timeline.remember',

@@ -1,6 +1,7 @@
 import Link from 'next/link';
 
 import { AgentSetupCard } from '@/components/marketing/agents/agent-setup-card';
+import { AGENTS_HUB } from '@/components/marketing/agents/content';
 import { AGENTS_HUB_DOCUMENT } from '@/components/marketing/agents/public-documents';
 import { EditorialKicker } from '@/components/marketing/editorial/editorial-kicker';
 import { EditorialStructuredData } from '@/components/marketing/editorial/editorial-structured-data';
@@ -8,7 +9,7 @@ import styles from '@/components/marketing/editorial/editorial.module.css';
 import { MarketingContainer, MarketingSectionGrid } from '@/components/marketing/marketing-layout';
 import { MarketingSectionIndex } from '@/components/marketing/section-index';
 import { MarketingCtaBand } from '@/components/marketing/start-free-cta';
-import { TIMELINE_HOSTED_MCP_TOOLS_LIST, TIMELINE_MCP_COMMAND } from '@/lib/agent-install-content';
+import { TIMELINE_MCP_COMMAND } from '@/lib/agent-install-content';
 import { buildPublicStructuredData } from '@/lib/public-site';
 import { getSiteUrl } from '@/lib/site-url';
 
@@ -20,11 +21,10 @@ export function AgentsHubPage() {
       />
       <header className="border-b border-border">
         <MarketingContainer className="py-16 sm:py-24 lg:py-28">
-          <EditorialKicker>Agents</EditorialKicker>
-          <h1 className={`${styles.displayTitle} mt-6`}>Give this to your agent.</h1>
+          <EditorialKicker>{AGENTS_HUB.kicker}</EditorialKicker>
+          <h1 className={`${styles.displayTitle} mt-6`}>{AGENTS_HUB.title}</h1>
           <p className="mt-7 max-w-2xl text-lg leading-8 text-fg-muted sm:text-xl">
-            One line sets up The Timeline for Claude, ChatGPT, Cursor, Grok, OpenClaw or Hermes. The
-            public file covers the MCP server, OAuth, ingest email, webhooks and the timeline skill.
+            {AGENTS_HUB.summary}
           </p>
           <div className="mt-10 max-w-3xl">
             <AgentSetupCard />
@@ -32,64 +32,88 @@ export function AgentsHubPage() {
         </MarketingContainer>
       </header>
 
-      <section className="border-b border-border">
+      <section className="border-b border-border" aria-labelledby="report-in-title">
         <MarketingContainer className="py-16 sm:py-20">
           <MarketingSectionGrid>
-            <MarketingSectionIndex index="01" label="Connect" />
+            <MarketingSectionIndex
+              index={AGENTS_HUB.reportIn.index}
+              label={AGENTS_HUB.reportIn.label}
+            />
             <div className="max-w-3xl">
-              <h2 className="text-3xl font-semibold tracking-tight sm:text-4xl">
-                Hosted MCP, then your sources.
+              <h2
+                id="report-in-title"
+                className="text-3xl font-semibold tracking-tight sm:text-4xl"
+              >
+                {AGENTS_HUB.reportIn.title}
+              </h2>
+              <p className="mt-4 text-base leading-7 text-fg-muted">{AGENTS_HUB.reportIn.body}</p>
+              <ul className="mt-6 list-disc space-y-3 pl-5 text-base leading-7 text-fg-muted">
+                {AGENTS_HUB.reportIn.paths.map((path) => (
+                  <li key={path.name}>
+                    {path.name.includes('.') ? (
+                      <code className="font-mono text-sm text-fg">{path.name}</code>
+                    ) : (
+                      <span className="font-medium text-fg">{path.name}</span>
+                    )}
+                    {` ${path.body}`}
+                  </li>
+                ))}
+              </ul>
+              <aside
+                className={`${styles.promptBlock} mt-10 rounded-md p-6 sm:p-8`}
+                aria-label={AGENTS_HUB.example.label}
+              >
+                <div className="relative z-10">
+                  <p className="font-mono text-[0.68rem] tracking-[0.14em] text-signal uppercase">
+                    {AGENTS_HUB.example.label}
+                  </p>
+                  <h3 className="mt-4 text-xl font-semibold tracking-[-0.025em] sm:text-2xl">
+                    {AGENTS_HUB.example.title}
+                  </h3>
+                  <p className="mt-4 text-sm leading-7 text-fg-muted sm:text-base">
+                    {AGENTS_HUB.example.body}
+                  </p>
+                  <p className="mt-6 border-t border-border pt-5 font-mono text-[0.65rem] leading-5 text-fg-muted">
+                    {AGENTS_HUB.example.boundary}
+                  </p>
+                </div>
+              </aside>
+            </div>
+          </MarketingSectionGrid>
+        </MarketingContainer>
+      </section>
+
+      <section className="border-b border-border" aria-labelledby="read-out-title">
+        <MarketingContainer className="py-16 sm:py-20">
+          <MarketingSectionGrid>
+            <MarketingSectionIndex
+              index={AGENTS_HUB.readOut.index}
+              label={AGENTS_HUB.readOut.label}
+            />
+            <div className="max-w-3xl">
+              <h2 id="read-out-title" className="text-3xl font-semibold tracking-tight sm:text-4xl">
+                {AGENTS_HUB.readOut.title}
               </h2>
               <p className="mt-4 text-base leading-7 text-fg-muted">
                 Compatible clients open{' '}
-                <code className="font-mono text-sm text-fg">
-                  https://thetimeline.cc/api/mcp/server
-                </code>
-                . Sign in, choose a team, and approve scopes in the browser. Static team keys (
-                <code className="font-mono text-sm">tla_</code>) are a manual fallback and see
-                team-visible data only.
+                <code className="font-mono text-sm text-fg">{AGENTS_HUB.readOut.endpoint}</code>.{' '}
+                {AGENTS_HUB.readOut.body}
               </p>
               <pre className="mt-6 overflow-x-auto rounded-md border border-border bg-surface p-4 font-mono text-xs leading-6">
                 {TIMELINE_MCP_COMMAND}
               </pre>
               <ul className="mt-6 list-disc space-y-3 pl-5 text-base leading-7 text-fg-muted">
-                <li>
-                  The hosted server advertises five tools:{' '}
-                  <code className="font-mono text-sm text-fg">
-                    {TIMELINE_HOSTED_MCP_TOOLS_LIST}
-                  </code>
-                  .
-                </li>
-                <li>
-                  OAuth consent has a separate capture checkbox, on by default, so{' '}
-                  <code className="font-mono text-sm text-fg">timeline.remember</code> can store a
-                  cited note. Uncheck it for a read-only grant.{' '}
-                  <code className="font-mono text-sm text-fg">timeline.ask</code> needs a separate
-                  owner or admin <code className="font-mono text-sm text-fg">agent:ask</code> scope.
-                </li>
-                <li>
-                  Remember notes use the same ingest path as other accepted sources, so they count
-                  toward the Free plan accepted-sources meter. They never change canonical records.
-                </li>
-                <li>
-                  The Timeline skill lives in{' '}
-                  <code className="font-mono text-sm text-fg">plugins/timeline</code> and is bundled
-                  for Codex and Claude Code.
-                </li>
-                <li>
-                  Forward, CC or BCC mail to the team inbound address to capture email.
-                  Authenticated{' '}
-                  <code className="font-mono text-sm text-fg">POST /api/webhooks/ingest</code>{' '}
-                  accepts a <code className="font-mono text-sm">tli_</code> bearer key or a one-time
-                  URL.
-                </li>
+                <li>{AGENTS_HUB.readOut.toolsIntro}</li>
+                {AGENTS_HUB.readOut.facts.map((fact) => (
+                  <li key={fact}>{fact}</li>
+                ))}
               </ul>
               <p className="mt-6">
                 <Link
-                  href="/help/agents"
+                  href={AGENTS_HUB.installGuide.href}
                   className="rounded-sm font-medium text-fg underline decoration-border-strong underline-offset-4 outline-none hover:decoration-fg focus-visible:ring-2 focus-visible:ring-ring"
                 >
-                  Full agent install guide
+                  {AGENTS_HUB.installGuide.label}
                 </Link>
               </p>
             </div>
@@ -97,10 +121,7 @@ export function AgentsHubPage() {
         </MarketingContainer>
       </section>
 
-      <MarketingCtaBand
-        title="Start free, then connect an agent."
-        body="Create a workspace, capture one channel or a few emails, and let the agent read the same cited record."
-      />
+      <MarketingCtaBand title={AGENTS_HUB.cta.title} body={AGENTS_HUB.cta.body} />
     </main>
   );
 }
