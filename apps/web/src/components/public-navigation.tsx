@@ -9,7 +9,6 @@ import {
   COMPARE_NAV_ITEMS,
   INTEGRATION_NAV_ITEMS,
   USE_CASE_NAV_ITEMS,
-  publicNavItemLabel,
 } from '@/components/marketing/copy';
 import styles from '@/components/public-navigation.module.css';
 import { PublicSessionBranch } from '@/components/public-session-branch';
@@ -70,7 +69,7 @@ export type PublicNavigationSection =
 interface NavChild {
   href: string;
   label: string;
-  statusLabel?: string;
+  group?: 'agent-tools';
 }
 
 interface PublicNavigationItemsProps {
@@ -195,24 +194,39 @@ function NavDropdown({
               <Link
                 href={href}
                 aria-current={pathname === href ? 'page' : undefined}
-                className={cn(itemClassName, 'w-full')}
+                className={cn(styles.dropdownLink, styles.dropdownOverview, itemClassName)}
                 data-public-analytics-cta={analyticsCta}
                 onClick={onNavigate}
               >
                 {overviewLabel}
               </Link>
             </li>
-            {childrenItems.map((child) => (
-              <li key={child.href}>
-                <Link
-                  href={child.href}
-                  className={cn(itemClassName, 'w-full')}
-                  onClick={onNavigate}
-                >
-                  {publicNavItemLabel(child)}
-                </Link>
-              </li>
-            ))}
+            <li role="separator" className={styles.dropdownRule} />
+            {childrenItems.flatMap((child, index) => {
+              const previous = childrenItems[index - 1];
+              const items = [];
+              if (child.group && child.group !== previous?.group) {
+                items.push(
+                  <li
+                    key={`${child.href}-rule`}
+                    role="separator"
+                    className={styles.dropdownRule}
+                  />,
+                );
+              }
+              items.push(
+                <li key={child.href}>
+                  <Link
+                    href={child.href}
+                    className={cn(styles.dropdownLink, itemClassName)}
+                    onClick={onNavigate}
+                  >
+                    {child.label}
+                  </Link>
+                </li>,
+              );
+              return items;
+            })}
           </ul>
         </div>
       </details>
@@ -296,7 +310,7 @@ export function PublicFooterColumns({
             <li key={item.href}>
               <FooterNavLink
                 href={item.href}
-                label={publicNavItemLabel(item)}
+                label={item.label}
                 itemClassName={itemClassName}
                 activeItemClassName={activeItemClassName}
               />

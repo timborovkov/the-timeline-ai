@@ -112,30 +112,34 @@ describe('Header navigation', () => {
     expect(screen.getByRole('link', { name: 'Integrations hub' }).getAttribute('href')).toBe(
       '/integrations',
     );
-    expect(screen.getByRole('link', { name: 'Slack · Native sync' }).getAttribute('href')).toBe(
+    expect(screen.getByRole('link', { name: 'Slack' }).getAttribute('href')).toBe(
       '/integrations/slack',
     );
-    expect(screen.getByRole('link', { name: 'Telegram · Capture' }).getAttribute('href')).toBe(
+    expect(screen.getByRole('link', { name: 'Telegram' }).getAttribute('href')).toBe(
       '/integrations/telegram',
     );
-    expect(
-      screen.getByRole('link', { name: 'Google Drive · Native sync' }).getAttribute('href'),
-    ).toBe('/integrations/google-drive');
-    expect(screen.getByRole('link', { name: 'GitHub · Native sync' }).getAttribute('href')).toBe(
+    expect(screen.getByRole('link', { name: 'Google Drive' }).getAttribute('href')).toBe(
+      '/integrations/google-drive',
+    );
+    expect(screen.getByRole('link', { name: 'GitHub' }).getAttribute('href')).toBe(
       '/integrations/github',
     );
-    expect(screen.getByRole('link', { name: 'Linear · Native sync' }).getAttribute('href')).toBe(
+    expect(screen.getByRole('link', { name: 'Linear' }).getAttribute('href')).toBe(
       '/integrations/linear',
     );
-    expect(
-      screen.getByRole('link', { name: 'Monday.com · Native sync' }).getAttribute('href'),
-    ).toBe('/integrations/monday');
-    expect(screen.getByRole('link', { name: 'Jira · MCP lookup' }).getAttribute('href')).toBe(
-      '/integrations/jira',
+    expect(screen.getByRole('link', { name: 'Monday.com' }).getAttribute('href')).toBe(
+      '/integrations/monday',
     );
-    expect(screen.getByRole('link', { name: 'Notion · MCP lookup' }).getAttribute('href')).toBe(
-      '/integrations/notion',
+    expect(screen.getByRole('link', { name: 'Sentry' }).getAttribute('href')).toBe(
+      '/integrations/sentry',
     );
+    expect(screen.getByRole('link', { name: 'Connect MCP tools' }).getAttribute('href')).toBe(
+      '/integrations/mcp',
+    );
+    expect(screen.queryByRole('link', { name: 'Jira · MCP lookup' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Notion · MCP lookup' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Jira' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Notion' })).toBeNull();
     expect(screen.queryByRole('link', { name: 'HubSpot · Coming soon' })).toBeNull();
     expect(screen.queryByRole('link', { name: 'Attio · Coming soon' })).toBeNull();
     expect(screen.queryByRole('link', { name: 'Pipedrive · Coming soon' })).toBeNull();
@@ -217,6 +221,28 @@ describe('Header navigation', () => {
     } finally {
       sheet.remove();
     }
+  });
+
+  it('keeps a quieter dropdown panel shadow and accessible focus/dismissal', async () => {
+    expect(NAV_STYLESHEET).not.toMatch(/0 16px 40px/);
+    expect(NAV_STYLESHEET).toMatch(/html\.dark\) \.dropdownPanel/);
+    expect(NAV_STYLESHEET).toMatch(/details\[open\]\s*>\s*summary\s+\.dropdownChevron/);
+    expect(NAV_STYLESHEET).toContain('.dropdownLink:hover');
+
+    const user = userEvent.setup();
+    const { container } = render(<PublicNavigationItems currentSection="product" />);
+    const dropdowns = [...container.querySelectorAll<HTMLDetailsElement>('li details')];
+    const integrations = dropdowns[1];
+    expect(integrations).toBeTruthy();
+    await user.click(screen.getByText('Integrations'));
+    expect(integrations?.open).toBe(true);
+    expect(integrations?.querySelectorAll('[role="separator"]').length).toBe(2);
+    expect(screen.getByRole('link', { name: 'Connect MCP tools' }).className).toContain(
+      navStyles.dropdownLink,
+    );
+
+    await user.keyboard('{Escape}');
+    expect(integrations?.open).toBe(false);
   });
 
   it('closes the mobile disclosure when Pricing is activated by keyboard', async () => {

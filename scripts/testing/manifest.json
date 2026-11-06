@@ -503,6 +503,9 @@
   "apps/web/src/app/help/support/page.test.tsx": {
     "group": "unit"
   },
+  "apps/web/src/app/integrations/mcp/route.test.tsx": {
+    "group": "dom"
+  },
   "apps/web/src/app/integrations/route.test.tsx": {
     "group": "dom"
   },
@@ -888,6 +891,12 @@
     "group": "unit"
   },
   "apps/web/src/components/marketing/integrations/connector-seo.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/components/marketing/integrations/mcp-guide-content.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/components/marketing/integrations/mcp-guide-public-documents.test.ts": {
     "group": "unit"
   },
   "apps/web/src/components/marketing/integrations/records-to-answer.test.ts": {

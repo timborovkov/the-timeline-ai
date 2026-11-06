@@ -61,6 +61,8 @@ describe('public integration routes', () => {
     expect(text).toContain('Start with Meeting transcripts');
     expect(html).toMatch(/aria-current="page"[^>]*href="\/integrations"/u);
     expect(html).toContain('href="/how-it-works"');
+    expect(html).toContain('href="/integrations/mcp"');
+    expect(html).toContain('Connect MCP tools');
     expect(html).toContain('href="/integrations/notion"');
     expect(html).toContain('href="/integrations/jira"');
     expect(html).toContain('href="/integrations/hubspot"');
@@ -211,6 +213,10 @@ describe('public integration routes', () => {
     expect(text).toContain('Just getting started? You may not need one yet');
     expect(text).toContain(`When ${tool.name} alone is the better pick`);
     expect(html).toContain('Start free');
+    if (tool.status === 'mcp-lookup') {
+      expect(html).toContain('href="/integrations/mcp"');
+      expect(text).toContain('Connect MCP tools');
+    }
   });
 
   it('keeps Google Drive on the native connector route without a works-with overlay', async () => {

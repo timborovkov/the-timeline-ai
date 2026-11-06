@@ -230,7 +230,7 @@ export const HELP_PAGES: HelpPage[] = [
     description: 'Connect durable sources and live MCP tools without breaking team isolation.',
     icon: PlugZap,
     related: ['capture', 'work', 'agents'],
-    updatedAt: '2026-11-02',
+    updatedAt: '2026-11-06',
     sections: [
       {
         title: 'Connected sources',
@@ -245,6 +245,9 @@ export const HELP_PAGES: HelpPage[] = [
           'Custom MCP servers expose approved live tools and context to the agent; successful team-shared results become team-visible evidence, while personal-server results stay private to their owner. Passive provider activity still needs native sync or custom ingestion.',
         ],
         appLink: { href: '/app/connections', label: 'Open connections' },
+        resourceLinks: [
+          { href: 'https://thetimeline.cc/integrations/mcp', label: 'Connect MCP tools' },
+        ],
       },
       {
         title: 'Security model',

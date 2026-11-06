@@ -1,22 +1,26 @@
 import { expect } from '@timeline/test-support';
 import { describe, it } from 'bun:test';
 
-import { INTEGRATION_NAV_ITEMS, publicNavItemLabel } from '@/components/marketing/copy';
+import { INTEGRATION_NAV_ITEMS } from '@/components/marketing/copy';
 import { CONNECTORS, findConnector } from '@/components/marketing/integrations/connector-content';
+import {
+  MCP_GUIDE_NAV_LABEL,
+  MCP_GUIDE_ROUTE,
+} from '@/components/marketing/integrations/mcp-guide-content';
 import { TELEGRAM_PAGE } from '@/components/marketing/integrations/telegram-content';
 import { WORKS_WITH_TOOLS } from '@/components/marketing/integrations/works-with-content';
 
 describe('public marketing copy', () => {
-  it('lists live Integrations dropdown destinations, not coming-soon tools', () => {
-    expect(INTEGRATION_NAV_ITEMS.map((item) => `${item.label} · ${item.statusLabel}`)).toEqual([
-      'Slack · Native sync',
-      'Telegram · Capture',
-      'Google Drive · Native sync',
-      'GitHub · Native sync',
-      'Linear · Native sync',
-      'Monday.com · Native sync',
-      'Jira · MCP lookup',
-      'Notion · MCP lookup',
+  it('lists live native and capture Integrations destinations with a general MCP guide', () => {
+    expect(INTEGRATION_NAV_ITEMS.map((item) => item.label)).toEqual([
+      'Slack',
+      'Telegram',
+      'Google Drive',
+      'GitHub',
+      'Linear',
+      'Monday.com',
+      'Sentry',
+      MCP_GUIDE_NAV_LABEL,
     ]);
     expect(INTEGRATION_NAV_ITEMS.map((item) => item.href)).toEqual([
       '/integrations/slack',
@@ -25,9 +29,13 @@ describe('public marketing copy', () => {
       '/integrations/github',
       '/integrations/linear',
       '/integrations/monday',
-      '/integrations/jira',
-      '/integrations/notion',
+      '/integrations/sentry',
+      MCP_GUIDE_ROUTE,
     ]);
+    expect(INTEGRATION_NAV_ITEMS.every((item) => !item.label.includes('·'))).toBe(true);
+    expect(
+      INTEGRATION_NAV_ITEMS.some((item) => /native sync|capture|mcp lookup/i.test(item.label)),
+    ).toBe(false);
 
     const comingSoonRoutes = WORKS_WITH_TOOLS.filter((tool) => tool.status === 'coming-soon').map(
       (tool) => tool.route,
@@ -41,16 +49,19 @@ describe('public marketing copy', () => {
     for (const route of comingSoonRoutes) {
       expect(navHrefs.has(route)).toBe(false);
     }
-    expect(INTEGRATION_NAV_ITEMS.some((item) => item.statusLabel === 'Coming soon')).toBe(false);
+    expect(navHrefs.has('/integrations/jira')).toBe(false);
+    expect(navHrefs.has('/integrations/notion')).toBe(false);
 
-    for (const slug of ['slack', 'google-drive', 'github', 'monday'] as const) {
-      const connector = findConnector(slug);
-      if (!connector) throw new Error(`expected ${slug} connector`);
+    for (const connector of CONNECTORS) {
       const item = INTEGRATION_NAV_ITEMS.find(
-        (navItem) => navItem.href === `/integrations/${slug}`,
+        (navItem) => navItem.href === `/integrations/${connector.slug}`,
       );
       expect(item?.label).toBe(connector.name);
-      expect(item?.statusLabel).toBe('Native sync');
+    }
+
+    for (const slug of ['slack', 'google-drive', 'github', 'monday', 'sentry'] as const) {
+      const connector = findConnector(slug);
+      if (!connector) throw new Error(`expected ${slug} connector`);
       expect(CONNECTORS.some((entry) => entry.slug === slug)).toBe(true);
     }
 
@@ -58,11 +69,14 @@ describe('public marketing copy', () => {
     expect(telegramNav).toEqual({
       href: TELEGRAM_PAGE.route,
       label: 'Telegram',
-      statusLabel: 'Capture',
     });
-    expect(publicNavItemLabel({ label: 'Telegram', statusLabel: 'Capture' })).toBe(
-      'Telegram · Capture',
-    );
     expect(TELEGRAM_PAGE.summary).toMatch(/Link a Telegram group or DM/i);
+
+    const mcpNav = INTEGRATION_NAV_ITEMS.find((item) => item.href === MCP_GUIDE_ROUTE);
+    expect(mcpNav).toEqual({
+      href: MCP_GUIDE_ROUTE,
+      label: MCP_GUIDE_NAV_LABEL,
+      group: 'agent-tools',
+    });
   });
 });

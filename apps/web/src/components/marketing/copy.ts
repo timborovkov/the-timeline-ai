@@ -1,5 +1,4 @@
 import { TELEGRAM_PAGE } from '@/components/marketing/integrations/telegram-content';
-import { WORKS_WITH_TOOLS } from '@/components/marketing/integrations/works-with-content';
 
 export const START_FREE_LABEL = 'Start free';
 export const START_FREE_HREF = '/sign-up' as const;
@@ -32,39 +31,24 @@ export const COMPARE_NAV_ITEMS = [
   { href: '/compare/the-timeline-vs-achiral', label: 'The Timeline vs Achiral' },
 ] as const;
 
-const FEATURED_INTEGRATION_NAV_ITEMS = [
-  { href: '/integrations/slack' as const, label: 'Slack', statusLabel: 'Native sync' },
-  { href: TELEGRAM_PAGE.route, label: 'Telegram', statusLabel: 'Capture' },
-  {
-    href: '/integrations/google-drive' as const,
-    label: 'Google Drive',
-    statusLabel: 'Native sync',
-  },
-  { href: '/integrations/github' as const, label: 'GitHub', statusLabel: 'Native sync' },
+const NATIVE_AND_CAPTURE_NAV_ITEMS = [
+  { href: '/integrations/slack' as const, label: 'Slack' },
+  { href: TELEGRAM_PAGE.route, label: 'Telegram' },
+  { href: '/integrations/google-drive' as const, label: 'Google Drive' },
+  { href: '/integrations/github' as const, label: 'GitHub' },
+  { href: '/integrations/linear' as const, label: 'Linear' },
+  { href: '/integrations/monday' as const, label: 'Monday.com' },
+  { href: '/integrations/sentry' as const, label: 'Sentry' },
 ] as const;
 
-const MONDAY_NAV_ITEM = {
-  href: '/integrations/monday' as const,
-  label: 'Monday.com',
-  statusLabel: 'Native sync',
-} as const;
-
 export const INTEGRATION_NAV_ITEMS = [
-  ...FEATURED_INTEGRATION_NAV_ITEMS,
-  ...WORKS_WITH_TOOLS.flatMap((tool) => {
-    if (tool.status === 'coming-soon') return [];
-    const item = {
-      href: tool.route,
-      label: tool.name,
-      statusLabel: tool.statusLabel,
-    };
-    return tool.slug === 'linear' ? [item, MONDAY_NAV_ITEM] : [item];
-  }),
+  ...NATIVE_AND_CAPTURE_NAV_ITEMS,
+  {
+    href: '/integrations/mcp' as const,
+    label: 'Connect MCP tools',
+    group: 'agent-tools' as const,
+  },
 ];
-
-export function publicNavItemLabel(item: { label: string; statusLabel?: string }): string {
-  return item.statusLabel ? `${item.label} · ${item.statusLabel}` : item.label;
-}
 
 export const TIMELINE_AGENT_SETUP_COMMAND = 'Set up The Timeline - https://thetimeline.cc/llms.txt';
 

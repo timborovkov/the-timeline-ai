@@ -6,6 +6,7 @@ import { AGENTS_PUBLIC_DOCUMENTS } from '@/components/marketing/agents/public-do
 import { COMPARE_PUBLIC_DOCUMENTS } from '@/components/marketing/compare/public-documents';
 import { EDITORIAL_PUBLIC_DOCUMENTS } from '@/components/marketing/editorial/public-documents';
 import { CONNECTOR_PUBLIC_DOCUMENTS } from '@/components/marketing/integrations/connector-public-documents';
+import { MCP_GUIDE_PUBLIC_DOCUMENTS } from '@/components/marketing/integrations/mcp-guide-public-documents';
 import { WORKS_WITH_PUBLIC_DOCUMENTS } from '@/components/marketing/integrations/works-with-public-documents';
 import { PRICING_FAQS } from '@/components/marketing/pricing-faq-content';
 import { SOLUTION_PUBLIC_DOCUMENTS } from '@/components/marketing/solutions/public-documents';
@@ -453,6 +454,7 @@ export const PUBLIC_DOCUMENT_REGISTRY = createPublicDocumentRegistry(
   helpDocuments,
   publicUtilityDocuments,
   CONNECTOR_PUBLIC_DOCUMENTS,
+  MCP_GUIDE_PUBLIC_DOCUMENTS,
   WORKS_WITH_PUBLIC_DOCUMENTS,
   EDITORIAL_PUBLIC_DOCUMENTS,
   SOLUTION_PUBLIC_DOCUMENTS,
