@@ -135,6 +135,9 @@ describe('Header navigation', () => {
     expect(screen.queryByRole('link', { name: 'Attio · Coming soon' })).toBeNull();
     expect(screen.queryByRole('link', { name: 'Pipedrive · Coming soon' })).toBeNull();
     expect(screen.queryByRole('link', { name: 'The Timeline vs Day AI' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'The Timeline vs Suda' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'The Timeline vs MemoryCrow' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'The Timeline vs Achiral' })).toBeNull();
     expect(screen.queryByRole('link', { name: 'Compare hub' })).toBeNull();
 
     const menu = container.querySelector('details');
