@@ -70,6 +70,7 @@ export const PUBLIC_ANALYTICS_SURFACES = [
   'integration_attio',
   'integration_jira',
   'integration_notion',
+  'integration_mcp',
   'product_tour',
   'use_cases',
   'compare',

@@ -14,9 +14,9 @@ export const INTEGRATION_DIRECTORY_DOCUMENT = {
   kind: 'product',
   title: 'Integrations and capture surfaces',
   description:
-    'Link Slack channels and Telegram groups, forward email and add calls, then sync GitHub, Linear, Google Drive, Monday.com and Sentry. The Timeline keeps the source of every record.',
+    'Link Slack channels and Telegram groups, forward email and add calls, then sync GitHub, Linear, Google Drive, Monday.com and Sentry. Connect MCP tools for The Timeline Agent, separately from native sync.',
   indexability: 'index',
-  dates: { modified: '2026-11-03', reviewed: '2026-11-03' },
+  dates: { modified: '2026-11-06', reviewed: '2026-11-06' },
   capability: { kind: 'current-product' },
   sitemap: { changeFrequency: 'weekly', priority: 0.9 },
   structuredData: [{ type: 'collection-page' }],
@@ -37,7 +37,7 @@ export const INTEGRATION_DIRECTORY_DOCUMENT = {
       },
       {
         title: 'Capability boundary',
-        body: 'First-party capture accepts deliberately routed conversations and payloads. Native integrations sync selected provider records into durable cited events. Hosted MCP access provides live tools without passive ingestion. Figma desktop MCP requires Timeline on the same machine and is not connectable from hosted Timeline. Planned native support cannot be connected yet.',
+        body: 'First-party capture accepts deliberately routed conversations and payloads. Native integrations sync selected provider records into durable cited events. Hosted MCP access provides live tools without passive ingestion; see /integrations/mcp. Figma desktop MCP requires Timeline on the same machine and is not connectable from hosted Timeline. Planned native support cannot be connected yet.',
       },
     ],
   },
