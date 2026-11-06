@@ -32,7 +32,7 @@ export function CompareHubPage() {
         <EditorialSectionHeading
           index="Vs"
           title="Head to head"
-          intro="Each page cites the competitor's own site. Unverified claims are left out."
+          intro="Each page cites the competitor's own site and says when that tool is the better pick. Unverified claims are left out."
         />
         <div className="mt-10 grid gap-px bg-border sm:grid-cols-2">
           {COMPARE_PAGES.map((page) => (
