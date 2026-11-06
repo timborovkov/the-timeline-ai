@@ -9,6 +9,8 @@ import { TELEGRAM_PAGE } from '@/components/marketing/integrations/telegram-cont
 import { findWorksWithTool } from '@/components/marketing/integrations/works-with-content';
 import { definePublicDocuments } from '@/lib/public-site/registry';
 
+export const INTEGRATION_DIRECTORY_REVIEW_DATE = '2026-11-06' as const;
+
 export const INTEGRATION_DIRECTORY_DOCUMENT = {
   canonicalPath: '/integrations',
   kind: 'product',
@@ -16,7 +18,10 @@ export const INTEGRATION_DIRECTORY_DOCUMENT = {
   description:
     'Link Slack channels and Telegram groups, forward email and add calls, then sync GitHub, Linear, Google Drive, Monday.com and Sentry. Connect MCP tools for The Timeline Agent, separately from native sync.',
   indexability: 'index',
-  dates: { modified: '2026-11-06', reviewed: '2026-11-06' },
+  dates: {
+    modified: INTEGRATION_DIRECTORY_REVIEW_DATE,
+    reviewed: INTEGRATION_DIRECTORY_REVIEW_DATE,
+  },
   capability: { kind: 'current-product' },
   sitemap: { changeFrequency: 'weekly', priority: 0.9 },
   structuredData: [{ type: 'collection-page' }],

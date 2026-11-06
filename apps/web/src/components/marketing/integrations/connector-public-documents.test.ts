@@ -6,6 +6,7 @@ import { CONNECTORS } from '@/components/marketing/integrations/connector-conten
 import {
   CONNECTOR_PUBLIC_DOCUMENTS,
   INTEGRATION_DIRECTORY_DOCUMENT,
+  INTEGRATION_DIRECTORY_REVIEW_DATE,
   findConnectorPublicDocument,
 } from '@/components/marketing/integrations/connector-public-documents';
 import { PUBLIC_DOCUMENT_REGISTRY } from '@/lib/public-site';
@@ -27,10 +28,12 @@ describe('connector public documents', () => {
   it('publishes capture-surface truth without inventing additional connector routes', () => {
     const serialized = JSON.stringify(INTEGRATION_DIRECTORY_DOCUMENT);
 
+    expect(INTEGRATION_DIRECTORY_REVIEW_DATE).toBe('2026-11-06');
     expect(INTEGRATION_DIRECTORY_DOCUMENT.dates).toEqual({
-      modified: '2026-11-03',
-      reviewed: '2026-11-03',
+      modified: INTEGRATION_DIRECTORY_REVIEW_DATE,
+      reviewed: INTEGRATION_DIRECTORY_REVIEW_DATE,
     });
+    expect(serialized).toContain('/integrations/mcp');
     for (const surface of CAPTURE_SURFACES) {
       expect(serialized).toContain(surface.name);
     }

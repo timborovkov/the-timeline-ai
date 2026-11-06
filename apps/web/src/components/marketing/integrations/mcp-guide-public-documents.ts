@@ -1,12 +1,15 @@
 import type { PublicDocument } from '@/lib/public-site/types';
 
 import {
+  MCP_GUIDE_HOSTED_TOOL_NAMES,
+  MCP_GUIDE_LOCAL_TOOL_NAMES,
   MCP_GUIDE_PAGE,
-  getMcpGuideCatalog,
+  catalogNames,
 } from '@/components/marketing/integrations/mcp-guide-content';
 import { definePublicDocuments } from '@/lib/public-site/registry';
 
-const catalog = getMcpGuideCatalog();
+const hostedToolsLabel = catalogNames(MCP_GUIDE_HOSTED_TOOL_NAMES);
+const localDesktopToolsLabel = catalogNames(MCP_GUIDE_LOCAL_TOOL_NAMES);
 
 export const MCP_GUIDE_DOCUMENT = {
   canonicalPath: MCP_GUIDE_PAGE.route,
@@ -44,7 +47,7 @@ export const MCP_GUIDE_DOCUMENT = {
       },
       {
         title: MCP_GUIDE_PAGE.catalog.title,
-        body: `${MCP_GUIDE_PAGE.catalog.intro} Hosted catalog tools: ${catalog.hostedToolsLabel}. Local desktop: ${catalog.localDesktopToolsLabel}. ${MCP_GUIDE_PAGE.catalog.localBody}`,
+        body: `${MCP_GUIDE_PAGE.catalog.intro} Hosted catalog tools: ${hostedToolsLabel}. Local desktop: ${localDesktopToolsLabel}. ${MCP_GUIDE_PAGE.catalog.localBody}`,
       },
       {
         title: MCP_GUIDE_PAGE.notNative.title,

@@ -26,5 +26,9 @@ describe('MCP guide public document', () => {
 
     const compact = buildLlmsTxt({ registry: PUBLIC_DOCUMENT_REGISTRY, siteUrl: SITE_URL });
     expect(compact).toContain(`[Connect MCP tools](${SITE_URL}/integrations/mcp)`);
+    expect(JSON.stringify(MCP_GUIDE_DOCUMENT.llms)).toContain(
+      'Hosted catalog tools: Notion, Jira, Confluence, and Stripe',
+    );
+    expect(JSON.stringify(MCP_GUIDE_DOCUMENT.llms)).toContain('Local desktop: Figma');
   });
 });

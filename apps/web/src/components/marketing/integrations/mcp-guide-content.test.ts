@@ -3,6 +3,8 @@ import { describe, it } from 'bun:test';
 
 import { getConnectorCapabilityTiers } from '@/components/marketing/integrations/connector-content';
 import {
+  MCP_GUIDE_HOSTED_TOOL_NAMES,
+  MCP_GUIDE_LOCAL_TOOL_NAMES,
   MCP_GUIDE_NAV_LABEL,
   MCP_GUIDE_PAGE,
   MCP_GUIDE_RELATED,
@@ -19,8 +21,8 @@ describe('MCP guide content', () => {
     expect(MCP_GUIDE_NAV_LABEL).toBe('Connect MCP tools');
     expect(MCP_GUIDE_PAGE.route).toBe(MCP_GUIDE_ROUTE);
     expect(catalog.hostedTools).toEqual(tiers.mcpAccess);
-    expect(catalog.hostedTools).toEqual(['Notion', 'Jira', 'Confluence', 'Stripe']);
-    expect(catalog.localDesktopTools).toEqual(['Figma']);
+    expect(catalog.hostedTools).toEqual([...MCP_GUIDE_HOSTED_TOOL_NAMES]);
+    expect(catalog.localDesktopTools).toEqual([...MCP_GUIDE_LOCAL_TOOL_NAMES]);
 
     const copy = JSON.stringify(MCP_GUIDE_PAGE);
     expect(copy).toMatch(/Connections/);

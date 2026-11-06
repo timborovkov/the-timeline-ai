@@ -5,7 +5,12 @@ export const MCP_GUIDE_NAV_LABEL = 'Connect MCP tools';
 
 const REVIEW_DATE = '2026-11-06' as const;
 
-function catalogNames(list: readonly string[]): string {
+/** Hosted Agent-tools catalog labels; keep in lockstep with listCatalog `mcp_available`. */
+export const MCP_GUIDE_HOSTED_TOOL_NAMES = ['Notion', 'Jira', 'Confluence', 'Stripe'] as const;
+/** Local-desktop catalog labels; keep in lockstep with listCatalog `mcp_local`. */
+export const MCP_GUIDE_LOCAL_TOOL_NAMES = ['Figma'] as const;
+
+export function catalogNames(list: readonly string[]): string {
   if (list.length === 0) return '';
   if (list.length === 1) return list[0] ?? '';
   return `${list.slice(0, -1).join(', ')}, and ${list.at(-1)}`;
