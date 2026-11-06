@@ -11,7 +11,7 @@ const nextConfig: NextConfig = {
   // Next 16 logs Server Function arguments by default, including auth form data.
   logging: {
     serverFunctions: false,
-    incomingRequests: { ignore: [/\/(?:forgot-password|reset-password)(?:[/?]|$)/] },
+    incomingRequests: { ignore: [/\/(?:forgot-password|reset-password|verify-email)(?:[/?]|$)/] },
   },
   outputFileTracingRoot: workspaceRoot,
   outputFileTracingIncludes: {

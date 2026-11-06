@@ -84,3 +84,13 @@ export const passwordResetTokens = pgTable('password_reset_tokens', {
   expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 });
+
+/** Opaque, account-bound continuation for email verification. */
+export const authContinuations = pgTable('auth_continuations', {
+  tokenHash: text('token_hash').primaryKey(),
+  userId: uuid('user_id')
+    .notNull()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  destination: text('destination').notNull(),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+});
