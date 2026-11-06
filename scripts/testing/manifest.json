@@ -905,6 +905,9 @@
   "apps/web/src/components/marketing/pricing-calculator.test.tsx": {
     "group": "dom"
   },
+  "apps/web/src/components/marketing/product-screenshot.test.tsx": {
+    "group": "unit"
+  },
   "apps/web/src/components/marketing/solutions/content.test.ts": {
     "group": "unit"
   },
