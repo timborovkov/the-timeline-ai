@@ -2557,6 +2557,45 @@ describe('runOneIntegration attention classification', () => {
     );
   });
 
+  it('durably delays a Drive file capture while the integration is health-paused', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-06-28T12:00:00.000Z'));
+    fakes.adminLoadIntegration.mockResolvedValueOnce({
+      ...integration,
+      provider: 'google_drive',
+      healthPausedAt: new Date('2026-06-28T12:00:00.000Z'),
+      healthPauseKind: 'connectivity',
+    });
+
+    try {
+      await runOneIntegration({} as never, INTEGRATION_ID, 'targeted', {
+        kind: 'targeted',
+        integrationId: INTEGRATION_ID,
+        teamId: TEAM_ID,
+        triggeredBy: 'webhook',
+        resourceType: 'drive.file',
+        externalId: 'file-1',
+        reason: 'drive_watch',
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+
+    expect(fakes.incrementalSync).not.toHaveBeenCalled();
+    expect(fakes.adminDecryptIntegrationTokens).not.toHaveBeenCalled();
+    expect(fakes.adminRecordPendingIntegrationSyncContinuations).toHaveBeenCalledWith(
+      expect.anything(),
+      INTEGRATION_ID,
+      [
+        {
+          resourceType: 'drive.file',
+          externalId: 'file-1',
+          retryAt: new Date('2026-06-28T12:01:00.000Z'),
+        },
+      ],
+    );
+  });
+
   it('durably delays a Drive file capture during a provider budget pause', async () => {
     const retryAt = new Date(Date.now() + 60_000);
     fakes.adminLoadIntegration.mockResolvedValueOnce({

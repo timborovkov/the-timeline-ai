@@ -1117,6 +1117,17 @@ export async function runOneIntegration(
         },
         `integration health paused (${integration.healthPauseKind ?? 'unknown'}) — skipping sync integrationId=${integrationId} provider=${integration.provider} providerConnectionId=${integration.providerConnectionId ?? 'none'}`,
       );
+      // Health pause is not an account/budget pause row, but delayed Drive
+      // watch jobs have already advanced their debounce cursor. Dropping them
+      // here loses the capture until the next change. Retain the same way
+      // those pause paths do, with a short retry so resume/retry can pick up.
+      integrationForHandoff = integration;
+      retainPausedDriveTarget(
+        integration,
+        target,
+        continuationJobs,
+        new Date(Date.now() + PAGINATION_LOCK_DURABLE_RETRY_DELAY_MS),
+      );
       return;
     }
     if (integration.provider === 'mcp') {
@@ -1503,6 +1514,9 @@ export async function runOneIntegration(
           permissionsHash: input.permissionsHash ?? '',
           mimeType: input.mimeType,
           commentsSnapshot: Array.isArray(input.commentsSnapshot) ? input.commentsSnapshot : [],
+          permissionsSnapshot: Array.isArray(input.permissionsSnapshot)
+            ? input.permissionsSnapshot
+            : [],
           snapshotLocate: input.snapshotLocate ?? null,
           ancestry: input.ancestry ?? null,
         });

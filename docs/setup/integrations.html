@@ -325,8 +325,10 @@ GOOGLE_DRIVE_WEBHOOK_SECRET=...</code></pre>
           that rejoined packed stream. Live <code>comments.list</code> omits deleted comments, so a
           withdrawn comment is recovered from the previous snapshot ids and labelled
           <code>(removed)</code> in that window. The judged event is written before the snapshot
-          advances. Delayed <code>drive.file</code> and <code>drive.changes</code> jobs are kept
-          across integration and provider-budget pauses, persist to the continuation handoff table
+          advances. Share-only <code>client_share</code> events fire only for newly introduced
+          anyone or external-domain grants, not for internal collaborator churn on an already-shared
+          ACL. Delayed <code>drive.file</code> and <code>drive.changes</code> jobs are kept across
+          integration, provider-budget, and health pauses, persist to the continuation handoff table
           when the per-integration lock is busy, keep the continuation reason and a unique handoff
           job id so a lock-retry cannot collide with the originating debounce job and get acked as a
           no-op, and attach to quota or token-refresh failures so capture resumes after the pause. A
