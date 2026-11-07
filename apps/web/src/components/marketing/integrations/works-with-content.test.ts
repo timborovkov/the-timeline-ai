@@ -46,7 +46,12 @@ describe('works-with content', () => {
     const copy = JSON.stringify(WORKS_WITH_TOOLS);
     expect(copy).not.toMatch(/\bvs\.?\b|switch from/iu);
 
+    expect(hubspot.statusLabel).toBe('Coming soon');
+    expect(jira.statusLabel).toBe('MCP lookup');
+    expect(linear.statusLabel).toBe('Native sync');
+
     for (const tool of WORKS_WITH_TOOLS) {
+      expect(tool.navLabel).toBe(`${tool.name} · ${tool.statusLabel}`);
       expect(tool.gettingStarted).toMatch(/may not need/i);
       expect(tool.whenAloneBetter.toLowerCase()).toContain(
         `stay in ${tool.name.toLowerCase()} alone`,

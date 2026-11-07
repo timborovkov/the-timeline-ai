@@ -29,7 +29,7 @@ workspace changes wait for human approval.
 - Search across projects, people, tasks, documents and calendars.
 - Generate cited answers, project updates, daily digests and handoff briefs.
 - Keep access scoped to each team and its source visibility settings.
-- Connect external agents through the [Timeline plugins and MCP interface](plugins/timeline/skills/README.md). Agents can fetch [setup.md](https://thetimeline.cc/agents/setup.md) and the [published skill](https://thetimeline.cc/agents/SKILL.md).
+- Connect external agents through the [Timeline plugins and MCP interface](plugins/timeline/skills/README.md). Agents read cited context over MCP and write notes through remember, ingest email, or an authenticated webhook. They can fetch [setup.md](https://thetimeline.cc/agents/setup.md) and the [published skill](https://thetimeline.cc/agents/SKILL.md).
 
 The project is under active development; APIs and migrations may change.
 

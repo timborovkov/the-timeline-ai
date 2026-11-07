@@ -1,6 +1,7 @@
 import type { PublicDocument, PublicDocumentRegistry } from '@/lib/public-site';
 
-import { TIMELINE_AGENT_SETUP_COMMAND } from '@/components/marketing/copy';
+import { AGENTS_HUB } from '@/components/marketing/agents/content';
+import { AGENT_SETUP_CARD, TIMELINE_AGENT_SETUP_COMMAND } from '@/components/marketing/copy';
 import { TIMELINE_HOSTED_MCP_TOOLS_LIST } from '@/lib/agent-install-content';
 import { buildLlmsAgentSetupPointer, buildLlmsForAgentsSection } from '@/lib/agent-setup';
 import { PUBLIC_DOCUMENT_REGISTRY, canonicalPublicUrl } from '@/lib/public-site';
@@ -36,20 +37,26 @@ const CONTRIBUTED_LLM_SECTIONS = [
 ] as const;
 
 const AGENT_SETUP_SECTION = [
-  '## Give this to your agent',
+  '## Agents as teammates',
+  '',
+  `${AGENT_SETUP_CARD.title} ${AGENT_SETUP_CARD.body}`,
   '',
   'Paste this command into Claude, ChatGPT, Cursor, Grok, OpenClaw, Hermes, or another compatible agent:',
   '',
   TIMELINE_AGENT_SETUP_COMMAND,
   '',
-  '## Connect The Timeline',
+  '## Report in',
   '',
-  '- Hosted MCP server (Streamable HTTP): https://thetimeline.cc/api/mcp/server. Compatible clients use browser OAuth: sign in, choose a team, and approve scopes. Capture is a separate consent checkbox, on by default, so `timeline.remember` can store cited notes; unchecking it is read-only. `timeline.ask` needs a separate owner/admin `agent:ask` scope. Static team keys (`tla_`) are a manual-client fallback and see team-visible data only.',
-  `- Advertised tools: ${TIMELINE_HOSTED_MCP_TOOLS_LIST}. Previous names remain callable aliases and are omitted from tools/list.`,
-  '- `timeline.remember` stores cited ingest evidence and counts toward the accepted-sources meter, like other ingest. It does not mutate canonical records.',
-  '- Timeline skill: `plugins/timeline`. The Codex and Claude Code marketplace packages include the skill and the hosted MCP connection.',
+  '- `timeline.remember` stores cited ingest evidence and counts toward the accepted-sources meter, like other ingest. It does not mutate canonical records. Capture is a separate consent checkbox, on by default, so remember can store cited notes; unchecking it is read-only.',
   '- Ingest email: forward, CC, or BCC mail to the team inbound address (`<team-slug>@<INBOUND_EMAIL_DOMAIN>`).',
   '- Ingest webhook: authenticated `POST https://thetimeline.cc/api/webhooks/ingest` with a Bearer `tli_` key, or a one-time URL under `/api/webhooks/ingest/<token>`.',
+  `- Illustrative example only: a Grok Bot (or any agent) progress note can use those write paths. ${AGENTS_HUB.example.boundary}`,
+  '',
+  '## Read out',
+  '',
+  '- Hosted MCP server (Streamable HTTP): https://thetimeline.cc/api/mcp/server. Compatible clients use browser OAuth: sign in, choose a team, and approve scopes. `timeline.ask` needs a separate owner/admin `agent:ask` scope. Static team keys (`tla_`) are a manual-client fallback and see team-visible data only.',
+  `- Advertised tools: ${TIMELINE_HOSTED_MCP_TOOLS_LIST}. Previous names remain callable aliases and are omitted from tools/list.`,
+  '- Timeline skill: `plugins/timeline`. The Codex and Claude Code marketplace packages include the skill and the hosted MCP connection.',
   '',
 ].join('\n');
 

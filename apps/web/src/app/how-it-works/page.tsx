@@ -7,6 +7,8 @@ import {
   EDITORIAL_GUIDES,
   findEditorialGuideByRoute,
   GUIDE_ROUTES,
+  HOW_IT_WORKS_EVIDENCE_SHOT,
+  HOW_IT_WORKS_FLOW_SHOT,
 } from '@/components/marketing/editorial/content';
 import { EditorialStructuredData } from '@/components/marketing/editorial/editorial-structured-data';
 import {
@@ -16,6 +18,7 @@ import {
 import { ProvenanceDiagram } from '@/components/marketing/editorial/provenance-diagram';
 import { TimelineFlowDiagram } from '@/components/marketing/home/timeline-flow-diagram';
 import { MarketingContainer, MarketingSectionGrid } from '@/components/marketing/marketing-layout';
+import { MarketingProductScreenshot } from '@/components/marketing/product-screenshot';
 import { MarketingSectionIndex } from '@/components/marketing/section-index';
 
 export const metadata: Metadata = createHowItWorksMetadata();
@@ -45,6 +48,13 @@ export default function HowItWorksPage() {
       <div data-how-it-works-flow className="border-b border-border">
         <MarketingContainer className="py-12 sm:py-16">
           <TimelineFlowDiagram variant="expanded" id="how-it-works-platform-flow" />
+          <div className="mt-12">
+            <MarketingProductScreenshot
+              file={HOW_IT_WORKS_FLOW_SHOT.file}
+              alt={HOW_IT_WORKS_FLOW_SHOT.alt}
+              caption={HOW_IT_WORKS_FLOW_SHOT.caption}
+            />
+          </div>
         </MarketingContainer>
       </div>
 
@@ -61,6 +71,13 @@ export default function HowItWorksPage() {
               </p>
               <div className="mt-10">
                 <ProvenanceDiagram diagram={featuredGuide.diagram} answerHeadingLevel={2} />
+              </div>
+              <div className="mt-12">
+                <MarketingProductScreenshot
+                  file={HOW_IT_WORKS_EVIDENCE_SHOT.file}
+                  alt={HOW_IT_WORKS_EVIDENCE_SHOT.alt}
+                  caption={HOW_IT_WORKS_EVIDENCE_SHOT.caption}
+                />
               </div>
             </div>
           </MarketingSectionGrid>

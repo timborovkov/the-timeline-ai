@@ -13,6 +13,7 @@ describe('use-case routes', () => {
     expect(html.match(/<h1\b/g)).toHaveLength(1);
     expect(html).toContain('One record. Six ways teams use it.');
     expect(html).toContain('data-use-cases-hub');
+    expect(html).toContain('data-record-jobs');
     expect(html).toContain('Start free');
     for (const useCase of USE_CASES) {
       expect(html).toContain(`href="${useCase.route}"`);
@@ -35,8 +36,10 @@ describe('use-case routes', () => {
       expect(html).not.toMatch(/\bweekly\b/iu);
       for (const shot of useCase.screenshots) {
         expect(html).toContain(`data-screenshot-file="${shot.file}"`);
+        expect(html).toContain(`data-screenshot-present="true"`);
         expect(html).toContain(shot.file);
       }
+      expect(html).not.toContain('Screenshot placeholder');
     },
   );
 });

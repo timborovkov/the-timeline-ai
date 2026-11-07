@@ -3,7 +3,7 @@ import type { PublicDocument, PublicLlmsContentSection } from '@/lib/public-site
 import { SOLUTIONS, type SolutionContent } from '@/components/marketing/solutions/content';
 import { definePublicDocuments } from '@/lib/public-site/registry';
 
-const SOLUTION_REVIEW_DATE = '2026-08-21' as const;
+const SOLUTION_REVIEW_DATE = '2026-11-07' as const;
 
 export const SOLUTION_PUBLIC_DOCUMENTS = definePublicDocuments(
   'solutions',

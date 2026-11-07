@@ -218,7 +218,30 @@ export function IntegrationDirectory() {
                     body={capabilityTiers.plannedProviders.join(', ')}
                   />
                 </div>
-                <div className="mt-10 grid gap-px border border-border bg-border sm:grid-cols-2 lg:grid-cols-3">
+                <Link
+                  href="/integrations/mcp"
+                  className="group mt-10 flex flex-col border border-border bg-bg p-6 outline-none hover:bg-surface focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:p-8"
+                >
+                  <span className="font-mono text-[0.65rem] tracking-[0.14em] text-signal uppercase">
+                    Agent tools
+                  </span>
+                  <h3 className="mt-5 text-xl font-semibold tracking-tight text-fg">
+                    Connect MCP tools
+                  </h3>
+                  <p className="mt-3 max-w-[64ch] text-sm leading-relaxed text-fg-muted">
+                    Third-party MCP servers add live tools The Timeline Agent can call. They are not
+                    native ongoing sync, and they are not the same as connecting an external agent
+                    to Timeline.
+                  </p>
+                  <span className="mt-5 inline-flex items-center gap-2 text-sm font-semibold text-fg">
+                    How MCP tools plug in
+                    <ArrowRight
+                      aria-hidden="true"
+                      className="size-4 motion-safe:transition-transform motion-safe:group-hover:translate-x-1"
+                    />
+                  </span>
+                </Link>
+                <div className="grid gap-px border-x border-b border-border bg-border sm:grid-cols-2 lg:grid-cols-3">
                   {WORKS_WITH_TOOLS.map((tool) => (
                     <Link
                       key={tool.route}
@@ -232,7 +255,7 @@ export function IntegrationDirectory() {
                         </span>
                       </span>
                       <h3 className="mt-5 text-xl font-semibold tracking-tight text-fg">
-                        {tool.navLabel}
+                        {tool.name}
                       </h3>
                       <p className="mt-3 grow text-sm leading-relaxed text-fg-muted">
                         {tool.summary}

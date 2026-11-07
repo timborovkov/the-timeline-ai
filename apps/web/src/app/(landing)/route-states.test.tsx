@@ -98,7 +98,8 @@ describe('Landing route states', () => {
     expect(html).not.toContain('>Integrations</a>');
     expect(html).not.toContain('>How it works</a>');
     expect(html).toContain('href="/use-cases"');
-    expect(html).toContain('href="/compare"');
+    expect(html).toContain('href="/integrations"');
+    expect(html).not.toContain('href="/compare"');
     expect(html).toContain('aria-label="The Timeline source code on GitHub"');
     expect(html).toContain('aria-label="Public navigation"');
     expect(html).toContain('aria-label="Public navigation menu"');

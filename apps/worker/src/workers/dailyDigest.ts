@@ -1,6 +1,7 @@
 import { type Db } from '@timeline/db';
 import { childLogger, messaging, queue } from '@timeline/shared';
 import { ResendError } from '@timeline/shared/email';
+import { PlatformAccessError } from '@timeline/shared/platform-admin';
 import { Worker, DelayedError, type Job } from 'bullmq';
 
 import { withWorkerAiBilling, workerBillingJobOptions } from '#src/billing-context.js';
@@ -136,10 +137,36 @@ function digestBillingTeamId(job: queue.DailyDigestJobData): string | undefined 
   return job.kind === 'recipient' || job.kind === 'workspace-send' ? job.teamId : undefined;
 }
 
+function digestJobTeamId(job: queue.DailyDigestJobData): string | undefined {
+  return 'teamId' in job ? job.teamId : undefined;
+}
+
+/** Complete already-queued digest work for a suspended principal without retry or Sentry. */
+export async function skipSuspendedDigestAccess<T>(
+  job: Pick<Job<queue.DailyDigestJobData>, 'id' | 'data'>,
+  run: () => Promise<T>,
+): Promise<T | { skipped: true }> {
+  try {
+    return await run();
+  } catch (error) {
+    if (!(error instanceof PlatformAccessError)) throw error;
+    log.info(
+      {
+        jobId: job.id,
+        kind: job.data.kind,
+        teamId: digestJobTeamId(job.data),
+        err: error.message,
+      },
+      'skipping digest job for suspended principal',
+    );
+    return { skipped: true };
+  }
+}
+
 export function startDailyDigestWorker(deps: { db: Db }): Worker<queue.DailyDigestJobData> {
-  const worker = new Worker<queue.DailyDigestJobData>(
-    queue.QUEUE_NAMES.dailyDigest,
-    guardWorkerProcessor(deps.db, async (job: Job<queue.DailyDigestJobData>, token?: string) => {
+  const process = guardWorkerProcessor(
+    deps.db,
+    async (job: Job<queue.DailyDigestJobData>, token?: string) => {
       const startedAt = Date.now();
       const result = await withWorkerAiBilling(
         deps.db,
@@ -163,7 +190,11 @@ export function startDailyDigestWorker(deps: { db: Db }): Worker<queue.DailyDige
         'digest job complete',
       );
       return result;
-    }),
+    },
+  );
+  const worker = new Worker<queue.DailyDigestJobData>(
+    queue.QUEUE_NAMES.dailyDigest,
+    (job, token, signal) => skipSuspendedDigestAccess(job, () => process(job, token, signal)),
     { connection: queue.getRedisConnection(), concurrency: 2 },
   );
 

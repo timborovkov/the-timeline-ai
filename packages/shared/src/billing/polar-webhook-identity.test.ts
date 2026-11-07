@@ -4,10 +4,14 @@ import { describe, it } from 'bun:test';
 import {
   handlePolarWebhookEvent,
   isIgnorablePolarWebhookFailure,
+  PolarWebhookInvalidTeamIdError,
+  resolvePolarWebhookTeamId,
   type PolarWebhookPayload,
 } from '#src/billing/polar-webhook.js';
 
 import type { Db } from '@timeline/db';
+
+const SANDBOX_TEAM_ID = 'timeline-identity-test-c122cebd-a917-4929-9a76-66fab9d28be6-0';
 
 // This regression must reject before *any* query, not merely catch a database error.
 const db = new Proxy(
@@ -21,7 +25,7 @@ const db = new Proxy(
 describe('Polar webhook external identity boundary', () => {
   it('acknowledges non-UUID sandbox/external IDs without touching the database', async () => {
     for (const externalId of [
-      'timeline-identity-test-c122cebd-a917-4929-9a76-66fab9d28be6-0',
+      SANDBOX_TEAM_ID,
       '',
       'not-a-team',
       'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee trailing',
@@ -36,6 +40,25 @@ describe('Polar webhook external identity boundary', () => {
         handlePolarWebhookEvent({ db, payload, chargesEnabled: true, products: {} }),
       ).resolves.toEqual({ ok: true, ignored: 'invalid_external_customer' });
     }
+  });
+
+  it('acknowledges metadata.team_id sandbox fixtures without touching the database', async () => {
+    await expect(
+      handlePolarWebhookEvent({
+        db,
+        payload: {
+          type: 'subscription.active',
+          data: { metadata: { team_id: SANDBOX_TEAM_ID } },
+        },
+        chargesEnabled: true,
+        products: {},
+      }),
+    ).resolves.toEqual({ ok: true, ignored: 'invalid_external_customer' });
+    expect(resolvePolarWebhookTeamId({ data: { metadata: { team_id: SANDBOX_TEAM_ID } } })).toEqual(
+      {
+        ignored: 'invalid_external_customer',
+      },
+    );
   });
   it('acknowledges missing team mappings without touching the database', async () => {
     await expect(
@@ -52,11 +75,10 @@ describe('Polar webhook external identity boundary', () => {
   it('treats Postgres UUID syntax errors as ignorable Polar webhook failures', () => {
     expect(
       isIgnorablePolarWebhookFailure(
-        new Error(
-          'invalid input syntax for type uuid: "timeline-identity-test-c122cebd-a917-4929-9a76-66fab9d28be6-0"',
-        ),
+        new Error(`invalid input syntax for type uuid: "${SANDBOX_TEAM_ID}"`),
       ),
     ).toBe(true);
+    expect(isIgnorablePolarWebhookFailure(new PolarWebhookInvalidTeamIdError())).toBe(true);
     expect(isIgnorablePolarWebhookFailure(new Error('identity_conflict'))).toBe(false);
   });
 

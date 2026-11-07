@@ -19,18 +19,16 @@ import {
   START_FREE_LABEL,
 } from '@/components/marketing/copy';
 import { HomeMotion } from '@/components/marketing/home/home-motion';
+import { HOME_PROOF_SHOTS } from '@/components/marketing/home/proof';
 import { TimelineFlowDiagram } from '@/components/marketing/home/timeline-flow-diagram';
 import { CAPTURE_SURFACES } from '@/components/marketing/integrations/capture-surface-content';
 import { findConnectorByName } from '@/components/marketing/integrations/connector-content';
+import { MarketingProductScreenshot } from '@/components/marketing/product-screenshot';
 import { PUBLIC_DEMO_STORY } from '@/components/marketing/public-demo-story';
 import { USE_CASES } from '@/components/marketing/use-cases/content';
 import { CookieSettingsButton } from '@/components/public-analytics';
 import { PublicHeader } from '@/components/public-header';
-import {
-  PublicFooterCompareLinks,
-  PublicFooterUseCaseLinks,
-  PublicNavigationItems,
-} from '@/components/public-navigation';
+import { PublicFooterColumns } from '@/components/public-navigation';
 import { PublicSessionBranch } from '@/components/public-session-branch';
 import {
   PUBLIC_DOCUMENT_REGISTRY,
@@ -335,6 +333,7 @@ function ChronologyScene({ nativeConnectors }: { nativeConnectors: NativeConnect
         </aside>
       </div>
       <ConnectorRail nativeConnectors={nativeConnectors} />
+      <HomeProof shot={HOME_PROOF_SHOTS[0]} />
     </section>
   );
 }
@@ -500,6 +499,7 @@ function AnswerScene() {
           </ol>
         </aside>
       </div>
+      <HomeProof shot={HOME_PROOF_SHOTS[1]} />
     </section>
   );
 }
@@ -636,6 +636,7 @@ function TrustScene() {
         }
         copy="If your team runs its day in Slack or Telegram and the rest of the work lives in email, calls and documents, The Timeline keeps one current record of it. That includes consultancies, agencies, client delivery, product and operations teams, at any size. Keep working where you already work."
       />
+      <HomeProof shot={HOME_PROOF_SHOTS[2]} />
       <div className={styles.fitPanel} data-home-diagram>
         <div className={styles.fitPanelIntro}>
           <span className={styles.monoLabel}>Six ways teams use it</span>
@@ -761,6 +762,15 @@ function SceneIndex({ number, label }: { number: string; label: string }) {
   );
 }
 
+function HomeProof({ shot }: { shot: (typeof HOME_PROOF_SHOTS)[number] }) {
+  return (
+    <div className={styles.proofStage} data-home-proof={shot.file}>
+      <span className={styles.monoLabel}>{shot.kicker}</span>
+      <MarketingProductScreenshot file={shot.file} alt={shot.alt} caption={shot.caption} />
+    </div>
+  );
+}
+
 function SceneHeading({
   number,
   label,
@@ -800,47 +810,61 @@ function Footer() {
   const year = new Date().getFullYear();
   return (
     <footer className={styles.footer}>
-      <div>
+      <div className={styles.footerBrandRow}>
         <span className={styles.footerBrand}>
           <Logo ariaHidden /> The Timeline
         </span>
         <span>© {year}</span>
       </div>
-      <div className={styles.footerNavigation}>
-        <nav aria-label="Explore The Timeline" className="grid gap-3">
-          <PublicNavigationItems
-            currentSection="product"
-            variant="simple"
-            listClassName={styles.footerLinks}
-            activeItemClassName={styles.footerLinkActive}
-          />
-          <PublicFooterUseCaseLinks />
-          <PublicFooterCompareLinks />
-        </nav>
-        <nav aria-label="Support and legal">
-          <GitHubSourceLink compact className={styles.footerGithub} />
-          <Link href="/trust">Trust</Link>
-          <Link href="/terms">Terms</Link>
-          <Link href="/privacy">Privacy</Link>
-          <Link href="/cookies">Cookies</Link>
-          <CookieSettingsButton />
-          <Link href={CONTACT_HREF} data-public-analytics-cta="contact_support">
-            Contact
-          </Link>
-          <PublicSessionBranch
-            signedOut={
-              <Link href="/sign-in" data-public-analytics-cta="sign_in">
-                Sign in
-              </Link>
-            }
-            signedIn={
-              <Link href="/app" data-public-analytics-cta="open_dashboard">
-                Dashboard
-              </Link>
-            }
-          />
-        </nav>
-      </div>
+      <nav aria-label="Explore The Timeline">
+        <PublicFooterColumns
+          currentSection="product"
+          className={styles.footerColumns}
+          headingClassName={styles.footerColumnTitle}
+          activeItemClassName={styles.footerLinkActive}
+          legalItems={
+            <>
+              <li>
+                <GitHubSourceLink compact className={styles.footerGithub} />
+              </li>
+              <li>
+                <Link href="/trust">Trust</Link>
+              </li>
+              <li>
+                <Link href="/terms">Terms</Link>
+              </li>
+              <li>
+                <Link href="/privacy">Privacy</Link>
+              </li>
+              <li>
+                <Link href="/cookies">Cookies</Link>
+              </li>
+              <li>
+                <CookieSettingsButton />
+              </li>
+              <li>
+                <Link href={CONTACT_HREF} data-public-analytics-cta="contact_support">
+                  Contact
+                </Link>
+              </li>
+              <li>
+                <PublicSessionBranch
+                  signedOut={
+                    <Link href="/sign-in" data-public-analytics-cta="sign_in">
+                      Sign in
+                    </Link>
+                  }
+                  signedIn={
+                    <Link href="/app" data-public-analytics-cta="open_dashboard">
+                      Dashboard
+                    </Link>
+                  }
+                />
+              </li>
+            </>
+          }
+        />
+      </nav>
     </footer>
   );
 }

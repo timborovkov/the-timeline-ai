@@ -500,6 +500,9 @@
   "apps/web/src/app/help/support/page.test.tsx": {
     "group": "unit"
   },
+  "apps/web/src/app/integrations/mcp/route.test.tsx": {
+    "group": "dom"
+  },
   "apps/web/src/app/integrations/route.test.tsx": {
     "group": "dom"
   },
@@ -839,13 +842,25 @@
   "apps/web/src/components/loading-states.test.tsx": {
     "group": "dom"
   },
+  "apps/web/src/components/marketing/agents/agent-loop-diagram.test.tsx": {
+    "group": "unit"
+  },
   "apps/web/src/components/marketing/agents/agent-setup-card.test.tsx": {
+    "group": "unit"
+  },
+  "apps/web/src/components/marketing/agents/content.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/components/marketing/agents/public-documents.test.ts": {
     "group": "unit"
   },
   "apps/web/src/components/marketing/compare/content.test.ts": {
     "group": "unit"
   },
   "apps/web/src/components/marketing/compare/public-documents.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/components/marketing/copy.test.ts": {
     "group": "unit"
   },
   "apps/web/src/components/marketing/editorial/content.test.ts": {
@@ -875,6 +890,15 @@
   "apps/web/src/components/marketing/integrations/connector-seo.test.ts": {
     "group": "unit"
   },
+  "apps/web/src/components/marketing/integrations/inbound-mcp-diagram.test.tsx": {
+    "group": "unit"
+  },
+  "apps/web/src/components/marketing/integrations/mcp-guide-content.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/components/marketing/integrations/mcp-guide-public-documents.test.ts": {
+    "group": "unit"
+  },
   "apps/web/src/components/marketing/integrations/records-to-answer.test.ts": {
     "group": "unit"
   },
@@ -890,6 +914,12 @@
   "apps/web/src/components/marketing/pricing-calculator.test.tsx": {
     "group": "dom"
   },
+  "apps/web/src/components/marketing/product-screenshot.test.tsx": {
+    "group": "unit"
+  },
+  "apps/web/src/components/marketing/screenshot-inventory.test.ts": {
+    "group": "unit"
+  },
   "apps/web/src/components/marketing/solutions/content.test.ts": {
     "group": "unit"
   },
@@ -903,6 +933,9 @@
     "group": "unit"
   },
   "apps/web/src/components/marketing/use-cases/public-documents.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/components/marketing/use-cases/record-jobs-diagram.test.tsx": {
     "group": "unit"
   },
   "apps/web/src/components/mcp-oauth-grants.test.tsx": {
@@ -1093,6 +1126,9 @@
   },
   "apps/web/src/hooks/use-project-search.test.tsx": {
     "group": "dom"
+  },
+  "apps/web/src/lib/active-team.test.ts": {
+    "group": "unit"
   },
   "apps/web/src/lib/active-team-cookie-migration.test.ts": {
     "group": "unit"
