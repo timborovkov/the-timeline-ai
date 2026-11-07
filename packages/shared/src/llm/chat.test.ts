@@ -6,6 +6,7 @@ import { z } from 'zod';
 
 import { openRouterUsdCostFromFinishEvent } from '#src/billing/openrouter-usage.js';
 import { resetEnvForTests } from '#src/env.js';
+import { normalizeExtractionModelOutput } from '#src/extract/model-output.js';
 import { EXTRACTION_SYSTEM_PROMPT } from '#src/extract/prompt.js';
 import { extractionResultSchema } from '#src/extract/schema.js';
 import {
@@ -15,10 +16,8 @@ import {
   streamChat,
 } from '#src/llm/chat.js';
 import { TIMELINE_MODELS } from '#src/llm/models.js';
-import { normalizeTaskCategoryModelJson } from '#src/task-categories/model-output.js';
-
-import { normalizeExtractionModelOutput } from '#src/extract/model-output.js';
 import { normalizeMeetingSummaryOutput } from '#src/meetings/model-output.js';
+import { normalizeTaskCategoryModelJson } from '#src/task-categories/model-output.js';
 
 type ProviderFetch = (
   ...args: Parameters<typeof globalThis.fetch>
@@ -334,7 +333,7 @@ describe('chatStructured', () => {
         {
           schema: z.object({ choice: z.number().int().min(-1).max(1) }),
           prompt: 'Pick the candidate that refers to the same real-world entity.',
-        normalizeOutput: normalizeExtractionModelOutput,
+          normalizeOutput: normalizeExtractionModelOutput,
         },
         { model: makeMockModel(JSON.stringify({ candidate_index: 999 })) },
       ),
@@ -681,7 +680,7 @@ describe('chatStructured', () => {
       chatStructured(
         {
           schema: extractionResultSchema,
-        normalizeOutput: normalizeExtractionModelOutput,
+          normalizeOutput: normalizeExtractionModelOutput,
           prompt: 'Extract facts from: Acme is evaluating Timeline for Q4.',
           instructions: EXTRACTION_SYSTEM_PROMPT,
         },
@@ -1307,7 +1306,7 @@ describe('chatStructured', () => {
       chatStructured(
         {
           schema: extractionResultSchema,
-        normalizeOutput: normalizeExtractionModelOutput,
+          normalizeOutput: normalizeExtractionModelOutput,
           prompt: 'Extract facts from: Heading out for lunch.',
           instructions: EXTRACTION_SYSTEM_PROMPT,
         },

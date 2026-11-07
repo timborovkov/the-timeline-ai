@@ -7,7 +7,6 @@ import {
   type BillingMeterId,
   type BillingPlanId,
 } from '#src/billing/catalog.js';
-
 import { billingMeterIdForPolarEvent } from '#src/billing/meters.js';
 import { freeAllowanceConsumedForMeter } from '#src/billing/policy.js';
 

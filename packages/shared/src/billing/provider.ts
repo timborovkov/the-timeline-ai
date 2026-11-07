@@ -1,11 +1,11 @@
+import { TIMELINE_METERED_EVENT_NAMES } from '#src/billing/meters.js';
+
 import type {
   PolarIdentityApi,
   PolarPerson,
   PolarCustomerIdentity,
   PolarMemberIdentity,
 } from '#src/billing/polar-identity-api.js';
-
-import { TIMELINE_METERED_EVENT_NAMES } from '#src/billing/meters.js';
 
 export interface PolarUsageEvent {
   externalCustomerId: string;

@@ -1,4 +1,3 @@
-import type { OperatorCapability, OperatorScopePolicy } from '#src/platform-admin/capabilities.js';
 import { AsyncLocalStorage } from 'node:async_hooks';
 
 import {
@@ -19,6 +18,8 @@ import {
   recordPlatformAudit,
   resolveImpersonation,
 } from '#src/platform-admin/index.js';
+
+import type { OperatorCapability, OperatorScopePolicy } from '#src/platform-admin/capabilities.js';
 
 export interface OperatorContext {
   actorUserId: string;

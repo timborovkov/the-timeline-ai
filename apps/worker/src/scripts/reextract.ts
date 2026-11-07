@@ -1,4 +1,3 @@
-import { closeAllRedisConnections } from '@timeline/shared/redis';
 /**
  * Re-extraction script. Walks raw_events for a team and enqueues an extract
  * job for any row that lacks facts at the current model_version. Idempotent:
@@ -18,6 +17,7 @@ import { closeAllRedisConnections } from '@timeline/shared/redis';
 import { closeDb, getDb, rawEvents } from '@timeline/db';
 import { queue } from '@timeline/shared';
 import { currentExtractionModelVersions } from '@timeline/shared/extraction-model-version';
+import { closeAllRedisConnections } from '@timeline/shared/redis';
 import { and, asc, eq, gt, isNotNull, or, type SQL, sql } from 'drizzle-orm';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;

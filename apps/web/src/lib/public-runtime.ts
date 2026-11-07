@@ -4,7 +4,6 @@ import { usePathname } from 'next/navigation';
 import { useSyncExternalStore } from 'react';
 
 import { createBrowserResourceStore } from '@/lib/browser-resource-store';
-
 import { DEFAULT_SUPPORT_EMAIL } from '@/lib/support-links';
 
 export type PublicRuntime =

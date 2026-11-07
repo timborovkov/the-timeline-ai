@@ -1,4 +1,3 @@
-import { closeAllRedisConnections } from '@timeline/shared/redis';
 /**
  * Re-suggestion script. Walks raw_events for a team and enqueues background
  * suggestion jobs. For Telegram/Slack this schedules one debounced conversation
@@ -17,6 +16,7 @@ import { closeAllRedisConnections } from '@timeline/shared/redis';
  */
 import { closeDb, conversationReviews, type Db, getDb, rawEvents } from '@timeline/db';
 import { conversationReview, queue } from '@timeline/shared';
+import { closeAllRedisConnections } from '@timeline/shared/redis';
 import { and, asc, eq, gt, isNotNull, or, type SQL, sql } from 'drizzle-orm';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;

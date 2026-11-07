@@ -5,14 +5,13 @@ import {
   type BillingPlanId,
   formatEuroFromCents,
 } from '#src/billing/catalog.js';
-
-import type { BillingPresentation } from '#src/billing/presentation.js';
-
 import { type FreeAllowanceRemaining, allFreeAllowancesExhausted } from '#src/billing/policy.js';
 import {
   shouldShowPlanRecommendation,
   type CheapestPlanPreview,
 } from '#src/billing/recommendation.js';
+
+import type { BillingPresentation } from '#src/billing/presentation.js';
 
 export {
   type FreeAllowanceRemaining,

@@ -1,4 +1,3 @@
-import { closeAllRedisConnections } from '@timeline/shared/redis';
 /**
  * Timeline moment presentation backfill.
  *
@@ -21,6 +20,7 @@ import { pathToFileURL } from 'node:url';
 import { closeDb, getDb, users } from '@timeline/db';
 import { queue } from '@timeline/shared';
 import { encodeCursor } from '@timeline/shared/pagination';
+import { closeAllRedisConnections } from '@timeline/shared/redis';
 import { withTeam } from '@timeline/shared/team-scope';
 import {
   buildTimelineMoments,

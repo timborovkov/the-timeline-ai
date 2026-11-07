@@ -1,4 +1,3 @@
-import type { entities } from '@timeline/db';
 import type { ObjectRow } from '#src/objects/types.js';
 import type {
   TaskCategory,
@@ -6,6 +5,7 @@ import type {
   TaskCategorySource,
   TaskCategoryStatus,
 } from '#src/task-categories/types.js';
+import type { entities } from '@timeline/db';
 type EntityRow = typeof entities.$inferSelect;
 
 export function recordFromUnknown(value: unknown): Record<string, unknown> {

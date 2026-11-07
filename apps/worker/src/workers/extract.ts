@@ -20,9 +20,9 @@ import { DelayedError, UnrecoverableError, Worker, type Job } from 'bullmq';
 import { and, asc, desc, eq, inArray, isNull, lt, sql } from 'drizzle-orm';
 
 import { withWorkerAiBilling, workerBillingJobOptions } from '#src/billing-context.js';
+import { finishIngestJob } from '#src/ingest-job-result.js';
 import { captureWorkerException, captureWorkerJobFailure } from '#src/monitoring.js';
 import { guardWorkerProcessor } from '#src/platform-worker.js';
-import { finishIngestJob } from '#src/ingest-job-result.js';
 
 const log = childLogger('worker:extract');
 const ZERO_UUID = '00000000-0000-0000-0000-000000000000';

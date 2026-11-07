@@ -27,6 +27,7 @@ import {
   rruleUntil,
   validateRRule,
 } from '#src/calendar/recurrence.js';
+import { calendarEventDetailsVisibleToUser } from '#src/calendar/visibility.js';
 import { sourceMetadataWithConversationArtifacts } from '#src/conversational/contact-artifacts.js';
 import {
   refreshLinkArtifactsForRawEvent,
@@ -39,7 +40,6 @@ import { principalIsActive } from '#src/platform-admin/runtime.js';
 import { getQdrantClient } from '#src/qdrant/client.js';
 import { buildPointId } from '#src/qdrant/point-id.js';
 import { enqueueCalendarEventEmbedJob } from '#src/queue/queues.js';
-import { calendarEventDetailsVisibleToUser } from '#src/calendar/visibility.js';
 import { assertValidTimezone } from '#src/time/index.js';
 import { validateVisibilityUserIds } from '#src/visibility.js';
 

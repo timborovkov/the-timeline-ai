@@ -1,6 +1,5 @@
 import { chatStructured as defaultChatStructured } from '#src/llm/chat.js';
 import { TIMELINE_MODELS } from '#src/llm/models.js';
-import type { TimelineMoment } from '#src/timeline-moments/index.js';
 import {
   TIMELINE_MOMENT_PRESENTATION_PROMPT_VERSION,
   buildTimelineMomentPresentationCacheKey,
@@ -10,6 +9,9 @@ import {
   isWeakGeneratedTitle,
   type TimelineMomentPresentationResult,
 } from '#src/timeline-moments/presentation-contract.js';
+
+import type { TimelineMoment } from '#src/timeline-moments/index.js';
+
 export * from '#src/timeline-moments/presentation-contract.js';
 
 export interface GenerateTimelineMomentPresentationOptions {

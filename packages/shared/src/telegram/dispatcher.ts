@@ -1,4 +1,3 @@
-import { consumeVerifiedTelegramLink } from '#src/telegram/link-token.js';
 import { createHash } from 'node:crypto';
 
 import {
@@ -49,10 +48,10 @@ import {
   joinSavedMeetingByCommand,
 } from '#src/meetings/quick-capture.js';
 import { detectMeetingPlatform } from '#src/meetings/scope.js';
-import { getRedisConnection } from '#src/redis/connection.js';
 import { checkRateLimit, rateLimitKey, RATE_LIMITS } from '#src/rate-limit/index.js';
 import { normalizeRawEventsToEvidence } from '#src/reconciliation/normalization.js';
 import { inlineSourceSnapshotMetadata } from '#src/reconciliation/source-snapshot.js';
+import { getRedisConnection } from '#src/redis/connection.js';
 import { withTeam } from '#src/team-scope.js';
 import { type TelegramApi } from '#src/telegram/api.js';
 import {
@@ -62,6 +61,7 @@ import {
   type TelegramGroupCommandName,
 } from '#src/telegram/commands.js';
 import { createTelegramConversationDeliveryAdapter } from '#src/telegram/conversation-adapter.js';
+import { consumeVerifiedTelegramLink } from '#src/telegram/link-token.js';
 import {
   tgUpdateSchema,
   type TgAudioPayload,

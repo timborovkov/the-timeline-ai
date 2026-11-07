@@ -1,4 +1,3 @@
-import { closeAllRedisConnections } from '@timeline/shared/redis';
 /**
  * Re-embed script (Phase 5 + Phase 8 follow-ups).
  *
@@ -39,6 +38,7 @@ import {
   rawEvents,
 } from '@timeline/db';
 import { queue } from '@timeline/shared';
+import { closeAllRedisConnections } from '@timeline/shared/redis';
 import { and, asc, eq, gt, isNotNull, isNull, or, type SQL, sql } from 'drizzle-orm';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;

@@ -1,12 +1,4 @@
 import {
-  findWorkspaceBySlackTeamId,
-  findWorkspaceInstallForTeam,
-  decryptWorkspaceToken,
-  type SlackTokenJson,
-  type SlackWorkspaceRecord,
-} from '#src/slack/workspace-access.js';
-export type { SlackWorkspaceRecord } from '#src/slack/workspace-access.js';
-import {
   type Db,
   documentVersions,
   documents,
@@ -52,9 +44,9 @@ import {
   joinSavedMeetingByCommand,
 } from '#src/meetings/quick-capture.js';
 import { detectMeetingPlatform } from '#src/meetings/scope.js';
-import { getRedisConnection } from '#src/redis/connection.js';
 import { normalizeRawEventsToEvidence } from '#src/reconciliation/normalization.js';
 import { inlineSourceSnapshotMetadata } from '#src/reconciliation/source-snapshot.js';
+import { getRedisConnection } from '#src/redis/connection.js';
 import { SlackApi, type SlackConversation, type SlackOAuthAccessResponse } from '#src/slack/api.js';
 import { createSlackConversationDeliveryAdapter } from '#src/slack/conversation-adapter.js';
 import {
@@ -63,7 +55,16 @@ import {
   type SlackFile,
   type SlackMessageEvent,
 } from '#src/slack/types.js';
+import {
+  findWorkspaceBySlackTeamId,
+  findWorkspaceInstallForTeam,
+  decryptWorkspaceToken,
+  type SlackTokenJson,
+  type SlackWorkspaceRecord,
+} from '#src/slack/workspace-access.js';
 import { withTeam } from '#src/team-scope.js';
+
+export type { SlackWorkspaceRecord } from '#src/slack/workspace-access.js';
 
 const log = childLogger('slack');
 const SLACK_SOURCE_SNAPSHOT_VERSION = 'slack-source-snapshot-2026-07';

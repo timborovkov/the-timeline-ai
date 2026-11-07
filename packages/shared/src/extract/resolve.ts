@@ -1,3 +1,6 @@
+import { type Db, entities } from '@timeline/db';
+import { and, eq, isNull, sql } from 'drizzle-orm';
+
 import {
   aliasesArray,
   findEntityMention,
@@ -5,9 +8,6 @@ import {
   type DbOrTx,
   type LookupEntityInput,
 } from '#src/extract/lookup.js';
-import { type Db, entities } from '@timeline/db';
-import { and, eq, isNull, sql } from 'drizzle-orm';
-
 import { type ChatDeps } from '#src/llm/chat.js';
 import { childLogger } from '#src/logger.js';
 import { enqueueEntityEmbedJob } from '#src/queue/queues.js';

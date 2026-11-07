@@ -1,9 +1,9 @@
 import { expect } from '@timeline/test-support';
-import { describe, it } from 'bun:test';
 import { DelayedError } from 'bullmq';
+import { describe, it } from 'bun:test';
 
-import { delayWorkerJob } from '#src/job-delay.js';
 import { finishIngestJob } from '#src/ingest-job-result.js';
+import { delayWorkerJob } from '#src/job-delay.js';
 
 // Deferral must preserve the BullMQ lock and must not masquerade as completion or failure.
 describe('worker job deferral', () => {

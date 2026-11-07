@@ -73,14 +73,23 @@ export function testExecutionPatterns(
     if (ts.isIdentifier(node) && (testNames.has(node.text) || namespaces.has(node.text))) {
       if (ts.isImportSpecifier(node.parent) || ts.isNamespaceImport(node.parent)) return;
       let expression: ts.Node = node;
-      while (ts.isPropertyAccessExpression(expression.parent) && expression.parent.expression === expression)
+      while (
+        ts.isPropertyAccessExpression(expression.parent) &&
+        expression.parent.expression === expression
+      )
         expression = expression.parent;
-      const isNamespaceUtility = namespaces.has(node.text) &&
+      const isNamespaceUtility =
+        namespaces.has(node.text) &&
         ts.isPropertyAccessExpression(expression) &&
         !['it', 'test'].includes(expression.name.text) &&
         !expression.getText(tree).match(/\.(?:it|test)(?:\.|$)/);
-      if (!isNamespaceUtility && !(ts.isCallExpression(expression.parent) && expression.parent.expression === expression))
-        throw new Error(`${file}: isolated test functions cannot be aliased or passed as values; use explicit file isolation`);
+      if (
+        !isNamespaceUtility &&
+        !(ts.isCallExpression(expression.parent) && expression.parent.expression === expression)
+      )
+        throw new Error(
+          `${file}: isolated test functions cannot be aliased or passed as values; use explicit file isolation`,
+        );
     }
     ts.forEachChild(node, rejectEscapedRegistrations);
   }
@@ -126,7 +135,9 @@ export function testExecutionPatterns(
         const isFactory =
           !factoryCall && modifiers.some((modifier) => ['each', 'if', 'skipIf'].includes(modifier));
         if (isFactory && !(ts.isCallExpression(node.parent) && node.parent.expression === node))
-          throw new Error(`${file}: isolated test factories cannot be aliased; use explicit file isolation`);
+          throw new Error(
+            `${file}: isolated test factories cannot be aliased; use explicit file isolation`,
+          );
         if (
           !isFactory &&
           !inSkippedSuite(node) &&

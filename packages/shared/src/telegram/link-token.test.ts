@@ -1,9 +1,9 @@
-import { expect } from '@timeline/test-support';
 import { PGlite } from '@electric-sql/pglite';
 import { type Db, telegramLinkTokens, teams, users, teamMembers } from '@timeline/db';
+import { expect } from '@timeline/test-support';
 import { afterAll, beforeAll, describe, it } from 'bun:test';
-import { drizzle } from 'drizzle-orm/pglite';
 import { eq } from 'drizzle-orm';
+import { drizzle } from 'drizzle-orm/pglite';
 
 import { consumeVerifiedTelegramLink } from '#src/telegram/link-token.js';
 import { applyDbMigrations } from '#src/test/pglite.js';

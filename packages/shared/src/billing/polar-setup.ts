@@ -1,5 +1,4 @@
 import { PLAN_CATALOG, OVERAGE_RATES } from '#src/billing/catalog.js';
-
 import {
   BILLING_METERS,
   TIMELINE_METERED_EVENT_NAMES,

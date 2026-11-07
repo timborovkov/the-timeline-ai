@@ -874,7 +874,8 @@ describe('board scope', () => {
     if (work.kind !== 'root') throw new Error('expected root transaction');
     await expect(work.run('object-write')).resolves.toBe('accepted');
     expect(queueFakes.enqueueCalendarEventEmbedJob).toHaveBeenCalledTimes(1);
-    const [persisted] = await db.select().from(entities).where(eq(entities.id, createdId!));
+    if (!createdId) throw new Error('expected committed object id');
+    const [persisted] = await db.select().from(entities).where(eq(entities.id, createdId));
     expect(persisted?.canonicalName).toBe('Committed deadline');
   });
 

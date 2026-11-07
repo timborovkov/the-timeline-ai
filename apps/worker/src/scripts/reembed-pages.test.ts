@@ -53,9 +53,13 @@ describe('reembed candidate pages', () => {
       ]);
       const first = await listReembedEntitiesPage(db, teamId, null);
       expect(first).toHaveLength(PAGE_SIZE);
-      const second = await listReembedEntitiesPage(db, teamId, first.at(-1)!);
+      const lastFirst = first.at(-1);
+      if (!lastFirst) throw new Error('expected first page cursor');
+      const second = await listReembedEntitiesPage(db, teamId, lastFirst);
       expect(second.map((row) => row.id)).toEqual([rowId(PAGE_SIZE)]);
-      expect(await listReembedEntitiesPage(db, teamId, second[0]!)).toEqual([]);
+      const lastSecond = second[0];
+      if (!lastSecond) throw new Error('expected second page cursor');
+      expect(await listReembedEntitiesPage(db, teamId, lastSecond)).toEqual([]);
     } finally {
       await pg.close();
     }

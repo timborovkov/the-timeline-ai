@@ -1,6 +1,8 @@
 import { type ChatContextRef, parseChatContextTrail } from '@timeline/shared/chat-context';
-import { parseStoredDashboardContext } from '@/lib/dashboard-chat-context';
+
 import type { DashboardChatContext } from '@/lib/dashboard-chat-context';
+
+import { parseStoredDashboardContext } from '@/lib/dashboard-chat-context';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 

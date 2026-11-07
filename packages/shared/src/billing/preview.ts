@@ -1,5 +1,3 @@
-
-
 import { PLAN_CATALOG, type BillingMeterId } from '#src/billing/catalog.js';
 import {
   daysInPeriodYm,
@@ -10,7 +8,6 @@ import {
   type MeterTotals,
 } from '#src/billing/charge.js';
 import { applyMeteredDiscountCents } from '#src/billing/operator.js';
-
 import { freeAllowanceFloorCents } from '#src/billing/policy.js';
 import {
   type SelfServePaidPlanId,

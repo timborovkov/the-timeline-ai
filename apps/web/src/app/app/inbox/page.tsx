@@ -7,8 +7,8 @@ import type { Metadata } from 'next';
 
 import { EmptyState } from '@/components/empty-state';
 import { HistoryBackLink } from '@/components/history-back-link';
-import { InboxReadProvider } from '@/components/inbox/inbox-read-state';
 import { InboxList } from '@/components/inbox/inbox-list';
+import { InboxReadProvider } from '@/components/inbox/inbox-read-state';
 import { MarkAllReadButton } from '@/components/inbox/mark-all-read-button';
 import { PageHeader } from '@/components/page-header';
 import { resolveActiveTeam } from '@/lib/active-team';

@@ -11,11 +11,11 @@ interface BulkRead {
 
 interface InboxReadState {
   bulkPending: boolean;
-  isRead(id: string, initiallyRead: boolean): boolean;
-  beginRead(id: string): boolean;
-  finishRead(id: string, succeeded: boolean): void;
-  beginBulkRead(): number;
-  finishBulkRead(token: number, succeeded: boolean): void;
+  isRead: (id: string, initiallyRead: boolean) => boolean;
+  beginRead: (id: string) => boolean;
+  finishRead: (id: string, succeeded: boolean) => void;
+  beginBulkRead: () => number;
+  finishBulkRead: (token: number, succeeded: boolean) => void;
 }
 
 const InboxReadContext = createContext<InboxReadState | null>(null);

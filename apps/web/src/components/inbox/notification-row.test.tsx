@@ -1,6 +1,9 @@
 import { expect } from '@timeline/test-support';
 import { vi } from '@timeline/test-support';
 import { afterEach, beforeEach, describe, it } from 'bun:test';
+
+import type { RenderOptions } from '@testing-library/react';
+import type { ReactElement } from 'react';
 // Test environment: happy-dom
 
 const fakes = vi.hoisted(() => ({
@@ -49,7 +52,7 @@ const {
 const { default: userEvent } = await import('@testing-library/user-event');
 
 const { InboxReadProvider } = await import('@/components/inbox/inbox-read-state');
-const render: typeof renderWithoutProvider = (ui, options) =>
+const render = (ui: ReactElement, options?: RenderOptions) =>
   renderWithoutProvider(ui, { wrapper: InboxReadProvider, ...options });
 
 const { MarkAllReadButton } = await import('./mark-all-read-button.js');

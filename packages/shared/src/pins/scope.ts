@@ -15,8 +15,8 @@ import { z } from 'zod';
 
 import { calendarEventDetailsVisibleToUser } from '#src/calendar/visibility.js';
 import { documentVisibleToUser } from '#src/documents/visibility.js';
-import { meetingVisibleToUser, savedMeetingVisibleToUser } from '#src/meetings/visibility.js';
 import { childLogger } from '#src/logger.js';
+import { meetingVisibleToUser, savedMeetingVisibleToUser } from '#src/meetings/visibility.js';
 import {
   buildTimelineMoments,
   timelineMomentAnchorId,

@@ -73,7 +73,15 @@ describe.skip('skipped suite', () => { it('nested skip', () => { throw new Error
       .split('\n')
       .map((value) => JSON.parse(value))
       .sort(),
-    ['single', 'double', 'literal', 'parameter 1', 'parameter 2', 'template a', 'template b'].sort(),
+    [
+      'single',
+      'double',
+      'literal',
+      'parameter 1',
+      'parameter 2',
+      'template a',
+      'template b',
+    ].sort(),
   );
   assert.deepEqual(testExecutionPatterns(source + '// vi.resetModules()', file, {}), [undefined]);
   assert.equal(testExecutionPatterns(source, file, { isolation: 'batch', batchSize: 2 }).length, 3);
@@ -83,7 +91,10 @@ describe.skip('skipped suite', () => { it('nested skip', () => { throw new Error
     "import {it} from 'bun:test'; const check = it.each([1, 2]); it('known', () => {});",
     "import * as tests from 'bun:test'; const {it} = tests; it('omitted', () => {});",
   ]) {
-    assert.throws(() => testExecutionPatterns(escaped, file, { isolation: 'registration' }), /cannot be aliased/);
+    assert.throws(
+      () => testExecutionPatterns(escaped, file, { isolation: 'registration' }),
+      /cannot be aliased/,
+    );
     assert.deepEqual(testExecutionPatterns(escaped, file, {}), [undefined]);
   }
 

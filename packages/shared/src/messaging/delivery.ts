@@ -1,14 +1,16 @@
-import { claimDelivery, markDeliveryResult } from '#src/messaging/delivery-ledger.js';
-export { recordDelivery, markDeliveryResult } from '#src/messaging/delivery-ledger.js';
 import { createHash } from 'node:crypto';
+
 import { type Db } from '@timeline/db';
 import { z } from 'zod';
+
 import { emailRecipientCount } from '#src/billing/catalog.js';
 import { decryptJson, encryptJson } from '#src/crypto/secrets.js';
 import { resendRequest, ResendError, type EmailFetch } from '#src/email/resend-client.js';
 import { getEnv } from '#src/env.js';
 import { childLogger } from '#src/logger.js';
+import { claimDelivery, markDeliveryResult } from '#src/messaging/delivery-ledger.js';
 import { renderMessage } from '#src/messaging/templates.js';
+
 import type {
   MessageChannel,
   MessageInput,
@@ -16,6 +18,8 @@ import type {
   RenderedMessage,
   SendMessageResult,
 } from '#src/messaging/types.js';
+
+export { recordDelivery, markDeliveryResult } from '#src/messaging/delivery-ledger.js';
 
 interface ResendResult {
   ok: boolean;

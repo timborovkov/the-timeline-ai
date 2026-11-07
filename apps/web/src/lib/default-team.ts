@@ -1,5 +1,5 @@
-import { initializeOwnedWorkspace } from '@timeline/shared/agent-provisioning';
 import { teamMembers } from '@timeline/db';
+import { initializeOwnedWorkspace } from '@timeline/shared/agent-provisioning';
 import { applyOwnedTeamFreeGrant } from '@timeline/shared/billing';
 import { buildInboundEmail, randomSlugSuffix, slugify } from '@timeline/shared/slug';
 import { and, eq, isNull } from 'drizzle-orm';

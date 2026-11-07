@@ -22,11 +22,11 @@ import { DropdownMenuItem } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import { ItemActionGroup, ItemOverflowMenu } from '@/components/ui/item-actions';
 import { Skeleton } from '@/components/ui/skeleton';
+import { readJson } from '@/lib/api-response';
 import { providerLogoSrc } from '@/lib/connections';
 import { notifyAction } from '@/lib/notify';
 import { queryKeys } from '@/lib/query-keys';
 import { groupResourcesByKind, providerLabel, shareDisplayName } from '@/lib/resource-labels';
-import { readJson } from '@/lib/api-response';
 import { connectionErrorMessage } from '@/lib/ux-errors';
 
 interface ProviderResource {

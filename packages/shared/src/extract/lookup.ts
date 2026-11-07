@@ -2,8 +2,9 @@ import { type Db, entities } from '@timeline/db';
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import { z } from 'zod';
 
-import { chatStructured, type ChatDeps } from '#src/llm/chat.js';
 import { normalizeExtractionModelOutput } from '#src/extract/model-output.js';
+import { chatStructured, type ChatDeps } from '#src/llm/chat.js';
+
 import type { EntityMention, ExtractedEntityType } from '#src/extract/schema.js';
 
 /** A Drizzle transaction or Db — both expose the query surface we need. */

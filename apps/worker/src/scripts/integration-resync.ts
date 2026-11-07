@@ -1,4 +1,3 @@
-import { closeAllRedisConnections } from '@timeline/shared/redis';
 /**
  * Phase 11 — Integration resync admin script.
  *
@@ -17,6 +16,7 @@ import {
   integrations as integrationsTable,
 } from '@timeline/db';
 import { queue } from '@timeline/shared';
+import { closeAllRedisConnections } from '@timeline/shared/redis';
 import { and, eq } from 'drizzle-orm';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;

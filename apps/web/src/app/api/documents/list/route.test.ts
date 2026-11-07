@@ -200,8 +200,10 @@ describe('GET /api/documents/list', () => {
     const listed = (await fakes.fakeListDocumentsWithProvenancePage()) as {
       items: { currentVersion: unknown; provenance: { occurredAt: Date | null } }[];
     };
-    listed.items[0].currentVersion = null;
-    listed.items[0].provenance.occurredAt = null;
+    const listedItem = listed.items[0];
+    if (!listedItem) throw new Error('Expected a document fixture');
+    listedItem.currentVersion = null;
+    listedItem.provenance.occurredAt = null;
     fakes.fakeListDocumentsWithProvenancePage.mockResolvedValue(listed);
     let cachedPage: unknown;
     fakes.fakeCachedJson.mockImplementation(
@@ -212,15 +214,19 @@ describe('GET /api/documents/list', () => {
     );
     try {
       const first = (await (await GET(request())).json()) as DocumentListPage;
-      expect(first.items[0]).toMatchObject({
+      const firstItem = first.items[0];
+      if (!firstItem) throw new Error('Expected the first document page');
+      expect(firstItem).toMatchObject({
         currentVersion: null,
         pinned: false,
         provenance: { occurredAt: null },
       });
-      expect(first.items[0].provenance).not.toHaveProperty('metadata');
+      expect(firstItem.provenance).not.toHaveProperty('metadata');
       fakes.fakeIsPinnedMany.mockResolvedValue({ 'document:doc-1': true });
       const second = (await (await GET(request())).json()) as DocumentListPage;
-      expect(second.items[0].pinned).toBe(true);
+      const secondItem = second.items[0];
+      if (!secondItem) throw new Error('Expected the cached document page');
+      expect(secondItem.pinned).toBe(true);
     } finally {
       fakes.fakeCachedJson.mockImplementation((_key: string, _ttl: number, load: () => unknown) =>
         load(),

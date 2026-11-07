@@ -1,5 +1,6 @@
 import { type Db, slackWorkspaces, slackWorkspaceTeams } from '@timeline/db';
 import { and, eq } from 'drizzle-orm';
+
 import { decryptJson, type EncryptedSecret } from '#src/crypto/secrets.js';
 
 export interface SlackTokenJson {

@@ -26,14 +26,13 @@ import {
 } from '#src/llm/errors.js';
 import { TIMELINE_MODELS } from '#src/llm/models.js';
 import { openRouterPrivateProviderOptions } from '#src/llm/privacy.js';
+import { createOpenRouterProvider } from '#src/llm/provider.js';
 import {
   generateObject,
   generateText,
   streamText,
   withLangSmithProviderOptions,
 } from '#src/llm/tracing.js';
-
-import { createOpenRouterProvider } from '#src/llm/provider.js';
 
 type GenerateObjectProviderOptions = NonNullable<
   Parameters<typeof generateObject>[0]['providerOptions']

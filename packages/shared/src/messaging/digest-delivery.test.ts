@@ -1,4 +1,3 @@
-import type * as TelegramApiModule from '#src/telegram/api.js';
 import { PGlite } from '@electric-sql/pglite';
 import {
   type Db,
@@ -14,16 +13,19 @@ import {
 } from '@timeline/db';
 import { vi, expect } from '@timeline/test-support';
 import { afterAll, beforeAll, beforeEach, describe, it } from 'bun:test';
-import { drizzle } from 'drizzle-orm/pglite';
 import { eq } from 'drizzle-orm';
+import { drizzle } from 'drizzle-orm/pglite';
+
 import { resetEnvForTests } from '#src/env.js';
 import { applyDbMigrations } from '#src/test/pglite.js';
+
+import type * as TelegramApiModule from '#src/telegram/api.js';
 
 const send = vi.hoisted(() => vi.fn(() => Promise.resolve()));
 await vi.mock(
   import.meta.resolve('#src/telegram/api.js'),
   async (original) => ({
-    ...(await original<TelegramApiModule>()),
+    ...(await original<typeof TelegramApiModule>()),
     sendTelegramBotMessage: send,
   }),
   () => import('#src/telegram/api.js'),

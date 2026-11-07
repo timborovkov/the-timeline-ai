@@ -2,8 +2,8 @@ import { PGlite } from '@electric-sql/pglite';
 import { type Db, teams, slackWorkspaces, slackWorkspaceTeams } from '@timeline/db';
 import { vi, expect } from '@timeline/test-support';
 import { afterAll, afterEach, beforeAll, describe, it } from 'bun:test';
-import { drizzle } from 'drizzle-orm/pglite';
 import { eq } from 'drizzle-orm';
+import { drizzle } from 'drizzle-orm/pglite';
 
 import { encryptJson, resetSecretsKeyCacheForTests } from '#src/crypto/secrets.js';
 import { resetEnvForTests } from '#src/env.js';
@@ -36,7 +36,9 @@ beforeAll(async () => {
   });
   await db.insert(slackWorkspaceTeams).values({ workspaceId, teamId });
 });
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 afterAll(async () => {
   if (priorKey === undefined) delete process.env.SECRETS_ENCRYPTION_KEY;
   else process.env.SECRETS_ENCRYPTION_KEY = priorKey;

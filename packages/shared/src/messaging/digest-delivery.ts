@@ -1,4 +1,3 @@
-import { claimDelivery, markDeliveryResult } from '#src/messaging/delivery-ledger.js';
 import {
   type Db,
   dailyDigests,
@@ -12,8 +11,11 @@ import {
   users,
 } from '@timeline/db';
 import { and, eq, isNull } from 'drizzle-orm';
+
 import { withChatDeliveryPrincipal } from '#src/conversation-surfaces/deferred-delivery.js';
 import { getEnv } from '#src/env.js';
+import { claimDelivery, markDeliveryResult } from '#src/messaging/delivery-ledger.js';
+import { sendMessage } from '#src/messaging/delivery.js';
 import {
   digestDestinationDedupeKey,
   listTeamDigestDestinations,
@@ -22,11 +24,11 @@ import {
   type TeamDigestDestination,
 } from '#src/messaging/destinations.js';
 import { formatDigestChatText } from '#src/messaging/digest-format.js';
-import { generateDailyDigest, getDigestPreference } from '#src/messaging/digest.js';
 import { isDigestWindowExpired } from '#src/messaging/digest-window.js';
-import { sendMessage } from '#src/messaging/delivery.js';
+import { generateDailyDigest, getDigestPreference } from '#src/messaging/digest.js';
 import { sendTeamSlackDirectMessage, sendTeamSlackMessage } from '#src/slack/outbound.js';
 import { sendTelegramBotMessage } from '#src/telegram/api.js';
+
 import type {
   DailyDigestPayload,
   MessageChannel,

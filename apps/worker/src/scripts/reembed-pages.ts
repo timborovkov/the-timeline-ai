@@ -3,7 +3,10 @@ import { and, asc, eq, gt, isNull, or, type SQL, sql } from 'drizzle-orm';
 
 export const PAGE_SIZE = 500;
 
-type EntityCursor = { updatedAt: Date; id: string };
+interface EntityCursor {
+  updatedAt: Date;
+  id: string;
+}
 
 export function listReembedEntitiesPage(db: Db, teamId: string, cursor: EntityCursor | null) {
   const conditions: SQL[] = [eq(entities.teamId, teamId), isNull(entities.mergedIntoId)];

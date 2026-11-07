@@ -14,7 +14,10 @@ describe('readJson', () => {
       { status: 428 },
     );
 
-    await expect(readJson(response, { navigate })).rejects.toMatchObject({ code: 'legal_acceptance_required', message: 'Request failed (428)' });
+    await expect(readJson(response, { navigate })).rejects.toMatchObject({
+      code: 'legal_acceptance_required',
+      message: 'Request failed (428)',
+    });
     expect(navigate).toHaveBeenCalledWith('/legal/accept?returnTo=%2Fapp');
   });
 
@@ -30,7 +33,10 @@ describe('readJson', () => {
       { status: 428 },
     );
 
-    await expect(readJson(response, { navigate })).rejects.toMatchObject({ code: 'legal_acceptance_required', message: 'Request failed (428)' });
+    await expect(readJson(response, { navigate })).rejects.toMatchObject({
+      code: 'legal_acceptance_required',
+      message: 'Request failed (428)',
+    });
     expect(navigate).not.toHaveBeenCalled();
   });
 
@@ -38,7 +44,10 @@ describe('readJson', () => {
     const navigate = vi.fn();
     const response = Response.json({ error: 'request_failed' }, { status: 500 });
 
-    await expect(readJson(response, { navigate })).rejects.toMatchObject({ code: 'request_failed', message: 'Request failed (500)' });
+    await expect(readJson(response, { navigate })).rejects.toMatchObject({
+      code: 'request_failed',
+      message: 'Request failed (500)',
+    });
     expect(navigate).not.toHaveBeenCalled();
   });
 });

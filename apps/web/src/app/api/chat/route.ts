@@ -36,7 +36,6 @@ import { z } from 'zod';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { trackProductEventBestEffort } from '@/lib/analytics';
 import { auth } from '@/lib/auth';
-import { dashboardContextSchema } from '@/lib/dashboard-chat-context';
 import {
   filterToolSet,
   hasExplicitPinMutationIntent,
@@ -44,6 +43,7 @@ import {
   selectAgentToolGroups,
   selectedNativeToolNames,
 } from '@/lib/chat-tool-selection';
+import { dashboardContextSchema } from '@/lib/dashboard-chat-context';
 import { db } from '@/lib/db';
 import { reportCaughtError, reportHandledEvent } from '@/lib/sentry-report';
 

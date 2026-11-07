@@ -1,6 +1,7 @@
-import type { Db } from '@timeline/db';
 import { SlackApi } from '#src/slack/api.js';
 import { findWorkspaceInstallForTeam, decryptWorkspaceToken } from '#src/slack/workspace-access.js';
+
+import type { Db } from '@timeline/db';
 
 export async function sendTeamSlackMessage(input: {
   db: Db;

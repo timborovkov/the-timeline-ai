@@ -3,8 +3,10 @@ import { expect, vi } from '@timeline/test-support';
 import { afterEach, it } from 'bun:test';
 
 import { resetEnvForTests } from '#src/env.js';
-import { closeRedisConnection as closeQueue, getRedisConnection as getQueue } from '#src/queue/connection.js';
-
+import {
+  closeRedisConnection as closeQueue,
+  getRedisConnection as getQueue,
+} from '#src/queue/connection.js';
 import {
   closeAllRedisConnections,
   closeRedisConnection,

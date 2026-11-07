@@ -1,4 +1,3 @@
-import { WORKSPACE_OPERATOR_POLICY } from '#src/platform-admin/workspace-policy.js';
 import { createHash } from 'node:crypto';
 
 import {
@@ -72,6 +71,7 @@ import {
   operatorDatabase,
   recordScopedReadAudit,
 } from '#src/platform-admin/runtime.js';
+import { WORKSPACE_OPERATOR_POLICY } from '#src/platform-admin/workspace-policy.js';
 import {
   getQdrantClient,
   type SearchHit,

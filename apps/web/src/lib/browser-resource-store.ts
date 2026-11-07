@@ -2,8 +2,8 @@
 
 interface BrowserResourceOptions<T> {
   initial: T;
-  load(previous: T): Promise<T>;
-  onChange?(value: T): void;
+  load: (previous: T) => Promise<T>;
+  onChange?: (value: T) => void;
 }
 
 export function createBrowserResourceStore<T>({
@@ -71,7 +71,7 @@ export function createBrowserResourceStore<T>({
     refresh,
     ensureLoaded,
     subscribeIdle,
-    subscribe(listener: () => void): () => void {
+    subscribe: (listener: () => void): (() => void) => {
       const unsubscribe = subscribeIdle(listener);
       bindBrowserRefresh();
       ensureLoaded();
@@ -79,13 +79,13 @@ export function createBrowserResourceStore<T>({
     },
     getSnapshot: () => snapshot,
     getServerSnapshot: () => initial,
-    reportPathname(pathname: string) {
+    reportPathname: (pathname: string) => {
       if (currentPathname === pathname) return;
       const first = currentPathname === null;
       currentPathname = pathname;
       if (!first) void refresh();
     },
-    reset() {
+    reset: () => {
       generation++;
       snapshot = initial;
       loaded = false;
@@ -93,7 +93,7 @@ export function createBrowserResourceStore<T>({
       currentPathname = null;
       emit();
     },
-    set(next: T) {
+    set: (next: T) => {
       generation++;
       snapshot = next;
       loaded = true;

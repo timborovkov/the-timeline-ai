@@ -1,8 +1,8 @@
-import { closeAllRedisConnections } from '@timeline/shared/redis';
 import { closeDb, getDb, migrateDatabase } from '@timeline/db';
 import { waitForMigrations } from '@timeline/db/wait-for-migrations';
 import { childLogger, getEnv, queue } from '@timeline/shared';
 import { shutdownPostHogNodeClients } from '@timeline/shared/analytics/posthog-node';
+import { closeAllRedisConnections } from '@timeline/shared/redis';
 
 import { ensureDocumentExtractSnapshot } from '#src/document-ingestion/document-extract-snapshot.js';
 import { captureWorkerException, flushWorkerSentry, initWorkerSentry } from '#src/monitoring.js';

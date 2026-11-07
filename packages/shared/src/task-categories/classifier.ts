@@ -11,7 +11,9 @@ import {
   type TaskCategoryBatchItem,
   type TaskCategoryBatchPrediction,
 } from '#src/task-categories/packet.js';
+
 import type { TaskCategory } from '#src/task-categories/types.js';
+
 export * from '#src/task-categories/packet.js';
 
 export async function classifyTaskCategory(

@@ -3,7 +3,6 @@ import { jsonSchema } from 'ai';
 import { describe, it } from 'bun:test';
 
 import { instrumentAgentTools, summarizeAgentToolObservations } from '#src/agent/observability.js';
-
 import { capabilityTool } from '#src/agent/tool-policy.js';
 
 import type { ToolSet } from 'ai';
@@ -116,11 +115,11 @@ describe('agent tool observability', () => {
           inputSchema: jsonSchema({ type: 'object' }),
           execute: () => Promise.resolve({ ok: true, id: 'proposal-1' }),
         }).definition,
-      } as unknown as ToolSet,
+      },
       (observation) => observations.push(observation),
     );
 
-    const execute = tools.create_followup?.execute as TestToolExecute;
+    const execute = tools.create_followup.execute as TestToolExecute;
     await execute({ title: 'Follow up' }, { toolCallId: 'call-1', messages: [] });
 
     expect(summarizeAgentToolObservations({ observations }).proposalIds).toEqual(['proposal-1']);

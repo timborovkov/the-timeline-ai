@@ -1,4 +1,3 @@
-import { OPERATOR_CAPABILITIES } from '#src/platform-admin/capabilities.js';
 import { PGlite } from '@electric-sql/pglite';
 import {
   auditLog,
@@ -13,6 +12,7 @@ import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 
 import { resetEnvForTests } from '#src/env.js';
+import { OPERATOR_CAPABILITIES } from '#src/platform-admin/capabilities.js';
 import {
   directoryPage,
   endImpersonation,

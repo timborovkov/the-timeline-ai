@@ -379,6 +379,6 @@ export interface ObjectChangeRow {
 }
 
 export interface UpdateActor {
-  kind: import('#src/objects/identity-facets.js').ActorKind;
+  kind: ActorKind;
   userId: string | null;
 }

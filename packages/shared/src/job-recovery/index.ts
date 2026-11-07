@@ -28,8 +28,8 @@ import {
 } from 'drizzle-orm';
 
 import { isProviderCooldownErrorMessage } from '#src/integrations/types.js';
-import * as queue from '#src/queue/index.js';
 import { RECOVERY_STALE_AFTER_MS } from '#src/job-recovery/policy.js';
+import * as queue from '#src/queue/index.js';
 import { rawEventVisibleToUser } from '#src/visibility.js';
 
 import type { JobType } from 'bullmq';

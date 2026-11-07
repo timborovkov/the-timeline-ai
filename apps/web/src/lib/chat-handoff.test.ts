@@ -1,5 +1,3 @@
-import { dashboardContextSchema, parseStoredDashboardContext } from '@/lib/dashboard-chat-context';
-import { buildChatView } from '@/lib/chat-view';
 import { expect } from '@timeline/test-support';
 import { describe, it } from 'bun:test';
 
@@ -12,6 +10,8 @@ import {
   storeChatContextHandoff,
   validateChatHandoffPrompt,
 } from '@/lib/chat-handoff';
+import { buildChatView } from '@/lib/chat-view';
+import { dashboardContextSchema, parseStoredDashboardContext } from '@/lib/dashboard-chat-context';
 function memoryStorage() {
   const values = new Map<string, string>();
   return {

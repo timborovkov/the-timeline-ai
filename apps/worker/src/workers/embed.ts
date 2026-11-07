@@ -17,9 +17,9 @@ import { eq, sql } from 'drizzle-orm';
 
 import { trackProductEventBestEffort } from '#src/analytics.js';
 import { withWorkerAiBilling, workerBillingJobOptions } from '#src/billing-context.js';
+import { finishIngestJob } from '#src/ingest-job-result.js';
 import { captureWorkerException, captureWorkerJobFailure } from '#src/monitoring.js';
 import { guardWorkerProcessor } from '#src/platform-worker.js';
-import { finishIngestJob } from '#src/ingest-job-result.js';
 
 const log = childLogger('worker:embed');
 const EMBEDDING_OVERLAP_TOKENS = 120;

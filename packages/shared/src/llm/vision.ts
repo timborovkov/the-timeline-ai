@@ -6,13 +6,12 @@ import { withAiMetering } from '#src/billing/runtime.js';
 import { wrapAiFailure } from '#src/llm/errors.js';
 import { TIMELINE_MODELS } from '#src/llm/models.js';
 import { openRouterPrivateProviderOptions } from '#src/llm/privacy.js';
+import { createOpenRouterProvider } from '#src/llm/provider.js';
 import {
   generateText,
   sanitizeAiSdkInputs,
   withLangSmithProviderOptions,
 } from '#src/llm/tracing.js';
-
-import { createOpenRouterProvider } from '#src/llm/provider.js';
 
 /**
  * Vision-based text extraction. One inference layer for OCR/transcription of

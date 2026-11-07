@@ -12,11 +12,11 @@ import { pruneAgentCredentials } from '@timeline/shared/agent-provisioning';
 import { runBillingMaintenanceTick } from '@timeline/shared/billing';
 import { flushDeferredEmailEnrichment } from '@timeline/shared/email';
 import { getEnv } from '@timeline/shared/env';
-import { RECOVERY_STALE_AFTER_MS } from '@timeline/shared/job-recovery/policy';
 import {
   flushDeferredAcceptedSourceEnrichment,
   flushDeferredAudioTranscription,
 } from '@timeline/shared/integrations';
+import { RECOVERY_STALE_AFTER_MS } from '@timeline/shared/job-recovery/policy';
 import { MCP_TEAM_ACTOR_USER_ID } from '@timeline/shared/mcp-server';
 import { prunePlatformAdminRecords } from '@timeline/shared/platform-admin/retention';
 import { withTeam } from '@timeline/shared/team-scope';

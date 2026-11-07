@@ -49,9 +49,9 @@ import { alias } from 'drizzle-orm/pg-core';
 import { z } from 'zod';
 
 import { withWorkerAiBilling, workerBillingJobOptions } from '#src/billing-context.js';
+import { finishIngestJob } from '#src/ingest-job-result.js';
 import { captureWorkerJobFailure } from '#src/monitoring.js';
 import { guardWorkerProcessor } from '#src/platform-worker.js';
-import { finishIngestJob } from '#src/ingest-job-result.js';
 
 const log = childLogger('worker:suggestions');
 const PSEUDO_USER = '00000000-0000-0000-0000-000000000000';
