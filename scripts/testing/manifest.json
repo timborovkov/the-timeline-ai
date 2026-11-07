@@ -2239,5 +2239,8 @@
   },
   "packages/shared/src/redis/connection.test.ts": {
     "group": "unit"
+  },
+  "packages/shared/src/telegram/link-token.test.ts": {
+    "group": "unit"
   }
 }
