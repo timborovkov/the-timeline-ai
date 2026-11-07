@@ -250,7 +250,9 @@ describe('getEnv', () => {
   it('defaults the PostHog UI host and validates HTTPS overrides', () => {
     for (const host of [undefined, '', 'https://eu.posthog.com', 'https://posthog.example.com']) {
       setBaseEnv({ NEXT_PUBLIC_POSTHOG_UI_HOST: host });
-      expect(getEnv().NEXT_PUBLIC_POSTHOG_UI_HOST).toBe(host || 'https://eu.posthog.com');
+      expect(getEnv().NEXT_PUBLIC_POSTHOG_UI_HOST).toBe(
+        host === '' ? 'https://eu.posthog.com' : (host ?? 'https://eu.posthog.com'),
+      );
     }
     for (const host of [
       'invalid',
@@ -265,7 +267,9 @@ describe('getEnv', () => {
   it('defaults browser analytics to the managed proxy and retains the EU override', () => {
     for (const host of [undefined, '', 'https://m.thetimeline.cc', 'https://eu.i.posthog.com']) {
       setBaseEnv({ NEXT_PUBLIC_POSTHOG_HOST: host });
-      expect(getEnv().NEXT_PUBLIC_POSTHOG_HOST).toBe(host || 'https://m.thetimeline.cc');
+      expect(getEnv().NEXT_PUBLIC_POSTHOG_HOST).toBe(
+        host === '' ? 'https://m.thetimeline.cc' : (host ?? 'https://m.thetimeline.cc'),
+      );
       expect(getEnv().POSTHOG_HOST).toBe('https://eu.i.posthog.com');
     }
     for (const host of [
