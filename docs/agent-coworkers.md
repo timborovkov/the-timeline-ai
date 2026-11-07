@@ -10,13 +10,16 @@ adds the coworker reporting agreement without adding a sixth advertised MCP tool
 Signup retains a validated same-origin OAuth authorization request through credentials,
 GitHub, and legal acceptance. Invitations retain precedence; a valid explicit authorization
 request precedes pricing. Email verification carries an opaque reference to an account-bound
-server record, never an arbitrary callback URL. It expires after 24 hours. Account-menu
-resends preserve the latest live continuation. An expired request tells the user to restart
-connection from their agent.
+server record, never an arbitrary callback URL. It expires after 24 hours and is consumed
+when verification succeeds. Account-menu resends keep the latest live OAuth destination even
+when the current page is not `/oauth/authorize`. Resolve matches the account email
+case-insensitively. An expired or already-used request tells the user to restart connection
+from their agent.
 
 A new customer still establishes identity and accepts terms. Verified existing owners can
-create a dedicated provisioning grant at `/app/agent-provisioning`. Grants create new
-workspaces only, default to one workspace/seven days, and allow up to ten/thirty days.
+create a dedicated provisioning grant at `/app/agent-provisioning`. Soft-removed owner
+memberships do not qualify. Grants create new workspaces only, default to one workspace/seven
+days, and allow up to ten/thirty days.
 Capture is opt-in. The owner-wide five-attempt hourly limit includes matching retries.
 The provisioning API is documented separately at `/agents/provisioning.md`.
 
