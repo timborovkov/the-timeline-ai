@@ -28,8 +28,15 @@ export function effectiveReporting(
 ) {
   return override ?? defaults;
 }
-class ReportingConsentError extends Error {
+export class ReportingConsentError extends Error {
   override name = 'ReportingConsentError';
+}
+
+export function isReportingConsentError(error: unknown): error is ReportingConsentError {
+  return (
+    error instanceof ReportingConsentError ||
+    (error instanceof Error && error.name === 'ReportingConsentError')
+  );
 }
 
 export function prepareConsentReporting(

@@ -810,6 +810,9 @@ async function callTool(
     case 'timeline.subject':
       return subjectTimeline(scope, args);
     case REMEMBER_TOOL_NAME:
+      if (!principal.scopes.includes('read') || !principal.scopes.includes('capture')) {
+        return rememberError('forbidden');
+      }
       return rememberNote(scope, principal, args, deps);
     default:
       return executeReadCapability(scope, toolName, args);

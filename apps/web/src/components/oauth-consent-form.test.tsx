@@ -110,5 +110,6 @@ describe('consent reporting agreement', () => {
       'Project handoff',
     );
     expect(screen.getByRole<HTMLInputElement>('radio', { name: /Owner team/ }).checked).toBe(true);
+    expect(screen.getByRole<HTMLInputElement>('checkbox').checked).toBe(true);
   });
 });

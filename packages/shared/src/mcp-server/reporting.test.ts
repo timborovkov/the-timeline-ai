@@ -57,6 +57,12 @@ describe('coworker reporting', () => {
         teamId: '22222222-2222-4222-8222-222222222222',
       }),
     ).rejects.toThrow('principal mismatch');
+    await expect(
+      connected.agentReporting.current({
+        ...principal,
+        keyId: '22222222-2222-4222-8222-222222222222',
+      }),
+    ).rejects.toThrow('Connection unavailable');
     await fixture.pg.exec("update team_members set role='member'");
     await expect(
       withTeam(db, team, owner).agentReporting.update(
@@ -87,5 +93,13 @@ describe('coworker reporting', () => {
         { mode: 'on_request' },
       ),
     ).rejects.toThrow('Connection unavailable');
+    const audits = await fixture.pg.query<{ metadata: { mode?: string; scope?: string } }>(
+      "select metadata from audit_log where action='agent.reporting.updated' order by created_at",
+    );
+    expect(audits.rows.length).toBeGreaterThan(0);
+    for (const row of audits.rows) {
+      expect(row.metadata).not.toHaveProperty('scope');
+      expect(row.metadata.mode).toBeDefined();
+    }
   });
 });

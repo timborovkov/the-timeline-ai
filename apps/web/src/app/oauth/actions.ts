@@ -2,6 +2,7 @@
 
 import {
   createMcpAuthorizationCode,
+  isReportingConsentError,
   resolveMcpOAuthConsentScopes,
   revokeMcpOAuthGrant,
   validateMcpAuthorizationRequest,
@@ -122,8 +123,7 @@ export async function approveMcpOAuthAction(formData: FormData): Promise<{ error
       }),
     };
   } catch (error) {
-    if (error instanceof Error && error.name === 'ReportingConsentError')
-      return { error: error.message };
+    if (isReportingConsentError(error)) return { error: error.message };
     reportCaughtError(new Error('MCP OAuth authorization issuance failed'), {
       surface: 'server_action',
       operation: 'mcp_oauth_consent_approve',

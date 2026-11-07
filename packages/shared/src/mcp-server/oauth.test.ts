@@ -666,6 +666,7 @@ describe('Timeline MCP OAuth server', () => {
       .select()
       .from(auditLog)
       .where(eq(auditLog.action, 'agent.reporting.updated'));
+    expect(audits.every((row) => !('scope' in (row.metadata as object)))).toBe(true);
     await testDb.pg.exec(
       `CREATE FUNCTION fail_consent_code() RETURNS trigger AS $$ BEGIN RAISE EXCEPTION 'test issuance failure'; END; $$ LANGUAGE plpgsql; CREATE TRIGGER fail_consent_code BEFORE INSERT ON mcp_outbound_oauth_codes FOR EACH ROW EXECUTE FUNCTION fail_consent_code();`,
     );

@@ -42,6 +42,8 @@ await vi.mock(
       validateMcpAuthorizationRequest: fakes.validate,
       createMcpAuthorizationCode: fakes.createCode,
       revokeMcpOAuthGrant: fakes.revokeGrant,
+      isReportingConsentError: (error: unknown) =>
+        error instanceof Error && error.name === 'ReportingConsentError',
       withMcpOAuthTrustedAuthorizationRedirect: (
         error: unknown,
         trustedAuthorizationRedirect: { redirectUri: string; state?: string },
