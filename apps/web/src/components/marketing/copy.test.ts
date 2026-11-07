@@ -1,7 +1,7 @@
 import { expect } from '@timeline/test-support';
 import { describe, it } from 'bun:test';
 
-import { INTEGRATION_NAV_ITEMS } from '@/components/marketing/copy';
+import { INTEGRATION_NAV_ITEMS, publicNavItemLabel } from '@/components/marketing/copy';
 import { CONNECTORS, findConnector } from '@/components/marketing/integrations/connector-content';
 import {
   MCP_GUIDE_NAV_LABEL,
@@ -36,6 +36,20 @@ describe('public marketing copy', () => {
     expect(
       INTEGRATION_NAV_ITEMS.some((item) => /native sync|capture|mcp lookup/i.test(item.label)),
     ).toBe(false);
+    const slackItem = INTEGRATION_NAV_ITEMS[0];
+    const telegramItem = INTEGRATION_NAV_ITEMS[1];
+    const driveItem = INTEGRATION_NAV_ITEMS[2];
+    if (!slackItem || !telegramItem || !driveItem) {
+      throw new Error('expected Slack, Telegram, and Google Drive nav items');
+    }
+    expect(publicNavItemLabel(slackItem)).toBe('Slack · Native sync');
+    expect(publicNavItemLabel(telegramItem)).toBe('Telegram · Capture');
+    expect(publicNavItemLabel(driveItem)).toBe('Google Drive');
+    expect(
+      INTEGRATION_NAV_ITEMS.filter((item) => 'statusLabel' in item && item.statusLabel).map(
+        (item) => item.href,
+      ),
+    ).toEqual(['/integrations/slack', TELEGRAM_PAGE.route]);
 
     const comingSoonRoutes = WORKS_WITH_TOOLS.filter((tool) => tool.status === 'coming-soon').map(
       (tool) => tool.route,
@@ -65,10 +79,17 @@ describe('public marketing copy', () => {
       expect(CONNECTORS.some((entry) => entry.slug === slug)).toBe(true);
     }
 
+    const slackNav = INTEGRATION_NAV_ITEMS.find((item) => item.href === '/integrations/slack');
+    expect(slackNav).toEqual({
+      href: '/integrations/slack',
+      label: 'Slack',
+      statusLabel: 'Native sync',
+    });
     const telegramNav = INTEGRATION_NAV_ITEMS.find((item) => item.href === TELEGRAM_PAGE.route);
     expect(telegramNav).toEqual({
       href: TELEGRAM_PAGE.route,
       label: 'Telegram',
+      statusLabel: 'Capture',
     });
     expect(TELEGRAM_PAGE.summary).toMatch(/Link a Telegram group or DM/i);
 
