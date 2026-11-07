@@ -2263,5 +2263,8 @@
   },
   "apps/worker/src/job-delay.test.ts": {
     "group": "unit"
+  },
+  "apps/worker/src/scripts/reembed-pages.test.ts": {
+    "group": "unit"
   }
 }
