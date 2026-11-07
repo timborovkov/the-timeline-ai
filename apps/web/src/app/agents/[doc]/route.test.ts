@@ -50,8 +50,8 @@ describe('agent markdown routes', () => {
       expect(body).toContain(client);
     }
     expect(body).toContain('timeline.search');
-    expect(body).toContain('small limit');
-    expect(body).toContain("human's OK");
+    expect(body).toContain('small bounded limit');
+    expect(body).toContain('context the user approves for sharing');
     expect(body).toContain('capture');
     expect(body).toContain('on by default');
     expect(body).toContain('$TIMELINE_INGEST_TOKEN');
@@ -80,8 +80,12 @@ describe('agent markdown routes', () => {
     );
   });
 
-  it('lists only the two markdown documents for static generation', () => {
-    expect(generateStaticParams()).toEqual([{ doc: 'setup.md' }, { doc: 'SKILL.md' }]);
+  it('lists the supported markdown documents for static generation', () => {
+    expect(generateStaticParams()).toEqual([
+      { doc: 'setup.md' },
+      { doc: 'SKILL.md' },
+      { doc: 'provisioning.md' },
+    ]);
   });
 
   it('returns 404 for unknown agent markdown documents', async () => {

@@ -35,9 +35,10 @@ suspension. The request context separates the actual administrator from the
 effective user. Team scopes retain their normal membership and visibility checks;
 queued work carries the impersonation-session identifier and revalidates it at
 execution. Work that starts after exit, expiry, or revocation is rejected.
-Account-security, credential, OAuth connection, and legal acceptance actions
-cannot run on another person's behalf. Platform management and billing use the
-actual administrator identity.
+Account-security, credential, OAuth connection, provisioning, and legal
+acceptance actions cannot run on another person's behalf. Account-wide
+provisioning grants and audit history are blocked for impersonated reads as well
+as writes. Platform management and billing use the actual administrator identity.
 
 ## Suspension and audit
 

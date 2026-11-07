@@ -55,7 +55,7 @@ For hosted Timeline, either plugin configures the remote URL automatically. Any 
 codex mcp add timeline --url "https://thetimeline.cc/api/mcp/server"
 ```
 
-Use Streamable HTTP, not legacy SSE. The endpoint returns a standards-compatible `401` discovery challenge, then exposes OAuth protected-resource and authorization-server metadata. Authorization uses PKCE S256 and explicit user/team consent. Revoke an approved AI app later from **Provider accounts** in Timeline.
+Use Streamable HTTP, not legacy SSE. The endpoint returns a standards-compatible `401` discovery challenge, then exposes OAuth protected-resource and authorization-server metadata. Authorization uses PKCE S256 and explicit user/team consent. Revoke an approved AI app later from **Connect your agent** in Timeline.
 
 ### Static key setup for manual clients
 
@@ -104,4 +104,18 @@ claude plugin update timeline@timeline
 
 ## Included skill
 
-- [`timeline`](./timeline/SKILL.md) — route workspace questions to `timeline.search`, `timeline.get`, `timeline.subject`, `timeline.ask`, and `timeline.remember`; expand material evidence; add notes only when asked; and answer with citations and explicit uncertainty.
+- [`timeline`](./timeline/SKILL.md) — route workspace questions to `timeline.search`, `timeline.get`, `timeline.subject`, `timeline.ask`, and `timeline.remember`; expand material evidence; add notes on request or within an authorized scoped reporting agreement; and answer with citations and explicit uncertainty.
+
+## Coworker reporting (0.5.0)
+
+Start Timeline-dependent work with `timeline.get` using `kind="connection"`. Owners/admins set
+workspace defaults and per-connection overrides in Connect your agent: on request, or meaningful
+work and handoffs within a stated project scope. Refresh before automatic reporting. Preferences
+do not grant capture permission. The installed skill, public skill and signed-in download share
+one canonical file. See [rollout and validation boundaries](../../../docs/agent-coworkers.md).
+
+A verified existing owner can delegate new-workspace creation through a dedicated provisioning
+grant. Follow [provisioning.md](https://thetimeline.cc/agents/provisioning.md), linked from setup.
+New customers still complete identity and legal acceptance themselves.
+
+OAuth consent now shows the effective reporting agreement for the selected workspace. Owners/admins can inherit or override it for this connection; members can inspect it. Unchanged reauthorization preserves it. The skill verifies the connection and finishes the actual task with a cited answer or an explicitly approved first brief, without forcing a capture.

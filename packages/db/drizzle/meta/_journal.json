@@ -701,6 +701,27 @@
       "when": 1795656280000,
       "tag": "0096_connect_agent_onboarding",
       "breakpoints": true
+    },
+    {
+      "idx": 100,
+      "version": "7",
+      "when": 1795656340000,
+      "tag": "0097_auth_continuations",
+      "breakpoints": true
+    },
+    {
+      "idx": 101,
+      "version": "7",
+      "when": 1795656400000,
+      "tag": "0098_agent_provisioning",
+      "breakpoints": true
+    },
+    {
+      "idx": 102,
+      "version": "7",
+      "when": 1795656460000,
+      "tag": "0099_agent_reporting",
+      "breakpoints": true
     }
   ]
 }
