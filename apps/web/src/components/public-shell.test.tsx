@@ -75,14 +75,31 @@ describe('PublicShell', () => {
     expect(html.match(/aria-current="page"[^>]*href="\/agents"/g)).toHaveLength(3);
     expect(html).toContain('<summary');
     expect(html).toContain('>Menu</span>');
-    expect(html).toContain('HubSpot · Coming soon');
     expect(html).toContain('Slack · Native sync');
     expect(html).toContain('Telegram · Capture');
-    expect(html).toContain('Linear · Native sync');
-    expect(html).toContain('Jira · MCP lookup');
-    expect(html.indexOf('Slack · Native sync')).toBeLessThan(html.indexOf('Linear · Native sync'));
-    expect(html.indexOf('Telegram · Capture')).toBeLessThan(html.indexOf('Linear · Native sync'));
+    expect(html).toContain('Google Drive');
+    expect(html).toContain('GitHub');
+    expect(html).toContain('>Linear<');
+    expect(html).toContain('Monday.com');
+    expect(html).toContain('Sentry');
+    expect(html).toContain('Connect MCP tools');
+    expect(html).toContain('href="/integrations/mcp"');
+    expect(html).toContain('href="/integrations/sentry"');
+    expect(html.indexOf('Slack · Native sync')).toBeLessThan(html.indexOf('Telegram · Capture'));
+    expect(html.indexOf('Telegram · Capture')).toBeLessThan(
+      html.indexOf('href="/integrations/google-drive"'),
+    );
+    expect(html).not.toContain('Linear · Native sync');
+    expect(html).not.toContain('MCP lookup');
+    expect(html).not.toContain('href="/integrations/jira"');
+    expect(html).not.toContain('href="/integrations/notion"');
     expect(html).toContain('The Timeline vs Day AI');
+    expect(html).toContain('The Timeline vs Suda');
+    expect(html).toContain('The Timeline vs MemoryCrow');
+    expect(html).toContain('The Timeline vs Achiral');
+    expect(html).not.toContain('HubSpot · Coming soon');
+    expect(html).not.toContain('Attio · Coming soon');
+    expect(html).not.toContain('Pipedrive · Coming soon');
     expect(html).not.toContain('Works with HubSpot');
   });
 

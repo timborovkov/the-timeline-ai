@@ -89,7 +89,7 @@ export const PRODUCT_TOUR = {
       index: '08',
       headline: 'Ask, and get the receipts.',
       caption:
-        'Ask for a status or a handoff brief on any client or project, and every line cites where it came from.',
+        'A stored example from the fictional Acme Labs demo. Every line cites where it came from.',
       file: '32-ask-handoff-dark.png',
       alt: 'Ask handoff brief with every line cited to its source.',
       reshoot:

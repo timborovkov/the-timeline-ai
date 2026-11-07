@@ -10,30 +10,15 @@ import {
   findComparePageByRoute,
   isLegacyCompareSlug,
 } from '@/components/marketing/compare/content';
-import { COMPARE_NAV_ITEMS, INTEGRATION_NAV_ITEMS } from '@/components/marketing/copy';
-import { WORKS_WITH_TOOLS } from '@/components/marketing/integrations/works-with-content';
+import { COMPARE_NAV_ITEMS } from '@/components/marketing/copy';
 
 describe('compare content', () => {
-  it('publishes a hub, four cited head-to-head pages, and legacy works-with redirects', () => {
+  it('publishes a hub, seven cited head-to-head pages, and legacy works-with redirects', () => {
     expect(COMPARE_HUB.route).toBe('/compare');
-    expect(COMPARE_PAGES).toHaveLength(4);
+    expect(COMPARE_PAGES).toHaveLength(7);
     expect(COMPARE_PAGES.map((page) => page.slug)).toEqual([...COMPARE_SLUGS]);
     expect(COMPARE_NAV_ITEMS.map((item) => item.href)).toEqual(
       COMPARE_PAGES.map((page) => page.route),
-    );
-    expect(INTEGRATION_NAV_ITEMS.map((item) => item.href)).toEqual([
-      '/integrations/slack',
-      '/integrations/telegram',
-      ...WORKS_WITH_TOOLS.map((tool) => tool.route),
-    ]);
-    expect(INTEGRATION_NAV_ITEMS.map((item) => `${item.label} · ${item.statusLabel}`)).toEqual([
-      'Slack · Native sync',
-      'Telegram · Capture',
-      ...WORKS_WITH_TOOLS.map((tool) => `${tool.name} · ${tool.statusLabel}`),
-    ]);
-    expect(INTEGRATION_NAV_ITEMS.map((item) => item.href)).not.toContain('/integrations/github');
-    expect(INTEGRATION_NAV_ITEMS.map((item) => item.href)).not.toContain(
-      '/integrations/google-drive',
     );
 
     expect(LEGACY_COMPARE_REDIRECTS).toEqual({
@@ -44,10 +29,38 @@ describe('compare content', () => {
     });
     expect(isLegacyCompareSlug('hubspot')).toBe(true);
     expect(isLegacyCompareSlug('the-timeline-vs-day-ai')).toBe(false);
+    expect(COMPARE_SLUGS).not.toContain('the-timeline-vs-notion');
+    expect(COMPARE_SLUGS).not.toContain('the-timeline-vs-mem0');
 
     for (const page of COMPARE_PAGES) {
       expect(findComparePage(page.slug)).toBe(page);
       expect(findComparePageByRoute(page.route)).toBe(page);
+    }
+  });
+
+  it('targets competitor-alternatives queries on existing vs URLs without changing the H1', () => {
+    expect(COMPARE_HUB.seoDescription.toLowerCase()).toContain('alternatives');
+    expect(COMPARE_HUB.summary.toLowerCase()).toContain('alternatives');
+    expect(new Set(COMPARE_PAGES.map((page) => page.seoTitle)).size).toBe(COMPARE_PAGES.length);
+
+    for (const page of COMPARE_PAGES) {
+      const alternative = `${page.name} alternative`;
+      expect(page.title).toBe(`The Timeline vs ${page.name}`);
+      expect(page.navLabel).toBe(`The Timeline vs ${page.name}`);
+      expect(page.seoTitle).toBe(`${page.name} alternatives: The Timeline vs ${page.name}`);
+      expect(page.seoDescription.toLowerCase()).toContain(`${alternative.toLowerCase()}s`);
+      expect(page.summary.toLowerCase()).toContain(alternative.toLowerCase());
+    }
+  });
+
+  it('does not invent Telegram gaps or developer-memory vs pages', () => {
+    expect(COMPARE_HUB.summary).toContain('Suda, MemoryCrow or Achiral alternatives');
+    expect(COMPARE_HUB.seoTitle).toBe('Compare The Timeline');
+
+    for (const page of COMPARE_PAGES) {
+      const published = `${page.facts.map((fact) => fact.claim).join(' ')} ${page.whenCompetitorBetter}`;
+      expect(published).not.toMatch(/does not (?:support|include|offer) Telegram/iu);
+      expect(published).not.toMatch(/\blacks Telegram\b/iu);
     }
   });
 

@@ -47,7 +47,7 @@ export const COMPARE_PUBLIC_DOCUMENTS = definePublicDocuments('compare', [
       sections: [
         {
           title: 'What Compare means here',
-          body: "Head-to-head pages compare The Timeline with Day AI, Folk, Glean and Geekbot. Every competitor fact cites that company's own site. Works-with pages live under /integrations and are labelled for native sync, MCP lookup, or coming soon.",
+          body: "Head-to-head pages compare The Timeline with Day AI, Folk, Glean, Geekbot, Suda, MemoryCrow and Achiral, including for people searching those alternatives. Every competitor fact cites that company's own site. Works-with pages live under /integrations and are labelled for native sync, MCP lookup, or coming soon.",
         },
       ],
     },

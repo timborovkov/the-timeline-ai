@@ -71,6 +71,7 @@ interface NavChild {
   href: string;
   label: string;
   statusLabel?: string;
+  group?: 'agent-tools';
 }
 
 interface PublicNavigationItemsProps {
@@ -182,12 +183,12 @@ function NavDropdown({
 
   return (
     <li className={nested ? styles.mobileDropdown : styles.dropdown}>
-      <details ref={detailsRef} className="group">
+      <details ref={detailsRef}>
         <summary
           className={cn(styles.dropdownSummary, itemClassName, active && activeItemClassName)}
         >
           {label}
-          <ChevronDown aria-hidden="true" className="size-3.5 opacity-70 group-open:rotate-180" />
+          <ChevronDown aria-hidden="true" className={styles.dropdownChevron} />
         </summary>
         <div className={styles.dropdownPanel}>
           <ul className={styles.dropdownList}>
@@ -195,24 +196,39 @@ function NavDropdown({
               <Link
                 href={href}
                 aria-current={pathname === href ? 'page' : undefined}
-                className={cn(itemClassName, 'w-full')}
+                className={cn(styles.dropdownLink, styles.dropdownOverview, itemClassName)}
                 data-public-analytics-cta={analyticsCta}
                 onClick={onNavigate}
               >
                 {overviewLabel}
               </Link>
             </li>
-            {childrenItems.map((child) => (
-              <li key={child.href}>
-                <Link
-                  href={child.href}
-                  className={cn(itemClassName, 'w-full')}
-                  onClick={onNavigate}
-                >
-                  {publicNavItemLabel(child)}
-                </Link>
-              </li>
-            ))}
+            <li role="separator" className={styles.dropdownRule} />
+            {childrenItems.flatMap((child, index) => {
+              const previous = childrenItems[index - 1];
+              const items = [];
+              if (child.group && child.group !== previous?.group) {
+                items.push(
+                  <li
+                    key={`${child.href}-rule`}
+                    role="separator"
+                    className={styles.dropdownRule}
+                  />,
+                );
+              }
+              items.push(
+                <li key={child.href}>
+                  <Link
+                    href={child.href}
+                    className={cn(styles.dropdownLink, itemClassName)}
+                    onClick={onNavigate}
+                  >
+                    {publicNavItemLabel(child)}
+                  </Link>
+                </li>,
+              );
+              return items;
+            })}
           </ul>
         </div>
       </details>
@@ -384,7 +400,7 @@ export function PublicNavigationDisclosure({
   }, [pathname]);
 
   return (
-    <details ref={disclosureRef} className={cn('group relative', className)}>
+    <details ref={disclosureRef} className={cn('relative', className)}>
       <summary className="flex min-h-11 cursor-pointer list-none items-center gap-2 rounded-sm border border-border bg-bg px-3 text-sm font-medium text-fg outline-none hover:bg-surface focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-bg [&::-webkit-details-marker]:hidden">
         <Menu aria-hidden="true" className="size-4" />
         <span>Menu</span>

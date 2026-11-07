@@ -1,8 +1,29 @@
+import type { MarketingScreenshotSlot } from '@/components/marketing/screenshot-slot';
+
 import { PUBLIC_DEMO_STORY } from '@/components/marketing/public-demo-story';
 
 export const EDITORIAL_PUBLICATION_NAME = 'How Timeline works';
 
 export const HOW_IT_WORKS_ROUTE = '/how-it-works' as const;
+
+export const HOW_IT_WORKS_FLOW_SHOT = {
+  file: '11-timeline-dark.png',
+  alt: 'The Timeline chronology with messages, notes, documents and code activity in order.',
+  caption:
+    'Selected conversations, email, calls and synced tools land on one chronology, each with who said it, where and when.',
+} as const satisfies MarketingScreenshotSlot;
+
+export const HOW_IT_WORKS_EVIDENCE_SHOT = {
+  file: '15-timeline-meeting-dark.png',
+  alt: 'A captured meeting on the chronology with its transcript attached.',
+  caption:
+    'A call joins the same record as chat and email, so an answer can cite the transcript beside the messages that followed it.',
+} as const satisfies MarketingScreenshotSlot;
+
+export const HOW_IT_WORKS_SCREENSHOTS = [
+  HOW_IT_WORKS_FLOW_SHOT,
+  HOW_IT_WORKS_EVIDENCE_SHOT,
+] as const;
 
 export const NATIVE_EDITORIAL_PROVIDERS = [
   'GitHub',
@@ -84,6 +105,7 @@ export interface EditorialGuide {
   limitations: readonly string[];
   faqs: readonly EditorialFaq[];
   relatedRoutes: readonly GuideRoute[];
+  screenshots?: readonly MarketingScreenshotSlot[];
   cta: {
     title: string;
     body: string;
@@ -203,6 +225,14 @@ export const EDITORIAL_GUIDES: readonly EditorialGuide[] = [
       },
     ],
     relatedRoutes: [GUIDE_ROUTES.weeklyEngineeringUpdates],
+    screenshots: [
+      {
+        file: '12-timeline-slack-dark.png',
+        alt: 'Timeline filtered to Slack captures from selected channels.',
+        caption:
+          'Selected Slack conversation lands on the chronology first. Drive files join the same record when the connector captures them; the answer cites each source instead of blending them.',
+      },
+    ],
     cta: {
       title: 'Try it on one project, not the whole company.',
       body: 'Activate one channel and the smallest Drive source available, ask a question about newly changed material that you already know how to verify, and inspect every citation.',
@@ -333,6 +363,14 @@ export const EDITORIAL_GUIDES: readonly EditorialGuide[] = [
       },
     ],
     relatedRoutes: [GUIDE_ROUTES.slackAndDrive, GUIDE_ROUTES.sentryReleaseIncidents],
+    screenshots: [
+      {
+        file: '11-timeline-dark.png',
+        alt: 'Work record mixing GitHub pull-request activity with Slack and Telegram conversation.',
+        caption:
+          'GitHub pull-request activity sits on the same chronology as Slack and Telegram conversation, so a weekly update can cite shipped work next to the discussion that explained it.',
+      },
+    ],
     cta: {
       title: 'Build one update you can audit.',
       body: 'Connect the channels, Linear scope, and repositories for one active project. Generate the update, then challenge every sentence against its citations.',
