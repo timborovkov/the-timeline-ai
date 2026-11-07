@@ -293,6 +293,7 @@ export async function processExtractJobForTests(
 
   const result = await (io.chatStructured ?? llm.chatStructured)({
     schema: extract.extractionResultSchema,
+    normalizeOutput: extract.normalizeExtractionModelOutput,
     prompt,
     instructions: extract.EXTRACTION_SYSTEM_PROMPT,
     model: modelId,
@@ -315,14 +316,7 @@ export async function processExtractJobForTests(
     mentions: (typeof extractionResult.facts)[number]['mentions'];
   }[] = [];
   for (const fact of extractionResult.facts) {
-    const entityIds = await extract.resolveMentions(
-      deps.db,
-      teamId,
-      fact.mentions,
-      fact.statement,
-      {},
-      { createIfMissing: false, updateAliases: false },
-    );
+    const entityIds = await extract.lookupMentions(deps.db, teamId, fact.mentions, fact.statement);
     resolvedFacts.push({
       statement: fact.statement,
       confidence: fact.confidence,

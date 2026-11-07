@@ -10,7 +10,6 @@ import {
   boards,
   entities,
   rawEvents,
-  reconciliationEvidence,
   reconciliationOutputs,
   reconciliationRuns,
   userPins,
@@ -32,8 +31,7 @@ import {
 } from 'drizzle-orm';
 
 import {
-  deleteDueDateCalendarEventEmbeddings,
-  enqueueDueDateCalendarEventEmbeddings,
+  dispatchDueDateCalendarEffects,
   mergeDueDateCalendarSyncResults,
   notifyBoardItemDueDate,
   syncBoardItemDueDateCalendarEvent,
@@ -41,10 +39,15 @@ import {
 } from '#src/calendar/due-dates.js';
 import { dueDateRangeConditions } from '#src/due-date-filter.js';
 import { childLogger } from '#src/logger.js';
+import {
+  buildDirectWriteSourceContext as buildBoardDirectWriteSourceContext,
+  directWriteSourceEnvelope,
+} from '#src/reconciliation/direct-write-source.js';
+
+export { buildDirectWriteSourceContext as buildBoardDirectWriteSourceContext } from '#src/reconciliation/direct-write-source.js';
 import { AUTHORITY_POLICY_VERSION } from '#src/reconciliation/authority.js';
 import { buildOutputDedupeKey, reconciliationDedupeKey } from '#src/reconciliation/index.js';
 import { normalizeRawEventsToEvidence } from '#src/reconciliation/normalization.js';
-import { sourcePayloadRefFromMetadata } from '#src/reconciliation/source-snapshot.js';
 import { stableSha256Digest } from '#src/reconciliation/stable-digest.js';
 import { likePattern } from '#src/sql-like.js';
 import {
@@ -66,33 +69,6 @@ import type { TeamScopeCore } from '#src/team-scope.js';
 
 type DbTx = Parameters<Parameters<Db['transaction']>[0]>[0];
 type DbOrTx = Db | DbTx;
-type BoardDirectWriteVisibility = 'private' | 'team' | 'specific_users';
-
-interface BoardDirectWriteSourceContext {
-  sourceRefs: {
-    source: string;
-    rawEventId: string;
-    sourcePayloadRef?: string;
-  }[];
-  sourcePayloadRefs: string[];
-  visibility: BoardDirectWriteVisibility;
-  visibilityOwnerUserId: string | null;
-  visibilityUserIds: string[] | null;
-}
-
-function boardDirectWriteSourceEnvelope(sourceContext: BoardDirectWriteSourceContext) {
-  return {
-    sourceRefs: sourceContext.sourceRefs,
-    sourcePayloadRefs: sourceContext.sourcePayloadRefs,
-    visibility: sourceContext.visibility,
-    visibilityOwnerUserId: sourceContext.visibilityOwnerUserId,
-    visibilityUserIds: sourceContext.visibilityUserIds,
-    visibilityFloor: sourceContext.visibility,
-    visibilityFloorOwnerUserId: sourceContext.visibilityOwnerUserId,
-    visibilityFloorUserIds: sourceContext.visibilityUserIds,
-  };
-}
-
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const BOARD_TEMPLATES = ['pipeline', 'task_board', 'catalog', 'custom'] as const;
 const BOARD_ITEM_QUERY_LIMIT_MAX = 50_000;
@@ -655,16 +631,6 @@ function stableEqual(a: unknown, b: unknown): boolean {
   return JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
 }
 
-async function afterDueDateCalendarSync(
-  teamId: string,
-  result: DueDateCalendarSyncResult,
-): Promise<void> {
-  await Promise.all([
-    enqueueDueDateCalendarEventEmbeddings(teamId, result.embedEventIds),
-    deleteDueDateCalendarEventEmbeddings(teamId, result.deleteEventIds),
-  ]);
-}
-
 async function normalizeBoardSystemRawEventEvidence(input: {
   db: DbOrTx;
   teamId: string;
@@ -683,69 +649,6 @@ async function normalizeBoardSystemRawEventEvidence(input: {
       'board system raw event reconciliation evidence normalization failed',
     );
   }
-}
-
-export async function buildBoardDirectWriteSourceContext(input: {
-  db: DbOrTx;
-  teamId: string;
-  sourceRawEventId: string;
-}): Promise<BoardDirectWriteSourceContext> {
-  const [raw] = await input.db
-    .select({
-      source: rawEvents.source,
-      sourceMetadata: rawEvents.sourceMetadata,
-      visibility: rawEvents.visibility,
-      visibilityOwnerUserId: rawEvents.visibilityOwnerUserId,
-      visibilityUserIds: rawEvents.visibilityUserIds,
-    })
-    .from(rawEvents)
-    .where(and(eq(rawEvents.teamId, input.teamId), eq(rawEvents.id, input.sourceRawEventId)))
-    .limit(1);
-  if (!raw) throw new Error('Source raw event not found for team');
-
-  const [evidence] = await input.db
-    .select({
-      id: reconciliationEvidence.id,
-      sourcePayloadRef: reconciliationEvidence.sourcePayloadRef,
-      visibility: reconciliationEvidence.visibility,
-      visibilityOwnerUserId: reconciliationEvidence.visibilityOwnerUserId,
-      visibilityUserIds: reconciliationEvidence.visibilityUserIds,
-    })
-    .from(reconciliationEvidence)
-    .where(
-      and(
-        eq(reconciliationEvidence.teamId, input.teamId),
-        eq(reconciliationEvidence.rawEventId, input.sourceRawEventId),
-      ),
-    )
-    .orderBy(desc(reconciliationEvidence.createdAt), desc(reconciliationEvidence.id))
-    .limit(1);
-  const sourcePayloadRef =
-    sourcePayloadRefFromMetadata(raw.sourceMetadata) ?? evidence?.sourcePayloadRef ?? null;
-  if (!sourcePayloadRef) {
-    throw new Error('Source raw event is missing a replay payload ref');
-  }
-  const sourcePayloadRefs = [
-    ...new Set(
-      [evidence?.sourcePayloadRef, sourcePayloadRef].filter((ref): ref is string => !!ref),
-    ),
-  ];
-  const visibility = evidence?.visibility ?? raw.visibility;
-  const visibilityOwnerUserId = evidence?.visibilityOwnerUserId ?? raw.visibilityOwnerUserId;
-  const visibilityUserIds = evidence?.visibilityUserIds ?? raw.visibilityUserIds;
-  return {
-    sourceRefs: [
-      {
-        source: raw.source,
-        rawEventId: input.sourceRawEventId,
-        ...(sourcePayloadRef ? { sourcePayloadRef } : {}),
-      },
-    ],
-    sourcePayloadRefs,
-    visibility,
-    visibilityOwnerUserId,
-    visibilityUserIds,
-  };
 }
 
 async function createBoardSystemRawEvent(input: {
@@ -911,7 +814,7 @@ async function emitBoardDirectWriteOutput(input: {
       },
       confidence: 'high',
       requiresApproval: false,
-      ...boardDirectWriteSourceEnvelope(sourceContext),
+      ...directWriteSourceEnvelope(sourceContext),
       dedupeKey: buildOutputDedupeKey({
         teamId: input.teamId,
         targetKind: input.targetKind,
@@ -927,7 +830,7 @@ async function emitBoardDirectWriteOutput(input: {
       target: [reconciliationOutputs.teamId, reconciliationOutputs.dedupeKey],
       set: {
         runId: run.id,
-        ...boardDirectWriteSourceEnvelope(sourceContext),
+        ...directWriteSourceEnvelope(sourceContext),
         status: 'applied',
         updatedAt: new Date(),
       },
@@ -1616,7 +1519,7 @@ export function createBoardScope({
           dueDateCalendarSync: mergeDueDateCalendarSyncResults(dueDateCalendarSyncResults),
         };
       });
-      await afterDueDateCalendarSync(scope.teamId, txResult.dueDateCalendarSync);
+      await dispatchDueDateCalendarEffects(scope, txResult.dueDateCalendarSync);
       return txResult.rows.length > 0;
     },
 
@@ -1643,7 +1546,7 @@ export function createBoardScope({
           dueDateCalendarSync: await refreshBoardDueDateMetadata(tx, board),
         };
       });
-      await afterDueDateCalendarSync(scope.teamId, txResult.dueDateCalendarSync);
+      await dispatchDueDateCalendarEffects(scope, txResult.dueDateCalendarSync);
       return txResult.renamed;
     },
 
@@ -1753,7 +1656,7 @@ export function createBoardScope({
           ? refreshBoardDueDateMetadata(tx, updatedBoard)
           : mergeDueDateCalendarSyncResults([]);
       });
-      await afterDueDateCalendarSync(scope.teamId, dueDateCalendarSync);
+      await dispatchDueDateCalendarEffects(scope, dueDateCalendarSync);
       return true;
     },
 
@@ -1858,7 +1761,7 @@ export function createBoardScope({
         await notifyBoardItemDueDate(tx, item, object, board, input.actor);
         return { item: toItemRow(item, object), dueDateCalendarSync };
       });
-      await afterDueDateCalendarSync(scope.teamId, txResult.dueDateCalendarSync);
+      await dispatchDueDateCalendarEffects(scope, txResult.dueDateCalendarSync);
       return txResult.item;
     },
 
@@ -1985,7 +1888,7 @@ export function createBoardScope({
         }
         return result;
       });
-      await afterDueDateCalendarSync(scope.teamId, dueDateCalendarSync);
+      await dispatchDueDateCalendarEffects(scope, dueDateCalendarSync);
       const item = await itemWithObject(itemId);
       if (!item) throw new Error('Board item not found after update');
       return { item, changed: true, changedFields };
@@ -2062,7 +1965,7 @@ export function createBoardScope({
           board,
         );
       });
-      await afterDueDateCalendarSync(scope.teamId, dueDateCalendarSync);
+      await dispatchDueDateCalendarEffects(scope, dueDateCalendarSync);
       return { ...current, archivedAt: now };
     },
 

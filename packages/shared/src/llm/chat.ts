@@ -32,7 +32,6 @@ import {
   streamText,
   withLangSmithProviderOptions,
 } from '#src/llm/tracing.js';
-import { normalizeTaskCategoryModelJson } from '#src/task-categories/model-output.js';
 
 import { createOpenRouterProvider } from '#src/llm/provider.js';
 
@@ -55,6 +54,7 @@ export const DEFAULT_STRUCTURED_MAX_OUTPUT_TOKENS = 8_000;
 
 export interface ChatStructuredInput<TSchema extends z.ZodType> {
   schema: TSchema;
+  normalizeOutput?: (value: unknown) => unknown;
   prompt: string;
   instructions?: string;
   /** Override the configured extraction model for this call. */
@@ -295,36 +295,14 @@ function parseStructuredRepairText(text: string): unknown {
   }
 }
 
-function repairFactShape(value: unknown): unknown {
-  const candidate = Array.isArray(value) ? { facts: value } : value;
-  if (!candidate || typeof candidate !== 'object') return value;
-  const row = candidate as Record<string, unknown>;
-  const facts = Array.isArray(row.facts) ? (row.facts as unknown[]) : null;
-  return {
-    ...row,
-    ...(facts
-      ? {
-          facts: facts.map((fact) => {
-            if (!fact || typeof fact !== 'object') return fact;
-            const factRow = fact as Record<string, unknown>;
-            return {
-              ...factRow,
-              statement: factRow.statement ?? factRow.text,
-              mentions: factRow.mentions ?? factRow.entities,
-            };
-          }),
-        }
-      : {}),
-    action_items: row.action_items ?? row.actionItems,
-    choice: row.choice ?? row.candidate_index ?? row.candidateIndex ?? row.index,
-  };
-}
-
-function repairKnownStructuredOutput(schema: z.ZodType): RepairTextFunction {
+function repairStructuredOutput(
+  schema: z.ZodType,
+  normalizeOutput?: (value: unknown) => unknown,
+): RepairTextFunction {
   return ({ text }) => {
     const parsed = parseStructuredRepairText(text);
     if (parsed === null) return Promise.resolve(null);
-    const candidates = [repairFactShape(parsed), normalizeTaskCategoryModelJson(parsed)];
+    const candidates = normalizeOutput ? [normalizeOutput(parsed), parsed] : [parsed];
     for (const candidate of candidates) {
       if (schema.safeParse(candidate).success) return Promise.resolve(JSON.stringify(candidate));
     }
@@ -347,6 +325,7 @@ export function buildOpenRouterLanguageModel(
 
 async function generateStructuredObject<TSchema extends z.ZodType>({
   schema,
+  normalizeOutput,
   prompt,
   instructions,
   model,
@@ -356,6 +335,7 @@ async function generateStructuredObject<TSchema extends z.ZodType>({
   abortSignal,
 }: {
   schema: TSchema;
+  normalizeOutput?: (value: unknown) => unknown;
   prompt: string;
   instructions: string;
   model: LanguageModel;
@@ -376,7 +356,7 @@ async function generateStructuredObject<TSchema extends z.ZodType>({
     maxOutputTokens,
     maxRetries: 0,
     ...(abortSignal ? { abortSignal } : {}),
-    repairText: repairKnownStructuredOutput(schema),
+    repairText: repairStructuredOutput(schema, normalizeOutput),
     providerOptions: withLangSmithProviderOptions(openRouterRequireParametersOptions(), {
       name: 'llm.chatStructured',
       model: modelId,
@@ -389,6 +369,7 @@ async function generateStructuredObject<TSchema extends z.ZodType>({
 
 async function generateJsonObjectFallback<TSchema extends z.ZodType>({
   schema,
+  normalizeOutput,
   prompt,
   instructions,
   model,
@@ -397,6 +378,7 @@ async function generateJsonObjectFallback<TSchema extends z.ZodType>({
   abortSignal,
 }: {
   schema: TSchema;
+  normalizeOutput?: (value: unknown) => unknown;
   prompt: string;
   instructions: string;
   model: LanguageModel;
@@ -419,7 +401,7 @@ async function generateJsonObjectFallback<TSchema extends z.ZodType>({
       },
     }),
   });
-  const repair = repairKnownStructuredOutput(schema);
+  const repair = repairStructuredOutput(schema, normalizeOutput);
   const repaired = await repair({
     text: result.text,
     error: new Error('json_object fallback validation') as never,
@@ -505,6 +487,7 @@ export async function chatStructured<TSchema extends z.ZodType>(
           try {
             const result = await generateStructuredObject({
               schema: input.schema,
+              ...(input.normalizeOutput ? { normalizeOutput: input.normalizeOutput } : {}),
               prompt: input.prompt,
               instructions: structuredOutputSystem(input.instructions),
               model,
@@ -531,6 +514,7 @@ export async function chatStructured<TSchema extends z.ZodType>(
             });
             const result = await generateJsonObjectFallback({
               schema: input.schema,
+              ...(input.normalizeOutput ? { normalizeOutput: input.normalizeOutput } : {}),
               prompt: input.prompt,
               instructions: structuredOutputFallbackSystem(input.schema, input.instructions),
               model: fallbackModel,

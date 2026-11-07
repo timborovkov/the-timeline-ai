@@ -42,14 +42,9 @@ import { createBillingScope } from '#src/billing/scope.js';
 import { currentExtractionModelVersion } from '#src/extraction-model-version.js';
 import { childLogger } from '#src/logger.js';
 import { participantNames } from '#src/meetings/participants.js';
+import { meetingVisibleToUser, savedMeetingVisibleToUser } from '#src/meetings/visibility.js';
 import { decodeCursor } from '#src/pagination.js';
 import { validateVisibilityUserIds } from '#src/visibility.js';
-
-// Phase 10 — meeting scope. Mirrors the documents scope pattern: a factory
-// returning per-(team,user) helpers that write every state transition
-// through a single chokepoint. Each transcript chunk insert creates an
-// audit raw_event row in the same transaction so existing pipelines
-// (extract / embed / visibility / timeline) light up unchanged.
 
 const log = childLogger('meetings');
 
@@ -801,18 +796,8 @@ export function createMeetingScope(deps: MeetingScopeDeps) {
     });
   }
 
-  // Visibility predicate over meetings. Same shape as raw_events: team,
-  // or private-only-author, or specific_users-includes-user.
-  const meetingVisibility = sql`(
-    ${meetings.defaultVisibility} = 'team'
-    OR (${meetings.defaultVisibility} = 'private' AND ${meetings.createdByUserId} = ${userId}::uuid)
-    OR (${meetings.defaultVisibility} = 'specific_users' AND ${userId}::uuid = ANY(${meetings.visibilityUserIds}))
-  )`;
-  const savedMeetingVisibility = sql`(
-    ${savedMeetings.defaultVisibility} = 'team'
-    OR (${savedMeetings.defaultVisibility} = 'private' AND ${savedMeetings.createdByUserId} = ${userId}::uuid)
-    OR (${savedMeetings.defaultVisibility} = 'specific_users' AND ${userId}::uuid = ANY(${savedMeetings.visibilityUserIds}))
-  )`;
+  const meetingVisibility = meetingVisibleToUser(userId);
+  const savedMeetingVisibility = savedMeetingVisibleToUser(userId);
 
   async function listSavedMeetingsInternal(
     opts: { enforceVisibility?: boolean } = {},

@@ -39,6 +39,7 @@ import { principalIsActive } from '#src/platform-admin/runtime.js';
 import { getQdrantClient } from '#src/qdrant/client.js';
 import { buildPointId } from '#src/qdrant/point-id.js';
 import { enqueueCalendarEventEmbedJob } from '#src/queue/queues.js';
+import { calendarEventDetailsVisibleToUser } from '#src/calendar/visibility.js';
 import { assertValidTimezone } from '#src/time/index.js';
 import { validateVisibilityUserIds } from '#src/visibility.js';
 
@@ -411,13 +412,7 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
     OR (${calendarEvents.visibility} = 'specific_users' AND ${userId}::uuid = ANY(${calendarEvents.visibilityUserIds}))
   )`;
 
-  // Write visibility: only the creator or explicitly-listed users can
-  // modify/delete. Other users' private events are read-only (busy blocks).
-  const calendarWriteVisibility = sql`(
-    ${calendarEvents.visibility} = 'team'
-    OR ${calendarEvents.createdByUserId} = ${userId}::uuid
-    OR (${calendarEvents.visibility} = 'specific_users' AND ${userId}::uuid = ANY(${calendarEvents.visibilityUserIds}))
-  )`;
+  const calendarWriteVisibility = calendarEventDetailsVisibleToUser(userId);
 
   async function lockCalendarEventMutation(
     tx: DbTx,
@@ -757,6 +752,54 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
       }
 
       return created;
+    },
+
+    /** A visible occurrence resolves to its visible series parent; hidden parents are unavailable. */
+    async resolveVisibleCalendarSeries(ids: string[]): Promise<Map<string, string>> {
+      await ensureMember();
+      if (ids.length === 0) return new Map();
+      const eventRows = await db
+        .select({ id: calendarEvents.id, recurringParentId: calendarEvents.recurringParentId })
+        .from(calendarEvents)
+        .where(
+          and(
+            eq(calendarEvents.teamId, teamId),
+            inArray(calendarEvents.id, [...new Set(ids)]),
+            isNull(calendarEvents.deletedAt),
+            calendarWriteVisibility,
+          ),
+        );
+      const parentIds = [
+        ...new Set(
+          eventRows.flatMap((row) => (row.recurringParentId ? [row.recurringParentId] : [])),
+        ),
+      ];
+      const visibleParentIds =
+        parentIds.length === 0
+          ? new Set<string>()
+          : new Set(
+              (
+                await db
+                  .select({ id: calendarEvents.id })
+                  .from(calendarEvents)
+                  .where(
+                    and(
+                      eq(calendarEvents.teamId, teamId),
+                      inArray(calendarEvents.id, parentIds),
+                      isNull(calendarEvents.deletedAt),
+                      calendarWriteVisibility,
+                    ),
+                  )
+              ).map((row) => row.id),
+            );
+      return new Map(
+        eventRows.flatMap((row) => {
+          if (!row.recurringParentId) return [[row.id, row.id]];
+          return visibleParentIds.has(row.recurringParentId)
+            ? [[row.id, row.recurringParentId]]
+            : [];
+        }),
+      );
     },
 
     async getCalendarEvent(id: string): Promise<CalendarEventWithRedaction | null> {

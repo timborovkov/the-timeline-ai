@@ -15,6 +15,10 @@ import {
   streamChat,
 } from '#src/llm/chat.js';
 import { TIMELINE_MODELS } from '#src/llm/models.js';
+import { normalizeTaskCategoryModelJson } from '#src/task-categories/model-output.js';
+
+import { normalizeExtractionModelOutput } from '#src/extract/model-output.js';
+import { normalizeMeetingSummaryOutput } from '#src/meetings/model-output.js';
 
 type ProviderFetch = (
   ...args: Parameters<typeof globalThis.fetch>
@@ -208,6 +212,7 @@ describe('chatStructured', () => {
     const result = await chatStructured(
       {
         schema: extractionResultSchema,
+        normalizeOutput: normalizeExtractionModelOutput,
         prompt: 'Extract facts from: The AuditAI team has a meeting scheduled for Monday.',
         instructions: EXTRACTION_SYSTEM_PROMPT,
       },
@@ -243,6 +248,7 @@ describe('chatStructured', () => {
     const result = await chatStructured(
       {
         schema: extractionResultSchema,
+        normalizeOutput: normalizeExtractionModelOutput,
         prompt: 'Extract facts from: Mikael Rintala shared a Google Drive folder for Otto.',
         instructions: EXTRACTION_SYSTEM_PROMPT,
       },
@@ -291,6 +297,7 @@ describe('chatStructured', () => {
           ),
         }),
         prompt: 'Summarize the meeting.',
+        normalizeOutput: normalizeMeetingSummaryOutput,
       },
       {
         model: makeMockModel(
@@ -313,6 +320,7 @@ describe('chatStructured', () => {
       {
         schema: z.object({ choice: z.number().int() }),
         prompt: 'Pick the candidate that refers to the same real-world entity.',
+        normalizeOutput: normalizeExtractionModelOutput,
       },
       { model: makeMockModel(JSON.stringify({ candidate_index: 1 })) },
     );
@@ -326,6 +334,7 @@ describe('chatStructured', () => {
         {
           schema: z.object({ choice: z.number().int().min(-1).max(1) }),
           prompt: 'Pick the candidate that refers to the same real-world entity.',
+        normalizeOutput: normalizeExtractionModelOutput,
         },
         { model: makeMockModel(JSON.stringify({ candidate_index: 999 })) },
       ),
@@ -389,6 +398,7 @@ describe('chatStructured', () => {
     const result = await chatStructured(
       {
         schema: extractionResultSchema,
+        normalizeOutput: normalizeExtractionModelOutput,
         prompt: 'Extract facts from: Mikael Rintala shared a Google Drive folder for AuditAI.',
         instructions: EXTRACTION_SYSTEM_PROMPT,
       },
@@ -460,6 +470,7 @@ describe('chatStructured', () => {
           ),
         }),
         prompt: 'Classify the task.',
+        normalizeOutput: normalizeTaskCategoryModelJson,
         instructions: 'Return schema-valid JSON.',
         model: TIMELINE_MODELS.taskCategorization.id,
       },
@@ -522,6 +533,7 @@ describe('chatStructured', () => {
     const result = await chatStructured(
       {
         schema: extractionResultSchema,
+        normalizeOutput: normalizeExtractionModelOutput,
         prompt: 'Extract facts from: Acme is evaluating Timeline for Q4.',
         instructions: EXTRACTION_SYSTEM_PROMPT,
       },
@@ -625,6 +637,7 @@ describe('chatStructured', () => {
     const result = await chatStructured(
       {
         schema: extractionResultSchema,
+        normalizeOutput: normalizeExtractionModelOutput,
         prompt: 'Extract facts from: Heading out for lunch.',
         instructions: EXTRACTION_SYSTEM_PROMPT,
       },
@@ -668,6 +681,7 @@ describe('chatStructured', () => {
       chatStructured(
         {
           schema: extractionResultSchema,
+        normalizeOutput: normalizeExtractionModelOutput,
           prompt: 'Extract facts from: Acme is evaluating Timeline for Q4.',
           instructions: EXTRACTION_SYSTEM_PROMPT,
         },
@@ -730,6 +744,7 @@ describe('chatStructured', () => {
     const result = await chatStructured(
       {
         schema: extractionResultSchema,
+        normalizeOutput: normalizeExtractionModelOutput,
         prompt: 'Extract facts from: Acme is evaluating Timeline for Q4.',
         instructions: EXTRACTION_SYSTEM_PROMPT,
       },
@@ -786,6 +801,7 @@ describe('chatStructured', () => {
     const result = await chatStructured(
       {
         schema: extractionResultSchema,
+        normalizeOutput: normalizeExtractionModelOutput,
         prompt: 'Extract facts from: Heading out for lunch.',
         instructions: EXTRACTION_SYSTEM_PROMPT,
       },
@@ -854,6 +870,7 @@ describe('chatStructured', () => {
     const result = await chatStructured(
       {
         schema: extractionResultSchema,
+        normalizeOutput: normalizeExtractionModelOutput,
         prompt: 'Extract facts from: Heading out for lunch.',
         instructions: EXTRACTION_SYSTEM_PROMPT,
       },
@@ -944,6 +961,7 @@ describe('chatStructured', () => {
     const result = await chatStructured(
       {
         schema: extractionResultSchema,
+        normalizeOutput: normalizeExtractionModelOutput,
         prompt: 'Extract facts from: Heading out for lunch.',
         instructions: EXTRACTION_SYSTEM_PROMPT,
       },
@@ -1038,6 +1056,7 @@ describe('chatStructured', () => {
     const result = await chatStructured(
       {
         schema: extractionResultSchema,
+        normalizeOutput: normalizeExtractionModelOutput,
         prompt: 'Extract facts from: Heading out for lunch.',
         instructions: EXTRACTION_SYSTEM_PROMPT,
       },
@@ -1145,6 +1164,7 @@ describe('chatStructured', () => {
     const result = await chatStructured(
       {
         schema: extractionResultSchema,
+        normalizeOutput: normalizeExtractionModelOutput,
         prompt: 'Extract facts from: Heading out for lunch.',
         instructions: EXTRACTION_SYSTEM_PROMPT,
       },
@@ -1228,6 +1248,7 @@ describe('chatStructured', () => {
     const result = await chatStructured(
       {
         schema: extractionResultSchema,
+        normalizeOutput: normalizeExtractionModelOutput,
         prompt: 'Extract facts from: Heading out for lunch.',
         instructions: EXTRACTION_SYSTEM_PROMPT,
       },
@@ -1286,6 +1307,7 @@ describe('chatStructured', () => {
       chatStructured(
         {
           schema: extractionResultSchema,
+        normalizeOutput: normalizeExtractionModelOutput,
           prompt: 'Extract facts from: Heading out for lunch.',
           instructions: EXTRACTION_SYSTEM_PROMPT,
         },
@@ -1325,6 +1347,7 @@ describe('chatStructured', () => {
 
       const result = await chatStructured({
         schema: extractionResultSchema,
+        normalizeOutput: normalizeExtractionModelOutput,
         instructions: EXTRACTION_SYSTEM_PROMPT,
         prompt:
           'Current event: Tim met Apple about SaaS licensing. Return one explicit fact with mentions.',
