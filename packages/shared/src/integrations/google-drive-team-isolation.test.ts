@@ -21,7 +21,7 @@ const ALLOWED_SNAPSHOT_TABLE_FILES = new Set([
 ]);
 
 const UNSCOPED_DRIVE_DB_CALL =
-  /\b(?:listDriveExtractCursors|forEachDriveExtractCursorPage|loadLatestDriveSnapshot|saveDriveSnapshot|deleteDriveSnapshotsForFile|deleteDriveSnapshotsForIntegration|linkedObjectForDriveSelection|latestDriveObjectLinkHints|latestDriveObjectLinkHintsByFileIds|listDriveSnapshotFileIds|listDriveTrackedDescendantFileIds|cleanupUncoveredDriveTrackedFiles|discardDriveTrackedFile|cancelDriveTrackedExtract)\s*\(\s*(?:db|tx|input\.db)\b/;
+  /\b(?:listDriveExtractCursors|forEachDriveExtractCursorPage|loadLatestDriveSnapshot|saveDriveSnapshot|deleteDriveSnapshotsForFile|deleteDriveSnapshotsForIntegration|linkedObjectForDriveSelection|latestDriveObjectLinkHints|latestDriveObjectLinkHintsByFileIds|listDriveSnapshotFileIds|listDriveTrackedDescendantFileIds|cleanupUncoveredDriveTrackedFiles|discardDriveTrackedFile|cancelDriveTrackedExtract|retainDriveExtractsForDisconnect)\s*\(\s*(?:db|tx|input\.db)\b/;
 const SNAPSHOT_TABLE = /\bgoogleDriveFileSnapshots\b/;
 const UNSCOPED_LIB_LIST = /\bintegrationsLib\.listDriveExtractCursors\b/;
 
@@ -151,6 +151,7 @@ describe('Drive withTeam isolation guard', () => {
       'utf8',
     );
     expect(scopeSource).toContain('async function applyDriveSelectionCoverageCleanup');
+    expect(scopeSource).toContain('retainDriveExtractsForDisconnect');
     for (const name of [
       'async function shareProviderResources',
       'async function revokeProviderResourceShare',

@@ -491,6 +491,27 @@ export function partitionDriveExtractTombstones(
   return { settled, live };
 }
 
+function remainingDriveExtractKeysById(
+  cursor: DriveExtractCursor,
+  remainingKeys: string[],
+): Map<string, string[]> {
+  const remaining = new Set(remainingKeys);
+  const byId = new Map<string, string[]>();
+  const assign = (extractId: string, keys: string[]) => {
+    const hit = keys.filter((key) => remaining.has(key));
+    if (hit.length > 0) byId.set(extractId, hit);
+  };
+  assign(cursor.extractId, [
+    cursor.objectKey,
+    cursor.resultObjectKey,
+    ...(cursor.pendingDeleteKeys ?? []),
+  ]);
+  for (const tombstone of cursor.tombstones ?? []) {
+    assign(tombstone.extractId, driveExtractTombstoneKeys(tombstone));
+  }
+  return byId;
+}
+
 /** Drop TTL-expired tombstones whose keys deleted (or 404'd); keep failed deletes. */
 export function applyDriveExtractTombstoneDeletes(
   cursor: DriveExtractCursor,
@@ -1479,7 +1500,11 @@ export type DriveTrackedExtractObjectDeleter = (cursor: {
 
 export type DriveTrackedFileDiscarder = (fileId: string) => Promise<void>;
 
-/** Cancel an in-flight extract. `cancel` keeps a tombstone; `disconnect` fails closed. */
+/**
+ * Cancel an in-flight extract. `cancel` keeps a tombstone until the producer
+ * wait elapses. `disconnect` fails closed while that wait remains, even when
+ * DeleteObject already 404'd a not-yet-written `result.json`.
+ */
 async function cancelDriveTrackedExtract(
   db: Db,
   input: {
@@ -1507,9 +1532,29 @@ async function cancelDriveTrackedExtract(
   const extractCursor = parseDriveExtractCursor(extractRow?.cursor);
   if (!extractCursor) return;
   const remainingKeys = await input.deleteExtractObjects(extractCursor);
+  const now = input.now ?? new Date();
+  const cleaned = applyDriveExtractTombstoneDeletes(
+    extractCursor,
+    remainingDriveExtractKeysById(extractCursor, remainingKeys),
+    now.getTime(),
+  );
+  const remainingCurrent = remainingKeys.filter(
+    (key) => key === cleaned.objectKey || key === cleaned.resultObjectKey,
+  );
   if (input.mode === 'disconnect') {
     if (remainingKeys.length > 0) {
       throw new Error(`drive transient extract objects remain: ${remainingKeys.join(',')}`);
+    }
+    const next = retainDriveExtractCleanupCursor(cleaned, remainingCurrent, {
+      cancelledAt: cleaned.cancelledAt ?? now.toISOString(),
+    });
+    if (
+      shouldRetainDriveExtractCleanup(next, remainingCurrent, {
+        mode: 'cancel',
+        now: now.getTime(),
+      })
+    ) {
+      throw new Error('drive transient extract still in flight');
     }
     await db
       .delete(integrationSyncState)
@@ -1521,12 +1566,8 @@ async function cancelDriveTrackedExtract(
       );
     return;
   }
-  const remainingCurrent = remainingKeys.filter(
-    (key) => key === extractCursor.objectKey || key === extractCursor.resultObjectKey,
-  );
-  const now = input.now ?? new Date();
-  const next = retainDriveExtractCleanupCursor(extractCursor, remainingCurrent, {
-    cancelledAt: extractCursor.cancelledAt ?? now.toISOString(),
+  const next = retainDriveExtractCleanupCursor(cleaned, remainingCurrent, {
+    cancelledAt: cleaned.cancelledAt ?? now.toISOString(),
   });
   if (
     shouldRetainDriveExtractCleanup(next, remainingCurrent, {
@@ -1553,6 +1594,43 @@ async function cancelDriveTrackedExtract(
         eq(integrationSyncState.resourceType, extractType),
       ),
     );
+}
+
+/**
+ * Persist cancel tombstones for every Drive extract on an integration before
+ * the disconnect transaction. Collect file ids first so cursor `updatedAt`
+ * changes cannot loop pagination. Disconnect then fails closed until the
+ * producer wait settles, so a late `result.json` still has cleanup tracking.
+ */
+export async function retainDriveExtractsForDisconnect(
+  db: Db,
+  input: {
+    teamId: string;
+    integrationId: string;
+    deleteExtractObjects: DriveTrackedExtractObjectDeleter;
+    now?: Date;
+  },
+): Promise<void> {
+  const fileIds: string[] = [];
+  await forEachDriveExtractCursorPage(db, {
+    teamId: input.teamId,
+    integrationId: input.integrationId,
+    ...(input.now ? { now: input.now } : {}),
+    onPage: (page) => {
+      for (const row of page) fileIds.push(row.fileId);
+      return Promise.resolve();
+    },
+  });
+  for (const fileId of fileIds) {
+    await cancelDriveTrackedExtract(db, {
+      teamId: input.teamId,
+      integrationId: input.integrationId,
+      fileId,
+      deleteExtractObjects: input.deleteExtractObjects,
+      mode: 'cancel',
+      ...(input.now ? { now: input.now } : {}),
+    });
+  }
 }
 
 export async function discardDriveTrackedFile(

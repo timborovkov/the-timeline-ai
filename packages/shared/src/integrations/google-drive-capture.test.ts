@@ -3340,6 +3340,68 @@ describe('saveDriveSnapshot uniqueness', () => {
     expect(remaining[0]?.cursor.extractId).toBe('ext-stuck');
   });
 
+  it('keeps extract cursors when disconnect races a still-running document extract', async () => {
+    const [integration] = await db
+      .insert(integrations)
+      .values({
+        teamId: TEAM_ID,
+        connectedByUserId: USER_ID,
+        provider: 'google_drive',
+        displayName: 'Google Drive',
+        externalAccountId: 'drive-acct-inflight-disconnect',
+        visibilityDefault: 'team',
+      })
+      .returning();
+    if (!integration) throw new Error('integration insert failed');
+    const enqueuedAt = new Date().toISOString();
+    await db.insert(integrationSyncState).values({
+      integrationId: integration.id,
+      resourceType: driveExtractCursorKey('inflight-file'),
+      cursor: {
+        extractId: 'ext-inflight',
+        objectKey: 'inflight-source',
+        resultObjectKey: 'inflight-result.json',
+        contentType: 'application/pdf',
+        filename: 'Inflight.pdf',
+        enqueuedAt,
+      },
+    });
+    s3Fakes.deleteObject.mockResolvedValue(undefined);
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    await expect(scope.integrations.deleteIntegration(integration.id)).rejects.toThrow(
+      'drive transient extract still in flight',
+    );
+    const remaining = await listDriveExtractCursors(db as never, {
+      teamId: TEAM_ID,
+      integrationId: integration.id,
+    });
+    expect(remaining).toHaveLength(1);
+    const inflight = remaining[0];
+    if (!inflight) throw new Error('expected inflight extract cursor');
+    expect(inflight.fileId).toBe('inflight-file');
+    expect(inflight.cursor.extractId).toBe('ext-inflight');
+    expect(inflight.cursor.cancelledAt).toBeTruthy();
+    expect(await db.select({ id: integrations.id }).from(integrations)).toEqual([
+      { id: integration.id },
+    ]);
+
+    const settledAt = new Date(Date.now() - DRIVE_EXTRACT_PENDING_STALE_MS - 1).toISOString();
+    await db
+      .update(integrationSyncState)
+      .set({
+        cursor: {
+          ...inflight.cursor,
+          cancelledAt: settledAt,
+        },
+      })
+      .where(eq(integrationSyncState.integrationId, integration.id));
+    await expect(scope.integrations.deleteIntegration(integration.id)).resolves.toBeUndefined();
+    await expect(
+      listDriveExtractCursors(db as never, { teamId: TEAM_ID, integrationId: integration.id }),
+    ).resolves.toEqual([]);
+    expect(await db.select({ id: integrations.id }).from(integrations)).toEqual([]);
+  });
+
   it('filters cleared extract cursors in SQL before the page limit', async () => {
     const [integration] = await db
       .insert(integrations)

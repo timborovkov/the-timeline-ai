@@ -37,6 +37,7 @@ import {
   linkedObjectForDriveSelection as loadLinkedObjectForDriveSelection,
   listDriveExtractCursors,
   listDriveTrackedDescendantFileIds as loadListDriveTrackedDescendantFileIds,
+  retainDriveExtractsForDisconnect,
   listTeamEmailDomains as loadTeamEmailDomains,
   loadLatestDriveSnapshot,
   remainingDriveExtractObjectKeys,
@@ -883,14 +884,31 @@ export function createIntegrationScope(deps: {
 
   async function deleteIntegration(id: string): Promise<void> {
     await ensureMember('admin');
+    const existingRows = await db
+      .select({ id: integrationsTable.id, provider: integrationsTable.provider })
+      .from(integrationsTable)
+      .where(and(eq(integrationsTable.id, id), eq(integrationsTable.teamId, teamId)))
+      .limit(1);
+    const existing = existingRows[0];
+    if (!existing) return;
+    if (existing.provider === 'google_drive') {
+      // Persist cancel tombstones before the disconnect transaction so a
+      // late document-extract PUT still has cleanup tracking if disconnect
+      // then fails closed on the producer wait.
+      await retainDriveExtractsForDisconnect(db, {
+        teamId,
+        integrationId: id,
+        deleteExtractObjects: deleteDriveTransientExtractObjects,
+      });
+    }
     await db.transaction(async (tx) => {
-      const existingRows = await tx
+      const lockedRows = await tx
         .select({ id: integrationsTable.id, provider: integrationsTable.provider })
         .from(integrationsTable)
         .where(and(eq(integrationsTable.id, id), eq(integrationsTable.teamId, teamId)))
         .limit(1);
-      const existing = existingRows[0];
-      if (!existing) return;
+      const locked = lockedRows[0];
+      if (!locked) return;
       await tx
         .delete(connectionAttention)
         .where(
@@ -909,8 +927,9 @@ export function createIntegrationScope(deps: {
         .where(eq(integrationWebhookSubscriptions.integrationId, id));
       await tx.delete(integrationSelections).where(eq(integrationSelections.integrationId, id));
       // Coverage-aware discard with remaining=[] deletes every snapshot and
-      // extract. `disconnect` fails closed if S3 objects remain; leftover `{}`
-      // cursors cannot hide later objects because the helper pages extracts.
+      // extract. `disconnect` fails closed if S3 objects remain or the
+      // extract producer wait has not settled; leftover `{}` cursors cannot
+      // hide later objects because the helper pages extracts.
       await applyDriveSelectionCoverageCleanup(tx as unknown as Db, {
         integrationId: id,
         remainingSelections: [],
@@ -932,7 +951,7 @@ export function createIntegrationScope(deps: {
         targetType: 'integration',
         targetId: id,
         targetVisibility: 'team',
-        metadata: { provider: existing.provider },
+        metadata: { provider: locked.provider },
       });
     });
   }
