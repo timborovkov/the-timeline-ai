@@ -345,8 +345,9 @@ restrictions or spend-cap warnings. Clearing browser storage resets the preferen
 Public browser ingestion defaults to `https://m.thetimeline.cc`, the managed proxy
 shown as Live for the EU project in the supplied account screenshot.
 `NEXT_PUBLIC_POSTHOG_HOST` can select that origin or direct EU ingestion at
-`https://eu.i.posthog.com`; other origins fail closed. The SDK UI host stays
-`https://eu.posthog.com`. Server/worker ingestion remains direct to the EU endpoint.
+`https://eu.i.posthog.com`; other origins fail closed. The SDK UI host defaults to
+`https://eu.posthog.com`, with a build-time `NEXT_PUBLIC_POSTHOG_UI_HOST` HTTPS override
+for dashboard links; this does not change the ingestion allowlist. Server/worker ingestion remains direct to the EU endpoint.
 This routing change preserves all consent, route, payload, and storage controls.
 The screenshot is account configuration evidence, not deployed application or
 end-to-end delivery evidence. Existing retention and contract gaps remain open.

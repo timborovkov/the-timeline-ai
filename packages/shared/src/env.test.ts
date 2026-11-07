@@ -247,6 +247,21 @@ describe('getEnv', () => {
     expect(getEnv().RECALL_WORKSPACE_VERIFICATION_SECRET).toBe(secret);
   });
 
+  it('defaults the PostHog UI host and validates HTTPS overrides', () => {
+    for (const host of [undefined, '', 'https://eu.posthog.com', 'https://posthog.example.com']) {
+      setBaseEnv({ NEXT_PUBLIC_POSTHOG_UI_HOST: host });
+      expect(getEnv().NEXT_PUBLIC_POSTHOG_UI_HOST).toBe(host || 'https://eu.posthog.com');
+    }
+    for (const host of [
+      'invalid',
+      'http://posthog.example.com',
+      'https://user:pass@eu.posthog.com',
+    ]) {
+      setBaseEnv({ NEXT_PUBLIC_POSTHOG_UI_HOST: host });
+      expect(() => getEnv()).toThrow(/NEXT_PUBLIC_POSTHOG_UI_HOST/);
+    }
+  });
+
   it('defaults browser analytics to the managed proxy and retains the EU override', () => {
     for (const host of [undefined, '', 'https://m.thetimeline.cc', 'https://eu.i.posthog.com']) {
       setBaseEnv({ NEXT_PUBLIC_POSTHOG_HOST: host });

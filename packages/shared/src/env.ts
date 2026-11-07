@@ -452,6 +452,20 @@ const baseSchema = z.object({
   // These public values are used only by the affirmative-consent public-site
   // client. Authenticated routes must not import or initialize that client.
   NEXT_PUBLIC_POSTHOG_KEY: z.preprocess(emptyStringAsUnset, z.string().optional()),
+  NEXT_PUBLIC_POSTHOG_UI_HOST: z.preprocess(
+    emptyStringAsUnset,
+    z
+      .url()
+      .refine((value) => {
+        try {
+          const url = new URL(value);
+          return url.protocol === 'https:' && !url.username && !url.password;
+        } catch {
+          return false;
+        }
+      }, 'NEXT_PUBLIC_POSTHOG_UI_HOST must be an HTTPS URL without credentials')
+      .default('https://eu.posthog.com'),
+  ),
   NEXT_PUBLIC_POSTHOG_HOST: z.preprocess(
     emptyStringAsUnset,
     reviewedPostHogBrowserHost.default('https://m.thetimeline.cc'),

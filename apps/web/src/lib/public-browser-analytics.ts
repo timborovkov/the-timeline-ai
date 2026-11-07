@@ -44,6 +44,8 @@ const REQUIRED_POSTHOG_PROPERTIES = [
 const configuredKey = normalizePublicValue(process.env.NEXT_PUBLIC_POSTHOG_KEY);
 const configuredHost = normalizePostHogHost(process.env.NEXT_PUBLIC_POSTHOG_HOST);
 
+const configuredUiHost = normalizePostHogUiHost(process.env.NEXT_PUBLIC_POSTHOG_UI_HOST);
+
 export const isPublicBrowserAnalyticsConfigured = Boolean(configuredKey && configuredHost);
 
 let activeSurface: PublicSurface | undefined;
@@ -233,7 +235,7 @@ async function getPublicPostHogClient(): Promise<PostHog | undefined> {
       if (!activeSurface || !canCaptureCurrentPublicSurface(activeSurface)) return undefined;
       initializedClient = posthog.init(configuredKey, {
         api_host: configuredHost,
-        ui_host: 'https://eu.posthog.com',
+        ui_host: configuredUiHost,
         advanced_disable_flags: true,
         autocapture: false,
         before_send: sanitizePublicPostHogEvent,
@@ -375,5 +377,15 @@ function normalizePostHogHost(value: string | undefined): string | undefined {
       : undefined;
   } catch {
     return undefined;
+  }
+}
+
+function normalizePostHogUiHost(value: string | undefined): string {
+  const fallback = 'https://eu.posthog.com';
+  try {
+    const url = new URL(normalizePublicValue(value) ?? fallback);
+    return url.protocol === 'https:' && !url.username && !url.password ? url.origin : fallback;
+  } catch {
+    return fallback;
   }
 }

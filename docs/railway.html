@@ -289,6 +289,7 @@ POSTHOG_HOST=https://eu.i.posthog.com
 ANALYTICS_PSEUDONYMIZATION_KEY=&lt;independent high-entropy secret&gt;
 NEXT_PUBLIC_POSTHOG_KEY=
 NEXT_PUBLIC_POSTHOG_HOST=https://m.thetimeline.cc
+NEXT_PUBLIC_POSTHOG_UI_HOST=https://eu.posthog.com
 SENTRY_DSN=&lt;sentry server/worker dsn&gt;
 NEXT_PUBLIC_SENTRY_DSN=&lt;sentry browser dsn&gt;
 NEXT_PUBLIC_SENTRY_TRACES_SAMPLE_RATE=0
@@ -335,8 +336,9 @@ LOG_LEVEL=info
         Keep <code>ANALYTICS_PSEUDONYMIZATION_KEY</code> secret and server-only. Leave
         <code>NEXT_PUBLIC_POSTHOG_KEY</code> empty until the consent-gated public-browser path and
         PostHog account have been reviewed, then pass it as a web Docker build arg together with
-        <code>NEXT_PUBLIC_POSTHOG_HOST</code>. None of the PostHog variables belong on the
-        credential-thin <code>document-extract-orchestrator</code> service.
+        <code>NEXT_PUBLIC_POSTHOG_HOST</code> and <code>NEXT_PUBLIC_POSTHOG_UI_HOST</code>. None of
+        the PostHog variables belong on the credential-thin
+        <code>document-extract-orchestrator</code> service.
       </p>
       <p>
         <code>CROSS_SOURCE_EVIDENCE_MODE</code> is a worker rollout switch. Keep production at

@@ -262,11 +262,12 @@
         For personless surface counts and pseudonymous server/worker product analytics, set
         <code>POSTHOG_PROJECT_KEY</code>, <code>POSTHOG_HOST=https://eu.i.posthog.com</code>, and a
         separate high-entropy <code>ANALYTICS_PSEUDONYMIZATION_KEY</code>. Set
-        <code>NEXT_PUBLIC_POSTHOG_KEY</code> and
-        <code>NEXT_PUBLIC_POSTHOG_HOST=https://m.thetimeline.cc</code> as web Docker build args only
-        when the consent-gated public-browser path and provider account have been verified; leaving
-        the public key empty disables browser capture. Put the server analytics values only on
-        <code>web</code> and the main <code>worker</code>; the document-extract orchestrator does
+        <code>NEXT_PUBLIC_POSTHOG_KEY</code>,
+        <code>NEXT_PUBLIC_POSTHOG_HOST=https://m.thetimeline.cc</code>, and
+        <code>NEXT_PUBLIC_POSTHOG_UI_HOST=https://eu.posthog.com</code> as web Docker build args
+        only when the consent-gated public-browser path and provider account have been verified;
+        leaving the public key empty disables browser capture. Put the server analytics values only
+        on <code>web</code> and the main <code>worker</code>; the document-extract orchestrator does
         not emit product analytics and its startup allowlist rejects them. See
         <a href="analytics.html">Analytics setup</a>. For error monitoring, set
         <code>SENTRY_DSN</code>, <code>NEXT_PUBLIC_SENTRY_DSN</code>,

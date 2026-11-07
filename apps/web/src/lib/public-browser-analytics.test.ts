@@ -92,6 +92,24 @@ describe('public PostHog runtime', () => {
     expect(posthog.client.capture).not.toHaveBeenCalled();
   });
 
+  it('overrides the UI host without changing proxy ingestion', async () => {
+    vi.stubEnv('NEXT_PUBLIC_POSTHOG_KEY', 'ph-test');
+    vi.stubEnv('NEXT_PUBLIC_POSTHOG_HOST', '');
+    vi.stubEnv('NEXT_PUBLIC_POSTHOG_UI_HOST', 'https://posthog.example.com/');
+    writePublicAnalyticsConsent('accepted');
+    const analytics = await (import(
+      freshModuleUrl(import.meta.resolve('@/lib/public-browser-analytics'))
+    ) as Promise<typeof TestModule1>);
+    await analytics.capturePublicPageView('home');
+    expect(posthog.init).toHaveBeenCalledWith(
+      'ph-test',
+      expect.objectContaining({
+        api_host: 'https://m.thetimeline.cc',
+        ui_host: 'https://posthog.example.com',
+      }),
+    );
+  });
+
   it('uses the managed proxy with unset host after consent', async () => {
     vi.stubEnv('NEXT_PUBLIC_POSTHOG_KEY', 'ph-test');
     vi.stubEnv('NEXT_PUBLIC_POSTHOG_HOST', undefined);

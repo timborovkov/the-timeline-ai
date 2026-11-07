@@ -50,6 +50,7 @@ ANALYTICS_PSEUDONYMIZATION_KEY=&lt;independent high-entropy secret&gt;
 # Optional public-browser capture. Leave the key empty to disable it.
 NEXT_PUBLIC_POSTHOG_KEY=
 NEXT_PUBLIC_POSTHOG_HOST=https://m.thetimeline.cc
+NEXT_PUBLIC_POSTHOG_UI_HOST=https://eu.posthog.com
 </code></pre>
       <p>
         Use a different pseudonymization key per environment. If that key is missing, correlatable
@@ -63,8 +64,10 @@ NEXT_PUBLIC_POSTHOG_HOST=https://m.thetimeline.cc
         <code>NEXT_PUBLIC_POSTHOG_HOST</code> at web build time to that origin, or to
         <code>https://eu.i.posthog.com</code> for direct EU ingestion. Existing explicit EU values
         override the default: update or remove them and rebuild the web image to use the proxy. The
-        SDK dashboard host remains <code>https://eu.posthog.com</code>. Other origins require a
-        source allowlist review. Server and worker ingestion still uses the direct EU host.
+        SDK dashboard host defaults to <code>https://eu.posthog.com</code>; override it with
+        <code>NEXT_PUBLIC_POSTHOG_UI_HOST</code> at build time using an HTTPS URL without
+        credentials. Other ingestion origins require a source allowlist review. Server and worker
+        ingestion still uses the direct EU host.
       </p>
       <p>
         The supplied 2026-11-07 account screenshot shows the managed proxy as Live for the EU
