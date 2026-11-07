@@ -2,6 +2,9 @@ import { readFileSync } from 'node:fs';
 
 import { expect } from '@timeline/test-support';
 import { describe, it } from 'bun:test';
+
+import type { NextConfig } from 'next';
+
 interface RailwayConfig {
   build?: { builder?: string; dockerfilePath?: string };
   deploy?: {
@@ -87,6 +90,19 @@ describe('Railway web config', () => {
     expect(server).toContain('stampSentryRuntimeContext');
     expect(edge).not.toContain('sentry-runtime');
     expect(client).not.toContain('sentry-runtime');
+  });
+
+  it('disables Next.js route preloading so unused server bundles stay off the idle heap', () => {
+    const config = readFileSync(new URL('../next.config.ts', import.meta.url), 'utf8');
+    const readme = readFileSync(new URL('../README.md', import.meta.url), 'utf8');
+    const experimental: NonNullable<NextConfig['experimental']> = {
+      preloadEntriesOnStart: false,
+    };
+
+    expect(config).toMatch(/^\s*preloadEntriesOnStart:\s*false,/m);
+    expect(experimental.preloadEntriesOnStart).toBe(false);
+    expect(readme).toContain('experimental.preloadEntriesOnStart');
+    expect(readme).toContain('trading cold-route latency for lower idle memory');
   });
 
   it('supplies the canonical public origin while prerendering the web image', () => {

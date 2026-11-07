@@ -49,12 +49,32 @@ ANALYTICS_PSEUDONYMIZATION_KEY=&lt;independent high-entropy secret&gt;
 
 # Optional public-browser capture. Leave the key empty to disable it.
 NEXT_PUBLIC_POSTHOG_KEY=
-NEXT_PUBLIC_POSTHOG_HOST=https://eu.i.posthog.com
+NEXT_PUBLIC_POSTHOG_HOST=https://m.thetimeline.cc
+NEXT_PUBLIC_POSTHOG_UI_HOST=https://eu.posthog.com
 </code></pre>
       <p>
         Use a different pseudonymization key per environment. If that key is missing, correlatable
         product-action events fail closed instead of sending raw IDs. The public key is
         intentionally separate so server analytics can run while browser analytics remains disabled.
+      </p>
+
+      <p>
+        Public browser ingestion defaults to the PostHog-managed reverse proxy at
+        <code>https://m.thetimeline.cc</code> when the host is unset or empty. Set
+        <code>NEXT_PUBLIC_POSTHOG_HOST</code> at web build time to that origin, or to
+        <code>https://eu.i.posthog.com</code> for direct EU ingestion. Existing explicit EU values
+        override the default: update or remove them and rebuild the web image to use the proxy. The
+        SDK dashboard host defaults to <code>https://eu.posthog.com</code>; override it with
+        <code>NEXT_PUBLIC_POSTHOG_UI_HOST</code> at build time using an HTTPS URL without
+        credentials. Other ingestion origins require a source allowlist review. Server and worker
+        ingestion still uses the direct EU host.
+      </p>
+      <p>
+        The supplied 2026-11-07 account screenshot shows the managed proxy as Live for the EU
+        project. No application proxy route or rewrite is needed. After deployment, verify an
+        accepted public-page event reaches this host and appears in PostHog; rejection and private
+        routes must still produce zero browser analytics requests. Proxy routing does not change
+        consent, event payloads, retention, or the outstanding provider evidence gaps.
       </p>
 
       <h2 id="paths">2. Measurement paths</h2>
