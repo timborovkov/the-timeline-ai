@@ -1,3 +1,4 @@
+import { WORKSPACE_OPERATOR_POLICY } from '#src/platform-admin/workspace-policy.js';
 import { createHash } from 'node:crypto';
 
 import {
@@ -3476,7 +3477,15 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
     audit: auditScope,
     telegram: telegramScope,
   };
-  return guardOperatorScope(db, teamId, userId, guardedScope, '', deps.skipMembershipCheck);
+  return guardOperatorScope(
+    db,
+    teamId,
+    userId,
+    guardedScope,
+    WORKSPACE_OPERATOR_POLICY,
+    '',
+    deps.skipMembershipCheck,
+  );
 }
 
 export type TeamScope = ReturnType<typeof withTeam>;

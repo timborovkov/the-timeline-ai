@@ -2251,5 +2251,8 @@
   },
   "apps/web/src/lib/mutation-surfaces.test.ts": {
     "group": "unit"
+  },
+  "apps/web/src/lib/auth.test.ts": {
+    "group": "unit"
   }
 }
