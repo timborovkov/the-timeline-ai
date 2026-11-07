@@ -3,6 +3,8 @@
 import { useState } from 'react';
 
 import { InlineError } from '@/components/inline-error';
+import { GoogleDriveConnectDisclosure } from '@/components/integrations/google-drive-connect-disclosure';
+import { isGoogleDriveProviderId } from '@/lib/google-drive-limited-use';
 import { notifyAction } from '@/lib/notify';
 import { cn } from '@/lib/utils';
 import { connectionErrorMessage } from '@/lib/ux-errors';
@@ -20,7 +22,16 @@ export function NativeProviderConnectButton({
 }) {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<{ message: string; details: string } | null>(null);
+  const [driveDisclosureOpen, setDriveDisclosureOpen] = useState(false);
   const busyLabel = 'Opening sign-in…';
+
+  function requestConnect() {
+    if (isGoogleDriveProviderId(providerId)) {
+      setDriveDisclosureOpen(true);
+      return;
+    }
+    void startConnect();
+  }
 
   async function startConnect() {
     setPending(true);
@@ -63,7 +74,7 @@ export function NativeProviderConnectButton({
         aria-label={`${pending ? busyLabel : label}: ${providerId}`}
         aria-busy={pending || undefined}
         disabled={disabled || pending}
-        onClick={() => void startConnect()}
+        onClick={requestConnect}
         className={cn(
           'inline-flex min-h-8 items-center rounded-sm px-2 text-xs text-fg-muted hover:bg-surface-2 hover:text-fg focus-visible:ring-2 focus-visible:ring-signal/50 disabled:cursor-not-allowed disabled:opacity-50',
           className,
@@ -75,10 +86,19 @@ export function NativeProviderConnectButton({
         <InlineError
           message={error.message}
           details={error.details}
-          onRetry={() => void startConnect()}
+          onRetry={requestConnect}
           retrying={pending}
         />
       ) : null}
+      <GoogleDriveConnectDisclosure
+        open={driveDisclosureOpen}
+        onOpenChange={setDriveDisclosureOpen}
+        pending={pending}
+        onContinue={() => {
+          setDriveDisclosureOpen(false);
+          void startConnect();
+        }}
+      />
     </div>
   );
 }

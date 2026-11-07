@@ -230,13 +230,13 @@ export const HELP_PAGES: HelpPage[] = [
     description: 'Connect durable sources and live MCP tools without breaking team isolation.',
     icon: PlugZap,
     related: ['capture', 'work', 'agents'],
-    updatedAt: '2026-11-06',
+    updatedAt: '2026-11-07',
     sections: [
       {
         title: 'Connected sources',
         body: 'First-party integrations and ingest paths can create durable evidence. MCP servers give the agent live reach into approved tools; successful team-shared results become team-visible evidence, while personal-server results stay private to their owner. MCP is not passive provider sync.',
         items: [
-          'Google Drive records selected Docs, Sheets, Slides, PDF, and Word changes as cited events. It does not copy those files into the document drive.',
+          'Google Drive records selected Docs, Sheets, Slides, PDF, and Word changes as cited events. It does not copy those files into the document drive. Disconnecting deletes tokens and snapshots, not already captured timeline events.',
           'GitHub and Linear bring engineering and project activity into the operational record.',
           'Monday.com syncs selected boards, generic records, subitems, updates, columns, and WorkDocs.',
           'Slack workspace ingestion syncs selected channels, threads, files, reactions, and edits.',

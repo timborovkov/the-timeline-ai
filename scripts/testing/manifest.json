@@ -812,6 +812,9 @@
   "apps/web/src/components/integrations/catalog.test.tsx": {
     "group": "dom"
   },
+  "apps/web/src/components/integrations/google-drive-connect-disclosure.test.tsx": {
+    "group": "dom"
+  },
   "apps/web/src/components/integrations/connected.test.tsx": {
     "group": "dom"
   },
@@ -942,6 +945,9 @@
     "group": "dom"
   },
   "apps/web/src/components/mobile-nav.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/native-provider-connect-button.test.tsx": {
     "group": "dom"
   },
   "apps/web/src/components/nav-items.test.ts": {
@@ -1204,6 +1210,9 @@
   },
   "apps/web/src/lib/form-action-toast.test.tsx": {
     "group": "dom"
+  },
+  "apps/web/src/lib/google-drive-limited-use.test.ts": {
+    "group": "unit"
   },
   "apps/web/src/lib/hub-status.test.ts": {
     "group": "unit"
@@ -1878,6 +1887,9 @@
     "group": "unit"
   },
   "packages/shared/src/integrations/google-drive-evidence.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/integrations/google-drive-oauth-revoke.test.ts": {
     "group": "unit"
   },
   "packages/shared/src/integrations/google-drive-scope.test.ts": {

@@ -3,6 +3,7 @@ import { listCatalog } from '@timeline/shared/integrations/registry';
 import type { CatalogEntry } from '@timeline/shared/integrations/registry';
 
 import { PUBLIC_DEMO_STORY } from '@/components/marketing/public-demo-story';
+import { GOOGLE_DRIVE_LIMITED_USE_POLICY } from '@/lib/google-drive-limited-use';
 
 export const CONNECTOR_SLUGS = [
   'slack',
@@ -406,7 +407,7 @@ export const CONNECTORS: readonly ConnectorContent[] = [
     logo: '/connectors/google-drive.svg',
     lightLogoTileInDarkMode: false,
     capability: 'Native integration',
-    lastReviewed: '2026-11-06',
+    lastReviewed: '2026-11-07',
     captureStatement:
       'Timeline records selected Drive changes as cited events after a quiet editing window. It keeps the latest extracted text to detect later edits, then deletes that text on disconnect or when the file leaves the selection. It does not copy Drive files into the document drive.',
     providerStatement:
@@ -451,12 +452,13 @@ export const CONNECTORS: readonly ConnectorContent[] = [
       'Register the Drive push-notification domain for `/api/webhooks/google-drive`. Timeline uses `changes.watch`; file capture waits for a quiet editing window of about 15 minutes and at most one hour. A scheduled `changes.list` pass recovers missed notifications about once a day.',
     ],
     permissions: [
-      'OAuth requests read-only Drive content and metadata plus openid and email. Google’s stable subject identifier anchors the provider account identity, and its primary email labels the connection.',
-      'The connection sees only files the authorizing Google account is allowed to read.',
+      'OAuth requests `openid`, `email`, and `https://www.googleapis.com/auth/drive.readonly`. Google’s stable subject identifier anchors the provider account identity, and its primary email labels the connection. Sign-in with Google is a separate `openid email profile` request and never includes Drive scopes.',
+      'The connection sees only files the authorizing Google account is allowed to read. Timeline uses that access to capture selected Docs, Sheets, Slides, PDF, and Word changes, including comments and sharing signals used for change detection.',
       'Selecting a folder, file, or shared drive admits only that subtree. My Drive root walks ancestry to `root` and does not admit Shared with me.',
-      'Non-owners cannot use Timeline to browse the connection owner’s unshared Drive resources.',
-      'OAuth credentials are encrypted at rest; Timeline’s own team and event visibility rules still apply after capture.',
-      'Timeline’s use of information received from Google APIs adheres to the Google API Services User Data Policy, including the Limited Use requirements. Drive content is used only to provide and improve the user-facing capture features described here.',
+      'Non-owners cannot use Timeline to browse the connection owner’s unshared Drive resources. A team admin activates the sources you share. Captured events follow Timeline visibility rules. Timeline does not edit Drive files or change Drive sharing.',
+      'OAuth credentials are encrypted at rest. Timeline keeps hashes and the latest extracted text to detect later edits, not a Drive document archive.',
+      `${GOOGLE_DRIVE_LIMITED_USE_POLICY} Drive content is used only to provide and improve the user-facing capture features described here. A small billed model may read changed passages to judge CRM relevance. PDF, Word, and Slides text is extracted then deleted. Timeline does not use Google user data to train general-purpose models.`,
+      'Disconnecting deletes Timeline’s Drive tokens, snapshots, and latest extracted text for uncovered files. Cited timeline events already captured stay until a team admin or support deletion request. You can also remove Timeline in Google Account permissions.',
     ],
     limitations: [
       'Activation sets a Drive changes cursor and registers `changes.watch`. Historical files are not enumerated. Changes before that cursor are never returned. The first time Timeline sees a selected file after that cursor, it stores a baseline snapshot without writing an event.',

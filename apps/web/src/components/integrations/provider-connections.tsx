@@ -15,6 +15,7 @@ import {
 
 import { EmptyState } from '@/components/empty-state';
 import { InlineError } from '@/components/inline-error';
+import { GoogleDriveConnectDisclosure } from '@/components/integrations/google-drive-connect-disclosure';
 import {
   type ObjectSearchResponse,
   visibleObjectSearchResultsForQuery,
@@ -27,6 +28,7 @@ import { Input } from '@/components/ui/input';
 import { ItemActionGroup, ItemOverflowMenu } from '@/components/ui/item-actions';
 import { Skeleton } from '@/components/ui/skeleton';
 import { providerLogoSrc } from '@/lib/connections';
+import { isGoogleDriveProviderId } from '@/lib/google-drive-limited-use';
 import { notifyAction } from '@/lib/notify';
 import { queryKeys } from '@/lib/query-keys';
 import { groupResourcesByKind, providerLabel, shareDisplayName } from '@/lib/resource-labels';
@@ -370,6 +372,7 @@ function ConnectionSources({
   const [state, dispatch] = useReducer(sourcePickerReducer, initialSourcePickerState);
   const [driveParentId, setDriveParentId] = useState('');
   const [driveCrumbs, setDriveCrumbs] = useState([{ id: '', label: 'Google Drive' }]);
+  const [driveDisclosureOpen, setDriveDisclosureOpen] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const deleteButtonRef = useRef<HTMLButtonElement>(null);
   const searchInputId = useId();
@@ -572,72 +575,89 @@ function ConnectionSources({
   }
 
   return (
-    <ConnectionSourcesPanel
-      compact={compact}
-      connection={connection}
-      selected={selected}
-      query={query}
-      searchInputId={searchInputId}
-      searchInputRef={searchInputRef}
-      deleteConfirmationId={deleteConfirmationId}
-      deleteButtonRef={deleteButtonRef}
-      busy={state.busy}
-      confirmDelete={state.confirmDelete}
-      error={error}
-      sourceLoadError={sourceLoadError}
-      picker={{
-        isLoading,
-        isFetching,
-        showEmptyResult,
-        hasSearchQuery,
-      }}
-      grouped={grouped}
-      driveBrowse={
-        isDrive
-          ? {
-              crumbs: driveCrumbs,
-              onOpenFolder: (resource) => {
-                setDriveParentId(resource.externalId);
-                setDriveCrumbs((current) => [
-                  ...current,
-                  { id: resource.externalId, label: resource.label },
-                ]);
-                dispatch({ type: 'query', query: '' });
-              },
-              onCrumb: (id) => {
-                if (!id) {
-                  setDriveParentId('');
-                  setDriveCrumbs([{ id: '', label: 'Google Drive' }]);
-                  return;
-                }
-                setDriveCrumbs((current) => {
-                  const index = current.findIndex((crumb) => crumb.id === id);
-                  return index >= 0 ? current.slice(0, index + 1) : current;
-                });
-                setDriveParentId(id);
-              },
-            }
-          : null
-      }
-      onQueryChange={(nextQuery) => {
-        dispatch({ type: 'query', query: nextQuery });
-      }}
-      onSave={() => void save()}
-      onDelete={() => {
-        dispatch({ type: 'openDeleteConfirmation' });
-      }}
-      onConfirmDelete={() => void deleteConnection()}
-      onCancelDelete={() => {
-        dispatch({ type: 'closeDeleteConfirmation' });
-        deleteButtonRef.current?.focus();
-      }}
-      onReconnect={() => void reconnect()}
-      onRetry={() => {
-        void retrySourceLoad();
-      }}
-      onToggle={toggle}
-      onClearSearch={clearSearch}
-    />
+    <>
+      <ConnectionSourcesPanel
+        compact={compact}
+        connection={connection}
+        selected={selected}
+        query={query}
+        searchInputId={searchInputId}
+        searchInputRef={searchInputRef}
+        deleteConfirmationId={deleteConfirmationId}
+        deleteButtonRef={deleteButtonRef}
+        busy={state.busy}
+        confirmDelete={state.confirmDelete}
+        error={error}
+        sourceLoadError={sourceLoadError}
+        picker={{
+          isLoading,
+          isFetching,
+          showEmptyResult,
+          hasSearchQuery,
+        }}
+        grouped={grouped}
+        driveBrowse={
+          isDrive
+            ? {
+                crumbs: driveCrumbs,
+                onOpenFolder: (resource) => {
+                  setDriveParentId(resource.externalId);
+                  setDriveCrumbs((current) => [
+                    ...current,
+                    { id: resource.externalId, label: resource.label },
+                  ]);
+                  dispatch({ type: 'query', query: '' });
+                },
+                onCrumb: (id) => {
+                  if (!id) {
+                    setDriveParentId('');
+                    setDriveCrumbs([{ id: '', label: 'Google Drive' }]);
+                    return;
+                  }
+                  setDriveCrumbs((current) => {
+                    const index = current.findIndex((crumb) => crumb.id === id);
+                    return index >= 0 ? current.slice(0, index + 1) : current;
+                  });
+                  setDriveParentId(id);
+                },
+              }
+            : null
+        }
+        onQueryChange={(nextQuery) => {
+          dispatch({ type: 'query', query: nextQuery });
+        }}
+        onSave={() => void save()}
+        onDelete={() => {
+          dispatch({ type: 'openDeleteConfirmation' });
+        }}
+        onConfirmDelete={() => void deleteConnection()}
+        onCancelDelete={() => {
+          dispatch({ type: 'closeDeleteConfirmation' });
+          deleteButtonRef.current?.focus();
+        }}
+        onReconnect={() => {
+          if (isGoogleDriveProviderId(connection.provider)) {
+            setDriveDisclosureOpen(true);
+            return;
+          }
+          void reconnect();
+        }}
+        onRetry={() => {
+          void retrySourceLoad();
+        }}
+        onToggle={toggle}
+        onClearSearch={clearSearch}
+      />
+      <GoogleDriveConnectDisclosure
+        open={driveDisclosureOpen}
+        onOpenChange={setDriveDisclosureOpen}
+        pending={state.busy === 'reconnect'}
+        onContinue={() => {
+          setDriveDisclosureOpen(false);
+          void reconnect();
+        }}
+      />
+    </>
   );
 }
 

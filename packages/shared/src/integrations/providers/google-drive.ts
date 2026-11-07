@@ -78,12 +78,21 @@ const fetch = providerFetch('google_drive');
 
 const log = childLogger('integrations:google-drive');
 
-const SCOPES = [
+/**
+ * Google classifies `drive.readonly` as restricted. It already covers file
+ * content and metadata for the Drive, Docs, and Sheets calls this adapter
+ * makes (`files.list`/`get`/`export`, `changes.list`/`watch`, `comments.list`,
+ * `permissions.list`, `drives.list`, Docs `documents.get`, Sheets
+ * `spreadsheets.get` / `values.batchGet`). `drive.metadata.readonly` is also
+ * restricted, forbids content, and is therefore not requested.
+ */
+export const GOOGLE_DRIVE_OAUTH_SCOPES = [
   'openid',
   'email',
   'https://www.googleapis.com/auth/drive.readonly',
-  'https://www.googleapis.com/auth/drive.metadata.readonly',
-];
+] as const;
+
+const SCOPES: readonly string[] = GOOGLE_DRIVE_OAUTH_SCOPES;
 
 const AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth';
 const TOKEN_URL = 'https://oauth2.googleapis.com/token';
@@ -1745,7 +1754,7 @@ export const googleDriveProvider: IntegrationProvider = {
     return {
       externalAccountId: sub,
       displayName,
-      scopes: SCOPES,
+      scopes: [...SCOPES],
       tokens: tokens as unknown as Record<string, unknown>,
       accessTokenExpiresAt: new Date(tokens.expires_at ?? Date.now() + expiresIn * 1000),
     };

@@ -170,6 +170,13 @@ describe('hasCurrentLegalAcceptance', () => {
     expect(
       hasCurrentLegalAcceptance({
         legalTermsVersion: TERMS_VERSION,
+        legalPrivacyVersion: '2026-11-03',
+        legalAcceptedAt: new Date('2026-08-21T10:00:00.000Z'),
+      }),
+    ).toBe(true);
+    expect(
+      hasCurrentLegalAcceptance({
+        legalTermsVersion: TERMS_VERSION,
         legalPrivacyVersion: PRIVACY_VERSION,
         legalAcceptedAt: new Date('2026-08-21T10:00:00.000Z'),
       }),

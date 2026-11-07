@@ -1,7 +1,7 @@
 # The Timeline — Design System
 
-**Version:** v3.38 · OAuth auto-verify, team support ids, Drive share picker (2026-11-06).
-Replaces v3.37 Agents as teammates.
+**Version:** v3.39 · Drive Limited Use disclosure (2026-11-07).
+Replaces v3.38 OAuth auto-verify, team support ids, Drive share picker.
 
 This is the visual and interaction contract for the product. If a screen
 disagrees with it, fix the screen. If the language intentionally changes,
@@ -1412,6 +1412,7 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-11-06 | Company-brain compare pages | Adds `/compare/the-timeline-vs-{suda,memorycrow,achiral}` with the same vs H1 and “[competitor] alternatives” SEO. Footer Compare column lists them; header stays Integrations-only for Notion. |
 | 2026-11-06 | Product-tour mobile frames | `/product-tour` mobile portrait shots (`*-mobile.png`) use a 390×844 contain frame instead of the landscape 16×10 top crop, so Ask recap citations stay visible. |
 | 2026-11-06 | OAuth auto-verify, team support ids, Drive picker | Google/GitHub sign-in stamps `emailVerified` when the provider asserts a verified email. Team → General shows readonly copyable team id and slug. Drive sharing drops the dense green callout, overlapping helper copy, and nested picker borders. |
+| 2026-11-07 | Drive Limited Use disclosure | Connecting or reconnecting Google Drive opens a contextual dialog before Google OAuth. The copy names read-only Drive access, selected-source capture, encrypted tokens, snapshots versus retained events, team sharing, billed change-judging, document extract, and no general-model training. Continue to Google is the affirmative action; Cancel or dismiss does not start OAuth. |
 
 
 ### Billing benefits and recorded charges (2026-10-31)

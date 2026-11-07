@@ -354,7 +354,7 @@ const publicUtilityDocuments = definePublicDocuments('public-utility', [
     title: 'Privacy Policy',
     description: 'How The Timeline processes personal data and team content.',
     indexability: 'index',
-    dates: { modified: PRIVACY_VERSION, reviewed: '2026-11-03' },
+    dates: { modified: PRIVACY_VERSION, reviewed: '2026-11-07' },
     capability: { kind: 'not-applicable' },
     sitemap: { changeFrequency: 'monthly', priority: 0.4 },
     structuredData: [{ type: 'web-page' }],

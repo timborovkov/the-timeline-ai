@@ -287,16 +287,21 @@ describe('connector content manifest', () => {
     const publicClaims = JSON.stringify(drive);
 
     expect(drive.slug).toBe('google-drive');
-    expect(drive.lastReviewed).toBe('2026-11-06');
+    expect(drive.lastReviewed).toBe('2026-11-07');
     expect(publicClaims).toContain('My Drive');
     expect(publicClaims).toContain('shared drives');
     expect(publicClaims).toContain('changes.watch');
     expect(publicClaims).toContain('does not admit Shared with me');
     expect(drive.intro).not.toContain('including Shared with me');
-    expect(drive.permissions.join(' ')).toContain('openid and email');
+    expect(drive.permissions.join(' ')).toContain('openid');
+    expect(drive.permissions.join(' ')).toContain('email');
     expect(drive.permissions.join(' ')).toContain('stable subject identifier');
     expect(drive.permissions.join(' ')).toContain('primary email labels the connection');
     expect(drive.permissions.join(' ')).toContain('Limited Use');
+    expect(drive.permissions.join(' ')).toContain('https://www.googleapis.com/auth/drive.readonly');
+    expect(drive.permissions.join(' ')).not.toContain('drive.metadata.readonly');
+    expect(drive.permissions.join(' ')).toContain('does not use Google user data to train');
+    expect(drive.permissions.join(' ')).toContain('Cited timeline events already captured stay');
     expect(publicClaims).toContain('Historical files are not enumerated');
     expect(publicClaims).toContain('baseline snapshot without writing an event');
     expect(publicClaims).toContain('keeps the latest extracted text to detect later changes');

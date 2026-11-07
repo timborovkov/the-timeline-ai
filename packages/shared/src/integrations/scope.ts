@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 
 import {
   type Db,
+  accounts,
   auditLog,
   connectionAttention,
   entities,
@@ -42,6 +43,11 @@ import {
   saveDriveSnapshot,
   type DriveExtractTombstone,
 } from '#src/integrations/google-drive-capture.js';
+import {
+  decideGoogleDriveTokenRevoke,
+  googleOAuthTokenFromDriveSecrets,
+  revokeGoogleOAuthToken,
+} from '#src/integrations/google-drive-oauth-revoke.js';
 import {
   DRIVE_FILE_KIND,
   DRIVE_FOLDER_KIND,
@@ -167,6 +173,67 @@ const githubRateLimitedUntilKey = 'github_rate_limited_until';
 const integrationSyncContinuationHandoffLeaseMs = 2 * 60 * 1000;
 const integrationSyncContinuationHandoffClaimLimit = 100;
 const log = childLogger('integrations:scope');
+
+async function maybeRevokeGoogleDriveGrantAfterDisconnect(
+  database: Db,
+  connection: ProviderConnectionRow,
+): Promise<void> {
+  if (connection.provider !== 'google_drive') return;
+
+  let token: string | null = null;
+  try {
+    const secrets = decryptJson({
+      ciphertext: connection.authSecretCiphertext,
+      iv: connection.authSecretIv,
+      tag: connection.authSecretTag,
+    }) as Record<string, unknown>;
+    token = googleOAuthTokenFromDriveSecrets(secrets);
+  } catch (err) {
+    log.warn(
+      { err, providerConnectionId: connection.id },
+      'could not decrypt Drive tokens before Google revoke',
+    );
+  }
+
+  const [signIn] = await database
+    .select({ userId: accounts.userId })
+    .from(accounts)
+    .where(
+      and(
+        eq(accounts.provider, 'google'),
+        eq(accounts.providerAccountId, connection.externalAccountId),
+      ),
+    )
+    .limit(1);
+  const [otherDrive] = await database
+    .select({ id: providerConnections.id })
+    .from(providerConnections)
+    .where(
+      and(
+        eq(providerConnections.provider, 'google_drive'),
+        eq(providerConnections.externalAccountId, connection.externalAccountId),
+      ),
+    )
+    .limit(1);
+
+  const decision = decideGoogleDriveTokenRevoke({
+    token,
+    googleSignInLinked: Boolean(signIn),
+    otherDriveConnectionsRemain: Boolean(otherDrive),
+  });
+  if (decision.action !== 'revoke') return;
+
+  const result = await revokeGoogleOAuthToken(decision.token);
+  if (result === 'failed') {
+    log.warn(
+      {
+        providerConnectionId: connection.id,
+        googleSubject: connection.externalAccountId,
+      },
+      'Google token revoke failed after local Drive disconnect',
+    );
+  }
+}
 
 async function deleteDriveTransientExtractObjects(cursor: {
   objectKey: string;
@@ -625,6 +692,14 @@ export function createIntegrationScope(deps: {
         }
       }
     });
+    try {
+      await maybeRevokeGoogleDriveGrantAfterDisconnect(db, connection);
+    } catch (err) {
+      log.warn(
+        { err, providerConnectionId: id },
+        'Google token revoke threw after local Drive disconnect',
+      );
+    }
     for (const notification of pendingNotifications) {
       try {
         const shouldEmail = await shouldEmailConnectionAttention(

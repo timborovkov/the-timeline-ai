@@ -986,6 +986,52 @@ describe('PersonalConnectionsUi', () => {
     expect(screen.queryByText(/Could not disconnect this connection/i)).toBeNull();
   });
 
+  it('shows Google Drive Limited Use before reconnect OAuth starts', async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      if (fetchHref(input).includes('/api/integrations/google_drive/start')) {
+        return Promise.resolve(
+          new Response(JSON.stringify({ url: 'https://accounts.google.com/o' }), { status: 200 }),
+        );
+      }
+      return Promise.resolve(
+        new Response(JSON.stringify({ resources: [], shares: [] }), { status: 200 }),
+      );
+    });
+
+    renderWithQueryClient(
+      <PersonalConnectionsUi
+        connections={[
+          {
+            id: 'conn-drive',
+            provider: 'google_drive',
+            displayName: 'Google Drive — Tim',
+            lastError: 'token_revoked',
+            lastConnectedAt: '2026-06-01T00:00:00.000Z',
+          },
+        ]}
+      />,
+    );
+
+    await screen.findByRole('button', { name: 'Reconnect' });
+    await user.click(screen.getByRole('button', { name: 'Reconnect' }));
+    expect(screen.getByRole('dialog', { name: 'Connect Google Drive' })).toBeTruthy();
+    expect(
+      fetchMock.mock.calls.some((call) =>
+        fetchHref(call[0]).includes('/api/integrations/google_drive/start'),
+      ),
+    ).toBe(false);
+
+    await user.click(screen.getByRole('button', { name: 'Continue to Google' }));
+    await waitFor(() => {
+      expect(
+        fetchMock.mock.calls.some((call) =>
+          fetchHref(call[0]).includes('/api/integrations/google_drive/start'),
+        ),
+      ).toBe(true);
+    });
+  });
+
   it('lets admins link an active Drive source to a Timeline object', async () => {
     const user = userEvent.setup();
     const patches: unknown[] = [];

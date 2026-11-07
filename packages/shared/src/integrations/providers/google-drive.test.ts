@@ -26,6 +26,7 @@ await vi.mock(
 const { resetEnvForTests } = await import('#src/env.js');
 const {
   DRIVE_EVENT_CONTENT_MAX_CHARS,
+  GOOGLE_DRIVE_OAUTH_SCOPES,
   googleDriveProvider,
   packDriveChangeEvents,
   packDriveEventContent,
@@ -591,10 +592,15 @@ describe('googleDriveProvider', () => {
       'openid',
       'email',
       'https://www.googleapis.com/auth/drive.readonly',
-      'https://www.googleapis.com/auth/drive.metadata.readonly',
     ]);
+    expect(url.searchParams.get('scope')).not.toContain('drive.metadata.readonly');
     expect(url.searchParams.get('access_type')).toBe('offline');
     expect(url.searchParams.get('redirect_uri')).not.toMatch(/\/api\/auth\/callback\/google$/);
+    expect([...GOOGLE_DRIVE_OAUTH_SCOPES]).toEqual([
+      'openid',
+      'email',
+      'https://www.googleapis.com/auth/drive.readonly',
+    ]);
   });
 
   it('exchanges an OAuth code and resolves the stable Google subject id', async () => {

@@ -22,6 +22,14 @@ This file now tracks only remaining work and recurring operating obligations.
 Use the repository history, release notes, and phase PRs for shipped
 implementation detail.
 
+Google OAuth production publishing is still operator/GCP work. Code on the Drive
+branch requests `openid email drive.readonly` for Drive and `openid email profile`
+for sign-in, shows a contextual Limited Use disclosure before Drive connect, and
+best-effort revokes Drive tokens only when that would not invalidate Sign in with
+Google on the shared Cloud project. See
+[docs/research/google-oauth-readiness.md](docs/research/google-oauth-readiness.md).
+Cited Drive timeline events are not deleted on disconnect.
+
 Google Drive v1 is shipped: person-owned OAuth, folder/file/shared-drive picker,
 `changes.watch` push (not polling), webhook-delivery + delayed targeted
 `integration-sync` debounce, latest extracted text kept only to detect later changes (older retained states hashes-only; deleted on disconnect or file removal) keyed by full-text content hashes

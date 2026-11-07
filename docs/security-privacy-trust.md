@@ -11,6 +11,7 @@
 | Next scheduled review | **TBD: no later than 2026-11-27** |
 | Evidence memo | [Provider privacy and data-handling research](./research/provider-privacy-audit-2026-08-21.md) |
 | Legal research | [GDPR, cookies, and consent audit](./research/gdpr-cookie-consent-audit-2026-08-21.md) |
+| Google OAuth readiness | [Drive and sign-in scopes, callbacks, APIs](./research/google-oauth-readiness.md) |
 | Analytics interface | [Privacy and analytics implementation interface](./privacy-analytics-interface.md) |
 | Public derivatives | Trust page, Privacy Policy, Cookies and similar technologies notice, Terms of Use, help, guides, sales and security answers |
 
@@ -602,8 +603,13 @@ Current categories include:
 Before connection, the product must show the operator or server URL, requested
 permissions/auth method, personal-versus-team sharing, selected resources,
 capture behavior, possible external side effects, and how to disconnect. Google
-Workspace data use must receive the prominent, specific Limited Use disclosure
-required by Google's policy.
+Drive connection and reconnect open a contextual Limited Use disclosure covering
+access, use, storage, sharing, deletion, billed change-judging / document
+extract, and no general-model training, immediately before Google OAuth.
+Continue to Google is the affirmative action; a separate checkbox is not treated
+as a blanket Google requirement. The published Privacy Policy and public Drive
+connector page carry the same facts. Disconnect deletes tokens and snapshots, not
+already captured timeline events.
 
 MCP output and integration snippets are untrusted and must pass through the
 external-content fence before reaching an agent. SSRF validation is required for
