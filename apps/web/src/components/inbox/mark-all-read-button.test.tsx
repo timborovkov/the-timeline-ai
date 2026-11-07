@@ -38,8 +38,17 @@ await vi.mock(
   () => import('next/navigation'),
 );
 
-const { cleanup, render, screen, waitFor } = await import('@testing-library/react');
+const {
+  cleanup,
+  render: renderWithoutProvider,
+  screen,
+  waitFor,
+} = await import('@testing-library/react');
 const { default: userEvent } = await import('@testing-library/user-event');
+
+const { InboxReadProvider } = await import('@/components/inbox/inbox-read-state');
+const render: typeof renderWithoutProvider = (ui, options) =>
+  renderWithoutProvider(ui, { wrapper: InboxReadProvider, ...options });
 
 const { MarkAllReadButton } = await import('./mark-all-read-button.js');
 

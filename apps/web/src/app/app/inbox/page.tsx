@@ -7,6 +7,7 @@ import type { Metadata } from 'next';
 
 import { EmptyState } from '@/components/empty-state';
 import { HistoryBackLink } from '@/components/history-back-link';
+import { InboxReadProvider } from '@/components/inbox/inbox-read-state';
 import { InboxList } from '@/components/inbox/inbox-list';
 import { MarkAllReadButton } from '@/components/inbox/mark-all-read-button';
 import { PageHeader } from '@/components/page-header';
@@ -25,58 +26,60 @@ export default async function InboxPage({
 }: {
   searchParams: Promise<{ unread?: string }>;
 }) {
-  const { totalCount, unreadCount, unreadOnly, pageRows, rows, matchingCount } =
+  const { totalCount, unreadCount, unreadOnly, pageRows, rows, matchingCount, scopeKey } =
     await loadInboxPage({ searchParams });
   return (
-    <div className="space-y-6">
-      <HistoryBackLink fallbackHref="/app" label="Back" />
+    <InboxReadProvider key={scopeKey} snapshot={pageRows}>
+      <div className="space-y-6">
+        <HistoryBackLink fallbackHref="/app" label="Back" />
 
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <PageHeader
-          title="Inbox"
-          subtitle="Review notifications and changes that need your attention."
-          srLabel={`Inbox · ${totalCount} notifications · ${unreadCount} unread${unreadOnly ? ' · unread filter on' : ''}`}
-          metadata={[
-            { label: 'Total', value: totalCount, mono: true },
-            { label: 'Unread', value: unreadCount, mono: true, signal: unreadCount > 0 },
-          ]}
-        />
-        <MarkAllReadButton hasUnread={unreadCount > 0} />
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <PageHeader
+            title="Inbox"
+            subtitle="Review notifications and changes that need your attention."
+            srLabel={`Inbox · ${totalCount} notifications · ${unreadCount} unread${unreadOnly ? ' · unread filter on' : ''}`}
+            metadata={[
+              { label: 'Total', value: totalCount, mono: true },
+              { label: 'Unread', value: unreadCount, mono: true, signal: unreadCount > 0 },
+            ]}
+          />
+          <MarkAllReadButton hasUnread={unreadCount > 0} />
+        </div>
+
+        {<InboxFilters unreadOnly={unreadOnly} />}
+
+        {pageRows.length === 0 ? (
+          <EmptyState
+            icon={Bell}
+            title={unreadOnly ? 'No unread notifications' : 'No notifications yet'}
+            body={
+              unreadOnly
+                ? 'You are caught up. New notifications will appear here when owned objects change or a proposal needs you.'
+                : 'Notifications appear when objects you own change or a proposal needs your attention.'
+            }
+            href={unreadOnly ? '/app/inbox' : '/app/timeline'}
+            action={unreadOnly ? 'Show all notifications' : 'Open timeline'}
+          />
+        ) : (
+          <InboxList
+            initialRows={pageRows.map((n) => ({
+              id: n.id,
+              kind: n.kind,
+              summary: n.summary,
+              entityId: n.entityId,
+              agentSuggestionId: n.agentSuggestionId,
+              payload: n.payload,
+              createdAt: n.createdAt.toISOString(),
+              readAt: n.readAt?.toISOString() ?? null,
+            }))}
+            nextOffset={rows.length > INBOX_PAGE_SIZE ? INBOX_PAGE_SIZE : null}
+            unreadOnly={unreadOnly}
+            matchingCount={matchingCount}
+            totalCount={totalCount}
+          />
+        )}
       </div>
-
-      {<InboxFilters unreadOnly={unreadOnly} />}
-
-      {pageRows.length === 0 ? (
-        <EmptyState
-          icon={Bell}
-          title={unreadOnly ? 'No unread notifications' : 'No notifications yet'}
-          body={
-            unreadOnly
-              ? 'You are caught up. New notifications will appear here when owned objects change or a proposal needs you.'
-              : 'Notifications appear when objects you own change or a proposal needs your attention.'
-          }
-          href={unreadOnly ? '/app/inbox' : '/app/timeline'}
-          action={unreadOnly ? 'Show all notifications' : 'Open timeline'}
-        />
-      ) : (
-        <InboxList
-          initialRows={pageRows.map((n) => ({
-            id: n.id,
-            kind: n.kind,
-            summary: n.summary,
-            entityId: n.entityId,
-            agentSuggestionId: n.agentSuggestionId,
-            payload: n.payload,
-            createdAt: n.createdAt.toISOString(),
-            readAt: n.readAt?.toISOString() ?? null,
-          }))}
-          nextOffset={rows.length > INBOX_PAGE_SIZE ? INBOX_PAGE_SIZE : null}
-          unreadOnly={unreadOnly}
-          matchingCount={matchingCount}
-          totalCount={totalCount}
-        />
-      )}
-    </div>
+    </InboxReadProvider>
   );
 }
 
@@ -122,5 +125,13 @@ async function loadInboxPage({ searchParams }: { searchParams: Promise<{ unread?
   const pageRows = rows.slice(0, INBOX_PAGE_SIZE);
   const matchingCount = unreadOnly ? unreadCount : totalCount;
 
-  return { totalCount, unreadCount, unreadOnly, pageRows, rows, matchingCount };
+  return {
+    totalCount,
+    unreadCount,
+    unreadOnly,
+    pageRows,
+    rows,
+    matchingCount,
+    scopeKey: `${active.teamId}:${session.user.id}`,
+  };
 }

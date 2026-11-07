@@ -2,9 +2,10 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Suspense, useEffect, useRef, useState, useTransition } from 'react';
+import { Suspense, useTransition } from 'react';
 
 import { markNotificationReadAction } from '@/app/actions/objects';
+import { useInboxReadState } from '@/components/inbox/inbox-read-state';
 import { RelativeTimestamp } from '@/components/relative-timestamp';
 import { notificationHref } from '@/lib/notification-href';
 import { notificationKindLabel } from '@/lib/notification-labels';
@@ -42,29 +43,11 @@ function NotificationRowContent({
 }: Props) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
-  // Optimistic local flags only. The visible read state is derived so a
-  // parent refresh (Mark all read → router.refresh()) can ratchet the row
-  // toward read without copying `initiallyRead` into an effect.
-  const [individuallyRead, setIndividuallyRead] = useState(false);
-  const [bulkRead, setBulkRead] = useState(false);
-  const individuallyReadRef = useRef(false);
-  const read = initiallyRead || individuallyRead || bulkRead;
-
-  useEffect(() => {
-    function onAllRead(event: Event): void {
-      if (!(event instanceof CustomEvent) || typeof event.detail !== 'boolean') return;
-      setBulkRead(event.detail);
-    }
-    window.addEventListener('timeline:notifications-read-all', onAllRead);
-    return () => {
-      window.removeEventListener('timeline:notifications-read-all', onAllRead);
-    };
-  }, []);
+  const { isRead, beginRead, finishRead } = useInboxReadState();
+  const read = isRead(id, initiallyRead);
 
   function markRead(): void {
-    if (initiallyRead || individuallyRead || individuallyReadRef.current) return;
-    individuallyReadRef.current = true;
-    setIndividuallyRead(true);
+    if (initiallyRead || !beginRead(id)) return;
     startTransition(async () => {
       const result = await notifyAction({
         id: `inbox:${id}:read`,
@@ -73,6 +56,7 @@ function NotificationRowContent({
         error: 'Couldn’t mark notification read',
         run: () => markNotificationReadAction(id),
       });
+      finishRead(id, !result.error);
       if (!result.error) {
         // On the unread-only view, the server filter excludes read rows —
         // refresh so the now-read row drops out instead of lingering with
@@ -81,11 +65,6 @@ function NotificationRowContent({
         router.refresh();
         return;
       }
-      // Action failed (DB blip, scope mismatch). Drop the individual
-      // optimistic flag so derived read falls back to server props or a
-      // still-in-flight bulk mark-all.
-      individuallyReadRef.current = false;
-      setIndividuallyRead(false);
     });
   }
 
