@@ -44,15 +44,9 @@ exploit.
   privacy boundaries.
 - Update affected documentation and public claims in the same change.
 
-Before handing a change back, run:
-
-```bash
-bun run validate
-bun run doctor
-```
-
-React Doctor must report a score of 100. Also run the nearest focused tests and
-any broader suites required by [AGENTS.md](./AGENTS.md).
+Follow the [validation policy in AGENTS.md](./AGENTS.md#validation-policy).
+Run focused local tests for changed behavior; GitHub runs repo-wide checks.
+Required checks gate merging, not committing, pushing, or opening a PR.
 
 ## Pull requests
 
