@@ -366,19 +366,21 @@ GOOGLE_DRIVE_WEBHOOK_SECRET=...</code></pre>
           team ids then lists orphans through <code>withTeam(...).integrations</code>, filtering
           populated extract cursors in SQL before the page limit so leftover <code>{}</code> rows
           cannot stall the sweep, treating <code>cleanupPending</code> cursors as immediately
-          eligible, and disconnect paginates that S3 cleanup, forwarding extract tombstones. Extract
-          JSON whose resume never ran is dropped after 24 hours. Extract failures audit
-          <code>drive_extract_failed</code>, clear that state, and retry within the extract budget
-          instead of skipping as empty, except an oversized result (shared 2&nbsp;MiB write/read
-          cap) which terminates without a retry loop. Saving Drive picker shares invalidates every
-          cached folder and search query for that account. Paid extract is gated by its own daily
-          budget (4 per file / 40 per connection) before sandbox or billed vision spend; the
-          post-diff judge stays at 8 processed files per doc and 200 per connection. Exhausting
-          either budget schedules a durable <code>drive.file</code> continuation from
-          <code>retryAfterMs</code> instead of completing the targeted capture after the changes
-          cursor has already advanced. Baseline captures consume extract budget, not the judge cap.
-          Full Drive copies are not stored in the document drive. Apply
-          <code>0097_google_drive_v1.sql</code>,
+          eligible, and disconnect persists cancel tombstones before deleting the integration, then
+          fails closed until that producer wait settles so a late <code>result.json</code> is not
+          orphaned after <code>DeleteObject</code> 404s a not-yet-written key. Disconnect paginates
+          that S3 cleanup, forwarding extract tombstones. Extract JSON whose resume never ran is
+          dropped after 24 hours. Extract failures audit <code>drive_extract_failed</code>, clear
+          that state, and retry within the extract budget instead of skipping as empty, except an
+          oversized result (shared 2&nbsp;MiB write/read cap) which terminates without a retry loop.
+          Saving Drive picker shares invalidates every cached folder and search query for that
+          account. Paid extract is gated by its own daily budget (4 per file / 40 per connection)
+          before sandbox or billed vision spend; the post-diff judge stays at 8 processed files per
+          doc and 200 per connection. Exhausting either budget schedules a durable
+          <code>drive.file</code> continuation from <code>retryAfterMs</code> instead of completing
+          the targeted capture after the changes cursor has already advanced. Baseline captures
+          consume extract budget, not the judge cap. Full Drive copies are not stored in the
+          document drive. Apply <code>0097_google_drive_v1.sql</code>,
           <code>0098_google_drive_snapshot_uniqueness.sql</code>,
           <code>0099_google_drive_snapshot_locate.sql</code>, and
           <code>0100_google_drive_snapshot_ancestry.sql</code> with the usual migration path.

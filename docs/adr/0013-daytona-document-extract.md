@@ -15,7 +15,9 @@ Drive v1 PDF/Word/Slides capture all enqueue `document-extract`. Drive does not
 harvest into the document drive: the main worker uploads bytes to a transient
 S3 key, writes the team-scoped extract cursor before enqueueing
 `document-extract` (and keeps that cursor if enqueue fails so a late
-`result.json` still has a cleanup reference), the orchestrator writes a JSON result, then a dedicated `drive.file`
+`result.json` still has a cleanup reference; Drive disconnect persists cancel
+tombstones then fails closed until the producer wait settles, so a 404 on a
+not-yet-written result cannot drop that handle), the orchestrator writes a JSON result, then a dedicated `drive.file`
 resume continuation (independent of the originating debounce job id) runs.
 The JSON result is durable before that resume is accepted; retries reuse it
 and only retry the handoff. Source bytes are deleted after resume, not before.
