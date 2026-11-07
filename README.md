@@ -37,6 +37,8 @@ The project is under active development; APIs and migrations may change.
 
 Use the hosted app at [thetimeline.cc](https://thetimeline.cc), or follow the
 [local development guide](docs/setup/local.html) to work on the code.
+Coding-agent workflows are bundled in [`.agents/skills`](.agents/skills/README.md),
+including cloud setup requirements and the repository-specific React Doctor gate.
 
 Local development requires **Bun 1.4.4** (pinned in `.bun-version`) and **Docker**.
 The setup guide covers dependencies, environment variables, infrastructure,
