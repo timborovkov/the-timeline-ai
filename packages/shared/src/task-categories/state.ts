@@ -55,7 +55,7 @@ export interface ProjectTaskCategoryInvalidation {
   fanout: { projectId: string; projectVersion: string; afterTaskId: string } | null;
 }
 
-export function hasExactlyOneCanonicalProjectEdge(teamId: string, taskId: SQLWrapper): SQL {
+function hasExactlyOneCanonicalProjectEdge(teamId: string, taskId: SQLWrapper): SQL {
   return sql`1 = (
     SELECT count(*)
     FROM entity_relationships AS candidate_project_rel

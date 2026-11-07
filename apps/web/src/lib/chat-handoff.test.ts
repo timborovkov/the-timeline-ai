@@ -133,9 +133,9 @@ describe('dashboard chat context boundary', () => {
       pathname: '/app/objects/11111111-1111-4111-8111-111111111111',
       searchParams: new URLSearchParams('tab=activity'),
     });
-    const restored = parseStoredDashboardContext(
-      JSON.parse(JSON.stringify(dashboardContext)) as unknown,
-    );
+    const storage = memoryStorage();
+    storeChatContextHandoff(storage, 'team-a', { context: dashboardContext }, 1_000);
+    const restored = consumeChatHandoffEntry(storage, 'team-a', 2_000)?.context;
     expect(dashboardContextSchema.parse(restored)).toEqual(dashboardContext);
   });
 
