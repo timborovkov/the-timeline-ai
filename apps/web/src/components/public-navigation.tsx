@@ -9,6 +9,7 @@ import {
   COMPARE_NAV_ITEMS,
   INTEGRATION_NAV_ITEMS,
   USE_CASE_NAV_ITEMS,
+  publicNavItemLabel,
 } from '@/components/marketing/copy';
 import styles from '@/components/public-navigation.module.css';
 import { PublicSessionBranch } from '@/components/public-session-branch';
@@ -69,6 +70,7 @@ export type PublicNavigationSection =
 interface NavChild {
   href: string;
   label: string;
+  statusLabel?: string;
   group?: 'agent-tools';
 }
 
@@ -221,7 +223,7 @@ function NavDropdown({
                     className={cn(styles.dropdownLink, itemClassName)}
                     onClick={onNavigate}
                   >
-                    {child.label}
+                    {publicNavItemLabel(child)}
                   </Link>
                 </li>,
               );
@@ -310,7 +312,7 @@ export function PublicFooterColumns({
             <li key={item.href}>
               <FooterNavLink
                 href={item.href}
-                label={item.label}
+                label={publicNavItemLabel(item)}
                 itemClassName={itemClassName}
                 activeItemClassName={activeItemClassName}
               />
