@@ -13,7 +13,7 @@ import type { DocumentListPage } from '@/lib/document-list';
 import type { OnboardingChecklistView } from '@/lib/onboarding-checklist';
 import type { TimelinePage } from '@/lib/timeline-types';
 
-import { readJson } from '@/lib/paginated-api';
+import { readJson } from '@/lib/api-response';
 import { queryKeys } from '@/lib/query-keys';
 
 function replaceFirstPage<TPage>(

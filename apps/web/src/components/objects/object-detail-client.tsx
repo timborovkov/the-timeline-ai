@@ -92,7 +92,7 @@ import { isSchedulableObjectType } from '@/lib/due-dates';
 import { notifyAction } from '@/lib/notify';
 import { formatTaskCategoryChangeValue } from '@/lib/object-change-format';
 import { displayObjectTitle } from '@/lib/object-title';
-import { readJson } from '@/lib/paginated-api';
+import { readJson } from '@/lib/api-response';
 import { queryKeys } from '@/lib/query-keys';
 import { relationshipDisplayLabel } from '@/lib/relationship-display-label';
 import { statusLabel } from '@/lib/status-labels';

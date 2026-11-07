@@ -18,7 +18,8 @@ import {
   JOB_RECOVERY_LIST_WINDOW_SIZE,
 } from '@/components/job-recovery/jobs-attention';
 import { JobsPageHeader } from '@/components/job-recovery/jobs-page-header';
-import { jobsMutationToast, postJson } from '@/components/job-recovery/jobs-page-toast';
+import { postJson } from '@/lib/api-response';
+import { notifyProgress as jobsMutationToast } from '@/lib/notify';
 import { JobDashboard } from '@/components/jobs/job-dashboard';
 import { SectionHeading } from '@/components/section-heading';
 import { TechnicalDetails } from '@/components/technical-details';

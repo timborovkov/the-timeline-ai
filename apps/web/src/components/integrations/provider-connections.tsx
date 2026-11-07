@@ -26,6 +26,7 @@ import { providerLogoSrc } from '@/lib/connections';
 import { notifyAction } from '@/lib/notify';
 import { queryKeys } from '@/lib/query-keys';
 import { groupResourcesByKind, providerLabel, shareDisplayName } from '@/lib/resource-labels';
+import { readJson } from '@/lib/api-response';
 import { connectionErrorMessage } from '@/lib/ux-errors';
 
 interface ProviderResource {
@@ -85,21 +86,6 @@ const initialSourcePickerState: SourcePickerState = {
 
 const emptyResources: ProviderResource[] = [];
 const emptyShares: ResourceShare[] = [];
-
-async function readJsonResponse<T extends { error?: string }>(res: Response): Promise<T> {
-  const text = await res.text();
-  let data = {} as T;
-  if (text) {
-    try {
-      data = JSON.parse(text) as T;
-    } catch {
-      if (!res.ok) throw new Error(text);
-      throw new Error(connectionErrorMessage('request_failed'));
-    }
-  }
-  if (!res.ok) throw new Error(data.error ?? (text || connectionErrorMessage('request_failed')));
-  return data;
-}
 
 const providerSourceHints: Partial<
   Record<
@@ -402,7 +388,7 @@ function ConnectionSources({
     queryKey: queryKeys.providerConnectionResources(connection.id),
     queryFn: async () => {
       const res = await fetch(`/api/connections/${connection.id}/resources`);
-      return readJsonResponse<ConnectionResourcesPayload>(res);
+      return readJson<ConnectionResourcesPayload>(res);
     },
   });
 
@@ -508,7 +494,7 @@ function ConnectionSources({
               })),
             }),
           });
-          if (!res.ok) await readJsonResponse(res);
+          if (!res.ok) await readJson(res);
           await refetch();
           return { ok: true };
         } catch {
@@ -533,7 +519,7 @@ function ConnectionSources({
       run: async () => {
         try {
           const res = await fetch(`/api/connections/${connection.id}`, { method: 'DELETE' });
-          await readJsonResponse(res);
+          await readJson(res, { emptyValue: {} });
           return { ok: true };
         } catch {
           return { error: 'failed' };
@@ -1021,7 +1007,7 @@ export function TeamSourcesUi({
             resourceShareIds: [...(selectedByConnection[providerConnectionId] ?? new Set())],
           }),
         });
-        const payload = await readJsonResponse<{
+        const payload = await readJson<{
           error?: string;
           syncRequired?: boolean;
           syncQueued?: boolean;

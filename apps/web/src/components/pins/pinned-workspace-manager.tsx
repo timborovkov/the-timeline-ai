@@ -13,7 +13,7 @@ import { EmptyState } from '@/components/empty-state';
 import { PinnedItemRow } from '@/components/pins/pinned-item-row';
 import { Button } from '@/components/ui/button';
 import { notifyAction, notifyError } from '@/lib/notify';
-import { readJson } from '@/lib/paginated-api';
+import { readJson } from '@/lib/api-response';
 import { cn } from '@/lib/utils';
 
 const FILTERS: { label: string; kinds?: PinTargetKind[]; value: string }[] = [
