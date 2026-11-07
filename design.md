@@ -1,7 +1,7 @@
 # The Timeline — Design System
 
-**Version:** v3.37 · Agents as teammates (2026-11-06).
-Replaces v3.36 Public nav IA.
+**Version:** v3.38 · Public product screenshots (2026-11-07).
+Replaces v3.37 Agents as teammates.
 
 This is the visual and interaction contract for the product. If a screen
 disagrees with it, fix the screen. If the language intentionally changes,
@@ -1037,7 +1037,14 @@ is a screenshot walkthrough linked from the home hero as See it first and from
 pricing; `/integrations/telegram` is the public Telegram capture page. Product
 screenshots live in `apps/web/public/marketing/screenshots` under the filenames
 from the website copy plan. Landscape slots use a 16×10 top crop; mobile
-portrait slots keep the full capture so Ask citations stay in frame.
+portrait slots keep the full capture so Ask citations stay in frame. The
+homepage shows three full-width proof shots (work record, stored cited Ask
+answer, daily update). `/agents` pairs the current Agent tools screen with a
+write-in / MCP read-out diagram. `/use-cases` opens with a conversations →
+work record → six jobs diagram rather than a screenshot wall. Referenced
+screenshot files are inventory-tested so a missing asset fails CI instead of
+shipping as a silent placeholder. Ask captures are stored demo answers; copy
+must not present them as live generated proof.
 Visible copy must stay consistent with deliberate capture, source-linked claims,
 daily (not weekly) updates, and human review before inferred durable workspace
 changes. Do not claim WhatsApp, Teams chat, or Slack Connect.

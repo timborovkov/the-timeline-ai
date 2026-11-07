@@ -3,7 +3,7 @@ import { getConnectorCapabilityTiers } from '@/components/marketing/integrations
 export const MCP_GUIDE_ROUTE = '/integrations/mcp' as const;
 export const MCP_GUIDE_NAV_LABEL = 'Connect MCP tools';
 
-const REVIEW_DATE = '2026-11-06' as const;
+const REVIEW_DATE = '2026-11-07' as const;
 
 /** Hosted Agent-tools catalog labels; keep in lockstep with listCatalog `mcp_available`. */
 export const MCP_GUIDE_HOSTED_TOOL_NAMES = ['Notion', 'Jira', 'Confluence', 'Stripe'] as const;
@@ -37,6 +37,12 @@ export const MCP_GUIDE_PAGE = {
   seoDescription:
     'Connect third-party MCP servers so The Timeline Agent can call live tools. This is distinct from native Slack, Telegram, Drive, GitHub, Linear, Monday.com, and Sentry sync, and from external agents that consume Timeline over MCP.',
   lastReviewed: REVIEW_DATE,
+  screenshot: {
+    file: '19-agent-tools-dark.png',
+    alt: 'Connections Agent tools listing Agent MCP servers the Timeline Agent can call.',
+    caption:
+      'Owners and admins connect third-party MCP servers under Connections → Agent tools. That inbound path is live lookup for The Timeline Agent, not native history sync, and not the Agents page outbound endpoint.',
+  },
   distinction: {
     title: 'Two different MCP directions',
     inboundTitle: 'The Timeline Agent calling other tools',

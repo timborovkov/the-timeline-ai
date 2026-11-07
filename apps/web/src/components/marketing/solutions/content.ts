@@ -1,3 +1,4 @@
+import type { MarketingScreenshotSlot } from '@/components/marketing/screenshot-slot';
 import type { PublicCanonicalPath } from '@/lib/public-site';
 
 export const SOLUTION_ROUTES = {
@@ -62,6 +63,7 @@ export interface SolutionContent {
     description: string;
   }[];
   furtherReading?: { label: string; href: PublicCanonicalPath };
+  screenshots?: readonly MarketingScreenshotSlot[];
   cta: {
     title: string;
     body: string;
@@ -210,6 +212,14 @@ export const SOLUTIONS: readonly SolutionContent[] = [
       },
     ],
     furtherReading: { label: 'See how selected work becomes cited history', href: '/how-it-works' },
+    screenshots: [
+      {
+        file: '32-ask-handoff-dark.png',
+        alt: 'A stored Ask handoff brief citing Northstar sources from Drive, GitHub, Linear, and Slack.',
+        caption:
+          'A cited answer for a client handoff names Drive, GitHub, Linear and Slack sources instead of blending them. This screenshot shows a stored Ask answer from the fictional Acme Labs demo; it is not live generated proof.',
+      },
+    ],
     cta: {
       title: 'Test one real handoff.',
       body: 'Choose one project, preserve only its relevant sources, and ask the question the next owner actually needs answered.',

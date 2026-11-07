@@ -217,7 +217,7 @@ export const USE_CASES: readonly UseCaseContent[] = [
         file: '31-ask-status-dark.png',
         alt: 'Ask answer about what was agreed, with each claim linked to its source.',
         caption:
-          'Ask what was agreed, and every claim links to the message, email or call it came from.',
+          'A stored Ask answer from the fictional Acme Labs demo: what was agreed, with each claim linked to its source. This is not live generated proof.',
         reshoot: RESHOOT_CITATION_SEED,
         placement: 'after-how-it-works',
       },
@@ -382,7 +382,7 @@ export const USE_CASES: readonly UseCaseContent[] = [
         file: '32-ask-handoff-dark.png',
         alt: 'A handoff brief in Ask, with account, current state, commitments and open gaps cited.',
         caption:
-          'Ask for a handoff brief: account, current state, commitments and open gaps, each with its source.',
+          'A stored Ask handoff brief from the fictional Acme Labs demo: account, current state, commitments and open gaps, each with its source. This is not live generated proof.',
         reshoot: RESHOOT_CITATION_SEED,
         placement: 'after-subhead',
       },

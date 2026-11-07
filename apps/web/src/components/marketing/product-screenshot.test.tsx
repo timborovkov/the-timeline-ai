@@ -24,6 +24,16 @@ describe('MarketingProductScreenshot', () => {
     expect(html).not.toContain('object-contain');
   });
 
+  it('labels a missing file instead of inventing UI', () => {
+    const html = renderToStaticMarkup(
+      <MarketingProductScreenshot {...BASE} file="missing-marketing-shot.png" />,
+    );
+
+    expect(html).toContain('data-screenshot-present="false"');
+    expect(html).toContain('Screenshot placeholder');
+    expect(html).toContain('missing-marketing-shot.png');
+  });
+
   it('fits portrait mobile shots without cropping the capture', () => {
     const html = renderToStaticMarkup(
       <MarketingProductScreenshot {...BASE} file="54-ask-recap-mobile.png" frame="portrait" />,

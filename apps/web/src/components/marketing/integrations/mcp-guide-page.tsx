@@ -11,6 +11,7 @@ import {
 } from '@/components/marketing/integrations/mcp-guide-content';
 import { MCP_GUIDE_DOCUMENT } from '@/components/marketing/integrations/mcp-guide-public-documents';
 import { MarketingContainer, MarketingSectionGrid } from '@/components/marketing/marketing-layout';
+import { MarketingProductScreenshot } from '@/components/marketing/product-screenshot';
 import { MarketingSectionIndex } from '@/components/marketing/section-index';
 import { MarketingCtaBand, StartFreeLink } from '@/components/marketing/start-free-cta';
 import { PublicSessionBranch } from '@/components/public-session-branch';
@@ -118,6 +119,13 @@ export function McpGuidePage() {
                 <p className="mt-4 max-w-[64ch] text-base leading-relaxed text-fg-muted">
                   {MCP_GUIDE_PAGE.setup.intro}
                 </p>
+                <div className="mt-10">
+                  <MarketingProductScreenshot
+                    file={MCP_GUIDE_PAGE.screenshot.file}
+                    alt={MCP_GUIDE_PAGE.screenshot.alt}
+                    caption={MCP_GUIDE_PAGE.screenshot.caption}
+                  />
+                </div>
                 <div className="mt-10 grid gap-8">
                   <SetupPath
                     title={MCP_GUIDE_PAGE.setup.teamTitle}
