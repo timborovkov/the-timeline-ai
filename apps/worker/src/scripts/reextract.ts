@@ -1,3 +1,4 @@
+import { closeAllRedisConnections } from '@timeline/shared/redis';
 /**
  * Re-extraction script. Walks raw_events for a team and enqueues an extract
  * job for any row that lacks facts at the current model_version. Idempotent:
@@ -117,7 +118,7 @@ async function main(): Promise<void> {
   );
 
   await queue.closeExtractQueue();
-  await queue.closeRedisConnection();
+  await closeAllRedisConnections();
   await closeDb();
 }
 

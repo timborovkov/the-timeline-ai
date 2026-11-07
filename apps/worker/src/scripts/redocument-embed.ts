@@ -1,3 +1,4 @@
+import { closeAllRedisConnections } from '@timeline/shared/redis';
 /**
  * Re-embed document chunks script (Phase 9).
  *
@@ -121,5 +122,5 @@ main()
   .finally(() => {
     void closeDb();
     void queue.closeEmbedQueue();
-    void queue.closeRedisConnection();
+    void closeAllRedisConnections();
   });

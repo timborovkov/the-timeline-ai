@@ -1,3 +1,4 @@
+import { closeAllRedisConnections } from '@timeline/shared/redis';
 import { closeDb, getDb, migrateDatabase } from '@timeline/db';
 import { waitForMigrations } from '@timeline/db/wait-for-migrations';
 import { childLogger, getEnv, queue } from '@timeline/shared';
@@ -207,7 +208,7 @@ async function main(): Promise<void> {
     log.info({ signal }, 'received shutdown signal');
     try {
       await workers.close();
-      await queue.closeRedisConnection();
+      await closeAllRedisConnections();
     } catch (err: unknown) {
       log.error({ err }, 'shutdown error');
       captureWorkerException(err, { signal, component: 'worker_shutdown' });

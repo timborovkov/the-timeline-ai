@@ -7,7 +7,7 @@ import {
   hydrateInboundEmailAttachments,
   ResendError,
 } from '#src/email/resend-client.js';
-import { getRedisConnection } from '#src/queue/connection.js';
+import { getRedisConnection } from '#src/redis/connection.js';
 import { RATE_LIMITS } from '#src/rate-limit/buckets.js';
 
 import type { InboundEmail } from '#src/email/inbound-schema.js';

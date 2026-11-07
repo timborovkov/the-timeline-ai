@@ -1,3 +1,4 @@
+import { closeAllRedisConnections } from '@timeline/shared/redis';
 /**
  * Re-extract documents script (Phase 9).
  *
@@ -145,5 +146,5 @@ main()
   .finally(() => {
     void closeDb();
     void queue.closeDocumentExtractQueue();
-    void queue.closeRedisConnection();
+    void closeAllRedisConnections();
   });

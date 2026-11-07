@@ -1,3 +1,4 @@
+import { closeAllRedisConnections } from '@timeline/shared/redis';
 /**
  * Re-suggestion script. Walks raw_events for a team and enqueues background
  * suggestion jobs. For Telegram/Slack this schedules one debounced conversation
@@ -317,7 +318,7 @@ async function main(): Promise<void> {
   );
 
   await queue.closeSuggestionQueue();
-  await queue.closeRedisConnection();
+  await closeAllRedisConnections();
   await closeDb();
 }
 

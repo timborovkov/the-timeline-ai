@@ -1,3 +1,4 @@
+import { closeAllRedisConnections } from '@timeline/shared/redis';
 /**
  * Re-embed script (Phase 5 + Phase 8 follow-ups).
  *
@@ -458,7 +459,7 @@ async function main(): Promise<void> {
   );
 
   await queue.closeEmbedQueue();
-  await queue.closeRedisConnection();
+  await closeAllRedisConnections();
   await closeDb();
 }
 

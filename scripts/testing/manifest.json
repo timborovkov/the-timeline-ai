@@ -2236,5 +2236,8 @@
   },
   "scripts/testing/runner.test.ts": {
     "group": "script"
+  },
+  "packages/shared/src/redis/connection.test.ts": {
+    "group": "unit"
   }
 }

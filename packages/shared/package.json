@@ -567,6 +567,12 @@
       "development": "./src/agent-provisioning/index.ts",
       "import": "./dist/agent-provisioning/index.js",
       "default": "./dist/agent-provisioning/index.js"
+    },
+    "./redis": {
+      "types": "./src/redis/connection.ts",
+      "development": "./src/redis/connection.ts",
+      "import": "./dist/redis/connection.js",
+      "default": "./dist/redis/connection.js"
     }
   },
   "main": "./dist/index.js",

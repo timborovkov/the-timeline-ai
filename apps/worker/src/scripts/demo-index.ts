@@ -1,3 +1,4 @@
+import { closeAllRedisConnections } from '@timeline/shared/redis';
 import { existsSync, readFileSync } from 'node:fs';
 
 import {
@@ -156,7 +157,7 @@ async function main(): Promise<void> {
       `[demo:index] indexed and confirmed ${String(pointIds.length)} points with ${model}`,
     );
   } finally {
-    await queue.closeRedisConnection();
+    await closeAllRedisConnections();
     await closeDb();
   }
 }

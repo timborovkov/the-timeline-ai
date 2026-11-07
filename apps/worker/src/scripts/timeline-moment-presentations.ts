@@ -1,3 +1,4 @@
+import { closeAllRedisConnections } from '@timeline/shared/redis';
 /**
  * Timeline moment presentation backfill.
  *
@@ -267,7 +268,7 @@ async function main(): Promise<void> {
     }
   } finally {
     await queue.closeTimelineMomentPresentationQueue().catch(() => undefined);
-    await queue.closeRedisConnection().catch(() => undefined);
+    await closeAllRedisConnections().catch(() => undefined);
     await closeDb().catch(() => undefined);
   }
 }

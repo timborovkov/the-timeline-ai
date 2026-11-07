@@ -1,3 +1,4 @@
+import { closeAllRedisConnections } from '@timeline/shared/redis';
 import { closeDb, getDb, migrateDatabase } from '@timeline/db';
 import { waitForMigrations } from '@timeline/db/wait-for-migrations';
 import { childLogger, getEnv, queue } from '@timeline/shared';
@@ -64,7 +65,7 @@ async function main(): Promise<void> {
       await documentExtractWorker.close();
       await queue.closeDocumentExtractQueue();
       await queue.closeEmbedQueue();
-      await queue.closeRedisConnection();
+      await closeAllRedisConnections();
     } catch (err: unknown) {
       log.error({ err }, 'shutdown error');
       captureWorkerException(err, { signal, component: 'document_extract_service_shutdown' });

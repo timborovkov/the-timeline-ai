@@ -1,3 +1,4 @@
+import { closeAllRedisConnections } from '@timeline/shared/redis';
 /**
  * Phase 11 — Integration resync admin script.
  *
@@ -75,7 +76,7 @@ async function main(): Promise<void> {
     console.log(`Enqueued ${String(rows.length)} sync job(s).`);
   } finally {
     await queue.closeIntegrationSyncQueue().catch(() => undefined);
-    await queue.closeRedisConnection().catch(() => undefined);
+    await closeAllRedisConnections().catch(() => undefined);
     await closeDb().catch(() => undefined);
   }
 }

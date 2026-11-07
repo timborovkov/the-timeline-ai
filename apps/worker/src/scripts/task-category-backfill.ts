@@ -1,3 +1,4 @@
+import { closeAllRedisConnections } from '@timeline/shared/redis';
 import { loadEnvFile } from 'node:process';
 import { pathToFileURL } from 'node:url';
 
@@ -120,7 +121,7 @@ export async function closeTaskCategoryBackfillResources(
 ): Promise<void> {
   await Promise.all([
     (deps.closeQueue ?? queue.closeTaskCategoryQueue)(),
-    (deps.closeRedis ?? queue.closeRedisConnection)(),
+    (deps.closeRedis ?? closeAllRedisConnections)(),
     (deps.closeDatabase ?? closeDb)(),
   ]);
 }
