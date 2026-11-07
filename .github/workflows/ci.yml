@@ -2,9 +2,18 @@ name: CI
 
 on:
   push:
-    branches: [main, staging]
+    branches: [main, production]
   pull_request:
-    branches: [main, staging]
+    branches: [main, production]
+
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
 
 jobs:
   ci:
@@ -38,20 +47,11 @@ jobs:
           DATABASE_URL: postgres://placeholder@localhost:5432/placeholder
         run: bun run validate
 
-      - name: Unit and integration tests
-        run: bun run test
-
       - name: Bun runtime smoke tests
         run: bun run test:runtime
 
       - name: React Doctor
         run: bun run doctor
-
-      - name: Reconciliation evals
-        env:
-          AUTH_SECRET: ci_dummy_secret_at_least_16_chars
-          DATABASE_URL: postgres://placeholder@localhost:5432/placeholder
-        run: bun run test:reconciliation-eval
 
       - name: E2E environment contract
         run: bun run test:e2e-env
@@ -61,3 +61,38 @@ jobs:
           AUTH_SECRET: ci_dummy_secret_at_least_16_chars
           DATABASE_URL: postgres://placeholder@localhost:5432/placeholder
         run: bun run test:dist-imports
+
+  full-tests:
+    name: Full test suite
+    if: github.base_ref == 'production' || github.ref == 'refs/heads/production' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    services:
+      redis:
+        image: redis:7-alpine
+        ports: [6379:6379]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
+
+      - name: Cache Bun downloads
+        uses: actions/cache@v6
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock', '.bun-version') }}
+
+      - name: Install dependencies
+        run: bun run deps --frozen-lockfile
+
+      - name: Unit and integration tests
+        run: bun run test
+
+      - name: Reconciliation evals
+        env:
+          AUTH_SECRET: ci_dummy_secret_at_least_16_chars
+          DATABASE_URL: postgres://placeholder@localhost:5432/placeholder
+        run: bun run test:reconciliation-eval
