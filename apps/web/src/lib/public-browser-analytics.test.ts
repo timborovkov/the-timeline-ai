@@ -92,6 +92,63 @@ describe('public PostHog runtime', () => {
     expect(posthog.client.capture).not.toHaveBeenCalled();
   });
 
+  it('uses the managed proxy with unset host after consent', async () => {
+    vi.stubEnv('NEXT_PUBLIC_POSTHOG_KEY', 'ph-test');
+    vi.stubEnv('NEXT_PUBLIC_POSTHOG_HOST', undefined);
+    const analytics = await (import(
+      freshModuleUrl(import.meta.resolve('@/lib/public-browser-analytics'))
+    ) as Promise<typeof TestModule1>);
+    await analytics.capturePublicPageView('home');
+    expect(posthog.init).not.toHaveBeenCalled();
+    writePublicAnalyticsConsent('accepted');
+    await analytics.capturePublicPageView('home');
+    expect(posthog.init).toHaveBeenCalledWith(
+      'ph-test',
+      expect.objectContaining({
+        api_host: 'https://m.thetimeline.cc',
+        ui_host: 'https://eu.posthog.com',
+      }),
+    );
+  });
+
+  it('uses the managed proxy with empty host after consent', async () => {
+    vi.stubEnv('NEXT_PUBLIC_POSTHOG_KEY', 'ph-test');
+    vi.stubEnv('NEXT_PUBLIC_POSTHOG_HOST', '');
+    const analytics = await (import(
+      freshModuleUrl(import.meta.resolve('@/lib/public-browser-analytics'))
+    ) as Promise<typeof TestModule1>);
+    await analytics.capturePublicPageView('home');
+    expect(posthog.init).not.toHaveBeenCalled();
+    writePublicAnalyticsConsent('accepted');
+    await analytics.capturePublicPageView('home');
+    expect(posthog.init).toHaveBeenCalledWith(
+      'ph-test',
+      expect.objectContaining({
+        api_host: 'https://m.thetimeline.cc',
+        ui_host: 'https://eu.posthog.com',
+      }),
+    );
+  });
+
+  it('uses the managed proxy with explicit host after consent', async () => {
+    vi.stubEnv('NEXT_PUBLIC_POSTHOG_KEY', 'ph-test');
+    vi.stubEnv('NEXT_PUBLIC_POSTHOG_HOST', 'https://m.thetimeline.cc');
+    const analytics = await (import(
+      freshModuleUrl(import.meta.resolve('@/lib/public-browser-analytics'))
+    ) as Promise<typeof TestModule1>);
+    await analytics.capturePublicPageView('home');
+    expect(posthog.init).not.toHaveBeenCalled();
+    writePublicAnalyticsConsent('accepted');
+    await analytics.capturePublicPageView('home');
+    expect(posthog.init).toHaveBeenCalledWith(
+      'ph-test',
+      expect.objectContaining({
+        api_host: 'https://m.thetimeline.cc',
+        ui_host: 'https://eu.posthog.com',
+      }),
+    );
+  });
+
   it('initializes only the reviewed EU configuration and captures only manual events', async () => {
     vi.stubEnv('NEXT_PUBLIC_POSTHOG_KEY', 'ph-test');
     vi.stubEnv('NEXT_PUBLIC_POSTHOG_HOST', 'https://eu.i.posthog.com');
@@ -384,9 +441,51 @@ describe('public PostHog runtime', () => {
     expect(posthog.client.capture.mock.calls.flat()).not.toContain('$opt_in');
   });
 
-  it('fails closed for an unreviewed ingestion host', async () => {
+  it('fails closed for US ingestion host', async () => {
     vi.stubEnv('NEXT_PUBLIC_POSTHOG_KEY', 'ph-test');
     vi.stubEnv('NEXT_PUBLIC_POSTHOG_HOST', 'https://us.i.posthog.com');
+    writePublicAnalyticsConsent('accepted');
+    const analytics = await (import(
+      freshModuleUrl(import.meta.resolve('@/lib/public-browser-analytics'))
+    ) as Promise<typeof TestModule1>);
+
+    expect(analytics.isPublicBrowserAnalyticsConfigured).toBe(false);
+    await analytics.capturePublicPageView('home');
+
+    expect(posthog.init).not.toHaveBeenCalled();
+  });
+
+  it('fails closed for insecure ingestion host', async () => {
+    vi.stubEnv('NEXT_PUBLIC_POSTHOG_KEY', 'ph-test');
+    vi.stubEnv('NEXT_PUBLIC_POSTHOG_HOST', 'http://m.thetimeline.cc');
+    writePublicAnalyticsConsent('accepted');
+    const analytics = await (import(
+      freshModuleUrl(import.meta.resolve('@/lib/public-browser-analytics'))
+    ) as Promise<typeof TestModule1>);
+
+    expect(analytics.isPublicBrowserAnalyticsConfigured).toBe(false);
+    await analytics.capturePublicPageView('home');
+
+    expect(posthog.init).not.toHaveBeenCalled();
+  });
+
+  it('fails closed for credential-bearing ingestion host', async () => {
+    vi.stubEnv('NEXT_PUBLIC_POSTHOG_KEY', 'ph-test');
+    vi.stubEnv('NEXT_PUBLIC_POSTHOG_HOST', 'https://user:pass@m.thetimeline.cc');
+    writePublicAnalyticsConsent('accepted');
+    const analytics = await (import(
+      freshModuleUrl(import.meta.resolve('@/lib/public-browser-analytics'))
+    ) as Promise<typeof TestModule1>);
+
+    expect(analytics.isPublicBrowserAnalyticsConfigured).toBe(false);
+    await analytics.capturePublicPageView('home');
+
+    expect(posthog.init).not.toHaveBeenCalled();
+  });
+
+  it('fails closed for lookalike ingestion host', async () => {
+    vi.stubEnv('NEXT_PUBLIC_POSTHOG_KEY', 'ph-test');
+    vi.stubEnv('NEXT_PUBLIC_POSTHOG_HOST', 'https://m.thetimeline.cc.evil.test');
     writePublicAnalyticsConsent('accepted');
     const analytics = await (import(
       freshModuleUrl(import.meta.resolve('@/lib/public-browser-analytics'))

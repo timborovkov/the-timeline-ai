@@ -247,6 +247,22 @@ describe('getEnv', () => {
     expect(getEnv().RECALL_WORKSPACE_VERIFICATION_SECRET).toBe(secret);
   });
 
+  it('defaults browser analytics to the managed proxy and retains the EU override', () => {
+    for (const host of [undefined, '', 'https://m.thetimeline.cc', 'https://eu.i.posthog.com']) {
+      setBaseEnv({ NEXT_PUBLIC_POSTHOG_HOST: host });
+      expect(getEnv().NEXT_PUBLIC_POSTHOG_HOST).toBe(host || 'https://m.thetimeline.cc');
+      expect(getEnv().POSTHOG_HOST).toBe('https://eu.i.posthog.com');
+    }
+    for (const host of [
+      'http://m.thetimeline.cc',
+      'https://user:pass@m.thetimeline.cc',
+      'https://us.i.posthog.com',
+    ]) {
+      setBaseEnv({ NEXT_PUBLIC_POSTHOG_HOST: host });
+      expect(() => getEnv()).toThrow(/NEXT_PUBLIC_POSTHOG_HOST/);
+    }
+  });
+
   it('keeps server analytics credentials separate and validates the pseudonymization key', () => {
     setBaseEnv({
       POSTHOG_PROJECT_KEY: 'ph-server',

@@ -233,6 +233,7 @@ async function getPublicPostHogClient(): Promise<PostHog | undefined> {
       if (!activeSurface || !canCaptureCurrentPublicSurface(activeSurface)) return undefined;
       initializedClient = posthog.init(configuredKey, {
         api_host: configuredHost,
+        ui_host: 'https://eu.posthog.com',
         advanced_disable_flags: true,
         autocapture: false,
         before_send: sanitizePublicPostHogEvent,
@@ -364,10 +365,12 @@ function normalizePublicValue(value: string | undefined): string | undefined {
 }
 
 function normalizePostHogHost(value: string | undefined): string | undefined {
-  const normalized = normalizePublicValue(value) ?? 'https://eu.i.posthog.com';
+  const normalized = normalizePublicValue(value) ?? 'https://m.thetimeline.cc';
   try {
     const url = new URL(normalized);
-    return url.protocol === 'https:' && url.origin === 'https://eu.i.posthog.com'
+    return !url.username &&
+      !url.password &&
+      ['https://m.thetimeline.cc', 'https://eu.i.posthog.com'].includes(url.origin)
       ? url.origin
       : undefined;
   } catch {

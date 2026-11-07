@@ -38,6 +38,15 @@ const reviewedPostHogServerHost = z.url().refine((value) => {
   return !url.username && !url.password && url.origin === 'https://eu.i.posthog.com';
 }, 'POSTHOG_HOST must use the reviewed EU PostHog ingestion origin');
 
+const reviewedPostHogBrowserHost = z.url().refine((value) => {
+  const url = new URL(value);
+  return (
+    !url.username &&
+    !url.password &&
+    ['https://m.thetimeline.cc', 'https://eu.i.posthog.com'].includes(url.origin)
+  );
+}, 'NEXT_PUBLIC_POSTHOG_HOST must use the managed proxy or reviewed EU PostHog ingestion origin');
+
 const OFFICIAL_RECALL_API_HOSTS = new Set([
   'us-west-2.recall.ai',
   'us-east-1.recall.ai',
@@ -445,7 +454,7 @@ const baseSchema = z.object({
   NEXT_PUBLIC_POSTHOG_KEY: z.preprocess(emptyStringAsUnset, z.string().optional()),
   NEXT_PUBLIC_POSTHOG_HOST: z.preprocess(
     emptyStringAsUnset,
-    reviewedPostHogServerHost.default('https://eu.i.posthog.com'),
+    reviewedPostHogBrowserHost.default('https://m.thetimeline.cc'),
   ),
 
   // Phase 10 — Meeting bots. The workspace verification secret signs both
