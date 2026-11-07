@@ -11,6 +11,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { closeDb, getDb } from '@timeline/db';
+import { closeAllRedisConnections } from '@timeline/shared/redis';
 import {
   getDocumentsBucket,
   getObjectBuffer,
@@ -238,7 +239,7 @@ async function main(): Promise<void> {
 
   await queue.closeDocumentExtractQueue().catch(() => undefined);
   await queue.closeEmbedQueue().catch(() => undefined);
-  await queue.closeRedisConnection().catch(() => undefined);
+  await closeAllRedisConnections().catch(() => undefined);
   await closeDb();
 }
 
@@ -247,7 +248,7 @@ main().catch(async (err: unknown) => {
   try {
     await queue.closeDocumentExtractQueue().catch(() => undefined);
     await queue.closeEmbedQueue().catch(() => undefined);
-    await queue.closeRedisConnection().catch(() => undefined);
+    await closeAllRedisConnections().catch(() => undefined);
     await closeDb();
   } catch {
     // ignore

@@ -1,4 +1,3 @@
-import { closeAllRedisConnections } from '@timeline/shared/redis';
 import { existsSync, readFileSync } from 'node:fs';
 
 import {
@@ -12,8 +11,9 @@ import {
   meetingTranscriptChunks,
   rawEvents,
 } from '@timeline/db';
-import { getEnv, qdrant, queue } from '@timeline/shared';
+import { getEnv, qdrant } from '@timeline/shared';
 import { runWorkerBilling } from '@timeline/shared/billing';
+import { closeAllRedisConnections } from '@timeline/shared/redis';
 import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 
 import {
