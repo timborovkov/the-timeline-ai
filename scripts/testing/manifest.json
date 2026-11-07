@@ -131,6 +131,9 @@
   "apps/web/src/app/api/integrations/manage/[id]/resume/route.test.ts": {
     "group": "unit"
   },
+  "apps/web/src/app/api/integrations/manage/[id]/selections/[selectionId]/route.test.ts": {
+    "group": "unit"
+  },
   "apps/web/src/app/api/integrations/manage/[id]/selections/route.test.ts": {
     "group": "unit"
   },
@@ -758,6 +761,9 @@
   "apps/web/src/components/global-search-palette.test.tsx": {
     "group": "dom"
   },
+  "apps/web/src/components/google-button.test.tsx": {
+    "group": "dom"
+  },
   "apps/web/src/components/help/support-form.test.tsx": {
     "group": "dom"
   },
@@ -807,6 +813,9 @@
     "group": "dom"
   },
   "apps/web/src/components/integrations/catalog.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/integrations/google-drive-connect-disclosure.test.tsx": {
     "group": "dom"
   },
   "apps/web/src/components/integrations/connected.test.tsx": {
@@ -953,6 +962,9 @@
   "apps/web/src/components/mobile-nav.test.tsx": {
     "group": "dom"
   },
+  "apps/web/src/components/native-provider-connect-button.test.tsx": {
+    "group": "dom"
+  },
   "apps/web/src/components/nav-items.test.ts": {
     "group": "unit"
   },
@@ -1074,6 +1086,9 @@
     "group": "dom"
   },
   "apps/web/src/components/team-setup-checklist-chip.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/team-support-metadata.test.tsx": {
     "group": "dom"
   },
   "apps/web/src/components/team-switcher.test.tsx": {
@@ -1217,6 +1232,9 @@
   "apps/web/src/lib/form-action-toast.test.tsx": {
     "group": "dom"
   },
+  "apps/web/src/lib/google-drive-limited-use.test.ts": {
+    "group": "unit"
+  },
   "apps/web/src/lib/hub-status.test.ts": {
     "group": "unit"
   },
@@ -1263,6 +1281,9 @@
     "group": "unit"
   },
   "apps/web/src/lib/object-title.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/lib/oauth-sign-in.test.ts": {
     "group": "unit"
   },
   "apps/web/src/lib/onboarding-checklist.test.ts": {
@@ -1443,6 +1464,9 @@
     "group": "unit"
   },
   "apps/worker/src/document-ingestion/full-worker-extract-gate.test.ts": {
+    "group": "unit"
+  },
+  "apps/worker/src/document-ingestion/pdf-extraction.test.ts": {
     "group": "unit"
   },
   "apps/worker/src/document-ingestion/types.test.ts": {
@@ -1875,6 +1899,36 @@
     "group": "unit"
   },
   "packages/shared/src/integrations/providers/github.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/integrations/google-drive-capture.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/integrations/google-drive-comments.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/integrations/google-drive-diff.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/integrations/google-drive-document.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/integrations/google-drive-evidence.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/integrations/google-drive-oauth-revoke.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/integrations/google-drive-scope.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/integrations/google-drive-spreadsheet.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/integrations/google-drive-team-isolation.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/integrations/providers/google-drive-revisit.test.ts": {
     "group": "unit"
   },
   "packages/shared/src/integrations/providers/google-drive.test.ts": {

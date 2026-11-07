@@ -91,10 +91,11 @@ export interface IntegrationEvent {
    * Optional timeline presentation family (`communication` / `work_record` /
    * `pulse` / `incident` / `artifact` / `schedule`). When omitted, the
    * event-writer classifies from provider, event type, and nested record
-   * kind. This is not `signalClass`: a Drive `file.changed` ping is
-   * `signalClass=pulse` and `eventClass=artifact`. Presentation `pulse`
-   * never promotes `objectMap` into artifact identity. Ingest and proposals
-   * read `signalClass` only.
+   * kind. This is not `signalClass`: an unlabeled legacy Drive `file.changed`
+   * ping is `signalClass=pulse` and `eventClass=artifact`. Judged Drive v1
+   * captures stamp both as `communication`. Presentation `pulse` never
+   * promotes `objectMap` into artifact identity. Ingest and proposals read
+   * `signalClass` only.
    */
   eventClass?: TimelineEventClass;
   /**
@@ -164,6 +165,157 @@ export interface SyncContext {
    * updates the existing document by adding a new version.
    */
   harvestDocument?(input: HarvestDocumentInput): Promise<{ documentId: string; versionId: string }>;
+  /**
+   * Enqueue a targeted follow-up for one resource. Drive reuses the GitHub /
+   * Monday targeted `integration-sync` job with delay so per-file processing
+   * can debounce after `changes.watch`.
+   */
+  scheduleTargetedSync?(
+    task: TargetedSyncTask,
+    opts?: { delayMs?: number; replaceDelayed?: boolean },
+  ): Promise<void>;
+  /**
+   * Enqueue a credential-thin document-extract job for Drive PDF/Word/Slides.
+   * The main worker must not run Daytona or billed vision itself (ADR 0013).
+   */
+  enqueueTransientDriveExtract?(input: {
+    fileId: string;
+    filename: string;
+    contentType: string;
+    body: Buffer;
+    revisionId?: string;
+  }): Promise<void>;
+  /**
+   * Read a previously enqueued Drive transient extract. `pending` means the
+   * orchestrator has not written a result yet (stale pending is re-enqueued
+   * by the worker). `failed` is a visible error; the provider clears that
+   * state and retries within the extract budget rather than blocking forever.
+   * `revisionId` is the Drive revision stamped when those bytes were uploaded.
+   */
+  loadTransientDriveExtract?(
+    fileId: string,
+  ): Promise<
+    | { status: 'pending'; revisionId?: string; reschedule?: boolean }
+    | { status: 'ready'; text: string; revisionId?: string }
+    | { status: 'failed'; error: string; revisionId?: string }
+    | null
+  >;
+  /** Delete the transient source/result objects and clear the extract cursor. */
+  consumeTransientDriveExtract?(fileId: string): Promise<void>;
+  /**
+   * Cancel an in-flight extract (missing/out-of-scope/unsupported, or a
+   * superseded revision still producing). Keeps a cleanup tombstone until the
+   * producer wait window elapses so a late `result.json` is not orphaned after
+   * S3 404 is treated as success.
+   */
+  cancelTransientDriveExtract?(fileId: string): Promise<void>;
+  /**
+   * Paid Drive extract budget (4/file/day, 40/connection/day), checked before
+   * Daytona/vision spend. Tests inject this; production uses
+   * `takeDriveExtractSlot`. Exhaustion must return a delayed continuation
+   * rather than completing the targeted capture.
+   */
+  takeDriveExtractSlot?(input: {
+    integrationId: string;
+    fileId: string;
+  }): Promise<
+    { allowed: true } | { allowed: false; reason: 'file' | 'connection'; retryAfterMs: number }
+  >;
+  /**
+   * Post-diff Drive processing budget (8/file/day, 200/connection/day). Tests
+   * inject this; production uses `takeDriveProcessSlot`. Exhaustion must
+   * return a delayed continuation rather than completing the targeted capture.
+   */
+  takeDriveProcessSlot?(input: {
+    integrationId: string;
+    fileId: string;
+  }): Promise<
+    { allowed: true } | { allowed: false; reason: 'file' | 'connection'; retryAfterMs: number }
+  >;
+  loadLatestDriveSnapshot?(fileId: string): Promise<{
+    contentHash: string;
+    snapshotText: string;
+    commentsHash: string | null;
+    permissionsHash: string | null;
+    mimeType: string | null;
+    commentsSnapshot?: unknown;
+    snapshotLocate?: {
+      length: number;
+      suffix: string;
+      chunkSize: number;
+      chunkHashes: string[];
+      chunkTexts: string[];
+    } | null;
+    ancestry?: {
+      parentIds: string[];
+      driveId: string | null;
+      matchedAncestorId: string | null;
+      inheritedCandidates: string[] | null;
+    } | null;
+  } | null>;
+  saveDriveSnapshot?(input: {
+    contentHash: string;
+    snapshotText: string;
+    commentsHash: string | null;
+    permissionsHash: string | null;
+    mimeType: string | null;
+    commentsSnapshot?: unknown;
+    snapshotLocate?: {
+      length: number;
+      suffix: string;
+      chunkSize: number;
+      chunkHashes: string[];
+      chunkTexts: string[];
+    } | null;
+    ancestry?: {
+      parentIds: string[];
+      driveId: string | null;
+      matchedAncestorId: string | null;
+      inheritedCandidates: string[] | null;
+    } | null;
+    fileId: string;
+  }): Promise<void>;
+  /** Delete retained Drive snapshots for a missing or out-of-scope file. */
+  deleteDriveSnapshotsForFile?(fileId: string): Promise<void>;
+  /**
+   * Coverage-aware snapshot/extract cleanup after the watchable selection set
+   * empties or narrows (share revoke, last selection, disconnect leftovers).
+   */
+  cleanupUncoveredDriveTrackedFiles?(
+    remainingSelections: { kind: string; externalId: string }[],
+  ): Promise<void>;
+  /** Snapshot delete plus extract cancel for one tracked Drive file. */
+  discardDriveTrackedFile?(fileId: string): Promise<void>;
+  listTeamEmailDomains?(): Promise<string[]>;
+  /** Tracked Drive files whose stored ancestry includes this folder or shared drive. */
+  listDriveTrackedDescendantFileIds?(ancestorId: string): Promise<string[]>;
+  linkedObjectForDriveSelection?(
+    fileId: string,
+    parentIds: string[],
+    matchedAncestorId?: string | null,
+    linkContext?: { driveId?: string | null; myDriveRootId?: string | null },
+  ): Promise<{
+    id: string;
+    canonicalName: string;
+    type: string;
+    inheritedFrom?: string;
+    inheritedCandidates?: string[];
+  } | null>;
+  /**
+   * Optional Drive CRM-relevance judge. Tests inject this; the worker leaves
+   * it unset so the provider bills through `llm.chatStructured`.
+   */
+  judgeDriveChange?(input: {
+    fileName: string;
+    mimeType: string;
+    hunks: string[];
+    strongSignals: string[];
+  }): Promise<{
+    matters: boolean;
+    reason:
+      'crm_update' | 'status_change' | 'client_share' | 'comment' | 'decision' | 'noise' | 'other';
+    summary: string;
+  }>;
   /**
    * Persist refreshed OAuth tokens back to the integration row. Providers
    * call this after `ensureAccessToken` (or the equivalent refresh path)
@@ -242,10 +394,10 @@ export interface ProviderSyncPolicy {
 export const PROVIDER_SYNC_POLICIES: Record<NativeProviderId, ProviderSyncPolicy> = {
   google_drive: {
     reconciliationIntervalMs: 24 * HOUR_MS,
-    ingestionPosture: 'webhook_wakeup',
+    ingestionPosture: 'webhook_first',
     budgetScopes: ['requests'],
     supportsWebhookIngress: true,
-    supportsTargetedSync: false,
+    supportsTargetedSync: true,
     provisioningModel: 'provider_managed',
   },
   linear: {
@@ -603,6 +755,12 @@ export interface ListSyncableResourcesContext {
    * encrypted connection with the expired token.
    */
   persistTokens(tokens: Record<string, unknown>): Promise<void>;
+  /** Drive folder/shared-drive id to list children for the source picker. */
+  parentId?: string;
+  /** Drive filename contains query for the source picker. */
+  query?: string;
+  /** Existing or proposed picker ids to re-validate without listing the whole tree. */
+  includeIds?: { kind: string; externalId: string }[];
 }
 
 export interface OAuthStartInput {

@@ -1,10 +1,10 @@
+import type * as TimelineDb from '@timeline/db';
+import type * as TimelineShared from '@timeline/shared';
+import type * as PlatformAdminRuntime from '@timeline/shared/platform-admin/runtime';
 import { expect } from '@timeline/test-support';
 import { vi } from '@timeline/test-support';
 import { afterEach, beforeEach, describe, it } from 'bun:test';
 
-import type * as TimelineDb from '@timeline/db';
-import type * as TimelineShared from '@timeline/shared';
-import type * as PlatformAdminRuntime from '@timeline/shared/platform-admin/runtime';
 type TestSyncContinuation = TimelineShared.integrations.SyncContinuation;
 type TestCheckpointInput = TimelineShared.integrations.CommitIntegrationSyncCheckpointInput;
 
@@ -80,6 +80,15 @@ await vi.mock(
 );
 
 await vi.mock(
+  import.meta.resolve('@timeline/shared/platform-admin/runtime'),
+  async (importOriginal) => ({
+    ...(await importOriginal<typeof PlatformAdminRuntime>()),
+    assertActivePrincipal: () => Promise.resolve(),
+  }),
+  () => import('@timeline/shared/platform-admin/runtime'),
+);
+
+await vi.mock(
   import.meta.resolve('@timeline/shared'),
   async (importOriginal) => {
     const actual = await importOriginal<typeof TimelineShared>();
@@ -136,16 +145,13 @@ await vi.mock(
   () => import('@timeline/shared'),
 );
 
-await vi.mock(
-  import.meta.resolve('@timeline/shared/platform-admin/runtime'),
-  async (importOriginal) => ({
-    ...(await importOriginal<typeof PlatformAdminRuntime>()),
-    assertActivePrincipal: () => Promise.resolve(),
-  }),
-  () => import('@timeline/shared/platform-admin/runtime'),
-);
-
-const { handleTick, runOneIntegration } = await import('./integrationSync.js');
+const {
+  clearDriveTransientExtract,
+  handleTick,
+  putAndEnqueueDriveTransientExtract,
+  readDriveTransientExtract,
+  runOneIntegration,
+} = await import('./integrationSync.js');
 const { integrations } = await import('@timeline/shared');
 
 const TEAM_ID = '11111111-1111-4111-8111-111111111111';
@@ -187,7 +193,14 @@ beforeEach(() => {
   fakes.reserved.mockClear();
   fakes.reserved.mockImplementation(() => Promise.resolve([{ locked: true }]));
   fakes.reserved.release.mockClear();
-  fakes.getDbClient.mockReturnValue({ reserve: vi.fn(() => Promise.resolve(fakes.reserved)) });
+  fakes.getDbClient.mockReturnValue({
+    reserve: vi.fn(() => Promise.resolve(fakes.reserved)),
+    select: vi.fn(() => ({
+      from: () => ({
+        where: () => Promise.resolve([]),
+      }),
+    })),
+  });
   fakes.adminLoadIntegration.mockResolvedValue(integration);
   fakes.adminListEnabledIntegrations.mockResolvedValue([]);
   fakes.adminVerifyTeamMember.mockResolvedValue(true);
@@ -1243,6 +1256,100 @@ describe('runOneIntegration attention classification', () => {
     expect(fakes.reserved.release).toHaveBeenCalledOnce();
   });
 
+  it('requeues a blocked Drive watch file target after a short bounded delay', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-06-25T03:00:00.000Z'));
+    fakes.reserved.mockImplementation((strings: TemplateStringsArray) => {
+      const query = strings.join('');
+      if (query.includes('pg_try_advisory_lock')) return Promise.resolve([{ locked: false }]);
+      return Promise.resolve([]);
+    });
+    const target = {
+      kind: 'targeted' as const,
+      integrationId: INTEGRATION_ID,
+      teamId: TEAM_ID,
+      triggeredBy: 'webhook' as const,
+      resourceType: 'drive.file',
+      externalId: 'file-1',
+      reason: 'drive_watch',
+    };
+
+    try {
+      await runOneIntegration({} as never, INTEGRATION_ID, 'targeted', target);
+    } finally {
+      vi.useRealTimers();
+    }
+
+    expect(fakes.adminLoadIntegration).not.toHaveBeenCalled();
+    expect(fakes.adminRecordPendingIntegrationSyncContinuations).toHaveBeenCalledWith(
+      expect.anything(),
+      INTEGRATION_ID,
+      [
+        {
+          resourceType: 'drive.file',
+          externalId: 'file-1',
+          retryAt: new Date('2026-06-25T03:00:05.000Z'),
+          continuationAttempt: 1,
+        },
+      ],
+    );
+    expect(fakes.enqueueIntegrationSyncJob).toHaveBeenCalledWith(
+      {
+        kind: 'targeted',
+        integrationId: INTEGRATION_ID,
+        teamId: TEAM_ID,
+        triggeredBy: 'webhook',
+        resourceType: 'drive.file',
+        externalId: 'file-1',
+        reason: 'provider_pagination_continuation',
+        continuationAttempt: 1,
+        continuationHandoffId: continuationHandoffId(1),
+      },
+      { delayMs: 5_000 },
+    );
+    expect(fakes.reserved.release).toHaveBeenCalledOnce();
+  });
+
+  it('requeues a blocked Drive changes watch after a short bounded delay', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-06-25T03:00:00.000Z'));
+    fakes.reserved.mockImplementation((strings: TemplateStringsArray) => {
+      const query = strings.join('');
+      if (query.includes('pg_try_advisory_lock')) return Promise.resolve([{ locked: false }]);
+      return Promise.resolve([]);
+    });
+    const target = {
+      kind: 'targeted' as const,
+      integrationId: INTEGRATION_ID,
+      teamId: TEAM_ID,
+      triggeredBy: 'webhook' as const,
+      resourceType: 'drive.changes',
+      externalId: INTEGRATION_ID,
+      reason: 'drive_watch',
+    };
+
+    try {
+      await runOneIntegration({} as never, INTEGRATION_ID, 'targeted', target);
+    } finally {
+      vi.useRealTimers();
+    }
+
+    expect(fakes.enqueueIntegrationSyncJob).toHaveBeenCalledWith(
+      {
+        kind: 'targeted',
+        integrationId: INTEGRATION_ID,
+        teamId: TEAM_ID,
+        triggeredBy: 'webhook',
+        resourceType: 'drive.changes',
+        externalId: INTEGRATION_ID,
+        reason: 'provider_pagination_continuation',
+        continuationAttempt: 1,
+        continuationHandoffId: continuationHandoffId(1),
+      },
+      { delayMs: 5_000 },
+    );
+  });
+
   it('propagates a failed lock-contention continuation handoff for BullMQ retry', async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-06-25T03:00:00.000Z'));
@@ -1825,6 +1932,127 @@ describe('runOneIntegration attention classification', () => {
     );
   });
 
+  it('persists a Drive watch file target when capture hits a quota pause without a carried continuation', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-06-25T02:59:00.000Z'));
+    const retryAt = new Date('2026-06-25T03:00:00.000Z');
+    fakes.adminLoadIntegration.mockResolvedValueOnce({
+      ...integration,
+      provider: 'google_drive',
+      externalAccountId: 'drive-user-1',
+    });
+    fakes.adminListSelections.mockResolvedValueOnce([{ kind: 'drive.file', externalId: 'file-1' }]);
+    const err = Object.assign(new Error('Drive GET /files/file-1 429: rate limited'), {
+      code: 'provider_rate_limited',
+      provider: 'google_drive',
+      retryAt,
+      retryAfterSeconds: 60,
+      scope: 'requests',
+      reason: 'provider_quota_exhausted',
+    });
+    fakes.incrementalSync.mockRejectedValueOnce(err);
+
+    try {
+      await runOneIntegration({} as never, INTEGRATION_ID, 'targeted', {
+        kind: 'targeted',
+        integrationId: INTEGRATION_ID,
+        teamId: TEAM_ID,
+        triggeredBy: 'webhook',
+        resourceType: 'drive.file',
+        externalId: 'file-1',
+        reason: 'drive_watch',
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+
+    expect(fakes.adminCommitIntegrationSyncCheckpoint).toHaveBeenCalledWith(expect.anything(), {
+      integrationId: INTEGRATION_ID,
+      cursors: [],
+      continuations: [
+        {
+          resourceType: 'drive.file',
+          externalId: 'file-1',
+          retryAt,
+        },
+      ],
+    });
+    expect(fakes.enqueueIntegrationSyncJob).toHaveBeenCalledWith(
+      {
+        kind: 'targeted',
+        integrationId: INTEGRATION_ID,
+        teamId: TEAM_ID,
+        triggeredBy: 'reconcile',
+        resourceType: 'drive.file',
+        externalId: 'file-1',
+        reason: 'provider_pagination_continuation',
+        continuationHandoffId: continuationHandoffId(1),
+      },
+      { delayMs: 60_000 },
+    );
+    expect(fakes.incrementalSync).toHaveBeenCalled();
+  });
+
+  it('persists a Drive changes watch when listing hits a quota pause without a carried continuation', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-06-25T02:59:00.000Z'));
+    const retryAt = new Date('2026-06-25T03:00:00.000Z');
+    fakes.adminLoadIntegration.mockResolvedValueOnce({
+      ...integration,
+      provider: 'google_drive',
+      externalAccountId: 'drive-user-1',
+    });
+    fakes.adminListSelections.mockResolvedValueOnce([{ kind: 'drive.file', externalId: 'file-1' }]);
+    const err = Object.assign(new Error('Drive GET /changes 429: rate limited'), {
+      code: 'provider_rate_limited',
+      provider: 'google_drive',
+      retryAt,
+      retryAfterSeconds: 60,
+      scope: 'requests',
+      reason: 'provider_quota_exhausted',
+    });
+    fakes.incrementalSync.mockRejectedValueOnce(err);
+
+    try {
+      await runOneIntegration({} as never, INTEGRATION_ID, 'targeted', {
+        kind: 'targeted',
+        integrationId: INTEGRATION_ID,
+        teamId: TEAM_ID,
+        triggeredBy: 'webhook',
+        resourceType: 'drive.changes',
+        externalId: INTEGRATION_ID,
+        reason: 'drive_watch',
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+
+    expect(fakes.adminCommitIntegrationSyncCheckpoint).toHaveBeenCalledWith(expect.anything(), {
+      integrationId: INTEGRATION_ID,
+      cursors: [],
+      continuations: [
+        {
+          resourceType: 'drive.changes',
+          externalId: INTEGRATION_ID,
+          retryAt,
+        },
+      ],
+    });
+    expect(fakes.enqueueIntegrationSyncJob).toHaveBeenCalledWith(
+      {
+        kind: 'targeted',
+        integrationId: INTEGRATION_ID,
+        teamId: TEAM_ID,
+        triggeredBy: 'reconcile',
+        resourceType: 'drive.changes',
+        externalId: INTEGRATION_ID,
+        reason: 'provider_pagination_continuation',
+        continuationHandoffId: continuationHandoffId(1),
+      },
+      { delayMs: 60_000 },
+    );
+  });
+
   it('records Slack Web API rate limits as provider budget pauses', async () => {
     fakes.adminLoadIntegration.mockResolvedValueOnce({
       ...integration,
@@ -2297,6 +2525,75 @@ describe('runOneIntegration attention classification', () => {
     );
   });
 
+  it('durably delays a Drive file capture that arrives during an account pause', async () => {
+    const retryAt = new Date(Date.now() + 60_000);
+    fakes.adminLoadIntegration.mockResolvedValueOnce({ ...integration, provider: 'google_drive' });
+    fakes.adminLoadIntegrationSyncPause.mockResolvedValueOnce({
+      retryAt,
+      reason: 'timeline_daily_budget',
+    });
+
+    await runOneIntegration({} as never, INTEGRATION_ID, 'targeted', {
+      kind: 'targeted',
+      integrationId: INTEGRATION_ID,
+      teamId: TEAM_ID,
+      triggeredBy: 'webhook',
+      resourceType: 'drive.file',
+      externalId: 'file-1',
+      reason: 'drive_watch',
+    });
+
+    expect(fakes.incrementalSync).not.toHaveBeenCalled();
+    expect(fakes.adminRecordPendingIntegrationSyncContinuations).toHaveBeenCalledWith(
+      expect.anything(),
+      INTEGRATION_ID,
+      [
+        {
+          resourceType: 'drive.file',
+          externalId: 'file-1',
+          retryAt,
+        },
+      ],
+    );
+  });
+
+  it('durably delays a Drive file capture during a provider budget pause', async () => {
+    const retryAt = new Date(Date.now() + 60_000);
+    fakes.adminLoadIntegration.mockResolvedValueOnce({
+      ...integration,
+      provider: 'google_drive',
+      externalAccountId: 'drive-user-1',
+    });
+    fakes.adminLoadProviderBudgetPause.mockResolvedValueOnce({
+      retryAt,
+      reason: 'daily_limit_exceeded',
+      scope: 'requests',
+    });
+
+    await runOneIntegration({} as never, INTEGRATION_ID, 'targeted', {
+      kind: 'targeted',
+      integrationId: INTEGRATION_ID,
+      teamId: TEAM_ID,
+      triggeredBy: 'webhook',
+      resourceType: 'drive.file',
+      externalId: 'file-1',
+      reason: 'drive_watch',
+    });
+
+    expect(fakes.incrementalSync).not.toHaveBeenCalled();
+    expect(fakes.adminRecordPendingIntegrationSyncContinuations).toHaveBeenCalledWith(
+      expect.anything(),
+      INTEGRATION_ID,
+      [
+        {
+          resourceType: 'drive.file',
+          externalId: 'file-1',
+          retryAt,
+        },
+      ],
+    );
+  });
+
   it('durably delays a Monday webhook that arrives during an account pause', async () => {
     const retryAt = new Date(Date.now() + 60_000);
     fakes.adminLoadIntegration.mockResolvedValueOnce({ ...integration, provider: 'monday' });
@@ -2534,5 +2831,701 @@ describe('runOneIntegration attention classification', () => {
     await runOneIntegration({} as never, INTEGRATION_ID, 'incremental');
 
     expect(fakes.incrementalSync).toHaveBeenCalled();
+  });
+
+  it('does not harvest Drive files and instead mounts delayed targeted sync', async () => {
+    fakes.adminLoadIntegration.mockResolvedValueOnce({ ...integration, provider: 'google_drive' });
+    fakes.adminListSelections.mockResolvedValueOnce([{ kind: 'drive.folder', externalId: 'root' }]);
+    fakes.incrementalSync.mockImplementationOnce(
+      ({
+        ctx,
+      }: {
+        ctx: {
+          harvestDocument?: unknown;
+          scheduleTargetedSync?: unknown;
+          enqueueTransientDriveExtract?: unknown;
+          extractBinaryText?: unknown;
+        };
+      }) => {
+        expect(ctx.harvestDocument).toBeUndefined();
+        expect(ctx.scheduleTargetedSync).toEqual(expect.any(Function));
+        expect(ctx.enqueueTransientDriveExtract).toEqual(expect.any(Function));
+        expect(ctx.extractBinaryText).toBeUndefined();
+        return Promise.resolve();
+      },
+    );
+
+    await runOneIntegration({} as never, INTEGRATION_ID, 'incremental');
+
+    expect(fakes.incrementalSync).toHaveBeenCalled();
+  });
+
+  it('keeps Drive file targeted jobs on all watchable selections', async () => {
+    fakes.adminLoadIntegration.mockResolvedValueOnce({ ...integration, provider: 'google_drive' });
+    const selections = [
+      { kind: 'drive.folder', externalId: 'folder-1' },
+      { kind: 'drive.file', externalId: 'file-9' },
+    ];
+    fakes.adminListSelections.mockResolvedValueOnce(selections);
+    fakes.incrementalSync.mockImplementationOnce(
+      (args: { selections: unknown; target?: { resourceType?: string; externalId?: string } }) => {
+        expect(args.selections).toEqual(selections);
+        expect(args.target).toMatchObject({
+          resourceType: 'drive.file',
+          externalId: 'file-1',
+        });
+        return Promise.resolve();
+      },
+    );
+
+    await runOneIntegration({} as never, INTEGRATION_ID, 'targeted', {
+      kind: 'targeted',
+      integrationId: INTEGRATION_ID,
+      teamId: TEAM_ID,
+      triggeredBy: 'webhook',
+      resourceType: 'drive.file',
+      externalId: 'file-1',
+      reason: 'drive_watch',
+    });
+
+    expect(fakes.incrementalSync).toHaveBeenCalled();
+  });
+
+  it('does not complete Drive feed recovery after a file-only extract resume', async () => {
+    fakes.adminLoadIntegration.mockResolvedValue({ ...integration, provider: 'google_drive' });
+    const selections = [
+      { kind: 'drive.folder', externalId: 'folder-1' },
+      { kind: 'drive.folder', externalId: 'folder-2' },
+    ];
+    fakes.adminListSelections.mockResolvedValue(selections);
+
+    await runOneIntegration({} as never, INTEGRATION_ID, 'targeted', {
+      kind: 'targeted',
+      integrationId: INTEGRATION_ID,
+      teamId: TEAM_ID,
+      triggeredBy: 'drive_extract',
+      resourceType: 'drive.file',
+      externalId: 'file-1',
+      reason: 'drive_transient_extract',
+    });
+
+    expect(fakes.incrementalSync).toHaveBeenCalledWith(expect.objectContaining({ selections }));
+    const resumeCall = fakes.incrementalSync.mock.calls[0] as
+      | [{ target?: { resourceType?: string; externalId?: string; triggeredBy?: string } }]
+      | undefined;
+    expect(resumeCall?.[0]?.target).toEqual({
+      resourceType: 'drive.file',
+      externalId: 'file-1',
+      reason: 'drive_transient_extract',
+      triggeredBy: 'drive_extract',
+    });
+    expect(fakes.adminCommitIntegrationSyncCheckpoint).toHaveBeenCalledWith(expect.anything(), {
+      integrationId: INTEGRATION_ID,
+      cursors: [],
+      continuations: [],
+    });
+
+    fakes.incrementalSync.mockClear();
+    await runOneIntegration({} as never, INTEGRATION_ID, 'incremental');
+    expect(fakes.incrementalSync).toHaveBeenCalledWith(expect.objectContaining({ selections }));
+  });
+
+  it('skips the Drive changes feed while every watchable selection is inside the recovery quiet window', async () => {
+    fakes.adminLoadIntegration.mockResolvedValue({ ...integration, provider: 'google_drive' });
+    fakes.adminListSelections.mockResolvedValue([
+      { kind: 'drive.folder', externalId: 'folder-1' },
+      { kind: 'drive.folder', externalId: 'folder-2' },
+    ]);
+    fakes.adminLoadCursor.mockImplementation((_db, _id, resource) =>
+      Promise.resolve(
+        resource === 'sync.recovery'
+          ? {
+              completed: {
+                'drive.folder:folder-1': new Date().toISOString(),
+                'drive.folder:folder-2': new Date().toISOString(),
+              },
+            }
+          : {},
+      ),
+    );
+
+    await runOneIntegration({} as never, INTEGRATION_ID, 'incremental');
+
+    expect(fakes.incrementalSync).not.toHaveBeenCalled();
+    expect(fakes.adminCommitIntegrationSyncCheckpoint).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        integrationId: INTEGRATION_ID,
+        markSynced: {},
+      }),
+    );
+  });
+});
+
+describe('Drive transient extract handoff', () => {
+  const FILE_ID = 'file-1';
+  const cursorKey = integrations.driveExtractCursorKey(FILE_ID);
+
+  function extractScope(store = new Map<string, unknown>()) {
+    return {
+      store,
+      getIntegration: vi.fn((id: string) =>
+        Promise.resolve(id === INTEGRATION_ID ? { id, teamId: TEAM_ID } : null),
+      ),
+      loadCursor: vi.fn((_id: string, resourceType: string) =>
+        Promise.resolve(store.get(resourceType) ?? {}),
+      ),
+      saveCursor: vi.fn((_id: string, resourceType: string, cursor: unknown) => {
+        store.set(resourceType, cursor);
+        return Promise.resolve();
+      }),
+    };
+  }
+
+  function extractIO() {
+    return {
+      getDocumentsBucket: () => 'docs',
+      putDocumentObject: vi.fn(() => Promise.resolve()),
+      getDocumentObject: vi.fn(() => {
+        const err = new Error('missing');
+        err.name = 'NoSuchKey';
+        return Promise.reject(err);
+      }),
+      deleteDocumentObject: vi.fn((_input: { bucket: string; key: string }) => Promise.resolve()),
+      enqueueDocumentExtractJob: vi.fn(() => Promise.resolve()),
+    };
+  }
+
+  it('writes extract cursors through the team-scoped integrations module', async () => {
+    const scope = extractScope();
+    const io = extractIO();
+    const order: string[] = [];
+    io.enqueueDocumentExtractJob.mockImplementation(() => {
+      order.push('enqueue');
+      return Promise.resolve();
+    });
+    scope.saveCursor.mockImplementation((_id: string, resourceType: string, cursor: unknown) => {
+      order.push('cursor');
+      scope.store.set(resourceType, cursor);
+      return Promise.resolve();
+    });
+
+    await putAndEnqueueDriveTransientExtract({
+      integrations: scope,
+      teamId: TEAM_ID,
+      integrationId: INTEGRATION_ID,
+      fileId: FILE_ID,
+      filename: 'Notes.pdf',
+      contentType: 'application/pdf',
+      body: Buffer.from('%PDF-1.4'),
+      revisionId: 'rev:rev-9',
+      io,
+      now: new Date('2026-11-02T12:00:00.000Z'),
+    });
+
+    expect(scope.getIntegration).toHaveBeenCalledWith(INTEGRATION_ID);
+    expect(fakes.adminSaveCursor).not.toHaveBeenCalled();
+    expect(fakes.adminLoadCursor).not.toHaveBeenCalled();
+    expect(order).toEqual(['cursor', 'enqueue', 'cursor']);
+    expect(io.enqueueDocumentExtractJob).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: 'drive_transient',
+        teamId: TEAM_ID,
+        integrationId: INTEGRATION_ID,
+        fileId: FILE_ID,
+        filename: 'Notes.pdf',
+      }),
+    );
+    expect(scope.saveCursor).toHaveBeenCalledWith(
+      INTEGRATION_ID,
+      cursorKey,
+      expect.objectContaining({
+        filename: 'Notes.pdf',
+        contentType: 'application/pdf',
+        enqueuedAt: '2026-11-02T12:00:00.000Z',
+        revisionId: 'rev:rev-9',
+      }),
+    );
+  });
+
+  it('keeps extract tracking when document-extract enqueue fails', async () => {
+    const scope = extractScope();
+    const io = extractIO();
+    io.enqueueDocumentExtractJob.mockRejectedValue(new Error('redis down'));
+
+    await expect(
+      putAndEnqueueDriveTransientExtract({
+        integrations: scope,
+        teamId: TEAM_ID,
+        integrationId: INTEGRATION_ID,
+        fileId: FILE_ID,
+        filename: 'Notes.pdf',
+        contentType: 'application/pdf',
+        body: Buffer.from('%PDF-1.4'),
+        io,
+      }),
+    ).rejects.toThrow('redis down');
+
+    expect(scope.saveCursor).toHaveBeenCalledWith(
+      INTEGRATION_ID,
+      cursorKey,
+      expect.objectContaining({
+        filename: 'Notes.pdf',
+        contentType: 'application/pdf',
+        jobPublished: false,
+      }),
+    );
+    expect(io.deleteDocumentObject).not.toHaveBeenCalled();
+    expect(fakes.adminSaveCursor).not.toHaveBeenCalled();
+  });
+
+  it('carries replaced extract ids as tombstones even when S3 delete reports success', async () => {
+    const previous = {
+      extractId: 'ext-old',
+      objectKey: 'source-old',
+      resultObjectKey: 'result-old.json',
+      contentType: 'application/pdf',
+      filename: 'Notes.pdf',
+      enqueuedAt: '2026-11-02T11:00:00.000Z',
+    };
+    const scope = extractScope(new Map([[cursorKey, previous]]));
+    const io = extractIO();
+
+    await putAndEnqueueDriveTransientExtract({
+      integrations: scope,
+      teamId: TEAM_ID,
+      integrationId: INTEGRATION_ID,
+      fileId: FILE_ID,
+      filename: 'Notes.pdf',
+      contentType: 'application/pdf',
+      body: Buffer.from('%PDF-1.4'),
+      io,
+      now: new Date('2026-11-02T12:00:00.000Z'),
+    });
+
+    const saved = scope.saveCursor.mock.calls.at(-1)?.[2] as {
+      extractId: string;
+      tombstones?: { extractId: string; objectKey: string }[];
+      jobPublished?: boolean;
+    };
+    expect(saved.extractId).not.toBe('ext-old');
+    expect(saved.tombstones).toEqual([
+      expect.objectContaining({
+        extractId: 'ext-old',
+        objectKey: 'source-old',
+        resultObjectKey: 'result-old.json',
+      }),
+    ]);
+    expect(saved.jobPublished).toBeUndefined();
+    expect(io.deleteDocumentObject).toHaveBeenCalledWith(
+      expect.objectContaining({ key: 'source-old' }),
+    );
+  });
+
+  it('re-enqueues an unpublished pending extract immediately instead of waiting 15 minutes', async () => {
+    const scope = extractScope(
+      new Map([
+        [
+          cursorKey,
+          {
+            extractId: 'ext-unpublished',
+            objectKey: 'source',
+            resultObjectKey: 'result.json',
+            contentType: 'application/pdf',
+            filename: 'Notes.pdf',
+            enqueuedAt: '2026-11-02T12:00:00.000Z',
+            jobPublished: false,
+          },
+        ],
+      ]),
+    );
+    const io = extractIO();
+    await expect(
+      readDriveTransientExtract({
+        integrations: scope,
+        teamId: TEAM_ID,
+        integrationId: INTEGRATION_ID,
+        fileId: FILE_ID,
+        io,
+        now: new Date('2026-11-02T12:00:05.000Z'),
+      }),
+    ).resolves.toEqual({ status: 'pending', reschedule: true });
+    expect(io.enqueueDocumentExtractJob).toHaveBeenCalledWith(
+      expect.objectContaining({ extractId: 'ext-unpublished' }),
+    );
+  });
+
+  it('re-enqueues stale pending extracts and leaves fresh pending alone', async () => {
+    const fresh = {
+      extractId: 'ext-fresh',
+      objectKey: 'source-fresh',
+      resultObjectKey: 'result-fresh.json',
+      contentType: 'application/pdf',
+      filename: 'Notes.pdf',
+      enqueuedAt: '2026-11-02T12:00:00.000Z',
+      revisionId: 'rev:rev-9',
+    };
+    const stale = {
+      ...fresh,
+      extractId: 'ext-stale',
+      objectKey: 'source-stale',
+      resultObjectKey: 'result-stale.json',
+      enqueuedAt: '2026-11-02T11:00:00.000Z',
+    };
+    const freshScope = extractScope(new Map([[cursorKey, fresh]]));
+    const freshIo = extractIO();
+    await expect(
+      readDriveTransientExtract({
+        integrations: freshScope,
+        teamId: TEAM_ID,
+        integrationId: INTEGRATION_ID,
+        fileId: FILE_ID,
+        io: freshIo,
+        now: new Date('2026-11-02T12:05:00.000Z'),
+      }),
+    ).resolves.toEqual({ status: 'pending', revisionId: 'rev:rev-9' });
+    expect(freshIo.enqueueDocumentExtractJob).not.toHaveBeenCalled();
+
+    const staleScope = extractScope(new Map([[cursorKey, stale]]));
+    const staleIo = extractIO();
+    await expect(
+      readDriveTransientExtract({
+        integrations: staleScope,
+        teamId: TEAM_ID,
+        integrationId: INTEGRATION_ID,
+        fileId: FILE_ID,
+        io: staleIo,
+        now: new Date('2026-11-02T12:00:00.000Z'),
+      }),
+    ).resolves.toEqual({ status: 'pending', revisionId: 'rev:rev-9', reschedule: true });
+    expect(staleIo.enqueueDocumentExtractJob).toHaveBeenCalledWith(
+      expect.objectContaining({ extractId: 'ext-stale', objectKey: 'source-stale' }),
+    );
+    expect(staleScope.saveCursor).toHaveBeenCalledWith(
+      INTEGRATION_ID,
+      cursorKey,
+      expect.objectContaining({
+        extractId: 'ext-stale',
+        enqueuedAt: '2026-11-02T12:00:00.000Z',
+      }),
+    );
+    expect(fakes.adminLoadCursor).not.toHaveBeenCalled();
+  });
+
+  it('returns a terminal too-large failure without re-enqueuing extract', async () => {
+    const scope = extractScope(
+      new Map([
+        [
+          cursorKey,
+          {
+            extractId: 'ext-1',
+            objectKey: 'source',
+            resultObjectKey: 'result.json',
+            contentType: 'application/pdf',
+            filename: 'Notes.pdf',
+            enqueuedAt: '2026-11-02T12:00:00.000Z',
+          },
+        ],
+      ]),
+    );
+    const io = extractIO();
+    io.getDocumentObject.mockRejectedValue(
+      new Error('S3 object docs/result.json exceeds 2097152 bytes'),
+    );
+
+    await expect(
+      readDriveTransientExtract({
+        integrations: scope,
+        teamId: TEAM_ID,
+        integrationId: INTEGRATION_ID,
+        fileId: FILE_ID,
+        io,
+      }),
+    ).resolves.toEqual({ status: 'failed', error: integrations.DRIVE_TRANSIENT_RESULT_TOO_LARGE });
+    expect(io.enqueueDocumentExtractJob).not.toHaveBeenCalled();
+  });
+
+  it('rethrows retryable S3 timeouts so the extract cursor and result stay intact', async () => {
+    const cursor = {
+      extractId: 'ext-1',
+      objectKey: 'source',
+      resultObjectKey: 'result.json',
+      contentType: 'application/pdf',
+      filename: 'Notes.pdf',
+      enqueuedAt: '2026-11-02T12:00:00.000Z',
+    };
+    const scope = extractScope(new Map([[cursorKey, cursor]]));
+    const io = extractIO();
+    const timeout = Object.assign(new Error('RequestTimeout'), {
+      name: 'TimeoutError',
+      $metadata: { httpStatusCode: 503 },
+    });
+    io.getDocumentObject.mockRejectedValue(timeout);
+
+    await expect(
+      readDriveTransientExtract({
+        integrations: scope,
+        teamId: TEAM_ID,
+        integrationId: INTEGRATION_ID,
+        fileId: FILE_ID,
+        io,
+      }),
+    ).rejects.toBe(timeout);
+    expect(scope.saveCursor).not.toHaveBeenCalled();
+    expect(io.enqueueDocumentExtractJob).not.toHaveBeenCalled();
+    expect(scope.store.get(cursorKey)).toEqual(cursor);
+  });
+
+  it('clears failed extract objects through team-scoped cursors', async () => {
+    const scope = extractScope(
+      new Map([
+        [
+          cursorKey,
+          {
+            extractId: 'ext-1',
+            objectKey: 'source',
+            resultObjectKey: 'result.json',
+            contentType: 'application/pdf',
+            filename: 'Notes.pdf',
+            enqueuedAt: '2026-11-02T12:00:00.000Z',
+          },
+        ],
+      ]),
+    );
+    const io = extractIO();
+    await clearDriveTransientExtract({
+      integrations: scope,
+      integrationId: INTEGRATION_ID,
+      fileId: FILE_ID,
+      io,
+    });
+    expect(io.deleteDocumentObject).toHaveBeenCalledTimes(2);
+    expect(scope.saveCursor).toHaveBeenCalledWith(INTEGRATION_ID, cursorKey, {});
+    expect(fakes.adminSaveCursor).not.toHaveBeenCalled();
+  });
+
+  it('keeps a retryable cleanup cursor when an S3 delete fails', async () => {
+    const cursor = {
+      extractId: 'ext-1',
+      objectKey: 'source',
+      resultObjectKey: 'result.json',
+      contentType: 'application/pdf',
+      filename: 'Notes.pdf',
+      enqueuedAt: '2026-11-02T12:00:00.000Z',
+    };
+    const scope = extractScope(new Map([[cursorKey, cursor]]));
+    const io = extractIO();
+    io.deleteDocumentObject.mockImplementation(({ key }: { key: string }) => {
+      if (key === 'source') return Promise.resolve();
+      return Promise.reject(new Error('AccessDenied'));
+    });
+    await clearDriveTransientExtract({
+      integrations: scope,
+      integrationId: INTEGRATION_ID,
+      fileId: FILE_ID,
+      io,
+    });
+    expect(io.deleteDocumentObject).toHaveBeenCalledTimes(2);
+    expect(scope.saveCursor).toHaveBeenCalledWith(
+      INTEGRATION_ID,
+      cursorKey,
+      expect.objectContaining({
+        extractId: 'ext-1',
+        cleanupPending: true,
+        pendingDeleteKeys: ['result.json'],
+      }),
+    );
+    expect(scope.store.get(cursorKey)).not.toEqual({});
+  });
+
+  it('keeps a cancel tombstone when S3 reports the extract result missing', async () => {
+    const enqueuedAt = '2026-11-02T12:00:00.000Z';
+    const now = new Date('2026-11-02T12:01:00.000Z');
+    const scope = extractScope(
+      new Map([
+        [
+          cursorKey,
+          {
+            extractId: 'ext-1',
+            objectKey: 'source',
+            resultObjectKey: 'result.json',
+            contentType: 'application/pdf',
+            filename: 'Notes.pdf',
+            enqueuedAt,
+          },
+        ],
+      ]),
+    );
+    const io = extractIO();
+    io.deleteDocumentObject.mockImplementation(() => {
+      const err = new Error('missing');
+      err.name = 'NoSuchKey';
+      return Promise.reject(err);
+    });
+    await clearDriveTransientExtract({
+      integrations: scope,
+      integrationId: INTEGRATION_ID,
+      fileId: FILE_ID,
+      io,
+      mode: 'cancel',
+      now,
+    });
+    expect(scope.saveCursor).toHaveBeenCalledWith(
+      INTEGRATION_ID,
+      cursorKey,
+      expect.objectContaining({
+        extractId: 'ext-1',
+        cleanupPending: true,
+        cancelledAt: now.toISOString(),
+        pendingDeleteKeys: ['source', 'result.json'],
+      }),
+    );
+    expect(scope.store.get(cursorKey)).not.toEqual({});
+  });
+
+  it('preserves cancelledAt when cancel cleanup retries before the producer wait elapses', async () => {
+    const cancelledAt = '2026-11-02T12:01:00.000Z';
+    const now = new Date('2026-11-02T12:05:00.000Z');
+    const scope = extractScope(
+      new Map([
+        [
+          cursorKey,
+          {
+            extractId: 'ext-1',
+            objectKey: 'source',
+            resultObjectKey: 'result.json',
+            contentType: 'application/pdf',
+            filename: 'Notes.pdf',
+            enqueuedAt: '2026-11-02T12:00:00.000Z',
+            cleanupPending: true,
+            cancelledAt,
+            pendingDeleteKeys: ['source', 'result.json'],
+          },
+        ],
+      ]),
+    );
+    const io = extractIO();
+    io.deleteDocumentObject.mockImplementation(() => {
+      const err = new Error('missing');
+      err.name = 'NoSuchKey';
+      return Promise.reject(err);
+    });
+    await clearDriveTransientExtract({
+      integrations: scope,
+      integrationId: INTEGRATION_ID,
+      fileId: FILE_ID,
+      io,
+      mode: 'cancel',
+      now,
+    });
+    expect(scope.saveCursor).toHaveBeenCalledWith(
+      INTEGRATION_ID,
+      cursorKey,
+      expect.objectContaining({
+        cleanupPending: true,
+        cancelledAt,
+        pendingDeleteKeys: ['source', 'result.json'],
+      }),
+    );
+    expect(scope.store.get(cursorKey)).not.toEqual({});
+  });
+
+  it('clears a cancel tombstone after the producer wait when extract objects stay gone', async () => {
+    const cancelledAt = '2026-11-02T12:01:00.000Z';
+    const now = new Date(Date.parse(cancelledAt) + integrations.DRIVE_EXTRACT_PENDING_STALE_MS);
+    const scope = extractScope(
+      new Map([
+        [
+          cursorKey,
+          {
+            extractId: 'ext-1',
+            objectKey: 'source',
+            resultObjectKey: 'result.json',
+            contentType: 'application/pdf',
+            filename: 'Notes.pdf',
+            enqueuedAt: '2026-11-02T12:00:00.000Z',
+            cleanupPending: true,
+            cancelledAt,
+            pendingDeleteKeys: ['source', 'result.json'],
+          },
+        ],
+      ]),
+    );
+    const io = extractIO();
+    io.deleteDocumentObject.mockImplementation(() => {
+      const err = new Error('missing');
+      err.name = 'NoSuchKey';
+      return Promise.reject(err);
+    });
+    await clearDriveTransientExtract({
+      integrations: scope,
+      integrationId: INTEGRATION_ID,
+      fileId: FILE_ID,
+      io,
+      mode: 'cancel',
+      now,
+    });
+    expect(scope.saveCursor).toHaveBeenCalledWith(INTEGRATION_ID, cursorKey, {});
+  });
+
+  it('treats a missing S3 object as a successful extract delete', async () => {
+    const scope = extractScope(
+      new Map([
+        [
+          cursorKey,
+          {
+            extractId: 'ext-1',
+            objectKey: 'source',
+            resultObjectKey: 'result.json',
+            contentType: 'application/pdf',
+            filename: 'Notes.pdf',
+            enqueuedAt: '2026-11-02T12:00:00.000Z',
+          },
+        ],
+      ]),
+    );
+    const io = extractIO();
+    io.deleteDocumentObject.mockImplementation(() => {
+      const err = new Error('missing');
+      err.name = 'NoSuchKey';
+      return Promise.reject(err);
+    });
+    await clearDriveTransientExtract({
+      integrations: scope,
+      integrationId: INTEGRATION_ID,
+      fileId: FILE_ID,
+      io,
+    });
+    expect(scope.saveCursor).toHaveBeenCalledWith(INTEGRATION_ID, cursorKey, {});
+  });
+
+  it('does not throw when clearing an extract after the integration is gone', async () => {
+    const scope = extractScope(
+      new Map([
+        [
+          cursorKey,
+          {
+            extractId: 'ext-1',
+            objectKey: 'source',
+            resultObjectKey: 'result.json',
+            contentType: 'application/pdf',
+            filename: 'Notes.pdf',
+            enqueuedAt: '2026-11-02T12:00:00.000Z',
+          },
+        ],
+      ]),
+    );
+    scope.getIntegration.mockResolvedValue(null);
+    const io = extractIO();
+    await expect(
+      clearDriveTransientExtract({
+        integrations: scope,
+        integrationId: INTEGRATION_ID,
+        fileId: FILE_ID,
+        io,
+      }),
+    ).resolves.toBeUndefined();
+    expect(io.deleteDocumentObject).not.toHaveBeenCalled();
+    expect(scope.saveCursor).not.toHaveBeenCalled();
   });
 });

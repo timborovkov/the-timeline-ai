@@ -2,13 +2,16 @@ import { type Db, documentChunks, documents, documentVersions } from '@timeline/
 import {
   childLogger,
   chunkText,
+  deleteObject,
   getDocumentsBucket,
   getEnv,
   getObjectBuffer,
   getS3Client,
+  integrations,
   isLikelyGeneratedDocumentName,
   llm,
   normalizeSuggestedTitle,
+  putObject,
   queue,
 } from '@timeline/shared';
 import { assertTeamWriteCapacity, isBillingAdmissionError } from '@timeline/shared/billing';
@@ -18,6 +21,7 @@ import { and, eq, sql } from 'drizzle-orm';
 import { withWorkerAiBilling, workerBillingJobOptions } from '#src/billing-context.js';
 import {
   ANYDOC_SANDBOX_MODEL,
+  completeSandboxPageImages,
   extractOfficeForDocument,
   extractPdfForDocument,
   resolveAnydocFormatHint,
@@ -30,6 +34,7 @@ import { guardWorkerProcessor } from '#src/platform-worker.js';
 
 export {
   ANYDOC_SANDBOX_MODEL,
+  completeSandboxPageImages,
   shouldAcceptSandboxPdfText,
   type SandboxPdfExtractResult,
 } from '#src/document-ingestion/pdf-extraction.js';
@@ -87,6 +92,41 @@ export interface DocumentExtractIO {
    * Tests inject fakes to assert accept/reject routing.
    */
   extractPdfSandbox: (body: Buffer) => Promise<SandboxPdfExtractResult>;
+  /** Persist Drive transient extract JSON (success or visible failure). */
+  writeDriveTransientResult: (objectKey: string, body: Buffer) => Promise<void>;
+  /**
+   * Read a previously persisted Drive transient extract JSON, or `null`
+   * when the object is missing. Retries reuse this instead of re-fetching
+   * source bytes that may already have been deleted.
+   */
+  readDriveTransientResult: (objectKey: string) => Promise<Buffer | null>;
+  /** Resume `drive.file` after a transient extract result is durable. */
+  resumeDriveFile: (input: {
+    teamId: string;
+    integrationId: string;
+    fileId: string;
+    extractId: string;
+  }) => Promise<void>;
+  /** Delete the uploaded Drive source bytes after resume is accepted. */
+  deleteBlob: (objectKey: string) => Promise<void>;
+}
+
+/** 25 MiB in-memory cap; matches the transcribe worker. */
+const MAX_DOCUMENT_BYTES = 25 * 1024 * 1024;
+const DRIVE_TRANSIENT_RESULT_MAX_BYTES = integrations.DRIVE_TRANSIENT_RESULT_MAX_BYTES;
+
+function isMissingObjectError(err: unknown): boolean {
+  if (!err || typeof err !== 'object') return false;
+  const name = 'name' in err && typeof err.name === 'string' ? err.name : '';
+  const code = 'Code' in err && typeof err.Code === 'string' ? err.Code : '';
+  const status =
+    '$metadata' in err &&
+    err.$metadata &&
+    typeof err.$metadata === 'object' &&
+    'httpStatusCode' in err.$metadata
+      ? err.$metadata.httpStatusCode
+      : undefined;
+  return name === 'NoSuchKey' || name === 'NotFound' || code === 'NoSuchKey' || status === 404;
 }
 
 function defaultIO(): DocumentExtractIO {
@@ -118,6 +158,43 @@ function defaultIO(): DocumentExtractIO {
     extractPdfSandbox(body) {
       return extractPdfForDocument(body);
     },
+    async writeDriveTransientResult(objectKey, body) {
+      await putObject(getS3Client(), {
+        bucket: getDocumentsBucket(),
+        key: objectKey,
+        body,
+        contentType: 'application/json',
+      });
+    },
+    async readDriveTransientResult(objectKey) {
+      try {
+        const fetched = await getObjectBuffer(
+          getS3Client(),
+          getDocumentsBucket(),
+          objectKey,
+          DRIVE_TRANSIENT_RESULT_MAX_BYTES,
+        );
+        return fetched.body;
+      } catch (err: unknown) {
+        if (isMissingObjectError(err)) return null;
+        throw err;
+      }
+    },
+    async resumeDriveFile(input) {
+      await queue.enqueueIntegrationSyncJob({
+        kind: 'targeted',
+        integrationId: input.integrationId,
+        teamId: input.teamId,
+        triggeredBy: 'drive_extract',
+        resourceType: 'drive.file',
+        externalId: input.fileId,
+        reason: 'drive_transient_extract',
+        surface: queue.driveTransientExtractResumeSurface(input.extractId),
+      });
+    },
+    async deleteBlob(objectKey) {
+      await deleteObject(getS3Client(), getDocumentsBucket(), objectKey);
+    },
   };
 }
 
@@ -125,12 +202,6 @@ function defaultIO(): DocumentExtractIO {
 // `redocument-extract` script can re-drive jobs whose chunking policy
 // predates a change.
 const EXTRACT_CODE_VERSION = '2026-08-c';
-
-// Cap on document size we will pull into memory for processing. Above
-// this, the worker stamps the version as 'failed' with a clear message
-// so the user can decide how to split the file. 25 MiB matches the
-// transcribe cap; revisit when streaming extraction lands.
-const MAX_DOCUMENT_BYTES = 25 * 1024 * 1024;
 
 /**
  * Phase 9 document extract worker. One job per `document_versions.id`:
@@ -150,10 +221,11 @@ const MAX_DOCUMENT_BYTES = 25 * 1024 * 1024;
  * unique constraint and rolls back).
  */
 interface DocumentExtractResult {
-  documentVersionId: string;
+  documentVersionId?: string;
   chunkCount?: number;
   skipped?: boolean;
   reason?: string;
+  driveFileId?: string;
 }
 
 type RepresentationKind = 'source_text' | 'transcript' | 'visual_description' | 'metadata_preview';
@@ -188,11 +260,149 @@ function metadataPreviewText(input: {
  *   - embed enqueue via `io.enqueueEmbed`
  * No direct Redis/S3 references; both go through `io`.
  */
+async function persistDriveTransientResult(
+  io: DocumentExtractIO,
+  data: queue.DriveTransientExtractJobData,
+  payload: integrations.DriveTransientExtractResultPayload,
+): Promise<integrations.DriveTransientExtractResultPayload> {
+  const body = integrations.driveTransientExtractResultBody(payload);
+  await io.writeDriveTransientResult(data.resultObjectKey, body);
+  return integrations.parseDriveTransientExtractResult(body);
+}
+
+async function resumeAndCleanupDriveTransientExtract(
+  io: DocumentExtractIO,
+  data: queue.DriveTransientExtractJobData,
+): Promise<void> {
+  await io.resumeDriveFile({
+    teamId: data.teamId,
+    integrationId: data.integrationId,
+    fileId: data.fileId,
+    extractId: data.extractId,
+  });
+  try {
+    await io.deleteBlob(data.objectKey);
+  } catch (err) {
+    log.warn({ err, objectKey: data.objectKey }, 'failed to delete Drive transient source blob');
+  }
+}
+
+async function loadPersistedDriveTransientResult(
+  io: DocumentExtractIO,
+  resultObjectKey: string,
+): Promise<integrations.DriveTransientExtractResultPayload | null> {
+  const body = await io.readDriveTransientResult(resultObjectKey);
+  if (!body) return null;
+  try {
+    return integrations.parseDriveTransientExtractResult(body);
+  } catch (err) {
+    log.warn({ err, resultObjectKey }, 'ignoring unreadable Drive transient extract result');
+    return null;
+  }
+}
+
+async function handoffPersistedDriveTransientResult(
+  io: DocumentExtractIO,
+  data: queue.DriveTransientExtractJobData,
+  payload: integrations.DriveTransientExtractResultPayload,
+): Promise<DocumentExtractResult> {
+  const stored = await persistDriveTransientResult(io, data, payload);
+  await resumeAndCleanupDriveTransientExtract(io, data);
+  if (stored.ok) {
+    return { driveFileId: data.fileId, reason: 'drive_transient_ready' };
+  }
+  return { driveFileId: data.fileId, skipped: true, reason: 'drive_transient_failed' };
+}
+
+/**
+ * Last-attempt failure path. Reuses a durable result (including a prior
+ * success whose resume threw) instead of overwriting it with `{ ok: false }`.
+ */
+export async function finalizeDriveTransientExtractFailure(
+  io: DocumentExtractIO,
+  data: queue.DriveTransientExtractJobData,
+  err: unknown,
+): Promise<void> {
+  const persisted = await loadPersistedDriveTransientResult(io, data.resultObjectKey);
+  if (!persisted) {
+    const message = err instanceof Error ? err.message : String(err);
+    await persistDriveTransientResult(io, data, { ok: false, error: message.slice(0, 500) });
+  }
+  await resumeAndCleanupDriveTransientExtract(io, data);
+}
+
+async function processDriveTransientExtract(
+  data: queue.DriveTransientExtractJobData,
+  io: DocumentExtractIO,
+): Promise<DocumentExtractResult> {
+  // Credential-thin: no withTeam / integration_sync_state. Cursor handoff
+  // stays on the main worker's team-scoped integrations module.
+  const persisted = await loadPersistedDriveTransientResult(io, data.resultObjectKey);
+  if (persisted) {
+    await resumeAndCleanupDriveTransientExtract(io, data);
+    return persisted.ok
+      ? { driveFileId: data.fileId, reason: 'drive_transient_ready' }
+      : { driveFileId: data.fileId, skipped: true, reason: 'drive_transient_failed' };
+  }
+
+  let body: Buffer;
+  try {
+    const fetched = await io.fetchBlob(data.objectKey, MAX_DOCUMENT_BYTES);
+    body = fetched.body;
+  } catch (err: unknown) {
+    if (integrations.isRetryableDriveExtractStorageError(err)) throw err;
+    await handoffPersistedDriveTransientResult(io, data, {
+      ok: false,
+      error: (err instanceof Error ? err.message : String(err)).slice(0, 500),
+    });
+    return { driveFileId: data.fileId, skipped: true, reason: 'drive_transient_fetch_failed' };
+  }
+
+  let routed: RouteResult;
+  try {
+    routed = await routeContentToText(
+      { contentType: data.contentType, body, name: data.filename },
+      io,
+    );
+  } catch (err: unknown) {
+    if (isDaytonaNotConfiguredError(err) || err instanceof UnrecoverableError) {
+      await handoffPersistedDriveTransientResult(io, data, {
+        ok: false,
+        error: err.message.slice(0, 500),
+      });
+      return { driveFileId: data.fileId, skipped: true, reason: 'drive_transient_failed' };
+    }
+    throw err;
+  }
+
+  if ('failure' in routed) {
+    await handoffPersistedDriveTransientResult(io, data, {
+      ok: false,
+      error: routed.failure.slice(0, 500),
+    });
+    return { driveFileId: data.fileId, skipped: true, reason: 'drive_transient_failed' };
+  }
+
+  const text = routed.representations
+    .map((representation) => representation.text.trim())
+    .filter((line) => line.length > 0)
+    .join('\n\n');
+  if (!text) {
+    await handoffPersistedDriveTransientResult(io, data, { ok: false, error: 'no text extracted' });
+    return { driveFileId: data.fileId, skipped: true, reason: 'drive_transient_empty' };
+  }
+
+  return handoffPersistedDriveTransientResult(io, data, { ok: true, text });
+}
+
 export async function processDocumentExtractJob(
   deps: DocumentExtractWorkerDeps,
   data: queue.DocumentExtractJobData,
   io: DocumentExtractIO = defaultIO(),
 ): Promise<DocumentExtractResult> {
+  if (queue.isDriveTransientExtractJob(data)) {
+    return processDriveTransientExtract(data, io);
+  }
   const { documentVersionId, teamId, targetCollection } = data;
   // OpenRouter is gated lazily inside routeContentToText only when a
   // vision path is taken. Text / DOCX / accepted sandbox PDFs work without it.
@@ -566,6 +776,16 @@ export function startDocumentExtractWorker(
   worker.on('failed', (job, err) => {
     log.error({ jobId: job?.id, err }, 'job failed');
     captureWorkerJobFailure(err, job);
+    if (!job || !queue.isDriveTransientExtractJob(job.data)) return;
+    const attempts = job.opts.attempts ?? 1;
+    if (job.attemptsMade < attempts) return;
+    const data = job.data;
+    void finalizeDriveTransientExtractFailure(io, data, err).catch((finalizeErr: unknown) => {
+      log.error(
+        { err: finalizeErr, fileId: data.fileId },
+        'failed to persist Drive transient extract failure',
+      );
+    });
   });
   worker.on('completed', (job) => {
     log.info({ jobId: job.id }, 'job completed');
@@ -640,24 +860,6 @@ async function routePdfContent(
     filename: input.name,
     ...(pageImagesForVision ? { pageImages: pageImagesForVision } : {}),
   });
-}
-
-/** Exported for unit tests. */
-export function completeSandboxPageImages(
-  sandbox: SandboxPdfExtractResult | null,
-): Buffer[] | undefined {
-  if (!sandbox || sandbox.pageImages.length === 0) return undefined;
-  if (sandbox.pageCount > sandbox.pageImages.length) {
-    log.warn(
-      {
-        pageCount: sandbox.pageCount,
-        pageImageCount: sandbox.pageImages.length,
-      },
-      'sandbox pageImages truncated vs pageCount; using full PDF for vision',
-    );
-    return undefined;
-  }
-  return sandbox.pageImages;
 }
 
 async function routeContentToText(

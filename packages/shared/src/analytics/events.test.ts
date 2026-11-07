@@ -175,6 +175,21 @@ describe('product analytics contract', () => {
   });
 });
 
+it('accepts Google as an authentication method without Drive identifiers', () => {
+  expect(validateProductEventProperties('authentication_succeeded', { method: 'google' })).toEqual({
+    method: 'google',
+  });
+  expect(
+    validateProductEventProperties('account_registered', {
+      source: 'google',
+      joinedViaInvite: false,
+    }),
+  ).toEqual({ source: 'google', joinedViaInvite: false });
+  expect(() =>
+    validateProductEventProperties('authentication_succeeded', { method: 'google_drive' }),
+  ).toThrow();
+});
+
 it('keeps lifecycle event properties bounded and content-free', () => {
   expect(validateProductEventProperties('billing_checkout_created', { plan: 'payg' })).toEqual({
     plan: 'payg',

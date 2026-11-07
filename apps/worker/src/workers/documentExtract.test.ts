@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
+import type { PGlite } from '@electric-sql/pglite';
 import {
   type Db,
   documentChunks,
@@ -8,7 +9,7 @@ import {
   rawEvents,
   teams,
 } from '@timeline/db';
-import { email, withTeam, type queue as queueNS } from '@timeline/shared';
+import { email, integrations, withTeam, type queue as queueNS } from '@timeline/shared';
 import {
   createResettablePGliteTestDb,
   type ResettablePGliteTestDb,
@@ -19,14 +20,13 @@ import { afterAll, beforeAll, beforeEach, describe, it } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 
-import type { PGlite } from '@electric-sql/pglite';
-
 import { DaytonaNotConfiguredError } from '#src/document-ingestion/types.js';
 import {
   type DocumentExtractIO,
   type SandboxPdfExtractResult,
   completeSandboxPageImages,
   ANYDOC_SANDBOX_MODEL,
+  finalizeDriveTransientExtractFailure,
   processDocumentExtractJob,
   shouldAcceptSandboxPdfText,
 } from '#src/workers/documentExtract.js';
@@ -77,6 +77,10 @@ interface Harness {
   extractOffice: ReturnType<typeof vi.fn>;
   extractPdfSandbox: ReturnType<typeof vi.fn>;
   requireEnv: ReturnType<typeof vi.fn>;
+  writeDriveTransientResult: ReturnType<typeof vi.fn>;
+  readDriveTransientResult: ReturnType<typeof vi.fn>;
+  resumeDriveFile: ReturnType<typeof vi.fn>;
+  deleteBlob: ReturnType<typeof vi.fn>;
   io: DocumentExtractIO;
 }
 
@@ -135,6 +139,13 @@ function makeHarness(
     return Promise.resolve(result);
   });
   const requireEnv = vi.fn(() => undefined);
+  const writeDriveTransientResult = vi.fn((_key: string, _body: Buffer) => Promise.resolve());
+  const readDriveTransientResult = vi.fn((_key: string) => Promise.resolve(null));
+  const resumeDriveFile = vi.fn(
+    (_input: { teamId: string; integrationId: string; fileId: string; extractId: string }) =>
+      Promise.resolve(),
+  );
+  const deleteBlob = vi.fn((_key: string) => Promise.resolve());
   const io: DocumentExtractIO = {
     fetchBlob,
     enqueueEmbed,
@@ -142,6 +153,10 @@ function makeHarness(
     extractFromMedia,
     extractOffice,
     extractPdfSandbox,
+    writeDriveTransientResult,
+    readDriveTransientResult,
+    resumeDriveFile,
+    deleteBlob,
   };
   return Promise.resolve({
     pg,
@@ -152,6 +167,10 @@ function makeHarness(
     extractOffice,
     extractPdfSandbox,
     requireEnv,
+    writeDriveTransientResult,
+    readDriveTransientResult,
+    resumeDriveFile,
+    deleteBlob,
     io,
   });
 }
@@ -475,7 +494,10 @@ describe('processDocumentExtractJob — content-type routing', () => {
     });
     await h.db
       .update(teams)
-      .set({ inboundEmail: 't@inbound.test', inboundSenderWhitelistEnabled: false })
+      .set({
+        inboundEmail: 't@inbound.test',
+        inboundSenderWhitelistEnabled: false,
+      })
       .where(eq(teams.id, TEAM_ID));
     const attachmentUpload = vi.fn().mockResolvedValue(undefined);
     const documentUpload = vi.fn().mockResolvedValue(undefined);
@@ -1443,5 +1465,196 @@ describe('processDocumentExtractJob — fetchBlob failure', () => {
     );
     expect(row.rows[0]?.processing_status).toBe('failed');
     expect(row.rows[0]?.processing_error).toContain('S3 timeout');
+  });
+});
+
+describe('processDocumentExtractJob — Drive transient extract', () => {
+  const TEAM = TEAM_ID;
+  const INTEGRATION_ID = '22222222-2222-4222-8222-222222222222';
+  const driveJob = {
+    kind: 'drive_transient' as const,
+    teamId: TEAM,
+    integrationId: INTEGRATION_ID,
+    fileId: 'file-1',
+    extractId: 'extract-1',
+    objectKey: 'drive-transient/source',
+    resultObjectKey: 'drive-transient/result.json',
+    contentType: 'application/pdf',
+    filename: 'Notes.pdf',
+  };
+
+  it('writes extracted text and resumes drive.file without creating document chunks', async () => {
+    h = await makeHarness(Buffer.from('%PDF-1.4'), {
+      sandboxPdf: {
+        text: 'Contract amount is forty eight thousand dollars.',
+        method: 'anydoc',
+        pageCount: 1,
+        sparse: false,
+        pageImages: [],
+      },
+    });
+    const result = await processDocumentExtractJob({ db: h.db }, driveJob, h.io);
+    expect(result).toMatchObject({
+      driveFileId: 'file-1',
+      reason: 'drive_transient_ready',
+    });
+    expect(h.writeDriveTransientResult).toHaveBeenCalledOnce();
+    const written = JSON.parse(
+      (h.writeDriveTransientResult.mock.calls[0]?.[1] as Buffer).toString('utf8'),
+    ) as { ok: boolean; text?: string };
+    expect(written).toEqual({
+      ok: true,
+      text: 'Contract amount is forty eight thousand dollars.',
+    });
+    expect(h.resumeDriveFile).toHaveBeenCalledWith({
+      teamId: TEAM,
+      integrationId: INTEGRATION_ID,
+      fileId: 'file-1',
+      extractId: 'extract-1',
+    });
+    expect(h.deleteBlob).toHaveBeenCalledWith('drive-transient/source');
+    expect(h.enqueueEmbed).not.toHaveBeenCalled();
+  });
+
+  it('reuses a persisted result and only retries the drive.file handoff', async () => {
+    const results = new Map<string, Buffer>();
+    h = await makeHarness(Buffer.from('%PDF-1.4'), {
+      sandboxPdf: {
+        text: 'Kept extract text.',
+        method: 'anydoc',
+        pageCount: 1,
+        sparse: false,
+        pageImages: [],
+      },
+    });
+    h.readDriveTransientResult.mockImplementation((key: string) =>
+      Promise.resolve(results.get(key) ?? null),
+    );
+    h.writeDriveTransientResult.mockImplementation((key: string, body: Buffer) => {
+      results.set(key, body);
+      return Promise.resolve();
+    });
+    h.resumeDriveFile.mockRejectedValueOnce(new Error('redis down'));
+
+    await expect(processDocumentExtractJob({ db: h.db }, driveJob, h.io)).rejects.toThrow(
+      'redis down',
+    );
+    expect(h.extractPdfSandbox).toHaveBeenCalledOnce();
+    expect(h.deleteBlob).not.toHaveBeenCalled();
+    const written = JSON.parse(
+      (h.writeDriveTransientResult.mock.calls[0]?.[1] as Buffer).toString('utf8'),
+    ) as { ok: boolean; text?: string };
+    expect(written).toEqual({ ok: true, text: 'Kept extract text.' });
+
+    h.fetchBlob.mockRejectedValue(new Error('NoSuchKey'));
+    h.resumeDriveFile.mockResolvedValue(undefined);
+    const retried = await processDocumentExtractJob({ db: h.db }, driveJob, h.io);
+    expect(retried).toMatchObject({
+      driveFileId: 'file-1',
+      reason: 'drive_transient_ready',
+    });
+    expect(h.extractPdfSandbox).toHaveBeenCalledOnce();
+    expect(h.writeDriveTransientResult).toHaveBeenCalledOnce();
+    expect(h.resumeDriveFile).toHaveBeenCalledTimes(2);
+    expect(h.deleteBlob).toHaveBeenCalledWith('drive-transient/source');
+  });
+
+  it('does not overwrite a durable success from the last-attempt failure handler', async () => {
+    h = await makeHarness(Buffer.from('%PDF-1.4'));
+    h.readDriveTransientResult.mockResolvedValue(
+      Buffer.from(JSON.stringify({ ok: true, text: 'Kept extract text.' })),
+    );
+
+    await finalizeDriveTransientExtractFailure(h.io, driveJob, new Error('resume failed'));
+
+    expect(h.writeDriveTransientResult).not.toHaveBeenCalled();
+    expect(h.resumeDriveFile).toHaveBeenCalledWith({
+      teamId: TEAM,
+      integrationId: INTEGRATION_ID,
+      fileId: 'file-1',
+      extractId: 'extract-1',
+    });
+    expect(h.deleteBlob).toHaveBeenCalledWith('drive-transient/source');
+    expect(h.fetchBlob).not.toHaveBeenCalled();
+  });
+
+  it('rethrows retryable source-blob S3 timeouts so BullMQ retries without burning the extract', async () => {
+    h = await makeHarness(Buffer.from('%PDF-1.4'));
+    h.fetchBlob.mockRejectedValueOnce(new Error('S3 timeout'));
+    await expect(processDocumentExtractJob({ db: h.db }, driveJob, h.io)).rejects.toThrow(
+      /S3 timeout/,
+    );
+    expect(h.writeDriveTransientResult).not.toHaveBeenCalled();
+    expect(h.resumeDriveFile).not.toHaveBeenCalled();
+    expect(h.deleteBlob).not.toHaveBeenCalled();
+  });
+
+  it('records a terminal Drive source-blob miss without retrying', async () => {
+    h = await makeHarness(Buffer.from('%PDF-1.4'));
+    const missing = Object.assign(new Error('The specified key does not exist.'), {
+      name: 'NoSuchKey',
+    });
+    h.fetchBlob.mockRejectedValueOnce(missing);
+    const result = await processDocumentExtractJob({ db: h.db }, driveJob, h.io);
+    expect(result).toMatchObject({
+      driveFileId: 'file-1',
+      skipped: true,
+      reason: 'drive_transient_fetch_failed',
+    });
+    const written = JSON.parse(
+      (h.writeDriveTransientResult.mock.calls[0]?.[1] as Buffer).toString('utf8'),
+    ) as { ok: boolean; error?: string };
+    expect(written.ok).toBe(false);
+    expect(written.error).toContain('specified key does not exist');
+    expect(h.resumeDriveFile).toHaveBeenCalledOnce();
+    expect(h.deleteBlob).toHaveBeenCalledWith('drive-transient/source');
+  });
+
+  it('persists a visible Daytona misconfiguration instead of returning empty text', async () => {
+    h = await makeHarness(Buffer.from('%PDF-1.4'), {
+      sandboxPdfThrows: new DaytonaNotConfiguredError('PDF'),
+    });
+    const result = await processDocumentExtractJob({ db: h.db }, driveJob, h.io);
+    expect(result).toMatchObject({
+      driveFileId: 'file-1',
+      skipped: true,
+      reason: 'drive_transient_failed',
+    });
+    const written = JSON.parse(
+      (h.writeDriveTransientResult.mock.calls[0]?.[1] as Buffer).toString('utf8'),
+    ) as { ok: boolean; error?: string };
+    expect(written.ok).toBe(false);
+    expect(written.error).toContain('Daytona is not configured');
+    expect(h.resumeDriveFile).toHaveBeenCalledOnce();
+    expect(h.enqueueEmbed).not.toHaveBeenCalled();
+  });
+
+  it('persists a terminal too-large result instead of an unreadable blob', async () => {
+    h = await makeHarness(Buffer.from('%PDF-1.4'), {
+      sandboxPdf: {
+        text: 'Northstar contract. '.repeat(
+          Math.ceil(integrations.DRIVE_TRANSIENT_RESULT_MAX_BYTES / 20),
+        ),
+        method: 'anydoc',
+        pageCount: 1,
+        sparse: false,
+        pageImages: [],
+      },
+    });
+    const result = await processDocumentExtractJob({ db: h.db }, driveJob, h.io);
+    expect(result).toMatchObject({
+      driveFileId: 'file-1',
+      skipped: true,
+      reason: 'drive_transient_failed',
+    });
+    const written = JSON.parse(
+      (h.writeDriveTransientResult.mock.calls[0]?.[1] as Buffer).toString('utf8'),
+    ) as { ok: boolean; error?: string };
+    expect(written).toEqual({ ok: false, error: integrations.DRIVE_TRANSIENT_RESULT_TOO_LARGE });
+    expect((h.writeDriveTransientResult.mock.calls[0]?.[1] as Buffer).length).toBeLessThan(
+      integrations.DRIVE_TRANSIENT_RESULT_MAX_BYTES,
+    );
+    expect(h.resumeDriveFile).toHaveBeenCalledOnce();
+    expect(h.enqueueEmbed).not.toHaveBeenCalled();
   });
 });

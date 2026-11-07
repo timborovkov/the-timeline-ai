@@ -78,4 +78,16 @@ describe('Privacy Policy analytics disclosures', () => {
     expect(html).toContain('digests instead of plaintext');
     expect(html).toContain('records do not allow the app to regain access');
   });
+
+  it('discloses Google Drive Limited Use, storage, deletion, and no general-model training', () => {
+    const html = renderToStaticMarkup(<PrivacyPage />);
+
+    expect(html).toContain('Google Drive');
+    expect(html).toContain('https://www.googleapis.com/auth/drive.readonly');
+    expect(html).toContain('Google API Services User Data Policy');
+    expect(html).toContain('Limited Use requirements');
+    expect(html).toContain('does not use Google user data to train general-purpose models');
+    expect(html).toContain('disconnect does not erase that history');
+    expect(html).not.toContain('drive.metadata.readonly');
+  });
 });
