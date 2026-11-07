@@ -573,6 +573,12 @@
       "development": "./src/redis/connection.ts",
       "import": "./dist/redis/connection.js",
       "default": "./dist/redis/connection.js"
+    },
+    "./timeline-moments/presentation-contract": {
+      "types": "./src/timeline-moments/presentation-contract.ts",
+      "development": "./src/timeline-moments/presentation-contract.ts",
+      "import": "./dist/timeline-moments/presentation-contract.js",
+      "default": "./dist/timeline-moments/presentation-contract.js"
     }
   },
   "main": "./dist/index.js",

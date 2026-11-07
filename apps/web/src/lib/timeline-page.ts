@@ -6,7 +6,7 @@ import {
   timelineMomentPresentationEligibility,
   type TimelineMomentPresentationCacheKey,
   type TimelineMomentPresentationCacheRecord,
-} from '@timeline/shared/timeline-moments/presentation';
+} from '@timeline/shared/timeline-moments/presentation-contract';
 
 import type {
   ImpactItem,

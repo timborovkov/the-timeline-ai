@@ -47,7 +47,7 @@ import {
   applyTimelineMomentPresentationCache,
   buildTimelineMomentPresentationCacheFingerprint,
   buildTimelineMomentPresentationCacheKey,
-} from '#src/timeline-moments/presentation.js';
+} from '#src/timeline-moments/presentation-contract.js';
 
 import type * as boards from '#src/boards/index.js';
 

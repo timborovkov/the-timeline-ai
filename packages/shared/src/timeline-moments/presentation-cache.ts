@@ -8,7 +8,7 @@ import {
   type TimelineMomentPresentationCacheKey,
   type TimelineMomentPresentationCacheRecord,
   type TimelineMomentPresentationSuggestion,
-} from '#src/timeline-moments/presentation.js';
+} from '#src/timeline-moments/presentation-contract.js';
 
 export interface UpsertTimelineMomentPresentationInput {
   cacheKey: TimelineMomentPresentationCacheKey;
