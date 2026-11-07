@@ -12,7 +12,7 @@ describe('core public documents', () => {
       title: "Your team's work, written down for you",
       description:
         'The Timeline keeps client, deal, task and decision records up to date from Slack, Telegram, email and calls. Every line has its source, and you approve each change.',
-      dates: { modified: '2026-11-03', reviewed: '2026-11-03' },
+      dates: { modified: '2026-11-07', reviewed: '2026-11-07' },
     });
 
     const graph = buildPublicStructuredData(home, 'https://thetimeline.cc');

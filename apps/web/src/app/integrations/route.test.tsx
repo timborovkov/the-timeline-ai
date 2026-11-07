@@ -126,6 +126,16 @@ describe('public integration routes', () => {
     }
   });
 
+  it('shows the Slack chronology capture without claiming a silent account sync', async () => {
+    const html = renderToStaticMarkup(
+      await connectorRoute.default({ params: Promise.resolve({ slug: 'slack' }) }),
+    );
+
+    expect(html).toContain('data-screenshot-file="12-timeline-slack-dark.png"');
+    expect(html).toContain('data-screenshot-present="true"');
+    expect(html).not.toContain('Screenshot placeholder');
+  });
+
   it.each(['slack', 'sentry'])('renders a light dark-mode logo tile for %s', async (slug) => {
     const html = renderToStaticMarkup(
       await connectorRoute.default({ params: Promise.resolve({ slug }) }),
