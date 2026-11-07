@@ -15,7 +15,7 @@ export class ApiResponseError extends Error {
     readonly acceptanceUrl: string | null,
     fallback: string,
   ) {
-    super(`${code ?? fallback}${reference ? ` Reference: ${reference}.` : ''}`);
+    super(`${fallback}${reference ? ` Reference: ${reference}.` : ''}`);
     this.name = 'ApiResponseError';
   }
 }

@@ -14,7 +14,7 @@ describe('readJson', () => {
       { status: 428 },
     );
 
-    await expect(readJson(response, { navigate })).rejects.toThrow('legal_acceptance_required');
+    await expect(readJson(response, { navigate })).rejects.toMatchObject({ code: 'legal_acceptance_required', message: 'Request failed (428)' });
     expect(navigate).toHaveBeenCalledWith('/legal/accept?returnTo=%2Fapp');
   });
 
@@ -30,7 +30,7 @@ describe('readJson', () => {
       { status: 428 },
     );
 
-    await expect(readJson(response, { navigate })).rejects.toThrow('legal_acceptance_required');
+    await expect(readJson(response, { navigate })).rejects.toMatchObject({ code: 'legal_acceptance_required', message: 'Request failed (428)' });
     expect(navigate).not.toHaveBeenCalled();
   });
 
@@ -38,7 +38,7 @@ describe('readJson', () => {
     const navigate = vi.fn();
     const response = Response.json({ error: 'request_failed' }, { status: 500 });
 
-    await expect(readJson(response, { navigate })).rejects.toThrow('request_failed');
+    await expect(readJson(response, { navigate })).rejects.toMatchObject({ code: 'request_failed', message: 'Request failed (500)' });
     expect(navigate).not.toHaveBeenCalled();
   });
 });
@@ -51,7 +51,7 @@ describe('API response boundary', () => {
       status: 500,
       code: 'request_failed',
       reference: 'abc123',
-      message: 'request_failed Reference: abc123.',
+      message: 'Request failed (500) Reference: abc123.',
     });
   });
 
@@ -59,6 +59,15 @@ describe('API response boundary', () => {
     await expect(
       readJson(new Response('internal provider token=secret', { status: 502 })),
     ).rejects.toThrow('Request failed (502)');
+  });
+
+  it('keeps JSON provider details out of display messages', async () => {
+    await expect(
+      readJson(Response.json({ error: 'internal provider token=secret' }, { status: 502 })),
+    ).rejects.toMatchObject({
+      code: 'internal provider token=secret',
+      message: 'Request failed (502)',
+    });
   });
 
   it('accepts an empty success only when the caller declares its empty value', async () => {
