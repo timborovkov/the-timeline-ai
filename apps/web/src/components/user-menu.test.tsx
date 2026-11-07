@@ -33,6 +33,19 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
+it('hides account-bound provisioning during impersonation', async () => {
+  const user = userEvent.setup();
+  const { rerender } = render(
+    <UserMenu user={{ email: 'owner@example.test', emailVerified: '2026-01-01' }} />,
+  );
+  await user.click(screen.getByRole('button', { name: 'Account' }));
+  expect(screen.getByRole('menuitem', { name: 'Agent provisioning' })).toBeTruthy();
+  rerender(
+    <UserMenu user={{ email: 'owner@example.test', emailVerified: '2026-01-01' }} impersonating />,
+  );
+  expect(screen.queryByRole('menuitem', { name: 'Agent provisioning' })).toBeNull();
+});
+
 for (const result of [{ ok: true }, { error: 'Email provider unavailable' }]) {
   it(`submits verification and retains ${'ok' in result ? 'success' : 'error'} feedback after closing the menu`, async () => {
     let resolve!: (value: typeof result) => void;

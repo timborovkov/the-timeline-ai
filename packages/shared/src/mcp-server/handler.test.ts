@@ -999,6 +999,33 @@ describe('handleMcpRequest', () => {
     );
   });
 
+  it('reads authenticated connection preferences through timeline.get without a record ref', async () => {
+    const key = await withTeam(db as never, TEAM_ID, USER_ID).mcpOutbound.createKey({
+      name: 'Coworker',
+      allowCapture: false,
+    });
+    const result = await invokeHttp(
+      db,
+      { ...principal('api_key'), keyId: key.id },
+      {
+        jsonrpc: '2.0',
+        id: 9,
+        method: 'tools/call',
+        params: { name: 'timeline.get', arguments: { kind: 'connection' } },
+      },
+    );
+    expect(result.payload).toMatchObject({
+      result: {
+        structuredContent: {
+          team: { id: TEAM_ID },
+          connection: { id: key.id },
+          scopes: ['read'],
+          reporting: { mode: 'on_request' },
+        },
+      },
+    });
+  });
+
   it('keeps OAuth user visibility distinct from static team-key visibility', async () => {
     const privateEventId = '99999999-9999-4999-8999-999999999991';
     await db.insert(rawEvents).values({

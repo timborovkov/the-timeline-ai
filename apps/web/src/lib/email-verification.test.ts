@@ -220,11 +220,52 @@ describe('markEmailVerifiedFromTrustedOAuth', () => {
   });
 });
 
-it('puts only allowlisted plan intent in verification emails', async () => {
-  const db = {
+function dbForVerificationEmail() {
+  return {
     delete: () => ({ where: () => Promise.resolve([]) }),
     insert: () => ({ values: () => Promise.resolve([]) }),
-  } as never;
+    select: () => ({
+      from: () => ({
+        where: () => ({
+          orderBy: () => ({
+            limit: () => Promise.resolve([]),
+          }),
+        }),
+      }),
+    }),
+    transaction: (
+      callback: (tx: {
+        select: () => {
+          from: () => {
+            where: () => {
+              orderBy: () => { limit: () => Promise<unknown[]> };
+            };
+          };
+        };
+        delete: () => { where: () => Promise<unknown> };
+        insert: () => { values: () => Promise<unknown> };
+      }) => unknown,
+    ) =>
+      Promise.resolve(
+        callback({
+          select: () => ({
+            from: () => ({
+              where: () => ({
+                orderBy: () => ({
+                  limit: () => Promise.resolve([]),
+                }),
+              }),
+            }),
+          }),
+          delete: () => ({ where: () => Promise.resolve([]) }),
+          insert: () => ({ values: () => Promise.resolve([]) }),
+        }),
+      ),
+  };
+}
+
+it('puts only allowlisted plan intent in verification emails', async () => {
+  const db = dbForVerificationEmail() as never;
   await sendEmailVerification({
     db,
     userId: 'user-1',
@@ -234,6 +275,7 @@ it('puts only allowlisted plan intent in verification emails', async () => {
   const payload = emailFakes.send.mock.calls.at(-1)?.[1] as { verificationUrl: string };
   expect(new URL(payload.verificationUrl).searchParams.get('plan')).toBe('payg');
   expect(new URL(payload.verificationUrl).searchParams.get('email')).toBe('user@example.test');
+  expect(new URL(payload.verificationUrl).searchParams.has('continuation')).toBe(false);
   await sendEmailVerification({
     db,
     userId: 'user-1',
@@ -243,4 +285,18 @@ it('puts only allowlisted plan intent in verification emails', async () => {
   const rejected = emailFakes.send.mock.calls.at(-1)?.[1] as { verificationUrl: string };
   expect(new URL(rejected.verificationUrl).searchParams.has('plan')).toBe(false);
   expect(rejected.verificationUrl).not.toContain('evil.test');
+});
+
+it('attaches an opaque continuation for a same-origin authorization request', async () => {
+  await sendEmailVerification({
+    db: dbForVerificationEmail() as never,
+    userId: 'user-1',
+    email: 'user@example.test',
+    callbackUrl:
+      '/oauth/authorize?client_id=test&state=state&redirect_uri=https%3A%2F%2Fclient.example%2Fcallback',
+  });
+  const payload = emailFakes.send.mock.calls.at(-1)?.[1] as { verificationUrl: string };
+  const continuation = new URL(payload.verificationUrl).searchParams.get('continuation');
+  expect(continuation).toMatch(/^[A-Za-z0-9_-]{43}$/);
+  expect(payload.verificationUrl).not.toContain('/oauth/authorize');
 });

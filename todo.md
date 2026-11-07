@@ -917,3 +917,18 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       messages. Verify with periodic row-count vs. Qdrant payload audits.
 
 - [x] Team setup includes optional-on-Free billing setup, inferred from active billing arrangements; restricted Free banners explain email verification or a grant elsewhere with resolution actions.
+
+### LLM entry point refresh (2026-11-06)
+
+- [x] Rewrite `llms.txt` as a public product reference and intent router for
+  research, existing-account setup, new-account setup, and connected agents.
+  Keep client installation in `agents/setup.md` and tool operating rules in
+  `agents/SKILL.md`; retain registry-backed documentation links and move examples
+  and comparisons into Optional. Distinguish evidence capture from approved
+  record changes and native ingestion from live MCP access.
+
+### Agent coworkers implementation
+
+- Implemented account-bound OAuth continuation, owner-only provisioning grants and retry receipts, connection reporting preferences, and canonical coworker skill distribution. Continuations consume on successful verification, account-menu resends retain the latest live authorize destination, and soft-removed owners cannot provision. See [release notes and validation boundaries](docs/agent-coworkers.md). Production deployment and unavailable-client live acceptance remain separate.
+
+- Implemented coworker agreement controls within OAuth consent, atomic connection preference saving, preserved reauthorization, and task-focused first use in the 0.5.0 canonical skill.

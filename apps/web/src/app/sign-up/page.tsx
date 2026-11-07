@@ -6,7 +6,7 @@ import { SignUpForm } from '@/components/auth-form';
 import { AuthShell } from '@/components/auth-shell';
 import { OAuthSignInButtons } from '@/components/oauth-buttons';
 import { auth, hasGitHubAuth, hasGoogleAuth } from '@/lib/auth';
-import { signedInAuthRedirect, selectedPlanCallback } from '@/lib/auth-redirect';
+import { signedInAuthRedirect, signupCallback } from '@/lib/auth-redirect';
 import { isLegalPublicationReady } from '@/lib/legal-publication';
 import { readPendingInvite } from '@/lib/pending-invite';
 
@@ -19,12 +19,15 @@ export const metadata: Metadata = {
 export const dynamic = 'force-dynamic';
 
 interface Props {
-  searchParams: Promise<{ invite?: string; plan?: string }>;
+  searchParams: Promise<{ invite?: string; plan?: string; callbackUrl?: string }>;
 }
 
 export default async function SignUpPage({ searchParams }: Props) {
-  const [{ invite, plan }, session] = await Promise.all([searchParams, auth()]);
-  const callbackUrl = selectedPlanCallback(plan);
+  const [{ invite, plan, callbackUrl: requestedCallback }, session] = await Promise.all([
+    searchParams,
+    auth(),
+  ]);
+  const callbackUrl = signupCallback(requestedCallback, plan);
   if (session?.user) {
     const pendingInviteToken = await readPendingInvite();
     // react-doctor-disable-next-line react-doctor/clickjacking-redirect-risk -- signedInAuthRedirect validates same-origin paths and selectedPlanCallback only returns fixed billing destinations; malicious input is covered by auth-redirect tests.

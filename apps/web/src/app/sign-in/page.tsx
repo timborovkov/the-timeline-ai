@@ -35,7 +35,11 @@ export default async function SignInPage({ searchParams }: Props) {
       title="Welcome back"
       subtitle="Sign in to your team’s timeline."
       secondaryPrefix="No account yet?"
-      secondaryHref="/sign-up"
+      secondaryHref={
+        callbackUrl
+          ? `/sign-up?callbackUrl=${encodeURIComponent(signedInAuthRedirect({ callbackUrl }))}`
+          : '/sign-up'
+      }
       secondaryLabel="Create one"
     >
       {oauthError ? (

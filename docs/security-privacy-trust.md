@@ -952,3 +952,9 @@ Interrupted web Ask settlement waits for the SDK abort callback so completed-ste
 usage is included. Unreported partial-step usage is marked incomplete in billing
 metadata and is not estimated from the reservation. Recovering costs the provider
 never reports remains unverified; no exact-cost guarantee is added.
+
+## Agent coworker authority and retention
+
+See [agent coworkers](agent-coworkers.md) for the implemented authority boundaries. Dedicated hashed provisioning credentials cannot authenticate MCP or ingest. Only verified existing owners with current legal acceptance and an active owner membership can provision new workspaces; soft-removed owner rows do not qualify. No existing-team access, paid-plan activation or agent:ask is granted. Transactional encrypted response receipts expire after fifteen minutes; retained hashes prevent duplicate provisioning. Janitor clears expired ciphertext and auth continuations. Reporting preferences authorize behavior within existing capture scopes and do not confer canonical-record approval or unrelated external authority. No credentials or note bodies belong in monitoring events.
+
+Consent reporting edits are restricted to current owners/admins and committed atomically with the OAuth grant, authorization code and reporting audit. Member consent exposes only that member/client’s preference. Raw project scope is excluded from redirect parameters and issuance exception telemetry. Inherited or retained ongoing settings never expand capture permission.

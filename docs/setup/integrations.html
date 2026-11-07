@@ -7,6 +7,12 @@
     <link rel="stylesheet" href="../styles.css" />
   </head>
   <body>
+    <p>
+      Agent coworker setup, reporting preferences and owner-delegated provisioning:
+      <a href="../agent-coworkers.md">implementation and rollout guide</a>;
+      <a href="https://thetimeline.cc/agents/setup.md">resumable setup</a>;
+      <a href="https://thetimeline.cc/agents/provisioning.md">provisioning API</a>.
+    </p>
     <a class="skip" href="#main">Skip to content</a>
     <main id="main">
       <h1>Native integrations &amp; custom MCPs</h1>
@@ -883,6 +889,14 @@ SENTRY_INTEGRATION_CLIENT_SECRET=...</code></pre>
           Unchecking it issues a read-only grant. <code>agent:ask</code> is optional, requires
           <code>read</code>, and can be granted only by a current owner or admin; demotion
           invalidates that elevated scope.
+        </li>
+        <li>
+          Review the reporting agreement beneath the team and capture choices. New connections
+          inherit the workspace default. Owners/admins can choose an on-request override or ongoing
+          reporting with a work scope; members can inspect their own effective agreement. Explicit
+          ongoing reporting requires capture, but inherited or retained agreements can remain
+          inactive on read-only connections. Reauthorization preserves unchanged preferences.
+          Reporting follows the skill while the agent works; it does not schedule background jobs.
         </li>
         <li>
           Revoke an approved AI app from <strong>Connect your agent</strong>
