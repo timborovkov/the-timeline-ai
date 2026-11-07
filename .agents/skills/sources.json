@@ -1,0 +1,141 @@
+[
+  {
+    "skill": "ship",
+    "source": "timborovkov/tims-agent-skills",
+    "sourcePath": "timb-ship",
+    "snapshotSha256": "bebfcc4b496436b0a7a871bf82874221ac2c4f9001f527c884ad9e6ae7edbb63",
+    "sourceRevision": "941722532d11ba83b617f8662f6b4162c0d0caf8"
+  },
+  {
+    "skill": "diff-review",
+    "source": "timborovkov/tims-agent-skills",
+    "sourcePath": "timb-diff-review",
+    "snapshotSha256": "4433bca5b9f226dba3d003b90e10d386ad2d93cd523e0ed3769c09692dc633bb",
+    "sourceRevision": "941722532d11ba83b617f8662f6b4162c0d0caf8"
+  },
+  {
+    "skill": "test-strategy",
+    "source": "timborovkov/tims-agent-skills",
+    "sourcePath": "timb-test-strategy",
+    "snapshotSha256": "c3d9d5caf242c3c013c5105676c7f4168a6f46d7a582d187b870cef732229581",
+    "sourceRevision": "941722532d11ba83b617f8662f6b4162c0d0caf8"
+  },
+  {
+    "skill": "document-release",
+    "source": "timborovkov/tims-agent-skills",
+    "sourcePath": "timb-document-release",
+    "snapshotSha256": "e3fb41fd643ebf5a73ce02d8b5e1fb9246fa05c77659e3cd2fe607319ba398b7",
+    "sourceRevision": "941722532d11ba83b617f8662f6b4162c0d0caf8"
+  },
+  {
+    "skill": "upstream-sync",
+    "source": "timborovkov/tims-agent-skills",
+    "sourcePath": "timb-upstream-sync",
+    "snapshotSha256": "d69db1351cd14239df097c16130b4cb41294f853e2f3333e834bbb2c4b5f358f",
+    "sourceRevision": "941722532d11ba83b617f8662f6b4162c0d0caf8"
+  },
+  {
+    "skill": "untangle-codebase",
+    "source": "timborovkov/tims-agent-skills",
+    "sourcePath": "timb-untangle-codebase",
+    "snapshotSha256": "4e01895cf99023f035a0427b87536ef647f1629b55a55e415aff9b2dd78ed7ae",
+    "sourceRevision": "941722532d11ba83b617f8662f6b4162c0d0caf8"
+  },
+  {
+    "skill": "handoff",
+    "source": "timborovkov/tims-agent-skills",
+    "sourcePath": "timb-handoff-and-follow-up",
+    "snapshotSha256": "c8cc5e40668eb48ca10f47e612776d7b564a092d798937f1ece334f1b22cf0cd",
+    "sourceRevision": "941722532d11ba83b617f8662f6b4162c0d0caf8"
+  },
+  {
+    "skill": "deslop",
+    "source": "millionco/react-doctor",
+    "sourcePath": ".agents/skills/deslop/SKILL.md",
+    "snapshotSha256": "8e6c2c98f99e7a692f9cc7edd72f09a71e6d52d829778ebb0f31059a038f1f1a"
+  },
+  {
+    "skill": "react-doctor",
+    "source": "millionco/react-doctor",
+    "sourcePath": "skills/react-doctor/SKILL.md",
+    "snapshotSha256": "ded3d7d7b77626e5308e028733fddab0b586ea513e2e73eafc94ba56afb4160b"
+  },
+  {
+    "skill": "diagnosing-bugs",
+    "source": "mattpocock/skills",
+    "sourcePath": "skills/engineering/diagnosing-bugs/SKILL.md",
+    "snapshotSha256": "849198df88cdb65fd0d97236604c1fca7ff2f22d2f705f9724a800d0266b118d"
+  },
+  {
+    "skill": "vercel-react-best-practices",
+    "source": "vercel-labs/agent-skills",
+    "sourcePath": "skills/react-best-practices/SKILL.md",
+    "snapshotSha256": "71ed7794962fa6e803ee83030517b5b93a9f70fbfeb431ec4535c5480a8d8355"
+  },
+  {
+    "skill": "vercel-composition-patterns",
+    "source": "vercel-labs/agent-skills",
+    "sourcePath": "skills/composition-patterns/SKILL.md",
+    "snapshotSha256": "e38e0eaa609316b10423a9a138ed95e35099accd3f735585295c8a8f165c28a3"
+  },
+  {
+    "skill": "find-docs",
+    "source": "upstash/context7",
+    "sourcePath": "skills/find-docs/SKILL.md",
+    "snapshotSha256": "8451dc6c6a6af10de717ad61d86b233bb9fe1ce42bf65e16220f30ce3682c8fc"
+  },
+  {
+    "skill": "interface-review",
+    "source": "jakubkrehel/skills",
+    "sourcePath": "skills/interface-review/SKILL.md",
+    "snapshotSha256": "8977988d63d7c17b8b0cd334ebd722d4e2dff00af0f152de2bc6f100d13d59ce"
+  },
+  {
+    "skill": "better-interface",
+    "source": "jakubkrehel/skills",
+    "sourcePath": "skills/better-interface/SKILL.md",
+    "snapshotSha256": "23416fef4d08e0417927b6eb6763b7b08ed832451abfb9e26ea699262a28abcb"
+  },
+  {
+    "skill": "better-accessibility",
+    "source": "jakubkrehel/skills",
+    "sourcePath": "skills/better-accessibility/SKILL.md",
+    "snapshotSha256": "df0cafe0e75a08548cf46a2a430f46c198e7e0ee9d46bdf7884c2afefb44b70e"
+  },
+  {
+    "skill": "better-layout",
+    "source": "jakubkrehel/skills",
+    "sourcePath": "skills/better-layout/SKILL.md",
+    "snapshotSha256": "8c5883ccb23c27c39b7c58d101154ff35e032410e0dc4794be9ab7fe070c2297"
+  },
+  {
+    "skill": "better-writing",
+    "source": "jakubkrehel/skills",
+    "sourcePath": "skills/better-writing/SKILL.md",
+    "snapshotSha256": "ef6843cbfcbafa62614b1a6e012c0b1ab6fd33eee0bdd84123cf49fe275c3a31"
+  },
+  {
+    "skill": "better-typography",
+    "source": "jakubkrehel/skills",
+    "sourcePath": "skills/better-typography/SKILL.md",
+    "snapshotSha256": "e60ca6467ba60e68f95ed2d2cfa35f2a850d96ef2a0c0d3fcfcfd9510e51f184"
+  },
+  {
+    "skill": "better-colors",
+    "source": "jakubkrehel/skills",
+    "sourcePath": "skills/better-colors/SKILL.md",
+    "snapshotSha256": "e74f1c413a4094dc2a73fb0baa0da2241465e01d593b0257ba995500df9b0068"
+  },
+  {
+    "skill": "better-ui",
+    "source": "jakubkrehel/skills",
+    "sourcePath": "skills/better-ui/SKILL.md",
+    "snapshotSha256": "fb9807bb5c59a3ca9d4a27b25f56b36e5596251d280fb30c4b7f2ff8b6f4fe2d"
+  },
+  {
+    "skill": "use-railway",
+    "source": "railwayapp/railway-skills",
+    "sourcePath": "skills/use-railway/SKILL.md",
+    "snapshotSha256": "de7f6dc86d247a148fe2aa71a363867ca1bde458b071189573d750589c00f079"
+  }
+]
