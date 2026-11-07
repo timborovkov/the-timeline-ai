@@ -44,12 +44,16 @@ export function createMcpAuthorizationCode(
     userId: string;
     teamId: string;
     grantedScopes?: ValidatedAuthorizationRequest['scopes'];
+    reportingChange?: unknown;
   },
 ): Promise<string> {
   const request = input.grantedScopes
     ? applyMcpOAuthConsentScopes(input.request, input.grantedScopes)
     : input.request;
-  return withTeam(db, input.teamId, input.userId).mcpOAuth.createAuthorizationCode(request);
+  return withTeam(db, input.teamId, input.userId).mcpOAuth.createAuthorizationCode(
+    request,
+    input.reportingChange,
+  );
 }
 
 /** Compatibility adapter for signed-in grant revocation callers. */

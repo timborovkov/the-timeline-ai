@@ -31,6 +31,7 @@ import {
   type ValidatedAuthorizationRequest,
   type OAuthTokenResponse,
 } from '#src/mcp-server/oauth-core.js';
+import { prepareConsentReporting, recordReportingChange } from '#src/mcp-server/reporting.js';
 
 type TeamGrantActor = 'self' | 'admin';
 
@@ -74,8 +75,11 @@ export interface McpOAuthPruneResult {
  * after the pre-principal adapter has resolved them to this exact team/user.
  */
 export function createMcpOAuthScope({ db, teamId, userId }: McpOAuthScopeDeps) {
-  async function activeMembership(queryDb: Db = db): Promise<ActiveMcpOAuthMembership | null> {
-    const rows = await queryDb
+  async function activeMembership(
+    queryDb: Db = db,
+    lock = false,
+  ): Promise<ActiveMcpOAuthMembership | null> {
+    const query = queryDb
       .select({
         role: teamMembers.role,
         authorizationEpoch: teamMembers.authorizationEpoch,
@@ -89,6 +93,7 @@ export function createMcpOAuthScope({ db, teamId, userId }: McpOAuthScopeDeps) {
         ),
       )
       .limit(1);
+    const rows = lock ? await query.for('share') : await query;
     return rows[0] ?? null;
   }
 
@@ -191,11 +196,14 @@ export function createMcpOAuthScope({ db, teamId, userId }: McpOAuthScopeDeps) {
     };
   }
 
-  async function createAuthorizationCode(request: ValidatedAuthorizationRequest): Promise<string> {
+  async function createAuthorizationCode(
+    request: ValidatedAuthorizationRequest,
+    reportingChange?: unknown,
+  ): Promise<string> {
     const code = mintSecret(AUTHORIZATION_CODE_PREFIX);
     await db.transaction(async (rawTx) => {
       const tx = rawTx as unknown as Db;
-      const membership = await activeMembership(tx);
+      const membership = await activeMembership(tx, true);
       if (!membership || !membershipAuthorizesScopes(membership, request.scopes)) {
         throw new McpOAuthError(
           'access_denied',
@@ -218,6 +226,12 @@ export function createMcpOAuthScope({ db, teamId, userId }: McpOAuthScopeDeps) {
         .limit(1)
         .for('update');
       const existing = existingRows[0];
+      const reporting = prepareConsentReporting(
+        reportingChange,
+        existing?.agentReporting ?? null,
+        membership.role,
+        request.scopes,
+      );
       let grantId: string;
       if (existing) {
         const resetsCredentialFamily =
@@ -264,6 +278,25 @@ export function createMcpOAuthScope({ db, teamId, userId }: McpOAuthScopeDeps) {
         const id = inserted[0]?.id;
         if (!id) throw new Error('mcp_oauth_grant_insert_failed');
         grantId = id;
+      }
+      if (reporting.changed) {
+        await tx
+          .update(mcpOutboundOAuthGrants)
+          .set({ agentReporting: reporting.preference })
+          .where(
+            and(
+              eq(mcpOutboundOAuthGrants.id, grantId),
+              eq(mcpOutboundOAuthGrants.teamId, teamId),
+              eq(mcpOutboundOAuthGrants.userId, userId),
+            ),
+          );
+        await recordReportingChange(
+          tx,
+          teamId,
+          userId,
+          { type: 'oauth', id: grantId },
+          reporting.preference,
+        );
       }
       await tx
         .update(mcpOutboundOAuthCodes)

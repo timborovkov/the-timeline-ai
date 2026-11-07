@@ -6,6 +6,7 @@ import { AGENTS_PUBLIC_DOCUMENTS } from '@/components/marketing/agents/public-do
 import { COMPARE_PUBLIC_DOCUMENTS } from '@/components/marketing/compare/public-documents';
 import { EDITORIAL_PUBLIC_DOCUMENTS } from '@/components/marketing/editorial/public-documents';
 import { CONNECTOR_PUBLIC_DOCUMENTS } from '@/components/marketing/integrations/connector-public-documents';
+import { MCP_GUIDE_PUBLIC_DOCUMENTS } from '@/components/marketing/integrations/mcp-guide-public-documents';
 import { WORKS_WITH_PUBLIC_DOCUMENTS } from '@/components/marketing/integrations/works-with-public-documents';
 import { PRICING_FAQS } from '@/components/marketing/pricing-faq-content';
 import { SOLUTION_PUBLIC_DOCUMENTS } from '@/components/marketing/solutions/public-documents';
@@ -170,7 +171,7 @@ const coreDocuments = definePublicDocuments('public-core', [
     description:
       'The Timeline keeps client, deal, task and decision records up to date from Slack, Telegram, email and calls. Every line has its source, and you approve each change.',
     indexability: 'index',
-    dates: { modified: '2026-11-03', reviewed: '2026-11-03' },
+    dates: { modified: '2026-11-07', reviewed: '2026-11-07' },
     capability: { kind: 'current-product' },
     sitemap: { changeFrequency: 'weekly', priority: 1 },
     structuredData: [
@@ -386,13 +387,26 @@ const publicUtilityDocuments = definePublicDocuments('public-utility', [
     },
   },
   {
+    canonicalPath: '/agents/provisioning.md',
+    kind: 'machine',
+    title: 'Agent provisioning API',
+    description:
+      'Owner-authorized unattended creation of new workspaces, credentials, retries, and restrictions.',
+    indexability: 'index',
+    dates: { modified: '2026-11-06', reviewed: '2026-11-06' },
+    capability: { kind: 'current-product' },
+    sitemap: false,
+    structuredData: [],
+    llms: false,
+  },
+  {
     canonicalPath: '/agents/setup.md',
     kind: 'machine',
     title: 'Agent setup',
     description:
       'Agent-readable Markdown that branches MCP and skill setup by ChatGPT, Claude, Claude Code, Codex, Cursor, Grok Bot, Hermes, and OpenClaw.',
     indexability: 'index',
-    dates: { modified: '2026-11-03', reviewed: '2026-11-03' },
+    dates: { modified: '2026-11-07', reviewed: '2026-11-07' },
     capability: { kind: 'current-product' },
     sitemap: false,
     structuredData: [],
@@ -405,7 +419,7 @@ const publicUtilityDocuments = definePublicDocuments('public-utility', [
     description:
       'The published Timeline SKILL.md, byte-identical to the repository plugin skill file.',
     indexability: 'index',
-    dates: { modified: '2026-11-03', reviewed: '2026-11-03' },
+    dates: { modified: '2026-11-07', reviewed: '2026-11-07' },
     capability: { kind: 'current-product' },
     sitemap: false,
     structuredData: [],
@@ -417,7 +431,7 @@ const publicUtilityDocuments = definePublicDocuments('public-utility', [
     title: 'llms-full.txt',
     description: 'Expanded Markdown summary of the public product and help content.',
     indexability: 'index',
-    dates: { modified: '2026-11-03', reviewed: '2026-11-03' },
+    dates: { modified: '2026-11-07', reviewed: '2026-11-07' },
     capability: { kind: 'not-applicable' },
     sitemap: false,
     structuredData: [],
@@ -453,6 +467,7 @@ export const PUBLIC_DOCUMENT_REGISTRY = createPublicDocumentRegistry(
   helpDocuments,
   publicUtilityDocuments,
   CONNECTOR_PUBLIC_DOCUMENTS,
+  MCP_GUIDE_PUBLIC_DOCUMENTS,
   WORKS_WITH_PUBLIC_DOCUMENTS,
   EDITORIAL_PUBLIC_DOCUMENTS,
   SOLUTION_PUBLIC_DOCUMENTS,

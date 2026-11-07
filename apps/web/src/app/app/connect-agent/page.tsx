@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation';
 
 import type { Metadata } from 'next';
 
+import { AgentReportingSettings } from '@/components/agent-reporting-settings';
 import { Breadcrumb } from '@/components/breadcrumb';
 import { ConnectAgentScreen } from '@/components/connect-agent/connect-agent-screen';
 import { PageHeader } from '@/components/page-header';
@@ -48,6 +49,8 @@ export default async function ConnectAgentPage({
     ? await Promise.all([scope.mcpOutbound.listKeys(), scope.ingestWebhooks.listWebhooks()])
     : [[], []];
 
+  const reporting = isAdmin ? await scope.agentReporting.list() : null;
+
   const teamEmail = displayInboundEmail(team);
   const extraSenders = Array.isArray(team?.inboundSenderWhitelist)
     ? team.inboundSenderWhitelist.filter((sender): sender is string => typeof sender === 'string')
@@ -71,6 +74,7 @@ export default async function ConnectAgentPage({
         title="Connect your agent"
         subtitle="Pick a client, then sign in with OAuth. Answers appear once work is captured; remember works now."
       />
+      {reporting ? <AgentReportingSettings teamId={active.teamId} {...reporting} /> : null}
       <ConnectAgentScreen
         teamId={active.teamId}
         mcpUrl={mcpUrl || mcpServerUrl(getSiteUrl())}

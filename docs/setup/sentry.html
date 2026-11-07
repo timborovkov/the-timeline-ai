@@ -10,7 +10,7 @@
     <a class="skip" href="#main">Skip to content</a>
     <main id="main">
       <h1>Sentry setup</h1>
-      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-10-24</span></div>
+      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-11-04</span></div>
       <blockquote><p>Optional locally. Strongly recommended before production.</p></blockquote>
       <p class="tldr">
         Hook the web and worker services into Sentry for error tracking. Timeline can also connect
@@ -218,7 +218,11 @@ SENTRY_RELEASE=
         A synthetic informational message sent through the Node SDK with Railway's production
         configuration was confirmed in Sentry on 2026-10-24 with the
         <code>component=monitoring_smoke</code> tag. This verifies the SDK destination and
-        ingestion; it does not simulate a production failure or prove email delivery.
+        ingestion; it does not simulate a production failure or prove email delivery. Web and worker
+        still use the Node/Next Sentry SDKs, which default to Bun's Node compatibility version
+        (<code>v26.3.0</code> on Bun 1.4). Server <code>beforeSend</code> stamps
+        <code>contexts.runtime</code> to <code>bun</code> and the pinned Bun version so production
+        issues show the Bun runtime after the Railway Bun start commands are live.
       </p>
       <ul>
         <li>

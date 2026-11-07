@@ -61,6 +61,19 @@ export function WorksWithPage({ tool }: { tool: WorksWithTool }) {
                   <p className="mt-4 max-w-[66ch] text-base leading-relaxed text-fg-muted">
                     {tool.howItPlugsIn}
                   </p>
+                  {tool.status === 'mcp-lookup' ? (
+                    <p className="mt-4 max-w-[66ch] text-base leading-relaxed text-fg-muted">
+                      See{' '}
+                      <Link
+                        href="/integrations/mcp"
+                        className="rounded-sm font-medium text-fg underline decoration-border-strong underline-offset-4 outline-none hover:decoration-fg focus-visible:ring-2 focus-visible:ring-ring"
+                      >
+                        Connect MCP tools
+                      </Link>{' '}
+                      for how third-party MCP servers extend The Timeline Agent, which is separate
+                      from native sync and from external agents that consume Timeline.
+                    </p>
+                  ) : null}
                 </div>
               </div>
             </section>
@@ -113,7 +126,7 @@ export function WorksWithPage({ tool }: { tool: WorksWithTool }) {
                           {item.statusLabel}
                         </p>
                         <h3 className="mt-5 text-xl font-semibold tracking-[-0.025em]">
-                          {item.navLabel}
+                          {item.name}
                         </h3>
                         <p className="mt-3 text-sm leading-7 text-fg-muted">{item.summary}</p>
                       </Link>

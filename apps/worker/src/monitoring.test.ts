@@ -25,6 +25,9 @@ interface WorkerBeforeSendEvent {
     message?: string;
     data?: Record<string, unknown>;
   }[];
+  contexts?: {
+    runtime?: { name?: string; version?: string };
+  };
 }
 
 interface WorkerBreadcrumb {
@@ -156,6 +159,10 @@ describe('worker Sentry monitoring', () => {
     expect(event?.request?.url).toBe('https://app.timeline.test/api/mcp/oauth/callback');
     expect(event?.request?.cookies).toBeUndefined();
     expect(event?.request?.headers).toBeUndefined();
+    expect(event?.contexts?.runtime).toEqual({
+      name: 'bun',
+      version: process.versions.bun,
+    });
 
     const span = initOptions?.beforeSendSpan?.({
       name: 'GET /api/mcp/oauth/callback?code=secret',

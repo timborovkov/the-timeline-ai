@@ -1534,6 +1534,32 @@ describe('handleUpdate telegram edit visibility', () => {
     ]);
   });
 
+  it('omits suspended workspaces from the Telegram team picker', async () => {
+    const messages: string[] = [];
+    await pg.exec(`
+      INSERT INTO team_members (team_id, user_id, role)
+      VALUES ('${OTHER_TEAM_ID}', '${USER_A}', 'member');
+      INSERT INTO team_billing_accounts (team_id, security_state)
+      VALUES ('${OTHER_TEAM_ID}', 'suspended');
+    `);
+
+    await handleUpdate(
+      { db: db as never, tg: recordingTg(messages) },
+      {
+        update_id: 217,
+        message: {
+          message_id: 37,
+          date: 1700000000,
+          chat: { id: 42, type: 'private' },
+          from: { id: TG_USER_ID, username: 'alice' },
+          text: '/team',
+        },
+      },
+    );
+
+    expect(messages).toEqual([`Only one team: Team A (${TEAM_ID}). It's now active.`]);
+  });
+
   it('shows the team name with the uuid in /whereami', async () => {
     const messages: string[] = [];
 

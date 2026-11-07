@@ -1,5 +1,9 @@
-import { teamMembers, teams } from '@timeline/db';
-import { operatorContext, assertActivePrincipal } from '@timeline/shared/platform-admin/runtime';
+import { teamBillingAccounts, teamMembers, teams } from '@timeline/db';
+import {
+  operatorContext,
+  assertActivePrincipal,
+  isInactiveWorkspaceSecurityState,
+} from '@timeline/shared/platform-admin/runtime';
 import { and, asc, eq, isNull } from 'drizzle-orm';
 import { cookies } from 'next/headers';
 
@@ -21,24 +25,37 @@ export interface TeamMembership {
 }
 
 async function listMemberships(userId: string): Promise<TeamMembership[]> {
-  const rows = await db
-    .select({
-      teamId: teams.id,
-      teamName: teams.name,
-      teamSlug: teams.slug,
-      role: teamMembers.role,
-      createdAt: teamMembers.createdAt,
+  const [context, rows] = await Promise.all([
+    operatorContext(),
+    db
+      .select({
+        teamId: teams.id,
+        teamName: teams.name,
+        teamSlug: teams.slug,
+        role: teamMembers.role,
+        createdAt: teamMembers.createdAt,
+        securityState: teamBillingAccounts.securityState,
+      })
+      .from(teamMembers)
+      .innerJoin(teams, eq(teams.id, teamMembers.teamId))
+      .leftJoin(teamBillingAccounts, eq(teamBillingAccounts.teamId, teams.id))
+      .where(and(eq(teamMembers.userId, userId), isNull(teamMembers.removedAt)))
+      .orderBy(asc(teamMembers.createdAt)),
+  ]);
+  return rows
+    .filter((r) => {
+      // Read-only impersonation may inspect a suspended workspace. Normal
+      // members never see it in the selector or as an active-team candidate.
+      if (context?.readOnly && context.effectiveUserId === userId && context.teamId === r.teamId)
+        return true;
+      return !isInactiveWorkspaceSecurityState(r.securityState);
     })
-    .from(teamMembers)
-    .innerJoin(teams, eq(teams.id, teamMembers.teamId))
-    .where(and(eq(teamMembers.userId, userId), isNull(teamMembers.removedAt)))
-    .orderBy(asc(teamMembers.createdAt));
-  return rows.map((r) => ({
-    teamId: r.teamId,
-    teamName: r.teamName,
-    teamSlug: r.teamSlug,
-    role: r.role,
-  }));
+    .map((r) => ({
+      teamId: r.teamId,
+      teamName: r.teamName,
+      teamSlug: r.teamSlug,
+      role: r.role,
+    }));
 }
 
 /**
@@ -50,8 +67,8 @@ async function listMemberships(userId: string): Promise<TeamMembership[]> {
 export async function resolveActiveTeam(
   userId: string,
 ): Promise<{ active: TeamMembership | null; memberships: TeamMembership[] }> {
-  const context = await operatorContext();
-  const memberships = (await listMemberships(userId)).filter(
+  const [context, listed] = await Promise.all([operatorContext(), listMemberships(userId)]);
+  const memberships = listed.filter(
     (m) => !context || (context.effectiveUserId === userId && m.teamId === context.teamId),
   );
   if (memberships.length === 0) return { active: null, memberships };

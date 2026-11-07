@@ -10,6 +10,7 @@ import { sendMessage } from '@timeline/shared/messaging';
 import { and, eq, lt, sql } from 'drizzle-orm';
 
 import { trackProductEventBestEffort } from '@/lib/analytics';
+import { createAuthContinuation } from '@/lib/auth-continuation';
 import { selectedPlanFromCallback } from '@/lib/auth-redirect';
 import { getSiteUrl } from '@/lib/site-url';
 
@@ -44,9 +45,10 @@ export async function sendEmailVerification(input: {
   });
 
   const plan = selectedPlanFromCallback(input.callbackUrl);
+  const continuation = await createAuthContinuation(input.db, input.userId, input.callbackUrl);
   const verificationUrl = `${getSiteUrl()}/verify-email/${encodeURIComponent(
     rawToken,
-  )}?email=${encodeURIComponent(email)}${plan ? `&plan=${plan}` : ''}`;
+  )}?email=${encodeURIComponent(email)}${plan ? `&plan=${plan}` : ''}${continuation ? `&continuation=${continuation}` : ''}`;
 
   const result = await sendMessage(
     'email_verification',

@@ -8,6 +8,7 @@ import styles from '@/components/marketing/editorial/editorial.module.css';
 import { TELEGRAM_PUBLIC_DOCUMENT } from '@/components/marketing/integrations/connector-public-documents';
 import { TELEGRAM_PAGE } from '@/components/marketing/integrations/telegram-content';
 import { MarketingContainer, MarketingSectionGrid } from '@/components/marketing/marketing-layout';
+import { MarketingProductScreenshot } from '@/components/marketing/product-screenshot';
 import { MarketingSectionIndex } from '@/components/marketing/section-index';
 import { MarketingCtaBand, StartFreeLink } from '@/components/marketing/start-free-cta';
 import { PublicSessionBranch } from '@/components/public-session-branch';
@@ -67,6 +68,13 @@ export function TelegramIntegrationPage() {
                 <p className="mt-4 max-w-[64ch] text-base leading-relaxed text-fg-muted">
                   {TELEGRAM_PAGE.captured}
                 </p>
+                <div className="mt-10">
+                  <MarketingProductScreenshot
+                    file={TELEGRAM_PAGE.screenshot.file}
+                    alt={TELEGRAM_PAGE.screenshot.alt}
+                    caption={TELEGRAM_PAGE.screenshot.caption}
+                  />
+                </div>
               </div>
             </MarketingSectionGrid>
           </MarketingContainer>

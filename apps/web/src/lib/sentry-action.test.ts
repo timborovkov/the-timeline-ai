@@ -86,6 +86,25 @@ describe('runSentryServerAction', () => {
     vi.unstubAllEnvs();
   });
 
+  it('blocks provisioning writes during impersonation', async () => {
+    mocks.headers.mockReturnValue(new Headers({ 'next-action': 'untrusted-action-id' }));
+    mocks.auth.mockResolvedValue({
+      user: {
+        legalTermsVersion: TERMS_VERSION,
+        legalPrivacyVersion: PRIVACY_VERSION,
+        legalAcceptedAt: '2026-08-21T00:00:00.000Z',
+      },
+    });
+    mocks.getRequestIdentity.mockResolvedValue({ impersonation: { readOnly: false } });
+    for (const operation of ['create_agent_provisioning', 'revoke_agent_provisioning']) {
+      const callback = vi.fn();
+      await expect(runSentryServerAction(operation, callback)).rejects.toThrow(
+        'Exit impersonation',
+      );
+      expect(callback).not.toHaveBeenCalled();
+    }
+  });
+
   it('allows only explicitly classified document reads during suspended inspection', async () => {
     mocks.headers.mockReturnValue(new Headers({ 'next-action': 'untrusted-action-id' }));
     mocks.auth.mockResolvedValue(null);

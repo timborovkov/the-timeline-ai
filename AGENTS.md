@@ -13,7 +13,21 @@ instructions about checks take precedence as well.
 Conventions for any AI coding agent working in this repo (Claude Code, Codex,
 Cursor, etc.).
 
-## Non-negotiable completion gates
+## Branch and release CI
+
+- `main` is the development branch. PRs require `Static checks`: validation,
+  React Doctor, runtime smoke tests, E2E environment contracts, and dist imports.
+- `production` is the release branch. PRs require both `Static checks` and
+  `Full test suite` (offline unit/integration tests and reconciliation evals),
+  with an up-to-date branch and resolved review threads. Direct pushes,
+  force pushes, and deletion are blocked; release through a PR from `main`.
+- Full tests also run on production pushes and manual CI dispatches. Superseded
+  PR runs are cancelled. Browser E2E remains a separate manual workflow.
+- Railway must follow `production` after the operator switches its source branch.
+  Creating this branch does not change Railway configuration.
+- These CI tiers do not replace the local completion gates below.
+
+## Non-negotiable local completion gates
 
 These gates are repo-wide, not scoped to the files you touched. Do not hand back,
 commit, push, open a PR, mark work complete, or call a task "done" while any gate
@@ -153,7 +167,7 @@ Treat this file as an operating contract for agents, not a loose README.
   `withTeam(db, teamId, userId)` in `packages/shared`. Use the returned
   named modules (`scope.timeline`, `scope.documents`, `scope.meetings`,
   `scope.objects`, `scope.boards`, `scope.pins`, `scope.suggestions`, `scope.calendar`,
-  `scope.integrations`, `scope.telegram`, `scope.mcp`, `scope.mcpOAuth`, `scope.onboarding`, `scope.jobRecovery`,
+  `scope.integrations`, `scope.telegram`, `scope.mcp`, `scope.mcpOAuth`, `scope.agentReporting`, `scope.onboarding`, `scope.jobRecovery`,
   `scope.reconciliation`, `scope.audit`, `scope.conversations`, `scope.billing`,
   `scope.billingOperator`) rather than flat scope methods or
   manually passing `db` into object helpers. Every Qdrant query filters on
@@ -163,6 +177,7 @@ Treat this file as an operating contract for agents, not a loose README.
   stop every vector writer, require the operator-only production acknowledgement,
   complete a source snapshot, and verify all teams plus total point coverage before
   switching collections. Retain the original collection and backup for rollback.
+- **Account provisioning is a separate pre-team boundary.** `packages/shared/src/agent-provisioning` owns verified-owner grants, idempotency receipts, owner-wide quotas and shared UI/API workspace creation. Only new workspaces may be provisioned; existing-team content still requires `withTeam`. Auth continuations are account-bound global identity records.
 - **Platform administration is a separate privilege boundary.** Global account/team directory, support-session, and platform-audit access goes through the verified `platform-admin` service. Impersonated content access still uses `withTeam` and the selected member’s role and visibility. Never replace the real login with the impersonated identity or omit its attribution from jobs.
 - **Captured raw event content is immutable.** Never `UPDATE` a source-ingested
   `raw_events` row's content. Derived facts can be re-extracted; the source is
