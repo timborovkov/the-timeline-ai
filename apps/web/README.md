@@ -35,6 +35,12 @@ bun run --filter @timeline/web typecheck
 
 Local dev requires the Docker Compose stack from the repo root (`docker compose up -d`).
 
+Production disables Next.js's `experimental.preloadEntriesOnStart` so unused
+routes do not load their server bundles into RAM at startup. Routes load on first
+request, trading cold-route latency for lower idle memory. Loaded modules stay
+resident: visiting every route can still approach the fully preloaded footprint.
+This setting does not deduplicate bundles or disable application caches.
+
 ## Where it fits
 
 - Architecture and service layout: [docs/railway.html](../../docs/railway.html).
