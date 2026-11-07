@@ -958,8 +958,12 @@ Its signature example project, Acme rollout, shows five cited work sources
 converging into one work record, with a linked Telegram group as the first source.
 Captured work settles onto a chronological rail, connects to project, person,
 task, and calendar context, and resolves into an answer with tangible source
-links. Suggested durable workspace changes remain approval-backed; the diagram
-never implies that evidence silently rewrites canonical objects. Acme rollout is
+links. The cited-answer evidence cards keep “Inspect example source” as a native
+`<details>` disclosure aligned to the padded titles: a custom chevron beside the
+summary, padded expanded text, and the landing lime `:focus-visible` ring around
+the summary rather than an unstyled full-width browser outline. Suggested
+durable workspace changes remain approval-backed; the diagram never implies that
+evidence silently rewrites canonical objects. Acme rollout is
 the canonical fictional public demo corpus across landing, connector, and guide
 examples; every rendered example states that it is illustrative and not
 customer data. Provider pages may show distinct slices, but people, identifiers,
@@ -1425,6 +1429,7 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-11-06 | OAuth auto-verify, team support ids, Drive picker | Google/GitHub sign-in stamps `emailVerified` when the provider asserts a verified email. Team → General shows readonly copyable team id and slug. Drive sharing drops the dense green callout, overlapping helper copy, and nested picker borders. |
 | 2026-11-07 | Drive Limited Use disclosure | Connecting or reconnecting Google Drive opens a contextual dialog before Google OAuth. The copy names read-only Drive access, selected-source capture, encrypted tokens, snapshots versus retained events, team sharing, billed change-judging, document extract, and no general-model training. Continue to Google is the affirmative action; Cancel or dismiss does not start OAuth. |
 | 2026-11-07 | Agents vs inbound MCP diagrams | `/agents` write-in / read-out stays external-agent contribution and MCP read-out. `/integrations/mcp` shows a separate live-lookup diagram. Screenshot captions label stored fictional examples without install noise. Public slots serve committed PNG bytes unoptimized so recaptures are not hidden by a stale image-optimizer cache. |
+| 2026-11-07 | Landing evidence inspect disclosures | Homepage “Inspect example source” rows share the evidence-card padding, a custom chevron, padded expanded copy, and the lime focus ring. |
 
 
 ### Billing benefits and recorded charges (2026-10-31)
