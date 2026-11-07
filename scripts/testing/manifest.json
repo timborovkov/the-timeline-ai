@@ -2254,5 +2254,11 @@
   },
   "apps/web/src/lib/auth.test.ts": {
     "group": "unit"
+  },
+  "apps/web/src/lib/default-team.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/agent-provisioning/workspace.test.ts": {
+    "group": "unit"
   }
 }

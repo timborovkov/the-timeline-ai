@@ -17,7 +17,10 @@ import { createOwnedWorkspace } from '#src/agent-provisioning/workspace.js';
 import { encryptJson, decryptJson } from '#src/crypto/secrets.js';
 import { TERMS_VERSION, isCurrentPrivacyVersion } from '#src/legal-versions.js';
 import { mintKey } from '#src/mcp-server/keys.js';
-export { createOwnedWorkspace } from '#src/agent-provisioning/workspace.js';
+export {
+  createOwnedWorkspace,
+  initializeOwnedWorkspace,
+} from '#src/agent-provisioning/workspace.js';
 
 const hash = (value: string) => createHash('sha256').update(value).digest('hex');
 const day = 86400000;
