@@ -158,3 +158,16 @@ skill distribution tests passed, as did MCP evaluations and compiled-package imp
 `bun run validate` passed formatting, TypeScript, ESLint and Knip.
 Skill acceptance scenarios remain documented expectations rather than live evaluations in Codex,
 Grok Bot, OpenClaw or Hermes. No production deployment was performed.
+
+## Main refresh for landing — 2026-11-07
+
+`feat/llms-entry-point` was ordinary-merged with `origin/main` at
+`fea9aa5ee9173ff055e0f82e39006a5c11bb2628`. Main's public-site, compare, MCP-guide, and
+dependency updates are included. Coworker migrations remain additive as
+`0097_auth_continuations`, `0098_agent_provisioning`, and `0099_agent_reporting`.
+
+**Later reconciliation required with Drive PR #462.** That PR independently uses
+`0097_google_drive_v1` through `0100_google_drive_snapshot_ancestry`. The numbers collide.
+This branch does not rename Drive files and does not change Drive. If this PR lands first,
+Drive must be renumbered after `0099_agent_reporting`. If Drive lands first, this PR's
+coworker migrations must move past Drive's last tag. Do not apply both journals as-is.
