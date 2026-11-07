@@ -489,10 +489,12 @@ function AnswerScene() {
                     {event.shortSource} / {event.day} {event.time}
                   </small>
                 </a>
-                <details>
+                <details className={styles.ledgerInspect}>
                   <summary>Inspect example source</summary>
-                  <p>{event.detail}</p>
-                  <p>Fictional Acme example, not customer data.</p>
+                  <div className={styles.ledgerInspectBody}>
+                    <p>{event.detail}</p>
+                    <p>Fictional Acme example, not customer data.</p>
+                  </div>
                 </details>
               </li>
             ))}
