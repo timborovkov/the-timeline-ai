@@ -9,6 +9,8 @@ import { signupCallback, signedInAuthRedirect } from '@/lib/auth-redirect';
 const pg = new PGlite();
 const db = drizzle(pg) as unknown as Db;
 const userId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+const path =
+  '/oauth/authorize?client_id=test&state=state&redirect_uri=https%3A%2F%2Fclient.example%2Fcallback';
 beforeAll(async () => {
   await pg.exec(
     'CREATE TABLE users(id uuid primary key,email text); CREATE TABLE auth_continuations(token_hash text primary key,user_id uuid references users(id),destination text,expires_at timestamptz);',
@@ -23,20 +25,28 @@ afterAll(async () => {
   await pg.close();
 });
 it('preserves a safe authorization request through an account-bound opaque continuation', async () => {
-  const path =
-    '/oauth/authorize?client_id=test&state=state&redirect_uri=https%3A%2F%2Fclient.example%2Fcallback';
   const token = await createAuthContinuation(db, userId, path);
   if (!token) throw new Error('Expected continuation');
   expect(token).toMatch(/^[A-Za-z0-9_-]{43}$/);
   expect(await resolveAuthContinuation(db, token, 'owner@example.test')).toBe(path);
-  expect(await resolveAuthContinuation(db, token, 'other@example.test')).toBeNull();
-  const resent = await createAuthContinuation(db, userId);
-  if (!resent) throw new Error('Expected resend continuation');
-  expect(await resolveAuthContinuation(db, resent, 'owner@example.test')).toBe(path);
-  const rows = await pg.query<{ token_hash: string }>('select token_hash from auth_continuations');
-  expect(rows.rows[0]?.token_hash).not.toBe(token);
-  await pg.exec("UPDATE auth_continuations SET expires_at=now()-interval '1 second'");
   expect(await resolveAuthContinuation(db, token, 'owner@example.test')).toBeNull();
+});
+it('keeps the pending authorization when account-menu resend passes the current page', async () => {
+  const token = await createAuthContinuation(db, userId, path);
+  if (!token) throw new Error('Expected continuation');
+  const resent = await createAuthContinuation(db, userId, '/app/timeline?view=all');
+  if (!resent) throw new Error('Expected resend continuation');
+  expect(resent).not.toBe(token);
+  expect(await resolveAuthContinuation(db, token, 'owner@example.test')).toBeNull();
+  expect(await resolveAuthContinuation(db, resent, 'owner@example.test')).toBe(path);
+});
+it('binds continuation resolve to the account case-insensitively and ignores other emails', async () => {
+  await pg.exec(`UPDATE users SET email='Owner@Example.test' WHERE id='${userId}'`);
+  const token = await createAuthContinuation(db, userId, path);
+  if (!token) throw new Error('Expected continuation');
+  expect(await resolveAuthContinuation(db, token, 'other@example.test')).toBeNull();
+  expect(await resolveAuthContinuation(db, token, 'OWNER@example.test')).toBe(path);
+  expect(await resolveAuthContinuation(db, token, 'OWNER@example.test')).toBeNull();
 });
 it('rejects external destinations and auth loops and preserves invitation priority', async () => {
   expect(
@@ -48,4 +58,10 @@ it('rejects external destinations and auth loops and preserves invitation priori
   expect(signedInAuthRedirect({ callbackUrl: '/oauth/authorize', inviteToken: 'invite' })).toBe(
     '/accept-invite/invite',
   );
+});
+it('does not continue a stored non-authorize destination', async () => {
+  const token = await createAuthContinuation(db, userId, path);
+  if (!token) throw new Error('Expected continuation');
+  await pg.exec("UPDATE auth_continuations SET destination='/app/admin'");
+  expect(await resolveAuthContinuation(db, token, 'owner@example.test')).toBeNull();
 });
