@@ -951,8 +951,12 @@ Its signature example project, Acme rollout, shows five cited work sources
 converging into one work record, with a linked Telegram group as the first source.
 Captured work settles onto a chronological rail, connects to project, person,
 task, and calendar context, and resolves into an answer with tangible source
-links. Suggested durable workspace changes remain approval-backed; the diagram
-never implies that evidence silently rewrites canonical objects. Acme rollout is
+links. The cited-answer evidence cards keep “Inspect example source” as a native
+`<details>` disclosure aligned to the padded titles: a custom chevron beside the
+summary, padded expanded text, and the landing lime `:focus-visible` ring around
+the summary rather than an unstyled full-width browser outline. Suggested
+durable workspace changes remain approval-backed; the diagram never implies that
+evidence silently rewrites canonical objects. Acme rollout is
 the canonical fictional public demo corpus across landing, connector, and guide
 examples; every rendered example states that it is illustrative and not
 customer data. Provider pages may show distinct slices, but people, identifiers,
@@ -1402,6 +1406,7 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-11-06 | Compare alternatives SEO | Existing `/compare/the-timeline-vs-{day-ai,folk,glean,geekbot}` pages keep the vs H1 and add “[competitor] alternatives” to SEO title, meta description, and intro. The hub names those alternative queries without extra URLs. |
 | 2026-11-06 | Company-brain compare pages | Adds `/compare/the-timeline-vs-{suda,memorycrow,achiral}` with the same vs H1 and “[competitor] alternatives” SEO. Footer Compare column lists them; header stays Integrations-only for Notion. |
 | 2026-11-06 | Product-tour mobile frames | `/product-tour` mobile portrait shots (`*-mobile.png`) use a 390×844 contain frame instead of the landscape 16×10 top crop, so Ask recap citations stay visible. |
+| 2026-11-07 | Landing evidence inspect disclosures | Homepage “Inspect example source” rows share the evidence-card padding, a custom chevron, padded expanded copy, and the lime focus ring. |
 
 
 ### Billing benefits and recorded charges (2026-10-31)
