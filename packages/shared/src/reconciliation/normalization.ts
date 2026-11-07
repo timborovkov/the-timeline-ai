@@ -6,7 +6,6 @@ import {
 } from '@timeline/db';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 
-import { buildEvidenceDedupeKey, reconciliationDedupeKey } from '#src/reconciliation/index.js';
 import {
   payloadDigestFromMetadata,
   sourcePayloadRefFromMetadata,
@@ -14,6 +13,8 @@ import {
 import { stableSha256Digest } from '#src/reconciliation/stable-digest.js';
 
 import type { IntegrationEvent } from '#src/integrations/types.js';
+
+import { buildEvidenceDedupeKey, reconciliationDedupeKey } from '#src/reconciliation/core.js';
 
 const INTEGRATION_NORMALIZER_VERSION = 'integration-normalize-2026-06';
 const RAW_EVENT_NORMALIZER_VERSION = 'raw-event-normalize-2026-06';

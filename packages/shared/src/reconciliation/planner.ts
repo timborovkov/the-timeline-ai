@@ -2,6 +2,7 @@ import { z } from 'zod';
 
 import { chatStructured as defaultChatStructured } from '#src/llm/chat.js';
 import { TIMELINE_MODELS } from '#src/llm/models.js';
+
 import {
   artifactClusterKinds,
   reconciliationEvalIngestionSurfaces,
@@ -9,7 +10,7 @@ import {
   type ArtifactClusterKind,
   type ReconciliationEvalIngestionSurface,
   type ReconciliationEvalScenarioFamily,
-} from '#src/reconciliation/index.js';
+} from '#src/reconciliation/core.js';
 
 export const RECONCILIATION_PLANNER_PROMPT_VERSION =
   'reconciliation-planner-2026-07-source-ref-allowlist';
