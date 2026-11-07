@@ -10,7 +10,7 @@ import {
   teamMembers,
   mcpOutboundKeys,
 } from '@timeline/db';
-import { and, desc, eq, gte, lt, sql } from 'drizzle-orm';
+import { and, desc, eq, gte, isNull, lt, sql } from 'drizzle-orm';
 import { z } from 'zod';
 
 import { createOwnedWorkspace } from '#src/agent-provisioning/workspace.js';
@@ -71,7 +71,13 @@ async function requireOwner(db: Store, ownerId: string) {
   const [membership] = await db
     .select({ id: teamMembers.teamId })
     .from(teamMembers)
-    .where(and(eq(teamMembers.userId, ownerId), eq(teamMembers.role, 'owner')))
+    .where(
+      and(
+        eq(teamMembers.userId, ownerId),
+        eq(teamMembers.role, 'owner'),
+        isNull(teamMembers.removedAt),
+      ),
+    )
     .limit(1);
   if (!membership) throw new ProvisioningError('owner_required', 403);
 }

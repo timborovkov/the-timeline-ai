@@ -137,6 +137,18 @@ describe('owner delegated provisioning', () => {
       'owner_required',
     );
   });
+  it('rejects a soft-removed owner whose role is still owner', async () => {
+    await fixture.pg.exec('update team_members set removed_at=now()');
+    await expect(createProvisioningGrant(db, owner, { name: 'Agent' })).rejects.toThrow(
+      'owner_required',
+    );
+    await fixture.pg.exec('update team_members set removed_at=null');
+    const grant = await createProvisioningGrant(db, owner, { name: 'Agent' });
+    await fixture.pg.exec('update team_members set removed_at=now()');
+    await expect(provisionWorkspace(db, grant.token, 'removed', input)).rejects.toThrow(
+      'owner_required',
+    );
+  });
   it('rolls back workspace and connection creation when receipt encryption fails', async () => {
     const grant = await createProvisioningGrant(db, owner, { name: 'Agent' });
     process.env.SECRETS_ENCRYPTION_KEY = 'invalid';
@@ -173,6 +185,25 @@ describe('owner delegated provisioning', () => {
     await expect(
       createProvisioningGrant(db, owner, { name: 'Too long', days: 31 }),
     ).rejects.toThrow();
+    await expect(
+      createProvisioningGrant(db, owner, { name: 'Too short', days: 0 }),
+    ).rejects.toThrow();
+    expect(
+      (await createProvisioningGrant(db, owner, { name: 'One day', days: 1 })).id,
+    ).toBeDefined();
+    expect(
+      (await createProvisioningGrant(db, owner, { name: 'Thirty days', days: 30 })).id,
+    ).toBeDefined();
+  });
+  it('counts matching receipt retries toward the owner-wide hourly limit', async () => {
+    const grant = await createProvisioningGrant(db, owner, { name: 'Agent' });
+    const first = await provisionWorkspace(db, grant.token, 'same', input);
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      expect(await provisionWorkspace(db, grant.token, 'same', input)).toEqual(first);
+    }
+    await expect(provisionWorkspace(db, grant.token, 'same', input)).rejects.toThrow(
+      'rate_limited',
+    );
   });
   it('limits attempts across grants owned by the same person', async () => {
     const grant = await createProvisioningGrant(db, owner, { name: 'Agent' });
