@@ -3,3 +3,4 @@ export * from '#src/slack/conversation-adapter.js';
 export * from '#src/slack/dispatcher.js';
 export * from '#src/slack/security.js';
 export * from '#src/slack/types.js';
+export * from '#src/slack/outbound.js';

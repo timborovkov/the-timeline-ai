@@ -2242,5 +2242,11 @@
   },
   "packages/shared/src/telegram/link-token.test.ts": {
     "group": "unit"
+  },
+  "packages/shared/src/slack/outbound.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/messaging/digest-delivery.test.ts": {
+    "group": "unit"
   }
 }
