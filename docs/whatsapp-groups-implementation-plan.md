@@ -267,18 +267,11 @@
 | End-to-end | real Meta staging webhook through public TLS, Group API creation/invite, group and DM capture, media retrieval, one successful explicit reply, one service-window refusal |
 | Regression | Telegram and Slack conversational capture/runtime behavior remains unchanged |
 
-Run, at minimum, after implementation:
-
-```bash
-bun run validate
-bun run doctor
-bun run test
-bun run test:dist-imports
-bun run test:eval
-bun run e2e
-```
-
-Add the narrow package/route tests while iterating and run `bun run test:reconciliation-eval` if source references, evidence associations, visibility floors, or reconciliation planning are touched. The final web check must show `React Doctor score: 100` and `No issues found!`.
+Follow the [validation policy and change-specific checks](../AGENTS.md#validation-policy).
+Use narrow package/route tests while iterating on the matrix above. Verify the
+provider-backed end-to-end scenarios in the approved Meta staging environment;
+GitHub offline checks do not establish live provider behavior. Repo-wide checks
+and production merge gates are defined only in `AGENTS.md`.
 
 ---
 

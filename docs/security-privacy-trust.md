@@ -744,8 +744,9 @@ Every change must preserve these rules:
 - Legal-version changes update public copy, append-only acceptance or
   acknowledgment evidence, and tests together. Terms reacceptance, Privacy
   Policy reacknowledgment, and fresh optional consent are separate gates.
-- Focused privacy regression tests and the repository-wide validation gates pass
-  before handoff.
+- Run focused privacy regression tests for changed behavior and follow the
+  [validation and merge policy](../AGENTS.md#validation-policy). Required GitHub
+  checks must pass before merging; an open PR is not a verified release.
 
 Test with at least two teams and multiple users. Include negative cases for
 inactive membership, private items, specific-user items, synthetic agents,

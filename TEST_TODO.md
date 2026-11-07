@@ -1175,10 +1175,9 @@ Once the suite is mature, split commands by layer:
   canary.
 - `bun run canary:integrations:strict`: same canary, failing unless every row is
   `OK`.
-- CI PR gate: validate, reconciliation evals, and compiled-package import
-  smoke, with core E2E when stable.
-- CI scheduled/manual gate: provider-backed E2E, production-ish smoke, and
-  slower evals.
+- Validation scope, development/production CI tiers, and merge gates are defined
+  in [AGENTS.md](AGENTS.md#validation-policy). This inventory describes commands
+  and coverage, not an additional local completion checklist.
 
 ## Priority Order
 
