@@ -133,6 +133,115 @@ describe('NotificationRow', () => {
     expect(screen.queryByText('Unread')).toBeNull();
   });
 
+  it('prevents overlapping individual read actions while one is pending', async () => {
+    let resolveAction: (value: { ok: true }) => void = () => {
+      throw new Error('Expected the individual read action to be pending');
+    };
+    fakes.markRead.mockReturnValue(
+      new Promise<{ ok: true }>((resolve) => {
+        resolveAction = resolve;
+      }),
+    );
+    const user = userEvent.setup();
+
+    render(
+      <ul>
+        <NotificationRow
+          id="notification-1"
+          kind="agent_suggestion"
+          summary="Review the launch plan"
+          entityId="object-1"
+          agentSuggestionId={null}
+          createdAt="2026-07-29T12:00:00.000Z"
+          initiallyRead={false}
+        />
+      </ul>,
+    );
+
+    const link = screen.getByRole('link', { name: 'Review the launch plan' });
+    await user.click(link);
+    await user.click(link);
+
+    expect(fakes.markRead).toHaveBeenCalledTimes(1);
+    resolveAction({ ok: true });
+    await waitFor(() => {
+      expect(fakes.refresh).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it('restores unread after a failed Mark all read, but keeps a successful individual read', async () => {
+    const user = userEvent.setup();
+    fakes.markAllRead.mockResolvedValue({ error: 'Database unavailable' });
+    fakes.markRead.mockResolvedValue({ ok: true });
+
+    const { rerender } = render(
+      <>
+        <MarkAllReadButton hasUnread />
+        <ul>
+          <NotificationRow
+            id="notification-1"
+            kind="agent_suggestion"
+            summary="Keep this row"
+            entityId={null}
+            agentSuggestionId={null}
+            createdAt="2026-07-29T12:00:00.000Z"
+            initiallyRead={false}
+          />
+          <NotificationRow
+            id="notification-2"
+            kind="agent_suggestion"
+            summary="Roll this row back"
+            entityId={null}
+            agentSuggestionId={null}
+            createdAt="2026-07-29T12:00:00.000Z"
+            initiallyRead={false}
+          />
+        </ul>
+      </>,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Mark Keep this row as read' }));
+    await waitFor(() => {
+      expect(screen.queryByRole('button', { name: 'Mark Keep this row as read' })).toBeNull();
+    });
+
+    await user.click(screen.getByRole('button', { name: 'Mark all read' }));
+    expect(
+      await screen.findByRole('button', { name: 'Mark Roll this row back as read' }),
+    ).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Mark Keep this row as read' })).toBeNull();
+    expect(fakes.refresh).toHaveBeenCalledTimes(1);
+
+    rerender(
+      <>
+        <MarkAllReadButton hasUnread />
+        <ul>
+          <NotificationRow
+            id="notification-1"
+            kind="agent_suggestion"
+            summary="Keep this row"
+            entityId={null}
+            agentSuggestionId={null}
+            createdAt="2026-07-29T12:00:00.000Z"
+            initiallyRead={false}
+          />
+          <NotificationRow
+            id="notification-2"
+            kind="agent_suggestion"
+            summary="Roll this row back"
+            entityId={null}
+            agentSuggestionId={null}
+            createdAt="2026-07-29T12:00:00.000Z"
+            initiallyRead={false}
+          />
+        </ul>
+      </>,
+    );
+
+    expect(screen.queryByRole('button', { name: 'Mark Keep this row as read' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Mark Roll this row back as read' })).toBeTruthy();
+  });
+
   it('marks the row read when refreshed props confirm it is read', async () => {
     const user = userEvent.setup();
     fakes.markRead.mockResolvedValue({ error: 'Database unavailable' });

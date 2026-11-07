@@ -66,6 +66,7 @@ import { childLogger } from '#src/logger.js';
 import { createMcpScope } from '#src/mcp/scope.js';
 import { createMcpOAuthScope } from '#src/mcp-server/oauth-scope.js';
 import { createMcpOutboundScope } from '#src/mcp-server/outbound.js';
+import { createAgentReportingScope } from '#src/mcp-server/reporting.js';
 import { createMeetingScope } from '#src/meetings/scope.js';
 import { createObjectScope, normalizeIdentityFacet } from '#src/objects/index.js';
 import { invalidateObjectSummariesForRawEvent } from '#src/objects/summaries.js';
@@ -4320,6 +4321,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
     mcp: mcpScope,
     mcpOAuth: mcpOAuthScope,
     mcpOutbound: mcpOutboundScope,
+    agentReporting: createAgentReportingScope({ db, teamId, userId, ensureMember }),
     ingestWebhooks: ingestWebhookScope,
     onboarding: onboardingScope,
     billing: billingScope,

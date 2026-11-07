@@ -43,7 +43,7 @@ await vi.mock(
 );
 
 const { GET } = await import('./route.js');
-const { CONNECT_AGENT_SKILL_MARKDOWN } = await import('@/lib/connect-agent-content');
+const { readTimelineSkillMarkdown } = await import('@/lib/agent-setup-skill');
 
 describe('Connect your agent SKILL.md download', () => {
   beforeEach(() => {
@@ -58,7 +58,7 @@ describe('Connect your agent SKILL.md download', () => {
     expect(response.headers.get('Content-Type')).toBe('text/markdown; charset=utf-8');
     expect(response.headers.get('Content-Disposition')).toBe('attachment; filename="SKILL.md"');
     const body = await response.text();
-    expect(body).toBe(CONNECT_AGENT_SKILL_MARKDOWN);
+    expect(body).toBe(readTimelineSkillMarkdown());
     expect(body).toContain('timeline.search');
     expect(body).toContain('timeline.remember');
     expect(fakes.requireMembership).toHaveBeenCalledOnce();

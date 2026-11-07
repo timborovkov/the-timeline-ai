@@ -5,9 +5,19 @@ import { beforeEach, describe, it } from 'bun:test';
 
 const verifyPolarWebhookSignature = vi.fn();
 const handlePolarWebhookEvent = vi.fn();
+const reportHandledEvent = vi.fn();
 const configuredProvider = { id: 'synthetic-provider' };
 const createPolarBillingProvider = vi.fn<() => typeof configuredProvider | null>(
   () => configuredProvider,
+);
+const db = new Proxy(
+  { id: 'db' },
+  {
+    get(target, prop, receiver) {
+      if (prop === 'id') return Reflect.get(target, prop, receiver);
+      throw new Error('unexpected database access');
+    },
+  },
 );
 
 await vi.mock(
@@ -26,23 +36,33 @@ await vi.mock(
 
 await vi.mock(
   import.meta.resolve('@timeline/shared/billing'),
-  () => ({
-    verifyPolarWebhookSignature: (...args: unknown[]) =>
-      verifyPolarWebhookSignature(...args) as boolean,
-    handlePolarWebhookEvent: (...args: unknown[]) => handlePolarWebhookEvent(...args) as unknown,
-    createPolarBillingProvider: () => createPolarBillingProvider(),
-    isIgnorablePolarWebhookFailure: (err: unknown) =>
-      /invalid input syntax for type uuid/i.test(err instanceof Error ? err.message : String(err)),
-  }),
+  async () => {
+    const actual = await import('@timeline/shared/billing');
+    return {
+      ...actual,
+      verifyPolarWebhookSignature: (...args: unknown[]) =>
+        verifyPolarWebhookSignature(...args) as boolean,
+      handlePolarWebhookEvent: (...args: unknown[]) => handlePolarWebhookEvent(...args) as unknown,
+      createPolarBillingProvider: () => createPolarBillingProvider(),
+    };
+  },
   () => import('@timeline/shared/billing'),
 );
 
 await vi.mock(
   import.meta.resolve('@/lib/db'),
   () => ({
-    db: { id: 'db' },
+    db,
   }),
   () => import('@/lib/db'),
+);
+
+await vi.mock(
+  import.meta.resolve('@/lib/sentry-report'),
+  () => ({
+    reportHandledEvent,
+  }),
+  () => import('@/lib/sentry-report'),
 );
 
 describe('POST /api/webhooks/polar', () => {
@@ -72,7 +92,7 @@ describe('POST /api/webhooks/polar', () => {
       data: {
         id: 'sub_1',
         product_id: 'prod_team',
-        customer: { id: 'cus_1', external_id: 'team-uuid' },
+        customer: { id: 'cus_1', external_id: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee' },
       },
     });
     const res = await POST(
@@ -95,6 +115,7 @@ describe('POST /api/webhooks/polar', () => {
       }),
     );
     expect(createPolarBillingProvider).toHaveBeenCalled();
+    expect(reportHandledEvent).not.toHaveBeenCalled();
   });
 
   it('fails closed without a configured identity provider', async () => {
@@ -122,7 +143,66 @@ describe('POST /api/webhooks/polar', () => {
     expect(handlePolarWebhookEvent).not.toHaveBeenCalled();
   });
 
-  it('acknowledges invalid UUID team identifiers so Polar stops retrying', async () => {
+  it('acknowledges a non-UUID team_id with 2xx and does not query', async () => {
+    const { POST } = await import('./route');
+    const res = await POST(
+      new Request('http://localhost/api/webhooks/polar', {
+        method: 'POST',
+        body: JSON.stringify({
+          type: 'subscription.active',
+          data: {
+            metadata: {
+              team_id: 'timeline-identity-test-c122cebd-a917-4929-9a76-66fab9d28be6-0',
+            },
+            customer: {
+              external_id: 'timeline-identity-test-c122cebd-a917-4929-9a76-66fab9d28be6-0',
+            },
+          },
+        }),
+      }),
+    );
+    expect(res.status).toBe(200);
+    await expect(res.json()).resolves.toEqual({
+      ok: true,
+      ignored: 'invalid_external_customer',
+    });
+    expect(handlePolarWebhookEvent).not.toHaveBeenCalled();
+    expect(reportHandledEvent).toHaveBeenCalledWith({
+      message: 'polar_webhook_ignored',
+      surface: 'api',
+      operation: 'polar_webhook',
+      level: 'warning',
+      tags: { reason: 'invalid_external_customer' },
+    });
+  });
+
+  it('acknowledges an unknown Timeline team with 2xx after the handler check', async () => {
+    handlePolarWebhookEvent.mockResolvedValueOnce({ ok: true, ignored: 'unknown_team' });
+    const { POST } = await import('./route');
+    const res = await POST(
+      new Request('http://localhost/api/webhooks/polar', {
+        method: 'POST',
+        body: JSON.stringify({
+          type: 'subscription.active',
+          data: {
+            customer: { external_id: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee' },
+          },
+        }),
+      }),
+    );
+    expect(res.status).toBe(200);
+    await expect(res.json()).resolves.toEqual({ ok: true, ignored: 'unknown_team' });
+    expect(handlePolarWebhookEvent).toHaveBeenCalled();
+    expect(reportHandledEvent).toHaveBeenCalledWith({
+      message: 'polar_webhook_ignored',
+      surface: 'api',
+      operation: 'polar_webhook',
+      level: 'warning',
+      tags: { reason: 'unknown_team' },
+    });
+  });
+
+  it('acknowledges ignorable UUID syntax failures so Polar stops retrying', async () => {
     handlePolarWebhookEvent.mockRejectedValueOnce(
       new Error(
         'invalid input syntax for type uuid: "timeline-identity-test-c122cebd-a917-4929-9a76-66fab9d28be6-0"',
@@ -136,7 +216,7 @@ describe('POST /api/webhooks/polar', () => {
           type: 'subscription.active',
           data: {
             customer: {
-              external_id: 'timeline-identity-test-c122cebd-a917-4929-9a76-66fab9d28be6-0',
+              external_id: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
             },
           },
         }),
@@ -147,6 +227,12 @@ describe('POST /api/webhooks/polar', () => {
       ok: true,
       ignored: 'invalid_external_customer',
     });
+    expect(reportHandledEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: 'polar_webhook_ignored',
+        tags: { reason: 'invalid_external_customer' },
+      }),
+    );
   });
 
   it('rejects an oversized body before signature verify or parse', async () => {

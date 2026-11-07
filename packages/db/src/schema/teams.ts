@@ -12,6 +12,8 @@ import {
 
 import { users } from '#src/schema/users.js';
 
+import type { AgentReportingPreference } from '#src/schema/agent-reporting.js';
+
 export const teamRole = pgEnum('team_role', ['owner', 'admin', 'member']);
 
 /** Closed membership windows preserved when a removed member is re-accepted. */
@@ -27,6 +29,10 @@ export const teamInviteSendStatus = pgEnum('team_invite_send_status', [
 
 export const teams = pgTable('teams', {
   id: uuid('id').defaultRandom().primaryKey(),
+  agentReporting: jsonb('agent_reporting')
+    .$type<AgentReportingPreference>()
+    .notNull()
+    .default({ mode: 'on_request', scope: '', revision: '0' }),
   slug: text('slug').notNull().unique(),
   name: text('name').notNull(),
   suspensionPreviousState: text('suspension_previous_state'),

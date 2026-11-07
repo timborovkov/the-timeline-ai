@@ -5,6 +5,7 @@ import {
   requirePlatformActor,
   resolveImpersonation,
 } from '@timeline/shared/platform-admin';
+import { isInactiveWorkspaceSecurityState } from '@timeline/shared/platform-admin/runtime';
 import { and, asc, eq, isNull, sql } from 'drizzle-orm';
 
 import type { NextRequest } from 'next/server';
@@ -14,7 +15,11 @@ import { ACTIVE_TEAM_COOKIE, parseActiveTeamCookie } from '@/lib/active-team-coo
 import { db } from '@/lib/db';
 
 const PERSONAL_PATHS =
-  /\/(?:oauth|auth|mcp-keys|ingest-webhooks|calendar-subscription|integrations|connections|mcp-servers|mcp-share|connect-agent|telegram|slack|legal|billing)(?:\/|$)/;
+  /\/(?:oauth|auth|mcp-keys|ingest-webhooks|calendar-subscription|integrations|connections|mcp-servers|mcp-share|connect-agent|agent-provisioning|telegram|slack|legal|billing)(?:\/|$)/;
+
+export function isPersonalAccountPath(path: string): boolean {
+  return PERSONAL_PATHS.test(path);
+}
 export async function platformRequestGate(
   request: NextRequest,
   session: Session | null,
@@ -45,7 +50,7 @@ export async function platformRequestGate(
       return new Response('Account suspended', { status: 403 });
     if (!token) return await suspendedWorkspaceResponse(request, actor.userId);
     if (
-      PERSONAL_PATHS.test(path) ||
+      isPersonalAccountPath(path) ||
       path.startsWith('/app/team/switch/') ||
       path === '/workspace-suspended'
     ) {
@@ -117,11 +122,14 @@ async function suspendedWorkspaceResponse(
     .leftJoin(teamBillingAccounts, eq(teamBillingAccounts.teamId, teamMembers.teamId))
     .where(and(eq(teamMembers.userId, userId), isNull(teamMembers.removedAt)))
     .orderBy(
+      // Prefer a selectable workspace even when the cookie still names a
+      // suspended/terminated team, so the selector can switch to another team.
+      sql`CASE WHEN ${teamBillingAccounts.securityState} IN ('suspended', 'terminated') THEN 1 ELSE 0 END`,
       sql`CASE WHEN ${teamMembers.teamId} = ${selected}::uuid THEN 0 ELSE 1 END`,
       asc(teamMembers.createdAt),
     )
     .limit(1);
-  if (team?.state !== 'suspended' && team?.state !== 'terminated') return null;
+  if (!isInactiveWorkspaceSecurityState(team?.state)) return null;
   if (path.startsWith('/app') && request.method === 'GET')
     return Response.redirect(new URL('/workspace-suspended', request.url));
   return Response.json({ error: 'workspace_suspended' }, { status: 403 });

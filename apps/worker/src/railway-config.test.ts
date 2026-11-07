@@ -39,13 +39,14 @@ describe('Railway worker config', () => {
     expect(config.build?.builder).toBe('DOCKERFILE');
     expect(config.build?.dockerfilePath).toBe('docker/worker.Dockerfile');
     expect(config.deploy.preDeployCommand).toEqual([
-      'env NODE_ENV=production bun --no-env-file packages/db/dist/migrate.js',
+      'env NODE_ENV=production bun --bun --no-env-file packages/db/dist/migrate.js',
     ]);
     expect(config.deploy.startCommand).toBe(
-      'env NODE_ENV=production bun --no-env-file apps/worker/dist/index.js',
+      'env NODE_ENV=production bun --bun --no-env-file apps/worker/dist/index.js',
     );
     expect(config.deploy.preDeployCommand.join(' ')).not.toContain('pnpm');
     expect(config.deploy.startCommand).not.toContain('pnpm');
+    expect(config.deploy.startCommand).not.toMatch(/\bnode\b/);
     expect(config.deploy.startCommand).not.toContain('NODE_ENV=staging');
   });
 
@@ -62,5 +63,20 @@ describe('Railway worker config', () => {
     expect(compose).toContain('SENTRY_RELEASE: ${SENTRY_RELEASE:-}');
     expect(dockerfile).toContain('ARG SENTRY_AUTH_TOKEN');
     expect(dockerfile).toContain('ENV SENTRY_AUTH_TOKEN=$SENTRY_AUTH_TOKEN');
+    expect(dockerfile).toContain('FROM oven/bun:1.4.4-debian AS base');
+    expect(dockerfile).toContain(
+      'CMD ["bun", "--bun", "--no-env-file", "apps/worker/dist/index.js"]',
+    );
+  });
+
+  it('forces Bun for the document-extract Railway start command', () => {
+    const config = JSON.parse(
+      readFileSync(new URL('../railway.extract.json', import.meta.url), 'utf8'),
+    ) as RailwayConfig;
+
+    expect(config.deploy.startCommand).toBe(
+      'env NODE_ENV=production WORKER_MODE=document-extract bun --bun --no-env-file apps/worker/dist/extract-main.js',
+    );
+    expect(config.deploy.startCommand).not.toMatch(/\bnode\b/);
   });
 });

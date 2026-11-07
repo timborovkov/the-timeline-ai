@@ -23,6 +23,7 @@
         <ul>
           <li><a href="#services">Services</a></li>
           <li><a href="#initial-setup">Initial setup</a></li>
+          <li><a href="#dashboard-overrides">Dashboard overrides</a></li>
           <li><a href="#environment-variables">Environment variables</a></li>
           <li><a href="#staging-vs-production">Staging vs production</a></li>
           <li><a href="#volumes-and-persistence">Volumes and persistence</a></li>
@@ -61,14 +62,16 @@
             <td><code>web</code></td>
             <td>App</td>
             <td><code>apps/web/railway.json</code> (Dockerfile)</td>
-            <td><code>env NODE_ENV=production bun --no-env-file apps/web/start.mjs</code></td>
+            <td>
+              <code>env NODE_ENV=production bun --bun --no-env-file apps/web/start.mjs</code>
+            </td>
           </tr>
           <tr>
             <td><code>worker</code></td>
             <td>App</td>
             <td><code>apps/worker/railway.json</code> (Dockerfile)</td>
             <td>
-              <code>env NODE_ENV=production bun --no-env-file apps/worker/dist/index.js</code>
+              <code>env NODE_ENV=production bun --bun --no-env-file apps/worker/dist/index.js</code>
             </td>
           </tr>
           <tr>
@@ -77,7 +80,7 @@
             <td><code>apps/worker/railway.extract.json</code> (Dockerfile)</td>
             <td>
               <code
-                >env NODE_ENV=production WORKER_MODE=document-extract bun --no-env-file
+                >env NODE_ENV=production WORKER_MODE=document-extract bun --bun --no-env-file
                 apps/worker/dist/extract-main.js</code
               >
             </td>
@@ -188,6 +191,50 @@
         variable or deliberately add an exact non-secret platform key in code; do not widen the
         allowlist by prefix.
       </p>
+
+      <h2 id="dashboard-overrides">Dashboard overrides</h2>
+      <p>
+        This repository does not change the Railway project. After merging, an operator must confirm
+        each app service uses the checked-in config rather than leftover Node/Railpack settings.
+        Repeat for <code>web</code>, <code>worker</code>, and
+        <code>document-extract-orchestrator</code>:
+      </p>
+      <ol>
+        <li>
+          <strong>Settings → Config-as-code</strong> — custom config path
+          <code>apps/web/railway.json</code>, <code>apps/worker/railway.json</code>, or
+          <code>apps/worker/railway.extract.json</code>.
+        </li>
+        <li>
+          <strong>Settings → Build</strong> — builder Dockerfile. Do not use Railpack or Nixpacks.
+          Clear custom build-command overrides such as <code>pnpm install</code>,
+          <code>npm run build</code>, or <code>next build</code>.
+        </li>
+        <li>
+          <strong>Settings → Deploy</strong> — leave Start Command empty so
+          <code>railway.json</code> supplies
+          <code>env NODE_ENV=production bun --bun --no-env-file …</code>. If a dashboard override
+          must exist, it has to match that command, including <code>--bun</code>. Remove
+          <code>node</code>, <code>next start</code>, and <code>pnpm start</code> overrides.
+        </li>
+        <li>
+          <strong>Variables</strong> — delete <code>NIXPACKS_NODE_VERSION</code>,
+          <code>RAILPACK_NODE_VERSION</code>, and <code>NODE_VERSION</code> if present. Keep
+          <code>NODE_ENV=production</code>; that is the app environment, not the JavaScript runtime.
+          Do not add a Node toolchain variable to force v26.
+        </li>
+        <li>
+          <strong>Healthcheck</strong> — web stays <code>/api/health</code> (already in
+          <code>apps/web/railway.json</code>). After deploy the JSON body includes
+          <code>"runtime":"bun"</code>. Worker and extract have no HTTP healthcheck; Railway restart
+          policy remains on-failure.
+        </li>
+        <li>
+          <strong>Sentry</strong> — a new server event's runtime context should be <code>bun</code>
+          <code>1.4.4</code>, not Node <code>26.3.0</code>. Browser events stay on the browser
+          runtime.
+        </li>
+      </ol>
 
       <h2 id="environment-variables">Environment variables</h2>
       <p>
@@ -376,9 +423,15 @@ BILLING_CHARGES_ENABLED=false
       </p>
       <p>
         App runtimes use Bun <code>1.4.4</code>, pinned in <code>.bun-version</code>,
-        <code>package.json</code>, and <code>oven/bun:1.4.4-debian</code> Docker images. Railway
-        builds the repository Dockerfiles. Remove old Railpack and Node command overrides before the
-        coordinated release.
+        <code>package.json</code>, and <code>oven/bun:1.4.4-debian</code> Docker images. Start and
+        pre-deploy commands pass <code>bun --bun</code> so Next's standalone
+        <code>server.js</code> Node shebang cannot exec Node. Bun 1.4's Node compatibility version
+        is <code>26.3.0</code>; Sentry's Node SDK would otherwise report that as the runtime. Server
+        <code>beforeSend</code> stamps <code>contexts.runtime</code> to
+        <code>bun</code>/<code>1.4.4</code>, and <code>GET /api/health</code> includes
+        <code>"runtime":"bun"</code>. Railway builds the repository Dockerfiles. Remove old Railpack
+        and Node command overrides before the coordinated release — see
+        <a href="#dashboard-overrides">dashboard overrides</a>.
       </p>
       <p>
         Keep <code>NODE_ENV</code> set to <code>production</code> in both staging and production
@@ -429,9 +482,12 @@ BILLING_CHARGES_ENABLED=false
 
       <h2 id="staging-vs-production">Staging vs production</h2>
       <p>
-        The current project has only <code>production</code>, deployed from <code>main</code> at
-        <code>thetimeline.cc</code>. With no users, it also serves as the development and
-        deployment-verification environment.
+        The current project has only the <code>production</code> environment at
+        <code>thetimeline.cc</code>. The Git branch <code>main</code> is for development;
+        <code>production</code> is the protected release branch. On 2026-11-07, all three app
+        services still followed <code>cursor/google-drive-v1-b571</code>. The operator must switch
+        their Railway source branches to <code>production</code>; the CI split does not change
+        Railway automatically.
       </p>
       <p>
         If a separate staging environment is introduced later, give it isolated Postgres, Redis,
@@ -580,7 +636,24 @@ rclone sync s3:timeline-exports backblaze-b2:timeline-backup-exports
 
       <h2 id="deploy-flow">Deploy flow</h2>
       <ol>
-        <li>Push to <code>main</code> (production) or <code>staging</code> branch.</li>
+        <li>
+          Merge development PRs into <code>main</code> after <code>Static checks</code> passes
+          (validation, React Doctor, runtime and E2E environment smoke checks, and dist imports).
+          Superseded PR runs are cancelled.
+        </li>
+        <li>
+          Open a release PR from <code>main</code> to <code>production</code>. Both
+          <code>Static checks</code> and <code>Full test suite</code> (offline unit/integration
+          tests and reconciliation evals) must pass on an up-to-date branch, with review threads
+          resolved. Direct pushes, force pushes and deletion are blocked. Full tests also run after
+          production merges and on manual CI dispatches; browser E2E remains manual.
+        </li>
+        <li>
+          Once all three Railway app services follow <code>production</code>, merging the release PR
+          triggers deployment. Until the operator switches those sources, Railway continues
+          following its configured branch. The Daytona snapshot publisher runs on matching
+          production changes or manual dispatch.
+        </li>
         <li>
           Railway builds each app service using the Dockerfile selected by its
           <code>railway.json</code>. The runner contains production dependencies and compiled
@@ -601,7 +674,7 @@ rclone sync s3:timeline-exports backblaze-b2:timeline-backup-exports
           restart. The pre-deploy command is already wired in
           <code>apps/web/railway.json</code> and <code>apps/worker/railway.json</code>:
           <pre><code>"preDeployCommand": [
-  "env NODE_ENV=production bun --no-env-file packages/db/dist/migrate.js"
+  "env NODE_ENV=production bun --bun --no-env-file packages/db/dist/migrate.js"
 ]
 </code></pre>
           The script (<code>packages/db/src/migrate.ts</code>) is built before deploy, and the

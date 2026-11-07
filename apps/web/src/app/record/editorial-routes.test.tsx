@@ -58,6 +58,10 @@ describe('how-it-works and guide routes', () => {
     expect(html).toMatch(
       /<h2[^>]*>The review date and owner are set; pricing is still unresolved\.<\/h2>/,
     );
+    expect(html).toContain('data-screenshot-file="11-timeline-dark.png"');
+    expect(html).toContain('data-screenshot-file="15-timeline-meeting-dark.png"');
+    expect(html).toContain('data-screenshot-present="true"');
+    expect(html).not.toContain('Screenshot placeholder');
     expect(html).toContain('Start with one channel.');
     expect(html).toContain('href="/sign-up"');
     expect(html).toContain('Start free');
@@ -107,6 +111,10 @@ describe('how-it-works and guide routes', () => {
       expect(html).toContain('What each source contributes');
       expect(html).toContain('What this cannot prove');
       expect(html).toContain('Fictional Acme example, not customer data.');
+      for (const shot of guide.screenshots ?? []) {
+        expect(html).toContain(`data-screenshot-file="${shot.file}"`);
+        expect(html).toContain('data-screenshot-present="true"');
+      }
       expect(html).toContain('Try this question');
       expect(html).toContain('Source roles');
       expect(html).not.toMatch(/Native \/|Prompt pattern|Source boundaries/u);

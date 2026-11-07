@@ -60,13 +60,24 @@ omitted, so adding the first document is what makes its section appear.
 
 Use-case documents live beside their shared page content under
 [`components/marketing/use-cases`](../apps/web/src/components/marketing/use-cases)
-and appear in the public Use cases menu. Compare/works-with documents live beside
+and appear in the public Use cases menu. Compare documents live beside
 their shared page content under
 [`components/marketing/compare`](../apps/web/src/components/marketing/compare)
-and appear in the public Compare menu as head-to-head pages. Works-with pages for
-Linear, Jira, Notion, HubSpot, Attio, and Pipedrive live under
-[`/integrations`](../apps/web/src/app/integrations) and also appear in that
-Compare menu. The agents hub and product-tour documents
+and appear in the footer Compare column as head-to-head pages versus Day AI,
+Folk, Glean, Geekbot, Suda, MemoryCrow, and Achiral. SEO titles and
+descriptions on those vs URLs also name each as a competitor alternative so
+people searching `[competitor] alternatives` can land on the cited comparison.
+Notion remains integrations-only.
+The Integrations
+header dropdown and matching footer column list the hub plus live destinations:
+Slack (native sync), Telegram (capture), Google Drive, GitHub, Linear,
+Monday.com, Sentry, and Connect MCP tools (`/integrations/mcp`). Slack and
+Telegram keep those status labels and their dedicated connector/capture pages;
+they are not added to works-with filters. Jira and Notion remain truthful
+works-with pages and hub cards, not native dropdown entries. Works-with pages
+for Linear, Jira, Notion, HubSpot, Attio, and Pipedrive still live under
+[`/integrations`](../apps/web/src/app/integrations); coming-soon CRM pages stay
+on the hub cards, not in that nav list. The agents hub and product-tour documents
 are registered with the core public pages. Outcome-led solution documents remain under
 [`components/marketing/solutions`](../apps/web/src/components/marketing/solutions)
 for the remaining client-handoff page. Do not create title-swapped or orphaned
@@ -127,8 +138,12 @@ names when its source module loads.
 
 `/agents/setup.md` and `/agents/SKILL.md` are machine-readable Markdown routes.
 They are registered as public machine documents with `llms: false` so the
-hand-authored `## For agents` block in `llms.txt` / `llms-full.txt` is the
-discovery entry. `SKILL.md` is served from
+hand-authored agent links in `llms.txt` / `llms-full.txt` provide discovery.
+The compact index starts with product context and routes research, existing-account
+setup, new-account setup, and already-connected agents separately. Installation
+steps belong in `setup.md`; tool selection and operating rules belong in `SKILL.md`.
+Product, guide, integration, pricing, trust, and support links come from the registry.
+Use cases, solutions, comparisons, and companion references appear under `Optional`. `SKILL.md` is served from
 `plugins/timeline/skills/timeline/SKILL.md` and must stay byte-identical.
 
 `sitemap.xml` and `robots.txt` are generated at request time so their absolute
@@ -153,3 +168,7 @@ verification routes. Publicly reachable HTML that declares `noindex` remains
 crawlable so search engines can observe that directive and process redirects.
 Use page metadata and the registry's `indexability` field to prevent indexing;
 do not add ordinary noindex pages to the robots disallow list.
+
+`/agents/provisioning.md` is a machine document linked from setup, excluded from the sitemap and automatic llms registry expansion, with a brief discovery link in llms.txt. The public skill and signed-in skill download read the canonical plugin SKILL.md. Discovery remains useful without an account or connection.
+
+The 2026-11-07 setup/skill update establishes reporting in OAuth consent and finishes first use with a cited task result or an approved brief. `llms.txt` remains the discovery index; reporting controls and operating rules stay in consent, setup and the canonical skill.

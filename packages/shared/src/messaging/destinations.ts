@@ -1,5 +1,5 @@
-import { type Db, teamDigestDestinations } from '@timeline/db';
-import { and, desc, eq, inArray } from 'drizzle-orm';
+import { type Db, teamBillingAccounts, teamDigestDestinations } from '@timeline/db';
+import { and, desc, eq, inArray, notExists } from 'drizzle-orm';
 import { z } from 'zod';
 
 const DIGEST_DESTINATION_KINDS = [
@@ -148,6 +148,17 @@ export async function listWorkspaceDigestTeamIds(db: Db): Promise<string[]> {
       and(
         eq(teamDigestDestinations.enabled, true),
         inArray(teamDigestDestinations.kind, [...SHARED_DIGEST_DESTINATION_KINDS]),
+        notExists(
+          db
+            .select({ teamId: teamBillingAccounts.teamId })
+            .from(teamBillingAccounts)
+            .where(
+              and(
+                eq(teamBillingAccounts.teamId, teamDigestDestinations.teamId),
+                inArray(teamBillingAccounts.securityState, ['suspended', 'terminated']),
+              ),
+            ),
+        ),
       ),
     );
   return rows.map((row) => row.teamId);

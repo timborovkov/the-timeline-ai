@@ -5,6 +5,17 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import ProductTourRoutePage from '@/app/product-tour/page';
 import { PRODUCT_TOUR } from '@/components/marketing/product-tour/content';
 
+function figureHtml(html: string, file: string): string {
+  const attr = `data-screenshot-file="${file}"`;
+  const attrAt = html.indexOf(attr);
+  expect(attrAt).toBeGreaterThan(-1);
+  const start = html.lastIndexOf('<figure', attrAt);
+  const end = html.indexOf('</figure>', attrAt);
+  expect(start).toBeGreaterThan(-1);
+  expect(end).toBeGreaterThan(start);
+  return html.slice(start, end + '</figure>'.length);
+}
+
 describe('product tour route', () => {
   it('renders every drafted step with a named screenshot slot', () => {
     const html = renderToStaticMarkup(<ProductTourRoutePage />);
@@ -20,8 +31,37 @@ describe('product tour route', () => {
       expect(html).toContain(`data-tour-step="${step.index}"`);
       expect(html).toContain(step.headline);
       expect(html).toContain(`data-screenshot-file="${step.file}"`);
+      expect(html).toContain('data-screenshot-present="true"');
       expect(html).toContain(step.file);
       if (step.mobileFile) expect(html).toContain(step.mobileFile);
+    }
+    expect(html).not.toContain('Screenshot placeholder');
+  });
+
+  it('keeps mobile recap citations in a portrait frame instead of a 16×10 crop', () => {
+    const html = renderToStaticMarkup(<ProductTourRoutePage />);
+    const recap = figureHtml(html, '54-ask-recap-mobile.png');
+    const handoff = figureHtml(html, '32-ask-handoff-dark.png');
+
+    expect(recap).toContain('data-screenshot-frame="portrait"');
+    expect(recap).toContain('aspect-[390/844]');
+    expect(recap).toContain('object-contain');
+    expect(recap).not.toContain('aspect-[16/10]');
+    expect(recap).not.toContain('object-cover');
+
+    expect(handoff).toContain('data-screenshot-frame="landscape"');
+    expect(handoff).toContain('aspect-[16/10]');
+    expect(handoff).toContain('object-cover');
+    expect(handoff).not.toContain('aspect-[390/844]');
+
+    for (const step of PRODUCT_TOUR.steps) {
+      if (!step.mobileFile) continue;
+      const mobile = figureHtml(html, step.mobileFile);
+      expect(mobile).toContain('data-screenshot-frame="portrait"');
+      expect(mobile).toContain('aspect-[390/844]');
+      const desktop = figureHtml(html, step.file);
+      expect(desktop).toContain('data-screenshot-frame="landscape"');
+      expect(desktop).toContain('aspect-[16/10]');
     }
   });
 });

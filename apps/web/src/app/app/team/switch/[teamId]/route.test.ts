@@ -87,4 +87,27 @@ describe('team switch route', () => {
 
     expect(response.headers.get('location')).toBe('https://thetimeline.cc/app');
   });
+
+  it('redirects to /app without setting the cookie when the workspace is suspended', async () => {
+    const { PlatformAccessError } = await import('@timeline/shared/platform-admin');
+    fakes.fakeVerifyMembership.mockRejectedValue(new PlatformAccessError('Workspace is suspended'));
+
+    const response = await POST(internalRequest(), {
+      params: Promise.resolve({ teamId: TEAM_ID }),
+    });
+
+    expect(fakes.cookieSet).not.toHaveBeenCalled();
+    expect(response.headers.get('location')).toBe('https://thetimeline.cc/app');
+  });
+
+  it('rethrows unexpected membership errors', async () => {
+    fakes.fakeVerifyMembership.mockRejectedValue(new Error('database unavailable'));
+
+    await expect(
+      POST(internalRequest(), {
+        params: Promise.resolve({ teamId: TEAM_ID }),
+      }),
+    ).rejects.toThrow('database unavailable');
+    expect(fakes.cookieSet).not.toHaveBeenCalled();
+  });
 });

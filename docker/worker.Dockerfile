@@ -43,4 +43,4 @@ COPY --from=builder --chown=bun:bun /app/packages/shared/dist ./packages/shared/
 COPY --from=builder --chown=bun:bun /app/apps/worker/dist ./apps/worker/dist
 COPY --from=builder --chown=bun:bun /app/apps/worker/document-extract-sandbox ./apps/worker/document-extract-sandbox
 USER bun
-CMD ["bun", "--no-env-file", "apps/worker/dist/index.js"]
+CMD ["bun", "--bun", "--no-env-file", "apps/worker/dist/index.js"]

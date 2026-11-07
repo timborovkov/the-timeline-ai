@@ -3,14 +3,20 @@ import { join } from 'node:path';
 
 import Image from 'next/image';
 
+import type {
+  MarketingScreenshotFrame,
+  MarketingScreenshotSlot,
+} from '@/components/marketing/screenshot-slot';
+
 import { FICTIONAL_EXAMPLE_LABEL, PRODUCT_SCREENSHOT_DIR } from '@/components/marketing/copy';
+import { cn } from '@/lib/utils';
 
 const PUBLIC_ROOTS = [
   join(process.cwd(), 'public'),
   join(process.cwd(), 'apps/web/public'),
 ] as const;
 
-function marketingScreenshotExists(file: string): boolean {
+function marketingScreenshotFileExists(file: string): boolean {
   return PUBLIC_ROOTS.some((root) => existsSync(join(root, 'marketing/screenshots', file)));
 }
 
@@ -20,31 +26,43 @@ export function MarketingProductScreenshot({
   caption,
   reshoot,
   priority = false,
+  frame = 'landscape',
 }: {
   file: string;
   alt: string;
   caption: string;
   reshoot?: string;
   priority?: boolean;
+  frame?: MarketingScreenshotFrame;
 }) {
   const src = `${PRODUCT_SCREENSHOT_DIR}/${file}`;
-  const present = marketingScreenshotExists(file);
+  const present = marketingScreenshotFileExists(file);
+  const portrait = frame === 'portrait';
 
   return (
     <figure
       className="overflow-hidden rounded-md border border-border bg-surface"
       data-screenshot-file={file}
+      data-screenshot-frame={frame}
       data-screenshot-present={present ? 'true' : 'false'}
     >
-      <div className="relative aspect-[16/10] bg-surface-2">
+      <div
+        className={cn(
+          'relative bg-surface-2',
+          portrait ? 'mx-auto aspect-[390/844] w-full max-w-sm' : 'aspect-[16/10]',
+        )}
+      >
         {present ? (
           <Image
             src={src}
             alt={alt}
             fill
             priority={priority}
-            sizes="(min-width: 1024px) 72rem, 100vw"
-            className="object-cover object-top"
+            unoptimized
+            sizes={
+              portrait ? '(max-width: 767px) 24rem, 100vw' : '(min-width: 1024px) 72rem, 100vw'
+            }
+            className={portrait ? 'object-contain object-top' : 'object-cover object-top'}
           />
         ) : (
           <div
@@ -72,5 +90,30 @@ export function MarketingProductScreenshot({
         </p>
       </figcaption>
     </figure>
+  );
+}
+
+export function MarketingScreenshotBlock({
+  shots,
+  priorityFirst = false,
+}: {
+  shots: readonly MarketingScreenshotSlot[];
+  priorityFirst?: boolean;
+}) {
+  if (shots.length === 0) return null;
+  return (
+    <div className="grid gap-6">
+      {shots.map((shot, index) => (
+        <MarketingProductScreenshot
+          key={shot.file}
+          file={shot.file}
+          alt={shot.alt}
+          caption={shot.caption}
+          reshoot={shot.reshoot}
+          frame={shot.frame}
+          priority={priorityFirst && index === 0}
+        />
+      ))}
+    </div>
   );
 }

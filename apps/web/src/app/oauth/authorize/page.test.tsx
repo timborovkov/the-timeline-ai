@@ -36,6 +36,21 @@ await vi.mock(
   () => import('@timeline/shared/mcp-server'),
 );
 await vi.mock(
+  import.meta.resolve('@timeline/shared/team-scope'),
+  () => ({
+    withTeam: () => ({
+      agentReporting: {
+        consentContext: () =>
+          Promise.resolve({
+            defaults: { mode: 'on_request', scope: '', revision: '0' },
+            override: null,
+          }),
+      },
+    }),
+  }),
+  () => import('@timeline/shared/team-scope'),
+);
+await vi.mock(
   import.meta.resolve('next/navigation'),
   async () => ({
     ...(await import('next/navigation')),

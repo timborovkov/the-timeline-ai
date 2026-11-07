@@ -12,7 +12,7 @@ import {
   teams,
   users,
 } from '@timeline/db';
-import { and, desc, eq, gte, inArray, isNull, lt, or, sql } from 'drizzle-orm';
+import { and, desc, eq, gte, inArray, isNull, lt, notExists, or, sql } from 'drizzle-orm';
 import { z } from 'zod';
 
 import { CAPACITY_BY_PLAN } from '#src/billing/catalog.js';
@@ -815,7 +815,23 @@ export async function listDailyDigestRecipients(db: Db): Promise<DigestRecipient
     .from(teamMembers)
     .innerJoin(teams, eq(teams.id, teamMembers.teamId))
     .innerJoin(users, eq(users.id, teamMembers.userId))
-    .where(isNull(teamMembers.removedAt));
+    .where(
+      and(
+        isNull(teamMembers.removedAt),
+        isNull(users.suspendedAt),
+        notExists(
+          db
+            .select({ teamId: teamBillingAccounts.teamId })
+            .from(teamBillingAccounts)
+            .where(
+              and(
+                eq(teamBillingAccounts.teamId, teamMembers.teamId),
+                inArray(teamBillingAccounts.securityState, ['suspended', 'terminated']),
+              ),
+            ),
+        ),
+      ),
+    );
 }
 
 export async function latestDailyDigest(input: {

@@ -77,10 +77,10 @@
   "apps/web/src/app/actions/visibility.test.ts": {
     "group": "unit"
   },
-  "apps/web/src/app/agents/route.test.tsx": {
+  "apps/web/src/app/agents/[doc]/route.test.ts": {
     "group": "unit"
   },
-  "apps/web/src/app/agents/[doc]/route.test.ts": {
+  "apps/web/src/app/agents/route.test.tsx": {
     "group": "unit"
   },
   "apps/web/src/app/api/artifacts/preview/route.test.ts": {
@@ -114,6 +114,9 @@
     "group": "unit"
   },
   "apps/web/src/app/api/health/ready/route.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/app/api/health/route.test.ts": {
     "group": "unit"
   },
   "apps/web/src/app/api/integrations/[provider]/callback/route.test.ts": {
@@ -270,6 +273,9 @@
     "group": "dom"
   },
   "apps/web/src/app/app/@modal/route-states.test.tsx": {
+    "group": "unit"
+  },
+  "apps/web/src/app/app/agent-provisioning/page.test.ts": {
     "group": "unit"
   },
   "apps/web/src/app/app/approvals/page.test.tsx": {
@@ -496,6 +502,9 @@
   },
   "apps/web/src/app/help/support/page.test.tsx": {
     "group": "unit"
+  },
+  "apps/web/src/app/integrations/mcp/route.test.tsx": {
+    "group": "dom"
   },
   "apps/web/src/app/integrations/route.test.tsx": {
     "group": "dom"
@@ -836,13 +845,25 @@
   "apps/web/src/components/loading-states.test.tsx": {
     "group": "dom"
   },
+  "apps/web/src/components/marketing/agents/agent-loop-diagram.test.tsx": {
+    "group": "unit"
+  },
   "apps/web/src/components/marketing/agents/agent-setup-card.test.tsx": {
+    "group": "unit"
+  },
+  "apps/web/src/components/marketing/agents/content.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/components/marketing/agents/public-documents.test.ts": {
     "group": "unit"
   },
   "apps/web/src/components/marketing/compare/content.test.ts": {
     "group": "unit"
   },
   "apps/web/src/components/marketing/compare/public-documents.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/components/marketing/copy.test.ts": {
     "group": "unit"
   },
   "apps/web/src/components/marketing/editorial/content.test.ts": {
@@ -872,6 +893,15 @@
   "apps/web/src/components/marketing/integrations/connector-seo.test.ts": {
     "group": "unit"
   },
+  "apps/web/src/components/marketing/integrations/inbound-mcp-diagram.test.tsx": {
+    "group": "unit"
+  },
+  "apps/web/src/components/marketing/integrations/mcp-guide-content.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/components/marketing/integrations/mcp-guide-public-documents.test.ts": {
+    "group": "unit"
+  },
   "apps/web/src/components/marketing/integrations/records-to-answer.test.ts": {
     "group": "unit"
   },
@@ -886,6 +916,12 @@
   },
   "apps/web/src/components/marketing/pricing-calculator.test.tsx": {
     "group": "dom"
+  },
+  "apps/web/src/components/marketing/product-screenshot.test.tsx": {
+    "group": "unit"
+  },
+  "apps/web/src/components/marketing/screenshot-inventory.test.ts": {
+    "group": "unit"
   },
   "apps/web/src/components/marketing/solutions/content.test.ts": {
     "group": "unit"
@@ -902,6 +938,9 @@
   "apps/web/src/components/marketing/use-cases/public-documents.test.ts": {
     "group": "unit"
   },
+  "apps/web/src/components/marketing/use-cases/record-jobs-diagram.test.tsx": {
+    "group": "unit"
+  },
   "apps/web/src/components/mcp-oauth-grants.test.tsx": {
     "group": "dom"
   },
@@ -916,6 +955,9 @@
   },
   "apps/web/src/components/nav-items.test.ts": {
     "group": "unit"
+  },
+  "apps/web/src/components/oauth-consent-form.test.tsx": {
+    "group": "dom"
   },
   "apps/web/src/components/objects/new-object-form.test.tsx": {
     "group": "dom"
@@ -1097,6 +1139,9 @@
   "apps/web/src/lib/active-team-cookie.test.ts": {
     "group": "unit"
   },
+  "apps/web/src/lib/active-team.test.ts": {
+    "group": "unit"
+  },
   "apps/web/src/lib/analytics.test.ts": {
     "group": "unit"
   },
@@ -1111,6 +1156,9 @@
   },
   "apps/web/src/lib/approval-preview.test.ts": {
     "group": "unit"
+  },
+  "apps/web/src/lib/auth-continuation.test.ts": {
+    "group": "integration"
   },
   "apps/web/src/lib/auth-redirect.test.ts": {
     "group": "unit"
@@ -1226,6 +1274,9 @@
   "apps/web/src/lib/password-recovery.test.ts": {
     "group": "unit"
   },
+  "apps/web/src/lib/platform-request-gate.test.ts": {
+    "group": "unit"
+  },
   "apps/web/src/lib/pricing-calculator.test.ts": {
     "group": "unit"
   },
@@ -1256,9 +1307,6 @@
   "apps/web/src/lib/public-runtime.test.tsx": {
     "group": "dom"
   },
-  "apps/web/src/lib/public-static-env.test.ts": {
-    "group": "unit"
-  },
   "apps/web/src/lib/public-session.test.tsx": {
     "group": "dom"
   },
@@ -1272,6 +1320,9 @@
     "group": "unit"
   },
   "apps/web/src/lib/public-site/structured-data.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/lib/public-static-env.test.ts": {
     "group": "unit"
   },
   "apps/web/src/lib/pwa-splash.test.ts": {
@@ -1537,6 +1588,9 @@
   },
   "packages/db/src/schema-contracts.test.ts": {
     "group": "unit"
+  },
+  "packages/shared/src/agent-provisioning/index.test.ts": {
+    "group": "integration"
   },
   "packages/shared/src/agent/ask.test.ts": {
     "group": "integration"
@@ -1904,11 +1958,14 @@
   "packages/shared/src/mcp-server/oauth.test.ts": {
     "group": "integration"
   },
-  "packages/shared/src/mcp-server/shipped-install-content.test.ts": {
-    "group": "unit"
-  },
   "packages/shared/src/mcp-server/outbound.test.ts": {
     "group": "integration"
+  },
+  "packages/shared/src/mcp-server/reporting.test.ts": {
+    "group": "integration"
+  },
+  "packages/shared/src/mcp-server/shipped-install-content.test.ts": {
+    "group": "unit"
   },
   "packages/shared/src/mcp/auth.test.ts": {
     "group": "unit"
@@ -1964,6 +2021,9 @@
   "packages/shared/src/messaging/templates.test.ts": {
     "group": "unit"
   },
+  "packages/shared/src/monitoring/sentry-runtime.test.ts": {
+    "group": "unit"
+  },
   "packages/shared/src/monitoring/sentry-scrub.test.ts": {
     "group": "unit"
   },
@@ -1990,6 +2050,9 @@
   },
   "packages/shared/src/pagination.test.ts": {
     "group": "unit"
+  },
+  "packages/shared/src/platform-admin/index.test.ts": {
+    "group": "integration"
   },
   "packages/shared/src/qdrant/client.test.ts": {
     "group": "unit"
@@ -2167,8 +2230,5 @@
   },
   "scripts/testing/runner.test.ts": {
     "group": "script"
-  },
-  "packages/shared/src/platform-admin/index.test.ts": {
-    "group": "integration"
   }
 }

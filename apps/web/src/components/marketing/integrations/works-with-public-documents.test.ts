@@ -28,7 +28,7 @@ describe('works-with public documents', () => {
     }
 
     const compact = buildLlmsTxt({ registry: PUBLIC_DOCUMENT_REGISTRY, siteUrl: SITE_URL });
-    expect(compact).toContain(`[Works with HubSpot](${SITE_URL}/integrations/hubspot)`);
-    expect(compact).toContain(`[Works with Jira](${SITE_URL}/integrations/jira)`);
+    expect(compact).toContain(`[HubSpot · Coming soon](${SITE_URL}/integrations/hubspot)`);
+    expect(compact).toContain(`[Jira · MCP lookup](${SITE_URL}/integrations/jira)`);
   });
 });
