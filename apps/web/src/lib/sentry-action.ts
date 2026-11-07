@@ -44,7 +44,7 @@ export async function runSentryServerAction<T>(
         if (
           impersonation &&
           ((impersonation.readOnly && !SUSPENDED_READ_ACTIONS.has(operation)) ||
-            /(?:sign_|legal|verification|invite|create_team|switch_team|leave_team|billing|mcp|oauth|integration|telegram|slack|connection|password|link_token|unbind_chat)/.test(
+            /(?:sign_|legal|verification|invite|create_team|switch_team|leave_team|billing|mcp|oauth|integration|telegram|slack|connection|password|link_token|unbind_chat|provisioning)/.test(
               operation,
             ))
         ) {

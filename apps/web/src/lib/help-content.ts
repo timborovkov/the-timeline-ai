@@ -230,7 +230,7 @@ export const HELP_PAGES: HelpPage[] = [
     description: 'Connect durable sources and live MCP tools without breaking team isolation.',
     icon: PlugZap,
     related: ['capture', 'work', 'agents'],
-    updatedAt: '2026-08-26',
+    updatedAt: '2026-11-06',
     sections: [
       {
         title: 'Connected sources',
@@ -245,6 +245,9 @@ export const HELP_PAGES: HelpPage[] = [
           'Custom MCP servers expose approved live tools and context to the agent; successful team-shared results become team-visible evidence, while personal-server results stay private to their owner. Passive provider activity still needs native sync or custom ingestion.',
         ],
         appLink: { href: '/app/connections', label: 'Open connections' },
+        resourceLinks: [
+          { href: 'https://thetimeline.cc/integrations/mcp', label: 'Connect MCP tools' },
+        ],
       },
       {
         title: 'Security model',
@@ -260,14 +263,14 @@ export const HELP_PAGES: HelpPage[] = [
       },
       {
         title: 'Use Timeline from an agent',
-        body: 'External agents connect through Timeline’s hosted MCP endpoint. Codex and Claude Code can install the Timeline plugin using the instructions below. Other MCP-compatible clients can connect directly.',
+        body: 'External agents connect through Timeline’s hosted MCP endpoint. Codex and Claude Code can install the Timeline plugin using the instructions below. Other MCP-compatible clients can connect directly. Give an agent https://thetimeline.cc/agents/setup.md. Already-connected agents read their connection context and follow the canonical coworker skill. Owners/admins can choose this connection’s reporting agreement during OAuth consent, inheriting the workspace default or setting an override. Workspace defaults and later changes live in Connect your agent; capture permission remains separate. The skill finishes setup with a useful cited answer or an approved first brief. Verified owners can create limited provisioning grants from the account menu for unattended creation of new workspaces.',
         items: [
           'The default path uses browser-based OAuth: sign in, choose a team, review the requested scopes, and approve or deny access.',
           'Codex and Claude Code users can install the full plugin from this repository. Other compatible clients can connect to the same production URL directly.',
-          'The default OAuth grant is read plus capture (on by default). Read follows the member’s existing visibility, including private and specifically shared evidence that member can access. Capture authorizes timeline.remember; unchecking it issues a read-only grant. Timeline agent access is a separate, optional owner/admin-approved scope for paid, proposal-only turns.',
-          'Static team keys remain available as a compatibility fallback for manual clients.',
+          'The hosted tools are timeline.search, timeline.get, timeline.subject, timeline.ask, and timeline.remember. The default OAuth grant is read plus capture (on by default). Capture authorizes timeline.remember; unchecking it issues a read-only grant. Timeline agent access is a separate, optional owner/admin-approved agent:ask scope for paid, proposal-only turns.',
+          'Static tla_ team keys remain an Advanced compatibility fallback for manual clients and must never be pasted in chat.',
         ],
-        appLink: { href: '/app/team/mcp-share', label: 'Manage Timeline MCP' },
+        appLink: { href: '/app/connect-agent', label: 'Connect your agent' },
         resourceLinks: [
           {
             href: 'https://github.com/timborovkov/the-timeline-ai/tree/main/plugins/timeline/skills#install-in-codex',
@@ -285,21 +288,25 @@ export const HELP_PAGES: HelpPage[] = [
     slug: 'agents',
     title: 'Timeline for agents',
     description:
-      'Connect Codex, Claude, ChatGPT, or another compatible agent to evidence-backed Timeline work.',
+      'Connect Codex, Claude, ChatGPT, Cursor, Grok Bot, Hermes, OpenClaw, or another compatible agent to evidence-backed Timeline work.',
     icon: Bot,
     related: ['integrations', 'work', 'objects'],
     updatedAt: '2026-11-03',
     sections: [
       {
         title: 'Install in Codex or Claude Code',
-        body: 'Use the copy-ready prompt for Codex or the repository marketplace commands for Claude Code. Both packages add the general Timeline skill and hosted Streamable HTTP MCP endpoint. The bundled connection uses browser-based OAuth instead of embedding a bearer key.',
+        body: 'Give your agent https://thetimeline.cc/agents/setup.md, or use the copy-ready prompt for Codex or the repository marketplace commands for Claude Code. Both packages add the general Timeline skill and hosted Streamable HTTP MCP endpoint. The bundled connection uses browser-based OAuth instead of embedding a bearer key.',
         items: [
-          'timeline chooses between broad context, moments, raw events, and structured workspace tools based on the request.',
+          'The hosted tools are timeline.search, timeline.get, timeline.subject, timeline.ask, and timeline.remember.',
           'The same skill adapts to status updates, exact lookups, recaps, and incident analysis without competing triggers.',
           'It distinguishes current canonical state from activity, expands material sources, and preserves citations and uncertainty.',
           'Restart Codex or Claude Code after installation, start a new task or conversation, and complete Timeline sign-in, team selection, and scope consent when prompted.',
         ],
         resourceLinks: [
+          {
+            href: 'https://thetimeline.cc/agents/setup.md',
+            label: 'Agent setup markdown',
+          },
           {
             href: 'https://github.com/timborovkov/the-timeline-ai/tree/main/plugins/timeline/skills#install-in-codex',
             label: 'Install in Codex',
@@ -316,11 +323,15 @@ export const HELP_PAGES: HelpPage[] = [
         items: [
           'The default OAuth grant is read plus capture (on by default). Read follows the signed-in member’s current team membership and visibility, including private and specifically shared evidence that member can access. Uncheck capture for a read-only grant.',
           'Approved AI-app access can be reviewed and revoked from Provider accounts.',
-          'Static team keys remain available for manual clients and see team-visible data only.',
+          'Static tla_ team keys remain an Advanced fallback for manual clients and see team-visible data only. Never paste them in chat.',
           'Self-hosted users install the standalone Timeline skill and point their compatible client at their own Timeline origin.',
         ],
         appLink: { href: '/app/me/connections', label: 'Manage approved AI apps' },
         resourceLinks: [
+          {
+            href: 'https://thetimeline.cc/agents/setup.md',
+            label: 'Read agent setup',
+          },
           {
             href: 'https://github.com/timborovkov/the-timeline-ai/tree/main/plugins/timeline/skills#connect-timeline-mcp',
             label: 'Read MCP setup',
@@ -329,10 +340,10 @@ export const HELP_PAGES: HelpPage[] = [
       },
       {
         title: 'Know the access boundary',
-        body: 'The bundled skill uses timeline.search, timeline.get, timeline.subject, timeline.ask, and timeline.remember, and preserves citations. The default OAuth grant includes read plus capture (on by default) so timeline.remember can store cited evidence; unchecking capture makes the grant read-only. It cannot invoke timeline.ask. A current team owner or admin may separately approve that scope for paid, stateless agent turns; it may call enabled team-shared custom MCP tools with external side effects and can create only Timeline proposals that still require human review.',
+        body: 'The bundled skill uses timeline.search, timeline.get, timeline.subject, timeline.ask, and timeline.remember, and preserves citations. The default OAuth grant includes read plus capture (on by default) so timeline.remember can store cited evidence; unchecking capture makes the grant read-only. It cannot invoke timeline.ask. A current team owner or admin may separately approve agent:ask for paid, stateless agent turns; it may call enabled team-shared custom MCP tools with external side effects and can create only Timeline proposals that still require human review.',
         resourceLinks: [
           {
-            href: 'https://github.com/timborovkov/the-timeline-ai/tree/main/plugins/timeline/skills',
+            href: 'https://thetimeline.cc/agents/SKILL.md',
             label: 'Browse the Timeline skill',
           },
         ],

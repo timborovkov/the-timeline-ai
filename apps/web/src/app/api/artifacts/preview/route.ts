@@ -9,8 +9,11 @@ import {
 import {
   artifactPreviewActionLabel,
   attachArtifactPreviewActions,
+  citationQuote,
   meetingDetailHref,
   timelineEventFocusHref,
+  type ArtifactCitationCard,
+  type ArtifactKind,
   type ArtifactPreview,
   type ArtifactPreviewAction,
   type ArtifactPreviewSection,
@@ -27,6 +30,7 @@ import { resolveActiveTeam } from '@/lib/active-team';
 import { trackProductEventBestEffort } from '@/lib/analytics';
 import { getArtifactRoutePreview } from '@/lib/artifact-routes';
 import { auth } from '@/lib/auth';
+import { citationAuthorHint, citationLogoSrc, citationSourceLabel } from '@/lib/citation-source';
 import { db } from '@/lib/db';
 import { hasSourceOriginal, sourceOriginalFromEvent } from '@/lib/source-original';
 
@@ -69,6 +73,35 @@ function compact(value: string | null | undefined, max = 900): string | null {
   const text = value?.trim();
   if (!text) return null;
   return text.length > max ? `${text.slice(0, max - 1).trimEnd()}…` : text;
+}
+
+function citationCard(input: {
+  kind: ArtifactKind;
+  source?: string | null;
+  metadata?: Record<string, unknown>;
+  sourceLabel: string;
+  author?: string | null;
+  date?: Date | string | null;
+  quote?: string | null;
+}): ArtifactCitationCard {
+  const metadata = input.metadata ?? {};
+  return {
+    sourceKey: input.source ?? input.kind,
+    sourceLabel: citationSourceLabel({
+      kind: input.kind,
+      source: input.source,
+      metadata,
+      fallback: input.sourceLabel,
+    }),
+    logoSrc: citationLogoSrc({
+      kind: input.kind,
+      source: input.source,
+      metadata,
+    }),
+    author: input.author?.trim() ? input.author.trim() : citationAuthorHint(metadata),
+    dateLabel: dateLabel(input.date),
+    quote: citationQuote(input.quote),
+  };
 }
 
 function isoDate(value: Date | string | null | undefined): string | null {
@@ -269,6 +302,15 @@ async function timelineEventPreview(
       badges: [source],
       media: audioUrl ? { kind: 'audio', url: audioUrl, label: 'Event audio' } : null,
       original: previewOriginal(event.source, event.contentText, event.sourceMetadata),
+      card: citationCard({
+        kind: ref.kind,
+        source: event.source,
+        metadata,
+        sourceLabel: source,
+        author: sender ?? conversation ?? metadataText(metadata, 'title'),
+        date: event.occurredAt,
+        quote: event.contentText,
+      }),
       sections: [
         {
           title: 'Metadata',
@@ -344,6 +386,13 @@ async function objectPreview(
       subtitle: `${object.type} · ${object.status}`,
       body: compact(object.notes[0]?.body ?? null, 500),
       badges: badges([object.type, object.status, object.stage]),
+      card: citationCard({
+        kind: ref.kind,
+        sourceLabel: object.type,
+        author: object.canonicalName,
+        date: object.updatedAt,
+        quote: object.notes[0]?.body ?? object.status,
+      }),
       sections,
     },
     [{ href: `/app/objects/${object.id}`, label: artifactPreviewActionLabel(ref.kind) }],
@@ -361,6 +410,13 @@ async function notePreview(scope: TeamScope, ref: ArtifactRef): Promise<Artifact
       subtitle: `${note.object.type} · ${dateLabel(note.createdAt) ?? 'object note'}`,
       body: compact(note.body),
       badges: ['note', note.object.type],
+      card: citationCard({
+        kind: ref.kind,
+        sourceLabel: 'Note',
+        author: note.object.canonicalName,
+        date: note.createdAt,
+        quote: note.body,
+      }),
       sections: [
         {
           title: 'Object',
@@ -418,6 +474,15 @@ async function factPreview(teamId: string, ref: ArtifactRef): Promise<ArtifactPr
       subtitle: [row.entityName, row.source, dateLabel(row.occurredAt)].filter(Boolean).join(' · '),
       body: row.fact.statement,
       badges: badges(['fact', row.entityType, `confidence ${row.fact.confidence.toFixed(2)}`]),
+      card: citationCard({
+        kind: ref.kind,
+        source: row.source,
+        metadata: metadataObject(row.sourceMetadata),
+        sourceLabel: sourceLabel(row.source),
+        author: row.entityName,
+        date: row.occurredAt,
+        quote: row.fact.statement,
+      }),
       original: previewOriginal(row.source, row.contentText, row.sourceMetadata),
       sections: [
         {
@@ -480,6 +545,13 @@ async function relationshipPreview(
       subtitle: `${from.canonicalName} -> ${to.canonicalName}`,
       body: `${from.canonicalName} is linked to ${to.canonicalName} as ${relationship.kind}.`,
       badges: ['relationship', relationship.kind],
+      card: citationCard({
+        kind: ref.kind,
+        sourceLabel: 'Relationship',
+        author: from.canonicalName,
+        date: relationship.createdAt,
+        quote: `${from.canonicalName} is linked to ${to.canonicalName} as ${relationship.kind}.`,
+      }),
       sections: [
         {
           title: 'Endpoints',
@@ -534,6 +606,13 @@ async function objectChangePreview(
       subtitle: `${row.objectName} · ${dateLabel(row.change.changedAt) ?? 'change'}`,
       body,
       badges: badges(['change', row.objectType, row.change.status]),
+      card: citationCard({
+        kind: ref.kind,
+        sourceLabel: 'Change',
+        author: row.objectName,
+        date: row.change.changedAt,
+        quote: body,
+      }),
       sections: [
         {
           title: 'Change',
@@ -590,6 +669,15 @@ async function documentChunkPreview(
         chunk.representationKind,
         chunk.pageNumber ? `p.${String(chunk.pageNumber)}` : null,
       ]),
+      card: citationCard({
+        kind: ref.kind,
+        source: 'document',
+        metadata: metadataObject(document.metadata),
+        sourceLabel: 'Document',
+        author: document.name,
+        date: chunk.createdAt,
+        quote: chunk.summary ?? chunk.text,
+      }),
       sections: [
         {
           title: 'Chunk',
@@ -633,6 +721,15 @@ async function calendarEventPreview(
         event.rrule ? 'recurring' : null,
         event.redacted ? 'redacted' : null,
       ]),
+      card: citationCard({
+        kind: ref.kind,
+        source: 'calendar',
+        metadata: rawEvent ? metadataObject(rawEvent.sourceMetadata) : {},
+        sourceLabel: 'Calendar',
+        author: event.title,
+        date: event.startAt,
+        quote: event.description ?? event.location,
+      }),
       original: rawEvent
         ? previewOriginal(rawEvent.source, rawEvent.contentText, rawEvent.sourceMetadata)
         : null,
@@ -671,6 +768,12 @@ async function boardPreview(
         board.pinned ? 'pinned' : null,
         board.isShared ? 'shared' : null,
       ]),
+      card: citationCard({
+        kind: ref.kind,
+        sourceLabel: 'Board',
+        author: board.name,
+        quote: board.purpose,
+      }),
       sections: [
         {
           title: 'Lanes',
@@ -714,6 +817,13 @@ async function boardItemPreview(
         item.object.status,
         item.priority ? `P${String(item.priority)}` : null,
       ]),
+      card: citationCard({
+        kind: ref.kind,
+        sourceLabel: 'Board item',
+        author: item.object.canonicalName,
+        date: item.dueAt ?? item.updatedAt,
+        quote: item.notes?.trim() ? item.notes : item.nextStep,
+      }),
       sections: [
         {
           title: 'Board Item',
@@ -742,6 +852,12 @@ function routePreview(ref: ArtifactRef): ArtifactPreview | null {
       subtitle: route.group === 'help' ? 'Usage guide' : 'Dashboard route',
       body: route.description,
       badges: [route.group],
+      card: citationCard({
+        kind: ref.kind,
+        sourceLabel: route.group === 'help' ? 'Help' : 'Page',
+        author: route.title,
+        quote: route.description,
+      }),
     },
     [{ href: route.href, label: 'Open page' }],
   );

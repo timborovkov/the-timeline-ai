@@ -384,7 +384,7 @@ services and volumes, not Qdrant Cloud or RustFS Cloud subprocessors.
 | --- | --- | --- |
 | PostgreSQL | Accounts, membership, customer records, content, permissions, job state, audit data | Team-scoped queries, least-privileged credentials, migration review, backup/restore control |
 | Redis/BullMQ | Rate limits, caches, queues, transient job payloads | Minimized payloads, bounded lifetime, no unnecessary source content, private network |
-| Qdrant | Embeddings and visibility metadata | `team_id` plus visibility filters, derived-data deletion, no public endpoint |
+| Qdrant | Embeddings and visibility metadata | `team_id` plus visibility filters and derived-data deletion; application traffic uses private networking, while an API-key-protected public operator endpoint remains |
 | RustFS | Voice notes, attachments, documents, and exports | Non-public buckets, team-authorized short-lived signed URLs, scoped object keys, deletion and backup controls |
 
 Internal service traffic should use Railway private networking. Public exposure
@@ -945,3 +945,9 @@ Interrupted web Ask settlement waits for the SDK abort callback so completed-ste
 usage is included. Unreported partial-step usage is marked incomplete in billing
 metadata and is not estimated from the reservation. Recovering costs the provider
 never reports remains unverified; no exact-cost guarantee is added.
+
+## Agent coworker authority and retention
+
+See [agent coworkers](agent-coworkers.md) for the implemented authority boundaries. Dedicated hashed provisioning credentials cannot authenticate MCP or ingest. Only verified existing owners with current legal acceptance and an active owner membership can provision new workspaces; soft-removed owner rows do not qualify. No existing-team access, paid-plan activation or agent:ask is granted. Transactional encrypted response receipts expire after fifteen minutes; retained hashes prevent duplicate provisioning. Janitor clears expired ciphertext and auth continuations. Reporting preferences authorize behavior within existing capture scopes and do not confer canonical-record approval or unrelated external authority. No credentials or note bodies belong in monitoring events.
+
+Consent reporting edits are restricted to current owners/admins and committed atomically with the OAuth grant, authorization code and reporting audit. Member consent exposes only that member/client’s preference. Raw project scope is excluded from redirect parameters and issuance exception telemetry. Inherited or retained ongoing settings never expand capture permission.

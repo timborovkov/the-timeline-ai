@@ -137,6 +137,15 @@ await vi.mock(
   () => import('@/components/home/home-ask-composer'),
 );
 await vi.mock(
+  import.meta.resolve('@/components/connect-agent/connect-agent-onboarding'),
+  () => ({
+    ConnectAgentOnboardingCard: () => (
+      <div data-testid="home-connect-agent">Connect your agent</div>
+    ),
+  }),
+  () => import('@/components/connect-agent/connect-agent-onboarding'),
+);
+await vi.mock(
   import.meta.resolve('@/components/onboarding-checklist'),
   () => ({
     OnboardingChecklist: ({ initialData }: { initialData?: { dismissed: boolean } | null }) => {

@@ -10,24 +10,22 @@ import {
   telegramChatBindings,
   users,
 } from '@timeline/db';
+import { createOwnedWorkspace } from '@timeline/shared/agent-provisioning';
 import {
-  applyOwnedTeamFreeGrant,
   assertTeamMemberSeatCapacity,
   expiredInviteNeedsSeat,
-  insertRestrictedFreeBillingAccount,
   isBillingAdmissionError,
 } from '@timeline/shared/billing';
 import { getEnv } from '@timeline/shared/env';
 import {
   addTeamDigestDestination,
-  insertDefaultDigestDestination,
   parseAddDigestDestinationInput,
   removeTeamDigestDestination,
   sendMessage,
   type AddDigestDestinationInput,
 } from '@timeline/shared/messaging';
 import { hasSlackInstallForTeam, listSlackConversationsForTeam } from '@timeline/shared/slack';
-import { buildInboundEmail, randomSlugSuffix, randomToken, slugify } from '@timeline/shared/slug';
+import { randomToken } from '@timeline/shared/slug';
 import { withTeam } from '@timeline/shared/team-scope';
 import { and, eq, isNull, ne, or, sql } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
@@ -86,37 +84,16 @@ export async function createTeamAction(
     if (!parsed.success) return { error: 'Invalid team name' };
     const defaultTimezone = normalizeTimezone(parsed.data.timezone);
 
-    const baseSlug = slugify(parsed.data.name) || 'team';
-    const slug = `${baseSlug}-${randomSlugSuffix()}`;
-    const inboundEmail = buildInboundEmail(slug, process.env.INBOUND_EMAIL_DOMAIN);
     let teamId: string;
     try {
-      teamId = await db.transaction(async (tx) => {
-        const inserted = await tx
-          .insert(teams)
-          .values({ name: parsed.data.name, slug, inboundEmail })
-          .returning({ id: teams.id });
-        const id = inserted[0]?.id;
-        if (!id) throw new Error('insert teams returned nothing');
-        // react-doctor-disable-next-line react-doctor/async-parallel -- Restricted billing insert must precede the Free grant on this transaction client.
-        await tx.insert(teamMembers).values({
-          teamId: id,
-          userId: session.user.id,
-          role: 'owner',
-        });
-        await tx.insert(teamCalendarSettings).values({
-          teamId: id,
-          defaultTimezone,
-        });
-        await insertDefaultDigestDestination(tx, id);
-        await insertRestrictedFreeBillingAccount({ db: tx, teamId: id });
-        await applyOwnedTeamFreeGrant({
-          db: tx,
-          teamId: id,
-          userId: session.user.id,
-        });
-        return id;
-      });
+      const result = await db.transaction((tx) =>
+        createOwnedWorkspace(tx, {
+          ownerId: session.user.id,
+          name: parsed.data.name,
+          timezone: defaultTimezone,
+        }),
+      );
+      teamId = result.team.id;
     } catch (err) {
       reportCaughtError(err, { surface: 'server_action', operation: 'create_team' });
       return { error: 'Failed to create team' };
@@ -321,6 +298,7 @@ export async function updateInboundEmailWhitelistAction(
     );
 
     revalidatePath('/app/team');
+    revalidatePath('/app/connect-agent');
     revalidatePath(CONNECTIONS_HREF, 'layout');
     revalidatePath(CONNECTIONS_LEGACY_HREF);
     return { ok: true };

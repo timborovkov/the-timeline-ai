@@ -106,6 +106,13 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
 - [x] Shared collection empty states: one `EmptyState` for indexes, queues,
       and directories, with quiet dim icons, create/recover actions, and
       waiting copy for proposals, notifications, and captured work.
+- [x] Connect your agent: `/app/connect-agent` consolidates Timeline-as-MCP
+      setup (OAuth-first client picker, connected grants with revoke, add-memory
+      email/webhook, SKILL.md, collapsed `tla_` keys). Admin grant rows show the
+      consenting member next to the client. Advertised tools and default-on
+      `capture` match the hosted MCP server. `/app/team/mcp-share` redirects.
+      New empty teams get a skippable Home card that does not return once
+      skipped.
 - [ ] Timeline moments redesign: turn `/app/timeline` from a raw activity log
       into bundled, evidence-backed work moments with deterministic grouping,
       source-specific adapters, AI-assisted titles/summaries, and an advanced
@@ -113,8 +120,9 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       First slice shipped the Moments/All events mode split, quieter chrome,
       weighted rows (story / record / pulse), Linear-style single-icon rows,
       a wider family-aware inspector with collapsed original-source viewers,
-      Ask citation previews that name transcript/calendar/document/Timeline
-      destinations and reuse that original-source viewer,
+      Ask and object-summary numbered superscript citations with compact source cards that keep
+      transcript/calendar/document/Timeline destinations (inspector chips still
+      reuse the original-source viewer),
       sentinel infinite scroll with virtualized archive rows and no inventory
       chip,
       GitHub workflow bundling, and the
@@ -399,6 +407,11 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
 - [x] Add repository plugin and marketplace packaging for Codex and Claude Code
       with the hosted Timeline MCP connection, one general cited-workspace skill,
       standalone installation guidance, and links from public help and MCP setup.
+- [x] Publish `/agents/setup.md` and `/agents/SKILL.md` as `text/markdown`, add a
+      `## For agents` pointer in `llms.txt` / `llms-full.txt`, document remember,
+      team email, and ingest-webhook push in the Timeline skill, and bump the
+      plugin to 0.3.1. Remember documents the `capture` OAuth scope landing with
+      the five-tool MCP surface.
 - [x] Implement the outbound MCP OAuth and current transport path in the repository:
       RFC 9728/8414 discovery, CIMD-first client resolution with constrained DCR,
       PKCE S256, member/team consent and revocation, `read` plus default-on
@@ -669,6 +682,9 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
 - [x] Billing foundation: entitlements catalog, Polar products/meters (sandbox),
       `team_billing_*` ledger, `/pricing`, team Billing settings, webhook verify,
       shadow mode (`BILLING_CHARGES_ENABLED=false`). See ADR 0018.
+- [x] Public monthly pricing calculator: paired sliders and exact fields compare PAYG,
+      Team and Business using shared billing previews, native allowances and pooled
+      credits; itemized estimates flag measured capacity limits and exclude VAT.
 - [x] Pricing UX: self-serve plan grid (no Enterprise column); gray Enterprise
       contact nudge; `/app/usage` is a meter, amount, and cost table (infrastructure limits stay
       folded); team Billing shows remaining benefits, recorded charges, the separate plan fee and spend cap, and
@@ -843,7 +859,8 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       [per-service caps](docs/railway.html#resource-caps), including Qdrant after the on-disk + int8 layout, and
       plan a move to sharded or managed Qdrant before it becomes painful. The
       2026-10-24 restart and search/ingestion probes informed an initial 3 GB
-      production RAM limit (plus a 2 vCPU cap) with the rollback collection retained; remeasure peaks
+      production RAM limit (plus a 2 vCPU cap). The rollback collection was removed on
+      2026-11-04 after a verified snapshot; remeasure peaks
       before lowering it or performing full reindexing (see
       [production memory measurements](docs/railway.html#qdrant-memory)). New
       collections already store original vectors on disk; copy any older in-RAM
@@ -866,3 +883,18 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       messages. Verify with periodic row-count vs. Qdrant payload audits.
 
 - [x] Team setup includes optional-on-Free billing setup, inferred from active billing arrangements; restricted Free banners explain email verification or a grant elsewhere with resolution actions.
+
+### LLM entry point refresh (2026-11-06)
+
+- [x] Rewrite `llms.txt` as a public product reference and intent router for
+  research, existing-account setup, new-account setup, and connected agents.
+  Keep client installation in `agents/setup.md` and tool operating rules in
+  `agents/SKILL.md`; retain registry-backed documentation links and move examples
+  and comparisons into Optional. Distinguish evidence capture from approved
+  record changes and native ingestion from live MCP access.
+
+### Agent coworkers implementation
+
+- Implemented account-bound OAuth continuation, owner-only provisioning grants and retry receipts, connection reporting preferences, and canonical coworker skill distribution. Continuations consume on successful verification, account-menu resends retain the latest live authorize destination, and soft-removed owners cannot provision. See [release notes and validation boundaries](docs/agent-coworkers.md). Production deployment and unavailable-client live acceptance remain separate.
+
+- Implemented coworker agreement controls within OAuth consent, atomic connection preference saving, preserved reauthorization, and task-focused first use in the 0.5.0 canonical skill.

@@ -6,6 +6,7 @@ import { AGENTS_PUBLIC_DOCUMENTS } from '@/components/marketing/agents/public-do
 import { COMPARE_PUBLIC_DOCUMENTS } from '@/components/marketing/compare/public-documents';
 import { EDITORIAL_PUBLIC_DOCUMENTS } from '@/components/marketing/editorial/public-documents';
 import { CONNECTOR_PUBLIC_DOCUMENTS } from '@/components/marketing/integrations/connector-public-documents';
+import { MCP_GUIDE_PUBLIC_DOCUMENTS } from '@/components/marketing/integrations/mcp-guide-public-documents';
 import { WORKS_WITH_PUBLIC_DOCUMENTS } from '@/components/marketing/integrations/works-with-public-documents';
 import { PRICING_FAQS } from '@/components/marketing/pricing-faq-content';
 import { SOLUTION_PUBLIC_DOCUMENTS } from '@/components/marketing/solutions/public-documents';
@@ -16,6 +17,7 @@ import {
 import {
   TIMELINE_AGENT_ACCESS_FAQS,
   TIMELINE_AGENT_INSTALL_STEPS,
+  TIMELINE_AGENT_SETUP_PROMPT,
   TIMELINE_CLAUDE_PLUGIN_INSTALL_COMMAND,
   TIMELINE_MCP_COMMAND,
   TIMELINE_PLUGIN_INSTALL_PROMPT,
@@ -28,6 +30,11 @@ import { TRUST_AI_MODEL_ITEMS, TRUST_AI_PRIVACY_SUMMARY } from '@/lib/trust-clai
 const LAST_REVIEWED = '2026-08-12' as const;
 
 const AGENT_INSTALL_LLM_SECTIONS = [
+  {
+    title: 'Give this to your agent',
+    body: 'Paste this one-liner so the agent can fetch /agents/setup.md and connect over OAuth.',
+    codeBlock: { content: TIMELINE_AGENT_SETUP_PROMPT, language: 'text' },
+  },
   {
     title: 'Copy-ready plugin install prompt',
     body: 'Paste this prompt into a Codex task to install the complete Timeline plugin.',
@@ -74,7 +81,7 @@ const LANDING_SECTIONS = [
   },
   {
     title: 'Trust model',
-    body: 'Raw events are immutable source evidence. Agent answers surface citation chips that point back to raw messages, voice memos, emails, transcripts, calendar events, or document versions.',
+    body: 'Raw events are immutable source evidence. Agent answers surface numbered citations that point back to raw messages, voice memos, emails, transcripts, calendar events, or document versions.',
   },
   {
     title: 'Privacy model',
@@ -164,7 +171,7 @@ const coreDocuments = definePublicDocuments('public-core', [
     description:
       'The Timeline keeps client, deal, task and decision records up to date from Slack, Telegram, email and calls. Every line has its source, and you approve each change.',
     indexability: 'index',
-    dates: { modified: '2026-11-03', reviewed: '2026-11-03' },
+    dates: { modified: '2026-11-07', reviewed: '2026-11-07' },
     capability: { kind: 'current-product' },
     sitemap: { changeFrequency: 'weekly', priority: 1 },
     structuredData: [
@@ -219,9 +226,9 @@ const coreDocuments = definePublicDocuments('public-core', [
     kind: 'guide-index',
     title: 'Pricing',
     description:
-      'Start free for up to 3 members, no card. Then choose Pay as you go (€0 fee), Team (€49/mo, 25 members) or Business (€199/mo, 100 members). Prices in EUR, excluding VAT.',
+      'Start free for up to 3 members, no card. Then choose Pay as you go (€0 fee), Team (€49/mo, 25 members) or Business (€199/mo, 100 members). Compare monthly estimates from the same usage. Prices in EUR, excluding VAT.',
     indexability: 'index',
-    dates: { modified: '2026-11-03', reviewed: '2026-11-03' },
+    dates: { modified: '2026-11-04', reviewed: '2026-11-04' },
     capability: { kind: 'current-product' },
     sitemap: { changeFrequency: 'weekly', priority: 0.9 },
     structuredData: [
@@ -250,7 +257,7 @@ const coreDocuments = definePublicDocuments('public-core', [
         },
         {
           title: 'Meters',
-          body: 'AI usage in euros, meeting minutes, email units, storage GB-month, accepted sources. Display native units and euro values.',
+          body: 'AI usage in euros, meeting minutes, email units, storage GB-month, accepted sources. Display native units and euro values. The public calculator reuses the shared billing preview; it does not invent rates.',
         },
         {
           title: 'Questions',
@@ -380,12 +387,51 @@ const publicUtilityDocuments = definePublicDocuments('public-utility', [
     },
   },
   {
+    canonicalPath: '/agents/provisioning.md',
+    kind: 'machine',
+    title: 'Agent provisioning API',
+    description:
+      'Owner-authorized unattended creation of new workspaces, credentials, retries, and restrictions.',
+    indexability: 'index',
+    dates: { modified: '2026-11-06', reviewed: '2026-11-06' },
+    capability: { kind: 'current-product' },
+    sitemap: false,
+    structuredData: [],
+    llms: false,
+  },
+  {
+    canonicalPath: '/agents/setup.md',
+    kind: 'machine',
+    title: 'Agent setup',
+    description:
+      'Agent-readable Markdown that branches MCP and skill setup by ChatGPT, Claude, Claude Code, Codex, Cursor, Grok Bot, Hermes, and OpenClaw.',
+    indexability: 'index',
+    dates: { modified: '2026-11-07', reviewed: '2026-11-07' },
+    capability: { kind: 'current-product' },
+    sitemap: false,
+    structuredData: [],
+    llms: false,
+  },
+  {
+    canonicalPath: '/agents/SKILL.md',
+    kind: 'machine',
+    title: 'Timeline skill',
+    description:
+      'The published Timeline SKILL.md, byte-identical to the repository plugin skill file.',
+    indexability: 'index',
+    dates: { modified: '2026-11-07', reviewed: '2026-11-07' },
+    capability: { kind: 'current-product' },
+    sitemap: false,
+    structuredData: [],
+    llms: false,
+  },
+  {
     canonicalPath: '/llms-full.txt',
     kind: 'machine',
     title: 'llms-full.txt',
     description: 'Expanded Markdown summary of the public product and help content.',
     indexability: 'index',
-    dates: { modified: '2026-11-03', reviewed: '2026-11-03' },
+    dates: { modified: '2026-11-07', reviewed: '2026-11-07' },
     capability: { kind: 'not-applicable' },
     sitemap: false,
     structuredData: [],
@@ -421,6 +467,7 @@ export const PUBLIC_DOCUMENT_REGISTRY = createPublicDocumentRegistry(
   helpDocuments,
   publicUtilityDocuments,
   CONNECTOR_PUBLIC_DOCUMENTS,
+  MCP_GUIDE_PUBLIC_DOCUMENTS,
   WORKS_WITH_PUBLIC_DOCUMENTS,
   EDITORIAL_PUBLIC_DOCUMENTS,
   SOLUTION_PUBLIC_DOCUMENTS,

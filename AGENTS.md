@@ -13,7 +13,21 @@ instructions about checks take precedence as well.
 Conventions for any AI coding agent working in this repo (Claude Code, Codex,
 Cursor, etc.).
 
-## Non-negotiable completion gates
+## Branch and release CI
+
+- `main` is the development branch. PRs require `Static checks`: validation,
+  React Doctor, runtime smoke tests, E2E environment contracts, and dist imports.
+- `production` is the release branch. PRs require both `Static checks` and
+  `Full test suite` (offline unit/integration tests and reconciliation evals),
+  with an up-to-date branch and resolved review threads. Direct pushes,
+  force pushes, and deletion are blocked; release through a PR from `main`.
+- Full tests also run on production pushes and manual CI dispatches. Superseded
+  PR runs are cancelled. Browser E2E remains a separate manual workflow.
+- Railway must follow `production` after the operator switches its source branch.
+  Creating this branch does not change Railway configuration.
+- These CI tiers do not replace the local completion gates below.
+
+## Non-negotiable local completion gates
 
 These gates are repo-wide, not scoped to the files you touched. Do not hand back,
 commit, push, open a PR, mark work complete, or call a task "done" while any gate
@@ -153,7 +167,7 @@ Treat this file as an operating contract for agents, not a loose README.
   `withTeam(db, teamId, userId)` in `packages/shared`. Use the returned
   named modules (`scope.timeline`, `scope.documents`, `scope.meetings`,
   `scope.objects`, `scope.boards`, `scope.pins`, `scope.suggestions`, `scope.calendar`,
-  `scope.integrations`, `scope.telegram`, `scope.mcp`, `scope.mcpOAuth`, `scope.onboarding`, `scope.jobRecovery`,
+  `scope.integrations`, `scope.telegram`, `scope.mcp`, `scope.mcpOAuth`, `scope.agentReporting`, `scope.onboarding`, `scope.jobRecovery`,
   `scope.reconciliation`, `scope.audit`, `scope.conversations`, `scope.billing`,
   `scope.billingOperator`) rather than flat scope methods or
   manually passing `db` into object helpers. Every Qdrant query filters on
@@ -163,6 +177,7 @@ Treat this file as an operating contract for agents, not a loose README.
   stop every vector writer, require the operator-only production acknowledgement,
   complete a source snapshot, and verify all teams plus total point coverage before
   switching collections. Retain the original collection and backup for rollback.
+- **Account provisioning is a separate pre-team boundary.** `packages/shared/src/agent-provisioning` owns verified-owner grants, idempotency receipts, owner-wide quotas and shared UI/API workspace creation. Only new workspaces may be provisioned; existing-team content still requires `withTeam`. Auth continuations are account-bound global identity records.
 - **Platform administration is a separate privilege boundary.** Global account/team directory, support-session, and platform-audit access goes through the verified `platform-admin` service. Impersonated content access still uses `withTeam` and the selected member’s role and visibility. Never replace the real login with the impersonated identity or omit its attribution from jobs.
 - **Captured raw event content is immutable.** Never `UPDATE` a source-ingested
   `raw_events` row's content. Derived facts can be re-extracted; the source is
@@ -397,7 +412,7 @@ Phased build plan and current state: [todo.md](todo.md). Product vision:
 ### Non-obvious env / startup gotchas
 
 - **Use Bun 1.4.4 from `.bun-version`.** Keep `engines.bun`, `packageManager`, CI, and every Docker stage aligned with that pin. Run `bun --version` before checks. Application execution and tests must not fall back to Node; record any required build/analysis exception in the local validation evidence, not the public README.
-- **The repository disables Bun’s automatic `.env` loading with `bunfig.toml` (`env = false`); offline tests also use `--no-env-file` and an environment allowlist. Production commands use `--no-env-file`.** Next.js loads `apps/web/.env` (symlink to `../../.env`). Before `bun run db:migrate`, `bun run demo:seed`, or running the worker, export the root env into the shell, e.g. `set -a; . ./.env; set +a`. Quote any values that contain spaces (for example `RECALL_BOT_DISPLAY_NAME="Timeline Bot"`) or bash will try to execute the trailing words when sourcing.
+- **The repository disables Bun’s automatic `.env` loading with the root and `apps/web/bunfig.toml` files (`env = false`); offline tests also use `--no-env-file` and an environment allowlist. Production commands use `--no-env-file`.** Keep the app-level configuration: Bun subprocesses started in that directory do not inherit the root configuration. Next.js normally loads `apps/web/.env` (symlink to `../../.env`); isolated E2E disables that separately. Before `bun run db:migrate`, `bun run demo:seed`, or running the worker, export the root env into the shell, e.g. `set -a; . ./.env; set +a`. Quote any values that contain spaces (for example `RECALL_BOT_DISPLAY_NAME="Timeline Bot"`) or bash will try to execute the trailing words when sourcing.
 - **The root `bun run dev` script must keep `--env-mode=loose`.** Turbo's strict default strips unlisted env vars from the worker task even after sourcing `.env`. Alternatively run packages separately with env already exported: `bun run --filter @timeline/web dev` and `bun run --filter @timeline/worker dev`.
 - Optional URL keys left blank in `.env.example` must use `emptyStringAsUnset` in the shared env schema so the documented shell export flow remains valid.
 - Keep a real `OPENROUTER_API_KEY` and `SECRETS_ENCRYPTION_KEY` in `.env` for chat/extraction/embeddings and for `bun run demo:seed` (seed encrypts fake integration credentials).

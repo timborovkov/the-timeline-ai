@@ -282,6 +282,14 @@ describe('Help route states', () => {
     expect(
       screen.getByText(/workspace evidence visible to you as the authorizing member/i),
     ).toBeTruthy();
+    expect(screen.getByRole('heading', { level: 3, name: 'Give this to your agent' })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Copy agent setup prompt' }));
+    await waitFor(() => {
+      expect(writeText).toHaveBeenCalledWith(
+        'Set up The Timeline: https://thetimeline.cc/agents/setup.md',
+      );
+    });
 
     fireEvent.click(screen.getByRole('button', { name: 'Copy Codex install prompt' }));
     await waitFor(() => {
@@ -297,7 +305,9 @@ describe('Help route states', () => {
     expect(TIMELINE_PLUGIN_INSTALL_PROMPT).toContain(
       'sign in to Timeline, choose the team to share',
     );
-    expect(TIMELINE_PLUGIN_INSTALL_PROMPT).toContain('The default grant is read plus capture');
+    expect(TIMELINE_PLUGIN_INSTALL_PROMPT).toContain(
+      'The default grant is read plus capture (the capture checkbox is on by default)',
+    );
     expect(TIMELINE_PLUGIN_INSTALL_PROMPT).toContain(
       'Never request agent:ask unless I explicitly ask',
     );
@@ -325,9 +335,7 @@ describe('Help route states', () => {
     expect(TIMELINE_SKILL_INSTALL_PROMPT).not.toContain('timeline-weekly-update');
 
     const skillLink = screen.getByRole('link', { name: 'View skill' });
-    expect(skillLink.getAttribute('href')).toBe(
-      'https://github.com/timborovkov/the-timeline-ai/tree/main/plugins/timeline/skills/timeline',
-    );
+    expect(skillLink.getAttribute('href')).toBe('https://thetimeline.cc/agents/SKILL.md');
 
     const codexInstallLink = screen.getByRole('link', { name: 'Read the Codex install guide' });
     expect(codexInstallLink.getAttribute('href')).toBe(

@@ -4,3 +4,8 @@ export * from '#src/qdrant/copy-points.js';
 export * from '#src/qdrant/measure.js';
 export * from '#src/qdrant/migrate-safety.js';
 export * from '#src/qdrant/point-id.js';
+export {
+  withQdrantOperation,
+  QdrantUnavailableError,
+  type QdrantOperationContext,
+} from '#src/qdrant/operation.js';

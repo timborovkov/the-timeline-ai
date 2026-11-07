@@ -25,6 +25,8 @@ describe('support context', () => {
     ['/app/connections/agent-tools', 'sources'],
     ['/app/connections/developer', 'sources'],
     ['/app/team/reconciliation/clusters/cluster-secret-id', 'team_reconciliation'],
+    ['/app/connect-agent', 'team_mcp_share'],
+    ['/app/team/mcp-share', 'team_mcp_share'],
   ])('collapses %s to the allowlisted %s surface', (pathname, surface) => {
     expect(supportSurfaceForPath(pathname)).toBe(surface);
   });

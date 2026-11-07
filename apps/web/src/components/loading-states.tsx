@@ -234,7 +234,7 @@ export function CollectionGroupSkeleton({
 }
 
 const KANBAN_LANE_WIDTH = {
-  board: 'w-[min(280px,calc(100vw-3rem))]',
+  board: 'min-w-[min(12rem,calc(100vw-3rem))] flex-[1_1_12rem]',
   task: 'w-[min(260px,calc(100vw-2.5rem))]',
 } as const;
 
@@ -259,7 +259,7 @@ export function CompactKanbanSkeleton({
   variant?: keyof typeof KANBAN_LANE_WIDTH;
 }) {
   return (
-    <section className="flex min-h-0 flex-1 overflow-x-auto px-2 pb-4 sm:px-3">
+    <section className="flex min-h-0 min-w-0 flex-1 overflow-x-auto px-2 pb-4 sm:px-3">
       {Array.from({ length: columns }).map((_, column) => (
         <div
           key={column}

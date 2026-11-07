@@ -12,6 +12,8 @@ describe('app analytics route classification', () => {
     expect(classifyAppAnalyticsPath('/app/connections/sources')).toBe('sources');
     expect(classifyAppAnalyticsPath('/app/connections/agent-tools')).toBe('sources');
     expect(classifyAppAnalyticsPath('/app/connections/developer')).toBe('sources');
+    expect(classifyAppAnalyticsPath('/app/connect-agent')).toBe('team_share');
+    expect(classifyAppAnalyticsPath('/app/team/mcp-share')).toBe('team_share');
   });
 
   it('collapses dynamic identifiers into fixed detail surfaces', () => {

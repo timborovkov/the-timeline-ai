@@ -15,6 +15,7 @@ export const onboardingStep = pgEnum('onboarding_step', [
   'first_meeting',
   'review_proposal',
   'daily_digest',
+  'connect_agent',
 ]);
 
 export const teamOnboardingCompletions = pgTable(

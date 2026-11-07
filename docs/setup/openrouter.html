@@ -663,6 +663,13 @@ curl -s -X PUT "$QDRANT_URL/collections/events/index" \
         reliable signal until queries start ranking the wrong things.
       </p>
 
+      <p>
+        The shared Qdrant client handles transient cold-start failures with bounded read retries and
+        caller cancellation. Interactive retrieval has a 30-second Qdrant budget; writes are not
+        blindly replayed after ambiguous failures. For optional Railway sleeping, deployment order,
+        telemetry configuration, and rollback checks, follow the
+        <a href="../railway.html#qdrant-serverless">Qdrant Serverless runbook</a>.
+      </p>
       <h2 id="qdrant-storage">On-disk collection copy (no re-embed)</h2>
       <p>
         Changing Qdrant storage layout — on-disk original vectors, scalar int8 quantization in RAM,

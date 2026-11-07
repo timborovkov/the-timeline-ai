@@ -5,10 +5,13 @@ import {
   dailyDigests,
   entities,
   objectChanges,
+  teamBillingAccounts,
+  users,
 } from '@timeline/db';
 import { expect } from '@timeline/test-support';
 import { vi } from '@timeline/test-support';
 import { afterAll, beforeAll, beforeEach, describe, it } from 'bun:test';
+import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 
 import {
@@ -18,7 +21,7 @@ import {
   listWorkspaceDigestTeamIds,
   removeTeamDigestDestination,
 } from '#src/messaging/destinations.js';
-import { generateDailyDigest } from '#src/messaging/digest.js';
+import { generateDailyDigest, listDailyDigestRecipients } from '#src/messaging/digest.js';
 import { createResettablePGliteTestDb, type ResettablePGliteTestDb } from '#src/test/pglite.js';
 
 import type { PGlite } from '@electric-sql/pglite';
@@ -265,6 +268,39 @@ describe('workspace digest destinations', () => {
       removeTeamDigestDestination({ db, teamId: TEAM_ID, destinationId: added.id }),
     ).resolves.toBe(true);
     expect(await listWorkspaceDigestTeamIds(db)).toEqual([]);
+  });
+
+  it('omits suspended workspaces and users from digest scheduling', async () => {
+    const added = await addTeamDigestDestination({
+      db,
+      teamId: TEAM_ID,
+      createdByUserId: USER_ID,
+      destination: { kind: 'slack_channel', targetId: 'C123', label: '#general' },
+    });
+    if ('error' in added) throw new Error(added.error);
+    expect(await listDailyDigestRecipients(db)).toEqual([
+      expect.objectContaining({ teamId: TEAM_ID, userId: USER_ID, email: 'owner@test.local' }),
+    ]);
+    expect(await listWorkspaceDigestTeamIds(db)).toEqual([TEAM_ID]);
+
+    await db.insert(teamBillingAccounts).values({ teamId: TEAM_ID, securityState: 'suspended' });
+    expect(await listDailyDigestRecipients(db)).toEqual([]);
+    expect(await listWorkspaceDigestTeamIds(db)).toEqual([]);
+
+    await db
+      .update(teamBillingAccounts)
+      .set({ securityState: 'terminated' })
+      .where(eq(teamBillingAccounts.teamId, TEAM_ID));
+    expect(await listDailyDigestRecipients(db)).toEqual([]);
+    expect(await listWorkspaceDigestTeamIds(db)).toEqual([]);
+
+    await db
+      .update(teamBillingAccounts)
+      .set({ securityState: 'normal' })
+      .where(eq(teamBillingAccounts.teamId, TEAM_ID));
+    await db.update(users).set({ suspendedAt: new Date() }).where(eq(users.id, USER_ID));
+    expect(await listDailyDigestRecipients(db)).toEqual([]);
+    expect(await listWorkspaceDigestTeamIds(db)).toEqual([TEAM_ID]);
   });
 
   it('generates a workspace digest without persisting a member row', async () => {

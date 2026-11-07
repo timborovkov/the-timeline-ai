@@ -2,10 +2,14 @@ import { expect } from '@timeline/test-support';
 import { describe, it } from 'bun:test';
 
 import { chatErrorMessage, connectionErrorMessage, searchErrorMessage } from '@/lib/ux-errors';
+
 describe('UX error messages', () => {
   it('maps search configuration failures to human recovery copy', () => {
     expect(searchErrorMessage('search_unconfigured')).toContain('Search is not configured yet');
     expect(searchErrorMessage('search_failed')).toContain('temporarily unavailable');
+    expect(searchErrorMessage('qdrant_failed')).toBe(
+      'Search is temporarily unavailable. Try again in a moment.',
+    );
     expect(searchErrorMessage('rate_limited')).toContain('cooling down');
   });
 

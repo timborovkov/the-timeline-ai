@@ -35,14 +35,19 @@ suspension. The request context separates the actual administrator from the
 effective user. Team scopes retain their normal membership and visibility checks;
 queued work carries the impersonation-session identifier and revalidates it at
 execution. Work that starts after exit, expiry, or revocation is rejected.
-Account-security, credential, OAuth connection, and legal acceptance actions
-cannot run on another person's behalf. Platform management and billing use the
-actual administrator identity.
+Account-security, credential, OAuth connection, provisioning, and legal
+acceptance actions cannot run on another person's behalf. Account-wide
+provisioning grants and audit history are blocked for impersonated reads as well
+as writes. Platform management and billing use the actual administrator identity.
 
 ## Suspension and audit
 
 User suspension blocks sign-in and existing authenticated access. Team suspension
 blocks workspace access and new ingestion/AI processing while retaining data.
+Suspended and terminated workspaces are omitted from the team selector, active-team
+resolution, and Telegram/Slack team pickers so a member cannot choose them; the
+team-switch route still rejects those workspaces as defense in depth. A cookie that
+still names a suspended team does not hide the member's remaining selectable teams.
 Security state remains separate from billing; restoration preserves other billing
 restrictions and the prior team security state. Existing provider subscriptions
 are not automatically canceled. System cleanup and billing reconciliation remain
@@ -70,9 +75,13 @@ blocked. Verified operator billing remains available for suspended teams through
 its separate administrator checks. Meeting scheduling excludes suspended teams
 and creators before applying the global batch limit.
 Webhook suspension failures retain failed target status for the existing retry
-and recovery flow instead of stranding targets in processing. Digest delivery
-rechecks the stored recipient and workspace security state before selecting any
-delivery channel; already-generated digests are skipped if either is suspended.
+and recovery flow instead of stranding targets in processing. Digest scheduling
+omits suspended and terminated workspaces, and suspended users, when listing
+recipients and shared destinations. Already-queued digest jobs for a suspended
+principal complete as skipped with an info log: they are not retried and are not
+reported to Sentry. Digest delivery rechecks the stored recipient and workspace
+security state before selecting any delivery channel; already-generated digests
+are skipped if either is suspended.
 Rate-limited chat digests retain their team and recipient in the encrypted deferred
 delivery envelope and queue routing metadata. The retry worker checks suspension
 again before any Slack or Telegram request.

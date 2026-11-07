@@ -116,7 +116,8 @@ The through-line:
 6. **Hiring**: product designer (Maya Chen, final round the day after seed day) and a
    reopened senior backend loop.
 
-Ask “what did the team achieve recently?” as Avery to walk the cited recap.
+Ask “what did the team achieve recently?” as Avery to walk the numbered recap. Hover a
+superscript to open the source card.
 
 Every seeded date — timestamps, calendar starts, digest windows, object due dates, and
 dates written inside notes, emails, Ask answers, and documents — is a relative offset
@@ -128,11 +129,11 @@ are one to three days late. Daily digests never land in the future.
 | Surface | What you should see |
 | --- | --- |
 | Timeline | ~2,500 events across a month of use. Weekdays carry ~90–100 raw events that collapse into fewer moments (GitHub workflows/PRs, Slack threads in `#eng` `#product` `#gtm` `#hiring`, Linear/Monday/Sentry/Drive, email threads, Telegram bursts, notes, documents, and the Ledger webhook). Weekends stay lighter. |
-| Objects | Tasks, deals, companies, people, decisions, incidents, hiring loops, follow-ups, projects |
+| Objects | Tasks, deals, companies, people, decisions, incidents, hiring loops, follow-ups, projects. Northstar Works, the Northstar pilot, and Series A process summaries use numbered source markers. |
 | Boards | Atlas Launch (tasks plus launch work), Customer dealflow, Series A funding |
 | Documents | Code of conduct, office rules, DPA excerpt, MSA excerpt, contractor excerpt, strategy memo, one-pager, pitch narrative, onboarding, brand voice, security FAQ, plus the Northstar handoff brief |
 | Meetings | Daily product standups across the last month, importer incident review, Northwind partner meeting, Brightline scoping, Maya Chen interview; saved daily standup with auto-join and a scheduled occurrence a few days out |
-| Ask | Nine historic sessions with `[ev:…]` / `[ent:…]` citation chips, including recent activity recap, Northstar status, a Northstar handoff brief, dealflow, hiring, webinar blockers, and the code of conduct |
+| Ask | Nine historic sessions with `[ev:…]` / `[ent:…]` tokens that render as numbered superscripts, including recent activity recap, Northstar status, a Northstar handoff brief, dealflow, hiring, webinar blockers, and the code of conduct |
 | Approvals | Fourteen pending proposals plus one already-accepted CSV-replay decision |
 | Digests | Twenty weekdays of Avery’s daily digest history. The most recent digest includes Highlights / Status / Follow-ups, open tasks, and upcoming calendar. Live digest send stays off so the worker can run without Resend, Slack, or Telegram delivery. Team settings still show the default email destination plus disabled Slack `#product` and Telegram “Acme leadership” destinations. |
 | Setup | Team checklist completed and dismissed for Avery |

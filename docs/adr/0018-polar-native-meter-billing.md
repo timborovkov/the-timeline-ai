@@ -25,7 +25,9 @@ credit hides margin and confuses prospects.
    from that env flag so flipping it to true does not wait for the next Polar
    webhook.
 5. Public catalog lives at `/pricing` (self-serve Free/PAYG/Team/Business columns;
-   Enterprise is a quiet contact nudge). Team usage is at `/app/usage`; admins
+   Enterprise is a quiet contact nudge). The Usage section is an illustrative
+   monthly calculator that calls the same `cheapestPlanPreview` / catalog rates as
+   billing; it does not mutate billing. Team usage is at `/app/usage`; admins
    manage plan/spend cap at `/app/team?section=billing`. Free hard-stops apply
    even while `shadowBilling` is true; paid spend-cap blocking applies when
    charges are enabled.

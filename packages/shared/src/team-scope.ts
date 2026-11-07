@@ -57,6 +57,7 @@ import {
   type AcceptIngestWebhookEvidenceInput,
   type AcceptIngestWebhookEvidenceResult,
 } from '#src/ingest-webhooks/accept.js';
+import { createIngestWebhookScope } from '#src/ingest-webhooks/scope.js';
 import { createIntegrationScope } from '#src/integrations/scope.js';
 import { createJobRecoveryScope } from '#src/job-recovery/index.js';
 import { embed as defaultEmbed, type EmbedResult } from '#src/llm/embed.js';
@@ -64,6 +65,8 @@ import { TIMELINE_MODELS } from '#src/llm/models.js';
 import { childLogger } from '#src/logger.js';
 import { createMcpScope } from '#src/mcp/scope.js';
 import { createMcpOAuthScope } from '#src/mcp-server/oauth-scope.js';
+import { createMcpOutboundScope } from '#src/mcp-server/outbound.js';
+import { createAgentReportingScope } from '#src/mcp-server/reporting.js';
 import { createMeetingScope } from '#src/meetings/scope.js';
 import { createObjectScope, normalizeIdentityFacet } from '#src/objects/index.js';
 import { invalidateObjectSummariesForRawEvent } from '#src/objects/summaries.js';
@@ -106,6 +109,7 @@ import {
 } from '#src/visibility.js';
 
 import type { chatStructured } from '#src/llm/chat.js';
+import type { QdrantOperationContext } from '#src/qdrant/operation.js';
 import type { TimelineMomentLookupPlan } from '#src/timeline-moments/index.js';
 
 // Note: `teamRole` value is referenced at runtime by drizzle elsewhere; keeping
@@ -306,6 +310,7 @@ export interface CreateEmailEventResult {
 }
 
 export interface SearchEventsInput {
+  operation?: QdrantOperationContext;
   query: string;
   /** Reuse a previously embedded query when scanning multiple semantic pages. */
   queryVector?: number[];
@@ -1704,6 +1709,20 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
     db,
     teamId,
     userId,
+  });
+
+  const mcpOutboundScope = createMcpOutboundScope({
+    db,
+    teamId,
+    userId,
+    ensureMember,
+  });
+
+  const ingestWebhookScope = createIngestWebhookScope({
+    db,
+    teamId,
+    userId,
+    ensureMember,
   });
 
   const calendarScope = createCalendarScope({
@@ -3917,6 +3936,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
         if (input.eventIds?.length === 0) return [];
 
         const searchOpts: SearchOpts = {
+          operation: input.operation ?? {},
           limit: input.limit ?? 20,
         };
         if (input.offset) searchOpts.offset = input.offset;
@@ -4148,6 +4168,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
       },
 
       async searchObjectNotes(input: {
+        operation?: QdrantOperationContext;
         query: string;
         objectId?: string;
         limit?: number;
@@ -4165,6 +4186,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
         const { vector } = await withSearchEmbeddingBilling(() => embedFn({ text: input.query }));
         const hits = await searchFn(teamId, userId, vector, {
           limit: limit * 3,
+          operation: input.operation ?? {},
           sourceKind: 'object_note',
         });
 
@@ -4298,6 +4320,9 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
     integrations: integrationScope,
     mcp: mcpScope,
     mcpOAuth: mcpOAuthScope,
+    mcpOutbound: mcpOutboundScope,
+    agentReporting: createAgentReportingScope({ db, teamId, userId, ensureMember }),
+    ingestWebhooks: ingestWebhookScope,
     onboarding: onboardingScope,
     billing: billingScope,
     billingOperator: createBillingOperatorScope({ db, teamId }),

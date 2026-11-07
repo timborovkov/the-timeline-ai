@@ -1332,6 +1332,8 @@ describe('TaskBoard', () => {
     expect(screen.queryByText(/loaded tasks hidden/)).toBeNull();
     const list = container.querySelector('[data-task-list]');
     expect(list).toBeTruthy();
+    expect(list?.className).toContain('flex h-full min-h-0 flex-1 flex-col');
+    expect(container.querySelector('.min-h-0.flex-1.overflow-y-auto')).toBeTruthy();
     expect(list?.className.split(/\s+/)).not.toContain('px-4');
     expect(list?.className.split(/\s+/)).not.toContain('md:px-8');
   });

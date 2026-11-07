@@ -1,5 +1,4 @@
-import { expect } from '@timeline/test-support';
-import { vi } from '@timeline/test-support';
+import { expect, vi } from '@timeline/test-support';
 import { beforeEach, describe, it } from 'bun:test';
 /**
  * Route-handler tests for `/api/documents/search`. Shared document search owns
@@ -210,5 +209,44 @@ describe('POST /api/documents/search', () => {
     expect(fakes.fakeSearchDocumentChunksPage).toHaveBeenCalledWith(
       expect.objectContaining({ offset: 24, limit: 5, maxOffset: 500 }),
     );
+  });
+
+  it('returns a retryable service error when Qdrant recovery is exhausted', async () => {
+    const { QdrantUnavailableError } = await import('@timeline/shared/qdrant');
+    fakes.fakeSearchDocumentChunksPage.mockRejectedValue(new QdrantUnavailableError('search', 503));
+    const response = await POST(request({ query: 'roadmap' }));
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({ error: 'qdrant_failed' });
+  });
+
+  it('cancels retrieval when the browser disconnects', async () => {
+    process.env.AUTH_SECRET = 'a'.repeat(32);
+    process.env.DATABASE_URL = 'postgres://x:y@localhost:5432/x';
+    process.env.QDRANT_URL = 'http://qdrant.test:6333';
+    const { createQdrantClient } = await import('@timeline/shared/qdrant');
+    // The route's operation context must reach a nested client without changing HTTP inputs.
+    const controller = new AbortController();
+    const req = new Request('https://timeline.test/api/documents/search', {
+      method: 'POST',
+      body: JSON.stringify({ query: 'roadmap' }),
+      signal: controller.signal,
+    });
+    let started!: () => void;
+    const ready = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    const client = createQdrantClient({
+      fetcher: () => {
+        started();
+        return new Promise(() => {
+          /* Remain pending until the request is cancelled. */
+        });
+      },
+    });
+    fakes.fakeSearchDocumentChunksPage.mockImplementation(() => client.search('t', 'u', [1]));
+    const response = POST(req).catch((e: unknown) => e);
+    await ready;
+    controller.abort();
+    expect(await response).toHaveProperty('name', 'AbortError');
   });
 });

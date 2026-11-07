@@ -8,6 +8,7 @@ import {
   userPins,
 } from '@timeline/db';
 import { childLogger, queue } from '@timeline/shared';
+import { pruneAgentCredentials } from '@timeline/shared/agent-provisioning';
 import { runBillingMaintenanceTick } from '@timeline/shared/billing';
 import { flushDeferredEmailEnrichment } from '@timeline/shared/email';
 import { getEnv } from '@timeline/shared/env';
@@ -420,6 +421,7 @@ export function startJanitorWorker(deps: { db: Db }): Worker<queue.JanitorJobDat
     guardWorkerProcessor(deps.db, async (job: Job<queue.JanitorJobData>) => {
       const startedAt = Date.now();
       try {
+        await pruneAgentCredentials(deps.db);
         const retention = await prunePlatformAdminRecords(deps.db);
         if (Object.values(retention).some((count) => count > 0))
           log.info(retention, 'janitor: platform record retention completed');

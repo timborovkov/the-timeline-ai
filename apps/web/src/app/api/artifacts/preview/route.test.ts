@@ -323,6 +323,37 @@ describe('POST /api/artifacts/preview', () => {
     expect(body).toContain(`/app/timeline?event=${IDS.event}#ev-${IDS.event}`);
     expect(body).toContain('"original":');
     expect(body).toContain('Original message');
+    expect(body).toContain('"sourceKey":"telegram"');
+    expect(body).toContain('"logoSrc":"/connectors/telegram.svg"');
+    expect(body).toContain('"author":"Mikael (Miku, @miku)"');
+    expect(body).toContain('"quote":"Otto mentioned the pilot."');
+  });
+
+  it('labels GitHub integration citations with the provider mark and repo', async () => {
+    fakes.getEventsByIds.mockResolvedValueOnce([
+      {
+        id: IDS.event,
+        source: 'integration',
+        contentText: 'GitHub release atlas-0.8.0 tagged.',
+        contentAudioUrl: null,
+        occurredAt: new Date('2026-08-11T07:58:00.000Z'),
+        visibility: 'team',
+        authorUserId: null,
+        sourceMetadata: {
+          provider: 'github',
+          github: { repo: 'acme-labs/atlas', type: 'release' },
+        },
+      },
+    ]);
+    fakes.resolveEventSenders.mockResolvedValueOnce(new Map());
+
+    const response = await POST(request({ ref: { kind: 'timeline_event', id: IDS.event } }));
+    expect(response.status).toBe(200);
+    const body = await response.text();
+    expect(body).toContain('"sourceLabel":"GitHub"');
+    expect(body).toContain('"logoSrc":"/connectors/github.svg"');
+    expect(body).toContain('"author":"acme-labs/atlas"');
+    expect(body).toContain('"quote":"GitHub release atlas-0.8.0 tagged."');
   });
 
   it('gives meeting events transcript, calendar, and timeline destinations plus original payload', async () => {

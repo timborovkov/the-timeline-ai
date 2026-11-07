@@ -29,7 +29,7 @@ workspace changes wait for human approval.
 - Search across projects, people, tasks, documents and calendars.
 - Generate cited answers, project updates, daily digests and handoff briefs.
 - Keep access scoped to each team and its source visibility settings.
-- Connect external agents through the [Timeline plugins and MCP interface](plugins/timeline/skills/README.md).
+- Connect external agents through the [Timeline plugins and MCP interface](plugins/timeline/skills/README.md). Agents read cited context over MCP and write notes through remember, ingest email, or an authenticated webhook. They can fetch [setup.md](https://thetimeline.cc/agents/setup.md) and the [published skill](https://thetimeline.cc/agents/SKILL.md).
 
 The project is under active development; APIs and migrations may change.
 
@@ -75,6 +75,12 @@ Common commands, after completing local setup:
 
 See [AGENTS.md](AGENTS.md) for repository conventions and change-specific checks.
 
+`main` is the development branch: PRs require static checks, React Doctor and
+smoke checks. Release through a PR from `main` to `production`, which additionally
+requires the full offline unit/integration suite and reconciliation evals. Full
+tests also run on production pushes and manual CI dispatches; browser E2E remains
+manual. See the [deployment guide](docs/railway.html#deploy-flow) for Railway setup.
+
 ## Documentation
 
 - [Developer documentation](docs/index.html)
@@ -95,3 +101,5 @@ Report security vulnerabilities privately through [SECURITY.md](SECURITY.md).
 This repository does not currently include an open-source license. Public access
 to the source does not grant general permission to copy, modify, redistribute or
 self-host it. See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution guidance.
+
+Agent coworker reporting, owner-delegated provisioning and rollout details: [agent coworkers](docs/agent-coworkers.md).

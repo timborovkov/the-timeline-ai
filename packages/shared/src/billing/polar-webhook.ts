@@ -51,9 +51,16 @@ export interface PolarWebhookPayload {
     updated_at?: string | number;
     modifiedAt?: string | number;
     updatedAt?: string | number;
-    customer?: { external_id?: string; id?: string };
+    customer?: {
+      external_id?: string;
+      id?: string;
+      metadata?: Record<string, unknown>;
+    };
     customer_id?: string;
     external_customer_id?: string;
+    /** Checkout/subscription custom metadata. Polar identity fixtures may set team_id. */
+    metadata?: Record<string, unknown>;
+    customer_metadata?: Record<string, unknown>;
     checkout_id?: string;
     checkoutId?: string;
     checkout?: { id?: string };
@@ -387,22 +394,69 @@ function polarCheckoutId(data: PolarWebhookPayload['data']): string | null {
   return trimmed.length > 0 ? trimmed : null;
 }
 
-function teamIdFromPayload(payload: PolarWebhookPayload): string | null {
-  return payload.data?.customer?.external_id ?? payload.data?.external_customer_id ?? null;
-}
-
 const POLAR_TEAM_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function isPolarWebhookTeamUuid(value: unknown): value is string {
-  return typeof value === 'string' && POLAR_TEAM_UUID_RE.test(value);
+  return (
+    typeof value === 'string' && POLAR_TEAM_UUID_RE.test(value.trim()) && value.trim() === value
+  );
+}
+
+function metadataTeamId(value: unknown): unknown {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+  const record = value as Record<string, unknown>;
+  if ('team_id' in record) return record.team_id;
+  if ('teamId' in record) return record.teamId;
+  return undefined;
+}
+
+/**
+ * First present Polar team identifier: customer.external_id, external_customer_id,
+ * then metadata.team_id on the object, customer, or customer_metadata.
+ * A present non-UUID value is invalid — never fall through to another candidate.
+ */
+export function resolvePolarWebhookTeamId(
+  payload: unknown,
+): { teamId: string } | { ignored: 'invalid_external_customer' | 'missing_external_customer' } {
+  if (!payload || typeof payload !== 'object') {
+    return { ignored: 'missing_external_customer' };
+  }
+  const data = (payload as PolarWebhookPayload).data;
+  const candidates: unknown[] = [
+    data?.customer?.external_id,
+    data?.external_customer_id,
+    metadataTeamId(data?.metadata),
+    metadataTeamId(data?.customer?.metadata),
+    metadataTeamId(data?.customer_metadata),
+  ];
+  for (const candidate of candidates) {
+    if (candidate === undefined || candidate === null) continue;
+    if (isPolarWebhookTeamUuid(candidate)) return { teamId: candidate };
+    return { ignored: 'invalid_external_customer' };
+  }
+  return { ignored: 'missing_external_customer' };
+}
+
+export class PolarWebhookInvalidTeamIdError extends Error {
+  constructor() {
+    super('polar webhook team id is not a uuid');
+    this.name = 'PolarWebhookInvalidTeamIdError';
+  }
 }
 
 /** Polar sandbox/org fixtures can send non-UUID external ids. Never query with those. */
 export function isIgnorablePolarWebhookFailure(err: unknown): boolean {
+  if (err instanceof PolarWebhookInvalidTeamIdError) return true;
   const parts: string[] = [];
   let current: unknown = err;
   for (let depth = 0; depth < 4 && current; depth++) {
     if (current instanceof Error) {
+      if (
+        current instanceof PolarWebhookInvalidTeamIdError ||
+        current.name === 'PolarWebhookInvalidTeamIdError'
+      ) {
+        return true;
+      }
       parts.push(current.message);
       current = current.cause;
       continue;
@@ -413,13 +467,19 @@ export function isIgnorablePolarWebhookFailure(err: unknown): boolean {
   return /invalid input syntax for type uuid/i.test(parts.join(' '));
 }
 
+function assertPolarWebhookTeamUuid(teamId: string): void {
+  if (!isPolarWebhookTeamUuid(teamId)) throw new PolarWebhookInvalidTeamIdError();
+}
+
 async function timelineTeamExists(db: Db, teamId: string): Promise<boolean> {
+  assertPolarWebhookTeamUuid(teamId);
   return withTeam(db, teamId, BILLING_SYSTEM_USER_ID, {
     skipMembershipCheck: true,
   }).billing.isExistingTeam();
 }
 
 async function lockBillingAccount(db: Db, teamId: string) {
+  assertPolarWebhookTeamUuid(teamId);
   const [row] = await db
     .select()
     .from(teamBillingAccounts)
@@ -1068,17 +1128,16 @@ export async function handlePolarWebhookEvent(input: {
     ].includes(type)
   )
     return { ok: true, ignored: 'unsupported_event' };
-  const teamId = teamIdFromPayload(input.payload);
+  const resolvedTeam = resolvePolarWebhookTeamId(input.payload);
   // Polar organizations can contain customers unrelated to Timeline (including
   // sandbox fixtures). Never pass provider-controlled identifiers into a UUID query.
-  if (teamId !== null && !isPolarWebhookTeamUuid(teamId))
-    return { ok: true, ignored: 'invalid_external_customer' };
-  if (!teamId) {
-    if (input.provider?.identity) {
+  if ('ignored' in resolvedTeam) {
+    if (resolvedTeam.ignored === 'missing_external_customer' && input.provider?.identity) {
       log.warn({ type }, 'polar webhook missing team mapping; acknowledging');
     }
-    return { ok: true, ignored: 'missing_external_customer' };
+    return { ok: true, ignored: resolvedTeam.ignored };
   }
+  const teamId = resolvedTeam.teamId;
   if (!(await timelineTeamExists(input.db, teamId))) {
     log.warn({ teamId, type }, 'polar webhook for unknown Timeline team; acknowledging');
     return { ok: true, ignored: 'unknown_team' };
@@ -1104,6 +1163,7 @@ async function applyPolarWebhookEvent(input: {
   type: string;
 }): Promise<{ ok: true; ignored?: string }> {
   const { teamId, type } = input;
+  assertPolarWebhookTeamUuid(teamId);
   if (input.provider?.identity) {
     const customerId = await assertStoredPolarIdentity(input.db, teamId, input.provider);
     const claimedCustomerId = input.payload.data?.customer?.id ?? input.payload.data?.customer_id;

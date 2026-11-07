@@ -21,4 +21,11 @@ describe('ProviderLogo', () => {
     expect(html).toContain('src="/connectors/slack.svg"');
     expect(html).not.toContain('/_next/image');
   });
+
+  it('keeps local PNG marks off the image optimizer', () => {
+    const html = renderToStaticMarkup(<ProviderLogo src="/connectors/hermes.png" />);
+
+    expect(html).toContain('src="/connectors/hermes.png"');
+    expect(html).not.toContain('/_next/image');
+  });
 });

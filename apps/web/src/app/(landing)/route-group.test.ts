@@ -31,6 +31,10 @@ describe('landing route group', () => {
 
   it('keeps public-page preferences, metadata, and motion usable', () => {
     const styles = readFileSync(landingRouteFile('home.module.css'), 'utf8');
+    const agentSetupStyles = readFileSync(
+      new URL('../../components/marketing/agents/agent-setup-card.module.css', import.meta.url),
+      'utf8',
+    );
     const headerStyles = readFileSync(
       new URL('../../components/public-header.module.css', import.meta.url),
       'utf8',
@@ -45,9 +49,10 @@ describe('landing route group', () => {
       narrowViewportStart,
     );
     const narrowViewportStyles = headerStyles.slice(narrowViewportStart, narrowViewportEnd);
-    const remFontSizeMinimums = [...styles.matchAll(/font-size:\s*(?:clamp\()?([\d.]+)rem/g)].map(
-      ([, size]) => Number(size),
-    );
+    const remFontSizeMinimums = [
+      ...styles.matchAll(/font-size:\s*(?:clamp\()?([\d.]+)rem/g),
+      ...agentSetupStyles.matchAll(/font-size:\s*(?:clamp\()?([\d.]+)rem/g),
+    ].map(([, size]) => Number(size));
 
     expect(narrowViewportStyles).toContain('.signInLink');
     expect(narrowViewportStyles).toContain('.themeToggle');
@@ -56,6 +61,9 @@ describe('landing route group', () => {
     expect(headerStyles).toContain('@media (prefers-reduced-motion: reduce)');
     expect(styles).toContain('--home-meta-size: 0.75rem');
     expect(Math.min(...remFontSizeMinimums)).toBeGreaterThanOrEqual(0.75);
+    expect(agentSetupStyles).toMatch(/\.marks\s*\{[^}]*flex-wrap:\s*nowrap;/s);
+    expect(styles).toMatch(/\.slackMeta span\s*\{[^}]*font-size:\s*var\(--home-meta-size\);/s);
+    expect(styles).toMatch(/\.mcpCalls code\s*\{[^}]*font-size:\s*var\(--home-meta-size\);/s);
     expect(styles).not.toContain('translateX(0.35rem)');
     expect(styles).toContain('animation: evidencePath 4.8s linear infinite both');
     expect(styles).toContain(
@@ -114,5 +122,16 @@ describe('landing route group', () => {
     expect(styles).toContain('.footer a');
     expect(styles).toContain('color: var(--home-paper)');
     expect(styles).toMatch(/\.footerGithub\s*\{[^}]*border: 0 !important;/s);
+    expect(styles).toMatch(/\.proofStage\s*\{[^}]*margin-top:\s*2\.75rem;/s);
+    expect(styles).toMatch(/\.ledgerInspect\s*\{[^}]*padding:\s*0 1rem 0\.85rem;/s);
+    expect(styles).toMatch(
+      /\.ledgerInspect summary\s*\{[^}]*width:\s*fit-content;[^}]*list-style:\s*none;/s,
+    );
+    expect(styles).toContain('.ledgerInspect summary::-webkit-details-marker');
+    expect(styles).toContain('.ledgerInspect summary:focus-visible');
+    expect(styles).toMatch(
+      /\.ledgerInspect\[open\]\s*>\s*summary::before\s*\{[^}]*transform:\s*rotate\(45deg\);/s,
+    );
+    expect(styles).toMatch(/\.ledgerInspectBody p\s*\{[^}]*font-size:\s*0\.86rem;/s);
   });
 });

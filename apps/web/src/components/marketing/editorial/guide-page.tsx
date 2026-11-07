@@ -10,6 +10,7 @@ import styles from '@/components/marketing/editorial/editorial.module.css';
 import { GuideClosingSections } from '@/components/marketing/editorial/guide-closing-sections';
 import { GuideMethodSections } from '@/components/marketing/editorial/guide-method-sections';
 import { findConnectorByName } from '@/components/marketing/integrations/connector-content';
+import { MarketingScreenshotBlock } from '@/components/marketing/product-screenshot';
 
 export function EditorialGuidePage({ guide }: { guide: EditorialGuide }) {
   return (
@@ -70,6 +71,12 @@ export function EditorialGuidePage({ guide }: { guide: EditorialGuide }) {
             <DirectAnswer answer={guide.answer} />
           </div>
         </header>
+
+        {guide.screenshots && guide.screenshots.length > 0 ? (
+          <div className="mx-auto max-w-6xl px-4 pb-14 sm:px-6 sm:pb-20">
+            <MarketingScreenshotBlock shots={guide.screenshots} />
+          </div>
+        ) : null}
 
         <GuideMethodSections guide={guide} />
         <GuideClosingSections guide={guide} />

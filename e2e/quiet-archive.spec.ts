@@ -272,6 +272,7 @@ const headingRouteGroups = {
     '/app/team/integrations/audit',
     '/app/team/mcp-servers',
     '/app/team/mcp-share',
+    '/app/connect-agent',
   ],
 };
 
