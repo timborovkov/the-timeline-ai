@@ -27,10 +27,10 @@ await vi.mock(
   () => import('next/navigation'),
 );
 
-const { cleanup, render, screen } = await import('@testing-library/react');
+const { cleanup, render, screen, within } = await import('@testing-library/react');
 const { default: userEvent } = await import('@testing-library/user-event');
 
-const { PublicNavigationDisclosure, PublicNavigationItems } =
+const { PublicFooterColumns, PublicNavigationDisclosure, PublicNavigationItems } =
   await import('@/components/public-navigation');
 
 beforeEach(() => {
@@ -107,10 +107,10 @@ describe('Header navigation', () => {
     expect(screen.getByRole('link', { name: 'Integrations hub' }).getAttribute('href')).toBe(
       '/integrations',
     );
-    expect(screen.getByRole('link', { name: 'Slack' }).getAttribute('href')).toBe(
+    expect(screen.getByRole('link', { name: 'Slack · Native sync' }).getAttribute('href')).toBe(
       '/integrations/slack',
     );
-    expect(screen.getByRole('link', { name: 'Telegram' }).getAttribute('href')).toBe(
+    expect(screen.getByRole('link', { name: 'Telegram · Capture' }).getAttribute('href')).toBe(
       '/integrations/telegram',
     );
     expect(screen.getByRole('link', { name: 'Google Drive' }).getAttribute('href')).toBe(
@@ -130,6 +130,15 @@ describe('Header navigation', () => {
     );
     expect(screen.getByRole('link', { name: 'Connect MCP tools' }).getAttribute('href')).toBe(
       '/integrations/mcp',
+    );
+    const slack = screen.getByRole('link', { name: 'Slack · Native sync' });
+    const telegram = screen.getByRole('link', { name: 'Telegram · Capture' });
+    const linear = screen.getByRole('link', { name: 'Linear' });
+    expect(slack.compareDocumentPosition(telegram) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+    expect(telegram.compareDocumentPosition(linear) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
     );
     expect(screen.queryByRole('link', { name: 'Jira · MCP lookup' })).toBeNull();
     expect(screen.queryByRole('link', { name: 'Notion · MCP lookup' })).toBeNull();
@@ -250,5 +259,33 @@ describe('Header navigation', () => {
     link.focus();
     await user.keyboard('{Enter}');
     expect(container.querySelector('details')?.open).toBe(false);
+  });
+});
+
+describe('PublicFooterColumns', () => {
+  it('lists Slack and Telegram in the Integrations column ahead of works-with pages', () => {
+    render(<PublicFooterColumns legalItems={<li>Legal</li>} />);
+
+    const column = screen.getByRole('region', { name: 'Integrations' });
+    const links = within(column)
+      .getAllByRole('link')
+      .map((link) => ({
+        name: link.textContent,
+        href: link.getAttribute('href'),
+      }));
+
+    expect(links.slice(0, 4)).toEqual([
+      { name: 'Integrations hub', href: '/integrations' },
+      { name: 'Slack · Native sync', href: '/integrations/slack' },
+      { name: 'Telegram · Capture', href: '/integrations/telegram' },
+      { name: 'Google Drive', href: '/integrations/google-drive' },
+    ]);
+    expect(links).toContainEqual({ name: 'GitHub', href: '/integrations/github' });
+    expect(links).toContainEqual({ name: 'Linear', href: '/integrations/linear' });
+    expect(links).toContainEqual({ name: 'Monday.com', href: '/integrations/monday' });
+    expect(links).toContainEqual({ name: 'Sentry', href: '/integrations/sentry' });
+    expect(links).toContainEqual({ name: 'Connect MCP tools', href: '/integrations/mcp' });
+    expect(links.map((link) => link.href)).not.toContain('/integrations/jira');
+    expect(links.map((link) => link.href)).not.toContain('/integrations/hubspot');
   });
 });

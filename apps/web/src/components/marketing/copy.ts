@@ -32,8 +32,16 @@ export const COMPARE_NAV_ITEMS = [
 ] as const;
 
 const NATIVE_AND_CAPTURE_NAV_ITEMS = [
-  { href: '/integrations/slack' as const, label: 'Slack' },
-  { href: TELEGRAM_PAGE.route, label: 'Telegram' },
+  {
+    href: '/integrations/slack' as const,
+    label: 'Slack',
+    statusLabel: 'Native sync' as const,
+  },
+  {
+    href: TELEGRAM_PAGE.route,
+    label: 'Telegram',
+    statusLabel: 'Capture' as const,
+  },
   { href: '/integrations/google-drive' as const, label: 'Google Drive' },
   { href: '/integrations/github' as const, label: 'GitHub' },
   { href: '/integrations/linear' as const, label: 'Linear' },
@@ -49,6 +57,10 @@ export const INTEGRATION_NAV_ITEMS = [
     group: 'agent-tools' as const,
   },
 ];
+
+export function publicNavItemLabel(item: { label: string; statusLabel?: string }): string {
+  return item.statusLabel ? `${item.label} · ${item.statusLabel}` : item.label;
+}
 
 export const TIMELINE_AGENT_SETUP_COMMAND = 'Set up The Timeline - https://thetimeline.cc/llms.txt';
 
