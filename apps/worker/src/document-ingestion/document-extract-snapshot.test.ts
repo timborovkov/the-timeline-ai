@@ -8,7 +8,7 @@ import { vi } from '@timeline/test-support';
 import { afterEach, describe, it } from 'bun:test';
 
 import {
-  DOCUMENT_EXTRACT_SNAPSHOT_IMAGE_REVISION,
+  DOCUMENT_EXTRACT_SNAPSHOT_RECIPE,
   DOCUMENT_EXTRACT_SNAPSHOT_PREFIX,
   documentExtractSnapshotName,
   ensureDocumentExtractSnapshot,
@@ -45,11 +45,27 @@ describe('document-extract snapshot naming', () => {
     expect(await hashDocumentExtractSandbox(dir)).not.toBe(first);
   });
 
+  it('changes snapshot identity when image inputs or resource requirements change', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'doc-extract-snap-'));
+    await writeSandbox(dir, { 'requirements.txt': 'x\n', 'extract_anydoc.py': 'x\n' });
+    const recipe = DOCUMENT_EXTRACT_SNAPSHOT_RECIPE;
+    const original = await hashDocumentExtractSandbox(dir);
+    for (const changed of [
+      { ...recipe, pythonVersion: '3.13' as const },
+      { ...recipe, requirementsFile: 'other-requirements.txt' },
+      { ...recipe, workdir: '/different' },
+      { ...recipe, files: [{ localPath: 'extract_anydoc.py', remotePath: '/different.py' }] },
+      { ...recipe, commands: ['chmod 755 /opt/timeline/extract_anydoc.py'] },
+      { ...recipe, resources: { ...recipe.resources, memory: 4 } },
+    ]) {
+      expect(await hashDocumentExtractSandbox(dir, changed)).not.toBe(original);
+    }
+  });
+
   it('pins snapshot names to the content hash prefix', () => {
     expect(documentExtractSnapshotName('abcdef012345')).toBe(
       `${DOCUMENT_EXTRACT_SNAPSHOT_PREFIX}-abcdef012345`,
     );
-    expect(DOCUMENT_EXTRACT_SNAPSHOT_IMAGE_REVISION.length).toBeGreaterThan(0);
   });
 
   it('resolves explicit pins and auto/content-hash to hashed names', async () => {
