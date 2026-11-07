@@ -2260,5 +2260,8 @@
   },
   "packages/shared/src/agent-provisioning/workspace.test.ts": {
     "group": "unit"
+  },
+  "apps/worker/src/job-delay.test.ts": {
+    "group": "unit"
   }
 }

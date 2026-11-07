@@ -22,6 +22,7 @@ import { and, asc, desc, eq, inArray, isNull, lt, sql } from 'drizzle-orm';
 import { withWorkerAiBilling, workerBillingJobOptions } from '#src/billing-context.js';
 import { captureWorkerException, captureWorkerJobFailure } from '#src/monitoring.js';
 import { guardWorkerProcessor } from '#src/platform-worker.js';
+import { finishIngestJob } from '#src/ingest-job-result.js';
 
 const log = childLogger('worker:extract');
 const ZERO_UUID = '00000000-0000-0000-0000-000000000000';
@@ -553,11 +554,7 @@ export function startExtractWorker(deps: ExtractWorkerDeps): Worker<queue.Extrac
         () => processExtractJobForTests(deps, job.data),
         workerBillingJobOptions(job, token),
       );
-      if (integrations.isDelayedIngestResult(result)) {
-        await job.moveToDelayed(Date.now() + result.retryAfterMs, token);
-        throw new DelayedError();
-      }
-      return result;
+      return finishIngestJob(job, result, token);
     }),
     {
       connection: queue.getRedisConnection(),
