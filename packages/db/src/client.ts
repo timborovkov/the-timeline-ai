@@ -1,7 +1,7 @@
-import postgres from 'postgres';
+import postgres, { type Options, type Sql } from 'postgres';
 
-export type PgClient = ReturnType<typeof postgres>;
-export type PgClientOptions = postgres.Options<Record<string, postgres.PostgresType>>;
+export type PgClient = Sql;
+export type PgClientOptions = Options;
 
 const silenceNotices = (): void => undefined;
 
@@ -36,6 +36,11 @@ interface BuildPgClientOptionsInput {
 export function buildPgClientOptions(input: BuildPgClientOptionsInput): PgClientOptions {
   return {
     max: input.max ?? 10,
+    // postgres.js 4 types parameters from the server (`infer: false`). Keep
+    // v3 JS inference so Date/boolean/bigint/Uint8Array/array values still
+    // bind without per-query casts. Drizzle and tagged-template callers rely
+    // on that, including uuid[] columns and Date comparisons.
+    infer: true,
     connect_timeout: PG_TIMEOUTS.connectTimeoutSeconds,
     idle_timeout: PG_TIMEOUTS.idleTimeoutSeconds,
     max_lifetime: PG_TIMEOUTS.maxLifetimeSeconds,
