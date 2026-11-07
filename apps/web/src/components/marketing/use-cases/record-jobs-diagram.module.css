@@ -1,0 +1,189 @@
+.figure {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+}
+
+.kicker {
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--border);
+  color: var(--signal);
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.flow {
+  display: grid;
+  grid-template-columns: minmax(9rem, 0.8fr) 2.4rem minmax(11rem, 1fr) 2.4rem minmax(12rem, 1.15fr);
+  min-height: 16rem;
+  padding: 1.25rem;
+}
+
+.sources,
+.record,
+.jobs {
+  padding: 1rem 1.1rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+}
+
+.sources h3,
+.record h3,
+.jobs h3 {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.record p {
+  margin: 0.55rem 0 0;
+  color: var(--fg-muted);
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+
+.sources ul,
+.jobs ul {
+  display: grid;
+  gap: 0.45rem;
+  margin: 0.85rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sources li,
+.jobs a {
+  color: var(--fg-muted);
+  font-size: 0.82rem;
+}
+
+.jobs a {
+  display: inline-flex;
+  min-height: 1.75rem;
+  align-items: center;
+  color: var(--fg);
+  text-decoration: underline;
+  text-decoration-color: var(--border-strong);
+  text-underline-offset: 3px;
+}
+
+.jobs a:hover {
+  text-decoration-color: var(--fg);
+}
+
+.jobs a:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.record {
+  display: grid;
+  align-content: center;
+  background: color-mix(in oklch, var(--signal) 8%, var(--bg));
+}
+
+.transfer {
+  display: flex;
+  position: relative;
+  align-items: center;
+  justify-content: center;
+}
+
+.transfer span {
+  position: absolute;
+  right: 0;
+  left: 0;
+  height: 1px;
+  overflow: hidden;
+  background: var(--border-strong);
+}
+
+.transfer span::after {
+  position: absolute;
+  inset: 0;
+  background: var(--signal);
+  content: '';
+  transform-origin: left;
+}
+
+.transfer svg {
+  z-index: 1;
+  width: 0.9rem;
+  height: 0.9rem;
+  padding: 0.15rem;
+  box-sizing: content-box;
+  background: var(--surface);
+  color: var(--signal);
+}
+
+.arrowNarrow {
+  display: none;
+}
+
+@media (max-width: 63.99rem) {
+  .flow {
+    grid-template-columns: 1fr;
+    min-height: 0;
+    gap: 0.35rem;
+  }
+
+  .transfer {
+    min-height: 2.25rem;
+  }
+
+  .transfer span {
+    top: 0;
+    right: auto;
+    bottom: 0;
+    left: 50%;
+    width: 1px;
+    height: auto;
+  }
+
+  .transfer span::after {
+    transform-origin: top;
+  }
+
+  .arrowWide {
+    display: none;
+  }
+
+  .arrowNarrow {
+    display: block;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .transfer span::after {
+    animation: jobs-trace 900ms cubic-bezier(0.22, 1, 0.36, 1) 160ms both;
+  }
+}
+
+@media (max-width: 63.99rem) and (prefers-reduced-motion: no-preference) {
+  .transfer span::after {
+    animation-name: jobs-trace-vertical;
+  }
+}
+
+@keyframes jobs-trace {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+
+@keyframes jobs-trace-vertical {
+  from {
+    transform: scaleY(0);
+  }
+  to {
+    transform: scaleY(1);
+  }
+}

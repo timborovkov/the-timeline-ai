@@ -1,0 +1,268 @@
+.figure {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+}
+
+.caption {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem 1.25rem;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.kicker,
+.disclosure {
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.kicker {
+  color: var(--signal);
+}
+
+.disclosure {
+  color: var(--fg-dim);
+}
+
+.lede {
+  max-width: 62ch;
+  margin: 0;
+  padding: 1rem 1.25rem 0;
+  color: var(--fg-muted);
+  font-size: 0.95rem;
+  line-height: 1.6;
+}
+
+.lede a {
+  color: var(--fg);
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+}
+
+.clients {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding: 1rem 1.25rem 0;
+}
+
+.client {
+  display: inline-flex;
+  gap: 0.4rem;
+  align-items: center;
+  min-height: 2rem;
+  padding: 0.2rem 0.55rem 0.2rem 0.3rem;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+  font-size: 0.78rem;
+}
+
+.clientMark {
+  display: grid;
+  width: 1.35rem;
+  height: 1.35rem;
+  place-items: center;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: #fff;
+}
+
+.flow {
+  display: grid;
+  grid-template-columns: minmax(12rem, 1.1fr) 2.5rem minmax(10rem, 0.9fr) 2.5rem minmax(
+      12rem,
+      1.1fr
+    );
+  gap: 0;
+  min-height: 22rem;
+  padding: 1.25rem;
+}
+
+.column,
+.core {
+  padding: 1.1rem 1.15rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+}
+
+.column h3,
+.core h3 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.column p,
+.core p {
+  margin: 0.55rem 0 0;
+  color: var(--fg-muted);
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+
+.column ul {
+  display: grid;
+  gap: 0.65rem;
+  margin: 1rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.column li {
+  display: grid;
+  gap: 0.15rem;
+}
+
+.column strong {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--fg);
+}
+
+.column span {
+  color: var(--fg-muted);
+  font-size: 0.75rem;
+  line-height: 1.4;
+}
+
+.core {
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  text-align: center;
+  background: color-mix(in oklch, var(--signal) 8%, var(--bg));
+}
+
+.mark {
+  width: 2rem;
+  height: 2rem;
+  margin-bottom: 0.65rem;
+  color: var(--fg);
+}
+
+.transfer {
+  display: flex;
+  position: relative;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.transfer span {
+  position: absolute;
+  right: 0;
+  left: 0;
+  height: 1px;
+  overflow: hidden;
+  background: var(--border-strong);
+}
+
+.transfer span::after {
+  position: absolute;
+  inset: 0;
+  background: var(--signal);
+  content: '';
+  transform-origin: left;
+}
+
+.transfer svg {
+  z-index: 1;
+  width: 0.9rem;
+  height: 0.9rem;
+  padding: 0.15rem;
+  box-sizing: content-box;
+  background: var(--surface);
+  color: var(--signal);
+}
+
+.arrowNarrow {
+  display: none;
+}
+
+@media (max-width: 63.99rem) {
+  .flow {
+    grid-template-columns: 1fr;
+    min-height: 0;
+    gap: 0.35rem;
+  }
+
+  .transfer {
+    min-height: 2.4rem;
+  }
+
+  .transfer span {
+    top: 0;
+    right: auto;
+    bottom: 0;
+    left: 50%;
+    width: 1px;
+    height: auto;
+  }
+
+  .transfer span::after {
+    transform-origin: top;
+  }
+
+  .arrowWide {
+    display: none;
+  }
+
+  .arrowNarrow {
+    display: block;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .transfer span::after {
+    animation: agent-trace 900ms cubic-bezier(0.22, 1, 0.36, 1) 180ms both;
+  }
+
+  .core {
+    animation: agent-core 640ms cubic-bezier(0.22, 1, 0.36, 1) 720ms both;
+  }
+}
+
+@media (max-width: 63.99rem) and (prefers-reduced-motion: no-preference) {
+  .transfer span::after {
+    animation-name: agent-trace-vertical;
+  }
+}
+
+@keyframes agent-trace {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+
+@keyframes agent-trace-vertical {
+  from {
+    transform: scaleY(0);
+  }
+  to {
+    transform: scaleY(1);
+  }
+}
+
+@keyframes agent-core {
+  from {
+    opacity: 0.72;
+    transform: scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}

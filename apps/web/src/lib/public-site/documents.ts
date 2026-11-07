@@ -171,7 +171,7 @@ const coreDocuments = definePublicDocuments('public-core', [
     description:
       'The Timeline keeps client, deal, task and decision records up to date from Slack, Telegram, email and calls. Every line has its source, and you approve each change.',
     indexability: 'index',
-    dates: { modified: '2026-11-03', reviewed: '2026-11-03' },
+    dates: { modified: '2026-11-07', reviewed: '2026-11-07' },
     capability: { kind: 'current-product' },
     sitemap: { changeFrequency: 'weekly', priority: 1 },
     structuredData: [

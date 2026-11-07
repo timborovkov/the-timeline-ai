@@ -112,7 +112,7 @@ export const TELEGRAM_PUBLIC_DOCUMENT = {
   title: TELEGRAM_PAGE.seoTitle,
   description: TELEGRAM_PAGE.seoDescription,
   indexability: 'index',
-  dates: { modified: '2026-11-03', reviewed: '2026-11-03' },
+  dates: { modified: '2026-11-07', reviewed: '2026-11-07' },
   capability: { kind: 'current-product' },
   sitemap: { changeFrequency: 'monthly', priority: 0.8 },
   structuredData: [
