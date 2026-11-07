@@ -114,12 +114,11 @@ export function buildLlmsTxt(options: LlmsTextOptions = {}): string {
     ...registry
       .forLlms('companion')
       .map((document) => link(document, llmsContent(document).summary, siteUrl)),
-    ...(['use-cases', 'solutions', 'compare'] as const).flatMap((section) =>
-      registry
-        .forLlms(section)
-        .map((document) => link(document, llmsContent(document).summary, siteUrl)),
-    ),
     '',
+    ...(['use-cases', 'solutions', 'compare'] as const).flatMap((section) => {
+      const heading = CONTRIBUTED_LLM_SECTIONS.find((item) => item.section === section)?.heading;
+      return heading ? renderLinkSection(heading, registry.forLlms(section), siteUrl) : [];
+    }),
     'Public product and help pages are the sources for product research. llms-full.txt provides an expanded Markdown reference; setup.md and SKILL.md are Markdown agent guides. Signed-in app routes, auth routes, invite routes, and API routes are not public research sources. Use signup and MCP links only for their stated account and connection purposes.',
     '',
   ].join('\n');

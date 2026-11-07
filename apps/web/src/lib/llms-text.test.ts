@@ -68,6 +68,9 @@ describe('llms text files', () => {
     expect(text).not.toContain('https://thetimeline.cc/');
     expect(text.indexOf('Already connected')).toBeLessThan(text.indexOf('## Product guides'));
     expect(text.indexOf('## For agents')).toBeLessThan(text.indexOf('## Optional'));
+    expect(text.indexOf('## Optional')).toBeLessThan(text.indexOf('## Use cases'));
+    expect(text.indexOf('## Use cases')).toBeLessThan(text.indexOf('## Solutions'));
+    expect(text.indexOf('## Solutions')).toBeLessThan(text.indexOf('## Compare'));
     expect(text.indexOf('## Optional')).toBeLessThan(text.indexOf('/compare)'));
   });
 
