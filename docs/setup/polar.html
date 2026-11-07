@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Polar billing setup</title>
-    <link rel="stylesheet" href="../docs.css" />
+    <link rel="stylesheet" href="../styles.css" />
   </head>
   <body>
     <main>
@@ -133,8 +133,9 @@ bun run billing:polar-convert --team-id=&lt;team-uuid&gt; --actor-email=&lt;veri
         <code>example.com/api/webhooks/polar</code> placeholder is removed only when it carries
         Timeline metadata and it is not the selected endpoint. An active product named Timeline
         Top-up, or stamped <code>timeline_key=topup</code>, is archived and is not recreated.
-        Railway deploys <code>main</code> to production and the <code>staging</code> branch to
-        staging, so a feature branch has no preview URL. The webhook defaults to
+        Production releases use the protected <code>production</code> branch after the operator
+        switches Railway's sources (see <a href="../railway.html#deploy-flow">deploy flow</a>). A
+        feature branch does not automatically have a preview URL. The webhook defaults to
         <code>https://thetimeline.cc/api/webhooks/polar</code>. That route has to be deployed before
         Polar deliveries succeed. Polar sandbox and production organizations are separate APIs, but
         a sandbox webhook whose URL is that production endpoint still delivers there; the handler
@@ -382,9 +383,9 @@ PLATFORM_ADMIN_EMAILS=
         <code>subscription.active</code>, <code>subscription.updated</code>,
         <code>subscription.canceled</code>, and <code>subscription.revoked</code>).
         <code>bun run billing:polar-setup</code> creates that endpoint. Keep it pointed at a deploy
-        that serves this route; production and staging only follow <code>main</code> and
-        <code>staging</code>. Webhook signatures require a timestamp within five minutes.
-        Subscription events compare Polar <code>modified_at</code> to
+        that serves this route; verify the deployed commit and Railway source branch rather than
+        assuming a merge to <code>main</code> deploys it. Webhook signatures require a timestamp
+        within five minutes. Subscription events compare Polar <code>modified_at</code> to
         <code>polar_event_modified_at</code>, not local <code>updated_at</code>, after locking the
         billing account in the same transaction. Request bodies are bounded to the integration
         webhook size limit before signature verify. Paid-plan activation writes the catalog default

@@ -77,6 +77,12 @@ Common commands, after completing local setup:
 
 See [AGENTS.md](AGENTS.md) for repository conventions and change-specific checks.
 
+`main` is the development branch: PRs require static checks, React Doctor and
+smoke checks. Release through a PR from `main` to `production`, which additionally
+requires the full offline unit/integration suite and reconciliation evals. Full
+tests also run on production pushes and manual CI dispatches; browser E2E remains
+manual. See the [deployment guide](docs/railway.html#deploy-flow) for Railway setup.
+
 ## Documentation
 
 - [Developer documentation](docs/index.html)

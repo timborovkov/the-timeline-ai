@@ -13,7 +13,21 @@ instructions about checks take precedence as well.
 Conventions for any AI coding agent working in this repo (Claude Code, Codex,
 Cursor, etc.).
 
-## Non-negotiable completion gates
+## Branch and release CI
+
+- `main` is the development branch. PRs require `Static checks`: validation,
+  React Doctor, runtime smoke tests, E2E environment contracts, and dist imports.
+- `production` is the release branch. PRs require both `Static checks` and
+  `Full test suite` (offline unit/integration tests and reconciliation evals),
+  with an up-to-date branch and resolved review threads. Direct pushes,
+  force pushes, and deletion are blocked; release through a PR from `main`.
+- Full tests also run on production pushes and manual CI dispatches. Superseded
+  PR runs are cancelled. Browser E2E remains a separate manual workflow.
+- Railway must follow `production` after the operator switches its source branch.
+  Creating this branch does not change Railway configuration.
+- These CI tiers do not replace the local completion gates below.
+
+## Non-negotiable local completion gates
 
 These gates are repo-wide, not scoped to the files you touched. Do not hand back,
 commit, push, open a PR, mark work complete, or call a task "done" while any gate
