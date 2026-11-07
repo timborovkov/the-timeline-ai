@@ -12,6 +12,7 @@ import { pruneAgentCredentials } from '@timeline/shared/agent-provisioning';
 import { runBillingMaintenanceTick } from '@timeline/shared/billing';
 import { flushDeferredEmailEnrichment } from '@timeline/shared/email';
 import { getEnv } from '@timeline/shared/env';
+import { RECOVERY_STALE_AFTER_MS } from '@timeline/shared/job-recovery/policy';
 import {
   flushDeferredAcceptedSourceEnrichment,
   flushDeferredAudioTranscription,
@@ -35,20 +36,6 @@ const PAGE_SIZE = 500;
 // A cap hit just rolls to the next tick — workers are idempotent.
 const MAX_REQUEUES_PER_KIND = 5_000;
 
-// Stuck-row thresholds. Picked to be generous multiples of the normal
-// happy-path latency so a fast-but-legitimate run never gets a duplicate
-// job. The duplicate would be harmless (worker advisory locks bail under
-// the status re-check) but unnecessary log noise.
-const PENDING_DOC_MIN_AGE_MS = 5 * 60 * 1000;
-// 60min, not 30, because `documentVersions.createdAt` is set at
-// presigned-PUT allocation time — not when extract starts. A slow user
-// upload + a slow vision-OCR pass can legitimately leave the row in
-// 'extracting' 30min+ from createdAt. Worker idempotency would bail any
-// duplicate (advisory lock + under-lock status re-check) so the cost of
-// being wrong is noise, not corruption, but 60min keeps the noise to
-// genuinely-dead workers.
-const EXTRACTING_DOC_MIN_AGE_MS = 60 * 60 * 1000;
-const PROCESSING_MEETING_MIN_AGE_MS = 30 * 60 * 1000;
 const PENDING_TASK_CATEGORY_MIN_AGE_MS = 5 * 60 * 1000;
 
 const log = childLogger('worker:janitor');
@@ -298,11 +285,11 @@ async function sweepDocumentVersions(
           or(
             and(
               eq(documentVersions.processingStatus, 'pending'),
-              sql`${documentVersions.createdAt} < now() - make_interval(secs => ${PENDING_DOC_MIN_AGE_MS / 1000})`,
+              sql`${documentVersions.createdAt} < now() - make_interval(secs => ${RECOVERY_STALE_AFTER_MS.documentPending / 1000})`,
             ),
             and(
               eq(documentVersions.processingStatus, 'extracting'),
-              sql`${documentVersions.createdAt} < now() - make_interval(secs => ${EXTRACTING_DOC_MIN_AGE_MS / 1000})`,
+              sql`${documentVersions.createdAt} < now() - make_interval(secs => ${RECOVERY_STALE_AFTER_MS.documentExtracting / 1000})`,
             ),
           ),
           cursor ? gt(documentVersions.id, cursor) : undefined,
@@ -381,7 +368,7 @@ async function sweepMeetings(
       .where(
         and(
           eq(meetings.status, 'processing'),
-          sql`${meetings.updatedAt} < now() - make_interval(secs => ${PROCESSING_MEETING_MIN_AGE_MS / 1000})`,
+          sql`${meetings.updatedAt} < now() - make_interval(secs => ${RECOVERY_STALE_AFTER_MS.meetingProcessing / 1000})`,
           cursor ? gt(meetings.id, cursor) : undefined,
         ),
       )
