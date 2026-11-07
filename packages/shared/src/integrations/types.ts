@@ -239,6 +239,13 @@ export interface SyncContext {
     permissionsHash: string | null;
     mimeType: string | null;
     commentsSnapshot?: unknown;
+    permissionsSnapshot?: {
+      id: string;
+      type: string;
+      role: string;
+      email: string;
+      domain: string;
+    }[];
     snapshotLocate?: {
       length: number;
       suffix: string;
@@ -260,6 +267,13 @@ export interface SyncContext {
     permissionsHash: string | null;
     mimeType: string | null;
     commentsSnapshot?: unknown;
+    permissionsSnapshot?: {
+      id: string;
+      type: string;
+      role: string;
+      email: string;
+      domain: string;
+    }[];
     snapshotLocate?: {
       length: number;
       suffix: string;

@@ -200,6 +200,9 @@ describe('Drive A→B→A→B revisit', () => {
           permissionsHash: input.permissionsHash ?? '',
           mimeType: input.mimeType,
           commentsSnapshot: Array.isArray(input.commentsSnapshot) ? input.commentsSnapshot : [],
+          permissionsSnapshot: Array.isArray(input.permissionsSnapshot)
+            ? input.permissionsSnapshot
+            : [],
           snapshotLocate: input.snapshotLocate ?? null,
           ancestry: input.ancestry ?? null,
         }),

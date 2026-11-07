@@ -2,6 +2,7 @@ import { createHmac, randomUUID } from 'node:crypto';
 
 import { getEnv } from '#src/env.js';
 import {
+  compactDrivePermissionGrants,
   driveDebouncePlan,
   driveExtractMatchesFileRevision,
   driveFileChangeDedupKey,
@@ -14,6 +15,7 @@ import {
   takeDriveExtractSlot,
   takeDriveProcessSlot,
   type DriveObjectLinkHints,
+  type DrivePermissionGrant,
 } from '#src/integrations/google-drive-capture.js';
 import {
   commentEventContext,
@@ -877,16 +879,58 @@ function permissionsFingerprint(permissions: DrivePermission[]): string {
   );
 }
 
-function clientShareSignals(permissions: DrivePermission[], teamDomains: string[]): string[] {
+function clientShareGrant(
+  permission: {
+    id?: string;
+    type?: string;
+    role?: string;
+    emailAddress?: string;
+    email?: string;
+    domain?: string;
+  },
+  team: Set<string>,
+): { key: string; signal: 'shared_anyone' | 'shared_external_domain' } | null {
+  const id = permission.id ?? '';
+  if (permission.type === 'anyone') {
+    return { key: `anyone:${id}`, signal: 'shared_anyone' };
+  }
+  const email = (permission.emailAddress ?? permission.email ?? '').toLowerCase();
+  const recordedDomain = permission.domain?.trim() ?? '';
+  const domain = (
+    recordedDomain.length > 0
+      ? recordedDomain
+      : email.includes('@')
+        ? email.slice(email.lastIndexOf('@') + 1)
+        : ''
+  ).toLowerCase();
+  if (domain.length > 0 && !team.has(domain)) {
+    return {
+      key: `external:${id || email || domain}:${permission.role ?? ''}`,
+      signal: 'shared_external_domain',
+    };
+  }
+  return null;
+}
+
+function clientShareSignals(
+  permissions: DrivePermission[],
+  teamDomains: string[],
+  previousGrants: readonly DrivePermissionGrant[] = [],
+): string[] {
   const team = new Set(teamDomains.map((domain) => domain.toLowerCase()));
+  const previousKeys = new Set(
+    previousGrants.flatMap((grant) => {
+      const clientShare = clientShareGrant(grant, team);
+      return clientShare ? [clientShare.key] : [];
+    }),
+  );
   const signals = new Set<string>();
+  const seen = new Set<string>();
   for (const permission of permissions) {
-    if (permission.type === 'anyone') signals.add('shared_anyone');
-    const domain = (
-      permission.domain ??
-      permission.emailAddress?.slice(permission.emailAddress.lastIndexOf('@') + 1)
-    )?.toLowerCase();
-    if (domain && domain.length > 0 && !team.has(domain)) signals.add('shared_external_domain');
+    const clientShare = clientShareGrant(permission, team);
+    if (!clientShare || seen.has(clientShare.key) || previousKeys.has(clientShare.key)) continue;
+    seen.add(clientShare.key);
+    signals.add(clientShare.signal);
   }
   return [...signals];
 }
@@ -908,6 +952,7 @@ async function persistDriveSnapshot(
     permissionsHash: string;
     mimeType: string;
     commentsSnapshot: ReturnType<typeof compactDriveComments>;
+    permissionsSnapshot: DrivePermissionGrant[];
     snapshotLocate: ReturnType<typeof buildDriveSnapshotLocate>;
   },
   ancestry: DriveObjectLinkHints,
@@ -932,6 +977,7 @@ function snapshotFromAdvanceDecision(
     permissionsHash: decision.snapshot.permissionsHash,
     mimeType,
     commentsSnapshot: decision.snapshot.commentsSnapshot,
+    permissionsSnapshot: decision.snapshot.permissionsSnapshot ?? [],
     snapshotLocate: locate,
   };
 }
@@ -1393,9 +1439,12 @@ async function processDriveFile(
   const commentsChanged = previous?.commentsHash !== commentsHash;
   const permissionsChanged = previous?.permissionsHash !== permissionsHash;
   const teamDomains = ctx.listTeamEmailDomains ? await ctx.listTeamEmailDomains() : [];
+  const permissionsSnapshot = compactDrivePermissionGrants(permissions);
   const strongSignals = [
     ...commentSignals(comments, commentsChanged),
-    ...(permissionsChanged ? clientShareSignals(permissions, teamDomains) : []),
+    ...(permissionsChanged
+      ? clientShareSignals(permissions, teamDomains, previous?.permissionsSnapshot ?? [])
+      : []),
   ];
   const diff = diffDriveSnapshots({
     previousSnapshotText: previous?.snapshotText ?? '',
@@ -1412,6 +1461,7 @@ async function processDriveFile(
     permissionsHash,
     mimeType: file.mimeType,
     commentsSnapshot: compactDriveComments(comments),
+    permissionsSnapshot,
   };
 
   if (previous?.contentHash === contentHash && !commentsChanged && !permissionsChanged) {
@@ -1448,6 +1498,7 @@ async function processDriveFile(
     commentsHash: previous.commentsHash ?? '',
     commentsSnapshot: previousComments,
     permissionsHash: previous.permissionsHash ?? '',
+    permissionsSnapshot: previous.permissionsSnapshot ?? [],
     mimeType: previous.mimeType,
   };
 

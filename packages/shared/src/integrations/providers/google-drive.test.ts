@@ -31,8 +31,12 @@ const {
   packDriveChangeEvents,
   packDriveEventContent,
 } = await import('#src/integrations/providers/google-drive.js');
-const { DRIVE_FILE_DEBOUNCE_MS, DRIVE_TRANSIENT_RESULT_TOO_LARGE, hashDrivePayload } =
-  await import('#src/integrations/google-drive-capture.js');
+const {
+  compactDrivePermissionGrants,
+  DRIVE_FILE_DEBOUNCE_MS,
+  DRIVE_TRANSIENT_RESULT_TOO_LARGE,
+  hashDrivePayload,
+} = await import('#src/integrations/google-drive-capture.js');
 const {
   commentEventContext,
   compactDriveComments,
@@ -3992,6 +3996,7 @@ describe('googleDriveProvider', () => {
         snapshotText,
         commentsHash: driveCommentsHash([]),
         permissionsHash: drivePermissionsHash(pageOnePermissions),
+        permissionsSnapshot: compactDrivePermissionGrants(pageOnePermissions),
         mimeType: 'application/vnd.google-apps.document',
       }),
     });
@@ -4015,6 +4020,79 @@ describe('googleDriveProvider', () => {
     expect(events[0]?.extra).toMatchObject({
       drive: { strong_signals: ['shared_external_domain'] },
     });
+  });
+
+  it('does not emit client_share when a preexisting external grant is unchanged and an internal collaborator is added', async () => {
+    const body = 'Contract amount is forty eight thousand dollars for Northstar.';
+    const snapshotText = formatDriveDocumentTabs([{ title: 'Tab 1', text: body }]);
+    const contentHash = hashDrivePayload(snapshotText);
+    const baselinePermissions = [
+      { id: 'p-anyone', type: 'anyone', role: 'reader' },
+      { id: 'p-client', type: 'user', role: 'reader', emailAddress: 'buyer@northstar.test' },
+    ];
+    const nextPermissions = [
+      ...baselinePermissions,
+      { id: 'p-internal', type: 'user', role: 'writer', emailAddress: 'sam@acme.test' },
+    ];
+    const fetch = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((input) => {
+      const url = requestUrl(input);
+      if (isGoogleDocsGet(url)) {
+        return Promise.resolve(googleDocsPlainResponse(body));
+      }
+      if (url.pathname.endsWith('/comments')) {
+        return Promise.resolve(jsonResponse({ comments: [] }));
+      }
+      if (url.pathname.endsWith('/permissions')) {
+        return Promise.resolve(jsonResponse({ permissions: nextPermissions }));
+      }
+      if (url.pathname.endsWith('/files/file-shared')) {
+        return Promise.resolve(
+          jsonResponse({
+            id: 'file-shared',
+            name: 'SOW',
+            mimeType: 'application/vnd.google-apps.document',
+            parents: ['shared-folder'],
+            modifiedTime: '2026-06-20T10:00:00.000Z',
+          }),
+        );
+      }
+      return Promise.resolve(jsonResponse({ message: 'unexpected' }, { status: 404 }));
+    });
+    vi.stubGlobal('fetch', fetch);
+    const ctx = syncContext({
+      loadLatestDriveSnapshot: vi.fn().mockResolvedValue({
+        contentHash,
+        snapshotText,
+        snapshotLocate: buildDriveSnapshotLocate(snapshotText),
+        commentsHash: driveCommentsHash([]),
+        permissionsHash: drivePermissionsHash(baselinePermissions),
+        permissionsSnapshot: compactDrivePermissionGrants(baselinePermissions),
+        mimeType: 'application/vnd.google-apps.document',
+      }),
+    });
+
+    await googleDriveProvider.incrementalSync({
+      integration: { id: 'integration-1', teamId: 'team-1' } as never,
+      tokens: { access_token: 'access-token', expires_at: Date.now() + 600_000 },
+      selections: [{ kind: 'drive.file', externalId: 'file-shared' }],
+      ctx: ctx,
+      target: { resourceType: 'drive.file', externalId: 'file-shared' },
+    });
+
+    const events: IntegrationEvent[] = (
+      ctx.writeEvents as unknown as { mock: { calls: [IntegrationEvent[]][] } }
+    ).mock.calls.flatMap(([batch]) => batch);
+    expect(events).toHaveLength(0);
+    expect(ctx.judgeDriveChange).not.toHaveBeenCalled();
+    expect(ctx.saveDriveSnapshot).toHaveBeenCalledWith(
+      expect.objectContaining({
+        fileId: 'file-shared',
+        permissionsHash: drivePermissionsHash(nextPermissions),
+        permissionsSnapshot: compactDrivePermissionGrants(nextPermissions),
+      }),
+    );
   });
 
   it('passes the matched selected ancestor into Drive linked-object lookup', async () => {

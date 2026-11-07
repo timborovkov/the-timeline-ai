@@ -137,6 +137,7 @@ describe('Drive withTeam isolation guard', () => {
     const adapter = /saveDriveSnapshot\(input\) \{[\s\S]*?\n      \},/.exec(source)?.[0];
     expect(adapter).toBeDefined();
     expect(adapter).toContain('commentsSnapshot');
+    expect(adapter).toContain('permissionsSnapshot');
     expect(adapter).toContain('snapshotLocate');
     expect(adapter).toContain('ancestry');
     expect(source).toContain('deleteDriveSnapshotsForFile');

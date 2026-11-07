@@ -44,6 +44,15 @@ export interface DriveSnapshotAdvanceFields {
   commentsHash: string;
   commentsSnapshot: DriveCommentSnapshot[];
   permissionsHash: string;
+  permissionsSnapshot?:
+    | {
+        id: string;
+        type: string;
+        role: string;
+        email: string;
+        domain: string;
+      }[]
+    | undefined;
   mimeType: string | null;
 }
 
@@ -172,6 +181,9 @@ export function decideDriveSnapshotAdvance(input: {
       permissionsHash: persistPermissions
         ? input.next.permissionsHash
         : input.previous.permissionsHash,
+      permissionsSnapshot: persistPermissions
+        ? input.next.permissionsSnapshot
+        : input.previous.permissionsSnapshot,
       mimeType: input.next.mimeType ?? input.previous.mimeType,
     },
   };

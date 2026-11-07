@@ -75,6 +75,7 @@ import {
   pickNewestDriveTrackedAncestry,
   listDriveExtractCursors,
   cleanupUncoveredDriveTrackedFiles,
+  compactDrivePermissionGrants,
   deleteDriveSnapshotsForFile,
   loadLatestDriveSnapshot,
   parseDriveExtractCursor,
@@ -1188,6 +1189,47 @@ describe('saveDriveSnapshot uniqueness', () => {
     });
     expect(loaded?.snapshotLocate).toEqual(snapshot.snapshotLocate);
     expect(loaded?.snapshotLocate?.suffix).toContain('$48k');
+  });
+
+  it('persists and reloads compact permission grants beside the locate index', async () => {
+    const [integration] = await db
+      .insert(integrations)
+      .values({
+        teamId: TEAM_ID,
+        connectedByUserId: USER_ID,
+        provider: 'google_drive',
+        displayName: 'Google Drive',
+        externalAccountId: 'drive-acct-grants',
+        visibilityDefault: 'team',
+      })
+      .returning();
+    if (!integration) throw new Error('integration insert failed');
+    const body = 'Northstar SOW';
+    const permissionsSnapshot = compactDrivePermissionGrants([
+      { id: 'p-anyone', type: 'anyone', role: 'reader' },
+      { id: 'p-client', type: 'user', role: 'reader', emailAddress: 'buyer@northstar.test' },
+    ]);
+    await saveDriveSnapshot(db as never, {
+      teamId: TEAM_ID,
+      integrationId: integration.id,
+      fileId: 'file-grants',
+      snapshot: {
+        contentHash: hashDrivePayload(body),
+        snapshotText: body,
+        snapshotLocate: buildDriveSnapshotLocate(body),
+        commentsHash: 'comments-grants',
+        permissionsHash: 'permissions-grants',
+        permissionsSnapshot,
+        mimeType: 'application/vnd.google-apps.document',
+      },
+    });
+    const loaded = await loadLatestDriveSnapshot(db as never, {
+      teamId: TEAM_ID,
+      integrationId: integration.id,
+      fileId: 'file-grants',
+    });
+    expect(loaded?.permissionsSnapshot).toEqual(permissionsSnapshot);
+    expect(loaded?.snapshotLocate?.chunkHashes.length).toBeGreaterThan(0);
   });
 
   it('keeps extracted chunk text only on the latest snapshot and purges it on disconnect or file removal', async () => {

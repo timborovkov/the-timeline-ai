@@ -47,6 +47,14 @@ export interface DriveDebouncePlan {
   quietUntil: string;
 }
 
+export interface DrivePermissionGrant {
+  id: string;
+  type: string;
+  role: string;
+  email: string;
+  domain: string;
+}
+
 export interface DriveSnapshotRecord {
   contentHash: string;
   snapshotText: string;
@@ -54,8 +62,74 @@ export interface DriveSnapshotRecord {
   permissionsHash: string;
   mimeType: string | null;
   commentsSnapshot?: unknown;
+  permissionsSnapshot?: DrivePermissionGrant[];
   snapshotLocate?: DriveSnapshotLocate | null;
   ancestry?: DriveObjectLinkHints | null;
+}
+
+export function compactDrivePermissionGrants(
+  permissions: readonly {
+    id?: string;
+    type?: string;
+    role?: string;
+    emailAddress?: string;
+    email?: string;
+    domain?: string;
+  }[],
+): DrivePermissionGrant[] {
+  return permissions.map((permission) => {
+    const email = permission.emailAddress ?? permission.email ?? '';
+    const domain =
+      permission.domain && permission.domain.length > 0
+        ? permission.domain
+        : email.includes('@')
+          ? email.slice(email.lastIndexOf('@') + 1)
+          : '';
+    return {
+      id: permission.id ?? '',
+      type: permission.type ?? '',
+      role: permission.role ?? '',
+      email,
+      domain,
+    };
+  });
+}
+
+function parseDrivePermissionGrants(value: unknown): DrivePermissionGrant[] {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return [];
+  const grants = (value as Record<string, unknown>).permissionGrants;
+  if (!Array.isArray(grants)) return [];
+  return compactDrivePermissionGrants(
+    grants.flatMap((grant) => {
+      if (!grant || typeof grant !== 'object' || Array.isArray(grant)) return [];
+      const record = grant as Record<string, unknown>;
+      return [
+        {
+          id: typeof record.id === 'string' ? record.id : '',
+          type: typeof record.type === 'string' ? record.type : '',
+          role: typeof record.role === 'string' ? record.role : '',
+          emailAddress: typeof record.email === 'string' ? record.email : '',
+          domain: typeof record.domain === 'string' ? record.domain : '',
+        },
+      ];
+    }),
+  );
+}
+
+type StoredDriveSnapshotLocate = NonNullable<
+  (typeof googleDriveFileSnapshots)['$inferInsert']['snapshotLocate']
+>;
+
+function persistableDriveSnapshotLocate(
+  locate: DriveSnapshotLocate | null | undefined,
+  grants: DrivePermissionGrant[] | undefined,
+): StoredDriveSnapshotLocate | null {
+  const parsed = parseDriveSnapshotLocate(locate ?? null);
+  const permissionGrants = grants ?? [];
+  if (!parsed) {
+    return permissionGrants.length > 0 ? ({ permissionGrants } as StoredDriveSnapshotLocate) : null;
+  }
+  return { ...parsed, permissionGrants };
 }
 
 export function driveDebouncePlan(
@@ -1380,6 +1454,7 @@ export async function loadLatestDriveSnapshot(
     commentsHash: row.commentsHash,
     permissionsHash: row.permissionsHash,
     commentsSnapshot: row.commentsSnapshot,
+    permissionsSnapshot: parseDrivePermissionGrants(row.snapshotLocate),
     mimeType: row.mimeType,
     snapshotLocate: parseDriveSnapshotLocate(row.snapshotLocate),
     ancestry: parseDriveSnapshotAncestry(row.ancestry),
@@ -1407,7 +1482,10 @@ export async function saveDriveSnapshot(
       permissionsHash: input.snapshot.permissionsHash,
       commentsSnapshot: parseDriveCommentSnapshots(input.snapshot.commentsSnapshot),
       mimeType: input.snapshot.mimeType,
-      snapshotLocate: parseDriveSnapshotLocate(input.snapshot.snapshotLocate),
+      snapshotLocate: persistableDriveSnapshotLocate(
+        input.snapshot.snapshotLocate,
+        input.snapshot.permissionsSnapshot,
+      ),
       ancestry: parseDriveSnapshotAncestry(input.snapshot.ancestry),
     })
     .onConflictDoUpdate({

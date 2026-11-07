@@ -368,6 +368,13 @@ export const googleDriveFileSnapshots = pgTable(
       chunkSize: number;
       chunkHashes: string[];
       chunkTexts: string[];
+      permissionGrants?: {
+        id: string;
+        type: string;
+        role: string;
+        email: string;
+        domain: string;
+      }[];
     } | null>(),
     ancestry: jsonb('ancestry').$type<{
       parentIds: string[];
