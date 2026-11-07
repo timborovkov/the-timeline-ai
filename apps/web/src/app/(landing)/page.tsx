@@ -19,9 +19,11 @@ import {
   START_FREE_LABEL,
 } from '@/components/marketing/copy';
 import { HomeMotion } from '@/components/marketing/home/home-motion';
+import { HOME_PROOF_SHOTS } from '@/components/marketing/home/proof';
 import { TimelineFlowDiagram } from '@/components/marketing/home/timeline-flow-diagram';
 import { CAPTURE_SURFACES } from '@/components/marketing/integrations/capture-surface-content';
 import { findConnectorByName } from '@/components/marketing/integrations/connector-content';
+import { MarketingProductScreenshot } from '@/components/marketing/product-screenshot';
 import { PUBLIC_DEMO_STORY } from '@/components/marketing/public-demo-story';
 import { USE_CASES } from '@/components/marketing/use-cases/content';
 import { CookieSettingsButton } from '@/components/public-analytics';
@@ -331,6 +333,7 @@ function ChronologyScene({ nativeConnectors }: { nativeConnectors: NativeConnect
         </aside>
       </div>
       <ConnectorRail nativeConnectors={nativeConnectors} />
+      <HomeProof shot={HOME_PROOF_SHOTS[0]} />
     </section>
   );
 }
@@ -496,6 +499,7 @@ function AnswerScene() {
           </ol>
         </aside>
       </div>
+      <HomeProof shot={HOME_PROOF_SHOTS[1]} />
     </section>
   );
 }
@@ -632,6 +636,7 @@ function TrustScene() {
         }
         copy="If your team runs its day in Slack or Telegram and the rest of the work lives in email, calls and documents, The Timeline keeps one current record of it. That includes consultancies, agencies, client delivery, product and operations teams, at any size. Keep working where you already work."
       />
+      <HomeProof shot={HOME_PROOF_SHOTS[2]} />
       <div className={styles.fitPanel} data-home-diagram>
         <div className={styles.fitPanelIntro}>
           <span className={styles.monoLabel}>Six ways teams use it</span>
@@ -753,6 +758,15 @@ function SceneIndex({ number, label }: { number: string; label: string }) {
     <div className={styles.sceneIndex}>
       <span>{number} / 06</span>
       <span>{label}</span>
+    </div>
+  );
+}
+
+function HomeProof({ shot }: { shot: (typeof HOME_PROOF_SHOTS)[number] }) {
+  return (
+    <div className={styles.proofStage} data-home-proof={shot.file}>
+      <span className={styles.monoLabel}>{shot.kicker}</span>
+      <MarketingProductScreenshot file={shot.file} alt={shot.alt} caption={shot.caption} />
     </div>
   );
 }

@@ -15,7 +15,9 @@ describe('compare routes', () => {
 
     expect(html.match(/<h1\b/g)).toHaveLength(1);
     expect(html).toContain('See how The Timeline sits next to other tools.');
-    expect(html).toContain('Day AI, Folk, Glean or Geekbot alternatives');
+    expect(html).toContain(
+      'Day AI, Folk, Glean, Geekbot, Suda, MemoryCrow or Achiral alternatives',
+    );
     expect(html).toContain('when that tool is the better pick');
     expect(html).toContain('data-compare-hub');
     expect(html).toContain('Start free');
@@ -31,7 +33,7 @@ describe('compare routes', () => {
     }
   });
 
-  it('publishes alternatives-targeted metadata on the hub and four vs pages', async () => {
+  it('publishes alternatives-targeted metadata on the hub and seven vs pages', async () => {
     expect(compareHubMetadata.title).toBe(COMPARE_HUB.seoTitle);
     expect(compareHubMetadata.description).toBe(COMPARE_HUB.seoDescription);
     expect(compareHubMetadata.alternates).toEqual({ canonical: COMPARE_HUB.route });

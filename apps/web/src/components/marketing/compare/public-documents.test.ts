@@ -14,7 +14,7 @@ import { buildPublicSitemap } from '@/lib/public-site/sitemap';
 const SITE_URL = 'https://thetimeline.cc';
 
 describe('compare public documents', () => {
-  it('registers the hub and four head-to-head pages for sitemap and LLM discovery', () => {
+  it('registers the hub and seven head-to-head pages for sitemap and LLM discovery', () => {
     expect(COMPARE_PUBLIC_DOCUMENTS.documents.map((document) => document.canonicalPath)).toEqual([
       COMPARE_HUB.route,
       ...COMPARE_PAGES.map((page) => page.route),
@@ -43,10 +43,16 @@ describe('compare public documents', () => {
     expect(compact).toContain(
       `[The Timeline vs Day AI](${SITE_URL}/compare/the-timeline-vs-day-ai)`,
     );
-    expect(compact).toContain('Day AI, Folk, Glean or Geekbot alternatives');
+    expect(compact).toContain(
+      'Day AI, Folk, Glean, Geekbot, Suda, MemoryCrow or Achiral alternatives',
+    );
     expect(compact).toContain('Looking for Geekbot alternatives?');
+    expect(compact).toContain('Looking for Suda alternatives?');
     expect(full).toContain('Geekbot alternatives: The Timeline vs Geekbot');
+    expect(full).toContain('Suda alternatives: The Timeline vs Suda');
     expect(full).toContain(`URL: ${SITE_URL}/compare/the-timeline-vs-glean`);
+    expect(full).toContain(`URL: ${SITE_URL}/compare/the-timeline-vs-memorycrow`);
     expect(full).toContain('https://www.glean.com');
+    expect(full).toContain('https://suda.so/');
   });
 });

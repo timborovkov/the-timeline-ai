@@ -31,9 +31,11 @@ describe('product tour route', () => {
       expect(html).toContain(`data-tour-step="${step.index}"`);
       expect(html).toContain(step.headline);
       expect(html).toContain(`data-screenshot-file="${step.file}"`);
+      expect(html).toContain('data-screenshot-present="true"');
       expect(html).toContain(step.file);
       if (step.mobileFile) expect(html).toContain(step.mobileFile);
     }
+    expect(html).not.toContain('Screenshot placeholder');
   });
 
   it('keeps mobile recap citations in a portrait frame instead of a 16×10 crop', () => {

@@ -61,6 +61,8 @@ describe('public integration routes', () => {
     expect(text).toContain('Start with Meeting transcripts');
     expect(html).toMatch(/aria-current="page"[^>]*href="\/integrations"/u);
     expect(html).toContain('href="/how-it-works"');
+    expect(html).toContain('href="/integrations/mcp"');
+    expect(html).toContain('Connect MCP tools');
     expect(html).toContain('href="/integrations/notion"');
     expect(html).toContain('href="/integrations/jira"');
     expect(html).toContain('href="/integrations/hubspot"');
@@ -122,6 +124,16 @@ describe('public integration routes', () => {
     for (const link of screen.getAllByRole('link', { name: 'Connect GitHub' })) {
       expect(link.getAttribute('href')).toBe('/app/connections');
     }
+  });
+
+  it('shows the Slack chronology capture without claiming a silent account sync', async () => {
+    const html = renderToStaticMarkup(
+      await connectorRoute.default({ params: Promise.resolve({ slug: 'slack' }) }),
+    );
+
+    expect(html).toContain('data-screenshot-file="12-timeline-slack-dark.png"');
+    expect(html).toContain('data-screenshot-present="true"');
+    expect(html).not.toContain('Screenshot placeholder');
   });
 
   it.each(['slack', 'sentry'])('renders a light dark-mode logo tile for %s', async (slug) => {
@@ -211,6 +223,10 @@ describe('public integration routes', () => {
     expect(text).toContain('Just getting started? You may not need one yet');
     expect(text).toContain(`When ${tool.name} alone is the better pick`);
     expect(html).toContain('Start free');
+    if (tool.status === 'mcp-lookup') {
+      expect(html).toContain('href="/integrations/mcp"');
+      expect(text).toContain('Connect MCP tools');
+    }
   });
 
   it('extends the native Linear page with works-with guidance', async () => {

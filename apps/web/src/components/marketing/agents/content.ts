@@ -58,4 +58,10 @@ export const AGENTS_HUB = {
     title: 'Start free, then let an agent write back.',
     body: 'Create a workspace. Agents read the cited record over MCP, and they add notes through remember, email or a webhook.',
   },
+  screenshot: {
+    file: '19-agent-tools-dark.png',
+    alt: 'Connections Agent tools showing the Timeline MCP endpoint other agents use to read this team.',
+    caption:
+      'The Timeline MCP endpoint other agents use to read this team. Agent MCP servers on the same screen are inbound live lookup for The Timeline Agent, covered on Connect MCP tools.',
+  },
 } as const;

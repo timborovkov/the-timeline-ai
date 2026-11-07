@@ -19,4 +19,10 @@ export const TELEGRAM_PAGE = {
     'Post the workspace daily update to a Telegram chat, or send it to each linked member by DM.',
   setupHref: telegram.setupHref,
   setupLabel: telegram.setupLabel,
+  screenshot: {
+    file: '17-timeline-voice-dark.png',
+    alt: 'A Telegram voice memo on the timeline with its transcript and original audio.',
+    caption:
+      'A Telegram voice memo joins the work record with its transcript and the original audio, linked to its source.',
+  },
 } as const;

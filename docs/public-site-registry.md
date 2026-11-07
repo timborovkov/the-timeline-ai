@@ -63,14 +63,18 @@ Use-case documents live beside their shared page content under
 and appear in the public Use cases menu. Compare documents live beside
 their shared page content under
 [`components/marketing/compare`](../apps/web/src/components/marketing/compare)
-and appear in the footer Compare column as head-to-head pages. SEO titles and
+and appear in the footer Compare column as head-to-head pages versus Day AI,
+Folk, Glean, Geekbot, Suda, MemoryCrow, and Achiral. SEO titles and
 descriptions on those vs URLs also name each as a competitor alternative so
 people searching `[competitor] alternatives` can land on the cited comparison.
+Notion remains integrations-only.
 The Integrations
 header dropdown and matching footer column list the hub plus live destinations:
-Slack, Telegram, Google Drive, GitHub, Linear, Monday.com, Jira, and Notion,
-labelled for native sync, capture, or MCP lookup. Works-with pages for Linear,
-Jira, Notion, HubSpot, Attio, and Pipedrive still live under
+Slack, Telegram, Google Drive, GitHub, Linear, Monday.com, Sentry, and
+Connect MCP tools (`/integrations/mcp`), using plain product names. Jira and
+Notion remain truthful works-with pages and hub cards, not native dropdown
+entries. Works-with pages for Linear, Jira, Notion, HubSpot, Attio, and
+Pipedrive still live under
 [`/integrations`](../apps/web/src/app/integrations); coming-soon CRM pages stay
 on the hub cards, not in that nav list. The agents hub and product-tour documents
 are registered with the core public pages. Outcome-led solution documents remain under
