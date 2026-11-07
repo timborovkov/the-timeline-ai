@@ -20,9 +20,10 @@ import { signOutAfterClearingLocalSession } from '@/lib/sign-out-session';
 
 interface Props {
   user: { name?: string | null; email?: string | null; emailVerified?: Date | string | null };
+  impersonating?: boolean;
 }
 
-export function UserMenu({ user }: Props) {
+export function UserMenu({ user, impersonating = false }: Props) {
   const [verificationState, resendVerification, verificationPending] = useActionState<
     EmailVerificationState,
     FormData
@@ -91,9 +92,11 @@ export function UserMenu({ user }: Props) {
           </>
         ) : null}
         <DropdownMenuSeparator />
-        <DropdownMenuItem asChild>
-          <Link href="/app/agent-provisioning">Agent provisioning</Link>
-        </DropdownMenuItem>
+        {impersonating ? null : (
+          <DropdownMenuItem asChild>
+            <Link href="/app/agent-provisioning">Agent provisioning</Link>
+          </DropdownMenuItem>
+        )}
         <form action={reopenOnboardingChecklistAction}>
           <DropdownMenuItem asChild>
             <button type="submit" className="flex w-full items-center gap-2">

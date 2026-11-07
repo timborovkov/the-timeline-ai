@@ -18,7 +18,8 @@ from their agent.
 
 A new customer still establishes identity and accepts terms. Verified existing owners can
 create a dedicated provisioning grant at `/app/agent-provisioning`. Soft-removed owner
-memberships do not qualify. Grants create new workspaces only, default to one workspace/seven
+memberships do not qualify. Support impersonation cannot read or change those
+account-wide grants; the page is a personal-account path like billing and OAuth. Grants create new workspaces only, default to one workspace/seven
 days, and allow up to ten/thirty days.
 Capture is opt-in. The owner-wide five-attempt hourly limit includes matching retries.
 The provisioning API is documented separately at `/agents/provisioning.md`.

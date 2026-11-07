@@ -139,7 +139,7 @@ export function AppShell({
                       Platform admin
                     </Link>
                   )}
-                  <UserMenu user={user} />
+                  <UserMenu user={user} impersonating={Boolean(impersonation)} />
                 </div>
               </header>
               {/* Every app route shares one frame so page headers and content do

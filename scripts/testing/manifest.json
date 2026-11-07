@@ -275,6 +275,9 @@
   "apps/web/src/app/app/@modal/route-states.test.tsx": {
     "group": "unit"
   },
+  "apps/web/src/app/app/agent-provisioning/page.test.ts": {
+    "group": "unit"
+  },
   "apps/web/src/app/app/approvals/page.test.tsx": {
     "group": "unit"
   },
@@ -1269,6 +1272,9 @@
     "group": "unit"
   },
   "apps/web/src/lib/password-recovery.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/lib/platform-request-gate.test.ts": {
     "group": "unit"
   },
   "apps/web/src/lib/pricing-calculator.test.ts": {

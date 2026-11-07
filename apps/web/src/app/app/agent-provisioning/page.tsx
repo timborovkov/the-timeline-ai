@@ -5,14 +5,15 @@ import { revokeAgentProvisioningAction } from '@/app/actions/agent-provisioning'
 import { AgentProvisioningForm } from '@/components/agent-provisioning-form';
 import { PageHeader } from '@/components/page-header';
 import { Button } from '@/components/ui/button';
-import { auth } from '@/lib/auth';
+import { getRequestIdentity } from '@/lib/auth';
 import { db } from '@/lib/db';
 
 export const metadata = { title: 'Agent provisioning' };
 export const dynamic = 'force-dynamic';
 export default async function AgentProvisioningPage() {
-  const session = await auth();
+  const { session, impersonation } = await getRequestIdentity();
   if (!session?.user.id) redirect('/sign-in');
+  if (impersonation) throw new Error('Exit impersonation first');
   const [grants, events] = await Promise.all([
     listProvisioningGrants(db, session.user.id),
     listProvisioningAudit(db, session.user.id),
