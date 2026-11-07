@@ -637,16 +637,11 @@ rclone sync s3:timeline-exports backblaze-b2:timeline-backup-exports
       <h2 id="deploy-flow">Deploy flow</h2>
       <ol>
         <li>
-          Merge development PRs into <code>main</code> after <code>Static checks</code> passes
-          (validation, React Doctor, runtime and E2E environment smoke checks, and dist imports).
-          Superseded PR runs are cancelled.
-        </li>
-        <li>
-          Open a release PR from <code>main</code> to <code>production</code>. Both
-          <code>Static checks</code> and <code>Full test suite</code> (offline unit/integration
-          tests and reconciliation evals) must pass on an up-to-date branch, with review threads
-          resolved. Direct pushes, force pushes and deletion are blocked. Full tests also run after
-          production merges and on manual CI dispatches; browser E2E remains manual.
+          Merge development PRs into <code>main</code>, then open a release PR from
+          <code>main</code> to <code>production</code>. Follow the
+          <a href="../AGENTS.md#branch-and-release-ci">branch and release CI policy in AGENTS.md</a>
+          for required checks and branch protections, and its
+          <a href="../AGENTS.md#validation-policy">validation policy</a> for scoped local work.
         </li>
         <li>
           Once all three Railway app services follow <code>production</code>, merging the release PR
