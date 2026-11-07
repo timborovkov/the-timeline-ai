@@ -4,7 +4,7 @@ import { closeDb, getDbClient } from '@timeline/db';
 import { decryptJson } from '@timeline/shared/crypto';
 import { withE2eDataTransaction } from './cleanup.js';
 import { signIn } from './helpers.js';
-import { e2eUsers } from './test-data.js';
+import { e2eUsers, e2eTeam, e2eOtherTeam } from './test-data.js';
 
 const createdEmails: string[] = [];
 const createdWorkspaceNames: string[] = [];
@@ -97,6 +97,17 @@ test('signup and email verification resume the same agent authorization', async 
   await page.getByRole('link', { name: 'Continue connecting your agent' }).click();
   await expect(page).toHaveURL(/\/oauth\/authorize/);
   expect(new URL(page.url()).searchParams.get('state')).toBe(state);
+  await expect(page.getByLabel('Reporting agreement')).toHaveValue('inherit');
+  await page.getByLabel('Reporting agreement').selectOption('handoffs');
+  await page.getByLabel('Project or work scope', { exact: true }).fill('New project delivery');
+  await page.route('http://127.0.0.1:9919/callback**', (route) =>
+    route.fulfill({ status: 200, contentType: 'text/plain', body: 'Connected' }),
+  );
+  await page.getByRole('button', { name: 'Allow access', exact: true }).click();
+  await expect(page).toHaveURL(/9919\/callback\?code=/);
+  const [grant] =
+    await sql`SELECT g.agent_reporting FROM mcp_outbound_oauth_grants g JOIN users u ON u.id=g.user_id WHERE u.email=${email}`;
+  expect(grant!.agent_reporting.scope).toBe('New project delivery');
 });
 
 test('owner provisions once, reads connection context, and manages reporting without expanding access', async ({
@@ -179,4 +190,123 @@ test('owner provisions once, reads connection context, and manages reporting wit
   await form.getByLabel('Project or work scope', { exact: false }).fill('Browser test project');
   await form.getByRole('button', { name: 'Save reporting preference' }).click();
   await expect(form.getByRole('status')).toHaveText('Reporting preference saved.');
+});
+
+async function consentRequest(page: import('@playwright/test').Page, baseURL: string | undefined) {
+  const registration = await page.request.post('/oauth/register', {
+    data: {
+      client_name: 'Consent coworker test',
+      redirect_uris: ['http://127.0.0.1:9919/callback'],
+      token_endpoint_auth_method: 'none',
+      grant_types: ['authorization_code', 'refresh_token'],
+      response_types: ['code'],
+    },
+  });
+  expect(registration.status()).toBe(201);
+  const { client_id: clientId } = await registration.json();
+  registeredClients.push(clientId);
+  const query = new URLSearchParams({
+    response_type: 'code',
+    client_id: clientId,
+    redirect_uri: 'http://127.0.0.1:9919/callback',
+    scope: 'read',
+    state: randomUUID(),
+    code_challenge: createHash('sha256').update(randomBytes(32)).digest('base64url'),
+    code_challenge_method: 'S256',
+    resource: `${baseURL}/api/mcp/server`,
+  });
+  await page.route('http://127.0.0.1:9919/callback**', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'text/plain',
+      body: 'Authorization returned to client',
+    }),
+  );
+  return { clientId, path: `/oauth/authorize?${query}` };
+}
+
+test('owner establishes an agreement in consent and reauthorization preserves it', async ({
+  page,
+  baseURL,
+}) => {
+  test.setTimeout(180_000);
+  await signIn(page, e2eUsers.owner.email, 120_000);
+  const { clientId, path } = await consentRequest(page, baseURL);
+  const sql = getDbClient();
+  await sql`UPDATE teams SET agent_reporting=${JSON.stringify({ mode: 'handoffs', scope: 'Workspace delivery', revision: 'browser-default' })}::jsonb WHERE id=${e2eTeam.id}`;
+  await page.goto(path);
+  await page.locator(`input[name="team_id"][value="${e2eTeam.id}"]`).check();
+  await expect(page.getByLabel('Reporting agreement')).toHaveValue('inherit');
+  await expect(page.getByText(/Effective agreement:/)).toContainText('Workspace delivery');
+  await page.getByLabel('Reporting agreement').selectOption('handoffs');
+  await page.getByLabel('Project or work scope', { exact: true }).fill('Discarded draft');
+  await page.locator(`input[name="team_id"][value="${e2eOtherTeam.id}"]`).check();
+  await expect(page.getByLabel('Reporting agreement')).toHaveValue('inherit');
+  await page.locator(`input[name="team_id"][value="${e2eTeam.id}"]`).check();
+  await page.getByLabel('Reporting agreement').selectOption('handoffs');
+  await page.getByLabel('Project or work scope', { exact: true }).fill('Connection delivery');
+  await page.getByRole('button', { name: 'Allow access', exact: true }).click();
+  await expect(page).toHaveURL(/9919\/callback\?code=/);
+  const [saved] =
+    await sql`SELECT agent_reporting FROM mcp_outbound_oauth_grants WHERE client_id=${clientId} AND user_id=${e2eUsers.owner.id} AND team_id=${e2eTeam.id}`;
+  expect(saved!.agent_reporting.scope).toBe('Connection delivery');
+  await page.goto(path);
+  await page.locator(`input[name="team_id"][value="${e2eTeam.id}"]`).check();
+  await expect(page.getByLabel('Reporting agreement')).toHaveValue('handoffs');
+  await expect(page.getByLabel('Project or work scope', { exact: true })).toHaveValue(
+    'Connection delivery',
+  );
+  await page.getByRole('checkbox', { name: /Capture notes in Timeline/ }).uncheck();
+  await expect(page.getByText(/Reporting is inactive/)).toBeVisible();
+  await page.getByRole('button', { name: 'Allow access', exact: true }).click();
+  await expect(page).toHaveURL(/9919\/callback\?code=/);
+  const [reauthorized] =
+    await sql`SELECT agent_reporting,scopes FROM mcp_outbound_oauth_grants WHERE client_id=${clientId} AND user_id=${e2eUsers.owner.id}`;
+  expect(reauthorized!.agent_reporting).toEqual(saved!.agent_reporting);
+  expect(reauthorized!.scopes).toEqual(['read']);
+  await page.goto(path);
+  await page.locator(`input[name="team_id"][value="${e2eTeam.id}"]`).check();
+  await page.getByLabel('Reporting agreement').selectOption('on_request');
+  await page.getByRole('button', { name: 'Deny access', exact: true }).click();
+  await expect(page).toHaveURL(/error=access_denied/);
+  const [denied] =
+    await sql`SELECT agent_reporting FROM mcp_outbound_oauth_grants WHERE client_id=${clientId} AND user_id=${e2eUsers.owner.id}`;
+  expect(denied!.agent_reporting).toEqual(saved!.agent_reporting);
+});
+
+test('member inspects inheritance, cannot forge reporting, and can approve read-only access', async ({
+  page,
+  baseURL,
+}) => {
+  test.setTimeout(180_000);
+  await signIn(page, e2eUsers.member.email, 120_000);
+  const { clientId, path } = await consentRequest(page, baseURL);
+  await page.goto(path);
+  await expect(page.getByText(/Workspace owners and admins manage reporting/)).toBeVisible();
+  await expect(page.getByLabel('Reporting agreement')).toHaveCount(0);
+  await page.getByRole('checkbox', { name: /Capture notes in Timeline/ }).uncheck();
+  await page.evaluate(() => {
+    const button = Array.from(document.querySelectorAll('button')).find(
+      (button) => button.textContent === 'Allow access',
+    );
+    const input = document.createElement('input');
+    input.type = 'hidden';
+    input.name = 'reporting_mode';
+    input.value = 'on_request';
+    button?.closest('form')?.append(input);
+  });
+  await page.getByRole('button', { name: 'Allow access', exact: true }).click();
+  await expect(
+    page.getByText('Only workspace owners and admins can change reporting preferences.'),
+  ).toBeVisible();
+  expect(new URL(page.url()).pathname).toBe('/oauth/authorize');
+  await expect(page.getByRole('checkbox', { name: /Capture notes in Timeline/ })).not.toBeChecked();
+  await page.evaluate(() => document.querySelector('input[name="reporting_mode"]')?.remove());
+  await page.getByRole('button', { name: 'Allow access', exact: true }).click();
+  await expect(page).toHaveURL(/9919\/callback\?code=/);
+  const sql = getDbClient();
+  const [grant] =
+    await sql`SELECT agent_reporting,scopes FROM mcp_outbound_oauth_grants WHERE client_id=${clientId} AND user_id=${e2eUsers.member.id}`;
+  expect(grant!.agent_reporting).toBeNull();
+  expect(grant!.scopes).toEqual(['read']);
 });

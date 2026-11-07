@@ -57,7 +57,7 @@ function authorizationFailurePath(
   return oauthAuthorizationErrorRedirect(error) ?? consentFailurePath(input);
 }
 
-export async function approveMcpOAuthAction(formData: FormData): Promise<void> {
+export async function approveMcpOAuthAction(formData: FormData): Promise<{ error: string }> {
   const input = authorizationInputFromFormData(formData);
   const callbackPath = mcpAuthorizationPath(input);
   const session = await auth();
@@ -111,10 +111,20 @@ export async function approveMcpOAuthAction(formData: FormData): Promise<void> {
         userId: session.user.id,
         teamId,
         grantedScopes,
+        ...(formData.has('reporting_mode')
+          ? {
+              reportingChange: {
+                mode: formData.get('reporting_mode'),
+                scope: formData.get('reporting_scope') ?? '',
+              },
+            }
+          : {}),
       }),
     };
   } catch (error) {
-    reportCaughtError(error, {
+    if (error instanceof Error && error.name === 'ReportingConsentError')
+      return { error: error.message };
+    reportCaughtError(new Error('MCP OAuth authorization issuance failed'), {
       surface: 'server_action',
       operation: 'mcp_oauth_consent_approve',
     });

@@ -4,16 +4,18 @@ import {
   type McpOAuthScope,
   validateMcpAuthorizationRequest,
 } from '@timeline/shared/mcp-server';
+import { withTeam } from '@timeline/shared/team-scope';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
-import type { TeamMembership } from '@/lib/active-team';
+import type { ConsentMembership } from '@/components/oauth-consent-form';
 import type { McpAuthorizationInput } from '@/lib/mcp-oauth-authorization';
 import type { ValidatedAuthorizationRequest } from '@timeline/shared/mcp-server';
 import type { Metadata } from 'next';
 
-import { approveMcpOAuthAction, denyMcpOAuthAction } from '@/app/oauth/actions';
+import { denyMcpOAuthAction } from '@/app/oauth/actions';
 import { AuthShell } from '@/components/auth-shell';
+import { OAuthConsentForm } from '@/components/oauth-consent-form';
 import { Button } from '@/components/ui/button';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
@@ -163,6 +165,16 @@ export default async function McpOAuthAuthorizePage({
     // react-doctor-disable-next-line react-doctor/clickjacking-redirect-risk -- The destination is the exact registered redirect URI validated above; only a code-owned error and the validated state are returned.
     redirect(destination);
   }
+  const consentMemberships = await Promise.all(
+    memberships.map(async (membership) => ({
+      ...membership,
+      reporting: await withTeam(
+        db,
+        membership.teamId,
+        session.user.id,
+      ).agentReporting.consentContext(request.client.clientId),
+    })),
+  );
   const clientIdHost = urlHostname(request.client.clientId);
   const redirectHost = urlHostname(request.redirectUri);
   const loopbackRedirect = redirectHost ? isLoopbackHostname(redirectHost) : false;
@@ -186,7 +198,7 @@ export default async function McpOAuthAuthorizePage({
       consentError={consentError}
       input={input}
       requiresTeamAdmin={requiresTeamAdmin}
-      memberships={memberships}
+      memberships={consentMemberships}
       defaultTeamId={defaultTeamId}
     />
   );
@@ -210,7 +222,7 @@ function OAuthConsentPage({
   consentError: string | null;
   input: McpAuthorizationInput;
   requiresTeamAdmin: boolean;
-  memberships: TeamMembership[];
+  memberships: ConsentMembership[];
   defaultTeamId: string | null;
 }) {
   return (
@@ -289,11 +301,12 @@ function OAuthConsentPage({
 
       {
         <OAuthConsentForm
-          input={input}
           requiresTeamAdmin={requiresTeamAdmin}
           memberships={memberships}
           defaultTeamId={defaultTeamId}
-        />
+        >
+          <HiddenAuthorizationFields input={input} />
+        </OAuthConsentForm>
       }
 
       <form action={denyMcpOAuthAction}>
@@ -305,7 +318,7 @@ function OAuthConsentPage({
 
       <p className="text-xs leading-5 text-fg-muted">
         The app receives content returned from the team and scopes you approve and may process or
-        retain it under its own terms and privacy policy. Revoking access from Provider accounts
+        retain it under its own terms and privacy policy. Revoking access from Connect your agent
         stops future Timeline requests but does not delete information the app already received.
         Timeline never sends your password to this app. Review Timeline&apos;s{' '}
         <Link href="/privacy" className="text-primary hover:underline">
@@ -318,84 +331,5 @@ function OAuthConsentPage({
         .
       </p>
     </AuthShell>
-  );
-}
-function OAuthConsentForm({
-  input,
-  requiresTeamAdmin,
-  memberships,
-  defaultTeamId,
-}: {
-  input: McpAuthorizationInput;
-  requiresTeamAdmin: boolean;
-  memberships: TeamMembership[];
-  defaultTeamId: string | null;
-}) {
-  return (
-    <form action={approveMcpOAuthAction} className="space-y-5">
-      <HiddenAuthorizationFields input={input} />
-      <fieldset className="space-y-2">
-        <legend className="text-sm font-semibold text-fg">Choose a team</legend>
-        <p className="text-xs leading-5 text-fg-muted">
-          The app receives your permissions in this team. It does not receive team-admin access.
-        </p>
-        {requiresTeamAdmin ? (
-          <p className="rounded-md border border-warning/40 bg-warning/10 p-3 text-xs leading-5 text-fg">
-            Agent access can be granted only for teams where you are an owner or admin. Teams where
-            you are a member are unavailable for this request.
-          </p>
-        ) : null}
-        <div className="space-y-2 pt-1">
-          {memberships.map((membership) => {
-            const eligible = !requiresTeamAdmin || membership.role !== 'member';
-            return (
-              <label
-                key={membership.teamId}
-                className={`flex items-center gap-3 rounded-md border border-border p-3 text-sm transition-colors ${
-                  eligible
-                    ? 'cursor-pointer hover:bg-bg-subtle has-[:checked]:border-primary has-[:checked]:bg-primary/5'
-                    : 'cursor-not-allowed opacity-55'
-                }`}
-              >
-                <input
-                  type="radio"
-                  name="team_id"
-                  value={membership.teamId}
-                  defaultChecked={membership.teamId === defaultTeamId}
-                  required
-                  disabled={!eligible}
-                  className="size-4 accent-primary"
-                />
-                <span className="min-w-0 flex-1 font-medium text-fg">{membership.teamName}</span>
-                <span className="text-xs capitalize text-fg-muted">
-                  {membership.role}
-                  {!eligible ? ' · unavailable' : ''}
-                </span>
-              </label>
-            );
-          })}
-        </div>
-      </fieldset>
-      <label className="flex min-h-11 cursor-pointer items-start gap-3 rounded-md border border-border p-3">
-        <input
-          type="checkbox"
-          name="grant_capture"
-          value="1"
-          defaultChecked
-          className="mt-0.5 size-4 shrink-0 accent-primary"
-        />
-        <span className="space-y-1">
-          <span className="block text-sm font-medium text-fg">
-            {scopeDescriptions.capture.title}
-          </span>
-          <span className="block text-xs leading-5 text-fg-muted">
-            {scopeDescriptions.capture.description}
-          </span>
-        </span>
-      </label>
-      <Button type="submit" className="w-full" disabled={!defaultTeamId}>
-        Allow access
-      </Button>
-    </form>
   );
 }

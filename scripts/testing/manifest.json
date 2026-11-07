@@ -932,6 +932,9 @@
   "apps/web/src/components/nav-items.test.ts": {
     "group": "unit"
   },
+  "apps/web/src/components/oauth-consent-form.test.tsx": {
+    "group": "dom"
+  },
   "apps/web/src/components/objects/new-object-form.test.tsx": {
     "group": "dom"
   },

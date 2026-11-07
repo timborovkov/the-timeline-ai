@@ -568,6 +568,120 @@ describe('Timeline MCP OAuth server', () => {
     expect(securityEvents).toEqual([{ action: 'mcp.oauth_refresh_reuse' }]);
   });
 
+  it('sets a consent agreement atomically, preserves revisions, and restores inheritance', async () => {
+    const { client, request } = await createDcrAuthorization(db, 'read capture');
+    const scope = withTeam(db, TEAM_ID, USER_ID);
+    await scope.agentReporting.update(
+      { type: 'workspace' },
+      { mode: 'handoffs', scope: 'Workspace project' },
+    );
+    const issue = (reportingChange?: unknown) =>
+      createMcpAuthorizationCode(db, {
+        request,
+        userId: USER_ID,
+        teamId: TEAM_ID,
+        reportingChange,
+      });
+    await issue();
+    expect(await scope.agentReporting.consentContext(client.client_id)).toMatchObject({
+      defaults: { mode: 'handoffs', scope: 'Workspace project' },
+      override: null,
+    });
+    await issue({ mode: 'handoffs', scope: 'Connection project' });
+    const saved = (await scope.agentReporting.consentContext(client.client_id)).override;
+    expect(saved?.scope).toBe('Connection project');
+    await issue({ mode: 'preserve' });
+    expect((await scope.agentReporting.consentContext(client.client_id)).override).toEqual(saved);
+    await issue({ mode: 'handoffs', scope: 'Connection project' });
+    expect((await scope.agentReporting.consentContext(client.client_id)).override).toEqual(saved);
+    await issue({ mode: 'on_request' });
+    expect((await scope.agentReporting.consentContext(client.client_id)).override?.mode).toBe(
+      'on_request',
+    );
+    await issue({ mode: 'inherit' });
+    expect((await scope.agentReporting.consentContext(client.client_id)).override).toBeNull();
+  });
+
+  it('rejects forged reporting and rechecks membership, while allowing read-only inherited agreements', async () => {
+    const { client, request } = await createDcrAuthorization(db, 'read');
+    const scope = withTeam(db, TEAM_ID, USER_ID);
+    await scope.agentReporting.update(
+      { type: 'workspace' },
+      { mode: 'handoffs', scope: 'Workspace project' },
+    );
+    const issue = (reportingChange?: unknown) =>
+      createMcpAuthorizationCode(db, {
+        request,
+        userId: USER_ID,
+        teamId: TEAM_ID,
+        reportingChange,
+      });
+    await issue();
+    for (const change of [
+      { mode: 'handoffs', scope: '' },
+      { mode: 'handoffs', scope: 'Project' },
+      { mode: 'handoffs', scope: 'x'.repeat(1001) },
+      { mode: 'invalid' },
+    ])
+      await expect(issue(change)).rejects.toThrow();
+    expect((await scope.agentReporting.consentContext(client.client_id)).override).toBeNull();
+    await db.update(teamMembers).set({ role: 'member' }).where(eq(teamMembers.userId, USER_ID));
+    await expect(issue({ mode: 'on_request' })).rejects.toThrow('Only workspace owners');
+    await expect(issue({ mode: 'inherit' })).rejects.toThrow('Only workspace owners');
+    await issue();
+    await expect(
+      withTeam(db, TEAM_ID, OTHER_USER_ID).agentReporting.consentContext(client.client_id),
+    ).rejects.toThrow();
+    await testDb.pg.exec(
+      `INSERT INTO team_members(team_id,user_id,role) VALUES ('${TEAM_ID}','${OTHER_USER_ID}','member')`,
+    );
+    const [grant] = await db
+      .select()
+      .from(mcpOutboundOAuthGrants)
+      .where(eq(mcpOutboundOAuthGrants.userId, USER_ID));
+    if (!grant) throw new Error('Missing grant');
+    await db
+      .update(mcpOutboundOAuthGrants)
+      .set({ agentReporting: { mode: 'handoffs', scope: 'Owner only setting', revision: 'test' } })
+      .where(eq(mcpOutboundOAuthGrants.id, grant.id));
+    expect(
+      (await withTeam(db, TEAM_ID, OTHER_USER_ID).agentReporting.consentContext(client.client_id))
+        .override,
+    ).toBeNull();
+  });
+
+  it('rolls back a reporting change and its audit when code issuance fails', async () => {
+    const { client, request } = await createDcrAuthorization(db, 'read capture');
+    const issue = (reportingChange?: unknown) =>
+      createMcpAuthorizationCode(db, {
+        request,
+        userId: USER_ID,
+        teamId: TEAM_ID,
+        reportingChange,
+      });
+    await issue({ mode: 'on_request' });
+    const scope = withTeam(db, TEAM_ID, USER_ID);
+    const before = await scope.agentReporting.consentContext(client.client_id);
+    const audits = await db
+      .select()
+      .from(auditLog)
+      .where(eq(auditLog.action, 'agent.reporting.updated'));
+    await testDb.pg.exec(
+      `CREATE FUNCTION fail_consent_code() RETURNS trigger AS $$ BEGIN RAISE EXCEPTION 'test issuance failure'; END; $$ LANGUAGE plpgsql; CREATE TRIGGER fail_consent_code BEFORE INSERT ON mcp_outbound_oauth_codes FOR EACH ROW EXECUTE FUNCTION fail_consent_code();`,
+    );
+    try {
+      await expect(issue({ mode: 'handoffs', scope: 'Must roll back' })).rejects.toThrow();
+      expect(await scope.agentReporting.consentContext(client.client_id)).toEqual(before);
+      expect(
+        await db.select().from(auditLog).where(eq(auditLog.action, 'agent.reporting.updated')),
+      ).toEqual(audits);
+    } finally {
+      await testDb.pg.exec(
+        'DROP TRIGGER fail_consent_code ON mcp_outbound_oauth_codes; DROP FUNCTION fail_consent_code();',
+      );
+    }
+  });
+
   it('isolates newly reauthorized credentials from rotated refresh tokens in the old family', async () => {
     const { client, request } = await createDcrAuthorization(db, 'read');
     const firstCode = await createMcpAuthorizationCode(db, {
