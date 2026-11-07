@@ -122,6 +122,7 @@ describe('landing route group', () => {
     expect(styles).toContain('.footer a');
     expect(styles).toContain('color: var(--home-paper)');
     expect(styles).toMatch(/\.footerGithub\s*\{[^}]*border: 0 !important;/s);
+    expect(styles).toMatch(/\.proofStage\s*\{[^}]*margin-top:\s*2\.75rem;/s);
     expect(styles).toMatch(/\.ledgerInspect\s*\{[^}]*padding:\s*0 1rem 0\.85rem;/s);
     expect(styles).toMatch(
       /\.ledgerInspect summary\s*\{[^}]*width:\s*fit-content;[^}]*list-style:\s*none;/s,

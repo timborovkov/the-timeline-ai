@@ -324,11 +324,17 @@ describe('LandingPage', () => {
 
     const user = userEvent.setup();
     const { container } = render(<LandingPage />);
+    const citedAnswer = container.querySelector('[data-scene="03-answer"]');
     const disclosures = [
       ...container.querySelectorAll<HTMLDetailsElement>(`.${LEDGER_INSPECT_CLASS}`),
     ];
     const acmeEvents = PUBLIC_DEMO_STORY.landing.events;
 
+    expect(citedAnswer).toBeTruthy();
+    expect(citedAnswer?.querySelectorAll(`.${LEDGER_INSPECT_CLASS}`)).toHaveLength(
+      acmeEvents.length,
+    );
+    expect(citedAnswer?.querySelector('[data-home-proof="32-ask-handoff-dark.png"]')).toBeTruthy();
     expect(disclosures).toHaveLength(acmeEvents.length);
     expect(screen.getAllByText('Inspect example source')).toHaveLength(acmeEvents.length);
 
