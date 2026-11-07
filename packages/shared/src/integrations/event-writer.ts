@@ -63,7 +63,7 @@ import {
   buildAssociationDedupeKey,
   buildOutputDedupeKey,
   reconciliationDedupeKey,
-} from '#src/reconciliation/index.js';
+} from '#src/reconciliation/core.js';
 import { normalizeIntegrationEventsToEvidence } from '#src/reconciliation/normalization.js';
 import {
   inlineSourceSnapshotMetadata,

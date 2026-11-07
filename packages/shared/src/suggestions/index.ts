@@ -62,7 +62,7 @@ import {
   reconciliationDedupeKey,
   validateSourceRefs,
   type SourceRef,
-} from '#src/reconciliation/index.js';
+} from '#src/reconciliation/core.js';
 import { sourcePayloadRefFromMetadata } from '#src/reconciliation/source-snapshot.js';
 import { stableStringify, suggestionDedupeKey } from '#src/suggestions/dedupe-key.js';
 import {

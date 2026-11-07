@@ -39,14 +39,12 @@ import {
 } from '#src/calendar/due-dates.js';
 import { dueDateRangeConditions } from '#src/due-date-filter.js';
 import { childLogger } from '#src/logger.js';
+import { AUTHORITY_POLICY_VERSION } from '#src/reconciliation/authority.js';
+import { buildOutputDedupeKey, reconciliationDedupeKey } from '#src/reconciliation/core.js';
 import {
   buildDirectWriteSourceContext as buildBoardDirectWriteSourceContext,
   directWriteSourceEnvelope,
 } from '#src/reconciliation/direct-write-source.js';
-
-export { buildDirectWriteSourceContext as buildBoardDirectWriteSourceContext } from '#src/reconciliation/direct-write-source.js';
-import { AUTHORITY_POLICY_VERSION } from '#src/reconciliation/authority.js';
-import { buildOutputDedupeKey, reconciliationDedupeKey } from '#src/reconciliation/index.js';
 import { normalizeRawEventsToEvidence } from '#src/reconciliation/normalization.js';
 import { stableSha256Digest } from '#src/reconciliation/stable-digest.js';
 import { likePattern } from '#src/sql-like.js';
@@ -66,6 +64,8 @@ import type {
 } from '#src/objects/index.js';
 import type { TaskCategoryFilterKey } from '#src/task-categories/types.js';
 import type { TeamScopeCore } from '#src/team-scope.js';
+
+export { buildDirectWriteSourceContext as buildBoardDirectWriteSourceContext } from '#src/reconciliation/direct-write-source.js';
 
 type DbTx = Parameters<Parameters<Db['transaction']>[0]>[0];
 type DbOrTx = Db | DbTx;
