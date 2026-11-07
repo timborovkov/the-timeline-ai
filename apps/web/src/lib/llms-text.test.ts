@@ -126,20 +126,20 @@ describe('llms text files', () => {
 
   it('tracks machine-document changes in their registry dates', () => {
     expect(PUBLIC_DOCUMENT_REGISTRY.get('/llms-full.txt')?.dates).toEqual({
-      modified: '2026-11-06',
-      reviewed: '2026-11-06',
+      modified: '2026-11-07',
+      reviewed: '2026-11-07',
     });
     expect(PUBLIC_DOCUMENT_REGISTRY.get('/sitemap.xml')?.dates).toEqual({
       modified: '2026-11-03',
       reviewed: '2026-11-03',
     });
     expect(PUBLIC_DOCUMENT_REGISTRY.get('/agents/setup.md')?.dates).toEqual({
-      modified: '2026-11-06',
-      reviewed: '2026-11-06',
+      modified: '2026-11-07',
+      reviewed: '2026-11-07',
     });
     expect(PUBLIC_DOCUMENT_REGISTRY.get('/agents/SKILL.md')?.dates).toEqual({
-      modified: '2026-11-06',
-      reviewed: '2026-11-06',
+      modified: '2026-11-07',
+      reviewed: '2026-11-07',
     });
   });
 

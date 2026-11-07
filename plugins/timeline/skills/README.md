@@ -106,7 +106,7 @@ claude plugin update timeline@timeline
 
 - [`timeline`](./timeline/SKILL.md) — route workspace questions to `timeline.search`, `timeline.get`, `timeline.subject`, `timeline.ask`, and `timeline.remember`; expand material evidence; add notes on request or within an authorized scoped reporting agreement; and answer with citations and explicit uncertainty.
 
-## Coworker reporting (0.4.0)
+## Coworker reporting (0.5.0)
 
 Start Timeline-dependent work with `timeline.get` using `kind="connection"`. Owners/admins set
 workspace defaults and per-connection overrides in Connect your agent: on request, or meaningful
@@ -117,3 +117,5 @@ one canonical file. See [rollout and validation boundaries](../../../docs/agent-
 A verified existing owner can delegate new-workspace creation through a dedicated provisioning
 grant. Follow [provisioning.md](https://thetimeline.cc/agents/provisioning.md), linked from setup.
 New customers still complete identity and legal acceptance themselves.
+
+OAuth consent now shows the effective reporting agreement for the selected workspace. Owners/admins can inherit or override it for this connection; members can inspect it. Unchanged reauthorization preserves it. The skill verifies the connection and finishes the actual task with a cited answer or an explicitly approved first brief, without forcing a capture.

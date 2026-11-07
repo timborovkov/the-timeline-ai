@@ -648,6 +648,14 @@ SENTRY_INTEGRATION_CLIENT_SECRET=...</code></pre>
           invalidates that elevated scope.
         </li>
         <li>
+          Review the reporting agreement beneath the team and capture choices. New connections
+          inherit the workspace default. Owners/admins can choose an on-request override or ongoing
+          reporting with a work scope; members can inspect their own effective agreement. Explicit
+          ongoing reporting requires capture, but inherited or retained agreements can remain
+          inactive on read-only connections. Reauthorization preserves unchanged preferences.
+          Reporting follows the skill while the agent works; it does not schedule background jobs.
+        </li>
+        <li>
           Revoke an approved AI app from <strong>Connect your agent</strong>
           (<code>/app/connect-agent</code>). Owners and admins see every team grant with the
           consenting member next to the client, so Revoke is tied to that member’s access. Token

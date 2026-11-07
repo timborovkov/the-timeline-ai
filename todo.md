@@ -896,3 +896,5 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
 ### Agent coworkers implementation
 
 - Implemented account-bound OAuth continuation, owner-only provisioning grants and retry receipts, connection reporting preferences, and canonical coworker skill distribution. See [release notes and validation boundaries](docs/agent-coworkers.md). Production deployment and unavailable-client live acceptance remain separate.
+
+- Implemented coworker agreement controls within OAuth consent, atomic connection preference saving, preserved reauthorization, and task-focused first use in the 0.5.0 canonical skill.

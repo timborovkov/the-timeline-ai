@@ -405,7 +405,7 @@ const publicUtilityDocuments = definePublicDocuments('public-utility', [
     description:
       'Agent-readable Markdown that branches MCP and skill setup by ChatGPT, Claude, Claude Code, Codex, Cursor, Grok Bot, Hermes, and OpenClaw.',
     indexability: 'index',
-    dates: { modified: '2026-11-06', reviewed: '2026-11-06' },
+    dates: { modified: '2026-11-07', reviewed: '2026-11-07' },
     capability: { kind: 'current-product' },
     sitemap: false,
     structuredData: [],
@@ -418,7 +418,7 @@ const publicUtilityDocuments = definePublicDocuments('public-utility', [
     description:
       'The published Timeline SKILL.md, byte-identical to the repository plugin skill file.',
     indexability: 'index',
-    dates: { modified: '2026-11-06', reviewed: '2026-11-06' },
+    dates: { modified: '2026-11-07', reviewed: '2026-11-07' },
     capability: { kind: 'current-product' },
     sitemap: false,
     structuredData: [],
@@ -430,7 +430,7 @@ const publicUtilityDocuments = definePublicDocuments('public-utility', [
     title: 'llms-full.txt',
     description: 'Expanded Markdown summary of the public product and help content.',
     indexability: 'index',
-    dates: { modified: '2026-11-06', reviewed: '2026-11-06' },
+    dates: { modified: '2026-11-07', reviewed: '2026-11-07' },
     capability: { kind: 'not-applicable' },
     sitemap: false,
     structuredData: [],

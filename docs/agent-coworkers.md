@@ -2,7 +2,7 @@
 
 The discovery entry point is `/llms.txt`. Product research needs no account. Setup lives at
 `/agents/setup.md`; operating behavior comes from `plugins/timeline/skills/timeline/SKILL.md`.
-The public Markdown route and signed-in download read that same file. Plugin version 0.4.0
+The public Markdown route and signed-in download read that same file. Plugin version 0.5.0
 adds the coworker reporting agreement without adding a sixth advertised MCP tool.
 
 ## Identity and access
@@ -82,6 +82,8 @@ Grok connector support alone does not establish a particular Grok Bot deployment
 | --- | --- |
 | Research only | Read public product documents; no signup or installation required. |
 | Already connected | Read connection context; install nothing already working. |
+| Restart continuation | Resume connection verification and the task; do not restart installation or consent. |
+| First useful retrieval | Retrieve bounded task context and give a cited answer; no capture required. |
 | No visible evidence | State the search limit; never infer an empty workspace. |
 | First contribution | Get approval for available brief, capture once, retrieve returned ID and cite. |
 | Ongoing handoff | Refresh agreement; report only meaningful work in scope with capture permission. |
@@ -113,3 +115,43 @@ were invoked through Bun; repository analyzer subprocesses can still invoke host
 The repository-referenced `/document-release` and `/ship` skills are unavailable in this
 checkout/environment. Documentation and diff review were performed manually. Production
 migration/release execution and unavailable live client checks remain separate work.
+
+## Consent agreement update — 2026-11-07
+
+OAuth consent now establishes workspace, reporting mode and work scope in the existing screen.
+New connections inherit the workspace default. Owners/admins can select a connection override;
+members inspect only their own effective agreement. Changing workspace discards unsaved reporting
+choices while preserving the capture checkbox. Existing overrides and revisions survive unchanged
+reauthorization, including read-only connections where reporting is inactive.
+
+Explicit ongoing reporting requires capture permission and a nonempty scope of at most 1,000
+characters. Preference changes, audit entries, grant updates and authorization codes commit in one
+transaction, with current membership/role checked under lock. Validation errors retain the draft
+in the consent form. Scope text is never put in redirect URLs or exception telemetry. Missing
+reporting fields preserve compatibility with older forms. No migration or public API/tool is added.
+
+Setup and the canonical 0.5.0 skill verify connection context, confirm the agreement once, retrieve
+relevant evidence, and finish a useful task. A cited answer is sufficient. When no evidence is
+visible, preview a proposed brief and obtain approval before capture; retain returned identifiers
+through indexing/retrieval delays. Already-connected and research-only use avoid onboarding prompts.
+Reporting still depends on agent behavior, not background scheduling. Provisioning defaults remain
+on request; static-key and provisioning preferences stay in Connect your agent.
+
+Additional acceptance scenarios: inherited ongoing defaults, read-only inherited/retained settings,
+workspace switches, member inspection, role changes before approval, preserved form drafts on error,
+unchanged reauthorization revisions, and rollback when code issuance fails. Live GitHub and named
+client-specific journeys remain unavailable; isolated browser tests exercise local OAuth consent.
+
+Local validation for this update used Bun 1.4.4, React Doctor 0.9.18 (100, no issues),
+Playwright 1.64.1 and Chromium 156.0.8078.4. All four isolated browser journeys passed:
+signup/verification through consent, provisioning/read/capture/retrieval, owner configuration with
+workspace switching and unchanged reauthorization/denial, and member inspection with forged-change
+rejection followed by read-only approval. The last journey caught and now guards against React's
+native form reset rechecking capture after a returned validation error. The disposable PostgreSQL
+database had zero users/teams after cleanup, its audit protection remained enabled, and it was dropped.
+
+Targeted OAuth/reporting, consent action/page/component, public document, setup snapshot and canonical
+skill distribution tests passed, as did MCP evaluations and compiled-package import checks.
+`bun run validate` passed formatting, TypeScript, ESLint and Knip.
+Skill acceptance scenarios remain documented expectations rather than live evaluations in Codex,
+Grok Bot, OpenClaw or Hermes. No production deployment was performed.

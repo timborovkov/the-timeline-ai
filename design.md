@@ -1463,3 +1463,5 @@ collects telemetry.
 ### Coworker account and reporting controls
 
 Connect your agent includes workspace reporting defaults and connection-specific overrides, with explicit on-request/meaningful-handoffs modes and a required ongoing work scope. Account → Agent provisioning shows grant expiry, allowance, capture permission, usage and audit history. Credentials appear once; revocation clearly leaves created workspaces and their independently managed connections intact.
+
+OAuth consent includes reporting directly beneath workspace selection and capture permission. New connections visibly inherit the workspace agreement; owners/admins can set a connection override. Members see their effective agreement. Work scope is required only for an explicit ongoing override; read-only connections clearly identify inactive reporting. No additional wizard or forced first note is introduced.
