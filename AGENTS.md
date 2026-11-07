@@ -91,6 +91,13 @@ and evidence; never treat an offline CI pass as live promotion evidence.
 
 Use `bun` only. Do not use `pnpm`, `npm`, or `yarn`.
 
+Offline test execution is declared in `scripts/testing/manifest.json`: each file
+gets a fresh process by default; `isolation: "registration"` or `"batch"` (with
+`batchSize`) explicitly partitions supported Bun test registrations. The runner
+parses test syntax and rejects unsupported isolated titles; source formatting or
+`vi.resetModules()` text must never choose execution policy. Preserve test rows
+when changing this manifest.
+
 ## Handoff protocol — run `/document-release` before handing back
 
 **Before you hand control back to the user at the end of a meaningful chunk of
