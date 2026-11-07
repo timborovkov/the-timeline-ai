@@ -182,15 +182,11 @@ Minimum deterministic tests:
   `supportsTargetedSync=false` falls back to broad catch-up.
 - Provider rate-limit parsing into `ProviderRateLimitError`.
 
-Run at least:
-
-```bash
-bun run validate
-bun run doctor
-bun run test:dist-imports
-bun run test:eval
-bun run canary:integrations -- --env-file=<env-file>
-```
+Use the [validation policy and change-specific checks](../AGENTS.md#validation-policy)
+for test selection and GitHub merge gates. Run focused tests for the provider
+behaviors above. Verify live provider wiring with
+`bun run canary:integrations -- --env-file=<env-file>` when the documented
+credentials and environment are available.
 
 ## 6. Update Docs And Canary
 
