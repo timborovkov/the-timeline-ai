@@ -890,6 +890,9 @@
   "apps/web/src/components/marketing/integrations/connector-seo.test.ts": {
     "group": "unit"
   },
+  "apps/web/src/components/marketing/integrations/inbound-mcp-diagram.test.tsx": {
+    "group": "unit"
+  },
   "apps/web/src/components/marketing/integrations/mcp-guide-content.test.ts": {
     "group": "unit"
   },

@@ -217,7 +217,7 @@ export const SOLUTIONS: readonly SolutionContent[] = [
         file: '32-ask-handoff-dark.png',
         alt: 'A stored Ask handoff brief citing Northstar sources from Drive, GitHub, Linear, and Slack.',
         caption:
-          'A cited answer for a client handoff names Drive, GitHub, Linear and Slack sources instead of blending them. This screenshot shows a stored Ask answer from the fictional Acme Labs demo; it is not live generated proof.',
+          'A cited answer for a client handoff names Drive, GitHub, Linear and Slack sources instead of blending them. Stored example from the fictional Acme Labs demo.',
       },
     ],
     cta: {

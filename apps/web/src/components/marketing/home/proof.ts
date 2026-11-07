@@ -13,7 +13,7 @@ export const HOME_PROOF_SHOTS = [
     kicker: 'Cited answers',
     alt: 'Ask handoff brief with numbered citations and a source hover card.',
     caption:
-      'A stored Ask answer from the fictional Acme Labs demo. Every line cites its source, and a hover card opens the evidence. This is not live generated proof.',
+      'A stored example from the fictional Acme Labs demo. Every line cites its source, and a hover card opens the evidence.',
   },
   {
     file: '33-digest-dark.png',

@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { EditorialKicker } from '@/components/marketing/editorial/editorial-kicker';
 import { EditorialStructuredData } from '@/components/marketing/editorial/editorial-structured-data';
 import styles from '@/components/marketing/editorial/editorial.module.css';
+import { InboundMcpDiagram } from '@/components/marketing/integrations/inbound-mcp-diagram';
 import {
   MCP_GUIDE_PAGE,
   MCP_GUIDE_RELATED,
@@ -99,6 +100,9 @@ export function McpGuidePage() {
                       />
                     </Link>
                   </article>
+                </div>
+                <div className="mt-10">
+                  <InboundMcpDiagram />
                 </div>
               </div>
             </MarketingSectionGrid>

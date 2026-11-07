@@ -41,7 +41,7 @@ export const MCP_GUIDE_PAGE = {
     file: '19-agent-tools-dark.png',
     alt: 'Connections Agent tools listing Agent MCP servers the Timeline Agent can call.',
     caption:
-      'Owners and admins connect third-party MCP servers under Connections → Agent tools. That inbound path is live lookup for The Timeline Agent, not native history sync, and not the Agents page outbound endpoint.',
+      'Owners and admins connect third-party MCP servers under Connections → Agent tools. That inbound path is live lookup for The Timeline Agent, not native history, and not the Agents page outbound endpoint.',
   },
   distinction: {
     title: 'Two different MCP directions',

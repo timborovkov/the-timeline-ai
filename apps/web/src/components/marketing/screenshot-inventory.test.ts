@@ -21,13 +21,15 @@ describe('marketing screenshot inventory', () => {
     expect(listMissingMarketingScreenshots(refs)).toEqual([]);
   });
 
-  it('keeps Ask captions from implying live generated proof', () => {
+  it('labels Ask captures as stored fictional examples without install noise', () => {
     const askCopy = listMarketingScreenshotReferences()
       .filter((ref) => ref.file.includes('ask'))
       .map((ref) => `${ref.alt} ${ref.caption}`)
       .join('\n');
 
-    expect(askCopy).toMatch(/stored Ask/i);
-    expect(askCopy).toMatch(/not live generated proof/i);
+    expect(askCopy).toMatch(/stored example/i);
+    expect(askCopy).toMatch(/fictional Acme Labs demo/i);
+    expect(askCopy).not.toMatch(/not live generated proof/i);
+    expect(askCopy).not.toMatch(/\btli_|\btla_|POST \/api/u);
   });
 });

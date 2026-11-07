@@ -58,6 +58,7 @@ export function MarketingProductScreenshot({
             alt={alt}
             fill
             priority={priority}
+            unoptimized
             sizes={
               portrait ? '(max-width: 767px) 24rem, 100vw' : '(min-width: 1024px) 72rem, 100vw'
             }

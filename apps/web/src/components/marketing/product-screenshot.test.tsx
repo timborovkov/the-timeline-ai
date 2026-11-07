@@ -20,6 +20,8 @@ describe('MarketingProductScreenshot', () => {
     expect(html).toContain('aspect-[16/10]');
     expect(html).toContain('object-cover');
     expect(html).toContain('object-top');
+    expect(html).toContain('/marketing/screenshots/32-ask-handoff-dark.png');
+    expect(html).not.toContain('/_next/image');
     expect(html).not.toContain('aspect-[390/844]');
     expect(html).not.toContain('object-contain');
   });

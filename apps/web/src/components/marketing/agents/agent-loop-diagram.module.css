@@ -40,6 +40,12 @@
   line-height: 1.6;
 }
 
+.lede a {
+  color: var(--fg);
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+}
+
 .clients {
   display: flex;
   flex-wrap: wrap;
@@ -117,9 +123,9 @@
   gap: 0.15rem;
 }
 
-.column code {
-  font-family: var(--font-mono);
-  font-size: 0.72rem;
+.column strong {
+  font-size: 0.78rem;
+  font-weight: 600;
   color: var(--fg);
 }
 

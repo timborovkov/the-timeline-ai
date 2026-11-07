@@ -1,7 +1,7 @@
 # The Timeline — Design System
 
-**Version:** v3.38 · Public product screenshots (2026-11-07).
-Replaces v3.37 Agents as teammates.
+**Version:** v3.39 · Public product screenshots (2026-11-07).
+Replaces v3.38 Public product screenshots.
 
 This is the visual and interaction contract for the product. If a screen
 disagrees with it, fix the screen. If the language intentionally changes,
@@ -1040,11 +1040,15 @@ from the website copy plan. Landscape slots use a 16×10 top crop; mobile
 portrait slots keep the full capture so Ask citations stay in frame. The
 homepage shows three full-width proof shots (work record, stored cited Ask
 answer, daily update). `/agents` pairs the current Agent tools screen with a
-write-in / MCP read-out diagram. `/use-cases` opens with a conversations →
-work record → six jobs diagram rather than a screenshot wall. Referenced
-screenshot files are inventory-tested so a missing asset fails CI instead of
-shipping as a silent placeholder. Ask captures are stored demo answers; copy
-must not present them as live generated proof.
+write-in / read-out diagram for external agents. `/integrations/mcp` has a
+separate inbound live-lookup diagram for The Timeline Agent calling third-party
+MCP tools. `/use-cases` opens with a conversations → work record → six jobs
+diagram rather than a screenshot wall. Referenced screenshot files are
+inventory-tested so a missing asset fails CI instead of shipping as a silent
+placeholder. Public screenshot slots serve the committed PNG bytes (unoptimized)
+so a recapture cannot stay hidden behind a stale image-optimizer cache. Ask
+captures are stored fictional examples; captions say that plainly without
+install or implementation noise.
 Visible copy must stay consistent with deliberate capture, source-linked claims,
 daily (not weekly) updates, and human review before inferred durable workspace
 changes. Do not claim WhatsApp, Teams chat, or Slack Connect.
@@ -1409,6 +1413,7 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-11-06 | Compare alternatives SEO | Existing `/compare/the-timeline-vs-{day-ai,folk,glean,geekbot}` pages keep the vs H1 and add “[competitor] alternatives” to SEO title, meta description, and intro. The hub names those alternative queries without extra URLs. |
 | 2026-11-06 | Company-brain compare pages | Adds `/compare/the-timeline-vs-{suda,memorycrow,achiral}` with the same vs H1 and “[competitor] alternatives” SEO. Footer Compare column lists them; header stays Integrations-only for Notion. |
 | 2026-11-06 | Product-tour mobile frames | `/product-tour` mobile portrait shots (`*-mobile.png`) use a 390×844 contain frame instead of the landscape 16×10 top crop, so Ask recap citations stay visible. |
+| 2026-11-07 | Agents vs inbound MCP diagrams | `/agents` write-in / read-out stays external-agent contribution and MCP read-out. `/integrations/mcp` shows a separate live-lookup diagram. Screenshot captions label stored fictional examples without install noise. Public slots serve committed PNG bytes unoptimized so recaptures are not hidden by a stale image-optimizer cache. |
 
 
 ### Billing benefits and recorded charges (2026-10-31)

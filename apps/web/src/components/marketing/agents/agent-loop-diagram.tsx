@@ -1,21 +1,21 @@
 import { ArrowDown, ArrowRight } from 'lucide-react';
 import Image from 'next/image';
+import Link from 'next/link';
 
 import { Logo } from '@/components/brand/logo';
 import styles from '@/components/marketing/agents/agent-loop-diagram.module.css';
 import { FICTIONAL_EXAMPLE_LABEL } from '@/components/marketing/copy';
 
 const WRITE_PATHS = [
-  { name: 'timeline.remember', body: 'A cited note from an agent.' },
-  { name: 'Ingest email', body: 'Forward, CC or BCC to the team address.' },
-  { name: 'Ingest webhook', body: 'Authenticated POST with a tli_ key.' },
+  { name: 'Remember a note', body: 'An agent adds a cited note to the record.' },
+  { name: 'Forward email', body: 'CC or BCC the team address.' },
+  { name: 'Send a webhook', body: 'An authenticated ingest webhook.' },
 ] as const;
 
 const READ_TOOLS = [
-  { name: 'timeline.search', body: 'Find evidence in the record.' },
-  { name: 'timeline.get', body: 'Open a named event or subject.' },
-  { name: 'timeline.subject', body: 'Load a company, project or person.' },
-  { name: 'timeline.ask', body: 'Ask a question with citations.' },
+  { name: 'Search', body: 'Find evidence in the record.' },
+  { name: 'Open a record', body: 'Load an event, company or person.' },
+  { name: 'Ask', body: 'Get an answer with citations.' },
 ] as const;
 
 const CLIENTS = [
@@ -35,8 +35,9 @@ export function AgentLoopDiagram() {
         <span className={styles.disclosure}>{FICTIONAL_EXAMPLE_LABEL}</span>
       </figcaption>
       <p className={styles.lede}>
-        External agents add notes like teammates, then read the same cited record over MCP. Neither
-        path changes canonical records on its own.
+        External agents add notes like teammates, then read the same cited record. Connecting
+        third-party tools so The Timeline Agent can look them up live is a different path, on{' '}
+        <Link href="/integrations/mcp">Connect MCP tools</Link>.
       </p>
       <div className={styles.clients} aria-label="Compatible agents">
         {CLIENTS.map((client) => (
@@ -51,11 +52,11 @@ export function AgentLoopDiagram() {
       <div className={styles.flow}>
         <section className={styles.column} aria-labelledby="agent-loop-write">
           <h3 id="agent-loop-write">Agents write into Timeline</h3>
-          <p>A note, forwarded email or webhook lands as cited ingest evidence.</p>
+          <p>A note, forwarded email or webhook lands as cited evidence.</p>
           <ul>
             {WRITE_PATHS.map((path) => (
               <li key={path.name}>
-                <code>{path.name}</code>
+                <strong>{path.name}</strong>
                 <span>{path.body}</span>
               </li>
             ))}
@@ -77,12 +78,12 @@ export function AgentLoopDiagram() {
           <ArrowDown className={styles.arrowNarrow} />
         </div>
         <section className={styles.column} aria-labelledby="agent-loop-read">
-          <h3 id="agent-loop-read">Agents read Timeline over MCP</h3>
-          <p>Hosted tools on https://thetimeline.cc/api/mcp/server.</p>
+          <h3 id="agent-loop-read">Agents read Timeline</h3>
+          <p>They connect over MCP and search the same cited record.</p>
           <ul>
             {READ_TOOLS.map((tool) => (
               <li key={tool.name}>
-                <code>{tool.name}</code>
+                <strong>{tool.name}</strong>
                 <span>{tool.body}</span>
               </li>
             ))}

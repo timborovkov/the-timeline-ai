@@ -60,8 +60,8 @@ export const AGENTS_HUB = {
   },
   screenshot: {
     file: '19-agent-tools-dark.png',
-    alt: 'Connections Agent tools with Agent MCP servers and the Timeline MCP endpoint.',
+    alt: 'Connections Agent tools showing the Timeline MCP endpoint other agents use to read this team.',
     caption:
-      'Connections → Agent tools is the current product screen: Agent MCP servers the Timeline Agent can call, and the Timeline MCP endpoint other agents use to read this team. Catalog rows marked Coming soon are not native sync.',
+      'The Timeline MCP endpoint other agents use to read this team. Agent MCP servers on the same screen are inbound live lookup for The Timeline Agent, covered on Connect MCP tools.',
   },
 } as const;
