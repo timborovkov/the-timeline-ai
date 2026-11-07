@@ -203,7 +203,11 @@ Treat this file as an operating contract for agents, not a loose README.
   complete a source snapshot, and verify all teams plus total point coverage before
   switching collections. Retain the original collection and backup for rollback.
 - **Account provisioning is a separate pre-team boundary.** `packages/shared/src/agent-provisioning` owns verified-owner grants, idempotency receipts, owner-wide quotas and shared UI/API workspace creation. Only new workspaces may be provisioned; existing-team content still requires `withTeam`. Auth continuations are account-bound global identity records.
-- **Platform administration is a separate privilege boundary.** Global account/team directory, support-session, and platform-audit access goes through the verified `platform-admin` service. Impersonated content access still uses `withTeam` and the selected member’s role and visibility. Never replace the real login with the impersonated identity or omit its attribution from jobs.
+- **Platform administration is a separate privilege boundary.** Global account/team directory, support-session, and platform-audit access goes through the verified `platform-admin` service. Impersonated content access still uses `withTeam` and the selected member’s role and visibility. Never replace the real login with the impersonated identity or omit its attribution from jobs. Declare every scoped operation in `platform-admin/workspace-policy.ts`; method names must not determine permissions.
+- **Redis lifecycle belongs to infrastructure.** Request consumers import
+  `redis/connection.ts`; queue consumers use the queue facade. Process shutdown
+  closes all Redis roles after draining work. Closing a queue must not close
+  request cache or admission connections.
 - **Captured raw event content is immutable.** Never `UPDATE` a source-ingested
   `raw_events` row's content. Derived facts can be re-extracted; the source is
   the source. Calendar raw-event rows are derived schedule mirrors and may

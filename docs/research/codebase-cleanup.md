@@ -109,3 +109,57 @@ ESLint passed after targeted corrections; formatting, local Markdown links, and
 diff whitespace were checked. Repository-wide CI was not run locally.
 
 This is local validation, not a CI, merge, deployment, or live-provider claim.
+
+## Assessment follow-through
+
+The follow-up assessment starts at `1dfae8be`. Its 32 items cover transaction
+ownership, canonical contracts, dependency cycles, worker lifecycle policy and
+web state. The implementation retains domain behavior and existing tests, with
+focused regressions for the newly exposed ownership mistakes.
+
+- Calendar due-date indexing and vector deletion share a dispatcher that honors
+  the owning transaction's after-commit collector. Pins reuse owning-domain
+  visibility predicates and calendar-series canonicalization. Direct-write
+  provenance has one reconciliation-owned source-context policy.
+- Operator scope operations declare exhaustive capabilities; method spelling no
+  longer determines authorization. Request-context initialization is explicit.
+  Workspace initialization shares a transaction primitive while signup paths
+  retain their distinct verified-owner, calendar, slug and audit policies.
+- Retrieval inputs, trusted clocks and explicit-tool parsing have canonical
+  contracts. Proposal observations use colocated tool metadata. Dashboard chat
+  context shares strict request and tolerant storage adapters.
+- Billing meter identities, allowance predicates and recommendation policy live
+  below billing orchestration. Reconciliation core contracts and presentation
+  cache contracts no longer load dashboard or inference orchestration.
+- Slack outbound delivery is independent of inbound dispatch. Digest delivery
+  depends on generic delivery, with a common atomic delivery-claim operation.
+  Telegram link-token verification remains transaction-bound; group and personal
+  binding retain their separate authorization policies.
+- Structured inference accepts domain-owned output normalization in every repair
+  path. Provider construction shares privacy and transport configuration while
+  embeddings retain their body-level routing policy. Task-category packet hashes
+  are pure; category state lives behind guarded object-scope operations. Production
+  mention lookup is explicitly read-only; legacy mutation compatibility remains.
+- Redis infrastructure owns separate queue and request lifecycles. Process
+  entrypoints close all roles after work drains; queue teardown alone cannot close
+  request caching or admission connections. Retry and protocol settings are unchanged.
+- Recovery thresholds, delayed-job translation and re-embedding page selection
+  have single owners. Daytona snapshot identity hashes the actual serialized
+  recipe/resources rather than a manual revision marker. Test isolation is explicit
+  in the manifest and registration parsing preserves parameterized test rows.
+- Inbox optimistic state is scoped to its server snapshot. HTTP response decoding,
+  mutation refresh surfaces and public-store request generations share focused
+  owners while their domain policies remain separate.
+
+The automatic Daytona snapshot name changes once under the recipe-hash migration;
+normal snapshot publication/ensure must run on the next deployment. Explicit pins
+and deployed-hash cleanup protections are unchanged. No remote snapshots, production
+services, deployments or merges are part of this cleanup.
+
+
+The [completed follow-up assessment](untangle-assessment.md) records all 32 items,
+implementation commits, focused verification, review fixes and remaining scope.
+Shared/database builds, compiled imports, worker/web types, changed application
+lint, formatting, agent evaluations, reconciliation evaluations and targeted
+web/domain/worker suites passed. No tests were deleted. Feature-only pushes do
+not trigger the main CI workflow; no merge or deployment was performed.
