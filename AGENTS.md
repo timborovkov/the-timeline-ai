@@ -123,16 +123,35 @@ to date" and that's fine. Run it anyway.
 
 ## Skill routing
 
-When the user's request matches an available skill, invoke it via the Skill
-tool. When in doubt, invoke the skill.
+Project skills are committed as complete folders in [`.agents/skills`](.agents/skills/README.md),
+so cloud checkouts do not depend on a developer's global skills or Mac symlinks.
+Use the client's skill invocation mechanism when available; otherwise read the
+matching `SKILL.md` and its relevant references directly. Repository instructions
+and existing authorization take precedence over generic skill examples. If a skill
+requests unavailable delegation tools, perform its relevant review passes serially
+and report the limitation.
 
-- New feature / non-trivial change → finish with `/document-release` and
-  `/ship`.
-- Bugs / unexpected behavior → `/investigate` (root-cause discipline).
-- Visual polish or design questions → `/design-review` (or
-  `/plan-design-review` in plan mode).
-- QA / "does this actually work?" → `/qa`.
-- Save / resume working context → `/context-save` and `/context-restore`.
+- Code completion → `document-release`; use `ship` when shipping is requested.
+- Branch/PR review → `diff-review`; meaningful test design → `test-strategy`.
+- Bugs / unexpected behavior → `diagnosing-bugs`.
+- React diagnostics → `react-doctor`, using root `bun run doctor`.
+- UI change review → `interface-review`; broader UI audit → `better-interface`
+  and its six bundled domain skills. Follow `design.md`.
+- QA → the existing targeted tests and Playwright/E2E commands required above;
+  do not assume a `/qa` command or a connected browser exists.
+- Save context → explicitly invoke `handoff`. Resume by reading the saved handoff
+  and checking its claims against the current worktree; no `/context-restore`
+  command is required.
+- Structural refactoring → explicitly request `untangle-codebase`; scoped
+  cleanup → `deslop`; upstream integration → `upstream-sync`.
+- Library documentation → bundled Next.js docs first for web work, then
+  `find-docs` when external documentation is needed and network access permits.
+- Railway operations → `use-railway` only for requested infrastructure work.
+  A shipping/PR request does not authorize deployment or account creation.
+
+`ship`, `handoff`, and `interface-review` retain explicit-only invocation policy.
+Cloud agents without authenticated Git/PR or Railway tools must report the patch
+and remaining execution steps rather than claiming a push or deployment occurred.
 
 ## Keep this file current
 

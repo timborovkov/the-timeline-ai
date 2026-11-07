@@ -1,0 +1,4 @@
+interface:
+  display_name: 'Document Release'
+  short_description: 'Refresh and verify every maintained project doc'
+  default_prompt: 'Use $document-release to refresh all maintained documentation for the current release and verify it.'
