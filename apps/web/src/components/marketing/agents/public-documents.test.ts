@@ -20,7 +20,7 @@ describe('agents public documents', () => {
     expect(AGENTS_HUB_DOCUMENT).toMatchObject({
       title: AGENTS_HUB.seoTitle,
       description: AGENTS_HUB.seoDescription,
-      dates: { modified: '2026-11-06', reviewed: '2026-11-06' },
+      dates: { modified: '2026-11-07', reviewed: '2026-11-07' },
       capability: { kind: 'current-product' },
     });
     expect(AGENTS_HUB_DOCUMENT.llms).toMatchObject({

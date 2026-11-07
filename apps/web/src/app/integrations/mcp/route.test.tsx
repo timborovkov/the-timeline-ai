@@ -31,6 +31,11 @@ describe('Connect MCP tools route', () => {
     expect(text).toContain('Figma');
     expect(text).toContain('not connectable from hosted Timeline');
     expect(html).toContain('href="/agents"');
+    expect(html).toContain('data-inbound-mcp');
+    expect(html).not.toContain('data-agent-loop');
+    expect(html).toContain('data-screenshot-file="19-agent-tools-dark.png"');
+    expect(html).toContain('data-screenshot-present="true"');
+    expect(html).not.toContain('Screenshot placeholder');
     expect(html).toContain('href="/integrations/jira"');
     expect(html).toContain('href="/integrations/notion"');
     expect(text).toContain('Connections');

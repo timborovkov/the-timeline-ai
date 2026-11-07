@@ -19,6 +19,12 @@ describe('agents hub', () => {
     expect(html).toContain(AGENTS_HUB.readOut.label);
     expect(html).toContain('data-agents-hub');
     expect(html).toContain('data-agent-setup');
+    expect(html).toContain('data-agent-loop');
+    expect(html).not.toContain('data-inbound-mcp');
+    expect(html).toContain('href="/integrations/mcp"');
+    expect(html).toContain('data-screenshot-file="19-agent-tools-dark.png"');
+    expect(html).toContain('data-screenshot-present="true"');
+    expect(html).not.toContain('Screenshot placeholder');
     expect(html).toContain(AGENT_SETUP_CARD.title);
     expect(html).toContain(AGENT_SETUP_CARD.body);
     expect(html).toContain(TIMELINE_AGENT_SETUP_COMMAND);

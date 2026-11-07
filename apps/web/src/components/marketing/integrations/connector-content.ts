@@ -1,5 +1,6 @@
 import { listCatalog } from '@timeline/shared/integrations/registry';
 
+import type { MarketingScreenshotSlot } from '@/components/marketing/screenshot-slot';
 import type { CatalogEntry } from '@timeline/shared/integrations/registry';
 
 import { PUBLIC_DEMO_STORY } from '@/components/marketing/public-demo-story';
@@ -70,6 +71,7 @@ export interface ConnectorContent {
   limitations: readonly string[];
   faqs: readonly ConnectorFaq[];
   related: readonly ConnectorSlug[];
+  screenshot?: MarketingScreenshotSlot;
 }
 
 export interface ConnectorRouteSummary {
@@ -103,7 +105,7 @@ export const CONNECTORS: readonly ConnectorContent[] = [
     logo: '/connectors/slack.svg',
     lightLogoTileInDarkMode: true,
     capability: 'Native integration',
-    lastReviewed: LAST_REVIEWED,
+    lastReviewed: '2026-11-07',
     captureStatement:
       'Timeline captures history from selected channels as immutable, citable events. Its separate Slack conversation mode handles direct agent chats, explicit capture, /ask, and @Timeline replies.',
     providerStatement:
@@ -186,6 +188,12 @@ export const CONNECTORS: readonly ConnectorContent[] = [
       },
     ],
     related: ['google-drive', 'linear', 'github'],
+    screenshot: {
+      file: '12-timeline-slack-dark.png',
+      alt: 'Timeline filtered to Slack captures from selected channels.',
+      caption:
+        'Selected Slack channels land on the chronology as immutable events, each with who said it, where and when.',
+    },
   },
   {
     slug: 'github',

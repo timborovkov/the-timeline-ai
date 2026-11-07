@@ -21,6 +21,11 @@ describe('solution page template', () => {
     expect(html).toContain('Free for up to 3 members · no card required');
     expect(html).toContain('motion-safe:group-hover:translate-x-1');
 
+    for (const shot of solution.screenshots ?? []) {
+      expect(html).toContain(`data-screenshot-file="${shot.file}"`);
+      expect(html).toContain('data-screenshot-present="true"');
+    }
+    expect(html).not.toContain('Screenshot placeholder');
     for (const related of solution.related) {
       expect(html).toContain(`href="${related.href}"`);
     }

@@ -9,7 +9,7 @@ import {
 import { definePublicDocuments } from '@/lib/public-site/registry';
 
 const EDITORIAL_REVIEW_DATE = '2026-08-15' as const;
-const HOW_IT_WORKS_REVIEW_DATE = '2026-11-03' as const;
+const HOW_IT_WORKS_REVIEW_DATE = '2026-11-07' as const;
 const REFRESHED_GUIDE_SLUGS = new Set([
   'search-slack-and-google-drive-together',
   'weekly-engineering-updates-from-slack-linear-and-github',

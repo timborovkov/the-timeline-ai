@@ -76,6 +76,18 @@
   color: var(--home-muted);
 }
 
+.page :global(.text-fg-dim) {
+  color: var(--home-dim);
+}
+
+.page :global(.text-signal) {
+  color: var(--home-signal);
+}
+
+.page :global(.bg-surface-2) {
+  background-color: var(--home-panel-2);
+}
+
 .page :global(.border-border),
 .page :global(.border-border-strong) {
   border-color: var(--home-line-strong);
@@ -1128,6 +1140,12 @@
   font-size: var(--home-meta-size);
   letter-spacing: 0.14em;
   text-transform: uppercase;
+}
+
+.proofStage {
+  display: grid;
+  gap: 0.8rem;
+  margin-top: 2.75rem;
 }
 
 .timelineStage {

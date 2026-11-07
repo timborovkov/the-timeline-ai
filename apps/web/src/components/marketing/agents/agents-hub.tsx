@@ -1,5 +1,6 @@
 import Link from 'next/link';
 
+import { AgentLoopDiagram } from '@/components/marketing/agents/agent-loop-diagram';
 import { AgentSetupCard } from '@/components/marketing/agents/agent-setup-card';
 import { AGENTS_HUB } from '@/components/marketing/agents/content';
 import { AGENTS_HUB_DOCUMENT } from '@/components/marketing/agents/public-documents';
@@ -7,6 +8,7 @@ import { EditorialKicker } from '@/components/marketing/editorial/editorial-kick
 import { EditorialStructuredData } from '@/components/marketing/editorial/editorial-structured-data';
 import styles from '@/components/marketing/editorial/editorial.module.css';
 import { MarketingContainer, MarketingSectionGrid } from '@/components/marketing/marketing-layout';
+import { MarketingProductScreenshot } from '@/components/marketing/product-screenshot';
 import { MarketingSectionIndex } from '@/components/marketing/section-index';
 import { MarketingCtaBand } from '@/components/marketing/start-free-cta';
 import { TIMELINE_MCP_COMMAND } from '@/lib/agent-install-content';
@@ -28,6 +30,9 @@ export function AgentsHubPage() {
           </p>
           <div className="mt-10 max-w-3xl">
             <AgentSetupCard />
+          </div>
+          <div className="mt-12">
+            <AgentLoopDiagram />
           </div>
         </MarketingContainer>
       </header>
@@ -118,6 +123,13 @@ export function AgentsHubPage() {
               </p>
             </div>
           </MarketingSectionGrid>
+          <div className="mt-12">
+            <MarketingProductScreenshot
+              file={AGENTS_HUB.screenshot.file}
+              alt={AGENTS_HUB.screenshot.alt}
+              caption={AGENTS_HUB.screenshot.caption}
+            />
+          </div>
         </MarketingContainer>
       </section>
 

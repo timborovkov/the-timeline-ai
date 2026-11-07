@@ -9,6 +9,7 @@ import { ConnectorStructuredData } from '@/components/marketing/integrations/con
 import { RecordsToAnswer } from '@/components/marketing/integrations/records-to-answer';
 import { findWorksWithTool } from '@/components/marketing/integrations/works-with-content';
 import { WorksWithGuidance } from '@/components/marketing/integrations/works-with-sections';
+import { MarketingProductScreenshot } from '@/components/marketing/product-screenshot';
 import { PUBLIC_DEMO_DISCLOSURE } from '@/components/marketing/public-demo-story';
 import { ProviderLogo } from '@/components/provider-logo';
 import { PublicSessionBranch } from '@/components/public-session-branch';
@@ -99,6 +100,15 @@ function ConnectorHero({ connector }: { connector: ConnectorContent }) {
         </div>
         <div className="mt-14 scroll-mt-12 sm:mt-20" id="how-it-works">
           <RecordsToAnswer connector={connector} />
+          {connector.screenshot ? (
+            <div className="mt-10">
+              <MarketingProductScreenshot
+                file={connector.screenshot.file}
+                alt={connector.screenshot.alt}
+                caption={connector.screenshot.caption}
+              />
+            </div>
+          ) : null}
         </div>
       </div>
     </section>

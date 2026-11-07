@@ -1,7 +1,7 @@
 # The Timeline — Design System
 
-**Version:** v3.39 · Drive Limited Use disclosure (2026-11-07).
-Replaces v3.38 OAuth auto-verify, team support ids, Drive share picker.
+**Version:** v3.40 · Drive Limited Use disclosure and public product screenshots (2026-11-07).
+Replaces v3.39 Drive Limited Use disclosure and v3.39 Public product screenshots.
 
 This is the visual and interaction contract for the product. If a screen
 disagrees with it, fix the screen. If the language intentionally changes,
@@ -1044,7 +1044,18 @@ is a screenshot walkthrough linked from the home hero as See it first and from
 pricing; `/integrations/telegram` is the public Telegram capture page. Product
 screenshots live in `apps/web/public/marketing/screenshots` under the filenames
 from the website copy plan. Landscape slots use a 16×10 top crop; mobile
-portrait slots keep the full capture so Ask citations stay in frame.
+portrait slots keep the full capture so Ask citations stay in frame. The
+homepage shows three full-width proof shots (work record, stored cited Ask
+answer, daily update). `/agents` pairs the current Agent tools screen with a
+write-in / read-out diagram for external agents. `/integrations/mcp` has a
+separate inbound live-lookup diagram for The Timeline Agent calling third-party
+MCP tools. `/use-cases` opens with a conversations → work record → six jobs
+diagram rather than a screenshot wall. Referenced screenshot files are
+inventory-tested so a missing asset fails CI instead of shipping as a silent
+placeholder. Public screenshot slots serve the committed PNG bytes (unoptimized)
+so a recapture cannot stay hidden behind a stale image-optimizer cache. Ask
+captures are stored fictional examples; captions say that plainly without
+install or implementation noise.
 Visible copy must stay consistent with deliberate capture, source-linked claims,
 daily (not weekly) updates, and human review before inferred durable workspace
 changes. Do not claim WhatsApp, Teams chat, or Slack Connect.
@@ -1413,6 +1424,7 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-11-06 | Product-tour mobile frames | `/product-tour` mobile portrait shots (`*-mobile.png`) use a 390×844 contain frame instead of the landscape 16×10 top crop, so Ask recap citations stay visible. |
 | 2026-11-06 | OAuth auto-verify, team support ids, Drive picker | Google/GitHub sign-in stamps `emailVerified` when the provider asserts a verified email. Team → General shows readonly copyable team id and slug. Drive sharing drops the dense green callout, overlapping helper copy, and nested picker borders. |
 | 2026-11-07 | Drive Limited Use disclosure | Connecting or reconnecting Google Drive opens a contextual dialog before Google OAuth. The copy names read-only Drive access, selected-source capture, encrypted tokens, snapshots versus retained events, team sharing, billed change-judging, document extract, and no general-model training. Continue to Google is the affirmative action; Cancel or dismiss does not start OAuth. |
+| 2026-11-07 | Agents vs inbound MCP diagrams | `/agents` write-in / read-out stays external-agent contribution and MCP read-out. `/integrations/mcp` shows a separate live-lookup diagram. Screenshot captions label stored fictional examples without install noise. Public slots serve committed PNG bytes unoptimized so recaptures are not hidden by a stale image-optimizer cache. |
 
 
 ### Billing benefits and recorded charges (2026-10-31)

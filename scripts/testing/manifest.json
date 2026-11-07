@@ -851,6 +851,9 @@
   "apps/web/src/components/loading-states.test.tsx": {
     "group": "dom"
   },
+  "apps/web/src/components/marketing/agents/agent-loop-diagram.test.tsx": {
+    "group": "unit"
+  },
   "apps/web/src/components/marketing/agents/agent-setup-card.test.tsx": {
     "group": "unit"
   },
@@ -896,6 +899,9 @@
   "apps/web/src/components/marketing/integrations/connector-seo.test.ts": {
     "group": "unit"
   },
+  "apps/web/src/components/marketing/integrations/inbound-mcp-diagram.test.tsx": {
+    "group": "unit"
+  },
   "apps/web/src/components/marketing/integrations/mcp-guide-content.test.ts": {
     "group": "unit"
   },
@@ -920,6 +926,9 @@
   "apps/web/src/components/marketing/product-screenshot.test.tsx": {
     "group": "unit"
   },
+  "apps/web/src/components/marketing/screenshot-inventory.test.ts": {
+    "group": "unit"
+  },
   "apps/web/src/components/marketing/solutions/content.test.ts": {
     "group": "unit"
   },
@@ -933,6 +942,9 @@
     "group": "unit"
   },
   "apps/web/src/components/marketing/use-cases/public-documents.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/components/marketing/use-cases/record-jobs-diagram.test.tsx": {
     "group": "unit"
   },
   "apps/web/src/components/mcp-oauth-grants.test.tsx": {

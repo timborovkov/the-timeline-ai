@@ -125,6 +125,12 @@ describe('LandingPage', () => {
     expect(html).toContain('Every answer carries its evidence chain.');
     expect(html).not.toContain('Northline');
     expect(html.match(/data-home-diagram/g)).toHaveLength(7);
+    expect(html.match(/data-home-proof=/g)).toHaveLength(3);
+    expect(html).toContain('data-home-proof="11-timeline-dark.png"');
+    expect(html).toContain('data-home-proof="32-ask-handoff-dark.png"');
+    expect(html).toContain('data-home-proof="33-digest-dark.png"');
+    expect(html).toContain('data-screenshot-present="true"');
+    expect(html).not.toContain('Screenshot placeholder');
     expect(html).not.toContain('data-home-ambient');
     expect(html).not.toContain('↘');
     expect(html).not.toContain('02-sources');
@@ -140,8 +146,8 @@ describe('LandingPage', () => {
     const webPage = graph['@graph'].find((node) => node['@type'] === 'WebPage');
     const application = graph['@graph'].find((node) => node['@type'] === 'SoftwareApplication');
     expect(webPage).toMatchObject({
-      dateModified: '2026-11-03',
-      lastReviewed: '2026-11-03',
+      dateModified: '2026-11-07',
+      lastReviewed: '2026-11-07',
     });
     expect(application?.featureList).toContain(
       'Native ingestion for GitHub, Linear, Google Drive, Monday.com, Slack, and Sentry',

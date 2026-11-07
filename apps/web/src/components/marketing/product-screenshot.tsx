@@ -3,6 +3,11 @@ import { join } from 'node:path';
 
 import Image from 'next/image';
 
+import type {
+  MarketingScreenshotFrame,
+  MarketingScreenshotSlot,
+} from '@/components/marketing/screenshot-slot';
+
 import { FICTIONAL_EXAMPLE_LABEL, PRODUCT_SCREENSHOT_DIR } from '@/components/marketing/copy';
 import { cn } from '@/lib/utils';
 
@@ -11,9 +16,7 @@ const PUBLIC_ROOTS = [
   join(process.cwd(), 'apps/web/public'),
 ] as const;
 
-type MarketingScreenshotFrame = 'landscape' | 'portrait';
-
-function marketingScreenshotExists(file: string): boolean {
+function marketingScreenshotFileExists(file: string): boolean {
   return PUBLIC_ROOTS.some((root) => existsSync(join(root, 'marketing/screenshots', file)));
 }
 
@@ -33,7 +36,7 @@ export function MarketingProductScreenshot({
   frame?: MarketingScreenshotFrame;
 }) {
   const src = `${PRODUCT_SCREENSHOT_DIR}/${file}`;
-  const present = marketingScreenshotExists(file);
+  const present = marketingScreenshotFileExists(file);
   const portrait = frame === 'portrait';
 
   return (
@@ -55,6 +58,7 @@ export function MarketingProductScreenshot({
             alt={alt}
             fill
             priority={priority}
+            unoptimized
             sizes={
               portrait ? '(max-width: 767px) 24rem, 100vw' : '(min-width: 1024px) 72rem, 100vw'
             }
@@ -86,5 +90,30 @@ export function MarketingProductScreenshot({
         </p>
       </figcaption>
     </figure>
+  );
+}
+
+export function MarketingScreenshotBlock({
+  shots,
+  priorityFirst = false,
+}: {
+  shots: readonly MarketingScreenshotSlot[];
+  priorityFirst?: boolean;
+}) {
+  if (shots.length === 0) return null;
+  return (
+    <div className="grid gap-6">
+      {shots.map((shot, index) => (
+        <MarketingProductScreenshot
+          key={shot.file}
+          file={shot.file}
+          alt={shot.alt}
+          caption={shot.caption}
+          reshoot={shot.reshoot}
+          frame={shot.frame}
+          priority={priorityFirst && index === 0}
+        />
+      ))}
+    </div>
   );
 }

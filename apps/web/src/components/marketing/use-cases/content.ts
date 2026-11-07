@@ -217,7 +217,7 @@ export const USE_CASES: readonly UseCaseContent[] = [
         file: '31-ask-status-dark.png',
         alt: 'Ask answer about what was agreed, with each claim linked to its source.',
         caption:
-          'Ask what was agreed, and every claim links to the message, email or call it came from.',
+          'A stored example from the fictional Acme Labs demo: what was agreed, with each claim linked to its source.',
         reshoot: RESHOOT_CITATION_SEED,
         placement: 'after-how-it-works',
       },
@@ -285,9 +285,9 @@ export const USE_CASES: readonly UseCaseContent[] = [
       },
       {
         file: '27-board-dealflow-dark.png',
-        alt: 'Deals on a board from Qualified to Proposal.',
-        caption: 'Deals on a board, from Qualified to Proposal.',
-        reshoot: `${RESHOOT_CITATION_SEED} The dealflow board is wider than 1440 px; crop to the visible lanes or reshoot wider.`,
+        alt: 'Customer dealflow board with complete kanban lanes, including Committed.',
+        caption: 'Deals on a board, with complete lanes from inbound through committed.',
+        reshoot: `${RESHOOT_CITATION_SEED} Capture the scrolling kanban so lane cards are complete, not clipped.`,
         placement: 'after-how-it-works',
       },
     ],
@@ -333,7 +333,7 @@ export const USE_CASES: readonly UseCaseContent[] = [
         alt: 'Tasks by status, with owners, due dates and pending task proposals.',
         caption:
           'Tasks by status, with owners, due dates and the task proposals waiting for approval.',
-        reshoot: `${RESHOOT_CITATION_SEED} Every due date currently reads Overdue.`,
+        reshoot: `${RESHOOT_CITATION_SEED} Recapture after a current demo seed so due dates match relative seed days.`,
         placement: 'after-subhead',
       },
       {
@@ -382,7 +382,7 @@ export const USE_CASES: readonly UseCaseContent[] = [
         file: '32-ask-handoff-dark.png',
         alt: 'A handoff brief in Ask, with account, current state, commitments and open gaps cited.',
         caption:
-          'Ask for a handoff brief: account, current state, commitments and open gaps, each with its source.',
+          'A stored example from the fictional Acme Labs demo: account, current state, commitments and open gaps, each with its source.',
         reshoot: RESHOOT_CITATION_SEED,
         placement: 'after-subhead',
       },

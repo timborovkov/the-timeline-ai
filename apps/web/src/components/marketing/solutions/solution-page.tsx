@@ -6,6 +6,7 @@ import { EditorialKicker } from '@/components/marketing/editorial/editorial-kick
 import { EditorialSectionHeading } from '@/components/marketing/editorial/editorial-section-heading';
 import { EditorialStructuredData } from '@/components/marketing/editorial/editorial-structured-data';
 import styles from '@/components/marketing/editorial/editorial.module.css';
+import { MarketingScreenshotBlock } from '@/components/marketing/product-screenshot';
 import { type SolutionContent } from '@/components/marketing/solutions/content';
 import { buildSolutionStructuredData } from '@/components/marketing/solutions/metadata';
 import { SolutionPageCta } from '@/components/marketing/solutions/solution-page-cta';
@@ -51,6 +52,12 @@ export function SolutionPage({ solution }: { solution: SolutionContent }) {
             <DirectAnswer answer={solution.answer} />
           </div>
         </header>
+
+        {solution.screenshots && solution.screenshots.length > 0 ? (
+          <div className="mx-auto max-w-6xl px-4 pb-14 sm:px-6 sm:pb-20">
+            <MarketingScreenshotBlock shots={solution.screenshots} />
+          </div>
+        ) : null}
 
         <section className="border-y border-border bg-surface/45" aria-labelledby="problem-title">
           <div className="mx-auto grid max-w-6xl gap-10 px-4 py-14 sm:px-6 sm:py-20 lg:grid-cols-[0.42fr_1fr]">
