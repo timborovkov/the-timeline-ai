@@ -13,6 +13,7 @@ import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { displayMemberLabel } from '@/lib/display-labels';
+import { serializeDocumentListEntry } from '@/lib/document-list';
 
 export const metadata: Metadata = {
   title: 'Documents',
@@ -100,30 +101,9 @@ export default async function DocumentsPage({ searchParams }: Props) {
           visibility: f.visibility,
           updatedAt: f.updatedAt.toISOString(),
         }))}
-        documents={documentPage.items.map((d) => ({
-          id: d.id,
-          fileKind: d.fileKind,
-          name: d.name,
-          metadata: d.metadata,
-          visibility: d.visibility,
-          updatedAt: d.updatedAt.toISOString(),
-          ownerUserId: d.ownerUserId,
-          pinned: documentPinState[`document:${d.id}`] ?? false,
-          currentVersion: d.currentVersion
-            ? {
-                ...d.currentVersion,
-                createdAt: d.currentVersion.createdAt.toISOString(),
-              }
-            : null,
-          provenance: {
-            source: d.provenance.source,
-            sourceEventId: d.provenance.sourceEventId,
-            parentEventId: d.provenance.parentEventId,
-            occurredAt: d.provenance.occurredAt?.toISOString() ?? null,
-            summary: d.provenance.summary,
-          },
-          description: d.description,
-          presentation: d.presentation,
+        documents={documentPage.items.map((document) => ({
+          ...serializeDocumentListEntry(document),
+          pinned: documentPinState[`document:${document.id}`] ?? false,
         }))}
         documentsNextCursor={documentPage.nextCursor}
       />

@@ -7,6 +7,7 @@ import {
   reserveMondayCall,
 } from '#src/integrations/monday-budget.js';
 import { providerFetch } from '#src/integrations/request.js';
+import { exactTargetSelections } from '#src/integrations/selection-policy.js';
 import {
   attachSyncContinuations,
   type IntegrationEvent,
@@ -2795,6 +2796,27 @@ async function syncBoard(
 export const mondayProvider: IntegrationProvider = {
   id: 'monday',
   displayLabel: 'Monday.com',
+  syncSelectionPolicy: {
+    recovery: 'all',
+    resolveTarget(selections, target) {
+      if (target.resourceType === 'monday.webhook')
+        return [{ kind: target.resourceType, externalId: target.externalId }];
+      const exact = exactTargetSelections(selections, target);
+      if (exact.length > 0) return exact;
+      if (target.resourceType === 'monday.item') {
+        const [boardId, itemId] = target.externalId.split(':');
+        if (
+          boardId &&
+          itemId &&
+          selections.some(
+            (selection) => selection.kind === 'monday.board' && selection.externalId === boardId,
+          )
+        )
+          return [{ kind: 'monday.board', externalId: boardId }];
+      }
+      return [];
+    },
+  },
 
   // eslint-disable-next-line @typescript-eslint/require-await
   async startOAuth(input) {

@@ -1,7 +1,7 @@
 import { Queue, type JobsOptions } from 'bullmq';
 
 import { getEnv } from '#src/env.js';
-import { defaultDigestWindow } from '#src/messaging/digest.js';
+import { defaultDigestWindow } from '#src/messaging/digest-window.js';
 import { tagOperatorJob } from '#src/platform-admin/runtime.js';
 import { getRedisConnection } from '#src/queue/connection.js';
 

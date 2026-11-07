@@ -6,7 +6,7 @@ import { expect } from '@timeline/test-support';
 import { vi } from '@timeline/test-support';
 import { describe, it } from 'bun:test';
 
-import type { TimelineEvent } from '@/lib/use-paginated-queries';
+import type { TimelineEvent } from '@/lib/timeline-types';
 
 import { buildTimelineMoments, type TimelineMoment } from '@/lib/timeline-moments';
 import { applyCachedTimelineMomentPresentations, collectTimelinePage } from '@/lib/timeline-page';

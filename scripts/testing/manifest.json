@@ -1496,6 +1496,9 @@
   "apps/worker/src/transcription-eval/openrouter.test.ts": {
     "group": "unit"
   },
+  "apps/worker/src/worker-lifecycle.test.ts": {
+    "group": "unit"
+  },
   "apps/worker/src/workers/calendarRecurrence.test.ts": {
     "group": "unit"
   },
@@ -2139,6 +2142,9 @@
     "group": "integration"
   },
   "packages/shared/src/slack/security.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/suggestions/acceptance-transaction.test.ts": {
     "group": "unit"
   },
   "packages/shared/src/suggestions/hub-context.test.ts": {

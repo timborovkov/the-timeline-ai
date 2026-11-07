@@ -23,7 +23,7 @@ import { useRouter } from 'next/navigation';
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 
 import type { TimelineCapturedFile } from '@/lib/timeline-captured-files';
-import type { TimelineArtifactCluster, TimelineEvent } from '@/lib/use-paginated-queries';
+import type { TimelineArtifactCluster, TimelineEvent } from '@/lib/timeline-types';
 import type { Dispatch, SetStateAction } from 'react';
 
 import { removeConversationalEventAction } from '@/app/actions/events';

@@ -12,7 +12,7 @@ import {
   type ServerContext,
   type ToolAnnotations,
 } from '@modelcontextprotocol/server';
-import { type Db } from '@timeline/db';
+import { eventSource, type Db } from '@timeline/db';
 import { z } from 'zod';
 
 import * as agent from '#src/agent/index.js';
@@ -62,18 +62,7 @@ const MCP_CANONICAL_BASE64 = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-
 const INTEGRATION_SEARCH_MAX_EVENT_IDS = 10_000;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const PSEUDO_USER = '00000000-0000-0000-0000-000000000000';
-const EVENT_SOURCE_VALUES = [
-  'web',
-  'telegram',
-  'email',
-  'system',
-  'document',
-  'meeting',
-  'integration',
-  'calendar',
-  'slack',
-  'ingest_webhook',
-] as const;
+const EVENT_SOURCE_VALUES = eventSource.enumValues;
 
 interface SearchHitForMoment {
   eventId: string;

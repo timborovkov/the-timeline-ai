@@ -1,5 +1,6 @@
 import { getEnv } from '#src/env.js';
 import { providerFetch } from '#src/integrations/request.js';
+import { exactTargetSelections } from '#src/integrations/selection-policy.js';
 import { attachSyncContinuation } from '#src/integrations/types.js';
 
 import type {
@@ -874,6 +875,25 @@ async function syncSentryResources(
 export const sentryProvider: IntegrationProvider = {
   id: 'sentry',
   displayLabel: 'Sentry',
+  syncSelectionPolicy: {
+    recovery: 'per_resource',
+    resolveTarget(selections, target) {
+      const exact = exactTargetSelections(selections, target);
+      if (exact.length > 0) return exact;
+      if (target.resourceType === 'sentry.project') {
+        const [orgSlug, projectSlug] = target.externalId.split('/');
+        if (
+          orgSlug &&
+          projectSlug &&
+          selections.some(
+            (selection) => selection.kind === 'sentry.org' && selection.externalId === orgSlug,
+          )
+        )
+          return [{ kind: 'sentry.project', externalId: target.externalId }];
+      }
+      return [];
+    },
+  },
 
   // eslint-disable-next-line @typescript-eslint/require-await
   async startOAuth(input) {

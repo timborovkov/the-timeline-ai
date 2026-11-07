@@ -2,6 +2,7 @@ import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
 
 import { getEnv } from '#src/env.js';
 import { providerFetch } from '#src/integrations/request.js';
+import { exactTargetSelections } from '#src/integrations/selection-policy.js';
 import {
   attachSyncContinuation,
   ProviderSyncDeferredError,
@@ -697,6 +698,13 @@ export function verifyLinearSignature(body: string, signature: string | null): b
 export const linearProvider: IntegrationProvider = {
   id: 'linear',
   displayLabel: 'Linear',
+  syncSelectionPolicy: {
+    recovery: 'shared_cursor',
+    resolveTarget(selections, target) {
+      if (target.reason === 'provider_pagination_continuation') return selections;
+      return exactTargetSelections(selections, target);
+    },
+  },
 
   // eslint-disable-next-line @typescript-eslint/require-await
   async startOAuth(input) {

@@ -1,6 +1,8 @@
+import { eventSource } from '@timeline/db';
 import { expect, vi } from '@timeline/test-support';
 import { afterEach, beforeEach, describe, it } from 'bun:test';
 
+import { instrumentAgentTools } from '#src/agent/observability.js';
 import { buildAgentTools, userApprovalForTools } from '#src/agent/tools.js';
 import { resetEnvForTests } from '#src/env.js';
 import { type TeamScope } from '#src/team-scope.js';
@@ -312,6 +314,19 @@ describe('buildAgentTools — team isolation', () => {
     expect(Object.keys(route.shape)).not.toContain('teamId');
   });
 
+  it('accepts every stored event source and rejects unknown sources in timeline tools', () => {
+    const tools = buildAgentTools(makeFakeScope() as unknown as TeamScope);
+    for (const name of ['search_timeline', 'search_timeline_moments', 'list_events']) {
+      const schema = tools[name]?.inputSchema as {
+        safeParse: (input: unknown) => { success: boolean };
+      };
+      for (const source of eventSource.enumValues) {
+        expect(schema.safeParse({ query: 'work', source }).success).toBe(true);
+      }
+      expect(schema.safeParse({ query: 'work', source: 'unknown_provider' }).success).toBe(false);
+    }
+  });
+
   it('lists active team members for assignment ids', async () => {
     const scope = makeFakeScope();
     scope.timeline.listMembers.mockResolvedValue([
@@ -419,6 +434,7 @@ describe('buildAgentTools — team isolation', () => {
   it('keeps pin reads but removes pin mutations from read-only tool sets', () => {
     const tools = buildAgentTools(makeFakeScope() as unknown as TeamScope, {
       toolMode: 'read_only',
+      allowPinMutations: true,
     });
     expect(tools.list_pins).toBeDefined();
     expect(tools.suggest_task).toBeUndefined();
@@ -427,6 +443,23 @@ describe('buildAgentTools — team isolation', () => {
     expect(tools.pin_item).toBeUndefined();
     expect(tools.unpin_item).toBeUndefined();
     expect(tools.move_pin).toBeUndefined();
+    for (const name of [
+      'execute_object_create',
+      'execute_object_update',
+      'execute_object_archive',
+      'execute_object_merge',
+      'execute_board_add_item',
+      'execute_board_update_item',
+      'execute_board_remove_item',
+      'execute_calendar_create',
+      'execute_calendar_update',
+      'execute_calendar_cancel',
+      'suggest_object_memory',
+      'suggest_calendar_event',
+      'propose_calendar_update',
+    ]) {
+      expect(tools[name]).toBeUndefined();
+    }
   });
 
   it('exposes new proposals but no revisions or canonical mutations in proposal-only mode', () => {
@@ -529,6 +562,50 @@ describe('buildAgentTools — team isolation', () => {
       visibilityUserIds: null,
       metadata: { origin_surface: 'mcp', origin_actor_kind: 'team_agent' },
     });
+  });
+
+  it('preserves canonical mutation approval through instrumentation and tool selection', () => {
+    const tools = buildAgentTools(makeFakeScope() as unknown as TeamScope, {
+      allowPinMutations: true,
+    });
+    const expected = Object.fromEntries(
+      [
+        'execute_object_create',
+        'execute_object_update',
+        'execute_object_archive',
+        'execute_object_merge',
+        'execute_board_add_item',
+        'execute_board_update_item',
+        'execute_board_remove_item',
+        'execute_calendar_create',
+        'execute_calendar_update',
+        'execute_calendar_cancel',
+      ].map((name) => [name, 'user-approval']),
+    );
+    expect(userApprovalForTools(tools)).toEqual(expected);
+    const observed = instrumentAgentTools({ ...tools }, vi.fn());
+    expect(userApprovalForTools(observed)).toEqual(expected);
+    const { execute_object_create, revise_suggestion, pin_item } = observed;
+    if (!execute_object_create || !revise_suggestion || !pin_item) {
+      throw new Error('Expected canonical, revision, and pin tools in the full tool set');
+    }
+    expect(
+      userApprovalForTools({
+        execute_object_create: { ...execute_object_create },
+        revise_suggestion,
+        pin_item,
+      }),
+    ).toEqual({ execute_object_create: 'user-approval' });
+    for (const toolMode of ['read_only', 'proposal_only'] as const) {
+      expect(
+        userApprovalForTools(
+          buildAgentTools(makeFakeScope() as unknown as TeamScope, {
+            toolMode,
+            allowPinMutations: true,
+          }),
+        ),
+      ).toBeUndefined();
+    }
   });
 
   it('does not expose pin mutations without explicit current-turn authorization', () => {

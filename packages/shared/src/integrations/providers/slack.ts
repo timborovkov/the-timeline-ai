@@ -1,5 +1,6 @@
 import { getEnv } from '#src/env.js';
 import { providerFetch, providerRetryAt } from '#src/integrations/request.js';
+import { exactTargetSelections } from '#src/integrations/selection-policy.js';
 import {
   attachSyncContinuation,
   ProviderRateLimitError as ProviderRateLimit,
@@ -393,6 +394,10 @@ async function syncSlackResources(
 export const slackProvider: IntegrationProvider = {
   id: 'slack',
   displayLabel: 'Slack',
+  syncSelectionPolicy: {
+    recovery: 'per_resource',
+    resolveTarget: exactTargetSelections,
+  },
 
   // eslint-disable-next-line @typescript-eslint/require-await
   async startOAuth(input) {

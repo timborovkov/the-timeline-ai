@@ -2,6 +2,7 @@ import { createHmac, randomUUID } from 'node:crypto';
 
 import { getEnv } from '#src/env.js';
 import { providerFetch } from '#src/integrations/request.js';
+import { exactTargetSelections } from '#src/integrations/selection-policy.js';
 import { attachSyncContinuation, isProviderRateLimitError } from '#src/integrations/types.js';
 import { childLogger } from '#src/logger.js';
 
@@ -496,6 +497,19 @@ async function fetchChanges(
 export const googleDriveProvider: IntegrationProvider = {
   id: 'google_drive',
   displayLabel: 'Google Drive',
+  syncSelectionPolicy: {
+    recovery: 'shared_cursor',
+    resolveTarget(selections, target) {
+      if (target.resourceType === 'google_drive.webhook')
+        return [{ kind: target.resourceType, externalId: target.externalId }];
+      if (
+        target.resourceType === 'drive.changes' &&
+        target.reason === 'provider_pagination_continuation'
+      )
+        return selections;
+      return exactTargetSelections(selections, target);
+    },
+  },
 
   // eslint-disable-next-line @typescript-eslint/require-await
   async startOAuth(input) {

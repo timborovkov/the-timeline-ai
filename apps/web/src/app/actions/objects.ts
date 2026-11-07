@@ -9,7 +9,9 @@ import { withTeam } from '@timeline/shared/team-scope';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 
-import { type ActionState, resolveScope, uuidSchema } from '@/lib/action-scope';
+import type { ObjectActionState } from '@/lib/object-action-result';
+
+import { resolveScope, uuidSchema } from '@/lib/action-scope';
 import { trackProductEventBestEffort } from '@/lib/analytics';
 import { db } from '@/lib/db';
 import { loadObjectRowsPage } from '@/lib/object-page';
@@ -354,7 +356,7 @@ const createObjectSchema = z.object({
   parentObjectId: uuidSchema.nullable().optional(),
 });
 
-export async function createObjectAction(input: unknown): Promise<ActionState> {
+export async function createObjectAction(input: unknown): Promise<ObjectActionState> {
   return runSentryServerAction('create_object', async () => {
     const parsed = createObjectSchema.safeParse(input);
     if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Invalid input' };
@@ -407,7 +409,7 @@ const updateObjectSchema = z.object({
   aliases: z.array(z.string().trim().min(1).max(120)).max(50).optional(),
 });
 
-export async function updateObjectAction(input: unknown): Promise<ActionState> {
+export async function updateObjectAction(input: unknown): Promise<ObjectActionState> {
   return runSentryServerAction('update_object', async () => {
     const parsed = updateObjectSchema.safeParse(input);
     if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Invalid input' };
@@ -448,7 +450,7 @@ export async function updateObjectAction(input: unknown): Promise<ActionState> {
 
 const taskCategoryMutationSchema = z.object({ id: uuidSchema, category: taskCategorySchema });
 
-export async function setTaskCategoryAction(input: unknown): Promise<ActionState> {
+export async function setTaskCategoryAction(input: unknown): Promise<ObjectActionState> {
   return runSentryServerAction('set_task_category', async () => {
     const parsed = taskCategoryMutationSchema.safeParse(input);
     if (!parsed.success) return { error: 'Invalid task category' };
@@ -475,7 +477,7 @@ export async function setTaskCategoryAction(input: unknown): Promise<ActionState
   });
 }
 
-export async function undoTaskCategoryChangeAction(input: unknown): Promise<ActionState> {
+export async function undoTaskCategoryChangeAction(input: unknown): Promise<ObjectActionState> {
   return runSentryServerAction('undo_task_category_change', async () => {
     const parsed = z.object({ id: uuidSchema, changeId: uuidSchema }).safeParse(input);
     if (!parsed.success) return { error: 'Invalid category change' };
@@ -505,7 +507,7 @@ export async function undoTaskCategoryChangeAction(input: unknown): Promise<Acti
   });
 }
 
-export async function resetTaskCategoryAction(input: unknown): Promise<ActionState> {
+export async function resetTaskCategoryAction(input: unknown): Promise<ObjectActionState> {
   return runSentryServerAction('reset_task_category', async () => {
     const parsed = z.object({ id: uuidSchema }).safeParse(input);
     if (!parsed.success) return { error: 'Invalid task id' };
@@ -531,7 +533,7 @@ export async function resetTaskCategoryAction(input: unknown): Promise<ActionSta
   });
 }
 
-export async function retryTaskCategoryAction(input: unknown): Promise<ActionState> {
+export async function retryTaskCategoryAction(input: unknown): Promise<ObjectActionState> {
   return runSentryServerAction('retry_task_category', async () => {
     const parsed = z.object({ id: uuidSchema }).safeParse(input);
     if (!parsed.success) return { error: 'Invalid task id' };
@@ -550,7 +552,7 @@ export async function retryTaskCategoryAction(input: unknown): Promise<ActionSta
   });
 }
 
-export async function setTaskProjectAction(input: unknown): Promise<ActionState> {
+export async function setTaskProjectAction(input: unknown): Promise<ObjectActionState> {
   return runSentryServerAction('set_task_project', async () => {
     const parsed = z.object({ id: uuidSchema, projectId: uuidSchema.nullable() }).safeParse(input);
     if (!parsed.success) return { error: 'Invalid task project' };
@@ -585,7 +587,7 @@ export async function setTaskProjectAction(input: unknown): Promise<ActionState>
 
 const metadataPatchSchema = z.record(z.string(), z.unknown());
 
-export async function updateObjectMetadataAction(input: unknown): Promise<ActionState> {
+export async function updateObjectMetadataAction(input: unknown): Promise<ObjectActionState> {
   return runSentryServerAction('update_object_metadata', async () => {
     const parsed = z.object({ id: uuidSchema, metadata: metadataPatchSchema }).safeParse(input);
     if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Invalid input' };
@@ -626,7 +628,7 @@ const identityFacetKindSchema = z.enum([
   'other',
 ]);
 
-export async function createIdentityFacetAction(input: unknown): Promise<ActionState> {
+export async function createIdentityFacetAction(input: unknown): Promise<ObjectActionState> {
   return runSentryServerAction('create_identity_facet', async () => {
     const parsed = z
       .object({
@@ -653,7 +655,7 @@ export async function createIdentityFacetAction(input: unknown): Promise<ActionS
   });
 }
 
-export async function archiveIdentityFacetAction(input: unknown): Promise<ActionState> {
+export async function archiveIdentityFacetAction(input: unknown): Promise<ObjectActionState> {
   return runSentryServerAction('archive_identity_facet', async () => {
     const parsed = z.object({ facetId: uuidSchema, entityId: uuidSchema }).safeParse(input);
     if (!parsed.success) return { error: 'Invalid contact' };
@@ -673,7 +675,7 @@ export async function archiveIdentityFacetAction(input: unknown): Promise<Action
   });
 }
 
-export async function setPersonCompanyAction(input: unknown): Promise<ActionState> {
+export async function setPersonCompanyAction(input: unknown): Promise<ObjectActionState> {
   return runSentryServerAction('set_person_company', async () => {
     const parsed = z.object({ id: uuidSchema, companyId: uuidSchema.nullable() }).safeParse(input);
     if (!parsed.success) return { error: 'Invalid company' };
@@ -699,7 +701,9 @@ export async function setPersonCompanyAction(input: unknown): Promise<ActionStat
   });
 }
 
-export async function structureContactFromBoardNotesAction(input: unknown): Promise<ActionState> {
+export async function structureContactFromBoardNotesAction(
+  input: unknown,
+): Promise<ObjectActionState> {
   return runSentryServerAction('structure_contact_from_board_notes', async () => {
     const parsed = z
       .object({ entityId: uuidSchema, notes: z.string().trim().min(1).max(5000) })
@@ -872,7 +876,7 @@ export async function loadTaskPrimaryProjectsAction(input: unknown): Promise<{
   });
 }
 
-export async function unarchiveObjectAction(input: unknown): Promise<ActionState> {
+export async function unarchiveObjectAction(input: unknown): Promise<ObjectActionState> {
   return runSentryServerAction('unarchive_object', async () => {
     const parsed = z.object({ id: uuidSchema }).safeParse(input);
     if (!parsed.success) return { error: 'Invalid id' };
@@ -905,7 +909,7 @@ export async function unarchiveObjectAction(input: unknown): Promise<ActionState
   });
 }
 
-export async function archiveObjectAction(input: unknown): Promise<ActionState> {
+export async function archiveObjectAction(input: unknown): Promise<ObjectActionState> {
   return runSentryServerAction('archive_object', async () => {
     const parsed = z.object({ id: uuidSchema }).safeParse(input);
     if (!parsed.success) return { error: 'Invalid id' };
@@ -934,7 +938,7 @@ export async function archiveObjectAction(input: unknown): Promise<ActionState> 
   });
 }
 
-export async function pinObjectAction(input: unknown): Promise<ActionState> {
+export async function pinObjectAction(input: unknown): Promise<ObjectActionState> {
   return runSentryServerAction('pin_object', async () => {
     const parsed = z.object({ id: uuidSchema }).safeParse(input);
     if (!parsed.success) return { error: 'Invalid id' };
@@ -951,7 +955,7 @@ export async function pinObjectAction(input: unknown): Promise<ActionState> {
   });
 }
 
-export async function unpinObjectAction(input: unknown): Promise<ActionState> {
+export async function unpinObjectAction(input: unknown): Promise<ObjectActionState> {
   return runSentryServerAction('unpin_object', async () => {
     const parsed = z.object({ id: uuidSchema }).safeParse(input);
     if (!parsed.success) return { error: 'Invalid id' };
@@ -972,7 +976,7 @@ const bulkObjectIdsSchema = z.object({
   ids: z.array(uuidSchema).min(1).max(50),
 });
 
-export async function bulkArchiveObjectsAction(input: unknown): Promise<ActionState> {
+export async function bulkArchiveObjectsAction(input: unknown): Promise<ObjectActionState> {
   return runSentryServerAction('bulk_archive_objects', async () => {
     const parsed = bulkObjectIdsSchema.safeParse(input);
     if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Invalid input' };
@@ -1020,7 +1024,7 @@ const mergeObjectsSchema = z.object({
   suggestionItemId: uuidSchema.optional(),
 });
 
-export async function mergeObjectsAction(input: unknown): Promise<ActionState> {
+export async function mergeObjectsAction(input: unknown): Promise<ObjectActionState> {
   return runSentryServerAction('merge_objects', async () => {
     const parsed = mergeObjectsSchema.safeParse(input);
     if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Invalid input' };
@@ -1076,7 +1080,7 @@ export async function mergeObjectsAction(input: unknown): Promise<ActionState> {
   });
 }
 
-export async function findObjectCleanupSuggestionsAction(): Promise<ActionState> {
+export async function findObjectCleanupSuggestionsAction(): Promise<ObjectActionState> {
   return runSentryServerAction('find_object_cleanup_suggestions', async () => {
     const r = await resolveScope();
     if (!r.ok) return { error: r.error };
@@ -1102,7 +1106,7 @@ export async function findObjectCleanupSuggestionsAction(): Promise<ActionState>
   });
 }
 
-export async function repairObjectMemoryAction(input: unknown): Promise<ActionState> {
+export async function repairObjectMemoryAction(input: unknown): Promise<ObjectActionState> {
   return runSentryServerAction('repair_object_memory', async () => {
     const parsed = z.object({ id: uuidSchema }).safeParse(input);
     if (!parsed.success) return { error: 'Invalid id' };
@@ -1140,7 +1144,7 @@ const relationshipSchema = z.object({
   kind: z.enum(['parent', 'child', 'related', 'blocks', 'blocked_by', 'duplicate_of']),
 });
 
-export async function addRelationshipAction(input: unknown): Promise<ActionState> {
+export async function addRelationshipAction(input: unknown): Promise<ObjectActionState> {
   return runSentryServerAction('add_relationship', async () => {
     const parsed = relationshipSchema.safeParse(input);
     if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Invalid input' };
@@ -1161,7 +1165,7 @@ export async function addRelationshipAction(input: unknown): Promise<ActionState
   });
 }
 
-export async function removeRelationshipAction(input: unknown): Promise<ActionState> {
+export async function removeRelationshipAction(input: unknown): Promise<ObjectActionState> {
   return runSentryServerAction('remove_relationship', async () => {
     const parsed = z
       .object({ id: uuidSchema, entityId: uuidSchema, otherEntityId: uuidSchema.optional() })
@@ -1205,7 +1209,7 @@ function bestEffortRevalidateObjectDetail(entityId: string, operation: string): 
   bestEffortRevalidatePath('/app/inbox', operation);
 }
 
-export async function createNoteAction(input: unknown): Promise<ActionState> {
+export async function createNoteAction(input: unknown): Promise<ObjectActionState> {
   return runSentryServerAction('create_note', async () => {
     const parsed = noteCreateSchema.safeParse(input);
     if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Invalid input' };
@@ -1231,7 +1235,7 @@ const noteUpdateSchema = z.object({
   body: z.string().trim().min(1).max(5000),
 });
 
-export async function updateNoteAction(input: unknown): Promise<ActionState> {
+export async function updateNoteAction(input: unknown): Promise<ObjectActionState> {
   return runSentryServerAction('update_note', async () => {
     const parsed = noteUpdateSchema.safeParse(input);
     if (!parsed.success) return { error: 'Invalid input' };
@@ -1252,7 +1256,7 @@ export async function updateNoteAction(input: unknown): Promise<ActionState> {
   });
 }
 
-export async function deleteNoteAction(input: unknown): Promise<ActionState> {
+export async function deleteNoteAction(input: unknown): Promise<ObjectActionState> {
   return runSentryServerAction('delete_note', async () => {
     const parsed = z.object({ noteId: uuidSchema, entityId: uuidSchema }).safeParse(input);
     if (!parsed.success) return { error: 'Invalid id' };
@@ -1274,7 +1278,7 @@ export async function deleteNoteAction(input: unknown): Promise<ActionState> {
 
 // ---------- Summaries ----------
 
-export async function generateObjectSummaryAction(input: unknown): Promise<ActionState> {
+export async function generateObjectSummaryAction(input: unknown): Promise<ObjectActionState> {
   return runSentryServerAction('generate_object_summary', async () => {
     const parsed = z.object({ entityId: uuidSchema }).safeParse(input);
     if (!parsed.success) return { error: 'Invalid id' };
@@ -1301,7 +1305,7 @@ export async function generateObjectSummaryAction(input: unknown): Promise<Actio
 
 // ---------- Notifications ----------
 
-export async function markNotificationReadAction(id: string): Promise<ActionState> {
+export async function markNotificationReadAction(id: string): Promise<ObjectActionState> {
   return runSentryServerAction('mark_notification_read', async () => {
     const parsed = uuidSchema.safeParse(id);
     if (!parsed.success) return { error: 'Invalid id' };
@@ -1324,7 +1328,7 @@ export async function markNotificationReadAction(id: string): Promise<ActionStat
   });
 }
 
-export async function markAllNotificationsReadAction(): Promise<ActionState> {
+export async function markAllNotificationsReadAction(): Promise<ObjectActionState> {
   return runSentryServerAction('mark_all_notifications_read', async () => {
     const r = await resolveScope();
     if (!r.ok) return { error: r.error };
@@ -1345,7 +1349,7 @@ const reviewSuggestionSchema = z.object({
   entityId: uuidSchema,
 });
 
-export async function acceptObjectChangeAction(input: unknown): Promise<ActionState> {
+export async function acceptObjectChangeAction(input: unknown): Promise<ObjectActionState> {
   return runSentryServerAction('accept_object_change', async () => {
     const parsed = reviewSuggestionSchema.safeParse(input);
     if (!parsed.success) return { error: 'Invalid id' };
@@ -1386,7 +1390,7 @@ export async function acceptObjectChangeAction(input: unknown): Promise<ActionSt
   });
 }
 
-export async function rejectObjectChangeAction(input: unknown): Promise<ActionState> {
+export async function rejectObjectChangeAction(input: unknown): Promise<ObjectActionState> {
   return runSentryServerAction('reject_object_change', async () => {
     const parsed = reviewSuggestionSchema.safeParse(input);
     if (!parsed.success) return { error: 'Invalid id' };

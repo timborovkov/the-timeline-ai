@@ -186,6 +186,10 @@ Treat this file as an operating contract for agents, not a loose README.
   `scope.billingOperator`) rather than flat scope methods or
   manually passing `db` into object helpers. Every Qdrant query filters on
   `team_id` via the wrapper. Do not bypass these — even in "internal" tools.
+  Timeline read queries live in `packages/shared/src/timeline/read-scope.ts`,
+  composed behind `withTeam`; presentation cache persistence lives in
+  `timeline-moments/presentation-cache.ts`. Suggestion acceptance transaction
+  context and after-commit execution belong to `suggestions/acceptance-transaction.ts`.
 - **Production Qdrant storage copies require maintenance safeguards.** Follow
   [the production copy runbook](docs/setup/openrouter.html#qdrant-production-copy):
   stop every vector writer, require the operator-only production acknowledgement,

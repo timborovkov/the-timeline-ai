@@ -9,91 +9,12 @@ import {
 } from '@tanstack/react-query';
 import { useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 
+import type { DocumentListPage } from '@/lib/document-list';
 import type { OnboardingChecklistView } from '@/lib/onboarding-checklist';
-import type { TimelineCapturedFile } from '@/lib/timeline-captured-files';
-import type {
-  ImpactItem,
-  TimelineGroupingVersion,
-  TimelineMomentDiagnostic,
-  TimelineMomentsPageVersion,
-  WebTimelineMomentDto,
-} from '@/lib/timeline-moments';
-import type { SearchEventArtifactCluster } from '@timeline/shared/team-scope';
+import type { TimelinePage } from '@/lib/timeline-types';
 
 import { readJson } from '@/lib/paginated-api';
 import { queryKeys } from '@/lib/query-keys';
-
-export type TimelineArtifactCluster = SearchEventArtifactCluster;
-
-export interface TimelinePage {
-  version?: TimelineMomentsPageVersion;
-  groupingVersion?: TimelineGroupingVersion;
-  mode?: 'moments' | 'events';
-  moments?: WebTimelineMomentDto[];
-  pinnedMomentIds?: string[];
-  rawEventsById?: Record<string, TimelineEvent>;
-  diagnostics?: {
-    mode: 'moments' | 'events';
-    scannedPageCount: number;
-    scannedRawEventCount: number;
-    returnedRawEventCount: number;
-    returnedMomentCount: number | null;
-    maxScanPagesReached: boolean;
-    boundaryCursorAdjusted: boolean;
-    providerMetadata: {
-      total: number;
-      affectedEventCount: number;
-      byProvider: Record<string, { count: number; missingFields: Record<string, number> }>;
-      diagnostics: TimelineMomentDiagnostic[];
-    };
-  };
-  items: TimelineEvent[];
-  nextCursor: string | null;
-  authors: Record<string, { id: string; name: string | null; email: string }>;
-  audioUrls: Record<string, string>;
-  impactItems: Record<string, ImpactItem[]>;
-  artifactClusters: Record<string, TimelineArtifactCluster>;
-  capturedFiles: Record<string, TimelineCapturedFile[]>;
-}
-
-export interface DocumentListPage {
-  items: {
-    id: string;
-    fileKind: 'captured' | 'document';
-    name: string;
-    metadata: Record<string, unknown>;
-    visibility: string;
-    updatedAt: string;
-    ownerUserId: string | null;
-    pinned: boolean;
-    currentVersion: {
-      id: string;
-      version: number;
-      byteSize: number | null;
-      contentType: string | null;
-      processingStatus: string;
-      sourceEventId: string | null;
-      createdAt: string;
-    } | null;
-    provenance: {
-      source: string;
-      sourceEventId: string | null;
-      parentEventId: string | null;
-      occurredAt: string | null;
-      summary: string | null;
-    };
-    description: string | null;
-    presentation: {
-      displayTitle: string;
-      storedName: string;
-      suggestedTitle: string | null;
-      isGeneratedName: boolean;
-      fallbackTitle: string;
-    };
-    optimistic?: boolean;
-  }[];
-  nextCursor: string | null;
-}
 
 function replaceFirstPage<TPage>(
   previous: InfiniteData<TPage, string | number | null> | undefined,
@@ -184,22 +105,7 @@ export function useTimelineInfiniteQuery(
       if (stableFilters.moment) params.set('moment', stableFilters.moment);
       if (stableFilters.mode === 'events') params.set('mode', 'events');
       if (pageParam) params.set('cursor', pageParam);
-      return readJson<{
-        version?: TimelineMomentsPageVersion;
-        groupingVersion?: TimelineGroupingVersion;
-        mode?: 'moments' | 'events';
-        moments?: WebTimelineMomentDto[];
-        pinnedMomentIds?: string[];
-        rawEventsById?: Record<string, TimelineEvent>;
-        diagnostics?: TimelinePage['diagnostics'];
-        items: TimelineEvent[];
-        nextCursor: string | null;
-        authors: Record<string, { id: string; name: string | null; email: string }>;
-        audioUrls: Record<string, string>;
-        impactItems: Record<string, ImpactItem[]>;
-        artifactClusters: Record<string, TimelineArtifactCluster>;
-        capturedFiles: Record<string, TimelineCapturedFile[]>;
-      }>(await fetch(`/api/timeline?${params.toString()}`));
+      return readJson<TimelinePage>(await fetch(`/api/timeline?${params.toString()}`));
     },
     getNextPageParam: (lastPage) => lastPage.nextCursor,
     initialData: initialInfiniteData(initialPage, null as string | null),
@@ -263,44 +169,7 @@ export function useDocumentListQuery(folderId: string | null, initialPage: Docum
       const params = new URLSearchParams();
       if (folderId) params.set('folder', folderId);
       if (pageParam) params.set('cursor', pageParam);
-      return readJson<{
-        items: {
-          id: string;
-          fileKind: 'captured' | 'document';
-          name: string;
-          metadata: Record<string, unknown>;
-          visibility: string;
-          updatedAt: string;
-          ownerUserId: string | null;
-          pinned: boolean;
-          currentVersion: {
-            id: string;
-            version: number;
-            byteSize: number | null;
-            contentType: string | null;
-            processingStatus: string;
-            sourceEventId: string | null;
-            createdAt: string;
-          } | null;
-          provenance: {
-            source: string;
-            sourceEventId: string | null;
-            parentEventId: string | null;
-            occurredAt: string | null;
-            summary: string | null;
-          };
-          description: string | null;
-          presentation: {
-            displayTitle: string;
-            storedName: string;
-            suggestedTitle: string | null;
-            isGeneratedName: boolean;
-            fallbackTitle: string;
-          };
-          optimistic?: boolean;
-        }[];
-        nextCursor: string | null;
-      }>(await fetch(`/api/documents/list?${params.toString()}`));
+      return readJson<DocumentListPage>(await fetch(`/api/documents/list?${params.toString()}`));
     },
     getNextPageParam: (lastPage) => lastPage.nextCursor,
     initialData: initialInfiniteData(initialPage, null as string | null),
@@ -418,31 +287,6 @@ export function useOnboardingChecklistQuery(initialData?: OnboardingChecklistVie
       if (mutation.variables) mutation.mutate(mutation.variables);
     },
   };
-}
-
-export interface TimelineEvent {
-  id: string;
-  teamId: string;
-  authorUserId: string | null;
-  source:
-    | 'web'
-    | 'telegram'
-    | 'email'
-    | 'system'
-    | 'document'
-    | 'meeting'
-    | 'integration'
-    | 'calendar'
-    | 'slack'
-    | 'ingest_webhook';
-  contentText: string | null;
-  contentAudioUrl: string | null;
-  occurredAt: string;
-  createdAt: string;
-  visibility: 'private' | 'team' | 'specific_users';
-  visibilityUserIds: string[] | null;
-  visibilityOwnerUserId: string | null;
-  sourceMetadata: unknown;
 }
 
 interface DocumentSearchHit {

@@ -329,7 +329,17 @@ beforeEach(() => {
   });
   fakes.adminResetIntegrationHealth.mockResolvedValue(undefined);
   fakes.incrementalSync.mockResolvedValue(undefined);
-  fakes.getProvider.mockReturnValue({ incrementalSync: fakes.incrementalSync });
+  fakes.getProvider.mockImplementation((id: TimelineShared.integrations.NativeProviderId) => ({
+    syncSelectionPolicy: {
+      github: integrations.githubProvider,
+      google_drive: integrations.googleDriveProvider,
+      linear: integrations.linearProvider,
+      monday: integrations.mondayProvider,
+      sentry: integrations.sentryProvider,
+      slack: integrations.slackProvider,
+    }[id].syncSelectionPolicy,
+    incrementalSync: fakes.incrementalSync,
+  }));
   fakes.enqueueIntegrationSyncJob.mockResolvedValue(undefined);
 });
 
@@ -2126,7 +2136,10 @@ describe('runOneIntegration attention classification', () => {
       ],
     });
     fakes.adminListSelections.mockResolvedValueOnce([{ kind: 'monday.doc', externalId: 'doc-1' }]);
-    fakes.getProvider.mockReturnValueOnce({ backfill: vi.fn().mockRejectedValue(err) });
+    fakes.getProvider.mockReturnValueOnce({
+      syncSelectionPolicy: integrations.mondayProvider.syncSelectionPolicy,
+      backfill: vi.fn().mockRejectedValue(err),
+    });
 
     await runOneIntegration({} as never, INTEGRATION_ID, 'backfill');
 
@@ -2172,7 +2185,10 @@ describe('runOneIntegration attention classification', () => {
       { kind: 'monday.board', externalId: 'board-1' },
       { kind: 'monday.board', externalId: 'board-2' },
     ]);
-    fakes.getProvider.mockReturnValueOnce({ backfill: vi.fn().mockRejectedValue(err) });
+    fakes.getProvider.mockReturnValueOnce({
+      syncSelectionPolicy: integrations.mondayProvider.syncSelectionPolicy,
+      backfill: vi.fn().mockRejectedValue(err),
+    });
 
     await runOneIntegration({} as never, INTEGRATION_ID, 'backfill');
 

@@ -14,7 +14,7 @@ import type {
   TimelineMoment,
   TimelineMomentDiagnostic,
 } from '@/lib/timeline-moments';
-import type { TimelineEvent } from '@/lib/use-paginated-queries';
+import type { TimelineEvent } from '@/lib/timeline-types';
 
 import {
   buildTimelineMoments,

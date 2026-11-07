@@ -33,14 +33,28 @@ registered provider and the policy agree with actual provider methods.
 Create `packages/shared/src/integrations/providers/<provider>.ts` and export it
 from `packages/shared/src/integrations/index.ts`.
 
+Each adapter owns `syncSelectionPolicy`. Use `per_resource` recovery when
+selections have independent cursors, `shared_cursor` when a shared feed must
+cover every selection whenever any is due, and `all` when recovery always needs
+the full selection set. `resolveTarget` must authorize ordinary resource targets
+against selected resources, including any provider-specific parent/child
+relationship. Webhook sentinels and shared-feed continuations retain their
+integration-bound validation in the worker and provider. Keep leases,
+checkpoints, and queue handoffs in the sync worker.
+
 Skeleton:
 
 ```ts
+import { exactTargetSelections } from '#src/integrations/selection-policy.js';
 import type { IntegrationProvider, WebhookHandleResult } from '#src/integrations/types.js';
 
 export const exampleProvider: IntegrationProvider = {
   id: 'example',
   displayLabel: 'Example',
+  syncSelectionPolicy: {
+    recovery: 'per_resource',
+    resolveTarget: exactTargetSelections,
+  },
 
   async startOAuth({ redirectUri, state }) {
     return { authorizeUrl: buildAuthorizeUrl({ redirectUri, state }) };

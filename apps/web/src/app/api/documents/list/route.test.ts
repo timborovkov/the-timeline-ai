@@ -1,6 +1,8 @@
 import { expect } from '@timeline/test-support';
 import { vi } from '@timeline/test-support';
 import { beforeEach, describe, it } from 'bun:test';
+
+import type { DocumentListPage } from '@/lib/document-list';
 /**
  * Route-handler tests for `/api/documents/list`. The documents scope owns
  * visibility and pagination semantics; this route owns auth, active-team
@@ -192,6 +194,38 @@ describe('GET /api/documents/list', () => {
       cursor: 'abc',
       limit: 30,
     });
+  });
+
+  it('keeps documents without a version visible and refreshes pins outside the document cache', async () => {
+    const listed = (await fakes.fakeListDocumentsWithProvenancePage()) as {
+      items: { currentVersion: unknown; provenance: { occurredAt: Date | null } }[];
+    };
+    listed.items[0].currentVersion = null;
+    listed.items[0].provenance.occurredAt = null;
+    fakes.fakeListDocumentsWithProvenancePage.mockResolvedValue(listed);
+    let cachedPage: unknown;
+    fakes.fakeCachedJson.mockImplementation(
+      async (_key: string, _ttl: number, load: () => unknown) => {
+        cachedPage ??= await load();
+        return cachedPage;
+      },
+    );
+    try {
+      const first = (await (await GET(request())).json()) as DocumentListPage;
+      expect(first.items[0]).toMatchObject({
+        currentVersion: null,
+        pinned: false,
+        provenance: { occurredAt: null },
+      });
+      expect(first.items[0].provenance).not.toHaveProperty('metadata');
+      fakes.fakeIsPinnedMany.mockResolvedValue({ 'document:doc-1': true });
+      const second = (await (await GET(request())).json()) as DocumentListPage;
+      expect(second.items[0].pinned).toBe(true);
+    } finally {
+      fakes.fakeCachedJson.mockImplementation((_key: string, _ttl: number, load: () => unknown) =>
+        load(),
+      );
+    }
   });
 
   it('treats malformed folder ids as the root folder', async () => {

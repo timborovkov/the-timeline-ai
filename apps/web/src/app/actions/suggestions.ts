@@ -5,7 +5,9 @@ import { taskCategorySchema } from '@timeline/shared/task-categories/types';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 
-import { type ActionState, resolveScope, uuidSchema } from '@/lib/action-scope';
+import type { SuggestionActionState } from '@/lib/suggestion-action-result';
+
+import { resolveScope, uuidSchema } from '@/lib/action-scope';
 import { trackProductEventBestEffort } from '@/lib/analytics';
 import { publicActionError } from '@/lib/public-error';
 import { runSentryServerAction } from '@/lib/sentry-action';
@@ -61,7 +63,7 @@ function errorMessage(err: unknown, fallback: string): string {
     : fallback;
 }
 
-export async function acceptSuggestionItemAction(input: unknown): Promise<ActionState> {
+export async function acceptSuggestionItemAction(input: unknown): Promise<SuggestionActionState> {
   return runSentryServerAction('accept_suggestion_item', async () => {
     const parsed = z.object({ itemId: uuidSchema }).safeParse(input);
     if (!parsed.success) return { error: 'Invalid suggestion item id' };
@@ -94,7 +96,7 @@ export async function acceptSuggestionItemAction(input: unknown): Promise<Action
   });
 }
 
-export async function rejectSuggestionItemAction(input: unknown): Promise<ActionState> {
+export async function rejectSuggestionItemAction(input: unknown): Promise<SuggestionActionState> {
   return runSentryServerAction('reject_suggestion_item', async () => {
     const parsed = z.object({ itemId: uuidSchema }).safeParse(input);
     if (!parsed.success) return { error: 'Invalid suggestion item id' };
@@ -118,7 +120,7 @@ export async function rejectSuggestionItemAction(input: unknown): Promise<Action
   });
 }
 
-export async function reviseSuggestionItemAction(input: unknown): Promise<ActionState> {
+export async function reviseSuggestionItemAction(input: unknown): Promise<SuggestionActionState> {
   return runSentryServerAction('revise_suggestion_item', async () => {
     const parsed = z
       .object({
@@ -151,7 +153,9 @@ export async function reviseSuggestionItemAction(input: unknown): Promise<Action
   });
 }
 
-export async function reviseTaskSuggestionItemAction(input: unknown): Promise<ActionState> {
+export async function reviseTaskSuggestionItemAction(
+  input: unknown,
+): Promise<SuggestionActionState> {
   return runSentryServerAction('revise_task_suggestion_item', async () => {
     const parsed = z
       .object({
@@ -187,7 +191,9 @@ export async function reviseTaskSuggestionItemAction(input: unknown): Promise<Ac
   });
 }
 
-export async function rejectVisibleSuggestionsAction(input: unknown): Promise<ActionState> {
+export async function rejectVisibleSuggestionsAction(
+  input: unknown,
+): Promise<SuggestionActionState> {
   return runSentryServerAction('reject_visible_suggestions', async () => {
     const parsed = z
       .object({
@@ -244,7 +250,7 @@ export async function rejectVisibleSuggestionsAction(input: unknown): Promise<Ac
   });
 }
 
-export async function acceptAllSuggestionAction(input: unknown): Promise<ActionState> {
+export async function acceptAllSuggestionAction(input: unknown): Promise<SuggestionActionState> {
   return runSentryServerAction('accept_all_suggestion', async () => {
     const parsed = z
       .object({
@@ -279,7 +285,9 @@ export async function acceptAllSuggestionAction(input: unknown): Promise<ActionS
   });
 }
 
-export async function acceptVisibleSuggestionsAction(input: unknown): Promise<ActionState> {
+export async function acceptVisibleSuggestionsAction(
+  input: unknown,
+): Promise<SuggestionActionState> {
   return runSentryServerAction('accept_visible_suggestions', async () => {
     const parsed = z
       .object({

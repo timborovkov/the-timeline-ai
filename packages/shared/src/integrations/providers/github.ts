@@ -9,6 +9,7 @@ import {
   providerResponseLimit,
   withProviderAccount,
 } from '#src/integrations/request.js';
+import { exactTargetSelections } from '#src/integrations/selection-policy.js';
 import { resolveSignalClassForEvent } from '#src/integrations/signal-class.js';
 import {
   attachSyncContinuation,
@@ -3057,6 +3058,24 @@ async function expandGithubSelections(
 export const githubProvider: IntegrationProvider = {
   id: 'github',
   displayLabel: 'GitHub',
+  syncSelectionPolicy: {
+    recovery: 'per_resource',
+    resolveTarget(selections, target) {
+      const exact = exactTargetSelections(selections, target);
+      if (exact.length > 0) return exact;
+      if (target.resourceType === 'github.repo') {
+        const owner = target.externalId.split('/')[0];
+        if (
+          owner &&
+          selections.some(
+            (selection) => selection.kind === 'github.org' && selection.externalId === owner,
+          )
+        )
+          return [{ kind: 'github.repo', externalId: target.externalId }];
+      }
+      return [];
+    },
+  },
 
   // eslint-disable-next-line @typescript-eslint/require-await
   async startOAuth(input) {

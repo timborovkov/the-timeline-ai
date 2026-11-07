@@ -44,6 +44,7 @@ const {
   mcpOutboundOAuthTokens,
   objectChanges,
   rawEvents,
+  eventSource,
   reconciliationEvidence,
   teamMembers,
 } = await import('@timeline/db');
@@ -1101,9 +1102,7 @@ describe('handleMcpRequest', () => {
       _meta: { securitySchemes: [{ type: 'oauth2', scopes: ['read'] }] },
     });
     expect(search?.outputSchema).toMatchObject({ type: 'object' });
-    expect(search?.inputSchema.properties?.source?.enum).toEqual(
-      expect.arrayContaining(['calendar', 'slack', 'ingest_webhook']),
-    );
+    expect(search?.inputSchema.properties?.source?.enum).toEqual(eventSource.enumValues);
     const categories = [...TASK_CATEGORIES];
     const categorySchema = search?.inputSchema.properties?.category;
     const searchCategorySchemas = categorySchema?.oneOf ?? categorySchema?.anyOf ?? [];

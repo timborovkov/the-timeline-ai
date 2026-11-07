@@ -4,7 +4,9 @@ import { pinTargetKindSchema } from '@timeline/shared/pins';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 
-import { type ActionState, resolveScope, uuidSchema } from '@/lib/action-scope';
+import type { ActionState } from '@/lib/action-result';
+
+import { resolveScope, uuidSchema } from '@/lib/action-scope';
 import { publicActionError } from '@/lib/public-error';
 import { runSentryServerAction } from '@/lib/sentry-action';
 import { reportCaughtError } from '@/lib/sentry-report';

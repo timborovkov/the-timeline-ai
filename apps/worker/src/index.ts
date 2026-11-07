@@ -8,6 +8,7 @@ import {
   shouldStartDocumentExtractOnFullWorker,
 } from '#src/document-ingestion/full-worker-extract-gate.js';
 import { captureWorkerException, flushWorkerSentry, initWorkerSentry } from '#src/monitoring.js';
+import { startWorkerGroup } from '#src/worker-lifecycle.js';
 import { startCalendarRecurrenceWorker } from '#src/workers/calendarRecurrence.js';
 import { startChatDeliveryWorker } from '#src/workers/chatDelivery.js';
 import { startConversationAgentWorker } from '#src/workers/conversationAgent.js';
@@ -67,102 +68,145 @@ async function main(): Promise<void> {
       'skipping document-extract consumer on full worker (use WORKER_MODE=document-extract in production, or set DAYTONA_API_KEY / DOCUMENT_EXTRACT_ALLOW_INPROCESS locally)',
     );
   }
-  const emailInboundWorker = startEmailInboundWorker({ db });
-  const transcribeWorker = startTranscribeWorker({ db });
-  const extractWorker = startExtractWorker({ db });
-  const suggestionWorker = startSuggestionWorker({ db });
-  const embedWorker = startEmbedWorker({ db });
-  const overdueWorker = startOverdueWorker({ db });
-  const calendarRecurrenceWorker = startCalendarRecurrenceWorker({ db });
-  const chatDeliveryWorker = startChatDeliveryWorker();
-  const conversationAgentWorker = startConversationAgentWorker({ db });
-  const documentExtractWorker = documentExtractEnabled ? startDocumentExtractWorker({ db }) : null;
-  const meetingFinalizeWorker = startMeetingFinalizeWorker({ db });
-  const meetingSchedulerWorker = startMeetingSchedulerWorker({ db });
-  const objectSummaryWorker = startObjectSummaryWorker({ db });
-  const taskCategoryWorker = startTaskCategoryWorker({ db });
-  const janitorWorker = startJanitorWorker({ db });
-  const webhookDeliveryWorker = startWebhookDeliveryWorker({ db });
-  const integrationSyncWorker = startIntegrationSyncWorker({ db });
-  const mcpHealthWorker = startMcpHealthWorker({ db });
-  const teamExportWorker = startTeamExportWorker({ db });
-  const timelineMomentPresentationWorker = startTimelineMomentPresentationWorker({ db });
-  const dailyDigestWorker = startDailyDigestWorker({ db });
-  const reconciliationWorker = startReconciliationWorker({ db });
-  // Register cron job schedulers. BullMQ keys by scheduler id so a
-  // duplicate call on the next deploy upserts the same definition.
-  await queue.scheduleOverdueScan();
-  await queue.scheduleCalendarRecurrenceMaterialization();
-  await queue.scheduleJanitorSweep();
-  // Phase 11: 5-minute integration sync tick fans out incremental syncs
-  // to every enabled integration. Same idempotency story — BullMQ dedups
-  // by jobId.
-  await queue.scheduleIntegrationIncrementalSync();
-  await queue.scheduleMcpHealthPing();
-  await queue.scheduleObjectCleanupSuggestions();
-  await queue.scheduleMeetingSchedulerTick();
-  await queue.scheduleDailyDigest();
+  const workers = await startWorkerGroup([
+    {
+      name: queue.QUEUE_NAMES.emailInbound,
+      start: () => startEmailInboundWorker({ db }),
+      closeQueue: queue.closeEmailInboundQueue,
+    },
+    {
+      name: queue.QUEUE_NAMES.transcribe,
+      start: () => startTranscribeWorker({ db }),
+      closeQueue: queue.closeTranscribeQueue,
+    },
+    {
+      name: queue.QUEUE_NAMES.extract,
+      start: () => startExtractWorker({ db }),
+      closeQueue: queue.closeExtractQueue,
+    },
+    {
+      name: queue.QUEUE_NAMES.suggestions,
+      start: () => startSuggestionWorker({ db }),
+      closeQueue: queue.closeSuggestionQueue,
+      schedule: queue.scheduleObjectCleanupSuggestions,
+    },
+    {
+      name: queue.QUEUE_NAMES.embed,
+      start: () => startEmbedWorker({ db }),
+      closeQueue: queue.closeEmbedQueue,
+    },
+    {
+      name: queue.QUEUE_NAMES.overdueScan,
+      start: () => startOverdueWorker({ db }),
+      closeQueue: queue.closeOverdueScanQueue,
+      schedule: queue.scheduleOverdueScan,
+    },
+    {
+      name: queue.QUEUE_NAMES.calendarRecurrence,
+      start: () => startCalendarRecurrenceWorker({ db }),
+      closeQueue: queue.closeCalendarRecurrenceQueue,
+      schedule: queue.scheduleCalendarRecurrenceMaterialization,
+    },
+    {
+      name: queue.QUEUE_NAMES.chatDelivery,
+      start: () => startChatDeliveryWorker(),
+      closeQueue: queue.closeChatDeliveryQueue,
+    },
+    {
+      name: queue.QUEUE_NAMES.conversationAgent,
+      start: () => startConversationAgentWorker({ db }),
+      closeQueue: queue.closeConversationAgentQueue,
+    },
+    ...(documentExtractEnabled
+      ? [
+          {
+            name: queue.QUEUE_NAMES.documentExtract,
+            start: () => startDocumentExtractWorker({ db }),
+            closeQueue: queue.closeDocumentExtractQueue,
+          },
+        ]
+      : []),
+    {
+      name: queue.QUEUE_NAMES.meetingFinalize,
+      start: () => startMeetingFinalizeWorker({ db }),
+      closeQueue: queue.closeMeetingFinalizeQueue,
+    },
+    {
+      name: queue.QUEUE_NAMES.meetingScheduler,
+      start: () => startMeetingSchedulerWorker({ db }),
+      closeQueue: queue.closeMeetingSchedulerQueue,
+      schedule: queue.scheduleMeetingSchedulerTick,
+    },
+    {
+      name: queue.QUEUE_NAMES.objectSummary,
+      start: () => startObjectSummaryWorker({ db }),
+      closeQueue: queue.closeObjectSummaryQueue,
+    },
+    {
+      name: queue.QUEUE_NAMES.taskCategory,
+      start: () => startTaskCategoryWorker({ db }),
+      closeQueue: queue.closeTaskCategoryQueue,
+    },
+    {
+      name: queue.QUEUE_NAMES.janitor,
+      start: () => startJanitorWorker({ db }),
+      closeQueue: queue.closeJanitorQueue,
+      schedule: queue.scheduleJanitorSweep,
+    },
+    {
+      name: queue.QUEUE_NAMES.webhookDelivery,
+      start: () => startWebhookDeliveryWorker({ db }),
+      closeQueue: queue.closeWebhookDeliveryQueue,
+    },
+    {
+      name: queue.QUEUE_NAMES.integrationSync,
+      start: () => startIntegrationSyncWorker({ db }),
+      closeQueue: queue.closeIntegrationSyncQueue,
+      schedule: queue.scheduleIntegrationIncrementalSync,
+    },
+    {
+      name: queue.QUEUE_NAMES.mcpHealth,
+      start: () => startMcpHealthWorker({ db }),
+      closeQueue: queue.closeMcpHealthQueue,
+      schedule: queue.scheduleMcpHealthPing,
+    },
+    {
+      name: queue.QUEUE_NAMES.teamExport,
+      start: () => startTeamExportWorker({ db }),
+      closeQueue: queue.closeTeamExportQueue,
+    },
+    {
+      name: queue.QUEUE_NAMES.timelineMomentPresentation,
+      start: () => startTimelineMomentPresentationWorker({ db }),
+      closeQueue: queue.closeTimelineMomentPresentationQueue,
+    },
+    {
+      name: queue.QUEUE_NAMES.dailyDigest,
+      start: () => startDailyDigestWorker({ db }),
+      closeQueue: queue.closeDailyDigestQueue,
+      schedule: queue.scheduleDailyDigest,
+    },
+    {
+      name: queue.QUEUE_NAMES.reconciliation,
+      start: () => startReconciliationWorker({ db }),
+      closeQueue: queue.closeReconciliationQueue,
+    },
+  ]);
   log.info(
     {
       runtime: typeof process.versions.bun === 'string' ? 'bun' : 'node',
       bunVersion: process.versions.bun,
-      taskCategoryWorkerEnabled: taskCategoryWorker !== null,
+      taskCategoryWorkerEnabled: workers.activeNames.includes(queue.QUEUE_NAMES.taskCategory),
+      workers: workers.activeNames,
       documentExtractEnabled,
     },
-    'email-inbound + transcribe + extract + suggestions + embed + overdue + calendar-recurrence + conversation-agent + document-extract + meeting-finalize + meeting-scheduler + object-summary + janitor + webhook-delivery + integration-sync + mcp-health + team-export + timeline-moment-presentation + daily-digest + reconciliation workers started',
+    'workers started',
   );
 
   const shutdown = async (signal: string): Promise<void> => {
     log.info({ signal }, 'received shutdown signal');
     try {
-      await Promise.all([
-        emailInboundWorker.close(),
-        transcribeWorker.close(),
-        extractWorker.close(),
-        suggestionWorker.close(),
-        embedWorker.close(),
-        overdueWorker.close(),
-        calendarRecurrenceWorker.close(),
-        conversationAgentWorker.close(),
-        chatDeliveryWorker.close(),
-        documentExtractWorker?.close(),
-        meetingFinalizeWorker.close(),
-        meetingSchedulerWorker.close(),
-        objectSummaryWorker.close(),
-        taskCategoryWorker?.close(),
-        janitorWorker.close(),
-        webhookDeliveryWorker.close(),
-        integrationSyncWorker.close(),
-        mcpHealthWorker.close(),
-        teamExportWorker.close(),
-        timelineMomentPresentationWorker.close(),
-        dailyDigestWorker.close(),
-        reconciliationWorker.close(),
-      ]);
-      await queue.closeEmailInboundQueue();
-      await queue.closeTranscribeQueue();
-      await queue.closeExtractQueue();
-      await queue.closeSuggestionQueue();
-      await queue.closeEmbedQueue();
-      await queue.closeOverdueScanQueue();
-      await queue.closeCalendarRecurrenceQueue();
-      await queue.closeConversationAgentQueue();
-      await queue.closeChatDeliveryQueue();
-      if (documentExtractEnabled) {
-        await queue.closeDocumentExtractQueue();
-      }
-      await queue.closeMeetingFinalizeQueue();
-      await queue.closeMeetingSchedulerQueue();
-      await queue.closeObjectSummaryQueue();
-      await queue.closeTaskCategoryQueue();
-      await queue.closeJanitorQueue();
-      await queue.closeWebhookDeliveryQueue();
-      await queue.closeIntegrationSyncQueue();
-      await queue.closeMcpHealthQueue();
-      await queue.closeTeamExportQueue();
-      await queue.closeTimelineMomentPresentationQueue();
-      await queue.closeDailyDigestQueue();
-      await queue.closeReconciliationQueue();
+      await workers.close();
       await queue.closeRedisConnection();
     } catch (err: unknown) {
       log.error({ err }, 'shutdown error');

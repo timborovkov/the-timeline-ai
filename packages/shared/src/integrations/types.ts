@@ -213,6 +213,17 @@ export interface SyncTarget {
   triggeredBy?: string;
 }
 
+export interface SyncSelection {
+  kind: string;
+  externalId: string;
+}
+
+export interface SyncSelectionPolicy {
+  /** Shared feeds must consume changes for all selections whenever any selection is due. */
+  recovery: 'all' | 'shared_cursor' | 'per_resource';
+  resolveTarget(selections: SyncSelection[], target: SyncTarget): SyncSelection[];
+}
+
 export type NativeProviderId = IntegrationProvider['id'];
 
 export const NATIVE_PROVIDER_IDS = [
@@ -535,7 +546,7 @@ export type WebhookHandleResult = IntegrationEvent[] | WebhookNormalizeResult;
 export interface WebhookProvisionInput {
   integration: IntegrationRow;
   tokens: unknown;
-  selections: { kind: string; externalId: string }[];
+  selections: SyncSelection[];
   existingSubscriptions?: WebhookSubscription[];
   ctx?: WebhookProvisionContext;
 }
@@ -635,6 +646,7 @@ export interface OAuthCallbackOutput {
 export interface IntegrationProvider {
   id: 'google_drive' | 'linear' | 'github' | 'monday' | 'slack' | 'sentry';
   displayLabel: string;
+  syncSelectionPolicy: SyncSelectionPolicy;
   /**
    * Build the OAuth authorize URL. Returns the URL only — the route
    * handler is responsible for redirecting the browser. The `state`
@@ -666,7 +678,7 @@ export interface IntegrationProvider {
     purpose?: 'backfill' | 'resync';
     integration: IntegrationRow;
     tokens: unknown;
-    selections: { kind: string; externalId: string }[];
+    selections: SyncSelection[];
     ctx: SyncContext;
   }): Promise<SyncResult | undefined>;
   /**
@@ -676,7 +688,7 @@ export interface IntegrationProvider {
     purpose?: 'recovery' | 'webhook';
     integration: IntegrationRow;
     tokens: unknown;
-    selections: { kind: string; externalId: string }[];
+    selections: SyncSelection[];
     ctx: SyncContext;
     target?: SyncTarget;
   }): Promise<SyncResult | undefined>;

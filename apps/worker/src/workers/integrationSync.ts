@@ -884,7 +884,7 @@ export async function runOneIntegration(
     const allSelections = await integrationsLib.adminListSelections(db, integrationId);
     let selections =
       kind === 'targeted' && target
-        ? targetedSelections(integration.provider, allSelections, target)
+        ? provider.syncSelectionPolicy.resolveTarget(allSelections, target)
         : allSelections;
     if (kind === 'targeted' && selections.length === 0) {
       await integrationsLib.adminRecordAudit(
@@ -994,7 +994,7 @@ export async function runOneIntegration(
     if (
       kind === 'incremental' &&
       triggeredBy === 'reconcile' &&
-      integration.provider !== 'monday'
+      provider.syncSelectionPolicy.recovery !== 'all'
     ) {
       const dueSelections = selections.filter((selection) => {
         const at = completed[resourceKey(selection)];
@@ -1004,8 +1004,7 @@ export async function runOneIntegration(
       });
       // These providers advance a shared feed/collection cursor. Filtering only
       // some selections would consume changes for selections omitted from this run.
-      const sharedCursor =
-        integration.provider === 'google_drive' || integration.provider === 'linear';
+      const sharedCursor = provider.syncSelectionPolicy.recovery === 'shared_cursor';
       if (!sharedCursor || dueSelections.length === 0) selections = dueSelections;
     }
     if (kind !== 'targeted' && selections.length > 1) {
@@ -1436,72 +1435,6 @@ export async function runOneIntegration(
         : new Error('failed to enqueue provider pagination continuation');
     }
   }
-}
-
-function targetedSelections(
-  provider: NativeSyncProvider,
-  selections: { kind: string; externalId: string }[],
-  target: TargetedIntegrationSyncJob,
-): { kind: string; externalId: string }[] {
-  if (
-    (provider === 'monday' || provider === 'google_drive') &&
-    target.resourceType === `${provider}.webhook`
-  ) {
-    return [{ kind: target.resourceType, externalId: target.externalId }];
-  }
-  if (
-    provider === 'google_drive' &&
-    target.resourceType === 'drive.changes' &&
-    target.reason === 'provider_pagination_continuation'
-  )
-    return selections;
-  if (provider === 'linear' && target.reason === 'provider_pagination_continuation')
-    return selections;
-  const exact = selections.filter(
-    (selection) =>
-      selection.kind === target.resourceType && selection.externalId === target.externalId,
-  );
-  if (exact.length > 0) return exact;
-
-  if (provider === 'github' && target.resourceType === 'github.repo') {
-    const owner = target.externalId.split('/')[0];
-    if (
-      owner &&
-      selections.some(
-        (selection) => selection.kind === 'github.org' && selection.externalId === owner,
-      )
-    ) {
-      return [{ kind: 'github.repo', externalId: target.externalId }];
-    }
-  }
-
-  if (provider === 'sentry' && target.resourceType === 'sentry.project') {
-    const [orgSlug, projectSlug] = target.externalId.split('/');
-    if (
-      orgSlug &&
-      projectSlug &&
-      selections.some(
-        (selection) => selection.kind === 'sentry.org' && selection.externalId === orgSlug,
-      )
-    ) {
-      return [{ kind: 'sentry.project', externalId: target.externalId }];
-    }
-  }
-
-  if (provider === 'monday' && target.resourceType === 'monday.item') {
-    const [boardId, itemId] = target.externalId.split(':');
-    if (
-      boardId &&
-      itemId &&
-      selections.some(
-        (selection) => selection.kind === 'monday.board' && selection.externalId === boardId,
-      )
-    ) {
-      return [{ kind: 'monday.board', externalId: boardId }];
-    }
-  }
-
-  return [];
 }
 
 function reconciliationDue(
