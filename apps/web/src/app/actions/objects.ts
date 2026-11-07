@@ -6,7 +6,6 @@ import { enqueueSuggestionJob } from '@timeline/shared/queue';
 import * as rateLimit from '@timeline/shared/rate-limit';
 import { taskCategorySchema } from '@timeline/shared/task-categories/types';
 import { withTeam } from '@timeline/shared/team-scope';
-import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 
 import type { ObjectActionState } from '@/lib/object-action-result';
@@ -16,6 +15,7 @@ import { trackProductEventBestEffort } from '@/lib/analytics';
 import { db } from '@/lib/db';
 import { loadObjectRowsPage } from '@/lib/object-page';
 import { publicActionError } from '@/lib/public-error';
+import { refreshMutation } from '@/lib/refresh-mutation';
 import { runSentryServerAction } from '@/lib/sentry-action';
 import { reportCaughtError } from '@/lib/sentry-report';
 import { loadTaskRowsPage } from '@/lib/task-page';
@@ -96,32 +96,6 @@ async function reconcileArchivedObject(
     operation: 'archive_or_cancel',
     reason: 'A teammate archived this object directly.',
   });
-}
-
-function bestEffortRevalidatePath(
-  path: string,
-  operation: string,
-  type?: Parameters<typeof revalidatePath>[1],
-): void {
-  try {
-    if (type) revalidatePath(path, type);
-    else revalidatePath(path);
-  } catch (err) {
-    reportCaughtError(err, { surface: 'server_action', operation });
-  }
-}
-
-function revalidateObjectMutationSurfaces(ids: string | string[]): void {
-  for (const id of Array.isArray(ids) ? ids : [ids]) {
-    bestEffortRevalidatePath(`/app/objects/${id}`, 'revalidate_object_mutation_surfaces');
-  }
-  bestEffortRevalidatePath('/app/objects', 'revalidate_object_mutation_surfaces');
-  bestEffortRevalidatePath('/app/work', 'revalidate_object_mutation_surfaces');
-  // Board pages receive object rows through layout data; refresh the layout so
-  // optimistic updates do not snap back to stale cards.
-  bestEffortRevalidatePath('/app/boards', 'revalidate_object_mutation_surfaces', 'layout');
-  bestEffortRevalidatePath('/app/tasks', 'revalidate_object_mutation_surfaces');
-  bestEffortRevalidatePath('/app/approvals', 'revalidate_object_mutation_surfaces');
 }
 
 const OBJECT_SEARCH_RESULT_LIMIT = 12;
@@ -374,14 +348,10 @@ export async function createObjectAction(input: unknown): Promise<ObjectActionSt
         parentObjectId: parsed.data.parentObjectId ?? null,
         actor: { kind: 'user', userId: r.userId },
       });
-      bestEffortRevalidatePath('/app/objects', 'revalidate_object_create');
-      bestEffortRevalidatePath('/app/work', 'revalidate_object_create');
-      if (parsed.data.parentObjectId) {
-        bestEffortRevalidatePath(
-          `/app/objects/${parsed.data.parentObjectId}`,
-          'revalidate_object_create',
-        );
-      }
+      refreshMutation(
+        { kind: 'object-created', parentId: parsed.data.parentObjectId },
+        'revalidate_object_create',
+      );
       trackProductEventBestEffort(
         { kind: 'user', userId: r.userId, teamId: r.teamId },
         'object_created',
@@ -433,7 +403,7 @@ export async function updateObjectAction(input: unknown): Promise<ObjectActionSt
           changedFields: result.changedFields,
         }),
       );
-      revalidateObjectMutationSurfaces(id);
+      refreshMutation({ kind: 'object-updated', ids: id }, 'revalidate_object_mutation_surfaces');
       if (result.changedFields.length > 0) {
         trackProductEventBestEffort(
           { kind: 'user', userId: r.userId, teamId: r.teamId },
@@ -469,7 +439,10 @@ export async function setTaskCategoryAction(input: unknown): Promise<ObjectActio
           mode: 'manual',
         },
       );
-      revalidateObjectMutationSurfaces(parsed.data.id);
+      refreshMutation(
+        { kind: 'object-updated', ids: parsed.data.id },
+        'revalidate_object_mutation_surfaces',
+      );
       return { ok: true, id: parsed.data.id, undoChangeId: result.changeId };
     } catch (err) {
       return { error: friendlyError(err, 'Failed to update category') };
@@ -499,7 +472,10 @@ export async function undoTaskCategoryChangeAction(input: unknown): Promise<Obje
           mode: result.taskCategoryMode === 'manual' ? 'manual' : 'automatic',
         },
       );
-      revalidateObjectMutationSurfaces(parsed.data.id);
+      refreshMutation(
+        { kind: 'object-updated', ids: parsed.data.id },
+        'revalidate_object_mutation_surfaces',
+      );
       return { ok: true, id: parsed.data.id };
     } catch (err) {
       return { error: friendlyError(err, 'Failed to undo category change') };
@@ -525,7 +501,10 @@ export async function resetTaskCategoryAction(input: unknown): Promise<ObjectAct
           mode: 'automatic',
         },
       );
-      revalidateObjectMutationSurfaces(parsed.data.id);
+      refreshMutation(
+        { kind: 'object-updated', ids: parsed.data.id },
+        'revalidate_object_mutation_surfaces',
+      );
       return { ok: true, id: parsed.data.id };
     } catch (err) {
       return { error: friendlyError(err, 'Failed to enable automatic category') };
@@ -544,7 +523,10 @@ export async function retryTaskCategoryAction(input: unknown): Promise<ObjectAct
         kind: 'user',
         userId: r.userId,
       });
-      revalidateObjectMutationSurfaces(parsed.data.id);
+      refreshMutation(
+        { kind: 'object-updated', ids: parsed.data.id },
+        'revalidate_object_mutation_surfaces',
+      );
       return { ok: true, id: parsed.data.id };
     } catch (err) {
       return { error: friendlyError(err, 'Failed to retry category') };
@@ -570,13 +552,17 @@ export async function setTaskProjectAction(input: unknown): Promise<ObjectAction
           hasProject: parsed.data.projectId !== null,
         },
       );
-      revalidateObjectMutationSurfaces(
-        [
-          parsed.data.id,
-          parsed.data.projectId,
-          result.project?.projectId,
-          ...result.touchedIds,
-        ].filter((id): id is string => Boolean(id)),
+      refreshMutation(
+        {
+          kind: 'object-updated',
+          ids: [
+            parsed.data.id,
+            parsed.data.projectId,
+            result.project?.projectId,
+            ...result.touchedIds,
+          ].filter((id): id is string => Boolean(id)),
+        },
+        'revalidate_object_mutation_surfaces',
       );
       return { ok: true, id: parsed.data.id };
     } catch (err) {
@@ -610,7 +596,10 @@ export async function updateObjectMetadataAction(input: unknown): Promise<Object
           changedFields: result.changedFields,
         }),
       );
-      revalidateObjectMutationSurfaces(parsed.data.id);
+      refreshMutation(
+        { kind: 'object-updated', ids: parsed.data.id },
+        'revalidate_object_mutation_surfaces',
+      );
       return { ok: true, id: parsed.data.id };
     } catch (err) {
       return { error: friendlyError(err, 'Failed to update metadata') };
@@ -647,7 +636,10 @@ export async function createIdentityFacetAction(input: unknown): Promise<ObjectA
         value: parsed.data.value,
         actor: { kind: 'user', userId: r.userId },
       });
-      revalidateObjectMutationSurfaces(parsed.data.entityId);
+      refreshMutation(
+        { kind: 'object-updated', ids: parsed.data.entityId },
+        'revalidate_object_mutation_surfaces',
+      );
       return { ok: true, id: facet.id };
     } catch (err) {
       return { error: friendlyError(err, 'Failed to add contact') };
@@ -667,7 +659,10 @@ export async function archiveIdentityFacetAction(input: unknown): Promise<Object
         userId: r.userId,
       });
       if (!archived) return { error: 'Contact not found' };
-      revalidateObjectMutationSurfaces(parsed.data.entityId);
+      refreshMutation(
+        { kind: 'object-updated', ids: parsed.data.entityId },
+        'revalidate_object_mutation_surfaces',
+      );
       return { ok: true, id: parsed.data.facetId };
     } catch (err) {
       return { error: friendlyError(err, 'Failed to remove contact') };
@@ -686,13 +681,17 @@ export async function setPersonCompanyAction(input: unknown): Promise<ObjectActi
         kind: 'user',
         userId: r.userId,
       });
-      revalidateObjectMutationSurfaces(
-        [
-          parsed.data.id,
-          parsed.data.companyId,
-          result.company?.companyId,
-          ...result.touchedIds,
-        ].filter((id): id is string => Boolean(id)),
+      refreshMutation(
+        {
+          kind: 'object-updated',
+          ids: [
+            parsed.data.id,
+            parsed.data.companyId,
+            result.company?.companyId,
+            ...result.touchedIds,
+          ].filter((id): id is string => Boolean(id)),
+        },
+        'revalidate_object_mutation_surfaces',
       );
       return { ok: true, id: parsed.data.id };
     } catch (err) {
@@ -766,7 +765,10 @@ export async function structureContactFromBoardNotesAction(
           );
         }
       }
-      revalidateObjectMutationSurfaces(parsed.data.entityId);
+      refreshMutation(
+        { kind: 'object-updated', ids: parsed.data.entityId },
+        'revalidate_object_mutation_surfaces',
+      );
       return { ok: true, id: parsed.data.entityId };
     } catch (err) {
       return { error: friendlyError(err, 'Failed to structure contact info') };
@@ -894,7 +896,10 @@ export async function unarchiveObjectAction(input: unknown): Promise<ObjectActio
           changedFields: result.changedFields,
         }),
       );
-      revalidateObjectMutationSurfaces(parsed.data.id);
+      refreshMutation(
+        { kind: 'object-updated', ids: parsed.data.id },
+        'revalidate_object_mutation_surfaces',
+      );
       if (result.changedFields.includes('archivedAt')) {
         trackProductEventBestEffort(
           { kind: 'user', userId: r.userId, teamId: r.teamId },
@@ -923,7 +928,10 @@ export async function archiveObjectAction(input: unknown): Promise<ObjectActionS
       await reconcileCanonicalChangeBestEffort('reconcile_object_archive_after_archive', () =>
         reconcileArchivedObject(r.scope.suggestions, archived),
       );
-      revalidateObjectMutationSurfaces(parsed.data.id);
+      refreshMutation(
+        { kind: 'object-updated', ids: parsed.data.id },
+        'revalidate_object_mutation_surfaces',
+      );
       if (archived.changedFields.includes('archivedAt')) {
         trackProductEventBestEffort(
           { kind: 'user', userId: r.userId, teamId: r.teamId },
@@ -946,8 +954,7 @@ export async function pinObjectAction(input: unknown): Promise<ObjectActionState
     if (!r.ok) return { error: r.error };
     try {
       await r.scope.pins.pin({ kind: 'object', key: parsed.data.id });
-      bestEffortRevalidatePath('/app', 'revalidate_object_pin');
-      bestEffortRevalidatePath(`/app/objects/${parsed.data.id}`, 'revalidate_object_pin');
+      refreshMutation({ kind: 'object-pinned', id: parsed.data.id }, 'revalidate_object_pin');
       return { ok: true };
     } catch (err) {
       return { error: friendlyError(err, 'Failed to pin object') };
@@ -963,8 +970,7 @@ export async function unpinObjectAction(input: unknown): Promise<ObjectActionSta
     if (!r.ok) return { error: r.error };
     try {
       await r.scope.pins.unpin({ kind: 'object', key: parsed.data.id });
-      bestEffortRevalidatePath('/app', 'revalidate_object_unpin');
-      bestEffortRevalidatePath(`/app/objects/${parsed.data.id}`, 'revalidate_object_unpin');
+      refreshMutation({ kind: 'object-pinned', id: parsed.data.id }, 'revalidate_object_unpin');
       return { ok: true };
     } catch (err) {
       return { error: friendlyError(err, 'Failed to unpin object') };
@@ -1003,7 +1009,7 @@ export async function bulkArchiveObjectsAction(input: unknown): Promise<ObjectAc
           ),
         ),
       );
-      revalidateObjectMutationSurfaces(ids);
+      refreshMutation({ kind: 'object-updated', ids: ids }, 'revalidate_object_mutation_surfaces');
       if (archivedObjects.some((object) => object.changedFields.includes('archivedAt'))) {
         trackProductEventBestEffort(
           { kind: 'user', userId: r.userId, teamId: r.teamId },
@@ -1063,16 +1069,10 @@ export async function mergeObjectsAction(input: unknown): Promise<ObjectActionSt
           });
         });
       }
-      bestEffortRevalidatePath('/app/objects', 'revalidate_object_merge');
-      bestEffortRevalidatePath('/app/work', 'revalidate_object_merge');
-      bestEffortRevalidatePath('/app/approvals', 'revalidate_object_merge');
-      bestEffortRevalidatePath('/app/inbox', 'revalidate_object_merge');
-      bestEffortRevalidatePath(`/app/objects/${survivorId}`, 'revalidate_object_merge');
-      for (const id of parsed.data.mergedIds) {
-        bestEffortRevalidatePath(`/app/objects/${id}`, 'revalidate_object_merge');
-      }
-      bestEffortRevalidatePath('/app/boards', 'revalidate_object_merge', 'layout');
-      bestEffortRevalidatePath('/app/tasks', 'revalidate_object_merge');
+      refreshMutation(
+        { kind: 'objects-merged', survivorId, mergedIds: parsed.data.mergedIds },
+        'revalidate_object_merge',
+      );
       return { ok: true, id: survivorId };
     } catch (err) {
       return { error: friendlyError(err, 'Failed to merge objects') };
@@ -1093,9 +1093,7 @@ export async function findObjectCleanupSuggestionsAction(): Promise<ObjectAction
         },
         { jobIdSuffix: 'manual' },
       );
-      bestEffortRevalidatePath('/app/objects', 'revalidate_object_cleanup_scan');
-      bestEffortRevalidatePath('/app/approvals', 'revalidate_object_cleanup_scan');
-      bestEffortRevalidatePath('/app/inbox', 'revalidate_object_cleanup_scan');
+      refreshMutation({ kind: 'object-cleanup' }, 'revalidate_object_cleanup_scan');
       return {
         ok: true,
         message: result.enqueued ? 'Scan queued' : 'Scan already queued',
@@ -1125,9 +1123,10 @@ export async function repairObjectMemoryAction(input: unknown): Promise<ObjectAc
         },
         { jobIdSuffix: `memory-repair:${parsed.data.id}` },
       );
-      bestEffortRevalidatePath(`/app/objects/${parsed.data.id}`, 'revalidate_object_memory_repair');
-      bestEffortRevalidatePath('/app/approvals', 'revalidate_object_memory_repair');
-      bestEffortRevalidatePath('/app/inbox', 'revalidate_object_memory_repair');
+      refreshMutation(
+        { kind: 'object-memory-repair', id: parsed.data.id },
+        'revalidate_object_memory_repair',
+      );
       return {
         ok: true,
         message: result.enqueued ? 'Memory repair queued' : 'Memory repair already queued',
@@ -1156,8 +1155,14 @@ export async function addRelationshipAction(input: unknown): Promise<ObjectActio
         actorUserId: r.userId,
       });
       if (!relationship) return { error: 'Relationship could not be created' };
-      bestEffortRevalidateObjectDetail(parsed.data.fromEntityId, 'revalidate_object_relationship');
-      bestEffortRevalidateObjectDetail(parsed.data.toEntityId, 'revalidate_object_relationship');
+      refreshMutation(
+        { kind: 'object-detail', id: parsed.data.fromEntityId },
+        'revalidate_object_relationship',
+      );
+      refreshMutation(
+        { kind: 'object-detail', id: parsed.data.toEntityId },
+        'revalidate_object_relationship',
+      );
       return { ok: true, id: relationship.id };
     } catch (err) {
       return { error: friendlyError(err, 'Failed to link') };
@@ -1186,7 +1191,7 @@ export async function removeRelationshipAction(input: unknown): Promise<ObjectAc
         ),
       );
       for (const objectId of revalidateIds) {
-        bestEffortRevalidateObjectDetail(objectId, 'revalidate_object_relationship');
+        refreshMutation({ kind: 'object-detail', id: objectId }, 'revalidate_object_relationship');
       }
       return { ok: true };
     } catch (err) {
@@ -1201,13 +1206,6 @@ const noteCreateSchema = z.object({
   entityId: uuidSchema,
   body: z.string().trim().min(1).max(5000),
 });
-
-function bestEffortRevalidateObjectDetail(entityId: string, operation: string): void {
-  bestEffortRevalidatePath(`/app/objects/${entityId}`, operation);
-  bestEffortRevalidatePath('/app/tasks', operation);
-  bestEffortRevalidatePath('/app/work', operation);
-  bestEffortRevalidatePath('/app/inbox', operation);
-}
 
 export async function createNoteAction(input: unknown): Promise<ObjectActionState> {
   return runSentryServerAction('create_note', async () => {
@@ -1224,7 +1222,7 @@ export async function createNoteAction(input: unknown): Promise<ObjectActionStat
     } catch (err) {
       return { error: friendlyError(err, 'Failed to add note') };
     }
-    bestEffortRevalidateObjectDetail(parsed.data.entityId, 'revalidate_object_note');
+    refreshMutation({ kind: 'object-detail', id: parsed.data.entityId }, 'revalidate_object_note');
     return { ok: true, id: note.id };
   });
 }
@@ -1248,7 +1246,10 @@ export async function updateNoteAction(input: unknown): Promise<ObjectActionStat
         actorUserId: r.userId,
       });
       if (!ok) return { error: 'Note not found' };
-      bestEffortRevalidateObjectDetail(parsed.data.entityId, 'revalidate_object_note');
+      refreshMutation(
+        { kind: 'object-detail', id: parsed.data.entityId },
+        'revalidate_object_note',
+      );
       return { ok: true };
     } catch (err) {
       return { error: friendlyError(err, 'Failed to update note') };
@@ -1268,7 +1269,10 @@ export async function deleteNoteAction(input: unknown): Promise<ObjectActionStat
         actorUserId: r.userId,
       });
       if (!ok) return { error: 'Note not found' };
-      bestEffortRevalidateObjectDetail(parsed.data.entityId, 'revalidate_object_note');
+      refreshMutation(
+        { kind: 'object-detail', id: parsed.data.entityId },
+        'revalidate_object_note',
+      );
       return { ok: true };
     } catch (err) {
       return { error: friendlyError(err, 'Failed to delete note') };
@@ -1295,7 +1299,10 @@ export async function generateObjectSummaryAction(input: unknown): Promise<Objec
         };
       }
       if (!result.enqueued) return { error: 'Summary generation is already queued' };
-      bestEffortRevalidateObjectDetail(parsed.data.entityId, 'revalidate_object_summary');
+      refreshMutation(
+        { kind: 'object-detail', id: parsed.data.entityId },
+        'revalidate_object_summary',
+      );
       return { ok: true, id: result.jobId ?? parsed.data.entityId };
     } catch (err) {
       return { error: friendlyError(err, 'Failed to queue summary') };
@@ -1320,7 +1327,7 @@ export async function markNotificationReadAction(id: string): Promise<ObjectActi
       // as { error } instead of throwing into the client and stranding
       // the optimistic read state.
       await r.scope.objects.markNotificationRead(parsed.data);
-      bestEffortRevalidatePath('/app/inbox', 'revalidate_object_notification');
+      refreshMutation({ kind: 'notifications-read' }, 'revalidate_object_notification');
       return { ok: true };
     } catch (err) {
       return { error: friendlyError(err, 'Failed to mark notification read') };
@@ -1334,7 +1341,7 @@ export async function markAllNotificationsReadAction(): Promise<ObjectActionStat
     if (!r.ok) return { error: r.error };
     try {
       await r.scope.objects.markAllNotificationsRead();
-      bestEffortRevalidatePath('/app/inbox', 'revalidate_object_notification');
+      refreshMutation({ kind: 'notifications-read' }, 'revalidate_object_notification');
       return { ok: true };
     } catch (err) {
       return { error: friendlyError(err, 'Failed to mark notifications read') };
@@ -1370,14 +1377,10 @@ export async function acceptObjectChangeAction(input: unknown): Promise<ObjectAc
           isBulk: false,
         },
       );
-      bestEffortRevalidateObjectDetail(parsed.data.entityId, 'revalidate_object_change_accept');
-      bestEffortRevalidatePath('/app/inbox', 'revalidate_object_change_accept');
-      // Accepting may change status / stage / priority — same revalidation
-      // set as updateObjectAction so kanban / task columns reflect the move.
-      bestEffortRevalidatePath('/app/objects', 'revalidate_object_change_accept');
-      bestEffortRevalidatePath('/app/work', 'revalidate_object_change_accept');
-      bestEffortRevalidatePath('/app/boards', 'revalidate_object_change_accept', 'layout');
-      bestEffortRevalidatePath('/app/tasks', 'revalidate_object_change_accept');
+      refreshMutation(
+        { kind: 'object-change-accepted', id: parsed.data.entityId },
+        'revalidate_object_change_accept',
+      );
       return { ok: true };
     } catch (err) {
       return {
@@ -1408,8 +1411,10 @@ export async function rejectObjectChangeAction(input: unknown): Promise<ObjectAc
           isBulk: false,
         },
       );
-      bestEffortRevalidateObjectDetail(parsed.data.entityId, 'revalidate_object_change_reject');
-      bestEffortRevalidatePath('/app/inbox', 'revalidate_object_change_reject');
+      refreshMutation(
+        { kind: 'object-detail', id: parsed.data.entityId },
+        'revalidate_object_change_reject',
+      );
       return { ok: true };
     } catch (err) {
       return {

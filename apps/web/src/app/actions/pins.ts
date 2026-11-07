@@ -1,15 +1,14 @@
 'use server';
 
 import { pinTargetKindSchema } from '@timeline/shared/pins';
-import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 
 import type { ActionState } from '@/lib/action-result';
 
 import { resolveScope, uuidSchema } from '@/lib/action-scope';
 import { publicActionError } from '@/lib/public-error';
+import { refreshMutation } from '@/lib/refresh-mutation';
 import { runSentryServerAction } from '@/lib/sentry-action';
-import { reportCaughtError } from '@/lib/sentry-report';
 
 const targetSchema = z.object({
   kind: pinTargetKindSchema,
@@ -30,24 +29,6 @@ const moveSchema = z
     { message: 'Choose one valid pin position' },
   );
 
-function revalidatePinSurfaces(target?: z.infer<typeof targetSchema>): void {
-  const paths = ['/app', '/app/work'];
-  if (target?.kind === 'object') paths.push(`/app/objects/${target.key}`, '/app/tasks');
-  if (target?.kind === 'board') paths.push(`/app/boards/${target.key}`, '/app/boards');
-  if (target?.kind === 'document') paths.push(`/app/documents/${target.key}`, '/app/documents');
-  if (target?.kind === 'meeting') paths.push(`/app/meetings/${target.key}`, '/app/meetings');
-  if (target?.kind === 'saved_meeting') paths.push('/app/meetings');
-  if (target?.kind === 'calendar_event') paths.push('/app/calendar');
-  if (target?.kind === 'timeline_moment') paths.push('/app/timeline');
-  for (const path of new Set(paths)) {
-    try {
-      revalidatePath(path);
-    } catch (error) {
-      reportCaughtError(error, { surface: 'server_action', operation: 'revalidate_pin_surfaces' });
-    }
-  }
-}
-
 export async function pinTargetAction(input: unknown): Promise<ActionState> {
   return runSentryServerAction('pin_target', async () => {
     const parsed = targetSchema.safeParse(input);
@@ -56,7 +37,7 @@ export async function pinTargetAction(input: unknown): Promise<ActionState> {
     if (!resolved.ok) return { error: resolved.error };
     try {
       const item = await resolved.scope.pins.pin(parsed.data);
-      revalidatePinSurfaces(parsed.data);
+      refreshMutation({ kind: 'pins-changed', target: parsed.data }, 'revalidate_pin_surfaces');
       return { ok: true, id: item.pinId, message: `Pinned ${item.title}` };
     } catch (error) {
       return {
@@ -77,7 +58,7 @@ export async function unpinTargetAction(input: unknown): Promise<ActionState> {
     if (!resolved.ok) return { error: resolved.error };
     try {
       await resolved.scope.pins.unpin(parsed.data);
-      revalidatePinSurfaces(parsed.data);
+      refreshMutation({ kind: 'pins-changed', target: parsed.data }, 'revalidate_pin_surfaces');
       return { ok: true, message: 'Item unpinned' };
     } catch (error) {
       return {
@@ -99,7 +80,7 @@ export async function movePinAction(input: unknown): Promise<ActionState> {
     try {
       const moved = await resolved.scope.pins.move(parsed.data);
       if (!moved) return { error: 'Pinned item or position no longer exists.' };
-      revalidatePinSurfaces();
+      refreshMutation({ kind: 'pins-changed' }, 'revalidate_pin_surfaces');
       return { ok: true };
     } catch (error) {
       return {

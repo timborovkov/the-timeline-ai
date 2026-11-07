@@ -2248,5 +2248,8 @@
   },
   "packages/shared/src/messaging/digest-delivery.test.ts": {
     "group": "unit"
+  },
+  "apps/web/src/lib/mutation-surfaces.test.ts": {
+    "group": "unit"
   }
 }

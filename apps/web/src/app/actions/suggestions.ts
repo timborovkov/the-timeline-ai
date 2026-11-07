@@ -2,7 +2,6 @@
 
 import { bucketAnalyticsCount } from '@timeline/shared/analytics';
 import { taskCategorySchema } from '@timeline/shared/task-categories/types';
-import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 
 import type { SuggestionActionState } from '@/lib/suggestion-action-result';
@@ -10,6 +9,7 @@ import type { SuggestionActionState } from '@/lib/suggestion-action-result';
 import { resolveScope, uuidSchema } from '@/lib/action-scope';
 import { trackProductEventBestEffort } from '@/lib/analytics';
 import { publicActionError } from '@/lib/public-error';
+import { refreshMutation } from '@/lib/refresh-mutation';
 import { runSentryServerAction } from '@/lib/sentry-action';
 
 const EXPECTED_SUGGESTION_APPLY_FAILURE_CODE = 'TIMELINE_EXPECTED_SUGGESTION_APPLY_FAILURE';
@@ -32,17 +32,6 @@ function trackApprovalDecision(
       isBulk,
     },
   );
-}
-
-function revalidateSuggestionSurfaces() {
-  revalidatePath('/app', 'layout');
-  revalidatePath('/app/approvals');
-  revalidatePath('/app/timeline');
-  revalidatePath('/app/objects', 'layout');
-  revalidatePath('/app/boards', 'layout');
-  revalidatePath('/app/calendar');
-  revalidatePath('/app/tasks');
-  revalidatePath('/app/inbox');
 }
 
 function isExpectedSuggestionApplyFailure(err: unknown): boolean {
@@ -73,7 +62,7 @@ export async function acceptSuggestionItemAction(input: unknown): Promise<Sugges
       const outcome = await r.scope.suggestions.acceptSuggestionItemWithOutcome(parsed.data.itemId);
       if (!outcome) return { error: 'Suggestion item no longer pending' };
       if (outcome === 'accepted') trackApprovalDecision(r, 'accepted', 1);
-      revalidateSuggestionSurfaces();
+      refreshMutation({ kind: 'suggestions-changed' }, 'revalidate_suggestion_surfaces');
       return { ok: true };
     } catch (err) {
       const failedSuggestions = await r.scope.suggestions
@@ -82,7 +71,7 @@ export async function acceptSuggestionItemAction(input: unknown): Promise<Sugges
       const itemIsFailed = failedSuggestions.some((suggestion) =>
         suggestion.items.some((item) => item.id === parsed.data.itemId && item.status === 'failed'),
       );
-      revalidateSuggestionSurfaces();
+      refreshMutation({ kind: 'suggestions-changed' }, 'revalidate_suggestion_surfaces');
       return {
         error: isExpectedSuggestionApplyFailure(err)
           ? errorMessage(err, 'Failed to accept suggestion')
@@ -106,10 +95,10 @@ export async function rejectSuggestionItemAction(input: unknown): Promise<Sugges
       const ok = await r.scope.suggestions.rejectSuggestionItem(parsed.data.itemId);
       if (!ok) return { error: 'Suggestion item no longer pending' };
       trackApprovalDecision(r, 'rejected', 1);
-      revalidateSuggestionSurfaces();
+      refreshMutation({ kind: 'suggestions-changed' }, 'revalidate_suggestion_surfaces');
       return { ok: true };
     } catch (err) {
-      revalidateSuggestionSurfaces();
+      refreshMutation({ kind: 'suggestions-changed' }, 'revalidate_suggestion_surfaces');
       return {
         error: publicActionError(err, {
           operation: 'reject_suggestion_item',
@@ -135,7 +124,7 @@ export async function reviseSuggestionItemAction(input: unknown): Promise<Sugges
       const revisedItem = await r.scope.suggestions.reviseSuggestionItem(parsed.data);
       if (!revisedItem) return { error: 'Proposal is no longer editable' };
       trackApprovalDecision(r, 'revised', 1);
-      revalidateSuggestionSurfaces();
+      refreshMutation({ kind: 'suggestions-changed' }, 'revalidate_suggestion_surfaces');
       return { ok: true, revisedItem };
     } catch (err) {
       return {
@@ -178,7 +167,7 @@ export async function reviseTaskSuggestionItemAction(
       const ok = await r.scope.suggestions.reviseTaskSuggestionItem(parsed.data);
       if (!ok) return { error: 'Task proposal is no longer editable' };
       trackApprovalDecision(r, 'revised', 1);
-      revalidateSuggestionSurfaces();
+      refreshMutation({ kind: 'suggestions-changed' }, 'revalidate_suggestion_surfaces');
       return { ok: true };
     } catch (err) {
       return {
@@ -233,13 +222,13 @@ export async function rejectVisibleSuggestionsAction(
       );
       const failedItemIds = itemIds.filter((_, index) => results[index] === false);
       const failed = failedItemIds.length;
-      revalidateSuggestionSurfaces();
+      refreshMutation({ kind: 'suggestions-changed' }, 'revalidate_suggestion_surfaces');
       if (failed === 0) trackApprovalDecision(r, 'rejected', itemIds.length, true);
       return failed > 0
         ? { error: `${failed} item(s) failed to reject`, failedItemIds }
         : { ok: true };
     } catch (err) {
-      revalidateSuggestionSurfaces();
+      refreshMutation({ kind: 'suggestions-changed' }, 'revalidate_suggestion_surfaces');
       return {
         error: publicActionError(err, {
           operation: 'reject_visible_suggestions',
@@ -268,13 +257,13 @@ export async function acceptAllSuggestionAction(input: unknown): Promise<Suggest
             itemIds: parsed.data.itemIds,
           })
         : await r.scope.suggestions.acceptAll(parsed.data.suggestionId);
-      revalidateSuggestionSurfaces();
+      refreshMutation({ kind: 'suggestions-changed' }, 'revalidate_suggestion_surfaces');
       if (result.failed === 0) trackApprovalDecision(r, 'accepted', result.accepted, true);
       return result.failed > 0
         ? { error: `${result.failed} item(s) failed to apply`, failedItemIds: result.failedItemIds }
         : { ok: true };
     } catch (err) {
-      revalidateSuggestionSurfaces();
+      refreshMutation({ kind: 'suggestions-changed' }, 'revalidate_suggestion_surfaces');
       return {
         error: publicActionError(err, {
           operation: 'accept_all_suggestions',
@@ -324,7 +313,7 @@ export async function acceptVisibleSuggestionsAction(
       );
       const failed = results.reduce((sum, result) => sum + result.failed, 0);
       const failedItemIds = [...new Set(results.flatMap((result) => result.failedItemIds ?? []))];
-      revalidateSuggestionSurfaces();
+      refreshMutation({ kind: 'suggestions-changed' }, 'revalidate_suggestion_surfaces');
       if (failed === 0) {
         const accepted = results.reduce((sum, result) => sum + result.accepted, 0);
         trackApprovalDecision(r, 'accepted', accepted, true);
@@ -333,7 +322,7 @@ export async function acceptVisibleSuggestionsAction(
         ? { error: `${failed} item(s) failed to apply`, failedItemIds }
         : { ok: true };
     } catch (err) {
-      revalidateSuggestionSurfaces();
+      refreshMutation({ kind: 'suggestions-changed' }, 'revalidate_suggestion_surfaces');
       return {
         error: publicActionError(err, {
           operation: 'accept_visible_suggestions',
