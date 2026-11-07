@@ -25,19 +25,22 @@
       <ol>
         <li>Create a new Railway project.</li>
         <li>
-          Use the default <code>production</code> environment. The current project has no users and
-          uses this environment for development and deployment verification.
+          Use the default <code>production</code> environment. Development work merges into
+          <code>main</code>; releases merge into the protected <code>production</code> branch.
         </li>
         <li>
           <strong>Settings → Git</strong> — connect the repo. Branch deploys:
           <ul>
-            <li><code>main</code> → <code>production</code></li>
+            <li><code>production</code> branch → <code>production</code> environment</li>
           </ul>
         </li>
       </ol>
       <p>
-        A separate staging environment is optional. If introduced, provision isolated services and
-        credentials for release validation.
+        On 2026-11-07, the web, worker and document-extract services still followed
+        <code>cursor/google-drive-v1-b571</code>. Switching each source branch to
+        <code>production</code> is an operator step, pending after the CI split. A separate staging
+        environment is optional. If introduced, provision isolated services and credentials for
+        release validation.
       </p>
 
       <h2 id="database-templates">2. Database templates</h2>

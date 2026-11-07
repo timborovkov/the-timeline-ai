@@ -482,9 +482,12 @@ BILLING_CHARGES_ENABLED=false
 
       <h2 id="staging-vs-production">Staging vs production</h2>
       <p>
-        The current project has only <code>production</code>, deployed from <code>main</code> at
-        <code>thetimeline.cc</code>. With no users, it also serves as the development and
-        deployment-verification environment.
+        The current project has only the <code>production</code> environment at
+        <code>thetimeline.cc</code>. The Git branch <code>main</code> is for development;
+        <code>production</code> is the protected release branch. On 2026-11-07, all three app
+        services still followed <code>cursor/google-drive-v1-b571</code>. The operator must switch
+        their Railway source branches to <code>production</code>; the CI split does not change
+        Railway automatically.
       </p>
       <p>
         If a separate staging environment is introduced later, give it isolated Postgres, Redis,
@@ -634,7 +637,24 @@ rclone sync s3:timeline-exports backblaze-b2:timeline-backup-exports
 
       <h2 id="deploy-flow">Deploy flow</h2>
       <ol>
-        <li>Push to <code>main</code> (production) or <code>staging</code> branch.</li>
+        <li>
+          Merge development PRs into <code>main</code> after <code>Static checks</code> passes
+          (validation, React Doctor, runtime and E2E environment smoke checks, and dist imports).
+          Superseded PR runs are cancelled.
+        </li>
+        <li>
+          Open a release PR from <code>main</code> to <code>production</code>. Both
+          <code>Static checks</code> and <code>Full test suite</code> (offline unit/integration
+          tests and reconciliation evals) must pass on an up-to-date branch, with review threads
+          resolved. Direct pushes, force pushes and deletion are blocked. Full tests also run after
+          production merges and on manual CI dispatches; browser E2E remains manual.
+        </li>
+        <li>
+          Once all three Railway app services follow <code>production</code>, merging the release PR
+          triggers deployment. Until the operator switches those sources, Railway continues
+          following its configured branch. The Daytona snapshot publisher runs on matching
+          production changes or manual dispatch.
+        </li>
         <li>
           Railway builds each app service using the Dockerfile selected by its
           <code>railway.json</code>. The runner contains production dependencies and compiled
