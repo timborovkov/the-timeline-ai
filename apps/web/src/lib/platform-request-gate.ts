@@ -15,7 +15,11 @@ import { ACTIVE_TEAM_COOKIE, parseActiveTeamCookie } from '@/lib/active-team-coo
 import { db } from '@/lib/db';
 
 const PERSONAL_PATHS =
-  /\/(?:oauth|auth|mcp-keys|ingest-webhooks|calendar-subscription|integrations|connections|mcp-servers|mcp-share|connect-agent|telegram|slack|legal|billing)(?:\/|$)/;
+  /\/(?:oauth|auth|mcp-keys|ingest-webhooks|calendar-subscription|integrations|connections|mcp-servers|mcp-share|connect-agent|agent-provisioning|telegram|slack|legal|billing)(?:\/|$)/;
+
+export function isPersonalAccountPath(path: string): boolean {
+  return PERSONAL_PATHS.test(path);
+}
 export async function platformRequestGate(
   request: NextRequest,
   session: Session | null,
@@ -46,7 +50,7 @@ export async function platformRequestGate(
       return new Response('Account suspended', { status: 403 });
     if (!token) return await suspendedWorkspaceResponse(request, actor.userId);
     if (
-      PERSONAL_PATHS.test(path) ||
+      isPersonalAccountPath(path) ||
       path.startsWith('/app/team/switch/') ||
       path === '/workspace-suspended'
     ) {

@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 
 import type { AgentMarkdownDoc } from '@/lib/agent-setup';
 
+import { buildAgentProvisioningMarkdown } from '@/lib/agent-provisioning-content';
 import { buildAgentSetupMarkdown } from '@/lib/agent-setup';
 
 const TIMELINE_SKILL_RELATIVE = 'plugins/timeline/skills/timeline/SKILL.md';
@@ -27,5 +28,6 @@ export function readTimelineSkillMarkdown(): string {
 }
 
 export function agentMarkdownBody(doc: AgentMarkdownDoc): string {
+  if (doc === 'provisioning.md') return buildAgentProvisioningMarkdown();
   return doc === 'SKILL.md' ? readTimelineSkillMarkdown() : buildAgentSetupMarkdown();
 }
