@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Suspense, useEffect, useState, useTransition } from 'react';
+import { Suspense, useEffect, useRef, useState, useTransition } from 'react';
 
 import { markNotificationReadAction } from '@/app/actions/objects';
 import { RelativeTimestamp } from '@/components/relative-timestamp';
@@ -47,6 +47,7 @@ function NotificationRowContent({
   // toward read without copying `initiallyRead` into an effect.
   const [individuallyRead, setIndividuallyRead] = useState(false);
   const [bulkRead, setBulkRead] = useState(false);
+  const individuallyReadRef = useRef(false);
   const read = initiallyRead || individuallyRead || bulkRead;
 
   useEffect(() => {
@@ -61,7 +62,8 @@ function NotificationRowContent({
   }, []);
 
   function markRead(): void {
-    if (initiallyRead || individuallyRead) return;
+    if (initiallyRead || individuallyRead || individuallyReadRef.current) return;
+    individuallyReadRef.current = true;
     setIndividuallyRead(true);
     startTransition(async () => {
       const result = await notifyAction({
@@ -82,6 +84,7 @@ function NotificationRowContent({
       // Action failed (DB blip, scope mismatch). Drop the individual
       // optimistic flag so derived read falls back to server props or a
       // still-in-flight bulk mark-all.
+      individuallyReadRef.current = false;
       setIndividuallyRead(false);
     });
   }
