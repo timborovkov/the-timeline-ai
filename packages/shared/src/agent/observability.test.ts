@@ -1,7 +1,10 @@
 import { expect } from '@timeline/test-support';
+import { jsonSchema } from 'ai';
 import { describe, it } from 'bun:test';
 
 import { instrumentAgentTools, summarizeAgentToolObservations } from '#src/agent/observability.js';
+
+import { capabilityTool } from '#src/agent/tool-policy.js';
 
 import type { ToolSet } from 'ai';
 
@@ -108,17 +111,55 @@ describe('agent tool observability', () => {
     const observations: Parameters<typeof summarizeAgentToolObservations>[0]['observations'] = [];
     const tools = instrumentAgentTools(
       {
-        suggest_task: {
+        create_followup: capabilityTool({
+          capability: 'proposal',
+          inputSchema: jsonSchema({ type: 'object' }),
           execute: () => Promise.resolve({ ok: true, id: 'proposal-1' }),
-        },
+        }).definition,
       } as unknown as ToolSet,
       (observation) => observations.push(observation),
     );
 
-    const execute = tools.suggest_task?.execute as TestToolExecute;
+    const execute = tools.create_followup?.execute as TestToolExecute;
     await execute({ title: 'Follow up' }, { toolCallId: 'call-1', messages: [] });
 
     expect(summarizeAgentToolObservations({ observations }).proposalIds).toEqual(['proposal-1']);
+  });
+
+  it('extracts only successful proposal identifiers after tool metadata is copied', async () => {
+    const observations: Parameters<typeof summarizeAgentToolObservations>[0]['observations'] = [];
+    const results = [
+      { ok: true, suggestion_id: 'proposal-2', id: 'other', privateText: 'not telemetry' },
+      { ok: false, id: 'failed-proposal' },
+      { id: 42 },
+      null,
+    ];
+    const proposal = capabilityTool({
+      capability: 'proposal',
+      inputSchema: jsonSchema({ type: 'object' }),
+      execute: () => Promise.resolve(results.shift()),
+    }).definition;
+    const tools = instrumentAgentTools(
+      {
+        renamed_proposal: { ...proposal },
+        suggest_task: {
+          inputSchema: jsonSchema({ type: 'object' }),
+          execute: () => Promise.resolve({ id: 'not-a-proposal' }),
+        },
+      },
+      (observation) => observations.push(observation),
+    );
+    const execute = tools.renamed_proposal.execute as TestToolExecute;
+    for (let index = 0; index < 4; index++) await execute({}, { toolCallId: 'call', messages: [] });
+    await (tools.suggest_task.execute as TestToolExecute)({}, { toolCallId: 'call', messages: [] });
+    expect(observations.map((observation) => observation.proposalIds)).toEqual([
+      ['proposal-2'],
+      [],
+      [],
+      [],
+      [],
+    ]);
+    expect(JSON.stringify(observations)).not.toContain('not telemetry');
   });
 
   it('marks failed tool results without throwing away the original output', async () => {

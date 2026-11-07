@@ -3472,6 +3472,20 @@ describe('advertised MCP parameters', () => {
       expect(excluded.calendarEvents).toEqual([]);
     });
 
+    it('uses the trusted request clock for composite calendar retrieval', async () => {
+      const result = (await callTool(
+        db,
+        'timeline.search',
+        {
+          surface: 'workspace',
+          query: 'review',
+          recipe: 'calendar',
+        },
+        { currentDate: new Date('1900-01-01T12:00:00.000Z') },
+      )) as { calendarEvents: unknown[] };
+      expect(result.calendarEvents).toEqual([]);
+    });
+
     it('recipe', async () => {
       const result = (await callTool(db, 'timeline.search', {
         surface: 'workspace',

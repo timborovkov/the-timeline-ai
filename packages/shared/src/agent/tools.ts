@@ -3,7 +3,14 @@ import { jsonSchema, tool, type ToolSet } from 'ai';
 import { z } from 'zod';
 
 import { fenceExternalContent } from '#src/agent/external-content.js';
+import { retrieveWorkspaceContextInput } from '#src/agent/retrieval-contract.js';
 import { retrieveWorkspaceContext } from '#src/agent/retrieval.js';
+import {
+  capabilityTool,
+  capabilityAllowed,
+  type CapabilityTool,
+  type AgentToolMode,
+} from '#src/agent/tool-policy.js';
 import { getAppGuideRoute, searchAppGuide } from '#src/app-guide.js';
 import { artifactRefCitation } from '#src/citation.js';
 import { childLogger } from '#src/logger.js';
@@ -58,7 +65,7 @@ export interface AgentApprovalDecisionObservation {
 
 export type AgentApprovalDecisionReporter = (observation: AgentApprovalDecisionObservation) => void;
 
-export type AgentToolMode = 'full' | 'proposal_only' | 'read_only';
+export { userApprovalForTools, type AgentToolMode } from '#src/agent/tool-policy.js';
 
 export interface AgentProposalOrigin {
   surface: string;
@@ -406,26 +413,6 @@ const searchDocumentsStructuredInput = z.object({
   fileKind: z.enum(['document', 'captured']).optional(),
   includeDeleted: z.boolean().optional(),
   limit: z.number().int().min(1).max(50).optional(),
-});
-
-const retrieveWorkspaceContextInput = z.object({
-  query: z.string().trim().min(1).max(500),
-  recipe: z
-    .enum([
-      'auto',
-      'object_profile',
-      'timeline_evidence',
-      'task_status',
-      'calendar',
-      'board_state',
-      'document_knowledge',
-      'product_guide',
-    ])
-    .optional(),
-  objectId: z.string().regex(UUID_RE).optional(),
-  limit: z.number().int().min(1).max(10).optional(),
-  includeDocuments: z.boolean().optional(),
-  includeCalendar: z.boolean().optional(),
 });
 
 const objectUpdateFieldSchema = z.enum([
@@ -1274,52 +1261,8 @@ async function resolveTaskProposalProject(
   };
 }
 
-const USER_APPROVAL = Symbol('timeline.userApproval');
-
-export function userApprovalForTools(tools: ToolSet): Record<string, 'user-approval'> | undefined {
-  const approval: Record<string, 'user-approval'> = {};
-  for (const [name, definition] of Object.entries(tools)) {
-    const policy = definition as ToolSet[string] & { [USER_APPROVAL]?: true };
-    if (policy[USER_APPROVAL]) approval[name] = 'user-approval';
-  }
-  return Object.keys(approval).length > 0 ? approval : undefined;
-}
-
-type AgentToolCapability = 'read' | 'proposal' | 'mutation' | 'pin_read' | 'pin_mutation';
-
-interface CapabilityTool {
-  capability: AgentToolCapability;
-  definition: ToolSet[string];
-}
-
-type AgentToolPolicy =
-  | { capability: 'mutation'; userApproval: 'required' | 'none' }
-  | { capability: Exclude<AgentToolCapability, 'mutation'>; userApproval?: never };
-
-function capabilityTool(input: ToolSet[string] & AgentToolPolicy): CapabilityTool {
-  const { capability, userApproval, ...definition } = input;
-  return {
-    capability,
-    definition: {
-      ...definition,
-      // Enumerable symbols survive instrumentation's object spread, but cannot
-      // leak into the provider's JSON schema or become model-controlled input.
-      ...(userApproval === 'required' ? { [USER_APPROVAL]: true } : {}),
-    },
-  };
-}
-
-function capabilityAllowed(capability: AgentToolCapability, options: AgentToolOptions): boolean {
-  if (options.toolMode === 'read_only') {
-    return capability === 'read' || capability === 'pin_read';
-  }
-  if (options.toolMode === 'proposal_only') {
-    return capability === 'read' || capability === 'proposal';
-  }
-  return capability !== 'pin_mutation' || Boolean(options.allowPinMutations);
-}
-
 export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}): ToolSet {
+  const executionContext = { currentDate: options.currentDate ?? new Date() };
   const runSafe = <T>(label: string, fn: () => Promise<T>): Promise<T | { error: string }> =>
     safe(
       label,
@@ -1821,18 +1764,7 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
       execute: async (raw) =>
         runSafe('retrieve_workspace_context', async () => {
           const input = retrieveWorkspaceContextInput.parse(raw);
-          return retrieveWorkspaceContext(scope, {
-            query: input.query,
-            ...(input.recipe === undefined ? {} : { recipe: input.recipe }),
-            ...(input.objectId === undefined ? {} : { objectId: input.objectId }),
-            ...(input.limit === undefined ? {} : { limit: input.limit }),
-            ...(input.includeDocuments === undefined
-              ? {}
-              : { includeDocuments: input.includeDocuments }),
-            ...(input.includeCalendar === undefined
-              ? {}
-              : { includeCalendar: input.includeCalendar }),
-          });
+          return retrieveWorkspaceContext(scope, input, executionContext);
         }),
     }),
 
@@ -3304,7 +3236,7 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
           const opts: Parameters<typeof scope.calendar.listCalendarEvents>[0] = {};
           if (input.from) opts.from = new Date(input.from);
           if (input.to) opts.to = new Date(input.to);
-          if (!input.from && !input.to) opts.from = options.currentDate ?? new Date();
+          if (!input.from && !input.to) opts.from = executionContext.currentDate;
           if (input.limit) opts.limit = input.limit;
           const events = await scope.calendar.listCalendarEvents(opts);
           return {
@@ -3359,7 +3291,7 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
           const settings = await scope.calendar.getCalendarSettings();
           const referenceDate = input.referenceDate
             ? new Date(input.referenceDate)
-            : (options.currentDate ?? new Date());
+            : executionContext.currentDate;
           const context = workspaceTimeContext(settings.defaultTimezone, referenceDate);
           const resolved = input.phrase
             ? resolveTimePhrase(input.phrase, {
