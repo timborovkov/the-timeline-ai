@@ -1,4 +1,6 @@
-import { PLAN_CATALOG, type BillingMeterId, type BillingPlanId } from '#src/billing/catalog.js';
+
+
+import { PLAN_CATALOG, type BillingMeterId } from '#src/billing/catalog.js';
 import {
   daysInPeriodYm,
   listChargeCentsForMeter,
@@ -8,31 +10,15 @@ import {
   type MeterTotals,
 } from '#src/billing/charge.js';
 import { applyMeteredDiscountCents } from '#src/billing/operator.js';
-import { freeAllowanceFloorCents } from '#src/billing/status.js';
 
-export type SelfServePaidPlanId = 'payg' | 'team' | 'business';
+import { freeAllowanceFloorCents } from '#src/billing/policy.js';
+import {
+  type SelfServePaidPlanId,
+  type PlanBillPreview,
+  type CheapestPlanPreview,
+} from '#src/billing/recommendation.js';
 
-export interface PlanBillPreview {
-  planId: SelfServePaidPlanId;
-  platformFeeCents: number;
-  extraMemberCents: number;
-  meteredAfterDiscountCents: number;
-  totalCents: number;
-}
-
-export interface CheapestPlanPreview {
-  recommended: SelfServePaidPlanId;
-  bills: Record<SelfServePaidPlanId, PlanBillPreview>;
-}
-
-/**
- * Show the billing-settings recommendation only when another self-serve plan
- * saves at least €5 and at least 10% of the current plan's projected bill.
- */
-export const PLAN_RECOMMENDATION_SAVINGS_THRESHOLD = {
-  minCents: 500,
-  minRatio: 0.1,
-} as const;
+export * from '#src/billing/recommendation.js';
 
 function extraMembers(activeMembers: number, included: number | null): number {
   if (included === null) return 0;
@@ -209,24 +195,4 @@ export function cheapestPlanPreview(input: {
     if (bills[id].totalCents < bills[recommended].totalCents) recommended = id;
   }
   return { recommended, bills };
-}
-
-/** Whether team billing settings should render the cheapest-plan section. */
-export function shouldShowPlanRecommendation(
-  preview: CheapestPlanPreview,
-  currentPlanId: string,
-): boolean {
-  if (currentPlanId !== 'payg' && currentPlanId !== 'team' && currentPlanId !== 'business') {
-    return false;
-  }
-  if (preview.recommended === currentPlanId) return false;
-  const currentCents = preview.bills[currentPlanId].totalCents;
-  const savingCents = currentCents - preview.bills[preview.recommended].totalCents;
-  if (savingCents < PLAN_RECOMMENDATION_SAVINGS_THRESHOLD.minCents) return false;
-  if (currentCents <= 0) return false;
-  return savingCents / currentCents >= PLAN_RECOMMENDATION_SAVINGS_THRESHOLD.minRatio;
-}
-
-export function isPaidSelfServePlan(planId: BillingPlanId): planId is SelfServePaidPlanId {
-  return planId === 'payg' || planId === 'team' || planId === 'business';
 }

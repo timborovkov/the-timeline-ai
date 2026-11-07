@@ -7,7 +7,9 @@ import {
   type BillingMeterId,
   type BillingPlanId,
 } from '#src/billing/catalog.js';
-import { freeAllowanceConsumedForMeter } from '#src/billing/status.js';
+
+import { billingMeterIdForPolarEvent } from '#src/billing/meters.js';
+import { freeAllowanceConsumedForMeter } from '#src/billing/policy.js';
 
 export type MeterTotals = Partial<
   Record<BillingMeterId, { nativeUnits: number; customerChargeCents: number } | undefined>
@@ -499,15 +501,6 @@ export function shouldIngestPolarMeteredUsage(input: {
 
 export const POLAR_INGEST_BLOCK_MISSING_PRICE = 'missing_subscription_price';
 
-const POLAR_EVENT_TO_METER: Record<string, BillingMeterId> = {
-  timeline_ai_eur_cents: 'ai',
-  timeline_recall_minutes: 'recall_minutes',
-  timeline_email_units: 'email_units',
-  timeline_storage_gb_month: 'storage_gb_month',
-  timeline_accepted_sources: 'accepted_sources',
-  timeline_extra_member_days: 'member_days',
-};
-
 /** Billing states that still have a subscription price Polar can invoice. */
 const POLAR_SUBSCRIPTION_PRICE_STATES = new Set([
   'payg_active',
@@ -519,9 +512,7 @@ const POLAR_SUBSCRIPTION_PRICE_STATES = new Set([
   'read_only',
 ]);
 
-export function billingMeterIdForPolarEvent(name: string): BillingMeterId | null {
-  return POLAR_EVENT_TO_METER[name] ?? null;
-}
+export { billingMeterIdForPolarEvent } from '#src/billing/meters.js';
 
 export interface PolarPlanProductIds {
   payg?: string;

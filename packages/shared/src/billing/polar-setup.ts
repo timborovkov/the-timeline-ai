@@ -1,5 +1,12 @@
 import { PLAN_CATALOG, OVERAGE_RATES } from '#src/billing/catalog.js';
 
+import {
+  BILLING_METERS,
+  TIMELINE_METERED_EVENT_NAMES,
+  type TimelineMeteredEventName,
+  type BillingMeterId,
+} from '#src/billing/meters.js';
+
 /**
  * Idempotent Polar catalog planning for Timeline billing.
  * Objects are Timeline's when their metadata `timeline_key` is set, their name
@@ -35,63 +42,53 @@ export const TIMELINE_POLAR_WEBHOOK_EVENTS = [
 /** High ceiling used only when Polar rejects a custom price that omits a maximum. */
 export const TIMELINE_ENTERPRISE_CUSTOM_MAXIMUM_CENTS = 100_000_000;
 
-export const TIMELINE_METER_SPECS = [
-  {
-    key: 'ai',
-    eventName: 'timeline_ai_eur_cents',
+const METER_PRICING = {
+  ai: {
     name: 'Timeline AI',
     unitAmount: '1',
     unit: 'scalar',
   },
-  {
-    key: 'recall_minutes',
-    eventName: 'timeline_recall_minutes',
+  recall_minutes: {
     name: 'Timeline Recall minutes',
     unitAmount: String(OVERAGE_RATES.recallCentsPerMinute),
     unit: 'scalar',
   },
-  {
-    key: 'email_units',
-    eventName: 'timeline_email_units',
+  email_units: {
     name: 'Timeline Email units',
     unitAmount: '0.25',
     unit: 'scalar',
   },
-  {
-    key: 'storage_gb_month',
-    eventName: 'timeline_storage_gb_month',
+  storage_gb_month: {
     name: 'Timeline Storage',
     // Polar meters have no included/credited units. The Free/PAYG floor is
     // FREE_ALLOWANCES.storageGb (100 MiB), applied locally before ingest.
     unitAmount: String(OVERAGE_RATES.storageCentsPerGbMonth),
     unit: 'scalar',
   },
-  {
-    key: 'accepted_sources',
-    eventName: 'timeline_accepted_sources',
+  accepted_sources: {
     name: 'Timeline Accepted sources',
     unitAmount: '0.05',
     unit: 'scalar',
   },
-  {
-    key: 'member_days',
-    eventName: 'timeline_extra_member_days',
+  member_days: {
     name: 'Timeline Extra members',
     unitAmount: String(OVERAGE_RATES.additionalMemberCentsPerMonth),
     unit: 'custom',
   },
-] as const;
+} as const satisfies Record<
+  BillingMeterId,
+  { name: string; unitAmount: string; unit: 'scalar' | 'custom' }
+>;
 
-export const TIMELINE_METERED_EVENT_NAMES = [
-  'timeline_ai_eur_cents',
-  'timeline_recall_minutes',
-  'timeline_email_units',
-  'timeline_storage_gb_month',
-  'timeline_accepted_sources',
-  'timeline_extra_member_days',
-] as const;
+export const TIMELINE_METER_SPECS = BILLING_METERS.map((meter) => ({
+  ...meter,
+  ...METER_PRICING[meter.key],
+}));
 
-export type TimelineMeteredEventName = (typeof TIMELINE_METERED_EVENT_NAMES)[number];
+export {
+  TIMELINE_METERED_EVENT_NAMES,
+  type TimelineMeteredEventName,
+} from '#src/billing/meters.js';
 
 export const TIMELINE_METERED_UNIT_AMOUNTS: Record<TimelineMeteredEventName, string> =
   Object.fromEntries(
