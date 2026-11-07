@@ -1,4 +1,3 @@
-import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
 import {
   NoObjectGeneratedError,
   isStepCount,
@@ -19,8 +18,6 @@ import {
   openRouterUsdCostFromFinishEvent,
 } from '#src/billing/openrouter-usage.js';
 import { withAiMetering } from '#src/billing/runtime.js';
-import { getEnv } from '#src/env.js';
-import { asBunFetch } from '#src/http/fetch.js';
 import {
   TimelineAiError,
   toTimelineAiError,
@@ -28,11 +25,7 @@ import {
   type TimelineAiErrorMetadata,
 } from '#src/llm/errors.js';
 import { TIMELINE_MODELS } from '#src/llm/models.js';
-import {
-  OPENROUTER_DISABLE_CACHE_HEADERS,
-  OPENROUTER_OFFICIAL_BASE_URL,
-  openRouterPrivateProviderOptions,
-} from '#src/llm/privacy.js';
+import { openRouterPrivateProviderOptions } from '#src/llm/privacy.js';
 import {
   generateObject,
   generateText,
@@ -40,6 +33,8 @@ import {
   withLangSmithProviderOptions,
 } from '#src/llm/tracing.js';
 import { normalizeTaskCategoryModelJson } from '#src/task-categories/model-output.js';
+
+import { createOpenRouterProvider } from '#src/llm/provider.js';
 
 type GenerateObjectProviderOptions = NonNullable<
   Parameters<typeof generateObject>[0]['providerOptions']
@@ -342,18 +337,10 @@ export function buildOpenRouterLanguageModel(
   deps: Pick<ChatDeps, 'fetch'> = {},
   options: { supportsStructuredOutputs?: boolean } = {},
 ): LanguageModel {
-  const env = getEnv();
-  if (!env.OPENROUTER_API_KEY) {
-    throw new Error('OPENROUTER_API_KEY is required for llm.chat');
-  }
-  const baseURL = env.OPENROUTER_BASE_URL ?? OPENROUTER_OFFICIAL_BASE_URL;
-  const provider = createOpenAICompatible({
-    name: 'openrouter',
-    apiKey: env.OPENROUTER_API_KEY,
-    baseURL,
-    headers: OPENROUTER_DISABLE_CACHE_HEADERS,
+  const provider = createOpenRouterProvider({
+    operation: 'llm.chat',
     supportsStructuredOutputs: options.supportsStructuredOutputs ?? true,
-    ...(deps.fetch ? { fetch: asBunFetch(deps.fetch) } : {}),
+    ...(deps.fetch ? { fetch: deps.fetch } : {}),
   });
   return provider(modelId);
 }
