@@ -95,3 +95,5 @@ Report security vulnerabilities privately through [SECURITY.md](SECURITY.md).
 This repository does not currently include an open-source license. Public access
 to the source does not grant general permission to copy, modify, redistribute or
 self-host it. See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution guidance.
+
+Agent coworker reporting, owner-delegated provisioning and rollout details: [agent coworkers](docs/agent-coworkers.md).

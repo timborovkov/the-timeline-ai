@@ -20,11 +20,7 @@ import GitHub from 'next-auth/providers/github';
 import { z } from 'zod';
 
 import { trackProductEventBestEffort } from '@/lib/analytics';
-import {
-  selectedPlanCallback,
-  selectedPlanFromCallback,
-  signedInAuthRedirect,
-} from '@/lib/auth-redirect';
+import { signedInAuthRedirect } from '@/lib/auth-redirect';
 import { authConfig } from '@/lib/auth.config';
 import { ensureSoloTeam } from '@/lib/default-team';
 import { sendEmailVerification } from '@/lib/email-verification';
@@ -229,11 +225,9 @@ const nextAuth = NextAuth({
         attribution = readConsentedPublicAttributionCookie(jar);
         const savedCallback =
           jar.get('__Secure-authjs.callback-url')?.value ?? jar.get('authjs.callback-url')?.value;
-        verificationCallbackUrl = selectedPlanCallback(
-          selectedPlanFromCallback(
-            signedInAuthRedirect({ ...(savedCallback ? { callbackUrl: savedCallback } : {}) }),
-          ),
-        );
+        verificationCallbackUrl = signedInAuthRedirect({
+          ...(savedCallback ? { callbackUrl: savedCallback } : {}),
+        });
       } catch {
         attribution = undefined;
       }
