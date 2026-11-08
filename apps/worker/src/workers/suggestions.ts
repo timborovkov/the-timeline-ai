@@ -49,6 +49,7 @@ import { alias } from 'drizzle-orm/pg-core';
 import { z } from 'zod';
 
 import { withWorkerAiBilling, workerBillingJobOptions } from '#src/billing-context.js';
+import { finishIngestJob } from '#src/ingest-job-result.js';
 import { captureWorkerJobFailure } from '#src/monitoring.js';
 import { guardWorkerProcessor } from '#src/platform-worker.js';
 
@@ -4553,10 +4554,7 @@ export function startSuggestionWorker(deps: SuggestionWorkerDeps): Worker<queue.
         () => processSuggestionJobForTests(deps, job.data),
         workerBillingJobOptions(job, token),
       );
-      if (integrations.isDelayedIngestResult(result)) {
-        await job.moveToDelayed(Date.now() + result.retryAfterMs, token);
-        throw new DelayedError();
-      }
+      await finishIngestJob(job, result, token);
     }),
     { connection: queue.getRedisConnection(), concurrency: 1 },
   );

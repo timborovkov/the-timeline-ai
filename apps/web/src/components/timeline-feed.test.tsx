@@ -3,7 +3,7 @@ import { vi } from '@timeline/test-support';
 import { afterEach, beforeEach, describe, it } from 'bun:test';
 
 import type { WebTimelineMomentDto } from '@/lib/timeline-moments';
-import type { TimelineEvent, TimelinePage } from '@/lib/use-paginated-queries';
+import type { TimelineEvent, TimelinePage } from '@/lib/timeline-types';
 // Test environment: happy-dom
 
 const fakes = vi.hoisted(() => ({

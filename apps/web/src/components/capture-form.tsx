@@ -14,6 +14,8 @@ import {
 import { useRouter } from 'next/navigation';
 import { type Dispatch, type RefObject, type SyntheticEvent, useReducer, useRef } from 'react';
 
+import type { TimelineEvent, TimelinePage } from '@/lib/timeline-types';
+
 import {
   finalizeDocumentVersionAction,
   requestDocumentUploadAction,
@@ -29,7 +31,6 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { notifyAction, type ActionResult } from '@/lib/notify';
 import { queryKeys } from '@/lib/query-keys';
-import { type TimelineEvent, type TimelinePage } from '@/lib/use-paginated-queries';
 import { cn } from '@/lib/utils';
 
 const attachmentKeys = new WeakMap<File, string>();

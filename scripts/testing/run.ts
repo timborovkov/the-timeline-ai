@@ -3,6 +3,7 @@ import { resolve, relative, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import manifest from './manifest.json';
+import { testExecutionPatterns, type TestExecutionPolicy } from './execution-policy';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const all = Object.keys(manifest);
@@ -91,40 +92,11 @@ for (const file of selected) {
       resolve(root, 'scripts/testing/web.ts'),
     );
   if (entry.group === 'dom') command.push('--preload', resolve(root, 'scripts/testing/dom.ts'));
-  // Bound memory for large migration-backed files and isolate module-cache tests
-  // fully, including dependencies of their dynamically imported entrypoints.
-  const source = readFileSync(resolve(root, file), 'utf8');
-  const names = [...source.matchAll(/\bit\(\s*'((?:\\'|[^'])+)'/g)].map((match) =>
-    match[1]!.replaceAll("\\'", "'"),
+  const patterns = testExecutionPatterns(
+    readFileSync(resolve(root, file), 'utf8'),
+    file,
+    entry as TestExecutionPolicy,
   );
-  const directTestCount = [...source.matchAll(/\bit\(/g)].length;
-  const isolate = source.includes('vi.resetModules()');
-  const chunk = names.length > 60 || isolate;
-  const patterns: (string | undefined)[] = [];
-  if (chunk && names.length > 0 && names.length === directTestCount) {
-    const uniqueNames = [...new Set(names)];
-    const size = isolate ? 1 : 20;
-    for (let index = 0; index < uniqueNames.length; index += size) {
-      patterns.push(
-        '(?:' +
-          uniqueNames
-            .slice(index, index + size)
-            .map((name) => name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
-            .join('|') +
-          ')$',
-      );
-    }
-    // Parameterized/computed names skip chunking above. test() aliases are not
-    // extracted, so run their complement only when the file uses that API.
-    // Bun still errors on a skipped-only complement even with --pass-with-no-tests.
-    if (/\btest\s*\(/.test(source)) {
-      patterns.push(
-        '^(?!.*(?:' +
-          uniqueNames.map((name) => name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|') +
-          ')$)',
-      );
-    }
-  } else patterns.push(undefined);
   for (const pattern of patterns) {
     console.log(`[bun-tests] ${file}${pattern ? ' (chunk)' : ''}`);
     const result = spawnSync(
@@ -132,7 +104,6 @@ for (const file of selected) {
       [
         ...command,
         ...(pattern ? ['--test-name-pattern', pattern] : []),
-        ...(pattern?.startsWith('^(?!') ? ['--pass-with-no-tests'] : []),
         './' + relative(pkg, file),
       ],
       {

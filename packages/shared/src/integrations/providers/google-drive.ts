@@ -7,13 +7,8 @@ import {
   driveExtractMatchesFileRevision,
   driveFileChangeDedupKey,
   driveFileContentRevision,
-  driveObjectLinkCandidates,
-  driveObjectLinkHintsEqual,
-  driveSnapshotAncestryFromMembership,
   hashDrivePayload,
   isDriveExtractResultTooLarge,
-  takeDriveExtractSlot,
-  takeDriveProcessSlot,
   type DriveObjectLinkHints,
   type DrivePermissionGrant,
 } from '#src/integrations/google-drive-capture.js';
@@ -24,6 +19,10 @@ import {
   parseDriveCommentSnapshots,
   type DriveComment,
 } from '#src/integrations/google-drive-comments.js';
+import {
+  requireDriveContext,
+  type DriveSyncContext,
+} from '#src/integrations/google-drive-context.js';
 import {
   buildDriveSnapshotLocate,
   diffDriveSnapshots,
@@ -41,6 +40,12 @@ import {
   packedCommentContext,
   type DrivePackedChangeEvent,
 } from '#src/integrations/google-drive-evidence.js';
+import {
+  driveObjectLinkCandidates,
+  driveObjectLinkHintsEqual,
+  driveSnapshotAncestryFromMembership,
+} from '#src/integrations/google-drive-link-policy.js';
+import { driveFeedContinuation, planDriveSync } from '#src/integrations/google-drive-scheduling.js';
 import {
   DRIVE_FILE_KIND,
   DRIVE_FOLDER_KIND,
@@ -60,6 +65,8 @@ import {
   quoteSheetsA1SheetName,
 } from '#src/integrations/google-drive-spreadsheet.js';
 import { providerFetch } from '#src/integrations/request.js';
+import { defineResourceAccess } from '#src/integrations/resource-access.js';
+import { exactTargetSelections } from '#src/integrations/selection-policy.js';
 import { attachSyncContinuation, isProviderRateLimitError } from '#src/integrations/types.js';
 import { childLogger } from '#src/logger.js';
 
@@ -71,7 +78,6 @@ import type {
   OAuthCallbackInput,
   OAuthStartInput,
   ProviderResource,
-  SyncContext,
   SyncResult,
   WebhookHandleResult,
 } from '#src/integrations/types.js';
@@ -374,13 +380,13 @@ async function searchDriveResources(
   return items;
 }
 
-async function resolveIncludeIds(
+async function validateDriveResourceSelections(
   tokens: DriveTokens,
-  includeIds: { kind: string; externalId: string }[],
+  selections: { kind: string; externalId: string }[],
 ): Promise<ProviderResource[]> {
   const items: ProviderResource[] = [];
   const seen = new Set<string>();
-  for (const requested of includeIds) {
+  for (const requested of selections) {
     const key = `${requested.kind}\x00${requested.externalId}`;
     if (seen.has(key)) continue;
     seen.add(key);
@@ -687,33 +693,24 @@ function delayedDriveFileCapture(fileId: string, retryAfterMs: number): SyncResu
 }
 
 async function consumeReadyDriveExtract(
-  ctx: SyncContext,
+  ctx: DriveSyncContext,
   fileId: string,
   loaded: LoadedDriveText,
 ): Promise<void> {
-  if (loaded.consumeReadyExtract) await ctx.consumeTransientDriveExtract?.(fileId);
+  if (loaded.consumeReadyExtract) await ctx.consumeTransientDriveExtract(fileId);
 }
 
-async function discardTransientDriveExtract(ctx: SyncContext, fileId: string): Promise<void> {
-  if (ctx.cancelTransientDriveExtract) {
-    await ctx.cancelTransientDriveExtract(fileId);
-    return;
-  }
-  await ctx.consumeTransientDriveExtract?.(fileId);
+async function discardTransientDriveExtract(ctx: DriveSyncContext, fileId: string): Promise<void> {
+  await ctx.cancelTransientDriveExtract(fileId);
 }
 
 async function discardTrackedDriveFile(
-  ctx: SyncContext,
+  ctx: DriveSyncContext,
   fileId: string,
   reason: 'missing' | 'out_of_scope' | 'removed' | 'unsupported_mime',
   extra: Record<string, unknown> = {},
 ): Promise<void> {
-  if (ctx.discardDriveTrackedFile) {
-    await ctx.discardDriveTrackedFile(fileId);
-  } else {
-    await ctx.deleteDriveSnapshotsForFile?.(fileId);
-    await discardTransientDriveExtract(ctx, fileId);
-  }
+  await ctx.discardDriveTrackedFile(fileId);
   await ctx.recordAudit(`drive_file_${reason}`, { file_id: fileId, ...extra });
 }
 
@@ -721,10 +718,10 @@ async function loadDriveText(
   integrationId: string,
   tokens: DriveTokens,
   file: DriveFile,
-  ctx: SyncContext,
+  ctx: DriveSyncContext,
 ): Promise<LoadedDriveText> {
   const fileRevisionId = driveFileContentRevision(file);
-  if (driveMimeNeedsPaidExtract(file.mimeType) && ctx.loadTransientDriveExtract) {
+  if (driveMimeNeedsPaidExtract(file.mimeType)) {
     const existing = await ctx.loadTransientDriveExtract(file.id);
     const revisionMatches = driveExtractMatchesFileRevision(existing?.revisionId, fileRevisionId);
     if (existing?.status === 'ready' && revisionMatches) {
@@ -734,9 +731,6 @@ async function loadDriveText(
       return { text: existing.text, consumeReadyExtract: true };
     }
     if (existing?.status === 'failed') {
-      if (!ctx.consumeTransientDriveExtract) {
-        return { text: '', skippedReason: 'extract_failed', extractError: existing.error };
-      }
       const terminal = isDriveExtractResultTooLarge(existing.error);
       if (terminal) {
         await ctx.consumeTransientDriveExtract(file.id);
@@ -782,9 +776,7 @@ async function loadDriveText(
     driveMimeNeedsPaidExtract(file.mimeType) ||
     downloadedBodyNeedsPaidExtract(download.contentType)
   ) {
-    const extractSlot = ctx.takeDriveExtractSlot
-      ? await ctx.takeDriveExtractSlot({ integrationId, fileId: file.id })
-      : await takeDriveExtractSlot({ integrationId, fileId: file.id });
+    const extractSlot = await ctx.takeDriveExtractSlot({ integrationId, fileId: file.id });
     if (!extractSlot.allowed) {
       return {
         text: '',
@@ -792,9 +784,6 @@ async function loadDriveText(
         extractCapReason: extractSlot.reason,
         extractRetryAfterMs: extractSlot.retryAfterMs,
       };
-    }
-    if (!ctx.enqueueTransientDriveExtract) {
-      return { text: '', skippedReason: 'extract_unavailable' };
     }
     await ctx.enqueueTransientDriveExtract({
       fileId: file.id,
@@ -943,7 +932,7 @@ function commentSignals(comments: DriveComment[], commentsChanged: boolean): str
 }
 
 async function persistDriveSnapshot(
-  ctx: SyncContext,
+  ctx: DriveSyncContext,
   fileId: string,
   snapshot: {
     contentHash: string;
@@ -957,7 +946,6 @@ async function persistDriveSnapshot(
   },
   ancestry: DriveObjectLinkHints,
 ): Promise<void> {
-  if (!ctx.saveDriveSnapshot) return;
   await ctx.saveDriveSnapshot({ fileId, ...snapshot, ancestry });
 }
 
@@ -989,9 +977,8 @@ function driveDebounceCursorKey(fileId: string): string {
 async function scheduleTrackedDescendantsForFolderAcl(
   integration: IntegrationRow,
   folderId: string,
-  ctx: SyncContext,
+  ctx: DriveSyncContext,
 ): Promise<void> {
-  if (!ctx.listDriveTrackedDescendantFileIds) return;
   const fileIds = await ctx.listDriveTrackedDescendantFileIds(folderId);
   for (const fileId of fileIds) {
     await scheduleFileCapture(integration, fileId, ctx, 'drive_folder_acl');
@@ -1001,46 +988,41 @@ async function scheduleTrackedDescendantsForFolderAcl(
 async function scheduleFileCapture(
   integration: IntegrationRow,
   fileId: string,
-  ctx: SyncContext,
-  reason: string,
+  ctx: DriveSyncContext,
+  reason: 'drive_watch' | 'drive_folder_acl',
 ): Promise<void> {
-  if (!ctx.scheduleTargetedSync) return;
   const existing = (await ctx.loadCursor(driveDebounceCursorKey(fileId))) as DriveCursor;
   const plan = driveDebouncePlan(existing);
   await ctx.saveCursor(driveDebounceCursorKey(fileId), {
     firstQueuedAt: plan.firstQueuedAt,
     quietUntil: plan.quietUntil,
   });
-  await ctx.scheduleTargetedSync(
+  const scheduled = planDriveSync(
+    { integrationId: integration.id, teamId: integration.teamId },
     {
-      integrationId: integration.id,
-      teamId: integration.teamId,
-      triggeredBy: 'webhook',
-      resourceType: DRIVE_FILE_KIND,
-      externalId: fileId,
+      kind: 'file_capture',
+      fileId,
       reason,
+      delayMs: plan.delayMs,
     },
-    { delayMs: plan.delayMs, replaceDelayed: true },
   );
+  await ctx.scheduleTargetedSync(scheduled.task, scheduled.options);
 }
 
 async function scheduleExtractResume(
   integration: IntegrationRow,
   fileId: string,
-  ctx: SyncContext,
+  ctx: DriveSyncContext,
 ): Promise<void> {
-  if (!ctx.scheduleTargetedSync) return;
-  await ctx.scheduleTargetedSync(
+  const scheduled = planDriveSync(
+    { integrationId: integration.id, teamId: integration.teamId },
     {
-      integrationId: integration.id,
-      teamId: integration.teamId,
+      kind: 'extract_resume',
+      fileId,
       triggeredBy: 'webhook',
-      resourceType: DRIVE_FILE_KIND,
-      externalId: fileId,
-      reason: 'drive_transient_extract',
     },
-    { delayMs: 0 },
   );
+  await ctx.scheduleTargetedSync(scheduled.task, scheduled.options);
 }
 
 function packDriveEvidence(input: {
@@ -1060,10 +1042,10 @@ async function fetchChanges(
   integration: IntegrationRow,
   tokens: DriveTokens,
   selections: { kind: string; externalId: string }[],
-  ctx: SyncContext,
+  ctx: DriveSyncContext,
   resourceType: string,
 ): Promise<SyncResult | undefined> {
-  const continuation = { resourceType: 'drive.changes', externalId: integration.id };
+  const continuation = driveFeedContinuation(integration.id);
   const scope = await resolveDriveScope(tokens, selections);
   if (
     scope.files.size === 0 &&
@@ -1353,7 +1335,7 @@ async function processDriveFile(
   integration: IntegrationRow,
   tokens: DriveTokens,
   selections: { kind: string; externalId: string }[],
-  ctx: SyncContext,
+  ctx: DriveSyncContext,
   fileId: string,
 ): Promise<SyncResult | undefined> {
   const scope = await resolveDriveScope(tokens, selections);
@@ -1435,10 +1417,10 @@ async function processDriveFile(
   const contentHash = hashDrivePayload(fullText);
   const commentsHash = commentsFingerprint(comments);
   const permissionsHash = permissionsFingerprint(permissions);
-  const previous = ctx.loadLatestDriveSnapshot ? await ctx.loadLatestDriveSnapshot(file.id) : null;
+  const previous = await ctx.loadLatestDriveSnapshot(file.id);
   const commentsChanged = previous?.commentsHash !== commentsHash;
   const permissionsChanged = previous?.permissionsHash !== permissionsHash;
-  const teamDomains = ctx.listTeamEmailDomains ? await ctx.listTeamEmailDomains() : [];
+  const teamDomains = await ctx.listTeamEmailDomains();
   const permissionsSnapshot = compactDrivePermissionGrants(permissions);
   const strongSignals = [
     ...commentSignals(comments, commentsChanged),
@@ -1553,9 +1535,7 @@ async function processDriveFile(
     return;
   }
 
-  const slot = ctx.takeDriveProcessSlot
-    ? await ctx.takeDriveProcessSlot({ integrationId: integration.id, fileId: file.id })
-    : await takeDriveProcessSlot({ integrationId: integration.id, fileId: file.id });
+  const slot = await ctx.takeDriveProcessSlot({ integrationId: integration.id, fileId: file.id });
   if (!slot.allowed) {
     await ctx.recordAudit('drive_process_capped', {
       file_id: fileId,
@@ -1574,16 +1554,13 @@ async function processDriveFile(
         : 'comment',
       summary: `Drive change on "${file.name}" (${strongSignals.join(', ')})`,
     };
-  } else if (ctx.judgeDriveChange) {
+  } else {
     judge = await ctx.judgeDriveChange({
       fileName: file.name,
       mimeType: file.mimeType,
       hunks: diff.hunks,
       strongSignals,
     });
-  } else {
-    await ctx.recordAudit('drive_judge_unavailable', { file_id: fileId });
-    return;
   }
 
   const packed = packDriveEvidence({
@@ -1640,17 +1617,15 @@ async function processDriveFile(
     return;
   }
 
-  const linked = ctx.linkedObjectForDriveSelection
-    ? await ctx.linkedObjectForDriveSelection(
-        file.id,
-        membership.ancestryIds.length > 0 ? membership.ancestryIds : (file.parents ?? []),
-        membership.matchedAncestorId,
-        {
-          ...(file.driveId ? { driveId: file.driveId } : {}),
-          ...(scope.myDriveRootId ? { myDriveRootId: scope.myDriveRootId } : {}),
-        },
-      )
-    : null;
+  const linked = await ctx.linkedObjectForDriveSelection(
+    file.id,
+    membership.ancestryIds.length > 0 ? membership.ancestryIds : (file.parents ?? []),
+    membership.matchedAncestorId,
+    {
+      ...(file.driveId ? { driveId: file.driveId } : {}),
+      ...(scope.myDriveRootId ? { myDriveRootId: scope.myDriveRootId } : {}),
+    },
+  );
   const occurrence = driveFileContentRevision(file) ?? 'unknown';
   const events: IntegrationEvent[] = packed.map((part, index) => ({
     dedupKey: driveFileChangeDedupKey({
@@ -1739,7 +1714,7 @@ function driveWebhookResourceState(payload: unknown): string | null {
   return typeof state === 'string' ? state : null;
 }
 
-async function refreshForSync(tokens: unknown, ctx: SyncContext): Promise<DriveTokens> {
+async function refreshForSync(tokens: unknown, ctx: DriveSyncContext): Promise<DriveTokens> {
   const original = tokens as DriveTokens;
   const refreshed = await ensureAccessToken(original);
   await persistRefreshedTokens(ctx, original, refreshed);
@@ -1749,6 +1724,17 @@ async function refreshForSync(tokens: unknown, ctx: SyncContext): Promise<DriveT
 export const googleDriveProvider: IntegrationProvider = {
   id: 'google_drive',
   displayLabel: 'Google Drive',
+  syncSelectionPolicy: {
+    recovery: 'shared_cursor',
+    resolveTarget(selections, target) {
+      if (target.resourceType === 'google_drive.webhook')
+        return [{ kind: target.resourceType, externalId: target.externalId }];
+      if (target.resourceType === 'drive.changes') return selections;
+      if (target.resourceType === 'drive.file')
+        return selections.filter((selection) => driveSelectionIsWatchable(selection.kind));
+      return exactTargetSelections(selections, target);
+    },
+  },
 
   // eslint-disable-next-line @typescript-eslint/require-await
   async startOAuth(input) {
@@ -1811,38 +1797,33 @@ export const googleDriveProvider: IntegrationProvider = {
     };
   },
 
-  async listSyncableResources(integration, tokens, ctx): Promise<ProviderResource[]> {
-    const original = tokens as DriveTokens;
-    const refreshed = await ensureAccessToken(original);
-    await persistRefreshedTokens(ctx, original, refreshed);
-    try {
-      if (ctx?.includeIds && ctx.includeIds.length > 0 && !ctx.parentId && !ctx.query) {
-        return await resolveIncludeIds(refreshed, ctx.includeIds);
-      }
-      if (ctx?.query?.trim()) {
-        const found = await searchDriveResources(refreshed, ctx.query);
-        if (ctx.includeIds?.length) {
-          const included = await resolveIncludeIds(refreshed, ctx.includeIds);
-          const seen = new Set(found.map((item) => `${item.kind}\x00${item.externalId}`));
-          for (const item of included) {
-            const key = `${item.kind}\x00${item.externalId}`;
-            if (!seen.has(key)) found.push(item);
-          }
+  ...defineResourceAccess({
+    async browseResources(integration, tokens, ctx): Promise<ProviderResource[]> {
+      const original = tokens as DriveTokens;
+      const refreshed = await ensureAccessToken(original);
+      await persistRefreshedTokens(ctx, original, refreshed);
+      try {
+        if (ctx?.query?.trim()) return await searchDriveResources(refreshed, ctx.query);
+        if (ctx?.parentId) {
+          return await listFolderChildren(refreshed, ctx.parentId);
         }
-        return found;
+        return await listTopLevelResources(refreshed);
+      } catch (err) {
+        if (isProviderRateLimitError(err)) throw err;
+        log.warn({ err, integrationId: integration.id }, 'listing drive resources failed');
+        throw err;
       }
-      if (ctx?.parentId) {
-        return await listFolderChildren(refreshed, ctx.parentId);
-      }
-      return await listTopLevelResources(refreshed);
-    } catch (err) {
-      if (isProviderRateLimitError(err)) throw err;
-      log.warn({ err, integrationId: integration.id }, 'listing drive resources failed');
-      throw err;
-    }
-  },
+    },
+    async validateResourceSelections(_identity, tokens, selections, ctx) {
+      const original = tokens as DriveTokens;
+      const refreshed = await ensureAccessToken(original);
+      await persistRefreshedTokens(ctx, original, refreshed);
+      return validateDriveResourceSelections(refreshed, selections);
+    },
+  }),
 
-  async backfill({ integration, tokens, selections, ctx }) {
+  async backfill({ integration, tokens, selections, ctx: commonContext }) {
+    const ctx = requireDriveContext(commonContext);
     if (!selections.some((selection) => driveSelectionIsWatchable(selection.kind))) return;
     const refreshed = await refreshForSync(tokens, ctx);
     const existing = (await ctx.loadCursor('drive.changes')) as DriveCursor;
@@ -1853,9 +1834,10 @@ export const googleDriveProvider: IntegrationProvider = {
     return undefined;
   },
 
-  async incrementalSync({ integration, tokens, selections, ctx, target }) {
+  async incrementalSync({ integration, tokens, selections, ctx: commonContext, target }) {
+    const ctx = requireDriveContext(commonContext);
     if (!selections.some((selection) => driveSelectionIsWatchable(selection.kind))) {
-      await ctx.cleanupUncoveredDriveTrackedFiles?.(
+      await ctx.cleanupUncoveredDriveTrackedFiles(
         selections.map((selection) => ({
           kind: selection.kind,
           externalId: selection.externalId,
@@ -1968,14 +1950,10 @@ export const googleDriveProvider: IntegrationProvider = {
     return {
       events: [],
       syncTasks: [
-        {
-          integrationId: integration.id,
-          teamId: integration.teamId,
-          triggeredBy: 'webhook',
-          resourceType: 'drive.changes',
-          externalId: integration.id,
-          reason: 'drive_watch',
-        },
+        planDriveSync(
+          { integrationId: integration.id, teamId: integration.teamId },
+          { kind: 'changes_feed' },
+        ).task,
       ],
       syncTaskDisposition: 'handled',
     };

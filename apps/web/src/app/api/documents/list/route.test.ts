@@ -1,6 +1,8 @@
 import { expect } from '@timeline/test-support';
 import { vi } from '@timeline/test-support';
 import { beforeEach, describe, it } from 'bun:test';
+
+import type { DocumentListPage } from '@/lib/document-list';
 /**
  * Route-handler tests for `/api/documents/list`. The documents scope owns
  * visibility and pagination semantics; this route owns auth, active-team
@@ -192,6 +194,44 @@ describe('GET /api/documents/list', () => {
       cursor: 'abc',
       limit: 30,
     });
+  });
+
+  it('keeps documents without a version visible and refreshes pins outside the document cache', async () => {
+    const listed = (await fakes.fakeListDocumentsWithProvenancePage()) as {
+      items: { currentVersion: unknown; provenance: { occurredAt: Date | null } }[];
+    };
+    const listedItem = listed.items[0];
+    if (!listedItem) throw new Error('Expected a document fixture');
+    listedItem.currentVersion = null;
+    listedItem.provenance.occurredAt = null;
+    fakes.fakeListDocumentsWithProvenancePage.mockResolvedValue(listed);
+    let cachedPage: unknown;
+    fakes.fakeCachedJson.mockImplementation(
+      async (_key: string, _ttl: number, load: () => unknown) => {
+        cachedPage ??= await load();
+        return cachedPage;
+      },
+    );
+    try {
+      const first = (await (await GET(request())).json()) as DocumentListPage;
+      const firstItem = first.items[0];
+      if (!firstItem) throw new Error('Expected the first document page');
+      expect(firstItem).toMatchObject({
+        currentVersion: null,
+        pinned: false,
+        provenance: { occurredAt: null },
+      });
+      expect(firstItem.provenance).not.toHaveProperty('metadata');
+      fakes.fakeIsPinnedMany.mockResolvedValue({ 'document:doc-1': true });
+      const second = (await (await GET(request())).json()) as DocumentListPage;
+      const secondItem = second.items[0];
+      if (!secondItem) throw new Error('Expected the cached document page');
+      expect(secondItem.pinned).toBe(true);
+    } finally {
+      fakes.fakeCachedJson.mockImplementation((_key: string, _ttl: number, load: () => unknown) =>
+        load(),
+      );
+    }
   });
 
   it('treats malformed folder ids as the root folder', async () => {

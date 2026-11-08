@@ -1,5 +1,22 @@
 const checks = [
   {
+    name: '@timeline/shared Drive runtime boundaries',
+    run: async () => {
+      const protocol = await import('@timeline/shared/integrations/drive-extract-protocol');
+      const lifecycle = await import('@timeline/shared/integrations/drive-extract-lifecycle');
+      const scheduling = await import('@timeline/shared/integrations/google-drive-scheduling');
+      const context = await import('@timeline/shared/integrations/google-drive-context');
+      if (
+        typeof protocol.parseDriveTransientExtractResult !== 'function' ||
+        typeof lifecycle.cleanupDriveExtract !== 'function' ||
+        typeof scheduling.planDriveSync !== 'function' ||
+        typeof context.requireDriveContext !== 'function'
+      ) {
+        throw new Error('Drive runtime subpath exports are missing');
+      }
+    },
+  },
+  {
     name: '@timeline/shared platform admin exports',
     run: async () => {
       const service = await import('@timeline/shared/platform-admin');

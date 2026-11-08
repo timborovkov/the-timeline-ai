@@ -95,9 +95,13 @@ export function getProvider(id: string): IntegrationProvider {
       : {}),
     handleOAuthCallback: (input) =>
       run('setup', undefined, () => provider.handleOAuthCallback(input)),
-    listSyncableResources: (integration, tokens, ctx) =>
+    browseResources: (integration, tokens, ctx) =>
       run('setup', integration.externalAccountId, () =>
-        provider.listSyncableResources(integration, tokens, ctx),
+        provider.browseResources(integration, tokens, ctx),
+      ),
+    validateResourceSelections: (identity, tokens, selections, ctx) =>
+      run('setup', identity.externalAccountId, () =>
+        provider.validateResourceSelections(identity, tokens, selections, ctx),
       ),
     backfill: (input) =>
       run(input.purpose ?? 'backfill', input.integration.externalAccountId, () =>

@@ -15,7 +15,7 @@ import {
   buildOutputDedupeKey,
   reconciliationDedupeKey,
   type SourceRef,
-} from '#src/reconciliation/index.js';
+} from '#src/reconciliation/core.js';
 
 type DbTx = Parameters<Parameters<Db['transaction']>[0]>[0];
 type DbOrTx = Db | DbTx;

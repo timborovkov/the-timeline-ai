@@ -4,6 +4,7 @@ import { expect, vi } from '@timeline/test-support';
 import { afterEach, beforeEach, describe, it } from 'bun:test';
 import { drizzle } from 'drizzle-orm/pglite';
 
+import type { DriveCaptureServices } from '#src/integrations/google-drive-context.js';
 import type { IntegrationEvent, SyncContext } from '#src/integrations/types.js';
 
 await vi.mock(
@@ -165,58 +166,49 @@ describe('Drive A→B→A→B revisit', () => {
     vi.stubGlobal('fetch', fetch);
 
     const consumeTransientDriveExtract = vi.fn().mockResolvedValue(undefined);
-    const ctx: Pick<
-      SyncContext,
-      | 'loadCursor'
-      | 'saveCursor'
-      | 'writeEvents'
-      | 'persistTokens'
-      | 'recordAudit'
-      | 'scheduleTargetedSync'
-      | 'loadLatestDriveSnapshot'
-      | 'saveDriveSnapshot'
-      | 'listTeamEmailDomains'
-      | 'judgeDriveChange'
-      | 'enqueueTransientDriveExtract'
-      | 'loadTransientDriveExtract'
-      | 'consumeTransientDriveExtract'
-      | 'takeDriveExtractSlot'
-      | 'takeDriveProcessSlot'
-    > = {
+    const ctx: SyncContext & { drive: DriveCaptureServices } = {
       loadCursor: vi.fn().mockResolvedValue({}),
       saveCursor: vi.fn().mockResolvedValue(undefined),
       writeEvents: (events: IntegrationEvent[]) =>
         writeIntegrationEvents({ db: db as never, integration, events }),
       persistTokens: vi.fn(),
       recordAudit: vi.fn().mockResolvedValue(undefined),
-      scheduleTargetedSync: vi.fn().mockResolvedValue(undefined),
-      loadLatestDriveSnapshot: (fileId) =>
-        scope.integrations.loadLatestDriveSnapshot(integration.id, fileId),
-      saveDriveSnapshot: (input) =>
-        scope.integrations.saveDriveSnapshot(integration.id, input.fileId, {
-          contentHash: input.contentHash,
-          snapshotText: input.snapshotText,
-          commentsHash: input.commentsHash ?? '',
-          permissionsHash: input.permissionsHash ?? '',
-          mimeType: input.mimeType,
-          commentsSnapshot: Array.isArray(input.commentsSnapshot) ? input.commentsSnapshot : [],
-          permissionsSnapshot: Array.isArray(input.permissionsSnapshot)
-            ? input.permissionsSnapshot
-            : [],
-          snapshotLocate: input.snapshotLocate ?? null,
-          ancestry: input.ancestry ?? null,
+      drive: {
+        scheduleTargetedSync: vi.fn().mockResolvedValue(undefined),
+        loadLatestDriveSnapshot: (fileId) =>
+          scope.integrations.loadLatestDriveSnapshot(integration.id, fileId),
+        saveDriveSnapshot: (input) =>
+          scope.integrations.saveDriveSnapshot(integration.id, input.fileId, {
+            contentHash: input.contentHash,
+            snapshotText: input.snapshotText,
+            commentsHash: input.commentsHash ?? '',
+            permissionsHash: input.permissionsHash ?? '',
+            mimeType: input.mimeType,
+            commentsSnapshot: Array.isArray(input.commentsSnapshot) ? input.commentsSnapshot : [],
+            permissionsSnapshot: Array.isArray(input.permissionsSnapshot)
+              ? input.permissionsSnapshot
+              : [],
+            snapshotLocate: input.snapshotLocate ?? null,
+            ancestry: input.ancestry ?? null,
+          }),
+        listTeamEmailDomains: vi.fn().mockResolvedValue(['acme.test']),
+        judgeDriveChange: vi.fn().mockResolvedValue({
+          matters: true,
+          reason: 'crm_update',
+          summary: 'Pricing section changed',
         }),
-      listTeamEmailDomains: vi.fn().mockResolvedValue(['acme.test']),
-      judgeDriveChange: vi.fn().mockResolvedValue({
-        matters: true,
-        reason: 'crm_update',
-        summary: 'Pricing section changed',
-      }),
-      enqueueTransientDriveExtract: vi.fn().mockResolvedValue(undefined),
-      loadTransientDriveExtract: vi.fn().mockResolvedValue(null),
-      consumeTransientDriveExtract,
-      takeDriveExtractSlot: vi.fn().mockResolvedValue({ allowed: true }),
-      takeDriveProcessSlot: vi.fn().mockResolvedValue({ allowed: true }),
+        enqueueTransientDriveExtract: vi.fn().mockResolvedValue(undefined),
+        loadTransientDriveExtract: vi.fn().mockResolvedValue(null),
+        consumeTransientDriveExtract,
+        takeDriveExtractSlot: vi.fn().mockResolvedValue({ allowed: true }),
+        takeDriveProcessSlot: vi.fn().mockResolvedValue({ allowed: true }),
+        cancelTransientDriveExtract: vi.fn().mockResolvedValue(undefined),
+        deleteDriveSnapshotsForFile: vi.fn().mockResolvedValue(undefined),
+        cleanupUncoveredDriveTrackedFiles: vi.fn().mockResolvedValue(undefined),
+        discardDriveTrackedFile: vi.fn().mockResolvedValue(undefined),
+        listDriveTrackedDescendantFileIds: vi.fn().mockResolvedValue([]),
+        linkedObjectForDriveSelection: vi.fn().mockResolvedValue(null),
+      },
     };
 
     async function capture(next: typeof current): Promise<void> {
@@ -328,6 +320,6 @@ describe('Drive A→B→A→B revisit', () => {
     });
     expect(await db.select().from(rawEvents)).toHaveLength(3);
     expect(enqueueExtractJob).toHaveBeenCalledTimes(3);
-    expect(ctx.judgeDriveChange).toHaveBeenCalledTimes(3);
+    expect(ctx.drive.judgeDriveChange).toHaveBeenCalledTimes(3);
   });
 });

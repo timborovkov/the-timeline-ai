@@ -206,6 +206,30 @@ describe('askAgent', () => {
     );
   });
 
+  it('keeps source and resource arguments inside their named retrieval clauses', () => {
+    const question =
+      'Use Timeline tools search_timeline source: ingest_webhook about launch, get_integration_resource provider: github externalObjectId=repo#42, search_integration_events provider: sentry.';
+    expect(parseExplicitRetrievalContract(question)).toEqual([
+      { tool: 'search_integration_events', input: { query: question, provider: 'sentry' } },
+      {
+        tool: 'get_integration_resource',
+        input: { provider: 'github', externalObjectId: 'repo#42' },
+      },
+      { tool: 'search_timeline', input: { query: 'launch', source: 'ingest_webhook' } },
+    ]);
+    expect(parseExplicitRetrievalContract('search_timeline source: web')).toEqual([]);
+    expect(
+      parseExplicitRetrievalContract(
+        'Use Timeline tools get_integration_resource provider: mcp externalObjectId=private',
+      ),
+    ).toEqual([]);
+    expect(
+      parseExplicitRetrievalContract(
+        'Use Timeline tools get_integration_resource provider: sentry, search_timeline source: web externalObjectId=elsewhere',
+      ),
+    ).not.toContainEqual(expect.objectContaining({ tool: 'get_integration_resource' }));
+  });
+
   it('parses provider arguments adjacent to their integration retrieval request', () => {
     const integrationQuestion =
       'Use Timeline tools: search_integration_events provider: monday, then get_integration_resource with provider sentry externalObjectId=sentry-issue-100.';

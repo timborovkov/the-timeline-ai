@@ -10,6 +10,13 @@ text is sparse or the input is an image.
 
 ## Context
 
+The Drive wire format and result bounds live in
+`packages/shared/src/integrations/drive-extract-protocol.ts`. Shared cleanup
+transitions live in `drive-extract-lifecycle.ts` beside it; worker publication,
+polling, and sweeps live in `apps/worker/src/integrations/drive-extract-runtime.ts`.
+The credential-thin producer imports the protocol directly rather than workspace
+capture persistence. Sync and janitor call the same worker lifecycle owner.
+
 Document upload, chat attachments, inbound email, integration harvest, and
 Drive v1 PDF/Word/Slides capture all enqueue `document-extract`. Drive does not
 harvest into the document drive: the main worker uploads bytes to a transient
@@ -81,7 +88,7 @@ authored by a trusted teammate.
    same defaults).
 7. **Content-hashed snapshot lifecycle.** The snapshot name is derived from a
    hash of `apps/worker/document-extract-sandbox/**` (non-markdown files) plus
-   an Image recipe revision constant. CI publishes/ensures that snapshot when
+   the serialized image recipe and resource allocation used to construct the image. CI publishes/ensures that snapshot when
    those paths change; extract-main may create-once if missing
    (`DAYTONA_SNAPSHOT_ENSURE`, default true) but must not rebuild on every
    restart. Railway uses `DAYTONA_SNAPSHOT=auto` so deployed code and snapshot
@@ -93,11 +100,16 @@ authored by a trusted teammate.
    content-hashed names that have no Daytona sandbox references. Legacy and
    unrelated snapshots are never deletion targets.
 
+The recipe-hash migration changes the automatically resolved name once. The next
+deployment must ensure that new snapshot through the normal publication/boot
+workflow. Explicit snapshot pins and deployed-hash retention protections remain
+unchanged; this refactor does not create or delete remote snapshots.
+
 ## Snapshot operations
 
 | Path | When | Command / behavior |
 | --- | --- | --- |
-| Content-hash name | Always (default) | `timeline-document-extract-<12-char-sha256>` from sandbox dir + image revision |
+| Content-hash name | Always (default) | `timeline-document-extract-<12-char-sha256>` from sandbox dir + serialized image recipe/resources |
 | Print name only | Local / CI | `bun run --filter @timeline/worker create-document-extract-snapshot -- --print-name-only` |
 | Ensure (idempotent) | Local once, CI on sandbox changes, optional extract boot | `bun run --filter @timeline/worker create-document-extract-snapshot` (alias: `ensure-document-extract-snapshot`) |
 | Force rebuild | Corruption / debugging | same script with `--force` |

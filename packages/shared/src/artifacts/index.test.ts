@@ -17,10 +17,13 @@ import {
   findArtifactClustersByAnchors,
   listArtifactClusterEvidence,
   reconcileArtifactEvidence,
+} from '#src/artifacts/index.js';
+import {
   rebindDriveFileObjectLink,
   rebindDriveSelectionArtifactLink,
-} from '#src/artifacts/index.js';
+} from '#src/integrations/google-drive-artifacts.js';
 import { applyDbMigrations } from '#src/test/pglite.js';
+
 const TEAM_ID = '11111111-1111-1111-1111-111111111111';
 const TEAM_B_ID = '22222222-2222-2222-2222-222222222222';
 const USER_ID = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
@@ -64,6 +67,43 @@ describe('artifact reconciliation', () => {
     if (!row) throw new Error('raw event insert failed');
     return row;
   }
+
+  it('preserves anchor metadata until an explicit patch refreshes selected fields', async () => {
+    const base = {
+      teamId: TEAM_ID,
+      artifactType: 'document' as const,
+      canonicalName: 'Release notes',
+      role: 'related_context' as const,
+      strength: 'hard' as const,
+    };
+    const anchor = { type: 'artifact_key', value: 'release-notes', strength: 'hard' as const };
+    await reconcileArtifactEvidence(db as never, {
+      ...base,
+      anchors: [{ ...anchor, metadata: { owner: 'original', folder: 'a' } }],
+    });
+    await reconcileArtifactEvidence(db as never, {
+      ...base,
+      anchors: [{ ...anchor, metadata: { owner: 'replacement', folder: 'b' } }],
+    });
+    const readMetadata = async () => {
+      const [row] = await db
+        .select({ metadata: artifactClusterAnchors.metadata })
+        .from(artifactClusterAnchors)
+        .where(
+          and(
+            eq(artifactClusterAnchors.teamId, TEAM_ID),
+            eq(artifactClusterAnchors.anchorValue, 'release-notes'),
+          ),
+        );
+      return row?.metadata;
+    };
+    expect(await readMetadata()).toEqual({ owner: 'original', folder: 'a' });
+    await reconcileArtifactEvidence(db as never, {
+      ...base,
+      anchors: [{ ...anchor, metadata: { owner: 'replacement' }, metadataPatch: { folder: 'b' } }],
+    });
+    expect(await readMetadata()).toEqual({ owner: 'original', folder: 'b' });
+  });
 
   it('clusters a contract across conversation and signature evidence without direct memory writes', async () => {
     const report = await rawEvent('Acme said the MSA is approved pending signature.');

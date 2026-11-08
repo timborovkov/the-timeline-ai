@@ -1,9 +1,16 @@
-import { getDb, type Db } from '@timeline/db';
+import { eventSource, getDb, type Db } from '@timeline/db';
 import { jsonSchema, tool, type ToolSet } from 'ai';
 import { z } from 'zod';
 
 import { fenceExternalContent } from '#src/agent/external-content.js';
+import { retrieveWorkspaceContextInput } from '#src/agent/retrieval-contract.js';
 import { retrieveWorkspaceContext } from '#src/agent/retrieval.js';
+import {
+  capabilityTool,
+  capabilityAllowed,
+  type CapabilityTool,
+  type AgentToolMode,
+} from '#src/agent/tool-policy.js';
 import { getAppGuideRoute, searchAppGuide } from '#src/app-guide.js';
 import { artifactRefCitation } from '#src/citation.js';
 import { childLogger } from '#src/logger.js';
@@ -42,7 +49,7 @@ import {
   applyTimelineMomentPresentationCache,
   buildTimelineMomentPresentationCacheFingerprint,
   buildTimelineMomentPresentationCacheKey,
-} from '#src/timeline-moments/presentation.js';
+} from '#src/timeline-moments/presentation-contract.js';
 
 import type * as boards from '#src/boards/index.js';
 
@@ -58,7 +65,7 @@ export interface AgentApprovalDecisionObservation {
 
 export type AgentApprovalDecisionReporter = (observation: AgentApprovalDecisionObservation) => void;
 
-export type AgentToolMode = 'full' | 'proposal_only' | 'read_only';
+export { userApprovalForTools, type AgentToolMode } from '#src/agent/tool-policy.js';
 
 export interface AgentProposalOrigin {
   surface: string;
@@ -116,20 +123,7 @@ const sourceKindSchema = z.enum([
   'calendar_event',
 ]);
 
-// Mirrors the `event_source` pg enum. Kept in lockstep with the
-// outbound MCP server's `tools/list` schema and `event-writer.ts`.
-const eventSourceSchema = z.enum([
-  'web',
-  'telegram',
-  'email',
-  'system',
-  'document',
-  'meeting',
-  'integration',
-  'calendar',
-  'slack',
-  'ingest_webhook',
-]);
+const eventSourceSchema = z.enum(eventSource.enumValues);
 const objectTypeSchema = z.enum(OBJECT_TYPES);
 const pinTargetRefSchema = z.object({
   kind: z.enum(PIN_TARGET_KINDS),
@@ -419,26 +413,6 @@ const searchDocumentsStructuredInput = z.object({
   fileKind: z.enum(['document', 'captured']).optional(),
   includeDeleted: z.boolean().optional(),
   limit: z.number().int().min(1).max(50).optional(),
-});
-
-const retrieveWorkspaceContextInput = z.object({
-  query: z.string().trim().min(1).max(500),
-  recipe: z
-    .enum([
-      'auto',
-      'object_profile',
-      'timeline_evidence',
-      'task_status',
-      'calendar',
-      'board_state',
-      'document_knowledge',
-      'product_guide',
-    ])
-    .optional(),
-  objectId: z.string().regex(UUID_RE).optional(),
-  limit: z.number().int().min(1).max(10).optional(),
-  includeDocuments: z.boolean().optional(),
-  includeCalendar: z.boolean().optional(),
 });
 
 const objectUpdateFieldSchema = z.enum([
@@ -1287,28 +1261,8 @@ async function resolveTaskProposalProject(
   };
 }
 
-export const USER_APPROVAL_TOOL_NAMES = [
-  'execute_object_create',
-  'execute_object_update',
-  'execute_object_archive',
-  'execute_object_merge',
-  'execute_board_add_item',
-  'execute_board_update_item',
-  'execute_board_remove_item',
-  'execute_calendar_create',
-  'execute_calendar_update',
-  'execute_calendar_cancel',
-] as const;
-
-export function userApprovalForTools(tools: ToolSet): Record<string, 'user-approval'> | undefined {
-  const approval: Record<string, 'user-approval'> = {};
-  for (const name of USER_APPROVAL_TOOL_NAMES) {
-    if (Object.hasOwn(tools, name)) approval[name] = 'user-approval';
-  }
-  return Object.keys(approval).length > 0 ? approval : undefined;
-}
-
 export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}): ToolSet {
+  const executionContext = { currentDate: options.currentDate ?? new Date() };
   const runSafe = <T>(label: string, fn: () => Promise<T>): Promise<T | { error: string }> =>
     safe(
       label,
@@ -1316,8 +1270,9 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
       options.onToolError,
       options.sanitizeError,
     );
-  const tools: ToolSet = {
-    list_pins: tool({
+  const tools: Record<string, CapabilityTool> = {
+    list_pins: capabilityTool({
+      capability: 'pin_read',
       description:
         "List the current user's visible personal pinned workspace items in their saved order. Use this when the user asks what they have pinned or wants to refer to their pinned workspace.",
       inputSchema: listPinsInputSchema,
@@ -1345,7 +1300,8 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
         }),
     }),
 
-    pin_item: tool({
+    pin_item: capabilityTool({
+      capability: 'pin_mutation',
       description:
         'Pin one personal workspace item. Use only when the user explicitly asks to pin or save that exact item. Resolve the item first; never invent a target key. This reversible personal preference does not require approval.',
       inputSchema: pinTargetRefSchema,
@@ -1363,7 +1319,8 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
         }),
     }),
 
-    unpin_item: tool({
+    unpin_item: capabilityTool({
+      capability: 'pin_mutation',
       description:
         'Unpin one personal workspace item. Use only when the user explicitly asks to unpin that exact item. Prefer a target returned by list_pins. This reversible personal preference does not require approval.',
       inputSchema: pinTargetRefSchema,
@@ -1380,7 +1337,8 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
         }),
     }),
 
-    move_pin: tool({
+    move_pin: capabilityTool({
+      capability: 'pin_mutation',
       description:
         'Reorder one personal pin after the user explicitly asks. Use pin IDs returned by list_pins. For before/after, relativePinId is required.',
       inputSchema: movePinInputSchema,
@@ -1409,7 +1367,8 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
         }),
     }),
 
-    list_team_members: tool({
+    list_team_members: capabilityTool({
+      capability: 'read',
       description:
         'List active team members and their user IDs. Use before assigning ownerUserId, assigneeUserId, responsibleUserId, visibilityUserIds, or filtering work by a teammate name.',
       inputSchema: z.object({}),
@@ -1428,7 +1387,9 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
         }),
     }),
 
-    execute_object_create: tool({
+    execute_object_create: capabilityTool({
+      capability: 'mutation',
+      userApproval: 'required',
       description:
         'Approval-required dashboard action. Directly create a canonical object/task after the user approves in chat. Use only for explicit commands like "create a project called X" or "add a task to follow up with Y". This writes canonical state through createObject and does NOT create a background approval queue item.',
       inputSchema: executeObjectCreateInput,
@@ -1462,7 +1423,9 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
         }),
     }),
 
-    execute_object_update: tool({
+    execute_object_update: capabilityTool({
+      capability: 'mutation',
+      userApproval: 'required',
       description:
         'Approval-required dashboard action. Directly update one field on an existing object after the user approves in chat. Use only for explicit user commands like "set this deal status to won" or "move this task due date to tomorrow". First call get_object or retrieve_workspace_context, then pass the observed current value as expectedCurrentValue so stale state is rejected. This does NOT create a background approval queue item.',
       inputSchema: executeObjectUpdateInput,
@@ -1515,7 +1478,9 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
         }),
     }),
 
-    execute_object_archive: tool({
+    execute_object_archive: capabilityTool({
+      capability: 'mutation',
+      userApproval: 'required',
       description:
         'Approval-required dashboard action. Directly archive one existing object/task after the user approves in chat. Use only for explicit archive/cancel commands. First resolve the object with search_objects/get_object/retrieve_workspace_context and show the user the object citation. This runs canonical archiveObject, reconciles duplicate archive suggestions, and does NOT create a background approval queue item.',
       inputSchema: executeObjectArchiveInput,
@@ -1566,7 +1531,9 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
         }),
     }),
 
-    execute_object_merge: tool({
+    execute_object_merge: capabilityTool({
+      capability: 'mutation',
+      userApproval: 'required',
       description:
         'Approval-required dashboard action. Directly merge duplicate objects after the user approves in chat. Use only for explicit merge commands. First resolve and preview all target objects with search_objects/get_object/retrieve_workspace_context; then pass all objectIds and the survivorId. This re-previews before executing, rejects stale/resolved ids, runs the canonical merge path, and does NOT create a background approval queue item.',
       inputSchema: executeObjectMergeInput,
@@ -1628,7 +1595,9 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
         }),
     }),
 
-    execute_board_add_item: tool({
+    execute_board_add_item: capabilityTool({
+      capability: 'mutation',
+      userApproval: 'required',
       description:
         'Approval-required dashboard action. Directly add an existing object/task to a board lane after the user approves in chat. Use only for explicit commands like "add this company to the New lane" or after execute_object_create when the user asked to create an object and place it on the current board. First resolve the board/lane/object with search_boards/search_objects/dashboard context. This writes canonical board state and does NOT create a background approval queue item.',
       inputSchema: executeBoardAddItemInput,
@@ -1664,7 +1633,9 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
         }),
     }),
 
-    execute_board_update_item: tool({
+    execute_board_update_item: capabilityTool({
+      capability: 'mutation',
+      userApproval: 'required',
       description:
         'Approval-required dashboard action. Directly update or move one board card after the user approves in chat. Use for explicit board commands like "move this card to Proposal", "set the board card priority to 2", or "add next step X". First read the current card with search_boards, then pass observed fields in expectedCurrent so stale state is rejected. This writes canonical board state and does NOT create a background approval queue item.',
       inputSchema: executeBoardUpdateItemInput,
@@ -1732,7 +1703,9 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
         }),
     }),
 
-    execute_board_remove_item: tool({
+    execute_board_remove_item: capabilityTool({
+      capability: 'mutation',
+      userApproval: 'required',
       description:
         'Approval-required dashboard action. Directly remove one card from a board after the user approves in chat. Use only for explicit board removal commands, not for archiving the underlying object. First read the current card with search_boards and pass boardId/objectId/laneId in expectedCurrent so stale state is rejected.',
       inputSchema: executeBoardRemoveItemInput,
@@ -1783,29 +1756,20 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
         }),
     }),
 
-    retrieve_workspace_context: tool({
+    retrieve_workspace_context: capabilityTool({
+      capability: 'read',
       description:
         'Read-only retrieval planner/fusion tool. Use first for broad questions like "what do we know about X?", object/person/company profiles, task/board/calendar/document context, or when current route context implies a target object. Returns a compact context packet with typed citations across objects, notes, timeline events, tasks, boards, calendar, documents, and route guides. If adapterFailures is non-empty, disclose those unavailable sources and do not imply the packet is complete.',
       inputSchema: retrieveWorkspaceContextInput,
       execute: async (raw) =>
         runSafe('retrieve_workspace_context', async () => {
           const input = retrieveWorkspaceContextInput.parse(raw);
-          return retrieveWorkspaceContext(scope, {
-            query: input.query,
-            ...(input.recipe === undefined ? {} : { recipe: input.recipe }),
-            ...(input.objectId === undefined ? {} : { objectId: input.objectId }),
-            ...(input.limit === undefined ? {} : { limit: input.limit }),
-            ...(input.includeDocuments === undefined
-              ? {}
-              : { includeDocuments: input.includeDocuments }),
-            ...(input.includeCalendar === undefined
-              ? {}
-              : { includeCalendar: input.includeCalendar }),
-          });
+          return retrieveWorkspaceContext(scope, input, executionContext);
         }),
     }),
 
-    search_timeline: tool({
+    search_timeline: capabilityTool({
+      capability: 'read',
       description:
         "Semantic search across the current team's timeline. Returns ranked events with event_id (use for [ev:<id>] citations), fact statements, and entity_ids. Use this for 'what was discussed about X' or 'find anything mentioning Y'.",
       inputSchema: searchTimelineInput,
@@ -1826,7 +1790,8 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
         }),
     }),
 
-    search_timeline_moments: tool({
+    search_timeline_moments: capabilityTool({
+      capability: 'read',
       description:
         "Semantic search across the team's timeline, returned as bundled moments with raw event citations and sender identity on each evidence item. Use this first for normal 'what happened', integration-heavy, meeting/chat recap, and timeline-summary questions; use search_timeline or get_event only when you need raw event-level detail.",
       inputSchema: searchTimelineInput,
@@ -1845,7 +1810,8 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
         }),
     }),
 
-    get_timeline_moment: tool({
+    get_timeline_moment: capabilityTool({
+      capability: 'read',
       description:
         'Expand a timeline moment returned by search_timeline_moments. Prefer passing raw_event_ids from that result; supported deterministic moment_id values can also be expanded directly through a bounded visible-event lookup. Returns moment metadata plus fenced source evidence with sender identity on each item.',
       inputSchema: getTimelineMomentInput,
@@ -1901,7 +1867,8 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
         }),
     }),
 
-    search_object_notes: tool({
+    search_object_notes: capabilityTool({
+      capability: 'read',
       description:
         'Semantic search across object discussion comments, including durable Q&A notes. Use before search_timeline for reusable answers, policies, procedures, discussion decisions, and "what is the answer to..." questions. Returns note_id citations plus the owning object; pending proposals are not included.',
       inputSchema: searchObjectNotesInput,
@@ -1940,7 +1907,8 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
         }),
     }),
 
-    get_entity: tool({
+    get_entity: capabilityTool({
+      capability: 'read',
       description:
         "Look up one entity (person, company, project, topic) by exact UUID or canonical-name/alias match. Returns the entity, its 20 most recent facts (capped — call search_timeline if you need more depth on a specific topic), its visibility-filtered source events with event_ids, and the top 10 co-occurring entities. Use this for 'tell me about <name>' or to resolve a name into an entity id before searching.",
       inputSchema: getEntityInput,
@@ -1983,7 +1951,8 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
         }),
     }),
 
-    list_events: tool({
+    list_events: capabilityTool({
+      capability: 'read',
       description:
         "List raw events in reverse-chronological order. Filterable by ISO datetime range (from inclusive, to exclusive), author UUID, and source. Use this for 'what happened on <date>' or 'what did <person> post'. Returns events with event_id, occurred_at, source, author_user_id, and content_text.",
       inputSchema: listEventsInput,
@@ -2025,11 +1994,12 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
         }),
     }),
 
-    get_object: tool({
+    get_object: capabilityTool({
+      capability: 'read',
       description:
         "Look up a workspace object (task, deal, project, person, company, follow_up, etc.) by UUID or canonical name. Returns its status/stage/owner/due_at, the most recent suggested+applied changes, any notes, related objects, and open child tasks. Use this for 'what's the status of <X>' or before proposing a change to verify the current value.",
       inputSchema: z.object({ idOrName: z.string().trim().min(1).max(200) }),
-      execute: async ({ idOrName }) =>
+      execute: async ({ idOrName }: { idOrName: string }) =>
         runSafe('get_object', async () => {
           const result = await scope.objects.getObject(idOrName);
           if (!result) return { found: false };
@@ -2082,7 +2052,8 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
         }),
     }),
 
-    search_objects: tool({
+    search_objects: capabilityTool({
+      capability: 'read',
       description:
         'Deterministic structured search over workspace objects by name/alias/text plus type, status, stage, owner, assignee, due range, archived, and limit. Prefer this over semantic search when the user gives object names, fields, statuses, dates, or route context. Returns object/task citations.',
       inputSchema: searchObjectsStructuredInput,
@@ -2117,7 +2088,8 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
         }),
     }),
 
-    list_objects: tool({
+    list_objects: capabilityTool({
+      capability: 'read',
       description:
         "List workspace objects with optional filters. Use this for 'what deals are open' or 'show me suggested tasks'. Returns id, name, type, status, stage, owner, and due_at for each match. Capped at 50; narrow the filter if you need fewer.",
       inputSchema: z.object({
@@ -2163,7 +2135,8 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
         }),
     }),
 
-    list_tasks: tool({
+    list_tasks: capabilityTool({
+      capability: 'read',
       description:
         "Convenience over list_objects for tasks. Filters by status (default: not 'done' and not 'cancelled') and optionally by ownerUserId. Use for 'what's on my plate' or 'what tasks are blocked'.",
       inputSchema: z.object({
@@ -2215,7 +2188,8 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
         }),
     }),
 
-    search_boards: tool({
+    search_boards: capabilityTool({
+      capability: 'read',
       description:
         'Deterministic structured search over boards and board items. Filter by board id, board name/purpose/template, pinned state, object membership, lane, responsible user, due range, priority, and item text. Returns board and board-item citations.',
       inputSchema: searchBoardsInput,
@@ -2317,7 +2291,8 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
         }),
     }),
 
-    recent_changes: tool({
+    recent_changes: capabilityTool({
+      capability: 'read',
       description:
         "Recent applied or legacy suggested object-change audit rows. Use this for 'what changed today' on object records. Use list_pending_approvals for bundled approval-queue proposals awaiting review.",
       inputSchema: z.object({
@@ -2358,7 +2333,8 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
         }),
     }),
 
-    list_pending_approvals: tool({
+    list_pending_approvals: capabilityTool({
+      capability: 'read',
       description:
         'List visible approval-backed proposals that are not canonical yet. Use this before claiming durable memory is approved, and when checking whether an alias, identity facet, object note, relationship, task, or calendar proposal is already pending.',
       inputSchema: listPendingApprovalsInput,
@@ -2416,7 +2392,9 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
         }),
     }),
 
-    revise_suggestion: tool({
+    revise_suggestion: capabilityTool({
+      capability: 'mutation',
+      userApproval: 'none',
       description:
         'Rewrite one visible pending or failed approval proposal from the user’s correction. Call list_pending_approvals first to resolve the exact item_id. This changes only the unresolved proposal; it does not mutate canonical workspace state or source evidence.',
       inputSchema: reviseSuggestionInput,
@@ -2446,7 +2424,8 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
         }),
     }),
 
-    suggest_task: tool({
+    suggest_task: capabilityTool({
+      capability: 'proposal',
       description:
         'Propose a new task with an automatic category preview. Records an approval-queue suggestion only; it does not create the canonical task or project until a human accepts it. Use parentObjectId only when exactly one listed active project clearly owns the task. Use createProjectName only when the evidence clearly names a new client or internal project that should be created with the task. Never use a deal, person, company, title match, co-mention, or ambiguous project; omit project fields instead of guessing.',
       inputSchema: suggestTaskInput,
@@ -2522,7 +2501,8 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
         }),
     }),
 
-    propose_object_change: tool({
+    propose_object_change: capabilityTool({
+      capability: 'proposal',
       description:
         "Propose a change to an existing object's field (status, stage, priority, ownerUserId, assigneeUserId, dueAt). Records an approval-queue suggestion WITHOUT mutating the object. Use after get_object verifies the current value.",
       inputSchema: z.object({
@@ -2579,7 +2559,8 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
         }),
     }),
 
-    suggest_object_memory: tool({
+    suggest_object_memory: capabilityTool({
+      capability: 'proposal',
       description:
         'Create an approval-backed proposal for durable object memory. Use when the user gives lasting information about people, companies, projects, tasks, deals, calendar commitments, aliases, identity facets, relationships, notes, or typo/name cleanup. For a create_object task, use parentObjectId only when one listed active project clearly owns it, or createProjectName when the evidence clearly names a new project; omit both instead of guessing. Task proposals receive an automatic category preview. This queues approval only; it does not make memory canonical until accepted.',
       inputSchema: suggestObjectMemoryInput,
@@ -2781,7 +2762,8 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
         }),
     }),
 
-    get_app_route: tool({
+    get_app_route: capabilityTool({
+      capability: 'read',
       description:
         'Read-only lookup for a known dashboard/help route id. Use when you already have a route id and need title, href, required role, guide text, and [route:<id>] citation. Does not read workspace data.',
       inputSchema: getAppRouteInput,
@@ -2806,7 +2788,8 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
         }),
     }),
 
-    search_app_guide: tool({
+    search_app_guide: capabilityTool({
+      capability: 'read',
       description:
         'Read-only search over Timeline dashboard routes and product guide snippets. Use for navigation/help questions like "where do I invite teammates?", "how do boards work?", or "where are integrations?". Returns route ids, hrefs, required role, guide snippets, and [route:<id>] citations. Does not search timeline data.',
       inputSchema: searchAppGuideInput,
@@ -2833,7 +2816,8 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
         }),
     }),
 
-    get_event: tool({
+    get_event: capabilityTool({
+      capability: 'read',
       description:
         "Fetch one raw event by id, including its linked facts and entities. Use this to verify a citation or drill into a specific event_id you've already received from another tool. Returns null if the id isn't in this team or isn't visible to you.",
       inputSchema: getEventInput,
@@ -2871,7 +2855,8 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
         }),
     }),
 
-    search_documents_structured: tool({
+    search_documents_structured: capabilityTool({
+      capability: 'read',
       description:
         'Deterministic structured search/list over document records by name substring, folder id, file kind, deleted state, and limit. Use this when the user asks to find a file/document by name or browse document metadata. Use search_documents for semantic chunk/text search.',
       inputSchema: searchDocumentsStructuredInput,
@@ -2910,7 +2895,8 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
         }),
     }),
 
-    search_documents: tool({
+    search_documents: capabilityTool({
+      capability: 'read',
       description:
         "Semantic search across the team's document drive. Returns ranked chunks with document_id, version, chunk_id, page_number, and snippet. Use this when the answer might live in an uploaded contract, deal doc, policy, onboarding guide, or customer note. Cite hits with [doc:<documentId>#v<version>:chunk:<chunkId>].",
       inputSchema: searchDocumentsInput,
@@ -2959,7 +2945,8 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
         }),
     }),
 
-    get_document: tool({
+    get_document: capabilityTool({
+      capability: 'read',
       description:
         'Fetch a document by id: metadata, owner, visibility, folder, current version, and full version history. Use this to verify a [doc:...] citation or to drill into a hit returned by search_documents.',
       inputSchema: getDocumentInput,
@@ -2994,7 +2981,8 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
         }),
     }),
 
-    get_document_chunk: tool({
+    get_document_chunk: capabilityTool({
+      capability: 'read',
       description:
         "Fetch the full text of a single document chunk by chunk_id. Use this to expand a citation when the snippet returned by search_documents isn't enough. Returns the chunk text fenced as external content.",
       inputSchema: getDocumentChunkInput,
@@ -3022,7 +3010,8 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
     }),
 
     // Phase 11 — Third-party integrations and custom MCP tools.
-    list_integrations: tool({
+    list_integrations: capabilityTool({
+      capability: 'read',
       description:
         "List third-party integrations connected to this team (Google Drive, Linear, GitHub, Monday.com, Slack, Sentry) and custom MCP servers. Returns provider, displayName, and last_synced_at. Use when the user asks 'what's connected' or to confirm a source before searching.",
       inputSchema: z.object({}),
@@ -3053,7 +3042,8 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
         }),
     }),
 
-    search_integration_events: tool({
+    search_integration_events: capabilityTool({
+      capability: 'read',
       description:
         'Semantic search restricted to events synced from connected integrations (Google Drive activity, Linear issue changes, GitHub PR/issue/release events, Monday.com board updates, Slack workspace history, and Sentry issues/releases). Returns event_ids you can cite as [ev:<id>]. Use when the user asks about something that happened in an external system.',
       inputSchema: z
@@ -3125,7 +3115,8 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
         }),
     }),
 
-    get_integration_resource: tool({
+    get_integration_resource: capabilityTool({
+      capability: 'read',
       description:
         "Look up the current state of an external object that was synced from a connected integration. Returns the workspace entity (when one exists) plus the most recent integration_event history. Use when the user names a specific external object (e.g. 'ENG-42', 'acme/repo#7', 'Drive file ...') and you want the latest status before answering.",
       inputSchema: z
@@ -3196,7 +3187,8 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
         }),
     }),
 
-    list_recent_document_changes: tool({
+    list_recent_document_changes: capabilityTool({
+      capability: 'read',
       description:
         "List recent document drive activity (uploads, new versions, renames, moves, deletes, restores, visibility changes). Use this for 'what's new in the docs', 'what did someone change recently', or to enumerate documents touched since a given time. Each entry links to a raw_events id for [ev:...] citation.",
       inputSchema: listDocumentChangesInput,
@@ -3223,7 +3215,8 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
         }),
     }),
 
-    list_calendar_events: tool({
+    list_calendar_events: capabilityTool({
+      capability: 'read',
       description:
         "List calendar events for this team within a date range. Returns id, title, start_at, end_at, timezone, location, visibility, recurrence, and tentative/proposal metadata. Use for 'what's on my calendar', 'what's scheduled this week', or 'any meetings Thursday'. Note: recurring events are materialized up to 3 months ahead; results may be incomplete for dates beyond that window.",
       inputSchema: z.object({
@@ -3243,7 +3236,7 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
           const opts: Parameters<typeof scope.calendar.listCalendarEvents>[0] = {};
           if (input.from) opts.from = new Date(input.from);
           if (input.to) opts.to = new Date(input.to);
-          if (!input.from && !input.to) opts.from = options.currentDate ?? new Date();
+          if (!input.from && !input.to) opts.from = executionContext.currentDate;
           if (input.limit) opts.limit = input.limit;
           const events = await scope.calendar.listCalendarEvents(opts);
           return {
@@ -3279,7 +3272,8 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
         }),
     }),
 
-    resolve_time_context: tool({
+    resolve_time_context: capabilityTool({
+      capability: 'read',
       description:
         'Resolve workspace-relative time phrases into exact local date spans and UTC query ranges. Use for relative dates like today, yesterday, last week, week 24, or next Tuesday before querying timeline/calendar tools.',
       inputSchema: z.object({
@@ -3297,7 +3291,7 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
           const settings = await scope.calendar.getCalendarSettings();
           const referenceDate = input.referenceDate
             ? new Date(input.referenceDate)
-            : (options.currentDate ?? new Date());
+            : executionContext.currentDate;
           const context = workspaceTimeContext(settings.defaultTimezone, referenceDate);
           const resolved = input.phrase
             ? resolveTimePhrase(input.phrase, {
@@ -3322,7 +3316,8 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
         }),
     }),
 
-    get_calendar_event: tool({
+    get_calendar_event: capabilityTool({
+      capability: 'read',
       description:
         'Fetch one calendar event by UUID. Returns full details including description, timezone, location, and visibility. Use this to drill into a specific event after listing.',
       inputSchema: z.object({ id: z.string().regex(UUID_RE) }),
@@ -3361,7 +3356,9 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
         }),
     }),
 
-    execute_calendar_create: tool({
+    execute_calendar_create: capabilityTool({
+      capability: 'mutation',
+      userApproval: 'required',
       description:
         'Approval-required dashboard action. Directly create a canonical calendar event after the user approves in chat. Use only for explicit scheduling commands. Resolves all-day local dates with the workspace timezone and does NOT create a background approval queue item.',
       inputSchema: executeCalendarCreateInput,
@@ -3381,7 +3378,9 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
         }),
     }),
 
-    execute_calendar_update: tool({
+    execute_calendar_update: capabilityTool({
+      capability: 'mutation',
+      userApproval: 'required',
       description:
         'Approval-required dashboard action. Directly update an existing calendar event after the user approves in chat. Use only for explicit update/move/reschedule commands. First call get_calendar_event, then pass expectedCurrent values for every field in patch so stale state is rejected. This does NOT create a background approval queue item.',
       inputSchema: executeCalendarUpdateInput,
@@ -3459,7 +3458,9 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
         }),
     }),
 
-    execute_calendar_cancel: tool({
+    execute_calendar_cancel: capabilityTool({
+      capability: 'mutation',
+      userApproval: 'required',
       description:
         'Approval-required dashboard action. Directly cancel/delete an existing calendar event after the user approves in chat. Use only for explicit cancellation commands. First call get_calendar_event, then pass expected title/start/end so stale state is rejected. This does NOT create a background approval queue item.',
       inputSchema: executeCalendarCancelInput,
@@ -3518,7 +3519,8 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
         }),
     }),
 
-    suggest_calendar_event: tool({
+    suggest_calendar_event: capabilityTool({
+      capability: 'proposal',
       description:
         "Propose a new calendar event. Records an approval-queue suggestion only; it does not create the canonical event until a human accepts it. Date-only scheduling should be represented as an all-day event with startDate and exclusive endDate. Use rrule for recurring schedules. Use showAs='tentative' and a shared proposalGroupId for proposed alternative slots.",
       inputSchema: z.object({
@@ -3656,7 +3658,8 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
         }),
     }),
 
-    propose_calendar_update: tool({
+    propose_calendar_update: capabilityTool({
+      capability: 'proposal',
       description:
         'Propose a refinement or cancellation for an existing calendar event. Records an approval-queue suggestion only. Use after get_calendar_event verifies the current value.',
       inputSchema: z.object({
@@ -3739,45 +3742,9 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
         }),
     }),
   };
-  const directMutationToolNames = new Set([
-    'execute_object_create',
-    'execute_object_update',
-    'execute_object_archive',
-    'execute_object_merge',
-    'execute_board_add_item',
-    'execute_board_update_item',
-    'execute_board_remove_item',
-    'revise_suggestion',
-    'execute_calendar_create',
-    'execute_calendar_update',
-    'execute_calendar_cancel',
-    'pin_item',
-    'unpin_item',
-    'move_pin',
-  ]);
-  const proposalToolNames = new Set([
-    'suggest_task',
-    'propose_object_change',
-    'suggest_object_memory',
-    'suggest_calendar_event',
-    'propose_calendar_update',
-  ]);
-  if (options.toolMode === 'read_only') {
-    const writeToolNames = new Set([...directMutationToolNames, ...proposalToolNames]);
-    return Object.fromEntries(Object.entries(tools).filter(([name]) => !writeToolNames.has(name)));
-  }
-  if (options.toolMode === 'proposal_only') {
-    return Object.fromEntries(
-      Object.entries(tools).filter(
-        ([name]) => name !== 'list_pins' && !directMutationToolNames.has(name),
-      ),
-    );
-  }
-  if (!options.allowPinMutations) {
-    const pinMutationNames = new Set(['pin_item', 'unpin_item', 'move_pin']);
-    return Object.fromEntries(
-      Object.entries(tools).filter(([name]) => !pinMutationNames.has(name)),
-    );
-  }
-  return tools;
+  return Object.fromEntries(
+    Object.entries(tools)
+      .filter(([, entry]) => capabilityAllowed(entry.capability, options))
+      .map(([name, entry]) => [name, entry.definition]),
+  );
 }

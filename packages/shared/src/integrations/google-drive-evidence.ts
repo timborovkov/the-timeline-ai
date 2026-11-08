@@ -20,6 +20,11 @@ import {
   type DriveTextDiff,
 } from '#src/integrations/google-drive-diff.js';
 
+import type {
+  DriveSnapshotRecord,
+  DrivePermissionGrant,
+} from '#src/integrations/google-drive-contracts.js';
+
 export interface DrivePackedChangeEvent {
   contentText: string;
   hunks: string[];
@@ -37,23 +42,13 @@ export function packedCommentContext(events: DrivePackedChangeEvent[] | null): s
   return events.map((event) => event.commentFragment).join('');
 }
 
-export interface DriveSnapshotAdvanceFields {
-  contentHash: string;
-  snapshotText: string;
+export interface DriveSnapshotAdvanceFields extends Omit<
+  DriveSnapshotRecord,
+  'commentsSnapshot' | 'snapshotLocate' | 'permissionsSnapshot'
+> {
   snapshotLocate: DriveSnapshotLocate | null;
-  commentsHash: string;
   commentsSnapshot: DriveCommentSnapshot[];
-  permissionsHash: string;
-  permissionsSnapshot?:
-    | {
-        id: string;
-        type: string;
-        role: string;
-        email: string;
-        domain: string;
-      }[]
-    | undefined;
-  mimeType: string | null;
+  permissionsSnapshot?: DrivePermissionGrant[] | undefined;
 }
 
 export interface DriveSnapshotAdvanceDecision {

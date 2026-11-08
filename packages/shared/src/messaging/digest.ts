@@ -28,15 +28,19 @@ import {
   digestContentSections,
   scrubDigestArtifactIds,
 } from '#src/messaging/digest-format.js';
+import {
+  DEFAULT_DIGEST_HOUR,
+  freshDigestCutoff,
+  isDigestWindowExpired,
+} from '#src/messaging/digest-window.js';
 import { displayObjectTitle, OBJECT_TYPES } from '#src/objects/types.js';
 import { withTeam } from '#src/team-scope.js';
-import { assertValidTimezone, dateFromInstant, zonedDateTimeFromDate } from '#src/time/index.js';
 import { buildTimelineMoments, type TimelineMoment } from '#src/timeline-moments/index.js';
 import {
   applyTimelineMomentPresentationCache,
   buildTimelineMomentPresentationCacheFingerprint,
   buildTimelineMomentPresentationCacheKey,
-} from '#src/timeline-moments/presentation.js';
+} from '#src/timeline-moments/presentation-contract.js';
 
 import type {
   DailyDigestActivity,
@@ -45,9 +49,10 @@ import type {
 } from '#src/messaging/types.js';
 import type { TeamScope } from '#src/team-scope.js';
 
+export { defaultDigestWindow, isDigestWindowExpired } from '#src/messaging/digest-window.js';
+
 const log = childLogger('digest');
 const DEFAULT_WORKSPACE_TIMEZONE = 'Europe/Helsinki';
-const DEFAULT_DIGEST_HOUR = 12;
 const WORKSPACE_DIGEST_ACTOR_USER_ID = '00000000-0000-0000-0000-000000000000';
 const QUIET_DIGEST_SUMMARY = 'No useful activity for this digest window.';
 const QUIET_DIGEST_REASON = 'No useful digest content in this window.';
@@ -652,15 +657,6 @@ function digestVisibleSuggestionPredicate(teamId: string, userId: string) {
 
 function addDays(date: Date, days: number): Date {
   return new Date(date.getTime() + days * 24 * 60 * 60 * 1000);
-}
-
-function freshDigestCutoff(windowEnd: Date, timezone: string, hour: number): Date {
-  const tz = assertValidTimezone(timezone);
-  const digestHour = Number.isInteger(hour) && hour >= 0 && hour <= 23 ? hour : DEFAULT_DIGEST_HOUR;
-  const previousDate = zonedDateTimeFromDate(windowEnd, tz).toPlainDate().subtract({ days: 1 });
-  return dateFromInstant(
-    previousDate.toZonedDateTime({ timeZone: tz, plainTime: { hour: digestHour } }).toInstant(),
-  );
 }
 
 function hasUsefulDigestContent(input: {
@@ -1498,38 +1494,4 @@ export async function generateDailyDigest(
     payload: (existing[0]?.payload as DailyDigestPayload | undefined) ?? payload,
     skipped: false,
   };
-}
-
-export function defaultDigestWindow(
-  now: Date = new Date(),
-  timezone = 'UTC',
-  hour = DEFAULT_DIGEST_HOUR,
-): { start: Date; end: Date } {
-  const tz = assertValidTimezone(timezone);
-  const digestHour = Number.isInteger(hour) && hour >= 0 && hour <= 23 ? hour : DEFAULT_DIGEST_HOUR;
-  const current = zonedDateTimeFromDate(now, tz);
-  let endInTimezone = current.toPlainDate().toZonedDateTime({
-    timeZone: tz,
-    plainTime: { hour: digestHour },
-  });
-  if (current.epochMilliseconds < endInTimezone.epochMilliseconds) {
-    endInTimezone = endInTimezone.subtract({ days: 1 });
-  }
-  const end = dateFromInstant(endInTimezone.toInstant());
-  const start = new Date(end.getTime() - 25 * 60 * 60 * 1000);
-  return { start, end };
-}
-
-/**
- * A digest is expired once the recipient's next digest cycle has started.
- * Queued recipient/send jobs from earlier cycles must not email after that.
- */
-export function isDigestWindowExpired(
-  windowEnd: Date,
-  now: Date = new Date(),
-  timezone = 'UTC',
-  hour = DEFAULT_DIGEST_HOUR,
-): boolean {
-  const current = defaultDigestWindow(now, timezone, hour);
-  return windowEnd.getTime() < current.end.getTime();
 }

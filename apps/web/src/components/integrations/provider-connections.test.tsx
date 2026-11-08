@@ -918,7 +918,7 @@ describe('PersonalConnectionsUi', () => {
     });
   });
 
-  it('surfaces provider resource errors from JSON responses', async () => {
+  it('keeps internal provider details out of JSON error displays', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response(JSON.stringify({ error: 'Monday GraphQL errors: Unauthorized field or type' }), {
         status: 502,
@@ -940,7 +940,8 @@ describe('PersonalConnectionsUi', () => {
     );
 
     const alert = await screen.findByRole('alert');
-    expect(alert.textContent).toContain('Monday GraphQL errors: Unauthorized field or type');
+    expect(alert.textContent).toContain('Request failed (502)');
+    expect(alert.textContent).not.toContain('Monday GraphQL errors: Unauthorized field or type');
   });
 
   it('maps provider account delete JSON errors to readable copy', async () => {

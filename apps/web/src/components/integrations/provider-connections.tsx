@@ -27,6 +27,7 @@ import { DropdownMenuItem } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import { ItemActionGroup, ItemOverflowMenu } from '@/components/ui/item-actions';
 import { Skeleton } from '@/components/ui/skeleton';
+import { readJson } from '@/lib/api-response';
 import { providerLogoSrc } from '@/lib/connections';
 import { isGoogleDriveProviderId } from '@/lib/google-drive-limited-use';
 import { notifyAction } from '@/lib/notify';
@@ -91,21 +92,6 @@ const initialSourcePickerState: SourcePickerState = {
 
 const emptyResources: ProviderResource[] = [];
 const emptyShares: ResourceShare[] = [];
-
-async function readJsonResponse<T extends { error?: string }>(res: Response): Promise<T> {
-  const text = await res.text();
-  let data = {} as T;
-  if (text) {
-    try {
-      data = JSON.parse(text) as T;
-    } catch {
-      if (!res.ok) throw new Error(text);
-      throw new Error(connectionErrorMessage('request_failed'));
-    }
-  }
-  if (!res.ok) throw new Error(data.error ?? (text || connectionErrorMessage('request_failed')));
-  return data;
-}
 
 const providerSourceHints: Partial<
   Record<
@@ -395,7 +381,7 @@ function ConnectionSources({
       else if (driveParentId) params.set('parentId', driveParentId);
       const suffix = params.size > 0 ? `?${params.toString()}` : '';
       const res = await fetch(`/api/connections/${connection.id}/resources${suffix}`);
-      return readJsonResponse<ConnectionResourcesPayload>(res);
+      return readJson<ConnectionResourcesPayload>(res);
     },
   });
 
@@ -512,7 +498,7 @@ function ConnectionSources({
               })),
             }),
           });
-          if (!res.ok) await readJsonResponse(res);
+          if (!res.ok) await readJson(res);
           await queryClient.invalidateQueries({
             queryKey: queryKeys.providerConnectionResourcesPrefix(connection.id),
           });
@@ -539,7 +525,7 @@ function ConnectionSources({
       run: async () => {
         try {
           const res = await fetch(`/api/connections/${connection.id}`, { method: 'DELETE' });
-          await readJsonResponse(res);
+          await readJson(res, { emptyValue: {} });
           return { ok: true };
         } catch {
           return { error: 'failed' };
@@ -1229,7 +1215,7 @@ export function TeamSourcesUi({
             resourceShareIds: [...(selectedByConnection[providerConnectionId] ?? new Set())],
           }),
         });
-        const payload = await readJsonResponse<{
+        const payload = await readJson<{
           error?: string;
           syncRequired?: boolean;
           syncQueued?: boolean;
@@ -1359,7 +1345,7 @@ function DriveObjectLinkField({
     gcTime: 30_000,
     queryFn: async ({ signal }) => {
       const params = new URLSearchParams({ q: trimmed });
-      const payload = await readJsonResponse<{
+      const payload = await readJson<{
         error?: string;
         results?: ObjectSearchResponse['results'];
       }>(await fetch(`/api/objects/search?${params.toString()}`, { signal }));
@@ -1385,7 +1371,7 @@ function DriveObjectLinkField({
               body: JSON.stringify({ linkedObjectId }),
             },
           );
-          await readJsonResponse(res);
+          await readJson(res);
           return { ok: true };
         },
       });

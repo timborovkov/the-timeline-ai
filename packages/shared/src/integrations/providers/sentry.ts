@@ -1,5 +1,7 @@
 import { getEnv } from '#src/env.js';
 import { providerFetch } from '#src/integrations/request.js';
+import { defineResourceAccess } from '#src/integrations/resource-access.js';
+import { exactTargetSelections } from '#src/integrations/selection-policy.js';
 import { attachSyncContinuation } from '#src/integrations/types.js';
 
 import type {
@@ -874,6 +876,25 @@ async function syncSentryResources(
 export const sentryProvider: IntegrationProvider = {
   id: 'sentry',
   displayLabel: 'Sentry',
+  syncSelectionPolicy: {
+    recovery: 'per_resource',
+    resolveTarget(selections, target) {
+      const exact = exactTargetSelections(selections, target);
+      if (exact.length > 0) return exact;
+      if (target.resourceType === 'sentry.project') {
+        const [orgSlug, projectSlug] = target.externalId.split('/');
+        if (
+          orgSlug &&
+          projectSlug &&
+          selections.some(
+            (selection) => selection.kind === 'sentry.org' && selection.externalId === orgSlug,
+          )
+        )
+          return [{ kind: 'sentry.project', externalId: target.externalId }];
+      }
+      return [];
+    },
+  },
 
   // eslint-disable-next-line @typescript-eslint/require-await
   async startOAuth(input) {
@@ -920,30 +941,32 @@ export const sentryProvider: IntegrationProvider = {
     };
   },
 
-  async listSyncableResources(_integration, tokens, ctx): Promise<ProviderResource[]> {
-    const sentryTokens = await ensureAccessToken(tokens as SentryTokens, ctx);
-    const orgs = await sentryGetAll<SentryOrg>(sentryTokens, '/organizations/');
-    const resources: ProviderResource[] = [];
-    for (const org of orgs) {
-      resources.push({
-        externalId: org.slug,
-        label: `${org.name ?? org.slug} (all projects)`,
-        kind: 'sentry.org',
-      });
-      const projects = await sentryGetAll<SentryProject>(
-        sentryTokens,
-        `/organizations/${encodeURIComponent(org.slug)}/projects/`,
-      );
-      resources.push(
-        ...projects.map((project) => ({
-          externalId: `${org.slug}/${project.slug}`,
-          label: `${org.slug}/${project.slug}`,
-          kind: 'sentry.project',
-        })),
-      );
-    }
-    return resources;
-  },
+  ...defineResourceAccess({
+    async browseResources(_integration, tokens, ctx): Promise<ProviderResource[]> {
+      const sentryTokens = await ensureAccessToken(tokens as SentryTokens, ctx);
+      const orgs = await sentryGetAll<SentryOrg>(sentryTokens, '/organizations/');
+      const resources: ProviderResource[] = [];
+      for (const org of orgs) {
+        resources.push({
+          externalId: org.slug,
+          label: `${org.name ?? org.slug} (all projects)`,
+          kind: 'sentry.org',
+        });
+        const projects = await sentryGetAll<SentryProject>(
+          sentryTokens,
+          `/organizations/${encodeURIComponent(org.slug)}/projects/`,
+        );
+        resources.push(
+          ...projects.map((project) => ({
+            externalId: `${org.slug}/${project.slug}`,
+            label: `${org.slug}/${project.slug}`,
+            kind: 'sentry.project',
+          })),
+        );
+      }
+      return resources;
+    },
+  }),
 
   backfill(input) {
     return syncSentryResources(input, true);

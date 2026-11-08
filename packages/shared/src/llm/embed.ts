@@ -1,7 +1,6 @@
 import { createHash } from 'node:crypto';
 import { createRequire } from 'node:module';
 
-import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
 import { embed as aiEmbed, embedMany as aiEmbedMany, type EmbeddingModel } from 'ai';
 
 import { isBillingAdmissionError } from '#src/billing/errors.js';
@@ -14,14 +13,10 @@ import {
 } from '#src/billing/openrouter-usage.js';
 import { withAiMetering } from '#src/billing/runtime.js';
 import { getEnv } from '#src/env.js';
-import { asBunFetch } from '#src/http/fetch.js';
 import { wrapAiFailure } from '#src/llm/errors.js';
 import { TIMELINE_MODELS } from '#src/llm/models.js';
-import {
-  OPENROUTER_DISABLE_CACHE_HEADERS,
-  OPENROUTER_OFFICIAL_BASE_URL,
-  openRouterPrivateProviderRouting,
-} from '#src/llm/privacy.js';
+import { openRouterPrivateProviderRouting } from '#src/llm/privacy.js';
+import { createOpenRouterProvider } from '#src/llm/provider.js';
 
 import type * as Cl100kBaseTokenizer from 'gpt-tokenizer/encoding/cl100k_base';
 
@@ -153,20 +148,10 @@ function buildDefaultModel(
     ...args: Parameters<typeof globalThis.fetch>
   ) => ReturnType<typeof globalThis.fetch> = globalThis.fetch.bind(globalThis),
 ): EmbeddingModel {
-  const env = getEnv();
-  if (!env.OPENROUTER_API_KEY) {
-    throw new Error('OPENROUTER_API_KEY is required for llm.embed');
-  }
-  const baseURL = env.OPENROUTER_BASE_URL ?? OPENROUTER_OFFICIAL_BASE_URL;
-  const provider = createOpenAICompatible({
-    name: 'openrouter',
-    apiKey: env.OPENROUTER_API_KEY,
-    baseURL,
-    headers: OPENROUTER_DISABLE_CACHE_HEADERS,
-    // The installed compatible adapter only serializes `dimensions` and
-    // `user` for embeddings. Inject the OpenRouter routing policy at the HTTP
-    // boundary and fail closed if that request shape changes.
-    fetch: asBunFetch(privateEmbeddingFetch(fetchImpl)),
+  const provider = createOpenRouterProvider({
+    operation: 'llm.embed',
+    // Embedding routing must be injected into the HTTP body: the SDK omits it.
+    fetch: privateEmbeddingFetch(fetchImpl),
   });
   return provider.embeddingModel(modelId);
 }

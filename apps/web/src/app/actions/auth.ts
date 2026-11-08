@@ -1,12 +1,9 @@
 'use server';
 
 import { teamInvites, teamMembers, teams, users } from '@timeline/db';
-import {
-  assertTeamMemberSeatCapacity,
-  insertRestrictedFreeBillingAccount,
-  isBillingAdmissionError,
-} from '@timeline/shared/billing';
-import { insertDefaultDigestDestination, sendMessage } from '@timeline/shared/messaging';
+import { initializeOwnedWorkspace } from '@timeline/shared/agent-provisioning';
+import { assertTeamMemberSeatCapacity, isBillingAdmissionError } from '@timeline/shared/billing';
+import { sendMessage } from '@timeline/shared/messaging';
 import { hashPassword } from '@timeline/shared/passwords';
 import * as rateLimit from '@timeline/shared/rate-limit';
 import { buildInboundEmail, randomSlugSuffix, slugify } from '@timeline/shared/slug';
@@ -225,18 +222,15 @@ export async function signUpAction(_prev: SignUpState, formData: FormData): Prom
         const baseSlug = slugify(`${name}-team`) || 'team';
         const slug = `${baseSlug}-${randomSlugSuffix()}`;
         const inboundEmail = buildInboundEmail(slug, process.env.INBOUND_EMAIL_DOMAIN);
-        const teamRows = await tx
-          .insert(teams)
-          .values({ name: `${name}'s Team`, slug, inboundEmail })
-          .returning({ id: teams.id });
-        const teamId = teamRows[0]?.id;
+        const team = await initializeOwnedWorkspace(tx, {
+          ownerId: userId,
+          name: `${name}'s Team`,
+          slug,
+          inboundEmail,
+        });
+        const teamId = team?.id;
         if (!teamId) throw new Error('Failed to create team');
-        // react-doctor-disable-next-line react-doctor/async-parallel -- Team membership insert must precede digest and restricted billing writes on this transaction client.
-        await tx.insert(teamMembers).values({ teamId, userId, role: 'owner' });
-        await insertDefaultDigestDestination(tx, teamId);
-        // Credentials signup does not set emailVerified. Keep the workspace
-        // restricted until verifyEmailToken claims the person-level Free grant.
-        await insertRestrictedFreeBillingAccount({ db: tx, teamId });
+        // Email verification claims the Free grant; signup keeps restricted billing.
         return { activeTeamId: teamId, userId, event: 'team_created' as const };
       });
     } catch (e) {

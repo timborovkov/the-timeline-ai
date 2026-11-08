@@ -1,17 +1,19 @@
-import { createHash, randomUUID } from 'node:crypto';
+import { createHash } from 'node:crypto';
 
 import { type Db, documents as documentsTable, getDbClient } from '@timeline/db';
 import {
   childLogger,
-  deleteObject,
   getDocumentsBucket,
-  getObjectBuffer,
   getS3Client,
   integrations as integrationsLib,
   putObject,
   queue,
   withTeam,
 } from '@timeline/shared';
+import {
+  driveSyncIntentKind,
+  driveTargetCompletesFeedRecovery,
+} from '@timeline/shared/integrations/google-drive-scheduling';
 import { assertActivePrincipal } from '@timeline/shared/platform-admin/runtime';
 import {
   payloadDigestFromMetadata,
@@ -21,6 +23,7 @@ import { Worker, type Job } from 'bullmq';
 import { and, eq, sql } from 'drizzle-orm';
 
 import { withWorkerAiBilling, workerBillingJobOptions } from '#src/billing-context.js';
+import { createDriveCaptureServices } from '#src/integrations/drive-capture-services.js';
 import { captureWorkerException, captureWorkerJobFailure } from '#src/monitoring.js';
 import { guardWorkerProcessor } from '#src/platform-worker.js';
 
@@ -63,10 +66,10 @@ function isProviderPaginationContinuation(
   return target?.reason === 'provider_pagination_continuation';
 }
 
-function isDriveWatchTarget(
+function isRetainedDriveTarget(
   target: TargetedIntegrationSyncJob | undefined,
 ): target is TargetedIntegrationSyncJob {
-  return target?.resourceType === 'drive.file' || target?.resourceType === 'drive.changes';
+  return driveSyncIntentKind(target) !== null;
 }
 
 async function rescheduleLockBlockedTarget(
@@ -74,7 +77,7 @@ async function rescheduleLockBlockedTarget(
   integrationId: string,
   target: TargetedIntegrationSyncJob | undefined,
 ): Promise<void> {
-  if (!isProviderPaginationContinuation(target) && !isDriveWatchTarget(target)) return;
+  if (!isProviderPaginationContinuation(target) && !isRetainedDriveTarget(target)) return;
   const attempt = target.continuationAttempt ?? 0;
   const continuationAttempt = attempt < MAX_PAGINATION_LOCK_RETRY_ATTEMPTS ? attempt + 1 : attempt;
   const retryDelayMs =
@@ -107,7 +110,7 @@ async function rescheduleLockBlockedTarget(
         claim.continuation.retryAt,
         claim,
       );
-      if (isDriveWatchTarget(target) && isMatchingContinuation(target, claim.continuation)) {
+      if (isRetainedDriveTarget(target) && isMatchingContinuation(target, claim.continuation)) {
         return {
           ...job,
           data: {
@@ -137,7 +140,7 @@ function includeCurrentContinuationWhenMissing(
   target: TargetedIntegrationSyncJob | undefined,
 ): void {
   if (
-    (isProviderPaginationContinuation(target) || isDriveWatchTarget(target)) &&
+    (isProviderPaginationContinuation(target) || isRetainedDriveTarget(target)) &&
     !continuations.some((continuation) => isMatchingContinuation(target, continuation))
   ) {
     continuations.push({
@@ -201,7 +204,7 @@ function retainPausedDriveTarget(
   retryAt?: Date,
 ): void {
   if (integration.provider !== 'google_drive' || !target) return;
-  if (target.resourceType !== 'drive.file' && target.resourceType !== 'drive.changes') return;
+  if (driveSyncIntentKind(target) === null) return;
   if (
     continuationJobs.some(
       (job) =>
@@ -343,403 +346,6 @@ const defaultDocumentHarvestIO: IntegrationDocumentHarvestIO = {
   },
   enqueueDocumentExtractJob: queue.enqueueDocumentExtractJob,
 };
-
-interface DriveTransientExtractIO {
-  getDocumentsBucket: () => string;
-  putDocumentObject: (input: {
-    bucket: string;
-    key: string;
-    body: Buffer;
-    contentType: string;
-  }) => Promise<void>;
-  getDocumentObject: (input: {
-    bucket: string;
-    key: string;
-    maxBytes: number;
-  }) => Promise<{ body: Buffer }>;
-  deleteDocumentObject: (input: { bucket: string; key: string }) => Promise<void>;
-  enqueueDocumentExtractJob: (data: queue.DocumentExtractJobData) => Promise<void>;
-}
-
-const defaultDriveTransientExtractIO: DriveTransientExtractIO = {
-  getDocumentsBucket,
-  async putDocumentObject(input) {
-    await putObject(getS3Client(), input);
-  },
-  async getDocumentObject(input) {
-    return getObjectBuffer(getS3Client(), input.bucket, input.key, input.maxBytes);
-  },
-  async deleteDocumentObject(input) {
-    await deleteObject(getS3Client(), input.bucket, input.key);
-  },
-  enqueueDocumentExtractJob: queue.enqueueDocumentExtractJob,
-};
-
-const DRIVE_TRANSIENT_RESULT_MAX_BYTES = integrationsLib.DRIVE_TRANSIENT_RESULT_MAX_BYTES;
-
-interface DriveExtractCursorScope {
-  getIntegration: (id: string) => Promise<{ id: string; teamId: string } | null>;
-  loadCursor: (integrationId: string, resourceType: string) => Promise<unknown>;
-  saveCursor: (
-    integrationId: string,
-    resourceType: string,
-    cursor: unknown,
-    status?: { lastStatus?: string; lastError?: string | null },
-  ) => Promise<void>;
-}
-
-async function requireDriveExtractIntegration(
-  integrations: DriveExtractCursorScope,
-  integrationId: string,
-): Promise<{ id: string; teamId: string }> {
-  const integration = await integrations.getIntegration(integrationId);
-  if (!integration) throw new Error('drive extract integration not found for team');
-  return integration;
-}
-
-async function findDriveExtractIntegration(
-  integrations: DriveExtractCursorScope,
-  integrationId: string,
-): Promise<{ id: string; teamId: string } | null> {
-  return integrations.getIntegration(integrationId);
-}
-
-function driveTransientExtractJob(input: {
-  teamId: string;
-  integrationId: string;
-  fileId: string;
-  cursor: integrationsLib.DriveExtractCursor;
-}): queue.DriveTransientExtractJobData {
-  return {
-    kind: 'drive_transient',
-    teamId: input.teamId,
-    integrationId: input.integrationId,
-    fileId: input.fileId,
-    extractId: input.cursor.extractId,
-    objectKey: input.cursor.objectKey,
-    resultObjectKey: input.cursor.resultObjectKey,
-    contentType: input.cursor.contentType,
-    filename: input.cursor.filename,
-  };
-}
-
-async function loadDriveExtractCursor(
-  integrations: DriveExtractCursorScope,
-  integrationId: string,
-  fileId: string,
-): Promise<integrationsLib.DriveExtractCursor | null> {
-  const integration = await findDriveExtractIntegration(integrations, integrationId);
-  if (!integration) return null;
-  return integrationsLib.parseDriveExtractCursor(
-    await integrations.loadCursor(integrationId, integrationsLib.driveExtractCursorKey(fileId)),
-  );
-}
-
-async function saveDriveExtractCursor(
-  integrations: DriveExtractCursorScope,
-  integrationId: string,
-  fileId: string,
-  cursor: integrationsLib.DriveExtractCursor | Record<string, never>,
-): Promise<void> {
-  const integration = await findDriveExtractIntegration(integrations, integrationId);
-  if (!integration) return;
-  await integrations.saveCursor(
-    integrationId,
-    integrationsLib.driveExtractCursorKey(fileId),
-    cursor,
-  );
-}
-
-async function expireDriveExtractTombstones(
-  io: DriveTransientExtractIO,
-  cursor: integrationsLib.DriveExtractCursor,
-  nowMs: number,
-): Promise<integrationsLib.DriveExtractCursor> {
-  const tombstones = cursor.tombstones ?? [];
-  if (tombstones.length === 0) return cursor;
-  const { settled } = integrationsLib.partitionDriveExtractTombstones(tombstones, nowMs);
-  const remainingKeysByExtractId = new Map<string, string[]>();
-  for (const tombstone of settled) {
-    const keys = integrationsLib.driveExtractTombstoneKeys(tombstone);
-    const results = await Promise.allSettled(
-      keys.map((key) => io.deleteDocumentObject({ bucket: io.getDocumentsBucket(), key })),
-    );
-    remainingKeysByExtractId.set(
-      tombstone.extractId,
-      integrationsLib.remainingDriveExtractObjectKeys(keys, results),
-    );
-  }
-  return integrationsLib.applyDriveExtractTombstoneDeletes(cursor, remainingKeysByExtractId, nowMs);
-}
-
-function publishedDriveExtractCursor(
-  cursor: integrationsLib.DriveExtractCursor,
-): integrationsLib.DriveExtractCursor {
-  const { jobPublished: _published, ...rest } = cursor;
-  return rest;
-}
-
-export async function putAndEnqueueDriveTransientExtract(input: {
-  integrations: DriveExtractCursorScope;
-  teamId: string;
-  integrationId: string;
-  fileId: string;
-  filename: string;
-  contentType: string;
-  body: Buffer;
-  revisionId?: string;
-  io?: DriveTransientExtractIO;
-  now?: Date;
-}): Promise<void> {
-  const io = input.io ?? defaultDriveTransientExtractIO;
-  await requireDriveExtractIntegration(input.integrations, input.integrationId);
-  const extractId = randomUUID();
-  const keys = integrationsLib.driveTransientExtractKeys({
-    teamId: input.teamId,
-    integrationId: input.integrationId,
-    fileId: input.fileId,
-    extractId,
-  });
-  const existing = await loadDriveExtractCursor(
-    input.integrations,
-    input.integrationId,
-    input.fileId,
-  );
-  const now = input.now ?? new Date();
-  const nowIso = now.toISOString();
-  const nowMs = now.getTime();
-  let tombstones: integrationsLib.DriveExtractTombstone[] = [];
-  if (existing) {
-    tombstones = integrationsLib.carryDriveExtractTombstones(existing, nowIso);
-    const leftoverKeys = integrationsLib.driveExtractObjectKeys(existing);
-    await Promise.allSettled(
-      leftoverKeys.map((key) => io.deleteDocumentObject({ bucket: io.getDocumentsBucket(), key })),
-    );
-  }
-  let cursor: integrationsLib.DriveExtractCursor = {
-    extractId,
-    objectKey: keys.objectKey,
-    resultObjectKey: keys.resultObjectKey,
-    contentType: input.contentType,
-    filename: input.filename,
-    enqueuedAt: nowIso,
-    jobPublished: false,
-    ...(input.revisionId ? { revisionId: input.revisionId } : {}),
-    ...(tombstones.length > 0 ? { tombstones } : {}),
-  };
-  cursor = await expireDriveExtractTombstones(io, cursor, nowMs);
-  await io.putDocumentObject({
-    bucket: io.getDocumentsBucket(),
-    key: keys.objectKey,
-    body: input.body,
-    contentType: input.contentType,
-  });
-  try {
-    // Persist the extract cursor before Redis sees the job so a late
-    // result.json always has a cleanup reference, including when enqueue fails.
-    await saveDriveExtractCursor(input.integrations, input.integrationId, input.fileId, cursor);
-  } catch (err) {
-    await Promise.allSettled([
-      io.deleteDocumentObject({ bucket: io.getDocumentsBucket(), key: keys.objectKey }),
-    ]);
-    throw err;
-  }
-  try {
-    await io.enqueueDocumentExtractJob(
-      driveTransientExtractJob({
-        teamId: input.teamId,
-        integrationId: input.integrationId,
-        fileId: input.fileId,
-        cursor,
-      }),
-    );
-  } catch (err) {
-    // Leave jobPublished: false so the 15-minute stale check cannot block retry.
-    throw err;
-  }
-  await saveDriveExtractCursor(
-    input.integrations,
-    input.integrationId,
-    input.fileId,
-    publishedDriveExtractCursor(cursor),
-  );
-}
-
-function withExtractRevision<T extends object>(
-  result: T,
-  cursor: integrationsLib.DriveExtractCursor,
-): T & { revisionId?: string } {
-  return cursor.revisionId ? { ...result, revisionId: cursor.revisionId } : result;
-}
-
-export async function readDriveTransientExtract(input: {
-  integrations: DriveExtractCursorScope;
-  teamId: string;
-  integrationId: string;
-  fileId: string;
-  io?: DriveTransientExtractIO;
-  now?: Date;
-}): Promise<
-  | { status: 'pending'; revisionId?: string; reschedule?: boolean }
-  | { status: 'ready'; text: string; revisionId?: string }
-  | { status: 'failed'; error: string; revisionId?: string }
-  | null
-> {
-  const io = input.io ?? defaultDriveTransientExtractIO;
-  const now = input.now ?? new Date();
-  let cursor = await loadDriveExtractCursor(input.integrations, input.integrationId, input.fileId);
-  if (!cursor || cursor.cleanupPending) return null;
-  const tombstoneCount = cursor.tombstones?.length ?? 0;
-  cursor = await expireDriveExtractTombstones(io, cursor, now.getTime());
-  const tombstonesChanged = (cursor.tombstones?.length ?? 0) !== tombstoneCount;
-  if (tombstonesChanged) {
-    await saveDriveExtractCursor(input.integrations, input.integrationId, input.fileId, cursor);
-  }
-  try {
-    const fetched = await io.getDocumentObject({
-      bucket: io.getDocumentsBucket(),
-      key: cursor.resultObjectKey,
-      maxBytes: DRIVE_TRANSIENT_RESULT_MAX_BYTES,
-    });
-    const parsed = integrationsLib.parseDriveTransientExtractResult(fetched.body);
-    if (parsed.ok) {
-      return withExtractRevision({ status: 'ready' as const, text: parsed.text }, cursor);
-    }
-    return withExtractRevision({ status: 'failed' as const, error: parsed.error }, cursor);
-  } catch (err) {
-    if (integrationsLib.isRetryableDriveExtractStorageError(err)) throw err;
-    if (!integrationsLib.isMissingS3ObjectError(err)) {
-      const message = err instanceof Error ? err.message : String(err);
-      const error = integrationsLib.isDriveExtractResultTooLarge(message)
-        ? integrationsLib.DRIVE_TRANSIENT_RESULT_TOO_LARGE
-        : message.slice(0, 500);
-      return withExtractRevision({ status: 'failed' as const, error }, cursor);
-    }
-    const stale = integrationsLib.isDriveExtractPendingStale(cursor, now.getTime());
-    if (stale) {
-      try {
-        await io.enqueueDocumentExtractJob(
-          driveTransientExtractJob({
-            teamId: input.teamId,
-            integrationId: input.integrationId,
-            fileId: input.fileId,
-            cursor,
-          }),
-        );
-        await saveDriveExtractCursor(
-          input.integrations,
-          input.integrationId,
-          input.fileId,
-          publishedDriveExtractCursor({ ...cursor, enqueuedAt: now.toISOString() }),
-        );
-      } catch {
-        await saveDriveExtractCursor(input.integrations, input.integrationId, input.fileId, {
-          ...cursor,
-          jobPublished: false,
-        });
-      }
-    }
-    return withExtractRevision(
-      { status: 'pending' as const, ...(stale ? { reschedule: true as const } : {}) },
-      cursor,
-    );
-  }
-}
-
-export async function clearDriveTransientExtract(input: {
-  integrations: DriveExtractCursorScope;
-  integrationId: string;
-  fileId: string;
-  io?: DriveTransientExtractIO;
-  /** `consume` wipes once S3 deletes succeed. `cancel` keeps a tombstone until the producer wait elapses. */
-  mode?: 'consume' | 'cancel';
-  now?: Date;
-}): Promise<void> {
-  const io = input.io ?? defaultDriveTransientExtractIO;
-  const mode = input.mode ?? 'consume';
-  const now = input.now ?? new Date();
-  const cursor = await loadDriveExtractCursor(
-    input.integrations,
-    input.integrationId,
-    input.fileId,
-  );
-  if (cursor) {
-    const bucket = io.getDocumentsBucket();
-    const currentKeys = [
-      ...new Set(
-        [cursor.objectKey, cursor.resultObjectKey, ...(cursor.pendingDeleteKeys ?? [])].filter(
-          (key) => key.length > 0,
-        ),
-      ),
-    ];
-    const currentResults = await Promise.allSettled(
-      currentKeys.map((key) => io.deleteDocumentObject({ bucket, key })),
-    );
-    const remainingCurrent = integrationsLib.remainingDriveExtractObjectKeys(
-      currentKeys,
-      currentResults,
-    );
-    const cancelledAt =
-      mode === 'cancel' ? (cursor.cancelledAt ?? now.toISOString()) : cursor.cancelledAt;
-    let next: integrationsLib.DriveExtractCursor = integrationsLib.retainDriveExtractCleanupCursor(
-      cursor,
-      remainingCurrent,
-      {
-        ...(cancelledAt ? { cancelledAt } : {}),
-      },
-    );
-    next = await expireDriveExtractTombstones(io, next, now.getTime());
-    if (
-      integrationsLib.shouldRetainDriveExtractCleanup(next, remainingCurrent, {
-        mode,
-        now: now.getTime(),
-      })
-    ) {
-      await saveDriveExtractCursor(input.integrations, input.integrationId, input.fileId, next);
-      return;
-    }
-  }
-  await saveDriveExtractCursor(input.integrations, input.integrationId, input.fileId, {});
-}
-
-export async function sweepOrphanDriveTransientExtracts(input: {
-  db: Db;
-  now?: Date;
-  limit?: number;
-  io?: DriveTransientExtractIO;
-}): Promise<number> {
-  const now = input.now ?? new Date();
-  const remainingLimit = input.limit ?? integrationsLib.DRIVE_EXTRACT_CURSOR_PAGE_SIZE;
-  const teamIds = await integrationsLib.adminListTeamIdsWithDriveExtractCursors(input.db, {
-    orphanOnly: true,
-    now,
-  });
-  let remaining = remainingLimit;
-  let cleared = 0;
-  for (const teamId of teamIds) {
-    if (remaining <= 0) break;
-    const scope = withTeam(input.db, teamId, ZERO_UUID, { skipMembershipCheck: true });
-    const orphans = await scope.integrations.listDriveExtractCursors({
-      orphanOnly: true,
-      now,
-      limit: remaining,
-    });
-    for (const row of orphans) {
-      await clearDriveTransientExtract({
-        integrations: scope.integrations,
-        integrationId: row.integrationId,
-        fileId: row.fileId,
-        mode: 'cancel',
-        now,
-        ...(input.io ? { io: input.io } : {}),
-      });
-      cleared += 1;
-      remaining -= 1;
-      if (remaining <= 0) break;
-    }
-  }
-  return cleared;
-}
 
 export async function harvestIntegrationDocument(input: {
   db: Db;
@@ -1363,7 +969,7 @@ export async function runOneIntegration(
     const allSelections = await integrationsLib.adminListSelections(db, integrationId);
     let selections =
       kind === 'targeted' && target
-        ? targetedSelections(integration.provider, allSelections, target)
+        ? provider.syncSelectionPolicy.resolveTarget(allSelections, target)
         : allSelections;
     if (kind === 'targeted' && selections.length === 0) {
       await integrationsLib.adminRecordAudit(
@@ -1410,6 +1016,24 @@ export async function runOneIntegration(
       providerSupportsDocumentHarvest && harvestableUserId !== null && harvestUserStillMember;
     const teamScope = withTeam(db, integration.teamId, ZERO_UUID, { skipMembershipCheck: true });
 
+    const scheduleTargetedSync: NonNullable<
+      integrationsLib.SyncContext['scheduleTargetedSync']
+    > = async (task, opts) => {
+      await queue.enqueueIntegrationSyncJob(
+        {
+          kind: 'targeted',
+          integrationId: task.integrationId,
+          teamId: task.teamId,
+          triggeredBy: task.triggeredBy,
+          resourceType: task.resourceType,
+          externalId: task.externalId,
+          ...(task.surface ? { surface: task.surface } : {}),
+          ...(task.reason ? { reason: task.reason } : {}),
+        },
+        opts,
+      );
+    };
+
     const ctx: integrationsLib.SyncContext = {
       async writeEvents(events) {
         return integrationsLib.writeIntegrationEvents({ db, integration, events });
@@ -1452,104 +1076,7 @@ export async function runOneIntegration(
         // rather than re-refreshing every tick. AES-256-GCM at rest.
         await integrationsLib.adminPersistTokens(db, integrationId, tokens);
       },
-      async scheduleTargetedSync(task, opts) {
-        await queue.enqueueIntegrationSyncJob(
-          {
-            kind: 'targeted',
-            integrationId: task.integrationId,
-            teamId: task.teamId,
-            triggeredBy: task.triggeredBy,
-            resourceType: task.resourceType,
-            externalId: task.externalId,
-            ...(task.surface ? { surface: task.surface } : {}),
-            ...(task.reason ? { reason: task.reason } : {}),
-          },
-          opts,
-        );
-      },
-      enqueueTransientDriveExtract(input) {
-        return putAndEnqueueDriveTransientExtract({
-          integrations: teamScope.integrations,
-          teamId: integration.teamId,
-          integrationId,
-          fileId: input.fileId,
-          filename: input.filename,
-          contentType: input.contentType,
-          body: input.body,
-          ...(input.revisionId ? { revisionId: input.revisionId } : {}),
-        });
-      },
-      loadTransientDriveExtract(fileId) {
-        return readDriveTransientExtract({
-          integrations: teamScope.integrations,
-          teamId: integration.teamId,
-          integrationId,
-          fileId,
-        });
-      },
-      consumeTransientDriveExtract(fileId) {
-        return clearDriveTransientExtract({
-          integrations: teamScope.integrations,
-          integrationId,
-          fileId,
-          mode: 'consume',
-        });
-      },
-      cancelTransientDriveExtract(fileId) {
-        return clearDriveTransientExtract({
-          integrations: teamScope.integrations,
-          integrationId,
-          fileId,
-          mode: 'cancel',
-        });
-      },
-      loadLatestDriveSnapshot(fileId) {
-        return teamScope.integrations.loadLatestDriveSnapshot(integrationId, fileId);
-      },
-      saveDriveSnapshot(input) {
-        return teamScope.integrations.saveDriveSnapshot(integrationId, input.fileId, {
-          contentHash: input.contentHash,
-          snapshotText: input.snapshotText,
-          commentsHash: input.commentsHash ?? '',
-          permissionsHash: input.permissionsHash ?? '',
-          mimeType: input.mimeType,
-          commentsSnapshot: Array.isArray(input.commentsSnapshot) ? input.commentsSnapshot : [],
-          permissionsSnapshot: Array.isArray(input.permissionsSnapshot)
-            ? input.permissionsSnapshot
-            : [],
-          snapshotLocate: input.snapshotLocate ?? null,
-          ancestry: input.ancestry ?? null,
-        });
-      },
-      deleteDriveSnapshotsForFile(fileId) {
-        return teamScope.integrations.deleteDriveSnapshotsForFile(integrationId, fileId);
-      },
-      cleanupUncoveredDriveTrackedFiles(remainingSelections) {
-        return teamScope.integrations.cleanupUncoveredDriveTrackedFiles(
-          integrationId,
-          remainingSelections,
-        );
-      },
-      discardDriveTrackedFile(fileId) {
-        return teamScope.integrations.discardDriveTrackedFile(integrationId, fileId);
-      },
-      listTeamEmailDomains() {
-        return teamScope.integrations.listTeamEmailDomains();
-      },
-      listDriveTrackedDescendantFileIds(ancestorId) {
-        return teamScope.integrations.listDriveTrackedDescendantFileIds(integrationId, ancestorId);
-      },
-      linkedObjectForDriveSelection(fileId, parentIds, matchedAncestorId, linkContext) {
-        return teamScope.integrations.linkedObjectForDriveSelection({
-          integrationId,
-          fileId,
-          parentIds,
-          ...(matchedAncestorId !== undefined ? { matchedAncestorId } : {}),
-          ...(linkContext?.driveId ? { driveId: linkContext.driveId } : {}),
-          ...(linkContext?.myDriveRootId ? { myDriveRootId: linkContext.myDriveRootId } : {}),
-        });
-      },
-      judgeDriveChange: integrationsLib.judgeDriveChange,
+      scheduleTargetedSync,
       ...(harvestEnabled && harvestableUserId
         ? {
             async harvestDocument(input) {
@@ -1563,6 +1090,14 @@ export async function runOneIntegration(
           }
         : {}),
     };
+    if (integration.provider === 'google_drive') {
+      ctx.drive = createDriveCaptureServices({
+        integrations: teamScope.integrations,
+        teamId: integration.teamId,
+        integrationId,
+        scheduleTargetedSync,
+      });
+    }
     // Completed selections remain quiet while larger selections finish their pages.
     const recovery = (await ctx.loadCursor('sync.recovery')) as {
       completed?: Record<string, string>;
@@ -1574,7 +1109,7 @@ export async function runOneIntegration(
     if (
       kind === 'incremental' &&
       triggeredBy === 'reconcile' &&
-      integration.provider !== 'monday'
+      provider.syncSelectionPolicy.recovery !== 'all'
     ) {
       const dueSelections = selections.filter((selection) => {
         const at = completed[resourceKey(selection)];
@@ -1584,8 +1119,7 @@ export async function runOneIntegration(
       });
       // These providers advance a shared feed/collection cursor. Filtering only
       // some selections would consume changes for selections omitted from this run.
-      const sharedCursor =
-        integration.provider === 'google_drive' || integration.provider === 'linear';
+      const sharedCursor = provider.syncSelectionPolicy.recovery === 'shared_cursor';
       if (!sharedCursor || dueSelections.length === 0) selections = dueSelections;
     }
     if (kind !== 'targeted' && selections.length > 1) {
@@ -2024,80 +1558,10 @@ function recordsFeedRecoveryCompletion(
 ): boolean {
   if (provider === 'monday') return false;
   if (provider === 'github' && kind === 'targeted' && target?.surface) return false;
-  // File-only Drive captures still receive every watchable selection for
-  // membership checks. Stamping those folders complete would skip the next
-  // scheduled changes.list fallback that recovers missed webhooks.
-  if (provider === 'google_drive' && kind === 'targeted' && target?.resourceType === 'drive.file') {
-    return false;
+  if (provider === 'google_drive' && kind === 'targeted') {
+    return driveTargetCompletesFeedRecovery(target);
   }
   return true;
-}
-
-function targetedSelections(
-  provider: NativeSyncProvider,
-  selections: { kind: string; externalId: string }[],
-  target: TargetedIntegrationSyncJob,
-): { kind: string; externalId: string }[] {
-  if (
-    (provider === 'monday' || provider === 'google_drive') &&
-    target.resourceType === `${provider}.webhook`
-  ) {
-    return [{ kind: target.resourceType, externalId: target.externalId }];
-  }
-  if (provider === 'google_drive' && target.resourceType === 'drive.changes') return selections;
-  if (provider === 'google_drive' && target.resourceType === 'drive.file') {
-    const watchable = selections.filter((selection) =>
-      integrationsLib.driveSelectionIsWatchable(selection.kind),
-    );
-    return watchable;
-  }
-  if (provider === 'linear' && target.reason === 'provider_pagination_continuation')
-    return selections;
-  const exact = selections.filter(
-    (selection) =>
-      selection.kind === target.resourceType && selection.externalId === target.externalId,
-  );
-  if (exact.length > 0) return exact;
-
-  if (provider === 'github' && target.resourceType === 'github.repo') {
-    const owner = target.externalId.split('/')[0];
-    if (
-      owner &&
-      selections.some(
-        (selection) => selection.kind === 'github.org' && selection.externalId === owner,
-      )
-    ) {
-      return [{ kind: 'github.repo', externalId: target.externalId }];
-    }
-  }
-
-  if (provider === 'sentry' && target.resourceType === 'sentry.project') {
-    const [orgSlug, projectSlug] = target.externalId.split('/');
-    if (
-      orgSlug &&
-      projectSlug &&
-      selections.some(
-        (selection) => selection.kind === 'sentry.org' && selection.externalId === orgSlug,
-      )
-    ) {
-      return [{ kind: 'sentry.project', externalId: target.externalId }];
-    }
-  }
-
-  if (provider === 'monday' && target.resourceType === 'monday.item') {
-    const [boardId, itemId] = target.externalId.split(':');
-    if (
-      boardId &&
-      itemId &&
-      selections.some(
-        (selection) => selection.kind === 'monday.board' && selection.externalId === boardId,
-      )
-    ) {
-      return [{ kind: 'monday.board', externalId: boardId }];
-    }
-  }
-
-  return [];
 }
 
 function reconciliationDue(

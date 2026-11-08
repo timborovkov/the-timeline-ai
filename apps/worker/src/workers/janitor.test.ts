@@ -20,8 +20,8 @@ import { afterEach, beforeEach, describe, it } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 
+import { sweepOrphanDriveTransientExtracts } from '#src/integrations/drive-extract-runtime.js';
 import { applyDbMigrations } from '#src/test/pglite.js';
-import { sweepOrphanDriveTransientExtracts } from '#src/workers/integrationSync.js';
 import { janitorTickIsIdle, processJanitorTick } from '#src/workers/janitor.js';
 /**
  * Integration tests for the janitor tick. Uses pglite for Postgres + stub

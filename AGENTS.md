@@ -91,6 +91,13 @@ and evidence; never treat an offline CI pass as live promotion evidence.
 
 Use `bun` only. Do not use `pnpm`, `npm`, or `yarn`.
 
+Offline test execution is declared in `scripts/testing/manifest.json`: each file
+gets a fresh process by default; `isolation: "registration"` or `"batch"` (with
+`batchSize`) explicitly partitions supported Bun test registrations. The runner
+parses test syntax and rejects unsupported isolated titles; source formatting or
+`vi.resetModules()` text must never choose execution policy. Preserve test rows
+when changing this manifest.
+
 ## Handoff protocol — run `/document-release` before handing back
 
 **Before you hand control back to the user at the end of a meaningful chunk of
@@ -186,13 +193,21 @@ Treat this file as an operating contract for agents, not a loose README.
   `scope.billingOperator`) rather than flat scope methods or
   manually passing `db` into object helpers. Every Qdrant query filters on
   `team_id` via the wrapper. Do not bypass these — even in "internal" tools.
+  Timeline read queries live in `packages/shared/src/timeline/read-scope.ts`,
+  composed behind `withTeam`; presentation cache persistence lives in
+  `timeline-moments/presentation-cache.ts`. Suggestion acceptance transaction
+  context and after-commit execution belong to `suggestions/acceptance-transaction.ts`.
 - **Production Qdrant storage copies require maintenance safeguards.** Follow
   [the production copy runbook](docs/setup/openrouter.html#qdrant-production-copy):
   stop every vector writer, require the operator-only production acknowledgement,
   complete a source snapshot, and verify all teams plus total point coverage before
   switching collections. Retain the original collection and backup for rollback.
 - **Account provisioning is a separate pre-team boundary.** `packages/shared/src/agent-provisioning` owns verified-owner grants, idempotency receipts, owner-wide quotas and shared UI/API workspace creation. Only new workspaces may be provisioned; existing-team content still requires `withTeam`. Auth continuations are account-bound global identity records.
-- **Platform administration is a separate privilege boundary.** Global account/team directory, support-session, and platform-audit access goes through the verified `platform-admin` service. Impersonated content access still uses `withTeam` and the selected member’s role and visibility. Never replace the real login with the impersonated identity or omit its attribution from jobs.
+- **Platform administration is a separate privilege boundary.** Global account/team directory, support-session, and platform-audit access goes through the verified `platform-admin` service. Impersonated content access still uses `withTeam` and the selected member’s role and visibility. Never replace the real login with the impersonated identity or omit its attribution from jobs. Declare every scoped operation in `platform-admin/workspace-policy.ts`; method names must not determine permissions.
+- **Redis lifecycle belongs to infrastructure.** Request consumers import
+  `redis/connection.ts`; queue consumers use the queue facade. Process shutdown
+  closes all Redis roles after draining work. Closing a queue must not close
+  request cache or admission connections.
 - **Captured raw event content is immutable.** Never `UPDATE` a source-ingested
   `raw_events` row's content. Derived facts can be re-extracted; the source is
   the source. Calendar raw-event rows are derived schedule mirrors and may
@@ -366,6 +381,8 @@ packages/
             module (Phase 11 — Drive/Linear/GitHub/Monday.com/Slack/Sentry
             providers, person-owned provider connections, team resource
             shares, active source paths, connection attention, event-writer,
+            separate resource browsing/validation, required Drive capture services,
+            transient extract lifecycle/protocol, transactional selection links,
             registry catalog, AES-GCM secrets helper), event-class taxonomy
             (provider-agnostic communication / work_record / pulse / incident /
             artifact / schedule; ingest webhooks set class in settings),

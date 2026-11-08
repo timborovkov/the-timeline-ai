@@ -44,6 +44,7 @@ const {
   mcpOutboundOAuthTokens,
   objectChanges,
   rawEvents,
+  eventSource,
   reconciliationEvidence,
   teamMembers,
 } = await import('@timeline/db');
@@ -1101,9 +1102,7 @@ describe('handleMcpRequest', () => {
       _meta: { securitySchemes: [{ type: 'oauth2', scopes: ['read'] }] },
     });
     expect(search?.outputSchema).toMatchObject({ type: 'object' });
-    expect(search?.inputSchema.properties?.source?.enum).toEqual(
-      expect.arrayContaining(['calendar', 'slack', 'ingest_webhook']),
-    );
+    expect(search?.inputSchema.properties?.source?.enum).toEqual(eventSource.enumValues);
     const categories = [...TASK_CATEGORIES];
     const categorySchema = search?.inputSchema.properties?.category;
     const searchCategorySchemas = categorySchema?.oneOf ?? categorySchema?.anyOf ?? [];
@@ -3471,6 +3470,20 @@ describe('advertised MCP parameters', () => {
       })) as { calendarEvents: unknown[] };
       expect(included.calendarEvents.length).toBeGreaterThan(0);
       expect(excluded.calendarEvents).toEqual([]);
+    });
+
+    it('uses the trusted request clock for composite calendar retrieval', async () => {
+      const result = (await callTool(
+        db,
+        'timeline.search',
+        {
+          surface: 'workspace',
+          query: 'review',
+          recipe: 'calendar',
+        },
+        { currentDate: new Date('1900-01-01T12:00:00.000Z') },
+      )) as { calendarEvents: unknown[] };
+      expect(result.calendarEvents).toEqual([]);
     });
 
     it('recipe', async () => {

@@ -2,7 +2,14 @@ import { expect } from '@timeline/test-support';
 import { vi, freshModuleUrl } from '@timeline/test-support';
 import { afterEach, beforeEach, describe, it } from 'bun:test';
 
+import {
+  planDriveSync,
+  driveSyncIntentKind,
+  driveTargetCompletesFeedRecovery,
+} from '#src/integrations/google-drive-scheduling.js';
+
 import type * as TestModule1 from '#src/queue/index.js';
+
 /**
  * Queue contract tests. The product relies on job payloads and retry policy
  * staying stable across web routes, workers, and recovery scripts; BullMQ and
@@ -501,6 +508,45 @@ describe('queue wrappers', () => {
     ]);
   });
 
+  it('keeps capture, feed recovery, and extract-resume intents distinct on the wire', () => {
+    const identity = {
+      integrationId: 'integration-1',
+      teamId: 'team-1',
+      ignored: 'private-runtime-detail',
+    };
+    const capture = planDriveSync(identity, {
+      kind: 'file_capture',
+      fileId: 'file-1',
+      reason: 'drive_watch',
+      delayMs: 900_000,
+    });
+    const resume = planDriveSync(identity, {
+      kind: 'extract_resume',
+      fileId: 'file-1',
+      extractId: 'extract-1',
+      triggeredBy: 'drive_extract',
+    });
+    const feed = planDriveSync(identity, { kind: 'changes_feed' });
+    expect(capture.options).toEqual({ delayMs: 900_000, replaceDelayed: true });
+    expect(resume.options.replaceDelayed).toBeUndefined();
+    expect(resume.task).toEqual({
+      integrationId: 'integration-1',
+      teamId: 'team-1',
+      triggeredBy: 'drive_extract',
+      resourceType: 'drive.file',
+      externalId: 'file-1',
+      reason: 'drive_transient_extract',
+      surface: 'extract:extract-1',
+    });
+    expect(driveTargetCompletesFeedRecovery(capture.task)).toBe(false);
+    expect(driveTargetCompletesFeedRecovery(resume.task)).toBe(false);
+    expect(driveTargetCompletesFeedRecovery(feed.task)).toBe(true);
+    expect(driveSyncIntentKind({ resourceType: 'drive.file', reason: 'legacy-watch' })).toBe(
+      'file_capture',
+    );
+    expect(driveSyncIntentKind({ resourceType: 'github.repo' })).toBeNull();
+  });
+
   it('gives Drive extract resumes an independent identity from the originating drive.file job', async () => {
     const queues = await importQueues();
     const originating = {
@@ -521,7 +567,7 @@ describe('queue wrappers', () => {
       resourceType: 'drive.file',
       externalId: 'file-1',
       reason: 'drive_transient_extract',
-      surface: queues.driveTransientExtractResumeSurface(extractId),
+      surface: `extract:${extractId}`,
     };
     const originatingJobId =
       'integration-targeted|11111111-1111-4111-8111-111111111111|drive.file|file-1|all';
@@ -560,7 +606,7 @@ describe('queue wrappers', () => {
       resourceType: 'drive.file',
       externalId: 'file-1',
       reason: 'drive_transient_extract',
-      surface: queues.driveTransientExtractResumeSurface(extractId),
+      surface: `extract:${extractId}`,
       continuationHandoffId: '33333333-3333-4333-8333-333333333333',
     };
     const successor = {

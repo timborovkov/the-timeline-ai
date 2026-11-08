@@ -12,6 +12,7 @@ import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 
 import { resetEnvForTests } from '#src/env.js';
+import { OPERATOR_CAPABILITIES } from '#src/platform-admin/capabilities.js';
 import {
   directoryPage,
   endImpersonation,
@@ -212,7 +213,13 @@ describe('platform administrator boundary', () => {
     const objects = {
       setTaskProject: (id: string) => Promise.resolve(`orig:${id}`),
     };
-    const scope = guardOperatorScope(db, TEAM, MEMBER, { objects });
+    const scope = guardOperatorScope(
+      db,
+      TEAM,
+      MEMBER,
+      { objects },
+      { 'objects.setTaskProject': OPERATOR_CAPABILITIES.write },
+    );
     expect(scope.objects).toBe(scope.objects);
     expect(scope.objects.setTaskProject).toBe(objects.setTaskProject);
     let intercepted = false;
@@ -254,6 +261,17 @@ describe('platform administrator boundary', () => {
       }),
     ).rejects.toThrow('Workspace is suspended');
   });
+  it('rejects incomplete capability declarations before installing any wrappers', async () => {
+    const surface = { inspect: () => Promise.resolve('visible') };
+    expect(() => guardOperatorScope(db, TEAM, MEMBER, surface, {} as never)).toThrow(
+      'Missing operator capability for inspect',
+    );
+    const guarded = guardOperatorScope(db, TEAM, MEMBER, surface, {
+      inspect: OPERATOR_CAPABILITIES.read,
+    });
+    expect(await guarded.inspect()).toBe('visible');
+  });
+
   it('reuses verified admission inside a nested transaction scope', async () => {
     const { withTeam } = await import('#src/team-scope.js');
     const nested = {
@@ -263,7 +281,9 @@ describe('platform administrator boundary', () => {
           return (await txScope.timeline.team())?.id;
         }),
     };
-    const scope = guardOperatorScope(db, TEAM, MEMBER, nested);
+    const scope = guardOperatorScope(db, TEAM, MEMBER, nested, {
+      work: OPERATOR_CAPABILITIES.write,
+    });
     expect(await scope.work()).toBe(TEAM);
     await setPlatformSuspension(db, actor, 'user', MEMBER, true, 'suspend after nested tx');
     await expect(scope.work()).rejects.toThrow('Account is suspended');
@@ -332,10 +352,23 @@ describe('impersonation lifecycle', () => {
         readOnly: true,
       }),
     );
-    const scope = guardOperatorScope(db, TEAM, MEMBER, {
-      getItem: () => Promise.resolve('visible'),
-      updateItem: () => Promise.resolve('changed'),
-    });
+    const scope = guardOperatorScope(
+      db,
+      TEAM,
+      MEMBER,
+      {
+        getItem: () => Promise.resolve('visible'),
+        updateItem: () => Promise.resolve('changed'),
+        inspect: () => Promise.resolve('explicit read'),
+        getAndMutate: () => Promise.resolve('must not run'),
+      },
+      {
+        getItem: OPERATOR_CAPABILITIES.read,
+        updateItem: OPERATOR_CAPABILITIES.write,
+        inspect: OPERATOR_CAPABILITIES.read,
+        getAndMutate: OPERATOR_CAPABILITIES.write,
+      },
+    );
     const { withTeam } = await import('#src/team-scope.js');
     const workspace = withTeam(db, TEAM, MEMBER);
     expect(await workspace.timeline.getEvent(ownEvent)).not.toBeNull();
@@ -361,14 +394,22 @@ describe('impersonation lifecycle', () => {
     );
     await expect(workspace.requireMembership('admin')).rejects.toThrow('Requires admin role');
     expect(await scope.getItem()).toBe('visible');
+    expect(await scope.inspect()).toBe('explicit read');
+    await expect(scope.getAndMutate()).rejects.toThrow('read-only');
     await expect(scope.updateItem()).rejects.toThrow('read-only');
     await expect(
       operatorDatabase(db).update(users).set({ name: 'forbidden' }).where(eq(users.id, MEMBER)),
     ).rejects.toThrow('read-only');
     await expect(
-      guardOperatorScope(db, OTHER, MEMBER, {
-        getItem: () => Promise.resolve('wrong team'),
-      }).getItem(),
+      guardOperatorScope(
+        db,
+        OTHER,
+        MEMBER,
+        {
+          getItem: () => Promise.resolve('wrong team'),
+        },
+        { getItem: OPERATOR_CAPABILITIES.read },
+      ).getItem(),
     ).rejects.toThrow('restricted');
     await expect(tagOperatorJob({ teamId: TEAM })).rejects.toThrow();
   });
@@ -378,7 +419,10 @@ describe('impersonation lifecycle', () => {
       inner,
       callInner: async () => inner.write(),
     };
-    const scope = guardOperatorScope(db, TEAM, MEMBER, outer);
+    const scope = guardOperatorScope(db, TEAM, MEMBER, outer, {
+      'inner.write': OPERATOR_CAPABILITIES.write,
+      callInner: OPERATOR_CAPABILITIES.write,
+    });
     const write = scope.inner.write;
     const spy = vi.spyOn(scope.inner, 'write').mockImplementation(async () => {
       await write();
@@ -392,10 +436,16 @@ describe('impersonation lifecycle', () => {
   });
   it('does not wrap a nested database handle carried on the scope', async () => {
     const originalSelect = Reflect.get(db, 'select');
-    const scope = guardOperatorScope(db, TEAM, MEMBER, {
-      postCommitDb: db,
-      readItem: () => Promise.resolve('ok'),
-    });
+    const scope = guardOperatorScope(
+      db,
+      TEAM,
+      MEMBER,
+      {
+        postCommitDb: db,
+        readItem: () => Promise.resolve('ok'),
+      },
+      { readItem: OPERATOR_CAPABILITIES.read },
+    );
     expect(scope.postCommitDb).toBe(db);
     expect(Reflect.get(db, 'select')).toBe(originalSelect);
     expect(await scope.readItem()).toBe('ok');

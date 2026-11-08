@@ -81,3 +81,16 @@ export { setSlackProviderFetchForTests, slackProvider } from '#src/integrations/
 
 export { withProviderRequestContext, providerRecoveryEnabled } from '#src/integrations/request.js';
 export { acceptSignedSlackNativeEvent } from '#src/integrations/slack-ingress.js';
+
+export type {
+  ProviderResourceIdentity,
+  ResourceAccessContext,
+  ResourceBrowseContext,
+  ResourceSelection,
+  ProviderResourceAccess,
+} from '#src/integrations/resource-access.js';
+
+export {
+  takeDriveExtractSlot,
+  takeDriveProcessSlot,
+} from '#src/integrations/google-drive-capture.js';

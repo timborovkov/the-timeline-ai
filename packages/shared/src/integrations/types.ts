@@ -1,4 +1,9 @@
 import type { TimelineEventClass } from '#src/event-class.js';
+import type { DriveCaptureServices } from '#src/integrations/google-drive-context.js';
+import type {
+  ProviderResourceAccess,
+  ResourceAccessContext,
+} from '#src/integrations/resource-access.js';
 import type {
   integrations as integrationsTable,
   providerConnections as providerConnectionsTable,
@@ -130,15 +135,15 @@ export interface SyncContext {
    * silently skipped. Returns the ids of the newly inserted raw_events
    * rows (skipped duplicates not included).
    */
-  writeEvents(events: IntegrationEvent[]): Promise<string[]>;
+  writeEvents: (events: IntegrationEvent[]) => Promise<string[]>;
   /** Provider may emit progress notes into the audit log mid-sync. */
-  recordAudit(kind: string, payload: Record<string, unknown>): Promise<void>;
+  recordAudit: (kind: string, payload: Record<string, unknown>) => Promise<void>;
   /** Update the per-resource cursor after a successful page or surface-specific failure. */
-  saveCursor(
+  saveCursor: (
     resourceType: string,
     cursor: unknown,
     status?: { lastStatus?: string; lastError?: string | null },
-  ): Promise<void>;
+  ) => Promise<void>;
   /**
    * Record a cursor and the exact continuation(s) needed to resume it for the
    * worker's final durable checkpoint transaction. Providers with
@@ -149,14 +154,14 @@ export interface SyncContext {
    * callers that do not persist cursors. The integration worker always
    * supplies it.
    */
-  saveCursorWithContinuations?(
+  saveCursorWithContinuations?: (
     resourceType: string,
     cursor: unknown,
     continuations: SyncContinuation[],
     status?: { lastStatus?: string; lastError?: string | null },
-  ): Promise<void>;
+  ) => Promise<void>;
   /** Load the last persisted cursor for a resource. Returns `{}` when unset. */
-  loadCursor(resourceType: string): Promise<unknown>;
+  loadCursor: (resourceType: string) => Promise<unknown>;
   /**
    * Phase 11 — Drive body harvest. Optional: providers that have file
    * bodies (Drive) can call this to route a file into the team document
@@ -164,172 +169,20 @@ export interface SyncContext {
    * → embed). Idempotent on externalId — re-harvesting the same file
    * updates the existing document by adding a new version.
    */
-  harvestDocument?(input: HarvestDocumentInput): Promise<{ documentId: string; versionId: string }>;
+  harvestDocument?: (
+    input: HarvestDocumentInput,
+  ) => Promise<{ documentId: string; versionId: string }>;
   /**
    * Enqueue a targeted follow-up for one resource. Drive reuses the GitHub /
    * Monday targeted `integration-sync` job with delay so per-file processing
    * can debounce after `changes.watch`.
    */
-  scheduleTargetedSync?(
+  scheduleTargetedSync?: (
     task: TargetedSyncTask,
     opts?: { delayMs?: number; replaceDelayed?: boolean },
-  ): Promise<void>;
-  /**
-   * Enqueue a credential-thin document-extract job for Drive PDF/Word/Slides.
-   * The main worker must not run Daytona or billed vision itself (ADR 0013).
-   */
-  enqueueTransientDriveExtract?(input: {
-    fileId: string;
-    filename: string;
-    contentType: string;
-    body: Buffer;
-    revisionId?: string;
-  }): Promise<void>;
-  /**
-   * Read a previously enqueued Drive transient extract. `pending` means the
-   * orchestrator has not written a result yet (stale pending is re-enqueued
-   * by the worker). `failed` is a visible error; the provider clears that
-   * state and retries within the extract budget rather than blocking forever.
-   * `revisionId` is the Drive revision stamped when those bytes were uploaded.
-   */
-  loadTransientDriveExtract?(
-    fileId: string,
-  ): Promise<
-    | { status: 'pending'; revisionId?: string; reschedule?: boolean }
-    | { status: 'ready'; text: string; revisionId?: string }
-    | { status: 'failed'; error: string; revisionId?: string }
-    | null
-  >;
-  /** Delete the transient source/result objects and clear the extract cursor. */
-  consumeTransientDriveExtract?(fileId: string): Promise<void>;
-  /**
-   * Cancel an in-flight extract (missing/out-of-scope/unsupported, or a
-   * superseded revision still producing). Keeps a cleanup tombstone until the
-   * producer wait window elapses so a late `result.json` is not orphaned after
-   * S3 404 is treated as success.
-   */
-  cancelTransientDriveExtract?(fileId: string): Promise<void>;
-  /**
-   * Paid Drive extract budget (4/file/day, 40/connection/day), checked before
-   * Daytona/vision spend. Tests inject this; production uses
-   * `takeDriveExtractSlot`. Exhaustion must return a delayed continuation
-   * rather than completing the targeted capture.
-   */
-  takeDriveExtractSlot?(input: {
-    integrationId: string;
-    fileId: string;
-  }): Promise<
-    { allowed: true } | { allowed: false; reason: 'file' | 'connection'; retryAfterMs: number }
-  >;
-  /**
-   * Post-diff Drive processing budget (8/file/day, 200/connection/day). Tests
-   * inject this; production uses `takeDriveProcessSlot`. Exhaustion must
-   * return a delayed continuation rather than completing the targeted capture.
-   */
-  takeDriveProcessSlot?(input: {
-    integrationId: string;
-    fileId: string;
-  }): Promise<
-    { allowed: true } | { allowed: false; reason: 'file' | 'connection'; retryAfterMs: number }
-  >;
-  loadLatestDriveSnapshot?(fileId: string): Promise<{
-    contentHash: string;
-    snapshotText: string;
-    commentsHash: string | null;
-    permissionsHash: string | null;
-    mimeType: string | null;
-    commentsSnapshot?: unknown;
-    permissionsSnapshot?: {
-      id: string;
-      type: string;
-      role: string;
-      email: string;
-      domain: string;
-    }[];
-    snapshotLocate?: {
-      length: number;
-      suffix: string;
-      chunkSize: number;
-      chunkHashes: string[];
-      chunkTexts: string[];
-    } | null;
-    ancestry?: {
-      parentIds: string[];
-      driveId: string | null;
-      matchedAncestorId: string | null;
-      inheritedCandidates: string[] | null;
-    } | null;
-  } | null>;
-  saveDriveSnapshot?(input: {
-    contentHash: string;
-    snapshotText: string;
-    commentsHash: string | null;
-    permissionsHash: string | null;
-    mimeType: string | null;
-    commentsSnapshot?: unknown;
-    permissionsSnapshot?: {
-      id: string;
-      type: string;
-      role: string;
-      email: string;
-      domain: string;
-    }[];
-    snapshotLocate?: {
-      length: number;
-      suffix: string;
-      chunkSize: number;
-      chunkHashes: string[];
-      chunkTexts: string[];
-    } | null;
-    ancestry?: {
-      parentIds: string[];
-      driveId: string | null;
-      matchedAncestorId: string | null;
-      inheritedCandidates: string[] | null;
-    } | null;
-    fileId: string;
-  }): Promise<void>;
-  /** Delete retained Drive snapshots for a missing or out-of-scope file. */
-  deleteDriveSnapshotsForFile?(fileId: string): Promise<void>;
-  /**
-   * Coverage-aware snapshot/extract cleanup after the watchable selection set
-   * empties or narrows (share revoke, last selection, disconnect leftovers).
-   */
-  cleanupUncoveredDriveTrackedFiles?(
-    remainingSelections: { kind: string; externalId: string }[],
-  ): Promise<void>;
-  /** Snapshot delete plus extract cancel for one tracked Drive file. */
-  discardDriveTrackedFile?(fileId: string): Promise<void>;
-  listTeamEmailDomains?(): Promise<string[]>;
-  /** Tracked Drive files whose stored ancestry includes this folder or shared drive. */
-  listDriveTrackedDescendantFileIds?(ancestorId: string): Promise<string[]>;
-  linkedObjectForDriveSelection?(
-    fileId: string,
-    parentIds: string[],
-    matchedAncestorId?: string | null,
-    linkContext?: { driveId?: string | null; myDriveRootId?: string | null },
-  ): Promise<{
-    id: string;
-    canonicalName: string;
-    type: string;
-    inheritedFrom?: string;
-    inheritedCandidates?: string[];
-  } | null>;
-  /**
-   * Optional Drive CRM-relevance judge. Tests inject this; the worker leaves
-   * it unset so the provider bills through `llm.chatStructured`.
-   */
-  judgeDriveChange?(input: {
-    fileName: string;
-    mimeType: string;
-    hunks: string[];
-    strongSignals: string[];
-  }): Promise<{
-    matters: boolean;
-    reason:
-      'crm_update' | 'status_change' | 'client_share' | 'comment' | 'decision' | 'noise' | 'other';
-    summary: string;
-  }>;
+  ) => Promise<void>;
+  /** Required capture services are assembled only for the Drive provider. */
+  drive?: DriveCaptureServices;
   /**
    * Persist refreshed OAuth tokens back to the integration row. Providers
    * call this after `ensureAccessToken` (or the equivalent refresh path)
@@ -337,7 +190,7 @@ export interface SyncContext {
    * worker keeps the old ciphertext and every sync repeats the refresh.
    * The worker writes via `adminPersistTokens` (AES-256-GCM at rest).
    */
-  persistTokens(tokens: Record<string, unknown>): Promise<void>;
+  persistTokens: (tokens: Record<string, unknown>) => Promise<void>;
 }
 
 export interface SyncPartialFailure {
@@ -377,6 +230,17 @@ export interface SyncTarget {
   surface?: string;
   reason?: string;
   triggeredBy?: string;
+}
+
+export interface SyncSelection {
+  kind: string;
+  externalId: string;
+}
+
+export interface SyncSelectionPolicy {
+  /** Shared feeds must consume changes for all selections whenever any selection is due. */
+  recovery: 'all' | 'shared_cursor' | 'per_resource';
+  resolveTarget(selections: SyncSelection[], target: SyncTarget): SyncSelection[];
 }
 
 export type NativeProviderId = IntegrationProvider['id'];
@@ -701,7 +565,7 @@ export type WebhookHandleResult = IntegrationEvent[] | WebhookNormalizeResult;
 export interface WebhookProvisionInput {
   integration: IntegrationRow;
   tokens: unknown;
-  selections: { kind: string; externalId: string }[];
+  selections: SyncSelection[];
   existingSubscriptions?: WebhookSubscription[];
   ctx?: WebhookProvisionContext;
 }
@@ -710,7 +574,7 @@ export interface WebhookDeprovisionInput {
   integration: IntegrationRow;
   tokens: unknown;
   subscription: WebhookSubscription;
-  ctx?: ListSyncableResourcesContext;
+  ctx?: ResourceAccessContext;
 }
 
 export interface WebhookSubscription {
@@ -721,7 +585,7 @@ export interface WebhookSubscription {
   expiresAt?: Date | null;
 }
 
-export interface WebhookProvisionContext extends ListSyncableResourcesContext {
+export interface WebhookProvisionContext extends ResourceAccessContext {
   /**
    * Persist a provider-side hook immediately after it is created. Provider
    * provisioning is not transactional with our database, so callers should use
@@ -762,21 +626,6 @@ export interface ProviderResource {
   searchText?: string;
 }
 
-export interface ListSyncableResourcesContext {
-  /**
-   * Persist refreshed OAuth tokens while listing picker resources. Without
-   * this, a provider can successfully refresh for the list call but leave the
-   * encrypted connection with the expired token.
-   */
-  persistTokens(tokens: Record<string, unknown>): Promise<void>;
-  /** Drive folder/shared-drive id to list children for the source picker. */
-  parentId?: string;
-  /** Drive filename contains query for the source picker. */
-  query?: string;
-  /** Existing or proposed picker ids to re-validate without listing the whole tree. */
-  includeIds?: { kind: string; externalId: string }[];
-}
-
 export interface OAuthStartInput {
   teamId: string;
   userId: string;
@@ -804,9 +653,10 @@ export interface OAuthCallbackOutput {
   accessTokenExpiresAt?: Date;
 }
 
-export interface IntegrationProvider {
+export interface IntegrationProvider extends ProviderResourceAccess {
   id: 'google_drive' | 'linear' | 'github' | 'monday' | 'slack' | 'sentry';
   displayLabel: string;
+  syncSelectionPolicy: SyncSelectionPolicy;
   /**
    * Build the OAuth authorize URL. Returns the URL only — the route
    * handler is responsible for redirecting the browser. The `state`
@@ -820,15 +670,6 @@ export interface IntegrationProvider {
    */
   handleOAuthCallback(input: OAuthCallbackInput): Promise<OAuthCallbackOutput>;
   /**
-   * List the resources the user can pick to sync (folders, projects,
-   * repos). Called by the settings UI after the OAuth handshake.
-   */
-  listSyncableResources(
-    integration: IntegrationRow,
-    tokens: unknown,
-    ctx?: ListSyncableResourcesContext,
-  ): Promise<ProviderResource[]>;
-  /**
    * Full backfill of the chosen resources. Idempotent under the
    * dedup_key index. Must paginate internally and call
    * `ctx.saveCursor()` after each page so a crash resumes from the
@@ -838,7 +679,7 @@ export interface IntegrationProvider {
     purpose?: 'backfill' | 'resync';
     integration: IntegrationRow;
     tokens: unknown;
-    selections: { kind: string; externalId: string }[];
+    selections: SyncSelection[];
     ctx: SyncContext;
   }): Promise<SyncResult | undefined>;
   /**
@@ -848,7 +689,7 @@ export interface IntegrationProvider {
     purpose?: 'recovery' | 'webhook';
     integration: IntegrationRow;
     tokens: unknown;
-    selections: { kind: string; externalId: string }[];
+    selections: SyncSelection[];
     ctx: SyncContext;
     target?: SyncTarget;
   }): Promise<SyncResult | undefined>;
