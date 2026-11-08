@@ -10,6 +10,13 @@ text is sparse or the input is an image.
 
 ## Context
 
+The Drive wire format and result bounds live in
+`packages/shared/src/integrations/drive-extract-protocol.ts`. Shared cleanup
+transitions live in `drive-extract-lifecycle.ts` beside it; worker publication,
+polling, and sweeps live in `apps/worker/src/integrations/drive-extract-runtime.ts`.
+The credential-thin producer imports the protocol directly rather than workspace
+capture persistence. Sync and janitor call the same worker lifecycle owner.
+
 Document upload, chat attachments, inbound email, integration harvest, and
 Drive v1 PDF/Word/Slides capture all enqueue `document-extract`. Drive does not
 harvest into the document drive: the main worker uploads bytes to a transient

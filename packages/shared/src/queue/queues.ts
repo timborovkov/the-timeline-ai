@@ -1,6 +1,7 @@
 import { Queue, type JobsOptions } from 'bullmq';
 
 import { getEnv } from '#src/env.js';
+import { driveExtractResumeJobIdentity } from '#src/integrations/google-drive-scheduling.js';
 import { defaultDigestWindow } from '#src/messaging/digest-window.js';
 import { tagOperatorJob } from '#src/platform-admin/runtime.js';
 import { getRedisConnection } from '#src/queue/connection.js';
@@ -685,11 +686,6 @@ export function isDriveTransientExtractJob(
   return data.kind === 'drive_transient';
 }
 
-/** Surface stamped on the `drive.file` continuation that picks up one extract. */
-export function driveTransientExtractResumeSurface(extractId: string): string {
-  return `extract:${extractId}`;
-}
-
 const DOCUMENT_EXTRACT_JOB_DEDUPE_STATES = new Set([
   'active',
   'delayed',
@@ -970,35 +966,12 @@ function integrationSyncJobId(data: IntegrationSyncJobData): string | undefined 
     return bullmqCustomJobId(['integration-reconcile', data.integrationId]);
   }
   if (data.kind !== 'targeted') return undefined;
-  // Durable outbox handoffs keep a unique job id even when a lock-retry
-  // still carries `drive_watch`. Colliding with the originating debounce
-  // id would ack the handoff without enqueueing the continuation.
+  const driveResumeIdentity = driveExtractResumeJobIdentity(data);
+  if (driveResumeIdentity) return bullmqCustomJobId(driveResumeIdentity);
   if (data.continuationHandoffId) {
-    if (data.reason === 'drive_transient_extract') {
-      return bullmqCustomJobId([
-        'integration-drive-extract-resume',
-        data.integrationId,
-        data.externalId,
-        data.continuationHandoffId,
-      ]);
-    }
     return bullmqCustomJobId(['integration-pagination-continuation', data.continuationHandoffId]);
   }
-  if (data.reason === 'provider_pagination_continuation') {
-    return undefined;
-  }
-  // Extract resumes must not share the originating `drive.file` debounce
-  // id (`…|all`). If that job is still active, delayed, or waiting,
-  // `enqueueIntegrationSyncJob` would otherwise silently drop the
-  // continuation after the changes cursor has already advanced.
-  if (data.reason === 'drive_transient_extract') {
-    return bullmqCustomJobId([
-      'integration-drive-extract-resume',
-      data.integrationId,
-      data.externalId,
-      data.surface ?? 'resume',
-    ]);
-  }
+  if (data.reason === 'provider_pagination_continuation') return undefined;
   return bullmqCustomJobId([
     'integration-targeted',
     data.integrationId,

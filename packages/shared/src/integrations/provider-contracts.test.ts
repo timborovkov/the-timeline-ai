@@ -14,7 +14,8 @@ import {
 const requiredAdapterMethods = [
   'startOAuth',
   'handleOAuthCallback',
-  'listSyncableResources',
+  'browseResources',
+  'validateResourceSelections',
   'backfill',
   'incrementalSync',
 ] as const;

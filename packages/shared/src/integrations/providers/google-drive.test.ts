@@ -2,6 +2,10 @@ import { expect } from '@timeline/test-support';
 import { vi } from '@timeline/test-support';
 import { afterEach, beforeEach, describe, it } from 'bun:test';
 
+import type {
+  DriveCaptureServices,
+  DriveSyncContext,
+} from '#src/integrations/google-drive-context.js';
 import type { IntegrationEvent, SyncContext, SyncResult } from '#src/integrations/types.js';
 
 const externalFetchMock = vi.hoisted(() =>
@@ -256,40 +260,25 @@ function driveSpreadsheetFetch(options: {
 }
 
 function syncContext(
-  overrides: Partial<SyncContext> = {},
-): Pick<
-  SyncContext,
-  | 'loadCursor'
-  | 'saveCursor'
-  | 'writeEvents'
-  | 'persistTokens'
-  | 'recordAudit'
-  | 'scheduleTargetedSync'
-  | 'loadLatestDriveSnapshot'
-  | 'saveDriveSnapshot'
-  | 'listTeamEmailDomains'
-  | 'judgeDriveChange'
-  | 'enqueueTransientDriveExtract'
-  | 'loadTransientDriveExtract'
-  | 'consumeTransientDriveExtract'
-  | 'cancelTransientDriveExtract'
-  | 'deleteDriveSnapshotsForFile'
-  | 'cleanupUncoveredDriveTrackedFiles'
-  | 'discardDriveTrackedFile'
-  | 'takeDriveExtractSlot'
-  | 'takeDriveProcessSlot'
-> &
-  Partial<SyncContext> {
-  return {
-    loadCursor: vi.fn().mockResolvedValue({}),
-    saveCursor: vi.fn().mockResolvedValue(undefined),
-    writeEvents: vi.fn<SyncContext['writeEvents']>().mockResolvedValue([]),
-    persistTokens: vi.fn(),
-    recordAudit: vi.fn().mockResolvedValue(undefined),
+  overrides: Partial<Omit<DriveSyncContext, 'drive'>> = {},
+): SyncContext & { drive: DriveCaptureServices } {
+  const {
+    loadCursor = vi.fn().mockResolvedValue({}),
+    saveCursor = vi.fn().mockResolvedValue(undefined),
+    writeEvents = vi.fn<SyncContext['writeEvents']>().mockResolvedValue([]),
+    persistTokens = vi.fn(),
+    recordAudit = vi.fn().mockResolvedValue(undefined),
+    saveCursorWithContinuations,
+    harvestDocument,
+    ...driveOverrides
+  } = overrides;
+  const drive: DriveCaptureServices = {
     scheduleTargetedSync: vi.fn().mockResolvedValue(undefined),
     loadLatestDriveSnapshot: vi.fn().mockResolvedValue(null),
     saveDriveSnapshot: vi.fn().mockResolvedValue(undefined),
     listTeamEmailDomains: vi.fn().mockResolvedValue(['acme.test']),
+    listDriveTrackedDescendantFileIds: vi.fn().mockResolvedValue([]),
+    linkedObjectForDriveSelection: vi.fn().mockResolvedValue(null),
     judgeDriveChange: vi.fn().mockResolvedValue({
       matters: true,
       reason: 'crm_update',
@@ -301,9 +290,23 @@ function syncContext(
     cancelTransientDriveExtract: vi.fn().mockResolvedValue(undefined),
     deleteDriveSnapshotsForFile: vi.fn().mockResolvedValue(undefined),
     cleanupUncoveredDriveTrackedFiles: vi.fn().mockResolvedValue(undefined),
+    discardDriveTrackedFile: vi.fn(async (fileId: string) => {
+      await drive.deleteDriveSnapshotsForFile(fileId);
+      await drive.cancelTransientDriveExtract(fileId);
+    }),
     takeDriveExtractSlot: vi.fn().mockResolvedValue({ allowed: true }),
     takeDriveProcessSlot: vi.fn().mockResolvedValue({ allowed: true }),
-    ...overrides,
+    ...driveOverrides,
+  };
+  return {
+    loadCursor,
+    saveCursor,
+    writeEvents,
+    persistTokens,
+    recordAudit,
+    ...(saveCursorWithContinuations ? { saveCursorWithContinuations } : {}),
+    ...(harvestDocument ? { harvestDocument } : {}),
+    drive,
   };
 }
 
@@ -497,6 +500,25 @@ describe('googleDriveProvider', () => {
     vi.unstubAllGlobals();
   });
 
+  it('rejects missing Drive services before reading provider data or writing a baseline', async () => {
+    const { drive: _drive, ...ctx } = syncContext();
+    const fetch = vi.fn();
+    vi.stubGlobal('fetch', fetch);
+
+    await expect(
+      googleDriveProvider.incrementalSync({
+        integration: { id: 'integration-1', teamId: 'team-1' } as never,
+        tokens: { access_token: 'access-token', expires_at: Date.now() + 600_000 },
+        selections: [{ kind: 'drive.file', externalId: 'file-1' }],
+        ctx,
+        target: { resourceType: 'drive.file', externalId: 'file-1' },
+      }),
+    ).rejects.toThrow('Drive capture services are required');
+    expect(fetch).not.toHaveBeenCalled();
+    expect(ctx.loadCursor).not.toHaveBeenCalled();
+    expect(ctx.writeEvents).not.toHaveBeenCalled();
+  });
+
   it('propagates a resource-picker quota pause instead of returning an incomplete success', async () => {
     vi.stubGlobal(
       'fetch',
@@ -510,7 +532,7 @@ describe('googleDriveProvider', () => {
         ),
     );
     await expect(
-      googleDriveProvider.listSyncableResources({ id: 'i' } as never, {
+      googleDriveProvider.browseResources({ id: 'i' } as never, {
         access_token: 'token',
         expires_at: Date.now() + 600_000,
       }),
@@ -664,10 +686,10 @@ describe('googleDriveProvider', () => {
     );
     vi.stubGlobal('fetch', fetch);
 
-    const resources = await googleDriveProvider.listSyncableResources(
-      { id: 'integration-1' } as never,
-      { access_token: 'access-token', expires_at: Date.now() + 600_000 },
-    );
+    const resources = await googleDriveProvider.browseResources({ id: 'integration-1' } as never, {
+      access_token: 'access-token',
+      expires_at: Date.now() + 600_000,
+    });
 
     expect(resources).toEqual([
       { externalId: 'root', label: 'My Drive (root)', kind: 'drive.folder' },
@@ -714,7 +736,7 @@ describe('googleDriveProvider', () => {
     });
     vi.stubGlobal('fetch', fetch);
 
-    const children = await googleDriveProvider.listSyncableResources(
+    const children = await googleDriveProvider.browseResources(
       { id: 'integration-1' } as never,
       { access_token: 'access-token', expires_at: Date.now() + 600_000 },
       {
@@ -727,13 +749,11 @@ describe('googleDriveProvider', () => {
       { externalId: 'nested', label: 'Nested', kind: 'drive.folder' },
     ]);
 
-    const included = await googleDriveProvider.listSyncableResources(
+    const included = await googleDriveProvider.validateResourceSelections(
       { id: 'integration-1' } as never,
       { access_token: 'access-token', expires_at: Date.now() + 600_000 },
-      {
-        persistTokens: vi.fn(),
-        includeIds: [{ kind: 'drive.file', externalId: 'file-9' }],
-      },
+      [{ kind: 'drive.file', externalId: 'file-9' }],
+      { persistTokens: vi.fn() },
     );
     expect(included).toEqual([{ externalId: 'file-9', label: 'Kept', kind: 'drive.file' }]);
   });
@@ -758,7 +778,7 @@ describe('googleDriveProvider', () => {
       selections: [],
       ctx: ctx,
     });
-    expect(ctx.cleanupUncoveredDriveTrackedFiles).toHaveBeenCalledWith([]);
+    expect(ctx.drive.cleanupUncoveredDriveTrackedFiles).toHaveBeenCalledWith([]);
     expect(ctx.loadCursor).not.toHaveBeenCalled();
     expect(ctx.writeEvents).not.toHaveBeenCalled();
   });
@@ -774,7 +794,7 @@ describe('googleDriveProvider', () => {
       ctx: ctx,
     });
     expect(ctx.saveCursor).toHaveBeenCalledWith('drive.changes', { page_token: 'start-9' });
-    expect(ctx.scheduleTargetedSync).not.toHaveBeenCalled();
+    expect(ctx.drive.scheduleTargetedSync).not.toHaveBeenCalled();
     expect(ctx.writeEvents).not.toHaveBeenCalled();
   });
 
@@ -853,8 +873,8 @@ describe('googleDriveProvider', () => {
     });
 
     expect(ctx.writeEvents).not.toHaveBeenCalled();
-    expect(ctx.scheduleTargetedSync).toHaveBeenCalledTimes(2);
-    expect(ctx.scheduleTargetedSync).toHaveBeenCalledWith(
+    expect(ctx.drive.scheduleTargetedSync).toHaveBeenCalledTimes(2);
+    expect(ctx.drive.scheduleTargetedSync).toHaveBeenCalledWith(
       expect.objectContaining({
         resourceType: 'drive.file',
         externalId: 'file-1',
@@ -862,7 +882,7 @@ describe('googleDriveProvider', () => {
       }),
       expect.objectContaining({ delayMs: DRIVE_FILE_DEBOUNCE_MS, replaceDelayed: true }),
     );
-    expect(ctx.scheduleTargetedSync).toHaveBeenCalledWith(
+    expect(ctx.drive.scheduleTargetedSync).toHaveBeenCalledWith(
       expect.objectContaining({ externalId: 'file-3' }),
       expect.objectContaining({ replaceDelayed: true }),
     );
@@ -913,7 +933,7 @@ describe('googleDriveProvider', () => {
     });
 
     expect(listDriveTrackedDescendantFileIds).toHaveBeenCalledWith('clients-folder');
-    expect(ctx.scheduleTargetedSync).toHaveBeenCalledWith(
+    expect(ctx.drive.scheduleTargetedSync).toHaveBeenCalledWith(
       expect.objectContaining({
         resourceType: 'drive.file',
         externalId: 'sow-doc',
@@ -921,14 +941,14 @@ describe('googleDriveProvider', () => {
       }),
       expect.objectContaining({ delayMs: DRIVE_FILE_DEBOUNCE_MS, replaceDelayed: true }),
     );
-    expect(ctx.scheduleTargetedSync).toHaveBeenCalledWith(
+    expect(ctx.drive.scheduleTargetedSync).toHaveBeenCalledWith(
       expect.objectContaining({
         externalId: 'pricing-sheet',
         reason: 'drive_folder_acl',
       }),
       expect.objectContaining({ replaceDelayed: true }),
     );
-    expect(ctx.scheduleTargetedSync).not.toHaveBeenCalledWith(
+    expect(ctx.drive.scheduleTargetedSync).not.toHaveBeenCalledWith(
       expect.objectContaining({ externalId: 'clients-folder' }),
       expect.anything(),
     );
@@ -974,7 +994,7 @@ describe('googleDriveProvider', () => {
       ctx: ctx,
     });
 
-    expect(ctx.scheduleTargetedSync).not.toHaveBeenCalled();
+    expect(ctx.drive.scheduleTargetedSync).not.toHaveBeenCalled();
   });
 
   it('keeps later nested files in scope after walking a shared ancestry cache', async () => {
@@ -1029,12 +1049,12 @@ describe('googleDriveProvider', () => {
     });
 
     expect(fetchedFolders).toEqual(['nested']);
-    expect(ctx.scheduleTargetedSync).toHaveBeenCalledTimes(2);
-    expect(ctx.scheduleTargetedSync).toHaveBeenCalledWith(
+    expect(ctx.drive.scheduleTargetedSync).toHaveBeenCalledTimes(2);
+    expect(ctx.drive.scheduleTargetedSync).toHaveBeenCalledWith(
       expect.objectContaining({ externalId: 'file-a', reason: 'drive_watch' }),
       expect.objectContaining({ replaceDelayed: true }),
     );
-    expect(ctx.scheduleTargetedSync).toHaveBeenCalledWith(
+    expect(ctx.drive.scheduleTargetedSync).toHaveBeenCalledWith(
       expect.objectContaining({ externalId: 'file-b', reason: 'drive_watch' }),
       expect.objectContaining({ replaceDelayed: true }),
     );
@@ -1082,7 +1102,7 @@ describe('googleDriveProvider', () => {
       ctx: ctx,
     });
 
-    expect(ctx.scheduleTargetedSync).toHaveBeenCalledWith(
+    expect(ctx.drive.scheduleTargetedSync).toHaveBeenCalledWith(
       expect.objectContaining({
         resourceType: 'drive.file',
         externalId: 'file-in-my-drive',
@@ -1140,14 +1160,14 @@ describe('googleDriveProvider', () => {
       ([input]) => requestUrl(input).searchParams.get('alt') === 'media',
     );
     expect(downloadCall?.[2]).toMatchObject({ maxResponseBytes: 20 * 1024 * 1024 });
-    expect(ctx.enqueueTransientDriveExtract).toHaveBeenCalledOnce();
-    expect(ctx.enqueueTransientDriveExtract).toHaveBeenCalledWith(
+    expect(ctx.drive.enqueueTransientDriveExtract).toHaveBeenCalledOnce();
+    expect(ctx.drive.enqueueTransientDriveExtract).toHaveBeenCalledWith(
       expect.objectContaining({
         fileId: 'file-1',
         revisionId: 'mod:2026-06-20T10:00:00.000Z',
       }),
     );
-    expect(ctx.takeDriveExtractSlot).toHaveBeenCalledWith({
+    expect(ctx.drive.takeDriveExtractSlot).toHaveBeenCalledWith({
       integrationId: 'integration-1',
       fileId: 'file-1',
     });
@@ -1201,21 +1221,27 @@ describe('googleDriveProvider', () => {
       target: { resourceType: 'drive.file', externalId: 'file-1' },
     });
 
-    expect(ctx.enqueueTransientDriveExtract).not.toHaveBeenCalled();
-    expect(ctx.consumeTransientDriveExtract).toHaveBeenCalledWith('file-1');
+    expect(ctx.drive.enqueueTransientDriveExtract).not.toHaveBeenCalled();
+    expect(ctx.drive.consumeTransientDriveExtract).toHaveBeenCalledWith('file-1');
     expect(
       (ctx.writeEvents as unknown as { mock: { invocationCallOrder: number[] } }).mock
         .invocationCallOrder[0] ?? 0,
     ).toBeLessThan(
-      (ctx.consumeTransientDriveExtract as unknown as { mock: { invocationCallOrder: number[] } })
-        .mock.invocationCallOrder[0] ?? 0,
+      (
+        ctx.drive.consumeTransientDriveExtract as unknown as {
+          mock: { invocationCallOrder: number[] };
+        }
+      ).mock.invocationCallOrder[0] ?? 0,
     );
     expect(
-      (ctx.saveDriveSnapshot as unknown as { mock: { invocationCallOrder: number[] } }).mock
+      (ctx.drive.saveDriveSnapshot as unknown as { mock: { invocationCallOrder: number[] } }).mock
         .invocationCallOrder[0] ?? 0,
     ).toBeLessThan(
-      (ctx.consumeTransientDriveExtract as unknown as { mock: { invocationCallOrder: number[] } })
-        .mock.invocationCallOrder[0] ?? 0,
+      (
+        ctx.drive.consumeTransientDriveExtract as unknown as {
+          mock: { invocationCallOrder: number[] };
+        }
+      ).mock.invocationCallOrder[0] ?? 0,
     );
     const events: IntegrationEvent[] = (
       ctx.writeEvents as unknown as { mock: { calls: [IntegrationEvent[]][] } }
@@ -1274,9 +1300,9 @@ describe('googleDriveProvider', () => {
       }),
     ).rejects.toThrow('db down');
 
-    expect(ctx.enqueueTransientDriveExtract).not.toHaveBeenCalled();
-    expect(ctx.consumeTransientDriveExtract).not.toHaveBeenCalled();
-    expect(ctx.saveDriveSnapshot).not.toHaveBeenCalled();
+    expect(ctx.drive.enqueueTransientDriveExtract).not.toHaveBeenCalled();
+    expect(ctx.drive.consumeTransientDriveExtract).not.toHaveBeenCalled();
+    expect(ctx.drive.saveDriveSnapshot).not.toHaveBeenCalled();
   });
 
   it('does not re-enqueue a terminal oversized extract result', async () => {
@@ -1315,9 +1341,9 @@ describe('googleDriveProvider', () => {
       target: { resourceType: 'drive.file', externalId: 'file-1' },
     });
 
-    expect(ctx.consumeTransientDriveExtract).toHaveBeenCalledWith('file-1');
-    expect(ctx.enqueueTransientDriveExtract).not.toHaveBeenCalled();
-    expect(ctx.takeDriveExtractSlot).not.toHaveBeenCalled();
+    expect(ctx.drive.consumeTransientDriveExtract).toHaveBeenCalledWith('file-1');
+    expect(ctx.drive.enqueueTransientDriveExtract).not.toHaveBeenCalled();
+    expect(ctx.drive.takeDriveExtractSlot).not.toHaveBeenCalled();
     expect(ctx.recordAudit).toHaveBeenCalledWith(
       'drive_extract_failed',
       expect.objectContaining({
@@ -1369,9 +1395,9 @@ describe('googleDriveProvider', () => {
       target: { resourceType: 'drive.file', externalId: 'file-1' },
     });
 
-    expect(ctx.cancelTransientDriveExtract).toHaveBeenCalledWith('file-1');
-    expect(ctx.consumeTransientDriveExtract).not.toHaveBeenCalled();
-    expect(ctx.enqueueTransientDriveExtract).toHaveBeenCalledWith(
+    expect(ctx.drive.cancelTransientDriveExtract).toHaveBeenCalledWith('file-1');
+    expect(ctx.drive.consumeTransientDriveExtract).not.toHaveBeenCalled();
+    expect(ctx.drive.enqueueTransientDriveExtract).toHaveBeenCalledWith(
       expect.objectContaining({
         fileId: 'file-1',
         body,
@@ -1436,13 +1462,13 @@ describe('googleDriveProvider', () => {
       target: { resourceType: 'drive.file', externalId: 'file-1' },
     });
 
-    expect(ctx.cancelTransientDriveExtract).toHaveBeenCalledWith('file-1');
-    expect(ctx.consumeTransientDriveExtract).not.toHaveBeenCalled();
+    expect(ctx.drive.cancelTransientDriveExtract).toHaveBeenCalledWith('file-1');
+    expect(ctx.drive.consumeTransientDriveExtract).not.toHaveBeenCalled();
     expect(ctx.writeEvents).not.toHaveBeenCalled();
-    expect(ctx.enqueueTransientDriveExtract).toHaveBeenCalledWith(
+    expect(ctx.drive.enqueueTransientDriveExtract).toHaveBeenCalledWith(
       expect.objectContaining({ revisionId: 'rev:rev-new' }),
     );
-    expect(ctx.judgeDriveChange).not.toHaveBeenCalled();
+    expect(ctx.drive.judgeDriveChange).not.toHaveBeenCalled();
   });
 
   it('keeps a matching pending extract instead of downloading a newer copy', async () => {
@@ -1482,8 +1508,8 @@ describe('googleDriveProvider', () => {
       target: { resourceType: 'drive.file', externalId: 'file-1' },
     });
 
-    expect(ctx.enqueueTransientDriveExtract).not.toHaveBeenCalled();
-    expect(ctx.consumeTransientDriveExtract).not.toHaveBeenCalled();
+    expect(ctx.drive.enqueueTransientDriveExtract).not.toHaveBeenCalled();
+    expect(ctx.drive.consumeTransientDriveExtract).not.toHaveBeenCalled();
     expect(ctx.recordAudit).toHaveBeenCalledWith(
       'drive_extract_pending',
       expect.objectContaining({ file_id: 'file-1' }),
@@ -1492,7 +1518,7 @@ describe('googleDriveProvider', () => {
       ([input]) => requestUrl(input).searchParams.get('alt') === 'media',
     );
     expect(mediaCall).toBeUndefined();
-    expect(ctx.scheduleTargetedSync).not.toHaveBeenCalledWith(
+    expect(ctx.drive.scheduleTargetedSync).not.toHaveBeenCalledWith(
       expect.objectContaining({ reason: 'drive_transient_extract' }),
       expect.anything(),
     );
@@ -1536,7 +1562,7 @@ describe('googleDriveProvider', () => {
       target: { resourceType: 'drive.file', externalId: 'file-1' },
     });
 
-    expect(ctx.scheduleTargetedSync).toHaveBeenCalledWith(
+    expect(ctx.drive.scheduleTargetedSync).toHaveBeenCalledWith(
       expect.objectContaining({
         resourceType: 'drive.file',
         externalId: 'file-1',
@@ -1544,7 +1570,7 @@ describe('googleDriveProvider', () => {
       }),
       expect.objectContaining({ delayMs: 0 }),
     );
-    expect(ctx.saveDriveSnapshot).not.toHaveBeenCalled();
+    expect(ctx.drive.saveDriveSnapshot).not.toHaveBeenCalled();
   });
 
   it('audits a visible Drive extract failure then retries after clearing failed state', async () => {
@@ -1588,12 +1614,12 @@ describe('googleDriveProvider', () => {
     });
 
     expect(ctx.writeEvents).not.toHaveBeenCalled();
-    expect(ctx.consumeTransientDriveExtract).toHaveBeenCalledWith('file-1');
-    expect(ctx.takeDriveExtractSlot).toHaveBeenCalledWith({
+    expect(ctx.drive.consumeTransientDriveExtract).toHaveBeenCalledWith('file-1');
+    expect(ctx.drive.takeDriveExtractSlot).toHaveBeenCalledWith({
       integrationId: 'integration-1',
       fileId: 'file-1',
     });
-    expect(ctx.enqueueTransientDriveExtract).toHaveBeenCalledOnce();
+    expect(ctx.drive.enqueueTransientDriveExtract).toHaveBeenCalledOnce();
     expect(ctx.recordAudit).toHaveBeenCalledWith(
       'drive_extract_failed',
       expect.objectContaining({
@@ -1654,11 +1680,11 @@ describe('googleDriveProvider', () => {
       target: { resourceType: 'drive.file', externalId: 'file-1' },
     });
 
-    expect(ctx.consumeTransientDriveExtract).toHaveBeenCalledWith('file-1');
-    expect(ctx.enqueueTransientDriveExtract).not.toHaveBeenCalled();
+    expect(ctx.drive.consumeTransientDriveExtract).toHaveBeenCalledWith('file-1');
+    expect(ctx.drive.enqueueTransientDriveExtract).not.toHaveBeenCalled();
     expect(ctx.writeEvents).not.toHaveBeenCalled();
-    expect(ctx.saveDriveSnapshot).not.toHaveBeenCalled();
-    expect(ctx.scheduleTargetedSync).not.toHaveBeenCalled();
+    expect(ctx.drive.saveDriveSnapshot).not.toHaveBeenCalled();
+    expect(ctx.drive.scheduleTargetedSync).not.toHaveBeenCalled();
     expect(ctx.recordAudit).toHaveBeenCalledWith(
       'drive_extract_capped',
       expect.objectContaining({
@@ -1703,11 +1729,11 @@ describe('googleDriveProvider', () => {
         target: { resourceType: 'drive.file', externalId: 'file-1' },
       });
 
-      expect(ctx.enqueueTransientDriveExtract).not.toHaveBeenCalled();
-      expect(ctx.judgeDriveChange).not.toHaveBeenCalled();
+      expect(ctx.drive.enqueueTransientDriveExtract).not.toHaveBeenCalled();
+      expect(ctx.drive.judgeDriveChange).not.toHaveBeenCalled();
       expect(ctx.writeEvents).not.toHaveBeenCalled();
-      expect(ctx.saveDriveSnapshot).not.toHaveBeenCalled();
-      expect(ctx.scheduleTargetedSync).not.toHaveBeenCalled();
+      expect(ctx.drive.saveDriveSnapshot).not.toHaveBeenCalled();
+      expect(ctx.drive.scheduleTargetedSync).not.toHaveBeenCalled();
       expect(ctx.recordAudit).toHaveBeenCalledWith(
         'drive_extract_capped',
         expect.objectContaining({
@@ -1786,8 +1812,8 @@ describe('googleDriveProvider', () => {
       });
 
       expect(ctx.writeEvents).not.toHaveBeenCalled();
-      expect(ctx.saveDriveSnapshot).not.toHaveBeenCalled();
-      expect(ctx.scheduleTargetedSync).not.toHaveBeenCalled();
+      expect(ctx.drive.saveDriveSnapshot).not.toHaveBeenCalled();
+      expect(ctx.drive.scheduleTargetedSync).not.toHaveBeenCalled();
       expect(ctx.recordAudit).toHaveBeenCalledWith(
         'drive_process_capped',
         expect.objectContaining({
@@ -1847,10 +1873,10 @@ describe('googleDriveProvider', () => {
       target: { resourceType: 'drive.file', externalId: 'file-1' },
     });
 
-    expect(ctx.enqueueTransientDriveExtract).not.toHaveBeenCalled();
-    expect(ctx.judgeDriveChange).toHaveBeenCalled();
+    expect(ctx.drive.enqueueTransientDriveExtract).not.toHaveBeenCalled();
+    expect(ctx.drive.judgeDriveChange).toHaveBeenCalled();
     const judgeInput = (
-      ctx.judgeDriveChange as unknown as {
+      ctx.drive.judgeDriveChange as unknown as {
         mock: { calls: [{ hunks: string[] }][] };
       }
     ).mock.calls[0]?.[0];
@@ -1865,7 +1891,7 @@ describe('googleDriveProvider', () => {
       }
     ).mock.calls[0]?.[0]?.[0];
     expect(written?.contentText).toContain('$48k');
-    expect(ctx.saveDriveSnapshot).toHaveBeenCalledWith(
+    expect(ctx.drive.saveDriveSnapshot).toHaveBeenCalledWith(
       expect.objectContaining({
         contentHash: hashDrivePayload(nextFull),
         snapshotText: prefix,
@@ -1873,7 +1899,7 @@ describe('googleDriveProvider', () => {
       }),
     );
     const saved = (
-      ctx.saveDriveSnapshot as unknown as {
+      ctx.drive.saveDriveSnapshot as unknown as {
         mock: { calls: [{ snapshotText: string; contentHash: string }][] };
       }
     ).mock.calls[0]?.[0];
@@ -1949,17 +1975,17 @@ describe('googleDriveProvider', () => {
           url.hostname === 'sheets.googleapis.com' && url.pathname.endsWith('/values:batchGet'),
       ),
     ).toBe(true);
-    expect(ctx.enqueueTransientDriveExtract).not.toHaveBeenCalled();
-    expect(ctx.judgeDriveChange).toHaveBeenCalled();
+    expect(ctx.drive.enqueueTransientDriveExtract).not.toHaveBeenCalled();
+    expect(ctx.drive.judgeDriveChange).toHaveBeenCalled();
     expect(ctx.writeEvents).toHaveBeenCalled();
-    expect(ctx.saveDriveSnapshot).toHaveBeenCalledWith(
+    expect(ctx.drive.saveDriveSnapshot).toHaveBeenCalledWith(
       expect.objectContaining({
         contentHash: hashDrivePayload(nextWorkbook),
         snapshotText: nextWorkbook,
       }),
     );
     const saved = (
-      ctx.saveDriveSnapshot as unknown as {
+      ctx.drive.saveDriveSnapshot as unknown as {
         mock: { calls: [{ contentHash: string }][] };
       }
     ).mock.calls[0]?.[0];
@@ -2003,9 +2029,9 @@ describe('googleDriveProvider', () => {
       target: { resourceType: 'drive.file', externalId: 'file-1' },
     });
 
-    expect(ctx.judgeDriveChange).not.toHaveBeenCalled();
+    expect(ctx.drive.judgeDriveChange).not.toHaveBeenCalled();
     expect(ctx.writeEvents).not.toHaveBeenCalled();
-    expect(ctx.saveDriveSnapshot).not.toHaveBeenCalled();
+    expect(ctx.drive.saveDriveSnapshot).not.toHaveBeenCalled();
   });
 
   it('hashes every Google Doc tab so a later-tab edit is not dropped as unchanged', async () => {
@@ -2071,17 +2097,17 @@ describe('googleDriveProvider', () => {
           url.searchParams.get('suggestionsViewMode') === 'PREVIEW_WITHOUT_SUGGESTIONS',
       ),
     ).toBe(true);
-    expect(ctx.enqueueTransientDriveExtract).not.toHaveBeenCalled();
-    expect(ctx.judgeDriveChange).toHaveBeenCalled();
+    expect(ctx.drive.enqueueTransientDriveExtract).not.toHaveBeenCalled();
+    expect(ctx.drive.judgeDriveChange).toHaveBeenCalled();
     expect(ctx.writeEvents).toHaveBeenCalled();
-    expect(ctx.saveDriveSnapshot).toHaveBeenCalledWith(
+    expect(ctx.drive.saveDriveSnapshot).toHaveBeenCalledWith(
       expect.objectContaining({
         contentHash: hashDrivePayload(nextDocument),
         snapshotText: nextDocument,
       }),
     );
     const saved = (
-      ctx.saveDriveSnapshot as unknown as {
+      ctx.drive.saveDriveSnapshot as unknown as {
         mock: { calls: [{ contentHash: string }][] };
       }
     ).mock.calls[0]?.[0];
@@ -2131,9 +2157,9 @@ describe('googleDriveProvider', () => {
       target: { resourceType: 'drive.file', externalId: 'file-1' },
     });
 
-    expect(ctx.judgeDriveChange).not.toHaveBeenCalled();
+    expect(ctx.drive.judgeDriveChange).not.toHaveBeenCalled();
     expect(ctx.writeEvents).not.toHaveBeenCalled();
-    expect(ctx.saveDriveSnapshot).not.toHaveBeenCalled();
+    expect(ctx.drive.saveDriveSnapshot).not.toHaveBeenCalled();
   });
 
   it('persists live ancestry on an unchanged-content move from folder A to B', async () => {
@@ -2188,10 +2214,10 @@ describe('googleDriveProvider', () => {
       target: { resourceType: 'drive.file', externalId: 'file-1' },
     });
 
-    expect(ctx.judgeDriveChange).not.toHaveBeenCalled();
+    expect(ctx.drive.judgeDriveChange).not.toHaveBeenCalled();
     expect(ctx.writeEvents).not.toHaveBeenCalled();
-    expect(ctx.saveDriveSnapshot).toHaveBeenCalledOnce();
-    expect(ctx.saveDriveSnapshot).toHaveBeenCalledWith(
+    expect(ctx.drive.saveDriveSnapshot).toHaveBeenCalledOnce();
+    expect(ctx.drive.saveDriveSnapshot).toHaveBeenCalledWith(
       expect.objectContaining({
         contentHash: hashDrivePayload(document),
         ancestry: folderAncestry('file-1', 'folder-b'),
@@ -2247,7 +2273,7 @@ describe('googleDriveProvider', () => {
       target: { resourceType: 'drive.file', externalId: 'file-1' },
     });
 
-    expect(ctx.judgeDriveChange).not.toHaveBeenCalled();
+    expect(ctx.drive.judgeDriveChange).not.toHaveBeenCalled();
     expect(ctx.writeEvents).not.toHaveBeenCalled();
     expect(ctx.recordAudit).toHaveBeenCalledWith(
       'drive_change_skipped',
@@ -2302,9 +2328,9 @@ describe('googleDriveProvider', () => {
       target: { resourceType: 'drive.file', externalId: 'file-1' },
     });
 
-    expect(ctx.judgeDriveChange).toHaveBeenCalled();
+    expect(ctx.drive.judgeDriveChange).toHaveBeenCalled();
     const judgeInput = (
-      ctx.judgeDriveChange as unknown as {
+      ctx.drive.judgeDriveChange as unknown as {
         mock: { calls: [{ hunks: string[] }][] };
       }
     ).mock.calls[0]?.[0];
@@ -2318,7 +2344,7 @@ describe('googleDriveProvider', () => {
       }
     ).mock.calls[0]?.[0]?.[0];
     expect(written?.contentText).toContain('$48k');
-    expect(ctx.saveDriveSnapshot).toHaveBeenCalled();
+    expect(ctx.drive.saveDriveSnapshot).toHaveBeenCalled();
   });
 
   it('judges a 41,001-char renewal change at offset 20,200 instead of advancing unjudged', async () => {
@@ -2371,9 +2397,9 @@ describe('googleDriveProvider', () => {
       target: { resourceType: 'drive.file', externalId: 'file-1' },
     });
 
-    expect(ctx.judgeDriveChange).toHaveBeenCalled();
+    expect(ctx.drive.judgeDriveChange).toHaveBeenCalled();
     const judgeInput = (
-      ctx.judgeDriveChange as unknown as {
+      ctx.drive.judgeDriveChange as unknown as {
         mock: { calls: [{ hunks: string[] }][] };
       }
     ).mock.calls[0]?.[0];
@@ -2388,7 +2414,7 @@ describe('googleDriveProvider', () => {
       }
     ).mock.calls[0]?.[0]?.[0];
     expect(written?.contentText).toContain('rejected');
-    expect(ctx.saveDriveSnapshot).toHaveBeenCalledWith(
+    expect(ctx.drive.saveDriveSnapshot).toHaveBeenCalledWith(
       expect.objectContaining({
         contentHash: hashDrivePayload(nextFull),
         snapshotLocate: buildDriveSnapshotLocate(nextFull),
@@ -2458,9 +2484,9 @@ describe('googleDriveProvider', () => {
       target: { resourceType: 'drive.file', externalId: 'file-1' },
     });
 
-    expect(ctx.judgeDriveChange).toHaveBeenCalled();
+    expect(ctx.drive.judgeDriveChange).toHaveBeenCalled();
     const judgeInput = (
-      ctx.judgeDriveChange as unknown as {
+      ctx.drive.judgeDriveChange as unknown as {
         mock: { calls: [{ hunks: string[] }][] };
       }
     ).mock.calls[0]?.[0];
@@ -2475,7 +2501,7 @@ describe('googleDriveProvider', () => {
       }
     ).mock.calls[0]?.[0]?.[0];
     expect(written?.contentText).toContain('rejected');
-    expect(ctx.saveDriveSnapshot).toHaveBeenCalled();
+    expect(ctx.drive.saveDriveSnapshot).toHaveBeenCalled();
     expect(ctx.recordAudit).not.toHaveBeenCalledWith(
       'drive_change_skipped',
       expect.objectContaining({ reason: 'no_evidence' }),
@@ -2528,13 +2554,13 @@ describe('googleDriveProvider', () => {
       target: { resourceType: 'drive.file', externalId: 'file-1' },
     });
 
-    expect(ctx.judgeDriveChange).not.toHaveBeenCalled();
+    expect(ctx.drive.judgeDriveChange).not.toHaveBeenCalled();
     expect(ctx.writeEvents).not.toHaveBeenCalled();
     expect(ctx.recordAudit).toHaveBeenCalledWith(
       'drive_change_skipped',
       expect.objectContaining({ reason: 'tiny' }),
     );
-    expect(ctx.saveDriveSnapshot).toHaveBeenCalled();
+    expect(ctx.drive.saveDriveSnapshot).toHaveBeenCalled();
   });
 
   it('judges an appended contract-signing paragraph instead of saving it as formatting', async () => {
@@ -2583,9 +2609,9 @@ describe('googleDriveProvider', () => {
       target: { resourceType: 'drive.file', externalId: 'file-1' },
     });
 
-    expect(ctx.judgeDriveChange).toHaveBeenCalled();
+    expect(ctx.drive.judgeDriveChange).toHaveBeenCalled();
     const judgeInput = (
-      ctx.judgeDriveChange as unknown as {
+      ctx.drive.judgeDriveChange as unknown as {
         mock: { calls: [{ hunks: string[] }][] };
       }
     ).mock.calls[0]?.[0];
@@ -2688,9 +2714,9 @@ describe('googleDriveProvider', () => {
       target: { resourceType: 'drive.file', externalId: 'file-1' },
     });
 
-    expect(ctx.judgeDriveChange).toHaveBeenCalled();
+    expect(ctx.drive.judgeDriveChange).toHaveBeenCalled();
     const judgeInput = (
-      ctx.judgeDriveChange as unknown as {
+      ctx.drive.judgeDriveChange as unknown as {
         mock: { calls: [{ hunks: string[] }][] };
       }
     ).mock.calls[0]?.[0];
@@ -2749,9 +2775,9 @@ describe('googleDriveProvider', () => {
       target: { resourceType: 'drive.file', externalId: 'file-1' },
     });
 
-    expect(ctx.judgeDriveChange).toHaveBeenCalled();
+    expect(ctx.drive.judgeDriveChange).toHaveBeenCalled();
     const judgeInput = (
-      ctx.judgeDriveChange as unknown as {
+      ctx.drive.judgeDriveChange as unknown as {
         mock: { calls: [{ hunks: string[] }][] };
       }
     ).mock.calls[0]?.[0];
@@ -2839,8 +2865,8 @@ describe('googleDriveProvider', () => {
       target: { resourceType: 'drive.file', externalId: 'file-1' },
     });
 
-    expect(ctx.saveDriveSnapshot).toHaveBeenCalledOnce();
-    expect(ctx.saveDriveSnapshot).toHaveBeenCalledWith(
+    expect(ctx.drive.saveDriveSnapshot).toHaveBeenCalledOnce();
+    expect(ctx.drive.saveDriveSnapshot).toHaveBeenCalledWith(
       expect.objectContaining({
         snapshotText: 'Initial contract draft',
         ancestry: {
@@ -2851,10 +2877,10 @@ describe('googleDriveProvider', () => {
         },
       }),
     );
-    expect(ctx.judgeDriveChange).not.toHaveBeenCalled();
+    expect(ctx.drive.judgeDriveChange).not.toHaveBeenCalled();
     expect(ctx.writeEvents).not.toHaveBeenCalled();
-    expect(ctx.takeDriveExtractSlot).not.toHaveBeenCalled();
-    expect(ctx.enqueueTransientDriveExtract).not.toHaveBeenCalled();
+    expect(ctx.drive.takeDriveExtractSlot).not.toHaveBeenCalled();
+    expect(ctx.drive.enqueueTransientDriveExtract).not.toHaveBeenCalled();
     expect(ctx.saveCursor).toHaveBeenCalledWith('drive.debounce.file-1', {});
   });
 
@@ -2903,7 +2929,7 @@ describe('googleDriveProvider', () => {
         target: { resourceType: 'drive.file', externalId: 'file-1' },
       }),
     ).rejects.toThrow('write failed');
-    expect(ctx.saveDriveSnapshot).not.toHaveBeenCalled();
+    expect(ctx.drive.saveDriveSnapshot).not.toHaveBeenCalled();
   });
 
   it('includes comment text, permission fingerprint, and linked object id on Drive events', async () => {
@@ -3011,14 +3037,14 @@ describe('googleDriveProvider', () => {
       displayTitle: 'SOW',
       aliases: ['file-1'],
     });
-    expect(ctx.linkedObjectForDriveSelection).toHaveBeenCalledWith(
+    expect(ctx.drive.linkedObjectForDriveSelection).toHaveBeenCalledWith(
       'file-1',
       ['file-1', 'root'],
       'file-1',
       {},
     );
-    expect(ctx.saveDriveSnapshot).toHaveBeenCalledOnce();
-    expect(ctx.saveDriveSnapshot).toHaveBeenCalledWith(
+    expect(ctx.drive.saveDriveSnapshot).toHaveBeenCalledOnce();
+    expect(ctx.drive.saveDriveSnapshot).toHaveBeenCalledWith(
       expect.objectContaining({
         commentsSnapshot: [
           expect.objectContaining({
@@ -3034,7 +3060,7 @@ describe('googleDriveProvider', () => {
       (ctx.writeEvents as unknown as { mock: { invocationCallOrder: number[] } }).mock
         .invocationCallOrder[0] ?? 0,
     ).toBeLessThan(
-      (ctx.saveDriveSnapshot as unknown as { mock: { invocationCallOrder: number[] } }).mock
+      (ctx.drive.saveDriveSnapshot as unknown as { mock: { invocationCallOrder: number[] } }).mock
         .invocationCallOrder[0] ?? 0,
     );
   });
@@ -3193,7 +3219,7 @@ describe('googleDriveProvider', () => {
     const blob = events.map((event) => event.contentText).join('');
     expect(blob).toContain('APPROVED-$48k');
     expect(blob).toContain(longComment);
-    expect(ctx.saveDriveSnapshot).toHaveBeenCalledWith(
+    expect(ctx.drive.saveDriveSnapshot).toHaveBeenCalledWith(
       expect.objectContaining({
         commentsHash: driveCommentsHash(comments),
       }),
@@ -3264,7 +3290,7 @@ describe('googleDriveProvider', () => {
         .calls[0]?.[0] ?? [];
     const blob = events.map((event) => event.contentText).join('');
     expect(blob).toContain('Keep comment 9');
-    expect(ctx.saveDriveSnapshot).toHaveBeenCalledWith(
+    expect(ctx.drive.saveDriveSnapshot).toHaveBeenCalledWith(
       expect.objectContaining({
         commentsHash: driveCommentsHash(comments),
       }),
@@ -3339,7 +3365,7 @@ describe('googleDriveProvider', () => {
     expect(events.length).toBeGreaterThan(1);
     const blob = events.map((event) => event.contentText).join('');
     expect(blob).toContain(longComment);
-    expect(ctx.saveDriveSnapshot).toHaveBeenCalledWith(
+    expect(ctx.drive.saveDriveSnapshot).toHaveBeenCalledWith(
       expect.objectContaining({
         commentsHash: driveCommentsHash(comments),
       }),
@@ -3421,7 +3447,7 @@ describe('googleDriveProvider', () => {
     const blob = events.map((event) => event.contentText).join('');
     expect(blob).toContain(longComment);
     expect(blob).toContain('Keep comment 8');
-    expect(ctx.saveDriveSnapshot).toHaveBeenCalledWith(
+    expect(ctx.drive.saveDriveSnapshot).toHaveBeenCalledWith(
       expect.objectContaining({
         commentsHash: driveCommentsHash(comments),
       }),
@@ -3582,13 +3608,13 @@ describe('googleDriveProvider', () => {
 
     expect(ctx.writeEvents).toHaveBeenCalled();
     const saved = (
-      ctx.saveDriveSnapshot as unknown as {
+      ctx.drive.saveDriveSnapshot as unknown as {
         mock: { calls: [{ contentHash: string; commentsHash: string }][] };
       }
     ).mock.calls[0]?.[0];
     expect(saved?.contentHash).toBe(previousHash);
     expect(saved?.commentsHash).not.toBe(driveCommentsHash([]));
-    expect(ctx.judgeDriveChange).not.toHaveBeenCalled();
+    expect(ctx.drive.judgeDriveChange).not.toHaveBeenCalled();
   });
 
   it('keeps comment evidence and passages 7-8 when ten 400-char hunks would overflow the event cap', async () => {
@@ -3685,8 +3711,8 @@ describe('googleDriveProvider', () => {
     expect(preview).toContain('PASSAGE7-$48k');
     expect(preview).toContain('PASSAGE8-Northstar');
     expect(preview.indexOf('Ada (resolved):')).toBeLessThan(preview.indexOf('PASSAGE7-$48k'));
-    expect(ctx.saveDriveSnapshot).toHaveBeenCalledOnce();
-    expect(ctx.judgeDriveChange).not.toHaveBeenCalled();
+    expect(ctx.drive.saveDriveSnapshot).toHaveBeenCalledOnce();
+    expect(ctx.drive.judgeDriveChange).not.toHaveBeenCalled();
     expect(new Set(events.map((event) => event.dedupKey))).toHaveLength(events.length);
   });
 
@@ -3763,7 +3789,7 @@ describe('googleDriveProvider', () => {
     expect(preview.indexOf('Ada (removed):')).toBeLessThan(preview.indexOf('Keep comment 1'));
     expect(preview).not.toContain('Keep comment 9');
     const savedSnapshot = (
-      ctx.saveDriveSnapshot as unknown as {
+      ctx.drive.saveDriveSnapshot as unknown as {
         mock: { calls: [{ commentsSnapshot: { id: string }[] }][] };
       }
     ).mock.calls[0]?.[0];
@@ -3860,7 +3886,7 @@ describe('googleDriveProvider', () => {
     ).mock.calls.flatMap(([batch]) => batch);
     expect(events).toHaveLength(1);
     expect(events[0]?.contentText).toContain('Sam (reply): Please confirm the $48k annual term.');
-    expect(ctx.saveDriveSnapshot).toHaveBeenCalledWith(
+    expect(ctx.drive.saveDriveSnapshot).toHaveBeenCalledWith(
       expect.objectContaining({
         commentsHash: driveCommentsHash(nextComments),
       }),
@@ -4085,8 +4111,8 @@ describe('googleDriveProvider', () => {
       ctx.writeEvents as unknown as { mock: { calls: [IntegrationEvent[]][] } }
     ).mock.calls.flatMap(([batch]) => batch);
     expect(events).toHaveLength(0);
-    expect(ctx.judgeDriveChange).not.toHaveBeenCalled();
-    expect(ctx.saveDriveSnapshot).toHaveBeenCalledWith(
+    expect(ctx.drive.judgeDriveChange).not.toHaveBeenCalled();
+    expect(ctx.drive.saveDriveSnapshot).toHaveBeenCalledWith(
       expect.objectContaining({
         fileId: 'file-shared',
         permissionsHash: drivePermissionsHash(nextPermissions),
@@ -4146,7 +4172,7 @@ describe('googleDriveProvider', () => {
       target: { resourceType: 'drive.file', externalId: 'file-nested' },
     });
 
-    expect(ctx.linkedObjectForDriveSelection).toHaveBeenCalledWith(
+    expect(ctx.drive.linkedObjectForDriveSelection).toHaveBeenCalledWith(
       'file-nested',
       expect.arrayContaining(['nested', 'selected-folder']),
       'selected-folder',
@@ -4211,7 +4237,7 @@ describe('googleDriveProvider', () => {
       target: { resourceType: 'drive.file', externalId: 'file-nested' },
     });
 
-    expect(ctx.linkedObjectForDriveSelection).toHaveBeenCalledWith(
+    expect(ctx.drive.linkedObjectForDriveSelection).toHaveBeenCalledWith(
       'file-nested',
       expect.arrayContaining(['nested', 'selected-folder']),
       'file-nested',
@@ -4309,9 +4335,9 @@ describe('googleDriveProvider', () => {
       target: { resourceType: 'drive.file', externalId: 'file-1' },
     });
 
-    expect(ctx.deleteDriveSnapshotsForFile).toHaveBeenCalledWith('file-1');
-    expect(ctx.cancelTransientDriveExtract).toHaveBeenCalledWith('file-1');
-    expect(ctx.consumeTransientDriveExtract).not.toHaveBeenCalled();
+    expect(ctx.drive.deleteDriveSnapshotsForFile).toHaveBeenCalledWith('file-1');
+    expect(ctx.drive.cancelTransientDriveExtract).toHaveBeenCalledWith('file-1');
+    expect(ctx.drive.consumeTransientDriveExtract).not.toHaveBeenCalled();
     expect(ctx.writeEvents).not.toHaveBeenCalled();
     expect(ctx.recordAudit).toHaveBeenCalledWith(
       'drive_file_missing',
@@ -4347,9 +4373,9 @@ describe('googleDriveProvider', () => {
       target: { resourceType: 'drive.file', externalId: 'file-1' },
     });
 
-    expect(ctx.deleteDriveSnapshotsForFile).toHaveBeenCalledWith('file-1');
-    expect(ctx.cancelTransientDriveExtract).toHaveBeenCalledWith('file-1');
-    expect(ctx.consumeTransientDriveExtract).not.toHaveBeenCalled();
+    expect(ctx.drive.deleteDriveSnapshotsForFile).toHaveBeenCalledWith('file-1');
+    expect(ctx.drive.cancelTransientDriveExtract).toHaveBeenCalledWith('file-1');
+    expect(ctx.drive.consumeTransientDriveExtract).not.toHaveBeenCalled();
     expect(ctx.writeEvents).not.toHaveBeenCalled();
     expect(ctx.recordAudit).toHaveBeenCalledWith(
       'drive_file_out_of_scope',
@@ -4387,9 +4413,9 @@ describe('googleDriveProvider', () => {
       target: { resourceType: 'drive.file', externalId: 'file-1' },
     });
 
-    expect(ctx.discardDriveTrackedFile).toHaveBeenCalledWith('file-1');
-    expect(ctx.deleteDriveSnapshotsForFile).not.toHaveBeenCalled();
-    expect(ctx.cancelTransientDriveExtract).not.toHaveBeenCalled();
+    expect(ctx.drive.discardDriveTrackedFile).toHaveBeenCalledWith('file-1');
+    expect(ctx.drive.deleteDriveSnapshotsForFile).not.toHaveBeenCalled();
+    expect(ctx.drive.cancelTransientDriveExtract).not.toHaveBeenCalled();
     expect(ctx.recordAudit).toHaveBeenCalledWith(
       'drive_file_out_of_scope',
       expect.objectContaining({ file_id: 'file-1' }),
@@ -4452,12 +4478,12 @@ describe('googleDriveProvider', () => {
       ctx: ctx,
     });
 
-    expect(ctx.scheduleTargetedSync).not.toHaveBeenCalled();
-    expect(ctx.deleteDriveSnapshotsForFile).toHaveBeenCalledWith('file-removed');
-    expect(ctx.deleteDriveSnapshotsForFile).toHaveBeenCalledWith('file-video');
-    expect(ctx.cancelTransientDriveExtract).toHaveBeenCalledWith('file-removed');
-    expect(ctx.cancelTransientDriveExtract).toHaveBeenCalledWith('file-video');
-    expect(ctx.consumeTransientDriveExtract).not.toHaveBeenCalled();
+    expect(ctx.drive.scheduleTargetedSync).not.toHaveBeenCalled();
+    expect(ctx.drive.deleteDriveSnapshotsForFile).toHaveBeenCalledWith('file-removed');
+    expect(ctx.drive.deleteDriveSnapshotsForFile).toHaveBeenCalledWith('file-video');
+    expect(ctx.drive.cancelTransientDriveExtract).toHaveBeenCalledWith('file-removed');
+    expect(ctx.drive.cancelTransientDriveExtract).toHaveBeenCalledWith('file-video');
+    expect(ctx.drive.consumeTransientDriveExtract).not.toHaveBeenCalled();
     expect(ctx.recordAudit).toHaveBeenCalledWith(
       'drive_file_removed',
       expect.objectContaining({ file_id: 'file-removed' }),

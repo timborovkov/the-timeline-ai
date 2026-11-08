@@ -344,7 +344,7 @@ describe('linearProvider.handleWebhook', () => {
   });
 });
 
-describe('linearProvider.listSyncableResources', () => {
+describe('linearProvider.browseResources', () => {
   it('paginates Linear teams so source selection can see teams beyond page one', async () => {
     const fetch = vi.fn<
       (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
@@ -379,7 +379,7 @@ describe('linearProvider.listSyncableResources', () => {
     });
     vi.stubGlobal('fetch', fetch);
 
-    const resources = await linearProvider.listSyncableResources({ id: 'integration-1' } as never, {
+    const resources = await linearProvider.browseResources({ id: 'integration-1' } as never, {
       access_token: 'linear-token',
     });
 

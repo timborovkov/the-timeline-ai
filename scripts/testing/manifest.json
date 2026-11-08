@@ -2346,5 +2346,11 @@
   },
   "scripts/testing/runner.test.ts": {
     "group": "script"
+  },
+  "packages/shared/src/integrations/drive-extract-lifecycle.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/integrations/resource-access.test.ts": {
+    "group": "unit"
   }
 }

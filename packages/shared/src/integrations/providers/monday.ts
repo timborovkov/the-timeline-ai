@@ -7,6 +7,7 @@ import {
   reserveMondayCall,
 } from '#src/integrations/monday-budget.js';
 import { providerFetch } from '#src/integrations/request.js';
+import { defineResourceAccess } from '#src/integrations/resource-access.js';
 import { exactTargetSelections } from '#src/integrations/selection-policy.js';
 import {
   attachSyncContinuations,
@@ -2867,47 +2868,49 @@ export const mondayProvider: IntegrationProvider = {
     };
   },
 
-  async listSyncableResources(integration, tokens, ctx): Promise<ProviderResource[]> {
-    const mondayTokens = await ensureAccessToken(
-      accountTokens(tokens as MondayTokens, integration.externalAccountId),
-      ctx,
-    );
-    const boards = (await listBoards(mondayTokens))
-      .filter((board) => !isSubitemsBoard(board))
-      .map((board) => ({
-        externalId: board.id,
-        label: board.workspace?.name ? `${board.workspace.name} / ${board.name}` : board.name,
-        kind: 'monday.board',
-        searchText: [
-          board.name,
-          board.workspace?.name,
-          board.board_kind,
-          'monday monday.com board items records pulses updates columns subitems',
-        ]
-          .filter(Boolean)
-          .join(' '),
-      }));
-    const docs = await listDocs(mondayTokens).catch((error: unknown) => {
-      if (error instanceof ProviderRateLimitErrorValue) throw error;
-      return [];
-    });
-    return [
-      ...boards,
-      ...docs.map((doc) => ({
-        externalId: doc.id,
-        label: doc.workspace?.name ? `${doc.workspace.name} / ${doc.name}` : doc.name,
-        kind: 'monday.doc',
-        searchText: [
-          doc.name,
-          doc.workspace?.name,
-          doc.doc_kind,
-          'monday monday.com workdoc workdocs doc document cited evidence',
-        ]
-          .filter(Boolean)
-          .join(' '),
-      })),
-    ];
-  },
+  ...defineResourceAccess({
+    async browseResources(integration, tokens, ctx): Promise<ProviderResource[]> {
+      const mondayTokens = await ensureAccessToken(
+        accountTokens(tokens as MondayTokens, integration.externalAccountId),
+        ctx,
+      );
+      const boards = (await listBoards(mondayTokens))
+        .filter((board) => !isSubitemsBoard(board))
+        .map((board) => ({
+          externalId: board.id,
+          label: board.workspace?.name ? `${board.workspace.name} / ${board.name}` : board.name,
+          kind: 'monday.board',
+          searchText: [
+            board.name,
+            board.workspace?.name,
+            board.board_kind,
+            'monday monday.com board items records pulses updates columns subitems',
+          ]
+            .filter(Boolean)
+            .join(' '),
+        }));
+      const docs = await listDocs(mondayTokens).catch((error: unknown) => {
+        if (error instanceof ProviderRateLimitErrorValue) throw error;
+        return [];
+      });
+      return [
+        ...boards,
+        ...docs.map((doc) => ({
+          externalId: doc.id,
+          label: doc.workspace?.name ? `${doc.workspace.name} / ${doc.name}` : doc.name,
+          kind: 'monday.doc',
+          searchText: [
+            doc.name,
+            doc.workspace?.name,
+            doc.doc_kind,
+            'monday monday.com workdoc workdocs doc document cited evidence',
+          ]
+            .filter(Boolean)
+            .join(' '),
+        })),
+      ];
+    },
+  }),
 
   async backfill({ integration, tokens, selections, ctx }) {
     const mondayTokens = await ensureAccessToken(

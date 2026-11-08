@@ -3,6 +3,7 @@ import { describe, it } from 'bun:test';
 
 import {
   authenticationMethod,
+  createOAuthRegistrationAttempt,
   decideOAuthSignIn,
   googleSignInAuthorizationParams,
   googleSignInRequestsDriveAccess,
@@ -16,9 +17,7 @@ import {
   oauthSignInErrorMessage,
   planOAuthCreateUserEmail,
   readGitHubOAuthProfile,
-  rememberOAuthRegistration,
   selectGitHubAccountEmail,
-  takeOAuthRegistration,
 } from '@/lib/oauth-sign-in';
 
 describe('oauthClientConfigured', () => {
@@ -302,22 +301,47 @@ describe('decideOAuthSignIn', () => {
   });
 });
 
-describe('pending OAuth registration source', () => {
-  it('records and consumes provider plus new-versus-link kind by email', () => {
-    rememberOAuthRegistration('Ada@Example.com', 'google', 'new', true);
-    expect(takeOAuthRegistration('ada@example.com')).toEqual({
-      provider: 'google',
-      kind: 'new',
-      emailVerifiedByProvider: true,
-    });
-    expect(takeOAuthRegistration('ada@example.com')).toBeNull();
-
-    rememberOAuthRegistration('owner@example.com', 'google', 'link', true);
-    expect(takeOAuthRegistration('owner@example.com')).toEqual({
+describe('OAuth registration attempt', () => {
+  it('keeps concurrent same-email registration decisions isolated', () => {
+    const googleAttempt = createOAuthRegistrationAttempt();
+    const githubAttempt = createOAuthRegistrationAttempt();
+    googleAttempt.approve({
+      email: 'Ada@Example.com',
       provider: 'google',
       kind: 'link',
       emailVerifiedByProvider: true,
     });
+    githubAttempt.approve({
+      email: 'ada@example.com',
+      provider: 'github',
+      kind: 'new',
+      emailVerifiedByProvider: false,
+    });
+    expect(googleAttempt.consume('ada@example.com')).toEqual({
+      provider: 'google',
+      kind: 'link',
+      emailVerifiedByProvider: true,
+    });
+    expect(githubAttempt.consume('ada@example.com')).toEqual({
+      provider: 'github',
+      kind: 'new',
+      emailVerifiedByProvider: false,
+    });
+    expect(googleAttempt.consume('ada@example.com')).toBeNull();
+    expect(githubAttempt.consume('ada@example.com')).toBeNull();
+  });
+
+  it('never reuses an abandoned attempt or a decision for another email', () => {
+    const abandoned = createOAuthRegistrationAttempt();
+    abandoned.approve({
+      email: 'owner@example.com',
+      provider: 'google',
+      kind: 'new',
+      emailVerifiedByProvider: true,
+    });
+    expect(createOAuthRegistrationAttempt().consume('owner@example.com')).toBeNull();
+    expect(abandoned.consume('other@example.com')).toBeNull();
+    expect(abandoned.consume('owner@example.com')).toBeNull();
   });
 });
 

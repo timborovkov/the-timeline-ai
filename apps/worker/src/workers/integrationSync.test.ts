@@ -145,13 +145,12 @@ await vi.mock(
   () => import('@timeline/shared'),
 );
 
+const { handleTick, runOneIntegration } = await import('./integrationSync.js');
 const {
   clearDriveTransientExtract,
-  handleTick,
   putAndEnqueueDriveTransientExtract,
   readDriveTransientExtract,
-  runOneIntegration,
-} = await import('./integrationSync.js');
+} = await import('#src/integrations/drive-extract-runtime.js');
 const { integrations } = await import('@timeline/shared');
 
 const TEAM_ID = '11111111-1111-4111-8111-111111111111';
@@ -2898,13 +2897,13 @@ describe('runOneIntegration attention classification', () => {
         ctx: {
           harvestDocument?: unknown;
           scheduleTargetedSync?: unknown;
-          enqueueTransientDriveExtract?: unknown;
+          drive?: { enqueueTransientDriveExtract: unknown };
           extractBinaryText?: unknown;
         };
       }) => {
         expect(ctx.harvestDocument).toBeUndefined();
         expect(ctx.scheduleTargetedSync).toEqual(expect.any(Function));
-        expect(ctx.enqueueTransientDriveExtract).toEqual(expect.any(Function));
+        expect(ctx.drive?.enqueueTransientDriveExtract).toEqual(expect.any(Function));
         expect(ctx.extractBinaryText).toBeUndefined();
         return Promise.resolve();
       },

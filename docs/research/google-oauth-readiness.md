@@ -1,5 +1,10 @@
 # Google OAuth readiness (technical evidence)
 
+OAuth registration metadata is scoped to one Auth.js configuration invocation.
+The approved sign-in callback and account-creation event share a single-use
+attempt context; no process-global email mailbox carries verification claims.
+Missing attempt metadata does not establish email verification.
+
 This note records what the Drive branch **code** requests and why. It is not a
 Google Cloud Console submission, CASA packet, or approved-status claim.
 

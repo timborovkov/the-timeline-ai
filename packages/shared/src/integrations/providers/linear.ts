@@ -2,6 +2,7 @@ import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
 
 import { getEnv } from '#src/env.js';
 import { providerFetch } from '#src/integrations/request.js';
+import { defineResourceAccess } from '#src/integrations/resource-access.js';
 import { exactTargetSelections } from '#src/integrations/selection-policy.js';
 import {
   attachSyncContinuation,
@@ -765,39 +766,41 @@ export const linearProvider: IntegrationProvider = {
     };
   },
 
-  async listSyncableResources(_integration, tokens): Promise<ProviderResource[]> {
-    // Paginate `teams`. Linear caps a single page at 100; without
-    // following `pageInfo.endCursor` orgs with >100 teams would have
-    // teams beyond page 1 silently dropped — and PUT /selections rejects
-    // anything outside this set. Cap at 20 pages = 2000 teams (well past
-    // any realistic Linear org).
-    const linearTokens = tokens as LinearTokens;
-    const all: { id: string; name: string; key: string }[] = [];
-    let after: string | null = null;
-    for (let i = 0; i < 20; i++) {
-      const variables: Record<string, unknown> = { after };
-      const query = `query Teams($after: String) {
+  ...defineResourceAccess({
+    async browseResources(_integration, tokens): Promise<ProviderResource[]> {
+      // Paginate `teams`. Linear caps a single page at 100; without
+      // following `pageInfo.endCursor` orgs with >100 teams would have
+      // teams beyond page 1 silently dropped — and PUT /selections rejects
+      // anything outside this set. Cap at 20 pages = 2000 teams (well past
+      // any realistic Linear org).
+      const linearTokens = tokens as LinearTokens;
+      const all: { id: string; name: string; key: string }[] = [];
+      let after: string | null = null;
+      for (let i = 0; i < 20; i++) {
+        const variables: Record<string, unknown> = { after };
+        const query = `query Teams($after: String) {
         teams(first: 100, after: $after) {
           nodes { id name key }
           pageInfo { hasNextPage endCursor }
         }
       }`;
-      const data = await gql<{
-        teams: {
-          nodes: { id: string; name: string; key: string }[];
-          pageInfo: { hasNextPage: boolean; endCursor: string | null };
-        };
-      }>(linearTokens, query, variables);
-      all.push(...data.teams.nodes);
-      if (!data.teams.pageInfo.hasNextPage || !data.teams.pageInfo.endCursor) break;
-      after = data.teams.pageInfo.endCursor;
-    }
-    return all.map((t) => ({
-      externalId: t.id,
-      label: `${t.name} (${t.key})`,
-      kind: 'linear.team',
-    }));
-  },
+        const data = await gql<{
+          teams: {
+            nodes: { id: string; name: string; key: string }[];
+            pageInfo: { hasNextPage: boolean; endCursor: string | null };
+          };
+        }>(linearTokens, query, variables);
+        all.push(...data.teams.nodes);
+        if (!data.teams.pageInfo.hasNextPage || !data.teams.pageInfo.endCursor) break;
+        after = data.teams.pageInfo.endCursor;
+      }
+      return all.map((t) => ({
+        externalId: t.id,
+        label: `${t.name} (${t.key})`,
+        kind: 'linear.team',
+      }));
+    },
+  }),
 
   async backfill({ tokens, selections, ctx }) {
     const teamIds = selections.filter((s) => s.kind === 'linear.team').map((s) => s.externalId);

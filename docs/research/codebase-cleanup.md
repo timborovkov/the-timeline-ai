@@ -163,3 +163,8 @@ Shared/database builds, compiled imports, worker/web types, changed application
 lint, formatting, agent evaluations, reconciliation evaluations and targeted
 web/domain/worker suites passed. No tests were deleted. Feature-only pushes do
 not trigger the main CI workflow; no merge or deployment was performed.
+
+The subsequent [Google Drive ownership cleanup](google-drive-cleanup.md) applies
+the same rules to the merged Drive v1 implementation, covering extraction,
+capture contracts, selection linking, scheduling, OAuth attempt state, and
+resource validation.

@@ -31,8 +31,6 @@ import {
   entityRelationships,
   factEntities,
   facts as factsTable,
-  integrations as integrationsTable,
-  integrationSelections,
   notifications,
   objectChanges,
   objectIdentityFacets,
@@ -69,7 +67,6 @@ import {
 } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 
-import { rebindDriveSelectionArtifactLink } from '#src/artifacts/index.js';
 import {
   dispatchDueDateCalendarEffects,
   mergeDueDateCalendarSyncResults,
@@ -91,6 +88,7 @@ import { resetSurfaceSessionByIdInTransaction } from '#src/conversation-surfaces
 import { reconcileLinkArtifactsForRawEvent } from '#src/conversational/link-artifacts.js';
 import { dueDateRangeConditions } from '#src/due-date-filter.js';
 import { getEnv } from '#src/env.js';
+import { remapIntegrationSelectionObjectLinks } from '#src/integrations/selection-links.js';
 import { TIMELINE_MODELS } from '#src/llm/models.js';
 import { childLogger } from '#src/logger.js';
 import {
@@ -5434,57 +5432,11 @@ export async function mergeObjects(
       text: eventText,
     });
 
-    const loserSelections = await tx
-      .select({
-        id: integrationSelections.id,
-        integrationId: integrationSelections.integrationId,
-        selectionKind: integrationSelections.selectionKind,
-        externalId: integrationSelections.externalId,
-        linkedObjectId: integrationSelections.linkedObjectId,
-        provider: integrationsTable.provider,
-      })
-      .from(integrationSelections)
-      .innerJoin(integrationsTable, eq(integrationsTable.id, integrationSelections.integrationId))
-      .where(
-        and(
-          eq(integrationsTable.teamId, scope.teamId),
-          inArray(integrationSelections.linkedObjectId, loserIds),
-        ),
-      );
-    if (loserSelections.length > 0) {
-      await tx
-        .update(integrationSelections)
-        .set({ linkedObjectId: survivor.id })
-        .where(
-          inArray(
-            integrationSelections.id,
-            loserSelections.map((row) => row.id),
-          ),
-        );
-      for (const selection of loserSelections) {
-        if (selection.provider !== 'google_drive') continue;
-        const siblings = await tx
-          .select({
-            externalId: integrationSelections.externalId,
-            linkedObjectId: integrationSelections.linkedObjectId,
-            selectionKind: integrationSelections.selectionKind,
-          })
-          .from(integrationSelections)
-          .where(eq(integrationSelections.integrationId, selection.integrationId));
-        await rebindDriveSelectionArtifactLink(tx as unknown as Db, {
-          teamId: scope.teamId,
-          integrationId: selection.integrationId,
-          selectionKind: selection.selectionKind,
-          externalId: selection.externalId,
-          previousObjectId: selection.linkedObjectId,
-          selections: siblings.map((row) => ({
-            kind: row.selectionKind,
-            externalId: row.externalId,
-            linkedObjectId: row.linkedObjectId,
-          })),
-        });
-      }
-    }
+    await remapIntegrationSelectionObjectLinks(tx as unknown as Db, {
+      teamId: scope.teamId,
+      fromObjectIds: loserIds,
+      toObjectId: survivor.id,
+    });
 
     await tx
       .update(entities)

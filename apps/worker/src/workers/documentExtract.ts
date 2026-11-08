@@ -7,7 +7,6 @@ import {
   getEnv,
   getObjectBuffer,
   getS3Client,
-  integrations,
   isLikelyGeneratedDocumentName,
   llm,
   normalizeSuggestedTitle,
@@ -15,6 +14,8 @@ import {
   queue,
 } from '@timeline/shared';
 import { assertTeamWriteCapacity, isBillingAdmissionError } from '@timeline/shared/billing';
+import * as extractProtocol from '@timeline/shared/integrations/drive-extract-protocol';
+import { planDriveSync } from '@timeline/shared/integrations/google-drive-scheduling';
 import { UnrecoverableError, Worker, type Job } from 'bullmq';
 import { and, eq, sql } from 'drizzle-orm';
 
@@ -113,7 +114,7 @@ export interface DocumentExtractIO {
 
 /** 25 MiB in-memory cap; matches the transcribe worker. */
 const MAX_DOCUMENT_BYTES = 25 * 1024 * 1024;
-const DRIVE_TRANSIENT_RESULT_MAX_BYTES = integrations.DRIVE_TRANSIENT_RESULT_MAX_BYTES;
+const DRIVE_TRANSIENT_RESULT_MAX_BYTES = extractProtocol.DRIVE_TRANSIENT_RESULT_MAX_BYTES;
 
 function isMissingObjectError(err: unknown): boolean {
   if (!err || typeof err !== 'object') return false;
@@ -181,16 +182,13 @@ function defaultIO(): DocumentExtractIO {
       }
     },
     async resumeDriveFile(input) {
-      await queue.enqueueIntegrationSyncJob({
-        kind: 'targeted',
-        integrationId: input.integrationId,
-        teamId: input.teamId,
+      const scheduled = planDriveSync(input, {
+        kind: 'extract_resume',
+        fileId: input.fileId,
+        extractId: input.extractId,
         triggeredBy: 'drive_extract',
-        resourceType: 'drive.file',
-        externalId: input.fileId,
-        reason: 'drive_transient_extract',
-        surface: queue.driveTransientExtractResumeSurface(input.extractId),
       });
+      await queue.enqueueIntegrationSyncJob({ kind: 'targeted', ...scheduled.task });
     },
     async deleteBlob(objectKey) {
       await deleteObject(getS3Client(), getDocumentsBucket(), objectKey);
@@ -263,11 +261,11 @@ function metadataPreviewText(input: {
 async function persistDriveTransientResult(
   io: DocumentExtractIO,
   data: queue.DriveTransientExtractJobData,
-  payload: integrations.DriveTransientExtractResultPayload,
-): Promise<integrations.DriveTransientExtractResultPayload> {
-  const body = integrations.driveTransientExtractResultBody(payload);
+  payload: extractProtocol.DriveTransientExtractResultPayload,
+): Promise<extractProtocol.DriveTransientExtractResultPayload> {
+  const body = extractProtocol.driveTransientExtractResultBody(payload);
   await io.writeDriveTransientResult(data.resultObjectKey, body);
-  return integrations.parseDriveTransientExtractResult(body);
+  return extractProtocol.parseDriveTransientExtractResult(body);
 }
 
 async function resumeAndCleanupDriveTransientExtract(
@@ -290,11 +288,11 @@ async function resumeAndCleanupDriveTransientExtract(
 async function loadPersistedDriveTransientResult(
   io: DocumentExtractIO,
   resultObjectKey: string,
-): Promise<integrations.DriveTransientExtractResultPayload | null> {
+): Promise<extractProtocol.DriveTransientExtractResultPayload | null> {
   const body = await io.readDriveTransientResult(resultObjectKey);
   if (!body) return null;
   try {
-    return integrations.parseDriveTransientExtractResult(body);
+    return extractProtocol.parseDriveTransientExtractResult(body);
   } catch (err) {
     log.warn({ err, resultObjectKey }, 'ignoring unreadable Drive transient extract result');
     return null;
@@ -304,7 +302,7 @@ async function loadPersistedDriveTransientResult(
 async function handoffPersistedDriveTransientResult(
   io: DocumentExtractIO,
   data: queue.DriveTransientExtractJobData,
-  payload: integrations.DriveTransientExtractResultPayload,
+  payload: extractProtocol.DriveTransientExtractResultPayload,
 ): Promise<DocumentExtractResult> {
   const stored = await persistDriveTransientResult(io, data, payload);
   await resumeAndCleanupDriveTransientExtract(io, data);
@@ -350,7 +348,7 @@ async function processDriveTransientExtract(
     const fetched = await io.fetchBlob(data.objectKey, MAX_DOCUMENT_BYTES);
     body = fetched.body;
   } catch (err: unknown) {
-    if (integrations.isRetryableDriveExtractStorageError(err)) throw err;
+    if (extractProtocol.isRetryableDriveExtractStorageError(err)) throw err;
     await handoffPersistedDriveTransientResult(io, data, {
       ok: false,
       error: (err instanceof Error ? err.message : String(err)).slice(0, 500),

@@ -381,6 +381,8 @@ packages/
             module (Phase 11 — Drive/Linear/GitHub/Monday.com/Slack/Sentry
             providers, person-owned provider connections, team resource
             shares, active source paths, connection attention, event-writer,
+            separate resource browsing/validation, required Drive capture services,
+            transient extract lifecycle/protocol, transactional selection links,
             registry catalog, AES-GCM secrets helper), event-class taxonomy
             (provider-agnostic communication / work_record / pulse / incident /
             artifact / schedule; ingest webhooks set class in settings),

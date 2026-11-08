@@ -585,6 +585,30 @@
       "development": "./src/agent-provisioning/index.ts",
       "import": "./dist/agent-provisioning/index.js",
       "default": "./dist/agent-provisioning/index.js"
+    },
+    "./integrations/drive-extract-protocol": {
+      "types": "./src/integrations/drive-extract-protocol.ts",
+      "development": "./src/integrations/drive-extract-protocol.ts",
+      "import": "./dist/integrations/drive-extract-protocol.js",
+      "default": "./dist/integrations/drive-extract-protocol.js"
+    },
+    "./integrations/drive-extract-lifecycle": {
+      "types": "./src/integrations/drive-extract-lifecycle.ts",
+      "development": "./src/integrations/drive-extract-lifecycle.ts",
+      "import": "./dist/integrations/drive-extract-lifecycle.js",
+      "default": "./dist/integrations/drive-extract-lifecycle.js"
+    },
+    "./integrations/google-drive-scheduling": {
+      "types": "./src/integrations/google-drive-scheduling.ts",
+      "development": "./src/integrations/google-drive-scheduling.ts",
+      "import": "./dist/integrations/google-drive-scheduling.js",
+      "default": "./dist/integrations/google-drive-scheduling.js"
+    },
+    "./integrations/google-drive-context": {
+      "types": "./src/integrations/google-drive-context.ts",
+      "development": "./src/integrations/google-drive-context.ts",
+      "import": "./dist/integrations/google-drive-context.js",
+      "default": "./dist/integrations/google-drive-context.js"
     }
   },
   "main": "./dist/index.js",

@@ -17,7 +17,6 @@ import {
 import { and, asc, eq, inArray, isNotNull, sql } from 'drizzle-orm';
 
 import {
-  rebindDriveFileObjectLink,
   reconcileArtifactEvidence,
   type ArtifactAnchorInput,
   type ArtifactClusterKind,
@@ -38,6 +37,8 @@ import {
   enqueueGithubTaskProposalJob,
   capturedWorkItemFromIntegrationEvent,
 } from '#src/integrations/github-task-proposals.js';
+import { rebindDriveFileObjectLink } from '#src/integrations/google-drive-artifacts.js';
+import { driveInheritanceAnchorMetadataFromSource } from '#src/integrations/google-drive-contracts.js';
 import {
   integrationExtractSkipReason,
   integrationSkipsExtract,
@@ -1872,26 +1873,7 @@ function driveInheritanceAnchorMetadata(
 ): Record<string, unknown> | undefined {
   if (event.provider !== 'google_drive') return undefined;
   const drive = recordField(event.extra, 'drive');
-  if (!drive) return undefined;
-  const inheritedFrom =
-    typeof drive.inherited_from === 'string' && drive.inherited_from.trim().length > 0
-      ? drive.inherited_from
-      : null;
-  const candidates = Array.isArray(drive.inherited_candidates)
-    ? drive.inherited_candidates.filter(
-        (item): item is string => typeof item === 'string' && item.trim().length > 0,
-      )
-    : [];
-  const integrationId =
-    typeof drive.integration_id === 'string' && drive.integration_id.trim().length > 0
-      ? drive.integration_id
-      : null;
-  if (!inheritedFrom && candidates.length === 0 && !integrationId) return undefined;
-  return {
-    ...(inheritedFrom ? { drive_inherited_from: inheritedFrom } : {}),
-    ...(candidates.length > 0 ? { drive_inherited_candidates: candidates } : {}),
-    ...(integrationId ? { drive_integration_id: integrationId } : {}),
-  };
+  return drive ? driveInheritanceAnchorMetadataFromSource(drive) : undefined;
 }
 
 function artifactAnchorsForIntegrationEvent(event: IntegrationEvent): ArtifactAnchorInput[] {
@@ -1901,7 +1883,7 @@ function artifactAnchorsForIntegrationEvent(event: IntegrationEvent): ArtifactAn
       type: 'provider_object',
       value: `${event.provider}:${event.externalObjectId}`,
       strength: 'hard',
-      ...(inheritance ? { metadata: inheritance } : {}),
+      ...(inheritance ? { metadata: inheritance, metadataPatch: inheritance } : {}),
     },
   ];
   if (event.objectMap) {

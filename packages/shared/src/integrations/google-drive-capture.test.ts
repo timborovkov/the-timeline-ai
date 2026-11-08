@@ -51,10 +51,6 @@ import {
   driveExtractMatchesFileRevision,
   driveFileChangeDedupKey,
   driveFileContentRevision,
-  driveObjectLinkCandidates,
-  driveFileInheritsChangedSelection,
-  driveSelectionsWithChangedLink,
-  resolveDriveFileObjectLink,
   driveTransientExtractKeys,
   driveTransientExtractResultBody,
   hashDrivePayload,
@@ -64,15 +60,12 @@ import {
   isDriveExtractResultTooLarge,
   isRetryableDriveExtractStorageError,
   shouldRetainDriveExtractCleanup,
-  survivingLinkedObjectForDriveFile,
   adminListTeamIdsWithDriveExtractCursors,
   forEachDriveExtractCursorPage,
-  driveObjectLinkHintsEqual,
   latestDriveObjectLinkHints,
   latestDriveObjectLinkHintsByFileIds,
   linkedObjectForDriveSelection,
   listDriveTrackedDescendantFileIds,
-  pickNewestDriveTrackedAncestry,
   listDriveExtractCursors,
   cleanupUncoveredDriveTrackedFiles,
   compactDrivePermissionGrants,
@@ -91,6 +84,15 @@ import {
 } from '#src/integrations/google-drive-capture.js';
 import { buildDriveSnapshotLocate } from '#src/integrations/google-drive-diff.js';
 import { driveChangeJudgePrompt } from '#src/integrations/google-drive-judge.js';
+import {
+  driveObjectLinkCandidates,
+  driveFileInheritsChangedSelection,
+  driveSelectionsWithChangedLink,
+  resolveDriveFileObjectLink,
+  survivingLinkedObjectForDriveFile,
+  driveObjectLinkHintsEqual,
+  pickNewestDriveTrackedAncestry,
+} from '#src/integrations/google-drive-link-policy.js';
 import { applyDbMigrations } from '#src/test/pglite.js';
 
 const { withTeam } = await import('#src/team-scope.js');

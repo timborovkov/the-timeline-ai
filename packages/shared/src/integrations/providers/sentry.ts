@@ -1,5 +1,6 @@
 import { getEnv } from '#src/env.js';
 import { providerFetch } from '#src/integrations/request.js';
+import { defineResourceAccess } from '#src/integrations/resource-access.js';
 import { exactTargetSelections } from '#src/integrations/selection-policy.js';
 import { attachSyncContinuation } from '#src/integrations/types.js';
 
@@ -940,30 +941,32 @@ export const sentryProvider: IntegrationProvider = {
     };
   },
 
-  async listSyncableResources(_integration, tokens, ctx): Promise<ProviderResource[]> {
-    const sentryTokens = await ensureAccessToken(tokens as SentryTokens, ctx);
-    const orgs = await sentryGetAll<SentryOrg>(sentryTokens, '/organizations/');
-    const resources: ProviderResource[] = [];
-    for (const org of orgs) {
-      resources.push({
-        externalId: org.slug,
-        label: `${org.name ?? org.slug} (all projects)`,
-        kind: 'sentry.org',
-      });
-      const projects = await sentryGetAll<SentryProject>(
-        sentryTokens,
-        `/organizations/${encodeURIComponent(org.slug)}/projects/`,
-      );
-      resources.push(
-        ...projects.map((project) => ({
-          externalId: `${org.slug}/${project.slug}`,
-          label: `${org.slug}/${project.slug}`,
-          kind: 'sentry.project',
-        })),
-      );
-    }
-    return resources;
-  },
+  ...defineResourceAccess({
+    async browseResources(_integration, tokens, ctx): Promise<ProviderResource[]> {
+      const sentryTokens = await ensureAccessToken(tokens as SentryTokens, ctx);
+      const orgs = await sentryGetAll<SentryOrg>(sentryTokens, '/organizations/');
+      const resources: ProviderResource[] = [];
+      for (const org of orgs) {
+        resources.push({
+          externalId: org.slug,
+          label: `${org.name ?? org.slug} (all projects)`,
+          kind: 'sentry.org',
+        });
+        const projects = await sentryGetAll<SentryProject>(
+          sentryTokens,
+          `/organizations/${encodeURIComponent(org.slug)}/projects/`,
+        );
+        resources.push(
+          ...projects.map((project) => ({
+            externalId: `${org.slug}/${project.slug}`,
+            label: `${org.slug}/${project.slug}`,
+            kind: 'sentry.project',
+          })),
+        );
+      }
+      return resources;
+    },
+  }),
 
   backfill(input) {
     return syncSentryResources(input, true);

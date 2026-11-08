@@ -288,7 +288,7 @@ describe('githubProvider.handleOAuthCallback', () => {
   });
 });
 
-describe('githubProvider.listSyncableResources', () => {
+describe('githubProvider.browseResources', () => {
   const originalFetch = globalThis.fetch;
 
   afterEach(() => {
@@ -337,7 +337,7 @@ describe('githubProvider.listSyncableResources', () => {
     /* Fetch's optional Bun connection hint is irrelevant to this request mock. */ globalThis.fetch =
       Object.assign(fetchMock, { preconnect: vi.fn() });
 
-    const resources = await githubProvider.listSyncableResources({} as never, {
+    const resources = await githubProvider.browseResources({} as never, {
       access_token: 'gho_token',
     });
 
@@ -386,14 +386,14 @@ describe('githubProvider.listSyncableResources', () => {
       Object.assign(fetchMock, { preconnect: vi.fn() });
 
     await expect(
-      githubProvider.listSyncableResources({} as never, { access_token: 'gho_token' }),
+      githubProvider.browseResources({} as never, { access_token: 'gho_token' }),
     ).rejects.toMatchObject({
       code: 'github_rate_limited',
       retryAt: new Date('2026-06-25T03:00:00.000Z'),
       rateLimitKind: 'primary',
     });
     await expect(
-      githubProvider.listSyncableResources({} as never, { access_token: 'gho_token' }),
+      githubProvider.browseResources({} as never, { access_token: 'gho_token' }),
     ).rejects.toBeInstanceOf(GithubRateLimitError);
     vi.useRealTimers();
   });

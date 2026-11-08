@@ -46,6 +46,7 @@ Skeleton:
 
 ```ts
 import { exactTargetSelections } from '#src/integrations/selection-policy.js';
+import { defineResourceAccess } from '#src/integrations/resource-access.js';
 import type { IntegrationProvider, WebhookHandleResult } from '#src/integrations/types.js';
 
 export const exampleProvider: IntegrationProvider = {
@@ -71,10 +72,12 @@ export const exampleProvider: IntegrationProvider = {
     };
   },
 
-  async listSyncableResources(integration, tokens, ctx) {
-    const freshTokens = await ensureAccessToken(tokens, ctx);
-    return listResources(freshTokens);
-  },
+  ...defineResourceAccess({
+    async browseResources(identity, tokens, ctx) {
+      const freshTokens = await ensureAccessToken(tokens, ctx);
+      return listResources(freshTokens);
+    },
+  }),
 
   async backfill({ integration, tokens, selections, ctx }) {
     for (const selection of selections) {
@@ -230,3 +233,10 @@ A provider is ready for product use when:
 - Deleting or unsharing selected resources stops future provider-side webhook
   work where Timeline controls provisioning.
 - Tests prove team/resource isolation and duplicate delivery idempotency.
+
+Resource browsing and selection validation are separate contracts.
+`defineResourceAccess` validates flat catalogs against the complete list. A
+hierarchical or paginated browser must supply `validateResourceSelections` that
+resolves the proposed IDs independently of the currently visible browser page.
+Both operations receive connection identity and persist refreshed tokens; neither
+requires a fabricated integration lifecycle row.

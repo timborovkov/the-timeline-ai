@@ -2,7 +2,7 @@ import { nonEmptyEnv } from '@/lib/safe-redirect';
 
 export const GOOGLE_SIGN_IN_SCOPES = ['openid', 'email', 'profile'] as const;
 
-export type OAuthSignInProvider = 'github' | 'google';
+type OAuthSignInProvider = 'github' | 'google';
 export type OAuthRegistrationKind = 'new' | 'link';
 
 interface GitHubAccountEmail {
@@ -11,13 +11,11 @@ interface GitHubAccountEmail {
   verified?: boolean;
 }
 
-export interface PendingOAuthRegistration {
+interface OAuthRegistration {
   provider: OAuthSignInProvider;
   kind: OAuthRegistrationKind;
   emailVerifiedByProvider: boolean;
 }
-
-const pendingOAuthRegistrations = new Map<string, PendingOAuthRegistration>();
 
 export function oauthClientConfigured(
   clientId: string | undefined,
@@ -170,25 +168,29 @@ export function decideOAuthSignIn(input: {
   return true;
 }
 
-export function rememberOAuthRegistration(
-  email: string | null | undefined,
-  provider: OAuthSignInProvider,
-  kind: OAuthRegistrationKind,
-  emailVerifiedByProvider = false,
-): void {
-  const key = email?.trim().toLowerCase();
-  if (!key) return;
-  pendingOAuthRegistrations.set(key, { provider, kind, emailVerifiedByProvider });
-}
-
-export function takeOAuthRegistration(
-  email: string | null | undefined,
-): PendingOAuthRegistration | null {
-  const key = email?.trim().toLowerCase();
-  if (!key) return null;
-  const pending = pendingOAuthRegistrations.get(key) ?? null;
-  if (pending) pendingOAuthRegistrations.delete(key);
-  return pending;
+/** One Auth.js invocation owns the signIn → createUser handoff. */
+export function createOAuthRegistrationAttempt() {
+  let approved: { email: string; registration: OAuthRegistration } | null = null;
+  return {
+    approve(input: OAuthRegistration & { email: string | null | undefined }): void {
+      const email = input.email?.trim().toLowerCase();
+      approved = email
+        ? {
+            email,
+            registration: {
+              provider: input.provider,
+              kind: input.kind,
+              emailVerifiedByProvider: input.emailVerifiedByProvider,
+            },
+          }
+        : null;
+    },
+    consume(email: string | null | undefined): OAuthRegistration | null {
+      const current = approved;
+      approved = null;
+      return current && current.email === email?.trim().toLowerCase() ? current.registration : null;
+    },
+  };
 }
 
 export function authenticationMethod(
