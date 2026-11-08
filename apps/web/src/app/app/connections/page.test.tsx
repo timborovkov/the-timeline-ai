@@ -631,6 +631,91 @@ describe('SourcesPageView', () => {
     expect(within(dialog).getAllByText('Linear — Acme').length).toBeGreaterThan(0);
   });
 
+  it('opens Google Drive details with accounts, team sync, and the resource picker', async () => {
+    const user = userEvent.setup();
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          resources: [{ kind: 'drive.folder', externalId: 'folder-1', label: 'Clients' }],
+          shares: [],
+        }),
+        { status: 200 },
+      ),
+    );
+    const pageModel = model();
+    try {
+      renderPage(
+        <SourcesPageView
+          params={{}}
+          active={{ teamName: 'Acme Labs' }}
+          isAdmin
+          summary={summary()}
+          model={model({
+            ownedConnections: [
+              ...pageModel.ownedConnections,
+              {
+                id: 'conn-drive',
+                provider: 'google_drive',
+                displayName: 'Google Drive — Tim',
+                lastError: null,
+                lastConnectedAt: '2026-06-01T00:00:00.000Z',
+              },
+            ],
+            teamSourceRows: [
+              ...pageModel.teamSourceRows,
+              {
+                share: {
+                  id: 'share-drive',
+                  providerConnectionId: 'conn-drive',
+                  resourceKind: 'drive.folder',
+                  externalId: 'folder-1',
+                  externalLabel: 'Clients',
+                  revokedAt: null,
+                },
+                connection: {
+                  id: 'conn-drive',
+                  provider: 'google_drive',
+                  displayName: 'Google Drive — Tim',
+                  lastError: null,
+                  lastConnectedAt: '2026-06-01T00:00:00.000Z',
+                  ownerLabel: 'Tim',
+                  ownerUserId: 'user-1',
+                },
+              },
+            ],
+            connectedRows: [
+              ...pageModel.connectedRows,
+              {
+                ...baseConnectedRow,
+                id: 'integration-drive',
+                provider: 'google_drive',
+                displayName: 'Google Drive — Tim',
+                attention: [],
+              },
+            ],
+          })}
+        />,
+      );
+
+      await user.click(screen.getByRole('link', { name: 'Open Google Drive details' }));
+      const dialog = await screen.findByRole('dialog', { name: 'Google Drive' });
+      expect(within(dialog).getByText('Accounts')).toBeTruthy();
+      expect(within(dialog).getByText('Team sync')).toBeTruthy();
+      expect(
+        within(dialog).getByRole('combobox', { name: 'Default visibility for Google Drive' }),
+      ).toBeTruthy();
+      const picker = dialog.querySelector(
+        '[data-slot="provider-resource-picker"][data-provider="google_drive"]',
+      );
+      expect(picker).toBeTruthy();
+      if (!(picker instanceof HTMLElement)) throw new Error('Expected Drive resource picker');
+      expect(await within(picker).findByRole('checkbox', { name: /Clients/i })).toBeTruthy();
+      expect(within(dialog).getByText('Team sync')).toBeTruthy();
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
+
   it('moves Telegram and Email setup into provider sheets and keeps agent MCP, webhooks, audit, and jobs on their tabs', async () => {
     const user = userEvent.setup();
     renderPage(

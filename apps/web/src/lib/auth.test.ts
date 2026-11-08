@@ -38,6 +38,7 @@ await vi.mock(
     signIn: vi.fn(),
     updateSession: vi.fn(),
     hasGitHubAuth: false,
+    hasGoogleAuth: false,
   }),
   () => import('@/lib/auth-base'),
 );

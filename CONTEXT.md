@@ -38,10 +38,12 @@ Captured work is a durable work record or lifecycle change (merged PR, Jira
 status, CRM call log). A pulse is telemetry that can explain or impact work
 (CI runs, Sentry events) without originating proposals. Classify the event,
 not the integration. Writers stamp this as `source_metadata.signal_class`.
-It is not Timeline event class: a Drive `file.changed` ping is
-`signalClass=pulse` and `event_class=artifact`; a merged GitHub PR is
-`captured_work` and `work_record`. Ingest, extract skip, and proposals read
-`signalClass` only. The living workflow is
+It is not Timeline event class: a judged Drive v1 capture is
+`signalClass=communication` and `event_class=communication`; an unlabeled
+legacy Drive `file.changed` ping is `signalClass=pulse` and
+`event_class=artifact`; a merged GitHub PR is `captured_work` and
+`work_record`. Ingest, extract skip, and proposals read `signalClass` only.
+The living workflow is
 [docs/relational-memory.md](docs/relational-memory.md).
 _Avoid_: Source, provider, integration type when discussing LLM spend or proposal rights
 
@@ -60,9 +62,10 @@ _Avoid_: Sync event, webhook when discussing memory rights
 **Pulse Signal**:
 A signal class for telemetry and heartbeats. Pulses persist, embed, and attach
 to an existing cluster when a hard join key exists. They never call extract
-and never originate proposals. They may appear as supporting evidence. Drive
-file-changed pings and document-drive lifecycle rows ("Uploaded X") are pulses.
-The document body is not.
+and never originate proposals. They may appear as supporting evidence.
+Unlabeled legacy Drive file-changed pings and document-drive lifecycle rows
+("Uploaded X") are pulses. Judged Drive v1 captures are communication. The
+document body is not.
 _Avoid_: Noise, spam, unimportant event
 
 **Intentional Capture**:
@@ -73,9 +76,10 @@ mint tasks; an intentional capture may propose from that single event.
 _Avoid_: Pulse, note dump, "just a message"
 
 **Reference Knowledge**:
-Curated document-drive files (manual upload, Drive harvest, promoted captured
-files) stored as versions and chunks. Ask, object summaries, and proposals may
-cite them with `[doc:…]`. They do not originate Timeline tasks by themselves.
+Curated document-drive files (manual upload, promoted captured files) stored as
+versions and chunks. Ask, object summaries, and proposals may cite them with
+`[doc:…]`. They do not originate Timeline tasks by themselves. Native Drive v1
+records judged file changes as cited timeline events, not document-drive copies.
 Unpromoted conversational attachments stay captured files, not reference
 knowledge. See [docs/captured-files.md](docs/captured-files.md) and
 [docs/relational-memory.md](docs/relational-memory.md).
@@ -297,7 +301,8 @@ _Avoid_: Team connection, shared account
 **Integration Scope**:
 The team-approved set of external resources Timeline may sync through a
 provider connection, such as selected GitHub repositories, a GitHub
-organization, Linear teams, the user's Drive root, or shared drives. Team
+organization, Linear teams, Drive folders, specific Drive files, the user's
+Drive root, or shared drives. Team
 admins may manage the active scope within the resources the
 provider-connection owner has made available to the team. A provider-native
 group such as a GitHub organization is

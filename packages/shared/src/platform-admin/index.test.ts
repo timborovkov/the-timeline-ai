@@ -413,6 +413,43 @@ describe('impersonation lifecycle', () => {
     ).rejects.toThrow('restricted');
     await expect(tagOperatorJob({ teamId: TEAM })).rejects.toThrow();
   });
+  it('lets spies on nested methods intercept closed-over callers after wrapping', async () => {
+    const inner = { write: async () => await Promise.resolve('inner') };
+    const outer = {
+      inner,
+      callInner: async () => inner.write(),
+    };
+    const scope = guardOperatorScope(db, TEAM, MEMBER, outer, {
+      'inner.write': OPERATOR_CAPABILITIES.write,
+      callInner: OPERATOR_CAPABILITIES.write,
+    });
+    const write = scope.inner.write;
+    const spy = vi.spyOn(scope.inner, 'write').mockImplementation(async () => {
+      await write();
+      return 'spy';
+    });
+    try {
+      expect(await scope.callInner()).toBe('spy');
+    } finally {
+      spy.mockRestore();
+    }
+  });
+  it('does not wrap a nested database handle carried on the scope', async () => {
+    const originalSelect = Reflect.get(db, 'select');
+    const scope = guardOperatorScope(
+      db,
+      TEAM,
+      MEMBER,
+      {
+        postCommitDb: db,
+        readItem: () => Promise.resolve('ok'),
+      },
+      { readItem: OPERATOR_CAPABILITIES.read },
+    );
+    expect(scope.postCommitDb).toBe(db);
+    expect(Reflect.get(db, 'select')).toBe(originalSelect);
+    expect(await scope.readItem()).toBe('ok');
+  });
   it('retains document attribution when recovery reconstructs a job after operator exit', async () => {
     const { token } = await startImpersonation(db, actor, input);
     const { session } = await resolveImpersonation(db, actor, token);

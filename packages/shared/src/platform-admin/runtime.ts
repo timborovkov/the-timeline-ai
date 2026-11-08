@@ -83,6 +83,17 @@ export async function guardTeamAccess(db: Db, teamId: string, userId: string, sy
 }
 const WRAPPED_OPERATOR_METHOD = Symbol('timeline.guardOperatorWrapped');
 const wrappedOperatorScopes = new WeakSet();
+const SKIP_NESTED_SCOPE_KEYS = new Set(['postCommitDb', 'postCommitEffects', 'teamId', 'userId']);
+
+function isPlainScopeRecord(value: object): boolean {
+  const proto: unknown = Object.getPrototypeOf(value);
+  return proto === Object.prototype || proto === null;
+}
+
+function isDatabaseHandle(value: object): boolean {
+  const record = value as { select?: unknown; transaction?: unknown };
+  return typeof record.select === 'function' && typeof record.transaction === 'function';
+}
 
 export function guardOperatorScope<T extends object>(
   db: Db,
@@ -103,6 +114,7 @@ function validateOperatorCapabilities(
   prefix: string,
 ): void {
   for (const key of Object.keys(scope)) {
+    if (SKIP_NESTED_SCOPE_KEYS.has(key)) continue;
     const value: unknown = Reflect.get(scope, key);
     const operation = prefix ? `${prefix}.${key}` : key;
     if (typeof value === 'function' && !capabilities[operation]) {
@@ -112,7 +124,8 @@ function validateOperatorCapabilities(
       value &&
       typeof value === 'object' &&
       !Array.isArray(value) &&
-      (Object.getPrototypeOf(value) === Object.prototype || Object.getPrototypeOf(value) === null)
+      isPlainScopeRecord(value) &&
+      !isDatabaseHandle(value)
     ) {
       validateOperatorCapabilities(value, capabilities, operation);
     }
@@ -130,22 +143,18 @@ function wrapOperatorScope<T extends object>(
 ): T {
   // Wrap own methods in place and return the same plain object. A Proxy here
   // would hide replacements from Bun's spyOn and from helpers that close over
-  // the original nested namespace.
+  // the original nested namespace. Never wrap Drizzle handles or other class
+  // instances: replacing `db.select` with a guard that itself queries `db`
+  // recurses until the process hangs.
   if (wrappedOperatorScopes.has(scope)) return scope;
   wrappedOperatorScopes.add(scope);
   for (const key of Object.keys(scope)) {
+    if (SKIP_NESTED_SCOPE_KEYS.has(key)) continue;
     const value: unknown = Reflect.get(scope, key);
     const operation = prefix ? `${prefix}.${key}` : key;
     if (value && typeof value === 'object' && !Array.isArray(value)) {
-      // Scope namespaces are plain objects. Class instances (Drizzle clients,
-      // dates, query builders) must stay untouched so wrappers do not turn
-      // synchronous builders into hanging async functions.
-      if (
-        Object.getPrototypeOf(value) === Object.prototype ||
-        Object.getPrototypeOf(value) === null
-      ) {
+      if (isPlainScopeRecord(value) && !isDatabaseHandle(value))
         wrapOperatorScope(db, teamId, userId, value, capabilities, operation, system);
-      }
       continue;
     }
     if (typeof value !== 'function') continue;

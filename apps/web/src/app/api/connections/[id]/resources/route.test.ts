@@ -181,6 +181,19 @@ describe('/api/connections/[id]/resources', () => {
     expect(typeof ctxArg.persistTokens).toBe('function');
   });
 
+  it('forwards Drive picker parentId and query to listSyncableResources', async () => {
+    const response = await GET(
+      new Request('https://timeline.test/api/connections/x/resources?parentId=folder-1&query=sow'),
+      params(),
+    );
+    expect(response.status).toBe(200);
+    const ctxArg = fakes.listSyncableResources.mock.calls[0]?.[2] as {
+      parentId?: string;
+      query?: string;
+    };
+    expect(ctxArg).toMatchObject({ parentId: 'folder-1', query: 'sow' });
+  });
+
   it('returns a JSON error when provider resource listing fails', async () => {
     fakes.listSyncableResources.mockRejectedValueOnce(
       new Error('Monday GraphQL errors: Unauthorized field or type'),

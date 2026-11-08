@@ -22,6 +22,9 @@ await vi.mock(
     hasGitHubAuth: vi.fn(() => {
       throw new Error('Unexpected hasGitHubAuth call in this test');
     }),
+    hasGoogleAuth: vi.fn(() => {
+      throw new Error('Unexpected hasGoogleAuth call in this test');
+    }),
     handlers: vi.fn(() => {
       throw new Error('Unexpected handlers call in this test');
     }),

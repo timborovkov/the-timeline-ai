@@ -50,6 +50,8 @@ enter that matcher.
 - Extract skip is per event, not per OAuth app.
 - Findings never originate Timeline tasks.
 - Packs still default `off`. Pulses stay out of proposal origin.
+- Drive v1 judged captures stamp `communication`; unlabeled legacy Drive
+  `file.changed` rows remain pulses.
 - Timeline `event_class` (presentation: `communication` / `work_record` /
   `pulse` / `incident` / `artifact` / `schedule`) is a sibling stamp, not a
   substitute. Ingest never reads `event_class` to decide extract or proposals.

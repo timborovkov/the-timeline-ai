@@ -88,6 +88,8 @@ const {
   reconciliationOutputs,
   reconciliationRuns,
   userPins,
+  integrations,
+  integrationSelections,
 } = await import('@timeline/db');
 const { and, eq, inArray, or } = await import('drizzle-orm');
 const { drizzle } = await import('drizzle-orm/pglite');
@@ -988,6 +990,46 @@ describe('object scope — team ownership and audit behavior', () => {
         dueNull: true,
       }),
     ).resolves.toEqual([]);
+  });
+
+  it('lists integration-linked objects only within the team scope', async () => {
+    const scope = withTeam(db, TEAM_A, USER_OWNER).objects;
+    const linked = await scope.createObject({
+      type: 'task',
+      canonicalName: 'Linked GitHub PR',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    await db
+      .update(entities)
+      .set({
+        metadata: {
+          integration_provider: 'github',
+          integration_external_id: 'acme/app#12',
+        },
+      })
+      .where(eq(entities.id, linked.id));
+    const foreign = await withTeam(db, TEAM_B, USER_OTHER_TEAM).objects.createObject({
+      type: 'task',
+      canonicalName: 'Foreign GitHub PR',
+      actor: { kind: 'user', userId: USER_OTHER_TEAM },
+    });
+    await db
+      .update(entities)
+      .set({
+        metadata: {
+          integration_provider: 'github',
+          integration_external_id: 'acme/app#12',
+        },
+      })
+      .where(eq(entities.id, foreign.id));
+    await expect(
+      scope.listObjectsLinkedToIntegration({
+        provider: 'github',
+        ids: ['acme/app#12', linked.id, foreign.id],
+      }),
+    ).resolves.toEqual([
+      expect.objectContaining({ id: linked.id, integrationExternalId: 'acme/app#12' }),
+    ]);
   });
 
   it('filters mixed due timestamps by workspace calendar date', async () => {
@@ -3961,6 +4003,50 @@ describe('object scope — merge cleanup', () => {
     const pinRows = await db.select().from(userPins).where(eq(userPins.teamId, TEAM_A));
     expect(pinRows).toHaveLength(2);
     expect(pinRows.every((pin) => pin.targetKey === survivor.id)).toBe(true);
+  });
+
+  it('migrates Drive selection links from merged objects onto the survivor', async () => {
+    const workspace = withTeam(db, TEAM_A, USER_OWNER);
+    const survivor = await workspace.objects.createObject({
+      type: 'company',
+      canonicalName: 'Northstar',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    const duplicate = await workspace.objects.createObject({
+      type: 'company',
+      canonicalName: 'North Star Inc',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    const [integration] = await db
+      .insert(integrations)
+      .values({
+        teamId: TEAM_A,
+        connectedByUserId: USER_OWNER,
+        provider: 'google_drive',
+        displayName: 'Google Drive',
+        externalAccountId: 'drive-acct-merge-selection',
+        visibilityDefault: 'team',
+      })
+      .returning();
+    if (!integration) throw new Error('integration insert failed');
+    await db.insert(integrationSelections).values({
+      integrationId: integration.id,
+      selectionKind: 'drive.folder',
+      externalId: 'clients',
+      linkedObjectId: duplicate.id,
+    });
+
+    await workspace.objects.mergeObjects({
+      survivorId: survivor.id,
+      mergedIds: [duplicate.id],
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+
+    const [selection] = await db
+      .select()
+      .from(integrationSelections)
+      .where(eq(integrationSelections.integrationId, integration.id));
+    expect(selection?.linkedObjectId).toBe(survivor.id);
   });
 
   it('merges compatible objects, moves derived rows, dedupes edges, and hides merged rows', async () => {

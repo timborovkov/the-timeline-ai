@@ -11,13 +11,15 @@ export const OPERATOR_CAPABILITIES = {
 
 export type OperatorCapability = (typeof OPERATOR_CAPABILITIES)[keyof typeof OPERATOR_CAPABILITIES];
 type OperationPaths<T> = {
-  [K in keyof T & string]: T[K] extends (...args: never[]) => unknown
-    ? K
-    : T[K] extends readonly unknown[]
-      ? never
-      : T[K] extends object
-        ? `${K}.${OperationPaths<T[K]>}`
-        : never;
+  [K in keyof T & string]: K extends 'postCommitDb' | 'postCommitEffects' | 'teamId' | 'userId'
+    ? never
+    : T[K] extends (...args: never[]) => unknown
+      ? K
+      : T[K] extends readonly unknown[]
+        ? never
+        : T[K] extends object
+          ? `${K}.${OperationPaths<T[K]>}`
+          : never;
 }[keyof T & string];
 
 /** Every exposed operation must declare policy; renaming a method cannot change access. */

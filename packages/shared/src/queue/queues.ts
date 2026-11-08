@@ -650,7 +650,8 @@ export async function closeCalendarRecurrenceQueue(): Promise<void> {
   });
 }
 
-export interface DocumentExtractJobData {
+export interface DocumentVersionExtractJobData {
+  kind?: 'document';
   documentVersionId: string;
   teamId: string;
   /** Override target Qdrant collection for the embed fan-out — used by the
@@ -658,6 +659,47 @@ export interface DocumentExtractJobData {
    *  job verbatim. */
   targetCollection?: string;
 }
+
+/**
+ * Transient Drive PDF/Word/Slides extract. Bytes live in the documents
+ * bucket only for the extract hop; the orchestrator writes a JSON result
+ * and resumes `drive.file`. This must not create a document-drive harvest.
+ */
+export interface DriveTransientExtractJobData {
+  kind: 'drive_transient';
+  teamId: string;
+  integrationId: string;
+  fileId: string;
+  extractId: string;
+  objectKey: string;
+  resultObjectKey: string;
+  contentType: string;
+  filename: string;
+}
+
+export type DocumentExtractJobData = DocumentVersionExtractJobData | DriveTransientExtractJobData;
+
+export function isDriveTransientExtractJob(
+  data: DocumentExtractJobData,
+): data is DriveTransientExtractJobData {
+  return data.kind === 'drive_transient';
+}
+
+/** Surface stamped on the `drive.file` continuation that picks up one extract. */
+export function driveTransientExtractResumeSurface(extractId: string): string {
+  return `extract:${extractId}`;
+}
+
+const DOCUMENT_EXTRACT_JOB_DEDUPE_STATES = new Set([
+  'active',
+  'delayed',
+  'paused',
+  'prioritized',
+  'waiting',
+  'waiting-children',
+]);
+
+const DOCUMENT_EXTRACT_JOB_REPLACEABLE_STATES = new Set(['completed', 'failed']);
 
 let _documentExtractQueue: TimelineQueue<DocumentExtractJobData> | undefined;
 
@@ -673,10 +715,39 @@ export function getDocumentExtractQueue(): TimelineQueue<DocumentExtractJobData>
 }
 
 export async function enqueueDocumentExtractJob(data: DocumentExtractJobData): Promise<void> {
-  // No jobId-based dedup for the same reasons as the other queues:
-  // worker-side idempotency comes from advisory locks on
-  // `document_versions.id` plus the deterministic chunk-embed point ids.
-  await getDocumentExtractQueue().add('document-extract', data);
+  // Document-version jobs rely on advisory locks for idempotency. Drive
+  // transient extracts collapse on extractId while in flight so a stale
+  // pending re-enqueue cannot stack duplicate Daytona/vision work. A
+  // retained completed/failed job is replaced so a dropped resume can
+  // reuse the persisted result instead of throwing on JobIdAlreadyExists.
+  const q = getDocumentExtractQueue();
+  const jobId = isDriveTransientExtractJob(data)
+    ? bullmqCustomJobId([
+        'document-extract',
+        'drive-transient',
+        data.integrationId,
+        data.fileId,
+        data.extractId,
+      ])
+    : undefined;
+  if (jobId) {
+    const existing = (await q.getJob(jobId)) as ExistingJobLike | null;
+    if (existing) {
+      const state = await existing.getState?.().catch(() => null);
+      if (!state || DOCUMENT_EXTRACT_JOB_DEDUPE_STATES.has(state)) return;
+      if (DOCUMENT_EXTRACT_JOB_REPLACEABLE_STATES.has(state)) {
+        if (!existing.remove) return;
+        const removed = await existing.remove().then(
+          () => true,
+          () => false,
+        );
+        if (!removed) return;
+      } else {
+        return;
+      }
+    }
+  }
+  await q.add('document-extract', data, jobId ? { jobId } : undefined);
 }
 
 export async function closeDocumentExtractQueue(): Promise<void> {
@@ -899,10 +970,34 @@ function integrationSyncJobId(data: IntegrationSyncJobData): string | undefined 
     return bullmqCustomJobId(['integration-reconcile', data.integrationId]);
   }
   if (data.kind !== 'targeted') return undefined;
+  // Durable outbox handoffs keep a unique job id even when a lock-retry
+  // still carries `drive_watch`. Colliding with the originating debounce
+  // id would ack the handoff without enqueueing the continuation.
+  if (data.continuationHandoffId) {
+    if (data.reason === 'drive_transient_extract') {
+      return bullmqCustomJobId([
+        'integration-drive-extract-resume',
+        data.integrationId,
+        data.externalId,
+        data.continuationHandoffId,
+      ]);
+    }
+    return bullmqCustomJobId(['integration-pagination-continuation', data.continuationHandoffId]);
+  }
   if (data.reason === 'provider_pagination_continuation') {
-    return data.continuationHandoffId
-      ? bullmqCustomJobId(['integration-pagination-continuation', data.continuationHandoffId])
-      : undefined;
+    return undefined;
+  }
+  // Extract resumes must not share the originating `drive.file` debounce
+  // id (`…|all`). If that job is still active, delayed, or waiting,
+  // `enqueueIntegrationSyncJob` would otherwise silently drop the
+  // continuation after the changes cursor has already advanced.
+  if (data.reason === 'drive_transient_extract') {
+    return bullmqCustomJobId([
+      'integration-drive-extract-resume',
+      data.integrationId,
+      data.externalId,
+      data.surface ?? 'resume',
+    ]);
   }
   return bullmqCustomJobId([
     'integration-targeted',
@@ -915,7 +1010,7 @@ function integrationSyncJobId(data: IntegrationSyncJobData): string | undefined 
 
 export async function enqueueIntegrationSyncJob(
   data: IntegrationSyncJobData,
-  opts: { delayMs?: number } = {},
+  opts: { delayMs?: number; replaceDelayed?: boolean } = {},
 ): Promise<void> {
   // Backfill and broad incremental jobs intentionally avoid jobId dedupe:
   // idempotency lives in raw_event dedup keys, per-resource cursors, and the
@@ -925,6 +1020,9 @@ export async function enqueueIntegrationSyncJob(
   // repo/board/project should collapse while a job is waiting or running. A
   // later delivery/reconciliation must be able to enqueue once the retained
   // completed/failed BullMQ job is removed.
+  //
+  // Drive file capture is the exception: `replaceDelayed` extends a waiting
+  // quiet window the same way conversation-review bumps `quietUntil`.
   const q = getIntegrationSyncQueue();
   const jobId = integrationSyncJobId(data);
   if (jobId) {
@@ -936,8 +1034,16 @@ export async function enqueueIntegrationSyncJob(
       // Redis connection dropped" error. Do not recycle it into a duplicate.
       if (data.kind === 'targeted' && data.continuationHandoffId) return;
       const state = await existing.getState?.().catch(() => null);
-      if (!state || INTEGRATION_SYNC_JOB_DEDUPE_STATES.has(state)) return;
-      if (INTEGRATION_SYNC_JOB_REPLACEABLE_STATES.has(state)) {
+      if (state === 'delayed' && opts.replaceDelayed) {
+        if (!existing.remove) return;
+        const removed = await existing.remove().then(
+          () => true,
+          () => false,
+        );
+        if (!removed) return;
+      } else if (!state || INTEGRATION_SYNC_JOB_DEDUPE_STATES.has(state)) {
+        return;
+      } else if (INTEGRATION_SYNC_JOB_REPLACEABLE_STATES.has(state)) {
         if (!existing.remove) return;
         const removed = await existing.remove().then(
           () => true,

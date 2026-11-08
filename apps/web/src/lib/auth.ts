@@ -11,7 +11,7 @@ import { cache } from 'react';
 
 import { auth as baseAuth } from '@/lib/auth-base';
 import { db } from '@/lib/db';
-export { handlers, signIn, updateSession, hasGitHubAuth } from '@/lib/auth-base';
+export { handlers, signIn, updateSession, hasGitHubAuth, hasGoogleAuth } from '@/lib/auth-base';
 
 export const realAuth = baseAuth;
 export const getRequestIdentity = cache(async () => {

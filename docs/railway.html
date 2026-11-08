@@ -301,7 +301,7 @@ SENTRY_AUTH_TOKEN=&lt;sentry source map upload token&gt;
 SENTRY_ORG=irmin-dw
 SENTRY_PROJECT=the-timeline-ai
 SENTRY_RELEASE=&lt;deployed git sha, optional&gt;
-GOOGLE_CLIENT_ID=&lt;google oauth client id&gt;
+GOOGLE_CLIENT_ID=&lt;google oauth client id; shared by sign-in and Drive&gt;
 GOOGLE_CLIENT_SECRET=&lt;google oauth client secret&gt;
 GOOGLE_DRIVE_WEBHOOK_SECRET=&lt;google drive webhook hmac secret&gt;
 LINEAR_CLIENT_ID=&lt;linear oauth app client id&gt;
@@ -600,6 +600,7 @@ rclone sync s3:timeline-exports backblaze-b2:timeline-backup-exports
       </ul>
       <p>
         Native integration OAuth callbacks also land on the web service, including
+        <code>/api/auth/callback/google</code> (sign-in; <code>openid email profile</code> only),
         <code>/api/integrations/google_drive/callback</code>,
         <code>/api/integrations/linear/callback</code>,
         <code>/api/integrations/github/callback</code>,

@@ -167,8 +167,12 @@ Grok Bot, OpenClaw or Hermes. No production deployment was performed.
 dependency updates are included. Coworker migrations remain additive as
 `0097_auth_continuations`, `0098_agent_provisioning`, and `0099_agent_reporting`.
 
-**Later reconciliation required with Drive PR #462.** That PR independently uses
-`0097_google_drive_v1` through `0100_google_drive_snapshot_ancestry`. The numbers collide.
-This branch does not rename Drive files and does not change Drive. If this PR lands first,
-Drive must be renumbered after `0099_agent_reporting`. If Drive lands first, this PR's
-coworker migrations must move past Drive's last tag. Do not apply both journals as-is.
+**Drive PR #462 reconciliation (2026-11-07).** Production currently deploys
+`cursor/google-drive-v1-b571`, and Drive `0097_google_drive_v1`–`0100_google_drive_snapshot_ancestry`
+keep their original journal `when` values so already-applied Drive history is not replayed.
+Coworker SQL files keep their original tags and contents (`0097_auth_continuations`,
+`0098_agent_provisioning`, `0099_agent_reporting`) but are journaled after Drive at idx 104–106
+with later `when` timestamps. Fresh databases apply Drive then coworker. Drive-applied
+databases skip Drive (high-water at `0100`) and apply coworker next. Do not change Drive
+`when` values. A database that already applied coworker at the original 0097–0099 timestamps
+is not this production lineage; do not replay those files.
