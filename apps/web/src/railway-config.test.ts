@@ -77,6 +77,10 @@ describe('Railway web config', () => {
     expect(dockerfile).toContain('ENV NEXT_PUBLIC_SENTRY_DSN=$NEXT_PUBLIC_SENTRY_DSN');
     expect(dockerfile).toContain('ARG NEXT_PUBLIC_POSTHOG_KEY');
     expect(dockerfile).toContain('ENV NEXT_PUBLIC_POSTHOG_KEY=$NEXT_PUBLIC_POSTHOG_KEY');
+    expect(dockerfile).toContain('ARG NEXT_PUBLIC_POSTHOG_HOST');
+    expect(dockerfile).toContain('ENV NEXT_PUBLIC_POSTHOG_HOST=$NEXT_PUBLIC_POSTHOG_HOST');
+    expect(dockerfile).toContain('ARG NEXT_PUBLIC_POSTHOG_UI_HOST');
+    expect(dockerfile).toContain('ENV NEXT_PUBLIC_POSTHOG_UI_HOST=$NEXT_PUBLIC_POSTHOG_UI_HOST');
     expect(dockerfile).toContain('FROM oven/bun:1.4.4-debian AS base');
     expect(dockerfile).toContain('CMD ["bun", "--bun", "--no-env-file", "apps/web/start.mjs"]');
   });

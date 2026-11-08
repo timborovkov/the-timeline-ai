@@ -32,12 +32,17 @@ const { default: userEvent } = await import('@testing-library/user-event');
 
 const { PublicFooterColumns, PublicNavigationDisclosure, PublicNavigationItems } =
   await import('@/components/public-navigation');
+const { resetPublicSessionCache, setPublicSessionCache } = await import('@/lib/public-session');
 
 beforeEach(() => {
   route.pathname = '/help/article';
+  resetPublicSessionCache();
 });
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  resetPublicSessionCache();
+});
 
 describe('PublicNavigationDisclosure', () => {
   it('closes after a menu link is activated', async () => {
@@ -180,6 +185,7 @@ describe('Header navigation', () => {
     };
 
     try {
+      setPublicSessionCache({ status: 'signed-out' });
       const user = userEvent.setup();
       const { container } = render(<PublicNavigationDisclosure currentSection="product" />);
       await user.click(screen.getByText('Menu'));

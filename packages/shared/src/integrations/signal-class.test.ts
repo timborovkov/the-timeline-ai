@@ -52,6 +52,13 @@ describe('resolveSignalClass', () => {
     expect(resolveSignalClass({ provider: 'google_drive', eventType: 'file.changed' })).toBe(
       'pulse',
     );
+    expect(
+      resolveSignalClass({
+        provider: 'google_drive',
+        eventType: 'file.changed',
+        signalClass: 'communication',
+      }),
+    ).toBe('communication');
   });
 
   it('keeps a conservative skip for legacy structured providers', () => {

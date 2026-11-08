@@ -31,6 +31,8 @@ import {
   entityRelationships,
   factEntities,
   facts as factsTable,
+  integrations as integrationsTable,
+  integrationSelections,
   notifications,
   objectChanges,
   objectIdentityFacets,
@@ -69,6 +71,7 @@ import {
 } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 
+import { rebindDriveSelectionArtifactLink } from '#src/artifacts/index.js';
 import {
   deleteDueDateCalendarEventEmbeddings,
   enqueueDueDateCalendarEventEmbeddings,
@@ -1659,6 +1662,31 @@ export async function listObjects(
     .limit(limit)
     .offset(offset);
   return attachCommentCounts(db, scope, rows.map(toObjectRow));
+}
+
+export async function listObjectsLinkedToIntegration(
+  db: Db,
+  scope: TeamScopeCore,
+  input: { provider: string; ids: string[] },
+): Promise<{ id: string; integrationExternalId: string | null }[]> {
+  await scope.requireMembership();
+  const ids = [...new Set(input.ids.filter((id) => id.length > 0))];
+  if (ids.length === 0) return [];
+  const uuidIds = ids.filter((id) => UUID_RE.test(id));
+  const metadataMatch = and(
+    sql`(${entities.metadata} ->> 'integration_provider') = ${input.provider}`,
+    inArray(sql`(${entities.metadata} ->> 'integration_external_id')`, ids),
+  );
+  const match =
+    uuidIds.length > 0 ? or(inArray(entities.id, uuidIds), metadataMatch) : metadataMatch;
+  return db
+    .select({
+      id: entities.id,
+      integrationExternalId: sql<string | null>`${entities.metadata} ->> 'integration_external_id'`,
+    })
+    .from(entities)
+    .where(and(eq(entities.teamId, scope.teamId), isNull(entities.mergedIntoId), match))
+    .limit(Math.min(Math.max(ids.length, 1), OBJECT_QUERY_LIMIT_MAX));
 }
 
 export async function searchObjects(
@@ -5684,6 +5712,58 @@ export async function mergeObjects(
       rawEventId: sourceEventId,
       text: eventText,
     });
+
+    const loserSelections = await tx
+      .select({
+        id: integrationSelections.id,
+        integrationId: integrationSelections.integrationId,
+        selectionKind: integrationSelections.selectionKind,
+        externalId: integrationSelections.externalId,
+        linkedObjectId: integrationSelections.linkedObjectId,
+        provider: integrationsTable.provider,
+      })
+      .from(integrationSelections)
+      .innerJoin(integrationsTable, eq(integrationsTable.id, integrationSelections.integrationId))
+      .where(
+        and(
+          eq(integrationsTable.teamId, scope.teamId),
+          inArray(integrationSelections.linkedObjectId, loserIds),
+        ),
+      );
+    if (loserSelections.length > 0) {
+      await tx
+        .update(integrationSelections)
+        .set({ linkedObjectId: survivor.id })
+        .where(
+          inArray(
+            integrationSelections.id,
+            loserSelections.map((row) => row.id),
+          ),
+        );
+      for (const selection of loserSelections) {
+        if (selection.provider !== 'google_drive') continue;
+        const siblings = await tx
+          .select({
+            externalId: integrationSelections.externalId,
+            linkedObjectId: integrationSelections.linkedObjectId,
+            selectionKind: integrationSelections.selectionKind,
+          })
+          .from(integrationSelections)
+          .where(eq(integrationSelections.integrationId, selection.integrationId));
+        await rebindDriveSelectionArtifactLink(tx as unknown as Db, {
+          teamId: scope.teamId,
+          integrationId: selection.integrationId,
+          selectionKind: selection.selectionKind,
+          externalId: selection.externalId,
+          previousObjectId: selection.linkedObjectId,
+          selections: siblings.map((row) => ({
+            kind: row.selectionKind,
+            externalId: row.externalId,
+            linkedObjectId: row.linkedObjectId,
+          })),
+        });
+      }
+    }
 
     await tx
       .update(entities)
@@ -9823,6 +9903,8 @@ export async function rejectObjectChange(
 export function createObjectScope(db: Db, scope: TeamScopeCore) {
   return {
     listObjects: (filter?: ObjectListFilter) => listObjects(db, scope, filter),
+    listObjectsLinkedToIntegration: (input: { provider: string; ids: string[] }) =>
+      listObjectsLinkedToIntegration(db, scope, input),
     countObjects: (filter?: ObjectCountFilter) => countObjects(db, scope, filter),
     getTaskCategoryFilterRefreshState: (
       filter: ObjectCountFilter,

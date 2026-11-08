@@ -45,6 +45,7 @@ import {
   TeamExportPanel,
 } from '@/components/team-forms';
 import { TeamMembersSettings } from '@/components/team-members-settings';
+import { TeamSupportMetadata } from '@/components/team-support-metadata';
 import { VisibilityDefaultSettings } from '@/components/visibility-default-settings';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
@@ -270,11 +271,14 @@ function TeamIdentitySettings({
 }) {
   return (
     <SettingsSection title="Team identity">
-      {isAdmin ? (
-        <RenameTeamForm currentName={active.teamName} teamId={active.teamId} />
-      ) : (
-        <p className="text-sm text-fg-muted">Only team administrators can rename this team.</p>
-      )}
+      <div className="space-y-4">
+        {isAdmin ? (
+          <RenameTeamForm currentName={active.teamName} teamId={active.teamId} />
+        ) : (
+          <p className="text-sm text-fg-muted">Only team administrators can rename this team.</p>
+        )}
+        <TeamSupportMetadata teamId={active.teamId} teamSlug={active.teamSlug} />
+      </div>
     </SettingsSection>
   );
 }
