@@ -105,8 +105,8 @@ time comparison even if no later request arrives.
 Apply migrations `0093_platform_admin` and `0094_platform_admin_retention` before
 deploying web and worker changes.
 Publish the updated Privacy notice and legal version together. Verify the existing
-`LEGAL_PUBLICATION_READY` production gate is enabled only after its contracting-entity
-readiness requirements are satisfied. This pre-launch revision does not trigger renewed acknowledgment.
+`LEGAL_PUBLICATION_READY` production gate is enabled after the legal text is approved
+for publication. This pre-launch revision does not trigger renewed acknowledgment.
 The shared platform-admin service owns global directory, session, and audit access;
 workspace content continues through `withTeam`. Configure the allowlist on the web
 and worker processes so queued impersonated work can verify the administrator.
