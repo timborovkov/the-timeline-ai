@@ -159,21 +159,35 @@ describe('legal acceptance persistence', () => {
 });
 
 describe('hasCurrentLegalAcceptance', () => {
-  it('keeps current pre-launch Privacy acknowledgment valid after disclosure edits', () => {
+  it('requires renewed Privacy acknowledgment after deletion disclosure changes', () => {
+    expect(
+      hasCurrentLegalAcceptance({
+        legalTermsVersion: TERMS_VERSION,
+        legalPrivacyVersion: '2026-11-07',
+        legalAcceptedAt: new Date('2026-11-07T10:00:00.000Z'),
+      }),
+    ).toBe(false);
+    expect(
+      hasCurrentLegalAcceptance({
+        legalTermsVersion: '2026-11-03',
+        legalPrivacyVersion: PRIVACY_VERSION,
+        legalAcceptedAt: new Date('2026-11-07T10:00:00.000Z'),
+      }),
+    ).toBe(false);
     expect(
       hasCurrentLegalAcceptance({
         legalTermsVersion: TERMS_VERSION,
         legalPrivacyVersion: '2026-11-01',
         legalAcceptedAt: new Date('2026-08-21T10:00:00.000Z'),
       }),
-    ).toBe(true);
+    ).toBe(false);
     expect(
       hasCurrentLegalAcceptance({
         legalTermsVersion: TERMS_VERSION,
         legalPrivacyVersion: '2026-11-03',
         legalAcceptedAt: new Date('2026-08-21T10:00:00.000Z'),
       }),
-    ).toBe(true);
+    ).toBe(false);
     expect(
       hasCurrentLegalAcceptance({
         legalTermsVersion: TERMS_VERSION,

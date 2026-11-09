@@ -36,23 +36,23 @@ describe('hasCurrentLegalSession', () => {
     const grandfathered = session();
     grandfathered.user.legalPrivacyVersion = '2026-11-01';
     expect(grandfathered.user.legalTermsVersion).toBe(TERMS_VERSION);
-    expect(hasCurrentLegalSession(grandfathered.user)).toBe(true);
+    expect(hasCurrentLegalSession(grandfathered.user)).toBe(false);
 
     const previous = session();
     previous.user.legalPrivacyVersion = 'older-privacy';
     expect(previous.user.legalTermsVersion).toBe(TERMS_VERSION);
     expect(hasCurrentLegalSession(previous.user)).toBe(false);
     previous.user.legalPrivacyVersion = '2026-11-01';
-    expect(hasCurrentLegalSession(previous.user)).toBe(true);
+    expect(hasCurrentLegalSession(previous.user)).toBe(false);
     expect(hasCurrentLegalSession(session().user)).toBe(true);
   });
 
-  it('keeps grandfathered pre-launch Privacy acknowledgments current', () => {
+  it('requires renewal of pre-launch Privacy acknowledgments', () => {
     const grandfathered = session();
     grandfathered.user.legalPrivacyVersion = '2026-11-01';
-    expect(hasCurrentLegalSession(grandfathered.user)).toBe(true);
+    expect(hasCurrentLegalSession(grandfathered.user)).toBe(false);
     grandfathered.user.legalPrivacyVersion = '2026-11-03';
-    expect(hasCurrentLegalSession(grandfathered.user)).toBe(true);
+    expect(hasCurrentLegalSession(grandfathered.user)).toBe(false);
   });
   it('requires both current signed versions and an acceptance timestamp', () => {
     expect(hasCurrentLegalSession(session().user)).toBe(true);

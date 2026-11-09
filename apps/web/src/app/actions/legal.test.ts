@@ -101,8 +101,7 @@ describe('acceptLegalAction', () => {
     fakes.isLegalPublicationReady.mockReturnValue(false);
 
     await expect(acceptLegalAction({}, form({ accepted: 'on' }))).resolves.toEqual({
-      error:
-        'Legal acceptance is unavailable while our contracting-entity publication review is completed.',
+      error: 'Legal acceptance is unavailable until publication is enabled.',
     });
     expect(fakes.auth).not.toHaveBeenCalled();
     expect(fakes.transaction).not.toHaveBeenCalled();

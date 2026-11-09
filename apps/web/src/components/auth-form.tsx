@@ -78,8 +78,8 @@ export function SignUpForm({
   if (!legalPublicationReady) {
     return (
       <p role="status" className="text-sm leading-6 text-muted-foreground">
-        We are not accepting new accounts until the contracting-entity review is resolved and the
-        Terms are ready for publication. Existing users can still sign in.
+        New account creation is paused until the Terms are published. Existing users can still sign
+        in.
       </p>
     );
   }
