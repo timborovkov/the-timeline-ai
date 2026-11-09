@@ -1,3 +1,4 @@
+import { proposalIdsForTool } from '#src/agent/tool-policy.js';
 import { citationPartToArtifactRef, parseCitations, type ArtifactRef } from '#src/citation.js';
 
 import type { ToolSet } from 'ai';
@@ -107,11 +108,19 @@ export function instrumentAgentTools<TTools extends ToolSet>(
         const started = Date.now();
         try {
           const output = await original(...args);
-          onObservation(buildToolObservation(name, args[0], output, Date.now() - started));
+          onObservation(
+            buildToolObservation(name, definition, args[0], output, Date.now() - started),
+          );
           return output;
         } catch (err) {
           onObservation(
-            buildToolObservation(name, args[0], { error: 'thrown' }, Date.now() - started),
+            buildToolObservation(
+              name,
+              definition,
+              args[0],
+              { error: 'thrown' },
+              Date.now() - started,
+            ),
           );
           throw err;
         }
@@ -161,6 +170,7 @@ export function agentToolGroup(toolName: string): AgentToolGroup {
 
 function buildToolObservation(
   toolName: string,
+  definition: ToolSet[string],
   input: unknown,
   output: unknown,
   durationMs: number,
@@ -174,25 +184,9 @@ function buildToolObservation(
     retrievalRecipe: retrievalRecipe(input),
     resultCount: resultCount(output),
     topArtifactRefs: extractArtifactRefs(output).slice(0, 10),
-    proposalIds: extractProposalIds(toolName, output),
+    proposalIds: proposalIdsForTool(definition, output),
     warningCodes: warningCodes(output),
   };
-}
-
-const PROPOSAL_TOOL_NAMES = new Set([
-  'suggest_task',
-  'propose_object_change',
-  'suggest_object_memory',
-  'suggest_calendar_event',
-  'propose_calendar_update',
-]);
-
-function extractProposalIds(toolName: string, output: unknown): string[] {
-  if (!PROPOSAL_TOOL_NAMES.has(toolName)) return [];
-  const row = objectRecord(output);
-  if (!row || row.ok === false) return [];
-  const id = typeof row.suggestion_id === 'string' ? row.suggestion_id : row.id;
-  return typeof id === 'string' ? [id] : [];
 }
 
 function objectRecord(value: unknown): Record<string, unknown> | null {

@@ -2,7 +2,7 @@ import { expect } from '@timeline/test-support';
 import { vi } from '@timeline/test-support';
 import { afterEach, describe, it } from 'bun:test';
 
-import type { TimelineEvent } from '@/lib/use-paginated-queries';
+import type { TimelineEvent } from '@/lib/timeline-types';
 import type { ComponentProps, ReactNode } from 'react';
 // Test environment: happy-dom
 

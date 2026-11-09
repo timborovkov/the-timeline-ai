@@ -10,7 +10,7 @@
     <a class="skip" href="#main">Skip to content</a>
     <main id="main">
       <h1>Railway deployment setup</h1>
-      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-10-24</span></div>
+      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-11-04</span></div>
       <p class="tldr">
         Project + environment provisioning for staging and production. For the full service
         architecture see <a href="../railway.html">docs/railway.html</a>.
@@ -25,19 +25,22 @@
       <ol>
         <li>Create a new Railway project.</li>
         <li>
-          Use the default <code>production</code> environment. The current project has no users and
-          uses this environment for development and deployment verification.
+          Use the default <code>production</code> environment. Development work merges into
+          <code>main</code>; releases merge into the protected <code>production</code> branch.
         </li>
         <li>
           <strong>Settings → Git</strong> — connect the repo. Branch deploys:
           <ul>
-            <li><code>main</code> → <code>production</code></li>
+            <li><code>production</code> branch → <code>production</code> environment</li>
           </ul>
         </li>
       </ol>
       <p>
-        A separate staging environment is optional. If introduced, provision isolated services and
-        credentials for release validation.
+        On 2026-11-07, the web, worker and document-extract services still followed
+        <code>cursor/google-drive-v1-b571</code>. Switching each source branch to
+        <code>production</code> is an operator step, pending after the CI split. A separate staging
+        environment is optional. If introduced, provision isolated services and credentials for
+        release validation.
       </p>
 
       <h2 id="database-templates">2. Database templates</h2>
@@ -115,8 +118,20 @@
       </p>
       <p>
         Bun is pinned to <code>1.4.4</code> in <code>.bun-version</code>, <code>package.json</code>,
-        and the Debian-based Dockerfiles. Railway uses the repository Dockerfiles for all three
-        application services; remove old Railpack build commands and Node start-command overrides.
+        and the Debian-based Dockerfiles. Start and pre-deploy commands use
+        <code>bun --bun --no-env-file</code> so Next's standalone Node shebang cannot exec Node.
+        Railway uses the repository Dockerfiles for all three application services. After merge, in
+        the Railway dashboard for <code>web</code>, <code>worker</code>, and
+        <code>document-extract-orchestrator</code>: set the custom config path to the matching
+        <code>railway.json</code>; set the builder to Dockerfile (not Railpack/Nixpacks); clear
+        start-command overrides that still run <code>node</code>, <code>next start</code>, or
+        <code>pnpm</code>; delete <code>NIXPACKS_NODE_VERSION</code>,
+        <code>RAILPACK_NODE_VERSION</code>, and <code>NODE_VERSION</code> if present; keep
+        <code>NODE_ENV=production</code>. Keep the web healthcheck at <code>/api/health</code>. Do
+        not change Railway from the git PR — these are dashboard-only operator steps. After deploy,
+        Sentry server events should show runtime <code>bun</code> <code>1.4.4</code> (not Node
+        <code>26.3.0</code>, which is Bun 1.4's compatibility version), and
+        <code>GET /api/health</code> should include <code>"runtime":"bun"</code>.
       </p>
       <p>
         The <code>document-extract-orchestrator</code> service is the credential-thin
@@ -247,11 +262,12 @@
         For personless surface counts and pseudonymous server/worker product analytics, set
         <code>POSTHOG_PROJECT_KEY</code>, <code>POSTHOG_HOST=https://eu.i.posthog.com</code>, and a
         separate high-entropy <code>ANALYTICS_PSEUDONYMIZATION_KEY</code>. Set
-        <code>NEXT_PUBLIC_POSTHOG_KEY</code> and
-        <code>NEXT_PUBLIC_POSTHOG_HOST=https://eu.i.posthog.com</code> as web Docker build args only
-        when the consent-gated public-browser path and provider account have been verified; leaving
-        the public key empty disables browser capture. Put the server analytics values only on
-        <code>web</code> and the main <code>worker</code>; the document-extract orchestrator does
+        <code>NEXT_PUBLIC_POSTHOG_KEY</code>,
+        <code>NEXT_PUBLIC_POSTHOG_HOST=https://m.thetimeline.cc</code>, and
+        <code>NEXT_PUBLIC_POSTHOG_UI_HOST=https://eu.posthog.com</code> as web Docker build args
+        only when the consent-gated public-browser path and provider account have been verified;
+        leaving the public key empty disables browser capture. Put the server analytics values only
+        on <code>web</code> and the main <code>worker</code>; the document-extract orchestrator does
         not emit product analytics and its startup allowlist rejects them. See
         <a href="analytics.html">Analytics setup</a>. For error monitoring, set
         <code>SENTRY_DSN</code>, <code>NEXT_PUBLIC_SENTRY_DSN</code>,
@@ -292,7 +308,8 @@
       <h2 id="healthchecks">6. Healthchecks</h2>
       <p>
         Already configured in <code>apps/web/railway.json</code> → <code>/api/health</code>. Railway
-        will restart the service on failure.
+        will restart the service on failure. The JSON body includes <code>"runtime":"bun"</code>
+        when the process is the Bun runtime.
       </p>
 
       <h2 id="reconcile-cron">7. Job reconciler (optional cron)</h2>

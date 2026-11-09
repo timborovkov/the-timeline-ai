@@ -26,6 +26,13 @@ await vi.mock(
   () => import('@/lib/email-verification'),
 );
 
+await vi.mock(
+  import.meta.resolve('@/lib/auth-continuation'),
+  () => ({ resolveAuthContinuation: vi.fn() }),
+  () => import('@/lib/auth-continuation'),
+);
+const { resolveAuthContinuation } = await import('@/lib/auth-continuation');
+
 const { cleanup, render, screen } = await import('@testing-library/react');
 const { default: userEvent } = await import('@testing-library/user-event');
 const { renderToStaticMarkup } = await import('react-dom/server');
@@ -51,6 +58,30 @@ describe('VerifyEmail route states', () => {
 
     expect(html.match(/<h1\b/g)).toHaveLength(1);
     expect(html).toContain('Verification link invalid');
+  });
+
+  it('resumes a valid authorization and explains an expired continuation', async () => {
+    for (const destination of ['/oauth/authorize?state=saved', null]) {
+      vi.mocked(verifyEmailToken).mockResolvedValueOnce('verified');
+      vi.mocked(resolveAuthContinuation).mockResolvedValueOnce(destination);
+      const html = renderToStaticMarkup(
+        await VerifyEmailPage({
+          params: Promise.resolve({ token: 'verification-token' }),
+          searchParams: Promise.resolve({
+            email: 'person@example.com',
+            continuation: 'opaque-reference',
+          }),
+        }),
+      );
+      expect(html).toContain(
+        destination ? 'Continue connecting your agent' : 'Restart authorization from your agent',
+      );
+      expect(resolveAuthContinuation).toHaveBeenCalledWith(
+        {},
+        'opaque-reference',
+        'person@example.com',
+      );
+    }
   });
 
   it('lets verification-service failures reach the route error boundary', async () => {

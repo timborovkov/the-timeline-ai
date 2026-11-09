@@ -1,3 +1,4 @@
+import { PlatformAccessError } from '@timeline/shared/platform-admin';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 
@@ -23,7 +24,15 @@ export async function POST(
     return appRedirect('/sign-in');
   }
   const { teamId } = await params;
-  const ok = await verifyMembership(session.user.id, teamId);
+  let ok: boolean;
+  try {
+    ok = await verifyMembership(session.user.id, teamId);
+  } catch (error) {
+    // Suspended/terminated workspaces throw instead of returning false. Stay on
+    // the current team and let /app (or the request gate) handle the UI.
+    if (error instanceof PlatformAccessError) return appRedirect('/app');
+    throw error;
+  }
   if (!ok) {
     return appRedirect('/app');
   }

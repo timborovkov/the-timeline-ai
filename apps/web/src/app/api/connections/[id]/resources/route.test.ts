@@ -12,7 +12,8 @@ const fakes = vi.hoisted(() => ({
   auth: vi.fn(),
   resolveActiveTeam: vi.fn(),
   getProvider: vi.fn(),
-  listSyncableResources: vi.fn(),
+  browseResources: vi.fn(),
+  validateResourceSelections: vi.fn(),
   getOwnedProviderConnection: vi.fn(),
   getProviderConnectionTokens: vi.fn(),
   listOwnedTeamResourceShares: vi.fn(),
@@ -93,8 +94,15 @@ beforeEach(() => {
   fakes.resolveActiveTeam.mockResolvedValue({ active: { teamId: TEAM_ID, role: 'member' } });
   fakes.getOwnedProviderConnection.mockResolvedValue(connection);
   fakes.getProviderConnectionTokens.mockResolvedValue({ accessToken: 'token' });
-  fakes.getProvider.mockReturnValue({ listSyncableResources: fakes.listSyncableResources });
-  fakes.listSyncableResources.mockResolvedValue([
+  fakes.getProvider.mockReturnValue({
+    browseResources: fakes.browseResources,
+    validateResourceSelections: fakes.validateResourceSelections,
+  });
+  fakes.validateResourceSelections.mockResolvedValue([
+    { kind: 'github.org', externalId: 'openai', label: 'OpenAI' },
+    { kind: 'github.repo', externalId: 'openai/codex', label: 'openai/codex' },
+  ]);
+  fakes.browseResources.mockResolvedValue([
     { kind: 'github.org', externalId: 'openai', label: 'OpenAI' },
     { kind: 'github.repo', externalId: 'openai/codex', label: 'openai/codex' },
   ]);
@@ -165,24 +173,31 @@ describe('/api/connections/[id]/resources', () => {
       resourceKind: 'github.repo',
       externalId: 'openai/codex',
     });
-    const [integrationArg, tokensArg, ctxArg] = fakes.listSyncableResources.mock.calls[0] as [
+    const [integrationArg, tokensArg, ctxArg] = fakes.browseResources.mock.calls[0] as [
       unknown,
       unknown,
       { persistTokens?: unknown },
     ];
-    expect(integrationArg).toEqual(
-      expect.objectContaining({
-        id: CONNECTION_ID,
-        teamId: TEAM_ID,
-        providerConnectionId: CONNECTION_ID,
-      }),
-    );
+    expect(integrationArg).toEqual({ id: CONNECTION_ID, externalAccountId: '42' });
     expect(tokensArg).toEqual({ accessToken: 'token' });
     expect(typeof ctxArg.persistTokens).toBe('function');
   });
 
+  it('forwards Drive picker parentId and query to browseResources', async () => {
+    const response = await GET(
+      new Request('https://timeline.test/api/connections/x/resources?parentId=folder-1&query=sow'),
+      params(),
+    );
+    expect(response.status).toBe(200);
+    const ctxArg = fakes.browseResources.mock.calls[0]?.[2] as {
+      parentId?: string;
+      query?: string;
+    };
+    expect(ctxArg).toMatchObject({ parentId: 'folder-1', query: 'sow' });
+  });
+
   it('returns a JSON error when provider resource listing fails', async () => {
-    fakes.listSyncableResources.mockRejectedValueOnce(
+    fakes.browseResources.mockRejectedValueOnce(
       new Error('Monday GraphQL errors: Unauthorized field or type'),
     );
 
@@ -226,10 +241,17 @@ describe('/api/connections/[id]/resources', () => {
     expect(fakes.shareProviderResources).toHaveBeenCalledWith(CONNECTION_ID, [
       { kind: 'github.org', externalId: 'openai', label: 'OpenAI' },
     ]);
+    expect(fakes.browseResources).not.toHaveBeenCalled();
+    expect(fakes.validateResourceSelections).toHaveBeenLastCalledWith(
+      { id: CONNECTION_ID, externalAccountId: '42' },
+      { accessToken: 'token' },
+      [{ kind: 'github.org', externalId: 'openai', label: 'OpenAI' }],
+      { persistTokens: expect.any(Function) as unknown },
+    );
   });
 
   it('preserves active owned shares that no longer appear in the live provider list', async () => {
-    fakes.listSyncableResources.mockResolvedValueOnce([
+    fakes.validateResourceSelections.mockResolvedValueOnce([
       { kind: 'github.org', externalId: 'openai', label: 'OpenAI' },
     ]);
     fakes.listOwnedTeamResourceShares.mockResolvedValueOnce([
@@ -267,7 +289,7 @@ describe('/api/connections/[id]/resources', () => {
       displayName: 'Monday.com — acme',
     };
     fakes.getOwnedProviderConnection.mockResolvedValueOnce(mondayConnection);
-    fakes.listSyncableResources.mockResolvedValueOnce([
+    fakes.validateResourceSelections.mockResolvedValueOnce([
       { kind: 'monday.board', externalId: 'board-1', label: 'Pipeline' },
     ]);
     fakes.listOwnedTeamResourceShares.mockResolvedValueOnce([
@@ -309,7 +331,7 @@ describe('/api/connections/[id]/resources', () => {
       displayName: 'Monday.com — acme',
     };
     fakes.getOwnedProviderConnection.mockResolvedValueOnce(mondayConnection);
-    fakes.listSyncableResources.mockResolvedValueOnce([
+    fakes.validateResourceSelections.mockResolvedValueOnce([
       { kind: 'monday.board', externalId: 'board-1', label: 'Pipeline' },
     ]);
     fakes.listOwnedTeamResourceShares.mockResolvedValueOnce([

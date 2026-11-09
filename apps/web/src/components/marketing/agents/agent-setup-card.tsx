@@ -2,7 +2,7 @@
 
 import { CopyButton } from '@/components/copy-button';
 import styles from '@/components/marketing/agents/agent-setup-card.module.css';
-import { TIMELINE_AGENT_SETUP_COMMAND } from '@/components/marketing/copy';
+import { AGENT_SETUP_CARD, TIMELINE_AGENT_SETUP_COMMAND } from '@/components/marketing/copy';
 import { ProviderLogo } from '@/components/provider-logo';
 import { cn } from '@/lib/utils';
 
@@ -31,9 +31,9 @@ export function AgentSetupCard({ className }: { className?: string }) {
   return (
     <aside className={cn(styles.card, className)} data-agent-setup>
       <div className={styles.copy}>
-        <p className={styles.kicker}>For agents</p>
-        <p className={styles.title}>Give this to your agent</p>
-        <p className={styles.lede}>Paste this line into your agent.</p>
+        <p className={styles.kicker}>{AGENT_SETUP_CARD.kicker}</p>
+        <p className={styles.title}>{AGENT_SETUP_CARD.title}</p>
+        <p className={styles.lede}>{AGENT_SETUP_CARD.body}</p>
       </div>
       <ul className={styles.marks} aria-label="Compatible agents">
         {COMPATIBLE_AGENTS.map((agent) => (

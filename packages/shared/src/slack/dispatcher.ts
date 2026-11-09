@@ -8,10 +8,11 @@ import {
   slackUserTeams,
   slackWorkspaces,
   slackWorkspaceTeams,
+  teamBillingAccounts,
   teamMembers,
   teams,
 } from '@timeline/db';
-import { and, asc, desc, eq, isNull, ne, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, ne, notExists, sql } from 'drizzle-orm';
 
 import { askAgent, TEAM_BOT_ACTOR_USER_ID, type AskAgentDeps } from '#src/agent/ask.js';
 import { type AgentToolErrorReporter } from '#src/agent/tools.js';
@@ -34,7 +35,7 @@ import {
   linkMetadata,
   reconcileLinkArtifactsForRawEvent,
 } from '#src/conversational/link-artifacts.js';
-import { encryptJson, decryptJson, type EncryptedSecret } from '#src/crypto/secrets.js';
+import { encryptJson } from '#src/crypto/secrets.js';
 import { buildDocumentObjectKey } from '#src/documents/object-key.js';
 import { childLogger } from '#src/logger.js';
 import {
@@ -43,9 +44,9 @@ import {
   joinSavedMeetingByCommand,
 } from '#src/meetings/quick-capture.js';
 import { detectMeetingPlatform } from '#src/meetings/scope.js';
-import { getRedisConnection } from '#src/queue/connection.js';
 import { normalizeRawEventsToEvidence } from '#src/reconciliation/normalization.js';
 import { inlineSourceSnapshotMetadata } from '#src/reconciliation/source-snapshot.js';
+import { getRedisConnection } from '#src/redis/connection.js';
 import { SlackApi, type SlackConversation, type SlackOAuthAccessResponse } from '#src/slack/api.js';
 import { createSlackConversationDeliveryAdapter } from '#src/slack/conversation-adapter.js';
 import {
@@ -54,7 +55,16 @@ import {
   type SlackFile,
   type SlackMessageEvent,
 } from '#src/slack/types.js';
+import {
+  findWorkspaceBySlackTeamId,
+  findWorkspaceInstallForTeam,
+  decryptWorkspaceToken,
+  type SlackTokenJson,
+  type SlackWorkspaceRecord,
+} from '#src/slack/workspace-access.js';
 import { withTeam } from '#src/team-scope.js';
+
+export type { SlackWorkspaceRecord } from '#src/slack/workspace-access.js';
 
 const log = childLogger('slack');
 const SLACK_SOURCE_SNAPSHOT_VERSION = 'slack-source-snapshot-2026-07';
@@ -98,24 +108,6 @@ export interface SlackIngestDeps {
   extract?: { enqueueExtract(input: { rawEventId: string; teamId: string }): Promise<void> };
   embed?: { enqueueEmbed(input: { rawEventId: string; teamId: string }): Promise<void> };
   suggestions?: { enqueueSuggestion(input: { rawEventId: string; teamId: string }): Promise<void> };
-}
-
-interface SlackTokenJson {
-  accessToken: string;
-  tokenType?: string;
-  scope?: string;
-  authedUserAccessToken?: string;
-  authedUserScope?: string;
-}
-
-export interface SlackWorkspaceRecord {
-  id: string;
-  slackTeamId: string;
-  appId?: string | null;
-  botUserId: string | null;
-  tokenCiphertext: Buffer;
-  tokenIv: Buffer;
-  tokenTag: Buffer;
 }
 
 function definedString(value: string | undefined): string | null {
@@ -636,7 +628,23 @@ async function listEligibleSlackTeams(
         eq(slackUserTeams.teamId, teamMembers.teamId),
       ),
     )
-    .where(and(eq(teamMembers.userId, userId), isNull(teamMembers.removedAt)))
+    .where(
+      and(
+        eq(teamMembers.userId, userId),
+        isNull(teamMembers.removedAt),
+        notExists(
+          db
+            .select({ teamId: teamBillingAccounts.teamId })
+            .from(teamBillingAccounts)
+            .where(
+              and(
+                eq(teamBillingAccounts.teamId, teamMembers.teamId),
+                inArray(teamBillingAccounts.securityState, ['suspended', 'terminated']),
+              ),
+            ),
+        ),
+      ),
+    )
     .orderBy(asc(teamMembers.createdAt), asc(teamMembers.teamId));
   return rows.map((row) => ({ ...row, isActive: row.isActive ?? false }));
 }
@@ -669,6 +677,17 @@ async function activateSlackTeam(input: {
           eq(teamMembers.teamId, input.teamId),
           eq(teamMembers.userId, input.userId),
           isNull(teamMembers.removedAt),
+          notExists(
+            tx
+              .select({ teamId: teamBillingAccounts.teamId })
+              .from(teamBillingAccounts)
+              .where(
+                and(
+                  eq(teamBillingAccounts.teamId, teamMembers.teamId),
+                  inArray(teamBillingAccounts.securityState, ['suspended', 'terminated']),
+                ),
+              ),
+          ),
         ),
       )
       .limit(1);
@@ -874,35 +893,6 @@ export async function listSlackConversationsForTeam(input: {
 
 export async function hasSlackInstallForTeam(input: { db: Db; teamId: string }): Promise<boolean> {
   return Boolean(await findWorkspaceInstallForTeam(input.db, input.teamId));
-}
-
-export async function sendTeamSlackMessage(input: {
-  db: Db;
-  teamId: string;
-  channelId: string;
-  text: string;
-}): Promise<void> {
-  const install = await findWorkspaceInstallForTeam(input.db, input.teamId);
-  if (!install) throw new Error('Slack workspace is no longer enabled for this team');
-  const api = new SlackApi(decryptWorkspaceToken(install).accessToken, install.slackTeamId);
-  await api.postMessage({ channel: input.channelId, text: input.text });
-}
-
-export async function sendTeamSlackDirectMessage(input: {
-  db: Db;
-  teamId: string;
-  slackUserId: string;
-  text: string;
-}): Promise<void> {
-  const install = await findWorkspaceInstallForTeam(input.db, input.teamId);
-  if (!install) throw new Error('Slack workspace is no longer enabled for this team');
-  const api = new SlackApi(decryptWorkspaceToken(install).accessToken, install.slackTeamId);
-  try {
-    await api.postMessage({ channel: input.slackUserId, text: input.text });
-  } catch {
-    const opened = await api.conversationsOpen(input.slackUserId);
-    await api.postMessage({ channel: opened.id, text: input.text });
-  }
 }
 
 export async function bindSlackConversation(input: {
@@ -1840,56 +1830,6 @@ function fileSummary(file: SlackFile): Record<string, unknown> {
     mimetype: file.mimetype ?? null,
     size: file.size ?? null,
   };
-}
-
-async function findWorkspaceBySlackTeamId(
-  db: Db,
-  slackTeamId: string | undefined,
-): Promise<SlackWorkspaceRecord | null> {
-  if (!slackTeamId) return null;
-  const rows = await db
-    .select({
-      id: slackWorkspaces.id,
-      slackTeamId: slackWorkspaces.slackTeamId,
-      appId: slackWorkspaces.appId,
-      botUserId: slackWorkspaces.botUserId,
-      tokenCiphertext: slackWorkspaces.tokenCiphertext,
-      tokenIv: slackWorkspaces.tokenIv,
-      tokenTag: slackWorkspaces.tokenTag,
-    })
-    .from(slackWorkspaces)
-    .where(eq(slackWorkspaces.slackTeamId, slackTeamId))
-    .limit(1);
-  return rows[0] ?? null;
-}
-
-async function findWorkspaceInstallForTeam(
-  db: Db,
-  teamId: string,
-): Promise<SlackWorkspaceRecord | null> {
-  const rows = await db
-    .select({
-      id: slackWorkspaces.id,
-      slackTeamId: slackWorkspaces.slackTeamId,
-      appId: slackWorkspaces.appId,
-      botUserId: slackWorkspaces.botUserId,
-      tokenCiphertext: slackWorkspaces.tokenCiphertext,
-      tokenIv: slackWorkspaces.tokenIv,
-      tokenTag: slackWorkspaces.tokenTag,
-    })
-    .from(slackWorkspaceTeams)
-    .innerJoin(slackWorkspaces, eq(slackWorkspaces.id, slackWorkspaceTeams.workspaceId))
-    .where(and(eq(slackWorkspaceTeams.teamId, teamId), eq(slackWorkspaceTeams.enabled, true)))
-    .limit(1);
-  return rows[0] ?? null;
-}
-
-function decryptWorkspaceToken(workspace: SlackWorkspaceRecord): SlackTokenJson {
-  return decryptJson({
-    ciphertext: workspace.tokenCiphertext,
-    iv: workspace.tokenIv,
-    tag: workspace.tokenTag,
-  } satisfies EncryptedSecret) as SlackTokenJson;
 }
 
 async function upsertSlackUserLink(

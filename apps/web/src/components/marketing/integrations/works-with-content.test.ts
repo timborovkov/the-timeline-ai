@@ -12,6 +12,8 @@ import {
 describe('works-with content', () => {
   it('publishes six integrations works-with pages with honest status', () => {
     expect(WORKS_WITH_TOOLS.map((tool) => tool.slug)).toEqual([...WORKS_WITH_SLUGS]);
+    expect(WORKS_WITH_SLUGS).not.toContain('google-drive');
+    expect(findWorksWithTool('google-drive')).toBeUndefined();
     expect(WORKS_WITH_PAGE_TOOLS.map((tool) => tool.slug)).toEqual([
       'jira',
       'notion',
@@ -46,7 +48,12 @@ describe('works-with content', () => {
     const copy = JSON.stringify(WORKS_WITH_TOOLS);
     expect(copy).not.toMatch(/\bvs\.?\b|switch from/iu);
 
+    expect(hubspot.statusLabel).toBe('Coming soon');
+    expect(jira.statusLabel).toBe('MCP lookup');
+    expect(linear.statusLabel).toBe('Native sync');
+
     for (const tool of WORKS_WITH_TOOLS) {
+      expect(tool.navLabel).toBe(`${tool.name} · ${tool.statusLabel}`);
       expect(tool.gettingStarted).toMatch(/may not need/i);
       expect(tool.whenAloneBetter.toLowerCase()).toContain(
         `stay in ${tool.name.toLowerCase()} alone`,

@@ -377,3 +377,8 @@ export interface ObjectChangeRow {
   note: string | null;
   changedAt: Date;
 }
+
+export interface UpdateActor {
+  kind: ActorKind;
+  userId: string | null;
+}

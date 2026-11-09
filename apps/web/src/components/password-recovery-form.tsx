@@ -38,7 +38,7 @@ export function ForgotPasswordForm() {
         {pending ? 'Sending…' : 'Send reset link'}
       </Button>
       <p className="text-sm text-muted-foreground">
-        If you use GitHub to sign in, continue with GitHub on the sign-in page.
+        If you use Google or GitHub to sign in, continue with that provider on the sign-in page.
       </p>
     </form>
   );

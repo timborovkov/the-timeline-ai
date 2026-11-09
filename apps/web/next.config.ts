@@ -8,13 +8,19 @@ const workspaceRoot = join(__dirname, '../..');
 
 const nextConfig: NextConfig = {
   output: 'standalone',
+  // Load routes on first use instead of retaining every server bundle at startup.
+  // This trades cold-route latency for a lower idle footprint on Railway.
+  experimental: {
+    preloadEntriesOnStart: false,
+  },
   // Next 16 logs Server Function arguments by default, including auth form data.
   logging: {
     serverFunctions: false,
-    incomingRequests: { ignore: [/\/(?:forgot-password|reset-password)(?:[/?]|$)/] },
+    incomingRequests: { ignore: [/\/(?:forgot-password|reset-password|verify-email)(?:[/?]|$)/] },
   },
   outputFileTracingRoot: workspaceRoot,
   outputFileTracingIncludes: {
+    '/app/connect-agent/skill': ['../../plugins/timeline/skills/timeline/SKILL.md'],
     '/agents/[doc]': ['../../plugins/timeline/skills/timeline/SKILL.md'],
   },
   turbopack: {

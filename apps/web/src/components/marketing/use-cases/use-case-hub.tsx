@@ -8,6 +8,7 @@ import { MarketingContainer } from '@/components/marketing/marketing-layout';
 import { MarketingCtaBand } from '@/components/marketing/start-free-cta';
 import { USE_CASE_HUB, USE_CASES } from '@/components/marketing/use-cases/content';
 import { USE_CASE_PUBLIC_DOCUMENTS } from '@/components/marketing/use-cases/public-documents';
+import { RecordJobsDiagram } from '@/components/marketing/use-cases/record-jobs-diagram';
 import { buildPublicStructuredData } from '@/lib/public-site';
 import { getSiteUrl } from '@/lib/site-url';
 
@@ -34,6 +35,12 @@ export function UseCaseHubPage() {
           </p>
         </MarketingContainer>
       </header>
+
+      <section className="border-b border-border">
+        <MarketingContainer className="py-12 sm:py-16">
+          <RecordJobsDiagram />
+        </MarketingContainer>
+      </section>
 
       <section className="mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-24">
         <div className="grid gap-px bg-border sm:grid-cols-2">

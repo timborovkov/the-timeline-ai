@@ -61,6 +61,8 @@ describe('public integration routes', () => {
     expect(text).toContain('Start with Meeting transcripts');
     expect(html).toMatch(/aria-current="page"[^>]*href="\/integrations"/u);
     expect(html).toContain('href="/how-it-works"');
+    expect(html).toContain('href="/integrations/mcp"');
+    expect(html).toContain('Connect MCP tools');
     expect(html).toContain('href="/integrations/notion"');
     expect(html).toContain('href="/integrations/jira"');
     expect(html).toContain('href="/integrations/hubspot"');
@@ -122,6 +124,16 @@ describe('public integration routes', () => {
     for (const link of screen.getAllByRole('link', { name: 'Connect GitHub' })) {
       expect(link.getAttribute('href')).toBe('/app/connections');
     }
+  });
+
+  it('shows the Slack chronology capture without claiming a silent account sync', async () => {
+    const html = renderToStaticMarkup(
+      await connectorRoute.default({ params: Promise.resolve({ slug: 'slack' }) }),
+    );
+
+    expect(html).toContain('data-screenshot-file="12-timeline-slack-dark.png"');
+    expect(html).toContain('data-screenshot-present="true"');
+    expect(html).not.toContain('Screenshot placeholder');
   });
 
   it.each(['slack', 'sentry'])('renders a light dark-mode logo tile for %s', async (slug) => {
@@ -211,6 +223,29 @@ describe('public integration routes', () => {
     expect(text).toContain('Just getting started? You may not need one yet');
     expect(text).toContain(`When ${tool.name} alone is the better pick`);
     expect(html).toContain('Start free');
+    if (tool.status === 'mcp-lookup') {
+      expect(html).toContain('href="/integrations/mcp"');
+      expect(text).toContain('Connect MCP tools');
+    }
+  });
+
+  it('keeps Google Drive on the native connector route without a works-with overlay', async () => {
+    const html = renderToStaticMarkup(
+      await connectorRoute.default({ params: Promise.resolve({ slug: 'google-drive' }) }),
+    );
+    const text = visibleText(html);
+    const metadata = await connectorRoute.generateMetadata({
+      params: Promise.resolve({ slug: 'google-drive' }),
+    });
+
+    expect(metadata.alternates).toEqual({ canonical: '/integrations/google-drive' });
+    expect(html.match(/<h1\b/g)).toHaveLength(1);
+    expect(text).toContain('Stay in Drive alone');
+    expect(text).toContain('changes.watch');
+    expect(text).toContain('remaining selections no longer cover it');
+    expect(text).toContain('Pending suggested inserts');
+    expect(text).not.toContain('When Google Drive alone is the better pick');
+    expect(html).not.toContain('data-works-with-route');
   });
 
   it('extends the native Linear page with works-with guidance', async () => {

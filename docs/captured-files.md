@@ -107,8 +107,10 @@ evidence; documents are curated workspace knowledge.
 - Timeline-oriented retrieval includes captured-file evidence, while document
   search remains scoped to curated documents. The operating-memory engine
   treats curated documents as **reference knowledge** (Ask, object summaries,
-  proposal context) and treats Drive file-change pings plus "Uploaded X"
-  lifecycle rows as pulses. See [relational-memory.md](./relational-memory.md).
+  proposal context) and treats unlabeled Drive file-change pings plus "Uploaded X"
+  lifecycle rows as pulses. Native Drive v1 judged captures are communication
+  events (compact hunks, never a document-drive copy). See
+  [relational-memory.md](./relational-memory.md).
 
 ## Remaining Follow-Ups
 

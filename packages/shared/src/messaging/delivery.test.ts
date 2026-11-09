@@ -20,8 +20,9 @@ await vi.mock(
 
 const { resetSecretsKeyCacheForTests } = await import('#src/crypto/secrets.js');
 const { resetEnvForTests } = await import('#src/env.js');
-const { messagingInternals, sendDailyDigest, sendMessage, shouldMeterWorkspaceEmail } =
+const { messagingInternals, sendMessage, shouldMeterWorkspaceEmail } =
   await import('#src/messaging/delivery.js');
+const { sendDailyDigest } = await import('#src/messaging/digest-delivery.js');
 const { renderMessage } = await import('#src/messaging/templates.js');
 
 function fakeDeliveryDb(

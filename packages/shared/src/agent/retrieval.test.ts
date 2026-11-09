@@ -2,7 +2,9 @@ import { expect } from '@timeline/test-support';
 import { vi } from '@timeline/test-support';
 import { describe, it } from 'bun:test';
 
+import { retrieveWorkspaceContextInput } from '#src/agent/retrieval-contract.js';
 import { retrieveWorkspaceContext } from '#src/agent/retrieval.js';
+import { buildAgentTools } from '#src/agent/tools.js';
 
 import type { TeamScope } from '#src/team-scope.js';
 
@@ -167,6 +169,47 @@ function makeScope() {
 }
 
 describe('retrieveWorkspaceContext', () => {
+  it('validates one retrieval contract while preserving explicit false flags', () => {
+    expect(
+      retrieveWorkspaceContextInput.parse({
+        query: ' work ',
+        includeDocuments: false,
+        includeCalendar: false,
+      }),
+    ).toEqual({
+      query: 'work',
+      includeDocuments: false,
+      includeCalendar: false,
+    });
+    expect(retrieveWorkspaceContextInput.parse({ query: 'work' })).toEqual({ query: 'work' });
+    for (const invalid of [
+      { objectId: 'bad-id' },
+      { limit: 0 },
+      { limit: 11 },
+      { recipe: 'unknown' },
+    ]) {
+      expect(retrieveWorkspaceContextInput.safeParse({ query: 'work', ...invalid }).success).toBe(
+        false,
+      );
+    }
+  });
+
+  it('uses the trusted tool clock for composite calendar retrieval without a model override', async () => {
+    const scope = makeScope();
+    const tools = buildAgentTools(scope as unknown as TeamScope, {
+      currentDate: new Date('2001-02-03T12:00:00.000Z'),
+    });
+    const execute = tools.retrieve_workspace_context?.execute as (
+      input: unknown,
+    ) => Promise<unknown>;
+    await execute({ query: 'calendar', recipe: 'calendar', currentDate: '2099-01-01T00:00:00Z' });
+    expect(scope.calendar.listCalendarEvents).toHaveBeenCalledWith({
+      from: new Date('2001-01-20T12:00:00.000Z'),
+      to: new Date('2001-03-05T12:00:00.000Z'),
+      limit: 5,
+    });
+  });
+
   it('builds a bounded object profile packet with typed refs', async () => {
     const scope = makeScope();
 

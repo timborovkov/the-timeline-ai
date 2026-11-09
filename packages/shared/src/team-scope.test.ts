@@ -18,6 +18,7 @@ await vi.mock(
 
 const { PGlite } = await import('@electric-sql/pglite');
 const {
+  accounts,
   auditLog,
   artifactClusters,
   artifactEvidenceAssociations,
@@ -171,6 +172,7 @@ describe('withTeam namespaced port', () => {
   });
 
   afterEach(async () => {
+    vi.unstubAllGlobals();
     await pg.close();
   });
 
@@ -2209,6 +2211,51 @@ describe('withTeam namespaced port', () => {
     ).rejects.toThrow('Integration not found');
   });
 
+  it('preserves Drive selection object links when reactivating the same sources', async () => {
+    const ownerScope = withTeam(db as never, TEAM_A, USER_A);
+    const adminScope = withTeam(db as never, TEAM_A, USER_C);
+    const connection = await ownerScope.integrations.upsertProviderConnection({
+      provider: 'google_drive',
+      displayName: 'Google Drive — Acme',
+      externalAccountId: 'drive-acct-links',
+      scopes: ['https://www.googleapis.com/auth/drive.readonly'],
+      tokens: { access_token: 'drive-token' },
+    });
+    await ownerScope.integrations.shareProviderResources(connection.id, [
+      { kind: 'drive.folder', externalId: 'selected-folder', label: 'Selected' },
+    ]);
+    const share = (await ownerScope.integrations.listOwnedTeamResourceShares())[0]?.share;
+    if (!share) throw new Error('Expected Drive share');
+    const integration = await adminScope.integrations.activateSharedResources({
+      providerConnectionId: connection.id,
+      resourceShareIds: [share.id],
+    });
+    const company = await adminScope.objects.createObject({
+      type: 'company',
+      canonicalName: 'Northstar',
+      actor: { kind: 'user', userId: USER_C },
+    });
+    const [selection] = await adminScope.integrations.listSelections(integration.id);
+    if (!selection) throw new Error('Expected Drive selection');
+    await adminScope.integrations.setSelectionLinkedObject(
+      integration.id,
+      selection.id,
+      company.id,
+    );
+
+    const reactivated = await adminScope.integrations.activateSharedResources({
+      providerConnectionId: connection.id,
+      resourceShareIds: [share.id],
+    });
+    expect(reactivated.id).toBe(integration.id);
+    const [kept] = await adminScope.integrations.listSelections(integration.id);
+    expect(kept).toMatchObject({
+      selectionKind: 'drive.folder',
+      externalId: 'selected-folder',
+      linkedObjectId: company.id,
+    });
+  });
+
   // Provider connections are personal grants, while team integration scopes are
   // admin-activated source paths. This regression covers the ownership,
   // activation, duplicate-source, token, and revocation contracts together.
@@ -2759,6 +2806,111 @@ describe('withTeam namespaced port', () => {
         );
       }),
     ).toBe(true);
+  });
+
+  it('revokes the Google Drive grant after deleting a connection with no remaining Google uses', async () => {
+    const ownerScope = withTeam(db as never, TEAM_A, USER_A);
+    const connection = await ownerScope.integrations.upsertProviderConnection({
+      provider: 'google_drive',
+      displayName: 'Google Drive — Ada',
+      externalAccountId: 'google-sub-revoke',
+      scopes: ['https://www.googleapis.com/auth/drive.readonly'],
+      tokens: { access_token: 'access-token', refresh_token: 'refresh-token' },
+    });
+    const fetchMock = vi.fn((input: string | URL | Request, init?: RequestInit) => {
+      expect(
+        typeof input === 'string' ? input : input instanceof URL ? input.href : input.url,
+      ).toBe('https://oauth2.googleapis.com/revoke');
+      expect(init?.body).toBe('token=refresh-token');
+      return Promise.resolve(new Response(null, { status: 200 }));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(
+      ownerScope.integrations.deleteOwnedProviderConnection(connection.id),
+    ).resolves.toBe(true);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(await ownerScope.integrations.getOwnedProviderConnection(connection.id)).toBeNull();
+    vi.unstubAllGlobals();
+  });
+
+  it('does not revoke Google when Sign in with Google still uses the same subject', async () => {
+    const ownerScope = withTeam(db as never, TEAM_A, USER_A);
+    const connection = await ownerScope.integrations.upsertProviderConnection({
+      provider: 'google_drive',
+      displayName: 'Google Drive — linked sign-in',
+      externalAccountId: 'google-sub-signin',
+      scopes: ['https://www.googleapis.com/auth/drive.readonly'],
+      tokens: { access_token: 'access-token', refresh_token: 'refresh-token' },
+    });
+    await db.insert(accounts).values({
+      userId: USER_A,
+      type: 'oidc',
+      provider: 'google',
+      providerAccountId: 'google-sub-signin',
+      access_token: 'signin-access',
+    });
+    const fetchMock = vi.fn(() => Promise.resolve(new Response(null, { status: 200 })));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(
+      ownerScope.integrations.deleteOwnedProviderConnection(connection.id),
+    ).resolves.toBe(true);
+    expect(fetchMock).not.toHaveBeenCalled();
+    const [signIn] = await db
+      .select()
+      .from(accounts)
+      .where(eq(accounts.providerAccountId, 'google-sub-signin'));
+    expect(signIn?.access_token).toBe('signin-access');
+    vi.unstubAllGlobals();
+  });
+
+  it('does not revoke Google when another Drive connection still uses the same account', async () => {
+    const ownerScope = withTeam(db as never, TEAM_A, USER_A);
+    const otherScope = withTeam(db as never, TEAM_A, USER_B);
+    const connection = await ownerScope.integrations.upsertProviderConnection({
+      provider: 'google_drive',
+      displayName: 'Google Drive — Ada',
+      externalAccountId: 'google-sub-shared',
+      scopes: ['https://www.googleapis.com/auth/drive.readonly'],
+      tokens: { refresh_token: 'ada-refresh' },
+    });
+    await otherScope.integrations.upsertProviderConnection({
+      provider: 'google_drive',
+      displayName: 'Google Drive — other member',
+      externalAccountId: 'google-sub-shared',
+      scopes: ['https://www.googleapis.com/auth/drive.readonly'],
+      tokens: { refresh_token: 'other-refresh' },
+    });
+    const fetchMock = vi.fn(() => Promise.resolve(new Response(null, { status: 200 })));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(
+      ownerScope.integrations.deleteOwnedProviderConnection(connection.id),
+    ).resolves.toBe(true);
+    expect(fetchMock).not.toHaveBeenCalled();
+    vi.unstubAllGlobals();
+  });
+
+  it('still deletes a Drive connection when Google revoke fails', async () => {
+    const ownerScope = withTeam(db as never, TEAM_A, USER_A);
+    const connection = await ownerScope.integrations.upsertProviderConnection({
+      provider: 'google_drive',
+      displayName: 'Google Drive — revoke fail',
+      externalAccountId: 'google-sub-fail',
+      scopes: ['https://www.googleapis.com/auth/drive.readonly'],
+      tokens: { refresh_token: 'refresh-token' },
+    });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => Promise.reject(new Error('google unreachable'))),
+    );
+
+    await expect(
+      ownerScope.integrations.deleteOwnedProviderConnection(connection.id),
+    ).resolves.toBe(true);
+    expect(await ownerScope.integrations.getOwnedProviderConnection(connection.id)).toBeNull();
+    vi.unstubAllGlobals();
   });
 
   it('disconnects an integration even when unresolved attention would collide after set-null', async () => {

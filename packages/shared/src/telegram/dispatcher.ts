@@ -5,15 +5,15 @@ import {
   documents,
   type Db,
   rawEvents,
+  teamBillingAccounts,
   teamMembers,
   teams,
   teamVisibilityDefaults,
   telegramChatBindings,
-  telegramLinkTokens,
   telegramUsers,
   telegramUserTeams,
 } from '@timeline/db';
-import { and, asc, desc, eq, isNull, ne, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, ne, notExists, sql } from 'drizzle-orm';
 
 import { askAgent, TEAM_BOT_ACTOR_USER_ID, type AskAgentDeps } from '#src/agent/ask.js';
 import {
@@ -48,10 +48,10 @@ import {
   joinSavedMeetingByCommand,
 } from '#src/meetings/quick-capture.js';
 import { detectMeetingPlatform } from '#src/meetings/scope.js';
-import { getRedisConnection } from '#src/queue/connection.js';
 import { checkRateLimit, rateLimitKey, RATE_LIMITS } from '#src/rate-limit/index.js';
 import { normalizeRawEventsToEvidence } from '#src/reconciliation/normalization.js';
 import { inlineSourceSnapshotMetadata } from '#src/reconciliation/source-snapshot.js';
+import { getRedisConnection } from '#src/redis/connection.js';
 import { withTeam } from '#src/team-scope.js';
 import { type TelegramApi } from '#src/telegram/api.js';
 import {
@@ -61,6 +61,7 @@ import {
   type TelegramGroupCommandName,
 } from '#src/telegram/commands.js';
 import { createTelegramConversationDeliveryAdapter } from '#src/telegram/conversation-adapter.js';
+import { consumeVerifiedTelegramLink } from '#src/telegram/link-token.js';
 import {
   tgUpdateSchema,
   type TgAudioPayload,
@@ -449,107 +450,75 @@ async function cmdLinkDm(ctx: DmContext, arg: string): Promise<void> {
     return;
   }
   try {
-    const team = await ctx.db.transaction(async (tx) => {
-      const tokens = await tx
-        .select()
-        .from(telegramLinkTokens)
-        .where(eq(telegramLinkTokens.token, token))
-        .limit(1)
-        .for('update');
-      const row = tokens[0];
-      if (!row) throw new Error('not_found');
-      if (row.consumedAt) throw new Error('consumed');
-      if (row.expiresAt < new Date()) throw new Error('expired');
-      if (row.scope !== 'personal') throw new Error('wrong_scope_personal');
-      // Identity gate: token is bound to the issuer's TG @username at
-      // generation time and is only consumable from that exact account.
-      // Once matched, the consumer IS the issuer — safe to bind user_id.
-      if (!row.targetTgUsername) throw new Error('legacy_no_username');
-      const consumerUsername = ctx.tgUser.username?.toLowerCase() ?? '';
-      if (consumerUsername !== row.targetTgUsername) throw new Error('wrong_user');
-      // Re-verify the issuer's team membership at consumption time so a
-      // teammate who was removed inside the 15-min TTL window cannot still
-      // bind Telegram capture to a team they no longer belong to.
-      const issuerStillMember = await tx
-        .select({ role: teamMembers.role })
-        .from(teamMembers)
-        .where(
-          and(
-            eq(teamMembers.teamId, row.teamId),
-            eq(teamMembers.userId, row.issuedByUserId),
-            isNull(teamMembers.removedAt),
-          ),
-        )
-        .limit(1);
-      if (!issuerStillMember[0]) throw new Error('issuer_revoked');
+    const team = await consumeVerifiedTelegramLink(
+      {
+        db: ctx.db,
+        token,
+        scope: 'personal',
+        username: ctx.tgUser.username,
+        tgUserId: ctx.tgUser.id,
+      },
+      async (tx, row) => {
+        // Upsert membership row, then flip active.
+        const existing = await tx
+          .select()
+          .from(telegramUserTeams)
+          .where(
+            and(
+              eq(telegramUserTeams.telegramUserId, ctx.tgUserRow.id),
+              eq(telegramUserTeams.teamId, row.teamId),
+            ),
+          )
+          .limit(1);
 
-      // Upsert membership row, then flip active.
-      const existing = await tx
-        .select()
-        .from(telegramUserTeams)
-        .where(
-          and(
-            eq(telegramUserTeams.telegramUserId, ctx.tgUserRow.id),
-            eq(telegramUserTeams.teamId, row.teamId),
-          ),
-        )
-        .limit(1);
-
-      // Deactivate any currently-active row first to satisfy the partial
-      // unique index.
-      await tx
-        .update(telegramUserTeams)
-        .set({ isActive: false })
-        .where(
-          and(
-            eq(telegramUserTeams.telegramUserId, ctx.tgUserRow.id),
-            eq(telegramUserTeams.isActive, true),
-          ),
-        );
-
-      if (existing[0]) {
-        // Refresh linkedByUserId on relink so the most recent issuer is the
-        // one whose team-membership controls this row's continued validity.
+        // Deactivate any currently-active row first to satisfy the partial
+        // unique index.
         await tx
           .update(telegramUserTeams)
-          .set({ isActive: true, linkedByUserId: row.issuedByUserId })
-          .where(eq(telegramUserTeams.id, existing[0].id));
-      } else {
-        await tx.insert(telegramUserTeams).values({
-          telegramUserId: ctx.tgUserRow.id,
-          teamId: row.teamId,
-          linkedByUserId: row.issuedByUserId,
-          isActive: true,
-        });
-      }
+          .set({ isActive: false })
+          .where(
+            and(
+              eq(telegramUserTeams.telegramUserId, ctx.tgUserRow.id),
+              eq(telegramUserTeams.isActive, true),
+            ),
+          );
 
-      // Now that the @username match has proven consumer == issuer, bind
-      // the Telegram account to the app user. This is what makes DM ingest
-      // attribute messages to the right author_user_id (instead of going
-      // in as source_unverified) AND what gives removeMemberAction a
-      // consumer-side anchor for revoking routing on member removal.
-      await tx
-        .update(telegramUsers)
-        .set({ userId: row.issuedByUserId, updatedAt: new Date() })
-        .where(eq(telegramUsers.id, ctx.tgUserRow.id));
+        if (existing[0]) {
+          // Refresh linkedByUserId on relink so the most recent issuer is the
+          // one whose team-membership controls this row's continued validity.
+          await tx
+            .update(telegramUserTeams)
+            .set({ isActive: true, linkedByUserId: row.issuedByUserId })
+            .where(eq(telegramUserTeams.id, existing[0].id));
+        } else {
+          await tx.insert(telegramUserTeams).values({
+            telegramUserId: ctx.tgUserRow.id,
+            teamId: row.teamId,
+            linkedByUserId: row.issuedByUserId,
+            isActive: true,
+          });
+        }
 
-      await tx
-        .update(telegramLinkTokens)
-        .set({
-          consumedAt: new Date(),
-          consumedByTgUserId: ctx.tgUser.id,
-        })
-        .where(eq(telegramLinkTokens.id, row.id));
+        // Now that the @username match has proven consumer == issuer, bind
+        // the Telegram account to the app user. This is what makes DM ingest
+        // attribute messages to the right author_user_id (instead of going
+        // in as source_unverified) AND what gives removeMemberAction a
+        // consumer-side anchor for revoking routing on member removal.
+        await tx
+          .update(telegramUsers)
+          .set({ userId: row.issuedByUserId, updatedAt: new Date() })
+          .where(eq(telegramUsers.id, ctx.tgUserRow.id));
 
-      const teamRows = await tx
-        .select({ teamId: teams.id, teamName: teams.name })
-        .from(teams)
-        .where(eq(teams.id, row.teamId))
-        .limit(1);
-      const team = teamRows[0];
-      if (!team) throw new Error('team_not_found');
-      return team;
-    });
+        const teamRows = await tx
+          .select({ teamId: teams.id, teamName: teams.name })
+          .from(teams)
+          .where(eq(teams.id, row.teamId))
+          .limit(1);
+        const team = teamRows[0];
+        if (!team) throw new Error('team_not_found');
+        return team;
+      },
+    );
     if (ctx.activeTeamId && ctx.activeTeamId !== team.teamId && ctx.tgUserRow.userId) {
       await withTeam(ctx.db, ctx.activeTeamId, ctx.tgUserRow.userId, {
         skipMembershipCheck: true,
@@ -610,7 +579,23 @@ async function cmdTeamDm(ctx: DmContext, arg: string): Promise<void> {
         eq(telegramUserTeams.teamId, teamMembers.teamId),
       ),
     )
-    .where(and(eq(teamMembers.userId, ctx.tgUserRow.userId), isNull(teamMembers.removedAt)))
+    .where(
+      and(
+        eq(teamMembers.userId, ctx.tgUserRow.userId),
+        isNull(teamMembers.removedAt),
+        notExists(
+          ctx.db
+            .select({ teamId: teamBillingAccounts.teamId })
+            .from(teamBillingAccounts)
+            .where(
+              and(
+                eq(teamBillingAccounts.teamId, teamMembers.teamId),
+                inArray(teamBillingAccounts.securityState, ['suspended', 'terminated']),
+              ),
+            ),
+        ),
+      ),
+    )
     .orderBy(asc(teamMembers.createdAt), asc(teamMembers.teamId));
 
   if (memberships.length === 0) {
@@ -838,6 +823,17 @@ async function activateTelegramTeam(ctx: DmContext, teamId: string): Promise<boo
           eq(teamMembers.teamId, teamId),
           eq(teamMembers.userId, userId),
           isNull(teamMembers.removedAt),
+          notExists(
+            tx
+              .select({ teamId: teamBillingAccounts.teamId })
+              .from(teamBillingAccounts)
+              .where(
+                and(
+                  eq(teamBillingAccounts.teamId, teamMembers.teamId),
+                  inArray(teamBillingAccounts.securityState, ['suspended', 'terminated']),
+                ),
+              ),
+          ),
         ),
       )
       .limit(1);
@@ -1516,71 +1512,37 @@ async function cmdLinkGroup(ctx: GroupContext, arg: string): Promise<void> {
   }
 
   try {
-    const teamId = await ctx.db.transaction(async (tx) => {
-      const tokens = await tx
-        .select()
-        .from(telegramLinkTokens)
-        .where(eq(telegramLinkTokens.token, token))
-        .limit(1)
-        .for('update');
-      const row = tokens[0];
-      if (!row) throw new Error('not_found');
-      if (row.consumedAt) throw new Error('consumed');
-      if (row.expiresAt < new Date()) throw new Error('expired');
-      if (row.scope !== 'group') throw new Error('wrong_scope_group');
-      // Identity gate: only the admin who issued the token (proved by
-      // matching their TG @username) can consume it inside the group.
-      if (!row.targetTgUsername) throw new Error('legacy_no_username');
-      const consumerUsername = issuer.username?.toLowerCase() ?? '';
-      if (consumerUsername !== row.targetTgUsername) throw new Error('wrong_user');
-      // Issuer must still be an admin of the team at consumption time —
-      // group binding is a privileged operation and a former admin's
-      // outstanding token must not survive their removal/demotion.
-      const issuerRoleRows = await tx
-        .select({ role: teamMembers.role })
-        .from(teamMembers)
-        .where(
-          and(
-            eq(teamMembers.teamId, row.teamId),
-            eq(teamMembers.userId, row.issuedByUserId),
-            isNull(teamMembers.removedAt),
-          ),
-        )
-        .limit(1);
-      const issuerRole = issuerRoleRows[0]?.role;
-      if (issuerRole !== 'owner' && issuerRole !== 'admin') {
-        throw new Error('issuer_revoked');
-      }
+    const teamId = await consumeVerifiedTelegramLink(
+      {
+        db: ctx.db,
+        token,
+        scope: 'group',
+        username: issuer.username,
+        tgUserId: issuer.id,
+        chatId: ctx.message.chat.id,
+      },
+      async (tx, row) => {
+        const existingBinding = await tx
+          .select()
+          .from(telegramChatBindings)
+          .where(eq(telegramChatBindings.tgChatId, ctx.message.chat.id))
+          .limit(1);
+        // The tg_chat_id UNIQUE constraint also enforces this — the check
+        // here just gives a clearer error message in the common case.
+        if (existingBinding[0]) throw new Error('already_bound');
 
-      const existingBinding = await tx
-        .select()
-        .from(telegramChatBindings)
-        .where(eq(telegramChatBindings.tgChatId, ctx.message.chat.id))
-        .limit(1);
-      // The tg_chat_id UNIQUE constraint also enforces this — the check
-      // here just gives a clearer error message in the common case.
-      if (existingBinding[0]) throw new Error('already_bound');
+        await tx.insert(telegramChatBindings).values({
+          tgChatId: ctx.message.chat.id,
+          teamId: row.teamId,
+          // Provenance: removeMemberAction uses bound_by_user_id to revoke
+          // group bindings established by a teammate who later leaves.
+          boundByUserId: row.issuedByUserId,
+          title: ctx.message.chat.title ?? null,
+        });
 
-      await tx.insert(telegramChatBindings).values({
-        tgChatId: ctx.message.chat.id,
-        teamId: row.teamId,
-        // Provenance: removeMemberAction uses bound_by_user_id to revoke
-        // group bindings established by a teammate who later leaves.
-        boundByUserId: row.issuedByUserId,
-        title: ctx.message.chat.title ?? null,
-      });
-
-      await tx
-        .update(telegramLinkTokens)
-        .set({
-          consumedAt: new Date(),
-          consumedByTgUserId: issuer.id,
-          consumedChatId: ctx.message.chat.id,
-        })
-        .where(eq(telegramLinkTokens.id, row.id));
-
-      return row.teamId;
-    });
+        return row.teamId;
+      },
+    );
     await ctx.tg.sendMessage({
       chat_id: ctx.message.chat.id,
       text: `Group bound to team ${teamId}. Every message here will be added to the team timeline.`,

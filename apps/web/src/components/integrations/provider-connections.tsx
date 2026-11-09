@@ -1,7 +1,7 @@
 'use client';
 
-import { useQuery } from '@tanstack/react-query';
-import { ExternalLink, Plug, Search } from 'lucide-react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { ChevronRight, ExternalLink, Plug, Search } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import {
   useId,
@@ -15,6 +15,11 @@ import {
 
 import { EmptyState } from '@/components/empty-state';
 import { InlineError } from '@/components/inline-error';
+import { GoogleDriveConnectDisclosure } from '@/components/integrations/google-drive-connect-disclosure';
+import {
+  type ObjectSearchResponse,
+  visibleObjectSearchResultsForQuery,
+} from '@/components/objects/object-search-results';
 import { ProviderLogo } from '@/components/provider-logo';
 import { RelativeTimestamp } from '@/components/relative-timestamp';
 import { Button } from '@/components/ui/button';
@@ -22,7 +27,9 @@ import { DropdownMenuItem } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import { ItemActionGroup, ItemOverflowMenu } from '@/components/ui/item-actions';
 import { Skeleton } from '@/components/ui/skeleton';
+import { readJson } from '@/lib/api-response';
 import { providerLogoSrc } from '@/lib/connections';
+import { isGoogleDriveProviderId } from '@/lib/google-drive-limited-use';
 import { notifyAction } from '@/lib/notify';
 import { queryKeys } from '@/lib/query-keys';
 import { groupResourcesByKind, providerLabel, shareDisplayName } from '@/lib/resource-labels';
@@ -86,21 +93,6 @@ const initialSourcePickerState: SourcePickerState = {
 const emptyResources: ProviderResource[] = [];
 const emptyShares: ResourceShare[] = [];
 
-async function readJsonResponse<T extends { error?: string }>(res: Response): Promise<T> {
-  const text = await res.text();
-  let data = {} as T;
-  if (text) {
-    try {
-      data = JSON.parse(text) as T;
-    } catch {
-      if (!res.ok) throw new Error(text);
-      throw new Error(connectionErrorMessage('request_failed'));
-    }
-  }
-  if (!res.ok) throw new Error(data.error ?? (text || connectionErrorMessage('request_failed')));
-  return data;
-}
-
 const providerSourceHints: Partial<
   Record<
     string,
@@ -125,6 +117,9 @@ const providerSourceHints: Partial<
   },
   sentry: {
     body: 'Choose individual Sentry projects for a fixed list, or choose an organization to include all projects your Sentry account can access there.',
+  },
+  google_drive: {
+    body: 'Choose My Drive, a folder, a shared drive, or specific Docs, Sheets, Slides, PDFs, or Word files. Timeline captures only those selections.',
   },
 };
 
@@ -316,7 +311,6 @@ function TeamConnectionHeader({ connection }: { connection: TeamShareRow['connec
 }
 
 function PersonalConnectionToolbar({
-  selectedSize,
   busy,
   isSourcesLoading,
   hasSourceLoadError,
@@ -325,7 +319,6 @@ function PersonalConnectionToolbar({
   onSave,
   onDelete,
 }: {
-  selectedSize: number;
   busy: SourcePickerState['busy'];
   isSourcesLoading: boolean;
   hasSourceLoadError: boolean;
@@ -336,46 +329,20 @@ function PersonalConnectionToolbar({
 }) {
   const canSave = !isSourcesLoading && !hasSourceLoadError;
   return (
-    <div className="flex flex-wrap items-center gap-2">
-      <div className="min-w-0 flex-1 basis-full sm:basis-auto">
-        {isSourcesLoading ? (
-          <>
-            <p className="text-sm font-medium text-fg">Loading shared sources</p>
-            <p className="text-xs text-fg-muted">Saving will be available when sources load.</p>
-          </>
-        ) : hasSourceLoadError ? (
-          <>
-            <p className="text-sm font-medium text-fg">Unable to load shared sources</p>
-            <p className="text-xs text-fg-muted">Retry loading sources before saving changes.</p>
-          </>
-        ) : (
-          <>
-            <p className="text-sm font-medium text-fg">
-              {String(selectedSize)} source{selectedSize === 1 ? '' : 's'} shared to this team
-            </p>
-            <p className="text-xs text-fg-muted">
-              Sharing allows team admins to activate sync later. Captured evidence uses Timeline
-              visibility, which can differ from access in the original tool. Disconnecting stops
-              future capture; it does not delete existing records.
-            </p>
-          </>
-        )}
-      </div>
-      <ItemActionGroup label="Actions for this provider account" className="sm:ml-auto">
-        <Button size="sm" className="min-h-9" disabled={busy !== null || !canSave} onClick={onSave}>
-          {busy === 'save' ? 'Saving' : 'Save sharing'}
-        </Button>
-        <ItemOverflowMenu targetLabel="this provider account" triggerRef={deleteButtonRef}>
-          <DropdownMenuItem
-            disabled={busy !== null || confirmingDeletion}
-            className="text-destructive focus:text-destructive"
-            onSelect={onDelete}
-          >
-            Delete account
-          </DropdownMenuItem>
-        </ItemOverflowMenu>
-      </ItemActionGroup>
-    </div>
+    <ItemActionGroup label="Actions for this provider account" className="shrink-0">
+      <Button size="sm" className="min-h-9" disabled={busy !== null || !canSave} onClick={onSave}>
+        {busy === 'save' ? 'Saving' : 'Save sharing'}
+      </Button>
+      <ItemOverflowMenu targetLabel="this provider account" triggerRef={deleteButtonRef}>
+        <DropdownMenuItem
+          disabled={busy !== null || confirmingDeletion}
+          className="text-destructive focus:text-destructive"
+          onSelect={onDelete}
+        >
+          Delete account
+        </DropdownMenuItem>
+      </ItemOverflowMenu>
+    </ItemActionGroup>
   );
 }
 
@@ -387,11 +354,17 @@ function ConnectionSources({
   compact?: boolean;
 }) {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const [state, dispatch] = useReducer(sourcePickerReducer, initialSourcePickerState);
+  const [driveParentId, setDriveParentId] = useState('');
+  const [driveCrumbs, setDriveCrumbs] = useState([{ id: '', label: 'Google Drive' }]);
+  const [driveDisclosureOpen, setDriveDisclosureOpen] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const deleteButtonRef = useRef<HTMLButtonElement>(null);
   const searchInputId = useId();
   const deleteConfirmationId = useId();
+  const isDrive = connection.provider === 'google_drive';
+  const driveQuery = isDrive && state.query.trim().length >= 2 ? state.query.trim() : undefined;
   const {
     data,
     error: queryError,
@@ -399,15 +372,25 @@ function ConnectionSources({
     isFetching,
     refetch,
   } = useQuery({
-    queryKey: queryKeys.providerConnectionResources(connection.id),
+    queryKey: queryKeys.providerConnectionResources(connection.id, {
+      ...(driveQuery ? { query: driveQuery } : driveParentId ? { parentId: driveParentId } : {}),
+    }),
     queryFn: async () => {
-      const res = await fetch(`/api/connections/${connection.id}/resources`);
-      return readJsonResponse<ConnectionResourcesPayload>(res);
+      const params = new URLSearchParams();
+      if (driveQuery) params.set('query', driveQuery);
+      else if (driveParentId) params.set('parentId', driveParentId);
+      const suffix = params.size > 0 ? `?${params.toString()}` : '';
+      const res = await fetch(`/api/connections/${connection.id}/resources${suffix}`);
+      return readJson<ConnectionResourcesPayload>(res);
     },
   });
 
   const resources = data?.resources ?? emptyResources;
   const shares = data?.shares ?? emptyShares;
+  const knownResourcesRef = useRef(new Map<string, ProviderResource>());
+  for (const resource of resources) {
+    knownResourcesRef.current.set(resourceKey(resource), resource);
+  }
   const resourceByKey = useMemo(() => {
     return new Map(resources.map((resource) => [resourceKey(resource), resource]));
   }, [resources]);
@@ -448,7 +431,8 @@ function ConnectionSources({
     const hiddenSelectedResources: ProviderResource[] = [];
     for (const key of selected) {
       if (resourceByKey.has(key)) continue;
-      const resource = activeShareToResource(activeShareByKey.get(key));
+      const resource =
+        knownResourcesRef.current.get(key) ?? activeShareToResource(activeShareByKey.get(key));
       if (resource) hiddenSelectedResources.push(resource);
     }
     return [...resources, ...hiddenSelectedResources];
@@ -481,6 +465,7 @@ function ConnectionSources({
   }
 
   function toggle(resource: ProviderResource) {
+    knownResourcesRef.current.set(resourceKey(resource), resource);
     dispatch({ type: 'toggle', key: resourceKey(resource), currentSelected: selected });
   }
 
@@ -488,7 +473,12 @@ function ConnectionSources({
     dispatch({ type: 'busy', busy: 'save' });
     dispatch({ type: 'error', error: null });
     const chosen = [...selected]
-      .map((key) => resourceByKey.get(key) ?? activeShareToResource(activeShareByKey.get(key)))
+      .map(
+        (key) =>
+          resourceByKey.get(key) ??
+          knownResourcesRef.current.get(key) ??
+          activeShareToResource(activeShareByKey.get(key)),
+      )
       .filter((resource): resource is ProviderResource => Boolean(resource));
     const result = await notifyAction({
       id: `connection:${connection.id}:save`,
@@ -508,8 +498,10 @@ function ConnectionSources({
               })),
             }),
           });
-          if (!res.ok) await readJsonResponse(res);
-          await refetch();
+          if (!res.ok) await readJson(res);
+          await queryClient.invalidateQueries({
+            queryKey: queryKeys.providerConnectionResourcesPrefix(connection.id),
+          });
           return { ok: true };
         } catch {
           return { error: 'failed' };
@@ -533,7 +525,7 @@ function ConnectionSources({
       run: async () => {
         try {
           const res = await fetch(`/api/connections/${connection.id}`, { method: 'DELETE' });
-          await readJsonResponse(res);
+          await readJson(res, { emptyValue: {} });
           return { ok: true };
         } catch {
           return { error: 'failed' };
@@ -569,45 +561,89 @@ function ConnectionSources({
   }
 
   return (
-    <ConnectionSourcesPanel
-      compact={compact}
-      connection={connection}
-      selected={selected}
-      query={query}
-      searchInputId={searchInputId}
-      searchInputRef={searchInputRef}
-      deleteConfirmationId={deleteConfirmationId}
-      deleteButtonRef={deleteButtonRef}
-      busy={state.busy}
-      confirmDelete={state.confirmDelete}
-      error={error}
-      sourceLoadError={sourceLoadError}
-      picker={{
-        isLoading,
-        isFetching,
-        showEmptyResult,
-        hasSearchQuery,
-      }}
-      grouped={grouped}
-      onQueryChange={(nextQuery) => {
-        dispatch({ type: 'query', query: nextQuery });
-      }}
-      onSave={() => void save()}
-      onDelete={() => {
-        dispatch({ type: 'openDeleteConfirmation' });
-      }}
-      onConfirmDelete={() => void deleteConnection()}
-      onCancelDelete={() => {
-        dispatch({ type: 'closeDeleteConfirmation' });
-        deleteButtonRef.current?.focus();
-      }}
-      onReconnect={() => void reconnect()}
-      onRetry={() => {
-        void retrySourceLoad();
-      }}
-      onToggle={toggle}
-      onClearSearch={clearSearch}
-    />
+    <>
+      <ConnectionSourcesPanel
+        compact={compact}
+        connection={connection}
+        selected={selected}
+        query={query}
+        searchInputId={searchInputId}
+        searchInputRef={searchInputRef}
+        deleteConfirmationId={deleteConfirmationId}
+        deleteButtonRef={deleteButtonRef}
+        busy={state.busy}
+        confirmDelete={state.confirmDelete}
+        error={error}
+        sourceLoadError={sourceLoadError}
+        picker={{
+          isLoading,
+          isFetching,
+          showEmptyResult,
+          hasSearchQuery,
+        }}
+        grouped={grouped}
+        driveBrowse={
+          isDrive
+            ? {
+                crumbs: driveCrumbs,
+                onOpenFolder: (resource) => {
+                  setDriveParentId(resource.externalId);
+                  setDriveCrumbs((current) => [
+                    ...current,
+                    { id: resource.externalId, label: resource.label },
+                  ]);
+                  dispatch({ type: 'query', query: '' });
+                },
+                onCrumb: (id) => {
+                  if (!id) {
+                    setDriveParentId('');
+                    setDriveCrumbs([{ id: '', label: 'Google Drive' }]);
+                    return;
+                  }
+                  setDriveCrumbs((current) => {
+                    const index = current.findIndex((crumb) => crumb.id === id);
+                    return index >= 0 ? current.slice(0, index + 1) : current;
+                  });
+                  setDriveParentId(id);
+                },
+              }
+            : null
+        }
+        onQueryChange={(nextQuery) => {
+          dispatch({ type: 'query', query: nextQuery });
+        }}
+        onSave={() => void save()}
+        onDelete={() => {
+          dispatch({ type: 'openDeleteConfirmation' });
+        }}
+        onConfirmDelete={() => void deleteConnection()}
+        onCancelDelete={() => {
+          dispatch({ type: 'closeDeleteConfirmation' });
+          deleteButtonRef.current?.focus();
+        }}
+        onReconnect={() => {
+          if (isGoogleDriveProviderId(connection.provider)) {
+            setDriveDisclosureOpen(true);
+            return;
+          }
+          void reconnect();
+        }}
+        onRetry={() => {
+          void retrySourceLoad();
+        }}
+        onToggle={toggle}
+        onClearSearch={clearSearch}
+      />
+      <GoogleDriveConnectDisclosure
+        open={driveDisclosureOpen}
+        onOpenChange={setDriveDisclosureOpen}
+        pending={state.busy === 'reconnect'}
+        onContinue={() => {
+          setDriveDisclosureOpen(false);
+          void reconnect();
+        }}
+      />
+    </>
   );
 }
 
@@ -626,6 +662,7 @@ function ConnectionSourcesPanel({
   sourceLoadError,
   picker,
   grouped,
+  driveBrowse,
   onQueryChange,
   onSave,
   onDelete,
@@ -655,6 +692,11 @@ function ConnectionSourcesPanel({
     hasSearchQuery: boolean;
   };
   grouped: ReturnType<typeof groupResourcesByKind>;
+  driveBrowse: {
+    crumbs: { id: string; label: string }[];
+    onOpenFolder: (resource: ProviderResource) => void;
+    onCrumb: (id: string) => void;
+  } | null;
   onQueryChange: (query: string) => void;
   onSave: () => void;
   onDelete: () => void;
@@ -670,80 +712,47 @@ function ConnectionSourcesPanel({
       aria-label={`${providerLabel(connection.provider)} account ${connection.displayName}`}
       className="border-y border-border"
     >
-      <div className="flex flex-wrap items-center gap-2 border-b border-border px-3 py-2">
+      <div className="flex flex-wrap items-center gap-2 px-3 py-2">
         <div className="min-w-0 flex-1">
           <PersonalConnectionHeader connection={connection} />
         </div>
-        {connection.lastError ? (
-          <>
-            <span className="rounded-sm border border-destructive/40 px-1.5 py-0.5 text-xs text-destructive">
-              Needs reconnect
-            </span>
-            <Button size="sm" variant="outline" disabled={busy !== null} onClick={onReconnect}>
-              {busy === 'reconnect' ? 'Redirecting…' : 'Reconnect'}
-            </Button>
-          </>
-        ) : null}
-        <span className="text-xs text-fg-muted">
-          Shared {String([...selected].length)} source{selected.size === 1 ? '' : 's'}
-        </span>
+        <ConnectionReconnectControls
+          lastError={connection.lastError}
+          busy={busy}
+          onReconnect={onReconnect}
+        />
+        <SharedSourceCount
+          selectedSize={selected.size}
+          isLoading={picker.isLoading}
+          sourceLoadError={sourceLoadError}
+        />
+        <PersonalConnectionToolbar
+          busy={busy}
+          isSourcesLoading={picker.isLoading}
+          hasSourceLoadError={Boolean(sourceLoadError)}
+          confirmingDeletion={confirmDelete}
+          deleteButtonRef={deleteButtonRef}
+          onSave={onSave}
+          onDelete={onDelete}
+        />
       </div>
-      <div className="space-y-3 p-3">
+      {confirmDelete ? (
+        <ProviderAccountDeleteConfirmation
+          id={deleteConfirmationId}
+          busy={busy}
+          onConfirm={onConfirmDelete}
+          onCancel={onCancelDelete}
+        />
+      ) : null}
+      <div className="space-y-2.5 border-t border-border px-3 py-3">
         {compact ? null : <ProviderAccountHint provider={connection.provider} />}
         {compact ? null : <ProviderSourceHint provider={connection.provider} />}
-        <div
-          className={
-            compact ? 'space-y-2' : 'grid gap-2 md:grid-cols-[minmax(0,1fr)_auto] md:items-end'
-          }
-        >
-          <div className="min-w-0 space-y-1.5">
-            <label htmlFor={searchInputId} className="block text-xs font-medium text-fg">
-              Search sources
-            </label>
-            <Input
-              ref={searchInputRef}
-              id={searchInputId}
-              className="text-base sm:text-sm"
-              placeholder="Search by name or type"
-              value={query}
-              onChange={(event) => {
-                onQueryChange(event.currentTarget.value);
-              }}
-            />
-          </div>
-          <PersonalConnectionToolbar
-            selectedSize={selected.size}
-            busy={busy}
-            isSourcesLoading={picker.isLoading}
-            hasSourceLoadError={Boolean(sourceLoadError)}
-            confirmingDeletion={confirmDelete}
-            deleteButtonRef={deleteButtonRef}
-            onSave={onSave}
-            onDelete={onDelete}
-          />
-        </div>
-        {confirmDelete ? (
-          <section
-            id={deleteConfirmationId}
-            aria-label="Confirm provider account deletion"
-            className="flex flex-wrap items-center gap-2 rounded-sm border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm"
-          >
-            <p role="status" className="min-w-0 flex-1 text-destructive">
-              Deleting this provider account stops team sync that depends on it.
-            </p>
-            <Button
-              size="sm"
-              variant="destructive"
-              disabled={busy !== null}
-              onClick={onConfirmDelete}
-            >
-              {busy === 'delete' ? 'Deleting' : 'Delete provider account'}
-            </Button>
-            <Button size="sm" variant="outline" disabled={busy !== null} onClick={onCancelDelete}>
-              Cancel
-            </Button>
-          </section>
-        ) : null}
+        <SourceSearchField
+          id={searchInputId}
+          inputRef={searchInputRef}
+          query={query}
+          onQueryChange={onQueryChange}
+        />
         {error ? (
           <InlineError
             message={connectionErrorMessage(error)}
@@ -754,17 +763,13 @@ function ConnectionSourcesPanel({
           />
         ) : null}
         {picker.isLoading ? <SourcePickerLoading /> : null}
-        <div data-slot="provider-resource-picker" data-provider={connection.provider}>
-          {grouped.map((group) => (
-            <ResourceGroup
-              key={group.kind}
-              title={group.label}
-              resources={group.resources}
-              selected={selected}
-              onToggle={onToggle}
-            />
-          ))}
-        </div>
+        <SourceResourcePicker
+          provider={connection.provider}
+          grouped={grouped}
+          selected={selected}
+          driveBrowse={driveBrowse}
+          onToggle={onToggle}
+        />
         {picker.showEmptyResult ? (
           <SourcePickerEmptyState
             query={query}
@@ -774,6 +779,172 @@ function ConnectionSourcesPanel({
         ) : null}
       </div>
     </section>
+  );
+}
+
+function ConnectionReconnectControls({
+  lastError,
+  busy,
+  onReconnect,
+}: {
+  lastError: string | null;
+  busy: SourcePickerState['busy'];
+  onReconnect: () => void;
+}) {
+  if (!lastError) return null;
+  return (
+    <>
+      <span className="rounded-sm border border-destructive/40 px-1.5 py-0.5 text-xs text-destructive">
+        Needs reconnect
+      </span>
+      <Button size="sm" variant="outline" disabled={busy !== null} onClick={onReconnect}>
+        {busy === 'reconnect' ? 'Redirecting…' : 'Reconnect'}
+      </Button>
+    </>
+  );
+}
+
+function SharedSourceCount({
+  selectedSize,
+  isLoading,
+  sourceLoadError,
+}: {
+  selectedSize: number;
+  isLoading: boolean;
+  sourceLoadError: string | null;
+}) {
+  const label = isLoading
+    ? 'Loading sources'
+    : sourceLoadError
+      ? 'Unable to load sources'
+      : `${String(selectedSize)} source${selectedSize === 1 ? '' : 's'} shared`;
+  return <p className="text-xs text-fg-muted">{label}</p>;
+}
+
+function ProviderAccountDeleteConfirmation({
+  id,
+  busy,
+  onConfirm,
+  onCancel,
+}: {
+  id: string;
+  busy: SourcePickerState['busy'];
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <section
+      id={id}
+      aria-label="Confirm provider account deletion"
+      className="flex flex-wrap items-center gap-2 border-t border-destructive/40 bg-destructive/10 px-3 py-2 text-sm"
+    >
+      <p role="status" className="min-w-0 flex-1 text-destructive">
+        Deleting this provider account stops team sync that depends on it.
+      </p>
+      <Button size="sm" variant="destructive" disabled={busy !== null} onClick={onConfirm}>
+        {busy === 'delete' ? 'Deleting' : 'Delete provider account'}
+      </Button>
+      <Button size="sm" variant="outline" disabled={busy !== null} onClick={onCancel}>
+        Cancel
+      </Button>
+    </section>
+  );
+}
+
+function SourceSearchField({
+  id,
+  inputRef,
+  query,
+  onQueryChange,
+}: {
+  id: string;
+  inputRef: RefObject<HTMLInputElement | null>;
+  query: string;
+  onQueryChange: (query: string) => void;
+}) {
+  return (
+    <div className="min-w-0 space-y-1.5">
+      <label htmlFor={id} className="block text-xs font-medium text-fg">
+        Search sources
+      </label>
+      <Input
+        ref={inputRef}
+        id={id}
+        className="text-base sm:text-sm"
+        placeholder="Search by name or type"
+        value={query}
+        onChange={(event) => {
+          onQueryChange(event.currentTarget.value);
+        }}
+      />
+    </div>
+  );
+}
+
+function DriveFolderBreadcrumb({
+  crumbs,
+  onCrumb,
+}: {
+  crumbs: { id: string; label: string }[];
+  onCrumb: (id: string) => void;
+}) {
+  return (
+    <nav aria-label="Google Drive folders" className="flex flex-wrap items-center gap-1 text-xs">
+      {crumbs.map((crumb, index) => (
+        <span key={crumb.id || 'drive-root'} className="inline-flex items-center gap-1">
+          {index > 0 ? <ChevronRight aria-hidden="true" className="size-3 text-fg-muted" /> : null}
+          <button
+            type="button"
+            className="text-signal hover:underline"
+            onClick={() => {
+              onCrumb(crumb.id);
+            }}
+          >
+            {crumb.label}
+          </button>
+        </span>
+      ))}
+    </nav>
+  );
+}
+
+function SourceResourcePicker({
+  provider,
+  grouped,
+  selected,
+  driveBrowse,
+  onToggle,
+}: {
+  provider: string;
+  grouped: ReturnType<typeof groupResourcesByKind>;
+  selected: Set<string>;
+  driveBrowse: {
+    crumbs: { id: string; label: string }[];
+    onOpenFolder: (resource: ProviderResource) => void;
+    onCrumb: (id: string) => void;
+  } | null;
+  onToggle: (resource: ProviderResource) => void;
+}) {
+  return (
+    <div data-slot="provider-resource-picker" data-provider={provider}>
+      {driveBrowse ? (
+        <DriveFolderBreadcrumb crumbs={driveBrowse.crumbs} onCrumb={driveBrowse.onCrumb} />
+      ) : null}
+      {grouped.map((group) => (
+        <ResourceGroup
+          key={group.kind}
+          title={group.label}
+          resources={group.resources}
+          selected={selected}
+          onToggle={onToggle}
+          onOpen={
+            driveBrowse && (group.kind === 'drive.folder' || group.kind === 'drive.shared_drive')
+              ? driveBrowse.onOpenFolder
+              : undefined
+          }
+        />
+      ))}
+    </div>
   );
 }
 
@@ -830,22 +1001,20 @@ function ProviderSourceHint({ provider }: { provider: string }) {
   const hint = providerSourceHints[provider];
   if (!hint) return null;
   return (
-    <div className="rounded-sm border border-signal/30 bg-signal-soft px-3 py-2 text-sm text-fg">
-      <div className="flex flex-wrap items-start gap-2">
-        <p className="min-w-0 flex-1">{hint.body}</p>
-        {hint.link ? (
-          <a
-            className="inline-flex shrink-0 items-center gap-1 text-[11px] text-signal hover:underline"
-            href={hint.link.href}
-            target="_blank"
-            rel="noreferrer"
-          >
-            {hint.link.label}
-            <ExternalLink aria-hidden="true" className="size-3" />
-          </a>
-        ) : null}
-      </div>
-      {hint.detail ? <p className="mt-1 text-fg-muted">{hint.detail}</p> : null}
+    <div className="space-y-1 text-sm text-fg-muted">
+      <p>{hint.body}</p>
+      {hint.detail ? <p>{hint.detail}</p> : null}
+      {hint.link ? (
+        <a
+          className="inline-flex items-center gap-1 text-xs text-signal hover:underline"
+          href={hint.link.href}
+          target="_blank"
+          rel="noreferrer"
+        >
+          {hint.link.label}
+          <ExternalLink aria-hidden="true" className="size-3" />
+        </a>
+      ) : null}
     </div>
   );
 }
@@ -855,38 +1024,56 @@ function ResourceGroup({
   resources,
   selected,
   onToggle,
+  onOpen,
 }: {
   title: string;
   resources: ProviderResource[];
   selected: Set<string>;
   onToggle: (resource: ProviderResource) => void;
+  onOpen?: (resource: ProviderResource) => void;
 }) {
   if (resources.length === 0) return null;
   return (
     <div className="space-y-1">
       <h3 className="text-xs text-fg-muted">{title}</h3>
-      <div className="max-h-72 overflow-auto rounded-sm border border-border">
+      <div className="max-h-72 overflow-auto">
         {resources.map((resource) => {
           const key = `${resource.kind}\x00${resource.externalId}`;
+          const description = resourceKindDescription(resource.kind);
           return (
-            <label
+            <div
               key={key}
-              className="flex cursor-pointer items-center gap-2 border-b border-border px-2 py-1.5 text-sm last:border-b-0"
+              className="flex items-start gap-2 border-t border-border py-1.5 text-sm first:border-t-0"
             >
-              <input
-                type="checkbox"
-                checked={selected.has(key)}
-                onChange={() => {
-                  onToggle(resource);
-                }}
-              />
-              <span className="min-w-0 flex-1">
-                <span className="block break-words">{resource.label}</span>
-                <span className="block break-words text-xs text-fg-muted">
-                  {resourceKindDescription(resource.kind)}
+              <label className="flex min-w-0 flex-1 cursor-pointer items-start gap-2">
+                <input
+                  type="checkbox"
+                  checked={selected.has(key)}
+                  className="mt-0.5 size-4 shrink-0 rounded-sm border-input accent-signal"
+                  onChange={() => {
+                    onToggle(resource);
+                  }}
+                />
+                <span className="min-w-0 flex-1">
+                  <span className="block break-words">{resource.label}</span>
+                  {description ? (
+                    <span className="block break-words text-xs text-fg-muted">{description}</span>
+                  ) : null}
                 </span>
-              </span>
-            </label>
+              </label>
+              {onOpen ? (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="shrink-0"
+                  onClick={() => {
+                    onOpen(resource);
+                  }}
+                >
+                  Open
+                </Button>
+              ) : null}
+            </div>
           );
         })}
       </div>
@@ -897,9 +1084,11 @@ function ResourceGroup({
 function resourceKindDescription(kind: string): string {
   switch (kind) {
     case 'drive.folder':
-      return 'Folder files imported into the document drive';
+      return 'Folder';
+    case 'drive.file':
+      return 'File';
     case 'drive.shared_drive':
-      return 'Shared drive files imported into the document drive';
+      return 'Shared drive';
     case 'monday.board':
       return 'Board items, updates, columns, and subitems';
     case 'monday.doc':
@@ -937,6 +1126,11 @@ function activeShareToResource(share: ResourceShare | undefined): ProviderResour
 interface TeamShareRow {
   share: ResourceShare;
   connection: ProviderConnection & { ownerLabel: string; ownerUserId: string };
+  driveLink?: {
+    integrationId: string;
+    selectionId: string;
+    linkedObjectId: string | null;
+  };
 }
 
 function sourceKey(share: Pick<ResourceShare, 'resourceKind' | 'externalId'>) {
@@ -1021,7 +1215,7 @@ export function TeamSourcesUi({
             resourceShareIds: [...(selectedByConnection[providerConnectionId] ?? new Set())],
           }),
         });
-        const payload = await readJsonResponse<{
+        const payload = await readJson<{
           error?: string;
           syncRequired?: boolean;
           syncQueued?: boolean;
@@ -1079,21 +1273,26 @@ export function TeamSourcesUi({
                 const checked = selected.has(row.share.id);
                 const revoked = Boolean(row.share.revokedAt);
                 return (
-                  <label key={row.share.id} className="flex items-center gap-2 px-3 py-2 text-sm">
-                    <input
-                      type="checkbox"
-                      disabled={!isAdmin || revoked}
-                      checked={checked}
-                      onChange={() => {
-                        setSelectedOverrides((current) => {
-                          const next = new Set(selected);
-                          if (next.has(row.share.id)) next.delete(row.share.id);
-                          else next.add(row.share.id);
-                          return { ...current, [connectionId]: next };
-                        });
-                      }}
-                    />
-                    <span className="min-w-0 flex-1 truncate">{shareDisplayName(row.share)}</span>
+                  <div key={row.share.id} className="flex items-center gap-2 px-3 py-2 text-sm">
+                    <label className="flex min-w-0 flex-1 items-center gap-2">
+                      <input
+                        type="checkbox"
+                        disabled={!isAdmin || revoked}
+                        checked={checked}
+                        onChange={() => {
+                          setSelectedOverrides((current) => {
+                            const next = new Set(selected);
+                            if (next.has(row.share.id)) next.delete(row.share.id);
+                            else next.add(row.share.id);
+                            return { ...current, [connectionId]: next };
+                          });
+                        }}
+                      />
+                      <span className="min-w-0 flex-1 truncate">{shareDisplayName(row.share)}</span>
+                    </label>
+                    {isAdmin && row.driveLink ? (
+                      <DriveObjectLinkField link={row.driveLink} disabled={busy !== null} />
+                    ) : null}
                     {revoked ? (
                       <>
                         <span className="rounded-sm border border-destructive/40 px-1.5 py-0.5 text-[10px] uppercase text-destructive">
@@ -1117,7 +1316,7 @@ export function TeamSourcesUi({
                         ) : null}
                       </>
                     ) : null}
-                  </label>
+                  </div>
                 );
               })}
             </div>
@@ -1125,6 +1324,114 @@ export function TeamSourcesUi({
         );
       })}
     </div>
+  );
+}
+
+function DriveObjectLinkField({
+  link,
+  disabled,
+}: {
+  link: { integrationId: string; selectionId: string; linkedObjectId: string | null };
+  disabled: boolean;
+}) {
+  const router = useRouter();
+  const [query, setQuery] = useState('');
+  const [busy, setBusy] = useState(false);
+  const trimmed = query.trim();
+  const { data } = useQuery<ObjectSearchResponse>({
+    queryKey: queryKeys.objectSearch(trimmed, ''),
+    enabled: trimmed.length >= 2 && !disabled && !busy,
+    staleTime: 0,
+    gcTime: 30_000,
+    queryFn: async ({ signal }) => {
+      const params = new URLSearchParams({ q: trimmed });
+      const payload = await readJson<{
+        error?: string;
+        results?: ObjectSearchResponse['results'];
+      }>(await fetch(`/api/objects/search?${params.toString()}`, { signal }));
+      return { query: trimmed, results: payload.results };
+    },
+  });
+  const results = visibleObjectSearchResultsForQuery(data, trimmed);
+
+  async function save(linkedObjectId: string | null) {
+    setBusy(true);
+    try {
+      const result = await notifyAction({
+        id: `drive-link:${link.selectionId}`,
+        loading: 'Saving object link…',
+        success: linkedObjectId ? 'Linked Drive source' : 'Cleared Drive object link',
+        error: 'Couldn’t update Drive object link',
+        run: async () => {
+          const res = await fetch(
+            `/api/integrations/manage/${link.integrationId}/selections/${link.selectionId}`,
+            {
+              method: 'PATCH',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify({ linkedObjectId }),
+            },
+          );
+          await readJson(res);
+          return { ok: true };
+        },
+      });
+      if (!('error' in result)) {
+        setQuery('');
+        router.refresh();
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <span className="relative min-w-[12rem] max-w-xs">
+      <span className="flex items-center gap-1">
+        <Input
+          aria-label="Link Drive source to a Timeline object"
+          className="h-8 text-xs"
+          placeholder={link.linkedObjectId ? 'Linked · search to replace' : 'Link object'}
+          value={query}
+          disabled={disabled || busy}
+          onChange={(event) => {
+            setQuery(event.currentTarget.value);
+          }}
+        />
+        {link.linkedObjectId ? (
+          <Button
+            size="sm"
+            variant="ghost"
+            disabled={disabled || busy}
+            onClick={() => {
+              void save(null);
+            }}
+          >
+            Clear
+          </Button>
+        ) : null}
+      </span>
+      {results.length > 0 ? (
+        <ul
+          aria-label="Matching Timeline objects"
+          className="absolute z-10 mt-1 max-h-40 w-full overflow-auto rounded-sm border border-border bg-popover p-1 text-popover-foreground shadow-md"
+        >
+          {results.map((result) => (
+            <li key={result.id}>
+              <button
+                type="button"
+                className="w-full rounded-sm px-2 py-1 text-left text-xs text-fg hover:bg-accent"
+                disabled={disabled || busy}
+                onClick={() => {
+                  void save(result.id);
+                }}
+              >
+                {result.canonicalName}
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </span>
   );
 }
 

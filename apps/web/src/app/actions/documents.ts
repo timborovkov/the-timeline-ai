@@ -12,7 +12,6 @@ import {
   headObject,
 } from '@timeline/shared/s3';
 import { withTeam } from '@timeline/shared/team-scope';
-import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 
 import { resolveActiveTeam } from '@/lib/active-team';
@@ -22,8 +21,8 @@ import { db } from '@/lib/db';
 import { safeMarkOnboardingStep } from '@/lib/onboarding';
 import { publicActionError } from '@/lib/public-error';
 import { requireRedisQueue } from '@/lib/queue';
+import { refreshMutation } from '@/lib/refresh-mutation';
 import { runSentryServerAction } from '@/lib/sentry-action';
-import { reportCaughtError } from '@/lib/sentry-report';
 import { visibilitySchema, type Visibility } from '@/lib/visibility';
 
 const log = childLogger('web:actions:documents');
@@ -81,24 +80,6 @@ const createFolderSchema = z.object({
   visibilityUserIds: z.array(z.string().regex(UUID_RE)).optional(),
 });
 
-function bestEffortRevalidateDocuments(): void {
-  try {
-    revalidatePath('/app/documents');
-  } catch (err) {
-    log.error({ err }, 'document revalidation failed');
-    reportCaughtError(err, { surface: 'server_action', operation: 'revalidate_documents' });
-  }
-}
-
-function bestEffortRevalidateDocumentPath(path: string, operation: string): void {
-  try {
-    revalidatePath(path);
-  } catch (err) {
-    log.error({ err, path }, 'document path revalidation failed');
-    reportCaughtError(err, { surface: 'server_action', operation });
-  }
-}
-
 export async function createFolderAction(
   input: z.input<typeof createFolderSchema>,
 ): Promise<CreateFolderResult> {
@@ -130,7 +111,7 @@ export async function createFolderAction(
       'document_action_completed',
       { action: 'folder_create' },
     );
-    bestEffortRevalidateDocuments();
+    refreshMutation({ kind: 'documents-changed' }, 'revalidate_documents');
     return { ok: true, id: folder.id };
   });
 }
@@ -161,7 +142,7 @@ export async function deleteFolderAction(id: string): Promise<Result> {
       'document_action_completed',
       { action: 'folder_delete' },
     );
-    bestEffortRevalidateDocuments();
+    refreshMutation({ kind: 'documents-changed' }, 'revalidate_documents');
     return { ok: true };
   });
 }
@@ -344,12 +325,10 @@ export async function finalizeDocumentVersionAction(
           source: 'automatic',
         });
       }
-      bestEffortRevalidateDocuments();
-      bestEffortRevalidateDocumentPath(
-        `/app/documents/${finalized.document.id}`,
-        'revalidate_document_detail',
+      refreshMutation(
+        { kind: 'documents-changed', id: finalized.document.id, timeline: true },
+        'revalidate_document_upload',
       );
-      bestEffortRevalidateDocumentPath('/app/timeline', 'revalidate_document_timeline');
       return {
         ok: true,
         documentId: finalized.document.id,
@@ -405,10 +384,9 @@ export async function renameDocumentAction(
       'document_action_completed',
       { action: 'document_rename' },
     );
-    bestEffortRevalidateDocuments();
-    bestEffortRevalidateDocumentPath(
-      `/app/documents/${parsed.data.id}`,
-      'revalidate_document_detail',
+    refreshMutation(
+      { kind: 'documents-changed', id: parsed.data.id },
+      'revalidate_document_rename',
     );
     return { ok: true };
   });
@@ -439,7 +417,7 @@ export async function deleteDocumentAction(id: string): Promise<Result> {
       'document_action_completed',
       { action: 'document_delete' },
     );
-    bestEffortRevalidateDocuments();
+    refreshMutation({ kind: 'documents-changed' }, 'revalidate_documents');
     return { ok: true };
   });
 }
@@ -468,13 +446,10 @@ export async function promoteCapturedFileAction(
         });
       }
       const document = promoted.document;
-      bestEffortRevalidateDocuments();
-      bestEffortRevalidateDocumentPath('/app/documents/captured', 'revalidate_captured_documents');
-      bestEffortRevalidateDocumentPath(
-        `/app/documents/${document.id}`,
-        'revalidate_document_detail',
+      refreshMutation(
+        { kind: 'documents-changed', id: document.id, captured: true, timeline: true },
+        'revalidate_document_promote',
       );
-      bestEffortRevalidateDocumentPath('/app/timeline', 'revalidate_document_timeline');
       return { ok: true, documentId: document.id };
     } catch (err) {
       return {

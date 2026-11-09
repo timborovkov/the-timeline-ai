@@ -361,6 +361,58 @@ describe('calendar scope', () => {
     ).rejects.toThrow('Pinned item not available');
   });
 
+  it('keeps single and batch calendar pins aligned when a recurring parent becomes hidden', async () => {
+    const owner = withTeam(db as never, TEAM_ID, USER_ID);
+    const teammate = withTeam(db as never, TEAM_ID, USER_B_ID);
+    const parent = await owner.calendar.createCalendarEvent({
+      title: 'Shared recurring meeting',
+      startAt: new Date('2026-07-01T16:00:00Z'),
+      endAt: new Date('2026-07-01T16:30:00Z'),
+      timezone: 'UTC',
+      visibility: 'team',
+      rrule: 'FREQ=WEEKLY;BYDAY=WE',
+    });
+    const occurrence = (
+      await owner.calendar.listCalendarEvents({
+        from: new Date('2026-07-02T00:00:00Z'),
+        to: new Date('2026-08-01T00:00:00Z'),
+        limit: 20,
+      })
+    ).find((event) => event.recurringParentId === parent.id);
+    if (!occurrence) throw new Error('expected recurring occurrence');
+    const pin = await teammate.pins.pin({ kind: 'calendar_event', key: occurrence.id });
+    const refs = [parent.id, occurrence.id, occurrence.id.toUpperCase(), 'invalid-id'].map(
+      (key) => ({ kind: 'calendar_event' as const, key }),
+    );
+    const before = await teammate.pins.isPinnedMany(refs);
+    for (const ref of refs) {
+      expect(before[`${ref.kind}:${ref.key}`] ?? false).toBe(await teammate.pins.isPinned(ref));
+    }
+    expect(before[`calendar_event:${occurrence.id}`]).toBe(true);
+
+    // Model an existing visible occurrence whose parent has since become private.
+    await db
+      .update(calendarEvents)
+      .set({ visibility: 'private' })
+      .where(eq(calendarEvents.id, parent.id));
+    await expect(teammate.calendar.getCalendarEvent(occurrence.id)).resolves.toMatchObject({
+      redacted: false,
+    });
+    const hidden = await teammate.pins.isPinnedMany(refs);
+    for (const ref of refs) {
+      expect(hidden[`${ref.kind}:${ref.key}`] ?? false).toBe(false);
+      await expect(teammate.pins.isPinned(ref)).resolves.toBe(false);
+    }
+    await expect(teammate.pins.pin({ kind: 'calendar_event', key: occurrence.id })).rejects.toThrow(
+      'Pinned item not available',
+    );
+    await expect(teammate.pins.list()).resolves.toMatchObject({ items: [] });
+    await expect(teammate.pins.resolvePin(pin.pinId)).resolves.toBeNull();
+    await expect(owner.calendar.resolveVisibleCalendarSeries([occurrence.id])).resolves.toEqual(
+      new Map([[occurrence.id, parent.id]]),
+    );
+  });
+
   it('lists paged calendar events with search without exposing redacted private details', async () => {
     const ownerScope = withTeam(db as never, TEAM_ID, USER_ID);
     const teammateScope = withTeam(db as never, TEAM_ID, USER_B_ID);

@@ -21,19 +21,71 @@
   display: none;
 }
 
+.dropdownChevron {
+  width: 0.875rem;
+  height: 0.875rem;
+  flex-shrink: 0;
+  opacity: 0.7;
+}
+
+/* Rotate only the chevron whose direct details parent is open. The mobile
+   Menu overlay is also a details element; a looser descendant selector would
+   invert collapsed rows whenever that overlay is open. */
+details[open] > summary .dropdownChevron {
+  transform: rotate(180deg);
+}
+
 .dropdownPanel {
   position: absolute;
-  top: calc(100% - 0.2rem);
+  top: calc(100% + 0.35rem);
   left: 0;
   z-index: 60;
-  min-width: 19rem;
+  min-width: 16.5rem;
   max-height: min(70vh, 36rem);
   overflow-y: auto;
-  padding: 0.4rem;
+  padding: 0.35rem;
   border: 1px solid var(--border);
   border-radius: 6px;
   background: var(--bg);
-  box-shadow: 0 16px 40px color-mix(in oklch, var(--fg) 12%, transparent);
+  box-shadow:
+    0 1px 2px color-mix(in oklch, black 8%, transparent),
+    0 8px 18px color-mix(in oklch, black 12%, transparent);
+}
+
+:global(html.dark) .dropdownPanel {
+  box-shadow:
+    0 1px 0 color-mix(in oklch, var(--border) 80%, transparent),
+    0 8px 18px color-mix(in oklch, black 42%, transparent);
+}
+
+.dropdownLink {
+  width: 100%;
+  justify-content: flex-start;
+  padding-block: 0.45rem;
+  padding-inline: 0.7rem;
+  border-radius: 4px;
+}
+
+.dropdownLink:hover {
+  background: var(--surface);
+  color: var(--fg);
+}
+
+:global(html.dark) .dropdownLink:hover {
+  background: var(--surface-2);
+}
+
+.dropdownOverview {
+  font-weight: 600;
+  color: var(--fg);
+}
+
+.dropdownRule {
+  height: 1px;
+  margin: 0.3rem 0.55rem;
+  padding: 0;
+  list-style: none;
+  background: var(--border);
 }
 
 .mobileDropdown .dropdownSummary {
@@ -61,7 +113,7 @@
 .dropdownList,
 .nestedList {
   display: grid;
-  gap: 0.15rem;
+  gap: 0.1rem;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -74,8 +126,38 @@
   border-inline-start: 1px solid var(--border);
 }
 
-.footerUseCases {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.75rem 1.25rem;
+.footerColumns {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(9.5rem, 1fr));
+  gap: 2rem 1.75rem;
+  width: 100%;
+}
+
+.footerColumnTitle {
+  margin: 0 0 0.85rem;
+  color: var(--fg);
+  font-size: 0.68rem;
+  font-weight: 650;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.footerColumnList {
+  display: grid;
+  gap: 0.55rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+@media (max-width: 64rem) {
+  .footerColumns {
+    grid-template-columns: repeat(2, minmax(10rem, 1fr));
+  }
+}
+
+@media (max-width: 30rem) {
+  .footerColumns {
+    grid-template-columns: 1fr;
+  }
 }

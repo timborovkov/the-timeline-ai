@@ -2,7 +2,7 @@ import { deferChatDelivery } from '#src/conversation-surfaces/deferred-delivery.
 import { getEnv } from '#src/env.js';
 import { requestBudgetIdentity } from '#src/integrations/request-budget.js';
 import { providerRetryAt, withExternalRequest } from '#src/integrations/request.js';
-import { getRedisConnection } from '#src/queue/connection.js';
+import { getRedisConnection } from '#src/redis/connection.js';
 /**
  * Minimal Telegram Bot API client. We only implement the handful of methods
  * the webhook flow needs, plus `setMyCommands` for startup `/` menu

@@ -2,6 +2,9 @@ import { readFileSync } from 'node:fs';
 
 import { expect } from '@timeline/test-support';
 import { describe, it } from 'bun:test';
+
+import type { NextConfig } from 'next';
+
 interface RailwayConfig {
   build?: { builder?: string; dockerfilePath?: string };
   deploy?: {
@@ -19,13 +22,14 @@ describe('Railway web config', () => {
     expect(config.build?.builder).toBe('DOCKERFILE');
     expect(config.build?.dockerfilePath).toBe('docker/web.Dockerfile');
     expect(config.deploy?.preDeployCommand).toEqual([
-      'env NODE_ENV=production bun --no-env-file packages/db/dist/migrate.js',
+      'env NODE_ENV=production bun --bun --no-env-file packages/db/dist/migrate.js',
     ]);
     expect(config.deploy?.startCommand).toBe(
-      'env NODE_ENV=production bun --no-env-file apps/web/start.mjs',
+      'env NODE_ENV=production bun --bun --no-env-file apps/web/start.mjs',
     );
     expect(config.deploy?.preDeployCommand?.join(' ')).not.toContain('pnpm');
     expect(config.deploy?.startCommand).not.toContain('pnpm');
+    expect(config.deploy?.startCommand).not.toMatch(/\bnode\b/);
     expect(config.deploy?.startCommand).not.toContain('NODE_ENV=staging');
   });
 
@@ -73,6 +77,36 @@ describe('Railway web config', () => {
     expect(dockerfile).toContain('ENV NEXT_PUBLIC_SENTRY_DSN=$NEXT_PUBLIC_SENTRY_DSN');
     expect(dockerfile).toContain('ARG NEXT_PUBLIC_POSTHOG_KEY');
     expect(dockerfile).toContain('ENV NEXT_PUBLIC_POSTHOG_KEY=$NEXT_PUBLIC_POSTHOG_KEY');
+    expect(dockerfile).toContain('ARG NEXT_PUBLIC_POSTHOG_HOST');
+    expect(dockerfile).toContain('ENV NEXT_PUBLIC_POSTHOG_HOST=$NEXT_PUBLIC_POSTHOG_HOST');
+    expect(dockerfile).toContain('ARG NEXT_PUBLIC_POSTHOG_UI_HOST');
+    expect(dockerfile).toContain('ENV NEXT_PUBLIC_POSTHOG_UI_HOST=$NEXT_PUBLIC_POSTHOG_UI_HOST');
+    expect(dockerfile).toContain('FROM oven/bun:1.4.4-debian AS base');
+    expect(dockerfile).toContain('CMD ["bun", "--bun", "--no-env-file", "apps/web/start.mjs"]');
+  });
+
+  it('stamps Bun on the Node server Sentry path and keeps Edge/browser free of process.versions', () => {
+    const server = readFileSync(new URL('./sentry.server.config.ts', import.meta.url), 'utf8');
+    const edge = readFileSync(new URL('./sentry.edge.config.ts', import.meta.url), 'utf8');
+    const client = readFileSync(new URL('./instrumentation-client.ts', import.meta.url), 'utf8');
+
+    expect(server).toContain("from '@timeline/shared/monitoring/sentry-runtime'");
+    expect(server).toContain('stampSentryRuntimeContext');
+    expect(edge).not.toContain('sentry-runtime');
+    expect(client).not.toContain('sentry-runtime');
+  });
+
+  it('disables Next.js route preloading so unused server bundles stay off the idle heap', () => {
+    const config = readFileSync(new URL('../next.config.ts', import.meta.url), 'utf8');
+    const readme = readFileSync(new URL('../README.md', import.meta.url), 'utf8');
+    const experimental: NonNullable<NextConfig['experimental']> = {
+      preloadEntriesOnStart: false,
+    };
+
+    expect(config).toMatch(/^\s*preloadEntriesOnStart:\s*false,/m);
+    expect(experimental.preloadEntriesOnStart).toBe(false);
+    expect(readme).toContain('experimental.preloadEntriesOnStart');
+    expect(readme).toContain('trading cold-route latency for lower idle memory');
   });
 
   it('supplies the canonical public origin while prerendering the web image', () => {

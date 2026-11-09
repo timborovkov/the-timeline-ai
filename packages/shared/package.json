@@ -77,6 +77,12 @@
       "import": "./dist/calendar/index.js",
       "default": "./dist/calendar/index.js"
     },
+    "./job-recovery/policy": {
+      "types": "./src/job-recovery/policy.ts",
+      "development": "./src/job-recovery/policy.ts",
+      "import": "./dist/job-recovery/policy.js",
+      "default": "./dist/job-recovery/policy.js"
+    },
     "./job-recovery": {
       "types": "./src/job-recovery/index.ts",
       "development": "./src/job-recovery/index.ts",
@@ -155,6 +161,12 @@
       "import": "./dist/extraction-model-version.js",
       "default": "./dist/extraction-model-version.js"
     },
+    "./redis": {
+      "types": "./src/redis/connection.ts",
+      "development": "./src/redis/connection.ts",
+      "import": "./dist/redis/connection.js",
+      "default": "./dist/redis/connection.js"
+    },
     "./queue": {
       "types": "./src/queue/index.ts",
       "development": "./src/queue/index.ts",
@@ -190,6 +202,12 @@
       "development": "./src/timeline-moments/index.ts",
       "import": "./dist/timeline-moments/index.js",
       "default": "./dist/timeline-moments/index.js"
+    },
+    "./timeline-moments/presentation-contract": {
+      "types": "./src/timeline-moments/presentation-contract.ts",
+      "development": "./src/timeline-moments/presentation-contract.ts",
+      "import": "./dist/timeline-moments/presentation-contract.js",
+      "default": "./dist/timeline-moments/presentation-contract.js"
     },
     "./timeline-moments/presentation": {
       "types": "./src/timeline-moments/presentation.ts",
@@ -274,6 +292,12 @@
       "development": "./src/monitoring/sentry-scrub.ts",
       "import": "./dist/monitoring/sentry-scrub.js",
       "default": "./dist/monitoring/sentry-scrub.js"
+    },
+    "./monitoring/sentry-runtime": {
+      "types": "./src/monitoring/sentry-runtime.ts",
+      "development": "./src/monitoring/sentry-runtime.ts",
+      "import": "./dist/monitoring/sentry-runtime.js",
+      "default": "./dist/monitoring/sentry-runtime.js"
     },
     "./meetings": {
       "types": "./src/meetings/index.ts",
@@ -555,6 +579,36 @@
       "development": "./src/qdrant/index.ts",
       "import": "./dist/qdrant/index.js",
       "default": "./dist/qdrant/index.js"
+    },
+    "./agent-provisioning": {
+      "types": "./src/agent-provisioning/index.ts",
+      "development": "./src/agent-provisioning/index.ts",
+      "import": "./dist/agent-provisioning/index.js",
+      "default": "./dist/agent-provisioning/index.js"
+    },
+    "./integrations/drive-extract-protocol": {
+      "types": "./src/integrations/drive-extract-protocol.ts",
+      "development": "./src/integrations/drive-extract-protocol.ts",
+      "import": "./dist/integrations/drive-extract-protocol.js",
+      "default": "./dist/integrations/drive-extract-protocol.js"
+    },
+    "./integrations/drive-extract-lifecycle": {
+      "types": "./src/integrations/drive-extract-lifecycle.ts",
+      "development": "./src/integrations/drive-extract-lifecycle.ts",
+      "import": "./dist/integrations/drive-extract-lifecycle.js",
+      "default": "./dist/integrations/drive-extract-lifecycle.js"
+    },
+    "./integrations/google-drive-scheduling": {
+      "types": "./src/integrations/google-drive-scheduling.ts",
+      "development": "./src/integrations/google-drive-scheduling.ts",
+      "import": "./dist/integrations/google-drive-scheduling.js",
+      "default": "./dist/integrations/google-drive-scheduling.js"
+    },
+    "./integrations/google-drive-context": {
+      "types": "./src/integrations/google-drive-context.ts",
+      "development": "./src/integrations/google-drive-context.ts",
+      "import": "./dist/integrations/google-drive-context.js",
+      "default": "./dist/integrations/google-drive-context.js"
     }
   },
   "main": "./dist/index.js",
@@ -567,32 +621,32 @@
     "test": "bun ../../scripts/testing/run.ts packages/shared"
   },
   "dependencies": {
-    "@ai-sdk/openai-compatible": "3.0.80",
-    "@aws-sdk/client-s3": "^3.1158.0",
-    "@aws-sdk/s3-request-presigner": "^3.1158.0",
+    "@ai-sdk/openai-compatible": "3.0.84",
+    "@aws-sdk/client-s3": "^3.1161.0",
+    "@aws-sdk/s3-request-presigner": "^3.1161.0",
     "@js-temporal/polyfill": "^0.5.1",
     "@modelcontextprotocol/server": "2.4.0",
     "@timeline/db": "workspace:*",
     "ai": "^7.0.153",
     "bcryptjs": "^3.0.3",
-    "bullmq": "6.5.0",
+    "bullmq": "6.6.0",
     "drizzle-orm": "^0.45.4",
     "gpt-tokenizer": "^4.1.0",
     "ioredis": "6.0.0",
     "ipaddr.js": "2.5.0",
     "jszip": "3.10.2",
-    "langsmith": "^0.11.1",
+    "langsmith": "^0.11.8",
     "libphonenumber-js": "^1.13.15",
     "pino": "^10.4.0",
     "pino-pretty": "^13.2.0",
-    "posthog-node": "^5.57.2",
+    "posthog-node": "^5.61.2",
     "rrule": "^2.8.1",
     "svix": "2.9.1",
     "undici": "8.12.3",
     "zod": "^4.6.7"
   },
   "devDependencies": {
-    "@electric-sql/pglite": "^0.5.12",
+    "@electric-sql/pglite": "^0.5.15",
     "@types/node": "^24.19.2",
     "typescript": "^6.0.3",
     "@timeline/test-support": "workspace:*",

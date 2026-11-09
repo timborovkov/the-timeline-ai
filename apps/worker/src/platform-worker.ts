@@ -1,6 +1,5 @@
-import { runGuardedJob } from '@timeline/shared/platform-admin/runtime';
-
 import type { Db } from '@timeline/db';
+import { runGuardedJob } from '@timeline/shared/platform-admin/runtime';
 import type { Processor } from 'bullmq';
 
 /** Enforce current suspension and impersonation authorization at job execution. */

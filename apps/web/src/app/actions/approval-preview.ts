@@ -3,13 +3,14 @@
 import { displayObjectTitle } from '@timeline/shared/objects/types';
 import { z } from 'zod';
 
+import type { ActionState } from '@/lib/action-result';
 import type {
   ApprovalCalendarSnapshot,
   ApprovalObjectSnapshot,
   ApprovalTargetSnapshot,
 } from '@/lib/approval-preview';
 
-import { type ActionState, resolveScope, uuidSchema } from '@/lib/action-scope';
+import { resolveScope, uuidSchema } from '@/lib/action-scope';
 import { displayMemberLabel } from '@/lib/display-labels';
 import { publicActionError } from '@/lib/public-error';
 import { runSentryServerAction } from '@/lib/sentry-action';

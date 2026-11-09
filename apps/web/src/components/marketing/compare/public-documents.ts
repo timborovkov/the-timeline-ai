@@ -8,7 +8,7 @@ import {
 } from '@/components/marketing/compare/content';
 import { definePublicDocuments } from '@/lib/public-site/registry';
 
-const REVIEW_DATE = '2026-11-03' as const;
+const REVIEW_DATE = '2026-11-06' as const;
 
 function uniqueCitations(sources: readonly ComparePageContent['facts'][number]['source'][]) {
   const seen = new Set<string>();
@@ -47,7 +47,7 @@ export const COMPARE_PUBLIC_DOCUMENTS = definePublicDocuments('compare', [
       sections: [
         {
           title: 'What Compare means here',
-          body: "Head-to-head pages compare The Timeline with Day AI, Folk, Glean and Geekbot. Every competitor fact cites that company's own site. Works-with pages for Linear, Jira, Notion, HubSpot, Attio and Pipedrive live under /integrations.",
+          body: "Head-to-head pages compare The Timeline with Day AI, Folk, Glean, Geekbot, Suda, MemoryCrow and Achiral, including for people searching those alternatives. Every competitor fact cites that company's own site. Works-with pages live under /integrations and are labelled for native sync, MCP lookup, or coming soon.",
         },
       ],
     },

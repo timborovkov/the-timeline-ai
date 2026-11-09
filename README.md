@@ -29,7 +29,7 @@ workspace changes wait for human approval.
 - Search across projects, people, tasks, documents and calendars.
 - Generate cited answers, project updates, daily digests and handoff briefs.
 - Keep access scoped to each team and its source visibility settings.
-- Connect external agents through the [Timeline plugins and MCP interface](plugins/timeline/skills/README.md). Agents can fetch [setup.md](https://thetimeline.cc/agents/setup.md) and the [published skill](https://thetimeline.cc/agents/SKILL.md).
+- Connect external agents through the [Timeline plugins and MCP interface](plugins/timeline/skills/README.md). Agents read cited context over MCP and write notes through remember, ingest email, or an authenticated webhook. They can fetch [setup.md](https://thetimeline.cc/agents/setup.md) and the [published skill](https://thetimeline.cc/agents/SKILL.md).
 
 The project is under active development; APIs and migrations may change.
 
@@ -37,6 +37,8 @@ The project is under active development; APIs and migrations may change.
 
 Use the hosted app at [thetimeline.cc](https://thetimeline.cc), or follow the
 [local development guide](docs/setup/local.html) to work on the code.
+Coding-agent workflows are bundled in [`.agents/skills`](.agents/skills/README.md),
+including cloud setup requirements and the repository-specific React Doctor gate.
 
 Local development requires **Bun 1.4.4** (pinned in `.bun-version`) and **Docker**.
 The setup guide covers dependencies, environment variables, infrastructure,
@@ -73,7 +75,12 @@ Common commands, after completing local setup:
 | `bun run test` | Run offline unit and integration tests |
 | `bun run doctor` | Run React Doctor |
 
-See [AGENTS.md](AGENTS.md) for repository conventions and change-specific checks.
+See [AGENTS.md](AGENTS.md#validation-policy) for the canonical validation policy,
+change-specific checks, and development/production merge gates. This command
+reference is not a required local checklist.
+
+Develop on `main` and release through PRs to `production`. See the
+[deployment guide](docs/railway.html#deploy-flow) for Railway setup.
 
 ## Documentation
 
@@ -95,3 +102,5 @@ Report security vulnerabilities privately through [SECURITY.md](SECURITY.md).
 This repository does not currently include an open-source license. Public access
 to the source does not grant general permission to copy, modify, redistribute or
 self-host it. See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution guidance.
+
+Agent coworker reporting, owner-delegated provisioning and rollout details: [agent coworkers](docs/agent-coworkers.md).

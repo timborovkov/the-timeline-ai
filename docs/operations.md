@@ -27,7 +27,8 @@ are supplied by the repository.
 Email/password users can follow “Forgot password?” from sign-in to request a
 single-use reset email. Links expire after 30 minutes; requesting another replaces
 the previous link. A successful reset signs out every existing application session
-and requires a fresh login. GitHub-only accounts continue using GitHub.
+and requires a fresh login. Google- or GitHub-only accounts continue using that
+provider on the sign-in page.
 
 Recovery uses the existing `RESEND_API_KEY`, `TRANSACTIONAL_EMAIL_FROM`,
 `SECRETS_ENCRYPTION_KEY`, trusted `AUTH_URL`, database, and Redis configuration.

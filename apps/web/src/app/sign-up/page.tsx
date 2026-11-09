@@ -4,10 +4,9 @@ import type { Metadata } from 'next';
 
 import { SignUpForm } from '@/components/auth-form';
 import { AuthShell } from '@/components/auth-shell';
-import { GitHubSignInButton } from '@/components/github-button';
-import { Separator } from '@/components/ui/separator';
-import { auth, hasGitHubAuth } from '@/lib/auth';
-import { signedInAuthRedirect, selectedPlanCallback } from '@/lib/auth-redirect';
+import { OAuthSignInButtons } from '@/components/oauth-buttons';
+import { auth, hasGitHubAuth, hasGoogleAuth } from '@/lib/auth';
+import { signedInAuthRedirect, signupCallback } from '@/lib/auth-redirect';
 import { isLegalPublicationReady } from '@/lib/legal-publication';
 import { readPendingInvite } from '@/lib/pending-invite';
 
@@ -20,12 +19,15 @@ export const metadata: Metadata = {
 export const dynamic = 'force-dynamic';
 
 interface Props {
-  searchParams: Promise<{ invite?: string; plan?: string }>;
+  searchParams: Promise<{ invite?: string; plan?: string; callbackUrl?: string }>;
 }
 
 export default async function SignUpPage({ searchParams }: Props) {
-  const [{ invite, plan }, session] = await Promise.all([searchParams, auth()]);
-  const callbackUrl = selectedPlanCallback(plan);
+  const [{ invite, plan, callbackUrl: requestedCallback }, session] = await Promise.all([
+    searchParams,
+    auth(),
+  ]);
+  const callbackUrl = signupCallback(requestedCallback, plan);
   if (session?.user) {
     const pendingInviteToken = await readPendingInvite();
     // react-doctor-disable-next-line react-doctor/clickjacking-redirect-risk -- signedInAuthRedirect validates same-origin paths and selectedPlanCallback only returns fixed billing destinations; malicious input is covered by auth-redirect tests.
@@ -49,8 +51,13 @@ export default async function SignUpPage({ searchParams }: Props) {
       }
       secondaryLabel="Sign in"
     >
-      {hasGitHubAuth && legalPublicationReady ? (
-        <SignupGitHubOptions invite={invite} callbackUrl={callbackUrl} />
+      {legalPublicationReady ? (
+        <OAuthSignInButtons
+          callbackUrl={invite ? `/accept-invite/${invite}` : callbackUrl}
+          inviteToken={invite}
+          google={hasGoogleAuth}
+          github={hasGitHubAuth}
+        />
       ) : null}
       <SignUpForm
         callbackUrl={callbackUrl}
@@ -68,26 +75,4 @@ function signupSubtitle(invited: boolean, ready: boolean): string {
   return invited
     ? 'You’ve been invited to a team. Sign up to accept.'
     : 'Free for up to 3 members — no card required. We’ll create your first team automatically.';
-}
-
-function SignupGitHubOptions({ invite, callbackUrl }: { invite?: string; callbackUrl?: string }) {
-  return (
-    <>
-      <GitHubSignInButton
-        callbackUrl={invite ? `/accept-invite/${invite}` : callbackUrl}
-        inviteToken={invite}
-      />
-      {invite ? (
-        <p className="text-xs text-muted-foreground">
-          After GitHub sign-in we&rsquo;ll send you to the invite; accept it from there using the
-          same email the invite was sent to.
-        </p>
-      ) : null}
-      <div className="flex items-center gap-3 text-xs text-muted-foreground">
-        <Separator className="flex-1" />
-        <span>or</span>
-        <Separator className="flex-1" />
-      </div>
-    </>
-  );
 }

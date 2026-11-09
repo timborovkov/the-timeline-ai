@@ -189,6 +189,20 @@ describe('suggestion action validation and scope', () => {
 });
 
 describe('suggestion item actions', () => {
+  it('keeps a committed acceptance successful and refreshes remaining surfaces after one refresh fails', async () => {
+    const failure = new Error('cache unavailable');
+    fakes.fakeRevalidatePath.mockImplementationOnce(() => {
+      throw failure;
+    });
+    await expect(acceptSuggestionItemAction({ itemId: ITEM_ID })).resolves.toEqual({ ok: true });
+    expect(fakes.fakeSuggestions.acceptSuggestionItemWithOutcome).toHaveBeenCalledTimes(1);
+    expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/inbox');
+    expect(fakes.fakeReportCaughtError).toHaveBeenCalledWith(failure, {
+      surface: 'server_action',
+      operation: 'revalidate_suggestion_surfaces',
+    });
+  });
+
   it('accepts an item and revalidates every approval-dependent surface', async () => {
     await expect(acceptSuggestionItemAction({ itemId: ITEM_ID })).resolves.toEqual({ ok: true });
 

@@ -1,5 +1,7 @@
 import { getEnv } from '#src/env.js';
 import { providerFetch, providerRetryAt } from '#src/integrations/request.js';
+import { defineResourceAccess } from '#src/integrations/resource-access.js';
+import { exactTargetSelections } from '#src/integrations/selection-policy.js';
 import {
   attachSyncContinuation,
   ProviderRateLimitError as ProviderRateLimit,
@@ -393,6 +395,10 @@ async function syncSlackResources(
 export const slackProvider: IntegrationProvider = {
   id: 'slack',
   displayLabel: 'Slack',
+  syncSelectionPolicy: {
+    recovery: 'per_resource',
+    resolveTarget: exactTargetSelections,
+  },
 
   // eslint-disable-next-line @typescript-eslint/require-await
   async startOAuth(input) {
@@ -438,17 +444,19 @@ export const slackProvider: IntegrationProvider = {
     };
   },
 
-  async listSyncableResources(_integration, tokens): Promise<ProviderResource[]> {
-    const slackTokens = tokens as SlackTokens;
-    const conversations = await new SlackApi(slackTokens.access_token).conversationsList(
-      'public_channel,private_channel',
-    );
-    return conversations.map((conversation) => ({
-      externalId: conversation.id,
-      label: conversation.name ? `#${conversation.name}` : conversation.id,
-      kind: 'slack.channel',
-    }));
-  },
+  ...defineResourceAccess({
+    async browseResources(_integration, tokens): Promise<ProviderResource[]> {
+      const slackTokens = tokens as SlackTokens;
+      const conversations = await new SlackApi(slackTokens.access_token).conversationsList(
+        'public_channel,private_channel',
+      );
+      return conversations.map((conversation) => ({
+        externalId: conversation.id,
+        label: conversation.name ? `#${conversation.name}` : conversation.id,
+        kind: 'slack.channel',
+      }));
+    },
+  }),
 
   backfill(input) {
     return syncSlackResources(input, true);

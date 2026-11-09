@@ -39,3 +39,9 @@ export function selectedPlanFromCallback(callback: unknown): string | undefined 
   const plan = url.searchParams.get('plan');
   return plan === 'payg' || plan === 'team' || plan === 'business' ? plan : undefined;
 }
+
+/** Preserve explicit continuation before pricing, while rejecting auth loops. */
+export function signupCallback(callbackUrl?: string, plan?: string): string | undefined {
+  const safe = safeSameOriginPath(callbackUrl, '', { blockedPaths: AUTH_PATHS });
+  return safe || selectedPlanCallback(plan);
+}

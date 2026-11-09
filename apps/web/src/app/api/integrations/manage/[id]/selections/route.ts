@@ -171,7 +171,7 @@ export async function GET(
   }
   try {
     const provider = integrationsLib.getProvider(integration.provider);
-    const resources = await provider.listSyncableResources(integration, tokens, {
+    const resources = await provider.browseResources(integration, tokens, {
       persistTokens: (fresh) => integrationsLib.adminPersistTokens(db, integration.id, fresh),
     });
     return NextResponse.json({ resources, selections });
@@ -218,7 +218,7 @@ export async function PUT(
       { status: 400 },
     );
   }
-  // Validate every proposed selection against `listSyncableResources` —
+  // Validate every proposed selection through `validateResourceSelections` —
   // i.e. the integration's actual OAuth scope. Without this, an admin
   // could PUT an arbitrary externalId (a repo, project, folder, etc.
   // they don't actually have access to). Validate here once so the sync
@@ -230,9 +230,14 @@ export async function PUT(
   let resources: { externalId: string; kind: string }[];
   try {
     const provider = integrationsLib.getProvider(integration.provider);
-    resources = await provider.listSyncableResources(integration, tokens, {
-      persistTokens: (fresh) => integrationsLib.adminPersistTokens(db, integration.id, fresh),
-    });
+    resources = await provider.validateResourceSelections(
+      integration,
+      tokens,
+      parsed.data.selections,
+      {
+        persistTokens: (fresh) => integrationsLib.adminPersistTokens(db, integration.id, fresh),
+      },
+    );
   } catch (err) {
     return publicApiErrorResponse(err, {
       operation: 'validate_integration_selections',

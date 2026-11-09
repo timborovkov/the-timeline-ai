@@ -2,7 +2,14 @@ import { expect } from '@timeline/test-support';
 import { vi, freshModuleUrl } from '@timeline/test-support';
 import { afterEach, beforeEach, describe, it } from 'bun:test';
 
+import {
+  planDriveSync,
+  driveSyncIntentKind,
+  driveTargetCompletesFeedRecovery,
+} from '#src/integrations/google-drive-scheduling.js';
+
 import type * as TestModule1 from '#src/queue/index.js';
+
 /**
  * Queue contract tests. The product relies on job payloads and retry policy
  * staying stable across web routes, workers, and recovery scripts; BullMQ and
@@ -241,6 +248,62 @@ describe('queue wrappers', () => {
     expect(fakes.queues[2]?.addCalls[0]).toMatchObject({ name: 'document-extract' });
   }, 20_000);
 
+  it('dedupes Drive transient extract jobs by extract id', async () => {
+    const queues = await importQueues();
+    const data = {
+      kind: 'drive_transient' as const,
+      teamId: '22222222-2222-4222-8222-222222222222',
+      integrationId: '11111111-1111-4111-8111-111111111111',
+      fileId: 'file-1',
+      extractId: 'extract-1',
+      objectKey: 'drive-transient/source',
+      resultObjectKey: 'drive-transient/result.json',
+      contentType: 'application/pdf',
+      filename: 'Notes.pdf',
+    };
+
+    await queues.enqueueDocumentExtractJob(data);
+    await queues.enqueueDocumentExtractJob(data);
+
+    expect(fakes.queues[0]?.name).toBe('document-extract');
+    expect(fakes.queues[0]?.addCalls).toHaveLength(1);
+    expect(fakes.queues[0]?.addCalls[0]).toMatchObject({
+      name: 'document-extract',
+      opts: {
+        jobId:
+          'document-extract|drive-transient|11111111-1111-4111-8111-111111111111|file-1|extract-1',
+      },
+    });
+  });
+
+  it('replaces a retained completed Drive transient extract so a dropped handoff can resume', async () => {
+    const queues = await importQueues();
+    const data = {
+      kind: 'drive_transient' as const,
+      teamId: '22222222-2222-4222-8222-222222222222',
+      integrationId: '11111111-1111-4111-8111-111111111111',
+      fileId: 'file-1',
+      extractId: 'extract-1',
+      objectKey: 'drive-transient/source',
+      resultObjectKey: 'drive-transient/result.json',
+      contentType: 'application/pdf',
+      filename: 'Notes.pdf',
+    };
+    const jobId =
+      'document-extract|drive-transient|11111111-1111-4111-8111-111111111111|file-1|extract-1';
+
+    await queues.enqueueDocumentExtractJob(data);
+    const extractQueue = fakes.queues[0];
+    extractQueue?.jobStates.set(jobId, 'completed');
+    await queues.enqueueDocumentExtractJob(data);
+
+    expect(extractQueue?.addCalls).toHaveLength(2);
+    expect(extractQueue?.addCalls[1]).toMatchObject({
+      name: 'document-extract',
+      opts: { jobId },
+    });
+  });
+
   it('keeps worker-idempotent queues free of jobId dedupe but uses explicit ids where required', async () => {
     const queues = await importQueues();
 
@@ -348,6 +411,234 @@ describe('queue wrappers', () => {
       jobId: turnId,
     });
     expect(conversationQueue?.addCalls).toHaveLength(2);
+  });
+
+  it('replaces a delayed Drive file job so trailing debounce can extend', async () => {
+    const queues = await importQueues();
+    const targeted = {
+      kind: 'targeted' as const,
+      integrationId: '11111111-1111-4111-8111-111111111111',
+      teamId: '22222222-2222-4222-8222-222222222222',
+      triggeredBy: 'webhook' as const,
+      resourceType: 'drive.file',
+      externalId: 'file-1',
+      reason: 'drive_watch',
+    };
+
+    await queues.enqueueIntegrationSyncJob(targeted, { delayMs: 15 * 60_000 });
+    await queues.enqueueIntegrationSyncJob(targeted, {
+      delayMs: 10 * 60_000,
+      replaceDelayed: true,
+    });
+
+    expect(fakes.queues[0]?.addCalls).toEqual([
+      {
+        name: 'integration-sync',
+        data: targeted,
+        opts: {
+          jobId: 'integration-targeted|11111111-1111-4111-8111-111111111111|drive.file|file-1|all',
+          delay: 15 * 60_000,
+        },
+      },
+      {
+        name: 'integration-sync',
+        data: targeted,
+        opts: {
+          jobId: 'integration-targeted|11111111-1111-4111-8111-111111111111|drive.file|file-1|all',
+          delay: 10 * 60_000,
+        },
+      },
+    ]);
+  });
+
+  it('gives a lock-blocked Drive file continuation its own job id instead of the debounce id', async () => {
+    const queues = await importQueues();
+    const originating = {
+      kind: 'targeted' as const,
+      integrationId: '11111111-1111-4111-8111-111111111111',
+      teamId: '22222222-2222-4222-8222-222222222222',
+      triggeredBy: 'webhook' as const,
+      resourceType: 'drive.file',
+      externalId: 'file-1',
+      reason: 'drive_watch',
+    };
+    const continuation = {
+      ...originating,
+      reason: 'provider_pagination_continuation' as const,
+      continuationAttempt: 1,
+      continuationHandoffId: '33333333-3333-4333-8333-333333333333',
+    };
+    const collidingWatchRetry = {
+      ...originating,
+      continuationAttempt: 1,
+      continuationHandoffId: '44444444-4444-4444-8444-444444444444',
+    };
+    const originatingJobId =
+      'integration-targeted|11111111-1111-4111-8111-111111111111|drive.file|file-1|all';
+
+    await queues.enqueueIntegrationSyncJob(originating, { delayMs: 15 * 60_000 });
+    const integrationQueue = fakes.queues[0];
+    integrationQueue?.jobStates.set(originatingJobId, 'delayed');
+
+    await queues.enqueueIntegrationSyncJob(continuation, { delayMs: 5_000 });
+    await queues.enqueueIntegrationSyncJob(collidingWatchRetry, { delayMs: 5_000 });
+
+    expect(integrationQueue?.addCalls).toEqual([
+      {
+        name: 'integration-sync',
+        data: originating,
+        opts: { jobId: originatingJobId, delay: 15 * 60_000 },
+      },
+      {
+        name: 'integration-sync',
+        data: continuation,
+        opts: {
+          jobId: 'integration-pagination-continuation|33333333-3333-4333-8333-333333333333',
+          delay: 5_000,
+        },
+      },
+      {
+        name: 'integration-sync',
+        data: collidingWatchRetry,
+        opts: {
+          jobId: 'integration-pagination-continuation|44444444-4444-4444-8444-444444444444',
+          delay: 5_000,
+        },
+      },
+    ]);
+  });
+
+  it('keeps capture, feed recovery, and extract-resume intents distinct on the wire', () => {
+    const identity = {
+      integrationId: 'integration-1',
+      teamId: 'team-1',
+      ignored: 'private-runtime-detail',
+    };
+    const capture = planDriveSync(identity, {
+      kind: 'file_capture',
+      fileId: 'file-1',
+      reason: 'drive_watch',
+      delayMs: 900_000,
+    });
+    const resume = planDriveSync(identity, {
+      kind: 'extract_resume',
+      fileId: 'file-1',
+      extractId: 'extract-1',
+      triggeredBy: 'drive_extract',
+    });
+    const feed = planDriveSync(identity, { kind: 'changes_feed' });
+    expect(capture.options).toEqual({ delayMs: 900_000, replaceDelayed: true });
+    expect(resume.options.replaceDelayed).toBeUndefined();
+    expect(resume.task).toEqual({
+      integrationId: 'integration-1',
+      teamId: 'team-1',
+      triggeredBy: 'drive_extract',
+      resourceType: 'drive.file',
+      externalId: 'file-1',
+      reason: 'drive_transient_extract',
+      surface: 'extract:extract-1',
+    });
+    expect(driveTargetCompletesFeedRecovery(capture.task)).toBe(false);
+    expect(driveTargetCompletesFeedRecovery(resume.task)).toBe(false);
+    expect(driveTargetCompletesFeedRecovery(feed.task)).toBe(true);
+    expect(driveSyncIntentKind({ resourceType: 'drive.file', reason: 'legacy-watch' })).toBe(
+      'file_capture',
+    );
+    expect(driveSyncIntentKind({ resourceType: 'github.repo' })).toBeNull();
+  });
+
+  it('gives Drive extract resumes an independent identity from the originating drive.file job', async () => {
+    const queues = await importQueues();
+    const originating = {
+      kind: 'targeted' as const,
+      integrationId: '11111111-1111-4111-8111-111111111111',
+      teamId: '22222222-2222-4222-8222-222222222222',
+      triggeredBy: 'webhook',
+      resourceType: 'drive.file',
+      externalId: 'file-1',
+      reason: 'drive_watch',
+    };
+    const extractId = 'extract-1';
+    const resume = {
+      kind: 'targeted' as const,
+      integrationId: originating.integrationId,
+      teamId: originating.teamId,
+      triggeredBy: 'drive_extract',
+      resourceType: 'drive.file',
+      externalId: 'file-1',
+      reason: 'drive_transient_extract',
+      surface: `extract:${extractId}`,
+    };
+    const originatingJobId =
+      'integration-targeted|11111111-1111-4111-8111-111111111111|drive.file|file-1|all';
+    const resumeJobId =
+      'integration-drive-extract-resume|11111111-1111-4111-8111-111111111111|file-1|extract%3Aextract-1';
+
+    await queues.enqueueIntegrationSyncJob(originating, { delayMs: 15 * 60_000 });
+    const integrationQueue = fakes.queues[0];
+    integrationQueue?.jobStates.set(originatingJobId, 'active');
+
+    await queues.enqueueIntegrationSyncJob(resume);
+    await queues.enqueueIntegrationSyncJob(resume);
+
+    expect(integrationQueue?.addCalls).toEqual([
+      {
+        name: 'integration-sync',
+        data: originating,
+        opts: { jobId: originatingJobId, delay: 15 * 60_000 },
+      },
+      {
+        name: 'integration-sync',
+        data: resume,
+        opts: { jobId: resumeJobId },
+      },
+    ]);
+  });
+
+  it('keeps lock-retry Drive extract resumes chainable via the continuation handoff id', async () => {
+    const queues = await importQueues();
+    const extractId = 'extract-1';
+    const firstHandoff = {
+      kind: 'targeted' as const,
+      integrationId: '11111111-1111-4111-8111-111111111111',
+      teamId: '22222222-2222-4222-8222-222222222222',
+      triggeredBy: 'drive_extract',
+      resourceType: 'drive.file',
+      externalId: 'file-1',
+      reason: 'drive_transient_extract',
+      surface: `extract:${extractId}`,
+      continuationHandoffId: '33333333-3333-4333-8333-333333333333',
+    };
+    const successor = {
+      ...firstHandoff,
+      continuationHandoffId: '44444444-4444-4444-8444-444444444444',
+    };
+
+    await queues.enqueueIntegrationSyncJob(firstHandoff);
+    fakes.queues[0]?.jobStates.set(
+      'integration-drive-extract-resume|11111111-1111-4111-8111-111111111111|file-1|33333333-3333-4333-8333-333333333333',
+      'active',
+    );
+    await queues.enqueueIntegrationSyncJob(successor);
+
+    expect(fakes.queues[0]?.addCalls).toEqual([
+      {
+        name: 'integration-sync',
+        data: firstHandoff,
+        opts: {
+          jobId:
+            'integration-drive-extract-resume|11111111-1111-4111-8111-111111111111|file-1|33333333-3333-4333-8333-333333333333',
+        },
+      },
+      {
+        name: 'integration-sync',
+        data: successor,
+        opts: {
+          jobId:
+            'integration-drive-extract-resume|11111111-1111-4111-8111-111111111111|file-1|44444444-4444-4444-8444-444444444444',
+        },
+      },
+    ]);
   });
 
   it('coalesces targeted integration sync bursts by resource while leaving broad syncs undeduped', async () => {

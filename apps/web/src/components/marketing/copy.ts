@@ -1,3 +1,5 @@
+import { TELEGRAM_PAGE } from '@/components/marketing/integrations/telegram-content';
+
 export const START_FREE_LABEL = 'Start free';
 export const START_FREE_HREF = '/sign-up' as const;
 export const SEE_IT_FIRST_LABEL = 'See it first';
@@ -24,12 +26,46 @@ export const COMPARE_NAV_ITEMS = [
   { href: '/compare/the-timeline-vs-folk', label: 'The Timeline vs Folk' },
   { href: '/compare/the-timeline-vs-glean', label: 'The Timeline vs Glean' },
   { href: '/compare/the-timeline-vs-geekbot', label: 'The Timeline vs Geekbot' },
-  { href: '/integrations/linear', label: 'Works with Linear' },
-  { href: '/integrations/jira', label: 'Works with Jira' },
-  { href: '/integrations/notion', label: 'Works with Notion' },
-  { href: '/integrations/hubspot', label: 'Works with HubSpot' },
-  { href: '/integrations/attio', label: 'Works with Attio' },
-  { href: '/integrations/pipedrive', label: 'Works with Pipedrive' },
+  { href: '/compare/the-timeline-vs-suda', label: 'The Timeline vs Suda' },
+  { href: '/compare/the-timeline-vs-memorycrow', label: 'The Timeline vs MemoryCrow' },
+  { href: '/compare/the-timeline-vs-achiral', label: 'The Timeline vs Achiral' },
 ] as const;
 
+const NATIVE_AND_CAPTURE_NAV_ITEMS = [
+  {
+    href: '/integrations/slack' as const,
+    label: 'Slack',
+    statusLabel: 'Native sync' as const,
+  },
+  {
+    href: TELEGRAM_PAGE.route,
+    label: 'Telegram',
+    statusLabel: 'Capture' as const,
+  },
+  { href: '/integrations/google-drive' as const, label: 'Google Drive' },
+  { href: '/integrations/github' as const, label: 'GitHub' },
+  { href: '/integrations/linear' as const, label: 'Linear' },
+  { href: '/integrations/monday' as const, label: 'Monday.com' },
+  { href: '/integrations/sentry' as const, label: 'Sentry' },
+] as const;
+
+export const INTEGRATION_NAV_ITEMS = [
+  ...NATIVE_AND_CAPTURE_NAV_ITEMS,
+  {
+    href: '/integrations/mcp' as const,
+    label: 'Connect MCP tools',
+    group: 'agent-tools' as const,
+  },
+];
+
+export function publicNavItemLabel(item: { label: string; statusLabel?: string }): string {
+  return item.statusLabel ? `${item.label} · ${item.statusLabel}` : item.label;
+}
+
 export const TIMELINE_AGENT_SETUP_COMMAND = 'Set up The Timeline - https://thetimeline.cc/llms.txt';
+
+export const AGENT_SETUP_CARD = {
+  kicker: 'For agents',
+  title: 'Give your agents the work record — and let them write back like teammates.',
+  body: 'They read what the team said in Slack, email, calls and docs, then add their own notes to the same cited log.',
+} as const;

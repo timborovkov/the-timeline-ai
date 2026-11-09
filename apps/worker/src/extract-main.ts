@@ -2,6 +2,7 @@ import { closeDb, getDb, migrateDatabase } from '@timeline/db';
 import { waitForMigrations } from '@timeline/db/wait-for-migrations';
 import { childLogger, getEnv, queue } from '@timeline/shared';
 import { shutdownPostHogNodeClients } from '@timeline/shared/analytics/posthog-node';
+import { closeAllRedisConnections } from '@timeline/shared/redis';
 
 import { ensureDocumentExtractSnapshot } from '#src/document-ingestion/document-extract-snapshot.js';
 import { captureWorkerException, flushWorkerSentry, initWorkerSentry } from '#src/monitoring.js';
@@ -50,7 +51,13 @@ async function main(): Promise<void> {
 
   const db = getDb();
   const documentExtractWorker = startDocumentExtractWorker({ db });
-  log.info('document-extract service started');
+  log.info(
+    {
+      runtime: typeof process.versions.bun === 'string' ? 'bun' : 'node',
+      bunVersion: process.versions.bun,
+    },
+    'document-extract service started',
+  );
 
   const shutdown = async (signal: string): Promise<void> => {
     log.info({ signal }, 'received shutdown signal');
@@ -58,7 +65,7 @@ async function main(): Promise<void> {
       await documentExtractWorker.close();
       await queue.closeDocumentExtractQueue();
       await queue.closeEmbedQueue();
-      await queue.closeRedisConnection();
+      await closeAllRedisConnections();
     } catch (err: unknown) {
       log.error({ err }, 'shutdown error');
       captureWorkerException(err, { signal, component: 'document_extract_service_shutdown' });

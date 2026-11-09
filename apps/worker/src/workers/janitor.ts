@@ -8,6 +8,7 @@ import {
   userPins,
 } from '@timeline/db';
 import { childLogger, queue } from '@timeline/shared';
+import { pruneAgentCredentials } from '@timeline/shared/agent-provisioning';
 import { runBillingMaintenanceTick } from '@timeline/shared/billing';
 import { flushDeferredEmailEnrichment } from '@timeline/shared/email';
 import { getEnv } from '@timeline/shared/env';
@@ -15,6 +16,7 @@ import {
   flushDeferredAcceptedSourceEnrichment,
   flushDeferredAudioTranscription,
 } from '@timeline/shared/integrations';
+import { RECOVERY_STALE_AFTER_MS } from '@timeline/shared/job-recovery/policy';
 import { MCP_TEAM_ACTOR_USER_ID } from '@timeline/shared/mcp-server';
 import { prunePlatformAdminRecords } from '@timeline/shared/platform-admin/retention';
 import { withTeam } from '@timeline/shared/team-scope';
@@ -22,6 +24,7 @@ import { Worker, type Job } from 'bullmq';
 import { and, asc, eq, gt, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 
+import { sweepOrphanDriveTransientExtracts } from '#src/integrations/drive-extract-runtime.js';
 import { captureWorkerException, captureWorkerJobFailure } from '#src/monitoring.js';
 import { guardWorkerProcessor } from '#src/platform-worker.js';
 
@@ -34,20 +37,6 @@ const PAGE_SIZE = 500;
 // A cap hit just rolls to the next tick — workers are idempotent.
 const MAX_REQUEUES_PER_KIND = 5_000;
 
-// Stuck-row thresholds. Picked to be generous multiples of the normal
-// happy-path latency so a fast-but-legitimate run never gets a duplicate
-// job. The duplicate would be harmless (worker advisory locks bail under
-// the status re-check) but unnecessary log noise.
-const PENDING_DOC_MIN_AGE_MS = 5 * 60 * 1000;
-// 60min, not 30, because `documentVersions.createdAt` is set at
-// presigned-PUT allocation time — not when extract starts. A slow user
-// upload + a slow vision-OCR pass can legitimately leave the row in
-// 'extracting' 30min+ from createdAt. Worker idempotency would bail any
-// duplicate (advisory lock + under-lock status re-check) so the cost of
-// being wrong is noise, not corruption, but 60min keeps the noise to
-// genuinely-dead workers.
-const EXTRACTING_DOC_MIN_AGE_MS = 60 * 60 * 1000;
-const PROCESSING_MEETING_MIN_AGE_MS = 30 * 60 * 1000;
 const PENDING_TASK_CATEGORY_MIN_AGE_MS = 5 * 60 * 1000;
 
 const log = childLogger('worker:janitor');
@@ -61,6 +50,11 @@ interface JanitorDeps {
   enqueueTaskCategoryJob?: (data: queue.TaskCategoryJobData) => Promise<unknown>;
   taskCategoryEnabled?: boolean;
   taskCategoryAttemptLimit?: number;
+  sweepOrphanDriveTransientExtracts?: (input: {
+    db: Db;
+    now?: Date;
+    limit?: number;
+  }) => Promise<number>;
 }
 
 export interface JanitorTickResult {
@@ -72,6 +66,7 @@ export interface JanitorTickResult {
   mcpOAuthAuthorizationCodesDeleted: number;
   mcpOAuthTokensDeleted: number;
   mcpOAuthGrantsDeleted: number;
+  driveTransientExtractsCleared: number;
 }
 
 /**
@@ -112,6 +107,12 @@ export async function processJanitorTick(deps: JanitorDeps): Promise<JanitorTick
     : 0;
   const timelineMomentPinsDeleted = await sweepDeletedTimelineMomentPins(deps.db);
   const mcpOAuthDeleted = await sweepExpiredMcpOAuthCredentials(deps.db);
+  const sweepDriveExtracts =
+    deps.sweepOrphanDriveTransientExtracts ?? sweepOrphanDriveTransientExtracts;
+  const driveTransientExtractsCleared = await sweepDriveExtracts({
+    db: deps.db,
+    limit: PAGE_SIZE,
+  });
 
   return {
     documentVersionsRequeued,
@@ -122,6 +123,7 @@ export async function processJanitorTick(deps: JanitorDeps): Promise<JanitorTick
     mcpOAuthAuthorizationCodesDeleted: mcpOAuthDeleted.authorizationCodesDeleted,
     mcpOAuthTokensDeleted: mcpOAuthDeleted.tokensDeleted,
     mcpOAuthGrantsDeleted: mcpOAuthDeleted.grantsDeleted,
+    driveTransientExtractsCleared,
   };
 }
 
@@ -297,11 +299,11 @@ async function sweepDocumentVersions(
           or(
             and(
               eq(documentVersions.processingStatus, 'pending'),
-              sql`${documentVersions.createdAt} < now() - make_interval(secs => ${PENDING_DOC_MIN_AGE_MS / 1000})`,
+              sql`${documentVersions.createdAt} < now() - make_interval(secs => ${RECOVERY_STALE_AFTER_MS.documentPending / 1000})`,
             ),
             and(
               eq(documentVersions.processingStatus, 'extracting'),
-              sql`${documentVersions.createdAt} < now() - make_interval(secs => ${EXTRACTING_DOC_MIN_AGE_MS / 1000})`,
+              sql`${documentVersions.createdAt} < now() - make_interval(secs => ${RECOVERY_STALE_AFTER_MS.documentExtracting / 1000})`,
             ),
           ),
           cursor ? gt(documentVersions.id, cursor) : undefined,
@@ -380,7 +382,7 @@ async function sweepMeetings(
       .where(
         and(
           eq(meetings.status, 'processing'),
-          sql`${meetings.updatedAt} < now() - make_interval(secs => ${PROCESSING_MEETING_MIN_AGE_MS / 1000})`,
+          sql`${meetings.updatedAt} < now() - make_interval(secs => ${RECOVERY_STALE_AFTER_MS.meetingProcessing / 1000})`,
           cursor ? gt(meetings.id, cursor) : undefined,
         ),
       )
@@ -420,6 +422,7 @@ export function startJanitorWorker(deps: { db: Db }): Worker<queue.JanitorJobDat
     guardWorkerProcessor(deps.db, async (job: Job<queue.JanitorJobData>) => {
       const startedAt = Date.now();
       try {
+        await pruneAgentCredentials(deps.db);
         const retention = await prunePlatformAdminRecords(deps.db);
         if (Object.values(retention).some((count) => count > 0))
           log.info(retention, 'janitor: platform record retention completed');

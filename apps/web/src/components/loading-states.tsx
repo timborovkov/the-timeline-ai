@@ -113,10 +113,12 @@ export function HistoryBackLinkSkeleton() {
   return <Skeleton className="h-8 w-24" />;
 }
 
-export function AuthProviderDividerSkeleton() {
+export function AuthProviderDividerSkeleton({ buttons = 1 }: { buttons?: number }) {
   return (
     <>
-      <Skeleton className="h-9 w-full motion-reduce:animate-none" />
+      {Array.from({ length: buttons }, (_, index) => (
+        <Skeleton key={index} className="h-9 w-full motion-reduce:animate-none" />
+      ))}
       <div className="flex items-center gap-3">
         <Skeleton className="h-px flex-1 motion-reduce:animate-none" />
         <Skeleton className="h-3 w-6 motion-reduce:animate-none" />

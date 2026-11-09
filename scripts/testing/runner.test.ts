@@ -5,6 +5,8 @@ import { dirname, join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
+import { testExecutionPatterns } from './execution-policy';
+
 const root = fileURLToPath(new URL('../../', import.meta.url));
 function list(...selectors: string[]) {
   return spawnSync(
@@ -30,6 +32,87 @@ const explicitLive = list('src/agent/live-eval.test.ts', '--live');
 assert.equal(explicitLive.status, 0, explicitLive.stderr);
 assert.ok(explicitLive.stdout.includes('src/agent/live-eval.test.ts'));
 console.log('Test selector contracts passed');
+
+// Explicit execution policy must run every registration, including parameterized/template cases.
+const executionFixture = mkdtempSync(join(tmpdir(), 'bun-runner-policy-'));
+try {
+  const executed = join(executionFixture, 'executed.jsonl');
+  const file = join(executionFixture, 'registrations.test.ts');
+  const source = `
+import { it, test, describe } from 'bun:test';
+import { appendFileSync } from 'node:fs';
+const record = (name: string) => appendFileSync(${JSON.stringify(executed)}, JSON.stringify(name) + String.fromCharCode(10));
+function identity<T>(value: T): T { return value; }
+it('single quoted', () => record(identity('single')));
+test("double quoted", () => record('double'));
+it('literal [a].(b)+?^$', () => record('literal'));
+it.each([1, 2])('parameter %i', value => record('parameter ' + value));
+for (const value of ['a', 'b']) it(\`template \${value}\`, () => record('template ' + value));
+it.skip('skipped', () => { throw new Error('skip executed'); });
+describe.skip('skipped suite', () => { it('nested skip', () => { throw new Error('skip executed'); }); });
+`;
+  writeFileSync(file, source);
+  const patterns = testExecutionPatterns(source, file, { isolation: 'registration' });
+  assert.equal(patterns.length, 5);
+  for (const pattern of patterns) {
+    assert.ok(pattern);
+    const result = spawnSync(
+      process.execPath,
+      ['test', '--no-env-file', '--test-name-pattern', pattern, file],
+      {
+        cwd: executionFixture,
+        encoding: 'utf8',
+        env: { PATH: process.env.PATH, HOME: process.env.HOME },
+      },
+    );
+    assert.equal(result.status, 0, result.stderr);
+  }
+  assert.deepEqual(
+    readFileSync(executed, 'utf8')
+      .trim()
+      .split('\n')
+      .map((value) => JSON.parse(value))
+      .sort(),
+    [
+      'single',
+      'double',
+      'literal',
+      'parameter 1',
+      'parameter 2',
+      'template a',
+      'template b',
+    ].sort(),
+  );
+  assert.deepEqual(testExecutionPatterns(source + '// vi.resetModules()', file, {}), [undefined]);
+  assert.equal(testExecutionPatterns(source, file, { isolation: 'batch', batchSize: 2 }).length, 3);
+  for (const escaped of [
+    "import {it} from 'bun:test'; const check = it; it('known', () => {}); check('omitted', () => {});",
+    "import {it} from 'bun:test'; const check = it.each; it('known', () => {});",
+    "import {it} from 'bun:test'; const check = it.each([1, 2]); it('known', () => {});",
+    "import * as tests from 'bun:test'; const {it} = tests; it('omitted', () => {});",
+  ]) {
+    assert.throws(
+      () => testExecutionPatterns(escaped, file, { isolation: 'registration' }),
+      /cannot be aliased/,
+    );
+    assert.deepEqual(testExecutionPatterns(escaped, file, {}), [undefined]);
+  }
+
+  assert.throws(
+    () =>
+      testExecutionPatterns("import {it} from 'bun:test'; it(makeTitle(), () => {});", file, {
+        isolation: 'registration',
+      }),
+    /computed titles/,
+  );
+  assert.throws(
+    () => testExecutionPatterns(source, file, { isolation: 'batch', batchSize: 0 }),
+    /positive integer/,
+  );
+  console.log('Explicit test isolation and complete registration execution passed');
+} finally {
+  rmSync(executionFixture, { recursive: true, force: true });
+}
 
 const workflow = readFileSync(
   new URL('../../.github/workflows/publish-document-extract-snapshot.yml', import.meta.url),

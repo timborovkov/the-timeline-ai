@@ -1,3 +1,4 @@
+import { PlatformAccessError } from '@timeline/shared/platform-admin';
 import { expect } from '@timeline/test-support';
 import { vi } from '@timeline/test-support';
 import { beforeEach, describe, it } from 'bun:test';
@@ -13,12 +14,16 @@ const fakes = vi.hoisted(() => ({
   enqueueDailyDigestRecipientJob: vi.fn(),
   enqueueDailyDigestSendJob: vi.fn(),
   enqueueDailyDigestWorkspaceSendJob: vi.fn(),
+  log: { info: vi.fn(), error: vi.fn() },
+  Worker: vi.fn((..._args: unknown[]) => ({ on: vi.fn() })),
+  guardWorkerProcessor: vi.fn((_db: unknown, processor: unknown) => processor),
+  captureWorkerJobFailure: vi.fn(),
 }));
 
 await vi.mock(
   import.meta.resolve('@timeline/shared'),
   () => ({
-    childLogger: () => ({ info: vi.fn(), error: vi.fn() }),
+    childLogger: () => fakes.log,
     messaging: {
       defaultDigestWindow: fakes.defaultDigestWindow,
       getDigestPreference: fakes.getDigestPreference,
@@ -44,17 +49,23 @@ await vi.mock(
   import.meta.resolve('bullmq'),
   async () => ({
     ...(await import('bullmq')),
-    Worker: vi.fn(),
+    Worker: fakes.Worker,
   }),
   () => import('bullmq'),
 );
 await vi.mock(
   import.meta.resolve('#src/monitoring.js'),
-  () => ({ captureWorkerJobFailure: vi.fn() }),
+  () => ({ captureWorkerJobFailure: fakes.captureWorkerJobFailure }),
   () => import('#src/monitoring.js'),
 );
+await vi.mock(
+  import.meta.resolve('#src/platform-worker.js'),
+  () => ({ guardWorkerProcessor: fakes.guardWorkerProcessor }),
+  () => import('#src/platform-worker.js'),
+);
 
-const { processDailyDigestJob } = await import('#src/workers/dailyDigest.js');
+const { processDailyDigestJob, skipSuspendedDigestAccess, startDailyDigestWorker } =
+  await import('#src/workers/dailyDigest.js');
 
 describe('daily digest worker', () => {
   beforeEach(() => {
@@ -76,6 +87,8 @@ describe('daily digest worker', () => {
       hour: 12,
       timezone: 'Europe/Helsinki',
     });
+    fakes.guardWorkerProcessor.mockImplementation((_db: unknown, processor: unknown) => processor);
+    fakes.Worker.mockImplementation((..._args: unknown[]) => ({ on: vi.fn() }));
   });
 
   it('fans out one recipient job per active member using their digest timezone', async () => {
@@ -288,5 +301,67 @@ describe('daily digest worker', () => {
         { kind: 'send', digestId: 'digest-1', email: 'a@example.test' },
       ),
     ).resolves.toEqual({ digestId: 'digest-1', sent: false, permanentFailure: true });
+  });
+
+  it('completes suspended workspace jobs as skipped without retrying', async () => {
+    const recipientJob = {
+      id: 'job-1',
+      data: {
+        kind: 'recipient' as const,
+        teamId: '11111111-1111-4111-8111-111111111111',
+        userId: '22222222-2222-4222-8222-222222222222',
+        email: 'a@example.test',
+        windowStart: '2026-06-13T12:00:00.000Z',
+        windowEnd: '2026-06-14T12:00:00.000Z',
+      },
+    };
+
+    await expect(
+      skipSuspendedDigestAccess(recipientJob, () =>
+        Promise.reject(new PlatformAccessError('Workspace is suspended')),
+      ),
+    ).resolves.toEqual({ skipped: true });
+    expect(fakes.log.info).toHaveBeenCalledWith(
+      expect.objectContaining({
+        jobId: 'job-1',
+        kind: 'recipient',
+        teamId: '11111111-1111-4111-8111-111111111111',
+        err: 'Workspace is suspended',
+      }),
+      'skipping digest job for suspended principal',
+    );
+  });
+
+  it('rethrows non-suspension errors so BullMQ can retry', async () => {
+    await expect(
+      skipSuspendedDigestAccess(
+        { id: 'job-2', data: { kind: 'send', digestId: 'digest-1', email: 'a@example.test' } },
+        () => Promise.reject(new Error('Resend timeout')),
+      ),
+    ).rejects.toThrow('Resend timeout');
+    expect(fakes.log.info).not.toHaveBeenCalled();
+  });
+
+  it('does not fail or report the worker when admission rejects a suspended workspace', async () => {
+    fakes.guardWorkerProcessor.mockImplementation(
+      () => () => Promise.reject(new PlatformAccessError('Workspace is suspended')),
+    );
+    startDailyDigestWorker({ db: {} as never });
+    const processor = fakes.Worker.mock.calls[0]?.[1] as
+      | ((job: { id: string; data: { kind: string; teamId?: string } }) => Promise<unknown>)
+      | undefined;
+    if (!processor) throw new Error('daily digest worker did not register a processor');
+
+    await expect(
+      processor({
+        id: 'job-3',
+        data: {
+          kind: 'workspace-send',
+          teamId: '11111111-1111-4111-8111-111111111111',
+        },
+      }),
+    ).resolves.toEqual({ skipped: true });
+    expect(fakes.captureWorkerJobFailure).not.toHaveBeenCalled();
+    expect(fakes.log.error).not.toHaveBeenCalled();
   });
 });

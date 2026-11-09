@@ -8,7 +8,7 @@ import type {
   DeterministicEvalCase,
   ReconciliationEvalIngestionSurface,
   ReconciliationEvalScenarioFamily,
-} from '#src/reconciliation/index.js';
+} from '#src/reconciliation/core.js';
 
 export type ReconciliationEvalManifestKind = 'surface' | 'scenario';
 

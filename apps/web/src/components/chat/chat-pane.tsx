@@ -17,7 +17,9 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useMemo, useRef, useState, type RefObject } from 'react';
 
-import type { ChatHandoff, ChatHandoffContext } from '@/lib/chat-handoff';
+import type { ChatHandoff } from '@/lib/chat-handoff';
+import type { DashboardChatContext } from '@/lib/dashboard-chat-context';
+export type { DashboardChatContext } from '@/lib/dashboard-chat-context';
 
 import { unpinChatSessionAction } from '@/app/actions/chat';
 import { CitationText } from '@/components/chat/citation';
@@ -38,8 +40,6 @@ interface Props {
   pinnedEntityName: string | null;
   contextTrail?: ChatContextRef[];
 }
-
-export type DashboardChatContext = ChatHandoffContext;
 
 const SUGGESTIONS = [
   'What did the team work on yesterday?',

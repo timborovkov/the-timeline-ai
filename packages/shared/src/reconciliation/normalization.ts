@@ -6,7 +6,7 @@ import {
 } from '@timeline/db';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 
-import { buildEvidenceDedupeKey, reconciliationDedupeKey } from '#src/reconciliation/index.js';
+import { buildEvidenceDedupeKey, reconciliationDedupeKey } from '#src/reconciliation/core.js';
 import {
   payloadDigestFromMetadata,
   sourcePayloadRefFromMetadata,

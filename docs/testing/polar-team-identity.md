@@ -97,9 +97,14 @@ issue 157533396 on deployed release `d07d8266`: the old handler passed the strin
 to a PostgreSQL UUID query. That query failed before attribution or mutation.
 This was caused by the sandbox test, not a push of this implementation.
 
-The new handler validates external-ID UUID syntax before database access and
-ignores unrelated event types. A regression test makes any database access fail
-and verifies malformed/string/object fixture IDs are acknowledged without queries.
+The handler validates Polar team identifiers (customer `external_id`,
+`external_customer_id`, and `metadata.team_id`) as UUIDs before any database
+access, including the `team_billing_accounts` `SELECT … FOR UPDATE`. Invalid
+identifiers and unknown Timeline teams are acknowledged with HTTP 2xx so Polar
+stops retrying; the webhook route reports a throttled handled warning
+(`reportHandledEvent`) instead of a 500. A regression test makes any database
+access fail and verifies malformed/string/object fixture IDs, including
+sandbox `timeline-identity-test-…` metadata, are acknowledged without queries.
 An isolated, schema-free hotfix is prepared as commit `707bb5de` on local branch
 `codex/polar-webhook-uuid-guard`. The user confirmed that pushing the Polar branch auto-deploys. On 2026-10-31,
 the user authorized syncing with main and pushing the full PR, including that

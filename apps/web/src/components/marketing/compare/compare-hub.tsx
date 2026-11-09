@@ -7,10 +7,8 @@ import { EditorialKicker } from '@/components/marketing/editorial/editorial-kick
 import { EditorialSectionHeading } from '@/components/marketing/editorial/editorial-section-heading';
 import { EditorialStructuredData } from '@/components/marketing/editorial/editorial-structured-data';
 import styles from '@/components/marketing/editorial/editorial.module.css';
-import { WORKS_WITH_TOOLS } from '@/components/marketing/integrations/works-with-content';
 import { MarketingContainer } from '@/components/marketing/marketing-layout';
 import { MarketingCtaBand } from '@/components/marketing/start-free-cta';
-import { ProviderLogo } from '@/components/provider-logo';
 import { buildPublicStructuredData } from '@/lib/public-site';
 import { getSiteUrl } from '@/lib/site-url';
 
@@ -34,7 +32,7 @@ export function CompareHubPage() {
         <EditorialSectionHeading
           index="Vs"
           title="Head to head"
-          intro="Each page cites the competitor's own site. Unverified claims are left out."
+          intro="Each page cites the competitor's own site and says when that tool is the better pick. Unverified claims are left out."
         />
         <div className="mt-10 grid gap-px bg-border sm:grid-cols-2">
           {COMPARE_PAGES.map((page) => (
@@ -55,41 +53,16 @@ export function CompareHubPage() {
             </Link>
           ))}
         </div>
-      </section>
-
-      <section className="border-t border-border">
-        <div className="mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-24">
-          <EditorialSectionHeading
-            index="With"
-            title="Works with"
-            intro="These pages live under Integrations. Linear syncs today. Jira and Notion work through MCP lookup. HubSpot, Attio and Pipedrive are coming soon."
-          />
-          <div className="mt-10 grid gap-px bg-border sm:grid-cols-2 lg:grid-cols-3">
-            {WORKS_WITH_TOOLS.map((tool) => (
-              <Link
-                key={tool.route}
-                href={tool.route}
-                className="group flex flex-col bg-bg p-6 outline-none hover:bg-surface focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:p-8"
-              >
-                <span className="flex items-center gap-3">
-                  <ProviderLogo src={tool.logo} size="sm" />
-                  <span className="font-mono text-[0.65rem] tracking-[0.14em] text-signal uppercase">
-                    {tool.statusLabel}
-                  </span>
-                </span>
-                <h2 className="mt-5 text-2xl font-semibold tracking-[-0.035em]">{tool.name}</h2>
-                <p className="mt-3 grow text-sm leading-7 text-fg-muted">{tool.summary}</p>
-                <span className="mt-6 inline-flex items-center gap-2 text-sm font-medium">
-                  {tool.navLabel}
-                  <ArrowRight
-                    aria-hidden="true"
-                    className="size-4 motion-safe:transition-transform motion-safe:group-hover:translate-x-1"
-                  />
-                </span>
-              </Link>
-            ))}
-          </div>
-        </div>
+        <p className="mt-10 max-w-2xl text-sm leading-7 text-fg-muted">
+          How existing tools plug into The Timeline lives on{' '}
+          <Link
+            href="/integrations"
+            className="rounded-sm font-medium text-fg underline decoration-border-strong underline-offset-4 outline-none hover:decoration-fg focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            Integrations
+          </Link>
+          , with native sync, MCP lookup, and coming-soon tools labelled for what ships today.
+        </p>
       </section>
 
       <MarketingCtaBand

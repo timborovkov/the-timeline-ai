@@ -19,6 +19,8 @@ import {
   resolveImpersonation,
 } from '#src/platform-admin/index.js';
 
+import type { OperatorCapability, OperatorScopePolicy } from '#src/platform-admin/capabilities.js';
+
 export interface OperatorContext {
   actorUserId: string;
   actorEmail: string;
@@ -38,12 +40,16 @@ export function registerOperatorContextResolver(resolver: () => Promise<Operator
 export async function operatorContext(): Promise<OperatorContext | null> {
   return contextStorage.getStore() ?? (webResolver ? await webResolver() : null);
 }
+export function isInactiveWorkspaceSecurityState(state: string | null | undefined): boolean {
+  return state === 'suspended' || state === 'terminated';
+}
+
 export async function assertActivePrincipal(db: Db, teamId: string, userId?: string) {
   const [account] = await db
     .select({ state: teamBillingAccounts.securityState })
     .from(teamBillingAccounts)
     .where(eq(teamBillingAccounts.teamId, teamId));
-  if (account?.state === 'suspended' || account?.state === 'terminated')
+  if (isInactiveWorkspaceSecurityState(account?.state))
     throw new PlatformAccessError('Workspace is suspended');
   if (userId) {
     const [user] = await db
@@ -75,43 +81,86 @@ export async function guardTeamAccess(db: Db, teamId: string, userId: string, sy
   // again (which deadlocks a single-connection transaction).
   await assertActivePrincipal(db, teamId, userId);
 }
-const READ_OPERATION =
-  /^(get|list|read|search|count|find|resolve|is|has|require|can|preview|summarizeVisibility)/;
-// Read helpers without a conventional read prefix must be reviewed by full scope path.
-const ADDITIONAL_READ_OPERATIONS = new Set(['timeline.team', 'objects.unreadNotificationCount']);
 const WRAPPED_OPERATOR_METHOD = Symbol('timeline.guardOperatorWrapped');
 const wrappedOperatorScopes = new WeakSet();
+const SKIP_NESTED_SCOPE_KEYS = new Set(['postCommitDb', 'postCommitEffects', 'teamId', 'userId']);
+
+function isPlainScopeRecord(value: object): boolean {
+  const proto: unknown = Object.getPrototypeOf(value);
+  return proto === Object.prototype || proto === null;
+}
+
+function isDatabaseHandle(value: object): boolean {
+  const record = value as { select?: unknown; transaction?: unknown };
+  return typeof record.select === 'function' && typeof record.transaction === 'function';
+}
 
 export function guardOperatorScope<T extends object>(
   db: Db,
   teamId: string,
   userId: string,
   scope: T,
+  capabilities: OperatorScopePolicy<NoInfer<T>>,
   prefix = '',
   system = false,
 ): T {
+  validateOperatorCapabilities(scope, capabilities, prefix);
+  return wrapOperatorScope(db, teamId, userId, scope, capabilities, prefix, system);
+}
+
+function validateOperatorCapabilities(
+  scope: object,
+  capabilities: Readonly<Record<string, OperatorCapability>>,
+  prefix: string,
+): void {
+  for (const key of Object.keys(scope)) {
+    if (SKIP_NESTED_SCOPE_KEYS.has(key)) continue;
+    const value: unknown = Reflect.get(scope, key);
+    const operation = prefix ? `${prefix}.${key}` : key;
+    if (typeof value === 'function' && !capabilities[operation]) {
+      throw new PlatformAccessError(`Missing operator capability for ${operation}`);
+    }
+    if (
+      value &&
+      typeof value === 'object' &&
+      !Array.isArray(value) &&
+      isPlainScopeRecord(value) &&
+      !isDatabaseHandle(value)
+    ) {
+      validateOperatorCapabilities(value, capabilities, operation);
+    }
+  }
+}
+
+function wrapOperatorScope<T extends object>(
+  db: Db,
+  teamId: string,
+  userId: string,
+  scope: T,
+  capabilities: Readonly<Record<string, OperatorCapability>>,
+  prefix: string,
+  system: boolean,
+): T {
   // Wrap own methods in place and return the same plain object. A Proxy here
   // would hide replacements from Bun's spyOn and from helpers that close over
-  // the original nested namespace.
+  // the original nested namespace. Never wrap Drizzle handles or other class
+  // instances: replacing `db.select` with a guard that itself queries `db`
+  // recurses until the process hangs.
   if (wrappedOperatorScopes.has(scope)) return scope;
   wrappedOperatorScopes.add(scope);
   for (const key of Object.keys(scope)) {
+    if (SKIP_NESTED_SCOPE_KEYS.has(key)) continue;
     const value: unknown = Reflect.get(scope, key);
     const operation = prefix ? `${prefix}.${key}` : key;
     if (value && typeof value === 'object' && !Array.isArray(value)) {
-      // Scope namespaces are plain objects. Class instances (Drizzle clients,
-      // dates, query builders) must stay untouched so wrappers do not turn
-      // synchronous builders into hanging async functions.
-      if (
-        Object.getPrototypeOf(value) === Object.prototype ||
-        Object.getPrototypeOf(value) === null
-      ) {
-        guardOperatorScope(db, teamId, userId, value, operation, system);
-      }
+      if (isPlainScopeRecord(value) && !isDatabaseHandle(value))
+        wrapOperatorScope(db, teamId, userId, value, capabilities, operation, system);
       continue;
     }
     if (typeof value !== 'function') continue;
     if (Reflect.get(value, WRAPPED_OPERATOR_METHOD) === true) continue;
+    const capability = capabilities[operation];
+    if (!capability) throw new PlatformAccessError(`Missing operator capability for ${operation}`);
     const original = value;
     Reflect.set(
       scope,
@@ -121,13 +170,9 @@ export function guardOperatorScope<T extends object>(
           const context = await operatorContext();
           if (context) {
             await guardTeamAccess(db, teamId, userId, system);
-            if (
-              context.readOnly &&
-              !READ_OPERATION.test(key) &&
-              !ADDITIONAL_READ_OPERATIONS.has(operation)
-            )
+            if (context.readOnly && !capability.readOnly)
               throw new PlatformAccessError('Suspended inspection is read-only');
-            if (/^(billingOperator|mcpOAuth)\./.test(operation))
+            if (!capability.impersonation)
               throw new PlatformAccessError(
                 'Use your administrator identity for account management',
               );
@@ -141,14 +186,7 @@ export function guardOperatorScope<T extends object>(
           }
           // Only internal system scopes can reconcile billing or prune expired data while
           // suspended. Never grant a browser or an impersonated job this exception.
-          if (
-            !context &&
-            system &&
-            (operation.startsWith('billing.') ||
-              operation.startsWith('billingOperator.') ||
-              operation === 'mcpOAuth.pruneExpiredCredentials' ||
-              operation === 'pins.pruneDeletedTimelineMomentPins')
-          )
+          if (!context && system && capability.maintenance)
             return maintenanceStorage.run(
               true,
               () => Reflect.apply(original, scope, args) as unknown,

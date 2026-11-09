@@ -12,8 +12,8 @@ import { VirtualList } from '@/components/collections/virtual-list';
 import { EmptyState } from '@/components/empty-state';
 import { PinnedItemRow } from '@/components/pins/pinned-item-row';
 import { Button } from '@/components/ui/button';
+import { readJson } from '@/lib/api-response';
 import { notifyAction, notifyError } from '@/lib/notify';
-import { readJson } from '@/lib/paginated-api';
 import { cn } from '@/lib/utils';
 
 const FILTERS: { label: string; kinds?: PinTargetKind[]; value: string }[] = [

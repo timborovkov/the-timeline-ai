@@ -14,7 +14,8 @@ import {
 const requiredAdapterMethods = [
   'startOAuth',
   'handleOAuthCallback',
-  'listSyncableResources',
+  'browseResources',
+  'validateResourceSelections',
   'backfill',
   'incrementalSync',
 ] as const;
@@ -124,5 +125,77 @@ describe('native provider adapter contracts', () => {
         `${providerId} should have provider-specific tests`,
       ).toBe(true);
     }
+  });
+});
+
+describe('provider target selection authorization', () => {
+  it('allows selected parent resources to cover their supported child targets', () => {
+    const cases = [
+      {
+        provider: 'github',
+        parent: { kind: 'github.org', externalId: 'acme' },
+        target: { resourceType: 'github.repo', externalId: 'acme/app' },
+        expected: { kind: 'github.repo', externalId: 'acme/app' },
+      },
+      {
+        provider: 'sentry',
+        parent: { kind: 'sentry.org', externalId: 'acme' },
+        target: { resourceType: 'sentry.project', externalId: 'acme/app' },
+        expected: { kind: 'sentry.project', externalId: 'acme/app' },
+      },
+      {
+        provider: 'monday',
+        parent: { kind: 'monday.board', externalId: 'board-1' },
+        target: { resourceType: 'monday.item', externalId: 'board-1:item-1' },
+        expected: { kind: 'monday.board', externalId: 'board-1' },
+      },
+    ] as const;
+    for (const { provider, parent, target, expected } of cases) {
+      const policy = getProvider(provider).syncSelectionPolicy;
+      expect(policy.resolveTarget([parent], target)).toEqual([expected]);
+      expect(policy.resolveTarget([{ ...parent, externalId: 'different-parent' }], target)).toEqual(
+        [],
+      );
+    }
+  });
+
+  it('does not broaden ordinary targets to unrelated selected resources', () => {
+    for (const id of NATIVE_PROVIDER_IDS) {
+      const policy = getProvider(id).syncSelectionPolicy;
+      const selected = { kind: 'selected.resource', externalId: 'selected-id' };
+      expect(
+        policy.resolveTarget([selected], {
+          resourceType: selected.kind,
+          externalId: selected.externalId,
+        }),
+      ).toEqual([selected]);
+      expect(
+        policy.resolveTarget([selected], {
+          resourceType: selected.kind,
+          externalId: 'unselected-id',
+        }),
+      ).toEqual([]);
+    }
+  });
+
+  it('keeps all selections attached to shared-feed pagination continuations', () => {
+    const selections = [
+      { kind: 'folder', externalId: 'one' },
+      { kind: 'folder', externalId: 'two' },
+    ];
+    expect(
+      getProvider('google_drive').syncSelectionPolicy.resolveTarget(selections, {
+        resourceType: 'drive.changes',
+        externalId: 'integration',
+        reason: 'provider_pagination_continuation',
+      }),
+    ).toEqual(selections);
+    expect(
+      getProvider('linear').syncSelectionPolicy.resolveTarget(selections, {
+        resourceType: 'linear.issues',
+        externalId: 'integration',
+        reason: 'provider_pagination_continuation',
+      }),
+    ).toEqual(selections);
   });
 });

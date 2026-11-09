@@ -77,10 +77,10 @@
   "apps/web/src/app/actions/visibility.test.ts": {
     "group": "unit"
   },
-  "apps/web/src/app/agents/route.test.tsx": {
+  "apps/web/src/app/agents/[doc]/route.test.ts": {
     "group": "unit"
   },
-  "apps/web/src/app/agents/[doc]/route.test.ts": {
+  "apps/web/src/app/agents/route.test.tsx": {
     "group": "unit"
   },
   "apps/web/src/app/api/artifacts/preview/route.test.ts": {
@@ -116,6 +116,9 @@
   "apps/web/src/app/api/health/ready/route.test.ts": {
     "group": "unit"
   },
+  "apps/web/src/app/api/health/route.test.ts": {
+    "group": "unit"
+  },
   "apps/web/src/app/api/integrations/[provider]/callback/route.test.ts": {
     "group": "unit"
   },
@@ -126,6 +129,9 @@
     "group": "unit"
   },
   "apps/web/src/app/api/integrations/manage/[id]/resume/route.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/app/api/integrations/manage/[id]/selections/[selectionId]/route.test.ts": {
     "group": "unit"
   },
   "apps/web/src/app/api/integrations/manage/[id]/selections/route.test.ts": {
@@ -270,6 +276,9 @@
     "group": "dom"
   },
   "apps/web/src/app/app/@modal/route-states.test.tsx": {
+    "group": "unit"
+  },
+  "apps/web/src/app/app/agent-provisioning/page.test.ts": {
     "group": "unit"
   },
   "apps/web/src/app/app/approvals/page.test.tsx": {
@@ -496,6 +505,9 @@
   },
   "apps/web/src/app/help/support/page.test.tsx": {
     "group": "unit"
+  },
+  "apps/web/src/app/integrations/mcp/route.test.tsx": {
+    "group": "dom"
   },
   "apps/web/src/app/integrations/route.test.tsx": {
     "group": "dom"
@@ -749,6 +761,9 @@
   "apps/web/src/components/global-search-palette.test.tsx": {
     "group": "dom"
   },
+  "apps/web/src/components/google-button.test.tsx": {
+    "group": "dom"
+  },
   "apps/web/src/components/help/support-form.test.tsx": {
     "group": "dom"
   },
@@ -800,6 +815,9 @@
   "apps/web/src/components/integrations/catalog.test.tsx": {
     "group": "dom"
   },
+  "apps/web/src/components/integrations/google-drive-connect-disclosure.test.tsx": {
+    "group": "dom"
+  },
   "apps/web/src/components/integrations/connected.test.tsx": {
     "group": "dom"
   },
@@ -836,13 +854,25 @@
   "apps/web/src/components/loading-states.test.tsx": {
     "group": "dom"
   },
+  "apps/web/src/components/marketing/agents/agent-loop-diagram.test.tsx": {
+    "group": "unit"
+  },
   "apps/web/src/components/marketing/agents/agent-setup-card.test.tsx": {
+    "group": "unit"
+  },
+  "apps/web/src/components/marketing/agents/content.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/components/marketing/agents/public-documents.test.ts": {
     "group": "unit"
   },
   "apps/web/src/components/marketing/compare/content.test.ts": {
     "group": "unit"
   },
   "apps/web/src/components/marketing/compare/public-documents.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/components/marketing/copy.test.ts": {
     "group": "unit"
   },
   "apps/web/src/components/marketing/editorial/content.test.ts": {
@@ -872,6 +902,15 @@
   "apps/web/src/components/marketing/integrations/connector-seo.test.ts": {
     "group": "unit"
   },
+  "apps/web/src/components/marketing/integrations/inbound-mcp-diagram.test.tsx": {
+    "group": "unit"
+  },
+  "apps/web/src/components/marketing/integrations/mcp-guide-content.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/components/marketing/integrations/mcp-guide-public-documents.test.ts": {
+    "group": "unit"
+  },
   "apps/web/src/components/marketing/integrations/records-to-answer.test.ts": {
     "group": "unit"
   },
@@ -886,6 +925,12 @@
   },
   "apps/web/src/components/marketing/pricing-calculator.test.tsx": {
     "group": "dom"
+  },
+  "apps/web/src/components/marketing/product-screenshot.test.tsx": {
+    "group": "unit"
+  },
+  "apps/web/src/components/marketing/screenshot-inventory.test.ts": {
+    "group": "unit"
   },
   "apps/web/src/components/marketing/solutions/content.test.ts": {
     "group": "unit"
@@ -902,6 +947,9 @@
   "apps/web/src/components/marketing/use-cases/public-documents.test.ts": {
     "group": "unit"
   },
+  "apps/web/src/components/marketing/use-cases/record-jobs-diagram.test.tsx": {
+    "group": "unit"
+  },
   "apps/web/src/components/mcp-oauth-grants.test.tsx": {
     "group": "dom"
   },
@@ -914,8 +962,14 @@
   "apps/web/src/components/mobile-nav.test.tsx": {
     "group": "dom"
   },
+  "apps/web/src/components/native-provider-connect-button.test.tsx": {
+    "group": "dom"
+  },
   "apps/web/src/components/nav-items.test.ts": {
     "group": "unit"
+  },
+  "apps/web/src/components/oauth-consent-form.test.tsx": {
+    "group": "dom"
   },
   "apps/web/src/components/objects/new-object-form.test.tsx": {
     "group": "dom"
@@ -1034,6 +1088,9 @@
   "apps/web/src/components/team-setup-checklist-chip.test.tsx": {
     "group": "dom"
   },
+  "apps/web/src/components/team-support-metadata.test.tsx": {
+    "group": "dom"
+  },
   "apps/web/src/components/team-switcher.test.tsx": {
     "group": "dom"
   },
@@ -1097,8 +1154,12 @@
   "apps/web/src/lib/active-team-cookie.test.ts": {
     "group": "unit"
   },
-  "apps/web/src/lib/analytics.test.ts": {
+  "apps/web/src/lib/active-team.test.ts": {
     "group": "unit"
+  },
+  "apps/web/src/lib/analytics.test.ts": {
+    "group": "unit",
+    "isolation": "registration"
   },
   "apps/web/src/lib/app-analytics-routes.test.ts": {
     "group": "unit"
@@ -1112,10 +1173,16 @@
   "apps/web/src/lib/approval-preview.test.ts": {
     "group": "unit"
   },
+  "apps/web/src/lib/auth-continuation.test.ts": {
+    "group": "integration"
+  },
   "apps/web/src/lib/auth-redirect.test.ts": {
     "group": "unit"
   },
   "apps/web/src/lib/auth.config.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/lib/auth.test.ts": {
     "group": "unit"
   },
   "apps/web/src/lib/board-add-item-candidates.test.ts": {
@@ -1151,6 +1218,9 @@
   "apps/web/src/lib/connections.test.ts": {
     "group": "unit"
   },
+  "apps/web/src/lib/default-team.test.ts": {
+    "group": "unit"
+  },
   "apps/web/src/lib/display-dates.test.ts": {
     "group": "unit"
   },
@@ -1168,6 +1238,9 @@
   },
   "apps/web/src/lib/form-action-toast.test.tsx": {
     "group": "dom"
+  },
+  "apps/web/src/lib/google-drive-limited-use.test.ts": {
+    "group": "unit"
   },
   "apps/web/src/lib/hub-status.test.ts": {
     "group": "unit"
@@ -1199,6 +1272,9 @@
   "apps/web/src/lib/multipart-request.test.ts": {
     "group": "unit"
   },
+  "apps/web/src/lib/mutation-surfaces.test.ts": {
+    "group": "unit"
+  },
   "apps/web/src/lib/notification-href.test.ts": {
     "group": "unit"
   },
@@ -1217,6 +1293,9 @@
   "apps/web/src/lib/object-title.test.ts": {
     "group": "unit"
   },
+  "apps/web/src/lib/oauth-sign-in.test.ts": {
+    "group": "unit"
+  },
   "apps/web/src/lib/onboarding-checklist.test.ts": {
     "group": "unit"
   },
@@ -1224,6 +1303,9 @@
     "group": "unit"
   },
   "apps/web/src/lib/password-recovery.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/lib/platform-request-gate.test.ts": {
     "group": "unit"
   },
   "apps/web/src/lib/pricing-calculator.test.ts": {
@@ -1245,7 +1327,8 @@
     "group": "dom"
   },
   "apps/web/src/lib/public-browser-analytics.test.ts": {
-    "group": "dom"
+    "group": "dom",
+    "isolation": "registration"
   },
   "apps/web/src/lib/public-error.test.ts": {
     "group": "unit"
@@ -1255,9 +1338,6 @@
   },
   "apps/web/src/lib/public-runtime.test.tsx": {
     "group": "dom"
-  },
-  "apps/web/src/lib/public-static-env.test.ts": {
-    "group": "unit"
   },
   "apps/web/src/lib/public-session.test.tsx": {
     "group": "dom"
@@ -1272,6 +1352,9 @@
     "group": "unit"
   },
   "apps/web/src/lib/public-site/structured-data.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/lib/public-static-env.test.ts": {
     "group": "unit"
   },
   "apps/web/src/lib/pwa-splash.test.ts": {
@@ -1394,16 +1477,19 @@
   "apps/worker/src/document-ingestion/full-worker-extract-gate.test.ts": {
     "group": "unit"
   },
+  "apps/worker/src/document-ingestion/pdf-extraction.test.ts": {
+    "group": "unit"
+  },
   "apps/worker/src/document-ingestion/types.test.ts": {
+    "group": "unit"
+  },
+  "apps/worker/src/job-delay.test.ts": {
     "group": "unit"
   },
   "apps/worker/src/monitoring.test.ts": {
     "group": "unit"
   },
   "apps/worker/src/railway-config.test.ts": {
-    "group": "unit"
-  },
-  "apps/worker/src/runtime-sentry-envelopes.test.ts": {
     "group": "unit"
   },
   "apps/worker/src/scripts/dedupe-calendar-events.test.ts": {
@@ -1422,6 +1508,9 @@
     "group": "unit"
   },
   "apps/worker/src/scripts/reconciliation-production-sampling.test.ts": {
+    "group": "unit"
+  },
+  "apps/worker/src/scripts/reembed-pages.test.ts": {
     "group": "unit"
   },
   "apps/worker/src/scripts/resuggest.test.ts": {
@@ -1446,6 +1535,9 @@
     "group": "unit"
   },
   "apps/worker/src/transcription-eval/openrouter.test.ts": {
+    "group": "unit"
+  },
+  "apps/worker/src/worker-lifecycle.test.ts": {
     "group": "unit"
   },
   "apps/worker/src/workers/calendarRecurrence.test.ts": {
@@ -1509,7 +1601,9 @@
     "group": "live"
   },
   "apps/worker/src/workers/suggestions.test.ts": {
-    "group": "integration"
+    "group": "integration",
+    "isolation": "batch",
+    "batchSize": 20
   },
   "apps/worker/src/workers/taskCategory.test.ts": {
     "group": "unit"
@@ -1533,12 +1627,19 @@
     "group": "unit"
   },
   "packages/db/src/client.test.ts": {
-    "group": "unit"
+    "group": "unit",
+    "isolation": "registration"
   },
   "packages/db/src/journal-order.test.ts": {
     "group": "integration"
   },
   "packages/db/src/schema-contracts.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/agent-provisioning/index.test.ts": {
+    "group": "integration"
+  },
+  "packages/shared/src/agent-provisioning/workspace.test.ts": {
     "group": "unit"
   },
   "packages/shared/src/agent/ask.test.ts": {
@@ -1572,16 +1673,20 @@
     "group": "unit"
   },
   "packages/shared/src/agent/tools.test.ts": {
-    "group": "unit"
+    "group": "unit",
+    "isolation": "batch",
+    "batchSize": 20
   },
   "packages/shared/src/analytics/events.test.ts": {
     "group": "unit"
   },
   "packages/shared/src/analytics/posthog-node-transport.test.ts": {
-    "group": "unit"
+    "group": "unit",
+    "isolation": "registration"
   },
   "packages/shared/src/analytics/posthog-node.test.ts": {
-    "group": "unit"
+    "group": "unit",
+    "isolation": "registration"
   },
   "packages/shared/src/app-guide.test.ts": {
     "group": "unit"
@@ -1656,7 +1761,9 @@
     "group": "integration"
   },
   "packages/shared/src/billing/scope.test.ts": {
-    "group": "integration"
+    "group": "integration",
+    "isolation": "batch",
+    "batchSize": 20
   },
   "packages/shared/src/billing/status.test.ts": {
     "group": "unit"
@@ -1824,6 +1931,38 @@
     "group": "unit"
   },
   "packages/shared/src/integrations/providers/github.test.ts": {
+    "group": "unit",
+    "isolation": "batch",
+    "batchSize": 20
+  },
+  "packages/shared/src/integrations/google-drive-capture.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/integrations/google-drive-comments.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/integrations/google-drive-diff.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/integrations/google-drive-document.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/integrations/google-drive-evidence.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/integrations/google-drive-oauth-revoke.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/integrations/google-drive-scope.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/integrations/google-drive-spreadsheet.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/integrations/google-drive-team-isolation.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/integrations/providers/google-drive-revisit.test.ts": {
     "group": "unit"
   },
   "packages/shared/src/integrations/providers/google-drive.test.ts": {
@@ -1833,7 +1972,9 @@
     "group": "unit"
   },
   "packages/shared/src/integrations/providers/monday.test.ts": {
-    "group": "unit"
+    "group": "unit",
+    "isolation": "batch",
+    "batchSize": 20
   },
   "packages/shared/src/integrations/providers/sentry.test.ts": {
     "group": "unit"
@@ -1902,16 +2043,21 @@
     "group": "unit"
   },
   "packages/shared/src/mcp-server/handler.test.ts": {
-    "group": "integration"
+    "group": "integration",
+    "isolation": "batch",
+    "batchSize": 20
   },
   "packages/shared/src/mcp-server/oauth.test.ts": {
     "group": "integration"
   },
-  "packages/shared/src/mcp-server/shipped-install-content.test.ts": {
-    "group": "unit"
-  },
   "packages/shared/src/mcp-server/outbound.test.ts": {
     "group": "integration"
+  },
+  "packages/shared/src/mcp-server/reporting.test.ts": {
+    "group": "integration"
+  },
+  "packages/shared/src/mcp-server/shipped-install-content.test.ts": {
+    "group": "unit"
   },
   "packages/shared/src/mcp/auth.test.ts": {
     "group": "unit"
@@ -1946,6 +2092,9 @@
   "packages/shared/src/messaging/destinations.test.ts": {
     "group": "unit"
   },
+  "packages/shared/src/messaging/digest-delivery.test.ts": {
+    "group": "unit"
+  },
   "packages/shared/src/messaging/digest-format.test.ts": {
     "group": "unit"
   },
@@ -1967,6 +2116,9 @@
   "packages/shared/src/messaging/templates.test.ts": {
     "group": "unit"
   },
+  "packages/shared/src/monitoring/sentry-runtime.test.ts": {
+    "group": "unit"
+  },
   "packages/shared/src/monitoring/sentry-scrub.test.ts": {
     "group": "unit"
   },
@@ -1977,7 +2129,9 @@
     "group": "unit"
   },
   "packages/shared/src/objects/index.test.ts": {
-    "group": "integration"
+    "group": "integration",
+    "isolation": "batch",
+    "batchSize": 20
   },
   "packages/shared/src/objects/mentions.test.ts": {
     "group": "unit"
@@ -1993,6 +2147,9 @@
   },
   "packages/shared/src/pagination.test.ts": {
     "group": "unit"
+  },
+  "packages/shared/src/platform-admin/index.test.ts": {
+    "group": "integration"
   },
   "packages/shared/src/qdrant/client.test.ts": {
     "group": "unit"
@@ -2016,7 +2173,8 @@
     "group": "unit"
   },
   "packages/shared/src/queue/queues.test.ts": {
-    "group": "unit"
+    "group": "unit",
+    "isolation": "registration"
   },
   "packages/shared/src/rate-limit/token-bucket.test.ts": {
     "group": "unit"
@@ -2063,8 +2221,12 @@
   "packages/shared/src/reconciliation/stable-json.test.ts": {
     "group": "unit"
   },
-  "packages/shared/src/s3/client.test.ts": {
+  "packages/shared/src/redis/connection.test.ts": {
     "group": "unit"
+  },
+  "packages/shared/src/s3/client.test.ts": {
+    "group": "unit",
+    "isolation": "registration"
   },
   "packages/shared/src/s3/objects.test.ts": {
     "group": "unit"
@@ -2078,14 +2240,22 @@
   "packages/shared/src/slack/dispatcher.test.ts": {
     "group": "integration"
   },
+  "packages/shared/src/slack/outbound.test.ts": {
+    "group": "unit"
+  },
   "packages/shared/src/slack/security.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/suggestions/acceptance-transaction.test.ts": {
     "group": "unit"
   },
   "packages/shared/src/suggestions/hub-context.test.ts": {
     "group": "unit"
   },
   "packages/shared/src/suggestions/index.test.ts": {
-    "group": "integration"
+    "group": "integration",
+    "isolation": "batch",
+    "batchSize": 20
   },
   "packages/shared/src/suggestions/linked-hubs.test.ts": {
     "group": "integration"
@@ -2130,7 +2300,9 @@
     "group": "integration"
   },
   "packages/shared/src/team-scope.test.ts": {
-    "group": "integration"
+    "group": "integration",
+    "isolation": "batch",
+    "batchSize": 20
   },
   "packages/shared/src/telegram/api.test.ts": {
     "group": "unit"
@@ -2143,6 +2315,9 @@
   },
   "packages/shared/src/telegram/dispatcher.test.ts": {
     "group": "integration"
+  },
+  "packages/shared/src/telegram/link-token.test.ts": {
+    "group": "unit"
   },
   "packages/shared/src/telegram/scope.test.ts": {
     "group": "integration"
@@ -2160,7 +2335,8 @@
     "group": "unit"
   },
   "packages/test-support/runtime.test.ts": {
-    "group": "unit"
+    "group": "unit",
+    "isolation": "registration"
   },
   "scripts/demo-fixture.test.ts": {
     "group": "script"
@@ -2171,7 +2347,10 @@
   "scripts/testing/runner.test.ts": {
     "group": "script"
   },
-  "packages/shared/src/platform-admin/index.test.ts": {
-    "group": "integration"
+  "packages/shared/src/integrations/drive-extract-lifecycle.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/integrations/resource-access.test.ts": {
+    "group": "unit"
   }
 }

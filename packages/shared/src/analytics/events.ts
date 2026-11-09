@@ -70,6 +70,7 @@ export const PUBLIC_ANALYTICS_SURFACES = [
   'integration_attio',
   'integration_jira',
   'integration_notion',
+  'integration_mcp',
   'product_tour',
   'use_cases',
   'compare',
@@ -77,6 +78,9 @@ export const PUBLIC_ANALYTICS_SURFACES = [
   'compare_folk',
   'compare_glean',
   'compare_geekbot',
+  'compare_suda',
+  'compare_memorycrow',
+  'compare_achiral',
   'agents',
   'use_case_work_record',
   'use_case_team_daily_log',
@@ -158,7 +162,7 @@ const analyticsActorSchema = z.discriminatedUnion('kind', [
 const PRODUCT_EVENT_SCHEMAS = {
   account_registered: z
     .object({
-      source: z.enum(['credentials', 'github']),
+      source: z.enum(['credentials', 'github', 'google']),
       joinedViaInvite: z.boolean(),
       attributionSource: z.enum(PUBLIC_ATTRIBUTION_SOURCES).optional(),
       attributionMedium: z.enum(PUBLIC_ATTRIBUTION_MEDIA).optional(),
@@ -184,7 +188,9 @@ const PRODUCT_EVENT_SCHEMAS = {
   source_indexed: z.object({ source: z.enum(['event', 'fact', 'object', 'other']) }).strict(),
   reference_preview_loaded: z.object({}).strict(),
   email_verified: z.object({}).strict(),
-  authentication_succeeded: z.object({ method: z.enum(['credentials', 'github']) }).strict(),
+  authentication_succeeded: z
+    .object({ method: z.enum(['credentials', 'github', 'google']) })
+    .strict(),
   team_created: z
     .object({ source: z.enum(['signup', 'oauth', 'manual', 'invite_fallback']) })
     .strict(),

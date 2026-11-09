@@ -1,3 +1,4 @@
+import type { PGlite } from '@electric-sql/pglite';
 import {
   type Db,
   agentSuggestionItems,
@@ -19,8 +20,6 @@ import { expect } from '@timeline/test-support';
 import { afterAll, beforeAll, beforeEach, describe, it } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
-
-import type { PGlite } from '@electric-sql/pglite';
 
 import {
   processReconciliationJob,

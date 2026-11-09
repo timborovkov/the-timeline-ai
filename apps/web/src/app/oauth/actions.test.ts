@@ -42,6 +42,8 @@ await vi.mock(
       validateMcpAuthorizationRequest: fakes.validate,
       createMcpAuthorizationCode: fakes.createCode,
       revokeMcpOAuthGrant: fakes.revokeGrant,
+      isReportingConsentError: (error: unknown) =>
+        error instanceof Error && error.name === 'ReportingConsentError',
       withMcpOAuthTrustedAuthorizationRedirect: (
         error: unknown,
         trustedAuthorizationRedirect: { redirectUri: string; state?: string },
@@ -162,6 +164,22 @@ describe('MCP OAuth consent actions', () => {
     expect(url.searchParams.get('code')).toBe('tlc_code_once');
     expect(url.searchParams.get('state')).toBe('state-value');
     expect(url.searchParams.get('iss')).toBe('https://timeline.example');
+  });
+
+  it('returns reporting validation errors without redirecting or logging scope text', async () => {
+    const form = consentForm();
+    form.set('reporting_mode', 'handoffs');
+    form.set('reporting_scope', 'Private project scope');
+    const error = new Error('Enable capture permission to select ongoing reporting.');
+    error.name = 'ReportingConsentError';
+    fakes.createCode.mockRejectedValueOnce(error);
+    expect(await approveMcpOAuthAction(form)).toEqual({ error: error.message });
+    expect(fakes.redirect).not.toHaveBeenCalled();
+    expect(fakes.reportCaughtError).not.toHaveBeenCalled();
+    expect(fakes.createCode.mock.calls[0]?.[1]).toMatchObject({
+      reportingChange: { mode: 'handoffs', scope: 'Private project scope' },
+      teamId: TEAM_ID,
+    });
   });
 
   it('grants capture when the consent checkbox is checked', async () => {

@@ -7,7 +7,7 @@ name: Publish document-extract Daytona snapshot
 
 on:
   push:
-    branches: [main, staging]
+    branches: [production]
     paths:
       - 'apps/worker/document-extract-sandbox/**'
       - 'apps/worker/src/document-ingestion/document-extract-snapshot.ts'

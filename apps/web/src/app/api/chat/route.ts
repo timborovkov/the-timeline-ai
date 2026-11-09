@@ -43,6 +43,7 @@ import {
   selectAgentToolGroups,
   selectedNativeToolNames,
 } from '@/lib/chat-tool-selection';
+import { dashboardContextSchema } from '@/lib/dashboard-chat-context';
 import { db } from '@/lib/db';
 import { reportCaughtError, reportHandledEvent } from '@/lib/sentry-report';
 
@@ -74,22 +75,6 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 const CHAT_TITLE_MAX_LENGTH = 48;
 const chatTitleSchema = z.object({
   title: z.string().min(1).max(CHAT_TITLE_MAX_LENGTH),
-});
-const dashboardContextSchema = z.strictObject({
-  pathname: z.string().trim().min(1).max(240),
-  routeKind: z.string().trim().min(1).max(80),
-  search: z.record(z.string().max(80), z.string().max(240)).optional(),
-  objectId: z.string().regex(UUID_RE).optional(),
-  boardId: z.string().regex(UUID_RE).optional(),
-  boardItemId: z.string().regex(UUID_RE).optional(),
-  calendarDate: z.string().trim().max(40).optional(),
-  calendarView: z.string().trim().max(40).optional(),
-  calendarEventId: z.string().regex(UUID_RE).optional(),
-  documentId: z.string().regex(UUID_RE).optional(),
-  taskId: z.string().regex(UUID_RE).optional(),
-  meetingId: z.string().regex(UUID_RE).optional(),
-  timelineEventId: z.string().regex(UUID_RE).optional(),
-  timelineMomentId: z.string().trim().min(1).max(200).optional(),
 });
 const contextTrailSchema = z.array(z.unknown()).max(CHAT_CONTEXT_TRAIL_MAX);
 

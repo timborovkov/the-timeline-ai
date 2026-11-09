@@ -321,6 +321,15 @@ describe('signUpAction legal acceptance', () => {
       email: 'legal-user@example.test',
       passwordHash: 'password-hash',
     });
+    expect(
+      transaction.insertedValues.find(
+        (value) =>
+          typeof value === 'object' &&
+          value !== null &&
+          'email' in value &&
+          value.email === 'legal-user@example.test',
+      ),
+    ).not.toHaveProperty('emailVerified');
     expect(transaction.insertedValues).toContainEqual({
       teamId: TEAM_ID,
       planId: 'free',

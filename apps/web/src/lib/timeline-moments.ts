@@ -1,8 +1,5 @@
-import type { TimelineArtifactCluster, TimelineEvent } from '@/lib/use-paginated-queries';
-import type {
-  TimelineMoment as SharedTimelineMoment,
-  TimelineMomentDto as SharedTimelineMomentDto,
-} from '@timeline/shared/timeline-moments';
+import type { TimelineArtifactCluster, TimelineEvent } from '@/lib/timeline-types';
+import type { TimelineMoment as SharedTimelineMoment } from '@timeline/shared/timeline-moments';
 
 export {
   actorLabelsByTelegramUserId,
@@ -28,4 +25,4 @@ export {
 } from '@timeline/shared/timeline-moments';
 
 export type TimelineMoment = SharedTimelineMoment<TimelineEvent, TimelineArtifactCluster>;
-export type WebTimelineMomentDto = SharedTimelineMomentDto<TimelineEvent, TimelineArtifactCluster>;
+export type { WebTimelineMomentDto } from '@/lib/timeline-types';

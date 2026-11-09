@@ -310,6 +310,14 @@ function PrivacyAiAndProviderSections() {
               from a team&apos;s optional GitHub content integration.
             </td>
           </tr>
+          <tr>
+            <td>Google (authentication, when configured)</td>
+            <td>
+              OpenID email and profile identifiers used to sign in. Sign-in requests only{' '}
+              <code>openid</code>, <code>email</code>, and <code>profile</code> — never Google Drive
+              scopes. Connecting Drive remains a separate Connections flow.
+            </td>
+          </tr>
         </tbody>
       </table>
 
@@ -321,6 +329,36 @@ function PrivacyAiAndProviderSections() {
         permissions granted. Those providers act under their own terms and privacy notices for their
         services. Disconnecting a source stops future access but does not automatically erase
         records already captured into Timeline.
+      </p>
+      <h3>Google Drive</h3>
+      <p>
+        Connecting Google Drive is separate from Sign in with Google. Drive requests{' '}
+        <code>openid</code>, <code>email</code>, and{' '}
+        <code>https://www.googleapis.com/auth/drive.readonly</code>. Sign-in requests only{' '}
+        <code>openid</code>, <code>email</code>, and <code>profile</code>.
+      </p>
+      <p>
+        Timeline uses selected Drive files, metadata, comments, and sharing signals to create cited
+        timeline events after a quiet editing window. OAuth tokens are encrypted at rest. Timeline
+        keeps hashes and the latest extracted text to detect later edits, then deletes that
+        extracted text on disconnect, file removal, or when remaining selections no longer cover the
+        file. Full Drive copies are not stored in the document drive. You choose which folders or
+        files a team may use; a team admin activates those sources. Captured events follow Timeline
+        visibility rules. Timeline does not edit Drive files or change Drive sharing.
+      </p>
+      <p>
+        A small billed model may read changed passages to judge whether they belong on the work
+        record. PDF, Word, and Slides text is extracted by Timeline’s document-extract service, then
+        deleted. Timeline does not use Google user data to train general-purpose models. Timeline’s
+        use of information received from Google APIs adheres to the Google API Services User Data
+        Policy, including the Limited Use requirements.
+      </p>
+      <p>
+        Disconnecting deletes Timeline’s Drive tokens, change snapshots, and latest extracted text
+        for uncovered files. Cited timeline events already captured stay until a team admin or
+        support deletion request; disconnect does not erase that history. You can also remove
+        Timeline in Google Account permissions. There is not yet a complete self-serve purge of
+        every derived index, backup, or processor copy of those events.
       </p>
       <p>
         A member may also authorize ChatGPT, Claude, Codex, or another MCP-compatible client to
@@ -478,6 +516,15 @@ function PrivacyRetentionSections() {
             <td>
               While the customer keeps it in Timeline, subject to supported deletion and export
               workflows and backup or recovery copies where configured.
+            </td>
+          </tr>
+          <tr>
+            <td>Google Drive snapshots and tokens</td>
+            <td>
+              Encrypted Drive tokens, change snapshots, and latest extracted text are deleted on
+              disconnect or when remaining selections no longer cover a file. Cited Drive timeline
+              events remain with other Customer Content until a team admin or support deletion
+              request.
             </td>
           </tr>
           <tr>

@@ -13,6 +13,8 @@ import {
 import { teams } from '#src/schema/teams.js';
 import { users } from '#src/schema/users.js';
 
+import type { AgentReportingPreference } from '#src/schema/agent-reporting.js';
+
 /**
  * Outbound MCP OAuth authorization-server tables.
  *
@@ -67,6 +69,7 @@ export const mcpOutboundOAuthGrants = pgTable(
     userId: uuid('user_id')
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
+    agentReporting: jsonb('agent_reporting').$type<AgentReportingPreference>(),
     membershipAuthorizationEpoch: uuid('membership_authorization_epoch').notNull(),
     scopes: jsonb('scopes').$type<string[]>().notNull(),
     resource: text('resource').notNull(),

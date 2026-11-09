@@ -3,6 +3,8 @@ import { index, jsonb, pgTable, text, timestamp, uniqueIndex, uuid } from 'drizz
 import { teams } from '#src/schema/teams.js';
 import { users } from '#src/schema/users.js';
 
+import type { AgentReportingPreference } from '#src/schema/agent-reporting.js';
+
 /**
  * Phase 11 — Timeline-as-MCP-server bearer keys. Each row authorises one
  * external agent (Claude Desktop, Cursor, etc.) to talk to a
@@ -20,6 +22,7 @@ export const mcpOutboundKeys = pgTable(
     createdByUserId: uuid('created_by_user_id').references(() => users.id, {
       onDelete: 'set null',
     }),
+    agentReporting: jsonb('agent_reporting').$type<AgentReportingPreference>(),
     name: text('name').notNull(),
     /** SHA-256 hex of the plaintext key. */
     keyHash: text('key_hash').notNull(),
