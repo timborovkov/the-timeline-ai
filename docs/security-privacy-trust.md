@@ -661,9 +661,20 @@ Team exports must preserve the requesting user's visibility and use short-lived
 download access. Export generation and signed-file counts are auditable; export
 archives require expiry and cleanup.
 
-The current end-to-end deletion SLA and tested provider propagation are open
-gaps. Legal copy must explain categories and criteria without promising an
-unverified duration.
+The [manual support deletion runbook](./setup/manual-support-deletion.md) defines
+intake, authority checks, inventory, coordinated source shutdown, case-specific
+removal, verification, and customer follow-up. This is a manual service process,
+not an automated purge system or evidence of a successful deletion rehearsal.
+Personal connection removal deletes credentials and disables dependent sources;
+team-source disconnect handles snapshots and extracts. Neither erases captured
+history. Missing scoped removal operations require engineering escalation, not
+unscoped production SQL. G-13 remains open until the relevant stores and provider
+propagation are exercised. Legal copy must not promise an unverified duration.
+
+The 9 November 2026 revision advances Terms and Privacy to `2026-11-09` and
+requires renewed acceptance/acknowledgment for the corrected deletion disclosures.
+It adds support-request instructions, distinguishes the two disconnect actions,
+and fixes Terms typography. It does not close provider-account or G-20 legal gaps.
 
 ## 13. Incident response
 

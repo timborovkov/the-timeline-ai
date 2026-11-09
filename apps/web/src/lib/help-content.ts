@@ -230,13 +230,25 @@ export const HELP_PAGES: HelpPage[] = [
     description: 'Connect durable sources and live MCP tools without breaking team isolation.',
     icon: PlugZap,
     related: ['capture', 'work', 'agents'],
-    updatedAt: '2026-11-07',
+    updatedAt: '2026-11-09',
     sections: [
+      {
+        title: 'Request deletion of captured data',
+        resourceLinks: [{ href: '/help/support', label: 'Request deletion through support' }],
+        body: 'Use the support form at /help/support or email contact@thetimeline.cc. Deletion requests are handled manually; there is no automatic history purge when you disconnect.',
+        items: [
+          'Tell us the workspace name, the connected provider, and whether you want all captured data from that source or a narrower set removed. Identify files by name or link only when needed; do not send passwords, tokens, or copies of private documents.',
+          'We verify your identity and workspace authority and confirm the scope. For team-controlled data, we may need the workspace administrator’s instructions; individual rights requests are reviewed separately.',
+          'We coordinate stopping affected capture before removal so background work does not recreate the data. Removing a shared personal connection can stop capture in other workspaces, so tell us if only one team is in scope.',
+          'We review retained records and derived data, including search indexes, and handle removal manually. We explain any backup expiry, provider follow-up, or justified retention and confirm completed and outstanding work. We do not promise instant removal from every retained copy.',
+          'Disconnecting Timeline does not delete the original files in Google Drive.',
+        ],
+      },
       {
         title: 'Connected sources',
         body: 'First-party integrations and ingest paths can create durable evidence. MCP servers give the agent live reach into approved tools; successful team-shared results become team-visible evidence, while personal-server results stay private to their owner. MCP is not passive provider sync.',
         items: [
-          'Google Drive records selected Docs, Sheets, Slides, PDF, and Word changes as cited events. It does not copy those files into the document drive. Disconnecting deletes tokens and snapshots, not already captured timeline events.',
+          'Google Drive records selected Docs, Sheets, Slides, PDF, and Word changes as cited events. It does not copy those files into the document drive. Removing a personal connection deletes its credentials and disables dependent sources; it does not remove their snapshots or captured history. A team admin can disconnect the team source to clean up its snapshots and temporary extracts. Captured history requires a separate support deletion request.',
           'GitHub and Linear bring engineering and project activity into the operational record.',
           'Monday.com syncs selected boards, generic records, subitems, updates, columns, and WorkDocs.',
           'Slack workspace ingestion syncs selected channels, threads, files, reactions, and edits.',
