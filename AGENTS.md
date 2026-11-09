@@ -235,6 +235,13 @@ Treat this file as an operating contract for agents, not a loose README.
   No direct OpenAI / OpenRouter SDK calls from app or worker code.
 - **`bun` only** (no `pnpm` / `npm` / `yarn`). Workspace packages are wired via
   Turborepo; `bun run build` is the canonical build.
+- **TypeScript 7 compiler, TypeScript 6 API.** Packages that run `tsc` depend on
+  `@typescript/native` (`npm:typescript@7.0.2`). The `typescript` package name is
+  `npm:@typescript/typescript6@6.0.2` so typescript-eslint, Knip, drizzle-kit, and
+  `import "typescript"` keep the TypeScript 6 compiler API. Do not install
+  `typescript@7` under the `typescript` package name until typescript-eslint supports
+  TypeScript 7 ([typescript-eslint#10940](https://github.com/typescript-eslint/typescript-eslint/issues/10940)).
+  A naive bump fails lint with `typescript-eslint does not support TS 7.0.`
 - **Use the verified demo seed for recorded demos and local regression checks.** `bun run demo:seed`
   runs the idempotent `bun run dev:seed`, indexes every deterministic fixture source through the real
   embed worker/OpenRouter/Qdrant path, and then runs `bun run demo:verify`. It creates the

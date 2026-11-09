@@ -341,9 +341,12 @@ docker compose down -v                # nuke local data
       <p>
         The static CI job runs formatting, TypeScript compilation, linting, Knip, the offline Bun
         suite, runtime smoke checks, React Doctor, deterministic reconciliation evaluations,
-        environment contracts, and compiled-package import checks. The separate production browser
-        smoke job builds the web application. Run broader relevant test commands separately,
-        including
+        environment contracts, and compiled-package import checks. Compilation uses TypeScript 7's
+        <code>tsc</code> from <code>@typescript/native</code>; ESLint and other tools that import
+        the compiler API use the TypeScript 6 compatibility package under the
+        <code>typescript</code>
+        package name. The separate production browser smoke job builds the web application. Run
+        broader relevant test commands separately, including
         <code>bun run test:eval</code> for agent, retrieval, summary, dashboard chat, or proposal
         changes, and run the production build and bundle hygiene checks manually when changing
         deploy output, bundling, or server/client import boundaries.
