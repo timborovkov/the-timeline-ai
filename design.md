@@ -856,9 +856,11 @@ also keep overflow Add task. The main column uses a dense section stack and 14px
 line-height: why this exists, a generated summary only when it has content or
 an actionable generate/retry state, then provenance / connected-work /
 evidence / facts. Connected work keeps a Tasks group on generic objects even
-when empty, with `Open N · Done M`, always-visible Recent history, assignee
+when empty, with `Open N · Done M`, always-visible Recent history (quiet
+`No completed tasks yet` when Done is 0), assignee
 chips (including mobile), inline status, and an add-task field pre-linked to
-the current object. Pending approvals stay in the one actionable block at the
+the current object. Done tasks never show overdue styling; they show a completed
+date when one exists, otherwise a neutral due date. Pending approvals stay in the one actionable block at the
 top of the page; Evidence is the single evidence list (no second Related
 evidence group). Top-level section titles use 13px
 semibold `--fg` (not dim) so Evidence / Connected work / Discussion read as
@@ -1437,7 +1439,7 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-11-07 | Drive Limited Use disclosure | Connecting or reconnecting Google Drive opens a contextual dialog before Google OAuth. The copy names read-only Drive access, selected-source capture, encrypted tokens, snapshots versus retained events, team sharing, billed change-judging, document extract, and no general-model training. Continue to Google is the affirmative action; Cancel or dismiss does not start OAuth. |
 | 2026-11-07 | Agents vs inbound MCP diagrams | `/agents` write-in / read-out stays external-agent contribution and MCP read-out. `/integrations/mcp` shows a separate live-lookup diagram. Screenshot captions label stored fictional examples without install noise. Public slots serve committed PNG bytes unoptimized so recaptures are not hidden by a stale image-optimizer cache. |
 | 2026-11-07 | Landing evidence inspect disclosures | Homepage “Inspect example source” rows share the evidence-card padding, a custom chevron, padded expanded copy, and the lime focus ring. |
-| 2026-11-09 | Object-page tasks | Connected work Tasks stays visible with Open/Done counts, Recent history, assignee chips, inline status, and a pre-linked add-task field. Approvals and Evidence each appear once. |
+| 2026-11-09 | Object-page tasks | Connected work Tasks stays visible with Open/Done counts, Recent history (`No completed tasks yet` when empty), assignee chips, inline status, and a pre-linked add-task field. Done tasks never show overdue. Approvals and Evidence each appear once. |
 
 
 ### Billing benefits and recorded charges (2026-10-31)

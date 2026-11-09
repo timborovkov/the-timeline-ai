@@ -61,6 +61,7 @@ import {
   OBJECT_CONTROL_CLASS,
   OBJECT_GROUP_CLASS,
   OBJECT_MONO_META_CLASS,
+  OBJECT_QUIET_CLASS,
   OBJECT_ROW_META_CLASS,
   OBJECT_ROW_TITLE_CLASS,
   OBJECT_SECTION_CLASS,
@@ -2058,7 +2059,9 @@ function ConnectedTaskList({
           getKey={(task) => task.id}
           Item={({ item: task }) => <ConnectedTaskRow task={task} members={members} />}
         />
-      ) : null}
+      ) : (
+        <p className={OBJECT_QUIET_CLASS}>No completed tasks yet</p>
+      )}
     </ConnectedWorkSection>
   );
 }
@@ -2091,6 +2094,8 @@ function ConnectedTaskRow({
   const assignee = members.find((member) => member.id === assigneeUserId);
   const dueAt = toDateOrNull(overlays.dueAt === undefined ? task.dueAt : overlays.dueAt);
   const title = displayText(displayObjectTitle(task));
+  const terminal = status === 'done' || status === 'cancelled';
+  const completedAt = status === 'done' ? toDateOrNull(task.updatedAt) : null;
 
   function save(key: keyof ConnectedTaskRowOverlays, value: string | Date | null): void {
     const current = key === 'status' ? status : key === 'assigneeUserId' ? assigneeUserId : dueAt;
@@ -2197,7 +2202,13 @@ function ConnectedTaskRow({
             density="compact"
           >
             <EditableMetadata.Value>
-              <DueDateDisplay value={dueAt} timezone={timezone} variant="compact" />
+              <DueDateDisplay
+                value={dueAt}
+                timezone={timezone}
+                variant="compact"
+                completed={terminal}
+                completedAt={completedAt}
+              />
             </EditableMetadata.Value>
             <EditableMetadata.Editor>
               <MetadataDateEditor

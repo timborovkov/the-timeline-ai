@@ -1296,8 +1296,75 @@ describe('ObjectDetailClient', () => {
 
     expect(html).toContain('Open 1 · Done 0');
     expect(html).toContain('Recent history');
+    expect(html).toContain('No completed tasks yet');
     expect(html).toContain('Mika Product');
     expect(html).toContain('Validate Northstar pilot export');
+  });
+
+  it('shows a quiet empty line when Recent history has no done tasks', () => {
+    const html = renderObjectDetail({
+      detail: {
+        ...detail,
+        type: 'company',
+        canonicalName: 'Northstar Works',
+        connectedWork: {
+          ...detail.connectedWork,
+          openTasks: [
+            {
+              ...detail,
+              id: 'task-open',
+              type: 'task',
+              canonicalName: 'Validate Northstar pilot export',
+              status: 'blocked',
+            },
+          ],
+          recentTasks: [],
+        },
+      },
+      userId: 'user-1',
+      suggestions: [],
+    });
+
+    expect(html).toContain('Recent history');
+    expect(html).toContain('No completed tasks yet');
+    expect(html).not.toContain('Send Northwind data room');
+  });
+
+  it('does not show overdue styling on done connected tasks', () => {
+    const html = renderObjectDetail({
+      detail: {
+        ...detail,
+        type: 'project',
+        canonicalName: 'Series A process',
+        dueAt: null,
+        connectedWork: {
+          ...detail.connectedWork,
+          openTasks: [],
+          recentTasks: [
+            {
+              ...detail,
+              id: 'task-done',
+              type: 'task',
+              canonicalName: 'Send Northwind data room',
+              status: 'done',
+              dueAt: new Date('2026-11-08T17:00:00.000Z'),
+              updatedAt: new Date('2026-11-08T18:00:00.000Z'),
+              assigneeUserId: 'user-harper',
+            },
+          ],
+        },
+      },
+      userId: 'user-1',
+      suggestions: [],
+      members: [{ id: 'user-harper', label: 'Harper Singh' }],
+    });
+
+    expect(html).toContain('Send Northwind data room');
+    expect(html).toContain('Completed Nov 8, 2026');
+    expect(html).toContain('data-due-status="completed"');
+    expect(html).not.toContain('Overdue');
+    expect(html).not.toContain('data-due-status="overdue"');
+    expect(html).not.toContain('No completed tasks yet');
   });
 
   it('adds a related task from a company page', async () => {
