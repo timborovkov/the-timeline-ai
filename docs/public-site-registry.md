@@ -146,9 +146,12 @@ Product, guide, integration, pricing, trust, and support links come from the reg
 Use cases, solutions, comparisons, and companion references appear under `Optional`. `SKILL.md` is served from
 `plugins/timeline/skills/timeline/SKILL.md` and must stay byte-identical.
 
-`sitemap.xml` and `robots.txt` are generated at request time so their absolute
-URLs use the runtime `AUTH_URL`. Prerendered public HTML (`metadataBase`, JSON-LD)
-bakes the origin at `next build`. The web Docker image defaults `AUTH_URL` to
+`sitemap.xml` uses Next.js's default metadata-route caching and is generated at
+build time from the public document registry. Registry changes take effect on
+the next build and deployment. Its absolute URLs, like prerendered public HTML
+(`metadataBase`, JSON-LD), use the build-time origin; changing `AUTH_URL` requires
+a rebuild to update them. `robots.txt` remains generated at request time using
+the runtime `AUTH_URL`. The web Docker image defaults `AUTH_URL` to
 `https://thetimeline.cc` for that build so production pages do not ship
 `http://localhost:3000`. Override the build arg for a non-canonical origin.
 
