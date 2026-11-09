@@ -24,6 +24,11 @@ describe('pricing blocks', () => {
     expect(html).not.toContain('data-pricing-plan="enterprise"');
     expect(html).toContain('data-pricing-enterprise-nudge');
     expect(html).toContain('Pay as you go');
+    expect(html).toContain('Start here');
+    expect(html).toContain('Create an account to add payment');
+    expect(html).toContain('data-first-run="compact"');
+    expect(html).not.toContain('Recommended');
+    expect(html).not.toContain('Add payment method');
   });
 
   it('explains native meters without opaque credits', () => {

@@ -40,6 +40,11 @@ describe('agents hub', () => {
     expect(html).toContain(AGENTS_HUB.example.label);
     expect(html).toContain(AGENTS_HUB.example.title);
     expect(html).toContain(AGENTS_HUB.example.boundary);
+    expect(html).toContain('data-agent-setup-prerequisites');
+    expect(html).toContain(AGENTS_HUB.setupPrerequisite.title);
+    expect(html).toContain(AGENTS_HUB.setupPrerequisite.body);
+    expect(html).toContain(AGENTS_HUB.setupPrerequisite.distinction);
+    expect(html).toContain(`href="${AGENTS_HUB.setupPrerequisite.mcpHref}"`);
     expect([...TIMELINE_HOSTED_MCP_TOOLS].sort()).toEqual([...ADVERTISED_MCP_TOOL_NAMES].sort());
   });
 });

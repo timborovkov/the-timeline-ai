@@ -74,5 +74,5 @@ function signupSubtitle(invited: boolean, ready: boolean): string {
   if (!ready) return 'New accounts are paused while our legal publication review is completed.';
   return invited
     ? 'You’ve been invited to a team. Sign up to accept.'
-    : 'Free for up to 3 members — no card required. We’ll create your first team automatically.';
+    : 'Free for up to 3 members — no card required. We’ll create your first team automatically. Then connect one source and open the first record.';
 }

@@ -58,6 +58,7 @@ export function UseCasePage({ useCase }: { useCase: UseCaseContent }) {
                 alt={shot.alt}
                 caption={shot.caption}
                 reshoot={shot.reshoot}
+                callouts={shot.callouts}
                 priority
               />
             ))}
@@ -109,6 +110,7 @@ export function UseCasePage({ useCase }: { useCase: UseCaseContent }) {
                   alt={shot.alt}
                   caption={shot.caption}
                   reshoot={shot.reshoot}
+                  callouts={shot.callouts}
                 />
               ))}
             </div>
@@ -226,7 +228,8 @@ export function UseCasePage({ useCase }: { useCase: UseCaseContent }) {
 
         <MarketingCtaBand
           title="Link one channel. Watch the record fill in."
-          body="Start with one Slack channel or Telegram group. Read the daily update, approve what The Timeline proposes, and ask what was decided, with the source for every line."
+          body="Start with one Slack channel or Telegram group. Read the daily update, approve lasting record changes that The Timeline proposes, and ask what was decided, with the source for every line."
+          firstRun={useCase.slug === 'team-daily-log'}
         />
       </article>
     </main>

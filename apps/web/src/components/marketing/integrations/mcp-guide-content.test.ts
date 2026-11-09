@@ -35,6 +35,17 @@ describe('MCP guide content', () => {
     expect(copy).not.toMatch(
       /legacy SSE picker|refresh every|env-file only|paste a URL into \.env/i,
     );
+    expect(MCP_GUIDE_PAGE.distinction.inboundBody).toMatch(/Live lookups, not background sync/u);
+    expect(MCP_GUIDE_PAGE.distinction.inboundBody).toMatch(
+      /successful team-shared call can be captured as evidence/u,
+    );
+    expect(MCP_GUIDE_PAGE.distinction.inboundBody).toMatch(
+      /connecting a server does not import its history/u,
+    );
+    expect(MCP_GUIDE_PAGE.setup.planLimit).toMatch(
+      /Free plan does not include custom MCP servers/u,
+    );
+    expect(MCP_GUIDE_PAGE.setup.personalBody).toMatch(/Personal results stay private/u);
     expect(MCP_GUIDE_PAGE.distinction.outboundBody).toMatch(/Agents page/);
     expect(MCP_GUIDE_PAGE.notNative.body).toMatch(/Sentry/);
     expect(MCP_GUIDE_RELATED.map((item) => item.href)).toEqual([

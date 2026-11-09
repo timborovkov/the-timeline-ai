@@ -884,6 +884,9 @@
   "apps/web/src/components/marketing/editorial/public-documents.test.ts": {
     "group": "unit"
   },
+  "apps/web/src/components/marketing/first-run-path.test.tsx": {
+    "group": "unit"
+  },
   "apps/web/src/components/marketing/home/timeline-flow-diagram.test.tsx": {
     "group": "dom"
   },

@@ -7,7 +7,7 @@ export default function SignUpLoading() {
   return (
     <AuthShell
       title="Create your account"
-      subtitle="Free for up to 3 members — no card required. We’ll create your first team automatically."
+      subtitle="Free for up to 3 members — no card required. We’ll create your first team automatically. Then connect one source and open the first record."
     >
       <output className="sr-only" aria-live="polite">
         Loading account creation
