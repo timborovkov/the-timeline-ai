@@ -1476,6 +1476,58 @@ describe('ObjectDetailClient', () => {
       expect(objectActions.addRelationshipAction).toHaveBeenCalledTimes(2);
     });
     expect(objectActions.createObjectAction).toHaveBeenCalledTimes(1);
+    expect(objectActions.updateObjectAction).not.toHaveBeenCalled();
+    expect(objectActions.addRelationshipAction).toHaveBeenNthCalledWith(2, {
+      fromEntityId: createdId,
+      toEntityId: detail.id,
+      kind: 'related',
+    });
+    await waitFor(() => {
+      expect(nameInput).toHaveProperty('value', '');
+    });
+  });
+
+  it('applies a corrected title to the retained task when retrying a failed link', async () => {
+    const user = userEvent.setup();
+    const createdId = '11111111-1111-4111-8111-111111111111';
+    vi.mocked(objectActions.createObjectAction).mockResolvedValue({ ok: true, id: createdId });
+    vi.mocked(objectActions.updateObjectAction).mockResolvedValue({ ok: true, id: createdId });
+    vi.mocked(objectActions.addRelationshipAction)
+      .mockResolvedValueOnce({ error: 'Failed to link' })
+      .mockResolvedValueOnce({ ok: true, id: 'rel-1' });
+    render(
+      objectDetailElement({
+        detail: {
+          ...detail,
+          type: 'company',
+          canonicalName: 'Northstar Works',
+        },
+        userId: 'user-1',
+        suggestions: [],
+      }),
+    );
+
+    const nameInput = screen.getByLabelText('New task name');
+    await user.type(nameInput, 'Confirm export mapping');
+    await user.click(screen.getByRole('button', { name: 'Add task' }));
+
+    await waitFor(() => {
+      expect(objectActions.addRelationshipAction).toHaveBeenCalledTimes(1);
+      expect(screen.getByRole('button', { name: 'Add task' })).toHaveProperty('disabled', false);
+    });
+
+    await user.clear(nameInput);
+    await user.type(nameInput, 'Confirm export mapping v2');
+    await user.click(screen.getByRole('button', { name: 'Add task' }));
+
+    await waitFor(() => {
+      expect(objectActions.updateObjectAction).toHaveBeenCalledWith({
+        id: createdId,
+        canonicalName: 'Confirm export mapping v2',
+      });
+    });
+    expect(objectActions.createObjectAction).toHaveBeenCalledTimes(1);
+    expect(objectActions.addRelationshipAction).toHaveBeenCalledTimes(2);
     expect(objectActions.addRelationshipAction).toHaveBeenNthCalledWith(2, {
       fromEntityId: createdId,
       toEntityId: detail.id,

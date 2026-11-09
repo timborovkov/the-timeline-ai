@@ -2241,7 +2241,7 @@ function ConnectedTaskComposer({
   const router = useRouter();
   const [name, setName] = useState('');
   const [creating, setCreating] = useState(false);
-  const pendingLinkTaskIdRef = useRef<string | null>(null);
+  const pendingLinkRef = useRef<{ id: string; name: string } | null>(null);
   const trimmed = name.trim();
 
   function submit(event: SyntheticEvent<HTMLFormElement>): void {
@@ -2251,19 +2251,27 @@ function ConnectedTaskComposer({
     setCreating(true);
     void notifyAction({
       id: `object:${objectId}:create-task`,
-      loading: pendingLinkTaskIdRef.current ? 'Linking task…' : 'Adding task…',
+      loading: pendingLinkRef.current ? 'Linking task…' : 'Adding task…',
       success: 'Task added',
       error: 'Couldn’t add task',
       run: async () => {
-        const pendingId = pendingLinkTaskIdRef.current;
-        if (pendingId && !isProject) {
+        const pending = pendingLinkRef.current;
+        if (pending && !isProject) {
+          if (pending.name !== trimmed) {
+            const renamed = await updateObjectAction({
+              id: pending.id,
+              canonicalName: trimmed,
+            });
+            if (renamed.error) return renamed;
+            pendingLinkRef.current = { id: pending.id, name: trimmed };
+          }
           const linked = await addRelationshipAction({
-            fromEntityId: pendingId,
+            fromEntityId: pending.id,
             toEntityId: objectId,
             kind: 'related',
           });
           if (linked.error) return linked;
-          return { ok: true, id: pendingId };
+          return { ok: true, id: pending.id };
         }
         const created = await createObjectAction({
           type: 'task',
@@ -2279,7 +2287,7 @@ function ConnectedTaskComposer({
           kind: 'related',
         });
         if (linked.error) {
-          pendingLinkTaskIdRef.current = created.id;
+          pendingLinkRef.current = { id: created.id, name: trimmed };
           return linked;
         }
         return created;
@@ -2287,7 +2295,7 @@ function ConnectedTaskComposer({
     }).then((result) => {
       setCreating(false);
       if (result.error) return;
-      pendingLinkTaskIdRef.current = null;
+      pendingLinkRef.current = null;
       setName('');
       router.refresh();
     });
