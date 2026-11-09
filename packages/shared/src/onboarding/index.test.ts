@@ -290,6 +290,28 @@ it('infers billing setup only from this team active subscription, never a manual
   expect(completedKeys(await scope().getChecklistState())).not.toContain('billing_setup');
 });
 
+describe('first-run scope', () => {
+  it('stores work style on the team and advances from welcome to choose', async () => {
+    await pg.exec(`
+      INSERT INTO team_first_run (team_id, started_by_user_id, phase)
+      VALUES ('${TEAM_ID}', '${OWNER_ID}', 'welcome');
+    `);
+    const next = await scope().submitWorkStyle('email');
+    expect(next.phase).toBe('choose');
+    expect(next.workStyle).toBe('email');
+  });
+
+  it('skips to an empty home without creating a sample workspace', async () => {
+    await pg.exec(`
+      INSERT INTO team_first_run (team_id, started_by_user_id, phase)
+      VALUES ('${TEAM_ID}', '${OWNER_ID}', 'choose');
+    `);
+    const next = await scope().skipToEmptyHome();
+    expect(next.phase).toBe('skipped');
+    expect(next.starterPath).toBe('skip');
+  });
+});
+
 it('treats an active comp as billing setup but not an expired comp', async () => {
   await pg.exec(`INSERT INTO team_billing_accounts (team_id, plan_id, billing_state, arrangement, comp_expires_at)
     VALUES ('${TEAM_ID}', 'team', 'team_active', 'comped', NOW() + INTERVAL '1 day')`);

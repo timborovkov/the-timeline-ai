@@ -29,6 +29,7 @@ const fakes = vi.hoisted(() => ({
       teamId: string;
       userId: string;
       getChecklistState: () => Promise<unknown>;
+      starterPath?: string | null;
     }) => Promise<{
       dismissed: boolean;
       items: { key: string; label: string; completed: boolean }[];
@@ -48,6 +49,7 @@ const fakes = vi.hoisted(() => ({
     compact?: boolean;
     live?: boolean;
     maxMoments?: number;
+    emptyLabel?: string;
   } | null,
 }));
 
@@ -94,7 +96,10 @@ await vi.mock(
       calendar: { getCalendarSettings: fakes.getCalendarSettings },
       integrations: { listConnectionAttention: fakes.listConnectionAttention },
       jobRecovery: { listRecoverableJobs: fakes.listRecoverableJobs },
-      onboarding: { getChecklistState: vi.fn() },
+      onboarding: {
+        getChecklistState: vi.fn(),
+        getFirstRun: vi.fn().mockResolvedValue(null),
+      },
       pins: { isPinnedMany: fakes.isPinnedMany, list: fakes.listPins },
       timeline: {
         listArtifactClusters: fakes.listArtifactClusters,
@@ -175,7 +180,12 @@ await vi.mock(
 await vi.mock(
   import.meta.resolve('@/components/timeline-feed'),
   () => ({
-    TimelineFeed: (props: { compact?: boolean; live?: boolean; maxMoments?: number }) => {
+    TimelineFeed: (props: {
+      compact?: boolean;
+      live?: boolean;
+      maxMoments?: number;
+      emptyLabel?: string;
+    }) => {
       fakes.timelineFeedProps = props;
       return <div data-testid="timeline-feed" />;
     },
@@ -369,7 +379,13 @@ describe('HomeDashboardPage', () => {
 
     expect(fakes.listPins).toHaveBeenCalledWith({ limit: 6 });
     expect(fakes.listEventsPage).toHaveBeenCalledWith({ limit: 16 });
-    expect(fakes.timelineFeedProps).toMatchObject({ compact: true, live: false, maxMoments: 8 });
+    expect(fakes.timelineFeedProps).toMatchObject({
+      compact: true,
+      live: false,
+      maxMoments: 8,
+      emptyLabel:
+        'Your timeline fills from what your team captures. Forward an email, upload a document or connect a channel to start it.',
+    });
     expect(html).not.toContain('>Attention<');
     expect(html).not.toContain('>Recent moments<');
     expect(html).toContain('aria-label="Recent moments"');
@@ -412,6 +428,7 @@ describe('HomeDashboardPage', () => {
     const loadArgs = fakes.loadOnboardingChecklistView.mock.calls[0]?.[0];
     expect(loadArgs?.teamId).toBe('team-1');
     expect(loadArgs?.userId).toBe('user-1');
+    expect(loadArgs?.starterPath).toBeNull();
     expect(typeof loadArgs?.getChecklistState).toBe('function');
     expect(fakes.onboardingInitialData).toEqual(snapshot);
   });

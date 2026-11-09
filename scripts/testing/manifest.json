@@ -35,6 +35,9 @@
   "apps/web/src/app/actions/events.test.ts": {
     "group": "unit"
   },
+  "apps/web/src/app/actions/first-run.test.ts": {
+    "group": "unit"
+  },
   "apps/web/src/app/actions/invites.test.ts": {
     "group": "unit"
   },
@@ -159,6 +162,9 @@
     "group": "unit"
   },
   "apps/web/src/app/api/onboarding/checklist/route.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/app/api/onboarding/first-run/route.test.ts": {
     "group": "unit"
   },
   "apps/web/src/app/api/public/runtime/route.test.ts": {
@@ -996,6 +1002,24 @@
     "group": "dom"
   },
   "apps/web/src/components/onboarding-checklist.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/onboarding/chooser-screen.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/onboarding/first-record-screen.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/onboarding/getting-started-strip.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/onboarding/go-live-screen.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/onboarding/processing-screen.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/onboarding/welcome-screen.test.tsx": {
     "group": "dom"
   },
   "apps/web/src/components/page-header.test.tsx": {
@@ -2141,6 +2165,9 @@
   },
   "packages/shared/src/objects/summary-evals.test.ts": {
     "group": "integration"
+  },
+  "packages/shared/src/onboarding/first-run.test.ts": {
+    "group": "unit"
   },
   "packages/shared/src/onboarding/index.test.ts": {
     "group": "integration"

@@ -26,8 +26,48 @@ import {
 import { and, count, eq, gt, inArray, isNull } from 'drizzle-orm';
 
 import { isActiveComp } from '#src/billing/operator.js';
+import { createFirstRunHandlers } from '#src/onboarding/first-run-scope.js';
 
 import type { TeamRole } from '#src/team-scope.js';
+
+export {
+  TEAM_WORK_STYLES,
+  FIRST_RUN_PHASES,
+  FIRST_RUN_PATHS,
+  GETTING_STARTED_STEPS,
+  WORK_STYLE_OPTIONS,
+  SETUP_SHELL_PHASES,
+  WEBSITE_SCAN_PAGE_CAP,
+  ONBOARDING_DOCUMENT_MAX_BYTES,
+  TRY_ASKING_PROMPTS,
+  documentProcessingSteps,
+  gettingStartedIndex,
+  isWebsiteScanEnabled,
+  orderChecklistItems,
+  parsePublicWebsiteUrl,
+  prefilledAskQuestion,
+  recommendedGoLiveChannel,
+  scanFailureCopy,
+  setupProgressLabel,
+  shouldRedirectToSetup,
+  shouldShowGettingStartedStrip,
+  suggestionTypeRank,
+  websiteProcessingSteps,
+} from '#src/onboarding/first-run.js';
+export type {
+  FirstRunPath,
+  FirstRunPhase,
+  FirstRunScanFailureReason,
+  FirstRunSource,
+  FirstRunState,
+  FirstRunSuggestion,
+  GettingStartedStep,
+  GoLiveChannel,
+  NamedProcessingStep,
+  TeamWorkStyle,
+  WorkStyleOption,
+} from '#src/onboarding/first-run.js';
+export type { FirstRunRecordView } from '#src/onboarding/first-run-scope.js';
 
 export const ONBOARDING_STEPS = [
   'billing_setup',
@@ -346,6 +386,7 @@ export function createOnboardingScope({ db, teamId, userId, ensureMember }: Onbo
     },
 
     markStepComplete,
+    ...createFirstRunHandlers({ db, teamId, userId, ensureMember }),
 
     async dismissChecklist(): Promise<void> {
       await ensureMember();

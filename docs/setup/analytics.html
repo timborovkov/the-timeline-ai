@@ -10,7 +10,7 @@
     <a class="skip" href="#main">Skip to content</a>
     <main id="main">
       <h1>Analytics setup</h1>
-      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-10-24</span></div>
+      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-11-09</span></div>
       <blockquote>
         <p>
           PostHog Cloud EU is the only product and website analytics provider. Sentry remains a
@@ -152,7 +152,11 @@ NEXT_PUBLIC_POSTHOG_UI_HOST=https://eu.posthog.com
         The server/worker typed registry lives in
         <code>packages/shared/src/analytics/events.ts</code>. Each event has an owner, trigger, data
         class, exact runtime schema, and retention target. Add server events there before emitting
-        them. The separate public-browser event and property allowlists are enforced in
+        them. First-run onboarding emits <code>onboarding_work_style_submitted</code>,
+        <code>onboarding_first_path_selected</code>, <code>first_capture_landed</code>, and
+        <code>agent_deployed_on_channel</code> with enum properties only (work style, starter path,
+        or channel) — never URLs, filenames, or capture text. The separate public-browser event and
+        property allowlists are enforced in
         <code>apps/web/src/lib/public-browser-analytics.ts</code> under the browser contract above.
       </p>
       <p>

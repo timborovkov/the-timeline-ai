@@ -271,6 +271,10 @@ describe('drizzle journal order', () => {
       idx: 106,
       when: 1_795_656_700_000,
     });
+    expect(byTag.get('0101_first_run_onboarding')).toMatchObject({
+      idx: 107,
+      when: 1_795_656_760_000,
+    });
     expect(byTag.get('0097_auth_continuations')?.when).toBeGreaterThan(
       byTag.get('0100_google_drive_snapshot_ancestry')?.when ?? 0,
     );
@@ -290,6 +294,8 @@ describe('drizzle journal order', () => {
       expect(await columnNames(pg, 'auth_continuations')).toContain('token_hash');
       expect(await columnNames(pg, 'agent_provisioning_grants')).toContain('token_hash');
       expect(await columnNames(pg, 'teams')).toContain('agent_reporting');
+      expect(await columnNames(pg, 'teams')).toContain('work_style');
+      expect(await columnNames(pg, 'team_first_run')).toContain('phase');
     } finally {
       await pg.close();
     }
@@ -317,6 +323,8 @@ describe('drizzle journal order', () => {
       expect(await columnNames(pg, 'auth_continuations')).toContain('destination');
       expect(await columnNames(pg, 'agent_provisioning_grants')).toContain('allowance');
       expect(await columnNames(pg, 'teams')).toContain('agent_reporting');
+      expect(await columnNames(pg, 'teams')).toContain('work_style');
+      expect(await columnNames(pg, 'team_first_run')).toContain('starter_path');
     } finally {
       await pg.close();
     }

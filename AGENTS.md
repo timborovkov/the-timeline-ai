@@ -284,7 +284,9 @@ Treat this file as an operating contract for agents, not a loose README.
   `./foo`). The only expected relative side-effect import there is local CSS,
   such as `./globals.css`. Client digest UI imports `@timeline/shared/messaging/format`
   rather than the Node messaging barrel. Client integration health copy imports
-  `@timeline/shared/integrations/health` rather than the Node integrations barrel. In `apps/worker/src`, `packages/shared/src`, and
+  `@timeline/shared/integrations/health` rather than the Node integrations barrel.
+  Client first-run onboarding screens import `@timeline/shared/onboarding/first-run`
+  rather than the Node onboarding barrel. In `apps/worker/src`, `packages/shared/src`, and
   `packages/db/src`, use the package-local Node `imports` alias (`#src/...`) for
   internal source imports/exports. Across package boundaries, use the workspace
   package names (`@timeline/db`, `@timeline/shared`, and exported subpaths)

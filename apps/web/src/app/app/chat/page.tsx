@@ -1,4 +1,5 @@
 import { entities, type Db } from '@timeline/db';
+import { TRY_ASKING_PROMPTS, prefilledAskQuestion } from '@timeline/shared/onboarding';
 import { pageWindow } from '@timeline/shared/pagination';
 import { withTeam } from '@timeline/shared/team-scope';
 import { type UIMessage } from 'ai';
@@ -11,6 +12,7 @@ import type { Metadata } from 'next';
 import { AskHeader } from '@/components/chat/ask-header';
 import { ChatPane } from '@/components/chat/chat-pane';
 import { MobileSessionNav, SessionSidebar } from '@/components/chat/session-sidebar';
+import { GuidedContinue } from '@/components/onboarding/guided-continue';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { hydrateChatSessionMessages } from '@/lib/chat-session';
@@ -57,6 +59,7 @@ export default async function ChatPage({
     pinnedEntityId,
     pinnedEntityName,
     contextTrail,
+    guidedAsk,
   } = await loadChatPage({ searchParams });
   return (
     // Escape main's px/py with negative margins so the chat fills the
@@ -96,7 +99,23 @@ export default async function ChatPage({
             pinnedEntityId={pinnedEntityId}
             pinnedEntityName={pinnedEntityName}
             contextTrail={contextTrail}
+            initialPrompt={guidedAsk?.question ?? null}
+            suggestionPrompts={guidedAsk ? TRY_ASKING_PROMPTS : undefined}
+            emptyTitle={guidedAsk ? 'Ask about what you just brought' : null}
+            emptyHint={
+              guidedAsk
+                ? 'We filled in a question that what you brought can answer. Edit it or send it as it is.'
+                : null
+            }
           />
+          {guidedAsk ? (
+            <GuidedContinue
+              phase="approve"
+              href="/app/approvals"
+              label="Review suggestions"
+              hint="Every claim links to its source."
+            />
+          ) : null}
         </div>
       </div>
     </div>
@@ -167,6 +186,24 @@ async function loadChatPage({ searchParams }: { searchParams: Promise<{ session?
       : null,
     updatedAt: chatSession.updatedAt.toISOString(),
   }));
+  const firstRun = await scope.onboarding.getFirstRun().catch(() => null);
+  if (firstRun && (firstRun.phase === 'record' || firstRun.phase === 'ask')) {
+    if (firstRun.phase !== 'ask') {
+      await scope.onboarding.setFirstRunPhase('ask');
+    }
+  }
+  const guidedAsk =
+    firstRun &&
+    (firstRun.phase === 'record' || firstRun.phase === 'ask' || firstRun.phase === 'approve')
+      ? {
+          question: prefilledAskQuestion({
+            path: firstRun.starterPath,
+            workStyle: firstRun.workStyle,
+            recordTitle: null,
+          }),
+        }
+      : null;
+
   const listedActive = sessionEntries.find((entry) => entry.id === activeSessionId);
   const activeTitle = listedActive
     ? chatSessionLabel(listedActive)
@@ -189,5 +226,6 @@ async function loadChatPage({ searchParams }: { searchParams: Promise<{ session?
     pinnedEntityId,
     pinnedEntityName,
     contextTrail,
+    guidedAsk,
   };
 }

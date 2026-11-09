@@ -140,6 +140,12 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
 - [x] Shared collection empty states: one `EmptyState` for indexes, queues,
       and directories, with quiet dim icons, create/recover actions, and
       waiting copy for proposals, notifications, and captured work.
+- [x] First-run onboarding: optional work-style question, four equal starter
+      cards (website Coming soon unless `WEBSITE_SCAN_ENABLED`, document upload,
+      email forward, skip to empty Home), named processing steps, first cited
+      record, guided Ask, approvals, Go live, and a slim Getting started strip
+      inside the real app. Sample workspace is out of scope. Website scan fetch
+      pipeline is a follow-up.
 - [x] Connect your agent: `/app/connect-agent` consolidates Timeline-as-MCP
       setup (OAuth-first client picker, connected grants with revoke, add-memory
       email/webhook, SKILL.md, collapsed `tla_` keys). Admin grant rows show the

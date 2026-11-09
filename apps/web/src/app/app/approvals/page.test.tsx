@@ -23,6 +23,10 @@ await vi.mock(
         listSuggestions: fakes.listSuggestions,
         withCalendarResolutionHints: fakes.withCalendarResolutionHints,
       },
+      onboarding: {
+        getFirstRun: () => Promise.resolve(null),
+        setFirstRunPhase: () => Promise.resolve(null),
+      },
     }),
   }),
   () => import('@timeline/shared/team-scope'),

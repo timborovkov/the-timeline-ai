@@ -16,6 +16,15 @@ import type { AgentReportingPreference } from '#src/schema/agent-reporting.js';
 
 export const teamRole = pgEnum('team_role', ['owner', 'admin', 'member']);
 
+/** How the team mostly works — orders suggestions and the recommended go-live channel. Never team size. */
+export const teamWorkStyle = pgEnum('team_work_style', [
+  'email',
+  'chat',
+  'dealflow',
+  'delivery',
+  'other',
+]);
+
 /** Closed membership windows preserved when a removed member is re-accepted. */
 export interface TeamMemberPriorInterval {
   startedAt: string;
@@ -43,6 +52,7 @@ export const teams = pgTable('teams', {
   // not a state. Unique across teams so cross-team routing in the inbound
   // dispatcher cannot ambiguously match.
   inboundEmail: text('inbound_email').unique(),
+  workStyle: teamWorkStyle('work_style'),
   inboundSenderWhitelistEnabled: boolean('inbound_sender_whitelist_enabled')
     .notNull()
     .default(true),

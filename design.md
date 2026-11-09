@@ -481,6 +481,15 @@ reopens it. The checklist teaches the product loop (capture, people, sources,
 ask, meetings, trust memory, stay in the loop) rather than enumerating every
 work surface.
 
+New teams start in a focused setup shell for Welcome and Bring something real
+(processing and failed website-scan stay in that shell). After the first capture,
+guided Ask, Approvals, and Go live use the real app chrome with a slim Getting
+started strip (Capture, Ask, Approve, Go live). Home never shows that strip.
+Skipping lands on an empty Home with the same checklist and next-step copy, not a
+sample workspace. Website scan is a chooser card; it stays Coming soon until the
+crawl worker is enabled. Work-style chips describe how the team works, never
+headcount, and only reorder suggestions plus the recommended Go live channel.
+
 Billing setup is an optional-on-Free checklist item linking owners/admins to plan
 selection; other members are directed to team owners. It completes from an active
 subscription or active comp arrangement, without a manual checkoff. Its guidance

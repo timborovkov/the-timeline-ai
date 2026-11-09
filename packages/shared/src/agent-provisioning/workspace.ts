@@ -1,4 +1,11 @@
-import { type Db, auditLog, teams, teamMembers, teamCalendarSettings } from '@timeline/db';
+import {
+  type Db,
+  auditLog,
+  teamFirstRun,
+  teams,
+  teamMembers,
+  teamCalendarSettings,
+} from '@timeline/db';
 
 import {
   applyOwnedTeamFreeGrant,
@@ -60,5 +67,10 @@ export async function initializeOwnedWorkspace(
   }
   await insertDefaultDigestDestination(tx, team.id);
   await insertRestrictedFreeBillingAccount({ db: tx, teamId: team.id });
+  await tx.insert(teamFirstRun).values({
+    teamId: team.id,
+    startedByUserId: input.ownerId,
+    phase: 'welcome',
+  });
   return team;
 }

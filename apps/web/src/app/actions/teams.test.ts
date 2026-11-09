@@ -345,7 +345,7 @@ describe('createTeamAction', () => {
 
   it('creates the team, stores the active-team cookie, revalidates, and redirects', async () => {
     await expect(createTeamAction({}, form({ name: 'Acme' }))).rejects.toThrow(
-      'NEXT_REDIRECT:/app/timeline',
+      'NEXT_REDIRECT:/onboarding',
     );
 
     expect(fakes.fakeTransaction).toHaveBeenCalledOnce();

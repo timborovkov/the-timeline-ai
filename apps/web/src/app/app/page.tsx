@@ -7,6 +7,7 @@ import { Boxes, CircleAlert, CircleCheckBig, ListTodo, PlugZap, Wrench } from 'l
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
+import type { BillingNudge } from '@timeline/shared/billing/status';
 import type { Metadata } from 'next';
 
 import { BillingRestrictionNotice } from '@/components/billing-restriction-notice';
@@ -92,6 +93,38 @@ async function shouldShowPaygSuggestion(input: {
   });
 }
 
+function HomePlanNotices({
+  nudge,
+  showPayg,
+  paygStorageKey,
+}: {
+  nudge: BillingNudge | null;
+  showPayg: boolean;
+  paygStorageKey: string;
+}) {
+  return (
+    <>
+      {nudge ? <BillingUpgradeNudge nudge={nudge} /> : null}
+      {showPayg ? <PaygValueNudge key={paygStorageKey} storageKey={paygStorageKey} /> : null}
+    </>
+  );
+}
+
+function homeEmptyTimelineCopy(isEmpty: boolean): { label: string; actionBody: string } {
+  if (isEmpty) {
+    return {
+      label:
+        'Your timeline fills from what your team captures. Forward an email, upload a document or connect a channel to start it.',
+      actionBody: 'Forward an email, upload a document or connect a channel to start it.',
+    };
+  }
+  return {
+    label: 'No recent moments yet',
+    actionBody:
+      'Moments will appear here as the timeline collects work from capture and connected sources.',
+  };
+}
+
 export default async function HomeDashboardPage() {
   const session = await auth();
   if (!session?.user) redirect('/sign-in');
@@ -105,6 +138,10 @@ export default async function HomeDashboardPage() {
   ]);
   const isAdmin = role === 'owner' || role === 'admin';
   const now = new Date();
+  const starterPath = await scope.onboarding
+    .getFirstRun()
+    .then((row) => row?.starterPath ?? null)
+    .catch(() => null);
 
   const [
     workAttention,
@@ -133,6 +170,7 @@ export default async function HomeDashboardPage() {
       teamId: active.teamId,
       userId: session.user.id,
       getChecklistState: () => scope.onboarding.getChecklistState(),
+      starterPath,
     }).catch((err: unknown) => {
       reportCaughtError(err, { surface: 'render', operation: 'onboarding_checklist' });
       return null;
@@ -196,6 +234,7 @@ export default async function HomeDashboardPage() {
     homeMoments.map((moment) => ({ kind: 'timeline_moment' as const, key: moment.id })),
   );
   const quickCaptureVisibility = webDefault.visibility === 'private' ? 'private' : 'team';
+  const emptyTimeline = homeEmptyTimelineCopy(events.length === 0);
 
   return (
     <div className="space-y-8">
@@ -224,16 +263,11 @@ export default async function HomeDashboardPage() {
       <ConnectAgentOnboardingCard initialData={initialChecklist} />
       <OnboardingChecklist initialData={initialChecklist} />
 
-      {isAdmin && billingDashboard?.nudge ? (
-        <BillingUpgradeNudge nudge={billingDashboard.nudge} />
-      ) : null}
-
-      {showPaygSuggestion ? (
-        <PaygValueNudge
-          key={`${session.user.id}:${active.teamId}`}
-          storageKey={`tl-coachmark:payg:${session.user.id}:${active.teamId}`}
-        />
-      ) : null}
+      <HomePlanNotices
+        nudge={isAdmin ? (billingDashboard?.nudge ?? null) : null}
+        showPayg={showPaygSuggestion}
+        paygStorageKey={`tl-coachmark:payg:${session.user.id}:${active.teamId}`}
+      />
 
       <HomeAttention
         groups={[
@@ -324,11 +358,11 @@ export default async function HomeDashboardPage() {
           maxMoments={HOME_TIMELINE_MOMENT_LIMIT}
           live={false}
           timezone={calendarSettings.defaultTimezone}
-          emptyLabel="No recent moments yet"
+          emptyLabel={emptyTimeline.label}
           emptyAction={{
             href: '/app/timeline',
             label: 'Open timeline',
-            body: 'Moments will appear here as the timeline collects work from capture and connected sources.',
+            body: emptyTimeline.actionBody,
           }}
         />
         <p>

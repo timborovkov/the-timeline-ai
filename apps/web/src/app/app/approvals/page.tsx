@@ -8,6 +8,7 @@ import type { Metadata } from 'next';
 
 import { ApprovalsClient } from '@/components/approvals/approvals-client';
 import { CollectionToolbar } from '@/components/collections/collection-toolbar';
+import { GuidedContinue } from '@/components/onboarding/guided-continue';
 import { PageHeader } from '@/components/page-header';
 import { WorkSubnav } from '@/components/work-subnav';
 import { resolveActiveTeam } from '@/lib/active-team';
@@ -55,6 +56,39 @@ interface PageProps {
   searchParams: Promise<{ status?: string }>;
 }
 
+const GUIDED_APPROVAL_PHASES = new Set(['ask', 'approve', 'record']);
+
+async function loadGuidedApprovals(scope: ReturnType<typeof withTeam>): Promise<boolean> {
+  const firstRun = await scope.onboarding.getFirstRun().catch(() => null);
+  if (firstRun && (firstRun.phase === 'ask' || firstRun.phase === 'record')) {
+    await scope.onboarding.setFirstRunPhase('approve');
+  }
+  return Boolean(firstRun && GUIDED_APPROVAL_PHASES.has(firstRun.phase));
+}
+
+function approvalsSubtitle(guided: boolean): string {
+  return guided
+    ? 'Nothing becomes a lasting record until you accept it. Rejecting removes the suggestion; the source stays in your event history either way.'
+    : 'Review evidence-backed changes before they become team memory.';
+}
+
+function GuidedApprovalsChrome({ enabled }: { enabled: boolean }) {
+  if (!enabled) return null;
+  return <p className="text-xs text-fg-dim">Approvals · from this capture</p>;
+}
+
+function GuidedApprovalsContinue({ enabled }: { enabled: boolean }) {
+  if (!enabled) return null;
+  return (
+    <GuidedContinue
+      phase="live"
+      href="/app/onboarding/live"
+      label="Continue"
+      hint="Anything you leave stays in Work → Approvals."
+    />
+  );
+}
+
 export default async function ApprovalsPage({ searchParams }: PageProps) {
   const session = await auth();
   if (!session?.user) redirect('/sign-in');
@@ -62,6 +96,7 @@ export default async function ApprovalsPage({ searchParams }: PageProps) {
   if (!active) redirect('/sign-in');
 
   const scope = withTeam(db, active.teamId, session.user.id);
+  const guidedApprovals = await loadGuidedApprovals(scope);
   const params = await searchParams;
   const status = STATUS_FILTERS.includes(params.status as ApprovalFilter)
     ? (params.status as ApprovalFilter)
@@ -98,7 +133,7 @@ export default async function ApprovalsPage({ searchParams }: PageProps) {
       <PageHeader
         variant="collection"
         title="Approvals"
-        subtitle="Review evidence-backed changes before they become team memory."
+        subtitle={approvalsSubtitle(guidedApprovals)}
         metadata={[
           { label: 'Filter', value: status.replaceAll('_', ' ') },
           ...(inventoryCount !== null
@@ -128,6 +163,7 @@ export default async function ApprovalsPage({ searchParams }: PageProps) {
           </nav>
         </CollectionToolbar.View>
       </CollectionToolbar>
+      <GuidedApprovalsChrome enabled={guidedApprovals} />
       <ApprovalsClient
         key={status}
         suggestions={visibleSuggestions}
@@ -137,6 +173,7 @@ export default async function ApprovalsPage({ searchParams }: PageProps) {
         taskCategoriesEnabled={getEnv().TASK_CATEGORY_UI_ENABLED}
         emptyState={EMPTY_STATES[status]}
       />
+      <GuidedApprovalsContinue enabled={guidedApprovals} />
     </div>
   );
 }

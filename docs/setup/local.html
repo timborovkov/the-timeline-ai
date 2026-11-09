@@ -10,7 +10,7 @@
     <a class="skip" href="#main">Skip to content</a>
     <main id="main">
       <h1>Local development</h1>
-      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-11-04</span></div>
+      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-11-09</span></div>
       <p class="tldr">
         Bring up the full Timeline stack on your machine with Docker Compose for infra and
         <code>bun run dev</code> for app + worker hot reload.
@@ -78,6 +78,11 @@ ln -sf ../../.env apps/web/.env
         For local document parsing without Daytona, set
         <code>DOCUMENT_EXTRACT_ALLOW_INPROCESS=true</code>. This development-only option is rejected
         in production; leave it false when using a Daytona extractor.
+      </p>
+      <p>
+        First-run website scan stays off unless <code>WEBSITE_SCAN_ENABLED=true</code>. Leave it
+        unset for local work; the chooser still shows the card as Coming soon. Team inbound
+        addresses use <code>INBOUND_EMAIL_DOMAIN</code> from config, never a hardcoded domain.
       </p>
 
       <p>
