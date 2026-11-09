@@ -135,9 +135,9 @@ function TermsContentAndAiSections() {
         for retrieval is processing for the Service, not model training.
       </p>
       <p>
-        {PUBLIC_TRANSCRIPTION_PRIVACY_CLAIMS.privacyZdrRoleList} require zero-data-retention
-        processing and cannot downgrade to weaker retention during an outage.{' '}
-        {PUBLIC_TRANSCRIPTION_PRIVACY_CLAIMS.termsDetail}
+        The following roles require zero-data-retention processing:{' '}
+        {PUBLIC_TRANSCRIPTION_PRIVACY_CLAIMS.privacyZdrRoleList}. They cannot downgrade to weaker
+        retention during an outage. {PUBLIC_TRANSCRIPTION_PRIVACY_CLAIMS.termsDetail}
       </p>
       <p>
         AI output can be inaccurate, incomplete, delayed, or based on incomplete evidence. Citations
@@ -227,6 +227,15 @@ function TermsResponsibleUseSections() {
 
       <h2>12. Privacy and data protection</h2>
       <p>
+        To request deletion of captured data, use our <Link href="/help/support">support form</Link>{' '}
+        or contact <SupportMailto />. Requests are handled manually after identity and workspace
+        authority checks. Removing a personal connection or disconnecting a team source does not
+        automatically delete captured history. The <Link href="/privacy">Privacy Policy</Link> and{' '}
+        <Link href="/help/integrations">integration help</Link> explain these actions and applicable
+        retention or backup limitations. We confirm the scope and outcome, including outstanding
+        steps or justified retention.
+      </p>
+      <p>
         Our <Link href="/privacy">Privacy Policy</Link> describes our controller activities. For
         Customer Content where we act as processor, the customer is responsible for its instructions
         and lawful basis. Customers needing a data-processing agreement or transfer terms should
@@ -263,8 +272,8 @@ function TermsProductAndLifecycleSections() {
         documentation, trademarks, and service content belong to us or our licensors. These Terms
         grant only the limited right to use the hosted Service while your account is authorized.
         Public availability of source code does not by itself grant permission to copy, modify,
-        redistribute, or self-host it; those rights exist only under an applicable license. Third-
-        party and open-source components remain governed by their own licenses.
+        redistribute, or self-host it; those rights exist only under an applicable license.
+        Third-party and open-source components remain governed by their own licenses.
       </p>
 
       <h2>14. Feedback and contributions</h2>
@@ -429,8 +438,8 @@ export default function TermsPage() {
         description="Binding Terms are not currently being published or presented for acceptance."
       >
         <p>
-          The Terms are unavailable while we review our contracting entity. This page does not form
-          an agreement or introduce a new Terms version, and you will not be asked to accept it.
+          The Terms are unavailable until publication is enabled. This page does not form an
+          agreement or introduce a new Terms version, and you will not be asked to accept it.
         </p>
         <p>
           Existing users may continue under any previously applicable agreement. New account

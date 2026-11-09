@@ -341,10 +341,11 @@ function PrivacyAiAndProviderSections() {
         Timeline uses selected Drive files, metadata, comments, and sharing signals to create cited
         timeline events after a quiet editing window. OAuth tokens are encrypted at rest. Timeline
         keeps hashes and the latest extracted text to detect later edits, then deletes that
-        extracted text on disconnect, file removal, or when remaining selections no longer cover the
-        file. Full Drive copies are not stored in the document drive. You choose which folders or
-        files a team may use; a team admin activates those sources. Captured events follow Timeline
-        visibility rules. Timeline does not edit Drive files or change Drive sharing.
+        extracted text on team-source disconnection, file removal, or when remaining selections no
+        longer cover the file. Full Drive copies are not stored in the document drive. You choose
+        which folders or files a team may use; a team admin activates those sources. Captured events
+        follow Timeline visibility rules. Timeline does not edit Drive files or change Drive
+        sharing.
       </p>
       <p>
         A small billed model may read changed passages to judge whether they belong on the work
@@ -354,11 +355,21 @@ function PrivacyAiAndProviderSections() {
         Policy, including the Limited Use requirements.
       </p>
       <p>
-        Disconnecting deletes Timeline’s Drive tokens, change snapshots, and latest extracted text
-        for uncovered files. Cited timeline events already captured stay until a team admin or
-        support deletion request; disconnect does not erase that history. You can also remove
-        Timeline in Google Account permissions. There is not yet a complete self-serve purge of
-        every derived index, backup, or processor copy of those events.
+        Removing your personal Google connection deletes its saved credentials and disables sources
+        using it. It does not delete their snapshots or captured history. A team admin can
+        disconnect the team’s Drive source to clean up its change snapshots, latest extracted text,
+        and temporary extracts. The personal connection may remain available to other sources.
+        Previously captured timeline events remain; disconnect does not erase that history. You can
+        also remove Timeline in Google Account permissions.
+      </p>
+      <p>
+        To request deletion of captured Google Drive data, use our{' '}
+        <Link href="/help/support">support form</Link> or contact <SupportMailto />. We handle
+        requests manually after checking identity and workspace authority and confirming the scope.
+        The review includes captured records and derived data such as search indexes. We explain
+        applicable retention, backup expiry, or provider follow-up and confirm what has been
+        completed. This is a support-assisted process, not an automatic purge on disconnect. See{' '}
+        <Link href="/help/integrations">integration help</Link> for instructions.
       </p>
       <p>
         A member may also authorize ChatGPT, Claude, Codex, or another MCP-compatible client to
@@ -521,10 +532,10 @@ function PrivacyRetentionSections() {
           <tr>
             <td>Google Drive snapshots and tokens</td>
             <td>
-              Encrypted Drive tokens, change snapshots, and latest extracted text are deleted on
-              disconnect or when remaining selections no longer cover a file. Cited Drive timeline
-              events remain with other Customer Content until a team admin or support deletion
-              request.
+              Personal connection removal deletes its saved credentials and disables dependent
+              sources. Team-source disconnection cleans up that source’s snapshots and extracts;
+              file removal and selection changes clean up files no longer covered. Captured events
+              and derived history require a separate support-assisted deletion request.
             </td>
           </tr>
           <tr>
