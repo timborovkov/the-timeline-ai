@@ -288,7 +288,8 @@ POSTHOG_PROJECT_KEY=&lt;posthog server project key&gt;
 POSTHOG_HOST=https://eu.i.posthog.com
 ANALYTICS_PSEUDONYMIZATION_KEY=&lt;independent high-entropy secret&gt;
 NEXT_PUBLIC_POSTHOG_KEY=
-NEXT_PUBLIC_POSTHOG_HOST=https://eu.i.posthog.com
+NEXT_PUBLIC_POSTHOG_HOST=https://m.thetimeline.cc
+NEXT_PUBLIC_POSTHOG_UI_HOST=https://eu.posthog.com
 SENTRY_DSN=&lt;sentry server/worker dsn&gt;
 NEXT_PUBLIC_SENTRY_DSN=&lt;sentry browser dsn&gt;
 NEXT_PUBLIC_SENTRY_TRACES_SAMPLE_RATE=0
@@ -300,7 +301,7 @@ SENTRY_AUTH_TOKEN=&lt;sentry source map upload token&gt;
 SENTRY_ORG=irmin-dw
 SENTRY_PROJECT=the-timeline-ai
 SENTRY_RELEASE=&lt;deployed git sha, optional&gt;
-GOOGLE_CLIENT_ID=&lt;google oauth client id&gt;
+GOOGLE_CLIENT_ID=&lt;google oauth client id; shared by sign-in and Drive&gt;
 GOOGLE_CLIENT_SECRET=&lt;google oauth client secret&gt;
 GOOGLE_DRIVE_WEBHOOK_SECRET=&lt;google drive webhook hmac secret&gt;
 LINEAR_CLIENT_ID=&lt;linear oauth app client id&gt;
@@ -335,8 +336,9 @@ LOG_LEVEL=info
         Keep <code>ANALYTICS_PSEUDONYMIZATION_KEY</code> secret and server-only. Leave
         <code>NEXT_PUBLIC_POSTHOG_KEY</code> empty until the consent-gated public-browser path and
         PostHog account have been reviewed, then pass it as a web Docker build arg together with
-        <code>NEXT_PUBLIC_POSTHOG_HOST</code>. None of the PostHog variables belong on the
-        credential-thin <code>document-extract-orchestrator</code> service.
+        <code>NEXT_PUBLIC_POSTHOG_HOST</code> and <code>NEXT_PUBLIC_POSTHOG_UI_HOST</code>. None of
+        the PostHog variables belong on the credential-thin
+        <code>document-extract-orchestrator</code> service.
       </p>
       <p>
         <code>CROSS_SOURCE_EVIDENCE_MODE</code> is a worker rollout switch. Keep production at
@@ -598,6 +600,7 @@ rclone sync s3:timeline-exports backblaze-b2:timeline-backup-exports
       </ul>
       <p>
         Native integration OAuth callbacks also land on the web service, including
+        <code>/api/auth/callback/google</code> (sign-in; <code>openid email profile</code> only),
         <code>/api/integrations/google_drive/callback</code>,
         <code>/api/integrations/linear/callback</code>,
         <code>/api/integrations/github/callback</code>,
@@ -637,16 +640,11 @@ rclone sync s3:timeline-exports backblaze-b2:timeline-backup-exports
       <h2 id="deploy-flow">Deploy flow</h2>
       <ol>
         <li>
-          Merge development PRs into <code>main</code> after <code>Static checks</code> passes
-          (validation, React Doctor, runtime and E2E environment smoke checks, and dist imports).
-          Superseded PR runs are cancelled.
-        </li>
-        <li>
-          Open a release PR from <code>main</code> to <code>production</code>. Both
-          <code>Static checks</code> and <code>Full test suite</code> (offline unit/integration
-          tests and reconciliation evals) must pass on an up-to-date branch, with review threads
-          resolved. Direct pushes, force pushes and deletion are blocked. Full tests also run after
-          production merges and on manual CI dispatches; browser E2E remains manual.
+          Merge development PRs into <code>main</code>, then open a release PR from
+          <code>main</code> to <code>production</code>. Follow the
+          <a href="../AGENTS.md#branch-and-release-ci">branch and release CI policy in AGENTS.md</a>
+          for required checks and branch protections, and its
+          <a href="../AGENTS.md#validation-policy">validation policy</a> for scoped local work.
         </li>
         <li>
           Once all three Railway app services follow <code>production</code>, merging the release PR
@@ -710,8 +708,10 @@ rclone sync s3:timeline-exports backblaze-b2:timeline-backup-exports
             to the PostgreSQL service's internal hostname and uses plain TCP. If you ever point this
             at the <em>external</em> Postgres proxy (e.g., to run
             <code>bun run db:migrate</code> from your laptop against staging), append
-            <code>?sslmode=require</code> to the URL — <code>postgres-js</code> follows the
-            connection string, not an out-of-band env var.
+            <code>?sslmode=require</code> to the URL — postgres.js 4 still follows the connection
+            string, not an out-of-band env var. <code>channel_binding</code> defaults to
+            <code>prefer</code> and only applies over TLS, so internal Railway connections are
+            unchanged.
           </p>
         </li>
         <li>

@@ -6,7 +6,7 @@ import {
   timelineMomentPresentationEligibility,
   type TimelineMomentPresentationCacheKey,
   type TimelineMomentPresentationCacheRecord,
-} from '@timeline/shared/timeline-moments/presentation';
+} from '@timeline/shared/timeline-moments/presentation-contract';
 
 import type {
   ImpactItem,
@@ -14,7 +14,7 @@ import type {
   TimelineMoment,
   TimelineMomentDiagnostic,
 } from '@/lib/timeline-moments';
-import type { TimelineEvent } from '@/lib/use-paginated-queries';
+import type { TimelineEvent } from '@/lib/timeline-types';
 
 import {
   buildTimelineMoments,

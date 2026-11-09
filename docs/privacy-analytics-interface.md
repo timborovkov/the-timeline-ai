@@ -339,3 +339,17 @@ Production delivery and provider settings are not verified by source tests.
 The optional PAYG suggestion uses a per-user/team local-storage dismissal preference.
 It stays on the device, is not exported to analytics, and does not hide billing
 restrictions or spend-cap warnings. Clearing browser storage resets the preference.
+
+### Managed browser ingestion proxy (2026-11-07)
+
+Public browser ingestion defaults to `https://m.thetimeline.cc`, the managed proxy
+shown as Live for the EU project in the supplied account screenshot.
+`NEXT_PUBLIC_POSTHOG_HOST` can select that origin or direct EU ingestion at
+`https://eu.i.posthog.com`; other origins fail closed. The SDK UI host defaults to
+`https://eu.posthog.com`, with a build-time `NEXT_PUBLIC_POSTHOG_UI_HOST` HTTPS override
+for dashboard links; this does not change the ingestion allowlist. Server/worker ingestion remains direct to the EU endpoint.
+This routing change preserves all consent, route, payload, and storage controls.
+The screenshot is account configuration evidence, not deployed application or
+end-to-end delivery evidence. Existing retention and contract gaps remain open.
+See the [analytics setup guide](./setup/analytics.html) for build-time migration
+and deployment verification.

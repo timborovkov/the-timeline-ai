@@ -9,7 +9,7 @@ import {
   type ArtifactClusterKind,
   type ReconciliationEvalIngestionSurface,
   type ReconciliationEvalScenarioFamily,
-} from '#src/reconciliation/index.js';
+} from '#src/reconciliation/core.js';
 
 export const RECONCILIATION_PLANNER_PROMPT_VERSION =
   'reconciliation-planner-2026-07-source-ref-allowlist';

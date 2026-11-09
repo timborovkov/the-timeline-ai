@@ -229,6 +229,25 @@ describe('public integration routes', () => {
     }
   });
 
+  it('keeps Google Drive on the native connector route without a works-with overlay', async () => {
+    const html = renderToStaticMarkup(
+      await connectorRoute.default({ params: Promise.resolve({ slug: 'google-drive' }) }),
+    );
+    const text = visibleText(html);
+    const metadata = await connectorRoute.generateMetadata({
+      params: Promise.resolve({ slug: 'google-drive' }),
+    });
+
+    expect(metadata.alternates).toEqual({ canonical: '/integrations/google-drive' });
+    expect(html.match(/<h1\b/g)).toHaveLength(1);
+    expect(text).toContain('Stay in Drive alone');
+    expect(text).toContain('changes.watch');
+    expect(text).toContain('remaining selections no longer cover it');
+    expect(text).toContain('Pending suggested inserts');
+    expect(text).not.toContain('When Google Drive alone is the better pick');
+    expect(html).not.toContain('data-works-with-route');
+  });
+
   it('extends the native Linear page with works-with guidance', async () => {
     const linear = findWorksWithTool('linear');
     if (!linear) throw new Error('Linear works-with content is required');

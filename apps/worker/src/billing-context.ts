@@ -3,6 +3,8 @@ import { isBillingAdmissionError, runWorkerBilling } from '@timeline/shared/bill
 import { childLogger } from '@timeline/shared/logger';
 import { DelayedError, UnrecoverableError } from 'bullmq';
 
+import { delayWorkerJob } from '#src/job-delay.js';
+
 const log = childLogger('worker:billing');
 
 const EXPECTED_BILLING_ADMISSION_CODES = new Set([
@@ -23,7 +25,7 @@ export function workerBillingJobOptions(
 } {
   return {
     ...(job.id ? { jobId: job.id } : {}),
-    delayJob: (delayMs: number) => job.moveToDelayed(Date.now() + delayMs, token),
+    delayJob: (delayMs: number) => delayWorkerJob(job, delayMs, token),
   };
 }
 

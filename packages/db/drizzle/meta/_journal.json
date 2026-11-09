@@ -706,20 +706,48 @@
       "idx": 100,
       "version": "7",
       "when": 1795656340000,
-      "tag": "0097_auth_continuations",
+      "tag": "0097_google_drive_v1",
       "breakpoints": true
     },
     {
       "idx": 101,
       "version": "7",
       "when": 1795656400000,
-      "tag": "0098_agent_provisioning",
+      "tag": "0098_google_drive_snapshot_uniqueness",
       "breakpoints": true
     },
     {
       "idx": 102,
       "version": "7",
       "when": 1795656460000,
+      "tag": "0099_google_drive_snapshot_locate",
+      "breakpoints": true
+    },
+    {
+      "idx": 103,
+      "version": "7",
+      "when": 1795656520000,
+      "tag": "0100_google_drive_snapshot_ancestry",
+      "breakpoints": true
+    },
+    {
+      "idx": 104,
+      "version": "7",
+      "when": 1795656580000,
+      "tag": "0097_auth_continuations",
+      "breakpoints": true
+    },
+    {
+      "idx": 105,
+      "version": "7",
+      "when": 1795656640000,
+      "tag": "0098_agent_provisioning",
+      "breakpoints": true
+    },
+    {
+      "idx": 106,
+      "version": "7",
+      "when": 1795656700000,
       "tag": "0099_agent_reporting",
       "breakpoints": true
     }

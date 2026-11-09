@@ -6,14 +6,16 @@ import { enqueueSuggestionJob } from '@timeline/shared/queue';
 import * as rateLimit from '@timeline/shared/rate-limit';
 import { taskCategorySchema } from '@timeline/shared/task-categories/types';
 import { withTeam } from '@timeline/shared/team-scope';
-import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 
-import { type ActionState, resolveScope, uuidSchema } from '@/lib/action-scope';
+import type { ObjectActionState } from '@/lib/object-action-result';
+
+import { resolveScope, uuidSchema } from '@/lib/action-scope';
 import { trackProductEventBestEffort } from '@/lib/analytics';
 import { db } from '@/lib/db';
 import { loadObjectRowsPage } from '@/lib/object-page';
 import { publicActionError } from '@/lib/public-error';
+import { refreshMutation } from '@/lib/refresh-mutation';
 import { runSentryServerAction } from '@/lib/sentry-action';
 import { reportCaughtError } from '@/lib/sentry-report';
 import { loadTaskRowsPage } from '@/lib/task-page';
@@ -94,32 +96,6 @@ async function reconcileArchivedObject(
     operation: 'archive_or_cancel',
     reason: 'A teammate archived this object directly.',
   });
-}
-
-function bestEffortRevalidatePath(
-  path: string,
-  operation: string,
-  type?: Parameters<typeof revalidatePath>[1],
-): void {
-  try {
-    if (type) revalidatePath(path, type);
-    else revalidatePath(path);
-  } catch (err) {
-    reportCaughtError(err, { surface: 'server_action', operation });
-  }
-}
-
-function revalidateObjectMutationSurfaces(ids: string | string[]): void {
-  for (const id of Array.isArray(ids) ? ids : [ids]) {
-    bestEffortRevalidatePath(`/app/objects/${id}`, 'revalidate_object_mutation_surfaces');
-  }
-  bestEffortRevalidatePath('/app/objects', 'revalidate_object_mutation_surfaces');
-  bestEffortRevalidatePath('/app/work', 'revalidate_object_mutation_surfaces');
-  // Board pages receive object rows through layout data; refresh the layout so
-  // optimistic updates do not snap back to stale cards.
-  bestEffortRevalidatePath('/app/boards', 'revalidate_object_mutation_surfaces', 'layout');
-  bestEffortRevalidatePath('/app/tasks', 'revalidate_object_mutation_surfaces');
-  bestEffortRevalidatePath('/app/approvals', 'revalidate_object_mutation_surfaces');
 }
 
 const OBJECT_SEARCH_RESULT_LIMIT = 12;
@@ -354,7 +330,7 @@ const createObjectSchema = z.object({
   parentObjectId: uuidSchema.nullable().optional(),
 });
 
-export async function createObjectAction(input: unknown): Promise<ActionState> {
+export async function createObjectAction(input: unknown): Promise<ObjectActionState> {
   return runSentryServerAction('create_object', async () => {
     const parsed = createObjectSchema.safeParse(input);
     if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Invalid input' };
@@ -372,14 +348,10 @@ export async function createObjectAction(input: unknown): Promise<ActionState> {
         parentObjectId: parsed.data.parentObjectId ?? null,
         actor: { kind: 'user', userId: r.userId },
       });
-      bestEffortRevalidatePath('/app/objects', 'revalidate_object_create');
-      bestEffortRevalidatePath('/app/work', 'revalidate_object_create');
-      if (parsed.data.parentObjectId) {
-        bestEffortRevalidatePath(
-          `/app/objects/${parsed.data.parentObjectId}`,
-          'revalidate_object_create',
-        );
-      }
+      refreshMutation(
+        { kind: 'object-created', parentId: parsed.data.parentObjectId },
+        'revalidate_object_create',
+      );
       trackProductEventBestEffort(
         { kind: 'user', userId: r.userId, teamId: r.teamId },
         'object_created',
@@ -407,7 +379,7 @@ const updateObjectSchema = z.object({
   aliases: z.array(z.string().trim().min(1).max(120)).max(50).optional(),
 });
 
-export async function updateObjectAction(input: unknown): Promise<ActionState> {
+export async function updateObjectAction(input: unknown): Promise<ObjectActionState> {
   return runSentryServerAction('update_object', async () => {
     const parsed = updateObjectSchema.safeParse(input);
     if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Invalid input' };
@@ -431,7 +403,7 @@ export async function updateObjectAction(input: unknown): Promise<ActionState> {
           changedFields: result.changedFields,
         }),
       );
-      revalidateObjectMutationSurfaces(id);
+      refreshMutation({ kind: 'object-updated', ids: id }, 'revalidate_object_mutation_surfaces');
       if (result.changedFields.length > 0) {
         trackProductEventBestEffort(
           { kind: 'user', userId: r.userId, teamId: r.teamId },
@@ -448,7 +420,7 @@ export async function updateObjectAction(input: unknown): Promise<ActionState> {
 
 const taskCategoryMutationSchema = z.object({ id: uuidSchema, category: taskCategorySchema });
 
-export async function setTaskCategoryAction(input: unknown): Promise<ActionState> {
+export async function setTaskCategoryAction(input: unknown): Promise<ObjectActionState> {
   return runSentryServerAction('set_task_category', async () => {
     const parsed = taskCategoryMutationSchema.safeParse(input);
     if (!parsed.success) return { error: 'Invalid task category' };
@@ -467,7 +439,10 @@ export async function setTaskCategoryAction(input: unknown): Promise<ActionState
           mode: 'manual',
         },
       );
-      revalidateObjectMutationSurfaces(parsed.data.id);
+      refreshMutation(
+        { kind: 'object-updated', ids: parsed.data.id },
+        'revalidate_object_mutation_surfaces',
+      );
       return { ok: true, id: parsed.data.id, undoChangeId: result.changeId };
     } catch (err) {
       return { error: friendlyError(err, 'Failed to update category') };
@@ -475,7 +450,7 @@ export async function setTaskCategoryAction(input: unknown): Promise<ActionState
   });
 }
 
-export async function undoTaskCategoryChangeAction(input: unknown): Promise<ActionState> {
+export async function undoTaskCategoryChangeAction(input: unknown): Promise<ObjectActionState> {
   return runSentryServerAction('undo_task_category_change', async () => {
     const parsed = z.object({ id: uuidSchema, changeId: uuidSchema }).safeParse(input);
     if (!parsed.success) return { error: 'Invalid category change' };
@@ -497,7 +472,10 @@ export async function undoTaskCategoryChangeAction(input: unknown): Promise<Acti
           mode: result.taskCategoryMode === 'manual' ? 'manual' : 'automatic',
         },
       );
-      revalidateObjectMutationSurfaces(parsed.data.id);
+      refreshMutation(
+        { kind: 'object-updated', ids: parsed.data.id },
+        'revalidate_object_mutation_surfaces',
+      );
       return { ok: true, id: parsed.data.id };
     } catch (err) {
       return { error: friendlyError(err, 'Failed to undo category change') };
@@ -505,7 +483,7 @@ export async function undoTaskCategoryChangeAction(input: unknown): Promise<Acti
   });
 }
 
-export async function resetTaskCategoryAction(input: unknown): Promise<ActionState> {
+export async function resetTaskCategoryAction(input: unknown): Promise<ObjectActionState> {
   return runSentryServerAction('reset_task_category', async () => {
     const parsed = z.object({ id: uuidSchema }).safeParse(input);
     if (!parsed.success) return { error: 'Invalid task id' };
@@ -523,7 +501,10 @@ export async function resetTaskCategoryAction(input: unknown): Promise<ActionSta
           mode: 'automatic',
         },
       );
-      revalidateObjectMutationSurfaces(parsed.data.id);
+      refreshMutation(
+        { kind: 'object-updated', ids: parsed.data.id },
+        'revalidate_object_mutation_surfaces',
+      );
       return { ok: true, id: parsed.data.id };
     } catch (err) {
       return { error: friendlyError(err, 'Failed to enable automatic category') };
@@ -531,7 +512,7 @@ export async function resetTaskCategoryAction(input: unknown): Promise<ActionSta
   });
 }
 
-export async function retryTaskCategoryAction(input: unknown): Promise<ActionState> {
+export async function retryTaskCategoryAction(input: unknown): Promise<ObjectActionState> {
   return runSentryServerAction('retry_task_category', async () => {
     const parsed = z.object({ id: uuidSchema }).safeParse(input);
     if (!parsed.success) return { error: 'Invalid task id' };
@@ -542,7 +523,10 @@ export async function retryTaskCategoryAction(input: unknown): Promise<ActionSta
         kind: 'user',
         userId: r.userId,
       });
-      revalidateObjectMutationSurfaces(parsed.data.id);
+      refreshMutation(
+        { kind: 'object-updated', ids: parsed.data.id },
+        'revalidate_object_mutation_surfaces',
+      );
       return { ok: true, id: parsed.data.id };
     } catch (err) {
       return { error: friendlyError(err, 'Failed to retry category') };
@@ -550,7 +534,7 @@ export async function retryTaskCategoryAction(input: unknown): Promise<ActionSta
   });
 }
 
-export async function setTaskProjectAction(input: unknown): Promise<ActionState> {
+export async function setTaskProjectAction(input: unknown): Promise<ObjectActionState> {
   return runSentryServerAction('set_task_project', async () => {
     const parsed = z.object({ id: uuidSchema, projectId: uuidSchema.nullable() }).safeParse(input);
     if (!parsed.success) return { error: 'Invalid task project' };
@@ -568,13 +552,17 @@ export async function setTaskProjectAction(input: unknown): Promise<ActionState>
           hasProject: parsed.data.projectId !== null,
         },
       );
-      revalidateObjectMutationSurfaces(
-        [
-          parsed.data.id,
-          parsed.data.projectId,
-          result.project?.projectId,
-          ...result.touchedIds,
-        ].filter((id): id is string => Boolean(id)),
+      refreshMutation(
+        {
+          kind: 'object-updated',
+          ids: [
+            parsed.data.id,
+            parsed.data.projectId,
+            result.project?.projectId,
+            ...result.touchedIds,
+          ].filter((id): id is string => Boolean(id)),
+        },
+        'revalidate_object_mutation_surfaces',
       );
       return { ok: true, id: parsed.data.id };
     } catch (err) {
@@ -585,7 +573,7 @@ export async function setTaskProjectAction(input: unknown): Promise<ActionState>
 
 const metadataPatchSchema = z.record(z.string(), z.unknown());
 
-export async function updateObjectMetadataAction(input: unknown): Promise<ActionState> {
+export async function updateObjectMetadataAction(input: unknown): Promise<ObjectActionState> {
   return runSentryServerAction('update_object_metadata', async () => {
     const parsed = z.object({ id: uuidSchema, metadata: metadataPatchSchema }).safeParse(input);
     if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Invalid input' };
@@ -608,7 +596,10 @@ export async function updateObjectMetadataAction(input: unknown): Promise<Action
           changedFields: result.changedFields,
         }),
       );
-      revalidateObjectMutationSurfaces(parsed.data.id);
+      refreshMutation(
+        { kind: 'object-updated', ids: parsed.data.id },
+        'revalidate_object_mutation_surfaces',
+      );
       return { ok: true, id: parsed.data.id };
     } catch (err) {
       return { error: friendlyError(err, 'Failed to update metadata') };
@@ -626,7 +617,7 @@ const identityFacetKindSchema = z.enum([
   'other',
 ]);
 
-export async function createIdentityFacetAction(input: unknown): Promise<ActionState> {
+export async function createIdentityFacetAction(input: unknown): Promise<ObjectActionState> {
   return runSentryServerAction('create_identity_facet', async () => {
     const parsed = z
       .object({
@@ -645,7 +636,10 @@ export async function createIdentityFacetAction(input: unknown): Promise<ActionS
         value: parsed.data.value,
         actor: { kind: 'user', userId: r.userId },
       });
-      revalidateObjectMutationSurfaces(parsed.data.entityId);
+      refreshMutation(
+        { kind: 'object-updated', ids: parsed.data.entityId },
+        'revalidate_object_mutation_surfaces',
+      );
       return { ok: true, id: facet.id };
     } catch (err) {
       return { error: friendlyError(err, 'Failed to add contact') };
@@ -653,7 +647,7 @@ export async function createIdentityFacetAction(input: unknown): Promise<ActionS
   });
 }
 
-export async function archiveIdentityFacetAction(input: unknown): Promise<ActionState> {
+export async function archiveIdentityFacetAction(input: unknown): Promise<ObjectActionState> {
   return runSentryServerAction('archive_identity_facet', async () => {
     const parsed = z.object({ facetId: uuidSchema, entityId: uuidSchema }).safeParse(input);
     if (!parsed.success) return { error: 'Invalid contact' };
@@ -665,7 +659,10 @@ export async function archiveIdentityFacetAction(input: unknown): Promise<Action
         userId: r.userId,
       });
       if (!archived) return { error: 'Contact not found' };
-      revalidateObjectMutationSurfaces(parsed.data.entityId);
+      refreshMutation(
+        { kind: 'object-updated', ids: parsed.data.entityId },
+        'revalidate_object_mutation_surfaces',
+      );
       return { ok: true, id: parsed.data.facetId };
     } catch (err) {
       return { error: friendlyError(err, 'Failed to remove contact') };
@@ -673,7 +670,7 @@ export async function archiveIdentityFacetAction(input: unknown): Promise<Action
   });
 }
 
-export async function setPersonCompanyAction(input: unknown): Promise<ActionState> {
+export async function setPersonCompanyAction(input: unknown): Promise<ObjectActionState> {
   return runSentryServerAction('set_person_company', async () => {
     const parsed = z.object({ id: uuidSchema, companyId: uuidSchema.nullable() }).safeParse(input);
     if (!parsed.success) return { error: 'Invalid company' };
@@ -684,13 +681,17 @@ export async function setPersonCompanyAction(input: unknown): Promise<ActionStat
         kind: 'user',
         userId: r.userId,
       });
-      revalidateObjectMutationSurfaces(
-        [
-          parsed.data.id,
-          parsed.data.companyId,
-          result.company?.companyId,
-          ...result.touchedIds,
-        ].filter((id): id is string => Boolean(id)),
+      refreshMutation(
+        {
+          kind: 'object-updated',
+          ids: [
+            parsed.data.id,
+            parsed.data.companyId,
+            result.company?.companyId,
+            ...result.touchedIds,
+          ].filter((id): id is string => Boolean(id)),
+        },
+        'revalidate_object_mutation_surfaces',
       );
       return { ok: true, id: parsed.data.id };
     } catch (err) {
@@ -699,7 +700,9 @@ export async function setPersonCompanyAction(input: unknown): Promise<ActionStat
   });
 }
 
-export async function structureContactFromBoardNotesAction(input: unknown): Promise<ActionState> {
+export async function structureContactFromBoardNotesAction(
+  input: unknown,
+): Promise<ObjectActionState> {
   return runSentryServerAction('structure_contact_from_board_notes', async () => {
     const parsed = z
       .object({ entityId: uuidSchema, notes: z.string().trim().min(1).max(5000) })
@@ -762,7 +765,10 @@ export async function structureContactFromBoardNotesAction(input: unknown): Prom
           );
         }
       }
-      revalidateObjectMutationSurfaces(parsed.data.entityId);
+      refreshMutation(
+        { kind: 'object-updated', ids: parsed.data.entityId },
+        'revalidate_object_mutation_surfaces',
+      );
       return { ok: true, id: parsed.data.entityId };
     } catch (err) {
       return { error: friendlyError(err, 'Failed to structure contact info') };
@@ -872,7 +878,7 @@ export async function loadTaskPrimaryProjectsAction(input: unknown): Promise<{
   });
 }
 
-export async function unarchiveObjectAction(input: unknown): Promise<ActionState> {
+export async function unarchiveObjectAction(input: unknown): Promise<ObjectActionState> {
   return runSentryServerAction('unarchive_object', async () => {
     const parsed = z.object({ id: uuidSchema }).safeParse(input);
     if (!parsed.success) return { error: 'Invalid id' };
@@ -890,7 +896,10 @@ export async function unarchiveObjectAction(input: unknown): Promise<ActionState
           changedFields: result.changedFields,
         }),
       );
-      revalidateObjectMutationSurfaces(parsed.data.id);
+      refreshMutation(
+        { kind: 'object-updated', ids: parsed.data.id },
+        'revalidate_object_mutation_surfaces',
+      );
       if (result.changedFields.includes('archivedAt')) {
         trackProductEventBestEffort(
           { kind: 'user', userId: r.userId, teamId: r.teamId },
@@ -905,7 +914,7 @@ export async function unarchiveObjectAction(input: unknown): Promise<ActionState
   });
 }
 
-export async function archiveObjectAction(input: unknown): Promise<ActionState> {
+export async function archiveObjectAction(input: unknown): Promise<ObjectActionState> {
   return runSentryServerAction('archive_object', async () => {
     const parsed = z.object({ id: uuidSchema }).safeParse(input);
     if (!parsed.success) return { error: 'Invalid id' };
@@ -919,7 +928,10 @@ export async function archiveObjectAction(input: unknown): Promise<ActionState> 
       await reconcileCanonicalChangeBestEffort('reconcile_object_archive_after_archive', () =>
         reconcileArchivedObject(r.scope.suggestions, archived),
       );
-      revalidateObjectMutationSurfaces(parsed.data.id);
+      refreshMutation(
+        { kind: 'object-updated', ids: parsed.data.id },
+        'revalidate_object_mutation_surfaces',
+      );
       if (archived.changedFields.includes('archivedAt')) {
         trackProductEventBestEffort(
           { kind: 'user', userId: r.userId, teamId: r.teamId },
@@ -934,7 +946,7 @@ export async function archiveObjectAction(input: unknown): Promise<ActionState> 
   });
 }
 
-export async function pinObjectAction(input: unknown): Promise<ActionState> {
+export async function pinObjectAction(input: unknown): Promise<ObjectActionState> {
   return runSentryServerAction('pin_object', async () => {
     const parsed = z.object({ id: uuidSchema }).safeParse(input);
     if (!parsed.success) return { error: 'Invalid id' };
@@ -942,8 +954,7 @@ export async function pinObjectAction(input: unknown): Promise<ActionState> {
     if (!r.ok) return { error: r.error };
     try {
       await r.scope.pins.pin({ kind: 'object', key: parsed.data.id });
-      bestEffortRevalidatePath('/app', 'revalidate_object_pin');
-      bestEffortRevalidatePath(`/app/objects/${parsed.data.id}`, 'revalidate_object_pin');
+      refreshMutation({ kind: 'object-pinned', id: parsed.data.id }, 'revalidate_object_pin');
       return { ok: true };
     } catch (err) {
       return { error: friendlyError(err, 'Failed to pin object') };
@@ -951,7 +962,7 @@ export async function pinObjectAction(input: unknown): Promise<ActionState> {
   });
 }
 
-export async function unpinObjectAction(input: unknown): Promise<ActionState> {
+export async function unpinObjectAction(input: unknown): Promise<ObjectActionState> {
   return runSentryServerAction('unpin_object', async () => {
     const parsed = z.object({ id: uuidSchema }).safeParse(input);
     if (!parsed.success) return { error: 'Invalid id' };
@@ -959,8 +970,7 @@ export async function unpinObjectAction(input: unknown): Promise<ActionState> {
     if (!r.ok) return { error: r.error };
     try {
       await r.scope.pins.unpin({ kind: 'object', key: parsed.data.id });
-      bestEffortRevalidatePath('/app', 'revalidate_object_unpin');
-      bestEffortRevalidatePath(`/app/objects/${parsed.data.id}`, 'revalidate_object_unpin');
+      refreshMutation({ kind: 'object-pinned', id: parsed.data.id }, 'revalidate_object_unpin');
       return { ok: true };
     } catch (err) {
       return { error: friendlyError(err, 'Failed to unpin object') };
@@ -972,7 +982,7 @@ const bulkObjectIdsSchema = z.object({
   ids: z.array(uuidSchema).min(1).max(50),
 });
 
-export async function bulkArchiveObjectsAction(input: unknown): Promise<ActionState> {
+export async function bulkArchiveObjectsAction(input: unknown): Promise<ObjectActionState> {
   return runSentryServerAction('bulk_archive_objects', async () => {
     const parsed = bulkObjectIdsSchema.safeParse(input);
     if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Invalid input' };
@@ -999,7 +1009,7 @@ export async function bulkArchiveObjectsAction(input: unknown): Promise<ActionSt
           ),
         ),
       );
-      revalidateObjectMutationSurfaces(ids);
+      refreshMutation({ kind: 'object-updated', ids: ids }, 'revalidate_object_mutation_surfaces');
       if (archivedObjects.some((object) => object.changedFields.includes('archivedAt'))) {
         trackProductEventBestEffort(
           { kind: 'user', userId: r.userId, teamId: r.teamId },
@@ -1020,7 +1030,7 @@ const mergeObjectsSchema = z.object({
   suggestionItemId: uuidSchema.optional(),
 });
 
-export async function mergeObjectsAction(input: unknown): Promise<ActionState> {
+export async function mergeObjectsAction(input: unknown): Promise<ObjectActionState> {
   return runSentryServerAction('merge_objects', async () => {
     const parsed = mergeObjectsSchema.safeParse(input);
     if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Invalid input' };
@@ -1059,16 +1069,10 @@ export async function mergeObjectsAction(input: unknown): Promise<ActionState> {
           });
         });
       }
-      bestEffortRevalidatePath('/app/objects', 'revalidate_object_merge');
-      bestEffortRevalidatePath('/app/work', 'revalidate_object_merge');
-      bestEffortRevalidatePath('/app/approvals', 'revalidate_object_merge');
-      bestEffortRevalidatePath('/app/inbox', 'revalidate_object_merge');
-      bestEffortRevalidatePath(`/app/objects/${survivorId}`, 'revalidate_object_merge');
-      for (const id of parsed.data.mergedIds) {
-        bestEffortRevalidatePath(`/app/objects/${id}`, 'revalidate_object_merge');
-      }
-      bestEffortRevalidatePath('/app/boards', 'revalidate_object_merge', 'layout');
-      bestEffortRevalidatePath('/app/tasks', 'revalidate_object_merge');
+      refreshMutation(
+        { kind: 'objects-merged', survivorId, mergedIds: parsed.data.mergedIds },
+        'revalidate_object_merge',
+      );
       return { ok: true, id: survivorId };
     } catch (err) {
       return { error: friendlyError(err, 'Failed to merge objects') };
@@ -1076,7 +1080,7 @@ export async function mergeObjectsAction(input: unknown): Promise<ActionState> {
   });
 }
 
-export async function findObjectCleanupSuggestionsAction(): Promise<ActionState> {
+export async function findObjectCleanupSuggestionsAction(): Promise<ObjectActionState> {
   return runSentryServerAction('find_object_cleanup_suggestions', async () => {
     const r = await resolveScope();
     if (!r.ok) return { error: r.error };
@@ -1089,9 +1093,7 @@ export async function findObjectCleanupSuggestionsAction(): Promise<ActionState>
         },
         { jobIdSuffix: 'manual' },
       );
-      bestEffortRevalidatePath('/app/objects', 'revalidate_object_cleanup_scan');
-      bestEffortRevalidatePath('/app/approvals', 'revalidate_object_cleanup_scan');
-      bestEffortRevalidatePath('/app/inbox', 'revalidate_object_cleanup_scan');
+      refreshMutation({ kind: 'object-cleanup' }, 'revalidate_object_cleanup_scan');
       return {
         ok: true,
         message: result.enqueued ? 'Scan queued' : 'Scan already queued',
@@ -1102,7 +1104,7 @@ export async function findObjectCleanupSuggestionsAction(): Promise<ActionState>
   });
 }
 
-export async function repairObjectMemoryAction(input: unknown): Promise<ActionState> {
+export async function repairObjectMemoryAction(input: unknown): Promise<ObjectActionState> {
   return runSentryServerAction('repair_object_memory', async () => {
     const parsed = z.object({ id: uuidSchema }).safeParse(input);
     if (!parsed.success) return { error: 'Invalid id' };
@@ -1121,9 +1123,10 @@ export async function repairObjectMemoryAction(input: unknown): Promise<ActionSt
         },
         { jobIdSuffix: `memory-repair:${parsed.data.id}` },
       );
-      bestEffortRevalidatePath(`/app/objects/${parsed.data.id}`, 'revalidate_object_memory_repair');
-      bestEffortRevalidatePath('/app/approvals', 'revalidate_object_memory_repair');
-      bestEffortRevalidatePath('/app/inbox', 'revalidate_object_memory_repair');
+      refreshMutation(
+        { kind: 'object-memory-repair', id: parsed.data.id },
+        'revalidate_object_memory_repair',
+      );
       return {
         ok: true,
         message: result.enqueued ? 'Memory repair queued' : 'Memory repair already queued',
@@ -1140,7 +1143,7 @@ const relationshipSchema = z.object({
   kind: z.enum(['parent', 'child', 'related', 'blocks', 'blocked_by', 'duplicate_of']),
 });
 
-export async function addRelationshipAction(input: unknown): Promise<ActionState> {
+export async function addRelationshipAction(input: unknown): Promise<ObjectActionState> {
   return runSentryServerAction('add_relationship', async () => {
     const parsed = relationshipSchema.safeParse(input);
     if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Invalid input' };
@@ -1152,8 +1155,14 @@ export async function addRelationshipAction(input: unknown): Promise<ActionState
         actorUserId: r.userId,
       });
       if (!relationship) return { error: 'Relationship could not be created' };
-      bestEffortRevalidateObjectDetail(parsed.data.fromEntityId, 'revalidate_object_relationship');
-      bestEffortRevalidateObjectDetail(parsed.data.toEntityId, 'revalidate_object_relationship');
+      refreshMutation(
+        { kind: 'object-detail', id: parsed.data.fromEntityId },
+        'revalidate_object_relationship',
+      );
+      refreshMutation(
+        { kind: 'object-detail', id: parsed.data.toEntityId },
+        'revalidate_object_relationship',
+      );
       return { ok: true, id: relationship.id };
     } catch (err) {
       return { error: friendlyError(err, 'Failed to link') };
@@ -1161,7 +1170,7 @@ export async function addRelationshipAction(input: unknown): Promise<ActionState
   });
 }
 
-export async function removeRelationshipAction(input: unknown): Promise<ActionState> {
+export async function removeRelationshipAction(input: unknown): Promise<ObjectActionState> {
   return runSentryServerAction('remove_relationship', async () => {
     const parsed = z
       .object({ id: uuidSchema, entityId: uuidSchema, otherEntityId: uuidSchema.optional() })
@@ -1182,7 +1191,7 @@ export async function removeRelationshipAction(input: unknown): Promise<ActionSt
         ),
       );
       for (const objectId of revalidateIds) {
-        bestEffortRevalidateObjectDetail(objectId, 'revalidate_object_relationship');
+        refreshMutation({ kind: 'object-detail', id: objectId }, 'revalidate_object_relationship');
       }
       return { ok: true };
     } catch (err) {
@@ -1198,14 +1207,7 @@ const noteCreateSchema = z.object({
   body: z.string().trim().min(1).max(5000),
 });
 
-function bestEffortRevalidateObjectDetail(entityId: string, operation: string): void {
-  bestEffortRevalidatePath(`/app/objects/${entityId}`, operation);
-  bestEffortRevalidatePath('/app/tasks', operation);
-  bestEffortRevalidatePath('/app/work', operation);
-  bestEffortRevalidatePath('/app/inbox', operation);
-}
-
-export async function createNoteAction(input: unknown): Promise<ActionState> {
+export async function createNoteAction(input: unknown): Promise<ObjectActionState> {
   return runSentryServerAction('create_note', async () => {
     const parsed = noteCreateSchema.safeParse(input);
     if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Invalid input' };
@@ -1220,7 +1222,7 @@ export async function createNoteAction(input: unknown): Promise<ActionState> {
     } catch (err) {
       return { error: friendlyError(err, 'Failed to add note') };
     }
-    bestEffortRevalidateObjectDetail(parsed.data.entityId, 'revalidate_object_note');
+    refreshMutation({ kind: 'object-detail', id: parsed.data.entityId }, 'revalidate_object_note');
     return { ok: true, id: note.id };
   });
 }
@@ -1231,7 +1233,7 @@ const noteUpdateSchema = z.object({
   body: z.string().trim().min(1).max(5000),
 });
 
-export async function updateNoteAction(input: unknown): Promise<ActionState> {
+export async function updateNoteAction(input: unknown): Promise<ObjectActionState> {
   return runSentryServerAction('update_note', async () => {
     const parsed = noteUpdateSchema.safeParse(input);
     if (!parsed.success) return { error: 'Invalid input' };
@@ -1244,7 +1246,10 @@ export async function updateNoteAction(input: unknown): Promise<ActionState> {
         actorUserId: r.userId,
       });
       if (!ok) return { error: 'Note not found' };
-      bestEffortRevalidateObjectDetail(parsed.data.entityId, 'revalidate_object_note');
+      refreshMutation(
+        { kind: 'object-detail', id: parsed.data.entityId },
+        'revalidate_object_note',
+      );
       return { ok: true };
     } catch (err) {
       return { error: friendlyError(err, 'Failed to update note') };
@@ -1252,7 +1257,7 @@ export async function updateNoteAction(input: unknown): Promise<ActionState> {
   });
 }
 
-export async function deleteNoteAction(input: unknown): Promise<ActionState> {
+export async function deleteNoteAction(input: unknown): Promise<ObjectActionState> {
   return runSentryServerAction('delete_note', async () => {
     const parsed = z.object({ noteId: uuidSchema, entityId: uuidSchema }).safeParse(input);
     if (!parsed.success) return { error: 'Invalid id' };
@@ -1264,7 +1269,10 @@ export async function deleteNoteAction(input: unknown): Promise<ActionState> {
         actorUserId: r.userId,
       });
       if (!ok) return { error: 'Note not found' };
-      bestEffortRevalidateObjectDetail(parsed.data.entityId, 'revalidate_object_note');
+      refreshMutation(
+        { kind: 'object-detail', id: parsed.data.entityId },
+        'revalidate_object_note',
+      );
       return { ok: true };
     } catch (err) {
       return { error: friendlyError(err, 'Failed to delete note') };
@@ -1274,7 +1282,7 @@ export async function deleteNoteAction(input: unknown): Promise<ActionState> {
 
 // ---------- Summaries ----------
 
-export async function generateObjectSummaryAction(input: unknown): Promise<ActionState> {
+export async function generateObjectSummaryAction(input: unknown): Promise<ObjectActionState> {
   return runSentryServerAction('generate_object_summary', async () => {
     const parsed = z.object({ entityId: uuidSchema }).safeParse(input);
     if (!parsed.success) return { error: 'Invalid id' };
@@ -1291,7 +1299,10 @@ export async function generateObjectSummaryAction(input: unknown): Promise<Actio
         };
       }
       if (!result.enqueued) return { error: 'Summary generation is already queued' };
-      bestEffortRevalidateObjectDetail(parsed.data.entityId, 'revalidate_object_summary');
+      refreshMutation(
+        { kind: 'object-detail', id: parsed.data.entityId },
+        'revalidate_object_summary',
+      );
       return { ok: true, id: result.jobId ?? parsed.data.entityId };
     } catch (err) {
       return { error: friendlyError(err, 'Failed to queue summary') };
@@ -1301,7 +1312,7 @@ export async function generateObjectSummaryAction(input: unknown): Promise<Actio
 
 // ---------- Notifications ----------
 
-export async function markNotificationReadAction(id: string): Promise<ActionState> {
+export async function markNotificationReadAction(id: string): Promise<ObjectActionState> {
   return runSentryServerAction('mark_notification_read', async () => {
     const parsed = uuidSchema.safeParse(id);
     if (!parsed.success) return { error: 'Invalid id' };
@@ -1316,7 +1327,7 @@ export async function markNotificationReadAction(id: string): Promise<ActionStat
       // as { error } instead of throwing into the client and stranding
       // the optimistic read state.
       await r.scope.objects.markNotificationRead(parsed.data);
-      bestEffortRevalidatePath('/app/inbox', 'revalidate_object_notification');
+      refreshMutation({ kind: 'notifications-read' }, 'revalidate_object_notification');
       return { ok: true };
     } catch (err) {
       return { error: friendlyError(err, 'Failed to mark notification read') };
@@ -1324,13 +1335,13 @@ export async function markNotificationReadAction(id: string): Promise<ActionStat
   });
 }
 
-export async function markAllNotificationsReadAction(): Promise<ActionState> {
+export async function markAllNotificationsReadAction(): Promise<ObjectActionState> {
   return runSentryServerAction('mark_all_notifications_read', async () => {
     const r = await resolveScope();
     if (!r.ok) return { error: r.error };
     try {
       await r.scope.objects.markAllNotificationsRead();
-      bestEffortRevalidatePath('/app/inbox', 'revalidate_object_notification');
+      refreshMutation({ kind: 'notifications-read' }, 'revalidate_object_notification');
       return { ok: true };
     } catch (err) {
       return { error: friendlyError(err, 'Failed to mark notifications read') };
@@ -1345,7 +1356,7 @@ const reviewSuggestionSchema = z.object({
   entityId: uuidSchema,
 });
 
-export async function acceptObjectChangeAction(input: unknown): Promise<ActionState> {
+export async function acceptObjectChangeAction(input: unknown): Promise<ObjectActionState> {
   return runSentryServerAction('accept_object_change', async () => {
     const parsed = reviewSuggestionSchema.safeParse(input);
     if (!parsed.success) return { error: 'Invalid id' };
@@ -1366,14 +1377,10 @@ export async function acceptObjectChangeAction(input: unknown): Promise<ActionSt
           isBulk: false,
         },
       );
-      bestEffortRevalidateObjectDetail(parsed.data.entityId, 'revalidate_object_change_accept');
-      bestEffortRevalidatePath('/app/inbox', 'revalidate_object_change_accept');
-      // Accepting may change status / stage / priority — same revalidation
-      // set as updateObjectAction so kanban / task columns reflect the move.
-      bestEffortRevalidatePath('/app/objects', 'revalidate_object_change_accept');
-      bestEffortRevalidatePath('/app/work', 'revalidate_object_change_accept');
-      bestEffortRevalidatePath('/app/boards', 'revalidate_object_change_accept', 'layout');
-      bestEffortRevalidatePath('/app/tasks', 'revalidate_object_change_accept');
+      refreshMutation(
+        { kind: 'object-change-accepted', id: parsed.data.entityId },
+        'revalidate_object_change_accept',
+      );
       return { ok: true };
     } catch (err) {
       return {
@@ -1386,7 +1393,7 @@ export async function acceptObjectChangeAction(input: unknown): Promise<ActionSt
   });
 }
 
-export async function rejectObjectChangeAction(input: unknown): Promise<ActionState> {
+export async function rejectObjectChangeAction(input: unknown): Promise<ObjectActionState> {
   return runSentryServerAction('reject_object_change', async () => {
     const parsed = reviewSuggestionSchema.safeParse(input);
     if (!parsed.success) return { error: 'Invalid id' };
@@ -1404,8 +1411,10 @@ export async function rejectObjectChangeAction(input: unknown): Promise<ActionSt
           isBulk: false,
         },
       );
-      bestEffortRevalidateObjectDetail(parsed.data.entityId, 'revalidate_object_change_reject');
-      bestEffortRevalidatePath('/app/inbox', 'revalidate_object_change_reject');
+      refreshMutation(
+        { kind: 'object-detail', id: parsed.data.entityId },
+        'revalidate_object_change_reject',
+      );
       return { ok: true };
     } catch (err) {
       return {

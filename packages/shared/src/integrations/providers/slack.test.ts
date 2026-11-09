@@ -106,7 +106,7 @@ describe('slackProvider', () => {
       ),
     );
 
-    const resources = await slackProvider.listSyncableResources({} as never, {
+    const resources = await slackProvider.browseResources({} as never, {
       access_token: 'xoxb-token',
     });
 

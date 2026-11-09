@@ -10,6 +10,10 @@ import {
   queue,
   withTeam,
 } from '@timeline/shared';
+import {
+  driveSyncIntentKind,
+  driveTargetCompletesFeedRecovery,
+} from '@timeline/shared/integrations/google-drive-scheduling';
 import { assertActivePrincipal } from '@timeline/shared/platform-admin/runtime';
 import {
   payloadDigestFromMetadata,
@@ -18,6 +22,8 @@ import {
 import { Worker, type Job } from 'bullmq';
 import { and, eq, sql } from 'drizzle-orm';
 
+import { withWorkerAiBilling, workerBillingJobOptions } from '#src/billing-context.js';
+import { createDriveCaptureServices } from '#src/integrations/drive-capture-services.js';
 import { captureWorkerException, captureWorkerJobFailure } from '#src/monitoring.js';
 import { guardWorkerProcessor } from '#src/platform-worker.js';
 
@@ -36,6 +42,7 @@ const HARVESTED_DOCUMENT_SOURCE_SNAPSHOT_VERSION = 'integration-document-source-
 const PAGINATION_LOCK_RETRY_DELAY_MS = 5_000;
 const MAX_PAGINATION_LOCK_RETRY_ATTEMPTS = 3;
 const PAGINATION_LOCK_DURABLE_RETRY_DELAY_MS = 60_000;
+const ZERO_UUID = '00000000-0000-0000-0000-000000000000';
 
 type TargetedIntegrationSyncJob = Extract<queue.IntegrationSyncJobData, { kind: 'targeted' }>;
 interface ContinuationJob {
@@ -59,6 +66,64 @@ function isProviderPaginationContinuation(
   return target?.reason === 'provider_pagination_continuation';
 }
 
+function isRetainedDriveTarget(
+  target: TargetedIntegrationSyncJob | undefined,
+): target is TargetedIntegrationSyncJob {
+  return driveSyncIntentKind(target) !== null;
+}
+
+async function rescheduleLockBlockedTarget(
+  db: Db,
+  integrationId: string,
+  target: TargetedIntegrationSyncJob | undefined,
+): Promise<void> {
+  if (!isProviderPaginationContinuation(target) && !isRetainedDriveTarget(target)) return;
+  const attempt = target.continuationAttempt ?? 0;
+  const continuationAttempt = attempt < MAX_PAGINATION_LOCK_RETRY_ATTEMPTS ? attempt + 1 : attempt;
+  const retryDelayMs =
+    attempt < MAX_PAGINATION_LOCK_RETRY_ATTEMPTS
+      ? PAGINATION_LOCK_RETRY_DELAY_MS
+      : PAGINATION_LOCK_DURABLE_RETRY_DELAY_MS;
+  // The current job has already acknowledged its prior outbox handoff.
+  // Persist the next target before asking Redis to delay it; otherwise an
+  // enqueue rejection would strand Drive watch work after BullMQ marks this
+  // lock-miss as a successful skip.
+  await integrationsLib.adminRecordPendingIntegrationSyncContinuations(db, integrationId, [
+    {
+      resourceType: target.resourceType,
+      externalId: target.externalId,
+      ...(target.surface ? { surface: target.surface } : {}),
+      retryAt: new Date(Date.now() + retryDelayMs),
+      continuationAttempt,
+    },
+  ]);
+  const claimed = await integrationsLib.adminClaimPendingIntegrationSyncContinuations(
+    db,
+    integrationId,
+  );
+  await handoffClaimedContinuations(
+    db,
+    claimed.map((claim) => {
+      const job = continuationJob(
+        { id: integrationId, teamId: target.teamId },
+        claim.continuation,
+        claim.continuation.retryAt,
+        claim,
+      );
+      if (isRetainedDriveTarget(target) && isMatchingContinuation(target, claim.continuation)) {
+        return {
+          ...job,
+          data: {
+            ...job.data,
+            ...(target.triggeredBy ? { triggeredBy: target.triggeredBy } : {}),
+          },
+        };
+      }
+      return job;
+    }),
+  );
+}
+
 function isMatchingContinuation(
   target: TargetedIntegrationSyncJob,
   continuation: integrationsLib.SyncContinuation,
@@ -75,7 +140,7 @@ function includeCurrentContinuationWhenMissing(
   target: TargetedIntegrationSyncJob | undefined,
 ): void {
   if (
-    isProviderPaginationContinuation(target) &&
+    (isProviderPaginationContinuation(target) || isRetainedDriveTarget(target)) &&
     !continuations.some((continuation) => isMatchingContinuation(target, continuation))
   ) {
     continuations.push({
@@ -130,6 +195,37 @@ function retainPausedMondayTarget(
       retryAt,
     ),
   );
+}
+
+function retainPausedDriveTarget(
+  integration: Pick<integrationsLib.IntegrationRow, 'id' | 'teamId' | 'provider'>,
+  target: TargetedIntegrationSyncJob | undefined,
+  continuationJobs: ContinuationJob[],
+  retryAt?: Date,
+): void {
+  if (integration.provider !== 'google_drive' || !target) return;
+  if (driveSyncIntentKind(target) === null) return;
+  if (
+    continuationJobs.some(
+      (job) =>
+        job.data.resourceType === target.resourceType && job.data.externalId === target.externalId,
+    )
+  ) {
+    return;
+  }
+  continuationJobs.push({
+    data: {
+      kind: 'targeted',
+      integrationId: integration.id,
+      teamId: integration.teamId,
+      resourceType: target.resourceType,
+      externalId: target.externalId,
+      ...(target.triggeredBy ? { triggeredBy: target.triggeredBy } : {}),
+      ...(target.surface ? { surface: target.surface } : {}),
+      ...(target.reason ? { reason: target.reason } : {}),
+    },
+    ...(retryAt ? { retryAt } : {}),
+  });
 }
 
 async function retainPausedBackfill(
@@ -599,43 +695,7 @@ export async function runOneIntegration(
   if (!lockedRow?.locked) {
     log.info({ integrationId, kind }, 'integration sync already running — skipping this tick');
     reserved.release();
-    if (isProviderPaginationContinuation(target)) {
-      const attempt = target.continuationAttempt ?? 0;
-      const continuationAttempt =
-        attempt < MAX_PAGINATION_LOCK_RETRY_ATTEMPTS ? attempt + 1 : attempt;
-      const retryDelayMs =
-        attempt < MAX_PAGINATION_LOCK_RETRY_ATTEMPTS
-          ? PAGINATION_LOCK_RETRY_DELAY_MS
-          : PAGINATION_LOCK_DURABLE_RETRY_DELAY_MS;
-      // The current job has already acknowledged its prior outbox handoff.
-      // Persist the next target before asking Redis to delay it; otherwise an
-      // enqueue rejection would strand the continuation after BullMQ exhausts
-      // this job's own retries.
-      await integrationsLib.adminRecordPendingIntegrationSyncContinuations(db, integrationId, [
-        {
-          resourceType: target.resourceType,
-          externalId: target.externalId,
-          ...(target.surface ? { surface: target.surface } : {}),
-          retryAt: new Date(Date.now() + retryDelayMs),
-          continuationAttempt,
-        },
-      ]);
-      const claimed = await integrationsLib.adminClaimPendingIntegrationSyncContinuations(
-        db,
-        integrationId,
-      );
-      await handoffClaimedContinuations(
-        db,
-        claimed.map((claim) =>
-          continuationJob(
-            { id: integrationId, teamId: target.teamId },
-            claim.continuation,
-            claim.continuation.retryAt,
-            claim,
-          ),
-        ),
-      );
-    }
+    await rescheduleLockBlockedTarget(db, integrationId, target);
     return;
   }
   const continuationJobs: ContinuationJob[] = [];
@@ -662,6 +722,17 @@ export async function runOneIntegration(
           providerConnectionId: integration.providerConnectionId,
         },
         `integration health paused (${integration.healthPauseKind ?? 'unknown'}) — skipping sync integrationId=${integrationId} provider=${integration.provider} providerConnectionId=${integration.providerConnectionId ?? 'none'}`,
+      );
+      // Health pause is not an account/budget pause row, but delayed Drive
+      // watch jobs have already advanced their debounce cursor. Dropping them
+      // here loses the capture until the next change. Retain the same way
+      // those pause paths do, with a short retry so resume/retry can pick up.
+      integrationForHandoff = integration;
+      retainPausedDriveTarget(
+        integration,
+        target,
+        continuationJobs,
+        new Date(Date.now() + PAGINATION_LOCK_DURABLE_RETRY_DELAY_MS),
       );
       return;
     }
@@ -760,6 +831,12 @@ export async function runOneIntegration(
           continuationJobs,
           latestRetryAt(pause?.retryAt, providerBudgetPause?.retryAt),
         );
+        retainPausedDriveTarget(
+          integration,
+          target,
+          continuationJobs,
+          latestRetryAt(pause?.retryAt, providerBudgetPause?.retryAt),
+        );
       }
       await retainPausedBackfill(
         db,
@@ -776,6 +853,12 @@ export async function runOneIntegration(
         'provider pagination continuation is leased by another worker — skipping provider sync',
       );
       retainPausedMondayTarget(
+        integration,
+        target,
+        continuationJobs,
+        latestRetryAt(pause?.retryAt, providerBudgetPause?.retryAt),
+      );
+      retainPausedDriveTarget(
         integration,
         target,
         continuationJobs,
@@ -814,6 +897,7 @@ export async function runOneIntegration(
           retryAt: pause.retryAt,
         });
       }
+      retainPausedDriveTarget(integration, target, continuationJobs, pause.retryAt);
       return;
     }
     if (providerBudgetPause) {
@@ -861,6 +945,7 @@ export async function runOneIntegration(
           retryAt: providerBudgetPause.retryAt,
         });
       }
+      retainPausedDriveTarget(integration, target, continuationJobs, providerBudgetPause.retryAt);
       return;
     }
     if (integration.provider === 'slack') {
@@ -884,7 +969,7 @@ export async function runOneIntegration(
     const allSelections = await integrationsLib.adminListSelections(db, integrationId);
     let selections =
       kind === 'targeted' && target
-        ? targetedSelections(integration.provider, allSelections, target)
+        ? provider.syncSelectionPolicy.resolveTarget(allSelections, target)
         : allSelections;
     if (kind === 'targeted' && selections.length === 0) {
       await integrationsLib.adminRecordAudit(
@@ -917,8 +1002,7 @@ export async function runOneIntegration(
       harvestableUserId !== null
         ? await integrationsLib.adminVerifyTeamMember(db, integration.teamId, harvestableUserId)
         : false;
-    const providerSupportsDocumentHarvest =
-      integration.provider === 'google_drive' || integration.provider === 'monday';
+    const providerSupportsDocumentHarvest = integration.provider === 'monday';
     if (providerSupportsDocumentHarvest && harvestableUserId !== null && !harvestUserStillMember) {
       await integrationsLib.adminRecordAudit(
         db,
@@ -930,6 +1014,25 @@ export async function runOneIntegration(
     }
     const harvestEnabled =
       providerSupportsDocumentHarvest && harvestableUserId !== null && harvestUserStillMember;
+    const teamScope = withTeam(db, integration.teamId, ZERO_UUID, { skipMembershipCheck: true });
+
+    const scheduleTargetedSync: NonNullable<
+      integrationsLib.SyncContext['scheduleTargetedSync']
+    > = async (task, opts) => {
+      await queue.enqueueIntegrationSyncJob(
+        {
+          kind: 'targeted',
+          integrationId: task.integrationId,
+          teamId: task.teamId,
+          triggeredBy: task.triggeredBy,
+          resourceType: task.resourceType,
+          externalId: task.externalId,
+          ...(task.surface ? { surface: task.surface } : {}),
+          ...(task.reason ? { reason: task.reason } : {}),
+        },
+        opts,
+      );
+    };
 
     const ctx: integrationsLib.SyncContext = {
       async writeEvents(events) {
@@ -961,6 +1064,9 @@ export async function runOneIntegration(
         return Promise.resolve();
       },
       async loadCursor(resourceType) {
+        if (resourceType.startsWith('drive.')) {
+          return teamScope.integrations.loadCursor(integrationId, resourceType);
+        }
         return integrationsLib.adminLoadCursor(db, integrationId, resourceType);
       },
       async persistTokens(tokens) {
@@ -970,6 +1076,7 @@ export async function runOneIntegration(
         // rather than re-refreshing every tick. AES-256-GCM at rest.
         await integrationsLib.adminPersistTokens(db, integrationId, tokens);
       },
+      scheduleTargetedSync,
       ...(harvestEnabled && harvestableUserId
         ? {
             async harvestDocument(input) {
@@ -983,6 +1090,14 @@ export async function runOneIntegration(
           }
         : {}),
     };
+    if (integration.provider === 'google_drive') {
+      ctx.drive = createDriveCaptureServices({
+        integrations: teamScope.integrations,
+        teamId: integration.teamId,
+        integrationId,
+        scheduleTargetedSync,
+      });
+    }
     // Completed selections remain quiet while larger selections finish their pages.
     const recovery = (await ctx.loadCursor('sync.recovery')) as {
       completed?: Record<string, string>;
@@ -994,7 +1109,7 @@ export async function runOneIntegration(
     if (
       kind === 'incremental' &&
       triggeredBy === 'reconcile' &&
-      integration.provider !== 'monday'
+      provider.syncSelectionPolicy.recovery !== 'all'
     ) {
       const dueSelections = selections.filter((selection) => {
         const at = completed[resourceKey(selection)];
@@ -1004,8 +1119,7 @@ export async function runOneIntegration(
       });
       // These providers advance a shared feed/collection cursor. Filtering only
       // some selections would consume changes for selections omitted from this run.
-      const sharedCursor =
-        integration.provider === 'google_drive' || integration.provider === 'linear';
+      const sharedCursor = provider.syncSelectionPolicy.recovery === 'shared_cursor';
       if (!sharedCursor || dueSelections.length === 0) selections = dueSelections;
     }
     if (kind !== 'targeted' && selections.length > 1) {
@@ -1086,8 +1200,7 @@ export async function runOneIntegration(
           target?.surface !== 'backfill_restart');
       if (
         isRecovery &&
-        integration.provider !== 'monday' &&
-        !(integration.provider === 'github' && kind === 'targeted' && target?.surface) &&
+        recordsFeedRecoveryCompletion(integration.provider, kind, target) &&
         partialFailures.length === 0
       ) {
         let completedAny = false;
@@ -1438,70 +1551,17 @@ export async function runOneIntegration(
   }
 }
 
-function targetedSelections(
+function recordsFeedRecoveryCompletion(
   provider: NativeSyncProvider,
-  selections: { kind: string; externalId: string }[],
-  target: TargetedIntegrationSyncJob,
-): { kind: string; externalId: string }[] {
-  if (
-    (provider === 'monday' || provider === 'google_drive') &&
-    target.resourceType === `${provider}.webhook`
-  ) {
-    return [{ kind: target.resourceType, externalId: target.externalId }];
+  kind: 'backfill' | 'incremental' | 'targeted',
+  target: TargetedIntegrationSyncJob | undefined,
+): boolean {
+  if (provider === 'monday') return false;
+  if (provider === 'github' && kind === 'targeted' && target?.surface) return false;
+  if (provider === 'google_drive' && kind === 'targeted') {
+    return driveTargetCompletesFeedRecovery(target);
   }
-  if (
-    provider === 'google_drive' &&
-    target.resourceType === 'drive.changes' &&
-    target.reason === 'provider_pagination_continuation'
-  )
-    return selections;
-  if (provider === 'linear' && target.reason === 'provider_pagination_continuation')
-    return selections;
-  const exact = selections.filter(
-    (selection) =>
-      selection.kind === target.resourceType && selection.externalId === target.externalId,
-  );
-  if (exact.length > 0) return exact;
-
-  if (provider === 'github' && target.resourceType === 'github.repo') {
-    const owner = target.externalId.split('/')[0];
-    if (
-      owner &&
-      selections.some(
-        (selection) => selection.kind === 'github.org' && selection.externalId === owner,
-      )
-    ) {
-      return [{ kind: 'github.repo', externalId: target.externalId }];
-    }
-  }
-
-  if (provider === 'sentry' && target.resourceType === 'sentry.project') {
-    const [orgSlug, projectSlug] = target.externalId.split('/');
-    if (
-      orgSlug &&
-      projectSlug &&
-      selections.some(
-        (selection) => selection.kind === 'sentry.org' && selection.externalId === orgSlug,
-      )
-    ) {
-      return [{ kind: 'sentry.project', externalId: target.externalId }];
-    }
-  }
-
-  if (provider === 'monday' && target.resourceType === 'monday.item') {
-    const [boardId, itemId] = target.externalId.split(':');
-    if (
-      boardId &&
-      itemId &&
-      selections.some(
-        (selection) => selection.kind === 'monday.board' && selection.externalId === boardId,
-      )
-    ) {
-      return [{ kind: 'monday.board', externalId: boardId }];
-    }
-  }
-
-  return [];
+  return true;
 }
 
 function reconciliationDue(
@@ -1633,13 +1693,25 @@ export function startIntegrationSyncWorker(
         await handleTick(deps.db);
         return { ticked: true, durationMs: Date.now() - startedAt };
       }
-      await runOneIntegration(
-        deps.db,
-        data.integrationId,
-        data.kind,
-        data.kind === 'targeted' ? data : undefined,
-        data.triggeredBy,
-      );
+      const run = () =>
+        runOneIntegration(
+          deps.db,
+          data.integrationId,
+          data.kind,
+          data.kind === 'targeted' ? data : undefined,
+          data.triggeredBy,
+        );
+      if (data.kind === 'targeted' && data.resourceType === 'drive.file') {
+        await withWorkerAiBilling(
+          deps.db,
+          data.teamId,
+          'drive_capture',
+          run,
+          workerBillingJobOptions(job),
+        );
+      } else {
+        await run();
+      }
       return {
         integrationId: data.integrationId,
         kind: data.kind,

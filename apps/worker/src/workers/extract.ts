@@ -20,6 +20,7 @@ import { DelayedError, UnrecoverableError, Worker, type Job } from 'bullmq';
 import { and, asc, desc, eq, inArray, isNull, lt, sql } from 'drizzle-orm';
 
 import { withWorkerAiBilling, workerBillingJobOptions } from '#src/billing-context.js';
+import { finishIngestJob } from '#src/ingest-job-result.js';
 import { captureWorkerException, captureWorkerJobFailure } from '#src/monitoring.js';
 import { guardWorkerProcessor } from '#src/platform-worker.js';
 
@@ -293,6 +294,7 @@ export async function processExtractJobForTests(
 
   const result = await (io.chatStructured ?? llm.chatStructured)({
     schema: extract.extractionResultSchema,
+    normalizeOutput: extract.normalizeExtractionModelOutput,
     prompt,
     instructions: extract.EXTRACTION_SYSTEM_PROMPT,
     model: modelId,
@@ -315,14 +317,7 @@ export async function processExtractJobForTests(
     mentions: (typeof extractionResult.facts)[number]['mentions'];
   }[] = [];
   for (const fact of extractionResult.facts) {
-    const entityIds = await extract.resolveMentions(
-      deps.db,
-      teamId,
-      fact.mentions,
-      fact.statement,
-      {},
-      { createIfMissing: false, updateAliases: false },
-    );
+    const entityIds = await extract.lookupMentions(deps.db, teamId, fact.mentions, fact.statement);
     resolvedFacts.push({
       statement: fact.statement,
       confidence: fact.confidence,
@@ -559,11 +554,7 @@ export function startExtractWorker(deps: ExtractWorkerDeps): Worker<queue.Extrac
         () => processExtractJobForTests(deps, job.data),
         workerBillingJobOptions(job, token),
       );
-      if (integrations.isDelayedIngestResult(result)) {
-        await job.moveToDelayed(Date.now() + result.retryAfterMs, token);
-        throw new DelayedError();
-      }
-      return result;
+      return finishIngestJob(job, result, token);
     }),
     {
       connection: queue.getRedisConnection(),

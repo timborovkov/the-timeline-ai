@@ -23,7 +23,8 @@ const fakes = vi.hoisted(() => ({
   getProvider: vi.fn(),
   adminReconcileIntegrationWebhookSubscriptions: vi.fn(),
   adminRecordPendingIntegrationSyncContinuations: vi.fn(),
-  listSyncableResources: vi.fn(),
+  browseResources: vi.fn(),
+  validateResourceSelections: vi.fn(),
   requireRedisQueue: vi.fn(),
   enqueueIntegrationSyncJob: vi.fn(),
 }));
@@ -129,10 +130,14 @@ beforeEach(() => {
     skipped: true,
   });
   fakes.adminRecordPendingIntegrationSyncContinuations.mockResolvedValue(undefined);
-  fakes.getProvider.mockReturnValue({ listSyncableResources: fakes.listSyncableResources });
-  fakes.listSyncableResources.mockResolvedValue([
+  fakes.getProvider.mockReturnValue({
+    browseResources: fakes.browseResources,
+    validateResourceSelections: fakes.validateResourceSelections,
+  });
+  fakes.validateResourceSelections.mockResolvedValue([
     { kind: 'github.repo', externalId: 'acme/private' },
   ]);
+  fakes.browseResources.mockResolvedValue([{ kind: 'github.repo', externalId: 'acme/private' }]);
   fakes.requireRedisQueue.mockResolvedValue({
     enqueueIntegrationSyncJob: fakes.enqueueIntegrationSyncJob,
   });
@@ -148,7 +153,7 @@ describe('/api/integrations/manage/[id]/selections', () => {
       error: 'provider_connection_scoped',
     });
     expect(fakes.getIntegrationTokens).not.toHaveBeenCalled();
-    expect(fakes.listSyncableResources).not.toHaveBeenCalled();
+    expect(fakes.browseResources).not.toHaveBeenCalled();
   });
 
   it('does not mutate selections for provider-connection-backed integrations', async () => {
@@ -173,7 +178,7 @@ describe('/api/integrations/manage/[id]/selections', () => {
       provider: 'monday',
       providerConnectionId: null,
     });
-    fakes.listSyncableResources.mockResolvedValueOnce([
+    fakes.validateResourceSelections.mockResolvedValueOnce([
       { kind: 'monday.board', externalId: 'board-1' },
     ]);
 
@@ -206,7 +211,7 @@ describe('/api/integrations/manage/[id]/selections', () => {
       provider: 'monday',
       providerConnectionId: null,
     });
-    fakes.listSyncableResources.mockResolvedValueOnce([
+    fakes.validateResourceSelections.mockResolvedValueOnce([
       { kind: 'monday.board', externalId: 'board-1' },
     ]);
     fakes.adminReconcileIntegrationWebhookSubscriptions.mockRejectedValueOnce(
@@ -242,7 +247,7 @@ describe('/api/integrations/manage/[id]/selections', () => {
       provider: 'monday',
       providerConnectionId: null,
     });
-    fakes.listSyncableResources.mockResolvedValueOnce([
+    fakes.validateResourceSelections.mockResolvedValueOnce([
       { kind: 'monday.board', externalId: 'board-1' },
     ]);
     fakes.adminReconcileIntegrationWebhookSubscriptions.mockRejectedValueOnce(
@@ -275,7 +280,7 @@ describe('/api/integrations/manage/[id]/selections', () => {
       provider: 'monday',
       providerConnectionId: null,
     });
-    fakes.listSyncableResources.mockResolvedValueOnce([
+    fakes.validateResourceSelections.mockResolvedValueOnce([
       { kind: 'monday.board', externalId: 'board-1' },
     ]);
     fakes.listSelections.mockResolvedValueOnce([

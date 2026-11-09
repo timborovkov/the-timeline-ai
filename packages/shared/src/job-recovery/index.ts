@@ -28,6 +28,7 @@ import {
 } from 'drizzle-orm';
 
 import { isProviderCooldownErrorMessage } from '#src/integrations/types.js';
+import { RECOVERY_STALE_AFTER_MS } from '#src/job-recovery/policy.js';
 import * as queue from '#src/queue/index.js';
 import { rawEventVisibleToUser } from '#src/visibility.js';
 
@@ -210,9 +211,6 @@ interface RetryPlan {
 }
 
 const STALE_MS = 15 * 60 * 1000;
-const DOCUMENT_PENDING_MS = 5 * 60 * 1000;
-const DOCUMENT_EXTRACTING_MS = 60 * 60 * 1000;
-const MEETING_PROCESSING_MS = 30 * 60 * 1000;
 const LIMIT = 200;
 const DISMISS_OLDER_BATCH_LIMIT = 500;
 const DISMISS_OLDER_MAX_BATCHES = 60;
@@ -976,8 +974,8 @@ async function collectDocumentCandidates(
   now: Date,
   collectLimit: number,
 ): Promise<JobRecoveryItem[]> {
-  const pendingCutoff = new Date(now.getTime() - DOCUMENT_PENDING_MS);
-  const extractingCutoff = new Date(now.getTime() - DOCUMENT_EXTRACTING_MS);
+  const pendingCutoff = new Date(now.getTime() - RECOVERY_STALE_AFTER_MS.documentPending);
+  const extractingCutoff = new Date(now.getTime() - RECOVERY_STALE_AFTER_MS.documentExtracting);
   const rows = await db
     .select({ version: documentVersions, document: documents })
     .from(documentVersions)
@@ -1027,7 +1025,7 @@ async function collectMeetingCandidates(
   now: Date,
   collectLimit: number,
 ): Promise<JobRecoveryItem[]> {
-  const cutoff = new Date(now.getTime() - MEETING_PROCESSING_MS);
+  const cutoff = new Date(now.getTime() - RECOVERY_STALE_AFTER_MS.meetingProcessing);
   const rows = await db
     .select()
     .from(meetings)

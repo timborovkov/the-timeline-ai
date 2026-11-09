@@ -16,6 +16,7 @@ import {
   integrations as integrationsTable,
 } from '@timeline/db';
 import { queue } from '@timeline/shared';
+import { closeAllRedisConnections } from '@timeline/shared/redis';
 import { and, eq } from 'drizzle-orm';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -75,7 +76,7 @@ async function main(): Promise<void> {
     console.log(`Enqueued ${String(rows.length)} sync job(s).`);
   } finally {
     await queue.closeIntegrationSyncQueue().catch(() => undefined);
-    await queue.closeRedisConnection().catch(() => undefined);
+    await closeAllRedisConnections().catch(() => undefined);
     await closeDb().catch(() => undefined);
   }
 }

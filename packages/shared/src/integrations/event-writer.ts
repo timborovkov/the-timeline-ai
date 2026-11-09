@@ -3,7 +3,6 @@ import {
   calendarEvents,
   type Db,
   documentVersions,
-  entities,
   integrations,
   meetingTranscriptChunks,
   mondayConversationTombstoneInvalidations,
@@ -38,6 +37,8 @@ import {
   enqueueGithubTaskProposalJob,
   capturedWorkItemFromIntegrationEvent,
 } from '#src/integrations/github-task-proposals.js';
+import { rebindDriveFileObjectLink } from '#src/integrations/google-drive-artifacts.js';
+import { driveInheritanceAnchorMetadataFromSource } from '#src/integrations/google-drive-contracts.js';
 import {
   integrationExtractSkipReason,
   integrationSkipsExtract,
@@ -63,7 +64,7 @@ import {
   buildAssociationDedupeKey,
   buildOutputDedupeKey,
   reconciliationDedupeKey,
-} from '#src/reconciliation/index.js';
+} from '#src/reconciliation/core.js';
 import { normalizeIntegrationEventsToEvidence } from '#src/reconciliation/normalization.js';
 import {
   inlineSourceSnapshotMetadata,
@@ -1362,29 +1363,46 @@ function slackBindingKeyParts(slackTeamId: string, channelId: string): string {
   return `${slackTeamId}:${channelId}`;
 }
 
+const ENTITY_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function driveLinkedObjectId(event: IntegrationEvent): string | null {
+  const drive = event.extra?.drive;
+  if (!drive || typeof drive !== 'object' || Array.isArray(drive)) return null;
+  const id = (drive as Record<string, unknown>).linked_object_id;
+  return typeof id === 'string' && ENTITY_ID_RE.test(id) ? id : null;
+}
+
 async function loadExistingWorkspaceObjectLinks(
   db: Db,
   integration: IntegrationRow,
   evts: (IntegrationEvent & { objectMap: ObjectMapping })[],
 ): Promise<Map<string, string>> {
   const externalIds = [...new Set(evts.map((e) => e.objectMap.externalId))];
-  if (externalIds.length === 0) return new Map();
+  const linkedIds = [
+    ...new Set(
+      evts.map((event) => driveLinkedObjectId(event)).filter((id): id is string => Boolean(id)),
+    ),
+  ];
+  const candidateIds = [...new Set([...externalIds, ...linkedIds])];
+  if (candidateIds.length === 0) return new Map();
 
-  const rows = await db
-    .select({
-      id: entities.id,
-      externalId: sql<string>`${entities.metadata} ->> 'integration_external_id'`,
-    })
-    .from(entities)
-    .where(
-      and(
-        eq(entities.teamId, integration.teamId),
-        sql`(${entities.metadata} ->> 'integration_provider') = ${integration.provider}`,
-        inArray(sql`(${entities.metadata} ->> 'integration_external_id')`, [...externalIds]),
-      ),
-    );
+  const scope = withTeam(
+    db,
+    integration.teamId,
+    integration.connectedByUserId ?? TOMBSTONE_SYSTEM_ACTOR_ID,
+    {
+      skipMembershipCheck: true,
+    },
+  );
+  const rows = await scope.objects.listObjectsLinkedToIntegration({
+    provider: integration.provider,
+    ids: candidateIds,
+  });
   const entityByExternalId = new Map<string, string>();
-  for (const row of rows) entityByExternalId.set(row.externalId, row.id);
+  for (const row of rows) {
+    entityByExternalId.set(row.id, row.id);
+    if (row.integrationExternalId) entityByExternalId.set(row.integrationExternalId, row.id);
+  }
   return entityByExternalId;
 }
 
@@ -1397,8 +1415,21 @@ async function reconcileIntegrationArtifacts(deps: {
 }): Promise<void> {
   for (const event of deps.events) {
     const rawEventId = deps.rawEventIdsByDedupKey.get(event.dedupKey);
-    const entityId = deps.entityByExternalId.get(event.objectMap.externalId);
+    const linkedId = driveLinkedObjectId(event);
+    const entityId =
+      deps.entityByExternalId.get(event.objectMap.externalId) ??
+      (linkedId ? deps.entityByExternalId.get(linkedId) : undefined);
+    const nextObjectId = linkedId ?? entityId ?? null;
     if (!rawEventId) continue;
+    if (event.provider === 'google_drive' && event.externalObjectId && nextObjectId) {
+      const inheritance = driveInheritanceAnchorMetadata(event);
+      await rebindDriveFileObjectLink(deps.db, {
+        teamId: deps.integration.teamId,
+        fileId: event.externalObjectId,
+        nextObjectId,
+        ...(inheritance ? { metadata: inheritance } : {}),
+      });
+    }
     const role = evidenceRoleForIntegrationEvent(event);
     const strength = evidenceStrengthForIntegrationEvent(event);
     const authoritative = integrationEventIsAuthoritative(event);
@@ -1837,12 +1868,22 @@ function authorityPolicyInputForIntegrationEvent(
   };
 }
 
+function driveInheritanceAnchorMetadata(
+  event: IntegrationEvent,
+): Record<string, unknown> | undefined {
+  if (event.provider !== 'google_drive') return undefined;
+  const drive = recordField(event.extra, 'drive');
+  return drive ? driveInheritanceAnchorMetadataFromSource(drive) : undefined;
+}
+
 function artifactAnchorsForIntegrationEvent(event: IntegrationEvent): ArtifactAnchorInput[] {
+  const inheritance = driveInheritanceAnchorMetadata(event);
   const anchors: ArtifactAnchorInput[] = [
     {
       type: 'provider_object',
       value: `${event.provider}:${event.externalObjectId}`,
       strength: 'hard',
+      ...(inheritance ? { metadata: inheritance, metadataPatch: inheritance } : {}),
     },
   ];
   if (event.objectMap) {

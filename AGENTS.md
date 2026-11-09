@@ -1,17 +1,49 @@
 # Agent instructions
 
-## Scope checks to the work — operational changes are exempt
-
-For environment-variable edits, secret configuration, backup cleanup, deployment-only
-operations, and prose-only documentation or agent-instruction changes, do not run
-repo-wide lint, typecheck, React Doctor, or test suites. Verify the changed values
-without exposing secrets, review the relevant diff, and verify deployment status
-when deploying. Do not start unrelated checks merely because configuration changed.
-This exception takes precedence over the completion gates below. Explicit user
-instructions about checks take precedence as well.
-
 Conventions for any AI coding agent working in this repo (Claude Code, Codex,
-Cursor, etc.).
+Cursor, etc.). This file is the source of truth for validation and merge policy.
+Other guides should link here rather than maintain competing checklists.
+Explicit user instructions about checks take precedence.
+
+## Validation policy
+
+Scope verification to the behavior and risk of the change. GitHub Actions owns
+repo-wide validation; do not routinely duplicate it locally.
+
+- **Application code, executable scripts, or generated behavior:** run the nearest
+  targeted local tests for the behavior changed. Broaden only when the affected
+  boundary or a failure justifies it. Use the change-specific checks below.
+- **CI-only changes that do not alter application code or test behavior:** inspect
+  workflow syntax, triggers, conditions, and required-check names, then verify the
+  affected GitHub run. Do not run local application suites, repo-wide validation,
+  or React Doctor merely because workflow YAML is executable configuration.
+- **Prose-only docs and agent instructions:** review the diff, changed-file
+  formatting, links, and consistency. No application tests or repo-wide checks.
+  Executable examples or generated behavior need only the relevant scoped checks.
+- **Environment variables, secrets, backup cleanup, and deployment-only work:**
+  verify affected settings without exposing secrets, review the relevant diff,
+  and verify deployment status when deploying. No unrelated application checks.
+- Run repo-wide local validation or full suites only when explicitly requested,
+  or when a concrete investigation requires them; state the reason first. Prefer
+  GitHub for broad verification. Do not launch a full suite solely because a
+  change is cross-package or user-facing.
+
+### GitHub checks and merge gates
+
+- Commits, pushes, and opening PRs are allowed before CI passes; that is how CI
+  runs. Required GitHub checks gate **merging**, not opening a PR.
+- Do not merge while required checks are pending or failing, bypass protections,
+  or weaken checks to obtain a pass. A demonstrably incorrect check may be fixed
+  with equally strict or stricter coverage.
+- Report targeted checks and GitHub status accurately. A prepared change or open
+  PR is not a verified merge or release; pending checks must be called out.
+- Fix failures caused by the change, then rerun the affected checks. Report
+  unrelated failures separately with evidence; do not automatically expand the
+  task into repository-wide repairs. Required failures still block merging.
+- GitHub's static gate runs `bun run validate` (Prettier, TypeScript, ESLint,
+  Knip) and `bun run doctor`. React Doctor must show
+  `React Doctor score: 100` and `No issues found!`; an exit without a score
+  is not proof of 100. Diagnose failures locally only as needed.
 
 ## Branch and release CI
 
@@ -25,76 +57,46 @@ Cursor, etc.).
   PR runs are cancelled. Browser E2E remains a separate manual workflow.
 - Railway must follow `production` after the operator switches its source branch.
   Creating this branch does not change Railway configuration.
-- These CI tiers do not replace the local completion gates below.
 
-## Non-negotiable local completion gates
+## Change-specific verification
 
-These gates are repo-wide, not scoped to the files you touched. Do not hand back,
-commit, push, open a PR, mark work complete, or call a task "done" while any gate
-is red.
+These checks apply when the named behavior changes, not to unrelated docs or CI
+routing edits. Use targeted local runs while iterating; broader checks can run on
+GitHub when available. Live evaluations still require their documented environment
+and evidence; never treat an offline CI pass as live promotion evidence.
 
-After code changes or changes to executable configuration, scripts, examples, or
-generated artifacts (excluding the operational changes listed above):
-
-1. Run `bun run validate`.
-   - This is the canonical static gate and must pass.
-   - It runs Prettier formatting checks, TypeScript compilation/typecheck,
-     ESLint, and Knip.
-2. Run `bun run doctor`.
-   - React Doctor must report a 100 score before handoff.
-   - The root script runs `scripts/run-react-doctor.mjs`, which executes the
-     real React Doctor analyzer in JSON mode and posts diagnostics to the
-     non-redirecting score endpoint. Treat `React Doctor score: 100` plus
-     `No issues found!` as the required pass signal.
-   - If the command exits without showing a score, do not claim "React Doctor is
-     100" unless you can verify that from the tool output, artifacts, or
-     documented behavior. Say exactly what was verified.
-3. Run tests appropriate to the change.
-   - For code changes, run the nearest targeted test command for the behavior
-     touched.
-   - Run `bun run test:dist-imports` when a change touches shared package exports,
-     compiled output, or Bun runtime loader boundaries.
-   - Run `bun run test:eval` when a change touches agent tools, retrieval,
-     visibility filters, MCP tool handling, or answer synthesis.
-   - Run `bun run test:proposal-engine:live` with
-     `PROPOSAL_ENGINE_LIVE_ENV_FILE=/path/to/.env` when proposal-engine
-     qualify/attach, container-label hubs, or messy live fixtures change **and**
-     a real `OPENROUTER_API_KEY` (and Qdrant, for the vector cases) is
-     available. This is an opt-in live eval, not CI.
-   - Run `bun run test:task-category-eval:live` with
-     `TASK_CATEGORY_LIVE_ENV_FILE=/path/to/.env` when the task-category
-     taxonomy, classifier packet, prompt, schema, or pinned model changes.
-   - Run `bun run eval:transcription-quality:live -- --manifest=/path/to/manifest.json
-     --out=/path/to/new-evidence.json --candidate=<model-id>` before changing the
-     non-meeting transcription pin. The approved corpus must contain no customer
-     data and satisfy the 24-language quality gate documented in
-     [docs/research/transcription-quality-eval.md](docs/research/transcription-quality-eval.md).
-     A live registry entry or single-language smoke test is not promotion evidence.
-   - Run `bun run test:reconciliation-eval` when a change touches reconciliation
-     schema, source refs, evidence associations, visibility floors, authority
-     policy, or reconciliation output planning. Run
-     `bun run test:reconciliation-eval:live` when prompts or live-model
-     reconciliation behavior changed and the required env vars are available.
-   - Run broader suites such as `bun run test`, `bun run e2e`, or a package-filtered
-     Bun/e2e command when the blast radius is shared, cross-package,
-     user-facing, or hard to localize.
-   - For docs-only changes, tests may be skipped only when no executable
-     behavior, scripts, examples, or generated artifacts changed.
-
-If any completion gate fails:
-
-- Fix the root cause even when it appears unrelated to your change. Treat
-  unrelated compile, lint, formatting, React Doctor, or test failures as repo
-  health bugs in the current task.
-- Rerun the failed gate after fixing it. If the fix could affect another gate,
-  rerun the full checklist.
-- Do not downgrade, silence, delete, or loosen checks to get green unless the
-  check itself is objectively wrong and the replacement is stricter or equally
-  strict.
-- Escalate only after a serious root-cause attempt, with the exact failing
-  command, error, what you tried, and what blocks completion.
+- Run `bun run test:dist-imports` when a change touches shared package exports,
+  compiled output, or Bun runtime loader boundaries.
+- Run `bun run test:eval` when a change touches agent tools, retrieval,
+  visibility filters, MCP tool handling, or answer synthesis.
+- Run `bun run test:proposal-engine:live` with
+  `PROPOSAL_ENGINE_LIVE_ENV_FILE=/path/to/.env` when proposal-engine
+  qualify/attach, container-label hubs, or messy live fixtures change **and**
+  a real `OPENROUTER_API_KEY` (and Qdrant, for the vector cases) is
+  available. This is an opt-in live eval, not CI.
+- Run `bun run test:task-category-eval:live` with
+  `TASK_CATEGORY_LIVE_ENV_FILE=/path/to/.env` when the task-category
+  taxonomy, classifier packet, prompt, schema, or pinned model changes.
+- Run `bun run eval:transcription-quality:live -- --manifest=/path/to/manifest.json
+  --out=/path/to/new-evidence.json --candidate=<model-id>` before changing the
+  non-meeting transcription pin. The approved corpus must contain no customer
+  data and satisfy the 24-language quality gate documented in
+  [docs/research/transcription-quality-eval.md](docs/research/transcription-quality-eval.md).
+  A live registry entry or single-language smoke test is not promotion evidence.
+- Run `bun run test:reconciliation-eval` when a change touches reconciliation
+  schema, source refs, evidence associations, visibility floors, authority
+  policy, or reconciliation output planning. Run
+  `bun run test:reconciliation-eval:live` when prompts or live-model
+  reconciliation behavior changed and the required env vars are available.
 
 Use `bun` only. Do not use `pnpm`, `npm`, or `yarn`.
+
+Offline test execution is declared in `scripts/testing/manifest.json`: each file
+gets a fresh process by default; `isolation: "registration"` or `"batch"` (with
+`batchSize`) explicitly partitions supported Bun test registrations. The runner
+parses test syntax and rejects unsupported isolated titles; source formatting or
+`vi.resetModules()` text must never choose execution policy. Preserve test rows
+when changing this manifest.
 
 ## Handoff protocol — run `/document-release` before handing back
 
@@ -128,16 +130,35 @@ to date" and that's fine. Run it anyway.
 
 ## Skill routing
 
-When the user's request matches an available skill, invoke it via the Skill
-tool. When in doubt, invoke the skill.
+Project skills are committed as complete folders in [`.agents/skills`](.agents/skills/README.md),
+so cloud checkouts do not depend on a developer's global skills or Mac symlinks.
+Use the client's skill invocation mechanism when available; otherwise read the
+matching `SKILL.md` and its relevant references directly. Repository instructions
+and existing authorization take precedence over generic skill examples. If a skill
+requests unavailable delegation tools, perform its relevant review passes serially
+and report the limitation.
 
-- New feature / non-trivial change → finish with `/document-release` and
-  `/ship`.
-- Bugs / unexpected behavior → `/investigate` (root-cause discipline).
-- Visual polish or design questions → `/design-review` (or
-  `/plan-design-review` in plan mode).
-- QA / "does this actually work?" → `/qa`.
-- Save / resume working context → `/context-save` and `/context-restore`.
+- Code completion → `document-release`; use `ship` when shipping is requested.
+- Branch/PR review → `diff-review`; meaningful test design → `test-strategy`.
+- Bugs / unexpected behavior → `diagnosing-bugs`.
+- React diagnostics → `react-doctor`, using root `bun run doctor`.
+- UI change review → `interface-review`; broader UI audit → `better-interface`
+  and its six bundled domain skills. Follow `design.md`.
+- QA → the existing targeted tests and Playwright/E2E commands required above;
+  do not assume a `/qa` command or a connected browser exists.
+- Save context → explicitly invoke `handoff`. Resume by reading the saved handoff
+  and checking its claims against the current worktree; no `/context-restore`
+  command is required.
+- Structural refactoring → explicitly request `untangle-codebase`; scoped
+  cleanup → `deslop`; upstream integration → `upstream-sync`.
+- Library documentation → bundled Next.js docs first for web work, then
+  `find-docs` when external documentation is needed and network access permits.
+- Railway operations → `use-railway` only for requested infrastructure work.
+  A shipping/PR request does not authorize deployment or account creation.
+
+`ship`, `handoff`, and `interface-review` retain explicit-only invocation policy.
+Cloud agents without authenticated Git/PR or Railway tools must report the patch
+and remaining execution steps rather than claiming a push or deployment occurred.
 
 ## Keep this file current
 
@@ -172,13 +193,21 @@ Treat this file as an operating contract for agents, not a loose README.
   `scope.billingOperator`) rather than flat scope methods or
   manually passing `db` into object helpers. Every Qdrant query filters on
   `team_id` via the wrapper. Do not bypass these — even in "internal" tools.
+  Timeline read queries live in `packages/shared/src/timeline/read-scope.ts`,
+  composed behind `withTeam`; presentation cache persistence lives in
+  `timeline-moments/presentation-cache.ts`. Suggestion acceptance transaction
+  context and after-commit execution belong to `suggestions/acceptance-transaction.ts`.
 - **Production Qdrant storage copies require maintenance safeguards.** Follow
   [the production copy runbook](docs/setup/openrouter.html#qdrant-production-copy):
   stop every vector writer, require the operator-only production acknowledgement,
   complete a source snapshot, and verify all teams plus total point coverage before
   switching collections. Retain the original collection and backup for rollback.
 - **Account provisioning is a separate pre-team boundary.** `packages/shared/src/agent-provisioning` owns verified-owner grants, idempotency receipts, owner-wide quotas and shared UI/API workspace creation. Only new workspaces may be provisioned; existing-team content still requires `withTeam`. Auth continuations are account-bound global identity records.
-- **Platform administration is a separate privilege boundary.** Global account/team directory, support-session, and platform-audit access goes through the verified `platform-admin` service. Impersonated content access still uses `withTeam` and the selected member’s role and visibility. Never replace the real login with the impersonated identity or omit its attribution from jobs.
+- **Platform administration is a separate privilege boundary.** Global account/team directory, support-session, and platform-audit access goes through the verified `platform-admin` service. Impersonated content access still uses `withTeam` and the selected member’s role and visibility. Never replace the real login with the impersonated identity or omit its attribution from jobs. Declare every scoped operation in `platform-admin/workspace-policy.ts`; method names must not determine permissions.
+- **Redis lifecycle belongs to infrastructure.** Request consumers import
+  `redis/connection.ts`; queue consumers use the queue facade. Process shutdown
+  closes all Redis roles after draining work. Closing a queue must not close
+  request cache or admission connections.
 - **Captured raw event content is immutable.** Never `UPDATE` a source-ingested
   `raw_events` row's content. Derived facts can be re-extracted; the source is
   the source. Calendar raw-event rows are derived schedule mirrors and may
@@ -352,6 +381,8 @@ packages/
             module (Phase 11 — Drive/Linear/GitHub/Monday.com/Slack/Sentry
             providers, person-owned provider connections, team resource
             shares, active source paths, connection attention, event-writer,
+            separate resource browsing/validation, required Drive capture services,
+            transient extract lifecycle/protocol, transactional selection links,
             registry catalog, AES-GCM secrets helper), event-class taxonomy
             (provider-agnostic communication / work_record / pulse / incident /
             artifact / schedule; ingest webhooks set class in settings),

@@ -15,6 +15,7 @@ const KIND_LABELS: Record<string, string> = {
   'github.repo': 'GitHub repository',
   'linear.team': 'Linear team',
   'drive.folder': 'Google Drive folder',
+  'drive.file': 'Google Drive file',
   'drive.shared_drive': 'Google Drive shared drive',
   'monday.board': 'Monday.com board',
   'monday.doc': 'Monday.com doc',

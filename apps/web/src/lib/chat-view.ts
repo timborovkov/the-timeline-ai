@@ -1,23 +1,15 @@
-import type { ChatHandoffContext } from '@/lib/chat-handoff';
+import type { DashboardChatContext, DashboardContextIds } from '@/lib/dashboard-chat-context';
 import type { ChatContextRef } from '@timeline/shared/chat-context';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const MOMENT_ID_RE = /^moment:[a-z0-9:._/-]{1,180}$/i;
 
-export interface ChatViewOverlay {
+export interface ChatViewOverlay extends DashboardContextIds {
   viewKey: string;
   kind: ChatContextRef['kind'];
   href: string;
   label: string;
-  objectId?: string;
-  documentId?: string;
-  boardId?: string;
-  boardItemId?: string;
-  taskId?: string;
-  calendarEventId?: string;
-  timelineEventId?: string;
   timelineMomentId?: string;
-  meetingId?: string;
 }
 
 const PAGE_LABELS: Record<string, string> = {
@@ -104,14 +96,14 @@ export function buildChatView(input: {
   pathname: string | null;
   searchParams: URLSearchParams;
   overlay?: ChatViewOverlay | null;
-}): { current: ChatContextRef; dashboardContext: ChatHandoffContext } {
+}): { current: ChatContextRef; dashboardContext: DashboardChatContext } {
   const pathname = input.pathname ?? '/app';
   const segments = pathname.split('/').filter(Boolean);
   const search: Record<string, string> = {};
   for (const [key, value] of input.searchParams.entries()) {
     if (value) search[key] = value;
   }
-  const dashboardContext: ChatHandoffContext = {
+  const dashboardContext: DashboardChatContext = {
     pathname,
     routeKind: routeKind(pathname, segments),
   };

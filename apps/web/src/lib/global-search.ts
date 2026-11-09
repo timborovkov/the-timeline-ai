@@ -4,7 +4,7 @@ import type {
   GlobalSearchResponse,
 } from '@timeline/shared/search';
 
-import { readJson } from '@/lib/paginated-api';
+import { readJson } from '@/lib/api-response';
 
 export interface GlobalSearchRequest {
   query: string;

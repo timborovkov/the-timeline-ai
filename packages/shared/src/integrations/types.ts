@@ -1,4 +1,9 @@
 import type { TimelineEventClass } from '#src/event-class.js';
+import type { DriveCaptureServices } from '#src/integrations/google-drive-context.js';
+import type {
+  ProviderResourceAccess,
+  ResourceAccessContext,
+} from '#src/integrations/resource-access.js';
 import type {
   integrations as integrationsTable,
   providerConnections as providerConnectionsTable,
@@ -91,10 +96,11 @@ export interface IntegrationEvent {
    * Optional timeline presentation family (`communication` / `work_record` /
    * `pulse` / `incident` / `artifact` / `schedule`). When omitted, the
    * event-writer classifies from provider, event type, and nested record
-   * kind. This is not `signalClass`: a Drive `file.changed` ping is
-   * `signalClass=pulse` and `eventClass=artifact`. Presentation `pulse`
-   * never promotes `objectMap` into artifact identity. Ingest and proposals
-   * read `signalClass` only.
+   * kind. This is not `signalClass`: an unlabeled legacy Drive `file.changed`
+   * ping is `signalClass=pulse` and `eventClass=artifact`. Judged Drive v1
+   * captures stamp both as `communication`. Presentation `pulse` never
+   * promotes `objectMap` into artifact identity. Ingest and proposals read
+   * `signalClass` only.
    */
   eventClass?: TimelineEventClass;
   /**
@@ -129,15 +135,15 @@ export interface SyncContext {
    * silently skipped. Returns the ids of the newly inserted raw_events
    * rows (skipped duplicates not included).
    */
-  writeEvents(events: IntegrationEvent[]): Promise<string[]>;
+  writeEvents: (events: IntegrationEvent[]) => Promise<string[]>;
   /** Provider may emit progress notes into the audit log mid-sync. */
-  recordAudit(kind: string, payload: Record<string, unknown>): Promise<void>;
+  recordAudit: (kind: string, payload: Record<string, unknown>) => Promise<void>;
   /** Update the per-resource cursor after a successful page or surface-specific failure. */
-  saveCursor(
+  saveCursor: (
     resourceType: string,
     cursor: unknown,
     status?: { lastStatus?: string; lastError?: string | null },
-  ): Promise<void>;
+  ) => Promise<void>;
   /**
    * Record a cursor and the exact continuation(s) needed to resume it for the
    * worker's final durable checkpoint transaction. Providers with
@@ -148,14 +154,14 @@ export interface SyncContext {
    * callers that do not persist cursors. The integration worker always
    * supplies it.
    */
-  saveCursorWithContinuations?(
+  saveCursorWithContinuations?: (
     resourceType: string,
     cursor: unknown,
     continuations: SyncContinuation[],
     status?: { lastStatus?: string; lastError?: string | null },
-  ): Promise<void>;
+  ) => Promise<void>;
   /** Load the last persisted cursor for a resource. Returns `{}` when unset. */
-  loadCursor(resourceType: string): Promise<unknown>;
+  loadCursor: (resourceType: string) => Promise<unknown>;
   /**
    * Phase 11 — Drive body harvest. Optional: providers that have file
    * bodies (Drive) can call this to route a file into the team document
@@ -163,7 +169,20 @@ export interface SyncContext {
    * → embed). Idempotent on externalId — re-harvesting the same file
    * updates the existing document by adding a new version.
    */
-  harvestDocument?(input: HarvestDocumentInput): Promise<{ documentId: string; versionId: string }>;
+  harvestDocument?: (
+    input: HarvestDocumentInput,
+  ) => Promise<{ documentId: string; versionId: string }>;
+  /**
+   * Enqueue a targeted follow-up for one resource. Drive reuses the GitHub /
+   * Monday targeted `integration-sync` job with delay so per-file processing
+   * can debounce after `changes.watch`.
+   */
+  scheduleTargetedSync?: (
+    task: TargetedSyncTask,
+    opts?: { delayMs?: number; replaceDelayed?: boolean },
+  ) => Promise<void>;
+  /** Required capture services are assembled only for the Drive provider. */
+  drive?: DriveCaptureServices;
   /**
    * Persist refreshed OAuth tokens back to the integration row. Providers
    * call this after `ensureAccessToken` (or the equivalent refresh path)
@@ -171,7 +190,7 @@ export interface SyncContext {
    * worker keeps the old ciphertext and every sync repeats the refresh.
    * The worker writes via `adminPersistTokens` (AES-256-GCM at rest).
    */
-  persistTokens(tokens: Record<string, unknown>): Promise<void>;
+  persistTokens: (tokens: Record<string, unknown>) => Promise<void>;
 }
 
 export interface SyncPartialFailure {
@@ -213,6 +232,17 @@ export interface SyncTarget {
   triggeredBy?: string;
 }
 
+export interface SyncSelection {
+  kind: string;
+  externalId: string;
+}
+
+export interface SyncSelectionPolicy {
+  /** Shared feeds must consume changes for all selections whenever any selection is due. */
+  recovery: 'all' | 'shared_cursor' | 'per_resource';
+  resolveTarget(selections: SyncSelection[], target: SyncTarget): SyncSelection[];
+}
+
 export type NativeProviderId = IntegrationProvider['id'];
 
 export const NATIVE_PROVIDER_IDS = [
@@ -242,10 +272,10 @@ export interface ProviderSyncPolicy {
 export const PROVIDER_SYNC_POLICIES: Record<NativeProviderId, ProviderSyncPolicy> = {
   google_drive: {
     reconciliationIntervalMs: 24 * HOUR_MS,
-    ingestionPosture: 'webhook_wakeup',
+    ingestionPosture: 'webhook_first',
     budgetScopes: ['requests'],
     supportsWebhookIngress: true,
-    supportsTargetedSync: false,
+    supportsTargetedSync: true,
     provisioningModel: 'provider_managed',
   },
   linear: {
@@ -535,7 +565,7 @@ export type WebhookHandleResult = IntegrationEvent[] | WebhookNormalizeResult;
 export interface WebhookProvisionInput {
   integration: IntegrationRow;
   tokens: unknown;
-  selections: { kind: string; externalId: string }[];
+  selections: SyncSelection[];
   existingSubscriptions?: WebhookSubscription[];
   ctx?: WebhookProvisionContext;
 }
@@ -544,7 +574,7 @@ export interface WebhookDeprovisionInput {
   integration: IntegrationRow;
   tokens: unknown;
   subscription: WebhookSubscription;
-  ctx?: ListSyncableResourcesContext;
+  ctx?: ResourceAccessContext;
 }
 
 export interface WebhookSubscription {
@@ -555,7 +585,7 @@ export interface WebhookSubscription {
   expiresAt?: Date | null;
 }
 
-export interface WebhookProvisionContext extends ListSyncableResourcesContext {
+export interface WebhookProvisionContext extends ResourceAccessContext {
   /**
    * Persist a provider-side hook immediately after it is created. Provider
    * provisioning is not transactional with our database, so callers should use
@@ -596,15 +626,6 @@ export interface ProviderResource {
   searchText?: string;
 }
 
-export interface ListSyncableResourcesContext {
-  /**
-   * Persist refreshed OAuth tokens while listing picker resources. Without
-   * this, a provider can successfully refresh for the list call but leave the
-   * encrypted connection with the expired token.
-   */
-  persistTokens(tokens: Record<string, unknown>): Promise<void>;
-}
-
 export interface OAuthStartInput {
   teamId: string;
   userId: string;
@@ -632,9 +653,10 @@ export interface OAuthCallbackOutput {
   accessTokenExpiresAt?: Date;
 }
 
-export interface IntegrationProvider {
+export interface IntegrationProvider extends ProviderResourceAccess {
   id: 'google_drive' | 'linear' | 'github' | 'monday' | 'slack' | 'sentry';
   displayLabel: string;
+  syncSelectionPolicy: SyncSelectionPolicy;
   /**
    * Build the OAuth authorize URL. Returns the URL only — the route
    * handler is responsible for redirecting the browser. The `state`
@@ -648,15 +670,6 @@ export interface IntegrationProvider {
    */
   handleOAuthCallback(input: OAuthCallbackInput): Promise<OAuthCallbackOutput>;
   /**
-   * List the resources the user can pick to sync (folders, projects,
-   * repos). Called by the settings UI after the OAuth handshake.
-   */
-  listSyncableResources(
-    integration: IntegrationRow,
-    tokens: unknown,
-    ctx?: ListSyncableResourcesContext,
-  ): Promise<ProviderResource[]>;
-  /**
    * Full backfill of the chosen resources. Idempotent under the
    * dedup_key index. Must paginate internally and call
    * `ctx.saveCursor()` after each page so a crash resumes from the
@@ -666,7 +679,7 @@ export interface IntegrationProvider {
     purpose?: 'backfill' | 'resync';
     integration: IntegrationRow;
     tokens: unknown;
-    selections: { kind: string; externalId: string }[];
+    selections: SyncSelection[];
     ctx: SyncContext;
   }): Promise<SyncResult | undefined>;
   /**
@@ -676,7 +689,7 @@ export interface IntegrationProvider {
     purpose?: 'recovery' | 'webhook';
     integration: IntegrationRow;
     tokens: unknown;
-    selections: { kind: string; externalId: string }[];
+    selections: SyncSelection[];
     ctx: SyncContext;
     target?: SyncTarget;
   }): Promise<SyncResult | undefined>;

@@ -1,7 +1,7 @@
 # The Timeline — Design System
 
-**Version:** v3.39 · Public product screenshots (2026-11-07).
-Replaces v3.38 Public product screenshots.
+**Version:** v3.40 · Drive Limited Use disclosure and public product screenshots (2026-11-07).
+Replaces v3.39 Drive Limited Use disclosure and v3.39 Public product screenshots.
 
 This is the visual and interaction contract for the product. If a screen
 disagrees with it, fix the screen. If the language intentionally changes,
@@ -69,7 +69,8 @@ next before seeing how the system represented it.
 - Internal database identifiers are implementation details. UUIDs, hashes, raw
   event IDs, output IDs, payload references, source references, cursors, and
   JSON appear only in a closed `TechnicalDetails` disclosure or an explicit
-  audit export.
+  audit export. Team → General is the exception for support: the workspace id
+  and slug are readonly copyable fields, not ordinary chrome.
 - Sentence case is the default. Uppercase is limited to short audit/index codes
   and literal citation syntax.
 - One lime primary action per view. A secondary action is outline, ghost, or
@@ -661,6 +662,9 @@ stay vertically centered with the row. Do not style board lanes as badges. Team
 settings render one URL-selected section at a time. Field validation stays on
 the edited form; pending, success, and server failures use the shared action
 toast. Member, object, source, and artifact labels never fall back to UUIDs.
+Team → General keeps identity as a form (rename for admins) plus two readonly
+copyable support fields — team id and slug — with hairline section structure
+and no nested cards.
 
 Team → Members is a collection: compact header, `CollectionRow` members with
 visible role and quiet actions, not a padded card list. Role changes save on
@@ -686,7 +690,10 @@ default team visibility, team-sync activation, matching MCP server, recent
 activity, and disconnect. Telegram setup (bot link tokens, group bindings,
 linked users) and inbound Email (team address and list-style allowed senders)
 live in those sheets. A Drive folder picker replaces the generic checkbox list
-inside that resource-picker slot. Available providers sit below as a Connect /
+inside that resource-picker slot: one account header with the share count and
+Save sharing control, short user-facing copy (no webhook or API jargon), a
+full-width search field, and a single checkbox list without nested cards or
+orphan checkboxes. Provider logos stay on white tiles. Available providers sit below as a Connect /
 Set up list. A quiet search on the tab chrome filters the open section. Agent
 tools holds compact rows for Agent MCP servers and Connect your agent;
 local-only and unroutable catalog entries such as Figma sit in Coming soon with
@@ -1411,6 +1418,8 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-11-04 | Connect your agent client picker | `/app/connect-agent` leads with a CollectionRow client list and one install path. Official vendor marks sit on white tiles. Connected agents, add-memory, SKILL.md, and static keys share one disclosure stack with no nested cards or stacked `border-y` sections. Admin grant rows show the consenting member next to the client. |
 | 2026-11-04 | Agent setup card marks | Replaces letter discs with official agent logos on white tiles, one short lede, and a single logo row on the landing and `/agents` cards. |
 | 2026-11-04 | Public monthly calculator | `/pricing` Usage compares PAYG, Team, and Business from paired sliders and exact fields. One hairline results panel, 12px metadata, and the shared billing preview. |
+| 2026-11-04 | Google sign-in | Sign-in and sign-up use the official Google G on a borderless white tile inside the existing outline control, at or above the 12px type floor, with Google above GitHub. Drive connection stays on Connections. |
+| 2026-11-05 | GitHub sign-in mark | Continue with GitHub uses the official Invertocat on the same borderless white tile as Google so the mark stays visible in dark mode. |
 | 2026-11-06 | Public nav IA | Header is Product, Use cases, Integrations, Agents, Pricing. Integrations dropdown is the hub plus Slack · Native sync, Telegram · Capture, then Google Drive, GitHub, Linear, Monday.com, Sentry, and Connect MCP tools. Jira and Notion stay on works-with pages and the hub, not in the native dropdown. Coming-soon CRM pages stay on the hub, not in the dropdown or footer column. Footer is Product / Use cases / Integrations / Compare / Legal. `/compare` is a thin vs-only hub. |
 | 2026-11-06 | Integrations chat nav | Integrations dropdown and footer prepend Slack (`Native sync`) and Telegram (`Capture`) so capture is not implied as account-history sync. Other live destinations keep plain product names. |
 | 2026-11-06 | Connect MCP tools | `/integrations/mcp` explains inbound third-party MCP servers for The Timeline Agent, distinct from `/agents`. Catalogue copy keeps native vs agent-tool semantics. |
@@ -1419,6 +1428,8 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-11-06 | Compare alternatives SEO | Existing `/compare/the-timeline-vs-{day-ai,folk,glean,geekbot}` pages keep the vs H1 and add “[competitor] alternatives” to SEO title, meta description, and intro. The hub names those alternative queries without extra URLs. |
 | 2026-11-06 | Company-brain compare pages | Adds `/compare/the-timeline-vs-{suda,memorycrow,achiral}` with the same vs H1 and “[competitor] alternatives” SEO. Footer Compare column lists them; header stays Integrations-only for Notion. |
 | 2026-11-06 | Product-tour mobile frames | `/product-tour` mobile portrait shots (`*-mobile.png`) use a 390×844 contain frame instead of the landscape 16×10 top crop, so Ask recap citations stay visible. |
+| 2026-11-06 | OAuth auto-verify, team support ids, Drive picker | Google/GitHub sign-in stamps `emailVerified` when the provider asserts a verified email. Team → General shows readonly copyable team id and slug. Drive sharing drops the dense green callout, overlapping helper copy, and nested picker borders. |
+| 2026-11-07 | Drive Limited Use disclosure | Connecting or reconnecting Google Drive opens a contextual dialog before Google OAuth. The copy names read-only Drive access, selected-source capture, encrypted tokens, snapshots versus retained events, team sharing, billed change-judging, document extract, and no general-model training. Continue to Google is the affirmative action; Cancel or dismiss does not start OAuth. |
 | 2026-11-07 | Agents vs inbound MCP diagrams | `/agents` write-in / read-out stays external-agent contribution and MCP read-out. `/integrations/mcp` shows a separate live-lookup diagram. Screenshot captions label stored fictional examples without install noise. Public slots serve committed PNG bytes unoptimized so recaptures are not hidden by a stale image-optimizer cache. |
 | 2026-11-07 | Landing evidence inspect disclosures | Homepage “Inspect example source” rows share the evidence-card padding, a custom chevron, padded expanded copy, and the lime focus ring. |
 

@@ -59,11 +59,13 @@ await vi.mock(
   () => ({
     withTeam: () => ({
       requireMembership: vi.fn().mockResolvedValue('owner'),
-      billing: { getDashboard: vi.fn().mockResolvedValue({ sidebar: null }) },
       calendar: { getCalendarSettings: fakes.getCalendarSettings },
       objects: {
         listNotifications: fakes.listNotifications,
         unreadNotificationCount: fakes.unreadNotificationCount,
+      },
+      billing: {
+        getDashboard: () => Promise.resolve({ sidebar: null }),
       },
     }),
   }),

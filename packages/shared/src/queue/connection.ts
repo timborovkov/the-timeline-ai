@@ -1,34 +1,12 @@
-import IORedis, { type Redis } from 'ioredis';
+import {
+  getRedisConnection as getConnection,
+  closeRedisConnection as closeConnection,
+} from '#src/redis/connection.js';
 
-import { getEnv } from '#src/env.js';
-
-let _conn: Redis | undefined;
-
-/**
- * Singleton Redis connection for BullMQ. `maxRetriesPerRequest: null` is
- * required by BullMQ workers (blocking BRPOPLPUSH calls would otherwise
- * fail under retry). `lazyConnect` keeps test environments from opening a
- * socket on import.
- */
-export function getRedisConnection(): Redis {
-  if (_conn) return _conn;
-  const env = getEnv();
-  if (!env.REDIS_URL) throw new Error('REDIS_URL is required for the job queue');
-  _conn = new IORedis(env.REDIS_URL, {
-    maxRetriesPerRequest: null,
-    enableReadyCheck: false,
-    lazyConnect: true,
-    // ioredis 6 defaults to RESP3. Keep legacy reply shapes so BullMQ 5 and
-    // string get/set/Lua callers stay on the v5 mapping.
-    protocol: 3,
-    replyMapping: 'legacy',
-  });
-  return _conn;
+export function getRedisConnection() {
+  return getConnection('queue');
 }
 
-export async function closeRedisConnection(): Promise<void> {
-  if (!_conn) return;
-  const c = _conn;
-  _conn = undefined;
-  await c.quit().catch(() => undefined);
+export function closeRedisConnection(): Promise<void> {
+  return closeConnection('queue');
 }

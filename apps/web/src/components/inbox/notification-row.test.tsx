@@ -1,6 +1,9 @@
 import { expect } from '@timeline/test-support';
 import { vi } from '@timeline/test-support';
 import { afterEach, beforeEach, describe, it } from 'bun:test';
+
+import type { RenderOptions } from '@testing-library/react';
+import type { ReactElement } from 'react';
 // Test environment: happy-dom
 
 const fakes = vi.hoisted(() => ({
@@ -40,8 +43,17 @@ await vi.mock(
   () => import('@/lib/notify'),
 );
 
-const { cleanup, render, screen, waitFor } = await import('@testing-library/react');
+const {
+  cleanup,
+  render: renderWithoutProvider,
+  screen,
+  waitFor,
+} = await import('@testing-library/react');
 const { default: userEvent } = await import('@testing-library/user-event');
+
+const { InboxReadProvider } = await import('@/components/inbox/inbox-read-state');
+const render = (ui: ReactElement, options?: RenderOptions) =>
+  renderWithoutProvider(ui, { wrapper: InboxReadProvider, ...options });
 
 const { MarkAllReadButton } = await import('./mark-all-read-button.js');
 const { NotificationRow } = await import('./notification-row.js');
@@ -270,5 +282,97 @@ describe('NotificationRow', () => {
     );
 
     expect(screen.queryByText('Unread')).toBeNull();
+  });
+});
+
+describe('inbox read scope', () => {
+  it('applies pending bulk state to newly mounted rows without changing another inbox', async () => {
+    let finish!: (value: { error: string }) => void;
+    fakes.markAllRead.mockReturnValue(
+      new Promise<{ error: string }>((resolve) => {
+        finish = resolve;
+      }),
+    );
+    const user = userEvent.setup();
+    const row = (id: string) => (
+      <NotificationRow
+        id={id}
+        kind="agent_suggestion"
+        summary={id}
+        entityId={null}
+        agentSuggestionId={null}
+        createdAt="2026-07-29T12:00:00.000Z"
+        initiallyRead={false}
+      />
+    );
+    const view = renderWithoutProvider(
+      <>
+        <InboxReadProvider>
+          <MarkAllReadButton hasUnread />
+          <ul>{row('first')}</ul>
+        </InboxReadProvider>
+        <InboxReadProvider>
+          <ul>{row('other scope')}</ul>
+        </InboxReadProvider>
+      </>,
+    );
+    await user.click(screen.getByRole('button', { name: 'Mark all read' }));
+    view.rerender(
+      <>
+        <InboxReadProvider>
+          <MarkAllReadButton hasUnread />
+          <ul>
+            {row('first')}
+            {row('late row')}
+          </ul>
+        </InboxReadProvider>
+        <InboxReadProvider>
+          <ul>{row('other scope')}</ul>
+        </InboxReadProvider>
+      </>,
+    );
+    expect(screen.queryByRole('button', { name: 'Mark late row as read' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Mark other scope as read' })).toBeTruthy();
+    finish({ error: 'failed' });
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Mark first as read' })).toBeTruthy();
+      expect(screen.getByRole('button', { name: 'Mark late row as read' })).toBeTruthy();
+    });
+  });
+});
+
+describe('inbox server reconciliation', () => {
+  it('clears completed bulk optimism when a refreshed server snapshot contains unread rows', async () => {
+    fakes.markAllRead.mockResolvedValue({ ok: true });
+    const user = userEvent.setup();
+    const row = (
+      <NotificationRow
+        id="new-notification"
+        kind="agent_suggestion"
+        summary="New notification"
+        entityId={null}
+        agentSuggestionId={null}
+        createdAt="2026-07-29T12:00:00.000Z"
+        initiallyRead={false}
+      />
+    );
+    const view = renderWithoutProvider(
+      <InboxReadProvider snapshot={{ version: 1 }}>
+        <MarkAllReadButton hasUnread />
+        <ul>{row}</ul>
+      </InboxReadProvider>,
+    );
+    await user.click(screen.getByRole('button', { name: 'Mark all read' }));
+    await waitFor(() => {
+      expect(fakes.refresh).toHaveBeenCalledTimes(1);
+    });
+    expect(screen.queryByText('Unread')).toBeNull();
+    view.rerender(
+      <InboxReadProvider snapshot={{ version: 2 }}>
+        <MarkAllReadButton hasUnread />
+        <ul>{row}</ul>
+      </InboxReadProvider>,
+    );
+    expect(screen.getByText('Unread')).toBeTruthy();
   });
 });

@@ -17,6 +17,7 @@ import { eq, sql } from 'drizzle-orm';
 
 import { trackProductEventBestEffort } from '#src/analytics.js';
 import { withWorkerAiBilling, workerBillingJobOptions } from '#src/billing-context.js';
+import { finishIngestJob } from '#src/ingest-job-result.js';
 import { captureWorkerException, captureWorkerJobFailure } from '#src/monitoring.js';
 import { guardWorkerProcessor } from '#src/platform-worker.js';
 
@@ -577,11 +578,7 @@ export function startEmbedWorker(deps: EmbedWorkerDeps): Worker<queue.EmbedJobDa
           ),
         workerBillingJobOptions(job, token),
       );
-      if (integrations.isDelayedIngestResult(result)) {
-        await job.moveToDelayed(Date.now() + result.retryAfterMs, token);
-        throw new DelayedError();
-      }
-      return result;
+      return finishIngestJob(job, result, token);
     }),
     {
       connection: queue.getRedisConnection(),

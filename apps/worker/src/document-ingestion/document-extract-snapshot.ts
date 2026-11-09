@@ -8,11 +8,23 @@ import { childLogger, getEnv } from '@timeline/shared';
 
 const log = childLogger('worker:document-ingestion:snapshot');
 
-/**
- * Bump when the Image recipe changes without a sandbox-dir file change
- * (base image, workdir, remote paths, resources, chmod set, etc.).
- */
-export const DOCUMENT_EXTRACT_SNAPSHOT_IMAGE_REVISION = '2';
+interface DocumentExtractSnapshotRecipe {
+  pythonVersion: NonNullable<Parameters<typeof Image.debianSlim>[0]>;
+  requirementsFile: string;
+  workdir: string;
+  files: readonly { localPath: string; remotePath: string }[];
+  commands: readonly string[];
+  resources: { cpu: number; memory: number; disk: number };
+}
+
+export const DOCUMENT_EXTRACT_SNAPSHOT_RECIPE: DocumentExtractSnapshotRecipe = {
+  pythonVersion: '3.12',
+  requirementsFile: 'requirements.txt',
+  workdir: '/opt/timeline',
+  files: [{ localPath: 'extract_anydoc.py', remotePath: '/opt/timeline/extract_anydoc.py' }],
+  commands: ['chmod +x /opt/timeline/extract_anydoc.py'],
+  resources: { cpu: 1, memory: 2, disk: 3 },
+};
 
 export const DOCUMENT_EXTRACT_SNAPSHOT_PREFIX = 'timeline-document-extract';
 
@@ -58,12 +70,14 @@ async function listHashableSandboxFiles(sandboxDir: string): Promise<string[]> {
   return out;
 }
 
-/** Stable 12-char hex content hash of sandbox inputs + image revision. */
+/** Snapshot identity includes both sandbox bytes and the recipe that runs them. */
 export async function hashDocumentExtractSandbox(
   sandboxDir: string = defaultDocumentExtractSandboxDir(),
+  recipe: DocumentExtractSnapshotRecipe = DOCUMENT_EXTRACT_SNAPSHOT_RECIPE,
 ): Promise<string> {
   const hash = createHash('sha256');
-  hash.update(`image-revision:${DOCUMENT_EXTRACT_SNAPSHOT_IMAGE_REVISION}\n`);
+  hash.update(JSON.stringify(recipe));
+  hash.update('\0');
   const files = await listHashableSandboxFiles(sandboxDir);
   if (files.length === 0) {
     throw new Error(`document-extract sandbox dir has no hashable files: ${sandboxDir}`);
@@ -104,11 +118,14 @@ export async function resolveDocumentExtractSnapshotName(
 function buildDocumentExtractSnapshotImage(
   sandboxDir: string = defaultDocumentExtractSandboxDir(),
 ): Image {
-  return Image.debianSlim('3.12')
-    .pipInstallFromRequirements(join(sandboxDir, 'requirements.txt'))
-    .workdir('/opt/timeline')
-    .addLocalFile(join(sandboxDir, 'extract_anydoc.py'), '/opt/timeline/extract_anydoc.py')
-    .runCommands('chmod +x /opt/timeline/extract_anydoc.py');
+  const recipe = DOCUMENT_EXTRACT_SNAPSHOT_RECIPE;
+  let image = Image.debianSlim(recipe.pythonVersion)
+    .pipInstallFromRequirements(join(sandboxDir, recipe.requirementsFile))
+    .workdir(recipe.workdir);
+  for (const file of recipe.files) {
+    image = image.addLocalFile(join(sandboxDir, file.localPath), file.remotePath);
+  }
+  return image.runCommands(...recipe.commands);
 }
 
 export interface EnsureDocumentExtractSnapshotResult {
@@ -183,7 +200,7 @@ async function createSnapshot(
     {
       name,
       image,
-      resources: { cpu: 1, memory: 2, disk: 3 },
+      resources: { ...DOCUMENT_EXTRACT_SNAPSHOT_RECIPE.resources },
     },
     onLogs ? { onLogs } : undefined,
   );

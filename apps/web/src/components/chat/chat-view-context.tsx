@@ -11,7 +11,7 @@ import {
   type ReactNode,
 } from 'react';
 
-import type { ChatHandoffContext } from '@/lib/chat-handoff';
+import type { DashboardChatContext } from '@/lib/dashboard-chat-context';
 import type { ChatContextRef } from '@timeline/shared/chat-context';
 
 import { buildChatView, type ChatViewOverlay } from '@/lib/chat-view';
@@ -72,7 +72,7 @@ export function ChatViewProvider({ children }: { children: ReactNode }) {
 
 export function useCurrentChatView(): {
   current: ChatContextRef;
-  dashboardContext: ChatHandoffContext;
+  dashboardContext: DashboardChatContext;
 } {
   const pathname = usePathname();
   const searchParams = useSearchParams();

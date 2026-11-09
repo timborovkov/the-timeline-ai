@@ -2,3 +2,5 @@ export * from '#src/meetings/participants.js';
 export * from '#src/meetings/quick-capture.js';
 export * from '#src/meetings/scope.js';
 export * from '#src/meetings/transcript.js';
+
+export { normalizeMeetingSummaryOutput } from '#src/meetings/model-output.js';

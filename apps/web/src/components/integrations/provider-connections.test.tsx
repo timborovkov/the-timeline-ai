@@ -60,9 +60,15 @@ afterEach(() => {
   cleanup();
 });
 
-function renderWithQueryClient(ui: ReactElement) {
+function fetchHref(input: RequestInfo | URL): string {
+  if (typeof input === 'string') return input;
+  if (input instanceof URL) return input.href;
+  return input.url;
+}
+
+function renderWithQueryClient(ui: ReactElement, options?: { staleTime?: number }) {
   const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
+    defaultOptions: { queries: { retry: false, staleTime: options?.staleTime ?? 0 } },
   });
   return render(<QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>);
 }
@@ -79,22 +85,32 @@ function row(input: {
   connectionId: string;
   ownerLabel: string;
   sourceExternalId?: string;
+  provider?: string;
+  resourceKind?: string;
+  externalLabel?: string;
+  driveLink?: {
+    integrationId: string;
+    selectionId: string;
+    linkedObjectId: string | null;
+  };
 }) {
   return {
     share: {
       id: input.id,
       providerConnectionId: input.connectionId,
-      resourceKind: 'github.repo',
+      resourceKind: input.resourceKind ?? 'github.repo',
       externalId: input.sourceExternalId ?? 'repo-1',
-      externalLabel: 'Acme Repo',
+      externalLabel: input.externalLabel ?? 'Acme Repo',
       revokedAt: null,
     },
     connection: {
       ...baseConnection,
+      ...(input.provider ? { provider: input.provider } : {}),
       id: input.connectionId,
       ownerLabel: input.ownerLabel,
       ownerUserId: `${input.connectionId}-owner`,
     },
+    ...(input.driveLink ? { driveLink: input.driveLink } : {}),
   };
 }
 
@@ -455,8 +471,6 @@ describe('PersonalConnectionsUi', () => {
     expect(await screen.findByText('No sources match “missing”')).toBeTruthy();
 
     await user.tab();
-    await user.tab();
-    await user.tab();
     expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Clear search' }));
 
     await user.keyboard('{Enter}');
@@ -496,10 +510,239 @@ describe('PersonalConnectionsUi', () => {
       />,
     );
 
-    expect(await screen.findByText(/Folder files imported into the document drive/i)).toBeTruthy();
-    expect(screen.getByText(/Shared drive files imported into the document drive/i)).toBeTruthy();
+    expect(await screen.findByText('Folder')).toBeTruthy();
+    expect(screen.getByText('Shared drive')).toBeTruthy();
     expect(screen.getByText(/Team issues, projects, comments, and workflow changes/i)).toBeTruthy();
     expect(screen.getByText(/All accessible projects in this organization/i)).toBeTruthy();
+  });
+
+  it('keeps Drive sharing copy short and the save control next to the account header', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          resources: [{ kind: 'drive.folder', externalId: 'root', label: 'My Drive (root)' }],
+          shares: [],
+        }),
+        { status: 200 },
+      ),
+    );
+
+    renderWithQueryClient(
+      <PersonalConnectionsUi
+        connections={[
+          {
+            id: 'conn-drive',
+            provider: 'google_drive',
+            displayName: 'Google Drive — Tim',
+            lastError: null,
+            lastConnectedAt: '2026-06-01T00:00:00.000Z',
+          },
+        ]}
+      />,
+    );
+
+    const region = await screen.findByRole('region', {
+      name: 'Google Drive account Google Drive — Tim',
+    });
+    expect(await screen.findByRole('checkbox', { name: /My Drive \(root\)/i })).toBeTruthy();
+    expect(screen.getByText('0 sources shared')).toBeTruthy();
+    expect(screen.getByText(/Choose My Drive, a folder, a shared drive/i)).toBeTruthy();
+    expect(screen.queryByText(/changes\.watch/i)).toBeNull();
+    expect(screen.queryByText(/quiet editing window/i)).toBeNull();
+    expect(screen.queryByText(/Shared with me/i)).toBeNull();
+    expect(region.querySelector('[class*="bg-signal-soft"]')).toBeNull();
+    expect(region.querySelector('[class*="rounded-sm border"][class*="max-h-72"]')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Save sharing' })).toBeTruthy();
+  });
+
+  it('browses Drive folders through parentId', async () => {
+    const user = userEvent.setup();
+    const requests: string[] = [];
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      const url = fetchHref(input);
+      requests.push(url);
+      const resources = url.includes('parentId=folder-1')
+        ? [{ kind: 'drive.file', externalId: 'doc-1', label: 'SOW' }]
+        : [{ kind: 'drive.folder', externalId: 'folder-1', label: 'Clients' }];
+      return Promise.resolve(
+        new Response(JSON.stringify({ resources, shares: [] }), { status: 200 }),
+      );
+    });
+
+    renderWithQueryClient(
+      <PersonalConnectionsUi
+        connections={[
+          {
+            id: 'conn-drive',
+            provider: 'google_drive',
+            displayName: 'Google Drive — Tim',
+            lastError: null,
+            lastConnectedAt: '2026-06-01T00:00:00.000Z',
+          },
+        ]}
+      />,
+    );
+
+    expect(await screen.findByText('Clients')).toBeTruthy();
+    await user.click(screen.getByRole('button', { name: 'Open' }));
+    await waitFor(() => {
+      expect(requests.some((url) => url.includes('parentId=folder-1'))).toBe(true);
+    });
+    expect(await screen.findByText('SOW')).toBeTruthy();
+    expect(screen.getByRole('navigation', { name: 'Google Drive folders' })).toBeTruthy();
+    expect(
+      document.querySelector(
+        '[data-slot="provider-resource-picker"][data-provider="google_drive"]',
+      ),
+    ).toBeTruthy();
+  });
+
+  it('keeps the Drive resource picker in the compact details-sheet slot', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      const url = fetchHref(input);
+      const resources = url.includes('parentId=folder-1')
+        ? [{ kind: 'drive.file', externalId: 'doc-1', label: 'SOW' }]
+        : [{ kind: 'drive.folder', externalId: 'folder-1', label: 'Clients' }];
+      return Promise.resolve(
+        new Response(JSON.stringify({ resources, shares: [] }), { status: 200 }),
+      );
+    });
+
+    renderWithQueryClient(
+      <PersonalConnectionsUi
+        compact
+        connections={[
+          {
+            id: 'conn-drive',
+            provider: 'google_drive',
+            displayName: 'Google Drive — Tim',
+            lastError: null,
+            lastConnectedAt: '2026-06-01T00:00:00.000Z',
+          },
+        ]}
+      />,
+    );
+
+    expect(await screen.findByText('Clients')).toBeTruthy();
+    expect(
+      document.querySelector(
+        '[data-slot="provider-resource-picker"][data-provider="google_drive"]',
+      ),
+    ).toBeTruthy();
+    await user.click(screen.getByRole('button', { name: 'Open' }));
+    expect(await screen.findByText('SOW')).toBeTruthy();
+  });
+
+  it('keeps an unsaved Drive folder selection after opening another folder', async () => {
+    const user = userEvent.setup();
+    const requests: { method: string; url: string; body: unknown }[] = [];
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
+      const url = fetchHref(input);
+      const method = init?.method ?? 'GET';
+      if (method === 'PUT') {
+        const bodyText = typeof init?.body === 'string' ? init.body : null;
+        requests.push({ method, url, body: bodyText ? JSON.parse(bodyText) : null });
+        return Promise.resolve(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+      }
+      requests.push({ method, url, body: null });
+      const resources = url.includes('parentId=folder-1')
+        ? [{ kind: 'drive.file', externalId: 'doc-1', label: 'SOW' }]
+        : [{ kind: 'drive.folder', externalId: 'folder-1', label: 'Clients' }];
+      return Promise.resolve(
+        new Response(JSON.stringify({ resources, shares: [] }), { status: 200 }),
+      );
+    });
+
+    renderWithQueryClient(
+      <PersonalConnectionsUi
+        connections={[
+          {
+            id: 'conn-drive',
+            provider: 'google_drive',
+            displayName: 'Google Drive — Tim',
+            lastError: null,
+            lastConnectedAt: '2026-06-01T00:00:00.000Z',
+          },
+        ]}
+      />,
+    );
+
+    expect(await screen.findByText('Clients')).toBeTruthy();
+    await user.click(screen.getByRole('checkbox', { name: /Clients/i }));
+    await user.click(screen.getByRole('button', { name: 'Open' }));
+    expect(await screen.findByText('SOW')).toBeTruthy();
+    await user.click(screen.getByRole('button', { name: /Save sharing/i }));
+
+    await waitFor(() => {
+      expect(requests.some((request) => request.method === 'PUT')).toBe(true);
+    });
+    expect(requests.find((request) => request.method === 'PUT')?.body).toEqual({
+      resources: [{ kind: 'drive.folder', externalId: 'folder-1', label: 'Clients' }],
+    });
+  });
+
+  it('invalidates every Drive picker query after saving shares', async () => {
+    const user = userEvent.setup();
+    const gets: string[] = [];
+    let saved = false;
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
+      const url = fetchHref(input);
+      const method = init?.method ?? 'GET';
+      if (method === 'PUT') {
+        saved = true;
+        return Promise.resolve(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+      }
+      gets.push(url);
+      const isFolder = url.includes('parentId=folder-1');
+      const shares = saved
+        ? [
+            {
+              id: 'share-doc',
+              providerConnectionId: 'conn-drive',
+              resourceKind: 'drive.file',
+              externalId: 'doc-1',
+              externalLabel: 'SOW',
+              revokedAt: null,
+            },
+          ]
+        : [];
+      const resources = isFolder
+        ? [{ kind: 'drive.file', externalId: 'doc-1', label: 'SOW' }]
+        : [{ kind: 'drive.folder', externalId: 'folder-1', label: 'Clients' }];
+      return Promise.resolve(new Response(JSON.stringify({ resources, shares }), { status: 200 }));
+    });
+
+    renderWithQueryClient(
+      <PersonalConnectionsUi
+        connections={[
+          {
+            id: 'conn-drive',
+            provider: 'google_drive',
+            displayName: 'Google Drive — Tim',
+            lastError: null,
+            lastConnectedAt: '2026-06-01T00:00:00.000Z',
+          },
+        ]}
+      />,
+      { staleTime: 30_000 },
+    );
+
+    expect(await screen.findByText('Clients')).toBeTruthy();
+    await user.click(screen.getByRole('button', { name: 'Open' }));
+    expect(await screen.findByText('SOW')).toBeTruthy();
+    await user.click(screen.getByRole('checkbox', { name: /SOW/i }));
+    const rootGetsBeforeSave = gets.filter(
+      (url) => url.includes('/resources') && !url.includes('parentId') && !url.includes('query='),
+    ).length;
+    await user.click(screen.getByRole('button', { name: /Save sharing/i }));
+    await user.click(screen.getByRole('button', { name: 'Google Drive' }));
+    await waitFor(() => {
+      const rootGets = gets.filter(
+        (url) => url.includes('/resources') && !url.includes('parentId') && !url.includes('query='),
+      );
+      expect(rootGets.length).toBeGreaterThan(rootGetsBeforeSave);
+    });
   });
 
   it('drops stale monday helper-board shares that are absent from live resources', async () => {
@@ -675,7 +918,7 @@ describe('PersonalConnectionsUi', () => {
     });
   });
 
-  it('surfaces provider resource errors from JSON responses', async () => {
+  it('keeps internal provider details out of JSON error displays', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response(JSON.stringify({ error: 'Monday GraphQL errors: Unauthorized field or type' }), {
         status: 502,
@@ -697,7 +940,8 @@ describe('PersonalConnectionsUi', () => {
     );
 
     const alert = await screen.findByRole('alert');
-    expect(alert.textContent).toContain('Monday GraphQL errors: Unauthorized field or type');
+    expect(alert.textContent).toContain('Request failed (502)');
+    expect(alert.textContent).not.toContain('Monday GraphQL errors: Unauthorized field or type');
   });
 
   it('maps provider account delete JSON errors to readable copy', async () => {
@@ -741,6 +985,109 @@ describe('PersonalConnectionsUi', () => {
       );
     });
     expect(screen.queryByText(/Could not disconnect this connection/i)).toBeNull();
+  });
+
+  it('shows Google Drive Limited Use before reconnect OAuth starts', async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      if (fetchHref(input).includes('/api/integrations/google_drive/start')) {
+        return Promise.resolve(
+          new Response(JSON.stringify({ url: 'https://accounts.google.com/o' }), { status: 200 }),
+        );
+      }
+      return Promise.resolve(
+        new Response(JSON.stringify({ resources: [], shares: [] }), { status: 200 }),
+      );
+    });
+
+    renderWithQueryClient(
+      <PersonalConnectionsUi
+        connections={[
+          {
+            id: 'conn-drive',
+            provider: 'google_drive',
+            displayName: 'Google Drive — Tim',
+            lastError: 'token_revoked',
+            lastConnectedAt: '2026-06-01T00:00:00.000Z',
+          },
+        ]}
+      />,
+    );
+
+    await screen.findByRole('button', { name: 'Reconnect' });
+    await user.click(screen.getByRole('button', { name: 'Reconnect' }));
+    expect(screen.getByRole('dialog', { name: 'Connect Google Drive' })).toBeTruthy();
+    expect(
+      fetchMock.mock.calls.some((call) =>
+        fetchHref(call[0]).includes('/api/integrations/google_drive/start'),
+      ),
+    ).toBe(false);
+
+    await user.click(screen.getByRole('button', { name: 'Continue to Google' }));
+    await waitFor(() => {
+      expect(
+        fetchMock.mock.calls.some((call) =>
+          fetchHref(call[0]).includes('/api/integrations/google_drive/start'),
+        ),
+      ).toBe(true);
+    });
+  });
+
+  it('lets admins link an active Drive source to a Timeline object', async () => {
+    const user = userEvent.setup();
+    const patches: unknown[] = [];
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
+      const url = fetchHref(input);
+      const method = init?.method ?? 'GET';
+      if (method === 'PATCH') {
+        patches.push(typeof init?.body === 'string' ? JSON.parse(init.body) : null);
+        return Promise.resolve(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+      }
+      if (url.includes('/api/objects/search')) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              results: [{ id: 'object-1', canonicalName: 'Northstar', type: 'project' }],
+            }),
+            { status: 200 },
+          ),
+        );
+      }
+      return Promise.resolve(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+    });
+
+    renderWithQueryClient(
+      <TeamSourcesUi
+        isAdmin
+        activeShareIds={['share-drive']}
+        rows={[
+          row({
+            id: 'share-drive',
+            connectionId: 'conn-drive',
+            ownerLabel: 'Tim',
+            provider: 'google_drive',
+            resourceKind: 'drive.file',
+            sourceExternalId: 'file-1',
+            externalLabel: 'SOW',
+            driveLink: {
+              integrationId: 'integration-drive',
+              selectionId: 'selection-drive',
+              linkedObjectId: null,
+            },
+          }),
+        ]}
+      />,
+    );
+
+    await user.type(
+      screen.getByRole('textbox', { name: 'Link Drive source to a Timeline object' }),
+      'North',
+    );
+    expect(await screen.findByRole('button', { name: 'Northstar' })).toBeTruthy();
+    await user.click(screen.getByRole('button', { name: 'Northstar' }));
+    await waitFor(() => {
+      expect(patches).toEqual([{ linkedObjectId: 'object-1' }]);
+    });
   });
 
   it('explains that admins activate shared team sources', () => {

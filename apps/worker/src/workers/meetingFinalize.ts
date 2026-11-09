@@ -30,7 +30,7 @@ import { buildCalendarSourcePayloadMetadata } from '@timeline/shared/calendar';
 import { sourceMetadataWithConversationArtifacts } from '@timeline/shared/conversational/contact-artifacts';
 import { reconcileLinkArtifactsForRawEvent } from '@timeline/shared/conversational/link-artifacts';
 import { currentExtractionModelVersion } from '@timeline/shared/extraction-model-version';
-import { participantNames } from '@timeline/shared/meetings';
+import { participantNames, normalizeMeetingSummaryOutput } from '@timeline/shared/meetings';
 import { inlineSourceSnapshotMetadata } from '@timeline/shared/reconciliation';
 import { normalizeRawEventsToEvidence } from '@timeline/shared/reconciliation/normalization';
 import { UnrecoverableError, Worker, type Job } from 'bullmq';
@@ -631,6 +631,7 @@ async function summarizeTranscript(
   try {
     const result = await chat({
       schema: finalizeSchema,
+      normalizeOutput: normalizeMeetingSummaryOutput,
       model: modelId,
       instructions:
         'You are summarising a meeting transcript. Produce a concise title, a concise summary (3-5 sentences), and an array of concrete action items mentioned during the meeting. If no action items are present, return an empty array. Do NOT invent owners — only set "owner" when the transcript clearly attributes the task to a named person.',

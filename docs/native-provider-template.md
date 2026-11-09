@@ -33,14 +33,29 @@ registered provider and the policy agree with actual provider methods.
 Create `packages/shared/src/integrations/providers/<provider>.ts` and export it
 from `packages/shared/src/integrations/index.ts`.
 
+Each adapter owns `syncSelectionPolicy`. Use `per_resource` recovery when
+selections have independent cursors, `shared_cursor` when a shared feed must
+cover every selection whenever any is due, and `all` when recovery always needs
+the full selection set. `resolveTarget` must authorize ordinary resource targets
+against selected resources, including any provider-specific parent/child
+relationship. Webhook sentinels and shared-feed continuations retain their
+integration-bound validation in the worker and provider. Keep leases,
+checkpoints, and queue handoffs in the sync worker.
+
 Skeleton:
 
 ```ts
+import { exactTargetSelections } from '#src/integrations/selection-policy.js';
+import { defineResourceAccess } from '#src/integrations/resource-access.js';
 import type { IntegrationProvider, WebhookHandleResult } from '#src/integrations/types.js';
 
 export const exampleProvider: IntegrationProvider = {
   id: 'example',
   displayLabel: 'Example',
+  syncSelectionPolicy: {
+    recovery: 'per_resource',
+    resolveTarget: exactTargetSelections,
+  },
 
   async startOAuth({ redirectUri, state }) {
     return { authorizeUrl: buildAuthorizeUrl({ redirectUri, state }) };
@@ -57,10 +72,12 @@ export const exampleProvider: IntegrationProvider = {
     };
   },
 
-  async listSyncableResources(integration, tokens, ctx) {
-    const freshTokens = await ensureAccessToken(tokens, ctx);
-    return listResources(freshTokens);
-  },
+  ...defineResourceAccess({
+    async browseResources(identity, tokens, ctx) {
+      const freshTokens = await ensureAccessToken(tokens, ctx);
+      return listResources(freshTokens);
+    },
+  }),
 
   async backfill({ integration, tokens, selections, ctx }) {
     for (const selection of selections) {
@@ -182,15 +199,11 @@ Minimum deterministic tests:
   `supportsTargetedSync=false` falls back to broad catch-up.
 - Provider rate-limit parsing into `ProviderRateLimitError`.
 
-Run at least:
-
-```bash
-bun run validate
-bun run doctor
-bun run test:dist-imports
-bun run test:eval
-bun run canary:integrations -- --env-file=<env-file>
-```
+Use the [validation policy and change-specific checks](../AGENTS.md#validation-policy)
+for test selection and GitHub merge gates. Run focused tests for the provider
+behaviors above. Verify live provider wiring with
+`bun run canary:integrations -- --env-file=<env-file>` when the documented
+credentials and environment are available.
 
 ## 6. Update Docs And Canary
 
@@ -220,3 +233,10 @@ A provider is ready for product use when:
 - Deleting or unsharing selected resources stops future provider-side webhook
   work where Timeline controls provisioning.
 - Tests prove team/resource isolation and duplicate delivery idempotency.
+
+Resource browsing and selection validation are separate contracts.
+`defineResourceAccess` validates flat catalogs against the complete list. A
+hierarchical or paginated browser must supply `validateResourceSelections` that
+resolves the proposed IDs independently of the currently visible browser page.
+Both operations receive connection identity and persist refreshed tokens; neither
+requires a fabricated integration lifecycle row.

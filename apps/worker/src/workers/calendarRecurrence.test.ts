@@ -6,6 +6,15 @@ const fakes = vi.hoisted(() => ({
 }));
 
 await vi.mock(
+  import.meta.resolve('@timeline/shared/platform-admin/runtime'),
+  async (importOriginal: () => Promise<Record<string, unknown>>) => ({
+    ...(await importOriginal()),
+    principalIsActive: () => Promise.resolve(true),
+    assertActivePrincipal: () => Promise.resolve(),
+  }),
+  () => import('@timeline/shared/platform-admin/runtime'),
+);
+await vi.mock(
   import.meta.resolve('@timeline/shared'),
   async (importOriginal: () => Promise<Record<string, unknown>>) => {
     const actual = await importOriginal();

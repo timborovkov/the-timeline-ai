@@ -239,4 +239,86 @@ describe('drizzle journal order', () => {
       await pg.close();
     }
   });
+
+  it('keeps Drive google_drive tags at their applied timestamps and coworker after them', () => {
+    const entries = readJournal();
+    const byTag = new Map(entries.map((entry) => [entry.tag, entry]));
+    expect(byTag.get('0097_google_drive_v1')).toMatchObject({
+      idx: 100,
+      when: 1_795_656_340_000,
+    });
+    expect(byTag.get('0098_google_drive_snapshot_uniqueness')).toMatchObject({
+      idx: 101,
+      when: 1_795_656_400_000,
+    });
+    expect(byTag.get('0099_google_drive_snapshot_locate')).toMatchObject({
+      idx: 102,
+      when: 1_795_656_460_000,
+    });
+    expect(byTag.get('0100_google_drive_snapshot_ancestry')).toMatchObject({
+      idx: 103,
+      when: 1_795_656_520_000,
+    });
+    expect(byTag.get('0097_auth_continuations')).toMatchObject({
+      idx: 104,
+      when: 1_795_656_580_000,
+    });
+    expect(byTag.get('0098_agent_provisioning')).toMatchObject({
+      idx: 105,
+      when: 1_795_656_640_000,
+    });
+    expect(byTag.get('0099_agent_reporting')).toMatchObject({
+      idx: 106,
+      when: 1_795_656_700_000,
+    });
+    expect(byTag.get('0097_auth_continuations')?.when).toBeGreaterThan(
+      byTag.get('0100_google_drive_snapshot_ancestry')?.when ?? 0,
+    );
+  });
+
+  it('applies Drive and coworker migrations on a fresh database', async () => {
+    const pg = new PGlite();
+    try {
+      const entries = readJournal();
+      await drizzleMigrate(
+        pg,
+        entries.map((entry) => ({ when: entry.when, sql: readSql(entry.tag) })),
+      );
+      expect(await columnNames(pg, 'google_drive_file_snapshots')).toContain('content_hash');
+      expect(await columnNames(pg, 'google_drive_file_snapshots')).toContain('ancestry');
+      expect(await columnNames(pg, 'integration_selections')).toContain('linked_object_id');
+      expect(await columnNames(pg, 'auth_continuations')).toContain('token_hash');
+      expect(await columnNames(pg, 'agent_provisioning_grants')).toContain('token_hash');
+      expect(await columnNames(pg, 'teams')).toContain('agent_reporting');
+    } finally {
+      await pg.close();
+    }
+  });
+
+  it('applies coworker migrations on a database that already applied Drive 0097-0100', async () => {
+    const pg = new PGlite();
+    try {
+      const entries = readJournal();
+      const driveApplied = entries.filter((entry) => entry.when <= 1_795_656_520_000);
+      expect(driveApplied.at(-1)?.tag).toBe('0100_google_drive_snapshot_ancestry');
+      await drizzleMigrate(
+        pg,
+        driveApplied.map((entry) => ({ when: entry.when, sql: readSql(entry.tag) })),
+      );
+      expect(await columnNames(pg, 'google_drive_file_snapshots')).toContain('content_hash');
+      expect(await columnNames(pg, 'auth_continuations')).toEqual([]);
+      expect(await columnNames(pg, 'teams')).not.toContain('agent_reporting');
+
+      await drizzleMigrate(
+        pg,
+        entries.map((entry) => ({ when: entry.when, sql: readSql(entry.tag) })),
+      );
+      expect(await columnNames(pg, 'google_drive_file_snapshots')).toContain('ancestry');
+      expect(await columnNames(pg, 'auth_continuations')).toContain('destination');
+      expect(await columnNames(pg, 'agent_provisioning_grants')).toContain('allowance');
+      expect(await columnNames(pg, 'teams')).toContain('agent_reporting');
+    } finally {
+      await pg.close();
+    }
+  });
 });

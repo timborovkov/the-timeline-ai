@@ -7,8 +7,7 @@ export const BILLING_ENTITLEMENTS_VERSION = 'v1' as const;
 
 export type BillingPlanId = 'free' | 'payg' | 'team' | 'business' | 'enterprise';
 
-export type BillingMeterId =
-  'ai' | 'recall_minutes' | 'email_units' | 'storage_gb_month' | 'accepted_sources' | 'member_days';
+export { polarEventNameForMeter, type BillingMeterId } from '#src/billing/meters.js';
 
 export interface PlanCommercial {
   id: BillingPlanId;
@@ -350,22 +349,4 @@ export function storageChargeCents(gbMonth: number): number {
 
 export function acceptedSourcesChargeCents(items: number): number {
   return Math.round((items * OVERAGE_RATES.acceptedSourcesCentsPerThousand) / 1000);
-}
-
-export function polarEventNameForMeter(meter: BillingMeterId): string | null {
-  switch (meter) {
-    case 'ai':
-      return 'timeline_ai_eur_cents';
-    case 'recall_minutes':
-      return 'timeline_recall_minutes';
-    case 'email_units':
-      return 'timeline_email_units';
-    case 'storage_gb_month':
-      return 'timeline_storage_gb_month';
-    case 'accepted_sources':
-      return 'timeline_accepted_sources';
-    case 'member_days':
-      // Ingested as member-month fractions against the €2 catalog price.
-      return 'timeline_extra_member_days';
-  }
 }

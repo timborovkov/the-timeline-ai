@@ -51,6 +51,8 @@ describe('hasCurrentLegalSession', () => {
     const grandfathered = session();
     grandfathered.user.legalPrivacyVersion = '2026-11-01';
     expect(hasCurrentLegalSession(grandfathered.user)).toBe(true);
+    grandfathered.user.legalPrivacyVersion = '2026-11-03';
+    expect(hasCurrentLegalSession(grandfathered.user)).toBe(true);
   });
   it('requires both current signed versions and an acceptance timestamp', () => {
     expect(hasCurrentLegalSession(session().user)).toBe(true);
