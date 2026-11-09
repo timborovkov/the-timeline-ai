@@ -2696,6 +2696,54 @@ describe('object scope — notes and suggestions', () => {
     ]);
   });
 
+  it('keeps explicitly linked tasks when unrelated relationships exceed the lookup cap', async () => {
+    const scope = withTeam(db, TEAM_A, USER_OWNER).objects;
+    const company = await scope.createObject({
+      type: 'company',
+      canonicalName: 'Northstar Works',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    const task = await scope.createObject({
+      type: 'task',
+      canonicalName: 'Validate Northstar pilot export',
+      status: 'todo',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    const unrelated = await db
+      .insert(entities)
+      .values(
+        Array.from({ length: 400 }, (_, index) => ({
+          teamId: TEAM_A,
+          type: 'person' as const,
+          canonicalName: `Unrelated contact ${String(index).padStart(3, '0')}`,
+        })),
+      )
+      .returning({ id: entities.id });
+    await db.insert(entityRelationships).values(
+      unrelated.map((row) => ({
+        teamId: TEAM_A,
+        fromEntityId: company.id,
+        toEntityId: row.id,
+        kind: 'related' as const,
+        createdBy: USER_OWNER,
+      })),
+    );
+    await db.insert(entityRelationships).values([
+      {
+        teamId: TEAM_A,
+        fromEntityId: task.id,
+        toEntityId: company.id,
+        kind: 'related',
+        createdBy: USER_OWNER,
+      },
+    ]);
+
+    const detail = await scope.getObject(company.id);
+    const taskPage = await scope.getObjectSectionPage(company.id, 'tasks');
+    expect(detail?.connectedWork.openTasks).toEqual([expect.objectContaining({ id: task.id })]);
+    expect(taskPage?.items).toEqual([expect.objectContaining({ id: task.id })]);
+  });
+
   it('stamps connected done-task completedAt from the status change, not later edits', async () => {
     const scope = withTeam(db, TEAM_A, USER_OWNER).objects;
     const company = await scope.createObject({

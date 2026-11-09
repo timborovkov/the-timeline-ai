@@ -2478,41 +2478,33 @@ async function listExplicitlyLinkedTaskIds(
   scope: TeamScopeCore,
   objectId: string,
 ): Promise<string[]> {
-  const relationshipRows = await db
-    .select({
-      fromId: entityRelationships.fromEntityId,
-      toId: entityRelationships.toEntityId,
-    })
+  const linkedTask = alias(entities, 'linked_task');
+  const rows = await db
+    .select({ id: linkedTask.id })
     .from(entityRelationships)
-    .where(
+    .innerJoin(
+      linkedTask,
       and(
-        eq(entityRelationships.teamId, scope.teamId),
+        eq(linkedTask.teamId, entityRelationships.teamId),
+        inArray(linkedTask.type, [...CONNECTED_TASK_TYPES]),
+        isNull(linkedTask.archivedAt),
+        isNull(linkedTask.mergedIntoId),
         or(
-          eq(entityRelationships.fromEntityId, objectId),
-          eq(entityRelationships.toEntityId, objectId),
+          and(
+            eq(entityRelationships.fromEntityId, objectId),
+            eq(linkedTask.id, entityRelationships.toEntityId),
+          ),
+          and(
+            eq(entityRelationships.toEntityId, objectId),
+            eq(linkedTask.id, entityRelationships.fromEntityId),
+          ),
         ),
       ),
     )
+    .where(eq(entityRelationships.teamId, scope.teamId))
+    .orderBy(desc(linkedTask.updatedAt), desc(linkedTask.id))
     .limit(400);
-  const candidateIds = Array.from(
-    new Set(
-      relationshipRows.flatMap((row) => [row.fromId, row.toId].filter((id) => id !== objectId)),
-    ),
-  );
-  if (candidateIds.length === 0) return [];
-  const taskRows = await db
-    .select({ id: entities.id })
-    .from(entities)
-    .where(
-      and(
-        eq(entities.teamId, scope.teamId),
-        inArray(entities.id, candidateIds),
-        inArray(entities.type, [...CONNECTED_TASK_TYPES]),
-        isNull(entities.archivedAt),
-        isNull(entities.mergedIntoId),
-      ),
-    );
-  return taskRows.map((row) => row.id);
+  return Array.from(new Set(rows.map((row) => row.id)));
 }
 
 async function appliedCompletionTimes(
