@@ -125,6 +125,8 @@ beforeEach(() => {
     connectedWork: {
       openTasks: [],
       recentTasks: [],
+      openTaskCount: 0,
+      doneTaskCount: 0,
       calendarEvents: [],
       timelineEvents: [],
       objects: [],

@@ -223,6 +223,8 @@ const detail = {
   connectedWork: {
     openTasks: [],
     recentTasks: [],
+    openTaskCount: 0,
+    doneTaskCount: 0,
     calendarEvents: [],
     timelineEvents: [],
     objects: [],
@@ -593,6 +595,8 @@ describe('ObjectDetailClient', () => {
               status: 'done',
             },
           ],
+          openTaskCount: 1,
+          doneTaskCount: 1,
           calendarEvents: [
             {
               id: 'calendar-1',
@@ -1300,6 +1304,40 @@ describe('ObjectDetailClient', () => {
     expect(html).toContain('No completed tasks yet');
     expect(html).toContain('Mika Product');
     expect(html).toContain('Validate Northstar pilot export');
+  });
+
+  it('shows Open and Done totals even when connected-task previews are truncated', () => {
+    const html = renderObjectDetail({
+      detail: {
+        ...detail,
+        type: 'company',
+        canonicalName: 'Northstar Works',
+        connectedWork: {
+          ...detail.connectedWork,
+          openTasks: Array.from({ length: 12 }, (_, index) => ({
+            ...detail,
+            id: `task-open-${index}`,
+            type: 'task',
+            canonicalName: `Open connected task ${index}`,
+            status: 'todo',
+          })),
+          recentTasks: Array.from({ length: 8 }, (_, index) => ({
+            ...detail,
+            id: `task-done-${index}`,
+            type: 'task',
+            canonicalName: `Done connected task ${index}`,
+            status: 'done',
+          })),
+          openTaskCount: 15,
+          doneTaskCount: 9,
+        },
+      },
+      userId: 'user-1',
+      suggestions: [],
+    });
+
+    expect(html).toContain('Open 15 · Done 9');
+    expect(html).not.toContain('Open 12 · Done 8');
   });
 
   it('shows a quiet empty line when Recent history has no done tasks', () => {

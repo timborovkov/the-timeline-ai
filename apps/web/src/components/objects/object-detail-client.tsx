@@ -1975,6 +1975,8 @@ function ObjectConnectedWorkSection({
           members={members}
           openTasks={connectedWork.openTasks}
           recentTasks={connectedWork.recentTasks}
+          openTaskCount={connectedWork.openTaskCount}
+          doneTaskCount={connectedWork.doneTaskCount}
         />
         <ConnectedCalendarList events={connectedWork.calendarEvents} />
         <ConnectedObjectList
@@ -2025,6 +2027,8 @@ function ConnectedTaskList({
   members,
   openTasks,
   recentTasks,
+  openTaskCount,
+  doneTaskCount,
 }: {
   objectId: string;
   objectType: ObjectDetail['type'];
@@ -2033,11 +2037,15 @@ function ConnectedTaskList({
   members: { id: string; label: string }[];
   openTasks: ObjectDetail['connectedWork']['openTasks'];
   recentTasks: ObjectDetail['connectedWork']['recentTasks'];
+  openTaskCount: number;
+  doneTaskCount: number;
 }) {
+  const openCount = Math.max(openTaskCount, openTasks.length);
+  const doneCount = Math.max(doneTaskCount, recentTasks.length);
   return (
     <ConnectedWorkSection title="Tasks">
       <p className={`mb-1.5 ${DETAIL_COUNT_CLASS}`}>
-        Open {openTasks.length} · Done {recentTasks.length}
+        Open {openCount} · Done {doneCount}
       </p>
       {canAdd ? (
         <ConnectedTaskComposer objectId={objectId} objectType={objectType} disabled={pending} />

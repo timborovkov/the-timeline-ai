@@ -232,6 +232,8 @@ export interface ObjectDetail extends ObjectRow {
   connectedWork: {
     openTasks: ObjectRow[];
     recentTasks: ObjectRow[];
+    openTaskCount: number;
+    doneTaskCount: number;
     calendarEvents: {
       id: string;
       title: string;

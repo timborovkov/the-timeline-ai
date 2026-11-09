@@ -1479,6 +1479,8 @@ export interface ObjectDetail extends ObjectRow {
   connectedWork: {
     openTasks: ObjectRow[];
     recentTasks: ObjectRow[];
+    openTaskCount: number;
+    doneTaskCount: number;
     calendarEvents: {
       id: string;
       title: string;
@@ -2472,6 +2474,13 @@ export async function getObjectSectionPage(
 }
 
 const CONNECTED_TASK_TYPES = ['task', 'follow_up'] as const;
+const CONNECTED_OPEN_TASK_PREVIEW = 12;
+const CONNECTED_RECENT_TASK_PREVIEW = 8;
+const TERMINAL_TASK_STATUSES = ['done', 'cancelled'] as const;
+
+function isTerminalTaskStatus(status: string): boolean {
+  return status === 'done' || status === 'cancelled';
+}
 
 async function listExplicitlyLinkedTaskIds(
   db: Db,
@@ -2794,31 +2803,51 @@ async function getConnectedWork(
     if (row.type === 'task' || row.type === 'follow_up') taskIds.add(row.id);
   }
 
-  const taskRows =
-    taskIds.size > 0
-      ? (
-          await db
-            .select()
-            .from(entities)
-            .where(
-              and(
-                eq(entities.teamId, scope.teamId),
-                inArray(entities.id, Array.from(taskIds)),
-                inArray(entities.type, ['task', 'follow_up']),
-                isNull(entities.archivedAt),
-                isNull(entities.mergedIntoId),
-              ),
-            )
-            .orderBy(desc(entities.updatedAt), desc(entities.id))
-            .limit(40)
-        ).map(toObjectRow)
-      : [];
-  const openTasks = taskRows
-    .filter((task) => task.status !== 'done' && task.status !== 'cancelled')
-    .slice(0, 12);
-  const recentTaskRows = taskRows
-    .filter((task) => task.status === 'done' || task.status === 'cancelled')
-    .slice(0, 8);
+  let openTaskCount = 0;
+  let doneTaskCount = 0;
+  let openTasks: ObjectRow[] = [];
+  let recentTaskRows: ObjectRow[] = [];
+  if (taskIds.size > 0) {
+    const ids = Array.from(taskIds);
+    const connectedTaskScope = and(
+      eq(entities.teamId, scope.teamId),
+      inArray(entities.id, ids),
+      inArray(entities.type, [...CONNECTED_TASK_TYPES]),
+      isNull(entities.archivedAt),
+      isNull(entities.mergedIntoId),
+    );
+    const [statusCounts, openTaskPreviewRows, doneTaskPreviewRows] = await Promise.all([
+      db
+        .select({
+          status: entities.status,
+          count: sql<number>`count(*)::int`,
+        })
+        .from(entities)
+        .where(connectedTaskScope)
+        .groupBy(entities.status),
+      db
+        .select()
+        .from(entities)
+        .where(and(connectedTaskScope, notInArray(entities.status, [...TERMINAL_TASK_STATUSES])))
+        .orderBy(desc(entities.updatedAt), desc(entities.id))
+        .limit(CONNECTED_OPEN_TASK_PREVIEW),
+      db
+        .select()
+        .from(entities)
+        .where(and(connectedTaskScope, inArray(entities.status, [...TERMINAL_TASK_STATUSES])))
+        .orderBy(desc(entities.updatedAt), desc(entities.id))
+        .limit(CONNECTED_RECENT_TASK_PREVIEW),
+    ]);
+    for (const row of statusCounts) {
+      if (isTerminalTaskStatus(row.status)) {
+        doneTaskCount += row.count;
+      } else {
+        openTaskCount += row.count;
+      }
+    }
+    openTasks = openTaskPreviewRows.map(toObjectRow);
+    recentTaskRows = doneTaskPreviewRows.map(toObjectRow);
+  }
   const completionTimes = await appliedCompletionTimes(
     db,
     scope,
@@ -3106,6 +3135,8 @@ async function getConnectedWork(
   return {
     openTasks,
     recentTasks,
+    openTaskCount,
+    doneTaskCount,
     calendarEvents: filteredCalendarRows,
     timelineEvents: filteredTimelineRows,
     objects: sharedObjectRows

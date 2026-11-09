@@ -2741,7 +2741,104 @@ describe('object scope — notes and suggestions', () => {
     const detail = await scope.getObject(company.id);
     const taskPage = await scope.getObjectSectionPage(company.id, 'tasks');
     expect(detail?.connectedWork.openTasks).toEqual([expect.objectContaining({ id: task.id })]);
+    expect(detail?.connectedWork.openTaskCount).toBe(1);
+    expect(detail?.connectedWork.doneTaskCount).toBe(0);
     expect(taskPage?.items).toEqual([expect.objectContaining({ id: task.id })]);
+  });
+
+  it('counts connected tasks independently of preview limits', async () => {
+    const scope = withTeam(db, TEAM_A, USER_OWNER).objects;
+    const company = await scope.createObject({
+      type: 'company',
+      canonicalName: 'Northstar Works',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    const openRows = await db
+      .insert(entities)
+      .values(
+        Array.from({ length: 13 }, (_, index) => ({
+          teamId: TEAM_A,
+          type: 'task' as const,
+          canonicalName: `Open connected task ${String(index).padStart(2, '0')}`,
+          status: 'todo',
+        })),
+      )
+      .returning({ id: entities.id });
+    const doneRows = await db
+      .insert(entities)
+      .values(
+        Array.from({ length: 9 }, (_, index) => ({
+          teamId: TEAM_A,
+          type: 'task' as const,
+          canonicalName: `Done connected task ${String(index).padStart(2, '0')}`,
+          status: 'done',
+        })),
+      )
+      .returning({ id: entities.id });
+    await db.insert(entityRelationships).values(
+      [...openRows, ...doneRows].map((row) => ({
+        teamId: TEAM_A,
+        fromEntityId: row.id,
+        toEntityId: company.id,
+        kind: 'related' as const,
+        createdBy: USER_OWNER,
+      })),
+    );
+
+    const detail = await scope.getObject(company.id);
+    expect(detail?.connectedWork.openTaskCount).toBe(13);
+    expect(detail?.connectedWork.doneTaskCount).toBe(9);
+    expect(detail?.connectedWork.openTasks).toHaveLength(12);
+    expect(detail?.connectedWork.recentTasks).toHaveLength(8);
+  });
+
+  it('still counts older open tasks when many newer done tasks exist', async () => {
+    const scope = withTeam(db, TEAM_A, USER_OWNER).objects;
+    const company = await scope.createObject({
+      type: 'company',
+      canonicalName: 'Northstar Works',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    const [openTask] = await db
+      .insert(entities)
+      .values([
+        {
+          teamId: TEAM_A,
+          type: 'task',
+          canonicalName: 'Older open connected task',
+          status: 'todo',
+          updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+        },
+      ])
+      .returning({ id: entities.id });
+    if (!openTask) throw new Error('expected older open task row');
+    const doneRows = await db
+      .insert(entities)
+      .values(
+        Array.from({ length: 40 }, (_, index) => ({
+          teamId: TEAM_A,
+          type: 'task' as const,
+          canonicalName: `Newer done connected task ${String(index).padStart(2, '0')}`,
+          status: 'done',
+          updatedAt: new Date('2026-06-01T00:00:00.000Z'),
+        })),
+      )
+      .returning({ id: entities.id });
+    await db.insert(entityRelationships).values(
+      [openTask, ...doneRows].map((row) => ({
+        teamId: TEAM_A,
+        fromEntityId: row.id,
+        toEntityId: company.id,
+        kind: 'related' as const,
+        createdBy: USER_OWNER,
+      })),
+    );
+
+    const detail = await scope.getObject(company.id);
+    expect(detail?.connectedWork.openTaskCount).toBe(1);
+    expect(detail?.connectedWork.doneTaskCount).toBe(40);
+    expect(detail?.connectedWork.openTasks).toEqual([expect.objectContaining({ id: openTask.id })]);
+    expect(detail?.connectedWork.recentTasks).toHaveLength(8);
   });
 
   it('stamps connected done-task completedAt from the status change, not later edits', async () => {
@@ -2788,6 +2885,7 @@ describe('object scope — notes and suggestions', () => {
       .where(eq(entities.id, task.id));
 
     const detail = await scope.getObject(company.id);
+    expect(detail?.connectedWork.doneTaskCount).toBe(1);
     expect(detail?.connectedWork.recentTasks).toEqual([
       expect.objectContaining({
         id: task.id,
