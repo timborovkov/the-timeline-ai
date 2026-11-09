@@ -121,7 +121,7 @@ const TRUST_SECTIONS = [
     links: [
       {
         label: 'Read the cookies and browser-storage notice',
-        href: 'https://thetimeline.cc/cookies',
+        href: '/cookies',
       },
     ],
   },
@@ -336,7 +336,7 @@ const publicUtilityDocuments = definePublicDocuments('public-utility', [
     title: 'Terms of Use',
     description: 'Terms governing access to The Timeline.',
     indexability: 'index',
-    dates: { modified: TERMS_VERSION, reviewed: '2026-11-03' },
+    dates: { modified: TERMS_VERSION, reviewed: TERMS_VERSION },
     capability: { kind: 'not-applicable' },
     sitemap: { changeFrequency: 'monthly', priority: 0.4 },
     structuredData: [{ type: 'web-page' }],
