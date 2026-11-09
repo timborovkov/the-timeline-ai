@@ -34,6 +34,27 @@ describe('Terms legal links', () => {
     expect(html).toContain('accepting these Terms does not consent');
   });
 
+  it('uses a complete sentence for ZDR roles and keeps Third-party hyphenated', () => {
+    const html = renderToStaticMarkup(<TermsPage />);
+
+    expect(html).toContain(
+      'The following AI roles require zero-data-retention processing and cannot downgrade to weaker retention during an outage:',
+    );
+    expect(html).toContain('Third-party and open-source components');
+    expect(html).not.toContain('Third- party');
+    expect(html).not.toMatch(/>generation, extraction/);
+  });
+
+  it('distinguishes personal disconnect, workspace-source removal, and captured evidence', () => {
+    const html = renderToStaticMarkup(<TermsPage />);
+
+    expect(html).toContain('member disconnecting a personal provider account');
+    expect(html).toContain('admin removing a workspace source');
+    expect(html).toContain('Neither action deletes evidence already captured into Timeline');
+    expect(html).toContain('Deleting a document hides it in the product');
+    expect(html).not.toContain('Disconnecting a source does not automatically delete evidence');
+  });
+
   it('withholds the binding agreement while production publication is blocked', () => {
     vi.stubEnv('NODE_ENV', 'production');
     vi.stubEnv('LEGAL_PUBLICATION_READY', 'false');
