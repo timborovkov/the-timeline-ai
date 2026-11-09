@@ -93,7 +93,6 @@ import { readJson } from '@/lib/api-response';
 import { displayText, formatDisplayDateTime } from '@/lib/display-dates';
 import { isInternalIdentifier } from '@/lib/display-labels';
 import { isSchedulableObjectType } from '@/lib/due-dates';
-import { dateInputValue } from '@/lib/iso-timestamp';
 import { notifyAction } from '@/lib/notify';
 import { formatTaskCategoryChangeValue } from '@/lib/object-change-format';
 import { statusOptionsForType } from '@/lib/object-status-options';
@@ -2217,7 +2216,7 @@ function ConnectedTaskRow({
             </EditableMetadata.Value>
             <EditableMetadata.Editor>
               <MetadataDateEditor
-                defaultValue={dateInputValue(dueAt)}
+                defaultValue={toLocalInputValue(dueAt, timezone)}
                 onApply={(value) => {
                   save('dueAt', value ? new Date(`${value}T00:00:00.000Z`) : null);
                 }}

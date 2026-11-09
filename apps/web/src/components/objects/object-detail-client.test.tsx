@@ -190,6 +190,7 @@ const { renderToStaticMarkup } = await import('react-dom/server');
 
 const { ObjectDetailClient } = await import('./object-detail-client.js');
 const { visibleObjectSearchResultsForQuery } = await import('./object-search-results.js');
+const { WorkspaceTimezoneProvider } = await import('@/components/workspace-timezone-context');
 const objectActions = await import('@/app/actions/objects');
 
 const detail = {
@@ -1557,6 +1558,44 @@ describe('ObjectDetailClient', () => {
         status: 'doing',
       });
     });
+  });
+
+  it('opens the connected-task due editor on the workspace-local date', async () => {
+    const user = userEvent.setup();
+    render(
+      createElement(WorkspaceTimezoneProvider, {
+        timezone: 'America/Los_Angeles',
+        children: objectDetailElement({
+          detail: {
+            ...detail,
+            type: 'company',
+            canonicalName: 'Northstar Works',
+            dueAt: null,
+            connectedWork: {
+              ...detail.connectedWork,
+              openTasks: [
+                {
+                  ...detail,
+                  id: 'task-1',
+                  type: 'task',
+                  canonicalName: 'Validate Northstar pilot export',
+                  status: 'todo',
+                  dueAt: new Date('2026-07-21T02:00:00.000Z'),
+                },
+              ],
+            },
+          },
+          userId: 'user-1',
+          suggestions: [],
+        }),
+      }),
+    );
+
+    expect(screen.getByText('Overdue Jul 20, 2026')).toBeTruthy();
+    await user.click(
+      screen.getByRole('button', { name: 'Due date for Validate Northstar pilot export' }),
+    );
+    expect(screen.getByLabelText('Due date')).toHaveProperty('value', '2026-07-20');
   });
 
   it('does not offer the generic unlink action for a task primary project', () => {
