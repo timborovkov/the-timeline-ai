@@ -15,6 +15,7 @@ const fakes = vi.hoisted(() => ({
   listPrimaryProjectsForTasks: vi.fn(),
   listObjectBoardContext: vi.fn(),
   listPendingSuggestions: vi.fn(),
+  listPendingSuggestionsForObject: vi.fn(),
   listMembers: vi.fn(),
   objectDetailClientProps: vi.fn(),
   redirect: vi.fn((path: string) => {
@@ -48,7 +49,10 @@ await vi.mock(
         listPrimaryProjectsForTasks: fakes.listPrimaryProjectsForTasks,
       },
       boards: { listObjectBoardContext: fakes.listObjectBoardContext },
-      suggestions: { listPendingSuggestions: fakes.listPendingSuggestions },
+      suggestions: {
+        listPendingSuggestions: fakes.listPendingSuggestions,
+        listPendingSuggestionsForObject: fakes.listPendingSuggestionsForObject,
+      },
       pins: { isPinned: fakes.isPinned },
       timeline: { listMembers: fakes.listMembers },
     }),
@@ -142,6 +146,7 @@ beforeEach(() => {
   fakes.getMergedObjectTarget.mockResolvedValue(null);
   fakes.listObjectBoardContext.mockResolvedValue([]);
   fakes.listPendingSuggestions.mockResolvedValue([]);
+  fakes.listPendingSuggestionsForObject.mockResolvedValue([]);
   fakes.listMembers.mockResolvedValue([]);
 });
 
@@ -157,6 +162,17 @@ describe('ObjectDetailPage', () => {
     expect(html).toContain('href="/app/tasks?task=task-1"');
   });
 
+  it('loads pending suggestions for the object instead of the workspace-newest list', async () => {
+    renderToStaticMarkup(
+      await ObjectDetailPage({
+        params: Promise.resolve({ id: OBJECT_ID }),
+      }),
+    );
+
+    expect(fakes.listPendingSuggestionsForObject).toHaveBeenCalledWith(OBJECT_ID);
+    expect(fakes.listPendingSuggestions).not.toHaveBeenCalled();
+  });
+
   it('falls back to objects when returnTo is external', async () => {
     const html = renderToStaticMarkup(
       await ObjectDetailPage({
@@ -169,7 +185,7 @@ describe('ObjectDetailPage', () => {
   });
 
   it('keeps sibling create items with pending relationship bundles for the object page', async () => {
-    fakes.listPendingSuggestions.mockResolvedValue([
+    fakes.listPendingSuggestionsForObject.mockResolvedValue([
       {
         id: 'bundle-1',
         source: 'background',
@@ -247,7 +263,7 @@ describe('ObjectDetailPage', () => {
   });
 
   it('does not keep failed sibling create items for pending relationship bundles', async () => {
-    fakes.listPendingSuggestions.mockResolvedValue([
+    fakes.listPendingSuggestionsForObject.mockResolvedValue([
       {
         id: 'bundle-1',
         source: 'background',
