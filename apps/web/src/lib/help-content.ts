@@ -234,7 +234,12 @@ export const HELP_PAGES: HelpPage[] = [
     sections: [
       {
         title: 'Request deletion of captured data',
-        resourceLinks: [{ href: '/help/support', label: 'Request deletion through support' }],
+        resourceLinks: [
+          {
+            href: 'https://thetimeline.cc/help/support',
+            label: 'Request deletion through support',
+          },
+        ],
         body: 'Use the support form at /help/support or email contact@thetimeline.cc. Deletion requests are handled manually; there is no automatic history purge when you disconnect.',
         items: [
           'Tell us the workspace name, the connected provider, and whether you want all captured data from that source or a narrower set removed. Identify files by name or link only when needed; do not send passwords, tokens, or copies of private documents.',
