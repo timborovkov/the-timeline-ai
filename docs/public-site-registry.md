@@ -121,10 +121,13 @@ without removing its entry.
   not accept arbitrary JSON-LD blobs.
 - `llms` supplies a discovery section, stable order, short summary, optional
   full summary, and optional long-form sections with labeled links or fenced
-  code blocks. Help resource links flow into those sections automatically;
-  destinations must be absolute HTTPS URLs and are normalized before Markdown
-  serialization. Set `llms` to `false` when a document should not appear in
-  LLM-readable discovery.
+  code blocks. Help resource links flow into those sections automatically.
+  Origin-relative canonical paths (`/help/support`) and internal source-style
+  hrefs (`help-guides:/help/integrations`) are resolved with `canonicalPublicUrl`
+  against the canonical public origin before validation. Stored destinations
+  must still be absolute HTTPS URLs; the validator is not relaxed for http,
+  protocol-relative, or script URLs. Set `llms` to `false` when a document
+  should not appear in LLM-readable discovery.
 
 ## Verification
 
