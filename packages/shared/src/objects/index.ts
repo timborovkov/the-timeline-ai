@@ -2245,18 +2245,7 @@ export async function getObjectSectionPage(
     return pageWindow(rows, limit, (row) => ({ at: row.changedAt.toISOString(), id: row.id }));
   }
   if (section === 'tasks') {
-    const relRows = await db
-      .select({ taskId: entityRelationships.fromEntityId })
-      .from(entityRelationships)
-      .where(
-        and(
-          eq(entityRelationships.teamId, scope.teamId),
-          eq(entityRelationships.toEntityId, entityId),
-          eq(entityRelationships.kind, 'child'),
-        ),
-      )
-      .limit(200);
-    const taskIds = relRows.map((r) => r.taskId);
+    const taskIds = await listExplicitlyLinkedTaskIds(db, scope, entityId);
     if (taskIds.length === 0) return { items: [], nextCursor: null };
     const cursorSql = cursorCondition(args.cursor, entities.updatedAt, entities.id);
     const rows = await db
@@ -2266,7 +2255,7 @@ export async function getObjectSectionPage(
         and(
           eq(entities.teamId, scope.teamId),
           inArray(entities.id, taskIds),
-          eq(entities.type, 'task'),
+          inArray(entities.type, [...CONNECTED_TASK_TYPES]),
           isNull(entities.archivedAt),
           isNull(entities.mergedIntoId),
           ne(entities.status, 'done'),
@@ -2482,6 +2471,50 @@ export async function getObjectSectionPage(
   }));
 }
 
+const CONNECTED_TASK_TYPES = ['task', 'follow_up'] as const;
+
+async function listExplicitlyLinkedTaskIds(
+  db: Db,
+  scope: TeamScopeCore,
+  objectId: string,
+): Promise<string[]> {
+  const relationshipRows = await db
+    .select({
+      fromId: entityRelationships.fromEntityId,
+      toId: entityRelationships.toEntityId,
+    })
+    .from(entityRelationships)
+    .where(
+      and(
+        eq(entityRelationships.teamId, scope.teamId),
+        or(
+          eq(entityRelationships.fromEntityId, objectId),
+          eq(entityRelationships.toEntityId, objectId),
+        ),
+      ),
+    )
+    .limit(400);
+  const candidateIds = Array.from(
+    new Set(
+      relationshipRows.flatMap((row) => [row.fromId, row.toId].filter((id) => id !== objectId)),
+    ),
+  );
+  if (candidateIds.length === 0) return [];
+  const taskRows = await db
+    .select({ id: entities.id })
+    .from(entities)
+    .where(
+      and(
+        eq(entities.teamId, scope.teamId),
+        inArray(entities.id, candidateIds),
+        inArray(entities.type, [...CONNECTED_TASK_TYPES]),
+        isNull(entities.archivedAt),
+        isNull(entities.mergedIntoId),
+      ),
+    );
+  return taskRows.map((row) => row.id);
+}
+
 async function getConnectedWork(
   db: Db,
   scope: TeamScopeCore,
@@ -2489,7 +2522,6 @@ async function getConnectedWork(
 ): Promise<ObjectDetail['connectedWork']> {
   const names = objectNamesForMatching(object);
   const tokens = objectEvidenceTokens(object);
-  const nameMatch = likeMentionCondition(entities.canonicalName, names);
 
   const factIdRows = await db
     .select({ factId: factEntities.factId, rawEventId: factsTable.rawEventId })
@@ -2509,9 +2541,8 @@ async function getConnectedWork(
   const factRawEventIds = Array.from(new Set(factIdRows.map((row) => row.rawEventId)));
 
   const [
-    relationshipTaskRows,
+    linkedTaskIds,
     sharedObjectRows,
-    titleTaskRows,
     linkedCalendarRows,
     artifactRawEventIds,
     boardRows,
@@ -2520,17 +2551,7 @@ async function getConnectedWork(
     documentRows,
     noteRawEventRows,
   ] = await Promise.all([
-    db
-      .select({ taskId: entityRelationships.fromEntityId })
-      .from(entityRelationships)
-      .where(
-        and(
-          eq(entityRelationships.teamId, scope.teamId),
-          eq(entityRelationships.toEntityId, object.id),
-          eq(entityRelationships.kind, 'child'),
-        ),
-      )
-      .limit(200),
+    listExplicitlyLinkedTaskIds(db, scope, object.id),
     factIds.length > 0
       ? db
           .select({
@@ -2556,23 +2577,6 @@ async function getConnectedWork(
             entities.canonicalName,
           )
           .limit(20)
-      : Promise.resolve([]),
-    nameMatch
-      ? db
-          .select({ id: entities.id, canonicalName: entities.canonicalName })
-          .from(entities)
-          .where(
-            and(
-              eq(entities.teamId, scope.teamId),
-              inArray(entities.type, ['task', 'follow_up']),
-              isNull(entities.archivedAt),
-              isNull(entities.mergedIntoId),
-              ne(entities.id, object.id),
-              nameMatch,
-            ),
-          )
-          .orderBy(desc(entities.updatedAt), desc(entities.id))
-          .limit(50)
       : Promise.resolve([]),
     db
       .select({ calendarEventId: calendarEventEntities.calendarEventId })
@@ -2762,13 +2766,9 @@ async function getConnectedWork(
       .values(),
   );
 
-  const taskIds = new Set<string>();
-  for (const row of relationshipTaskRows) taskIds.add(row.taskId);
+  const taskIds = new Set<string>(linkedTaskIds);
   for (const row of sharedObjectRows) {
     if (row.type === 'task' || row.type === 'follow_up') taskIds.add(row.id);
-  }
-  for (const row of titleTaskRows) {
-    if (textMentionsAnyValue(row.canonicalName, names)) taskIds.add(row.id);
   }
 
   const taskRows =

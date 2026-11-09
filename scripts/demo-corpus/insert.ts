@@ -925,7 +925,13 @@ async function insertObjects(tx: SeedTx): Promise<void> {
       },
     });
 
-  const relationships = [
+  const moveNorthstarTask = CORPUS_OBJECTS.find((row) =>
+    row.canonicalName.startsWith('Move Northstar pilot review'),
+  );
+  if (!moveNorthstarTask) {
+    throw new Error('Missing Move Northstar pilot review task');
+  }
+  const namedRelationships = [
     { from: 'Helio Retail pilot', to: 'Helio Retail', kind: 'related' as const },
     { from: 'Brightline Health', to: 'Dana Cole', kind: 'related' as const },
     { from: 'Northwind Capital lead', to: 'Northwind Capital', kind: 'related' as const },
@@ -941,14 +947,63 @@ async function insertObjects(tx: SeedTx): Promise<void> {
     { from: 'Harbor Peak catch-up', to: 'Harbor Peak', kind: 'related' as const },
     { from: 'Atlas beta webinar', to: 'GTM launch system', kind: 'related' as const },
   ];
+  const explicitTaskRelationships = [
+    {
+      fromEntityId: DEMO_IDS.objectDelivery,
+      toEntityId: dealflowEntityId('Northstar Works'),
+      kind: 'related' as const,
+    },
+    {
+      fromEntityId: DEMO_IDS.objectDelivery,
+      toEntityId: DEMO_IDS.objectPilot,
+      kind: 'child' as const,
+    },
+    {
+      fromEntityId: dealflowEntityId('Ping Elena Park on field-mapping'),
+      toEntityId: dealflowEntityId('Northstar Works'),
+      kind: 'related' as const,
+    },
+    {
+      fromEntityId: moveNorthstarTask.id,
+      toEntityId: dealflowEntityId('Northstar Works'),
+      kind: 'related' as const,
+    },
+    {
+      fromEntityId: dealflowEntityId('Send Northwind data room'),
+      toEntityId: dealflowEntityId('Series A process'),
+      kind: 'related' as const,
+    },
+    {
+      fromEntityId: dealflowEntityId('Answer Northwind diligence Q&A'),
+      toEntityId: dealflowEntityId('Series A process'),
+      kind: 'related' as const,
+    },
+    {
+      fromEntityId: dealflowEntityId('Prepare Brightline MSA excerpt'),
+      toEntityId: dealflowEntityId('Brightline Health'),
+      kind: 'related' as const,
+    },
+    {
+      fromEntityId: dealflowEntityId('Crop Northstar screenshot for webinar'),
+      toEntityId: dealflowEntityId('Atlas beta webinar'),
+      kind: 'related' as const,
+    },
+  ];
   await tx
     .insert(entityRelationships)
     .values(
-      relationships.map((row, index) => ({
+      [
+        ...namedRelationships.map((row) => ({
+          fromEntityId: dealflowEntityId(row.from),
+          toEntityId: dealflowEntityId(row.to),
+          kind: row.kind,
+        })),
+        ...explicitTaskRelationships,
+      ].map((row, index) => ({
         id: CORPUS_UUID.relationship(index + 1),
         teamId: TEAM_ID,
-        fromEntityId: dealflowEntityId(row.from),
-        toEntityId: dealflowEntityId(row.to),
+        fromEntityId: row.fromEntityId,
+        toEntityId: row.toEntityId,
         kind: row.kind,
         createdBy: DEMO_IDS.owner,
       })),

@@ -570,6 +570,8 @@ describe('ObjectDetailClient', () => {
     const html = renderObjectDetail({
       detail: {
         ...detail,
+        type: 'company',
+        canonicalName: 'DFK',
         connectedWork: {
           openTasks: [
             {
@@ -578,6 +580,7 @@ describe('ObjectDetailClient', () => {
               type: 'task',
               canonicalName: 'Send message to DFK with proposed meeting times',
               status: 'todo',
+              assigneeUserId: 'user-mika',
             },
           ],
           recentTasks: [
@@ -668,6 +671,7 @@ describe('ObjectDetailClient', () => {
       },
       userId: 'user-1',
       suggestions: [],
+      members: [{ id: 'user-mika', label: 'Mika Product' }],
     });
 
     expect(html).toContain('Send message to DFK with proposed meeting times');
@@ -676,7 +680,12 @@ describe('ObjectDetailClient', () => {
     expect(html).not.toContain('Timeline moments');
     expect(html).toContain('Jonne Granqvist');
     expect(html).toContain('Pilot pipeline');
-    expect(html).toContain('Merge DFK Finland Oy into DFK');
+    expect(html).toContain('Open 1 · Done 1');
+    expect(html).toContain('Recent history');
+    expect(html).toContain('Mika Product');
+    expect(html).toContain('Add a task');
+    expect(html).not.toContain('Merge DFK Finland Oy into DFK');
+    expect(html).not.toContain('/app/approvals');
     expect(html).toContain('Send pilot times to DFK');
     expect(html).toContain('example.com/dfk');
     expect(html).toContain('pilot-photo.png');
@@ -765,7 +774,8 @@ describe('ObjectDetailClient', () => {
       suggestions: [],
     });
 
-    expect(html.match(new RegExp(taskTitle, 'g'))).toHaveLength(1);
+    expect(html.match(/href="\/app\/objects\/task-1"/g)).toHaveLength(1);
+    expect(html).toContain(taskTitle);
   });
 
   it('renders saved contact facets for people and companies', () => {
@@ -1053,7 +1063,7 @@ describe('ObjectDetailClient', () => {
                 `change-${index}`,
                 Array.from({ length: index < 2 ? 1 : 2 }, () => 'change'),
                 'update',
-                undefined,
+                longBody,
                 10 + index * 3,
               ),
             ),
@@ -1076,20 +1086,17 @@ describe('ObjectDetailClient', () => {
     expect(screen.getAllByRole('link', { name: /^creation ·/ })).toHaveLength(2);
 
     const changesDisclosure = screen.getByText('Review 4 more change sources');
-    const relatedDisclosure = screen.getByText('Review 8 related sources');
     expect(changesDisclosure.closest('details')?.open).toBe(false);
-    expect(relatedDisclosure.closest('details')?.open).toBe(false);
+    expect(screen.queryByText('Related evidence')).toBeNull();
+    expect(screen.queryByText('Review 8 related sources')).toBeNull();
     expect(screen.getAllByRole('link', { name: /^change ·/ })[2]?.closest('details')).toBe(
       changesDisclosure.closest('details'),
     );
-    const relatedLinks = screen.getAllByRole('link', { name: /^integration ·/ });
-    expect(relatedLinks[0]?.closest('details')).toBe(relatedDisclosure.closest('details'));
-    expect(new Set(relatedLinks.map((link) => link.textContent.trim())).size).toBe(8);
+    expect(screen.queryAllByRole('link', { name: /^integration ·/ })).toHaveLength(0);
 
-    await user.click(relatedDisclosure);
+    await user.click(changesDisclosure);
 
-    expect(relatedDisclosure.closest('details')?.open).toBe(true);
-    expect(screen.getAllByRole('link', { name: /^integration ·/ })).toHaveLength(8);
+    expect(changesDisclosure.closest('details')?.open).toBe(true);
     expect(screen.queryByText(longBody)).toBeNull();
     expect(screen.getAllByText(/GitHub evidence multi-kilobyte payload/).length).toBeGreaterThan(0);
     expect(
@@ -1258,6 +1265,148 @@ describe('ObjectDetailClient', () => {
     );
 
     expect(screen.queryByRole('link', { name: 'Add task' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Add task' })).toBeNull();
+    expect(screen.queryByLabelText('New task name')).toBeNull();
+  });
+
+  it('keeps Recent history visible with open and done counts', () => {
+    const html = renderObjectDetail({
+      detail: {
+        ...detail,
+        type: 'company',
+        canonicalName: 'Northstar Works',
+        connectedWork: {
+          ...detail.connectedWork,
+          openTasks: [
+            {
+              ...detail,
+              id: 'task-open',
+              type: 'task',
+              canonicalName: 'Validate Northstar pilot export',
+              status: 'blocked',
+              assigneeUserId: 'user-mika',
+            },
+          ],
+        },
+      },
+      userId: 'user-1',
+      suggestions: [],
+      members: [{ id: 'user-mika', label: 'Mika Product' }],
+    });
+
+    expect(html).toContain('Open 1 · Done 0');
+    expect(html).toContain('Recent history');
+    expect(html).toContain('Mika Product');
+    expect(html).toContain('Validate Northstar pilot export');
+  });
+
+  it('adds a related task from a company page', async () => {
+    const user = userEvent.setup();
+    const createdId = '11111111-1111-4111-8111-111111111111';
+    vi.mocked(objectActions.createObjectAction).mockResolvedValue({ ok: true, id: createdId });
+    vi.mocked(objectActions.addRelationshipAction).mockResolvedValue({ ok: true, id: 'rel-1' });
+    render(
+      objectDetailElement({
+        detail: {
+          ...detail,
+          type: 'company',
+          canonicalName: 'Northstar Works',
+        },
+        userId: 'user-1',
+        suggestions: [],
+      }),
+    );
+
+    await user.type(screen.getByLabelText('New task name'), 'Confirm export mapping');
+    await user.click(screen.getByRole('button', { name: 'Add task' }));
+
+    await waitFor(() => {
+      expect(objectActions.createObjectAction).toHaveBeenCalledWith({
+        type: 'task',
+        canonicalName: 'Confirm export mapping',
+        status: 'todo',
+        parentObjectId: null,
+      });
+    });
+    expect(objectActions.addRelationshipAction).toHaveBeenCalledWith({
+      fromEntityId: createdId,
+      toEntityId: detail.id,
+      kind: 'related',
+    });
+  });
+
+  it('adds a project-linked task with parentObjectId', async () => {
+    const user = userEvent.setup();
+    vi.mocked(objectActions.createObjectAction).mockResolvedValue({
+      ok: true,
+      id: '22222222-2222-4222-8222-222222222222',
+    });
+    render(
+      objectDetailElement({
+        detail: {
+          ...detail,
+          type: 'project',
+          canonicalName: 'Series A process',
+        },
+        userId: 'user-1',
+        suggestions: [],
+      }),
+    );
+
+    await user.type(screen.getByLabelText('New task name'), 'Collect diligence answers');
+    await user.click(screen.getByRole('button', { name: 'Add task' }));
+
+    await waitFor(() => {
+      expect(objectActions.createObjectAction).toHaveBeenCalledWith({
+        type: 'task',
+        canonicalName: 'Collect diligence answers',
+        status: 'todo',
+        parentObjectId: detail.id,
+      });
+    });
+    expect(objectActions.addRelationshipAction).not.toHaveBeenCalled();
+  });
+
+  it('changes connected task status inline', async () => {
+    const user = userEvent.setup();
+    vi.mocked(objectActions.updateObjectAction).mockResolvedValue({ ok: true, id: 'task-1' });
+    render(
+      objectDetailElement({
+        detail: {
+          ...detail,
+          type: 'company',
+          canonicalName: 'Northstar Works',
+          connectedWork: {
+            ...detail.connectedWork,
+            openTasks: [
+              {
+                ...detail,
+                id: 'task-1',
+                type: 'task',
+                canonicalName: 'Validate Northstar pilot export',
+                status: 'blocked',
+                assigneeUserId: 'user-mika',
+              },
+            ],
+          },
+        },
+        userId: 'user-1',
+        suggestions: [],
+        members: [{ id: 'user-mika', label: 'Mika Product' }],
+      }),
+    );
+
+    await user.click(
+      screen.getByRole('button', { name: 'Status for Validate Northstar pilot export' }),
+    );
+    await user.selectOptions(screen.getByLabelText('Status'), 'doing');
+
+    await waitFor(() => {
+      expect(objectActions.updateObjectAction).toHaveBeenCalledWith({
+        id: 'task-1',
+        status: 'doing',
+      });
+    });
   });
 
   it('does not offer the generic unlink action for a task primary project', () => {

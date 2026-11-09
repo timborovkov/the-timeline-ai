@@ -1,7 +1,7 @@
 # The Timeline — Design System
 
-**Version:** v3.40 · Drive Limited Use disclosure and public product screenshots (2026-11-07).
-Replaces v3.39 Drive Limited Use disclosure and v3.39 Public product screenshots.
+**Version:** v3.41 · Object-page tasks (2026-11-09).
+Replaces v3.40 Drive Limited Use disclosure and public product screenshots.
 
 This is the visual and interaction contract for the product. If a screen
 disagrees with it, fix the screen. If the language intentionally changes,
@@ -851,15 +851,20 @@ The full object page is a Linear-style issue view, not a work-index. It has no
 `WorkSubnav`. The type (and task category) sit as quiet metadata above an 18px
 editable title. Board placement is a muted header line, not a standalone
 section, and those same boards are not repeated under Connected work. Pin is the shared Home-destination icon; Ask uses the
-shared floating binder. Repair memory and Add task live in the overflow
-menu. The main column uses a dense section stack and 14px body at 1.35
+shared floating binder. Repair memory lives in the overflow menu; project pages
+also keep overflow Add task. The main column uses a dense section stack and 14px body at 1.35
 line-height: why this exists, a generated summary only when it has content or
-an actionable generate/retry state, then only the provenance / connected-work /
-evidence / facts groups that have items. Top-level section titles use 13px
+an actionable generate/retry state, then provenance / connected-work /
+evidence / facts. Connected work keeps a Tasks group on generic objects even
+when empty, with `Open N · Done M`, always-visible Recent history, assignee
+chips (including mobile), inline status, and an add-task field pre-linked to
+the current object. Pending approvals stay in the one actionable block at the
+top of the page; Evidence is the single evidence list (no second Related
+evidence group). Top-level section titles use 13px
 semibold `--fg` (not dim) so Evidence / Connected work / Discussion read as
 structure; section counts and timestamps use Commit Mono 11px tabular
 `--fg-dim`. Nested Connected work groups use quieter 11px medium `--fg-muted`
-and hairline dividers so Open tasks / Documents / Evidence do not compete.
+and hairline dividers so Tasks / Documents do not compete.
 Row titles are 14px medium `--fg`; body and prose stay 14px regular `--fg`;
 supporting meta is 12px `--fg-dim` and sentence case (`Create · Identity facet`,
 never raw `create · identity_facet`). Empty
@@ -1432,6 +1437,7 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-11-07 | Drive Limited Use disclosure | Connecting or reconnecting Google Drive opens a contextual dialog before Google OAuth. The copy names read-only Drive access, selected-source capture, encrypted tokens, snapshots versus retained events, team sharing, billed change-judging, document extract, and no general-model training. Continue to Google is the affirmative action; Cancel or dismiss does not start OAuth. |
 | 2026-11-07 | Agents vs inbound MCP diagrams | `/agents` write-in / read-out stays external-agent contribution and MCP read-out. `/integrations/mcp` shows a separate live-lookup diagram. Screenshot captions label stored fictional examples without install noise. Public slots serve committed PNG bytes unoptimized so recaptures are not hidden by a stale image-optimizer cache. |
 | 2026-11-07 | Landing evidence inspect disclosures | Homepage “Inspect example source” rows share the evidence-card padding, a custom chevron, padded expanded copy, and the lime focus ring. |
+| 2026-11-09 | Object-page tasks | Connected work Tasks stays visible with Open/Done counts, Recent history, assignee chips, inline status, and a pre-linked add-task field. Approvals and Evidence each appear once. |
 
 
 ### Billing benefits and recorded charges (2026-10-31)

@@ -2222,6 +2222,22 @@ describe('object scope — notes and suggestions', () => {
       status: 'todo',
       actor: { kind: 'user', userId: USER_OWNER },
     });
+    await db.insert(entityRelationships).values([
+      {
+        teamId: TEAM_A,
+        fromEntityId: openTask.id,
+        toEntityId: company.id,
+        kind: 'related',
+        createdBy: USER_OWNER,
+      },
+      {
+        teamId: TEAM_A,
+        fromEntityId: doneTask.id,
+        toEntityId: company.id,
+        kind: 'related',
+        createdBy: USER_OWNER,
+      },
+    ]);
     await db.insert(calendarEvents).values([
       {
         teamId: TEAM_A,
@@ -2560,6 +2576,123 @@ describe('object scope — notes and suggestions', () => {
     ]);
     expect(detail?.connectedWork.capturedFiles).toEqual([
       expect.objectContaining({ name: 'dfk-whiteboard.png', contentType: 'image/png' }),
+    ]);
+  });
+
+  it('connects tasks through explicit links and shared facts, not title mentions', async () => {
+    const scope = withTeam(db, TEAM_A, USER_OWNER).objects;
+    const company = await scope.createObject({
+      type: 'company',
+      canonicalName: 'Northstar Works',
+      aliases: ['Northstar'],
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    const reverseHost = await scope.createObject({
+      type: 'deal',
+      canonicalName: 'Series A process',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    const relatedTask = await scope.createObject({
+      type: 'task',
+      canonicalName: 'Validate Northstar pilot export',
+      status: 'blocked',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    const reverseRelatedTask = await scope.createObject({
+      type: 'task',
+      canonicalName: 'Answer Northwind diligence Q&A',
+      status: 'doing',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    const childTask = await scope.createObject({
+      type: 'task',
+      canonicalName: 'Prepare Brightline MSA excerpt',
+      status: 'todo',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    const nameOnlyTask = await scope.createObject({
+      type: 'task',
+      canonicalName: 'Crop Northstar screenshot for webinar',
+      status: 'todo',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    const sharedFactTask = await scope.createObject({
+      type: 'task',
+      canonicalName: 'Ping Elena Park on field-mapping',
+      status: 'todo',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    await db.insert(entityRelationships).values([
+      {
+        teamId: TEAM_A,
+        fromEntityId: relatedTask.id,
+        toEntityId: company.id,
+        kind: 'related',
+        createdBy: USER_OWNER,
+      },
+      {
+        teamId: TEAM_A,
+        fromEntityId: reverseHost.id,
+        toEntityId: reverseRelatedTask.id,
+        kind: 'related',
+        createdBy: USER_OWNER,
+      },
+      {
+        teamId: TEAM_A,
+        fromEntityId: childTask.id,
+        toEntityId: company.id,
+        kind: 'child',
+        createdBy: USER_OWNER,
+      },
+    ]);
+    const [raw] = await db
+      .insert(rawEvents)
+      .values({
+        teamId: TEAM_A,
+        authorUserId: USER_OWNER,
+        source: 'web',
+        contentText: 'Elena still owes Northstar field-mapping.',
+        occurredAt: new Date('2026-06-16T10:00:00.000Z'),
+        visibility: 'team',
+      })
+      .returning({ id: rawEvents.id });
+    const [fact] = await db
+      .insert(facts)
+      .values({
+        teamId: TEAM_A,
+        rawEventId: raw?.id ?? '',
+        statement: 'Elena still owes Northstar field-mapping.',
+        confidence: 0.9,
+        modelVersion: 'test',
+      })
+      .returning({ id: facts.id });
+    await db.insert(factEntities).values([
+      { factId: fact?.id ?? '', entityId: company.id, role: 'subject' },
+      { factId: fact?.id ?? '', entityId: sharedFactTask.id, role: 'object' },
+    ]);
+
+    const companyDetail = await scope.getObject(company.id);
+    const companyTaskPage = await scope.getObjectSectionPage(company.id, 'tasks');
+    const reverseDetail = await scope.getObject(reverseHost.id);
+
+    expect(companyDetail?.connectedWork.openTasks.map((task) => task.id).sort()).toEqual(
+      [relatedTask.id, childTask.id, sharedFactTask.id].sort(),
+    );
+    expect(companyDetail?.connectedWork.openTasks).not.toContainEqual(
+      expect.objectContaining({ id: nameOnlyTask.id }),
+    );
+    expect(companyTaskPage?.items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: relatedTask.id }),
+        expect.objectContaining({ id: childTask.id }),
+      ]),
+    );
+    expect(companyTaskPage?.items).toHaveLength(2);
+    expect(companyTaskPage?.items).not.toContainEqual(
+      expect.objectContaining({ id: nameOnlyTask.id }),
+    );
+    expect(reverseDetail?.connectedWork.openTasks).toEqual([
+      expect.objectContaining({ id: reverseRelatedTask.id }),
     ]);
   });
 
