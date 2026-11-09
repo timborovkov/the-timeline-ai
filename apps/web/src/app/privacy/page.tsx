@@ -271,9 +271,26 @@ function PrivacyAiAndProviderSections() {
           <tr>
             <td>Resend</td>
             <td>
-              Transactional and inbound email, invitations, and support messages. Resend retains
-              message content and delivery metadata under its service terms and account settings.
-              Account-specific retention, tracking, and deletion settings remain to be verified.
+              Timeline sends transactional product email through Resend from the verified domain{' '}
+              <code>in.thetimeline.cc</code> in the <code>eu-west-1</code> sending region (for
+              example noreply@in.thetimeline.cc). Current types are team invitations, support
+              requests, welcome messages, email verification, password reset, daily digests,
+              connection-attention notices, and billing usage alerts. Timeline does not use Resend
+              audiences, contacts, segments, broadcasts, topics, automations, or Resend templates.
+              Inbound receiving is enabled on the same domain. Resend posts a signature-verified{' '}
+              <code>email.received</code> webhook to{' '}
+              <code>https://thetimeline.cc/api/email/inbound</code>; a worker then fetches the body
+              and attachments from Resend&apos;s receiving API and stores them in the workspace.
+              Open tracking and click tracking are currently enabled at the domain level. Timeline
+              does not set per-send tracking flags. Resend states that customer data is stored in
+              the United States regardless of sending region. Resend&apos;s published documentation
+              for its Free, Pro, and Scale plans states that email and log data are retained for 30
+              days while the account is active and deleted within 90 days after termination. See
+              Resend&apos;s <a href="https://resend.com/security/gdpr">GDPR documentation</a>,{' '}
+              <a href="https://resend.com/legal/dpa">DPA</a>, and{' '}
+              <a href="https://resend.com/legal/subprocessors">subprocessor list</a>. Deleting data
+              in Timeline does not by itself delete copies Resend holds during that window; earlier
+              deletion of Resend copies requires a request to Resend.
             </td>
           </tr>
           <tr>
@@ -327,9 +344,38 @@ function PrivacyAiAndProviderSections() {
         Monday.com, Sentry, calendar providers, custom webhooks, and custom MCP servers. We exchange
         data with them only when configured or invoked by the customer and according to the
         permissions granted. Those providers act under their own terms and privacy notices for their
-        services. Disconnecting a source stops future access but does not automatically erase
-        records already captured into Timeline.
+        services.
       </p>
+      <p>Disconnecting access and deleting captured records are different actions:</p>
+      <ul>
+        <li>
+          <strong>Personal account or OAuth disconnect:</strong> A member can remove their own
+          provider account from Timeline. Timeline deletes the encrypted credentials stored for that
+          connection. For Google Drive, Timeline also requests that Google revoke the grant when no
+          remaining Drive connection or Google sign-in on this project still needs it. Workspace
+          sources that used that account are disabled until a replacement connection is chosen. This
+          does not cancel provider watches or webhooks by itself, and it does not delete captured
+          timeline events, documents, Drive change snapshots, or extracted text.
+        </li>
+        <li>
+          <strong>Workspace source removal:</strong> A team admin can disconnect a workspace source.
+          Timeline stops future capture from that source, deletes the source configuration and
+          related sync records, and attempts to cancel provider-managed watches or webhooks where
+          that cleanup is implemented (Google Drive change watches and Monday.com webhooks). Other
+          providers&apos; app-level or manually configured webhooks are not uninstalled by this
+          action. For Google Drive sources, Timeline also cancels in-flight document extraction and
+          deletes Drive change snapshots, the latest extracted text kept for change detection, and
+          transient extract files. Already-captured timeline events and uploaded documents remain.
+        </li>
+        <li>
+          <strong>Deletion of captured history or documents:</strong> Members can soft-delete
+          documents they can access; the document is hidden and can be restored, and stored bytes
+          and search chunks are not immediately purged. Calendar events can be deleted in the
+          product. Captured source events remain immutable workspace evidence. Disconnecting a
+          connection or source does not erase that history. There is no complete self-serve erasure
+          of an account, workspace, or every derived index, backup, or processor copy.
+        </li>
+      </ul>
       <h3>Google Drive</h3>
       <p>
         Connecting Google Drive is separate from Sign in with Google. Drive requests{' '}
@@ -355,12 +401,15 @@ function PrivacyAiAndProviderSections() {
         Policy, including the Limited Use requirements.
       </p>
       <p>
-        Removing your personal Google connection deletes its saved credentials and disables sources
-        using it. It does not delete their snapshots or captured history. A team admin can
-        disconnect the team’s Drive source to clean up its change snapshots, latest extracted text,
-        and temporary extracts. The personal connection may remain available to other sources.
-        Previously captured timeline events remain; disconnect does not erase that history. You can
-        also remove Timeline in Google Account permissions.
+        Removing your personal Drive account deletes Timeline’s encrypted Drive tokens and, when no
+        remaining Drive connection or Google sign-in still needs the grant, requests Google
+        revocation. Sources using that account are disabled. It does not delete their snapshots or
+        captured history. The personal connection may remain available to other sources. An admin
+        disconnect of the workspace Drive source deletes change snapshots and latest extracted text
+        for uncovered files, cancels in-flight extraction, and stops Drive change watches when
+        deprovision succeeds. Cited timeline events already captured stay in the workspace. Neither
+        action is a complete purge of every derived index, backup, or processor copy. You can also
+        remove Timeline in Google Account permissions.
       </p>
       <p>
         To request deletion of captured Google Drive data, use our{' '}
@@ -532,10 +581,11 @@ function PrivacyRetentionSections() {
           <tr>
             <td>Google Drive snapshots and tokens</td>
             <td>
-              Personal connection removal deletes its saved credentials and disables dependent
-              sources. Team-source disconnection cleans up that source’s snapshots and extracts;
-              file removal and selection changes clean up files no longer covered. Captured events
-              and derived history require a separate support-assisted deletion request.
+              Encrypted Drive tokens are deleted when the member disconnects their Drive account;
+              dependent sources are disabled. Change snapshots and latest extracted text are deleted
+              when an admin removes the workspace Drive source or when remaining selections no
+              longer cover a file. Cited Drive timeline events remain with other Customer Content
+              until a support-assisted deletion request is completed.
             </td>
           </tr>
           <tr>
@@ -587,6 +637,16 @@ function PrivacyRetentionSections() {
               or incident references, management actions, and support-session access and activity.
               This audit evidence can remain after the session record is deleted. We do not copy
               workspace content or credentials into these records.
+            </td>
+          </tr>
+          <tr>
+            <td>Email at Resend</td>
+            <td>
+              Outbound transactional email and inbound messages processed by Resend. Open tracking
+              and click tracking are currently enabled at the domain level. Resend states that, on
+              its Free, Pro, and Scale plans, email and log data are retained for 30 days while the
+              account is active and deleted within 90 days after termination. Deleting a Timeline
+              record does not itself delete the Resend copy during that window.
             </td>
           </tr>
           <tr>
@@ -645,10 +705,17 @@ function PrivacyRightsAndClosingSections() {
         the browser-storage inventory.
       </p>
       <p>
-        Send requests to <SupportMailto /> or use our{' '}
-        <Link href="/help/support">private support form</Link>. Do not put account details or a
-        privacy request in a public GitHub issue. You also have the right to complain to your local
-        supervisory authority or the{' '}
+        To request deletion of personal data or assistance with workspace Customer Content, email{' '}
+        <SupportMailto /> or use our <Link href="/help/support">private support form</Link>. Do not
+        put account details or a privacy request in a public GitHub issue. We will verify identity
+        and authority before acting. Timeline does not currently provide a complete self-serve admin
+        or support console that erases every store. After we process a valid request, copies can
+        remain in backups or recovery systems where those are configured, in security and audit
+        logs, in legal, billing, and tax records, and in processor systems until those providers
+        complete their own deletion. Email copies at Resend remain subject to Resend&apos;s
+        published retention window unless Resend is asked to delete them earlier. We do not publish
+        a deletion-completion SLA for those residual copies. Law may require us to retain some
+        records. You also have the right to complain to your local supervisory authority or the{' '}
         <a href="https://www.aki.ee/en/guidelines-legislation/how-can-we-help-foreign-persons-and-authorities">
           Estonian Data Protection Inspectorate
         </a>
