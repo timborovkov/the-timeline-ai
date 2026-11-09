@@ -257,7 +257,10 @@ Treat this file as an operating contract for agents, not a loose README.
   providers. Live daily-digest send stays off; historical digest rows are still seeded.
   Keep the credential list and glossary in
   [docs/demo-corpus.md](docs/demo-corpus.md) current when
-  the seed changes.
+  the seed changes. Recapture public marketing screenshot light/dark pairs with
+  `bun run capture:marketing-screenshots` against that seed and a running web
+  app; copy the PNGs into
+  [`apps/web/public/marketing/screenshots`](apps/web/public/marketing/screenshots/README.md).
 - **Monday helper-board repair is dry-run first.** Use `bun run repair:monday --
   --env-file=/path/to/.env --team-id=<uuid> --user-id=<uuid>` to inspect stale
   classic helper-board state. Add `--apply` only after reviewing the team-scoped

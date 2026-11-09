@@ -317,6 +317,11 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       a modal sheet. Home still hands questions into `/app/chat`. Full Ask
       shows linked context badges. `search_app_guide` / `get_app_route` cover
       the float; Telegram and suggestions stay out.
+- [ ] Public marketing screenshots: every public in-app slot now has a
+      matching `<stem>-light.png` / `<stem>-dark.png` pair from one
+      `demo:seed` capture (`bun run capture:marketing-screenshots`). Wire
+      `MarketingProductScreenshot` to the theme class without layout shift
+      or double download; keep inventory filenames working until that lands.
 
 ## Workspace Reconciliation
 

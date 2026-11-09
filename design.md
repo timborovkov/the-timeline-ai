@@ -1,7 +1,7 @@
 # The Timeline — Design System
 
-**Version:** v3.40 · Drive Limited Use disclosure and public product screenshots (2026-11-07).
-Replaces v3.39 Drive Limited Use disclosure and v3.39 Public product screenshots.
+**Version:** v3.41 · Public product screenshot light/dark twins (2026-11-09).
+Replaces v3.40 Drive Limited Use disclosure and public product screenshots.
 
 This is the visual and interaction contract for the product. If a screen
 disagrees with it, fix the screen. If the language intentionally changes,
@@ -1048,10 +1048,14 @@ at `/solutions/client-project-handoffs` with related use-case links. `/product-t
 is a screenshot walkthrough linked from the home hero as See it first and from
 pricing; `/integrations/telegram` is the public Telegram capture page. Product
 screenshots live in `apps/web/public/marketing/screenshots` under the filenames
-from the website copy plan. Landscape slots use a 16×10 top crop; mobile
-portrait slots keep the full capture so Ask citations stay in frame. The
-homepage shows three full-width proof shots (work record, stored cited Ask
-answer, daily update). `/agents` pairs the current Agent tools screen with a
+from the website copy plan. Each public in-app slot keeps a matching
+`<stem>-light.png` / `<stem>-dark.png` pair from the same `demo:seed` capture
+(1440×900 at 2×; mobile 390×844 at 2×). Inventory still points at the current
+slot filenames (almost all dark, plus `18-sources-light.png` and unthemed
+mobile names); theme-aware switching is a follow-up. Landscape slots use a
+16×10 top crop; mobile portrait slots keep the full capture so Ask citations
+stay in frame. The homepage shows three full-width proof shots (work record,
+stored cited Ask answer, daily update). `/agents` pairs the current Agent tools screen with a
 write-in / read-out diagram for external agents. `/integrations/mcp` has a
 separate inbound live-lookup diagram for The Timeline Agent calling third-party
 MCP tools. `/use-cases` opens with a conversations → work record → six jobs
