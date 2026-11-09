@@ -438,8 +438,8 @@ export default function TermsPage() {
         description="Binding Terms are not currently being published or presented for acceptance."
       >
         <p>
-          The Terms are unavailable while we review our contracting entity. This page does not form
-          an agreement or introduce a new Terms version, and you will not be asked to accept it.
+          The Terms are unavailable until publication is enabled. This page does not form an
+          agreement or introduce a new Terms version, and you will not be asked to accept it.
         </p>
         <p>
           Existing users may continue under any previously applicable agreement. New account

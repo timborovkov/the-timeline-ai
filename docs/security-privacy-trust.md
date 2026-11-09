@@ -66,7 +66,7 @@ the distinction between requested retention and confirmed deletion.
 
 The October 2026 editorial cleanup preserves legal versions, processing purposes,
 rights, and contractual commitments as instructed by the site owner. G-02, G-03,
-G-05 through G-14, G-18, G-19, and G-20 remain unchanged; analytics legal-basis
+G-05 through G-14, G-18, and G-19 remain unchanged; analytics legal-basis
 review, account settings, historical deletion, and staff-access evidence remain
 operator responsibilities. This copy review does not constitute counsel approval
 or production verification.
@@ -674,7 +674,7 @@ propagation are exercised. Legal copy must not promise an unverified duration.
 The 9 November 2026 revision advances Terms and Privacy to `2026-11-09` and
 requires renewed acceptance/acknowledgment for the corrected deletion disclosures.
 It adds support-request instructions, distinguishes the two disconnect actions,
-and fixes Terms typography. It does not close provider-account or G-20 legal gaps.
+and fixes Terms typography. It does not close provider-account gaps.
 
 ## 13. Incident response
 
@@ -857,7 +857,6 @@ item requires dated evidence stored in the internal control file.
 | G-17 | **OPEN** | **TBD: security program** | Define security roadmap, asset/vendor/access reviews, vulnerability scanning, restore/deletion exercises, and evidence archive | SOC 2 / ISO readiness |
 | G-18 | **OPEN** | **TBD: web/privacy** | Self-host Fontshare/jsDelivr assets or add them to the public-site provider inventory | Provider-free/minimal-third-party docs claim |
 | G-19 | **OPEN** | **TBD: legal + platform** | Archive an immutable rendered copy or content digest for each Terms/Privacy version and bind that evidence to acceptance events | Exact-text clickwrap evidence beyond version, timestamp, IP, user agent and Git history |
-| G-20 | **OPEN / blocker; runtime publication interlock enforced** | **TBD: founder + accounting/counsel** | Resolve the missing annual reports and published deletion notice shown on the [official Nyxone OÜ registry card](https://ariregister.rik.ee/eng/company/16172329/Nyxone-O%C3%9C), then retain current official status evidence. Production defaults `LEGAL_PUBLICATION_READY=false`, which withholds the binding Terms, legal gate/acceptance writes, and first-time credential/GitHub/Google signup while preserving existing sign-in. Set it to `true` only after retaining that dated evidence; the flag is an operator attestation, not evidence itself. | Stable contracting/controller identity and publication readiness |
 
 ## 18. Change and review process
 
@@ -925,7 +924,7 @@ Resend handles outbound email and inbound capture. Signed webhooks queue only pr
 
 ### Prelaunch billing and boundary changes (2026-11-03)
 
-Terms and Privacy versions advance to 2026-11-03 for paid-service terms and explicit Polar billing-data disclosure. The customer meter is variable euro-denominated AI usage; internal provider-cost conversion is not a public price promise. Cancellation stops future renewals under the portal terms; already-incurred usage and mandatory consumer rights remain applicable. This is a repository content change, not counsel approval, live Polar configuration evidence, or closure of G-20.
+Terms and Privacy versions advance to 2026-11-03 for paid-service terms and explicit Polar billing-data disclosure. The customer meter is variable euro-denominated AI usage; internal provider-cost conversion is not a public price promise. Cancellation stops future renewals under the portal terms; already-incurred usage and mandatory consumer rights remain applicable. This is a repository content change, not counsel approval or live Polar configuration evidence.
 
 Sentry intake and queued delivery now both require a currently selected organization/project. GitHub capture requires the matching App installation token and paginates installation discovery; missing mappings fail closed. These are code controls verified with synthetic tests, not production provider attestations. Sentry delivery receipt time is explicitly identified as receipt time, not the exact upstream action time.
 

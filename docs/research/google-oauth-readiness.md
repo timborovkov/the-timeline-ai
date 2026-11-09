@@ -168,5 +168,5 @@ Console configuration is unverified from this repository.
 10. Do not publish to Production/external users before Google completes that
     review. Testing + allowlisted test users is the safe interim.
 
-`LEGAL_PUBLICATION_READY` and G-20 remain founder/counsel work. This change
+The operator controls publication through `LEGAL_PUBLICATION_READY`. This change
 does not publish Terms.
