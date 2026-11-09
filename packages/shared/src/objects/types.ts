@@ -86,6 +86,8 @@ export interface ObjectRow {
   metadata: Record<string, unknown>;
   updatedAt: Date;
   createdAt: Date;
+  /** Latest applied status change to done/cancelled, when that audit row is loaded. */
+  completedAt?: Date | null;
   /** Omitted when there are no discussion comments. */
   commentCount?: number;
 }

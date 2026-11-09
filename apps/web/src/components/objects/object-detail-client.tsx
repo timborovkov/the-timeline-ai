@@ -2095,7 +2095,12 @@ function ConnectedTaskRow({
   const dueAt = toDateOrNull(overlays.dueAt === undefined ? task.dueAt : overlays.dueAt);
   const title = displayText(displayObjectTitle(task));
   const terminal = status === 'done' || status === 'cancelled';
-  const completedAt = status === 'done' ? toDateOrNull(task.updatedAt) : null;
+  const completedAt =
+    status !== 'done'
+      ? null
+      : overlays.status === undefined || task.status === 'done'
+        ? toDateOrNull(task.completedAt)
+        : new Date();
 
   function save(key: keyof ConnectedTaskRowOverlays, value: string | Date | null): void {
     const current = key === 'status' ? status : key === 'assigneeUserId' ? assigneeUserId : dueAt;
@@ -2237,6 +2242,7 @@ function ConnectedTaskComposer({
   const router = useRouter();
   const [name, setName] = useState('');
   const [creating, setCreating] = useState(false);
+  const pendingLinkTaskIdRef = useRef<string | null>(null);
   const trimmed = name.trim();
 
   function submit(event: SyntheticEvent<HTMLFormElement>): void {
@@ -2246,10 +2252,20 @@ function ConnectedTaskComposer({
     setCreating(true);
     void notifyAction({
       id: `object:${objectId}:create-task`,
-      loading: 'Adding task…',
+      loading: pendingLinkTaskIdRef.current ? 'Linking task…' : 'Adding task…',
       success: 'Task added',
       error: 'Couldn’t add task',
       run: async () => {
+        const pendingId = pendingLinkTaskIdRef.current;
+        if (pendingId && !isProject) {
+          const linked = await addRelationshipAction({
+            fromEntityId: pendingId,
+            toEntityId: objectId,
+            kind: 'related',
+          });
+          if (linked.error) return linked;
+          return { ok: true, id: pendingId };
+        }
         const created = await createObjectAction({
           type: 'task',
           canonicalName: trimmed,
@@ -2263,12 +2279,16 @@ function ConnectedTaskComposer({
           toEntityId: objectId,
           kind: 'related',
         });
-        if (linked.error) return linked;
+        if (linked.error) {
+          pendingLinkTaskIdRef.current = created.id;
+          return linked;
+        }
         return created;
       },
     }).then((result) => {
       setCreating(false);
       if (result.error) return;
+      pendingLinkTaskIdRef.current = null;
       setName('');
       router.refresh();
     });

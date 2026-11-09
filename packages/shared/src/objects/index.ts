@@ -2515,6 +2515,37 @@ async function listExplicitlyLinkedTaskIds(
   return taskRows.map((row) => row.id);
 }
 
+async function appliedCompletionTimes(
+  db: Db,
+  scope: TeamScopeCore,
+  entityIds: string[],
+): Promise<Map<string, Date>> {
+  const completedAtById = new Map<string, Date>();
+  if (entityIds.length === 0) return completedAtById;
+  const rows = await db
+    .select({
+      entityId: objectChanges.entityId,
+      newValue: objectChanges.newValue,
+      changedAt: objectChanges.changedAt,
+    })
+    .from(objectChanges)
+    .where(
+      and(
+        eq(objectChanges.teamId, scope.teamId),
+        inArray(objectChanges.entityId, entityIds),
+        eq(objectChanges.field, 'status'),
+        eq(objectChanges.status, 'applied'),
+      ),
+    )
+    .orderBy(desc(objectChanges.changedAt), desc(objectChanges.id));
+  for (const row of rows) {
+    if (completedAtById.has(row.entityId)) continue;
+    if (row.newValue !== 'done' && row.newValue !== 'cancelled') continue;
+    completedAtById.set(row.entityId, row.changedAt);
+  }
+  return completedAtById;
+}
+
 async function getConnectedWork(
   db: Db,
   scope: TeamScopeCore,
@@ -2793,9 +2824,18 @@ async function getConnectedWork(
   const openTasks = taskRows
     .filter((task) => task.status !== 'done' && task.status !== 'cancelled')
     .slice(0, 12);
-  const recentTasks = taskRows
+  const recentTaskRows = taskRows
     .filter((task) => task.status === 'done' || task.status === 'cancelled')
     .slice(0, 8);
+  const completionTimes = await appliedCompletionTimes(
+    db,
+    scope,
+    recentTaskRows.map((task) => task.id),
+  );
+  const recentTasks = recentTaskRows.map((task) => {
+    const completedAt = completionTimes.get(task.id);
+    return completedAt ? { ...task, completedAt } : task;
+  });
 
   const timelineConditions: SQL[] = [
     sql`${rawEvents.sourceMetadata} ->> 'entity_id' = ${object.id}`,

@@ -1360,11 +1360,48 @@ describe('ObjectDetailClient', () => {
     });
 
     expect(html).toContain('Send Northwind data room');
-    expect(html).toContain('Completed Nov 8, 2026');
-    expect(html).toContain('data-due-status="completed"');
+    expect(html).toContain('Due Nov 8, 2026');
+    expect(html).toContain('data-due-status="scheduled"');
+    expect(html).not.toContain('Completed Nov 8, 2026');
     expect(html).not.toContain('Overdue');
     expect(html).not.toContain('data-due-status="overdue"');
     expect(html).not.toContain('No completed tasks yet');
+  });
+
+  it('shows the status-change date for done connected tasks when completedAt is loaded', () => {
+    const html = renderObjectDetail({
+      detail: {
+        ...detail,
+        type: 'project',
+        canonicalName: 'Series A process',
+        dueAt: null,
+        connectedWork: {
+          ...detail.connectedWork,
+          openTasks: [],
+          recentTasks: [
+            {
+              ...detail,
+              id: 'task-done',
+              type: 'task',
+              canonicalName: 'Send Northwind data room',
+              status: 'done',
+              dueAt: new Date('2026-11-01T17:00:00.000Z'),
+              updatedAt: new Date('2026-11-09T18:00:00.000Z'),
+              completedAt: new Date('2026-11-08T18:00:00.000Z'),
+              assigneeUserId: 'user-harper',
+            },
+          ],
+        },
+      },
+      userId: 'user-1',
+      suggestions: [],
+      members: [{ id: 'user-harper', label: 'Harper Singh' }],
+    });
+
+    expect(html).toContain('Completed Nov 8, 2026');
+    expect(html).toContain('data-due-status="completed"');
+    expect(html).not.toContain('Due Nov 1, 2026');
+    expect(html).not.toContain('Overdue');
   });
 
   it('adds a related task from a company page', async () => {
@@ -1399,6 +1436,52 @@ describe('ObjectDetailClient', () => {
       fromEntityId: createdId,
       toEntityId: detail.id,
       kind: 'related',
+    });
+  });
+
+  it('retries only the relationship after a related task is created but not linked', async () => {
+    const user = userEvent.setup();
+    const createdId = '11111111-1111-4111-8111-111111111111';
+    vi.mocked(objectActions.createObjectAction).mockResolvedValue({ ok: true, id: createdId });
+    vi.mocked(objectActions.addRelationshipAction)
+      .mockResolvedValueOnce({ error: 'Failed to link' })
+      .mockResolvedValueOnce({ ok: true, id: 'rel-1' });
+    render(
+      objectDetailElement({
+        detail: {
+          ...detail,
+          type: 'company',
+          canonicalName: 'Northstar Works',
+        },
+        userId: 'user-1',
+        suggestions: [],
+      }),
+    );
+
+    const nameInput = screen.getByLabelText('New task name');
+    await user.type(nameInput, 'Confirm export mapping');
+    await user.click(screen.getByRole('button', { name: 'Add task' }));
+
+    await waitFor(() => {
+      expect(objectActions.addRelationshipAction).toHaveBeenCalledTimes(1);
+      expect(screen.getByRole('button', { name: 'Add task' })).toHaveProperty('disabled', false);
+    });
+    expect(objectActions.createObjectAction).toHaveBeenCalledTimes(1);
+    expect(nameInput).toHaveProperty('value', 'Confirm export mapping');
+
+    await user.click(screen.getByRole('button', { name: 'Add task' }));
+
+    await waitFor(() => {
+      expect(objectActions.addRelationshipAction).toHaveBeenCalledTimes(2);
+    });
+    expect(objectActions.createObjectAction).toHaveBeenCalledTimes(1);
+    expect(objectActions.addRelationshipAction).toHaveBeenNthCalledWith(2, {
+      fromEntityId: createdId,
+      toEntityId: detail.id,
+      kind: 'related',
+    });
+    await waitFor(() => {
+      expect(nameInput).toHaveProperty('value', '');
     });
   });
 

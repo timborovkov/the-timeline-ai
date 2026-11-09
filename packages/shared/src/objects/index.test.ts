@@ -2696,6 +2696,61 @@ describe('object scope — notes and suggestions', () => {
     ]);
   });
 
+  it('stamps connected done-task completedAt from the status change, not later edits', async () => {
+    const scope = withTeam(db, TEAM_A, USER_OWNER).objects;
+    const company = await scope.createObject({
+      type: 'company',
+      canonicalName: 'Northstar Works',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    const task = await scope.createObject({
+      type: 'task',
+      canonicalName: 'Send Northwind data room',
+      status: 'todo',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    await db.insert(entityRelationships).values([
+      {
+        teamId: TEAM_A,
+        fromEntityId: task.id,
+        toEntityId: company.id,
+        kind: 'related',
+        createdBy: USER_OWNER,
+      },
+    ]);
+    await scope.updateObject(task.id, { status: 'done' }, { kind: 'user', userId: USER_OWNER });
+    const [statusChange] = await db
+      .select({ changedAt: objectChanges.changedAt })
+      .from(objectChanges)
+      .where(
+        and(
+          eq(objectChanges.teamId, TEAM_A),
+          eq(objectChanges.entityId, task.id),
+          eq(objectChanges.field, 'status'),
+          eq(objectChanges.status, 'applied'),
+        ),
+      );
+    expect(statusChange?.changedAt).toBeInstanceOf(Date);
+    await db
+      .update(entities)
+      .set({
+        canonicalName: 'Send Northwind data room (renamed)',
+        updatedAt: new Date((statusChange?.changedAt.getTime() ?? 0) + 60_000),
+      })
+      .where(eq(entities.id, task.id));
+
+    const detail = await scope.getObject(company.id);
+    expect(detail?.connectedWork.recentTasks).toEqual([
+      expect.objectContaining({
+        id: task.id,
+        completedAt: statusChange?.changedAt,
+      }),
+    ]);
+    expect(detail?.connectedWork.recentTasks[0]?.updatedAt).not.toEqual(
+      detail?.connectedWork.recentTasks[0]?.completedAt,
+    );
+  });
+
   it('paginates beyond 100 artifact-associated evidence events', async () => {
     const scope = withTeam(db, TEAM_A, USER_OWNER).objects;
     const object = await scope.createObject({
