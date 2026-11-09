@@ -66,6 +66,12 @@ upload event. Extraction admission recovers that attribution from the document
 version even when janitor recovery reconstructs an otherwise unattributed job;
 expired, ended, or missing sessions cannot resume the work. Global object-cleanup
 sweeps skip suspended teams so active teams continue processing.
+Scoped operations declare exhaustive capabilities in
+`packages/shared/src/platform-admin/workspace-policy.ts`; method names do not
+determine read, write, account-management or maintenance permission. Web identity
+entrypoints explicitly install the request-context resolver before resolving an
+effective identity.
+
 Suspension admission runs at each scoped operation's entry. Nested helpers reuse
 that operation's admission to avoid querying an outer connection from inside a
 transaction; a later operation on the same scope checks current suspension again.

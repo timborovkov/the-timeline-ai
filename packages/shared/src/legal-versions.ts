@@ -5,16 +5,17 @@
  * every fixture that snapshots accepted versions.
  */
 export const TERMS_VERSION = '2026-11-03';
-export const PRIVACY_VERSION = '2026-11-03';
-export const PRIVACY_EFFECTIVE_DATE = 'November 3, 2026';
+export const PRIVACY_VERSION = '2026-11-07';
+export const PRIVACY_EFFECTIVE_DATE = 'November 7, 2026';
 export const LEGAL_EFFECTIVE_DATE = 'November 3, 2026';
 
 /**
  * Pre-launch Privacy acknowledgments that remain valid without a renewed
- * acceptance. The 2026-11-03 disclosure edits keep Privacy `2026-11-01`
- * current for existing users.
+ * acceptance. The 2026-11-07 Google Drive Limited Use edits keep Privacy
+ * `2026-11-03` and `2026-11-01` current for existing users. The in-app Drive
+ * connect disclosure is the timely contextual notice for new Drive grants.
  */
-const GRANDFATHERED_PRIVACY_VERSIONS: readonly string[] = ['2026-11-01'];
+const GRANDFATHERED_PRIVACY_VERSIONS: readonly string[] = ['2026-11-03', '2026-11-01'];
 
 export function isCurrentPrivacyVersion(version: string | null | undefined): boolean {
   return (

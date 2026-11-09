@@ -27,47 +27,6 @@ async function resolveScope(userId: string) {
   return { active, scope: withTeam(db, active.teamId, userId) };
 }
 
-function integrationStubFromConnection(
-  connection: {
-    id: string;
-    ownerUserId: string;
-    provider: integrationsLib.IntegrationProviderName;
-    displayName: string;
-    externalAccountId: string | null;
-    scopes: string[] | null;
-    lastError: string | null;
-    createdAt: Date;
-    updatedAt: Date;
-  },
-  teamId: string,
-): integrationsLib.IntegrationRow {
-  return {
-    id: connection.id,
-    teamId,
-    connectedByUserId: connection.ownerUserId,
-    providerConnectionId: connection.id,
-    provider: connection.provider,
-    displayName: connection.displayName,
-    externalAccountId: connection.externalAccountId,
-    scopes: connection.scopes,
-    authSecretCiphertext: null,
-    authSecretIv: null,
-    authSecretTag: null,
-    visibilityDefault: 'team',
-    visibilityDefaultUserIds: null,
-    enabled: true,
-    lastError: connection.lastError,
-    lastSyncedAt: null,
-    healthConsecutiveFailures: 0,
-    healthFirstFailedAt: null,
-    healthPausedAt: null,
-    healthPauseKind: null,
-    healthOwnerNotifiedAt: null,
-    createdAt: connection.createdAt,
-    updatedAt: connection.updatedAt,
-  };
-}
-
 function serializeConnection(connection: {
   id: string;
   ownerUserId: string;
@@ -95,7 +54,7 @@ function serializeConnection(connection: {
 }
 
 export async function GET(
-  _req: Request,
+  req: Request,
   ctx: { params: Promise<{ id: string }> },
 ): Promise<Response> {
   const session = await auth();
@@ -108,14 +67,19 @@ export async function GET(
   const tokens = await scope.integrations.getProviderConnectionTokens(id);
   if (!tokens) return NextResponse.json({ error: 'no_tokens' }, { status: 400 });
   const provider = integrationsLib.getProvider(connection.provider);
+  const url = new URL(req.url);
+  const parentId = url.searchParams.get('parentId') ?? undefined;
+  const query = (url.searchParams.get('query') ?? url.searchParams.get('q') ?? '').trim();
   let resources;
   try {
-    resources = await provider.listSyncableResources(
-      integrationStubFromConnection(connection, resolved.active.teamId),
+    resources = await provider.browseResources(
+      { id: connection.id, externalAccountId: connection.externalAccountId },
       tokens,
       {
         persistTokens: (fresh) =>
           integrationsLib.adminPersistProviderConnectionTokens(db, connection.id, fresh),
+        ...(parentId ? { parentId } : {}),
+        ...(query ? { query } : {}),
       },
     );
   } catch (err) {
@@ -163,9 +127,10 @@ export async function PUT(
   const tokens = await scope.integrations.getProviderConnectionTokens(id);
   if (!tokens) return NextResponse.json({ error: 'no_tokens' }, { status: 400 });
   const provider = integrationsLib.getProvider(connection.provider);
-  const available = await provider.listSyncableResources(
-    integrationStubFromConnection(connection, resolved.active.teamId),
+  const available = await provider.validateResourceSelections(
+    { id: connection.id, externalAccountId: connection.externalAccountId },
     tokens,
+    parsed.data.resources,
     {
       persistTokens: (fresh) =>
         integrationsLib.adminPersistProviderConnectionTokens(db, connection.id, fresh),

@@ -339,7 +339,22 @@ async function ensureDueDateRawEvents(
     .where(and(eq(calendarEvents.id, event.id), eq(calendarEvents.teamId, target.teamId)));
 }
 
-export async function enqueueDueDateCalendarEventEmbeddings(
+/** Queue/vector writes must wait for the outer transaction, not merely a nested savepoint. */
+export async function dispatchDueDateCalendarEffects(
+  context: { teamId: string; postCommitEffects?: (() => void | Promise<void>)[] },
+  result: DueDateCalendarSyncResult,
+): Promise<void> {
+  const effect = async () => {
+    await Promise.all([
+      enqueueDueDateCalendarEventEmbeddings(context.teamId, result.embedEventIds),
+      deleteDueDateCalendarEventEmbeddings(context.teamId, result.deleteEventIds),
+    ]);
+  };
+  if (context.postCommitEffects) context.postCommitEffects.push(effect);
+  else await effect();
+}
+
+async function enqueueDueDateCalendarEventEmbeddings(
   teamId: string,
   eventIds: string[],
 ): Promise<void> {
@@ -354,7 +369,7 @@ export async function enqueueDueDateCalendarEventEmbeddings(
   );
 }
 
-export async function deleteDueDateCalendarEventEmbeddings(
+async function deleteDueDateCalendarEventEmbeddings(
   teamId: string,
   eventIds: string[],
 ): Promise<void> {

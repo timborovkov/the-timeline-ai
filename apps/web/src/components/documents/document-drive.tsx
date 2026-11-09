@@ -33,6 +33,8 @@ import {
   useTransition,
 } from 'react';
 
+import type { DocumentListPage } from '@/lib/document-list';
+
 import {
   createFolderAction,
   deleteFolderAction,
@@ -53,7 +55,7 @@ import { ItemActionGroup } from '@/components/ui/item-actions';
 import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
 import { notifyAction } from '@/lib/notify';
 import { queryKeys } from '@/lib/query-keys';
-import { type DocumentListPage, useDocumentListQuery } from '@/lib/use-paginated-queries';
+import { useDocumentListQuery } from '@/lib/use-paginated-queries';
 
 interface FolderItem {
   id: string;

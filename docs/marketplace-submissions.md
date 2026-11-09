@@ -252,19 +252,12 @@ hosts cannot complete OAuth against production.
 Re-test ChatGPT and Claude against the deployed production origin before
 relaxing `state` or `resource` checks for less strict hosts.
 
-## Local release checks
+## Release verification
 
-Run with Bun 1.4.4 from the repository root:
+Follow the [validation policy and change-specific checks](../AGENTS.md#validation-policy)
+for application tests and GitHub merge gates. Marketplace packaging has its own
+scoped validators; run the applicable validators when those artifacts change:
 
-```bash
-bun run validate
-bun run doctor
-bun run test
-bun run test:eval
-bun run test:dist-imports
-```
-
-Validate the packages themselves:
 
 ```bash
 claude plugin validate --strict .

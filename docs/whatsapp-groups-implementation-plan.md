@@ -144,6 +144,7 @@
 - Create: `packages/shared/src/whatsapp/dispatcher.ts`
 - Create: `packages/shared/src/whatsapp/dispatcher.test.ts`
 - Modify: `packages/shared/src/team-scope.ts`
+- Modify: `packages/shared/src/timeline/types.ts` and `packages/shared/src/timeline/read-scope.ts`
 - Modify: `packages/shared/src/timeline-moments/index.ts`
 - Modify: `packages/shared/src/timeline-moments/index.test.ts`
 - Modify: `apps/web/src/lib/timeline-controls.ts`
@@ -155,7 +156,7 @@
 2. Capture raw evidence with `source: 'whatsapp'`, canonical timeline text, sender display data, `whatsapp_message_id`, `wa_id`, `phone_number_id`, WABA ID, group ID, reply context, content type, and a provider-versioned metadata shape.
 3. Preserve source immutability. If Meta supplies a supported correction/deletion event, tombstone/supersede the active derived event in the same manner as the current Slack/Telegram contracts; never overwrite captured source content.
 4. Map an inbound group to a deterministic moment key using `group_id`; map a DM to a deterministic conversation key using number and `wa_id`. Add source labels, grouping metadata, and display-safe provider labels without rendering raw provider IDs by default.
-5. Add WhatsApp as a concrete timeline source in `apps/web/src/lib/timeline-controls.ts`; include it in the Chat source expansion only if the product intentionally treats all three conversation providers as one facet. Extend `TimelineOriginFilter`, `parseTimelineOrigins`, `timelineOriginValue`, `timelineOriginOptions`, source-facet SQL, and `timelineOriginFilterCondition` in `packages/shared/src/team-scope.ts` with a `whatsapp_group` origin keyed by `group_id` (and, where required for uniqueness, receiving `phone_number_id`). Add tests for URL parsing, visible facets, and source/origin filtering.
+5. Add WhatsApp as a concrete timeline source in `apps/web/src/lib/timeline-controls.ts`; include it in the Chat source expansion only if the product intentionally treats all three conversation providers as one facet. Extend `TimelineOriginFilter` in `packages/shared/src/timeline/types.ts`, the web origin parsing/value/options helpers in `apps/web/src/lib/timeline-controls.ts`, and source-facet SQL plus `timelineOriginFilterCondition` in `packages/shared/src/timeline/read-scope.ts` with a `whatsapp_group` origin keyed by `group_id` (and, where required for uniqueness, receiving `phone_number_id`). Add tests for URL parsing, visible facets, and source/origin filtering.
 6. For supported media, persist a capture row before scheduling download/extraction; use the shared attachment/document/audio paths and leave a bounded, retryable failure state when media retrieval fails or expires.
 7. Persist outbound delivery/read/failure statuses separately from inbound source evidence so observability does not alter the original message.
 
@@ -267,18 +268,11 @@
 | End-to-end | real Meta staging webhook through public TLS, Group API creation/invite, group and DM capture, media retrieval, one successful explicit reply, one service-window refusal |
 | Regression | Telegram and Slack conversational capture/runtime behavior remains unchanged |
 
-Run, at minimum, after implementation:
-
-```bash
-bun run validate
-bun run doctor
-bun run test
-bun run test:dist-imports
-bun run test:eval
-bun run e2e
-```
-
-Add the narrow package/route tests while iterating and run `bun run test:reconciliation-eval` if source references, evidence associations, visibility floors, or reconciliation planning are touched. The final web check must show `React Doctor score: 100` and `No issues found!`.
+Follow the [validation policy and change-specific checks](../AGENTS.md#validation-policy).
+Use narrow package/route tests while iterating on the matrix above. Verify the
+provider-backed end-to-end scenarios in the approved Meta staging environment;
+GitHub offline checks do not establish live provider behavior. Repo-wide checks
+and production merge gates are defined only in `AGENTS.md`.
 
 ---
 

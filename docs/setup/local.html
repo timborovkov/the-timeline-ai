@@ -10,7 +10,7 @@
     <a class="skip" href="#main">Skip to content</a>
     <main id="main">
       <h1>Local development</h1>
-      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-10-28</span></div>
+      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-11-04</span></div>
       <p class="tldr">
         Bring up the full Timeline stack on your machine with Docker Compose for infra and
         <code>bun run dev</code> for app + worker hot reload.
@@ -66,6 +66,13 @@ ln -sf ../../.env apps/web/.env
         <code>TURNSTILE_SITE_KEY</code>, <code>TURNSTILE_SECRET_KEY</code>, and
         <code>SUPPORT_EMAIL</code> can stay empty locally. Empty Turnstile secrets fail open outside
         production so developers can create email/password accounts without a Cloudflare widget.
+        Optional GitHub sign-in uses <code>AUTH_GITHUB_ID</code> /
+        <code>AUTH_GITHUB_SECRET</code> with callback
+        <code>http://localhost:3000/api/auth/callback/github</code>. Optional Google sign-in reuses
+        the Drive OAuth client (<code>GOOGLE_CLIENT_ID</code> / <code>GOOGLE_CLIENT_SECRET</code>)
+        with callback <code>http://localhost:3000/api/auth/callback/google</code> and scopes
+        <code>openid email profile</code> only — never Drive. See
+        <a href="integrations.html#google-sign-in">Google sign-in setup</a>.
       </p>
       <p>
         For local document parsing without Daytona, set
@@ -253,6 +260,11 @@ bun run dev:seed:heavy         # optional extra volume for infinite-scroll / vir
       </ol>
 
       <h2 id="useful-commands">Useful commands</h2>
+      <p>
+        This is a command reference, not a required local checklist. Follow the
+        <a href="../../AGENTS.md#validation-policy">validation policy in AGENTS.md</a>
+        for scoped local checks and GitHub merge gates.
+      </p>
       <pre><code>bun run dev                              # next + worker, watch mode
 bun run validate                         # format, typecheck, lint, knip
 bun run test                             # unit + integration tests (package suites run sequentially)

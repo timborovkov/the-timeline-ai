@@ -62,7 +62,7 @@ import {
   reconciliationDedupeKey,
   validateSourceRefs,
   type SourceRef,
-} from '#src/reconciliation/index.js';
+} from '#src/reconciliation/core.js';
 import { sourcePayloadRefFromMetadata } from '#src/reconciliation/source-snapshot.js';
 import { stableStringify, suggestionDedupeKey } from '#src/suggestions/dedupe-key.js';
 import {
@@ -97,6 +97,7 @@ import type {
   ObjectScope,
   ObjectType,
 } from '#src/objects/index.js';
+import type { SuggestionAcceptanceUnitOfWork } from '#src/suggestions/acceptance-transaction.js';
 import type { TeamRole } from '#src/team-scope.js';
 
 export { suggestionDedupeKey } from '#src/suggestions/dedupe-key.js';
@@ -390,15 +391,9 @@ export interface SuggestionScopeDeps {
   boards: BoardScope;
   calendar: CalendarScope;
   chatStructured?: typeof defaultChatStructured;
-  /** Test/instrumentation seam invoked after an acceptance is claimed but before it is applied. */
+  /** Pauses acceptance for race tests before application, outside pack evidence locks. */
   beforeApplyItem?: (itemId: string) => Promise<void>;
-  acceptanceEvidenceLocked?: boolean;
-  createAcceptanceTransactionScope?: (
-    tx: DbTx,
-    postCommitEffects: (() => void | Promise<void>)[],
-  ) => {
-    acceptSuggestionItemWithOutcome: (itemId: string) => Promise<'accepted' | 'superseded' | null>;
-  };
+  acceptance: SuggestionAcceptanceUnitOfWork;
 }
 
 export interface SuggestionItemInput {
@@ -3844,7 +3839,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     item: typeof agentSuggestionItems.$inferSelect,
     evidenceRawEventIds: string[],
   ): Promise<void> {
-    if (!deps.acceptanceEvidenceLocked) return;
+    if (deps.acceptance.kind !== 'transaction') return;
 
     const targetIsCalendar =
       item.targetKind === 'calendar_event' && item.targetId !== null && UUID_RE.test(item.targetId);
@@ -3935,7 +3930,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
   async function lockAcceptanceMutationTarget(
     item: typeof agentSuggestionItems.$inferSelect,
   ): Promise<void> {
-    if (!deps.acceptanceEvidenceLocked) return;
+    if (deps.acceptance.kind !== 'transaction') return;
 
     if (
       item.operation !== 'create' &&
@@ -4038,7 +4033,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       const visiblePackEvidence =
         storedPackEvidenceIds.length === 0
           ? []
-          : deps.acceptanceEvidenceLocked
+          : deps.acceptance.kind === 'transaction'
             ? await packEvidenceQuery.for('update')
             : await packEvidenceQuery;
       if (
@@ -5728,16 +5723,10 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     if (!row) return null;
     const isPackBacked =
       typeof recordFromUnknown(row.suggestion.metadata).evidence_pack_fingerprint === 'string';
-    const acceptanceTransactionScope = deps.createAcceptanceTransactionScope;
-    if (isPackBacked && !deps.acceptanceEvidenceLocked && acceptanceTransactionScope) {
+    if (isPackBacked && deps.acceptance.kind === 'root') {
       await deps.beforeApplyItem?.(itemId);
       try {
-        const postCommitEffects: (() => void | Promise<void>)[] = [];
-        const outcome = await db.transaction((tx) =>
-          acceptanceTransactionScope(tx, postCommitEffects).acceptSuggestionItemWithOutcome(itemId),
-        );
-        for (const effect of postCommitEffects) await effect();
-        return outcome;
+        return await deps.acceptance.run(itemId);
       } catch (error) {
         if (!(error instanceof TransactionalSuggestionApplyFailure)) throw error;
         const outcome = await recordRolledBackApplyFailure(error);
@@ -5794,7 +5783,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       resultId = await applyItem(claimed);
     } catch (err) {
       const failureReason = suggestionApplyFailureReason(err);
-      if (deps.acceptanceEvidenceLocked) {
+      if (deps.acceptance.kind === 'transaction') {
         throw new TransactionalSuggestionApplyFailure(
           claimed,
           row.item.updatedAt,

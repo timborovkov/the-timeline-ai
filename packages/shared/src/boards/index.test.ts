@@ -5,6 +5,10 @@ import { afterAll, beforeAll, beforeEach, describe, it } from 'bun:test';
 import type { ResettablePGliteTestDb } from '#src/test/pglite.js';
 import type { PGlite } from '@electric-sql/pglite';
 import type { Db } from '@timeline/db';
+const queueFakes = vi.hoisted(() => ({
+  enqueueCalendarEventEmbedJob: vi.fn().mockResolvedValue(undefined),
+}));
+
 const qdrantFakes = vi.hoisted(() => ({
   deletePoints: vi.fn().mockResolvedValue(undefined),
   deletePointsForSource: vi.fn().mockResolvedValue(undefined),
@@ -19,7 +23,7 @@ await vi.mock(
     enqueueEntityEmbedJob: vi.fn().mockResolvedValue(undefined),
     enqueueObjectNoteEmbedJob: vi.fn().mockResolvedValue(undefined),
     enqueueObjectChangeEmbedJob: vi.fn().mockResolvedValue(undefined),
-    enqueueCalendarEventEmbedJob: vi.fn().mockResolvedValue(undefined),
+    enqueueCalendarEventEmbedJob: queueFakes.enqueueCalendarEventEmbedJob,
     enqueueObjectSummaryJob: vi.fn().mockResolvedValue({ enqueued: true, jobId: 'summary-job' }),
   }),
   () => import('#src/queue/queues.js'),
@@ -49,6 +53,8 @@ const { drizzle } = await import('drizzle-orm/pglite');
 const { buildBoardDirectWriteSourceContext, defaultBoardLanes, defaultBoardRecommendedTypes } =
   await import('#src/boards/index.js');
 const { withTeam } = await import('#src/team-scope.js');
+const { createSuggestionAcceptanceUnitOfWork } =
+  await import('#src/suggestions/acceptance-transaction.js');
 const { createResettablePGliteTestDb } = await import('#src/test/pglite.js');
 
 const TEAM_A = '11111111-1111-1111-1111-111111111111';
@@ -776,6 +782,101 @@ describe('board scope', () => {
       }),
     );
     expect(startRawRows[0]?.contentText).toContain('2026-08-12T21:00:00.000Z');
+  });
+
+  // Board mutations may finish a savepoint while suggestion acceptance still owns the commit.
+  for (const outcome of ['commit', 'rollback'] as const) {
+    it(`keeps outer board due-date effects behind ${outcome}`, async () => {
+      const scope = withTeam(db, TEAM_A, USER_OWNER);
+      const board = await scope.boards.createBoard({
+        name: 'Transactional deadlines',
+        templateKind: 'custom',
+        lanes: [],
+      });
+      const company = await scope.objects.createObject({
+        type: 'company',
+        canonicalName: 'Deadline owner',
+        actor: { kind: 'user', userId: USER_OWNER },
+      });
+      const existing = await scope.boards.addBoardItem(board.id, {
+        entityId: company.id,
+        dueAt: new Date('2026-08-12T10:00:00Z'),
+        actor: { kind: 'user', userId: USER_OWNER },
+      });
+      vi.clearAllMocks();
+      const work = createSuggestionAcceptanceUnitOfWork(db, (tx, context) => ({
+        async acceptSuggestionItemWithOutcome() {
+          const nested = withTeam(tx as unknown as Db, TEAM_A, USER_OWNER, {
+            suggestionAcceptanceTransaction: context,
+          });
+          await nested.boards.updateBoardItem(
+            existing.id,
+            { dueAt: new Date('2026-08-13T10:00:00Z') },
+            { kind: 'user', userId: USER_OWNER },
+          );
+          await nested.boards.removeBoardItem(existing.id, { kind: 'user', userId: USER_OWNER });
+          expect(queueFakes.enqueueCalendarEventEmbedJob).not.toHaveBeenCalled();
+          expect(qdrantFakes.deletePointsForSource).not.toHaveBeenCalled();
+          expect(qdrantFakes.deletePoints).not.toHaveBeenCalled();
+          if (outcome === 'rollback') throw new Error('outer write failed');
+          return 'accepted';
+        },
+      }));
+      if (work.kind !== 'root') throw new Error('expected root transaction');
+      if (outcome === 'rollback') {
+        await expect(work.run('board-write')).rejects.toThrow('outer write failed');
+        expect(queueFakes.enqueueCalendarEventEmbedJob).not.toHaveBeenCalled();
+        expect(qdrantFakes.deletePointsForSource).not.toHaveBeenCalled();
+        expect(qdrantFakes.deletePoints).not.toHaveBeenCalled();
+        const [persisted] = await db
+          .select()
+          .from(boardItems)
+          .where(eq(boardItems.id, existing.id));
+        expect(persisted?.archivedAt).toBeNull();
+        expect(persisted?.dueAt).toEqual(new Date('2026-08-12T10:00:00Z'));
+      } else {
+        await expect(work.run('board-write')).resolves.toBe('accepted');
+        expect(queueFakes.enqueueCalendarEventEmbedJob).toHaveBeenCalledTimes(1);
+        expect(qdrantFakes.deletePoints).toHaveBeenCalledTimes(1);
+        const models = qdrantFakes.deletePointsForSource.mock.calls.map(
+          ([input]) => (input as { model: string }).model,
+        );
+        expect(models.length).toBeGreaterThan(0);
+        expect(new Set(models).size).toBe(models.length);
+        const [persisted] = await db
+          .select()
+          .from(boardItems)
+          .where(eq(boardItems.id, existing.id));
+        expect(persisted?.archivedAt).toBeInstanceOf(Date);
+      }
+    });
+  }
+
+  it('keeps committed object acceptance successful when due-date enqueue rejects', async () => {
+    queueFakes.enqueueCalendarEventEmbedJob.mockRejectedValueOnce(new Error('queue unavailable'));
+    let createdId: string | undefined;
+    const work = createSuggestionAcceptanceUnitOfWork(db, (tx, context) => ({
+      async acceptSuggestionItemWithOutcome() {
+        const nested = withTeam(tx as unknown as Db, TEAM_A, USER_OWNER, {
+          suggestionAcceptanceTransaction: context,
+        });
+        const task = await nested.objects.createObject({
+          type: 'task',
+          canonicalName: 'Committed deadline',
+          dueAt: new Date('2026-08-12T10:00:00Z'),
+          actor: { kind: 'user', userId: USER_OWNER },
+        });
+        createdId = task.id;
+        expect(queueFakes.enqueueCalendarEventEmbedJob).not.toHaveBeenCalled();
+        return 'accepted';
+      },
+    }));
+    if (work.kind !== 'root') throw new Error('expected root transaction');
+    await expect(work.run('object-write')).resolves.toBe('accepted');
+    expect(queueFakes.enqueueCalendarEventEmbedJob).toHaveBeenCalledTimes(1);
+    if (!createdId) throw new Error('expected committed object id');
+    const [persisted] = await db.select().from(entities).where(eq(entities.id, createdId));
+    expect(persisted?.canonicalName).toBe('Committed deadline');
   });
 
   it('mirrors board item due dates without responsible-person inbox notifications', async () => {

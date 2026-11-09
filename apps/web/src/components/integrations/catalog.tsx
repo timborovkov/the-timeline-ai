@@ -8,8 +8,10 @@ import type * as integrationsLib from '@timeline/shared/integrations';
 import { CollectionRow } from '@/components/collections/collection-row';
 import { EmptyState } from '@/components/empty-state';
 import { InlineError } from '@/components/inline-error';
+import { GoogleDriveConnectDisclosure } from '@/components/integrations/google-drive-connect-disclosure';
 import { ProviderLogo } from '@/components/provider-logo';
 import { Button } from '@/components/ui/button';
+import { isGoogleDriveProviderId } from '@/lib/google-drive-limited-use';
 import { notifyAction } from '@/lib/notify';
 import { connectionErrorMessage } from '@/lib/ux-errors';
 
@@ -18,6 +20,15 @@ type CatalogEntry = ReturnType<typeof integrationsLib.listAvailableProviders>[nu
 export function IntegrationsCatalog({ catalog }: { catalog: CatalogEntry[] }) {
   const [pending, setPending] = useState<string | null>(null);
   const [error, setError] = useState<{ id: string; message: string; details: string } | null>(null);
+  const [driveDisclosureOpen, setDriveDisclosureOpen] = useState(false);
+
+  async function requestConnect(id: string) {
+    if (isGoogleDriveProviderId(id)) {
+      setDriveDisclosureOpen(true);
+      return;
+    }
+    await startConnect(id);
+  }
 
   async function startConnect(id: string) {
     setPending(id);
@@ -79,7 +90,7 @@ export function IntegrationsCatalog({ catalog }: { catalog: CatalogEntry[] }) {
                 provider={provider}
                 pending={pending}
                 error={error}
-                onConnect={startConnect}
+                onConnect={requestConnect}
               />
             ))}
           </div>
@@ -104,13 +115,22 @@ export function IntegrationsCatalog({ catalog }: { catalog: CatalogEntry[] }) {
                   provider={provider}
                   pending={pending}
                   error={error}
-                  onConnect={startConnect}
+                  onConnect={requestConnect}
                 />
               ))}
             </div>
           </details>
         ) : null}
       </div>
+      <GoogleDriveConnectDisclosure
+        open={driveDisclosureOpen}
+        onOpenChange={setDriveDisclosureOpen}
+        pending={pending === 'google_drive'}
+        onContinue={() => {
+          setDriveDisclosureOpen(false);
+          void startConnect('google_drive');
+        }}
+      />
     </>
   );
 }

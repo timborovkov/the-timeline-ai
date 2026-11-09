@@ -1,9 +1,9 @@
 import {
   closeEmailInboundQueue,
-  closeRedisConnection,
   enqueueEmailInboundJob,
   getEmailInboundQueue,
 } from '@timeline/shared/queue';
+import { closeAllRedisConnections } from '@timeline/shared/redis';
 
 const emailId = process.argv[2];
 if (
@@ -22,5 +22,5 @@ try {
   console.log(`Queued Resend email ${emailId}`);
 } finally {
   await closeEmailInboundQueue();
-  await closeRedisConnection();
+  await closeAllRedisConnections();
 }

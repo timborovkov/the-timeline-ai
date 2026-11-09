@@ -18,6 +18,7 @@ import { sourceMetadataWithConversationArtifacts } from '#src/conversational/con
 import { reconcileLinkArtifactsForRawEvent } from '#src/conversational/link-artifacts.js';
 import { buildDocumentObjectKey } from '#src/documents/object-key.js';
 import { documentPresentation } from '#src/documents/presentation.js';
+import { documentVisibleToUser } from '#src/documents/visibility.js';
 import { embed as defaultEmbed, type EmbedResult } from '#src/llm/embed.js';
 import { childLogger } from '#src/logger.js';
 import { decodeCursor, pageWindow } from '#src/pagination.js';
@@ -42,23 +43,8 @@ import type { QdrantOperationContext } from '#src/qdrant/operation.js';
 type DbTx = Parameters<Parameters<Db['transaction']>[0]>[0];
 type DbOrTx = Db | DbTx;
 
-/**
- * Phase 9 — document drive methods for the team scope. Factored out of
- * team-scope.ts so that file stays focused on the timeline / entity
- * surface. The returned object is spread into the `withTeam` result so
- * callers see one flat namespace (`scope.listFolders`, `scope.createDocument`).
- *
- * Every mutating method that changes user-visible state (upload, finalise,
- * rename, move, delete, restore, visibility change) writes a `raw_events`
- * row with `source = 'document'` in the same transaction. The timeline UI,
- * search, notifications, and the agent's `list_recent_document_changes`
- * tool all key off that single audit log.
- *
- * Visibility predicate mirrors `withTeam`'s `visibilityFilter`. Folders and
- * documents reuse `event_visibility` so the same `(team / private / specific_users)`
- * rule applies — one predicate definition per column, no enum drift.
- */
-
+/** Document state changes and their timeline events commit together so search,
+ * notifications, and agent activity reads cannot observe an unaudited change. */
 type Visibility = 'private' | 'team' | 'specific_users';
 type FileKind = 'captured' | 'document';
 type RepresentationKind = 'source_text' | 'transcript' | 'visual_description' | 'metadata_preview';
@@ -329,14 +315,7 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
       sql`${userId}::uuid = ANY(${folders.visibilityUserIds})`,
     ),
   );
-  const documentVisibility = or(
-    eq(documents.visibility, 'team'),
-    and(eq(documents.visibility, 'private'), eq(documents.ownerUserId, userId)),
-    and(
-      eq(documents.visibility, 'specific_users'),
-      sql`${userId}::uuid = ANY(${documents.visibilityUserIds})`,
-    ),
-  );
+  const documentVisibility = documentVisibleToUser(userId);
 
   async function normalizeDocumentVisibilityUserIds(input: {
     visibility: Visibility;

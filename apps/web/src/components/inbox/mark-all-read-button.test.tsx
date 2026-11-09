@@ -1,6 +1,9 @@
 import { expect } from '@timeline/test-support';
 import { vi } from '@timeline/test-support';
 import { afterEach, beforeEach, describe, it } from 'bun:test';
+
+import type { RenderOptions } from '@testing-library/react';
+import type { ReactElement } from 'react';
 // Test environment: happy-dom
 
 const fakes = vi.hoisted(() => ({
@@ -38,8 +41,17 @@ await vi.mock(
   () => import('next/navigation'),
 );
 
-const { cleanup, render, screen, waitFor } = await import('@testing-library/react');
+const {
+  cleanup,
+  render: renderWithoutProvider,
+  screen,
+  waitFor,
+} = await import('@testing-library/react');
 const { default: userEvent } = await import('@testing-library/user-event');
+
+const { InboxReadProvider } = await import('@/components/inbox/inbox-read-state');
+const render = (ui: ReactElement, options?: RenderOptions) =>
+  renderWithoutProvider(ui, { wrapper: InboxReadProvider, ...options });
 
 const { MarkAllReadButton } = await import('./mark-all-read-button.js');
 

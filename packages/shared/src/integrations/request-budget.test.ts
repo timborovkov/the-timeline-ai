@@ -6,9 +6,9 @@ import IORedis from 'ioredis';
 
 const connection = vi.hoisted(() => ({ current: null as IORedis | null }));
 await vi.mock(
-  import.meta.resolve('#src/queue/connection.js'),
+  import.meta.resolve('#src/redis/connection.js'),
   () => ({ getRedisConnection: () => connection.current }),
-  () => import('#src/queue/connection.js'),
+  () => import('#src/redis/connection.js'),
 );
 
 const {

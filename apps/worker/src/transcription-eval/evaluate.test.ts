@@ -9,9 +9,8 @@ import type {
   TranscriptionEvalTransport,
   TranscriptionEvalZdrRoutes,
 } from '#src/transcription-eval/evaluate.js';
-import type { LoadedTranscriptionEvalManifest } from '#src/transcription-eval/manifest.js';
-
 import { runTranscriptionQualityEval } from '#src/transcription-eval/evaluate.js';
+import type { LoadedTranscriptionEvalManifest } from '#src/transcription-eval/manifest.js';
 import { buildValidTranscriptionEvalManifest } from '#src/transcription-eval/test-fixtures.js';
 
 /**

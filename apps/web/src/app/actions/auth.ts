@@ -1,12 +1,9 @@
 'use server';
 
 import { teamInvites, teamMembers, teams, users } from '@timeline/db';
-import {
-  assertTeamMemberSeatCapacity,
-  insertRestrictedFreeBillingAccount,
-  isBillingAdmissionError,
-} from '@timeline/shared/billing';
-import { insertDefaultDigestDestination, sendMessage } from '@timeline/shared/messaging';
+import { initializeOwnedWorkspace } from '@timeline/shared/agent-provisioning';
+import { assertTeamMemberSeatCapacity, isBillingAdmissionError } from '@timeline/shared/billing';
+import { sendMessage } from '@timeline/shared/messaging';
 import { hashPassword } from '@timeline/shared/passwords';
 import * as rateLimit from '@timeline/shared/rate-limit';
 import { buildInboundEmail, randomSlugSuffix, slugify } from '@timeline/shared/slug';
@@ -225,18 +222,15 @@ export async function signUpAction(_prev: SignUpState, formData: FormData): Prom
         const baseSlug = slugify(`${name}-team`) || 'team';
         const slug = `${baseSlug}-${randomSlugSuffix()}`;
         const inboundEmail = buildInboundEmail(slug, process.env.INBOUND_EMAIL_DOMAIN);
-        const teamRows = await tx
-          .insert(teams)
-          .values({ name: `${name}'s Team`, slug, inboundEmail })
-          .returning({ id: teams.id });
-        const teamId = teamRows[0]?.id;
+        const team = await initializeOwnedWorkspace(tx, {
+          ownerId: userId,
+          name: `${name}'s Team`,
+          slug,
+          inboundEmail,
+        });
+        const teamId = team?.id;
         if (!teamId) throw new Error('Failed to create team');
-        // react-doctor-disable-next-line react-doctor/async-parallel -- Team membership insert must precede digest and restricted billing writes on this transaction client.
-        await tx.insert(teamMembers).values({ teamId, userId, role: 'owner' });
-        await insertDefaultDigestDestination(tx, teamId);
-        // Credentials signup does not set emailVerified. Keep the workspace
-        // restricted until verifyEmailToken claims the person-level Free grant.
-        await insertRestrictedFreeBillingAccount({ db: tx, teamId });
+        // Email verification claims the Free grant; signup keeps restricted billing.
         return { activeTeamId: teamId, userId, event: 'team_created' as const };
       });
     } catch (e) {
@@ -405,25 +399,38 @@ export async function signInAction(_prev: SignInState, formData: FormData): Prom
   });
 }
 
+async function signInWithOAuthProvider(
+  provider: 'github' | 'google',
+  formData: FormData,
+): Promise<void> {
+  const callbackUrl = safeCallbackUrl(
+    typeof formData.get('callbackUrl') === 'string'
+      ? (formData.get('callbackUrl') as string)
+      : undefined,
+  );
+  // If this OAuth signup is for an invite, stash the token in a signed
+  // cookie so the `createUser` event can skip the default solo-team
+  // creation. Without this the user ends up in two teams after the OAuth
+  // callback redirects to /accept-invite.
+  const inviteToken = formData.get('inviteToken');
+  if (typeof inviteToken === 'string' && inviteToken.length > 0 && inviteToken.length <= 256) {
+    const { setPendingInvite } = await import('@/lib/pending-invite');
+    await setPendingInvite(inviteToken);
+  }
+  // signIn() with a non-credentials provider throws NEXT_REDIRECT on success.
+  // Let it propagate; Next handles the response.
+  await signIn(provider, { redirectTo: callbackUrl });
+}
+
 export async function signInWithGitHubAction(formData: FormData): Promise<void> {
   return runSentryServerAction('sign_in_with_git_hub', async () => {
-    const callbackUrl = safeCallbackUrl(
-      typeof formData.get('callbackUrl') === 'string'
-        ? (formData.get('callbackUrl') as string)
-        : undefined,
-    );
-    // If this OAuth signup is for an invite, stash the token in a signed
-    // cookie so the `createUser` event can skip the default solo-team
-    // creation. Without this the user ends up in two teams after the OAuth
-    // callback redirects to /accept-invite.
-    const inviteToken = formData.get('inviteToken');
-    if (typeof inviteToken === 'string' && inviteToken.length > 0 && inviteToken.length <= 256) {
-      const { setPendingInvite } = await import('@/lib/pending-invite');
-      await setPendingInvite(inviteToken);
-    }
-    // signIn() with a non-credentials provider throws NEXT_REDIRECT on success.
-    // Let it propagate; Next handles the response.
-    await signIn('github', { redirectTo: callbackUrl });
+    await signInWithOAuthProvider('github', formData);
+  });
+}
+
+export async function signInWithGoogleAction(formData: FormData): Promise<void> {
+  return runSentryServerAction('sign_in_with_google', async () => {
+    await signInWithOAuthProvider('google', formData);
   });
 }
 

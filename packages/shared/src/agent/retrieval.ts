@@ -8,26 +8,17 @@ import {
 } from '#src/evidence-pack/index.js';
 import { type ObjectSummarySourceRef, sourceRefCitation } from '#src/objects/summaries.js';
 
+import type {
+  RetrievalRecipe,
+  RetrieveWorkspaceContextInput,
+  RetrievalExecutionContext,
+} from '#src/agent/retrieval-contract.js';
 import type { TeamScope } from '#src/team-scope.js';
 
-export type RetrievalRecipe =
-  | 'auto'
-  | 'object_profile'
-  | 'timeline_evidence'
-  | 'task_status'
-  | 'calendar'
-  | 'board_state'
-  | 'document_knowledge'
-  | 'product_guide';
-
-export interface RetrieveWorkspaceContextInput {
-  query: string;
-  recipe?: RetrievalRecipe;
-  objectId?: string;
-  limit?: number;
-  includeDocuments?: boolean;
-  includeCalendar?: boolean;
-}
+export type {
+  RetrievalRecipe,
+  RetrieveWorkspaceContextInput,
+} from '#src/agent/retrieval-contract.js';
 
 export interface WorkspaceContextResult {
   recipe: Exclude<RetrievalRecipe, 'auto'>;
@@ -92,7 +83,9 @@ async function recoverAdapter<T>(
 export async function retrieveWorkspaceContext(
   scope: TeamScope,
   input: RetrieveWorkspaceContextInput,
+  executionContext: RetrievalExecutionContext = {},
 ): Promise<WorkspaceContextResult> {
+  const currentDate = executionContext.currentDate ?? new Date();
   const query = input.query.trim();
   const recipe = input.recipe === 'auto' || !input.recipe ? classifyRecipe(query) : input.recipe;
   const limit = Math.min(Math.max(input.limit ?? 5, 1), 10);
@@ -176,8 +169,8 @@ export async function retrieveWorkspaceContext(
             adapterFailures,
             'calendar',
             scope.calendar.listCalendarEvents({
-              from: new Date(Date.now() - 14 * MILLIS_PER_DAY),
-              to: new Date(Date.now() + 30 * MILLIS_PER_DAY),
+              from: new Date(currentDate.getTime() - 14 * MILLIS_PER_DAY),
+              to: new Date(currentDate.getTime() + 30 * MILLIS_PER_DAY),
               limit: Math.min(limit, 10),
             }),
             [],

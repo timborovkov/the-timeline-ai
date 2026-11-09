@@ -2,14 +2,15 @@
 
 import * as boardDomain from '@timeline/shared/boards';
 import * as objects from '@timeline/shared/objects';
-import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 
-import { type ActionState, resolveScope, uuidSchema } from '@/lib/action-scope';
+import type { ActionState } from '@/lib/action-result';
+
+import { resolveScope, uuidSchema } from '@/lib/action-scope';
 import { trackProductEventBestEffort } from '@/lib/analytics';
 import { publicActionError } from '@/lib/public-error';
+import { refreshMutation } from '@/lib/refresh-mutation';
 import { runSentryServerAction } from '@/lib/sentry-action';
-import { reportCaughtError } from '@/lib/sentry-report';
 
 const objectTypeSchema = z.enum(objects.OBJECT_TYPES);
 const boardTemplateSchema = z.enum(['pipeline', 'task_board', 'catalog', 'custom']);
@@ -65,23 +66,6 @@ const quickCreateSchema = z.object({
   laneId: uuidSchema.nullable().optional(),
 });
 
-function revalidateBoardSurfaces(boardId?: string, entityId?: string): void {
-  const paths = ['/app', '/app/boards', '/app/work'];
-  if (boardId) paths.push(`/app/boards/${boardId}`);
-  if (entityId) paths.push(`/app/objects/${entityId}`);
-
-  for (const path of paths) {
-    try {
-      revalidatePath(path);
-    } catch (err) {
-      reportCaughtError(err, {
-        surface: 'server_action',
-        operation: 'revalidate_board_surfaces',
-      });
-    }
-  }
-}
-
 function friendlyError(err: unknown, fallback: string): string {
   if (err && typeof err === 'object' && 'code' in err) {
     const code = (err as { code?: unknown }).code;
@@ -113,7 +97,7 @@ export async function createBoardAction(input: unknown): Promise<ActionState> {
         'board_action_completed',
         { action: 'create' },
       );
-      revalidateBoardSurfaces(board.id);
+      refreshMutation({ kind: 'board-changed', boardId: board.id }, 'revalidate_board_surfaces');
       return { ok: true, id: board.id };
     } catch (err) {
       return { error: friendlyError(err, 'create_board') };
@@ -136,7 +120,10 @@ export async function deleteBoardAction(input: unknown): Promise<ActionState> {
           { action: 'delete' },
         );
       }
-      revalidateBoardSurfaces(parsed.data.id);
+      refreshMutation(
+        { kind: 'board-changed', boardId: parsed.data.id },
+        'revalidate_board_surfaces',
+      );
       return ok ? { ok: true } : { error: 'Board not found' };
     } catch (err) {
       return { error: friendlyError(err, 'archive_board') };
@@ -158,7 +145,10 @@ export async function renameBoardAction(input: unknown): Promise<ActionState> {
         'board_action_completed',
         { action: 'update' },
       );
-      revalidateBoardSurfaces(parsed.data.id);
+      refreshMutation(
+        { kind: 'board-changed', boardId: parsed.data.id },
+        'revalidate_board_surfaces',
+      );
       return { ok: true };
     } catch (err) {
       return { error: friendlyError(err, 'rename_board') };
@@ -180,7 +170,10 @@ export async function updateBoardSettingsAction(input: unknown): Promise<ActionS
         'board_action_completed',
         { action: 'update' },
       );
-      revalidateBoardSurfaces(parsed.data.id);
+      refreshMutation(
+        { kind: 'board-changed', boardId: parsed.data.id },
+        'revalidate_board_surfaces',
+      );
       return { ok: true };
     } catch (err) {
       return { error: friendlyError(err, 'update_board_settings') };
@@ -207,7 +200,10 @@ export async function addBoardItemAction(
         'board_action_completed',
         { action: 'item_add' },
       );
-      revalidateBoardSurfaces(parsed.data.boardId, item.entityId);
+      refreshMutation(
+        { kind: 'board-changed', boardId: parsed.data.boardId, entityId: item.entityId },
+        'revalidate_board_surfaces',
+      );
       return { ok: true, id: item.id, item };
     } catch (err) {
       return { error: friendlyError(err, 'add_board_item') };
@@ -240,7 +236,10 @@ export async function quickCreateBoardItemAction(
         'board_action_completed',
         { action: 'item_add' },
       );
-      revalidateBoardSurfaces(parsed.data.boardId, item.entityId);
+      refreshMutation(
+        { kind: 'board-changed', boardId: parsed.data.boardId, entityId: item.entityId },
+        'revalidate_board_surfaces',
+      );
       return { ok: true, id: item.id, item };
     } catch (err) {
       return { error: friendlyError(err, 'quick_create_board_item') };
@@ -271,7 +270,10 @@ export async function updateBoardItemAction(input: unknown): Promise<ActionState
           'board_action_completed',
           { action: 'item_update' },
         );
-        revalidateBoardSurfaces(result.item.boardId, result.item.entityId);
+        refreshMutation(
+          { kind: 'board-changed', boardId: result.item.boardId, entityId: result.item.entityId },
+          'revalidate_board_surfaces',
+        );
       }
       return { ok: true, id };
     } catch (err) {
@@ -298,7 +300,10 @@ export async function removeBoardItemAction(input: unknown): Promise<ActionState
           { action: 'item_remove' },
         );
       }
-      revalidateBoardSurfaces(item?.boardId, item?.entityId);
+      refreshMutation(
+        { kind: 'board-changed', boardId: item?.boardId, entityId: item?.entityId },
+        'revalidate_board_surfaces',
+      );
       return item ? { ok: true } : { error: 'Board item not found' };
     } catch (err) {
       return { error: friendlyError(err, 'remove_board_item') };
@@ -314,7 +319,10 @@ export async function pinBoardAction(input: unknown): Promise<ActionState> {
     if (!r.ok) return { error: r.error };
     try {
       await r.scope.pins.pin({ kind: 'board', key: parsed.data.id });
-      revalidateBoardSurfaces(parsed.data.id);
+      refreshMutation(
+        { kind: 'board-changed', boardId: parsed.data.id },
+        'revalidate_board_surfaces',
+      );
       return { ok: true };
     } catch (err) {
       return { error: friendlyError(err, 'pin_board') };
@@ -330,7 +338,10 @@ export async function unpinBoardAction(input: unknown): Promise<ActionState> {
     if (!r.ok) return { error: r.error };
     try {
       await r.scope.pins.unpin({ kind: 'board', key: parsed.data.id });
-      revalidateBoardSurfaces(parsed.data.id);
+      refreshMutation(
+        { kind: 'board-changed', boardId: parsed.data.id },
+        'revalidate_board_surfaces',
+      );
       return { ok: true };
     } catch (err) {
       return { error: friendlyError(err, 'unpin_board') };
