@@ -127,11 +127,16 @@ INBOUND_EMAIL_DOMAIN=</code></pre>
       </p>
       <h2>Privacy and trust</h2>
       <p>
-        Resend processes recipients, senders, email content, attachments, and delivery metadata.
-        Account-specific retention, tracking, DPA/transfer coverage, access, and deletion behavior
-        remain unverified under G-09. Timeline's stored evidence has its own retention; deleting
-        provider copies does not delete Timeline records. Do not infer account settings or assurance
-        from a successful API response.
+        Resend processes recipients, senders, email content, attachments, and delivery metadata. A
+        2026-11-09 read-only account review verified domain <code>in.thetimeline.cc</code>,
+        <code>eu-west-1</code> sending, inbound receiving, the <code>email.received</code> webhook,
+        unused audiences/contacts/segments/broadcasts/topics/automations/templates, and domain-level
+        open/click tracking currently enabled. Resend's published GDPR page states US storage
+        regardless of sending region and 30-day Free/Pro/Scale email/log retention while the account
+        is active (deleted within 90 days after termination). Timeline deletion does not itself
+        delete Resend copies during that window. G-09 remains partial: do not claim a signed DPA on
+        file, custom retention, API key scope, a plan name, or that tracking is off. Do not infer
+        those remaining settings from a successful API response.
       </p>
       <p>
         References:

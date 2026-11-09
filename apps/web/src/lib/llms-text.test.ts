@@ -129,8 +129,8 @@ describe('llms text files', () => {
 
   it('tracks machine-document changes in their registry dates', () => {
     expect(PUBLIC_DOCUMENT_REGISTRY.get('/llms-full.txt')?.dates).toEqual({
-      modified: '2026-11-07',
-      reviewed: '2026-11-07',
+      modified: '2026-11-09',
+      reviewed: '2026-11-09',
     });
     expect(PUBLIC_DOCUMENT_REGISTRY.get('/sitemap.xml')?.dates).toEqual({
       modified: '2026-11-03',
