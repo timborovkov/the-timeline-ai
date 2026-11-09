@@ -1126,61 +1126,7 @@ function SelectedTaskDetail({
   revertPrimaryProject,
 }: {
   selectedTask: objects.ObjectRow;
-  selectedTaskContext:
-    | {
-        openTasks: objects.ObjectRow[];
-        recentTasks: objects.ObjectRow[];
-        calendarEvents: { id: string; title: string; startAt: Date; endAt: Date; showAs: string }[];
-        timelineEvents: {
-          id: string;
-          source: string;
-          contentText: string | null;
-          occurredAt: Date;
-        }[];
-        objects: {
-          id: string;
-          canonicalName: string;
-          type: objects.ObjectType;
-          factCount: number;
-        }[];
-        boards: {
-          boardId: string;
-          boardName: string;
-          itemId: string;
-          laneName: string | null;
-          dueAt: Date | null;
-          priority: number | null;
-          nextStep: string | null;
-          notes: string | null;
-        }[];
-        pendingApprovals: {
-          suggestionId: string;
-          itemId: string;
-          title: string;
-          operation: string;
-          targetKind: string;
-          createdAt: Date;
-        }[];
-        documents: { id: string; name: string; fileKind: string; updatedAt: Date }[];
-        links: {
-          id: string;
-          canonicalName: string;
-          canonicalUrl: string | null;
-          displayUrl: string | null;
-          domain: string | null;
-          provider: string | null;
-          updatedAt: Date;
-        }[];
-        capturedFiles: {
-          id: string;
-          name: string;
-          contentType: string | null;
-          sourceRawEventId: string | null;
-          updatedAt: Date;
-        }[];
-      }
-    | null
-    | undefined;
+  selectedTaskContext: objects.ObjectDetail['connectedWork'] | null | undefined;
   selectedTaskProvenance:
     | {
         whyThisExists: objects.ObjectProvenanceEntry[];

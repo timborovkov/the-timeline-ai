@@ -1479,6 +1479,8 @@ export interface ObjectDetail extends ObjectRow {
   connectedWork: {
     openTasks: ObjectRow[];
     recentTasks: ObjectRow[];
+    openTaskCount: number;
+    doneTaskCount: number;
     calendarEvents: {
       id: string;
       title: string;
@@ -2245,18 +2247,7 @@ export async function getObjectSectionPage(
     return pageWindow(rows, limit, (row) => ({ at: row.changedAt.toISOString(), id: row.id }));
   }
   if (section === 'tasks') {
-    const relRows = await db
-      .select({ taskId: entityRelationships.fromEntityId })
-      .from(entityRelationships)
-      .where(
-        and(
-          eq(entityRelationships.teamId, scope.teamId),
-          eq(entityRelationships.toEntityId, entityId),
-          eq(entityRelationships.kind, 'child'),
-        ),
-      )
-      .limit(200);
-    const taskIds = relRows.map((r) => r.taskId);
+    const taskIds = await listExplicitlyLinkedTaskIds(db, scope, entityId);
     if (taskIds.length === 0) return { items: [], nextCursor: null };
     const cursorSql = cursorCondition(args.cursor, entities.updatedAt, entities.id);
     const rows = await db
@@ -2266,7 +2257,7 @@ export async function getObjectSectionPage(
         and(
           eq(entities.teamId, scope.teamId),
           inArray(entities.id, taskIds),
-          eq(entities.type, 'task'),
+          inArray(entities.type, [...CONNECTED_TASK_TYPES]),
           isNull(entities.archivedAt),
           isNull(entities.mergedIntoId),
           ne(entities.status, 'done'),
@@ -2482,6 +2473,80 @@ export async function getObjectSectionPage(
   }));
 }
 
+const CONNECTED_TASK_TYPES = ['task', 'follow_up'] as const;
+const CONNECTED_OPEN_TASK_PREVIEW = 12;
+const CONNECTED_RECENT_TASK_PREVIEW = 8;
+const TERMINAL_TASK_STATUSES = ['done', 'cancelled'] as const;
+
+function isTerminalTaskStatus(status: string): boolean {
+  return status === 'done' || status === 'cancelled';
+}
+
+async function listExplicitlyLinkedTaskIds(
+  db: Db,
+  scope: TeamScopeCore,
+  objectId: string,
+): Promise<string[]> {
+  const linkedTask = alias(entities, 'linked_task');
+  const rows = await db
+    .select({ id: linkedTask.id })
+    .from(entityRelationships)
+    .innerJoin(
+      linkedTask,
+      and(
+        eq(linkedTask.teamId, entityRelationships.teamId),
+        inArray(linkedTask.type, [...CONNECTED_TASK_TYPES]),
+        isNull(linkedTask.archivedAt),
+        isNull(linkedTask.mergedIntoId),
+        or(
+          and(
+            eq(entityRelationships.fromEntityId, objectId),
+            eq(linkedTask.id, entityRelationships.toEntityId),
+          ),
+          and(
+            eq(entityRelationships.toEntityId, objectId),
+            eq(linkedTask.id, entityRelationships.fromEntityId),
+          ),
+        ),
+      ),
+    )
+    .where(eq(entityRelationships.teamId, scope.teamId))
+    .orderBy(desc(linkedTask.updatedAt), desc(linkedTask.id))
+    .limit(400);
+  return Array.from(new Set(rows.map((row) => row.id)));
+}
+
+async function appliedCompletionTimes(
+  db: Db,
+  scope: TeamScopeCore,
+  entityIds: string[],
+): Promise<Map<string, Date>> {
+  const completedAtById = new Map<string, Date>();
+  if (entityIds.length === 0) return completedAtById;
+  const rows = await db
+    .select({
+      entityId: objectChanges.entityId,
+      newValue: objectChanges.newValue,
+      changedAt: objectChanges.changedAt,
+    })
+    .from(objectChanges)
+    .where(
+      and(
+        eq(objectChanges.teamId, scope.teamId),
+        inArray(objectChanges.entityId, entityIds),
+        eq(objectChanges.field, 'status'),
+        eq(objectChanges.status, 'applied'),
+      ),
+    )
+    .orderBy(desc(objectChanges.changedAt), desc(objectChanges.id));
+  for (const row of rows) {
+    if (completedAtById.has(row.entityId)) continue;
+    if (row.newValue !== 'done' && row.newValue !== 'cancelled') continue;
+    completedAtById.set(row.entityId, row.changedAt);
+  }
+  return completedAtById;
+}
+
 async function getConnectedWork(
   db: Db,
   scope: TeamScopeCore,
@@ -2489,7 +2554,6 @@ async function getConnectedWork(
 ): Promise<ObjectDetail['connectedWork']> {
   const names = objectNamesForMatching(object);
   const tokens = objectEvidenceTokens(object);
-  const nameMatch = likeMentionCondition(entities.canonicalName, names);
 
   const factIdRows = await db
     .select({ factId: factEntities.factId, rawEventId: factsTable.rawEventId })
@@ -2509,9 +2573,8 @@ async function getConnectedWork(
   const factRawEventIds = Array.from(new Set(factIdRows.map((row) => row.rawEventId)));
 
   const [
-    relationshipTaskRows,
+    linkedTaskIds,
     sharedObjectRows,
-    titleTaskRows,
     linkedCalendarRows,
     artifactRawEventIds,
     boardRows,
@@ -2520,17 +2583,7 @@ async function getConnectedWork(
     documentRows,
     noteRawEventRows,
   ] = await Promise.all([
-    db
-      .select({ taskId: entityRelationships.fromEntityId })
-      .from(entityRelationships)
-      .where(
-        and(
-          eq(entityRelationships.teamId, scope.teamId),
-          eq(entityRelationships.toEntityId, object.id),
-          eq(entityRelationships.kind, 'child'),
-        ),
-      )
-      .limit(200),
+    listExplicitlyLinkedTaskIds(db, scope, object.id),
     factIds.length > 0
       ? db
           .select({
@@ -2556,23 +2609,6 @@ async function getConnectedWork(
             entities.canonicalName,
           )
           .limit(20)
-      : Promise.resolve([]),
-    nameMatch
-      ? db
-          .select({ id: entities.id, canonicalName: entities.canonicalName })
-          .from(entities)
-          .where(
-            and(
-              eq(entities.teamId, scope.teamId),
-              inArray(entities.type, ['task', 'follow_up']),
-              isNull(entities.archivedAt),
-              isNull(entities.mergedIntoId),
-              ne(entities.id, object.id),
-              nameMatch,
-            ),
-          )
-          .orderBy(desc(entities.updatedAt), desc(entities.id))
-          .limit(50)
       : Promise.resolve([]),
     db
       .select({ calendarEventId: calendarEventEntities.calendarEventId })
@@ -2762,40 +2798,65 @@ async function getConnectedWork(
       .values(),
   );
 
-  const taskIds = new Set<string>();
-  for (const row of relationshipTaskRows) taskIds.add(row.taskId);
+  const taskIds = new Set<string>(linkedTaskIds);
   for (const row of sharedObjectRows) {
     if (row.type === 'task' || row.type === 'follow_up') taskIds.add(row.id);
   }
-  for (const row of titleTaskRows) {
-    if (textMentionsAnyValue(row.canonicalName, names)) taskIds.add(row.id);
-  }
 
-  const taskRows =
-    taskIds.size > 0
-      ? (
-          await db
-            .select()
-            .from(entities)
-            .where(
-              and(
-                eq(entities.teamId, scope.teamId),
-                inArray(entities.id, Array.from(taskIds)),
-                inArray(entities.type, ['task', 'follow_up']),
-                isNull(entities.archivedAt),
-                isNull(entities.mergedIntoId),
-              ),
-            )
-            .orderBy(desc(entities.updatedAt), desc(entities.id))
-            .limit(40)
-        ).map(toObjectRow)
-      : [];
-  const openTasks = taskRows
-    .filter((task) => task.status !== 'done' && task.status !== 'cancelled')
-    .slice(0, 12);
-  const recentTasks = taskRows
-    .filter((task) => task.status === 'done' || task.status === 'cancelled')
-    .slice(0, 8);
+  let openTaskCount = 0;
+  let doneTaskCount = 0;
+  let openTasks: ObjectRow[] = [];
+  let recentTaskRows: ObjectRow[] = [];
+  if (taskIds.size > 0) {
+    const ids = Array.from(taskIds);
+    const connectedTaskScope = and(
+      eq(entities.teamId, scope.teamId),
+      inArray(entities.id, ids),
+      inArray(entities.type, [...CONNECTED_TASK_TYPES]),
+      isNull(entities.archivedAt),
+      isNull(entities.mergedIntoId),
+    );
+    const [statusCounts, openTaskPreviewRows, doneTaskPreviewRows] = await Promise.all([
+      db
+        .select({
+          status: entities.status,
+          count: sql<number>`count(*)::int`,
+        })
+        .from(entities)
+        .where(connectedTaskScope)
+        .groupBy(entities.status),
+      db
+        .select()
+        .from(entities)
+        .where(and(connectedTaskScope, notInArray(entities.status, [...TERMINAL_TASK_STATUSES])))
+        .orderBy(desc(entities.updatedAt), desc(entities.id))
+        .limit(CONNECTED_OPEN_TASK_PREVIEW),
+      db
+        .select()
+        .from(entities)
+        .where(and(connectedTaskScope, inArray(entities.status, [...TERMINAL_TASK_STATUSES])))
+        .orderBy(desc(entities.updatedAt), desc(entities.id))
+        .limit(CONNECTED_RECENT_TASK_PREVIEW),
+    ]);
+    for (const row of statusCounts) {
+      if (isTerminalTaskStatus(row.status)) {
+        doneTaskCount += row.count;
+      } else {
+        openTaskCount += row.count;
+      }
+    }
+    openTasks = openTaskPreviewRows.map(toObjectRow);
+    recentTaskRows = doneTaskPreviewRows.map(toObjectRow);
+  }
+  const completionTimes = await appliedCompletionTimes(
+    db,
+    scope,
+    recentTaskRows.map((task) => task.id),
+  );
+  const recentTasks = recentTaskRows.map((task) => {
+    const completedAt = completionTimes.get(task.id);
+    return completedAt ? { ...task, completedAt } : task;
+  });
 
   const timelineConditions: SQL[] = [
     sql`${rawEvents.sourceMetadata} ->> 'entity_id' = ${object.id}`,
@@ -3074,6 +3135,8 @@ async function getConnectedWork(
   return {
     openTasks,
     recentTasks,
+    openTaskCount,
+    doneTaskCount,
     calendarEvents: filteredCalendarRows,
     timelineEvents: filteredTimelineRows,
     objects: sharedObjectRows
