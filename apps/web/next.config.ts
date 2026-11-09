@@ -53,6 +53,20 @@ const nextConfig: NextConfig = {
         ],
       },
       {
+        source: '/mockups',
+        headers: [
+          { key: 'Cache-Control', value: 'no-store' },
+          { key: 'X-Robots-Tag', value: 'noindex, nofollow' },
+        ],
+      },
+      {
+        source: '/mockups/:path*',
+        headers: [
+          { key: 'Cache-Control', value: 'no-store' },
+          { key: 'X-Robots-Tag', value: 'noindex, nofollow' },
+        ],
+      },
+      {
         source: '/oauth/authorize',
         headers: [
           { key: 'Cache-Control', value: 'no-store' },

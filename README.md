@@ -89,6 +89,7 @@ Develop on `main` and release through PRs to `production`. See the
 - [Integrations and MCP](docs/setup/integrations.html)
 - [Deployment](docs/railway.html) and [operations](docs/operations.md)
 - [Design system](design.md)
+- [Visual mockups](docs/mockups.md) (example-data studies at `/mockups`, not product)
 - [Security and privacy](https://thetimeline.cc/trust)
 
 ## Contributing and support

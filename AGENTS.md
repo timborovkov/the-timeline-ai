@@ -357,7 +357,9 @@ Treat this file as an operating contract for agents, not a loose README.
 
 ```
 apps/
-  web/      Next.js 16 app (App Router, RSC, server actions, Auth.js)
+  web/      Next.js 16 app (App Router, RSC, server actions, Auth.js). Isolated
+            visual mockups at `/mockups/*` are example-data studies, not product
+            routes ([docs/mockups.md](docs/mockups.md)).
   worker/   BullMQ workers (email-inbound, conversation-agent, transcribe, extract,
             suggestions, embed,
             overdue-scan, calendar-recurrence,

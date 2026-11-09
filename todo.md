@@ -137,6 +137,11 @@ timestamps, citations, shortcuts, counts, code, and recognizable external
 identifiers, and keep internal IDs or raw payloads inside closed technical
 disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
 
+- [ ] Visual studies only: brief-first home, milestone history, and approve-in-chat
+      live at `/mockups/*` with hardcoded Acme Labs example data. They are not
+      product routes, not wired to data or send paths, and must not be merged as
+      features. See [docs/mockups.md](docs/mockups.md).
+
 - [x] Shared collection empty states: one `EmptyState` for indexes, queues,
       and directories, with quiet dim icons, create/recover actions, and
       waiting copy for proposals, notifications, and captured work.

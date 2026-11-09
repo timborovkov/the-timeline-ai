@@ -19,7 +19,15 @@ describe('robots', () => {
     for (const rule of rules) {
       const disallow = Array.isArray(rule.disallow) ? rule.disallow : [rule.disallow];
       expect(rule.allow).toBe('/');
-      expect(disallow).toEqual(['/api/', '/app$', '/app/', '/accept-invite/', '/verify-email/']);
+      expect(disallow).toEqual([
+        '/api/',
+        '/app$',
+        '/app/',
+        '/mockups$',
+        '/mockups/',
+        '/accept-invite/',
+        '/verify-email/',
+      ]);
       expect(disallow).not.toContain('/help');
       expect(disallow).not.toContain('/help/contact');
       expect(disallow).not.toContain('/legal/accept');
