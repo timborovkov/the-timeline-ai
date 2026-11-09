@@ -7554,6 +7554,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
           and(
             suggestionVisibilityPredicate(teamId, userId),
             inArray(agentSuggestions.status, ['pending', 'partially_resolved']),
+            pendingItemExistsPredicate(),
             exists(
               db
                 .select({ id: agentSuggestionItems.id })
@@ -7562,7 +7563,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
                   and(
                     eq(agentSuggestionItems.suggestionId, agentSuggestions.id),
                     eq(agentSuggestionItems.teamId, teamId),
-                    eq(agentSuggestionItems.status, 'pending'),
+                    inArray(agentSuggestionItems.status, ['pending', 'accepted']),
                     or(
                       eq(agentSuggestionItems.targetId, trimmed),
                       eq(agentSuggestionItems.resultId, trimmed),

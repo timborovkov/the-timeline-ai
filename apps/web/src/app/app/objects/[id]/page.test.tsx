@@ -321,4 +321,64 @@ describe('ObjectDetailPage', () => {
       { suggestions?: { items: { id: string }[] }[] } | undefined;
     expect(props?.suggestions?.[0]?.items.map((item) => item.id)).toEqual(['item-relationship']);
   });
+
+  it('keeps pending local-ref relationships after sibling object creates are accepted', async () => {
+    fakes.listPendingSuggestionsForObject.mockResolvedValue([
+      {
+        id: 'bundle-1',
+        source: 'background',
+        status: 'partially_resolved',
+        title: 'Remember Jonne Granqvist and DFK',
+        summary: null,
+        reason: null,
+        confidence: 'medium',
+        createdAt: new Date('2026-06-01T10:00:00.000Z'),
+        evidence: [],
+        items: [
+          {
+            id: 'item-person',
+            status: 'accepted',
+            operation: 'create',
+            targetKind: 'object',
+            targetId: null,
+            resultId: OBJECT_ID,
+            title: 'Jonne Granqvist',
+            description: null,
+            proposedPayload: {
+              type: 'person',
+              canonicalName: 'Jonne Granqvist',
+              localRef: 'jonne-granqvist',
+            },
+            failureReason: null,
+          },
+          {
+            id: 'item-relationship',
+            status: 'pending',
+            operation: 'create',
+            targetKind: 'object_relationship',
+            targetId: null,
+            resultId: null,
+            title: 'Relate Jonne Granqvist and DFK',
+            description: null,
+            proposedPayload: {
+              fromRef: 'jonne-granqvist',
+              toEntityId: '66666666-6666-4666-8666-666666666666',
+              kind: 'related',
+            },
+            failureReason: null,
+          },
+        ],
+      },
+    ]);
+
+    renderToStaticMarkup(
+      await ObjectDetailPage({
+        params: Promise.resolve({ id: OBJECT_ID }),
+      }),
+    );
+
+    const props = fakes.objectDetailClientProps.mock.calls.at(-1)?.[0] as
+      { suggestions?: { items: { id: string }[] }[] } | undefined;
+    expect(props?.suggestions?.[0]?.items.map((item) => item.id)).toEqual(['item-relationship']);
+  });
 });

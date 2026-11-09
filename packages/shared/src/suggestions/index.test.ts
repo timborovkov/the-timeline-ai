@@ -243,6 +243,63 @@ describe('suggestion scope', () => {
     expect(objectPending.map((bundle) => bundle.id)).toEqual([older.id]);
   });
 
+  it('keeps pending local-ref relationships when sibling object creates are accepted', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const objectId = '55555555-5555-4555-8555-555555555555';
+    const [bundle] = await db
+      .insert(agentSuggestions)
+      .values({
+        teamId: TEAM_ID,
+        source: 'background',
+        status: 'partially_resolved',
+        title: 'Remember Jonne Granqvist and DFK',
+        dedupeKey: 'accepted-sibling-local-ref',
+        visibility: 'team',
+      })
+      .returning({ id: agentSuggestions.id });
+    if (!bundle) throw new Error('expected local-ref suggestion bundle');
+    await db.insert(agentSuggestionItems).values([
+      {
+        suggestionId: bundle.id,
+        teamId: TEAM_ID,
+        status: 'accepted',
+        operation: 'create',
+        targetKind: 'object',
+        targetId: null,
+        resultId: objectId,
+        title: 'Jonne Granqvist',
+        dedupeKey: 'accepted-sibling-local-ref:person',
+        proposedPayload: {
+          type: 'person',
+          canonicalName: 'Jonne Granqvist',
+          localRef: 'jonne-granqvist',
+        },
+      },
+      {
+        suggestionId: bundle.id,
+        teamId: TEAM_ID,
+        status: 'pending',
+        operation: 'create',
+        targetKind: 'object_relationship',
+        targetId: null,
+        title: 'Relate Jonne Granqvist and DFK',
+        dedupeKey: 'accepted-sibling-local-ref:relationship',
+        proposedPayload: {
+          fromRef: 'jonne-granqvist',
+          toEntityId: '66666666-6666-4666-8666-666666666666',
+          kind: 'related',
+        },
+      },
+    ]);
+
+    const objectPending = await scope.suggestions.listPendingSuggestionsForObject(objectId);
+    expect(objectPending.map((row) => row.id)).toEqual([bundle.id]);
+    expect(objectPending[0]?.items.map((item) => item.status).sort()).toEqual([
+      'accepted',
+      'pending',
+    ]);
+  });
+
   it('rejects item evidence that is not included in bundle evidence', async () => {
     await db.insert(rawEvents).values([
       {
