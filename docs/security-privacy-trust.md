@@ -6,7 +6,7 @@
 | Applies to | Hosted Timeline, public Timeline surfaces, development, support, and vendor operations |
 | Service operator | Nyxone OÜ, Estonian registry code 16172329 |
 | Control owner | **TBD: named security/privacy owner** |
-| Version | 2026-11-03 |
+| Version | 2026-11-09 |
 | Last evidence review | 2026-08-27 |
 | Next scheduled review | **TBD: no later than 2026-11-27** |
 | Evidence memo | [Provider privacy and data-handling research](./research/provider-privacy-audit-2026-08-21.md) |
@@ -571,7 +571,7 @@ sentence.
 | OpenRouter and selected endpoint | AI prompts/inputs, retrieved evidence, outputs, embeddings, media for inference | In hosted production, role-based privacy classification, per-request no-collection/ZDR for required roles, cache disablement, the official API origin, and a key/guardrail/catalog/policy-bound attestation are **Enforced in code**. A self-managed operator owns an alternate compatible endpoint and its controls and cannot reuse hosted assurances. Provider-side assignment/settings still require management-key deployment evidence, and the disclosed voice-transcription retention exception, contract, multilingual evaluation, and live evidence remain **Gap** |
 | Recall.ai | Meeting attendance, media processing, transcript generation, diagnostics | Hosted production requests one-hour media retention, allows only documented HTTPS regional API hosts, pins transcripts to the application callback, closes local transcript acceptance atomically, and reports cancellation success only after provider confirmation; failed confirmations are retried. An explicit `self-managed` mode owns alternate endpoints and retention. Deployed request/account evidence, region, DPA, and deletion-failure handling are **Gap** |
 | Daytona | Ephemeral complex-document extraction and observability | Credential-thin sandbox controls are **Enforced**; region and sensitive-data contract coverage are **Gap** |
-| Resend | Transactional/support email and inbound email payloads | Required when configured; retention, tracking, DPA and support access are **Gap** |
+| Resend | Transactional/support email and inbound email payloads | Domain `in.thetimeline.cc`, `eu-west-1` sending, inbound receiving, `email.received` webhook, and domain-level open/click tracking **Verified** 2026-11-09 from the Resend account. Retention, US storage, DPA, and subprocessors are cited only as Resend's published statements. Signed DPA on file, custom/minimum retention, API key scope, and support access remain **Gap** |
 | PostHog | Fixed-stream personless surface requests, consent-gated allowlisted public-browser events, and pseudonymous minimized server/worker product events | Runtime controls are implemented. The [2026-08-26 account review](./research/posthog-rollout-evidence-2026-08-26.md) verifies the EU project, IP discard, disabled automatic capture/replay/heatmaps/errors, restricted current membership, and a pinned Launch dashboard shell. Pay-as-you-go retention, contracts/transfers, deletion completion, populated insights, and production canaries remain **Gap**. |
 | Sentry | Error monitoring and source-map processing | PII defaults and scrubbers are **Enforced**; project region, retention, AI options and sample audit are **Gap** |
 | Cloudflare Turnstile | Signup/support anti-abuse browser signals | **Conditional**; DPA and legal-basis record are **Gap** |
@@ -608,8 +608,11 @@ access, use, storage, sharing, deletion, billed change-judging / document
 extract, and no general-model training, immediately before Google OAuth.
 Continue to Google is the affirmative action; a separate checkbox is not treated
 as a blanket Google requirement. The published Privacy Policy and public Drive
-connector page carry the same facts. Disconnect deletes tokens and snapshots, not
-already captured timeline events.
+connector page carry the same facts. A personal OAuth disconnect deletes stored
+tokens and does not cancel provider watches or delete Drive snapshots. An admin
+workspace-source removal stops future capture and, where implemented, cancels
+provider-managed watches; Drive source removal also deletes change snapshots and
+latest extracted text. Neither action deletes already captured timeline events.
 
 MCP output and integration snippets are untrusted and must pass through the
 external-content fence before reaching an agent. SSRF validation is required for
@@ -644,7 +647,7 @@ a soft-delete flag alone is not a complete deletion claim.
 | OpenRouter voice transcription | Current `openai/gpt-4o-transcribe` quality exception is non-training but prompt-retaining; OpenAI documents default API abuse-monitoring retention up to 30 days | Name the exception and retention; never call hosted AI universally ZDR |
 | Recall.ai | Timeline-hosted mode requests one-hour meeting-media retention, which Recall documents as starting at recording `done`; an explicit self-managed deployment can choose another supported duration. Operational logs can remain seven days and meeting URLs fourteen days after termination; Timeline transcript persists | Never say call media is deleted or provider deletion is verified until deployed evidence exists |
 | Daytona | Ephemeral sandbox state is discarded/deleted; observability data may remain three days | Never equate ephemeral compute with zero provider retention |
-| Resend | Email content and delivery metadata are processed under Resend service terms; account retention, tracking, DPA and deletion settings are unverified | Name Resend and avoid a shorter unverified promise |
+| Resend | Domain `in.thetimeline.cc` sends from `eu-west-1`; inbound receiving enabled; open/click tracking currently enabled at domain level (no per-send flags in code). Resend states US storage regardless of sending region and 30-day email/log retention on Free/Pro/Scale while active, deletion within 90 days after termination. Timeline deletion does not itself delete Resend copies. | Cite Resend's published statements. Do not claim Timeline's plan name, a signed DPA on file, custom retention, API key scope, or that tracking is off |
 | PostHog | Current source enforces zero browser capture/identifier before valid consent or after rejection, public-route-only browser analytics after opt-in, fixed personless surface streams, and explicit minimized server/worker events. The EU account review verifies disabled automatic capture and IP discard. Pay-as-you-go documents seven-year product-event retention, which exceeds the 90-day target; production and deletion completion remain unverified. | Public copy may describe the source-enforced product design and the dated account review. Do not claim that it is deployed, that retention is 90 days, that queued deletion is complete, or that pseudonymous analytics is anonymous until G-10 closes. |
 | Sentry | Account retention is unverified | Describe minimized error monitoring, not a retention period |
 | LangSmith | Production tracing is rejected | Development traces must use synthetic/approved data and follow the selected account retention |
@@ -846,7 +849,7 @@ item requires dated evidence stored in the internal control file.
 | G-06 | **OPEN** | **TBD: privacy/vendor** | Capture executed DPAs and dated subprocessors for every fixed processor; record transfer mechanisms and incident/deletion terms | Authoritative subprocessor and transfer statements |
 | G-07 | **OPEN** | **TBD: meetings** | Verify Recall region, DPA, account retention, request-level retention, support access, and deletion failure handling | Meeting residency and provider deletion claims |
 | G-08 | **OPEN** | **TBD: documents** | Verify Daytona target/host, telemetry payloads/retention, DPA coverage, and April 2026 incident/credential status | Sensitive-document readiness |
-| G-09 | **OPEN** | **TBD: email** | Set Resend to minimum viable retention, verify open/click tracking, DPA, sender configuration, and support access | Email retention and tracking statements |
+| G-09 | **PARTIAL: domain, region, inbound, and tracking verified** | **TBD: email** | 2026-11-09 Resend account review (read-only) verified `in.thetimeline.cc`, `eu-west-1` sending, inbound receiving, the `email.received` webhook, unused audiences/contacts/segments/broadcasts/topics/automations/templates, and domain-level open/click tracking currently **enabled**. Public copy cites Resend's published US storage, Free/Pro/Scale 30/90-day retention, DPA, and subprocessor pages as Resend statements only. Remaining: signed DPA on file, custom/minimum retention (tracking is on, not minimized), API key scope, and support-access evidence. | Unverified email contract-on-file, custom retention, tracking-off, or plan-name statements |
 | G-10 | **PARTIAL: runtime + account review** | **TBD: analytics + product privacy** | The [2026-08-26 account review](./research/posthog-rollout-evidence-2026-08-26.md) verifies the EU project, IP discard, disabled automatic capture/replay/heatmaps/errors, restricted current membership, a pinned Launch dashboard shell, and queued legacy-data deletion. Prove the remaining [privacy/analytics interface](./privacy-analytics-interface.md): production fixed-stream and pseudonymous payloads, consent/private-route browser boundaries, populated insights, deletion completion, retention decision, DPA/transfers, access controls, and legal basis. | Any deployed analytics claim, 90-day retention claim, completed-deletion claim, or provider assurance beyond the dated evidence |
 | G-11 | **OPEN** | **TBD: reliability** | Verify Sentry region, retention, Seer/AI settings, DPA, access, sampling, and representative scrubbed event payload | Error-monitoring retention and AI claims |
 | G-12 | **OPEN / blocker** | **TBD: security owner** | Inventory named production access, enforce MFA/least privilege, document break-glass, retain access logs, and run quarterly review | “Rare, approved, and auditable” staff-access claim |
@@ -930,6 +933,12 @@ Sentry intake and queued delivery now both require a currently selected organiza
 
 The authenticated `/api/health/ready` probe uses the existing `CRON_SECRET`, returns aggregate queue/worker information only, and never returns source content or job identifiers. Public liveness remains minimal. Pricing analytics adds only fixed public route/CTA values under the existing consent contract, without linking anonymous visitors to account identities.
 
+### Privacy disconnect, deletion, and Resend wording (2026-11-09)
+
+Public Privacy Policy and Terms now distinguish (a) a member disconnecting a personal provider account/OAuth connection, (b) a workspace admin removing a workspace source, and (c) deletion of already-captured history or documents. The copy follows implemented cleanup paths only and does not promise erasure that disconnect does not perform. Deletion requests are directed to the existing support address and private form; residual backups, logs, legal/billing records, and processor copies are disclosed without an unverified completion SLA.
+
+A 2026-11-09 read-only review of the Resend account (against `main` `e2984c03`) verified domain `in.thetimeline.cc`, `eu-west-1` sending, inbound receiving, the `email.received` webhook, unused marketing objects, and domain-level open/click tracking currently enabled. Public copy replaces the previous unverified-settings caveat with those facts plus Resend's published GDPR/DPA/subprocessor statements. It does not claim a signed DPA on file, custom retention, API key scope, a plan name, or that tracking is off. G-09 remains partial. This is not counsel approval or company-status evidence. Website wording does not publish the legal documents; `LEGAL_PUBLICATION_READY` remains the production interlock.
+
 ### Password recovery controls
 
 Password recovery stores SHA-256 digests of random 32-byte, single-use tokens,
@@ -946,8 +955,9 @@ rate limits apply before account lookup and fail closed when Redis is unavailabl
 Reset email retry payloads use the existing AES-256-GCM encrypted delivery format;
 Resend receives the reset URL to deliver the email. Recovery routes have no browser
 analytics, no-index/no-store/no-referrer policies, and sanitized error events.
-Provider-account tracking and retention evidence remains G-09; this feature makes
-no new provider-retention claim. Infrastructure access logs must not retain reset
+Open/click tracking is disclosed as currently enabled. Signed DPA on file, custom
+retention, API key scope, and support access remain G-09; this feature makes no
+new claim for those items. Infrastructure access logs must not retain reset
 URL query parameters. Production delivery still requires operator verification.
 
 
