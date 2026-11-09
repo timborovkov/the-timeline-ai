@@ -123,7 +123,7 @@ vendor due diligence, not certificates Timeline may display as its own.
 | OpenRouter + selected model provider | Required for AI | Prompts, retrieved team evidence, document/image/audio inputs, outputs and embeddings | OpenRouter says prompt logging and model-improvement sharing are opt-in, but downstream endpoint policy controls retention/training. Committed code permits collecting endpoints. | OpenRouter enterprise terms describe GCP US, SOC 2 Type II framework, DPA and subprocessors; contract tier is unknown. | **Confirmed code and public policy; account unknown.** Enforce ZDR/no-collection, disable logging/sharing, bind guardrail to key, capture DPA/subprocessors. |
 | Recall.ai | Meeting-bot provider | Meeting URL, participants/metadata, audio/video, transcript and bot diagnostics | Timeline default is one-hour media retention. Recall says no Customer Data training. Accuracy mode is incompatible with Recall ZDR. Logs remain 7 days; meeting URL clears 14 days after termination. | Repo defaults to US West. Recall also offers EU Frankfurt and Tokyo. | **Confirmed.** Disclose one hour, not “immediate”; choose region; decide accuracy versus ZDR. |
 | Daytona | Optional document-extraction sandbox, required for supported complex files when configured | Document bytes, filename/type, extractor process output/errors | Ephemeral sandboxes discard state on stop; repo also deletes. Daytona documents 3-day logs/traces/metrics. Standard DPA says no sensitive/special-category data. | Repo defaults to target `us`; exact host/region/subprocessors unknown. | **Confirmed path; account unknown. Critical contractual review.** Resolve special-category mismatch before accepting unrestricted documents. |
-| Resend | Outbound email and inbound-email capture | Sender/recipient, bodies, attachments and delivery metadata | Account retention, tracking and deletion unverified. | Current contract and transfer evidence pending. | **Code path implemented; account evidence pending (G-09).** |
+| Resend | Outbound email and inbound-email capture | Sender/recipient, bodies, attachments and delivery metadata | August row superseded. See §5 (2026-11-01) and §5a (2026-11-09): domain, region, inbound, and tracking verified; published retention/DPA cited as Resend statements; signed DPA on file, custom retention, API key scope, and plan name remain G-09. | Cite Resend's published pages; do not claim a signed DPA or that tracking is off. | **Account review 2026-11-09; G-09 partial.** |
 | PostHog | Optional product analytics and feature flags | Pseudonymous user ID, team ID and typed product-event properties | Repo disables autocapture, pageviews, pageleave and replay, but persists analytics identifiers in cookie/localStorage. Project retention is unknown. | Default host is EU ingestion; an EU hostname alone is not proof of project residency. | **Conditional.** Verify project region, retention, DPA, subprocessors, IP handling, consent/legal basis and property allowlist. |
 | Convex-hosted custom analytics | Unconditional root-layout script at audited commit | Full URL/path/query, referrer, UTM values, screen, language, scroll/time and persistent visitor/session IDs | Custom backend schema, retention, access and downstream export are not in this repo. | Convex offers US East and EU West deployments; this endpoint's region is unknown. Convex advertises SOC 2 Type II and AWS controls. | **Confirmed and high risk.** Remove or explicitly own, sanitize and consent-gate it; inventory the external backend before policy publication. |
 | Sentry | Optional error monitoring plus optional native data-source integration | Exceptions, stack traces, breadcrumbs, runtime metadata, source maps; connected team issue/release data | `sendDefaultPii` is false and repo scrubs known secrets, but unexpected error strings can still contain customer data. Actual retention and AI/Seer settings unknown. | Sentry supports US or Germany data location. DSN/account decides; repo does not. | **Conditional.** Verify region, retention, DPA, subprocessors, scrubbing, Seer/AI opt-ins and sampling. |
@@ -365,6 +365,18 @@ that Resend account settings or contracts were reviewed in August.
 Account retention, tracking, DPA/transfer coverage, support access, and provider
 deletion behavior remain unverified (G-09). Review current terms and account
 settings before production use; do not infer them from another provider's policy.
+
+## 5a. Resend email — superseding update, 2026-11-09
+
+A read-only review of the production Resend account against `main` `e2984c03`
+verified domain `in.thetimeline.cc`, `eu-west-1` sending, inbound receiving, the
+`email.received` webhook at `https://thetimeline.cc/api/email/inbound`, unused
+audiences/contacts/segments/broadcasts/topics/automations/templates, and
+domain-level open/click tracking currently enabled. Public copy cites Resend's
+published US-storage, Free/Pro/Scale 30/90-day retention, DPA, and subprocessor
+pages as Resend statements only. Do not claim a signed DPA on file, custom
+retention, API key scope, a plan name, or that tracking is off. G-09 remains
+partial.
 
 ## 6. Analytics and telemetry
 
@@ -786,7 +798,7 @@ API documentation establishes transport behavior, not account or contractual ass
 | Railway regions, volume controls, backups/logs and executed DPA | Railway dashboard + contract | Blocks residency, retention and sensitive-data claims. |
 | Recall production region/account retention/DPA | Recall dashboard + bot request logs + contract | Blocks meeting retention/residency wording. |
 | Daytona host/region/log payloads/DPA coverage | Daytona dashboard/support + contract | Blocks unrestricted sensitive-document processing. |
-| Resend retention, tracking, DPA and support access | Resend dashboard + contract | Blocks email retention/security wording. |
+| Resend signed DPA on file, custom retention, API key scope, and support access | Resend dashboard + contract. Domain, region, inbound, unused marketing objects, and currently-enabled tracking were verified 2026-11-09 (§5a). | Blocks contract-on-file, tracking-off, custom-retention, and plan-name wording. |
 | PostHog project region, retention, DPA, identifiers and consent basis | PostHog dashboard + counsel | Blocks analytics/cookie wording. |
 | Convex analytics backend owner, schema, region, retention and logs already collected | Convex project access + incident review | Blocks “minimal analytics”; may require credential/incident response. |
 | Sentry account region/retention/Seer/scrubbing | Sentry dashboard + sample event audit | Blocks monitoring retention and AI claims. |
