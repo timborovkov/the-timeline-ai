@@ -81,6 +81,8 @@ senders are preserved; active member addresses are resolved at ingestion time.
 Runtime Postgres clients should come from `createPgClient()` or `getDb()`, not a
 direct `postgres()` call. The shared builder applies:
 
+- postgres.js 4 with `infer: true`, so Date, boolean, bigint, bytea, and array
+  parameters keep v3 JavaScript typing instead of the v4 server-typed default.
 - `application_name` labels for lock diagnosis (`timeline-web`,
   `timeline-worker`, `timeline-migrator`, `timeline-migration-waiter`,
   `timeline-reset`, or `timeline-script`).
