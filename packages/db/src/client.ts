@@ -1,7 +1,7 @@
-import postgres, { type Options, type Sql } from 'postgres';
+import postgres, { type Options, type PostgresType, type Sql } from 'postgres';
 
 export type PgClient = Sql;
-export type PgClientOptions = Options;
+export type PgClientOptions = Options<Record<string, PostgresType>>;
 
 const silenceNotices = (): void => undefined;
 
