@@ -12,6 +12,7 @@ import {
   PUBLIC_DOCUMENT_KINDS,
   PUBLIC_LLM_SECTIONS,
 } from '@/lib/public-site/types';
+import { CANONICAL_PUBLIC_ORIGIN } from '@/lib/site-url';
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 const SOURCE_ID = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
@@ -23,10 +24,11 @@ export function definePublicDocuments(
   if (!SOURCE_ID.test(id)) {
     throw new Error(`Public document source id must be kebab-case: ${id}`);
   }
-  documents.forEach((document) => {
+  const resolved = documents.map((document) => resolveDocumentLlmsResourceHrefs(document));
+  resolved.forEach((document) => {
     validateDocument(document, id);
   });
-  return Object.freeze({ id, documents: Object.freeze([...documents]) });
+  return Object.freeze({ id, documents: Object.freeze(resolved) });
 }
 
 export function createPublicDocumentRegistry(
@@ -75,6 +77,42 @@ export function canonicalPublicUrl(siteUrl: string, canonicalPath: PublicCanonic
   return new URL(canonicalPath, `${origin}/`)
     .toString()
     .replace(/[&()]/g, (character) => `%${character.charCodeAt(0).toString(16).toUpperCase()}`);
+}
+
+/**
+ * LLM section resource links must be absolute HTTPS before validation. Help UI
+ * and other feature sources may still author origin-relative canonical paths
+ * (`/help/support`) or source-style internal hrefs (`help-guides:/help/integrations`).
+ * Resolve those with the same canonical-origin helper sitemap/llms use; leave
+ * already-absolute and unresolvable hrefs for the HTTPS validator.
+ */
+export function resolvePublicLlmsResourceHref(
+  href: string,
+  siteUrl: string = CANONICAL_PUBLIC_ORIGIN,
+): string {
+  if (isCanonicalPublicPath(href)) {
+    return canonicalPublicUrl(siteUrl, href);
+  }
+
+  try {
+    const parsed = new URL(href);
+    if (
+      parsed.protocol !== 'http:' &&
+      parsed.protocol !== 'https:' &&
+      parsed.username === '' &&
+      parsed.password === '' &&
+      parsed.hostname === '' &&
+      parsed.search === '' &&
+      parsed.hash === '' &&
+      isCanonicalPublicPath(parsed.pathname)
+    ) {
+      return canonicalPublicUrl(siteUrl, parsed.pathname);
+    }
+  } catch {
+    // Non-URLs stay unchanged so the HTTPS validator can reject them.
+  }
+
+  return href;
 }
 
 function validateDocument(document: PublicDocument, sourceId: string): void {
@@ -184,15 +222,47 @@ function llmsOrder(document: PublicDocument): number {
   return document.llms ? document.llms.order : Number.POSITIVE_INFINITY;
 }
 
+function resolveDocumentLlmsResourceHrefs(document: PublicDocument): PublicDocument {
+  if (!document.llms) {
+    return document;
+  }
+  const llms = document.llms;
+  if (!llms.sections?.some((section) => section.links?.length)) {
+    return document;
+  }
+
+  return {
+    ...document,
+    llms: {
+      ...llms,
+      sections: llms.sections.map((section) =>
+        section.links
+          ? {
+              ...section,
+              links: section.links.map((link) => ({
+                ...link,
+                href: resolvePublicLlmsResourceHref(link.href),
+              })),
+            }
+          : section,
+      ),
+    },
+  };
+}
+
+function isCanonicalPublicPath(value: string): value is PublicCanonicalPath {
+  return (
+    value.startsWith('/') &&
+    !value.startsWith('//') &&
+    (value.length === 1 || !value.endsWith('/')) &&
+    !value.includes('?') &&
+    !value.includes('#') &&
+    new URL(value, 'https://public-document.invalid').pathname === value
+  );
+}
+
 function validateCanonicalPath(canonicalPath: string, context: string): void {
-  if (
-    !canonicalPath.startsWith('/') ||
-    canonicalPath.startsWith('//') ||
-    (canonicalPath.length > 1 && canonicalPath.endsWith('/')) ||
-    canonicalPath.includes('?') ||
-    canonicalPath.includes('#') ||
-    new URL(canonicalPath, 'https://public-document.invalid').pathname !== canonicalPath
-  ) {
+  if (!isCanonicalPublicPath(canonicalPath)) {
     throw new Error(`Invalid public canonical path in ${context}: ${canonicalPath}`);
   }
 }

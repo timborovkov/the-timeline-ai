@@ -40,7 +40,7 @@ describe('Terms legal links', () => {
 
     const html = renderToStaticMarkup(<TermsPage />);
 
-    expect(html).toContain('while we review our contracting entity');
+    expect(html).toContain('until publication is enabled');
     expect(html).toContain('New account creation is paused');
     expect(html).toContain('does not form an agreement');
     expect(html).not.toContain('These Terms of Use (“Terms”) are a binding agreement');

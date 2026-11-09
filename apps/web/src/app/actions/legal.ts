@@ -33,8 +33,7 @@ export async function acceptLegalAction(
   return runSentryServerAction('accept_legal', async () => {
     if (!isLegalPublicationReady()) {
       return {
-        error:
-          'Legal acceptance is unavailable while our contracting-entity publication review is completed.',
+        error: 'Legal acceptance is unavailable until publication is enabled.',
       };
     }
     const session = await auth();
