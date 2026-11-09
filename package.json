@@ -64,7 +64,7 @@
     "@timeline/shared": "workspace:*",
     "@types/bun": "1.4.4",
     "@typescript-eslint/eslint-plugin": "^8.72.1",
-    "bullmq": "6.5.3",
+    "bullmq": "6.6.0",
     "drizzle-orm": "^0.45.4",
     "eslint": "^10.14.0",
     "eslint-config-prettier": "^10.1.8",
@@ -72,7 +72,7 @@
     "eslint-plugin-unused-imports": "^4.4.1",
     "knip": "^6.44.1",
     "prettier": "^3.9.10",
-    "react-doctor": "^0.9.21",
+    "react-doctor": "^0.9.22",
     "turbo": "^2.11.9",
     "typescript": "npm:@typescript/typescript6@6.0.2",
     "typescript-eslint": "^8.72.1"

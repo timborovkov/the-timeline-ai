@@ -49,10 +49,10 @@
   },
   "dependencies": {
     "drizzle-orm": "^0.45.4",
-    "postgres": "^3.4.9"
+    "postgres": "^4.0.0"
   },
   "devDependencies": {
-    "@electric-sql/pglite": "^0.5.14",
+    "@electric-sql/pglite": "^0.5.15",
     "@types/node": "^24.19.2",
     "drizzle-kit": "^0.31.11",
     "@typescript/native": "npm:typescript@7.0.2",
