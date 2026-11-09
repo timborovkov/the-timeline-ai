@@ -416,12 +416,15 @@ BILLING_CHARGES_ENABLED=false
         Railway uses the checked-in Dockerfiles for web and worker deploys. They accept the Sentry
         and public PostHog build/runtime variables above; source-map upload requires those values at
         build time. The web image also accepts <code>AUTH_URL</code> at build time (default
-        <code>https://thetimeline.cc</code>) so prerendered public metadata and JSON-LD do not bake
-        <code>http://localhost:3000</code>. Runtime <code>AUTH_URL</code> on the web service still
-        controls Auth.js, redirects, and request-time routes such as <code>sitemap.xml</code>.
-        <code>SUPPORT_EMAIL</code>, Turnstile keys, and <code>LEGAL_PUBLICATION_READY</code> stay on
-        the running web service; prerendered pages read the public subset from
-        <code>/api/public/runtime</code>, and <code>/terms</code> is generated per request.
+        <code>https://thetimeline.cc</code>) for prerendered public metadata, JSON-LD, and the
+        cached <code>sitemap.xml</code>. For a non-canonical origin, override the Docker build
+        argument <code>AUTH_URL</code> to match the web service's runtime origin and rebuild and
+        redeploy the image. Changing only runtime <code>AUTH_URL</code> does not update those
+        generated URLs. Runtime <code>AUTH_URL</code> still controls Auth.js, redirects, and
+        request-time <code>robots.txt</code>. <code>SUPPORT_EMAIL</code>, Turnstile keys, and
+        <code>LEGAL_PUBLICATION_READY</code> stay on the running web service; prerendered pages read
+        the public subset from <code>/api/public/runtime</code>, and <code>/terms</code> is
+        generated per request.
       </p>
       <p>
         App runtimes use Bun <code>1.4.4</code>, pinned in <code>.bun-version</code>,
@@ -717,17 +720,16 @@ rclone sync s3:timeline-exports backblaze-b2:timeline-backup-exports
         <li>
           <strong>Legal-version release warning.</strong> Changing the current Terms or Privacy
           version intentionally makes every existing human session stale, but production first
-          defaults <code>LEGAL_PUBLICATION_READY=false</code>. Keep it false until G-20 in the
-          security/privacy/trust register is resolved and dated official registry evidence is
-          retained; that default withholds binding Terms, legal acceptance, and first-time account
-          signup while preserving existing users' signed-in dashboard access. Set it to true only as
-          an operator attestation after the evidence exists. Then signed-in app and invite routes
-          redirect to <code>/legal/accept</code>; human product APIs return a no-store
-          <code>428 legal_acceptance_required</code> response until the person accepts. Before a
-          version bump, publish and review both documents, notify support and API consumers, and
-          confirm the immutable acceptance-history migration is deployed. Service webhooks, cron
-          jobs, health checks, inbound email, calendar feeds, and bearer-authenticated outbound MCP
-          remain exempt because they cannot complete human clickwrap.
+          defaults <code>LEGAL_PUBLICATION_READY=false</code>. That default withholds binding Terms,
+          legal acceptance, and first-time account signup while preserving existing users' signed-in
+          dashboard access. Set it to true after approving the legal text for publication. Then
+          signed-in app and invite routes redirect to <code>/legal/accept</code>; human product APIs
+          return a no-store <code>428 legal_acceptance_required</code> response until the person
+          accepts. Before a version bump, publish and review both documents, notify support and API
+          consumers, and confirm the immutable acceptance-history migration is deployed. Service
+          webhooks, cron jobs, health checks, inbound email, calendar feeds, and
+          bearer-authenticated outbound MCP remain exempt because they cannot complete human
+          clickwrap.
         </li>
         <li>
           Services restart with new image. Healthcheck on

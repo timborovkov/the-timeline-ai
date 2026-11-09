@@ -108,15 +108,19 @@ disconnect.
 
 ## Retained Google-sourced events
 
-Disconnect already deletes Drive snapshots, latest extracted text, and extract
-objects. Captured `raw_events` stay. Source-ingested event **content** is
+Team-source disconnect deletes Drive snapshots, latest extracted text, and extract
+objects. Personal connection removal deletes credentials and disables dependent
+sources, but does not perform that snapshot cleanup. Captured `raw_events` stay.
+Source-ingested event **content** is
 immutable. The `sourceMetadata.deleted` flag is for provider-side deletions
 (Slack/Telegram), not a user “erase this integration history” control.
 
-No new bulk Drive-event purge shipped here. It would touch citations, evidence
-packs, proposals, Qdrant vectors, backups, and G-13. Existing controls: team
-export, coverage-aware snapshot cleanup, support-assisted deletion. Privacy copy
-states that gap instead of promising complete erasure.
+No bulk Drive-event purge is introduced. The
+[manual support process](../setup/manual-support-deletion.md) covers requests,
+case-specific removal, citations, evidence, vectors, backups, and verification.
+Existing controls include team export and coverage-aware snapshot cleanup;
+unsupported removal operations require engineering escalation. A synthetic
+rehearsal remains outstanding, and G-13 is not closed by documenting the process.
 
 ## Demo script (verification video)
 
@@ -132,8 +136,10 @@ branch host). Record without customer data.
    activate the source.
 6. Edit the Doc, wait for the quiet window / changes path, show a cited
    timeline event.
-7. Delete the personal Drive connection. Confirm tokens/snapshots are gone and
-   the cited event **remains**.
+7. Show personal connection removal (credentials removed, dependent sources
+   disabled) separately from team-source disconnect (snapshot/extract cleanup).
+   The cited event **remains** after either action. Show Help → Support for a
+   separate manual deletion request; do not claim personal removal deletes snapshots.
 8. Open Google Account → Third-party access and show remaining Timeline grant
    if Sign in with Google is still linked (expected skip of programmatic revoke).
 
@@ -162,5 +168,5 @@ Console configuration is unverified from this repository.
 10. Do not publish to Production/external users before Google completes that
     review. Testing + allowlisted test users is the safe interim.
 
-`LEGAL_PUBLICATION_READY` and G-20 remain founder/counsel work. This change
+The operator controls publication through `LEGAL_PUBLICATION_READY`. This change
 does not publish Terms.
