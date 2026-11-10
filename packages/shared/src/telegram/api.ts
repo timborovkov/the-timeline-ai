@@ -137,7 +137,7 @@ export class HttpTelegramApi implements TelegramApi {
       fromChatId,
       toChatId,
       alreadySentDedupeKeys: writeResult?.alreadySentDedupeKeys ?? [],
-      pendingDedupeKeys: writeResult?.pendingDedupeKeys ?? [],
+      retryableDedupeKeys: writeResult?.retryableDedupeKeys ?? [],
     });
   }
 
@@ -216,7 +216,7 @@ export class HttpTelegramApi implements TelegramApi {
           if (persistResult.skipRedirect) {
             log.info(
               { fromChatId, toChatId },
-              'telegram chat migration skipped redirect: destination delivery is in flight',
+              'telegram chat migration skipped redirect: destination delivery owns the retry',
             );
             throw error;
           }

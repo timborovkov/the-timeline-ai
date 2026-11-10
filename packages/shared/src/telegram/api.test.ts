@@ -288,7 +288,7 @@ describe('HttpTelegramApi file downloads', () => {
 
   it('does not retry sendMessage when the migrated digest key is already sent', async () => {
     const persist = vi.fn(() =>
-      Promise.resolve({ alreadySentDedupeKeys: [NEW_DIGEST_KEY], pendingDedupeKeys: [] }),
+      Promise.resolve({ alreadySentDedupeKeys: [NEW_DIGEST_KEY], retryableDedupeKeys: [] }),
     );
     const fetch = vi.fn().mockResolvedValueOnce(upgradedGroupResponse());
     vi.stubGlobal('fetch', fetch);
@@ -310,7 +310,7 @@ describe('HttpTelegramApi file downloads', () => {
 
   it('does not retry sendMessage when the migrated digest key is already pending', async () => {
     const persist = vi.fn(() =>
-      Promise.resolve({ alreadySentDedupeKeys: [], pendingDedupeKeys: [NEW_DIGEST_KEY] }),
+      Promise.resolve({ alreadySentDedupeKeys: [], retryableDedupeKeys: [NEW_DIGEST_KEY] }),
     );
     const fetch = vi.fn().mockResolvedValueOnce(upgradedGroupResponse());
     vi.stubGlobal('fetch', fetch);
@@ -335,7 +335,7 @@ describe('HttpTelegramApi file downloads', () => {
 
   it('still retries a non-digest send when historical digest keys already exist', async () => {
     const persist = vi.fn(() =>
-      Promise.resolve({ alreadySentDedupeKeys: [NEW_DIGEST_KEY], pendingDedupeKeys: [] }),
+      Promise.resolve({ alreadySentDedupeKeys: [NEW_DIGEST_KEY], retryableDedupeKeys: [] }),
     );
     const fetch = vi
       .fn()

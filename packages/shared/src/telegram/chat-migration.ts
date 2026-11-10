@@ -21,13 +21,13 @@ export class TelegramChatMigrationConflictError extends Error {
 export interface TelegramChatMigrationWriteResult {
   /** New-chat workspace digest keys that already exist as `sent`. */
   alreadySentDedupeKeys: string[];
-  /** New-chat workspace digest keys that already exist as `pending`. */
-  pendingDedupeKeys: string[];
+  /** New-chat workspace digest keys owned by an existing pending or failed delivery. */
+  retryableDedupeKeys: string[];
 }
 
 const EMPTY_TELEGRAM_CHAT_MIGRATION_WRITE_RESULT: TelegramChatMigrationWriteResult = {
   alreadySentDedupeKeys: [],
-  pendingDedupeKeys: [],
+  retryableDedupeKeys: [],
 };
 
 export function isTelegramChatMigrationConflictError(
@@ -253,8 +253,8 @@ export async function verifyTelegramChatMigrationOwnership(
  * Decide whether an in-flight send should retry after a persisted migration.
  *
  * Workspace digest keys are per destination. If this send's rewritten key
- * already exists as `sent`, the caller must not post again. A `pending`
- * collision skips the redirect without treating the send as delivered.
+ * already exists as `sent`, the caller must not post again. A `pending` or `failed`
+ * collision leaves delivery to the canonical key without reporting this send as delivered.
  */
 export function telegramMigratedDigestRedirectDisposition(input: {
   inFlightDedupeKey: string | undefined;
@@ -262,7 +262,7 @@ export function telegramMigratedDigestRedirectDisposition(input: {
   fromChatId: number;
   toChatId: number;
   alreadySentDedupeKeys: readonly string[];
-  pendingDedupeKeys?: readonly string[];
+  retryableDedupeKeys?: readonly string[];
 }): { alreadyDelivered: boolean; skipRedirect: boolean } {
   const { inFlightDedupeKey, teamId } = input;
   if (!inFlightDedupeKey || !teamId) {
@@ -279,7 +279,7 @@ export function telegramMigratedDigestRedirectDisposition(input: {
   if (input.alreadySentDedupeKeys.includes(nextKey)) {
     return { alreadyDelivered: true, skipRedirect: true };
   }
-  if (input.pendingDedupeKeys?.includes(nextKey)) {
+  if (input.retryableDedupeKeys?.includes(nextKey)) {
     return { alreadyDelivered: false, skipRedirect: true };
   }
   return { alreadyDelivered: false, skipRedirect: false };

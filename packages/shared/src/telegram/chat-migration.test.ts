@@ -10,6 +10,7 @@ import { afterEach, beforeEach, describe, it } from 'bun:test';
 import { drizzle } from 'drizzle-orm/pglite';
 
 import { withChatDeliveryPrincipal } from '#src/conversation-surfaces/deferred-delivery.js';
+import { claimDelivery, markDeliveryResult } from '#src/messaging/delivery-ledger.js';
 import { digestDestinationDedupeKey } from '#src/messaging/destinations.js';
 import { HttpTelegramApi } from '#src/telegram/api.js';
 import {
@@ -108,7 +109,7 @@ describe('telegram chat migration helpers', () => {
         fromChatId: OLD_CHAT_ID,
         toChatId: NEW_CHAT_ID,
         alreadySentDedupeKeys: [],
-        pendingDedupeKeys: [newKey],
+        retryableDedupeKeys: [newKey],
       }),
     ).toEqual({ alreadyDelivered: false, skipRedirect: true });
     expect(
@@ -579,6 +580,95 @@ describe('applyTelegramChatMigration', () => {
 
     expect(input.chat_id).toBe(OLD_CHAT_ID);
     expect(fetch).toHaveBeenCalledTimes(1);
+    expect(
+      (await db.select({ dedupeKey: messageDeliveries.dedupeKey }).from(messageDeliveries)).map(
+        (row) => row.dedupeKey,
+      ),
+    ).toEqual(expect.arrayContaining([oldKey, newKey]));
+  });
+
+  it('leaves a failed migrated digest to its canonical retry and deduplicates later claims', async () => {
+    const windowEnd = '2026-06-14T12:00:00.000Z';
+    const oldKey = digestDestinationDedupeKey({
+      scope: 'workspace',
+      teamId: TEAM_ID,
+      windowEnd,
+      destination: { kind: 'telegram_chat', targetId: String(OLD_CHAT_ID) },
+    });
+    const newKey = digestDestinationDedupeKey({
+      scope: 'workspace',
+      teamId: TEAM_ID,
+      windowEnd,
+      destination: { kind: 'telegram_chat', targetId: String(NEW_CHAT_ID) },
+    });
+    await pg.exec(`
+      INSERT INTO team_digest_destinations (team_id, kind, target_id, label, enabled)
+      VALUES ('${TEAM_ID}', 'telegram_chat', '${NEW_CHAT_ID}', 'Sales supergroup', true);
+    `);
+    await db.insert(messageDeliveries).values([
+      {
+        intent: 'daily_digest',
+        channel: 'telegram',
+        teamId: TEAM_ID,
+        status: 'pending',
+        provider: 'telegram',
+        dedupeKey: oldKey,
+      },
+      {
+        intent: 'daily_digest',
+        channel: 'telegram',
+        teamId: TEAM_ID,
+        status: 'failed',
+        provider: 'telegram',
+        dedupeKey: newKey,
+      },
+    ]);
+    const fetch = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            ok: false,
+            error_code: 400,
+            description: 'Bad Request: group chat was upgraded to a supergroup chat',
+            parameters: { migrate_to_chat_id: NEW_CHAT_ID },
+          }),
+          { status: 400 },
+        ),
+      )
+      .mockResolvedValueOnce(Response.json({ ok: true, result: { message_id: 99 } }));
+    vi.stubGlobal('fetch', fetch);
+    const api = new HttpTelegramApi('token', 10_000, true, {
+      sendingTeamId: TEAM_ID,
+      onChatMigrated: (fromChatId, toChatId) =>
+        applyTelegramChatMigration(db, fromChatId, toChatId, { sendingTeamId: TEAM_ID }),
+    });
+    const input = { chat_id: OLD_CHAT_ID, text: 'Acme daily digest' };
+
+    await expect(
+      withChatDeliveryPrincipal({ teamId: TEAM_ID, dedupeKey: oldKey }, () =>
+        api.sendMessage(input),
+      ),
+    ).rejects.toThrow('Telegram sendMessage failed: 400');
+
+    expect(input.chat_id).toBe(OLD_CHAT_ID);
+    expect(fetch).toHaveBeenCalledTimes(1);
+    const claimInput = {
+      db,
+      intent: 'daily_digest' as const,
+      channel: 'telegram' as const,
+      teamId: TEAM_ID,
+      provider: 'telegram',
+      dedupeKey: newKey,
+    };
+    const claim = await claimDelivery(claimInput);
+    expect(claim.kind).toBe('claimed');
+    if (claim.kind !== 'claimed' || !claim.deliveryId) throw new Error('Expected retry claim');
+    await api.sendMessage({ chat_id: NEW_CHAT_ID, text: 'Acme daily digest' });
+    await markDeliveryResult({ db, deliveryId: claim.deliveryId, status: 'sent' });
+    expect((await claimDelivery(claimInput)).kind).toBe('already_sent');
+    expect(fetch).toHaveBeenCalledTimes(2);
+
     expect(
       (await db.select({ dedupeKey: messageDeliveries.dedupeKey }).from(messageDeliveries)).map(
         (row) => row.dedupeKey,

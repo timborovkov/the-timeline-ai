@@ -75,7 +75,7 @@ async function rewriteTelegramWorkspaceDigestLedgerKeys(
   input: { teamId: string; fromTarget: string; toTarget: string },
 ): Promise<TelegramChatMigrationWriteResult> {
   const alreadySentDedupeKeys: string[] = [];
-  const pendingDedupeKeys: string[] = [];
+  const retryableDedupeKeys: string[] = [];
   const oldKeyPattern = workspaceDigestDedupeKeyTargetLike({
     teamId: input.teamId,
     kind: 'telegram_chat',
@@ -109,7 +109,9 @@ async function rewriteTelegramWorkspaceDigestLedgerKeys(
       .limit(1);
     if (keyConflict) {
       if (keyConflict.status === 'sent') alreadySentDedupeKeys.push(nextKey);
-      else if (keyConflict.status === 'pending') pendingDedupeKeys.push(nextKey);
+      else if (keyConflict.status === 'pending' || keyConflict.status === 'failed') {
+        retryableDedupeKeys.push(nextKey);
+      }
       continue;
     }
     await tx
@@ -117,7 +119,7 @@ async function rewriteTelegramWorkspaceDigestLedgerKeys(
       .set({ dedupeKey: nextKey, updatedAt: new Date() })
       .where(and(eq(messageDeliveries.id, row.id), eq(messageDeliveries.teamId, input.teamId)));
   }
-  return { alreadySentDedupeKeys, pendingDedupeKeys };
+  return { alreadySentDedupeKeys, retryableDedupeKeys };
 }
 
 export function createTelegramScope({ db, teamId, userId, ensureMember }: TelegramScopeDeps) {
@@ -253,7 +255,7 @@ export function createTelegramScope({ db, teamId, userId, ensureMember }: Telegr
       await ensureMember();
       const { fromChatId, toChatId } = input;
       if (fromChatId === toChatId) {
-        return { alreadySentDedupeKeys: [], pendingDedupeKeys: [] };
+        return { alreadySentDedupeKeys: [], retryableDedupeKeys: [] };
       }
       const fromTarget = String(fromChatId);
       const toTarget = String(toChatId);
