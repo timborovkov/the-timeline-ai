@@ -1,8 +1,6 @@
 import {
   type Db,
   agentSuggestionEvidence,
-  agentSuggestionItems,
-  agentSuggestions,
   documentChunks,
   documentVersions,
   documents,
@@ -10,7 +8,7 @@ import {
   teamFirstRun,
   teams,
 } from '@timeline/db';
-import { and, asc, desc, eq, gte, inArray, isNull, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, isNull } from 'drizzle-orm';
 
 import { documentVisibleToUser } from '#src/documents/visibility.js';
 import {
@@ -32,6 +30,7 @@ import {
 } from '#src/onboarding/first-run.js';
 import { rawEventVisibleToUser } from '#src/visibility.js';
 
+import type { SuggestionBundle } from '#src/suggestions/index.js';
 import type { TeamRole } from '#src/team-scope.js';
 
 interface FirstRunScopeDeps {
@@ -39,6 +38,7 @@ interface FirstRunScopeDeps {
   teamId: string;
   userId: string;
   ensureMember: (minRole?: TeamRole) => Promise<TeamRole>;
+  getSuggestion: (id: string) => Promise<SuggestionBundle | null>;
 }
 
 const LANDING_CAPTURE_PHASES: FirstRunPhase[] = ['processing', 'failed'];
@@ -49,20 +49,6 @@ function isWorkStyle(value: string | null | undefined): value is TeamWorkStyle {
 
 function isPhase(value: string | null | undefined): value is FirstRunPhase {
   return Boolean(value && (FIRST_RUN_PHASES as readonly string[]).includes(value));
-}
-
-function suggestionVisibleToUser(viewerUserId: string) {
-  return or(
-    eq(agentSuggestions.visibility, 'team'),
-    and(
-      eq(agentSuggestions.visibility, 'private'),
-      eq(agentSuggestions.visibilityOwnerUserId, viewerUserId),
-    ),
-    and(
-      eq(agentSuggestions.visibility, 'specific_users'),
-      sql`${viewerUserId}::uuid = ANY(${agentSuggestions.visibilityUserIds})`,
-    ),
-  );
 }
 
 function mapRow(row: typeof teamFirstRun.$inferSelect, workStyle: string | null): FirstRunState {
@@ -99,7 +85,13 @@ export interface FirstRunRecordView {
   emailArrived: boolean;
 }
 
-export function createFirstRunHandlers({ db, teamId, userId, ensureMember }: FirstRunScopeDeps) {
+export function createFirstRunHandlers({
+  db,
+  teamId,
+  userId,
+  ensureMember,
+  getSuggestion,
+}: FirstRunScopeDeps) {
   async function loadState(): Promise<FirstRunState | null> {
     const [row] = await db
       .select({
@@ -135,7 +127,10 @@ export function createFirstRunHandlers({ db, teamId, userId, ensureMember }: Fir
           inArray(agentSuggestionEvidence.rawEventId, eventIds),
         ),
       );
-    return new Set(rows.map((row) => row.suggestionId)).size;
+    const suggestions = await Promise.all(
+      [...new Set(rows.map((row) => row.suggestionId))].map(getSuggestion),
+    );
+    return suggestions.filter((suggestion) => suggestion !== null).length;
   }
 
   async function loadSuggestions(
@@ -158,28 +153,14 @@ export function createFirstRunHandlers({ db, teamId, userId, ensureMember }: Fir
     const suggestionIds = [...new Set(evidenceRows.map((row) => row.suggestionId))];
     if (suggestionIds.length === 0) return [];
     const eventIndex = new Map(eventIds.map((id, index) => [id, index + 1] as const));
-    const [suggestionRows, itemRows] = await Promise.all([
-      db
-        .select()
-        .from(agentSuggestions)
-        .where(
-          and(
-            eq(agentSuggestions.teamId, teamId),
-            inArray(agentSuggestions.id, suggestionIds),
-            suggestionVisibleToUser(userId),
-          ),
-        ),
-      db
-        .select()
-        .from(agentSuggestionItems)
-        .where(
-          and(
-            eq(agentSuggestionItems.teamId, teamId),
-            inArray(agentSuggestionItems.suggestionId, suggestionIds),
-          ),
-        )
-        .orderBy(asc(agentSuggestionItems.createdAt)),
-    ]);
+    // Reuse the canonical reader: proposal audience alone does not authorize its
+    // content when required supporting evidence becomes unavailable or private.
+    const suggestionRows = (await Promise.all(suggestionIds.map(getSuggestion))).filter(
+      (suggestion): suggestion is SuggestionBundle => suggestion !== null,
+    );
+    const itemRows = suggestionRows.flatMap((suggestion) =>
+      suggestion.items.map((item) => ({ ...item, suggestionId: suggestion.id })),
+    );
     const bySuggestion = new Map(suggestionRows.map((row) => [row.id, row] as const));
     const out: FirstRunSuggestion[] = [];
     for (const item of itemRows) {
