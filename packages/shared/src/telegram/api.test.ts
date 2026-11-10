@@ -3,6 +3,11 @@ import { vi } from '@timeline/test-support';
 import { afterEach, describe, it } from 'bun:test';
 
 import { HttpTelegramApi } from '#src/telegram/api.js';
+import {
+  TELEGRAM_CHAT_MIGRATION_CONFLICT_CODE,
+  TelegramChatMigrationConflictError,
+} from '#src/telegram/chat-migration.js';
+
 describe('HttpTelegramApi file downloads', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
@@ -151,6 +156,34 @@ describe('HttpTelegramApi file downloads', () => {
     );
     expect(persist).toHaveBeenCalledTimes(1);
     expect(fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not retry sendMessage when chat migration hits a cross-team conflict', async () => {
+    const persist = vi.fn(() => Promise.reject(new TelegramChatMigrationConflictError()));
+    const fetch = vi.fn().mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          ok: false,
+          error_code: 400,
+          description: 'Bad Request: group chat was upgraded to a supergroup chat',
+          parameters: { migrate_to_chat_id: -1004317012921 },
+        }),
+        { status: 400 },
+      ),
+    );
+    vi.stubGlobal('fetch', fetch);
+    const api = new HttpTelegramApi('token', 10_000, true, { onChatMigrated: persist });
+    const input = { chat_id: -123456, text: 'hello' };
+
+    const error = await api.sendMessage(input).catch((value: unknown) => value);
+    expect(error).toMatchObject({ code: TELEGRAM_CHAT_MIGRATION_CONFLICT_CODE });
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toContain('Telegram sendMessage failed: 400');
+    expect((error as Error).message).toContain('cross-team chat migration conflict; skipped retry');
+    expect(persist).toHaveBeenCalledTimes(1);
+    expect(persist).toHaveBeenCalledWith(-123456, -1004317012921);
+    expect(input.chat_id).toBe(-123456);
+    expect(fetch).toHaveBeenCalledTimes(1);
   });
 
   it('does not retry ordinary Telegram send failures', async () => {

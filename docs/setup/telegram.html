@@ -262,7 +262,8 @@ curl -F "url=https://&lt;ngrok-id&gt;.ngrok-free.app/api/telegram/webhook" \
           at a single team. Permanent until <code>/unlink</code>. When Telegram upgrades a group to
           a supergroup, outbound send errors and inbound migration service messages rewrite this id
           and that team's <code>telegram_chat</code> digest destination so later traffic uses the
-          new chat. A new id already bound to another workspace is left unchanged.
+          new chat. A new id already bound to another workspace is left unchanged, and the in-flight
+          send is not retried to that id.
         </li>
         <li>
           <code>telegram_link_tokens</code> — single-use, 15-minute-TTL tokens, scoped

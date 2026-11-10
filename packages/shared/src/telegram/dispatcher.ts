@@ -56,6 +56,7 @@ import { withTeam } from '#src/team-scope.js';
 import { type TelegramApi } from '#src/telegram/api.js';
 import {
   applyTelegramChatMigration,
+  isTelegramChatMigrationConflictError,
   telegramChatMigrationFromMessage,
 } from '#src/telegram/chat-migration.js';
 import {
@@ -215,7 +216,11 @@ export async function handleUpdate(
   try {
     const migration = telegramChatMigrationFromMessage(update.message ?? update.edited_message);
     if (migration) {
-      await applyTelegramChatMigration(deps.db, migration.fromChatId, migration.toChatId);
+      try {
+        await applyTelegramChatMigration(deps.db, migration.fromChatId, migration.toChatId);
+      } catch (err) {
+        if (!isTelegramChatMigrationConflictError(err)) throw err;
+      }
       return { ok: true };
     }
     if (update.message) {

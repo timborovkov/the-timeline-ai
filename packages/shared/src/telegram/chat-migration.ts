@@ -5,6 +5,24 @@ import { childLogger } from '#src/logger.js';
 
 const log = childLogger('telegram');
 
+export const TELEGRAM_CHAT_MIGRATION_CONFLICT_CODE =
+  'telegram_chat_migration_cross_team_conflict' as const;
+
+export class TelegramChatMigrationConflictError extends Error {
+  readonly code = TELEGRAM_CHAT_MIGRATION_CONFLICT_CODE;
+
+  constructor() {
+    super('Telegram chat migration conflict: new chat id is bound to another team');
+    this.name = 'TelegramChatMigrationConflictError';
+  }
+}
+
+export function isTelegramChatMigrationConflictError(
+  error: unknown,
+): error is TelegramChatMigrationConflictError {
+  return error instanceof TelegramChatMigrationConflictError;
+}
+
 export interface TelegramChatMigration {
   fromChatId: number;
   toChatId: number;
@@ -114,11 +132,11 @@ export async function applyTelegramChatMigration(
     .limit(1);
 
   if (oldBinding && newBinding && oldBinding.teamId !== newBinding.teamId) {
-    log.warn(
+    log.error(
       { fromChatId, toChatId, oldTeamId: oldBinding.teamId, newTeamId: newBinding.teamId },
       'telegram chat migration skipped: new chat id is bound to another team',
     );
-    return;
+    throw new TelegramChatMigrationConflictError();
   }
 
   const teamId = oldBinding?.teamId ?? newBinding?.teamId;

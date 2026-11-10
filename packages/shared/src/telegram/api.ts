@@ -6,8 +6,10 @@ import { childLogger } from '#src/logger.js';
 import { getRedisConnection } from '#src/redis/connection.js';
 import {
   applyTelegramChatMigration,
+  isTelegramChatMigrationConflictError,
   parseTelegramMigratedChatId,
   replaceTelegramChatId,
+  TELEGRAM_CHAT_MIGRATION_CONFLICT_CODE,
   telegramChatIdFromBody,
   telegramMigratedChatId,
 } from '#src/telegram/chat-migration.js';
@@ -94,8 +96,19 @@ export class HttpTelegramApi implements TelegramApi {
       const { getDb } = await import('@timeline/db');
       await applyTelegramChatMigration(getDb(), fromChatId, toChatId);
     } catch (err) {
+      if (isTelegramChatMigrationConflictError(err)) throw err;
       log.warn({ err, fromChatId, toChatId }, 'telegram chat migration persist failed');
     }
+  }
+
+  private migrationConflictSendError(error: unknown): Error {
+    const detail = error instanceof Error ? error.message : 'Telegram request failed';
+    return Object.assign(
+      new Error(`${detail} (cross-team chat migration conflict; skipped retry)`, {
+        cause: error,
+      }),
+      { code: TELEGRAM_CHAT_MIGRATION_CONFLICT_CODE },
+    );
   }
 
   private async call<T>(method: string, body: unknown, retried = false): Promise<T> {
@@ -108,7 +121,18 @@ export class HttpTelegramApi implements TelegramApi {
       const fromChatId = telegramChatIdFromBody(body);
       const toChatId = telegramMigratedChatId(error);
       if (!retried && fromChatId !== null && toChatId !== null && fromChatId !== toChatId) {
-        await this.persistChatMigration(fromChatId, toChatId);
+        try {
+          await this.persistChatMigration(fromChatId, toChatId);
+        } catch (persistErr) {
+          if (isTelegramChatMigrationConflictError(persistErr)) {
+            log.error(
+              { err: persistErr, fromChatId, toChatId },
+              'telegram chat migration conflict; not retrying send',
+            );
+            throw this.migrationConflictSendError(error);
+          }
+          throw persistErr;
+        }
         replaceTelegramChatId(body, toChatId);
         return this.call(method, body, true);
       }

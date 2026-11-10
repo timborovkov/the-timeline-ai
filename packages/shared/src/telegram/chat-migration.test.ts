@@ -7,6 +7,7 @@ import { drizzle } from 'drizzle-orm/pglite';
 import {
   applyTelegramChatMigration,
   parseTelegramMigratedChatId,
+  TelegramChatMigrationConflictError,
   telegramChatMigrationFromMessage,
   telegramMigratedChatId,
 } from '#src/telegram/chat-migration.js';
@@ -144,7 +145,9 @@ describe('applyTelegramChatMigration', () => {
       VALUES ('${OTHER_TEAM_ID}', 'telegram_chat', '${NEW_CHAT_ID}', 'Other', true);
     `);
 
-    await applyTelegramChatMigration(db, OLD_CHAT_ID, NEW_CHAT_ID);
+    await expect(applyTelegramChatMigration(db, OLD_CHAT_ID, NEW_CHAT_ID)).rejects.toThrow(
+      TelegramChatMigrationConflictError,
+    );
 
     const bindings = await db.select().from(telegramChatBindings);
     expect(bindings).toHaveLength(2);
