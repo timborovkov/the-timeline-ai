@@ -103,12 +103,11 @@ export interface BuildEvidencePackInput {
 }
 
 export class EvidencePackError extends Error {
-  constructor(
-    readonly code: EvidencePackErrorCode,
-    message: string,
-  ) {
+  readonly code: EvidencePackErrorCode;
+  constructor(code: EvidencePackErrorCode, message: string) {
     super(message);
     this.name = 'EvidencePackError';
+    this.code = code;
   }
 }
 

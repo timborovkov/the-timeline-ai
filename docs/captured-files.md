@@ -11,8 +11,6 @@ evidence; documents are curated workspace knowledge.
 - Captured files and documents share the existing file/version/blob/chunk
   storage path, but rows must distinguish unpromoted captured files from
   curated documents.
-- The schema can be reshaped directly. The product is not preserving legacy
-  compatibility for the old model where every captured file is a document.
 - Captured files inherit source-event visibility and must not widen
   automatically. Promotion may preserve or narrow visibility by default;
   widening visibility is explicit and audited.
@@ -81,7 +79,7 @@ evidence; documents are curated workspace knowledge.
   Persisted inspection output must be representation-like, not arbitrary
   conclusions or workspace interpretation.
 
-## Implemented First Pass
+## Capture and promotion
 
 - Telegram and Slack file attachments now create unpromoted captured files that
   inherit the parent raw event's visibility and source provenance.
@@ -111,40 +109,3 @@ evidence; documents are curated workspace knowledge.
   lifecycle rows as pulses. Native Drive v1 judged captures are communication
   events (compact hunks, never a document-drive copy). See
   [relational-memory.md](./relational-memory.md).
-
-## Remaining Follow-Ups
-
-- Agent tools can search and fetch precomputed document chunks, but cannot yet
-  run a targeted second-pass vision inspection on a specific original file.
-- Representation corrections are still planned as layered, audited edits over
-  model output.
-- Captured-file triage can grow sender filters, bulk actions, and deeper
-  targeted inspection beyond the current source/date/type/status filters and
-  promotion path.
-
-## Implementation Shape
-
-Implement this as one coherent feature branch with phased reviewable slices:
-schema/domain first, ingestion and processing next, document-drive UI and
-promotion next, and agent tooling after the storage and representation model is
-stable.
-
-## First-Pass Done Criteria
-
-- Schema distinguishes captured files from documents and supports promotion
-  metadata plus typed extracted representations.
-- Telegram, Slack, and manual upload ingestion create the right file kind and
-  inherit source visibility where applicable.
-- Voice memos, images, PDFs, and text-ish files produce searchable
-  representations, using budget deferral where appropriate.
-- The document drive defaults to curated documents and folders only, with
-  captured files available through a separate triage/source-evidence surface.
-- Display titles use a stable precedence everywhere: human `documents.name`,
-  then `metadata.suggested_title` for generated names, then a generic
-  attachment fallback such as "Image attachment" or "PDF attachment".
-- Agent retrieval includes source-evidence representations for timeline
-  questions and curated documents for document/reference questions.
-- Existing "everything is a document" assumptions are removed rather than kept
-  as legacy compatibility.
-- Targeted file inspection and representation corrections can follow in a later
-  implementation pass, but the schema should leave room for them.

@@ -34,10 +34,12 @@ interface SchedulerCall {
 }
 
 class FakeJob {
-  constructor(
-    private queue: FakeQueue,
-    public id: string,
-  ) {}
+  private queue: FakeQueue;
+  id: string;
+  constructor(queue: FakeQueue, id: string) {
+    this.queue = queue;
+    this.id = id;
+  }
 
   getState = vi.fn(() => {
     if (this.queue.stateReadFailures.has(this.id)) {
@@ -114,10 +116,11 @@ await vi.mock(
   import.meta.resolve('ioredis'),
   () => ({
     default: class FakeRedis {
-      constructor(
-        public url: string,
-        public options: Record<string, unknown>,
-      ) {
+      url: string;
+      options: Record<string, unknown>;
+      constructor(url: string, options: Record<string, unknown>) {
+        this.url = url;
+        this.options = options;
         fakes.redisInstances.push(this);
       }
       quit = vi.fn(() => Promise.resolve());
