@@ -6,6 +6,7 @@ import {
   listMissingMarketingScreenshots,
   marketingScreenshotFileExists,
 } from '@/components/marketing/screenshot-inventory';
+import { marketingScreenshotVariants } from '@/components/marketing/screenshot-slot';
 
 describe('marketing screenshot inventory', () => {
   it('requires every public marketing screenshot reference to exist on disk', () => {
@@ -19,6 +20,31 @@ describe('marketing screenshot inventory', () => {
     expect(files).toContain('32-ask-handoff-dark.png');
     expect(marketingScreenshotFileExists('missing-marketing-shot.png')).toBe(false);
     expect(listMissingMarketingScreenshots(refs)).toEqual([]);
+    for (const ref of refs) {
+      for (const file of Object.values(marketingScreenshotVariants(ref.file))) {
+        expect(marketingScreenshotFileExists(file)).toBe(true);
+      }
+    }
+  });
+
+  it('derives twins from light, dark and legacy mobile inventory names', () => {
+    expect(marketingScreenshotVariants('18-sources-light.png')).toEqual({
+      light: '18-sources-light.png',
+      dark: '18-sources-dark.png',
+    });
+    expect(marketingScreenshotVariants('11-timeline-dark.png')).toEqual({
+      light: '11-timeline-light.png',
+      dark: '11-timeline-dark.png',
+    });
+    expect(marketingScreenshotVariants('53-timeline-mobile.png')).toEqual({
+      light: '53-timeline-mobile-light.png',
+      dark: '53-timeline-mobile-dark.png',
+    });
+    expect(
+      listMissingMarketingScreenshots([
+        { source: 'test', file: 'missing-shot.png', alt: '', caption: '' },
+      ]).map((ref) => ref.file),
+    ).toEqual(['missing-shot-light.png', 'missing-shot-dark.png']);
   });
 
   it('labels Ask captures as stored fictional examples without install noise', () => {

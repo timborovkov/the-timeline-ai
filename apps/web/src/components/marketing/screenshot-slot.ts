@@ -13,3 +13,8 @@ export interface MarketingScreenshotSlot {
   frame?: MarketingScreenshotFrame;
   callouts?: readonly MarketingScreenshotCallout[];
 }
+
+export function marketingScreenshotVariants(file: string) {
+  const stem = file.replace(/(?:-(?:light|dark))?\.png$/, '');
+  return { light: `${stem}-light.png`, dark: `${stem}-dark.png` };
+}
