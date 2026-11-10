@@ -104,11 +104,14 @@ async function responseBufferWithLimit(res: Response, maxBytes?: number): Promis
 }
 
 export class SlackApi {
-  constructor(
-    private readonly token: string,
-    private readonly accountId?: string,
-    private readonly deferRateLimits = true,
-  ) {}
+  private readonly token: string;
+  private readonly accountId: string | undefined;
+  private readonly deferRateLimits: boolean;
+  constructor(token: string, accountId?: string, deferRateLimits = true) {
+    this.token = token;
+    this.accountId = accountId;
+    this.deferRateLimits = deferRateLimits;
+  }
 
   private async call<T extends SlackResponse>(
     method: string,

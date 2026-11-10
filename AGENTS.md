@@ -242,6 +242,11 @@ Treat this file as an operating contract for agents, not a loose README.
   `typescript@7` under the `typescript` package name until typescript-eslint supports
   TypeScript 7 ([typescript-eslint#10940](https://github.com/typescript-eslint/typescript-eslint/issues/10940)).
   A naive bump fails lint with `typescript-eslint does not support TS 7.0.`
+  Shared compiler options live in [`tsconfig.base.json`](tsconfig.base.json),
+  including `erasableSyntaxOnly` so sources stay type-stripping-safe for Bun
+  (no enums, value namespaces, constructor parameter properties, or
+  `import =` / `export =`). Do not add `verbatimModuleSyntax` unless a later
+  change needs it; keep `target`/`lib` versions as they are.
 - **Use the verified demo seed for recorded demos and local regression checks.** `bun run demo:seed`
   runs the idempotent `bun run dev:seed`, indexes every deterministic fixture source through the real
   embed worker/OpenRouter/Qdrant path, and then runs `bun run demo:verify`. It creates the

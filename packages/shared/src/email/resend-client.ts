@@ -10,13 +10,15 @@ export type EmailFetch = (
 ) => ReturnType<typeof globalThis.fetch>;
 
 export class ResendError extends Error {
-  constructor(
-    public readonly code: string,
-    public readonly retryable: boolean,
-    public readonly retryAfterMs = 0,
-  ) {
+  readonly code: string;
+  readonly retryable: boolean;
+  readonly retryAfterMs: number;
+  constructor(code: string, retryable: boolean, retryAfterMs = 0) {
     super(`Resend request failed: ${code}`);
     this.name = 'ResendError';
+    this.code = code;
+    this.retryable = retryable;
+    this.retryAfterMs = retryAfterMs;
   }
 }
 
