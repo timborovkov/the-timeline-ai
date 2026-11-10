@@ -17,7 +17,11 @@ export function RefreshSuggestions() {
         type="button"
         variant="outline"
         disabled={pending}
-        onClick={() => startTransition(() => router.refresh())}
+        onClick={() => {
+          startTransition(() => {
+            router.refresh();
+          });
+        }}
       >
         {pending ? 'Checking…' : 'Check for suggestions'}
       </Button>
