@@ -290,9 +290,14 @@ GOOGLE_DRIVE_WEBHOOK_SECRET=...</code></pre>
           tiny. Equal-length substitutions such as <code>hiring</code>→<code>firing</code> stay
           substantive, as does inserting or removing a whole word such as <code>not</code>.
           Remaining hunks bill a small CRM-relevance judge through <code>llm.chatStructured</code> /
-          the existing AI meter. Judged event text packs comment evidence before hunks using
-          remaining space in the 4000-char cap, splitting a longer comment across events, so a long
-          diff cannot drop comments and a long comment-only change cannot stick on
+          the existing AI meter. A noise verdict cannot discard an unambiguous paired change to a
+          whole-line owner, assignee, status, deadline, due date, launch date, budget, or
+          approved-budget field. The safeguard compares the values using the same cosmetic-edit
+          rules and records <code>drive_change_noise_overridden</code> with field names only, not
+          their values. Other prose still uses the relevance judge; synthetic/demo labels alone do
+          not make meaningful changes noise. Judged event text packs comment evidence before hunks
+          using remaining space in the 4000-char cap, splitting a longer comment across events, so a
+          long diff cannot drop comments and a long comment-only change cannot stick on
           <code>no_evidence</code>, including the strong-signal path. Continuation slices keep
           original whitespace so packed <code>commentFragment</code> values rejoin to the exact
           preview, including a space that falls on a split boundary. Every changed span must still

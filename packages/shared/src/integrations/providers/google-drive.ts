@@ -1,6 +1,22 @@
 import { createHmac, randomUUID } from 'node:crypto';
 
 import { getEnv } from '#src/env.js';
+import { providerFetch } from '#src/integrations/request.js';
+import { attachSyncContinuation, isProviderRateLimitError } from '#src/integrations/types.js';
+import { childLogger } from '#src/logger.js';
+
+import type { DriveChangeJudge } from '#src/integrations/google-drive-judge.js';
+import type {
+  IntegrationEvent,
+  IntegrationProvider,
+  IntegrationRow,
+  OAuthCallbackInput,
+  OAuthStartInput,
+  ProviderResource,
+  SyncResult,
+  WebhookHandleResult,
+} from '#src/integrations/types.js';
+
 import {
   compactDrivePermissionGrants,
   driveDebouncePlan,
@@ -45,6 +61,7 @@ import {
   driveObjectLinkHintsEqual,
   driveSnapshotAncestryFromMembership,
 } from '#src/integrations/google-drive-link-policy.js';
+import { changedDriveProjectFields } from '#src/integrations/google-drive-project-signals.js';
 import { driveFeedContinuation, planDriveSync } from '#src/integrations/google-drive-scheduling.js';
 import {
   DRIVE_FILE_KIND,
@@ -64,23 +81,8 @@ import {
   formatDriveSpreadsheetWorkbook,
   quoteSheetsA1SheetName,
 } from '#src/integrations/google-drive-spreadsheet.js';
-import { providerFetch } from '#src/integrations/request.js';
 import { defineResourceAccess } from '#src/integrations/resource-access.js';
 import { exactTargetSelections } from '#src/integrations/selection-policy.js';
-import { attachSyncContinuation, isProviderRateLimitError } from '#src/integrations/types.js';
-import { childLogger } from '#src/logger.js';
-
-import type { DriveChangeJudge } from '#src/integrations/google-drive-judge.js';
-import type {
-  IntegrationEvent,
-  IntegrationProvider,
-  IntegrationRow,
-  OAuthCallbackInput,
-  OAuthStartInput,
-  ProviderResource,
-  SyncResult,
-  WebhookHandleResult,
-} from '#src/integrations/types.js';
 
 const fetch = providerFetch('google_drive');
 
@@ -1561,6 +1563,22 @@ async function processDriveFile(
       hunks: diff.hunks,
       strongSignals,
     });
+  }
+
+  if (!judge.matters || judge.reason === 'noise') {
+    const changedFields = changedDriveProjectFields(diff.hunks);
+    if (changedFields.length > 0) {
+      await ctx.recordAudit('drive_change_noise_overridden', {
+        file_id: fileId,
+        reason: judge.reason,
+        changed_fields: changedFields,
+      });
+      judge = {
+        matters: true,
+        reason: 'crm_update',
+        summary: `Project fields changed: ${changedFields.join(', ')}.`,
+      };
+    }
   }
 
   const packed = packDriveEvidence({
