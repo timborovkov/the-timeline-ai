@@ -11,7 +11,7 @@ export const PRODUCT_TOUR = {
     'Real screens from a demo workspace. Scroll through how The Timeline turns what your team says in Slack, Telegram, email and calls into a work record that keeps itself current.',
   closingTitle: 'Link one channel. Watch the record fill in.',
   closingBody:
-    'Start with one Slack channel or Telegram group. Read the daily update, approve what The Timeline proposes, and ask what was decided, with the source for every line.',
+    'Start with one Slack channel or Telegram group. Read the daily update, approve lasting record changes that The Timeline proposes, and ask what was decided, with the source for every line.',
   steps: [
     {
       index: '01',
@@ -66,9 +66,9 @@ export const PRODUCT_TOUR = {
     },
     {
       index: '06',
-      headline: 'Nothing changes until you approve it.',
+      headline: 'Lasting record changes wait for your approval.',
       caption:
-        'Proposed tasks, dates and record changes wait in a queue, each with why it was suggested and its source.',
+        'Proposed tasks, dates and record changes wait in a queue, each with why it was suggested and its source. Captured evidence still lands on the timeline automatically.',
       file: '29-approvals-dark.png',
       alt: 'Approvals queue of proposed tasks, dates and record changes.',
       reshoot: 'To reshoot after citation redesign and seed update (demo dates).',

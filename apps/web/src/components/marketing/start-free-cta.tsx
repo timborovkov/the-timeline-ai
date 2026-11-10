@@ -4,6 +4,7 @@ import Link from 'next/link';
 import type { ReactNode } from 'react';
 
 import { CTA_MICROCOPY_LEAD, START_FREE_HREF, START_FREE_LABEL } from '@/components/marketing/copy';
+import { FirstRunPath } from '@/components/marketing/first-run-path';
 import { PublicSessionBranch } from '@/components/public-session-branch';
 import { cn } from '@/lib/utils';
 
@@ -71,10 +72,12 @@ export function MarketingCtaBand({
   kicker = 'Start free',
   title,
   body,
+  firstRun = false,
 }: {
   kicker?: string;
   title: string;
   body: string;
+  firstRun?: boolean;
 }) {
   return (
     <section className="border-t border-border bg-surface" aria-labelledby="cta-title">
@@ -90,6 +93,7 @@ export function MarketingCtaBand({
             {title}
           </h2>
           <p className="mt-5 text-base leading-7 text-fg-muted">{body}</p>
+          {firstRun ? <FirstRunPath /> : null}
         </div>
         <div className="flex flex-col items-start gap-3 lg:items-end">
           <StartFreeLink className="inline-flex min-h-12 items-center justify-center gap-2 rounded-sm bg-signal px-6 text-sm font-semibold text-signal-fg outline-none hover:brightness-95 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface" />

@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import Image from 'next/image';
 
 import type {
+  MarketingScreenshotCallout,
   MarketingScreenshotFrame,
   MarketingScreenshotSlot,
 } from '@/components/marketing/screenshot-slot';
@@ -27,6 +28,7 @@ export function MarketingProductScreenshot({
   reshoot,
   priority = false,
   frame = 'landscape',
+  callouts,
 }: {
   file: string;
   alt: string;
@@ -34,6 +36,7 @@ export function MarketingProductScreenshot({
   reshoot?: string;
   priority?: boolean;
   frame?: MarketingScreenshotFrame;
+  callouts?: readonly MarketingScreenshotCallout[];
 }) {
   const src = `${PRODUCT_SCREENSHOT_DIR}/${file}`;
   const present = marketingScreenshotFileExists(file);
@@ -53,17 +56,31 @@ export function MarketingProductScreenshot({
         )}
       >
         {present ? (
-          <Image
-            src={src}
-            alt={alt}
-            fill
-            priority={priority}
-            unoptimized
-            sizes={
-              portrait ? '(max-width: 767px) 24rem, 100vw' : '(min-width: 1024px) 72rem, 100vw'
-            }
-            className={portrait ? 'object-contain object-top' : 'object-cover object-top'}
-          />
+          <>
+            <div
+              data-screenshot-pending
+              aria-hidden="true"
+              className="absolute inset-0 grid place-items-center px-6 text-center"
+            >
+              <p className="font-mono text-[0.65rem] tracking-[0.14em] text-fg-muted uppercase">
+                Loading screenshot
+              </p>
+            </div>
+            <Image
+              src={src}
+              alt={alt}
+              fill
+              priority={priority}
+              unoptimized
+              sizes={
+                portrait ? '(max-width: 767px) 24rem, 100vw' : '(min-width: 1024px) 72rem, 100vw'
+              }
+              className={cn(
+                'z-[1]',
+                portrait ? 'object-contain object-top' : 'object-cover object-top',
+              )}
+            />
+          </>
         ) : (
           <div
             role="img"
@@ -83,6 +100,21 @@ export function MarketingProductScreenshot({
           </div>
         )}
       </div>
+      {callouts && callouts.length > 0 ? (
+        <ol
+          className="grid gap-4 border-t border-border px-5 py-4 sm:grid-cols-3 sm:px-6"
+          data-screenshot-callouts
+        >
+          {callouts.map((callout) => (
+            <li key={callout.label} className="min-w-0">
+              <p className="font-mono text-[0.62rem] tracking-[0.12em] text-signal uppercase">
+                {callout.label}
+              </p>
+              <p className="mt-2 text-sm leading-6 text-fg">{callout.detail}</p>
+            </li>
+          ))}
+        </ol>
+      ) : null}
       <figcaption className="space-y-2 border-t border-border px-5 py-4 sm:px-6">
         <p className="text-sm leading-6 text-fg-muted">{caption}</p>
         <p className="font-mono text-[0.62rem] tracking-[0.12em] text-fg-dim uppercase">
@@ -111,6 +143,7 @@ export function MarketingScreenshotBlock({
           caption={shot.caption}
           reshoot={shot.reshoot}
           frame={shot.frame}
+          callouts={shot.callouts}
           priority={priorityFirst && index === 0}
         />
       ))}

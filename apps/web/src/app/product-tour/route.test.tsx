@@ -25,6 +25,9 @@ describe('product tour route', () => {
     expect(html).toContain('data-product-tour');
     expect(html).toContain('Start free');
     expect(html).toContain('See pricing');
+    expect(html).toContain('Lasting record changes wait for your approval.');
+    expect(html).not.toContain('Nothing changes until you approve it.');
+    expect(html).toContain('data-first-run="full"');
     expect(PRODUCT_TOUR.steps).toHaveLength(8);
 
     for (const step of PRODUCT_TOUR.steps) {

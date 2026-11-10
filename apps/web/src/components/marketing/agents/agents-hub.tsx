@@ -30,6 +30,24 @@ export function AgentsHubPage() {
           </p>
           <div className="mt-10 max-w-3xl">
             <AgentSetupCard />
+            <div className="mt-5 max-w-2xl" data-agent-setup-prerequisites>
+              <p className="font-mono text-[0.68rem] tracking-[0.14em] text-signal uppercase">
+                {AGENTS_HUB.setupPrerequisite.title}
+              </p>
+              <p className="mt-3 text-sm leading-7 text-fg-muted sm:text-base">
+                {AGENTS_HUB.setupPrerequisite.body}
+              </p>
+              <p className="mt-3 text-sm leading-7 text-fg-muted sm:text-base">
+                {AGENTS_HUB.setupPrerequisite.distinction}{' '}
+                <Link
+                  href={AGENTS_HUB.setupPrerequisite.mcpHref}
+                  className="rounded-sm font-medium text-fg underline decoration-border-strong underline-offset-4 outline-none hover:decoration-fg focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  {AGENTS_HUB.setupPrerequisite.mcpLabel}
+                </Link>
+                .
+              </p>
+            </div>
           </div>
           <div className="mt-12">
             <AgentLoopDiagram />

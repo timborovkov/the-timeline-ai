@@ -49,4 +49,37 @@ describe('MarketingProductScreenshot', () => {
     expect(html).not.toContain('aspect-[16/10]');
     expect(html).not.toContain('object-cover');
   });
+
+  it('reserves the frame and shows a loading label behind the image', () => {
+    const html = renderToStaticMarkup(
+      <MarketingProductScreenshot {...BASE} file="32-ask-handoff-dark.png" />,
+    );
+
+    expect(html).toContain('data-screenshot-pending');
+    expect(html).toContain('Loading screenshot');
+    expect(html).toContain('aspect-[16/10]');
+    expect(html).not.toContain('data-screenshot-callouts');
+  });
+
+  it('renders always-visible callouts without hover-only copy', () => {
+    const html = renderToStaticMarkup(
+      <MarketingProductScreenshot
+        {...BASE}
+        file="32-ask-handoff-dark.png"
+        callouts={[
+          { label: 'What changed', detail: 'Current state and the open gap.' },
+          { label: 'Who owns the next step', detail: 'Owner in flight is named.' },
+          { label: 'Link to the source', detail: 'Numbered citations open the evidence.' },
+        ]}
+      />,
+    );
+
+    expect(html).toContain('data-screenshot-callouts');
+    expect(html).toContain('What changed');
+    expect(html).toContain('Who owns the next step');
+    expect(html).toContain('Link to the source');
+    expect(html).toContain('Numbered citations open the evidence.');
+    expect(html).not.toContain('onmouseover');
+    expect(html).not.toContain('group-hover');
+  });
 });
