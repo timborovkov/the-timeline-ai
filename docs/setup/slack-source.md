@@ -1,0 +1,12 @@
+# Slack workspace ingestion
+
+Slack has two first-party modes. [Slack conversations and capture](slack.md) handles direct agent chats, explicit notes and files, bound-channel capture, `/ask`, and `/timeline join`. Native workspace ingestion uses the same Slack app credentials but syncs selected channels as a passive integration with `source='integration'` and `provider='slack'`. Native Slack workspace ingestion shares the signed `/api/slack/events` route with interactive conversations. Native deliveries are persisted before processing and restricted to the verified app, workspace, and selected channel. Existing native connections pause until migration is verified.
+
+1.  Configure the Slack app from [Slack conversations and capture setup](slack.md), including `SLACK_CLIENT_ID`, `SLACK_CLIENT_SECRET`, and `SLACK_SIGNING_SECRET`.
+2.  Add the native ingestion redirect URI: `https://thetimeline.cc/api/integrations/slack/callback`.
+3.  Ensure the bot scopes include the native-ingestion scopes: `channels:read`, `channels:history`, `groups:read`, `groups:history`, `files:read`, `reactions:read`, `users:read`, and `users:read.email`. The Slack setup page also lists the additional scopes/events needed for commands, DMs, reactions, and app mentions.
+4.  Connect Slack from the native catalog, share selected channels from `/app/me/connections`, then activate them from `/app/connections/sources`. Every selected public or private channel requires the bot to be present before Slack will expose history. The native picker does not currently preserve Slack's membership flag, so invite the bot even when a public channel appears in the list. The worker reconciles selected channels once daily over a 48-hour recovery window. Subscribe to `message.channels`, `message.groups`, `reaction_added`, and `reaction_removed`, reinstall if permissions changed, then send a test message in a selected channel to activate native capture. OAuth alone does not activate it. History and reply reads use 15-record pages and conservative one-request-per-minute pacing per workspace/app/method. Replies are fetched only for new or changed thread roots. A missed reply edit or reaction can require manual resync even within 48 hours if root metadata is unchanged. Older missed edits or replies also require manual resync, using the same quota controls.
+
+<span id="sentry-native"></span>
+
+Shared prerequisites, health and resync: [integrations](integrations.md).

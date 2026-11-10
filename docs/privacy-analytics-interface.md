@@ -5,10 +5,9 @@
 | Status | Required contract; current source implementation present, production/provider evidence pending |
 | Applies to | Public Timeline routes, authenticated product routes, web/server/worker analytics, consent UX, PostHog, personless surface streams, and Sentry boundaries |
 | Normative parent | [Security, privacy, and trust operating standard](./security-privacy-trust.md) |
-| Legal research | [GDPR, cookies, and consent audit](./research/gdpr-cookie-consent-audit-2026-08-21.md) |
-| Runtime owner | Analytics implementation branch |
+| Legal research | [GDPR, cookies, and consent audit](evidence/gdpr-cookie-consent-audit-2026-08-21.md) |
+| Runtime owner | Shared analytics helpers and web route/consent adapters |
 | Privacy owner | **TBD: product privacy** |
-| Version | 2026-10-24 |
 
 This document is the handoff contract between privacy policy and analytics
 implementation. It defines the required behavior and evidence needed to call
@@ -173,7 +172,7 @@ apply to custom public events, server streams, or private routes. Count only
 pageview total. Automatic pageviews and recording remain prohibited.
 
 Consent format version 2 requires a fresh choice for this expanded metadata;
-version 1 is invalid. The Privacy Policy version is 2026-10-24. Existing legal
+version 1 is invalid. Legal versions are owned by `packages/shared/src/legal-versions.ts`. Existing legal
 acknowledgment and optional analytics consent remain independent.
 
 ## 5. Consent interface
@@ -257,12 +256,12 @@ Streamed traces must be scrubbed with `beforeSendSpan`; `beforeSendTransaction`
 is ignored under Sentry 11's default span-stream lifecycle. It must not receive
 customer content merely because an exception included it.
 
-G-11 in the parent standard remains open independently of browser analytics
+G-11 in the [gap register](security-gaps.md) remains open independently of browser analytics
 acceptance and independently of G-10.
 
 ## 8. Acceptance evidence
 
-The analytics implementation branch must provide repeatable evidence for all of
+The change owner must provide repeatable evidence for all of
 the following before the target moves from **Required** to **Enforced**:
 
 | Scenario | Required observation |
@@ -289,37 +288,11 @@ IP/geolocation handling, person-profile settings, access control, DPA,
 subprocessors/transfers, deletion, and the disabling of autocapture, automatic
 page views/page leave, heatmaps, replay, and unreviewed feature flags.
 
-## 9. Status and ownership handoff
-
-| Item | Current state | Owner |
-| --- | --- | --- |
-| This normative interface | **Required** | Privacy documentation owner |
-| Runtime route split, personless surface streams, consent UX, PostHog initialization, server/worker event path, setup-guide correction, and tests | **Implemented in current source with focused tests.** Release, production, and provider-account evidence remain separate gaps. | Analytics implementation branch |
-| Legacy Convex pageview code, deployment, logs, token URLs, and deletion/rotation review | **Source removal implemented; external deployment/data review remains a gap** | Analytics implementation branch with security owner |
-| PostHog account configuration, contract, retention, transfer, deletion, and production evidence | **Partial.** The 2026-08-26 account review verifies the EU project, IP discard, disabled automatic capture/replay/heatmaps/errors, a pinned Launch dashboard shell, and queued deletion of legacy development data. Pay-as-you-go's documented seven-year retention conflicts with the 90-day target; contracts, deletion completion, dashboard insights, and production canaries remain open. See [`docs/research/posthog-rollout-evidence-2026-08-26.md`](./research/posthog-rollout-evidence-2026-08-26.md). | Product privacy/vendor owner with analytics implementation branch |
-| Sentry account and scrubber evidence | **Gap**, separate from analytics | Reliability owner |
-| Public claims and legal/cookie copy | The implemented source behavior may be described as product design; any claim that it is deployed or provider-enforced, or any unverified retention or anonymity claim, is blocked until production and provider evidence pass | Privacy/legal owner |
-
-The privacy-documentation owner owns this contract and the status language in
-the parent standard. The analytics implementation branch owns runtime code,
-configuration, environment variables, consent components, event registries,
-provider initialization, analytics tests, analytics setup documentation, and
-the evidence bundle. Runtime and documentation changes must continue to land as
-one reviewed contract.
-
-The implementation branch may make behavior more private without coordination.
-It must not broaden routes, identifiers, properties, capture modes, provider
-features, or consent assumptions without privacy review and a same-change
-update to this interface. It must return the acceptance evidence above before
-requesting that G-03 or G-10 be closed or that a target behavior become a public
-claim.
-
-## November 2026 acquisition coverage
+## Acquisition event contract
 
 Public pricing and billing help are explicitly allowlisted public surfaces. Pricing choices use only fixed `choose_free`, `choose_payg`, `choose_team` and `choose_business` CTA values under the existing consent gate. No plan query string, promo code, payment detail, customer identifier or visitor-to-account identity link is collected by this change.
 
-
-## MVP lifecycle coverage (3 November 2026)
+## Lifecycle event contract
 
 The existing pseudonymous server/worker stream now includes `email_verified`,
 `billing_checkout_created` (plan only), `billing_plan_activated` (plan only),
@@ -340,7 +313,7 @@ The optional PAYG suggestion uses a per-user/team local-storage dismissal prefer
 It stays on the device, is not exported to analytics, and does not hide billing
 restrictions or spend-cap warnings. Clearing browser storage resets the preference.
 
-### Managed browser ingestion proxy (2026-11-07)
+### Browser ingestion proxy
 
 Public browser ingestion defaults to `https://m.thetimeline.cc`, the managed proxy
 shown as Live for the EU project in the supplied account screenshot.
@@ -351,5 +324,5 @@ for dashboard links; this does not change the ingestion allowlist. Server/worker
 This routing change preserves all consent, route, payload, and storage controls.
 The screenshot is account configuration evidence, not deployed application or
 end-to-end delivery evidence. Existing retention and contract gaps remain open.
-See the [analytics setup guide](./setup/analytics.html) for build-time migration
+See the [analytics setup guide](setup/analytics.md) for build-time migration
 and deployment verification.

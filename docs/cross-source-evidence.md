@@ -4,7 +4,6 @@
 
 **Audience:** Product, engineering, design, and website copy
 
-**Last updated:** 2026-08-17
 
 Architecture, signal class, hubs, the proposal engine, and when a later PR
 becomes a `done` proposal live in

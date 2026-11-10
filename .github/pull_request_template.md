@@ -20,8 +20,8 @@ after checking each category.
 
 - [ ] A maintainer agreed to this contribution and scope before substantial work.
 - [ ] I used `bun` and followed `AGENTS.md`.
-- [ ] I added focused tests and updated affected documentation.
-- [ ] `bun run validate` passes.
-- [ ] `bun run doctor` reports a score of 100.
+- [ ] I ran the checks appropriate to this change under `AGENTS.md` and reported results.
+- [ ] I updated the owning documentation and removed completed roadmap work.
+- [ ] Required GitHub checks will pass before merge.
 - [ ] I included no customer content, personal data, credentials, tokens, private logs, sensitive URLs, or undisclosed vulnerabilities.
 - [ ] I understand this repository currently has no general software license or contribution terms, and this pull request does not create either.

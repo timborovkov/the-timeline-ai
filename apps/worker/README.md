@@ -1,142 +1,17 @@
 # @timeline/worker
 
-BullMQ workers for the async processing pipeline: durable direct conversation
-agents, email-inbound, transcribe, extract, embed, document-extract (also as a dedicated
-`WORKER_MODE=document-extract` / Daytona sandbox service — ADR 0013), meeting-finalize,
-task-category classification, overdue-scan, integrations, maintenance, and
-exports. One Bun entry point starts the queue workers from the same codebase.
+BullMQ consumers and background processing. The web service accepts requests; workers perform durable, retryable capture, extraction, indexing and delivery.
 
-## Why it exists
+## Running
 
-Long-running, retry-prone work (audio transcription, LLM extraction, vector embedding) belongs off the request path. Railway runs the worker service separately from web so backlogs do not block requests.
+Follow [local setup](../../docs/setup/local.md). Root `bun run dev` starts the ordinary worker with the web app. Dedicated extraction uses `WORKER_MODE=document-extract` and the checked-in extraction Railway configuration; it must receive only the credentials required by that mode.
 
-The `conversation-agent` worker also keeps Telegram/Slack webhook lifetimes
-short. It runs the shared tool-using agent once per durable turn, applies the
-external profile through a no-tool final-answer pass, persists the answer before
-external delivery, and retries delivery from cache. Each job carries the
-turn UUID plus its team/user scope, and the worker claims it only through that
-`withTeam` conversation scope. Its 180-second deadline includes progress
-startup, history loading, and model execution; retained failed queue jobs can
-be replaced for cached or still-queued recovery without repeating a paid
-answer. Set `TELEGRAM_BOT_TOKEN` on the worker for Telegram typing and replies;
-Slack tokens are decrypted from installed workspace records with the same
-`SECRETS_ENCRYPTION_KEY` configured on web.
+## Ownership
 
-The worker resolves presentation from the current delivery surface. Only
-literal `web` uses the rich cited profile; Telegram, Slack, and every future
-conversation provider default to compact plain text with internal Timeline
-references removed. The 900-token generation ceiling applies only to the
-no-tool final-answer pass, leaving tool-call arguments uncapped. New delivery
-adapters inherit that policy through the shared conversation runtime and must
-not add provider-specific answer prompts or citation sanitizers.
+Queue registrations and worker startup/shutdown live in source, not in a duplicated prose inventory. Preserve startup admission, idempotent job identity, durable retries and cleanup. Drain consumers before closing producers or Redis roles. Workspace operations use `withTeam`; provider adapters must not persist through unscoped connections.
 
-The `email-inbound` worker retrieves Resend email content and attachments from ID-only
-jobs accepted by the signed web endpoint. It runs at concurrency two with eight
-attempts, exponential backoff starting at 30 seconds, and provider Retry-After
-handling. Failed global ingestion jobs stay operator-visible rather than appearing
-in team job screens. See [email setup and replay](../../docs/setup/resend.html) for
-configuration, retention, and `bun run email:replay -- <received-email-uuid>`.
+[Domain ownership](../../docs/architecture/ownership.md) maps transaction and lifecycle boundaries. [Extraction operations](../../docs/runbooks/document-extract.md) owns sandbox snapshots. [Job recovery](../../docs/runbooks/job-recovery.md) owns reconciliation. [Integration setup](../../docs/setup/integrations.md) owns provider configuration.
 
-## How to use
+## Verification
 
-From the repo root:
-
-```bash
-bun run --filter @timeline/worker dev          # all workers, watch mode
-bun run --filter @timeline/worker dev:extract  # document-extract only (WORKER_MODE=document-extract)
-bun run --filter @timeline/worker build
-bun run --filter @timeline/worker start:extract
-bun run --filter @timeline/worker create-document-extract-snapshot  # Daytona snapshot ensure (content-hash; --force to rebuild)
-bun run --filter @timeline/worker reextract -- --team=<teamId>
-bun run --filter @timeline/worker reembed   -- --team=<teamId> --target-collection=events_v2
-bun run --filter @timeline/worker qdrant-migrate-collection -- --source-collection=events --target-collection=events_ondisk --create-target --copy --verify --writers-paused --all-teams
-bun run --filter @timeline/worker resuggest -- --team=<teamId> [--since=2026-06-01] [--until=2026-06-04] [--source=all|telegram|slack] [--limit=N] [--all] [--dry-run]
-bun run --filter @timeline/worker dedupe-approvals -- --team=<teamId> [--limit=N] [--apply]
-bun run --filter @timeline/worker dedupe-calendar-events -- --team=<teamId> [--limit=N] [--from=2026-06-01] [--to=2026-07-01] [--apply] [--no-ai]
-bun run --filter @timeline/worker redocument-extract -- --team=<teamId> [--status=failed,pending] [--force]
-bun run --filter @timeline/worker redocument-embed   -- --team=<teamId> [--target-collection=docs_v2]
-TIMELINE_ENV_FILE=/path/to/.env bun run --filter @timeline/worker task-category-backfill -- --team-id=<teamId> --limit=500 [--enqueue --max-cost-usd=0.10]
-```
-
-`qdrant-migrate-collection` copies an existing collection onto a new on-disk + quantized
-collection without re-embedding. Pause embed writers first; live `--copy` requires
-`--writers-paused`, re-syncs a second pass, and copies per `team_id` (`--all-teams` or `--team`).
-`--all-teams` verify unions source and target tenants; identity compares the canonical full
-payload. Live `--measure` indexes both collections before RAM snapshots; `--dry-run --measure`
-does not PATCH thresholds. Isolated remote clusters require `ALLOW_QDRANT_MIGRATE_REMOTE`.
-Production instead requires `--production --copy --verify --writers-paused --all-teams` and
-`ALLOW_QDRANT_MIGRATE_PRODUCTION=I_UNDERSTAND_THIS_MIGRATES_PRODUCTION_QDRANT` in the operator
-process. It backs up the active source collection before writing the target, checks full vector
-and payload identity plus total point coverage, and forbids the optimizer-changing `--measure`.
-Stop all web/worker vector writers during this maintenance window; retain the source and snapshot.
-After counts and point
-identity match, switch `QDRANT_COLLECTION` and restart web + workers. See
-[docs/setup/openrouter.html](../../docs/setup/openrouter.html#qdrant-storage).
-`resuggest` scans the requested window before applying `--limit`; conversational sources recover
-the latest anchor per conversation, and limited runs keep the latest candidate anchors.
-The suggestion worker normalizes lifecycle status aliases into the target artifact vocabulary
-(`in progress` → `doing` for tasks/follow-ups, but `active` for projects), proposes
-cross-artifact lifecycle updates only when evidence resolves to one artifact, and supersedes stale
-pending lifecycle approvals while preserving unrelated approval items in the same bundle.
-Cross-source proposal evidence is controlled by
-`CROSS_SOURCE_EVIDENCE_MODE=off|shadow|enforced` and defaults to `off`. Shadow
-mode records content-free pack metrics without changing the prompt; enforced
-mode requires exact per-item raw-event citations for generic ingest webhook
-proposals. Conversation reviews and other event-local adapters remain on their
-legacy paths until they pass separate rollout gates. Restart the worker after
-changing the mode.
-`dedupe-approvals` defaults to dry-run and supersedes stale duplicate active or retryable approval
-items only when workspace reconciliation can identify a survivor. Apply mode also copies duplicate
-evidence and records merge history/adjudication metadata on the surviving approval, and can use AI
-adjudication for ambiguous same-day timed calendar proposals; dry-run uses only deterministic
-checks, so it may undercount apply-mode calendar supersessions.
-`dedupe-calendar-events` defaults to dry-run, scans recent and future rows by default, accepts
-`--from`/`--to` for explicit date windows, and queues cancellation approvals rather than deleting
-calendar rows directly. It uses exact same-slot deterministic text evidence plus an AI semantic pass
-across the scan window that can catch translated, differently titled, rescheduled, or
-all-day-normalized versions of the same meeting. Pass `--no-ai` to run only the deterministic
-matcher. Recurring series masters are skipped as deletion candidates because those need manual
-review. When a duplicate cluster is approved, the event with the newest evidence timestamp is kept.
-
-`task-category-backfill` is dry-run by default and reports a bounded candidate count and projected
-cost. Enqueueing requires both `--enqueue` and `--max-cost-usd`; repeated bounded runs resume the
-backfill while skipping archived, manual, pending, and already categorized tasks.
-
-Production starts the combined worker entry point (see [docs/railway.html](../../docs/railway.html)):
-
-```bash
-NODE_ENV=production bun apps/worker/dist/index.js
-```
-
-Document extract (ADR 0013) runs in Daytona sandboxes coordinated by the separate Railway
-`document-extract-orchestrator` service:
-
-```bash
-NODE_ENV=production WORKER_MODE=document-extract bun apps/worker/dist/extract-main.js
-```
-
-Set `DOCUMENT_EXTRACT_ENABLED=false` on the main worker when
-`document-extract-orchestrator` owns the queue. Configure that Railway service to use
-`/apps/worker/railway.extract.json` as its custom config path.
-Locally, prefer `DAYTONA_API_KEY` + `dev:extract`. Only set
-`DOCUMENT_EXTRACT_ALLOW_INPROCESS=true` for offline/dev without Daytona (never in production).
-
-Daytona snapshots are content-hashed (`timeline-document-extract-<hash>` from
-`document-extract-sandbox/**`). Set `DAYTONA_SNAPSHOT=auto` on Railway so the
-deployed code resolves its matching hash. Boot ensure
-(`DAYTONA_SNAPSHOT_ENSURE=true`, default) creates the snapshot once if missing;
-it does not rebuild on every restart. Push CI ensures snapshots but never
-deletes them. Cleanup is a manual workflow dispatch or CLI maintenance action:
-set `DAYTONA_ACTIVE_SNAPSHOTS` to every hash used by a deployed production or
-staging extractor, then run `cleanup-document-extract-snapshots`. It preserves
-that deployed inventory plus the current and two rollback hashes, and skips any
-snapshot referenced by a Daytona sandbox. Details:
-[docs/adr/0013-daytona-document-extract.md](../../docs/adr/0013-daytona-document-extract.md)
-and [document-extract-sandbox/README.md](document-extract-sandbox/README.md).
-
-## Where it fits
-
-- Pipeline overview: [docs/product-brief.html](../../docs/product-brief.html).
-- Re-extract / re-embed / on-disk collection copy: [docs/setup/openrouter.html](../../docs/setup/openrouter.html).
-- Local walkthrough (Phase 3+): [docs/setup/local.html](../../docs/setup/local.html).
-- Meeting bots (Phase 10): [docs/setup/meeting-bots.html](../../docs/setup/meeting-bots.html).
+Use the nearest worker/domain suites under [testing policy](../../docs/testing/README.md). Offline fixtures never use production services. Live provider calls require the documented isolated fixtures and evidence. Deployment configuration is in [Railway](../../docs/railway.md).
