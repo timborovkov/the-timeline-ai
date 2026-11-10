@@ -97,17 +97,17 @@ Every connect, sync start, sync finish, sync error, and replay writes a row in `
 
 ## Troubleshooting
 
-Need to verify live provider credentials without leaking secrets  
+### Need to verify live provider credentials without leaking secrets
 Run `bun run canary:integrations -- --env-file=/path/to/.env`. The canary prints only `OK`, `WARN`, or `SKIP` rows for OpenRouter, GitHub App auth, Sentry API access, Resend API access, native OAuth authorize endpoints, and native webhook/signing secrets, followed by secret-safe next steps for any non-OK row. Use `bun run canary:integrations:strict -- --env-file=/path/to/.env` when every row must be `OK`. Configured GitHub, Google Drive, Linear, Monday.com, Slack, and Sentry OAuth rows require both client id and client secret env vars to be present, then build the provider authorize URL and make a secret-free request to the provider, treating provider-side non-5xx responses as proof that the app registration is reachable. The Sentry API row uses `SENTRY_AUTH_TOKEN`, `SENTRY_ORG`, and `SENTRY_PROJECT` and expects the token to have project read access; the Sentry webhook-signature row uses `SENTRY_INTEGRATION_CLIENT_SECRET`. The Resend API row uses `RESEND_API_KEY` for a read-only received-email lookup; the inbound webhook row checks `RESEND_WEBHOOK_SECRET`. An optional `RESEND_INBOUND_CANARY_EMAIL_ID` identifies an existing synthetic received email. With `RESEND_INBOUND_CANARY_ALLOWED_ORIGIN` matching the app origin, the canary sends a signed replay to `/api/email/inbound` and verifies a captured event. It may find an existing event and does not prove new SMTP delivery.
 
-Need to exercise the Monday board contract against a dedicated canary board  
+### Need to exercise the Monday board contract against a dedicated canary board
 Set `MONDAY_CANARY_ACCESS_TOKEN` and `MONDAY_CANARY_BOARD_ID`, then run the normal integration canary command. The read-only check verifies that the target is a real board and that all-depth item discovery is accepted. To also create and immediately delete a webhook, set `MONDAY_CANARY_PROVISION_WEBHOOK=1`; this additionally requires `AUTH_URL` and `MONDAY_WEBHOOK_SECRET`. Never point the canary at a production customer board or a classic helper board.
 
-Webhook returns `bad_signature`  
+### Webhook returns `bad_signature`
 Check the secret env var matches what the provider's webhook UI shows. The signing algorithm is HMAC-SHA256 over the raw body — make sure the provider hasn't re-serialised the JSON in transit.
 
-Connect button stays disabled  
+### Connect button stays disabled
 The provider's OAuth client env pair is missing or empty. Set both `CLIENT_ID` and `CLIENT_SECRET` and restart.
 
-Sync runs but no timeline events  
+### Sync runs but no timeline events
 The agent's dedup_key partial unique index makes replay a no-op. Use `--from-zero` on the resync script to wipe the cursor and re-walk from provider epoch.
