@@ -1983,6 +1983,9 @@
   "packages/shared/src/integrations/google-drive-oauth-revoke.test.ts": {
     "group": "unit"
   },
+  "packages/shared/src/integrations/google-drive-project-signals.test.ts": {
+    "group": "unit"
+  },
   "packages/shared/src/integrations/google-drive-scope.test.ts": {
     "group": "unit"
   },

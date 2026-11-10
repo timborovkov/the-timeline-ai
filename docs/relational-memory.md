@@ -272,7 +272,7 @@ Do not treat an unlabeled legacy Drive `file.changed` ping as equal to a judged 
 Unstructured captured work (a CRM call log) may still extract. Structured
 captured work (PR merged, Linear state) must not. Pulses never extract.
 
-**Shipped:** skip extract/suggestion LLM by envelope `signalClass` ([ADR 0016](./adr/0016-ingest-signal-class-lives-on-the-envelope.md)). GitHub PRs are `captured_work`; GitHub CI is `pulse`; review comments and Sentry incidents are `finding`. Drive v1 judged captures stamp `communication`; unlabeled legacy Drive `file.changed` rows still skip extract as pulses. Document lifecycle rows skip event extract/suggest. A legacy provider fallback keeps already-ingested GitHub/Linear/Monday/Sentry rows skipping extract.
+**Shipped:** skip extract/suggestion LLM by envelope `signalClass` ([ADR 0016](./adr/0016-ingest-signal-class-lives-on-the-envelope.md)). GitHub PRs are `captured_work`; GitHub CI is `pulse`; review comments and Sentry incidents are `finding`. Drive v1 judged captures stamp `communication`; a rejected relevance verdict is overridden for unambiguous paired changes to explicit project fields (owner/assignee, status, deadline/due date/launch date, budget/approved budget) when their values are not cosmetic edits; unlabeled legacy Drive `file.changed` rows still skip extract as pulses. Document lifecycle rows skip event extract/suggest. A legacy provider fallback keeps already-ingested GitHub/Linear/Monday/Sentry rows skipping extract.
 **Target:** adapters keep stamping `signalClass` at emit time; `relatedExternalObjectId` lets pulses attach to a parent PR/SHA without originating.
 
 ```mermaid

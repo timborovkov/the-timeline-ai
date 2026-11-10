@@ -24,6 +24,7 @@ import {
   type DriveSyncContext,
 } from '#src/integrations/google-drive-context.js';
 import {
+  DRIVE_SNAPSHOT_MAX_CHARS,
   buildDriveSnapshotLocate,
   diffDriveSnapshots,
   driveDiffHasEvidence,
@@ -45,6 +46,7 @@ import {
   driveObjectLinkHintsEqual,
   driveSnapshotAncestryFromMembership,
 } from '#src/integrations/google-drive-link-policy.js';
+import { changedDriveProjectFields } from '#src/integrations/google-drive-project-signals.js';
 import { driveFeedContinuation, planDriveSync } from '#src/integrations/google-drive-scheduling.js';
 import {
   DRIVE_FILE_KIND,
@@ -1561,6 +1563,27 @@ async function processDriveFile(
       hunks: diff.hunks,
       strongSignals,
     });
+  }
+
+  if (!judge.matters || judge.reason === 'noise') {
+    const hasFullPreviousText = previousLocate
+      ? previousFull.length === previousLocate.length
+      : previousFull.length < DRIVE_SNAPSHOT_MAX_CHARS;
+    const changedFields = hasFullPreviousText
+      ? changedDriveProjectFields(previousFull, fullText)
+      : [];
+    if (changedFields.length > 0) {
+      await ctx.recordAudit('drive_change_noise_overridden', {
+        file_id: fileId,
+        reason: judge.reason,
+        changed_fields: changedFields,
+      });
+      judge = {
+        matters: true,
+        reason: 'crm_update',
+        summary: `Project fields changed: ${changedFields.join(', ')}.`,
+      };
+    }
   }
 
   const packed = packDriveEvidence({
