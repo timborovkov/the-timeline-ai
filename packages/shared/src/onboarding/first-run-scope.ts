@@ -262,14 +262,24 @@ export function createFirstRunHandlers({ db, teamId, userId, ensureMember }: Fir
         scanFailureReason: null,
       });
     } else {
+      const replacingCapture =
+        current.starterPath !== path ||
+        (path === 'document' &&
+          extras.documentId !== undefined &&
+          extras.documentId !== current.captureDocumentId) ||
+        (path === 'website' &&
+          extras.websiteUrl !== undefined &&
+          extras.websiteUrl !== current.websiteUrl);
       await touch({
         phase,
         starterPath: path,
         starterSelectedAt: now,
         websiteUrl: extras.websiteUrl ?? null,
         websiteHost: extras.websiteHost ?? null,
-        captureDocumentId: extras.documentId ?? current.captureDocumentId,
-        captureEventId: path === 'skip' ? null : current.captureEventId,
+        captureDocumentId:
+          path === 'document' ? (extras.documentId ?? current.captureDocumentId) : null,
+        captureEventId: replacingCapture || path === 'skip' ? null : current.captureEventId,
+        firstCaptureLandedAt: replacingCapture ? null : current.firstCaptureLandedAt,
         scanFailureReason: null,
       });
     }

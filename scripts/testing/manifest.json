@@ -320,6 +320,9 @@
   "apps/web/src/app/app/chat/loading.test.tsx": {
     "group": "unit"
   },
+  "apps/web/src/app/app/chat/page.test.tsx": {
+    "group": "unit"
+  },
   "apps/web/src/app/app/chat/route-states.test.tsx": {
     "group": "dom"
   },

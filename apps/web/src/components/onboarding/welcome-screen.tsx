@@ -58,6 +58,7 @@ export function WelcomeScreen({
           return (
             <button
               key={option.id}
+              aria-pressed={selected}
               type="button"
               onClick={() => {
                 setWorkStyle(selected ? null : option.id);

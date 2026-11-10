@@ -1,8 +1,10 @@
 import { entities, type Db } from '@timeline/db';
+import { parseChatContextTrail, type ChatContextRef } from '@timeline/shared/chat-context';
 import {
   TRY_ASKING_PROMPTS,
   guidedAskEmptyHint,
   prefilledAskQuestion,
+  type FirstRunSource,
 } from '@timeline/shared/onboarding';
 import { pageWindow } from '@timeline/shared/pagination';
 import { withTeam } from '@timeline/shared/team-scope';
@@ -10,7 +12,6 @@ import { type UIMessage } from 'ai';
 import { and, eq, inArray } from 'drizzle-orm';
 import { redirect } from 'next/navigation';
 
-import type { ChatContextRef } from '@timeline/shared/chat-context';
 import type { Metadata } from 'next';
 
 import { AskHeader } from '@/components/chat/ask-header';
@@ -186,24 +187,8 @@ async function loadChatPage({ searchParams }: { searchParams: Promise<{ session?
       : null,
     updatedAt: chatSession.updatedAt.toISOString(),
   }));
-  const firstRun = await scope.onboarding.getFirstRun().catch(() => null);
-  if (firstRun && (firstRun.phase === 'record' || firstRun.phase === 'ask')) {
-    if (firstRun.phase !== 'ask') {
-      await scope.onboarding.setFirstRunPhase('ask');
-    }
-  }
-  const guidedAsk =
-    firstRun &&
-    (firstRun.phase === 'record' || firstRun.phase === 'ask' || firstRun.phase === 'approve')
-      ? {
-          path: firstRun.starterPath,
-          question: prefilledAskQuestion({
-            path: firstRun.starterPath,
-            workStyle: firstRun.workStyle,
-            recordTitle: null,
-          }),
-        }
-      : null;
+  const guidedAsk = activeSessionId ? null : await loadGuidedAsk(scope);
+  if (guidedAsk) contextTrail = guidedAsk.contextTrail;
 
   const listedActive = sessionEntries.find((entry) => entry.id === activeSessionId);
   const activeTitle = listedActive
@@ -228,5 +213,40 @@ async function loadChatPage({ searchParams }: { searchParams: Promise<{ session?
     pinnedEntityName,
     contextTrail,
     guidedAsk,
+  };
+}
+
+function starterContextTrail(sources: FirstRunSource[]): ChatContextRef[] {
+  const refs = sources.flatMap<ChatContextRef>((source) => {
+    if (!source.href) return [];
+    const documentId = /^\/app\/documents\/([^/?#]+)$/.exec(source.href)?.[1];
+    if (documentId) {
+      return [{ kind: 'document', documentId, href: source.href, label: source.title }];
+    }
+    const timelineEventId = /^\/app\/timeline\?event=([^&#]+)$/.exec(source.href)?.[1];
+    return timelineEventId
+      ? [{ kind: 'timeline-event', timelineEventId, href: source.href, label: source.title }]
+      : [];
+  });
+  return parseChatContextTrail(refs);
+}
+
+async function loadGuidedAsk(scope: ReturnType<typeof withTeam>) {
+  const firstRun = await scope.onboarding.getFirstRun().catch(() => null);
+  if (!firstRun || !['record', 'ask', 'approve'].includes(firstRun.phase)) return null;
+  // The record reader filters sources by item visibility; persisted capture IDs alone
+  // are not authorization to attach a document or event to chat.
+  const record = await scope.onboarding.getFirstRunRecord();
+  const contextTrail = starterContextTrail(record?.sources ?? []);
+  if (contextTrail.length === 0) return null;
+  if (firstRun.phase === 'record') await scope.onboarding.setFirstRunPhase('ask');
+  return {
+    path: firstRun.starterPath,
+    question: prefilledAskQuestion({
+      path: firstRun.starterPath,
+      workStyle: firstRun.workStyle,
+      recordTitle: record?.recordTitle,
+    }),
+    contextTrail,
   };
 }

@@ -6,6 +6,8 @@ import { beforeEach, describe, it } from 'bun:test';
 
 const fakes = vi.hoisted(() => ({
   auth: vi.fn(),
+  getFirstRun: vi.fn(),
+  getFirstRunRecord: vi.fn(),
   getApprovalItemCounts: vi.fn(),
   getCalendarSettings: vi.fn(),
   listSuggestions: vi.fn(),
@@ -24,7 +26,8 @@ await vi.mock(
         withCalendarResolutionHints: fakes.withCalendarResolutionHints,
       },
       onboarding: {
-        getFirstRun: () => Promise.resolve(null),
+        getFirstRun: fakes.getFirstRun,
+        getFirstRunRecord: fakes.getFirstRunRecord,
         setFirstRunPhase: () => Promise.resolve(null),
       },
     }),
@@ -71,6 +74,7 @@ const { default: ApprovalsPage } = await import('./page.js');
 
 beforeEach(() => {
   vi.clearAllMocks();
+  fakes.getFirstRun.mockResolvedValue(null);
   fakes.auth.mockResolvedValue({ user: { id: 'user-1' } });
   fakes.resolveActiveTeam.mockResolvedValue({
     active: { teamId: 'team-1', teamName: 'AuditAI' },
@@ -211,4 +215,14 @@ describe('ApprovalsPage', () => {
 
     expect(html).toContain('No failed approvals');
   });
+});
+
+it('scopes guided approval rows and counts to the visible starter capture', async () => {
+  fakes.getFirstRun.mockResolvedValue({ phase: 'approve' });
+  fakes.getFirstRunRecord.mockResolvedValue({ suggestions: [{ id: 'starter-item' }] });
+  await ApprovalsPage({ searchParams: Promise.resolve({}) });
+  expect(fakes.listSuggestions).toHaveBeenCalledWith(
+    expect.objectContaining({ itemIds: ['starter-item'] }),
+  );
+  expect(fakes.getApprovalItemCounts).toHaveBeenCalledWith({ itemIds: ['starter-item'] });
 });
