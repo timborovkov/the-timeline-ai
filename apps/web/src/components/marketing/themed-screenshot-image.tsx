@@ -8,7 +8,7 @@ import { PRODUCT_SCREENSHOT_DIR } from '@/components/marketing/copy';
 import { marketingScreenshotVariants } from '@/components/marketing/screenshot-slot';
 import { cn } from '@/lib/utils';
 
-const subscribe = () => () => {};
+const subscribe = () => () => undefined;
 const clientSnapshot = () => true;
 const serverSnapshot = () => false;
 

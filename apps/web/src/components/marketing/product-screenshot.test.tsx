@@ -2,7 +2,7 @@ import { expect, vi } from '@timeline/test-support';
 import { afterEach, describe, it } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 
-const theme = vi.hoisted(() => ({ resolvedTheme: 'dark' as string | undefined }));
+const theme: { resolvedTheme: string | undefined } = vi.hoisted(() => ({ resolvedTheme: 'dark' }));
 await vi.mock(
   import.meta.resolve('next-themes'),
   () => ({ useTheme: () => theme }),

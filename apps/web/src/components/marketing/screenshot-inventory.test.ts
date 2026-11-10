@@ -1,13 +1,12 @@
 import { expect } from '@timeline/test-support';
 import { describe, it } from 'bun:test';
 
-import { marketingScreenshotVariants } from '@/components/marketing/screenshot-slot';
-
 import {
   listMarketingScreenshotReferences,
   listMissingMarketingScreenshots,
   marketingScreenshotFileExists,
 } from '@/components/marketing/screenshot-inventory';
+import { marketingScreenshotVariants } from '@/components/marketing/screenshot-slot';
 
 describe('marketing screenshot inventory', () => {
   it('requires every public marketing screenshot reference to exist on disk', () => {
