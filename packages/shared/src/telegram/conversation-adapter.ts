@@ -69,9 +69,12 @@ export function createTelegramWorkerDeliveryAdapter(input: {
   token: string;
   externalConversationKey: string;
   externalMessageId: string;
+  sendingTeamId?: string;
 }): ConversationDeliveryAdapter {
   return createTelegramConversationDeliveryAdapter({
-    api: new HttpTelegramApi(input.token, 10_000, false),
+    api: new HttpTelegramApi(input.token, 10_000, false, {
+      ...(input.sendingTeamId ? { sendingTeamId: input.sendingTeamId } : {}),
+    }),
     externalConversationKey: input.externalConversationKey,
     externalMessageId: input.externalMessageId,
   });
