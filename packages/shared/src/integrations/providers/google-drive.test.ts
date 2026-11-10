@@ -2659,6 +2659,7 @@ describe('googleDriveProvider', () => {
       loadLatestDriveSnapshot: vi.fn().mockResolvedValue({
         contentHash: hashDrivePayload(previousFull),
         snapshotText: previousFull,
+        snapshotLocate: buildDriveSnapshotLocate(previousFull),
         commentsHash: driveCommentsHash([]),
         permissionsHash: drivePermissionsHash([]),
         mimeType: 'application/vnd.google-apps.document',

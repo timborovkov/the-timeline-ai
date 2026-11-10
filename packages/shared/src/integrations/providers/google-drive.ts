@@ -1,22 +1,6 @@
 import { createHmac, randomUUID } from 'node:crypto';
 
 import { getEnv } from '#src/env.js';
-import { providerFetch } from '#src/integrations/request.js';
-import { attachSyncContinuation, isProviderRateLimitError } from '#src/integrations/types.js';
-import { childLogger } from '#src/logger.js';
-
-import type { DriveChangeJudge } from '#src/integrations/google-drive-judge.js';
-import type {
-  IntegrationEvent,
-  IntegrationProvider,
-  IntegrationRow,
-  OAuthCallbackInput,
-  OAuthStartInput,
-  ProviderResource,
-  SyncResult,
-  WebhookHandleResult,
-} from '#src/integrations/types.js';
-
 import {
   compactDrivePermissionGrants,
   driveDebouncePlan,
@@ -40,6 +24,7 @@ import {
   type DriveSyncContext,
 } from '#src/integrations/google-drive-context.js';
 import {
+  DRIVE_SNAPSHOT_MAX_CHARS,
   buildDriveSnapshotLocate,
   diffDriveSnapshots,
   driveDiffHasEvidence,
@@ -81,8 +66,23 @@ import {
   formatDriveSpreadsheetWorkbook,
   quoteSheetsA1SheetName,
 } from '#src/integrations/google-drive-spreadsheet.js';
+import { providerFetch } from '#src/integrations/request.js';
 import { defineResourceAccess } from '#src/integrations/resource-access.js';
 import { exactTargetSelections } from '#src/integrations/selection-policy.js';
+import { attachSyncContinuation, isProviderRateLimitError } from '#src/integrations/types.js';
+import { childLogger } from '#src/logger.js';
+
+import type { DriveChangeJudge } from '#src/integrations/google-drive-judge.js';
+import type {
+  IntegrationEvent,
+  IntegrationProvider,
+  IntegrationRow,
+  OAuthCallbackInput,
+  OAuthStartInput,
+  ProviderResource,
+  SyncResult,
+  WebhookHandleResult,
+} from '#src/integrations/types.js';
 
 const fetch = providerFetch('google_drive');
 
@@ -1566,7 +1566,12 @@ async function processDriveFile(
   }
 
   if (!judge.matters || judge.reason === 'noise') {
-    const changedFields = changedDriveProjectFields(diff.hunks);
+    const hasFullPreviousText = previousLocate
+      ? previousFull.length === previousLocate.length
+      : previousFull.length < DRIVE_SNAPSHOT_MAX_CHARS;
+    const changedFields = hasFullPreviousText
+      ? changedDriveProjectFields(previousFull, fullText)
+      : [];
     if (changedFields.length > 0) {
       await ctx.recordAudit('drive_change_noise_overridden', {
         file_id: fileId,
