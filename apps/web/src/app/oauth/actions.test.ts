@@ -19,12 +19,16 @@ await vi.mock(
   import.meta.resolve('@timeline/shared/mcp-server'),
   () => {
     class McpOAuthError extends Error {
+      readonly code: string;
+      readonly trustedAuthorizationRedirect: { redirectUri: string; state?: string } | undefined;
       constructor(
-        readonly code: string,
+        code: string,
         message: string,
-        readonly trustedAuthorizationRedirect?: { redirectUri: string; state?: string },
+        trustedAuthorizationRedirect?: { redirectUri: string; state?: string },
       ) {
         super(message);
+        this.code = code;
+        this.trustedAuthorizationRedirect = trustedAuthorizationRedirect;
       }
     }
     return {

@@ -25,11 +25,12 @@ export {
 const hash = (value: string) => createHash('sha256').update(value).digest('hex');
 const day = 86400000;
 export class ProvisioningError extends Error {
-  constructor(
-    public code: string,
-    public status = 400,
-  ) {
+  code: string;
+  status: number;
+  constructor(code: string, status = 400) {
     super(code);
+    this.code = code;
+    this.status = status;
   }
 }
 export const provisioningGrantInput = z

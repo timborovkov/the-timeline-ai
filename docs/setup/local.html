@@ -345,8 +345,11 @@ docker compose down -v                # nuke local data
         <code>tsc</code> from <code>@typescript/native</code>; ESLint and other tools that import
         the compiler API use the TypeScript 6 compatibility package under the
         <code>typescript</code>
-        package name. The separate production browser smoke job builds the web application. Run
-        broader relevant test commands separately, including
+        package name. Shared <code>compilerOptions</code> in <code>tsconfig.base.json</code> include
+        <code>erasableSyntaxOnly</code> so sources stay type-stripping-safe for Bun. The web
+        <code>lib</code> list no longer includes <code>dom.iterable</code>, which TypeScript 6
+        folded into <code>dom</code>. The separate production browser smoke job builds the web
+        application. Run broader relevant test commands separately, including
         <code>bun run test:eval</code> for agent, retrieval, summary, dashboard chat, or proposal
         changes, and run the production build and bundle hygiene checks manually when changing
         deploy output, bundling, or server/client import boundaries.
