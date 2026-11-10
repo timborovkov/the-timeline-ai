@@ -10,7 +10,7 @@
     <a class="skip" href="#main">Skip to content</a>
     <main id="main">
       <h1>Railway deployment setup</h1>
-      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-11-04</span></div>
+      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-11-10</span></div>
       <p class="tldr">
         Project + environment provisioning for staging and production. For the full service
         architecture see <a href="../railway.html">docs/railway.html</a>.
@@ -257,6 +257,11 @@
         email/password registration and <code>/help/support</code>. OAuth sign-up and signed-in app
         forms do not show CAPTCHA; they use rate limits, permission checks, and product quotas
         instead.
+      </p>
+      <p>
+        First-run website scan stays off unless <code>WEBSITE_SCAN_ENABLED=true</code> and
+        <code>FIRECRAWL_API_KEY</code> are set on the web and worker services. If the flag is on
+        without the key, the chooser keeps Coming soon and the server refuses scans.
       </p>
       <p>
         For personless surface counts and pseudonymous server/worker product analytics, set

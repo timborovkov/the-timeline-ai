@@ -2,10 +2,56 @@ import { expect } from '@timeline/test-support';
 import { vi } from '@timeline/test-support';
 import { describe, it } from 'bun:test';
 
+import {
+  FIRECRAWL_API_ORIGIN,
+  type FirecrawlFetch,
+} from '#src/onboarding/firecrawl-website-scan.js';
 import { processWebsiteScanJob } from '#src/onboarding/website-scan-job.js';
 
 import type { FirstRunState } from '#src/onboarding/first-run.js';
-import type { WebsiteScanFetch } from '#src/onboarding/website-scan.js';
+
+const FIRECRAWL_KEY = 'fc-test';
+const HOME = 'https://studio.example/';
+
+function requestUrl(input: string | URL | Request): string {
+  if (typeof input === 'string') return input;
+  if (input instanceof Request) return input.url;
+  return input.href;
+}
+
+function firecrawlFetch(options: {
+  pages?: { url: string; title: string; markdown: string }[];
+  robotsBlocked?: string[];
+}): FirecrawlFetch {
+  return (input, init) => {
+    const url = requestUrl(input);
+    const method = (init?.method ?? 'GET').toUpperCase();
+    if (url === `${FIRECRAWL_API_ORIGIN}/v2/crawl` && method === 'POST') {
+      return Promise.resolve(Response.json({ id: 'crawl-1' }));
+    }
+    if (url.includes('/v2/crawl/crawl-1/errors')) {
+      return Promise.resolve(
+        Response.json({ errors: [], robotsBlocked: options.robotsBlocked ?? [] }),
+      );
+    }
+    if (url.includes('/v2/crawl/crawl-1')) {
+      return Promise.resolve(
+        Response.json({
+          status: 'completed',
+          data: (options.pages ?? []).map((page) => ({
+            markdown: page.markdown,
+            metadata: { title: page.title, sourceURL: page.url, statusCode: 200 },
+          })),
+        }),
+      );
+    }
+    return Promise.resolve(new Response('not found', { status: 404 }));
+  };
+}
+
+function readableMarkdown(label: string): string {
+  return `${label} ${'work record context '.repeat(8).trim()}`;
+}
 
 const TEAM_ID = '11111111-1111-4111-8111-111111111111';
 const USER_ID = '22222222-2222-4222-8222-222222222222';
@@ -31,23 +77,6 @@ function firstRun(overrides: Partial<FirstRunState> = {}): FirstRunState {
   };
 }
 
-function html(body: string): string {
-  return `<html><head><title>Studio</title></head><body><p>${body} ${'named work '.repeat(10)}</p></body></html>`;
-}
-
-function fetchPages(pages: Record<string, string | number>): WebsiteScanFetch {
-  return (input) => {
-    const url = String(input);
-    const value = pages[url] ?? pages[`${url}/`] ?? 404;
-    if (typeof value === 'number') {
-      return Promise.resolve(new Response('missing', { status: value }));
-    }
-    return Promise.resolve(
-      new Response(value, { status: 200, headers: { 'content-type': 'text/html' } }),
-    );
-  };
-}
-
 describe('website scan job', () => {
   it('writes cited web events through createEvent and never creates objects', async () => {
     const createEvent = vi.fn(() => Promise.resolve({ id: 'event-home' }));
@@ -59,15 +88,15 @@ describe('website scan job', () => {
     await processWebsiteScanJob({
       userId: USER_ID,
       websiteScanEnabled: true,
+      firecrawlApiKey: FIRECRAWL_KEY,
+      firecrawlFetch: firecrawlFetch({
+        pages: [{ url: HOME, title: 'Studio', markdown: readableMarkdown('Design sprints') }],
+      }),
       getFirstRun: () => Promise.resolve(firstRun()),
       createEvent,
       attachCapture,
       markScanFailed,
       enqueueExtract,
-      fetchPage: fetchPages({
-        'https://studio.example/robots.txt': 404,
-        'https://studio.example/': html('Design sprints for B2B teams.'),
-      }),
     });
 
     expect(createEvent).toHaveBeenCalledOnce();
@@ -111,15 +140,13 @@ describe('website scan job', () => {
     await processWebsiteScanJob({
       userId: USER_ID,
       websiteScanEnabled: true,
+      firecrawlApiKey: FIRECRAWL_KEY,
+      firecrawlFetch: firecrawlFetch({ pages: [], robotsBlocked: [HOME] }),
       getFirstRun: () => Promise.resolve(firstRun()),
       createEvent,
       attachCapture,
       markScanFailed,
       enqueueExtract: () => Promise.resolve(undefined),
-      fetchPage: fetchPages({
-        'https://studio.example/robots.txt': 'User-agent: *\nDisallow: /\n',
-        'https://studio.example/': html('Hidden'),
-      }),
     });
 
     expect(markScanFailed).toHaveBeenCalledWith('robots');
@@ -132,6 +159,21 @@ describe('website scan job', () => {
     await processWebsiteScanJob({
       userId: USER_ID,
       websiteScanEnabled: false,
+      firecrawlApiKey: FIRECRAWL_KEY,
+      getFirstRun: () => Promise.resolve(firstRun()),
+      createEvent: () => Promise.resolve({ id: 'x' }),
+      attachCapture: () => Promise.resolve({}),
+      markScanFailed,
+    });
+    expect(markScanFailed).toHaveBeenCalledWith('not_enabled');
+  });
+
+  it('fail-closes when the Firecrawl key is missing', async () => {
+    const markScanFailed = vi.fn(() => Promise.resolve({}));
+    await processWebsiteScanJob({
+      userId: USER_ID,
+      websiteScanEnabled: true,
+      firecrawlApiKey: '',
       getFirstRun: () => Promise.resolve(firstRun()),
       createEvent: () => Promise.resolve({ id: 'x' }),
       attachCapture: () => Promise.resolve({}),
@@ -147,16 +189,16 @@ describe('website scan job', () => {
     await processWebsiteScanJob({
       userId: USER_ID,
       websiteScanEnabled: true,
+      firecrawlApiKey: FIRECRAWL_KEY,
+      firecrawlFetch: firecrawlFetch({
+        pages: [{ url: HOME, title: 'Studio', markdown: readableMarkdown('Design sprints') }],
+      }),
       getFirstRun: () => Promise.resolve(firstRun()),
       createEvent: () => Promise.resolve({ id: 'event-home' }),
       attachCapture,
       markScanFailed: () => Promise.resolve({}),
       enqueueExtract,
       admitEnrichment,
-      fetchPage: fetchPages({
-        'https://studio.example/robots.txt': 404,
-        'https://studio.example/': html('Design sprints for B2B teams.'),
-      }),
     });
     expect(admitEnrichment).toHaveBeenCalledWith('event-home');
     expect(enqueueExtract).not.toHaveBeenCalled();
@@ -173,15 +215,15 @@ describe('website scan job', () => {
       processWebsiteScanJob({
         userId: USER_ID,
         websiteScanEnabled: true,
+        firecrawlApiKey: FIRECRAWL_KEY,
+        firecrawlFetch: firecrawlFetch({
+          pages: [{ url: HOME, title: 'Studio', markdown: readableMarkdown('Design sprints') }],
+        }),
         getFirstRun: () => Promise.resolve(firstRun()),
         createEvent: () => Promise.resolve({ id: 'event-home' }),
         attachCapture,
         markScanFailed: () => Promise.resolve({}),
         enqueueExtract: () => Promise.reject(new Error('redis down')),
-        fetchPage: fetchPages({
-          'https://studio.example/robots.txt': 404,
-          'https://studio.example/': html('Design sprints for B2B teams.'),
-        }),
       }),
     ).rejects.toThrow('redis down');
     expect(attachCapture).not.toHaveBeenCalled();
@@ -194,6 +236,8 @@ describe('website scan job', () => {
     await processWebsiteScanJob({
       userId: USER_ID,
       websiteScanEnabled: true,
+      firecrawlApiKey: FIRECRAWL_KEY,
+      firecrawlFetch: firecrawlFetch({ pages: [], robotsBlocked: [HOME] }),
       getFirstRun: () => {
         calls += 1;
         if (calls === 1) return Promise.resolve(firstRun());
@@ -203,10 +247,6 @@ describe('website scan job', () => {
       attachCapture,
       markScanFailed,
       enqueueExtract: () => Promise.resolve(undefined),
-      fetchPage: fetchPages({
-        'https://studio.example/robots.txt': 'User-agent: *\nDisallow: /\n',
-        'https://studio.example/': html('Hidden'),
-      }),
     });
     expect(markScanFailed).not.toHaveBeenCalled();
     expect(attachCapture).not.toHaveBeenCalled();

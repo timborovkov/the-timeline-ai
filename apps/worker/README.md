@@ -38,10 +38,12 @@ in team job screens. See [email setup and replay](../../docs/setup/resend.html) 
 configuration, retention, and `bun run email:replay -- <received-email-uuid>`.
 
 The `website-scan` worker runs the first-run public website crawl. Jobs carry only
-team and user IDs. The worker loads the stored URL from `team_first_run`, fetches
-through `externalFetch` (robots.txt, same-origin, five-page cap, timeouts, size
-caps), writes cited `source: web` events, and enqueues extract. It never creates
-objects. One scan per team at signup; `WEBSITE_SCAN_ENABLED` defaults off.
+team and user IDs. The worker loads the stored URL from `team_first_run`, asks
+Firecrawl to crawl up to five same-origin public pages (markdown only), writes
+cited `source: web` events, and enqueues extract. An in-house fetcher runs only
+when Firecrawl returns 5xx or times out, behind the same caps. It never creates
+objects. One scan per team at signup; `WEBSITE_SCAN_ENABLED` defaults off and also
+requires `FIRECRAWL_API_KEY`.
 
 ## How to use
 

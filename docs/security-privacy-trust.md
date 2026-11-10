@@ -6,7 +6,7 @@
 | Applies to | Hosted Timeline, public Timeline surfaces, development, support, and vendor operations |
 | Service operator | Nyxone OÜ, Estonian registry code 16172329 |
 | Control owner | **TBD: named security/privacy owner** |
-| Version | 2026-11-09 |
+| Version | 2026-11-10 |
 | Last evidence review | 2026-08-27 |
 | Next scheduled review | **TBD: no later than 2026-11-27** |
 | Evidence memo | [Provider privacy and data-handling research](./research/provider-privacy-audit-2026-08-21.md) |
@@ -100,8 +100,8 @@ The working legal-role model is:
   or delete it.
 - A self-managed operator becomes responsible for its deployment, access,
   backups, providers, retention, security, and notices. Self-management does not
-  automatically remove OpenRouter, Recall.ai, Resend, Daytona, or connected
-  services.
+  automatically remove OpenRouter, Recall.ai, Resend, Daytona, Firecrawl, or
+  connected services.
 
 ## 3. Data classification
 
@@ -571,6 +571,7 @@ sentence.
 | OpenRouter and selected endpoint | AI prompts/inputs, retrieved evidence, outputs, embeddings, media for inference | In hosted production, role-based privacy classification, per-request no-collection/ZDR for required roles, cache disablement, the official API origin, and a key/guardrail/catalog/policy-bound attestation are **Enforced in code**. A self-managed operator owns an alternate compatible endpoint and its controls and cannot reuse hosted assurances. Provider-side assignment/settings still require management-key deployment evidence, and the disclosed voice-transcription retention exception, contract, multilingual evaluation, and live evidence remain **Gap** |
 | Recall.ai | Meeting attendance, media processing, transcript generation, diagnostics | Hosted production requests one-hour media retention, allows only documented HTTPS regional API hosts, pins transcripts to the application callback, closes local transcript acceptance atomically, and reports cancellation success only after provider confirmation; failed confirmations are retried. An explicit `self-managed` mode owns alternate endpoints and retention. Deployed request/account evidence, region, DPA, and deletion-failure handling are **Gap** |
 | Daytona | Ephemeral complex-document extraction and observability | Credential-thin sandbox controls are **Enforced**; region and sensitive-data contract coverage are **Gap** |
+| Firecrawl (SideGuide Technologies, Inc. d/b/a Firecrawl) | First-run public website crawl: the submitted public URL and fetched page content, returned as markdown | Code sends only a SSRF-validated public URL to `https://api.firecrawl.dev/v2/crawl` with markdown-only scrape options, a five-page cap, and no JSON mode. Firecrawl honors robots.txt (ignore is Enterprise-only). Published privacy policy names the Delaware operator and US servers; crawl results remain retrievable for 24 hours. Broader page-content retention, DPA, and Enterprise ZDR are **not claimed**. Account/contract evidence is **Gap**. |
 | Resend | Transactional/support email and inbound email payloads | Domain `in.thetimeline.cc`, `eu-west-1` sending, inbound receiving, `email.received` webhook, and domain-level open/click tracking **Verified** 2026-11-09 from the Resend account. Retention, US storage, DPA, and subprocessors are cited only as Resend's published statements. Signed DPA on file, custom/minimum retention, API key scope, and support access remain **Gap** |
 | PostHog | Fixed-stream personless surface requests, consent-gated allowlisted public-browser events, and pseudonymous minimized server/worker product events | Runtime controls are implemented. The [2026-08-26 account review](./research/posthog-rollout-evidence-2026-08-26.md) verifies the EU project, IP discard, disabled automatic capture/replay/heatmaps/errors, restricted current membership, and a pinned Launch dashboard shell. Pay-as-you-go retention, contracts/transfers, deletion completion, populated insights, and production canaries remain **Gap**. |
 | Sentry | Error monitoring and source-map processing | PII defaults and scrubbers are **Enforced**; project region, retention, AI options and sample audit are **Gap** |
@@ -647,6 +648,7 @@ a soft-delete flag alone is not a complete deletion claim.
 | OpenRouter voice transcription | Current `openai/gpt-4o-transcribe` quality exception is non-training but prompt-retaining; OpenAI documents default API abuse-monitoring retention up to 30 days | Name the exception and retention; never call hosted AI universally ZDR |
 | Recall.ai | Timeline-hosted mode requests one-hour meeting-media retention, which Recall documents as starting at recording `done`; an explicit self-managed deployment can choose another supported duration. Operational logs can remain seven days and meeting URLs fourteen days after termination; Timeline transcript persists | Never say call media is deleted or provider deletion is verified until deployed evidence exists |
 | Daytona | Ephemeral sandbox state is discarded/deleted; observability data may remain three days | Never equate ephemeral compute with zero provider retention |
+| Firecrawl | Firecrawl documents US processing and a 24-hour crawl-result API window. Privacy policy PII retention is until written deletion, with no recurring deletion schedule. Enterprise zero-data-retention is not enabled. | Cite the published 24-hour API window and US location. Say broader page-content retention is to be confirmed. Never claim zero-data retention. |
 | Resend | Domain `in.thetimeline.cc` sends from `eu-west-1`; inbound receiving enabled; open/click tracking currently enabled at domain level (no per-send flags in code). Resend states US storage regardless of sending region and 30-day email/log retention on Free/Pro/Scale while active, deletion within 90 days after termination. Timeline deletion does not itself delete Resend copies. | Cite Resend's published statements. Do not claim Timeline's plan name, a signed DPA on file, custom retention, API key scope, or that tracking is off |
 | PostHog | Current source enforces zero browser capture/identifier before valid consent or after rejection, public-route-only browser analytics after opt-in, fixed personless surface streams, and explicit minimized server/worker events. The EU account review verifies disabled automatic capture and IP discard. Pay-as-you-go documents seven-year product-event retention, which exceeds the 90-day target; production and deletion completion remain unverified. | Public copy may describe the source-enforced product design and the dated account review. Do not claim that it is deployed, that retention is 90 days, that queued deletion is complete, or that pseudonymous analytics is anonymous until G-10 closes. |
 | Sentry | Account retention is unverified | Describe minimized error monitoring, not a retention period |
@@ -853,13 +855,14 @@ item requires dated evidence stored in the internal control file.
 | G-10 | **PARTIAL: runtime + account review** | **TBD: analytics + product privacy** | The [2026-08-26 account review](./research/posthog-rollout-evidence-2026-08-26.md) verifies the EU project, IP discard, disabled automatic capture/replay/heatmaps/errors, restricted current membership, a pinned Launch dashboard shell, and queued legacy-data deletion. Prove the remaining [privacy/analytics interface](./privacy-analytics-interface.md): production fixed-stream and pseudonymous payloads, consent/private-route browser boundaries, populated insights, deletion completion, retention decision, DPA/transfers, access controls, and legal basis. | Any deployed analytics claim, 90-day retention claim, completed-deletion claim, or provider assurance beyond the dated evidence |
 | G-11 | **OPEN** | **TBD: reliability** | Verify Sentry region, retention, Seer/AI settings, DPA, access, sampling, and representative scrubbed event payload | Error-monitoring retention and AI claims |
 | G-12 | **OPEN / blocker** | **TBD: security owner** | Inventory named production access, enforce MFA/least privilege, document break-glass, retain access logs, and run quarterly review | “Rare, approved, and auditable” staff-access claim |
-| G-13 | **OPEN / blocker** | **TBD: privacy + platform** | Define and test deletion across PostgreSQL, RustFS, Qdrant, Redis/queues, backups, exports, analytics, error monitoring, email, Recall, and connected providers | Deletion SLA and complete-erasure claim |
+| G-13 | **OPEN / blocker** | **TBD: privacy + platform** | Define and test deletion across PostgreSQL, RustFS, Qdrant, Redis/queues, backups, exports, analytics, error monitoring, email, Recall, Firecrawl, and connected providers | Deletion SLA and complete-erasure claim |
 | G-14 | **OPEN** | **TBD: privacy + counsel** | Complete record of processing, DPIAs for meetings/communications/documents/AI/analytics, data-subject workflow, transfer assessment, and controller/processor review | Enterprise GDPR readiness claims |
 | G-15 | **OPEN** | **TBD: security owner** | Assign security inbox ownership, incident on-call/escalation, private case system, tabletop exercise, and notification timer matrix | Mature incident-response claim |
 | G-16 | **OPEN** | **TBD: infrastructure** | Self-host documentation, supported deployment boundary, update policy, and commercial support terms after G-01 | Self-host availability and support promises |
 | G-17 | **OPEN** | **TBD: security program** | Define security roadmap, asset/vendor/access reviews, vulnerability scanning, restore/deletion exercises, and evidence archive | SOC 2 / ISO readiness |
 | G-18 | **OPEN** | **TBD: web/privacy** | Self-host Fontshare/jsDelivr assets or add them to the public-site provider inventory | Provider-free/minimal-third-party docs claim |
 | G-19 | **OPEN** | **TBD: legal + platform** | Archive an immutable rendered copy or content digest for each Terms/Privacy version and bind that evidence to acceptance events | Exact-text clickwrap evidence beyond version, timestamp, IP, user agent and Git history |
+| G-20 | **OPEN** | **TBD: privacy/vendor** | Confirm Firecrawl page-content retention beyond the documented 24-hour crawl-result API window, DPA on file, and whether Enterprise ZDR should ever be enabled. Public copy currently says broader retention is to be confirmed and does not claim ZDR. | Firecrawl zero-retention or complete-deletion claims |
 
 ## 18. Change and review process
 
@@ -938,6 +941,10 @@ The authenticated `/api/health/ready` probe uses the existing `CRON_SECRET`, ret
 Public Privacy Policy and Terms now distinguish (a) a member disconnecting a personal provider account/OAuth connection, (b) a workspace admin removing a workspace source, and (c) deletion of already-captured history or documents. The copy follows implemented cleanup paths only and does not promise erasure that disconnect does not perform. Deletion requests are directed to the existing support address and private form; residual backups, logs, legal/billing records, and processor copies are disclosed without an unverified completion SLA.
 
 A 2026-11-09 read-only review of the Resend account (against `main` `e2984c03`) verified domain `in.thetimeline.cc`, `eu-west-1` sending, inbound receiving, the `email.received` webhook, unused marketing objects, and domain-level open/click tracking currently enabled. Public copy replaces the previous unverified-settings caveat with those facts plus Resend's published GDPR/DPA/subprocessor statements. It does not claim a signed DPA on file, custom retention, API key scope, a plan name, or that tracking is off. G-09 remains partial. This is not counsel approval or company-status evidence. Website wording does not publish the legal documents; `LEGAL_PUBLICATION_READY` remains the production interlock.
+
+### Firecrawl first-run website scan (2026-11-10)
+
+Terms and Privacy versions advance to `2026-11-10` to name Firecrawl (SideGuide Technologies, Inc. d/b/a Firecrawl) as the processor that fetches public pages of a website URL submitted during first-run onboarding. Public copy cites Firecrawl's privacy policy and security overview: the public URL and fetched page content, United States processing, and a 24-hour crawl-result API window. Broader page-content retention is stated as to be confirmed. Enterprise zero-data-retention is not enabled and is not claimed. G-20 tracks DPA, broader retention, and any later ZDR decision.
 
 ### Password recovery controls
 

@@ -1,6 +1,10 @@
 import { expect } from '@timeline/test-support';
 import { describe, it } from 'bun:test';
 
+import {
+  FIRECRAWL_API_ORIGIN,
+  type FirecrawlFetch,
+} from '#src/onboarding/firecrawl-website-scan.js';
 import { WEBSITE_SCAN_PAGE_CAP } from '#src/onboarding/first-run.js';
 import {
   discoverSameOriginPages,
@@ -8,6 +12,7 @@ import {
   parseRobotsTxt,
   robotsAllowsPath,
   scanPublicWebsite,
+  scanPublicWebsiteInHouse,
   WEBSITE_SCAN_USER_AGENT,
   type WebsiteScanFetch,
 } from '#src/onboarding/website-scan.js';
@@ -28,6 +33,12 @@ function readable(label: string): string {
 
 function response(body: string, init: ResponseInit = {}): Response {
   return new Response(body, { status: 200, headers: { 'content-type': 'text/html' }, ...init });
+}
+
+function requestUrl(input: string | URL | Request): string {
+  if (typeof input === 'string') return input;
+  if (input instanceof Request) return input.url;
+  return input.href;
 }
 
 function fetchMap(pages: Record<string, Response | Error>): WebsiteScanFetch {
@@ -95,7 +106,7 @@ Disallow: /secret
     for (const slug of extra) {
       pages[`https://studio.example/${slug}`] = response(page(readable(slug)));
     }
-    const result = await scanPublicWebsite(HOME, { fetchPage: fetchMap(pages) });
+    const result = await scanPublicWebsiteInHouse(HOME, { fetchPage: fetchMap(pages) });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.pages).toHaveLength(WEBSITE_SCAN_PAGE_CAP);
@@ -125,7 +136,7 @@ Allow: /private/public
   });
 
   it('does not fetch a path blocked by a wildcard Disallow', async () => {
-    const result = await scanPublicWebsite(HOME, {
+    const result = await scanPublicWebsiteInHouse(HOME, {
       fetchPage: fetchMap({
         'https://studio.example/robots.txt': response('User-agent: *\nDisallow: /private/*\n', {
           headers: { 'content-type': 'text/plain' },
@@ -145,7 +156,7 @@ Allow: /private/public
   });
 
   it('resolves relative links against the final redirected home URL', async () => {
-    const result = await scanPublicWebsite(HOME, {
+    const result = await scanPublicWebsiteInHouse(HOME, {
       fetchPage: fetchMap({
         'https://studio.example/robots.txt': new Response('missing', { status: 404 }),
         [HOME]: new Response(null, {
@@ -168,7 +179,7 @@ Allow: /private/public
   });
 
   it('treats an empty Disallow as allowing the site', async () => {
-    const result = await scanPublicWebsite(HOME, {
+    const result = await scanPublicWebsiteInHouse(HOME, {
       fetchPage: fetchMap({
         'https://studio.example/robots.txt': response('User-agent: *\nDisallow:\n', {
           headers: { 'content-type': 'text/plain' },
@@ -180,7 +191,7 @@ Allow: /private/public
   });
 
   it('does not follow a same-origin redirect into a robots-disallowed path', async () => {
-    const result = await scanPublicWebsite(HOME, {
+    const result = await scanPublicWebsiteInHouse(HOME, {
       fetchPage: fetchMap({
         'https://studio.example/robots.txt': response('User-agent: *\nDisallow: /private\n', {
           headers: { 'content-type': 'text/plain' },
@@ -196,7 +207,7 @@ Allow: /private/public
   });
 
   it('fails closed when robots disallow the site', async () => {
-    const result = await scanPublicWebsite(HOME, {
+    const result = await scanPublicWebsiteInHouse(HOME, {
       fetchPage: fetchMap({
         'https://studio.example/robots.txt': response('User-agent: *\nDisallow: /\n', {
           headers: { 'content-type': 'text/plain' },
@@ -208,7 +219,7 @@ Allow: /private/public
   });
 
   it('fails when the home page has no readable text', async () => {
-    const result = await scanPublicWebsite(HOME, {
+    const result = await scanPublicWebsiteInHouse(HOME, {
       fetchPage: fetchMap({
         'https://studio.example/robots.txt': new Response('missing', { status: 404 }),
         [HOME]: response(html('<div id="app"></div>')),
@@ -218,7 +229,7 @@ Allow: /private/public
   });
 
   it('does not follow a cross-origin redirect from home', async () => {
-    const result = await scanPublicWebsite(HOME, {
+    const result = await scanPublicWebsiteInHouse(HOME, {
       fetchPage: fetchMap({
         'https://studio.example/robots.txt': new Response('missing', { status: 404 }),
         [HOME]: new Response(null, {
@@ -233,7 +244,160 @@ Allow: /private/public
 
   it('rejects local addresses before fetching', async () => {
     const fetchPage = fetchMap({});
-    const result = await scanPublicWebsite('http://127.0.0.1/', { fetchPage });
+    const result = await scanPublicWebsiteInHouse('http://127.0.0.1/', { fetchPage });
     expect(result).toEqual({ ok: false, reason: 'unreachable' });
+  });
+});
+
+const FIRECRAWL_KEY = 'fc-test';
+
+function firecrawlFetch(options: {
+  pages?: { url: string; title: string; markdown: string; statusCode?: number }[];
+  robotsBlocked?: string[];
+  startStatus?: number;
+  crawlStatus?: string;
+  errorBody?: string;
+}): FirecrawlFetch {
+  return (input, init) => {
+    const url = requestUrl(input);
+    const method = (init?.method ?? 'GET').toUpperCase();
+    if (url === `${FIRECRAWL_API_ORIGIN}/v2/crawl` && method === 'POST') {
+      if (options.startStatus && options.startStatus !== 200) {
+        return Promise.resolve(
+          new Response(options.errorBody ?? 'fail', { status: options.startStatus }),
+        );
+      }
+      return Promise.resolve(Response.json({ id: 'crawl-1' }));
+    }
+    if (url.includes('/v2/crawl/crawl-1/errors')) {
+      return Promise.resolve(
+        Response.json({
+          errors: options.errorBody ? [{ url: HOME, error: options.errorBody }] : [],
+          robotsBlocked: options.robotsBlocked ?? [],
+        }),
+      );
+    }
+    if (url.includes('/v2/crawl/crawl-1')) {
+      return Promise.resolve(
+        Response.json({
+          status: options.crawlStatus ?? 'completed',
+          data: (options.pages ?? []).map((page) => ({
+            markdown: page.markdown,
+            metadata: {
+              title: page.title,
+              sourceURL: page.url,
+              statusCode: page.statusCode ?? 200,
+            },
+          })),
+        }),
+      );
+    }
+    return Promise.resolve(new Response('not found', { status: 404 }));
+  };
+}
+
+describe('website scan Firecrawl crawl', () => {
+  it('refuses a scan when the Firecrawl key is missing', async () => {
+    const result = await scanPublicWebsite(HOME, { firecrawlApiKey: '' });
+    expect(result).toEqual({ ok: false, reason: 'not_enabled' });
+  });
+
+  it('rejects local addresses before calling Firecrawl', async () => {
+    let called = false;
+    const result = await scanPublicWebsite('http://127.0.0.1/', {
+      firecrawlApiKey: FIRECRAWL_KEY,
+      firecrawlFetch: () => {
+        called = true;
+        return Promise.resolve(new Response('nope', { status: 500 }));
+      },
+    });
+    expect(result).toEqual({ ok: false, reason: 'unreachable' });
+    expect(called).toBe(false);
+  });
+
+  it('maps Firecrawl markdown pages and caps at five', async () => {
+    const extra = ['about', 'pricing', 'product', 'team', 'blog'];
+    const result = await scanPublicWebsite(HOME, {
+      firecrawlApiKey: FIRECRAWL_KEY,
+      firecrawlFetch: firecrawlFetch({
+        pages: [
+          { url: HOME, title: 'Studio', markdown: readable('Home') },
+          ...extra.map((slug) => ({
+            url: `https://studio.example/${slug}`,
+            title: slug,
+            markdown: readable(slug),
+          })),
+        ],
+      }),
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.pages).toHaveLength(WEBSITE_SCAN_PAGE_CAP);
+    expect(result.pages[0]?.url).toBe(HOME);
+    expect(result.pages.map((item) => item.url)).toEqual([
+      HOME,
+      'https://studio.example/about',
+      'https://studio.example/pricing',
+      'https://studio.example/product',
+      'https://studio.example/team',
+    ]);
+  });
+
+  it('maps robots-blocked home pages to robots', async () => {
+    const result = await scanPublicWebsite(HOME, {
+      firecrawlApiKey: FIRECRAWL_KEY,
+      firecrawlFetch: firecrawlFetch({
+        pages: [],
+        robotsBlocked: [HOME],
+      }),
+    });
+    expect(result).toEqual({ ok: false, reason: 'robots' });
+  });
+
+  it('maps empty markdown to no_readable_text', async () => {
+    const result = await scanPublicWebsite(HOME, {
+      firecrawlApiKey: FIRECRAWL_KEY,
+      firecrawlFetch: firecrawlFetch({
+        pages: [{ url: HOME, title: 'Studio', markdown: 'short' }],
+      }),
+    });
+    expect(result).toEqual({ ok: false, reason: 'no_readable_text' });
+  });
+
+  it('falls back to the in-house fetcher on Firecrawl 5xx', async () => {
+    const result = await scanPublicWebsite(HOME, {
+      firecrawlApiKey: FIRECRAWL_KEY,
+      firecrawlFetch: firecrawlFetch({ startStatus: 503 }),
+      fetchPage: fetchMap({
+        'https://studio.example/robots.txt': new Response('missing', { status: 404 }),
+        [HOME]: response(page(readable('Home'))),
+      }),
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.pages.map((item) => item.url)).toEqual([HOME]);
+  });
+
+  it('does not fall back when Firecrawl reports robots', async () => {
+    const result = await scanPublicWebsite(HOME, {
+      firecrawlApiKey: FIRECRAWL_KEY,
+      firecrawlFetch: firecrawlFetch({ pages: [], robotsBlocked: [HOME] }),
+      fetchPage: fetchMap({
+        'https://studio.example/robots.txt': new Response('missing', { status: 404 }),
+        [HOME]: response(page(readable('Home'))),
+      }),
+    });
+    expect(result).toEqual({ ok: false, reason: 'robots' });
+  });
+
+  it('maps Firecrawl 429 to rate_limited without falling back', async () => {
+    const result = await scanPublicWebsite(HOME, {
+      firecrawlApiKey: FIRECRAWL_KEY,
+      firecrawlFetch: firecrawlFetch({ startStatus: 429, errorBody: 'Rate limit exceeded' }),
+      fetchPage: fetchMap({
+        [HOME]: response(page(readable('Home'))),
+      }),
+    });
+    expect(result).toEqual({ ok: false, reason: 'rate_limited' });
   });
 });

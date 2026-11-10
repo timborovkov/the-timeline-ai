@@ -416,12 +416,16 @@ describe('getEnv', () => {
       GITHUB_APP_CLIENT_ID: '',
       SLACK_CLIENT_ID: '',
       MONDAY_CLIENT_ID: '',
+      FIRECRAWL_API_KEY: '',
+      WEBSITE_SCAN_ENABLED: '',
     });
 
     expect(getEnv().GITHUB_APP_ID).toBeUndefined();
     expect(getEnv().GITHUB_APP_CLIENT_ID).toBeUndefined();
     expect(getEnv().SLACK_CLIENT_ID).toBeUndefined();
     expect(getEnv().MONDAY_CLIENT_ID).toBeUndefined();
+    expect(getEnv().FIRECRAWL_API_KEY).toBeUndefined();
+    expect(getEnv().WEBSITE_SCAN_ENABLED).toBe(false);
   });
 
   it('defaults LangSmith tracing off with an environment-specific project', () => {
@@ -779,6 +783,7 @@ describe('isAllowedDocumentExtractProcessEnvKey', () => {
 
   it('rejects non-extract secrets including unparsed canary/MCP keys', () => {
     expect(isAllowedDocumentExtractProcessEnvKey('LANGSMITH_API_KEY')).toBe(false);
+    expect(isAllowedDocumentExtractProcessEnvKey('FIRECRAWL_API_KEY')).toBe(false);
     expect(isAllowedDocumentExtractProcessEnvKey('SLACK_CANARY_BOT_TOKEN')).toBe(false);
     expect(isAllowedDocumentExtractProcessEnvKey('MCP_PREREGISTERED_X_CLIENT_SECRET')).toBe(false);
     expect(isAllowedDocumentExtractProcessEnvKey('AUTH_SECRET')).toBe(false);

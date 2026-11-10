@@ -487,7 +487,8 @@ guided Ask, Approvals, and Go live use the real app chrome with a slim Getting
 started strip (Capture, Ask, Approve, Go live). Home never shows that strip.
 Skipping lands on an empty Home with the same checklist and next-step copy, not a
 sample workspace. Website scan is a chooser card; it stays Coming soon unless
-`WEBSITE_SCAN_ENABLED` is on. The crawl writes cited pages, not objects.
+`WEBSITE_SCAN_ENABLED` is on and `FIRECRAWL_API_KEY` is set. The crawl writes
+cited pages, not objects.
 Work-style chips describe how the team works, never headcount, and only reorder
 suggestions plus the recommended Go live channel.
 

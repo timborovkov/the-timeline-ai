@@ -65,7 +65,9 @@ function TermsFormationSections() {
         Timeline is an evidence-backed team memory product. It can capture, import, store, organize,
         search, transcribe, summarize, and cite information from web entry, Telegram, Slack, email,
         documents, meetings, calendars, selected third-party integrations, webhooks, and connected
-        MCP servers. Features and supported providers may change over time.
+        MCP servers. During first-run setup, a team may submit a public website; when website scan
+        is enabled, Timeline uses Firecrawl (SideGuide Technologies, Inc.) to fetch up to five
+        public pages of that site. Features and supported providers may change over time.
       </p>
 
       <h2>4. Accounts and credentials</h2>
@@ -263,6 +265,13 @@ function TermsResponsibleUseSections() {
         Supported complex documents may be processed in an ephemeral Daytona sandbox. Sandbox state
         is discarded when the sandbox stops, while Daytona documents three-day retention for its
         observability logs, traces, and metrics.
+      </p>
+      <p>
+        If website scan is enabled, Firecrawl fetches public pages of a website URL the team submits
+        during first-run setup. Firecrawl&apos;s published privacy policy and security overview
+        describe that processing, including United States storage. Broader page-content retention
+        beyond Firecrawl&apos;s documented 24-hour crawl-result API window is to be confirmed. The
+        Privacy Policy has the current processor description.
       </p>
     </>
   );

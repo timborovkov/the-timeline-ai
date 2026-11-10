@@ -1,6 +1,10 @@
 import { ExternalHttpError, externalFetch } from '#src/http/external-fetch.js';
 import { validateMcpUrl } from '#src/mcp/auth.js';
 import {
+  crawlPublicWebsiteWithFirecrawl,
+  type FirecrawlFetch,
+} from '#src/onboarding/firecrawl-website-scan.js';
+import {
   parsePublicWebsiteUrl,
   WEBSITE_SCAN_PAGE_CAP,
   type FirstRunScanFailureReason,
@@ -39,6 +43,9 @@ export type WebsiteScanFetch = typeof externalFetch;
 export interface WebsiteScanDeps {
   fetchPage?: WebsiteScanFetch;
   now?: () => number;
+  firecrawlApiKey?: string;
+  firecrawlFetch?: FirecrawlFetch;
+  sleep?: (ms: number) => Promise<void>;
 }
 
 interface RobotsRule {
@@ -324,7 +331,7 @@ export function renderWebsitePageContent(page: WebsiteScanPage): string {
   return [page.title, page.url, '', page.text].filter((part) => part.length > 0).join('\n');
 }
 
-export async function scanPublicWebsite(
+export async function scanPublicWebsiteInHouse(
   startUrl: string,
   deps: WebsiteScanDeps = {},
 ): Promise<WebsiteScanResult> {
@@ -421,4 +428,28 @@ export async function scanPublicWebsite(
 
   if (pages.length === 0) return { ok: false, reason: 'no_readable_text' };
   return { ok: true, host: origin.hostname, pages: pages.slice(0, WEBSITE_SCAN_PAGE_CAP) };
+}
+
+export async function scanPublicWebsite(
+  startUrl: string,
+  deps: WebsiteScanDeps = {},
+): Promise<WebsiteScanResult> {
+  const origin = canonicalizePublicHref(startUrl);
+  if (!origin) return { ok: false, reason: 'unreachable' };
+  const apiKey = deps.firecrawlApiKey?.trim() ?? '';
+  if (!apiKey) return { ok: false, reason: 'not_enabled' };
+
+  const firecrawl = await crawlPublicWebsiteWithFirecrawl(origin, {
+    apiKey,
+    ...(deps.firecrawlFetch ? { fetchImpl: deps.firecrawlFetch } : {}),
+    ...(deps.now ? { now: deps.now } : {}),
+    ...(deps.sleep ? { sleep: deps.sleep } : {}),
+  });
+  if (firecrawl.kind === 'pages') {
+    return { ok: true, host: origin.hostname, pages: firecrawl.pages };
+  }
+  if (firecrawl.kind === 'failure') {
+    return { ok: false, reason: firecrawl.reason };
+  }
+  return scanPublicWebsiteInHouse(startUrl, deps);
 }

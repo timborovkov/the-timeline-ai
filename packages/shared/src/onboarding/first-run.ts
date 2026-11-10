@@ -129,9 +129,14 @@ export function listedWebsiteSourceEvents<T extends { id: string }>(
   return [extra, ...pages];
 }
 
-export function isWebsiteScanEnabled(env: { WEBSITE_SCAN_ENABLED?: boolean | string }): boolean {
+export function isWebsiteScanEnabled(env: {
+  WEBSITE_SCAN_ENABLED?: boolean | string | undefined;
+  FIRECRAWL_API_KEY?: string | undefined;
+}): boolean {
   const value = env.WEBSITE_SCAN_ENABLED;
-  return value === true || value === 'true' || value === '1';
+  const flag = value === true || value === 'true' || value === '1';
+  const key = typeof env.FIRECRAWL_API_KEY === 'string' && env.FIRECRAWL_API_KEY.trim().length > 0;
+  return flag && key;
 }
 
 export function recommendedGoLiveChannel(

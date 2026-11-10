@@ -11,7 +11,7 @@
     <main id="main">
       <h1>Railway deployment</h1>
       <div class="meta">
-        <span class="kind">Operations</span><span>Last updated 2026-11-04</span>
+        <span class="kind">Operations</span><span>Last updated 2026-11-10</span>
       </div>
       <p class="tldr">
         How the Timeline's web + worker + plugin + custom services are arranged on Railway, and what
@@ -284,6 +284,8 @@ RECALL_RETENTION=1
 RECALL_BOT_DISPLAY_NAME=Timeline
 TURNSTILE_SITE_KEY=&lt;cloudflare turnstile site key&gt;
 TURNSTILE_SECRET_KEY=&lt;cloudflare turnstile secret key&gt;
+WEBSITE_SCAN_ENABLED=false
+FIRECRAWL_API_KEY=
 POSTHOG_PROJECT_KEY=&lt;posthog server project key&gt;
 POSTHOG_HOST=https://eu.i.posthog.com
 ANALYTICS_PSEUDONYMIZATION_KEY=&lt;independent high-entropy secret&gt;
@@ -483,6 +485,12 @@ BILLING_CHARGES_ENABLED=false
         env directly. OAuth signup and signed-in product flows rely on Redis-backed rate limits,
         team permissions, and existing quota checks. In production, leave neither key blank; the
         server action rejects missing or invalid Turnstile tokens.
+      </p>
+      <p>
+        <strong>About website scan:</strong> leave <code>WEBSITE_SCAN_ENABLED</code> false unless
+        first-run website crawl should run. When it is true, set <code>FIRECRAWL_API_KEY</code> on
+        the worker (and web, so the chooser can offer Scan). If the flag is on and the key is
+        missing, the website card stays Coming soon and the server refuses scans.
       </p>
 
       <h2 id="staging-vs-production">Staging vs production</h2>

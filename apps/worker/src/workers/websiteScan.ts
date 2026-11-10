@@ -10,12 +10,17 @@ import { captureWorkerJobFailure } from '#src/monitoring.js';
 import { guardWorkerProcessor } from '#src/platform-worker.js';
 
 const log = childLogger('worker:website-scan');
+const WEBSITE_SCAN_LOCK_DURATION_MS = 120_000;
 
 export function startWebsiteScanWorker({ db }: { db: Db }): Worker<WebsiteScanJobData> {
   const worker = new Worker<WebsiteScanJobData>(
     QUEUE_NAMES.websiteScan,
     guardWorkerProcessor(db, (job) => processWebsiteScanWorkerJob(db, job)),
-    { connection: getRedisConnection(), concurrency: 2 },
+    {
+      connection: getRedisConnection(),
+      concurrency: 2,
+      lockDuration: WEBSITE_SCAN_LOCK_DURATION_MS,
+    },
   );
   worker.on('failed', (job, error) => {
     log.error({ jobId: job?.id, err: error }, 'website scan job failed');

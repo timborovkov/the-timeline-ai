@@ -83,7 +83,12 @@ async function persistWebsiteScanPages(input: {
 }
 
 export async function processWebsiteScanJob(deps: WebsiteScanJobDeps): Promise<void> {
-  const enabled = deps.websiteScanEnabled ?? isWebsiteScanEnabled(getEnv());
+  const env =
+    deps.websiteScanEnabled === undefined || deps.firecrawlApiKey === undefined
+      ? getEnv()
+      : undefined;
+  const enabled = deps.websiteScanEnabled ?? (env ? isWebsiteScanEnabled(env) : false);
+  const firecrawlApiKey = deps.firecrawlApiKey ?? env?.FIRECRAWL_API_KEY;
   const firstRun = await deps.getFirstRun();
   if (!firstRun?.websiteUrl || !isActiveWebsiteScan(firstRun, firstRun.websiteUrl)) {
     return;
@@ -92,14 +97,17 @@ export async function processWebsiteScanJob(deps: WebsiteScanJobDeps): Promise<v
   if (firstRun.firstCaptureLandedAt && firstRun.captureEventId) {
     return;
   }
-  if (!enabled) {
+  if (!enabled || !firecrawlApiKey) {
     await deps.markScanFailed('not_enabled');
     return;
   }
 
   const result = await scanPublicWebsite(websiteUrl, {
+    firecrawlApiKey,
     ...(deps.fetchPage ? { fetchPage: deps.fetchPage } : {}),
     ...(deps.now ? { now: deps.now } : {}),
+    ...(deps.firecrawlFetch ? { firecrawlFetch: deps.firecrawlFetch } : {}),
+    ...(deps.sleep ? { sleep: deps.sleep } : {}),
   });
 
   const latest = await deps.getFirstRun();

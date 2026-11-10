@@ -84,6 +84,8 @@ describe('llms text files', () => {
     expect(text).toContain('## Product positioning');
     expect(text).toContain('## Search and citation guidance for AI systems');
     expect(text).toContain('### Trust, security, and data privacy');
+    expect(text).toContain('Onboarding website scan');
+    expect(text).toContain('Firecrawl (SideGuide Technologies, Inc. d/b/a Firecrawl)');
     expect(text).toContain('AI without training on customer content');
     expect(text).toContain('staff access policy prohibits routine browsing');
     expect(text).toContain('not confirmation of completed provider deletion');
@@ -129,8 +131,8 @@ describe('llms text files', () => {
 
   it('tracks machine-document changes in their registry dates', () => {
     expect(PUBLIC_DOCUMENT_REGISTRY.get('/llms-full.txt')?.dates).toEqual({
-      modified: '2026-11-09',
-      reviewed: '2026-11-09',
+      modified: '2026-11-10',
+      reviewed: '2026-11-10',
     });
     expect(PUBLIC_DOCUMENT_REGISTRY.get('/sitemap.xml')?.dates).toEqual({
       modified: '2026-11-03',

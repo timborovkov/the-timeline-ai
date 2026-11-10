@@ -10,7 +10,7 @@
     <a class="skip" href="#main">Skip to content</a>
     <main id="main">
       <h1>Local development</h1>
-      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-11-09</span></div>
+      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-11-10</span></div>
       <p class="tldr">
         Bring up the full Timeline stack on your machine with Docker Compose for infra and
         <code>bun run dev</code> for app + worker hot reload.
@@ -80,12 +80,15 @@ ln -sf ../../.env apps/web/.env
         in production; leave it false when using a Daytona extractor.
       </p>
       <p>
-        First-run website scan stays off unless <code>WEBSITE_SCAN_ENABLED=true</code>. Leave it
-        unset for local work; the chooser still shows the card as Coming soon. When the flag is on,
-        the <code>website-scan</code> worker fetches up to five same-origin public pages through
-        <code>externalFetch</code> (robots.txt, timeouts, size caps, one scan per team) and writes
-        cited web events. Objects still wait on approvals. Team inbound addresses use
-        <code>INBOUND_EMAIL_DOMAIN</code> from config, never a hardcoded domain.
+        First-run website scan stays off unless <code>WEBSITE_SCAN_ENABLED=true</code> and
+        <code>FIRECRAWL_API_KEY</code> is set. Leave the flag unset for local work; the chooser
+        still shows the card as Coming soon. If the flag is on but the key is missing, Scan stays
+        coming-soon and the server refuses the path. When both are set, the
+        <code>website-scan</code> worker asks Firecrawl to crawl up to five same-origin public pages
+        (markdown only; Firecrawl honors robots.txt) and writes cited web events. An in-house
+        fetcher runs only if Firecrawl returns 5xx or times out, behind the same caps. Objects still
+        wait on approvals. Team inbound addresses use <code>INBOUND_EMAIL_DOMAIN</code> from config,
+        never a hardcoded domain.
       </p>
 
       <p>
