@@ -1,8 +1,29 @@
-import { deferChatDelivery } from '#src/conversation-surfaces/deferred-delivery.js';
+import {
+  deferChatDelivery,
+  getChatDeliveryPrincipal,
+} from '#src/conversation-surfaces/deferred-delivery.js';
 import { getEnv } from '#src/env.js';
 import { requestBudgetIdentity } from '#src/integrations/request-budget.js';
 import { providerRetryAt, withExternalRequest } from '#src/integrations/request.js';
+import { childLogger } from '#src/logger.js';
 import { getRedisConnection } from '#src/redis/connection.js';
+import {
+  applyTelegramChatMigration,
+  assertTelegramChatRedirectOwnership,
+  isTelegramChatMigrationConflictError,
+  parseTelegramMigratedChatId,
+  replaceTelegramChatId,
+  rethrowTelegramChatMigrationWriteError,
+  TELEGRAM_CHAT_MIGRATION_CONFLICT_CODE,
+  telegramChatIdFromBody,
+  telegramMigratedChatId,
+  telegramMigratedDigestRedirectDisposition,
+  verifyTelegramChatMigrationOwnership,
+  type TelegramChatMigrationWriteResult,
+} from '#src/telegram/chat-migration.js';
+
+const log = childLogger('telegram');
+
 /**
  * Minimal Telegram Bot API client. We only implement the handful of methods
  * the webhook flow needs, plus `setMyCommands` for startup `/` menu
@@ -59,22 +80,173 @@ export interface TelegramApi {
   }): Promise<void>;
 }
 
+export interface HttpTelegramApiOptions {
+  /** Persist a Telegram group→supergroup chat id rewrite. Defaults to the app db. */
+  onChatMigrated?: (
+    fromChatId: number,
+    toChatId: number,
+  ) => Promise<TelegramChatMigrationWriteResult | undefined>;
+  /**
+   * Workspace that originated this send. Redirected migrate retries are
+   * authorized only when this principal owns the destination chat. Falls back
+   * to {@link getChatDeliveryPrincipal} when omitted.
+   */
+  sendingTeamId?: string;
+  /**
+   * In-flight workspace digest ledger key. When a migrated send would collide
+   * with an already-delivered new-chat key, the redirect is suppressed.
+   * Falls back to {@link getChatDeliveryPrincipal} when omitted.
+   */
+  dedupeKey?: string;
+}
+
 export class HttpTelegramApi implements TelegramApi {
   private readonly token: string;
   private readonly requestTimeoutMs: number;
   private readonly deferRateLimits: boolean;
-  constructor(token: string, requestTimeoutMs = 10_000, deferRateLimits = true) {
+  private readonly options: HttpTelegramApiOptions;
+  constructor(
+    token: string,
+    requestTimeoutMs = 10_000,
+    deferRateLimits = true,
+    options: HttpTelegramApiOptions = {},
+  ) {
     if (!token) throw new Error('TELEGRAM_BOT_TOKEN is required');
     this.token = token;
     this.requestTimeoutMs = requestTimeoutMs;
     this.deferRateLimits = deferRateLimits;
+    this.options = options;
   }
 
-  private async call<T>(method: string, body: unknown): Promise<T> {
-    return withExternalRequest(
-      { provider: 'telegram', identity: this.token, operation: method },
-      () => this.request<T>(method, body),
+  private sendingWorkspaceTeamId(): string | undefined {
+    return this.options.sendingTeamId ?? getChatDeliveryPrincipal()?.teamId;
+  }
+
+  private inFlightDedupeKey(): string | undefined {
+    return this.options.dedupeKey ?? getChatDeliveryPrincipal()?.dedupeKey;
+  }
+
+  private digestRedirectDisposition(
+    fromChatId: number,
+    toChatId: number,
+    writeResult: TelegramChatMigrationWriteResult | undefined,
+  ): { alreadyDelivered: boolean; skipRedirect: boolean } {
+    return telegramMigratedDigestRedirectDisposition({
+      inFlightDedupeKey: this.inFlightDedupeKey(),
+      teamId: this.sendingWorkspaceTeamId(),
+      fromChatId,
+      toChatId,
+      alreadySentDedupeKeys: writeResult?.alreadySentDedupeKeys ?? [],
+      retryableDedupeKeys: writeResult?.retryableDedupeKeys ?? [],
+    });
+  }
+
+  /**
+   * Authorize, then persist, a group→supergroup chat id rewrite.
+   *
+   * The sending workspace principal must own the destination before the
+   * in-flight send is retried against the new id. Discovering another
+   * workspace's binding is not authorization. A unique constraint on the
+   * binding write is a cross-team conflict. Any other failed write also
+   * skips the retry. A workspace digest whose migrated key is already
+   * `sent` is reported as already delivered instead of posting twice.
+   */
+  private async persistChatMigration(
+    fromChatId: number,
+    toChatId: number,
+  ): Promise<{ alreadyDelivered: boolean; skipRedirect: boolean }> {
+    const sendingTeamId = this.sendingWorkspaceTeamId();
+    if (!sendingTeamId) {
+      throw new Error('telegram chat migration skipped: sending workspace is missing');
+    }
+    try {
+      if (this.options.onChatMigrated) {
+        const writeResult = await this.options.onChatMigrated(fromChatId, toChatId);
+        return this.digestRedirectDisposition(fromChatId, toChatId, writeResult);
+      }
+      const { getDb } = await import('@timeline/db');
+      const db = getDb();
+      const ownership = await verifyTelegramChatMigrationOwnership(db, fromChatId, toChatId, {
+        sendingTeamId,
+      });
+      if (!ownership) {
+        throw new Error(
+          'telegram chat migration skipped: sending workspace ownership could not be established',
+        );
+      }
+      const writeResult = await applyTelegramChatMigration(db, fromChatId, toChatId, {
+        sendingTeamId,
+      });
+      await assertTelegramChatRedirectOwnership(db, toChatId, sendingTeamId);
+      return this.digestRedirectDisposition(fromChatId, toChatId, writeResult);
+    } catch (err) {
+      rethrowTelegramChatMigrationWriteError(err);
+    }
+  }
+
+  private migrationConflictSendError(error: unknown): Error {
+    const detail = error instanceof Error ? error.message : 'Telegram request failed';
+    return Object.assign(
+      new Error(`${detail} (cross-team chat migration conflict; skipped retry)`, {
+        cause: error,
+      }),
+      { code: TELEGRAM_CHAT_MIGRATION_CONFLICT_CODE },
     );
+  }
+
+  private async call<T>(method: string, body: unknown, retried = false): Promise<T> {
+    try {
+      return await withExternalRequest(
+        { provider: 'telegram', identity: this.token, operation: method },
+        () => this.request<T>(method, body),
+      );
+    } catch (error) {
+      const fromChatId = telegramChatIdFromBody(body);
+      const toChatId = telegramMigratedChatId(error);
+      if (!retried && fromChatId !== null && toChatId !== null && fromChatId !== toChatId) {
+        try {
+          const persistResult = await this.persistChatMigration(fromChatId, toChatId);
+          if (persistResult.alreadyDelivered) {
+            log.info(
+              { fromChatId, toChatId },
+              'telegram chat migration skipped redirect: already delivered',
+            );
+            return undefined as T;
+          }
+          if (persistResult.skipRedirect) {
+            log.info(
+              { fromChatId, toChatId },
+              'telegram chat migration skipped redirect: destination delivery owns the retry',
+            );
+            throw error;
+          }
+        } catch (persistErr) {
+          if (persistErr === error) throw error;
+          if (isTelegramChatMigrationConflictError(persistErr)) {
+            log.error(
+              { err: persistErr, fromChatId, toChatId },
+              'telegram chat migration conflict; not retrying send',
+            );
+            throw this.migrationConflictSendError(error);
+          }
+          log.error(
+            { err: persistErr, fromChatId, toChatId },
+            'telegram chat migration persist failed; not retrying send',
+          );
+          throw error;
+        }
+        replaceTelegramChatId(body, toChatId);
+        return this.call(method, body, true);
+      }
+      throw error;
+    }
+  }
+
+  private telegramMethodError(method: string, detail: string, payload?: unknown): Error {
+    const migrated = parseTelegramMigratedChatId(payload ?? detail);
+    return Object.assign(new Error(`Telegram ${method} failed: ${detail}`), {
+      ...(migrated !== null ? { migrateToChatId: migrated } : {}),
+    });
   }
 
   private async request<T>(method: string, body: unknown): Promise<T> {
@@ -104,11 +276,16 @@ export class HttpTelegramApi implements TelegramApi {
     }
     if (!res.ok) {
       const text = await res.text().catch(() => '');
-      throw new Error(`Telegram ${method} failed: ${res.status} ${text}`);
+      throw this.telegramMethodError(method, `${res.status} ${text}`, text);
     }
-    const json = (await res.json()) as { ok: boolean; result?: T; description?: string };
+    const json = (await res.json()) as {
+      ok: boolean;
+      result?: T;
+      description?: string;
+      parameters?: { migrate_to_chat_id?: number };
+    };
     if (!json.ok) {
-      throw new Error(`Telegram ${method} failed: ${json.description ?? 'unknown'}`);
+      throw this.telegramMethodError(method, json.description ?? 'unknown', json);
     }
     return json.result as T;
   }
@@ -280,7 +457,12 @@ export async function sendTelegramBotMessage(input: {
   text: string;
   token: string;
   api?: TelegramApi;
+  teamId?: string;
 }): Promise<void> {
-  const api = input.api ?? new HttpTelegramApi(input.token);
+  const api =
+    input.api ??
+    new HttpTelegramApi(input.token, 10_000, true, {
+      ...(input.teamId ? { sendingTeamId: input.teamId } : {}),
+    });
   await api.sendMessage({ chat_id: input.chatId, text: input.text });
 }

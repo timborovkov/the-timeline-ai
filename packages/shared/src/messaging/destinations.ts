@@ -104,6 +104,8 @@ export function digestDestinationLabel(destination: TeamDigestDestination): stri
   return destination.label ? `Telegram · ${destination.label}` : 'Telegram chat';
 }
 
+const WORKSPACE_DIGEST_DEDUPE_HEAD = 'daily_digest:workspace';
+
 export function digestDestinationDedupeKey(input: {
   scope: 'member' | 'workspace';
   digestId?: string;
@@ -118,7 +120,54 @@ export function digestDestinationDedupeKey(input: {
     return `daily_digest:${input.digestId}:${input.destination.kind}`;
   }
   const target = input.destination.targetId ?? 'none';
-  return `daily_digest:workspace:${input.teamId}:${input.windowEnd}:${input.destination.kind}:${target}`;
+  return workspaceDigestDedupeKey({
+    teamId: input.teamId,
+    windowEnd: input.windowEnd,
+    kind: input.destination.kind,
+    targetId: target,
+  });
+}
+
+function workspaceDigestDedupeKey(input: {
+  teamId: string;
+  windowEnd: string;
+  kind: DigestDestinationKind;
+  targetId: string;
+}): string {
+  return `${WORKSPACE_DIGEST_DEDUPE_HEAD}:${input.teamId}:${input.windowEnd}:${input.kind}:${input.targetId}`;
+}
+
+/** LIKE pattern for every workspace digest key of one shared destination target. */
+export function workspaceDigestDedupeKeyTargetLike(input: {
+  teamId: string;
+  kind: DigestDestinationKind;
+  targetId: string;
+}): string {
+  return workspaceDigestDedupeKey({
+    teamId: input.teamId,
+    windowEnd: '%',
+    kind: input.kind,
+    targetId: input.targetId,
+  });
+}
+
+/**
+ * Rewrite a workspace digest ledger key onto a new shared-destination target.
+ * Returns null when `dedupeKey` is not that team's key for `fromTargetId`.
+ */
+export function rewriteWorkspaceDigestDedupeKeyTarget(input: {
+  dedupeKey: string;
+  teamId: string;
+  kind: DigestDestinationKind;
+  fromTargetId: string;
+  toTargetId: string;
+}): string | null {
+  const prefix = `${WORKSPACE_DIGEST_DEDUPE_HEAD}:${input.teamId}:`;
+  const fromSuffix = `:${input.kind}:${input.fromTargetId}`;
+  if (!input.dedupeKey.startsWith(prefix) || !input.dedupeKey.endsWith(fromSuffix)) {
+    return null;
+  }
+  return `${input.dedupeKey.slice(0, -fromSuffix.length)}:${input.kind}:${input.toTargetId}`;
 }
 
 export async function listTeamDigestDestinations(
