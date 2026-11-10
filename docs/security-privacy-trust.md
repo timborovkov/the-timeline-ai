@@ -189,7 +189,7 @@ Personnel and contractors must not:
 - disclose content outside the named incident/support/legal participants.
 
 Provider support access follows the same minimum-necessary principle and must be
-governed by the provider contract and account controls. Section 17 records the
+governed by the provider contract and account controls. [The security gap register](security-gaps.md) records the
 current gap in evidencing staff access, break-glass logging, and review.
 
 Current Terms/Privacy versions and renewed-acceptance requirements are owned by `packages/shared/src/legal-versions.ts`. Historical retention approval is recorded in [the dated decision](evidence/platform-retention-decision-2026-11-03.md); it does not override later publication changes.

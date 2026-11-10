@@ -335,7 +335,9 @@ function NoSourcesState({ isAdmin }: { isAdmin: boolean }) {
     >
       {isAdmin ? (
         <Button asChild variant="outline" size="sm">
-          <Link href="/docs/setup/integrations.html">Read the setup guide</Link>
+          <Link href="https://github.com/timborovkov/the-timeline-ai/blob/main/docs/setup/integrations.md">
+            Read the setup guide
+          </Link>
         </Button>
       ) : (
         <p className="text-sm text-fg-muted">Ask a team admin to enable a source to get started.</p>

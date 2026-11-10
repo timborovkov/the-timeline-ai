@@ -8,7 +8,7 @@
 | Print name only | Local / CI | `bun run --filter @timeline/worker create-document-extract-snapshot -- --print-name-only` |
 | Ensure (idempotent) | Local once, CI on sandbox changes, optional extract boot | `bun run --filter @timeline/worker create-document-extract-snapshot` (alias: `ensure-document-extract-snapshot`) |
 | Force rebuild | Corruption / debugging | same script with `--force` |
-| CI publish | Push to `main`/`staging` touching sandbox or snapshot recipe | `.github/workflows/publish-document-extract-snapshot.yml` when repo variable `DAYTONA_SNAPSHOT_PUBLISH=true` and secret `DAYTONA_API_KEY` |
+| CI publish | Push to `production` touching sandbox or snapshot recipe, or manual dispatch | `.github/workflows/publish-document-extract-snapshot.yml` when repo variable `DAYTONA_SNAPSHOT_PUBLISH=true` and secret `DAYTONA_API_KEY` |
 | Manual retention | Workflow dispatch / operator maintenance after inspecting all Railway environments | Set `DAYTONA_ACTIVE_SNAPSHOTS` to every deployed hash, then run `bun run --filter @timeline/worker cleanup-document-extract-snapshots -- --retain=3`; missing/stale inventory fails closed |
 | Boot ensure | extract-main start | If `DAYTONA_SNAPSHOT_ENSURE=true` (default) and `DAYTONA_API_KEY` set: get-or-create once |
 

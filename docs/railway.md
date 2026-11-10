@@ -197,7 +197,7 @@ Use Railway's "shared variables" feature at the project level for anything used 
 
 ## Staging vs production
 
-The current project has only the `production` environment at `thetimeline.cc`. The Git branch `main` is for development; `production` is the protected release branch. Verify the deployed source branch for web, worker and extractor before release. The intended release branch is `production`; a repository policy does not change Railway settings.
+The Git branch `main` is for development; `production` is the protected release branch. Verify the deployed source branch for web, worker and extractor before release. The intended release branch is `production`; a repository policy does not change Railway settings.
 
 If a separate staging environment is introduced later, give it isolated Postgres, Redis, Qdrant, RustFS, and provider credentials. Verify its configured branch, domain and isolation before use; this guide does not assert whether a staging deployment currently exists.
 
