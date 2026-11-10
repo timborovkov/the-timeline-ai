@@ -117,7 +117,7 @@ const TRUST_SECTIONS = [
   },
   {
     title: 'Onboarding website scan',
-    body: 'When first-run website scan is enabled, Firecrawl (SideGuide Technologies, Inc. d/b/a Firecrawl) fetches public pages of a website URL the user submits. Timeline sends that public URL; Firecrawl returns markdown. Firecrawl documents United States processing and a 24-hour crawl-result API window. Broader page-content retention is to be confirmed. Timeline does not enable Firecrawl Enterprise zero-data-retention.',
+    body: 'When a user requests a website scan, Firecrawl (SideGuide Technologies, Inc. d/b/a Firecrawl) fetches public pages of a website URL the user submits. Timeline sends that public URL; Firecrawl returns markdown. Firecrawl documents United States processing and a 24-hour crawl-result API window. Broader page-content retention is to be confirmed. Timeline does not enable Firecrawl Enterprise zero-data-retention.',
   },
   {
     title: 'Analytics and third parties',

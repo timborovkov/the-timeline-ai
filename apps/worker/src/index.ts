@@ -40,6 +40,9 @@ initWorkerSentry();
 
 async function main(): Promise<void> {
   const env = getEnv();
+  if (env.WORKER_MODE !== 'document-extract' && !env.FIRECRAWL_API_KEY?.trim()) {
+    throw new Error('FIRECRAWL_API_KEY is required to start the worker service.');
+  }
   if (env.WORKER_MODE === 'document-extract') {
     throw new Error(
       'WORKER_MODE=document-extract must use apps/worker/dist/extract-main.js (refusing full worker boot)',

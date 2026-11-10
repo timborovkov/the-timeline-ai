@@ -1654,6 +1654,7 @@ export async function closeEmailInboundQueue(): Promise<void> {
 export interface WebsiteScanJobData {
   teamId: string;
   userId: string;
+  scanId: string;
 }
 
 let _websiteScanQueue: TimelineQueue<WebsiteScanJobData> | undefined;
@@ -1668,7 +1669,9 @@ export function getWebsiteScanQueue(): TimelineQueue<WebsiteScanJobData> {
 }
 
 export async function enqueueWebsiteScanJob(data: WebsiteScanJobData): Promise<void> {
-  await getWebsiteScanQueue().add('scan', data, { jobId: `website-scan-${data.teamId}` });
+  await getWebsiteScanQueue().add('scan', data, {
+    jobId: `website-scan-${data.teamId}-${data.scanId}`,
+  });
 }
 
 export async function closeWebsiteScanQueue(): Promise<void> {

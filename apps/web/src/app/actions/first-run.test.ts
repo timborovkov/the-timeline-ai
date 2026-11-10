@@ -4,6 +4,8 @@ import { beforeEach, describe, it } from 'bun:test';
 
 const fakes = vi.hoisted(() => ({
   auth: vi.fn(),
+  reserve: vi.fn(),
+  release: vi.fn(),
   resolveActiveTeam: vi.fn(),
   submitWorkStyle: vi.fn(),
   selectStarterPath: vi.fn(),
@@ -12,7 +14,6 @@ const fakes = vi.hoisted(() => ({
   markScanFailed: vi.fn(),
   setFirstRunPhase: vi.fn(),
   checkRateLimit: vi.fn(),
-  isWebsiteScanEnabled: vi.fn(),
   enqueueWebsiteScanJob: vi.fn(),
   trackProductEventBestEffort: vi.fn(),
   revalidatePath: vi.fn(),
@@ -40,14 +41,13 @@ await vi.mock(
 );
 await vi.mock(
   import.meta.resolve('@timeline/shared/env'),
-  () => ({ getEnv: () => ({}) }),
+  () => ({ getEnv: () => ({ FIRECRAWL_API_KEY: 'fc-test' }) }),
   () => import('@timeline/shared/env'),
 );
 await vi.mock(
   import.meta.resolve('@timeline/shared/onboarding'),
   async () => ({
     ...(await import('@timeline/shared/onboarding')),
-    isWebsiteScanEnabled: fakes.isWebsiteScanEnabled,
   }),
   () => import('@timeline/shared/onboarding'),
 );
@@ -75,6 +75,7 @@ await vi.mock(
         markScanFailed: fakes.markScanFailed,
         setFirstRunPhase: fakes.setFirstRunPhase,
       },
+      billing: { reserve: fakes.reserve, release: fakes.release },
       requireMembership: vi.fn(),
     }),
   }),
@@ -116,9 +117,10 @@ beforeEach(() => {
   fakes.auth.mockResolvedValue({ user: { id: USER_ID } });
   fakes.resolveActiveTeam.mockResolvedValue({ active: { teamId: TEAM_ID } });
   fakes.checkRateLimit.mockResolvedValue({ ok: true });
-  fakes.isWebsiteScanEnabled.mockReturnValue(false);
   fakes.submitWorkStyle.mockResolvedValue({});
-  fakes.selectStarterPath.mockResolvedValue({});
+  fakes.selectStarterPath.mockImplementation(async (_path: string, extras: unknown) => extras);
+  fakes.reserve.mockResolvedValue({ ok: true });
+  fakes.release.mockResolvedValue({ ok: true });
   fakes.skipToEmptyHome.mockResolvedValue({});
   fakes.markScanFailed.mockResolvedValue({});
   fakes.enqueueWebsiteScanJob.mockResolvedValue(undefined);
@@ -162,30 +164,36 @@ describe('first-run analytics', () => {
     );
   });
 
-  it('does not start a website scan when the flag is off', async () => {
+  it('requires permission confirmation before starting a website scan', async () => {
     await expect(
       selectStarterPathAction({ path: 'website', websiteUrl: 'studio.example' }),
     ).resolves.toEqual({
       ok: false,
-      error: 'Website scan is coming soon. Upload a document or forward an email.',
+      error: 'Confirm that you may submit this website for scanning.',
     });
     expect(fakes.selectStarterPath).not.toHaveBeenCalled();
     expect(fakes.enqueueWebsiteScanJob).not.toHaveBeenCalled();
     expect(fakes.trackProductEventBestEffort).not.toHaveBeenCalled();
   });
 
-  it('enqueues a website scan when the flag is on', async () => {
-    fakes.isWebsiteScanEnabled.mockReturnValue(true);
+  it('admits billing and enqueues a website scan with its subject', async () => {
     await expect(
-      selectStarterPathAction({ path: 'website', websiteUrl: 'studio.example' }),
+      selectStarterPathAction({
+        path: 'website',
+        websiteUrl: 'studio.example',
+        websitePermissionConfirmed: true,
+      }),
     ).resolves.toEqual({ ok: true });
     expect(fakes.selectStarterPath).toHaveBeenCalledWith('website', {
       websiteUrl: 'https://studio.example/',
       websiteHost: 'studio.example',
+      websiteSubject: 'own_team',
+      websiteScanId: expect.any(String),
     });
     expect(fakes.enqueueWebsiteScanJob).toHaveBeenCalledWith({
       teamId: TEAM_ID,
       userId: USER_ID,
+      scanId: expect.any(String),
     });
     expect(fakes.markScanFailed).not.toHaveBeenCalled();
     expect(fakes.trackProductEventBestEffort).toHaveBeenCalledWith(
@@ -195,13 +203,40 @@ describe('first-run analytics', () => {
     );
   });
 
+  it('does not select or enqueue when billing denies the scan', async () => {
+    fakes.reserve.mockResolvedValue({ ok: false, code: 'free_allowance_reached' });
+    const result = await selectStarterPathAction({
+      path: 'website',
+      websiteUrl: 'studio.example',
+      websitePermissionConfirmed: true,
+    });
+    expect(result.ok).toBe(false);
+    expect(fakes.selectStarterPath).not.toHaveBeenCalled();
+    expect(fakes.enqueueWebsiteScanJob).not.toHaveBeenCalled();
+  });
+
+  it('reports enqueue failure and releases the reservation', async () => {
+    fakes.enqueueWebsiteScanJob.mockRejectedValue(new Error('Redis failed'));
+    const result = await selectStarterPathAction({
+      path: 'website',
+      websiteUrl: 'studio.example',
+      websitePermissionConfirmed: true,
+    });
+    expect(result.ok).toBe(false);
+    expect(fakes.release).toHaveBeenCalled();
+    expect(fakes.markScanFailed).toHaveBeenCalledWith('unreachable', expect.any(String));
+  });
+
   it('refuses a second website scan for the same team', async () => {
-    fakes.isWebsiteScanEnabled.mockReturnValue(true);
     fakes.checkRateLimit
       .mockResolvedValueOnce({ ok: true, remaining: 29 })
       .mockResolvedValueOnce({ ok: false, remaining: 0, retryAfterMs: 86_400_000 });
     await expect(
-      selectStarterPathAction({ path: 'website', websiteUrl: 'studio.example' }),
+      selectStarterPathAction({
+        path: 'website',
+        websiteUrl: 'studio.example',
+        websitePermissionConfirmed: true,
+      }),
     ).resolves.toEqual({
       ok: false,
       error:

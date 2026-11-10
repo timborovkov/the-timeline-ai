@@ -2397,5 +2397,8 @@
   },
   "packages/shared/src/integrations/resource-access.test.ts": {
     "group": "unit"
+  },
+  "apps/worker/src/workers/websiteScan.live-eval.test.ts": {
+    "group": "live"
   }
 }

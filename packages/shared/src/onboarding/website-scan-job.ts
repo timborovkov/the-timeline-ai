@@ -1,8 +1,8 @@
 import { getEnv } from '#src/env.js';
 import {
-  isWebsiteScanEnabled,
   type FirstRunScanFailureReason,
   type FirstRunState,
+  type WebsiteSubject,
 } from '#src/onboarding/first-run.js';
 import {
   renderWebsitePageContent,
@@ -12,11 +12,25 @@ import {
 } from '#src/onboarding/website-scan.js';
 import { enqueueExtractJob } from '#src/queue/queues.js';
 
-const FIRST_RUN_WEBSITE_SCAN_META = 'firstRunWebsiteScan' as const;
-
 export interface WebsiteScanJobDeps extends WebsiteScanDeps {
   userId: string;
+  scanId: string;
   getFirstRun: () => Promise<FirstRunState | null>;
+  reserve: () => Promise<boolean>;
+  settle: (pageCount: number) => Promise<void>;
+  release: () => Promise<void>;
+  getPages: () => Promise<WebsiteScanPage[] | null>;
+  savePages: (input: {
+    scanId: string;
+    url: string;
+    websiteSubject: WebsiteSubject;
+    pages: WebsiteScanPage[];
+  }) => Promise<WebsiteScanPage[]>;
+  saveDocument: (input: {
+    scanId: string;
+    eventId: string;
+    page: WebsiteScanPage;
+  }) => Promise<unknown>;
   createEvent: (input: {
     idempotencyKey: string;
     authorUserId: string;
@@ -30,117 +44,89 @@ export interface WebsiteScanJobDeps extends WebsiteScanDeps {
     eventId: string;
     landed: boolean;
     requireStarterPath: 'website';
+    websiteScanId: string;
   }) => Promise<unknown>;
-  markScanFailed: (reason: FirstRunScanFailureReason) => Promise<unknown>;
+  markScanFailed: (reason: FirstRunScanFailureReason, scanId: string) => Promise<unknown>;
   enqueueExtract?: typeof enqueueExtractJob;
-  admitEnrichment?: (rawEventId: string) => Promise<boolean>;
-  websiteScanEnabled?: boolean;
-}
-
-function pageMetadata(page: WebsiteScanPage, host: string): Record<string, unknown> {
-  return {
-    [FIRST_RUN_WEBSITE_SCAN_META]: true,
-    pageUrl: page.url,
-    pageHost: host,
-    pageTitle: page.title,
-  };
-}
-
-function isActiveWebsiteScan(state: FirstRunState | null, websiteUrl: string): boolean {
-  return (
-    state?.starterPath === 'website' &&
-    state.websiteUrl === websiteUrl &&
-    state.phase === 'processing'
-  );
-}
-
-async function persistWebsiteScanPages(input: {
-  userId: string;
-  host: string;
-  pages: WebsiteScanPage[];
-  createEvent: WebsiteScanJobDeps['createEvent'];
-  enqueueExtract: typeof enqueueExtractJob;
-  admitEnrichment?: (rawEventId: string) => Promise<boolean>;
-  teamId: string;
-}): Promise<string | null> {
-  let firstId: string | null = null;
-  for (const page of input.pages) {
-    const event = await input.createEvent({
-      idempotencyKey: `first-run-website:${page.url}`,
-      authorUserId: input.userId,
-      source: 'web',
-      contentText: renderWebsitePageContent(page),
-      visibility: 'team',
-      visibilityOwnerUserId: input.userId,
-      sourceMetadata: pageMetadata(page, input.host),
-    });
-    firstId ??= event.id;
-    const admitted = input.admitEnrichment ? await input.admitEnrichment(event.id) : true;
-    if (!admitted) continue;
-    await input.enqueueExtract({ rawEventId: event.id, teamId: input.teamId });
-  }
-  return firstId;
 }
 
 export async function processWebsiteScanJob(deps: WebsiteScanJobDeps): Promise<void> {
-  const env =
-    deps.websiteScanEnabled === undefined || deps.firecrawlApiKey === undefined
-      ? getEnv()
-      : undefined;
-  const enabled = deps.websiteScanEnabled ?? (env ? isWebsiteScanEnabled(env) : false);
-  const firecrawlApiKey = deps.firecrawlApiKey ?? env?.FIRECRAWL_API_KEY;
+  const active = (state: FirstRunState | null) =>
+    state?.starterPath === 'website' &&
+    state.websiteScanId === deps.scanId &&
+    state.phase === 'processing';
   const firstRun = await deps.getFirstRun();
-  if (!firstRun?.websiteUrl || !isActiveWebsiteScan(firstRun, firstRun.websiteUrl)) {
+  if (!active(firstRun) || !firstRun?.websiteUrl) {
+    await deps.release();
     return;
   }
-  const websiteUrl = firstRun.websiteUrl;
-  if (firstRun.firstCaptureLandedAt && firstRun.captureEventId) {
+  const apiKey = deps.firecrawlApiKey ?? getEnv().FIRECRAWL_API_KEY;
+  if (!apiKey?.trim()) throw new Error('FIRECRAWL_API_KEY is required for website scanning.');
+  let pages = await deps.getPages();
+  // Recheck admission in the worker: a queued reservation may have expired.
+  if (!(await deps.reserve())) {
+    await deps.markScanFailed('rate_limited', deps.scanId);
+    await deps.release();
     return;
   }
-  if (!enabled || !firecrawlApiKey) {
-    await deps.markScanFailed('not_enabled');
+  if (!pages) {
+    const result = await scanPublicWebsite(firstRun.websiteUrl, {
+      ...deps,
+      firecrawlApiKey: apiKey,
+    });
+    if (!result.ok) {
+      await deps.markScanFailed(result.reason, deps.scanId);
+      await deps.release();
+      return;
+    }
+    pages = await deps.savePages({
+      scanId: deps.scanId,
+      url: firstRun.websiteUrl,
+      websiteSubject: firstRun.websiteSubject,
+      pages: result.pages,
+    });
+  }
+  if (!(await deps.getFirstRun().then(active))) {
+    await deps.release();
     return;
   }
-
-  const result = await scanPublicWebsite(websiteUrl, {
-    firecrawlApiKey,
-    ...(deps.fetchPage ? { fetchPage: deps.fetchPage } : {}),
-    ...(deps.now ? { now: deps.now } : {}),
-    ...(deps.firecrawlFetch ? { firecrawlFetch: deps.firecrawlFetch } : {}),
-    ...(deps.sleep ? { sleep: deps.sleep } : {}),
-  });
-
-  const latest = await deps.getFirstRun();
-  if (!isActiveWebsiteScan(latest, websiteUrl)) {
+  if (!pages.length) {
+    await deps.markScanFailed('no_readable_text', deps.scanId);
+    await deps.release();
     return;
   }
-
-  if (!result.ok) {
-    await deps.markScanFailed(result.reason);
-    return;
+  // One scan settlement, one accepted-source unit per page. AI remains separately metered.
+  await deps.settle(pages.length);
+  let firstId: string | null = null;
+  for (const page of pages) {
+    const event = await deps.createEvent({
+      idempotencyKey: `website-scan:${deps.scanId}:${page.url}`,
+      authorUserId: deps.userId,
+      source: 'web',
+      contentText: renderWebsitePageContent(page),
+      visibility: 'team',
+      visibilityOwnerUserId: deps.userId,
+      sourceMetadata: {
+        firstRunWebsiteScan: true,
+        websiteScanId: deps.scanId,
+        websiteSubject: firstRun.websiteSubject,
+        pageUrl: page.url,
+        pageHost: firstRun.websiteHost,
+        pageTitle: page.title,
+      },
+    });
+    firstId ??= event.id;
+    await deps.saveDocument({ scanId: deps.scanId, eventId: event.id, page });
+    await (deps.enqueueExtract ?? enqueueExtractJob)({
+      rawEventId: event.id,
+      teamId: firstRun.teamId,
+    });
   }
-  if (result.pages.length === 0) {
-    await deps.markScanFailed('no_readable_text');
-    return;
-  }
-
-  const firstId = await persistWebsiteScanPages({
-    userId: deps.userId,
-    host: result.host,
-    pages: result.pages,
-    createEvent: deps.createEvent,
-    enqueueExtract: deps.enqueueExtract ?? enqueueExtractJob,
-    ...(deps.admitEnrichment ? { admitEnrichment: deps.admitEnrichment } : {}),
-    teamId: firstRun.teamId,
-  });
-
-  const afterPersist = await deps.getFirstRun();
-  if (!isActiveWebsiteScan(afterPersist, websiteUrl)) {
-    return;
-  }
-  if (!firstId) {
-    await deps.markScanFailed('no_readable_text');
-    return;
-  }
-  await deps.attachCapture({ eventId: firstId, landed: true, requireStarterPath: 'website' });
+  if (firstId)
+    await deps.attachCapture({
+      eventId: firstId,
+      landed: true,
+      requireStarterPath: 'website',
+      websiteScanId: deps.scanId,
+    });
 }

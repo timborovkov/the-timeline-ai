@@ -93,18 +93,11 @@ function WelcomePreview({ inboundEmail }: { inboundEmail: string }) {
   );
 }
 
-function ChooserPreview({
-  inboundEmail,
-  websiteScanEnabled,
-}: {
-  inboundEmail: string;
-  websiteScanEnabled: boolean;
-}) {
+function ChooserPreview({ inboundEmail }: { inboundEmail: string }) {
   return (
     <SetupShell progress="Setup · 2 of 2">
       <ChooserScreen
         inboundEmail={inboundEmail}
-        websiteScanEnabled={websiteScanEnabled}
         onWebsite={noop}
         onDocument={noop}
         onEmail={noop}
@@ -324,12 +317,8 @@ const SCREEN_NAMES = [
 
 const SCREENS: Record<string, (inboundEmail: string) => ReactNode> = {
   welcome: (inboundEmail) => <WelcomePreview inboundEmail={inboundEmail} />,
-  chooser: (inboundEmail) => (
-    <ChooserPreview inboundEmail={inboundEmail} websiteScanEnabled={false} />
-  ),
-  'chooser-enabled': (inboundEmail) => (
-    <ChooserPreview inboundEmail={inboundEmail} websiteScanEnabled />
-  ),
+  chooser: (inboundEmail) => <ChooserPreview inboundEmail={inboundEmail} />,
+  'chooser-enabled': (inboundEmail) => <ChooserPreview inboundEmail={inboundEmail} />,
   'processing-document': (inboundEmail) => (
     <ProcessingDocumentPreview inboundEmail={inboundEmail} />
   ),

@@ -78,11 +78,12 @@ class FirecrawlRetryableError extends Error {
 }
 
 class FirecrawlHttpError extends Error {
-  constructor(
-    readonly status: number,
-    readonly body: string,
-  ) {
+  readonly status: number;
+  readonly body: string;
+  constructor(status: number, body: string) {
     super(`Firecrawl HTTP ${String(status)}`);
+    this.status = status;
+    this.body = body;
   }
 }
 
@@ -164,6 +165,7 @@ async function firecrawlJson(
     };
     if (init.body) headers['Content-Type'] = 'application/json';
     const requestInit: RequestInit = {
+      redirect: 'error',
       signal: AbortSignal.timeout(FIRECRAWL_REQUEST_TIMEOUT_MS),
       headers,
     };
@@ -205,7 +207,7 @@ function mapDocuments(documents: FirecrawlDocument[], origin: URL): FirecrawlPag
   for (const document of documents) {
     const statusCode = asNumber(document.metadata?.statusCode);
     if (statusCode !== null && (statusCode < 200 || statusCode >= 300)) continue;
-    const markdown = asString(document.markdown).replace(/\s+/g, ' ').trim();
+    const markdown = asString(document.markdown).trim();
     if (markdown.length < FIRECRAWL_MIN_TEXT_CHARS) continue;
     const rawUrl = asString(document.metadata?.sourceURL) || asString(document.metadata?.url);
     const canonical = canonicalizePublicHref(rawUrl);

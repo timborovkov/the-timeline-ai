@@ -10,11 +10,12 @@ const fakes = vi.hoisted(() => ({
   createEvent: vi.fn(),
   attachCapture: vi.fn(),
   markScanFailed: vi.fn(),
+  release: vi.fn(async () => ({})),
 }));
 
 await vi.mock(
   import.meta.resolve('@timeline/shared/onboarding'),
-  () => ({ processWebsiteScanJob: fakes.processWebsiteScanJob }),
+  () => ({ processWebsiteScanJob: fakes.processWebsiteScanJob, WEBSITE_SCAN_PAGE_CAP: 5 }),
   () => import('@timeline/shared/onboarding'),
 );
 await vi.mock(
@@ -26,6 +27,7 @@ await vi.mock(
         attachCapture: fakes.attachCapture,
         markScanFailed: fakes.markScanFailed,
       },
+      billing: { release: fakes.release },
       timeline: { createEvent: fakes.createEvent },
     }),
   }),
@@ -39,7 +41,7 @@ const USER_ID = '22222222-2222-4222-8222-222222222222';
 
 function job(attemptsStarted = 1): Job<WebsiteScanJobData> {
   return {
-    data: { teamId: TEAM_ID, userId: USER_ID },
+    data: { teamId: TEAM_ID, userId: USER_ID, scanId: TEAM_ID },
     attemptsStarted,
   } as Job<WebsiteScanJobData>;
 }
@@ -65,6 +67,6 @@ describe('website scan worker', () => {
     await expect(processWebsiteScanWorkerJob({} as Db, job(3))).rejects.toBeInstanceOf(
       UnrecoverableError,
     );
-    expect(fakes.markScanFailed).toHaveBeenCalledWith('unreachable');
+    expect(fakes.markScanFailed).toHaveBeenCalledWith('unreachable', TEAM_ID);
   });
 });

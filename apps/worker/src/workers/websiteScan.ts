@@ -1,8 +1,13 @@
 import type { Db } from '@timeline/db';
-import { admitAcceptedSourceEnrichment } from '@timeline/shared/billing';
+import { listChargeCentsForMeter } from '@timeline/shared/billing';
 import { childLogger } from '@timeline/shared/logger';
-import { processWebsiteScanJob } from '@timeline/shared/onboarding';
-import { getRedisConnection, QUEUE_NAMES, type WebsiteScanJobData } from '@timeline/shared/queue';
+import { processWebsiteScanJob, WEBSITE_SCAN_PAGE_CAP } from '@timeline/shared/onboarding';
+import {
+  enqueueDocChunkEmbedJob,
+  getRedisConnection,
+  QUEUE_NAMES,
+  type WebsiteScanJobData,
+} from '@timeline/shared/queue';
 import { withTeam } from '@timeline/shared/team-scope';
 import { UnrecoverableError, Worker, type Job } from 'bullmq';
 
@@ -33,24 +38,54 @@ export async function processWebsiteScanWorkerJob(
   db: Db,
   job: Job<WebsiteScanJobData>,
 ): Promise<void> {
-  const { teamId, userId } = job.data;
-  if (!teamId || !userId) {
+  const { teamId, userId, scanId } = job.data;
+  if (!teamId || !userId || !scanId) {
     throw new UnrecoverableError('website_scan_missing_scope');
   }
   const scope = withTeam(db, teamId, userId);
+  const operationId = `website-scan:${scanId}`;
   try {
     await processWebsiteScanJob({
+      scanId,
+      reserve: async () =>
+        (
+          await scope.billing.reserve({
+            operationId,
+            meterId: 'accepted_sources',
+            reservedNativeUnits: WEBSITE_SCAN_PAGE_CAP,
+            reservedChargeCents: listChargeCentsForMeter('accepted_sources', WEBSITE_SCAN_PAGE_CAP),
+            ttlMs: 30 * 60_000,
+          })
+        ).ok,
+      settle: async (pageCount) => {
+        await scope.billing.settle({
+          operationId,
+          meterId: 'accepted_sources',
+          nativeUnits: pageCount,
+          customerChargeCents: listChargeCentsForMeter('accepted_sources', pageCount),
+          operationClass: 'ingest',
+          source: 'website_scan',
+        });
+      },
+      release: async () => {
+        await scope.billing.release(operationId);
+      },
+      getPages: () => scope.onboarding.getWebsiteScanPages(scanId),
+      savePages: (input) => scope.onboarding.saveWebsiteScanPages(input),
+      saveDocument: async (input) => {
+        const saved = await scope.onboarding.saveWebsitePageDocument(input);
+        for (const chunkId of saved.chunkIds) await enqueueDocChunkEmbedJob(teamId, chunkId);
+      },
       userId,
       getFirstRun: () => scope.onboarding.getFirstRun(),
       createEvent: (input) => scope.timeline.createEvent(input),
       attachCapture: (input) => scope.onboarding.attachCapture(input),
-      markScanFailed: (reason) => scope.onboarding.markScanFailed(reason),
-      admitEnrichment: (rawEventId) =>
-        admitAcceptedSourceEnrichment({ db, teamId, userId, rawEventId }),
+      markScanFailed: (reason, id) => scope.onboarding.markScanFailed(reason, id),
     });
   } catch (error) {
     if (job.attemptsStarted >= 3) {
-      await scope.onboarding.markScanFailed('unreachable').catch((err: unknown) => {
+      await scope.billing.release(operationId);
+      await scope.onboarding.markScanFailed('unreachable', scanId).catch((err: unknown) => {
         log.error({ err }, 'failed to record website scan failure after retries');
       });
       throw new UnrecoverableError('website_scan_attempts_exhausted');

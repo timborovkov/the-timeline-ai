@@ -417,7 +417,6 @@ describe('getEnv', () => {
       SLACK_CLIENT_ID: '',
       MONDAY_CLIENT_ID: '',
       FIRECRAWL_API_KEY: '',
-      WEBSITE_SCAN_ENABLED: '',
     });
 
     expect(getEnv().GITHUB_APP_ID).toBeUndefined();
@@ -425,7 +424,6 @@ describe('getEnv', () => {
     expect(getEnv().SLACK_CLIENT_ID).toBeUndefined();
     expect(getEnv().MONDAY_CLIENT_ID).toBeUndefined();
     expect(getEnv().FIRECRAWL_API_KEY).toBeUndefined();
-    expect(getEnv().WEBSITE_SCAN_ENABLED).toBe(false);
   });
 
   it('defaults LangSmith tracing off with an environment-specific project', () => {

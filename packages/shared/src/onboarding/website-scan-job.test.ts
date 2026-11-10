@@ -1,254 +1,162 @@
-import { expect } from '@timeline/test-support';
-import { vi } from '@timeline/test-support';
+// A scan must admit billing before provider work, preserve retry evidence, and never write canonical records.
+import { expect, vi } from '@timeline/test-support';
 import { describe, it } from 'bun:test';
-
 import {
-  FIRECRAWL_API_ORIGIN,
-  type FirecrawlFetch,
-} from '#src/onboarding/firecrawl-website-scan.js';
-import { processWebsiteScanJob } from '#src/onboarding/website-scan-job.js';
-
+  processWebsiteScanJob,
+  type WebsiteScanJobDeps,
+} from '#src/onboarding/website-scan-job.js';
 import type { FirstRunState } from '#src/onboarding/first-run.js';
 
-const FIRECRAWL_KEY = 'fc-test';
-const HOME = 'https://studio.example/';
-
-function requestUrl(input: string | URL | Request): string {
-  if (typeof input === 'string') return input;
-  if (input instanceof Request) return input.url;
-  return input.href;
-}
-
-function firecrawlFetch(options: {
-  pages?: { url: string; title: string; markdown: string }[];
-  robotsBlocked?: string[];
-}): FirecrawlFetch {
-  return (input, init) => {
-    const url = requestUrl(input);
-    const method = (init?.method ?? 'GET').toUpperCase();
-    if (url === `${FIRECRAWL_API_ORIGIN}/v2/crawl` && method === 'POST') {
-      return Promise.resolve(Response.json({ id: 'crawl-1' }));
-    }
-    if (url.includes('/v2/crawl/crawl-1/errors')) {
-      return Promise.resolve(
-        Response.json({ errors: [], robotsBlocked: options.robotsBlocked ?? [] }),
-      );
-    }
-    if (url.includes('/v2/crawl/crawl-1')) {
-      return Promise.resolve(
-        Response.json({
-          status: 'completed',
-          data: (options.pages ?? []).map((page) => ({
-            markdown: page.markdown,
-            metadata: { title: page.title, sourceURL: page.url, statusCode: 200 },
-          })),
-        }),
-      );
-    }
-    return Promise.resolve(new Response('not found', { status: 404 }));
-  };
-}
-
-function readableMarkdown(label: string): string {
-  return `${label} ${'work record context '.repeat(8).trim()}`;
-}
-
-const TEAM_ID = '11111111-1111-4111-8111-111111111111';
-const USER_ID = '22222222-2222-4222-8222-222222222222';
-
-function firstRun(overrides: Partial<FirstRunState> = {}): FirstRunState {
-  return {
-    teamId: TEAM_ID,
-    startedByUserId: USER_ID,
-    phase: 'processing',
-    starterPath: 'website',
-    starterSelectedAt: new Date('2026-11-09T00:00:00.000Z'),
-    captureDocumentId: null,
-    captureEventId: null,
-    websiteUrl: 'https://studio.example/',
-    websiteHost: 'studio.example',
-    scanFailureReason: null,
-    guideHiddenAt: null,
-    firstCaptureLandedAt: null,
-    workStyle: 'delivery',
-    createdAt: new Date('2026-11-09T00:00:00.000Z'),
-    updatedAt: new Date('2026-11-09T00:00:00.000Z'),
+const scanId = '33333333-3333-4333-8333-333333333333';
+const state: FirstRunState = {
+  teamId: '11111111-1111-4111-8111-111111111111',
+  startedByUserId: '22222222-2222-4222-8222-222222222222',
+  phase: 'processing',
+  starterPath: 'website',
+  starterSelectedAt: new Date(),
+  captureDocumentId: null,
+  captureEventId: null,
+  websiteUrl: 'https://studio.example/',
+  websiteHost: 'studio.example',
+  websiteSubject: 'own_team',
+  websiteScanId: scanId,
+  scanFailureReason: null,
+  guideHiddenAt: null,
+  firstCaptureLandedAt: null,
+  workStyle: null,
+  createdAt: new Date(),
+  updatedAt: new Date(),
+};
+const pages = [
+  {
+    url: state.websiteUrl!,
+    title: 'Studio',
+    text: 'Studio builds software for public companies. '.repeat(4),
+  },
+];
+function fixture(overrides: Partial<WebsiteScanJobDeps> = {}) {
+  const deps = {
+    scanId,
+    userId: state.startedByUserId!,
+    firecrawlApiKey: 'fc-test',
+    getFirstRun: vi.fn(async () => state),
+    reserve: vi.fn(async () => true),
+    settle: vi.fn(async () => {}),
+    release: vi.fn(async () => {}),
+    getPages: vi.fn(async () => pages),
+    savePages: vi.fn(async () => pages),
+    saveDocument: vi.fn(async () => ({})),
+    createEvent: vi.fn(async () => ({ id: 'event-home' })),
+    attachCapture: vi.fn(async () => ({})),
+    markScanFailed: vi.fn(async () => ({})),
+    enqueueExtract: vi.fn(async () => {}),
+    firecrawlFetch: vi.fn(async () =>
+      Response.json({
+        id: 'crawl-1',
+        status: 'completed',
+        data: pages.map((page) => ({
+          markdown: page.text,
+          metadata: { sourceURL: page.url, title: page.title },
+        })),
+      }),
+    ),
     ...overrides,
   };
+  return deps;
 }
-
 describe('website scan job', () => {
-  it('writes cited web events through createEvent and never creates objects', async () => {
-    const createEvent = vi.fn(() => Promise.resolve({ id: 'event-home' }));
-    const attachCapture = vi.fn(() => Promise.resolve({}));
-    const markScanFailed = vi.fn(() => Promise.resolve({}));
-    const enqueueExtract = vi.fn(() => Promise.resolve(undefined));
-    const createObject = vi.fn();
-
-    await processWebsiteScanJob({
-      userId: USER_ID,
-      websiteScanEnabled: true,
-      firecrawlApiKey: FIRECRAWL_KEY,
-      firecrawlFetch: firecrawlFetch({
-        pages: [{ url: HOME, title: 'Studio', markdown: readableMarkdown('Design sprints') }],
-      }),
-      getFirstRun: () => Promise.resolve(firstRun()),
-      createEvent,
-      attachCapture,
-      markScanFailed,
-      enqueueExtract,
-    });
-
-    expect(createEvent).toHaveBeenCalledOnce();
-    const created = (
-      createEvent.mock.calls as unknown as [
-        {
-          source: string;
-          visibility: string;
-          authorUserId: string;
-          contentText: string;
-          sourceMetadata: Record<string, unknown>;
-        },
-      ][]
-    )[0]?.[0];
-    expect(created).toMatchObject({
-      source: 'web',
-      visibility: 'team',
-      authorUserId: USER_ID,
-      sourceMetadata: {
-        firstRunWebsiteScan: true,
-        pageUrl: 'https://studio.example/',
-        pageHost: 'studio.example',
-      },
-    });
-    expect(created?.contentText).toContain('https://studio.example/');
-    expect(enqueueExtract).toHaveBeenCalledWith({ rawEventId: 'event-home', teamId: TEAM_ID });
-    expect(attachCapture).toHaveBeenCalledWith({
-      eventId: 'event-home',
-      landed: true,
-      requireStarterPath: 'website',
-    });
-    expect(markScanFailed).not.toHaveBeenCalled();
-    expect(createObject).not.toHaveBeenCalled();
-  });
-
-  it('marks a failed scan and does not write events', async () => {
-    const createEvent = vi.fn(() => Promise.resolve({ id: 'event-home' }));
-    const attachCapture = vi.fn(() => Promise.resolve({}));
-    const markScanFailed = vi.fn(() => Promise.resolve({}));
-
-    await processWebsiteScanJob({
-      userId: USER_ID,
-      websiteScanEnabled: true,
-      firecrawlApiKey: FIRECRAWL_KEY,
-      firecrawlFetch: firecrawlFetch({ pages: [], robotsBlocked: [HOME] }),
-      getFirstRun: () => Promise.resolve(firstRun()),
-      createEvent,
-      attachCapture,
-      markScanFailed,
-      enqueueExtract: () => Promise.resolve(undefined),
-    });
-
-    expect(markScanFailed).toHaveBeenCalledWith('robots');
-    expect(createEvent).not.toHaveBeenCalled();
-    expect(attachCapture).not.toHaveBeenCalled();
-  });
-
-  it('fail-closes when the scan flag is off', async () => {
-    const markScanFailed = vi.fn(() => Promise.resolve({}));
-    await processWebsiteScanJob({
-      userId: USER_ID,
-      websiteScanEnabled: false,
-      firecrawlApiKey: FIRECRAWL_KEY,
-      getFirstRun: () => Promise.resolve(firstRun()),
-      createEvent: () => Promise.resolve({ id: 'x' }),
-      attachCapture: () => Promise.resolve({}),
-      markScanFailed,
-    });
-    expect(markScanFailed).toHaveBeenCalledWith('not_enabled');
-  });
-
-  it('fail-closes when the Firecrawl key is missing', async () => {
-    const markScanFailed = vi.fn(() => Promise.resolve({}));
-    await processWebsiteScanJob({
-      userId: USER_ID,
-      websiteScanEnabled: true,
-      firecrawlApiKey: '',
-      getFirstRun: () => Promise.resolve(firstRun()),
-      createEvent: () => Promise.resolve({ id: 'x' }),
-      attachCapture: () => Promise.resolve({}),
-      markScanFailed,
-    });
-    expect(markScanFailed).toHaveBeenCalledWith('not_enabled');
-  });
-
-  it('admits accepted-source billing before extract and skips extract when denied', async () => {
-    const enqueueExtract = vi.fn(() => Promise.resolve(undefined));
-    const attachCapture = vi.fn(() => Promise.resolve({}));
-    const admitEnrichment = vi.fn(() => Promise.resolve(false));
-    await processWebsiteScanJob({
-      userId: USER_ID,
-      websiteScanEnabled: true,
-      firecrawlApiKey: FIRECRAWL_KEY,
-      firecrawlFetch: firecrawlFetch({
-        pages: [{ url: HOME, title: 'Studio', markdown: readableMarkdown('Design sprints') }],
-      }),
-      getFirstRun: () => Promise.resolve(firstRun()),
-      createEvent: () => Promise.resolve({ id: 'event-home' }),
-      attachCapture,
-      markScanFailed: () => Promise.resolve({}),
-      enqueueExtract,
-      admitEnrichment,
-    });
-    expect(admitEnrichment).toHaveBeenCalledWith('event-home');
-    expect(enqueueExtract).not.toHaveBeenCalled();
-    expect(attachCapture).toHaveBeenCalledWith({
-      eventId: 'event-home',
-      landed: true,
-      requireStarterPath: 'website',
-    });
-  });
-
-  it('does not mark the capture landed when extract enqueue fails', async () => {
-    const attachCapture = vi.fn(() => Promise.resolve({}));
-    await expect(
-      processWebsiteScanJob({
-        userId: USER_ID,
-        websiteScanEnabled: true,
-        firecrawlApiKey: FIRECRAWL_KEY,
-        firecrawlFetch: firecrawlFetch({
-          pages: [{ url: HOME, title: 'Studio', markdown: readableMarkdown('Design sprints') }],
+  it('persists documents and cited web events, settles one page once and enqueues extraction', async () => {
+    const deps = fixture();
+    await processWebsiteScanJob(deps);
+    expect(deps.settle).toHaveBeenCalledWith(1);
+    expect(deps.createEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        source: 'web',
+        sourceMetadata: expect.objectContaining({
+          websiteScanId: scanId,
+          websiteSubject: 'own_team',
+          pageUrl: pages[0]!.url,
         }),
-        getFirstRun: () => Promise.resolve(firstRun()),
-        createEvent: () => Promise.resolve({ id: 'event-home' }),
-        attachCapture,
-        markScanFailed: () => Promise.resolve({}),
-        enqueueExtract: () => Promise.reject(new Error('redis down')),
       }),
-    ).rejects.toThrow('redis down');
-    expect(attachCapture).not.toHaveBeenCalled();
-  });
-
-  it('does not fail onboarding after the starter path has changed', async () => {
-    const markScanFailed = vi.fn(() => Promise.resolve({}));
-    const attachCapture = vi.fn(() => Promise.resolve({}));
-    let calls = 0;
-    await processWebsiteScanJob({
-      userId: USER_ID,
-      websiteScanEnabled: true,
-      firecrawlApiKey: FIRECRAWL_KEY,
-      firecrawlFetch: firecrawlFetch({ pages: [], robotsBlocked: [HOME] }),
-      getFirstRun: () => {
-        calls += 1;
-        if (calls === 1) return Promise.resolve(firstRun());
-        return Promise.resolve(firstRun({ starterPath: 'email', websiteUrl: null }));
-      },
-      createEvent: () => Promise.resolve({ id: 'event-home' }),
-      attachCapture,
-      markScanFailed,
-      enqueueExtract: () => Promise.resolve(undefined),
+    );
+    expect(deps.saveDocument).toHaveBeenCalledWith({
+      scanId,
+      eventId: 'event-home',
+      page: pages[0],
     });
-    expect(markScanFailed).not.toHaveBeenCalled();
-    expect(attachCapture).not.toHaveBeenCalled();
+    expect(deps.enqueueExtract).toHaveBeenCalledWith({
+      teamId: state.teamId,
+      rawEventId: 'event-home',
+    });
+    expect(deps.attachCapture).toHaveBeenCalledWith({
+      eventId: 'event-home',
+      landed: true,
+      requireStarterPath: 'website',
+      websiteScanId: scanId,
+    });
+    expect(deps.firecrawlFetch).not.toHaveBeenCalled();
+  });
+  it('does not call Firecrawl or persist events when billing refuses admission', async () => {
+    const deps = fixture({ reserve: async () => false, getPages: async () => null });
+    await processWebsiteScanJob(deps);
+    expect(deps.firecrawlFetch).not.toHaveBeenCalled();
+    expect(deps.createEvent).not.toHaveBeenCalled();
+    expect(deps.release).toHaveBeenCalled();
+  });
+  it('requires the key before provider work', async () => {
+    const deps = fixture({ firecrawlApiKey: '' });
+    await expect(processWebsiteScanJob(deps)).rejects.toThrow('FIRECRAWL_API_KEY is required');
+    expect(deps.firecrawlFetch).not.toHaveBeenCalled();
+  });
+  it('ignores jobs for an older selection even when its URL is identical', async () => {
+    const deps = fixture({
+      getFirstRun: async () => ({ ...state, websiteScanId: 'new-selection' }),
+    });
+    await processWebsiteScanJob(deps);
+    expect(deps.createEvent).not.toHaveBeenCalled();
+    expect(deps.attachCapture).not.toHaveBeenCalled();
+  });
+  it('propagates extraction enqueue failures without completing and reuses snapshots on retry', async () => {
+    let fail = true;
+    const deps = fixture({
+      enqueueExtract: async () => {
+        if (fail) throw new Error('Redis unavailable');
+      },
+    });
+    await expect(processWebsiteScanJob(deps)).rejects.toThrow('Redis unavailable');
+    expect(deps.attachCapture).not.toHaveBeenCalled();
+    fail = false;
+    await processWebsiteScanJob(deps);
+    expect(deps.firecrawlFetch).not.toHaveBeenCalled();
+    expect(deps.createEvent).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ idempotencyKey: `website-scan:${scanId}:${pages[0]!.url}` }),
+    );
+    expect(deps.attachCapture).toHaveBeenCalledTimes(1);
+  });
+  it('does not persist a crawl that finishes after switching paths', async () => {
+    let current = state;
+    const deps = fixture({
+      getPages: async () => null,
+      getFirstRun: async () => current,
+      savePages: async () => {
+        current = { ...state, starterPath: 'email' };
+        return pages;
+      },
+    });
+    await processWebsiteScanJob(deps);
+    expect(deps.createEvent).not.toHaveBeenCalled();
+    expect(deps.attachCapture).not.toHaveBeenCalled();
+  });
+  it('preserves the other-company subject in evidence', async () => {
+    const deps = fixture({
+      getFirstRun: async () => ({ ...state, websiteSubject: 'other_company' }),
+    });
+    await processWebsiteScanJob(deps);
+    expect(deps.createEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sourceMetadata: expect.objectContaining({ websiteSubject: 'other_company' }),
+      }),
+    );
   });
 });

@@ -8,7 +8,6 @@ import {
   orderChecklistItems,
   parsePublicWebsiteUrl,
   guidedAskEmptyHint,
-  isWebsiteScanEnabled,
   listedWebsiteSourceEvents,
   prefilledAskQuestion,
   recommendedGoLiveChannel,
@@ -80,20 +79,6 @@ describe('first-run helpers', () => {
       ['suggest', 'waiting'],
     ]);
     expect(steps[1]?.detail).toBe('PDF and Office files up to 25 MB.');
-  });
-
-  it('enables website scan only when the flag and Firecrawl key are both set', () => {
-    expect(isWebsiteScanEnabled({ WEBSITE_SCAN_ENABLED: true })).toBe(false);
-    expect(isWebsiteScanEnabled({ WEBSITE_SCAN_ENABLED: true, FIRECRAWL_API_KEY: '' })).toBe(false);
-    expect(
-      isWebsiteScanEnabled({ WEBSITE_SCAN_ENABLED: false, FIRECRAWL_API_KEY: 'fc-test' }),
-    ).toBe(false);
-    expect(isWebsiteScanEnabled({ WEBSITE_SCAN_ENABLED: true, FIRECRAWL_API_KEY: 'fc-test' })).toBe(
-      true,
-    );
-    expect(isWebsiteScanEnabled({ WEBSITE_SCAN_ENABLED: '1', FIRECRAWL_API_KEY: 'fc-test' })).toBe(
-      true,
-    );
   });
 
   it('keeps website scan copy honest about the page cap and robots', () => {
@@ -171,6 +156,8 @@ describe('first-run helpers', () => {
           captureEventId: null,
           websiteUrl: null,
           websiteHost: null,
+          websiteSubject: 'own_team',
+          websiteScanId: null,
           scanFailureReason: null,
           guideHiddenAt: null,
           firstCaptureLandedAt: null,
