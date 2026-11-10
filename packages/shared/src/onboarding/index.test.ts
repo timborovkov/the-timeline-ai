@@ -324,6 +324,17 @@ describe('first-run scope', () => {
     expect(firstRun.rows).toHaveLength(0);
   });
 
+  it('does not record a website scan failure after the starter path changes', async () => {
+    await pg.exec(`
+      INSERT INTO team_first_run (team_id, started_by_user_id, phase, starter_path)
+      VALUES ('${TEAM_ID}', '${OWNER_ID}', 'processing', 'email');
+    `);
+    const next = await scope().markScanFailed('robots');
+    expect(next.phase).toBe('processing');
+    expect(next.starterPath).toBe('email');
+    expect(next.scanFailureReason).toBeNull();
+  });
+
   it('does not let a stale document selection replace skip', async () => {
     await pg.exec(`
       INSERT INTO team_first_run (team_id, started_by_user_id, phase)

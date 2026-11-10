@@ -109,6 +109,34 @@ Disallow: /secret
     ]);
   });
 
+  it('treats an empty Disallow as allowing the site', async () => {
+    const result = await scanPublicWebsite(HOME, {
+      fetchPage: fetchMap({
+        'https://studio.example/robots.txt': response('User-agent: *\nDisallow:\n', {
+          headers: { 'content-type': 'text/plain' },
+        }),
+        [HOME]: response(page(readable('Home'))),
+      }),
+    });
+    expect(result.ok).toBe(true);
+  });
+
+  it('does not follow a same-origin redirect into a robots-disallowed path', async () => {
+    const result = await scanPublicWebsite(HOME, {
+      fetchPage: fetchMap({
+        'https://studio.example/robots.txt': response('User-agent: *\nDisallow: /private\n', {
+          headers: { 'content-type': 'text/plain' },
+        }),
+        [HOME]: new Response(null, {
+          status: 302,
+          headers: { location: 'https://studio.example/private' },
+        }),
+        'https://studio.example/private': response(page(readable('Secret'))),
+      }),
+    });
+    expect(result).toEqual({ ok: false, reason: 'robots' });
+  });
+
   it('fails closed when robots disallow the site', async () => {
     const result = await scanPublicWebsite(HOME, {
       fetchPage: fetchMap({

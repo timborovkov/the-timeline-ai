@@ -281,10 +281,14 @@ export function createFirstRunHandlers({ db, teamId, userId, ensureMember }: Fir
     documentId?: string;
     eventId?: string;
     landed?: boolean;
+    requireStarterPath?: FirstRunPath;
   }): Promise<FirstRunState> {
     await ensureMember();
     const current = await loadState();
     if (!current) throw new Error('First-run has not started');
+    if (input.requireStarterPath && current.starterPath !== input.requireStarterPath) {
+      return current;
+    }
     if (
       input.documentId &&
       current.starterPath !== 'document' &&
@@ -391,6 +395,11 @@ export function createFirstRunHandlers({ db, teamId, userId, ensureMember }: Fir
 
     async markScanFailed(reason: FirstRunScanFailureReason): Promise<FirstRunState> {
       await ensureMember();
+      const current = await loadState();
+      if (!current) throw new Error('First-run has not started');
+      if (current.starterPath !== 'website' || current.phase !== 'processing') {
+        return current;
+      }
       const next = await touch({ phase: 'failed', scanFailureReason: reason });
       if (!next) throw new Error('Failed to record scan failure');
       return next;

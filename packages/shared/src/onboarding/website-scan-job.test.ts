@@ -94,7 +94,11 @@ describe('website scan job', () => {
     });
     expect(created?.contentText).toContain('https://studio.example/');
     expect(enqueueExtract).toHaveBeenCalledWith({ rawEventId: 'event-home', teamId: TEAM_ID });
-    expect(attachCapture).toHaveBeenCalledWith({ eventId: 'event-home', landed: true });
+    expect(attachCapture).toHaveBeenCalledWith({
+      eventId: 'event-home',
+      landed: true,
+      requireStarterPath: 'website',
+    });
     expect(markScanFailed).not.toHaveBeenCalled();
     expect(createObject).not.toHaveBeenCalled();
   });
@@ -134,5 +138,77 @@ describe('website scan job', () => {
       markScanFailed,
     });
     expect(markScanFailed).toHaveBeenCalledWith('not_enabled');
+  });
+
+  it('admits accepted-source billing before extract and skips extract when denied', async () => {
+    const enqueueExtract = vi.fn(() => Promise.resolve(undefined));
+    const attachCapture = vi.fn(() => Promise.resolve({}));
+    const admitEnrichment = vi.fn(() => Promise.resolve(false));
+    await processWebsiteScanJob({
+      userId: USER_ID,
+      websiteScanEnabled: true,
+      getFirstRun: () => Promise.resolve(firstRun()),
+      createEvent: () => Promise.resolve({ id: 'event-home' }),
+      attachCapture,
+      markScanFailed: () => Promise.resolve({}),
+      enqueueExtract,
+      admitEnrichment,
+      fetchPage: fetchPages({
+        'https://studio.example/robots.txt': 404,
+        'https://studio.example/': html('Design sprints for B2B teams.'),
+      }),
+    });
+    expect(admitEnrichment).toHaveBeenCalledWith('event-home');
+    expect(enqueueExtract).not.toHaveBeenCalled();
+    expect(attachCapture).toHaveBeenCalledWith({
+      eventId: 'event-home',
+      landed: true,
+      requireStarterPath: 'website',
+    });
+  });
+
+  it('does not mark the capture landed when extract enqueue fails', async () => {
+    const attachCapture = vi.fn(() => Promise.resolve({}));
+    await expect(
+      processWebsiteScanJob({
+        userId: USER_ID,
+        websiteScanEnabled: true,
+        getFirstRun: () => Promise.resolve(firstRun()),
+        createEvent: () => Promise.resolve({ id: 'event-home' }),
+        attachCapture,
+        markScanFailed: () => Promise.resolve({}),
+        enqueueExtract: () => Promise.reject(new Error('redis down')),
+        fetchPage: fetchPages({
+          'https://studio.example/robots.txt': 404,
+          'https://studio.example/': html('Design sprints for B2B teams.'),
+        }),
+      }),
+    ).rejects.toThrow('redis down');
+    expect(attachCapture).not.toHaveBeenCalled();
+  });
+
+  it('does not fail onboarding after the starter path has changed', async () => {
+    const markScanFailed = vi.fn(() => Promise.resolve({}));
+    const attachCapture = vi.fn(() => Promise.resolve({}));
+    let calls = 0;
+    await processWebsiteScanJob({
+      userId: USER_ID,
+      websiteScanEnabled: true,
+      getFirstRun: () => {
+        calls += 1;
+        if (calls === 1) return Promise.resolve(firstRun());
+        return Promise.resolve(firstRun({ starterPath: 'email', websiteUrl: null }));
+      },
+      createEvent: () => Promise.resolve({ id: 'event-home' }),
+      attachCapture,
+      markScanFailed,
+      enqueueExtract: () => Promise.resolve(undefined),
+      fetchPage: fetchPages({
+        'https://studio.example/robots.txt': 'User-agent: *\nDisallow: /\n',
+        'https://studio.example/': html('Hidden'),
+      }),
+    });
+    expect(markScanFailed).not.toHaveBeenCalled();
+    expect(attachCapture).not.toHaveBeenCalled();
   });
 });

@@ -1,5 +1,4 @@
 import { getEnv } from '#src/env.js';
-import { childLogger } from '#src/logger.js';
 import {
   isWebsiteScanEnabled,
   type FirstRunScanFailureReason,
@@ -12,8 +11,6 @@ import {
   type WebsiteScanPage,
 } from '#src/onboarding/website-scan.js';
 import { enqueueExtractJob } from '#src/queue/queues.js';
-
-const log = childLogger('onboarding:website-scan');
 
 const FIRST_RUN_WEBSITE_SCAN_META = 'firstRunWebsiteScan' as const;
 
@@ -29,9 +26,14 @@ export interface WebsiteScanJobDeps extends WebsiteScanDeps {
     visibilityOwnerUserId: string;
     sourceMetadata: Record<string, unknown>;
   }) => Promise<{ id: string }>;
-  attachCapture: (input: { eventId: string; landed: boolean }) => Promise<unknown>;
+  attachCapture: (input: {
+    eventId: string;
+    landed: boolean;
+    requireStarterPath: 'website';
+  }) => Promise<unknown>;
   markScanFailed: (reason: FirstRunScanFailureReason) => Promise<unknown>;
   enqueueExtract?: typeof enqueueExtractJob;
+  admitEnrichment?: (rawEventId: string) => Promise<boolean>;
   websiteScanEnabled?: boolean;
 }
 
@@ -44,13 +46,21 @@ function pageMetadata(page: WebsiteScanPage, host: string): Record<string, unkno
   };
 }
 
+function isActiveWebsiteScan(state: FirstRunState | null, websiteUrl: string): boolean {
+  return (
+    state?.starterPath === 'website' &&
+    state.websiteUrl === websiteUrl &&
+    state.phase === 'processing'
+  );
+}
+
 async function persistWebsiteScanPages(input: {
   userId: string;
   host: string;
   pages: WebsiteScanPage[];
   createEvent: WebsiteScanJobDeps['createEvent'];
-  attachCapture: WebsiteScanJobDeps['attachCapture'];
   enqueueExtract: typeof enqueueExtractJob;
+  admitEnrichment?: (rawEventId: string) => Promise<boolean>;
   teamId: string;
 }): Promise<string | null> {
   let firstId: string | null = null;
@@ -65,14 +75,9 @@ async function persistWebsiteScanPages(input: {
       sourceMetadata: pageMetadata(page, input.host),
     });
     firstId ??= event.id;
-    try {
-      await input.enqueueExtract({ rawEventId: event.id, teamId: input.teamId });
-    } catch (err) {
-      log.error({ err, rawEventId: event.id }, 'failed to enqueue extract for website scan page');
-    }
-  }
-  if (firstId) {
-    await input.attachCapture({ eventId: firstId, landed: true });
+    const admitted = input.admitEnrichment ? await input.admitEnrichment(event.id) : true;
+    if (!admitted) continue;
+    await input.enqueueExtract({ rawEventId: event.id, teamId: input.teamId });
   }
   return firstId;
 }
@@ -80,16 +85,10 @@ async function persistWebsiteScanPages(input: {
 export async function processWebsiteScanJob(deps: WebsiteScanJobDeps): Promise<void> {
   const enabled = deps.websiteScanEnabled ?? isWebsiteScanEnabled(getEnv());
   const firstRun = await deps.getFirstRun();
-  if (firstRun?.starterPath !== 'website' || !firstRun.websiteUrl) {
+  if (!firstRun?.websiteUrl || !isActiveWebsiteScan(firstRun, firstRun.websiteUrl)) {
     return;
   }
-  if (
-    firstRun.phase === 'failed' ||
-    firstRun.phase === 'skipped' ||
-    firstRun.phase === 'complete'
-  ) {
-    return;
-  }
+  const websiteUrl = firstRun.websiteUrl;
   if (firstRun.firstCaptureLandedAt && firstRun.captureEventId) {
     return;
   }
@@ -98,10 +97,16 @@ export async function processWebsiteScanJob(deps: WebsiteScanJobDeps): Promise<v
     return;
   }
 
-  const result = await scanPublicWebsite(firstRun.websiteUrl, {
+  const result = await scanPublicWebsite(websiteUrl, {
     ...(deps.fetchPage ? { fetchPage: deps.fetchPage } : {}),
     ...(deps.now ? { now: deps.now } : {}),
   });
+
+  const latest = await deps.getFirstRun();
+  if (!isActiveWebsiteScan(latest, websiteUrl)) {
+    return;
+  }
+
   if (!result.ok) {
     await deps.markScanFailed(result.reason);
     return;
@@ -116,11 +121,18 @@ export async function processWebsiteScanJob(deps: WebsiteScanJobDeps): Promise<v
     host: result.host,
     pages: result.pages,
     createEvent: deps.createEvent,
-    attachCapture: deps.attachCapture,
     enqueueExtract: deps.enqueueExtract ?? enqueueExtractJob,
+    ...(deps.admitEnrichment ? { admitEnrichment: deps.admitEnrichment } : {}),
     teamId: firstRun.teamId,
   });
+
+  const afterPersist = await deps.getFirstRun();
+  if (!isActiveWebsiteScan(afterPersist, websiteUrl)) {
+    return;
+  }
   if (!firstId) {
     await deps.markScanFailed('no_readable_text');
+    return;
   }
+  await deps.attachCapture({ eventId: firstId, landed: true, requireStarterPath: 'website' });
 }

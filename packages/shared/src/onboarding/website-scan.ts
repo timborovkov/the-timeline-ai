@@ -78,7 +78,8 @@ export function parseRobotsTxt(body: string): RobotsGroup[] {
     startingGroup = false;
     if (!current) continue;
     if (field === 'allow' || field === 'disallow') {
-      current.rules.push({ allow: field === 'allow', path: value || '/' });
+      if (!value) continue;
+      current.rules.push({ allow: field === 'allow', path: value });
     }
   }
   return groups;
@@ -250,7 +251,8 @@ async function followSameOrigin(
   fetchPage: WebsiteScanFetch,
   start: URL,
   origin: URL,
-): Promise<Response | null> {
+  groups: RobotsGroup[],
+): Promise<Response | 'robots' | null> {
   let current = start;
   for (let hop = 0; hop <= WEBSITE_SCAN_MAX_REDIRECTS; hop += 1) {
     const response = await fetchPageResponse(fetchPage, current);
@@ -265,6 +267,10 @@ async function followSameOrigin(
     }
     const canonical = canonicalizePublicHref(next.toString());
     if (!canonical || !sameOrigin(canonical, origin)) return null;
+    const path = `${canonical.pathname}${canonical.search}` || '/';
+    if (groups.length > 0 && !robotsAllowsPath(groups, WEBSITE_SCAN_USER_AGENT, path)) {
+      return 'robots';
+    }
     current = canonical;
   }
   return null;
@@ -333,13 +339,14 @@ export async function scanPublicWebsite(
       return 'robots';
     }
     if (deadlineExceeded()) return 'skip';
-    let response: Response | null;
+    let response: Response | 'robots' | null;
     try {
-      response = await followSameOrigin(fetchPage, url, origin);
+      response = await followSameOrigin(fetchPage, url, origin, groups);
     } catch (error) {
       if (error instanceof ExternalHttpError && error.code === 'blocked_address') throw error;
       return 'skip';
     }
+    if (response === 'robots') return 'robots';
     if (!response || response.status < 200 || response.status >= 300 || !isHtmlResponse(response)) {
       return 'skip';
     }

@@ -1,4 +1,5 @@
 import type { Db } from '@timeline/db';
+import { admitAcceptedSourceEnrichment } from '@timeline/shared/billing';
 import { childLogger } from '@timeline/shared/logger';
 import { processWebsiteScanJob } from '@timeline/shared/onboarding';
 import { getRedisConnection, QUEUE_NAMES, type WebsiteScanJobData } from '@timeline/shared/queue';
@@ -39,6 +40,8 @@ export async function processWebsiteScanWorkerJob(
       createEvent: (input) => scope.timeline.createEvent(input),
       attachCapture: (input) => scope.onboarding.attachCapture(input),
       markScanFailed: (reason) => scope.onboarding.markScanFailed(reason),
+      admitEnrichment: (rawEventId) =>
+        admitAcceptedSourceEnrichment({ db, teamId, userId, rawEventId }),
     });
   } catch (error) {
     if (job.attemptsStarted >= 3) {
