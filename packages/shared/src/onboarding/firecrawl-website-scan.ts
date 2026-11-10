@@ -45,6 +45,8 @@ export type FirecrawlFetch = (
 
 export interface FirecrawlCrawlDeps {
   apiKey: string;
+  crawlId?: string;
+  onCrawlStarted?: (crawlId: string) => Promise<void>;
   fetchImpl?: FirecrawlFetch;
   now?: () => number;
   sleep?: (ms: number) => Promise<void>;
@@ -310,17 +312,32 @@ export async function crawlPublicWebsiteWithFirecrawl(
   const deadlineExceeded = () => now() - startedAt >= FIRECRAWL_CRAWL_TIMEOUT_MS;
 
   try {
-    const started = await firecrawlJson(
-      fetchImpl,
-      firecrawlUrl('/v2/crawl'),
-      {
-        method: 'POST',
-        body: JSON.stringify({ url: origin.toString(), ...CRAWL_BODY }),
-      },
-      deps.apiKey,
-    );
-    const crawlId = asString(asRecord(started)?.id);
-    if (!crawlId) return { kind: 'retryable' };
+    let crawlId = deps.crawlId;
+    if (!crawlId) {
+      const started = await firecrawlJson(
+        fetchImpl,
+        firecrawlUrl('/v2/crawl'),
+        {
+          method: 'POST',
+          body: JSON.stringify({ url: origin.toString(), ...CRAWL_BODY }),
+        },
+        deps.apiKey,
+      );
+      crawlId = asString(asRecord(started)?.id);
+      if (!crawlId) return { kind: 'retryable' };
+      try {
+        await deps.onCrawlStarted?.(crawlId);
+      } catch (error) {
+        // Do not knowingly leave untracked provider work when checkpointing fails.
+        await firecrawlJson(
+          fetchImpl,
+          firecrawlUrl(`/v2/crawl/${encodeURIComponent(crawlId)}`),
+          { method: 'DELETE' },
+          deps.apiKey,
+        );
+        throw error;
+      }
+    }
 
     let lastDocuments: FirecrawlDocument[] = [];
     while (!deadlineExceeded()) {

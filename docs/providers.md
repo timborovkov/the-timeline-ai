@@ -84,4 +84,3 @@ A provider may be added only after its owner records:
 - [Polar sandbox identity evidence](evidence/polar-team-identity-2026-10.md).
 
 Recheck provider policies, regions, retention and contracts before changing a public assurance. The date of a source document is not proof of current account state. Customer-directed connections remain subject to their own source permissions and disconnect/deletion behavior.
-

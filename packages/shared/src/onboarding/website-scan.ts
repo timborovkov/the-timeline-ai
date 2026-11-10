@@ -17,6 +17,8 @@ export type WebsiteScanResult =
   | { ok: true; host: string; pages: WebsiteScanPage[] }
   | { ok: false; reason: FirstRunScanFailureReason };
 export interface WebsiteScanDeps {
+  crawlId?: string;
+  onCrawlStarted?: (crawlId: string) => Promise<void>;
   now?: () => number;
   firecrawlApiKey?: string;
   firecrawlFetch?: FirecrawlFetch;
@@ -48,6 +50,8 @@ export async function scanPublicWebsite(
 
   const firecrawl = await crawlPublicWebsiteWithFirecrawl(origin, {
     apiKey,
+    ...(deps.crawlId ? { crawlId: deps.crawlId } : {}),
+    ...(deps.onCrawlStarted ? { onCrawlStarted: deps.onCrawlStarted } : {}),
     ...(deps.firecrawlFetch ? { fetchImpl: deps.firecrawlFetch } : {}),
     ...(deps.now ? { now: deps.now } : {}),
     ...(deps.sleep ? { sleep: deps.sleep } : {}),

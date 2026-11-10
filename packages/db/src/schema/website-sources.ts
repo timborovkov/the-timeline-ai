@@ -9,6 +9,7 @@ export const websiteSources = pgTable('website_sources', {
     .references(() => teams.id, { onDelete: 'cascade' }),
   url: text('url').notNull(),
   websiteSubject: text('website_subject').$type<'own_team' | 'other_company'>().notNull(),
-  pages: jsonb('pages').$type<{ url: string; title: string; text: string }[]>().notNull(),
+  crawlId: text('crawl_id'),
+  pages: jsonb('pages').$type<{ url: string; title: string; text: string }[]>(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 });

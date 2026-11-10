@@ -70,6 +70,8 @@ export async function processWebsiteScanWorkerJob(
       release: async () => {
         await scope.billing.release(operationId);
       },
+      getCrawlId: () => scope.onboarding.getWebsiteCrawlId(scanId),
+      saveCrawlId: (input) => scope.onboarding.saveWebsiteCrawlId(input),
       getPages: () => scope.onboarding.getWebsiteScanPages(scanId),
       savePages: (input) => scope.onboarding.saveWebsiteScanPages(input),
       saveDocument: async (input) => {

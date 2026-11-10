@@ -74,28 +74,24 @@ live('real website scan E2E', () => {
       const teamId = randomUUID();
       const userId = randomUUID();
       const scanId = randomUUID();
-      await database
-        .insert(users)
-        .values({
-          id: userId,
-          email: `${userId}@example.test`,
-          name: 'Website test owner',
-          emailVerified: new Date(),
-        });
+      await database.insert(users).values({
+        id: userId,
+        email: `${userId}@example.test`,
+        name: 'Website test owner',
+        emailVerified: new Date(),
+      });
       await database
         .insert(teams)
         .values({ id: teamId, name: 'Website scan test', slug: `scan-${teamId}` });
       await database.insert(teamMembers).values({ teamId, userId, role: 'owner' });
-      await database
-        .insert(teamBillingAccounts)
-        .values({
-          teamId,
-          planId: 'payg',
-          billingState: 'payg_active',
-          securityState: 'normal',
-          shadowBilling: true,
-          walletBalanceCents: 10000,
-        });
+      await database.insert(teamBillingAccounts).values({
+        teamId,
+        planId: 'payg',
+        billingState: 'payg_active',
+        securityState: 'normal',
+        shadowBilling: true,
+        walletBalanceCents: 10000,
+      });
       const scope = withTeam(db, teamId, userId);
       const url = process.env.WEBSITE_SCAN_LIVE_URL ?? 'https://thetimeline.cc';
       await scope.onboarding.selectStarterPath('website', {
@@ -132,6 +128,8 @@ live('real website scan E2E', () => {
         release: async () => {
           await scope.billing.release(operationId);
         },
+        getCrawlId: () => scope.onboarding.getWebsiteCrawlId(scanId),
+        saveCrawlId: (input) => scope.onboarding.saveWebsiteCrawlId(input),
         getPages: () => scope.onboarding.getWebsiteScanPages(scanId),
         savePages: (input) => scope.onboarding.saveWebsiteScanPages(input),
         saveDocument: (input) => scope.onboarding.saveWebsitePageDocument(input),

@@ -6,7 +6,8 @@ CREATE TABLE "website_sources" (
   "team_id" uuid NOT NULL REFERENCES "teams"("id") ON DELETE CASCADE,
   "url" text NOT NULL,
   "website_subject" text NOT NULL CHECK ("website_subject" IN ('own_team', 'other_company')),
-  "pages" jsonb NOT NULL,
+  "crawl_id" text,
+  "pages" jsonb,
   "created_at" timestamptz DEFAULT now() NOT NULL
 );
 CREATE INDEX "website_sources_team_idx" ON "website_sources" ("team_id");

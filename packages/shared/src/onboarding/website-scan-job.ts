@@ -19,6 +19,13 @@ export interface WebsiteScanJobDeps extends WebsiteScanDeps {
   reserve: () => Promise<boolean>;
   settle: (pageCount: number) => Promise<void>;
   release: () => Promise<void>;
+  getCrawlId: () => Promise<string | null>;
+  saveCrawlId: (input: {
+    scanId: string;
+    url: string;
+    websiteSubject: WebsiteSubject;
+    crawlId: string;
+  }) => Promise<void>;
   getPages: () => Promise<WebsiteScanPage[] | null>;
   savePages: (input: {
     scanId: string;
@@ -70,8 +77,17 @@ export async function processWebsiteScanJob(deps: WebsiteScanJobDeps): Promise<v
     return;
   }
   if (!pages) {
+    const crawlId = await deps.getCrawlId();
     const result = await scanPublicWebsite(firstRun.websiteUrl, {
       ...deps,
+      ...(crawlId ? { crawlId } : {}),
+      onCrawlStarted: (crawlId) =>
+        deps.saveCrawlId({
+          scanId: deps.scanId,
+          url: firstRun.websiteUrl!,
+          websiteSubject: firstRun.websiteSubject,
+          crawlId,
+        }),
       firecrawlApiKey: apiKey,
     });
     if (!result.ok) {

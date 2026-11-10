@@ -175,8 +175,6 @@ export async function selectStarterPathAction(input: {
           error: 'Could not start the website scan. Upload a document or forward an email instead.',
         };
       }
-      const scanLimited = await limitWebsiteScan(got.teamId);
-      if (scanLimited) return { ok: false, error: scanLimited };
       const admission = await got.scope.billing.reserve({
         operationId,
         meterId: 'accepted_sources',
@@ -191,6 +189,11 @@ export async function selectStarterPathAction(input: {
             'Website scan cannot start with the current usage allowance. Check Billing or ask a team administrator.',
         };
       reserved = true;
+      const scanLimited = await limitWebsiteScan(got.teamId);
+      if (scanLimited) {
+        await got.scope.billing.release(operationId);
+        return { ok: false, error: scanLimited };
+      }
     }
 
     try {

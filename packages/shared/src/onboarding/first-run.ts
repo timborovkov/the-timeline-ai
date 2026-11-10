@@ -377,7 +377,7 @@ export function scanFailureCopy(input: {
   if (input.reason === 'unreachable') {
     return {
       title: `We couldn't reach ${host}`,
-      body: 'The address did not respond, or it is not a public site we can fetch. Nothing was saved from this attempt.',
+      body: 'The website scan did not finish. Any pages already saved remain available; some processing may still be incomplete. You can upload a document or forward an email instead.',
     };
   }
   if (input.reason === 'rate_limited') {
@@ -429,6 +429,8 @@ export function parsePublicWebsiteUrl(
   if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
     return { error: 'Enter an http or https address.' };
   }
+  if (parsed.username || parsed.password)
+    return { error: 'Use a public website URL without a username or password.' };
   const host = parsed.hostname.toLowerCase();
   if (isNonPublicWebsiteHost(host)) {
     return { error: 'Enter a public website, not a local address.' };

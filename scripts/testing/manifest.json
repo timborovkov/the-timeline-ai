@@ -2403,5 +2403,8 @@
   },
   "apps/worker/src/workers/websiteScan.live-eval.test.ts": {
     "group": "live"
+  },
+  "packages/shared/src/onboarding/website-source-scope.test.ts": {
+    "group": "unit"
   }
 }

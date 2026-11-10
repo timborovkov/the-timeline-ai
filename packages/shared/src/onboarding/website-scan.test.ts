@@ -154,4 +154,31 @@ describe('website scan Firecrawl crawl', () => {
     });
     expect(result).toEqual({ ok: false, reason: 'rate_limited' });
   });
+  it('rejects embedded URL credentials before contacting Firecrawl', async () => {
+    let called = false;
+    const result = await scanPublicWebsite('https://user:password@example.com/', {
+      firecrawlApiKey: FIRECRAWL_KEY,
+      firecrawlFetch: async () => {
+        called = true;
+        return new Response();
+      },
+    });
+    expect(result.ok).toBe(false);
+    expect(called).toBe(false);
+  });
+  it('resumes a checkpointed crawl without starting another provider job', async () => {
+    const methods: string[] = [];
+    const result = await scanPublicWebsite(HOME, {
+      firecrawlApiKey: FIRECRAWL_KEY,
+      crawlId: 'crawl-1',
+      firecrawlFetch: async (input, init) => {
+        methods.push(init?.method ?? 'GET');
+        return firecrawlFetch({
+          pages: [{ url: HOME, title: 'Studio', markdown: readable('Home') }],
+        })(input, init);
+      },
+    });
+    expect(result.ok).toBe(true);
+    expect(methods).not.toContain('POST');
+  });
 });

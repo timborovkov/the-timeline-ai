@@ -331,6 +331,8 @@ export const WORKSPACE_OPERATOR_POLICY = {
   'onboarding.reopenChecklist': write,
   'onboarding.getFirstRun': read,
   'onboarding.getWebsiteScanPages': read,
+  'onboarding.getWebsiteCrawlId': read,
+  'onboarding.saveWebsiteCrawlId': write,
   'onboarding.saveWebsiteScanPages': write,
   'onboarding.saveWebsitePageDocument': write,
   'onboarding.ensureFirstRun': write,

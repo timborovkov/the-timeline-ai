@@ -29,6 +29,33 @@ export function createWebsiteSourceHandlers({
   ensureMember: (minRole?: TeamRole) => Promise<TeamRole>;
 }) {
   return {
+    async getWebsiteCrawlId(scanId: string): Promise<string | null> {
+      await ensureMember();
+      const [source] = await db
+        .select({ crawlId: websiteSources.crawlId })
+        .from(websiteSources)
+        .where(and(eq(websiteSources.teamId, teamId), eq(websiteSources.id, scanId)))
+        .limit(1);
+      return source?.crawlId ?? null;
+    },
+    async saveWebsiteCrawlId(input: {
+      scanId: string;
+      url: string;
+      websiteSubject: WebsiteSubject;
+      crawlId: string;
+    }): Promise<void> {
+      await ensureMember();
+      await db
+        .insert(websiteSources)
+        .values({
+          id: input.scanId,
+          teamId,
+          url: input.url,
+          websiteSubject: input.websiteSubject,
+          crawlId: input.crawlId,
+        })
+        .onConflictDoNothing();
+    },
     async getWebsiteScanPages(scanId: string): Promise<WebsiteScanPage[] | null> {
       await ensureMember();
       const [source] = await db
@@ -61,7 +88,26 @@ export function createWebsiteSourceHandlers({
         .where(and(eq(websiteSources.teamId, teamId), eq(websiteSources.id, input.scanId)))
         .limit(1);
       if (!source) throw new Error('Website source not found');
-      return source.pages;
+      if (source.pages) return source.pages;
+      const [saved] = await db
+        .update(websiteSources)
+        .set({ pages: input.pages })
+        .where(
+          and(
+            eq(websiteSources.teamId, teamId),
+            eq(websiteSources.id, input.scanId),
+            sql`${websiteSources.pages} IS NULL`,
+          ),
+        )
+        .returning();
+      if (saved?.pages) return saved.pages;
+      const [current] = await db
+        .select()
+        .from(websiteSources)
+        .where(and(eq(websiteSources.teamId, teamId), eq(websiteSources.id, input.scanId)))
+        .limit(1);
+      if (!current?.pages) throw new Error('Website snapshot unavailable');
+      return current.pages;
     },
     async saveWebsitePageDocument(input: {
       scanId: string;
@@ -75,7 +121,7 @@ export function createWebsiteSourceHandlers({
         .from(websiteSources)
         .where(and(eq(websiteSources.teamId, teamId), eq(websiteSources.id, input.scanId)))
         .limit(1);
-      const page = source?.pages.find((p) => p.url === input.page.url);
+      const page = source?.pages?.find((p) => p.url === input.page.url);
       if (!page) throw new Error('Website page not found');
       const [event] = await db
         .select({ id: rawEvents.id })
@@ -101,7 +147,14 @@ export function createWebsiteSourceHandlers({
           })
           .from(documents)
           .innerJoin(documentVersions, eq(documentVersions.documentId, documents.id))
-          .where(and(eq(documents.teamId, teamId), eq(documents.sourceRawEventId, input.eventId)))
+          .where(
+            and(
+              eq(documents.teamId, teamId),
+              eq(documents.sourceRawEventId, input.eventId),
+              eq(documentVersions.version, 1),
+              eq(documentVersions.sourceEventId, input.eventId),
+            ),
+          )
           .limit(1);
         if (existing) return existing;
         await assertTeamWriteCapacity({
@@ -183,7 +236,13 @@ export function createWebsiteSourceHandlers({
         await tx
           .update(documents)
           .set({ currentVersionId: stored.versionId })
-          .where(and(eq(documents.teamId, teamId), eq(documents.id, stored.documentId)));
+          .where(
+            and(
+              eq(documents.teamId, teamId),
+              eq(documents.id, stored.documentId),
+              sql`${documents.currentVersionId} IS NULL`,
+            ),
+          );
       });
       const rows = await db
         .select({ id: documentChunks.id })
