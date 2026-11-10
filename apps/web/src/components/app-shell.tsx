@@ -5,6 +5,7 @@ import type { NavBadgeMap } from '@/components/nav-items';
 import type { RecipientInvite } from '@/components/team-switcher';
 import type { TeamMembership } from '@/lib/active-team';
 import type { SidebarBillingSummary } from '@timeline/shared/billing/status';
+import type { FirstRunPhase } from '@timeline/shared/onboarding/first-run';
 import type { ReactNode } from 'react';
 
 import { AppDocumentScrollLock } from '@/components/app-document-scroll-lock';
@@ -18,6 +19,7 @@ import { InspectorProvider } from '@/components/inspector-context';
 import { InspectorPane } from '@/components/inspector-pane';
 import { InspectorToggle } from '@/components/inspector-pane';
 import { MobileNav } from '@/components/mobile-nav';
+import { GettingStartedStrip } from '@/components/onboarding/getting-started-strip';
 import { SkipLink } from '@/components/skip-link';
 import { TeamSetupChecklistChip } from '@/components/team-setup-checklist-chip';
 import { ThemeToggle } from '@/components/theme-toggle';
@@ -41,6 +43,7 @@ interface Props {
   billingSummary?: SidebarBillingSummary | null;
   platformAdmin?: boolean;
   impersonation?: { email: string; teamName: string; readOnly: boolean; expiresAt: string } | null;
+  gettingStarted?: { phase: FirstRunPhase; hidden: boolean } | null;
   children: ReactNode;
 }
 
@@ -67,6 +70,7 @@ export function AppShell({
   billingSummary = null,
   platformAdmin = false,
   impersonation = null,
+  gettingStarted = null,
   children,
 }: Props) {
   return (
@@ -142,6 +146,9 @@ export function AppShell({
                   <UserMenu user={user} impersonating={Boolean(impersonation)} />
                 </div>
               </header>
+              {gettingStarted ? (
+                <GettingStartedStrip phase={gettingStarted.phase} hidden={gettingStarted.hidden} />
+              ) : null}
               {/* Every app route shares one frame so page headers and content do
               not shift horizontally during navigation. Pages may constrain
               an inner prose region, but not their outer frame. */}

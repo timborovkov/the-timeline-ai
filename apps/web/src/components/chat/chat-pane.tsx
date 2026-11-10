@@ -39,6 +39,10 @@ interface Props {
   pinnedEntityId: string | null;
   pinnedEntityName: string | null;
   contextTrail?: ChatContextRef[];
+  initialPrompt?: string | null;
+  suggestionPrompts?: readonly string[];
+  emptyTitle?: string | null;
+  emptyHint?: string | null;
 }
 
 const SUGGESTIONS = [
@@ -85,6 +89,9 @@ function ChatSurfaceContent({
   dashboardContext,
   contextTrail,
   emptyHint,
+  initialPrompt = null,
+  suggestionPrompts,
+  emptyTitle = null,
   onSessionIdChange,
   updateUrlOnSessionCreate = false,
   consumeHandoff = true,
@@ -121,7 +128,7 @@ function ChatSurfaceContent({
     sendAutomaticallyWhen: lastAssistantMessageIsCompleteWithApprovalResponses,
   });
 
-  const [input, setInput] = useState('');
+  const [input, setInput] = useState(initialPrompt ?? '');
   const scrollRef = useRef<HTMLDivElement>(null);
   const handoffConsumedRef = useRef(false);
 
@@ -196,6 +203,8 @@ function ChatSurfaceContent({
       <ChatTranscript
         compact={compact}
         emptyHint={emptyHint}
+        emptyTitle={emptyTitle}
+        suggestionPrompts={suggestionPrompts}
         isStreaming={isStreaming}
         messages={messages}
         onToolApprovalResponse={addToolApprovalResponse}
@@ -416,6 +425,8 @@ function ChatContextBadges({ refs, compact }: { refs: ChatContextRef[]; compact:
 function ChatTranscript({
   compact,
   emptyHint,
+  emptyTitle,
+  suggestionPrompts,
   isStreaming,
   messages,
   onToolApprovalResponse,
@@ -425,6 +436,8 @@ function ChatTranscript({
 }: {
   compact: boolean;
   emptyHint?: string | null;
+  emptyTitle?: string | null;
+  suggestionPrompts?: readonly string[];
   isStreaming: boolean;
   messages: UIMessage[];
   onToolApprovalResponse: (input: { id: string; approved: boolean; reason?: string }) => void;
@@ -438,6 +451,8 @@ function ChatTranscript({
         <ChatEmptyState
           compact={compact}
           emptyHint={emptyHint}
+          emptyTitle={emptyTitle}
+          suggestionPrompts={suggestionPrompts}
           onSuggestion={onSuggestion}
           teamName={teamName}
         />
@@ -456,14 +471,19 @@ function ChatTranscript({
 function ChatEmptyState({
   compact,
   emptyHint,
+  emptyTitle,
+  suggestionPrompts,
   onSuggestion,
   teamName,
 }: {
   compact: boolean;
   emptyHint?: string | null;
+  emptyTitle?: string | null;
+  suggestionPrompts?: readonly string[];
   onSuggestion: (text: string) => void;
   teamName: string;
 }) {
+  const prompts = suggestionPrompts ?? SUGGESTIONS;
   if (compact) {
     return (
       <p className="pt-1 text-sm text-fg-muted">
@@ -476,11 +496,12 @@ function ChatEmptyState({
       <div>
         <p className="text-xs font-medium text-fg-muted">Try asking</p>
         <h2 className="mt-2 text-xl font-medium tracking-tight text-fg">
-          Ask anything about {teamName}&apos;s timeline
+          {emptyTitle ?? `Ask anything about ${teamName}'s timeline`}
         </h2>
+        {emptyHint ? <p className="mt-2 text-sm leading-6 text-fg-muted">{emptyHint}</p> : null}
       </div>
       <div className="flex flex-wrap gap-2">
-        {SUGGESTIONS.map((suggestion) => (
+        {prompts.map((suggestion) => (
           <button
             key={suggestion}
             type="button"

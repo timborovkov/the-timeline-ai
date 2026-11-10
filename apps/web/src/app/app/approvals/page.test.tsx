@@ -6,12 +6,20 @@ import { beforeEach, describe, it } from 'bun:test';
 
 const fakes = vi.hoisted(() => ({
   auth: vi.fn(),
+  getFirstRun: vi.fn(),
+  getFirstRunRecord: vi.fn(),
   getApprovalItemCounts: vi.fn(),
   getCalendarSettings: vi.fn(),
   listSuggestions: vi.fn(),
   resolveActiveTeam: vi.fn(),
   withCalendarResolutionHints: vi.fn(),
 }));
+
+await vi.mock(
+  import.meta.resolve('next/navigation'),
+  () => ({ redirect: vi.fn(), useRouter: () => ({ refresh: vi.fn(), push: vi.fn() }) }),
+  () => import('next/navigation'),
+);
 
 await vi.mock(
   import.meta.resolve('@timeline/shared/team-scope'),
@@ -22,6 +30,11 @@ await vi.mock(
         getApprovalItemCounts: fakes.getApprovalItemCounts,
         listSuggestions: fakes.listSuggestions,
         withCalendarResolutionHints: fakes.withCalendarResolutionHints,
+      },
+      onboarding: {
+        getFirstRun: fakes.getFirstRun,
+        getFirstRunRecord: fakes.getFirstRunRecord,
+        setFirstRunPhase: () => Promise.resolve(null),
       },
     }),
   }),
@@ -67,6 +80,7 @@ const { default: ApprovalsPage } = await import('./page.js');
 
 beforeEach(() => {
   vi.clearAllMocks();
+  fakes.getFirstRun.mockResolvedValue(null);
   fakes.auth.mockResolvedValue({ user: { id: 'user-1' } });
   fakes.resolveActiveTeam.mockResolvedValue({
     active: { teamId: 'team-1', teamName: 'AuditAI' },
@@ -207,4 +221,15 @@ describe('ApprovalsPage', () => {
 
     expect(html).toContain('No failed approvals');
   });
+});
+
+it('scopes guided approval rows and counts to the visible starter capture', async () => {
+  fakes.getFirstRun.mockResolvedValue({ phase: 'approve' });
+  fakes.getFirstRunRecord.mockResolvedValue({ suggestions: [{ id: 'starter-item' }] });
+  const page = await ApprovalsPage({ searchParams: Promise.resolve({}) });
+  expect(renderToStaticMarkup(page)).toContain('Check for suggestions');
+  expect(fakes.listSuggestions).toHaveBeenCalledWith(
+    expect.objectContaining({ itemIds: ['starter-item'] }),
+  );
+  expect(fakes.getApprovalItemCounts).toHaveBeenCalledWith({ itemIds: ['starter-item'] });
 });

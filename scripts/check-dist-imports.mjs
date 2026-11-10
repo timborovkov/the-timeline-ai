@@ -357,6 +357,30 @@ const checks = [
     },
   },
   {
+    name: '@timeline/shared onboarding first-run helpers',
+    run: async () => {
+      const firstRun = await import('@timeline/shared/onboarding/first-run');
+      if (firstRun.WEBSITE_SCAN_PAGE_CAP !== 5) {
+        throw new Error('onboarding/first-run page cap export is missing or incorrect');
+      }
+      if ('createOnboardingScope' in firstRun || 'createFirstRunHandlers' in firstRun) {
+        throw new Error('onboarding/first-run must not export Node onboarding scope');
+      }
+      const { readFileSync } = await import('node:fs');
+      const source = readFileSync(
+        new URL('../packages/shared/dist/onboarding/first-run.js', import.meta.url),
+        'utf8',
+      );
+      if (
+        source.includes('drizzle-orm') ||
+        source.includes('first-run-scope.js') ||
+        source.includes('node:crypto')
+      ) {
+        throw new Error('onboarding/first-run compiled output pulled Node onboarding scope');
+      }
+    },
+  },
+  {
     name: '@timeline/shared qdrant recovery exports',
     run: async () => {
       const qdrant = await import('@timeline/shared/qdrant');

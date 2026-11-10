@@ -6082,13 +6082,35 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     return { survivorId };
   }
 
+  function captureItemsPredicate(itemIds: string[]) {
+    if (itemIds.length === 0) return sql`false`;
+    return exists(
+      db
+        .select({ id: agentSuggestionItems.id })
+        .from(agentSuggestionItems)
+        .where(
+          and(
+            eq(agentSuggestionItems.teamId, teamId),
+            eq(agentSuggestionItems.suggestionId, agentSuggestions.id),
+            inArray(agentSuggestionItems.id, itemIds),
+          ),
+        ),
+    );
+  }
+
   async function listSuggestions(
-    opts: { status?: SuggestionListStatus; limit?: number; cursor?: string | null } = {},
+    opts: {
+      status?: SuggestionListStatus;
+      limit?: number;
+      cursor?: string | null;
+      itemIds?: string[];
+    } = {},
   ): Promise<SuggestionBundle[]> {
     await ensureMember();
     await recoverInterruptedTaskCreateAcceptances();
     const status = opts.status ?? 'pending';
     const conditions = [suggestionVisibilityPredicate(teamId, userId)];
+    if (opts.itemIds) conditions.push(captureItemsPredicate(opts.itemIds));
     if (status === 'pending') {
       conditions.push(
         inArray(agentSuggestions.status, ['pending', 'partially_resolved']),
@@ -7608,7 +7630,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
 
     repairApprovalProjectionForOutput,
 
-    async getApprovalItemCounts(): Promise<ApprovalItemCounts> {
+    async getApprovalItemCounts(opts: { itemIds?: string[] } = {}): Promise<ApprovalItemCounts> {
       await ensureMember();
       await recoverInterruptedTaskCreateAcceptances();
       const countEvidence = alias(agentSuggestionEvidence, 'approval_count_evidence');
@@ -7704,6 +7726,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
               eq(agentSuggestionItems.status, 'failed'),
             ),
             packEvidenceIsAvailable,
+            opts.itemIds ? captureItemsPredicate(opts.itemIds) : undefined,
           ),
         )
         .groupBy(agentSuggestionItems.status);

@@ -82,9 +82,10 @@ look like a month of active use.
 
 ### Empty onboarding team
 
-Use this login to capture first-run onboarding screens. Nothing is connected: no
-timeline events, integrations, documents, meetings, objects, proposals, or completed
-checklist steps.
+Use this login to capture first-run onboarding screens. Seed resets it to the
+Welcome phase. Nothing is connected: no timeline events, integrations, documents,
+meetings, objects, proposals, or completed checklist steps. Website scan stays
+Coming soon unless `WEBSITE_SCAN_ENABLED` is on.
 
 | Email | Role | Team |
 | --- | --- | --- |

@@ -95,7 +95,7 @@ export function authorizeProductRequest({
   const path = request.nextUrl.pathname;
   const isAuthed = Boolean(auth?.user);
 
-  const isAppRoute = isRouteWithin(path, '/app');
+  const isAppRoute = isRouteWithin(path, '/app') || isRouteWithin(path, '/onboarding');
   const isInviteRoute = isRouteWithin(path, '/accept-invite');
 
   if (isAppRoute && !isAuthed) return unauthenticatedAppRedirect(request);

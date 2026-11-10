@@ -36,6 +36,8 @@ The rest of the defaults already match `docker-compose.yml`. When you use `docke
 
 For local document parsing without Daytona, set `DOCUMENT_EXTRACT_ALLOW_INPROCESS=true`. This development-only option is rejected in production; leave it false when using a Daytona extractor.
 
+First-run website scan stays off unless `WEBSITE_SCAN_ENABLED=true`. Leave it unset for local work; the chooser still shows the card as Coming soon. Team inbound addresses use `INBOUND_EMAIL_DOMAIN` from config, never a hardcoded domain.
+
 Local Compose uses PostgreSQL 18. For an existing PostgreSQL 16 volume, follow the [data-preserving PostgreSQL upgrade procedure](postgres18.md) before startup. Keep `POSTGRES_DATA_VOLUME=postgres_data` until the documented migration; the image refuses old data rather than silently replacing it. Never use a volume reset to resolve this upgrade error.
 
 When upgrading an existing Qdrant container, check its running image with `docker compose ps qdrant` before starting the updated Compose stack. Back up the stopped container's `/qdrant/storage` directory and upgrade through the latest patch of each intermediate minor version; a persisted 1.12 collection must not jump directly to 1.20.0. See the [Qdrant upgrade guide](https://qdrant.tech/documentation/operations/upgrades/). Recreating the container keeps its data volume and existing collection layout. After the server upgrade, use the collection-copy command below to adopt on-disk vectors without re-embedding; keep the source collection until the copy and demo verification pass.

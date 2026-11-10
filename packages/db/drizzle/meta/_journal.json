@@ -750,6 +750,13 @@
       "when": 1795656700000,
       "tag": "0099_agent_reporting",
       "breakpoints": true
+    },
+    {
+      "idx": 107,
+      "version": "7",
+      "when": 1795656760000,
+      "tag": "0101_first_run_onboarding",
+      "breakpoints": true
     }
   ]
 }

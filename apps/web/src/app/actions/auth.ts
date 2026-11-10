@@ -345,7 +345,12 @@ export async function signUpAction(_prev: SignUpState, formData: FormData): Prom
         throw e;
       }
     }
-    const destination = inviteToken ? '/app' : safeCallbackUrl(parsed.data.callbackUrl);
+    const callbackDestination = safeCallbackUrl(parsed.data.callbackUrl);
+    const destination = inviteToken
+      ? '/app'
+      : createdAccount.event === 'team_created' && callbackDestination === '/app'
+        ? '/onboarding'
+        : callbackDestination;
     if (signInFailed)
       redirect(
         destination === '/app'

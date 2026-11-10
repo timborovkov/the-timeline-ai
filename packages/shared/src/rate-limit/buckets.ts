@@ -84,4 +84,8 @@ export const RATE_LIMITS = {
   driveExtractConnectionPerDay: { capacity: 40, refillPerSec: 40 / 86_400 },
   /** 401/lookup lockout for ingest webhooks: 60/min per source IP. */
   ingestWebhookAuth: { capacity: 60, refillPerSec: 60 / 60 },
+  /** First-run onboarding mutations: 30/min per user. */
+  firstRun: { capacity: 30, refillPerSec: 30 / 60 },
+  /** Website scan starts: one burst, slow refill — one scan per team at signup. */
+  websiteScan: { capacity: 1, refillPerSec: 1 / 86_400 },
 } as const;
