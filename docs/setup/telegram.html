@@ -10,7 +10,7 @@
     <a class="skip" href="#main">Skip to content</a>
     <main id="main">
       <h1>Telegram bot setup</h1>
-      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-08-20</span></div>
+      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-11-10</span></div>
       <blockquote>
         <p>
           Telegram is a first-party conversational surface. Direct text talks to the agent; explicit
@@ -268,8 +268,13 @@ curl -F "url=https://&lt;ngrok-id&gt;.ngrok-free.app/api/telegram/webhook" \
           follow <code>migrate_to_chat_id</code> into a chat later bound to another team. A new id
           already bound to another workspace is left unchanged, and the in-flight send is not
           retried to that id. The same fail-closed path applies if another workspace claims the new
-          id between the ownership check and the binding write (unique constraint), or if the
-          sending workspace cannot be established.
+          id between the ownership check and the binding write (unique constraint), if this
+          workspace's binding disappears before the locked write (so destinations are not rewritten
+          either), or if the sending workspace cannot be established. The write locks the old and
+          new binding rows so <code>/unlink</code> and <code>/link</code> serialize with the
+          rewrite. After a successful persist, a redirected send is skipped unless this workspace
+          still owns the new chat. If the same workspace already delivered that digest to the new
+          chat, the migrated send is treated as already delivered and is not posted again.
         </li>
         <li>
           <code>telegram_link_tokens</code> — single-use, 15-minute-TTL tokens, scoped

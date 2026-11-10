@@ -12,7 +12,13 @@ import { guardWorkerProcessor } from '#src/platform-worker.js';
 
 const log = childLogger('worker:chat-delivery');
 const deliverySchema = z.object({
-  principal: z.object({ teamId: z.uuid(), userId: z.uuid().optional() }).optional(),
+  principal: z
+    .object({
+      teamId: z.uuid(),
+      userId: z.uuid().optional(),
+      dedupeKey: z.string().min(1).optional(),
+    })
+    .optional(),
   provider: z.enum(['slack', 'telegram']),
   token: z.string().min(1),
   accountId: z.string().optional(),
@@ -56,6 +62,7 @@ export async function processChatDelivery(data: ChatDeliveryJobData, db?: Db): P
   } else {
     const api = new HttpTelegramApi(delivery.token, 10_000, false, {
       ...(delivery.principal?.teamId ? { sendingTeamId: delivery.principal.teamId } : {}),
+      ...(delivery.principal?.dedupeKey ? { dedupeKey: delivery.principal.dedupeKey } : {}),
     });
     if (delivery.method === 'edit') {
       const body = z

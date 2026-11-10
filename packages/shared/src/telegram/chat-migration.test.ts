@@ -9,6 +9,7 @@ import { expect, vi } from '@timeline/test-support';
 import { afterEach, beforeEach, describe, it } from 'bun:test';
 import { drizzle } from 'drizzle-orm/pglite';
 
+import { withChatDeliveryPrincipal } from '#src/conversation-surfaces/deferred-delivery.js';
 import { digestDestinationDedupeKey } from '#src/messaging/destinations.js';
 import { HttpTelegramApi } from '#src/telegram/api.js';
 import {
@@ -19,6 +20,7 @@ import {
   TelegramChatMigrationConflictError,
   telegramChatMigrationFromMessage,
   telegramMigratedChatId,
+  telegramMigratedDigestRedirectDisposition,
   verifyTelegramChatMigrationOwnership,
 } from '#src/telegram/chat-migration.js';
 import { applyDbMigrations } from '#src/test/pglite.js';
@@ -75,6 +77,49 @@ describe('telegram chat migration helpers', () => {
     expect(() => rethrowTelegramChatMigrationWriteError(new Error('DB timeout'))).toThrow(
       'DB timeout',
     );
+  });
+
+  it('skips a redirected digest send when the migrated key was already sent', () => {
+    const oldKey = digestDestinationDedupeKey({
+      scope: 'workspace',
+      teamId: TEAM_ID,
+      windowEnd: '2026-06-14T12:00:00.000Z',
+      destination: { kind: 'telegram_chat', targetId: String(OLD_CHAT_ID) },
+    });
+    const newKey = digestDestinationDedupeKey({
+      scope: 'workspace',
+      teamId: TEAM_ID,
+      windowEnd: '2026-06-14T12:00:00.000Z',
+      destination: { kind: 'telegram_chat', targetId: String(NEW_CHAT_ID) },
+    });
+    expect(
+      telegramMigratedDigestRedirectDisposition({
+        inFlightDedupeKey: oldKey,
+        teamId: TEAM_ID,
+        fromChatId: OLD_CHAT_ID,
+        toChatId: NEW_CHAT_ID,
+        alreadySentDedupeKeys: [newKey],
+      }),
+    ).toEqual({ alreadyDelivered: true, skipRedirect: true });
+    expect(
+      telegramMigratedDigestRedirectDisposition({
+        inFlightDedupeKey: oldKey,
+        teamId: TEAM_ID,
+        fromChatId: OLD_CHAT_ID,
+        toChatId: NEW_CHAT_ID,
+        alreadySentDedupeKeys: [],
+        pendingDedupeKeys: [newKey],
+      }),
+    ).toEqual({ alreadyDelivered: false, skipRedirect: true });
+    expect(
+      telegramMigratedDigestRedirectDisposition({
+        inFlightDedupeKey: undefined,
+        teamId: TEAM_ID,
+        fromChatId: OLD_CHAT_ID,
+        toChatId: NEW_CHAT_ID,
+        alreadySentDedupeKeys: [newKey],
+      }),
+    ).toEqual({ alreadyDelivered: false, skipRedirect: false });
   });
 
   it('reads migrate_to and migrate_from on inbound service messages', () => {
@@ -163,6 +208,77 @@ describe('applyTelegramChatMigration', () => {
       ]),
     );
     expect(await db.select().from(teamDigestDestinations)).toHaveLength(2);
+  });
+
+  it('fails closed when the sending team binding disappears before the write', async () => {
+    const originalTransaction = db.transaction.bind(db);
+    db.transaction = ((...args: Parameters<typeof originalTransaction>) => {
+      return (async () => {
+        await pg.exec(`
+          DELETE FROM telegram_chat_bindings WHERE tg_chat_id = ${OLD_CHAT_ID};
+          INSERT INTO telegram_chat_bindings (tg_chat_id, team_id, title)
+          VALUES (${NEW_CHAT_ID}, '${OTHER_TEAM_ID}', 'Other');
+        `);
+        return originalTransaction(...args);
+      })();
+    }) as typeof db.transaction;
+
+    await expect(
+      applyTelegramChatMigration(db, OLD_CHAT_ID, NEW_CHAT_ID, { sendingTeamId: TEAM_ID }),
+    ).rejects.toThrow(TelegramChatMigrationConflictError);
+
+    const bindings = await db.select().from(telegramChatBindings);
+    expect(bindings).toHaveLength(1);
+    expect(bindings[0]).toMatchObject({ tgChatId: NEW_CHAT_ID, teamId: OTHER_TEAM_ID });
+    expect(
+      (await db.select().from(teamDigestDestinations)).map((row) => ({
+        teamId: row.teamId,
+        targetId: row.targetId,
+      })),
+    ).toEqual([{ teamId: TEAM_ID, targetId: String(OLD_CHAT_ID) }]);
+  });
+
+  it('does not redirect a digest send after the sending team binding disappears', async () => {
+    const originalTransaction = db.transaction.bind(db);
+    db.transaction = ((...args: Parameters<typeof originalTransaction>) => {
+      return (async () => {
+        await pg.exec(`
+          DELETE FROM telegram_chat_bindings WHERE tg_chat_id = ${OLD_CHAT_ID};
+          INSERT INTO telegram_chat_bindings (tg_chat_id, team_id, title)
+          VALUES (${NEW_CHAT_ID}, '${OTHER_TEAM_ID}', 'Other');
+        `);
+        return originalTransaction(...args);
+      })();
+    }) as typeof db.transaction;
+    const fetch = vi.fn().mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          ok: false,
+          error_code: 400,
+          description: 'Bad Request: group chat was upgraded to a supergroup chat',
+          parameters: { migrate_to_chat_id: NEW_CHAT_ID },
+        }),
+        { status: 400 },
+      ),
+    );
+    vi.stubGlobal('fetch', fetch);
+    const api = new HttpTelegramApi('token', 10_000, true, {
+      sendingTeamId: TEAM_ID,
+      onChatMigrated: (fromChatId, toChatId) =>
+        applyTelegramChatMigration(db, fromChatId, toChatId, { sendingTeamId: TEAM_ID }),
+    });
+    const input = { chat_id: OLD_CHAT_ID, text: 'Acme daily digest' };
+
+    const error = await api.sendMessage(input).catch((value: unknown) => value);
+    expect(error).toMatchObject({ code: TELEGRAM_CHAT_MIGRATION_CONFLICT_CODE });
+    expect(input.chat_id).toBe(OLD_CHAT_ID);
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(await db.select().from(teamDigestDestinations)).toMatchObject([
+      { kind: 'telegram_chat', targetId: String(OLD_CHAT_ID), teamId: TEAM_ID },
+    ]);
+    expect(await db.select().from(telegramChatBindings)).toMatchObject([
+      { tgChatId: NEW_CHAT_ID, teamId: OTHER_TEAM_ID },
+    ]);
   });
 
   it('treats a unique-constraint race on the binding write as a cross-team conflict', async () => {
@@ -397,6 +513,77 @@ describe('applyTelegramChatMigration', () => {
     expect(await db.select().from(teamDigestDestinations)).toMatchObject([
       { kind: 'telegram_chat', targetId: String(OLD_CHAT_ID), teamId: TEAM_ID },
     ]);
+  });
+
+  it('does not redirect a digest send when the new chat already received it', async () => {
+    const windowEnd = '2026-06-14T12:00:00.000Z';
+    const oldKey = digestDestinationDedupeKey({
+      scope: 'workspace',
+      teamId: TEAM_ID,
+      windowEnd,
+      destination: { kind: 'telegram_chat', targetId: String(OLD_CHAT_ID) },
+    });
+    const newKey = digestDestinationDedupeKey({
+      scope: 'workspace',
+      teamId: TEAM_ID,
+      windowEnd,
+      destination: { kind: 'telegram_chat', targetId: String(NEW_CHAT_ID) },
+    });
+    await pg.exec(`
+      INSERT INTO team_digest_destinations (team_id, kind, target_id, label, enabled)
+      VALUES ('${TEAM_ID}', 'telegram_chat', '${NEW_CHAT_ID}', 'Sales supergroup', true);
+    `);
+    await db.insert(messageDeliveries).values([
+      {
+        intent: 'daily_digest',
+        channel: 'telegram',
+        teamId: TEAM_ID,
+        status: 'pending',
+        provider: 'telegram',
+        dedupeKey: oldKey,
+      },
+      {
+        intent: 'daily_digest',
+        channel: 'telegram',
+        teamId: TEAM_ID,
+        status: 'sent',
+        provider: 'telegram',
+        dedupeKey: newKey,
+      },
+    ]);
+    const fetch = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            ok: false,
+            error_code: 400,
+            description: 'Bad Request: group chat was upgraded to a supergroup chat',
+            parameters: { migrate_to_chat_id: NEW_CHAT_ID },
+          }),
+          { status: 400 },
+        ),
+      )
+      .mockResolvedValueOnce(Response.json({ ok: true, result: { message_id: 99 } }));
+    vi.stubGlobal('fetch', fetch);
+    const api = new HttpTelegramApi('token', 10_000, true, {
+      sendingTeamId: TEAM_ID,
+      onChatMigrated: (fromChatId, toChatId) =>
+        applyTelegramChatMigration(db, fromChatId, toChatId, { sendingTeamId: TEAM_ID }),
+    });
+    const input = { chat_id: OLD_CHAT_ID, text: 'Acme daily digest' };
+
+    await withChatDeliveryPrincipal({ teamId: TEAM_ID, dedupeKey: oldKey }, () =>
+      api.sendMessage(input),
+    );
+
+    expect(input.chat_id).toBe(OLD_CHAT_ID);
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(
+      (await db.select({ dedupeKey: messageDeliveries.dedupeKey }).from(messageDeliveries)).map(
+        (row) => row.dedupeKey,
+      ),
+    ).toEqual(expect.arrayContaining([oldKey, newKey]));
   });
 
   it('does not clobber an existing digest ledger key for the new chat id', async () => {

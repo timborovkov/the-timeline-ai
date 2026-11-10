@@ -400,7 +400,11 @@ async function deliverBotDigest(input: {
   const deliveryId = claim.deliveryId;
   try {
     await withChatDeliveryPrincipal(
-      { teamId: input.teamId, ...(input.userId ? { userId: input.userId } : {}) },
+      {
+        teamId: input.teamId,
+        ...(input.userId ? { userId: input.userId } : {}),
+        dedupeKey: input.dedupeKey,
+      },
       input.send,
     );
     if (deliveryId) {

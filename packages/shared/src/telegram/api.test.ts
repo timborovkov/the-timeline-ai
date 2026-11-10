@@ -3,6 +3,7 @@ import { vi } from '@timeline/test-support';
 import { afterEach, describe, it } from 'bun:test';
 
 import { withChatDeliveryPrincipal } from '#src/conversation-surfaces/deferred-delivery.js';
+import { digestDestinationDedupeKey } from '#src/messaging/destinations.js';
 import { HttpTelegramApi } from '#src/telegram/api.js';
 import {
   TELEGRAM_CHAT_MIGRATION_CONFLICT_CODE,
@@ -10,6 +11,21 @@ import {
 } from '#src/telegram/chat-migration.js';
 
 const SENDING_TEAM_ID = '11111111-1111-4111-8111-111111111111';
+const OLD_CHAT_ID = -123456;
+const NEW_CHAT_ID = -1004317012921;
+const DIGEST_WINDOW_END = '2026-06-14T12:00:00.000Z';
+const OLD_DIGEST_KEY = digestDestinationDedupeKey({
+  scope: 'workspace',
+  teamId: SENDING_TEAM_ID,
+  windowEnd: DIGEST_WINDOW_END,
+  destination: { kind: 'telegram_chat', targetId: String(OLD_CHAT_ID) },
+});
+const NEW_DIGEST_KEY = digestDestinationDedupeKey({
+  scope: 'workspace',
+  teamId: SENDING_TEAM_ID,
+  windowEnd: DIGEST_WINDOW_END,
+  destination: { kind: 'telegram_chat', targetId: String(NEW_CHAT_ID) },
+});
 
 function upgradedGroupResponse(): Response {
   return new Response(
@@ -112,7 +128,7 @@ describe('HttpTelegramApi file downloads', () => {
   });
 
   it('persists a chat migration and retries sendMessage once with the new id', async () => {
-    const persist = vi.fn(() => Promise.resolve());
+    const persist = vi.fn(() => Promise.resolve(undefined));
     const fetch = vi
       .fn()
       .mockResolvedValueOnce(upgradedGroupResponse())
@@ -141,7 +157,7 @@ describe('HttpTelegramApi file downloads', () => {
   });
 
   it('surfaces the retry error when the migrated send still fails', async () => {
-    const persist = vi.fn(() => Promise.resolve());
+    const persist = vi.fn(() => Promise.resolve(undefined));
     const fetch = vi
       .fn()
       .mockResolvedValueOnce(upgradedGroupResponse())
@@ -235,7 +251,7 @@ describe('HttpTelegramApi file downloads', () => {
   });
 
   it('does not retry sendMessage when the sending workspace is missing', async () => {
-    const persist = vi.fn(() => Promise.resolve());
+    const persist = vi.fn(() => Promise.resolve(undefined));
     const fetch = vi.fn().mockResolvedValueOnce(upgradedGroupResponse());
     vi.stubGlobal('fetch', fetch);
     const api = new HttpTelegramApi('token', 10_000, true, { onChatMigrated: persist });
@@ -253,7 +269,7 @@ describe('HttpTelegramApi file downloads', () => {
   });
 
   it('authorizes a migrated retry from the chat-delivery principal', async () => {
-    const persist = vi.fn(() => Promise.resolve());
+    const persist = vi.fn(() => Promise.resolve(undefined));
     const fetch = vi
       .fn()
       .mockResolvedValueOnce(upgradedGroupResponse())
@@ -270,8 +286,77 @@ describe('HttpTelegramApi file downloads', () => {
     expect(fetch).toHaveBeenCalledTimes(2);
   });
 
+  it('does not retry sendMessage when the migrated digest key is already sent', async () => {
+    const persist = vi.fn(() =>
+      Promise.resolve({ alreadySentDedupeKeys: [NEW_DIGEST_KEY], pendingDedupeKeys: [] }),
+    );
+    const fetch = vi.fn().mockResolvedValueOnce(upgradedGroupResponse());
+    vi.stubGlobal('fetch', fetch);
+    const api = new HttpTelegramApi('token', 10_000, true, {
+      onChatMigrated: persist,
+      sendingTeamId: SENDING_TEAM_ID,
+    });
+    const input = { chat_id: OLD_CHAT_ID, text: 'daily digest' };
+
+    await withChatDeliveryPrincipal({ teamId: SENDING_TEAM_ID, dedupeKey: OLD_DIGEST_KEY }, () =>
+      api.sendMessage(input),
+    );
+
+    expect(persist).toHaveBeenCalledTimes(1);
+    expect(persist).toHaveBeenCalledWith(OLD_CHAT_ID, NEW_CHAT_ID);
+    expect(input.chat_id).toBe(OLD_CHAT_ID);
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not retry sendMessage when the migrated digest key is already pending', async () => {
+    const persist = vi.fn(() =>
+      Promise.resolve({ alreadySentDedupeKeys: [], pendingDedupeKeys: [NEW_DIGEST_KEY] }),
+    );
+    const fetch = vi.fn().mockResolvedValueOnce(upgradedGroupResponse());
+    vi.stubGlobal('fetch', fetch);
+    const api = new HttpTelegramApi('token', 10_000, true, {
+      onChatMigrated: persist,
+      sendingTeamId: SENDING_TEAM_ID,
+    });
+    const input = { chat_id: OLD_CHAT_ID, text: 'daily digest' };
+
+    const error = await withChatDeliveryPrincipal(
+      { teamId: SENDING_TEAM_ID, dedupeKey: OLD_DIGEST_KEY },
+      () => api.sendMessage(input).catch((value: unknown) => value),
+    );
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toContain(
+      'Telegram sendMessage failed: 400 {"ok":false,"error_code":400',
+    );
+    expect(persist).toHaveBeenCalledTimes(1);
+    expect(input.chat_id).toBe(OLD_CHAT_ID);
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('still retries a non-digest send when historical digest keys already exist', async () => {
+    const persist = vi.fn(() =>
+      Promise.resolve({ alreadySentDedupeKeys: [NEW_DIGEST_KEY], pendingDedupeKeys: [] }),
+    );
+    const fetch = vi
+      .fn()
+      .mockResolvedValueOnce(upgradedGroupResponse())
+      .mockResolvedValueOnce(Response.json({ ok: true, result: { message_id: 1 } }));
+    vi.stubGlobal('fetch', fetch);
+    const api = new HttpTelegramApi('token', 10_000, true, {
+      onChatMigrated: persist,
+      sendingTeamId: SENDING_TEAM_ID,
+    });
+    const input = { chat_id: OLD_CHAT_ID, text: 'agent reply' };
+
+    await api.sendMessage(input);
+
+    expect(persist).toHaveBeenCalledTimes(1);
+    expect(input.chat_id).toBe(NEW_CHAT_ID);
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
+
   it('does not retry ordinary Telegram send failures', async () => {
-    const persist = vi.fn(() => Promise.resolve());
+    const persist = vi.fn(() => Promise.resolve(undefined));
     const fetch = vi.fn().mockResolvedValueOnce(
       new Response(JSON.stringify({ ok: false, description: 'Bad Request: chat not found' }), {
         status: 400,

@@ -15,6 +15,10 @@ import {
   rewriteWorkspaceDigestDedupeKeyTarget,
   workspaceDigestDedupeKeyTargetLike,
 } from '#src/messaging/destinations.js';
+import {
+  TelegramChatMigrationConflictError,
+  type TelegramChatMigrationWriteResult,
+} from '#src/telegram/chat-migration.js';
 
 const log = childLogger('telegram');
 
@@ -69,7 +73,9 @@ async function rewriteTelegramWorkspaceDigestLedgerKeys(
     update: Db['update'];
   },
   input: { teamId: string; fromTarget: string; toTarget: string },
-): Promise<void> {
+): Promise<TelegramChatMigrationWriteResult> {
+  const alreadySentDedupeKeys: string[] = [];
+  const pendingDedupeKeys: string[] = [];
   const oldKeyPattern = workspaceDigestDedupeKeyTargetLike({
     teamId: input.teamId,
     kind: 'telegram_chat',
@@ -97,16 +103,21 @@ async function rewriteTelegramWorkspaceDigestLedgerKeys(
     });
     if (!nextKey || nextKey === row.dedupeKey) continue;
     const [keyConflict] = await tx
-      .select({ id: messageDeliveries.id })
+      .select({ id: messageDeliveries.id, status: messageDeliveries.status })
       .from(messageDeliveries)
       .where(eq(messageDeliveries.dedupeKey, nextKey))
       .limit(1);
-    if (keyConflict) continue;
+    if (keyConflict) {
+      if (keyConflict.status === 'sent') alreadySentDedupeKeys.push(nextKey);
+      else if (keyConflict.status === 'pending') pendingDedupeKeys.push(nextKey);
+      continue;
+    }
     await tx
       .update(messageDeliveries)
       .set({ dedupeKey: nextKey, updatedAt: new Date() })
       .where(and(eq(messageDeliveries.id, row.id), eq(messageDeliveries.teamId, input.teamId)));
   }
+  return { alreadySentDedupeKeys, pendingDedupeKeys };
 }
 
 export function createTelegramScope({ db, teamId, userId, ensureMember }: TelegramScopeDeps) {
@@ -211,44 +222,69 @@ export function createTelegramScope({ db, teamId, userId, ensureMember }: Telegr
 
     async unbindChat(id: string): Promise<void> {
       await ensureMember('admin');
-      await db
-        .delete(telegramChatBindings)
-        .where(and(eq(telegramChatBindings.id, id), eq(telegramChatBindings.teamId, teamId)));
+      await db.transaction(async (tx) => {
+        const [row] = await tx
+          .select({ id: telegramChatBindings.id })
+          .from(telegramChatBindings)
+          .where(and(eq(telegramChatBindings.id, id), eq(telegramChatBindings.teamId, teamId)))
+          .limit(1)
+          .for('update');
+        if (!row) return;
+        await tx
+          .delete(telegramChatBindings)
+          .where(and(eq(telegramChatBindings.id, row.id), eq(telegramChatBindings.teamId, teamId)));
+      });
     },
 
     /**
      * Rewrite this team's stored Telegram chat id after a group→supergroup
      * upgrade. Bindings, digest destinations, and workspace digest ledger
      * keys are the live send/route/dedupe identity.
+     *
+     * Binding lookups take `FOR UPDATE` so `unbindChat()` and `/link`
+     * serialize with this write. If this team no longer owns either chat
+     * id, the transaction throws without rewriting destinations — a
+     * concurrent unlink+relink must not authorize a redirected send.
      */
-    async migrateChatId(input: { fromChatId: number; toChatId: number }): Promise<void> {
+    async migrateChatId(input: {
+      fromChatId: number;
+      toChatId: number;
+    }): Promise<TelegramChatMigrationWriteResult> {
       await ensureMember();
       const { fromChatId, toChatId } = input;
-      if (fromChatId === toChatId) return;
+      if (fromChatId === toChatId) {
+        return { alreadySentDedupeKeys: [], pendingDedupeKeys: [] };
+      }
       const fromTarget = String(fromChatId);
       const toTarget = String(toChatId);
 
-      await db.transaction(async (tx) => {
-        const [oldBinding] = await tx
-          .select({ id: telegramChatBindings.id })
+      const writeResult = await db.transaction(async (tx) => {
+        const lockIds = fromChatId < toChatId ? [fromChatId, toChatId] : [toChatId, fromChatId];
+        const lockedBindings = await tx
+          .select({
+            id: telegramChatBindings.id,
+            teamId: telegramChatBindings.teamId,
+            tgChatId: telegramChatBindings.tgChatId,
+          })
           .from(telegramChatBindings)
-          .where(
-            and(
-              eq(telegramChatBindings.teamId, teamId),
-              eq(telegramChatBindings.tgChatId, fromChatId),
-            ),
-          )
-          .limit(1);
-        const [newBinding] = await tx
-          .select({ id: telegramChatBindings.id })
-          .from(telegramChatBindings)
-          .where(
-            and(
-              eq(telegramChatBindings.teamId, teamId),
-              eq(telegramChatBindings.tgChatId, toChatId),
-            ),
-          )
-          .limit(1);
+          .where(inArray(telegramChatBindings.tgChatId, lockIds))
+          .for('update');
+        const oldBinding = lockedBindings.find((row) => row.tgChatId === fromChatId);
+        const newBinding = lockedBindings.find((row) => row.tgChatId === toChatId);
+
+        if (oldBinding && oldBinding.teamId !== teamId) {
+          throw new TelegramChatMigrationConflictError();
+        }
+        if (newBinding && newBinding.teamId !== teamId) {
+          throw new TelegramChatMigrationConflictError();
+        }
+        if (!oldBinding && !newBinding) {
+          log.error(
+            { teamId, fromChatId, toChatId },
+            'telegram chat migration skipped: sending workspace binding disappeared',
+          );
+          throw new TelegramChatMigrationConflictError();
+        }
 
         if (oldBinding && newBinding) {
           await tx
@@ -316,7 +352,7 @@ export function createTelegramScope({ db, teamId, userId, ensureMember }: Telegr
             );
         }
 
-        await rewriteTelegramWorkspaceDigestLedgerKeys(tx, {
+        return rewriteTelegramWorkspaceDigestLedgerKeys(tx, {
           teamId,
           fromTarget,
           toTarget,
@@ -324,6 +360,7 @@ export function createTelegramScope({ db, teamId, userId, ensureMember }: Telegr
       });
 
       log.info({ teamId, fromChatId, toChatId }, 'telegram chat migrated');
+      return writeResult;
     },
   };
 }

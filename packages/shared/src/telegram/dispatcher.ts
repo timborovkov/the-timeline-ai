@@ -1570,7 +1570,8 @@ async function cmdLinkGroup(ctx: GroupContext, arg: string): Promise<void> {
           .select()
           .from(telegramChatBindings)
           .where(eq(telegramChatBindings.tgChatId, ctx.message.chat.id))
-          .limit(1);
+          .limit(1)
+          .for('update');
         // The tg_chat_id UNIQUE constraint also enforces this — the check
         // here just gives a clearer error message in the common case.
         if (existingBinding[0]) throw new Error('already_bound');

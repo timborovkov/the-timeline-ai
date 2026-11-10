@@ -9,6 +9,7 @@ import { childLogger } from '#src/logger.js';
 import { getRedisConnection } from '#src/redis/connection.js';
 import {
   applyTelegramChatMigration,
+  assertTelegramChatRedirectOwnership,
   isTelegramChatMigrationConflictError,
   parseTelegramMigratedChatId,
   replaceTelegramChatId,
@@ -16,7 +17,9 @@ import {
   TELEGRAM_CHAT_MIGRATION_CONFLICT_CODE,
   telegramChatIdFromBody,
   telegramMigratedChatId,
+  telegramMigratedDigestRedirectDisposition,
   verifyTelegramChatMigrationOwnership,
+  type TelegramChatMigrationWriteResult,
 } from '#src/telegram/chat-migration.js';
 
 const log = childLogger('telegram');
@@ -79,13 +82,22 @@ export interface TelegramApi {
 
 export interface HttpTelegramApiOptions {
   /** Persist a Telegram group→supergroup chat id rewrite. Defaults to the app db. */
-  onChatMigrated?: (fromChatId: number, toChatId: number) => Promise<void>;
+  onChatMigrated?: (
+    fromChatId: number,
+    toChatId: number,
+  ) => Promise<TelegramChatMigrationWriteResult | undefined>;
   /**
    * Workspace that originated this send. Redirected migrate retries are
    * authorized only when this principal owns the destination chat. Falls back
    * to {@link getChatDeliveryPrincipal} when omitted.
    */
   sendingTeamId?: string;
+  /**
+   * In-flight workspace digest ledger key. When a migrated send would collide
+   * with an already-delivered new-chat key, the redirect is suppressed.
+   * Falls back to {@link getChatDeliveryPrincipal} when omitted.
+   */
+  dedupeKey?: string;
 }
 
 export class HttpTelegramApi implements TelegramApi {
@@ -102,6 +114,25 @@ export class HttpTelegramApi implements TelegramApi {
     return this.options.sendingTeamId ?? getChatDeliveryPrincipal()?.teamId;
   }
 
+  private inFlightDedupeKey(): string | undefined {
+    return this.options.dedupeKey ?? getChatDeliveryPrincipal()?.dedupeKey;
+  }
+
+  private digestRedirectDisposition(
+    fromChatId: number,
+    toChatId: number,
+    writeResult: TelegramChatMigrationWriteResult | undefined,
+  ): { alreadyDelivered: boolean; skipRedirect: boolean } {
+    return telegramMigratedDigestRedirectDisposition({
+      inFlightDedupeKey: this.inFlightDedupeKey(),
+      teamId: this.sendingWorkspaceTeamId(),
+      fromChatId,
+      toChatId,
+      alreadySentDedupeKeys: writeResult?.alreadySentDedupeKeys ?? [],
+      pendingDedupeKeys: writeResult?.pendingDedupeKeys ?? [],
+    });
+  }
+
   /**
    * Authorize, then persist, a group→supergroup chat id rewrite.
    *
@@ -109,17 +140,21 @@ export class HttpTelegramApi implements TelegramApi {
    * in-flight send is retried against the new id. Discovering another
    * workspace's binding is not authorization. A unique constraint on the
    * binding write is a cross-team conflict. Any other failed write also
-   * skips the retry.
+   * skips the retry. A workspace digest whose migrated key is already
+   * `sent` is reported as already delivered instead of posting twice.
    */
-  private async persistChatMigration(fromChatId: number, toChatId: number): Promise<void> {
+  private async persistChatMigration(
+    fromChatId: number,
+    toChatId: number,
+  ): Promise<{ alreadyDelivered: boolean; skipRedirect: boolean }> {
     const sendingTeamId = this.sendingWorkspaceTeamId();
     if (!sendingTeamId) {
       throw new Error('telegram chat migration skipped: sending workspace is missing');
     }
     try {
       if (this.options.onChatMigrated) {
-        await this.options.onChatMigrated(fromChatId, toChatId);
-        return;
+        const writeResult = await this.options.onChatMigrated(fromChatId, toChatId);
+        return this.digestRedirectDisposition(fromChatId, toChatId, writeResult);
       }
       const { getDb } = await import('@timeline/db');
       const db = getDb();
@@ -131,7 +166,11 @@ export class HttpTelegramApi implements TelegramApi {
           'telegram chat migration skipped: sending workspace ownership could not be established',
         );
       }
-      await applyTelegramChatMigration(db, fromChatId, toChatId, { sendingTeamId });
+      const writeResult = await applyTelegramChatMigration(db, fromChatId, toChatId, {
+        sendingTeamId,
+      });
+      await assertTelegramChatRedirectOwnership(db, toChatId, sendingTeamId);
+      return this.digestRedirectDisposition(fromChatId, toChatId, writeResult);
     } catch (err) {
       rethrowTelegramChatMigrationWriteError(err);
     }
@@ -158,8 +197,23 @@ export class HttpTelegramApi implements TelegramApi {
       const toChatId = telegramMigratedChatId(error);
       if (!retried && fromChatId !== null && toChatId !== null && fromChatId !== toChatId) {
         try {
-          await this.persistChatMigration(fromChatId, toChatId);
+          const persistResult = await this.persistChatMigration(fromChatId, toChatId);
+          if (persistResult.alreadyDelivered) {
+            log.info(
+              { fromChatId, toChatId },
+              'telegram chat migration skipped redirect: already delivered',
+            );
+            return undefined as T;
+          }
+          if (persistResult.skipRedirect) {
+            log.info(
+              { fromChatId, toChatId },
+              'telegram chat migration skipped redirect: destination delivery is in flight',
+            );
+            throw error;
+          }
         } catch (persistErr) {
+          if (persistErr === error) throw error;
           if (isTelegramChatMigrationConflictError(persistErr)) {
             log.error(
               { err: persistErr, fromChatId, toChatId },

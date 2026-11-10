@@ -2,6 +2,7 @@ import { type Db, telegramChatBindings } from '@timeline/db';
 import { eq } from 'drizzle-orm';
 
 import { childLogger } from '#src/logger.js';
+import { rewriteWorkspaceDigestDedupeKeyTarget } from '#src/messaging/destinations.js';
 
 const log = childLogger('telegram');
 
@@ -16,6 +17,18 @@ export class TelegramChatMigrationConflictError extends Error {
     this.name = 'TelegramChatMigrationConflictError';
   }
 }
+
+export interface TelegramChatMigrationWriteResult {
+  /** New-chat workspace digest keys that already exist as `sent`. */
+  alreadySentDedupeKeys: string[];
+  /** New-chat workspace digest keys that already exist as `pending`. */
+  pendingDedupeKeys: string[];
+}
+
+const EMPTY_TELEGRAM_CHAT_MIGRATION_WRITE_RESULT: TelegramChatMigrationWriteResult = {
+  alreadySentDedupeKeys: [],
+  pendingDedupeKeys: [],
+};
 
 export function isTelegramChatMigrationConflictError(
   error: unknown,
@@ -237,6 +250,66 @@ export async function verifyTelegramChatMigrationOwnership(
 }
 
 /**
+ * Decide whether an in-flight send should retry after a persisted migration.
+ *
+ * Workspace digest keys are per destination. If this send's rewritten key
+ * already exists as `sent`, the caller must not post again. A `pending`
+ * collision skips the redirect without treating the send as delivered.
+ */
+export function telegramMigratedDigestRedirectDisposition(input: {
+  inFlightDedupeKey: string | undefined;
+  teamId: string | undefined;
+  fromChatId: number;
+  toChatId: number;
+  alreadySentDedupeKeys: readonly string[];
+  pendingDedupeKeys?: readonly string[];
+}): { alreadyDelivered: boolean; skipRedirect: boolean } {
+  const { inFlightDedupeKey, teamId } = input;
+  if (!inFlightDedupeKey || !teamId) {
+    return { alreadyDelivered: false, skipRedirect: false };
+  }
+  const nextKey = rewriteWorkspaceDigestDedupeKeyTarget({
+    dedupeKey: inFlightDedupeKey,
+    teamId,
+    kind: 'telegram_chat',
+    fromTargetId: String(input.fromChatId),
+    toTargetId: String(input.toChatId),
+  });
+  if (!nextKey) return { alreadyDelivered: false, skipRedirect: false };
+  if (input.alreadySentDedupeKeys.includes(nextKey)) {
+    return { alreadyDelivered: true, skipRedirect: true };
+  }
+  if (input.pendingDedupeKeys?.includes(nextKey)) {
+    return { alreadyDelivered: false, skipRedirect: true };
+  }
+  return { alreadyDelivered: false, skipRedirect: false };
+}
+
+/**
+ * The sending workspace must still own the migrated chat before a redirected
+ * Bot API retry. A post-write unlink+relink must not deliver another team's
+ * content into the new chat.
+ */
+export async function assertTelegramChatRedirectOwnership(
+  db: Db,
+  toChatId: number,
+  sendingTeamId: string,
+): Promise<void> {
+  const [binding] = await db
+    .select({ teamId: telegramChatBindings.teamId })
+    .from(telegramChatBindings)
+    .where(eq(telegramChatBindings.tgChatId, toChatId))
+    .limit(1);
+  if (binding?.teamId !== sendingTeamId) {
+    log.error(
+      { toChatId, sendingTeamId, boundTeamId: binding?.teamId ?? null },
+      'telegram chat migration skipped: sending workspace does not own the redirected chat',
+    );
+    throw new TelegramChatMigrationConflictError();
+  }
+}
+
+/**
  * Rewrite stored Telegram group/supergroup ids after Telegram upgrades a chat.
  * Bindings and digest destinations are the live send/route keys. Captured
  * raw-event metadata stays immutable.
@@ -249,9 +322,9 @@ export async function applyTelegramChatMigration(
   fromChatId: number,
   toChatId: number,
   options?: TelegramChatMigrationVerifyOptions,
-): Promise<void> {
+): Promise<TelegramChatMigrationWriteResult> {
   const ownership = await verifyTelegramChatMigrationOwnership(db, fromChatId, toChatId, options);
-  if (!ownership) return;
+  if (!ownership) return EMPTY_TELEGRAM_CHAT_MIGRATION_WRITE_RESULT;
   if (options?.sendingTeamId && ownership.teamId !== options.sendingTeamId) {
     throw new TelegramChatMigrationConflictError();
   }
@@ -260,9 +333,13 @@ export async function applyTelegramChatMigration(
   // whole workspace port at module load.
   const { withTeam } = await import('#src/team-scope.js');
   try {
-    await withTeam(db, ownership.teamId, TELEGRAM_MIGRATION_ACTOR_USER_ID, {
+    const writeResult = await withTeam(db, ownership.teamId, TELEGRAM_MIGRATION_ACTOR_USER_ID, {
       skipMembershipCheck: true,
     }).telegram.migrateChatId({ fromChatId, toChatId });
+    if (options?.sendingTeamId) {
+      await assertTelegramChatRedirectOwnership(db, toChatId, options.sendingTeamId);
+    }
+    return writeResult;
   } catch (err) {
     rethrowTelegramChatMigrationWriteError(err);
   }
