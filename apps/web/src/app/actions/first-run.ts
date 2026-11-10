@@ -1,11 +1,16 @@
 'use server';
 
+import { randomUUID } from 'node:crypto';
+
+import { listChargeCentsForMeter } from '@timeline/shared/billing';
 import { getEnv } from '@timeline/shared/env';
 import { childLogger } from '@timeline/shared/logger';
 import {
   FIRST_RUN_PATHS,
+  WEBSITE_SUBJECTS,
+  WEBSITE_SCAN_PAGE_CAP,
+  type WebsiteSubject,
   TEAM_WORK_STYLES,
-  isWebsiteScanEnabled,
   parsePublicWebsiteUrl,
   type FirstRunPath,
   type FirstRunPhase,
@@ -23,6 +28,7 @@ import { trackProductEventBestEffort } from '@/lib/analytics';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { publicActionError } from '@/lib/public-error';
+import { requireRedisQueue } from '@/lib/queue';
 import { runSentryServerAction } from '@/lib/sentry-action';
 
 const log = childLogger('web:actions:first-run');
@@ -63,6 +69,17 @@ async function limitFirstRun(userId: string): Promise<string | null> {
   });
   if (!rl.ok) {
     return `Too many onboarding updates. Try again in ${String(Math.ceil(rl.retryAfterMs / 1000))} seconds.`;
+  }
+  return null;
+}
+
+async function limitWebsiteScan(teamId: string): Promise<string | null> {
+  const rl = await rateLimit.checkRateLimit({
+    key: rateLimit.rateLimitKey('website_scan', 'team', teamId),
+    ...rateLimit.RATE_LIMITS.websiteScan,
+  });
+  if (!rl.ok) {
+    return 'This team already used its signup website scan. Upload a document or forward an email instead.';
   }
   return null;
 }
@@ -114,6 +131,8 @@ export async function submitWorkStyleAction(input: {
 export async function selectStarterPathAction(input: {
   path: FirstRunPath;
   websiteUrl?: string;
+  websiteSubject?: WebsiteSubject;
+  websitePermissionConfirmed?: boolean;
 }): Promise<ActionResult> {
   return runSentryServerAction('select_starter_path', async () => {
     const got = await withFirstRunScope();
@@ -121,38 +140,84 @@ export async function selectStarterPathAction(input: {
     const limited = await limitFirstRun(got.userId);
     if (limited) return { ok: false, error: limited };
     const parsed = z
-      .object({ path: pathSchema, websiteUrl: z.string().max(2048).optional() })
+      .object({
+        path: pathSchema,
+        websiteUrl: z.string().max(2048).optional(),
+        websiteSubject: z.enum(WEBSITE_SUBJECTS).default('own_team'),
+        websitePermissionConfirmed: z.boolean().optional(),
+      })
       .safeParse(input);
     if (!parsed.success) return { ok: false, error: 'Invalid starter path' };
 
-    const websiteEnabled = isWebsiteScanEnabled(getEnv());
-    if (parsed.data.path === 'website' && !websiteEnabled) {
-      return {
-        ok: false,
-        error: 'Website scan is coming soon. Upload a document or forward an email.',
-      };
-    }
-
+    const scanId = randomUUID();
+    const operationId = `website-scan:${scanId}`;
+    let reserved = false;
     let websiteUrl: string | undefined;
     let websiteHost: string | undefined;
     if (parsed.data.path === 'website') {
+      if (!parsed.data.websitePermissionConfirmed)
+        return { ok: false, error: 'Confirm that you may submit this website for scanning.' };
+      if (!getEnv().FIRECRAWL_API_KEY?.trim())
+        return {
+          ok: false,
+          error: 'FIRECRAWL_API_KEY is required for website scanning. Contact your administrator.',
+        };
       const parsedUrl = parsePublicWebsiteUrl(parsed.data.websiteUrl ?? '');
       if ('error' in parsedUrl) return { ok: false, error: parsedUrl.error };
       websiteUrl = parsedUrl.href;
       websiteHost = parsedUrl.host;
+      try {
+        await requireRedisQueue();
+      } catch (err) {
+        log.error({ err }, 'website scan queue unavailable');
+        return {
+          ok: false,
+          error: 'Could not start the website scan. Upload a document or forward an email instead.',
+        };
+      }
+      const admission = await got.scope.billing.reserve({
+        operationId,
+        meterId: 'accepted_sources',
+        reservedNativeUnits: WEBSITE_SCAN_PAGE_CAP,
+        reservedChargeCents: listChargeCentsForMeter('accepted_sources', WEBSITE_SCAN_PAGE_CAP),
+        ttlMs: 30 * 60_000,
+      });
+      if (!admission.ok)
+        return {
+          ok: false,
+          error:
+            'Website scan cannot start with the current usage allowance. Check Billing or ask a team administrator.',
+        };
+      reserved = true;
+      const scanLimited = await limitWebsiteScan(got.teamId);
+      if (scanLimited) {
+        await got.scope.billing.release(operationId);
+        return { ok: false, error: scanLimited };
+      }
     }
 
     try {
-      await got.scope.onboarding.selectStarterPath(parsed.data.path, {
+      const selected = await got.scope.onboarding.selectStarterPath(parsed.data.path, {
+        ...(websiteUrl
+          ? { websiteSubject: parsed.data.websiteSubject, websiteScanId: scanId }
+          : {}),
         ...(websiteUrl ? { websiteUrl } : {}),
         ...(websiteHost ? { websiteHost } : {}),
       });
       if (parsed.data.path === 'website') {
-        // The fetch pipeline ships in a follow-up PR. Fail closed so this
-        // path never pretends pages were saved.
-        await got.scope.onboarding.markScanFailed('not_enabled');
+        try {
+          if (selected.websiteScanId !== scanId)
+            throw new Error('The starter selection has changed.');
+          const queue = await requireRedisQueue();
+          await queue.enqueueWebsiteScanJob({ teamId: got.teamId, userId: got.userId, scanId });
+        } catch (err) {
+          log.error({ err }, 'enqueue website scan failed');
+          await got.scope.onboarding.markScanFailed('unreachable', scanId);
+          throw err;
+        }
       }
     } catch (err) {
+      if (reserved) await got.scope.billing.release(operationId);
       log.error({ err }, 'selectStarterPath failed');
       return {
         ok: false,

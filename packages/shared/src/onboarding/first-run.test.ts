@@ -156,6 +156,8 @@ describe('first-run helpers', () => {
           captureEventId: null,
           websiteUrl: null,
           websiteHost: null,
+          websiteSubject: 'own_team',
+          websiteScanId: null,
           scanFailureReason: null,
           guideHiddenAt: null,
           firstCaptureLandedAt: null,

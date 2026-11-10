@@ -26,6 +26,7 @@ export const firstRunScanFailureReason = pgEnum('first_run_scan_failure_reason',
   'unreachable',
   'not_enabled',
   'rate_limited',
+  'billing_limited',
 ]);
 
 export const teamFirstRun = pgTable('team_first_run', {
@@ -42,6 +43,11 @@ export const teamFirstRun = pgTable('team_first_run', {
   captureEventId: uuid('capture_event_id').references(() => rawEvents.id, { onDelete: 'set null' }),
   websiteUrl: text('website_url'),
   websiteHost: text('website_host'),
+  websiteSubject: text('website_subject')
+    .$type<'own_team' | 'other_company'>()
+    .notNull()
+    .default('own_team'),
+  websiteScanId: uuid('website_scan_id'),
   scanFailureReason: firstRunScanFailureReason('scan_failure_reason'),
   guideHiddenAt: timestamp('guide_hidden_at', { withTimezone: true }),
   firstCaptureLandedAt: timestamp('first_capture_landed_at', { withTimezone: true }),

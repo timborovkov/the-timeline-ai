@@ -7,6 +7,7 @@ import {
   type FirstRunState,
   type NamedProcessingStep,
   type TeamWorkStyle,
+  type WebsiteSubject,
 } from '@timeline/shared/onboarding/first-run';
 import { useRouter } from 'next/navigation';
 import { useEffect } from 'react';
@@ -30,7 +31,6 @@ import { WelcomeScreen } from '@/components/onboarding/welcome-screen';
 
 export interface FirstRunStatusPayload {
   firstRun: FirstRunState | null;
-  websiteScanEnabled: boolean;
   inboundEmail: string | null;
   teamName: string;
   record: {
@@ -105,8 +105,17 @@ export function SetupFlow({ initialStatus }: { initialStatus: FirstRunStatusPayl
     router.refresh();
   }
 
-  async function pickWebsite(url: string) {
-    const result = await selectStarterPathAction({ path: 'website', websiteUrl: url });
+  async function pickWebsite(
+    url: string,
+    websiteSubject: WebsiteSubject,
+    websitePermissionConfirmed: boolean,
+  ) {
+    const result = await selectStarterPathAction({
+      path: 'website',
+      websiteUrl: url,
+      websiteSubject,
+      websitePermissionConfirmed,
+    });
     if (!result.ok) throw new Error(result.error ?? 'Could not start the website scan.');
     router.refresh();
   }
@@ -146,7 +155,6 @@ export function SetupFlow({ initialStatus }: { initialStatus: FirstRunStatusPayl
     body = (
       <ChooserScreen
         inboundEmail={initialStatus.inboundEmail}
-        websiteScanEnabled={initialStatus.websiteScanEnabled}
         onWebsite={pickWebsite}
         onDocument={pickDocument}
         onEmail={pickEmail}

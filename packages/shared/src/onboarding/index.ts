@@ -27,11 +27,13 @@ import { and, count, eq, gt, inArray, isNull } from 'drizzle-orm';
 
 import { isActiveComp } from '#src/billing/operator.js';
 import { createFirstRunHandlers } from '#src/onboarding/first-run-scope.js';
+import { createWebsiteSourceHandlers } from '#src/onboarding/website-source-scope.js';
 
 import type { SuggestionBundle } from '#src/suggestions/index.js';
 import type { TeamRole } from '#src/team-scope.js';
 
 export {
+  WEBSITE_SUBJECTS,
   TEAM_WORK_STYLES,
   FIRST_RUN_PHASES,
   FIRST_RUN_PATHS,
@@ -46,7 +48,6 @@ export {
   documentProcessingSteps,
   firstCaptureJustLanded,
   gettingStartedIndex,
-  isWebsiteScanEnabled,
   orderChecklistItems,
   parsePublicWebsiteUrl,
   prefilledAskQuestion,
@@ -60,7 +61,9 @@ export {
   suggestionTypeRank,
   websiteProcessingSteps,
 } from '#src/onboarding/first-run.js';
+export { processWebsiteScanJob } from '#src/onboarding/website-scan-job.js';
 export type {
+  WebsiteSubject,
   FirstRunPath,
   FirstRunPhase,
   FirstRunScanFailureReason,
@@ -400,6 +403,7 @@ export function createOnboardingScope({
 
     markStepComplete,
     ...createFirstRunHandlers({ db, teamId, userId, ensureMember, getSuggestion }),
+    ...createWebsiteSourceHandlers({ db, teamId, userId, ensureMember }),
 
     async dismissChecklist(): Promise<void> {
       await ensureMember();

@@ -77,6 +77,9 @@ export const QUEUE_NAMES = {
   // conversational providers. The UUID job id matches the persisted turn.
   conversationAgent: 'conversation-agent',
   chatDelivery: 'chat-delivery',
+  // First-run website scan. One job per team; the worker fetches a short
+  // public-page set through externalFetch and writes cited web raw events.
+  websiteScan: 'website-scan',
 } as const;
 
 export type QueueName = (typeof QUEUE_NAMES)[keyof typeof QUEUE_NAMES];
@@ -1644,5 +1647,35 @@ export async function enqueueEmailInboundJob(data: EmailInboundJobData): Promise
 export async function closeEmailInboundQueue(): Promise<void> {
   await closeQueue(_emailInboundQueue, () => {
     _emailInboundQueue = undefined;
+  });
+}
+
+/** Team and actor IDs only: crawled page text never enters Redis jobs. */
+export interface WebsiteScanJobData {
+  teamId: string;
+  userId: string;
+  scanId: string;
+}
+
+let _websiteScanQueue: TimelineQueue<WebsiteScanJobData> | undefined;
+
+export function getWebsiteScanQueue(): TimelineQueue<WebsiteScanJobData> {
+  return (_websiteScanQueue ??= createTimelineQueue<WebsiteScanJobData>(QUEUE_NAMES.websiteScan, {
+    attempts: 3,
+    backoff: { type: 'exponential', delay: 5_000 },
+    removeOnComplete: { age: 24 * 3600 },
+    removeOnFail: { age: 7 * 24 * 3600 },
+  }));
+}
+
+export async function enqueueWebsiteScanJob(data: WebsiteScanJobData): Promise<void> {
+  await getWebsiteScanQueue().add('scan', data, {
+    jobId: `website-scan-${data.teamId}-${data.scanId}`,
+  });
+}
+
+export async function closeWebsiteScanQueue(): Promise<void> {
+  await closeQueue(_websiteScanQueue, () => {
+    _websiteScanQueue = undefined;
   });
 }

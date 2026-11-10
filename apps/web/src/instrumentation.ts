@@ -29,6 +29,9 @@ export async function register(): Promise<void> {
   }
 
   if (process.env.NEXT_RUNTIME !== 'nodejs') return;
+  if (!process.env.FIRECRAWL_API_KEY?.trim()) {
+    throw new Error('FIRECRAWL_API_KEY is required to start the web service.');
+  }
 
   const { resolveTelegramAuthUrl, startTelegramBotRegistration } =
     await import('./lib/telegram-bot-startup');

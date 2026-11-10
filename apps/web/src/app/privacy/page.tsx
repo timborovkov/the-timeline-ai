@@ -269,6 +269,30 @@ function PrivacyAiAndProviderSections() {
             </td>
           </tr>
           <tr>
+            <td>Firecrawl (SideGuide Technologies, Inc.)</td>
+            <td>
+              When you request a website scan, Timeline sends the public website URL a user submits
+              to Firecrawl so Firecrawl can fetch up to five public pages and return markdown.
+              Timeline does not send workspace records, account passwords, or private logged-in
+              pages. Firecrawl&apos;s published privacy policy names the operator as SideGuide
+              Technologies, Inc. d/b/a Firecrawl and states that its servers are in the United
+              States. Firecrawl documents that crawl job results remain retrievable from its API for
+              24 hours after completion. Broader retention of fetched page content beyond that
+              documented API window is to be confirmed. Timeline does not enable Firecrawl&apos;s
+              Enterprise zero-data-retention option. See Firecrawl&apos;s{' '}
+              <a href="https://www.firecrawl.dev/privacy-policy">privacy policy</a> and{' '}
+              <a href="https://docs.firecrawl.dev/security">security overview</a>. Deleting data in
+              Timeline does not by itself delete copies Firecrawl holds. Websites about clients,
+              partners, or other companies may include other people&apos;s public information.
+              Timeline stores the captured pages as cited evidence and document snapshots and may
+              suggest records for your approval. To request removal of captured pages, snapshots,
+              and derived information, contact the workspace administrator or contact us using the
+              details in this policy. We coordinate applicable deletion requests with the workspace
+              and processors; deleting a document alone does not remove all captured evidence,
+              backups, or processor copies.
+            </td>
+          </tr>
+          <tr>
             <td>Resend</td>
             <td>
               Timeline sends transactional product email through Resend from the verified domain{' '}

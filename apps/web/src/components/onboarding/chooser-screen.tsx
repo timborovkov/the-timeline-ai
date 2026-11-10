@@ -3,6 +3,7 @@
 import {
   ONBOARDING_DOCUMENT_MAX_BYTES,
   WEBSITE_SCAN_PAGE_CAP,
+  type WebsiteSubject,
 } from '@timeline/shared/onboarding/first-run';
 import { useRef, useState, useTransition, type DragEvent } from 'react';
 
@@ -13,20 +14,20 @@ import { cn } from '@/lib/utils';
 
 export function ChooserScreen({
   inboundEmail,
-  websiteScanEnabled,
   onWebsite,
   onDocument,
   onEmail,
   onSkip,
 }: {
   inboundEmail: string | null;
-  websiteScanEnabled: boolean;
-  onWebsite: (url: string) => Promise<void>;
+  onWebsite: (url: string, subject: WebsiteSubject, permissionConfirmed: boolean) => Promise<void>;
   onDocument: (file: File) => Promise<void>;
   onEmail: () => Promise<void>;
   onSkip: () => Promise<void>;
 }) {
   const [websiteUrl, setWebsiteUrl] = useState('');
+  const [websiteSubject, setWebsiteSubject] = useState<WebsiteSubject>('own_team');
+  const [permissionConfirmed, setPermissionConfirmed] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
   const [pending, startTransition] = useTransition();
@@ -75,17 +76,51 @@ export function ChooserScreen({
           <div>
             <div className="flex flex-wrap items-center gap-2">
               <h2 className="text-sm font-semibold">Scan your website</h2>
-              {websiteScanEnabled ? null : (
-                <span className="rounded-sm border border-border px-1.5 py-0.5 text-[11px] text-fg-dim">
-                  Coming soon
-                </span>
-              )}
             </div>
             <p className="mt-1 text-[13px] leading-5 text-fg-muted">
               We read up to {WEBSITE_SCAN_PAGE_CAP} public pages, like home, about, pricing and
               product.
             </p>
           </div>
+          <fieldset disabled={pending} className="space-y-2 text-[13px]">
+            <legend className="mb-2 font-medium">Who is this website about?</legend>
+            {(
+              [
+                ['own_team', 'Our team or company'],
+                ['other_company', 'A client, partner or another company'],
+              ] as const
+            ).map(([value, label]) => (
+              <label key={value} className="flex items-start gap-2">
+                <input
+                  type="radio"
+                  name="website-subject"
+                  value={value}
+                  checked={websiteSubject === value}
+                  onChange={() => {
+                    setWebsiteSubject(value);
+                  }}
+                />
+                {label}
+              </label>
+            ))}
+          </fieldset>
+          <p className="text-xs text-fg-muted">
+            {websiteSubject === 'own_team'
+              ? 'Suggest a company profile, people and projects supported by the pages.'
+              : 'Suggest a Company record supported by the pages.'}{' '}
+            You approve every record.
+          </p>
+          <label className="flex items-start gap-2 text-xs text-fg-muted">
+            <input
+              type="checkbox"
+              checked={permissionConfirmed}
+              disabled={pending}
+              onChange={(event) => {
+                setPermissionConfirmed(event.target.checked);
+              }}
+            />
+            I confirm I may submit this website. Only public pages will be read.
+          </label>
           <div className="mt-auto flex flex-wrap gap-2">
             <Input
               value={websiteUrl}
@@ -93,16 +128,16 @@ export function ChooserScreen({
                 setWebsiteUrl(event.target.value);
               }}
               placeholder="company.example"
-              disabled={!websiteScanEnabled || pending}
+              disabled={pending}
               aria-label="Website address"
               className="min-w-0 flex-1"
             />
             <Button
               type="button"
               variant="outline"
-              disabled={!websiteScanEnabled || pending}
+              disabled={pending || !permissionConfirmed}
               onClick={() => {
-                run(() => onWebsite(websiteUrl));
+                run(() => onWebsite(websiteUrl, websiteSubject, permissionConfirmed));
               }}
             >
               Scan

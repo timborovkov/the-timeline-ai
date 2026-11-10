@@ -16,10 +16,18 @@ export const FIRST_RUN_PHASES = [
 export type FirstRunPhase = (typeof FIRST_RUN_PHASES)[number];
 
 export const FIRST_RUN_PATHS = ['website', 'document', 'email', 'skip'] as const;
+export const WEBSITE_SUBJECTS = ['own_team', 'other_company'] as const;
+export type WebsiteSubject = (typeof WEBSITE_SUBJECTS)[number];
+
 export type FirstRunPath = (typeof FIRST_RUN_PATHS)[number];
 
 export type FirstRunScanFailureReason =
-  'no_readable_text' | 'robots' | 'unreachable' | 'not_enabled' | 'rate_limited';
+  | 'no_readable_text'
+  | 'robots'
+  | 'unreachable'
+  | 'not_enabled'
+  | 'rate_limited'
+  | 'billing_limited';
 
 export type GoLiveChannel = 'slack' | 'telegram' | 'email' | 'digest' | 'meeting';
 
@@ -81,6 +89,8 @@ export interface FirstRunState {
   captureEventId: string | null;
   websiteUrl: string | null;
   websiteHost: string | null;
+  websiteSubject: WebsiteSubject;
+  websiteScanId: string | null;
   scanFailureReason: FirstRunScanFailureReason | null;
   guideHiddenAt: Date | null;
   firstCaptureLandedAt: Date | null;
@@ -127,11 +137,6 @@ export function listedWebsiteSourceEvents<T extends { id: string }>(
   if (!extra) return pages;
   if (pages.some((page) => page.id === extra.id)) return pages;
   return [extra, ...pages];
-}
-
-export function isWebsiteScanEnabled(env: { WEBSITE_SCAN_ENABLED?: boolean | string }): boolean {
-  const value = env.WEBSITE_SCAN_ENABLED;
-  return value === true || value === 'true' || value === '1';
 }
 
 export function recommendedGoLiveChannel(
@@ -377,24 +382,30 @@ export function scanFailureCopy(input: {
   if (input.reason === 'unreachable') {
     return {
       title: `We couldn't reach ${host}`,
-      body: 'The address did not respond, or it is not a public site we can fetch. Nothing was saved from this attempt.',
+      body: 'The website scan did not finish. Any pages already saved remain available; some processing may still be incomplete. You can upload a document or forward an email instead.',
+    };
+  }
+  if (input.reason === 'billing_limited') {
+    return {
+      title: 'Website scan needs usage allowance',
+      body: 'Your team’s usage allowance could not admit this scan. Check Billing or ask a team administrator before trying again.',
     };
   }
   if (input.reason === 'rate_limited') {
     return {
       title: `We couldn't read ${host}`,
-      body: 'This team already used its signup website scan. Upload a document or forward an email instead. Nothing new was saved.',
+      body: 'The website reader is temporarily rate limited. Try again later, upload a document, or forward an email.',
     };
   }
   if (input.reason === 'not_enabled') {
     return {
-      title: 'Website scan is not available yet',
-      body: 'Scan is coming soon. Upload a document or forward an email to start a cited record. Nothing was saved from this attempt.',
+      title: 'Website scan needs configuration',
+      body: 'Contact your administrator to configure website scanning, or upload a document or forward an email.',
     };
   }
   return {
     title: `We couldn't read ${host}`,
-    body: 'The pages loaded, but they had no readable text. Sites built entirely with JavaScript often look empty to us. Nothing was saved from this attempt.',
+    body: 'The pages loaded, but the website reader returned no usable text. Try another public page, upload a document, or forward an email.',
   };
 }
 
@@ -429,6 +440,8 @@ export function parsePublicWebsiteUrl(
   if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
     return { error: 'Enter an http or https address.' };
   }
+  if (parsed.username || parsed.password)
+    return { error: 'Use a public website URL without a username or password.' };
   const host = parsed.hostname.toLowerCase();
   if (isNonPublicWebsiteHost(host)) {
     return { error: 'Enter a public website, not a local address.' };

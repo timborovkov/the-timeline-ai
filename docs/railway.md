@@ -347,3 +347,5 @@ If first-request recovery fails or exceeds the budget, disable Serverless and re
 ### Qdrant memory
 
 Use on-disk vectors/payloads with the configured quantization and monitor cache growth. Preserve snapshots and rollback coverage during collection migration. Follow [vector maintenance](runbooks/reindex.md).
+
+Website scanning requires `FIRECRAWL_API_KEY` on both web and worker services. Firecrawl is the public-page crawl provider.
