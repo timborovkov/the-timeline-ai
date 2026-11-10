@@ -183,6 +183,123 @@ describe('suggestion scope', () => {
     expect(bundle.items).toHaveLength(1);
   });
 
+  it('lists object-targeted pending suggestions beyond the workspace-newest cap', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const objectId = '44444444-4444-4444-8444-444444444444';
+    const [older] = await db
+      .insert(agentSuggestions)
+      .values({
+        teamId: TEAM_ID,
+        source: 'background',
+        status: 'pending',
+        title: 'Update object stage',
+        dedupeKey: 'older-object-target',
+        visibility: 'team',
+        createdAt: new Date('2026-01-01T00:00:00.000Z'),
+      })
+      .returning({ id: agentSuggestions.id });
+    if (!older) throw new Error('expected older object-targeted suggestion');
+    await db.insert(agentSuggestionItems).values({
+      suggestionId: older.id,
+      teamId: TEAM_ID,
+      status: 'pending',
+      operation: 'update',
+      targetKind: 'object',
+      targetId: objectId,
+      title: 'Move to proposal',
+      dedupeKey: 'older-object-target:item',
+      proposedPayload: { stage: 'proposal' },
+    });
+    const newer = await db
+      .insert(agentSuggestions)
+      .values(
+        Array.from({ length: 100 }, (_, index) => ({
+          teamId: TEAM_ID,
+          source: 'background' as const,
+          status: 'pending' as const,
+          title: `Unrelated approval ${String(index).padStart(3, '0')}`,
+          dedupeKey: `unrelated-approval-${String(index).padStart(3, '0')}`,
+          visibility: 'team' as const,
+          createdAt: new Date('2026-06-01T00:00:00.000Z'),
+        })),
+      )
+      .returning({ id: agentSuggestions.id });
+    await db.insert(agentSuggestionItems).values(
+      newer.map((row, index) => ({
+        suggestionId: row.id,
+        teamId: TEAM_ID,
+        status: 'pending' as const,
+        operation: 'create' as const,
+        targetKind: 'task' as const,
+        title: `Unrelated task ${String(index).padStart(3, '0')}`,
+        dedupeKey: `unrelated-approval-${String(index).padStart(3, '0')}:item`,
+        proposedPayload: { canonicalName: `Unrelated task ${String(index).padStart(3, '0')}` },
+      })),
+    );
+
+    const workspacePending = await scope.suggestions.listPendingSuggestions();
+    const objectPending = await scope.suggestions.listPendingSuggestionsForObject(objectId);
+    expect(workspacePending.map((bundle) => bundle.id)).not.toContain(older.id);
+    expect(objectPending.map((bundle) => bundle.id)).toEqual([older.id]);
+  });
+
+  it('keeps pending local-ref relationships when sibling object creates are accepted', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const objectId = '55555555-5555-4555-8555-555555555555';
+    const [bundle] = await db
+      .insert(agentSuggestions)
+      .values({
+        teamId: TEAM_ID,
+        source: 'background',
+        status: 'partially_resolved',
+        title: 'Remember Jonne Granqvist and DFK',
+        dedupeKey: 'accepted-sibling-local-ref',
+        visibility: 'team',
+      })
+      .returning({ id: agentSuggestions.id });
+    if (!bundle) throw new Error('expected local-ref suggestion bundle');
+    await db.insert(agentSuggestionItems).values([
+      {
+        suggestionId: bundle.id,
+        teamId: TEAM_ID,
+        status: 'accepted',
+        operation: 'create',
+        targetKind: 'object',
+        targetId: null,
+        resultId: objectId,
+        title: 'Jonne Granqvist',
+        dedupeKey: 'accepted-sibling-local-ref:person',
+        proposedPayload: {
+          type: 'person',
+          canonicalName: 'Jonne Granqvist',
+          localRef: 'jonne-granqvist',
+        },
+      },
+      {
+        suggestionId: bundle.id,
+        teamId: TEAM_ID,
+        status: 'pending',
+        operation: 'create',
+        targetKind: 'object_relationship',
+        targetId: null,
+        title: 'Relate Jonne Granqvist and DFK',
+        dedupeKey: 'accepted-sibling-local-ref:relationship',
+        proposedPayload: {
+          fromRef: 'jonne-granqvist',
+          toEntityId: '66666666-6666-4666-8666-666666666666',
+          kind: 'related',
+        },
+      },
+    ]);
+
+    const objectPending = await scope.suggestions.listPendingSuggestionsForObject(objectId);
+    expect(objectPending.map((row) => row.id)).toEqual([bundle.id]);
+    expect(objectPending[0]?.items.map((item) => item.status).sort()).toEqual([
+      'accepted',
+      'pending',
+    ]);
+  });
+
   it('rejects item evidence that is not included in bundle evidence', async () => {
     await db.insert(rawEvents).values([
       {
