@@ -30,6 +30,12 @@ Google on the shared Cloud project. See
 [docs/research/google-oauth-readiness.md](docs/research/google-oauth-readiness.md).
 Cited Drive timeline events are not deleted on disconnect.
 
+Drive demo follow-up: the 9 November live Doc update was classified as noise while
+the Sheet update produced cited evidence. The project-field noise safeguard and
+clearer relevance instructions are locally tested; production deployment and a
+fresh Doc edit/capture check remain outstanding. The old Doc noise verdict advanced
+its comparison snapshot, so redeploying alone will not recreate the missed event.
+
 Google Drive v1 is shipped: person-owned OAuth, folder/file/shared-drive picker,
 `changes.watch` push (not polling), webhook-delivery + delayed targeted
 `integration-sync` debounce, latest extracted text kept only to detect later changes (older retained states hashes-only; deleted on disconnect or file removal) keyed by full-text content hashes
