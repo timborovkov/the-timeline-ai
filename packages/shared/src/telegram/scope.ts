@@ -1,5 +1,6 @@
 import {
   type Db,
+  messageDeliveries,
   teamDigestDestinations,
   telegramChatBindings,
   telegramLinkTokens,
@@ -7,9 +8,13 @@ import {
   telegramUserTeams,
   users,
 } from '@timeline/db';
-import { and, desc, eq, gt, inArray, isNull } from 'drizzle-orm';
+import { and, desc, eq, gt, inArray, isNull, like } from 'drizzle-orm';
 
 import { childLogger } from '#src/logger.js';
+import {
+  rewriteWorkspaceDigestDedupeKeyTarget,
+  workspaceDigestDedupeKeyTargetLike,
+} from '#src/messaging/destinations.js';
 
 const log = childLogger('telegram');
 
@@ -56,6 +61,52 @@ interface TelegramScopeDeps {
 
 function isAdminRole(role: TeamRole): boolean {
   return role === 'owner' || role === 'admin';
+}
+
+async function rewriteTelegramWorkspaceDigestLedgerKeys(
+  tx: {
+    select: Db['select'];
+    update: Db['update'];
+  },
+  input: { teamId: string; fromTarget: string; toTarget: string },
+): Promise<void> {
+  const oldKeyPattern = workspaceDigestDedupeKeyTargetLike({
+    teamId: input.teamId,
+    kind: 'telegram_chat',
+    targetId: input.fromTarget,
+  });
+  const ledgerRows = await tx
+    .select({ id: messageDeliveries.id, dedupeKey: messageDeliveries.dedupeKey })
+    .from(messageDeliveries)
+    .where(
+      and(
+        eq(messageDeliveries.teamId, input.teamId),
+        eq(messageDeliveries.intent, 'daily_digest'),
+        eq(messageDeliveries.channel, 'telegram'),
+        like(messageDeliveries.dedupeKey, oldKeyPattern),
+      ),
+    );
+  for (const row of ledgerRows) {
+    if (!row.dedupeKey) continue;
+    const nextKey = rewriteWorkspaceDigestDedupeKeyTarget({
+      dedupeKey: row.dedupeKey,
+      teamId: input.teamId,
+      kind: 'telegram_chat',
+      fromTargetId: input.fromTarget,
+      toTargetId: input.toTarget,
+    });
+    if (!nextKey || nextKey === row.dedupeKey) continue;
+    const [keyConflict] = await tx
+      .select({ id: messageDeliveries.id })
+      .from(messageDeliveries)
+      .where(eq(messageDeliveries.dedupeKey, nextKey))
+      .limit(1);
+    if (keyConflict) continue;
+    await tx
+      .update(messageDeliveries)
+      .set({ dedupeKey: nextKey, updatedAt: new Date() })
+      .where(and(eq(messageDeliveries.id, row.id), eq(messageDeliveries.teamId, input.teamId)));
+  }
 }
 
 export function createTelegramScope({ db, teamId, userId, ensureMember }: TelegramScopeDeps) {
@@ -167,7 +218,8 @@ export function createTelegramScope({ db, teamId, userId, ensureMember }: Telegr
 
     /**
      * Rewrite this team's stored Telegram chat id after a group→supergroup
-     * upgrade. Bindings and digest destinations are the live send/route keys.
+     * upgrade. Bindings, digest destinations, and workspace digest ledger
+     * keys are the live send/route/dedupe identity.
      */
     async migrateChatId(input: { fromChatId: number; toChatId: number }): Promise<void> {
       await ensureMember();
@@ -263,6 +315,12 @@ export function createTelegramScope({ db, teamId, userId, ensureMember }: Telegr
               ),
             );
         }
+
+        await rewriteTelegramWorkspaceDigestLedgerKeys(tx, {
+          teamId,
+          fromTarget,
+          toTarget,
+        });
       });
 
       log.info({ teamId, fromChatId, toChatId }, 'telegram chat migrated');

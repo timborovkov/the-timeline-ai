@@ -1,9 +1,15 @@
 import { PGlite } from '@electric-sql/pglite';
-import { type Db, teamDigestDestinations, telegramChatBindings } from '@timeline/db';
+import {
+  type Db,
+  messageDeliveries,
+  teamDigestDestinations,
+  telegramChatBindings,
+} from '@timeline/db';
 import { expect } from '@timeline/test-support';
 import { afterEach, beforeEach, describe, it } from 'bun:test';
 import { drizzle } from 'drizzle-orm/pglite';
 
+import { digestDestinationDedupeKey } from '#src/messaging/destinations.js';
 import {
   applyTelegramChatMigration,
   parseTelegramMigratedChatId,
@@ -167,5 +173,116 @@ describe('applyTelegramChatMigration', () => {
       ]),
     );
     expect(await db.select().from(teamDigestDestinations)).toHaveLength(2);
+  });
+
+  it('rewrites workspace digest ledger keys with the migrated chat id', async () => {
+    const windowEnd = '2026-06-14T12:00:00.000Z';
+    const oldKey = digestDestinationDedupeKey({
+      scope: 'workspace',
+      teamId: TEAM_ID,
+      windowEnd,
+      destination: { kind: 'telegram_chat', targetId: String(OLD_CHAT_ID) },
+    });
+    const newKey = digestDestinationDedupeKey({
+      scope: 'workspace',
+      teamId: TEAM_ID,
+      windowEnd,
+      destination: { kind: 'telegram_chat', targetId: String(NEW_CHAT_ID) },
+    });
+    const otherTeamKey = digestDestinationDedupeKey({
+      scope: 'workspace',
+      teamId: OTHER_TEAM_ID,
+      windowEnd,
+      destination: { kind: 'telegram_chat', targetId: String(OLD_CHAT_ID) },
+    });
+    const slackKey = digestDestinationDedupeKey({
+      scope: 'workspace',
+      teamId: TEAM_ID,
+      windowEnd,
+      destination: { kind: 'slack_channel', targetId: String(OLD_CHAT_ID) },
+    });
+    await db.insert(messageDeliveries).values([
+      {
+        intent: 'daily_digest',
+        channel: 'telegram',
+        teamId: TEAM_ID,
+        status: 'sent',
+        provider: 'telegram',
+        dedupeKey: oldKey,
+      },
+      {
+        intent: 'daily_digest',
+        channel: 'telegram',
+        teamId: OTHER_TEAM_ID,
+        status: 'sent',
+        provider: 'telegram',
+        dedupeKey: otherTeamKey,
+      },
+      {
+        intent: 'daily_digest',
+        channel: 'slack',
+        teamId: TEAM_ID,
+        status: 'sent',
+        provider: 'slack',
+        dedupeKey: slackKey,
+      },
+    ]);
+
+    await applyTelegramChatMigration(db, OLD_CHAT_ID, NEW_CHAT_ID);
+
+    expect(
+      (await db.select({ dedupeKey: messageDeliveries.dedupeKey }).from(messageDeliveries)).map(
+        (row) => row.dedupeKey,
+      ),
+    ).toEqual(expect.arrayContaining([newKey, otherTeamKey, slackKey]));
+    expect(await db.select().from(messageDeliveries)).toHaveLength(3);
+    expect(
+      (await db.select({ dedupeKey: messageDeliveries.dedupeKey }).from(messageDeliveries)).map(
+        (row) => row.dedupeKey,
+      ),
+    ).not.toContain(oldKey);
+  });
+
+  it('does not clobber an existing digest ledger key for the new chat id', async () => {
+    const windowEnd = '2026-06-14T12:00:00.000Z';
+    const oldKey = digestDestinationDedupeKey({
+      scope: 'workspace',
+      teamId: TEAM_ID,
+      windowEnd,
+      destination: { kind: 'telegram_chat', targetId: String(OLD_CHAT_ID) },
+    });
+    const newKey = digestDestinationDedupeKey({
+      scope: 'workspace',
+      teamId: TEAM_ID,
+      windowEnd,
+      destination: { kind: 'telegram_chat', targetId: String(NEW_CHAT_ID) },
+    });
+    await db.insert(messageDeliveries).values([
+      {
+        intent: 'daily_digest',
+        channel: 'telegram',
+        teamId: TEAM_ID,
+        status: 'sent',
+        provider: 'telegram',
+        dedupeKey: oldKey,
+      },
+      {
+        intent: 'daily_digest',
+        channel: 'telegram',
+        teamId: TEAM_ID,
+        status: 'sent',
+        provider: 'telegram',
+        dedupeKey: newKey,
+      },
+    ]);
+
+    await applyTelegramChatMigration(db, OLD_CHAT_ID, NEW_CHAT_ID);
+
+    expect(
+      (await db.select({ dedupeKey: messageDeliveries.dedupeKey }).from(messageDeliveries)).map(
+        (row) => row.dedupeKey,
+      ),
+    ).toEqual(expect.arrayContaining([oldKey, newKey]));
+    expect(await db.select().from(messageDeliveries)).toHaveLength(2);
   });
 });
