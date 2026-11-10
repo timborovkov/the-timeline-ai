@@ -190,6 +190,7 @@ const { renderToStaticMarkup } = await import('react-dom/server');
 
 const { ObjectDetailClient } = await import('./object-detail-client.js');
 const { visibleObjectSearchResultsForQuery } = await import('./object-search-results.js');
+const { WorkspaceTimezoneProvider } = await import('@/components/workspace-timezone-context');
 const objectActions = await import('@/app/actions/objects');
 
 const detail = {
@@ -222,6 +223,8 @@ const detail = {
   connectedWork: {
     openTasks: [],
     recentTasks: [],
+    openTaskCount: 0,
+    doneTaskCount: 0,
     calendarEvents: [],
     timelineEvents: [],
     objects: [],
@@ -570,6 +573,8 @@ describe('ObjectDetailClient', () => {
     const html = renderObjectDetail({
       detail: {
         ...detail,
+        type: 'company',
+        canonicalName: 'DFK',
         connectedWork: {
           openTasks: [
             {
@@ -578,6 +583,7 @@ describe('ObjectDetailClient', () => {
               type: 'task',
               canonicalName: 'Send message to DFK with proposed meeting times',
               status: 'todo',
+              assigneeUserId: 'user-mika',
             },
           ],
           recentTasks: [
@@ -589,6 +595,8 @@ describe('ObjectDetailClient', () => {
               status: 'done',
             },
           ],
+          openTaskCount: 1,
+          doneTaskCount: 1,
           calendarEvents: [
             {
               id: 'calendar-1',
@@ -668,6 +676,7 @@ describe('ObjectDetailClient', () => {
       },
       userId: 'user-1',
       suggestions: [],
+      members: [{ id: 'user-mika', label: 'Mika Product' }],
     });
 
     expect(html).toContain('Send message to DFK with proposed meeting times');
@@ -676,7 +685,12 @@ describe('ObjectDetailClient', () => {
     expect(html).not.toContain('Timeline moments');
     expect(html).toContain('Jonne Granqvist');
     expect(html).toContain('Pilot pipeline');
-    expect(html).toContain('Merge DFK Finland Oy into DFK');
+    expect(html).toContain('Open 1 · Done 1');
+    expect(html).toContain('Recent history');
+    expect(html).toContain('Mika Product');
+    expect(html).toContain('Add a task');
+    expect(html).not.toContain('Merge DFK Finland Oy into DFK');
+    expect(html).not.toContain('/app/approvals');
     expect(html).toContain('Send pilot times to DFK');
     expect(html).toContain('example.com/dfk');
     expect(html).toContain('pilot-photo.png');
@@ -765,7 +779,8 @@ describe('ObjectDetailClient', () => {
       suggestions: [],
     });
 
-    expect(html.match(new RegExp(taskTitle, 'g'))).toHaveLength(1);
+    expect(html.match(/href="\/app\/objects\/task-1"/g)).toHaveLength(1);
+    expect(html).toContain(taskTitle);
   });
 
   it('renders saved contact facets for people and companies', () => {
@@ -1053,7 +1068,7 @@ describe('ObjectDetailClient', () => {
                 `change-${index}`,
                 Array.from({ length: index < 2 ? 1 : 2 }, () => 'change'),
                 'update',
-                undefined,
+                longBody,
                 10 + index * 3,
               ),
             ),
@@ -1076,20 +1091,17 @@ describe('ObjectDetailClient', () => {
     expect(screen.getAllByRole('link', { name: /^creation ·/ })).toHaveLength(2);
 
     const changesDisclosure = screen.getByText('Review 4 more change sources');
-    const relatedDisclosure = screen.getByText('Review 8 related sources');
     expect(changesDisclosure.closest('details')?.open).toBe(false);
-    expect(relatedDisclosure.closest('details')?.open).toBe(false);
+    expect(screen.queryByText('Related evidence')).toBeNull();
+    expect(screen.queryByText('Review 8 related sources')).toBeNull();
     expect(screen.getAllByRole('link', { name: /^change ·/ })[2]?.closest('details')).toBe(
       changesDisclosure.closest('details'),
     );
-    const relatedLinks = screen.getAllByRole('link', { name: /^integration ·/ });
-    expect(relatedLinks[0]?.closest('details')).toBe(relatedDisclosure.closest('details'));
-    expect(new Set(relatedLinks.map((link) => link.textContent.trim())).size).toBe(8);
+    expect(screen.queryAllByRole('link', { name: /^integration ·/ })).toHaveLength(0);
 
-    await user.click(relatedDisclosure);
+    await user.click(changesDisclosure);
 
-    expect(relatedDisclosure.closest('details')?.open).toBe(true);
-    expect(screen.getAllByRole('link', { name: /^integration ·/ })).toHaveLength(8);
+    expect(changesDisclosure.closest('details')?.open).toBe(true);
     expect(screen.queryByText(longBody)).toBeNull();
     expect(screen.getAllByText(/GitHub evidence multi-kilobyte payload/).length).toBeGreaterThan(0);
     expect(
@@ -1258,6 +1270,422 @@ describe('ObjectDetailClient', () => {
     );
 
     expect(screen.queryByRole('link', { name: 'Add task' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Add task' })).toBeNull();
+    expect(screen.queryByLabelText('New task name')).toBeNull();
+  });
+
+  it('keeps Recent history visible with open and done counts', () => {
+    const html = renderObjectDetail({
+      detail: {
+        ...detail,
+        type: 'company',
+        canonicalName: 'Northstar Works',
+        connectedWork: {
+          ...detail.connectedWork,
+          openTasks: [
+            {
+              ...detail,
+              id: 'task-open',
+              type: 'task',
+              canonicalName: 'Validate Northstar pilot export',
+              status: 'blocked',
+              assigneeUserId: 'user-mika',
+            },
+          ],
+        },
+      },
+      userId: 'user-1',
+      suggestions: [],
+      members: [{ id: 'user-mika', label: 'Mika Product' }],
+    });
+
+    expect(html).toContain('Open 1 · Done 0');
+    expect(html).toContain('Recent history');
+    expect(html).toContain('No completed tasks yet');
+    expect(html).toContain('Mika Product');
+    expect(html).toContain('Validate Northstar pilot export');
+  });
+
+  it('shows Open and Done totals even when connected-task previews are truncated', () => {
+    const html = renderObjectDetail({
+      detail: {
+        ...detail,
+        type: 'company',
+        canonicalName: 'Northstar Works',
+        connectedWork: {
+          ...detail.connectedWork,
+          openTasks: Array.from({ length: 12 }, (_, index) => ({
+            ...detail,
+            id: `task-open-${index}`,
+            type: 'task',
+            canonicalName: `Open connected task ${index}`,
+            status: 'todo',
+          })),
+          recentTasks: Array.from({ length: 8 }, (_, index) => ({
+            ...detail,
+            id: `task-done-${index}`,
+            type: 'task',
+            canonicalName: `Done connected task ${index}`,
+            status: 'done',
+          })),
+          openTaskCount: 15,
+          doneTaskCount: 9,
+        },
+      },
+      userId: 'user-1',
+      suggestions: [],
+    });
+
+    expect(html).toContain('Open 15 · Done 9');
+    expect(html).not.toContain('Open 12 · Done 8');
+  });
+
+  it('shows a quiet empty line when Recent history has no done tasks', () => {
+    const html = renderObjectDetail({
+      detail: {
+        ...detail,
+        type: 'company',
+        canonicalName: 'Northstar Works',
+        connectedWork: {
+          ...detail.connectedWork,
+          openTasks: [
+            {
+              ...detail,
+              id: 'task-open',
+              type: 'task',
+              canonicalName: 'Validate Northstar pilot export',
+              status: 'blocked',
+            },
+          ],
+          recentTasks: [],
+        },
+      },
+      userId: 'user-1',
+      suggestions: [],
+    });
+
+    expect(html).toContain('Recent history');
+    expect(html).toContain('No completed tasks yet');
+    expect(html).not.toContain('Send Northwind data room');
+  });
+
+  it('does not show overdue styling on done connected tasks', () => {
+    const html = renderObjectDetail({
+      detail: {
+        ...detail,
+        type: 'project',
+        canonicalName: 'Series A process',
+        dueAt: null,
+        connectedWork: {
+          ...detail.connectedWork,
+          openTasks: [],
+          recentTasks: [
+            {
+              ...detail,
+              id: 'task-done',
+              type: 'task',
+              canonicalName: 'Send Northwind data room',
+              status: 'done',
+              dueAt: new Date('2026-11-08T17:00:00.000Z'),
+              updatedAt: new Date('2026-11-08T18:00:00.000Z'),
+              assigneeUserId: 'user-harper',
+            },
+          ],
+        },
+      },
+      userId: 'user-1',
+      suggestions: [],
+      members: [{ id: 'user-harper', label: 'Harper Singh' }],
+    });
+
+    expect(html).toContain('Send Northwind data room');
+    expect(html).toContain('Due Nov 8, 2026');
+    expect(html).toContain('data-due-status="scheduled"');
+    expect(html).not.toContain('Completed Nov 8, 2026');
+    expect(html).not.toContain('Overdue');
+    expect(html).not.toContain('data-due-status="overdue"');
+    expect(html).not.toContain('No completed tasks yet');
+  });
+
+  it('shows the status-change date for done connected tasks when completedAt is loaded', () => {
+    const html = renderObjectDetail({
+      detail: {
+        ...detail,
+        type: 'project',
+        canonicalName: 'Series A process',
+        dueAt: null,
+        connectedWork: {
+          ...detail.connectedWork,
+          openTasks: [],
+          recentTasks: [
+            {
+              ...detail,
+              id: 'task-done',
+              type: 'task',
+              canonicalName: 'Send Northwind data room',
+              status: 'done',
+              dueAt: new Date('2026-11-01T17:00:00.000Z'),
+              updatedAt: new Date('2026-11-09T18:00:00.000Z'),
+              completedAt: new Date('2026-11-08T18:00:00.000Z'),
+              assigneeUserId: 'user-harper',
+            },
+          ],
+        },
+      },
+      userId: 'user-1',
+      suggestions: [],
+      members: [{ id: 'user-harper', label: 'Harper Singh' }],
+    });
+
+    expect(html).toContain('Completed Nov 8, 2026');
+    expect(html).toContain('data-due-status="completed"');
+    expect(html).not.toContain('Due Nov 1, 2026');
+    expect(html).not.toContain('Overdue');
+  });
+
+  it('adds a related task from a company page', async () => {
+    const user = userEvent.setup();
+    const createdId = '11111111-1111-4111-8111-111111111111';
+    vi.mocked(objectActions.createObjectAction).mockResolvedValue({ ok: true, id: createdId });
+    vi.mocked(objectActions.addRelationshipAction).mockResolvedValue({ ok: true, id: 'rel-1' });
+    render(
+      objectDetailElement({
+        detail: {
+          ...detail,
+          type: 'company',
+          canonicalName: 'Northstar Works',
+        },
+        userId: 'user-1',
+        suggestions: [],
+      }),
+    );
+
+    await user.type(screen.getByLabelText('New task name'), 'Confirm export mapping');
+    await user.click(screen.getByRole('button', { name: 'Add task' }));
+
+    await waitFor(() => {
+      expect(objectActions.createObjectAction).toHaveBeenCalledWith({
+        type: 'task',
+        canonicalName: 'Confirm export mapping',
+        status: 'todo',
+        parentObjectId: null,
+      });
+    });
+    expect(objectActions.addRelationshipAction).toHaveBeenCalledWith({
+      fromEntityId: createdId,
+      toEntityId: detail.id,
+      kind: 'related',
+    });
+  });
+
+  it('retries only the relationship after a related task is created but not linked', async () => {
+    const user = userEvent.setup();
+    const createdId = '11111111-1111-4111-8111-111111111111';
+    vi.mocked(objectActions.createObjectAction).mockResolvedValue({ ok: true, id: createdId });
+    vi.mocked(objectActions.addRelationshipAction)
+      .mockResolvedValueOnce({ error: 'Failed to link' })
+      .mockResolvedValueOnce({ ok: true, id: 'rel-1' });
+    render(
+      objectDetailElement({
+        detail: {
+          ...detail,
+          type: 'company',
+          canonicalName: 'Northstar Works',
+        },
+        userId: 'user-1',
+        suggestions: [],
+      }),
+    );
+
+    const nameInput = screen.getByLabelText('New task name');
+    await user.type(nameInput, 'Confirm export mapping');
+    await user.click(screen.getByRole('button', { name: 'Add task' }));
+
+    await waitFor(() => {
+      expect(objectActions.addRelationshipAction).toHaveBeenCalledTimes(1);
+      expect(screen.getByRole('button', { name: 'Add task' })).toHaveProperty('disabled', false);
+    });
+    expect(objectActions.createObjectAction).toHaveBeenCalledTimes(1);
+    expect(nameInput).toHaveProperty('value', 'Confirm export mapping');
+
+    await user.click(screen.getByRole('button', { name: 'Add task' }));
+
+    await waitFor(() => {
+      expect(objectActions.addRelationshipAction).toHaveBeenCalledTimes(2);
+    });
+    expect(objectActions.createObjectAction).toHaveBeenCalledTimes(1);
+    expect(objectActions.updateObjectAction).not.toHaveBeenCalled();
+    expect(objectActions.addRelationshipAction).toHaveBeenNthCalledWith(2, {
+      fromEntityId: createdId,
+      toEntityId: detail.id,
+      kind: 'related',
+    });
+    await waitFor(() => {
+      expect(nameInput).toHaveProperty('value', '');
+    });
+  });
+
+  it('applies a corrected title to the retained task when retrying a failed link', async () => {
+    const user = userEvent.setup();
+    const createdId = '11111111-1111-4111-8111-111111111111';
+    vi.mocked(objectActions.createObjectAction).mockResolvedValue({ ok: true, id: createdId });
+    vi.mocked(objectActions.updateObjectAction).mockResolvedValue({ ok: true, id: createdId });
+    vi.mocked(objectActions.addRelationshipAction)
+      .mockResolvedValueOnce({ error: 'Failed to link' })
+      .mockResolvedValueOnce({ ok: true, id: 'rel-1' });
+    render(
+      objectDetailElement({
+        detail: {
+          ...detail,
+          type: 'company',
+          canonicalName: 'Northstar Works',
+        },
+        userId: 'user-1',
+        suggestions: [],
+      }),
+    );
+
+    const nameInput = screen.getByLabelText('New task name');
+    await user.type(nameInput, 'Confirm export mapping');
+    await user.click(screen.getByRole('button', { name: 'Add task' }));
+
+    await waitFor(() => {
+      expect(objectActions.addRelationshipAction).toHaveBeenCalledTimes(1);
+      expect(screen.getByRole('button', { name: 'Add task' })).toHaveProperty('disabled', false);
+    });
+
+    await user.clear(nameInput);
+    await user.type(nameInput, 'Confirm export mapping v2');
+    await user.click(screen.getByRole('button', { name: 'Add task' }));
+
+    await waitFor(() => {
+      expect(objectActions.updateObjectAction).toHaveBeenCalledWith({
+        id: createdId,
+        canonicalName: 'Confirm export mapping v2',
+      });
+    });
+    expect(objectActions.createObjectAction).toHaveBeenCalledTimes(1);
+    expect(objectActions.addRelationshipAction).toHaveBeenCalledTimes(2);
+    expect(objectActions.addRelationshipAction).toHaveBeenNthCalledWith(2, {
+      fromEntityId: createdId,
+      toEntityId: detail.id,
+      kind: 'related',
+    });
+    await waitFor(() => {
+      expect(nameInput).toHaveProperty('value', '');
+    });
+  });
+
+  it('adds a project-linked task with parentObjectId', async () => {
+    const user = userEvent.setup();
+    vi.mocked(objectActions.createObjectAction).mockResolvedValue({
+      ok: true,
+      id: '22222222-2222-4222-8222-222222222222',
+    });
+    render(
+      objectDetailElement({
+        detail: {
+          ...detail,
+          type: 'project',
+          canonicalName: 'Series A process',
+        },
+        userId: 'user-1',
+        suggestions: [],
+      }),
+    );
+
+    await user.type(screen.getByLabelText('New task name'), 'Collect diligence answers');
+    await user.click(screen.getByRole('button', { name: 'Add task' }));
+
+    await waitFor(() => {
+      expect(objectActions.createObjectAction).toHaveBeenCalledWith({
+        type: 'task',
+        canonicalName: 'Collect diligence answers',
+        status: 'todo',
+        parentObjectId: detail.id,
+      });
+    });
+    expect(objectActions.addRelationshipAction).not.toHaveBeenCalled();
+  });
+
+  it('changes connected task status inline', async () => {
+    const user = userEvent.setup();
+    vi.mocked(objectActions.updateObjectAction).mockResolvedValue({ ok: true, id: 'task-1' });
+    render(
+      objectDetailElement({
+        detail: {
+          ...detail,
+          type: 'company',
+          canonicalName: 'Northstar Works',
+          connectedWork: {
+            ...detail.connectedWork,
+            openTasks: [
+              {
+                ...detail,
+                id: 'task-1',
+                type: 'task',
+                canonicalName: 'Validate Northstar pilot export',
+                status: 'blocked',
+                assigneeUserId: 'user-mika',
+              },
+            ],
+          },
+        },
+        userId: 'user-1',
+        suggestions: [],
+        members: [{ id: 'user-mika', label: 'Mika Product' }],
+      }),
+    );
+
+    await user.click(
+      screen.getByRole('button', { name: 'Status for Validate Northstar pilot export' }),
+    );
+    await user.selectOptions(screen.getByLabelText('Status'), 'doing');
+
+    await waitFor(() => {
+      expect(objectActions.updateObjectAction).toHaveBeenCalledWith({
+        id: 'task-1',
+        status: 'doing',
+      });
+    });
+  });
+
+  it('opens the connected-task due editor on the workspace-local date', async () => {
+    const user = userEvent.setup();
+    render(
+      createElement(WorkspaceTimezoneProvider, {
+        timezone: 'America/Los_Angeles',
+        children: objectDetailElement({
+          detail: {
+            ...detail,
+            type: 'company',
+            canonicalName: 'Northstar Works',
+            dueAt: null,
+            connectedWork: {
+              ...detail.connectedWork,
+              openTasks: [
+                {
+                  ...detail,
+                  id: 'task-1',
+                  type: 'task',
+                  canonicalName: 'Validate Northstar pilot export',
+                  status: 'todo',
+                  dueAt: new Date('2026-07-21T02:00:00.000Z'),
+                },
+              ],
+            },
+          },
+          userId: 'user-1',
+          suggestions: [],
+        }),
+      }),
+    );
+
+    expect(screen.getByText('Overdue Jul 20, 2026')).toBeTruthy();
+    await user.click(
+      screen.getByRole('button', { name: 'Due date for Validate Northstar pilot export' }),
+    );
+    expect(screen.getByLabelText('Due date')).toHaveProperty('value', '2026-07-20');
   });
 
   it('does not offer the generic unlink action for a task primary project', () => {

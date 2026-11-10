@@ -135,9 +135,9 @@ function TermsContentAndAiSections() {
         for retrieval is processing for the Service, not model training.
       </p>
       <p>
-        The following roles require zero-data-retention processing:{' '}
-        {PUBLIC_TRANSCRIPTION_PRIVACY_CLAIMS.privacyZdrRoleList}. They cannot downgrade to weaker
-        retention during an outage. {PUBLIC_TRANSCRIPTION_PRIVACY_CLAIMS.termsDetail}
+        The following AI roles require zero-data-retention processing and cannot downgrade to weaker
+        retention during an outage: {PUBLIC_TRANSCRIPTION_PRIVACY_CLAIMS.privacyZdrRoleList}.{' '}
+        {PUBLIC_TRANSCRIPTION_PRIVACY_CLAIMS.termsDetail}
       </p>
       <p>
         AI output can be inaccurate, incomplete, delayed, or based on incomplete evidence. Citations
@@ -165,9 +165,14 @@ function TermsContentAndAiSections() {
       <p>
         Tools made available to an agent may cause external side effects, including creating or
         changing records outside Timeline. Review scopes and approval settings before enabling a
-        tool. Disconnecting a source does not automatically delete evidence already captured into
-        Timeline. We are not responsible for third-party changes, outages, or data practices outside
-        our reasonable control.
+        tool. A member disconnecting a personal provider account removes Timeline&apos;s stored
+        credentials for that account and may disable workspace sources that depended on it. An admin
+        removing a workspace source stops future capture and, where implemented, cancels
+        provider-managed watches or webhooks; Google Drive source removal also deletes Drive change
+        snapshots and extracted text used for change detection. Neither action deletes evidence
+        already captured into Timeline. Deleting a document hides it in the product; it is not a
+        complete erasure of every copy. We are not responsible for third-party changes, outages, or
+        data practices outside our reasonable control.
       </p>
     </>
   );

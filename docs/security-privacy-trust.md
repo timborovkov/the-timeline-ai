@@ -6,11 +6,11 @@
 | Applies to | Hosted Timeline, public Timeline surfaces, development, support, and vendor operations |
 | Service operator | Nyxone OÜ, Estonian registry code 16172329 |
 | Control owner | **TBD: named security/privacy owner** |
-| Version | 2026-11-03 |
+| Version | 2026-11-09 |
 | Last evidence review | 2026-08-27 |
 | Next scheduled review | **TBD: no later than 2026-11-27** |
-| Evidence memo | [Provider privacy and data-handling research](./research/provider-privacy-audit-2026-08-21.md) |
-| Legal research | [GDPR, cookies, and consent audit](./research/gdpr-cookie-consent-audit-2026-08-21.md) |
+| Evidence memo | [Provider privacy and data-handling research](evidence/provider-privacy-research.md) |
+| Legal research | [GDPR, cookies, and consent audit](evidence/gdpr-cookie-consent-audit-2026-08-21.md) |
 | Google OAuth readiness | [Drive and sign-in scopes, callbacks, APIs](./research/google-oauth-readiness.md) |
 | Analytics interface | [Privacy and analytics implementation interface](./privacy-analytics-interface.md) |
 | Public derivatives | Trust page, Privacy Policy, Cookies and similar technologies notice, Terms of Use, help, guides, sales and security answers |
@@ -64,12 +64,7 @@ Removing an internal note does not close its gap or permit a stronger assurance.
 Preserve provider retention exceptions, consent choices, regulated-use limits, and
 the distinction between requested retention and confirmed deletion.
 
-The October 2026 editorial cleanup preserves legal versions, processing purposes,
-rights, and contractual commitments as instructed by the site owner. G-02, G-03,
-G-05 through G-14, G-18, and G-19 remain unchanged; analytics legal-basis
-review, account settings, historical deletion, and staff-access evidence remain
-operator responsibilities. This copy review does not constitute counsel approval
-or production verification.
+Current legal versions are owned by `packages/shared/src/legal-versions.ts`. Editorial maintenance does not close evidence gaps or constitute legal approval.
 
 ## 2. Scope, roles, and responsibility
 
@@ -124,7 +119,7 @@ is part of the data classification. Moving data to a broader visibility is a
 security-sensitive operation, including when data is summarized, embedded,
 exported, cached, or sent to an agent.
 
-Until the Railway and Daytona contractual gaps in section 17 are resolved,
+Until the Railway and Daytona contractual gaps in the [security gap register](security-gaps.md) are resolved,
 Timeline must not be sold or described as approved for intentionally submitting
 special-category, HIPAA-regulated, or similarly restricted data without a
 specific written agreement and deployment review.
@@ -194,23 +189,10 @@ Personnel and contractors must not:
 - disclose content outside the named incident/support/legal participants.
 
 Provider support access follows the same minimum-necessary principle and must be
-governed by the provider contract and account controls. Section 17 records the
+governed by the provider contract and account controls. [The security gap register](security-gaps.md) records the
 current gap in evidencing staff access, break-glass logging, and review.
 
-The platform panel implements named, time-limited support sessions under
-`PLATFORM_ADMIN_EMAILS`. Operators record purpose, ticket/incident reference, and
-authorization context. Impersonation retains the selected member's role and
-visibility, records both identities, and never grants a general private-content
-bypass. Suspended inspection is read-only. These repository controls do not close
-the operational access-review and approval-evidence gaps in G-12. Session records
-are eligible for deletion 30 days after access ends; platform audit records after
-12 months. Documented user/team legal holds delay deletion, without extending
-access. Scheduled maintenance applies these periods, retaining released hold
-documentation for 12 months. The legal owner approved these periods on 3 November
-2026 and clarified that the product is not live. These are pre-launch disclosure
-edits: Privacy stays at `2026-11-01`, Terms remains unchanged, and this revision
-does not trigger renewed acknowledgment. See
-[Platform administration](platform-admin.md).
+Current Terms/Privacy versions and renewed-acceptance requirements are owned by `packages/shared/src/legal-versions.ts`. Historical retention approval is recorded in [the dated decision](evidence/platform-retention-decision-2026-11-03.md); it does not override later publication changes.
 
 ## 6. User, team, and agent permissions
 
@@ -278,7 +260,7 @@ meeting transcription is the deliberate exception: it stays behind the shared
 meeting-bots provider boundary and is not a voice-note model route.
 
 `packages/shared/src/llm/models.ts` is the source of truth for each exact model
-pin and its privacy class. The current policy version is `2026-08-21.1`. Each
+pin and its privacy class. The shared privacy-policy module owns the attestation version. Each
 role must be classified as one of:
 
 - `zdr_required`: generation, structured extraction, summarization, task
@@ -407,7 +389,7 @@ without a documented, approved, minimized, and time-bounded process.
 
 Regions, backup schedules, storage encryption, public networking, log retention,
 and restore tests are deployment facts that the repository does not prove. They
-remain open until the evidence pack in section 17 is complete.
+remain open until the evidence pack in the [security gap register](security-gaps.md) is complete.
 
 ## 9. Files, documents, voice notes, and meetings
 
@@ -456,176 +438,18 @@ evidence. Public copy must keep this distinction clear.
 
 ## 10. Analytics, cookies, logging, and monitoring
 
-The normative contract is defined in the
-[privacy and analytics implementation interface](./privacy-analytics-interface.md).
-The current source implements that runtime boundary with focused tests. The
-[2026-08-26 PostHog account review](./research/posthog-rollout-evidence-2026-08-26.md)
-verifies part of the provider configuration, but it is not production evidence.
-G-03 and G-10 remain partial until the specified deployment, contract,
-retention, deletion, and canary evidence is retained.
+[The analytics contract](privacy-analytics-interface.md) owns the exact route, consent, identity and payload rules. Preserve its separation of personless fixed streams, optional public-browser analytics, pseudonymous server/worker product events, and independent minimized reliability monitoring. Private workspace routes must not load browser analytics or join identities to public visitors.
 
-The current source has four analytics paths and one separate reliability path:
+Optional browser access requires an affirmative, withdrawable choice; legal acceptance is not that consent. New data purposes, fields, providers or identities require review and, where applicable, renewed consent. A telemetry SDK update must not silently add payload fields. Do not export content, secrets, arbitrary URLs, raw actor IDs, headers or error objects through analytics.
 
-1. **Personless public and app surface-request streams are always on.** They run
-   server-side on allowlisted route templates and use one fixed, non-visitor
-   PostHog stream ID for public requests and another for authenticated app
-   requests. The only variable property is an allowlisted surface enum. They do
-   not read browser consent or include a visitor, user, team, device, session,
-   cookie, client-request IP, user-agent, referrer, campaign, URL parameter, or
-   Customer Content value. PostHog receives only the server connection and
-   reviewed SDK transport metadata (project key, stream ID, event name, SDK
-   server marker, SDK name/version, UUID/timestamps, and GeoIP-disable flag); GeoIP enrichment is
-   disabled. None of those fields is derived from the request. These events support totals only, not unique
-   visitors, sessions, retention, or returning-user analysis.
-2. **Public browser analytics is optional.** It may run only after affirmative
-   analytics consent and only on allowlisted public routes. Before a choice,
-   after rejection, and after withdrawal there must be zero browser PostHog
-   capture, request, identifier, or storage.
-3. **Private workspace routes never load browser analytics.** They do not
-   import, initialize, identify, capture, forward browser events, or request
-   analytics-backed feature flags. Prior consent on a public route does not
-   weaken the private boundary or link the public identity to an account.
-4. **Authenticated product analytics is explicit server/worker processing.**
-   Each event has a named purpose, owner, exact runtime-validated schema, and
-   legal basis. It is content-free and requires a validated user or team actor
-   whose raw ID is HMAC-pseudonymized before capture. Browser consent does not
-   authorize this separate path or connect that actor to a public identity.
-5. **Sentry is separate reliability/security monitoring.** It does not share a
-   PostHog identity or turn analytics consent into error-monitoring consent. Its
-   minimization, scrubber, provider, retention, and legal-basis controls remain
-   independently subject to G-11. Error events strip request headers/cookies and
-   sanitize URLs. Streamed traces use `beforeSendSpan` (Sentry 11 ignores
-   `beforeSendTransaction` under the default span-stream lifecycle) so span
-   names and URL attributes cannot carry query strings, invite tokens, or
-   request headers.
+Reliability monitoring is not permission for replay, model training, advertising or content collection. Keep default PII/replay and production prompt/output tracing disabled, scrub secrets and sensitive URL parameters at transport boundaries, and retain only necessary diagnostic metadata. Server/provider access logs are separate flows requiring their own retention and access evidence.
 
-Declining optional browser analytics does not affect the personless server
-surface streams and must not affect public content, signup, authentication,
-invitations, or authenticated product features. The consent interface must
-explain this distinction and provide equally clear accept and reject actions,
-an easy withdrawal control, and a minimal necessary record that remembers the
-choice.
+[Setup](setup/analytics.md) owns configuration and [the provider register](providers.md) owns dated account observations. G-03, G-10 and G-11 in [security gaps](security-gaps.md) track outstanding legacy data, analytics and monitoring evidence. Removing source code or requesting deletion does not establish deployment or completed erasure.
 
-The Privacy Policy and Cookies and similar technologies notice explain the
-processing; showing, linking, accepting, or acknowledging them is not optional
-analytics consent. Terms acceptance is also separate.
 
-PostHog autocapture, automatic pageview/pageleave capture, heatmaps, session
-recording/replay, DOM capture, and client-side feature-flag analytics are
-prohibited. A consented public event must be manual, named, source-allowlisted,
-and content-free. Names, emails, raw URLs, queries, filenames, form values,
-prompts, outputs, transcripts, documents, cookies, headers, arbitrary errors,
-and uploaded or customer content are prohibited. Public PostHog identities must
-never be identified, aliased, or grouped to an account, user, or team.
+## Providers
 
-The founder-approved exception in section 4 of the analytics interface allows
-manual, consented `$pageview` events with reviewed public paths and referring
-website origins/hostnames for visitor, pageview, referrer, and popular-page
-reports. It never permits queries, fragments, referrer paths, titles, workspace
-routes, GeoIP, or account identity links. Consent format version 2 requires a
-fresh choice; the Privacy Policy version 2026-10-24 discloses this scope. Server
-surface streams and other event schemas keep their stricter field allowlists.
-
-The legacy Convex pageview import is removed from the current source and guarded
-by a regression test. Deployed behavior, logs, token URLs, retained data,
-deletion, and credential rotation remain an analytics/security handoff under
-G-03. This standard does not infer deployment state from a worktree removal.
-
-The public and authenticated product may use strictly necessary cookies or
-browser storage for authentication, active-team and invite state, security,
-sidebar or tutorial preferences, and short-lived handoff state. Cloudflare
-Turnstile is conditional anti-abuse processing on signup and support forms. Do
-not label all storage as “cookies” or all cookies as analytics; document purpose,
-lifetime, and provider accurately.
-
-Sentry is conditional error monitoring. The current source keeps default PII
-collection and session replay disabled, removes request cookies and all request
-headers from events and transactions, sanitizes request URLs and breadcrumbs,
-and minimizes production trace/profile sampling. Exception text can still
-contain unexpected customer data, so deployed configuration, sample events,
-and scrubbers require review before an **Enforced** or **Verified** claim.
-
-Integration API usage counters use hashed quota identities and expire after two days in Redis.
-Request diagnostics record provider, operation/purpose, status, duration, and numeric remaining
-capacity; hashing does not make account metadata anonymous. Provider capacity is distinct from
-Timeline usage.
-
-Application logs must not include customer-content bodies, prompts, outputs,
-transcripts, document text, authorization/cookie headers, signed URLs, tokens,
-or encryption material. Log identifiers, operation, status, duration, counts,
-and a redacted error category. Debug logging must not weaken the production
-rule.
-
-## 11. Providers and customer-directed services
-
-A fixed subprocessor is a provider Timeline selects to operate the hosted
-service. A customer-directed service is connected or invoked by the customer.
-Maintain both lists, but do not merge them into an ambiguous “third parties”
-sentence.
-
-### Fixed or conditional hosted processors
-
-| Provider | Purpose and data | Current control/evidence state |
-| --- | --- | --- |
-| Railway | Hosting, networking, service volumes, PostgreSQL/Redis templates, logs and backups | Topology documented; real regions, backup/restore, DPA and account controls are **Gap** |
-| OpenRouter and selected endpoint | AI prompts/inputs, retrieved evidence, outputs, embeddings, media for inference | In hosted production, role-based privacy classification, per-request no-collection/ZDR for required roles, cache disablement, the official API origin, and a key/guardrail/catalog/policy-bound attestation are **Enforced in code**. A self-managed operator owns an alternate compatible endpoint and its controls and cannot reuse hosted assurances. Provider-side assignment/settings still require management-key deployment evidence, and the disclosed voice-transcription retention exception, contract, multilingual evaluation, and live evidence remain **Gap** |
-| Recall.ai | Meeting attendance, media processing, transcript generation, diagnostics | Hosted production requests one-hour media retention, allows only documented HTTPS regional API hosts, pins transcripts to the application callback, closes local transcript acceptance atomically, and reports cancellation success only after provider confirmation; failed confirmations are retried. An explicit `self-managed` mode owns alternate endpoints and retention. Deployed request/account evidence, region, DPA, and deletion-failure handling are **Gap** |
-| Daytona | Ephemeral complex-document extraction and observability | Credential-thin sandbox controls are **Enforced**; region and sensitive-data contract coverage are **Gap** |
-| Resend | Transactional/support email and inbound email payloads | Required when configured; retention, tracking, DPA and support access are **Gap** |
-| PostHog | Fixed-stream personless surface requests, consent-gated allowlisted public-browser events, and pseudonymous minimized server/worker product events | Runtime controls are implemented. The [2026-08-26 account review](./research/posthog-rollout-evidence-2026-08-26.md) verifies the EU project, IP discard, disabled automatic capture/replay/heatmaps/errors, restricted current membership, and a pinned Launch dashboard shell. Pay-as-you-go retention, contracts/transfers, deletion completion, populated insights, and production canaries remain **Gap**. |
-| Sentry | Error monitoring and source-map processing | PII defaults and scrubbers are **Enforced**; project region, retention, AI options and sample audit are **Gap** |
-| Cloudflare Turnstile | Signup/support anti-abuse browser signals | **Conditional**; DPA and legal-basis record are **Gap** |
-
-PostgreSQL, Redis, Qdrant, RustFS, Auth.js, and the AI SDK are not separate
-hosted subprocessors merely because their software is used. In the documented
-hosted topology, their infrastructure data path runs through Railway.
-
-LangSmith is a development/evaluation tool, not an approved production
-processor. Production environment validation rejects tracing because traces can
-contain concentrated prompt and output content.
-
-Static repository documentation currently loads fonts from Fontshare and
-jsDelivr when served in a browser. Those CDNs can receive ordinary visitor
-request metadata but are not intended to receive workspace content. Self-host
-those assets before claiming a provider-free documentation surface.
-
-### Customer-directed connections
-
-Current categories include:
-
-- GitHub, Google Drive, Linear, Monday.com, Slack, and Sentry native
-  integrations;
-- Telegram and Slack conversation surfaces;
-- Notion, Atlassian Jira/Confluence, Stripe, Figma, and other catalog MCP
-  servers; and
-- arbitrary remote MCP servers supplied by a customer.
-
-Before connection, the product must show the operator or server URL, requested
-permissions/auth method, personal-versus-team sharing, selected resources,
-capture behavior, possible external side effects, and how to disconnect. Google
-Drive connection and reconnect open a contextual Limited Use disclosure covering
-access, use, storage, sharing, deletion, billed change-judging / document
-extract, and no general-model training, immediately before Google OAuth.
-Continue to Google is the affirmative action; a separate checkbox is not treated
-as a blanket Google requirement. The published Privacy Policy and public Drive
-connector page carry the same facts. Disconnect deletes tokens and snapshots, not
-already captured timeline events.
-
-MCP output and integration snippets are untrusted and must pass through the
-external-content fence before reaching an agent. SSRF validation is required for
-user-supplied or discovered outbound URLs. These controls reduce prompt
-injection and network risk; they do not control what the external service logs
-or retains.
-
-A provider may be added only after its owner records:
-
-- purpose, data categories, data flow, and whether content is stored;
-- controller/processor role, DPA/terms, subprocessors, transfers, and incident
-  terms;
-- region, retention, deletion, backup, support-access, and AI-training settings;
-- least-privilege credentials, account owners, MFA/SSO, and offboarding;
-- user notice, consent or other legal basis, and customer-facing controls; and
-- a review date, evidence links, failure mode, and exit plan.
+See [the provider register](providers.md) for services and [security gaps](security-gaps.md) for unresolved verification.
 
 ## 12. Retention, deletion, export, and rights
 
@@ -644,7 +468,7 @@ a soft-delete flag alone is not a complete deletion claim.
 | OpenRouter voice transcription | Current `openai/gpt-4o-transcribe` quality exception is non-training but prompt-retaining; OpenAI documents default API abuse-monitoring retention up to 30 days | Name the exception and retention; never call hosted AI universally ZDR |
 | Recall.ai | Timeline-hosted mode requests one-hour meeting-media retention, which Recall documents as starting at recording `done`; an explicit self-managed deployment can choose another supported duration. Operational logs can remain seven days and meeting URLs fourteen days after termination; Timeline transcript persists | Never say call media is deleted or provider deletion is verified until deployed evidence exists |
 | Daytona | Ephemeral sandbox state is discarded/deleted; observability data may remain three days | Never equate ephemeral compute with zero provider retention |
-| Resend | Email content and delivery metadata are processed under Resend service terms; account retention, tracking, DPA and deletion settings are unverified | Name Resend and avoid a shorter unverified promise |
+| Resend | Domain `in.thetimeline.cc` sends from `eu-west-1`; inbound receiving enabled; open/click tracking currently enabled at domain level (no per-send flags in code). Resend states US storage regardless of sending region and 30-day email/log retention on Free/Pro/Scale while active, deletion within 90 days after termination. Timeline deletion does not itself delete Resend copies. | Cite Resend's published statements. Do not claim Timeline's plan name, a signed DPA on file, custom retention, API key scope, or that tracking is off |
 | PostHog | Current source enforces zero browser capture/identifier before valid consent or after rejection, public-route-only browser analytics after opt-in, fixed personless surface streams, and explicit minimized server/worker events. The EU account review verifies disabled automatic capture and IP discard. Pay-as-you-go documents seven-year product-event retention, which exceeds the 90-day target; production and deletion completion remain unverified. | Public copy may describe the source-enforced product design and the dated account review. Do not claim that it is deployed, that retention is 90 days, that queued deletion is complete, or that pseudonymous analytics is anonymous until G-10 closes. |
 | Sentry | Account retention is unverified | Describe minimized error monitoring, not a retention period |
 | LangSmith | Production tracing is rejected | Development traces must use synthetic/approved data and follow the selected account retention |
@@ -671,10 +495,7 @@ history. Missing scoped removal operations require engineering escalation, not
 unscoped production SQL. G-13 remains open until the relevant stores and provider
 propagation are exercised. Legal copy must not promise an unverified duration.
 
-The 9 November 2026 revision advances Terms and Privacy to `2026-11-09` and
-requires renewed acceptance/acknowledgment for the corrected deletion disclosures.
-It adds support-request instructions, distinguishes the two disconnect actions,
-and fixes Terms typography. It does not close provider-account gaps.
+Material disclosure changes require current-version acceptance/acknowledgment under the source-owned legal gate. They do not close provider-account gaps.
 
 ## 13. Incident response
 
@@ -748,7 +569,7 @@ Every change must preserve these rules:
   pseudonymous server/worker calls.
 - Files are untrusted, size-bounded, type-checked, and accessed through
   authorized short-lived URLs.
-- New providers and outbound domains complete the provider review in section 11
+- New providers and outbound domains complete the provider review in the [provider register](providers.md)
   before production use.
 - Data deletion covers derivatives and failed/partial artifacts, not only the
   primary row.
@@ -756,7 +577,7 @@ Every change must preserve these rules:
   acknowledgment evidence, and tests together. Terms reacceptance, Privacy
   Policy reacknowledgment, and fresh optional consent are separate gates.
 - Run focused privacy regression tests for changed behavior and follow the
-  [validation and merge policy](../AGENTS.md#validation-policy). Required GitHub
+  [validation and merge policy](testing/README.md#validation-policy). Required GitHub
   checks must pass before merging; an open PR is not a verified release.
 
 Test with at least two teams and multiple users. Include negative cases for
@@ -830,33 +651,9 @@ provider and must not be displayed as Timeline's own assurance. Future badges
 may be published only with the correct legal entity, scope, system, auditor,
 period, and current evidence.
 
-## 17. Open control and evidence gaps
+## Open evidence
 
-`TBD` owners must be replaced with a named person before the item can be marked
-closed. Closing a code item requires merged tests; closing an account or legal
-item requires dated evidence stored in the internal control file.
-
-| ID | Status | Owner | Gap / completion evidence | Claim or risk blocked |
-| --- | --- | --- | --- | --- |
-| G-01 | **OPEN / blocker** | **TBD: founders + counsel** | Choose repository license after contributor/IP review; commit the license and contribution terms | “Open source” and general self-hosting rights |
-| G-02 | **PARTIAL: role policy + canary code implemented** | **TBD: AI/platform** | Run and lock the 24-language transcription bake-off; generate the key/guardrail/catalog/policy-bound runtime attestation; use an operator-only management key to capture dated evidence of the exact inference-key assignment, `allowed_models`, guardrail/ZDR settings, logging/sharing/Broadcast/cache settings, current DPA/subprocessors, and scheduled synthetic plus registry canaries. Never deploy the management key to web or worker runtime. | Verified hosted ZDR-by-role and no-training claims; any transcription-model migration |
-| G-03 | **PARTIAL: source removed** | **TBD: analytics + security** | Current source and regression tests remove the legacy Convex pageview import. Verify the deployed path; inspect prior logs/ownership and token URLs, export anything that must be retained, delete tracker-only data/deployment where proven safe, rotate still-valid credentials if affected, and retain dated evidence. | Complete tracker inventory and legacy analytics incident closure |
-| G-04 | **OPEN / blocker** | **TBD: founders + counsel** | Resolve Railway and Daytona special-category-data DPA mismatch or technically restrict unsupported data | Regulated/special-category hosted use |
-| G-05 | **OPEN** | **TBD: infrastructure** | Record Railway region per service/volume, public networking, storage encryption, log retention, backup schedule, and successful restore test | Residency, encryption, backup, and recovery claims |
-| G-06 | **OPEN** | **TBD: privacy/vendor** | Capture executed DPAs and dated subprocessors for every fixed processor; record transfer mechanisms and incident/deletion terms | Authoritative subprocessor and transfer statements |
-| G-07 | **OPEN** | **TBD: meetings** | Verify Recall region, DPA, account retention, request-level retention, support access, and deletion failure handling | Meeting residency and provider deletion claims |
-| G-08 | **OPEN** | **TBD: documents** | Verify Daytona target/host, telemetry payloads/retention, DPA coverage, and April 2026 incident/credential status | Sensitive-document readiness |
-| G-09 | **OPEN** | **TBD: email** | Set Resend to minimum viable retention, verify open/click tracking, DPA, sender configuration, and support access | Email retention and tracking statements |
-| G-10 | **PARTIAL: runtime + account review** | **TBD: analytics + product privacy** | The [2026-08-26 account review](./research/posthog-rollout-evidence-2026-08-26.md) verifies the EU project, IP discard, disabled automatic capture/replay/heatmaps/errors, restricted current membership, a pinned Launch dashboard shell, and queued legacy-data deletion. Prove the remaining [privacy/analytics interface](./privacy-analytics-interface.md): production fixed-stream and pseudonymous payloads, consent/private-route browser boundaries, populated insights, deletion completion, retention decision, DPA/transfers, access controls, and legal basis. | Any deployed analytics claim, 90-day retention claim, completed-deletion claim, or provider assurance beyond the dated evidence |
-| G-11 | **OPEN** | **TBD: reliability** | Verify Sentry region, retention, Seer/AI settings, DPA, access, sampling, and representative scrubbed event payload | Error-monitoring retention and AI claims |
-| G-12 | **OPEN / blocker** | **TBD: security owner** | Inventory named production access, enforce MFA/least privilege, document break-glass, retain access logs, and run quarterly review | “Rare, approved, and auditable” staff-access claim |
-| G-13 | **OPEN / blocker** | **TBD: privacy + platform** | Define and test deletion across PostgreSQL, RustFS, Qdrant, Redis/queues, backups, exports, analytics, error monitoring, email, Recall, and connected providers | Deletion SLA and complete-erasure claim |
-| G-14 | **OPEN** | **TBD: privacy + counsel** | Complete record of processing, DPIAs for meetings/communications/documents/AI/analytics, data-subject workflow, transfer assessment, and controller/processor review | Enterprise GDPR readiness claims |
-| G-15 | **OPEN** | **TBD: security owner** | Assign security inbox ownership, incident on-call/escalation, private case system, tabletop exercise, and notification timer matrix | Mature incident-response claim |
-| G-16 | **OPEN** | **TBD: infrastructure** | Self-host documentation, supported deployment boundary, update policy, and commercial support terms after G-01 | Self-host availability and support promises |
-| G-17 | **OPEN** | **TBD: security program** | Define security roadmap, asset/vendor/access reviews, vulnerability scanning, restore/deletion exercises, and evidence archive | SOC 2 / ISO readiness |
-| G-18 | **OPEN** | **TBD: web/privacy** | Self-host Fontshare/jsDelivr assets or add them to the public-site provider inventory | Provider-free/minimal-third-party docs claim |
-| G-19 | **OPEN** | **TBD: legal + platform** | Archive an immutable rendered copy or content digest for each Terms/Privacy version and bind that evidence to acceptance events | Exact-text clickwrap evidence beyond version, timestamp, IP, user agent and Git history |
+See [the security gap register](security-gaps.md).
 
 ## 18. Change and review process
 
@@ -893,44 +690,7 @@ removed.
 
 Deferred Slack/Telegram command delivery stores an AES-256-GCM encrypted payload in the existing Redis queue infrastructure, including the credential needed to complete that authorized send. Successful jobs are removed immediately; failed jobs expire after 24 hours. Pending quota-delayed sends remain until eligible. Delivery logs contain job IDs, never message contents or credentials. Agent answers retain their existing conversation-turn delivery path.
 
-
-### Polar billing member identity evidence (2026-10-30)
-
-Timeline sends team ID/name and authorized billing members' email/name/user ID to
-Polar. Customer identity is team-scoped, with organization/environment-bound local
-mappings; customer email is not a discovery key. Ordinary team members are not
-provisioned with billing access. Portal sessions use the authenticated billing
-member. Revocation is external-first with durable pending intent; sandbox evidence
-shows an existing removed member session returns 401 while owner access remains.
-Diagnostics exclude tokens, portal links and raw billing payloads. See
-[verification and known provider limitations](testing/polar-team-identity.md).
-Sandbox invoice delivery is restricted by Polar to organization-member addresses;
-API success does not prove inbox delivery. Converted customers may retain their
-legacy customer-level email because Polar currently ignores `email: null`; no
-public erasure/completion claim should contradict that observed behavior.
-
-The 2026-10-31 revocation follow-up also blocks local role removal when a legacy
-Polar customer email remains an independent recipient of customer-scoped access
-links. Verified cleanup must precede member removal; provider refusal preserves
-the pending operation and denies new Timeline billing sessions. This does not
-revoke previously issued customer-scoped links by itself; provider-supported
-cleanup remains required for legacy records. New team customers omit that
-separate email while always retaining the owner member's email.
-
-### Email provider change (2026-11-01)
-
-Resend handles outbound email and inbound capture. Signed webhooks queue only provider IDs; workers retrieve content and bounded attachments, applying sender rate-limit admission before attachment hydration. Email recovery metadata reads require an explicit internal ingest principal and are constrained to active email events in its team. Recovery fails closed for parents restricted to specific people before creating derived documents or audio. Verification and invitation retry payloads are encrypted at rest using the existing AES-256-GCM secrets helper; retries decrypt the original payload, and missing keys fail closed. Completed ingestion job identifiers remain for 24 hours, failures for seven days. Temporary download URLs and credentials are not persisted in jobs or source snapshots. The Privacy Policy version advances to 2026-11-01. G-09 remains open: no account retention, tracking, contractual, or deletion verification is claimed.
-
-
-### Prelaunch billing and boundary changes (2026-11-03)
-
-Terms and Privacy versions advance to 2026-11-03 for paid-service terms and explicit Polar billing-data disclosure. The customer meter is variable euro-denominated AI usage; internal provider-cost conversion is not a public price promise. Cancellation stops future renewals under the portal terms; already-incurred usage and mandatory consumer rights remain applicable. This is a repository content change, not counsel approval or live Polar configuration evidence.
-
-Sentry intake and queued delivery now both require a currently selected organization/project. GitHub capture requires the matching App installation token and paginates installation discovery; missing mappings fail closed. These are code controls verified with synthetic tests, not production provider attestations. Sentry delivery receipt time is explicitly identified as receipt time, not the exact upstream action time.
-
-The authenticated `/api/health/ready` probe uses the existing `CRON_SECRET`, returns aggregate queue/worker information only, and never returns source content or job identifiers. Public liveness remains minimal. Pricing analytics adds only fixed public route/CTA values under the existing consent contract, without linking anonymous visitors to account identities.
-
-### Password recovery controls
+## Password recovery
 
 Password recovery stores SHA-256 digests of random 32-byte, single-use tokens,
 with a 30-minute expiry, separately from email-verification tokens. Issuance and
@@ -946,26 +706,21 @@ rate limits apply before account lookup and fail closed when Redis is unavailabl
 Reset email retry payloads use the existing AES-256-GCM encrypted delivery format;
 Resend receives the reset URL to deliver the email. Recovery routes have no browser
 analytics, no-index/no-store/no-referrer policies, and sanitized error events.
-Provider-account tracking and retention evidence remains G-09; this feature makes
-no new provider-retention claim. Infrastructure access logs must not retain reset
+Open/click tracking is disclosed as currently enabled. Signed DPA on file, custom
+retention, API key scope, and support access remain G-09; this feature makes no
+new claim for those items. Infrastructure access logs must not retain reset
 URL query parameters. Production delivery still requires operator verification.
-
-
-### MVP follow-up (2026-11-03)
-
-Verification emails may carry an allowlisted self-serve plan name, never an arbitrary
-redirect URL. The verified page routes through sign-in with a fixed billing destination;
-this does not authorize checkout. Product events remain on the existing content-free,
-pseudonymized server/worker path; see the analytics interface for exact limitations.
-The device-local PAYG dismissal is a UI preference, not analytics storage.
-
-Interrupted web Ask settlement waits for the SDK abort callback so completed-step
-usage is included. Unreported partial-step usage is marked incomplete in billing
-metadata and is not estimated from the reservation. Recovering costs the provider
-never reports remains unverified; no exact-cost guarantee is added.
 
 ## Agent coworker authority and retention
 
 See [agent coworkers](agent-coworkers.md) for the implemented authority boundaries. Dedicated hashed provisioning credentials cannot authenticate MCP or ingest. Only verified existing owners with current legal acceptance and an active owner membership can provision new workspaces; soft-removed owner rows do not qualify. No existing-team access, paid-plan activation or agent:ask is granted. Transactional encrypted response receipts expire after fifteen minutes; retained hashes prevent duplicate provisioning. Janitor clears expired ciphertext and auth continuations. Reporting preferences authorize behavior within existing capture scopes and do not confer canonical-record approval or unrelated external authority. No credentials or note bodies belong in monitoring events.
 
 Consent reporting edits are restricted to current owners/admins and committed atomically with the OAuth grant, authorization code and reporting audit. Member consent exposes only that member/client’s preference. Raw project scope is excluded from redirect parameters and issuance exception telemetry. Inherited or retained ongoing settings never expand capture permission.
+
+## Email and source recovery
+
+Signed email webhooks queue provider IDs; workers admit senders before downloading bounded content/attachments. Recovery requires the scoped internal ingest principal and fails closed for restricted parents. Retry payloads are encrypted; temporary URLs and credentials do not enter source snapshots. Provider delivery/retention evidence remains in the provider register.
+
+Disconnect, source removal and erasure are separate operations. Follow [manual support deletion](setup/manual-support-deletion.md); disclose retained history, backups, legal/billing records and processor copies without promising unverified completion.
+
+Sentry intake and queued delivery require current source selection. GitHub capture requires the matching installation token and fails closed on missing mappings. Health/readiness responses expose aggregate operational state, not content or secrets.

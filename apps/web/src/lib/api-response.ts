@@ -8,15 +8,23 @@ type Navigate = (path: string) => void;
 const LEGAL_ACCEPTANCE_REDIRECT = '/legal/accept?returnTo=%2Fapp';
 
 export class ApiResponseError extends Error {
+  readonly status: number;
+  readonly code: string | null;
+  readonly reference: string | null;
+  readonly acceptanceUrl: string | null;
   constructor(
-    readonly status: number,
-    readonly code: string | null,
-    readonly reference: string | null,
-    readonly acceptanceUrl: string | null,
+    status: number,
+    code: string | null,
+    reference: string | null,
+    acceptanceUrl: string | null,
     fallback: string,
   ) {
     super(`${fallback}${reference ? ` Reference: ${reference}.` : ''}`);
     this.name = 'ApiResponseError';
+    this.status = status;
+    this.code = code;
+    this.reference = reference;
+    this.acceptanceUrl = acceptanceUrl;
   }
 }
 

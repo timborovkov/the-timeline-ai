@@ -112,7 +112,7 @@ export default async function ObjectDetailPage({ params, searchParams }: PagePro
     members,
   ] = await Promise.all([
     scope.boards.listObjectBoardContext(detail.id),
-    scope.suggestions.listPendingSuggestions(),
+    scope.suggestions.listPendingSuggestionsForObject(detail.id),
     detail.type === 'task'
       ? scope.objects.listObjects({ type: 'project', archived: false, limit: 200 })
       : Promise.resolve([]),

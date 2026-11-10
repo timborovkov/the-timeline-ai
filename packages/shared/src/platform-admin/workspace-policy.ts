@@ -226,6 +226,7 @@ export const WORKSPACE_OPERATOR_POLICY = {
   'suggestions.createOrMergeSuggestionBundle': write,
   'suggestions.listSuggestions': read,
   'suggestions.listPendingSuggestions': read,
+  'suggestions.listPendingSuggestionsForObject': read,
   'suggestions.withCalendarResolutionHints': write,
   'suggestions.getSuggestion': read,
   'suggestions.repairApprovalProjectionForOutput': write,

@@ -44,7 +44,7 @@ exploit.
   privacy boundaries.
 - Update affected documentation and public claims in the same change.
 
-Follow the [validation policy in AGENTS.md](./AGENTS.md#validation-policy).
+Follow the [validation policy in AGENTS.md](docs/testing/README.md#validation-policy).
 Run focused local tests for changed behavior; GitHub runs repo-wide checks.
 Required checks gate merging, not committing, pushing, or opening a PR.
 

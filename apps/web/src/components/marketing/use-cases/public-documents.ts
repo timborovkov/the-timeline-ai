@@ -66,7 +66,7 @@ export const USE_CASE_PUBLIC_DOCUMENTS = definePublicDocuments('use-cases', [
           items: USE_CASES.map((useCase) => `${useCase.cardTitle}: ${useCase.cardBody}`),
           links: USE_CASES.map((useCase) => ({
             label: useCase.navLabel,
-            href: `https://thetimeline.cc${useCase.route}`,
+            href: useCase.route,
           })),
         },
       ],

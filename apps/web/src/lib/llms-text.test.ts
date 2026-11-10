@@ -129,8 +129,8 @@ describe('llms text files', () => {
 
   it('tracks machine-document changes in their registry dates', () => {
     expect(PUBLIC_DOCUMENT_REGISTRY.get('/llms-full.txt')?.dates).toEqual({
-      modified: '2026-11-07',
-      reviewed: '2026-11-07',
+      modified: '2026-11-09',
+      reviewed: '2026-11-09',
     });
     expect(PUBLIC_DOCUMENT_REGISTRY.get('/sitemap.xml')?.dates).toEqual({
       modified: '2026-11-03',
@@ -271,7 +271,42 @@ describe('llms text files', () => {
       '[Reference \\[advanced\\]](https://docs.example.test/guides/r&d/%28notes%29?source=agent%20setup#read%28me%29)',
     );
   });
+
+  it('keeps every rendered llms.txt and llms-full.txt resource link on absolute HTTPS', async () => {
+    process.env.AUTH_URL = 'https://thetimeline.cc';
+    delete process.env.VERCEL_URL;
+    delete process.env.NEXTAUTH_URL;
+
+    const { GET: getLlmsTxt } = await import('@/app/llms.txt/route');
+    const { GET: getLlmsFullTxt } = await import('@/app/llms-full.txt/route');
+    const compact = await getLlmsTxt().text();
+    const full = await getLlmsFullTxt().text();
+
+    expect(full).toContain(
+      '[Request deletion through support](https://thetimeline.cc/help/support)',
+    );
+
+    for (const document of PUBLIC_DOCUMENT_REGISTRY.all()) {
+      if (!document.llms) continue;
+      for (const section of document.llms.sections ?? []) {
+        for (const link of section.links ?? []) {
+          expect(link.href).toMatch(/^https:\/\//u);
+          expect(new URL(link.href).protocol).toBe('https:');
+        }
+      }
+    }
+
+    for (const href of [...markdownLinkDestinations(compact), ...markdownLinkDestinations(full)]) {
+      expect(href).toMatch(/^https:\/\//u);
+      expect(new URL(href).protocol).toBe('https:');
+    }
+  });
 });
+
+function markdownLinkDestinations(text: string): string[] {
+  const withoutFences = text.replace(/^```[\s\S]*?^```/gmu, '');
+  return [...withoutFences.matchAll(/\]\(([^)\s]+)\)/gu)].map((match) => match[1] ?? '');
+}
 
 function testDocument(overrides: Partial<PublicDocument>): PublicDocument {
   return {

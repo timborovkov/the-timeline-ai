@@ -43,6 +43,25 @@ describe('DueDateDisplay', () => {
     expect(screen.getByText('Due not-a-date')).toBeTruthy();
   });
 
+  it('renders completed work without overdue styling', () => {
+    const { container } = render(
+      <WorkspaceTimezoneProvider timezone="America/Los_Angeles">
+        <DueDateDisplay
+          value="2026-07-19T00:00:00.000Z"
+          variant="compact"
+          now={NOW}
+          locale="en-US"
+          completed
+          completedAt="2026-07-18T00:00:00.000Z"
+        />
+      </WorkspaceTimezoneProvider>,
+    );
+    expect(container.textContent).toBe('Completed Jul 18, 2026');
+    expect(container.querySelector('[data-due-status="completed"]')?.className).not.toContain(
+      'text-danger',
+    );
+  });
+
   it('uses the workspace timezone for non-midnight timestamps', () => {
     const { container } = renderDue('2026-07-21T02:00:00.000Z', 'inline');
     expect(container.textContent).toBe('Due today · Jul 20, 2026');
