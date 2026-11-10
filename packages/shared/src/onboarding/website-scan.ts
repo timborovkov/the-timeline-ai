@@ -89,6 +89,23 @@ function userAgentToken(userAgent: string): string {
   return userAgent.split(/[/\s]/)[0]?.toLowerCase() ?? 'timelinebot';
 }
 
+function escapeRobotsRegex(value: string): string {
+  return value.replace(/[.+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/** RFC 9309 §2.2.3: `*` matches any sequence; a trailing `$` anchors the end of the URL. */
+function robotsPatternMatches(pattern: string, pathAndQuery: string): boolean {
+  const path = pathAndQuery.length > 0 ? pathAndQuery : '/';
+  const endAnchored = pattern.endsWith('$');
+  const body = endAnchored ? pattern.slice(0, -1) : pattern;
+  let source = '^';
+  for (const char of body) {
+    source += char === '*' ? '.*' : escapeRobotsRegex(char);
+  }
+  if (endAnchored) source += '$';
+  return new RegExp(source).test(path);
+}
+
 export function robotsAllowsPath(
   groups: RobotsGroup[],
   userAgent: string,
@@ -103,7 +120,7 @@ export function robotsAllowsPath(
   let winner: { allow: boolean; length: number } | null = null;
   for (const group of matched) {
     for (const rule of group.rules) {
-      if (!path.startsWith(rule.path)) continue;
+      if (!robotsPatternMatches(rule.path, path)) continue;
       const length = rule.path.length;
       if (!winner || length > winner.length || (length === winner.length && rule.allow)) {
         winner = { allow: rule.allow, length };
@@ -252,11 +269,13 @@ async function followSameOrigin(
   start: URL,
   origin: URL,
   groups: RobotsGroup[],
-): Promise<Response | 'robots' | null> {
+): Promise<{ response: Response; finalUrl: URL } | 'robots' | null> {
   let current = start;
   for (let hop = 0; hop <= WEBSITE_SCAN_MAX_REDIRECTS; hop += 1) {
     const response = await fetchPageResponse(fetchPage, current);
-    if (![301, 302, 303, 307, 308].includes(response.status)) return response;
+    if (![301, 302, 303, 307, 308].includes(response.status)) {
+      return { response, finalUrl: current };
+    }
     const location = response.headers.get('location');
     if (!location) return null;
     let next: URL;
@@ -330,7 +349,7 @@ export async function scanPublicWebsite(
 
   async function readPage(
     url: URL,
-  ): Promise<{ page: WebsiteScanPage; html: string } | 'robots' | 'skip'> {
+  ): Promise<{ page: WebsiteScanPage; html: string; finalUrl: URL } | 'robots' | 'skip'> {
     const key = normalizePageUrl(url);
     if (seen.has(key)) return 'skip';
     seen.add(key);
@@ -339,31 +358,42 @@ export async function scanPublicWebsite(
       return 'robots';
     }
     if (deadlineExceeded()) return 'skip';
-    let response: Response | 'robots' | null;
+    let followed: { response: Response; finalUrl: URL } | 'robots' | null;
     try {
-      response = await followSameOrigin(fetchPage, url, origin, groups);
+      followed = await followSameOrigin(fetchPage, url, origin, groups);
     } catch (error) {
       if (error instanceof ExternalHttpError && error.code === 'blocked_address') throw error;
       return 'skip';
     }
-    if (response === 'robots') return 'robots';
-    if (!response || response.status < 200 || response.status >= 300 || !isHtmlResponse(response)) {
+    if (followed === 'robots') return 'robots';
+    if (
+      !followed ||
+      followed.response.status < 200 ||
+      followed.response.status >= 300 ||
+      !isHtmlResponse(followed.response)
+    ) {
       return 'skip';
     }
-    const html = await response.text();
+    const finalKey = normalizePageUrl(followed.finalUrl);
+    if (finalKey !== key) {
+      if (seen.has(finalKey)) return 'skip';
+      seen.add(finalKey);
+    }
+    const html = await followed.response.text();
     const readable = htmlToReadableText(html);
     if (readable.text.length < WEBSITE_SCAN_MIN_TEXT_CHARS) return 'skip';
     return {
       html,
+      finalUrl: followed.finalUrl,
       page: {
-        url: key,
-        title: readable.title || url.hostname,
+        url: finalKey,
+        title: readable.title || followed.finalUrl.hostname,
         text: readable.text.slice(0, 20_000),
       },
     };
   }
 
-  let home: { page: WebsiteScanPage; html: string } | 'robots' | 'skip';
+  let home: { page: WebsiteScanPage; html: string; finalUrl: URL } | 'robots' | 'skip';
   try {
     home = await readPage(origin);
   } catch (error) {
@@ -374,8 +404,8 @@ export async function scanPublicWebsite(
   pages.push(home.page);
 
   try {
-    const candidates = discoverSameOriginPages(home.html, origin).filter(
-      (href) => href !== normalizePageUrl(origin),
+    const candidates = discoverSameOriginPages(home.html, home.finalUrl).filter(
+      (href) => href !== home.page.url,
     );
     for (const href of candidates) {
       if (pages.length >= WEBSITE_SCAN_PAGE_CAP || deadlineExceeded()) break;

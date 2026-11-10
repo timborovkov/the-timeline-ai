@@ -109,6 +109,64 @@ Disallow: /secret
     ]);
   });
 
+  it('matches RFC 9309 wildcard and end-anchored robots patterns', () => {
+    const groups = parseRobotsTxt(`
+User-agent: *
+Disallow: /private/*
+Disallow: /index.html$
+Allow: /private/public
+`);
+    expect(robotsAllowsPath(groups, WEBSITE_SCAN_USER_AGENT, '/private/secret')).toBe(false);
+    expect(robotsAllowsPath(groups, WEBSITE_SCAN_USER_AGENT, '/private/public')).toBe(true);
+    expect(robotsAllowsPath(groups, WEBSITE_SCAN_USER_AGENT, '/about')).toBe(true);
+    expect(robotsAllowsPath(groups, WEBSITE_SCAN_USER_AGENT, '/index.html')).toBe(false);
+    expect(robotsAllowsPath(groups, WEBSITE_SCAN_USER_AGENT, '/index.html?x=1')).toBe(true);
+    expect(robotsAllowsPath(groups, WEBSITE_SCAN_USER_AGENT, '/index.html/extra')).toBe(true);
+  });
+
+  it('does not fetch a path blocked by a wildcard Disallow', async () => {
+    const result = await scanPublicWebsite(HOME, {
+      fetchPage: fetchMap({
+        'https://studio.example/robots.txt': response('User-agent: *\nDisallow: /private/*\n', {
+          headers: { 'content-type': 'text/plain' },
+        }),
+        [HOME]: response(
+          html(
+            `<a href="/private/secret">Secret</a><a href="/about">About</a><p>${readable('Home')}</p>`,
+          ),
+        ),
+        'https://studio.example/private/secret': response(page(readable('Secret'))),
+        'https://studio.example/about': response(page(readable('About'))),
+      }),
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.pages.map((item) => item.url)).toEqual([HOME, 'https://studio.example/about']);
+  });
+
+  it('resolves relative links against the final redirected home URL', async () => {
+    const result = await scanPublicWebsite(HOME, {
+      fetchPage: fetchMap({
+        'https://studio.example/robots.txt': new Response('missing', { status: 404 }),
+        [HOME]: new Response(null, {
+          status: 302,
+          headers: { location: 'https://studio.example/en/' },
+        }),
+        'https://studio.example/en/': response(
+          html(`<a href="about">About</a><p>${readable('Home')}</p>`),
+        ),
+        'https://studio.example/en/about': response(page(readable('About'))),
+        'https://studio.example/about': response(page(readable('Wrong about'))),
+      }),
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.pages.map((item) => item.url)).toEqual([
+      'https://studio.example/en',
+      'https://studio.example/en/about',
+    ]);
+  });
+
   it('treats an empty Disallow as allowing the site', async () => {
     const result = await scanPublicWebsite(HOME, {
       fetchPage: fetchMap({
