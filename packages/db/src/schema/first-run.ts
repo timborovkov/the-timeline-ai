@@ -26,6 +26,7 @@ export const firstRunScanFailureReason = pgEnum('first_run_scan_failure_reason',
   'unreachable',
   'not_enabled',
   'rate_limited',
+  'billing_limited',
 ]);
 
 export const teamFirstRun = pgTable('team_first_run', {

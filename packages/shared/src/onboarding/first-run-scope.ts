@@ -280,7 +280,8 @@ export function createFirstRunHandlers({ db, teamId, userId, ensureMember }: Fir
           extras.documentId !== current.captureDocumentId) ||
         (path === 'website' &&
           extras.websiteUrl !== undefined &&
-          (extras.websiteUrl !== current.websiteUrl || extras.websiteScanId !== current.websiteScanId));
+          (extras.websiteUrl !== current.websiteUrl ||
+            extras.websiteScanId !== current.websiteScanId));
       await touch({
         phase,
         starterPath: path,

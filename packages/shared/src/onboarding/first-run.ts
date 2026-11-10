@@ -22,7 +22,12 @@ export type WebsiteSubject = (typeof WEBSITE_SUBJECTS)[number];
 export type FirstRunPath = (typeof FIRST_RUN_PATHS)[number];
 
 export type FirstRunScanFailureReason =
-  'no_readable_text' | 'robots' | 'unreachable' | 'not_enabled' | 'rate_limited';
+  | 'no_readable_text'
+  | 'robots'
+  | 'unreachable'
+  | 'not_enabled'
+  | 'rate_limited'
+  | 'billing_limited';
 
 export type GoLiveChannel = 'slack' | 'telegram' | 'email' | 'digest' | 'meeting';
 
@@ -378,6 +383,12 @@ export function scanFailureCopy(input: {
     return {
       title: `We couldn't reach ${host}`,
       body: 'The website scan did not finish. Any pages already saved remain available; some processing may still be incomplete. You can upload a document or forward an email instead.',
+    };
+  }
+  if (input.reason === 'billing_limited') {
+    return {
+      title: 'Website scan needs usage allowance',
+      body: 'Your team’s usage allowance could not admit this scan. Check Billing or ask a team administrator before trying again.',
     };
   }
   if (input.reason === 'rate_limited') {

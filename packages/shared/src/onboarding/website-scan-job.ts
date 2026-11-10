@@ -72,7 +72,7 @@ export async function processWebsiteScanJob(deps: WebsiteScanJobDeps): Promise<v
   let pages = await deps.getPages();
   // Recheck admission in the worker: a queued reservation may have expired.
   if (!(await deps.reserve())) {
-    await deps.markScanFailed('rate_limited', deps.scanId);
+    await deps.markScanFailed('billing_limited', deps.scanId);
     await deps.release();
     return;
   }

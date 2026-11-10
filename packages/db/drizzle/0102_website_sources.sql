@@ -1,3 +1,5 @@
+ALTER TYPE "first_run_scan_failure_reason" ADD VALUE IF NOT EXISTS 'billing_limited';
+--> statement-breakpoint
 ALTER TABLE "team_first_run" ADD COLUMN "website_subject" text NOT NULL DEFAULT 'own_team';
 ALTER TABLE "team_first_run" ADD COLUMN "website_scan_id" uuid;
 ALTER TABLE "team_first_run" ADD CONSTRAINT "team_first_run_website_subject_check" CHECK ("website_subject" IN ('own_team', 'other_company'));
