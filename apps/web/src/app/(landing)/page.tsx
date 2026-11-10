@@ -215,7 +215,7 @@ function ClaimScene() {
       aria-labelledby="claim-title"
       data-scene="01-claim"
     >
-      <div className={styles.heroCopy} data-home-reveal>
+      <div className={styles.heroCopy}>
         <SceneIndex number="01" label="The auto-updating work record" />
         <h1 id="claim-title" className={styles.heroTitle}>
           Your team's work, <em>written down for you</em>

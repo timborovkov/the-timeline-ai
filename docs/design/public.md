@@ -44,9 +44,11 @@ records, and outcomes stay coherent across the journey. Connector capability bel
 evidence-entry scene; audience fit and the evidence chain remain a separate,
 stacked explanation rather than an equal-height split. Substantive copy and
 diagrams are server-rendered; a small client motion controller may progressively
-reveal scenes, replay each evidence diagram while it is in view, and show scroll
-progress. Background motion is prohibited: movement belongs to the evidence
-diagram and must explain provenance or hierarchy. The shared public canvas uses
+reveal below-the-fold scenes, replay evidence flow while it is in view, and show
+scroll progress. The hero copy, source cards, central mark, and outcome labels
+are complete and in their final positions on first paint; hydration must not
+hide or slide them into place. Background motion is prohibited: movement belongs
+to the evidence diagram and must explain provenance or hierarchy. The shared public canvas uses
 the same subtle fixed grain in both themes, with theme-specific blending so
 cream reads like paper and near-black retains its tactile texture.
 
@@ -180,7 +182,11 @@ measure instead of being squeezed by a proportional sidebar.
 Every public shell uses the landing masthead as one full-width chrome component,
 with the same warm public palette, wordmark position, active state, GitHub and
 theme controls, and lime account CTA. Signed-in visitors see `Dashboard`;
-signed-out visitors see `Sign in` and `Start free` (free / no-card). The shared public canvas
+signed-out visitors see `Sign in` and `Start free` (free / no-card). Session-dependent
+content reserves the larger of both states in a shared grid cell from the server
+render onward. Pending and inactive branches remain invisible, inert, and hidden
+from assistive technology; resolving authentication must not move adjacent content,
+even when one branch is empty. The shared public canvas
 inherits that warm paper palette in light mode and the landing's warm near-black
 palette in dark mode, while each page group keeps its own content structure.
 Auth-neutral loading and error boundaries keep the same masthead but omit

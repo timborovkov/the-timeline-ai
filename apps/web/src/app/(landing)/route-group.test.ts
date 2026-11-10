@@ -66,12 +66,6 @@ describe('landing route group', () => {
     expect(styles).toMatch(/\.mcpCalls code\s*\{[^}]*font-size:\s*var\(--home-meta-size\);/s);
     expect(styles).not.toContain('translateX(0.35rem)');
     expect(styles).toContain('animation: evidencePath 4.8s linear infinite both');
-    expect(styles).toContain(
-      'animation: evidenceCore 720ms 440ms cubic-bezier(0.22, 1, 0.36, 1) both',
-    );
-    expect(styles).toContain(
-      'animation: heroOutcomeIn 560ms 1.15s cubic-bezier(0.22, 1, 0.36, 1) both',
-    );
     expect(styles).toContain('.observatory');
     expect(styles).not.toContain('--diagram-size');
     expect(styles).toContain('animation: flowPacketAcross 8s linear infinite');
