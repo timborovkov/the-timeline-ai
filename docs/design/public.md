@@ -121,7 +121,14 @@ at `/solutions/client-project-handoffs` with related use-case links. `/product-t
 is a screenshot walkthrough linked from the home hero as See it first and from
 pricing; `/integrations/telegram` is the public Telegram capture page. Product
 screenshots live in `apps/web/public/marketing/screenshots` under the filenames
-from the website copy plan. Landscape slots use a 16×10 top crop; mobile
+from the website copy plan. Each public slot has matching `<stem>-light.png`
+and `<stem>-dark.png` twins from the same fictional seed and framing. The
+resolved site theme selects one unoptimized image after hydration, including
+saved Light/Dark overrides and System changes. No variant is preloaded before
+the preference is known; the reserved loading frame prevents layout shift.
+Inventory tests require both twins, including legacy unthemed mobile slots.
+See the [recapture guide](../../apps/web/public/marketing/screenshots/README.md).
+Landscape slots use a 16×10 top crop; mobile
 portrait slots keep the full capture so Ask citations stay in frame. The
 homepage shows three full-width proof shots (work record, stored cited Ask
 answer, daily update). `/agents` pairs the current Agent tools screen with a

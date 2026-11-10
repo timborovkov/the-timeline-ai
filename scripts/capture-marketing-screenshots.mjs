@@ -26,7 +26,7 @@ const DESKTOP_SHOTS = [
   {
     stem: '11-timeline',
     path: '/app/timeline',
-    wait: /TODAY|Today/,
+    wait: '[data-moment-id]',
   },
   {
     stem: '12-timeline-slack',
@@ -124,7 +124,7 @@ const MOBILE_SHOTS = [
   {
     stem: '53-timeline-mobile',
     path: '/app/timeline',
-    wait: /TODAY|Today/,
+    wait: '[data-moment-id]',
     mobile: true,
   },
   {
@@ -167,6 +167,7 @@ async function hoverHandoffCitation(page) {
       const text = node?.textContent ?? '';
       return text.length > 0 && !text.includes('Loading citation');
     },
+    undefined,
     { timeout: 10_000 },
   );
   await page.waitForTimeout(250);
@@ -217,7 +218,7 @@ async function captureShot(page, shot, theme) {
   await page.waitForLoadState('networkidle').catch(() => {});
   const waiter =
     typeof shot.wait === 'string'
-      ? page.getByText(shot.wait, { exact: false }).first()
+      ? page.locator(shot.wait).first()
       : page.getByText(shot.wait).first();
   await waiter.waitFor({ timeout: 30_000 });
   if (shot.prepare) await shot.prepare(page);

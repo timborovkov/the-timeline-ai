@@ -1,7 +1,7 @@
 # The Timeline — Design System
 
-**Version:** v3.42 · Public conversion-clarity (2026-11-10).
-Replaces v3.41 Object-page tasks; retains the split app and public surface patterns.
+**Version:** v3.43 · Theme-aware public screenshots (2026-11-10).
+Replaces v3.42 Public conversion-clarity; retains the split app and public surface patterns.
 
 This is the visual and interaction contract for the product. If a screen
 disagrees with it, fix the screen. If the language intentionally changes,
