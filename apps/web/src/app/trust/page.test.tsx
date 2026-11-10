@@ -47,6 +47,8 @@ describe('Trust page', () => {
     expect(html).toContain('href="/cookies"');
     expect(html).toContain('href="/terms"');
     expect(html).toContain('href="https://github.com/timborovkov/the-timeline-ai"');
+    expect(html).toContain('Firecrawl');
+    expect(html).toContain('public pages of a website URL submitted during first-run onboarding');
   });
 
   it('routes signed-in readers back to their dashboard', () => {

@@ -158,6 +158,7 @@ export function buildE2eEnv(input: Env = process.env, options: BuildE2eEnvOption
   // Next's pinned env loader honors this marker: test servers and smoke builds
   // must not merge a developer's symlinked apps/web/.env into isolated fixtures.
   env.__NEXT_PROCESSED_ENV = 'true';
+  env.FIRECRAWL_API_KEY = 'e2e-firecrawl-not-live';
   const workspaceHashValue = workspaceHash(options.workspacePath ?? process.cwd());
 
   const useDockerPorts = env.E2E_USE_DOCKER_PORTS !== '0';

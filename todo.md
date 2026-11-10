@@ -34,7 +34,7 @@ This is the prioritised index of unresolved outcomes. Detailed acceptance criter
 | P11 | Extend captured-work and supporting evidence coverage. | Parent IDs for pulses, GitHub review discussion, document-chunk pack admission and summary refresh, Linear/Monday actor mapping, and later Jira/CRM adapters. Follow [engine authority](docs/relational-memory.md); no semantic-only canonical writes. |
 | P12 | Improve residual behavioral test coverage. | Restore/deeper permission/session-isolation paths, real queue/storage/DB contracts and end-to-end first-value/payment/provider flows. Use existing suites; [testing](docs/testing/README.md) owns execution policy. |
 
-- Complete the first-run website-scan pipeline in PR #525; the onboarding chooser currently fails closed.
+- Add a Website source on `/app/connections/sources` for later ingestion and refresh, reusing the onboarding ingest path and accepted-source meter.
 
 ## Conditional work
 

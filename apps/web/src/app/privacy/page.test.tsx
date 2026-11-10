@@ -112,6 +112,23 @@ describe('Privacy Policy analytics disclosures', () => {
     );
   });
 
+  it('discloses Firecrawl as the first-run website-scan processor with evidenced claims only', () => {
+    const html = renderToStaticMarkup(<PrivacyPage />);
+
+    expect(html).toContain('Firecrawl (SideGuide Technologies, Inc.)');
+    expect(html).toContain('public website URL a user submits');
+    expect(html).toContain('up to five public pages');
+    expect(html).toContain('United States');
+    expect(html).toContain('24 hours after completion');
+    expect(html).toContain('to be confirmed');
+    expect(html).toContain('does not enable Firecrawl');
+    expect(html).toContain('zero-data-retention');
+    expect(html).toContain('href="https://www.firecrawl.dev/privacy-policy"');
+    expect(html).toContain('href="https://docs.firecrawl.dev/security"');
+    expect(html).not.toContain('Mendable');
+    expect(html).not.toContain('zero data retention for website scan');
+  });
+
   it('discloses evidenced Resend sending, inbound capture, tracking, and published policy', () => {
     const html = renderToStaticMarkup(<PrivacyPage />);
 

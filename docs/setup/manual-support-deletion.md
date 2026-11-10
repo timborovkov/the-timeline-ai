@@ -41,6 +41,13 @@ Capture identifiers/counts, not content, in the case record. Record unknown stor
 as unresolved. Do not interpret this inventory list as proof each store contains
 data or that existing helpers cover every category.
 
+For website scans, inventory `website_sources` by team and scan ID, including its
+immutable cached markdown; `raw_events.source_metadata.websiteScanId`; captured
+`documents`, their versions, chunks and versioned S3 keys; derived facts/proposals
+and vectors; and website-scan/extract/embed jobs. Document deletion alone does not
+erase the crawl cache or raw evidence. Include Firecrawl in processor follow-up;
+its 24-hour result API window is not proof of complete erasure.
+
 ## 3. Stop recapture and perform source cleanup
 
 Coordinate with the customer before interrupting shared sources. Inventory and

@@ -9,7 +9,6 @@ const fakes = vi.hoisted(() => ({
   getFirstRunRecord: vi.fn(),
   trackProductEventBestEffort: vi.fn(),
   displayInboundEmail: vi.fn(),
-  isWebsiteScanEnabled: vi.fn(),
 }));
 
 await vi.mock(
@@ -31,7 +30,6 @@ await vi.mock(
   import.meta.resolve('@timeline/shared/onboarding'),
   async () => ({
     ...(await import('@timeline/shared/onboarding')),
-    isWebsiteScanEnabled: fakes.isWebsiteScanEnabled,
   }),
   () => import('@timeline/shared/onboarding'),
 );
@@ -54,7 +52,6 @@ const { loadFirstRunStatus } = await import('./first-run-status.js');
 
 beforeEach(() => {
   vi.clearAllMocks();
-  fakes.isWebsiteScanEnabled.mockReturnValue(false);
   fakes.displayInboundEmail.mockReturnValue('northwind@inbound.test');
   fakes.getFirstRun.mockResolvedValue({
     starterPath: 'document',

@@ -10,11 +10,10 @@ afterEach(() => {
 });
 
 describe('ChooserScreen', () => {
-  it('shows four equal cards and marks website scan coming soon when the flag is off', () => {
+  it('offers website scanning with permission confirmation and own-team default', () => {
     render(
       <ChooserScreen
         inboundEmail="northwind-studio@inbound.test"
-        websiteScanEnabled={false}
         onWebsite={() => Promise.resolve()}
         onDocument={() => Promise.resolve()}
         onEmail={() => Promise.resolve()}
@@ -24,7 +23,8 @@ describe('ChooserScreen', () => {
 
     expect(screen.getByRole('heading', { name: 'Bring something real' })).toBeTruthy();
     expect(screen.getByRole('heading', { name: 'Scan your website' })).toBeTruthy();
-    expect(screen.getByText('Coming soon')).toBeTruthy();
+    expect(screen.queryByText('Coming soon')).toBeNull();
+    expect(screen.getByLabelText<HTMLInputElement>('Our team or company').checked).toBe(true);
     expect(screen.getByRole('button', { name: 'Scan' }).hasAttribute('disabled')).toBe(true);
     expect(screen.getByRole('heading', { name: 'Upload a document' })).toBeTruthy();
     expect(screen.getByRole('heading', { name: 'Forward an email' })).toBeTruthy();
@@ -42,7 +42,6 @@ describe('ChooserScreen', () => {
     render(
       <ChooserScreen
         inboundEmail="northwind-studio@inbound.test"
-        websiteScanEnabled={false}
         onWebsite={() => Promise.resolve()}
         onDocument={onDocument}
         onEmail={() => Promise.resolve()}

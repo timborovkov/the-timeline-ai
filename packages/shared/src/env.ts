@@ -407,11 +407,8 @@ const baseSchema = z.object({
    */
   SUPPORT_EMAIL: z.preprocess(emptyStringAsUnset, z.email().optional()),
   INBOUND_EMAIL_DOMAIN: z.string().optional(),
-  /**
-   * First-run website scan. Off until the crawl worker ships. The chooser
-   * still shows the card; Scan stays coming-soon while this is false.
-   */
-  WEBSITE_SCAN_ENABLED: z.preprocess(booleanString, z.boolean().default(false)),
+  /** Required by web/worker website scanning; validated before enqueue/provider work. */
+  FIRECRAWL_API_KEY: z.preprocess(emptyStringAsUnset, z.string().trim().min(1).optional()),
   // Cloudflare Turnstile (Phase 13 abuse controls). Only public/anonymous
   // forms use it: email/password registration and public support/contact.
   TURNSTILE_SITE_KEY: z.string().optional(),

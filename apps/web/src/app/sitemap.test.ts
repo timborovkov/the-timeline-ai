@@ -53,7 +53,7 @@ describe('sitemap', () => {
     expect(byUrl.get('https://thetimeline.cc/use-cases')).toBe('2026-11-07');
     expect(byUrl.get('https://thetimeline.cc/product-tour')).toBe('2026-11-07');
     expect(byUrl.get('https://thetimeline.cc/help')).toBe('2026-11-03');
-    expect(byUrl.get('https://thetimeline.cc/trust')).toBe('2026-11-03');
+    expect(byUrl.get('https://thetimeline.cc/trust')).toBe('2026-11-10');
     expect(byUrl.get('https://thetimeline.cc/terms')).toBe(TERMS_VERSION);
     expect(byUrl.get('https://thetimeline.cc/privacy')).toBe(PRIVACY_VERSION);
     expect(byUrl.get('https://thetimeline.cc/cookies')).toBe('2026-10-24');

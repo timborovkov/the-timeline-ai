@@ -374,6 +374,8 @@ const checks = [
       if (
         source.includes('drizzle-orm') ||
         source.includes('first-run-scope.js') ||
+        source.includes('website-scan.js') ||
+        source.includes('external-fetch') ||
         source.includes('node:crypto')
       ) {
         throw new Error('onboarding/first-run compiled output pulled Node onboarding scope');

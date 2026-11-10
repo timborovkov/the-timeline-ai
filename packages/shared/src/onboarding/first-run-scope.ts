@@ -8,10 +8,11 @@ import {
   teamFirstRun,
   teams,
 } from '@timeline/db';
-import { and, asc, desc, eq, gte, inArray, isNull } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, isNull, sql } from 'drizzle-orm';
 
 import { documentVisibleToUser } from '#src/documents/visibility.js';
 import {
+  type WebsiteSubject,
   type FirstRunPath,
   type FirstRunPhase,
   type FirstRunScanFailureReason,
@@ -62,6 +63,8 @@ function mapRow(row: typeof teamFirstRun.$inferSelect, workStyle: string | null)
     captureEventId: row.captureEventId,
     websiteUrl: row.websiteUrl,
     websiteHost: row.websiteHost,
+    websiteSubject: row.websiteSubject,
+    websiteScanId: row.websiteScanId,
     scanFailureReason: row.scanFailureReason,
     guideHiddenAt: row.guideHiddenAt,
     firstCaptureLandedAt: row.firstCaptureLandedAt,
@@ -218,7 +221,13 @@ export function createFirstRunHandlers({
 
   async function selectStarterPath(
     path: FirstRunPath,
-    extras: { websiteUrl?: string; websiteHost?: string; documentId?: string } = {},
+    extras: {
+      websiteUrl?: string;
+      websiteHost?: string;
+      websiteSubject?: WebsiteSubject;
+      websiteScanId?: string;
+      documentId?: string;
+    } = {},
   ): Promise<FirstRunState> {
     await ensureMember();
     const now = new Date();
@@ -236,6 +245,8 @@ export function createFirstRunHandlers({
         starterSelectedAt: now,
         websiteUrl: extras.websiteUrl ?? null,
         websiteHost: extras.websiteHost ?? null,
+        websiteSubject: extras.websiteSubject ?? 'own_team',
+        websiteScanId: extras.websiteScanId ?? null,
         captureDocumentId: extras.documentId ?? null,
         scanFailureReason: null,
       });
@@ -247,13 +258,16 @@ export function createFirstRunHandlers({
           extras.documentId !== current.captureDocumentId) ||
         (path === 'website' &&
           extras.websiteUrl !== undefined &&
-          extras.websiteUrl !== current.websiteUrl);
+          (extras.websiteUrl !== current.websiteUrl ||
+            extras.websiteScanId !== current.websiteScanId));
       await touch({
         phase,
         starterPath: path,
         starterSelectedAt: now,
         websiteUrl: extras.websiteUrl ?? null,
         websiteHost: extras.websiteHost ?? null,
+        websiteSubject: extras.websiteSubject ?? 'own_team',
+        websiteScanId: extras.websiteScanId ?? null,
         captureDocumentId:
           path === 'document' ? (extras.documentId ?? current.captureDocumentId) : null,
         captureEventId: replacingCapture || path === 'skip' ? null : current.captureEventId,
@@ -270,10 +284,15 @@ export function createFirstRunHandlers({
     documentId?: string;
     eventId?: string;
     landed?: boolean;
+    requireStarterPath?: FirstRunPath;
+    websiteScanId?: string;
   }): Promise<FirstRunState> {
     await ensureMember();
     const current = await loadState();
     if (!current) throw new Error('First-run has not started');
+    if (input.requireStarterPath && current.starterPath !== input.requireStarterPath) {
+      return current;
+    }
     if (
       input.documentId &&
       current.starterPath !== 'document' &&
@@ -286,6 +305,27 @@ export function createFirstRunHandlers({
       : current.firstCaptureLandedAt;
     const phase =
       input.landed && LANDING_CAPTURE_PHASES.includes(current.phase) ? 'record' : current.phase;
+    if (input.websiteScanId) {
+      await db
+        .update(teamFirstRun)
+        .set({
+          captureEventId: input.eventId ?? null,
+          firstCaptureLandedAt: landedAt,
+          phase,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(teamFirstRun.teamId, teamId),
+            eq(teamFirstRun.websiteScanId, input.websiteScanId),
+            eq(teamFirstRun.starterPath, 'website'),
+            eq(teamFirstRun.phase, 'processing'),
+          ),
+        );
+      const next = await loadState();
+      if (!next) throw new Error('First-run state disappeared during capture');
+      return next;
+    }
     const next = await touch({
       captureDocumentId: input.documentId ?? current.captureDocumentId,
       captureEventId: input.eventId ?? current.captureEventId,
@@ -378,9 +418,28 @@ export function createFirstRunHandlers({
       return next;
     },
 
-    async markScanFailed(reason: FirstRunScanFailureReason): Promise<FirstRunState> {
+    async markScanFailed(
+      reason: FirstRunScanFailureReason,
+      websiteScanId?: string,
+    ): Promise<FirstRunState> {
       await ensureMember();
-      const next = await touch({ phase: 'failed', scanFailureReason: reason });
+      const current = await loadState();
+      if (!current) throw new Error('First-run has not started');
+      if (current.starterPath !== 'website' || current.phase !== 'processing') {
+        return current;
+      }
+      await db
+        .update(teamFirstRun)
+        .set({ phase: 'failed', scanFailureReason: reason, updatedAt: new Date() })
+        .where(
+          and(
+            eq(teamFirstRun.teamId, teamId),
+            eq(teamFirstRun.starterPath, 'website'),
+            eq(teamFirstRun.phase, 'processing'),
+            ...(websiteScanId ? [eq(teamFirstRun.websiteScanId, websiteScanId)] : []),
+          ),
+        );
+      const next = await loadState();
       if (!next) throw new Error('Failed to record scan failure');
       return next;
     },
@@ -583,8 +642,11 @@ export function createFirstRunHandlers({
               and(
                 eq(rawEvents.teamId, teamId),
                 eq(rawEvents.source, 'web'),
-                gte(rawEvents.createdAt, firstRun.starterSelectedAt),
+                ...(firstRun.websiteScanId
+                  ? [sql`${rawEvents.sourceMetadata}->>'websiteScanId' = ${firstRun.websiteScanId}`]
+                  : [gte(rawEvents.createdAt, firstRun.starterSelectedAt)]),
                 rawEventVisibleToUser(userId),
+                sql`(${rawEvents.sourceMetadata} ->> 'firstRunWebsiteScan') = 'true'`,
               ),
             )
             .orderBy(asc(rawEvents.createdAt))
@@ -605,7 +667,9 @@ export function createFirstRunHandlers({
                 and(
                   eq(rawEvents.id, firstRun.captureEventId),
                   eq(rawEvents.teamId, teamId),
+                  eq(rawEvents.source, 'web'),
                   rawEventVisibleToUser(userId),
+                  sql`(${rawEvents.sourceMetadata} ->> 'firstRunWebsiteScan') = 'true'`,
                 ),
               )
               .limit(1);
