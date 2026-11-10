@@ -2,7 +2,9 @@ import { expect } from '@timeline/test-support';
 import { describe, it } from 'bun:test';
 
 import {
+  canReplaceFirstRunStarter,
   documentProcessingSteps,
+  firstCaptureJustLanded,
   orderChecklistItems,
   parsePublicWebsiteUrl,
   prefilledAskQuestion,
@@ -78,6 +80,35 @@ describe('first-run helpers', () => {
     expect(parsePublicWebsiteUrl('http://10.0.0.1')).toEqual({
       error: 'Enter a public website, not a local address.',
     });
+  });
+
+  it('blocks a stale document attach from replacing skip or another live path', () => {
+    expect(canReplaceFirstRunStarter({ phase: 'skipped', starterPath: 'skip' }, 'document')).toBe(
+      false,
+    );
+    expect(
+      canReplaceFirstRunStarter({ phase: 'processing', starterPath: 'email' }, 'document'),
+    ).toBe(false);
+    expect(canReplaceFirstRunStarter({ phase: 'choose', starterPath: null }, 'document')).toBe(
+      true,
+    );
+    expect(canReplaceFirstRunStarter({ phase: 'failed', starterPath: 'website' }, 'document')).toBe(
+      true,
+    );
+  });
+
+  it('detects the first capture landing transition for the UI poll path', () => {
+    const processing = {
+      firstCaptureLandedAt: null,
+      starterPath: 'document' as const,
+    };
+    const landed = {
+      firstCaptureLandedAt: new Date('2026-11-09T12:00:00.000Z'),
+      starterPath: 'document' as const,
+    };
+    expect(firstCaptureJustLanded(processing, landed)).toBe('document');
+    expect(firstCaptureJustLanded(landed, landed)).toBeNull();
+    expect(firstCaptureJustLanded(processing, { ...landed, starterPath: 'skip' })).toBeNull();
   });
 
   it('only sends the starter back to setup for welcome and choose', () => {

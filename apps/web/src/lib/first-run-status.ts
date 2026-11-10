@@ -1,5 +1,6 @@
 import { getEnv } from '@timeline/shared/env';
 import {
+  firstCaptureJustLanded,
   isWebsiteScanEnabled,
   prefilledAskQuestion,
   recommendedGoLiveChannel,
@@ -9,6 +10,7 @@ import { withTeam } from '@timeline/shared/team-scope';
 
 import type { Db } from '@timeline/db';
 
+import { trackProductEventBestEffort } from '@/lib/analytics';
 import { displayInboundEmail } from '@/lib/hub-status';
 
 export async function loadFirstRunStatus(input: {
@@ -28,6 +30,14 @@ export async function loadFirstRunStatus(input: {
   }
   const record = await scope.onboarding.getFirstRunRecord();
   const firstRun = record?.firstRun ?? (await scope.onboarding.getFirstRun());
+  const landedPath = firstCaptureJustLanded(before, firstRun);
+  if (landedPath) {
+    trackProductEventBestEffort(
+      { kind: 'user', userId: input.userId, teamId: input.teamId },
+      'first_capture_landed',
+      { path: landedPath },
+    );
+  }
   return {
     firstRun,
     websiteScanEnabled: isWebsiteScanEnabled(getEnv()),

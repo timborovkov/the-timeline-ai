@@ -148,6 +148,30 @@ export function shouldRedirectToSetup(input: {
   return input.firstRun.phase === 'welcome' || input.firstRun.phase === 'choose';
 }
 
+export function canReplaceFirstRunStarter(
+  current: { phase: FirstRunPhase; starterPath: FirstRunPath | null } | null | undefined,
+  nextPath: FirstRunPath,
+): boolean {
+  if (!current) return true;
+  if (current.starterPath === nextPath) return true;
+  return current.phase === 'welcome' || current.phase === 'choose' || current.phase === 'failed';
+}
+
+export function firstCaptureJustLanded(
+  before: Pick<FirstRunState, 'firstCaptureLandedAt' | 'starterPath'> | null | undefined,
+  after: Pick<FirstRunState, 'firstCaptureLandedAt' | 'starterPath'> | null | undefined,
+): Exclude<FirstRunPath, 'skip'> | null {
+  if (!after?.firstCaptureLandedAt || before?.firstCaptureLandedAt) return null;
+  if (
+    after.starterPath === 'document' ||
+    after.starterPath === 'email' ||
+    after.starterPath === 'website'
+  ) {
+    return after.starterPath;
+  }
+  return null;
+}
+
 export function shouldShowGettingStartedStrip(input: {
   phase: FirstRunPhase | null;
   hidden: boolean;

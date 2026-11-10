@@ -1257,6 +1257,9 @@
   "apps/web/src/lib/email-verification.test.ts": {
     "group": "unit"
   },
+  "apps/web/src/lib/first-run-status.test.ts": {
+    "group": "unit"
+  },
   "apps/web/src/lib/floating-chat-session-storage.test.ts": {
     "group": "dom"
   },

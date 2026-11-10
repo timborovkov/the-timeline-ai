@@ -297,8 +297,9 @@ describe('first-run scope', () => {
       VALUES ('${TEAM_ID}', '${OWNER_ID}', 'welcome');
     `);
     const next = await scope().submitWorkStyle('email');
-    expect(next.phase).toBe('choose');
-    expect(next.workStyle).toBe('email');
+    expect(next).not.toBeNull();
+    expect(next?.phase).toBe('choose');
+    expect(next?.workStyle).toBe('email');
   });
 
   it('skips to an empty home without creating a sample workspace', async () => {
@@ -309,6 +310,122 @@ describe('first-run scope', () => {
     const next = await scope().skipToEmptyHome();
     expect(next.phase).toBe('skipped');
     expect(next.starterPath).toBe('skip');
+  });
+
+  it('updates work style on an existing team without starting first-run', async () => {
+    const next = await scope().submitWorkStyle('chat');
+    expect(next).toBeNull();
+    const workStyle = await pg.query(`SELECT work_style FROM teams WHERE id = '${TEAM_ID}'`);
+    const row = workStyle.rows[0] as { work_style: string | null } | undefined;
+    expect(row?.work_style).toBe('chat');
+    const firstRun = await pg.query(
+      `SELECT team_id FROM team_first_run WHERE team_id = '${TEAM_ID}'`,
+    );
+    expect(firstRun.rows).toHaveLength(0);
+  });
+
+  it('does not let a stale document selection replace skip', async () => {
+    await pg.exec(`
+      INSERT INTO team_first_run (team_id, started_by_user_id, phase)
+      VALUES ('${TEAM_ID}', '${OWNER_ID}', 'choose');
+    `);
+    await scope().skipToEmptyHome();
+    const next = await scope().selectStarterPath('document');
+    expect(next.phase).toBe('skipped');
+    expect(next.starterPath).toBe('skip');
+  });
+
+  it('keeps completed onboarding complete when a document capture refreshes', async () => {
+    const documentId = '33333333-3333-4333-8333-333333333333';
+    const eventId = '55555555-5555-4555-8555-555555555555';
+    await pg.exec(`
+      INSERT INTO raw_events (id, team_id, author_user_id, source, content_text, visibility)
+      VALUES ('${eventId}', '${TEAM_ID}', '${OWNER_ID}', 'web', 'deck', 'team');
+      INSERT INTO documents (id, team_id, owner_user_id, name, visibility)
+      VALUES ('${documentId}', '${TEAM_ID}', '${OWNER_ID}', 'Plan', 'team');
+      INSERT INTO document_versions (id, team_id, document_id, version, object_key, processing_status, source_event_id)
+      VALUES ('66666666-6666-4666-8666-666666666666', '${TEAM_ID}', '${documentId}', 1, 'docs/plan-1', 'embedded', '${eventId}');
+      INSERT INTO team_first_run (
+        team_id, started_by_user_id, phase, starter_path, capture_document_id, capture_event_id, first_capture_landed_at
+      )
+      VALUES (
+        '${TEAM_ID}', '${OWNER_ID}', 'complete', 'document', '${documentId}', '${eventId}', NOW()
+      );
+    `);
+    const next = await scope().refreshDocumentCapture();
+    expect(next?.phase).toBe('complete');
+  });
+
+  it('detects an email sent while the team address was already on the chooser', async () => {
+    await pg.exec(`
+      INSERT INTO team_first_run (
+        team_id, started_by_user_id, phase, starter_path, starter_selected_at, created_at
+      )
+      VALUES (
+        '${TEAM_ID}', '${OWNER_ID}', 'processing', 'email', NOW(), NOW() - INTERVAL '1 hour'
+      );
+      INSERT INTO raw_events (team_id, author_user_id, source, content_text, visibility, created_at)
+      VALUES (
+        '${TEAM_ID}', '${OWNER_ID}', 'email', 'Subject: kickoff', 'team', NOW() - INTERVAL '10 minutes'
+      );
+    `);
+    const arrival = await scope().detectEmailArrival();
+    expect(arrival.arrived).toBe(true);
+    expect(arrival.eventId).toBeTruthy();
+  });
+
+  it('hides a teammate private email from first-run capture reads', async () => {
+    await pg.exec(`
+      INSERT INTO team_first_run (
+        team_id, started_by_user_id, phase, starter_path, created_at
+      )
+      VALUES (
+        '${TEAM_ID}', '${OWNER_ID}', 'processing', 'email', NOW() - INTERVAL '1 hour'
+      );
+      INSERT INTO raw_events (
+        team_id, author_user_id, visibility_owner_user_id, source, content_text, visibility, created_at
+      )
+      VALUES (
+        '${TEAM_ID}', '${MEMBER_ID}', '${MEMBER_ID}', 'email', 'private thread', 'private', NOW()
+      );
+    `);
+    const arrival = await scope().detectEmailArrival();
+    expect(arrival.arrived).toBe(false);
+    const record = await scope().getFirstRunRecord();
+    expect(record?.summary).toBeNull();
+    expect(record?.emailArrived).toBe(false);
+  });
+
+  it('reads starter document chunks only from the selected version', async () => {
+    const documentId = '77777777-7777-4777-8777-777777777777';
+    const oldVersionId = '88888888-8888-4888-8888-888888888888';
+    const newVersionId = '99999999-9999-4999-8999-999999999999';
+    const eventId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa01';
+    await pg.exec(`
+      INSERT INTO raw_events (id, team_id, author_user_id, source, content_text, visibility)
+      VALUES ('${eventId}', '${TEAM_ID}', '${OWNER_ID}', 'web', 'deck', 'team');
+      INSERT INTO documents (id, team_id, owner_user_id, name, visibility)
+      VALUES ('${documentId}', '${TEAM_ID}', '${OWNER_ID}', 'Plan', 'team');
+      INSERT INTO document_versions (id, team_id, document_id, version, object_key, processing_status, source_event_id)
+      VALUES
+        ('${oldVersionId}', '${TEAM_ID}', '${documentId}', 1, 'docs/plan-1', 'embedded', '${eventId}'),
+        ('${newVersionId}', '${TEAM_ID}', '${documentId}', 2, 'docs/plan-2', 'embedded', '${eventId}');
+      INSERT INTO document_chunks (
+        team_id, document_id, document_version_id, chunk_index, text, token_count
+      )
+      VALUES
+        ('${TEAM_ID}', '${documentId}', '${oldVersionId}', 0, 'obsolete draft text that should stay hidden', 8),
+        ('${TEAM_ID}', '${documentId}', '${newVersionId}', 0, 'latest cited deck summary', 5);
+      INSERT INTO team_first_run (
+        team_id, started_by_user_id, phase, starter_path, capture_document_id
+      )
+      VALUES (
+        '${TEAM_ID}', '${OWNER_ID}', 'record', 'document', '${documentId}'
+      );
+    `);
+    const record = await scope().getFirstRunRecord();
+    expect(record?.summary).toContain('latest cited deck summary');
+    expect(record?.summary).not.toContain('obsolete draft');
   });
 });
 

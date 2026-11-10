@@ -31,18 +31,24 @@ export function ChooserScreen({
   const [dragging, setDragging] = useState(false);
   const [pending, startTransition] = useTransition();
   const fileRef = useRef<HTMLInputElement>(null);
+  const selectionSeq = useRef(0);
 
   function run(task: () => Promise<void>) {
+    const seq = selectionSeq.current + 1;
+    selectionSeq.current = seq;
     setError(null);
-    startTransition(() => {
-      void task().catch((err: unknown) => {
+    startTransition(async () => {
+      try {
+        await task();
+      } catch (err: unknown) {
+        if (seq !== selectionSeq.current) return;
         setError(err instanceof Error ? err.message : 'Could not continue.');
-      });
+      }
     });
   }
 
   function handleFile(file: File | undefined) {
-    if (!file) return;
+    if (pending || !file) return;
     if (file.size > ONBOARDING_DOCUMENT_MAX_BYTES) {
       setError('File exceeds 25 MB.');
       return;
@@ -53,6 +59,7 @@ export function ChooserScreen({
   function onDrop(event: DragEvent<HTMLDivElement>) {
     event.preventDefault();
     setDragging(false);
+    if (pending) return;
     handleFile(event.dataTransfer.files[0]);
   }
 
@@ -130,6 +137,7 @@ export function ChooserScreen({
               className="sr-only"
               accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,.md,application/pdf"
               aria-label="Upload a document"
+              disabled={pending}
               onChange={(event) => {
                 handleFile(event.target.files?.[0]);
                 event.currentTarget.value = '';

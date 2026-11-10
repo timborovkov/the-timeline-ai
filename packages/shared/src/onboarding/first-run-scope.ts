@@ -12,6 +12,7 @@ import {
 } from '@timeline/db';
 import { and, asc, desc, eq, gte, inArray, isNull } from 'drizzle-orm';
 
+import { documentVisibleToUser } from '#src/documents/visibility.js';
 import {
   type FirstRunPath,
   type FirstRunPhase,
@@ -23,10 +24,12 @@ import {
   type NamedProcessingStep,
   TEAM_WORK_STYLES,
   FIRST_RUN_PHASES,
+  canReplaceFirstRunStarter,
   documentProcessingSteps,
   suggestionTypeRank,
   websiteProcessingSteps,
 } from '#src/onboarding/first-run.js';
+import { rawEventVisibleToUser } from '#src/visibility.js';
 
 import type { TeamRole } from '#src/team-scope.js';
 
@@ -37,7 +40,7 @@ interface FirstRunScopeDeps {
   ensureMember: (minRole?: TeamRole) => Promise<TeamRole>;
 }
 
-const GUIDED_AFTER_CAPTURE: FirstRunPhase[] = ['record', 'ask', 'approve', 'live'];
+const LANDING_CAPTURE_PHASES: FirstRunPhase[] = ['processing', 'failed'];
 
 function isWorkStyle(value: string | null | undefined): value is TeamWorkStyle {
   return Boolean(value && (TEAM_WORK_STYLES as readonly string[]).includes(value));
@@ -205,6 +208,17 @@ export function createFirstRunHandlers({ db, teamId, userId, ensureMember }: Fir
     );
   }
 
+  async function visibleRawEvent(eventId: string): Promise<{ id: string } | null> {
+    const [event] = await db
+      .select({ id: rawEvents.id })
+      .from(rawEvents)
+      .where(
+        and(eq(rawEvents.id, eventId), eq(rawEvents.teamId, teamId), rawEventVisibleToUser(userId)),
+      )
+      .limit(1);
+    return event ?? null;
+  }
+
   async function selectStarterPath(
     path: FirstRunPath,
     extras: { websiteUrl?: string; websiteHost?: string; documentId?: string } = {},
@@ -213,6 +227,9 @@ export function createFirstRunHandlers({ db, teamId, userId, ensureMember }: Fir
     const now = new Date();
     const phase: FirstRunPhase = path === 'skip' ? 'skipped' : 'processing';
     const current = await loadState();
+    if (current && !canReplaceFirstRunStarter(current, path)) {
+      return current;
+    }
     if (!current) {
       await db.insert(teamFirstRun).values({
         teamId,
@@ -250,11 +267,18 @@ export function createFirstRunHandlers({ db, teamId, userId, ensureMember }: Fir
     await ensureMember();
     const current = await loadState();
     if (!current) throw new Error('First-run has not started');
+    if (
+      input.documentId &&
+      current.starterPath !== 'document' &&
+      !canReplaceFirstRunStarter(current, 'document')
+    ) {
+      return current;
+    }
     const landedAt = input.landed
       ? (current.firstCaptureLandedAt ?? new Date())
       : current.firstCaptureLandedAt;
     const phase =
-      input.landed && !GUIDED_AFTER_CAPTURE.includes(current.phase) ? 'record' : current.phase;
+      input.landed && LANDING_CAPTURE_PHASES.includes(current.phase) ? 'record' : current.phase;
     const next = await touch({
       captureDocumentId: input.documentId ?? current.captureDocumentId,
       captureEventId: input.eventId ?? current.captureEventId,
@@ -276,9 +300,11 @@ export function createFirstRunHandlers({ db, teamId, userId, ensureMember }: Fir
       return { arrived: false, eventId: null, firstRun: current };
     }
     if (current.captureEventId) {
+      const visible = await visibleRawEvent(current.captureEventId);
+      if (!visible) return { arrived: false, eventId: null, firstRun: current };
       return { arrived: true, eventId: current.captureEventId, firstRun: current };
     }
-    const since = current.starterSelectedAt ?? current.createdAt;
+    const since = current.createdAt;
     const [event] = await db
       .select({ id: rawEvents.id })
       .from(rawEvents)
@@ -287,6 +313,7 @@ export function createFirstRunHandlers({ db, teamId, userId, ensureMember }: Fir
           eq(rawEvents.teamId, teamId),
           eq(rawEvents.source, 'email'),
           gte(rawEvents.createdAt, since),
+          rawEventVisibleToUser(userId),
         ),
       )
       .orderBy(desc(rawEvents.createdAt))
@@ -315,22 +342,15 @@ export function createFirstRunHandlers({ db, teamId, userId, ensureMember }: Fir
       return created;
     },
 
-    async submitWorkStyle(workStyle: TeamWorkStyle | null): Promise<FirstRunState> {
+    async submitWorkStyle(workStyle: TeamWorkStyle | null): Promise<FirstRunState | null> {
       await ensureMember('member');
       await db.update(teams).set({ workStyle }).where(eq(teams.id, teamId));
       const current = await loadState();
-      if (!current) {
-        await db.insert(teamFirstRun).values({
-          teamId,
-          startedByUserId: userId,
-          phase: 'choose',
-        });
-      } else if (current.phase === 'welcome') {
+      if (!current) return null;
+      if (current.phase === 'welcome') {
         await touch({ phase: 'choose' });
       }
-      const next = await loadState();
-      if (!next) throw new Error('Failed to save work style');
-      return next;
+      return loadState();
     },
 
     selectStarterPath,
@@ -393,6 +413,7 @@ export function createFirstRunHandlers({ db, teamId, userId, ensureMember }: Fir
               eq(documents.id, firstRun.captureDocumentId),
               eq(documents.teamId, teamId),
               isNull(documents.deletedAt),
+              documentVisibleToUser(userId),
             ),
           )
           .limit(1);
@@ -420,16 +441,25 @@ export function createFirstRunHandlers({ db, teamId, userId, ensureMember }: Fir
           .orderBy(desc(documentVersions.version))
           .limit(1);
         const eventId = version?.sourceEventId ?? firstRun.captureEventId;
-        const eventIds = eventId ? [eventId] : [];
-        const chunks = await db
-          .select({
-            chunkIndex: documentChunks.chunkIndex,
-            text: documentChunks.text,
-          })
-          .from(documentChunks)
-          .where(and(eq(documentChunks.teamId, teamId), eq(documentChunks.documentId, document.id)))
-          .orderBy(asc(documentChunks.chunkIndex))
-          .limit(4);
+        const visibleEventId = eventId && (await visibleRawEvent(eventId)) ? eventId : null;
+        const eventIds = visibleEventId ? [visibleEventId] : [];
+        const chunks = version
+          ? await db
+              .select({
+                chunkIndex: documentChunks.chunkIndex,
+                text: documentChunks.text,
+              })
+              .from(documentChunks)
+              .where(
+                and(
+                  eq(documentChunks.teamId, teamId),
+                  eq(documentChunks.documentId, document.id),
+                  eq(documentChunks.documentVersionId, version.id),
+                ),
+              )
+              .orderBy(asc(documentChunks.chunkIndex))
+              .limit(4)
+          : [];
         const suggestions = await loadSuggestions(eventIds, firstRun.workStyle);
         const sources: FirstRunSource[] = chunks.map((chunk, index) => ({
           n: index + 1,
@@ -438,7 +468,7 @@ export function createFirstRunHandlers({ db, teamId, userId, ensureMember }: Fir
           meta: `chunk ${String(chunk.chunkIndex + 1)}`,
           href: `/app/documents/${document.id}`,
         }));
-        if (sources.length === 0 && eventId) {
+        if (sources.length === 0 && visibleEventId) {
           sources.push({
             n: 1,
             kind: 'Document',
@@ -448,7 +478,7 @@ export function createFirstRunHandlers({ db, teamId, userId, ensureMember }: Fir
           });
         }
         return {
-          firstRun: eventId ? { ...firstRun, captureEventId: eventId } : firstRun,
+          firstRun: visibleEventId ? { ...firstRun, captureEventId: visibleEventId } : firstRun,
           teamName,
           inboundEmail,
           recordTitle: document.name,
@@ -486,23 +516,44 @@ export function createFirstRunHandlers({ db, teamId, userId, ensureMember }: Fir
         const [event] = await db
           .select()
           .from(rawEvents)
-          .where(and(eq(rawEvents.id, arrival.eventId), eq(rawEvents.teamId, teamId)))
+          .where(
+            and(
+              eq(rawEvents.id, arrival.eventId),
+              eq(rawEvents.teamId, teamId),
+              rawEventVisibleToUser(userId),
+            ),
+          )
           .limit(1);
+        if (!event) {
+          return {
+            firstRun: state,
+            teamName,
+            inboundEmail,
+            recordTitle: 'Waiting for your email',
+            recordMeta: 'Email',
+            summary: null,
+            note: 'Send one real thread to your team address. This screen opens the record as soon as it arrives.',
+            sources: [],
+            suggestions: [],
+            processingSteps: [],
+            emailArrived: false,
+          };
+        }
         const suggestions = await loadSuggestions([arrival.eventId], state.workStyle);
         return {
           firstRun: state,
           teamName,
           inboundEmail,
-          recordTitle: event?.contentText?.split('\n')[0]?.slice(0, 120) ?? 'Forwarded email',
+          recordTitle: event.contentText?.split('\n')[0]?.slice(0, 120) ?? 'Forwarded email',
           recordMeta: 'Email · arrived',
-          summary: event?.contentText?.slice(0, 600) ?? null,
+          summary: event.contentText?.slice(0, 600) ?? null,
           note: 'One thread is a start. Auto-forwarding or a connected channel keeps it current without anyone forwarding by hand.',
           sources: [
             {
               n: 1,
               kind: 'Email',
               title: 'Forwarded thread',
-              meta: event?.occurredAt.toISOString().slice(0, 10) ?? '',
+              meta: event.occurredAt.toISOString().slice(0, 10),
               href: `/app/timeline?event=${arrival.eventId}`,
             },
           ],
@@ -528,6 +579,7 @@ export function createFirstRunHandlers({ db, teamId, userId, ensureMember }: Fir
                 eq(rawEvents.teamId, teamId),
                 eq(rawEvents.source, 'web'),
                 gte(rawEvents.createdAt, firstRun.starterSelectedAt),
+                rawEventVisibleToUser(userId),
               ),
             )
             .orderBy(asc(rawEvents.createdAt))

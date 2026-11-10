@@ -1,5 +1,6 @@
 import { getEnv } from '@timeline/shared/env';
 import {
+  firstCaptureJustLanded,
   isWebsiteScanEnabled,
   prefilledAskQuestion,
   recommendedGoLiveChannel,
@@ -37,18 +38,12 @@ export async function GET() {
     }
     const record = await scope.onboarding.getFirstRunRecord();
     const firstRun = record?.firstRun ?? (await scope.onboarding.getFirstRun());
-    if (
-      firstRun?.firstCaptureLandedAt &&
-      before &&
-      !before.firstCaptureLandedAt &&
-      (firstRun.starterPath === 'document' ||
-        firstRun.starterPath === 'email' ||
-        firstRun.starterPath === 'website')
-    ) {
+    const landedPath = firstCaptureJustLanded(before, firstRun);
+    if (landedPath) {
       trackProductEventBestEffort(
         { kind: 'user', userId: session.user.id, teamId: active.teamId },
         'first_capture_landed',
-        { path: firstRun.starterPath },
+        { path: landedPath },
       );
     }
 
