@@ -194,6 +194,11 @@ export async function POST(req: Request): Promise<Response> {
       onAgentError(err) {
         reportCaughtError(err, { surface: 'background', operation: 'telegram_agent_run' });
       },
+      onPersonalTeamLinked({ teamId, userId }) {
+        trackProductEventBestEffort({ kind: 'user', userId, teamId }, 'agent_deployed_on_channel', {
+          channel: 'telegram',
+        });
+      },
     };
     if (audioDeps) deps.audio = audioDeps;
     if (documentDeps) deps.documents = documentDeps;

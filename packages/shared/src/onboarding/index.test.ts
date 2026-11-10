@@ -396,6 +396,61 @@ describe('first-run scope', () => {
     expect(record?.emailArrived).toBe(false);
   });
 
+  it('hides a private proposal that cites a team-visible starter event', async () => {
+    const eventId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbb01';
+    const suggestionId = 'cccccccc-cccc-4ccc-8ccc-cccccccccc01';
+    const itemId = 'dddddddd-dddd-4ddd-8ddd-dddddddddd01';
+    await pg.exec(`
+      INSERT INTO raw_events (id, team_id, author_user_id, source, content_text, visibility)
+      VALUES ('${eventId}', '${TEAM_ID}', '${OWNER_ID}', 'email', 'kickoff thread', 'team');
+      INSERT INTO agent_suggestions (
+        id, team_id, source, status, title, dedupe_key, visibility, visibility_owner_user_id
+      )
+      VALUES (
+        '${suggestionId}', '${TEAM_ID}', 'background', 'pending', 'Secret person',
+        'first-run-private-person', 'private', '${MEMBER_ID}'
+      );
+      INSERT INTO agent_suggestion_items (
+        id, suggestion_id, team_id, operation, target_kind, title, dedupe_key, proposed_payload
+      )
+      VALUES (
+        '${itemId}', '${suggestionId}', '${TEAM_ID}', 'create', 'object', 'Dana Reyes',
+        'person-dana', '{"type":"person","name":"Dana Reyes"}'::jsonb
+      );
+      INSERT INTO agent_suggestion_evidence (suggestion_id, team_id, raw_event_id)
+      VALUES ('${suggestionId}', '${TEAM_ID}', '${eventId}');
+      INSERT INTO team_first_run (
+        team_id, started_by_user_id, phase, starter_path, capture_event_id
+      )
+      VALUES ('${TEAM_ID}', '${OWNER_ID}', 'record', 'email', '${eventId}');
+    `);
+    const ownerRecord = await scope().getFirstRunRecord();
+    const memberRecord = await scope(TEAM_ID, MEMBER_ID).getFirstRunRecord();
+    expect(ownerRecord?.suggestions).toEqual([]);
+    expect(memberRecord?.suggestions.map((item) => item.title)).toContain('Dana Reyes');
+  });
+
+  it('does not mark a failed document extract as landed', async () => {
+    const documentId = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeee01';
+    await pg.exec(`
+      INSERT INTO documents (id, team_id, owner_user_id, name, visibility)
+      VALUES ('${documentId}', '${TEAM_ID}', '${OWNER_ID}', 'Empty.txt', 'team');
+      INSERT INTO document_versions (id, team_id, document_id, version, object_key, processing_status)
+      VALUES (
+        'ffffffff-ffff-4fff-8fff-ffffffffff01', '${TEAM_ID}', '${documentId}', 1, 'docs/empty', 'failed'
+      );
+      INSERT INTO team_first_run (
+        team_id, started_by_user_id, phase, starter_path, capture_document_id
+      )
+      VALUES ('${TEAM_ID}', '${OWNER_ID}', 'processing', 'document', '${documentId}');
+    `);
+    const next = await scope().refreshDocumentCapture();
+    expect(next?.phase).toBe('processing');
+    expect(next?.firstCaptureLandedAt).toBeNull();
+    const record = await scope().getFirstRunRecord();
+    expect(record?.processingSteps.some((step) => step.status === 'failed')).toBe(true);
+  });
+
   it('reads starter document chunks only from the selected version', async () => {
     const documentId = '77777777-7777-4777-8777-777777777777';
     const oldVersionId = '88888888-8888-4888-8888-888888888888';

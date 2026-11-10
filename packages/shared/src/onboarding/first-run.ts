@@ -69,7 +69,7 @@ export const SETUP_SHELL_PHASES: readonly FirstRunPhase[] = [
   'processing',
   'failed',
 ];
-const GUIDED_SHELL_PHASES: readonly FirstRunPhase[] = ['record', 'ask', 'approve', 'live'];
+export const GUIDED_SHELL_PHASES: readonly FirstRunPhase[] = ['record', 'ask', 'approve', 'live'];
 
 export interface FirstRunState {
   teamId: string;

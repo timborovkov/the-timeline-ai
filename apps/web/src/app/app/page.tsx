@@ -1,5 +1,6 @@
 import { teams, users } from '@timeline/db';
 import { latestDailyDigest, type DailyDigestPayload } from '@timeline/shared/messaging';
+import { GUIDED_SHELL_PHASES, type FirstRunState } from '@timeline/shared/onboarding/first-run';
 import { getAudioBucket, getS3PresignClient, getSignedGetObjectUrl } from '@timeline/shared/s3';
 import { withTeam } from '@timeline/shared/team-scope';
 import { eq, inArray } from 'drizzle-orm';
@@ -19,6 +20,7 @@ import { DailyDigestBlock } from '@/components/home/daily-digest-block';
 import { HomeAskComposer } from '@/components/home/home-ask-composer';
 import { HomeAttention } from '@/components/home/home-attention';
 import { HomeTeamEmail } from '@/components/home/home-team-email';
+import { FirstRunHomeCapture } from '@/components/onboarding/first-run-home-capture';
 import { OnboardingChecklist } from '@/components/onboarding-checklist';
 import { PaygValueNudge } from '@/components/payg-value-nudge';
 import { PinnedWorkspacePreview } from '@/components/pins/pinned-workspace-preview';
@@ -27,6 +29,7 @@ import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { displayMemberLabel } from '@/lib/display-labels';
+import { loadFirstRunStatus } from '@/lib/first-run-status';
 import {
   displayInboundEmail,
   getHomeOpenObjectCounts,
@@ -125,6 +128,49 @@ function homeEmptyTimelineCopy(isEmpty: boolean): { label: string; actionBody: s
   };
 }
 
+async function resolveFirstRunHomeCapture(input: {
+  firstRun: FirstRunState | null;
+  teamId: string;
+  userId: string;
+  teamSlug: string;
+}): Promise<{ failed: boolean } | 'record' | null> {
+  if (input.firstRun?.phase === 'failed') return { failed: true };
+  if (input.firstRun?.phase !== 'processing') return null;
+  const status = await loadFirstRunStatus({
+    db,
+    teamId: input.teamId,
+    userId: input.userId,
+    teamSlug: input.teamSlug,
+    teamName: 'Your team',
+  });
+  const nextPhase = status.firstRun?.phase ?? input.firstRun.phase;
+  if (GUIDED_SHELL_PHASES.includes(nextPhase)) return 'record';
+  const stepsFailed = (status.record?.processingSteps ?? []).some(
+    (step) => step.status === 'failed',
+  );
+  return { failed: nextPhase === 'failed' || stepsFailed };
+}
+
+function firstRunStarterPath(row: FirstRunState | null) {
+  return row?.starterPath ?? null;
+}
+
+function homeTeamSlug(teamRow: { slug: string } | null, teamId: string) {
+  return teamRow?.slug ?? teamId;
+}
+
+async function FirstRunHomeBanner(input: {
+  firstRun: FirstRunState | null;
+  teamId: string;
+  userId: string;
+  teamSlug: string;
+}) {
+  const result = await resolveFirstRunHomeCapture(input);
+  if (result === 'record') redirect('/app/onboarding/record');
+  if (!result) return null;
+  return <FirstRunHomeCapture failed={result.failed} />;
+}
+
 export default async function HomeDashboardPage() {
   const session = await auth();
   if (!session?.user) redirect('/sign-in');
@@ -138,10 +184,8 @@ export default async function HomeDashboardPage() {
   ]);
   const isAdmin = role === 'owner' || role === 'admin';
   const now = new Date();
-  const starterPath = await scope.onboarding
-    .getFirstRun()
-    .then((row) => row?.starterPath ?? null)
-    .catch(() => null);
+  const firstRunRow = await scope.onboarding.getFirstRun();
+  const starterPath = firstRunStarterPath(firstRunRow);
 
   const [
     workAttention,
@@ -194,6 +238,12 @@ export default async function HomeDashboardPage() {
     hasAnswer: () => scope.objects.hasCompletedChatAnswer(),
   });
   const inboundEmail = displayInboundEmail(teamRow);
+  const firstRunBanner = await FirstRunHomeBanner({
+    firstRun: firstRunRow,
+    teamId: active.teamId,
+    userId: session.user.id,
+    teamSlug: homeTeamSlug(teamRow, active.teamId),
+  });
   const events = eventPage.items;
   const pendingApprovals = workAttention.pendingApprovals;
   const urgentWorkCount = homeWorkNeedingAttentionCount(workAttention);
@@ -239,6 +289,7 @@ export default async function HomeDashboardPage() {
   return (
     <div className="space-y-8">
       <h1 className="sr-only">Home</h1>
+      {firstRunBanner}
       {billingDashboard?.restrictionReason ? (
         <BillingRestrictionNotice reason={billingDashboard.restrictionReason} />
       ) : null}

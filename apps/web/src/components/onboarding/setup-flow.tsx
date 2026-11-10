@@ -85,15 +85,19 @@ export function SetupFlow({ initialStatus }: { initialStatus: FirstRunStatusPayl
   const firstRun = initialStatus.firstRun;
   const phase: FirstRunPhase = firstRun?.phase ?? 'welcome';
 
+  const stepsFailed = (initialStatus.record?.processingSteps ?? []).some(
+    (step) => step.status === 'failed',
+  );
+
   useEffect(() => {
-    if (phase !== 'processing') return;
+    if (phase !== 'processing' || stepsFailed) return;
     const id = setInterval(() => {
       router.refresh();
     }, 2500);
     return () => {
       clearInterval(id);
     };
-  }, [phase, router]);
+  }, [phase, router, stepsFailed]);
 
   async function continueWorkStyle(workStyle: TeamWorkStyle | null) {
     const result = await submitWorkStyleAction({ workStyle });

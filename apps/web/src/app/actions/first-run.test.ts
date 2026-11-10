@@ -141,11 +141,11 @@ describe('first-run analytics', () => {
       { path: 'skip' },
     );
 
-    await expect(recordAgentDeployedAction('slack')).resolves.toEqual({ ok: true });
+    await expect(recordAgentDeployedAction('email')).resolves.toEqual({ ok: true });
     expect(fakes.trackProductEventBestEffort).toHaveBeenCalledWith(
       { kind: 'user', userId: USER_ID, teamId: TEAM_ID },
       'agent_deployed_on_channel',
-      { channel: 'slack' },
+      { channel: 'email' },
     );
   });
 

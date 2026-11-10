@@ -12,6 +12,7 @@ const fakes = vi.hoisted(() => ({
   verifySlackOAuthState: vi.fn(),
   oauthV2Access: vi.fn(),
   upsertSlackWorkspaceFromOAuth: vi.fn(),
+  trackProductEventBestEffort: vi.fn(),
 }));
 
 await vi.mock(
@@ -28,6 +29,11 @@ await vi.mock(
   import.meta.resolve('@/lib/onboarding'),
   () => ({ safeMarkOnboardingStep: fakes.safeMarkOnboardingStep }),
   () => import('@/lib/onboarding'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/analytics'),
+  () => ({ trackProductEventBestEffort: fakes.trackProductEventBestEffort }),
+  () => import('@/lib/analytics'),
 );
 await vi.mock(
   import.meta.resolve('next/navigation'),
@@ -168,6 +174,11 @@ describe('GET /api/slack/install/callback', () => {
     expect(fakes.safeMarkOnboardingStep).toHaveBeenCalledWith(
       expect.objectContaining({ audit: { record: fakes.auditRecord } }),
       'slack',
+    );
+    expect(fakes.trackProductEventBestEffort).toHaveBeenCalledWith(
+      { kind: 'user', userId: 'user-1', teamId: 'team-1' },
+      'agent_deployed_on_channel',
+      { channel: 'slack' },
     );
   });
 });

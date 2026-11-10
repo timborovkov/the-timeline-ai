@@ -1010,6 +1010,9 @@
   "apps/web/src/components/onboarding/first-record-screen.test.tsx": {
     "group": "dom"
   },
+  "apps/web/src/components/onboarding/first-run-home-capture.test.tsx": {
+    "group": "dom"
+  },
   "apps/web/src/components/onboarding/getting-started-strip.test.tsx": {
     "group": "dom"
   },

@@ -160,6 +160,7 @@ interface DispatcherDeps {
   tg: TelegramApi;
   onAgentToolError?: AgentToolErrorReporter | undefined;
   onAgentError?: ((err: unknown) => void) | undefined;
+  onPersonalTeamLinked?: ((input: { teamId: string; userId: string }) => void) | undefined;
   agentDeps?: Omit<AskAgentDeps, 'onToolError' | 'onAgentError'> | undefined;
   audio?: AudioIngestDeps;
   documents?: DocumentAttachmentDeps;
@@ -516,7 +517,7 @@ async function cmdLinkDm(ctx: DmContext, arg: string): Promise<void> {
           .limit(1);
         const team = teamRows[0];
         if (!team) throw new Error('team_not_found');
-        return team;
+        return { ...team, userId: row.issuedByUserId };
       },
     );
     if (ctx.activeTeamId && ctx.activeTeamId !== team.teamId && ctx.tgUserRow.userId) {
@@ -526,6 +527,7 @@ async function cmdLinkDm(ctx: DmContext, arg: string): Promise<void> {
         directTelegramIdentity(ctx, ctx.activeTeamId, ctx.tgUserRow.userId),
       );
     }
+    ctx.onPersonalTeamLinked?.({ teamId: team.teamId, userId: team.userId });
     await replyToTelegramDm(
       ctx,
       `Linked. This chat is now attributed to team ${formatTeamLabel(team)}. Run /team to switch active team later.`,

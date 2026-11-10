@@ -35,6 +35,8 @@ describe('ProcessingScreen', () => {
 
     expect(screen.getByRole('heading', { name: 'Reading seed-deck.pdf' })).toBeTruthy();
     expect(screen.getByText('In progress')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Go to Home and wait there' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Choose another way' })).toBeTruthy();
     expect(screen.queryByText(/%|seconds|minutes/i)).toBeNull();
   });
 

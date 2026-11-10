@@ -78,12 +78,15 @@ export function GoLiveScreen({
       ]
     : CHANNELS;
 
-  function deploy(channel: GoLiveChannel, href?: string) {
-    startTransition(() => {
-      void recordAgentDeployedAction(channel).then(() => {
-        if (href) router.push(href);
+  function openChannel(channel: GoLiveChannel, href?: string) {
+    if (channel === 'email') {
+      setShowEmailHow(true);
+      startTransition(() => {
+        void recordAgentDeployedAction('email');
       });
-    });
+      return;
+    }
+    if (href) router.push(href);
   }
 
   return (
@@ -114,12 +117,7 @@ export function GoLiveScreen({
               variant="outline"
               disabled={pending}
               onClick={() => {
-                if (row.id === 'email') {
-                  setShowEmailHow(true);
-                  deploy('email');
-                  return;
-                }
-                deploy(row.id, row.href);
+                openChannel(row.id, row.href);
               }}
             >
               {row.action}

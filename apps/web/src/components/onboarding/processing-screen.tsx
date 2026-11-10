@@ -119,9 +119,12 @@ export function ProcessingScreen({
           </li>
         ))}
       </ol>
-      <div className="mt-5">
+      <div className="mt-5 flex flex-wrap gap-2">
         <Button type="button" variant="outline" onClick={onHome}>
           Go to Home and wait there
+        </Button>
+        <Button type="button" variant="ghost" onClick={onSwitch}>
+          Choose another way
         </Button>
       </div>
     </div>

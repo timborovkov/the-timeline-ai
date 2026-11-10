@@ -10,7 +10,7 @@ import {
   teamFirstRun,
   teams,
 } from '@timeline/db';
-import { and, asc, desc, eq, gte, inArray, isNull } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, isNull, or, sql } from 'drizzle-orm';
 
 import { documentVisibleToUser } from '#src/documents/visibility.js';
 import {
@@ -48,6 +48,20 @@ function isWorkStyle(value: string | null | undefined): value is TeamWorkStyle {
 
 function isPhase(value: string | null | undefined): value is FirstRunPhase {
   return Boolean(value && (FIRST_RUN_PHASES as readonly string[]).includes(value));
+}
+
+function suggestionVisibleToUser(viewerUserId: string) {
+  return or(
+    eq(agentSuggestions.visibility, 'team'),
+    and(
+      eq(agentSuggestions.visibility, 'private'),
+      eq(agentSuggestions.visibilityOwnerUserId, viewerUserId),
+    ),
+    and(
+      eq(agentSuggestions.visibility, 'specific_users'),
+      sql`${viewerUserId}::uuid = ANY(${agentSuggestions.visibilityUserIds})`,
+    ),
+  );
 }
 
 function mapRow(row: typeof teamFirstRun.$inferSelect, workStyle: string | null): FirstRunState {
@@ -148,7 +162,11 @@ export function createFirstRunHandlers({ db, teamId, userId, ensureMember }: Fir
         .select()
         .from(agentSuggestions)
         .where(
-          and(eq(agentSuggestions.teamId, teamId), inArray(agentSuggestions.id, suggestionIds)),
+          and(
+            eq(agentSuggestions.teamId, teamId),
+            inArray(agentSuggestions.id, suggestionIds),
+            suggestionVisibleToUser(userId),
+          ),
         ),
       db
         .select()
@@ -654,6 +672,7 @@ export function createFirstRunHandlers({ db, teamId, userId, ensureMember }: Fir
         )
         .orderBy(desc(documentVersions.version))
         .limit(1);
+      if (version?.processingStatus === 'failed') return current;
       if (!version?.sourceEventId) return current;
       const suggestionCount = await countSuggestionsForEvents([version.sourceEventId]);
       const ready =
