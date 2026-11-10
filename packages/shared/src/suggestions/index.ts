@@ -242,14 +242,22 @@ class ProposalRevisionConflictError extends Error {
 }
 
 class TransactionalSuggestionApplyFailure extends Error {
+  readonly claimedItem: typeof agentSuggestionItems.$inferSelect;
+  readonly preClaimUpdatedAt: Date;
+  readonly failureReason: string;
+  readonly applyError: unknown;
   constructor(
-    readonly claimedItem: typeof agentSuggestionItems.$inferSelect,
-    readonly preClaimUpdatedAt: Date,
-    readonly failureReason: string,
-    readonly applyError: unknown,
+    claimedItem: typeof agentSuggestionItems.$inferSelect,
+    preClaimUpdatedAt: Date,
+    failureReason: string,
+    applyError: unknown,
   ) {
     super(failureReason, { cause: applyError });
     this.name = 'TransactionalSuggestionApplyFailure';
+    this.claimedItem = claimedItem;
+    this.preClaimUpdatedAt = preClaimUpdatedAt;
+    this.failureReason = failureReason;
+    this.applyError = applyError;
   }
 }
 

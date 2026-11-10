@@ -1,4 +1,4 @@
-# Agent coworkers — implementation and release notes
+# Agent coworkers
 
 The discovery entry point is `/llms.txt`. Product research needs no account. Setup lives at
 `/agents/setup.md`; operating behavior comes from `plugins/timeline/skills/timeline/SKILL.md`.
@@ -53,7 +53,7 @@ its returned event ID. Indexing delays never justify duplicate writes.
 
 ## Rollout and monitoring
 
-Apply additive migrations 0097–0099 before serving the new interfaces. Reporting defaults
+Follow the [migration-order runbook](migrations/coworker-drive-order.md) before enabling these interfaces. Reporting defaults
 backfill to on-request; existing keys and OAuth grants remain valid. Production deployment
 is a separate action. Existing secrets encryption configuration is reused; no new secret
 or environment variable is required.
@@ -96,31 +96,8 @@ Grok connector support alone does not establish a particular Grok Bot deployment
 | Capture failure | Disclose failure; never claim the handoff was saved. |
 | Preferences unavailable | Explicit requests only; no inferred ongoing permission. |
 
-## Local validation evidence — 2026-11-06
 
-`bun run validate` passed (formatting, TypeScript, ESLint and Knip). Bun 1.4.4. React Doctor 0.9.18 reports 100 with no issues. MCP evaluations and
-compiled-package import checks passed. Targeted tests cover auth redirects/continuations,
-verification/resend/expiry, provisioning authority, limits, rollback and receipt replay,
-reporting isolation/inheritance, OAuth reauthorization and canonical skill distribution.
-
-Playwright 1.64.1 with Chromium 156.0.8078.4 passed both isolated browser journeys:
-credentials signup → original OAuth consent → verification → original consent; and owner
-grant creation → concurrent HTTP provisioning → connection inspection → capture → retrieve
-by returned ID → reporting settings save. Migrations ran against a disposable local
-PostgreSQL 16 database. No production data or credentials were used. The concurrent test
-caught a foreign-key lock cycle; non-key row locks now serialize quota/idempotency updates
-without blocking each other's foreign-key checks. The browser regression test remains.
-
-GitHub's real identity-provider callback and client-specific install/login journeys were
-not exercised live. Skill scenarios above are acceptance guidance; they are not evidence
-of autonomous behavioral evaluation in all named clients. Application and test commands
-were invoked through Bun; repository analyzer subprocesses can still invoke host Node.
-
-The repository-referenced `/document-release` and `/ship` skills are unavailable in this
-checkout/environment. Documentation and diff review were performed manually. Production
-migration/release execution and unavailable live client checks remain separate work.
-
-## Consent agreement update — 2026-11-07
+## Consent agreement
 
 OAuth consent now establishes workspace, reporting mode and work scope in the existing screen.
 New connections inherit the workspace default. Owners/admins can select a connection override;
@@ -145,34 +122,3 @@ Additional acceptance scenarios: inherited ongoing defaults, read-only inherited
 workspace switches, member inspection, role changes before approval, preserved form drafts on error,
 unchanged reauthorization revisions, and rollback when code issuance fails. Live GitHub and named
 client-specific journeys remain unavailable; isolated browser tests exercise local OAuth consent.
-
-Local validation for this update used Bun 1.4.4, React Doctor 0.9.18 (100, no issues),
-Playwright 1.64.1 and Chromium 156.0.8078.4. All four isolated browser journeys passed:
-signup/verification through consent, provisioning/read/capture/retrieval, owner configuration with
-workspace switching and unchanged reauthorization/denial, and member inspection with forged-change
-rejection followed by read-only approval. The last journey caught and now guards against React's
-native form reset rechecking capture after a returned validation error. The disposable PostgreSQL
-database had zero users/teams after cleanup, its audit protection remained enabled, and it was dropped.
-
-Targeted OAuth/reporting, consent action/page/component, public document, setup snapshot and canonical
-skill distribution tests passed, as did MCP evaluations and compiled-package import checks.
-`bun run validate` passed formatting, TypeScript, ESLint and Knip.
-Skill acceptance scenarios remain documented expectations rather than live evaluations in Codex,
-Grok Bot, OpenClaw or Hermes. No production deployment was performed.
-
-## Main refresh for landing — 2026-11-07
-
-`feat/llms-entry-point` was ordinary-merged with `origin/main` at
-`fea9aa5ee9173ff055e0f82e39006a5c11bb2628`. Main's public-site, compare, MCP-guide, and
-dependency updates are included. Coworker migrations remain additive as
-`0097_auth_continuations`, `0098_agent_provisioning`, and `0099_agent_reporting`.
-
-**Drive PR #462 reconciliation (2026-11-07).** Production currently deploys
-`cursor/google-drive-v1-b571`, and Drive `0097_google_drive_v1`–`0100_google_drive_snapshot_ancestry`
-keep their original journal `when` values so already-applied Drive history is not replayed.
-Coworker SQL files keep their original tags and contents (`0097_auth_continuations`,
-`0098_agent_provisioning`, `0099_agent_reporting`) but are journaled after Drive at idx 104–106
-with later `when` timestamps. Fresh databases apply Drive then coworker. Drive-applied
-databases skip Drive (high-water at `0100`) and apply coworker next. Do not change Drive
-`when` values. A database that already applied coworker at the original 0097–0099 timestamps
-is not this production lineage; do not replay those files.

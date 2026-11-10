@@ -101,13 +101,21 @@ export interface HttpTelegramApiOptions {
 }
 
 export class HttpTelegramApi implements TelegramApi {
+  private readonly token: string;
+  private readonly requestTimeoutMs: number;
+  private readonly deferRateLimits: boolean;
+  private readonly options: HttpTelegramApiOptions;
   constructor(
-    private readonly token: string,
-    private readonly requestTimeoutMs = 10_000,
-    private readonly deferRateLimits = true,
-    private readonly options: HttpTelegramApiOptions = {},
+    token: string,
+    requestTimeoutMs = 10_000,
+    deferRateLimits = true,
+    options: HttpTelegramApiOptions = {},
   ) {
     if (!token) throw new Error('TELEGRAM_BOT_TOKEN is required');
+    this.token = token;
+    this.requestTimeoutMs = requestTimeoutMs;
+    this.deferRateLimits = deferRateLimits;
+    this.options = options;
   }
 
   private sendingWorkspaceTeamId(): string | undefined {

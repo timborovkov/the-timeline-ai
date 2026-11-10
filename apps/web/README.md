@@ -1,48 +1,20 @@
 # @timeline/web
 
-The Next.js 16 app — public help docs, support/contact, the Home surface,
-grouped timeline browser, capture surfaces, entity pages, agent chat, auth,
-server actions, and the inbound webhook routes for Telegram, Slack, and
-Resend.
+Next.js app for the public site, authenticated workspace, server actions and inbound HTTP endpoints.
 
-Web chat history also lists private sessions created by Telegram and Slack with
-compact provider badges. Opening one hydrates its persisted transcript,
-continuing it from web appends to the same session, and archiving it causes the
-provider's next direct message to create a new session.
+## Development
 
-Pack-backed approval items show their exact visible source citations beneath
-the proposed change. If a required citation becomes inaccessible, the item is
-shown as stale and cannot be accepted or revised.
+Follow [local setup](../../docs/setup/local.md), then run `bun run dev` from the repository root. The root command starts web and worker with the exported development environment. Read [AGENTS.md](AGENTS.md) before changing framework behavior.
 
-Presentation follows the current delivery surface rather than the session's
-origin. Prior Telegram or Slack turns remain their exact compact transcript;
-new turns sent from web use the rich profile with full clickable citations and
-no external-chat output cap.
+## Ownership
 
-## Why it exists
+- Routes and transport adapters: `src/app`.
+- Shared UI: `src/components`; foundations: [design system](../../design.md).
+- Web-only helpers and session handling: `src/lib`.
+- Workspace persistence, provider protocols and inference: `@timeline/shared`, through scoped interfaces.
 
-Single user-facing surface. All UI, API routes, and server actions live here. Backend logic that other workspace packages need (DB access, LLM calls, queue dispatch) is delegated to [`@timeline/shared`](../../packages/shared/README.md) and [`@timeline/db`](../../packages/db/README.md) — this package stays focused on the request/response layer.
+[Public document registry](../../docs/public-site-registry.md) owns public metadata/discovery; [domain ownership](../../docs/architecture/ownership.md) owns authority and presentation boundaries. The HTTP layer must not bypass them.
 
-## How to use
+## Verification and deployment
 
-From the repo root:
-
-```bash
-bun run dev          # starts Next.js + worker in watch mode
-bun run --filter @timeline/web build
-bun run --filter @timeline/web typecheck
-```
-
-Local dev requires the Docker Compose stack from the repo root (`docker compose up -d`).
-
-Production disables Next.js's `experimental.preloadEntriesOnStart` so unused
-routes do not load their server bundles into RAM at startup. Routes load on first
-request, trading cold-route latency for lower idle memory. Loaded modules stay
-resident: visiting every route can still approach the fully preloaded footprint.
-This setting does not deduplicate bundles or disable application caches.
-
-## Where it fits
-
-- Architecture and service layout: [docs/railway.html](../../docs/railway.html).
-- Local walkthrough: [docs/setup/local.html](../../docs/setup/local.html).
-- Product context: [docs/product-brief.html](../../docs/product-brief.html).
+Use [testing policy](../../docs/testing/README.md) and [Railway deployment](../../docs/railway.md). `scripts/prepare-standalone.mjs` prepares the production artifact; `start.mjs` runs startup migrations before serving. Environment values used during prerender require a rebuild when changed.

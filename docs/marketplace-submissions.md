@@ -1,15 +1,14 @@
 # OpenAI and Anthropic marketplace submissions
 
-Last updated: 2026-10-24
 
-This is the operator runbook and evidence ledger for publishing The Timeline in
+This is the operator runbook for publishing The Timeline in
 **OpenAI's universal Plugins Directory** and **Anthropic's software
 directories** (Claude Code marketplace / plugin directory and Claude.ai
 connectors). It records repository readiness, production deployment, provider
 submission, review, approval, and visible publication as separate states.
 
 Do not create an OpenAI draft, Anthropic directory submission, or public Claude
-connector listing until this revision is deployed and the post-deploy checks
+connector listing until the intended revision is deployed and the post-deploy checks
 pass. That includes
 `GET https://thetimeline.cc/.well-known/oauth-authorization-server` returning
 HTTP 200 in production. A 404 or a legacy MCP descriptor means the origin is
@@ -46,25 +45,7 @@ submissions, and do not store their provider tokens in the
 Recheck these sources immediately before each submission. Portal fields and
 review requirements may change independently of this repository.
 
-## Release-state ledger
 
-| State | Evidence | Status |
-| --- | --- | --- |
-| Repository implementation | OAuth, MCP SDK v2 transport, Codex package, Claude package, browser CORS on register/token/revoke, tests | Ready on PR branch after merging latest `main` (including #391, #433, #434, #435, #437) |
-| Pull request | [GitHub PR #392](https://github.com/timborovkov/the-timeline-ai/pull/392), creation head `f77fcaad` | Open; refreshed onto current `main` on 2026-10-24; not merged |
-| Local package validation | Codex plugin/skill validators, strict Claude validators, and isolated installs | Passed 2026-08-27; plugin source files were not changed in the 2026-10-24 refresh |
-| Local MCP validation | Handler, route, OAuth, database, eval, distribution-import, and full repository tests | Passed 2026-10-24 after merging latest `main` |
-| Production deployment | Migration `0075_mcp_oauth_server.sql`, matching web and worker revisions | Pending |
-| Production MCP smoke | OAuth discovery, CORS preflight, consent, tools, refresh, revocation, role and membership invalidation | Blocked: production still serves the legacy MCP implementation |
-| OpenAI draft | Portal draft URL and ID | Not created; verified developer identity and production deployment required |
-| OpenAI review | Submission timestamp and review status | Not submitted |
-| OpenAI publication | Visible Plugins Directory URL | Not published |
-| Anthropic plugin submission | Submission receipt or directory URL | Blocked: the signed-in Free account has no access to organization directory submissions |
-| Claude remote connector | Account/organization, connection date, smoke evidence | Free-account connector form is available; blocked until the new OAuth deployment is live |
-
-Update this table only from direct evidence. A pull request, a green build, or
-an approved provider review does not by itself prove production deployment or
-directory publication.
 
 ## Shared production information
 
@@ -117,10 +98,9 @@ Nothing is submitted to OpenAI or Anthropic, and no public connector is saved,
 until this release is deployed and every check below passes. The hard discovery
 signal is `GET https://thetimeline.cc/.well-known/oauth-authorization-server`
 returning HTTP 200 with PKCE `S256` and scopes `read`, `capture`, plus `agent:ask`.
-Production still returned 404 for that document on 2026-08-27.
+Historical failures are recorded in [dated verification evidence](evidence/marketplace-verification-2026.md); check the endpoint afresh.
 
-1. Merge and deploy the release containing migration 0075 and the matching web
-   and worker revisions.
+1. Deploy matching web/worker revisions and verify the migration ledger, including MCP OAuth tables. Follow the current migration runner rather than applying a historic migration tag out of order.
 2. Confirm the following public endpoints return the new production behavior:
    - `GET https://thetimeline.cc/.well-known/oauth-protected-resource/api/mcp/server`
      returns 200
@@ -151,73 +131,9 @@ Production still returned 404 for that document on 2026-08-27.
 Do not scan, attest, or submit a provider draft against the legacy production
 MCP descriptor.
 
-### Operator evidence: 2026-08-27
 
-- Both strict Claude validators, the Codex plugin validator, and the OpenAI
-  skill validator passed. Isolated Codex and Claude marketplace installs also
-  installed `timeline` version `0.2.0` and exposed one skill plus the hosted MCP
-  server.
-- The canonical `bun run test` completed all six workspace tasks successfully in
-  40 minutes 4 seconds, including the reordered serial PGlite suite, 2,107 web
-  tests, and the worker unit and integration suites.
-- Production `GET /.well-known/oauth-authorization-server` returned `404`.
-- Production `GET /.well-known/oauth-protected-resource/api/mcp/server`
-  returned `404`.
-- A current-protocol unauthenticated `initialize` request returned `200` with
-  legacy protocol version `2024-11-05`, server version `0.1.0`, and permissive
-  `Access-Control-Allow-Origin: *`; the required OAuth challenge was absent.
-- After sign-in to an OpenAI Personal organization, **Create plugin → With MCP**
-  opened a **Complete identity verification** gate. The portal requires a
-  verified developer identity before it will create or upload a plugin. No
-  draft was created and no data was submitted.
-- After sign-in to a Claude Free account, the public directory submission route
-  opened **Organization settings** and reported that organization settings are
-  available only on Claude Team and Enterprise plans. No submission was
-  created and no data was submitted.
-- The same Claude Free account exposed **Customize → Connectors → Add custom
-  connector**, including the name and remote MCP URL fields. The connector was
-  not saved because production still serves the legacy non-OAuth MCP release.
 
-These observations are direct production and portal evidence. Signing in does
-not clear provider identity, account-plan, or production deployment gates.
 
-### Operator evidence: 2026-10-24
-
-- Merged current `main` into PR #392, including privacy-safe analytics #391
-  (`3d95c133`), consented PostHog traffic #433 (`f11bf97a`), and the dashboard
-  legal-publication redirect fix #434 (`02cecd64`). Kept mainline PostHog env
-  and analytics contracts, billing, task-category default-on, OpenRouter model
-  pins, Qdrant on-disk/int8, and AI SDK 7 behavior. Later refresh also merged
-  Node pin #435 (`f762eece`) and production-log causes #437 (`0955a3a9`). The
-  OAuth migration remains `0075_mcp_oauth_server` with journal `when` strictly
-  after main's `0073_legal_acceptance_history` and
-  `0074_recall_join_metadata_minimization` (main added no later SQL).
-- Browser MCP clients: `/oauth/register`, `/oauth/token`, and `/oauth/revoke`
-  now answer `OPTIONS` preflight and attach the same public CORS as discovery
-  (`Access-Control-Allow-Origin: *`, no credentials, explicit allowed headers).
-- Repository MCP/OAuth follow-up on this branch: IPv6 loopback host matching
-  (`localhost`, `127.0.0.1`, `::1`, `[::1]`), `invalid_client` mapped to HTTP
-  `401`, extra redirect/PKCE-plain/credentialed-URI tests, and AI-apps grant UI
-  tests. Plugin source files were not changed.
-- `bun run validate` passed (Prettier, typecheck, ESLint, Knip).
-- `bun run doctor` reported `React Doctor score: 100` and `No issues found!`.
-- `bun run test` completed all six workspace tasks successfully after merging
-  #435/#437 (web 2,362 tests).
-- `bun run test:eval` and `bun run test:dist-imports` passed on that revision.
-- Local `GET /.well-known/oauth-authorization-server` and
-  `GET /.well-known/oauth-protected-resource/api/mcp/server` returned `200` with
-  `read`, `capture`, plus `agent:ask`, PKCE `S256`, public-client token auth `none`, and
-  revocation advertised.
-- Local unauthenticated `POST /api/mcp/server` returned `401` with
-  `WWW-Authenticate` pointing at the protected-resource metadata document.
-- Browser consent for a local public client showed team selection, explicit
-  `read`, default-on `capture`, and optional owner/admin `agent:ask`, the loopback-HTTP warning, and
-  the granted AI app with a revoke control on Provider accounts.
-
-Plugin validators and isolated Codex/Claude installs were not re-run in this
-refresh because `plugins/timeline` and the marketplace manifests did not change.
-Production still serves the legacy MCP implementation; the 2026-08-27 production
-and portal gates remain open.
 
 ## Generic MCP clients
 
@@ -239,67 +155,9 @@ This generic path is still blocked on the production gate above. Until
 `/.well-known/oauth-authorization-server` returns 200 on `thetimeline.cc`,
 hosts cannot complete OAuth against production.
 
-### Hosts verified so far
-
-| Host | What was verified | Date | Production OAuth |
-| --- | --- | --- | --- |
-| Local Timeline origin | Discovery documents 200, unauthenticated MCP `401` challenge, DCR, browser consent, grant revoke UI (Claude-shaped public client, including loopback HTTP) | 2026-10-24 | Not applicable |
-| Codex CLI | Isolated repository marketplace add/install of `timeline@timeline` 0.2.0 | 2026-08-27 | Not verified; plugin install is not live OAuth |
-| Claude Code | Isolated repository marketplace add/install; one skill plus hosted MCP component | 2026-08-27 | Not verified; plugin install is not live OAuth |
-| ChatGPT (With MCP / Developer Mode) | Portal identity-verification gate observed; no connection | 2026-08-27 | Not verified |
-| Claude.ai custom connector | Personal **Add custom connector** form observed; connector not saved | 2026-08-27 | Not verified |
-
-Re-test ChatGPT and Claude against the deployed production origin before
-relaxing `state` or `resource` checks for less strict hosts.
-
-## Release verification
-
-Follow the [validation policy and change-specific checks](../AGENTS.md#validation-policy)
-for application tests and GitHub merge gates. Marketplace packaging has its own
-scoped validators; run the applicable validators when those artifacts change:
 
 
-```bash
-claude plugin validate --strict .
-claude plugin validate --strict plugins/timeline
-python3 /path/to/plugin-creator/scripts/validate_plugin.py plugins/timeline
-python3 /path/to/skill-creator/scripts/quick_validate.py plugins/timeline/skills/timeline
-```
 
-Exercise marketplace discovery and installation against isolated temporary
-configuration directories so the test does not modify the operator's normal
-Codex or Claude configuration:
-
-```bash
-timeline_codex_test_dir="$(mktemp -d)"
-env CODEX_HOME="$timeline_codex_test_dir" codex plugin marketplace add "$PWD" --json
-env CODEX_HOME="$timeline_codex_test_dir" codex plugin list --available --json
-env CODEX_HOME="$timeline_codex_test_dir" codex plugin add timeline@timeline --json
-
-timeline_claude_test_dir="$(mktemp -d)"
-env CLAUDE_CONFIG_DIR="$timeline_claude_test_dir" claude plugin marketplace add "$PWD" --scope user
-env CLAUDE_CONFIG_DIR="$timeline_claude_test_dir" claude plugin install timeline@timeline
-env CLAUDE_CONFIG_DIR="$timeline_claude_test_dir" claude plugin details timeline@timeline
-```
-
-Remove the temporary directories after reviewing the output. Do not exercise
-the bundled hosted MCP connection as proof of the new OAuth flow until the new
-server revision is deployed.
-
-### Local package-install evidence
-
-| Date | Host | Evidence | Result |
-| --- | --- | --- | --- |
-| 2026-08-27 | Codex CLI | Isolated marketplace add, available-plugin discovery, and install | Passed; `timeline@timeline` version `0.2.0` installed from `plugins/timeline` |
-| 2026-08-27 | Claude Code 2.1.220 | Isolated marketplace add, install, and component inventory | Passed; one `timeline` skill and one `timeline` MCP server discovered |
-
-### Local MCP validation evidence
-
-| Date | Check | Result |
-| --- | --- | --- |
-| 2026-10-24 | `bun run validate`, `bun run doctor`, `bun run test`, `bun run test:eval`, `bun run test:dist-imports` | Passed after merging latest `main` |
-| 2026-10-24 | Local OAuth discovery, unauthenticated MCP `401` challenge, browser consent, and grant revocation UI | Passed against the local web service |
-| 2026-10-24 | Codex/Claude plugin validators and isolated installs | Not re-run; plugin sources unchanged since 2026-08-27 |
 
 ## OpenAI universal Plugins Directory
 
@@ -419,24 +277,7 @@ Put its credentials only in the OpenAI reviewer-credentials field.
      records.
    - Why negative: human approval is a non-bypassable product boundary.
 
-### OpenAI submission record
 
-| Field | Evidence |
-| --- | --- |
-| Draft URL/ID | Not created; identity gate appeared before draft creation |
-| Submitting organization | OpenAI Personal organization observed; final submitting organization not selected |
-| Verified developer identity | Required by portal; not completed in this run |
-| Production deployment SHA | Pending |
-| Tool scan timestamp/result | Pending |
-| Submitted for review at | Pending |
-| Review status/notes | Pending |
-| Approved at | Pending |
-| Published at | Pending |
-| Public directory URL | Pending |
-
-Submitting starts review; it does not publish the plugin. After approval, an
-authorized publisher must explicitly publish the approved version and verify
-its visible listing in both ChatGPT and Codex.
 
 ## Anthropic plugin directory
 
@@ -464,16 +305,7 @@ The final repository commit must be reachable from the public GitHub repository
 before submitting. Re-run both strict Claude validators against that commit and
 confirm a clean isolated marketplace install.
 
-### Anthropic submission record
 
-| Field | Evidence |
-| --- | --- |
-| Submission form/receipt URL | No receipt; Claude Free account blocked at organization settings |
-| Submitted repository commit | Pending |
-| Submitted at | Pending |
-| Review status/notes | Pending |
-| Approved at | Pending |
-| Public directory URL | Pending |
 
 ## Claude remote connector verification
 
@@ -528,3 +360,8 @@ these are independently verified:
 Generic MCP hosts may connect without a directory listing after steps 1–3.
 HubSpot, Slack, Attio, and Pipedrive app listings are not covered by this
 rule; they remain separate future work.
+
+
+## Recording release status
+
+Record revision, environment, date and the observed result for each gate in the release PR or a dated evidence record: deployed implementation; real-host smoke; submitted draft; review decision; visible publication. Do not infer later states from earlier ones. Historical observations are [here](evidence/marketplace-verification-2026.md); current portal/deployment state must be checked before acting. No current submission or approval status is asserted by this guide.

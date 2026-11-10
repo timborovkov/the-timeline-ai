@@ -36,13 +36,17 @@ export interface McpOAuthTrustedAuthorizationRedirect {
 }
 
 export class McpOAuthError extends Error {
+  readonly code: McpOAuthErrorCode;
+  readonly trustedAuthorizationRedirect: McpOAuthTrustedAuthorizationRedirect | undefined;
   constructor(
-    readonly code: McpOAuthErrorCode,
+    code: McpOAuthErrorCode,
     message: string,
-    readonly trustedAuthorizationRedirect?: McpOAuthTrustedAuthorizationRedirect,
+    trustedAuthorizationRedirect?: McpOAuthTrustedAuthorizationRedirect,
   ) {
     super(message);
     this.name = 'McpOAuthError';
+    this.code = code;
+    this.trustedAuthorizationRedirect = trustedAuthorizationRedirect;
   }
 }
 
