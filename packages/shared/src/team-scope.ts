@@ -1618,6 +1618,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
     teamId,
     userId,
     ensureMember,
+    getSuggestion: (id) => suggestionScope.getSuggestion(id),
   });
 
   const billingProvider = createPolarBillingProvider() ?? undefined;

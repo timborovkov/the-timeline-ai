@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, it } from 'bun:test';
 import { drizzle } from 'drizzle-orm/pglite';
 
 import { createOnboardingScope } from '#src/onboarding/index.js';
+import { withTeam } from '#src/team-scope.js';
 import { applyDbMigrations } from '#src/test/pglite.js';
 /**
  * Onboarding checklist tests. The checklist is inferred from real workspace
@@ -42,7 +43,13 @@ let ensureMember: (minRole?: 'owner' | 'admin' | 'member') => Promise<'owner' | 
 let ensureMemberMock: ReturnType<typeof vi.fn<(minRole?: 'owner' | 'admin' | 'member') => void>>;
 
 function scope(teamId = TEAM_ID, userId = OWNER_ID) {
-  return createOnboardingScope({ db, teamId, userId, ensureMember });
+  return createOnboardingScope({
+    db,
+    teamId,
+    userId,
+    ensureMember,
+    getSuggestion: (id) => withTeam(db, teamId, userId).suggestions.getSuggestion(id),
+  });
 }
 
 function completedKeys(state: Awaited<ReturnType<ReturnType<typeof scope>['getChecklistState']>>) {
@@ -288,6 +295,288 @@ it('infers billing setup only from this team active subscription, never a manual
     `UPDATE team_billing_accounts SET billing_state = 'canceled' WHERE team_id = '${TEAM_ID}'`,
   );
   expect(completedKeys(await scope().getChecklistState())).not.toContain('billing_setup');
+});
+
+describe('first-run scope', () => {
+  it('stores work style on the team and advances from welcome to choose', async () => {
+    await pg.exec(`
+      INSERT INTO team_first_run (team_id, started_by_user_id, phase)
+      VALUES ('${TEAM_ID}', '${OWNER_ID}', 'welcome');
+    `);
+    const next = await scope().submitWorkStyle('email');
+    expect(next).not.toBeNull();
+    expect(next?.phase).toBe('choose');
+    expect(next?.workStyle).toBe('email');
+  });
+
+  it('skips to an empty home without creating a sample workspace', async () => {
+    await pg.exec(`
+      INSERT INTO team_first_run (team_id, started_by_user_id, phase)
+      VALUES ('${TEAM_ID}', '${OWNER_ID}', 'choose');
+    `);
+    const next = await scope().skipToEmptyHome();
+    expect(next.phase).toBe('skipped');
+    expect(next.starterPath).toBe('skip');
+  });
+
+  it('updates work style on an existing team without starting first-run', async () => {
+    const next = await scope().submitWorkStyle('chat');
+    expect(next).toBeNull();
+    const workStyle = await pg.query(`SELECT work_style FROM teams WHERE id = '${TEAM_ID}'`);
+    const row = workStyle.rows[0] as { work_style: string | null } | undefined;
+    expect(row?.work_style).toBe('chat');
+    const firstRun = await pg.query(
+      `SELECT team_id FROM team_first_run WHERE team_id = '${TEAM_ID}'`,
+    );
+    expect(firstRun.rows).toHaveLength(0);
+  });
+
+  it('does not let a stale document selection replace skip', async () => {
+    await pg.exec(`
+      INSERT INTO team_first_run (team_id, started_by_user_id, phase)
+      VALUES ('${TEAM_ID}', '${OWNER_ID}', 'choose');
+    `);
+    await scope().skipToEmptyHome();
+    const next = await scope().selectStarterPath('document');
+    expect(next.phase).toBe('skipped');
+    expect(next.starterPath).toBe('skip');
+  });
+
+  it('waits for a real email after switching away from a processing document', async () => {
+    const documentId = '33333333-3333-4333-8333-333333333333';
+    const documentEventId = '55555555-5555-4555-8555-555555555555';
+    const emailEventId = '77777777-7777-4777-8777-777777777777';
+    await pg.exec(`
+      INSERT INTO raw_events (id, team_id, author_user_id, source, content_text, visibility)
+      VALUES ('${documentEventId}', '${TEAM_ID}', '${OWNER_ID}', 'document', 'Uploaded deck', 'team');
+      INSERT INTO documents (id, team_id, owner_user_id, name, visibility)
+      VALUES ('${documentId}', '${TEAM_ID}', '${OWNER_ID}', 'Plan', 'team');
+      INSERT INTO document_versions (id, team_id, document_id, version, object_key, processing_status, source_event_id)
+      VALUES ('66666666-6666-4666-8666-666666666666', '${TEAM_ID}', '${documentId}', 1, 'docs/plan-1', 'pending', '${documentEventId}');
+      INSERT INTO team_first_run (team_id, started_by_user_id, phase, starter_path, capture_document_id)
+      VALUES ('${TEAM_ID}', '${OWNER_ID}', 'processing', 'document', '${documentId}');
+    `);
+    expect((await scope().refreshDocumentCapture())?.captureEventId).toBe(documentEventId);
+    await scope().setFirstRunPhase('choose');
+    await scope().selectStarterPath('email');
+
+    const waiting = await scope().detectEmailArrival();
+    expect(waiting.arrived).toBe(false);
+    expect(waiting.eventId).toBeNull();
+    expect(waiting.firstRun?.captureDocumentId).toBeNull();
+    expect(waiting.firstRun?.phase).toBe('processing');
+    expect((await scope().getFirstRunRecord())?.summary).toBeNull();
+
+    await pg.exec(`
+      INSERT INTO raw_events (id, team_id, author_user_id, source, content_text, visibility)
+      VALUES ('${emailEventId}', '${TEAM_ID}', '${OWNER_ID}', 'email', 'Subject: kickoff', 'team');
+    `);
+    const arrived = await scope().detectEmailArrival();
+    expect(arrived.eventId).toBe(emailEventId);
+    expect(arrived.firstRun?.phase).toBe('record');
+    expect((await scope().getFirstRunRecord())?.summary).toBe('Subject: kickoff');
+  });
+
+  it('clears the old capture when selecting a replacement document', async () => {
+    const oldDocumentId = '33333333-3333-4333-8333-333333333333';
+    const newDocumentId = '44444444-4444-4444-8444-444444444444';
+    const eventId = '55555555-5555-4555-8555-555555555555';
+    await pg.exec(`
+      INSERT INTO raw_events (id, team_id, author_user_id, source, content_text, visibility)
+      VALUES ('${eventId}', '${TEAM_ID}', '${OWNER_ID}', 'document', 'Old deck', 'team');
+      INSERT INTO documents (id, team_id, owner_user_id, name, visibility)
+      VALUES
+        ('${oldDocumentId}', '${TEAM_ID}', '${OWNER_ID}', 'Old plan', 'team'),
+        ('${newDocumentId}', '${TEAM_ID}', '${OWNER_ID}', 'New plan', 'team');
+      INSERT INTO team_first_run (
+        team_id, started_by_user_id, phase, starter_path, capture_document_id,
+        capture_event_id, first_capture_landed_at
+      ) VALUES (
+        '${TEAM_ID}', '${OWNER_ID}', 'choose', 'document', '${oldDocumentId}', '${eventId}', NOW()
+      );
+    `);
+    const next = await scope().selectStarterPath('document', { documentId: newDocumentId });
+    expect(next.captureDocumentId).toBe(newDocumentId);
+    expect(next.captureEventId).toBeNull();
+    expect(next.firstCaptureLandedAt).toBeNull();
+    expect(next.phase).toBe('processing');
+  });
+
+  it('keeps completed onboarding complete when a document capture refreshes', async () => {
+    const documentId = '33333333-3333-4333-8333-333333333333';
+    const eventId = '55555555-5555-4555-8555-555555555555';
+    await pg.exec(`
+      INSERT INTO raw_events (id, team_id, author_user_id, source, content_text, visibility)
+      VALUES ('${eventId}', '${TEAM_ID}', '${OWNER_ID}', 'web', 'deck', 'team');
+      INSERT INTO documents (id, team_id, owner_user_id, name, visibility)
+      VALUES ('${documentId}', '${TEAM_ID}', '${OWNER_ID}', 'Plan', 'team');
+      INSERT INTO document_versions (id, team_id, document_id, version, object_key, processing_status, source_event_id)
+      VALUES ('66666666-6666-4666-8666-666666666666', '${TEAM_ID}', '${documentId}', 1, 'docs/plan-1', 'embedded', '${eventId}');
+      INSERT INTO team_first_run (
+        team_id, started_by_user_id, phase, starter_path, capture_document_id, capture_event_id, first_capture_landed_at
+      )
+      VALUES (
+        '${TEAM_ID}', '${OWNER_ID}', 'complete', 'document', '${documentId}', '${eventId}', NOW()
+      );
+    `);
+    const next = await scope().refreshDocumentCapture();
+    expect(next?.phase).toBe('complete');
+  });
+
+  it('detects an email sent while the team address was already on the chooser', async () => {
+    await pg.exec(`
+      INSERT INTO team_first_run (
+        team_id, started_by_user_id, phase, starter_path, starter_selected_at, created_at
+      )
+      VALUES (
+        '${TEAM_ID}', '${OWNER_ID}', 'processing', 'email', NOW(), NOW() - INTERVAL '1 hour'
+      );
+      INSERT INTO raw_events (team_id, author_user_id, source, content_text, visibility, created_at)
+      VALUES (
+        '${TEAM_ID}', '${OWNER_ID}', 'email', 'Subject: kickoff', 'team', NOW() - INTERVAL '10 minutes'
+      );
+    `);
+    const arrival = await scope().detectEmailArrival();
+    expect(arrival.arrived).toBe(true);
+    expect(arrival.eventId).toBeTruthy();
+  });
+
+  it('hides a teammate private email from first-run capture reads', async () => {
+    await pg.exec(`
+      INSERT INTO team_first_run (
+        team_id, started_by_user_id, phase, starter_path, created_at
+      )
+      VALUES (
+        '${TEAM_ID}', '${OWNER_ID}', 'processing', 'email', NOW() - INTERVAL '1 hour'
+      );
+      INSERT INTO raw_events (
+        team_id, author_user_id, visibility_owner_user_id, source, content_text, visibility, created_at
+      )
+      VALUES (
+        '${TEAM_ID}', '${MEMBER_ID}', '${MEMBER_ID}', 'email', 'private thread', 'private', NOW()
+      );
+    `);
+    const arrival = await scope().detectEmailArrival();
+    expect(arrival.arrived).toBe(false);
+    const record = await scope().getFirstRunRecord();
+    expect(record?.summary).toBeNull();
+    expect(record?.emailArrived).toBe(false);
+  });
+
+  it('hides a private proposal that cites a team-visible starter event', async () => {
+    const eventId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbb01';
+    const suggestionId = 'cccccccc-cccc-4ccc-8ccc-cccccccccc01';
+    const itemId = 'dddddddd-dddd-4ddd-8ddd-dddddddddd01';
+    await pg.exec(`
+      INSERT INTO raw_events (id, team_id, author_user_id, source, content_text, visibility)
+      VALUES ('${eventId}', '${TEAM_ID}', '${OWNER_ID}', 'email', 'kickoff thread', 'team');
+      INSERT INTO agent_suggestions (
+        id, team_id, source, status, title, dedupe_key, visibility, visibility_owner_user_id
+      )
+      VALUES (
+        '${suggestionId}', '${TEAM_ID}', 'background', 'pending', 'Secret person',
+        'first-run-private-person', 'private', '${MEMBER_ID}'
+      );
+      INSERT INTO agent_suggestion_items (
+        id, suggestion_id, team_id, operation, target_kind, title, dedupe_key, proposed_payload
+      )
+      VALUES (
+        '${itemId}', '${suggestionId}', '${TEAM_ID}', 'create', 'object', 'Dana Reyes',
+        'person-dana', '{"type":"person","name":"Dana Reyes"}'::jsonb
+      );
+      INSERT INTO agent_suggestion_evidence (suggestion_id, team_id, raw_event_id)
+      VALUES ('${suggestionId}', '${TEAM_ID}', '${eventId}');
+      INSERT INTO team_first_run (
+        team_id, started_by_user_id, phase, starter_path, capture_event_id
+      )
+      VALUES ('${TEAM_ID}', '${OWNER_ID}', 'record', 'email', '${eventId}');
+    `);
+    const ownerRecord = await scope().getFirstRunRecord();
+    const memberRecord = await scope(TEAM_ID, MEMBER_ID).getFirstRunRecord();
+    expect(ownerRecord?.suggestions).toEqual([]);
+    expect(memberRecord?.suggestions.map((item) => item.title)).toContain('Dana Reyes');
+  });
+
+  it('hides starter proposals when supporting evidence becomes private', async () => {
+    const eventId = 'cccccccc-cccc-4ccc-8ccc-cccccccccc10';
+    const supportId = 'cccccccc-cccc-4ccc-8ccc-cccccccccc11';
+    const suggestionId = 'dddddddd-dddd-4ddd-8ddd-dddddddddd10';
+    await pg.exec(`
+      INSERT INTO raw_events (id, team_id, author_user_id, source, content_text, visibility)
+      VALUES ('${eventId}', '${TEAM_ID}', '${OWNER_ID}', 'email', 'Starter thread', 'team'),
+             ('${supportId}', '${TEAM_ID}', '${OWNER_ID}', 'email', 'Private supporting detail', 'team');
+      INSERT INTO agent_suggestions (id, team_id, source, title, dedupe_key, visibility, metadata)
+      VALUES ('${suggestionId}', '${TEAM_ID}', 'background', 'Confidential follow-up',
+              'support-privacy', 'team', '{"evidence_pack_fingerprint":"test-pack"}'::jsonb);
+      INSERT INTO agent_suggestion_items (suggestion_id, team_id, operation, target_kind, title, dedupe_key, proposed_payload)
+      VALUES ('${suggestionId}', '${TEAM_ID}', 'create', 'task', 'Confidential follow-up',
+              'support-privacy-item', '{"canonicalName":"Confidential follow-up"}'::jsonb);
+      INSERT INTO agent_suggestion_evidence (suggestion_id, team_id, raw_event_id)
+      VALUES ('${suggestionId}', '${TEAM_ID}', '${eventId}'), ('${suggestionId}', '${TEAM_ID}', '${supportId}');
+      INSERT INTO team_first_run (team_id, started_by_user_id, phase, starter_path, capture_event_id)
+      VALUES ('${TEAM_ID}', '${OWNER_ID}', 'record', 'email', '${eventId}');
+    `);
+    expect((await scope(TEAM_ID, MEMBER_ID).getFirstRunRecord())?.suggestions).toHaveLength(1);
+    await pg.exec(
+      `UPDATE raw_events SET visibility = 'private', visibility_owner_user_id = '${OWNER_ID}' WHERE id = '${supportId}'`,
+    );
+    expect((await scope(TEAM_ID, MEMBER_ID).getFirstRunRecord())?.suggestions).toEqual([]);
+    // Even the source owner cannot expose private supporting evidence through a team proposal.
+    expect((await scope().getFirstRunRecord())?.suggestions).toEqual([]);
+  });
+
+  it('does not mark a failed document extract as landed', async () => {
+    const documentId = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeee01';
+    await pg.exec(`
+      INSERT INTO documents (id, team_id, owner_user_id, name, visibility)
+      VALUES ('${documentId}', '${TEAM_ID}', '${OWNER_ID}', 'Empty.txt', 'team');
+      INSERT INTO document_versions (id, team_id, document_id, version, object_key, processing_status)
+      VALUES (
+        'ffffffff-ffff-4fff-8fff-ffffffffff01', '${TEAM_ID}', '${documentId}', 1, 'docs/empty', 'failed'
+      );
+      INSERT INTO team_first_run (
+        team_id, started_by_user_id, phase, starter_path, capture_document_id
+      )
+      VALUES ('${TEAM_ID}', '${OWNER_ID}', 'processing', 'document', '${documentId}');
+    `);
+    const next = await scope().refreshDocumentCapture();
+    expect(next?.phase).toBe('processing');
+    expect(next?.firstCaptureLandedAt).toBeNull();
+    const record = await scope().getFirstRunRecord();
+    expect(record?.processingSteps.some((step) => step.status === 'failed')).toBe(true);
+  });
+
+  it('reads starter document chunks only from the selected version', async () => {
+    const documentId = '77777777-7777-4777-8777-777777777777';
+    const oldVersionId = '88888888-8888-4888-8888-888888888888';
+    const newVersionId = '99999999-9999-4999-8999-999999999999';
+    const eventId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa01';
+    await pg.exec(`
+      INSERT INTO raw_events (id, team_id, author_user_id, source, content_text, visibility)
+      VALUES ('${eventId}', '${TEAM_ID}', '${OWNER_ID}', 'web', 'deck', 'team');
+      INSERT INTO documents (id, team_id, owner_user_id, name, visibility)
+      VALUES ('${documentId}', '${TEAM_ID}', '${OWNER_ID}', 'Plan', 'team');
+      INSERT INTO document_versions (id, team_id, document_id, version, object_key, processing_status, source_event_id)
+      VALUES
+        ('${oldVersionId}', '${TEAM_ID}', '${documentId}', 1, 'docs/plan-1', 'embedded', '${eventId}'),
+        ('${newVersionId}', '${TEAM_ID}', '${documentId}', 2, 'docs/plan-2', 'embedded', '${eventId}');
+      INSERT INTO document_chunks (
+        team_id, document_id, document_version_id, chunk_index, text, token_count
+      )
+      VALUES
+        ('${TEAM_ID}', '${documentId}', '${oldVersionId}', 0, 'obsolete draft text that should stay hidden', 8),
+        ('${TEAM_ID}', '${documentId}', '${newVersionId}', 0, 'latest cited deck summary', 5);
+      INSERT INTO team_first_run (
+        team_id, started_by_user_id, phase, starter_path, capture_document_id
+      )
+      VALUES (
+        '${TEAM_ID}', '${OWNER_ID}', 'record', 'document', '${documentId}'
+      );
+    `);
+    const record = await scope().getFirstRunRecord();
+    expect(record?.summary).toContain('latest cited deck summary');
+    expect(record?.summary).not.toContain('obsolete draft');
+  });
 });
 
 it('treats an active comp as billing setup but not an expired comp', async () => {

@@ -109,7 +109,8 @@ export async function createTeamAction(
       source: 'manual',
     });
     revalidatePath('/app');
-    redirect('/app/timeline');
+    revalidatePath('/onboarding');
+    redirect('/onboarding');
   });
 }
 

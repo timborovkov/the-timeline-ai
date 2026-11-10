@@ -1,5 +1,6 @@
 import { teams, users } from '@timeline/db';
 import { latestDailyDigest, type DailyDigestPayload } from '@timeline/shared/messaging';
+import { GUIDED_SHELL_PHASES, type FirstRunState } from '@timeline/shared/onboarding/first-run';
 import { getAudioBucket, getS3PresignClient, getSignedGetObjectUrl } from '@timeline/shared/s3';
 import { withTeam } from '@timeline/shared/team-scope';
 import { eq, inArray } from 'drizzle-orm';
@@ -7,6 +8,7 @@ import { Boxes, CircleAlert, CircleCheckBig, ListTodo, PlugZap, Wrench } from 'l
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
+import type { BillingNudge } from '@timeline/shared/billing/status';
 import type { Metadata } from 'next';
 
 import { BillingRestrictionNotice } from '@/components/billing-restriction-notice';
@@ -18,6 +20,7 @@ import { DailyDigestBlock } from '@/components/home/daily-digest-block';
 import { HomeAskComposer } from '@/components/home/home-ask-composer';
 import { HomeAttention } from '@/components/home/home-attention';
 import { HomeTeamEmail } from '@/components/home/home-team-email';
+import { FirstRunHomeCapture } from '@/components/onboarding/first-run-home-capture';
 import { OnboardingChecklist } from '@/components/onboarding-checklist';
 import { PaygValueNudge } from '@/components/payg-value-nudge';
 import { PinnedWorkspacePreview } from '@/components/pins/pinned-workspace-preview';
@@ -26,6 +29,7 @@ import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { displayMemberLabel } from '@/lib/display-labels';
+import { loadFirstRunStatus } from '@/lib/first-run-status';
 import {
   displayInboundEmail,
   getHomeOpenObjectCounts,
@@ -92,6 +96,81 @@ async function shouldShowPaygSuggestion(input: {
   });
 }
 
+function HomePlanNotices({
+  nudge,
+  showPayg,
+  paygStorageKey,
+}: {
+  nudge: BillingNudge | null;
+  showPayg: boolean;
+  paygStorageKey: string;
+}) {
+  return (
+    <>
+      {nudge ? <BillingUpgradeNudge nudge={nudge} /> : null}
+      {showPayg ? <PaygValueNudge key={paygStorageKey} storageKey={paygStorageKey} /> : null}
+    </>
+  );
+}
+
+function homeEmptyTimelineCopy(isEmpty: boolean): { label: string; actionBody: string } {
+  if (isEmpty) {
+    return {
+      label:
+        'Your timeline fills from what your team captures. Forward an email, upload a document or connect a channel to start it.',
+      actionBody: 'Forward an email, upload a document or connect a channel to start it.',
+    };
+  }
+  return {
+    label: 'No recent moments yet',
+    actionBody:
+      'Moments will appear here as the timeline collects work from capture and connected sources.',
+  };
+}
+
+async function resolveFirstRunHomeCapture(input: {
+  firstRun: FirstRunState | null;
+  teamId: string;
+  userId: string;
+  teamSlug: string;
+}): Promise<{ failed: boolean } | 'record' | null> {
+  if (input.firstRun?.phase === 'failed') return { failed: true };
+  if (input.firstRun?.phase !== 'processing') return null;
+  const status = await loadFirstRunStatus({
+    db,
+    teamId: input.teamId,
+    userId: input.userId,
+    teamSlug: input.teamSlug,
+    teamName: 'Your team',
+  });
+  const nextPhase = status.firstRun?.phase ?? input.firstRun.phase;
+  if (GUIDED_SHELL_PHASES.includes(nextPhase)) return 'record';
+  const stepsFailed = (status.record?.processingSteps ?? []).some(
+    (step) => step.status === 'failed',
+  );
+  return { failed: nextPhase === 'failed' || stepsFailed };
+}
+
+function firstRunStarterPath(row: FirstRunState | null) {
+  return row?.starterPath ?? null;
+}
+
+function homeTeamSlug(teamRow: { slug: string } | null, teamId: string) {
+  return teamRow?.slug ?? teamId;
+}
+
+async function FirstRunHomeBanner(input: {
+  firstRun: FirstRunState | null;
+  teamId: string;
+  userId: string;
+  teamSlug: string;
+}) {
+  const result = await resolveFirstRunHomeCapture(input);
+  if (result === 'record') redirect('/app/onboarding/record');
+  if (!result) return null;
+  return <FirstRunHomeCapture failed={result.failed} />;
+}
+
 export default async function HomeDashboardPage() {
   const session = await auth();
   if (!session?.user) redirect('/sign-in');
@@ -105,6 +184,8 @@ export default async function HomeDashboardPage() {
   ]);
   const isAdmin = role === 'owner' || role === 'admin';
   const now = new Date();
+  const firstRunRow = await scope.onboarding.getFirstRun();
+  const starterPath = firstRunStarterPath(firstRunRow);
 
   const [
     workAttention,
@@ -133,6 +214,7 @@ export default async function HomeDashboardPage() {
       teamId: active.teamId,
       userId: session.user.id,
       getChecklistState: () => scope.onboarding.getChecklistState(),
+      starterPath,
     }).catch((err: unknown) => {
       reportCaughtError(err, { surface: 'render', operation: 'onboarding_checklist' });
       return null;
@@ -156,6 +238,12 @@ export default async function HomeDashboardPage() {
     hasAnswer: () => scope.objects.hasCompletedChatAnswer(),
   });
   const inboundEmail = displayInboundEmail(teamRow);
+  const firstRunBanner = await FirstRunHomeBanner({
+    firstRun: firstRunRow,
+    teamId: active.teamId,
+    userId: session.user.id,
+    teamSlug: homeTeamSlug(teamRow, active.teamId),
+  });
   const events = eventPage.items;
   const pendingApprovals = workAttention.pendingApprovals;
   const urgentWorkCount = homeWorkNeedingAttentionCount(workAttention);
@@ -196,10 +284,12 @@ export default async function HomeDashboardPage() {
     homeMoments.map((moment) => ({ kind: 'timeline_moment' as const, key: moment.id })),
   );
   const quickCaptureVisibility = webDefault.visibility === 'private' ? 'private' : 'team';
+  const emptyTimeline = homeEmptyTimelineCopy(events.length === 0);
 
   return (
     <div className="space-y-8">
       <h1 className="sr-only">Home</h1>
+      {firstRunBanner}
       {billingDashboard?.restrictionReason ? (
         <BillingRestrictionNotice reason={billingDashboard.restrictionReason} />
       ) : null}
@@ -224,16 +314,11 @@ export default async function HomeDashboardPage() {
       <ConnectAgentOnboardingCard initialData={initialChecklist} />
       <OnboardingChecklist initialData={initialChecklist} />
 
-      {isAdmin && billingDashboard?.nudge ? (
-        <BillingUpgradeNudge nudge={billingDashboard.nudge} />
-      ) : null}
-
-      {showPaygSuggestion ? (
-        <PaygValueNudge
-          key={`${session.user.id}:${active.teamId}`}
-          storageKey={`tl-coachmark:payg:${session.user.id}:${active.teamId}`}
-        />
-      ) : null}
+      <HomePlanNotices
+        nudge={isAdmin ? (billingDashboard?.nudge ?? null) : null}
+        showPayg={showPaygSuggestion}
+        paygStorageKey={`tl-coachmark:payg:${session.user.id}:${active.teamId}`}
+      />
 
       <HomeAttention
         groups={[
@@ -324,11 +409,11 @@ export default async function HomeDashboardPage() {
           maxMoments={HOME_TIMELINE_MOMENT_LIMIT}
           live={false}
           timezone={calendarSettings.defaultTimezone}
-          emptyLabel="No recent moments yet"
+          emptyLabel={emptyTimeline.label}
           emptyAction={{
             href: '/app/timeline',
             label: 'Open timeline',
-            body: 'Moments will appear here as the timeline collects work from capture and connected sources.',
+            body: emptyTimeline.actionBody,
           }}
         />
         <p>
