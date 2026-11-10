@@ -395,6 +395,12 @@
       "import": "./dist/onboarding/index.js",
       "default": "./dist/onboarding/index.js"
     },
+    "./onboarding/first-run": {
+      "types": "./src/onboarding/first-run.ts",
+      "development": "./src/onboarding/first-run.ts",
+      "import": "./dist/onboarding/first-run.js",
+      "default": "./dist/onboarding/first-run.js"
+    },
     "./search": {
       "types": "./src/search/index.ts",
       "development": "./src/search/index.ts",

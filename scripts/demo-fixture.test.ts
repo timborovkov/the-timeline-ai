@@ -863,6 +863,7 @@ function validEmptySnapshot(): EmptyDemoWorkspaceSnapshot {
     completedOnboardingSteps: [],
     billingPlanId: 'free',
     billingState: 'free',
+    firstRunPhase: 'welcome',
   };
 }
 
@@ -878,6 +879,12 @@ assert.doesNotThrow(() => assertEmptyDemoWorkspace(validEmptySnapshot()));
   const snapshot = validEmptySnapshot();
   snapshot.completedOnboardingSteps = ['first_note'];
   assert.throws(() => assertEmptyDemoWorkspace(snapshot), /empty workspace completed onboarding/);
+}
+
+{
+  const snapshot = validEmptySnapshot();
+  snapshot.firstRunPhase = 'skipped';
+  assert.throws(() => assertEmptyDemoWorkspace(snapshot), /empty workspace first-run phase/);
 }
 
 {

@@ -475,6 +475,7 @@ export interface EmptyDemoWorkspaceSnapshot {
   completedOnboardingSteps: string[];
   billingPlanId: string | null;
   billingState: string | null;
+  firstRunPhase: string | null;
 }
 
 export function assertDemoFixture(snapshot: DemoFixtureSnapshot): void {
@@ -942,6 +943,7 @@ export function assertEmptyDemoWorkspace(snapshot: EmptyDemoWorkspaceSnapshot): 
   expectValue('empty workspace completed onboarding', snapshot.completedOnboardingSteps, []);
   expectValue('empty workspace billing plan', snapshot.billingPlanId, 'free');
   expectValue('empty workspace billing state', snapshot.billingState, 'free');
+  expectValue('empty workspace first-run phase', snapshot.firstRunPhase, 'welcome');
 
   if (errors.length > 0) {
     throw new Error(`Empty onboarding workspace verification failed:\n- ${errors.join('\n- ')}`);

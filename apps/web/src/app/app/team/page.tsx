@@ -23,6 +23,7 @@ import { and, desc, eq, inArray, isNotNull, isNull, lt } from 'drizzle-orm';
 import { redirect } from 'next/navigation';
 
 import type { TeamDigestDestination } from '@timeline/shared/messaging';
+import type { TeamWorkStyle } from '@timeline/shared/onboarding';
 import type { Metadata } from 'next';
 import type { ComponentProps } from 'react';
 
@@ -33,6 +34,7 @@ import {
   DigestDestinationsForm,
   type DigestDestinationOption,
 } from '@/components/digest-destinations';
+import { WorkStylePreference } from '@/components/onboarding/work-style-preference';
 import { PageHeader } from '@/components/page-header';
 import { SettingsSection } from '@/components/section-heading';
 import { SettingsNav } from '@/components/settings-nav';
@@ -111,6 +113,7 @@ export default async function TeamSettingsPage({
     showOperatorLink,
     commercial,
     exportRows,
+    workStyle,
   } = await loadTeamSettingsPage({ searchParams });
   return (
     <div className="space-y-4">
@@ -152,6 +155,7 @@ export default async function TeamSettingsPage({
           showOperatorLink={showOperatorLink}
           commercial={commercial}
           exportRows={exportRows}
+          workStyle={workStyle}
         />
       }
     </div>
@@ -184,6 +188,7 @@ function TeamSettingsSections({
   showOperatorLink,
   commercial,
   exportRows,
+  workStyle,
 }: Omit<Awaited<ReturnType<typeof loadTeamSettingsPage>>, 'role'>) {
   return (
     <div className="flex flex-col gap-5 lg:flex-row lg:gap-8">
@@ -212,6 +217,7 @@ function TeamSettingsSections({
             digestDestinations={digestDestinations}
             destinationOptions={destinationOptions}
             timezoneSettings={timezoneSettings}
+            workStyle={workStyle}
           />
         ) : null}
         {section === 'visibility' ? (
@@ -288,15 +294,20 @@ function TeamPreferencesSettings({
   digestDestinations,
   destinationOptions,
   timezoneSettings,
+  workStyle,
 }: {
   digestPreference: { enabled: boolean; hour: number; timezone: string };
   isAdmin: boolean;
   digestDestinations: TeamDigestDestination[];
   destinationOptions: DigestDestinationOption[];
   timezoneSettings: { timezone: string };
+  workStyle: TeamWorkStyle | null;
 }) {
   return (
     <>
+      <SettingsSection title="How the team works">
+        <WorkStylePreference initialWorkStyle={workStyle} />
+      </SettingsSection>
       <MessagingPreferencesCard enabled={digestPreference.enabled} />
       {isAdmin ? (
         <SettingsSection title="Digest destinations">
@@ -499,17 +510,24 @@ async function loadTeamSettingsPage({
     }),
     listTeamDigestDestinations(db, active.teamId),
   ]);
-  const inboundEmailSettings: InboundEmailWhitelistSettings = (
+  const teamSettingsRow = (
     await db
       .select({
         inboundEmail: teams.inboundEmail,
         enabled: teams.inboundSenderWhitelistEnabled,
         senders: teams.inboundSenderWhitelist,
+        workStyle: teams.workStyle,
       })
       .from(teams)
       .where(eq(teams.id, active.teamId))
       .limit(1)
-  )[0] ?? { inboundEmail: null, enabled: true, senders: [] };
+  )[0] ?? { inboundEmail: null, enabled: true, senders: [], workStyle: null };
+  const inboundEmailSettings: InboundEmailWhitelistSettings = {
+    inboundEmail: teamSettingsRow.inboundEmail,
+    enabled: teamSettingsRow.enabled,
+    senders: teamSettingsRow.senders,
+  };
+  const workStyle = teamSettingsRow.workStyle ?? null;
   const inboundEmail = displayInboundEmail({
     slug: active.teamSlug,
     inboundEmail: inboundEmailSettings.inboundEmail,
@@ -655,5 +673,6 @@ async function loadTeamSettingsPage({
     showOperatorLink,
     commercial,
     exportRows,
+    workStyle,
   };
 }

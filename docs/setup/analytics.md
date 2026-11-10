@@ -94,3 +94,5 @@ Do not create a person, retention, or session insight from the two fixed personl
 ## 5. Release evidence
 
 Run the [analytics acceptance matrix](../privacy-analytics-interface.md#8-acceptance-evidence) against the intended deployment and record dated results. [Security gaps](../security-gaps.md) owns unresolved provider/account/legal checks. No duplicate checklist is maintained here.
+
+First-run onboarding emits `onboarding_work_style_submitted`, `onboarding_first_path_selected`, `first_capture_landed`, and `agent_deployed_on_channel` with enum properties only (work style, starter path, or channel), never URLs, filenames, or capture text.

@@ -4,6 +4,7 @@ import {
   teamBillingAccounts,
   teamCalendarSettings,
   teamDigestDestinations,
+  teamFirstRun,
   teamMembers,
   teams,
 } from '@timeline/db';
@@ -57,6 +58,13 @@ describe('workspace initialization policies', () => {
     expect(await db.select().from(auditLog)).toEqual([]);
     expect(await db.select().from(teamDigestDestinations)).toEqual([
       expect.objectContaining({ teamId: team?.id, kind: 'email_members', enabled: true }),
+    ]);
+    expect(await db.select().from(teamFirstRun)).toEqual([
+      expect.objectContaining({
+        teamId: team?.id,
+        startedByUserId: ownerId,
+        phase: 'welcome',
+      }),
     ]);
   });
 
