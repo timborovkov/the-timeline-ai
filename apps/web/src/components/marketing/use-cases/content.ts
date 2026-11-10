@@ -158,7 +158,7 @@ export const USE_CASES: readonly UseCaseContent[] = [
         file: '33-digest-dark.png',
         alt: 'Daily workspace update with highlights, status, follow-ups, new tasks and upcoming calendar.',
         caption:
-          'The daily update: highlights, status, follow-ups, new tasks and what’s coming up, written from captured conversations, with the source for every line.',
+          'The daily update: highlights, status, follow-ups, new tasks and what’s coming up, written from captured conversations, with links to tasks and calendar items.',
         reshoot: `${RESHOOT_CITATION_SEED} Capture from the top of the page.`,
         placement: 'after-subhead',
         callouts: [
@@ -172,7 +172,7 @@ export const USE_CASES: readonly UseCaseContent[] = [
           },
           {
             label: 'Link to the source',
-            detail: 'Each line traces back to a conversation, document or shipped change.',
+            detail: 'Open linked tasks and calendar items; find captured sources in Timeline.',
           },
         ],
       },

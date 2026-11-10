@@ -153,7 +153,7 @@ describe('LandingPage', () => {
     expect(html).toContain('data-first-run="full"');
     expect(html).toContain('Your first team is created');
     expect(html).toContain('Connect one capture source');
-    expect(html).toContain('A Slack channel or Telegram group captures the conversation.');
+    expect(html).toContain('A linked Slack channel or Telegram group captures the conversation.');
     expect(html).not.toContain('Screenshot placeholder');
     expect(html).not.toContain('data-home-ambient');
     expect(html).not.toContain('↘');

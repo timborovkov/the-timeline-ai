@@ -48,7 +48,7 @@ export const HOME_PROOF_SHOTS = [
     kicker: 'Commitments and follow-ups',
     alt: 'Daily workspace update with highlights, status, follow-ups, new tasks and upcoming calendar.',
     caption:
-      'The daily update is written from captured conversations: who did what, what was promised, and what’s next — with links to the source.',
+      'The daily update is written from captured conversations: who did what, what was promised, and what’s next, with links to tasks and calendar items.',
     callouts: [
       {
         label: 'What changed',
@@ -60,7 +60,7 @@ export const HOME_PROOF_SHOTS = [
       },
       {
         label: 'Link to the source',
-        detail: 'Each line traces back to a conversation, document or shipped change.',
+        detail: 'Open linked tasks and calendar items; find captured sources in Timeline.',
       },
     ],
   },

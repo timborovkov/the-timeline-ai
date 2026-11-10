@@ -18,6 +18,9 @@ describe('FirstRunPath', () => {
     expect(html).toContain('Slack channel');
     expect(html).toContain('Telegram group');
     expect(html).toContain('direct chat');
+    expect(html).toContain('Plain-text questions');
+    expect(html).toContain('explicit notes and supported media can still be captured');
+    expect(html).not.toContain('it does not capture');
     expect(html).toContain('You do not need every connector.');
     expect(html).not.toMatch(/all integrations|minutes to set up|install every/iu);
   });

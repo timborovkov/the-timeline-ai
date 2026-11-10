@@ -28,7 +28,7 @@ export const FIRST_RUN_STEPS = [
 ] as const;
 
 export const FIRST_RUN_NOTE =
-  'A Slack channel or Telegram group captures the conversation. A direct chat with Timeline asks the agent; it does not capture.';
+  'A linked Slack channel or Telegram group captures the conversation. Plain-text questions in a direct chat ask the agent; explicit notes and supported media can still be captured.';
 
 export const USE_CASE_NAV_ITEMS = [
   { href: '/use-cases/work-record', label: 'Work record' },
