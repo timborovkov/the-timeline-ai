@@ -15,6 +15,7 @@ import {
   SUGGESTIONS_PAGE_SIZE,
 } from '@/lib/collection-page-sizes';
 import { displayObjectLabel } from '@/lib/display-labels';
+import { guidedApprovalItemIds } from '@/lib/guided-approval-items';
 import { runSentryServerAction } from '@/lib/sentry-action';
 import { groupLinkedObjectsByEvent, serializeCalendarEvent } from '@/lib/serialize-calendar-event';
 import { serializeSuggestionBundle } from '@/lib/suggestions';
@@ -75,6 +76,7 @@ export async function loadSuggestionsPageAction(input: unknown): Promise<{
       .object({
         cursor: cursorSchema,
         status: z.enum(['pending', 'failed', 'resolved', 'all']).default('pending'),
+        guided: z.boolean().default(false),
       })
       .safeParse(input);
     if (!parsed.success) return { suggestions: [], nextCursor: null, error: 'Invalid cursor' };
@@ -83,6 +85,7 @@ export async function loadSuggestionsPageAction(input: unknown): Promise<{
     const rows = await r.scope.suggestions.withCalendarResolutionHints(
       await r.scope.suggestions.listSuggestions({
         status: parsed.data.status,
+        itemIds: parsed.data.guided ? await guidedApprovalItemIds(r.scope) : undefined,
         limit: SUGGESTIONS_PAGE_SIZE + 1,
         cursor: parsed.data.cursor ?? null,
       }),

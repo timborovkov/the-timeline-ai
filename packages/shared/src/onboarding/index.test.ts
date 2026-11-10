@@ -346,6 +346,66 @@ describe('first-run scope', () => {
     expect(next.starterPath).toBe('skip');
   });
 
+  it('waits for a real email after switching away from a processing document', async () => {
+    const documentId = '33333333-3333-4333-8333-333333333333';
+    const documentEventId = '55555555-5555-4555-8555-555555555555';
+    const emailEventId = '77777777-7777-4777-8777-777777777777';
+    await pg.exec(`
+      INSERT INTO raw_events (id, team_id, author_user_id, source, content_text, visibility)
+      VALUES ('${documentEventId}', '${TEAM_ID}', '${OWNER_ID}', 'document', 'Uploaded deck', 'team');
+      INSERT INTO documents (id, team_id, owner_user_id, name, visibility)
+      VALUES ('${documentId}', '${TEAM_ID}', '${OWNER_ID}', 'Plan', 'team');
+      INSERT INTO document_versions (id, team_id, document_id, version, object_key, processing_status, source_event_id)
+      VALUES ('66666666-6666-4666-8666-666666666666', '${TEAM_ID}', '${documentId}', 1, 'docs/plan-1', 'pending', '${documentEventId}');
+      INSERT INTO team_first_run (team_id, started_by_user_id, phase, starter_path, capture_document_id)
+      VALUES ('${TEAM_ID}', '${OWNER_ID}', 'processing', 'document', '${documentId}');
+    `);
+    expect((await scope().refreshDocumentCapture())?.captureEventId).toBe(documentEventId);
+    await scope().setFirstRunPhase('choose');
+    await scope().selectStarterPath('email');
+
+    const waiting = await scope().detectEmailArrival();
+    expect(waiting.arrived).toBe(false);
+    expect(waiting.eventId).toBeNull();
+    expect(waiting.firstRun?.captureDocumentId).toBeNull();
+    expect(waiting.firstRun?.phase).toBe('processing');
+    expect((await scope().getFirstRunRecord())?.summary).toBeNull();
+
+    await pg.exec(`
+      INSERT INTO raw_events (id, team_id, author_user_id, source, content_text, visibility)
+      VALUES ('${emailEventId}', '${TEAM_ID}', '${OWNER_ID}', 'email', 'Subject: kickoff', 'team');
+    `);
+    const arrived = await scope().detectEmailArrival();
+    expect(arrived.eventId).toBe(emailEventId);
+    expect(arrived.firstRun?.phase).toBe('record');
+    expect((await scope().getFirstRunRecord())?.summary).toBe('Subject: kickoff');
+  });
+
+  it('clears the old capture when selecting a replacement document', async () => {
+    const oldDocumentId = '33333333-3333-4333-8333-333333333333';
+    const newDocumentId = '44444444-4444-4444-8444-444444444444';
+    const eventId = '55555555-5555-4555-8555-555555555555';
+    await pg.exec(`
+      INSERT INTO raw_events (id, team_id, author_user_id, source, content_text, visibility)
+      VALUES ('${eventId}', '${TEAM_ID}', '${OWNER_ID}', 'document', 'Old deck', 'team');
+      INSERT INTO documents (id, team_id, owner_user_id, name, visibility)
+      VALUES
+        ('${oldDocumentId}', '${TEAM_ID}', '${OWNER_ID}', 'Old plan', 'team'),
+        ('${newDocumentId}', '${TEAM_ID}', '${OWNER_ID}', 'New plan', 'team');
+      INSERT INTO team_first_run (
+        team_id, started_by_user_id, phase, starter_path, capture_document_id,
+        capture_event_id, first_capture_landed_at
+      ) VALUES (
+        '${TEAM_ID}', '${OWNER_ID}', 'choose', 'document', '${oldDocumentId}', '${eventId}', NOW()
+      );
+    `);
+    const next = await scope().selectStarterPath('document', { documentId: newDocumentId });
+    expect(next.captureDocumentId).toBe(newDocumentId);
+    expect(next.captureEventId).toBeNull();
+    expect(next.firstCaptureLandedAt).toBeNull();
+    expect(next.phase).toBe('processing');
+  });
+
   it('keeps completed onboarding complete when a document capture refreshes', async () => {
     const documentId = '33333333-3333-4333-8333-333333333333';
     const eventId = '55555555-5555-4555-8555-555555555555';

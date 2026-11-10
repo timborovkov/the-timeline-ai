@@ -2256,6 +2256,45 @@ describe('suggestion scope', () => {
     ]);
   });
 
+  it('scopes approval lists and counts to capture items before pagination', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const bundles = [];
+    for (const name of ['starter', 'unrelated']) {
+      bundles.push(
+        await scope.suggestions.createOrMergeSuggestionBundle({
+          source: 'background',
+          title: name,
+          dedupeKey: `capture:${name}`,
+          visibility: 'team',
+          items: [
+            {
+              operation: 'create',
+              targetKind: 'task',
+              title: name,
+              dedupeKey: `capture:${name}:item`,
+              proposedPayload: { canonicalName: name },
+            },
+          ],
+        }),
+      );
+    }
+    const starter = bundles[0];
+    if (!starter) throw new Error('Missing starter fixture');
+    const itemIds = starter.items.map((item) => item.id);
+    await expect(scope.suggestions.listSuggestions({ itemIds, limit: 1 })).resolves.toEqual([
+      expect.objectContaining({ id: starter.id }),
+    ]);
+    await expect(scope.suggestions.getApprovalItemCounts({ itemIds })).resolves.toEqual({
+      pending: 1,
+      failed: 0,
+    });
+    await expect(scope.suggestions.listSuggestions({ itemIds: [] })).resolves.toEqual([]);
+    await expect(scope.suggestions.getApprovalItemCounts({ itemIds: [] })).resolves.toEqual({
+      pending: 0,
+      failed: 0,
+    });
+  });
+
   it('lists pending approvals after a created-at cursor', async () => {
     const scope = withTeam(db as never, TEAM_ID, USER_ID);
     const older = await scope.suggestions.createOrMergeSuggestionBundle({

@@ -15,6 +15,7 @@ import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { SUGGESTIONS_PAGE_SIZE } from '@/lib/collection-page-sizes';
 import { db } from '@/lib/db';
+import { guidedApprovalItemIds } from '@/lib/guided-approval-items';
 import { isActionableSuggestionStatus } from '@/lib/suggestion-status';
 import { serializeSuggestionBundle } from '@/lib/suggestions';
 
@@ -97,6 +98,7 @@ export default async function ApprovalsPage({ searchParams }: PageProps) {
 
   const scope = withTeam(db, active.teamId, session.user.id);
   const guidedApprovals = await loadGuidedApprovals(scope);
+  const itemIds = guidedApprovals ? await guidedApprovalItemIds(scope) : undefined;
   const params = await searchParams;
   const status = STATUS_FILTERS.includes(params.status as ApprovalFilter)
     ? (params.status as ApprovalFilter)
@@ -105,12 +107,13 @@ export default async function ApprovalsPage({ searchParams }: PageProps) {
     scope.suggestions.withCalendarResolutionHints(
       await scope.suggestions.listSuggestions({
         status,
+        itemIds,
         limit: SUGGESTIONS_PAGE_SIZE + 1,
         cursor: null,
       }),
     ),
     scope.calendar.getCalendarSettings(),
-    scope.suggestions.getApprovalItemCounts(),
+    scope.suggestions.getApprovalItemCounts({ itemIds }),
   ]);
   const page = pageWindow(suggestionRows, SUGGESTIONS_PAGE_SIZE, (row) => ({
     at: row.createdAt.toISOString(),
@@ -169,6 +172,7 @@ export default async function ApprovalsPage({ searchParams }: PageProps) {
         suggestions={visibleSuggestions}
         nextCursor={page.nextCursor}
         status={status}
+        guided={guidedApprovals}
         timezone={calendarSettings.defaultTimezone}
         taskCategoriesEnabled={getEnv().TASK_CATEGORY_UI_ENABLED}
         emptyState={EMPTY_STATES[status]}
