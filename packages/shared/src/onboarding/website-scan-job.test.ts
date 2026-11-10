@@ -139,7 +139,7 @@ describe('website scan job', () => {
     expect(deps.createEvent).toHaveBeenNthCalledWith(
       2,
       expect.objectContaining({
-        idempotencyKey: `website-scan:${scanId}:${'https://studio.example/'}`,
+        idempotencyKey: `website-scan:${scanId}:https://studio.example/`,
       }),
     );
     expect(deps.attachCapture).toHaveBeenCalledTimes(1);
