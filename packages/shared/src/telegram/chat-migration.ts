@@ -100,24 +100,24 @@ export function telegramChatMigrationFromMessage(
 const TELEGRAM_MIGRATION_ACTOR_USER_ID = '00000000-0000-0000-0000-000000000000';
 
 /**
- * Rewrite stored Telegram group/supergroup ids after Telegram upgrades a chat.
- * Bindings and digest destinations are the live send/route keys. Captured
- * raw-event metadata stays immutable.
+ * Confirm the migrated chat id is not bound to a different team.
  *
- * `tg_chat_id` is globally unique, so the binding lookup is the discovery seam
- * that yields the owning team. Workspace writes then go through `withTeam`.
+ * Completes only after both binding lookups succeed. Throws
+ * {@link TelegramChatMigrationConflictError} on a cross-team collision.
+ * Lookup failures propagate so callers can fail closed instead of retrying
+ * a send to an unverified chat id.
  */
-export async function applyTelegramChatMigration(
+export async function verifyTelegramChatMigrationOwnership(
   db: Db,
   fromChatId: number,
   toChatId: number,
-): Promise<void> {
+): Promise<{ teamId: string } | null> {
   if (
     fromChatId === toChatId ||
     !Number.isSafeInteger(fromChatId) ||
     !Number.isSafeInteger(toChatId)
   ) {
-    return;
+    return null;
   }
 
   const [oldBinding] = await db
@@ -140,12 +140,29 @@ export async function applyTelegramChatMigration(
   }
 
   const teamId = oldBinding?.teamId ?? newBinding?.teamId;
-  if (!teamId) return;
+  return teamId ? { teamId } : null;
+}
+
+/**
+ * Rewrite stored Telegram group/supergroup ids after Telegram upgrades a chat.
+ * Bindings and digest destinations are the live send/route keys. Captured
+ * raw-event metadata stays immutable.
+ *
+ * `tg_chat_id` is globally unique, so the binding lookup is the discovery seam
+ * that yields the owning team. Workspace writes then go through `withTeam`.
+ */
+export async function applyTelegramChatMigration(
+  db: Db,
+  fromChatId: number,
+  toChatId: number,
+): Promise<void> {
+  const ownership = await verifyTelegramChatMigrationOwnership(db, fromChatId, toChatId);
+  if (!ownership) return;
 
   // Dynamic import keeps the HTTP Telegram client graph from pulling the
   // whole workspace port at module load.
   const { withTeam } = await import('#src/team-scope.js');
-  await withTeam(db, teamId, TELEGRAM_MIGRATION_ACTOR_USER_ID, {
+  await withTeam(db, ownership.teamId, TELEGRAM_MIGRATION_ACTOR_USER_ID, {
     skipMembershipCheck: true,
   }).telegram.migrateChatId({ fromChatId, toChatId });
 }
