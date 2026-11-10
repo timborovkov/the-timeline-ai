@@ -114,10 +114,34 @@ describe('applyTelegramChatMigration', () => {
     expect(bindings[0]).toMatchObject({ tgChatId: NEW_CHAT_ID, title: 'Sales supergroup' });
   });
 
-  it('keeps both bindings when old and new ids belong to different teams', async () => {
+  it('rewrites only the owning team digest destination', async () => {
+    await pg.exec(`
+      INSERT INTO team_digest_destinations (team_id, kind, target_id, label, enabled)
+      VALUES ('${OTHER_TEAM_ID}', 'telegram_chat', '${OLD_CHAT_ID}', 'Other stale', true);
+    `);
+
+    await applyTelegramChatMigration(db, OLD_CHAT_ID, NEW_CHAT_ID);
+
+    expect(
+      (await db.select().from(teamDigestDestinations)).map((row) => ({
+        teamId: row.teamId,
+        targetId: row.targetId,
+      })),
+    ).toEqual(
+      expect.arrayContaining([
+        { teamId: TEAM_ID, targetId: String(NEW_CHAT_ID) },
+        { teamId: OTHER_TEAM_ID, targetId: String(OLD_CHAT_ID) },
+      ]),
+    );
+    expect(await db.select().from(teamDigestDestinations)).toHaveLength(2);
+  });
+
+  it('does not rewrite destinations when the new id is bound to another team', async () => {
     await pg.exec(`
       INSERT INTO telegram_chat_bindings (tg_chat_id, team_id, title)
       VALUES (${NEW_CHAT_ID}, '${OTHER_TEAM_ID}', 'Other');
+      INSERT INTO team_digest_destinations (team_id, kind, target_id, label, enabled)
+      VALUES ('${OTHER_TEAM_ID}', 'telegram_chat', '${NEW_CHAT_ID}', 'Other', true);
     `);
 
     await applyTelegramChatMigration(db, OLD_CHAT_ID, NEW_CHAT_ID);
@@ -128,8 +152,17 @@ describe('applyTelegramChatMigration', () => {
       NEW_CHAT_ID,
       OLD_CHAT_ID,
     ]);
-    expect(await db.select().from(teamDigestDestinations)).toMatchObject([
-      { targetId: String(NEW_CHAT_ID) },
-    ]);
+    expect(
+      (await db.select().from(teamDigestDestinations)).map((row) => ({
+        teamId: row.teamId,
+        targetId: row.targetId,
+      })),
+    ).toEqual(
+      expect.arrayContaining([
+        { teamId: TEAM_ID, targetId: String(OLD_CHAT_ID) },
+        { teamId: OTHER_TEAM_ID, targetId: String(NEW_CHAT_ID) },
+      ]),
+    );
+    expect(await db.select().from(teamDigestDestinations)).toHaveLength(2);
   });
 });

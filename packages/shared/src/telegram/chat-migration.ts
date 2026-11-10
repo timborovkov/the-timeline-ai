@@ -1,5 +1,5 @@
-import { type Db, teamDigestDestinations, telegramChatBindings } from '@timeline/db';
-import { and, eq } from 'drizzle-orm';
+import { type Db, telegramChatBindings } from '@timeline/db';
+import { eq } from 'drizzle-orm';
 
 import { childLogger } from '#src/logger.js';
 
@@ -78,10 +78,16 @@ export function telegramChatMigrationFromMessage(
   return null;
 }
 
+/** Synthetic team actor; same id as `TEAM_BOT_ACTOR_USER_ID` in the agent runtime. */
+const TELEGRAM_MIGRATION_ACTOR_USER_ID = '00000000-0000-0000-0000-000000000000';
+
 /**
  * Rewrite stored Telegram group/supergroup ids after Telegram upgrades a chat.
  * Bindings and digest destinations are the live send/route keys. Captured
  * raw-event metadata stays immutable.
+ *
+ * `tg_chat_id` is globally unique, so the binding lookup is the discovery seam
+ * that yields the owning team. Workspace writes then go through `withTeam`.
  */
 export async function applyTelegramChatMigration(
   db: Db,
@@ -95,80 +101,33 @@ export async function applyTelegramChatMigration(
   ) {
     return;
   }
-  const fromTarget = String(fromChatId);
-  const toTarget = String(toChatId);
 
-  await db.transaction(async (tx) => {
-    const [oldBinding] = await tx
-      .select({
-        id: telegramChatBindings.id,
-        teamId: telegramChatBindings.teamId,
-      })
-      .from(telegramChatBindings)
-      .where(eq(telegramChatBindings.tgChatId, fromChatId))
-      .limit(1);
-    const [newBinding] = await tx
-      .select({
-        id: telegramChatBindings.id,
-        teamId: telegramChatBindings.teamId,
-      })
-      .from(telegramChatBindings)
-      .where(eq(telegramChatBindings.tgChatId, toChatId))
-      .limit(1);
+  const [oldBinding] = await db
+    .select({ teamId: telegramChatBindings.teamId })
+    .from(telegramChatBindings)
+    .where(eq(telegramChatBindings.tgChatId, fromChatId))
+    .limit(1);
+  const [newBinding] = await db
+    .select({ teamId: telegramChatBindings.teamId })
+    .from(telegramChatBindings)
+    .where(eq(telegramChatBindings.tgChatId, toChatId))
+    .limit(1);
 
-    if (oldBinding && newBinding) {
-      if (oldBinding.teamId === newBinding.teamId) {
-        await tx.delete(telegramChatBindings).where(eq(telegramChatBindings.id, oldBinding.id));
-      } else {
-        log.warn(
-          { fromChatId, toChatId, oldTeamId: oldBinding.teamId, newTeamId: newBinding.teamId },
-          'telegram chat migration skipped binding rewrite: both ids already bound',
-        );
-      }
-    } else if (oldBinding) {
-      await tx
-        .update(telegramChatBindings)
-        .set({ tgChatId: toChatId })
-        .where(eq(telegramChatBindings.id, oldBinding.id));
-    }
+  if (oldBinding && newBinding && oldBinding.teamId !== newBinding.teamId) {
+    log.warn(
+      { fromChatId, toChatId, oldTeamId: oldBinding.teamId, newTeamId: newBinding.teamId },
+      'telegram chat migration skipped: new chat id is bound to another team',
+    );
+    return;
+  }
 
-    const destinations = await tx
-      .select({
-        id: teamDigestDestinations.id,
-        teamId: teamDigestDestinations.teamId,
-      })
-      .from(teamDigestDestinations)
-      .where(
-        and(
-          eq(teamDigestDestinations.kind, 'telegram_chat'),
-          eq(teamDigestDestinations.targetId, fromTarget),
-        ),
-      );
+  const teamId = oldBinding?.teamId ?? newBinding?.teamId;
+  if (!teamId) return;
 
-    for (const destination of destinations) {
-      const [conflict] = await tx
-        .select({ id: teamDigestDestinations.id })
-        .from(teamDigestDestinations)
-        .where(
-          and(
-            eq(teamDigestDestinations.teamId, destination.teamId),
-            eq(teamDigestDestinations.kind, 'telegram_chat'),
-            eq(teamDigestDestinations.targetId, toTarget),
-          ),
-        )
-        .limit(1);
-      if (conflict) {
-        await tx
-          .delete(teamDigestDestinations)
-          .where(eq(teamDigestDestinations.id, destination.id));
-        continue;
-      }
-      await tx
-        .update(teamDigestDestinations)
-        .set({ targetId: toTarget, updatedAt: new Date() })
-        .where(eq(teamDigestDestinations.id, destination.id));
-    }
-  });
-
-  log.info({ fromChatId, toChatId }, 'telegram chat migrated');
+  // Dynamic import keeps the HTTP Telegram client graph from pulling the
+  // whole workspace port at module load.
+  const { withTeam } = await import('#src/team-scope.js');
+  await withTeam(db, teamId, TELEGRAM_MIGRATION_ACTOR_USER_ID, {
+    skipMembershipCheck: true,
+  }).telegram.migrateChatId({ fromChatId, toChatId });
 }
