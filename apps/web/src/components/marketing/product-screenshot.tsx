@@ -1,15 +1,15 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
-import Image from 'next/image';
-
 import type {
   MarketingScreenshotCallout,
   MarketingScreenshotFrame,
   MarketingScreenshotSlot,
 } from '@/components/marketing/screenshot-slot';
 
-import { FICTIONAL_EXAMPLE_LABEL, PRODUCT_SCREENSHOT_DIR } from '@/components/marketing/copy';
+import { FICTIONAL_EXAMPLE_LABEL } from '@/components/marketing/copy';
+import { marketingScreenshotVariants } from '@/components/marketing/screenshot-slot';
+import { ThemedScreenshotImage } from '@/components/marketing/themed-screenshot-image';
 import { cn } from '@/lib/utils';
 
 const PUBLIC_ROOTS = [
@@ -38,8 +38,9 @@ export function MarketingProductScreenshot({
   frame?: MarketingScreenshotFrame;
   callouts?: readonly MarketingScreenshotCallout[];
 }) {
-  const src = `${PRODUCT_SCREENSHOT_DIR}/${file}`;
-  const present = marketingScreenshotFileExists(file);
+  const present = Object.values(marketingScreenshotVariants(file)).every(
+    marketingScreenshotFileExists,
+  );
   const portrait = frame === 'portrait';
 
   return (
@@ -66,20 +67,7 @@ export function MarketingProductScreenshot({
                 Loading screenshot
               </p>
             </div>
-            <Image
-              src={src}
-              alt={alt}
-              fill
-              priority={priority}
-              unoptimized
-              sizes={
-                portrait ? '(max-width: 767px) 24rem, 100vw' : '(min-width: 1024px) 72rem, 100vw'
-              }
-              className={cn(
-                'z-[1]',
-                portrait ? 'object-contain object-top' : 'object-cover object-top',
-              )}
-            />
+            <ThemedScreenshotImage file={file} alt={alt} portrait={portrait} priority={priority} />
           </>
         ) : (
           <div

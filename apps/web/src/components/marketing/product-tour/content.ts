@@ -20,7 +20,7 @@ export const PRODUCT_TOUR = {
         'Link Telegram and Slack, forward email, and sync GitHub, Linear, Google Drive, Monday.com and Sentry.',
       file: '18-sources-light.png',
       alt: 'Sources page showing Telegram, Slack, email and synced tools connected to a workspace.',
-      reshoot: 'Needs a true dark capture: 18-sources-dark.png was captured in light mode.',
+      reshoot: undefined,
       mobileFile: undefined,
     },
     {

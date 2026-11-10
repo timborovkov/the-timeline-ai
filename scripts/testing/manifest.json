@@ -939,7 +939,7 @@
     "group": "dom"
   },
   "apps/web/src/components/marketing/product-screenshot.test.tsx": {
-    "group": "unit"
+    "group": "dom"
   },
   "apps/web/src/components/marketing/screenshot-inventory.test.ts": {
     "group": "unit"

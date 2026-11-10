@@ -54,6 +54,7 @@
     "test:runtime": "bun --bun --no-env-file --conditions=development apps/worker/scripts/runtime-smoke.ts",
     "billing:polar-convert": "bun --no-env-file --conditions=development scripts/billing-polar-convert.ts",
     "email:replay": "bun --conditions=development scripts/replay-inbound-email.ts",
+    "capture:marketing-screenshots": "bun scripts/capture-marketing-screenshots.mjs",
     "test:website-scan:live": "WEBSITE_SCAN_LIVE_EVAL=1 bun --conditions=development scripts/testing/run.ts src/workers/websiteScan.live-eval.test.ts --live"
   },
   "devDependencies": {
