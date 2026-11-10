@@ -32,6 +32,7 @@ import { startTeamExportWorker } from '#src/workers/teamExport.js';
 import { startTimelineMomentPresentationWorker } from '#src/workers/timelineMomentPresentation.js';
 import { startTranscribeWorker } from '#src/workers/transcribe.js';
 import { startWebhookDeliveryWorker } from '#src/workers/webhookDelivery.js';
+import { startWebsiteScanWorker } from '#src/workers/websiteScan.js';
 
 const log = childLogger('worker');
 
@@ -74,6 +75,11 @@ async function main(): Promise<void> {
       name: queue.QUEUE_NAMES.emailInbound,
       start: () => startEmailInboundWorker({ db }),
       closeQueue: queue.closeEmailInboundQueue,
+    },
+    {
+      name: queue.QUEUE_NAMES.websiteScan,
+      start: () => startWebsiteScanWorker({ db }),
+      closeQueue: queue.closeWebsiteScanQueue,
     },
     {
       name: queue.QUEUE_NAMES.transcribe,

@@ -13,6 +13,7 @@ const fakes = vi.hoisted(() => ({
   setFirstRunPhase: vi.fn(),
   checkRateLimit: vi.fn(),
   isWebsiteScanEnabled: vi.fn(),
+  enqueueWebsiteScanJob: vi.fn(),
   trackProductEventBestEffort: vi.fn(),
   revalidatePath: vi.fn(),
 }));
@@ -53,7 +54,10 @@ await vi.mock(
 await vi.mock(
   import.meta.resolve('@timeline/shared/rate-limit'),
   () => ({
-    RATE_LIMITS: { firstRun: { capacity: 30, refillPerSec: 0.5 } },
+    RATE_LIMITS: {
+      firstRun: { capacity: 30, refillPerSec: 0.5 },
+      websiteScan: { capacity: 1, refillPerSec: 1 / 86_400 },
+    },
     checkRateLimit: fakes.checkRateLimit,
     rateLimitKey: (...parts: string[]) => parts.join(':'),
   }),
@@ -75,6 +79,14 @@ await vi.mock(
     }),
   }),
   () => import('@timeline/shared/team-scope'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/queue'),
+  () => ({
+    requireRedisQueue: () =>
+      Promise.resolve({ enqueueWebsiteScanJob: fakes.enqueueWebsiteScanJob }),
+  }),
+  () => import('@/lib/queue'),
 );
 await vi.mock(
   import.meta.resolve('next/cache'),
@@ -109,6 +121,7 @@ beforeEach(() => {
   fakes.selectStarterPath.mockResolvedValue({});
   fakes.skipToEmptyHome.mockResolvedValue({});
   fakes.markScanFailed.mockResolvedValue({});
+  fakes.enqueueWebsiteScanJob.mockResolvedValue(undefined);
 });
 
 describe('first-run analytics', () => {
@@ -157,6 +170,43 @@ describe('first-run analytics', () => {
       error: 'Website scan is coming soon. Upload a document or forward an email.',
     });
     expect(fakes.selectStarterPath).not.toHaveBeenCalled();
+    expect(fakes.enqueueWebsiteScanJob).not.toHaveBeenCalled();
     expect(fakes.trackProductEventBestEffort).not.toHaveBeenCalled();
+  });
+
+  it('enqueues a website scan when the flag is on', async () => {
+    fakes.isWebsiteScanEnabled.mockReturnValue(true);
+    await expect(
+      selectStarterPathAction({ path: 'website', websiteUrl: 'studio.example' }),
+    ).resolves.toEqual({ ok: true });
+    expect(fakes.selectStarterPath).toHaveBeenCalledWith('website', {
+      websiteUrl: 'https://studio.example/',
+      websiteHost: 'studio.example',
+    });
+    expect(fakes.enqueueWebsiteScanJob).toHaveBeenCalledWith({
+      teamId: TEAM_ID,
+      userId: USER_ID,
+    });
+    expect(fakes.markScanFailed).not.toHaveBeenCalled();
+    expect(fakes.trackProductEventBestEffort).toHaveBeenCalledWith(
+      { kind: 'user', userId: USER_ID, teamId: TEAM_ID },
+      'onboarding_first_path_selected',
+      { path: 'website' },
+    );
+  });
+
+  it('refuses a second website scan for the same team', async () => {
+    fakes.isWebsiteScanEnabled.mockReturnValue(true);
+    fakes.checkRateLimit
+      .mockResolvedValueOnce({ ok: true, remaining: 29 })
+      .mockResolvedValueOnce({ ok: false, remaining: 0, retryAfterMs: 86_400_000 });
+    await expect(
+      selectStarterPathAction({ path: 'website', websiteUrl: 'studio.example' }),
+    ).resolves.toEqual({
+      ok: false,
+      error:
+        'This team already used its signup website scan. Upload a document or forward an email instead.',
+    });
+    expect(fakes.enqueueWebsiteScanJob).not.toHaveBeenCalled();
   });
 });

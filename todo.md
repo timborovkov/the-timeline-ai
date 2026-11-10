@@ -145,7 +145,9 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       email forward, skip to empty Home), named processing steps, first cited
       record, guided Ask, approvals, Go live, and a slim Getting started strip
       inside the real app. Sample workspace is out of scope. Website scan fetch
-      pipeline is a follow-up.
+      pipeline is behind `WEBSITE_SCAN_ENABLED` (off by default): public pages
+      become cited `source: web` events through `externalFetch` + extract;
+      objects still wait on approvals.
 - [x] Connect your agent: `/app/connect-agent` consolidates Timeline-as-MCP
       setup (OAuth-first client picker, connected grants with revoke, add-memory
       email/webhook, SKILL.md, collapsed `tla_` keys). Admin grant rows show the

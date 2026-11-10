@@ -367,7 +367,7 @@ Treat this file as an operating contract for agents, not a loose README.
 ```
 apps/
   web/      Next.js 16 app (App Router, RSC, server actions, Auth.js)
-  worker/   BullMQ workers (email-inbound, conversation-agent, transcribe, extract,
+  worker/   BullMQ workers (email-inbound, website-scan, conversation-agent, transcribe, extract,
             suggestions, embed,
             overdue-scan, calendar-recurrence,
             meeting-finalize, meeting-scheduler, object-summary, janitor,

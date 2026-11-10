@@ -23,6 +23,7 @@ import { trackProductEventBestEffort } from '@/lib/analytics';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { publicActionError } from '@/lib/public-error';
+import { requireRedisQueue } from '@/lib/queue';
 import { runSentryServerAction } from '@/lib/sentry-action';
 
 const log = childLogger('web:actions:first-run');
@@ -63,6 +64,17 @@ async function limitFirstRun(userId: string): Promise<string | null> {
   });
   if (!rl.ok) {
     return `Too many onboarding updates. Try again in ${String(Math.ceil(rl.retryAfterMs / 1000))} seconds.`;
+  }
+  return null;
+}
+
+async function limitWebsiteScan(teamId: string): Promise<string | null> {
+  const rl = await rateLimit.checkRateLimit({
+    key: rateLimit.rateLimitKey('website_scan', 'team', teamId),
+    ...rateLimit.RATE_LIMITS.websiteScan,
+  });
+  if (!rl.ok) {
+    return 'This team already used its signup website scan. Upload a document or forward an email instead.';
   }
   return null;
 }
@@ -140,6 +152,17 @@ export async function selectStarterPathAction(input: {
       if ('error' in parsedUrl) return { ok: false, error: parsedUrl.error };
       websiteUrl = parsedUrl.href;
       websiteHost = parsedUrl.host;
+      try {
+        await requireRedisQueue();
+      } catch (err) {
+        log.error({ err }, 'website scan queue unavailable');
+        return {
+          ok: false,
+          error: 'Could not start the website scan. Upload a document or forward an email instead.',
+        };
+      }
+      const scanLimited = await limitWebsiteScan(got.teamId);
+      if (scanLimited) return { ok: false, error: scanLimited };
     }
 
     try {
@@ -148,9 +171,13 @@ export async function selectStarterPathAction(input: {
         ...(websiteHost ? { websiteHost } : {}),
       });
       if (parsed.data.path === 'website') {
-        // The fetch pipeline ships in a follow-up PR. Fail closed so this
-        // path never pretends pages were saved.
-        await got.scope.onboarding.markScanFailed('not_enabled');
+        try {
+          const queue = await requireRedisQueue();
+          await queue.enqueueWebsiteScanJob({ teamId: got.teamId, userId: got.userId });
+        } catch (err) {
+          log.error({ err }, 'enqueue website scan failed');
+          await got.scope.onboarding.markScanFailed('unreachable');
+        }
       }
     } catch (err) {
       log.error({ err }, 'selectStarterPath failed');

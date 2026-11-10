@@ -85,7 +85,8 @@ look like a month of active use.
 Use this login to capture first-run onboarding screens. Seed resets it to the
 Welcome phase. Nothing is connected: no timeline events, integrations, documents,
 meetings, objects, proposals, or completed checklist steps. Website scan stays
-Coming soon unless `WEBSITE_SCAN_ENABLED` is on.
+Coming soon unless `WEBSITE_SCAN_ENABLED` is on; with the flag on, a scan writes
+cited pages and still never creates objects until someone approves a proposal.
 
 | Email | Role | Team |
 | --- | --- | --- |

@@ -81,8 +81,11 @@ ln -sf ../../.env apps/web/.env
       </p>
       <p>
         First-run website scan stays off unless <code>WEBSITE_SCAN_ENABLED=true</code>. Leave it
-        unset for local work; the chooser still shows the card as Coming soon. Team inbound
-        addresses use <code>INBOUND_EMAIL_DOMAIN</code> from config, never a hardcoded domain.
+        unset for local work; the chooser still shows the card as Coming soon. When the flag is on,
+        the <code>website-scan</code> worker fetches up to five same-origin public pages through
+        <code>externalFetch</code> (robots.txt, timeouts, size caps, one scan per team) and writes
+        cited web events. Objects still wait on approvals. Team inbound addresses use
+        <code>INBOUND_EMAIL_DOMAIN</code> from config, never a hardcoded domain.
       </p>
 
       <p>

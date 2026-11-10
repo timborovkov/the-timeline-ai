@@ -57,6 +57,7 @@ export {
   suggestionTypeRank,
   websiteProcessingSteps,
 } from '#src/onboarding/first-run.js';
+export { processWebsiteScanJob } from '#src/onboarding/website-scan-job.js';
 export type {
   FirstRunPath,
   FirstRunPhase,

@@ -583,7 +583,9 @@ export function createFirstRunHandlers({ db, teamId, userId, ensureMember }: Fir
 
       if (firstRun.starterPath === 'website') {
         const eventIds: string[] = [];
-        if (firstRun.captureEventId) eventIds.push(firstRun.captureEventId);
+        if (firstRun.captureEventId && (await visibleRawEvent(firstRun.captureEventId))) {
+          eventIds.push(firstRun.captureEventId);
+        }
         if (firstRun.starterSelectedAt) {
           const pages = await db
             .select({
@@ -598,6 +600,7 @@ export function createFirstRunHandlers({ db, teamId, userId, ensureMember }: Fir
                 eq(rawEvents.source, 'web'),
                 gte(rawEvents.createdAt, firstRun.starterSelectedAt),
                 rawEventVisibleToUser(userId),
+                sql`(${rawEvents.sourceMetadata} ->> 'firstRunWebsiteScan') = 'true'`,
               ),
             )
             .orderBy(asc(rawEvents.createdAt))

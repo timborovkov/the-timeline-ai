@@ -208,6 +208,31 @@ describe('queue wrappers', () => {
     expect(queue?.close).toHaveBeenCalledOnce();
   });
 
+  it('deduplicates website scan jobs per team and keeps page text out of Redis', async () => {
+    const queues = await importQueues();
+    const data = {
+      teamId: '11111111-1111-4111-8111-111111111111',
+      userId: '22222222-2222-4222-8222-222222222222',
+    };
+    await queues.enqueueWebsiteScanJob(data);
+    await queues.enqueueWebsiteScanJob(data);
+    const queue = fakes.queues.find((item) => item.name === 'website-scan');
+    expect(queue?.options).toMatchObject({
+      defaultJobOptions: {
+        attempts: 3,
+        backoff: { type: 'exponential', delay: 5_000 },
+      },
+    });
+    expect(queue?.jobs.size).toBe(1);
+    expect(queue?.addCalls[0]).toEqual({
+      name: 'scan',
+      data,
+      opts: { jobId: `website-scan-${data.teamId}` },
+    });
+    await queues.closeWebsiteScanQueue();
+    expect(queue?.close).toHaveBeenCalledOnce();
+  });
+
   it('constructs core queues with stable names and retry/backoff defaults', async () => {
     const queues = await importQueues();
 

@@ -1,7 +1,7 @@
 # @timeline/worker
 
 BullMQ workers for the async processing pipeline: durable direct conversation
-agents, email-inbound, transcribe, extract, embed, document-extract (also as a dedicated
+agents, email-inbound, website-scan, transcribe, extract, embed, document-extract (also as a dedicated
 `WORKER_MODE=document-extract` / Daytona sandbox service — ADR 0013), meeting-finalize,
 task-category classification, overdue-scan, integrations, maintenance, and
 exports. One Bun entry point starts the queue workers from the same codebase.
@@ -36,6 +36,12 @@ attempts, exponential backoff starting at 30 seconds, and provider Retry-After
 handling. Failed global ingestion jobs stay operator-visible rather than appearing
 in team job screens. See [email setup and replay](../../docs/setup/resend.html) for
 configuration, retention, and `bun run email:replay -- <received-email-uuid>`.
+
+The `website-scan` worker runs the first-run public website crawl. Jobs carry only
+team and user IDs. The worker loads the stored URL from `team_first_run`, fetches
+through `externalFetch` (robots.txt, same-origin, five-page cap, timeouts, size
+caps), writes cited `source: web` events, and enqueues extract. It never creates
+objects. One scan per team at signup; `WEBSITE_SCAN_ENABLED` defaults off.
 
 ## How to use
 
