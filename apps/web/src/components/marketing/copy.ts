@@ -8,6 +8,28 @@ export const CTA_MICROCOPY_LEAD = 'Free for up to 3 members · no card required 
 export const FICTIONAL_EXAMPLE_LABEL = 'Fictional example · Acme Labs demo workspace';
 export const PRODUCT_SCREENSHOT_DIR = '/marketing/screenshots';
 
+export const FIRST_RUN_STEPS = [
+  {
+    index: '01',
+    title: 'Your first team is created',
+    detail: 'We create it automatically when you sign up. No card is required.',
+  },
+  {
+    index: '02',
+    title: 'Connect one capture source',
+    detail:
+      'A Slack channel, a Telegram group, or forwarded email is enough. You do not need every connector.',
+  },
+  {
+    index: '03',
+    title: 'Open the first record, or ask',
+    detail: 'Once something has landed, the source stays attached. Ask from Home or Ask.',
+  },
+] as const;
+
+export const FIRST_RUN_NOTE =
+  'A linked Slack channel or Telegram group captures the conversation. Plain-text questions in a direct chat ask the agent; explicit notes and supported media can still be captured.';
+
 export const USE_CASE_NAV_ITEMS = [
   { href: '/use-cases/work-record', label: 'Work record' },
   { href: '/use-cases/team-daily-log', label: 'Team daily log' },

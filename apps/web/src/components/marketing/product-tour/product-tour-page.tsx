@@ -71,7 +71,11 @@ export function ProductTourPage() {
         ))}
       </ol>
 
-      <MarketingCtaBand title={PRODUCT_TOUR.closingTitle} body={PRODUCT_TOUR.closingBody} />
+      <MarketingCtaBand
+        title={PRODUCT_TOUR.closingTitle}
+        body={PRODUCT_TOUR.closingBody}
+        firstRun
+      />
     </main>
   );
 }

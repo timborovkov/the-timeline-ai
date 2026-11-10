@@ -144,6 +144,16 @@ describe('LandingPage', () => {
     expect(html).toContain('data-home-proof="32-ask-handoff-dark.png"');
     expect(html).toContain('data-home-proof="33-digest-dark.png"');
     expect(html).toContain('data-screenshot-present="true"');
+    expect(html).toContain('data-screenshot-pending');
+    expect(html).toContain('Loading screenshot');
+    expect(html).toContain('data-screenshot-callouts');
+    expect(html).toContain('What changed');
+    expect(html).toContain('Who owns the next step');
+    expect(html).toContain('Link to the source');
+    expect(html).toContain('data-first-run="full"');
+    expect(html).toContain('Your first team is created');
+    expect(html).toContain('Connect one capture source');
+    expect(html).toContain('A linked Slack channel or Telegram group captures the conversation.');
     expect(html).not.toContain('Screenshot placeholder');
     expect(html).not.toContain('data-home-ambient');
     expect(html).not.toContain('↘');
@@ -223,6 +233,7 @@ describe('LandingPage', () => {
       'The Timeline updates itself from your team&#x27;s Slack or Telegram, email, calls, docs and wherever else work happens. Who did what, what was promised, and what&#x27;s next, always current.',
     );
     expect(html).toContain('Link one channel. <em>Watch the record fill in.</em>');
+    expect(html).toContain('approve lasting record changes that The Timeline proposes');
     expect(html).toContain(
       'Your team runs its work in Slack or Telegram, then spreads it across email, calls and documents.',
     );

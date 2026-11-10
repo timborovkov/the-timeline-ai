@@ -47,7 +47,7 @@ export const MCP_GUIDE_PAGE = {
     title: 'Two different MCP directions',
     inboundTitle: 'The Timeline Agent calling other tools',
     inboundBody:
-      'This page is about inbound agent tools: MCP servers you connect so The Timeline Agent can look up or act in another product during a question. Results are live lookups, not a stored chronology from that product.',
+      'Live lookups, not background sync. A successful team-shared call can be captured as evidence; connecting a server does not import its history.',
     outboundTitle: 'Other agents calling Timeline',
     outboundBody:
       'External agents such as Claude, Cursor, or Codex can read a Timeline team through Timeline’s own MCP endpoint. That setup lives on the Agents page. It does not add third-party tools to The Timeline Agent.',
@@ -58,7 +58,9 @@ export const MCP_GUIDE_PAGE = {
       'Connecting MCP servers is self-serve in the product. It is not an operator-only env-file setup for customers.',
     teamTitle: 'Team-shared servers',
     teamBody:
-      'Owners and admins open Connections, then Agent tools, then Agent MCP servers. From there they can connect a catalog tool or add a custom server for the team. Successful calls from team-shared servers can be captured as team-visible evidence.',
+      'Owners and admins open Connections, then Agent tools, then Agent MCP servers. From there they can connect a catalog tool or add a custom server for the team. Live lookups, not background sync: a successful team-shared call can be captured as evidence; connecting a server does not import its history.',
+    planLimit:
+      'The Free plan does not include custom MCP servers. Add them on a paid plan under Connections → Agent tools.',
     teamHref: '/app/connections/agent-tools',
     teamLabel: 'Open Agent tools',
     personalTitle: 'Personal servers',

@@ -123,6 +123,12 @@ export function McpGuidePage() {
                 <p className="mt-4 max-w-[64ch] text-base leading-relaxed text-fg-muted">
                   {MCP_GUIDE_PAGE.setup.intro}
                 </p>
+                <p
+                  className="mt-4 max-w-[64ch] text-sm leading-relaxed text-fg-muted"
+                  data-mcp-plan-limit
+                >
+                  {MCP_GUIDE_PAGE.setup.planLimit}
+                </p>
                 <div className="mt-10">
                   <MarketingProductScreenshot
                     file={MCP_GUIDE_PAGE.screenshot.file}

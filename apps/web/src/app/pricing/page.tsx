@@ -14,6 +14,7 @@ import {
 import { PricingCalculator } from '@/components/marketing/pricing-calculator';
 import { PricingFaq } from '@/components/marketing/pricing-faq';
 import { MarketingSectionIndex } from '@/components/marketing/section-index';
+import { StartFreeLink } from '@/components/marketing/start-free-cta';
 import {
   PUBLIC_DOCUMENT_REGISTRY,
   buildPublicStructuredData,
@@ -40,14 +41,23 @@ export default function PricingPage() {
           <p className="text-sm font-medium text-fg-muted">Pricing</p>
           <div className="mt-6 grid items-end gap-10 lg:grid-cols-[1.25fr_0.75fr]">
             <h1 className="max-w-[14ch] break-words text-balance text-[3rem] font-semibold leading-[0.95] tracking-[-0.05em] text-fg sm:text-[clamp(3.5rem,5vw,5.5rem)]">
-              Start free. Pay for what you use.
+              Start Free, no card.
             </h1>
             <div className="max-w-[44ch] space-y-4 text-base leading-relaxed text-fg-muted sm:text-lg">
               <p>
-                Start with Free, with no card required. Pay as you go keeps the Free allowance and
-                charges for usage beyond it. Choose Team or Business for more included usage and
-                members.
+                Start Free to try your first source. Add payment when you need more. Pay as you go
+                keeps the Free allowance and charges for usage beyond it. Choose Team or Business
+                for more included usage and members.
               </p>
+              <div className="flex flex-wrap items-center gap-x-5 gap-y-3">
+                <StartFreeLink className="inline-flex min-h-11 items-center gap-2 rounded-sm bg-signal px-4 text-sm font-semibold text-signal-fg outline-none hover:brightness-95 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2" />
+                <Link
+                  href="#estimate-usage"
+                  className="rounded-sm font-medium text-fg underline decoration-border-strong underline-offset-4 outline-none hover:decoration-fg focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  Estimate paid usage
+                </Link>
+              </div>
               <p>
                 Not sure yet?{' '}
                 <Link
@@ -68,10 +78,11 @@ export default function PricingPage() {
             <MarketingSectionIndex index="01" label="Plans" />
             <div>
               <h2 className="max-w-[18ch] text-3xl font-semibold tracking-tight sm:text-4xl">
-                Choose the plan that fits.
+                Start Free. Paid plans are optional.
               </h2>
               <p className="mt-4 max-w-[64ch] text-base leading-relaxed text-fg-muted">
-                All prices are in euros and exclude VAT.
+                All prices are in euros and exclude VAT. Free is the no-card entry. Paid usage and
+                committed plans are there when you need them.
               </p>
               <PricingPlanGrid className="mt-10" />
               <PricingEnterpriseNudge className="mt-4" />
@@ -80,17 +91,18 @@ export default function PricingPage() {
         </MarketingContainer>
       </section>
 
-      <section className="border-b border-border bg-surface/45">
+      <section id="estimate-usage" className="scroll-mt-24 border-b border-border bg-surface/45">
         <MarketingContainer className="py-16 sm:py-20">
           <MarketingSectionGrid>
-            <MarketingSectionIndex index="02" label="Usage" />
+            <MarketingSectionIndex index="02" label="Optional" />
             <div>
               <h2 className="max-w-[20ch] text-3xl font-semibold tracking-tight sm:text-4xl">
-                Estimate your monthly cost.
+                Estimate paid usage when you need it.
               </h2>
               <p className="mt-4 max-w-[64ch] text-base leading-relaxed text-fg-muted">
-                Compare Pay as you go, Team and Business using the same monthly usage. Adjust the
-                example to see what is included and what you would pay.
+                Optional planning. Compare Pay as you go, Team and Business using the same monthly
+                usage. You do not need these numbers to start Free. Adjust the example to see what
+                is included and what you would pay.
               </p>
               <PricingCalculator />
               <PricingMetersExplainer className="mt-8" />
