@@ -7,6 +7,8 @@ for developing Timeline; `plugins/timeline` is the separate product/MCP consumer
 
 ## Included workflows
 
+Use the narrowest applicable entry point. `interface-review` reviews an explicitly selected diff, branch or PR; `better-interface` is a broader audit that routes to focused domain references. Root AGENTS owns repository validation; skill examples do not create additional local gates.
+
 | Group | Skills |
 | --- | --- |
 | Delivery | `ship`, `diff-review`, `document-release`, `handoff`, `upstream-sync` |
@@ -43,10 +45,7 @@ without authenticated Git/PR tooling should return their patch and publication
 status to the host; Railway needs separately authorized, authenticated access.
 Do not provision credentials or deploy merely because skills were installed.
 
-This PR supplies the repository files. It does not configure a hosted cloud
-environment, grant network access, or install secrets there. Start a cloud task
-from a revision containing this bundle and check that it can read a skill and a
-supporting reference before relying on automatic discovery.
+Read these repository files from the checked-out revision; environment credentials and tooling are configured separately.
 
 ## Provenance and maintenance
 
@@ -65,7 +64,7 @@ skills declare MIT licensing in their original frontmatter; their upstream repos
 provided no separate license file in the inspected tree. Retain the author metadata.
 
 Update a selected skill deliberately from its recorded source, copy the full folder,
-preserve notices, reapply the Timeline adaptations, and update its source hash.
+preserve notices, reapply the Timeline adaptations, and preserve its source hash. Record `localSha256` for a locally adapted entrypoint so local edits do not masquerade as an upstream snapshot.
 Check local Markdown links, frontmatter/name consistency, invocation policy,
 package-manager commands, referenced skills, and absence of external symlinks.
 Review helper scripts before running them. Do not regenerate this bundle from all

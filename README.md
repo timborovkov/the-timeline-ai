@@ -14,8 +14,8 @@
   <a href="./SUPPORT.md">Support</a> ·
   <a href="./CONTRIBUTING.md">Contributing</a> ·
   <a href="./plugins/timeline/skills/README.md">Agent plugins</a> ·
-  <a href="./docs/setup/local.html">Local setup</a> ·
-  <a href="./docs/index.html">Developer docs</a>
+  <a href="docs/setup/local.md">Local setup</a> ·
+  <a href="docs/README.md">Developer docs</a>
 </p>
 
 The Timeline keeps client, deal, task and decision records up to date from Slack,
@@ -36,7 +36,7 @@ The project is under active development; APIs and migrations may change.
 ## Getting started
 
 Use the hosted app at [thetimeline.cc](https://thetimeline.cc), or follow the
-[local development guide](docs/setup/local.html) to work on the code.
+[local development guide](docs/setup/local.md) to work on the code.
 Coding-agent workflows are bundled in [`.agents/skills`](.agents/skills/README.md),
 including cloud setup requirements and the repository-specific React Doctor gate.
 
@@ -66,28 +66,15 @@ calls routed through a shared OpenRouter inference layer.
 
 ## Development
 
-Common commands, after completing local setup:
+Follow [local setup](docs/setup/local.md) and [testing policy](docs/testing/README.md). Commands and dependency versions are owned by `package.json` and `.bun-version`; [AGENTS.md](AGENTS.md) defines the repository operating contract.
 
-| Command | Purpose |
-| --- | --- |
-| `bun run dev` | Start the web app and workers |
-| `bun run validate` | Check formatting, TypeScript, ESLint and Knip |
-| `bun run test` | Run offline unit and integration tests |
-| `bun run doctor` | Run React Doctor |
-
-See [AGENTS.md](AGENTS.md#validation-policy) for the canonical validation policy,
-change-specific checks, and development/production merge gates. This command
-reference is not a required local checklist.
-
-Develop on `main` and release through PRs to `production`. See the
-[deployment guide](docs/railway.html#deploy-flow) for Railway setup.
 
 ## Documentation
 
-- [Developer documentation](docs/index.html)
+- [Developer documentation](docs/README.md)
 - [Architecture and memory model](docs/relational-memory.md)
-- [Integrations and MCP](docs/setup/integrations.html)
-- [Deployment](docs/railway.html) and [operations](docs/operations.md)
+- [Integrations and MCP](docs/setup/integrations.md)
+- [Deployment](docs/railway.md) and [operations](docs/operations.md)
 - [Design system](design.md)
 - [Security and privacy](https://thetimeline.cc/trust)
 
