@@ -13,6 +13,7 @@ Use this map to locate implementation responsibilities. It is not a task list or
 | Retrieval | The shared retrieval request contract owns input vocabulary; MCP, dashboard and chat adapters translate into it. Preserve visibility, provenance and partial-failure disclosure. |
 | Reconciliation | Dependency-light core/planner contracts stay separate from dashboard/runtime orchestration. Direct-write provenance has one owner. |
 | Redis and queues | `redis/connection.ts` owns connection roles; queue shutdown must not close request-cache/admission connections. Drain consumers before producers/connections. |
+| Website scan | `onboarding/website-scan-job.ts` orchestrates admission and handoffs; `website-source-scope.ts` owns team-scoped crawl checkpoints and immutable page snapshots. Canonical changes still go through proposals and approval. |
 | Provider lifecycle | Provider adapters own browsing, selection validation and capture protocol; generic sync assembles required services and must not silently omit persistence. |
 | Drive | [Drive lifecycle](drive.md) owns snapshots, evidence packing, transient extraction and transactional source-link changes. |
 | Messaging | Provider-neutral durable turns, claims and delivery policy; outbound delivery must not depend on inbound orchestration. Provider retries preserve idempotency. |

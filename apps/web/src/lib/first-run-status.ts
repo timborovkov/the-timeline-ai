@@ -1,7 +1,5 @@
-import { getEnv } from '@timeline/shared/env';
 import {
   firstCaptureJustLanded,
-  isWebsiteScanEnabled,
   prefilledAskQuestion,
   recommendedGoLiveChannel,
   type FirstRunState,
@@ -40,7 +38,6 @@ export async function loadFirstRunStatus(input: {
   }
   return {
     firstRun,
-    websiteScanEnabled: isWebsiteScanEnabled(getEnv()),
     inboundEmail: displayInboundEmail({
       slug: input.teamSlug,
       inboundEmail: record?.inboundEmail ?? null,

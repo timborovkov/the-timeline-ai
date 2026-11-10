@@ -1656,6 +1656,9 @@
   "apps/worker/src/workers/webhookDelivery.test.ts": {
     "group": "unit"
   },
+  "apps/worker/src/workers/websiteScan.test.ts": {
+    "group": "unit"
+  },
   "packages/db/src/chat-message-sequence-migration.test.ts": {
     "group": "unit"
   },
@@ -2184,6 +2187,12 @@
   "packages/shared/src/onboarding/index.test.ts": {
     "group": "integration"
   },
+  "packages/shared/src/onboarding/website-scan-job.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/onboarding/website-scan.test.ts": {
+    "group": "unit"
+  },
   "packages/shared/src/pagination.test.ts": {
     "group": "unit"
   },
@@ -2393,6 +2402,12 @@
     "group": "unit"
   },
   "packages/shared/src/integrations/resource-access.test.ts": {
+    "group": "unit"
+  },
+  "apps/worker/src/workers/websiteScan.live-eval.test.ts": {
+    "group": "live"
+  },
+  "packages/shared/src/onboarding/website-source-scope.test.ts": {
     "group": "unit"
   }
 }

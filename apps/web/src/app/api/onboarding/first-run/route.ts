@@ -1,7 +1,5 @@
-import { getEnv } from '@timeline/shared/env';
 import {
   firstCaptureJustLanded,
-  isWebsiteScanEnabled,
   prefilledAskQuestion,
   recommendedGoLiveChannel,
 } from '@timeline/shared/onboarding';
@@ -49,7 +47,6 @@ export async function GET() {
 
     return NextResponse.json({
       firstRun,
-      websiteScanEnabled: isWebsiteScanEnabled(getEnv()),
       inboundEmail: displayInboundEmail({
         slug: active.teamSlug,
         inboundEmail: record?.inboundEmail ?? null,
