@@ -41,6 +41,11 @@ describe('Connect MCP tools route', () => {
     expect(text).toContain('Connections');
     expect(text).toContain('Agent tools');
     expect(text).toContain('Agent MCP servers');
+    expect(text).toContain('Live lookups, not background sync');
+    expect(text).toContain('does not import its history');
+    expect(html).toContain('data-mcp-plan-limit');
+    expect(text).toContain('The Free plan does not include custom MCP servers');
+    expect(text).toContain('Personal results stay private');
     expect(text).not.toMatch(/native Jira ingest is live|silently sync Notion history/i);
     expect(metadata.alternates).toEqual({ canonical: '/integrations/mcp' });
     expect(metadata.title).toBe(MCP_GUIDE_PAGE.seoTitle);

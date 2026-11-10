@@ -1,3 +1,4 @@
+import type { MarketingScreenshotCallout } from '@/components/marketing/screenshot-slot';
 import type { PublicCanonicalPath } from '@/lib/public-site';
 
 export const USE_CASE_ROUTES = {
@@ -18,6 +19,7 @@ interface UseCaseScreenshot {
   caption: string;
   reshoot: string;
   placement: 'after-subhead' | 'after-how-it-works';
+  callouts?: readonly MarketingScreenshotCallout[];
 }
 
 interface UseCaseFaq {
@@ -156,9 +158,23 @@ export const USE_CASES: readonly UseCaseContent[] = [
         file: '33-digest-dark.png',
         alt: 'Daily workspace update with highlights, status, follow-ups, new tasks and upcoming calendar.',
         caption:
-          'The daily update: highlights, status, follow-ups, new tasks and what’s coming up, written from what the team said and shipped.',
+          'The daily update: highlights, status, follow-ups, new tasks and what’s coming up, written from captured conversations, with links to tasks and calendar items.',
         reshoot: `${RESHOOT_CITATION_SEED} Capture from the top of the page.`,
         placement: 'after-subhead',
+        callouts: [
+          {
+            label: 'What changed',
+            detail: 'Highlights and status are written from that day’s captured work.',
+          },
+          {
+            label: 'Who owns the next step',
+            detail: 'Follow-ups and new tasks name the next owner.',
+          },
+          {
+            label: 'Link to the source',
+            detail: 'Open linked tasks and calendar items; find captured sources in Timeline.',
+          },
+        ],
       },
       {
         file: '44-work-dark.png',

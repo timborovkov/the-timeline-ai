@@ -50,6 +50,14 @@ export const AGENTS_HUB = {
       'The Timeline skill lives in plugins/timeline and is bundled for Codex and Claude Code.',
     ],
   },
+  setupPrerequisite: {
+    title: 'Account and team first',
+    body: 'Paste the line into a compatible agent. If you already have a Timeline team, sign in and choose it. If you are new, create an account first — we create your first team automatically — then approve access. Connecting does not import Slack, Telegram or email history.',
+    distinction:
+      'This lets an external agent read Timeline and write cited notes. It does not add third-party tools to The Timeline Agent.',
+    mcpHref: '/integrations/mcp' as const,
+    mcpLabel: 'Connect MCP tools for live lookups',
+  },
   installGuide: {
     href: '/help/agents',
     label: 'Full agent install guide',

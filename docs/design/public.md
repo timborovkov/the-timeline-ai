@@ -9,8 +9,11 @@ Grok, OpenClaw, and Hermes marks on white tiles in a single row, and the copyabl
 `Set up The Timeline - https://thetimeline.cc/llms.txt` command. The card follows
 landing `--home-*` tokens in both themes and does not use letter discs. The claim defines The Timeline as an auto-updating work record:
 what is said in Slack, Telegram, email and calls becomes current client, deal,
-task and decision records, with the source for every line and human approval
-before anything changes. Audience copy describes how teams work (chat-run teams
+task and decision records, with the source for every line. Captured evidence
+lands automatically; lasting record changes wait for human approval. Closing
+signup entry points (home, product tour, team daily log, and the Free pricing
+card) show the first-run path: team created, one capture source, then the first
+source-linked record or a question. Audience copy describes how teams work (chat-run teams
 on Slack or Telegram, with the rest of the work spread across email, calls and
 documents), not team size or role. Updates are daily, with no weekly framing.
 The chronology scene names the cost of rebuilding status, promises and decisions
@@ -22,9 +25,18 @@ task, and calendar context, and resolves into an answer with tangible source
 links. The cited-answer evidence cards keep “Inspect example source” as a native
 `<details>` disclosure aligned to the padded titles: a custom chevron beside the
 summary, padded expanded text, and the landing lime `:focus-visible` ring around
-the summary rather than an unstyled full-width browser outline. Suggested
+the summary rather than an unstyled full-width browser outline. Homepage proof screenshots keep the real captures and fictional Acme Labs
+labels. Each frame reserves its aspect box, shows a “Loading screenshot” label
+until the image paints, and uses always-visible callouts for what changed, who
+owns the next step, and the link to the source. Callouts stack on small screens
+and do not rely on hover or motion. Suggested
 durable workspace changes remain approval-backed; the diagram never implies that
-evidence silently rewrites canonical objects. Acme rollout is
+evidence silently rewrites canonical objects. The product-tour approvals step
+uses the same narrower promise: lasting record changes wait for approval.
+`/pricing` leads with Start Free, no card; the usage estimator is optional
+planning, not the first decision. The optional analytics banner sits as a compact
+bottom-right card on desktop so proof captions stay readable; Reject and Accept
+stay equally prominent, and nothing is sent before a choice. Acme rollout is
 the canonical fictional public demo corpus across landing, connector, and guide
 examples; every rendered example states that it is illustrative and not
 customer data. Provider pages may show distinct slices, but people, identifiers,

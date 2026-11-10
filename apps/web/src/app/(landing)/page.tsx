@@ -18,6 +18,7 @@ import {
   SEE_IT_FIRST_LABEL,
   START_FREE_LABEL,
 } from '@/components/marketing/copy';
+import { FirstRunPath } from '@/components/marketing/first-run-path';
 import { HomeMotion } from '@/components/marketing/home/home-motion';
 import { HOME_PROOF_SHOTS } from '@/components/marketing/home/proof';
 import { TimelineFlowDiagram } from '@/components/marketing/home/timeline-flow-diagram';
@@ -705,9 +706,10 @@ function CtaScene() {
         </h2>
         <p>
           Link one Slack channel or Telegram group, forward a few emails and add a call. Read the
-          daily update, approve the changes The Timeline proposes, and ask what was decided, with
-          the source for every line.
+          daily update, approve lasting record changes that The Timeline proposes, and ask what was
+          decided, with the source for every line.
         </p>
+        <FirstRunPath />
         <PublicSessionBranch
           signedOut={
             <Link
@@ -768,7 +770,12 @@ function HomeProof({ shot }: { shot: (typeof HOME_PROOF_SHOTS)[number] }) {
   return (
     <div className={styles.proofStage} data-home-proof={shot.file}>
       <span className={styles.monoLabel}>{shot.kicker}</span>
-      <MarketingProductScreenshot file={shot.file} alt={shot.alt} caption={shot.caption} />
+      <MarketingProductScreenshot
+        file={shot.file}
+        alt={shot.alt}
+        caption={shot.caption}
+        callouts={shot.callouts}
+      />
     </div>
   );
 }

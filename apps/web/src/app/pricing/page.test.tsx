@@ -30,4 +30,18 @@ describe('pricing page FAQ', () => {
     expect(html).not.toContain('0.097');
     expect(html).not.toContain('1 GB of file storage');
   });
+
+  it('makes Free the no-card entry and treats the estimator as optional planning', () => {
+    const html = renderToStaticMarkup(<PricingPage />);
+
+    expect(html).toContain('Start Free, no card.');
+    expect(html).toContain('Start Free to try your first source.');
+    expect(html).toContain('href="#estimate-usage"');
+    expect(html).toContain('Estimate paid usage');
+    expect(html).toContain('id="estimate-usage"');
+    expect(html).toContain('Estimate paid usage when you need it.');
+    expect(html).toContain('You do not need these numbers to start Free.');
+    expect(html).toContain('All prices are in euros and exclude VAT.');
+    expect(html).toContain('€37.18');
+  });
 });
