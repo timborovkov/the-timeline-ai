@@ -26,8 +26,8 @@ import {
 import { and, count, eq, gt, inArray, isNull } from 'drizzle-orm';
 
 import { isActiveComp } from '#src/billing/operator.js';
-import { createWebsiteSourceHandlers } from '#src/onboarding/website-source-scope.js';
 import { createFirstRunHandlers } from '#src/onboarding/first-run-scope.js';
+import { createWebsiteSourceHandlers } from '#src/onboarding/website-source-scope.js';
 
 import type { TeamRole } from '#src/team-scope.js';
 

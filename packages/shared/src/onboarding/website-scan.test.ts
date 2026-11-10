@@ -1,6 +1,7 @@
 // Public website scans use only Firecrawl and fail closed on provider errors.
 import { expect } from '@timeline/test-support';
 import { describe, it } from 'bun:test';
+
 import {
   FIRECRAWL_API_ORIGIN,
   type FirecrawlFetch,
@@ -109,6 +110,19 @@ describe('website scan Firecrawl crawl', () => {
     ]);
   });
 
+  it('preserves distinct trailing-slash source URLs in citations', async () => {
+    const urls = ['https://studio.example/about', 'https://studio.example/about/'];
+    const result = await scanPublicWebsite(HOME, {
+      firecrawlApiKey: FIRECRAWL_KEY,
+      firecrawlFetch: firecrawlFetch({
+        pages: urls.map((url) => ({ url, title: 'About', markdown: readable(url) })),
+      }),
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error('Expected readable pages');
+    expect(result.pages.map((page) => page.url)).toEqual(urls);
+  });
+
   it('maps robots-blocked home pages to robots', async () => {
     const result = await scanPublicWebsite(HOME, {
       firecrawlApiKey: FIRECRAWL_KEY,
@@ -158,9 +172,9 @@ describe('website scan Firecrawl crawl', () => {
     let called = false;
     const result = await scanPublicWebsite('https://user:password@example.com/', {
       firecrawlApiKey: FIRECRAWL_KEY,
-      firecrawlFetch: async () => {
+      firecrawlFetch: () => {
         called = true;
-        return new Response();
+        return Promise.resolve(new Response());
       },
     });
     expect(result.ok).toBe(false);

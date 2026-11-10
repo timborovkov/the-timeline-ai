@@ -67,6 +67,7 @@ export async function processWebsiteScanJob(deps: WebsiteScanJobDeps): Promise<v
     await deps.release();
     return;
   }
+  const websiteUrl = firstRun.websiteUrl;
   const apiKey = deps.firecrawlApiKey ?? getEnv().FIRECRAWL_API_KEY;
   if (!apiKey?.trim()) throw new Error('FIRECRAWL_API_KEY is required for website scanning.');
   let pages = await deps.getPages();
@@ -84,7 +85,7 @@ export async function processWebsiteScanJob(deps: WebsiteScanJobDeps): Promise<v
       onCrawlStarted: (crawlId) =>
         deps.saveCrawlId({
           scanId: deps.scanId,
-          url: firstRun.websiteUrl!,
+          url: websiteUrl,
           websiteSubject: firstRun.websiteSubject,
           crawlId,
         }),

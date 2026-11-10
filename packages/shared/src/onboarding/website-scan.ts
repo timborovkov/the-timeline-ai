@@ -29,7 +29,6 @@ function canonicalizePublicHref(raw: string): URL | null {
   const parsed = parsePublicWebsiteUrl(raw);
   if ('error' in parsed) return null;
   const url = new URL(parsed.href);
-  if (url.protocol === 'http:') url.protocol = 'https:';
   if (validateMcpUrl(url.toString())) return null;
   url.hash = '';
   return url;

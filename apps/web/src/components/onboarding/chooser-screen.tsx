@@ -96,7 +96,9 @@ export function ChooserScreen({
                   name="website-subject"
                   value={value}
                   checked={websiteSubject === value}
-                  onChange={() => setWebsiteSubject(value)}
+                  onChange={() => {
+                    setWebsiteSubject(value);
+                  }}
                 />
                 {label}
               </label>
@@ -113,7 +115,9 @@ export function ChooserScreen({
               type="checkbox"
               checked={permissionConfirmed}
               disabled={pending}
-              onChange={(event) => setPermissionConfirmed(event.target.checked)}
+              onChange={(event) => {
+                setPermissionConfirmed(event.target.checked);
+              }}
             />
             I confirm I may submit this website. Only public pages will be read.
           </label>

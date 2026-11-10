@@ -10,7 +10,7 @@ const fakes = vi.hoisted(() => ({
   createEvent: vi.fn(),
   attachCapture: vi.fn(),
   markScanFailed: vi.fn(),
-  release: vi.fn(async () => ({})),
+  release: vi.fn(() => Promise.resolve({})),
 }));
 
 await vi.mock(

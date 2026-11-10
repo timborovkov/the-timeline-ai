@@ -24,7 +24,7 @@ describe('ChooserScreen', () => {
     expect(screen.getByRole('heading', { name: 'Bring something real' })).toBeTruthy();
     expect(screen.getByRole('heading', { name: 'Scan your website' })).toBeTruthy();
     expect(screen.queryByText('Coming soon')).toBeNull();
-    expect((screen.getByLabelText('Our team or company') as HTMLInputElement).checked).toBe(true);
+    expect(screen.getByLabelText<HTMLInputElement>('Our team or company').checked).toBe(true);
     expect(screen.getByRole('button', { name: 'Scan' }).hasAttribute('disabled')).toBe(true);
     expect(screen.getByRole('heading', { name: 'Upload a document' })).toBeTruthy();
     expect(screen.getByRole('heading', { name: 'Forward an email' })).toBeTruthy();

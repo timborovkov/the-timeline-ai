@@ -1,4 +1,5 @@
 import { jsonb, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
+
 import { teams } from '#src/schema/teams.js';
 
 /** Immutable crawl result; retrying downstream handoffs never re-crawls changed pages. */

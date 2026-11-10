@@ -3,13 +3,14 @@
 // Worker dispatch is inline: this tests the ingest chain, not browser/Redis transport or embeddings.
 import { randomUUID } from 'node:crypto';
 import { loadEnvFile } from 'node:process';
-import { PGlite } from '@electric-sql/pglite';
+
 import {
   CreateBucketCommand,
   DeleteBucketCommand,
   DeleteObjectsCommand,
   ListObjectsV2Command,
 } from '@aws-sdk/client-s3';
+import { PGlite } from '@electric-sql/pglite';
 import {
   type Db,
   teams,
@@ -22,14 +23,15 @@ import {
   entities,
   agentSuggestionEvidence,
 } from '@timeline/db';
+import { listChargeCentsForMeter, runWorkerBilling } from '@timeline/shared/billing';
 import { getEnv, resetEnvForTests } from '@timeline/shared/env';
 import { processWebsiteScanJob } from '@timeline/shared/onboarding';
-import { withTeam } from '@timeline/shared/team-scope';
-import { listChargeCentsForMeter, runWorkerBilling } from '@timeline/shared/billing';
 import { getS3Client, getObjectBuffer } from '@timeline/shared/s3';
+import { withTeam } from '@timeline/shared/team-scope';
 import { expect } from '@timeline/test-support';
 import { describe, it } from 'bun:test';
 import { drizzle } from 'drizzle-orm/pglite';
+
 import { applyDbMigrations } from '#src/test/pglite.js';
 import { processExtractJobForTests } from '#src/workers/extract.js';
 import { processSuggestionJobForTests } from '#src/workers/suggestions.js';
@@ -41,6 +43,8 @@ live('real website scan E2E', () => {
     for (const key of ['FIRECRAWL_API_KEY', 'OPENROUTER_API_KEY'])
       if (!process.env[key]?.trim())
         throw new Error(`${key} is required for the live website test`);
+    const firecrawlApiKey = process.env.FIRECRAWL_API_KEY;
+    if (!firecrawlApiKey) throw new Error('FIRECRAWL_API_KEY is required');
     const endpoint = process.env.WEBSITE_SCAN_LIVE_S3_ENDPOINT ?? 'http://127.0.0.1:9000';
     const parsed = new URL(endpoint);
     if (!['localhost', '127.0.0.1', '[::1]'].includes(parsed.hostname))
@@ -61,8 +65,9 @@ live('real website scan E2E', () => {
       LANGSMITH_TRACING: 'false',
     });
     // Never use connected billing/analytics accounts from the caller's environment.
-    for (const key of ['POLAR_ACCESS_TOKEN', 'POSTHOG_PROJECT_KEY', 'LANGSMITH_API_KEY'])
-      delete process.env[key];
+    delete process.env.POLAR_ACCESS_TOKEN;
+    delete process.env.POSTHOG_PROJECT_KEY;
+    delete process.env.LANGSMITH_API_KEY;
     resetEnvForTests();
     const pg = new PGlite();
     const s3 = getS3Client();
@@ -114,7 +119,7 @@ live('real website scan E2E', () => {
       await processWebsiteScanJob({
         scanId,
         userId,
-        firecrawlApiKey: process.env.FIRECRAWL_API_KEY!,
+        firecrawlApiKey: firecrawlApiKey,
         getFirstRun: () => scope.onboarding.getFirstRun(),
         reserve,
         settle: async (count) => {
@@ -140,8 +145,8 @@ live('real website scan E2E', () => {
           await runWorkerBilling(db, teamId, 'extract', () =>
             processExtractJobForTests({ db }, data, {
               getEnv,
-              enqueueEmbedJob: async () => {},
-              enqueueObjectSummaryRefresh: async () => {},
+              enqueueEmbedJob: () => Promise.resolve(),
+              enqueueObjectSummaryRefresh: () => Promise.resolve(),
               enqueueSuggestionJob: async (job) => {
                 await runWorkerBilling(db, teamId, 'suggestions', () =>
                   processSuggestionJobForTests({ db }, job, { getEnv }),
@@ -182,7 +187,7 @@ live('real website scan E2E', () => {
         await s3.send(
           new DeleteObjectsCommand({
             Bucket: bucket,
-            Delete: { Objects: objects.Contents.map((o) => ({ Key: o.Key! })) },
+            Delete: { Objects: objects.Contents.flatMap((o) => (o.Key ? [{ Key: o.Key }] : [])) },
           }),
         );
       await s3.send(new DeleteBucketCommand({ Bucket: bucket }));

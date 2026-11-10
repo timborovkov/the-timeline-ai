@@ -120,9 +120,6 @@ function sleepMs(ms: number): Promise<void> {
 function normalizePageUrl(url: URL): string {
   const copy = new URL(url.toString());
   copy.hash = '';
-  if (copy.pathname !== '/' && copy.pathname.endsWith('/')) {
-    copy.pathname = copy.pathname.slice(0, -1);
-  }
   return copy.toString();
 }
 
@@ -130,7 +127,6 @@ function canonicalizePublicHref(raw: string): URL | null {
   const parsed = parsePublicWebsiteUrl(raw);
   if ('error' in parsed) return null;
   const url = new URL(parsed.href);
-  if (url.protocol === 'http:') url.protocol = 'https:';
   if (validateMcpUrl(url.toString())) return null;
   url.hash = '';
   return url;

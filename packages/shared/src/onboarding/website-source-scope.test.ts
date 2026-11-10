@@ -6,10 +6,11 @@ import { expect, vi } from '@timeline/test-support';
 import { afterEach, beforeEach, describe, it } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
-import { applyDbMigrations } from '#src/test/pglite.js';
-import { createOnboardingScope } from '#src/onboarding/index.js';
 
-const storage = vi.hoisted(() => ({ put: vi.fn(async () => {}) }));
+import { createOnboardingScope } from '#src/onboarding/index.js';
+import { applyDbMigrations } from '#src/test/pglite.js';
+
+const storage = vi.hoisted(() => ({ put: vi.fn(() => Promise.resolve()) }));
 await vi.mock(
   import.meta.resolve('#src/s3/objects.js'),
   () => ({ putObject: storage.put }),
@@ -34,7 +35,12 @@ const page = {
 let pg: PGlite;
 let db: Db;
 const scope = (teamId = TEAM) =>
-  createOnboardingScope({ db, teamId, userId: USER, ensureMember: async () => 'owner' });
+  createOnboardingScope({
+    db,
+    teamId,
+    userId: USER,
+    ensureMember: () => Promise.resolve('owner' as const),
+  });
 beforeEach(async () => {
   storage.put.mockClear();
   pg = new PGlite();
@@ -92,16 +98,17 @@ describe('website snapshots', () => {
         sourceEventId: EVENT,
       })
       .returning();
+    if (!original || !newVersion) throw new Error('Expected saved document versions');
     await db
       .update(documents)
-      .set({ fileKind: 'document', currentVersionId: newVersion!.id })
+      .set({ fileKind: 'document', currentVersionId: newVersion.id })
       .where(eq(documents.id, saved.documentId));
     await scope().saveWebsitePageDocument({ scanId: SCAN, eventId: EVENT, page });
-    expect((await db.select().from(documents))[0]!.currentVersionId).toBe(newVersion!.id);
+    expect((await db.select().from(documents))[0]?.currentVersionId).toBe(newVersion.id);
     expect(await db.select().from(documentVersions)).toHaveLength(2);
     expect(storage.put).toHaveBeenLastCalledWith(
       expect.anything(),
-      expect.objectContaining({ key: original!.objectKey, body: Buffer.from(page.text) }),
+      expect.objectContaining({ key: original.objectKey, body: Buffer.from(page.text) }),
     );
   });
   it('ignores success and failure from an old selection of the same URL', async () => {

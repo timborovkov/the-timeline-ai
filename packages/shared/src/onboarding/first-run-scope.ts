@@ -344,7 +344,9 @@ export function createFirstRunHandlers({ db, teamId, userId, ensureMember }: Fir
             eq(teamFirstRun.phase, 'processing'),
           ),
         );
-      return (await loadState())!;
+      const next = await loadState();
+      if (!next) throw new Error('First-run state disappeared during capture');
+      return next;
     }
     const next = await touch({
       captureDocumentId: input.documentId ?? current.captureDocumentId,

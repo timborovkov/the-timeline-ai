@@ -118,7 +118,9 @@ beforeEach(() => {
   fakes.resolveActiveTeam.mockResolvedValue({ active: { teamId: TEAM_ID } });
   fakes.checkRateLimit.mockResolvedValue({ ok: true });
   fakes.submitWorkStyle.mockResolvedValue({});
-  fakes.selectStarterPath.mockImplementation(async (_path: string, extras: unknown) => extras);
+  fakes.selectStarterPath.mockImplementation((_path: string, extras: unknown) =>
+    Promise.resolve(extras),
+  );
   fakes.reserve.mockResolvedValue({ ok: true });
   fakes.release.mockResolvedValue({ ok: true });
   fakes.skipToEmptyHome.mockResolvedValue({});
@@ -188,12 +190,12 @@ describe('first-run analytics', () => {
       websiteUrl: 'https://studio.example/',
       websiteHost: 'studio.example',
       websiteSubject: 'own_team',
-      websiteScanId: expect.any(String),
+      websiteScanId: expect.any(String) as string,
     });
     expect(fakes.enqueueWebsiteScanJob).toHaveBeenCalledWith({
       teamId: TEAM_ID,
       userId: USER_ID,
-      scanId: expect.any(String),
+      scanId: expect.any(String) as string,
     });
     expect(fakes.markScanFailed).not.toHaveBeenCalled();
     expect(fakes.trackProductEventBestEffort).toHaveBeenCalledWith(
