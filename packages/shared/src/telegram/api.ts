@@ -2,7 +2,18 @@ import { deferChatDelivery } from '#src/conversation-surfaces/deferred-delivery.
 import { getEnv } from '#src/env.js';
 import { requestBudgetIdentity } from '#src/integrations/request-budget.js';
 import { providerRetryAt, withExternalRequest } from '#src/integrations/request.js';
+import { childLogger } from '#src/logger.js';
 import { getRedisConnection } from '#src/redis/connection.js';
+import {
+  applyTelegramChatMigration,
+  parseTelegramMigratedChatId,
+  replaceTelegramChatId,
+  telegramChatIdFromBody,
+  telegramMigratedChatId,
+} from '#src/telegram/chat-migration.js';
+
+const log = childLogger('telegram');
+
 /**
  * Minimal Telegram Bot API client. We only implement the handful of methods
  * the webhook flow needs, plus `setMyCommands` for startup `/` menu
@@ -59,20 +70,57 @@ export interface TelegramApi {
   }): Promise<void>;
 }
 
+export interface HttpTelegramApiOptions {
+  /** Persist a Telegram group→supergroup chat id rewrite. Defaults to the app db. */
+  onChatMigrated?: (fromChatId: number, toChatId: number) => Promise<void>;
+}
+
 export class HttpTelegramApi implements TelegramApi {
   constructor(
     private readonly token: string,
     private readonly requestTimeoutMs = 10_000,
     private readonly deferRateLimits = true,
+    private readonly options: HttpTelegramApiOptions = {},
   ) {
     if (!token) throw new Error('TELEGRAM_BOT_TOKEN is required');
   }
 
-  private async call<T>(method: string, body: unknown): Promise<T> {
-    return withExternalRequest(
-      { provider: 'telegram', identity: this.token, operation: method },
-      () => this.request<T>(method, body),
-    );
+  private async persistChatMigration(fromChatId: number, toChatId: number): Promise<void> {
+    try {
+      if (this.options.onChatMigrated) {
+        await this.options.onChatMigrated(fromChatId, toChatId);
+        return;
+      }
+      const { getDb } = await import('@timeline/db');
+      await applyTelegramChatMigration(getDb(), fromChatId, toChatId);
+    } catch (err) {
+      log.warn({ err, fromChatId, toChatId }, 'telegram chat migration persist failed');
+    }
+  }
+
+  private async call<T>(method: string, body: unknown, retried = false): Promise<T> {
+    try {
+      return await withExternalRequest(
+        { provider: 'telegram', identity: this.token, operation: method },
+        () => this.request<T>(method, body),
+      );
+    } catch (error) {
+      const fromChatId = telegramChatIdFromBody(body);
+      const toChatId = telegramMigratedChatId(error);
+      if (!retried && fromChatId !== null && toChatId !== null && fromChatId !== toChatId) {
+        await this.persistChatMigration(fromChatId, toChatId);
+        replaceTelegramChatId(body, toChatId);
+        return this.call(method, body, true);
+      }
+      throw error;
+    }
+  }
+
+  private telegramMethodError(method: string, detail: string, payload?: unknown): Error {
+    const migrated = parseTelegramMigratedChatId(payload ?? detail);
+    return Object.assign(new Error(`Telegram ${method} failed: ${detail}`), {
+      ...(migrated !== null ? { migrateToChatId: migrated } : {}),
+    });
   }
 
   private async request<T>(method: string, body: unknown): Promise<T> {
@@ -102,11 +150,16 @@ export class HttpTelegramApi implements TelegramApi {
     }
     if (!res.ok) {
       const text = await res.text().catch(() => '');
-      throw new Error(`Telegram ${method} failed: ${res.status} ${text}`);
+      throw this.telegramMethodError(method, `${res.status} ${text}`, text);
     }
-    const json = (await res.json()) as { ok: boolean; result?: T; description?: string };
+    const json = (await res.json()) as {
+      ok: boolean;
+      result?: T;
+      description?: string;
+      parameters?: { migrate_to_chat_id?: number };
+    };
     if (!json.ok) {
-      throw new Error(`Telegram ${method} failed: ${json.description ?? 'unknown'}`);
+      throw this.telegramMethodError(method, json.description ?? 'unknown', json);
     }
     return json.result as T;
   }

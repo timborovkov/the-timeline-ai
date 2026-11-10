@@ -2310,6 +2310,9 @@
   "packages/shared/src/telegram/api.test.ts": {
     "group": "unit"
   },
+  "packages/shared/src/telegram/chat-migration.test.ts": {
+    "group": "integration"
+  },
   "packages/shared/src/telegram/commands.test.ts": {
     "group": "unit"
   },

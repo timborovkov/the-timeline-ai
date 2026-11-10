@@ -55,6 +55,10 @@ import { getRedisConnection } from '#src/redis/connection.js';
 import { withTeam } from '#src/team-scope.js';
 import { type TelegramApi } from '#src/telegram/api.js';
 import {
+  applyTelegramChatMigration,
+  telegramChatMigrationFromMessage,
+} from '#src/telegram/chat-migration.js';
+import {
   TELEGRAM_DM_HELP,
   TELEGRAM_GROUP_HELP,
   type TelegramDmCommandName,
@@ -209,6 +213,11 @@ export async function handleUpdate(
   }
 
   try {
+    const migration = telegramChatMigrationFromMessage(update.message ?? update.edited_message);
+    if (migration) {
+      await applyTelegramChatMigration(deps.db, migration.fromChatId, migration.toChatId);
+      return { ok: true };
+    }
     if (update.message) {
       await routeMessage(deps, update.update_id, update.message, false);
     } else if (update.edited_message) {

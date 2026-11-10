@@ -90,4 +90,83 @@ describe('HttpTelegramApi file downloads', () => {
     });
     expect(fetch).toHaveBeenCalledTimes(2);
   });
+
+  it('persists a chat migration and retries sendMessage once with the new id', async () => {
+    const persist = vi.fn(() => Promise.resolve());
+    const fetch = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            ok: false,
+            error_code: 400,
+            description: 'Bad Request: group chat was upgraded to a supergroup chat',
+            parameters: { migrate_to_chat_id: -1004317012921 },
+          }),
+          { status: 400 },
+        ),
+      )
+      .mockResolvedValueOnce(Response.json({ ok: true, result: { message_id: 1 } }));
+    vi.stubGlobal('fetch', fetch);
+    const api = new HttpTelegramApi('token', 10_000, true, { onChatMigrated: persist });
+    const input = { chat_id: -123456, text: 'hello' };
+
+    await api.sendMessage(input);
+
+    expect(persist).toHaveBeenCalledTimes(1);
+    expect(persist).toHaveBeenCalledWith(-123456, -1004317012921);
+    expect(input.chat_id).toBe(-1004317012921);
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(fetch).toHaveBeenNthCalledWith(
+      2,
+      'https://api.telegram.org/bottoken/sendMessage',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ chat_id: -1004317012921, text: 'hello' }),
+      }),
+    );
+  });
+
+  it('surfaces the retry error when the migrated send still fails', async () => {
+    const persist = vi.fn(() => Promise.resolve());
+    const fetch = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            ok: false,
+            error_code: 400,
+            description: 'Bad Request: group chat was upgraded to a supergroup chat',
+            parameters: { migrate_to_chat_id: -1004317012921 },
+          }),
+          { status: 400 },
+        ),
+      )
+      .mockResolvedValueOnce(new Response('bot was blocked by the user', { status: 403 }));
+    vi.stubGlobal('fetch', fetch);
+    const api = new HttpTelegramApi('token', 10_000, true, { onChatMigrated: persist });
+
+    await expect(api.sendMessage({ chat_id: -123456, text: 'hello' })).rejects.toThrow(
+      'Telegram sendMessage failed: 403 bot was blocked by the user',
+    );
+    expect(persist).toHaveBeenCalledTimes(1);
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not retry ordinary Telegram send failures', async () => {
+    const persist = vi.fn(() => Promise.resolve());
+    const fetch = vi.fn().mockResolvedValueOnce(
+      new Response(JSON.stringify({ ok: false, description: 'Bad Request: chat not found' }), {
+        status: 400,
+      }),
+    );
+    vi.stubGlobal('fetch', fetch);
+    const api = new HttpTelegramApi('token', 10_000, true, { onChatMigrated: persist });
+
+    await expect(api.sendMessage({ chat_id: -123456, text: 'hello' })).rejects.toThrow(
+      'Telegram sendMessage failed: 400',
+    );
+    expect(persist).not.toHaveBeenCalled();
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
 });
