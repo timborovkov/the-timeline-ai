@@ -16,6 +16,12 @@ const fakes = vi.hoisted(() => ({
 }));
 
 await vi.mock(
+  import.meta.resolve('next/navigation'),
+  () => ({ redirect: vi.fn(), useRouter: () => ({ refresh: vi.fn(), push: vi.fn() }) }),
+  () => import('next/navigation'),
+);
+
+await vi.mock(
   import.meta.resolve('@timeline/shared/team-scope'),
   () => ({
     withTeam: () => ({
@@ -220,7 +226,8 @@ describe('ApprovalsPage', () => {
 it('scopes guided approval rows and counts to the visible starter capture', async () => {
   fakes.getFirstRun.mockResolvedValue({ phase: 'approve' });
   fakes.getFirstRunRecord.mockResolvedValue({ suggestions: [{ id: 'starter-item' }] });
-  await ApprovalsPage({ searchParams: Promise.resolve({}) });
+  const page = await ApprovalsPage({ searchParams: Promise.resolve({}) });
+  expect(renderToStaticMarkup(page)).toContain('Check for suggestions');
   expect(fakes.listSuggestions).toHaveBeenCalledWith(
     expect.objectContaining({ itemIds: ['starter-item'] }),
   );

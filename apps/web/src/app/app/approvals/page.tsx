@@ -9,6 +9,7 @@ import type { Metadata } from 'next';
 import { ApprovalsClient } from '@/components/approvals/approvals-client';
 import { CollectionToolbar } from '@/components/collections/collection-toolbar';
 import { GuidedContinue } from '@/components/onboarding/guided-continue';
+import { RefreshSuggestions } from '@/components/onboarding/refresh-suggestions';
 import { PageHeader } from '@/components/page-header';
 import { WorkSubnav } from '@/components/work-subnav';
 import { resolveActiveTeam } from '@/lib/active-team';
@@ -177,6 +178,7 @@ export default async function ApprovalsPage({ searchParams }: PageProps) {
         taskCategoriesEnabled={getEnv().TASK_CATEGORY_UI_ENABLED}
         emptyState={EMPTY_STATES[status]}
       />
+      {guidedApprovals && visibleSuggestions.length === 0 ? <RefreshSuggestions /> : null}
       <GuidedApprovalsContinue enabled={guidedApprovals} />
     </div>
   );
