@@ -6,7 +6,7 @@
 | Applies to | Hosted Timeline, public Timeline surfaces, development, support, and vendor operations |
 | Service operator | Nyxone OÜ, Estonian registry code 16172329 |
 | Control owner | **TBD: named security/privacy owner** |
-| Version | 2026-11-09 |
+| Version | 2026-11-10 |
 | Last evidence review | 2026-08-27 |
 | Next scheduled review | **TBD: no later than 2026-11-27** |
 | Evidence memo | [Provider privacy and data-handling research](evidence/provider-privacy-research.md) |
@@ -95,8 +95,8 @@ The working legal-role model is:
   or delete it.
 - A self-managed operator becomes responsible for its deployment, access,
   backups, providers, retention, security, and notices. Self-management does not
-  automatically remove OpenRouter, Recall.ai, Resend, Daytona, or connected
-  services.
+  automatically remove OpenRouter, Recall.ai, Resend, Daytona, Firecrawl, or
+  connected services.
 
 ## 3. Data classification
 
@@ -468,6 +468,7 @@ a soft-delete flag alone is not a complete deletion claim.
 | OpenRouter voice transcription | Current `openai/gpt-4o-transcribe` quality exception is non-training but prompt-retaining; OpenAI documents default API abuse-monitoring retention up to 30 days | Name the exception and retention; never call hosted AI universally ZDR |
 | Recall.ai | Timeline-hosted mode requests one-hour meeting-media retention, which Recall documents as starting at recording `done`; an explicit self-managed deployment can choose another supported duration. Operational logs can remain seven days and meeting URLs fourteen days after termination; Timeline transcript persists | Never say call media is deleted or provider deletion is verified until deployed evidence exists |
 | Daytona | Ephemeral sandbox state is discarded/deleted; observability data may remain three days | Never equate ephemeral compute with zero provider retention |
+| Firecrawl | Firecrawl documents US processing and a 24-hour crawl-result API window. Privacy policy PII retention is until written deletion, with no recurring deletion schedule. Enterprise zero-data-retention is not enabled. | Cite the published 24-hour API window and US location. Say broader page-content retention is to be confirmed. Never claim zero-data retention. |
 | Resend | Domain `in.thetimeline.cc` sends from `eu-west-1`; inbound receiving enabled; open/click tracking currently enabled at domain level (no per-send flags in code). Resend states US storage regardless of sending region and 30-day email/log retention on Free/Pro/Scale while active, deletion within 90 days after termination. Timeline deletion does not itself delete Resend copies. | Cite Resend's published statements. Do not claim Timeline's plan name, a signed DPA on file, custom retention, API key scope, or that tracking is off |
 | PostHog | Current source enforces zero browser capture/identifier before valid consent or after rejection, public-route-only browser analytics after opt-in, fixed personless surface streams, and explicit minimized server/worker events. The EU account review verifies disabled automatic capture and IP discard. Pay-as-you-go documents seven-year product-event retention, which exceeds the 90-day target; production and deletion completion remain unverified. | Public copy may describe the source-enforced product design and the dated account review. Do not claim that it is deployed, that retention is 90 days, that queued deletion is complete, or that pseudonymous analytics is anonymous until G-10 closes. |
 | Sentry | Account retention is unverified | Describe minimized error monitoring, not a retention period |

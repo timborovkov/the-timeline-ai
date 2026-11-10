@@ -44,6 +44,10 @@ describe('product analytics contract', () => {
         'object_action_completed',
         'object_created',
         'onboarding_step_completed',
+        'onboarding_work_style_submitted',
+        'onboarding_first_path_selected',
+        'first_capture_landed',
+        'agent_deployed_on_channel',
         'search_performed',
         'task_category_changed',
         'task_project_changed',
@@ -149,6 +153,27 @@ describe('product analytics contract', () => {
     expect(bucketSearchResultCount(0)).toBe('zero');
     expect(bucketSearchResultCount(10)).toBe('one_to_ten');
     expect(bucketSearchResultCount(51)).toBe('fifty_one_plus');
+  });
+
+  it('accepts first-run onboarding analytics payloads without identifiers', () => {
+    expect(
+      validateProductEventProperties('onboarding_work_style_submitted', { workStyle: 'email' }),
+    ).toEqual({ workStyle: 'email' });
+    expect(
+      validateProductEventProperties('onboarding_first_path_selected', { path: 'document' }),
+    ).toEqual({ path: 'document' });
+    expect(validateProductEventProperties('first_capture_landed', { path: 'email' })).toEqual({
+      path: 'email',
+    });
+    expect(
+      validateProductEventProperties('agent_deployed_on_channel', { channel: 'slack' }),
+    ).toEqual({ channel: 'slack' });
+    expect(() =>
+      validateProductEventProperties('onboarding_first_path_selected', {
+        path: 'document',
+        documentId: 'secret',
+      }),
+    ).toThrow();
   });
 
   it('runtime-validates grouped action events without accepting resource identifiers', () => {

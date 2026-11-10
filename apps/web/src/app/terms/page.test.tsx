@@ -45,6 +45,15 @@ describe('Terms legal links', () => {
     expect(html).not.toMatch(/>generation, extraction/);
   });
 
+  it('names Firecrawl for first-run website scan without claiming unpublished retention', () => {
+    const html = renderToStaticMarkup(<TermsPage />);
+
+    expect(html).toContain('Firecrawl (SideGuide Technologies, Inc.)');
+    expect(html).toContain('up to five public pages');
+    expect(html).toContain('to be confirmed');
+    expect(html).not.toContain('Mendable');
+  });
+
   it('distinguishes personal disconnect, workspace-source removal, and captured evidence', () => {
     const html = renderToStaticMarkup(<TermsPage />);
 

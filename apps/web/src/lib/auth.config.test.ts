@@ -85,6 +85,19 @@ describe('authorizeProductRequest', () => {
     ).toBe(true);
   });
 
+  it('keeps the existing sign-in gate for unauthenticated onboarding requests', () => {
+    const result = authorizeProductRequest({
+      auth: null,
+      request: request('/onboarding'),
+    });
+
+    expect(result).toBeInstanceOf(Response);
+    expect((result as Response).status).toBe(307);
+    expect((result as Response).headers.get('location')).toBe(
+      'https://timeline.test/sign-in?callbackUrl=https%3A%2F%2Ftimeline.test%2Fonboarding',
+    );
+  });
+
   it('keeps the existing sign-in gate for unauthenticated app requests', () => {
     const result = authorizeProductRequest({
       auth: null,

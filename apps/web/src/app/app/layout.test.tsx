@@ -10,6 +10,7 @@ const fakes = vi.hoisted(() => ({
   getRequestIdentity: vi.fn(),
   cookies: vi.fn(),
   getCalendarSettings: vi.fn(),
+  getFirstRun: vi.fn(),
   getNavAttentionSummary: vi.fn(),
   getUserLegalAcceptance: vi.fn(),
   hasCurrentLegalAcceptance: vi.fn(),
@@ -67,6 +68,9 @@ await vi.mock(
       billing: {
         getDashboard: () => Promise.resolve({ sidebar: null }),
       },
+      onboarding: {
+        getFirstRun: fakes.getFirstRun,
+      },
     }),
   }),
   () => import('@timeline/shared/team-scope'),
@@ -110,6 +114,14 @@ await vi.mock(
   import.meta.resolve('@/lib/hub-status'),
   () => ({ getNavAttentionSummary: fakes.getNavAttentionSummary }),
   () => import('@/lib/hub-status'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/first-run-status'),
+  () => ({
+    firstRunGuideProps: (firstRun: { phase: string; guideHiddenAt: Date | null } | null) =>
+      firstRun ? { phase: firstRun.phase, hidden: Boolean(firstRun.guideHiddenAt) } : null,
+  }),
+  () => import('@/lib/first-run-status'),
 );
 await vi.mock(
   import.meta.resolve('@/lib/legal'),
@@ -158,6 +170,7 @@ beforeEach(() => {
     memberships: [],
   });
   fakes.unreadNotificationCount.mockResolvedValue(0);
+  fakes.getFirstRun.mockResolvedValue(null);
 });
 
 afterEach(() => {
@@ -209,6 +222,18 @@ describe('AppLayout', () => {
 
     await expect(AppLayout({ children: <p>Home</p>, modal: null })).rejects.toThrow(
       'redirect:/sign-in',
+    );
+  });
+
+  it('sends a first-run starter to setup before Home when the team is still on welcome', async () => {
+    fakes.getFirstRun.mockResolvedValue({
+      phase: 'welcome',
+      startedByUserId: 'user-1',
+      guideHiddenAt: null,
+    });
+
+    await expect(AppLayout({ children: <p>Home</p>, modal: null })).rejects.toThrow(
+      'redirect:/onboarding',
     );
   });
 

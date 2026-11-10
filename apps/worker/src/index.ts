@@ -32,6 +32,7 @@ import { startTeamExportWorker } from '#src/workers/teamExport.js';
 import { startTimelineMomentPresentationWorker } from '#src/workers/timelineMomentPresentation.js';
 import { startTranscribeWorker } from '#src/workers/transcribe.js';
 import { startWebhookDeliveryWorker } from '#src/workers/webhookDelivery.js';
+import { startWebsiteScanWorker } from '#src/workers/websiteScan.js';
 
 const log = childLogger('worker');
 
@@ -39,6 +40,9 @@ initWorkerSentry();
 
 async function main(): Promise<void> {
   const env = getEnv();
+  if (env.WORKER_MODE !== 'document-extract' && !env.FIRECRAWL_API_KEY?.trim()) {
+    throw new Error('FIRECRAWL_API_KEY is required to start the worker service.');
+  }
   if (env.WORKER_MODE === 'document-extract') {
     throw new Error(
       'WORKER_MODE=document-extract must use apps/worker/dist/extract-main.js (refusing full worker boot)',
@@ -74,6 +78,11 @@ async function main(): Promise<void> {
       name: queue.QUEUE_NAMES.emailInbound,
       start: () => startEmailInboundWorker({ db }),
       closeQueue: queue.closeEmailInboundQueue,
+    },
+    {
+      name: queue.QUEUE_NAMES.websiteScan,
+      start: () => startWebsiteScanWorker({ db }),
+      closeQueue: queue.closeWebsiteScanQueue,
     },
     {
       name: queue.QUEUE_NAMES.transcribe,

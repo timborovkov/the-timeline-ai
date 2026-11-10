@@ -218,6 +218,7 @@ const INITIAL_APPROVALS_QUEUE: ApprovalsQueueState = {
 };
 
 interface Props {
+  guided?: boolean;
   suggestions: SuggestionBundle[];
   nextCursor?: string | null;
   status?: 'pending' | 'failed' | 'resolved' | 'all';
@@ -665,6 +666,7 @@ function foldedSummaryText(
 }
 
 export function ApprovalsClient({
+  guided = false,
   suggestions,
   nextCursor = null,
   status = 'pending',
@@ -794,7 +796,7 @@ export function ApprovalsClient({
   function loadMore(): void {
     if (!pageCursor || loadingMore) return;
     startLoadingMore(async () => {
-      const page = await loadSuggestionsPageAction({ cursor: pageCursor, status });
+      const page = await loadSuggestionsPageAction({ cursor: pageCursor, status, guided });
       if (page.error) {
         setPageState((current) => ({
           ...current,

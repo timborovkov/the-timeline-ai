@@ -116,6 +116,10 @@ const TRUST_SECTIONS = [
     body: 'Recall.ai processes meeting media to produce transcripts. Hosted Timeline requests one-hour provider media retention and does not copy raw meeting audio or video into Timeline storage. The requested setting is not confirmation of completed provider deletion. Transcripts remain workspace content. Uploaded voice notes and documents remain stored until deleted under applicable workspace handling.',
   },
   {
+    title: 'Onboarding website scan',
+    body: 'When a user requests a website scan, Firecrawl (SideGuide Technologies, Inc. d/b/a Firecrawl) fetches public pages of a website URL the user submits. Timeline sends that public URL; Firecrawl returns markdown. Firecrawl documents United States processing and a 24-hour crawl-result API window. Broader page-content retention is to be confirmed. Timeline does not enable Firecrawl Enterprise zero-data-retention.',
+  },
+  {
     title: 'Analytics and third parties',
     body: 'Timeline does not use behavioral advertising trackers. PostHog browser analytics may run only on reviewed public pages after affirmative consent, never in private workspace routes, with autocapture, heatmaps, and session replay off. Separate server-to-server events count allowlisted public and app surfaces through two fixed non-visitor streams, while content-free product actions use pseudonymous server identifiers. Sentry error monitoring is separate from every PostHog path.',
     links: [
@@ -148,7 +152,7 @@ export const TRUST_DOCUMENT = {
   description:
     'How The Timeline protects team data across AI inference, storage, permissions, meetings, analytics, and human access.',
   indexability: 'index',
-  dates: { modified: '2026-11-03', reviewed: '2026-11-03' },
+  dates: { modified: '2026-11-10', reviewed: '2026-11-10' },
   capability: { kind: 'current-product' },
   sitemap: { changeFrequency: 'monthly', priority: 0.7 },
   structuredData: [{ type: 'web-page' }],
@@ -363,7 +367,7 @@ const publicUtilityDocuments = definePublicDocuments('public-utility', [
       order: 40,
       summary: 'How The Timeline processes personal data and team content.',
       fullSummary:
-        'Controller and processor roles, data categories, legal bases, AI privacy routing, subprocessors including Resend transactional and inbound email, analytics, human access, security, retention, transfers, data-subject rights, and the distinction between personal disconnect, workspace-source removal, and deletion of captured history.',
+        'Controller and processor roles, data categories, legal bases, AI privacy routing, subprocessors including Firecrawl first-run public website fetch, Resend transactional and inbound email, analytics, human access, security, retention, transfers, data-subject rights, and the distinction between personal disconnect, workspace-source removal, and deletion of captured history.',
     },
   },
   {
@@ -431,7 +435,7 @@ const publicUtilityDocuments = definePublicDocuments('public-utility', [
     title: 'llms-full.txt',
     description: 'Expanded Markdown summary of the public product and help content.',
     indexability: 'index',
-    dates: { modified: '2026-11-09', reviewed: '2026-11-09' },
+    dates: { modified: '2026-11-10', reviewed: '2026-11-10' },
     capability: { kind: 'not-applicable' },
     sitemap: false,
     structuredData: [],

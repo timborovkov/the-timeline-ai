@@ -71,6 +71,7 @@ const PROVIDERS = [
     'Meeting attendance and transcript generation; Timeline requests one-hour media retention',
   ],
   ['Daytona', 'Ephemeral isolated compute for document extraction'],
+  ['Firecrawl', 'Fetches public pages of a website URL submitted during first-run onboarding'],
   ['Resend', 'Transactional and inbound email'],
   ['Polar', 'Merchant of record for checkout, subscriptions, invoices and transaction taxes'],
   [

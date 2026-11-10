@@ -12,8 +12,10 @@ const fakes = vi.hoisted(() => ({
   getCalendarSettings: vi.fn(),
   getDashboard: vi.fn(),
   hasCompletedChatAnswer: vi.fn(),
+  getFirstRun: vi.fn(),
   getWorkAttentionSummary: vi.fn(),
   getHomeOpenObjectCounts: vi.fn(),
+  loadFirstRunStatus: vi.fn(),
   isPinnedMany: vi.fn(),
   latestDailyDigest: vi.fn(),
   listArtifactClusters: vi.fn(),
@@ -29,6 +31,7 @@ const fakes = vi.hoisted(() => ({
       teamId: string;
       userId: string;
       getChecklistState: () => Promise<unknown>;
+      starterPath?: string | null;
     }) => Promise<{
       dismissed: boolean;
       items: { key: string; label: string; completed: boolean }[];
@@ -48,6 +51,7 @@ const fakes = vi.hoisted(() => ({
     compact?: boolean;
     live?: boolean;
     maxMoments?: number;
+    emptyLabel?: string;
   } | null,
 }));
 
@@ -94,7 +98,10 @@ await vi.mock(
       calendar: { getCalendarSettings: fakes.getCalendarSettings },
       integrations: { listConnectionAttention: fakes.listConnectionAttention },
       jobRecovery: { listRecoverableJobs: fakes.listRecoverableJobs },
-      onboarding: { getChecklistState: vi.fn() },
+      onboarding: {
+        getChecklistState: vi.fn(),
+        getFirstRun: fakes.getFirstRun,
+      },
       pins: { isPinnedMany: fakes.isPinnedMany, list: fakes.listPins },
       timeline: {
         listArtifactClusters: fakes.listArtifactClusters,
@@ -175,7 +182,12 @@ await vi.mock(
 await vi.mock(
   import.meta.resolve('@/components/timeline-feed'),
   () => ({
-    TimelineFeed: (props: { compact?: boolean; live?: boolean; maxMoments?: number }) => {
+    TimelineFeed: (props: {
+      compact?: boolean;
+      live?: boolean;
+      maxMoments?: number;
+      emptyLabel?: string;
+    }) => {
       fakes.timelineFeedProps = props;
       return <div data-testid="timeline-feed" />;
     },
@@ -224,6 +236,20 @@ await vi.mock(
     homeWorkNeedingAttentionCount: (summary: { overdueTasks: number }) => summary.overdueTasks,
   }),
   () => import('@/lib/hub-status'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/first-run-status'),
+  () => ({ loadFirstRunStatus: fakes.loadFirstRunStatus }),
+  () => import('@/lib/first-run-status'),
+);
+await vi.mock(
+  import.meta.resolve('@/components/onboarding/first-run-home-capture'),
+  () => ({
+    FirstRunHomeCapture: ({ failed }: { failed: boolean }) => (
+      <div data-testid="first-run-home-capture">{failed ? 'failed' : 'processing'}</div>
+    ),
+  }),
+  () => import('@/components/onboarding/first-run-home-capture'),
 );
 await vi.mock(
   import.meta.resolve('@/lib/onboarding-checklist'),
@@ -289,6 +315,8 @@ beforeEach(() => {
   fakes.isPinnedMany.mockResolvedValue({});
   fakes.onboardingInitialData = null;
   fakes.homeTeamEmail = null;
+  fakes.getFirstRun.mockResolvedValue(null);
+  fakes.loadFirstRunStatus.mockResolvedValue({ firstRun: null });
   fakes.teamRow = { slug: 'acme', inboundEmail: 'acme@inbound.timeline.dev' };
   fakes.loadOnboardingChecklistView.mockResolvedValue({
     dismissed: true,
@@ -369,7 +397,13 @@ describe('HomeDashboardPage', () => {
 
     expect(fakes.listPins).toHaveBeenCalledWith({ limit: 6 });
     expect(fakes.listEventsPage).toHaveBeenCalledWith({ limit: 16 });
-    expect(fakes.timelineFeedProps).toMatchObject({ compact: true, live: false, maxMoments: 8 });
+    expect(fakes.timelineFeedProps).toMatchObject({
+      compact: true,
+      live: false,
+      maxMoments: 8,
+      emptyLabel:
+        'Your timeline fills from what your team captures. Forward an email, upload a document or connect a channel to start it.',
+    });
     expect(html).not.toContain('>Attention<');
     expect(html).not.toContain('>Recent moments<');
     expect(html).toContain('aria-label="Recent moments"');
@@ -412,6 +446,7 @@ describe('HomeDashboardPage', () => {
     const loadArgs = fakes.loadOnboardingChecklistView.mock.calls[0]?.[0];
     expect(loadArgs?.teamId).toBe('team-1');
     expect(loadArgs?.userId).toBe('user-1');
+    expect(loadArgs?.starterPath).toBeNull();
     expect(typeof loadArgs?.getChecklistState).toBe('function');
     expect(fakes.onboardingInitialData).toEqual(snapshot);
   });
@@ -481,6 +516,53 @@ describe('HomeDashboardPage', () => {
       surface: 'render',
       operation: 'billing_dashboard',
     });
+  });
+
+  it('keeps a processing first-run capture visible after the owner leaves setup', async () => {
+    fakes.getFirstRun.mockResolvedValue({ phase: 'processing', starterPath: 'document' });
+    fakes.loadFirstRunStatus.mockResolvedValue({
+      firstRun: { phase: 'processing', starterPath: 'document' },
+    });
+
+    const html = renderToStaticMarkup(await HomeDashboardPage());
+
+    expect(html).toContain('data-testid="first-run-home-capture"');
+    expect(html).toContain('processing');
+    expect(fakes.loadFirstRunStatus).toHaveBeenCalledWith(
+      expect.objectContaining({ teamId: 'team-1', userId: 'user-1' }),
+    );
+  });
+
+  it('opens the cited record when capture lands after leaving setup', async () => {
+    fakes.getFirstRun.mockResolvedValue({ phase: 'processing', starterPath: 'document' });
+    fakes.loadFirstRunStatus.mockResolvedValue({
+      firstRun: { phase: 'record', starterPath: 'document' },
+    });
+
+    await expect(HomeDashboardPage()).rejects.toThrow('redirect:/app/onboarding/record');
+  });
+
+  it('shows a failed first-run capture on Home', async () => {
+    fakes.getFirstRun.mockResolvedValue({ phase: 'failed', starterPath: 'website' });
+
+    const html = renderToStaticMarkup(await HomeDashboardPage());
+
+    expect(html).toContain('data-testid="first-run-home-capture"');
+    expect(html).toContain('failed');
+    expect(fakes.loadFirstRunStatus).not.toHaveBeenCalled();
+  });
+
+  it('stops waiting on Home when document extract failed', async () => {
+    fakes.getFirstRun.mockResolvedValue({ phase: 'processing', starterPath: 'document' });
+    fakes.loadFirstRunStatus.mockResolvedValue({
+      firstRun: { phase: 'processing', starterPath: 'document' },
+      record: { processingSteps: [{ id: 'extract', status: 'failed' }] },
+    });
+
+    const html = renderToStaticMarkup(await HomeDashboardPage());
+
+    expect(html).toContain('data-testid="first-run-home-capture"');
+    expect(html).toContain('failed');
   });
 });
 

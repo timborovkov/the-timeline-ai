@@ -17,6 +17,20 @@ reopens it. The checklist teaches the product loop (capture, people, sources,
 ask, meetings, trust memory, stay in the loop) rather than enumerating every
 work surface.
 
+New teams start in a focused setup shell for Welcome and Bring something real
+(processing and failed website-scan stay in that shell). After the first capture,
+guided Ask, Approvals, and Go live use the real app chrome with a slim Getting
+started strip (Capture, Ask, Approve, Go live). Fresh guided Ask includes the visible
+starter capture in its context; guided Approvals scopes rows and counts to that
+capture, including pagination. First-record suggestions use the same proposal and
+supporting-evidence visibility checks as the approval queue. Empty first-record and
+guided Approvals views offer Check for suggestions so asynchronously generated
+proposals can be discovered without reloading the page. Home never shows that strip.
+Skipping lands on an empty Home with the same checklist and next-step copy, not a
+sample workspace. Website scan is a chooser card; it stays Coming soon until the
+crawl worker is enabled. Work-style chips describe how the team works, never
+headcount, and only reorder suggestions plus the recommended Go live channel.
+
 Billing setup is an optional-on-Free checklist item linking owners/admins to plan
 selection; other members are directed to team owners. It completes from an active
 subscription or active comp arrangement, without a manual checkoff. Its guidance
@@ -560,3 +574,9 @@ for that user/team in the current browser. The CTA opens plan selection only.
 Connect your agent includes workspace reporting defaults and connection-specific overrides, with explicit on-request/meaningful-handoffs modes and a required ongoing work scope. Account → Agent provisioning shows grant expiry, allowance, capture permission, usage and audit history. Credentials appear once; revocation clearly leaves created workspaces and their independently managed connections intact.
 
 OAuth consent includes reporting directly beneath workspace selection and capture permission. New connections visibly inherit the workspace agreement; owners/admins can set a connection override. Members see their effective agreement. Work scope is required only for an explicit ongoing override; read-only connections clearly identify inactive reporting. No additional wizard or forced first note is introduced.
+
+Website scan asks “Who is this website about?” with “Our team or company” selected
+by default and “A client, partner or another company” as the alternative. Both use
+Company records; the own-team choice also suggests cited people and projects.
+The user confirms permission to submit the site; only public pages are read.
+Source documents are saved as evidence, while canonical records require approval.

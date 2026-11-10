@@ -35,6 +35,9 @@
   "apps/web/src/app/actions/events.test.ts": {
     "group": "unit"
   },
+  "apps/web/src/app/actions/first-run.test.ts": {
+    "group": "unit"
+  },
   "apps/web/src/app/actions/invites.test.ts": {
     "group": "unit"
   },
@@ -159,6 +162,9 @@
     "group": "unit"
   },
   "apps/web/src/app/api/onboarding/checklist/route.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/app/api/onboarding/first-run/route.test.ts": {
     "group": "unit"
   },
   "apps/web/src/app/api/public/runtime/route.test.ts": {
@@ -312,6 +318,9 @@
     "group": "dom"
   },
   "apps/web/src/app/app/chat/loading.test.tsx": {
+    "group": "unit"
+  },
+  "apps/web/src/app/app/chat/page.test.tsx": {
     "group": "unit"
   },
   "apps/web/src/app/app/chat/route-states.test.tsx": {
@@ -998,6 +1007,27 @@
   "apps/web/src/components/onboarding-checklist.test.tsx": {
     "group": "dom"
   },
+  "apps/web/src/components/onboarding/chooser-screen.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/onboarding/first-record-screen.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/onboarding/first-run-home-capture.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/onboarding/getting-started-strip.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/onboarding/go-live-screen.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/onboarding/processing-screen.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/onboarding/welcome-screen.test.tsx": {
+    "group": "dom"
+  },
   "apps/web/src/components/page-header.test.tsx": {
     "group": "dom"
   },
@@ -1231,6 +1261,9 @@
     "group": "unit"
   },
   "apps/web/src/lib/email-verification.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/lib/first-run-status.test.ts": {
     "group": "unit"
   },
   "apps/web/src/lib/floating-chat-session-storage.test.ts": {
@@ -1621,6 +1654,9 @@
     "group": "unit"
   },
   "apps/worker/src/workers/webhookDelivery.test.ts": {
+    "group": "unit"
+  },
+  "apps/worker/src/workers/websiteScan.test.ts": {
     "group": "unit"
   },
   "packages/db/src/chat-message-sequence-migration.test.ts": {
@@ -2145,8 +2181,17 @@
   "packages/shared/src/objects/summary-evals.test.ts": {
     "group": "integration"
   },
+  "packages/shared/src/onboarding/first-run.test.ts": {
+    "group": "unit"
+  },
   "packages/shared/src/onboarding/index.test.ts": {
     "group": "integration"
+  },
+  "packages/shared/src/onboarding/website-scan-job.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/onboarding/website-scan.test.ts": {
+    "group": "unit"
   },
   "packages/shared/src/pagination.test.ts": {
     "group": "unit"
@@ -2357,6 +2402,12 @@
     "group": "unit"
   },
   "packages/shared/src/integrations/resource-access.test.ts": {
+    "group": "unit"
+  },
+  "apps/worker/src/workers/websiteScan.live-eval.test.ts": {
+    "group": "live"
+  },
+  "packages/shared/src/onboarding/website-source-scope.test.ts": {
     "group": "unit"
   }
 }
