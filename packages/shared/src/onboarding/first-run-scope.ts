@@ -166,10 +166,7 @@ export function createFirstRunHandlers({
     for (const item of itemRows) {
       const suggestion = bySuggestion.get(item.suggestionId);
       if (!suggestion) continue;
-      const payload =
-        item.proposedPayload && typeof item.proposedPayload === 'object'
-          ? (item.proposedPayload as { type?: unknown; name?: unknown; title?: unknown })
-          : {};
+      const payload = item.proposedPayload;
       const type =
         item.targetKind === 'task'
           ? 'Task'
