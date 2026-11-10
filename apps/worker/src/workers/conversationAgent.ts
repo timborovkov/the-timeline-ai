@@ -40,6 +40,7 @@ async function deliveryAdapter(
       token,
       externalConversationKey: turn.externalConversationKey,
       externalMessageId: turn.externalMessageId,
+      sendingTeamId: turn.teamId,
     });
   }
   if (turn.surface === 'slack') {

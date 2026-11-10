@@ -382,4 +382,5 @@ export const WORKSPACE_OPERATOR_POLICY = {
   'telegram.createLinkToken': write,
   'telegram.revokeLinkToken': write,
   'telegram.unbindChat': write,
+  'telegram.migrateChatId': write,
 };
