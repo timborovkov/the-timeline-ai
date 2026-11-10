@@ -1,0 +1,18 @@
+.slot {
+  display: inline-grid;
+  grid-template-columns: minmax(0, 1fr);
+  min-width: 0;
+  max-width: 100%;
+  vertical-align: middle;
+}
+
+.branch {
+  display: grid;
+  grid-area: 1 / 1;
+  min-width: 0;
+}
+
+.branch[data-active='false'] {
+  visibility: hidden;
+  pointer-events: none;
+}

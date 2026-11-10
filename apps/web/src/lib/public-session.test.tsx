@@ -44,15 +44,15 @@ function SessionLinks() {
 }
 
 describe('public session island', () => {
-  it('server-renders account actions as a pending signed-out placeholder', () => {
+  it('server-renders both account states as inert sizing placeholders', () => {
     const html = renderToStaticMarkup(<PublicHeader currentSection="product" />);
 
     expect(html).toContain('data-public-session="unknown"');
     expect(html).toContain('href="/sign-in"');
     expect(html).toContain('>Start free</a>');
-    expect(html).toContain('invisible');
+    expect(html).toContain('aria-hidden="true"');
     expect(html).toContain('inert');
-    expect(html).not.toContain('>Dashboard</a>');
+    expect(html).toContain('>Dashboard</a>');
   });
 
   it('resolves Sign in versus Dashboard from the session endpoint without flashing the wrong CTA', async () => {

@@ -118,7 +118,10 @@ paused, or merely noteworthy work.
 
 ## Typography
 
-Both families are self-hosted with `next/font/local`.
+Both families are self-hosted and preloaded with `next/font/local`. Use
+`display: optional` so a slow font response cannot reflow an already-painted
+page. A cold visit may retain the metric-adjusted fallback for that page view;
+cached fonts are available on subsequent loads.
 
 - **Switzer:** display, interface, body, forms, and prose.
 - **Commit Mono:** timestamps, citations, counts, shortcuts, code, filenames,

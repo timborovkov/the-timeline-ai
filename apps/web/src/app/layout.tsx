@@ -16,7 +16,7 @@ import './globals.css';
 
 const switzer = localFont({
   variable: '--font-switzer',
-  display: 'swap',
+  display: 'optional',
   src: [
     {
       path: '../../public/fonts/switzer/Switzer-Variable.woff2',
@@ -33,7 +33,7 @@ const switzer = localFont({
 
 const commitMono = localFont({
   variable: '--font-commit-mono',
-  display: 'swap',
+  display: 'optional',
   src: [
     {
       path: '../../public/fonts/commit-mono/CommitMono-400-Regular.woff2',
