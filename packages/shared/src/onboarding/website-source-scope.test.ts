@@ -112,6 +112,56 @@ describe('website snapshots', () => {
       expect.objectContaining({ key: original.objectKey, body: Buffer.from(page.text) }),
     );
   });
+  it('rechecks chunk capacity after storage upload and admits retries idempotently', async () => {
+    await pg.exec(
+      `UPDATE team_billing_accounts SET plan_id='free', billing_state='free' WHERE team_id='${TEAM}'`,
+    );
+    await scope().saveWebsiteScanPages({
+      scanId: SCAN,
+      url: page.url,
+      websiteSubject: 'own_team',
+      pages: [page],
+    });
+    const [otherDoc] = await db
+      .insert(documents)
+      .values({ teamId: TEAM, name: 'Other' })
+      .returning();
+    if (!otherDoc) throw new Error('Expected another document');
+    const [otherVersion] = await db
+      .insert(documentVersions)
+      .values({
+        teamId: TEAM,
+        documentId: otherDoc.id,
+        version: 1,
+        objectKey: 'other.md',
+        contentType: 'text/markdown',
+      })
+      .returning();
+    if (!otherVersion) throw new Error('Expected another version');
+    storage.put.mockImplementationOnce(async () => {
+      // Another extraction fills the allowance while the website upload is in flight.
+      await pg.exec(`INSERT INTO document_chunks(team_id, document_id, document_version_id, chunk_index, text, token_count)
+        SELECT '${TEAM}', '${otherDoc.id}', '${otherVersion.id}', n, 'other', 1 FROM generate_series(1,20000) n`);
+    });
+    const input = { scanId: SCAN, eventId: EVENT, page };
+    await expect(scope().saveWebsitePageDocument(input)).rejects.toThrow('Indexed chunk limit');
+    const pending = await db
+      .select()
+      .from(documentVersions)
+      .where(eq(documentVersions.sourceEventId, EVENT));
+    expect(pending[0]?.processingStatus).toBe('pending');
+    // Leave exactly one slot, then verify a completed retry consumes no extra slot.
+    await pg.exec(
+      `DELETE FROM document_chunks WHERE document_version_id='${otherVersion.id}' AND chunk_index=20000`,
+    );
+    await scope().saveWebsitePageDocument(input);
+    await scope().saveWebsitePageDocument(input);
+    const counts = await pg.query<{ n: number }>(
+      `SELECT count(*)::int AS n FROM document_chunks WHERE team_id='${TEAM}'`,
+    );
+    expect(counts.rows[0]?.n).toBe(20000);
+  });
+
   it('ignores success and failure from an old selection of the same URL', async () => {
     await scope().selectStarterPath('website', {
       websiteUrl: page.url,

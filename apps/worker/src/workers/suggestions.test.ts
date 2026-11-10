@@ -2904,6 +2904,29 @@ describe('processSuggestionJobForTests', () => {
     });
   });
 
+  it.each(['own_team', 'other_company'])(
+    'does not turn %s website quotes into fallback commitments',
+    async (websiteSubject) => {
+      const rawEventId = '10000000-0000-0000-0000-000000000001';
+      await seedRawEvent(db as never, {
+        id: rawEventId,
+        text: "I'll send the proposal next Tuesday",
+        sourceMetadata: { firstRunWebsiteScan: true, websiteSubject },
+      });
+      await processSuggestionJobForTests(
+        { db: db as never },
+        { rawEventId, teamId: TEAM_ID },
+        { getEnv: env, chatStructured: emptyModel(), modelId: MODEL_ID },
+      );
+      const bundles = await withTeam(
+        db as never,
+        TEAM_ID,
+        OWNER_ID,
+      ).suggestions.listPendingSuggestions();
+      expect(bundles).toHaveLength(0);
+    },
+  );
+
   it('turns a commitment raw event into task and calendar suggestions through fallback', async () => {
     const rawEventId = '10000000-0000-0000-0000-000000000001';
     await seedRawEvent(db as never, {

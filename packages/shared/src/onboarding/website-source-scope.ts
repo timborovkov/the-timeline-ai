@@ -165,7 +165,6 @@ export function createWebsiteSourceHandlers({
           teamId,
           additionalDocuments: 1,
           additionalBytes: body.length,
-          additionalChunks: chunks.length,
         });
         const [doc] = await tx
           .insert(documents)
@@ -212,6 +211,13 @@ export function createWebsiteSourceHandlers({
         contentType: 'text/markdown',
       });
       await db.transaction(async (tx) => {
+        await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${teamId}, 2))`);
+        await assertTeamWriteCapacity({
+          db: tx as unknown as Db,
+          teamId,
+          additionalChunks: chunks.length,
+          excludeDocumentVersionId: stored.versionId,
+        });
         if (chunks.length)
           await tx
             .insert(documentChunks)
