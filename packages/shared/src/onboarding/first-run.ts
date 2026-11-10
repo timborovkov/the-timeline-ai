@@ -115,6 +115,20 @@ export interface FirstRunSuggestion {
   status: 'pending' | 'accepted' | 'rejected' | 'updated';
 }
 
+/**
+ * Listed website sources own the citation numbers. If the capture event is
+ * already one of the crawled pages, keep crawl order so "from N" matches the
+ * rows on screen. Only prepend a capture that is not already listed.
+ */
+export function listedWebsiteSourceEvents<T extends { id: string }>(
+  pages: T[],
+  extra: T | null,
+): T[] {
+  if (!extra) return pages;
+  if (pages.some((page) => page.id === extra.id)) return pages;
+  return [extra, ...pages];
+}
+
 export function isWebsiteScanEnabled(env: { WEBSITE_SCAN_ENABLED?: boolean | string }): boolean {
   const value = env.WEBSITE_SCAN_ENABLED;
   return value === true || value === 'true' || value === '1';
@@ -216,6 +230,19 @@ export function prefilledAskQuestion(input: {
   return input.recordTitle
     ? `What should I know from ${input.recordTitle}?`
     : 'What should happen next?';
+}
+
+export function guidedAskEmptyHint(path: FirstRunPath | null): string {
+  if (path === 'email') {
+    return 'We filled in a question this thread can answer. Edit it or send it as it is.';
+  }
+  if (path === 'website') {
+    return 'We filled in a question this site can answer. Edit it or send it as it is.';
+  }
+  if (path === 'document') {
+    return 'We filled in a question your upload can answer. Edit it or send it as it is.';
+  }
+  return 'We filled in a question your capture can answer. Edit it or send it as it is.';
 }
 
 export const TRY_ASKING_PROMPTS = [

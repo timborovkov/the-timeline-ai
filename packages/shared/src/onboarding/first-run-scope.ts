@@ -26,6 +26,7 @@ import {
   FIRST_RUN_PHASES,
   canReplaceFirstRunStarter,
   documentProcessingSteps,
+  listedWebsiteSourceEvents,
   suggestionTypeRank,
   websiteProcessingSteps,
 } from '#src/onboarding/first-run.js';
@@ -582,8 +583,6 @@ export function createFirstRunHandlers({ db, teamId, userId, ensureMember }: Fir
       }
 
       if (firstRun.starterPath === 'website') {
-        const eventIds: string[] = [];
-        if (firstRun.captureEventId) eventIds.push(firstRun.captureEventId);
         if (firstRun.starterSelectedAt) {
           const pages = await db
             .select({
@@ -602,11 +601,32 @@ export function createFirstRunHandlers({ db, teamId, userId, ensureMember }: Fir
             )
             .orderBy(asc(rawEvents.createdAt))
             .limit(5);
-          for (const page of pages) {
-            if (!eventIds.includes(page.id)) eventIds.push(page.id);
+          let extra: (typeof pages)[number] | null = null;
+          if (
+            firstRun.captureEventId &&
+            !pages.some((page) => page.id === firstRun.captureEventId)
+          ) {
+            const [captured] = await db
+              .select({
+                id: rawEvents.id,
+                contentText: rawEvents.contentText,
+                occurredAt: rawEvents.occurredAt,
+              })
+              .from(rawEvents)
+              .where(
+                and(
+                  eq(rawEvents.id, firstRun.captureEventId),
+                  eq(rawEvents.teamId, teamId),
+                  rawEventVisibleToUser(userId),
+                ),
+              )
+              .limit(1);
+            extra = captured ?? null;
           }
+          const listed = listedWebsiteSourceEvents(pages, extra);
+          const eventIds = listed.map((page) => page.id);
           const suggestions = await loadSuggestions(eventIds, firstRun.workStyle);
-          const sources: FirstRunSource[] = pages.map((page, index) => ({
+          const sources: FirstRunSource[] = listed.map((page, index) => ({
             n: index + 1,
             kind: 'Web page',
             title: page.contentText?.split('\n')[0]?.slice(0, 80) ?? `Page ${String(index + 1)}`,
@@ -621,17 +641,17 @@ export function createFirstRunHandlers({ db, teamId, userId, ensureMember }: Fir
               ? `Starter context from ${firstRun.websiteHost}`
               : 'Starter context from your website',
             recordMeta:
-              pages.length > 0
-                ? `Website · ${String(pages.length)} page${pages.length === 1 ? '' : 's'} read`
+              listed.length > 0
+                ? `Website · ${String(listed.length)} page${listed.length === 1 ? '' : 's'} read`
                 : 'Website',
-            summary: pages[0]?.contentText?.slice(0, 600) ?? null,
+            summary: listed[0]?.contentText?.slice(0, 600) ?? null,
             note: 'This is your public website, not your team’s work yet. The record starts updating itself once a channel or your email is connected.',
             sources,
             suggestions,
             processingSteps: websiteProcessingSteps({
               host: firstRun.websiteHost,
               failureReason: firstRun.scanFailureReason,
-              pageCount: pages.length,
+              pageCount: listed.length,
               hasSuggestions: suggestions.length > 0,
             }),
             emailArrived: false,

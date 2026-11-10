@@ -99,14 +99,14 @@ export function FirstRecordScreen({
                   <div className="text-sm font-medium">{suggestion.title}</div>
                   <div className="mt-0.5 text-xs text-fg-dim">
                     {suggestion.detail}
-                    {suggestion.sourceN ? (
+                    {source ? (
                       <>
                         {' '}
                         · from{' '}
                         <span className="rounded-sm bg-signal-soft px-1 font-mono text-[11px] text-signal">
-                          {suggestion.sourceN}
+                          {source.n}
                         </span>{' '}
-                        {source?.title ?? ''}
+                        {source.title}
                       </>
                     ) : null}
                   </div>

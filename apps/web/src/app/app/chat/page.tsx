@@ -1,5 +1,9 @@
 import { entities, type Db } from '@timeline/db';
-import { TRY_ASKING_PROMPTS, prefilledAskQuestion } from '@timeline/shared/onboarding';
+import {
+  TRY_ASKING_PROMPTS,
+  guidedAskEmptyHint,
+  prefilledAskQuestion,
+} from '@timeline/shared/onboarding';
 import { pageWindow } from '@timeline/shared/pagination';
 import { withTeam } from '@timeline/shared/team-scope';
 import { type UIMessage } from 'ai';
@@ -102,11 +106,7 @@ export default async function ChatPage({
             initialPrompt={guidedAsk?.question ?? null}
             suggestionPrompts={guidedAsk ? TRY_ASKING_PROMPTS : undefined}
             emptyTitle={guidedAsk ? 'Ask about what you just brought' : null}
-            emptyHint={
-              guidedAsk
-                ? 'We filled in a question that what you brought can answer. Edit it or send it as it is.'
-                : null
-            }
+            emptyHint={guidedAsk ? guidedAskEmptyHint(guidedAsk.path) : null}
           />
           {guidedAsk ? (
             <GuidedContinue
@@ -196,6 +196,7 @@ async function loadChatPage({ searchParams }: { searchParams: Promise<{ session?
     firstRun &&
     (firstRun.phase === 'record' || firstRun.phase === 'ask' || firstRun.phase === 'approve')
       ? {
+          path: firstRun.starterPath,
           question: prefilledAskQuestion({
             path: firstRun.starterPath,
             workStyle: firstRun.workStyle,

@@ -2,6 +2,7 @@
 
 import {
   documentProcessingSteps,
+  guidedAskEmptyHint,
   websiteProcessingSteps,
   type FirstRunPhase,
 } from '@timeline/shared/onboarding/first-run';
@@ -177,9 +178,7 @@ export function OnboardingPreviewGallery({
         <h1 className="mt-1 text-2xl font-semibold tracking-tight">
           Ask about what you just brought
         </h1>
-        <p className="mt-2 text-sm leading-6 text-fg-muted">
-          We filled in a question that what you brought can answer. Edit it or send it as it is.
-        </p>
+        <p className="mt-2 text-sm leading-6 text-fg-muted">{guidedAskEmptyHint('document')}</p>
         <div className="mt-4 rounded-md border border-border bg-surface px-3 py-2 text-sm">
           What is this document about, and who does it name?
         </div>
