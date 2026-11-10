@@ -23,7 +23,9 @@ guided Ask, Approvals, and Go live use the real app chrome with a slim Getting
 started strip (Capture, Ask, Approve, Go live). Fresh guided Ask includes the visible
 starter capture in its context; guided Approvals scopes rows and counts to that
 capture, including pagination. First-record suggestions use the same proposal and
-supporting-evidence visibility checks as the approval queue. Home never shows that strip.
+supporting-evidence visibility checks as the approval queue. Empty first-record and
+guided Approvals views offer Check for suggestions so asynchronously generated
+proposals can be discovered without reloading the page. Home never shows that strip.
 Skipping lands on an empty Home with the same checklist and next-step copy, not a
 sample workspace. Website scan is a chooser card; it stays Coming soon until the
 crawl worker is enabled. Work-style chips describe how the team works, never

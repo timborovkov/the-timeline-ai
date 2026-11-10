@@ -7,6 +7,7 @@ import { useTransition } from 'react';
 import type { FirstRunSource, FirstRunSuggestion } from '@timeline/shared/onboarding/first-run';
 
 import { setFirstRunPhaseAction } from '@/app/actions/first-run';
+import { RefreshSuggestions } from '@/components/onboarding/refresh-suggestions';
 import { SuggestionStatusPill } from '@/components/onboarding/suggestion-status-pill';
 import { Button } from '@/components/ui/button';
 
@@ -117,6 +118,8 @@ export function FirstRecordScreen({
           })
         )}
       </ul>
+
+      {suggestions.length === 0 ? <RefreshSuggestions /> : null}
 
       <div className="mt-5 flex flex-col gap-2 sm:flex-row">
         <Button
