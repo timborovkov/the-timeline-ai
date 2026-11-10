@@ -106,7 +106,7 @@ async function checkOpenRouterZdrRequests(): Promise<LiveIntegrationCanaryResult
       status: 'skip',
       detail: 'OPENROUTER_API_KEY missing',
       envKeys: ['OPENROUTER_API_KEY'],
-      docs: 'docs/setup/openrouter.html',
+      docs: 'docs/setup/openrouter.md',
     };
   }
   try {
@@ -141,7 +141,7 @@ async function checkOpenRouterZdrRequests(): Promise<LiveIntegrationCanaryResult
         .join(', '),
       action:
         'verify the shared OpenRouter key allowlist, assigned guardrail, ZDR endpoints, and exact code-owned model pins',
-      docs: 'docs/setup/openrouter.html',
+      docs: 'docs/setup/openrouter.md',
     };
   } catch {
     return {
@@ -149,13 +149,13 @@ async function checkOpenRouterZdrRequests(): Promise<LiveIntegrationCanaryResult
       status: 'warn',
       detail: 'canary target construction failed before a provider response was recorded',
       action: 'add a synthetic canary surface for every ZDR-required model role',
-      docs: 'docs/setup/openrouter.html',
+      docs: 'docs/setup/openrouter.md',
     };
   }
 }
 
 async function checkOpenRouterZdrRegistry(): Promise<LiveIntegrationCanaryResult> {
-  const docs = 'docs/setup/openrouter.html#model-pins';
+  const docs = 'docs/setup/openrouter.md#model-pins';
   const modelIds = [...new Set(buildOpenRouterZdrCanaryTargets().map((target) => target.modelId))];
   try {
     const response = await fetch('https://openrouter.ai/api/v1/endpoints/zdr', {
@@ -214,7 +214,7 @@ async function checkOpenRouterTranscription(): Promise<LiveIntegrationCanaryResu
       status: 'skip',
       detail: 'OPENROUTER_API_KEY missing',
       envKeys: ['OPENROUTER_API_KEY'],
-      docs: 'docs/setup/openrouter.html#phase-3',
+      docs: 'docs/setup/openrouter.md#phase-3',
     };
   }
   try {
@@ -235,7 +235,7 @@ async function checkOpenRouterTranscription(): Promise<LiveIntegrationCanaryResu
       status: 'warn',
       detail: 'speech transcription response missed the expected canary words',
       action: 'verify the configured transcription model can decode the pinned speech fixture',
-      docs: 'docs/setup/openrouter.html#phase-3',
+      docs: 'docs/setup/openrouter.md#phase-3',
     };
   } catch {
     return {
@@ -243,7 +243,7 @@ async function checkOpenRouterTranscription(): Promise<LiveIntegrationCanaryResu
       status: 'warn',
       detail: 'speech transcription request failed without recording provider response content',
       action: 'verify the OpenRouter key can access the pinned transcription model',
-      docs: 'docs/setup/openrouter.html#phase-3',
+      docs: 'docs/setup/openrouter.md#phase-3',
     };
   }
 }
@@ -279,7 +279,7 @@ async function checkGithubApp(): Promise<LiveIntegrationCanaryResult> {
       envKeys: ['GITHUB_APP_ID', 'GITHUB_APP_PRIVATE_KEY'],
       action:
         'configure GitHub App installation-token credentials for production webhook-first sync',
-      docs: 'docs/setup/integrations.html#github',
+      docs: 'docs/setup/github.md',
     };
   }
   const response = await fetch('https://api.github.com/app', {
@@ -296,7 +296,7 @@ async function checkGithubApp(): Promise<LiveIntegrationCanaryResult> {
       status: 'warn',
       detail: shortProviderError(response.status, body, text),
       action: 'verify the GitHub App id/private key pair and app permissions',
-      docs: 'docs/setup/integrations.html#github',
+      docs: 'docs/setup/github.md',
     };
   }
   return { name: 'GitHub App', status: 'ok', detail: 'app JWT authenticated' };
@@ -309,7 +309,7 @@ async function checkSentry(): Promise<LiveIntegrationCanaryResult> {
       status: 'skip',
       detail: 'SENTRY_AUTH_TOKEN missing',
       envKeys: ['SENTRY_AUTH_TOKEN'],
-      docs: 'docs/setup/sentry.html',
+      docs: 'docs/setup/sentry.md',
     };
   }
   if (!configured('SENTRY_ORG', 'SENTRY_PROJECT')) {
@@ -318,7 +318,7 @@ async function checkSentry(): Promise<LiveIntegrationCanaryResult> {
       status: 'skip',
       detail: 'SENTRY_ORG or SENTRY_PROJECT missing',
       envKeys: ['SENTRY_ORG', 'SENTRY_PROJECT'],
-      docs: 'docs/setup/sentry.html',
+      docs: 'docs/setup/sentry.md',
     };
   }
   const org = encodeURIComponent(process.env.SENTRY_ORG ?? '');
@@ -334,7 +334,7 @@ async function checkSentry(): Promise<LiveIntegrationCanaryResult> {
       detail: shortProviderError(response.status, body, text),
       action:
         'grant the Sentry token project:read access to the configured org/project or update SENTRY_ORG/SENTRY_PROJECT',
-      docs: 'docs/setup/sentry.html',
+      docs: 'docs/setup/sentry.md',
     };
   }
   return { name: 'Sentry API', status: 'ok', detail: 'project lookup succeeded' };
@@ -347,7 +347,7 @@ async function checkResend(): Promise<LiveIntegrationCanaryResult> {
       status: 'skip',
       detail: 'RESEND_API_KEY missing',
       envKeys: ['RESEND_API_KEY'],
-      docs: 'docs/setup/resend.html',
+      docs: 'docs/setup/resend.md',
     };
   }
   const response = await fetch('https://api.resend.com/emails/receiving?limit=1', {
@@ -363,7 +363,7 @@ async function checkResend(): Promise<LiveIntegrationCanaryResult> {
       status: 'warn',
       detail: shortProviderError(response.status, body, text),
       action: 'verify the Resend API key has receiving access',
-      docs: 'docs/setup/resend.html',
+      docs: 'docs/setup/resend.md',
     };
   }
   return { name: 'Resend API', status: 'ok', detail: 'received-email API lookup succeeded' };
@@ -376,7 +376,7 @@ async function checkRecallApi(): Promise<LiveIntegrationCanaryResult> {
       status: 'skip',
       detail: 'RECALL_API_KEY missing',
       envKeys: ['RECALL_API_KEY'],
-      docs: 'docs/setup/meeting-bots.html',
+      docs: 'docs/setup/meeting-bots.md',
     };
   }
   try {
@@ -396,7 +396,7 @@ async function checkRecallApi(): Promise<LiveIntegrationCanaryResult> {
       status: 'warn',
       detail: safeCanaryDetail(err instanceof Error ? err.message : String(err)),
       action: 'verify the Recall API key, base URL region, and workspace access',
-      docs: 'docs/setup/meeting-bots.html',
+      docs: 'docs/setup/meeting-bots.md',
     };
   }
 }
@@ -414,7 +414,7 @@ async function checkSlackApiAuth(input: {
       detail: `${input.envKey} missing`,
       envKeys: [input.envKey],
       action: 'configure an optional read-only Slack canary token for auth.test',
-      docs: 'docs/setup/slack.html#live-canary',
+      docs: 'docs/setup/slack.md#live-canary',
     };
   }
   if (!token.startsWith(input.expectedPrefix)) {
@@ -423,7 +423,7 @@ async function checkSlackApiAuth(input: {
       status: 'warn',
       detail: `${input.envKey} does not look like a ${input.expectedPrefix} token`,
       action: 'set the matching Slack token type or leave the canary env unset',
-      docs: 'docs/setup/slack.html#live-canary',
+      docs: 'docs/setup/slack.md#live-canary',
     };
   }
   try {
@@ -440,7 +440,7 @@ async function checkSlackApiAuth(input: {
       status: 'warn',
       detail: safeCanaryDetail(err instanceof Error ? err.message : String(err)),
       action: 'verify the Slack canary token is active and has not been revoked',
-      docs: 'docs/setup/slack.html#live-canary',
+      docs: 'docs/setup/slack.md#live-canary',
     };
   }
 }
@@ -452,7 +452,7 @@ async function checkTelegramBotApi(): Promise<LiveIntegrationCanaryResult> {
       status: 'skip',
       detail: 'TELEGRAM_BOT_TOKEN missing',
       envKeys: ['TELEGRAM_BOT_TOKEN'],
-      docs: 'docs/setup/telegram.html',
+      docs: 'docs/setup/telegram.md',
     };
   }
   try {
@@ -479,7 +479,7 @@ async function checkTelegramBotApi(): Promise<LiveIntegrationCanaryResult> {
       status: 'warn',
       detail: shortProviderError(response.status, body, text),
       action: 'verify TELEGRAM_BOT_TOKEN is active and belongs to the configured bot',
-      docs: 'docs/setup/telegram.html',
+      docs: 'docs/setup/telegram.md',
     };
   } catch (err) {
     return {
@@ -487,7 +487,7 @@ async function checkTelegramBotApi(): Promise<LiveIntegrationCanaryResult> {
       status: 'warn',
       detail: safeCanaryDetail(err instanceof Error ? err.message : String(err)),
       action: 'verify Telegram Bot API reachability and TELEGRAM_BOT_TOKEN',
-      docs: 'docs/setup/telegram.html',
+      docs: 'docs/setup/telegram.md',
     };
   }
 }
@@ -537,7 +537,7 @@ async function checkTelegramCapture(): Promise<LiveIntegrationCanaryResult> {
       detail: 'Telegram capture canary env missing',
       envKeys,
       action: 'configure a linked Telegram user canary before running capture canaries',
-      docs: 'docs/setup/telegram.html#live-canary',
+      docs: 'docs/setup/telegram.md#live-canary',
     };
   }
 
@@ -550,7 +550,7 @@ async function checkTelegramCapture(): Promise<LiveIntegrationCanaryResult> {
       detail: 'TELEGRAM_CAPTURE_CANARY_USER_ID must be a positive integer',
       action:
         'set TELEGRAM_CAPTURE_CANARY_USER_ID to the numeric Telegram user id linked in Timeline',
-      docs: 'docs/setup/telegram.html#live-canary',
+      docs: 'docs/setup/telegram.md#live-canary',
     };
   }
 
@@ -565,7 +565,7 @@ async function checkTelegramCapture(): Promise<LiveIntegrationCanaryResult> {
       detail: canaryUrl.reason,
       action:
         'set AUTH_URL and TELEGRAM_CAPTURE_CANARY_ALLOWED_ORIGIN to the same trusted app origin before running capture canaries',
-      docs: 'docs/setup/telegram.html#live-canary',
+      docs: 'docs/setup/telegram.md#live-canary',
     };
   }
 
@@ -601,7 +601,7 @@ async function checkTelegramCapture(): Promise<LiveIntegrationCanaryResult> {
         status: 'warn',
         detail: shortProviderError(response.status, responseBody, responseText),
         action: 'verify Telegram webhook secret, app route reachability, and rate limits',
-        docs: 'docs/setup/telegram.html#live-canary',
+        docs: 'docs/setup/telegram.md#live-canary',
       };
     }
     const rawEventId = await waitForTelegramCaptureRawEvent({ text, updateId });
@@ -618,7 +618,7 @@ async function checkTelegramCapture(): Promise<LiveIntegrationCanaryResult> {
       detail: 'webhook accepted but no matching Telegram raw event was found',
       action:
         'verify the canary Telegram user is linked to an active Timeline team in the same database as AUTH_URL',
-      docs: 'docs/setup/telegram.html#live-canary',
+      docs: 'docs/setup/telegram.md#live-canary',
     };
   } catch (err) {
     return {
@@ -627,7 +627,7 @@ async function checkTelegramCapture(): Promise<LiveIntegrationCanaryResult> {
       detail: safeCanaryDetail(err instanceof Error ? err.message : String(err)),
       action:
         'verify DATABASE_URL points at the same database as AUTH_URL and Telegram canary routing is linked',
-      docs: 'docs/setup/telegram.html#live-canary',
+      docs: 'docs/setup/telegram.md#live-canary',
     };
   }
 }
@@ -672,7 +672,7 @@ async function checkSlackEventCapture(): Promise<LiveIntegrationCanaryResult> {
       envKeys,
       action:
         'configure a real installed Slack team/channel/user canary before running capture canaries',
-      docs: 'docs/setup/slack.html#live-canary',
+      docs: 'docs/setup/slack.md#live-canary',
     };
   }
 
@@ -687,7 +687,7 @@ async function checkSlackEventCapture(): Promise<LiveIntegrationCanaryResult> {
       detail: canaryUrl.reason,
       action:
         'set AUTH_URL and SLACK_CAPTURE_CANARY_ALLOWED_ORIGIN to the same trusted app origin before running capture canaries',
-      docs: 'docs/setup/slack.html#live-canary',
+      docs: 'docs/setup/slack.md#live-canary',
     };
   }
 
@@ -728,7 +728,7 @@ async function checkSlackEventCapture(): Promise<LiveIntegrationCanaryResult> {
         status: 'warn',
         detail: shortProviderError(response.status, responseBody, responseText),
         action: 'verify Slack signing secret, app route reachability, and rate limits',
-        docs: 'docs/setup/slack.html#live-canary',
+        docs: 'docs/setup/slack.md#live-canary',
       };
     }
     const rawEventId = await waitForSlackCaptureRawEvent({ eventId, text });
@@ -745,7 +745,7 @@ async function checkSlackEventCapture(): Promise<LiveIntegrationCanaryResult> {
       detail: 'webhook accepted but no matching Slack raw event was found',
       action:
         'verify the canary Slack team is installed, the channel is bound, the user is valid, and the app worker can reach Slack users.info',
-      docs: 'docs/setup/slack.html#live-canary',
+      docs: 'docs/setup/slack.md#live-canary',
     };
   } catch (err) {
     return {
@@ -754,7 +754,7 @@ async function checkSlackEventCapture(): Promise<LiveIntegrationCanaryResult> {
       detail: safeCanaryDetail(err instanceof Error ? err.message : String(err)),
       action:
         'verify DATABASE_URL points at the same database as AUTH_URL and the canary workspace is installed',
-      docs: 'docs/setup/slack.html#live-canary',
+      docs: 'docs/setup/slack.md#live-canary',
     };
   }
 }
@@ -774,7 +774,7 @@ async function checkResendInboundCapture(): Promise<LiveIntegrationCanaryResult>
       status: 'skip',
       detail: 'Received-email replay canary is not configured',
       envKeys,
-      docs: 'docs/setup/resend.html#smoke-test',
+      docs: 'docs/setup/resend.md#smoke-test',
     };
   const destination = validateResendInboundCaptureCanaryUrl(
     process.env.AUTH_URL,
@@ -827,7 +827,7 @@ async function checkResendInboundCapture(): Promise<LiveIntegrationCanaryResult>
     status: 'warn',
     detail: 'Queued replay has no captured event yet',
     action: 'Check email-inbound worker failures, recipient routing and sender whitelist',
-    docs: 'docs/setup/resend.html#smoke-test',
+    docs: 'docs/setup/resend.md#smoke-test',
   };
 }
 
@@ -843,37 +843,37 @@ const oauthAuthorizeCanaries = [
     name: 'Google Drive OAuth authorize',
     provider: 'google_drive',
     envKeys: ['GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET'],
-    docs: 'docs/setup/integrations.html#google-drive',
+    docs: 'docs/setup/google-drive.md',
   },
   {
     name: 'Linear OAuth authorize',
     provider: 'linear',
     envKeys: ['LINEAR_CLIENT_ID', 'LINEAR_CLIENT_SECRET'],
-    docs: 'docs/setup/integrations.html#linear',
+    docs: 'docs/setup/linear.md',
   },
   {
     name: 'GitHub OAuth authorize',
     provider: 'github',
     envKeys: ['GITHUB_APP_CLIENT_ID', 'GITHUB_APP_CLIENT_SECRET'],
-    docs: 'docs/setup/integrations.html#github',
+    docs: 'docs/setup/github.md',
   },
   {
     name: 'Monday OAuth authorize',
     provider: 'monday',
     envKeys: ['MONDAY_CLIENT_ID', 'MONDAY_CLIENT_SECRET'],
-    docs: 'docs/setup/integrations.html#monday',
+    docs: 'docs/setup/monday.md',
   },
   {
     name: 'Slack OAuth authorize',
     provider: 'slack',
     envKeys: ['SLACK_CLIENT_ID', 'SLACK_CLIENT_SECRET'],
-    docs: 'docs/setup/slack.html',
+    docs: 'docs/setup/slack.md',
   },
   {
     name: 'Sentry OAuth authorize',
     provider: 'sentry',
     envKeys: ['SENTRY_INTEGRATION_CLIENT_ID', 'SENTRY_INTEGRATION_CLIENT_SECRET'],
-    docs: 'docs/setup/integrations.html#sentry-native',
+    docs: 'docs/setup/sentry-source.md',
   },
 ] as const satisfies readonly OAuthAuthorizeCanary[];
 
@@ -934,7 +934,7 @@ async function checkMondayBoardContract(): Promise<LiveIntegrationCanaryResult> 
       status: 'skip',
       detail: configuredStatusDetail(envKeys),
       envKeys: [...envKeys],
-      docs: 'docs/setup/integrations.html#monday',
+      docs: 'docs/setup/monday.md',
     };
   }
   const token = process.env.MONDAY_CANARY_ACCESS_TOKEN ?? '';
@@ -1020,7 +1020,7 @@ async function checkMondayBoardContract(): Promise<LiveIntegrationCanaryResult> 
       formatError: (error) =>
         safeCanaryDetail(error instanceof Error ? error.message : String(error)),
       action: 'remove the temporary webhook and verify monday webhook scopes',
-      docs: 'docs/setup/integrations.html#monday',
+      docs: 'docs/setup/monday.md',
     });
     if (result.status === 'ok') webhookId = null;
     return result;
@@ -1030,7 +1030,7 @@ async function checkMondayBoardContract(): Promise<LiveIntegrationCanaryResult> 
       status: 'warn',
       detail: safeCanaryDetail(error instanceof Error ? error.message : String(error)),
       action: 'verify the dedicated Monday canary token, parent board, scopes, and webhook URL',
-      docs: 'docs/setup/integrations.html#monday',
+      docs: 'docs/setup/monday.md',
     };
   } finally {
     if (webhookId) {
@@ -1052,7 +1052,7 @@ function checkWebhookConfig(): LiveIntegrationCanaryResult[] {
       configured('GITHUB_WEBHOOK_SECRET') ? 'configured' : 'GITHUB_WEBHOOK_SECRET missing',
       {
         envKeys: ['GITHUB_WEBHOOK_SECRET'],
-        docs: 'docs/setup/integrations.html#github',
+        docs: 'docs/setup/github.md',
       },
     ),
     secretStatus(
@@ -1061,7 +1061,7 @@ function checkWebhookConfig(): LiveIntegrationCanaryResult[] {
       configured('MONDAY_WEBHOOK_SECRET') ? 'configured' : 'MONDAY_WEBHOOK_SECRET missing',
       {
         envKeys: ['MONDAY_WEBHOOK_SECRET'],
-        docs: 'docs/setup/integrations.html#monday',
+        docs: 'docs/setup/monday.md',
       },
     ),
     secretStatus(
@@ -1072,7 +1072,7 @@ function checkWebhookConfig(): LiveIntegrationCanaryResult[] {
         : 'SENTRY_INTEGRATION_CLIENT_SECRET missing',
       {
         envKeys: ['SENTRY_INTEGRATION_CLIENT_SECRET'],
-        docs: 'docs/setup/integrations.html#sentry-native',
+        docs: 'docs/setup/sentry-source.md',
       },
     ),
     secretStatus(
@@ -1083,7 +1083,7 @@ function checkWebhookConfig(): LiveIntegrationCanaryResult[] {
         : 'GOOGLE_DRIVE_WEBHOOK_SECRET missing',
       {
         envKeys: ['GOOGLE_DRIVE_WEBHOOK_SECRET'],
-        docs: 'docs/setup/integrations.html#google-drive',
+        docs: 'docs/setup/google-drive.md',
       },
     ),
     secretStatus(
@@ -1092,7 +1092,7 @@ function checkWebhookConfig(): LiveIntegrationCanaryResult[] {
       configured('LINEAR_WEBHOOK_SECRET') ? 'configured' : 'LINEAR_WEBHOOK_SECRET missing',
       {
         envKeys: ['LINEAR_WEBHOOK_SECRET'],
-        docs: 'docs/setup/integrations.html#linear',
+        docs: 'docs/setup/linear.md',
       },
     ),
     secretStatus(
@@ -1101,7 +1101,7 @@ function checkWebhookConfig(): LiveIntegrationCanaryResult[] {
       configured('SLACK_SIGNING_SECRET') ? 'configured' : 'SLACK_SIGNING_SECRET missing',
       {
         envKeys: ['SLACK_SIGNING_SECRET'],
-        docs: 'docs/setup/slack.html',
+        docs: 'docs/setup/slack.md',
       },
     ),
     secretStatus(
@@ -1110,7 +1110,7 @@ function checkWebhookConfig(): LiveIntegrationCanaryResult[] {
       configured('RESEND_WEBHOOK_SECRET') ? 'configured' : 'RESEND_WEBHOOK_SECRET missing',
       {
         envKeys: ['RESEND_WEBHOOK_SECRET'],
-        docs: 'docs/setup/resend.html',
+        docs: 'docs/setup/resend.md',
       },
     ),
   ];

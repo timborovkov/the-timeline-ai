@@ -15,7 +15,7 @@ export const GOOGLE_DRIVE_LIMITED_USE = {
   sharing:
     'You choose which folders or files this team may use. A team admin activates those sources. Captured events follow Timeline visibility rules. Timeline does not edit Drive files or change Drive sharing.',
   deletion:
-    'Disconnecting deletes Timeline’s Drive tokens, change snapshots, and latest extracted text for uncovered files. Cited timeline events already captured stay in the workspace until a team admin or support deletion request. Disconnect does not erase that history. You can also remove Timeline in Google Account permissions.',
+    'Removing your personal Drive account deletes Timeline’s encrypted Drive tokens and, when no remaining Drive connection or Google sign-in still needs the grant, requests Google revocation. Sources using that account are disabled; snapshots and captured history are not deleted. An admin disconnect of the workspace Drive source deletes change snapshots and latest extracted text for uncovered files, cancels in-flight extraction, and stops Drive change watches when deprovision succeeds. Cited timeline events already captured stay in the workspace. To request deletion of captured data, use Help → Support. Requests are handled manually after identity and workspace authority checks. You can also remove Timeline in Google Account permissions.',
   processors:
     'A small billed model may read changed passages to judge whether they belong on the work record. PDF, Word, and Slides text is extracted by Timeline’s document-extract service, then deleted.',
   training: 'Timeline does not use Google user data to train general-purpose models.',

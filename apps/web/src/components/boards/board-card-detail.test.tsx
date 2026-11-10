@@ -243,6 +243,8 @@ function connectedWork(): objects.ObjectDetail['connectedWork'] {
   return {
     openTasks: [],
     recentTasks: [],
+    openTaskCount: 0,
+    doneTaskCount: 0,
     calendarEvents: [],
     timelineEvents: [
       {

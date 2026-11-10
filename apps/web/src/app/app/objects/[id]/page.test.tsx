@@ -15,6 +15,7 @@ const fakes = vi.hoisted(() => ({
   listPrimaryProjectsForTasks: vi.fn(),
   listObjectBoardContext: vi.fn(),
   listPendingSuggestions: vi.fn(),
+  listPendingSuggestionsForObject: vi.fn(),
   listMembers: vi.fn(),
   objectDetailClientProps: vi.fn(),
   redirect: vi.fn((path: string) => {
@@ -48,7 +49,10 @@ await vi.mock(
         listPrimaryProjectsForTasks: fakes.listPrimaryProjectsForTasks,
       },
       boards: { listObjectBoardContext: fakes.listObjectBoardContext },
-      suggestions: { listPendingSuggestions: fakes.listPendingSuggestions },
+      suggestions: {
+        listPendingSuggestions: fakes.listPendingSuggestions,
+        listPendingSuggestionsForObject: fakes.listPendingSuggestionsForObject,
+      },
       pins: { isPinned: fakes.isPinned },
       timeline: { listMembers: fakes.listMembers },
     }),
@@ -125,6 +129,8 @@ beforeEach(() => {
     connectedWork: {
       openTasks: [],
       recentTasks: [],
+      openTaskCount: 0,
+      doneTaskCount: 0,
       calendarEvents: [],
       timelineEvents: [],
       objects: [],
@@ -140,6 +146,7 @@ beforeEach(() => {
   fakes.getMergedObjectTarget.mockResolvedValue(null);
   fakes.listObjectBoardContext.mockResolvedValue([]);
   fakes.listPendingSuggestions.mockResolvedValue([]);
+  fakes.listPendingSuggestionsForObject.mockResolvedValue([]);
   fakes.listMembers.mockResolvedValue([]);
 });
 
@@ -155,6 +162,17 @@ describe('ObjectDetailPage', () => {
     expect(html).toContain('href="/app/tasks?task=task-1"');
   });
 
+  it('loads pending suggestions for the object instead of the workspace-newest list', async () => {
+    renderToStaticMarkup(
+      await ObjectDetailPage({
+        params: Promise.resolve({ id: OBJECT_ID }),
+      }),
+    );
+
+    expect(fakes.listPendingSuggestionsForObject).toHaveBeenCalledWith(OBJECT_ID);
+    expect(fakes.listPendingSuggestions).not.toHaveBeenCalled();
+  });
+
   it('falls back to objects when returnTo is external', async () => {
     const html = renderToStaticMarkup(
       await ObjectDetailPage({
@@ -167,7 +185,7 @@ describe('ObjectDetailPage', () => {
   });
 
   it('keeps sibling create items with pending relationship bundles for the object page', async () => {
-    fakes.listPendingSuggestions.mockResolvedValue([
+    fakes.listPendingSuggestionsForObject.mockResolvedValue([
       {
         id: 'bundle-1',
         source: 'background',
@@ -245,7 +263,7 @@ describe('ObjectDetailPage', () => {
   });
 
   it('does not keep failed sibling create items for pending relationship bundles', async () => {
-    fakes.listPendingSuggestions.mockResolvedValue([
+    fakes.listPendingSuggestionsForObject.mockResolvedValue([
       {
         id: 'bundle-1',
         source: 'background',
@@ -285,6 +303,66 @@ describe('ObjectDetailPage', () => {
             proposedPayload: {
               fromRef: 'jonne-granqvist',
               toEntityId: OBJECT_ID,
+              kind: 'related',
+            },
+            failureReason: null,
+          },
+        ],
+      },
+    ]);
+
+    renderToStaticMarkup(
+      await ObjectDetailPage({
+        params: Promise.resolve({ id: OBJECT_ID }),
+      }),
+    );
+
+    const props = fakes.objectDetailClientProps.mock.calls.at(-1)?.[0] as
+      { suggestions?: { items: { id: string }[] }[] } | undefined;
+    expect(props?.suggestions?.[0]?.items.map((item) => item.id)).toEqual(['item-relationship']);
+  });
+
+  it('keeps pending local-ref relationships after sibling object creates are accepted', async () => {
+    fakes.listPendingSuggestionsForObject.mockResolvedValue([
+      {
+        id: 'bundle-1',
+        source: 'background',
+        status: 'partially_resolved',
+        title: 'Remember Jonne Granqvist and DFK',
+        summary: null,
+        reason: null,
+        confidence: 'medium',
+        createdAt: new Date('2026-06-01T10:00:00.000Z'),
+        evidence: [],
+        items: [
+          {
+            id: 'item-person',
+            status: 'accepted',
+            operation: 'create',
+            targetKind: 'object',
+            targetId: null,
+            resultId: OBJECT_ID,
+            title: 'Jonne Granqvist',
+            description: null,
+            proposedPayload: {
+              type: 'person',
+              canonicalName: 'Jonne Granqvist',
+              localRef: 'jonne-granqvist',
+            },
+            failureReason: null,
+          },
+          {
+            id: 'item-relationship',
+            status: 'pending',
+            operation: 'create',
+            targetKind: 'object_relationship',
+            targetId: null,
+            resultId: null,
+            title: 'Relate Jonne Granqvist and DFK',
+            description: null,
+            proposedPayload: {
+              fromRef: 'jonne-granqvist',
+              toEntityId: '66666666-6666-4666-8666-666666666666',
               kind: 'related',
             },
             failureReason: null,

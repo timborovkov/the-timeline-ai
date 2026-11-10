@@ -118,6 +118,20 @@ describe('suggestionTargetsObject', () => {
     ).toBe(true);
   });
 
+  it('matches merge suggestions by any participating object id', () => {
+    const item = {
+      targetId: 'survivor-1',
+      targetKind: 'object_merge',
+      proposedPayload: {
+        objectIds: ['survivor-1', 'duplicate-1'],
+        survivorId: 'survivor-1',
+      },
+    };
+    expect(suggestionTargetsObject(item, 'duplicate-1')).toBe(true);
+    expect(suggestionTargetsObject(item, 'survivor-1')).toBe(true);
+    expect(suggestionTargetsObject(item, 'unrelated-1')).toBe(false);
+  });
+
   it('does not match unrelated board suggestions', () => {
     expect(
       suggestionTargetsObject(

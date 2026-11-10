@@ -60,12 +60,6 @@ export function ObjectProvenanceGroups({
       entries: provenance.whatChangedIt,
       previewCount: 2,
     },
-    {
-      title: 'Related evidence',
-      sourceKind: 'related' as const,
-      entries: provenance.relatedEvidence,
-      previewCount: 0,
-    },
   ].filter((group) => group.entries.length > 0);
   if (groups.length === 0) return null;
 
@@ -93,7 +87,7 @@ function ProvenanceGroup({
   title: string;
   entries: ProvenanceEntry[];
   previewCount: number;
-  sourceKind: 'change' | 'related';
+  sourceKind: 'change';
 }) {
   const previewEntries = entries.slice(0, previewCount);
   const remainingEntries = entries.slice(previewCount);

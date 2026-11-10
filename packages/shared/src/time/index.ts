@@ -5,7 +5,8 @@ const UTC_MIDNIGHT_PATTERN = /^\d{4}-\d{2}-\d{2}T00:00:00(?:\.0+)?Z$/;
 
 export const DEFAULT_DUE_SOON_DAYS = 14;
 
-export type DueDateStatus = 'missing' | 'overdue' | 'today' | 'due_soon' | 'scheduled' | 'invalid';
+export type DueDateStatus =
+  'missing' | 'overdue' | 'today' | 'due_soon' | 'scheduled' | 'completed' | 'invalid';
 
 export interface DueDatePresentation {
   status: DueDateStatus;
@@ -21,6 +22,9 @@ export interface PresentDueDateOptions {
   now?: Date;
   locale?: string;
   dueSoonDays?: number;
+  /** Terminal work: never overdue/due-soon. Prefer `completedAt` when set. */
+  completed?: boolean;
+  completedAt?: Date | string | null;
 }
 
 export interface DueDateRangeFilter {
@@ -152,6 +156,26 @@ export function presentDueDate(
   value: Date | string | null | undefined,
   options: PresentDueDateOptions,
 ): DueDatePresentation {
+  const timezone = assertValidTimezone(options.timezone);
+  if (options.completed) {
+    const completedKey =
+      options.completedAt === null ||
+      options.completedAt === undefined ||
+      options.completedAt === ''
+        ? null
+        : dueDateKey(options.completedAt, timezone);
+    if (completedKey) {
+      const dateLabel = localizedDueDate(completedKey, options.locale);
+      return {
+        status: 'completed',
+        dateKey: completedKey,
+        dateLabel,
+        label: 'Completed',
+        compactText: `Completed ${dateLabel}`,
+        tone: 'muted',
+      };
+    }
+  }
   if (value === null || value === undefined || value === '') {
     return {
       status: 'missing',
@@ -163,7 +187,6 @@ export function presentDueDate(
     };
   }
 
-  const timezone = assertValidTimezone(options.timezone);
   const dateKey = dueDateKey(value, timezone);
   if (!dateKey) {
     const raw = value instanceof Date ? value.toString() : value;
@@ -173,6 +196,18 @@ export function presentDueDate(
       dateLabel: raw,
       label: 'Due',
       compactText: `Due ${raw}`,
+      tone: 'neutral',
+    };
+  }
+
+  if (options.completed) {
+    const dateLabel = localizedDueDate(dateKey, options.locale);
+    return {
+      status: 'scheduled',
+      dateKey,
+      dateLabel,
+      label: 'Due',
+      compactText: `Due ${dateLabel}`,
       tone: 'neutral',
     };
   }

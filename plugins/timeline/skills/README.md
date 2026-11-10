@@ -6,7 +6,7 @@ The bundled Codex and Claude Code connections use Timeline's OAuth flow. On firs
 
 Agents can fetch the live setup instructions at [https://thetimeline.cc/agents/setup.md](https://thetimeline.cc/agents/setup.md). The published skill at [https://thetimeline.cc/agents/SKILL.md](https://thetimeline.cc/agents/SKILL.md) is byte-identical to [`timeline/SKILL.md`](./timeline/SKILL.md).
 
-> Release status: these OAuth instructions describe this repository version. The hosted URL will not provide this flow until migration `0075_mcp_oauth_server.sql` and the matching web release are deployed. Repository packaging is not a public marketplace listing.
+> Release prerequisite: verify the deployed OAuth discovery and MCP endpoints before connecting a client. Repository packaging does not establish deployment or directory publication; see [release verification](../../../docs/marketplace-submissions.md).
 
 ## Install in Codex
 

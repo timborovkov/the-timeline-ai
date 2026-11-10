@@ -64,6 +64,7 @@ import {
   type SourceRef,
 } from '#src/reconciliation/core.js';
 import { sourcePayloadRefFromMetadata } from '#src/reconciliation/source-snapshot.js';
+import { likePattern } from '#src/sql-like.js';
 import { stableStringify, suggestionDedupeKey } from '#src/suggestions/dedupe-key.js';
 import {
   canonicalProposalPayloadIssues,
@@ -241,14 +242,22 @@ class ProposalRevisionConflictError extends Error {
 }
 
 class TransactionalSuggestionApplyFailure extends Error {
+  readonly claimedItem: typeof agentSuggestionItems.$inferSelect;
+  readonly preClaimUpdatedAt: Date;
+  readonly failureReason: string;
+  readonly applyError: unknown;
   constructor(
-    readonly claimedItem: typeof agentSuggestionItems.$inferSelect,
-    readonly preClaimUpdatedAt: Date,
-    readonly failureReason: string,
-    readonly applyError: unknown,
+    claimedItem: typeof agentSuggestionItems.$inferSelect,
+    preClaimUpdatedAt: Date,
+    failureReason: string,
+    applyError: unknown,
   ) {
     super(failureReason, { cause: applyError });
     this.name = 'TransactionalSuggestionApplyFailure';
+    this.claimedItem = claimedItem;
+    this.preClaimUpdatedAt = preClaimUpdatedAt;
+    this.failureReason = failureReason;
+    this.applyError = applyError;
   }
 }
 
@@ -7539,6 +7548,58 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
 
     async listPendingSuggestions(): Promise<SuggestionBundle[]> {
       return listSuggestions({ status: 'pending' });
+    },
+
+    async listPendingSuggestionsForObject(objectId: string): Promise<SuggestionBundle[]> {
+      await ensureMember();
+      await recoverInterruptedTaskCreateAcceptances();
+      const trimmed = objectId.trim();
+      if (!trimmed) return [];
+      const rows = await db
+        .select()
+        .from(agentSuggestions)
+        .where(
+          and(
+            suggestionVisibilityPredicate(teamId, userId),
+            inArray(agentSuggestions.status, ['pending', 'partially_resolved']),
+            pendingItemExistsPredicate(),
+            exists(
+              db
+                .select({ id: agentSuggestionItems.id })
+                .from(agentSuggestionItems)
+                .where(
+                  and(
+                    eq(agentSuggestionItems.suggestionId, agentSuggestions.id),
+                    eq(agentSuggestionItems.teamId, teamId),
+                    inArray(agentSuggestionItems.status, ['pending', 'accepted']),
+                    or(
+                      eq(agentSuggestionItems.targetId, trimmed),
+                      eq(agentSuggestionItems.resultId, trimmed),
+                      sql`${agentSuggestionItems.proposedPayload}::text LIKE ${likePattern(trimmed)} ESCAPE '\\'`,
+                      exists(
+                        db
+                          .select({ id: boardItems.id })
+                          .from(boardItems)
+                          .innerJoin(boardsTable, eq(boardItems.boardId, boardsTable.id))
+                          .where(
+                            and(
+                              eq(boardItems.teamId, teamId),
+                              eq(boardItems.entityId, trimmed),
+                              isNull(boardItems.archivedAt),
+                              isNull(boardsTable.archivedAt),
+                              sql`${boardItems.id}::text = ${agentSuggestionItems.proposedPayload} ->> 'boardItemId'`,
+                            ),
+                          ),
+                      ),
+                    ),
+                  ),
+                ),
+            ),
+          ),
+        )
+        .orderBy(desc(agentSuggestions.createdAt), desc(agentSuggestions.id))
+        .limit(100);
+      return hydrateBundles(rows);
     },
 
     withCalendarResolutionHints,

@@ -382,8 +382,9 @@ export const QUICK_LINKS: readonly QuickLinkSeed[] = [
     kind: 'external_link',
     title: 'Integration setup docs',
     snippet: 'Open integration setup documentation in a new tab.',
-    href: '/docs/setup/integrations.html',
-    externalHref: '/docs/setup/integrations.html',
+    href: 'https://github.com/timborovkov/the-timeline-ai/blob/main/docs/setup/integrations.md',
+    externalHref:
+      'https://github.com/timborovkov/the-timeline-ai/blob/main/docs/setup/integrations.md',
     group: 'Docs',
     keywords: ['setup docs', 'integration docs', 'docs', 'mcp docs'],
   },

@@ -223,8 +223,7 @@ const baseSchema = z.object({
    */
   TIMELINE_DEPLOYMENT_MODE: z.enum(['hosted', 'self-managed']).default('hosted'),
   /**
-   * Operator attestation that the contracting/controller identity publication
-   * blocker in docs/security-privacy-trust.md (G-20) is resolved and evidenced.
+   * Operator approval to publish the legal text.
    * The web app otherwise withholds binding terms and legal acceptance.
    */
   LEGAL_PUBLICATION_READY: z.preprocess(booleanString, z.boolean().default(false)),

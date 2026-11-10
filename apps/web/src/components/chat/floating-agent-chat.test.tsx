@@ -37,7 +37,9 @@ await vi.mock(
   import.meta.resolve('ai'),
   () => ({
     DefaultChatTransport: class DefaultChatTransport {
-      constructor(public options: { body?: () => unknown }) {
+      options: { body?: () => unknown };
+      constructor(options: { body?: () => unknown }) {
+        this.options = options;
         fakes.transports.push({ options });
       }
     },

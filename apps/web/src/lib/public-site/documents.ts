@@ -121,7 +121,7 @@ const TRUST_SECTIONS = [
     links: [
       {
         label: 'Read the cookies and browser-storage notice',
-        href: 'https://thetimeline.cc/cookies',
+        href: '/cookies',
       },
     ],
   },
@@ -336,7 +336,7 @@ const publicUtilityDocuments = definePublicDocuments('public-utility', [
     title: 'Terms of Use',
     description: 'Terms governing access to The Timeline.',
     indexability: 'index',
-    dates: { modified: TERMS_VERSION, reviewed: '2026-11-03' },
+    dates: { modified: TERMS_VERSION, reviewed: TERMS_VERSION },
     capability: { kind: 'not-applicable' },
     sitemap: { changeFrequency: 'monthly', priority: 0.4 },
     structuredData: [{ type: 'web-page' }],
@@ -345,7 +345,7 @@ const publicUtilityDocuments = definePublicDocuments('public-utility', [
       order: 50,
       summary: 'Terms governing access to The Timeline.',
       fullSummary:
-        'Binding service terms covering user and team authority, customer content, capture responsibility, AI, integrations, acceptable use, security, liability, and termination.',
+        'Binding service terms covering user and team authority, customer content, capture responsibility, AI, integrations, acceptable use, security, liability, and termination. Personal OAuth disconnect, workspace-source removal, and deletion of captured history are distinct actions.',
     },
   },
   {
@@ -354,7 +354,7 @@ const publicUtilityDocuments = definePublicDocuments('public-utility', [
     title: 'Privacy Policy',
     description: 'How The Timeline processes personal data and team content.',
     indexability: 'index',
-    dates: { modified: PRIVACY_VERSION, reviewed: '2026-11-07' },
+    dates: { modified: PRIVACY_VERSION, reviewed: PRIVACY_VERSION },
     capability: { kind: 'not-applicable' },
     sitemap: { changeFrequency: 'monthly', priority: 0.4 },
     structuredData: [{ type: 'web-page' }],
@@ -363,7 +363,7 @@ const publicUtilityDocuments = definePublicDocuments('public-utility', [
       order: 40,
       summary: 'How The Timeline processes personal data and team content.',
       fullSummary:
-        'Controller and processor roles, data categories, legal bases, AI privacy routing, subprocessors, analytics, human access, security, retention, transfers, and data-subject rights.',
+        'Controller and processor roles, data categories, legal bases, AI privacy routing, subprocessors including Resend transactional and inbound email, analytics, human access, security, retention, transfers, data-subject rights, and the distinction between personal disconnect, workspace-source removal, and deletion of captured history.',
     },
   },
   {
@@ -431,7 +431,7 @@ const publicUtilityDocuments = definePublicDocuments('public-utility', [
     title: 'llms-full.txt',
     description: 'Expanded Markdown summary of the public product and help content.',
     indexability: 'index',
-    dates: { modified: '2026-11-07', reviewed: '2026-11-07' },
+    dates: { modified: '2026-11-09', reviewed: '2026-11-09' },
     capability: { kind: 'not-applicable' },
     sitemap: false,
     structuredData: [],

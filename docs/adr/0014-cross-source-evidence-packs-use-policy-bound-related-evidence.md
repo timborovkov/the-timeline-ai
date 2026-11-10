@@ -224,46 +224,7 @@ identifiers, or provider payloads.
 
 ### Rollout
 
-A server-side `CROSS_SOURCE_EVIDENCE_MODE` setting controls `off`, `shadow`, and
-`enforced` behavior and defaults to `off`. Shadow mode builds and measures packs
-without changing model input or creating pack-derived output. Its fingerprint
-is telemetry only and never enters the metadata field that activates proposal
-revision handling. Enforced mode uses the pack. The generic webhook's existing
-proposal-generation setting remains an inner source gate. Changing the global
-mode requires a worker restart or redeploy.
-
-The first rollout is environment-scoped and starts with generic ingest
-webhooks. Later milestones cover conversation reviews, other event-local paths,
-and Agent Ask. Every adapter has its own fixtures, negative-link tests,
-visibility tests, shadow evidence, and explicit enforcement gate.
-Promotion evidence must contain exactly one builder version and one policy
-version within the shadow population; `off` and `enforced` samples do not affect
-that version gate. Changing either version requires a fresh qualifying shadow
-population. An explicitly supplied empty telemetry export is still assessed
-and fails the shadow-population gates.
-Sampling reports retain a content-free latency distribution so merged reports
-recompute cumulative p50, p95, and p99 values instead of merging percentiles.
-They also retain stable content-free population fingerprints derived from an
-immutable attempt ID, with immutable attempt provenance as the legacy fallback,
-and reject report merges with overlapping population identities. Mutable review
-outcomes, eligibility labels, and error annotations do not change that identity,
-while ambiguous duplicate legacy identities are rejected rather than counted as
-separate attempts. Cumulative reports therefore cannot double-count historical
-attempts. One pre-fingerprint legacy aggregate remains loadable and retains an
-absent fingerprint field when rewritten; it cannot be merged with another
-health population until its attempts are traceable. A shadow attempt must also
-complete without an error and carry its own
-sample timestamp, team key, and scenario family before it counts as eligible,
-and reported pack counts must satisfy surface count ≤ selected count ≤ candidate
-count. Loaded aggregate health is rejected unless
-cross-source ≤ eligible ≤ total attempts, error counts and reasons match their
-rate, the aggregate pack counts preserve the same ordering, mode values are
-recognized, and nonzero shadow eligibility has a shadow population. Dashboard
-persistence goes through the named team reconciliation scope, including the
-CLI's explicit trusted internal-user path, and retains both the required
-scenario policy and the promotion result/blocker codes so a
-zero-fixture-failure run can still show as promotion-blocked.
-Reports without evidence-pack telemetry omit pack health and promotion state.
+Promotion gates and rollback thresholds have one owner: [evidence rollout](../cross-source-evidence.md).
 
 ## Consequences
 

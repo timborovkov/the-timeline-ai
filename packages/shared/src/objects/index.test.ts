@@ -2222,6 +2222,22 @@ describe('object scope — notes and suggestions', () => {
       status: 'todo',
       actor: { kind: 'user', userId: USER_OWNER },
     });
+    await db.insert(entityRelationships).values([
+      {
+        teamId: TEAM_A,
+        fromEntityId: openTask.id,
+        toEntityId: company.id,
+        kind: 'related',
+        createdBy: USER_OWNER,
+      },
+      {
+        teamId: TEAM_A,
+        fromEntityId: doneTask.id,
+        toEntityId: company.id,
+        kind: 'related',
+        createdBy: USER_OWNER,
+      },
+    ]);
     await db.insert(calendarEvents).values([
       {
         teamId: TEAM_A,
@@ -2561,6 +2577,324 @@ describe('object scope — notes and suggestions', () => {
     expect(detail?.connectedWork.capturedFiles).toEqual([
       expect.objectContaining({ name: 'dfk-whiteboard.png', contentType: 'image/png' }),
     ]);
+  });
+
+  it('connects tasks through explicit links and shared facts, not title mentions', async () => {
+    const scope = withTeam(db, TEAM_A, USER_OWNER).objects;
+    const company = await scope.createObject({
+      type: 'company',
+      canonicalName: 'Northstar Works',
+      aliases: ['Northstar'],
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    const reverseHost = await scope.createObject({
+      type: 'deal',
+      canonicalName: 'Series A process',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    const relatedTask = await scope.createObject({
+      type: 'task',
+      canonicalName: 'Validate Northstar pilot export',
+      status: 'blocked',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    const reverseRelatedTask = await scope.createObject({
+      type: 'task',
+      canonicalName: 'Answer Northwind diligence Q&A',
+      status: 'doing',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    const childTask = await scope.createObject({
+      type: 'task',
+      canonicalName: 'Prepare Brightline MSA excerpt',
+      status: 'todo',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    const nameOnlyTask = await scope.createObject({
+      type: 'task',
+      canonicalName: 'Crop Northstar screenshot for webinar',
+      status: 'todo',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    const sharedFactTask = await scope.createObject({
+      type: 'task',
+      canonicalName: 'Ping Elena Park on field-mapping',
+      status: 'todo',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    await db.insert(entityRelationships).values([
+      {
+        teamId: TEAM_A,
+        fromEntityId: relatedTask.id,
+        toEntityId: company.id,
+        kind: 'related',
+        createdBy: USER_OWNER,
+      },
+      {
+        teamId: TEAM_A,
+        fromEntityId: reverseHost.id,
+        toEntityId: reverseRelatedTask.id,
+        kind: 'related',
+        createdBy: USER_OWNER,
+      },
+      {
+        teamId: TEAM_A,
+        fromEntityId: childTask.id,
+        toEntityId: company.id,
+        kind: 'child',
+        createdBy: USER_OWNER,
+      },
+    ]);
+    const [raw] = await db
+      .insert(rawEvents)
+      .values({
+        teamId: TEAM_A,
+        authorUserId: USER_OWNER,
+        source: 'web',
+        contentText: 'Elena still owes Northstar field-mapping.',
+        occurredAt: new Date('2026-06-16T10:00:00.000Z'),
+        visibility: 'team',
+      })
+      .returning({ id: rawEvents.id });
+    const [fact] = await db
+      .insert(facts)
+      .values({
+        teamId: TEAM_A,
+        rawEventId: raw?.id ?? '',
+        statement: 'Elena still owes Northstar field-mapping.',
+        confidence: 0.9,
+        modelVersion: 'test',
+      })
+      .returning({ id: facts.id });
+    await db.insert(factEntities).values([
+      { factId: fact?.id ?? '', entityId: company.id, role: 'subject' },
+      { factId: fact?.id ?? '', entityId: sharedFactTask.id, role: 'object' },
+    ]);
+
+    const companyDetail = await scope.getObject(company.id);
+    const companyTaskPage = await scope.getObjectSectionPage(company.id, 'tasks');
+    const reverseDetail = await scope.getObject(reverseHost.id);
+
+    expect(companyDetail?.connectedWork.openTasks.map((task) => task.id).sort()).toEqual(
+      [relatedTask.id, childTask.id, sharedFactTask.id].sort(),
+    );
+    expect(companyDetail?.connectedWork.openTasks).not.toContainEqual(
+      expect.objectContaining({ id: nameOnlyTask.id }),
+    );
+    expect(companyTaskPage?.items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: relatedTask.id }),
+        expect.objectContaining({ id: childTask.id }),
+      ]),
+    );
+    expect(companyTaskPage?.items).toHaveLength(2);
+    expect(companyTaskPage?.items).not.toContainEqual(
+      expect.objectContaining({ id: nameOnlyTask.id }),
+    );
+    expect(reverseDetail?.connectedWork.openTasks).toEqual([
+      expect.objectContaining({ id: reverseRelatedTask.id }),
+    ]);
+  });
+
+  it('keeps explicitly linked tasks when unrelated relationships exceed the lookup cap', async () => {
+    const scope = withTeam(db, TEAM_A, USER_OWNER).objects;
+    const company = await scope.createObject({
+      type: 'company',
+      canonicalName: 'Northstar Works',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    const task = await scope.createObject({
+      type: 'task',
+      canonicalName: 'Validate Northstar pilot export',
+      status: 'todo',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    const unrelated = await db
+      .insert(entities)
+      .values(
+        Array.from({ length: 400 }, (_, index) => ({
+          teamId: TEAM_A,
+          type: 'person' as const,
+          canonicalName: `Unrelated contact ${String(index).padStart(3, '0')}`,
+        })),
+      )
+      .returning({ id: entities.id });
+    await db.insert(entityRelationships).values(
+      unrelated.map((row) => ({
+        teamId: TEAM_A,
+        fromEntityId: company.id,
+        toEntityId: row.id,
+        kind: 'related' as const,
+        createdBy: USER_OWNER,
+      })),
+    );
+    await db.insert(entityRelationships).values([
+      {
+        teamId: TEAM_A,
+        fromEntityId: task.id,
+        toEntityId: company.id,
+        kind: 'related',
+        createdBy: USER_OWNER,
+      },
+    ]);
+
+    const detail = await scope.getObject(company.id);
+    const taskPage = await scope.getObjectSectionPage(company.id, 'tasks');
+    expect(detail?.connectedWork.openTasks).toEqual([expect.objectContaining({ id: task.id })]);
+    expect(detail?.connectedWork.openTaskCount).toBe(1);
+    expect(detail?.connectedWork.doneTaskCount).toBe(0);
+    expect(taskPage?.items).toEqual([expect.objectContaining({ id: task.id })]);
+  });
+
+  it('counts connected tasks independently of preview limits', async () => {
+    const scope = withTeam(db, TEAM_A, USER_OWNER).objects;
+    const company = await scope.createObject({
+      type: 'company',
+      canonicalName: 'Northstar Works',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    const openRows = await db
+      .insert(entities)
+      .values(
+        Array.from({ length: 13 }, (_, index) => ({
+          teamId: TEAM_A,
+          type: 'task' as const,
+          canonicalName: `Open connected task ${String(index).padStart(2, '0')}`,
+          status: 'todo',
+        })),
+      )
+      .returning({ id: entities.id });
+    const doneRows = await db
+      .insert(entities)
+      .values(
+        Array.from({ length: 9 }, (_, index) => ({
+          teamId: TEAM_A,
+          type: 'task' as const,
+          canonicalName: `Done connected task ${String(index).padStart(2, '0')}`,
+          status: 'done',
+        })),
+      )
+      .returning({ id: entities.id });
+    await db.insert(entityRelationships).values(
+      [...openRows, ...doneRows].map((row) => ({
+        teamId: TEAM_A,
+        fromEntityId: row.id,
+        toEntityId: company.id,
+        kind: 'related' as const,
+        createdBy: USER_OWNER,
+      })),
+    );
+
+    const detail = await scope.getObject(company.id);
+    expect(detail?.connectedWork.openTaskCount).toBe(13);
+    expect(detail?.connectedWork.doneTaskCount).toBe(9);
+    expect(detail?.connectedWork.openTasks).toHaveLength(12);
+    expect(detail?.connectedWork.recentTasks).toHaveLength(8);
+  });
+
+  it('still counts older open tasks when many newer done tasks exist', async () => {
+    const scope = withTeam(db, TEAM_A, USER_OWNER).objects;
+    const company = await scope.createObject({
+      type: 'company',
+      canonicalName: 'Northstar Works',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    const [openTask] = await db
+      .insert(entities)
+      .values([
+        {
+          teamId: TEAM_A,
+          type: 'task',
+          canonicalName: 'Older open connected task',
+          status: 'todo',
+          updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+        },
+      ])
+      .returning({ id: entities.id });
+    if (!openTask) throw new Error('expected older open task row');
+    const doneRows = await db
+      .insert(entities)
+      .values(
+        Array.from({ length: 40 }, (_, index) => ({
+          teamId: TEAM_A,
+          type: 'task' as const,
+          canonicalName: `Newer done connected task ${String(index).padStart(2, '0')}`,
+          status: 'done',
+          updatedAt: new Date('2026-06-01T00:00:00.000Z'),
+        })),
+      )
+      .returning({ id: entities.id });
+    await db.insert(entityRelationships).values(
+      [openTask, ...doneRows].map((row) => ({
+        teamId: TEAM_A,
+        fromEntityId: row.id,
+        toEntityId: company.id,
+        kind: 'related' as const,
+        createdBy: USER_OWNER,
+      })),
+    );
+
+    const detail = await scope.getObject(company.id);
+    expect(detail?.connectedWork.openTaskCount).toBe(1);
+    expect(detail?.connectedWork.doneTaskCount).toBe(40);
+    expect(detail?.connectedWork.openTasks).toEqual([expect.objectContaining({ id: openTask.id })]);
+    expect(detail?.connectedWork.recentTasks).toHaveLength(8);
+  });
+
+  it('stamps connected done-task completedAt from the status change, not later edits', async () => {
+    const scope = withTeam(db, TEAM_A, USER_OWNER).objects;
+    const company = await scope.createObject({
+      type: 'company',
+      canonicalName: 'Northstar Works',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    const task = await scope.createObject({
+      type: 'task',
+      canonicalName: 'Send Northwind data room',
+      status: 'todo',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    await db.insert(entityRelationships).values([
+      {
+        teamId: TEAM_A,
+        fromEntityId: task.id,
+        toEntityId: company.id,
+        kind: 'related',
+        createdBy: USER_OWNER,
+      },
+    ]);
+    await scope.updateObject(task.id, { status: 'done' }, { kind: 'user', userId: USER_OWNER });
+    const [statusChange] = await db
+      .select({ changedAt: objectChanges.changedAt })
+      .from(objectChanges)
+      .where(
+        and(
+          eq(objectChanges.teamId, TEAM_A),
+          eq(objectChanges.entityId, task.id),
+          eq(objectChanges.field, 'status'),
+          eq(objectChanges.status, 'applied'),
+        ),
+      );
+    expect(statusChange?.changedAt).toBeInstanceOf(Date);
+    await db
+      .update(entities)
+      .set({
+        canonicalName: 'Send Northwind data room (renamed)',
+        updatedAt: new Date((statusChange?.changedAt.getTime() ?? 0) + 60_000),
+      })
+      .where(eq(entities.id, task.id));
+
+    const detail = await scope.getObject(company.id);
+    expect(detail?.connectedWork.doneTaskCount).toBe(1);
+    expect(detail?.connectedWork.recentTasks).toEqual([
+      expect.objectContaining({
+        id: task.id,
+        completedAt: statusChange?.changedAt,
+      }),
+    ]);
+    expect(detail?.connectedWork.recentTasks[0]?.updatedAt).not.toEqual(
+      detail?.connectedWork.recentTasks[0]?.completedAt,
+    );
   });
 
   it('paginates beyond 100 artifact-associated evidence events', async () => {
