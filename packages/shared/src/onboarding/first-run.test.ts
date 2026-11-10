@@ -7,6 +7,8 @@ import {
   firstCaptureJustLanded,
   orderChecklistItems,
   parsePublicWebsiteUrl,
+  guidedAskEmptyHint,
+  listedWebsiteSourceEvents,
   prefilledAskQuestion,
   recommendedGoLiveChannel,
   scanFailureCopy,
@@ -36,6 +38,36 @@ describe('first-run helpers', () => {
     expect(prefilledAskQuestion({ path: 'document', workStyle: 'dealflow' })).toBe(
       'What is this document asking for, and who are the named counterparts?',
     );
+  });
+
+  it('explains the prefilled Ask in path-specific English', () => {
+    expect(guidedAskEmptyHint('document')).toBe(
+      'We filled in a question your upload can answer. Edit it or send it as it is.',
+    );
+    expect(guidedAskEmptyHint('website')).toBe(
+      'We filled in a question this site can answer. Edit it or send it as it is.',
+    );
+    expect(guidedAskEmptyHint('email')).toBe(
+      'We filled in a question this thread can answer. Edit it or send it as it is.',
+    );
+  });
+
+  it('numbers website citations from listed pages, not a prepended capture id', () => {
+    const pages = [
+      { id: 'home', title: 'Studio' },
+      { id: 'about', title: 'About' },
+    ];
+    expect(listedWebsiteSourceEvents(pages, { id: 'about', title: 'About' })).toEqual(pages);
+    expect(listedWebsiteSourceEvents(pages, { id: 'home', title: 'Studio' })).toEqual(pages);
+    expect(listedWebsiteSourceEvents(pages, { id: 'extra', title: 'Capture' })).toEqual([
+      { id: 'extra', title: 'Capture' },
+      ...pages,
+    ]);
+    const listed = listedWebsiteSourceEvents(pages, { id: 'about', title: 'About' });
+    expect(listed.map((page, index) => ({ n: index + 1, id: page.id }))).toEqual([
+      { n: 1, id: 'home' },
+      { n: 2, id: 'about' },
+    ]);
   });
 
   it('maps document processing status onto named steps without invented counts', () => {

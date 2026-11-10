@@ -49,4 +49,44 @@ describe('FirstRecordScreen', () => {
     expect(screen.getByText('Suggested · needs your approval')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Ask about it' })).toBeTruthy();
   });
+
+  it('cites only source numbers that are listed', () => {
+    render(
+      <FirstRecordScreen
+        title="Starter context from studio.example"
+        meta="Website · 2 pages read"
+        summary="The about page names Dana Reyes as founder and lists Northwind as a client."
+        note="This is your public website, not your team’s work yet."
+        sources={[
+          { n: 1, kind: 'Web page', title: 'Studio', meta: 'studio.example' },
+          { n: 2, kind: 'Web page', title: 'About', meta: 'studio.example' },
+        ]}
+        suggestions={[
+          {
+            id: 's1',
+            type: 'Company',
+            title: 'Northwind',
+            detail: 'Named client',
+            sourceN: 2,
+            status: 'pending',
+          },
+          {
+            id: 's2',
+            type: 'Person',
+            title: 'Orphan cite',
+            detail: 'Should not invent a third page',
+            sourceN: 3,
+            status: 'pending',
+          },
+        ]}
+      />,
+    );
+
+    const northwind = screen.getByText('Northwind').closest('li');
+    expect(northwind?.textContent).toContain('from');
+    expect(northwind?.textContent).toContain('About');
+    const orphan = screen.getByText('Orphan cite').closest('li');
+    expect(orphan?.textContent).not.toContain('from');
+    expect(orphan?.textContent).not.toContain('3');
+  });
 });

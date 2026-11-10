@@ -2,6 +2,7 @@
 
 import {
   documentProcessingSteps,
+  guidedAskEmptyHint,
   websiteProcessingSteps,
   type FirstRunPhase,
 } from '@timeline/shared/onboarding/first-run';
@@ -44,6 +45,25 @@ const SUGGESTIONS = [
     title: 'Dana Reyes',
     detail: 'Founder',
     sourceN: 1,
+    status: 'pending' as const,
+  },
+];
+
+const WEBSITE_SUGGESTIONS = [
+  {
+    id: 's1',
+    type: 'Company',
+    title: 'Northwind',
+    detail: 'Named client',
+    sourceN: 2,
+    status: 'pending' as const,
+  },
+  {
+    id: 's2',
+    type: 'Person',
+    title: 'Dana Reyes',
+    detail: 'Founder',
+    sourceN: 2,
     status: 'pending' as const,
   },
 ];
@@ -173,7 +193,7 @@ function FirstRecordWebsitePreview() {
           { n: 1, kind: 'Web page', title: 'Studio', meta: 'studio.example' },
           { n: 2, kind: 'Web page', title: 'About', meta: 'studio.example' },
         ]}
-        suggestions={SUGGESTIONS}
+        suggestions={WEBSITE_SUGGESTIONS}
       />
     </AppPreview>
   );
@@ -201,9 +221,7 @@ function GuidedAskPreview() {
       <h1 className="mt-1 text-2xl font-semibold tracking-tight">
         Ask about what you just brought
       </h1>
-      <p className="mt-2 text-sm leading-6 text-fg-muted">
-        We filled in a question that what you brought can answer. Edit it or send it as it is.
-      </p>
+      <p className="mt-2 text-sm leading-6 text-fg-muted">{guidedAskEmptyHint('document')}</p>
       <div className="mt-4 rounded-md border border-border bg-surface px-3 py-2 text-sm">
         What is this document about, and who does it name?
       </div>
