@@ -25,6 +25,7 @@ import { askBillingUserMessage } from '#src/billing/admission.js';
 import { assertTeamWriteCapacity } from '#src/billing/capacity.js';
 import { isBillingAdmissionError } from '#src/billing/errors.js';
 import { admitAcceptedSourceEnrichment, admitAudioTranscription } from '#src/billing/runtime.js';
+import { withChatDeliveryPrincipal } from '#src/conversation-surfaces/deferred-delivery.js';
 import { redactConversationError } from '#src/conversation-surfaces/privacy.js';
 import { acceptDirectAgentTurn } from '#src/conversation-surfaces/runtime.js';
 import { resetSurfaceSessionInTransaction } from '#src/conversation-surfaces/scope.js';
@@ -54,6 +55,11 @@ import { inlineSourceSnapshotMetadata } from '#src/reconciliation/source-snapsho
 import { getRedisConnection } from '#src/redis/connection.js';
 import { withTeam } from '#src/team-scope.js';
 import { type TelegramApi } from '#src/telegram/api.js';
+import {
+  applyTelegramChatMigration,
+  isTelegramChatMigrationConflictError,
+  telegramChatMigrationFromMessage,
+} from '#src/telegram/chat-migration.js';
 import {
   TELEGRAM_DM_HELP,
   TELEGRAM_GROUP_HELP,
@@ -210,6 +216,15 @@ export async function handleUpdate(
   }
 
   try {
+    const migration = telegramChatMigrationFromMessage(update.message ?? update.edited_message);
+    if (migration) {
+      try {
+        await applyTelegramChatMigration(deps.db, migration.fromChatId, migration.toChatId);
+      } catch (err) {
+        if (!isTelegramChatMigrationConflictError(err)) throw err;
+      }
+      return { ok: true };
+    }
     if (update.message) {
       await routeMessage(deps, update.update_id, update.message, false);
     } else if (update.edited_message) {
@@ -226,45 +241,49 @@ export async function handleUpdate(
 
 async function routeCallbackQuery(deps: DispatcherDeps, query: TgUpdate['callback_query']) {
   if (!query?.data || !query.message) return;
+  const message = query.message;
   const [kind, confirmationId] = query.data.split(':');
   if (kind !== 'timeline_join_confirm' && kind !== 'timeline_join_cancel') return;
   await deps.tg.answerCallbackQuery({ callback_query_id: query.id, text: 'Working on it...' });
   const tgUserRow = await upsertTelegramUser(deps.db, query.from);
-  const chat = query.message.chat;
+  const chat = message.chat;
   const teamId =
     chat.type === 'private'
       ? await getActiveTeamId(deps.db, tgUserRow.id)
       : ((await getChatBinding(deps.db, chat.id, chat.title ?? null))?.teamId ?? null);
-  if (!teamId || !tgUserRow.userId || !confirmationId) {
+  const userId = tgUserRow.userId;
+  if (!teamId || !userId || !confirmationId) {
     await deps.tg.editMessageText({
       chat_id: chat.id,
-      message_id: query.message.message_id,
+      message_id: message.message_id,
       text: 'Could not confirm this join request. Make sure your Telegram user is linked.',
     });
     return;
   }
-  if (kind === 'timeline_join_cancel') {
-    const scope = withTeam(deps.db, teamId, tgUserRow.userId);
-    await scope.meetings.markMeetingCaptureConfirmation(confirmationId, 'cancelled');
+  await withChatDeliveryPrincipal({ teamId, userId }, async () => {
+    if (kind === 'timeline_join_cancel') {
+      const scope = withTeam(deps.db, teamId, userId);
+      await scope.meetings.markMeetingCaptureConfirmation(confirmationId, 'cancelled');
+      await deps.tg.editMessageText({
+        chat_id: chat.id,
+        message_id: message.message_id,
+        text: 'Cancelled.',
+      });
+      return;
+    }
+    const joined = await confirmRawUrlQuickJoin({
+      db: deps.db,
+      teamId,
+      userId,
+      confirmationId,
+    });
     await deps.tg.editMessageText({
       chat_id: chat.id,
-      message_id: query.message.message_id,
-      text: 'Cancelled.',
+      message_id: message.message_id,
+      text: joined.ok
+        ? `Joining as ${joined.botName ?? 'Timeline bot'}.`
+        : (joined.error ?? 'Could not join call.'),
     });
-    return;
-  }
-  const joined = await confirmRawUrlQuickJoin({
-    db: deps.db,
-    teamId,
-    userId: tgUserRow.userId,
-    confirmationId,
-  });
-  await deps.tg.editMessageText({
-    chat_id: chat.id,
-    message_id: query.message.message_id,
-    text: joined.ok
-      ? `Joining as ${joined.botName ?? 'Timeline bot'}.`
-      : (joined.error ?? 'Could not join call.'),
   });
 }
 
@@ -276,37 +295,62 @@ async function routeMessage(
 ): Promise<void> {
   const chat = message.chat;
   if (chat.type === 'private') {
-    if (!message.from) return; // anonymous DM is impossible, but typecheck
-    const tgUserRow = await upsertTelegramUser(deps.db, message.from);
+    const tgUser = message.from;
+    if (!tgUser) return; // anonymous DM is impossible, but typecheck
+    const tgUserRow = await upsertTelegramUser(deps.db, tgUser);
     const activeTeamId = await getActiveTeamId(deps.db, tgUserRow.id);
-    await handleDm(
-      {
-        ...deps,
-        updateId,
-        message,
-        tgUser: message.from,
-        tgUserRow,
-        activeTeamId,
-      },
-      isEdit,
-    );
+    const handle = () =>
+      handleDm(
+        {
+          ...deps,
+          updateId,
+          message,
+          tgUser,
+          tgUserRow,
+          activeTeamId,
+        },
+        isEdit,
+      );
+    if (activeTeamId) {
+      await withChatDeliveryPrincipal(
+        {
+          teamId: activeTeamId,
+          ...(tgUserRow.userId ? { userId: tgUserRow.userId } : {}),
+        },
+        handle,
+      );
+      return;
+    }
+    await handle();
     return;
   }
 
   if (chat.type === 'group' || chat.type === 'supergroup') {
     const tgUserRow = message.from ? await upsertTelegramUser(deps.db, message.from) : null;
     const binding = await getChatBinding(deps.db, chat.id, chat.title ?? null);
-    await handleGroup(
-      {
-        ...deps,
-        updateId,
-        message,
-        tgUser: message.from ?? null,
-        tgUserRow,
-        binding,
-      },
-      isEdit,
-    );
+    const handle = () =>
+      handleGroup(
+        {
+          ...deps,
+          updateId,
+          message,
+          tgUser: message.from ?? null,
+          tgUserRow,
+          binding,
+        },
+        isEdit,
+      );
+    if (binding) {
+      await withChatDeliveryPrincipal(
+        {
+          teamId: binding.teamId,
+          ...(tgUserRow?.userId ? { userId: tgUserRow.userId } : {}),
+        },
+        handle,
+      );
+      return;
+    }
+    await handle();
     return;
   }
   // channels not supported in Phase 2
@@ -1528,7 +1572,8 @@ async function cmdLinkGroup(ctx: GroupContext, arg: string): Promise<void> {
           .select()
           .from(telegramChatBindings)
           .where(eq(telegramChatBindings.tgChatId, ctx.message.chat.id))
-          .limit(1);
+          .limit(1)
+          .for('update');
         // The tg_chat_id UNIQUE constraint also enforces this — the check
         // here just gives a clearer error message in the common case.
         if (existingBinding[0]) throw new Error('already_bound');
