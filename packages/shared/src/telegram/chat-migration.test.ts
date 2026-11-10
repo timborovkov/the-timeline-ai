@@ -13,6 +13,7 @@ import { digestDestinationDedupeKey } from '#src/messaging/destinations.js';
 import {
   applyTelegramChatMigration,
   parseTelegramMigratedChatId,
+  rethrowTelegramChatMigrationWriteError,
   TelegramChatMigrationConflictError,
   telegramChatMigrationFromMessage,
   telegramMigratedChatId,
@@ -54,6 +55,23 @@ describe('telegram chat migration helpers', () => {
         }),
       ),
     ).toBe(NEW_CHAT_ID);
+  });
+
+  it('maps a binding unique-constraint error to a cross-team conflict', () => {
+    const unique = Object.assign(new Error('Failed query: insert'), {
+      cause: Object.assign(
+        new Error(
+          'duplicate key value violates unique constraint "telegram_chat_bindings_tg_chat_id_unique"',
+        ),
+        { code: '23505', constraint: 'telegram_chat_bindings_tg_chat_id_unique' },
+      ),
+    });
+    expect(() => rethrowTelegramChatMigrationWriteError(unique)).toThrow(
+      TelegramChatMigrationConflictError,
+    );
+    expect(() => rethrowTelegramChatMigrationWriteError(new Error('DB timeout'))).toThrow(
+      'DB timeout',
+    );
   });
 
   it('reads migrate_to and migrate_from on inbound service messages', () => {
@@ -141,6 +159,38 @@ describe('applyTelegramChatMigration', () => {
       ]),
     );
     expect(await db.select().from(teamDigestDestinations)).toHaveLength(2);
+  });
+
+  it('treats a unique-constraint race on the binding write as a cross-team conflict', async () => {
+    const originalTransaction = db.transaction.bind(db);
+    db.transaction = ((...args: Parameters<typeof originalTransaction>) => {
+      return (async () => {
+        await pg.exec(`
+          INSERT INTO telegram_chat_bindings (tg_chat_id, team_id, title)
+          VALUES (${NEW_CHAT_ID}, '${OTHER_TEAM_ID}', 'Other');
+        `);
+        return originalTransaction(...args);
+      })();
+    }) as typeof db.transaction;
+
+    await expect(applyTelegramChatMigration(db, OLD_CHAT_ID, NEW_CHAT_ID)).rejects.toThrow(
+      TelegramChatMigrationConflictError,
+    );
+
+    const bindings = await db.select().from(telegramChatBindings);
+    expect(bindings).toHaveLength(2);
+    expect(bindings.map((row) => ({ tgChatId: row.tgChatId, teamId: row.teamId }))).toEqual(
+      expect.arrayContaining([
+        { tgChatId: OLD_CHAT_ID, teamId: TEAM_ID },
+        { tgChatId: NEW_CHAT_ID, teamId: OTHER_TEAM_ID },
+      ]),
+    );
+    expect(
+      (await db.select().from(teamDigestDestinations)).map((row) => ({
+        teamId: row.teamId,
+        targetId: row.targetId,
+      })),
+    ).toEqual([{ teamId: TEAM_ID, targetId: String(OLD_CHAT_ID) }]);
   });
 
   it('does not rewrite destinations when the new id is bound to another team', async () => {

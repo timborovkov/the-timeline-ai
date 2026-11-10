@@ -263,7 +263,8 @@ curl -F "url=https://&lt;ngrok-id&gt;.ngrok-free.app/api/telegram/webhook" \
           a supergroup, outbound send errors and inbound migration service messages rewrite this id
           and that team's <code>telegram_chat</code> digest destination so later traffic uses the
           new chat. A new id already bound to another workspace is left unchanged, and the in-flight
-          send is not retried to that id.
+          send is not retried to that id. The same fail-closed path applies if another workspace
+          claims the new id between the ownership check and the binding write (unique constraint).
         </li>
         <li>
           <code>telegram_link_tokens</code> — single-use, 15-minute-TTL tokens, scoped

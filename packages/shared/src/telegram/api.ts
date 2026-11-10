@@ -9,6 +9,7 @@ import {
   isTelegramChatMigrationConflictError,
   parseTelegramMigratedChatId,
   replaceTelegramChatId,
+  rethrowTelegramChatMigrationWriteError,
   TELEGRAM_CHAT_MIGRATION_CONFLICT_CODE,
   telegramChatIdFromBody,
   telegramMigratedChatId,
@@ -89,26 +90,25 @@ export class HttpTelegramApi implements TelegramApi {
   }
 
   /**
-   * Authorize, then best-effort persist, a group→supergroup chat id rewrite.
+   * Authorize, then persist, a group→supergroup chat id rewrite.
    *
-   * Ownership verification (binding lookups / injected persist hook) must
-   * succeed before the in-flight send is retried against the new id. The
-   * later workspace write is best-effort: a failed rewrite after a successful
-   * verification still allows the redirected retry.
+   * Ownership verification and the workspace write must both succeed before
+   * the in-flight send is retried against the new id. A unique constraint on
+   * the binding write is a cross-team conflict. Any other failed write also
+   * skips the retry.
    */
   private async persistChatMigration(fromChatId: number, toChatId: number): Promise<void> {
-    if (this.options.onChatMigrated) {
-      await this.options.onChatMigrated(fromChatId, toChatId);
-      return;
-    }
-    const { getDb } = await import('@timeline/db');
-    const db = getDb();
-    await verifyTelegramChatMigrationOwnership(db, fromChatId, toChatId);
     try {
+      if (this.options.onChatMigrated) {
+        await this.options.onChatMigrated(fromChatId, toChatId);
+        return;
+      }
+      const { getDb } = await import('@timeline/db');
+      const db = getDb();
+      await verifyTelegramChatMigrationOwnership(db, fromChatId, toChatId);
       await applyTelegramChatMigration(db, fromChatId, toChatId);
     } catch (err) {
-      if (isTelegramChatMigrationConflictError(err)) throw err;
-      log.warn({ err, fromChatId, toChatId }, 'telegram chat migration persist failed');
+      rethrowTelegramChatMigrationWriteError(err);
     }
   }
 
@@ -144,7 +144,7 @@ export class HttpTelegramApi implements TelegramApi {
           }
           log.error(
             { err: persistErr, fromChatId, toChatId },
-            'telegram chat migration ownership verification failed; not retrying send',
+            'telegram chat migration persist failed; not retrying send',
           );
           throw error;
         }

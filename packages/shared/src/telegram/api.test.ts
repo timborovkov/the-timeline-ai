@@ -8,6 +8,18 @@ import {
   TelegramChatMigrationConflictError,
 } from '#src/telegram/chat-migration.js';
 
+function upgradedGroupResponse(): Response {
+  return new Response(
+    JSON.stringify({
+      ok: false,
+      error_code: 400,
+      description: 'Bad Request: group chat was upgraded to a supergroup chat',
+      parameters: { migrate_to_chat_id: -1004317012921 },
+    }),
+    { status: 400 },
+  );
+}
+
 describe('HttpTelegramApi file downloads', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
@@ -100,17 +112,7 @@ describe('HttpTelegramApi file downloads', () => {
     const persist = vi.fn(() => Promise.resolve());
     const fetch = vi
       .fn()
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({
-            ok: false,
-            error_code: 400,
-            description: 'Bad Request: group chat was upgraded to a supergroup chat',
-            parameters: { migrate_to_chat_id: -1004317012921 },
-          }),
-          { status: 400 },
-        ),
-      )
+      .mockResolvedValueOnce(upgradedGroupResponse())
       .mockResolvedValueOnce(Response.json({ ok: true, result: { message_id: 1 } }));
     vi.stubGlobal('fetch', fetch);
     const api = new HttpTelegramApi('token', 10_000, true, { onChatMigrated: persist });
@@ -136,17 +138,7 @@ describe('HttpTelegramApi file downloads', () => {
     const persist = vi.fn(() => Promise.resolve());
     const fetch = vi
       .fn()
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({
-            ok: false,
-            error_code: 400,
-            description: 'Bad Request: group chat was upgraded to a supergroup chat',
-            parameters: { migrate_to_chat_id: -1004317012921 },
-          }),
-          { status: 400 },
-        ),
-      )
+      .mockResolvedValueOnce(upgradedGroupResponse())
       .mockResolvedValueOnce(new Response('bot was blocked by the user', { status: 403 }));
     vi.stubGlobal('fetch', fetch);
     const api = new HttpTelegramApi('token', 10_000, true, { onChatMigrated: persist });
@@ -160,17 +152,7 @@ describe('HttpTelegramApi file downloads', () => {
 
   it('does not retry sendMessage when chat migration ownership verification fails', async () => {
     const persist = vi.fn(() => Promise.reject(new Error('DB timeout')));
-    const fetch = vi.fn().mockResolvedValueOnce(
-      new Response(
-        JSON.stringify({
-          ok: false,
-          error_code: 400,
-          description: 'Bad Request: group chat was upgraded to a supergroup chat',
-          parameters: { migrate_to_chat_id: -1004317012921 },
-        }),
-        { status: 400 },
-      ),
-    );
+    const fetch = vi.fn().mockResolvedValueOnce(upgradedGroupResponse());
     vi.stubGlobal('fetch', fetch);
     const api = new HttpTelegramApi('token', 10_000, true, { onChatMigrated: persist });
     const input = { chat_id: -123456, text: 'hello' };
@@ -189,17 +171,36 @@ describe('HttpTelegramApi file downloads', () => {
 
   it('does not retry sendMessage when chat migration hits a cross-team conflict', async () => {
     const persist = vi.fn(() => Promise.reject(new TelegramChatMigrationConflictError()));
-    const fetch = vi.fn().mockResolvedValueOnce(
-      new Response(
-        JSON.stringify({
-          ok: false,
-          error_code: 400,
-          description: 'Bad Request: group chat was upgraded to a supergroup chat',
-          parameters: { migrate_to_chat_id: -1004317012921 },
+    const fetch = vi.fn().mockResolvedValueOnce(upgradedGroupResponse());
+    vi.stubGlobal('fetch', fetch);
+    const api = new HttpTelegramApi('token', 10_000, true, { onChatMigrated: persist });
+    const input = { chat_id: -123456, text: 'hello' };
+
+    const error = await api.sendMessage(input).catch((value: unknown) => value);
+    expect(error).toMatchObject({ code: TELEGRAM_CHAT_MIGRATION_CONFLICT_CODE });
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toContain('Telegram sendMessage failed: 400');
+    expect((error as Error).message).toContain('cross-team chat migration conflict; skipped retry');
+    expect(persist).toHaveBeenCalledTimes(1);
+    expect(persist).toHaveBeenCalledWith(-123456, -1004317012921);
+    expect(input.chat_id).toBe(-123456);
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not retry sendMessage when migration persist hits a binding unique constraint', async () => {
+    const persist = vi.fn(() =>
+      Promise.reject(
+        Object.assign(new Error('Failed query: update telegram_chat_bindings'), {
+          cause: Object.assign(
+            new Error(
+              'duplicate key value violates unique constraint "telegram_chat_bindings_tg_chat_id_unique"',
+            ),
+            { code: '23505', constraint: 'telegram_chat_bindings_tg_chat_id_unique' },
+          ),
         }),
-        { status: 400 },
       ),
     );
+    const fetch = vi.fn().mockResolvedValueOnce(upgradedGroupResponse());
     vi.stubGlobal('fetch', fetch);
     const api = new HttpTelegramApi('token', 10_000, true, { onChatMigrated: persist });
     const input = { chat_id: -123456, text: 'hello' };

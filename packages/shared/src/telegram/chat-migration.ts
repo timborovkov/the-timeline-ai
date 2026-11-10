@@ -23,6 +23,47 @@ export function isTelegramChatMigrationConflictError(
   return error instanceof TelegramChatMigrationConflictError;
 }
 
+const TELEGRAM_CHAT_BINDINGS_TG_CHAT_ID_UNIQUE = 'telegram_chat_bindings_tg_chat_id_unique';
+
+function isPostgresUniqueViolation(error: unknown): boolean {
+  let current = error;
+  for (let depth = 0; depth < 6 && current && typeof current === 'object'; depth += 1) {
+    const record = current as {
+      code?: unknown;
+      constraint?: unknown;
+      cause?: unknown;
+      message?: unknown;
+    };
+    if (record.code === '23505' || record.code === 23505) return true;
+    if (record.constraint === TELEGRAM_CHAT_BINDINGS_TG_CHAT_ID_UNIQUE) return true;
+    if (
+      typeof record.message === 'string' &&
+      /duplicate key value violates unique constraint/i.test(record.message)
+    ) {
+      return true;
+    }
+    current = record.cause;
+  }
+  return false;
+}
+
+/**
+ * Map a failed migration write onto the fail-closed persist contract.
+ *
+ * Unique-constraint collisions (the TOCTOU where another workspace binds the
+ * new chat id after the ownership check) become
+ * {@link TelegramChatMigrationConflictError}. Other errors rethrow so callers
+ * skip the redirected send instead of swallowing a failed write.
+ */
+export function rethrowTelegramChatMigrationWriteError(error: unknown): never {
+  if (isTelegramChatMigrationConflictError(error)) throw error;
+  if (isPostgresUniqueViolation(error)) {
+    log.error({ err: error }, 'telegram chat migration skipped: new chat id unique constraint');
+    throw new TelegramChatMigrationConflictError();
+  }
+  throw error;
+}
+
 export interface TelegramChatMigration {
   fromChatId: number;
   toChatId: number;
@@ -162,7 +203,11 @@ export async function applyTelegramChatMigration(
   // Dynamic import keeps the HTTP Telegram client graph from pulling the
   // whole workspace port at module load.
   const { withTeam } = await import('#src/team-scope.js');
-  await withTeam(db, ownership.teamId, TELEGRAM_MIGRATION_ACTOR_USER_ID, {
-    skipMembershipCheck: true,
-  }).telegram.migrateChatId({ fromChatId, toChatId });
+  try {
+    await withTeam(db, ownership.teamId, TELEGRAM_MIGRATION_ACTOR_USER_ID, {
+      skipMembershipCheck: true,
+    }).telegram.migrateChatId({ fromChatId, toChatId });
+  } catch (err) {
+    rethrowTelegramChatMigrationWriteError(err);
+  }
 }
