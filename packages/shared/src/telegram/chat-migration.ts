@@ -140,6 +140,15 @@ export function telegramChatMigrationFromMessage(
 /** Synthetic team actor; same id as `TEAM_BOT_ACTOR_USER_ID` in the agent runtime. */
 const TELEGRAM_MIGRATION_ACTOR_USER_ID = '00000000-0000-0000-0000-000000000000';
 
+export interface TelegramChatMigrationVerifyOptions {
+  /**
+   * Workspace that is trying to send. Required before a redirected Bot API
+   * retry: discovering who currently owns the destination chat is not enough
+   * to authorize another workspace's content.
+   */
+  sendingTeamId?: string;
+}
+
 /**
  * Confirm the migrated chat id is not bound to a different team.
  *
@@ -147,11 +156,16 @@ const TELEGRAM_MIGRATION_ACTOR_USER_ID = '00000000-0000-0000-0000-000000000000';
  * {@link TelegramChatMigrationConflictError} on a cross-team collision.
  * Lookup failures propagate so callers can fail closed instead of retrying
  * a send to an unverified chat id.
+ *
+ * When `sendingTeamId` is set, the sending workspace must itself own the old
+ * binding, the new binding, or both. An absent old binding must not fall back
+ * to another team's new binding — that is the unlink-then-relink leak.
  */
 export async function verifyTelegramChatMigrationOwnership(
   db: Db,
   fromChatId: number,
   toChatId: number,
+  options?: TelegramChatMigrationVerifyOptions,
 ): Promise<{ teamId: string } | null> {
   if (
     fromChatId === toChatId ||
@@ -180,6 +194,44 @@ export async function verifyTelegramChatMigrationOwnership(
     throw new TelegramChatMigrationConflictError();
   }
 
+  const sendingTeamId = options?.sendingTeamId;
+  if (sendingTeamId) {
+    const senderOwnsOld = oldBinding?.teamId === sendingTeamId;
+    const senderOwnsNew = newBinding?.teamId === sendingTeamId;
+    if (newBinding && !senderOwnsNew) {
+      log.error(
+        {
+          fromChatId,
+          toChatId,
+          sendingTeamId,
+          newTeamId: newBinding.teamId,
+        },
+        'telegram chat migration skipped: sending workspace does not own the new chat',
+      );
+      throw new TelegramChatMigrationConflictError();
+    }
+    if (oldBinding && !senderOwnsOld) {
+      log.error(
+        {
+          fromChatId,
+          toChatId,
+          sendingTeamId,
+          oldTeamId: oldBinding.teamId,
+        },
+        'telegram chat migration skipped: sending workspace does not own the old chat',
+      );
+      throw new TelegramChatMigrationConflictError();
+    }
+    if (!senderOwnsOld && !senderOwnsNew) {
+      log.error(
+        { fromChatId, toChatId, sendingTeamId },
+        'telegram chat migration skipped: sending workspace ownership could not be established',
+      );
+      return null;
+    }
+    return { teamId: sendingTeamId };
+  }
+
   const teamId = oldBinding?.teamId ?? newBinding?.teamId;
   return teamId ? { teamId } : null;
 }
@@ -196,9 +248,13 @@ export async function applyTelegramChatMigration(
   db: Db,
   fromChatId: number,
   toChatId: number,
+  options?: TelegramChatMigrationVerifyOptions,
 ): Promise<void> {
-  const ownership = await verifyTelegramChatMigrationOwnership(db, fromChatId, toChatId);
+  const ownership = await verifyTelegramChatMigrationOwnership(db, fromChatId, toChatId, options);
   if (!ownership) return;
+  if (options?.sendingTeamId && ownership.teamId !== options.sendingTeamId) {
+    throw new TelegramChatMigrationConflictError();
+  }
 
   // Dynamic import keeps the HTTP Telegram client graph from pulling the
   // whole workspace port at module load.

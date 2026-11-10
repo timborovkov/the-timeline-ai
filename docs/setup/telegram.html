@@ -262,9 +262,14 @@ curl -F "url=https://&lt;ngrok-id&gt;.ngrok-free.app/api/telegram/webhook" \
           at a single team. Permanent until <code>/unlink</code>. When Telegram upgrades a group to
           a supergroup, outbound send errors and inbound migration service messages rewrite this id
           and that team's <code>telegram_chat</code> digest destination so later traffic uses the
-          new chat. A new id already bound to another workspace is left unchanged, and the in-flight
-          send is not retried to that id. The same fail-closed path applies if another workspace
-          claims the new id between the ownership check and the binding write (unique constraint).
+          new chat. Outbound retries also require the sending workspace to own the old or new
+          binding; discovering that another workspace now owns the upgraded chat is not
+          authorization. After <code>/unlink</code>, a leftover digest destination is not enough to
+          follow <code>migrate_to_chat_id</code> into a chat later bound to another team. A new id
+          already bound to another workspace is left unchanged, and the in-flight send is not
+          retried to that id. The same fail-closed path applies if another workspace claims the new
+          id between the ownership check and the binding write (unique constraint), or if the
+          sending workspace cannot be established.
         </li>
         <li>
           <code>telegram_link_tokens</code> — single-use, 15-minute-TTL tokens, scoped

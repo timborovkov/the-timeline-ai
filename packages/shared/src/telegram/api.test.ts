@@ -2,11 +2,14 @@ import { expect } from '@timeline/test-support';
 import { vi } from '@timeline/test-support';
 import { afterEach, describe, it } from 'bun:test';
 
+import { withChatDeliveryPrincipal } from '#src/conversation-surfaces/deferred-delivery.js';
 import { HttpTelegramApi } from '#src/telegram/api.js';
 import {
   TELEGRAM_CHAT_MIGRATION_CONFLICT_CODE,
   TelegramChatMigrationConflictError,
 } from '#src/telegram/chat-migration.js';
+
+const SENDING_TEAM_ID = '11111111-1111-4111-8111-111111111111';
 
 function upgradedGroupResponse(): Response {
   return new Response(
@@ -115,7 +118,10 @@ describe('HttpTelegramApi file downloads', () => {
       .mockResolvedValueOnce(upgradedGroupResponse())
       .mockResolvedValueOnce(Response.json({ ok: true, result: { message_id: 1 } }));
     vi.stubGlobal('fetch', fetch);
-    const api = new HttpTelegramApi('token', 10_000, true, { onChatMigrated: persist });
+    const api = new HttpTelegramApi('token', 10_000, true, {
+      onChatMigrated: persist,
+      sendingTeamId: SENDING_TEAM_ID,
+    });
     const input = { chat_id: -123456, text: 'hello' };
 
     await api.sendMessage(input);
@@ -141,7 +147,10 @@ describe('HttpTelegramApi file downloads', () => {
       .mockResolvedValueOnce(upgradedGroupResponse())
       .mockResolvedValueOnce(new Response('bot was blocked by the user', { status: 403 }));
     vi.stubGlobal('fetch', fetch);
-    const api = new HttpTelegramApi('token', 10_000, true, { onChatMigrated: persist });
+    const api = new HttpTelegramApi('token', 10_000, true, {
+      onChatMigrated: persist,
+      sendingTeamId: SENDING_TEAM_ID,
+    });
 
     await expect(api.sendMessage({ chat_id: -123456, text: 'hello' })).rejects.toThrow(
       'Telegram sendMessage failed: 403 bot was blocked by the user',
@@ -154,7 +163,10 @@ describe('HttpTelegramApi file downloads', () => {
     const persist = vi.fn(() => Promise.reject(new Error('DB timeout')));
     const fetch = vi.fn().mockResolvedValueOnce(upgradedGroupResponse());
     vi.stubGlobal('fetch', fetch);
-    const api = new HttpTelegramApi('token', 10_000, true, { onChatMigrated: persist });
+    const api = new HttpTelegramApi('token', 10_000, true, {
+      onChatMigrated: persist,
+      sendingTeamId: SENDING_TEAM_ID,
+    });
     const input = { chat_id: -123456, text: 'hello' };
 
     const error = await api.sendMessage(input).catch((value: unknown) => value);
@@ -173,7 +185,10 @@ describe('HttpTelegramApi file downloads', () => {
     const persist = vi.fn(() => Promise.reject(new TelegramChatMigrationConflictError()));
     const fetch = vi.fn().mockResolvedValueOnce(upgradedGroupResponse());
     vi.stubGlobal('fetch', fetch);
-    const api = new HttpTelegramApi('token', 10_000, true, { onChatMigrated: persist });
+    const api = new HttpTelegramApi('token', 10_000, true, {
+      onChatMigrated: persist,
+      sendingTeamId: SENDING_TEAM_ID,
+    });
     const input = { chat_id: -123456, text: 'hello' };
 
     const error = await api.sendMessage(input).catch((value: unknown) => value);
@@ -202,7 +217,10 @@ describe('HttpTelegramApi file downloads', () => {
     );
     const fetch = vi.fn().mockResolvedValueOnce(upgradedGroupResponse());
     vi.stubGlobal('fetch', fetch);
-    const api = new HttpTelegramApi('token', 10_000, true, { onChatMigrated: persist });
+    const api = new HttpTelegramApi('token', 10_000, true, {
+      onChatMigrated: persist,
+      sendingTeamId: SENDING_TEAM_ID,
+    });
     const input = { chat_id: -123456, text: 'hello' };
 
     const error = await api.sendMessage(input).catch((value: unknown) => value);
@@ -214,6 +232,42 @@ describe('HttpTelegramApi file downloads', () => {
     expect(persist).toHaveBeenCalledWith(-123456, -1004317012921);
     expect(input.chat_id).toBe(-123456);
     expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not retry sendMessage when the sending workspace is missing', async () => {
+    const persist = vi.fn(() => Promise.resolve());
+    const fetch = vi.fn().mockResolvedValueOnce(upgradedGroupResponse());
+    vi.stubGlobal('fetch', fetch);
+    const api = new HttpTelegramApi('token', 10_000, true, { onChatMigrated: persist });
+    const input = { chat_id: -123456, text: 'hello' };
+
+    const error = await api.sendMessage(input).catch((value: unknown) => value);
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toContain(
+      'Telegram sendMessage failed: 400 {"ok":false,"error_code":400',
+    );
+    expect((error as Error).message).not.toContain('cross-team chat migration conflict');
+    expect(persist).not.toHaveBeenCalled();
+    expect(input.chat_id).toBe(-123456);
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('authorizes a migrated retry from the chat-delivery principal', async () => {
+    const persist = vi.fn(() => Promise.resolve());
+    const fetch = vi
+      .fn()
+      .mockResolvedValueOnce(upgradedGroupResponse())
+      .mockResolvedValueOnce(Response.json({ ok: true, result: { message_id: 1 } }));
+    vi.stubGlobal('fetch', fetch);
+    const api = new HttpTelegramApi('token', 10_000, true, { onChatMigrated: persist });
+    const input = { chat_id: -123456, text: 'hello' };
+
+    await withChatDeliveryPrincipal({ teamId: SENDING_TEAM_ID }, () => api.sendMessage(input));
+
+    expect(persist).toHaveBeenCalledTimes(1);
+    expect(persist).toHaveBeenCalledWith(-123456, -1004317012921);
+    expect(input.chat_id).toBe(-1004317012921);
+    expect(fetch).toHaveBeenCalledTimes(2);
   });
 
   it('does not retry ordinary Telegram send failures', async () => {

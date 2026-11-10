@@ -300,7 +300,13 @@ async function deliverPersonalDigestDestination(input: {
     subject: `Daily digest for ${input.payload.teamName}`,
     dedupeKey,
     metadata: { telegram_chat_id: telegramChatId },
-    send: () => sendTelegramBotMessage({ chatId: telegramChatId, text, token }),
+    send: () =>
+      sendTelegramBotMessage({
+        chatId: telegramChatId,
+        text,
+        token,
+        teamId: input.digest.teamId,
+      }),
   });
 }
 
@@ -357,7 +363,7 @@ async function deliverSharedDigestDestination(input: {
     subject: `Daily digest for ${input.payload.teamName}`,
     dedupeKey,
     metadata: { telegram_chat_id: chatId },
-    send: () => sendTelegramBotMessage({ chatId, text, token }),
+    send: () => sendTelegramBotMessage({ chatId, text, token, teamId: input.teamId }),
   });
 }
 

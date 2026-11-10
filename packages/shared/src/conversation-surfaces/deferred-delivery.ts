@@ -19,6 +19,11 @@ export function withChatDeliveryPrincipal<T>(
   return principalStorage.run(principal, send);
 }
 
+/** Sending workspace attached to the current outbound chat delivery, if any. */
+export function getChatDeliveryPrincipal(): ChatDeliveryPrincipal | undefined {
+  return principalStorage.getStore();
+}
+
 export interface DeferredChatDelivery {
   provider: 'slack' | 'telegram';
   token: string;

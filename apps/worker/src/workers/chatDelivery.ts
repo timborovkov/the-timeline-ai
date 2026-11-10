@@ -54,7 +54,9 @@ export async function processChatDelivery(data: ChatDeliveryJobData, db?: Db): P
       body as Parameters<SlackApi['postMessage']>[0],
     );
   } else {
-    const api = new HttpTelegramApi(delivery.token, 10_000, false);
+    const api = new HttpTelegramApi(delivery.token, 10_000, false, {
+      ...(delivery.principal?.teamId ? { sendingTeamId: delivery.principal.teamId } : {}),
+    });
     if (delivery.method === 'edit') {
       const body = z
         .object({

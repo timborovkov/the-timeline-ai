@@ -1,4 +1,7 @@
-import { deferChatDelivery } from '#src/conversation-surfaces/deferred-delivery.js';
+import {
+  deferChatDelivery,
+  getChatDeliveryPrincipal,
+} from '#src/conversation-surfaces/deferred-delivery.js';
 import { getEnv } from '#src/env.js';
 import { requestBudgetIdentity } from '#src/integrations/request-budget.js';
 import { providerRetryAt, withExternalRequest } from '#src/integrations/request.js';
@@ -77,6 +80,12 @@ export interface TelegramApi {
 export interface HttpTelegramApiOptions {
   /** Persist a Telegram group→supergroup chat id rewrite. Defaults to the app db. */
   onChatMigrated?: (fromChatId: number, toChatId: number) => Promise<void>;
+  /**
+   * Workspace that originated this send. Redirected migrate retries are
+   * authorized only when this principal owns the destination chat. Falls back
+   * to {@link getChatDeliveryPrincipal} when omitted.
+   */
+  sendingTeamId?: string;
 }
 
 export class HttpTelegramApi implements TelegramApi {
@@ -89,15 +98,24 @@ export class HttpTelegramApi implements TelegramApi {
     if (!token) throw new Error('TELEGRAM_BOT_TOKEN is required');
   }
 
+  private sendingWorkspaceTeamId(): string | undefined {
+    return this.options.sendingTeamId ?? getChatDeliveryPrincipal()?.teamId;
+  }
+
   /**
    * Authorize, then persist, a group→supergroup chat id rewrite.
    *
-   * Ownership verification and the workspace write must both succeed before
-   * the in-flight send is retried against the new id. A unique constraint on
-   * the binding write is a cross-team conflict. Any other failed write also
+   * The sending workspace principal must own the destination before the
+   * in-flight send is retried against the new id. Discovering another
+   * workspace's binding is not authorization. A unique constraint on the
+   * binding write is a cross-team conflict. Any other failed write also
    * skips the retry.
    */
   private async persistChatMigration(fromChatId: number, toChatId: number): Promise<void> {
+    const sendingTeamId = this.sendingWorkspaceTeamId();
+    if (!sendingTeamId) {
+      throw new Error('telegram chat migration skipped: sending workspace is missing');
+    }
     try {
       if (this.options.onChatMigrated) {
         await this.options.onChatMigrated(fromChatId, toChatId);
@@ -105,8 +123,15 @@ export class HttpTelegramApi implements TelegramApi {
       }
       const { getDb } = await import('@timeline/db');
       const db = getDb();
-      await verifyTelegramChatMigrationOwnership(db, fromChatId, toChatId);
-      await applyTelegramChatMigration(db, fromChatId, toChatId);
+      const ownership = await verifyTelegramChatMigrationOwnership(db, fromChatId, toChatId, {
+        sendingTeamId,
+      });
+      if (!ownership) {
+        throw new Error(
+          'telegram chat migration skipped: sending workspace ownership could not be established',
+        );
+      }
+      await applyTelegramChatMigration(db, fromChatId, toChatId, { sendingTeamId });
     } catch (err) {
       rethrowTelegramChatMigrationWriteError(err);
     }
@@ -370,7 +395,12 @@ export async function sendTelegramBotMessage(input: {
   text: string;
   token: string;
   api?: TelegramApi;
+  teamId?: string;
 }): Promise<void> {
-  const api = input.api ?? new HttpTelegramApi(input.token);
+  const api =
+    input.api ??
+    new HttpTelegramApi(input.token, 10_000, true, {
+      ...(input.teamId ? { sendingTeamId: input.teamId } : {}),
+    });
   await api.sendMessage({ chat_id: input.chatId, text: input.text });
 }

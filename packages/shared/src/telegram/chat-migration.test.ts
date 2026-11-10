@@ -5,18 +5,21 @@ import {
   teamDigestDestinations,
   telegramChatBindings,
 } from '@timeline/db';
-import { expect } from '@timeline/test-support';
+import { expect, vi } from '@timeline/test-support';
 import { afterEach, beforeEach, describe, it } from 'bun:test';
 import { drizzle } from 'drizzle-orm/pglite';
 
 import { digestDestinationDedupeKey } from '#src/messaging/destinations.js';
+import { HttpTelegramApi } from '#src/telegram/api.js';
 import {
   applyTelegramChatMigration,
   parseTelegramMigratedChatId,
   rethrowTelegramChatMigrationWriteError,
+  TELEGRAM_CHAT_MIGRATION_CONFLICT_CODE,
   TelegramChatMigrationConflictError,
   telegramChatMigrationFromMessage,
   telegramMigratedChatId,
+  verifyTelegramChatMigrationOwnership,
 } from '#src/telegram/chat-migration.js';
 import { applyDbMigrations } from '#src/test/pglite.js';
 
@@ -103,6 +106,7 @@ describe('applyTelegramChatMigration', () => {
   });
 
   afterEach(async () => {
+    vi.unstubAllGlobals();
     await pg.close();
   });
 
@@ -291,6 +295,108 @@ describe('applyTelegramChatMigration', () => {
         (row) => row.dedupeKey,
       ),
     ).not.toContain(oldKey);
+  });
+
+  it('rewrites when the sending workspace owns the old binding', async () => {
+    await applyTelegramChatMigration(db, OLD_CHAT_ID, NEW_CHAT_ID, { sendingTeamId: TEAM_ID });
+
+    expect(await db.select().from(telegramChatBindings)).toMatchObject([
+      { tgChatId: NEW_CHAT_ID, teamId: TEAM_ID, title: 'Sales' },
+    ]);
+    expect(await db.select().from(teamDigestDestinations)).toMatchObject([
+      { kind: 'telegram_chat', targetId: String(NEW_CHAT_ID), teamId: TEAM_ID },
+    ]);
+  });
+
+  it('does not redirect after the old group is unlinked and the supergroup is bound to another team', async () => {
+    await pg.exec(`
+      DELETE FROM telegram_chat_bindings WHERE tg_chat_id = ${OLD_CHAT_ID};
+      INSERT INTO telegram_chat_bindings (tg_chat_id, team_id, title)
+      VALUES (${NEW_CHAT_ID}, '${OTHER_TEAM_ID}', 'Other supergroup');
+      INSERT INTO team_digest_destinations (team_id, kind, target_id, label, enabled)
+      VALUES ('${OTHER_TEAM_ID}', 'telegram_chat', '${NEW_CHAT_ID}', 'Other', true);
+    `);
+
+    await expect(
+      verifyTelegramChatMigrationOwnership(db, OLD_CHAT_ID, NEW_CHAT_ID, {
+        sendingTeamId: TEAM_ID,
+      }),
+    ).rejects.toThrow(TelegramChatMigrationConflictError);
+    await expect(
+      applyTelegramChatMigration(db, OLD_CHAT_ID, NEW_CHAT_ID, { sendingTeamId: TEAM_ID }),
+    ).rejects.toThrow(TelegramChatMigrationConflictError);
+
+    expect(
+      (await db.select().from(telegramChatBindings)).map((row) => ({
+        tgChatId: row.tgChatId,
+        teamId: row.teamId,
+      })),
+    ).toEqual([{ tgChatId: NEW_CHAT_ID, teamId: OTHER_TEAM_ID }]);
+    expect(
+      (await db.select().from(teamDigestDestinations)).map((row) => ({
+        teamId: row.teamId,
+        targetId: row.targetId,
+      })),
+    ).toEqual(
+      expect.arrayContaining([
+        { teamId: TEAM_ID, targetId: String(OLD_CHAT_ID) },
+        { teamId: OTHER_TEAM_ID, targetId: String(NEW_CHAT_ID) },
+      ]),
+    );
+    expect(await db.select().from(teamDigestDestinations)).toHaveLength(2);
+  });
+
+  it('does not retry a digest send into a supergroup later bound to another team', async () => {
+    await pg.exec(`
+      DELETE FROM telegram_chat_bindings WHERE tg_chat_id = ${OLD_CHAT_ID};
+      INSERT INTO telegram_chat_bindings (tg_chat_id, team_id, title)
+      VALUES (${NEW_CHAT_ID}, '${OTHER_TEAM_ID}', 'Other supergroup');
+    `);
+    const fetch = vi.fn().mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          ok: false,
+          error_code: 400,
+          description: 'Bad Request: group chat was upgraded to a supergroup chat',
+          parameters: { migrate_to_chat_id: NEW_CHAT_ID },
+        }),
+        { status: 400 },
+      ),
+    );
+    vi.stubGlobal('fetch', fetch);
+    const api = new HttpTelegramApi('token', 10_000, true, {
+      sendingTeamId: TEAM_ID,
+      onChatMigrated: (fromChatId, toChatId) =>
+        applyTelegramChatMigration(db, fromChatId, toChatId, { sendingTeamId: TEAM_ID }),
+    });
+    const input = { chat_id: OLD_CHAT_ID, text: 'Acme daily digest' };
+
+    const error = await api.sendMessage(input).catch((value: unknown) => value);
+    expect(error).toMatchObject({ code: TELEGRAM_CHAT_MIGRATION_CONFLICT_CODE });
+    expect(input.chat_id).toBe(OLD_CHAT_ID);
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(await db.select().from(teamDigestDestinations)).toMatchObject([
+      { kind: 'telegram_chat', targetId: String(OLD_CHAT_ID), teamId: TEAM_ID },
+    ]);
+    expect(await db.select().from(telegramChatBindings)).toMatchObject([
+      { tgChatId: NEW_CHAT_ID, teamId: OTHER_TEAM_ID },
+    ]);
+  });
+
+  it('does not authorize a leftover digest destination when neither chat is bound to the sender', async () => {
+    await pg.exec(`DELETE FROM telegram_chat_bindings WHERE tg_chat_id = ${OLD_CHAT_ID};`);
+
+    expect(
+      await verifyTelegramChatMigrationOwnership(db, OLD_CHAT_ID, NEW_CHAT_ID, {
+        sendingTeamId: TEAM_ID,
+      }),
+    ).toBeNull();
+    await applyTelegramChatMigration(db, OLD_CHAT_ID, NEW_CHAT_ID, { sendingTeamId: TEAM_ID });
+
+    expect(await db.select().from(telegramChatBindings)).toHaveLength(0);
+    expect(await db.select().from(teamDigestDestinations)).toMatchObject([
+      { kind: 'telegram_chat', targetId: String(OLD_CHAT_ID), teamId: TEAM_ID },
+    ]);
   });
 
   it('does not clobber an existing digest ledger key for the new chat id', async () => {
