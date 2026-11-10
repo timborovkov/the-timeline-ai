@@ -17,13 +17,15 @@ export type PolarServer = 'sandbox' | 'production';
 
 /** Safe messages for the customer; never expose provider bodies or submitted codes. */
 export class PolarDiscountError extends Error {
-  constructor(public readonly code: 'ineligible' | 'unavailable') {
+  readonly code: 'ineligible' | 'unavailable';
+  constructor(code: 'ineligible' | 'unavailable') {
     super(
       code === 'ineligible'
         ? 'That discount is invalid or not eligible for this plan or customer. No plan change was completed.'
         : 'Polar could not apply the discount right now. Please retry. We will not continue at full price.',
     );
     this.name = 'PolarDiscountError';
+    this.code = code;
   }
 }
 

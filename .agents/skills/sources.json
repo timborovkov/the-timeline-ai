@@ -25,7 +25,8 @@
     "source": "timborovkov/tims-agent-skills",
     "sourcePath": "timb-document-release",
     "snapshotSha256": "e3fb41fd643ebf5a73ce02d8b5e1fb9246fa05c77659e3cd2fe607319ba398b7",
-    "sourceRevision": "941722532d11ba83b617f8662f6b4162c0d0caf8"
+    "sourceRevision": "941722532d11ba83b617f8662f6b4162c0d0caf8",
+    "localSha256": "7a51c540a8d011faa1a004148d0361549b18c58c702acb33b35064ec52e5e1ce"
   },
   {
     "skill": "upstream-sync",

@@ -13,11 +13,10 @@ await vi.mock(
   import.meta.resolve('@timeline/shared/mcp-server'),
   () => {
     class McpOAuthError extends Error {
-      constructor(
-        readonly code: string,
-        message: string,
-      ) {
+      readonly code: string;
+      constructor(code: string, message: string) {
         super(message);
+        this.code = code;
       }
     }
     return {

@@ -199,7 +199,7 @@ Minimum deterministic tests:
   `supportsTargetedSync=false` falls back to broad catch-up.
 - Provider rate-limit parsing into `ProviderRateLimitError`.
 
-Use the [validation policy and change-specific checks](../AGENTS.md#validation-policy)
+Use the [validation policy and change-specific checks](testing/README.md#validation-policy)
 for test selection and GitHub merge gates. Run focused tests for the provider
 behaviors above. Verify live provider wiring with
 `bun run canary:integrations -- --env-file=<env-file>` when the documented
@@ -209,9 +209,9 @@ credentials and environment are available.
 
 Update:
 
-- `.env.example` and `docs/railway.html` for required env vars.
-- `docs/setup/integrations.html` for operator setup and webhook URLs.
-- `TEST_TODO.md` for coverage state and remaining E2E gaps.
+- `.env.example` and `docs/railway.md` for required env vars.
+- `docs/setup/integrations.md` for operator setup and webhook URLs.
+- `docs/testing/README.md` for coverage state and remaining E2E gaps.
 - `scripts/check-live-integrations.ts` when a live secret-safe probe is possible.
 
 The canary should distinguish:

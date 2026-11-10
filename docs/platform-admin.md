@@ -102,15 +102,7 @@ time comparison even if no later request arrives.
 
 ## Implementation and rollout
 
-Apply migrations `0093_platform_admin` and `0094_platform_admin_retention` before
-deploying web and worker changes.
-Publish the updated Privacy notice and legal version together. Verify the existing
-`LEGAL_PUBLICATION_READY` production gate is enabled after the legal text is approved
-for publication. This pre-launch revision does not trigger renewed acknowledgment.
-The shared platform-admin service owns global directory, session, and audit access;
-workspace content continues through `withTeam`. Configure the allowlist on the web
-and worker processes so queued impersonated work can verify the administrator.
-No production migration or deployment is implied by implementing this feature.
+Current Terms/Privacy versions and renewed-acceptance requirements are owned by `packages/shared/src/legal-versions.ts`. Historical retention approval is recorded in [the dated decision](evidence/platform-retention-decision-2026-11-03.md); it does not override later publication changes.
 
 ## Record retention and legal holds
 
@@ -165,28 +157,6 @@ Apply `0094_platform_admin_retention` after `0093_platform_admin` and before
 starting the updated web and worker processes. This PR does not run production
 cleanup or apply production migrations.
 
-## Legal-owner decision — 3 November 2026
+## Retention authority
 
-The requester approved the retention periods as legal owner in the Codex task
-for PR #465 on 3 November 2026, then clarified that the product is not live.
-That clarification supersedes the earlier material-update/version-bump decision:
-
-- Session records: 30 days after access ends; audit records: 12 months, subject to
-  documented legal holds. Released hold documentation follows the 12-month audit
-  accountability period.
-- Treat the staff-access and retention disclosures as a pre-launch policy revision.
-  Keep Privacy version `2026-11-01` and its effective date unchanged; this change
-  does not require renewed acknowledgment. The normal initial acceptance flow and
-  future version-change gates remain in place.
-- Keep the Terms version `2026-08-21` unchanged: no Terms text or contractual
-  grounds for access or suspension change. Existing confidentiality, permitted
-  support access, and suspension clauses continue to apply.
-- Clarify Trust's distinction between customer team administrators and authorized
-  Timeline personnel. Update Trust and Cookies review dates to 3 November 2026.
-  There is no new processor or optional analytics purpose and no change to
-  optional analytics consent.
-
-This records the requester's legal-owner approval, not an independent counsel
-review or a production deployment attestation. Operational access reviews,
-customer authorization evidence, emergency review, and the open G-12 controls
-remain required.
+[The dated retention decision](evidence/platform-retention-decision-2026-11-03.md) records approval. Current legal versions are source-owned; do not reuse its historical publication instructions.

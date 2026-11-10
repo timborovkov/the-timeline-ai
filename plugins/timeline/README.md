@@ -1,20 +1,14 @@
-# The Timeline agent plugin
+# Timeline agent plugin
 
-This directory packages the same hosted Timeline MCP connection and general `timeline` skill for Codex and Claude Code. The skill teaches agents how to choose the relevant Timeline tools, expand material evidence, distinguish current state from activity, and cite consequential claims across search, status updates, incident analysis, and other workspace questions.
+This directory packages the hosted Timeline MCP connection and the canonical `timeline` skill for Codex and Claude Code.
 
-The bundled MCP definitions contain the hosted URL without a static Authorization header. Once the corresponding server release is deployed, compatible hosts therefore use Timeline's OAuth discovery and consent flow: the member signs in, chooses a team, and reviews scopes. The default grant is `read` plus `capture` (the capture checkbox is on by default so `timeline.remember` can store cited evidence). Unchecking capture makes the grant read-only. A client may additionally request `agent:ask` for paid, proposal-only Timeline agent turns. Only a current team owner or admin can grant that optional scope, and demotion invalidates it. It may call enabled team-shared custom MCP tools with external side effects, but it does not allow direct canonical Timeline writes. The hosted server advertises five tools: `timeline.search`, `timeline.get`, `timeline.subject`, `timeline.ask`, and `timeline.remember`. `timeline.remember` stores cited ingest evidence only; it never mutates canonical records. Agent setup lives at `https://thetimeline.cc/agents/setup.md`; the skill at `https://thetimeline.cc/agents/SKILL.md` is byte-identical to `skills/timeline/SKILL.md`.
+| Host | Repository catalogue | Plugin manifest |
+| --- | --- | --- |
+| Codex | `.agents/plugins/marketplace.json` at the repository root | `.codex-plugin/plugin.json` here |
+| Claude Code | `.claude-plugin/marketplace.json` at the repository root | `.claude-plugin/plugin.json` here |
 
-Static `tla_` bearer keys remain available for direct, manual, and developer-client configuration. They represent a team rather than a member and can read only team-visible evidence. Keep them out of plugin manifests, repositories, chats, and shared configuration. They belong only under Advanced in Timeline.
+The catalogues locate the plugin; the nested manifests define it. They are not duplicate configuration.
 
-Repository packaging exists for both hosts:
+[Installation and updates](skills/README.md) owns client setup. [The skill](skills/timeline/SKILL.md) owns agent behavior and is also served by the application; keep that single source. [Hosted MCP setup](../../docs/setup/timeline-mcp.md) owns server configuration; [directory publication](../../docs/marketplace-submissions.md) owns external submissions. Repository packaging is not provider approval or a public listing.
 
-- `.agents/plugins/marketplace.json` and `.codex-plugin/plugin.json` package the Codex plugin.
-- `.claude-plugin/marketplace.json` and `.claude-plugin/plugin.json` package the Claude Code plugin.
-
-See the [installation guide](./skills/README.md) for Codex and Claude Code installation, OAuth sign-in, standalone skill installation, direct MCP setup, updates, and self-hosted configuration.
-
-These repository packages are installable directly, but that is not the same as provider review or publication. OpenAI now uses one universal Plugins Directory across ChatGPT and Codex. Timeline's OpenAI draft must use **With MCP** and submit the production remote MCP connection together with the Timeline skill; neither repository manifest is itself an OpenAI submission. Claude Code can install this repository marketplace directly, while Anthropic's public Claude plugin marketplace and the separate Claude.ai Connectors Directory require their own submission and review steps. Production migration, deployment, smoke testing, provider submission, review, and publication remain external release work.
-
-Version 0.5.0 reads connection context with `timeline.get` using `kind="connection"`. Owners/admins manage on-request or scoped meaningful-handoff reporting in Connect your agent. Preferences never add capture permission. Verified owners can separately delegate new-workspace creation; see [coworker rollout and validation](../../docs/agent-coworkers.md).
-
-OAuth consent now shows the effective reporting agreement for the selected workspace. Owners/admins can inherit or override it for this connection; members can inspect it. Unchanged reauthorization preserves it. The skill verifies the connection and finishes the actual task with a cited answer or an explicitly approved first brief, without forcing a capture.
+Never add a static Authorization header or secret to a manifest. Compatible hosts use the member OAuth consent flow; static keys belong only in private manual client configuration.
