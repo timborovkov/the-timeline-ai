@@ -29,6 +29,7 @@ import { isActiveComp } from '#src/billing/operator.js';
 import { createFirstRunHandlers } from '#src/onboarding/first-run-scope.js';
 import { createWebsiteSourceHandlers } from '#src/onboarding/website-source-scope.js';
 
+import type { SuggestionBundle } from '#src/suggestions/index.js';
 import type { TeamRole } from '#src/team-scope.js';
 
 export {
@@ -145,13 +146,20 @@ interface OnboardingScopeDeps {
   teamId: string;
   userId: string;
   ensureMember: (minRole?: TeamRole) => Promise<TeamRole>;
+  getSuggestion: (id: string) => Promise<SuggestionBundle | null>;
 }
 
 function firstCount(rows: { total: number }[]): number {
   return rows[0]?.total ?? 0;
 }
 
-export function createOnboardingScope({ db, teamId, userId, ensureMember }: OnboardingScopeDeps) {
+export function createOnboardingScope({
+  db,
+  teamId,
+  userId,
+  ensureMember,
+  getSuggestion,
+}: OnboardingScopeDeps) {
   async function markStepComplete(step: OnboardingStep): Promise<boolean> {
     await ensureMember();
     if (step === 'billing_setup') return false;
@@ -394,7 +402,7 @@ export function createOnboardingScope({ db, teamId, userId, ensureMember }: Onbo
     },
 
     markStepComplete,
-    ...createFirstRunHandlers({ db, teamId, userId, ensureMember }),
+    ...createFirstRunHandlers({ db, teamId, userId, ensureMember, getSuggestion }),
     ...createWebsiteSourceHandlers({ db, teamId, userId, ensureMember }),
 
     async dismissChecklist(): Promise<void> {

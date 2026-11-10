@@ -40,6 +40,7 @@ const scope = (teamId = TEAM) =>
     teamId,
     userId: USER,
     ensureMember: () => Promise.resolve('owner' as const),
+    getSuggestion: () => Promise.resolve(null),
   });
 beforeEach(async () => {
   storage.put.mockClear();

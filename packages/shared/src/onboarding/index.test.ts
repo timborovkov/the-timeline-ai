@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, it } from 'bun:test';
 import { drizzle } from 'drizzle-orm/pglite';
 
 import { createOnboardingScope } from '#src/onboarding/index.js';
+import { withTeam } from '#src/team-scope.js';
 import { applyDbMigrations } from '#src/test/pglite.js';
 /**
  * Onboarding checklist tests. The checklist is inferred from real workspace
@@ -42,7 +43,13 @@ let ensureMember: (minRole?: 'owner' | 'admin' | 'member') => Promise<'owner' | 
 let ensureMemberMock: ReturnType<typeof vi.fn<(minRole?: 'owner' | 'admin' | 'member') => void>>;
 
 function scope(teamId = TEAM_ID, userId = OWNER_ID) {
-  return createOnboardingScope({ db, teamId, userId, ensureMember });
+  return createOnboardingScope({
+    db,
+    teamId,
+    userId,
+    ensureMember,
+    getSuggestion: (id) => withTeam(db, teamId, userId).suggestions.getSuggestion(id),
+  });
 }
 
 function completedKeys(state: Awaited<ReturnType<ReturnType<typeof scope>['getChecklistState']>>) {
@@ -499,6 +506,34 @@ describe('first-run scope', () => {
     const memberRecord = await scope(TEAM_ID, MEMBER_ID).getFirstRunRecord();
     expect(ownerRecord?.suggestions).toEqual([]);
     expect(memberRecord?.suggestions.map((item) => item.title)).toContain('Dana Reyes');
+  });
+
+  it('hides starter proposals when supporting evidence becomes private', async () => {
+    const eventId = 'cccccccc-cccc-4ccc-8ccc-cccccccccc10';
+    const supportId = 'cccccccc-cccc-4ccc-8ccc-cccccccccc11';
+    const suggestionId = 'dddddddd-dddd-4ddd-8ddd-dddddddddd10';
+    await pg.exec(`
+      INSERT INTO raw_events (id, team_id, author_user_id, source, content_text, visibility)
+      VALUES ('${eventId}', '${TEAM_ID}', '${OWNER_ID}', 'email', 'Starter thread', 'team'),
+             ('${supportId}', '${TEAM_ID}', '${OWNER_ID}', 'email', 'Private supporting detail', 'team');
+      INSERT INTO agent_suggestions (id, team_id, source, title, dedupe_key, visibility, metadata)
+      VALUES ('${suggestionId}', '${TEAM_ID}', 'background', 'Confidential follow-up',
+              'support-privacy', 'team', '{"evidence_pack_fingerprint":"test-pack"}'::jsonb);
+      INSERT INTO agent_suggestion_items (suggestion_id, team_id, operation, target_kind, title, dedupe_key, proposed_payload)
+      VALUES ('${suggestionId}', '${TEAM_ID}', 'create', 'task', 'Confidential follow-up',
+              'support-privacy-item', '{"canonicalName":"Confidential follow-up"}'::jsonb);
+      INSERT INTO agent_suggestion_evidence (suggestion_id, team_id, raw_event_id)
+      VALUES ('${suggestionId}', '${TEAM_ID}', '${eventId}'), ('${suggestionId}', '${TEAM_ID}', '${supportId}');
+      INSERT INTO team_first_run (team_id, started_by_user_id, phase, starter_path, capture_event_id)
+      VALUES ('${TEAM_ID}', '${OWNER_ID}', 'record', 'email', '${eventId}');
+    `);
+    expect((await scope(TEAM_ID, MEMBER_ID).getFirstRunRecord())?.suggestions).toHaveLength(1);
+    await pg.exec(
+      `UPDATE raw_events SET visibility = 'private', visibility_owner_user_id = '${OWNER_ID}' WHERE id = '${supportId}'`,
+    );
+    expect((await scope(TEAM_ID, MEMBER_ID).getFirstRunRecord())?.suggestions).toEqual([]);
+    // Even the source owner cannot expose private supporting evidence through a team proposal.
+    expect((await scope().getFirstRunRecord())?.suggestions).toEqual([]);
   });
 
   it('does not mark a failed document extract as landed', async () => {
