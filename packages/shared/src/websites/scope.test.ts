@@ -218,6 +218,8 @@ it.each([null, 'provider_failed'])(
     expect(await obsoleteWebsiteEventIds(db, OTHER)).toEqual([]);
     await scope.updateRun(run.id, { handoffAt: new Date() });
     await completeWebsiteChunk(db, TEAM, must(chunks[1]).id, 'test-model');
+    // Replayed completion reconciles the run even when this version is already current.
+    expect((await scope.getRun(run.id)).status).toBe(failureReason ? 'partial' : 'completed');
     const { tickWebsiteSchedules } = await import('#src/websites/scheduler.js');
     await tickWebsiteSchedules(db);
     expect((await scope.getRun(run.id)).status).toBe(failureReason ? 'partial' : 'completed');

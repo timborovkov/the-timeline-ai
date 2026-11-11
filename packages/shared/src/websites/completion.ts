@@ -95,42 +95,45 @@ export async function completeWebsiteChunk(
         ),
       )
       .for('update', { of: documents });
-    if (!activeDocument) return;
     await tx
       .update(documentVersions)
       .set({ processingStatus: 'embedded' })
       .where(and(eq(documentVersions.teamId, teamId), eq(documentVersions.id, row.version.id)));
-    const [current] = await tx
-      .select({ version: documentVersions.version, documentId: documentVersions.documentId })
-      .from(websitePages)
-      .innerJoin(documentVersions, eq(documentVersions.id, websitePages.currentVersionId))
-      .where(
-        and(
-          eq(websitePages.teamId, teamId),
-          eq(websitePages.websiteId, metadata.websiteId),
-          eq(websitePages.url, metadata.pageUrl),
-        ),
-      );
-    if (current?.documentId === row.version.documentId && current.version >= row.version.version)
-      return;
-    await tx
-      .update(websitePages)
-      .set({
-        currentEventId: row.event.id,
-        currentVersionId: row.version.id,
-        contentHash: metadata.websiteContentHash,
-      })
-      .where(
-        and(
-          eq(websitePages.teamId, teamId),
-          eq(websitePages.websiteId, metadata.websiteId),
-          eq(websitePages.url, metadata.pageUrl),
-        ),
-      );
-    await tx
-      .update(documents)
-      .set({ currentVersionId: row.version.id })
-      .where(and(eq(documents.teamId, teamId), eq(documents.id, row.version.documentId)));
+    if (activeDocument) {
+      const [current] = await tx
+        .select({ version: documentVersions.version, documentId: documentVersions.documentId })
+        .from(websitePages)
+        .innerJoin(documentVersions, eq(documentVersions.id, websitePages.currentVersionId))
+        .where(
+          and(
+            eq(websitePages.teamId, teamId),
+            eq(websitePages.websiteId, metadata.websiteId),
+            eq(websitePages.url, metadata.pageUrl),
+          ),
+        );
+      if (!(
+        current?.documentId === row.version.documentId && current.version >= row.version.version
+      )) {
+        await tx
+          .update(websitePages)
+          .set({
+            currentEventId: row.event.id,
+            currentVersionId: row.version.id,
+            contentHash: metadata.websiteContentHash,
+          })
+          .where(
+            and(
+              eq(websitePages.teamId, teamId),
+              eq(websitePages.websiteId, metadata.websiteId),
+              eq(websitePages.url, metadata.pageUrl),
+            ),
+          );
+        await tx
+          .update(documents)
+          .set({ currentVersionId: row.version.id })
+          .where(and(eq(documents.teamId, teamId), eq(documents.id, row.version.documentId)));
+      }
+    }
     if (typeof metadata.websiteScanId === 'string') {
       const [unfinished] = await tx
         .select({ id: documentVersions.id })

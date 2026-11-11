@@ -167,9 +167,13 @@ describe('website snapshots', () => {
     expect(counts.rows[0]?.n).toBe(20000);
   });
 
-  async function managedCapture(websiteId: string, actorId = USER, text = page.text) {
+  async function managedCapture(
+    websiteId: string,
+    actorId = USER,
+    text = page.text,
+    scanId: string = randomUUID(),
+  ) {
     const team = withTeam(db, TEAM, actorId);
-    const scanId = randomUUID();
     const capturePage = { ...page, text };
     await team.onboarding.saveWebsiteScanPages({
       scanId,
@@ -265,7 +269,26 @@ describe('website snapshots', () => {
     const website = await managedSource();
     const first = await managedCapture(website.id);
     await completeCapture(first);
-    const queued = await managedCapture(website.id, MEMBER, 'Captured before promotion');
+    const websites = withTeam(db, TEAM, MEMBER).websites;
+    const run = await websites.admit({
+      websiteId: website.id,
+      idempotencyKey: 'refresh',
+      trigger: 'manual',
+    });
+    const queued = await managedCapture(website.id, MEMBER, 'Captured before promotion', run.id);
+    await websites.updateRun(run.id, {
+      status: 'processing',
+      changedCount: 1,
+      handoffAt: new Date(),
+    });
+    const otherSource = await websites.add({
+      url: 'https://another.example.com',
+      subject: 'other_company',
+      permissionConfirmed: true,
+    });
+    await expect(
+      websites.admit({ websiteId: otherSource.id, idempotencyKey: 'blocked', trigger: 'manual' }),
+    ).rejects.toThrow();
     expect(queued.documentId).toBe(first.documentId);
     const ownerDocuments = withTeam(db, TEAM, USER).documents;
     await ownerDocuments.promoteCapturedFile({ id: first.documentId, visibility: 'private' });
@@ -289,6 +312,21 @@ describe('website snapshots', () => {
     expect((await ownerDocuments.getDocument(first.documentId))?.currentVersionId).toBe(edited.id);
     expect((await db.select().from(websitePages))[0]?.currentEventId).toBe(first.eventId);
     expect(await withTeam(db, TEAM, MEMBER).documents.getDocument(first.documentId)).toBeNull();
+    expect(
+      (await db.select().from(documentVersions).where(eq(documentVersions.id, queued.versionId)))[0]
+        ?.processingStatus,
+    ).toBe('embedded');
+    expect((await websites.getRun(run.id)).status).toBe('completed');
+    expect((await websites.getRun(run.id)).finishedAt).not.toBeNull();
+    expect(
+      (
+        await websites.admit({
+          websiteId: otherSource.id,
+          idempotencyKey: 'unblocked',
+          trigger: 'manual',
+        })
+      ).status,
+    ).toBe('queued');
   });
 
   it('ignores success and failure from an old selection of the same URL', async () => {
