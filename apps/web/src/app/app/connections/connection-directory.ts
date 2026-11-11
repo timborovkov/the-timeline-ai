@@ -1,6 +1,5 @@
-import type { MouseEvent } from 'react';
-
 import type { IntegrationsPageModel } from '@/app/app/team/integrations/integrations-page-model';
+import type { MouseEvent } from 'react';
 
 import {
   CONNECTIONS_TABS,
