@@ -1,6 +1,7 @@
-import { formatEuroFromCents } from '@timeline/shared/billing/catalog';
+import { formatEuroFromCents, PLAN_CATALOG } from '@timeline/shared/billing/catalog';
 
 import type { BillingPresentation, BillingPeriod, RecordedCharges } from '@timeline/shared/billing';
+import type { ReactNode } from 'react';
 
 function billingDate(value: string): string {
   return new Date(value).toLocaleDateString('en-GB', {
@@ -154,7 +155,7 @@ function BillingRecordedCharges({
   credit: BillingPresentation['credit'];
 }) {
   return (
-    <section className="space-y-2 border border-border p-3" aria-label="Charges recorded so far">
+    <section className="space-y-2" aria-label="Charges recorded so far">
       <h3 className="text-sm font-medium">Charges recorded so far</h3>
       {charges.period ? <Period value={charges.period} /> : null}
       {summary.planId === 'free' ? (
@@ -238,6 +239,108 @@ function RecordedChargeAmounts({
         <dd>
           <Money value={amounts.totalCents} />
         </dd>
+      </div>
+    </dl>
+  );
+}
+
+export function BillingUsageOverview({
+  summary,
+  children,
+}: {
+  summary: BillingPresentation;
+  children: ReactNode;
+}) {
+  return (
+    <div className="space-y-8">
+      <UsagePlanSummary summary={summary} />
+      {summary.credit.status !== 'not_applicable' ? (
+        <IncludedUsageCredit credit={summary.credit} />
+      ) : null}
+      <section aria-labelledby="usage-meters-heading" className="space-y-4">
+        <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+          <h2 id="usage-meters-heading" className="text-base font-semibold">
+            {summary.allowances.length > 0 ? 'Monthly allowances' : 'Usage by meter'}
+          </h2>
+          {summary.allowances.length > 0 ? (
+            <p className="text-xs text-fg-muted">
+              Resets {billingDate(summary.calendarPeriod.end)} (UTC)
+            </p>
+          ) : null}
+        </div>
+        {children}
+      </section>
+      {summary.planId !== 'free' && summary.cap.applicable ? (
+        <BillingSpendCapSummary cap={summary.cap} summary={summary} />
+      ) : null}
+      <details className="group rounded-lg bg-surface p-5">
+        <summary className="cursor-pointer text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+          Billing details
+        </summary>
+        <div className="mt-4">
+          <BillingRecordedCharges
+            charges={summary.charges}
+            summary={summary}
+            credit={summary.credit}
+          />
+          {summary.planId !== 'free' && !summary.cap.applicable ? (
+            <p className="mt-3 text-sm text-fg-muted">
+              {summary.cap.exemption === 'enterprise_contract'
+                ? 'Spend limits follow your Enterprise agreement; no local spend cap applies.'
+                : 'Spending limit tracking is informational; the local cap is not currently enforced.'}
+            </p>
+          ) : null}
+        </div>
+      </details>
+    </div>
+  );
+}
+
+function UsagePlanSummary({ summary }: { summary: BillingPresentation }) {
+  return (
+    <dl className="grid gap-6 sm:grid-cols-3">
+      <div className="space-y-2">
+        <dt className="text-xs text-fg-muted">Current plan</dt>
+        <dd className="text-xl font-semibold">
+          {PLAN_CATALOG[summary.planId].name}
+          {summary.comped ? ' · Comped' : ''}
+        </dd>
+        <dd className="text-xs text-fg-muted">
+          Plan fee: <Money value={summary.recurringFeeCents} />
+          {summary.recurringFeeCents === null ? '' : ' / month'}
+        </dd>
+      </div>
+      <div className="space-y-2">
+        <dt className="text-xs text-fg-muted">Members</dt>
+        <dd className="font-mono text-xl">
+          {summary.members.current}
+          <span className="ml-2 font-sans text-sm font-normal text-fg-muted">
+            / {summary.members.included ?? 'Custom'} included
+          </span>
+        </dd>
+        <dd className="text-xs text-fg-muted">
+          {summary.planId === 'free' ? (
+            'Upgrade to add more members.'
+          ) : (
+            <>
+              Extra member: <Money value={summary.members.additionalMemberCents} />
+              {summary.members.additionalMemberCents === null ? '' : ' / month, prorated'}
+            </>
+          )}
+        </dd>
+      </div>
+      <div className="space-y-2">
+        <dt className="text-xs text-fg-muted">Recorded usage charges</dt>
+        <dd className="font-mono text-xl">
+          {summary.charges.status === 'available' && summary.charges.amounts ? (
+            <Money value={summary.charges.amounts.totalCents} />
+          ) : summary.charges.status === 'updating' ? (
+            'Updating'
+          ) : (
+            'Unavailable'
+          )}
+        </dd>
+        <dd className="text-xs text-fg-muted">Excludes plan fee, adjustments and tax.</dd>
       </div>
     </dl>
   );

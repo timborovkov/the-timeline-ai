@@ -527,7 +527,12 @@ Foundations and shared components: [design system](../../design.md).
 
 ### Billing benefits and recorded charges
 
-Usage and Billing share the same typed billing summary. Free/PAYG show each
+Usage and Billing share the same typed billing summary. Usage presents plan, members,
+and recorded charges in a compact summary, followed by responsive meter cards.
+Each allowance card shows usage against its allowance and the remaining amount;
+positive meter charges stay visible. Detailed recorded charges live in a closed
+Billing details disclosure. Included credit and applicable spend caps remain
+visible outside that disclosure. Billing settings retain the compact meter table. Free/PAYG show each
 calendar-month allowance with used, included and remaining units, plus the UTC
 reset date. Team/Business instead show pooled included credit, used and remaining
 amounts, and the subscription-period dates. Extra members are separate from that
