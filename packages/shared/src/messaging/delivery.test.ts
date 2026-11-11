@@ -98,7 +98,13 @@ function fakeDeliveryDb(
 }
 
 function fakeDailyDigestDbWithPendingDelivery(
-  recipientState: { suspendedAt?: Date; securityState?: string } = {},
+  recipientState: {
+    suspendedAt?: Date;
+    securityState?: string;
+    disabledAt?: Date;
+    deletionStartedAt?: Date;
+    deletedAt?: Date;
+  } = {},
 ) {
   let selectCount = 0;
   const updates: unknown[] = [];
@@ -147,6 +153,14 @@ function fakeDailyDigestDbWithPendingDelivery(
                   ? [
                       {
                         id: 'digest-1',
+                        workspaceActive: !(
+                          Boolean(
+                            recipientState.disabledAt ??
+                            recipientState.deletionStartedAt ??
+                            recipientState.deletedAt,
+                          ) ||
+                          ['suspended', 'terminated'].includes(recipientState.securityState ?? '')
+                        ),
                         teamId: 'team-1',
                         userId: 'user-1',
                         windowEnd: new Date('2026-06-14T12:00:00.000Z'),
@@ -823,6 +837,9 @@ describe('Resend messaging adapter', () => {
     { suspendedAt: new Date(), error: 'Recipient is suspended.' },
     { securityState: 'suspended', error: 'Workspace is suspended.' },
     { securityState: 'terminated', error: 'Workspace is suspended.' },
+    { disabledAt: new Date(), error: 'Workspace is disabled.' },
+    { deletionStartedAt: new Date(), error: 'Workspace deletion started.' },
+    { deletedAt: new Date(), error: 'Workspace deleted.' },
   ])('blocks an already generated digest after suspension: $error', async (state) => {
     const { db, updates } = fakeDailyDigestDbWithPendingDelivery(state);
     const fetchMock = vi.fn();
@@ -835,10 +852,12 @@ describe('Resend messaging adapter', () => {
         fetch: fetchMock,
       }),
     ).resolves.toMatchObject({ ok: true, skipped: true });
-    expect(updates).toContainEqual({ status: 'skipped', error: state.error });
+    if ('suspendedAt' in state)
+      expect(updates).toContainEqual({ status: 'skipped', error: state.error });
+    else expect(updates).toEqual([]);
     expect(fetchMock).not.toHaveBeenCalled();
     expect(db.insert).not.toHaveBeenCalled();
-    expect(db.select).toHaveBeenCalledTimes(2);
+    expect(db.select).toHaveBeenCalledTimes('suspendedAt' in state ? 2 : 1);
   });
 
   it('does not mark a digest sent when its delivery is skipped because another send is pending', async () => {
@@ -884,6 +903,7 @@ describe('Resend messaging adapter', () => {
                 limit: vi.fn().mockResolvedValue([
                   {
                     id: 'digest-1',
+                    workspaceActive: true,
                     teamId: 'team-1',
                     userId: 'user-1',
                     payload: {
@@ -972,6 +992,7 @@ describe('Resend messaging adapter', () => {
                   ? [
                       {
                         id: 'digest-1',
+                        workspaceActive: true,
                         teamId: 'team-1',
                         userId: 'user-1',
                         windowEnd: new Date('2026-06-14T12:00:00.000Z'),

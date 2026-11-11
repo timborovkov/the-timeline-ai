@@ -45,7 +45,7 @@ import {
   joinSavedMeetingByCommand,
 } from '#src/meetings/quick-capture.js';
 import { detectMeetingPlatform } from '#src/meetings/scope.js';
-import { assertActivePrincipal } from '#src/platform-admin/runtime.js';
+import { activeWorkspaceCondition, assertActivePrincipal } from '#src/platform-admin/runtime.js';
 import { normalizeRawEventsToEvidence } from '#src/reconciliation/normalization.js';
 import { inlineSourceSnapshotMetadata } from '#src/reconciliation/source-snapshot.js';
 import { getRedisConnection } from '#src/redis/connection.js';
@@ -692,6 +692,7 @@ async function listEligibleSlackTeams(
       and(
         eq(teamMembers.userId, userId),
         isNull(teamMembers.removedAt),
+        activeWorkspaceCondition(teamMembers.teamId),
         notExists(
           db
             .select({ teamId: teamBillingAccounts.teamId })
@@ -737,6 +738,7 @@ async function activateSlackTeam(input: {
           eq(teamMembers.teamId, input.teamId),
           eq(teamMembers.userId, input.userId),
           isNull(teamMembers.removedAt),
+          activeWorkspaceCondition(teamMembers.teamId),
           notExists(
             tx
               .select({ teamId: teamBillingAccounts.teamId })
@@ -1330,6 +1332,7 @@ async function queueSlackDmAgentTurn(input: {
               eq(teamMembers.teamId, slackUserTeams.teamId),
               eq(teamMembers.userId, slackUserTeams.userId),
               isNull(teamMembers.removedAt),
+              activeWorkspaceCondition(teamMembers.teamId),
             ),
           )
           .where(
@@ -2054,6 +2057,7 @@ async function findActiveSlackLink(
         eq(teamMembers.teamId, slackUserTeams.teamId),
         eq(teamMembers.userId, slackUserTeams.userId),
         isNull(teamMembers.removedAt),
+        activeWorkspaceCondition(teamMembers.teamId),
       ),
     )
     .where(
@@ -2113,6 +2117,7 @@ async function findSlackLinkForTeam(
         eq(teamMembers.teamId, slackUserTeams.teamId),
         eq(teamMembers.userId, slackUserTeams.userId),
         isNull(teamMembers.removedAt),
+        activeWorkspaceCondition(teamMembers.teamId),
       ),
     )
     .where(
