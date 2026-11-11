@@ -1,5 +1,5 @@
 /** Freshness is a small relevance signal, never a claim of source authority. */
-export type SearchRanking = 'auto' | 'relevance' | 'balanced';
+type SearchRanking = 'auto' | 'relevance' | 'balanced';
 export type EvidenceDateBasis = 'source' | 'observed' | 'uploaded' | 'unknown';
 export const FRESHNESS_CANDIDATE_LIMIT = 200;
 export interface RankingMetadata {
