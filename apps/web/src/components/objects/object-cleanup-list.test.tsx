@@ -261,6 +261,29 @@ describe('ObjectCleanupList', () => {
     });
   });
 
+  it('keeps preview highlighting independent from bulk action selection', async () => {
+    const user = userEvent.setup();
+    render(
+      <ObjectCleanupList
+        rows={[object({ id: 'object-1', canonicalName: 'Previewed object' })]}
+        typeLabels={{ task: 'Task' }}
+        selectedObjectId="object-1"
+      />,
+    );
+    await user.click(screen.getByRole('button', { name: 'Select Task' }));
+    const checkbox = screen.getByRole('checkbox', {
+      name: 'Select Previewed object',
+    }) as HTMLInputElement;
+    expect(checkbox.checked).toBe(false);
+    expect(screen.queryByRole('status', { name: '1 object selected' })).toBeNull();
+    await user.click(checkbox);
+    expect(checkbox.checked).toBe(true);
+    expect(screen.getByRole('status', { name: '1 object selected' })).toBeTruthy();
+    await user.click(checkbox);
+    expect(checkbox.checked).toBe(false);
+    expect(screen.queryByRole('status', { name: '1 object selected' })).toBeNull();
+  });
+
   it('does not expose a disabled merge action as a keyboard-activatable link', async () => {
     const user = userEvent.setup();
     render(

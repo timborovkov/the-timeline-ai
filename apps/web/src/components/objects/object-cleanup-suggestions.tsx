@@ -3,7 +3,7 @@
 import { Archive, BrushCleaning, GitMerge, RefreshCw, X } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useMemo, useReducer } from 'react';
+import { useCallback, useMemo, useReducer, useState } from 'react';
 
 import type * as objects from '@timeline/shared/objects/types';
 
@@ -130,6 +130,8 @@ export function ObjectCleanupSuggestions({
   mergePreviewsByItemId = EMPTY_MERGE_PREVIEWS,
 }: Props) {
   const router = useRouter();
+  const [scrollElement, setScrollElement] = useState<HTMLDivElement | null>(null);
+  const getScrollElement = useCallback(() => scrollElement, [scrollElement]);
   const [state, dispatch] = useReducer(cleanupReviewReducer, undefined, initialCleanupReviewState);
   const pendingItems = useMemo(() => {
     const items: { bundle: SuggestionBundle; item: SuggestionItem }[] = [];
@@ -218,7 +220,10 @@ export function ObjectCleanupSuggestions({
             ) : null}
           </Button>
         </DialogTrigger>
-        <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-2xl">
+        <DialogContent
+          ref={setScrollElement}
+          className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-2xl"
+        >
           <DialogHeader>
             <DialogTitle>Cleanup suggestions</DialogTitle>
             <DialogDescription>
@@ -253,6 +258,8 @@ export function ObjectCleanupSuggestions({
               items={pendingItems}
               getItemKey={({ item }) => item.id}
               estimateSize={96}
+              getScrollElement={getScrollElement}
+              offsetWithinScrollElement
               className="mt-4"
               renderItem={({ bundle, item }) => {
                 const mergeIds = item.targetKind === 'object_merge' ? objectIdsForMerge(item) : [];
@@ -342,6 +349,7 @@ export function ObjectCleanupSuggestions({
             />
           ) : null}
           <InfiniteScroll
+            root={scrollElement}
             hasMore={false}
             onLoadMore={() => undefined}
             boundLabel="No more matching suggestions"

@@ -3,7 +3,7 @@
 import { Archive, GitMerge, Shapes, SquareCheckBig } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useMemo, useReducer, useState, useTransition } from 'react';
+import { useCallback, useMemo, useReducer, useState, useTransition } from 'react';
 
 import type * as objects from '@timeline/shared/objects/types';
 
@@ -22,6 +22,7 @@ import { SelectionBar } from '@/components/collections/selection-bar';
 import { VirtualList } from '@/components/collections/virtual-list';
 import { DueDateDisplay } from '@/components/due-date-display';
 import { EmptyState } from '@/components/empty-state';
+import { useObjectListScrollElement } from '@/components/objects/object-list-viewport';
 import { DiscussionCountBadge } from '@/components/objects/discussion-count-badge';
 import { PinOverflowMenu } from '@/components/pins/pin-overflow-menu';
 import {
@@ -133,6 +134,8 @@ export function ObjectCleanupList({
   returnTo = '/app/objects',
   selectedObjectId,
 }: Props) {
+  const scrollElement = useObjectListScrollElement();
+  const getScrollElement = useCallback(() => scrollElement, [scrollElement]);
   const timezone = useWorkspaceTimezone();
   const router = useRouter();
   const dialog = useAppDialog();
@@ -353,6 +356,8 @@ export function ObjectCleanupList({
                     items={list}
                     getItemKey={(object) => object.id}
                     estimateSize={48}
+                    getScrollElement={getScrollElement}
+                    offsetWithinScrollElement
                     renderItem={(object) => {
                       const isSelected = selected.has(object.id);
                       return (
@@ -362,7 +367,8 @@ export function ObjectCleanupList({
                           timezone={timezone}
                           returnTo={returnTo}
                           selecting={selecting}
-                          selected={isSelected || selectedObjectId === object.id}
+                          selected={isSelected}
+                          previewed={selectedObjectId === object.id}
                           onToggle={() => {
                             toggle(object.id);
                           }}
@@ -376,6 +382,7 @@ export function ObjectCleanupList({
           </div>
         )}
         <InfiniteScroll
+          root={scrollElement}
           hasMore={Boolean(pageCursor)}
           loading={loadingMore}
           error={pageLoadError}
@@ -421,6 +428,7 @@ function ObjectCollectionItem({
   returnTo,
   selecting,
   selected,
+  previewed,
   onToggle,
 }: {
   object: PinnableObjectRow;
@@ -429,6 +437,7 @@ function ObjectCollectionItem({
   returnTo: string;
   selecting: boolean;
   selected: boolean;
+  previewed: boolean;
   onToggle: () => void;
 }) {
   const router = useRouter();
@@ -510,7 +519,7 @@ function ObjectCollectionItem({
   return (
     <div style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto 44px' }}>
       <CollectionRow
-        selected={selected}
+        selected={selected || previewed}
         onActivate={() => {
           router.push(previewHref, { scroll: false });
         }}

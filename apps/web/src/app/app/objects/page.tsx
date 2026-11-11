@@ -14,6 +14,7 @@ import type { Metadata } from 'next';
 import { EmptyState } from '@/components/empty-state';
 import { ObjectCleanupList } from '@/components/objects/object-cleanup-list';
 import { ObjectCleanupSuggestions } from '@/components/objects/object-cleanup-suggestions';
+import { ObjectListViewport } from '@/components/objects/object-list-viewport';
 import { ObjectIndexPeek } from '@/components/objects/object-index-peek';
 import { PageHeader } from '@/components/page-header';
 import { TaskCategoryFilterRefresh } from '@/components/tasks/task-category-filter-refresh';
@@ -141,7 +142,7 @@ export default async function ObjectsIndexPage({
         />
       ) : null}
 
-      <div className="min-h-0 flex-1 overflow-y-auto">
+      <ObjectListViewport>
         <div
           className={
             selectedObjectDetail
@@ -187,7 +188,7 @@ export default async function ObjectsIndexPage({
             </div>
           ) : null}
         </div>
-      </div>
+      </ObjectListViewport>
     </div>
   );
 }
