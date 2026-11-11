@@ -903,7 +903,7 @@ function FolderList({
                 ) : (
                   <Link
                     href={`/app/documents?folder=${f.id}`}
-                    className="block truncate rounded-sm hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    className="block whitespace-normal [overflow-wrap:anywhere] rounded-sm hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   >
                     {f.name}
                   </Link>
@@ -1096,7 +1096,10 @@ function DocumentTitleRow({
         <Icon className="size-4" />
       </span>
       <span className="min-w-0">
-        <span className="block truncate text-sm font-semibold text-foreground" title={title}>
+        <span
+          className="block whitespace-normal text-sm font-semibold text-foreground [overflow-wrap:anywhere]"
+          title={title}
+        >
           {title}
         </span>
         <span className="mt-0.5 flex min-w-0 items-center gap-2 text-xs text-fg-dim">

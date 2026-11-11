@@ -363,18 +363,20 @@ export function AddCustomMcpServerLauncher({
 }) {
   const [open, setOpen] = useState(false);
   return (
-    <>
-      <Button
-        size="sm"
-        variant={open ? 'ghost' : variant}
-        onClick={() => {
-          setOpen((v) => !v);
-        }}
-      >
-        {open ? 'Cancel' : label}
-      </Button>
+    <div className="min-w-0 w-full space-y-3">
+      <div className="flex justify-end">
+        <Button
+          size="sm"
+          variant={open ? 'ghost' : variant}
+          onClick={() => {
+            setOpen((v) => !v);
+          }}
+        >
+          {open ? 'Cancel' : label}
+        </Button>
+      </div>
       {open ? (
-        <div className="col-span-full mt-2 w-full">
+        <div className="min-w-0 w-full">
           <AddCustomMcpServerForm
             ownership={ownership}
             onDone={() => {
@@ -386,7 +388,7 @@ export function AddCustomMcpServerLauncher({
           />
         </div>
       ) : null}
-    </>
+    </div>
   );
 }
 

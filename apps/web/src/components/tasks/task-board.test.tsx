@@ -904,7 +904,8 @@ describe('TaskBoard', () => {
     const cardTitle = screen.getByRole('link', { name: longTitle });
     const panelTitle = screen.getByRole('heading', { name: longTitle });
 
-    expect(cardTitle.className).toContain('break-words');
+    expect(cardTitle.className).toContain('[overflow-wrap:anywhere]');
+    expect(cardTitle.className).not.toContain('line-clamp');
     expect(cardTitle.className).not.toContain('truncate');
     expect(panelTitle.className).toContain('break-words');
     expect(panelTitle.className).not.toContain('truncate');
@@ -1386,7 +1387,9 @@ describe('TaskBoard', () => {
 
     expect(screen.queryByText('Task', { exact: true })).toBeNull();
     expect(screen.getByRole('button', { name: 'Project for Send proposal' })).toBeTruthy();
-    expect(screen.getByRole('link', { name: 'Send proposal' }).className).toContain('line-clamp-2');
+    expect(screen.getByRole('link', { name: 'Send proposal' }).className).not.toContain(
+      'line-clamp',
+    );
     const card = screen.getByRole('link', { name: 'Send proposal' }).closest('article');
     const drag = screen.getByRole('button', { name: /Drag Send proposal/ });
     const project = screen.getByRole('button', { name: 'Project for Send proposal' });

@@ -68,7 +68,7 @@ export default async function BoardsIndexPage() {
                   <CollectionRow.Title>
                     <Link
                       href={`/app/boards/${board.id}`}
-                      className="block truncate rounded-sm hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      className="block whitespace-normal [overflow-wrap:anywhere] rounded-sm hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     >
                       {board.name}
                     </Link>

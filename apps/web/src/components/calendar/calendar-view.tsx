@@ -1066,7 +1066,7 @@ function CalendarEventListPages({
                   <button
                     type="button"
                     disabled={event.redacted}
-                    className="block min-w-0 truncate rounded-sm text-left hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-default disabled:opacity-100"
+                    className="block min-w-0 whitespace-normal [overflow-wrap:anywhere] rounded-sm text-left hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-default disabled:opacity-100"
                     onClick={() => {
                       onEdit(event);
                     }}

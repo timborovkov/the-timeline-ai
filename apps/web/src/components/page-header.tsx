@@ -157,7 +157,7 @@ function PageHeaderHeading({
       <div
         className={cn(
           'flex flex-col gap-1.5',
-          variant === 'collection' && 'min-w-0 flex-row items-baseline gap-3',
+          variant === 'collection' && 'min-w-0 flex-row flex-wrap items-baseline gap-3',
         )}
       >
         {leading ? <div className="text-fg-dim">{leading}</div> : null}
@@ -165,7 +165,8 @@ function PageHeaderHeading({
           id={titleId}
           className={cn(
             'm-0 text-2xl font-semibold tracking-tight text-fg',
-            variant === 'collection' && 'truncate text-lg leading-7',
+            variant === 'collection' &&
+              'min-w-0 whitespace-normal text-lg leading-7 [overflow-wrap:anywhere]',
           )}
         >
           {title}

@@ -985,7 +985,7 @@ function TaskBoardView({
     <div
       className={
         selectedTask
-          ? 'grid h-full min-h-0 min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_min(40%,40rem)]'
+          ? 'grid h-full min-h-0 min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(36rem,55%)]'
           : 'flex h-full min-h-0 min-w-0 flex-col'
       }
     >
@@ -1520,7 +1520,7 @@ function TaskListRow({
           <Link
             href={taskViewHref('list', row.id, filterParams)}
             scroll={false}
-            className="block truncate hover:underline"
+            className="block whitespace-normal [overflow-wrap:anywhere] hover:underline"
           >
             {displayText(title)}
           </Link>
@@ -2076,7 +2076,7 @@ function TaskCard({
         <Link
           href={href}
           scroll={false}
-          className="min-w-0 flex-1 line-clamp-2 whitespace-normal break-words font-medium leading-snug hover:underline"
+          className="min-w-0 flex-1 whitespace-normal [overflow-wrap:anywhere] font-medium leading-snug hover:underline"
         >
           {displayText(title)}
         </Link>
