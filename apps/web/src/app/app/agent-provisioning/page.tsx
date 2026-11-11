@@ -21,6 +21,7 @@ export default async function AgentProvisioningPage() {
     listProvisioningGrants(db, session.user.id),
     listProvisioningAudit(db, session.user.id),
   ]);
+  const now = new Date();
   return (
     <div className="space-y-6">
       <PageHeader
@@ -78,7 +79,7 @@ export default async function AgentProvisioningPage() {
                       <span className="text-xs text-muted-foreground">
                         {grant.revokedAt
                           ? 'Revoked'
-                          : grant.expiresAt <= new Date()
+                          : grant.expiresAt <= now
                             ? 'Expired'
                             : 'Active'}
                         {' · '}
