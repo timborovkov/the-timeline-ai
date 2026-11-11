@@ -80,6 +80,7 @@ export function ApprovalPreviewDialog({
     key: string;
     snapshot: ApprovalTargetSnapshot;
     members: Record<string, string>;
+    currentEvidence: PreviewEvidence[];
   } | null>(null);
 
   useEffect(() => {
@@ -98,6 +99,7 @@ export function ApprovalPreviewDialog({
         key: requestKey,
         snapshot: result.snapshot ?? { kind: 'none' },
         members: result.members ?? {},
+        currentEvidence: result.currentEvidence ?? [],
       });
     });
     return () => {
@@ -140,6 +142,7 @@ export function ApprovalPreviewDialog({
             item={item}
             timezone={timezone}
             evidence={evidence}
+            currentEvidence={loaded?.key === requestKey ? loaded.currentEvidence : []}
           />
         }
         <DialogFooter className="sm:justify-between">
@@ -188,6 +191,7 @@ function ApprovalPreviewContent({
   item,
   timezone,
   evidence,
+  currentEvidence,
 }: {
   loadingSnapshot: boolean;
   fields: ApprovalPreviewField[];
@@ -205,6 +209,7 @@ function ApprovalPreviewContent({
   };
   timezone: string;
   evidence: PreviewEvidence[];
+  currentEvidence: PreviewEvidence[];
 }) {
   return (
     <div className="max-h-[min(28rem,60dvh)] space-y-4 overflow-y-auto pr-1">
@@ -228,6 +233,32 @@ function ApprovalPreviewContent({
       {item.description ? (
         <p className="text-sm text-fg-muted">{displayText(item.description, { timezone })}</p>
       ) : null}
+      {currentEvidence.length > 0 ? (
+        <section className="space-y-2 border-t border-border pt-3">
+          <h3 className="text-xs font-medium text-fg">Evidence for the current record</h3>
+          {currentEvidence.map((entry, index) => (
+            <EvidenceLink
+              key={`${entry.rawEventId}-${index}`}
+              eventId={entry.rawEventId}
+              previewText={entry.quote}
+              source={entry.source}
+              occurredAt={entry.occurredAt}
+              className="grid gap-1 text-xs text-fg-dim hover:text-fg"
+            >
+              <span>
+                {evidenceSourceContextLabel(entry)}
+                {entry.occurredAt ? (
+                  <>
+                    {' '}
+                    · <RelativeTimestamp value={entry.occurredAt} />
+                  </>
+                ) : null}
+              </span>
+              {entry.quote ? <span className="line-clamp-3">{entry.quote}</span> : null}
+            </EvidenceLink>
+          ))}
+        </section>
+      ) : null}
       {evidence.length > 0 ? (
         <section className="space-y-2 border-t border-border pt-3">
           <h3 className="text-xs font-medium text-fg">
@@ -243,7 +274,15 @@ function ApprovalPreviewContent({
               occurredAt={entry.occurredAt}
               className="grid gap-1 text-xs text-fg-dim hover:text-fg"
             >
-              <span>Evidence from {evidenceSourceContextLabel(entry)}</span>
+              <span>
+                Evidence from {evidenceSourceContextLabel(entry)}
+                {entry.occurredAt ? (
+                  <>
+                    {' '}
+                    · <RelativeTimestamp value={entry.occurredAt} />
+                  </>
+                ) : null}
+              </span>
               {entry.quote ? (
                 <span className="line-clamp-3 text-fg-muted">
                   {displayText(entry.quote, { timezone })}
