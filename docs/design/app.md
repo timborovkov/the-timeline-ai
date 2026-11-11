@@ -563,7 +563,8 @@ and recorded charges in a compact summary, followed by responsive meter cards.
 Each allowance card shows usage against its allowance and the remaining amount;
 positive meter charges stay visible. Detailed recorded charges live in a closed
 Billing details disclosure. Included credit and applicable spend caps remain
-visible outside that disclosure. Billing settings retain the compact meter table. Free/PAYG show each
+visible outside that disclosure. Billing settings use the same allowance cards, with separate neutral surfaces for
+plan controls, recorded charges, and membership. Plan controls wrap on narrow screens. Free/PAYG show each
 calendar-month allowance with used, included and remaining units, plus the UTC
 reset date. Team/Business instead show pooled included credit, used and remaining
 amounts, and the subscription-period dates. Extra members are separate from that
