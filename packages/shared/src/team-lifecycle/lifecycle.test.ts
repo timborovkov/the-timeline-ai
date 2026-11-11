@@ -218,6 +218,16 @@ describe('team lifecycle', () => {
       const attention = await db.select().from(schema.connectionAttention);
       expect(attention.find((row) => row.teamId === OTHER)?.resolvedAt).not.toBeNull();
       expect(attention.find((row) => row.teamId === TEAM)?.resolvedAt).toBeNull();
+      // Personal-connection attention can outlive its last team integration.
+      await db.delete(schema.integrations).where(eq(schema.integrations.teamId, OTHER));
+      await db
+        .update(schema.connectionAttention)
+        .set({ resolvedAt: null })
+        .where(eq(schema.connectionAttention.teamId, OTHER));
+      await scope.upsertProviderConnection(input);
+      const remainingAttention = await db.select().from(schema.connectionAttention);
+      expect(remainingAttention.find((row) => row.teamId === OTHER)?.resolvedAt).not.toBeNull();
+      expect(remainingAttention.find((row) => row.teamId === TEAM)?.resolvedAt).toBeNull();
       await expect(assertActivePrincipal(db, TEAM)).rejects.toThrow('disabled');
     } finally {
       if (oldKey === undefined) delete process.env.SECRETS_ENCRYPTION_KEY;

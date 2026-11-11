@@ -571,12 +571,21 @@ export function createIntegrationScope(deps: {
         .from(teams)
         .where(
           and(
-            inArray(
-              teams.id,
-              db
-                .select({ id: integrationsTable.teamId })
-                .from(integrationsTable)
-                .where(eq(integrationsTable.providerConnectionId, row.id)),
+            or(
+              inArray(
+                teams.id,
+                db
+                  .select({ id: integrationsTable.teamId })
+                  .from(integrationsTable)
+                  .where(eq(integrationsTable.providerConnectionId, row.id)),
+              ),
+              inArray(
+                teams.id,
+                db
+                  .select({ id: connectionAttention.teamId })
+                  .from(connectionAttention)
+                  .where(eq(connectionAttention.providerConnectionId, row.id)),
+              ),
             ),
             isNull(teams.disabledAt),
             isNull(teams.deletionStartedAt),
