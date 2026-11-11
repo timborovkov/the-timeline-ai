@@ -200,7 +200,7 @@ export function PersonalConnectionsUi({
 
 function PersonalConnectionFlow() {
   return (
-    <div className="space-y-3 border-y border-border py-3 text-sm">
+    <div className="space-y-3 py-3 text-sm">
       <div className="grid gap-2 md:grid-cols-3">
         <div>
           <p className="font-medium text-fg">1. Provider account</p>
@@ -708,10 +708,7 @@ function ConnectionSourcesPanel({
   onClearSearch: () => void;
 }) {
   return (
-    <section
-      aria-label={`${providerLabel(connection.provider)} account ${connection.displayName}`}
-      className="border-y border-border"
-    >
+    <section aria-label={`${providerLabel(connection.provider)} account ${connection.displayName}`}>
       <div className="flex flex-wrap items-center gap-2 px-3 py-2">
         <div className="min-w-0 flex-1">
           <PersonalConnectionHeader connection={connection} />
@@ -1253,7 +1250,7 @@ export function TeamSourcesUi({
             ? 'Save team sync'
             : 'Activate team sync';
         return (
-          <section key={connectionId} className="border-y border-border">
+          <section key={connectionId}>
             <div className="grid gap-2 border-b border-border px-3 py-2 sm:grid-cols-[minmax(0,1fr)_auto_auto] sm:items-center">
               <TeamConnectionHeader connection={connection} />
               <TeamSyncStatus selectedSize={selected.size} hasActiveSources={hasActiveSources} />

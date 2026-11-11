@@ -48,7 +48,7 @@ export function EmptyState({
     <output
       className={cn(
         'block text-center not-italic',
-        size === 'page' && 'border-y border-border px-4 py-16',
+        size === 'page' && 'px-4 py-16',
         size === 'inset' && 'px-4 py-10',
         size === 'compact' && 'px-3 py-8',
         className,

@@ -1,7 +1,7 @@
 # The Timeline — Design System
 
-**Version:** v3.43 · Theme-aware public screenshots (2026-11-10).
-Replaces v3.42 Public conversion-clarity; retains the split app and public surface patterns.
+**Version:** v3.44 · Quiet dashboard section boundaries (2026-11-11).
+Replaces v3.43 Theme-aware public screenshots; retains the split app and public surface patterns.
 
 This is the visual and interaction contract for the product. If a screen
 disagrees with it, fix the screen. If the language intentionally changes,
@@ -79,6 +79,11 @@ next before seeing how the system represented it.
 - Pills are for person avatars, filters, and compact state toggles only.
 - Content surfaces use a hairline border or one background step. They do not
   use shadows. Shadows are reserved for menus, dialogs, sheets, and overlays.
+- Dashboard sections, page headers, form groups, and empty states use spacing
+  rather than top/bottom framing rules. Do not stack borders on nested wrappers.
+  Keep hairlines for dense data rows, sticky chrome, tabs, and control boundaries;
+  a filled collection group header needs no additional horizontal rules. Loading
+  states follow the same boundary treatment as the loaded view.
 - Dashed borders are prohibited.
 - Dense rows are welcome, but metadata is subordinate to the human title.
 - Async mutations announce progress and outcome with a viewport-sticky toast.
@@ -194,7 +199,7 @@ The default route header. It owns the single sentence-case `<h1>`, an optional
 subtitle, leading/trailing actions, and a quiet wrapping 12px metadata row.
 Metadata is sans by default; individual values may opt into mono.
 
-The collection variant is at most 52px tall on desktop. It uses an 18px title,
+The collection variant is at most 52px tall on desktop, without a bottom rule. It uses an 18px title,
 keeps metadata and actions inline, and exposes the descriptive subtitle to
 assistive technology without spending a visible row on it.
 
@@ -285,7 +290,7 @@ second empty layout. The composition is always:
 
 Sizes:
 
-- `page` — full collection canvas. Hairline top/bottom borders, 64px vertical
+- `page` — full collection canvas. No outer border; 64px vertical
   padding. Timeline, objects, tasks, boards, approvals, inbox, documents.
 - `inset` — inside a `CollectionGroup`, board lane, or settings subsection.
   No extra outer border. 40px vertical padding.

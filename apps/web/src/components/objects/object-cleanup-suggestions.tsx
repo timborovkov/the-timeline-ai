@@ -206,7 +206,7 @@ export function ObjectCleanupSuggestions({
   }
 
   return (
-    <section className="border-y border-border py-4">
+    <section className="py-4">
       <details>
         <summary className="cursor-pointer list-none">
           <div className="flex flex-wrap items-center justify-between gap-3">

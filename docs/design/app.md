@@ -49,8 +49,8 @@ those records onto Home. “You’re caught up” replaces empty dashboard grids
 when every group is zero. Pinned work, the team inbound email as one readonly
 copyable field (`#team-email`) with a quiet link to Team → Email settings,
 digest, and a dense recent-moments scan follow as full-width sections without
-duplicating Timeline or Connections. These sections prefer horizontal rules and
-rows over bordered dashboard cards.
+duplicating Timeline or Connections. These sections use spacing between groups and hairlines between dense rows,
+following the boundary rules in [the design system](../../design.md#core-rules).
 
 The latest digest stays folded until opened. Its summary and section bodies are
 readable prose, not inventories of pull requests or IDs. The generator bans
@@ -61,7 +61,7 @@ use Highlights, Status, Completed, In progress, Decisions, Risks, and
 Follow-ups; Status is the current state of work, not a product-specific label.
 Empty sections and empty task, object, or calendar groups are omitted. The
 header shows the digest date; the covering time range stays footer metadata.
-Activity is a hairline count strip using the same mono lime numbers as Home
+Activity is a compact count strip using the same mono lime numbers as Home
 Attention, and is hidden when every count is zero. Task, object, and
 calendar blocks are ordinary linked lists: newly created or completed tasks,
 new non-task objects, calendar events that fell in the digest window, and
@@ -213,14 +213,14 @@ settings render one URL-selected section at a time. Field validation stays on
 the edited form; pending, success, and server failures use the shared action
 toast. Member, object, source, and artifact labels never fall back to UUIDs.
 Team → General keeps identity as a form (rename for admins) plus two readonly
-copyable support fields — team id and slug — with hairline section structure
+copyable support fields — team id and slug — with spacing between sections
 and no nested cards.
 
 Team → Members is a collection: compact header, `CollectionRow` members with
 visible role and quiet actions, not a padded card list. Role changes save on
 select. Remove, resend, and revoke are tooltiped icon buttons. Invite, pending,
 removed, and export lists use the same rows. Other settings sections stay
-forms, with hairline section structure, 12px muted labels, compact `sm`
+forms, with spacing between sections, 12px muted labels, compact `sm`
 outline saves, and at most one filled primary action per view (Rename, Create
 invite, Start export). Select and checkbox preferences may save immediately.
 

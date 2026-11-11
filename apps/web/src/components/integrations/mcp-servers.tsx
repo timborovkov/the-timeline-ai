@@ -233,7 +233,7 @@ function AddCustomMcpServerForm({
   }
 
   return (
-    <div className="space-y-3 border-y border-border py-4">
+    <div className="space-y-3 py-4">
       <h3 className="text-sm font-medium text-fg">Add MCP server</h3>
       <div className="space-y-3">
         <form ref={formRef} className="space-y-3" onSubmit={(event) => void submit(event)}>
@@ -528,7 +528,7 @@ export function McpServersUi({
       ) : (
         <ul
           aria-label={isPersonalServer ? 'Personal MCP servers' : 'MCP servers'}
-          className="divide-y divide-border border-y border-border"
+          className="divide-y divide-border"
         >
           {servers.map((s) => {
             const mutation = rowMutations[s.id] ?? { busy: null };

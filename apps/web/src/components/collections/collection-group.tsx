@@ -31,7 +31,7 @@ export function CollectionGroup({
   const contentId = useId();
   return (
     <section className={cn('min-w-0', className)}>
-      <div className="flex min-h-10 items-center gap-1 border-y border-border bg-surface/70 px-2 sm:px-3">
+      <div className="flex min-h-10 items-center gap-1 bg-surface/70 px-2 sm:px-3">
         <button
           type="button"
           aria-expanded={open}

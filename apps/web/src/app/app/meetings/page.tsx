@@ -163,7 +163,7 @@ export default async function MeetingsPage({
       <MeetingsViewNavigation tab={tab} />
 
       {tab === 'captures' ? (
-        <details className="border-y border-border py-1.5">
+        <details className="py-1.5">
           <summary className="cursor-pointer text-sm text-fg-muted hover:text-fg">
             Invite notetaker
           </summary>
@@ -176,7 +176,7 @@ export default async function MeetingsPage({
           </div>
         </details>
       ) : (
-        <details className="border-y border-border py-1.5">
+        <details className="py-1.5">
           <summary className="cursor-pointer text-sm text-fg-muted hover:text-fg">
             Save a meeting
           </summary>

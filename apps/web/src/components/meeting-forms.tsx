@@ -768,7 +768,7 @@ export function SavedMeetingForm({
         visibility={visibility}
         visibilityUserIds={visibilityUserIds}
       />
-      <div className="space-y-3 border-y border-border py-3">
+      <div className="space-y-3 py-3">
         <label className="flex min-h-9 items-center gap-2 text-sm">
           <input
             type="checkbox"
@@ -966,7 +966,7 @@ export function EditSavedMeetingForm({
         visibility={visibility}
         visibilityUserIds={visibilityUserIds}
       />
-      <div className="space-y-3 border-y border-border py-3">
+      <div className="space-y-3 py-3">
         <label className="flex min-h-9 items-center gap-2 text-sm">
           <input
             type="checkbox"

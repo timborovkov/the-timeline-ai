@@ -149,7 +149,7 @@ function EvidenceList({ rows }: { rows: ReconciliationClusterDetailEvidence[] })
           body="Evidence for this cluster will appear here when sources attach."
         />
       ) : (
-        <ul className="border-y border-border">
+        <ul>
           {rows.map((row) => {
             const hint = reconciliationEvidenceRowHint({
               authoritative: row.authoritative,
@@ -211,7 +211,7 @@ function OutputList({
           body="Reconciliation outputs for this cluster will appear here after a run."
         />
       ) : (
-        <ul className="border-y border-border">
+        <ul>
           {rows.map((row) => {
             const title = outputActionLabel(row);
             const hint = reconciliationOutputRowHint({

@@ -16,7 +16,7 @@ export function PageHeaderSkeleton({
   if (variant === 'collection') {
     return (
       <div
-        className="flex min-h-12 items-center justify-between gap-3 border-b border-border py-2"
+        className="flex min-h-12 items-center justify-between gap-3 py-2"
         aria-busy="true"
         aria-label="Loading"
       >
@@ -168,7 +168,7 @@ export function SettingsSectionSkeleton({
   action?: boolean;
 }) {
   return (
-    <section className="space-y-2.5 border-t border-border pt-4 first:border-t-0 first:pt-0">
+    <section className="space-y-2.5 pt-4 first:pt-0">
       <Skeleton className="h-5 w-40" />
       {Array.from({ length: lines }).map((_, index) => (
         <Skeleton
@@ -221,7 +221,7 @@ export function CollectionGroupSkeleton({
     <div className="min-h-0 flex-1 overflow-hidden">
       {Array.from({ length: groups }).map((_, group) => (
         <section key={group}>
-          <div className="flex min-h-10 items-center gap-2 border-y border-border bg-surface/70 px-2 sm:px-3">
+          <div className="flex min-h-10 items-center gap-2 bg-surface/70 px-2 sm:px-3">
             <Skeleton className="h-3.5 w-3.5" />
             <Skeleton className="h-4 w-16" />
             <Skeleton className="h-4 w-6" />
@@ -341,7 +341,7 @@ export function TimelineFeedSkeleton({ count = 4 }: { count?: number }) {
 
 export function HairlineSectionSkeleton({ lines = 3 }: { lines?: number }) {
   return (
-    <div className="space-y-3 border-y border-border py-4" aria-busy="true">
+    <div className="space-y-3 py-4" aria-busy="true">
       <Skeleton className="h-4 w-32" />
       {Array.from({ length: lines }).map((_, index) => (
         <Skeleton

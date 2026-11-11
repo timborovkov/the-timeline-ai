@@ -401,7 +401,7 @@ function RecentRuns({
           body="Clear or broaden the filters to see run history."
         />
       ) : (
-        <ul className="border-y border-border">
+        <ul>
           {rows.map((row) => {
             const metrics = runMetricHint(row.metrics);
             const hint = [

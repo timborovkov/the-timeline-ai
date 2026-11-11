@@ -103,11 +103,7 @@ export function PageHeader({
   const hasMetadata = metadataList.length > 0;
   return (
     <header
-      className={cn(
-        'space-y-2',
-        variant === 'collection' && 'min-h-12 space-y-0 border-b border-border py-2',
-        className,
-      )}
+      className={cn('space-y-2', variant === 'collection' && 'min-h-12 space-y-0 py-2', className)}
     >
       {
         <PageHeaderHeading

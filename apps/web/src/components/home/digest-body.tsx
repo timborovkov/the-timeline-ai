@@ -73,7 +73,7 @@ export function DigestBody({
       </div>
 
       {activityItems.length > 0 ? (
-        <section aria-label="Activity" className="border-y border-border py-3">
+        <section aria-label="Activity" className="py-3">
           <p className="flex flex-wrap gap-x-5 gap-y-1 font-mono text-xs text-fg-muted">
             {activityItems.map((item) => (
               <span key={item.label}>

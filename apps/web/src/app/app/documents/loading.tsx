@@ -26,7 +26,7 @@ export default function DocumentsLoading() {
               <Skeleton className="h-8 w-20 rounded-sm" />
             </div>
           </section>
-          <section className="flex flex-wrap items-center gap-3 border-y border-border py-3">
+          <section className="flex flex-wrap items-center gap-3 py-3">
             <Skeleton className="h-3 w-28" />
             <Skeleton className="h-8 w-24 rounded-sm" />
           </section>

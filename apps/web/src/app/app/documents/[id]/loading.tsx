@@ -15,7 +15,7 @@ export default function DocumentDetailLoading() {
         <div className="space-y-5">
           <Skeleton className="h-4 w-16" />
           <HairlineSectionSkeleton lines={2} />
-          <section className="space-y-3 border-y border-border py-4">
+          <section className="space-y-3 py-4">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div className="space-y-2">
                 <Skeleton className="h-5 w-32" />
@@ -32,9 +32,9 @@ export default function DocumentDetailLoading() {
               </div>
             </div>
           </section>
-          <section className="space-y-3 border-y border-border py-4">
+          <section className="space-y-3 py-4">
             <Skeleton className="h-5 w-28" />
-            <ul className="divide-y divide-border border-y border-border">
+            <ul className="divide-y divide-border">
               {Array.from({ length: 3 }).map((_, index) => (
                 <li
                   key={index}

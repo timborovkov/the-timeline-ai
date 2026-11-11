@@ -137,7 +137,7 @@ function DocumentSearchResults({
           retryLabel="Retry search"
         />
       ) : hasNoMatches ? (
-        <div className="border-y border-border py-3 text-sm">
+        <div className="py-3 text-sm">
           <p className="font-medium">No matches for “{query}”</p>
           <p className="mt-1 text-fg-muted">
             Try a different phrase, or clear the search to return to the document browser.

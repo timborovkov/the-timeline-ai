@@ -24,7 +24,7 @@ export default function SlackLoading() {
           <SettingsSectionSkeleton action />
           <SettingsSectionSkeleton action />
           <SettingsSectionSkeleton lines={1} action />
-          <section className="space-y-2.5 border-t border-border pt-4">
+          <section className="space-y-2.5 pt-4">
             <Skeleton className="h-5 w-44" />
             <ChatBindingsSkeleton />
           </section>
