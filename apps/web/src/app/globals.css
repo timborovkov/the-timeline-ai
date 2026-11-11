@@ -124,6 +124,99 @@
   max-width: none;
 }
 
+#main:has(> .app-page-container > [data-app-width='collection']) {
+  container-type: inline-size;
+  --app-page-gutter: 1rem;
+}
+
+@media (min-width: 48rem) {
+  #main:has(> .app-page-container > [data-app-width='collection']) {
+    --app-page-gutter: 2rem;
+  }
+}
+
+/* Collection content stays readable while its section bands reach the pane
+   edges. The main scroller clips the decorative bleed, not the inner content. */
+[data-app-width='collection']
+  :is(
+    [data-slot='collection-band'],
+    [data-slot='collection-group-header'],
+    [data-slot='collection-row'],
+    [data-slot='collection-tabs']
+  ) {
+  position: relative;
+  isolation: isolate;
+}
+
+[data-app-width='collection']
+  :is(
+    [data-slot='collection-band'],
+    [data-slot='collection-group-header'],
+    [data-slot='collection-row'],
+    [data-slot='collection-sticky-band']
+  )::before,
+[data-app-width='collection']
+  :is(
+    [data-slot='collection-band'],
+    [data-slot='collection-group-header'],
+    [data-slot='collection-row'],
+    [data-slot='collection-sticky-band']
+  )::after {
+  content: '';
+  position: absolute;
+  inset-block: 0;
+  width: max(0px, calc((100cqw - 100%) / 2 + var(--app-page-gutter)));
+  z-index: -1;
+  pointer-events: none;
+  background: inherit;
+  border-bottom: inherit;
+}
+
+[data-app-width='collection']
+  :is(
+    [data-slot='collection-band'],
+    [data-slot='collection-group-header'],
+    [data-slot='collection-row'],
+    [data-slot='collection-sticky-band']
+  )::before {
+  inset-inline-end: 100%;
+}
+
+[data-app-width='collection']
+  :is(
+    [data-slot='collection-band'],
+    [data-slot='collection-group-header'],
+    [data-slot='collection-row'],
+    [data-slot='collection-sticky-band']
+  )::after {
+  inset-inline-start: 100%;
+}
+
+[data-app-width='collection'] [data-slot='collection-tabs']::before {
+  content: '';
+  position: absolute;
+  inset-inline: calc((100% - 100cqw) / 2 - var(--app-page-gutter));
+  bottom: 0;
+  border-bottom: 1px solid var(--border);
+  pointer-events: none;
+}
+
+[data-app-width='collection'] [data-slot='collection-groups-skeleton'] {
+  overflow: visible;
+}
+
+[data-app-width='collection'] [data-slot='collection-sticky-band'] {
+  isolation: isolate;
+}
+
+[data-app-width='collection'] .timeline-row-selected {
+  box-shadow: none;
+}
+
+[data-app-width='collection'] .timeline-row-selected::before {
+  border-inline-start: 2px solid var(--signal);
+}
+
 /* Sticky in-page chrome (Timeline's CollectionToolbar) sits under the 48px
    shell header. Padding on the overflow scroller becomes a stuck gap because
    position:sticky cannot occupy the scroll container's padding box. A negative

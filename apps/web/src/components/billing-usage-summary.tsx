@@ -99,6 +99,7 @@ function meterHint(input: {
 
 export function BillingUsageSummary({
   planId,
+  layout = 'table',
   allowancesOnly = false,
   allowanceBalances,
   comped = false,
@@ -111,6 +112,7 @@ export function BillingUsageSummary({
   className,
 }: {
   planId: string;
+  layout?: 'table' | 'cards';
   allowancesOnly?: boolean;
   allowanceBalances?: BillingPresentation['allowances'];
   comped?: boolean;
@@ -187,61 +189,73 @@ export function BillingUsageSummary({
           Metered charges shown before included plan credit, provider discounts and tax.
         </p>
       ) : null}
-      <div className="border border-border text-sm">
-        <div className="grid grid-cols-[minmax(0,1fr)_auto_auto] gap-4 px-3 py-2 text-fg-muted">
-          <span>Meter</span>
-          <span>Usage</span>
-          <span className="text-right">{allowancesOnly ? 'Remaining' : 'Usage charges'}</span>
+      {layout === 'cards' ? (
+        <UsageMeterCards
+          rows={rows}
+          comped={comped}
+          includedActiveMembers={includedActiveMembers}
+          additionalMemberCents={additionalMemberCents}
+        />
+      ) : (
+        <div className="border border-border text-sm">
+          <div className="grid grid-cols-[minmax(0,1fr)_auto_auto] gap-4 px-3 py-2 text-fg-muted">
+            <span>Meter</span>
+            <span>Usage</span>
+            <span className="text-right">{allowancesOnly ? 'Remaining' : 'Usage charges'}</span>
+          </div>
+          <ul>
+            {rows.map((row) => {
+              const hint = meterHint({
+                meter: row.meter,
+                includedActiveMembers,
+                additionalMemberCents,
+              });
+              return (
+                <li
+                  key={row.meter}
+                  data-billing-meter={row.meter}
+                  {...(row.meter === 'member_days' ? { 'data-billing-extra-members': '' } : {})}
+                  className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-4 border-t border-border px-3 py-2.5"
+                >
+                  <div className="min-w-0">
+                    <p className="text-fg" {...(hint ? { title: hint } : {})}>
+                      {METER_LABELS[row.meter]}
+                    </p>
+                    {hint ? <p className="mt-1 text-xs text-fg-muted">{hint}</p> : null}
+                    {row.allowance === null ? null : (
+                      <>
+                        <p className="mt-1 text-xs text-fg-muted">
+                          Used: {amountLabel(row.meter, row.nativeUnits)} · Included:{' '}
+                          {amountLabel(row.meter, row.allowance)} · Remaining:{' '}
+                          {amountLabel(row.meter, Math.max(0, row.allowance - row.nativeUnits))}
+                          {row.nativeUnits >= row.allowance ? ' · Allowance used up' : ''}
+                        </p>
+                        <AllowanceBar used={row.nativeUnits} allowance={row.allowance} />
+                      </>
+                    )}
+                  </div>
+                  <span className="font-mono text-fg-muted">
+                    {amountLabel(row.meter, row.nativeUnits)}
+                  </span>
+                  <span className="text-right font-mono text-fg">
+                    {allowancesOnly && row.allowance !== null
+                      ? amountLabel(row.meter, Math.max(0, row.allowance - row.nativeUnits))
+                      : comped
+                        ? '—'
+                        : formatEuroFromCents(row.customerChargeCents)}
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
         </div>
-        <ul>
-          {rows.map((row) => {
-            const hint = meterHint({
-              meter: row.meter,
-              includedActiveMembers,
-              additionalMemberCents,
-            });
-            return (
-              <li
-                key={row.meter}
-                data-billing-meter={row.meter}
-                {...(row.meter === 'member_days' ? { 'data-billing-extra-members': '' } : {})}
-                className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-4 border-t border-border px-3 py-2.5"
-              >
-                <div className="min-w-0">
-                  <p className="text-fg" {...(hint ? { title: hint } : {})}>
-                    {METER_LABELS[row.meter]}
-                  </p>
-                  {hint ? <p className="mt-1 text-xs text-fg-muted">{hint}</p> : null}
-                  {row.allowance === null ? null : (
-                    <>
-                      <p className="mt-1 text-xs text-fg-muted">
-                        Used: {amountLabel(row.meter, row.nativeUnits)} · Included:{' '}
-                        {amountLabel(row.meter, row.allowance)} · Remaining:{' '}
-                        {amountLabel(row.meter, Math.max(0, row.allowance - row.nativeUnits))}
-                        {row.nativeUnits >= row.allowance ? ' · Allowance used up' : ''}
-                      </p>
-                      <AllowanceBar used={row.nativeUnits} allowance={row.allowance} />
-                    </>
-                  )}
-                </div>
-                <span className="font-mono text-fg-muted">
-                  {amountLabel(row.meter, row.nativeUnits)}
-                </span>
-                <span className="text-right font-mono text-fg">
-                  {allowancesOnly && row.allowance !== null
-                    ? amountLabel(row.meter, Math.max(0, row.allowance - row.nativeUnits))
-                    : comped
-                      ? '—'
-                      : formatEuroFromCents(row.customerChargeCents)}
-                </span>
-              </li>
-            );
-          })}
-        </ul>
-      </div>
+      )}
 
       {capacityUsage.length > 0 ? (
-        <details data-billing-capacity className="border border-border">
+        <details
+          data-billing-capacity
+          className={layout === 'cards' ? 'pt-2' : 'border border-border'}
+        >
           <summary className="cursor-pointer px-3 py-2 text-sm text-fg-muted hover:text-fg">
             Infrastructure limits
           </summary>
@@ -260,5 +274,75 @@ export function BillingUsageSummary({
         </details>
       ) : null}
     </div>
+  );
+}
+
+function UsageMeterCards({
+  rows,
+  comped,
+  includedActiveMembers,
+  additionalMemberCents,
+}: {
+  rows: {
+    meter: BillingMeterId;
+    nativeUnits: number;
+    customerChargeCents: number;
+    allowance: number | null;
+  }[];
+  comped: boolean;
+  includedActiveMembers?: number | null;
+  additionalMemberCents?: number | null;
+}) {
+  return (
+    <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3" aria-label="Usage by meter">
+      {rows.map((row) => {
+        const hint = meterHint({ meter: row.meter, includedActiveMembers, additionalMemberCents });
+        const remaining =
+          row.allowance === null ? null : Math.max(0, row.allowance - row.nativeUnits);
+        return (
+          <li
+            key={row.meter}
+            data-billing-meter={row.meter}
+            className="min-w-0 space-y-4 rounded-lg bg-surface p-5"
+          >
+            <h3 className="text-sm font-medium text-fg-muted">{METER_LABELS[row.meter]}</h3>
+            <p className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+              <span className="sr-only">Used: </span>
+              <span className="font-mono text-2xl tracking-tight text-fg">
+                {amountLabel(row.meter, row.nativeUnits)}
+              </span>
+              {row.allowance !== null ? (
+                <span className="text-xs text-fg-muted">
+                  / {amountLabel(row.meter, row.allowance)} included
+                </span>
+              ) : (
+                <span className="text-xs text-fg-muted">used</span>
+              )}
+            </p>
+            {row.allowance !== null ? (
+              <AllowanceBar used={row.nativeUnits} allowance={row.allowance} />
+            ) : null}
+            <div className="space-y-1 text-xs text-fg-muted">
+              {remaining !== null ? (
+                <p>
+                  {remaining === 0
+                    ? 'Allowance used up'
+                    : `${amountLabel(row.meter, remaining)} remaining`}
+                </p>
+              ) : null}
+              {hint ? <p>{hint}</p> : null}
+              {!comped && row.customerChargeCents > 0 ? (
+                <p>
+                  Meter charges:{' '}
+                  <span className="font-mono text-fg">
+                    {formatEuroFromCents(row.customerChargeCents)}
+                  </span>
+                </p>
+              ) : null}
+            </div>
+          </li>
+        );
+      })}
+    </ul>
   );
 }

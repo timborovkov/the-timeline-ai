@@ -135,6 +135,29 @@ beforeEach(() => {
 });
 
 describe('MeetingsPage', () => {
+  it.each(['captures', 'saved'])(
+    'keeps an empty %s view focused on one create action',
+    async (tab) => {
+      const html = renderToStaticMarkup(
+        await MeetingsPage({ searchParams: Promise.resolve({ tab }) }),
+      );
+      expect(html).not.toContain('role="search"');
+      expect(html).not.toContain('href="#invite-notetaker"');
+      expect(html).not.toContain('href="#save-meeting"');
+      expect(html).toContain('aria-haspopup="dialog"');
+      expect(html).toContain(tab === 'captures' ? 'Invite notetaker' : 'Save a meeting');
+    },
+  );
+
+  it('keeps filter recovery available even when the capture archive is empty', async () => {
+    const html = renderToStaticMarkup(
+      await MeetingsPage({ searchParams: Promise.resolve({ q: 'missing' }) }),
+    );
+    expect(html).toContain('role="search"');
+    expect(html).toContain('Clear filters');
+    expect(html).toContain('No captures match these filters');
+  });
+
   it('filters visible captures by search and status without changing the team-scoped query', async () => {
     fakes.listMeetings.mockResolvedValue([
       meetingRow({ id: 'meeting-launch', title: 'Launch review', status: 'completed' }),

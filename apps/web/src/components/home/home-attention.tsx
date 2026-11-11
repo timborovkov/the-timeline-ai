@@ -17,12 +17,12 @@ export function HomeAttention({ groups }: { groups: AttentionGroup[] }) {
   return (
     <section aria-label="Attention">
       {visible.length === 0 ? (
-        <div className="flex items-center gap-2 border-y border-border py-4 text-sm text-fg-muted">
+        <div className="flex items-center gap-2 py-4 text-sm text-fg-muted">
           <CircleCheckBig aria-hidden="true" className="size-4 text-signal" />
           You’re caught up
         </div>
       ) : (
-        <div className="divide-y divide-border border-y border-border">
+        <div className="divide-y divide-border">
           {visible.map((group) => (
             <Link
               key={group.href}

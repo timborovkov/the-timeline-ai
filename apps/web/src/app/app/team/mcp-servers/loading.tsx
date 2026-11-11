@@ -22,10 +22,7 @@ export default function McpServersLoading() {
           ]}
         />
         <PageHeaderSkeleton />
-        <div
-          aria-hidden="true"
-          className="flex flex-wrap items-center gap-2 border-y border-border py-2"
-        >
+        <div aria-hidden="true" className="flex flex-wrap items-center gap-2 py-2">
           {Array.from({ length: 4 }).map((_, index) => (
             <Skeleton key={index} className="h-7 w-28 max-w-full motion-reduce:animate-none" />
           ))}

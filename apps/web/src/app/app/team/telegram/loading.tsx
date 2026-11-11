@@ -23,7 +23,7 @@ export default function TelegramLoading() {
           <PageHeaderSkeleton variant="collection" />
           <SettingsSectionSkeleton action />
           <SettingsSectionSkeleton action />
-          <section className="space-y-2.5 border-t border-border pt-4">
+          <section className="space-y-2.5 pt-4">
             <Skeleton className="h-5 w-40" />
             <ChatBindingsSkeleton />
           </section>

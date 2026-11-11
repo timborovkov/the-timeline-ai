@@ -97,7 +97,7 @@ function JobDashboardFailure({
 
 function JobDashboardLoading() {
   return (
-    <ul aria-busy="true" aria-label="Loading job dashboard" className="border-y border-border">
+    <ul aria-busy="true" aria-label="Loading job dashboard">
       {Array.from({ length: 6 }, (_, index) => (
         <li
           key={index}

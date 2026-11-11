@@ -54,7 +54,7 @@ export default async function CalendarPage({ searchParams }: PageProps) {
     calendarSuggestions,
   } = await loadCalendarPage({ searchParams });
   return (
-    <div className="space-y-6">
+    <div data-app-width="collection" className="space-y-6">
       <PageHeader
         variant="collection"
         title="Calendar"
@@ -104,7 +104,7 @@ export default async function CalendarPage({ searchParams }: PageProps) {
               singular: 'pending calendar proposal',
               plural: 'pending calendar proposals',
             },
-            className: 'border-y border-border py-4',
+            className: 'py-4',
           }}
         />
       ) : null}

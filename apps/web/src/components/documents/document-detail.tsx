@@ -234,7 +234,7 @@ export function DocumentDetail({
         ]}
       />
 
-      <section className="flex flex-row items-start justify-between gap-4 border-y border-border py-4 max-sm:flex-col">
+      <section className="flex flex-row items-start justify-between gap-4 py-4 max-sm:flex-col">
         <div className="min-w-0 space-y-1">
           <h1
             className="max-w-full break-all text-2xl font-semibold leading-tight tracking-tight"
@@ -297,7 +297,7 @@ export function DocumentDetail({
         />
       ) : null}
 
-      <section className="space-y-3 border-y border-border py-4">
+      <section className="space-y-3 py-4">
         <SectionHeading>Version history</SectionHeading>
         {versions.length === 0 ? (
           <EmptyState
@@ -405,7 +405,7 @@ function CurrentVersionPanel({
       ? 'Manual upload'
       : `${document.provenance.source.replace(/_/g, ' ')} capture`;
   return (
-    <section className="space-y-3 border-y border-border py-4">
+    <section className="space-y-3 py-4">
       <div className="flex flex-row items-start justify-between gap-4 max-sm:flex-col">
         <div>
           <SectionHeading>

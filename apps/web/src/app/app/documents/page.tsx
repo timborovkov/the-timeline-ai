@@ -70,7 +70,7 @@ export default async function DocumentsPage({ searchParams }: Props) {
   ];
 
   return (
-    <div className="space-y-6">
+    <div data-app-width="collection" className="space-y-6">
       {currentFolder ? (
         <ChatViewContextBinder
           viewKey={`documents-folder:${currentFolder.id}`}

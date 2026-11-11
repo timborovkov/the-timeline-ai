@@ -16,7 +16,7 @@ export function PageHeaderSkeleton({
   if (variant === 'collection') {
     return (
       <div
-        className="flex min-h-12 items-center justify-between gap-3 border-b border-border py-2"
+        className="flex min-h-12 items-center justify-between gap-3 py-2"
         aria-busy="true"
         aria-label="Loading"
       >
@@ -81,7 +81,11 @@ export function CollectionToolbarSkeleton({
   filters?: boolean;
 }) {
   return (
-    <div className="border-b border-border bg-bg" data-loading-toolbar="collection">
+    <div
+      data-slot="collection-band"
+      className="border-b border-border bg-bg"
+      data-loading-toolbar="collection"
+    >
       <div className="flex min-h-11 min-w-0 flex-wrap items-center gap-1.5 px-2 sm:px-3">
         {search ? (
           <div className="min-w-48 flex-1 sm:max-w-sm">
@@ -168,7 +172,7 @@ export function SettingsSectionSkeleton({
   action?: boolean;
 }) {
   return (
-    <section className="space-y-2.5 border-t border-border pt-4 first:border-t-0 first:pt-0">
+    <section className="space-y-2.5 pt-4 first:pt-0">
       <Skeleton className="h-5 w-40" />
       {Array.from({ length: lines }).map((_, index) => (
         <Skeleton
@@ -191,7 +195,10 @@ export function CollectionRowSkeleton({
   metadata?: number;
 }) {
   return (
-    <div className="flex min-h-11 items-center gap-3 border-b border-border/80 px-2 sm:px-3">
+    <div
+      data-slot="collection-row"
+      className="flex min-h-11 items-center gap-3 border-b border-border/80 px-2 sm:px-3"
+    >
       {leading ? <Skeleton className="size-4 shrink-0" /> : null}
       <div className="min-w-0 flex-1 space-y-1">
         <Skeleton className="h-4 w-2/5" />
@@ -218,10 +225,13 @@ export function CollectionGroupSkeleton({
   subtitle?: boolean;
 }) {
   return (
-    <div className="min-h-0 flex-1 overflow-hidden">
+    <div data-slot="collection-groups-skeleton" className="min-h-0 flex-1 overflow-hidden">
       {Array.from({ length: groups }).map((_, group) => (
         <section key={group}>
-          <div className="flex min-h-10 items-center gap-2 border-y border-border bg-surface/70 px-2 sm:px-3">
+          <div
+            data-slot="collection-group-header"
+            className="flex min-h-10 items-center gap-2 bg-surface/70 px-2 sm:px-3"
+          >
             <Skeleton className="h-3.5 w-3.5" />
             <Skeleton className="h-4 w-16" />
             <Skeleton className="h-4 w-6" />
@@ -314,7 +324,10 @@ export function CollectionRowsSkeleton({ count = 6 }: { count?: number }) {
  */
 function TimelineRowSkeleton() {
   return (
-    <li className="grid grid-cols-1 gap-x-4 gap-y-2 border-b border-border py-3 md:grid-cols-[6.75rem_minmax(0,1fr)_12rem]">
+    <li
+      data-slot="collection-row"
+      className="grid grid-cols-1 gap-x-4 gap-y-2 border-b border-border py-3 md:grid-cols-[6.75rem_minmax(0,1fr)_12rem]"
+    >
       <Skeleton className="h-3 w-14" />
       <div className="min-w-0 space-y-2">
         <Skeleton className="h-3 w-48" />
@@ -341,7 +354,7 @@ export function TimelineFeedSkeleton({ count = 4 }: { count?: number }) {
 
 export function HairlineSectionSkeleton({ lines = 3 }: { lines?: number }) {
   return (
-    <div className="space-y-3 border-y border-border py-4" aria-busy="true">
+    <div className="space-y-3 py-4" aria-busy="true">
       <Skeleton className="h-4 w-32" />
       {Array.from({ length: lines }).map((_, index) => (
         <Skeleton

@@ -61,7 +61,7 @@ export function ConnectAgentScreen({
         }
       />
       <ConnectAgentTabs mcpUrl={mcpUrl} teamEmail={teamEmail} />
-      <div className="divide-y divide-border border-y border-border">
+      <div className="divide-y divide-border">
         <ConnectAgentDisclosure
           title={
             <>

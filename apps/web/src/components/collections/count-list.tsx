@@ -15,7 +15,7 @@ export function CountList({
     return <p className="px-1 py-3 text-sm text-fg-muted">{empty}</p>;
   }
   return (
-    <ul className="border-y border-border">
+    <ul>
       {items.map((item) => {
         const numericZero = typeof item.value === 'number' && item.value === 0;
         const display = typeof item.value === 'number' ? item.value.toLocaleString() : item.value;

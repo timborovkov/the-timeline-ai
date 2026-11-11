@@ -427,7 +427,7 @@ function MessagingPreferencesCard({ enabled }: { enabled: boolean }) {
 function AdminShortcuts({ isAdmin }: { isAdmin: boolean }) {
   if (!isAdmin) return null;
   return (
-    <div className="flex flex-wrap items-center gap-x-1 gap-y-1 border-y border-border py-1.5">
+    <div className="flex flex-wrap items-center gap-x-1 gap-y-1 py-1.5">
       <ActionChip href="/app/team/jobs" label="Job recovery" />
       <ActionChip href="/app/team/reconciliation" label="Reconciliation" />
       <ActionChip href="/app/team/audit" label="Audit" />

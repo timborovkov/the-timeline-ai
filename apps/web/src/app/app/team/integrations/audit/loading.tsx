@@ -21,12 +21,12 @@ export default function IntegrationAuditLoading() {
           ]}
         />
         <div aria-hidden="true" inert className="space-y-8">
-          <header className="flex flex-wrap items-center gap-x-4 gap-y-1.5 border-y border-border py-3">
+          <header className="flex flex-wrap items-center gap-x-4 gap-y-1.5 border-b border-border py-3">
             <Skeleton className="h-3 w-32" />
             <Skeleton className="h-3 w-24" />
             <Skeleton className="h-3 w-16" />
           </header>
-          <ul className="border-y border-border">
+          <ul>
             {Array.from({ length: 5 }).map((_, index) => (
               <li key={index} className="space-y-2 border-b border-border py-3 last:border-b-0">
                 <div className="flex flex-wrap items-center gap-2">

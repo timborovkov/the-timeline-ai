@@ -66,7 +66,12 @@ describe('Timeline route states', () => {
     const css = readFileSync(join(timelineDir, '../../globals.css'), 'utf8');
 
     expect(page).toContain('data-app-layout="flush-top"');
-    expect(page).toContain('sticky top-0 z-20');
+    expect(page).toContain('<TimelineToolbarFrame>');
+    const toolbar = readFileSync(
+      join(timelineDir, '../../../components/timeline-toolbar-frame.tsx'),
+      'utf8',
+    );
+    expect(toolbar).toContain('sticky top-0 z-20');
     expect(page).not.toContain('top-[-');
     expect(css).toContain("#main:has(> .app-page-container > [data-app-layout='flush-top'])");
     expect(css).toContain('padding-top: 0');

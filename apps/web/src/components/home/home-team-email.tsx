@@ -9,7 +9,7 @@ export function HomeTeamEmail({ inboundEmail }: { inboundEmail: string | null })
     <section
       id={HOME_TEAM_EMAIL_SECTION_ID}
       aria-label="Team email"
-      className="space-y-3 border-y border-border py-4 sm:px-1 scroll-mt-14"
+      className="space-y-3 py-4 sm:px-1 scroll-mt-14"
     >
       <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
         <p className="text-sm font-medium text-fg">Team email</p>

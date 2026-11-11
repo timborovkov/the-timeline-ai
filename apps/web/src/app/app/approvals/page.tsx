@@ -133,7 +133,7 @@ export default async function ApprovalsPage({ searchParams }: PageProps) {
     status === 'pending' || status === 'failed' ? approvalCounts[status] : null;
 
   return (
-    <div className="space-y-6">
+    <div data-app-width="collection" className="space-y-6">
       <PageHeader
         variant="collection"
         title="Approvals"

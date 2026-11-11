@@ -17,10 +17,9 @@ import {
   ArchiveSavedMeetingButton,
   EditSavedMeetingForm,
   JoinSavedMeetingButton,
-  SavedMeetingForm,
-  ScheduleMeetingBotForm,
 } from '@/components/meeting-forms';
 import { MeetingCapturesList } from '@/components/meetings/meeting-captures-list';
+import { MeetingCreateDialog } from '@/components/meetings/meeting-create-dialog';
 import { PageHeader } from '@/components/page-header';
 import { PinOverflowMenu } from '@/components/pins/pin-overflow-menu';
 import { SectionHeading } from '@/components/section-heading';
@@ -134,22 +133,13 @@ export default async function MeetingsPage({
     return { id: m.userId, label: displayMemberLabel(u) };
   });
   const cap = settings.meetingMinutesCap;
-  const normalizedQuery = query.toLocaleLowerCase();
-  const filteredSavedMeetings = savedMeetings.filter((meeting) => {
-    if (!normalizedQuery) return true;
-    return [
-      displayMeetingLabel(meeting),
-      meeting.description ?? '',
-      displaySourceLabel(meeting.platform),
-      ...meeting.aliases,
-    ].some((value) => value.toLocaleLowerCase().includes(normalizedQuery));
-  });
+  const filteredSavedMeetings = filterSavedMeetings(savedMeetings, query);
   const hasCaptureFilters = tab === 'captures' && (Boolean(query) || filter !== 'all');
   const hasSavedSearch = Boolean(query);
   const clearCurrentViewHref = meetingHref({ tab });
 
   return (
-    <div className="space-y-4">
+    <div data-app-width="collection" className="space-y-4">
       <PageHeader
         variant="collection"
         title="Meetings"
@@ -158,42 +148,25 @@ export default async function MeetingsPage({
           { label: 'This month', value: `${String(usedMinutes)} minutes`, mono: true },
           ...(cap !== null ? [{ label: 'Cap', value: `${String(cap)} minutes`, mono: true }] : []),
         ]}
-      />
+      >
+        <PageHeader.Trailing>
+          <MeetingCreateDialog
+            key={tab}
+            kind={tab}
+            defaultVisibility={defaultRow.visibility}
+            defaultVisibilityUserIds={defaultRow.visibilityUserIds}
+            defaultTimezone={calendarSettings.defaultTimezone}
+            members={memberOptions}
+          />
+        </PageHeader.Trailing>
+      </PageHeader>
 
       <MeetingsViewNavigation tab={tab} />
-
-      {tab === 'captures' ? (
-        <details className="border-y border-border py-1.5">
-          <summary className="cursor-pointer text-sm text-fg-muted hover:text-fg">
-            Invite notetaker
-          </summary>
-          <div id="invite-notetaker" className="scroll-mt-24 pt-3">
-            <ScheduleMeetingBotForm
-              defaultVisibility={defaultRow.visibility}
-              defaultVisibilityUserIds={defaultRow.visibilityUserIds}
-              members={memberOptions}
-            />
-          </div>
-        </details>
-      ) : (
-        <details className="border-y border-border py-1.5">
-          <summary className="cursor-pointer text-sm text-fg-muted hover:text-fg">
-            Save a meeting
-          </summary>
-          <div id="save-meeting" className="scroll-mt-24 pt-3">
-            <SavedMeetingForm
-              defaultVisibility={defaultRow.visibility}
-              defaultVisibilityUserIds={defaultRow.visibilityUserIds}
-              defaultTimezone={calendarSettings.defaultTimezone}
-              members={memberOptions}
-            />
-          </div>
-        </details>
-      )}
 
       <MeetingSearchControls
         clearHref={clearCurrentViewHref}
         filter={filter}
+        hasItems={list.length + savedMeetings.length > 0}
         hasActiveFilters={tab === 'captures' ? hasCaptureFilters : hasSavedSearch}
         query={query}
         tab={tab}
@@ -231,9 +204,26 @@ export default async function MeetingsPage({
   );
 }
 
+function filterSavedMeetings(savedMeetings: SavedMeetingRow[], query: string): SavedMeetingRow[] {
+  const normalizedQuery = query.toLocaleLowerCase();
+  return savedMeetings.filter((meeting) => {
+    if (!normalizedQuery) return true;
+    return [
+      displayMeetingLabel(meeting),
+      meeting.description ?? '',
+      displaySourceLabel(meeting.platform),
+      ...meeting.aliases,
+    ].some((value) => value.toLocaleLowerCase().includes(normalizedQuery));
+  });
+}
+
 function MeetingsViewNavigation({ tab }: { tab: MeetingTab }) {
   return (
-    <nav aria-label="Meeting views" className="flex gap-1 border-b border-border">
+    <nav
+      data-slot="collection-tabs"
+      aria-label="Meeting views"
+      className="flex gap-1 border-b border-border"
+    >
       <Link
         href="/app/meetings"
         aria-current={tab === 'captures' ? 'page' : undefined}
@@ -256,15 +246,19 @@ function MeetingSearchControls({
   clearHref,
   filter,
   hasActiveFilters,
+  hasItems,
   query,
   tab,
 }: {
   clearHref: string;
   filter: CaptureFilter;
   hasActiveFilters: boolean;
+  hasItems: boolean;
   query: string;
   tab: MeetingTab;
 }) {
+  if (!hasItems && !hasActiveFilters) return null;
+
   return (
     <form action="/app/meetings" role="search">
       <input name="tab" type="hidden" value={tab === 'saved' ? 'saved' : ''} />
@@ -352,7 +346,12 @@ function SavedMeetingsSection({
 }) {
   return (
     <section aria-labelledby="saved-meetings-heading" className="space-y-3">
-      <SectionHeading id="saved-meetings-heading">Saved meetings</SectionHeading>
+      <SectionHeading
+        id="saved-meetings-heading"
+        className={totalCount === 0 ? 'sr-only' : undefined}
+      >
+        Saved meetings
+      </SectionHeading>
       {hasSearch ? (
         <p aria-live="polite" className="text-xs tabular-nums text-fg-muted">
           {formatCollectionCount({
@@ -371,8 +370,8 @@ function SavedMeetingsSection({
               ? 'Try a different search or clear it to see every saved meeting.'
               : 'Save a meeting link to keep its details, permissions, and recurring schedule together.'
           }
-          href={hasSearch ? clearHref : '#save-meeting'}
-          action={hasSearch ? 'Clear filters' : 'Save a meeting'}
+          href={hasSearch ? clearHref : undefined}
+          action={hasSearch ? 'Clear filters' : undefined}
         />
       ) : (
         <ul aria-label="Saved meetings">
@@ -455,7 +454,12 @@ function MeetingCapturesSection({
 }) {
   return (
     <section aria-labelledby="meeting-captures-heading" className="space-y-3">
-      <SectionHeading id="meeting-captures-heading">Recent captures</SectionHeading>
+      <SectionHeading
+        id="meeting-captures-heading"
+        className={meetings.length === 0 ? 'sr-only' : undefined}
+      >
+        Recent captures
+      </SectionHeading>
       <MeetingCapturesList
         clearHref={clearHref}
         filter={filter}
@@ -463,7 +467,6 @@ function MeetingCapturesSection({
         initialMeetings={meetings}
         nextCursor={nextCursor}
         query={query}
-        tab="captures"
       />
     </section>
   );

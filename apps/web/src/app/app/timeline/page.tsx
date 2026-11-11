@@ -14,6 +14,7 @@ import { FilterMultiSelect } from '@/components/filter-multi-select';
 import { TimelineFeed } from '@/components/timeline-feed';
 import { TimelineSearchField } from '@/components/timeline-search-field';
 import { TimelineSourceFilterControls } from '@/components/timeline-source-filter-controls';
+import { TimelineToolbarFrame } from '@/components/timeline-toolbar-frame';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
@@ -148,7 +149,7 @@ export default async function TimelinePage({ searchParams }: Props) {
     dateWindow,
   } = await loadTimelinePage({ searchParams });
   return (
-    <div data-app-layout="flush-top" className="relative">
+    <div data-app-width="collection" data-app-layout="flush-top" className="relative">
       <h1 className="sr-only">Timeline</h1>
       <TimelineBrowserSection
         sp={sp}
@@ -251,7 +252,7 @@ function TimelineBrowserSection({
 }) {
   return (
     <section>
-      <div className="sticky top-0 z-20 -mx-4 bg-bg/95 px-4 backdrop-blur md:-mx-8 md:px-8">
+      <TimelineToolbarFrame>
         <TimelineFilterPanel
           members={members}
           userMap={userMap}
@@ -271,7 +272,7 @@ function TimelineBrowserSection({
           impactFilters={impactFilters}
           hasOriginFilter={Boolean(originFilterValue)}
         />
-      </div>
+      </TimelineToolbarFrame>
       <TimelineFeed
         initialPage={{
           version: 'timeline_moments_page.v1',

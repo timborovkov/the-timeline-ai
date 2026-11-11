@@ -309,7 +309,7 @@ export function IngestWebhooksUi({ webhooks }: { webhooks: IngestWebhookRow[] })
       </div>
 
       {minted ? (
-        <div className="space-y-3 border-y border-border py-4">
+        <div className="space-y-3 py-4">
           <div>
             <div className="text-sm font-medium">Copy the new URL for {minted.webhookName}</div>
             <p className="text-sm text-fg-muted">This is the only time the secret URL is shown.</p>
@@ -352,7 +352,7 @@ export function IngestWebhooksUi({ webhooks }: { webhooks: IngestWebhookRow[] })
           body="Create a webhook to accept signed events from tools that aren't connected as a native source."
         />
       ) : (
-        <ul className="divide-y divide-border border-y border-border">
+        <ul className="divide-y divide-border">
           {webhooks.map((webhook) => (
             <IngestWebhookListItem
               key={webhook.id}
@@ -388,7 +388,7 @@ function IngestWebhookCreateForm({
   onCreate: () => void;
 }) {
   return (
-    <div className="space-y-4 border-y border-border py-4">
+    <div className="space-y-4 py-4">
       <div className="space-y-1">
         <Label htmlFor="ingest-webhook-name">Name</Label>
         <Input

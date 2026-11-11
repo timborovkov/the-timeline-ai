@@ -111,7 +111,7 @@ export function IntegrationsPageView({
 
 function IntegrationPageActions({ isAdmin }: { isAdmin: boolean }) {
   return (
-    <div className="flex flex-wrap items-center gap-x-1 gap-y-1 border-y border-border py-1.5">
+    <div className="flex flex-wrap items-center gap-x-1 gap-y-1 py-1.5">
       <ActionChip href="/app/me/connections" label="Provider accounts →" />
       <ActionChip href="/app/team/integrations/audit" label="Audit log →" />
       {isAdmin ? <ActionChip href="/app/team/jobs" label="Job recovery →" /> : null}
@@ -122,7 +122,7 @@ function IntegrationPageActions({ isAdmin }: { isAdmin: boolean }) {
 
 function McpEndpointSection() {
   return (
-    <section className="space-y-3 border-t border-border pt-4 first:border-t-0 first:pt-0">
+    <section className="space-y-3 pt-4 first:pt-0">
       <h3 className="text-sm font-medium text-fg">Expose Timeline as an MCP server</h3>
       <p className="max-w-2xl text-sm text-fg-muted">
         Let external agents read Timeline through member-approved OAuth or a manual team key. This
@@ -244,7 +244,7 @@ function NativeIntegrationsSection({
 
 function IngestWebhookSection({ webhooks }: { webhooks: IngestWebhookRow[] }) {
   return (
-    <section className="space-y-3 border-t border-border pt-4 first:border-t-0 first:pt-0">
+    <section className="space-y-3 pt-4 first:pt-0">
       <h3 className="text-sm font-medium text-fg">Ingest webhooks</h3>
       <IngestWebhooksUi webhooks={webhooks} />
     </section>
@@ -253,7 +253,7 @@ function IngestWebhookSection({ webhooks }: { webhooks: IngestWebhookRow[] }) {
 
 function McpCatalogSection({ catalog }: { catalog: IntegrationsPageModel['mcpCatalogAvailable'] }) {
   return (
-    <section className="space-y-3 border-t border-border pt-4 first:border-t-0 first:pt-0">
+    <section className="space-y-3 pt-4 first:pt-0">
       <h3 className="text-sm font-medium text-fg">MCP servers</h3>
       <p className="text-sm text-fg-muted">
         MCP servers give the agent live tool access. Successful tool results are captured as private
@@ -316,7 +316,7 @@ function AdvancedIntegrationSection({
           <AddCustomMcpServerLauncher ownership="team" />
         </div>
       ) : null}
-      <div className="space-y-5 border-y border-border py-5">
+      <div className="space-y-5 py-5">
         {isAdmin ? <McpEndpointSection /> : null}
         {mcpServerRows.length > 0 ? <McpServersUi hideAddButton servers={mcpServerRows} /> : null}
         {isAdmin ? <IngestWebhookSection webhooks={webhooks} /> : null}

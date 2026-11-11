@@ -7,6 +7,7 @@ export default function TimelineLoading() {
         Loading timeline
       </output>
       <div
+        data-app-width="collection"
         data-app-layout="flush-top"
         className="relative space-y-0"
         aria-busy="true"

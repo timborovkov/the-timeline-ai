@@ -12,7 +12,12 @@ export default function CalendarLoading() {
       <output className="sr-only" aria-live="polite">
         Loading calendar
       </output>
-      <div className="space-y-6" aria-busy="true" aria-label="Loading calendar">
+      <div
+        data-app-width="collection"
+        className="space-y-6"
+        aria-busy="true"
+        aria-label="Loading calendar"
+      >
         <h1 className="sr-only">Calendar</h1>
         <div aria-hidden="true" inert>
           <PageHeaderSkeleton variant="collection" />

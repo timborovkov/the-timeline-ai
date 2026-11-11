@@ -40,7 +40,7 @@ export function AllowedSendersEditor({ senders }: { senders: string[] }) {
       </Label>
       <input type="hidden" name="senders" value={items.join('\n')} />
       {items.length > 0 ? (
-        <ul className="border-y border-border">
+        <ul>
           {items.map((sender) => (
             <li key={sender}>
               <CollectionRow>

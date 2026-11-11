@@ -1200,7 +1200,7 @@ describe('ObjectDetailClient', () => {
     const nameInput = screen.getByLabelText('Name');
     await user.clear(nameInput);
     await user.type(nameInput, 'Send renewed proposal');
-    await user.tab();
+    await user.keyboard('{Enter}');
 
     await waitFor(() => {
       expect(objectActions.updateObjectAction).toHaveBeenCalledWith({
