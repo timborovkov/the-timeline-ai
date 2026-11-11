@@ -13,7 +13,7 @@ import {
   teams,
   type Db,
 } from '@timeline/db';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql, type SQLWrapper } from 'drizzle-orm';
 
 import {
   PlatformAccessError,
@@ -46,6 +46,42 @@ export function isInactiveWorkspaceSecurityState(state: string | null | undefine
   return state === 'suspended' || state === 'terminated';
 }
 
+/** Shared admission predicate for global scans; apply before pagination/limits. */
+export function activeWorkspaceCondition(teamId: SQLWrapper) {
+  return sql`exists (
+    select 1 from teams as active_workspace
+    where active_workspace.id = ${teamId}
+      and active_workspace.disabled_at is null
+      and active_workspace.deletion_started_at is null
+      and active_workspace.deleted_at is null
+      and not exists (
+        select 1 from team_billing_accounts as inactive_account
+        where inactive_account.team_id = active_workspace.id
+          and inactive_account.security_state in ('suspended', 'terminated')
+      )
+  )`;
+}
+
+export class InactiveWorkspaceError extends PlatformAccessError {}
+
+/** Recognize only lifecycle denials, including a Drizzle-wrapped trigger error. */
+export function isInactiveWorkspaceError(error: unknown): boolean {
+  const seen = new Set<unknown>();
+  while (error && typeof error === 'object' && !seen.has(error)) {
+    seen.add(error);
+    if (error instanceof InactiveWorkspaceError) return true;
+    if (
+      'code' in error &&
+      error.code === '42501' &&
+      'message' in error &&
+      error.message === 'Workspace is disabled'
+    )
+      return true;
+    error = 'cause' in error ? error.cause : undefined;
+  }
+  return false;
+}
+
 export async function assertActivePrincipal(db: Db, teamId: string, userId?: string) {
   const [team] = await db
     .select({
@@ -56,13 +92,13 @@ export async function assertActivePrincipal(db: Db, teamId: string, userId?: str
     .from(teams)
     .where(eq(teams.id, teamId));
   if (!team || team.disabledAt || team.deleting || team.deletedAt)
-    throw new PlatformAccessError('Workspace is suspended (disabled)');
+    throw new InactiveWorkspaceError('Workspace is suspended (disabled)');
   const [account] = await db
     .select({ state: teamBillingAccounts.securityState })
     .from(teamBillingAccounts)
     .where(eq(teamBillingAccounts.teamId, teamId));
   if (isInactiveWorkspaceSecurityState(account?.state))
-    throw new PlatformAccessError('Workspace is suspended');
+    throw new InactiveWorkspaceError('Workspace is suspended');
   if (userId) {
     const [user] = await db
       .select({ suspendedAt: users.suspendedAt })
@@ -249,6 +285,8 @@ export async function runGuardedJob<T>(
     scanId?: string;
     platformOperatorSessionId?: string;
   };
+  if (payload.teamId && /^[0-9a-f-]{36}$/i.test(payload.teamId))
+    await assertActivePrincipal(db, payload.teamId);
   // Recovery may reconstruct an extraction job without queue attribution. Resolve
   // its immutable upload event before choosing the effective execution identity.
   if (payload.documentVersionId && payload.teamId) {

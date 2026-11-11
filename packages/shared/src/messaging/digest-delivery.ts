@@ -10,7 +10,7 @@ import {
   telegramUserTeams,
   users,
 } from '@timeline/db';
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, eq, isNull, getTableColumns } from 'drizzle-orm';
 
 import { withChatDeliveryPrincipal } from '#src/conversation-surfaces/deferred-delivery.js';
 import { getEnv } from '#src/env.js';
@@ -26,6 +26,7 @@ import {
 import { formatDigestChatText } from '#src/messaging/digest-format.js';
 import { isDigestWindowExpired } from '#src/messaging/digest-window.js';
 import { generateDailyDigest, getDigestPreference } from '#src/messaging/digest.js';
+import { activeWorkspaceCondition } from '#src/platform-admin/runtime.js';
 import { sendTeamSlackDirectMessage, sendTeamSlackMessage } from '#src/slack/outbound.js';
 import { sendTelegramBotMessage } from '#src/telegram/api.js';
 
@@ -44,12 +45,17 @@ export async function sendDailyDigest(input: {
   now?: Date;
 }): Promise<SendMessageResult> {
   const rows = await input.db
-    .select()
+    .select({
+      ...getTableColumns(dailyDigests),
+      workspaceActive: activeWorkspaceCondition(dailyDigests.teamId),
+    })
     .from(dailyDigests)
     .where(eq(dailyDigests.id, input.digestId))
     .limit(1);
   const digest = rows[0];
   if (!digest) return { ok: false, error: 'Digest not found', retryable: false };
+  if (!digest.workspaceActive) return { ok: true, skipped: true, skippedStatus: 'skipped' };
+
   const recipientRows = await input.db
     .select({
       email: users.email,

@@ -1579,6 +1579,9 @@
   "apps/worker/src/transcription-eval/openrouter.test.ts": {
     "group": "unit"
   },
+  "apps/worker/src/platform-worker.test.ts": {
+    "group": "integration"
+  },
   "apps/worker/src/worker-lifecycle.test.ts": {
     "group": "unit"
   },

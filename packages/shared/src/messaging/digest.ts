@@ -34,6 +34,7 @@ import {
   isDigestWindowExpired,
 } from '#src/messaging/digest-window.js';
 import { displayObjectTitle, OBJECT_TYPES } from '#src/objects/types.js';
+import { activeWorkspaceCondition } from '#src/platform-admin/runtime.js';
 import { withTeam } from '#src/team-scope.js';
 import { buildTimelineMoments, type TimelineMoment } from '#src/timeline-moments/index.js';
 import {
@@ -813,6 +814,7 @@ export async function listDailyDigestRecipients(db: Db): Promise<DigestRecipient
     .innerJoin(users, eq(users.id, teamMembers.userId))
     .where(
       and(
+        activeWorkspaceCondition(teamMembers.teamId),
         isNull(teamMembers.removedAt),
         isNull(users.suspendedAt),
         notExists(
