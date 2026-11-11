@@ -233,42 +233,17 @@ export function WebsiteManager({
                   <WebsiteScanSummary run={website.latestRun} />
                 </div>
                 {website.blockedReason && <StatusBadge status="blocked" />}
-                <div className="flex gap-1">
-                  <Button
-                    variant="outline"
-                    disabled={busy || website.paused || hasActiveScan}
-                    title={
-                      hasActiveScan && !isScanning(website.latestRun)
-                        ? 'Another website scan is in progress'
-                        : undefined
-                    }
-                    onClick={(event) => {
-                      confirmationTrigger.current = event.currentTarget;
-                      setConfirmation({ websiteId: website.id, action: 'scan' });
-                    }}
-                  >
-                    <RefreshCw
-                      aria-hidden="true"
-                      className={
-                        isScanning(website.latestRun) ? 'motion-safe:animate-spin' : undefined
-                      }
-                    />
-                    {isScanning(website.latestRun)
-                      ? website.latestRun?.status === 'queued'
-                        ? 'Scan queued'
-                        : 'Scanning…'
-                      : 'Scan now'}
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    aria-expanded={selected === website.id}
-                    onClick={() => {
-                      setSelected(selected === website.id ? null : website.id);
-                    }}
-                  >
-                    History
-                  </Button>
-                </div>
+                <WebsiteScanActions
+                  website={website}
+                  busy={busy}
+                  hasActiveScan={hasActiveScan}
+                  historyOpen={selected === website.id}
+                  scan={(trigger) => {
+                    confirmationTrigger.current = trigger;
+                    setConfirmation({ websiteId: website.id, action: 'scan' });
+                  }}
+                  toggleHistory={() => setSelected(selected === website.id ? null : website.id)}
+                />
               </div>
               {website.blockedReason && (
                 <p className="mt-3 text-sm text-destructive">
@@ -396,6 +371,47 @@ export function WebsiteManager({
           />
         </DialogContent>
       </Dialog>
+    </div>
+  );
+}
+
+function WebsiteScanActions({
+  website,
+  busy,
+  hasActiveScan,
+  historyOpen,
+  scan,
+  toggleHistory,
+}: {
+  website: Website;
+  busy: boolean;
+  hasActiveScan: boolean;
+  historyOpen: boolean;
+  scan: (trigger: HTMLButtonElement) => void;
+  toggleHistory: () => void;
+}) {
+  const scanning = isScanning(website.latestRun);
+  return (
+    <div className="flex gap-1">
+      <Button
+        variant="outline"
+        disabled={busy || website.paused || hasActiveScan}
+        title={hasActiveScan && !scanning ? 'Another website scan is in progress' : undefined}
+        onClick={(event) => scan(event.currentTarget)}
+      >
+        <RefreshCw
+          aria-hidden="true"
+          className={scanning ? 'motion-safe:animate-spin' : undefined}
+        />
+        {scanning
+          ? website.latestRun?.status === 'queued'
+            ? 'Scan queued'
+            : 'Scanning…'
+          : 'Scan now'}
+      </Button>
+      <Button variant="ghost" aria-expanded={historyOpen} onClick={toggleHistory}>
+        History
+      </Button>
     </div>
   );
 }
