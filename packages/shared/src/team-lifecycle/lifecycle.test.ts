@@ -58,6 +58,43 @@ afterEach(async () => {
 });
 
 describe('team lifecycle', () => {
+  it('erases merged legacy entity proposals under the complete provenance migrations', async () => {
+    const event = await withTeam(db, TEAM, OWNER).timeline.createEvent({
+      authorUserId: OWNER,
+      source: 'web',
+      contentText: 'Legacy entity fixture',
+      visibility: 'team',
+    });
+    const parentId = '10000000-0000-4000-8000-000000000011';
+    const childId = '10000000-0000-4000-8000-000000000012';
+    await pg.exec(`ALTER TABLE entities DISABLE TRIGGER entities_legacy_provenance_write_guard;
+      INSERT INTO entities (id,team_id,type,canonical_name,source_event_id,agent_suggested) VALUES
+        ('${parentId}','${TEAM}','company','Legacy proposal','${event.id}',true);
+      INSERT INTO entities (id,team_id,type,canonical_name,source_event_id,agent_suggested,merged_into_id) VALUES
+        ('${childId}','${TEAM}','company','Legacy proposal','${event.id}',true,'${parentId}');
+      ALTER TABLE entities ENABLE TRIGGER entities_legacy_provenance_write_guard;`);
+    const constraints = await pg.query(
+      `SELECT conname FROM pg_constraint WHERE conname IN ('entities_legacy_source_event_id_null_chk', 'entities_legacy_agent_suggested_false_chk')`,
+    );
+    expect(constraints.rows).toHaveLength(0);
+    await expect(
+      db.insert(schema.entities).values({
+        teamId: OTHER,
+        type: 'company',
+        canonicalName: 'Forbidden new proposal',
+        agentSuggested: true,
+      }),
+    ).rejects.toThrow();
+    await beginTeamDeletion(db, actor, {
+      teamId: TEAM,
+      confirmation: 'First',
+      reason: 'Legacy entity fixture',
+    });
+    let done = false;
+    for (let tick = 0; tick < 8 && !done; tick++) done = await purgeTeamRows(db, TEAM);
+    expect(done).toBe(true);
+    await verifyTeamRows(db, TEAM);
+  });
   it('erases legacy board and object history without revalidating old provenance', async () => {
     const scope = withTeam(db, TEAM, OWNER);
     const event = await scope.timeline.createEvent({
