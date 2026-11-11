@@ -13,7 +13,6 @@ import { PlatformAccessError } from '#src/platform-admin/index.js';
 import { runGuardedJob } from '#src/platform-admin/runtime.js';
 import { getChatDeliveryQueue, enqueueWebsiteScanJob } from '#src/queue/queues.js';
 import { withTeam } from '#src/team-scope.js';
-
 import { authorizeWebsitePrincipal } from '#src/websites/authorization.js';
 import { failWebsiteRun } from '#src/websites/recovery.js';
 import { startWebsiteScan } from '#src/websites/runtime.js';
