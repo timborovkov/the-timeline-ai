@@ -24,6 +24,8 @@ await vi.mock(
   () => ({
     signInAction: vi.fn(),
     signUpAction: vi.fn(),
+    signInWithGoogleAction: vi.fn(),
+    signInWithGitHubAction: vi.fn(),
   }),
   () => import('@/app/actions/auth'),
 );
@@ -40,6 +42,7 @@ const { cleanup, render, screen } = await import('@testing-library/react');
 const { PRIVACY_VERSION, TERMS_VERSION } = await import('@/lib/legal-versions');
 
 const { SignInForm, SignUpForm } = await import('./auth-form.js');
+const { OAuthSignInButtons } = await import('./oauth-buttons');
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -49,10 +52,55 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe('auth forms', () => {
+  it('marks only the remembered OAuth provider and preserves invite destinations', () => {
+    for (const method of ['google', 'github'] as const) {
+      render(
+        <OAuthSignInButtons
+          google
+          github
+          lastLoginMethod={method}
+          callbackUrl="/app"
+          inviteToken="invite"
+        />,
+      );
+      const badge = screen.getByText('Last used');
+      expect(badge.closest('button')?.textContent).toContain(
+        method === 'google' ? 'Google' : 'GitHub',
+      );
+      expect(document.querySelector<HTMLInputElement>('input[name="callbackUrl"]')?.value).toBe(
+        '/app',
+      );
+      expect(document.querySelector<HTMLInputElement>('input[name="inviteToken"]')?.value).toBe(
+        'invite',
+      );
+      cleanup();
+    }
+  });
+
+  it('does not mark an unavailable or unknown OAuth method', () => {
+    render(<OAuthSignInButtons google={false} github lastLoginMethod="google" />);
+    expect(screen.queryByText('Last used')).toBeNull();
+    cleanup();
+    render(<OAuthSignInButtons google github />);
+    expect(screen.queryByText('Last used')).toBeNull();
+  });
+
+  it('shows the remembered email method on both forms only when selected', () => {
+    render(<SignInForm lastUsed />);
+    expect(screen.getByText('Last used')).toBeTruthy();
+    expect(screen.getByLabelText('Email')).toHaveProperty('name', 'email');
+    cleanup();
+    render(<SignUpForm requiresTurnstile={false} lastUsed />);
+    expect(screen.getByText('Last used')).toBeTruthy();
+    cleanup();
+    render(<SignInForm />);
+    expect(screen.queryByText('Last used')).toBeNull();
+  });
+
   it('withholds account creation while legal publication is blocked', () => {
     render(<SignUpForm requiresTurnstile={false} legalPublicationReady={false} />);
 
-    expect(screen.getByRole('status').textContent).toContain('not accepting new accounts');
+    expect(screen.getByRole('status').textContent).toContain('New account creation is paused');
     expect(screen.queryByRole('button', { name: 'Create account' })).toBeNull();
   });
 

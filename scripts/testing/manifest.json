@@ -1290,6 +1290,9 @@
   "apps/web/src/lib/kanban-collision.test.ts": {
     "group": "unit"
   },
+  "apps/web/src/lib/last-login-method.test.ts": {
+    "group": "unit"
+  },
   "apps/web/src/lib/legal-publication.test.ts": {
     "group": "unit"
   },
