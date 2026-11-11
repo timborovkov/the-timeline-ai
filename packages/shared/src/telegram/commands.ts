@@ -50,6 +50,11 @@ export const TELEGRAM_DM_COMMANDS: readonly TelegramBotCommand[] = [
     helpLine: '/new             start a new agent conversation',
   },
   {
+    command: 'crawl',
+    description: 'Scan a public website',
+    helpLine: '/crawl <url> scan up to five public pages (confirmation required)',
+  },
+  {
     command: 'join',
     description: 'Capture a meeting now',
     helpLine: '/join <alias-or-url> [title]  capture a meeting now',
@@ -91,6 +96,11 @@ export const TELEGRAM_GROUP_COMMANDS: readonly TelegramBotCommand[] = [
     command: 'ask',
     description: 'Ask the timeline',
     helpLine: '/ask <question>  ask the timeline',
+  },
+  {
+    command: 'crawl',
+    description: 'Scan a public website',
+    helpLine: '/crawl <url> scan up to five public pages (confirmation required)',
   },
   {
     command: 'join',

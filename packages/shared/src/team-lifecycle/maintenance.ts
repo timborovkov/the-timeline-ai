@@ -13,6 +13,7 @@ import {
   teams,
   users,
   meetings,
+  websiteRuns,
   teamBillingAccounts,
   type Db,
 } from '@timeline/db';
@@ -38,6 +39,8 @@ import { getMeetingBotProvider } from '#src/meeting-bots/index.js';
 import { sendMessage } from '#src/messaging/delivery.js';
 import { RETAINED_USAGE_METADATA_FIELDS } from '#src/team-lifecycle/inventory.js';
 import { withTeam } from '#src/team-scope.js';
+
+import { failWebsiteRun } from '#src/websites/recovery.js';
 
 /** Called inside the dedicated system lifecycle scope, never from an impersonated request. */
 export function createLifecycleMaintenance(db: Db, teamId: string, authorize: () => Promise<void>) {
@@ -249,6 +252,28 @@ export function createLifecycleMaintenance(db: Db, teamId: string, authorize: ()
           )})), '{}'::jsonb)`,
         })
         .where(eq(billingUsageLedger.teamId, teamId));
+    },
+    async stopWebsiteRuns() {
+      await authorize();
+      const runs = await db
+        .select()
+        .from(websiteRuns)
+        .where(
+          and(
+            eq(websiteRuns.teamId, teamId),
+            sql`(${websiteRuns.finishedAt} IS NULL OR (${websiteRuns.providerStartedAt} IS NOT NULL AND ${websiteRuns.providerFinishedAt} IS NULL))`,
+          ),
+        )
+        .limit(50);
+      for (const run of runs) {
+        // This maintenance transaction permits terminal updates, never new captures.
+        // Recovery settles only persisted pages and retains unconfirmed provider occupancy.
+        await db.transaction(async (tx) => {
+          await tx.execute(sql`SELECT set_config('timeline.lifecycle_cleanup', 'on', true)`);
+          await failWebsiteRun(tx as unknown as Db, teamId, run.id, 'team_disabled');
+        });
+      }
+      return runs.length === 0;
     },
     async stopBots() {
       await authorize();

@@ -11,6 +11,7 @@ import {
   type BillingMeterId,
 } from '@timeline/shared/billing/catalog';
 import { cheapestPlanPreview, type SelfServePaidPlanId } from '@timeline/shared/billing/preview';
+import { estimateWebsiteUsage } from '@timeline/shared/websites/usage';
 
 export const CALCULATOR_PLANS = ['payg', 'team', 'business'] as const;
 /** Exact fields may exceed slider ranges; this is the parse ceiling, not a billed cap. */
@@ -74,7 +75,7 @@ export const USAGE_FIELDS = [
     max: 1_000_000,
     step: 1_000,
     decimals: 0,
-    hint: 'Accepted unique source items; associated AI is charged separately.',
+    hint: 'Ordinary accepted sources use one unit each. Exclude website pages here; the website estimate adds 20 units per crawled page. AI is separate.',
   },
 ] as const;
 export type UsageKey = (typeof USAGE_FIELDS)[number]['key'];
@@ -113,7 +114,17 @@ export function parseUsage(draft: UsageDraft) {
   return { values: Object.keys(errors).length ? null : values, errors };
 }
 
-export function estimatePricing(usage: UsageValues) {
+export function estimatePricing(
+  usage: UsageValues,
+  websiteInput: Parameters<typeof estimateWebsiteUsage>[0] = {
+    websites: 0,
+    pages: 5,
+    frequency: 'manual',
+    manualScans: 1,
+  },
+) {
+  const websiteUsage = estimateWebsiteUsage(websiteInput);
+  const totalSources = usage.sources + websiteUsage.sourceUnits;
   const rows: {
     id: BillingMeterId;
     label: string;
@@ -152,9 +163,9 @@ export function estimatePricing(usage: UsageValues) {
     {
       id: 'accepted_sources',
       label: 'Accepted sources',
-      nativeUnits: usage.sources,
-      grossCents: acceptedSourcesChargeCents(usage.sources),
-      allowance: `${FREE_ALLOWANCES.acceptedSources.toLocaleString('en-IE')} items included`,
+      nativeUnits: totalSources,
+      grossCents: acceptedSourcesChargeCents(totalSources),
+      allowance: `${FREE_ALLOWANCES.acceptedSources.toLocaleString('en-IE')} source units included`,
     },
   ];
   const meters = Object.fromEntries(
@@ -181,7 +192,7 @@ export function estimatePricing(usage: UsageValues) {
         label: 'meeting minutes',
       },
       { value: usage.storage, limit: capacity.storageGb, label: 'GB storage' },
-      { value: usage.sources, limit: capacity.acceptedSourcesPerMonth, label: 'accepted sources' },
+      { value: totalSources, limit: capacity.acceptedSourcesPerMonth, label: 'accepted sources' },
     ];
     capacityWarnings[id] = checks
       .filter((check) => check.limit !== null && check.value > check.limit)
@@ -194,5 +205,5 @@ export function estimatePricing(usage: UsageValues) {
     )
       cheapest = id;
   }
-  return { bills: preview.bills, breakdown, capacityWarnings, cheapest };
+  return { bills: preview.bills, breakdown, capacityWarnings, cheapest, websiteUsage };
 }

@@ -389,6 +389,8 @@ function fifteenMinuteBucket(input: Date | string, timezone?: string): string {
 
 export function timelineGroupKey(event: TimelineEvent, timezone?: string): string {
   const meta = metaObject(event.sourceMetadata);
+  if (event.source === 'web' && stringMeta(meta, 'websiteScanId'))
+    return `website:${stringMeta(meta, 'websiteScanId')}`;
   if (event.source === 'meeting') {
     return `meeting:${stringMeta(meta, 'meeting_id') ?? event.id}`;
   }
@@ -460,6 +462,10 @@ export function timelineMomentLookupPlan(momentId: string): TimelineMomentLookup
   const key = momentId.slice('moment:'.length);
   const parts = key.split(':');
   const family = parts[0];
+  if (family === 'website') {
+    const scanId = parts.slice(1).join(':');
+    return scanId ? metadataLookupPlan('web', [[['websiteScanId'], scanId]], 5) : null;
+  }
   if (family === 'meeting') {
     const meetingId = parts.slice(1).join(':');
     return meetingId ? metadataLookupPlan('meeting', [[['meeting_id'], meetingId]], 100) : null;

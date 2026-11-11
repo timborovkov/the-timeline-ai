@@ -2,6 +2,7 @@ import { validateMcpUrl } from '#src/mcp/auth.js';
 import {
   crawlPublicWebsiteWithFirecrawl,
   type FirecrawlFetch,
+  type FirecrawlPartialFailureReason,
 } from '#src/onboarding/firecrawl-website-scan.js';
 import {
   parsePublicWebsiteUrl,
@@ -14,8 +15,14 @@ export interface WebsiteScanPage {
   text: string;
 }
 export type WebsiteScanResult =
-  | { ok: true; host: string; pages: WebsiteScanPage[] }
-  | { ok: false; reason: FirstRunScanFailureReason };
+  | {
+      ok: true;
+      host: string;
+      pages: WebsiteScanPage[];
+      providerCredits?: number;
+      partialFailureReason?: FirecrawlPartialFailureReason;
+    }
+  | { ok: false; reason: FirstRunScanFailureReason; providerCredits?: number };
 export interface WebsiteScanDeps {
   crawlId?: string;
   onCrawlStarted?: (crawlId: string) => Promise<void>;
@@ -56,10 +63,29 @@ export async function scanPublicWebsite(
     ...(deps.sleep ? { sleep: deps.sleep } : {}),
   });
   if (firecrawl.kind === 'pages') {
-    return { ok: true, host: origin.hostname, pages: firecrawl.pages };
+    return {
+      ok: true,
+      host: origin.hostname,
+      pages: firecrawl.pages,
+      ...(firecrawl.partialFailureReason
+        ? { partialFailureReason: firecrawl.partialFailureReason }
+        : {}),
+      ...(firecrawl.providerCredits === undefined
+        ? {}
+        : { providerCredits: firecrawl.providerCredits }),
+    };
   }
   if (firecrawl.kind === 'failure') {
-    return { ok: false, reason: firecrawl.reason };
+    return {
+      ok: false,
+      reason: firecrawl.reason,
+      ...(firecrawl.providerCredits === undefined
+        ? {}
+        : { providerCredits: firecrawl.providerCredits }),
+    };
   }
-  throw new Error('Firecrawl is temporarily unavailable. Please retry the website scan.');
+  const error = new Error('Firecrawl is temporarily unavailable. Please retry the website scan.');
+  if (firecrawl.retryAfterMs) Object.assign(error, { retryAfterMs: firecrawl.retryAfterMs });
+  if (firecrawl.providerRejected) Object.assign(error, { providerRejected: true });
+  throw error;
 }

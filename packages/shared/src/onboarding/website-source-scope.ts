@@ -7,6 +7,7 @@ import {
   documentVersions,
   documentChunks,
   rawEvents,
+  websitePages,
 } from '@timeline/db';
 import { and, eq, sql } from 'drizzle-orm';
 
@@ -116,7 +117,8 @@ export function createWebsiteSourceHandlers({
       scanId: string;
       eventId: string;
       page: WebsiteScanPage;
-    }): Promise<{ documentId: string; chunkIds: string[] }> {
+      websiteId?: string;
+    }): Promise<{ documentId: string; versionId: string; chunkIds: string[] }> {
       await ensureMember();
       // The source event and immutable crawl cache must both belong to this team.
       const [source] = await db
@@ -153,36 +155,78 @@ export function createWebsiteSourceHandlers({
           .where(
             and(
               eq(documents.teamId, teamId),
-              eq(documents.sourceRawEventId, input.eventId),
-              eq(documentVersions.version, 1),
+
               eq(documentVersions.sourceEventId, input.eventId),
             ),
           )
           .limit(1);
         if (existing) return existing;
+        const [mappedPage] = input.websiteId
+          ? await tx
+              .select()
+              .from(websitePages)
+              .where(
+                and(
+                  eq(websitePages.teamId, teamId),
+                  eq(websitePages.websiteId, input.websiteId),
+                  eq(websitePages.url, page.url),
+                ),
+              )
+          : [];
+        const [mappedDocument] = mappedPage?.documentId
+          ? await tx
+              .select()
+              .from(documents)
+              .where(
+                and(
+                  eq(documents.teamId, teamId),
+                  eq(documents.id, mappedPage.documentId),
+                  eq(documents.fileKind, 'captured'),
+                  eq(documents.visibility, 'team'),
+                  sql`${documents.deletedAt} IS NULL`,
+                ),
+              )
+              .for('update')
+          : [];
+        const knownPage = mappedDocument ? mappedPage : undefined;
         await assertTeamWriteCapacity({
           db: tx as unknown as Db,
           teamId,
-          additionalDocuments: 1,
+          additionalDocuments: knownPage?.documentId ? 0 : 1,
           additionalBytes: body.length,
         });
-        const [doc] = await tx
-          .insert(documents)
-          .values({
-            teamId,
-            fileKind: 'captured',
-            name: `${page.title}.md`,
-            ownerUserId: userId,
-            visibility: 'team',
-            sourceRawEventId: input.eventId,
-            metadata: { source: 'web', pageUrl: page.url, websiteScanId: input.scanId },
-          })
-          .returning();
+        const [doc] = knownPage?.documentId
+          ? await tx
+              .select()
+              .from(documents)
+              .where(and(eq(documents.teamId, teamId), eq(documents.id, knownPage.documentId)))
+          : await tx
+              .insert(documents)
+              .values({
+                teamId,
+                fileKind: 'captured',
+                name: `${page.title}.md`,
+                ownerUserId: userId === '00000000-0000-0000-0000-000000000000' ? null : userId,
+                visibility: 'team',
+                sourceRawEventId: input.eventId,
+                metadata: {
+                  ...(input.websiteId ? { websiteId: input.websiteId } : {}),
+                  source: 'web',
+                  pageUrl: page.url,
+                  websiteScanId: input.scanId,
+                },
+              })
+              .returning();
         if (!doc) throw new Error('Failed to save website document');
+        const [latest] = await tx
+          .select({ value: sql<number>`COALESCE(max(${documentVersions.version}), 0)::int` })
+          .from(documentVersions)
+          .where(and(eq(documentVersions.teamId, teamId), eq(documentVersions.documentId, doc.id)));
+        const versionNumber = (latest?.value ?? 0) + 1;
         const objectKey = buildDocumentObjectKey({
           teamId,
           documentId: doc.id,
-          version: 1,
+          version: versionNumber,
           filename: 'page.md',
         });
         const [version] = await tx
@@ -190,17 +234,25 @@ export function createWebsiteSourceHandlers({
           .values({
             teamId,
             documentId: doc.id,
-            version: 1,
+            version: versionNumber,
             objectKey,
             byteSize: body.length,
             contentType: 'text/markdown',
             checksumSha256: createHash('sha256').update(body).digest('hex'),
-            uploadedByUserId: userId,
+            uploadedByUserId: userId === '00000000-0000-0000-0000-000000000000' ? null : userId,
             sourceEventId: input.eventId,
             processingStatus: 'pending',
           })
           .returning();
         if (!version) throw new Error('Failed to save website version');
+        if (input.websiteId)
+          await tx
+            .insert(websitePages)
+            .values({ teamId, websiteId: input.websiteId, url: page.url, documentId: doc.id })
+            .onConflictDoUpdate({
+              target: [websitePages.teamId, websitePages.websiteId, websitePages.url],
+              set: { documentId: doc.id },
+            });
         return { documentId: doc.id, versionId: version.id, objectKey };
       });
       // Retried writes contain the same cached bytes at the same versioned key.
@@ -242,16 +294,17 @@ export function createWebsiteSourceHandlers({
               eq(documentVersions.processingStatus, 'pending'),
             ),
           );
-        await tx
-          .update(documents)
-          .set({ currentVersionId: stored.versionId })
-          .where(
-            and(
-              eq(documents.teamId, teamId),
-              eq(documents.id, stored.documentId),
-              sql`${documents.currentVersionId} IS NULL`,
-            ),
-          );
+        if (!input.websiteId)
+          await tx
+            .update(documents)
+            .set({ currentVersionId: stored.versionId })
+            .where(
+              and(
+                eq(documents.teamId, teamId),
+                eq(documents.id, stored.documentId),
+                sql`${documents.currentVersionId} IS NULL`,
+              ),
+            );
       });
       const rows = await db
         .select({ id: documentChunks.id })
@@ -262,7 +315,11 @@ export function createWebsiteSourceHandlers({
             eq(documentChunks.documentVersionId, stored.versionId),
           ),
         );
-      return { documentId: stored.documentId, chunkIds: rows.map((r) => r.id) };
+      return {
+        documentId: stored.documentId,
+        versionId: stored.versionId,
+        chunkIds: rows.map((r) => r.id),
+      };
     },
   };
 }

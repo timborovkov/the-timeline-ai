@@ -5,6 +5,7 @@ import {
   auditLog,
   documentVersions,
   rawEvents,
+  websiteRuns,
   platformAdminAudit,
   platformImpersonationSessions,
   teamBillingAccounts,
@@ -245,6 +246,7 @@ export async function runGuardedJob<T>(
     userId?: string;
     requestedByUserId?: string;
     documentVersionId?: string;
+    scanId?: string;
     platformOperatorSessionId?: string;
   };
   // Recovery may reconstruct an extraction job without queue attribution. Resolve
@@ -268,6 +270,33 @@ export async function runGuardedJob<T>(
       payload.platformOperatorSessionId = durableSession;
     }
     if (!payload.userId && version?.userId) payload.userId = version.userId;
+  }
+  // Website admission outlives queue submission. Recover the original session even
+  // when the durable outbox or an idempotent client reconstructs an untagged job.
+  if (payload.scanId && payload.teamId) {
+    const [run] = await db
+      .select({
+        sessionId: websiteRuns.platformOperatorSessionId,
+        requestedBy: websiteRuns.requestedBy,
+      })
+      .from(websiteRuns)
+      .where(and(eq(websiteRuns.teamId, payload.teamId), eq(websiteRuns.id, payload.scanId)));
+    if (run) {
+      if (
+        (payload.userId && payload.userId !== run.requestedBy) ||
+        (payload.requestedByUserId && payload.requestedByUserId !== run.requestedBy)
+      )
+        throw new PlatformAccessError('Website job attribution does not match its admission');
+      if (run.sessionId) {
+        if (
+          payload.platformOperatorSessionId &&
+          payload.platformOperatorSessionId !== run.sessionId
+        )
+          throw new PlatformAccessError('Website job attribution does not match its admission');
+        payload.platformOperatorSessionId = run.sessionId;
+      }
+      payload.userId = run.requestedBy;
+    }
   }
   const initiatingUser = payload.userId ?? payload.requestedByUserId;
   if (payload.teamId && /^[0-9a-f-]{36}$/i.test(payload.teamId))

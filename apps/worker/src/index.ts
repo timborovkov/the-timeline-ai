@@ -38,7 +38,7 @@ import {
 import { startTimelineMomentPresentationWorker } from '#src/workers/timelineMomentPresentation.js';
 import { startTranscribeWorker } from '#src/workers/transcribe.js';
 import { startWebhookDeliveryWorker } from '#src/workers/webhookDelivery.js';
-import { startWebsiteScanWorker } from '#src/workers/websiteScan.js';
+import { startWebsiteScanWorker, startWebsiteSchedulerWorker } from '#src/workers/websiteScan.js';
 
 const log = childLogger('worker');
 
@@ -85,6 +85,12 @@ async function main(): Promise<void> {
       start: () => startTeamLifecycleWorker({ db }),
       closeQueue: closeTeamLifecycleQueue,
       schedule: scheduleTeamLifecycle,
+    },
+    {
+      name: queue.QUEUE_NAMES.websiteScheduler,
+      start: () => startWebsiteSchedulerWorker({ db }),
+      closeQueue: queue.closeWebsiteSchedulerQueue,
+      schedule: queue.scheduleWebsiteScheduler,
     },
     {
       name: queue.QUEUE_NAMES.emailInbound,

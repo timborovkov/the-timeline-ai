@@ -408,6 +408,17 @@ const baseSchema = z.object({
   SUPPORT_EMAIL: z.preprocess(emptyStringAsUnset, z.email().optional()),
   INBOUND_EMAIL_DOMAIN: z.string().optional(),
   /** Required by web/worker website scanning; validated before enqueue/provider work. */
+  WEBSITE_MAX_SOURCES: z.coerce.number().int().min(1).default(100),
+  WEBSITE_MAX_DAILY_PAGES: z.coerce.number().int().min(5).default(10_000),
+  WEBSITE_COOLDOWN_MS: z.coerce.number().int().min(1).default(3_600_000),
+  WEBSITE_GLOBAL_CONCURRENCY: z.coerce.number().int().min(1).default(2),
+  WEBSITE_HOST_DELAY_MS: z.coerce.number().int().min(1).default(10_000),
+  FIRECRAWL_COST_EUR_PER_CREDIT: z.preprocess(
+    emptyStringAsUnset,
+    z.coerce.number().nonnegative().optional(),
+  ),
+  WEBSITE_CRAWLS_DISABLED: z.preprocess(booleanString, z.boolean().default(false)),
+  WEBSITE_SCHEDULES_ENABLED: z.preprocess(booleanString, z.boolean().default(false)),
   FIRECRAWL_API_KEY: z.preprocess(emptyStringAsUnset, z.string().trim().min(1).optional()),
   // Cloudflare Turnstile (Phase 13 abuse controls). Only public/anonymous
   // forms use it: email/password registration and public support/contact.

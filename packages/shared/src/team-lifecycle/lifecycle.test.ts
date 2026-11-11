@@ -57,6 +57,137 @@ afterEach(async () => {
 });
 
 describe('team lifecycle', () => {
+  it('retries unconfirmed website cancellation and settles captured pages once while disabled', async () => {
+    const previousKey = process.env.FIRECRAWL_API_KEY;
+    process.env.FIRECRAWL_API_KEY = 'synthetic-test-key';
+    resetEnvForTests();
+    const request = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response('{}', { status: 503 }));
+    try {
+      const [source] = await db
+        .insert(schema.websites)
+        .values({
+          teamId: TEAM,
+          url: 'https://example.test',
+          hostname: 'example.test',
+          subject: 'own_team',
+          createdBy: OWNER,
+        })
+        .returning();
+      if (!source) throw new Error('Website fixture missing');
+      const [run] = await db
+        .insert(schema.websiteRuns)
+        .values({
+          teamId: TEAM,
+          websiteId: source.id,
+          requestedBy: OWNER,
+          trigger: 'manual',
+          idempotencyKey: 'cancel-fixture',
+          providerStartedAt: new Date(),
+        })
+        .returning();
+      if (!run) throw new Error('Website run fixture missing');
+      await db.insert(schema.websiteSources).values({
+        id: run.id,
+        teamId: TEAM,
+        url: 'https://example.test',
+        websiteSubject: 'own_team',
+        crawlId: 'synthetic-crawl',
+        pages: [
+          { url: 'https://example.test', title: 'Fixture', text: 'Captured before disabling' },
+        ],
+      });
+      await setPlatformSuspension(db, actor, 'team', TEAM, true, 'Cancel provider fixture');
+      const maintenance = withTeam(db, TEAM, BILLING_SYSTEM_USER_ID, {
+        skipMembershipCheck: true,
+      }).lifecycle;
+      expect(await maintenance.stopWebsiteRuns()).toBe(false);
+      expect((await db.select().from(schema.websiteRuns))[0]?.providerFinishedAt).toBeNull();
+      request.mockResolvedValue(new Response('{"success":true}', { status: 200 }));
+      expect(await maintenance.stopWebsiteRuns()).toBe(false);
+      expect(await maintenance.stopWebsiteRuns()).toBe(true);
+      const ledger = await db.select().from(schema.billingUsageLedger);
+      expect(ledger.filter((row) => row.operationId === `website-scan:${run.id}`)).toHaveLength(1);
+      expect((await db.select().from(schema.websiteRuns))[0]?.sourceUnits).toBe(20);
+    } finally {
+      request.mockRestore();
+      if (previousKey === undefined) delete process.env.FIRECRAWL_API_KEY;
+      else process.env.FIRECRAWL_API_KEY = previousKey;
+      resetEnvForTests();
+    }
+  });
+  it('stops website runs while disabled and erases their records without touching another team', async () => {
+    for (const teamId of [TEAM, OTHER]) {
+      const [source] = await db
+        .insert(schema.websites)
+        .values({
+          teamId,
+          url: 'https://example.test',
+          hostname: 'example.test',
+          subject: 'own_team',
+          createdBy: OWNER,
+        })
+        .returning();
+      if (!source) throw new Error('Website fixture missing');
+      const [run] = await db
+        .insert(schema.websiteRuns)
+        .values({
+          teamId,
+          websiteId: source.id,
+          requestedBy: OWNER,
+          trigger: 'manual',
+          idempotencyKey: 'fixture',
+        })
+        .returning();
+      if (!run) throw new Error('Website run fixture missing');
+      await db
+        .insert(schema.websitePages)
+        .values({ teamId, websiteId: source.id, url: 'https://example.test' });
+      await db
+        .insert(schema.websiteNotifications)
+        .values({ teamId, runId: run.id, ciphertext: 'fixture', iv: 'fixture', tag: 'fixture' });
+    }
+    await setPlatformSuspension(db, actor, 'team', TEAM, true, 'Pause website fixtures');
+    const maintenance = withTeam(db, TEAM, BILLING_SYSTEM_USER_ID, {
+      skipMembershipCheck: true,
+    }).lifecycle;
+    expect(await maintenance.stopWebsiteRuns()).toBe(false);
+    expect(await maintenance.stopWebsiteRuns()).toBe(true);
+    const runs = await db.select().from(schema.websiteRuns);
+    expect(runs.find((run) => run.teamId === TEAM)?.finishedAt).toBeInstanceOf(Date);
+    expect(runs.find((run) => run.teamId === OTHER)?.status).toBe('queued');
+    for (const table of [
+      schema.websites,
+      schema.websiteRuns,
+      schema.websitePages,
+      schema.websiteNotifications,
+    ]) {
+      await expect(
+        db.update(table).set({ teamId: TEAM }).where(eq(table.teamId, TEAM)),
+      ).rejects.toThrow();
+    }
+    await setPlatformSuspension(db, actor, 'team', TEAM, false, 'Restore website fixtures');
+    expect(await withTeam(db, TEAM, OWNER).websites.list()).toHaveLength(1);
+    await beginTeamDeletion(db, actor, {
+      teamId: TEAM,
+      confirmation: 'First',
+      reason: 'Erase website fixtures',
+    });
+    let done = false;
+    for (let tick = 0; tick < 8 && !done; tick++) done = await purgeTeamRows(db, TEAM);
+    expect(done).toBe(true);
+    await verifyTeamRows(db, TEAM);
+    for (const table of [
+      schema.websites,
+      schema.websiteRuns,
+      schema.websitePages,
+      schema.websiteNotifications,
+    ]) {
+      expect(await db.select().from(table).where(eq(table.teamId, OTHER))).toHaveLength(1);
+    }
+  });
+
   it('erases repeated document and folder names without flattening namespaces', async () => {
     await pg.exec(`INSERT INTO folders (id,team_id,name) VALUES
       ('20000000-0000-4000-8000-000000000001','${TEAM}','Parent A'),
@@ -442,7 +573,7 @@ describe('team lifecycle', () => {
     await pg.close();
     pg = new PGlite();
     await applyDbMigrations(pg, async (filename) => {
-      if (filename !== '0103_team_lifecycle.sql') return;
+      if (filename !== '0104_team_lifecycle.sql') return;
       await pg.exec(`INSERT INTO users (id,email,"emailVerified") VALUES ('${ADMIN}','ops@example.test',now()),('${OWNER}','owner@example.test',now());
         INSERT INTO teams (id,name,slug,created_at) VALUES ('${TEAM}','First','legacy-first',now()-interval '5 days');
         INSERT INTO team_members (team_id,user_id,role,created_at) VALUES ('${TEAM}','${OWNER}','owner',now()-interval '5 days');

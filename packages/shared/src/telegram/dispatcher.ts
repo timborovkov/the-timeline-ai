@@ -42,6 +42,7 @@ import {
   reconcileLinkArtifactsForRawEvent,
 } from '#src/conversational/link-artifacts.js';
 import { buildDocumentObjectKey } from '#src/documents/object-key.js';
+import { getEnv } from '#src/env.js';
 import { childLogger } from '#src/logger.js';
 import {
   confirmRawUrlQuickJoin,
@@ -77,6 +78,7 @@ import {
   type TgUpdate,
   type TgUser,
 } from '#src/telegram/types.js';
+import { websiteBotCommand } from '#src/websites/bot-command.js';
 
 const log = childLogger('telegram');
 const TELEGRAM_SOURCE_SNAPSHOT_VERSION = 'telegram-source-snapshot-2026-07';
@@ -754,6 +756,34 @@ async function cmdNewDm(ctx: DmContext): Promise<void> {
   await replyToTelegramDm(ctx, 'Started a new conversation.');
 }
 
+async function cmdCrawl(ctx: DmContext | GroupContext, arg: string): Promise<void> {
+  const teamId = 'activeTeamId' in ctx ? ctx.activeTeamId : ctx.binding?.teamId;
+  const userId = ctx.tgUserRow?.userId;
+  let text = 'Link your Telegram identity and this chat to a team before scanning websites.';
+  if (teamId && userId) {
+    try {
+      text = await websiteBotCommand({
+        db: ctx.db,
+        teamId,
+        userId,
+        arg,
+        command: '/crawl',
+        requestId: `telegram-crawl:${ctx.updateId}`,
+        delivery: {
+          provider: 'telegram',
+          token: getEnv().TELEGRAM_BOT_TOKEN ?? '',
+          method: 'send',
+          body: { chat_id: ctx.message.chat.id },
+        },
+      });
+    } catch {
+      text =
+        'Could not start this website scan. Check the URL, source status, and billing in Website sources.';
+    }
+  }
+  await ctx.tg.sendMessage({ chat_id: ctx.message.chat.id, text });
+}
+
 type TelegramDmCommandHandler = (ctx: DmContext, arg: string) => Promise<void>;
 
 const DM_COMMAND_HANDLERS: {
@@ -769,6 +799,7 @@ const DM_COMMAND_HANDLERS: {
   '/note': (ctx, arg) => cmdNoteDm(ctx, arg),
   '/new': (ctx) => cmdNewDm(ctx),
   '/join': (ctx, arg) => cmdJoinDm(ctx, arg),
+  '/crawl': (ctx, arg) => cmdCrawl(ctx, arg),
 };
 
 async function dispatchCommand(
@@ -1706,6 +1737,7 @@ const GROUP_COMMAND_HANDLERS: {
       agentDeps: ctx.agentDeps,
     });
   },
+  '/crawl': (ctx, arg) => cmdCrawl(ctx, arg),
   '/join': async (ctx, arg) => {
     if (!ctx.binding || !ctx.tgUser || !ctx.tgUserRow?.userId) {
       await ctx.tg.sendMessage({

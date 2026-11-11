@@ -142,3 +142,5 @@ When Telegram upgrades a group to a supergroup, migration messages or outbound e
 Private agent state is provider-neutral: `chat_sessions.surface='telegram'`, `chat_surface_session_links` maps the opaque Telegram DM key to the active session, and `chat_surface_turns` is the durable idempotency, model, and delivery ledger consumed by the `conversation-agent` worker queue.
 
 Daily digest delivery uses the same bot: a workspace can post the team-visible digest to a bound group, or DM every linked member. Configure destinations in Team settings → Preferences. The bot can only DM people who have already started a conversation with it.
+
+Website capture: `/crawl <url>` shows the cost and permission statement; `/crawl <url> confirm` starts it for the linked team. See [website sources](../websites.md).

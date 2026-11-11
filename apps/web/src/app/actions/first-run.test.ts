@@ -4,6 +4,9 @@ import { beforeEach, describe, it } from 'bun:test';
 
 const fakes = vi.hoisted(() => ({
   auth: vi.fn(),
+  startWebsiteScan: vi.fn(),
+  addWebsite: vi.fn(),
+  listWebsites: vi.fn(),
   reserve: vi.fn(),
   release: vi.fn(),
   resolveActiveTeam: vi.fn(),
@@ -19,6 +22,11 @@ const fakes = vi.hoisted(() => ({
   revalidatePath: vi.fn(),
 }));
 
+await vi.mock(
+  import.meta.resolve('@timeline/shared/websites'),
+  () => ({ startWebsiteScan: fakes.startWebsiteScan }),
+  () => import('@timeline/shared/websites'),
+);
 await vi.mock(
   import.meta.resolve('@/lib/auth'),
   () => ({ auth: fakes.auth }),
@@ -67,6 +75,7 @@ await vi.mock(
   import.meta.resolve('@timeline/shared/team-scope'),
   () => ({
     withTeam: () => ({
+      websites: { list: fakes.listWebsites, add: fakes.addWebsite },
       onboarding: {
         submitWorkStyle: fakes.submitWorkStyle,
         selectStarterPath: fakes.selectStarterPath,
@@ -114,6 +123,9 @@ const TEAM_ID = '11111111-1111-4111-8111-111111111111';
 
 beforeEach(() => {
   vi.clearAllMocks();
+  fakes.startWebsiteScan.mockResolvedValue({ status: 'queued' });
+  fakes.addWebsite.mockResolvedValue({ id: 'website-id' });
+  fakes.listWebsites.mockResolvedValue([]);
   fakes.auth.mockResolvedValue({ user: { id: USER_ID } });
   fakes.resolveActiveTeam.mockResolvedValue({ active: { teamId: TEAM_ID } });
   fakes.checkRateLimit.mockResolvedValue({ ok: true });
@@ -178,7 +190,7 @@ describe('first-run analytics', () => {
     expect(fakes.trackProductEventBestEffort).not.toHaveBeenCalled();
   });
 
-  it('admits billing and enqueues a website scan with its subject', async () => {
+  it('creates a persistent website source and starts its shared onboarding scan', async () => {
     await expect(
       selectStarterPathAction({
         path: 'website',
@@ -192,11 +204,22 @@ describe('first-run analytics', () => {
       websiteSubject: 'own_team',
       websiteScanId: expect.any(String) as string,
     });
-    expect(fakes.enqueueWebsiteScanJob).toHaveBeenCalledWith({
-      teamId: TEAM_ID,
-      userId: USER_ID,
-      scanId: expect.any(String) as string,
+    expect(fakes.addWebsite).toHaveBeenCalledWith({
+      url: 'https://studio.example/',
+      subject: 'own_team',
+      permissionConfirmed: true,
     });
+    expect(fakes.enqueueWebsiteScanJob).not.toHaveBeenCalled();
+    expect(fakes.reserve).not.toHaveBeenCalled();
+    expect(fakes.startWebsiteScan).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        websiteId: 'website-id',
+        scanId: expect.any(String) as string,
+        trigger: 'onboarding',
+        permissionConfirmed: true,
+      }),
+    );
     expect(fakes.markScanFailed).not.toHaveBeenCalled();
     expect(fakes.trackProductEventBestEffort).toHaveBeenCalledWith(
       { kind: 'user', userId: USER_ID, teamId: TEAM_ID },
@@ -205,45 +228,59 @@ describe('first-run analytics', () => {
     );
   });
 
-  it('does not select or enqueue when billing denies the scan', async () => {
-    fakes.reserve.mockResolvedValue({ ok: false, code: 'free_allowance_reached' });
-    const result = await selectStarterPathAction({
-      path: 'website',
-      websiteUrl: 'studio.example',
-      websitePermissionConfirmed: true,
-    });
-    expect(result.ok).toBe(false);
-    expect(fakes.selectStarterPath).not.toHaveBeenCalled();
-    expect(fakes.enqueueWebsiteScanJob).not.toHaveBeenCalled();
-  });
-
-  it('reports enqueue failure and releases the reservation', async () => {
-    fakes.enqueueWebsiteScanJob.mockRejectedValue(new Error('Redis failed'));
-    const result = await selectStarterPathAction({
-      path: 'website',
-      websiteUrl: 'studio.example',
-      websitePermissionConfirmed: true,
-    });
-    expect(result.ok).toBe(false);
-    expect(fakes.release).toHaveBeenCalled();
-    expect(fakes.markScanFailed).toHaveBeenCalledWith('unreachable', expect.any(String));
-  });
-
-  it('refuses a second website scan for the same team', async () => {
-    fakes.checkRateLimit
-      .mockResolvedValueOnce({ ok: true, remaining: 29 })
-      .mockResolvedValueOnce({ ok: false, remaining: 0, retryAfterMs: 86_400_000 });
+  it('reuses the same persistent source when onboarding selects an existing website', async () => {
+    fakes.listWebsites.mockResolvedValue([
+      { id: 'existing-website', url: 'https://studio.example/' },
+    ]);
     await expect(
       selectStarterPathAction({
         path: 'website',
-        websiteUrl: 'studio.example',
+        websiteUrl: 'https://studio.example:443/#about',
         websitePermissionConfirmed: true,
       }),
-    ).resolves.toEqual({
-      ok: false,
-      error:
-        'This team already used its signup website scan. Upload a document or forward an email instead.',
+    ).resolves.toEqual({ ok: true });
+    expect(fakes.addWebsite).not.toHaveBeenCalled();
+    expect(fakes.startWebsiteScan).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        websiteId: 'existing-website',
+        trigger: 'onboarding',
+        permissionConfirmed: true,
+      }),
+    );
+  });
+
+  it('marks onboarding failed when shared scan admission is blocked', async () => {
+    fakes.startWebsiteScan.mockResolvedValue({ status: 'blocked' });
+    const result = await selectStarterPathAction({
+      path: 'website',
+      websiteUrl: 'studio.example',
+      websitePermissionConfirmed: true,
     });
+    expect(result.ok).toBe(false);
+    expect(fakes.markScanFailed).toHaveBeenCalled();
     expect(fakes.enqueueWebsiteScanJob).not.toHaveBeenCalled();
+  });
+
+  it('reports a shared scan failure', async () => {
+    fakes.startWebsiteScan.mockRejectedValue(new Error('Redis failed'));
+    const result = await selectStarterPathAction({
+      path: 'website',
+      websiteUrl: 'studio.example',
+      websitePermissionConfirmed: true,
+    });
+    expect(result.ok).toBe(false);
+    expect(fakes.markScanFailed).toHaveBeenCalledWith('unreachable', expect.any(String));
+  });
+
+  it('reports shared cooldown rejection without bypassing admission', async () => {
+    fakes.startWebsiteScan.mockRejectedValue(new Error('Wait one hour between website scans'));
+    const result = await selectStarterPathAction({
+      path: 'website',
+      websiteUrl: 'studio.example',
+      websitePermissionConfirmed: true,
+    });
+    expect(result.ok).toBe(false);
+    expect(fakes.markScanFailed).toHaveBeenCalled();
   });
 });

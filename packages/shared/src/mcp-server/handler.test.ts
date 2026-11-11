@@ -1000,6 +1000,57 @@ describe('handleMcpRequest', () => {
     );
   });
 
+  it('requests only the website scan grant for an existing OAuth connection', async () => {
+    const response = await invokeHttp(db, principal('oauth'), {
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'tools/call',
+      params: {
+        name: 'timeline.crawl',
+        arguments: {
+          url: 'https://example.com',
+          permissionConfirmed: true,
+          idempotencyKey: 'oauth-crawl',
+        },
+      },
+    });
+    const result = (response.payload?.result ?? {}) as {
+      _meta?: { 'mcp/www_authenticate'?: string[] };
+    };
+    expect(response.payload).toMatchObject({
+      result: {
+        isError: true,
+        structuredContent: { ok: false, error: 'forbidden' },
+      },
+    });
+    expect(result._meta?.['mcp/www_authenticate']).toEqual([
+      'Bearer error="insufficient_scope", error_description="Grant the websites:scan scope to use timeline.crawl", scope="read websites:scan", resource_metadata="https://timeline.test/.well-known/oauth-protected-resource/api/mcp/server"',
+    ]);
+  });
+
+  it('does not offer an OAuth upgrade for a static key without website scan permission', async () => {
+    const response = await invokeHttp(db, principal('api_key'), {
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'tools/call',
+      params: {
+        name: 'timeline.crawl',
+        arguments: {
+          url: 'https://example.com',
+          permissionConfirmed: true,
+          idempotencyKey: 'key-crawl',
+        },
+      },
+    });
+    expect(response.payload).toMatchObject({
+      result: {
+        isError: true,
+        structuredContent: { ok: false, error: 'forbidden' },
+      },
+    });
+    expect((response.payload?.result as Record<string, unknown>)._meta).toBeUndefined();
+  });
+
   it('reads authenticated connection preferences through timeline.get without a record ref', async () => {
     const key = await withTeam(db as never, TEAM_ID, USER_ID).mcpOutbound.createKey({
       name: 'Coworker',
@@ -1141,6 +1192,26 @@ describe('handleMcpRequest', () => {
     expect(result).toHaveProperty('object');
     expect(result).toHaveProperty('context');
     expect(result).toHaveProperty('moments');
+  });
+
+  it('rejects crawling with a legacy read-only credential', async () => {
+    const response = await handleMcpRequest(
+      { db: db as never, bearer: TOKEN },
+      {
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'tools/call',
+        params: {
+          name: 'timeline.crawl',
+          arguments: {
+            url: 'https://example.com',
+            permissionConfirmed: true,
+            idempotencyKey: 'crawl-test',
+          },
+        },
+      },
+    );
+    expect(response).toMatchObject({ result: { isError: true } });
   });
 
   it('exposes ask_agent for consent discovery and rejects a static read-only key', async () => {

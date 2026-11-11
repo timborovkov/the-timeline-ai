@@ -116,7 +116,7 @@ const TRUST_SECTIONS = [
     body: 'Recall.ai processes meeting media to produce transcripts. Hosted Timeline requests one-hour provider media retention and does not copy raw meeting audio or video into Timeline storage. The requested setting is not confirmation of completed provider deletion. Transcripts remain workspace content. Uploaded voice notes and documents remain stored until deleted under applicable workspace handling.',
   },
   {
-    title: 'Onboarding website scan',
+    title: 'Website sources and scanning',
     body: 'When a user requests a website scan, Firecrawl (SideGuide Technologies, Inc. d/b/a Firecrawl) fetches public pages of a website URL the user submits. Timeline sends that public URL; Firecrawl returns markdown. Firecrawl documents United States processing and a 24-hour crawl-result API window. Broader page-content retention is to be confirmed. Timeline does not enable Firecrawl Enterprise zero-data-retention.',
   },
   {
@@ -261,7 +261,7 @@ const coreDocuments = definePublicDocuments('public-core', [
         },
         {
           title: 'Meters',
-          body: 'AI usage in euros, meeting minutes, email units, storage GB-month, accepted sources. Display native units and euro values. The public calculator reuses the shared billing preview; it does not invent rates.',
+          body: 'AI usage in euros, meeting minutes, email units, storage GB-month, accepted source units (one per ordinary source; 20 per captured website page, including unchanged pages). Display native units and euro values. The public calculator reuses the shared billing preview; it does not invent rates.',
         },
         {
           title: 'Questions',
@@ -367,7 +367,7 @@ const publicUtilityDocuments = definePublicDocuments('public-utility', [
       order: 40,
       summary: 'How The Timeline processes personal data and team content.',
       fullSummary:
-        'Controller and processor roles, data categories, legal bases, AI privacy routing, subprocessors including Firecrawl first-run public website fetch, Resend transactional and inbound email, analytics, human access, security, retention, transfers, data-subject rights, and the distinction between personal disconnect, workspace-source removal, and deletion of captured history.',
+        'Controller and processor roles, data categories, legal bases, AI privacy routing, subprocessors including Firecrawl public website scanning, Resend transactional and inbound email, analytics, human access, security, retention, transfers, data-subject rights, and the distinction between personal disconnect, workspace-source removal, and deletion of captured history.',
     },
   },
   {

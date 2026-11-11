@@ -18,6 +18,10 @@ import {
   users,
   teamMembers,
   rawEvents,
+  websites,
+  websiteRuns,
+  websitePages,
+  websiteNotifications,
   integrations,
   providerConnections,
 } from '@timeline/db';
@@ -82,6 +86,34 @@ try {
     { teamId: team, userId: admin, role: 'owner' },
     { teamId: control, userId: admin, role: 'owner' },
   ]);
+  for (const teamId of [team, control]) {
+    const [source] = await db
+      .insert(websites)
+      .values({
+        teamId,
+        url: 'https://example.test',
+        hostname: 'example.test',
+        subject: 'own_team',
+        createdBy: admin,
+      })
+      .returning();
+    const [run] = await db
+      .insert(websiteRuns)
+      .values({
+        teamId,
+        websiteId: source!.id,
+        requestedBy: admin,
+        trigger: 'manual',
+        idempotencyKey: 'fixture',
+      })
+      .returning();
+    await db
+      .insert(websitePages)
+      .values({ teamId, websiteId: source!.id, url: 'https://example.test' });
+    await db
+      .insert(websiteNotifications)
+      .values({ teamId, runId: run!.id, ciphertext: 'fixture', iv: 'fixture', tag: 'fixture' });
+  }
   const sharedConnection = randomUUID(),
     unusedConnection = randomUUID();
   await db.insert(providerConnections).values(
@@ -193,6 +225,10 @@ try {
   assert(deleted?.deletedAt, 'Deletion must complete');
   assert.equal((await db.select().from(rawEvents).where(eq(rawEvents.teamId, team))).length, 0);
   assert.equal((await db.select().from(rawEvents).where(eq(rawEvents.teamId, control))).length, 1);
+  for (const table of [websites, websiteRuns, websitePages, websiteNotifications]) {
+    assert.equal((await db.select().from(table).where(eq(table.teamId, team))).length, 0);
+    assert.equal((await db.select().from(table).where(eq(table.teamId, control))).length, 1);
+  }
   const versions = await s3.send(new ListObjectVersionsCommand({ Bucket: bucket }));
   assert(!(versions.Versions ?? []).some((object) => object.Key?.includes(team)));
   assert.equal(

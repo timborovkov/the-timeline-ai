@@ -12,6 +12,10 @@ export function McpOutboundKeyForm({
   nameError,
   allowCapture,
   allowAgent,
+  allowWebsiteScan,
+  allowWebsiteManage,
+  onAllowWebsiteScanChange,
+  onAllowWebsiteManageChange,
   busy,
   allowAgentDescription,
   onNameChange,
@@ -26,6 +30,10 @@ export function McpOutboundKeyForm({
   nameError: string | null;
   allowCapture: boolean;
   allowAgent: boolean;
+  allowWebsiteScan: boolean;
+  allowWebsiteManage: boolean;
+  onAllowWebsiteScanChange: (value: boolean) => void;
+  onAllowWebsiteManageChange: (value: boolean) => void;
   busy: boolean;
   allowAgentDescription: string;
   onNameChange: (value: string) => void;
@@ -90,6 +98,40 @@ export function McpOutboundKeyForm({
         <span className="space-y-1">
           <span className="block text-sm font-medium text-fg">Allow Timeline agent</span>
           <span className="block text-xs leading-5 text-fg-muted">{allowAgentDescription}</span>
+        </span>
+      </label>
+      <label className="flex min-h-11 items-start gap-3 border border-border p-3">
+        <input
+          type="checkbox"
+          checked={allowWebsiteScan}
+          onChange={(event) => {
+            onAllowWebsiteScanChange(event.currentTarget.checked);
+          }}
+          className="mt-1 size-4"
+        />
+        <span>
+          <span className="block text-sm font-medium">Allow website scans</span>
+          <span className="text-xs text-fg-muted">
+            Can scan public websites after permission confirmation. Each captured page uses 20
+            source units.
+          </span>
+        </span>
+      </label>
+      <label className="flex min-h-11 items-start gap-3 border border-border p-3">
+        <input
+          type="checkbox"
+          checked={allowWebsiteManage}
+          onChange={(event) => {
+            onAllowWebsiteManageChange(event.currentTarget.checked);
+          }}
+          className="mt-1 size-4"
+        />
+        <span>
+          <span className="block text-sm font-medium">Allow website management</span>
+          <span className="text-xs text-fg-muted">
+            Includes scanning, schedules and archiving through the HTTP API. Requires the issuing
+            admin to retain admin access.
+          </span>
         </span>
       </label>
       <Button type="submit" size="sm" disabled={busy}>

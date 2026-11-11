@@ -86,7 +86,7 @@ export async function processTeamLifecycle(db: Db, io: TeamCleanupIO = defaultIO
           const scope = withTeam(stageTx as unknown as Db, row.id, BILLING_SYSTEM_USER_ID, {
             skipMembershipCheck: true,
           }).lifecycle;
-          if (team.disabledAt && !(await scope.stopBots())) {
+          if (team.disabledAt && (!(await scope.stopBots()) || !(await scope.stopWebsiteRuns()))) {
             work.botsPending = true;
             return;
           }

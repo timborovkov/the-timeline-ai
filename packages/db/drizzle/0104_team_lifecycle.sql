@@ -123,6 +123,10 @@ CREATE TRIGGER telegram_user_teams_active_team BEFORE INSERT OR UPDATE ON telegr
 CREATE TRIGGER timeline_moment_presentations_active_team BEFORE INSERT OR UPDATE ON timeline_moment_presentations FOR EACH ROW EXECUTE FUNCTION reject_inactive_team_write();
 CREATE TRIGGER user_onboarding_dismissals_active_team BEFORE INSERT OR UPDATE ON user_onboarding_dismissals FOR EACH ROW EXECUTE FUNCTION reject_inactive_team_write();
 CREATE TRIGGER user_pins_active_team BEFORE INSERT OR UPDATE ON user_pins FOR EACH ROW EXECUTE FUNCTION reject_inactive_team_write();
+CREATE TRIGGER websites_active_team BEFORE INSERT OR UPDATE ON websites FOR EACH ROW EXECUTE FUNCTION reject_inactive_team_write();
+CREATE TRIGGER website_runs_active_team BEFORE INSERT OR UPDATE ON website_runs FOR EACH ROW EXECUTE FUNCTION reject_inactive_team_write();
+CREATE TRIGGER website_pages_active_team BEFORE INSERT OR UPDATE ON website_pages FOR EACH ROW EXECUTE FUNCTION reject_inactive_team_write();
+CREATE TRIGGER website_notifications_active_team BEFORE INSERT OR UPDATE ON website_notifications FOR EACH ROW EXECUTE FUNCTION reject_inactive_team_write();
 CREATE TRIGGER website_sources_active_team BEFORE INSERT OR UPDATE ON website_sources FOR EACH ROW EXECUTE FUNCTION reject_inactive_team_write();
 
 --> statement-breakpoint

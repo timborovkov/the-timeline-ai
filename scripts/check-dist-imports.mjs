@@ -1,5 +1,21 @@
 const checks = [
   {
+    name: '@timeline/shared website service and browser-safe usage',
+    run: async () => {
+      const websites = await import('@timeline/shared/websites');
+      const usage = await import('@timeline/shared/websites/usage');
+      const policy = await import('@timeline/shared/websites/policy');
+      if (
+        typeof websites.startWebsiteScan !== 'function' ||
+        typeof websites.tickWebsiteSchedules !== 'function' ||
+        typeof websites.settleCapturedWebsiteRun !== 'function' ||
+        typeof policy.nextWebsiteScan !== 'function' ||
+        usage.websiteSourceUnits(5) !== 100
+      )
+        throw new Error('Website exports or weighted usage are missing');
+    },
+  },
+  {
     name: '@timeline/shared Drive runtime boundaries',
     run: async () => {
       const protocol = await import('@timeline/shared/integrations/drive-extract-protocol');

@@ -99,8 +99,11 @@ import {
   rawEventIsActive,
   rawEventVisibleToUser,
 } from '#src/visibility.js';
+import { obsoleteWebsiteEventIds } from '#src/websites/retrieval.js';
+import { createWebsiteScope } from '#src/websites/scope.js';
 
 import type { chatStructured } from '#src/llm/chat.js';
+import type { McpAuthPrincipal } from '#src/mcp-server/oauth-core.js';
 import type { QdrantOperationContext } from '#src/qdrant/operation.js';
 
 // Note: `teamRole` value is referenced at runtime by drizzle elsewhere; keeping
@@ -460,6 +463,7 @@ export interface SetEventVisibilityInput {
 }
 
 export interface TeamScopeDeps {
+  websitePrincipal?: McpAuthPrincipal;
   /** Inject a custom embedder. Tests pass a deterministic stub; production
    *  uses the OpenRouter-backed `llm.embed`. */
   embed?: (input: { text: string }) => Promise<EmbedResult>;
@@ -3087,6 +3091,8 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
           operation: input.operation ?? {},
           limit: input.limit ?? 20,
         };
+        if (!input.from && !input.to && !input.eventIds)
+          searchOpts.obsoleteWebsiteEventIds = await obsoleteWebsiteEventIds(db, teamId);
         if (input.offset) searchOpts.offset = input.offset;
         if (input.from) searchOpts.from = input.from;
         if (input.to) searchOpts.to = input.to;
@@ -3472,6 +3478,13 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
     agentReporting: createAgentReportingScope({ db, teamId, userId, ensureMember }),
     ingestWebhooks: ingestWebhookScope,
     onboarding: onboardingScope,
+    websites: createWebsiteScope({
+      db,
+      teamId,
+      userId,
+      ensureMember,
+      ...(deps.websitePrincipal ? { principal: deps.websitePrincipal } : {}),
+    }),
     billing: billingScope,
     lifecycle: createTeamLifecycleScope(db, teamId, userId, deps.skipMembershipCheck === true),
     billingOperator: createBillingOperatorScope({ db, teamId }),

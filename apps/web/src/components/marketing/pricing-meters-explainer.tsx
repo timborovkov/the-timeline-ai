@@ -26,8 +26,8 @@ const METER_COPY = [
     body: `${formatEuroFromCents(OVERAGE_RATES.storageCentsPerGbMonth)} per GB-month of original files.`,
   },
   {
-    name: 'Accepted sources',
-    body: `${formatEuroFromCents(OVERAGE_RATES.acceptedSourcesCentsPerThousand)} per 1,000 accepted unique source items (AI triggered by those items is metered separately).`,
+    name: 'Accepted source units',
+    body: `${formatEuroFromCents(OVERAGE_RATES.acceptedSourcesCentsPerThousand)} per 1,000 source units. Ordinary accepted sources use one unit each; website crawling uses 20 units per captured page, including unchanged pages. AI and storage are metered separately.`,
   },
 ] as const;
 

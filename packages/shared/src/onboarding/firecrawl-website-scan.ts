@@ -33,10 +33,18 @@ interface FirecrawlPage {
   text: string;
 }
 
+export type FirecrawlPartialFailureReason =
+  'provider_failed' | 'provider_cancelled' | 'provider_page_errors';
+
 export type FirecrawlCrawlOutcome =
-  | { kind: 'pages'; pages: FirecrawlPage[] }
-  | { kind: 'failure'; reason: FirstRunScanFailureReason }
-  | { kind: 'retryable' };
+  | {
+      kind: 'pages';
+      pages: FirecrawlPage[];
+      providerCredits?: number;
+      partialFailureReason?: FirecrawlPartialFailureReason;
+    }
+  | { kind: 'failure'; reason: FirstRunScanFailureReason; providerCredits?: number }
+  | { kind: 'retryable'; retryAfterMs?: number; providerRejected?: boolean };
 
 export type FirecrawlFetch = (
   input: string | URL | Request,
@@ -68,6 +76,7 @@ interface FirecrawlCrawlStatus {
   data?: unknown;
   error?: unknown;
   next?: unknown;
+  creditsUsed?: unknown;
 }
 
 interface FirecrawlCrawlErrors {
@@ -77,6 +86,8 @@ interface FirecrawlCrawlErrors {
 
 class FirecrawlRetryableError extends Error {
   readonly retryable = true as const;
+  retryAfterMs?: number;
+  providerRejected?: boolean;
 }
 
 class FirecrawlHttpError extends Error {
@@ -90,7 +101,7 @@ class FirecrawlHttpError extends Error {
 }
 
 function isRetryableStatus(status: number): boolean {
-  return status === 408 || status >= 500;
+  return status === 408 || status === 429 || status >= 500;
 }
 
 function looksLikeRobots(value: string): boolean {
@@ -174,7 +185,15 @@ async function firecrawlJson(
     throw new FirecrawlRetryableError('Firecrawl request failed');
   }
   if (isRetryableStatus(response.status)) {
-    throw new FirecrawlRetryableError(`Firecrawl HTTP ${String(response.status)}`);
+    const error = new FirecrawlRetryableError(`Firecrawl HTTP ${String(response.status)}`);
+    if (init.method === 'POST' && response.status === 429) error.providerRejected = true;
+    const retryAfter = response.headers.get('retry-after');
+    if (retryAfter) {
+      const seconds = Number(retryAfter);
+      const ms = Number.isFinite(seconds) ? seconds * 1000 : Date.parse(retryAfter) - Date.now();
+      if (Number.isFinite(ms) && ms > 0) error.retryAfterMs = ms;
+    }
+    throw error;
   }
   const body = await response.text();
   if (!response.ok) {
@@ -284,6 +303,7 @@ async function collectStatusPages(
       data: record.data,
       error: record.error,
       next: record.next,
+      creditsUsed: record.creditsUsed ?? status.creditsUsed,
     };
     documents.push(...collectDocuments(record.data));
     const following = asString(record.next);
@@ -352,21 +372,57 @@ export async function crawlPublicWebsiteWithFirecrawl(
           blockedHome ||
           errorsLookLikeRobots(errors.errors) ||
           looksLikeRobots(asString(page.status.error));
-        if (pages.length > 0) return { kind: 'pages', pages };
-        if (robotsError) return { kind: 'failure', reason: 'robots' };
-        if (status === 'failed' || status === 'cancelled') {
-          return { kind: 'failure', reason: 'unreachable' };
+        const usage =
+          typeof page.status.creditsUsed === 'number' &&
+          Number.isSafeInteger(page.status.creditsUsed) &&
+          page.status.creditsUsed >= 0
+            ? { providerCredits: page.status.creditsUsed }
+            : {};
+        if (pages.length > 0) {
+          const partialFailureReason =
+            status === 'failed'
+              ? 'provider_failed'
+              : status === 'cancelled'
+                ? 'provider_cancelled'
+                : (Array.isArray(errors.errors) && errors.errors.length > 0) ||
+                    (Array.isArray(errors.robotsBlocked) && errors.robotsBlocked.length > 0)
+                  ? 'provider_page_errors'
+                  : undefined;
+          return {
+            kind: 'pages',
+            pages,
+            ...usage,
+            ...(partialFailureReason ? { partialFailureReason } : {}),
+          };
         }
-        return { kind: 'failure', reason: 'no_readable_text' };
+        if (robotsError) return { kind: 'failure', reason: 'robots', ...usage };
+        if (status === 'failed' || status === 'cancelled') {
+          return { kind: 'failure', reason: 'unreachable', ...usage };
+        }
+        return { kind: 'failure', reason: 'no_readable_text', ...usage };
       }
       await sleep(FIRECRAWL_POLL_INTERVAL_MS);
     }
     return { kind: 'retryable' };
   } catch (error) {
-    if (error instanceof FirecrawlRetryableError) return { kind: 'retryable' };
+    if (error instanceof FirecrawlRetryableError)
+      return {
+        kind: 'retryable',
+        ...(error.retryAfterMs ? { retryAfterMs: error.retryAfterMs } : {}),
+        ...(error.providerRejected ? { providerRejected: true } : {}),
+      };
     if (error instanceof FirecrawlHttpError) {
       return { kind: 'failure', reason: mapHttpFailure(error) };
     }
     return { kind: 'retryable' };
   }
+}
+
+export async function cancelWebsiteCrawl(crawlId: string, apiKey: string): Promise<void> {
+  await firecrawlJson(
+    fetch,
+    firecrawlUrl(`/v2/crawl/${encodeURIComponent(crawlId)}`),
+    { method: 'DELETE' },
+    apiKey,
+  );
 }

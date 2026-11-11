@@ -23,6 +23,7 @@ function firecrawlFetch(options: {
   startStatus?: number;
   crawlStatus?: string;
   errorBody?: string;
+  creditsUsed?: number;
 }): FirecrawlFetch {
   return (input, init) => {
     const url = requestUrl(input);
@@ -47,6 +48,7 @@ function firecrawlFetch(options: {
       return Promise.resolve(
         Response.json({
           status: options.crawlStatus ?? 'completed',
+          creditsUsed: options.creditsUsed,
           data: (options.pages ?? []).map((page) => ({
             markdown: page.markdown,
             metadata: {
@@ -63,6 +65,55 @@ function firecrawlFetch(options: {
 }
 
 describe('website scan Firecrawl crawl', () => {
+  it.each([0, 7])(
+    'retains %i provider credits independently of captured page count',
+    async (creditsUsed) => {
+      const result = await scanPublicWebsite(HOME, {
+        firecrawlApiKey: FIRECRAWL_KEY,
+        firecrawlFetch: firecrawlFetch({
+          creditsUsed,
+          pages: [{ url: HOME, title: 'Studio', markdown: readable('Home') }],
+        }),
+      });
+      expect(result.ok).toBe(true);
+      expect(result.providerCredits).toBe(creditsUsed);
+      if (result.ok) expect(result.pages).toHaveLength(1);
+    },
+  );
+
+  it('retains provider credits for an unusable failed crawl', async () => {
+    const result = await scanPublicWebsite(HOME, {
+      firecrawlApiKey: FIRECRAWL_KEY,
+      firecrawlFetch: firecrawlFetch({ crawlStatus: 'failed', creditsUsed: 3 }),
+    });
+    expect(result).toEqual({ ok: false, reason: 'unreachable', providerCredits: 3 });
+  });
+
+  it.each([
+    ['failed', 'provider_failed'],
+    ['cancelled', 'provider_cancelled'],
+    ['completed', 'provider_page_errors'],
+  ] as const)(
+    'preserves usable pages and partial failure for provider status %s',
+    async (crawlStatus, reason) => {
+      const result = await scanPublicWebsite(HOME, {
+        firecrawlApiKey: FIRECRAWL_KEY,
+        firecrawlFetch: firecrawlFetch({
+          crawlStatus,
+          creditsUsed: 3,
+          errorBody: 'Some pages could not be fetched',
+          pages: [{ url: HOME, title: 'Studio', markdown: readable('Home') }],
+        }),
+      });
+      expect(result.ok).toBe(true);
+      expect(result.providerCredits).toBe(3);
+      if (result.ok) {
+        expect(result.pages).toHaveLength(1);
+        expect(result.partialFailureReason).toBe(reason);
+      }
+    },
+  );
+
   it('refuses a scan when the Firecrawl key is missing', async () => {
     await expect(scanPublicWebsite(HOME, { firecrawlApiKey: '' })).rejects.toThrow(
       'FIRECRAWL_API_KEY is required',
@@ -161,12 +212,13 @@ describe('website scan Firecrawl crawl', () => {
     expect(result).toEqual({ ok: false, reason: 'robots' });
   });
 
-  it('maps Firecrawl 429 to rate_limited without falling back', async () => {
-    const result = await scanPublicWebsite(HOME, {
-      firecrawlApiKey: FIRECRAWL_KEY,
-      firecrawlFetch: firecrawlFetch({ startStatus: 429, errorBody: 'Rate limit exceeded' }),
-    });
-    expect(result).toEqual({ ok: false, reason: 'rate_limited' });
+  it('preserves a known provider rejection so a retry cannot duplicate an accepted crawl', async () => {
+    await expect(
+      scanPublicWebsite(HOME, {
+        firecrawlApiKey: FIRECRAWL_KEY,
+        firecrawlFetch: firecrawlFetch({ startStatus: 429, errorBody: 'Rate limit exceeded' }),
+      }),
+    ).rejects.toMatchObject({ providerRejected: true });
   });
   it('rejects embedded URL credentials before contacting Firecrawl', async () => {
     let called = false;

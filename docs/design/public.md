@@ -289,3 +289,5 @@ Advanced usage with their value visible when closed. Metadata stays at the 12px
 floor. Rates and workspace eligibility remain in the closed How this estimate
 works disclosure. Inputs stay local; the calculator neither changes billing nor
 collects telemetry.
+
+Website scanning is an optional, closed disclosure in the pricing calculator. Expanded controls use a two-column grid and show one monthly page/unit subtotal; calculation assumptions are a secondary disclosure. The website feature page leads with the benefit and a concrete five-page price example, followed by three short benefits and expandable setup, limits, billing, and retention details.

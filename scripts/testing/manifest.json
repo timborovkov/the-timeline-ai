@@ -824,10 +824,10 @@
   "apps/web/src/components/integrations/catalog.test.tsx": {
     "group": "dom"
   },
-  "apps/web/src/components/integrations/connected.test.tsx": {
+  "apps/web/src/components/integrations/google-drive-connect-disclosure.test.tsx": {
     "group": "dom"
   },
-  "apps/web/src/components/integrations/google-drive-connect-disclosure.test.tsx": {
+  "apps/web/src/components/integrations/connected.test.tsx": {
     "group": "dom"
   },
   "apps/web/src/components/integrations/mcp-catalog.test.tsx": {
@@ -1323,9 +1323,6 @@
   "apps/web/src/lib/notify.test.ts": {
     "group": "unit"
   },
-  "apps/web/src/lib/oauth-sign-in.test.ts": {
-    "group": "unit"
-  },
   "apps/web/src/lib/object-filter.test.ts": {
     "group": "unit"
   },
@@ -1333,6 +1330,9 @@
     "group": "unit"
   },
   "apps/web/src/lib/object-title.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/lib/oauth-sign-in.test.ts": {
     "group": "unit"
   },
   "apps/web/src/lib/onboarding-checklist.test.ts": {
@@ -1662,9 +1662,6 @@
   "apps/worker/src/workers/webhookDelivery.test.ts": {
     "group": "unit"
   },
-  "apps/worker/src/workers/websiteScan.live-eval.test.ts": {
-    "group": "live"
-  },
   "apps/worker/src/workers/websiteScan.test.ts": {
     "group": "unit"
   },
@@ -1945,14 +1942,40 @@
   "packages/shared/src/integrations/continuation-handoffs.test.ts": {
     "group": "integration"
   },
-  "packages/shared/src/integrations/drive-extract-lifecycle.test.ts": {
-    "group": "unit"
-  },
   "packages/shared/src/integrations/event-writer.test.ts": {
     "group": "integration"
   },
   "packages/shared/src/integrations/github-task-proposals.test.ts": {
     "group": "integration"
+  },
+  "packages/shared/src/integrations/health-scope.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/integrations/health.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/integrations/ingest-processing.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/integrations/monday-budget.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/integrations/monday-repair.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/integrations/provider-budget.test.ts": {
+    "group": "integration"
+  },
+  "packages/shared/src/integrations/provider-contracts.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/integrations/providers/github-logging.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/integrations/providers/github.test.ts": {
+    "group": "unit",
+    "isolation": "batch",
+    "batchSize": 20
   },
   "packages/shared/src/integrations/google-drive-capture.test.ts": {
     "group": "unit"
@@ -1984,35 +2007,6 @@
   "packages/shared/src/integrations/google-drive-team-isolation.test.ts": {
     "group": "unit"
   },
-  "packages/shared/src/integrations/health-scope.test.ts": {
-    "group": "unit"
-  },
-  "packages/shared/src/integrations/health.test.ts": {
-    "group": "unit"
-  },
-  "packages/shared/src/integrations/ingest-processing.test.ts": {
-    "group": "unit"
-  },
-  "packages/shared/src/integrations/monday-budget.test.ts": {
-    "group": "unit"
-  },
-  "packages/shared/src/integrations/monday-repair.test.ts": {
-    "group": "unit"
-  },
-  "packages/shared/src/integrations/provider-budget.test.ts": {
-    "group": "integration"
-  },
-  "packages/shared/src/integrations/provider-contracts.test.ts": {
-    "group": "unit"
-  },
-  "packages/shared/src/integrations/providers/github-logging.test.ts": {
-    "group": "unit"
-  },
-  "packages/shared/src/integrations/providers/github.test.ts": {
-    "group": "unit",
-    "isolation": "batch",
-    "batchSize": 20
-  },
   "packages/shared/src/integrations/providers/google-drive-revisit.test.ts": {
     "group": "unit"
   },
@@ -2040,9 +2034,6 @@
     "group": "unit"
   },
   "packages/shared/src/integrations/request.test.ts": {
-    "group": "unit"
-  },
-  "packages/shared/src/integrations/resource-access.test.ts": {
     "group": "unit"
   },
   "packages/shared/src/integrations/scope.test.ts": {
@@ -2208,9 +2199,6 @@
   "packages/shared/src/onboarding/website-scan.test.ts": {
     "group": "unit"
   },
-  "packages/shared/src/onboarding/website-source-scope.test.ts": {
-    "group": "unit"
-  },
   "packages/shared/src/pagination.test.ts": {
     "group": "unit"
   },
@@ -2362,10 +2350,6 @@
   "packages/shared/src/team-exports/index.test.ts": {
     "group": "integration"
   },
-  "packages/shared/src/team-lifecycle/lifecycle.test.ts": {
-    "group": "integration",
-    "isolation": "registration"
-  },
   "packages/shared/src/team-scope.search.test.ts": {
     "group": "integration"
   },
@@ -2419,5 +2403,42 @@
   },
   "scripts/testing/runner.test.ts": {
     "group": "script"
+  },
+  "packages/shared/src/integrations/drive-extract-lifecycle.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/integrations/resource-access.test.ts": {
+    "group": "unit"
+  },
+  "apps/worker/src/workers/websiteScan.live-eval.test.ts": {
+    "group": "live"
+  },
+  "packages/shared/src/onboarding/website-source-scope.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/websites/policy.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/websites/scope.test.ts": {
+    "group": "db"
+  },
+  "apps/web/src/app/api/websites/route.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/websites/scheduler.test.ts": {
+    "group": "db"
+  },
+  "apps/web/src/app/app/connections/websites/website-manager.test.tsx": {
+    "group": "dom"
+  },
+  "packages/shared/src/websites/bot-command.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/websites/runtime.test.ts": {
+    "group": "db"
+  },
+  "packages/shared/src/team-lifecycle/lifecycle.test.ts": {
+    "group": "integration",
+    "isolation": "registration"
   }
 }

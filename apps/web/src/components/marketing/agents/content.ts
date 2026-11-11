@@ -44,7 +44,7 @@ export const AGENTS_HUB = {
     title: 'Agents read the same cited record.',
     body: 'Sign in, choose a team, and approve scopes in the browser. Static team keys (tla_) are a manual fallback and see team-visible data only.',
     endpoint: 'https://thetimeline.cc/api/mcp/server',
-    toolsIntro: `The hosted server advertises five tools: ${TIMELINE_HOSTED_MCP_TOOLS_LIST}.`,
+    toolsIntro: `The hosted server advertises seven tools: ${TIMELINE_HOSTED_MCP_TOOLS_LIST}.`,
     facts: [
       'timeline.ask needs a separate owner or admin agent:ask scope.',
       'The Timeline skill lives in plugins/timeline and is bundled for Codex and Claude Code.',

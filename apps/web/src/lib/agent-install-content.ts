@@ -28,7 +28,7 @@ codex plugin add timeline@timeline
 
 Then verify that the timeline skill is installed.
 
-The hosted tools are timeline.search, timeline.get, timeline.subject, timeline.ask, and timeline.remember. The bundled MCP connection uses Timeline OAuth and does not need a bearer key in the plugin manifest. Fully restart Codex, start a new task, and complete the browser flow when prompted: sign in to Timeline, choose the team to share, review the requested scopes, and approve or deny access. The default grant is read plus capture (the capture checkbox is on by default). Uncheck capture for a read-only grant. Never request agent:ask unless I explicitly ask for paid, proposal-only Timeline agent turns and the consent screen shows that scope. Never paste a tla_ key or ingest token in chat.
+The hosted tools are timeline.search, timeline.get, timeline.subject, timeline.ask, timeline.remember, timeline.crawl, and timeline.crawl_status. The bundled MCP connection uses Timeline OAuth and does not need a bearer key in the plugin manifest. Fully restart Codex, start a new task, and complete the browser flow when prompted: sign in to Timeline, choose the team to share, review the requested scopes, and approve or deny access. The default grant is read plus capture (the capture checkbox is on by default). Uncheck capture for a read-only grant. Never request agent:ask unless I explicitly ask for paid, proposal-only Timeline agent turns and the consent screen shows that scope. Never paste a tla_ key or ingest token in chat.
 
 When setup is ready, tell me to start a new task so Codex loads the plugin and begins OAuth authorization.`;
 
@@ -58,6 +58,8 @@ export const TIMELINE_HOSTED_MCP_TOOLS = [
   'timeline.subject',
   'timeline.ask',
   'timeline.remember',
+  'timeline.crawl',
+  'timeline.crawl_status',
 ] as const;
 
 export const TIMELINE_HOSTED_MCP_TOOLS_LIST = TIMELINE_HOSTED_MCP_TOOLS.join(', ');
@@ -80,7 +82,7 @@ export const TIMELINE_AGENT_INSTALL_STEPS = [
   },
   {
     title: 'Start a Timeline-backed task',
-    body: 'After consent, start a new task or conversation so your agent uses timeline.search, timeline.get, timeline.subject, timeline.ask, and timeline.remember to retrieve and cite workspace evidence.',
+    body: 'After consent, start a new task or conversation so your agent uses timeline.search, timeline.get, timeline.subject, timeline.ask, timeline.remember, timeline.crawl, and timeline.crawl_status to retrieve and cite workspace evidence.',
   },
 ] as const;
 
@@ -119,7 +121,7 @@ export const TIMELINE_AGENT_HELP_SEARCH_TEXT = [
   'Prefer a narrower setup? Install only the skill, or connect the MCP endpoint without the plugin.',
   'Skill only. Best for self-hosted Timeline or agents that already have an MCP connection.',
   'MCP only. Add the hosted Timeline URL, then sign in, choose a team, and approve the requested OAuth scopes in the browser.',
-  'One skill, the whole workspace. It routes each request to timeline.search, timeline.get, timeline.subject, timeline.ask, and timeline.remember and preserves citations, uncertainty, visibility, and evidence boundaries.',
+  'One skill, the whole workspace. It routes each request to timeline.search, timeline.get, timeline.subject, timeline.ask, timeline.remember, timeline.crawl, and timeline.crawl_status and preserves citations, uncertainty, visibility, and evidence boundaries.',
   'Access, without surprises. The install path and access boundary are intentionally separate.',
   'Give this to your agent.',
   TIMELINE_AGENT_SETUP_PROMPT,

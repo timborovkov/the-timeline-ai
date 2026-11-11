@@ -2,13 +2,11 @@
 
 import { randomUUID } from 'node:crypto';
 
-import { listChargeCentsForMeter } from '@timeline/shared/billing';
 import { getEnv } from '@timeline/shared/env';
 import { childLogger } from '@timeline/shared/logger';
 import {
   FIRST_RUN_PATHS,
   WEBSITE_SUBJECTS,
-  WEBSITE_SCAN_PAGE_CAP,
   type WebsiteSubject,
   TEAM_WORK_STYLES,
   parsePublicWebsiteUrl,
@@ -19,6 +17,7 @@ import {
 } from '@timeline/shared/onboarding';
 import * as rateLimit from '@timeline/shared/rate-limit';
 import { withTeam } from '@timeline/shared/team-scope';
+import { startWebsiteScan } from '@timeline/shared/websites';
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { z } from 'zod';
@@ -69,17 +68,6 @@ async function limitFirstRun(userId: string): Promise<string | null> {
   });
   if (!rl.ok) {
     return `Too many onboarding updates. Try again in ${String(Math.ceil(rl.retryAfterMs / 1000))} seconds.`;
-  }
-  return null;
-}
-
-async function limitWebsiteScan(teamId: string): Promise<string | null> {
-  const rl = await rateLimit.checkRateLimit({
-    key: rateLimit.rateLimitKey('website_scan', 'team', teamId),
-    ...rateLimit.RATE_LIMITS.websiteScan,
-  });
-  if (!rl.ok) {
-    return 'This team already used its signup website scan. Upload a document or forward an email instead.';
   }
   return null;
 }
@@ -150,8 +138,6 @@ export async function selectStarterPathAction(input: {
     if (!parsed.success) return { ok: false, error: 'Invalid starter path' };
 
     const scanId = randomUUID();
-    const operationId = `website-scan:${scanId}`;
-    let reserved = false;
     let websiteUrl: string | undefined;
     let websiteHost: string | undefined;
     if (parsed.data.path === 'website') {
@@ -175,25 +161,6 @@ export async function selectStarterPathAction(input: {
           error: 'Could not start the website scan. Upload a document or forward an email instead.',
         };
       }
-      const admission = await got.scope.billing.reserve({
-        operationId,
-        meterId: 'accepted_sources',
-        reservedNativeUnits: WEBSITE_SCAN_PAGE_CAP,
-        reservedChargeCents: listChargeCentsForMeter('accepted_sources', WEBSITE_SCAN_PAGE_CAP),
-        ttlMs: 30 * 60_000,
-      });
-      if (!admission.ok)
-        return {
-          ok: false,
-          error:
-            'Website scan cannot start with the current usage allowance. Check Billing or ask a team administrator.',
-        };
-      reserved = true;
-      const scanLimited = await limitWebsiteScan(got.teamId);
-      if (scanLimited) {
-        await got.scope.billing.release(operationId);
-        return { ok: false, error: scanLimited };
-      }
     }
 
     try {
@@ -206,10 +173,28 @@ export async function selectStarterPathAction(input: {
       });
       if (parsed.data.path === 'website') {
         try {
+          if (!websiteUrl) throw new Error('Website URL is required.');
           if (selected.websiteScanId !== scanId)
             throw new Error('The starter selection has changed.');
-          const queue = await requireRedisQueue();
-          await queue.enqueueWebsiteScanJob({ teamId: got.teamId, userId: got.userId, scanId });
+          const existing = (await got.scope.websites.list()).find(
+            (source) => source.url === websiteUrl,
+          );
+          const source =
+            existing ??
+            (await got.scope.websites.add({
+              url: websiteUrl,
+              subject: parsed.data.websiteSubject,
+              permissionConfirmed: true,
+            }));
+          const run = await startWebsiteScan(got.scope, {
+            websiteId: source.id,
+            scanId,
+            idempotencyKey: `onboarding:${scanId}`,
+            permissionConfirmed: true,
+            trigger: 'onboarding',
+          });
+          if (run.status === 'blocked')
+            throw new Error('Website scan is blocked by billing limits');
         } catch (err) {
           log.error({ err }, 'enqueue website scan failed');
           await got.scope.onboarding.markScanFailed('unreachable', scanId);
@@ -217,7 +202,6 @@ export async function selectStarterPathAction(input: {
         }
       }
     } catch (err) {
-      if (reserved) await got.scope.billing.release(operationId);
       log.error({ err }, 'selectStarterPath failed');
       return {
         ok: false,

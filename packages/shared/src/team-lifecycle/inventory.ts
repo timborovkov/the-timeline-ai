@@ -128,7 +128,11 @@ export const PURGED_TEAM_TABLES = [
   'timeline_moment_presentations',
   'user_onboarding_dismissals',
   'user_pins',
+  'website_notifications',
+  'website_pages',
+  'website_runs',
   'website_sources',
+  'websites',
 ] as const;
 
 /** Indirect/shared stores: cascade, explicit shared-reference cleanup, or account/security ownership. */
