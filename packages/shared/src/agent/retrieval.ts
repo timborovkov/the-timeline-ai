@@ -7,7 +7,7 @@ import {
   type EvidencePackMetrics,
 } from '#src/evidence-pack/index.js';
 import { type ObjectSummarySourceRef, sourceRefCitation } from '#src/objects/summaries.js';
-import { enrichEvidenceContext } from '#src/retrieval/context.js';
+import { enrichEvidenceContext, expandEvidenceConversations } from '#src/retrieval/context.js';
 
 import type {
   RetrievalRecipe,
@@ -58,6 +58,7 @@ export interface WorkspaceContextAdapterFailure {
     | 'notes'
     | 'timeline_events'
     | 'evidence_pack'
+    | 'conversation_context'
     | 'boards'
     | 'documents'
     | 'calendar';
@@ -219,7 +220,7 @@ export async function retrieveWorkspaceContext(
     ...new Set([
       ...events.map((event) => event.eventId),
       ...documents.flatMap((doc) =>
-        [doc.sourceEvidenceEventId, doc.sourceRawEventId].filter((id): id is string => Boolean(id)),
+        [doc.sourceEvidenceEventId].filter((id): id is string => Boolean(id)),
       ),
     ]),
   ];
@@ -227,10 +228,13 @@ export async function retrieveWorkspaceContext(
   if (evidenceEventIds.length > 0) {
     try {
       const members = await scope.timeline.listMembers();
+      const conversation = await expandEvidenceConversations(scope, evidenceEventIds);
+      adapterFailures.push(...conversation.adapterFailures);
       const pack = await buildEvidencePack(scope, {
         purpose: 'answer',
         anchorRawEventIds: evidenceEventIds,
         semanticRawEventIds: evidenceEventIds,
+        coreRawEventIds: conversation.eventIds,
       });
       evidencePack = {
         status: 'complete',
@@ -262,7 +266,7 @@ export async function retrieveWorkspaceContext(
             }) ?? '',
           relationshipSignals: item.relationshipSignals,
         })),
-        metrics: pack.metrics,
+        metrics: { ...pack.metrics, truncated: pack.metrics.truncated || conversation.truncated },
       };
     } catch (error) {
       const errorReason = error instanceof Error ? error.name : 'evidence_pack_failure';

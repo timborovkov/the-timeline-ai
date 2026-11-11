@@ -995,6 +995,7 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
         fileKind: documents.fileKind,
         documentName: documents.name,
         documentMetadata: documents.metadata,
+        originalSourceEventId: documents.sourceRawEventId,
         folderId: documents.folderId,
         sourceRawEventId: documentVersions.sourceEventId,
         createdAt: documentVersions.createdAt,
@@ -1031,7 +1032,9 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
     const parentIdFor = (row: (typeof rows)[number]): string | null => {
       const candidate =
         stringMetadata(metadataRecord(row.sourceMetadata), 'parent_raw_event_id') ??
-        stringMetadata(metadataRecord(row.documentMetadata), 'parent_raw_event_id');
+        (row.sourceOccurredAt && row.sourceRawEventId === row.originalSourceEventId
+          ? stringMetadata(metadataRecord(row.documentMetadata), 'parent_raw_event_id')
+          : null);
       return candidate && UUID_RE.test(candidate) ? candidate : null;
     };
     const parentIds = [

@@ -928,12 +928,30 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
     rawEventIds: string[],
   ): Promise<{ objectIds: string[]; truncated: boolean }> {
     await ensureMember();
-    const result = await listEvidencePackArtifactClusters(rawEventIds.slice(0, 20), 200);
-    const clusterIds = Object.keys(result.clusters);
-    if (!clusterIds.length) return { objectIds: [], truncated: result.truncatedCandidateCount > 0 };
+    const ids = [...new Set(rawEventIds.filter((id) => UUID_RE.test(id)))];
+    if (!ids.length) return { objectIds: [], truncated: false };
+    const associationRawEventId = sql<string>`COALESCE(${artifactEvidenceAssociations.rawEventId}, ${reconciliationEvidence.rawEventId})`;
     const rows = await db
-      .select({ id: artifactClusters.canonicalEntityId })
-      .from(artifactClusters)
+      .select({ id: entities.id })
+      .from(artifactEvidenceAssociations)
+      .innerJoin(
+        reconciliationEvidence,
+        and(
+          eq(reconciliationEvidence.id, artifactEvidenceAssociations.evidenceId),
+          eq(reconciliationEvidence.teamId, teamId),
+        ),
+      )
+      .innerJoin(
+        rawEvents,
+        and(eq(rawEvents.id, associationRawEventId), eq(rawEvents.teamId, teamId)),
+      )
+      .innerJoin(
+        artifactClusters,
+        and(
+          eq(artifactClusters.id, artifactEvidenceAssociations.clusterId),
+          eq(artifactClusters.teamId, teamId),
+        ),
+      )
       .innerJoin(
         entities,
         and(
@@ -944,18 +962,31 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
       )
       .where(
         and(
-          eq(artifactClusters.teamId, teamId),
-          inArray(artifactClusters.id, clusterIds),
+          eq(artifactEvidenceAssociations.teamId, teamId),
+          inArray(rawEvents.id, ids.slice(0, 20)),
+          visibilityFilter,
+          activeRawEventFilter,
           isNull(artifactClusters.archivedAt),
+          ne(artifactEvidenceAssociations.associationSource, 'model_candidate'),
+          ne(artifactEvidenceAssociations.strength, 'semantic'),
+          visibilityEnvelopeVisibleToUser({
+            visibility: artifactEvidenceAssociations.visibility,
+            visibilityOwnerUserId: artifactEvidenceAssociations.visibilityOwnerUserId,
+            visibilityUserIds: artifactEvidenceAssociations.visibilityUserIds,
+            authorUserId: rawEvents.authorUserId,
+          }),
+          visibilityEnvelopeVisibleToUser({
+            visibility: artifactEvidenceAssociations.visibilityFloor,
+            visibilityOwnerUserId: artifactEvidenceAssociations.visibilityFloorOwnerUserId,
+            visibilityUserIds: artifactEvidenceAssociations.visibilityFloorUserIds,
+            authorUserId: rawEvents.authorUserId,
+          }),
         ),
       )
-      .groupBy(artifactClusters.canonicalEntityId)
-      .orderBy(asc(artifactClusters.canonicalEntityId))
+      .groupBy(entities.id)
+      .orderBy(asc(entities.id))
       .limit(6);
-    return {
-      objectIds: rows.flatMap((row) => (row.id ? [row.id] : [])),
-      truncated: result.truncatedCandidateCount > 0 || rawEventIds.length > 20 || rows.length > 5,
-    };
+    return { objectIds: rows.map((row) => row.id), truncated: ids.length > 20 || rows.length > 5 };
   }
 
   async function listEvidencePackArtifactClusters(

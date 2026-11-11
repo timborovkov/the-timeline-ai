@@ -122,8 +122,12 @@ Current records, raw claims, and pending changes are distinct. Pending proposals
 remain noncanonical; rejected changes do not erase source history. Source-specific
 answers attribute the source, historical answers respect the requested period,
 and unresolved contradictions retain both citations without an invented resolution.
-Conversation context preserves chronology; unrelated newer messages do not override
-a record. Existing provider/human authority rules remain authoritative. Retrieval
+Conversation context expands at most five matched moments through scoped lookups
+(up to 40 events per moment and 100 events overall), preserving chronology. Only
+visibility-validated source IDs become evidence anchors. Board-item proposals retain
+their exact object association and separate current board values. Later manual
+document versions do not inherit a promoted attachment’s original message provenance.
+Unrelated newer messages do not override a record. Existing provider/human authority rules remain authoritative. Retrieval
 cannot guarantee that every contradictory source was found.
 
 Customer explanations live in Help → Capture and the How it works FAQ; both must

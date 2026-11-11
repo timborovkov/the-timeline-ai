@@ -181,6 +181,59 @@ describe('withTeam timeline semantic search', () => {
     expect(rows.map((row) => row.id)).toEqual([TEAM_EVENT]);
   });
 
+  it('expands a short correction absent from semantic hits and excludes private replies', async () => {
+    await pg.query(
+      `UPDATE raw_events SET source='telegram',source_metadata=jsonb_build_object('tg_chat_id','correction-room'),occurred_at='2026-06-01T09:01:00Z' WHERE id=ANY($1::uuid[])`,
+      [[TEAM_EVENT, RELATED_EVENT, PRIVATE_EVENT]],
+    );
+    await pg.query(`UPDATE raw_events SET content_text='Actually, Friday.' WHERE id=$1`, [
+      RELATED_EVENT,
+    ]);
+    const result = await enrichEvidenceContext(scopeFor(MEMBER), { eventIds: [TEAM_EVENT] });
+    expect(result.adapterFailures).toEqual([]);
+    expect(result.evidence.map((row) => row.eventId)).toContain(RELATED_EVENT);
+    expect(result.evidence.map((row) => row.eventId)).not.toContain(PRIVATE_EVENT);
+    expect(result.evidence.find((row) => row.eventId === RELATED_EVENT)?.content).toContain(
+      'Actually, Friday.',
+    );
+  });
+
+  it('keeps pending board updates for their exactly associated object', async () => {
+    const boardId = crypto.randomUUID(),
+      boardItemId = crypto.randomUUID(),
+      bundleId = crypto.randomUUID(),
+      itemId = crypto.randomUUID();
+    await pg.query(`INSERT INTO boards(id,team_id,name) VALUES ($1,$2,'Fixture pipeline')`, [
+      boardId,
+      TEAM_A,
+    ]);
+    await pg.query(
+      `INSERT INTO board_items(id,team_id,board_id,entity_id,next_step) VALUES ($1,$2,$3,$4,'Old next step')`,
+      [boardItemId, TEAM_A, boardId, ENTITY_ID],
+    );
+    await pg.query(
+      `INSERT INTO agent_suggestions(id,team_id,source,title,dedupe_key) VALUES ($1,$2,'background','Board update','board-fixture')`,
+      [bundleId, TEAM_A],
+    );
+    await pg.query(
+      `INSERT INTO agent_suggestion_items(id,suggestion_id,team_id,operation,target_kind,target_id,title,dedupe_key,proposed_payload) VALUES ($1,$2,$3,'update','board_item_update',$4,'Next step','board-fixture',$5)`,
+      [
+        itemId,
+        bundleId,
+        TEAM_A,
+        boardItemId,
+        JSON.stringify({ boardItemId, field: 'nextStep', newValue: 'Confirm Friday' }),
+      ],
+    );
+    const result = await enrichEvidenceContext(scopeFor(MEMBER), { objectIds: [ENTITY_ID] });
+    expect(result.adapterFailures).toEqual([]);
+    expect(result.objects[0]?.pending.map((item) => item.id)).toEqual([itemId]);
+    expect(result.objects[0]?.currentBoardItems[0]?.values).toContain('Old next step');
+    await pg.query(`UPDATE board_items SET archived_at=now() WHERE id=$1`, [boardItemId]);
+    const archived = await enrichEvidenceContext(scopeFor(MEMBER), { objectIds: [ENTITY_ID] });
+    expect(archived.objects[0]?.pending).toEqual([]);
+  });
+
   it('discloses the bounded pool even when duplicate hits collapse to one event', async () => {
     hits = Array.from({ length: 200 }, (_, index) => ({
       ...hit(TEAM_EVENT, 0.8),
@@ -441,6 +494,17 @@ describe('withTeam timeline semantic search', () => {
         ('${TEAM_A}', '${ARTIFACT_CLUSTER}', '${baseEvidence}', 'origin', 'human', 'human', '[]'::jsonb, 'team', 'team', NULL, '{"canonical_name":"Acme pricing rollout","status":"active"}'::jsonb, 'association:base'),
         ('${TEAM_A}', '${ARTIFACT_CLUSTER}', '${ownerOnlyEvidence}', 'lifecycle_update', 'provider', 'authoritative_provider', '[]'::jsonb, 'team', 'private', '${OWNER}', '{"canonical_name":"Owner-only Acme rollout state","status":"blocked"}'::jsonb, 'association:owner-only');
     `);
+    await pg.query(`UPDATE artifact_clusters SET canonical_entity_id=$1 WHERE id=$2`, [
+      ENTITY_ID,
+      ARTIFACT_CLUSTER,
+    ]);
+    expect(await scopeFor(MEMBER).timeline.resolveEvidenceObjectIds([TEAM_EVENT])).toEqual({
+      objectIds: [ENTITY_ID],
+      truncated: false,
+    });
+    expect(
+      await scopeFor(OWNER).timeline.resolveEvidenceObjectIds([TEAM_EVENT, RELATED_EVENT]),
+    ).toEqual({ objectIds: [ENTITY_ID], truncated: false });
     hits = [hit(TEAM_EVENT, 0.9)];
 
     const memberResults = await scopeFor(MEMBER).timeline.searchEvents({

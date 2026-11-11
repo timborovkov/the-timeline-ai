@@ -1,8 +1,45 @@
 import { fenceExternalContent } from '#src/agent/external-content.js';
 import { artifactRefCitation } from '#src/citation.js';
 import { buildEvidencePack, evidenceSourceContextForPrompt } from '#src/evidence-pack/index.js';
+import { buildTimelineMoments, timelineMomentLookupPlan } from '#src/timeline-moments/index.js';
 
 import type { TeamScope } from '#src/team-scope.js';
+
+/** Expand only scoped moments, never arbitrary semantic neighbors. */
+export async function expandEvidenceConversations(scope: TeamScope, eventIds: string[]) {
+  const anchors = await scope.timeline.getEventsByIds([...new Set(eventIds)].slice(0, 20));
+  const inputOrder = new Map(eventIds.map((id, index) => [id, index]));
+  const momentRank = (moment: ReturnType<typeof buildTimelineMoments>[number]) =>
+    Math.min(...moment.rawEvents.map((event) => inputOrder.get(event.id) ?? Infinity));
+  const moments = buildTimelineMoments(anchors, new Map(), { groupingMode: 'moments' }).sort(
+    (a, b) => momentRank(a) - momentRank(b),
+  );
+  const ids = new Set(anchors.map((event) => event.id));
+  const adapterFailures: { adapter: 'conversation_context'; errorReason: string }[] = [];
+  let truncated = moments.length > 5 || eventIds.length > 20;
+  for (const moment of moments.slice(0, 5)) {
+    const plan = timelineMomentLookupPlan(moment.id);
+    if (!plan) continue;
+    const limit = Math.min(plan.limit, 40);
+    try {
+      const related = await scope.timeline.listEventsForMomentLookup({ ...plan, limit });
+      truncated ||= related.length >= limit;
+      for (const event of related) {
+        if (ids.size >= 100 && !ids.has(event.id)) {
+          truncated = true;
+          continue;
+        }
+        ids.add(event.id);
+      }
+    } catch (error) {
+      adapterFailures.push({
+        adapter: 'conversation_context',
+        errorReason: error instanceof Error ? error.name : 'unknown_error',
+      });
+    }
+  }
+  return { eventIds: [...ids], truncated, adapterFailures };
+}
 
 /** Read-time context only: never resolves contradictions or creates proposals. */
 export async function enrichEvidenceContext(
@@ -67,11 +104,28 @@ export async function enrichEvidenceContext(
           ].includes(key) &&
           (field === id || (Array.isArray(field) && field.includes(id))),
       );
+    const boardContext = bundles.some((bundle) =>
+      bundle.items.some(
+        (item) => item.status === 'pending' && item.targetKind === 'board_item_update',
+      ),
+    )
+      ? await safe('board_item_identity', () => scope.boards.listObjectBoardContext(id), [])
+      : [];
+    const boardItemIds = new Set(boardContext.map((item) => item.itemId));
+    const boardItemMatches = (item: (typeof bundles)[number]['items'][number]) => {
+      if (item.targetKind !== 'board_item_update') return false;
+      const boardItemId = item.proposedPayload.boardItemId;
+      return (
+        (typeof boardItemId === 'string' && boardItemIds.has(boardItemId)) ||
+        (item.targetId !== null && boardItemIds.has(item.targetId))
+      );
+    };
     const pending = bundles.flatMap((bundle) =>
       bundle.items
         .filter(
           (item) =>
-            item.status === 'pending' && (item.targetId === id || refersTo(item.proposedPayload)),
+            item.status === 'pending' &&
+            (item.targetId === id || refersTo(item.proposedPayload) || boardItemMatches(item)),
         )
         .map((item) => ({
           id: item.id,
@@ -122,6 +176,15 @@ export async function enrichEvidenceContext(
         ownerUserId: current.ownerUserId,
         assigneeUserId: current.assigneeUserId,
       },
+      currentBoardItems: boardContext.map((item) => ({
+        itemId: item.itemId,
+        boardId: item.boardId,
+        canonical: true,
+        values: fenceExternalContent(JSON.stringify(item), {
+          source: 'board-item',
+          eventId: item.itemId,
+        }),
+      })),
       currentEvidence: [...current.provenance.whyThisExists, ...current.provenance.whatChangedIt]
         .slice(0, 5)
         .map((entry) => ({
@@ -140,6 +203,16 @@ export async function enrichEvidenceContext(
       pending: pending.slice(0, 5),
     });
   }
+  const conversation =
+    eventIds.length && input.includeConversation !== false
+      ? await safe('conversation_context', () => expandEvidenceConversations(scope, eventIds), {
+          eventIds: [],
+          truncated: false,
+          adapterFailures: [],
+        })
+      : { eventIds: [], truncated: false, adapterFailures: [] };
+  failures.push(...conversation.adapterFailures);
+  truncated ||= conversation.truncated;
   const pack =
     eventIds.length && input.includeConversation !== false
       ? await safe(
@@ -149,6 +222,7 @@ export async function enrichEvidenceContext(
               purpose: 'answer',
               anchorRawEventIds: eventIds.slice(0, 20),
               semanticRawEventIds: eventIds.slice(0, 20),
+              coreRawEventIds: conversation.eventIds,
             }),
           null,
         )

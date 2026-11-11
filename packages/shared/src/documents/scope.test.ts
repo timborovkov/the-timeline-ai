@@ -544,6 +544,26 @@ describe('document scope — visibility filter', () => {
     expect(hiddenVersion.sourceEvidenceEventId).not.toBe(parentId);
     expect(hiddenVersion.ranking?.dateBasis).toBe('uploaded');
     expect(hiddenVersion.ranking?.freshnessBoost).toBe(0.01);
+    // Promotion retains document metadata, but a later manual version has its own provenance.
+    await pg.query(`UPDATE raw_events SET visibility='team' WHERE id=$1`, [parentId]);
+    await pg.query(
+      `UPDATE documents SET file_kind='document', metadata=jsonb_build_object('parent_raw_event_id',$1::text) WHERE id=$2`,
+      [parentId, documentId],
+    );
+    await pg.query(
+      `UPDATE raw_events SET source='document',occurred_at='2026-11-11',source_metadata='{}' WHERE id=$1`,
+      [versions[1]?.eventId],
+    );
+    const promoted = await scope.searchDocumentChunks({
+      query: 'capture',
+      rankingNow: new Date('2026-11-11'),
+    });
+    expect(promoted.find((row) => row.version === 1)?.sourceEvidenceEventId).toBe(parentId);
+    expect(promoted.find((row) => row.version === 2)?.sourceEvidenceEventId).toBe(
+      versions[1]?.eventId,
+    );
+    expect(promoted.find((row) => row.version === 2)?.ranking?.dateBasis).toBe('uploaded');
+    expect(promoted.find((row) => row.version === 2)?.ranking?.freshnessBoost).toBe(0.01);
   });
 
   it('keeps a promoted website version searchable after a newer crawl supersedes its source event', async () => {

@@ -2998,9 +2998,7 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
             retrieval,
             context: await enrichEvidenceContext(scope, {
               eventIds: hits.flatMap((hit) =>
-                [hit.sourceEvidenceEventId, hit.sourceRawEventId].filter((id): id is string =>
-                  Boolean(id),
-                ),
+                [hit.sourceEvidenceEventId].filter((id): id is string => Boolean(id)),
               ),
             }),
           };

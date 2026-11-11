@@ -1112,9 +1112,7 @@ async function executeReadCapability(
         retrieval,
         context: await enrichEvidenceContext(scope, {
           eventIds: results.flatMap((hit) =>
-            [hit.sourceEvidenceEventId, hit.sourceRawEventId].filter((id): id is string =>
-              Boolean(id),
-            ),
+            [hit.sourceEvidenceEventId].filter((id): id is string => Boolean(id)),
           ),
         }),
       };

@@ -77,6 +77,7 @@ function makeScope() {
       }),
     },
     timeline: {
+      listEventsForMomentLookup: vi.fn().mockResolvedValue([]),
       listMembers: vi.fn().mockResolvedValue([
         {
           userId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
@@ -193,6 +194,31 @@ describe('retrieveWorkspaceContext', () => {
       recipe: 'document_knowledge',
     });
     expect(result.evidencePack).toMatchObject({ items: [{ rawEventId: EVENT_ID }] });
+  });
+
+  it('does not anchor inaccessible document source IDs alongside visible timeline evidence', async () => {
+    const scope = makeScope();
+    scope.documents.searchDocumentChunks.mockResolvedValue([
+      {
+        documentId: OBJECT_ID,
+        documentChunkId: NOTE_ID,
+        documentVersionId: OBJECT_ID,
+        sourceEvidenceEventId: null,
+        sourceRawEventId: SUPPORT_EVENT_ID,
+        text: 'Shared document',
+        documentName: 'Shared document',
+        createdAt: new Date('2026-11-11'),
+        score: 0.8,
+      },
+    ]);
+    const result = await retrieveWorkspaceContext(scope as unknown as TeamScope, {
+      query: 'Otto',
+      includeDocuments: true,
+    });
+    expect(result.evidencePack?.status).toBe('complete');
+    expect(scope.timeline.getEventsByIds.mock.calls.flat()).not.toContainEqual(
+      expect.arrayContaining([SUPPORT_EVENT_ID]),
+    );
   });
 
   it('validates one retrieval contract while preserving explicit false flags', () => {
