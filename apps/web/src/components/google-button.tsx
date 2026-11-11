@@ -1,22 +1,30 @@
 import { signInWithGoogleAction } from '@/app/actions/auth';
+import { LastUsedBadge } from '@/components/last-used-badge';
 import { Button } from '@/components/ui/button';
 
 export function GoogleSignInButton({
   callbackUrl,
   inviteToken,
+  lastUsed = false,
 }: {
   callbackUrl?: string;
   inviteToken?: string;
+  lastUsed?: boolean;
 }) {
   return (
     <form action={signInWithGoogleAction}>
       {callbackUrl ? <input type="hidden" name="callbackUrl" value={callbackUrl} /> : null}
       {inviteToken ? <input type="hidden" name="inviteToken" value={inviteToken} /> : null}
-      <Button type="submit" variant="outline" className="w-full text-sm">
+      <Button
+        type="submit"
+        variant="outline"
+        className="h-auto min-h-9 w-full flex-wrap gap-x-2 gap-y-1 py-2 text-sm"
+      >
         <span className="flex size-5 shrink-0 items-center justify-center rounded-[2px] bg-white">
           <GoogleGLogo />
         </span>
-        Continue with Google
+        <span>Continue with Google</span>
+        {lastUsed ? <LastUsedBadge /> : null}
       </Button>
     </form>
   );

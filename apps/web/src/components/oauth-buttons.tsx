@@ -1,3 +1,5 @@
+import type { LoginMethod } from '@/lib/last-login-method';
+
 import { GitHubSignInButton } from '@/components/github-button';
 import { GoogleSignInButton } from '@/components/google-button';
 import { Separator } from '@/components/ui/separator';
@@ -7,19 +9,33 @@ export function OAuthSignInButtons({
   inviteToken,
   google,
   github,
+  lastLoginMethod,
 }: {
   callbackUrl?: string;
   inviteToken?: string;
   google: boolean;
   github: boolean;
+  lastLoginMethod?: LoginMethod | null;
 }) {
   if (!google && !github) return null;
 
   return (
     <>
       <div className="space-y-2">
-        {google ? <GoogleSignInButton callbackUrl={callbackUrl} inviteToken={inviteToken} /> : null}
-        {github ? <GitHubSignInButton callbackUrl={callbackUrl} inviteToken={inviteToken} /> : null}
+        {google ? (
+          <GoogleSignInButton
+            lastUsed={lastLoginMethod === 'google'}
+            callbackUrl={callbackUrl}
+            inviteToken={inviteToken}
+          />
+        ) : null}
+        {github ? (
+          <GitHubSignInButton
+            lastUsed={lastLoginMethod === 'github'}
+            callbackUrl={callbackUrl}
+            inviteToken={inviteToken}
+          />
+        ) : null}
       </div>
       {inviteToken ? (
         <p className="text-xs text-muted-foreground">
