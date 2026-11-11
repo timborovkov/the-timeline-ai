@@ -1,3 +1,5 @@
+import { renderToStaticMarkup } from 'react-dom/server';
+
 import { expect } from '@timeline/test-support';
 import { vi } from '@timeline/test-support';
 import { beforeEach, describe, it } from 'bun:test';
@@ -74,9 +76,50 @@ describe('Agent provisioning page', () => {
     mocks.listProvisioningGrants.mockResolvedValue([]);
     mocks.listProvisioningAudit.mockResolvedValue([]);
 
-    await AgentProvisioningPage();
+    const html = renderToStaticMarkup(await AgentProvisioningPage());
+    expect(html).toContain('No grants yet');
+    expect(html).toContain('No activity yet');
 
     expect(mocks.listProvisioningGrants).toHaveBeenCalledWith({ kind: 'test-db' }, 'owner-id');
     expect(mocks.listProvisioningAudit).toHaveBeenCalledWith({ kind: 'test-db' }, 'owner-id');
+  });
+  it('shows grant status, readable activity, and only available revoke actions', async () => {
+    mocks.getRequestIdentity.mockResolvedValue({
+      session: { user: { id: 'owner-id' } },
+      impersonation: null,
+    });
+    mocks.listProvisioningGrants.mockResolvedValue([
+      {
+        id: 'active',
+        name: 'Setup agent',
+        prefix: 'tlp_example',
+        used: 1,
+        allowance: 3,
+        allowCapture: true,
+        expiresAt: new Date('2099-01-01'),
+        revokedAt: null,
+      },
+      {
+        id: 'revoked',
+        name: 'Old agent',
+        prefix: 'tlp_old',
+        used: 0,
+        allowance: 1,
+        allowCapture: false,
+        expiresAt: new Date('2020-01-01'),
+        revokedAt: new Date('2019-12-31'),
+      },
+    ]);
+    mocks.listProvisioningAudit.mockResolvedValue([
+      { id: 'event', action: 'grant.created', createdAt: new Date('2026-11-11T12:00:00Z') },
+    ]);
+    const html = renderToStaticMarkup(await AgentProvisioningPage());
+    expect(html).toContain('Active');
+    expect(html).toContain('Revoked');
+    expect(html).toContain('Grant created');
+    expect(html).toContain('Revoke Setup agent');
+    expect(html).not.toContain('Revoke Old agent');
+    expect(html).not.toContain('No grants yet');
+    expect(html).not.toContain('No activity yet');
   });
 });

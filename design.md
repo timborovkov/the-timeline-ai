@@ -153,6 +153,10 @@ Ask, Work, Documents, Meetings, Connections, Usage, and Team.
   same 12px inset as primary destinations and links to Home (`/app`). Fold and
   unfold is a quiet chevron, not a boxed panel glyph.
 - Shell header: 48px.
+- Account menu destinations have leading 16px Lucide icons; Agent provisioning
+  uses `Bot`. Its page pairs a compact grant form with a grants/activity column
+  on wide screens, stacking on mobile. Empty collections use `EmptyState`;
+  grants use `CollectionRow` with readable expiry dates and explicit status.
 - Main page container: one shell-owned `max-w-6xl`; routes must not create a
   competing outer page width.
 - Full-canvas chat and boards may opt into full bleed. Timeline opts into
