@@ -9,6 +9,8 @@ import {
 import { and, asc, eq, isNull, lte, sql } from 'drizzle-orm';
 
 import { getEnv } from '#src/env.js';
+import { PlatformAccessError } from '#src/platform-admin/index.js';
+import { runGuardedJob } from '#src/platform-admin/runtime.js';
 import { getChatDeliveryQueue, enqueueWebsiteScanJob } from '#src/queue/queues.js';
 import { withTeam } from '#src/team-scope.js';
 import { authorizeWebsitePrincipal } from '#src/websites/authorization.js';
@@ -51,6 +53,9 @@ export async function tickWebsiteSchedules(db: Db): Promise<void> {
       {
         teamId: run.teamId,
         userId: run.requestedBy,
+        ...(run.platformOperatorSessionId
+          ? { platformOperatorSessionId: run.platformOperatorSessionId }
+          : {}),
         ciphertext: notification.ciphertext,
         iv: notification.iv,
         tag: notification.tag,
@@ -75,55 +80,84 @@ export async function tickWebsiteSchedules(db: Db): Promise<void> {
     )
     .orderBy(asc(websiteRuns.createdAt));
   for (const run of pending) {
-    const scope = withTeam(db, run.teamId, run.requestedBy, {
-      skipMembershipCheck: run.principal?.authType === 'api_key',
-      ...(run.principal ? { websitePrincipal: run.principal } : {}),
-    });
     try {
-      if (run.principal) await authorizeWebsitePrincipal(db, run.principal, 'websites:scan');
-      await scope.requireMembership();
-      if (run.createdAt.getTime() < Date.now() - 86_400_000) {
-        await failWebsiteRun(db, run.teamId, run.id, 'processing_timeout');
-        continue;
-      }
-      if (run.status === 'queued') {
-        await enqueueWebsiteScanJob({
+      await runGuardedJob(
+        {
           teamId: run.teamId,
           userId: run.requestedBy,
           scanId: run.id,
-        });
-      } else if (run.handoffAt) {
-        const [unfinished] = await db
-          .select({ id: documentVersions.id })
-          .from(documentVersions)
-          .innerJoin(rawEvents, eq(rawEvents.id, documentVersions.sourceEventId))
-          .where(
-            and(
-              eq(documentVersions.teamId, run.teamId),
-              eq(rawEvents.teamId, run.teamId),
-              sql`${rawEvents.sourceMetadata}->>'websiteScanId' = ${run.id}`,
-              sql`${documentVersions.processingStatus} <> 'embedded'`,
-            ),
-          )
-          .limit(1);
-        if (!unfinished)
-          await scope.websites.updateRun(run.id, {
-            status: run.failureReason ? 'partial' : 'completed',
-            finishedAt: new Date(),
+          ...(run.platformOperatorSessionId
+            ? { platformOperatorSessionId: run.platformOperatorSessionId }
+            : {}),
+        },
+        async () => {
+          const scope = withTeam(db, run.teamId, run.requestedBy, {
+            skipMembershipCheck: run.principal?.authType === 'api_key',
+            ...(run.principal ? { websitePrincipal: run.principal } : {}),
           });
-        else if (run.handoffAt.getTime() < Date.now() - 86_400_000)
-          await scope.websites.updateRun(run.id, {
-            status: 'partial',
-            failureReason: 'processing_incomplete',
-            finishedAt: new Date(),
-          });
-      }
+          if (run.principal) await authorizeWebsitePrincipal(db, run.principal, 'websites:scan');
+          await scope.requireMembership();
+          if (run.createdAt.getTime() < Date.now() - 86_400_000) {
+            await failWebsiteRun(db, run.teamId, run.id, 'processing_timeout');
+            return;
+          }
+          if (run.status === 'queued') {
+            await enqueueWebsiteScanJob({
+              teamId: run.teamId,
+              userId: run.requestedBy,
+              scanId: run.id,
+              ...(run.platformOperatorSessionId
+                ? { platformOperatorSessionId: run.platformOperatorSessionId }
+                : {}),
+            });
+          } else if (run.handoffAt) {
+            const [unfinished] = await db
+              .select({ id: documentVersions.id })
+              .from(documentVersions)
+              .innerJoin(rawEvents, eq(rawEvents.id, documentVersions.sourceEventId))
+              .where(
+                and(
+                  eq(documentVersions.teamId, run.teamId),
+                  eq(rawEvents.teamId, run.teamId),
+                  sql`${rawEvents.sourceMetadata}->>'websiteScanId' = ${run.id}`,
+                  sql`${documentVersions.processingStatus} <> 'embedded'`,
+                ),
+              )
+              .limit(1);
+            if (!unfinished)
+              await scope.websites.updateRun(run.id, {
+                status: run.failureReason ? 'partial' : 'completed',
+                finishedAt: new Date(),
+              });
+            else if (run.handoffAt.getTime() < Date.now() - 86_400_000)
+              await scope.websites.updateRun(run.id, {
+                status: 'partial',
+                failureReason: 'processing_incomplete',
+                finishedAt: new Date(),
+              });
+          }
+        },
+        db,
+      );
     } catch (error) {
       if (
-        error instanceof Error &&
-        /member|revoked|expired|authorized|permission|suspended/i.test(error.message)
-      )
+        error instanceof PlatformAccessError ||
+        (error instanceof Error &&
+          /member|revoked|expired|authorized|permission|suspended/i.test(error.message))
+      ) {
         await failWebsiteRun(db, run.teamId, run.id, 'actor_no_longer_authorized');
+        if (run.platformOperatorSessionId)
+          await db
+            .update(websites)
+            .set({ paused: true, nextScanAt: null, blockedReason: 'schedule_authorization_lost' })
+            .where(
+              and(
+                eq(websites.teamId, run.teamId),
+                eq(websites.id, run.websiteId),
+                eq(websites.scheduleOperatorSessionId, run.platformOperatorSessionId),
+              ),
+            );
+      }
     }
   }
   if (!getEnv().WEBSITE_SCHEDULES_ENABLED || getEnv().WEBSITE_CRAWLS_DISABLED) return;
@@ -139,34 +173,62 @@ export async function tickWebsiteSchedules(db: Db): Promise<void> {
     )
     .orderBy(asc(websites.nextScanAt), asc(websites.id));
   for (const source of due) {
-    if (!source.nextScanAt || !source.scheduleBy) continue;
-    const scope = withTeam(db, source.teamId, source.scheduleBy, {
-      skipMembershipCheck: source.schedulePrincipal?.authType === 'api_key',
-      ...(source.schedulePrincipal ? { websitePrincipal: source.schedulePrincipal } : {}),
-    });
+    const dueAt = source.nextScanAt;
+    const scheduleBy = source.scheduleBy;
+    if (!dueAt || !scheduleBy) continue;
     try {
-      if (source.schedulePrincipal)
-        await authorizeWebsitePrincipal(db, source.schedulePrincipal, 'websites:manage');
-      else {
-        const role = await scope.requireMembership('admin');
-        if (role === 'member') continue;
-      }
-      await startWebsiteScan(scope, {
-        websiteId: source.id,
-        idempotencyKey: `schedule:${source.id}:${source.nextScanAt.toISOString()}`,
-        trigger: 'scheduled',
-        permissionConfirmed: true,
-      });
-      await scope.websites.advanceSchedule(source.id, source.nextScanAt);
+      await runGuardedJob(
+        {
+          teamId: source.teamId,
+          userId: scheduleBy,
+          ...(source.scheduleOperatorSessionId
+            ? { platformOperatorSessionId: source.scheduleOperatorSessionId }
+            : {}),
+        },
+        async () => {
+          const scope = withTeam(db, source.teamId, scheduleBy, {
+            skipMembershipCheck: source.schedulePrincipal?.authType === 'api_key',
+            ...(source.schedulePrincipal ? { websitePrincipal: source.schedulePrincipal } : {}),
+          });
+          if (source.schedulePrincipal)
+            await authorizeWebsitePrincipal(db, source.schedulePrincipal, 'websites:manage');
+          else {
+            const role = await scope.requireMembership('admin');
+            if (role === 'member') return;
+          }
+          await startWebsiteScan(scope, {
+            websiteId: source.id,
+            idempotencyKey: `schedule:${source.id}:${dueAt.toISOString()}`,
+            trigger: 'scheduled',
+            permissionConfirmed: true,
+          });
+          await scope.websites.advanceSchedule(source.id, dueAt);
+        },
+        db,
+      );
     } catch (error) {
       if (
-        error instanceof Error &&
-        /member|revoked|expired|authorized|permission|suspended|admin/i.test(error.message)
+        error instanceof PlatformAccessError ||
+        (error instanceof Error &&
+          /member|revoked|expired|authorized|permission|suspended|admin/i.test(error.message))
       )
         await db
           .update(websites)
           .set({ paused: true, nextScanAt: null, blockedReason: 'schedule_authorization_lost' })
-          .where(and(eq(websites.teamId, source.teamId), eq(websites.id, source.id)));
+          .where(
+            and(
+              eq(websites.teamId, source.teamId),
+              eq(websites.id, source.id),
+              eq(websites.nextScanAt, dueAt),
+              eq(websites.scheduleBy, scheduleBy),
+              source.schedulePrincipal
+                ? sql`${websites.schedulePrincipal} = ${JSON.stringify(source.schedulePrincipal)}::jsonb`
+                : isNull(websites.schedulePrincipal),
+              source.scheduleOperatorSessionId
+                ? eq(websites.scheduleOperatorSessionId, source.scheduleOperatorSessionId)
+                : isNull(websites.scheduleOperatorSessionId),
+            ),
+          );
     }
   }
 }

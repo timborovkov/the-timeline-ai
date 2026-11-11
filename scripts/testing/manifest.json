@@ -2433,5 +2433,8 @@
   },
   "packages/shared/src/websites/bot-command.test.ts": {
     "group": "unit"
+  },
+  "packages/shared/src/websites/runtime.test.ts": {
+    "group": "db"
   }
 }

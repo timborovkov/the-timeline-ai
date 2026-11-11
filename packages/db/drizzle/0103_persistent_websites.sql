@@ -1,6 +1,6 @@
 CREATE TABLE websites (
  id uuid PRIMARY KEY DEFAULT gen_random_uuid(), team_id uuid NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
- url text NOT NULL, hostname text NOT NULL, subject text NOT NULL, created_by uuid NOT NULL, schedule_by uuid, schedule_principal jsonb,
+ url text NOT NULL, hostname text NOT NULL, subject text NOT NULL, created_by uuid NOT NULL, schedule_by uuid, schedule_principal jsonb, schedule_operator_session_id uuid,
  schedule jsonb NOT NULL DEFAULT '{"frequency":"manual","time":"09:00","weekday":1,"timezone":"UTC"}',
  paused boolean NOT NULL DEFAULT false, blocked_reason text, next_scan_at timestamptz, last_scan_at timestamptz,
  archived_at timestamptz, created_at timestamptz NOT NULL DEFAULT now()
@@ -10,7 +10,7 @@ CREATE UNIQUE INDEX websites_active_url ON websites(team_id,url) WHERE archived_
 CREATE INDEX websites_due ON websites(next_scan_at);
 CREATE TABLE website_runs (
  id uuid PRIMARY KEY DEFAULT gen_random_uuid(), team_id uuid NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
- website_id uuid NOT NULL REFERENCES websites(id), requested_by uuid NOT NULL, principal jsonb, trigger text NOT NULL,
+ website_id uuid NOT NULL REFERENCES websites(id), requested_by uuid NOT NULL, principal jsonb, platform_operator_session_id uuid, trigger text NOT NULL,
  idempotency_key text NOT NULL, status text NOT NULL DEFAULT 'queued', billing_policy text NOT NULL DEFAULT 'website-v1',
  units_per_page integer NOT NULL DEFAULT 20, page_count integer NOT NULL DEFAULT 0, changed_count integer NOT NULL DEFAULT 0,
  source_units integer NOT NULL DEFAULT 0, provider_credits integer, estimated_provider_cost_eur double precision, failure_reason text, provider_started_at timestamptz, provider_finished_at timestamptz,

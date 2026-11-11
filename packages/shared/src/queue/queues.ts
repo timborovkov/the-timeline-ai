@@ -1653,6 +1653,7 @@ export async function closeEmailInboundQueue(): Promise<void> {
 
 /** Team and actor IDs only: crawled page text never enters Redis jobs. */
 export interface WebsiteScanJobData {
+  platformOperatorSessionId?: string;
   teamId: string;
   userId: string;
   scanId: string;

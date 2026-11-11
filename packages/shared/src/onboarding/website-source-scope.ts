@@ -181,9 +181,12 @@ export function createWebsiteSourceHandlers({
                 and(
                   eq(documents.teamId, teamId),
                   eq(documents.id, mappedPage.documentId),
+                  eq(documents.fileKind, 'captured'),
+                  eq(documents.visibility, 'team'),
                   sql`${documents.deletedAt} IS NULL`,
                 ),
               )
+              .for('update')
           : [];
         const knownPage = mappedDocument ? mappedPage : undefined;
         await assertTeamWriteCapacity({

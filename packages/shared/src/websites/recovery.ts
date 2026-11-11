@@ -1,4 +1,10 @@
-import { type Db, websiteRuns, billingUsageReservations, websiteSources } from '@timeline/db';
+import {
+  type Db,
+  websiteRuns,
+  billingUsageReservations,
+  websiteSources,
+  teamFirstRun,
+} from '@timeline/db';
 import { and, eq, sql } from 'drizzle-orm';
 
 import { listChargeCentsForMeter } from '#src/billing/charge.js';
@@ -68,6 +74,10 @@ export async function failWebsiteRun(
     }
   }
   await db.transaction(async (tx) => {
+    const [run] = await tx
+      .select({ trigger: websiteRuns.trigger })
+      .from(websiteRuns)
+      .where(and(eq(websiteRuns.teamId, teamId), eq(websiteRuns.id, runId)));
     await tx
       .update(websiteRuns)
       .set({
@@ -99,5 +109,19 @@ export async function failWebsiteRun(
           eq(billingUsageReservations.state, 'reserved'),
         ),
       );
+    // Trusted terminal cleanup only: revoked actors cannot repair first-run state through
+    // ordinary membership checks. The scan identity and phase guard protect newer choices.
+    if (run?.trigger === 'onboarding')
+      await tx
+        .update(teamFirstRun)
+        .set({ phase: 'failed', scanFailureReason: 'unreachable', updatedAt: new Date() })
+        .where(
+          and(
+            eq(teamFirstRun.teamId, teamId),
+            eq(teamFirstRun.websiteScanId, runId),
+            eq(teamFirstRun.starterPath, 'website'),
+            eq(teamFirstRun.phase, 'processing'),
+          ),
+        );
   });
 }

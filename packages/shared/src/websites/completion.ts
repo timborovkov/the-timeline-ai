@@ -89,9 +89,12 @@ export async function completeWebsiteChunk(
         and(
           eq(documents.teamId, teamId),
           eq(documents.id, row.version.documentId),
+          eq(documents.fileKind, 'captured'),
+          eq(documents.visibility, 'team'),
           sql`${documents.deletedAt} IS NULL`,
         ),
-      );
+      )
+      .for('update', { of: documents });
     if (!activeDocument) return;
     await tx
       .update(documentVersions)

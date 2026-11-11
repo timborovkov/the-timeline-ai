@@ -26,6 +26,7 @@ export const websites = pgTable(
     subject: text('subject').$type<'own_team' | 'other_company'>().notNull(),
     createdBy: uuid('created_by').notNull(),
     scheduleBy: uuid('schedule_by'),
+    scheduleOperatorSessionId: uuid('schedule_operator_session_id'),
     schedulePrincipal: jsonb('schedule_principal').$type<{
       authType: 'api_key' | 'oauth';
       teamId: string;
@@ -69,6 +70,7 @@ export const websiteRuns = pgTable(
       .notNull()
       .references(() => websites.id),
     requestedBy: uuid('requested_by').notNull(),
+    platformOperatorSessionId: uuid('platform_operator_session_id'),
     principal: jsonb('principal').$type<{
       authType: 'api_key' | 'oauth';
       teamId: string;

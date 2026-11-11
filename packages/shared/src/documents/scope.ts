@@ -8,6 +8,7 @@ import {
   documentVersions,
   folders,
   rawEvents,
+  websitePages,
 } from '@timeline/db';
 import { type SQL, and, asc, desc, eq, gte, inArray, isNull, lt, or, sql } from 'drizzle-orm';
 
@@ -1437,6 +1438,12 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
           .returning();
         const row = rows[0] as DocumentRow | undefined;
         if (!row) throw new Error('Failed to promote captured file');
+        // Promotion transfers editing to the document drive. Future crawls must own
+        // a fresh capture; historical page/version pointers remain valid evidence.
+        await tx
+          .update(websitePages)
+          .set({ documentId: null })
+          .where(and(eq(websitePages.teamId, teamId), eq(websitePages.documentId, row.id)));
         if (row.currentVersionId) {
           const currentVersions = await tx
             .select({

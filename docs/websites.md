@@ -13,7 +13,8 @@ to manual refresh; administrators can schedule it afterward. Leaving onboarding
 keeps the source and its scan history. An unchanged onboarding scan uses the
 existing page citation to advance onboarding without creating duplicate evidence.
 The separate legacy adapter only finishes jobs admitted before migration; new
-onboarding scans use the persistent worker.
+onboarding scans use the persistent worker. Terminal failures update only the
+matching in-progress onboarding scan, including trusted cleanup after actor revocation.
 
 Members can add a source and scan after confirming permission. Administrators
 manage schedules, pause and archive sources. Archiving stops new work and retains
@@ -33,7 +34,9 @@ embedding completion from completing a partially persisted scan. Failed or
 missing pages retain prior ready versions; capped results cannot prove deletion.
 Default event/document vector searches exclude non-current website evidence
 before result limits. Date-scoped historical searches and explicit citations
-remain available. Timeline moments group changed pages by scan.
+remain available. Timeline moments group changed pages by scan. Promoting a capture
+to the document drive detaches it from managed crawling: later scans create a new
+capture and cannot replace the promoted document’s edited or private content.
 
 ## Billing and safeguards
 
@@ -69,7 +72,10 @@ DST. A due-time identity permits one catch-up run, not a backlog of missed runs.
 `WEBSITE_SCHEDULES_ENABLED` defaults false; the scheduler still recovers queued
 work and reconciles completion while recurring capture is disabled.
 
-Scheduled work rechecks its original administrator or scoped credential. Billing
+Scheduled work rechecks its original administrator or scoped credential. Runs and
+schedules created during impersonation retain their operator-session identity;
+recovery and execution revalidate that session. An expired session terminates
+pending work or pauses the schedule rather than continuing as the customer. Billing
 blocks are visible on the source and generate one in-app notification per episode.
 The next due time retries billing; explicit pauses require resumption. Stale work
 is terminalized after one day instead of permanently holding a team's active slot.

@@ -20,10 +20,28 @@ import { WEBSITE_PAGE_LIMIT, websiteSourceUnits } from '#src/websites/policy.js'
 import { settleCapturedWebsiteRun } from '#src/websites/recovery.js';
 
 import type { DeferredChatDelivery } from '#src/conversation-surfaces/deferred-delivery.js';
+import type { FirstRunScanFailureReason } from '#src/onboarding/first-run.js';
 import type { Db } from '@timeline/db';
 
 export function websiteContentHash(text: string): string {
   return createHash('sha256').update(text.replace(/\r\n/g, '\n').trim()).digest('hex');
+}
+
+async function failOnboardingScan(
+  scope: TeamScope,
+  run: { id: string; trigger: string },
+  reason: string | null,
+): Promise<void> {
+  if (run.trigger !== 'onboarding' || !(await scope.onboarding.getFirstRun())) return;
+  const failure: FirstRunScanFailureReason =
+    reason === 'robots' ||
+    reason === 'no_readable_text' ||
+    reason === 'billing_limited' ||
+    reason === 'not_enabled' ||
+    reason === 'rate_limited'
+      ? reason
+      : 'unreachable';
+  await scope.onboarding.markScanFailed(failure, run.id);
 }
 
 export async function startWebsiteScan(
@@ -42,7 +60,11 @@ export async function startWebsiteScan(
   if (getEnv().WEBSITE_CRAWLS_DISABLED) throw new Error('Website scanning is temporarily disabled');
   const run = await scope.websites.admit({ ...input, trigger: input.trigger ?? 'manual' });
   if (input.notification) await scope.websites.attachNotification(run.id, input.notification);
-  if (run.status !== 'queued') return run;
+  if (run.status !== 'queued') {
+    if (run.finishedAt && run.status !== 'completed')
+      await failOnboardingScan(scope, run, run.failureReason);
+    return run;
+  }
   const units = websiteSourceUnits(WEBSITE_PAGE_LIMIT, run.unitsPerPage);
   const admission = await scope.billing.reserve({
     operationId: `website-scan:${run.id}`,
@@ -54,10 +76,18 @@ export async function startWebsiteScan(
   });
   if (!admission.ok) {
     await scope.websites.block(run.id, 'billing_limited');
+    await failOnboardingScan(scope, run, 'billing_limited');
     return scope.websites.getRun(run.id);
   }
   // The durable queued row is also an outbox: scheduler recovery retries failed enqueue.
-  await enqueueWebsiteScanJob({ teamId: scope.teamId, userId: run.requestedBy, scanId: run.id });
+  await enqueueWebsiteScanJob({
+    teamId: scope.teamId,
+    userId: run.requestedBy,
+    scanId: run.id,
+    ...(run.platformOperatorSessionId
+      ? { platformOperatorSessionId: run.platformOperatorSessionId }
+      : {}),
+  });
   return run;
 }
 
@@ -85,7 +115,10 @@ export async function processPersistentWebsiteScan(
       websitePrincipal: run.principal,
     });
   }
-  if (run.finishedAt) return true;
+  if (run.finishedAt) {
+    if (run.status !== 'completed') await failOnboardingScan(scope, run, run.failureReason);
+    return true;
+  }
   if (run.billingPolicy === 'legacy') return false;
   const source = await scope.websites.get(run.websiteId);
   const operationId = `website-scan:${run.id}`;
@@ -93,6 +126,11 @@ export async function processPersistentWebsiteScan(
     await settleCapturedWebsiteRun(db, teamId, scanId);
     await scope.billing.release(operationId);
     await scope.websites.updateRun(run.id, { status: 'cancelled', finishedAt: new Date() });
+    await failOnboardingScan(
+      scope,
+      run,
+      getEnv().WEBSITE_CRAWLS_DISABLED ? 'not_enabled' : 'unreachable',
+    );
     return true;
   }
   if (run.trigger === 'scheduled') {
@@ -113,6 +151,7 @@ export async function processPersistentWebsiteScan(
     });
     if (!admission.ok) {
       await scope.websites.block(run.id, 'billing_limited');
+      await failOnboardingScan(scope, run, 'billing_limited');
       return true;
     }
   }
@@ -131,6 +170,7 @@ export async function processPersistentWebsiteScan(
         leaseUntil: null,
       });
       await scope.billing.release(operationId);
+      await failOnboardingScan(scope, run, 'unreachable');
       return true;
     }
     if (!(await scope.websites.claimProvider(scanId))) throw new Error('website_provider_busy');
@@ -174,6 +214,7 @@ export async function processPersistentWebsiteScan(
         leaseUntil: null,
       });
       await scope.billing.release(operationId);
+      await failOnboardingScan(scope, run, result.reason);
       return true;
     }
     failureReason = result.partialFailureReason ?? null;
@@ -196,6 +237,7 @@ export async function processPersistentWebsiteScan(
       finishedAt: new Date(),
       leaseUntil: null,
     });
+    await failOnboardingScan(scope, run, 'unreachable');
     return true;
   }
   await scope.websites.updateRun(scanId, {

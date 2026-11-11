@@ -19,6 +19,7 @@ import { and, desc, eq, isNull, sql } from 'drizzle-orm';
 import { encryptJson } from '#src/crypto/secrets.js';
 import { getEnv } from '#src/env.js';
 import { cancelWebsiteCrawl } from '#src/onboarding/firecrawl-website-scan.js';
+import { operatorContext } from '#src/platform-admin/runtime.js';
 import { authorizeWebsitePrincipal } from '#src/websites/authorization.js';
 import {
   DEFAULT_WEBSITE_SCHEDULE,
@@ -405,6 +406,7 @@ export function createWebsiteScope({
       input: { schedule?: WebsiteSchedule; paused?: boolean; archive?: boolean },
     ) {
       await permission('websites:manage');
+      const operatorSessionId = (await operatorContext())?.sessionId ?? null;
       const row = await get(id);
       if (row.archivedAt) throw new Error('Website is archived');
       const schedule = input.schedule ?? row.schedule;
@@ -415,6 +417,7 @@ export function createWebsiteScope({
         .set({
           schedule,
           scheduleBy: userId,
+          scheduleOperatorSessionId: operatorSessionId,
           schedulePrincipal: principal ?? null,
           paused,
           nextScanAt,
@@ -475,6 +478,7 @@ export function createWebsiteScope({
       await permission('websites:scan');
       if (!input.idempotencyKey || input.idempotencyKey.length > 200)
         throw new Error('Invalid idempotency key');
+      const operatorSessionId = (await operatorContext())?.sessionId ?? null;
       return db.transaction(async (tx) => {
         await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${teamId}, 17))`);
         const [existing] = await tx
@@ -491,9 +495,23 @@ export function createWebsiteScope({
             throw new Error('Idempotency key already used');
           return existing;
         }
-        const [source] = await tx.select().from(websites).where(sourceWhere(input.websiteId));
+        const [source] = await tx
+          .select()
+          .from(websites)
+          .where(sourceWhere(input.websiteId))
+          .for('update');
         if (!source || source.archivedAt || source.paused)
           throw new Error('Website is unavailable or paused');
+        if (
+          input.trigger === 'scheduled' &&
+          (source.scheduleBy !== userId ||
+            source.scheduleOperatorSessionId !== operatorSessionId ||
+            source.schedulePrincipal?.keyId !== principal?.keyId ||
+            source.schedulePrincipal?.authType !== principal?.authType ||
+            !source.nextScanAt ||
+            input.idempotencyKey !== `schedule:${source.id}:${source.nextScanAt.toISOString()}`)
+        )
+          throw new Error('Website schedule changed before admission');
         if (
           source.lastScanAt &&
           source.lastScanAt.getTime() > Date.now() - websiteLimits().cooldownMs
@@ -528,6 +546,7 @@ export function createWebsiteScope({
             teamId,
             websiteId: source.id,
             requestedBy: userId,
+            platformOperatorSessionId: operatorSessionId,
             principal: principal ?? null,
             trigger: input.trigger,
             idempotencyKey: input.idempotencyKey,
@@ -646,6 +665,8 @@ export function createWebsiteScope({
           and(
             eq(documents.teamId, teamId),
             eq(documents.id, websitePages.documentId),
+            eq(documents.fileKind, 'captured'),
+            eq(documents.visibility, 'team'),
             isNull(documents.deletedAt),
           ),
         )
