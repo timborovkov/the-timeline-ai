@@ -218,20 +218,7 @@ export function WebsiteManager({
             <section key={website.id} className="py-5">
               <div className="flex flex-wrap items-center gap-4">
                 <Globe aria-hidden="true" className="size-5 shrink-0 text-fg-muted" />
-                <div className="min-w-0 flex-1 basis-48">
-                  <h2 className="break-all text-base font-semibold">
-                    {website.url.replace(/^https?:\/\//, '').replace(/\/$/, '')}
-                  </h2>
-                  <p className="mt-1 text-sm text-fg-muted">
-                    {website.subject === 'own_team' ? 'Your company' : 'Another company'} ·{' '}
-                    {website.paused
-                      ? 'Paused'
-                      : website.schedule.frequency === 'manual'
-                        ? 'On demand'
-                        : `${website.schedule.frequency === 'daily' ? 'Daily' : 'Weekly'} · ${website.schedule.time} ${website.schedule.timezone}`}
-                  </p>
-                  <WebsiteScanSummary run={website.latestRun} />
-                </div>
+                <WebsiteIdentity website={website} />
                 {website.blockedReason && <StatusBadge status="blocked" />}
                 <WebsiteScanActions
                   website={website}
@@ -373,6 +360,25 @@ export function WebsiteManager({
           />
         </DialogContent>
       </Dialog>
+    </div>
+  );
+}
+
+function WebsiteIdentity({ website }: { website: Website }) {
+  return (
+    <div className="min-w-0 flex-1 basis-48">
+      <h2 className="break-all text-base font-semibold">
+        {website.url.replace(/^https?:\/\//, '').replace(/\/$/, '')}
+      </h2>
+      <p className="mt-1 text-sm text-fg-muted">
+        {website.subject === 'own_team' ? 'Your company' : 'Another company'} ·{' '}
+        {website.paused
+          ? 'Paused'
+          : website.schedule.frequency === 'manual'
+            ? 'On demand'
+            : `${website.schedule.frequency === 'daily' ? 'Daily' : 'Weekly'} · ${website.schedule.time} ${website.schedule.timezone}`}
+      </p>
+      <WebsiteScanSummary run={website.latestRun} />
     </div>
   );
 }
