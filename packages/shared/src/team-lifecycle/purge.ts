@@ -26,6 +26,8 @@ export async function purgeTeamRows(db: Db, teamId: string): Promise<boolean> {
         // A merge marker excludes the old name from the active-name unique index.
         // Preserve it and delete merge descendants before their survivor instead.
         if (tableName === 'entities' && column?.name === 'merged_into_id') continue;
+        if (tableName === 'documents' && column?.name === 'folder_id') continue;
+        if (tableName === 'folders' && column?.name === 'parent_folder_id') continue;
         if (column && !column.notNull && PURGED_TEAM_TABLES.some((name) => name === target)) {
           await tx.execute(
             sql`UPDATE ${sql.identifier(tableName)} SET ${sql.identifier(column.name)} = NULL WHERE ctid IN (SELECT ctid FROM ${sql.identifier(tableName)} WHERE team_id = ${teamId}::uuid AND ${sql.identifier(column.name)} IS NOT NULL LIMIT 500)`,
@@ -33,10 +35,16 @@ export async function purgeTeamRows(db: Db, teamId: string): Promise<boolean> {
         }
       }
       // Keep unlinked nullable references even when a child still prevents deletion.
+      const noDependants =
+        tableName === 'entities'
+          ? sql`AND NOT EXISTS (SELECT 1 FROM entities child WHERE child.merged_into_id = entities.id)`
+          : tableName === 'folders'
+            ? sql`AND NOT EXISTS (SELECT 1 FROM folders child WHERE child.parent_folder_id = folders.id) AND NOT EXISTS (SELECT 1 FROM documents child WHERE child.folder_id = folders.id)`
+            : sql``;
       try {
         const deleted = await tx.transaction((deleteTx) =>
           deleteTx.execute(
-            sql`DELETE FROM ${sql.identifier(tableName)} WHERE ctid IN (SELECT ctid FROM ${sql.identifier(tableName)} WHERE team_id = ${teamId}::uuid ${tableName === 'entities' ? sql`AND NOT EXISTS (SELECT 1 FROM entities child WHERE child.merged_into_id = entities.id)` : sql``} LIMIT 500) RETURNING 1`,
+            sql`DELETE FROM ${sql.identifier(tableName)} WHERE ctid IN (SELECT ctid FROM ${sql.identifier(tableName)} WHERE team_id = ${teamId}::uuid ${noDependants} LIMIT 500) RETURNING 1`,
           ),
         );
         if (lifecycleRows(deleted).length) remaining = true;

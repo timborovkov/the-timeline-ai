@@ -34,6 +34,7 @@ import { getEnv } from '#src/env.js';
 import { adminDeprovisionIntegrationWebhookSubscriptions } from '#src/integrations/scope.js';
 import { getMeetingBotProvider } from '#src/meeting-bots/index.js';
 import { sendMessage } from '#src/messaging/delivery.js';
+import { RETAINED_USAGE_METADATA_FIELDS } from '#src/team-lifecycle/inventory.js';
 import { withTeam } from '#src/team-scope.js';
 
 /** Called inside the dedicated system lifecycle scope, never from an impersonated request. */
@@ -239,7 +240,12 @@ export function createLifecycleMaintenance(db: Db, teamId: string, authorize: ()
       // Keep invoice amounts and attribution; discard arbitrary usage metadata.
       await db
         .update(billingUsageLedger)
-        .set({ metadata: {} })
+        .set({
+          metadata: sql`COALESCE((SELECT jsonb_object_agg(key, value) FROM jsonb_each(${billingUsageLedger.metadata}) WHERE key IN (${sql.join(
+            RETAINED_USAGE_METADATA_FIELDS.map((key) => sql`${key}`),
+            sql`, `,
+          )})), '{}'::jsonb)`,
+        })
         .where(eq(billingUsageLedger.teamId, teamId));
     },
     async stopBots() {

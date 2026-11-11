@@ -593,6 +593,18 @@ export function createIntegrationScope(deps: {
       attentionId: string;
     }[] = [];
     await db.transaction(async (tx) => {
+      // Account-owned revocation can only disable integrations and remove this
+      // owner's credential. It must work even when a linked workspace is paused.
+      const [owned] = await tx
+        .select({
+          id: providerConnections.id,
+          cleanupSetting: sql<string | null>`current_setting('timeline.lifecycle_cleanup', true)`,
+        })
+        .from(providerConnections)
+        .where(and(eq(providerConnections.id, id), eq(providerConnections.ownerUserId, userId)))
+        .for('update');
+      if (!owned) throw new Error('Provider connection ownership changed');
+      await tx.execute(sql`SELECT set_config('timeline.lifecycle_cleanup', 'on', true)`);
       const affected = await tx
         .update(integrationsTable)
         .set({
@@ -605,6 +617,15 @@ export function createIntegrationScope(deps: {
       await tx.delete(providerConnections).where(eq(providerConnections.id, id));
       const attentionRecordedAt = new Date();
       for (const row of affected) {
+        const [team] = await tx
+          .select({
+            disabledAt: teams.disabledAt,
+            deleting: teams.deletionStartedAt,
+            deletedAt: teams.deletedAt,
+          })
+          .from(teams)
+          .where(eq(teams.id, row.teamId));
+        if (!team || team.disabledAt || team.deleting || team.deletedAt) continue;
         const input: ConnectionAttentionInput = {
           integrationId: row.integrationId,
           category: 'needs_new_owner',
@@ -660,6 +681,9 @@ export function createIntegrationScope(deps: {
             .where(and(...conditions));
         }
       }
+      await tx.execute(
+        sql`SELECT set_config('timeline.lifecycle_cleanup', ${owned.cleanupSetting ?? ''}, true)`,
+      );
     });
     try {
       await maybeRevokeGoogleDriveGrantAfterDisconnect(db, connection);

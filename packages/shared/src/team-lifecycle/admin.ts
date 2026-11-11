@@ -12,24 +12,29 @@ import { deletionConfirmation } from '#src/team-lifecycle/scope.js';
 export async function beginTeamDeletion(db: Db, actor: PlatformActor, raw: unknown) {
   const input = deletionConfirmation.parse(raw);
   await requirePlatformActor(db, actor);
-  // Suspension is committed first, including durable billing cancellation intent.
-  // Repeated confirmation after a worker failure must never restore the team.
-  const [existing] = await db.select().from(teams).where(eq(teams.id, input.teamId));
-  if (existing?.name !== input.confirmation) throw new Error('Enter the exact team name');
-  if (!existing.deletionStartedAt)
-    await setPlatformSuspension(db, actor, 'team', input.teamId, true, input.reason);
   await db.transaction(async (tx) => {
     await requirePlatformActor(tx as unknown as Db, actor);
     const [team] = await tx.select().from(teams).where(eq(teams.id, input.teamId)).for('update');
     if (team?.name !== input.confirmation) throw new Error('Enter the exact team name');
     if (team.deletedAt || team.deletionStartedAt) return;
+    // The same team lock protects both suspension and irreversible acceptance.
+    await setPlatformSuspension(
+      tx as unknown as Db,
+      actor,
+      'team',
+      input.teamId,
+      true,
+      input.reason,
+    );
+    const [disabled] = await tx.select().from(teams).where(eq(teams.id, input.teamId));
+    if (!disabled?.disabledAt) throw new Error('Deletion requires a disabled team');
     // Holds preserve platform security evidence, not the entire workspace.
     await tx
       .update(teams)
       .set({
         deletionStartedAt: new Date(),
         lifecycleWork: {
-          ...team.lifecycleWork,
+          ...disabled.lifecycleWork,
           deletionActorUserId: actor.userId,
           stage: 'inventory',
           attempts: 0,

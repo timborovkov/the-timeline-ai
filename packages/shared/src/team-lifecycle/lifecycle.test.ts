@@ -10,6 +10,7 @@ import { getTableConfig } from 'drizzle-orm/pg-core';
 import { drizzle } from 'drizzle-orm/pglite';
 
 import { BILLING_SYSTEM_USER_ID } from '#src/billing/context.js';
+import { recordedChargesForPeriod } from '#src/billing/presentation.js';
 import { resetEnvForTests } from '#src/env.js';
 import { getMeetingBotProvider, resetMeetingBotProviderForTests } from '#src/meeting-bots/index.js';
 import { setPlatformSuspension, listPlatformTeams } from '#src/platform-admin/index.js';
@@ -54,6 +55,129 @@ afterEach(async () => {
 });
 
 describe('team lifecycle', () => {
+  it('erases repeated document and folder names without flattening namespaces', async () => {
+    await pg.exec(`INSERT INTO folders (id,team_id,name) VALUES
+      ('20000000-0000-4000-8000-000000000001','${TEAM}','Parent A'),
+      ('20000000-0000-4000-8000-000000000002','${TEAM}','Parent B');
+      INSERT INTO folders (team_id,name,parent_folder_id) VALUES
+      ('${TEAM}','Same subfolder','20000000-0000-4000-8000-000000000001'),
+      ('${TEAM}','Same subfolder','20000000-0000-4000-8000-000000000002');
+      INSERT INTO documents (team_id,name,folder_id) VALUES
+      ('${TEAM}','Same document','20000000-0000-4000-8000-000000000001'),
+      ('${TEAM}','Same document','20000000-0000-4000-8000-000000000002');`);
+    await beginTeamDeletion(db, actor, {
+      teamId: TEAM,
+      confirmation: 'First',
+      reason: 'Erase hierarchy fixture',
+    });
+    let done = false;
+    for (let tick = 0; tick < 8 && !done; tick++) done = await purgeTeamRows(db, TEAM);
+    expect(done).toBe(true);
+    await verifyTeamRows(db, TEAM);
+  });
+  it('retains financial reconciliation evidence while removing content metadata', async () => {
+    await db.insert(schema.billingUsageLedger).values({
+      teamId: TEAM,
+      operationId: 'financial-fixture',
+      kind: 'settlement',
+      meterId: 'ai',
+      nativeUnits: '1',
+      customerChargeCents: 100,
+      metadata: {
+        invoice_cents: 75,
+        discount_cents: 25,
+        usage_at: '2026-10-20T12:00:00Z',
+        pricing_plan_id: 'payg',
+        polar_ingest_status: 'sent',
+        private_content: 'Erase this content',
+        credentials: 'Erase this secret',
+      },
+    });
+    const before = await db.select().from(schema.billingUsageLedger);
+    const period = { start: '2026-10-01T00:00:00Z', end: '2026-11-01T00:00:00Z' };
+    const expected = recordedChargesForPeriod(before, period);
+    expect(expected?.totalCents).toBe(75);
+    await beginTeamDeletion(db, actor, {
+      teamId: TEAM,
+      confirmation: 'First',
+      reason: 'Financial retention fixture',
+    });
+    await withTeam(db, TEAM, BILLING_SYSTEM_USER_ID, {
+      skipMembershipCheck: true,
+    }).lifecycle.purgeIndirect({});
+    const after = await db.select().from(schema.billingUsageLedger);
+    expect(recordedChargesForPeriod(after, period)).toEqual(expected);
+    expect(after[0]?.metadata).not.toHaveProperty('private_content');
+    expect(after[0]?.metadata).not.toHaveProperty('credentials');
+    expect(after[0]?.metadata.polar_ingest_status).toBe('sent');
+  });
+  it('allows an owner to remove a personal connection shared with a disabled team', async () => {
+    const id = '20000000-0000-4000-8000-000000000003';
+    await db
+      .insert(schema.providerConnections)
+      .values({
+        id,
+        ownerUserId: OWNER,
+        provider: 'mcp',
+        displayName: 'Fixture',
+        externalAccountId: id,
+        authSecretCiphertext: Buffer.from('fixture'),
+        authSecretIv: Buffer.alloc(12),
+        authSecretTag: Buffer.alloc(16),
+      });
+    await db
+      .insert(schema.integrations)
+      .values(
+        [TEAM, OTHER].map((teamId) => ({
+          teamId,
+          provider: 'mcp' as const,
+          displayName: 'Fixture source',
+          providerConnectionId: id,
+        })),
+      );
+    await setPlatformSuspension(db, actor, 'team', TEAM, true, 'Pause fixture');
+    expect(await withTeam(db, OTHER, OWNER).integrations.deleteOwnedProviderConnection(id)).toBe(
+      true,
+    );
+    expect(await db.select().from(schema.providerConnections)).toHaveLength(0);
+    const sources = await db.select().from(schema.integrations);
+    expect(sources.every((row) => !row.enabled && row.providerConnectionId === null)).toBe(true);
+    expect(
+      await db
+        .select()
+        .from(schema.connectionAttention)
+        .where(eq(schema.connectionAttention.teamId, TEAM)),
+    ).toHaveLength(0);
+    await expect(
+      pg.exec(`UPDATE integrations SET enabled=true WHERE team_id='${TEAM}'`),
+    ).rejects.toThrow('disabled');
+  });
+  it('does not expose a restorable gap before permanent deletion is committed', async () => {
+    const transaction = db.transaction.bind(db);
+    // Simulate another admin restoring any externally visible pause-only commit.
+    const spy = vi.spyOn(db, 'transaction').mockImplementation(async (...args) => {
+      const result = await transaction(...args);
+      const [team] = await db.select().from(teams).where(eq(teams.id, TEAM));
+      if (team?.disabledAt && !team.deletionStartedAt) {
+        spy.mockRestore();
+        await setPlatformSuspension(db, actor, 'team', TEAM, false, 'Concurrent restore');
+      }
+      return result;
+    });
+    try {
+      await beginTeamDeletion(db, actor, {
+        teamId: TEAM,
+        confirmation: 'First',
+        reason: 'Concurrent deletion fixture',
+      });
+      const [team] = await db.select().from(teams).where(eq(teams.id, TEAM));
+      expect(team?.deletionStartedAt).not.toBeNull();
+      expect(team?.disabledAt).not.toBeNull();
+      expect(team?.lifecycleWork.billingPending).toBe(true);
+    } finally {
+      spy.mockRestore();
+    }
+  });
   it('erases merged objects when their old canonical name has been reused', async () => {
     await pg.exec(`INSERT INTO entities (id,team_id,type,canonical_name) VALUES
       ('10000000-0000-4000-8000-000000000001','${TEAM}','project','Survivor');

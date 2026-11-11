@@ -1,4 +1,28 @@
 /** Explicit classification: adding a team-owned table requires a deletion policy. */
+export const RETAINED_USAGE_METADATA_FIELDS = [
+  'invoice_cents',
+  'discount_cents',
+  'list_charge_cents',
+  'cap_eligible_cents',
+  'pricing_plan_id',
+  'pricing_period_ym',
+  'usage_at',
+  'discount_windows',
+  'period_segments',
+  'presentation_comped',
+  'presentation_chargeable',
+  'polar_ingest_status',
+  'polar_ingest_name',
+  'polar_ingest_units',
+  'polar_ingest_customer_id',
+  'polar_ingest_operation_id',
+  'polar_ingest_charge_cents',
+  'polar_ingest_meter',
+  'polar_ingest_period_ym',
+  'polar_ingest_claimed_at',
+  'polar_ingest_block',
+] as const;
+
 export const RETAINED_TEAM_TABLES = [
   'platform_admin_audit',
   'platform_admin_retention_holds',
