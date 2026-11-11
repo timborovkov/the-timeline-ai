@@ -7,12 +7,10 @@ team owner or team admin does not receive platform access. An empty allowlist
 provides no access. The panel has its own layout, so platform admins need no team
 membership. The workspace header links to it only for eligible administrators.
 
-Users and teams have searchable directories, 50 records per page, and linked
-membership details. Operators can edit display names and team names, change
+Users and teams have searchable, sortable, filterable directories, 50 records per page, visible copyable UUIDs, and linked membership details. Team rows show disabled dates when known. Operators can edit display names and team names, change
 non-owner member/admin roles, remove non-owner members, and suspend or restore
 users and teams. Billing remains at `/app/admin/billing`. Owner changes,
-invitations, email/password changes, permanent deletion, and automatic subscription
-cancellation are not part of this panel. Membership removal reuses the existing
+invitations and email/password changes are not part of this panel. Team disabling, deletion requests, permanent cleanup and retention follow-up are described below. Membership removal reuses the existing
 billing revocation, integration, calendar, and chat-routing cleanup.
 
 ## Impersonation
@@ -49,8 +47,7 @@ resolution, and Telegram/Slack team pickers so a member cannot choose them; the
 team-switch route still rejects those workspaces as defense in depth. A cookie that
 still names a suspended team does not hide the member's remaining selectable teams.
 Security state remains separate from billing; restoration preserves other billing
-restrictions and the prior team security state. Existing provider subscriptions
-are not automatically canceled. System cleanup and billing reconciliation remain
+restrictions and the prior team security state. Disabling a team records cancellation of subscription renewal for retry by the lifecycle worker. New processing, storage and member usage accrual stops. Restoration never silently resumes renewal; previously incurred charges remain payable without automatic refunds. System cleanup and billing reconciliation remain
 available. The panel cannot suspend the operator or another allowlisted admin.
 
 Suspended accounts and teams allow read-only impersonation inspection. The
@@ -160,3 +157,17 @@ cleanup or apply production migrations.
 ## Retention authority
 
 [The dated retention decision](evidence/platform-retention-decision-2026-11-03.md) records approval. Current legal versions are source-owned; do not reuse its historical publication instructions.
+
+## Team deletion lifecycle
+
+Owners request permanent deletion under Team settings → Advanced after typing the team name and acknowledging loss of access for every member. Export first using normal visibility permissions. The request immediately disables the team and persists notifications for platform admins and the requester. Only platform admins can withdraw the request and restore access. The admin Teams directory has a deletion-request filter.
+
+Platform admins may start permanent deletion with or without an owner request. Confirmation requires the team name and a reason. Once started, deletion cannot be reversed or impersonated. The detail page exposes cleanup status and retries, not workspace content. A one-minute dedicated lifecycle worker polls durable database state, so missing queue publication cannot lose a request.
+
+Cleanup inventories shared references, stops bots, cancels renewal and pending checkouts, disconnects sources, removes team-owned rows, versioned objects, vectors, queue payloads and caches, then verifies after a 24-hour late-producer window. Failures keep access blocked and retry with bounded backoff. The verification window cannot be bypassed by the retry button. The worker only removes personal connector credentials and Slack installations when other teams do not use them. User accounts, sign-in credentials and original provider files remain.
+
+The team row becomes a minimal tombstone; retired inbound identities cannot be reused. Platform security evidence and financial records remain under their documented retention and applicable holds. Backups, processor copies and retained records have explicit operator follow-up status, references and expiry/review dates. “Active-system data removed” is distinct from completion of those follow-ups. Never assert all copies are erased based solely on a completed worker stage.
+
+Apply `0103_team_lifecycle` before updated web and workers. Drain old workers before permitting permanent deletion; old binaries do not understand lifecycle admission. Review and publish the accompanying legal versions through the existing publication gate. Source changes and disposable rehearsals do not prove production deployment, backup expiry or processor deletion. Do not roll back to binaries without lifecycle checks after accepting a deletion.
+
+For pre-migration suspended teams without a reliable suspension audit, the migration records an enforcement timestamp and labels the original disable date **Unknown**. It schedules renewal cancellation for all historically suspended/terminated teams; deletion of a billing row cannot remove the access block.

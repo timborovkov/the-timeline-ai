@@ -1,11 +1,10 @@
 # Manual support deletion
 
-Status: documented process, not a completed deletion exercise. No automated purge
-system is required or introduced. Before representing end-to-end deletion as
+Status: documented process, not a completed deletion exercise. The team-wide automated workflow is documented in [platform administration](../platform-admin.md#team-deletion-lifecycle). This procedure remains for narrower source requests and external retention follow-up. Before representing end-to-end deletion as
 verified, rehearse this process with synthetic records and retain the results.
 G-13 remains open for unverified stores and provider propagation.
 
-Customers request deletion through `/help/support` or `contact@thetimeline.cc`.
+Team owners request permanent team deletion in Team settings → Advanced. Customers request narrower deletion through `/help/support` or `contact@thetimeline.cc`.
 The public instructions are at `/help/integrations`; Privacy and Terms describe
 support-assisted deletion separately from disconnect. No fixed completion SLA or
 instant backup-erasure promise is made.
@@ -125,3 +124,9 @@ Capture an event and derived search evidence; exercise the two disconnect action
 separately. Run the inventory/removal/verification steps, including delayed work
 and a mixed-source reference. Record unsupported steps and actual backup/provider
 coverage. Only mark the exercised boundaries verified; do not close G-13 wholesale.
+
+## Team workflow follow-up
+
+For team-wide deletion, review the admin request and cleanup status instead of manually deleting the team row. Record backup expiry, processor receipts, and any financial/security retention basis in its follow-up controls. Retained items require an expiry or review date. Reapply tombstones and cleanup before restored backups serve customer traffic. Verify every active vector collection and retained snapshot against the deployment inventory; the application worker verifies its configured active collection, not unlisted historical copies.
+
+Run the disposable local rehearsal with a dedicated `timeline_deletion_test_*` database using `scripts/testing/team-deletion-rehearsal.ts`. It refuses remote database hosts, creates unique storage/vector fixtures, and verifies an unrelated control team survives. This does not authorize production operations.

@@ -453,6 +453,9 @@ See [the provider register](providers.md) for services and [security gaps](secur
 
 ## 12. Retention, deletion, export, and rights
 
+Team owners can authorize team-wide deletion, including members’ private content within that team, through a request that immediately disables access. Platform admins control restoration before irreversible deletion and perform the tracked cleanup. This authority does not grant owners visibility into other members’ private content or exports. Disabling preserves data; permanent cleanup removes operational content while retaining only the tombstone and explicitly justified financial/security evidence. Personal credentials are removed when unused elsewhere; other teams, accounts and original provider files remain. [Platform administration](platform-admin.md#team-deletion-lifecycle) owns the workflow and deployment requirements. Backup/provider completion remains evidence-dependent and separately tracked.
+
+
 Retention follows purpose and must be stated per system. “Deleted” means all
 named active stores and processors have completed their defined deletion path;
 a soft-delete flag alone is not a complete deletion claim.

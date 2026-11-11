@@ -3756,8 +3756,6 @@ export async function adminDeprovisionIntegrationWebhookSubscriptions(
   if (!provider.deprovisionWebhook) {
     return { deprovisioned: 0, skipped: true };
   }
-  const tokens = await adminDecryptIntegrationTokens(db, integration);
-  if (!tokens) throw new Error('No tokens — reconnect required');
   const rows = await db
     .select()
     .from(integrationWebhookSubscriptions)
@@ -3768,6 +3766,9 @@ export async function adminDeprovisionIntegrationWebhookSubscriptions(
         eq(integrationWebhookSubscriptions.status, 'active'),
       ),
     );
+  if (!rows.length) return { deprovisioned: 0, skipped: false };
+  const tokens = await adminDecryptIntegrationTokens(db, integration);
+  if (!tokens) throw new Error('No tokens — reconnect required');
   for (const row of rows) {
     await provider.deprovisionWebhook({
       integration,

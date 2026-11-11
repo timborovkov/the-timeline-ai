@@ -1,10 +1,11 @@
 import {
   type Db,
+  teams,
   integrations as integrationsTable,
   integrationWebhookDeliveries,
   integrationWebhookDeliveryTargets,
 } from '@timeline/db';
-import { and, eq, inArray, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 
 import type { IntegrationRow, NativeProviderId } from '#src/integrations/types.js';
 
@@ -38,7 +39,7 @@ export interface RecordWebhookDeliveryInput {
 }
 
 export interface RecordWebhookDeliveryResult {
-  deliveryId: string;
+  deliveryId: string | null;
   targetIds: string[];
 }
 
@@ -56,55 +57,77 @@ export async function recordWebhookDeliveryTargets(
   db: Db,
   input: RecordWebhookDeliveryInput,
 ): Promise<RecordWebhookDeliveryResult> {
-  const deliveryRows = await db
-    .insert(integrationWebhookDeliveries)
-    .values({
-      provider: input.provider,
-      externalDeliveryId: input.externalDeliveryId ?? null,
-      externalAccountId: input.externalAccountId ?? null,
-      resourceKind: input.resourceKind ?? null,
-      externalResourceId: input.externalResourceId ?? null,
-      eventType: input.eventType,
-      action: input.action ?? null,
-      headers: input.headers ?? {},
-      payload: input.payload ?? {},
-      dedupKey: input.dedupKey,
-      updatedAt: new Date(),
-    })
-    .onConflictDoUpdate({
-      target: [integrationWebhookDeliveries.provider, integrationWebhookDeliveries.dedupKey],
-      set: {
+  return db.transaction(async (tx) => {
+    if (!input.targets.length) return { deliveryId: null, targetIds: [] };
+    // Lock admission through both inserts: a concurrent disable cannot leave an orphan payload.
+    const activeTeams = await tx
+      .select({ id: teams.id })
+      .from(teams)
+      .where(
+        and(
+          inArray(
+            teams.id,
+            input.targets.map((target) => target.teamId),
+          ),
+          isNull(teams.disabledAt),
+          isNull(teams.deletionStartedAt),
+          sql`NOT EXISTS (SELECT 1 FROM team_billing_accounts b WHERE b.team_id = ${teams.id} AND b.security_state IN ('suspended', 'terminated'))`,
+        ),
+      )
+      .for('share');
+    const activeIds = new Set(activeTeams.map((team) => team.id));
+    const targets = input.targets.filter((target) => activeIds.has(target.teamId));
+    if (!targets.length) return { deliveryId: null, targetIds: [] };
+    const deliveryRows = await tx
+      .insert(integrationWebhookDeliveries)
+      .values({
+        provider: input.provider,
+        externalDeliveryId: input.externalDeliveryId ?? null,
+        externalAccountId: input.externalAccountId ?? null,
+        resourceKind: input.resourceKind ?? null,
+        externalResourceId: input.externalResourceId ?? null,
+        eventType: input.eventType,
+        action: input.action ?? null,
+        headers: input.headers ?? {},
+        payload: input.payload ?? {},
+        dedupKey: input.dedupKey,
         updatedAt: new Date(),
-      },
-    })
-    .returning({ id: integrationWebhookDeliveries.id });
-  const deliveryId = deliveryRows[0]?.id;
-  if (!deliveryId) throw new Error('webhook_delivery_insert_failed');
-  if (input.targets.length === 0) return { deliveryId, targetIds: [] };
+      })
+      .onConflictDoUpdate({
+        target: [integrationWebhookDeliveries.provider, integrationWebhookDeliveries.dedupKey],
+        set: {
+          updatedAt: new Date(),
+        },
+      })
+      .returning({ id: integrationWebhookDeliveries.id });
+    const deliveryId = deliveryRows[0]?.id;
+    if (!deliveryId) throw new Error('webhook_delivery_insert_failed');
+    if (targets.length === 0) return { deliveryId, targetIds: [] };
 
-  const targetRows = await db
-    .insert(integrationWebhookDeliveryTargets)
-    .values(
-      input.targets.map((target) => ({
-        deliveryId,
-        teamId: target.teamId,
-        integrationId: target.integrationId,
-        providerConnectionId: target.providerConnectionId ?? null,
-        updatedAt: new Date(),
-      })),
-    )
-    .onConflictDoNothing({
-      target: [
-        integrationWebhookDeliveryTargets.deliveryId,
-        integrationWebhookDeliveryTargets.integrationId,
-      ],
-    })
-    .returning({ id: integrationWebhookDeliveryTargets.id });
+    const targetRows = await tx
+      .insert(integrationWebhookDeliveryTargets)
+      .values(
+        targets.map((target) => ({
+          deliveryId,
+          teamId: target.teamId,
+          integrationId: target.integrationId,
+          providerConnectionId: target.providerConnectionId ?? null,
+          updatedAt: new Date(),
+        })),
+      )
+      .onConflictDoNothing({
+        target: [
+          integrationWebhookDeliveryTargets.deliveryId,
+          integrationWebhookDeliveryTargets.integrationId,
+        ],
+      })
+      .returning({ id: integrationWebhookDeliveryTargets.id });
 
-  return {
-    deliveryId,
-    targetIds: targetRows.map((row) => row.id),
-  };
+    return {
+      deliveryId,
+      targetIds: targetRows.map((row) => row.id),
+    };
+  });
 }
 
 export async function loadWebhookDeliveryWork(

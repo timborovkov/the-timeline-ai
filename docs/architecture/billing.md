@@ -42,3 +42,7 @@ Role removal records durable revocation intent under the account lock, revokes p
 Recorded usage is not a forecast or final invoice. Show plan fees, metered usage, pooled credit and calendar spend caps distinctly; preserve the correct renewal/reset dates. Unknown attribution remains unavailable rather than guessed. Financial detail follows member authorization. The public calculator is local and illustrative; it neither changes billing nor proves eligibility.
 
 Invoice reconciliation and provider/member-access verification are operating evidence, not inferred from unit tests. See [Polar release checks](../setup/polar.md#verification-and-release).
+
+## Disabled and deleted teams
+
+Disabling records durable period-end cancellation intent and expires recorded pending self-serve and Enterprise checkouts through verified provider identities. Provider failure does not postpone access disabling. New processing and daily storage/member accrual stop. Any day overlapping a disabled interval is waived by daily meters, including later backfill after restoration. Previously incurred usage still settles; there are no automatic refunds. Restoring access does not resume renewal. Deleting/deleted teams cannot be reactivated by late billing events; incoming subscriptions are reconciled against the stored customer identity before revocation.

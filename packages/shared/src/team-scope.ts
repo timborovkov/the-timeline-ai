@@ -90,6 +90,7 @@ import {
   type SuggestionAcceptanceTransaction,
 } from '#src/suggestions/acceptance-transaction.js';
 import { createSuggestionScope } from '#src/suggestions/index.js';
+import { createTeamLifecycleScope } from '#src/team-lifecycle/scope.js';
 import { createTelegramScope } from '#src/telegram/scope.js';
 import { createTimelineReadScope } from '#src/timeline/read-scope.js';
 import { createTimelineMomentPresentationCache } from '#src/timeline-moments/presentation-cache.js';
@@ -3472,6 +3473,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
     ingestWebhooks: ingestWebhookScope,
     onboarding: onboardingScope,
     billing: billingScope,
+    lifecycle: createTeamLifecycleScope(db, teamId, userId, deps.skipMembershipCheck === true),
     billingOperator: createBillingOperatorScope({ db, teamId }),
     calendar: calendarScope,
     jobRecovery: jobRecoveryScope,

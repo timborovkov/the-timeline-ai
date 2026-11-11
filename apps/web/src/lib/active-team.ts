@@ -35,6 +35,8 @@ async function listMemberships(userId: string): Promise<TeamMembership[]> {
         role: teamMembers.role,
         createdAt: teamMembers.createdAt,
         securityState: teamBillingAccounts.securityState,
+        disabledAt: teams.disabledAt,
+        deletionStartedAt: teams.deletionStartedAt,
       })
       .from(teamMembers)
       .innerJoin(teams, eq(teams.id, teamMembers.teamId))
@@ -46,9 +48,10 @@ async function listMemberships(userId: string): Promise<TeamMembership[]> {
     .filter((r) => {
       // Read-only impersonation may inspect a suspended workspace. Normal
       // members never see it in the selector or as an active-team candidate.
+      if (r.deletionStartedAt) return false;
       if (context?.readOnly && context.effectiveUserId === userId && context.teamId === r.teamId)
         return true;
-      return !isInactiveWorkspaceSecurityState(r.securityState);
+      return !r.disabledAt && !isInactiveWorkspaceSecurityState(r.securityState);
     })
     .map((r) => ({
       teamId: r.teamId,

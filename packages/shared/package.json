@@ -615,6 +615,18 @@
       "development": "./src/integrations/google-drive-context.ts",
       "import": "./dist/integrations/google-drive-context.js",
       "default": "./dist/integrations/google-drive-context.js"
+    },
+    "./team-lifecycle": {
+      "types": "./src/team-lifecycle/admin.ts",
+      "development": "./src/team-lifecycle/admin.ts",
+      "import": "./dist/team-lifecycle/admin.js",
+      "default": "./dist/team-lifecycle/admin.js"
+    },
+    "./team-lifecycle/processor": {
+      "types": "./src/team-lifecycle/processor.ts",
+      "development": "./src/team-lifecycle/processor.ts",
+      "import": "./dist/team-lifecycle/processor.js",
+      "default": "./dist/team-lifecycle/processor.js"
     }
   },
   "main": "./dist/index.js",

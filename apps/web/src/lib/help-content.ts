@@ -71,7 +71,7 @@ export const HELP_PAGES: HelpPage[] = [
       },
       {
         title: 'Invoices, payment changes and cancellation',
-        body: 'Open Manage payment in Billing to use the payment provider’s customer portal. Review its confirmation for the effective cancellation date and any outstanding charges. Disconnecting a source or deleting data is not a billing cancellation. Fees and consumed usage are generally non-refundable, except where law requires otherwise or a refund is agreed. Report suspected billing errors with the workspace and invoice reference; mandatory consumer rights remain unaffected.',
+        body: 'Open Manage payment in Billing to use the payment provider’s customer portal. Review its confirmation for the effective cancellation date and any outstanding charges. Disconnecting a source or deleting individual data is not a billing cancellation. Disabling a team or requesting permanent team deletion stops new usage accrual and requests cancellation of renewal; restoration does not silently resume renewal. Fees and consumed usage are generally non-refundable, except where law requires otherwise or a refund is agreed. Report suspected billing errors with the workspace and invoice reference; mandatory consumer rights remain unaffected.',
         items: [
           'Check the active workspace before opening its payment portal.',
           'Use the portal to review invoices, payment details and available subscription actions.',
@@ -235,7 +235,7 @@ export const HELP_PAGES: HelpPage[] = [
       {
         title: 'Request deletion of captured data',
         resourceLinks: [{ href: '/help/support', label: 'Request deletion through support' }],
-        body: 'Use the support form at /help/support or email contact@thetimeline.cc. Deletion requests are handled manually; there is no automatic history purge when you disconnect.',
+        body: 'Team owners can request permanent team deletion from Team settings → Advanced. Export data you can access first. The request immediately disables access for all members, stops new usage accrual, and requests subscription renewal cancellation. Platform admins review and perform deletion. Only platform admins can restore access before permanent deletion starts. For narrower deletion requests, use /help/support. Disconnecting alone does not erase history.',
         items: [
           'Tell us the workspace name, the connected provider, and whether you want all captured data from that source or a narrower set removed. Identify files by name or link only when needed; do not send passwords, tokens, or copies of private documents.',
           'We verify your identity and workspace authority and confirm the scope. For team-controlled data, we may need the workspace administrator’s instructions; individual rights requests are reviewed separately.',

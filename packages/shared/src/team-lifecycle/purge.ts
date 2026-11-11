@@ -1,0 +1,59 @@
+import { schema, teams, type Db } from '@timeline/db';
+import { eq, is, sql, Table } from 'drizzle-orm';
+import { getTableConfig } from 'drizzle-orm/pg-core';
+
+import { PURGED_TEAM_TABLES } from '#src/team-lifecycle/inventory.js';
+import { lifecycleRows } from '#src/team-lifecycle/result.js';
+
+/** Only invoked by the explicit maintenance scope. Never use a client-supplied table name. */
+export async function purgeTeamRows(db: Db, teamId: string): Promise<boolean> {
+  const [team] = await db.select().from(teams).where(eq(teams.id, teamId));
+  if (!team?.deletionStartedAt) throw new Error('Permanent deletion has not started');
+  let remaining = false;
+  for (const tableName of PURGED_TEAM_TABLES) {
+    await db.transaction(async (tx) => {
+      await tx.execute(sql`SELECT set_config('timeline.lifecycle_cleanup', 'on', true)`);
+      // Nullable cross-links can otherwise form cycles between purge-owned rows.
+      const table = Object.values(schema).find(
+        (value) => is(value, Table) && getTableConfig(value).name === tableName,
+      );
+      if (!table || !is(table, Table)) throw new Error('Unclassified deletion table');
+      for (const fk of getTableConfig(table).foreignKeys) {
+        const reference = fk.reference();
+        if (reference.columns.length !== 1) continue;
+        const column = reference.columns[0];
+        const target = getTableConfig(reference.foreignTable).name;
+        if (column && !column.notNull && PURGED_TEAM_TABLES.some((name) => name === target)) {
+          await tx.execute(
+            sql`UPDATE ${sql.identifier(tableName)} SET ${sql.identifier(column.name)} = NULL WHERE ctid IN (SELECT ctid FROM ${sql.identifier(tableName)} WHERE team_id = ${teamId}::uuid AND ${sql.identifier(column.name)} IS NOT NULL LIMIT 500)`,
+          );
+        }
+      }
+      // Keep unlinked nullable references even when a child still prevents deletion.
+      try {
+        const deleted = await tx.transaction((deleteTx) =>
+          deleteTx.execute(
+            sql`DELETE FROM ${sql.identifier(tableName)} WHERE ctid IN (SELECT ctid FROM ${sql.identifier(tableName)} WHERE team_id = ${teamId}::uuid LIMIT 500) RETURNING 1`,
+          ),
+        );
+        if (lifecycleRows(deleted).length) remaining = true;
+      } catch (error) {
+        const code =
+          (error as { code?: string; cause?: { code?: string } }).code ??
+          (error as { cause?: { code?: string } }).cause?.code;
+        if (code !== '23503') throw error;
+        remaining = true;
+      }
+    });
+  }
+  return !remaining;
+}
+
+export async function verifyTeamRows(db: Db, teamId: string) {
+  for (const table of PURGED_TEAM_TABLES) {
+    const rows = await db.execute(
+      sql`SELECT 1 FROM ${sql.identifier(table)} WHERE team_id = ${teamId}::uuid LIMIT 1`,
+    );
+    if (lifecycleRows(rows).length) throw new Error(`Team cleanup pending: ${table}`);
+  }
+}

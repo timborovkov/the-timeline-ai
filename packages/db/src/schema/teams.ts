@@ -36,6 +36,31 @@ export const teamInviteSendStatus = pgEnum('team_invite_send_status', [
   'failed',
 ]);
 
+export interface TeamLifecycleWork {
+  disabledDateUnknown?: boolean;
+  pendingCheckoutIds?: string[];
+  deletionActorUserId?: string;
+  billingPending?: boolean;
+  botsPending?: boolean;
+  notificationPending?: boolean;
+  requestId?: string;
+  stage?: 'inventory' | 'stop' | 'purge' | 'verify' | 'complete';
+  error?: string;
+  attempts?: number;
+  retryAt?: string;
+  connectionIds?: string[];
+  slackWorkspaceIds?: string[];
+  webhookDeliveryIds?: string[];
+  verifiedAt?: string;
+  externalFollowup?: string;
+  followups?: {
+    category: 'backups' | 'processors' | 'retained_records';
+    status: 'pending' | 'retained' | 'complete';
+    reference: string;
+    expiresAt?: string;
+  }[];
+}
+
 export const teams = pgTable('teams', {
   id: uuid('id').defaultRandom().primaryKey(),
   agentReporting: jsonb('agent_reporting')
@@ -45,6 +70,22 @@ export const teams = pgTable('teams', {
   slug: text('slug').notNull().unique(),
   name: text('name').notNull(),
   suspensionPreviousState: text('suspension_previous_state'),
+  disabledPeriods: jsonb('disabled_periods')
+    .$type<{ start: string; end?: string }[]>()
+    .notNull()
+    .default([]),
+  disabledAt: timestamp('disabled_at', { withTimezone: true }),
+  disabledByUserId: uuid('disabled_by_user_id').references(() => users.id, {
+    onDelete: 'set null',
+  }),
+  disabledReason: text('disabled_reason'),
+  deletionRequestedAt: timestamp('deletion_requested_at', { withTimezone: true }),
+  deletionRequestedByUserId: uuid('deletion_requested_by_user_id').references(() => users.id, {
+    onDelete: 'set null',
+  }),
+  deletionStartedAt: timestamp('deletion_started_at', { withTimezone: true }),
+  deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  lifecycleWork: jsonb('lifecycle_work').$type<TeamLifecycleWork>().notNull().default({}),
   // Phase 7: per-team inbound email address. Format is `<slug>@<INBOUND_EMAIL_DOMAIN>`,
   // populated at team creation. Nullable because legacy rows (created before
   // Phase 7) backfill via migration but new teams should never be NULL — the
@@ -121,3 +162,7 @@ export const teamInvites = pgTable(
     index('team_invites_team_email_idx').on(table.teamId, table.email),
   ],
 );
+
+export const retiredTeamRoutes = pgTable('retired_team_routes', {
+  routeHash: text('route_hash').primaryKey(),
+});

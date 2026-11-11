@@ -1,6 +1,7 @@
 import { createHash, randomBytes } from 'node:crypto';
 
 import {
+  integrations,
   platformAdminAudit,
   platformImpersonationSessions,
   teamBillingAccounts,
@@ -9,11 +10,18 @@ import {
   users,
   type Db,
 } from '@timeline/db';
-import { and, count, desc, eq, ilike, isNull, or, sql } from 'drizzle-orm';
+import { and, count, eq, ilike, isNull, isNotNull, or, sql } from 'drizzle-orm';
 import { z } from 'zod';
 
 import { isPlatformAdminEmail } from '#src/billing/operator.js';
 import { getEnv } from '#src/env.js';
+import {
+  directoryOrder,
+  directoryDates,
+  type DirectoryOptions,
+} from '#src/platform-admin/directory.js';
+
+export type { DirectoryOptions } from '#src/platform-admin/directory.js';
 
 export const IMPERSONATION_COOKIE = 'tl_platform_impersonation';
 export interface PlatformActor {
@@ -57,6 +65,14 @@ const teamFields = {
   name: teams.name,
   slug: teams.slug,
   createdAt: teams.createdAt,
+  disabledAt: teams.disabledAt,
+  disabledByUserId: teams.disabledByUserId,
+  disabledReason: teams.disabledReason,
+  deletionRequestedAt: teams.deletionRequestedAt,
+  deletionRequestedByUserId: teams.deletionRequestedByUserId,
+  deletionStartedAt: teams.deletionStartedAt,
+  deletedAt: teams.deletedAt,
+  lifecycleWork: teams.lifecycleWork,
   securityState: teamBillingAccounts.securityState,
   billingState: teamBillingAccounts.billingState,
   planId: teamBillingAccounts.planId,
@@ -71,13 +87,30 @@ function searchTerm(value: string) {
     .slice(0, 200)
     .replace(/[\\%_]/g, '\\$&')}%`;
 }
-export async function listPlatformUsers(db: Db, actor: PlatformActor, query: string, page: number) {
+export async function listPlatformUsers(
+  db: Db,
+  actor: PlatformActor,
+  query: string,
+  page: number,
+  options: DirectoryOptions = {},
+) {
   await requirePlatformActor(db, actor);
   await recordPlatformAudit(db, { actorUserId: actor.userId, action: 'directory.users.read' });
-  const filter = or(
+  const search = or(
     ilike(users.email, searchTerm(query)),
     ilike(users.name, searchTerm(query)),
     ilike(sql`${users.id}::text`, searchTerm(query)),
+  );
+  const filter = and(
+    search,
+    ...directoryDates(users.createdAt, options),
+    options.status === 'disabled'
+      ? isNotNull(users.suspendedAt)
+      : options.status === 'active'
+        ? isNull(users.suspendedAt)
+        : options.status === 'unverified'
+          ? isNull(users.emailVerified)
+          : undefined,
   );
   const [rows, total] = await Promise.all([
     db
@@ -87,20 +120,55 @@ export async function listPlatformUsers(db: Db, actor: PlatformActor, query: str
       })
       .from(users)
       .where(filter)
-      .orderBy(desc(users.createdAt), users.id)
+      .orderBy(
+        directoryOrder(
+          options,
+          {
+            name: users.name,
+            email: users.email,
+            created: users.createdAt,
+            disabled: users.suspendedAt,
+          },
+          users.createdAt,
+        ),
+        users.id,
+      )
       .limit(50)
       .offset((directoryPage(page) - 1) * 50),
     db.select({ value: count() }).from(users).where(filter),
   ]);
   return { rows, total: total[0]?.value ?? 0 };
 }
-export async function listPlatformTeams(db: Db, actor: PlatformActor, query: string, page: number) {
+export async function listPlatformTeams(
+  db: Db,
+  actor: PlatformActor,
+  query: string,
+  page: number,
+  options: DirectoryOptions = {},
+) {
   await requirePlatformActor(db, actor);
   await recordPlatformAudit(db, { actorUserId: actor.userId, action: 'directory.teams.read' });
-  const filter = or(
+  const search = or(
     ilike(teams.name, searchTerm(query)),
     ilike(teams.slug, searchTerm(query)),
     ilike(sql`${teams.id}::text`, searchTerm(query)),
+  );
+  const inactive = sql`(${teams.disabledAt} IS NOT NULL OR ${teamBillingAccounts.securityState} IN ('suspended', 'terminated'))`;
+  const filter = and(
+    search,
+    ...directoryDates(teams.createdAt, options),
+    options.status === 'disabled'
+      ? and(inactive, isNull(teams.deletionStartedAt))
+      : options.status === 'requested'
+        ? and(isNotNull(teams.deletionRequestedAt), isNull(teams.deletionStartedAt))
+        : options.status === 'deleting'
+          ? and(isNotNull(teams.deletionStartedAt), isNull(teams.deletedAt))
+          : options.status === 'deleted'
+            ? isNotNull(teams.deletedAt)
+            : options.status === 'active'
+              ? sql`NOT COALESCE(${inactive}, false) AND ${teams.deletionStartedAt} IS NULL`
+              : undefined,
+    options.plan ? sql`${teamBillingAccounts.planId}::text = ${options.plan}` : undefined,
   );
   const [rows, total] = await Promise.all([
     db
@@ -111,14 +179,35 @@ export async function listPlatformTeams(db: Db, actor: PlatformActor, query: str
       .from(teams)
       .leftJoin(teamBillingAccounts, eq(teams.id, teamBillingAccounts.teamId))
       .where(filter)
-      .orderBy(desc(teams.createdAt), teams.id)
+      .orderBy(
+        directoryOrder(
+          options,
+          {
+            name: teams.name,
+            created: teams.createdAt,
+            disabled: teams.disabledAt,
+            requested: teams.deletionRequestedAt,
+          },
+          teams.createdAt,
+        ),
+        teams.id,
+      )
       .limit(50)
       .offset((directoryPage(page) - 1) * 50),
-    db.select({ value: count() }).from(teams).where(filter),
+    db
+      .select({ value: count() })
+      .from(teams)
+      .leftJoin(teamBillingAccounts, eq(teams.id, teamBillingAccounts.teamId))
+      .where(filter),
   ]);
   return { rows, total: total[0]?.value ?? 0 };
 }
-export async function readPlatformUser(db: Db, actor: PlatformActor, id: string) {
+export async function readPlatformUser(
+  db: Db,
+  actor: PlatformActor,
+  id: string,
+  options: DirectoryOptions = {},
+) {
   await requirePlatformActor(db, actor);
   z.uuid().parse(id);
   await recordPlatformAudit(db, {
@@ -136,8 +225,28 @@ export async function readPlatformUser(db: Db, actor: PlatformActor, id: string)
     })
     .from(teamMembers)
     .innerJoin(teams, eq(teams.id, teamMembers.teamId))
-    .where(eq(teamMembers.userId, id))
-    .orderBy(teams.name);
+    .where(
+      and(
+        eq(teamMembers.userId, id),
+        ...directoryDates(teamMembers.createdAt, options),
+        options.role ? sql`${teamMembers.role}::text = ${options.role}` : undefined,
+        options.status === 'active'
+          ? isNull(teamMembers.removedAt)
+          : options.status === 'removed'
+            ? isNotNull(teamMembers.removedAt)
+            : undefined,
+      ),
+    )
+    .orderBy(
+      directoryOrder(
+        options,
+        { name: teams.name, role: teamMembers.role, created: teamMembers.createdAt },
+        teams.name,
+      ),
+      teams.id,
+    )
+    .limit(51)
+    .offset((directoryPage(options.page) - 1) * 50);
   return user
     ? {
         ...user,
@@ -147,7 +256,12 @@ export async function readPlatformUser(db: Db, actor: PlatformActor, id: string)
       }
     : null;
 }
-export async function readPlatformTeam(db: Db, actor: PlatformActor, id: string) {
+export async function readPlatformTeam(
+  db: Db,
+  actor: PlatformActor,
+  id: string,
+  options: DirectoryOptions = {},
+) {
   await requirePlatformActor(db, actor);
   z.uuid().parse(id);
   await recordPlatformAudit(db, {
@@ -160,15 +274,50 @@ export async function readPlatformTeam(db: Db, actor: PlatformActor, id: string)
     .from(teams)
     .leftJoin(teamBillingAccounts, eq(teams.id, teamBillingAccounts.teamId))
     .where(eq(teams.id, id));
+  if (team?.deletionStartedAt) return { ...team, members: [], integrationCount: 0 };
+  const integrationRows = await db
+    .select({ total: count() })
+    .from(integrations)
+    .where(eq(integrations.teamId, id));
   const members = await db
     .select({ ...userFields, role: teamMembers.role, removedAt: teamMembers.removedAt })
     .from(teamMembers)
     .innerJoin(users, eq(users.id, teamMembers.userId))
-    .where(eq(teamMembers.teamId, id))
-    .orderBy(users.email);
-  return team ? { ...team, members } : null;
+    .where(
+      and(
+        eq(teamMembers.teamId, id),
+        ...directoryDates(teamMembers.createdAt, options),
+        options.role ? sql`${teamMembers.role}::text = ${options.role}` : undefined,
+        options.status === 'active'
+          ? isNull(teamMembers.removedAt)
+          : options.status === 'removed'
+            ? isNotNull(teamMembers.removedAt)
+            : undefined,
+      ),
+    )
+    .orderBy(
+      directoryOrder(
+        options,
+        {
+          name: users.name,
+          email: users.email,
+          role: teamMembers.role,
+          created: teamMembers.createdAt,
+        },
+        users.email,
+      ),
+      users.id,
+    )
+    .limit(51)
+    .offset((directoryPage(options.page) - 1) * 50);
+  return team ? { ...team, members, integrationCount: integrationRows[0]?.total ?? 0 } : null;
 }
-export async function listPlatformAudit(db: Db, actor: PlatformActor, page: number) {
+export async function listPlatformAudit(
+  db: Db,
+  actor: PlatformActor,
+  page: number,
+  options: DirectoryOptions & { q?: string } = {},
+) {
   await requirePlatformActor(db, actor);
   return db
     .select({
@@ -185,7 +334,33 @@ export async function listPlatformAudit(db: Db, actor: PlatformActor, page: numb
     })
     .from(platformAdminAudit)
     .innerJoin(users, eq(users.id, platformAdminAudit.actorUserId))
-    .orderBy(desc(platformAdminAudit.createdAt), platformAdminAudit.id)
+    .where(
+      and(
+        ...directoryDates(platformAdminAudit.createdAt, options),
+        options.team && z.uuid().safeParse(options.team).success
+          ? eq(platformAdminAudit.teamId, options.team)
+          : undefined,
+        options.q ? ilike(platformAdminAudit.action, searchTerm(options.q)) : undefined,
+        options.actor
+          ? or(
+              ilike(users.email, searchTerm(options.actor)),
+              ilike(sql`${platformAdminAudit.actorUserId}::text`, searchTerm(options.actor)),
+            )
+          : undefined,
+      ),
+    )
+    .orderBy(
+      directoryOrder(
+        options,
+        {
+          created: platformAdminAudit.createdAt,
+          action: platformAdminAudit.action,
+          actor: users.email,
+        },
+        platformAdminAudit.createdAt,
+      ),
+      platformAdminAudit.id,
+    )
     .limit(51)
     .offset((directoryPage(page) - 1) * 50);
 }
@@ -213,6 +388,13 @@ export async function renamePlatformEntity(
       .where(eq(table.id, id))
       .for('update');
     if (!before) throw new PlatformAccessError('Record not found');
+    if (kind === 'team') {
+      const [team] = await tx
+        .select({ deleting: teams.deletionStartedAt })
+        .from(teams)
+        .where(eq(teams.id, id));
+      if (team?.deleting) throw new PlatformAccessError('Deleted teams cannot be renamed');
+    }
     await tx.update(table).set({ name }).where(eq(table.id, id));
     await recordPlatformAudit(store, {
       actorUserId: actor.userId,
@@ -257,6 +439,8 @@ export async function setPlatformSuspension(
     } else {
       const [team] = await tx.select().from(teams).where(eq(teams.id, id)).for('update');
       if (!team) throw new PlatformAccessError('Team not found');
+      if (team.deletionStartedAt || team.deletedAt)
+        throw new PlatformAccessError('Permanent deletion cannot be reversed');
       // Billing scope creates accounts with the current catalog defaults.
       const { withTeam } = await import('#src/team-scope.js');
       const existing = await tx
@@ -270,18 +454,49 @@ export async function setPlatformSuspension(
         .from(teamBillingAccounts)
         .where(eq(teamBillingAccounts.teamId, id))
         .for('update');
-      if (!account || account.securityState === 'terminated')
+      if (!account || (!suspended && account.securityState === 'terminated'))
         throw new PlatformAccessError('Team cannot be restored here');
-      if (suspended && account.securityState !== 'suspended') {
+      if (
+        suspended &&
+        ['suspended', 'terminated'].includes(account.securityState) &&
+        !team.disabledAt
+      ) {
         await tx
           .update(teams)
-          .set({ suspensionPreviousState: account.securityState })
+          .set({
+            disabledAt: new Date(),
+            disabledByUserId: actor.userId,
+            disabledReason: reason,
+            disabledPeriods: [...team.disabledPeriods, { start: new Date().toISOString() }],
+            lifecycleWork: {
+              ...team.lifecycleWork,
+              disabledDateUnknown: false,
+              billingPending: true,
+            },
+          })
+          .where(eq(teams.id, id));
+      }
+      if (suspended && !['suspended', 'terminated'].includes(account.securityState)) {
+        await tx
+          .update(teams)
+          .set({
+            suspensionPreviousState: account.securityState,
+            disabledPeriods: [...team.disabledPeriods, { start: new Date().toISOString() }],
+            disabledAt: new Date(),
+            disabledByUserId: actor.userId,
+            disabledReason: reason,
+            lifecycleWork: {
+              ...team.lifecycleWork,
+              disabledDateUnknown: false,
+              billingPending: true,
+            },
+          })
           .where(eq(teams.id, id));
         await tx
           .update(teamBillingAccounts)
           .set({ securityState: 'suspended' })
           .where(eq(teamBillingAccounts.teamId, id));
-      } else if (!suspended && account.securityState === 'suspended') {
+      } else if (!suspended && (account.securityState === 'suspended' || team.disabledAt)) {
         if (!team.suspensionPreviousState)
           throw new PlatformAccessError(
             'This suspension must be restored by its originating security workflow',
@@ -291,9 +506,26 @@ export async function setPlatformSuspension(
           .parse(team.suspensionPreviousState);
         await tx
           .update(teamBillingAccounts)
-          .set({ securityState: previous })
+          .set({
+            securityState: ['normal', 'suspended'].includes(account.securityState)
+              ? previous
+              : account.securityState,
+          })
           .where(eq(teamBillingAccounts.teamId, id));
-        await tx.update(teams).set({ suspensionPreviousState: null }).where(eq(teams.id, id));
+        await tx
+          .update(teams)
+          .set({
+            suspensionPreviousState: null,
+            disabledPeriods: team.disabledPeriods.map((period) =>
+              period.end ? period : { ...period, end: new Date().toISOString() },
+            ),
+            disabledAt: null,
+            disabledByUserId: null,
+            disabledReason: null,
+            deletionRequestedAt: null,
+            deletionRequestedByUserId: null,
+          })
+          .where(eq(teams.id, id));
       }
     }
     await recordPlatformAudit(store, {
@@ -324,6 +556,11 @@ export async function startImpersonation(
   return db.transaction(async (tx) => {
     const store = tx as unknown as Db;
     await requirePlatformActor(store, actor);
+    const [team] = await tx
+      .select({ deleting: teams.deletionStartedAt })
+      .from(teams)
+      .where(eq(teams.id, input.teamId));
+    if (!team || team.deleting) throw new PlatformAccessError('Workspace deletion has started');
     const [member] = await tx
       .select()
       .from(teamMembers)

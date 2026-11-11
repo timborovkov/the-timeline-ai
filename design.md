@@ -561,3 +561,7 @@ For every changed surface:
 Copy the New York variant into `apps/web/src/components/ui/`, then retune it to
 this contract: 4px controls, 6px panels, no content shadow, lime only for the
 primary action, and imports through `@/components/ui/<name>`.
+
+## Administrative lifecycle controls
+
+Platform directories expose copyable identifiers, lifecycle status, disabled timestamps, and URL-persisted sorting/filtering. Use “Disabled” for reversible team access suspension, “Deletion requested” for owner requests, and “Active-system data removed” only after verification. Permanent actions live in a danger disclosure with exact team-name confirmation and explicit consequences for every member. Admin deletion details show retries and external retention follow-up separately. UUIDs remain an administrative/support detail rather than ordinary workspace navigation.

@@ -845,6 +845,7 @@ export async function snapshotTeamStorageGbMonth(input: {
   let lastGb = 0;
   let settled = false;
   for (const day of days) {
+    if (await teamDisabledOnDay(input.db, input.teamId, day)) continue;
     const gb = await storageGbOnUtcDay(input.db, input.teamId, day);
     lastGb = gb;
     if (gb <= 0) continue;
@@ -1222,6 +1223,7 @@ export async function accrueTeamMemberDays(input: {
   let extraMembers = 0;
   let chargeCents = 0;
   for (const day of days) {
+    if (await teamDisabledOnDay(input.db, input.teamId, day)) continue;
     const members = input.day
       ? roster.filter((member) => member.removedAt === null)
       : membersActiveOnDay(roster, day);
@@ -1357,22 +1359,25 @@ async function settleCompletedWorkerAiReservation(
  * sweep, including a row that already expired. One row's failure does not
  * stop the rest of the tick.
  */
-export async function settlePendingBillingReservations(db: Db): Promise<number> {
+export async function settlePendingBillingReservations(db: Db, teamId?: string): Promise<number> {
   const rows = await db
     .select()
     .from(billingUsageReservations)
     .where(
-      or(
-        and(
-          eq(billingUsageReservations.state, 'reserved'),
-          sql`coalesce(${billingUsageReservations.metadata}->>'pending_settlement', '') = 'true'`,
-        ),
-        and(
-          inArray(billingUsageReservations.state, ['reserved', 'expired']),
-          or(
-            sql`coalesce(${billingUsageReservations.metadata}->>'worker_settlement_pending', '') = 'true'`,
-            sql`coalesce(${billingUsageReservations.metadata}->>'provider_completed', '') = 'true'`,
-            sql`coalesce(${billingUsageReservations.metadata}->>'pending_failed_attempt_settlement', '') = 'true'`,
+      and(
+        teamId ? eq(billingUsageReservations.teamId, teamId) : undefined,
+        or(
+          and(
+            eq(billingUsageReservations.state, 'reserved'),
+            sql`coalesce(${billingUsageReservations.metadata}->>'pending_settlement', '') = 'true'`,
+          ),
+          and(
+            inArray(billingUsageReservations.state, ['reserved', 'expired']),
+            or(
+              sql`coalesce(${billingUsageReservations.metadata}->>'worker_settlement_pending', '') = 'true'`,
+              sql`coalesce(${billingUsageReservations.metadata}->>'provider_completed', '') = 'true'`,
+              sql`coalesce(${billingUsageReservations.metadata}->>'pending_failed_attempt_settlement', '') = 'true'`,
+            ),
           ),
         ),
       ),
@@ -1559,4 +1564,23 @@ export async function resetIncludedDiscountIfPeriodElapsed(input: {
     });
     return rolled.rolled;
   });
+}
+
+/** Daily meters waive any day overlapping a disabled interval, including after restoration. */
+async function teamDisabledOnDay(db: Db, teamId: string, day: string) {
+  const [team] = await db
+    .select({
+      periods: teams.disabledPeriods,
+      disabledAt: teams.disabledAt,
+      deleting: teams.deletionStartedAt,
+    })
+    .from(teams)
+    .where(eq(teams.id, teamId));
+  if (!team || team.deleting || team.disabledAt) return true;
+  const start = new Date(`${day}T00:00:00Z`).getTime();
+  return team.periods.some(
+    (period) =>
+      new Date(period.start).getTime() < start + 86400000 &&
+      (!period.end || new Date(period.end).getTime() >= start),
+  );
 }

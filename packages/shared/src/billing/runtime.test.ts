@@ -238,6 +238,30 @@ describe('billing runtime', () => {
     expect(dash.meters.accepted_sources?.customerChargeCents).toBe(1);
   });
 
+  it('does not accrue daily usage during disable or backfill the disabled interval after restoration', async () => {
+    const billing = billingScopeMod.createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await billing.getAccount();
+    const day = utcDay();
+    await pg.exec(`INSERT INTO documents (id,team_id,name) VALUES ('cccccccc-dddd-4eee-8fff-000000000001','${TEAM_ID}','fixture');
+      INSERT INTO document_versions (team_id,document_id,version,object_key,byte_size) VALUES ('${TEAM_ID}','cccccccc-dddd-4eee-8fff-000000000001',1,'${TEAM_ID}/fixture',${50 * BYTES_PER_MIB});
+      UPDATE teams SET disabled_at = now(), disabled_periods = '[{"start":"${day}T00:00:00Z"}]' WHERE id = '${TEAM_ID}';`);
+    await accrueTeamMemberDays({ db, teamId: TEAM_ID, day });
+    await snapshotTeamStorageGbMonth({ db, teamId: TEAM_ID, day });
+    expect(await db.select().from(billingUsageLedger)).toHaveLength(0);
+    expect(await db.select().from(billingMemberDayLedger)).toHaveLength(0);
+    await pg.exec(
+      `UPDATE teams SET disabled_at=NULL,disabled_periods='[{"start":"${day}T00:00:00Z","end":"${day}T12:00:00Z"}]' WHERE id='${TEAM_ID}'`,
+    );
+    await accrueTeamMemberDays({ db, teamId: TEAM_ID, day });
+    await snapshotTeamStorageGbMonth({ db, teamId: TEAM_ID, day });
+    expect(await db.select().from(billingUsageLedger)).toHaveLength(0);
+    expect(await db.select().from(billingMemberDayLedger)).toHaveLength(0);
+  });
   it('accrues extra member-days on paid plans and resets included discount', async () => {
     const billing = billingScopeMod.createBillingScope({
       db,

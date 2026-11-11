@@ -29,6 +29,12 @@ import { startReconciliationWorker } from '#src/workers/reconciliation.js';
 import { startSuggestionWorker } from '#src/workers/suggestions.js';
 import { startTaskCategoryWorker } from '#src/workers/taskCategory.js';
 import { startTeamExportWorker } from '#src/workers/teamExport.js';
+import {
+  startTeamLifecycleWorker,
+  closeTeamLifecycleQueue,
+  scheduleTeamLifecycle,
+  TEAM_LIFECYCLE_QUEUE,
+} from '#src/workers/teamLifecycle.js';
 import { startTimelineMomentPresentationWorker } from '#src/workers/timelineMomentPresentation.js';
 import { startTranscribeWorker } from '#src/workers/transcribe.js';
 import { startWebhookDeliveryWorker } from '#src/workers/webhookDelivery.js';
@@ -74,6 +80,12 @@ async function main(): Promise<void> {
     );
   }
   const workers = await startWorkerGroup([
+    {
+      name: TEAM_LIFECYCLE_QUEUE,
+      start: () => startTeamLifecycleWorker({ db }),
+      closeQueue: closeTeamLifecycleQueue,
+      schedule: scheduleTeamLifecycle,
+    },
     {
       name: queue.QUEUE_NAMES.emailInbound,
       start: () => startEmailInboundWorker({ db }),

@@ -396,8 +396,16 @@ function PrivacyAiAndProviderSections() {
           documents they can access; the document is hidden and can be restored, and stored bytes
           and search chunks are not immediately purged. Calendar events can be deleted in the
           product. Captured source events remain immutable workspace evidence. Disconnecting a
-          connection or source does not erase that history. There is no complete self-serve erasure
-          of an account, workspace, or every derived index, backup, or processor copy.
+          connection or source does not erase that history. An owner can request permanent team
+          deletion in Team settings. This immediately disables the team for all members; platform
+          administrators carry out deletion of all team content, including private content within
+          that team, files, search vectors, exports, queued payloads and team integrations. Unused
+          personal connector credentials are removed; connections used by other teams, user
+          accounts, sign-in credentials and original external files remain. Only platform
+          administrators can restore access before permanent deletion begins. A minimal team
+          tombstone and limited financial/security records remain under documented retention and
+          legal holds. Backup expiry and provider deletion are tracked separately; active-system
+          removal does not establish immediate erasure from every copy.
         </li>
       </ul>
       <h3>Google Drive</h3>
@@ -609,7 +617,7 @@ function PrivacyRetentionSections() {
               dependent sources are disabled. Change snapshots and latest extracted text are deleted
               when an admin removes the workspace Drive source or when remaining selections no
               longer cover a file. Cited Drive timeline events remain with other Customer Content
-              until a support-assisted deletion request is completed.
+              until a team deletion or support-assisted deletion request is completed.
             </td>
           </tr>
           <tr>

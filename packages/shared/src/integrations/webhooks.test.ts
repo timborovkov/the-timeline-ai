@@ -78,6 +78,18 @@ describe('webhook delivery persistence', () => {
     await pg.close();
   });
 
+  it('discards disabled and unowned callbacks without retaining payloads', async () => {
+    await db.update(teams).set({ disabledAt: new Date() }).where(eq(teams.id, TEAM_ID));
+    const recorded = await recordWebhookDeliveryTargets(db as never, {
+      provider: 'linear',
+      eventType: 'Issue',
+      dedupKey: 'disabled',
+      payload: { private: 'must not persist' },
+      targets: [{ teamId: TEAM_ID, integrationId: INTEGRATION_ID }],
+    });
+    expect(recorded.deliveryId).toBeNull();
+    expect(await db.select().from(integrationWebhookDeliveries)).toHaveLength(0);
+  });
   it('records delivery targets and advances target lifecycle state', async () => {
     const recorded = await recordWebhookDeliveryTargets(db as never, {
       provider: 'linear',
@@ -96,7 +108,7 @@ describe('webhook delivery persistence', () => {
         },
       ],
     });
-
+    if (!recorded.deliveryId) throw new Error('Expected active delivery');
     expect(recorded.targetIds).toHaveLength(1);
     const work = await loadWebhookDeliveryWork(db as never, recorded.deliveryId);
     expect(work?.delivery).toMatchObject({
@@ -154,6 +166,7 @@ describe('webhook delivery persistence', () => {
         },
       ],
     });
+    if (!recorded.deliveryId) throw new Error('Expected active delivery');
     const targetId = recorded.targetIds[0];
     if (!targetId) throw new Error('target id missing');
     await markWebhookDeliveryTargetProcessing(db as never, targetId);

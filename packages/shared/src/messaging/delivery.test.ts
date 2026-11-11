@@ -1022,6 +1022,7 @@ describe('workspace email metering', () => {
       false,
     );
     expect(shouldMeterWorkspaceEmail('support_request', { db: {}, teamId: 'team-1' })).toBe(false);
+    expect(shouldMeterWorkspaceEmail('team_deletion', { db: {}, teamId: 'team-1' })).toBe(false);
     expect(shouldMeterWorkspaceEmail('welcome', { db: {}, teamId: 'team-1' })).toBe(true);
     expect(shouldMeterWorkspaceEmail('email_verification', { db: {}, teamId: null })).toBe(false);
   });

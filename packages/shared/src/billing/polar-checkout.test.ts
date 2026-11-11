@@ -651,3 +651,38 @@ describe('Polar managed checkout discounts', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('cancelSubscriptionRenewal', () => {
+  it('verifies subscription ownership and requires confirmed period-end cancellation', async () => {
+    const calls: { method: string; body: string }[] = [];
+    globalThis.fetch = vi.fn((_url: string | URL | Request, init?: RequestInit) => {
+      calls.push({
+        method: init?.method ?? 'GET',
+        body: typeof init?.body === 'string' ? init.body : '',
+      });
+      return Promise.resolve(
+        new Response(
+          JSON.stringify(
+            init?.method === 'PATCH'
+              ? { cancel_at_period_end: true }
+              : { customer_id: 'customer-a' },
+          ),
+          { status: 200 },
+        ),
+      );
+    }) as unknown as typeof fetch;
+    const provider = createPolarBillingProvider({
+      accessToken: 'fixture',
+      server: 'sandbox',
+      organizationId: 'fixture-org',
+    });
+    if (!provider) throw new Error('Missing fixture provider');
+    await provider.cancelSubscriptionRenewal('subscription-a', 'customer-a');
+    expect(calls.map((call) => call.method)).toEqual(['GET', 'PATCH']);
+    expect(JSON.parse(calls[1]?.body ?? '{}')).toEqual({ cancel_at_period_end: true });
+    await expect(
+      provider.cancelSubscriptionRenewal('subscription-a', 'another-customer'),
+    ).rejects.toThrow();
+    expect(calls.filter((call) => call.method === 'PATCH')).toHaveLength(1);
+  });
+});

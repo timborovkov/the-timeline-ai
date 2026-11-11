@@ -116,6 +116,7 @@ async function sendResendEmail(
 }
 
 const UNMETERED_WORKSPACE_EMAIL_INTENTS = new Set<MessageIntent>([
+  'team_deletion',
   'billing_usage_alert',
   'email_verification',
   'password_reset',
@@ -346,7 +347,7 @@ export async function sendMessage<TIntent extends MessageIntent>(
   const result = await sendResendEmail(
     rendered,
     options.fetch,
-    deliveryId ?? options.dedupeKey,
+    intent === 'team_deletion' ? options.dedupeKey : (deliveryId ?? options.dedupeKey),
     payload,
   );
   if (deliveryId && options.db) {
