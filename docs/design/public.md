@@ -123,7 +123,7 @@ at `/solutions/client-project-handoffs` with related use-case links. `/product-t
 is a screenshot walkthrough linked from the home hero as See it first and from
 pricing; `/integrations/telegram` is the public Telegram capture page. Product
 screenshots live in `apps/web/public/marketing/screenshots` under the filenames
-from the website copy plan. Each public slot has matching `<stem>-light.png`
+referenced by the public screenshot inventory. Each public slot has matching `<stem>-light.png`
 and `<stem>-dark.png` twins from the same fictional seed and framing. The
 resolved site theme selects one unoptimized image after hydration, including
 saved Light/Dark overrides and System changes. No variant is preloaded before

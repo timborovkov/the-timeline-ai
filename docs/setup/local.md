@@ -36,7 +36,7 @@ The rest of the defaults already match `docker-compose.yml`. When you use `docke
 
 For local document parsing without Daytona, set `DOCUMENT_EXTRACT_ALLOW_INPROCESS=true`. This development-only option is rejected in production; leave it false when using a Daytona extractor.
 
-Website scanning is always available. Web and full worker startup require `FIRECRAWL_API_KEY`; missing configuration fails immediately. Firecrawl is the only crawler; provider outages retry without an in-house fetcher. Team inbound addresses use `INBOUND_EMAIL_DOMAIN` from config, never a hardcoded domain.
+Web and full worker startup require `FIRECRAWL_API_KEY`; missing configuration fails immediately. The document-extract-only worker does not require it. See the [website scan lifecycle](../relational-memory.md#website-scans). Team inbound addresses use `INBOUND_EMAIL_DOMAIN` from config.
 
 Local Compose uses PostgreSQL 18. For an existing PostgreSQL 16 volume, follow the [data-preserving PostgreSQL upgrade procedure](postgres18.md) before startup. Keep `POSTGRES_DATA_VOLUME=postgres_data` until the documented migration; the image refuses old data rather than silently replacing it. Never use a volume reset to resolve this upgrade error.
 
@@ -175,16 +175,4 @@ Use `bun run demo:reset` only for the disposable demo database configured by the
 - **Migrations stuck** — `docker compose logs postgres`; ensure container is healthy.
 - **Port already in use** — another local Postgres/Redis on the same port. Stop it, or edit `docker-compose.yml` to remap.
 
-## Live website scan test
-
-Start local storage with `docker compose up -d rustfs rustfs-init`, then run
-`bun run test:website-scan:live` with `FIRECRAWL_API_KEY` and `OPENROUTER_API_KEY`
-exported. Optionally set `WEBSITE_SCAN_LIVE_ENV_FILE` to a private env file and
-`WEBSITE_SCAN_LIVE_URL` (default `https://thetimeline.cc`). This incurs real provider
-usage. The opt-in test uses a disposable migrated PGlite database and a unique local
-S3 bucket, removed after the test; it refuses remote storage. It runs real Firecrawl,
-extraction, and suggestion generation and checks page snapshots, documents, cited
-pending Company proposals, and absence of canonical objects. Worker dispatch is
-inline; Redis/browser transport and vector indexing are outside this test.
-Local S3 defaults follow Compose; override with `WEBSITE_SCAN_LIVE_S3_ENDPOINT`,
-`WEBSITE_SCAN_LIVE_S3_ACCESS_KEY_ID`, and `WEBSITE_SCAN_LIVE_S3_SECRET_ACCESS_KEY`.
+For the opt-in provider evaluation, follow [live website scan testing](../testing/README.md#live-website-scan).
