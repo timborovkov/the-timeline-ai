@@ -274,11 +274,11 @@ describe('withTeam timeline semantic search', () => {
     const bundle = crypto.randomUUID(),
       item = crypto.randomUUID();
     await pg.query(
-      `INSERT INTO agent_suggestions(id,team_id,source,title,dedupe_key) VALUES ($1,$2,'background','Next action',$1)`,
+      `INSERT INTO agent_suggestions(id,team_id,source,title,dedupe_key) VALUES ($1,$2,'background','Next action','parent-task')`,
       [bundle, TEAM_A],
     );
     await pg.query(
-      `INSERT INTO agent_suggestion_items(id,suggestion_id,team_id,operation,target_kind,title,dedupe_key,proposed_payload) VALUES ($1,$2,$3,'create','task','Confirm launch',$1,$4::jsonb)`,
+      `INSERT INTO agent_suggestion_items(id,suggestion_id,team_id,operation,target_kind,title,dedupe_key,proposed_payload) VALUES ($1,$2,$3,'create','task','Confirm launch','parent-task',$4::jsonb)`,
       [
         item,
         bundle,
