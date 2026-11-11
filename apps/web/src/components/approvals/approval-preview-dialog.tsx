@@ -236,9 +236,16 @@ function ApprovalPreviewContent({
       {currentEvidence.length > 0 ? (
         <section className="space-y-2 border-t border-border pt-3">
           <h3 className="text-xs font-medium text-fg">Evidence for the current record</h3>
-          {currentEvidence.map((entry, index) => (
+          {[
+            ...new Map(
+              currentEvidence.map((entry) => [
+                JSON.stringify([entry.rawEventId, entry.quote]),
+                entry,
+              ]),
+            ).entries(),
+          ].map(([key, entry]) => (
             <EvidenceLink
-              key={`${entry.rawEventId}-${index}`}
+              key={key}
               eventId={entry.rawEventId}
               previewText={entry.quote}
               source={entry.source}
