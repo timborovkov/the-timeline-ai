@@ -116,7 +116,7 @@ export function CalendarSubscriptionPanel({
 
   return (
     <section
-      className="space-y-2 border-y border-border py-3"
+      className="space-y-2 py-3"
       aria-labelledby="calendar-subscription-heading"
       aria-busy={busy}
     >

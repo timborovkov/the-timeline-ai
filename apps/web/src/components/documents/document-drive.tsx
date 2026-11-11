@@ -733,7 +733,7 @@ function Breadcrumbs({ breadcrumbs }: { breadcrumbs: Crumb[] }) {
 function UploadStatusList({ uploads }: { uploads: readonly UploadState[] }) {
   if (uploads.length === 0) return null;
   return (
-    <output className="space-y-2 border-y border-border py-3" aria-live="polite">
+    <output className="space-y-2 py-3" aria-live="polite">
       {uploads.map((upload) => (
         <div key={upload.id} className="flex items-center justify-between gap-3 text-sm">
           <span className="truncate font-medium">{upload.name}</span>
@@ -769,7 +769,7 @@ function NewItemVisibilityPicker({
 
   const selectedMemberIds = new Set(visibilityUserIds);
   return (
-    <fieldset className="flex flex-wrap items-center gap-3 border-y border-border py-3 text-sm">
+    <fieldset className="flex flex-wrap items-center gap-3 py-3 text-sm">
       <legend className="px-1 text-xs text-fg-dim">New item visibility</legend>
       <label className="sr-only" htmlFor={visibilityId}>
         Default visibility for new documents and folders
@@ -842,7 +842,7 @@ function DocumentDropZone({
         e.preventDefault();
       }}
       onDrop={onDrop}
-      className="border-y border-border py-4"
+      className="py-4"
     >
       {isEmpty ? (
         <EmptyDocumentDrive fileInputRef={fileInputRef} />

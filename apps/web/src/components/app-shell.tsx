@@ -149,9 +149,8 @@ export function AppShell({
               {gettingStarted ? (
                 <GettingStartedStrip phase={gettingStarted.phase} hidden={gettingStarted.hidden} />
               ) : null}
-              {/* Every app route shares one frame so page headers and content do
-              not shift horizontally during navigation. Pages may constrain
-              an inner prose region, but not their outer frame. */}
+              {/* The shell owns a bounded content column. Collection bands can
+              bleed to pane edges without stretching their inner content. */}
               <main
                 id={APP_MAIN_SCROLL_ID}
                 className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain px-4 pb-24 pt-6 md:px-8 md:py-8"

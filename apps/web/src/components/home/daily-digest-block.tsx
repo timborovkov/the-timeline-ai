@@ -8,10 +8,7 @@ export function DailyDigestBlock({ digest }: { digest: DailyDigestPayload | unde
   if (!digest?.summary) return null;
 
   return (
-    <section
-      aria-labelledby="latest-digest-heading"
-      className="space-y-3 border-y border-border py-4"
-    >
+    <section aria-labelledby="latest-digest-heading" className="space-y-3 py-4">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <SectionHeading id="latest-digest-heading">Latest digest</SectionHeading>
         <div className="flex flex-wrap items-baseline gap-3">

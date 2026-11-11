@@ -15,29 +15,31 @@ const WORK_LINKS = [
 
 export function WorkSubnav({ current, className }: { current: string; className?: string }) {
   return (
-    <nav aria-label="Work" className={cn('overflow-x-auto border-b border-border', className)}>
-      <div className="flex min-w-max gap-1">
-        {WORK_LINKS.map((item) => {
-          const active = item.href.includes('?')
-            ? current === item.href
-            : item.href === '/app/work'
+    <div data-slot="collection-tabs" className="min-w-0 shrink-0">
+      <nav aria-label="Work" className={cn('overflow-x-auto border-b border-border', className)}>
+        <div className="flex min-w-max gap-1">
+          {WORK_LINKS.map((item) => {
+            const active = item.href.includes('?')
               ? current === item.href
-              : current === item.href || current.startsWith(`${item.href}/`);
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              aria-current={active ? 'page' : undefined}
-              className={cn(
-                'border-b-2 border-transparent px-3 py-2 text-sm font-medium text-fg-muted transition-colors hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset',
-                active && 'border-signal text-fg',
-              )}
-            >
-              {item.label}
-            </Link>
-          );
-        })}
-      </div>
-    </nav>
+              : item.href === '/app/work'
+                ? current === item.href
+                : current === item.href || current.startsWith(`${item.href}/`);
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                aria-current={active ? 'page' : undefined}
+                className={cn(
+                  'border-b-2 border-transparent px-3 py-2 text-sm font-medium text-fg-muted transition-colors hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset',
+                  active && 'border-signal text-fg',
+                )}
+              >
+                {item.label}
+              </Link>
+            );
+          })}
+        </div>
+      </nav>
+    </div>
   );
 }

@@ -34,12 +34,7 @@ export function McpOutboundKeyForm({
   onSubmit: (event: SyntheticEvent<HTMLFormElement>) => void;
 }) {
   return (
-    <form
-      className="space-y-3 border-y border-border py-4"
-      noValidate
-      onSubmit={onSubmit}
-      aria-busy={busy}
-    >
+    <form className="space-y-3 py-4" noValidate onSubmit={onSubmit} aria-busy={busy}>
       <div className="space-y-1">
         <Label htmlFor={keyNameId}>
           Label <span aria-hidden="true">(required)</span>

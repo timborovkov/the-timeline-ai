@@ -1,5 +1,14 @@
 # Application design patterns
 
+Dashboard collections share the same title, context, section-band, and row
+boundary treatment. Detail views lead with a summary and editable properties;
+settings group related controls with short supporting text. Full source material
+and secondary context belong in disclosures with clear ways to open them.
+
+Collection indexes keep a bounded inner content width and shared responsive
+gutters. Section backgrounds and row separators extend to the main pane edges. Work’s empty Boards group is a compact inline prompt with Create board,
+so the work queue remains near the top even before a team creates its first board.
+
 ### Home
 
 Home does not repeat its navigation label as a visible page title. It starts
@@ -54,8 +63,8 @@ those records onto Home. “You’re caught up” replaces empty dashboard grids
 when every group is zero. Pinned work, the team inbound email as one readonly
 copyable field (`#team-email`) with a quiet link to Team → Email settings,
 digest, and a dense recent-moments scan follow as full-width sections without
-duplicating Timeline or Connections. These sections prefer horizontal rules and
-rows over bordered dashboard cards.
+duplicating Timeline or Connections. These sections use spacing between groups and hairlines between dense rows,
+following the boundary rules in [the design system](../../design.md#core-rules).
 
 The latest digest stays folded until opened. Its summary and section bodies are
 readable prose, not inventories of pull requests or IDs. The generator bans
@@ -66,7 +75,7 @@ use Highlights, Status, Completed, In progress, Decisions, Risks, and
 Follow-ups; Status is the current state of work, not a product-specific label.
 Empty sections and empty task, object, or calendar groups are omitted. The
 header shows the digest date; the covering time range stays footer metadata.
-Activity is a hairline count strip using the same mono lime numbers as Home
+Activity is a compact count strip using the same mono lime numbers as Home
 Attention, and is hidden when every count is zero. Task, object, and
 calendar blocks are ordinary linked lists: newly created or completed tasks,
 new non-task objects, calendar events that fell in the digest window, and
@@ -114,19 +123,31 @@ obvious without a lecture. Timeline has no inventory chip; Moments versus All
 events is the page mode.
 
 Each Moments row is a Linear-style collection row: time, one source icon, a
-single title line, and at most one muted context line. Do not duplicate the
+title of up to two lines, and at most one muted source/actor/context line.
+Source body previews belong in the inspector, not the collection row. Do not duplicate the
 icon on a rail node, and do not stack source, actor, title, and preview as
 separate competing headings. Stories and records share that same skeleton;
 pulses stay one muted line. Impact on the row is omitted; the inspector shows
 workspace consequences, structured facts, a matching `[ev:…]` citation chip per
 source evidence item, and a collapsed Original source
-disclosure. Attached files link to Documents. Sticky dates (`top-11` under the
-toolbar) and infinite scroll with virtualized rows remain. The default view ends at the current instant so
+disclosure. Attached files link to Documents. Sticky date bands and row boundaries extend to the main-pane edges while their
+content stays bounded. The date offset follows the measured toolbar height,
+including wrapped controls and expanded filters. Infinite scroll retains
+virtualized rows. The default view ends at the current instant so
 materialized calendar occurrences do not displace recent work. Upcoming context
 is an explicit seven-day view; the Calendar surface owns the complete future
 schedule. Compact Home moments are a denser scan of the same formatter: time,
 source, and title only, linking into this surface. Timeline pin and overflow
 actions stay visible without hover, using the shared item-action primitives.
+
+The inspector uses one quiet surface per source, sentence-case metadata, and
+three initial evidence items. Show older evidence reveals the next batch with
+its own visibility, audio, and removal controls. Long excerpts show four lines
+with View full evidence opening the complete text; Original source remains
+available. Repeated source previews are omitted above the evidence section.
+Related objects show their identity and a source-count disclosure instead of
+nested expanded evidence boxes. The shared inspector header allows a bounded
+multiline title and retains keyboard/focus behavior.
 
 ### Ask
 
@@ -218,14 +239,14 @@ settings render one URL-selected section at a time. Field validation stays on
 the edited form; pending, success, and server failures use the shared action
 toast. Member, object, source, and artifact labels never fall back to UUIDs.
 Team → General keeps identity as a form (rename for admins) plus two readonly
-copyable support fields — team id and slug — with hairline section structure
+copyable support fields — team id and slug — with spacing between sections
 and no nested cards.
 
 Team → Members is a collection: compact header, `CollectionRow` members with
 visible role and quiet actions, not a padded card list. Role changes save on
 select. Remove, resend, and revoke are tooltiped icon buttons. Invite, pending,
 removed, and export lists use the same rows. Other settings sections stay
-forms, with hairline section structure, 12px muted labels, compact `sm`
+forms, with spacing between sections, 12px muted labels, compact `sm`
 outline saves, and at most one filled primary action per view (Rename, Create
 invite, Start export). Select and checkbox preferences may save immediately.
 
@@ -270,8 +291,12 @@ logos always sit on a white padded rounded tile. Fragment links such as
 `/app/sources` (including hashes), `/app/team/integrations`, and
 `/app/team/telegram` redirect to the matching Connections route and sheet.
 
-Meetings keep the collection header and rows. Capture and saved-meeting setup
-forms sit in a closed disclosure so the list is the default view. The Saved tab
+Meetings keep the collection header and rows. One primary header action opens
+a focus-managed dialog: **Invite notetaker** on Captures, **Save a meeting** on
+Saved. Creation forms close on success and remain open on errors. Empty
+collections omit search/filter controls and redundant section headings; active
+filters always keep their controls and clear-filter recovery. The empty state
+explains the next step without duplicating the header action. The Saved tab
 lists saved meeting links only; captures stay on Captures. Saved meeting edit
 is one closed **Edit details** disclosure that opens the editor, never a nested
 second “Edit saved meeting” control. Join, archive, and skip are tooltiped icon
@@ -403,14 +428,15 @@ comment can start from the peek. Empty memory and empty related context stay
 out of the peek.
 
 The full object page is a Linear-style issue view, not a work-index. It has no
-`WorkSubnav`. The type (and task category) sit as quiet metadata above an 18px
-editable title. Board placement is a muted header line, not a standalone
+`WorkSubnav`. The type (and task category) sit as quiet metadata above a wrapping 20px title (24px on desktop)
+that remains editable and saves on blur or Enter. Board placement is a muted header line, not a standalone
 section, and those same boards are not repeated under Connected work. Pin is the shared Home-destination icon; Ask uses the
 shared floating binder. Repair memory lives in the overflow menu; project pages
-also keep overflow Add task. The main column uses a dense section stack and 14px body at 1.35
-line-height: why this exists, a generated summary only when it has content or
-an actionable generate/retry state, then provenance / connected-work /
-evidence / facts. Connected work keeps a Tasks group on generic objects even
+also keep overflow Add task. The main column uses separated sections with readable 14px summary prose.
+A generated Summary leads when available; its current-state claims remain in a
+closed disclosure with citations intact. Origin and source context is folded
+below a generated summary to avoid competing lead paragraphs, and stays visible
+when no summary exists. Connected work, evidence, facts, and discussion follow. Connected work omits empty child-task groups on leaf tasks, but keeps a Tasks group on generic objects even
 when empty, with `Open N · Done M` totals (not the truncated preview lengths),
 always-visible Recent history (quiet
 `No completed tasks yet` when Done is 0), assignee
@@ -433,17 +459,21 @@ preview three rows, then fold the rest behind a quiet `Show N more` disclosure
 (with hairline row dividers and two-line evidence clamps) so the main column
 does not become a wall of text. Discussion keeps
 a borderless composer with @mentions. The right column is one Properties rail at
-`20rem` on xl breakpoints: a 6px-radius `--surface` panel with a hairline
-`--border`, not raw page canvas. Board context, editable contact facets (people and
+`22rem` from the lg breakpoint, with a quiet `--surface` background and internal
+spacing instead of stacked dividing rules. Editable Properties come first,
+followed by board context, editable contact facets (people and
 companies), type-aware Details fields (same 32px property rows as Stage/Aliases:
 `6.75rem` medium `--fg-dim` labels, 14px `--fg` values, blur-to-save inputs, `No …` placeholders;
 arbitrary Add field with human labels stored as camelCase; hover-only ghost × to clear
-custom fields; `fixture_version` and other internal keys stay hidden), Properties,
-Company (person objects), Related, recent changes, and Archive share that one panel
-and divide with hairlines. Status and Priority keep a toned icon with quiet `--fg`
+custom fields; `fixture_version` and other internal keys stay hidden),
+Company (person objects), Related, change history, and Archive share that panel.
+On mobile, Edit properties beneath the title jumps to the property controls.
+Change history starts closed unless suggested changes need review. Technical
+details live at the bottom of the rail. Aliases appear in their editable property
+without repeating a long alternate-name line beneath the title. Status and Priority keep a toned icon with quiet `--fg`
 value text so they match Stage/Aliases. Do not nest a card per
-field. The task peek and board card peek use the same rail pattern so they lift
-off the list in light and dark; both include Discussion below command fields and
+field. The task peek and board card peek retain their compact bordered rail treatment
+to lift off the list in light and dark; both include Discussion below command fields and
 before related context. An empty summary is a single Generate summary control, not a “ready to generate” block. Evidence uses a
 quiet text control, not a signal chip. Supporting copy stays 12px `--fg-dim`.
 Quiet fold/actions use 12px medium `--fg-muted`. `--signal` is reserved for
@@ -528,7 +558,12 @@ Foundations and shared components: [design system](../../design.md).
 
 ### Billing benefits and recorded charges
 
-Usage and Billing share the same typed billing summary. Free/PAYG show each
+Usage and Billing share the same typed billing summary. Usage presents plan, members,
+and recorded charges in a compact summary, followed by responsive meter cards.
+Each allowance card shows usage against its allowance and the remaining amount;
+positive meter charges stay visible. Detailed recorded charges live in a closed
+Billing details disclosure. Included credit and applicable spend caps remain
+visible outside that disclosure. Billing settings retain the compact meter table. Free/PAYG show each
 calendar-month allowance with used, included and remaining units, plus the UTC
 reset date. Team/Business instead show pooled included credit, used and remaining
 amounts, and the subscription-period dates. Extra members are separate from that

@@ -37,7 +37,7 @@ export default async function DigestsPage({
   });
 
   return (
-    <div className="space-y-6">
+    <div data-app-width="collection" className="space-y-6">
       <PageHeader
         variant="collection"
         title="Digests"

@@ -95,11 +95,7 @@ export function OnboardingChecklist({
     return (
       <>
         {updateStatus}
-        <section
-          aria-busy="true"
-          aria-label="Loading team setup checklist"
-          className="border-y border-border py-4"
-        >
+        <section aria-busy="true" aria-label="Loading team setup checklist" className="py-4">
           <Skeleton className="h-5 w-36 motion-reduce:animate-none" />
           <div className="mt-3 space-y-3">
             <Skeleton className="h-4 w-56 motion-reduce:animate-none" />
@@ -114,7 +110,7 @@ export function OnboardingChecklist({
     return (
       <>
         {updateStatus}
-        <section aria-labelledby="onboarding-heading" className="border-y border-border py-4">
+        <section aria-labelledby="onboarding-heading" className="py-4">
           <h2 id="onboarding-heading" className="text-xs font-normal text-fg-dim">
             Team setup checklist
           </h2>
@@ -216,7 +212,7 @@ export function OnboardingChecklist({
       <section
         id={TEAM_SETUP_CHECKLIST_PANEL_ID}
         aria-labelledby="onboarding-heading"
-        className="scroll-mt-16 border-y border-border py-4"
+        className="scroll-mt-16 py-4"
       >
         <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
           <div className="flex min-w-0 flex-wrap items-baseline gap-2">

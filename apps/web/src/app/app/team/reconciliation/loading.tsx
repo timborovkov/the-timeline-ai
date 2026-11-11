@@ -16,7 +16,7 @@ export default function ReconciliationLoading() {
         <section aria-label="Reconciliation loading placeholder" className="space-y-8">
           <div
             aria-hidden="true"
-            className="flex flex-col gap-2 border-y border-border px-2 py-2 sm:px-3 md:flex-row md:items-center md:justify-end"
+            className="flex flex-col gap-2 px-2 py-2 sm:px-3 md:flex-row md:items-center md:justify-end"
           >
             <Skeleton className="h-3 w-48 max-w-full md:mr-auto" />
             <Skeleton className="h-8 w-28" />
@@ -38,7 +38,7 @@ function RecentReconciliationSkeleton() {
         {Array.from({ length: 2 }).map((_, index) => (
           <div key={index} className="space-y-3">
             <Skeleton className="h-4 w-32 max-w-full" />
-            <div className="divide-y divide-border border-y border-border bg-surface">
+            <div className="divide-y divide-border bg-surface">
               {Array.from({ length: 3 }).map((_, rowIndex) => (
                 <div key={rowIndex} className="flex min-h-11 items-center gap-3 px-3">
                   <Skeleton className="h-3.5 w-16" />

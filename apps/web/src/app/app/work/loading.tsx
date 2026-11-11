@@ -21,7 +21,12 @@ export default function WorkLoading() {
       <output className="sr-only" aria-live="polite">
         Loading work
       </output>
-      <div className="space-y-6" aria-busy="true" aria-label="Loading work">
+      <div
+        data-app-width="collection"
+        className="space-y-6"
+        aria-busy="true"
+        aria-label="Loading work"
+      >
         <h1 className="sr-only">Work</h1>
         <div aria-hidden="true">
           <PageHeaderSkeleton variant="collection" />

@@ -18,7 +18,7 @@ export default function MergeObjectModalLoading() {
       >
         <div aria-hidden="true" inert className="space-y-5">
           <MergeObjectRowsSkeleton />
-          <div className="space-y-3 border-y border-border py-4">
+          <div className="space-y-3 py-4">
             <Skeleton className="h-3 w-24" />
             <div className="grid gap-px overflow-hidden border border-border sm:grid-cols-4">
               {Array.from({ length: 4 }).map((_, index) => (

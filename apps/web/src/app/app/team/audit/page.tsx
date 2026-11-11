@@ -159,7 +159,7 @@ export default async function TrustAuditPage() {
             action="Manage team settings"
           />
         ) : (
-          <ul className="border-y border-border text-sm">
+          <ul className="text-sm">
             {rows.map((row) => {
               const summary = row.redacted
                 ? { label: 'Restricted activity', outcome: null, danger: false }

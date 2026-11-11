@@ -78,7 +78,7 @@ function ConnectionHealthNotices({ model }: { model: IntegrationsPageModel }) {
         </div>
       ) : null}
       {model.webhookDegradedCount > 0 ? (
-        <output className="block border-y border-border bg-surface-2 px-3 py-2 text-sm text-fg-muted">
+        <output className="block bg-surface-2 px-3 py-2 text-sm text-fg-muted">
           {String(model.webhookDegradedCount)} webhook subscription
           {model.webhookDegradedCount === 1 ? '' : 's'} degraded. Reconciliation remains active
           while provider webhook delivery is repaired.

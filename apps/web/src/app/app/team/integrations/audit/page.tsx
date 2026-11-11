@@ -77,7 +77,7 @@ export default async function IntegrationAuditPage() {
             action="Manage connections"
           />
         ) : (
-          <ul className="border-y border-border text-sm">
+          <ul className="text-sm">
             {rows.map((r) => (
               <li key={r.id} className="border-b border-border py-3 last:border-b-0">
                 <div className="min-w-0 space-y-1">

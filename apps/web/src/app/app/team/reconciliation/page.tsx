@@ -125,7 +125,7 @@ function CoverageSection({
   }[];
 }) {
   return (
-    <div className="border-y border-border">
+    <div>
       <RepairAttention failures={failures} />
       <CoverageToolbar coverageLimit={coverageLimit} hasRepairRows={failures.length > 0} />
     </div>
@@ -243,7 +243,7 @@ function RecentClusters({
           body="Clusters appear here as the team reviews overlapping evidence and proposed memory changes."
         />
       ) : (
-        <ul className="border-y border-border">
+        <ul>
           {rows.map((row) => {
             const hint = reconciliationClusterRowHint({
               artifactClusterKind: row.artifactClusterKind,
@@ -301,7 +301,7 @@ function RecentOutputs({
           body="Accepted or generated outputs will appear here after clusters are reviewed."
         />
       ) : (
-        <ul className="border-y border-border">
+        <ul>
           {rows.map((row) => {
             const hint = reconciliationOutputRowHint({
               clusterId: row.clusterId,

@@ -8,6 +8,7 @@ import {
   mentionInsertToken,
   type MentionMember,
 } from '@timeline/shared/objects/mentions';
+import { humanizeMetadataKey } from '@timeline/shared/objects/metadata-schemas';
 import Link from 'next/link';
 import {
   type Dispatch,
@@ -93,7 +94,9 @@ function mentionChipLabel(token: string, members: DiscussionMember[]): string {
 function activitySummary(change: ObjectDetail['recentChanges'][number]): string {
   const actor =
     nonempty(change.actorName) ?? (change.actorKind === 'agent' ? AGENT_DISPLAY_NAME : 'Someone');
-  return `${actor} updated ${change.field}`;
+  if (change.field === '__create__') return `${actor} created this object`;
+  if (change.field === '__archive__') return `${actor} archived this object`;
+  return `${actor} updated ${humanizeMetadataKey(change.field).toLowerCase()}`;
 }
 
 export function ObjectDiscussionPanel({

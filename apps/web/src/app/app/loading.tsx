@@ -27,7 +27,7 @@ export default function HomeLoading() {
               <Skeleton className="h-8 w-44 rounded-sm" />
             </div>
           </div>
-          <div className="divide-y divide-border border-y border-border">
+          <div className="divide-y divide-border">
             {Array.from({ length: 3 }).map((_, index) => (
               <div key={index} className="flex items-center gap-3 py-3 sm:px-3">
                 <Skeleton className="size-4 shrink-0" />
@@ -49,7 +49,7 @@ export default function HomeLoading() {
               <CollectionRowSkeleton key={index} leading metadata={2} />
             ))}
           </section>
-          <section className="space-y-3 border-y border-border py-4">
+          <section className="space-y-3 py-4">
             <div className="flex items-baseline justify-between gap-2">
               <Skeleton className="h-5 w-28" />
               <Skeleton className="h-3 w-24" />
