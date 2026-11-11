@@ -90,6 +90,49 @@ describe('webhook delivery persistence', () => {
     expect(recorded.deliveryId).toBeNull();
     expect(await db.select().from(integrationWebhookDeliveries)).toHaveLength(0);
   });
+  it('skips inactive targets in a shared delivery and dead-letters only active targets', async () => {
+    const otherTeam = '77777777-7777-4777-8777-777777777777';
+    const otherIntegration = '88888888-8888-4888-8888-888888888888';
+    await db.insert(teams).values({ id: otherTeam, name: 'Control', slug: 'control' });
+    await db
+      .insert(integrations)
+      .values({
+        id: otherIntegration,
+        teamId: otherTeam,
+        provider: 'linear',
+        displayName: 'Control',
+        providerConnectionId: CONNECTION_ID,
+      });
+    const recorded = await recordWebhookDeliveryTargets(db as never, {
+      provider: 'linear',
+      eventType: 'Issue',
+      dedupKey: 'shared-disabled',
+      payload: { type: 'Issue' },
+      targets: [
+        { teamId: TEAM_ID, integrationId: INTEGRATION_ID },
+        { teamId: otherTeam, integrationId: otherIntegration },
+      ],
+    });
+    if (!recorded.deliveryId) throw new Error('Missing delivery');
+    const [inactiveTarget] = await db
+      .select()
+      .from(integrationWebhookDeliveryTargets)
+      .where(eq(integrationWebhookDeliveryTargets.teamId, TEAM_ID));
+    if (!inactiveTarget) throw new Error('Missing target');
+    await db.update(teams).set({ disabledAt: new Date() }).where(eq(teams.id, TEAM_ID));
+    const work = await loadWebhookDeliveryWork(db as never, recorded.deliveryId);
+    expect(work?.targets.map((item) => item.target.teamId)).toEqual([otherTeam]);
+    await markWebhookDeliveryTargetProcessing(db as never, inactiveTarget.id);
+    await markWebhookDeliveryTargetProcessed(db as never, inactiveTarget.id);
+    await markWebhookDeliveryDeadLettered(
+      db as never,
+      recorded.deliveryId,
+      'Synthetic provider failure',
+    );
+    const rows = await db.select().from(integrationWebhookDeliveryTargets);
+    expect(rows.find((row) => row.teamId === TEAM_ID)?.status).toBe('pending');
+    expect(rows.find((row) => row.teamId === otherTeam)?.status).toBe('dead_lettered');
+  });
   it('records delivery targets and advances target lifecycle state', async () => {
     const recorded = await recordWebhookDeliveryTargets(db as never, {
       provider: 'linear',

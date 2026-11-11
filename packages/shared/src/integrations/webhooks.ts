@@ -130,6 +130,8 @@ export async function recordWebhookDeliveryTargets(
   });
 }
 
+const activeTargetTeam = sql`EXISTS (SELECT 1 FROM teams WHERE id = ${integrationWebhookDeliveryTargets.teamId} AND disabled_at IS NULL AND deletion_started_at IS NULL AND deleted_at IS NULL)`;
+
 export async function loadWebhookDeliveryWork(
   db: Db,
   deliveryId: string,
@@ -154,6 +156,7 @@ export async function loadWebhookDeliveryWork(
     )
     .where(
       and(
+        activeTargetTeam,
         eq(integrationWebhookDeliveryTargets.deliveryId, deliveryId),
         inArray(integrationWebhookDeliveryTargets.status, ['pending', 'failed']),
       ),
@@ -188,7 +191,7 @@ export async function markWebhookDeliveryTargetProcessing(db: Db, targetId: stri
       nextAttemptAt: null,
       updatedAt: new Date(),
     })
-    .where(eq(integrationWebhookDeliveryTargets.id, targetId));
+    .where(and(eq(integrationWebhookDeliveryTargets.id, targetId), activeTargetTeam));
 }
 
 export async function markWebhookDeliveryTargetProcessed(
@@ -222,7 +225,7 @@ export async function markWebhookDeliveryTargetFailed(
       lastError: error.slice(0, 500),
       updatedAt: new Date(),
     })
-    .where(eq(integrationWebhookDeliveryTargets.id, targetId));
+    .where(and(eq(integrationWebhookDeliveryTargets.id, targetId), activeTargetTeam));
 }
 
 export async function markWebhookDeliveryDeadLettered(
@@ -249,6 +252,7 @@ export async function markWebhookDeliveryDeadLettered(
       })
       .where(
         and(
+          activeTargetTeam,
           eq(integrationWebhookDeliveryTargets.deliveryId, deliveryId),
           inArray(integrationWebhookDeliveryTargets.status, ['pending', 'processing', 'failed']),
         ),
@@ -275,5 +279,5 @@ async function markWebhookDeliveryTargetDone(
       lastError: input.lastError ?? null,
       updatedAt: new Date(),
     })
-    .where(eq(integrationWebhookDeliveryTargets.id, targetId));
+    .where(and(eq(integrationWebhookDeliveryTargets.id, targetId), activeTargetTeam));
 }

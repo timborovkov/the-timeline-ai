@@ -448,44 +448,56 @@ describe('team lifecycle', () => {
       1,
     );
   });
-  it('records consumed Recall minutes before cancelling an active bot', async () => {
-    const previousKey = process.env.RECALL_API_KEY;
-    process.env.RECALL_API_KEY = 'synthetic-recall-key';
-    resetEnvForTests();
-    resetMeetingBotProviderForTests();
-    const leave = vi.spyOn(getMeetingBotProvider(), 'leaveMeeting').mockResolvedValue(undefined);
-    try {
-      const meetingId = '10000000-0000-4000-8000-000000000002';
-      await pg.exec(`INSERT INTO meetings (id,team_id,platform,meeting_url,provider_bot_id,status,started_at) VALUES
-        ('${meetingId}','${TEAM}','meet','https://meet.google.com/synthetic','synthetic-bot','active',now()-interval '5 minutes');
+  it.each(['active', 'processing'] as const)(
+    'records consumed Recall minutes without extending an ended %s call',
+    async (status) => {
+      const previousKey = process.env.RECALL_API_KEY;
+      process.env.RECALL_API_KEY = 'synthetic-recall-key';
+      resetEnvForTests();
+      resetMeetingBotProviderForTests();
+      const leave = vi.spyOn(getMeetingBotProvider(), 'leaveMeeting').mockResolvedValue(undefined);
+      try {
+        const meetingId = '10000000-0000-4000-8000-000000000002';
+        const endedAt = status === 'processing' ? new Date('2026-11-01T10:05:00Z') : null;
+        const startedAt = endedAt
+          ? new Date(endedAt.getTime() - 5 * 60_000)
+          : new Date(Date.now() - 5 * 60_000);
+        await pg.exec(`INSERT INTO meetings (id,team_id,platform,meeting_url,provider_bot_id,status,started_at,ended_at) VALUES
+        ('${meetingId}','${TEAM}','meet','https://meet.google.com/synthetic','synthetic-bot','${status}','${startedAt.toISOString()}',${endedAt ? `'${endedAt.toISOString()}'` : 'NULL'});
         INSERT INTO billing_usage_reservations (team_id,operation_id,meter_id,reserved_native_units,reserved_charge_cents,state,expires_at) VALUES
         ('${TEAM}','recall:${meetingId}','recall_minutes',30,100,'reserved',now()+interval '1 hour');`);
-      await setPlatformSuspension(db, actor, 'team', TEAM, true, 'Stop fixture');
-      await withTeam(db, TEAM, BILLING_SYSTEM_USER_ID, {
-        skipMembershipCheck: true,
-      }).lifecycle.stopBots();
-      const [meeting] = (
-        await pg.query<{ status: string; ended_at: Date }>(
-          `SELECT status,ended_at FROM meetings WHERE id='${meetingId}'`,
-        )
-      ).rows;
-      const [reservation] = (
-        await pg.query<{ metadata: Record<string, unknown> }>(
-          `SELECT metadata FROM billing_usage_reservations WHERE team_id='${TEAM}'`,
-        )
-      ).rows;
-      expect(meeting?.status).toBe('cancelled');
-      expect(meeting?.ended_at).not.toBeNull();
-      expect(reservation?.metadata.pending_settlement).toBe(true);
-      expect(Number(reservation?.metadata.pending_recall_minutes)).toBeGreaterThanOrEqual(5);
-    } finally {
-      leave.mockRestore();
-      if (previousKey === undefined) delete process.env.RECALL_API_KEY;
-      else process.env.RECALL_API_KEY = previousKey;
-      resetMeetingBotProviderForTests();
-      resetEnvForTests();
-    }
-  });
+        await setPlatformSuspension(db, actor, 'team', TEAM, true, 'Stop fixture');
+        await withTeam(db, TEAM, BILLING_SYSTEM_USER_ID, {
+          skipMembershipCheck: true,
+        }).lifecycle.stopBots();
+        const [meeting] = (
+          await pg.query<{ status: string; ended_at: Date }>(
+            `SELECT status,ended_at FROM meetings WHERE id='${meetingId}'`,
+          )
+        ).rows;
+        const [reservation] = (
+          await pg.query<{ metadata: Record<string, unknown> }>(
+            `SELECT metadata FROM billing_usage_reservations WHERE team_id='${TEAM}'`,
+          )
+        ).rows;
+        expect(meeting?.status).toBe('cancelled');
+        expect(meeting?.ended_at).not.toBeNull();
+        expect(reservation?.metadata.pending_settlement).toBe(true);
+        expect(Number(reservation?.metadata.pending_recall_minutes)).toBeGreaterThanOrEqual(5);
+        expect(leave).toHaveBeenCalledTimes(endedAt ? 0 : 1);
+        if (endedAt) {
+          expect(meeting?.ended_at.toISOString()).toBe(endedAt.toISOString());
+          expect(Number(reservation?.metadata.pending_recall_minutes)).toBe(5);
+        }
+      } finally {
+        leave.mockRestore();
+        if (previousKey === undefined) delete process.env.RECALL_API_KEY;
+        else process.env.RECALL_API_KEY = previousKey;
+        resetMeetingBotProviderForTests();
+        resetEnvForTests();
+      }
+    },
+  );
   it('settles missed active-day usage before deleting its source history', async () => {
     await pg.exec(`INSERT INTO team_billing_accounts (team_id,plan_id,billing_state,shadow_billing,price_override) VALUES ('${TEAM}','team','team_active',true,'{"includedActiveMembers":0}');
       UPDATE teams SET created_at=now()-interval '40 days', disabled_periods=jsonb_build_array(jsonb_build_object('start',now()-interval '1 day','end',now()-interval '12 hours')) WHERE id='${TEAM}';

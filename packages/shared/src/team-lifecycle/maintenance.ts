@@ -289,21 +289,22 @@ export function createLifecycleMaintenance(db: Db, teamId: string, authorize: ()
         .limit(50);
       for (const meeting of rows) {
         if (!meeting.providerBotId) continue;
-        await getMeetingBotProvider().leaveMeeting(meeting.providerBotId);
+        if (!meeting.endedAt) await getMeetingBotProvider().leaveMeeting(meeting.providerBotId);
         await db.transaction(async (tx) => {
           await tx.execute(sql`SELECT set_config('timeline.lifecycle_cleanup', 'on', true)`);
           const now = new Date();
+          const endedAt = meeting.endedAt ?? now;
           await stampReservedRecallSettlement(tx, {
             teamId,
             operationId: recallOperationId(meeting.id),
             meetingId: meeting.id,
-            minutes: recallBillableMinutesFromRecord({ ...meeting, endedAt: now }),
-            endedAt: now,
+            minutes: recallBillableMinutesFromRecord({ ...meeting, endedAt }),
+            endedAt,
             source: 'team_disable',
           });
           await tx
             .update(meetings)
-            .set({ status: 'cancelled', endedAt: now, updatedAt: now })
+            .set({ status: 'cancelled', endedAt, updatedAt: now })
             .where(eq(meetings.id, meeting.id));
         });
       }
