@@ -120,9 +120,93 @@
 
 /* Keep this unlayered so it outranks Tailwind's layered max-width utility.
    Canvas-style routes can then opt out without duplicating shell sizing. */
-.app-page-container:has(> [data-app-layout='full-bleed']),
-.app-page-container:has(> [data-app-width='full']) {
+.app-page-container:has(> [data-app-layout='full-bleed']) {
   max-width: none;
+}
+
+#main:has(> .app-page-container > [data-app-width='collection']) {
+  container-type: inline-size;
+  --app-page-gutter: 1rem;
+}
+
+@media (min-width: 48rem) {
+  #main:has(> .app-page-container > [data-app-width='collection']) {
+    --app-page-gutter: 2rem;
+  }
+}
+
+/* Collection content stays readable while its section bands reach the pane
+   edges. The main scroller clips the decorative bleed, not the inner content. */
+[data-app-width='collection']
+  :is(
+    [data-slot='collection-band'],
+    [data-slot='collection-group-header'],
+    [data-slot='collection-row'],
+    [data-slot='collection-tabs']
+  ) {
+  position: relative;
+  isolation: isolate;
+}
+
+[data-app-width='collection']
+  :is(
+    [data-slot='collection-band'],
+    [data-slot='collection-group-header'],
+    [data-slot='collection-row'],
+    [data-slot='collection-sticky-band']
+  )::before,
+[data-app-width='collection']
+  :is(
+    [data-slot='collection-band'],
+    [data-slot='collection-group-header'],
+    [data-slot='collection-row'],
+    [data-slot='collection-sticky-band']
+  )::after {
+  content: '';
+  position: absolute;
+  inset-block: 0;
+  width: max(0px, calc((100cqw - 100%) / 2 + var(--app-page-gutter)));
+  z-index: -1;
+  pointer-events: none;
+  background: inherit;
+  border-bottom: inherit;
+}
+
+[data-app-width='collection']
+  :is(
+    [data-slot='collection-band'],
+    [data-slot='collection-group-header'],
+    [data-slot='collection-row'],
+    [data-slot='collection-sticky-band']
+  )::before {
+  inset-inline-end: 100%;
+}
+
+[data-app-width='collection']
+  :is(
+    [data-slot='collection-band'],
+    [data-slot='collection-group-header'],
+    [data-slot='collection-row'],
+    [data-slot='collection-sticky-band']
+  )::after {
+  inset-inline-start: 100%;
+}
+
+[data-app-width='collection'] [data-slot='collection-tabs']::before {
+  content: '';
+  position: absolute;
+  inset-inline: calc((100% - 100cqw) / 2 - var(--app-page-gutter));
+  bottom: 0;
+  border-bottom: 1px solid var(--border);
+  pointer-events: none;
+}
+
+[data-app-width='collection'] [data-slot='collection-groups-skeleton'] {
+  overflow: visible;
+}
+
+[data-app-width='collection'] [data-slot='collection-sticky-band'] {
+  isolation: isolate;
 }
 
 /* Sticky in-page chrome (Timeline's CollectionToolbar) sits under the 48px

@@ -148,7 +148,7 @@ export default async function TimelinePage({ searchParams }: Props) {
     dateWindow,
   } = await loadTimelinePage({ searchParams });
   return (
-    <div data-app-width="full" data-app-layout="flush-top" className="relative">
+    <div data-app-width="collection" data-app-layout="flush-top" className="relative">
       <h1 className="sr-only">Timeline</h1>
       <TimelineBrowserSection
         sp={sp}
@@ -251,7 +251,10 @@ function TimelineBrowserSection({
 }) {
   return (
     <section>
-      <div className="sticky top-0 z-20 -mx-4 bg-bg/95 px-4 backdrop-blur md:-mx-8 md:px-8">
+      <div
+        data-slot="collection-sticky-band"
+        className="sticky top-0 z-20 -mx-4 bg-bg/95 px-4 backdrop-blur md:-mx-8 md:px-8"
+      >
         <TimelineFilterPanel
           members={members}
           userMap={userMap}

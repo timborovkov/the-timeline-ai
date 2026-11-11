@@ -139,7 +139,7 @@ export default async function MeetingsPage({
   const clearCurrentViewHref = meetingHref({ tab });
 
   return (
-    <div data-app-width="full" className="space-y-4">
+    <div data-app-width="collection" className="space-y-4">
       <PageHeader
         variant="collection"
         title="Meetings"
@@ -219,7 +219,11 @@ function filterSavedMeetings(savedMeetings: SavedMeetingRow[], query: string): S
 
 function MeetingsViewNavigation({ tab }: { tab: MeetingTab }) {
   return (
-    <nav aria-label="Meeting views" className="flex gap-1 border-b border-border">
+    <nav
+      data-slot="collection-tabs"
+      aria-label="Meeting views"
+      className="flex gap-1 border-b border-border"
+    >
       <Link
         href="/app/meetings"
         aria-current={tab === 'captures' ? 'page' : undefined}

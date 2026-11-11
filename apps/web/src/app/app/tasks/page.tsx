@@ -75,7 +75,7 @@ export default async function TasksPage({ searchParams }: PageProps<'/app/tasks'
   } = await loadTasksPage({ searchParams });
   return (
     <div
-      data-app-width="full"
+      data-app-width="collection"
       data-app-layout={rows.length > 0 ? 'full-bleed' : undefined}
       className={
         rows.length > 0

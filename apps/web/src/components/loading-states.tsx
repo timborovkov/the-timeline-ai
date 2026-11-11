@@ -81,7 +81,11 @@ export function CollectionToolbarSkeleton({
   filters?: boolean;
 }) {
   return (
-    <div className="border-b border-border bg-bg" data-loading-toolbar="collection">
+    <div
+      data-slot="collection-band"
+      className="border-b border-border bg-bg"
+      data-loading-toolbar="collection"
+    >
       <div className="flex min-h-11 min-w-0 flex-wrap items-center gap-1.5 px-2 sm:px-3">
         {search ? (
           <div className="min-w-48 flex-1 sm:max-w-sm">
@@ -191,7 +195,10 @@ export function CollectionRowSkeleton({
   metadata?: number;
 }) {
   return (
-    <div className="flex min-h-11 items-center gap-3 border-b border-border/80 px-2 sm:px-3">
+    <div
+      data-slot="collection-row"
+      className="flex min-h-11 items-center gap-3 border-b border-border/80 px-2 sm:px-3"
+    >
       {leading ? <Skeleton className="size-4 shrink-0" /> : null}
       <div className="min-w-0 flex-1 space-y-1">
         <Skeleton className="h-4 w-2/5" />
@@ -218,10 +225,13 @@ export function CollectionGroupSkeleton({
   subtitle?: boolean;
 }) {
   return (
-    <div className="min-h-0 flex-1 overflow-hidden">
+    <div data-slot="collection-groups-skeleton" className="min-h-0 flex-1 overflow-hidden">
       {Array.from({ length: groups }).map((_, group) => (
         <section key={group}>
-          <div className="flex min-h-10 items-center gap-2 bg-surface/70 px-2 sm:px-3">
+          <div
+            data-slot="collection-group-header"
+            className="flex min-h-10 items-center gap-2 bg-surface/70 px-2 sm:px-3"
+          >
             <Skeleton className="h-3.5 w-3.5" />
             <Skeleton className="h-4 w-16" />
             <Skeleton className="h-4 w-6" />

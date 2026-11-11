@@ -68,7 +68,7 @@ export function CollectionToolbar({
   );
 
   return (
-    <div className={cn('border-b border-border bg-bg', className)}>
+    <div data-slot="collection-band" className={cn('border-b border-border bg-bg', className)}>
       <div className="flex min-h-11 min-w-0 flex-wrap items-center gap-1.5 px-2 sm:px-3">
         {search ? <div className="min-w-48 flex-1 sm:max-w-sm">{search}</div> : null}
         {resolvedCount ? (

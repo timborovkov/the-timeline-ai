@@ -13,7 +13,7 @@ export default function CalendarLoading() {
         Loading calendar
       </output>
       <div
-        data-app-width="full"
+        data-app-width="collection"
         className="space-y-6"
         aria-busy="true"
         aria-label="Loading calendar"

@@ -66,7 +66,7 @@ export default async function WorkPage({ searchParams }: PageProps<'/app/work'>)
       filter === 'all' ? undefined : [...PIN_FILTER_KINDS[filter as keyof typeof PIN_FILTER_KINDS]];
     const page = await scope.pins.list({ limit: 50, kinds });
     return (
-      <div data-app-width="full" className="space-y-6">
+      <div data-app-width="collection" className="space-y-6">
         <PageHeader
           variant="collection"
           title="Work"
@@ -133,7 +133,7 @@ export default async function WorkPage({ searchParams }: PageProps<'/app/work'>)
   );
 
   return (
-    <div data-app-width="full" className="space-y-6">
+    <div data-app-width="collection" className="space-y-6">
       <PageHeader
         variant="collection"
         title="Work"

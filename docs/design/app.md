@@ -1,7 +1,7 @@
 # Application design patterns
 
-Collection indexes use the shell’s full available width and shared responsive
-gutters. Work’s empty Boards group is a compact inline prompt with Create board,
+Collection indexes keep a bounded inner content width and shared responsive
+gutters. Section backgrounds and row separators extend to the main pane edges. Work’s empty Boards group is a compact inline prompt with Create board,
 so the work queue remains near the top even before a team creates its first board.
 
 ### Home

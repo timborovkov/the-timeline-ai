@@ -159,12 +159,13 @@ Ask, Work, Documents, Meetings, Connections, Usage, and Team.
   uses `Bot`. Its page pairs a compact grant form with a grants/activity column
   on wide screens, stacking on mobile. Empty collections use `EmptyState`;
   grants use `CollectionRow` with readable expiry dates and explicit status.
-- The shell owns consistent page gutters: 16px on mobile and 32px on desktop.
-  Collection indexes (Work and its tabs, Timeline, Documents, Meetings) use the
-  full available main-pane width via `data-app-width="full"`, including empty
-  and loading states. Titles, controls, and lists share those edges. Forms,
-  settings, and reading views retain the default `max-w-6xl` outer cap and may
-  constrain an inner reading region. Do not widen detail routes by inheritance.
+- The shell owns consistent page gutters: 16px on mobile and 32px on desktop,
+  with a centered `max-w-6xl` content container. Collection indexes (Work and
+  its tabs, Timeline, Documents, Meetings) mark their frame with
+  `data-app-width="collection"`. Their section bands and row separators extend
+  to the main pane edges while labels, controls, and row content retain the
+  bounded inner width. Empty and loading states retain the same content width.
+  Forms, settings, and reading views keep the default cap without decorative bleed.
 - Full-canvas chat and boards may opt into full bleed. Timeline opts into
   flush-top so its sticky `CollectionToolbar` can sit under the 48px header;
   do not hide main padding with a negative sticky `top`.
