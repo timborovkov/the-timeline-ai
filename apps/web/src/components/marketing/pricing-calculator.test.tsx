@@ -9,7 +9,7 @@ afterEach(cleanup);
 describe('pricing calculator', () => {
   it('server renders the example and closed advanced usage', () => {
     const html = renderToStaticMarkup(<PricingCalculator />);
-    expect(html).toContain('€37.18');
+    expect(html).toContain('€40.18');
     expect(html).toContain('2,000 accepted sources');
     expect(html).toContain('aria-live="polite"');
     expect(html).not.toMatch(/<details[^>]*\sopen/);

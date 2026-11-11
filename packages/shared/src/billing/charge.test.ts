@@ -103,7 +103,7 @@ describe('billing charge split', () => {
         meterId: 'ai',
         nativeUnits: 40,
         listChargeCents: 40,
-        meters: { ai: { nativeUnits: 480, customerChargeCents: 0 } },
+        meters: { ai: { nativeUnits: 180, customerChargeCents: 0 } },
       }),
     ).toBe(20);
   });
@@ -114,7 +114,7 @@ describe('billing charge split', () => {
       meterId: 'ai',
       nativeUnits: 0.2,
       listChargeCents: 1,
-      meters: { ai: { nativeUnits: 499.4, customerChargeCents: 0 } },
+      meters: { ai: { nativeUnits: 199.4, customerChargeCents: 0 } },
     });
     expect(nearFloor).toBe(0);
     expect(Number.isInteger(nearFloor)).toBe(true);
@@ -124,7 +124,7 @@ describe('billing charge split', () => {
       meterId: 'ai',
       nativeUnits: 1.2,
       listChargeCents: 2,
-      meters: { ai: { nativeUnits: 499.4, customerChargeCents: 0 } },
+      meters: { ai: { nativeUnits: 199.4, customerChargeCents: 0 } },
     });
     expect(crossed).toBe(1);
     expect(Number.isInteger(crossed)).toBe(true);
@@ -985,7 +985,7 @@ describe('settlement period attribution', () => {
 
 describe('costBearingPausedFromAccount', () => {
   const freeRemaining = {
-    aiChargeCents: 500,
+    aiChargeCents: FREE_ALLOWANCES.aiChargeCents,
     recallMinutes: 60,
     emailUnits: 500,
     storageGb: FREE_ALLOWANCES.storageGb,

@@ -15,16 +15,16 @@ if (!example) throw new Error('The example must be valid');
 const zero: UsageValues = { members: 1, ai: 0, meetings: 0, email: 0, storage: 0, sources: 0 };
 describe('pricing estimates', () => {
   it('matches published examples and platform fees', () => {
-    expect(estimatePricing({ ...zero, ai: 7 }).bills.payg.totalCents).toBe(200);
+    expect(estimatePricing({ ...zero, ai: 7 }).bills.payg.totalCents).toBe(500);
     expect(estimatePricing({ ...zero, meetings: 2 }).bills.payg.totalCents).toBe(180);
     expect(estimatePricing(zero).bills.team.totalCents).toBe(4900);
     expect(estimatePricing(zero).bills.business.totalCents).toBe(19900);
-    expect(estimatePricing(example).bills.payg.totalCents).toBe(3718);
+    expect(estimatePricing(example).bills.payg.totalCents).toBe(4018);
   });
   it('applies native PAYG allowances and pooled paid credits separately', () => {
     const atFloor = {
       ...zero,
-      ai: 5,
+      ai: 2,
       meetings: 1,
       email: 500,
       storage: FREE_ALLOWANCES.storageGb,
@@ -57,14 +57,14 @@ describe('pricing estimates', () => {
     }
   });
   it('excludes capacity violations and resolves equal costs in catalog order', () => {
-    expect(estimatePricing({ ...zero, ai: 54 }).cheapest).toBe('payg');
+    expect(estimatePricing({ ...zero, ai: 51 }).cheapest).toBe('payg');
     const overPayg = estimatePricing({ ...zero, storage: 26 });
     expect(overPayg.capacityWarnings.payg).toEqual(['25 GB storage']);
     expect(overPayg.cheapest).toBe('team');
     expect(estimatePricing({ ...zero, members: 501 }).cheapest).toBeNull();
     expect(estimatePricing({ ...zero, meetings: 501 }).cheapest).toBeNull();
     expect(estimatePricing({ ...zero, sources: 1_000_001 }).cheapest).toBeNull();
-    expect(estimatePricing({ ...zero, ai: 1000 }).bills.payg.totalCents).toBe(99500);
+    expect(estimatePricing({ ...zero, ai: 1000 }).bills.payg.totalCents).toBe(99800);
   });
   it('rejects invalid inputs while allowing exact values beyond slider ranges', () => {
     for (const ai of ['', '-1', 'Infinity', 'NaN', '1.001', '1e9'])

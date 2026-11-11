@@ -30,16 +30,16 @@ describe('billing status', () => {
 
   it('derives free remaining from meter counters', () => {
     const remaining = freeAllowanceRemaining({
-      ai: { customerChargeCents: 400 },
+      ai: { customerChargeCents: 100 },
       recall_minutes: { nativeUnits: 50 },
     });
-    expect(remaining.aiChargeCents).toBe(FREE_ALLOWANCES.aiChargeCents - 400);
+    expect(remaining.aiChargeCents).toBe(FREE_ALLOWANCES.aiChargeCents - 100);
     expect(remaining.recallMinutes).toBe(10);
   });
 
   it('treats PAYG AI native units as gross Free-floor consumption', () => {
     const remaining = freeAllowanceRemaining({
-      ai: { customerChargeCents: 0, nativeUnits: 400 },
+      ai: { customerChargeCents: 0, nativeUnits: 100 },
     });
     expect(remaining.aiChargeCents).toBe(100);
   });

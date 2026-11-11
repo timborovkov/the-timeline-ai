@@ -8,7 +8,7 @@ Cost-bearing work reserves capacity before execution, then settles reported work
 
 Shared inference calls settle exact reported usage under the worker billing context. Ask and Recall retain their own reservation paths to avoid double-counting. Completed Ask steps settle on interruption; unreported partial usage is marked incomplete rather than estimated from the reservation. Historical pricing, discounts and member attribution are immutable once recorded.
 
-Free allowances and plan capacities are distinct from billed meters. Free hard stops remain enforced in shadow mode. Paid spend caps apply according to enforcement and contractual/comp policy; a zero paid cap is a hard stop where enforcement applies. Extra owned workspaces cannot mint another person-level Free grant. Verification and active ownership are required for a grant; failed claims are retryable.
+Free allowances and plan capacities are distinct from billed meters. Free and PAYG share the catalog’s included native allowances; changing that floor affects both plans, while Ask turn capacities remain plan-specific. The Ask reservation must fit within the Free AI allowance so a fresh Free account can start a turn; settlement records actual provider usage. Free hard stops remain enforced in shadow mode. Paid spend caps apply according to enforcement and contractual/comp policy; a zero paid cap is a hard stop where enforcement applies. Extra owned workspaces cannot mint another person-level Free grant. Verification and active ownership are required for a grant; failed claims are retryable.
 
 ## Meter semantics
 

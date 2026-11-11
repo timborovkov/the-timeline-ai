@@ -76,7 +76,7 @@ describe('billing admission helpers', () => {
 
     const dash = await billing.getDashboard();
     expect(dash.meters.ai?.customerChargeCents).toBeGreaterThan(0);
-    expect(ASK_AI_RESERVE_CUSTOMER_CHARGE_CENTS).toBe(250);
+    expect(ASK_AI_RESERVE_CUSTOMER_CHARGE_CENTS).toBe(100);
   });
 
   it('does not turn an unused Ask reservation into a customer charge', async () => {
