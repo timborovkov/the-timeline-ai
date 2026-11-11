@@ -1,6 +1,6 @@
 'use client';
 
-import { LifeBuoy, LogOut, MailWarning, User } from 'lucide-react';
+import { Bot, LifeBuoy, LogOut, MailWarning, User } from 'lucide-react';
 import Link from 'next/link';
 import { useActionState } from 'react';
 
@@ -94,7 +94,10 @@ export function UserMenu({ user, impersonating = false }: Props) {
         <DropdownMenuSeparator />
         {impersonating ? null : (
           <DropdownMenuItem asChild>
-            <Link href="/app/agent-provisioning">Agent provisioning</Link>
+            <Link href="/app/agent-provisioning">
+              <Bot aria-hidden="true" className="size-4" />
+              Agent provisioning
+            </Link>
           </DropdownMenuItem>
         )}
         <form action={reopenOnboardingChecklistAction}>

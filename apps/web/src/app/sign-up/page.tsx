@@ -7,6 +7,7 @@ import { AuthShell } from '@/components/auth-shell';
 import { OAuthSignInButtons } from '@/components/oauth-buttons';
 import { auth, hasGitHubAuth, hasGoogleAuth } from '@/lib/auth';
 import { signedInAuthRedirect, signupCallback } from '@/lib/auth-redirect';
+import { readLastLoginMethod } from '@/lib/last-login-method';
 import { isLegalPublicationReady } from '@/lib/legal-publication';
 import { readPendingInvite } from '@/lib/pending-invite';
 
@@ -37,6 +38,7 @@ export default async function SignUpPage({ searchParams }: Props) {
   const requiresTurnstile = process.env.NODE_ENV === 'production';
   const turnstileSiteKey = process.env.TURNSTILE_SITE_KEY ?? undefined;
   const legalPublicationReady = isLegalPublicationReady();
+  const lastLoginMethod = await readLastLoginMethod();
   return (
     <AuthShell
       title="Create your account"
@@ -53,6 +55,7 @@ export default async function SignUpPage({ searchParams }: Props) {
     >
       {legalPublicationReady ? (
         <OAuthSignInButtons
+          lastLoginMethod={lastLoginMethod}
           callbackUrl={invite ? `/accept-invite/${invite}` : callbackUrl}
           inviteToken={invite}
           google={hasGoogleAuth}
@@ -60,6 +63,7 @@ export default async function SignUpPage({ searchParams }: Props) {
         />
       ) : null}
       <SignUpForm
+        lastUsed={lastLoginMethod === 'credentials'}
         callbackUrl={callbackUrl}
         inviteToken={invite}
         legalPublicationReady={legalPublicationReady}

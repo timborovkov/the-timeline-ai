@@ -5,6 +5,7 @@ import { useActionState, useReducer } from 'react';
 import { useFormStatus } from 'react-dom';
 
 import { signInAction, signUpAction, type SignInState, type SignUpState } from '@/app/actions/auth';
+import { LastUsedBadge } from '@/components/last-used-badge';
 import { TurnstileWidget } from '@/components/turnstile-widget';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -20,13 +21,22 @@ function SubmitButton({ disabled = false, label }: { disabled?: boolean; label: 
   );
 }
 
-export function SignInForm({ callbackUrl }: { callbackUrl?: string }) {
+export function SignInForm({
+  callbackUrl,
+  lastUsed = false,
+}: {
+  callbackUrl?: string;
+  lastUsed?: boolean;
+}) {
   const [state, action] = useActionState<SignInState, FormData>(signInAction, {});
   return (
     <form action={action} className="space-y-4">
       {callbackUrl ? <input type="hidden" name="callbackUrl" value={callbackUrl} /> : null}
       <div className="space-y-2">
-        <Label htmlFor="email">Email</Label>
+        <div className="flex items-center justify-between gap-2">
+          <Label htmlFor="email">Email</Label>
+          {lastUsed ? <LastUsedBadge /> : null}
+        </div>
         <Input id="email" name="email" type="email" autoComplete="email" required />
       </div>
       <div className="space-y-2">
@@ -60,12 +70,14 @@ export function SignUpForm({
   legalPublicationReady = true,
   requiresTurnstile,
   turnstileSiteKey,
+  lastUsed = false,
 }: {
   callbackUrl?: string;
   inviteToken?: string;
   legalPublicationReady?: boolean;
   requiresTurnstile: boolean;
   turnstileSiteKey?: string;
+  lastUsed?: boolean;
 }) {
   const [state, action] = useActionState<SignUpState, FormData>(signUpAction, {});
   const [identity, updateIdentity] = useReducer(
@@ -103,7 +115,10 @@ export function SignUpForm({
         />
       </div>
       <div className="space-y-2">
-        <Label htmlFor="email">Email</Label>
+        <div className="flex items-center justify-between gap-2">
+          <Label htmlFor="email">Email</Label>
+          {lastUsed ? <LastUsedBadge /> : null}
+        </div>
         <Input
           id="email"
           name="email"
