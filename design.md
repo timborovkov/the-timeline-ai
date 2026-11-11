@@ -584,3 +584,5 @@ For every changed surface:
 Copy the New York variant into `apps/web/src/components/ui/`, then retune it to
 this contract: 4px controls, 6px panels, no content shadow, lime only for the
 primary action, and imports through `@/components/ui/<name>`.
+
+Website source management follows [the application patterns](docs/design/app.md); its public directory entry and pricing calculator share the 20-source-unit per-page usage contract.

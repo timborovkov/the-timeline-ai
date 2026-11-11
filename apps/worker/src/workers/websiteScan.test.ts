@@ -6,6 +6,8 @@ import { beforeEach, describe, it } from 'bun:test';
 
 const fakes = vi.hoisted(() => ({
   processWebsiteScanJob: vi.fn(),
+  processPersistentWebsiteScan: vi.fn(),
+  failWebsiteRun: vi.fn(),
   getFirstRun: vi.fn(),
   createEvent: vi.fn(),
   attachCapture: vi.fn(),
@@ -13,6 +15,16 @@ const fakes = vi.hoisted(() => ({
   release: vi.fn(() => Promise.resolve({})),
 }));
 
+await vi.mock(
+  import.meta.resolve('@timeline/shared/websites'),
+  () => ({
+    processPersistentWebsiteScan: fakes.processPersistentWebsiteScan,
+    failWebsiteRun: fakes.failWebsiteRun,
+    tickWebsiteSchedules: () => Promise.resolve(undefined),
+    settleCapturedWebsiteRun: () => Promise.resolve(undefined),
+  }),
+  () => import('@timeline/shared/websites'),
+);
 await vi.mock(
   import.meta.resolve('@timeline/shared/onboarding'),
   () => ({ processWebsiteScanJob: fakes.processWebsiteScanJob, WEBSITE_SCAN_PAGE_CAP: 5 }),
@@ -22,8 +34,14 @@ await vi.mock(
   import.meta.resolve('@timeline/shared/team-scope'),
   () => ({
     withTeam: () => ({
+      websites: {
+        adoptLegacyScan: () => Promise.resolve(undefined),
+        updateRun: () => Promise.resolve(undefined),
+      },
       onboarding: {
         getFirstRun: fakes.getFirstRun,
+        getWebsiteScanPages: () => Promise.resolve(null),
+        getWebsiteCrawlId: () => Promise.resolve(null),
         attachCapture: fakes.attachCapture,
         markScanFailed: fakes.markScanFailed,
       },
@@ -43,6 +61,8 @@ function job(attemptsStarted = 1): Job<WebsiteScanJobData> {
   return {
     data: { teamId: TEAM_ID, userId: USER_ID, scanId: TEAM_ID },
     attemptsStarted,
+    opts: { attempts: 4 },
+    attemptsMade: attemptsStarted - 1,
   } as Job<WebsiteScanJobData>;
 }
 
@@ -50,6 +70,8 @@ describe('website scan worker', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     fakes.processWebsiteScanJob.mockResolvedValue(undefined);
+    fakes.processPersistentWebsiteScan.mockResolvedValue(false);
+    fakes.failWebsiteRun.mockResolvedValue(undefined);
     fakes.markScanFailed.mockResolvedValue({});
   });
 
@@ -62,9 +84,16 @@ describe('website scan worker', () => {
     );
   });
 
+  it('processes persistent onboarding scans without invoking the legacy onboarding adapter', async () => {
+    fakes.processPersistentWebsiteScan.mockResolvedValue(true);
+    await processWebsiteScanWorkerJob({} as Db, job());
+    expect(fakes.processWebsiteScanJob).not.toHaveBeenCalled();
+    expect(fakes.getFirstRun).not.toHaveBeenCalled();
+  });
+
   it('records unreachable and stops after the last attempt', async () => {
     fakes.processWebsiteScanJob.mockRejectedValue(new Error('dns'));
-    await expect(processWebsiteScanWorkerJob({} as Db, job(3))).rejects.toBeInstanceOf(
+    await expect(processWebsiteScanWorkerJob({} as Db, job(4))).rejects.toBeInstanceOf(
       UnrecoverableError,
     );
     expect(fakes.markScanFailed).toHaveBeenCalledWith('unreachable', TEAM_ID);

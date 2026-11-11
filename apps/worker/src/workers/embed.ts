@@ -12,6 +12,7 @@ import {
   queue,
 } from '@timeline/shared';
 import { isBillingAdmissionError } from '@timeline/shared/billing';
+import { completeWebsiteChunk } from '@timeline/shared/websites';
 import { DelayedError, UnrecoverableError, Worker, type Job } from 'bullmq';
 import { eq, sql } from 'drizzle-orm';
 
@@ -357,6 +358,14 @@ async function finalizeSourceEmbedding(input: {
     model: input.model,
     minChunkIndex: input.chunkCount,
   });
+
+  if (input.scope === 'doc_chunk' && 'documentChunkId' in input.data)
+    await completeWebsiteChunk(
+      input.db,
+      input.data.teamId,
+      input.data.documentChunkId,
+      input.model,
+    );
 
   // Only event-scope raw_events.source_metadata gets stamped — see Phase 5
   // rationale below. Non-event scopes don't have a single canonical row to

@@ -45,6 +45,16 @@ export const metadata: Metadata = {
 export const dynamic = 'force-dynamic';
 
 const scopeDescriptions: Record<McpOAuthScope, { title: string; description: string }> = {
+  'websites:scan': {
+    title: 'Scan public websites',
+    description:
+      'Start scans that use 20 source units per captured page, up to 100 per scan, with additional AI and storage usage.',
+  },
+  'websites:manage': {
+    title: 'Manage website schedules',
+    description:
+      'Configure recurring scans, pause websites, and remove website sources. Requires administrator authority.',
+  },
   read: {
     title: 'Read your Timeline data',
     description:
@@ -105,6 +115,10 @@ function AuthorizationError({ message }: { message: string }) {
       </div>
     </AuthShell>
   );
+}
+
+function requiresAdminScope(scopes: string[]): boolean {
+  return scopes.includes('agent:ask') || scopes.includes('websites:manage');
 }
 
 export default async function McpOAuthAuthorizePage({
@@ -178,7 +192,7 @@ export default async function McpOAuthAuthorizePage({
   const clientIdHost = urlHostname(request.client.clientId);
   const redirectHost = urlHostname(request.redirectUri);
   const loopbackRedirect = redirectHost ? isLoopbackHostname(redirectHost) : false;
-  const requiresTeamAdmin = request.scopes.includes('agent:ask');
+  const requiresTeamAdmin = requiresAdminScope(request.scopes);
   const eligibleMemberships = requiresTeamAdmin
     ? memberships.filter((membership) => membership.role !== 'member')
     : memberships;

@@ -148,6 +148,7 @@ export interface SearchOpts {
   source?: QdrantPayload['source'];
   entityIds?: string[];
   eventIds?: string[];
+  excludeEventIds?: string[];
   /** Zero-based semantic-result offset used by bounded paginated retrieval. */
   offset?: number;
   /**
@@ -624,6 +625,10 @@ export function createQdrantClient(opts: QdrantClientOptions = {}): QdrantClient
     if (searchOpts.embeddingModel) {
       extraMust.push({ key: 'embedding_model', match: { value: searchOpts.embeddingModel } });
     }
+    if (searchOpts.excludeEventIds?.length)
+      extraMust.push({
+        must_not: [{ key: 'event_id', match: { any: searchOpts.excludeEventIds } }],
+      });
     if (searchOpts.eventIds && searchOpts.eventIds.length > 0) {
       extraMust.push({ key: 'event_id', match: { any: searchOpts.eventIds } });
     }

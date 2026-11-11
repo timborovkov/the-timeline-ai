@@ -31,6 +31,20 @@ describe('pricing calculator', () => {
     expect(ai.value).toBe('20');
     expect(view.getByRole('heading', { name: 'Team breakdown' })).toBeTruthy();
   });
+  it('includes optional website usage once and resets it with the example', () => {
+    const view = render(<PricingCalculator />);
+    const websites = view.getByLabelText('Websites');
+    fireEvent.change(websites, { target: { value: '3' } });
+    fireEvent.change(view.getByLabelText('Scan frequency'), { target: { value: 'daily' } });
+    expect(view.container.textContent).toContain('450 pages / month');
+    expect(view.container.textContent).toContain('9,000 source units');
+    expect(view.container.textContent).toContain('€41.68');
+    expect(view.queryByLabelText('Scans / month')).toBeNull();
+    fireEvent.click(view.getByRole('button', { name: 'Reset example' }));
+    expect((websites as HTMLInputElement).value).toBe('0');
+    expect(view.container.textContent).toContain('€37.18');
+    expect(view.container.textContent).not.toContain('9,000 source units');
+  });
   it('shows zero credit without a negative-zero amount', () => {
     const view = render(<PricingCalculator />);
     for (const label of [

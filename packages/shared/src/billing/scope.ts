@@ -991,11 +991,13 @@ export function createBillingScope(deps: BillingScopeDeps) {
         // In-flight worker slots are concurrency, not a monthly allowance.
         if (
           costlyWorkerCap !== null &&
-          input.meterId === 'ai' &&
+          (input.meterId === 'ai' || input.metadata?.website_crawl === true) &&
           reservationWorkerSource(input.metadata) === 'worker'
         ) {
           const inFlight = pending.filter(
-            (row) => row.meterId === 'ai' && reservationWorkerSource(row.metadata) === 'worker',
+            (row) =>
+              (row.meterId === 'ai' || row.metadata.website_crawl === true) &&
+              reservationWorkerSource(row.metadata) === 'worker',
           ).length;
           if (inFlight >= costlyWorkerCap) {
             return { kind: 'reject' as const, code: 'costly_worker_busy' as const };
@@ -1011,6 +1013,14 @@ export function createBillingScope(deps: BillingScopeDeps) {
           ]),
         ) as Partial<Record<BillingMeterId, { nativeUnits: number; customerChargeCents: number }>>;
         const metersForAdmission = metersPlusPendingReservations(byMeter, pending, ym);
+        const sourceCapacity = CAPACITY_BY_PLAN[entitlementsPlanId].acceptedSourcesPerMonth;
+        if (
+          input.meterId === 'accepted_sources' &&
+          sourceCapacity !== null &&
+          (metersForAdmission.accepted_sources?.nativeUnits ?? 0) + input.reservedNativeUnits >
+            sourceCapacity
+        )
+          return { kind: 'reject' as const, code: 'usage_limit_reached' as const };
         const admissionStartedAt = new Date();
         const reservedUnits = Math.max(0, input.reservedNativeUnits);
         const unitsThisMonth = pendingNativeUnitsInPeriod(

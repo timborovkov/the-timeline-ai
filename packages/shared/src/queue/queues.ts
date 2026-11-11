@@ -80,6 +80,7 @@ export const QUEUE_NAMES = {
   // First-run website scan. One job per team; the worker fetches a short
   // public-page set through externalFetch and writes cited web raw events.
   websiteScan: 'website-scan',
+  websiteScheduler: 'website-scheduler',
 } as const;
 
 export type QueueName = (typeof QUEUE_NAMES)[keyof typeof QUEUE_NAMES];
@@ -1661,8 +1662,8 @@ let _websiteScanQueue: TimelineQueue<WebsiteScanJobData> | undefined;
 
 export function getWebsiteScanQueue(): TimelineQueue<WebsiteScanJobData> {
   return (_websiteScanQueue ??= createTimelineQueue<WebsiteScanJobData>(QUEUE_NAMES.websiteScan, {
-    attempts: 3,
-    backoff: { type: 'exponential', delay: 5_000 },
+    attempts: 4,
+    backoff: { type: 'website-retry', delay: 5_000 },
     removeOnComplete: { age: 24 * 3600 },
     removeOnFail: { age: 7 * 24 * 3600 },
   }));
@@ -1677,5 +1678,25 @@ export async function enqueueWebsiteScanJob(data: WebsiteScanJobData): Promise<v
 export async function closeWebsiteScanQueue(): Promise<void> {
   await closeQueue(_websiteScanQueue, () => {
     _websiteScanQueue = undefined;
+  });
+}
+
+let _websiteSchedulerQueue: TimelineQueue<Record<string, never>> | undefined;
+export function getWebsiteSchedulerQueue(): TimelineQueue<Record<string, never>> {
+  return (_websiteSchedulerQueue ??= createTimelineQueue<Record<string, never>>(
+    QUEUE_NAMES.websiteScheduler,
+    { removeOnComplete: true, removeOnFail: { age: 86400 } },
+  ));
+}
+export async function scheduleWebsiteScheduler(): Promise<void> {
+  await getWebsiteSchedulerQueue().upsertJobScheduler(
+    'website-scheduler-minute',
+    { every: 60_000 },
+    { name: 'tick', data: {} },
+  );
+}
+export async function closeWebsiteSchedulerQueue(): Promise<void> {
+  await closeQueue(_websiteSchedulerQueue, () => {
+    _websiteSchedulerQueue = undefined;
   });
 }

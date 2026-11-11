@@ -33,6 +33,7 @@ import { stableSha256Digest } from '#src/reconciliation/stable-digest.js';
 import { getDocumentsBucket, getS3Client } from '#src/s3/client.js';
 import { deleteObject } from '#src/s3/objects.js';
 import { rawEventVisibleToUser, validateVisibilityUserIds } from '#src/visibility.js';
+import { obsoleteWebsiteEventIds } from '#src/websites/retrieval.js';
 
 import type { QdrantOperationContext } from '#src/qdrant/operation.js';
 
@@ -920,6 +921,8 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
       limit: offset + limit + 1,
       sourceKind: 'doc_chunk',
     };
+    if (!input.from && !input.to)
+      searchOpts.excludeEventIds = await obsoleteWebsiteEventIds(db, teamId);
     if (input.from) searchOpts.from = input.from;
     if (input.to) searchOpts.to = input.to;
     if (input.rootFolder) searchOpts.rootFolder = true;

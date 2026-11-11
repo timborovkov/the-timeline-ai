@@ -3,7 +3,8 @@ import { describe, it } from 'bun:test';
 /**
  * Opt-in Polar sandbox checks. Skipped unless POLAR_SANDBOX_INTEGRATION=1,
  * POLAR_SERVER=sandbox, and the access token plus the three subscription
- * product ids, including Enterprise, are set. Never confirms payment and never ingests usage.
+ * product IDs, including Enterprise, are set. Never confirms payment. Usage tests
+ * ingest only against their own disposable sandbox customer, then delete it.
  */
 const ARCHIVED_TOPUP_PRODUCT_ID = '203852a1-263f-4c8a-9925-e86fa23236da';
 
@@ -70,6 +71,37 @@ describe.skipIf(!sandboxReady)('Polar sandbox subscription billing', () => {
     const topup = (await archived.json()) as { is_archived?: boolean; name?: string };
     expect(topup.name).toBe('Timeline Top-up');
     expect(topup.is_archived).toBe(true);
+  });
+
+  it('reports weighted website pages through the existing accepted-source event', async () => {
+    const { createPolarBillingProvider } = await import('#src/billing/polar.js');
+    const { polarEventNameForMeter } = await import('#src/billing/catalog.js');
+    const { websiteSourceUnits } = await import('#src/websites/usage.js');
+    const provider = createPolarBillingProvider();
+    const email = process.env.POLAR_SANDBOX_TEST_EMAIL;
+    if (!provider?.identity || !email) throw new Error('Sandbox provider and test inbox required');
+    const externalId = `timeline-website-sandbox-${crypto.randomUUID()}`;
+    const customer = await provider.identity.create(
+      externalId,
+      'Disposable website billing fixture',
+      { userId: `fixture-${crypto.randomUUID()}`, email },
+    );
+    try {
+      const name = polarEventNameForMeter('accepted_sources');
+      if (!name) throw new Error('Accepted-source event is missing');
+      const event = {
+        externalCustomerId: externalId,
+        name,
+        units: websiteSourceUnits(5),
+        id: `website-scan-${crypto.randomUUID()}`,
+        metadata: { source: 'website_scan', fixture: true },
+      };
+      expect(event.units).toBe(100);
+      await provider.ingestUsage(event);
+      await provider.ingestUsage(event); // Stable event ID must be accepted on retry.
+    } finally {
+      expect((await polar(`/customers/${customer.id}`, { method: 'DELETE' })).status).toBe(204);
+    }
   });
 
   it('opens a PAYG checkout and leaves it unpaid', async () => {

@@ -161,12 +161,13 @@ describe('website scan Firecrawl crawl', () => {
     expect(result).toEqual({ ok: false, reason: 'robots' });
   });
 
-  it('maps Firecrawl 429 to rate_limited without falling back', async () => {
-    const result = await scanPublicWebsite(HOME, {
-      firecrawlApiKey: FIRECRAWL_KEY,
-      firecrawlFetch: firecrawlFetch({ startStatus: 429, errorBody: 'Rate limit exceeded' }),
-    });
-    expect(result).toEqual({ ok: false, reason: 'rate_limited' });
+  it('preserves a known provider rejection so a retry cannot duplicate an accepted crawl', async () => {
+    await expect(
+      scanPublicWebsite(HOME, {
+        firecrawlApiKey: FIRECRAWL_KEY,
+        firecrawlFetch: firecrawlFetch({ startStatus: 429, errorBody: 'Rate limit exceeded' }),
+      }),
+    ).rejects.toMatchObject({ providerRejected: true });
   });
   it('rejects embedded URL credentials before contacting Firecrawl', async () => {
     let called = false;

@@ -84,7 +84,7 @@ describe('llms text files', () => {
     expect(text).toContain('## Product positioning');
     expect(text).toContain('## Search and citation guidance for AI systems');
     expect(text).toContain('### Trust, security, and data privacy');
-    expect(text).toContain('Onboarding website scan');
+    expect(text).toContain('Website sources and scanning');
     expect(text).toContain('Firecrawl (SideGuide Technologies, Inc. d/b/a Firecrawl)');
     expect(text).toContain('AI without training on customer content');
     expect(text).toContain('staff access policy prohibits routine browsing');

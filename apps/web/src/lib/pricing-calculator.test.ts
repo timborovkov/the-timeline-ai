@@ -76,3 +76,18 @@ describe('pricing estimates', () => {
     );
   });
 });
+
+it('adds weighted website usage once to the existing source meter', () => {
+  const parsed = parseUsage(EXAMPLE_USAGE);
+  if (!parsed.values) throw new Error('Example usage must parse');
+  const estimate = estimatePricing(parsed.values, {
+    websites: 1,
+    pages: 5,
+    frequency: 'daily',
+    manualScans: 0,
+  });
+  expect(estimate.websiteUsage.sourceUnits).toBe(3000);
+  const source = estimate.breakdown.find((row) => row.id === 'accepted_sources');
+  expect(source?.nativeUnits).toBe(parsed.values.sources + 3000);
+  expect(estimate.breakdown.filter((row) => row.id === 'accepted_sources')).toHaveLength(1);
+});

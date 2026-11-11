@@ -42,3 +42,7 @@ Role removal records durable revocation intent under the account lock, revokes p
 Recorded usage is not a forecast or final invoice. Show plan fees, metered usage, pooled credit and calendar spend caps distinctly; preserve the correct renewal/reset dates. Unknown attribution remains unavailable rather than guessed. Financial detail follows member authorization. The public calculator is local and illustrative; it neither changes billing nor proves eligibility.
 
 Invoice reconciliation and provider/member-access verification are operating evidence, not inferred from unit tests. See [Polar release checks](../setup/polar.md#verification-and-release).
+
+## Website capture
+
+[Website sources](../websites.md) use the existing accepted-source meter with 20 source units per captured page, including unchanged pages and ingestion. Legacy admissions retain their original multiplier. AI and storage are separate. The same multiplier powers the public calculator; no new Polar meter is required.

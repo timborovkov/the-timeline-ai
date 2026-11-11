@@ -1143,6 +1143,26 @@ describe('handleMcpRequest', () => {
     expect(result).toHaveProperty('moments');
   });
 
+  it('rejects crawling with a legacy read-only credential', async () => {
+    const response = await handleMcpRequest(
+      { db: db as never, bearer: TOKEN },
+      {
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'tools/call',
+        params: {
+          name: 'timeline.crawl',
+          arguments: {
+            url: 'https://example.com',
+            permissionConfirmed: true,
+            idempotencyKey: 'crawl-test',
+          },
+        },
+      },
+    );
+    expect(response).toMatchObject({ result: { isError: true } });
+  });
+
   it('exposes ask_agent for consent discovery and rejects a static read-only key', async () => {
     const response = await handleMcpRequest(
       { db: db as never, bearer: TOKEN },

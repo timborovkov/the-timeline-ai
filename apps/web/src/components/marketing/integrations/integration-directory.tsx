@@ -1,4 +1,13 @@
-import { ArrowRight, Check, CircleDotDashed, Mail, Video, Webhook, Wrench } from 'lucide-react';
+import {
+  ArrowRight,
+  Globe,
+  Check,
+  CircleDotDashed,
+  Mail,
+  Video,
+  Webhook,
+  Wrench,
+} from 'lucide-react';
 import Link from 'next/link';
 
 import {
@@ -45,8 +54,9 @@ export function IntegrationDirectory() {
               <div>
                 <p className="max-w-[44ch] text-base leading-relaxed text-fg-muted sm:text-lg">
                   Deliberately route conversations, forwarded email, meeting transcripts, and
-                  webhook payloads into Timeline, or select records from connected tools. Timeline
-                  keeps the origin clear while it turns that work into chronology and cited answers.
+                  webhook payloads or public website pages into Timeline, or select records from
+                  connected tools. Timeline keeps the origin clear while it turns that work into
+                  chronology and cited answers.
                 </p>
                 <PublicSessionBranch
                   signedOut={
@@ -387,7 +397,14 @@ function CaptureSurfaceIcon({ surface }: { surface: CaptureSurfaceContent }) {
     );
   }
 
-  const Icon = surface.icon === 'mail' ? Mail : surface.icon === 'video' ? Video : Webhook;
+  const Icon =
+    surface.icon === 'globe'
+      ? Globe
+      : surface.icon === 'mail'
+        ? Mail
+        : surface.icon === 'video'
+          ? Video
+          : Webhook;
   return (
     <div className="grid size-12 place-items-center rounded-md border border-border bg-surface">
       <Icon aria-hidden="true" className="size-6 text-fg" strokeWidth={1.5} />

@@ -725,3 +725,9 @@ Signed email webhooks queue provider IDs; workers admit senders before downloadi
 Disconnect, source removal and erasure are separate operations. Follow [manual support deletion](setup/manual-support-deletion.md); disclose retained history, backups, legal/billing records and processor copies without promising unverified completion.
 
 Sentry intake and queued delivery require current source selection. GitHub capture requires the matching installation token and fails closed on missing mappings. Health/readiness responses expose aggregate operational state, not content or secrets.
+
+## Persistent website capture
+
+[Website sources](websites.md) extend the existing Firecrawl data flow to manual and scheduled capture. URL, schedule, actor/credential identifiers, run status, immutable snapshots and page-version associations have separate operational/evidence purposes. Website grants are explicit; worker execution revalidates them. Source removal is not erasure.
+
+Bot completion outbox records temporarily retain AES-256-GCM encrypted delivery payloads and provider credentials in PostgreSQL, then hand off to the existing encrypted Redis delivery queue. Outbox records are removed after enqueue or one day after completion, with a two-day creation-age ceiling; website completion queue receipts retain the encrypted payload for at most one day to deduplicate enqueue recovery; logs contain no payloads. Existing processor retention/DPA gaps remain open. Material terms/privacy versions were advanced; source changes do not constitute counsel approval or production publication.

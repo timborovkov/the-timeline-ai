@@ -1676,6 +1676,47 @@ describe('Slack dispatcher routing', () => {
     expect(await db.select().from(meetings)).toHaveLength(0);
   });
 
+  it('uses the channel-bound team for website crawl confirmation instead of the active DM team', async () => {
+    const fetchMock = installFetchMock();
+    await seedBoundSlackUser(db, 'C_DOCS');
+    await db
+      .insert(slackWorkspaceTeams)
+      .values({
+        workspaceId: WORKSPACE_ID,
+        teamId: TEAM_B,
+        installedByUserId: USER_B,
+        enabled: true,
+      });
+    await db
+      .insert(slackUserTeams)
+      .values({
+        slackUserId: SLACK_USER_ROW_ID,
+        teamId: TEAM_B,
+        userId: USER_B,
+        linkedByUserId: USER_B,
+        isActive: false,
+      });
+    await db
+      .update(slackConversationBindings)
+      .set({ teamId: TEAM_B, boundByUserId: USER_B })
+      .where(eq(slackConversationBindings.slackConversationId, 'C_DOCS'));
+    await handleSlackSlashCommand(
+      { db: db as never },
+      {
+        command: '/timeline',
+        text: 'crawl https://example.com',
+        user_id: 'U_SLACK',
+        team_id: 'T_SLACK',
+        channel_id: 'C_DOCS',
+        response_url: 'https://hooks.slack.test/response',
+        trigger_id: 'crawl-confirmation',
+      },
+    );
+    expect(JSON.stringify(responseBodies(fetchMock))).toContain('Team: Team B');
+    expect(JSON.stringify(responseBodies(fetchMock))).toContain('20 per page');
+    expect(await db.select().from(rawEvents)).toHaveLength(0);
+  });
+
   it('attributes bound channel messages to the sender linked in that Timeline team', async () => {
     await seedWorkspace(db, TEAM_A);
     await db.insert(slackWorkspaceTeams).values({
