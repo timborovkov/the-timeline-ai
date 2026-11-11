@@ -84,10 +84,4 @@ PostgreSQL holds canonical records, immutable sources, provenance, approvals and
 
 [Drive lifecycle](architecture/drive.md) owns revision/snapshot/selection behavior; [extraction operations](runbooks/document-extract.md) owns sandbox isolation and cleanup; [billing](architecture/billing.md) owns admission and settlement; [security](security-privacy-trust.md) owns retention and deletion. These are linked contracts rather than parallel descriptions here.
 
-First-run website scan captures up to five public same-origin pages through Firecrawl as team-visible `source: web` raw events, then uses extraction and approval-backed suggestions. It never writes canonical objects directly (ADR 0003).
-
-Website scans reserve up to five accepted-source units before enqueue and recheck
-admission before Firecrawl. Settlement counts returned pages once; downstream AI
-uses the AI meter. Immutable `website_sources` crawl results allow retries to reuse
-identical bytes. Each page has a cited web event and a versioned markdown document;
-scan IDs scope retries, source lists and atomic onboarding completion.
+[Website scans](architecture/website-scan.md) capture public pages as immutable evidence; canonical changes still require approval.

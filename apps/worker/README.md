@@ -16,4 +16,4 @@ Queue registrations and worker startup/shutdown live in source, not in a duplica
 
 Use the nearest worker/domain suites under [testing policy](../../docs/testing/README.md). Offline fixtures never use production services. Live provider calls require the documented isolated fixtures and evidence. Deployment configuration is in [Railway](../../docs/railway.md).
 
-The `website-scan` worker reads the first-run public URL through Firecrawl (up to five same-origin pages), persists cited `source: web` events, and enqueues extraction. Objects require approval. Configure `FIRECRAWL_API_KEY` on web and worker.
+The `website-scan` worker follows the [website scan lifecycle](../../docs/architecture/website-scan.md); [Railway](../../docs/railway.md#environment-variables) owns its service configuration.

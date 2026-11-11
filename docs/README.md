@@ -13,7 +13,7 @@ Read the document for the task at hand. Current behavior, future work and histor
 ## Understand and change behavior
 
 - [Product brief](product-brief.md), [glossary](../CONTEXT.md), [open work](../todo.md).
-- [Memory engine](relational-memory.md), [domain ownership](architecture/ownership.md), [Drive lifecycle](architecture/drive.md), [billing contract](architecture/billing.md).
+- [Memory engine](relational-memory.md), [domain ownership](architecture/ownership.md), [Drive lifecycle](architecture/drive.md), [billing contract](architecture/billing.md), [website scan lifecycle](architecture/website-scan.md).
 - [Objects and boards](objects.md), [calendar](calendar.md), [captured files](captured-files.md), [agent coworkers](agent-coworkers.md).
 - [Design foundations](../design.md), [application patterns](design/app.md), [public-site patterns](design/public.md).
 - [Provider contribution template](native-provider-template.md), [public document registry](public-site-registry.md), [analytics contract](privacy-analytics-interface.md).
