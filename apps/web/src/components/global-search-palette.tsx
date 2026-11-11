@@ -18,6 +18,7 @@ import type { ActionDispatch, ComponentType, SetStateAction, Dispatch, SVGProps 
 
 import { DueDateDisplay } from '@/components/due-date-display';
 import { PinOverflowMenu } from '@/components/pins/pin-overflow-menu';
+import { ApiResponseError } from '@/lib/api-response';
 import { isSchedulableObjectType } from '@/lib/due-dates';
 import { fetchGlobalSearch } from '@/lib/global-search';
 import { cn } from '@/lib/utils';
@@ -155,7 +156,13 @@ export function GlobalSearchPalette({ hint, className }: Props) {
           if (controller.signal.aborted) return;
           dispatchView({
             type: 'search_error',
-            error: searchErrorMessage(err instanceof Error ? err.message : undefined),
+            error: searchErrorMessage(
+              err instanceof ApiResponseError
+                ? (err.code ?? undefined)
+                : err instanceof Error
+                  ? err.message
+                  : undefined,
+            ),
           });
         });
     }, 250);

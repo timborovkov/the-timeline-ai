@@ -402,9 +402,17 @@ export default function TrustPage() {
                     These support sessions expire after 30 minutes and require a recorded purpose,
                     ticket or incident reference, and authorization or emergency context. We record
                     the staff identity separately from the member identity. Inspection of suspended
-                    accounts or teams is read-only. Ordinary support requires customer
-                    authorization; emergency access remains subject to subsequent review under our
-                    staff policy.
+                    accounts or teams is read-only. Team owners can request permanent deletion in
+                    Team settings, immediately disabling access for all members. Disabling preserves
+                    data while pausing processing and new usage accrual, and requests cancellation
+                    of subscription renewal. Platform administrators can restore access before
+                    permanent deletion starts. Deletion removes operational team content, files,
+                    search vectors and team connections through a tracked cleanup process. User
+                    accounts, other teams and original external files remain. Limited financial and
+                    security records, backups and provider copies have separate retention or
+                    deletion requirements; active-system cleanup is not a claim of immediate erasure
+                    everywhere. Ordinary support requires customer authorization; emergency access
+                    remains subject to subsequent review under our staff policy.
                   </p>
                 </div>
               </div>

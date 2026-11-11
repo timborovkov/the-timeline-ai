@@ -17,6 +17,9 @@ import { authorizeWebsitePrincipal } from '#src/websites/authorization.js';
 import { failWebsiteRun } from '#src/websites/recovery.js';
 import { startWebsiteScan } from '#src/websites/runtime.js';
 
+const activeTeam = (teamId: typeof websites.teamId | typeof websiteRuns.teamId) =>
+  sql`EXISTS (SELECT 1 FROM teams WHERE id = ${teamId} AND disabled_at IS NULL AND deletion_started_at IS NULL AND deleted_at IS NULL)`;
+
 /** Worker inventory only. Per-team actions re-enter withTeam with the original actor. */
 export async function tickWebsiteSchedules(db: Db): Promise<void> {
   // Sweep before delivery so a queue outage cannot extend credential retention.
@@ -30,7 +33,10 @@ export async function tickWebsiteSchedules(db: Db): Promise<void> {
     .select()
     .from(websiteRuns)
     .where(
-      sql`${websiteRuns.finishedAt} IS NOT NULL AND ${websiteRuns.providerStartedAt} IS NOT NULL AND ${websiteRuns.providerFinishedAt} IS NULL`,
+      and(
+        activeTeam(websiteRuns.teamId),
+        sql`${websiteRuns.finishedAt} IS NOT NULL AND ${websiteRuns.providerStartedAt} IS NOT NULL AND ${websiteRuns.providerFinishedAt} IS NULL`,
+      ),
     )
     .limit(100);
   for (const run of abandoned)
@@ -45,7 +51,7 @@ export async function tickWebsiteSchedules(db: Db): Promise<void> {
         eq(websiteRuns.teamId, websiteNotifications.teamId),
       ),
     )
-    .where(sql`${websiteRuns.finishedAt} IS NOT NULL`)
+    .where(and(activeTeam(websiteRuns.teamId), sql`${websiteRuns.finishedAt} IS NOT NULL`))
     .limit(100);
   for (const { notification, run } of notifications) {
     await getChatDeliveryQueue().add(
@@ -76,7 +82,10 @@ export async function tickWebsiteSchedules(db: Db): Promise<void> {
     .select()
     .from(websiteRuns)
     .where(
-      sql`${websiteRuns.status} IN ('queued','crawling','processing') AND ${websiteRuns.billingPolicy} <> 'legacy'`,
+      and(
+        activeTeam(websiteRuns.teamId),
+        sql`${websiteRuns.status} IN ('queued','crawling','processing') AND ${websiteRuns.billingPolicy} <> 'legacy'`,
+      ),
     )
     .orderBy(asc(websiteRuns.createdAt));
   for (const run of pending) {
@@ -166,6 +175,7 @@ export async function tickWebsiteSchedules(db: Db): Promise<void> {
     .from(websites)
     .where(
       and(
+        activeTeam(websites.teamId),
         isNull(websites.archivedAt),
         eq(websites.paused, false),
         lte(websites.nextScanAt, new Date()),

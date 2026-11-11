@@ -72,6 +72,7 @@ export interface BillingProvider {
   }): Promise<{ url: string }>;
   updateSubscription(input: UpdateSubscriptionInput): Promise<UpdateSubscriptionResult>;
   /** Cancel immediately so a comp stops the platform fee. 404 and already-canceled are success. */
+  cancelSubscriptionRenewal(subscriptionId: string, customerId: string): Promise<void>;
   revokeSubscription(subscriptionId: string, customerId?: string): Promise<void>;
   ingestUsage(event: PolarUsageEvent): Promise<void>;
   /**
@@ -211,6 +212,9 @@ export function createFakeBillingProvider(options?: { teamIdentity?: boolean }):
     updateSubscription(input) {
       subscriptionUpdates.push(input);
       return Promise.resolve({ ok: true });
+    },
+    cancelSubscriptionRenewal() {
+      return Promise.resolve();
     },
     revokeSubscription(subscriptionId) {
       revokedSubscriptionIds.push(subscriptionId);

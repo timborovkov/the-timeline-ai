@@ -38,6 +38,7 @@ import { WorkStylePreference } from '@/components/onboarding/work-style-preferen
 import { PageHeader } from '@/components/page-header';
 import { SettingsSection } from '@/components/section-heading';
 import { SettingsNav } from '@/components/settings-nav';
+import { TeamDeletionForm } from '@/components/team-deletion-form';
 import {
   InboundEmailPlaceholderNotice,
   InboundEmailWhitelistForm,
@@ -263,7 +264,12 @@ function TeamSettingsSections({
             )}
           </SettingsSection>
         ) : null}
-        {section === 'advanced' && isAdmin ? <AdminShortcuts isAdmin /> : null}
+        {section === 'advanced' && isAdmin ? (
+          <>
+            <AdminShortcuts isAdmin />
+            {isOwner && <TeamDeletionForm teamId={active.teamId} teamName={active.teamName} />}
+          </>
+        ) : null}
       </div>
     </div>
   );

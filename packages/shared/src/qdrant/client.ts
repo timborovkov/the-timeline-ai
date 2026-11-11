@@ -244,6 +244,7 @@ export interface QdrantClient {
     queryEventIds: string[],
     candidateEventIds: string[],
   ): Promise<SearchHit[]>;
+  deleteTeamPoints(teamId: string): Promise<void>;
   deletePoints(ids: string[], opts?: DeletePointsOpts): Promise<void>;
   deletePointsForSource(input: {
     teamId: string;
@@ -838,6 +839,21 @@ export function createQdrantClient(opts: QdrantClientOptions = {}): QdrantClient
     });
   }
 
+  async function deleteTeamPoints(teamId: string): Promise<void> {
+    if (!/^[0-9a-f-]{36}$/i.test(teamId)) throw new Error('Invalid team ID');
+    await ensureCollection();
+    await request(
+      'write',
+      'POST',
+      `/collections/${encodeURIComponent(collection)}/points/delete?wait=true`,
+      {
+        filter: { must: [{ key: 'team_id', match: { value: teamId } }] },
+      },
+    );
+    if ((await countPoints(teamId)) !== 0)
+      throw new Error('Team vector deletion verification failed');
+  }
+
   async function deletePoints(ids: string[], opts: DeletePointsOpts = {}): Promise<void> {
     if (ids.length === 0) return;
     await ensureCollection();
@@ -1188,6 +1204,8 @@ export function createQdrantClient(opts: QdrantClientOptions = {}): QdrantClient
         () => searchByStoredEventVectors(...args),
         'searchByStoredEventVectors',
       ),
+    deleteTeamPoints: (teamId: string) =>
+      withQdrantOperation({}, () => deleteTeamPoints(teamId), 'deleteTeamPoints'),
     deletePoints: (...args: Parameters<typeof deletePoints>) =>
       withQdrantOperation({}, () => deletePoints(...args), 'deletePoints'),
     deletePointsForSource: (...args: Parameters<typeof deletePointsForSource>) =>

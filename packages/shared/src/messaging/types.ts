@@ -1,6 +1,7 @@
 import type { dailyDigests, messageDeliveries } from '@timeline/db';
 
 export type MessageIntent =
+  | 'team_deletion'
   | 'team_invite'
   | 'support_request'
   | 'welcome'
@@ -188,7 +189,14 @@ export interface BillingUsageAlertMessageInput {
   billingUrl: string;
 }
 
+export interface TeamDeletionMessageInput {
+  to: string;
+  teamId: string;
+  admin: boolean;
+}
+
 export interface MessageInputByIntent {
+  team_deletion: TeamDeletionMessageInput;
   team_invite: TeamInviteMessageInput;
   support_request: SupportRequestMessageInput;
   welcome: WelcomeMessageInput;

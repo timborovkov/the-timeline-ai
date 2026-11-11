@@ -64,18 +64,18 @@ import {
   setIntegrationSelectionObjectLink,
   type IntegrationSelectionLinkRow,
 } from '#src/integrations/selection-links.js';
+import {
+  ProviderAuthorizationError,
+  type IntegrationRow,
+  type ProviderConnectionRow,
+  type SyncContinuation,
+  type WebhookSubscription,
+} from '#src/integrations/types.js';
 import { childLogger } from '#src/logger.js';
 import { sendMessage } from '#src/messaging/delivery.js';
 import { getDocumentsBucket, getS3Client } from '#src/s3/client.js';
 import { deleteObject } from '#src/s3/objects.js';
 import { rawEventVisibleToUser, validateVisibilityUserIds } from '#src/visibility.js';
-
-import type {
-  IntegrationRow,
-  ProviderConnectionRow,
-  SyncContinuation,
-  WebhookSubscription,
-} from '#src/integrations/types.js';
 
 // Phase 11 — Team-scoped integration helpers. Every read/write goes
 // through `withTeam`-style membership enforcement so a forged team_id
@@ -528,59 +528,98 @@ export function createIntegrationScope(deps: {
     input: UpsertProviderConnectionInput,
   ): Promise<ProviderConnectionRow> {
     await ensureMember();
-    const encrypted = encryptJson(input.tokens);
-    const rows = await db
-      .insert(providerConnections)
-      .values({
-        ownerUserId: userId,
-        provider: input.provider,
-        displayName: input.displayName,
-        externalAccountId: input.externalAccountId,
-        scopes: input.scopes ?? [],
-        authSecretCiphertext: encrypted.ciphertext,
-        authSecretIv: encrypted.iv,
-        authSecretTag: encrypted.tag,
-        lastError: null,
-        lastConnectedAt: new Date(),
-      })
-      .onConflictDoUpdate({
-        target: [
-          providerConnections.ownerUserId,
-          providerConnections.provider,
-          providerConnections.externalAccountId,
-        ],
-        set: {
+    return db.transaction(async (tx) => {
+      const db = tx as unknown as Db;
+      const encrypted = encryptJson(input.tokens);
+      const rows = await db
+        .insert(providerConnections)
+        .values({
+          ownerUserId: userId,
+          provider: input.provider,
           displayName: input.displayName,
+          externalAccountId: input.externalAccountId,
           scopes: input.scopes ?? [],
           authSecretCiphertext: encrypted.ciphertext,
           authSecretIv: encrypted.iv,
           authSecretTag: encrypted.tag,
           lastError: null,
           lastConnectedAt: new Date(),
+        })
+        .onConflictDoUpdate({
+          target: [
+            providerConnections.ownerUserId,
+            providerConnections.provider,
+            providerConnections.externalAccountId,
+          ],
+          set: {
+            displayName: input.displayName,
+            scopes: input.scopes ?? [],
+            authSecretCiphertext: encrypted.ciphertext,
+            authSecretIv: encrypted.iv,
+            authSecretTag: encrypted.tag,
+            lastError: null,
+            lastConnectedAt: new Date(),
+            updatedAt: new Date(),
+          },
+        })
+        .returning();
+      const row = rows[0];
+      if (!row) throw new Error('Failed to create provider connection');
+      // Lock only active linked teams so reconnect cannot race their suspension.
+      const activeTeams = await db
+        .select({ id: teams.id })
+        .from(teams)
+        .where(
+          and(
+            or(
+              inArray(
+                teams.id,
+                db
+                  .select({ id: integrationsTable.teamId })
+                  .from(integrationsTable)
+                  .where(eq(integrationsTable.providerConnectionId, row.id)),
+              ),
+              inArray(
+                teams.id,
+                db
+                  .select({ id: connectionAttention.teamId })
+                  .from(connectionAttention)
+                  .where(eq(connectionAttention.providerConnectionId, row.id)),
+              ),
+            ),
+            isNull(teams.disabledAt),
+            isNull(teams.deletionStartedAt),
+            isNull(teams.deletedAt),
+          ),
+        )
+        .orderBy(teams.id)
+        .for('share');
+      const teamIds = activeTeams.map((team) => team.id);
+      if (!teamIds.length) return row;
+      await db
+        .update(integrationsTable)
+        .set({
+          displayName: input.displayName,
+          externalAccountId: input.externalAccountId,
+          scopes: input.scopes ?? [],
+          lastError: null,
+          ...integrationHealthReset,
           updatedAt: new Date(),
-        },
-      })
-      .returning();
-    const row = rows[0];
-    if (!row) throw new Error('Failed to create provider connection');
-    await db
-      .update(integrationsTable)
-      .set({
-        displayName: input.displayName,
-        externalAccountId: input.externalAccountId,
-        scopes: input.scopes ?? [],
-        lastError: null,
-        ...integrationHealthReset,
-        updatedAt: new Date(),
-      })
-      .where(eq(integrationsTable.providerConnectionId, row.id));
-    await adminResolveProviderConnectionAttention(db, row.id, [
-      'needs_reconnect',
-      'access_revoked',
-      'sync_error',
-      'webhook_degraded',
-    ]);
-    return row;
+        })
+        .where(
+          and(
+            eq(integrationsTable.providerConnectionId, row.id),
+            inArray(integrationsTable.teamId, teamIds),
+          ),
+        );
+      await adminResolveProviderConnectionAttention(
+        db,
+        row.id,
+        ['needs_reconnect', 'access_revoked', 'sync_error', 'webhook_degraded'],
+        teamIds,
+      );
+      return row;
+    });
   }
 
   async function deleteOwnedProviderConnection(id: string): Promise<boolean> {
@@ -593,6 +632,18 @@ export function createIntegrationScope(deps: {
       attentionId: string;
     }[] = [];
     await db.transaction(async (tx) => {
+      // Account-owned revocation can only disable integrations and remove this
+      // owner's credential. It must work even when a linked workspace is paused.
+      const [owned] = await tx
+        .select({
+          id: providerConnections.id,
+          cleanupSetting: sql<string | null>`current_setting('timeline.lifecycle_cleanup', true)`,
+        })
+        .from(providerConnections)
+        .where(and(eq(providerConnections.id, id), eq(providerConnections.ownerUserId, userId)))
+        .for('update');
+      if (!owned) throw new Error('Provider connection ownership changed');
+      await tx.execute(sql`SELECT set_config('timeline.lifecycle_cleanup', 'on', true)`);
       const affected = await tx
         .update(integrationsTable)
         .set({
@@ -605,6 +656,15 @@ export function createIntegrationScope(deps: {
       await tx.delete(providerConnections).where(eq(providerConnections.id, id));
       const attentionRecordedAt = new Date();
       for (const row of affected) {
+        const [team] = await tx
+          .select({
+            disabledAt: teams.disabledAt,
+            deleting: teams.deletionStartedAt,
+            deletedAt: teams.deletedAt,
+          })
+          .from(teams)
+          .where(eq(teams.id, row.teamId));
+        if (!team || team.disabledAt || team.deleting || team.deletedAt) continue;
         const input: ConnectionAttentionInput = {
           integrationId: row.integrationId,
           category: 'needs_new_owner',
@@ -660,6 +720,9 @@ export function createIntegrationScope(deps: {
             .where(and(...conditions));
         }
       }
+      await tx.execute(
+        sql`SELECT set_config('timeline.lifecycle_cleanup', ${owned.cleanupSetting ?? ''}, true)`,
+      );
     });
     try {
       await maybeRevokeGoogleDriveGrantAfterDisconnect(db, connection);
@@ -2729,6 +2792,7 @@ export async function adminResolveProviderConnectionAttention(
   db: Db,
   providerConnectionId: string,
   categories: ConnectionAttentionInput['category'][],
+  teamIds?: string[],
 ): Promise<void> {
   await db
     .update(connectionAttention)
@@ -2737,6 +2801,7 @@ export async function adminResolveProviderConnectionAttention(
       and(
         eq(connectionAttention.providerConnectionId, providerConnectionId),
         isNull(connectionAttention.resolvedAt),
+        teamIds ? inArray(connectionAttention.teamId, teamIds) : undefined,
         inArray(connectionAttention.category, categories),
       ),
     );
@@ -3756,8 +3821,6 @@ export async function adminDeprovisionIntegrationWebhookSubscriptions(
   if (!provider.deprovisionWebhook) {
     return { deprovisioned: 0, skipped: true };
   }
-  const tokens = await adminDecryptIntegrationTokens(db, integration);
-  if (!tokens) throw new Error('No tokens — reconnect required');
   const rows = await db
     .select()
     .from(integrationWebhookSubscriptions)
@@ -3768,6 +3831,9 @@ export async function adminDeprovisionIntegrationWebhookSubscriptions(
         eq(integrationWebhookSubscriptions.status, 'active'),
       ),
     );
+  if (!rows.length) return { deprovisioned: 0, skipped: false };
+  const tokens = await adminDecryptIntegrationTokens(db, integration);
+  if (!tokens) throw new ProviderAuthorizationError(integration.provider);
   for (const row of rows) {
     await provider.deprovisionWebhook({
       integration,

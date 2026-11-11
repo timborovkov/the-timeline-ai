@@ -20,6 +20,7 @@ import { askBillingUserMessage } from '#src/billing/admission.js';
 import { assertTeamWriteCapacity } from '#src/billing/capacity.js';
 import { isBillingAdmissionError } from '#src/billing/errors.js';
 import { admitAcceptedSourceEnrichment, admitAudioTranscription } from '#src/billing/runtime.js';
+import { withChatDeliveryPrincipal } from '#src/conversation-surfaces/deferred-delivery.js';
 import { redactConversationError } from '#src/conversation-surfaces/privacy.js';
 import { acceptDirectAgentTurn } from '#src/conversation-surfaces/runtime.js';
 import { resetSurfaceSessionInTransaction } from '#src/conversation-surfaces/scope.js';
@@ -44,6 +45,7 @@ import {
   joinSavedMeetingByCommand,
 } from '#src/meetings/quick-capture.js';
 import { detectMeetingPlatform } from '#src/meetings/scope.js';
+import { assertActivePrincipal } from '#src/platform-admin/runtime.js';
 import { normalizeRawEventsToEvidence } from '#src/reconciliation/normalization.js';
 import { inlineSourceSnapshotMetadata } from '#src/reconciliation/source-snapshot.js';
 import { getRedisConnection } from '#src/redis/connection.js';
@@ -310,61 +312,76 @@ async function handleSlackAskCommand(
     );
     return;
   }
-  const question = input.text.trim();
-  if (!question) {
-    await replyToSlackCommand(api, input, 'Usage: /ask what changed with Acme this week?');
-    return;
-  }
-  const claim = await claimSlackAsk(
-    input.trigger_id ?? `${input.team_id}:${input.channel_id}:${input.user_id}:${question}`,
+  return withChatDeliveryPrincipal(
+    { teamId: route.teamId, ...(!route.trustedTeamActor ? { userId: route.userId } : {}) },
+    async () => {
+      const question = input.text.trim();
+      if (!question) {
+        await replyToSlackCommand(api, input, 'Usage: /ask what changed with Acme this week?');
+        return;
+      }
+      const claim = await claimSlackAsk(
+        input.trigger_id ?? `${input.team_id}:${input.channel_id}:${input.user_id}:${question}`,
+      );
+      if (!claim) return;
+      try {
+        const result = await askAgent(
+          {
+            db: deps.db,
+            teamId: route.teamId,
+            userId: route.userId,
+            deliverySurface: 'slack',
+            userName: route.userName,
+            trustedTeamActor: route.trustedTeamActor,
+            ...(route.trustedTeamActor
+              ? {
+                  toolMode: 'proposal_only' as const,
+                  proposalOrigin: { surface: 'slack', actorKind: 'team_agent' as const },
+                }
+              : {}),
+            question,
+          },
+          {
+            ...deps.agentDeps,
+            ...(route.trustedTeamActor ? { includeMcpTools: true } : {}),
+            onToolError: deps.onAgentToolError,
+            onAgentError: deps.onAgentError,
+            sanitizeError: redactConversationError,
+          },
+        );
+        await assertActivePrincipal(
+          deps.db,
+          route.teamId,
+          route.trustedTeamActor ? undefined : route.userId,
+        );
+        await replyToSlackCommand(
+          api,
+          input,
+          result.ok
+            ? result.answer
+            : result.error === 'security_blocked' ||
+                result.error === 'free_allowance_reached' ||
+                result.error === 'usage_limit_reached' ||
+                result.error === 'spend_cap_reached'
+              ? askBillingUserMessage(result.error)
+              : 'Timeline could not answer that right now.',
+        );
+      } catch (err) {
+        if (isBillingAdmissionError(err)) throw err;
+        await assertActivePrincipal(
+          deps.db,
+          route.teamId,
+          route.trustedTeamActor ? undefined : route.userId,
+        );
+        log.error({ err: redactConversationError(err) }, 'slack slash command answer failed');
+        await replyToSlackCommand(api, input, 'Timeline could not answer that right now.').catch(
+          (postErr: unknown) => {
+            log.error({ err: postErr }, 'slack slash command failure response failed');
+          },
+        );
+      }
+    },
   );
-  if (!claim) return;
-  try {
-    const result = await askAgent(
-      {
-        db: deps.db,
-        teamId: route.teamId,
-        userId: route.userId,
-        deliverySurface: 'slack',
-        userName: route.userName,
-        trustedTeamActor: route.trustedTeamActor,
-        ...(route.trustedTeamActor
-          ? {
-              toolMode: 'proposal_only' as const,
-              proposalOrigin: { surface: 'slack', actorKind: 'team_agent' as const },
-            }
-          : {}),
-        question,
-      },
-      {
-        ...deps.agentDeps,
-        ...(route.trustedTeamActor ? { includeMcpTools: true } : {}),
-        onToolError: deps.onAgentToolError,
-        onAgentError: deps.onAgentError,
-        sanitizeError: redactConversationError,
-      },
-    );
-    await replyToSlackCommand(
-      api,
-      input,
-      result.ok
-        ? result.answer
-        : result.error === 'security_blocked' ||
-            result.error === 'free_allowance_reached' ||
-            result.error === 'usage_limit_reached' ||
-            result.error === 'spend_cap_reached'
-          ? askBillingUserMessage(result.error)
-          : 'Timeline could not answer that right now.',
-    );
-  } catch (err) {
-    if (isBillingAdmissionError(err)) throw err;
-    log.error({ err: redactConversationError(err) }, 'slack slash command answer failed');
-    await replyToSlackCommand(api, input, 'Timeline could not answer that right now.').catch(
-      (postErr: unknown) => {
-        log.error({ err: postErr }, 'slack slash command failure response failed');
-      },
-    );
-  }
 }
 
 async function handleSlackTimelineCommand(
@@ -1019,67 +1036,74 @@ async function handleAppMention(
     event.channel_type,
   );
   if (!route) return;
-  const claimed = await claimSlackAsk(slackEventId);
-  if (!claimed) return;
-  const question = (event.text ?? '').replace(/<@[^>]+>/g, '').trim();
-  if (!question) {
-    await api.postMessage({
-      channel: event.channel,
-      thread_ts: event.thread_ts ?? event.ts,
-      text: 'Ask a question after mentioning Timeline, for example: @Timeline what changed with Acme this week?',
-    });
-    return;
-  }
-  try {
-    const result = await askAgent(
-      {
-        db: deps.db,
-        teamId: route.teamId,
-        userId: route.linkedUserId ?? TEAM_BOT_ACTOR_USER_ID,
-        deliverySurface: 'slack',
-        userName: route.linkedUserName ?? 'a teammate',
-        trustedTeamActor: !route.linkedUserId && !route.isDm,
-        ...(!route.linkedUserId && !route.isDm
-          ? {
-              toolMode: 'proposal_only' as const,
-              proposalOrigin: { surface: 'slack', actorKind: 'team_agent' as const },
-            }
-          : {}),
-        question,
-      },
-      {
-        ...deps.agentDeps,
-        ...(!route.linkedUserId && !route.isDm ? { includeMcpTools: true } : {}),
-        onToolError: deps.onAgentToolError,
-        onAgentError: deps.onAgentError,
-        sanitizeError: redactConversationError,
-      },
-    );
-    await api.postMessage({
-      channel: event.channel,
-      thread_ts: event.thread_ts ?? event.ts,
-      text: result.ok
-        ? result.answer
-        : result.error === 'security_blocked' ||
-            result.error === 'free_allowance_reached' ||
-            result.error === 'usage_limit_reached' ||
-            result.error === 'spend_cap_reached'
-          ? askBillingUserMessage(result.error)
-          : 'Timeline could not answer that right now.',
-    });
-  } catch (err) {
-    if (isBillingAdmissionError(err)) throw err;
-    log.error({ err: redactConversationError(err) }, 'slack app mention answer failed');
-    await api
-      .postMessage({
-        channel: event.channel,
-        thread_ts: event.thread_ts ?? event.ts,
-        text: 'Timeline could not answer that right now.',
-      })
-      .catch((postErr: unknown) => {
-        log.error({ err: postErr }, 'slack app mention failure response failed');
-      });
-  }
+  return withChatDeliveryPrincipal(
+    { teamId: route.teamId, ...(route.linkedUserId ? { userId: route.linkedUserId } : {}) },
+    async () => {
+      const send = async (message: Parameters<SlackApi['postMessage']>[0]) => {
+        await assertActivePrincipal(deps.db, route.teamId, route.linkedUserId ?? undefined);
+        return api.postMessage(message);
+      };
+      const claimed = await claimSlackAsk(slackEventId);
+      if (!claimed) return;
+      const question = (event.text ?? '').replace(/<@[^>]+>/g, '').trim();
+      if (!question) {
+        await send({
+          channel: event.channel,
+          thread_ts: event.thread_ts ?? event.ts,
+          text: 'Ask a question after mentioning Timeline, for example: @Timeline what changed with Acme this week?',
+        });
+        return;
+      }
+      try {
+        const result = await askAgent(
+          {
+            db: deps.db,
+            teamId: route.teamId,
+            userId: route.linkedUserId ?? TEAM_BOT_ACTOR_USER_ID,
+            deliverySurface: 'slack',
+            userName: route.linkedUserName ?? 'a teammate',
+            trustedTeamActor: !route.linkedUserId && !route.isDm,
+            ...(!route.linkedUserId && !route.isDm
+              ? {
+                  toolMode: 'proposal_only' as const,
+                  proposalOrigin: { surface: 'slack', actorKind: 'team_agent' as const },
+                }
+              : {}),
+            question,
+          },
+          {
+            ...deps.agentDeps,
+            ...(!route.linkedUserId && !route.isDm ? { includeMcpTools: true } : {}),
+            onToolError: deps.onAgentToolError,
+            onAgentError: deps.onAgentError,
+            sanitizeError: redactConversationError,
+          },
+        );
+        await send({
+          channel: event.channel,
+          thread_ts: event.thread_ts ?? event.ts,
+          text: result.ok
+            ? result.answer
+            : result.error === 'security_blocked' ||
+                result.error === 'free_allowance_reached' ||
+                result.error === 'usage_limit_reached' ||
+                result.error === 'spend_cap_reached'
+              ? askBillingUserMessage(result.error)
+              : 'Timeline could not answer that right now.',
+        });
+      } catch (err) {
+        if (isBillingAdmissionError(err)) throw err;
+        log.error({ err: redactConversationError(err) }, 'slack app mention answer failed');
+        await send({
+          channel: event.channel,
+          thread_ts: event.thread_ts ?? event.ts,
+          text: 'Timeline could not answer that right now.',
+        }).catch((postErr: unknown) => {
+          log.error({ err: postErr }, 'slack app mention failure response failed');
+        });
+      }
+    },
+  );
 }
 
 async function handleMessageEvent(

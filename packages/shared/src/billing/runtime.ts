@@ -828,6 +828,13 @@ export async function snapshotTeamStorageGbMonth(input: {
   teamId: string;
   day?: string;
 }): Promise<{ gb: number; settled: boolean }> {
+  return snapshotStorageDays(input);
+}
+
+async function snapshotStorageDays(
+  input: { db: Db; teamId: string; day?: string },
+  settleBefore?: Date,
+): Promise<{ gb: number; settled: boolean }> {
   const days = input.day
     ? [input.day]
     : await absentOperationDays(
@@ -845,6 +852,7 @@ export async function snapshotTeamStorageGbMonth(input: {
   let lastGb = 0;
   let settled = false;
   for (const day of days) {
+    if (await teamDisabledOnDay(input.db, input.teamId, day, settleBefore)) continue;
     const gb = await storageGbOnUtcDay(input.db, input.teamId, day);
     lastGb = gb;
     if (gb <= 0) continue;
@@ -870,7 +878,7 @@ export async function snapshotTeamStorageGbMonth(input: {
       livePlanId: livePlan,
       pricingPeriodYm: replayPeriodYm,
     });
-    const result = await settleTeamMeter({
+    const result = await (settleBefore ? settleLifecycleHistory : settleTeamMeter)({
       db: input.db,
       teamId: input.teamId,
       operationId: `storage_gb:${input.teamId}:${day}`,
@@ -1136,6 +1144,7 @@ async function accrueTeamMemberDaysForDay(input: {
   meteredDiscountPercent: number | null;
   included: number | null;
   additionalMemberCents: number | null;
+  settleBefore?: Date;
 }): Promise<{ extraMembers: number; chargeCents: number }> {
   const { day, planId, included } = input;
   const additionalMemberCents = input.additionalMemberCents;
@@ -1173,7 +1182,7 @@ async function accrueTeamMemberDaysForDay(input: {
       centsPerMemberMonth: additionalMemberCents,
       daysInMonth,
     });
-    const result = await settleTeamMeter({
+    const result = await (input.settleBefore ? settleLifecycleHistory : settleTeamMeter)({
       db: input.db,
       teamId: input.teamId,
       operationId: `member_days:${input.teamId}:${day}:${extra.userId}`,
@@ -1203,6 +1212,13 @@ export async function accrueTeamMemberDays(input: {
   teamId: string;
   day?: string;
 }): Promise<{ extraMembers: number; chargeCents: number }> {
+  return accrueMemberDays(input);
+}
+
+async function accrueMemberDays(
+  input: { db: Db; teamId: string; day?: string },
+  settleBefore?: Date,
+): Promise<{ extraMembers: number; chargeCents: number }> {
   const days = input.day ? [input.day] : memberDayBackfillRange();
   if (days.length === 0) {
     return { extraMembers: 0, chargeCents: 0 };
@@ -1222,9 +1238,11 @@ export async function accrueTeamMemberDays(input: {
   let extraMembers = 0;
   let chargeCents = 0;
   for (const day of days) {
-    const members = input.day
-      ? roster.filter((member) => member.removedAt === null)
-      : membersActiveOnDay(roster, day);
+    if (await teamDisabledOnDay(input.db, input.teamId, day, settleBefore)) continue;
+    const members =
+      input.day && !settleBefore
+        ? roster.filter((member) => member.removedAt === null)
+        : membersActiveOnDay(roster, day);
     // Serialize the first daily facts with operator changes. Every member on
     // the day, including later arrivals and zero-charge seats, shares this stamp.
     const entitlement = await input.db.transaction(async (tx) => {
@@ -1282,6 +1300,7 @@ export async function accrueTeamMemberDays(input: {
       included: entitlement.included,
       additionalMemberCents: entitlement.additionalMemberCents,
       meteredDiscountPercent: entitlement.meteredDiscountPercent,
+      ...(settleBefore ? { settleBefore } : {}),
     });
     extraMembers = result.extraMembers;
     chargeCents += result.chargeCents;
@@ -1357,22 +1376,25 @@ async function settleCompletedWorkerAiReservation(
  * sweep, including a row that already expired. One row's failure does not
  * stop the rest of the tick.
  */
-export async function settlePendingBillingReservations(db: Db): Promise<number> {
+export async function settlePendingBillingReservations(db: Db, teamId?: string): Promise<number> {
   const rows = await db
     .select()
     .from(billingUsageReservations)
     .where(
-      or(
-        and(
-          eq(billingUsageReservations.state, 'reserved'),
-          sql`coalesce(${billingUsageReservations.metadata}->>'pending_settlement', '') = 'true'`,
-        ),
-        and(
-          inArray(billingUsageReservations.state, ['reserved', 'expired']),
-          or(
-            sql`coalesce(${billingUsageReservations.metadata}->>'worker_settlement_pending', '') = 'true'`,
-            sql`coalesce(${billingUsageReservations.metadata}->>'provider_completed', '') = 'true'`,
-            sql`coalesce(${billingUsageReservations.metadata}->>'pending_failed_attempt_settlement', '') = 'true'`,
+      and(
+        teamId ? eq(billingUsageReservations.teamId, teamId) : undefined,
+        or(
+          and(
+            eq(billingUsageReservations.state, 'reserved'),
+            sql`coalesce(${billingUsageReservations.metadata}->>'pending_settlement', '') = 'true'`,
+          ),
+          and(
+            inArray(billingUsageReservations.state, ['reserved', 'expired']),
+            or(
+              sql`coalesce(${billingUsageReservations.metadata}->>'worker_settlement_pending', '') = 'true'`,
+              sql`coalesce(${billingUsageReservations.metadata}->>'provider_completed', '') = 'true'`,
+              sql`coalesce(${billingUsageReservations.metadata}->>'pending_failed_attempt_settlement', '') = 'true'`,
+            ),
           ),
         ),
       ),
@@ -1559,4 +1581,58 @@ export async function resetIncludedDiscountIfPeriodElapsed(input: {
     });
     return rolled.rolled;
   });
+}
+
+/** Daily meters waive any day overlapping a disabled interval, including after restoration. */
+async function teamDisabledOnDay(db: Db, teamId: string, day: string, settleBefore?: Date) {
+  const [team] = await db
+    .select({
+      periods: teams.disabledPeriods,
+      disabledAt: teams.disabledAt,
+      deleting: teams.deletionStartedAt,
+    })
+    .from(teams)
+    .where(eq(teams.id, teamId));
+  if (!team) return true;
+  if (settleBefore) {
+    if (!team.deleting || !team.disabledAt || day >= utcDay(settleBefore)) return true;
+  } else if (team.deleting || team.disabledAt) return true;
+  const start = new Date(`${day}T00:00:00Z`).getTime();
+  return team.periods.some(
+    (period) =>
+      new Date(period.start).getTime() < start + 86400000 &&
+      (!period.end || new Date(period.end).getTime() >= start),
+  );
+}
+
+/** Only the authorized lifecycle maintenance scope uses this historical settlement path. */
+export async function settleTeamPreDisableDailyUsage(input: {
+  db: Db;
+  teamId: string;
+  fromDay?: string;
+}): Promise<string | undefined> {
+  const [team] = await input.db.select().from(teams).where(eq(teams.id, input.teamId));
+  if (!team?.disabledAt || !team.deletionStartedAt)
+    throw new Error('Deletion settlement requires a disabled team');
+  let day = input.fromDay ?? utcDay(team.createdAt);
+  const end = utcDay(team.disabledAt);
+  // Checkpoint at most a month per tick. The start is anchored to team creation,
+  // so a long suspension cannot age missed charges out of the janitor window.
+  for (let count = 0; count < 31 && day < end; count++, day = addUtcDays(day, 1)) {
+    await snapshotStorageDays({ db: input.db, teamId: input.teamId, day }, team.disabledAt);
+    await accrueMemberDays({ db: input.db, teamId: input.teamId, day }, team.disabledAt);
+  }
+  return day < end ? day : undefined;
+}
+
+async function settleLifecycleHistory(
+  input: Parameters<typeof settleTeamMeter>[0],
+): Promise<{ ok: true; duplicate: boolean }> {
+  const billing = billingScope({
+    db: input.db,
+    teamId: input.teamId,
+    userId: BILLING_SYSTEM_USER_ID,
+  });
+  const settled = await billing.settle(input);
+  return { ok: true, duplicate: settled.duplicate };
 }

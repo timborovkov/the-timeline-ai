@@ -58,6 +58,7 @@ await vi.mock(
   () => import('#src/monitoring.js'),
 );
 
+const { PlatformAccessError } = await import('@timeline/shared/platform-admin');
 const { deadLetterWebhookDeliveryJobIfExhausted, processWebhookDeliveryJob } =
   await import('#src/workers/webhookDelivery.js');
 
@@ -591,39 +592,50 @@ describe('webhook delivery worker', () => {
   });
 });
 
-it('rejects suspended integration processing before calling its provider', async () => {
-  fakes.loadWebhookDeliveryWork.mockResolvedValue({ delivery, targets: [{ target, integration }] });
-  fakes.assertActive.mockRejectedValueOnce(new Error('Workspace is suspended'));
-  await expect(
-    processWebhookDeliveryJob(
-      { db: {} as never, assertActive: fakes.assertActive },
-      { deliveryId: DELIVERY_ID },
-    ),
-  ).rejects.toThrow('webhook_delivery_failed');
-  expect(fakes.markWebhookDeliveryTargetFailed).toHaveBeenCalledWith(
-    expect.anything(),
-    TARGET_ID,
-    'Workspace is suspended',
-  );
-  expect(fakes.markWebhookDeliveryStatus).toHaveBeenCalledWith(
-    expect.anything(),
-    DELIVERY_ID,
-    'failed',
-    expect.stringContaining('Workspace is suspended'),
-  );
-  expect(fakes.markWebhookDeliveryTargetProcessed).not.toHaveBeenCalled();
-  expect(fakes.writeIntegrationEvents).not.toHaveBeenCalled();
-  expect(fakes.enqueueIntegrationSyncJob).not.toHaveBeenCalled();
-  // A failed target is eligible for the existing loader/retry path after restoration.
-  fakes.loadWebhookDeliveryWork.mockResolvedValue({
-    delivery: { ...delivery, status: 'failed' },
-    targets: [{ target: { ...target, status: 'failed' }, integration }],
-  });
-  await expect(
-    processWebhookDeliveryJob(
-      { db: {} as never, assertActive: fakes.assertActive },
-      { deliveryId: DELIVERY_ID },
-    ),
-  ).resolves.toMatchObject({ failed: 0 });
-  expect(fakes.markWebhookDeliveryTargetProcessed).toHaveBeenCalled();
-});
+it.each([false, true])(
+  'continues shared delivery when disabling races target processing: %s',
+  async (race) => {
+    const activeTarget = {
+      ...target,
+      id: 'active-target',
+      teamId: 'active-team',
+      integrationId: 'active-integration',
+    };
+    const activeIntegration = {
+      ...integration,
+      id: activeTarget.integrationId,
+      teamId: activeTarget.teamId,
+    };
+    fakes.loadWebhookDeliveryWork.mockResolvedValue({
+      delivery,
+      targets: [
+        { target, integration },
+        { target: activeTarget, integration: activeIntegration },
+      ],
+    });
+    if (race) {
+      fakes.assertActive.mockResolvedValueOnce(undefined);
+      fakes.markWebhookDeliveryTargetProcessing.mockRejectedValueOnce(
+        Object.assign(new Error('Workspace is disabled'), { code: '42501' }),
+      );
+    }
+    fakes.assertActive.mockRejectedValueOnce(new PlatformAccessError('Workspace is suspended'));
+    await expect(
+      processWebhookDeliveryJob(
+        { db: {} as never, assertActive: fakes.assertActive },
+        { deliveryId: DELIVERY_ID },
+      ),
+    ).resolves.toMatchObject({ processed: 1, ignored: 1, failed: 0 });
+    expect(fakes.markWebhookDeliveryTargetFailed).not.toHaveBeenCalled();
+    expect(fakes.markWebhookDeliveryTargetProcessed).toHaveBeenCalledTimes(1);
+    expect(fakes.markWebhookDeliveryTargetProcessed).toHaveBeenCalledWith(
+      expect.anything(),
+      activeTarget.id,
+      expect.anything(),
+    );
+    expect(fakes.writeIntegrationEvents).toHaveBeenCalledTimes(1);
+    expect(fakes.writeIntegrationEvents).toHaveBeenCalledWith(
+      expect.objectContaining({ integration: activeIntegration }),
+    );
+  },
+);

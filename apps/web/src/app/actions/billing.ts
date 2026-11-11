@@ -83,7 +83,7 @@ export async function startBillingCheckout(input: {
     try {
       const checkoutResult = await withTeamBillingIdentity(
         { db, provider, teamId: gate.active.teamId, userId: gate.userId },
-        async (identity, { account: current }) => {
+        async (identity, { account: current, recordCheckout }) => {
           if (compSuppressesPolarCharges(current)) {
             return {
               ok: false as const,
@@ -114,6 +114,7 @@ export async function startBillingCheckout(input: {
             portalReturnUrl: `${env.AUTH_URL}/app/team?section=billing`,
             ...(discountId ? { discountId } : {}),
           });
+          if (checkout.id) await recordCheckout(checkout.id);
           return { ok: true as const, url: checkout.url };
         },
       );

@@ -13,6 +13,22 @@ const {
 
 // Checked against the composed scope at withTeam; new operations require a deliberate policy.
 export const WORKSPACE_OPERATOR_POLICY = {
+  'lifecycle.inventoryIndirect': maintenanceAccountRead,
+  'lifecycle.purgeIndirect': maintenanceAccountWrite,
+  'lifecycle.settlePriorUsage': maintenanceAccountWrite,
+  'lifecycle.cancelRenewal': maintenanceAccountWrite,
+  'lifecycle.notifyRequest': maintenanceAccountWrite,
+  'lifecycle.inventoryConnections': maintenanceAccountWrite,
+  'lifecycle.stopBots': maintenanceAccountWrite,
+  'lifecycle.stopWebsiteRuns': maintenanceAccountWrite,
+  'lifecycle.disconnectSources': maintenanceAccountWrite,
+  'lifecycle.removeUnusedConnections': maintenanceAccountWrite,
+  'lifecycle.finish': maintenanceAccountWrite,
+  'lifecycle.purgeRows': maintenanceAccountWrite,
+  'lifecycle.verifyRows': maintenanceAccountRead,
+  'lifecycle.requestDeletion': accountWrite,
+  'lifecycle.readLifecycle': maintenanceAccountRead,
+  'lifecycle.updateWork': maintenanceAccountWrite,
   requireMembership: read,
   requireTeamMember: read,
   isTeamMember: read,

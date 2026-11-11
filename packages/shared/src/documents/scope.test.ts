@@ -8,6 +8,8 @@ import { drizzle } from 'drizzle-orm/pglite';
 
 import type { EmbedResult } from '#src/llm/embed.js';
 import type { SearchHit, SearchOpts } from '#src/qdrant/client.js';
+import type * as S3Client from '#src/s3/client.js';
+import type * as S3Objects from '#src/s3/objects.js';
 import type { Db } from '@timeline/db';
 
 const s3Fakes = vi.hoisted(() => ({
@@ -16,7 +18,8 @@ const s3Fakes = vi.hoisted(() => ({
 
 await vi.mock(
   import.meta.resolve('#src/s3/objects.js'),
-  () => ({
+  async (importOriginal) => ({
+    ...(await importOriginal<typeof S3Objects>()),
     putObject: () => Promise.resolve(undefined),
     deleteObject: async (...args: unknown[]) => {
       await s3Fakes.deleteObject(...args);
@@ -26,7 +29,8 @@ await vi.mock(
 );
 await vi.mock(
   import.meta.resolve('#src/s3/client.js'),
-  () => ({
+  async (importOriginal) => ({
+    ...(await importOriginal<typeof S3Client>()),
     getS3Client: () => ({}),
     getDocumentsBucket: () => 'timeline-documents',
   }),

@@ -8,6 +8,7 @@ import {
 describe('capture surface content', () => {
   it('keeps key capture paths visible and separate from provider record sync', () => {
     expect(CAPTURE_SURFACES.map((surface) => surface.id)).toEqual([
+      'websites',
       'telegram',
       'slack-chat',
       'email',
@@ -15,6 +16,7 @@ describe('capture surface content', () => {
       'webhooks',
     ]);
     expect(CAPTURE_SURFACES.filter((surface) => surface.featured).map(({ id }) => id)).toEqual([
+      'websites',
       'telegram',
       'slack-chat',
     ]);

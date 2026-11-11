@@ -13,6 +13,7 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
@@ -76,7 +77,12 @@ export function WebsiteManager({
   const [websites, setWebsites] = useState<Website[]>([]);
   const [error, setError] = useState('');
   const addButton = useRef<HTMLButtonElement>(null);
+  const confirmationTrigger = useRef<HTMLButtonElement | null>(null);
   const [adding, setAdding] = useState(false);
+  const [confirmation, setConfirmation] = useState<{
+    websiteId: string;
+    action: 'scan' | 'remove';
+  } | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [selected, setSelected] = useState<string | null>(initialSourceId ?? null);
@@ -215,17 +221,9 @@ export function WebsiteManager({
                   <Button
                     variant="outline"
                     disabled={busy || website.paused}
-                    onClick={() => {
-                      if (
-                        window.confirm(
-                          'Scan up to five public pages for up to 100 source units? Confirm you have permission to submit this website.',
-                        )
-                      )
-                        void act(
-                          () =>
-                            request(`/${website.id}/scans`, 'POST', { permissionConfirmed: true }),
-                          'Scan queued',
-                        );
+                    onClick={(event) => {
+                      confirmationTrigger.current = event.currentTarget;
+                      setConfirmation({ websiteId: website.id, action: 'scan' });
                     }}
                   >
                     <RefreshCw aria-hidden="true" />
@@ -287,16 +285,9 @@ export function WebsiteManager({
                         variant="ghost"
                         className="text-destructive"
                         disabled={busy}
-                        onClick={() => {
-                          if (
-                            window.confirm(
-                              'Remove this source and stop future scans? Captured history will remain.',
-                            )
-                          )
-                            void act(async () => {
-                              await request(`/${website.id}`, 'DELETE');
-                              if (selected === website.id) setSelected(null);
-                            }, 'Website removed');
+                        onClick={(event) => {
+                          confirmationTrigger.current = event.currentTarget;
+                          setConfirmation({ websiteId: website.id, action: 'remove' });
                         }}
                       >
                         Remove website
@@ -311,6 +302,32 @@ export function WebsiteManager({
         </div>
       )}
       <p className="text-xs text-fg-muted">Up to 5 pages per scan · 20 source units per page</p>
+      <WebsiteConfirmation
+        action={confirmation?.action ?? null}
+        busy={busy}
+        close={() => {
+          setConfirmation(null);
+        }}
+        restoreFocus={() => {
+          confirmationTrigger.current?.focus();
+        }}
+        confirm={() => {
+          if (!confirmation) return;
+          const { websiteId, action } = confirmation;
+          setConfirmation(null);
+          if (action === 'scan') {
+            void act(
+              () => request(`/${websiteId}/scans`, 'POST', { permissionConfirmed: true }),
+              'Scan queued',
+            );
+          } else {
+            void act(async () => {
+              await request(`/${websiteId}`, 'DELETE');
+              if (selected === websiteId) setSelected(null);
+            }, 'Website removed');
+          }
+        }}
+      />
       <Dialog open={adding} onOpenChange={setAdding}>
         <DialogContent
           onCloseAutoFocus={(event) => {
@@ -541,5 +558,56 @@ function WebsiteHistory({ runs, timezone }: { runs: Run[] | null; timezone: stri
         </ul>
       )}
     </div>
+  );
+}
+
+function WebsiteConfirmation({
+  action,
+  busy,
+  close,
+  confirm,
+  restoreFocus,
+}: {
+  action: 'scan' | 'remove' | null;
+  busy: boolean;
+  close: () => void;
+  confirm: () => void;
+  restoreFocus: () => void;
+}) {
+  return (
+    <Dialog
+      open={action !== null}
+      onOpenChange={(open) => {
+        if (!open) close();
+      }}
+    >
+      <DialogContent
+        onCloseAutoFocus={(event) => {
+          event.preventDefault();
+          restoreFocus();
+        }}
+      >
+        <DialogHeader>
+          <DialogTitle>{action === 'scan' ? 'Scan website?' : 'Remove website?'}</DialogTitle>
+          <DialogDescription>
+            {action === 'scan'
+              ? 'Scan up to five public pages for up to 100 source units? Confirm you have permission to submit this website.'
+              : 'Remove this source and stop future scans? Captured history will remain.'}
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          <Button variant="ghost" onClick={close}>
+            Cancel
+          </Button>
+          <Button
+            disabled={busy}
+            variant={action === 'remove' ? 'destructive' : 'default'}
+            onClick={confirm}
+          >
+            {action === 'scan' ? 'Confirm scan' : 'Remove website'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

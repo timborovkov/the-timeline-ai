@@ -98,7 +98,7 @@ describe('Railway web config', () => {
 
   it('disables Next.js route preloading so unused server bundles stay off the idle heap', () => {
     const config = readFileSync(new URL('../next.config.ts', import.meta.url), 'utf8');
-    const readme = readFileSync(new URL('../README.md', import.meta.url), 'utf8');
+    const readme = readFileSync(new URL('../../../docs/railway.md', import.meta.url), 'utf8');
     const experimental: NonNullable<NextConfig['experimental']> = {
       preloadEntriesOnStart: false,
     };

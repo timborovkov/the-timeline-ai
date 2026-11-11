@@ -137,3 +137,67 @@ it('ignores an older history response after selecting another website', async ()
     'second-run',
   );
 });
+
+it.each(['scan', 'remove'] as const)(
+  'requires in-app confirmation before %s and supports cancellation',
+  async (action) => {
+    const user = userEvent.setup();
+    const website = {
+      id: 'confirmed-website',
+      url: 'https://confirmation.example/',
+      subject: 'own_team',
+      paused: false,
+      blockedReason: null,
+      nextScanAt: null,
+      schedule: { frequency: 'manual', time: '09:00', weekday: 1, timezone: 'UTC' },
+    };
+    const fetcher = vi.fn((_url: string, init?: RequestInit) =>
+      Promise.resolve(
+        Response.json(
+          !init?.method || init.method === 'GET' ? { websites: [website] } : { ok: true },
+        ),
+      ),
+    );
+    vi.stubGlobal('fetch', fetcher);
+    renderWithQueryClient(<WebsiteManager canManage timezone="UTC" schedulesEnabled={false} />);
+    await screen.findByText('confirmation.example');
+    if (action === 'remove') await user.click(screen.getByText('Schedule & settings'));
+    const trigger = screen.getByRole('button', {
+      name: action === 'scan' ? 'Scan now' : 'Remove website',
+    });
+    const mutations = () =>
+      fetcher.mock.calls.filter(([, init]) => init?.method === 'POST' || init?.method === 'DELETE');
+    await user.click(trigger);
+    let dialog = within(
+      screen.getByRole('dialog', { name: action === 'scan' ? 'Scan website?' : 'Remove website?' }),
+    );
+    expect(mutations()).toHaveLength(0);
+    expect(
+      dialog.getByText(action === 'scan' ? /100 source units/ : /Captured history will remain/),
+    ).toBeTruthy();
+    await user.click(dialog.getByRole('button', { name: 'Cancel' }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(document.activeElement).toBe(trigger);
+    expect(mutations()).toHaveLength(0);
+    await user.click(trigger);
+    dialog = within(screen.getByRole('dialog'));
+    await user.click(
+      dialog.getByRole('button', { name: action === 'scan' ? 'Confirm scan' : 'Remove website' }),
+    );
+    await waitFor(() => {
+      expect(mutations()).toHaveLength(1);
+    });
+    const mutation = mutations()[0];
+    if (!mutation) throw new Error('Expected a confirmed request');
+    const [url, init] = mutation;
+    expect(url).toBe(
+      action === 'scan'
+        ? '/api/websites/confirmed-website/scans'
+        : '/api/websites/confirmed-website',
+    );
+    expect(init?.method).toBe(action === 'scan' ? 'POST' : 'DELETE');
+    if (action === 'scan')
+      expect(JSON.parse(init?.body as string)).toEqual({ permissionConfirmed: true });
+    expect(screen.queryByRole('dialog')).toBeNull();
+  },
+);

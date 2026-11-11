@@ -16,6 +16,7 @@ const { PGlite } = await import('@electric-sql/pglite');
 const { drizzle } = await import('drizzle-orm/pglite');
 const { eq } = await import('drizzle-orm');
 const {
+  teams,
   websites,
   websiteRuns,
   teamBillingAccounts,
@@ -304,4 +305,22 @@ it('rejects a stale due identity after an administrator reconfigures the schedul
   expect(await db.select().from(websiteRuns)).toHaveLength(0);
   expect(queued).not.toHaveBeenCalled();
   expect((await scope.websites.get(source.id)).paused).toBe(false);
+});
+
+it('preserves disabled website schedules and does not publish their queued runs', async () => {
+  const { source } = await dueSource();
+  await db.insert(websiteRuns).values({
+    teamId: TEAM,
+    websiteId: source.id,
+    requestedBy: USER,
+    trigger: 'manual',
+    idempotencyKey: 'disabled-fixture',
+  });
+  await db.update(teams).set({ disabledAt: new Date() }).where(eq(teams.id, TEAM));
+  await tickWebsiteSchedules(db);
+  expect(queued).not.toHaveBeenCalled();
+  const [saved] = await db.select().from(websites).where(eq(websites.id, source.id));
+  expect(saved?.nextScanAt?.getTime()).toBeLessThan(Date.now());
+  expect(saved?.paused).toBe(false);
+  expect((await db.select().from(websiteRuns))[0]?.status).toBe('queued');
 });

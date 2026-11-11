@@ -102,7 +102,8 @@ describe('Privacy Policy analytics disclosures', () => {
     expect(html).toContain('are not uninstalled by this action');
     expect(html).toContain('cancels in-flight document extraction');
     expect(html).toContain('Captured source events remain immutable workspace evidence');
-    expect(html).toContain('no complete self-serve erasure');
+    expect(html).toContain('An owner can request permanent team deletion');
+    expect(html).toContain('Backup expiry and provider deletion are tracked separately');
     expect(html).toContain('To request deletion of personal data');
     expect(html).toContain('href="/help/support"');
     expect(html).toContain('do not publish a deletion-completion SLA');

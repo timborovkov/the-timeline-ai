@@ -223,8 +223,10 @@ describe('queue wrappers', () => {
     const queue = fakes.queues.find((item) => item.name === 'website-scan');
     expect(queue?.options).toMatchObject({
       defaultJobOptions: {
-        attempts: 3,
-        backoff: { type: 'exponential', delay: 5_000 },
+        attempts: 4,
+        backoff: { type: 'website-retry', delay: 5_000 },
+        removeOnComplete: { age: 86400 },
+        removeOnFail: { age: 604800 },
       },
     });
     expect(queue?.jobs.size).toBe(1);

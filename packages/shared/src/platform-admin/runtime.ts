@@ -10,6 +10,7 @@ import {
   platformImpersonationSessions,
   teamBillingAccounts,
   users,
+  teams,
   type Db,
 } from '@timeline/db';
 import { and, eq } from 'drizzle-orm';
@@ -46,6 +47,16 @@ export function isInactiveWorkspaceSecurityState(state: string | null | undefine
 }
 
 export async function assertActivePrincipal(db: Db, teamId: string, userId?: string) {
+  const [team] = await db
+    .select({
+      disabledAt: teams.disabledAt,
+      deleting: teams.deletionStartedAt,
+      deletedAt: teams.deletedAt,
+    })
+    .from(teams)
+    .where(eq(teams.id, teamId));
+  if (!team || team.disabledAt || team.deleting || team.deletedAt)
+    throw new PlatformAccessError('Workspace is suspended (disabled)');
   const [account] = await db
     .select({ state: teamBillingAccounts.securityState })
     .from(teamBillingAccounts)
@@ -69,7 +80,14 @@ export async function guardTeamAccess(db: Db, teamId: string, userId: string, sy
     )
       throw new PlatformAccessError('Impersonation is restricted to the selected member and team');
     // Read-only suspended inspection is gated separately at the operation boundary.
-    if (context.readOnly) return;
+    if (context.readOnly) {
+      const [team] = await db
+        .select({ deleting: teams.deletionStartedAt })
+        .from(teams)
+        .where(eq(teams.id, teamId));
+      if (!team || team.deleting) throw new PlatformAccessError('Workspace deletion has started');
+      return;
+    }
   }
   if (!context && maintenanceStorage.getStore()) return;
   const admitted = admissionStorage.getStore();

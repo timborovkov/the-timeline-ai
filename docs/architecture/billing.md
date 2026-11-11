@@ -43,6 +43,12 @@ Recorded usage is not a forecast or final invoice. Show plan fees, metered usage
 
 Invoice reconciliation and provider/member-access verification are operating evidence, not inferred from unit tests. See [Polar release checks](../setup/polar.md#verification-and-release).
 
+## Disabled and deleted teams
+
+Disabling records durable period-end cancellation intent and expires recorded pending self-serve and Enterprise checkouts through verified provider identities. Provider failure does not postpone access disabling. New processing and daily storage/member accrual stop. Any day overlapping a disabled interval is waived by daily meters, including later backfill after restoration. Previously incurred usage still settles; there are no automatic refunds. Bot cancellation records consumed Recall minutes and durable settlement intent. Before erasing source history, lifecycle cleanup backfills eligible storage/member days from team creation through the day before disabling in checkpointed batches of at most 31 days, using historical pricing and excluding every disabled interval. This settlement does not reopen access or admit new work. Restoring access does not resume renewal. Deleting/deleted teams cannot be reactivated by late billing events; incoming subscriptions are reconciled against the stored customer identity before revocation.
+
+Permanent erasure removes content-bearing usage metadata but retains an explicit financial allowlist: invoice/credit splits, historical pricing and usage timestamps, period allocations, and provider-ingest reconciliation fields. Retained financial records remain subject to their retention and hold rules.
+
 ## Website capture
 
 [Website sources](../websites.md) use the existing accepted-source meter with 20 source units per captured page, including unchanged pages and ingestion. Legacy admissions retain their original multiplier. AI and storage are separate. The same multiplier powers the public calculator; no new Polar meter is required.

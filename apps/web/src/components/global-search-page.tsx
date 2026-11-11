@@ -26,6 +26,7 @@ import { PageHeader } from '@/components/page-header';
 import { PinOverflowMenu } from '@/components/pins/pin-overflow-menu';
 import { ItemActionGroup } from '@/components/ui/item-actions';
 import { Skeleton } from '@/components/ui/skeleton';
+import { ApiResponseError } from '@/lib/api-response';
 import { chatViewLabel } from '@/lib/chat-view';
 import { isSchedulableObjectType } from '@/lib/due-dates';
 import { selectedValues } from '@/lib/filter-values';
@@ -401,7 +402,13 @@ export function GlobalSearchPage({
         if (controller.signal.aborted) return;
         dispatch({
           type: 'search_error',
-          error: searchErrorMessage(err instanceof Error ? err.message : undefined),
+          error: searchErrorMessage(
+            err instanceof ApiResponseError
+              ? (err.code ?? undefined)
+              : err instanceof Error
+                ? err.message
+                : undefined,
+          ),
         });
       });
     return () => {

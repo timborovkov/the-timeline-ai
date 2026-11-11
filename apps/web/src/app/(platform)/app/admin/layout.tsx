@@ -23,6 +23,7 @@ export default async function AdminLayout({ children }: { children: ReactNode })
       >
         <Link href="/app/admin/users">Users</Link>
         <Link href="/app/admin/teams">Teams</Link>
+        <Link href="/app/admin/teams?status=requested">Deletion requests</Link>
         <Link href="/app/admin/audit">Audit</Link>
         <Link href="/app/admin/billing">Billing</Link>
         <Link href="/app">Back to workspace</Link>

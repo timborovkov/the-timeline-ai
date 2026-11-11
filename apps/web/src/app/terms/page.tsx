@@ -359,11 +359,25 @@ function TermsProductAndLifecycleSections() {
         permitted.
       </p>
       <p>
-        Before planned termination, use available export tools or contact us. After termination we
-        may delete Customer Content from active systems after a reasonable retrieval period, unless
-        a written agreement says otherwise or law requires retention. Sections that by nature should
-        survive—including ownership, confidentiality, disclaimers, liability, indemnity, and dispute
-        terms—remain effective.
+        A team owner may request permanent deletion from Team settings. The request immediately
+        disables access for every member and authorizes deletion of all team content, including
+        members’ private content within that team. Export the information you are permitted to
+        access before requesting deletion. Platform administrators review requests and may disable,
+        restore or permanently delete teams. Only platform administrators can cancel a request and
+        restore access before permanent deletion begins; once it begins, it cannot be reversed.
+      </p>
+      <p>
+        Disabling preserves team data, stops new processing and usage accrual, and requests
+        cancellation of subscription renewal. Provider failures are retried. Previously incurred
+        charges remain payable and there are no automatic refunds. Restoration does not resume
+        renewal without an explicit billing action. Permanent deletion removes operational team
+        data, files, search vectors and team connections. User accounts, other teams, shared
+        connections used elsewhere and original files in connected services remain. Limited
+        financial/security records may remain for documented legal, security or contractual
+        purposes; backups and provider copies follow their applicable expiry or deletion process. We
+        report completed removal separately from outstanding work and do not promise immediate
+        erasure of every copy. Sections that by nature should survive—including ownership,
+        confidentiality, disclaimers, liability, indemnity and dispute terms—remain effective.
       </p>
     </>
   );

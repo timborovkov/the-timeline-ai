@@ -69,7 +69,11 @@ import {
 import { providerFetch } from '#src/integrations/request.js';
 import { defineResourceAccess } from '#src/integrations/resource-access.js';
 import { exactTargetSelections } from '#src/integrations/selection-policy.js';
-import { attachSyncContinuation, isProviderRateLimitError } from '#src/integrations/types.js';
+import {
+  attachSyncContinuation,
+  isProviderRateLimitError,
+  ProviderAuthorizationError,
+} from '#src/integrations/types.js';
 import { childLogger } from '#src/logger.js';
 
 import type { DriveChangeJudge } from '#src/integrations/google-drive-judge.js';
@@ -186,6 +190,14 @@ async function postForm(
     parsed = text;
   }
   if (!res.ok) {
+    if (
+      (res.status === 400 || res.status === 401) &&
+      typeof parsed === 'object' &&
+      parsed !== null &&
+      'error' in parsed &&
+      parsed.error === 'invalid_grant'
+    )
+      throw new ProviderAuthorizationError('google_drive');
     throw new Error(
       `Google Drive ${String(res.status)}: ${typeof parsed === 'string' ? parsed : JSON.stringify(parsed)}`,
     );
@@ -201,7 +213,7 @@ async function ensureAccessToken(tokens: DriveTokens): Promise<DriveTokens> {
   const now = Date.now();
   if (tokens.expires_at && tokens.expires_at > now + 60_000) return tokens;
   if (!tokens.refresh_token) {
-    throw new Error('Google Drive access token expired and no refresh_token available');
+    throw new ProviderAuthorizationError('google_drive');
   }
   const body = await postForm(TOKEN_URL, {
     grant_type: 'refresh_token',
@@ -1960,6 +1972,15 @@ export const googleDriveProvider: IntegrationProvider = {
       },
       body: JSON.stringify(channel),
     });
+    if (response.status === 401 || response.status === 403) {
+      const body = await response.text();
+      // Google also uses 403 for quota failures; those remain retryable.
+      if (
+        response.status === 401 ||
+        !/rateLimitExceeded|dailyLimitExceeded|quotaExceeded|RESOURCE_EXHAUSTED/i.test(body)
+      )
+        throw new ProviderAuthorizationError('google_drive');
+    }
     if (!response.ok && response.status !== 404)
       throw new Error(`Drive stop watch failed: ${response.status}`);
   },

@@ -16,7 +16,7 @@ The separate legacy adapter only finishes jobs admitted before migration; new
 onboarding scans use the persistent worker. Terminal failures update only the
 matching in-progress onboarding scan, including trusted cleanup after actor revocation.
 
-Members can add a source and scan after confirming permission. Administrators
+Members can add a source and scan after confirming permission. The website manager uses in-app confirmation dialogs for scanning and removing sources; cancelling sends no mutation. Administrators
 manage schedules, pause and archive sources. Archiving stops new work and retains
 evidence; it is not erasure. Public URLs pass the existing SSRF guard. Scans read
 at most five pages, without external links, subdomains or authenticated content.
@@ -160,3 +160,7 @@ multiplier before releasing unused reservation capacity, including after pause,
 archive or actor revocation. It cannot admit new work. This uses the existing
 billing maintenance boundary so suspended-team cleanup does not evade incurred
 usage.
+
+## Team lifecycle
+
+Team disabling blocks website reads, new captures, scheduled scans and result delivery. Configuration and evidence remain available after restoration. The lifecycle worker cancels admitted runs and settles only persisted page outcomes; unconfirmed provider cancellation keeps cleanup pending and retryable. Permanent erasure removes source configuration, runs, page links, encrypted notification outboxes, captured evidence and queued payloads through the [team lifecycle workflow](platform-admin.md#team-deletion-lifecycle).

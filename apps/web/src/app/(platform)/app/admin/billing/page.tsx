@@ -7,11 +7,13 @@ import {
   readOperatorBillingAccount,
 } from '@timeline/shared/billing/operator-store';
 import { getEnv } from '@timeline/shared/env';
+import { directoryPage, type DirectoryOptions } from '@timeline/shared/platform-admin';
 import { eq } from 'drizzle-orm';
 import { notFound, redirect } from 'next/navigation';
 
 import { BillingOperatorTeamPanel } from '@/components/billing-operator-forms';
 import { PageHeader } from '@/components/page-header';
+import { AdminPagination } from '@/components/platform-admin-directory';
 import { SettingsSection } from '@/components/section-heading';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
@@ -22,7 +24,15 @@ const FIELD_CLASS =
 export default async function BillingOperatorPage({
   searchParams,
 }: {
-  searchParams: Promise<{ team?: string; error?: string; notice?: string; checkout?: string }>;
+  searchParams: Promise<
+    DirectoryOptions & {
+      q?: string;
+      team?: string;
+      error?: string;
+      notice?: string;
+      checkout?: string;
+    }
+  >;
 }) {
   const { query, checkoutHref, unbilled, teamQuery, matches, selected, account, audit } =
     await loadBillingOperatorPage(searchParams);
@@ -48,12 +58,49 @@ export default async function BillingOperatorPage({
         </p>
       ) : null}
 
+      <form className="flex flex-wrap items-end gap-3 text-sm">
+        <input type="hidden" name="team" value={teamQuery} />
+        <label>
+          Action or alert reason
+          <input className={FIELD_CLASS} name="q" defaultValue={query.q ?? ''} />
+        </label>
+        <label>
+          Audit actor
+          <input className={FIELD_CLASS} name="actor" defaultValue={query.actor ?? ''} />
+        </label>
+        <label>
+          Sort
+          <select className={FIELD_CLASS} name="sort" defaultValue={query.sort ?? 'created'}>
+            {['created', 'name', 'action', 'actor', 'reason', 'meter'].map((sort) => (
+              <option key={sort}>{sort}</option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Direction
+          <select className={FIELD_CLASS} name="direction" defaultValue={query.direction ?? 'desc'}>
+            <option value="desc">Descending</option>
+            <option value="asc">Ascending</option>
+          </select>
+        </label>
+        <label>
+          From
+          <input type="date" className={FIELD_CLASS} name="from" defaultValue={query.from ?? ''} />
+        </label>
+        <label>
+          Through
+          <input type="date" className={FIELD_CLASS} name="to" defaultValue={query.to ?? ''} />
+        </label>
+        <button type="submit" className="min-h-11 rounded-sm border border-border px-3">
+          Apply filters
+        </button>
+      </form>
       <SettingsSection title="Unbilled usage">
         {unbilled.length === 0 ? (
           <p className="text-sm text-fg-muted">No open unbilled usage alerts.</p>
         ) : (
           <ul className="space-y-2 text-sm">
-            {unbilled.map((alert) => (
+            {unbilled.slice(0, 50).map((alert) => (
               <li key={alert.id} data-unbilled-alert className="border border-border px-3 py-2">
                 <p className="font-medium text-fg">
                   {alert.meterId} · {alert.periodYm} · {alert.reason}
@@ -65,17 +112,37 @@ export default async function BillingOperatorPage({
         )}
       </SettingsSection>
 
-      {<BillingTeamSearch teamQuery={teamQuery} matches={matches} selected={selected} />}
+      {
+        <BillingTeamSearch
+          teamQuery={teamQuery}
+          matches={matches.slice(0, 50)}
+          selected={selected}
+        />
+      }
 
       {selected && account ? (
-        <BillingOperatorTeamPanel team={selected} account={account} audit={audit} />
+        <BillingOperatorTeamPanel team={selected} account={account} audit={audit.slice(0, 50)} />
       ) : null}
+      <AdminPagination
+        page={directoryPage(query.page)}
+        hasNext={matches.length > 50 || audit.length > 50 || unbilled.length > 50}
+        query={query.q}
+        options={query}
+      />
     </div>
   );
 }
 
 async function loadBillingOperatorPage(
-  searchParams: Promise<{ team?: string; error?: string; notice?: string; checkout?: string }>,
+  searchParams: Promise<
+    DirectoryOptions & {
+      q?: string;
+      team?: string;
+      error?: string;
+      notice?: string;
+      checkout?: string;
+    }
+  >,
 ) {
   const session = await auth();
   if (!session?.user.id || !session.user.email) redirect('/sign-in');
@@ -91,15 +158,22 @@ async function loadBillingOperatorPage(
   const query = await searchParams;
   const teamQuery = query.team?.trim() ?? '';
   const actor = { userId: session.user.id, email: operatorUser.email };
-  const matches = teamQuery ? await findOperatorTeams({ db, actor, query: teamQuery }) : [];
+  const matches = teamQuery
+    ? await findOperatorTeams({ db, actor, query: teamQuery, options: query })
+    : [];
+  const selection = teamQuery ? await findOperatorTeams({ db, actor, query: teamQuery }) : [];
   const selected =
-    matches.find((team) => team.id === teamQuery || team.slug === teamQuery) ??
-    (matches.length === 1 ? matches[0] : null);
+    selection.find((team) => team.id === teamQuery || team.slug === teamQuery) ??
+    (selection.length === 1 ? selection[0] : null);
   const account = selected
     ? await readOperatorBillingAccount({ db, actor, teamId: selected.id })
     : null;
-  const audit = selected ? await listBillingOperatorAudit({ db, actor, teamId: selected.id }) : [];
-  const unbilled = selected ? await listOpenUnbilledAlerts({ db, actor, teamId: selected.id }) : [];
+  const audit = selected
+    ? await listBillingOperatorAudit({ db, actor, teamId: selected.id, options: query })
+    : [];
+  const unbilled = selected
+    ? await listOpenUnbilledAlerts({ db, actor, teamId: selected.id, options: query })
+    : [];
   const checkoutHref = polarCheckoutUrl(query.checkout ?? '');
   return { query, checkoutHref, unbilled, teamQuery, matches, selected, account, audit };
 }

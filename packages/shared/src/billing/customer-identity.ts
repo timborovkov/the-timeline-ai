@@ -101,7 +101,11 @@ export async function withTeamBillingIdentity<T>(
   },
   action: (
     identity: TeamBillingIdentity,
-    context: { db: Db; account: typeof teamBillingAccounts.$inferSelect },
+    context: {
+      db: Db;
+      account: typeof teamBillingAccounts.$inferSelect;
+      recordCheckout: (id: string) => Promise<void>;
+    },
   ) => Promise<T>,
 ): Promise<T> {
   const api = identityApi(input.provider);
@@ -109,6 +113,9 @@ export async function withTeamBillingIdentity<T>(
   // write. It survives a later rollback and requires provider reconciliation
   // before role removal, even if customer/member IDs never committed.
   await input.db.transaction(async (tx) => {
+    const [team] = await tx.select().from(teams).where(eq(teams.id, input.teamId)).for('update');
+    if (!team || team.disabledAt || team.deletionStartedAt || team.lifecycleWork.billingPending)
+      throw new PolarIdentityError('forbidden', 'workspace_lifecycle');
     const [account] = await tx
       .select()
       .from(teamBillingAccounts)
@@ -148,6 +155,18 @@ export async function withTeamBillingIdentity<T>(
   return input.db
     .transaction(async (tx) => {
       const db = tx as unknown as Db;
+      const [lifecycle] = await db
+        .select()
+        .from(teams)
+        .where(eq(teams.id, input.teamId))
+        .for('update');
+      if (
+        !lifecycle ||
+        lifecycle.disabledAt ||
+        lifecycle.deletionStartedAt ||
+        lifecycle.lifecycleWork.billingPending
+      )
+        throw new PolarIdentityError('forbidden', 'workspace_lifecycle');
       const [account] = await db
         .select()
         .from(teamBillingAccounts)
@@ -282,6 +301,18 @@ export async function withTeamBillingIdentity<T>(
     .then(async ({ identity }) =>
       input.db.transaction(async (tx) => {
         const db = tx as unknown as Db;
+        const [lifecycle] = await db
+          .select()
+          .from(teams)
+          .where(eq(teams.id, input.teamId))
+          .for('update');
+        if (
+          !lifecycle ||
+          lifecycle.disabledAt ||
+          lifecycle.deletionStartedAt ||
+          lifecycle.lifecycleWork.billingPending
+        )
+          throw new PolarIdentityError('forbidden', 'workspace_lifecycle');
         const [account] = await db
           .select()
           .from(teamBillingAccounts)
@@ -308,7 +339,23 @@ export async function withTeamBillingIdentity<T>(
           pending.some((row) => row.pendingRole !== null)
         )
           throw new PolarIdentityError('forbidden', 'billing_member');
-        return action(identity, { db, account });
+        return action(identity, {
+          db,
+          account,
+          recordCheckout: async (id) => {
+            await db
+              .update(teams)
+              .set({
+                lifecycleWork: {
+                  ...lifecycle.lifecycleWork,
+                  pendingCheckoutIds: [
+                    ...new Set([...(lifecycle.lifecycleWork.pendingCheckoutIds ?? []), id]),
+                  ],
+                },
+              })
+              .where(eq(teams.id, input.teamId));
+          },
+        });
       }),
     );
 }

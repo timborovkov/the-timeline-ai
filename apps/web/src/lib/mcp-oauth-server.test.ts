@@ -23,7 +23,7 @@ describe('Timeline MCP OAuth metadata', () => {
     const expected = {
       resource: 'https://timeline.example/api/mcp/server',
       authorization_servers: ['https://timeline.example'],
-      scopes_supported: ['read', 'capture', 'agent:ask'],
+      scopes_supported: ['read', 'capture', 'agent:ask', 'websites:scan', 'websites:manage'],
       bearer_methods_supported: ['header'],
       resource_name: 'Timeline MCP',
       resource_documentation: 'https://timeline.example/help',
@@ -51,7 +51,7 @@ describe('Timeline MCP OAuth metadata', () => {
       token_endpoint: 'https://timeline.example/oauth/token',
       registration_endpoint: 'https://timeline.example/oauth/register',
       revocation_endpoint: 'https://timeline.example/oauth/revoke',
-      scopes_supported: ['read', 'capture', 'agent:ask'],
+      scopes_supported: ['read', 'capture', 'agent:ask', 'websites:scan', 'websites:manage'],
       response_types_supported: ['code'],
       grant_types_supported: ['authorization_code', 'refresh_token'],
       token_endpoint_auth_methods_supported: ['none'],

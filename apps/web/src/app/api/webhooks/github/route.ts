@@ -159,6 +159,7 @@ export async function POST(req: Request): Promise<Response> {
         providerConnectionId: integration.providerConnectionId,
       })),
     });
+    if (!recorded.deliveryId) return NextResponse.json({ ok: true, reason: 'no_active_targets' });
     deliveryRowId = recorded.deliveryId;
   } catch (err) {
     reportCaughtError(err, {

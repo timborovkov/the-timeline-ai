@@ -29,6 +29,7 @@ import type {
   RenderedMessage,
   SupportRequestMessageInput,
   TeamInviteMessageInput,
+  TeamDeletionMessageInput,
   WelcomeMessageInput,
 } from '#src/messaging/types.js';
 
@@ -651,6 +652,24 @@ export function renderMessage<TIntent extends MessageIntent>(
   input: MessageInput<TIntent>,
 ): RenderedMessage {
   switch (intent) {
+    case 'team_deletion': {
+      const message = input as TeamDeletionMessageInput;
+      const subject = message.admin
+        ? 'Team deletion request requires review'
+        : 'Your team deletion request was received';
+      const text = `Team ID: ${message.teamId}. The team is disabled for all members. New usage accrual has stopped and subscription renewal cancellation is being processed. Permanent deletion requires platform administrator action. Contact support to request restoration before deletion starts.`;
+      return {
+        intent,
+        to: message.to,
+        subject,
+        textBody: text,
+        htmlBody: htmlLayout({
+          title: subject,
+          preview: subject,
+          body: `<p>${escapeHtml(text)}</p>`,
+        }),
+      };
+    }
     case 'team_invite':
       return renderTeamInvite(input as TeamInviteMessageInput);
     case 'support_request':

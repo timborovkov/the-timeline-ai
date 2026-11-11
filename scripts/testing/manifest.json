@@ -2436,5 +2436,9 @@
   },
   "packages/shared/src/websites/runtime.test.ts": {
     "group": "db"
+  },
+  "packages/shared/src/team-lifecycle/lifecycle.test.ts": {
+    "group": "integration",
+    "isolation": "registration"
   }
 }
