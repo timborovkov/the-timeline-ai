@@ -27,7 +27,7 @@ function Money({ value }: { value: number | null }) {
 export function BillingBenefitsSummary({ summary }: { summary: BillingPresentation }) {
   const { credit, charges, cap, members } = summary;
   return (
-    <div className="space-y-4" data-billing-benefits>
+    <div className="space-y-6" data-billing-benefits>
       {summary.allowances.length > 0 ? (
         <p className="text-sm text-fg-muted">
           Monthly allowances reset {billingDate(summary.calendarPeriod.end)} (UTC). Each meter has
@@ -35,8 +35,14 @@ export function BillingBenefitsSummary({ summary }: { summary: BillingPresentati
         </p>
       ) : null}
       {credit.status !== 'not_applicable' ? <IncludedUsageCredit credit={credit} /> : null}
-      {<BillingRecordedCharges charges={charges} summary={summary} credit={credit} />}
-      <section className="space-y-1 text-sm" aria-label="Included members">
+      <div className="rounded-lg bg-surface p-5">
+        <BillingRecordedCharges charges={charges} summary={summary} credit={credit} />
+      </div>
+      <section
+        className="space-y-2 rounded-lg bg-surface p-5 text-sm"
+        aria-label="Included members"
+      >
+        <h3 className="text-sm font-medium">Members</h3>
         <p>
           Members: {members.current} current · {members.included ?? 'Custom'} included
         </p>
@@ -78,7 +84,7 @@ function BillingSpendCapSummary({
   summary: BillingPresentation;
 }) {
   return (
-    <section className="space-y-1 text-sm" aria-label="Monthly spend cap">
+    <section className="space-y-2 rounded-lg bg-surface p-5 text-sm" aria-label="Monthly spend cap">
       <p>
         Monthly spend cap: <Money value={cap.usedCents} /> used of <Money value={cap.limitCents} />
       </p>
@@ -105,7 +111,7 @@ function IncludedUsageCredit({
   };
 }) {
   return (
-    <section className="space-y-2 border border-border p-3" aria-label="Included usage credit">
+    <section className="space-y-3 rounded-lg bg-surface p-5" aria-label="Included usage credit">
       <h3 className="text-sm font-medium">Included usage credit</h3>
       {credit.period ? (
         <>
