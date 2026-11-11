@@ -21,6 +21,12 @@ manage schedules, pause and archive sources. Archiving stops new work and retain
 evidence; it is not erasure. Public URLs pass the existing SSRF guard. Scans read
 at most five pages, without external links, subdomains or authenticated content.
 
+The source list shows the latest scan outcome
+and relative time (completion time for finished scans), with a link to timeline
+changes when pages changed. Queued, crawling and processing runs keep scan controls
+disabled across the team while the list refreshes every ten seconds. History
+expands beneath each source with past runs and their evidence links.
+
 `websites` holds configuration; `website_runs` holds admission, actor/credential
 provenance, frozen billing policy, status and usage. Existing `website_sources`
 rows remain immutable provider checkpoints/snapshots. `website_pages` links a
@@ -98,7 +104,8 @@ HTTP endpoints use the signed-in active team with same-origin mutation checks, o
 existing MCP bearer credentials (resource `/api/mcp/server`). Credentials must be
 explicitly granted website scopes; existing grants do not gain them automatically.
 
-- `GET /api/websites`: list active sources.
+- `GET /api/websites`: list active sources with a nullable `latestRun` summary
+  (id, status, creation/completion times and changed-page count).
 - `POST /api/websites`: create `{url, subject, permissionConfirmed: true}`; does not scan.
 - `GET /api/websites/:id`: source and recent run history.
 - `PATCH /api/websites/:id`: schedule and/or paused state; admin authority required.
