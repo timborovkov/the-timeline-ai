@@ -40,6 +40,10 @@ capture and cannot replace the promoted document’s edited or private content.
 The promoted document remains searchable even when a later scan supersedes its
 original website evidence.
 
+Capture time is an observation date, not proof that a page’s claims were newly authored.
+Search uses the weaker observation-date freshness signal when no trustworthy source
+revision date is available. See [retrieval freshness and conflicting evidence](relational-memory.md#read-time-freshness-and-disagreements) for the shared ranking and authority contract.
+
 ## Billing and safeguards
 
 The `accepted_sources` meter charges **20 source units per captured page**,

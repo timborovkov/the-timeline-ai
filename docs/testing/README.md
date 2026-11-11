@@ -118,3 +118,20 @@ pending Company proposals, and absence of canonical objects. Worker dispatch is
 inline; Redis/browser transport and vector indexing are outside this test.
 Local S3 defaults follow Compose; override with `WEBSITE_SCAN_LIVE_S3_ENDPOINT`,
 `WEBSITE_SCAN_LIVE_S3_ACCESS_KEY_ID`, and `WEBSITE_SCAN_LIVE_S3_SECRET_ACCESS_KEY`.
+
+## Freshness and conflict-context verification
+
+Changes to evidence ranking require deterministic source-date, weak upload-date,
+historical-query, pagination and visibility regressions plus `bun run test:eval`.
+The live agent suite's supplied vector hits do not verify actual retrieval:
+exercise real embeddings and isolated Qdrant points with `bun run test:freshness-eval:live` (`OPENROUTER_API_KEY`, local `QDRANT_URL` and its API key). Set `FRESHNESS_EVAL_REPORT` to save the synthetic evidence report. Use synthetic
+cross-source examples, including Telegram corrections, and clean up the unique
+fixture collection afterwards. Record baseline/candidate recall and p95 across
+30 repeated queries after three warmups per mode, without concurrent validation jobs; the release target is no required-evidence loss and no more
+than 25% p95 retrieval regression. Repeat each critical live answer scenario
+three times and require correct citations and current/pending distinctions.
+
+Browser verification covers approval evidence links, revision/acceptance and the
+subsequent answer, plus Help/FAQ navigation and responsive themes. Missing live
+prerequisites or a failed quality/latency gate remain unverified release evidence;
+offline tests and screenshots do not substitute for them.

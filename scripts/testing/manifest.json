@@ -2,6 +2,8 @@
   "apps/web/src/app/team-deletion-requested/page.test.tsx": {
     "group": "dom"
   },
+  "packages/shared/src/agent/freshness.live-eval.test.ts": { "group": "live" },
+  "packages/shared/src/retrieval/ranking.test.ts": { "group": "unit" },
   "apps/web/src/app/(landing)/page.test.tsx": {
     "group": "dom"
   },

@@ -91,3 +91,40 @@ PostgreSQL holds canonical records, immutable sources, provenance, approvals and
 New scans reserve up to 100 accepted-source units and settle 20 units per captured page once, including unchanged pages. Legacy jobs retain their original multiplier. Immutable `website_sources` snapshots let retries reuse identical bytes. Current retrieval favours ready page versions while historical citations remain accessible.
 
 [Local setup](setup/local.md) and [Railway](railway.md#environment-variables) own credentials; [live evaluation](testing/README.md#live-website-scan) owns verification. [Provider controls](providers.md) and [support deletion](setup/manual-support-deletion.md) cover retention and erasure.
+
+## Read-time freshness and disagreements
+
+Timeline and document semantic searches share bounded freshness ranking. `ranking`
+accepts `auto`, `relevance`, or `balanced`. Auto balances ordinary searches and
+preserves relevance for historical ranges and exact-source inspection. Balanced
+search considers at most 200 semantic candidates, hydrates visibility and dates,
+deduplicates, ranks, then paginates. Candidate-limit metadata describes bounded
+recall, not an exhaustive search. Semantic `score` stays unchanged; separate
+ranking metadata records the boost, effective date/basis, and ranking clock.
+
+Source-date freshness contributes at most 0.05 with a 30-day half-life. Uploads
+without trustworthy source dates and website observations receive at most 0.01.
+Missing, invalid and future dates receive no boost. Telegram/Slack message time,
+email occurrence, meeting evidence, and integration action time remain distinct
+from ingestion and indexing time. Captured attachments resolve visible parent-event
+provenance before falling back to upload time. Re-embedding never renews evidence age.
+Historical/exact reads remain available; internal semantic pagination must use
+relevance explicitly. No ranking score qualifies a canonical write.
+
+Answer tools enrich event/document matches with bounded conversation evidence,
+current objects and pending proposals through scoped reads. Identity comes from
+explicit object IDs or SQL-hydrated source associations, never a semantic top
+match or an unverified vector payload. At most five objects and five relevant
+pending items per object are included. Bundles are filtered to relevant pending
+items before truncation. Adapter failures and truncation are disclosed.
+
+Current records, raw claims, and pending changes are distinct. Pending proposals
+remain noncanonical; rejected changes do not erase source history. Source-specific
+answers attribute the source, historical answers respect the requested period,
+and unresolved contradictions retain both citations without an invented resolution.
+Conversation context preserves chronology; unrelated newer messages do not override
+a record. Existing provider/human authority rules remain authoritative. Retrieval
+cannot guarantee that every contradictory source was found.
+
+Customer explanations live in Help → Capture and the How it works FAQ; both must
+remain consistent with this contract and verified release behaviour.
