@@ -7,6 +7,7 @@ import { AuthShell } from '@/components/auth-shell';
 import { OAuthSignInButtons } from '@/components/oauth-buttons';
 import { auth, hasGitHubAuth, hasGoogleAuth } from '@/lib/auth';
 import { signedInAuthRedirect } from '@/lib/auth-redirect';
+import { readLastLoginMethod } from '@/lib/last-login-method';
 import { oauthSignInErrorMessage } from '@/lib/oauth-sign-in';
 import { readPendingInvite } from '@/lib/pending-invite';
 
@@ -30,6 +31,7 @@ export default async function SignInPage({ searchParams }: Props) {
 
   const oauthError = oauthSignInErrorMessage(error);
 
+  const lastLoginMethod = await readLastLoginMethod();
   return (
     <AuthShell
       title="Welcome back"
@@ -47,8 +49,13 @@ export default async function SignInPage({ searchParams }: Props) {
           {oauthError}
         </p>
       ) : null}
-      <OAuthSignInButtons callbackUrl={callbackUrl} google={hasGoogleAuth} github={hasGitHubAuth} />
-      <SignInForm callbackUrl={callbackUrl} />
+      <OAuthSignInButtons
+        lastLoginMethod={lastLoginMethod}
+        callbackUrl={callbackUrl}
+        google={hasGoogleAuth}
+        github={hasGitHubAuth}
+      />
+      <SignInForm lastUsed={lastLoginMethod === 'credentials'} callbackUrl={callbackUrl} />
     </AuthShell>
   );
 }
