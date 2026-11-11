@@ -301,7 +301,7 @@ describe('connector content manifest', () => {
     expect(drive.permissions.join(' ')).toContain('https://www.googleapis.com/auth/drive.readonly');
     expect(drive.permissions.join(' ')).not.toContain('drive.metadata.readonly');
     expect(drive.permissions.join(' ')).toContain('does not use Google user data to train');
-    expect(drive.permissions.join(' ')).toContain('Cited timeline events already captured stay');
+    expect(drive.permissions.join(' ')).toContain('but retains snapshots and captured history');
     expect(publicClaims).toContain('Historical files are not enumerated');
     expect(publicClaims).toContain('baseline snapshot without writing an event');
     expect(publicClaims).toContain('keeps the latest extracted text to detect later changes');

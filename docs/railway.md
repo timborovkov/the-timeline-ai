@@ -26,6 +26,8 @@ Railway provisions PostgreSQL and Redis from database templates. They remain cus
 
 
 
+The web build sets `experimental.preloadEntriesOnStart` to `false`, trading cold-route latency for lower idle memory. This is a source configuration; verify the deployed revision separately.
+
 ## Provisioning
 
 1. Create a Railway project and isolated production/staging environments as needed. Connect the repository; use the protected `production` branch for releases and verify each service setting.
