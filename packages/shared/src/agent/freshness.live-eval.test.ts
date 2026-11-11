@@ -205,7 +205,7 @@ live('freshness end-to-end live evaluation', () => {
       for (const row of records) {
         const privateRow = row.text.includes('PRIVATE_FRESHNESS_CANARY');
         await pg.query(
-          'INSERT INTO raw_events(id,team_id,author_user_id,visibility_owner_user_id,source,content_text,occurred_at,visibility,source_metadata) VALUES ($1,$2,$3,$3,$4,$5,$6,$7,$8)',
+          'INSERT INTO raw_events(id,team_id,author_user_id,visibility_owner_user_id,source,content_text,occurred_at,visibility,source_metadata) VALUES ($1,$2,$3,$3,$4,$5,$6,$7,$8::text::jsonb)',
           [
             row.id,
             teamId,
@@ -229,7 +229,7 @@ live('freshness end-to-end live evaluation', () => {
         [bundleId, teamId],
       );
       await pg.query(
-        "INSERT INTO agent_suggestion_items(id,suggestion_id,team_id,operation,target_kind,target_id,title,dedupe_key,proposed_payload) VALUES ($1,$2,$3,'update','task',$4,'Move launch','freshness',$5)",
+        "INSERT INTO agent_suggestion_items(id,suggestion_id,team_id,operation,target_kind,target_id,title,dedupe_key,proposed_payload) VALUES ($1,$2,$3,'update','task',$4,'Move launch','freshness',$5::text::jsonb)",
         [itemId, bundleId, teamId, objectId, JSON.stringify({ dueAt: '2026-11-20T12:00:00Z' })],
       );
       await pg.query(
@@ -247,6 +247,11 @@ live('freshness end-to-end live evaluation', () => {
           [factId, objectId],
         );
       }
+      const jsonShape = await pg.query(
+        'SELECT jsonb_typeof(source_metadata) AS kind FROM raw_events WHERE id=$1',
+        [records[9]?.id],
+      );
+      expect(jsonShape[0]?.kind).toBe('object');
       const embeddings = await embedMany({ texts: records.map((row) => row.text) });
       report.embeddingModel = embeddings.model;
       const client = createQdrantClient({
@@ -537,7 +542,7 @@ live('freshness end-to-end live evaluation', () => {
         [rejectedBundleId, teamId],
       );
       await pg.query(
-        "INSERT INTO agent_suggestion_items(id,suggestion_id,team_id,operation,target_kind,target_id,title,dedupe_key,proposed_payload) VALUES ($1,$2,$3,'update','task',$4,'Competing date','freshness-reject',$5)",
+        "INSERT INTO agent_suggestion_items(id,suggestion_id,team_id,operation,target_kind,target_id,title,dedupe_key,proposed_payload) VALUES ($1,$2,$3,'update','task',$4,'Competing date','freshness-reject',$5::text::jsonb)",
         [
           rejectedItemId,
           rejectedBundleId,

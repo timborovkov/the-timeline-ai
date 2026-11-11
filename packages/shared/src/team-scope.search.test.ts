@@ -200,7 +200,7 @@ describe('withTeam timeline semantic search', () => {
 
   it('keeps text anchors when optional Slack attachments have no transcript', async () => {
     await pg.query(
-      `UPDATE raw_events SET source='slack',source_metadata='{"slack_channel_id":"C-REVIEW","slack_thread_ts":"123"}'::jsonb,occurred_at='2026-06-01T09:01:00Z' WHERE id=ANY($1::uuid[])`,
+      `UPDATE raw_events SET source='slack',source_metadata='{"slack_channel_id":"C-REVIEW","slack_thread_ts":"1780304460"}'::jsonb,occurred_at='2026-06-01T09:01:00Z' WHERE id=ANY($1::uuid[])`,
       [[TEAM_EVENT, RELATED_EVENT]],
     );
     await pg.query('UPDATE raw_events SET content_text=NULL WHERE id=$1', [RELATED_EVENT]);
