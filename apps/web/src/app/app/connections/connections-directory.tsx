@@ -1,5 +1,8 @@
 'use client';
 
+import { Globe } from 'lucide-react';
+import Link from 'next/link';
+
 import {
   filterByDirectoryQuery,
   providerStatusTone,
@@ -126,10 +129,18 @@ export function ConnectionsDirectory({
   selectedId: string | null;
 }) {
   const visibleEmail = filterByDirectoryQuery([email], query)[0] ?? null;
+  const visibleWebsites = 'websites website sources add scan schedule'.includes(
+    query.trim().toLowerCase(),
+  );
   const visibleConnected = filterByDirectoryQuery(connected, query);
   const visibleAvailable = filterByDirectoryQuery(available, query);
 
-  if (!visibleEmail && visibleConnected.length === 0 && visibleAvailable.length === 0) {
+  if (
+    !visibleWebsites &&
+    !visibleEmail &&
+    visibleConnected.length === 0 &&
+    visibleAvailable.length === 0
+  ) {
     return (
       <ConnectionsEmptyHint>
         {query.trim() ? 'No matching sources.' : 'No sources available.'}
@@ -141,6 +152,25 @@ export function ConnectionsDirectory({
     <div className="[&>section+section]:-mt-px">
       {visibleEmail ? (
         <InboxSection email={visibleEmail} selected={selectedId === visibleEmail.id} />
+      ) : null}
+
+      {visibleWebsites ? (
+        <CollectionRow href="/app/connections/websites" activateLabel="Open website sources">
+          <CollectionRow.Leading>
+            <span className="flex size-7 items-center justify-center rounded-sm border border-border bg-bg">
+              <Globe className="size-5" aria-hidden="true" />
+            </span>
+          </CollectionRow.Leading>
+          <CollectionRow.Title>
+            <Link href="/app/connections/websites">Websites</Link>
+          </CollectionRow.Title>
+          <CollectionRow.Context>Add, scan, and schedule website sources.</CollectionRow.Context>
+          <CollectionRow.Actions>
+            <Link href="/app/connections/websites" className={CONNECTIONS_ROW_ACTION_CLASS}>
+              Open
+            </Link>
+          </CollectionRow.Actions>
+        </CollectionRow>
       ) : null}
 
       {visibleConnected.length > 0 ? (
