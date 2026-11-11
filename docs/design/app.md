@@ -1,5 +1,10 @@
 # Application design patterns
 
+Dashboard collections share the same title, context, section-band, and row
+boundary treatment. Detail views lead with a summary and editable properties;
+settings group related controls with short supporting text. Full source material
+and secondary context belong in disclosures with clear ways to open them.
+
 Collection indexes keep a bounded inner content width and shared responsive
 gutters. Section backgrounds and row separators extend to the main pane edges. Work’s empty Boards group is a compact inline prompt with Create board,
 so the work queue remains near the top even before a team creates its first board.
@@ -118,19 +123,31 @@ obvious without a lecture. Timeline has no inventory chip; Moments versus All
 events is the page mode.
 
 Each Moments row is a Linear-style collection row: time, one source icon, a
-single title line, and at most one muted context line. Do not duplicate the
+title of up to two lines, and at most one muted source/actor/context line.
+Source body previews belong in the inspector, not the collection row. Do not duplicate the
 icon on a rail node, and do not stack source, actor, title, and preview as
 separate competing headings. Stories and records share that same skeleton;
 pulses stay one muted line. Impact on the row is omitted; the inspector shows
 workspace consequences, structured facts, a matching `[ev:…]` citation chip per
 source evidence item, and a collapsed Original source
-disclosure. Attached files link to Documents. Sticky dates (`top-11` under the
-toolbar) and infinite scroll with virtualized rows remain. The default view ends at the current instant so
+disclosure. Attached files link to Documents. Sticky date bands and row boundaries extend to the main-pane edges while their
+content stays bounded. The date offset follows the measured toolbar height,
+including wrapped controls and expanded filters. Infinite scroll retains
+virtualized rows. The default view ends at the current instant so
 materialized calendar occurrences do not displace recent work. Upcoming context
 is an explicit seven-day view; the Calendar surface owns the complete future
 schedule. Compact Home moments are a denser scan of the same formatter: time,
 source, and title only, linking into this surface. Timeline pin and overflow
 actions stay visible without hover, using the shared item-action primitives.
+
+The inspector uses one quiet surface per source, sentence-case metadata, and
+three initial evidence items. Show older evidence reveals the next batch with
+its own visibility, audio, and removal controls. Long excerpts show four lines
+with View full evidence opening the complete text; Original source remains
+available. Repeated source previews are omitted above the evidence section.
+Related objects show their identity and a source-count disclosure instead of
+nested expanded evidence boxes. The shared inspector header allows a bounded
+multiline title and retains keyboard/focus behavior.
 
 ### Ask
 

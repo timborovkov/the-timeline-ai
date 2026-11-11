@@ -116,7 +116,12 @@ export function CollectionToolbar({
           <div className="ml-auto flex min-h-10 items-center">{resolvedView}</div>
         ) : null}
         {actions ? (
-          <div className={cn('flex min-h-10 items-center', !resolvedView && 'ml-auto')}>
+          <div
+            className={cn(
+              'flex min-h-10 min-w-0 max-w-full items-center',
+              !resolvedView && 'ml-auto',
+            )}
+          >
             {actions}
           </div>
         ) : null}

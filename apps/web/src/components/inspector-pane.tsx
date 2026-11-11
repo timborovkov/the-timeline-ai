@@ -157,14 +157,14 @@ export function InspectorPane() {
         )}
         tabIndex={-1}
       >
-        <header className="flex h-12 shrink-0 items-center justify-between border-b border-border px-3">
+        <header className="flex min-h-12 shrink-0 items-start justify-between gap-3 border-b border-border px-4 py-3">
           <div className="flex min-w-0 items-baseline gap-2 text-sm text-fg-muted">
             <span className="shrink-0 text-xs">{kind}</span>
             <span className="shrink-0 text-fg-dim">·</span>
             <span
               id="inspector-title"
               title={title ?? 'Inspector'}
-              className="min-w-0 truncate font-medium text-fg"
+              className="min-w-0 line-clamp-3 break-words font-medium leading-5 text-fg"
             >
               {title ?? 'Inspector'}
             </span>
@@ -175,7 +175,7 @@ export function InspectorPane() {
             size="icon"
             aria-label="Close inspector"
             onClick={inspector.hide}
-            className="size-7"
+            className="size-7 shrink-0"
           >
             <X className="size-3.5" />
           </Button>

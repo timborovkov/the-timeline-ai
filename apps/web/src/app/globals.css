@@ -209,6 +209,14 @@
   isolation: isolate;
 }
 
+[data-app-width='collection'] .timeline-row-selected {
+  box-shadow: none;
+}
+
+[data-app-width='collection'] .timeline-row-selected::before {
+  border-inline-start: 2px solid var(--signal);
+}
+
 /* Sticky in-page chrome (Timeline's CollectionToolbar) sits under the 48px
    shell header. Padding on the overflow scroller becomes a stuck gap because
    position:sticky cannot occupy the scroll container's padding box. A negative

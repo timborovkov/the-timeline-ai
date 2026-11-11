@@ -324,7 +324,10 @@ export function CollectionRowsSkeleton({ count = 6 }: { count?: number }) {
  */
 function TimelineRowSkeleton() {
   return (
-    <li className="grid grid-cols-1 gap-x-4 gap-y-2 border-b border-border py-3 md:grid-cols-[6.75rem_minmax(0,1fr)_12rem]">
+    <li
+      data-slot="collection-row"
+      className="grid grid-cols-1 gap-x-4 gap-y-2 border-b border-border py-3 md:grid-cols-[6.75rem_minmax(0,1fr)_12rem]"
+    >
       <Skeleton className="h-3 w-14" />
       <div className="min-w-0 space-y-2">
         <Skeleton className="h-3 w-48" />

@@ -168,6 +168,7 @@ Ask, Work, Documents, Meetings, Connections, Usage, and Team.
   Forms, settings, and reading views keep the default cap without decorative bleed.
 - Full-canvas chat and boards may opt into full bleed. Timeline opts into
   flush-top so its sticky `CollectionToolbar` can sit under the 48px header;
+  date bands follow its measured height when controls wrap;
   do not hide main padding with a negative sticky `top`.
 - Provider-created chat sessions use a compact `TG`, `SL`, or neutral `EXT`
   badge in desktop and mobile history. Web-created sessions remain unbadged;

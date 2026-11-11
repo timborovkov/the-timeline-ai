@@ -323,7 +323,7 @@ describe('TimelineList archive virtualization', () => {
     ]);
 
     expect(html).toContain('data-timeline-mode="moments"');
-    expect(html).toContain('sticky top-11');
+    expect(html).toContain('sticky top-[var(--timeline-toolbar-height,2.75rem)]');
     expect(html).not.toContain('sticky top-0');
     expect(html).not.toContain('<ol');
     expect(html).not.toContain('[ev:');
@@ -346,7 +346,7 @@ describe('TimelineList archive virtualization', () => {
     );
 
     expect(html).toContain('<ol');
-    expect(html).not.toContain('sticky top-11');
+    expect(html).not.toContain('sticky top-[var(--timeline-toolbar-height,2.75rem)]');
     expect(html).toContain('aria-label="Recent timeline moments"');
   });
 });
@@ -711,6 +711,10 @@ describe('TimelineList evidence-owned actions', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /^Telegram message 4 ·/i }));
     renderLastInspectorContent();
+    expect(
+      screen.getAllByRole('group', { name: /Actions for Telegram evidence .* from Mikael/ }),
+    ).toHaveLength(3);
+    fireEvent.click(screen.getByRole('button', { name: 'Show 2 older evidence items' }));
 
     expect(
       screen.getAllByRole('group', { name: /Actions for Telegram evidence .* from Mikael/ }),
@@ -837,10 +841,12 @@ describe('TimelineList inspector source caps', () => {
     renderLastInspectorContent();
     expect(screen.getAllByText('Meeting note 8').length).toBeGreaterThan(0);
     expect(screen.queryByText('Meeting note 0')).toBeNull();
-    expect(screen.getByRole('button', { name: 'Show 1 older evidence item' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Show 6 older evidence items' })).toBeTruthy();
     expect(screen.queryByLabelText(/Audio for Meeting evidence.*4:00 PM/i)).toBeNull();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Show 1 older evidence item' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Show 6 older evidence items' }));
+    expect(screen.queryByText('Meeting note 0')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Show 3 older evidence items' }));
 
     expect(screen.getByText('Meeting note 0')).toBeTruthy();
     expect(
