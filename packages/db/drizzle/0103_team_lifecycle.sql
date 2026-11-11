@@ -125,7 +125,6 @@ CREATE TRIGGER user_onboarding_dismissals_active_team BEFORE INSERT OR UPDATE ON
 CREATE TRIGGER user_pins_active_team BEFORE INSERT OR UPDATE ON user_pins FOR EACH ROW EXECUTE FUNCTION reject_inactive_team_write();
 CREATE TRIGGER website_sources_active_team BEFORE INSERT OR UPDATE ON website_sources FOR EACH ROW EXECUTE FUNCTION reject_inactive_team_write();
 
-UPDATE teams SET disabled_periods = jsonb_build_array(jsonb_build_object('start', disabled_at)) WHERE disabled_at IS NOT NULL;
 --> statement-breakpoint
 -- Workspace audit content is erased only by an authorized permanent-cleanup operation.
 CREATE OR REPLACE FUNCTION prevent_audit_log_mutation() RETURNS trigger LANGUAGE plpgsql AS $$

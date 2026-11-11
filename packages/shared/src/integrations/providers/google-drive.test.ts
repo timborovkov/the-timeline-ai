@@ -2,6 +2,8 @@ import { expect } from '@timeline/test-support';
 import { vi } from '@timeline/test-support';
 import { afterEach, beforeEach, describe, it } from 'bun:test';
 
+import { ProviderAuthorizationError } from '#src/integrations/types.js';
+
 import type {
   DriveCaptureServices,
   DriveSyncContext,
@@ -483,6 +485,52 @@ describe('packDriveChangeEvents', () => {
 });
 
 describe('googleDriveProvider', () => {
+  it.each([
+    { status: 400, body: { error: 'invalid_grant' }, refresh: true, terminal: true },
+    { status: 401, body: {}, refresh: false, terminal: true },
+    { status: 403, body: {}, refresh: false, terminal: true },
+    {
+      status: 403,
+      body: { error: { errors: [{ reason: 'userRateLimitExceeded' }] } },
+      refresh: false,
+      terminal: false,
+    },
+    { status: 503, body: {}, refresh: false, terminal: false },
+    { status: 429, body: {}, refresh: true, terminal: false },
+  ])(
+    'classifies inaccessible Drive watch cleanup at HTTP $status',
+    async ({ status, body, refresh, terminal }) => {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn().mockResolvedValue(new Response(JSON.stringify(body), { status })),
+      );
+      let failure: unknown;
+      try {
+        await googleDriveProvider.deprovisionWebhook?.({
+          integration: { id: 'fixture', teamId: 'fixture' } as never,
+          tokens: {
+            access_token: 'synthetic',
+            refresh_token: 'synthetic-refresh',
+            expires_at: refresh ? 0 : Date.now() + 3600000,
+          },
+          subscription: {
+            externalSubscriptionId: JSON.stringify({
+              id: 'fixture-channel',
+              resourceId: 'fixture-resource',
+            }),
+            resourceKind: 'drive.changes',
+            externalResourceId: 'fixture',
+            eventType: 'change',
+          },
+        });
+      } catch (error) {
+        failure = error;
+      }
+      expect(failure).toBeInstanceOf(Error);
+      expect(failure instanceof ProviderAuthorizationError).toBe(terminal);
+    },
+  );
+
   beforeEach(() => {
     externalFetchMock.mockReset();
     externalFetchMock.mockImplementation((input, init) => globalThis.fetch(input, init));

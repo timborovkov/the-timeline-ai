@@ -1,5 +1,3 @@
-import { readFileSync } from 'node:fs';
-
 /** Exercise real migrations and tenant state: deletion must never damage another team or reopen access. */
 import { PGlite } from '@electric-sql/pglite';
 import { teams, teamMembers, teamBillingAccounts, schema, type Db } from '@timeline/db';
@@ -431,19 +429,16 @@ describe('team lifecycle', () => {
     ).rejects.toThrow('disabled');
   });
   it('backfills unknown historical suspensions without relying on billing for access', async () => {
-    await pg.exec(
-      `UPDATE teams SET created_at=now()-interval '5 days' WHERE id='${TEAM}'; UPDATE team_members SET created_at=now()-interval '5 days' WHERE team_id='${TEAM}'; INSERT INTO team_billing_accounts (team_id,security_state,plan_id,billing_state,shadow_billing,price_override) VALUES ('${TEAM}','suspended','team','team_active',true,'{"includedActiveMembers":0}')`,
-    );
-    const migration = readFileSync(
-      new URL('../../../db/drizzle/0103_team_lifecycle.sql', import.meta.url),
-      'utf8',
-    );
-    await pg.exec(
-      migration.slice(
-        migration.indexOf('UPDATE teams t SET disabled_at = COALESCE'),
-        migration.indexOf('CREATE INDEX teams_lifecycle_work_idx'),
-      ),
-    );
+    await pg.close();
+    pg = new PGlite();
+    await applyDbMigrations(pg, async (filename) => {
+      if (filename !== '0103_team_lifecycle.sql') return;
+      await pg.exec(`INSERT INTO users (id,email,"emailVerified") VALUES ('${ADMIN}','ops@example.test',now()),('${OWNER}','owner@example.test',now());
+        INSERT INTO teams (id,name,slug,created_at) VALUES ('${TEAM}','First','legacy-first',now()-interval '5 days');
+        INSERT INTO team_members (team_id,user_id,role,created_at) VALUES ('${TEAM}','${OWNER}','owner',now()-interval '5 days');
+        INSERT INTO team_billing_accounts (team_id,security_state,plan_id,billing_state,shadow_billing,price_override) VALUES ('${TEAM}','suspended','team','team_active',true,'{"includedActiveMembers":0}');`);
+    });
+    db = drizzle(pg) as unknown as Db;
     const [team] = await db.select().from(teams).where(eq(teams.id, TEAM));
     expect(team?.lifecycleWork).toMatchObject({ disabledDateUnknown: true, billingPending: true });
     await beginTeamDeletion(db, actor, {
