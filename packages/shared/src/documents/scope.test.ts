@@ -603,7 +603,10 @@ describe('document scope — visibility filter', () => {
           hits
             .filter((hit) => {
               if (opts.documentId && hit.payload.document_id !== opts.documentId) return false;
-              if (opts.fileKinds?.length && !opts.fileKinds.includes(hit.payload.file_kind!))
+              if (
+                opts.fileKinds?.length &&
+                (!hit.payload.file_kind || !opts.fileKinds.includes(hit.payload.file_kind))
+              )
                 return false;
               return (
                 hit.payload.file_kind === 'document' ||
