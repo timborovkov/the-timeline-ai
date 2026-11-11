@@ -1,4 +1,7 @@
 {
+  "apps/web/src/app/team-deletion-requested/page.test.tsx": {
+    "group": "dom"
+  },
   "apps/web/src/app/(landing)/page.test.tsx": {
     "group": "dom"
   },
