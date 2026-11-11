@@ -133,16 +133,7 @@ export default async function MeetingsPage({
     return { id: m.userId, label: displayMemberLabel(u) };
   });
   const cap = settings.meetingMinutesCap;
-  const normalizedQuery = query.toLocaleLowerCase();
-  const filteredSavedMeetings = savedMeetings.filter((meeting) => {
-    if (!normalizedQuery) return true;
-    return [
-      displayMeetingLabel(meeting),
-      meeting.description ?? '',
-      displaySourceLabel(meeting.platform),
-      ...meeting.aliases,
-    ].some((value) => value.toLocaleLowerCase().includes(normalizedQuery));
-  });
+  const filteredSavedMeetings = filterSavedMeetings(savedMeetings, query);
   const hasCaptureFilters = tab === 'captures' && (Boolean(query) || filter !== 'all');
   const hasSavedSearch = Boolean(query);
   const clearCurrentViewHref = meetingHref({ tab });
@@ -216,6 +207,19 @@ export default async function MeetingsPage({
       )}
     </div>
   );
+}
+
+function filterSavedMeetings(savedMeetings: SavedMeetingRow[], query: string): SavedMeetingRow[] {
+  const normalizedQuery = query.toLocaleLowerCase();
+  return savedMeetings.filter((meeting) => {
+    if (!normalizedQuery) return true;
+    return [
+      displayMeetingLabel(meeting),
+      meeting.description ?? '',
+      displaySourceLabel(meeting.platform),
+      ...meeting.aliases,
+    ].some((value) => value.toLocaleLowerCase().includes(normalizedQuery));
+  });
 }
 
 function MeetingsViewNavigation({ tab }: { tab: MeetingTab }) {
