@@ -1,4 +1,4 @@
-import { Children, isValidElement, type ReactNode } from 'react';
+import { Children, isValidElement, type MouseEventHandler, type ReactNode } from 'react';
 
 import {
   createCollectionSlot,
@@ -29,6 +29,7 @@ type CollectionRowProps = {
   children?: ReactNode;
   selected?: boolean;
   className?: string;
+  onNavigate?: MouseEventHandler<HTMLAnchorElement>;
 } & (
   | {
       onActivate: () => void;
@@ -66,6 +67,7 @@ export function CollectionRow({
   activateLabel,
   href,
   className,
+  onNavigate,
 }: CollectionRowProps) {
   const slots = readCollectionSlots(children, ROW_SLOTS);
   const { titleHint, contextTitle } = readRowHints(children);
@@ -89,6 +91,7 @@ export function CollectionRow({
       {href ? (
         <a
           href={href}
+          onClick={onNavigate}
           aria-label={activateLabel}
           className="absolute inset-0 z-0 rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/50"
         />

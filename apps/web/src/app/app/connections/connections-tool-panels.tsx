@@ -2,13 +2,14 @@
 
 import { ExternalLink, KeyRound, ScrollText, Server, Webhook, Wrench } from 'lucide-react';
 import Link from 'next/link';
-import { type ReactNode } from 'react';
+import { type MouseEvent, type ReactNode } from 'react';
 
 import type { ConnectionsToolSheet } from '@/app/app/connections/connection-directory';
 import type { IntegrationsPageModel } from '@/app/app/team/integrations/integrations-page-model';
 
 import {
   agentMcpAccessMatchesQuery,
+  openConnectionsPanel,
   filterByDirectoryQuery,
 } from '@/app/app/connections/connection-directory';
 import {
@@ -73,14 +74,26 @@ function ToolRow({
       {actionLabel}
     </Link>
   ) : (
-    <a href={`#${id}`} className={CONNECTIONS_ROW_ACTION_CLASS}>
+    <a
+      href={`#${id}`}
+      onClick={(event) => {
+        openConnectionsPanel(event, onOpen);
+      }}
+      className={CONNECTIONS_ROW_ACTION_CLASS}
+    >
       {actionLabel}
     </a>
   );
   const rowActivate = href
     ? { href, activateLabel: actionName }
     : onOpen
-      ? { href: `#${id}`, activateLabel: `Open ${title} details` }
+      ? {
+          href: `#${id}`,
+          activateLabel: `Open ${title} details`,
+          onNavigate: (event: MouseEvent<HTMLAnchorElement>) => {
+            openConnectionsPanel(event, onOpen);
+          },
+        }
       : {};
   return (
     <div id={id} className="scroll-mt-24">

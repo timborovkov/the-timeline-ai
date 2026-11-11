@@ -239,30 +239,7 @@ export function ConnectionsWorkspace({
   }
 
   return (
-    <div
-      className="space-y-4"
-      onClick={(event) => {
-        if (
-          event.defaultPrevented ||
-          event.button !== 0 ||
-          event.metaKey ||
-          event.ctrlKey ||
-          event.shiftKey ||
-          event.altKey
-        )
-          return;
-        const anchor =
-          event.target instanceof Element ? event.target.closest('a[href^="#"]') : null;
-        const target = anchor?.getAttribute('href')?.slice(1);
-        if (
-          !target ||
-          (!isConnectionsToolSheet(target) && !directoryHashOwnerId(target, providers))
-        )
-          return;
-        event.preventDefault();
-        openHash(target);
-      }}
-    >
+    <div className="space-y-4">
       <ConnectionsTabs
         tab={tab}
         onChange={selectTab}
@@ -284,6 +261,7 @@ export function ConnectionsWorkspace({
             available={available}
             query={query}
             selectedId={openProvider?.id ?? null}
+            onOpen={openHash}
           />
         ) : null}
         {tab === 'agent' ? (

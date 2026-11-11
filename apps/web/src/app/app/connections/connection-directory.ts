@@ -1,3 +1,5 @@
+import type { MouseEvent } from 'react';
+
 import type { IntegrationsPageModel } from '@/app/app/team/integrations/integrations-page-model';
 
 import {
@@ -470,4 +472,19 @@ export function connectionHeaderMetadata(
       ? ([{ label: 'Available', value: availableCount, mono: true as const }] as const)
       : ([] as const)),
   ];
+}
+
+export function openConnectionsPanel(event: MouseEvent<HTMLAnchorElement>, onOpen?: () => void) {
+  if (
+    !onOpen ||
+    event.defaultPrevented ||
+    event.button !== 0 ||
+    event.metaKey ||
+    event.ctrlKey ||
+    event.shiftKey ||
+    event.altKey
+  )
+    return;
+  event.preventDefault();
+  onOpen();
 }
