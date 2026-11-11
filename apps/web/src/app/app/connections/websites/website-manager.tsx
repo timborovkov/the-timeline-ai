@@ -242,7 +242,9 @@ export function WebsiteManager({
                     confirmationTrigger.current = trigger;
                     setConfirmation({ websiteId: website.id, action: 'scan' });
                   }}
-                  toggleHistory={() => setSelected(selected === website.id ? null : website.id)}
+                  toggleHistory={() => {
+                    setSelected(selected === website.id ? null : website.id);
+                  }}
                 />
               </div>
               {website.blockedReason && (
@@ -397,7 +399,9 @@ function WebsiteScanActions({
         variant="outline"
         disabled={busy || website.paused || hasActiveScan}
         title={hasActiveScan && !scanning ? 'Another website scan is in progress' : undefined}
-        onClick={(event) => scan(event.currentTarget)}
+        onClick={(event) => {
+          scan(event.currentTarget);
+        }}
       >
         <RefreshCw
           aria-hidden="true"
