@@ -44,6 +44,7 @@ export const WORKSPACE_OPERATOR_POLICY = {
   'timeline.listImpactItems': read,
   'timeline.listArtifactClusters': read,
   'timeline.listEvidencePackArtifactClusters': read,
+  'timeline.resolveEvidenceObjectIds': read,
   'timeline.rankEvidencePackSupportByStoredVectors': write,
   'timeline.listSourceFacets': read,
   'timeline.listEventsForMomentLookup': read,

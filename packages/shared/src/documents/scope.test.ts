@@ -504,11 +504,66 @@ describe('document scope — visibility filter', () => {
       query: 'Website capture',
       fileKinds: ['captured'],
     });
-    expect(results.map((row) => ({ version: row.version, eventId: row.sourceRawEventId }))).toEqual(
-      versions.map((row) => ({ version: row.version, eventId: row.eventId })),
-    );
+    expect(
+      results
+        .map((row) => ({ version: row.version, eventId: row.sourceRawEventId }))
+        .sort((a, b) => a.version - b.version),
+    ).toEqual(versions.map((row) => ({ version: row.version, eventId: row.eventId })));
     const [document] = await db.select().from(documents).where(eq(documents.id, documentId));
     expect(document?.sourceRawEventId).toBe(versions[0]?.eventId);
+    const parentId = randomUUID();
+    await pg.query(
+      `INSERT INTO raw_events(id,team_id,author_user_id,source,content_text,visibility,occurred_at) VALUES ($1,$2,$3,'telegram','Old attachment source','team','2026-01-01')`,
+      [parentId, TEAM_ID, USER_A],
+    );
+    await pg.query(
+      `UPDATE raw_events SET source='document', occurred_at='2026-11-11', source_metadata=jsonb_build_object('parent_raw_event_id',$1::text) WHERE id=$2`,
+      [parentId, versions[0]?.eventId],
+    );
+    const backed = await scope.searchDocumentChunks({
+      query: 'capture',
+      fileKinds: ['captured'],
+      rankingNow: new Date('2026-11-11'),
+    });
+    const backedVersion = backed.find((row) => row.version === 1);
+    if (!backedVersion) throw new Error('Missing backed version');
+    expect(backedVersion.sourceEvidenceEventId).toBe(parentId);
+    expect(backedVersion.ranking?.evidenceDate).toBe('2026-01-01T00:00:00.000Z');
+    expect(backedVersion.ranking?.freshnessBoost).toBeLessThan(0.001);
+    await pg.query(
+      `UPDATE raw_events SET visibility='private', visibility_owner_user_id=$1, author_user_id=$1 WHERE id=$2`,
+      [USER_B, parentId],
+    );
+    const hidden = await scope.searchDocumentChunks({
+      query: 'capture',
+      fileKinds: ['captured'],
+      rankingNow: new Date('2026-11-11'),
+    });
+    const hiddenVersion = hidden.find((row) => row.version === 1);
+    if (!hiddenVersion) throw new Error('Missing hidden version');
+    expect(hiddenVersion.sourceEvidenceEventId).not.toBe(parentId);
+    expect(hiddenVersion.ranking?.dateBasis).toBe('uploaded');
+    expect(hiddenVersion.ranking?.freshnessBoost).toBe(0.01);
+    // Promotion retains document metadata, but a later manual version has its own provenance.
+    await pg.query(`UPDATE raw_events SET visibility='team' WHERE id=$1`, [parentId]);
+    await pg.query(
+      `UPDATE documents SET file_kind='document', metadata=jsonb_build_object('parent_raw_event_id',$1::text) WHERE id=$2`,
+      [parentId, documentId],
+    );
+    await pg.query(
+      `UPDATE raw_events SET source='document',occurred_at='2026-11-11',source_metadata='{}' WHERE id=$1`,
+      [versions[1]?.eventId],
+    );
+    const promoted = await scope.searchDocumentChunks({
+      query: 'capture',
+      rankingNow: new Date('2026-11-11'),
+    });
+    expect(promoted.find((row) => row.version === 1)?.sourceEvidenceEventId).toBe(parentId);
+    expect(promoted.find((row) => row.version === 2)?.sourceEvidenceEventId).toBe(
+      versions[1]?.eventId,
+    );
+    expect(promoted.find((row) => row.version === 2)?.ranking?.dateBasis).toBe('uploaded');
+    expect(promoted.find((row) => row.version === 2)?.ranking?.freshnessBoost).toBe(0.01);
   });
 
   it('keeps a promoted website version searchable after a newer crawl supersedes its source event', async () => {

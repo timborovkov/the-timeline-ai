@@ -14,6 +14,7 @@
     "test:ci": "bun run test:e2e-env && bun run test:demo-fixture && bun run test:eval && bun run test:reconciliation-eval && bun run test:dist-imports",
     "test:eval": "bun --conditions=development scripts/testing/run.ts src/agent/evals.test.ts src/agent/ask.test.ts src/agent/surface-evals.test.ts src/objects/summary-evals.test.ts src/task-categories/evals.test.ts src/team-scope.search.test.ts && bun --conditions=development scripts/testing/run.ts src/agent/mcp-evals.test.ts && bun --conditions=development scripts/testing/run.ts src/app/api/chat/route.test.ts && bun --conditions=development scripts/testing/run.ts src/workers/suggestions.evals.test.ts",
     "test:task-category-eval:live": "TASK_CATEGORY_LIVE_EVAL=1 bun --conditions=development scripts/testing/run.ts src/task-categories/live-eval.test.ts --live",
+    "test:freshness-eval:live": "FRESHNESS_LIVE_EVAL=1 bun --conditions=development scripts/testing/run.ts src/agent/freshness.live-eval.test.ts --live",
     "test:agent-eval:live": "AGENT_LIVE_EVAL=1 bun --conditions=development scripts/testing/run.ts src/agent/live-eval.test.ts --live",
     "test:suggestions-eval:live": "SUGGESTIONS_LIVE_EVAL=1 bun --conditions=development scripts/testing/run.ts src/workers/suggestions.live-eval.test.ts --live",
     "test:proposal-engine:live": "PROPOSAL_ENGINE_LIVE_EVAL=1 bun --conditions=development scripts/testing/run.ts src/workers/proposal-engine.live-eval.test.ts --live",

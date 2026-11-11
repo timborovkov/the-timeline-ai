@@ -1,6 +1,7 @@
 import type { PublicDocument } from '@/lib/public-site/types';
 
 import {
+  EVIDENCE_FRESHNESS_FAQS,
   EDITORIAL_GUIDES,
   EDITORIAL_PUBLICATION_NAME,
   HOW_IT_WORKS_ROUTE,
@@ -9,7 +10,7 @@ import {
 import { definePublicDocuments } from '@/lib/public-site/registry';
 
 const EDITORIAL_REVIEW_DATE = '2026-08-15' as const;
-const HOW_IT_WORKS_REVIEW_DATE = '2026-11-07' as const;
+const HOW_IT_WORKS_REVIEW_DATE = '2026-11-11' as const;
 const REFRESHED_GUIDE_SLUGS = new Set([
   'search-slack-and-google-drive-together',
   'weekly-engineering-updates-from-slack-linear-and-github',
@@ -20,13 +21,14 @@ const howItWorksDocument = {
   kind: 'guide-index',
   title: 'How it works: from conversation to current record',
   description:
-    'See how The Timeline turns Slack, Telegram, email and call conversations into current records, cites the source for every line, and waits for your approval before anything changes.',
+    'See how The Timeline retrieves cited evidence from conversations and documents, balances relevance with freshness, and distinguishes accepted records from pending changes. Newer evidence does not automatically overwrite the record.',
   indexability: 'index',
   dates: { modified: HOW_IT_WORKS_REVIEW_DATE, reviewed: HOW_IT_WORKS_REVIEW_DATE },
   capability: { kind: 'current-product' },
   sitemap: { changeFrequency: 'weekly', priority: 0.8 },
   structuredData: [
     { type: 'collection-page' },
+    { type: 'faq', entries: EVIDENCE_FRESHNESS_FAQS },
     {
       type: 'breadcrumbs',
       items: [
@@ -40,8 +42,9 @@ const howItWorksDocument = {
     order: 0,
     label: EDITORIAL_PUBLICATION_NAME,
     summary:
-      'See how The Timeline turns Slack, Telegram, email and call conversations into current records, cites the source for every line, and waits for your approval before anything changes.',
+      'See how The Timeline retrieves cited evidence from conversations and documents, balances relevance with freshness, and distinguishes accepted records from pending changes. Newer evidence does not automatically overwrite the record.',
     sections: [
+      ...EVIDENCE_FRESHNESS_FAQS.map((faq) => ({ title: faq.question, body: faq.answer })),
       {
         title: 'Questions covered',
         body: 'Three detailed walkthroughs apply the same cited-answer method to common cross-tool questions.',

@@ -93,7 +93,8 @@ await vi.mock(
   () => import('@/components/collections/virtual-list'),
 );
 
-const { cleanup, fireEvent, render, screen, waitFor } = await import('@testing-library/react');
+const { cleanup, fireEvent, render, screen, waitFor, within } =
+  await import('@testing-library/react');
 const { default: userEvent } = await import('@testing-library/user-event');
 
 const { createElement } = await import('react');
@@ -1055,7 +1056,14 @@ describe('ApprovalsClient', () => {
             reason: null,
             confidence: 'high',
             createdAt: '2026-06-01T10:00:00.000Z',
-            evidence: [],
+            evidence: [
+              {
+                rawEventId: '11111111-1111-4111-8111-111111111111',
+                quote: 'Telegram correction: Friday, not Thursday.',
+                occurredAt: '2026-06-01T10:00:00Z',
+                source: 'telegram',
+              },
+            ],
             items: [
               {
                 id: 'item-edit',
@@ -1083,6 +1091,9 @@ describe('ApprovalsClient', () => {
     expect(screen.getByText('Faba website redesign')).toBeTruthy();
     await user.click(screen.getByRole('button', { name: 'Preview Prepare homepage wireframes' }));
     expect(await screen.findByText(/Proposed record/)).toBeTruthy();
+    expect(
+      within(screen.getByRole('dialog')).getByText('Telegram correction: Friday, not Thursday.'),
+    ).toBeTruthy();
     expect(screen.getAllByText('Design').length).toBeGreaterThan(0);
     expect(screen.queryByRole('combobox', { name: /Category for/ })).toBeNull();
   });

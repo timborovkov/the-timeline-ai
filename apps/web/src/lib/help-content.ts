@@ -89,7 +89,7 @@ export const HELP_PAGES: HelpPage[] = [
       'Send raw work into Timeline from web, Slack, Telegram, email, meetings, and uploads.',
     icon: Inbox,
     related: ['work', 'integrations'],
-    updatedAt: '2026-11-03',
+    updatedAt: '2026-11-11',
     sections: [
       {
         title: 'Get your first cited answer',
@@ -125,6 +125,18 @@ export const HELP_PAGES: HelpPage[] = [
         ],
       },
       {
+        title: 'How answers handle newer and conflicting evidence',
+        body: 'Ask balances relevance with freshness across Telegram and Slack conversations, email, meetings, notes, website captures, integrations, and documents. Newer evidence can rank higher, but newer does not mean correct or approved.',
+        items: [
+          'If an older email says Thursday and a later Telegram reply says “actually, Friday”, inspect the conversation and both citations. Ask distinguishes the current record from a pending proposal to change it.',
+          'A pending proposal does not change the accepted record. Review its sources and accept, revise, or reject it in Approvals.',
+          'An undated file uploaded today gets a smaller freshness boost. Its upload date does not prove its contents are new. Website capture dates likewise describe when a page was observed.',
+          'Historical questions use the requested period. Questions about a particular source describe what that source says.',
+          'Search is bounded and only includes evidence you can access. Linked or retrieved disagreements can be surfaced; absence of a warning does not mean every source agrees. Ask discloses unavailable context when a retrieval adapter fails.',
+        ],
+        resourceLinks: [{ href: '/help/work', label: 'Review changes in Work' }],
+      },
+      {
         title: 'Good capture habits',
         body: 'Use the surface that is closest to the work. A rough voice memo beats a polished recap that never gets written.',
         items: [
@@ -137,7 +149,7 @@ export const HELP_PAGES: HelpPage[] = [
   },
   {
     slug: 'work',
-    updatedAt: '2026-11-03',
+    updatedAt: '2026-11-11',
     title: 'Work surface',
     description:
       'Use tasks, boards, objects, the daily update, on-demand updates and handoffs that stay current from evidence.',
@@ -159,6 +171,9 @@ export const HELP_PAGES: HelpPage[] = [
       },
       {
         title: 'How it stays current',
+        resourceLinks: [
+          { href: '/help/capture', label: 'How answers handle newer and conflicting evidence' },
+        ],
         body: 'Timeline extracts proposed state from conversations, email, meetings, documents, and integrations, then keeps receipts attached so changes can be reviewed.',
         items: [
           'Raw events stay intact; summaries can change without rewriting source evidence.',
@@ -170,6 +185,7 @@ export const HELP_PAGES: HelpPage[] = [
   },
   {
     slug: 'documents',
+    updatedAt: '2026-11-11',
     title: 'Document drive',
     description: 'Upload, version, search, and cite team documents alongside the event timeline.',
     icon: FolderOpen,
@@ -177,6 +193,9 @@ export const HELP_PAGES: HelpPage[] = [
     sections: [
       {
         title: 'How the drive works',
+        resourceLinks: [
+          { href: '/help/capture', label: 'Freshness, source dates, and conflicting evidence' },
+        ],
         body: 'The document drive stores originals and versions while extracted text feeds the same search and agent citation system as events.',
         items: [
           'Folders keep documents browsable without hiding them from search.',

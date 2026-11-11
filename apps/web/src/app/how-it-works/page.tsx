@@ -4,6 +4,7 @@ import Link from 'next/link';
 import type { Metadata } from 'next';
 
 import {
+  EVIDENCE_FRESHNESS_FAQS,
   EDITORIAL_GUIDES,
   findEditorialGuideByRoute,
   GUIDE_ROUTES,
@@ -166,6 +167,24 @@ export default function HowItWorksPage() {
               className="rounded-sm text-sm font-semibold text-fg underline decoration-border-strong underline-offset-4 outline-none hover:decoration-fg focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
             >
               Read the first walkthrough
+            </Link>
+          </div>
+        </MarketingContainer>
+      </section>
+      <section className="border-t border-border" aria-labelledby="evidence-faq">
+        <MarketingContainer className="py-16 sm:py-20">
+          <h2 id="evidence-faq" className="text-3xl font-semibold tracking-tight">
+            When evidence changes
+          </h2>
+          <div className="mt-8 max-w-3xl">
+            {EVIDENCE_FRESHNESS_FAQS.map((faq) => (
+              <details key={faq.question} className="border-b border-border py-5">
+                <summary className="cursor-pointer font-medium">{faq.question}</summary>
+                <p className="mt-3 leading-relaxed text-fg-muted">{faq.answer}</p>
+              </details>
+            ))}
+            <Link href="/help/capture" className="mt-6 inline-flex underline underline-offset-4">
+              How answers handle newer and conflicting evidence
             </Link>
           </div>
         </MarketingContainer>

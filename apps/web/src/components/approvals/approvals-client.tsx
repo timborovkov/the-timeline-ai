@@ -870,7 +870,12 @@ export function ApprovalsClient({
           onOpenChange={(open) => {
             if (!open) dispatch({ type: 'closePreview' });
           }}
-          item={previewItem.item}
+          item={{
+            ...previewItem.item,
+            evidence: previewItem.item.evidence?.length
+              ? previewItem.item.evidence
+              : previewItem.bundle.evidence,
+          }}
           timezone={resolvedTimezone}
           actionLabel={itemActionLabel(previewItem.item)}
           acceptDisabled={previewItem.item.evidenceStatus === 'stale'}

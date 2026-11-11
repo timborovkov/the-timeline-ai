@@ -353,6 +353,24 @@ describe('agent tool evals', () => {
     expect(evalRun.answer).toContain(`[event:${CI_EVENT_B}]`);
   });
 
+  it('reports bounded integration recall even when 200 candidates deduplicate to one event', async () => {
+    const run = await runToolEval(
+      db,
+      OWNER,
+      'search_integration_events',
+      { query: 'CI', provider: 'github', limit: 5 },
+      Array.from({ length: 200 }, () => ({
+        ...hit(CI_EVENT_A, 0.9, { source: 'integration' }),
+        id: crypto.randomUUID(),
+      })),
+    );
+    expect(run.output).toMatchObject({
+      count: 1,
+      truncated: true,
+      retrieval: { mode: 'balanced', candidateLimit: 200, candidateLimitReached: true },
+    });
+  });
+
   it('answers monday board questions with parent items and their cited subitems', async () => {
     // Product behavior: selecting a Monday parent board must make its real items and classic
     // subitems jointly retrievable. A hidden helper board must never replace the parent board in
