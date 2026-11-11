@@ -32,6 +32,8 @@ function makeScope() {
         },
       ]),
       getObject: vi.fn().mockResolvedValue({
+        updatedAt: new Date('2026-11-11'),
+        provenance: { whyThisExists: [], whatChangedIt: [] },
         id: OBJECT_ID,
         type: 'person',
         canonicalName: 'Otto Silventola',
@@ -169,6 +171,30 @@ function makeScope() {
 }
 
 describe('retrieveWorkspaceContext', () => {
+  it('expands the source conversation for a document-only match', async () => {
+    const scope = makeScope();
+    scope.timeline.searchEvents.mockResolvedValue([]);
+    scope.documents.searchDocumentChunks.mockResolvedValue([
+      {
+        documentId: OBJECT_ID,
+        documentVersionId: OBJECT_ID,
+        documentChunkId: NOTE_ID,
+        sourceEvidenceEventId: EVENT_ID,
+        sourceRawEventId: null,
+        documentName: 'Attachment',
+        documentDisplayTitle: 'Attachment',
+        text: 'Otto follow-up',
+        score: 0.8,
+        createdAt: new Date('2026-11-11'),
+      },
+    ]);
+    const result = await retrieveWorkspaceContext(scope as unknown as TeamScope, {
+      query: 'Attachment',
+      recipe: 'document_knowledge',
+    });
+    expect(result.evidencePack).toMatchObject({ items: [{ rawEventId: EVENT_ID }] });
+  });
+
   it('validates one retrieval contract while preserving explicit false flags', () => {
     expect(
       retrieveWorkspaceContextInput.parse({
@@ -215,14 +241,11 @@ describe('retrieveWorkspaceContext', () => {
 
     const result = await retrieveWorkspaceContext(scope as unknown as TeamScope, {
       query: 'What do we know about Otto Silventola?',
+      objectId: OBJECT_ID,
       limit: 5,
     });
 
-    expect(scope.objects.searchObjects).toHaveBeenCalledWith({
-      query: 'What do we know about Otto Silventola?',
-      limit: 5,
-      archived: false,
-    });
+    expect(scope.objects.searchObjects).not.toHaveBeenCalled();
     expect(scope.timeline.searchEvents).toHaveBeenCalledWith(
       expect.objectContaining({ entityIds: [OBJECT_ID], limit: 5 }),
     );

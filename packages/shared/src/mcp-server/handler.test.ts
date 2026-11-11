@@ -640,7 +640,7 @@ describe('handleMcpRequest', () => {
       [0.11, 0.22, 0.33],
       expect.objectContaining({
         eventIds: [SENTRY_SEARCH_EVENT],
-        limit: 1,
+        limit: 200,
         source: 'integration',
       }),
     );
@@ -714,7 +714,7 @@ describe('handleMcpRequest', () => {
       [0.11, 0.22, 0.33],
       expect.objectContaining({
         eventIds: [GITHUB_SEARCH_EVENT],
-        limit: 10,
+        limit: 200,
         source: 'integration',
       }),
     );
@@ -3740,7 +3740,7 @@ describe('advertised MCP parameters', () => {
 
     it('limit', async () => {
       await callTool(db, 'timeline.subject', { subject: 'Project Alpha', limit: 1 });
-      expect(searchCalls().some((opts) => opts.limit === 1)).toBe(true);
+      expect(searchCalls().some((opts) => opts.limit === 200)).toBe(true);
     });
   });
 

@@ -38,6 +38,7 @@ import { type McpAuthPrincipal, resolveMcpBearer } from '#src/mcp-server/oauth.j
 import * as objects from '#src/objects/index.js';
 import { serializeObjectRowsWithProjects } from '#src/objects/tool-serialization.js';
 import { checkRateLimit, rateLimitKey, RATE_LIMITS } from '#src/rate-limit/index.js';
+import { enrichEvidenceContext } from '#src/retrieval/context.js';
 import { taskCategorySchema } from '#src/task-categories/types.js';
 import { withTeam, type TeamScope } from '#src/team-scope.js';
 import { resolveTimePhrase, workspaceTimeContext } from '#src/time/index.js';
@@ -55,6 +56,7 @@ import {
 import { startWebsiteScan, normalizeWebsiteUrl } from '#src/websites/index.js';
 
 import type * as boards from '#src/boards/index.js';
+import type { SearchRankingSummary } from '#src/retrieval/ranking.js';
 
 const log = childLogger('mcp-server');
 
@@ -70,6 +72,7 @@ const PSEUDO_USER = '00000000-0000-0000-0000-000000000000';
 const EVENT_SOURCE_VALUES = eventSource.enumValues;
 
 interface SearchHitForMoment {
+  ranking?: { rankingScore: number };
   eventId: string;
   factIds: string[];
   score: number;
@@ -121,6 +124,7 @@ const listTasksInput = objectFilterInput.pick({
 });
 
 const searchEventsInput = z.object({
+  ranking: z.enum(['auto', 'relevance', 'balanced']).optional(),
   query: z.string().trim().min(1).max(500),
   from: z.iso.datetime().optional(),
   to: z.iso.datetime().optional(),
@@ -168,6 +172,7 @@ const listIntegrationsInput = z.object({
 });
 
 const searchDocumentsInput = z.object({
+  ranking: z.enum(['auto', 'relevance', 'balanced']).optional(),
   query: z.string().trim().min(1).max(500),
   folderId: z.string().regex(UUID_RE).nullable().optional(),
   fileKind: z.enum(['document', 'captured']).optional(),
@@ -214,6 +219,7 @@ const GET_KINDS = [
 ] as const;
 
 const searchWorkspaceInput = z.object({
+  ranking: z.enum(['auto', 'relevance', 'balanced']).optional(),
   query: z.string().trim().min(1).max(500).optional(),
   surface: z.enum(SEARCH_SURFACES).optional(),
   timePhrase: z.string().trim().min(1).max(100).optional(),
@@ -354,10 +360,12 @@ function parsedEventSearch(
   from?: Date;
   to?: Date;
   source?: (typeof EVENT_SOURCE_VALUES)[number];
+  ranking?: 'auto' | 'relevance' | 'balanced';
 } {
   const input = searchEventsInput.parse(args);
   return {
     query: input.query,
+    ...(input.ranking ? { ranking: input.ranking } : {}),
     limit: input.limit ?? defaultLimit,
     ...(input.from ? { from: new Date(input.from) } : {}),
     ...(input.to ? { to: new Date(input.to) } : {}),
@@ -451,49 +459,66 @@ async function serializeMcpTimelineMoments(
     buildTimelineMomentPresentationCacheKey({ teamId: scope.teamId, moment }),
   );
   const presentations = await scope.timeline.listMomentPresentations(cacheKeys);
-  return builtMoments.map((builtMoment, index) => {
-    const cacheKey = cacheKeys[index];
-    const moment = cacheKey
-      ? applyTimelineMomentPresentationCache(
-          builtMoment,
-          presentations[buildTimelineMomentPresentationCacheFingerprint(cacheKey)],
-          { teamId: scope.teamId },
-        )
-      : builtMoment;
-    const rawEvents = moment.rawEvents;
-    const topScore = Math.max(...rawEvents.map((event) => hitByEventId.get(event.id)?.score ?? 0));
-    return {
-      moment_id: moment.id,
-      version: moment.version,
-      anchor_id: moment.anchorId,
-      kind: moment.kind,
-      title: fenceTimelineMomentText(moment.title, moment),
-      subtitle: fenceTimelineMomentText(moment.subtitle, moment),
-      preview: fenceTimelineMomentText(moment.preview, moment),
-      occurred_at:
-        rawEvents[0]?.occurredAt instanceof Date
-          ? rawEvents[0].occurredAt.toISOString()
-          : (rawEvents[0]?.occurredAt ?? null),
-      source_families: moment.grouping.sourceFamilies,
-      evidence_count: rawEvents.length,
-      raw_event_ids: rawEvents.map((event) => event.id),
-      citations: rawEvents.map((event) =>
-        artifactRefCitation({ kind: 'timeline_event', id: event.id }),
-      ),
-      score: topScore,
-      evidence: rawEvents.map((event) => ({
-        event_id: event.id,
-        citation: artifactRefCitation({ kind: 'timeline_event', id: event.id }),
-        source: event.source,
+  return [...builtMoments]
+    .sort(
+      (a, b) =>
+        Math.min(
+          ...a.rawEvents
+            .map((ev) => hits.findIndex((hit) => hit.eventId === ev.id))
+            .filter((i) => i >= 0),
+        ) -
+        Math.min(
+          ...b.rawEvents
+            .map((ev) => hits.findIndex((hit) => hit.eventId === ev.id))
+            .filter((i) => i >= 0),
+        ),
+    )
+    .map((builtMoment) => {
+      const index = builtMoments.indexOf(builtMoment);
+      const cacheKey = cacheKeys[index];
+      const moment = cacheKey
+        ? applyTimelineMomentPresentationCache(
+            builtMoment,
+            presentations[buildTimelineMomentPresentationCacheFingerprint(cacheKey)],
+            { teamId: scope.teamId },
+          )
+        : builtMoment;
+      const rawEvents = moment.rawEvents;
+      const topScore = Math.max(
+        ...rawEvents.map((event) => hitByEventId.get(event.id)?.score ?? 0),
+      );
+      return {
+        moment_id: moment.id,
+        version: moment.version,
+        anchor_id: moment.anchorId,
+        kind: moment.kind,
+        title: fenceTimelineMomentText(moment.title, moment),
+        subtitle: fenceTimelineMomentText(moment.subtitle, moment),
+        preview: fenceTimelineMomentText(moment.preview, moment),
         occurred_at:
-          event.occurredAt instanceof Date ? event.occurredAt.toISOString() : event.occurredAt,
-        snippet: fenceExternalContent(hitByEventId.get(event.id)?.snippet ?? event.contentText, {
+          rawEvents[0]?.occurredAt instanceof Date
+            ? rawEvents[0].occurredAt.toISOString()
+            : (rawEvents[0]?.occurredAt ?? null),
+        source_families: moment.grouping.sourceFamilies,
+        evidence_count: rawEvents.length,
+        raw_event_ids: rawEvents.map((event) => event.id),
+        citations: rawEvents.map((event) =>
+          artifactRefCitation({ kind: 'timeline_event', id: event.id }),
+        ),
+        score: topScore,
+        evidence: rawEvents.map((event) => ({
+          event_id: event.id,
+          citation: artifactRefCitation({ kind: 'timeline_event', id: event.id }),
           source: event.source,
-          eventId: event.id,
-        }),
-      })),
-    };
-  });
+          occurred_at:
+            event.occurredAt instanceof Date ? event.occurredAt.toISOString() : event.occurredAt,
+          snippet: fenceExternalContent(hitByEventId.get(event.id)?.snippet ?? event.contentText, {
+            source: event.source,
+            eventId: event.id,
+          }),
+        })),
+      };
+    });
 }
 
 async function hydrateCompleteMcpMomentEvents(
@@ -861,25 +886,47 @@ async function executeReadCapability(
 ): Promise<unknown> {
   switch (toolName) {
     case 'timeline.search_events': {
-      const hits = await scope.timeline.searchEvents(parsedEventSearch(args, 10));
+      let retrieval: SearchRankingSummary | null = null;
+      const hits = await scope.timeline.searchEvents({
+        ...parsedEventSearch(args, 10),
+        rankingNow: executionContext.currentDate,
+        onRanking: (value) => {
+          retrieval = value;
+        },
+      });
       return {
         count: hits.length,
+        retrieval,
+        context: await enrichEvidenceContext(scope, { eventIds: hits.map((hit) => hit.eventId) }),
         results: hits.map((r) => ({
           event_id: r.eventId,
           citation: artifactRefCitation({ kind: 'timeline_event', id: r.eventId }),
           occurred_at: r.occurredAt,
           score: r.score,
+          ranking: r.ranking,
           source: r.source,
           snippet: fenceExternalContent(r.snippet, { source: r.source, eventId: r.eventId }),
         })),
       };
     }
     case 'timeline.search_moments': {
-      const hits = await scope.timeline.searchEvents(parsedEventSearch(args, 20));
+      let retrieval: SearchRankingSummary | null = null;
+      const hits = await scope.timeline.searchEvents({
+        ...parsedEventSearch(args, 20),
+        rankingNow: executionContext.currentDate,
+        onRanking: (value) => {
+          retrieval = value;
+        },
+      });
       const rows = await scope.timeline.getEventsByIds(hits.map((hit) => hit.eventId));
       const events = await hydrateCompleteMcpMomentEvents(scope, rows.map(timelineMomentEvent));
       const moments = await serializeMcpTimelineMoments(scope, hits, events);
-      return { count: moments.length, moments };
+      return {
+        count: moments.length,
+        moments,
+        retrieval,
+        context: await enrichEvidenceContext(scope, { eventIds: hits.map((hit) => hit.eventId) }),
+      };
     }
     case 'timeline.list_moments': {
       const input = z
@@ -1044,14 +1091,33 @@ async function executeReadCapability(
         query: input.query,
         limit: input.limit ?? 10,
       };
+      searchArgs.rankingNow = executionContext.currentDate;
+      if (input.ranking) searchArgs.ranking = input.ranking;
       if (typeof input.folderId === 'string') searchArgs.folderIds = [input.folderId];
       if (input.folderId === null) searchArgs.rootFolder = true;
       if (input.fileKind) searchArgs.fileKinds = [input.fileKind];
       if (input.name) searchArgs.name = input.name;
       if (input.from) searchArgs.from = new Date(input.from);
       if (input.to) searchArgs.to = new Date(input.to);
-      const results = await scope.documents.searchDocumentChunks(searchArgs);
-      return { count: results.length, results };
+      let retrieval: SearchRankingSummary | null = null;
+      const results = await scope.documents.searchDocumentChunks({
+        ...searchArgs,
+        onRanking: (value) => {
+          retrieval = value;
+        },
+      });
+      return {
+        count: results.length,
+        results,
+        retrieval,
+        context: await enrichEvidenceContext(scope, {
+          eventIds: results.flatMap((hit) =>
+            [hit.sourceEvidenceEventId, hit.sourceRawEventId].filter((id): id is string =>
+              Boolean(id),
+            ),
+          ),
+        }),
+      };
     }
     case 'timeline.retrieve_workspace_context': {
       const input = retrieveWorkspaceContextInput.parse(args);
@@ -1488,11 +1554,16 @@ async function executeReadCapability(
         source: 'integration',
         limit: requestedLimit,
         eventIds: candidates.eventIds,
+        ranking: 'balanced',
+        rankingNow: executionContext.currentDate,
       };
       const filtered = (await scope.timeline.searchEvents(opts)).filter(
         (hit) => hit.source === 'integration',
       );
       return {
+        context: await enrichEvidenceContext(scope, {
+          eventIds: filtered.map((hit) => hit.eventId),
+        }),
         count: filtered.length,
         truncated: candidates.truncated,
         results: filtered.map((r) => ({
@@ -1607,6 +1678,7 @@ async function searchWorkspace(
             ...(input.recipe ? { recipe: input.recipe } : {}),
             ...(input.objectId ? { objectId: input.objectId } : {}),
             ...(input.limit ? { limit: Math.min(input.limit, 10) } : {}),
+            ...(input.ranking ? { ranking: input.ranking } : {}),
             ...(input.includeDocuments !== undefined
               ? { includeDocuments: input.includeDocuments }
               : {}),
@@ -1624,6 +1696,7 @@ async function searchWorkspace(
           input.query ? 'timeline.search_moments' : 'timeline.list_moments',
           {
             ...(input.query ? { query: input.query } : {}),
+            ...(input.ranking ? { ranking: input.ranking } : {}),
             ...(from ? { from } : {}),
             ...(to ? { to } : {}),
             ...(input.source ? { source: input.source } : {}),
@@ -1639,6 +1712,7 @@ async function searchWorkspace(
           input.query ? 'timeline.search_events' : 'timeline.list_events',
           {
             ...(input.query ? { query: input.query } : {}),
+            ...(input.ranking ? { ranking: input.ranking } : {}),
             ...(from ? { from } : {}),
             ...(to ? { to } : {}),
             ...(input.source ? { source: input.source } : {}),
@@ -1654,6 +1728,7 @@ async function searchWorkspace(
           input.query ? 'timeline.search_objects' : 'timeline.list_objects',
           {
             ...(input.query ? { query: input.query } : {}),
+            ...(input.ranking ? { ranking: input.ranking } : {}),
             ...(input.type ? { type: input.type } : {}),
             ...(input.status ? { status: input.status } : {}),
             ...(input.stage ? { stage: input.stage } : {}),
@@ -1695,6 +1770,7 @@ async function searchWorkspace(
       return withTime(
         await executeReadCapability(scope, executionContext, 'timeline.search_boards', {
           ...(input.query ? { query: input.query } : {}),
+          ...(input.ranking ? { ranking: input.ranking } : {}),
           ...(input.boardId ? { boardId: input.boardId } : {}),
           ...(input.templateKind ? { templateKind: input.templateKind } : {}),
           ...(input.pinned !== undefined ? { pinned: input.pinned } : {}),
@@ -1728,6 +1804,7 @@ async function searchWorkspace(
         return withTime(
           await executeReadCapability(scope, executionContext, 'timeline.search_documents', {
             query: input.query,
+            ...(input.ranking ? { ranking: input.ranking } : {}),
             ...(input.folderId !== undefined ? { folderId: input.folderId } : {}),
             ...(input.fileKind ? { fileKind: input.fileKind } : {}),
             ...(input.name ? { name: input.name } : {}),
@@ -1755,6 +1832,7 @@ async function searchWorkspace(
       return withTime(
         await executeReadCapability(scope, executionContext, 'timeline.list_calendar_events', {
           ...(input.query ? { query: input.query } : {}),
+          ...(input.ranking ? { ranking: input.ranking } : {}),
           ...(from ? { from } : {}),
           ...(to ? { to } : {}),
           ...(input.limit ? { limit: input.limit } : {}),

@@ -4,6 +4,7 @@ import { vi } from '@timeline/test-support';
 import { afterEach, beforeEach, describe, it } from 'bun:test';
 import { drizzle } from 'drizzle-orm/pglite';
 
+import { enrichEvidenceContext } from '#src/retrieval/context.js';
 import { withTeam } from '#src/team-scope.js';
 import { applyDbMigrations } from '#src/test/pglite.js';
 import { generateAndStoreTimelineMomentPresentation } from '#src/timeline-moments/generation.js';
@@ -143,6 +144,101 @@ describe('withTeam timeline semantic search', () => {
   let embeddedTexts: string[];
   let qdrantCalls: { teamId: string; userId: string; vector: number[]; opts: SearchOpts }[];
   let hits: SearchHit[];
+
+  it('ranks newer Telegram corrections after SQL visibility checks and preserves historical ordering', async () => {
+    await pg.exec(
+      `UPDATE raw_events SET source='telegram', occurred_at='2026-11-11T12:00:00Z' WHERE id='${RELATED_EVENT}';`,
+    );
+    hits = [
+      hit('old', 0.82, { event_id: TEAM_EVENT }),
+      hit('new', 0.8, { event_id: RELATED_EVENT }),
+      hit('private', 0.99, { event_id: PRIVATE_EVENT }),
+    ];
+    const input = { query: 'Acme', rankingNow: new Date('2026-11-11T12:00:00Z'), limit: 1 };
+    const fresh = await scopeFor(MEMBER).timeline.searchEvents(input);
+    expect(fresh.map((row) => row.eventId)).toEqual([RELATED_EVENT]);
+    expect(fresh[0]?.score).toBe(0.8);
+    expect(fresh[0]?.ranking?.freshnessBoost).toBe(0.05);
+    const next = await scopeFor(MEMBER).timeline.searchEvents({ ...input, offset: 1 });
+    expect(next.map((row) => row.eventId)).toEqual([TEAM_EVENT]);
+    const historical = await scopeFor(MEMBER).timeline.searchEvents({
+      ...input,
+      ranking: 'relevance',
+    });
+    expect(historical.map((row) => row.eventId)).toEqual([TEAM_EVENT]);
+  });
+
+  it('expands website scan moments through the scoped metadata predicate', async () => {
+    await pg.query(
+      `UPDATE raw_events SET source_metadata=jsonb_build_object('websiteScanId','fixture-scan') WHERE id=ANY($1::uuid[])`,
+      [[TEAM_EVENT, PRIVATE_EVENT, OTHER_TEAM_EVENT]],
+    );
+    const rows = await scopeFor(MEMBER).timeline.listEventsForMomentLookup({
+      source: 'web',
+      limit: 20,
+      metadataPredicates: [{ path: ['websiteScanId'], equals: 'fixture-scan' }],
+    });
+    expect(rows.map((row) => row.id)).toEqual([TEAM_EVENT]);
+  });
+
+  it('discloses the bounded pool even when duplicate hits collapse to one event', async () => {
+    hits = Array.from({ length: 200 }, (_, index) => ({
+      ...hit(TEAM_EVENT, 0.8),
+      id: `duplicate-${index}`,
+    }));
+    const summary: unknown[] = [];
+    const result = await scopeFor(MEMBER).timeline.searchEvents({
+      query: 'Acme',
+      limit: 1,
+      onRanking: (value) => {
+        summary.push(value);
+      },
+    });
+    expect(result).toHaveLength(1);
+    expect(result[0]?.ranking?.candidateLimitReached).toBe(true);
+    expect(summary).toEqual([
+      { mode: 'balanced', candidateLimit: 200, candidateLimitReached: true },
+    ]);
+  });
+
+  it('keeps current state separate from pending evidence and drops rejected proposals', async () => {
+    const bundle = '90000000-0000-4000-8000-000000000001';
+    const item = '90000000-0000-4000-8000-000000000002';
+    await pg.exec(`
+      INSERT INTO agent_suggestions (id,team_id,source,title,dedupe_key) VALUES ('${bundle}','${TEAM_A}','background','Acme correction','freshness');
+      INSERT INTO agent_suggestion_items (id,suggestion_id,team_id,operation,target_kind,target_id,title,dedupe_key,proposed_payload)
+      VALUES ('${item}','${bundle}','${TEAM_A}','update','object','${ENTITY_ID}','Correct Acme status','freshness','{"status":"blocked"}');
+      INSERT INTO agent_suggestion_evidence (suggestion_id,team_id,raw_event_id,quote) VALUES ('${bundle}','${TEAM_A}','${TEAM_EVENT}','Acme correction');
+    `);
+    const scope = scopeFor(MEMBER);
+    const pending = await enrichEvidenceContext(scope, { objectIds: [ENTITY_ID] });
+    expect(pending.adapterFailures).toEqual([]);
+    expect(pending.objects[0]?.current.canonical).toBe(true);
+    expect(pending.objects[0]?.current.status).not.toBe('blocked');
+    expect(pending.objects[0]?.pending[0]).toMatchObject({
+      id: item,
+      canonical: false,
+      status: 'pending',
+    });
+    await scope.suggestions.rejectSuggestionItem(item);
+    const rejected = await enrichEvidenceContext(scope, { objectIds: [ENTITY_ID] });
+    expect(rejected.objects[0]?.pending).toEqual([]);
+    expect(await scope.timeline.getEventWithFacts(TEAM_EVENT)).not.toBeNull();
+  });
+
+  it('discloses failed context adapters rather than claiming no conflict', async () => {
+    const scope = scopeFor(MEMBER);
+    const failed = {
+      ...scope,
+      objects: {
+        ...scope.objects,
+        getObject: () => Promise.reject(new Error('unavailable')),
+      },
+    };
+    const context = await enrichEvidenceContext(failed, { objectIds: [ENTITY_ID] });
+    expect(context.objects).toEqual([]);
+    expect(context.adapterFailures).toEqual([{ adapter: 'current_record', errorReason: 'Error' }]);
+  });
 
   beforeEach(async () => {
     pg = new PGlite();

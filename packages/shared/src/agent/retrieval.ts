@@ -7,12 +7,14 @@ import {
   type EvidencePackMetrics,
 } from '#src/evidence-pack/index.js';
 import { type ObjectSummarySourceRef, sourceRefCitation } from '#src/objects/summaries.js';
+import { enrichEvidenceContext } from '#src/retrieval/context.js';
 
 import type {
   RetrievalRecipe,
   RetrieveWorkspaceContextInput,
   RetrievalExecutionContext,
 } from '#src/agent/retrieval-contract.js';
+import type { SearchRankingSummary } from '#src/retrieval/ranking.js';
 import type { TeamScope } from '#src/team-scope.js';
 
 export type {
@@ -21,6 +23,8 @@ export type {
 } from '#src/agent/retrieval-contract.js';
 
 export interface WorkspaceContextResult {
+  retrieval?: { timeline: SearchRankingSummary | null; documents: SearchRankingSummary | null };
+  conflictContext?: Awaited<ReturnType<typeof enrichEvidenceContext>>;
   recipe: Exclude<RetrievalRecipe, 'auto'>;
   query: string;
   refs: string[];
@@ -96,6 +100,10 @@ export async function retrieveWorkspaceContext(
   const routes =
     recipe === 'product_guide' ? searchAppGuide(query, limit) : searchAppGuide(query, 2);
   const adapterFailures: WorkspaceContextAdapterFailure[] = [];
+  const retrieval: {
+    timeline: SearchRankingSummary | null;
+    documents: SearchRankingSummary | null;
+  } = { timeline: null, documents: null };
 
   const objectCandidates = input.objectId
     ? []
@@ -105,7 +113,11 @@ export async function retrieveWorkspaceContext(
         scope.objects.searchObjects({ query, limit, archived: false }),
         [],
       );
-  const primaryObjectId = input.objectId ?? objectCandidates[0]?.id;
+  const exactCandidates = objectCandidates.filter(
+    (object) => object.canonicalName.toLowerCase() === query.toLowerCase(),
+  );
+  const primaryObjectId =
+    input.objectId ?? (exactCandidates.length === 1 ? exactCandidates[0]?.id : undefined);
 
   const [objectDetail, entityProfile, notes, events, boardContext, documents, calendarEvents] =
     await Promise.all([
@@ -142,6 +154,11 @@ export async function retrieveWorkspaceContext(
         adapterFailures,
         'timeline_events',
         scope.timeline.searchEvents({
+          ranking: input.ranking,
+          onRanking: (value) => {
+            retrieval.timeline = value;
+          },
+          rankingNow: currentDate,
           query,
           ...(primaryObjectId ? { entityIds: [primaryObjectId] } : {}),
           limit: Math.min(limit, 8),
@@ -160,7 +177,15 @@ export async function retrieveWorkspaceContext(
         ? recoverAdapter(
             adapterFailures,
             'documents',
-            scope.documents.searchDocumentChunks({ query, limit: Math.min(limit, 5) }),
+            scope.documents.searchDocumentChunks({
+              query,
+              onRanking: (value) => {
+                retrieval.documents = value;
+              },
+              ranking: input.ranking,
+              rankingNow: currentDate,
+              limit: Math.min(limit, 5),
+            }),
             [],
           )
         : [],
@@ -190,14 +215,22 @@ export async function retrieveWorkspaceContext(
         updated_at: objectDetail.summary.generatedAt?.toISOString() ?? null,
       }
     : null;
+  const evidenceEventIds = [
+    ...new Set([
+      ...events.map((event) => event.eventId),
+      ...documents.flatMap((doc) =>
+        [doc.sourceEvidenceEventId, doc.sourceRawEventId].filter((id): id is string => Boolean(id)),
+      ),
+    ]),
+  ];
   let evidencePack: WorkspaceContextResult['evidencePack'] = null;
-  if (events.length > 0) {
+  if (evidenceEventIds.length > 0) {
     try {
       const members = await scope.timeline.listMembers();
       const pack = await buildEvidencePack(scope, {
         purpose: 'answer',
-        anchorRawEventIds: events.map((event) => event.eventId),
-        semanticRawEventIds: events.map((event) => event.eventId),
+        anchorRawEventIds: evidenceEventIds,
+        semanticRawEventIds: evidenceEventIds,
       });
       evidencePack = {
         status: 'complete',
@@ -273,6 +306,12 @@ export async function retrieveWorkspaceContext(
     })) ?? [];
 
   const result: WorkspaceContextResult = {
+    retrieval,
+    conflictContext: await enrichEvidenceContext(scope, {
+      includeConversation: false,
+      objectIds: primaryObjectId ? [primaryObjectId] : [],
+      eventIds: evidenceEventIds,
+    }),
     recipe,
     query,
     refs: [],
@@ -295,6 +334,7 @@ export async function retrieveWorkspaceContext(
         sender_resolution_status: event.senderResolutionStatus,
         occurred_at: event.occurredAt,
         score: event.score,
+        ranking: event.ranking,
         snippet: event.snippet,
         artifact_cluster: event.artifactCluster
           ? {
@@ -358,6 +398,7 @@ export async function retrieveWorkspaceContext(
       document_name: doc.documentName,
       snippet: doc.summary ?? doc.text.slice(0, 500),
       score: doc.score,
+      ranking: doc.ranking,
     })),
     routes: routes.map((route) => ({
       route_id: route.id,

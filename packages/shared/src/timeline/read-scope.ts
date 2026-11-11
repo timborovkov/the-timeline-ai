@@ -599,6 +599,8 @@ export function createTimelineReadScope({
         return sql`${rawEvents.sourceMetadata} ->> 'thread_root_id' = ${value}`;
       case 'calendar_event_id':
         return sql`${rawEvents.sourceMetadata} ->> 'calendar_event_id' = ${value}`;
+      case 'websiteScanId':
+        return sql`${rawEvents.sourceMetadata} ->> 'websiteScanId' = ${value}`;
       case 'document_id':
         return sql`COALESCE(${rawEvents.sourceMetadata} ->> 'document_id', ${rawEvents.sourceMetadata} ->> 'documentId') = ${value}`;
       case 'action':
