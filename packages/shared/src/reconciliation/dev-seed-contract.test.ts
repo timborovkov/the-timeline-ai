@@ -40,13 +40,9 @@ function shouldScanSourceFile(path: string): boolean {
     '.live-eval.test.ts',
     '/packages/db/src/schema/',
     '/packages/shared/src/reconciliation/dev-seed-contract.test.ts',
+    // Disposable erasure fixtures are not production event writers.
+    '/scripts/testing/team-deletion-rehearsal.ts',
   ].some((excluded) => path.includes(excluded));
-}
-
-function scannedApplicationSources(): string {
-  return repoSourceFiles(APPLICATION_SOURCE_ROOTS)
-    .map((path) => readFileSync(path, 'utf8'))
-    .join('\n');
 }
 
 function rawEventWriterFiles(): string[] {
@@ -292,13 +288,24 @@ describe('reconciliation cutover contracts', () => {
   });
 
   it('keeps old reconciliation writer paths out of application code', () => {
-    const sources = scannedApplicationSources();
-
-    expect(sources).not.toContain('createSuggestion(');
-    expect(sources).not.toContain('artifactClusterMembers');
-    expect(sources).not.toContain('artifact_cluster_members');
-    expect(sources).not.toContain('.insert(artifactClusterMembers)');
-    expect(sources).not.toContain('INSERT INTO artifact_cluster_members');
+    const forbidden = [
+      'createSuggestion(',
+      'artifactClusterMembers',
+      'artifact_cluster_members',
+      '.insert(artifactClusterMembers)',
+      'INSERT INTO artifact_cluster_members',
+    ];
+    const findings = repoSourceFiles(APPLICATION_SOURCE_ROOTS).flatMap((path) => {
+      const file = relativeRepoPath(path);
+      let source = readFileSync(path, 'utf8');
+      // Erasure must classify the retired table; this literal cannot write records.
+      if (file === 'packages/shared/src/team-lifecycle/inventory.ts')
+        source = source.replace(/^  'artifact_cluster_members',\n/m, '');
+      return forbidden
+        .filter((pattern) => source.includes(pattern))
+        .map((pattern) => `${file}: ${pattern}`);
+    });
+    expect(findings).toEqual([]);
   });
 
   it('keeps every production raw-event writer on the reconciliation evidence path', () => {

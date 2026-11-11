@@ -10,6 +10,8 @@ const SCAN_ROOTS = ['apps/web/src', 'apps/worker/src', 'packages/shared/src'];
 const ALLOWED_DB_HELPER_FILES = new Set([
   'packages/shared/src/integrations/google-drive-capture.ts',
   'packages/shared/src/integrations/scope.ts',
+  // Scoped artifact rebinding extracted from artifacts/index; every query retains teamId.
+  'packages/shared/src/integrations/google-drive-artifacts.ts',
   // Artifact rebind already receives the withTeam db and filters every query by
   // teamId; it reuses the capture ancestry helper so nested-folder assignment
   // sees the same newest snapshot/event walk as live coverage.
@@ -131,10 +133,10 @@ describe('Drive withTeam isolation guard', () => {
 
   it('forwards commentsSnapshot through the worker saveDriveSnapshot adapter', () => {
     const source = readFileSync(
-      join(REPO_ROOT, 'apps/worker/src/workers/integrationSync.ts'),
+      join(REPO_ROOT, 'apps/worker/src/integrations/drive-capture-services.ts'),
       'utf8',
     );
-    const adapter = /saveDriveSnapshot\(input\) \{[\s\S]*?\n      \},/.exec(source)?.[0];
+    const adapter = /saveDriveSnapshot\(input\) \{[\s\S]*?\n    \},/.exec(source)?.[0];
     expect(adapter).toBeDefined();
     expect(adapter).toContain('commentsSnapshot');
     expect(adapter).toContain('permissionsSnapshot');
