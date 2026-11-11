@@ -180,6 +180,9 @@ Ask, Work, Documents, Meetings, Connections, Usage, and Team.
   `min(40%, 36rem)`; mobile uses a taller focus-managed bottom sheet.
 - Work routes share `WorkSubnav`: Overview, Pinned, Objects, Tasks, Boards,
   Calendar, Digests, Approvals.
+- Billing settings share Usage’s allowance cards and neutral surfaces, with clear
+  spacing between plan controls, charges, and membership. See the
+  [billing presentation contract](docs/design/app.md#billing-benefits-and-recorded-charges).
 - Team settings use URL-backed `SettingsNav`: Members, General, Preferences,
   Visibility, Email, Exports, and admin-only Advanced.
 
