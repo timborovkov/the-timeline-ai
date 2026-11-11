@@ -120,7 +120,13 @@ describe('shipped agent surfaces', () => {
   });
 
   it('documents the live capture OAuth scope and default-on consent', () => {
-    expect(MCP_OAUTH_SCOPES).toEqual(['read', 'capture', 'agent:ask']);
+    expect(MCP_OAUTH_SCOPES).toEqual([
+      'read',
+      'capture',
+      'agent:ask',
+      'websites:scan',
+      'websites:manage',
+    ]);
     expect(resolveMcpOAuthConsentScopes(['read'], { grantCapture: true })).toEqual([
       'read',
       'capture',

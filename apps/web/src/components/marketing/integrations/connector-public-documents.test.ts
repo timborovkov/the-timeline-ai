@@ -15,6 +15,7 @@ describe('connector public documents', () => {
     expect(CONNECTOR_PUBLIC_DOCUMENTS.documents.map((document) => document.canonicalPath)).toEqual([
       '/integrations',
       '/integrations/telegram',
+      '/integrations/websites',
       ...CONNECTORS.map((connector) => `/integrations/${connector.slug}`),
     ]);
     expect(
@@ -37,7 +38,7 @@ describe('connector public documents', () => {
     for (const surface of CAPTURE_SURFACES) {
       expect(serialized).toContain(surface.name);
     }
-    expect(CONNECTOR_PUBLIC_DOCUMENTS.documents).toHaveLength(CONNECTORS.length + 2);
+    expect(CONNECTOR_PUBLIC_DOCUMENTS.documents).toHaveLength(CONNECTORS.length + 3);
   });
 
   it('derives metadata, capability, structured data, and LLM content from connector truth', () => {

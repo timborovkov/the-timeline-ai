@@ -47,7 +47,7 @@ describe('Trust audit route states', () => {
     const placeholder = container.querySelector('[aria-busy="true"] > [aria-hidden="true"][inert]');
     expect(placeholder).toBeTruthy();
     expect(placeholder?.querySelector('header')?.className).toContain(
-      'border-y border-border py-3',
+      'border-b border-border py-3',
     );
     const rows = placeholder?.querySelectorAll('ul > li');
     expect(rows).toHaveLength(5);
