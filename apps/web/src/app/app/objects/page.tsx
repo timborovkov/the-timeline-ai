@@ -6,6 +6,7 @@ import { inArray } from 'drizzle-orm';
 import { Plus, Shapes } from 'lucide-react';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
+import { z } from 'zod';
 
 import type * as objects from '@timeline/shared/objects/types';
 import type { Metadata } from 'next';
@@ -13,6 +14,7 @@ import type { Metadata } from 'next';
 import { EmptyState } from '@/components/empty-state';
 import { ObjectCleanupList } from '@/components/objects/object-cleanup-list';
 import { ObjectCleanupSuggestions } from '@/components/objects/object-cleanup-suggestions';
+import { ObjectIndexPeek } from '@/components/objects/object-index-peek';
 import { PageHeader } from '@/components/page-header';
 import { TaskCategoryFilterRefresh } from '@/components/tasks/task-category-filter-refresh';
 import { WorkFilterBar } from '@/components/work-filter-bar';
@@ -63,6 +65,10 @@ export default async function ObjectsIndexPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const {
+    selectedObjectDetail,
+    selectedObjectPinned,
+    selectedPrimaryProject,
+    userId,
     objectWindow,
     singleType,
     filters,
@@ -81,8 +87,13 @@ export default async function ObjectsIndexPage({
     filterParams,
   } = await loadObjectsIndexPage({ searchParams });
   return (
-    <div data-app-width="collection" className="space-y-6">
+    <div
+      data-app-width="collection"
+      data-app-layout="full-bleed"
+      className="-mx-4 -my-6 flex h-[calc(100dvh-3rem)] min-w-0 flex-col md:-mx-8 md:-my-8"
+    >
       <PageHeader
+        className="w-full shrink-0 px-4 md:px-8"
         variant="collection"
         title="Objects"
         subtitle="Projects, people, decisions, and other durable team context."
@@ -93,7 +104,7 @@ export default async function ObjectsIndexPage({
             : []),
         ]}
       />
-      <WorkSubnav current="/app/objects" />
+      <WorkSubnav current="/app/objects" className="px-4 md:px-8" />
 
       <WorkFilterBar
         mode="objects"
@@ -107,13 +118,19 @@ export default async function ObjectsIndexPage({
         projects={projects.map((project) => ({ id: project.id, label: project.canonicalName }))}
         typeLabels={OBJECT_TYPE_LABELS}
         actions={
-          <Link
-            href="/app/objects/new"
-            className="inline-flex min-h-10 items-center gap-1.5 rounded-sm px-2.5 text-xs font-medium text-fg-muted transition-colors hover:bg-surface-2 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/50"
-          >
-            <Plus className="size-3.5" aria-hidden="true" />
-            New object
-          </Link>
+          <>
+            <ObjectCleanupSuggestions
+              suggestions={cleanupSuggestions}
+              mergePreviewsByItemId={mergePreviewsByItemId}
+            />
+            <Link
+              href="/app/objects/new"
+              className="inline-flex min-h-10 items-center gap-1.5 rounded-sm px-2.5 text-xs font-medium text-fg-muted transition-colors hover:bg-surface-2 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/50"
+            >
+              <Plus className="size-3.5" aria-hidden="true" />
+              New object
+            </Link>
+          </>
         }
       />
       {categoryFilterBaseline ? (
@@ -124,26 +141,53 @@ export default async function ObjectsIndexPage({
         />
       ) : null}
 
-      <ObjectCleanupSuggestions
-        suggestions={cleanupSuggestions}
-        mergePreviewsByItemId={mergePreviewsByItemId}
-      />
-
-      {rows.length === 0 ? (
-        <ObjectsEmptyState activeFilters={activeFilters} />
-      ) : (
-        <ObjectCleanupList
-          rows={rows.map((row) => ({
-            ...row,
-            pinned: objectPinState[`object:${row.id}`] ?? false,
-          }))}
-          typeLabels={OBJECT_TYPE_LABELS}
-          returnTo={objectsIndexReturnTo(params)}
-          nextCursor={hasTypeFilter ? objectWindow.nextCursor : null}
-          filterParams={hasTypeFilter ? filterParams : undefined}
-          sectionMoreHrefs={objectWindow.sectionMoreHrefs}
-        />
-      )}
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <div
+          className={
+            selectedObjectDetail
+              ? 'grid min-h-0 min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_min(40%,40rem)]'
+              : 'min-w-0'
+          }
+        >
+          <div className="min-w-0">
+            {rows.length === 0 ? (
+              <ObjectsEmptyState activeFilters={activeFilters} />
+            ) : (
+              <ObjectCleanupList
+                rows={rows.map((row) => ({
+                  ...row,
+                  pinned: objectPinState[`object:${row.id}`] ?? false,
+                }))}
+                selectedObjectId={selectedObjectDetail?.id}
+                typeLabels={OBJECT_TYPE_LABELS}
+                returnTo={objectsIndexReturnTo(params)}
+                nextCursor={hasTypeFilter ? objectWindow.nextCursor : null}
+                filterParams={hasTypeFilter ? filterParams : undefined}
+                sectionMoreHrefs={objectWindow.sectionMoreHrefs}
+              />
+            )}
+          </div>
+          {selectedObjectDetail ? (
+            <div className="min-w-0 xl:sticky xl:top-0 xl:h-[calc(100dvh-14rem)]">
+              <ObjectIndexPeek
+                key={selectedObjectDetail.id}
+                detail={selectedObjectDetail}
+                pinned={selectedObjectPinned}
+                userId={userId}
+                taskCategoriesEnabled={getEnv().TASK_CATEGORY_UI_ENABLED}
+                members={memberOptions}
+                projects={projects.map((project) => ({
+                  id: project.id,
+                  label: project.canonicalName,
+                }))}
+                primaryProject={selectedPrimaryProject}
+                closeHref={objectsIndexReturnTo({ ...params, object: undefined })}
+                returnTo={objectsIndexReturnTo(params)}
+              />
+            </div>
+          ) : null}
+        </div>
+      </div>
     </div>
   );
 }
@@ -335,6 +379,17 @@ async function loadObjectsIndexPage({
       label: displayMemberLabel(user),
     };
   });
+  const selectedObjectId = z.uuid().safeParse(params.object).data ?? null;
+  const selectedObjectDetail = selectedObjectId
+    ? await scope.objects.getObject(selectedObjectId)
+    : null;
+  const selectedObjectPinned = selectedObjectDetail
+    ? await scope.pins.isPinned({ kind: 'object', key: selectedObjectDetail.id })
+    : false;
+  const selectedPrimaryProject =
+    selectedObjectDetail?.type === 'task'
+      ? ((await scope.objects.listPrimaryProjectsForTasks([selectedObjectDetail.id]))[0] ?? null)
+      : null;
   const rows = objectWindow.rows;
   const objectPinState = await scope.pins.isPinnedMany(
     rows.map((row) => ({ kind: 'object' as const, key: row.id })),
@@ -377,6 +432,10 @@ async function loadObjectsIndexPage({
   );
 
   return {
+    selectedObjectDetail,
+    selectedObjectPinned,
+    selectedPrimaryProject,
+    userId: session.user.id,
     objectWindow,
     singleType,
     filters,

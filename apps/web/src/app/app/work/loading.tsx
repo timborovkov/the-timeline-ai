@@ -34,7 +34,7 @@ export default function WorkLoading() {
         <WorkSubnav current={current} />
         <div
           aria-hidden="true"
-          className="space-y-7"
+          className={isPinned ? 'space-y-0' : 'space-y-7'}
           data-work-loading-view={isPinned ? 'pinned' : 'overview'}
         >
           {isPinned ? (
@@ -54,15 +54,7 @@ export default function WorkLoading() {
             </>
           ) : (
             <>
-              <section className="space-y-3">
-                <div className="flex items-center justify-between gap-3">
-                  <Skeleton className="h-5 w-16" />
-                  <Skeleton className="h-4 w-16" />
-                </div>
-                {Array.from({ length: 3 }).map((_, index) => (
-                  <CollectionRowSkeleton key={index} leading metadata={2} />
-                ))}
-              </section>
+              <CollectionGroupSkeleton groups={1} rows={3} leading />
               <CollectionGroupSkeleton groups={1} rows={3} leading={false} />
               <CollectionGroupSkeleton groups={1} rows={4} leading={false} />
             </>

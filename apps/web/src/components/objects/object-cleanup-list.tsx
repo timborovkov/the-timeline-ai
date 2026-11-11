@@ -36,7 +36,6 @@ import { displayText } from '@/lib/display-dates';
 import { isSchedulableObjectType } from '@/lib/due-dates';
 import { dateInputValue, toDateOrNull } from '@/lib/iso-timestamp';
 import { notifyAction } from '@/lib/notify';
-import { objectDetailHref } from '@/lib/object-links';
 import { MAX_OBJECT_MERGE_SELECTION, objectMergeHref } from '@/lib/object-merge';
 import { statusOptionsForType } from '@/lib/object-status-options';
 import { statusLabel } from '@/lib/status-labels';
@@ -58,6 +57,7 @@ interface Props {
   filterParams?: Record<string, string>;
   sectionMoreHrefs?: Record<string, string>;
   returnTo?: string;
+  selectedObjectId?: string;
 }
 
 interface CleanupListState {
@@ -131,6 +131,7 @@ export function ObjectCleanupList({
   filterParams = EMPTY_FILTER_PARAMS,
   sectionMoreHrefs,
   returnTo = '/app/objects',
+  selectedObjectId,
 }: Props) {
   const timezone = useWorkspaceTimezone();
   const router = useRouter();
@@ -260,21 +261,7 @@ export function ObjectCleanupList({
 
   return (
     <TaskCategoryPollingProvider tasks={categoryPollingTasks}>
-      <div className="space-y-4">
-        <div className="flex min-h-10 items-center justify-end border-b border-border">
-          {!selecting ? (
-            <button
-              type="button"
-              onClick={() => {
-                dispatchCleanupList({ type: 'begin-selecting' });
-              }}
-              className="inline-flex min-h-10 items-center gap-1.5 rounded-sm px-2.5 text-xs text-fg transition-colors hover:bg-surface-2"
-            >
-              <SquareCheckBig className="size-3.5" aria-hidden />
-              Select
-            </button>
-          ) : null}
-        </div>
+      <div className="min-w-0">
         <SelectionBar
           count={selectedCount}
           label={selectedCount === 1 ? 'object selected' : 'objects selected'}
@@ -333,14 +320,33 @@ export function ObjectCleanupList({
                   title={typeLabels[typeKey] ?? typeKey}
                   count={list.length}
                   actions={
-                    sectionMoreHrefs?.[typeKey] ? (
-                      <Link
-                        href={sectionMoreHrefs[typeKey]}
-                        className="min-h-10 px-2 py-3 text-xs text-signal hover:underline"
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          dispatchCleanupList(
+                            selecting ? { type: 'clear-selection' } : { type: 'begin-selecting' },
+                          );
+                        }}
+                        className="inline-flex size-8 items-center justify-center rounded-sm text-fg-muted hover:bg-surface-2"
+                        aria-label={
+                          selecting
+                            ? 'Cancel selection'
+                            : `Select ${typeLabels[typeKey] ?? typeKey}`
+                        }
+                        title={selecting ? 'Cancel selection' : 'Select objects'}
                       >
-                        View all
-                      </Link>
-                    ) : null
+                        <SquareCheckBig className="size-4" aria-hidden="true" />
+                      </button>
+                      {sectionMoreHrefs?.[typeKey] ? (
+                        <Link
+                          href={sectionMoreHrefs[typeKey]}
+                          className="min-h-10 px-2 py-3 text-xs text-signal hover:underline"
+                        >
+                          View all
+                        </Link>
+                      ) : null}
+                    </>
                   }
                 >
                   <VirtualList
@@ -356,7 +362,7 @@ export function ObjectCleanupList({
                           timezone={timezone}
                           returnTo={returnTo}
                           selecting={selecting}
-                          selected={isSelected}
+                          selected={isSelected || selectedObjectId === object.id}
                           onToggle={() => {
                             toggle(object.id);
                           }}
@@ -497,10 +503,19 @@ function ObjectCollectionItem({
   }
 
   const statusOptions = statusOptionsForType(object.type, status);
+  const previewParams = new URLSearchParams(returnTo.split('?')[1] ?? '');
+  previewParams.set('object', object.id);
+  const previewHref = `/app/objects?${previewParams.toString()}`;
 
   return (
     <div style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto 44px' }}>
-      <CollectionRow selected={selected}>
+      <CollectionRow
+        selected={selected}
+        onActivate={() => {
+          router.push(previewHref, { scroll: false });
+        }}
+        activateLabel={`Preview ${displayText(object.canonicalName)}`}
+      >
         <CollectionRow.Leading>
           {selecting ? (
             <input
@@ -513,11 +528,7 @@ function ObjectCollectionItem({
           ) : null}
         </CollectionRow.Leading>
         <CollectionRow.Title>
-          <Link
-            href={objectDetailHref(object.id, returnTo)}
-            scroll={false}
-            className="block truncate hover:underline"
-          >
+          <Link href={previewHref} scroll={false} className="block truncate hover:underline">
             {displayText(object.canonicalName)}
           </Link>
           <DiscussionCountBadge count={object.commentCount} className="ml-2 shrink-0" />

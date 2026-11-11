@@ -412,8 +412,10 @@ instruction to unarchive the task first.
 
 ### Object and task detail
 
-Task list selection opens a right-hand peek on the same route (`?task=`). Object
-rows and the peek’s “Open object” link go to `/app/objects/[id]` with `returnTo`
+Task list selection opens a right-hand peek on the same route (`?task=`); Objects
+rows use `?object=` and preserve list filters. Both use the shared preview with
+discussion and type-appropriate editable properties. The full-width, quiet outlined “Open object”
+link at the top goes to `/app/objects/[id]` with `returnTo`
 so Back restores the originating list. In-list selection links use
 `scroll={false}` so opening a peek does not jump the page.
 
@@ -616,4 +618,5 @@ Connect your agent includes workspace reporting defaults and connection-specific
 
 OAuth consent includes reporting directly beneath workspace selection and capture permission. New connections visibly inherit the workspace agreement; owners/admins can set a connection override. Members see their effective agreement. Work scope is required only for an explicit ongoing override; read-only connections clearly identify inactive reporting. No additional wizard or forced first note is introduced.
 
-Website sources are managed from Connections → Sources → Websites. Use compact source rows with one scan action. Adding opens a permission-confirming dialog; history expands beneath its source, and administrator schedule/pause/archive controls live under “Schedule & settings”. Show weekday only for weekly schedules and time/timezone only for recurring scans. Keep the unit rate in a quiet footer and full cost/permission details at confirmation. Archive copy distinguishes stopping capture from erasing evidence.
+Website sources are managed from the searchable Websites row directly below Email
+in Connections → Sources. Use compact source rows with one scan action. Adding opens a permission-confirming dialog; history expands beneath its source, and administrator schedule/pause/archive controls live under “Schedule & settings”. Show weekday only for weekly schedules and time/timezone only for recurring scans. Keep the unit rate in a quiet footer and full cost/permission details at confirmation. Archive copy distinguishes stopping capture from erasing evidence.

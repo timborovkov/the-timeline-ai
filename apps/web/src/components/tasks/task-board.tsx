@@ -14,7 +14,7 @@ import {
 import { useQueries } from '@tanstack/react-query';
 import { TASK_CATEGORY_OPTIONS, type TaskCategory } from '@timeline/shared/task-categories/types';
 import { presentDueDate } from '@timeline/shared/time';
-import { GripVertical, ListTodo, X } from 'lucide-react';
+import { GripVertical, ListTodo } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
@@ -34,13 +34,10 @@ import type * as objects from '@timeline/shared/objects/types';
 import type { Dispatch, SetStateAction } from 'react';
 
 import {
-  createNoteAction,
-  deleteNoteAction,
   loadTaskPrimaryProjectsAction,
   loadTaskRowsAction,
   resetTaskCategoryAction,
   setTaskCategoryAction,
-  updateNoteAction,
   updateObjectAction,
 } from '@/app/actions/objects';
 import { ChatViewContextBinder } from '@/components/chat/chat-view-context';
@@ -57,10 +54,7 @@ import { DueDateDisplay } from '@/components/due-date-display';
 import { EmptyState } from '@/components/empty-state';
 import { CompactKanbanCardSkeleton } from '@/components/loading-states';
 import { DiscussionCountBadge } from '@/components/objects/discussion-count-badge';
-import { ObjectDiscussionPanel } from '@/components/objects/object-discussion-panel';
-import { ObjectOrigin } from '@/components/objects/object-origin';
-import { ObjectPinButton } from '@/components/objects/object-pin-button';
-import { ObjectRelatedContext } from '@/components/objects/object-related-context';
+import { ObjectPeekPanel } from '@/components/objects/object-peek-panel';
 import { PinOverflowMenu } from '@/components/pins/pin-overflow-menu';
 import { TaskCategoryBadge } from '@/components/tasks/task-category-badge';
 import { useTaskCategoryPolling } from '@/components/tasks/task-category-polling';
@@ -68,7 +62,6 @@ import { TaskCategorySelect } from '@/components/tasks/task-category-select';
 import { TaskProjectSelect } from '@/components/tasks/task-project-select';
 import { taskViewHref, type TaskView } from '@/components/tasks/task-view';
 import { useAppDialog } from '@/components/ui/app-dialog';
-import { DetailRail } from '@/components/ui/detail-rail';
 import { ItemActionGroup } from '@/components/ui/item-actions';
 import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
 import { chatViewLabel } from '@/lib/chat-view';
@@ -992,7 +985,7 @@ function TaskBoardView({
     <div
       className={
         selectedTask
-          ? 'grid h-full min-h-0 min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(22rem,0.34fr)]'
+          ? 'grid h-full min-h-0 min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_min(40%,40rem)]'
           : 'flex h-full min-h-0 min-w-0 flex-col'
       }
     >
@@ -1179,7 +1172,8 @@ function SelectedTaskDetail({
   revertPrimaryProject: (taskId: string) => void;
 }) {
   return (
-    <TaskDetailPanel
+    <ObjectPeekPanel
+      key={selectedTask.id}
       task={selectedTask}
       connectedWork={selectedTaskContext}
       provenance={selectedTaskProvenance}
@@ -2225,420 +2219,6 @@ function TaskCard({
   );
 }
 
-interface TaskDetailUiState {
-  saving: string | null;
-  error: string | null;
-  noteBody: string;
-  editingNoteId: string | null;
-  editingBody: string;
-}
-
-type TaskDetailUiAction =
-  | { type: 'save-start'; field: string }
-  | { type: 'save-end' }
-  | { type: 'error'; error: string | null }
-  | { noteBody: string }
-  | { editingNoteId: string | null; editingBody?: string }
-  | { editingBody: string };
-
-function taskDetailUiReducer(
-  state: TaskDetailUiState,
-  action: TaskDetailUiAction,
-): TaskDetailUiState {
-  if ('type' in action) {
-    if (action.type === 'save-start') {
-      return { ...state, saving: action.field, error: null };
-    }
-    if (action.type === 'save-end') {
-      return { ...state, saving: null };
-    }
-    return { ...state, error: action.error };
-  }
-  if ('noteBody' in action) {
-    return { ...state, noteBody: action.noteBody };
-  }
-  if ('editingBody' in action && !('editingNoteId' in action)) {
-    return { ...state, editingBody: action.editingBody };
-  }
-  return {
-    ...state,
-    editingNoteId: action.editingNoteId,
-    editingBody: action.editingBody ?? state.editingBody,
-  };
-}
-
-// react-doctor-disable-next-line react-doctor/no-multi-comp, react-doctor/no-giant-component -- The side panel is the task board's selected-row editor and shares the same update path.
-function TaskDetailPanel({
-  task,
-  connectedWork,
-  provenance,
-  notes,
-  recentChanges,
-  initialPinned,
-  currentUserId,
-  columns,
-  members,
-  projects,
-  taskCategoriesEnabled,
-  primaryProject,
-  closeHref,
-  objectHref,
-  onUpdate,
-  onProjectChange,
-  onProjectChangeCommitted,
-  onProjectChangeReverted,
-}: {
-  task: objects.ObjectRow;
-  connectedWork?: objects.ObjectDetail['connectedWork'] | null;
-  provenance?: objects.ObjectDetail['provenance'] | null;
-  notes?: objects.ObjectDetail['notes'];
-  recentChanges?: objects.ObjectDetail['recentChanges'];
-  initialPinned: boolean;
-  currentUserId?: string;
-  columns: string[];
-  members: TaskMemberOption[];
-  projects: TaskMemberOption[];
-  taskCategoriesEnabled: boolean;
-  primaryProject: objects.TaskPrimaryProjectRow | null;
-  closeHref: string;
-  objectHref: string;
-  onUpdate: (id: string, patch: TaskPatch) => Promise<{ ok?: boolean; error?: string }>;
-  onProjectChange: (project: { id: string; label: string } | null) => void;
-  onProjectChangeCommitted: () => void;
-  onProjectChangeReverted: () => void;
-}) {
-  const [panelUi, dispatchPanelUi] = useReducer(taskDetailUiReducer, {
-    saving: null,
-    error: null,
-    noteBody: '',
-    editingNoteId: null,
-    editingBody: '',
-  });
-  const { saving, error, noteBody, editingNoteId, editingBody } = panelUi;
-  const [notePending, startNoteTransition] = useTransition();
-  const timezone = useWorkspaceTimezone();
-  const router = useRouter();
-  const title = displayObjectTitle(task);
-  const assignee = members.find((member) => member.id === task.assigneeUserId);
-
-  function dispatchObjectUi(
-    action:
-      | { noteBody: string }
-      | { editingNoteId: string | null; editingBody?: string }
-      | { editingBody: string },
-  ): void {
-    dispatchPanelUi(action);
-  }
-
-  function addNote(): void {
-    if (!noteBody.trim()) return;
-    const body = noteBody.trim();
-    dispatchPanelUi({ noteBody: '' });
-    startNoteTransition(async () => {
-      const result = await notifyAction({
-        id: `task:${task.id}:note`,
-        loading: 'Adding comment…',
-        success: 'Comment added',
-        error: 'Couldn’t add comment',
-        run: () => createNoteAction({ entityId: task.id, body }),
-      });
-      if (result.error) dispatchPanelUi({ noteBody: body });
-      else router.refresh();
-    });
-  }
-
-  function saveNote(noteId: string, body: string): void {
-    const trimmed = body.trim();
-    if (!trimmed) return;
-    dispatchPanelUi({ editingNoteId: null });
-    startNoteTransition(async () => {
-      const result = await notifyAction({
-        id: `task:${task.id}:note`,
-        loading: 'Updating comment…',
-        success: 'Comment updated',
-        error: 'Couldn’t update comment',
-        run: () => updateNoteAction({ noteId, entityId: task.id, body: trimmed }),
-      });
-      if (result.error) {
-        dispatchPanelUi({ editingNoteId: noteId, editingBody: body });
-      } else router.refresh();
-    });
-  }
-
-  function deleteNote(noteId: string): void {
-    startNoteTransition(async () => {
-      const result = await notifyAction({
-        id: `task:${task.id}:note`,
-        loading: 'Deleting comment…',
-        success: 'Comment deleted',
-        error: 'Couldn’t delete comment',
-        run: () => deleteNoteAction({ noteId, entityId: task.id }),
-      });
-      if (!result.error) router.refresh();
-    });
-  }
-
-  function save(field: string, patch: TaskPatch): void {
-    dispatchPanelUi({ type: 'save-start', field });
-    void onUpdate(task.id, patch)
-      .then((result) => {
-        if (result.error) {
-          dispatchPanelUi({ type: 'error', error: result.error });
-        }
-      })
-      .catch((err: unknown) => {
-        dispatchPanelUi({
-          type: 'error',
-          error: err instanceof Error && err.message ? err.message : 'Save failed',
-        });
-      })
-      .finally(() => {
-        dispatchPanelUi({ type: 'save-end' });
-      });
-  }
-
-  return (
-    <DetailRail className="h-full min-h-0 overflow-y-auto" aria-label="Task detail">
-      <div className="flex items-start gap-2 px-3 pt-2">
-        <h2 className="min-w-0 flex-1 whitespace-normal break-words text-sm font-semibold leading-snug text-fg">
-          {displayText(title)}
-        </h2>
-        <div className="flex shrink-0 items-center">
-          <ObjectPinButton key={task.id} objectId={task.id} initialPinned={initialPinned} />
-          <Link
-            href={closeHref}
-            aria-label="Close"
-            className="inline-flex size-8 items-center justify-center rounded-sm text-fg-muted hover:bg-surface-2 hover:text-fg"
-          >
-            <X aria-hidden="true" className="size-3.5" />
-          </Link>
-        </div>
-      </div>
-
-      {
-        <TaskDetailMetadata
-          saving={saving}
-          task={task}
-          save={save}
-          columns={columns}
-          assignee={assignee}
-          members={members}
-          timezone={timezone}
-          primaryProject={primaryProject}
-          projects={projects}
-          onProjectChange={onProjectChange}
-          onProjectChangeCommitted={onProjectChangeCommitted}
-          onProjectChangeReverted={onProjectChangeReverted}
-          taskCategoriesEnabled={taskCategoriesEnabled}
-        />
-      }
-
-      {saving || error ? (
-        <div className="px-3 py-1 text-xs">
-          {saving ? <span className="text-fg-dim">Saving {saving}…</span> : null}
-          {error ? <span className="text-danger">{error}</span> : null}
-        </div>
-      ) : null}
-
-      <ObjectOrigin provenance={provenance} compact />
-
-      <div className="px-3 py-1.5">
-        <ObjectDiscussionPanel
-          notes={notes ?? []}
-          recentChanges={recentChanges ?? []}
-          userId={currentUserId ?? ''}
-          members={members}
-          pending={notePending}
-          noteBody={noteBody}
-          editingNoteId={editingNoteId}
-          editingBody={editingBody}
-          dispatchObjectUi={dispatchObjectUi}
-          onAddNote={addNote}
-          onSaveNote={saveNote}
-          onDeleteNote={deleteNote}
-        />
-      </div>
-
-      <ObjectRelatedContext connectedWork={connectedWork} compact />
-
-      <div className="px-3 py-1.5">
-        <Link
-          href={objectHref}
-          className="text-xs font-normal text-fg-muted hover:text-fg hover:underline"
-        >
-          Open object
-        </Link>
-      </div>
-    </DetailRail>
-  );
-}
-
-function TaskDetailMetadata({
-  saving,
-  task,
-  save,
-  columns,
-  assignee,
-  members,
-  timezone,
-  primaryProject,
-  projects,
-  onProjectChange,
-  onProjectChangeCommitted,
-  onProjectChangeReverted,
-  taskCategoriesEnabled,
-}: {
-  saving: string | null;
-  task: objects.ObjectRow;
-  save: (field: string, patch: TaskPatch) => void;
-  columns: string[];
-  assignee: TaskMemberOption | undefined;
-  members: TaskMemberOption[];
-  timezone: string;
-  primaryProject: objects.TaskPrimaryProjectRow | null;
-  projects: TaskMemberOption[];
-  onProjectChange: (project: { id: string; label: string } | null) => void;
-  onProjectChangeCommitted: () => void;
-  onProjectChangeReverted: () => void;
-  taskCategoriesEnabled: boolean;
-}) {
-  return (
-    <div className="mt-0.5 flex flex-col px-1.5">
-      <EditableMetadata
-        label="Task status"
-        className="min-h-8 px-1.5"
-        pending={saving === 'status'}
-      >
-        <EditableMetadata.Value>
-          <CollectionStatus
-            value={task.status}
-            label={statusLabel(taskDisplayStatus(task.status))}
-          />
-        </EditableMetadata.Value>
-        <EditableMetadata.Editor>
-          <select
-            value={taskDisplayStatus(task.status)}
-            onChange={(event) => {
-              save('status', { status: event.currentTarget.value });
-            }}
-            className="h-10 w-full rounded-sm border border-border bg-bg px-2 text-xs"
-            aria-label="Status"
-          >
-            {columns.map((column) => (
-              <option key={column} value={column}>
-                {statusLabel(column)}
-              </option>
-            ))}
-            {!columns.includes(taskDisplayStatus(task.status)) ? (
-              <option value={task.status}>{statusLabel(task.status)}</option>
-            ) : null}
-          </select>
-        </EditableMetadata.Editor>
-      </EditableMetadata>
-      <EditableMetadata
-        label="Task priority"
-        className="min-h-8 px-1.5"
-        pending={saving === 'priority'}
-      >
-        <EditableMetadata.Value>
-          <CollectionStatus
-            value={task.priority ? `p${task.priority}` : 'none'}
-            tone={priorityTone(task.priority)}
-            label={task.priority ? `P${task.priority}` : 'No priority'}
-          />
-        </EditableMetadata.Value>
-        <EditableMetadata.Editor>
-          <select
-            value={task.priority ?? ''}
-            onChange={(event) => {
-              save('priority', {
-                priority: event.currentTarget.value ? Number(event.currentTarget.value) : null,
-              });
-            }}
-            className="h-10 w-full rounded-sm border border-border bg-bg px-2 text-xs"
-            aria-label="Task priority"
-          >
-            <option value="">No priority</option>
-            {[1, 2, 3, 4].map((priority) => (
-              <option key={priority} value={priority}>
-                P{priority}
-              </option>
-            ))}
-          </select>
-        </EditableMetadata.Editor>
-      </EditableMetadata>
-      <EditableMetadata
-        label="Task assignee"
-        className="min-h-8 px-1.5"
-        pending={saving === 'assignee'}
-      >
-        <EditableMetadata.Value>{assignee?.label ?? 'Unassigned'}</EditableMetadata.Value>
-        <EditableMetadata.Editor>
-          <select
-            value={task.assigneeUserId ?? ''}
-            onChange={(event) => {
-              save('assignee', { assigneeUserId: event.currentTarget.value || null });
-            }}
-            className="h-10 w-full rounded-sm border border-border bg-bg px-2 text-xs"
-            aria-label="Task assignee"
-          >
-            <option value="">Unassigned</option>
-            {members.map((member) => (
-              <option key={member.id} value={member.id}>
-                {member.label}
-              </option>
-            ))}
-          </select>
-        </EditableMetadata.Editor>
-      </EditableMetadata>
-      <EditableMetadata
-        label="Task due date"
-        className="min-h-8 px-1.5"
-        pending={saving === 'due date'}
-      >
-        <EditableMetadata.Value>
-          <DueDateDisplay value={task.dueAt} variant="field-hint" />
-        </EditableMetadata.Value>
-        <EditableMetadata.Editor>
-          <MetadataDateEditor
-            defaultValue={task.dueAt ? dateInputValue(task.dueAt, timezone) : ''}
-            label="Due date"
-            onApply={(value) => {
-              save('due date', {
-                dueAt: value ? new Date(`${value}T00:00:00.000Z`) : null,
-              });
-            }}
-          />
-        </EditableMetadata.Editor>
-      </EditableMetadata>
-      <div className="px-2 py-1">
-        <TaskProjectSelect
-          taskId={task.id}
-          projectId={primaryProject?.projectId ?? null}
-          currentProjectLabel={primaryProject?.projectName}
-          projectArchived={Boolean(primaryProject?.archivedAt)}
-          projects={projects}
-          onProjectChange={onProjectChange}
-          onProjectChangeCommitted={onProjectChangeCommitted}
-          onProjectChangeReverted={onProjectChangeReverted}
-          quiet
-        />
-      </div>
-      {taskCategoriesEnabled ? (
-        <div className="px-2 py-1">
-          <TaskCategorySelect
-            taskId={task.id}
-            category={task.taskCategory}
-            mode={task.taskCategoryMode}
-            status={task.taskCategoryStatus}
-            updatedAt={task.taskCategoryUpdatedAt}
-            quiet
-          />
-        </div>
-      ) : null}
-    </div>
-  );
-}
 function memberLabel(userId: string | null, members: TaskMemberOption[]): string {
   if (!userId) return 'Unassigned';
   return members.find((member) => member.id === userId)?.label ?? 'Assigned';

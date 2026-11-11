@@ -1,6 +1,6 @@
 'use client';
 
-import { Archive, GitMerge, RefreshCw, X } from 'lucide-react';
+import { Archive, BrushCleaning, GitMerge, RefreshCw, X } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useMemo, useReducer } from 'react';
@@ -19,6 +19,7 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
+  DialogTrigger,
 } from '@/components/ui/dialog';
 import { displayText } from '@/lib/display-dates';
 import { notifyAction, notifySuccess } from '@/lib/notify';
@@ -206,142 +207,148 @@ export function ObjectCleanupSuggestions({
   }
 
   return (
-    <section className="py-4">
-      <details>
-        <summary className="cursor-pointer list-none">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="min-w-0 flex-1">
-              <h2 className="text-xs text-fg">Cleanup suggestions</h2>
-              <p className="mt-1 text-sm text-fg-muted">
-                {pendingItems.length > 0
-                  ? `${pendingItems.length} pending cleanup ${pendingItems.length === 1 ? 'suggestion' : 'suggestions'}`
-                  : 'No cleanup suggestions pending'}
-              </p>
-            </div>
-            <span className="text-xs text-fg-dim">Open</span>
-          </div>
-        </summary>
-
-        <div className="mt-4 flex justify-end">
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            disabled={state.findingSuggestions}
-            onClick={() => {
-              void run(findObjectCleanupSuggestionsAction, {
-                id: 'cleanup:find',
-                loading: 'Finding suggestions…',
-                success: 'Suggestions updated',
-                error: 'Couldn’t find suggestions',
-              });
-            }}
-          >
-            <RefreshCw className="size-4" />
-            Find suggestions
+    <>
+      <Dialog>
+        <DialogTrigger asChild>
+          <Button variant="ghost" size="sm" className="min-h-10 gap-1.5 text-xs text-fg-muted">
+            <BrushCleaning className="size-3.5" aria-hidden="true" />
+            Cleanup
+            {pendingItems.length > 0 ? (
+              <span className="font-mono text-fg-dim">{pendingItems.length}</span>
+            ) : null}
           </Button>
-        </div>
+        </DialogTrigger>
+        <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Cleanup suggestions</DialogTitle>
+            <DialogDescription>
+              Review duplicates and objects that may no longer be needed.
+            </DialogDescription>
+          </DialogHeader>
+          {pendingItems.length === 0 ? (
+            <p className="py-4 text-sm text-fg-muted">No cleanup suggestions pending.</p>
+          ) : null}
+          <div className="mt-4 flex justify-end">
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={state.findingSuggestions}
+              onClick={() => {
+                void run(findObjectCleanupSuggestionsAction, {
+                  id: 'cleanup:find',
+                  loading: 'Finding suggestions…',
+                  success: 'Suggestions updated',
+                  error: 'Couldn’t find suggestions',
+                });
+              }}
+            >
+              <RefreshCw className="size-4" />
+              Find suggestions
+            </Button>
+          </div>
 
-        {pendingItems.length > 0 ? (
-          <VirtualList
-            items={pendingItems}
-            getItemKey={({ item }) => item.id}
-            estimateSize={96}
-            className="mt-4"
-            renderItem={({ bundle, item }) => {
-              const mergeIds = item.targetKind === 'object_merge' ? objectIdsForMerge(item) : [];
-              const itemBusy = state.busyItemIds.has(item.id);
-              return (
-                <div className="grid gap-3 border border-border bg-bg p-3 md:grid-cols-[minmax(0,1fr)_auto]">
-                  <div className="min-w-0">
-                    <div className="text-xs text-fg-dim">
-                      {item.targetKind === 'object_merge' ? 'merge' : 'archive'} ·{' '}
-                      {bundle.confidence}
+          {pendingItems.length > 0 ? (
+            <VirtualList
+              items={pendingItems}
+              getItemKey={({ item }) => item.id}
+              estimateSize={96}
+              className="mt-4"
+              renderItem={({ bundle, item }) => {
+                const mergeIds = item.targetKind === 'object_merge' ? objectIdsForMerge(item) : [];
+                const itemBusy = state.busyItemIds.has(item.id);
+                return (
+                  <div className="grid gap-3 border border-border bg-bg p-3 md:grid-cols-[minmax(0,1fr)_auto]">
+                    <div className="min-w-0">
+                      <div className="text-xs text-fg-dim">
+                        {item.targetKind === 'object_merge' ? 'merge' : 'archive'} ·{' '}
+                        {bundle.confidence}
+                      </div>
+                      <div className="mt-1 font-medium text-fg">{displayText(item.title)}</div>
+                      <p className="mt-1 truncate text-sm text-fg-muted">
+                        {displayText(
+                          item.description ?? bundle.summary ?? 'Review this cleanup suggestion.',
+                        )}
+                      </p>
                     </div>
-                    <div className="mt-1 font-medium text-fg">{displayText(item.title)}</div>
-                    <p className="mt-1 truncate text-sm text-fg-muted">
-                      {displayText(
-                        item.description ?? bundle.summary ?? 'Review this cleanup suggestion.',
-                      )}
-                    </p>
-                  </div>
-                  <div className="flex flex-wrap items-center justify-end gap-1.5">
-                    {item.targetKind === 'object_merge' ? (
-                      mergePreviewsByItemId[item.id] ? (
+                    <div className="flex flex-wrap items-center justify-end gap-1.5">
+                      {item.targetKind === 'object_merge' ? (
+                        mergePreviewsByItemId[item.id] ? (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            disabled={itemBusy || mergeIds.length < 2}
+                            onClick={() => {
+                              dispatch({ type: 'review_item', itemId: item.id });
+                            }}
+                          >
+                            <GitMerge className="size-4" />
+                            Review
+                          </Button>
+                        ) : itemBusy || mergeIds.length < 2 ? (
+                          <Button type="button" size="sm" variant="outline" disabled>
+                            <GitMerge className="size-4" />
+                            Review
+                          </Button>
+                        ) : (
+                          <Button asChild size="sm" variant="outline">
+                            <Link href={objectMergeSuggestionHref(item, mergeIds)}>
+                              <GitMerge className="size-4" />
+                              Review
+                            </Link>
+                          </Button>
+                        )
+                      ) : (
                         <Button
                           type="button"
                           size="sm"
                           variant="outline"
-                          disabled={itemBusy || mergeIds.length < 2}
+                          disabled={itemBusy || !item.targetId}
                           onClick={() => {
-                            dispatch({ type: 'review_item', itemId: item.id });
+                            if (!item.targetId) return;
+                            void run(
+                              () => acceptSuggestionItemAction({ itemId: item.id }),
+                              {
+                                id: `cleanup:${item.id}`,
+                                loading: 'Archiving…',
+                                success: 'Suggestion archived',
+                                error: 'Couldn’t archive suggestion',
+                              },
+                              item.id,
+                            );
                           }}
                         >
-                          <GitMerge className="size-4" />
-                          Review
+                          <Archive className="size-4" />
+                          Archive
                         </Button>
-                      ) : itemBusy || mergeIds.length < 2 ? (
-                        <Button type="button" size="sm" variant="outline" disabled>
-                          <GitMerge className="size-4" />
-                          Review
-                        </Button>
-                      ) : (
-                        <Button asChild size="sm" variant="outline">
-                          <Link href={objectMergeSuggestionHref(item, mergeIds)}>
-                            <GitMerge className="size-4" />
-                            Review
-                          </Link>
-                        </Button>
-                      )
-                    ) : (
+                      )}
                       <Button
                         type="button"
                         size="sm"
-                        variant="outline"
-                        disabled={itemBusy || !item.targetId}
+                        variant="ghost"
+                        disabled={itemBusy}
                         onClick={() => {
-                          if (!item.targetId) return;
-                          void run(
-                            () => acceptSuggestionItemAction({ itemId: item.id }),
-                            {
-                              id: `cleanup:${item.id}`,
-                              loading: 'Archiving…',
-                              success: 'Suggestion archived',
-                              error: 'Couldn’t archive suggestion',
-                            },
-                            item.id,
-                          );
+                          rejectItem(item.id);
                         }}
                       >
-                        <Archive className="size-4" />
-                        Archive
+                        <X className="size-4" />
+                        Dismiss
                       </Button>
-                    )}
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="ghost"
-                      disabled={itemBusy}
-                      onClick={() => {
-                        rejectItem(item.id);
-                      }}
-                    >
-                      <X className="size-4" />
-                      Dismiss
-                    </Button>
+                    </div>
                   </div>
-                </div>
-              );
-            }}
+                );
+              }}
+            />
+          ) : null}
+          <InfiniteScroll
+            hasMore={false}
+            onLoadMore={() => undefined}
+            boundLabel="No more matching suggestions"
+            hideBound={pendingItems.length === 0}
           />
-        ) : null}
-        <InfiniteScroll
-          hasMore={false}
-          onLoadMore={() => undefined}
-          boundLabel="No more matching suggestions"
-          hideBound={pendingItems.length === 0}
-        />
-      </details>
+        </DialogContent>
+      </Dialog>
 
       <Dialog
         open={Boolean(state.reviewingItemId)}
@@ -383,6 +390,6 @@ export function ObjectCleanupSuggestions({
           )}
         </DialogContent>
       </Dialog>
-    </section>
+    </>
   );
 }

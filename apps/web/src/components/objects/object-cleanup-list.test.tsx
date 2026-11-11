@@ -8,6 +8,7 @@ import type { ReactNode } from 'react';
 
 const fakes = vi.hoisted(() => ({
   refresh: vi.fn(),
+  push: vi.fn(),
   confirm: vi.fn(),
   bulkArchiveObjectsAction: vi.fn(),
   updateObjectAction: vi.fn(),
@@ -19,7 +20,7 @@ await vi.mock(
   import.meta.resolve('next/navigation'),
   async () => ({
     ...(await import('next/navigation')),
-    useRouter: () => ({ refresh: fakes.refresh }),
+    useRouter: () => ({ refresh: fakes.refresh, push: fakes.push }),
   }),
   () => import('next/navigation'),
 );
@@ -242,6 +243,24 @@ describe('ObjectCleanupList', () => {
     expect(screen.getAllByText('No due date')).toHaveLength(1);
   });
 
+  it('opens a row preview without losing filters and exposes a shareable title link', async () => {
+    const user = userEvent.setup();
+    render(
+      <ObjectCleanupList
+        rows={[object({ id: 'object-1', canonicalName: 'First object' })]}
+        typeLabels={{ task: 'Task' }}
+        returnTo="/app/objects?type=task&q=First&object=old"
+      />,
+    );
+    expect(screen.getByRole('link', { name: 'First object' }).getAttribute('href')).toBe(
+      '/app/objects?type=task&q=First&object=object-1',
+    );
+    await user.click(screen.getByRole('button', { name: 'Preview First object' }));
+    expect(fakes.push).toHaveBeenCalledWith('/app/objects?type=task&q=First&object=object-1', {
+      scroll: false,
+    });
+  });
+
   it('does not expose a disabled merge action as a keyboard-activatable link', async () => {
     const user = userEvent.setup();
     render(
@@ -254,7 +273,7 @@ describe('ObjectCleanupList', () => {
       />,
     );
 
-    await user.click(screen.getByRole('button', { name: 'Select' }));
+    await user.click(screen.getByRole('button', { name: 'Select Task' }));
 
     expect(screen.queryByRole('link', { name: 'Merge' })).toBeNull();
     expect(screen.queryByText('Merge')).toBeNull();

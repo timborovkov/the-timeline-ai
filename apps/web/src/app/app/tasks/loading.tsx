@@ -27,7 +27,7 @@ export default function TasksLoading() {
         aria-label="Loading tasks"
       >
         <h1 className="sr-only">Tasks</h1>
-        <div aria-hidden="true" inert className="shrink-0 px-4 pt-5 md:px-8">
+        <div aria-hidden="true" inert className="shrink-0 px-4 md:px-8">
           <PageHeaderSkeleton variant="collection" />
         </div>
         <WorkSubnav current="/app/tasks" className="shrink-0 px-4 md:px-8" />
@@ -43,7 +43,7 @@ export default function TasksLoading() {
           {isKanban ? (
             <CompactKanbanSkeleton columns={5} variant="task" />
           ) : (
-            <CollectionGroupSkeleton />
+            <CollectionGroupSkeleton leading={false} />
           )}
         </div>
       </div>

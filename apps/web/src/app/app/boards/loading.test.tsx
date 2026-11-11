@@ -50,7 +50,7 @@ describe('Boards route states', () => {
     expect(
       document.querySelector('[aria-label="Boards list loading placeholder"]')?.firstElementChild
         ?.className,
-    ).toContain('border-t border-border');
+    ).not.toContain('border-t');
 
     rerender(<BoardDetailLoading />);
 

@@ -179,10 +179,21 @@ Ask, Work, Documents, Meetings, Connections, Usage, and Team.
 - Inspector: hidden until content exists. Desktop uses a reading pane up to
   `min(40%, 36rem)`; mobile uses a taller focus-managed bottom sheet.
 - Work routes share `WorkSubnav`: Overview, Pinned, Objects, Tasks, Boards,
-  Calendar, Digests, Approvals.
+  Calendar, Digests, Approvals. Collection tabs sit flush against the following
+  toolbar or group; Calendar uses 24px below tabs before its standalone controls,
+  and creation and merge forms retain breathing room. Loading states mirror the
+  same header alignment, tab spacing, toolbars, and row geometry.
+- Objects cleanup is a quiet toolbar action beside New object. It opens a review
+  dialog with a pending count and an explicit empty state, rather than adding
+  a separate strip above the list. Objects and Tasks use the full collection
+  canvas with compact chrome.
+- Object and task previews use the same detail rail, up to `min(40%, 40rem)`
+  on wide screens and a focus-managed bottom sheet below 1280px. Keep the title,
+  pin, close, and full-width, quiet outlined “Open object” action together at the top.
 - Billing settings share Usage’s allowance cards and neutral surfaces, with clear
   spacing between plan controls, charges, and membership. See the
   [billing presentation contract](docs/design/app.md#billing-benefits-and-recorded-charges).
+
 - Team settings use URL-backed `SettingsNav`: Members, General, Preferences,
   Visibility, Email, Exports, and admin-only Advanced.
 
