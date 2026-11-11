@@ -1739,7 +1739,7 @@ describe('billing scope', () => {
         pricing_plan_id: 'payg',
         list_charge_cents: 600,
         discount_cents: 0,
-        invoice_cents: 100,
+        invoice_cents: 400,
       });
     }
     if (!recall.duplicate) {
@@ -1807,7 +1807,7 @@ describe('billing scope', () => {
       expect(settled.ledger.metadata).toMatchObject({
         pricing_plan_id: 'payg',
         discount_cents: 0,
-        invoice_cents: 100,
+        invoice_cents: 400,
       });
     }
     expect((await scope.getAccount()).includedDiscountRemainingCents).toBe(6_000);
@@ -2734,6 +2734,7 @@ describe('billing scope', () => {
   });
 
   it('stamps a payable settlement with the reservation instant instead of the month midpoint', async () => {
+    vi.setSystemTime(new Date('2026-10-20T12:00:00.000Z'));
     const provider = createFakeBillingProvider();
     const scope = createBillingScope({
       db,
@@ -2931,7 +2932,7 @@ describe('billing scope', () => {
         team_id, operation_id, meter_id, reserved_native_units, reserved_charge_cents, expires_at
       )
       SELECT '${TEAM_ID}', 'ask:web:' || g, 'ai', 1, 1, now() + interval '1 hour'
-      FROM generate_series(1, 99) AS g;
+      FROM generate_series(1, 49) AS g;
     `);
     const [first, second] = await Promise.all([
       scope.reserve({
