@@ -26,6 +26,7 @@ import { signedInAuthRedirect } from '@/lib/auth-redirect';
 import { authConfig } from '@/lib/auth.config';
 import { ensureSoloTeam } from '@/lib/default-team';
 import { markEmailVerifiedFromTrustedOAuth, sendEmailVerification } from '@/lib/email-verification';
+import { rememberLastLoginMethod } from '@/lib/last-login-method';
 import { isLegalPublicationReady } from '@/lib/legal-publication';
 import {
   authenticationMethod,
@@ -251,7 +252,8 @@ const nextAuth = NextAuth(() => {
           );
         }
       },
-      signIn({ user, account }) {
+      async signIn({ user, account }) {
+        await rememberLastLoginMethod(account?.provider);
         if (!user.id) return;
         trackProductEventBestEffort({ kind: 'user', userId: user.id }, 'authentication_succeeded', {
           method: authenticationMethod(account?.provider),
