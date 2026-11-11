@@ -198,6 +198,42 @@ describe('withTeam timeline semantic search', () => {
     );
   });
 
+  it('keeps text anchors when optional Slack attachments have no transcript', async () => {
+    await pg.query(
+      `UPDATE raw_events SET source='slack',source_metadata='{"slack_channel_id":"C-REVIEW","slack_thread_ts":"123"}'::jsonb,occurred_at='2026-06-01T09:01:00Z' WHERE id=ANY($1::uuid[])`,
+      [[TEAM_EVENT, RELATED_EVENT]],
+    );
+    await pg.query('UPDATE raw_events SET content_text=NULL WHERE id=$1', [RELATED_EVENT]);
+    const result = await enrichEvidenceContext(scopeFor(MEMBER), { eventIds: [TEAM_EVENT] });
+    expect(result.adapterFailures).toEqual([]);
+    expect(result.evidence.map((row) => row.eventId)).toContain(TEAM_EVENT);
+    expect(result.evidence.map((row) => row.eventId)).not.toContain(RELATED_EVENT);
+    const invalidAnchor = await enrichEvidenceContext(scopeFor(MEMBER), {
+      eventIds: [RELATED_EVENT],
+    });
+    expect(invalidAnchor.adapterFailures).toContainEqual({
+      adapter: 'conversation_context',
+      errorReason: 'EvidencePackError',
+    });
+  });
+
+  it('discloses conversation evidence omitted by the downstream core budget', async () => {
+    await pg.query(
+      `UPDATE raw_events SET source='telegram',source_metadata='{"tg_chat_id":"long-thread"}'::jsonb WHERE id=$1`,
+      [TEAM_EVENT],
+    );
+    for (let index = 0; index < 24; index++) {
+      await pg.query(
+        `INSERT INTO raw_events (id,team_id,author_user_id,source,content_text,occurred_at,visibility,source_metadata) VALUES ($1,$2,$3,'telegram',$4,'2026-06-01T09:01:00Z','team','{"tg_chat_id":"long-thread"}'::jsonb)`,
+        [crypto.randomUUID(), TEAM_A, OWNER, `Reply ${index}`],
+      );
+    }
+    const result = await enrichEvidenceContext(scopeFor(MEMBER), { eventIds: [TEAM_EVENT] });
+    expect(result.adapterFailures).toEqual([]);
+    expect(result.truncated).toBe(true);
+    expect(result.evidence.filter((row) => row.role === 'core')).toHaveLength(24);
+  });
+
   it('keeps pending board updates for their exactly associated object', async () => {
     const boardId = crypto.randomUUID(),
       boardItemId = crypto.randomUUID(),

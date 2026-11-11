@@ -172,6 +172,30 @@ function makeScope() {
 }
 
 describe('retrieveWorkspaceContext', () => {
+  it('discloses expanded conversations exceeding the core evidence budget', async () => {
+    const scope = makeScope();
+    const rows = Array.from({ length: 25 }, (_, index) => ({
+      id: index === 0 ? EVENT_ID : crypto.randomUUID(),
+      source: 'telegram',
+      contentText: `Reply ${index}`,
+      occurredAt: new Date('2026-06-14T09:00:00Z'),
+      authorUserId: OBJECT_ID,
+      sourceMetadata: { tg_chat_id: 'review-room' },
+      visibility: 'team',
+      visibilityOwnerUserId: null,
+      visibilityUserIds: null,
+    }));
+    scope.timeline.getEventsByIds.mockImplementation((ids: string[]) =>
+      rows.filter((row) => ids.includes(row.id)),
+    );
+    scope.timeline.listEventsForMomentLookup.mockResolvedValue(rows);
+    const result = await retrieveWorkspaceContext(scope as unknown as TeamScope, {
+      query: 'Otto',
+      recipe: 'document_knowledge',
+    });
+    expect(result.evidencePack).toMatchObject({ status: 'complete', metrics: { truncated: true } });
+  });
+
   it('expands the source conversation for a document-only match', async () => {
     const scope = makeScope();
     scope.timeline.searchEvents.mockResolvedValue([]);

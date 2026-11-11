@@ -123,7 +123,10 @@ remain noncanonical; rejected changes do not erase source history. Source-specif
 answers attribute the source, historical answers respect the requested period,
 and unresolved contradictions retain both citations without an invented resolution.
 Conversation context expands at most five matched moments through scoped lookups
-(up to 40 events per moment and 100 events overall), preserving chronology. Only
+(up to 40 events per moment and 100 events overall), preserving chronology. The
+answer pack admits at most 24 core events; omitted expansion is reported as
+truncated. Optional replies without text are excluded without weakening anchor
+validation. Only
 visibility-validated source IDs become evidence anchors. Board-item proposals retain
 their exact object association and separate current board values. Later manual
 document versions do not inherit a promoted attachment’s original message provenance.

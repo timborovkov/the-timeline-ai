@@ -1,6 +1,10 @@
 import { fenceExternalContent } from '#src/agent/external-content.js';
 import { artifactRefCitation } from '#src/citation.js';
-import { buildEvidencePack, evidenceSourceContextForPrompt } from '#src/evidence-pack/index.js';
+import {
+  buildEvidencePack,
+  EVIDENCE_PACK_POLICIES,
+  evidenceSourceContextForPrompt,
+} from '#src/evidence-pack/index.js';
 import { buildTimelineMoments, timelineMomentLookupPlan } from '#src/timeline-moments/index.js';
 
 import type { TeamScope } from '#src/team-scope.js';
@@ -25,6 +29,8 @@ export async function expandEvidenceConversations(scope: TeamScope, eventIds: st
       const related = await scope.timeline.listEventsForMomentLookup({ ...plan, limit });
       truncated ||= related.length >= limit;
       for (const event of related) {
+        // Optional attachments awaiting transcription must not invalidate text anchors.
+        if (!event.contentText?.trim()) continue;
         if (ids.size >= 100 && !ids.has(event.id)) {
           truncated = true;
           continue;
@@ -38,6 +44,8 @@ export async function expandEvidenceConversations(scope: TeamScope, eventIds: st
       });
     }
   }
+  // The downstream pack has a smaller core budget than conversation discovery.
+  truncated ||= new Set([...eventIds, ...ids]).size > EVIDENCE_PACK_POLICIES.answer.maxCoreEvents;
   return { eventIds: [...ids], truncated, adapterFailures };
 }
 
