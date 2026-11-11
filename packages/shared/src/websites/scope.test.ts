@@ -16,7 +16,6 @@ import { drizzle } from 'drizzle-orm/pglite';
 
 import { withTeam } from '#src/team-scope.js';
 import { applyDbMigrations } from '#src/test/pglite.js';
-
 import { completeWebsiteChunk } from '#src/websites/completion.js';
 import { obsoleteWebsiteEventIds } from '#src/websites/retrieval.js';
 
