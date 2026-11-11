@@ -163,19 +163,14 @@ export default async function MeetingsPage({
 
       <MeetingsViewNavigation tab={tab} />
 
-      {(
-        tab === 'captures'
-          ? capturePage.items.length > 0 || hasCaptureFilters
-          : savedMeetings.length > 0 || hasSavedSearch
-      ) ? (
-        <MeetingSearchControls
-          clearHref={clearCurrentViewHref}
-          filter={filter}
-          hasActiveFilters={tab === 'captures' ? hasCaptureFilters : hasSavedSearch}
-          query={query}
-          tab={tab}
-        />
-      ) : null}
+      <MeetingSearchControls
+        clearHref={clearCurrentViewHref}
+        filter={filter}
+        hasItems={list.length + savedMeetings.length > 0}
+        hasActiveFilters={tab === 'captures' ? hasCaptureFilters : hasSavedSearch}
+        query={query}
+        tab={tab}
+      />
 
       {tab === 'saved' ? (
         <SavedMeetingsSection
@@ -247,15 +242,19 @@ function MeetingSearchControls({
   clearHref,
   filter,
   hasActiveFilters,
+  hasItems,
   query,
   tab,
 }: {
   clearHref: string;
   filter: CaptureFilter;
   hasActiveFilters: boolean;
+  hasItems: boolean;
   query: string;
   tab: MeetingTab;
 }) {
+  if (!hasItems && !hasActiveFilters) return null;
+
   return (
     <form action="/app/meetings" role="search">
       <input name="tab" type="hidden" value={tab === 'saved' ? 'saved' : ''} />
