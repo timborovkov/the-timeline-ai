@@ -28,12 +28,23 @@ interface Website {
   paused: boolean;
   blockedReason: string | null;
   nextScanAt: string | null;
+  latestRun: RunSummary | null;
   schedule: {
     frequency: 'manual' | 'daily' | 'weekly';
     time: string;
     weekday: number;
     timezone: string;
   };
+}
+interface RunSummary {
+  id: string;
+  status: string;
+  createdAt: string;
+  finishedAt: string | null;
+  changedCount: number;
+}
+function isScanning(run: RunSummary | null | undefined) {
+  return Boolean(run && ['queued', 'crawling', 'processing'].includes(run.status));
 }
 interface Run {
   id: string;
@@ -76,6 +87,8 @@ export function WebsiteManager({
 }) {
   const [websites, setWebsites] = useState<Website[]>([]);
   const [error, setError] = useState('');
+  const refreshVersion = useRef(0);
+  const hasActiveScan = websites.some((website) => isScanning(website.latestRun));
   const addButton = useRef<HTMLButtonElement>(null);
   const confirmationTrigger = useRef<HTMLButtonElement | null>(null);
   const [adding, setAdding] = useState(false);
@@ -97,7 +110,9 @@ export function WebsiteManager({
   const displayedError =
     error || (historyQuery.isError ? 'Could not refresh scan history. Try again.' : '');
   const refresh = useCallback(async () => {
+    const version = ++refreshVersion.current;
     const data = await request<{ websites: Website[] }>('');
+    if (version !== refreshVersion.current) return;
     setWebsites(data.websites);
     setLoading(false);
     setError('');
@@ -203,42 +218,21 @@ export function WebsiteManager({
             <section key={website.id} className="py-5">
               <div className="flex flex-wrap items-center gap-4">
                 <Globe aria-hidden="true" className="size-5 shrink-0 text-fg-muted" />
-                <div className="min-w-0 flex-1 basis-48">
-                  <h2 className="break-all text-base font-semibold">
-                    {website.url.replace(/^https?:\/\//, '').replace(/\/$/, '')}
-                  </h2>
-                  <p className="mt-1 text-sm text-fg-muted">
-                    {website.subject === 'own_team' ? 'Your company' : 'Another company'} ·{' '}
-                    {website.paused
-                      ? 'Paused'
-                      : website.schedule.frequency === 'manual'
-                        ? 'On demand'
-                        : `${website.schedule.frequency === 'daily' ? 'Daily' : 'Weekly'} · ${website.schedule.time} ${website.schedule.timezone}`}
-                  </p>
-                </div>
+                <WebsiteIdentity website={website} />
                 {website.blockedReason && <StatusBadge status="blocked" />}
-                <div className="flex gap-1">
-                  <Button
-                    variant="outline"
-                    disabled={busy || website.paused}
-                    onClick={(event) => {
-                      confirmationTrigger.current = event.currentTarget;
-                      setConfirmation({ websiteId: website.id, action: 'scan' });
-                    }}
-                  >
-                    <RefreshCw aria-hidden="true" />
-                    Scan now
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    aria-expanded={selected === website.id}
-                    onClick={() => {
-                      setSelected(selected === website.id ? null : website.id);
-                    }}
-                  >
-                    History
-                  </Button>
-                </div>
+                <WebsiteScanActions
+                  website={website}
+                  busy={busy}
+                  hasActiveScan={hasActiveScan}
+                  historyOpen={selected === website.id}
+                  scan={(trigger) => {
+                    confirmationTrigger.current = trigger;
+                    setConfirmation({ websiteId: website.id, action: 'scan' });
+                  }}
+                  toggleHistory={() => {
+                    setSelected(selected === website.id ? null : website.id);
+                  }}
+                />
               </div>
               {website.blockedReason && (
                 <p className="mt-3 text-sm text-destructive">
@@ -304,7 +298,7 @@ export function WebsiteManager({
       <p className="text-xs text-fg-muted">Up to 5 pages per scan · 20 source units per page</p>
       <WebsiteConfirmation
         action={confirmation?.action ?? null}
-        busy={busy}
+        busy={busy || (confirmation?.action === 'scan' && hasActiveScan)}
         close={() => {
           setConfirmation(null);
         }}
@@ -312,14 +306,22 @@ export function WebsiteManager({
           confirmationTrigger.current?.focus();
         }}
         confirm={() => {
-          if (!confirmation) return;
+          if (!confirmation || busy || (confirmation.action === 'scan' && hasActiveScan)) return;
           const { websiteId, action } = confirmation;
           setConfirmation(null);
           if (action === 'scan') {
-            void act(
-              () => request(`/${websiteId}/scans`, 'POST', { permissionConfirmed: true }),
-              'Scan queued',
-            );
+            void act(async () => {
+              const { run } = await request<{ run: RunSummary }>(`/${websiteId}/scans`, 'POST', {
+                permissionConfirmed: true,
+              });
+              // Keep the accepted run visible even if the subsequent refresh fails.
+              ++refreshVersion.current;
+              setWebsites((current) =>
+                current.map((website) =>
+                  website.id === websiteId ? { ...website, latestRun: run } : website,
+                ),
+              );
+            }, 'Scan queued');
           } else {
             void act(async () => {
               await request(`/${websiteId}`, 'DELETE');
@@ -358,6 +360,105 @@ export function WebsiteManager({
           />
         </DialogContent>
       </Dialog>
+    </div>
+  );
+}
+
+function WebsiteIdentity({ website }: { website: Website }) {
+  return (
+    <div className="min-w-0 flex-1 basis-48">
+      <h2 className="break-all text-base font-semibold">
+        {website.url.replace(/^https?:\/\//, '').replace(/\/$/, '')}
+      </h2>
+      <p className="mt-1 text-sm text-fg-muted">
+        {website.subject === 'own_team' ? 'Your company' : 'Another company'} ·{' '}
+        {website.paused
+          ? 'Paused'
+          : website.schedule.frequency === 'manual'
+            ? 'On demand'
+            : `${website.schedule.frequency === 'daily' ? 'Daily' : 'Weekly'} · ${website.schedule.time} ${website.schedule.timezone}`}
+      </p>
+      <WebsiteScanSummary run={website.latestRun} />
+    </div>
+  );
+}
+
+function WebsiteScanActions({
+  website,
+  busy,
+  hasActiveScan,
+  historyOpen,
+  scan,
+  toggleHistory,
+}: {
+  website: Website;
+  busy: boolean;
+  hasActiveScan: boolean;
+  historyOpen: boolean;
+  scan: (trigger: HTMLButtonElement) => void;
+  toggleHistory: () => void;
+}) {
+  const scanning = isScanning(website.latestRun);
+  return (
+    <div className="flex gap-1">
+      <Button
+        variant="outline"
+        disabled={busy || website.paused || hasActiveScan}
+        title={hasActiveScan && !scanning ? 'Another website scan is in progress' : undefined}
+        onClick={(event) => {
+          scan(event.currentTarget);
+        }}
+      >
+        <RefreshCw
+          aria-hidden="true"
+          className={scanning ? 'motion-safe:animate-spin' : undefined}
+        />
+        {scanning
+          ? website.latestRun?.status === 'queued'
+            ? 'Scan queued'
+            : 'Scanning…'
+          : 'Scan now'}
+      </Button>
+      <Button variant="ghost" aria-expanded={historyOpen} onClick={toggleHistory}>
+        History
+      </Button>
+    </div>
+  );
+}
+
+function WebsiteScanSummary({ run }: { run: RunSummary | null }) {
+  if (!run) return <p className="mt-2 text-xs text-fg-muted">Not scanned yet</p>;
+  const active = isScanning(run);
+  const labels: Record<string, string> = {
+    queued: 'Queued',
+    crawling: 'Scanning website',
+    processing: 'Processing pages',
+    completed: 'Last scanned',
+    partial: 'Last scan partially completed',
+    cancelled: 'Last scan cancelled',
+    blocked: 'Last scan blocked',
+    failed: 'Last scan failed',
+  };
+  const label = labels[run.status] ?? 'Last scan';
+  return (
+    <div
+      className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-fg-muted"
+      role="status"
+    >
+      <span>
+        {label} <RelativeTimestamp value={run.finishedAt ?? run.createdAt} />
+      </span>
+      {!active && run.status === 'completed' && run.changedCount === 0 && (
+        <span>No changes found</span>
+      )}
+      {!active && run.changedCount > 0 && (
+        <Link
+          className="underline underline-offset-4"
+          href={`/app/timeline?moment=${encodeURIComponent(`moment:website:${run.id}`)}`}
+        >
+          View changes
+        </Link>
+      )}
     </div>
   );
 }

@@ -14,7 +14,7 @@ import {
   documentChunks,
   rawEvents,
 } from '@timeline/db';
-import { and, desc, eq, isNull, sql } from 'drizzle-orm';
+import { and, desc, eq, getTableColumns, isNull, sql } from 'drizzle-orm';
 
 import { encryptJson } from '#src/crypto/secrets.js';
 import { getEnv } from '#src/env.js';
@@ -351,9 +351,32 @@ export function createWebsiteScope({
     },
     async list() {
       await permission('read');
+      const latestRun = db
+        .select({
+          id: websiteRuns.id,
+          status: websiteRuns.status,
+          createdAt: websiteRuns.createdAt,
+          finishedAt: websiteRuns.finishedAt,
+          changedCount: websiteRuns.changedCount,
+        })
+        .from(websiteRuns)
+        .where(and(eq(websiteRuns.teamId, teamId), eq(websiteRuns.websiteId, websites.id)))
+        .orderBy(desc(websiteRuns.createdAt), desc(websiteRuns.id))
+        .limit(1)
+        .as('latest_run');
       return db
-        .select()
+        .select({
+          ...getTableColumns(websites),
+          latestRun: {
+            id: latestRun.id,
+            status: latestRun.status,
+            createdAt: latestRun.createdAt,
+            finishedAt: latestRun.finishedAt,
+            changedCount: latestRun.changedCount,
+          },
+        })
         .from(websites)
+        .leftJoinLateral(latestRun, sql`true`)
         .where(and(eq(websites.teamId, teamId), isNull(websites.archivedAt)))
         .orderBy(desc(websites.createdAt));
     },

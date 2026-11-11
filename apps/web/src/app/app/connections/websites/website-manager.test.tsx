@@ -201,3 +201,89 @@ it.each(['scan', 'remove'] as const)(
     expect(screen.queryByRole('dialog')).toBeNull();
   },
 );
+
+const statusWebsite = {
+  id: 'status-website',
+  url: 'https://status.example/',
+  subject: 'own_team',
+  paused: false,
+  blockedReason: null,
+  nextScanAt: null,
+  schedule: { frequency: 'manual', time: '09:00', weekday: 1, timezone: 'UTC' },
+};
+const recentRun = {
+  id: 'recent-run',
+  status: 'completed',
+  createdAt: new Date(Date.now() - 10 * 60_000).toISOString(),
+  finishedAt: new Date(Date.now() - 5 * 60_000).toISOString(),
+  changedCount: 2,
+};
+
+it.each(['queued', 'crawling', 'processing'])(
+  'prevents repeat scans while a run is %s, including after reload',
+  async (status) => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() =>
+        Promise.resolve(
+          Response.json({
+            websites: [{ ...statusWebsite, latestRun: { ...recentRun, status, finishedAt: null } }],
+          }),
+        ),
+      ),
+    );
+    renderWithQueryClient(
+      <WebsiteManager canManage={false} timezone="UTC" schedulesEnabled={false} />,
+    );
+    const button = await screen.findByRole('button', {
+      name: status === 'queued' ? 'Scan queued' : 'Scanning…',
+    });
+    expect((button as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.queryByRole('link', { name: 'View changes' })).toBeNull();
+    expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
+  },
+);
+
+it('shows the latest completed scan time and its timeline evidence without opening history', async () => {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(() =>
+      Promise.resolve(Response.json({ websites: [{ ...statusWebsite, latestRun: recentRun }] })),
+    ),
+  );
+  renderWithQueryClient(
+    <WebsiteManager canManage={false} timezone="UTC" schedulesEnabled={false} />,
+  );
+  await screen.findByText(/Last scanned/);
+  expect(document.querySelector('time')?.getAttribute('datetime')).toBe(recentRun.finishedAt);
+  expect(screen.getByRole('link', { name: 'View changes' }).getAttribute('href')).toBe(
+    '/app/timeline?moment=moment%3Awebsite%3Arecent-run',
+  );
+  expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Scan now' }).disabled).toBe(false);
+});
+
+it('keeps an accepted scan disabled when refreshing the list fails', async () => {
+  const user = userEvent.setup();
+  let accepted = false;
+  const fetcher = vi.fn((_url: string, init?: RequestInit) => {
+    if (init?.method === 'POST') {
+      accepted = true;
+      return Promise.resolve(
+        Response.json({ run: { ...recentRun, status: 'queued', finishedAt: null } }),
+      );
+    }
+    if (accepted) return Promise.resolve(Response.json({ error: 'Unavailable' }, { status: 503 }));
+    return Promise.resolve(Response.json({ websites: [{ ...statusWebsite, latestRun: null }] }));
+  });
+  vi.stubGlobal('fetch', fetcher);
+  renderWithQueryClient(
+    <WebsiteManager canManage={false} timezone="UTC" schedulesEnabled={false} />,
+  );
+  await screen.findByText('Not scanned yet');
+  await user.click(screen.getByRole('button', { name: 'Scan now' }));
+  await user.click(screen.getByRole('button', { name: 'Confirm scan' }));
+  const queued = await screen.findByRole('button', { name: 'Scan queued' });
+  await user.click(queued);
+  expect((queued as HTMLButtonElement).disabled).toBe(true);
+  expect(fetcher.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(1);
+});
