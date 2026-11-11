@@ -1,8 +1,7 @@
-import { renderToStaticMarkup } from 'react-dom/server';
-
 import { expect } from '@timeline/test-support';
 import { vi } from '@timeline/test-support';
 import { beforeEach, describe, it } from 'bun:test';
+import { renderToStaticMarkup } from 'react-dom/server';
 
 const mocks = vi.hoisted(() => ({
   getRequestIdentity: vi.fn(),
