@@ -1,6 +1,6 @@
 import { withTeam } from '@timeline/shared/team-scope';
 import { workspaceDueDateBoundaries } from '@timeline/shared/time';
-import { Columns3, ListTodo } from 'lucide-react';
+import { ListTodo } from 'lucide-react';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
@@ -66,7 +66,7 @@ export default async function WorkPage({ searchParams }: PageProps<'/app/work'>)
       filter === 'all' ? undefined : [...PIN_FILTER_KINDS[filter as keyof typeof PIN_FILTER_KINDS]];
     const page = await scope.pins.list({ limit: 50, kinds });
     return (
-      <div className="space-y-6">
+      <div data-app-width="full" className="space-y-6">
         <PageHeader
           variant="collection"
           title="Work"
@@ -133,7 +133,7 @@ export default async function WorkPage({ searchParams }: PageProps<'/app/work'>)
   );
 
   return (
-    <div className="space-y-6">
+    <div data-app-width="full" className="space-y-6">
       <PageHeader
         variant="collection"
         title="Work"
@@ -184,14 +184,15 @@ export default async function WorkPage({ searchParams }: PageProps<'/app/work'>)
 
         <CollectionGroup title="Boards" count={boards.length}>
           {boards.length === 0 ? (
-            <EmptyState
-              icon={Columns3}
-              size="inset"
-              title="No boards yet"
-              body="Create a board so the team has a place to run work. Start with a preset, then tailor the stages."
-            >
+            <div className="flex flex-wrap items-center justify-between gap-3 px-3 py-4">
+              <div className="min-w-0 space-y-1">
+                <p className="text-sm font-medium">No boards yet</p>
+                <p className="text-sm text-fg-muted">
+                  Start with a preset to organize your team’s work.
+                </p>
+              </div>
               <BoardCreateDialog appearance="empty" />
-            </EmptyState>
+            </div>
           ) : (
             <div>
               {boards.map((board) => (

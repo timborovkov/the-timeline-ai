@@ -12,6 +12,7 @@ export default function MeetingsLoading() {
         Loading meetings
       </output>
       <div
+        data-app-width="full"
         className="space-y-4 motion-reduce:[&_.animate-pulse]:animate-none"
         aria-busy="true"
         aria-label="Loading meetings"

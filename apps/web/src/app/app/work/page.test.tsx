@@ -554,7 +554,7 @@ describe('WorkPage', () => {
     expect(html).toContain('Open boards');
     expect(html).toContain('Boards');
     expect(html).toContain('No boards yet');
-    expect(html).toContain('Create a board so the team has a place to run work');
+    expect(html).toContain('Start with a preset to organize your team');
     expect(html).toContain('Create board');
     expect(html).not.toContain('Pinned and team boards');
     expect(html.indexOf('Boards')).toBeLessThan(html.indexOf('Work queue'));

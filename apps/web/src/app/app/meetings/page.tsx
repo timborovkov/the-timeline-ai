@@ -139,7 +139,7 @@ export default async function MeetingsPage({
   const clearCurrentViewHref = meetingHref({ tab });
 
   return (
-    <div className="space-y-4">
+    <div data-app-width="full" className="space-y-4">
       <PageHeader
         variant="collection"
         title="Meetings"

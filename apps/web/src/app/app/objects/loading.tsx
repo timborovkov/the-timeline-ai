@@ -12,6 +12,7 @@ export default function ObjectsLoading() {
         Loading objects
       </output>
       <div
+        data-app-width="full"
         className="space-y-6 motion-reduce:[&_.animate-pulse]:animate-none"
         aria-busy="true"
         aria-label="Loading objects"

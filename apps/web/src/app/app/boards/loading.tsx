@@ -8,7 +8,7 @@ export default function BoardsLoading() {
         Loading boards
       </output>
       <h1 className="sr-only">Boards</h1>
-      <div className="space-y-6" aria-busy="true" aria-label="Loading boards">
+      <div data-app-width="full" className="space-y-6" aria-busy="true" aria-label="Loading boards">
         <div aria-hidden="true">
           <PageHeaderSkeleton variant="collection" action />
         </div>

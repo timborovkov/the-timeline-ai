@@ -11,7 +11,12 @@ export default function ApprovalsLoading() {
       <output className="sr-only" aria-live="polite">
         Loading approvals
       </output>
-      <div className="space-y-6" aria-busy="true" aria-label="Loading approvals">
+      <div
+        data-app-width="full"
+        className="space-y-6"
+        aria-busy="true"
+        aria-label="Loading approvals"
+      >
         <h1 className="sr-only">Approvals</h1>
         <div aria-hidden="true" className="motion-reduce:[&_.animate-pulse]:animate-none">
           <PageHeaderSkeleton variant="collection" />

@@ -148,7 +148,7 @@ export default async function TimelinePage({ searchParams }: Props) {
     dateWindow,
   } = await loadTimelinePage({ searchParams });
   return (
-    <div data-app-layout="flush-top" className="relative">
+    <div data-app-width="full" data-app-layout="flush-top" className="relative">
       <h1 className="sr-only">Timeline</h1>
       <TimelineBrowserSection
         sp={sp}

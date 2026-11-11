@@ -1,5 +1,9 @@
 # Application design patterns
 
+Collection indexes use the shell’s full available width and shared responsive
+gutters. Work’s empty Boards group is a compact inline prompt with Create board,
+so the work queue remains near the top even before a team creates its first board.
+
 ### Home
 
 Home does not repeat its navigation label as a visible page title. It starts

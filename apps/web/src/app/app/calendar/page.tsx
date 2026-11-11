@@ -54,7 +54,7 @@ export default async function CalendarPage({ searchParams }: PageProps) {
     calendarSuggestions,
   } = await loadCalendarPage({ searchParams });
   return (
-    <div className="space-y-6">
+    <div data-app-width="full" className="space-y-6">
       <PageHeader
         variant="collection"
         title="Calendar"
