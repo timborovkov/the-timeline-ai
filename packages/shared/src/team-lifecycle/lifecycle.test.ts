@@ -113,28 +113,24 @@ describe('team lifecycle', () => {
   });
   it('allows an owner to remove a personal connection shared with a disabled team', async () => {
     const id = '20000000-0000-4000-8000-000000000003';
-    await db
-      .insert(schema.providerConnections)
-      .values({
-        id,
-        ownerUserId: OWNER,
-        provider: 'mcp',
-        displayName: 'Fixture',
-        externalAccountId: id,
-        authSecretCiphertext: Buffer.from('fixture'),
-        authSecretIv: Buffer.alloc(12),
-        authSecretTag: Buffer.alloc(16),
-      });
-    await db
-      .insert(schema.integrations)
-      .values(
-        [TEAM, OTHER].map((teamId) => ({
-          teamId,
-          provider: 'mcp' as const,
-          displayName: 'Fixture source',
-          providerConnectionId: id,
-        })),
-      );
+    await db.insert(schema.providerConnections).values({
+      id,
+      ownerUserId: OWNER,
+      provider: 'mcp',
+      displayName: 'Fixture',
+      externalAccountId: id,
+      authSecretCiphertext: Buffer.from('fixture'),
+      authSecretIv: Buffer.alloc(12),
+      authSecretTag: Buffer.alloc(16),
+    });
+    await db.insert(schema.integrations).values(
+      [TEAM, OTHER].map((teamId) => ({
+        teamId,
+        provider: 'mcp' as const,
+        displayName: 'Fixture source',
+        providerConnectionId: id,
+      })),
+    );
     await setPlatformSuspension(db, actor, 'team', TEAM, true, 'Pause fixture');
     expect(await withTeam(db, OTHER, OWNER).integrations.deleteOwnedProviderConnection(id)).toBe(
       true,
