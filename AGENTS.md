@@ -34,8 +34,6 @@ This is the repository operating contract. Explicit user instructions take prece
 - Production vector copies, schema upgrades, deletion and snapshot cleanup follow their runbooks; never delete a volume or bypass a deployment inventory to repair startup.
 - Use `@/` for web source imports, `#src/` inside worker/shared/db packages, and exported `@timeline/*` subpaths across packages.
 
-Client first-run onboarding screens import `@timeline/shared/onboarding/first-run` rather than the Node onboarding barrel.
-
 ## Skills
 
 Repository workflows live in [.agents/skills](.agents/skills/README.md); the consumer plugin under `plugins/timeline` is separate. Read a skill and relevant references before using it. A skill listing is not proof that its tools, credentials or external services exist.

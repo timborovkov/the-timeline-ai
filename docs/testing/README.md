@@ -104,3 +104,17 @@ Follow [local setup](../setup/local.md) for dependencies, disposable services an
 ## Live evaluation
 
 [Transcription evaluation](transcription-quality-eval.md) owns the corpus and promotion gates. Live-provider evidence must name its revision, environment, date and scope without exposing secrets or customer data. Offline CI is not proof of provider or production behavior.
+
+## Live website scan
+
+Start local storage with `docker compose up -d rustfs rustfs-init`, then run
+`bun run test:website-scan:live` with `FIRECRAWL_API_KEY` and `OPENROUTER_API_KEY`
+exported. Optionally set `WEBSITE_SCAN_LIVE_ENV_FILE` to a private env file and
+`WEBSITE_SCAN_LIVE_URL` (default `https://thetimeline.cc`). This incurs real provider
+usage. The opt-in test uses a disposable migrated PGlite database and a unique local
+S3 bucket, removed after the test; it refuses remote storage. It runs real Firecrawl,
+extraction, and suggestion generation and checks page snapshots, documents, cited
+pending Company proposals, and absence of canonical objects. Worker dispatch is
+inline; Redis/browser transport and vector indexing are outside this test.
+Local S3 defaults follow Compose; override with `WEBSITE_SCAN_LIVE_S3_ENDPOINT`,
+`WEBSITE_SCAN_LIVE_S3_ACCESS_KEY_ID`, and `WEBSITE_SCAN_LIVE_S3_SECRET_ACCESS_KEY`.

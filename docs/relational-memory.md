@@ -84,10 +84,10 @@ PostgreSQL holds canonical records, immutable sources, provenance, approvals and
 
 [Drive lifecycle](architecture/drive.md) owns revision/snapshot/selection behavior; [extraction operations](runbooks/document-extract.md) owns sandbox isolation and cleanup; [billing](architecture/billing.md) owns admission and settlement; [security](security-privacy-trust.md) owns retention and deletion. These are linked contracts rather than parallel descriptions here.
 
-First-run website scan captures up to five public same-origin pages through Firecrawl as team-visible `source: web` raw events, then uses extraction and approval-backed suggestions. It never writes canonical objects directly (ADR 0003).
+## Website scans
 
-Website scans reserve up to five accepted-source units before enqueue and recheck
-admission before Firecrawl. Settlement counts returned pages once; downstream AI
-uses the AI meter. Immutable `website_sources` crawl results allow retries to reuse
-identical bytes. Each page has a cited web event and a versioned markdown document;
-scan IDs scope retries, source lists and atomic onboarding completion.
+First-run scanning captures up to five public same-origin pages through Firecrawl after the user confirms permission. Firecrawl is the only crawler; failures do not fall back to an in-house fetcher. Each page becomes a cited `source: web` event and a versioned Markdown document; extraction and suggestions use existing pipelines, with canonical changes requiring approval.
+
+Reserve up to five accepted-source units before enqueue, recheck admission before crawling, and settle returned pages once. Downstream inference uses the AI meter. Immutable `website_sources` snapshots let retries reuse identical bytes; scan IDs scope retries, source lists and atomic onboarding completion.
+
+[Local setup](setup/local.md) and [Railway](railway.md#environment-variables) own credentials; [live evaluation](testing/README.md#live-website-scan) owns verification. [Provider controls](providers.md) and [support deletion](setup/manual-support-deletion.md) cover retention and erasure.

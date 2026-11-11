@@ -242,6 +242,13 @@ The server/worker path must not be described as anonymous merely because it is
 content-free or pseudonymous. Browser rejection does not authorize this path;
 its authority comes from its separately documented purpose and legal basis.
 
+First-run onboarding events (`onboarding_work_style_submitted`,
+`onboarding_first_path_selected`, `first_capture_landed`, and
+`agent_deployed_on_channel`) use only enum-valued event properties for work style,
+starter path or channel, never URLs, filenames or capture text. The exact schemas
+live in `packages/shared/src/analytics/events.ts`; the pseudonymous product-event
+envelope and identity restrictions above still apply.
+
 ## 7. Sentry remains separate
 
 Sentry is reliability and security monitoring, not product analytics. The

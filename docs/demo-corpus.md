@@ -84,10 +84,9 @@ look like a month of active use.
 
 Use this login to capture first-run onboarding screens. Seed resets it to the
 Welcome phase. Nothing is connected: no timeline events, integrations, documents,
-meetings, objects, proposals, or completed checklist steps. Website scan stays
-available with required `FIRECRAWL_API_KEY` configuration;
-with both set, a scan writes cited pages and still never creates objects until
-someone approves a proposal.
+meetings, objects, proposals, or completed checklist steps. Website scans use the [local provider configuration](setup/local.md) and real
+provider usage; the demo seed does not mock them. Scans save cited pages, while
+canonical records require approval.
 
 | Email | Role | Team |
 | --- | --- | --- |

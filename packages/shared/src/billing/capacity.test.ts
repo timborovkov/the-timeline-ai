@@ -319,7 +319,7 @@ describe('billing capacity (not Polar meters)', () => {
     const rows = await getTeamCapacityUsage({ db, teamId: TEAM_ID, planId: 'free' });
     const byKind = Object.fromEntries(rows.map((row) => [row.kind, row]));
     expect(byKind.concurrent_recall_bots).toMatchObject({ used: 1, limit: 1 });
-    expect(byKind.agent_turns).toMatchObject({ used: 1, limit: 100 });
+    expect(byKind.agent_turns).toMatchObject({ used: 1, limit: 50 });
     expect(byKind.active_members).toMatchObject({ used: 1, limit: 3 });
     expect(byKind.custom_mcp_servers).toMatchObject({ used: 0, limit: 0 });
     expect(byKind.documents).toMatchObject({ used: 0, limit: CAPACITY_BY_PLAN.free.documents });

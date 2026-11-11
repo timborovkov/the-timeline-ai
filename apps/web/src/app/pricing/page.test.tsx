@@ -21,7 +21,7 @@ describe('pricing page FAQ', () => {
     expect(html).toContain('HubSpot, Attio and Pipedrive');
     expect(html).toContain('does not train or fine-tune models on Customer Content');
     expect(html).toContain('€0 spend cap');
-    expect(html).toContain('100 Ask turns');
+    expect(html).toContain('50 Ask turns');
     expect(html).toContain('1,000 accepted sources');
     expect(html).toContain('timeline.remember notes count toward that meter');
     expect(html).toContain('10,000 documents');
@@ -42,6 +42,6 @@ describe('pricing page FAQ', () => {
     expect(html).toContain('Estimate paid usage when you need it.');
     expect(html).toContain('You do not need these numbers to start Free.');
     expect(html).toContain('All prices are in euros and exclude VAT.');
-    expect(html).toContain('€37.18');
+    expect(html).toContain('€40.18');
   });
 });

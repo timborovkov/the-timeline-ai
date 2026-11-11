@@ -46,7 +46,7 @@ export function paygOverageCustomerChargeCents(input: {
   if (allowance.unit === 'cents') {
     // Difference of rounded cumulative totals above the allowance. Subtracting
     // the fractional remainder from an already-rounded list delta is not an
-    // integer (499.4 → 499.6 is still inside the €5 floor).
+    // integer (199.4 → 199.6 is still inside the €2 floor).
     const previousGross = Math.max(0, allowance.consumed);
     const nextGross = previousGross + Math.max(0, input.nativeUnits);
     return (

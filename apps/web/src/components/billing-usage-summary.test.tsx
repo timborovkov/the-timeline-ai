@@ -78,8 +78,8 @@ it('keeps all PAYG meters visible and separates included usage from chargeable s
   }
   expect(html).toContain('Monthly spend cap:');
   expect(html).toContain('€25');
-  expect(html).toContain('Included: €5');
-  expect(html).toContain('Remaining: €4.99');
+  expect(html).toContain('Included: €2');
+  expect(html).toContain('Remaining: €1.99');
   expect(html).toContain('Included: 60 min');
   // Earlier Free AI usage retains its measured value but must not appear as a charge.
   expect(html.match(/€0\.01/g)).toHaveLength(2);
