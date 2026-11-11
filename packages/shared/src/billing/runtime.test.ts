@@ -1302,10 +1302,11 @@ describe('billing runtime', () => {
     expect(reservation?.state).toBe('released');
   });
 
+  // €7.36 of usage less the €2 Free allowance leaves €5.36 before the admitted discount.
   for (const scenario of [
-    { name: 'expires', initial: 50, next: 50, expired: true, invoice: 118 },
-    { name: 'changes', initial: 50, next: 10, expired: false, invoice: 118 },
-    { name: 'starts later', initial: 0, next: 50, expired: false, invoice: 236 },
+    { name: 'expires', initial: 50, next: 50, expired: true, invoice: 268 },
+    { name: 'changes', initial: 50, next: 10, expired: false, invoice: 268 },
+    { name: 'starts later', initial: 0, next: 50, expired: false, invoice: 536 },
   ]) {
     it(`keeps a failed attempt discount when the override ${scenario.name}`, async () => {
       process.env.BILLING_CHARGES_ENABLED = 'true';
@@ -1750,9 +1751,9 @@ describe('billing runtime', () => {
   });
 
   for (const scenario of [
-    { name: 'expired', admitted: 50, current: 50, expired: true, invoice: 118 },
-    { name: 'replaced', admitted: 50, current: 10, expired: false, invoice: 118 },
-    { name: 'newly added', admitted: null, current: 50, expired: false, invoice: 236 },
+    { name: 'expired', admitted: 50, current: 50, expired: true, invoice: 268 },
+    { name: 'replaced', admitted: 50, current: 10, expired: false, invoice: 268 },
+    { name: 'newly added', admitted: null, current: 50, expired: false, invoice: 536 },
   ]) {
     it(`preserves the admitted AI discount when the override is ${scenario.name}`, async () => {
       process.env.BILLING_CHARGES_ENABLED = 'true';
@@ -1867,7 +1868,7 @@ describe('billing runtime', () => {
     expect(ledger?.metadata).toMatchObject({
       pricing_plan_id: 'payg',
       discount_cents: 0,
-      invoice_cents: 236,
+      invoice_cents: 536,
     });
     const [account] = await db
       .select({

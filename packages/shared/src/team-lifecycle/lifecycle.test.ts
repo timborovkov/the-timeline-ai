@@ -3,13 +3,15 @@ import { readFileSync } from 'node:fs';
 /** Exercise real migrations and tenant state: deletion must never damage another team or reopen access. */
 import { PGlite } from '@electric-sql/pglite';
 import { teams, teamMembers, teamBillingAccounts, schema, type Db } from '@timeline/db';
-import { expect } from '@timeline/test-support';
+import { expect, vi } from '@timeline/test-support';
 import { afterEach, beforeEach, describe, it } from 'bun:test';
 import { eq, is, Table } from 'drizzle-orm';
 import { getTableConfig } from 'drizzle-orm/pg-core';
 import { drizzle } from 'drizzle-orm/pglite';
 
+import { BILLING_SYSTEM_USER_ID } from '#src/billing/context.js';
 import { resetEnvForTests } from '#src/env.js';
+import { getMeetingBotProvider, resetMeetingBotProviderForTests } from '#src/meeting-bots/index.js';
 import { setPlatformSuspension, listPlatformTeams } from '#src/platform-admin/index.js';
 import {
   assertActivePrincipal,
@@ -52,6 +54,124 @@ afterEach(async () => {
 });
 
 describe('team lifecycle', () => {
+  it('erases merged objects when their old canonical name has been reused', async () => {
+    await pg.exec(`INSERT INTO entities (id,team_id,type,canonical_name) VALUES
+      ('10000000-0000-4000-8000-000000000001','${TEAM}','project','Survivor');
+      INSERT INTO entities (team_id,type,canonical_name,merged_into_id) VALUES
+      ('${TEAM}','project','Reused name','10000000-0000-4000-8000-000000000001');
+      INSERT INTO entities (team_id,type,canonical_name) VALUES ('${TEAM}','project','Reused name'),('${OTHER}','project','Reused name');`);
+    await beginTeamDeletion(db, actor, {
+      teamId: TEAM,
+      confirmation: 'First',
+      reason: 'Fixture erasure',
+    });
+    let done = false;
+    for (let tick = 0; tick < 6 && !done; tick++) done = await purgeTeamRows(db, TEAM);
+    expect(done).toBe(true);
+    await verifyTeamRows(db, TEAM);
+    expect((await pg.query(`SELECT 1 FROM entities WHERE team_id='${OTHER}'`)).rows).toHaveLength(
+      1,
+    );
+  });
+  it('records consumed Recall minutes before cancelling an active bot', async () => {
+    const previousKey = process.env.RECALL_API_KEY;
+    process.env.RECALL_API_KEY = 'synthetic-recall-key';
+    resetEnvForTests();
+    resetMeetingBotProviderForTests();
+    const leave = vi.spyOn(getMeetingBotProvider(), 'leaveMeeting').mockResolvedValue(undefined);
+    try {
+      const meetingId = '10000000-0000-4000-8000-000000000002';
+      await pg.exec(`INSERT INTO meetings (id,team_id,platform,meeting_url,provider_bot_id,status,started_at) VALUES
+        ('${meetingId}','${TEAM}','meet','https://meet.google.com/synthetic','synthetic-bot','active',now()-interval '5 minutes');
+        INSERT INTO billing_usage_reservations (team_id,operation_id,meter_id,reserved_native_units,reserved_charge_cents,state,expires_at) VALUES
+        ('${TEAM}','recall:${meetingId}','recall_minutes',30,100,'reserved',now()+interval '1 hour');`);
+      await setPlatformSuspension(db, actor, 'team', TEAM, true, 'Stop fixture');
+      await withTeam(db, TEAM, BILLING_SYSTEM_USER_ID, {
+        skipMembershipCheck: true,
+      }).lifecycle.stopBots();
+      const [meeting] = (
+        await pg.query<{ status: string; ended_at: Date }>(
+          `SELECT status,ended_at FROM meetings WHERE id='${meetingId}'`,
+        )
+      ).rows;
+      const [reservation] = (
+        await pg.query<{ metadata: Record<string, unknown> }>(
+          `SELECT metadata FROM billing_usage_reservations WHERE team_id='${TEAM}'`,
+        )
+      ).rows;
+      expect(meeting?.status).toBe('cancelled');
+      expect(meeting?.ended_at).not.toBeNull();
+      expect(reservation?.metadata.pending_settlement).toBe(true);
+      expect(Number(reservation?.metadata.pending_recall_minutes)).toBeGreaterThanOrEqual(5);
+    } finally {
+      leave.mockRestore();
+      if (previousKey === undefined) delete process.env.RECALL_API_KEY;
+      else process.env.RECALL_API_KEY = previousKey;
+      resetMeetingBotProviderForTests();
+      resetEnvForTests();
+    }
+  });
+  it('settles missed active-day usage before deleting its source history', async () => {
+    await pg.exec(`INSERT INTO team_billing_accounts (team_id,plan_id,billing_state,shadow_billing,price_override) VALUES ('${TEAM}','team','team_active',true,'{"includedActiveMembers":0}');
+      UPDATE teams SET created_at=now()-interval '40 days', disabled_periods=jsonb_build_array(jsonb_build_object('start',now()-interval '1 day','end',now()-interval '12 hours')) WHERE id='${TEAM}';
+      UPDATE team_members SET created_at=now()-interval '2 days' WHERE team_id='${TEAM}';
+      INSERT INTO documents (id,team_id,name,created_at) VALUES ('10000000-0000-4000-8000-000000000003','${TEAM}','Historical file',now()-interval '2 days');
+      INSERT INTO document_versions (team_id,document_id,version,object_key,byte_size,created_at) VALUES ('${TEAM}','10000000-0000-4000-8000-000000000003',1,'${TEAM}/fixture',1073741824,now()-interval '2 days');`);
+    await beginTeamDeletion(db, actor, {
+      teamId: TEAM,
+      confirmation: 'First',
+      reason: 'Settle history fixture',
+    });
+    const io = {
+      objects: () => Promise.resolve(true),
+      vectors: () => Promise.resolve(),
+      queues: () => Promise.resolve(true),
+    };
+    await processTeamLifecycle(db, io);
+    await processTeamLifecycle(db, io);
+    const [checkpoint] = await db.select().from(teams).where(eq(teams.id, TEAM));
+    expect(checkpoint?.lifecycleWork.stage).toBe('stop');
+    expect(checkpoint?.lifecycleWork.usageBackfillDay).toBeDefined();
+    expect((await pg.query(`SELECT 1 FROM documents WHERE team_id='${TEAM}'`)).rows).toHaveLength(
+      1,
+    );
+    for (let tick = 0; tick < 6; tick++) await processTeamLifecycle(db, io);
+    const storage = (
+      await pg.query(
+        `SELECT 1 FROM billing_usage_ledger WHERE team_id='${TEAM}' AND meter_id='storage_gb_month'`,
+      )
+    ).rows;
+    const members = (
+      await pg.query(
+        `SELECT 1 FROM billing_member_day_ledger WHERE team_id='${TEAM}' AND day < current_date::text`,
+      )
+    ).rows;
+    expect(storage.length).toBeGreaterThan(0);
+    expect(members.length).toBeGreaterThan(0);
+    expect(
+      (
+        await pg.query(
+          `SELECT 1 FROM billing_member_day_ledger WHERE team_id='${TEAM}' AND day=(current_date-1)::text`,
+        )
+      ).rows,
+    ).toHaveLength(0);
+    expect(
+      (
+        await pg.query(
+          `SELECT 1 FROM billing_usage_ledger WHERE team_id='${TEAM}' AND meter_id='member_days' AND customer_charge_cents > 0`,
+        )
+      ).rows.length,
+    ).toBeGreaterThan(0);
+    expect(
+      (
+        await pg.query(
+          `SELECT 1 FROM billing_member_day_ledger WHERE team_id='${TEAM}' AND day=current_date::text`,
+        )
+      ).rows,
+    ).toHaveLength(0);
+    const [team] = await db.select().from(teams).where(eq(teams.id, TEAM));
+    expect(team?.lifecycleWork.stage).toBe('verify');
+  });
   it('requires ownership and exact confirmation before immediately disabling', async () => {
     await expect(withTeam(db, TEAM, OWNER).lifecycle.requestDeletion('Wrong')).rejects.toThrow(
       'exact team name',

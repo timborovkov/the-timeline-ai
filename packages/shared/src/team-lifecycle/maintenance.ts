@@ -18,8 +18,16 @@ import {
 import { and, eq, inArray, isNotNull, ne, sql } from 'drizzle-orm';
 import { z } from 'zod';
 
+import {
+  recallBillableMinutesFromRecord,
+  recallOperationId,
+  stampReservedRecallSettlement,
+} from '#src/billing/admission.js';
 import { createPolarBillingProvider } from '#src/billing/polar.js';
-import { settlePendingBillingReservations } from '#src/billing/runtime.js';
+import {
+  settlePendingBillingReservations,
+  settleTeamPreDisableDailyUsage,
+} from '#src/billing/runtime.js';
 import { flushPendingPolarUsageIngest } from '#src/billing/scope.js';
 import { decryptJson } from '#src/crypto/secrets.js';
 import { getEnv } from '#src/env.js';
@@ -115,8 +123,14 @@ export function createLifecycleMaintenance(db: Db, teamId: string, authorize: ()
       }
       return complete;
     },
-    async settlePriorUsage() {
+    async settlePriorUsage(fromDay?: string) {
       await authorize();
+      const nextDay = await settleTeamPreDisableDailyUsage({
+        db,
+        teamId,
+        ...(fromDay ? { fromDay } : {}),
+      });
+      if (nextDay) return nextDay;
       await settlePendingBillingReservations(db, teamId);
       await flushPendingPolarUsageIngest({ db, teamId, provider: createPolarBillingProvider() });
       const pending =
@@ -246,7 +260,19 @@ export function createLifecycleMaintenance(db: Db, teamId: string, authorize: ()
         await getMeetingBotProvider().leaveMeeting(meeting.providerBotId);
         await db.transaction(async (tx) => {
           await tx.execute(sql`SELECT set_config('timeline.lifecycle_cleanup', 'on', true)`);
-          await tx.update(meetings).set({ status: 'cancelled' }).where(eq(meetings.id, meeting.id));
+          const now = new Date();
+          await stampReservedRecallSettlement(tx, {
+            teamId,
+            operationId: recallOperationId(meeting.id),
+            meetingId: meeting.id,
+            minutes: recallBillableMinutesFromRecord({ ...meeting, endedAt: now }),
+            endedAt: now,
+            source: 'team_disable',
+          });
+          await tx
+            .update(meetings)
+            .set({ status: 'cancelled', endedAt: now, updatedAt: now })
+            .where(eq(meetings.id, meeting.id));
         });
       }
       return rows.length === 0;

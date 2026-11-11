@@ -49,6 +49,7 @@ export interface TeamLifecycleWork {
   attempts?: number;
   retryAt?: string;
   connectionIds?: string[];
+  usageBackfillDay?: string;
   slackWorkspaceIds?: string[];
   webhookDeliveryIds?: string[];
   verifiedAt?: string;

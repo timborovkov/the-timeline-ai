@@ -99,7 +99,12 @@ export async function processTeamLifecycle(db: Db, io: TeamCleanupIO = defaultIO
               work.stage = 'stop';
             } else if (work.stage === 'stop') {
               if ((await scope.disconnectSources()) && (await io.queues(team.id))) {
-                await scope.settlePriorUsage();
+                const nextDay = await scope.settlePriorUsage(work.usageBackfillDay);
+                if (nextDay) {
+                  work.usageBackfillDay = nextDay;
+                  return;
+                }
+                delete work.usageBackfillDay;
                 work.stage = 'purge';
               }
             } else if (work.stage === 'purge') {
