@@ -79,6 +79,7 @@ test('owner requests deletion; operator restores, retries and verifies permanent
     await expect(page.getByRole('button', { name: 'Retry cleanup' })).toBeVisible();
     fail = false;
     await page.getByRole('button', { name: 'Retry cleanup' }).click();
+    await expect(page.getByRole('button', { name: 'Retry cleanup' })).toHaveCount(0);
     for (let tick = 0; tick < 8; tick++) {
       await processTeamLifecycle(getDb(), io);
       const [team] = await getDb().select().from(teams).where(eq(teams.id, teamId));
