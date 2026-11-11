@@ -70,3 +70,19 @@ describe('processCalendarRecurrenceTick', () => {
     expect(materializeRecurringEvents).toHaveBeenCalledTimes(1001);
   });
 });
+
+it('continues active workspaces when an earlier workspace is disabled after discovery', async () => {
+  const { InactiveWorkspaceError } = await import('@timeline/shared/platform-admin/runtime');
+  const first = vi.fn(() => Promise.reject(new InactiveWorkspaceError('Workspace disabled')));
+  const second = vi.fn(() => Promise.resolve(3));
+  fakes.withTeam.mockImplementation((_db: unknown, teamId: string) => ({
+    calendar: { materializeRecurringEvents: teamId === 'inactive' ? first : second },
+  }));
+  expect(
+    await processCalendarRecurrenceTick({
+      db: makeDb([[{ teamId: 'inactive' }, { teamId: 'active' }]]) as never,
+    }),
+  ).toEqual({ materialized: 3 });
+  expect(first).toHaveBeenCalledOnce();
+  expect(second).toHaveBeenCalledOnce();
+});

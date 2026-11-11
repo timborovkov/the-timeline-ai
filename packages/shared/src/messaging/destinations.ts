@@ -2,6 +2,8 @@ import { type Db, teamBillingAccounts, teamDigestDestinations } from '@timeline/
 import { and, desc, eq, inArray, notExists } from 'drizzle-orm';
 import { z } from 'zod';
 
+import { activeWorkspaceCondition } from '#src/platform-admin/runtime.js';
+
 const DIGEST_DESTINATION_KINDS = [
   'email_members',
   'slack_channel',
@@ -195,6 +197,7 @@ export async function listWorkspaceDigestTeamIds(db: Db): Promise<string[]> {
     .from(teamDigestDestinations)
     .where(
       and(
+        activeWorkspaceCondition(teamDigestDestinations.teamId),
         eq(teamDigestDestinations.enabled, true),
         inArray(teamDigestDestinations.kind, [...SHARED_DIGEST_DESTINATION_KINDS]),
         notExists(

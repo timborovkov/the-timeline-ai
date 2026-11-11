@@ -1,7 +1,7 @@
 import { PGlite } from '@electric-sql/pglite';
 import { type Db, entities, notifications, teamCalendarSettings } from '@timeline/db';
 import { workspaceDueDateBoundaries } from '@timeline/shared/time';
-import { expect } from '@timeline/test-support';
+import { expect, vi } from '@timeline/test-support';
 import { afterEach, beforeEach, describe, it } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
@@ -90,6 +90,56 @@ afterEach(async () => {
 });
 
 describe('processOverdueScanTick', () => {
+  it.each(['disabled_at', 'deletion_started_at', 'deleted_at', 'suspended', 'terminated'])(
+    'ignores %s workspaces without blocking active workspace reminders',
+    async (state) => {
+      await insertObject({
+        id: '00000000-0000-0000-0000-000000000001',
+        name: 'Inactive task',
+        ownerUserId: OWNER_A,
+      });
+      await insertObject({
+        id: '00000000-0000-0000-0000-000000000002',
+        teamId: TEAM_B,
+        name: 'Active task',
+        ownerUserId: OWNER_B,
+      });
+      if (state === 'suspended' || state === 'terminated')
+        await pg.exec(
+          `INSERT INTO team_billing_accounts (team_id, security_state) VALUES ('${TEAM_A}', '${state}')`,
+        );
+      else await pg.exec(`UPDATE teams SET ${state} = now() WHERE id = '${TEAM_A}'`);
+      expect(await processOverdueScanTick({ db })).toEqual({ scanned: 1, inserted: 1 });
+      const rows = await db.select().from(notifications);
+      expect(rows.map((row) => row.teamId)).toEqual([TEAM_B]);
+    },
+  );
+
+  it('skips a workspace disabled after discovery and continues the other workspace', async () => {
+    await insertObject({
+      id: '00000000-0000-0000-0000-000000000001',
+      name: 'Inactive task',
+      ownerUserId: OWNER_A,
+    });
+    await insertObject({
+      id: '00000000-0000-0000-0000-000000000002',
+      teamId: TEAM_B,
+      name: 'Active task',
+      ownerUserId: OWNER_B,
+    });
+    const originalTransaction = db.transaction.bind(db);
+    const transaction = vi.spyOn(db, 'transaction').mockImplementationOnce(async (...args) => {
+      await pg.exec(`UPDATE teams SET disabled_at = now() WHERE id = '${TEAM_A}'`);
+      return originalTransaction(...args);
+    });
+    try {
+      expect(await processOverdueScanTick({ db })).toEqual({ scanned: 2, inserted: 1 });
+    } finally {
+      transaction.mockRestore();
+    }
+    expect((await db.select().from(notifications)).map((row) => row.teamId)).toEqual([TEAM_B]);
+  });
+
   it('creates one overdue notification per distinct owner and assignee', async () => {
     const taskId = '00000000-0000-0000-0000-000000000101';
     await insertObject({

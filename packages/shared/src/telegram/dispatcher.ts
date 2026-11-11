@@ -50,6 +50,7 @@ import {
   joinSavedMeetingByCommand,
 } from '#src/meetings/quick-capture.js';
 import { detectMeetingPlatform } from '#src/meetings/scope.js';
+import { activeWorkspaceCondition } from '#src/platform-admin/runtime.js';
 import { checkRateLimit, rateLimitKey, RATE_LIMITS } from '#src/rate-limit/index.js';
 import { normalizeRawEventsToEvidence } from '#src/reconciliation/normalization.js';
 import { inlineSourceSnapshotMetadata } from '#src/reconciliation/source-snapshot.js';
@@ -631,6 +632,7 @@ async function cmdTeamDm(ctx: DmContext, arg: string): Promise<void> {
       and(
         eq(teamMembers.userId, ctx.tgUserRow.userId),
         isNull(teamMembers.removedAt),
+        activeWorkspaceCondition(teamMembers.teamId),
         notExists(
           ctx.db
             .select({ teamId: teamBillingAccounts.teamId })
@@ -868,6 +870,7 @@ async function queueDmAgentTurn(ctx: DmContext, question: string): Promise<void>
               eq(teamMembers.teamId, telegramUserTeams.teamId),
               eq(teamMembers.userId, telegramUsers.userId),
               isNull(teamMembers.removedAt),
+              activeWorkspaceCondition(teamMembers.teamId),
             ),
           )
           .where(
@@ -900,6 +903,7 @@ async function activateTelegramTeam(ctx: DmContext, teamId: string): Promise<boo
           eq(teamMembers.teamId, teamId),
           eq(teamMembers.userId, userId),
           isNull(teamMembers.removedAt),
+          activeWorkspaceCondition(teamMembers.teamId),
           notExists(
             tx
               .select({ teamId: teamBillingAccounts.teamId })
@@ -1940,6 +1944,7 @@ async function getActiveTeamId(db: Db, telegramUserId: string): Promise<string |
         eq(teamMembers.teamId, telegramUserTeams.teamId),
         eq(teamMembers.userId, telegramUsers.userId),
         isNull(teamMembers.removedAt),
+        activeWorkspaceCondition(teamMembers.teamId),
       ),
     )
     .where(
@@ -2079,6 +2084,7 @@ async function insertEvent(
           eq(teamMembers.teamId, teamId),
           eq(teamMembers.userId, authorUserId),
           isNull(teamMembers.removedAt),
+          activeWorkspaceCondition(teamMembers.teamId),
         ),
       )
       .limit(1);
@@ -2300,6 +2306,7 @@ async function resolveTelegramVisibilityOwnerUserId(
           eq(teamMembers.teamId, teamId),
           eq(teamMembers.userId, candidate),
           isNull(teamMembers.removedAt),
+          activeWorkspaceCondition(teamMembers.teamId),
         ),
       )
       .limit(1);

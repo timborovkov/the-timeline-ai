@@ -139,3 +139,26 @@ describe('bot digest delivery ledger', () => {
     expect(await db.select().from(messageDeliveries)).toHaveLength(1);
   });
 });
+
+it('leaves an inactive workspace digest untouched even after the recipient leaves', async () => {
+  await db.update(teamMembers).set({ removedAt: new Date() }).where(eq(teamMembers.teamId, teamId));
+  await db.update(teams).set({ disabledAt: new Date() }).where(eq(teams.id, teamId));
+  const [before] = await db.select().from(dailyDigests).where(eq(dailyDigests.id, digestId));
+  try {
+    expect(
+      await sendDailyDigest({
+        db,
+        digestId,
+        to: 'digest@example.test',
+        digestUrl: 'https://example.test',
+        now,
+      }),
+    ).toMatchObject({ ok: true, skipped: true });
+    const [after] = await db.select().from(dailyDigests).where(eq(dailyDigests.id, digestId));
+    expect(after).toEqual(before);
+    expect(send).not.toHaveBeenCalled();
+  } finally {
+    await db.update(teams).set({ disabledAt: null }).where(eq(teams.id, teamId));
+    await db.update(teamMembers).set({ removedAt: null }).where(eq(teamMembers.teamId, teamId));
+  }
+});

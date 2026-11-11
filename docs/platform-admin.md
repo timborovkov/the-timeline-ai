@@ -160,6 +160,18 @@ cleanup or apply production migrations.
 
 ## Team deletion lifecycle
 
+Normal product work ignores inactive workspaces: `disabled_at`, `deletion_started_at`,
+`deleted_at`, or legacy billing security state `suspended`/`terminated` blocks admission.
+Global discovery and recovery scans apply the shared active-workspace predicate before
+batch limits, including reminders, digest recipients, integration polling/renewal,
+deferred enrichment, health checks and janitor recovery. Queued workspace jobs finish
+as skipped on lifecycle denial; unrelated authorization and infrastructure failures
+still fail. Skipping must not update workspace content or send notifications.
+Overdue reminders recheck admission under a workspace lock and insert per workspace,
+so disabling one workspace cannot roll back another workspace's reminders.
+Explicit lifecycle cleanup, credential revocation, retention and reconciliation of
+previously incurred billing remain the documented maintenance exceptions.
+
 Owners request permanent deletion under Team settings → Advanced after typing the team name and acknowledging loss of access for every member. Export first using normal visibility permissions. The request immediately disables the team and persists notifications for platform admins and the requester. Only platform admins can withdraw the request and restore access. The admin Teams directory has a deletion-request filter.
 
 Platform admins may start permanent deletion with or without an owner request. Confirmation requires the team name and a reason. Once started, deletion cannot be reversed or impersonated. The detail page exposes cleanup status and retries, not workspace content. A one-minute dedicated lifecycle worker polls durable database state, so missing queue publication cannot lose a request.

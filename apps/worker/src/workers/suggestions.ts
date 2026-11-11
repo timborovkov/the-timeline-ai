@@ -35,7 +35,11 @@ import {
   withTeam,
 } from '@timeline/shared';
 import { isBillingAdmissionError } from '@timeline/shared/billing';
-import { principalIsActive } from '@timeline/shared/platform-admin/runtime';
+import {
+  activeWorkspaceCondition,
+  isInactiveWorkspaceError,
+  principalIsActive,
+} from '@timeline/shared/platform-admin/runtime';
 import {
   RECONCILIATION_PLANNER_PROMPT_VERSION,
   planReconciliation,
@@ -2453,15 +2457,25 @@ async function processObjectCleanupJob(
           await deps.db
             .selectDistinct({ teamId: entities.teamId })
             .from(entities)
-            .where(and(isNull(entities.archivedAt), isNull(entities.mergedIntoId)))
+            .where(
+              and(
+                activeWorkspaceCondition(entities.teamId),
+                isNull(entities.archivedAt),
+                isNull(entities.mergedIntoId),
+              ),
+            )
         ).map((row) => row.teamId)
       : [data.teamId];
   for (const teamId of teamIds) {
     if (!(await principalIsActive(deps.db, teamId))) continue;
-    await createObjectCleanupSuggestionsForTeam(deps.db, teamId, {
-      triggeredBy: data.triggeredBy ?? 'daily',
-      ...(data.objectId ? { objectId: data.objectId } : {}),
-    });
+    try {
+      await createObjectCleanupSuggestionsForTeam(deps.db, teamId, {
+        triggeredBy: data.triggeredBy ?? 'daily',
+        ...(data.objectId ? { objectId: data.objectId } : {}),
+      });
+    } catch (error) {
+      if (!isInactiveWorkspaceError(error)) throw error;
+    }
   }
 }
 
