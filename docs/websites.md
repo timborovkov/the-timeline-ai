@@ -37,6 +37,8 @@ before result limits. Date-scoped historical searches and explicit citations
 remain available. Timeline moments group changed pages by scan. Promoting a capture
 to the document drive detaches it from managed crawling: later scans create a new
 capture and cannot replace the promoted document’s edited or private content.
+The promoted document remains searchable even when a later scan supersedes its
+original website evidence.
 
 ## Billing and safeguards
 

@@ -922,8 +922,8 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
       limit: offset + limit + 1,
       sourceKind: 'doc_chunk',
     };
-    if (!input.from && !input.to)
-      searchOpts.excludeEventIds = await obsoleteWebsiteEventIds(db, teamId);
+    if (!input.from && !input.to && input.fileKinds?.includes('captured'))
+      searchOpts.obsoleteWebsiteEventIds = await obsoleteWebsiteEventIds(db, teamId);
     if (input.from) searchOpts.from = input.from;
     if (input.to) searchOpts.to = input.to;
     if (input.rootFolder) searchOpts.rootFolder = true;

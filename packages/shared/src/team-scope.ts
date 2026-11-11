@@ -3091,7 +3091,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
           limit: input.limit ?? 20,
         };
         if (!input.from && !input.to && !input.eventIds)
-          searchOpts.excludeEventIds = await obsoleteWebsiteEventIds(db, teamId);
+          searchOpts.obsoleteWebsiteEventIds = await obsoleteWebsiteEventIds(db, teamId);
         if (input.offset) searchOpts.offset = input.offset;
         if (input.from) searchOpts.from = input.from;
         if (input.to) searchOpts.to = input.to;
