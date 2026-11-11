@@ -98,7 +98,21 @@ export async function processTeamLifecycle(db: Db, io: TeamCleanupIO = defaultIO
               Object.assign(work, await scope.inventoryIndirect());
               work.stage = 'stop';
             } else if (work.stage === 'stop') {
-              if ((await scope.disconnectSources()) && (await io.queues(team.id))) {
+              const disconnected = await scope.disconnectSources();
+              if (disconnected.exceptions.length) {
+                const existing = work.followups?.find((item) => item.category === 'processors');
+                work.followups = [
+                  ...(work.followups ?? []).filter((item) => item.category !== 'processors'),
+                  {
+                    category: 'processors',
+                    status: 'pending',
+                    reference: [existing?.reference, ...disconnected.exceptions]
+                      .filter(Boolean)
+                      .join('; '),
+                  },
+                ];
+              }
+              if (disconnected.complete && (await io.queues(team.id))) {
                 const nextDay = await scope.settlePriorUsage(work.usageBackfillDay);
                 if (nextDay) {
                   work.usageBackfillDay = nextDay;

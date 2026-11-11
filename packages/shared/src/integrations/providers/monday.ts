@@ -11,6 +11,7 @@ import { defineResourceAccess } from '#src/integrations/resource-access.js';
 import { exactTargetSelections } from '#src/integrations/selection-policy.js';
 import {
   attachSyncContinuations,
+  ProviderAuthorizationError,
   type IntegrationEvent,
   type IntegrationProvider,
   type ObjectMapping,
@@ -424,6 +425,7 @@ async function postForm(
   });
   const text = await res.text();
   const parsed = text ? (JSON.parse(text) as Record<string, unknown>) : {};
+  if (res.status === 401 || res.status === 403) throw new ProviderAuthorizationError('monday');
   if (!res.ok) throw new Error(`Monday ${String(res.status)}: ${text}`);
   return parsed;
 }
@@ -451,11 +453,20 @@ async function gql<T>(
   }
   const httpRateLimit = mondayRateLimitError(res, text);
   if (httpRateLimit) throw httpRateLimit;
+  if (res.status === 401 || res.status === 403) throw new ProviderAuthorizationError('monday');
   if (!res.ok) throw new Error(`Monday GraphQL ${String(res.status)}: ${text}`);
   const json = JSON.parse(text) as { data?: T; errors?: MondayGraphQLError[] };
   if (json.errors?.length) {
     const gqlRateLimit = mondayRateLimitError(res, text, json.errors);
     if (gqlRateLimit) throw gqlRateLimit;
+    if (
+      json.errors.some((error) =>
+        /^(UNAUTHORIZED|FORBIDDEN|AUTHENTICATION_ERROR|AuthorizationException|UserUnauthorizedException|InvalidTokenException)$/i.test(
+          error.extensions?.code ?? '',
+        ),
+      )
+    )
+      throw new ProviderAuthorizationError('monday');
     throw new Error(`Monday GraphQL errors: ${json.errors.map((e) => e.message).join('; ')}`);
   }
   if (!json.data) throw new Error('Monday GraphQL returned no data');

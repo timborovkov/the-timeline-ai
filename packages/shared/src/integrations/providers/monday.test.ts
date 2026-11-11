@@ -15,7 +15,8 @@ await vi.mock(
 const { resetEnvForTests } = await import('#src/env.js');
 const { MONDAY_BOARD_WRITER_EVENT_BUDGET, mondayProvider } =
   await import('#src/integrations/providers/monday.js');
-const { ProviderRateLimitError } = await import('#src/integrations/types.js');
+const { ProviderRateLimitError, ProviderAuthorizationError } =
+  await import('#src/integrations/types.js');
 
 const ENV_BACKUP = { ...process.env };
 
@@ -1224,6 +1225,45 @@ describe('mondayProvider', () => {
     ]);
     expect(fetch).toHaveBeenCalledTimes(3);
   });
+
+  it.each([
+    { status: 401, body: {}, terminal: true },
+    { status: 403, body: {}, terminal: true },
+    {
+      status: 200,
+      body: {
+        errors: [{ message: 'Access denied', extensions: { code: 'UserUnauthorizedException' } }],
+      },
+      terminal: true,
+    },
+    { status: 503, body: {}, terminal: false },
+    { status: 429, body: {}, terminal: false },
+  ])(
+    'classifies webhook cleanup authorization at HTTP $status',
+    async ({ status, body, terminal }) => {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn().mockResolvedValue(new Response(JSON.stringify(body), { status })),
+      );
+      let failure: unknown;
+      try {
+        await mondayProvider.deprovisionWebhook?.({
+          integration: { id: 'fixture', teamId: 'fixture' } as never,
+          tokens: { access_token: 'synthetic' },
+          subscription: {
+            externalSubscriptionId: 'fixture-hook',
+            resourceKind: 'monday.board',
+            externalResourceId: 'fixture-board',
+            eventType: 'create_item',
+          },
+        });
+      } catch (error) {
+        failure = error;
+      }
+      expect(failure).toBeInstanceOf(Error);
+      expect(failure instanceof ProviderAuthorizationError).toBe(terminal);
+    },
+  );
 
   it('deprovisions stale monday.com webhooks', async () => {
     const fetch = vi.fn<

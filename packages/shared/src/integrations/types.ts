@@ -340,6 +340,14 @@ export function missingRequiredProviderScopes(
 
 export const PROVIDER_RATE_LIMIT_CODE = 'provider_rate_limited';
 
+/** Revoked or inaccessible authorization needs operator/provider follow-up, not an automatic retry. */
+export class ProviderAuthorizationError extends Error {
+  constructor(provider: string) {
+    super(`${provider}_authorization_unavailable`);
+    this.name = 'ProviderAuthorizationError';
+  }
+}
+
 export class ProviderRateLimitError extends Error {
   readonly code: string = PROVIDER_RATE_LIMIT_CODE;
   readonly provider: NativeProviderId;

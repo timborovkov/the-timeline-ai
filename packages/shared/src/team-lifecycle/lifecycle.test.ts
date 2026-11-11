@@ -12,7 +12,10 @@ import { drizzle } from 'drizzle-orm/pglite';
 import { BILLING_SYSTEM_USER_ID } from '#src/billing/context.js';
 import { recordedChargesForPeriod } from '#src/billing/presentation.js';
 import { settleTeamPreDisableDailyUsage } from '#src/billing/runtime.js';
+import { encryptJson } from '#src/crypto/secrets.js';
 import { resetEnvForTests } from '#src/env.js';
+import { mondayProvider } from '#src/integrations/providers/monday.js';
+import { ProviderAuthorizationError } from '#src/integrations/types.js';
 import { getMeetingBotProvider, resetMeetingBotProviderForTests } from '#src/meeting-bots/index.js';
 import { setPlatformSuspension, listPlatformTeams } from '#src/platform-admin/index.js';
 import {
@@ -111,6 +114,118 @@ describe('team lifecycle', () => {
     expect(after[0]?.metadata).not.toHaveProperty('private_content');
     expect(after[0]?.metadata).not.toHaveProperty('credentials');
     expect(after[0]?.metadata.polar_ingest_status).toBe('sent');
+  });
+  it('records inaccessible provider cleanup and continues local erasure', async () => {
+    const oldKey = process.env.SECRETS_ENCRYPTION_KEY;
+    process.env.SECRETS_ENCRYPTION_KEY = Buffer.alloc(32, 3).toString('base64');
+    resetEnvForTests();
+    const stop = vi
+      .spyOn(
+        mondayProvider as typeof mondayProvider & {
+          deprovisionWebhook: NonNullable<typeof mondayProvider.deprovisionWebhook>;
+        },
+        'deprovisionWebhook',
+      )
+      .mockRejectedValue(new ProviderAuthorizationError('monday'));
+    try {
+      const secret = encryptJson({ access_token: 'synthetic' });
+      const [source] = await db
+        .insert(schema.integrations)
+        .values({
+          teamId: TEAM,
+          provider: 'monday',
+          displayName: 'Synthetic',
+          authSecretCiphertext: secret.ciphertext,
+          authSecretIv: secret.iv,
+          authSecretTag: secret.tag,
+        })
+        .returning();
+      if (!source) throw new Error('Missing fixture integration');
+      await db.insert(schema.integrationWebhookSubscriptions).values({
+        integrationId: source.id,
+        provider: 'monday',
+        externalSubscriptionId: 'synthetic-webhook',
+        resourceKind: 'monday.board',
+        externalResourceId: 'synthetic-board',
+        eventType: 'create_item',
+        status: 'active',
+      });
+      await beginTeamDeletion(db, actor, {
+        teamId: TEAM,
+        confirmation: 'First',
+        reason: 'Revoked provider fixture',
+      });
+      const io = {
+        objects: () => Promise.resolve(true),
+        vectors: () => Promise.resolve(),
+        queues: () => Promise.resolve(true),
+      };
+      for (let tick = 0; tick < 6; tick++) await processTeamLifecycle(db, io);
+      const [team] = await db.select().from(teams).where(eq(teams.id, TEAM));
+      expect(team?.lifecycleWork.stage).toBe('verify');
+      expect(
+        team?.lifecycleWork.followups?.find((item) => item.category === 'processors'),
+      ).toMatchObject({
+        status: 'pending',
+        reference: expect.stringContaining('synthetic-webhook') as string,
+      });
+      expect(await db.select().from(schema.integrations)).toHaveLength(0);
+      await expect(assertActivePrincipal(db, TEAM)).rejects.toThrow();
+    } finally {
+      stop.mockRestore();
+      if (oldKey === undefined) delete process.env.SECRETS_ENCRYPTION_KEY;
+      else process.env.SECRETS_ENCRYPTION_KEY = oldKey;
+      resetEnvForTests();
+    }
+  });
+  it('reconnects shared credentials without modifying disabled integrations or attention', async () => {
+    const oldKey = process.env.SECRETS_ENCRYPTION_KEY;
+    process.env.SECRETS_ENCRYPTION_KEY = Buffer.alloc(32, 3).toString('base64');
+    resetEnvForTests();
+    try {
+      const scope = withTeam(db, OTHER, OWNER).integrations;
+      const input = {
+        provider: 'monday' as const,
+        displayName: 'Fixture',
+        externalAccountId: 'shared',
+        tokens: { access_token: 'synthetic' },
+      };
+      const connection = await scope.upsertProviderConnection(input);
+      const sources = await db
+        .insert(schema.integrations)
+        .values(
+          [TEAM, OTHER].map((teamId) => ({
+            teamId,
+            provider: 'monday' as const,
+            displayName: 'Old',
+            providerConnectionId: connection.id,
+            lastError: 'reconnect required',
+          })),
+        )
+        .returning();
+      await db.insert(schema.connectionAttention).values(
+        sources.map((source) => ({
+          teamId: source.teamId,
+          integrationId: source.id,
+          providerConnectionId: connection.id,
+          category: 'needs_reconnect' as const,
+          summary: 'Synthetic reconnect',
+        })),
+      );
+      await setPlatformSuspension(db, actor, 'team', TEAM, true, 'Pause fixture');
+      await scope.upsertProviderConnection({ ...input, displayName: 'Fresh' });
+      const rows = await db.select().from(schema.integrations);
+      expect(rows.find((row) => row.teamId === OTHER)?.lastError).toBeNull();
+      expect(rows.find((row) => row.teamId === TEAM)?.lastError).toBe('reconnect required');
+      const attention = await db.select().from(schema.connectionAttention);
+      expect(attention.find((row) => row.teamId === OTHER)?.resolvedAt).not.toBeNull();
+      expect(attention.find((row) => row.teamId === TEAM)?.resolvedAt).toBeNull();
+      await expect(assertActivePrincipal(db, TEAM)).rejects.toThrow('disabled');
+    } finally {
+      if (oldKey === undefined) delete process.env.SECRETS_ENCRYPTION_KEY;
+      else process.env.SECRETS_ENCRYPTION_KEY = oldKey;
+      resetEnvForTests();
+    }
   });
   it('allows an owner to remove a personal connection shared with a disabled team', async () => {
     const id = '20000000-0000-4000-8000-000000000003';

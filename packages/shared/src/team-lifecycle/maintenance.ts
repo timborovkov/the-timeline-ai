@@ -4,6 +4,7 @@ import {
   slackWorkspaces,
   slackWorkspaceTeams,
   integrationWebhookDeliveries,
+  integrationWebhookSubscriptions,
   integrationWebhookDeliveryTargets,
   billingUsageLedger,
   integrations,
@@ -32,6 +33,7 @@ import { flushPendingPolarUsageIngest } from '#src/billing/scope.js';
 import { decryptJson } from '#src/crypto/secrets.js';
 import { getEnv } from '#src/env.js';
 import { adminDeprovisionIntegrationWebhookSubscriptions } from '#src/integrations/scope.js';
+import { ProviderAuthorizationError } from '#src/integrations/types.js';
 import { getMeetingBotProvider } from '#src/meeting-bots/index.js';
 import { sendMessage } from '#src/messaging/delivery.js';
 import { RETAINED_USAGE_METADATA_FIELDS } from '#src/team-lifecycle/inventory.js';
@@ -289,12 +291,29 @@ export function createLifecycleMaintenance(db: Db, teamId: string, authorize: ()
       const actorId = team?.lifecycleWork.deletionActorUserId;
       if (!actorId) throw new Error('Deletion actor is missing');
       const rows = await db
-        .select({ id: integrations.id })
+        .select({ id: integrations.id, provider: integrations.provider })
         .from(integrations)
         .where(eq(integrations.teamId, teamId))
         .limit(10);
+      const exceptions: string[] = [];
       for (const integration of rows) {
-        await adminDeprovisionIntegrationWebhookSubscriptions(db, integration.id);
+        try {
+          await adminDeprovisionIntegrationWebhookSubscriptions(db, integration.id);
+        } catch (error) {
+          if (!(error instanceof ProviderAuthorizationError)) throw error;
+          const subscriptions = await db
+            .select({ id: integrationWebhookSubscriptions.externalSubscriptionId })
+            .from(integrationWebhookSubscriptions)
+            .where(
+              and(
+                eq(integrationWebhookSubscriptions.integrationId, integration.id),
+                eq(integrationWebhookSubscriptions.status, 'active'),
+              ),
+            );
+          exceptions.push(
+            `${integration.provider}: authorization unavailable for integration ${integration.id}; provider webhook cleanup unverified (${subscriptions.map((row) => row.id ?? 'unknown').join(', ')})`,
+          );
+        }
         await db.transaction(async (tx) => {
           await tx.execute(sql`SELECT set_config('timeline.lifecycle_cleanup', 'on', true)`);
           await withTeam(tx as unknown as Db, teamId, actorId, {
@@ -302,7 +321,7 @@ export function createLifecycleMaintenance(db: Db, teamId: string, authorize: ()
           }).integrations.deleteIntegration(integration.id);
         });
       }
-      return rows.length === 0;
+      return { complete: rows.length === 0, exceptions };
     },
     async removeUnusedConnections(ids: string[]) {
       await authorize();
