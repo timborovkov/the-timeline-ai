@@ -405,7 +405,7 @@ describe('CalendarView recurrence and tentative UI', () => {
     expect(screen.getByPlaceholderText('Search events')).toHaveProperty('value', 'budget');
     expect(within(eventList).getByRole('status', { name: '1' })).toBeTruthy();
     expect(within(eventList).getByRole('button', { name: 'Budget review' })).toBeTruthy();
-    expect(within(eventList).getAllByText('Finance room')).toHaveLength(2);
+    expect(within(eventList).getAllByText('Finance room')).toHaveLength(1);
     expect(within(eventList).queryByRole('button', { name: /Roadmap review/ })).toBeNull();
 
     rerender(

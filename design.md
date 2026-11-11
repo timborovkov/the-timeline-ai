@@ -176,8 +176,13 @@ Ask, Work, Documents, Meetings, Connections, Usage, and Team.
   row shows last-activity age; archive stays hidden until hover or focus on
   desktop. A search field under New chat filters history. The Ask heading keeps
   the selected title on the same row and does not show a session count.
-- Inspector: hidden until content exists. Desktop uses a reading pane up to
-  `min(40%, 36rem)`; mobile uses a taller focus-managed bottom sheet.
+- Inspectors and Connections drawers share the modal `Sheet` reading surface:
+  fixed to the viewport, up to 48rem (768px), full-width on smaller screens.
+  Opening or closing an overlay must preserve the underlying page width and
+  scroll position. Use history updates for panel URLs, not native hash scrolling.
+  Keep a wrapping header and close control above an independently scrolling body;
+  secondary descriptions wrap and row metadata stacks inside panels. Focus is
+  contained, Escape dismisses, and closing restores focus without scrolling.
 - Work routes share `WorkSubnav`: Overview, Pinned, Objects, Tasks, Boards,
   Calendar, Digests, Approvals. Collection tabs sit flush against the following
   toolbar or group; Calendar uses 24px below tabs before its standalone controls,
@@ -187,7 +192,7 @@ Ask, Work, Documents, Meetings, Connections, Usage, and Team.
   dialog with a pending count and an explicit empty state, rather than adding
   a separate strip above the list. Objects and Tasks use the full collection
   canvas with compact chrome.
-- Object and task previews use the same detail rail, up to `min(40%, 40rem)`
+- Object and task previews use the same detail rail, at least 36rem (576px), growing to 55% of the content width
   on wide screens and a focus-managed bottom sheet below 1280px. Keep the title,
   pin, close, and full-width, quiet outlined “Open object” action together at the top.
 - Billing settings share Usage’s allowance cards and neutral surfaces, with clear
@@ -231,7 +236,8 @@ The default route header. It owns the single sentence-case `<h1>`, an optional
 subtitle, leading/trailing actions, and a quiet wrapping 12px metadata row.
 Metadata is sans by default; individual values may opt into mono.
 
-The collection variant is at most 52px tall on desktop, without a bottom rule. It uses an 18px title,
+The collection variant has compact spacing on desktop, without a bottom rule;
+long headings wrap and increase its height. It uses an 18px title,
 keeps metadata and actions inline, and exposes the descriptive subtitle to
 assistive technology without spending a visible row on it.
 
@@ -256,9 +262,13 @@ table.
 - `CollectionGroup` uses a 40px header with glyph, readable status label,
   count, and optional action. Groups start open; collapse state lasts only for
   the mounted session and is never saved as a preference.
-- `CollectionRow` is at least 44px on desktop. It favors one line: selection or
-  type cue, human title, compact context, metadata, and overflow. Mobile uses
-  two lines: title plus context, then wrapping metadata. Domain content uses
+- `CollectionRow` is at least 44px on desktop. Human titles wrap in full,
+  including unbroken strings; never ellipsize or line-clamp the identifying title.
+  Titles get a preferred 20rem reading width before context and metadata share
+  their line. Metadata wraps below when it cannot fit. Actions move below the
+  content in rows narrower than 40rem, including beside an open inspector.
+  Task board cards and collection group headings follow the same full-title rule.
+  Secondary summaries may truncate when the detail view exposes their full text. Domain content uses
   named children (`CollectionRow.Leading`, `.Title`, `.Subtitle`, `.Context`,
   `.Metadata`, `.Actions`) rather than JSX props. Optional `.Subtitle` sits
   under the title for board-local next steps and similar secondary lines. Pass
@@ -278,6 +288,9 @@ table.
   accessible name and `title`. They are not filled or outline buttons. Accept,
   Change, and Reject stay inline as one coordinated set. Destructive hover may
   use danger color; the resting state stays quiet.
+- Approval queues use two-line rows with source/time on bundle headers and neutral
+  selected surfaces; the bulk Accept action carries the signal color. See the
+  [approval presentation contract](docs/design/app.md).
 - Bulk work uses selection, then `SelectionBar`. Do not mount a persistent
   filled Accept-all / Reject-all bar. Checkboxes may fade in on desktop hover
   or focus and stay visible while selection is active. Collection headers may

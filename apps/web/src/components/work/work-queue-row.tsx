@@ -118,7 +118,10 @@ export function WorkQueueRow({
   return (
     <CollectionRow>
       <CollectionRow.Title>
-        <Link href={item.href} className="block truncate hover:underline">
+        <Link
+          href={item.href}
+          className="block whitespace-normal [overflow-wrap:anywhere] hover:underline"
+        >
           {displayText(item.title)}
         </Link>
         <DiscussionCountBadge count={item.commentCount} className="ml-2 shrink-0" />

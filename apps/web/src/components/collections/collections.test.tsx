@@ -119,7 +119,7 @@ describe('collection primitives', () => {
     );
   });
 
-  it('uses a 44px desktop row with a two-line responsive content structure', () => {
+  it('keeps compact minimum height while allowing titles and metadata to wrap', () => {
     const { container } = render(
       <CollectionRow>
         <CollectionRow.Title>Launch plan</CollectionRow.Title>
@@ -134,8 +134,9 @@ describe('collection primitives', () => {
     expect(row?.className).toContain('border-b');
     expect(row?.className).not.toContain('last:border-b-0');
     expect(row?.className).not.toContain('border-x');
-    expect(row?.querySelector('.sm\\:flex-row')).toBeTruthy();
-    expect(screen.getAllByText('Acme')).toHaveLength(2);
+    expect(screen.getByText('Launch plan').className).toContain('whitespace-normal');
+    expect(screen.getByText('Launch plan').className).not.toContain('truncate');
+    expect(screen.getAllByText('Acme')).toHaveLength(1);
     expect(screen.getByText('P2')).toBeTruthy();
   });
 
@@ -148,7 +149,7 @@ describe('collection primitives', () => {
     );
 
     const hints = screen.getAllByTitle('Job ID: job-1');
-    expect(hints).toHaveLength(3);
+    expect(hints).toHaveLength(2);
     expect(hints[0]?.textContent).toBe('Audio extract');
   });
 

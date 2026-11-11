@@ -52,7 +52,7 @@ export function CollectionGroup({
             )}
           />
           <span className={statusToneClass(tone)}>{icon}</span>
-          <span className="truncate">{title}</span>
+          <span className="min-w-0 whitespace-normal py-2 [overflow-wrap:anywhere]">{title}</span>
           <span className="font-mono tabular-nums text-fg-dim">{count}</span>
         </button>
         {actions ? <div className="flex min-h-10 items-center">{actions}</div> : null}

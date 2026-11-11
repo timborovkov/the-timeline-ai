@@ -262,7 +262,7 @@ function RecentClusters({
                   <CollectionRow.Title title={hint}>
                     <Link
                       href={`/app/team/reconciliation/clusters/${row.id}`}
-                      className="block truncate hover:underline"
+                      className="block whitespace-normal [overflow-wrap:anywhere] hover:underline"
                     >
                       {row.canonicalName}
                     </Link>
@@ -333,7 +333,7 @@ function RecentOutputs({
                     {row.clusterId ? (
                       <Link
                         href={`/app/team/reconciliation/clusters/${row.clusterId}`}
-                        className="block truncate hover:underline"
+                        className="block whitespace-normal [overflow-wrap:anywhere] hover:underline"
                       >
                         {action}
                       </Link>

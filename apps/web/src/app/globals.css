@@ -311,3 +311,19 @@ dialog#floating-agent-chat-panel[open] {
 dialog#floating-agent-chat-panel::backdrop {
   background: transparent;
 }
+
+/* Side panels are reading surfaces, not compressed desktop tables. */
+[data-slot='sheet-content'] [data-slot='collection-row-content'] {
+  flex-direction: column;
+  align-items: stretch;
+}
+[data-slot='sheet-content'] [data-slot='collection-row-heading'] {
+  flex: initial;
+}
+[data-slot='sheet-content']
+  :is([data-slot='collection-row-context'], [data-slot='collection-row-subtitle']) {
+  max-width: none;
+  white-space: normal;
+  overflow: visible;
+  overflow-wrap: anywhere;
+}

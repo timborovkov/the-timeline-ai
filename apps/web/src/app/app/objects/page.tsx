@@ -146,7 +146,7 @@ export default async function ObjectsIndexPage({
         <div
           className={
             selectedObjectDetail
-              ? 'grid min-h-0 min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_min(40%,40rem)]'
+              ? 'grid min-h-0 min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(36rem,55%)]'
               : 'min-w-0'
           }
         >

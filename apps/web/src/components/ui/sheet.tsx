@@ -22,7 +22,7 @@ function SheetOverlay({
     <DialogPrimitive.Overlay
       data-slot="sheet-overlay"
       className={cn(
-        'fixed inset-0 z-50 bg-black/50 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:fade-in-0',
+        'fixed inset-0 z-50 bg-black/30 motion-reduce:animate-none data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:fade-in-0',
         className,
       )}
       {...props}
@@ -34,29 +34,56 @@ function SheetContent({
   className,
   children,
   showCloseButton = true,
+  closeLabel = 'Close',
+  onOpenAutoFocus,
+  onCloseAutoFocus,
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Content> & {
   showCloseButton?: boolean;
+  closeLabel?: string;
 }) {
+  const openerRef = React.useRef<HTMLElement | null>(null);
   return (
     <SheetPortal>
       <SheetOverlay />
       <DialogPrimitive.Content
         data-slot="sheet-content"
         className={cn(
-          'fixed inset-y-0 right-0 z-50 flex h-full w-full max-w-xl flex-col border-l border-border bg-background shadow-lg duration-200 outline-none data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:slide-out-to-right data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:slide-in-from-right',
+          'fixed inset-y-0 right-0 z-50 flex h-dvh min-w-0 w-full max-w-3xl flex-col overflow-hidden border-l border-border bg-surface shadow-lg duration-200 outline-none motion-reduce:animate-none data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:slide-out-to-right data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:slide-in-from-right',
           className,
         )}
         {...props}
+        onOpenAutoFocus={(event) => {
+          openerRef.current =
+            document.activeElement instanceof HTMLElement ? document.activeElement : null;
+          onOpenAutoFocus?.(event);
+          if (event.defaultPrevented) return;
+          const panel = event.currentTarget;
+          if (!(panel instanceof HTMLElement)) return;
+          event.preventDefault();
+          (panel.querySelector<HTMLElement>('[data-slot="sheet-close"]') ?? panel).focus({
+            preventScroll: true,
+          });
+        }}
+        onCloseAutoFocus={(event) => {
+          onCloseAutoFocus?.(event);
+          if (event.defaultPrevented) return;
+          event.preventDefault();
+          const target = openerRef.current?.isConnected
+            ? openerRef.current
+            : document.querySelector<HTMLElement>('[data-inspector-focus-fallback]');
+          target?.focus({ preventScroll: true });
+        }}
       >
         {children}
         {showCloseButton ? (
           <DialogPrimitive.Close
             data-slot="sheet-close"
-            className="absolute top-3 right-3 rounded-xs opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:outline-hidden disabled:pointer-events-none [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4"
+            aria-label={closeLabel}
+            className="absolute top-3 right-3 inline-flex size-9 items-center justify-center rounded-sm text-fg-muted transition-colors hover:bg-surface-2 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4"
           >
-            <XIcon />
-            <span className="sr-only">Close</span>
+            <XIcon className="size-4" />
+            <span className="sr-only">{closeLabel}</span>
           </DialogPrimitive.Close>
         ) : null}
       </DialogPrimitive.Content>
@@ -69,7 +96,7 @@ function SheetHeader({ className, ...props }: React.ComponentProps<'div'>) {
     <div
       data-slot="sheet-header"
       className={cn(
-        'flex shrink-0 flex-col gap-1 border-b border-border px-4 py-3 pr-12',
+        'flex min-w-0 max-h-[40dvh] shrink-0 flex-col gap-2 overflow-y-auto overscroll-contain border-b border-border px-5 py-4 pr-16 [overflow-wrap:anywhere]',
         className,
       )}
       {...props}
@@ -81,7 +108,10 @@ function SheetBody({ className, ...props }: React.ComponentProps<'div'>) {
   return (
     <div
       data-slot="sheet-body"
-      className={cn('min-h-0 flex-1 overflow-y-auto px-4 py-4', className)}
+      className={cn(
+        'min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain px-5 py-5 [scrollbar-gutter:stable] [overflow-wrap:anywhere]',
+        className,
+      )}
       {...props}
     />
   );
@@ -91,7 +121,10 @@ function SheetTitle({ className, ...props }: React.ComponentProps<typeof DialogP
   return (
     <DialogPrimitive.Title
       data-slot="sheet-title"
-      className={cn('text-base font-semibold leading-none tracking-tight text-fg', className)}
+      className={cn(
+        'min-w-0 whitespace-normal text-base font-semibold leading-6 tracking-tight text-fg [overflow-wrap:anywhere]',
+        className,
+      )}
       {...props}
     />
   );
@@ -104,7 +137,7 @@ function SheetDescription({
   return (
     <DialogPrimitive.Description
       data-slot="sheet-description"
-      className={cn('text-sm text-fg-muted', className)}
+      className={cn('text-sm leading-6 text-fg-muted', className)}
       {...props}
     />
   );
