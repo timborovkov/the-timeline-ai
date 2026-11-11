@@ -124,9 +124,9 @@ Local S3 defaults follow Compose; override with `WEBSITE_SCAN_LIVE_S3_ENDPOINT`,
 Changes to evidence ranking require deterministic source-date, weak upload-date,
 historical-query, pagination and visibility regressions plus `bun run test:eval`.
 The live agent suite's supplied vector hits do not verify actual retrieval:
-exercise real embeddings and isolated Qdrant points with `bun run test:freshness-eval:live` (`OPENROUTER_API_KEY`, local `QDRANT_URL` and its API key). Set `FRESHNESS_EVAL_REPORT` to save the synthetic evidence report. Use synthetic
+exercise real embeddings and isolated Qdrant points with `bun run test:freshness-eval:live` (`OPENROUTER_API_KEY`, local `QDRANT_URL` and its API key, plus local `FRESHNESS_EVAL_DATABASE_URL` or `DATABASE_URL` with permission to create disposable databases). Set `FRESHNESS_EVAL_REPORT` to save the synthetic evidence report. Use synthetic
 cross-source examples, including Telegram corrections, and clean up the unique
-fixture collection afterwards. The harness indexes conversation, meeting, website,
+fixture collection and PostgreSQL database afterwards. Latency comparisons use PostgreSQL, the application’s SQL engine, rather than in-process PGlite. The harness indexes conversation, meeting, website,
 integration and native-note events plus source-backed, undated and private document
 chunks. It checks accepted/rejected proposal context without deleting source history.
 Record baseline/candidate recall and p95 across

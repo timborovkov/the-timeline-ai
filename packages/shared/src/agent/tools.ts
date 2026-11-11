@@ -3155,10 +3155,14 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
             mondayDocIds: [...selectedDocIds],
             limit: INTEGRATION_SEARCH_MAX_EVENT_IDS,
           });
+          let retrieval: SearchRankingSummary | null = null;
           const filtered = await scope.timeline.searchEvents({
             query: parsed.query,
             ranking: 'balanced',
             rankingNow: executionContext.currentDate,
+            onRanking: (value) => {
+              retrieval = value;
+            },
             source: 'integration',
             eventIds: candidates.eventIds,
             limit: requestedLimit,
@@ -3168,11 +3172,15 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
               eventIds: filtered.map((hit) => hit.eventId),
             }),
             count: filtered.length,
-            truncated: candidates.truncated,
+            truncated:
+              candidates.truncated ||
+              Boolean((retrieval as SearchRankingSummary | null)?.candidateLimitReached),
+            retrieval,
             results: filtered.map((r) => ({
               event_id: r.eventId,
               occurred_at: r.occurredAt,
               score: r.score,
+              ranking: r.ranking,
               snippet:
                 fenceExternalContent(r.snippet, { source: r.source, eventId: r.eventId }) ?? '',
             })),

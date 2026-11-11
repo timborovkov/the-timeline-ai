@@ -580,6 +580,36 @@ describe('handleMcpRequest', () => {
     expect(getResult.event.source_metadata).toContain('"instruction"');
   });
 
+  it('reports integration candidate exhaustion after deduplication', async () => {
+    await db
+      .insert(rawEvents)
+      .values({
+        id: GITHUB_SEARCH_EVENT,
+        teamId: TEAM_ID,
+        source: 'integration',
+        contentText: 'GitHub launch',
+        occurredAt: new Date('2026-06-21'),
+        sourceMetadata: { provider: 'github' },
+      });
+    semanticSearchFakes.search.mockResolvedValue(
+      Array.from({ length: 200 }, () => ({
+        ...integrationSearchHit(GITHUB_SEARCH_EVENT, 0.9),
+        id: randomUUID(),
+      })),
+    );
+    const result = await callTool(db, 'timeline.search', {
+      surface: 'integrations',
+      query: 'launch',
+      provider: 'github',
+      limit: 1,
+    });
+    expect(result).toMatchObject({
+      count: 1,
+      truncated: true,
+      retrieval: { mode: 'balanced', candidateLimit: 200, candidateLimitReached: true },
+    });
+  });
+
   it('applies provider filtering before the semantic result limit', async () => {
     await db.insert(rawEvents).values([
       {

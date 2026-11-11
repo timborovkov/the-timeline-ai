@@ -1547,6 +1547,7 @@ async function executeReadCapability(
         mondayDocIds: [...selectedDocIds],
         limit: INTEGRATION_SEARCH_MAX_EVENT_IDS,
       });
+      let retrieval: SearchRankingSummary | null = null;
       const opts: Parameters<typeof scope.timeline.searchEvents>[0] = {
         query: input.query,
         source: 'integration',
@@ -1554,6 +1555,9 @@ async function executeReadCapability(
         eventIds: candidates.eventIds,
         ranking: 'balanced',
         rankingNow: executionContext.currentDate,
+        onRanking: (value) => {
+          retrieval = value;
+        },
       };
       const filtered = (await scope.timeline.searchEvents(opts)).filter(
         (hit) => hit.source === 'integration',
@@ -1563,12 +1567,16 @@ async function executeReadCapability(
           eventIds: filtered.map((hit) => hit.eventId),
         }),
         count: filtered.length,
-        truncated: candidates.truncated,
+        truncated:
+          candidates.truncated ||
+          Boolean((retrieval as SearchRankingSummary | null)?.candidateLimitReached),
+        retrieval,
         results: filtered.map((r) => ({
           event_id: r.eventId,
           citation: artifactRefCitation({ kind: 'timeline_event', id: r.eventId }),
           occurred_at: r.occurredAt,
           score: r.score,
+          ranking: r.ranking,
           snippet: fenceExternalContent(r.snippet, { source: r.source, eventId: r.eventId }),
         })),
       };

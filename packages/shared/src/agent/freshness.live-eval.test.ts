@@ -1,6 +1,6 @@
-import { PGlite } from '@electric-sql/pglite';
+import { createPgClient, migrateDatabase } from '@timeline/db';
 import { describe, expect, it } from 'bun:test';
-import { drizzle } from 'drizzle-orm/pglite';
+import { drizzle } from 'drizzle-orm/postgres-js';
 
 import { askAgent } from '#src/agent/ask.js';
 import { embed, embedMany } from '#src/llm/embed.js';
@@ -8,7 +8,6 @@ import { createQdrantClient } from '#src/qdrant/client.js';
 import { enrichEvidenceContext } from '#src/retrieval/context.js';
 import { withTeam } from '#src/team-scope.js';
 import { buildSearchHit } from '#src/test/agent-eval-harness.js';
-import { applyDbMigrations } from '#src/test/pglite.js';
 
 // Real embeddings, isolated Qdrant, and real agent answers: supplied vector hits
 // cannot establish freshness recall. Only synthetic data; the collection is
@@ -22,7 +21,27 @@ live('freshness end-to-end live evaluation', () => {
       throw new Error('Freshness fixtures require local Qdrant');
     process.env.QDRANT_URL = url;
     const collection = `freshness_eval_${crypto.randomUUID().replaceAll('-', '')}`;
-    const pg = new PGlite();
+    const databaseUrl = process.env.FRESHNESS_EVAL_DATABASE_URL ?? process.env.DATABASE_URL;
+    if (
+      !databaseUrl ||
+      !['localhost', '127.0.0.1', '[::1]'].includes(new URL(databaseUrl).hostname)
+    )
+      throw new Error('Freshness fixtures require local PostgreSQL');
+    const fixtureDatabaseUrl = new URL(databaseUrl);
+    fixtureDatabaseUrl.pathname = `/${collection}`;
+    const admin = createPgClient(databaseUrl, { max: 1, applicationName: 'timeline-script' });
+    const sqlClient = createPgClient(fixtureDatabaseUrl.toString(), {
+      max: 1,
+      applicationName: 'timeline-script',
+    });
+    const pg = {
+      query: (query: string, params: (string | number | boolean | null | undefined)[] = []) =>
+        sqlClient.unsafe(
+          query,
+          params.map((value) => value ?? null),
+        ),
+    };
+    let databaseCreated = false;
     const teamId = crypto.randomUUID();
     const userId = crypto.randomUUID();
     const otherUserId = crypto.randomUUID();
@@ -150,9 +169,12 @@ live('freshness end-to-end live evaluation', () => {
       fixtures: { events: records, documents: documentFixtures },
       scenarios: [],
       timings: null,
+      databaseEngine: 'PostgreSQL',
     };
     try {
-      await applyDbMigrations(pg);
+      await admin.unsafe(`CREATE DATABASE "${collection}"`);
+      databaseCreated = true;
+      await migrateDatabase({ url: fixtureDatabaseUrl.toString() });
       await pg.query('INSERT INTO teams(id,slug,name) VALUES ($1,$2,$3)', [
         teamId,
         collection,
@@ -299,8 +321,16 @@ live('freshness end-to-end live evaluation', () => {
         }).payload;
         await client.upsertVector(row.chunkId, documentEmbeddings.vectors[index] ?? [], payload);
       }
-      const db = drizzle(pg);
-      const search = client.search.bind(client);
+      const db = drizzle(sqlClient);
+      let lastVectorSearchMs = 0;
+      const search: typeof client.search = async (...args) => {
+        const startedAt = performance.now();
+        try {
+          return await client.search(...args);
+        } finally {
+          lastVectorSearchMs = performance.now() - startedAt;
+        }
+      };
       const scope = withTeam(db as never, teamId, userId, { qdrantSearch: search });
       for (const ranking of ['relevance', 'balanced'] as const) {
         const documents = await scope.documents.searchDocumentChunks({
@@ -351,6 +381,7 @@ live('freshness end-to-end live evaluation', () => {
       }
       const baseline: number[] = [];
       const candidate: number[] = [];
+      const vectorTimings: { mode: string; vectorMs: number; totalMs: number }[] = [];
       for (let run = 0; run < 30; run++) {
         for (const ranking of run % 2
           ? (['balanced', 'relevance'] as const)
@@ -363,7 +394,9 @@ live('freshness end-to-end live evaluation', () => {
             rankingNow: now,
             limit: 10,
           });
-          (ranking === 'balanced' ? candidate : baseline).push(performance.now() - start);
+          const totalMs = performance.now() - start;
+          (ranking === 'balanced' ? candidate : baseline).push(totalMs);
+          vectorTimings.push({ mode: ranking, vectorMs: lastVectorSearchMs, totalMs });
           expect(hits.map((hit) => hit.eventId)).toEqual(
             expect.arrayContaining(records.slice(0, 3).map((row) => row.id)) as string[],
           );
@@ -374,6 +407,7 @@ live('freshness end-to-end live evaluation', () => {
         [...values].sort((a, b) => a - b)[Math.ceil(values.length * 0.95) - 1] ?? Infinity;
       report.timings = {
         warmupQueriesPerMode: 3,
+        vectorTimings,
         baselineMs: baseline,
         candidateMs: candidate,
         baselineP95: p95(baseline),
@@ -533,7 +567,12 @@ live('freshness end-to-end live evaluation', () => {
     } finally {
       if (process.env.FRESHNESS_EVAL_REPORT)
         await Bun.write(process.env.FRESHNESS_EVAL_REPORT, JSON.stringify(report, null, 2));
-      await pg.close();
+      await sqlClient.end({ timeout: 5 });
+      try {
+        if (databaseCreated) await admin.unsafe(`DROP DATABASE "${collection}"`);
+      } finally {
+        await admin.end({ timeout: 5 });
+      }
       const response = await fetch(`${url}/collections/${collection}`, {
         method: 'DELETE',
         headers: process.env.QDRANT_API_KEY ? { 'api-key': process.env.QDRANT_API_KEY } : {},

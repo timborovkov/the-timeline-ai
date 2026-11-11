@@ -270,6 +270,27 @@ describe('withTeam timeline semantic search', () => {
     expect(archived.objects[0]?.pending).toEqual([]);
   });
 
+  it('retains pending tasks associated through their parent object', async () => {
+    const bundle = crypto.randomUUID(),
+      item = crypto.randomUUID();
+    await pg.query(
+      `INSERT INTO agent_suggestions(id,team_id,source,title,dedupe_key) VALUES ($1,$2,'background','Next action',$1)`,
+      [bundle, TEAM_A],
+    );
+    await pg.query(
+      `INSERT INTO agent_suggestion_items(id,suggestion_id,team_id,operation,target_kind,title,dedupe_key,proposed_payload) VALUES ($1,$2,$3,'create','task','Confirm launch',$1,$4::jsonb)`,
+      [
+        item,
+        bundle,
+        TEAM_A,
+        JSON.stringify({ parentObjectId: ENTITY_ID, title: 'Confirm launch' }),
+      ],
+    );
+    const result = await enrichEvidenceContext(scopeFor(MEMBER), { objectIds: [ENTITY_ID] });
+    expect(result.adapterFailures).toEqual([]);
+    expect(result.objects[0]?.pending.map((entry) => entry.id)).toContain(item);
+  });
+
   it('discloses the bounded pool even when duplicate hits collapse to one event', async () => {
     hits = Array.from({ length: 200 }, (_, index) => ({
       ...hit(TEAM_EVENT, 0.8),

@@ -107,6 +107,7 @@ export async function enrichEvidenceContext(
             'fromObjectId',
             'toObjectId',
             'parentId',
+            'parentObjectId',
             'projectId',
             'objectIds',
           ].includes(key) &&
