@@ -15,16 +15,16 @@ export function GoogleSignInButton({
     <form action={signInWithGoogleAction}>
       {callbackUrl ? <input type="hidden" name="callbackUrl" value={callbackUrl} /> : null}
       {inviteToken ? <input type="hidden" name="inviteToken" value={inviteToken} /> : null}
-      <Button
-        type="submit"
-        variant="outline"
-        className="h-auto min-h-9 w-full flex-wrap gap-x-2 gap-y-1 py-2 text-sm"
-      >
+      <Button type="submit" variant="outline" className="relative h-10 w-full text-sm">
         <span className="flex size-5 shrink-0 items-center justify-center rounded-[2px] bg-white">
           <GoogleGLogo />
         </span>
         <span>Continue with Google</span>
-        {lastUsed ? <LastUsedBadge /> : null}
+        {lastUsed ? (
+          <span className="absolute right-3 top-0 inline-flex -translate-y-1/2">
+            <LastUsedBadge />
+          </span>
+        ) : null}
       </Button>
     </form>
   );

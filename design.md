@@ -192,8 +192,9 @@ Sign-in and sign-up show a compact neutral “Last used” badge beside the last
 successfully used Google or GitHub button, or beside the Email label for
 password authentication. Both routes use the same browser preference; a failed
 or cancelled attempt does not change it. New browsers show no badge. Keep the
-badge readable in both themes, allow provider buttons to wrap on narrow screens,
-and preserve the existing primary action and provider order. Cookie lifetime
+badge readable in both themes. Place OAuth badges on the top-right button edge,
+outside the centered icon-and-label flow, with enough spacing between buttons
+to prevent overlap. Preserve the existing primary action and provider order. Cookie lifetime
 and contents are disclosed in the [cookie notice](apps/web/src/app/cookies/page.tsx).
 
 ## Shared components

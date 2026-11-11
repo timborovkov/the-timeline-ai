@@ -21,7 +21,7 @@ export function OAuthSignInButtons({
 
   return (
     <>
-      <div className="space-y-2">
+      <div className="space-y-3">
         {google ? (
           <GoogleSignInButton
             lastUsed={lastLoginMethod === 'google'}
