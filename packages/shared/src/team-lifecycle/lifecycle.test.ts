@@ -11,6 +11,7 @@ import { drizzle } from 'drizzle-orm/pglite';
 
 import { BILLING_SYSTEM_USER_ID } from '#src/billing/context.js';
 import { recordedChargesForPeriod } from '#src/billing/presentation.js';
+import { settleTeamPreDisableDailyUsage } from '#src/billing/runtime.js';
 import { resetEnvForTests } from '#src/env.js';
 import { getMeetingBotProvider, resetMeetingBotProviderForTests } from '#src/meeting-bots/index.js';
 import { setPlatformSuspension, listPlatformTeams } from '#src/platform-admin/index.js';
@@ -316,7 +317,7 @@ describe('team lifecycle', () => {
   });
   it('backfills unknown historical suspensions without relying on billing for access', async () => {
     await pg.exec(
-      `INSERT INTO team_billing_accounts (team_id,security_state) VALUES ('${TEAM}','suspended')`,
+      `UPDATE teams SET created_at=now()-interval '5 days' WHERE id='${TEAM}'; UPDATE team_members SET created_at=now()-interval '5 days' WHERE team_id='${TEAM}'; INSERT INTO team_billing_accounts (team_id,security_state,plan_id,billing_state,shadow_billing,price_override) VALUES ('${TEAM}','suspended','team','team_active',true,'{"includedActiveMembers":0}')`,
     );
     const migration = readFileSync(
       new URL('../../../db/drizzle/0103_team_lifecycle.sql', import.meta.url),
@@ -330,6 +331,15 @@ describe('team lifecycle', () => {
     );
     const [team] = await db.select().from(teams).where(eq(teams.id, TEAM));
     expect(team?.lifecycleWork).toMatchObject({ disabledDateUnknown: true, billingPending: true });
+    await beginTeamDeletion(db, actor, {
+      teamId: TEAM,
+      confirmation: 'First',
+      reason: 'Unknown historical suspension fixture',
+    });
+    await settleTeamPreDisableDailyUsage({ db, teamId: TEAM });
+    expect(
+      (await pg.query(`SELECT 1 FROM billing_member_day_ledger WHERE team_id='${TEAM}'`)).rows,
+    ).toHaveLength(0);
     await db.delete(teamBillingAccounts).where(eq(teamBillingAccounts.teamId, TEAM));
     await expect(assertActivePrincipal(db, TEAM)).rejects.toThrow('disabled');
   });

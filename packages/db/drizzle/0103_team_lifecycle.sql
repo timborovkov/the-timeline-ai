@@ -16,9 +16,10 @@ FROM (SELECT DISTINCT ON (team_id) team_id, created_at, actor_user_id, reason, a
 JOIN team_billing_accounts b ON b.team_id = a.team_id
 WHERE t.id = a.team_id AND a.action = 'team.suspend' AND b.security_state = 'suspended';
 -- Preserve an unknown original disable date while enforcing legacy suspensions independently of billing.
+-- Waive unrecorded daily usage throughout unknown history rather than inventing active days.
 UPDATE teams t SET disabled_at = COALESCE(t.disabled_at, now()),
   lifecycle_work = jsonb_build_object('billingPending', true, 'disabledDateUnknown', t.disabled_at IS NULL),
-  disabled_periods = jsonb_build_array(jsonb_build_object('start', COALESCE(t.disabled_at, now())))
+  disabled_periods = jsonb_build_array(jsonb_build_object('start', COALESCE(t.disabled_at, t.created_at)))
 FROM team_billing_accounts b WHERE b.team_id = t.id AND b.security_state IN ('suspended', 'terminated');
 CREATE INDEX teams_lifecycle_work_idx ON teams (id)
 WHERE lifecycle_work <> '{}'::jsonb;
