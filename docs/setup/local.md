@@ -36,7 +36,7 @@ The rest of the defaults already match `docker-compose.yml`. When you use `docke
 
 For local document parsing without Daytona, set `DOCUMENT_EXTRACT_ALLOW_INPROCESS=true`. This development-only option is rejected in production; leave it false when using a Daytona extractor.
 
-Web and full worker startup require `FIRECRAWL_API_KEY`; missing configuration fails immediately. The document-extract-only worker does not require it. See the [website scan lifecycle](../architecture/website-scan.md). Team inbound addresses use `INBOUND_EMAIL_DOMAIN` from config.
+Web and full worker startup require `FIRECRAWL_API_KEY`; missing configuration fails immediately. The document-extract-only worker does not require it. See the [website scan lifecycle](../relational-memory.md#website-scans). Team inbound addresses use `INBOUND_EMAIL_DOMAIN` from config.
 
 Local Compose uses PostgreSQL 18. For an existing PostgreSQL 16 volume, follow the [data-preserving PostgreSQL upgrade procedure](postgres18.md) before startup. Keep `POSTGRES_DATA_VOLUME=postgres_data` until the documented migration; the image refuses old data rather than silently replacing it. Never use a volume reset to resolve this upgrade error.
 

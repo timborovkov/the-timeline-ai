@@ -13,10 +13,10 @@ Use this map to locate implementation responsibilities. It is not a task list or
 | Retrieval | The shared retrieval request contract owns input vocabulary; MCP, dashboard and chat adapters translate into it. Preserve visibility, provenance and partial-failure disclosure. |
 | Reconciliation | Dependency-light core/planner contracts stay separate from dashboard/runtime orchestration. Direct-write provenance has one owner. |
 | Redis and queues | `redis/connection.ts` owns connection roles; queue shutdown must not close request-cache/admission connections. Drain consumers before producers/connections. |
-| Website scan | [Website scan lifecycle](website-scan.md) owns admission, crawl checkpoints, immutable page snapshots and approval-backed handoffs. |
+| Website scan | `onboarding/website-scan-job.ts` owns admission and handoffs; `website-source-scope.ts` owns team-scoped crawl checkpoints and immutable snapshots. Client first-run screens use `@timeline/shared/onboarding/first-run`, not the Node barrel. See [capture semantics](../relational-memory.md#website-scans). |
 | Provider lifecycle | Provider adapters own browsing, selection validation and capture protocol; generic sync assembles required services and must not silently omit persistence. |
 | Drive | [Drive lifecycle](drive.md) owns snapshots, evidence packing, transient extraction and transactional source-link changes. |
-| Messaging | Provider-neutral durable turns, claims and delivery policy; outbound delivery must not depend on inbound orchestration. Provider retries preserve idempotency. [Telegram chat migration](telegram-chat-migration.md) preserves workspace ownership across chat-ID changes. |
+| Messaging | Provider-neutral durable turns, claims and delivery policy; outbound delivery must not depend on inbound orchestration. Provider retries preserve idempotency. |
 | Billing | [Billing contract](billing.md) owns admission, settlement, provider mapping and historical price attribution; setup and conversion belong in the Polar guide. |
 | Typed transport | Dependency-light DTO/contracts shared by server and client, with strict API validation and tolerant persisted-state parsing where explicitly required. |
 | Worker startup | Queue registration, startup and shutdown inventory is code-owned; do not keep a parallel worker list in prose. |

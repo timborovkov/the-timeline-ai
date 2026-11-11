@@ -132,8 +132,12 @@ Telegram routing still uses four provider tables:
 
 - `telegram_users` — one row per Telegram user the bot has seen; optional link to an app `users.id` once the user `/link`s a personal token.
 - `telegram_user_teams` — the selected DM route. It is not an eligibility list; `team_members` supplies every currently available team. A partial unique index guarantees exactly one `is_active=true` row per Telegram user.
-- `telegram_chat_bindings` — one row per Telegram group/supergroup chat, pointing at a single team. Permanent until `/unlink`; [chat migration](../architecture/telegram-chat-migration.md) preserves workspace ownership when Telegram upgrades a group.
+- `telegram_chat_bindings` — one row per Telegram group/supergroup chat, pointing at a single team. Permanent until `/unlink`.
 - `telegram_link_tokens` — single-use, 15-minute-TTL tokens, scoped `personal` (DM link) or `group` (group binding).
+
+### Group upgrades
+
+When Telegram upgrades a group to a supergroup, migration messages or outbound errors update its binding and the same workspace’s digest destination. Migration requires confirmed workspace ownership; a leftover destination after unlink is not authorization. Conflicting ownership fails closed, and existing new-chat delivery records prevent duplicate digests. Locking and retry details live in `packages/shared/src/telegram/chat-migration.ts` and its tests.
 
 Private agent state is provider-neutral: `chat_sessions.surface='telegram'`, `chat_surface_session_links` maps the opaque Telegram DM key to the active session, and `chat_surface_turns` is the durable idempotency, model, and delivery ledger consumed by the `conversation-agent` worker queue.
 

@@ -50,7 +50,7 @@ This repository does not change the Railway project. After merging, an operator 
 
 ## Environment variables
 
-Website scanning requires `FIRECRAWL_API_KEY` on web and full worker services, but not the document-extract-only service. See the [scan lifecycle](architecture/website-scan.md).
+Website scanning requires `FIRECRAWL_API_KEY` on web and full worker services, but not the document-extract-only service. See the [scan lifecycle](relational-memory.md#website-scans).
 
 Shared variables for `web` and `worker` (not the credential-thin `document-extract-orchestrator` service). Railway's service-to-service references (`${{ Postgres.DATABASE_URL }}`) keep things DRY.
 

@@ -33,7 +33,7 @@ This is the prioritised index of unresolved outcomes. Detailed acceptance criter
 | P10 | Add targeted file inspection and correction. | Second-pass original-file inspection, audited representation corrections, and captured-file sender/bulk triage; preserve [file semantics](docs/captured-files.md). |
 | P11 | Extend captured-work and supporting evidence coverage. | Parent IDs for pulses, GitHub review discussion, document-chunk pack admission and summary refresh, Linear/Monday actor mapping, and later Jira/CRM adapters. Follow [engine authority](docs/relational-memory.md); no semantic-only canonical writes. |
 | P12 | Improve residual behavioral test coverage. | Restore/deeper permission/session-isolation paths, real queue/storage/DB contracts and end-to-end first-value/payment/provider flows. Use existing suites; [testing](docs/testing/README.md) owns execution policy. |
-| P13 | Add website ingestion and refresh outside first-run onboarding. | Add a Website source on `/app/connections/sources`, reusing the existing [scan lifecycle](docs/architecture/website-scan.md) and accepted-source meter. |
+| P13 | Add website ingestion and refresh outside first-run onboarding. | Add a Website source on `/app/connections/sources`, reusing the existing [scan lifecycle](docs/relational-memory.md#website-scans) and accepted-source meter. |
 
 ## Conditional work
 
