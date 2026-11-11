@@ -157,7 +157,7 @@ export function freeAllowanceConsumedForMeter(
     case 'ai':
       return {
         // Gross AI cents live on nativeUnits. PAYG customerChargeCents is
-        // post-floor overage and would otherwise reset the €5 floor every call.
+        // post-floor overage and would otherwise reset the Free floor every call.
         consumed: Math.max(meters.ai?.nativeUnits ?? 0, meters.ai?.customerChargeCents ?? 0),
         limit: FREE_ALLOWANCES.aiChargeCents,
         unit: 'cents',
