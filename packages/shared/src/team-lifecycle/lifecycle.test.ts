@@ -10,6 +10,7 @@ import { drizzle } from 'drizzle-orm/pglite';
 import { BILLING_SYSTEM_USER_ID } from '#src/billing/context.js';
 import { recordedChargesForPeriod } from '#src/billing/presentation.js';
 import { settleTeamPreDisableDailyUsage } from '#src/billing/runtime.js';
+import { resetSurfaceSessionInTransaction } from '#src/conversation-surfaces/scope.js';
 import { encryptJson } from '#src/crypto/secrets.js';
 import { resetEnvForTests } from '#src/env.js';
 import { mondayProvider } from '#src/integrations/providers/monday.js';
@@ -57,6 +58,192 @@ afterEach(async () => {
 });
 
 describe('team lifecycle', () => {
+  it('erases legacy board and object history without revalidating old provenance', async () => {
+    const scope = withTeam(db, TEAM, OWNER);
+    const event = await scope.timeline.createEvent({
+      authorUserId: OWNER,
+      source: 'web',
+      contentText: 'Legacy fixture',
+      visibility: 'team',
+    });
+    const board = await scope.boards.createBoard({
+      name: 'Legacy fixture',
+      templateKind: 'custom',
+      lanes: [],
+    });
+    const [entity] = await db
+      .insert(schema.entities)
+      .values({ teamId: TEAM, type: 'company', canonicalName: 'Legacy fixture' })
+      .returning();
+    if (!entity) throw new Error('Missing legacy entity');
+    const item = await scope.boards.addBoardItem(board.id, {
+      entityId: entity.id,
+      laneId: null,
+      actor: { kind: 'user', userId: OWNER },
+    });
+    await pg.exec(
+      'ALTER TABLE board_item_changes DROP CONSTRAINT board_item_changes_legacy_source_event_id_null_chk; ALTER TABLE object_changes DROP CONSTRAINT object_changes_legacy_source_event_id_null_chk',
+    );
+    await db.insert(schema.boardItemChanges).values(
+      Array.from({ length: 501 }, () => ({
+        teamId: TEAM,
+        boardId: board.id,
+        boardItemId: item.id,
+        entityId: entity.id,
+        actorKind: 'agent' as const,
+        field: 'laneId',
+        sourceEventId: event.id,
+      })),
+    );
+    await db.insert(schema.objectChanges).values({
+      teamId: TEAM,
+      entityId: entity.id,
+      actorKind: 'agent',
+      field: 'name',
+      sourceEventId: event.id,
+    });
+    await pg.exec(
+      'ALTER TABLE board_item_changes ADD CONSTRAINT board_item_changes_legacy_source_event_id_null_chk CHECK (source_event_id IS NULL) NOT VALID; ALTER TABLE object_changes ADD CONSTRAINT object_changes_legacy_source_event_id_null_chk CHECK (source_event_id IS NULL) NOT VALID',
+    );
+    await beginTeamDeletion(db, actor, {
+      teamId: TEAM,
+      confirmation: 'First',
+      reason: 'Legacy history fixture',
+    });
+    expect(await purgeTeamRows(db, TEAM)).toBe(false);
+    expect(
+      (
+        await db
+          .select()
+          .from(schema.boardItemChanges)
+          .where(eq(schema.boardItemChanges.teamId, TEAM))
+      ).filter((row) => row.sourceEventId !== null),
+    ).toHaveLength(1);
+    let done = false;
+    for (let tick = 0; tick < 8 && !done; tick++) done = await purgeTeamRows(db, TEAM);
+    expect(done).toBe(true);
+    await verifyTeamRows(db, TEAM);
+    expect((await db.select().from(teams).where(eq(teams.id, OTHER)))[0]?.disabledAt).toBeNull();
+  });
+  it.each(['telegram', 'slack'] as const)(
+    'permits only terminal old-route changes when switching %s teams',
+    async (surface) => {
+      const identity = {
+        surface,
+        externalConversationKey: 'synthetic-conversation',
+        externalUserKey: 'synthetic-user',
+        teamId: TEAM,
+        userId: OWNER,
+        userName: 'Owner',
+      };
+      const created = await withTeam(db, TEAM, OWNER).conversations.createTurn({
+        ...identity,
+        externalEventId: 'first',
+        externalMessageId: 'first',
+        question: 'Private fixture',
+      });
+      if (created.status !== 'accepted') throw new Error('Missing conversation fixture');
+      const [telegramUser] = await db
+        .insert(schema.telegramUsers)
+        .values({ tgUserId: 1234567, userId: OWNER })
+        .returning();
+      const [workspace] = await db
+        .insert(schema.slackWorkspaces)
+        .values({
+          slackTeamId: 'synthetic',
+          tokenCiphertext: Buffer.from('fixture'),
+          tokenIv: Buffer.alloc(12),
+          tokenTag: Buffer.alloc(16),
+        })
+        .returning();
+      if (!workspace || !telegramUser) throw new Error('Missing route fixtures');
+      const [slackUser] = await db
+        .insert(schema.slackUsers)
+        .values({ workspaceId: workspace.id, slackUserId: 'synthetic' })
+        .returning();
+      if (!slackUser) throw new Error('Missing Slack fixture');
+      await db.insert(schema.telegramUserTeams).values({
+        telegramUserId: telegramUser.id,
+        teamId: TEAM,
+        linkedByUserId: OWNER,
+        isActive: true,
+      });
+      await db.insert(schema.slackUserTeams).values({
+        slackUserId: slackUser.id,
+        teamId: TEAM,
+        userId: OWNER,
+        linkedByUserId: OWNER,
+        isActive: true,
+      });
+      await setPlatformSuspension(db, actor, 'team', TEAM, true, 'Pause chat fixture');
+      expect(
+        await db.transaction((tx) =>
+          resetSurfaceSessionInTransaction(tx, { ...identity, userId: ADMIN }, 'team_changed'),
+        ),
+      ).toBeNull();
+      await db.transaction(async (tx) => {
+        await resetSurfaceSessionInTransaction(tx, identity, 'team_changed');
+        if (surface === 'telegram') {
+          await tx
+            .update(schema.telegramUserTeams)
+            .set({ isActive: false })
+            .where(eq(schema.telegramUserTeams.telegramUserId, telegramUser.id));
+          await tx.insert(schema.telegramUserTeams).values({
+            telegramUserId: telegramUser.id,
+            teamId: OTHER,
+            linkedByUserId: OWNER,
+            isActive: true,
+          });
+        } else {
+          await tx
+            .update(schema.slackUserTeams)
+            .set({ isActive: false, updatedAt: new Date() })
+            .where(eq(schema.slackUserTeams.slackUserId, slackUser.id));
+          await tx
+            .insert(schema.slackUserTeams)
+            .values({ slackUserId: slackUser.id, teamId: OTHER, userId: OWNER, isActive: true });
+        }
+      });
+      expect((await db.select().from(schema.chatSurfaceTurns))[0]?.status).toBe('cancelled');
+      expect((await db.select().from(schema.chatSessions))[0]?.archivedAt).toBeInstanceOf(Date);
+      expect(await db.select().from(schema.chatSurfaceSessionLinks)).toHaveLength(0);
+      for (const table of [schema.telegramUserTeams, schema.slackUserTeams]) {
+        await expect(
+          db.update(table).set({ isActive: true }).where(eq(table.teamId, TEAM)),
+        ).rejects.toThrow();
+        await expect(
+          db
+            .update(table)
+            .set({ isActive: false, linkedByUserId: ADMIN })
+            .where(eq(table.teamId, TEAM)),
+        ).rejects.toThrow();
+      }
+      await expect(
+        db
+          .update(schema.chatSurfaceTurns)
+          .set({
+            status: 'cancelled',
+            errorCode: 'team_changed',
+            answerText: 'Forbidden late answer',
+          })
+          .where(eq(schema.chatSurfaceTurns.teamId, TEAM)),
+      ).rejects.toThrow();
+      await expect(
+        db
+          .update(schema.chatSessions)
+          .set({ archivedAt: new Date(), title: 'Forbidden mutation' })
+          .where(eq(schema.chatSessions.teamId, TEAM)),
+      ).rejects.toThrow();
+      const next = await withTeam(db, OTHER, OWNER).conversations.createTurn({
+        ...identity,
+        teamId: OTHER,
+        externalEventId: 'next',
+        externalMessageId: 'next',
+        question: 'Healthy team',
+      });
+      expect(next.status).toBe('accepted');
+    },
+  );
   it('retries unconfirmed website cancellation and settles captured pages once while disabled', async () => {
     const previousKey = process.env.FIRECRAWL_API_KEY;
     process.env.FIRECRAWL_API_KEY = 'synthetic-test-key';

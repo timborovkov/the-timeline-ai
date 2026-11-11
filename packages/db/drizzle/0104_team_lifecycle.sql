@@ -31,6 +31,30 @@ BEGIN
   PERFORM 1 FROM teams WHERE id = NEW.team_id FOR SHARE;
   IF EXISTS (SELECT 1 FROM teams WHERE id = NEW.team_id AND
     (disabled_at IS NOT NULL OR deletion_started_at IS NOT NULL OR deleted_at IS NOT NULL)) THEN
+    -- Verified account-level chat switching may deactivate old routing and
+    -- cancel/archive its own session. Never permit identity/content changes,
+    -- new rows, reactivation, or answer delivery through this exception.
+    IF TG_OP = 'UPDATE' THEN
+      IF TG_TABLE_NAME IN ('telegram_user_teams', 'slack_user_teams')
+         AND to_jsonb(NEW)->>'is_active' = 'false'
+         AND (to_jsonb(NEW) - ARRAY['is_active','updated_at']) =
+             (to_jsonb(OLD) - ARRAY['is_active','updated_at']) THEN
+        RETURN NEW;
+      END IF;
+      IF TG_TABLE_NAME = 'chat_surface_turns'
+         AND to_jsonb(NEW)->>'status' = 'cancelled'
+         AND to_jsonb(NEW)->>'error_code' IN ('team_changed', 'session_reset')
+         AND (to_jsonb(NEW) - ARRAY['status','error_code','updated_at']) =
+             (to_jsonb(OLD) - ARRAY['status','error_code','updated_at']) THEN
+        RETURN NEW;
+      END IF;
+      IF TG_TABLE_NAME = 'chat_sessions'
+         AND to_jsonb(NEW)->>'archived_at' IS NOT NULL
+         AND (to_jsonb(NEW) - ARRAY['archived_at','updated_at']) =
+             (to_jsonb(OLD) - ARRAY['archived_at','updated_at']) THEN
+        RETURN NEW;
+      END IF;
+    END IF;
     RAISE EXCEPTION 'Workspace is disabled' USING ERRCODE = '42501';
   END IF;
   RETURN NEW;

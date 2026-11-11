@@ -9,6 +9,19 @@ import { lifecycleRows } from '#src/team-lifecycle/result.js';
 export async function purgeTeamRows(db: Db, teamId: string): Promise<boolean> {
   const [team] = await db.select().from(teams).where(eq(teams.id, teamId));
   if (!team?.deletionStartedAt) throw new Error('Permanent deletion has not started');
+  // Legacy history must go before deleting any parent: ON DELETE SET NULL
+  // would also revalidate its old NOT VALID provenance constraints.
+  let legacyRemaining = false;
+  for (const history of ['board_item_changes', 'object_changes']) {
+    const deleted = await db.transaction(async (tx) => {
+      await tx.execute(sql`SELECT set_config('timeline.lifecycle_cleanup', 'on', true)`);
+      return tx.execute(sql`DELETE FROM ${sql.identifier(history)} WHERE ctid IN
+        (SELECT ctid FROM ${sql.identifier(history)} WHERE team_id = ${teamId}::uuid
+         AND source_event_id IS NOT NULL LIMIT 500) RETURNING 1`);
+    });
+    if (lifecycleRows(deleted).length) legacyRemaining = true;
+  }
+  if (legacyRemaining) return false;
   let remaining = false;
   for (const tableName of PURGED_TEAM_TABLES) {
     await db.transaction(async (tx) => {
@@ -18,7 +31,10 @@ export async function purgeTeamRows(db: Db, teamId: string): Promise<boolean> {
         (value) => is(value, Table) && getTableConfig(value).name === tableName,
       );
       if (!table || !is(table, Table)) throw new Error('Unclassified deletion table');
-      for (const fk of getTableConfig(table).foreignKeys) {
+      // Historical rows can predate NOT VALID provenance checks. Delete history
+      // directly: unrelated FK updates would revalidate those old pointers.
+      const history = tableName === 'board_item_changes' || tableName === 'object_changes';
+      for (const fk of history ? [] : getTableConfig(table).foreignKeys) {
         const reference = fk.reference();
         if (reference.columns.length !== 1) continue;
         const column = reference.columns[0];
