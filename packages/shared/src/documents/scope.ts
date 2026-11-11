@@ -8,6 +8,7 @@ import {
   documentVersions,
   folders,
   rawEvents,
+  websitePages,
 } from '@timeline/db';
 import { type SQL, and, asc, desc, eq, gte, inArray, isNull, lt, or, sql } from 'drizzle-orm';
 
@@ -33,6 +34,7 @@ import { stableSha256Digest } from '#src/reconciliation/stable-digest.js';
 import { getDocumentsBucket, getS3Client } from '#src/s3/client.js';
 import { deleteObject } from '#src/s3/objects.js';
 import { rawEventVisibleToUser, validateVisibilityUserIds } from '#src/visibility.js';
+import { obsoleteWebsiteEventIds } from '#src/websites/retrieval.js';
 
 import type { QdrantOperationContext } from '#src/qdrant/operation.js';
 
@@ -920,6 +922,8 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
       limit: offset + limit + 1,
       sourceKind: 'doc_chunk',
     };
+    if (!input.from && !input.to && input.fileKinds?.includes('captured'))
+      searchOpts.obsoleteWebsiteEventIds = await obsoleteWebsiteEventIds(db, teamId);
     if (input.from) searchOpts.from = input.from;
     if (input.to) searchOpts.to = input.to;
     if (input.rootFolder) searchOpts.rootFolder = true;
@@ -966,7 +970,7 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
         documentName: documents.name,
         documentMetadata: documents.metadata,
         folderId: documents.folderId,
-        sourceRawEventId: documents.sourceRawEventId,
+        sourceRawEventId: documentVersions.sourceEventId,
         createdAt: documentVersions.createdAt,
       })
       .from(documentChunks)
@@ -1434,6 +1438,12 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
           .returning();
         const row = rows[0] as DocumentRow | undefined;
         if (!row) throw new Error('Failed to promote captured file');
+        // Promotion transfers editing to the document drive. Future crawls must own
+        // a fresh capture; historical page/version pointers remain valid evidence.
+        await tx
+          .update(websitePages)
+          .set({ documentId: null })
+          .where(and(eq(websitePages.teamId, teamId), eq(websitePages.documentId, row.id)));
         if (row.currentVersionId) {
           const currentVersions = await tx
             .select({

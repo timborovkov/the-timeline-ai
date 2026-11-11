@@ -1,7 +1,13 @@
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 
 /** MCP authorization-server scopes only. Do not add CRM or other provider-app scopes. */
-export const MCP_OAUTH_SCOPES = ['read', 'capture', 'agent:ask'] as const;
+export const MCP_OAUTH_SCOPES = [
+  'read',
+  'capture',
+  'agent:ask',
+  'websites:scan',
+  'websites:manage',
+] as const;
 export const MCP_OAUTH_DEFAULT_SCOPE = 'read';
 export const MCP_TEAM_ACTOR_USER_ID = '00000000-0000-0000-0000-000000000000';
 
@@ -194,8 +200,9 @@ export function parseMcpOAuthScopes(raw: string | null | undefined): McpOAuthSco
   const unique = [...new Set(values)];
   if (
     unique.length === 0 ||
+    (unique.includes('websites:manage') && !unique.includes('websites:scan')) ||
     unique.some((scope) => !MCP_OAUTH_SCOPES.includes(scope as McpOAuthScope)) ||
-    ((unique.includes('agent:ask') || unique.includes('capture')) && !unique.includes('read'))
+    (unique.some((scope) => scope !== 'read') && !unique.includes('read'))
   ) {
     throw new McpOAuthError(
       'invalid_scope',
@@ -212,6 +219,8 @@ export function resolveMcpOAuthConsentScopes(
   const scopes: McpOAuthScope[] = ['read'];
   if (options.grantCapture) scopes.push('capture');
   if (requested.includes('agent:ask')) scopes.push('agent:ask');
+  if (requested.includes('websites:scan')) scopes.push('websites:scan');
+  if (requested.includes('websites:manage')) scopes.push('websites:manage');
   return scopes;
 }
 
@@ -220,7 +229,11 @@ export function applyMcpOAuthConsentScopes(
   grantedScopes: readonly McpOAuthScope[],
 ): ValidatedAuthorizationRequest {
   const parsed = parseMcpOAuthScopes(grantedScopes.join(' '));
-  if (parsed.includes('agent:ask') && !request.scopes.includes('agent:ask')) {
+  if (
+    parsed.some(
+      (scope) => scope !== 'read' && scope !== 'capture' && !request.scopes.includes(scope),
+    )
+  ) {
     throw new McpOAuthError('invalid_scope', 'The granted scopes exceed the authorization request');
   }
   return { ...request, scopes: parsed };
@@ -229,10 +242,14 @@ export function applyMcpOAuthConsentScopes(
 export function mcpStaticKeyScopes(options: {
   allowCapture: boolean;
   allowAgent: boolean;
+  allowWebsiteScan?: boolean;
+  allowWebsiteManage?: boolean;
 }): McpOAuthScope[] {
   const scopes: McpOAuthScope[] = ['read'];
   if (options.allowCapture) scopes.push('capture');
   if (options.allowAgent) scopes.push('agent:ask');
+  if (options.allowWebsiteScan || options.allowWebsiteManage) scopes.push('websites:scan');
+  if (options.allowWebsiteManage) scopes.push('websites:manage');
   return scopes;
 }
 
@@ -250,7 +267,9 @@ export function membershipAuthorizesScopes(
     return false;
   }
   return (
-    !scopes.includes('agent:ask') || membership.role === 'owner' || membership.role === 'admin'
+    (!scopes.includes('agent:ask') && !scopes.includes('websites:manage')) ||
+    membership.role === 'owner' ||
+    membership.role === 'admin'
   );
 }
 

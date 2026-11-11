@@ -86,8 +86,8 @@ PostgreSQL holds canonical records, immutable sources, provenance, approvals and
 
 ## Website scans
 
-First-run scanning captures up to five public same-origin pages through Firecrawl after the user confirms permission. Firecrawl is the only crawler; failures do not fall back to an in-house fetcher. Each page becomes a cited `source: web` event and a versioned Markdown document; extraction and suggestions use existing pipelines, with canonical changes requiring approval.
+[Website sources](websites.md) owns persistent configuration, scan admission, schedules and version promotion, including first-run scans. Firecrawl captures up to five public same-origin pages after permission confirmation; failures do not fall back to an in-house fetcher. Captures are team-visible cited web events and versioned Markdown documents. Extraction and suggestions use the existing pipelines; canonical changes require approval.
 
-Reserve up to five accepted-source units before enqueue, recheck admission before crawling, and settle returned pages once. Downstream inference uses the AI meter. Immutable `website_sources` snapshots let retries reuse identical bytes; scan IDs scope retries, source lists and atomic onboarding completion.
+New scans reserve up to 100 accepted-source units and settle 20 units per captured page once, including unchanged pages. Legacy jobs retain their original multiplier. Immutable `website_sources` snapshots let retries reuse identical bytes. Current retrieval favours ready page versions while historical citations remain accessible.
 
 [Local setup](setup/local.md) and [Railway](railway.md#environment-variables) own credentials; [live evaluation](testing/README.md#live-website-scan) owns verification. [Provider controls](providers.md) and [support deletion](setup/manual-support-deletion.md) cover retention and erasure.

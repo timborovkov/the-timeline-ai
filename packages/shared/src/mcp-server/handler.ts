@@ -52,6 +52,7 @@ import {
   buildTimelineMomentPresentationCacheFingerprint,
   buildTimelineMomentPresentationCacheKey,
 } from '#src/timeline-moments/presentation-contract.js';
+import { startWebsiteScan, normalizeWebsiteUrl } from '#src/websites/index.js';
 
 import type * as boards from '#src/boards/index.js';
 
@@ -302,12 +303,15 @@ function withMcpScope(db: Db, principal: McpAuthPrincipal) {
     // visibility boundary. withTeam re-checks that membership on every
     // request, so revoked/removed users fail closed even if a token lookup
     // raced the membership change.
-    return withTeam(db, principal.teamId, principal.userId);
+    return withTeam(db, principal.teamId, principal.userId, { websitePrincipal: principal });
   }
   // Static outbound keys represent the team rather than a user. The
   // pseudo-user cannot match an author or specific-user visibility target,
   // so these keys remain limited to team-visible data.
-  return withTeam(db, principal.teamId, PSEUDO_USER, { skipMembershipCheck: true });
+  return withTeam(db, principal.teamId, PSEUDO_USER, {
+    skipMembershipCheck: true,
+    websitePrincipal: principal,
+  });
 }
 
 function textMatches(value: string | null | undefined, query: string | undefined): boolean {
@@ -620,7 +624,36 @@ function readTool(
   };
 }
 
+const crawlInput = z.object({
+  url: z.string().max(2048),
+  subject: z.enum(['own_team', 'other_company']).default('other_company'),
+  permissionConfirmed: z.literal(true),
+  idempotencyKey: z.string().min(1).max(200),
+});
 const TOOLS: TimelineToolDefinition[] = [
+  {
+    name: 'timeline.crawl',
+    title: 'Scan a public website',
+    description:
+      'Explicitly scan up to five public pages into team-visible evidence. Costs 20 source units per captured page, up to 100 per scan, plus AI and storage. Requires the user to confirm permission and paid usage. Never invoke automatically while searching.',
+    inputSchema: crawlInput,
+    outputSchema: z.looseObject({}),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: true,
+    },
+    securitySchemes: [{ type: 'oauth2', scopes: ['read', 'websites:scan'] }],
+    _meta: { securitySchemes: [{ type: 'oauth2', scopes: ['read', 'websites:scan'] }] },
+  },
+  readTool(
+    'timeline.crawl_status',
+    'Website scan status',
+    'Read a website scan status and usage in this team.',
+    z.object({ runId: z.uuid() }),
+    z.looseObject({}),
+  ),
   readTool(
     'timeline.search',
     'Search Timeline',
@@ -651,6 +684,8 @@ export const ADVERTISED_MCP_TOOL_NAMES = [
   'timeline.search',
   'timeline.get',
   'timeline.subject',
+  'timeline.crawl',
+  'timeline.crawl_status',
   REMEMBER_TOOL_NAME,
   ASK_TOOL_NAME,
 ] as const;
@@ -776,6 +811,25 @@ async function callTool(
   const scope = withMcpScope(db, principal);
   const executionContext = { currentDate: deps.currentDate ?? new Date() };
   switch (toolName) {
+    case 'timeline.crawl': {
+      if (!principal.scopes.includes('websites:scan'))
+        throw new Error('Missing website permission');
+      const input = crawlInput.parse(args);
+      const url = normalizeWebsiteUrl(input.url);
+      const existing = (await scope.websites.list()).find((source) => source.url === url);
+      const source =
+        existing ??
+        (await scope.websites.add({ url, subject: input.subject, permissionConfirmed: true }));
+      const run = await startWebsiteScan(scope, {
+        websiteId: source.id,
+        idempotencyKey: input.idempotencyKey,
+        permissionConfirmed: true,
+        trigger: 'mcp',
+      });
+      return { run, statusUrl: `/api/websites/${source.id}/scans/${run.id}` };
+    }
+    case 'timeline.crawl_status':
+      return { run: await scope.websites.getRun(z.object({ runId: z.uuid() }).parse(args).runId) };
     case 'timeline.search':
       return searchWorkspace(scope, executionContext, args);
     case 'timeline.get':
@@ -2424,6 +2478,19 @@ export function createTimelineMcpServer(input: {
   if (principal.scopes.includes('read')) {
     for (const definition of TOOLS) {
       registerTimelineTool(server, definition, async (args) => {
+        if (definition.name === 'timeline.crawl' && !principal.scopes.includes('websites:scan')) {
+          const challenge = [
+            'Bearer error="insufficient_scope"',
+            'error_description="Grant the websites:scan scope to use timeline.crawl"',
+            'scope="read websites:scan"',
+            `resource_metadata="${timelineMcpResourceMetadataUrl(expectedResource)}"`,
+          ].join(', ');
+          return toolResult(
+            { ok: false, error: 'forbidden' },
+            true,
+            principal.authType === 'oauth' ? { 'mcp/www_authenticate': [challenge] } : undefined,
+          );
+        }
         const output = structuredOutput(
           await callTool(input.db, principal, definition.name, args, input.deps),
         );

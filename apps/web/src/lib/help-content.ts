@@ -279,7 +279,7 @@ export const HELP_PAGES: HelpPage[] = [
         items: [
           'The default path uses browser-based OAuth: sign in, choose a team, review the requested scopes, and approve or deny access.',
           'Codex and Claude Code users can install the full plugin from this repository. Other compatible clients can connect to the same production URL directly.',
-          'The hosted tools are timeline.search, timeline.get, timeline.subject, timeline.ask, and timeline.remember. The default OAuth grant is read plus capture (on by default). Capture authorizes timeline.remember; unchecking it issues a read-only grant. Timeline agent access is a separate, optional owner/admin-approved agent:ask scope for paid, proposal-only turns.',
+          'The hosted tools are timeline.search, timeline.get, timeline.subject, timeline.ask, timeline.remember, timeline.crawl, and timeline.crawl_status. The default OAuth grant is read plus capture (on by default). Capture authorizes timeline.remember; unchecking it issues a read-only grant. Timeline agent access is a separate, optional owner/admin-approved agent:ask scope for paid, proposal-only turns.',
           'Static tla_ team keys remain an Advanced compatibility fallback for manual clients and must never be pasted in chat.',
         ],
         appLink: { href: '/app/connect-agent', label: 'Connect your agent' },
@@ -309,7 +309,7 @@ export const HELP_PAGES: HelpPage[] = [
         title: 'Install in Codex or Claude Code',
         body: 'Give your agent https://thetimeline.cc/agents/setup.md, or use the copy-ready prompt for Codex or the repository marketplace commands for Claude Code. Both packages add the general Timeline skill and hosted Streamable HTTP MCP endpoint. The bundled connection uses browser-based OAuth instead of embedding a bearer key.',
         items: [
-          'The hosted tools are timeline.search, timeline.get, timeline.subject, timeline.ask, and timeline.remember.',
+          'The hosted tools are timeline.search, timeline.get, timeline.subject, timeline.ask, timeline.remember, timeline.crawl, and timeline.crawl_status.',
           'The same skill adapts to status updates, exact lookups, recaps, and incident analysis without competing triggers.',
           'It distinguishes current canonical state from activity, expands material sources, and preserves citations and uncertainty.',
           'Restart Codex or Claude Code after installation, start a new task or conversation, and complete Timeline sign-in, team selection, and scope consent when prompted.',
@@ -352,7 +352,7 @@ export const HELP_PAGES: HelpPage[] = [
       },
       {
         title: 'Know the access boundary',
-        body: 'The bundled skill uses timeline.search, timeline.get, timeline.subject, timeline.ask, and timeline.remember, and preserves citations. The default OAuth grant includes read plus capture (on by default) so timeline.remember can store cited evidence; unchecking capture makes the grant read-only. It cannot invoke timeline.ask. A current team owner or admin may separately approve agent:ask for paid, stateless agent turns; it may call enabled team-shared custom MCP tools with external side effects and can create only Timeline proposals that still require human review.',
+        body: 'The bundled skill uses timeline.search, timeline.get, timeline.subject, timeline.ask, timeline.remember, timeline.crawl, and timeline.crawl_status, and preserves citations. The default OAuth grant includes read plus capture (on by default) so timeline.remember can store cited evidence; unchecking capture makes the grant read-only. It cannot invoke timeline.ask. A current team owner or admin may separately approve agent:ask for paid, stateless agent turns; it may call enabled team-shared custom MCP tools with external side effects and can create only Timeline proposals that still require human review.',
         resourceLinks: [
           {
             href: 'https://thetimeline.cc/agents/SKILL.md',

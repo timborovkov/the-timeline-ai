@@ -1,5 +1,6 @@
 import { getEnv } from '@timeline/shared/env';
 import { withTeam, type TeamScope } from '@timeline/shared/team-scope';
+import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
 import type { Metadata } from 'next';
@@ -198,6 +199,11 @@ export function SourcesPageView({
         success={params.connected ? 'MCP server connected' : null}
       />
 
+      {tab === 'sources' && (
+        <Link href="/app/connections/websites" className="mb-4 block text-sm underline">
+          Website sources — add, scan, and schedule
+        </Link>
+      )}
       <ConnectionsWorkspace
         isAdmin={isAdmin}
         model={model}

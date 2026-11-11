@@ -2415,5 +2415,26 @@
   },
   "packages/shared/src/onboarding/website-source-scope.test.ts": {
     "group": "unit"
+  },
+  "packages/shared/src/websites/policy.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/websites/scope.test.ts": {
+    "group": "db"
+  },
+  "apps/web/src/app/api/websites/route.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/websites/scheduler.test.ts": {
+    "group": "db"
+  },
+  "apps/web/src/app/app/connections/websites/website-manager.test.tsx": {
+    "group": "dom"
+  },
+  "packages/shared/src/websites/bot-command.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/websites/runtime.test.ts": {
+    "group": "db"
   }
 }

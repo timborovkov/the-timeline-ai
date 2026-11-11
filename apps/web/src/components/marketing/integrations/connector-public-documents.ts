@@ -139,9 +139,39 @@ export const TELEGRAM_PUBLIC_DOCUMENT = {
   },
 } as const satisfies PublicDocument;
 
+export const WEBSITES_PUBLIC_DOCUMENT = {
+  canonicalPath: '/integrations/websites',
+  kind: 'product',
+  title: 'Website sources',
+  description:
+    'Capture public website pages as cited evidence, preserve version history, and refresh them manually or on a schedule.',
+  structuredData: [],
+  indexability: 'index',
+  dates: { modified: '2026-11-11', reviewed: '2026-11-11' },
+  capability: { kind: 'current-product' },
+  sitemap: { changeFrequency: 'monthly', priority: 0.7 },
+  llms: {
+    section: 'integrations',
+    order: 6,
+    summary:
+      'Public website capture: five pages per scan, 20 source units per page; immutable snapshots and current-version answers.',
+    sections: [
+      {
+        title: 'Capture and refresh',
+        body: 'Add your own or another company’s public website in Sources. Members can scan; admins manage daily or weekly schedules and removal. Schedules require service activation. Historical citations remain available. Firecrawl fetches public pages; login-protected pages are not supported.',
+      },
+      {
+        title: 'Usage',
+        body: 'Twenty accepted-source units per successfully captured page, including unchanged pages. AI and storage are separate. Removing the source stops future scans and retains history; see Privacy for deletion.',
+      },
+    ],
+  },
+} as const satisfies PublicDocument;
+
 export const CONNECTOR_PUBLIC_DOCUMENTS = definePublicDocuments('native-connectors', [
   INTEGRATION_DIRECTORY_DOCUMENT,
   TELEGRAM_PUBLIC_DOCUMENT,
+  WEBSITES_PUBLIC_DOCUMENT,
   ...connectorDocuments,
 ]);
 

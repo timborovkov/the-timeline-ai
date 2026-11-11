@@ -16,4 +16,4 @@ Queue registrations and worker startup/shutdown live in source, not in a duplica
 
 Use the nearest worker/domain suites under [testing policy](../../docs/testing/README.md). Offline fixtures never use production services. Live provider calls require the documented isolated fixtures and evidence. Deployment configuration is in [Railway](../../docs/railway.md).
 
-The `website-scan` worker follows the [website scan lifecycle](../../docs/relational-memory.md#website-scans); [Railway](../../docs/railway.md#environment-variables) owns its service configuration.
+The `website-scan` worker follows the [website source lifecycle](../../docs/websites.md); [Railway](../../docs/railway.md#environment-variables) owns service configuration. Scheduling and rollout controls are documented in the lifecycle owner.

@@ -615,6 +615,24 @@
       "development": "./src/integrations/google-drive-context.ts",
       "import": "./dist/integrations/google-drive-context.js",
       "default": "./dist/integrations/google-drive-context.js"
+    },
+    "./websites": {
+      "types": "./src/websites/index.ts",
+      "development": "./src/websites/index.ts",
+      "import": "./dist/websites/index.js",
+      "default": "./dist/websites/index.js"
+    },
+    "./websites/policy": {
+      "types": "./src/websites/policy.ts",
+      "development": "./src/websites/policy.ts",
+      "import": "./dist/websites/policy.js",
+      "default": "./dist/websites/policy.js"
+    },
+    "./websites/usage": {
+      "types": "./src/websites/usage.ts",
+      "development": "./src/websites/usage.ts",
+      "import": "./dist/websites/usage.js",
+      "default": "./dist/websites/usage.js"
     }
   },
   "main": "./dist/index.js",

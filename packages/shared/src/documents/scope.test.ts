@@ -17,6 +17,7 @@ const s3Fakes = vi.hoisted(() => ({
 await vi.mock(
   import.meta.resolve('#src/s3/objects.js'),
   () => ({
+    putObject: () => Promise.resolve(undefined),
     deleteObject: async (...args: unknown[]) => {
       await s3Fakes.deleteObject(...args);
     },
@@ -435,6 +436,218 @@ describe('document scope — visibility filter', () => {
     });
     expect(page.items.map((item) => item.documentName)).toEqual(['June launch notes']);
     expect(page.items[0]?.createdAt).toEqual(new Date('2026-06-12T00:00:00.000Z'));
+  });
+
+  it('returns each captured version’s event rather than the document’s original event', async () => {
+    const documentId = randomUUID();
+    const versions = [1, 2].map((version) => ({
+      version,
+      eventId: randomUUID(),
+      versionId: randomUUID(),
+      chunkId: randomUUID(),
+    }));
+    for (const row of versions) {
+      await pg.query(
+        `INSERT INTO raw_events (id, team_id, author_user_id, source, content_text, visibility)
+         VALUES ($1, $2, $3, 'web', $4, 'team')`,
+        [row.eventId, TEAM_ID, USER_A, `Website capture ${String(row.version)}`],
+      );
+    }
+    await pg.query(
+      `INSERT INTO documents (id, team_id, file_kind, name, owner_user_id, visibility, source_raw_event_id)
+       VALUES ($1, $2, 'captured', 'Website.md', $3, 'team', $4)`,
+      [documentId, TEAM_ID, USER_A, versions[0]?.eventId],
+    );
+    for (const row of versions) {
+      await pg.query(
+        `INSERT INTO document_versions (id, team_id, document_id, version, object_key, source_event_id, processing_status)
+         VALUES ($1, $2, $3, $4, $5, $6, 'embedded')`,
+        [
+          row.versionId,
+          TEAM_ID,
+          documentId,
+          row.version,
+          `page-${String(row.version)}`,
+          row.eventId,
+        ],
+      );
+      await pg.query(
+        `INSERT INTO document_chunks (id, team_id, document_id, document_version_id, chunk_index, text, token_count)
+         VALUES ($1, $2, $3, $4, 0, $5, 3)`,
+        [row.chunkId, TEAM_ID, documentId, row.versionId, `Website capture ${String(row.version)}`],
+      );
+    }
+    const scope = withTeam(db, TEAM_ID, USER_A, {
+      embed: () => Promise.resolve({ vector: [1], model: 'test-embedding-model' }),
+      qdrantSearch: () =>
+        Promise.resolve(
+          versions.map(
+            (row) =>
+              ({
+                id: row.chunkId,
+                score: 0.9,
+                payload: {
+                  team_id: TEAM_ID,
+                  source_kind: 'doc_chunk',
+                  document_chunk_id: row.chunkId,
+                  event_id: row.eventId,
+                },
+              }) as SearchHit,
+          ),
+        ),
+    }).documents;
+    const results = await scope.searchDocumentChunks({
+      query: 'Website capture',
+      fileKinds: ['captured'],
+    });
+    expect(results.map((row) => ({ version: row.version, eventId: row.sourceRawEventId }))).toEqual(
+      versions.map((row) => ({ version: row.version, eventId: row.eventId })),
+    );
+    const [document] = await db.select().from(documents).where(eq(documents.id, documentId));
+    expect(document?.sourceRawEventId).toBe(versions[0]?.eventId);
+  });
+
+  it('keeps a promoted website version searchable after a newer crawl supersedes its source event', async () => {
+    const { rawEvents, documentChunks, websites, websitePages } = await import('@timeline/db');
+    const websiteId = randomUUID();
+    await db.insert(websites).values({
+      id: websiteId,
+      teamId: TEAM_ID,
+      url: 'https://example.com/',
+      hostname: 'example.com',
+      subject: 'own_team',
+      createdBy: USER_A,
+    });
+    async function capture(name: string) {
+      const eventId = randomUUID();
+      const documentId = randomUUID();
+      const versionId = randomUUID();
+      const chunkId = randomUUID();
+      await db.insert(rawEvents).values({
+        id: eventId,
+        teamId: TEAM_ID,
+        authorUserId: USER_A,
+        source: 'web',
+        visibility: 'team',
+        contentText: name,
+        sourceMetadata: { websiteId, pageUrl: 'https://example.com/' },
+      });
+      await db.insert(documents).values({
+        id: documentId,
+        teamId: TEAM_ID,
+        fileKind: 'captured',
+        name,
+        ownerUserId: USER_A,
+        visibility: 'team',
+        sourceRawEventId: eventId,
+      });
+      await db.insert(documentVersions).values({
+        id: versionId,
+        teamId: TEAM_ID,
+        documentId,
+        version: 1,
+        objectKey: name,
+        sourceEventId: eventId,
+        processingStatus: 'embedded',
+      });
+      await db.insert(documentChunks).values({
+        id: chunkId,
+        teamId: TEAM_ID,
+        documentId,
+        documentVersionId: versionId,
+        chunkIndex: 0,
+        text: name,
+        tokenCount: 3,
+      });
+      await db
+        .update(documents)
+        .set({ currentVersionId: versionId })
+        .where(eq(documents.id, documentId));
+      return { documentId, eventId, versionId, chunkId, name };
+    }
+    const old = await capture('Saved website research');
+    const stale = await capture('Old managed capture');
+    const current = await capture('Current managed capture');
+    await withTeam(db, TEAM_ID, USER_A).documents.promoteCapturedFile({ id: old.documentId });
+    await db.insert(websitePages).values({
+      teamId: TEAM_ID,
+      websiteId,
+      url: 'https://example.com/',
+      documentId: current.documentId,
+      currentEventId: current.eventId,
+      currentVersionId: current.versionId,
+      contentHash: 'current',
+    });
+    // Promotion reindexes the same version as a drive document; no upload replaces its provenance.
+    const hits = [stale, old, current].map(
+      (row, index) =>
+        ({
+          id: row.chunkId,
+          score: 1 - index / 10,
+          payload: {
+            team_id: TEAM_ID,
+            source_kind: 'doc_chunk',
+            file_kind: row === old ? 'document' : 'captured',
+            document_id: row.documentId,
+            document_chunk_id: row.chunkId,
+            event_id: row.eventId,
+          },
+        }) as SearchHit,
+    );
+    const seen: SearchOpts[] = [];
+    const scope = withTeam(db, TEAM_ID, USER_A, {
+      embed: () => Promise.resolve({ vector: [1], model: 'test-embedding-model' }),
+      qdrantSearch: (_teamId, _userId, _vector, opts) => {
+        seen.push(opts);
+        return Promise.resolve(
+          hits
+            .filter((hit) => {
+              if (opts.documentId && hit.payload.document_id !== opts.documentId) return false;
+              if (
+                opts.fileKinds?.length &&
+                (!hit.payload.file_kind || !opts.fileKinds.includes(hit.payload.file_kind))
+              )
+                return false;
+              return (
+                hit.payload.file_kind === 'document' ||
+                !opts.obsoleteWebsiteEventIds?.includes(hit.payload.event_id ?? '')
+              );
+            })
+            .slice(0, opts.limit ?? 10),
+        );
+      },
+    }).documents;
+    for (const selection of [{}, { documentId: old.documentId }, { name: old.name }]) {
+      const found = await scope.searchDocumentChunks({ query: 'research', ...selection, limit: 1 });
+      expect(found.map((row) => row.documentId)).toEqual([old.documentId]);
+      expect(found[0]?.sourceRawEventId).toBe(old.eventId);
+      expect(found[0]?.documentVersionId).toBe(old.versionId);
+      expect(seen.at(-1)?.obsoleteWebsiteEventIds).toBeUndefined();
+    }
+    const mixed = await scope.searchDocumentChunks({
+      query: 'research',
+      fileKinds: ['document', 'captured'],
+      limit: 1,
+    });
+    expect(seen.at(-1)?.obsoleteWebsiteEventIds).toContain(old.eventId);
+    expect(seen.at(-1)?.obsoleteWebsiteEventIds).toContain(stale.eventId);
+    expect(seen.at(-1)?.obsoleteWebsiteEventIds).not.toContain(current.eventId);
+    expect(mixed.map((row) => row.documentId)).toEqual([old.documentId]);
+    const managed = await scope.searchDocumentChunks({
+      query: 'research',
+      fileKinds: ['captured'],
+      limit: 1,
+    });
+    expect(managed.map((row) => row.documentId)).toEqual([current.documentId]);
+    const historical = await scope.searchDocumentChunks({
+      query: 'research',
+      fileKinds: ['captured'],
+      from: new Date('2000-01-01'),
+      limit: 1,
+    });
+    expect(seen.at(-1)?.obsoleteWebsiteEventIds).toBeUndefined();
+    expect(historical.map((row) => row.documentId)).toEqual([stale.documentId]);
+    expect((await scope.getDocumentVersion(old.versionId))?.sourceEventId).toBe(old.eventId);
   });
 
   it('applies version date bounds in Qdrant before the semantic limit', async () => {

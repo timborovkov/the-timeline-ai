@@ -63,6 +63,7 @@ import {
   type SlackWorkspaceRecord,
 } from '#src/slack/workspace-access.js';
 import { withTeam } from '#src/team-scope.js';
+import { websiteBotCommand } from '#src/websites/bot-command.js';
 
 export type { SlackWorkspaceRecord } from '#src/slack/workspace-access.js';
 
@@ -75,6 +76,7 @@ const SLACK_HELP_TEXT =
   `/timeline new  start a new DM agent conversation\n` +
   `/timeline team [number]  list or switch eligible teams\n` +
   `/timeline whereami  show the active team\n` +
+  `/timeline crawl <url>  scan a public website (confirmation required)\n` +
   `/timeline join <saved-meeting-alias-or-url> [optional title]  capture a meeting now\n` +
   `/timeline help  show this message`;
 
@@ -215,7 +217,15 @@ export async function handleSlackSlashCommand(
     return;
   }
   const subcommand = timelineText.split(/\s+/, 1)[0];
-  const linked = await findActiveSlackLink(deps.db, workspace.id, input.user_id);
+  const crawlBinding =
+    subcommand === 'crawl'
+      ? await findSlackConversationBinding(deps.db, workspace.id, input.channel_id)
+      : null;
+  const linked = crawlBinding
+    ? await findSlackLinkForTeam(deps.db, workspace.id, input.user_id, crawlBinding.teamId).then(
+        (member) => (member ? { ...member, teamId: crawlBinding.teamId } : null),
+      )
+    : await findActiveSlackLink(deps.db, workspace.id, input.user_id);
   if (!linked) {
     if (subcommand === 'team') {
       const identity = await findVerifiedSlackIdentity(deps.db, workspace.id, input.user_id);
@@ -241,6 +251,14 @@ export async function handleSlackSlashCommand(
     return;
   }
   const conversation = await api.conversationsInfo(input.channel_id).catch(() => null);
+  if (subcommand === 'crawl' && !conversation?.is_im && !crawlBinding) {
+    await replyToSlackCommand(
+      api,
+      input,
+      'Bind this channel to a Timeline team before scanning websites.',
+    );
+    return;
+  }
   await handleSlackTimelineCommand(
     deps,
     api,
@@ -359,6 +377,31 @@ async function handleSlackTimelineCommand(
 ): Promise<void> {
   const [subcommandRaw = '', targetRaw = '', ...titleParts] = input.text.trim().split(/\s+/);
   const subcommand = subcommandRaw.toLowerCase();
+  if (subcommand === 'crawl') {
+    let text: string;
+    try {
+      text = await websiteBotCommand({
+        db: deps.db,
+        teamId: linked.teamId,
+        userId: linked.userId,
+        arg: [targetRaw, ...titleParts].join(' '),
+        command: '/timeline crawl',
+        requestId: `slack-crawl:${input.trigger_id ?? `${input.team_id}:${input.channel_id}:${input.user_id}:${input.text}`}`,
+        delivery: {
+          provider: 'slack',
+          token: decryptWorkspaceToken(workspace).accessToken,
+          accountId: workspace.slackTeamId,
+          method: 'send',
+          body: { channel: input.channel_id },
+        },
+      });
+    } catch {
+      text =
+        'Could not start this website scan. Check the URL, source status, and billing in Website sources.';
+    }
+    await replyToSlackCommand(api, input, text);
+    return;
+  }
   if (subcommand === 'whereami') {
     const rows = await deps.db
       .select({ teamId: teams.id, teamName: teams.name })

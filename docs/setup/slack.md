@@ -122,3 +122,5 @@ See [native source setup](slack-source.md); this guide owns conversation/reliabi
 - `/timeline join` is the only Slack text path that starts meeting capture. Ordinary messages such as "everyone join daily" are treated as normal conversation and never invite a bot.
 - Source edits create replacement raw rows and tombstone older visible revisions. Source deletes tombstone active Timeline rows while preserving immutable raw rows.
 - Voice-memo style audio is transcribed. Supported text, image, PDF, DOCX, CSV/JSON/XML/YAML, Markdown, HTML, and log files become captured files that feed typed extraction representations and embeddings. Archives, executables, video, oversize files, and unknown binary files are skipped. Ambiguous `.mp4`/`.webm` files require an `audio/*` content type to enter transcription.
+
+Website capture: `/timeline crawl <url>` shows the cost and permission statement; append `confirm` to start it for the linked team. See [website sources](../websites.md).

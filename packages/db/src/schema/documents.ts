@@ -213,6 +213,7 @@ export const documentChunks = pgTable(
     tokenCount: integer('token_count').notNull(),
     pageNumber: integer('page_number'),
     summary: text('summary'),
+    websiteEmbeddedAt: timestamp('website_embedded_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [

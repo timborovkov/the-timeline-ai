@@ -125,3 +125,5 @@ Capture an event and derived search evidence; exercise the two disconnect action
 separately. Run the inventory/removal/verification steps, including delayed work
 and a mixed-source reference. Record unsupported steps and actual backup/provider
 coverage. Only mark the exercised boundaries verified; do not close G-13 wholesale.
+
+Persistent website inventory also includes `websites`, `website_runs`, `website_pages`, `website_notifications`, and website scheduler jobs. Pause/archive first to prevent recapture; use the existing document/event/vector deletion procedure for evidence. Check encrypted delivery outbox/queue records and provider jobs independently. See [website sources](../websites.md).
