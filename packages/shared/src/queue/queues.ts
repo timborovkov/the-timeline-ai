@@ -77,8 +77,8 @@ export const QUEUE_NAMES = {
   // conversational providers. The UUID job id matches the persisted turn.
   conversationAgent: 'conversation-agent',
   chatDelivery: 'chat-delivery',
-  // First-run website scan. One job per team; the worker fetches a short
-  // public-page set through externalFetch and writes cited web raw events.
+  // Persistent website scans, including onboarding. Admission allows one active
+  // run per team; Firecrawl captures public pages as cited web events.
   websiteScan: 'website-scan',
   websiteScheduler: 'website-scheduler',
 } as const;

@@ -1,4 +1,5 @@
 'use client';
+import { useQuery } from '@tanstack/react-query';
 import { ArrowUpRight, Globe, Plus, RefreshCw } from 'lucide-react';
 import Link from 'next/link';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -79,40 +80,22 @@ export function WebsiteManager({
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [selected, setSelected] = useState<string | null>(initialSourceId ?? null);
-  const [runs, setRuns] = useState<Run[] | null>(null);
+  const historyQuery = useQuery({
+    queryKey: ['website-history', selected],
+    queryFn: () => request<{ runs: Run[] }>(`/${selected}`),
+    enabled: Boolean(selected && websites.some((website) => website.id === selected)),
+    refetchInterval: 10_000,
+    staleTime: 0,
+  });
+  const runs = historyQuery.data?.runs ?? null;
+  const displayedError =
+    error || (historyQuery.isError ? 'Could not refresh scan history. Try again.' : '');
   const refresh = useCallback(async () => {
     const data = await request<{ websites: Website[] }>('');
     setWebsites(data.websites);
     setLoading(false);
     setError('');
   }, []);
-  const selectedWebsiteExists = websites.some((website) => website.id === selected);
-  useEffect(() => {
-    if (!selected || !selectedWebsiteExists) return;
-    let active = true;
-    let inFlight = false;
-    const load = async () => {
-      if (inFlight) return;
-      inFlight = true;
-      try {
-        const data = await request<{ runs: Run[] }>(`/${selected}`);
-        if (active) setRuns(data.runs);
-      } catch {
-        if (active) setError('Could not refresh scan history. Try again.');
-      } finally {
-        inFlight = false;
-      }
-    };
-    void load();
-    const timer = setInterval(() => {
-      void load();
-    }, 10_000);
-    return () => {
-      active = false;
-      clearInterval(timer);
-    };
-  }, [selected, selectedWebsiteExists]);
-
   useEffect(() => {
     let active = true;
     const load = () => {
@@ -142,6 +125,7 @@ export function WebsiteManager({
         run: async () => {
           await fn();
           await refresh();
+          if (selected) await historyQuery.refetch();
           return { ok: true };
         },
       });
@@ -179,13 +163,16 @@ export function WebsiteManager({
           How scanning works
         </Link>
       </div>
-      {error && (
+      {displayedError && (
         <div role="alert" className="flex flex-wrap items-center gap-3 text-sm text-destructive">
-          {error}
+          {displayedError}
           <Button
             variant="outline"
             onClick={() =>
-              void refresh().catch(() => {
+              void (async () => {
+                await refresh();
+                if (selected) await historyQuery.refetch();
+              })().catch(() => {
                 setError('Could not load websites. Try again.');
               })
             }
@@ -248,7 +235,6 @@ export function WebsiteManager({
                     variant="ghost"
                     aria-expanded={selected === website.id}
                     onClick={() => {
-                      setRuns(null);
                       setSelected(selected === website.id ? null : website.id);
                     }}
                   >

@@ -1,10 +1,20 @@
 // Test environment: happy-dom
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { expect, vi } from '@timeline/test-support';
 import { afterEach, it } from 'bun:test';
+
+import type { ReactElement } from 'react';
 const { act, cleanup, render, screen, waitFor, within } = await import('@testing-library/react');
 const { default: userEvent } = await import('@testing-library/user-event');
 const { WebsiteManager } = await import('./website-manager');
+const queryClients: QueryClient[] = [];
+function renderWithQueryClient(ui: ReactElement) {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  queryClients.push(client);
+  return render(<QueryClientProvider client={client}>{ui}</QueryClientProvider>);
+}
 afterEach(() => {
+  for (const client of queryClients.splice(0)) client.clear();
   cleanup();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
@@ -35,7 +45,9 @@ it('shows weighted usage and keeps schedule/removal controls admin-only', async 
       ),
     ),
   );
-  render(<WebsiteManager canManage={false} timezone="Europe/London" schedulesEnabled={false} />);
+  renderWithQueryClient(
+    <WebsiteManager canManage={false} timezone="Europe/London" schedulesEnabled={false} />,
+  );
   await screen.findByText('example.com');
   expect(screen.queryByRole('button', { name: 'Remove website' })).toBeNull();
   expect(screen.queryByText('Schedule & settings')).toBeNull();
@@ -49,7 +61,7 @@ it('creates a website with explicit permission without automatically starting a 
     ),
   );
   vi.stubGlobal('fetch', fetcher);
-  render(<WebsiteManager canManage timezone="UTC" schedulesEnabled={false} />);
+  renderWithQueryClient(<WebsiteManager canManage timezone="UTC" schedulesEnabled={false} />);
   await user.click(screen.getByRole('button', { name: 'Add website' }));
   const dialog = within(screen.getByRole('dialog'));
   await user.type(dialog.getByRole('textbox', { name: 'Website URL' }), 'https://example.com');
@@ -103,7 +115,9 @@ it('ignores an older history response after selecting another website', async ()
     return Promise.resolve(Response.json({ websites }));
   });
   vi.stubGlobal('fetch', fetcher);
-  render(<WebsiteManager canManage={false} timezone="UTC" schedulesEnabled={false} />);
+  renderWithQueryClient(
+    <WebsiteManager canManage={false} timezone="UTC" schedulesEnabled={false} />,
+  );
   await screen.findByText('first.example');
   const [firstHistory, secondHistory] = screen.getAllByRole('button', { name: 'History' });
   if (!firstHistory || !secondHistory) throw new Error('Expected both website history controls');
