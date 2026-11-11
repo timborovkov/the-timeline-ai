@@ -169,7 +169,7 @@ export default async function WorkPage({ searchParams }: PageProps<'/app/work'>)
                   <CollectionRow.Title>
                     <Link
                       href={notificationHref(notification)}
-                      className="block truncate hover:underline"
+                      className="block whitespace-normal [overflow-wrap:anywhere] hover:underline"
                     >
                       {notification.summary}
                     </Link>
@@ -200,7 +200,7 @@ export default async function WorkPage({ searchParams }: PageProps<'/app/work'>)
                   <CollectionRow.Title>
                     <Link
                       href={`/app/boards/${board.id}`}
-                      className="block truncate hover:underline"
+                      className="block whitespace-normal [overflow-wrap:anywhere] hover:underline"
                     >
                       {board.name}
                     </Link>

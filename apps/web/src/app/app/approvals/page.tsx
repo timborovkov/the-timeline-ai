@@ -139,45 +139,52 @@ export default async function ApprovalsPage({ searchParams }: PageProps) {
         title="Approvals"
         subtitle={approvalsSubtitle(guidedApprovals)}
         metadata={[
-          { label: 'Filter', value: status.replaceAll('_', ' ') },
           ...(inventoryCount !== null
-            ? [{ label: 'Items', value: inventoryCount, mono: true }]
+            ? [
+                {
+                  label: status === 'pending' ? 'To review' : 'Needs attention',
+                  value: inventoryCount,
+                  mono: true,
+                },
+              ]
             : []),
         ]}
       />
-      <WorkSubnav current="/app/approvals" />
-      <CollectionToolbar>
-        <CollectionToolbar.View>
-          <nav className="flex flex-wrap gap-1" aria-label="Approval status filters">
-            {STATUS_FILTERS.map((filter) => (
-              <Link
-                key={filter}
-                href={`/app/approvals?status=${filter}`}
-                aria-current={status === filter ? 'page' : undefined}
-                className={`inline-flex min-h-9 items-center rounded-sm px-2.5 text-xs capitalize transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong ${
-                  status === filter
-                    ? 'bg-signal-soft text-signal'
-                    : 'text-fg-muted hover:bg-surface-2 hover:text-fg'
-                }`}
-              >
-                {filter}
-                {filter === 'pending' || filter === 'failed' ? ` ${approvalCounts[filter]}` : ''}
-              </Link>
-            ))}
-          </nav>
-        </CollectionToolbar.View>
-      </CollectionToolbar>
-      <GuidedApprovalsChrome enabled={guidedApprovals} />
-      <ApprovalsClient
-        key={status}
-        suggestions={visibleSuggestions}
-        nextCursor={page.nextCursor}
-        status={status}
-        guided={guidedApprovals}
-        timezone={calendarSettings.defaultTimezone}
-        taskCategoriesEnabled={getEnv().TASK_CATEGORY_UI_ENABLED}
-        emptyState={EMPTY_STATES[status]}
-      />
+      <div>
+        <WorkSubnav current="/app/approvals" />
+        <CollectionToolbar>
+          <CollectionToolbar.Search>
+            <nav className="flex flex-wrap gap-1" aria-label="Approval status filters">
+              {STATUS_FILTERS.map((filter) => (
+                <Link
+                  key={filter}
+                  href={`/app/approvals?status=${filter}`}
+                  aria-current={status === filter ? 'page' : undefined}
+                  className={`inline-flex min-h-9 items-center rounded-sm px-2.5 text-xs capitalize transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong ${
+                    status === filter
+                      ? 'bg-signal-soft text-signal'
+                      : 'text-fg-muted hover:bg-surface-2 hover:text-fg'
+                  }`}
+                >
+                  {filter}
+                  {filter === 'pending' || filter === 'failed' ? ` ${approvalCounts[filter]}` : ''}
+                </Link>
+              ))}
+            </nav>
+          </CollectionToolbar.Search>
+        </CollectionToolbar>
+        <GuidedApprovalsChrome enabled={guidedApprovals} />
+        <ApprovalsClient
+          key={status}
+          suggestions={visibleSuggestions}
+          nextCursor={page.nextCursor}
+          status={status}
+          guided={guidedApprovals}
+          timezone={calendarSettings.defaultTimezone}
+          taskCategoriesEnabled={getEnv().TASK_CATEGORY_UI_ENABLED}
+          emptyState={EMPTY_STATES[status]}
+        />
+      </div>
       {guidedApprovals && visibleSuggestions.length === 0 ? <RefreshSuggestions /> : null}
       <GuidedApprovalsContinue enabled={guidedApprovals} />
     </div>

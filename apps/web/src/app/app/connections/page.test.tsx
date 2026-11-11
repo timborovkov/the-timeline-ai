@@ -812,7 +812,7 @@ describe('SourcesPageView', () => {
     );
 
     expect(container.innerHTML).toContain('min-h-8');
-    expect(container.innerHTML).toContain('sm:flex-row sm:items-center sm:gap-3');
+    expect(container.innerHTML).toContain('@container/collection-row');
     expect(container.innerHTML).toContain('focus-visible:ring-2 focus-visible:ring-signal/50');
     expect(container.innerHTML).toContain('bg-white');
     expect(container.innerHTML).not.toContain('rounded-md border border-border bg-surface p-4');

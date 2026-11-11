@@ -80,7 +80,7 @@ export function CollectionRow({
     <div
       data-slot="collection-row"
       className={cn(
-        'group/collection-row relative grid min-h-11 min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 border-b border-border/80 px-2 transition-[background-color,border-color] duration-150 hover:bg-surface focus-within:bg-surface motion-reduce:transition-none sm:px-3',
+        'group/collection-row @container/collection-row relative grid min-h-11 min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 border-b border-border/80 px-2 transition-[background-color,border-color] duration-150 hover:bg-surface focus-within:bg-surface motion-reduce:transition-none sm:px-3',
         selected && 'bg-signal-soft shadow-[inset_2px_0_0_var(--color-signal)]',
         Boolean(onActivate ?? href) && 'cursor-pointer',
         className,
@@ -100,46 +100,58 @@ export function CollectionRow({
           onClick={onActivate}
         />
       ) : null}
-      <div className={cn(SLOT_LAYER, 'flex min-h-10 shrink-0 items-center')}>{leading}</div>
+      <div className={cn(SLOT_LAYER, 'flex min-h-10 shrink-0 items-center self-start')}>
+        {leading}
+      </div>
       <div
+        data-slot="collection-row-content"
         className={cn(
           SLOT_LAYER,
-          'flex min-w-0 flex-col justify-center py-1 sm:flex-row sm:items-center sm:gap-3',
+          'col-span-2 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 py-2 @min-[40rem]/collection-row:col-span-1',
         )}
       >
-        <div className="min-w-0 flex-1">
-          <div className="min-w-0 truncate text-sm font-medium leading-5 text-fg" title={titleHint}>
+        <div data-slot="collection-row-heading" className="min-w-0 flex-[1_1_20rem]">
+          <div
+            data-slot="collection-row-title"
+            className="min-w-0 whitespace-normal text-sm font-medium leading-5 text-fg [overflow-wrap:anywhere]"
+            title={titleHint}
+          >
             {title}
           </div>
           {subtitle ? (
-            <div className="min-w-0 truncate text-[11px] font-normal leading-4 text-fg-dim">
-              {subtitle}
-            </div>
-          ) : null}
-          {context ? (
             <div
-              className="min-w-0 truncate text-[11px] leading-4 text-fg-dim sm:hidden"
-              title={contextTitle}
+              data-slot="collection-row-subtitle"
+              className="min-w-0 truncate text-[11px] font-normal leading-4 text-fg-dim"
             >
-              {context}
+              {subtitle}
             </div>
           ) : null}
         </div>
         {context ? (
           <div
-            className="hidden min-w-0 max-w-[22rem] truncate text-xs text-fg-dim sm:block"
+            data-slot="collection-row-context"
+            className="min-w-0 max-w-[22rem] truncate text-xs text-fg-dim"
             title={contextTitle}
           >
             {context}
           </div>
         ) : null}
         {metadata ? (
-          <div className="flex min-w-0 flex-wrap items-center gap-x-1 gap-y-0.5 sm:ml-auto sm:flex-nowrap sm:justify-end">
+          <div className="flex min-w-0 max-w-full flex-wrap items-center gap-x-1 gap-y-0.5">
             {metadata}
           </div>
         ) : null}
       </div>
-      <div className={cn(SLOT_LAYER, 'flex min-h-10 shrink-0 items-center')}>{actions}</div>
+      {actions ? (
+        <div
+          className={cn(
+            SLOT_LAYER,
+            'col-span-2 col-start-2 flex min-h-10 min-w-0 items-center @min-[40rem]/collection-row:col-span-1 @min-[40rem]/collection-row:col-start-auto',
+          )}
+        >
+          {actions}
+        </div>
+      ) : null}
     </div>
   );
 }

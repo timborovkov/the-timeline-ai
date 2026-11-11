@@ -116,9 +116,9 @@ function ToolSheetChrome({
 }) {
   return (
     <SheetHeader>
-      <div className="flex min-w-0 items-center gap-2">
+      <div className="flex min-w-0 items-start gap-2">
         <ToolGlyph>{glyph}</ToolGlyph>
-        <SheetTitle className="min-w-0 flex-1 truncate">{title}</SheetTitle>
+        <SheetTitle className="min-w-0 flex-1">{title}</SheetTitle>
         {trailing}
       </div>
       <SheetDescription>{description}</SheetDescription>
@@ -396,12 +396,7 @@ export function ConnectionsToolSheets({
 }) {
   return (
     <Sheet open={openSheet !== null} onOpenChange={onOpenChange}>
-      <SheetContent
-        onOpenAutoFocus={(event) => {
-          event.preventDefault();
-          if (event.currentTarget instanceof HTMLElement) event.currentTarget.focus();
-        }}
-      >
+      <SheetContent>
         {openSheet === 'agent-mcp' ? (
           <>
             <ToolSheetChrome
@@ -419,7 +414,14 @@ export function ConnectionsToolSheets({
                   />
                 </div>
               ) : null}
-              <McpServersUi hideAddButton servers={mcpServers} />
+              {mcpServers.length > 0 ? (
+                <McpServersUi hideAddButton servers={mcpServers} />
+              ) : (
+                <p className="text-sm text-fg-muted">
+                  No custom servers connected. Choose a tool from the catalog or add your own
+                  server.
+                </p>
+              )}
               {mcpCatalog.length > 0 ? (
                 <section className="space-y-2">
                   <h3 className="text-xs font-medium text-fg-muted">Catalog</h3>

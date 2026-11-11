@@ -537,7 +537,11 @@ function ObjectCollectionItem({
           ) : null}
         </CollectionRow.Leading>
         <CollectionRow.Title>
-          <Link href={previewHref} scroll={false} className="block truncate hover:underline">
+          <Link
+            href={previewHref}
+            scroll={false}
+            className="block whitespace-normal [overflow-wrap:anywhere] hover:underline"
+          >
             {displayText(object.canonicalName)}
           </Link>
           <DiscussionCountBadge count={object.commentCount} className="ml-2 shrink-0" />

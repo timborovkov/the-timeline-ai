@@ -1121,6 +1121,7 @@ function ApprovalSelectionBar({
 }) {
   return (
     <SelectionBar
+      className="border-t-0 border-border bg-surface [&>output]:basis-full sm:[&>output]:basis-auto"
       count={selectedItems.length}
       label={selectedItems.length === 1 ? 'proposal selected' : 'proposals selected'}
       onClear={onClearSelection}
@@ -1148,7 +1149,7 @@ function ApprovalSelectionBar({
             <Button
               type="button"
               size="sm"
-              variant="ghost"
+              variant="default"
               disabled={pending || selectedAccept.length === 0}
               onClick={() => {
                 run(
@@ -1308,9 +1309,11 @@ function ApprovalBundleRow({
           }}
         />
       ))}
-      <div className="px-3">
-        <ApprovalEvidence bundle={bundle} timezone={timezone} />
-      </div>
+      {bundle.evidence.length > 0 || bundle.reason ? (
+        <div className="px-3 py-3">
+          <ApprovalEvidence bundle={bundle} timezone={timezone} />
+        </div>
+      ) : null}
     </>
   );
   if (bundle.items.length === 1) {
@@ -1321,7 +1324,17 @@ function ApprovalBundleRow({
     <article>
       <CollectionGroup
         count={bundle.items.length}
-        title={bundleTitle}
+        title={
+          <span className="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-1 py-2">
+            <span className="min-w-0 whitespace-normal [overflow-wrap:anywhere]">
+              {bundleTitle}
+            </span>
+            <span className="text-xs font-normal text-fg-dim">
+              {approvalSourceLabel(bundle)} ·{' '}
+              {formatDisplayDateTime(bundle.createdAt, { timezone })}
+            </span>
+          </span>
+        }
         actions={
           selectable && bundleActionableIds.length > 0 ? (
             <ApprovalSelectAllControl
@@ -1372,11 +1385,19 @@ function ApprovalItemRow({
 }) {
   const title = displayText(item.title, { timezone });
   const source = approvalSourceLabel(bundle);
-  const context = `${itemActionLabel(item)} · ${source} · ${formatDisplayDateTime(bundle.createdAt, { timezone })}`;
+  const context =
+    bundle.items.length === 1
+      ? `${itemActionLabel(item)} · ${source} · ${formatDisplayDateTime(bundle.createdAt, { timezone })}`
+      : itemActionLabel(item);
   const actionFailureReason = actionFailed ? localActionFailureReason(item) : null;
   return (
     <div>
-      <CollectionRow selected={selected} onActivate={onPreview} activateLabel={`Open ${title}`}>
+      <CollectionRow
+        className={`min-h-18 py-2 ${selected ? 'bg-surface-2 shadow-none' : ''}`}
+        selected={selected}
+        onActivate={onPreview}
+        activateLabel={`Open ${title}`}
+      >
         <CollectionRow.Leading>
           {selectable && isActionableSuggestionStatus(item.status) ? (
             <input
@@ -1387,7 +1408,7 @@ function ApprovalItemRow({
               className={`size-4 accent-signal ${
                 selected || selectionActive
                   ? 'opacity-100'
-                  : 'opacity-0 group-hover/collection-row:opacity-100 group-focus-within/collection-row:opacity-100'
+                  : 'opacity-100 sm:opacity-0 sm:group-hover/collection-row:opacity-100 sm:group-focus-within/collection-row:opacity-100'
               }`}
               onChange={(event) => {
                 onSelectedChange(event.currentTarget.checked);
@@ -1397,19 +1418,25 @@ function ApprovalItemRow({
             <span className="size-4" aria-hidden="true" />
           )}
         </CollectionRow.Leading>
-        <CollectionRow.Title>{title}</CollectionRow.Title>
-        <CollectionRow.Context>{context}</CollectionRow.Context>
-        <CollectionRow.Metadata>
-          {item.status === 'failed' ? (
-            <span className="text-[11px] text-danger">{itemStatusLabel(item.status)}</span>
-          ) : null}
-          <ApprovalRowMetadata
-            bundle={bundle}
-            item={item}
-            timezone={timezone}
-            taskCategoriesEnabled={taskCategoriesEnabled}
-          />
-        </CollectionRow.Metadata>
+        <CollectionRow.Title title={title}>{title}</CollectionRow.Title>
+        <CollectionRow.Subtitle>
+          <span className="mt-1 block min-w-0 truncate text-xs">
+            <span className="capitalize" title={context}>
+              {context}
+            </span>
+            <ApprovalRowMetadata
+              bundle={bundle}
+              item={item}
+              timezone={timezone}
+              taskCategoriesEnabled={taskCategoriesEnabled}
+            />
+          </span>
+        </CollectionRow.Subtitle>
+        {item.status === 'failed' ? (
+          <CollectionRow.Metadata>
+            <span className="text-xs text-danger">{itemStatusLabel(item.status)}</span>
+          </CollectionRow.Metadata>
+        ) : null}
         <CollectionRow.Actions>
           {isActionableSuggestionStatus(item.status) ? (
             <ApprovalItemActions
@@ -1453,7 +1480,9 @@ function ApprovalRowMetadata({
 }) {
   const relationship = relationshipPayloadSummary(item, bundle);
   if (relationship) {
-    return <span className="text-[11px] text-fg-dim">{relationship}</span>;
+    return (
+      <span className="ml-2 border-l border-border pl-2 text-xs text-fg-dim">{relationship}</span>
+    );
   }
   const fields = formatPayloadFields(item.proposedPayload, timezone, item.title, item.operation)
     .filter((field) => {
@@ -1483,11 +1512,19 @@ function ApprovalRowMetadata({
   return (
     <>
       {category ? (
-        <span className="text-[11px] text-fg-dim">{taskCategoryLabel(category)}</span>
+        <span className="ml-2 border-l border-border pl-2 text-xs text-fg-dim">
+          {taskCategoryLabel(category)}
+        </span>
       ) : null}
-      {projectName ? <span className="text-[11px] text-fg-dim">{projectName}</span> : null}
+      {projectName ? (
+        <span className="ml-2 border-l border-border pl-2 text-xs text-fg-dim">{projectName}</span>
+      ) : null}
       {fields.map((field) => (
-        <span className="text-[11px] text-fg-dim" key={field.key}>
+        <span
+          className="ml-2 border-l border-border pl-2 text-xs text-fg-dim"
+          title={payloadFieldText(field)}
+          key={field.key}
+        >
           {payloadFieldText(field, true)}
         </span>
       ))}
@@ -1589,7 +1626,10 @@ function ApprovalItemActions({
 }) {
   const title = displayText(item.title);
   return (
-    <ItemActionGroup label={`Decision actions for ${title}`}>
+    <ItemActionGroup
+      label={`Decision actions for ${title}`}
+      className="ms-auto w-auto gap-1 rounded-sm border border-border bg-bg p-0.5"
+    >
       {item.targetKind === 'object_merge' ? (
         <ItemIconButton asChild label={`Review merge for ${title}`} disabled={pending}>
           <Link href={objectMergeHref(item)}>

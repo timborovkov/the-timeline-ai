@@ -512,7 +512,15 @@ what is wrong, Timeline rewrites the same unresolved proposal, and the row
 stays pending. Merge proposals still offer `Review merge` for survivor
 choices and also open this preview.
 
-Actionable rows use ghost icon `Accept`, `Change`, `Preview`, and `Reject`.
+Approval rows show the full, wrapping title above a compact, truncated detail line, with
+separated payload fields and aligned actions. Multi-item bundles show source
+and capture time once in their header. Selection uses a neutral background;
+the bulk Accept button carries the lime emphasis. Status filters align with
+the left edge of the queue, directly below the Work tabs.
+
+Actionable rows group ghost icon `Accept`, `Change`, `Preview`, and `Reject`
+in a quiet outlined control strip aligned to the trailing edge, including when
+controls wrap below the title. Each icon retains its accessible name and tooltip.
 Accepting or rejecting hides the row immediately, shows a loading toast,
 then replaces it with success or error. Failures restore the row. Bulk
 accept and reject run from `SelectionBar` after the reviewer selects rows.
@@ -620,3 +628,14 @@ OAuth consent includes reporting directly beneath workspace selection and captur
 
 Website sources are managed from the searchable Websites row directly below Email
 in Connections → Sources. Use compact source rows with one scan action. Adding opens a permission-confirming dialog; history expands beneath its source, and administrator schedule/pause/archive controls live under “Schedule & settings”. Show weekday only for weekly schedules and time/timezone only for recurring scans. Keep the unit rate in a quiet footer and full cost/permission details at confirmation. Archive copy distinguishes stopping capture from erasing evidence.
+
+### Side-panel reading layout
+
+Connections provider and tool panels and the global inspector use the shared
+Sheet surface described in [design foundations](../../design.md#layout-and-navigation).
+Panel URLs retain Back/Forward and deep linking without moving the directory
+behind them. Only a target inside an open panel may scroll into view.
+Catalog entries show a readable title, wrapping description, subordinate metadata,
+and an outlined connect action. Empty custom-server lists use a concise hint so
+the available catalog remains visible. Task and object detail rails retain their
+workspace-specific split layout.

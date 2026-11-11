@@ -41,12 +41,8 @@ function writeConnectionsUrl(
   const next = connectionsTabHref(tab, hash);
   const current = `${window.location.pathname}${window.location.search}${window.location.hash}`;
   if (current === next) return;
-  if (window.location.pathname === next.split('#')[0]) {
-    window.location.hash = hash ?? '';
-    return;
-  }
-  if (mode === 'replace') window.location.replace(next);
-  else window.location.assign(next);
+  if (mode === 'replace') window.history.replaceState(window.history.state, '', next);
+  else window.history.pushState(window.history.state, '', next);
 }
 
 function readConnectionsLocation(
@@ -201,7 +197,9 @@ export function ConnectionsWorkspace({
 
   useEffect(() => {
     if (!hash) return;
-    document.getElementById(hash)?.scrollIntoView({ block: 'nearest' });
+    const section = document.getElementById(hash);
+    if (section?.closest('[data-slot="sheet-content"]'))
+      section.scrollIntoView({ block: 'nearest' });
   }, [hash, tab]);
 
   function selectTab(next: ConnectionsTab) {
@@ -241,7 +239,30 @@ export function ConnectionsWorkspace({
   }
 
   return (
-    <div className="space-y-4">
+    <div
+      className="space-y-4"
+      onClick={(event) => {
+        if (
+          event.defaultPrevented ||
+          event.button !== 0 ||
+          event.metaKey ||
+          event.ctrlKey ||
+          event.shiftKey ||
+          event.altKey
+        )
+          return;
+        const anchor =
+          event.target instanceof Element ? event.target.closest('a[href^="#"]') : null;
+        const target = anchor?.getAttribute('href')?.slice(1);
+        if (
+          !target ||
+          (!isConnectionsToolSheet(target) && !directoryHashOwnerId(target, providers))
+        )
+          return;
+        event.preventDefault();
+        openHash(target);
+      }}
+    >
       <ConnectionsTabs
         tab={tab}
         onChange={selectTab}
