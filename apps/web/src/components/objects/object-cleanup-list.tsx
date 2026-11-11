@@ -22,8 +22,8 @@ import { SelectionBar } from '@/components/collections/selection-bar';
 import { VirtualList } from '@/components/collections/virtual-list';
 import { DueDateDisplay } from '@/components/due-date-display';
 import { EmptyState } from '@/components/empty-state';
-import { useObjectListScrollElement } from '@/components/objects/object-list-viewport';
 import { DiscussionCountBadge } from '@/components/objects/discussion-count-badge';
+import { useObjectListScrollElement } from '@/components/objects/object-list-viewport';
 import { PinOverflowMenu } from '@/components/pins/pin-overflow-menu';
 import {
   LiveTaskCategoryBadge,

@@ -89,7 +89,7 @@ describe('VirtualList', () => {
         constructor(callback: ResizeObserverCallback) {
           resize = callback;
         }
-        observe() {}
+        observe = vi.fn();
         disconnect() {
           disconnect();
         }
@@ -107,7 +107,7 @@ describe('VirtualList', () => {
     );
     expect(virtualizerOptions.current?.getScrollElement()).toBe(root);
     expect(virtualizerOptions.current?.scrollMargin).toBe(280);
-    expect((container.querySelector('[data-index="0"]') as HTMLElement).style.transform).toBe(
+    expect(container.querySelector<HTMLElement>('[data-index="0"]')?.style.transform).toBe(
       'translateY(0px)',
     );
     listTop = 240;
@@ -115,7 +115,7 @@ describe('VirtualList', () => {
       resize?.([], {} as ResizeObserver);
     });
     expect(virtualizerOptions.current?.scrollMargin).toBe(340);
-    expect((container.querySelector('[data-index="1"]') as HTMLElement).style.transform).toBe(
+    expect(container.querySelector<HTMLElement>('[data-index="1"]')?.style.transform).toBe(
       'translateY(40px)',
     );
     unmount();

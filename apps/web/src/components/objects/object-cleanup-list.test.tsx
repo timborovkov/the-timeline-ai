@@ -271,9 +271,9 @@ describe('ObjectCleanupList', () => {
       />,
     );
     await user.click(screen.getByRole('button', { name: 'Select Task' }));
-    const checkbox = screen.getByRole('checkbox', {
+    const checkbox = screen.getByRole<HTMLInputElement>('checkbox', {
       name: 'Select Previewed object',
-    }) as HTMLInputElement;
+    });
     expect(checkbox.checked).toBe(false);
     expect(screen.queryByRole('status', { name: '1 object selected' })).toBeNull();
     await user.click(checkbox);
