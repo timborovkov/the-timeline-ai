@@ -1,7 +1,8 @@
 import { PGlite } from '@electric-sql/pglite';
-import { type Db } from '@timeline/db';
+import { teams, teamBillingAccounts, type Db } from '@timeline/db';
 import { expect } from '@timeline/test-support';
 import { afterEach, beforeEach, describe, it } from 'bun:test';
+import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 
 import {
@@ -20,6 +21,7 @@ import {
 } from '#src/billing/polar-webhook.js';
 import { createFakeBillingProvider } from '#src/billing/provider.js';
 import { createBillingScope } from '#src/billing/scope.js';
+import { assertActivePrincipal } from '#src/platform-admin/runtime.js';
 import { applyDbMigrations } from '#src/test/pglite.js';
 
 const TEAM_ID = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
@@ -231,6 +233,63 @@ describe('Polar webhook helpers', () => {
 });
 
 describe('handlePolarWebhookEvent', () => {
+  it('keeps disabled teams inaccessible and renews cancellation intent after a delayed activation', async () => {
+    await pg.exec(`INSERT INTO team_billing_accounts (team_id, security_state) VALUES ('${TEAM_ID}', 'suspended');
+      UPDATE teams SET disabled_at=now(), lifecycle_work='{"billingPending":false}' WHERE id='${TEAM_ID}';`);
+    await handlePolarWebhookEvent({
+      db,
+      chargesEnabled: true,
+      products: PRODUCTS,
+      payload: {
+        type: 'subscription.active',
+        data: {
+          id: 'sub_late',
+          status: 'active',
+          product_id: 'prod_team',
+          customer: { id: 'cus_late', external_id: TEAM_ID },
+        },
+      },
+    });
+    const [team] = await db.select().from(teams).where(eq(teams.id, TEAM_ID));
+    const [account] = await db
+      .select()
+      .from(teamBillingAccounts)
+      .where(eq(teamBillingAccounts.teamId, TEAM_ID));
+    expect(team?.lifecycleWork.billingPending).toBe(true);
+    expect(account?.securityState).toBe('suspended');
+    await expect(assertActivePrincipal(db, TEAM_ID)).rejects.toThrow('disabled');
+  });
+  it('revokes delayed subscriptions during deletion without recreating a paid account', async () => {
+    await pg.exec(`INSERT INTO team_billing_accounts (team_id, polar_customer_id) VALUES ('${TEAM_ID}', 'cus_late');
+      UPDATE teams SET disabled_at=now(), deletion_started_at=now() WHERE id='${TEAM_ID}';`);
+    const provider = createFakeBillingProvider();
+    const input = {
+      db,
+      chargesEnabled: true,
+      products: PRODUCTS,
+      provider,
+      payload: {
+        type: 'subscription.active',
+        data: {
+          id: 'sub_late',
+          status: 'active',
+          product_id: 'prod_team',
+          customer: { id: 'cus_late', external_id: TEAM_ID },
+        },
+      },
+    };
+    expect(await handlePolarWebhookEvent(input)).toEqual({ ok: true, ignored: 'team_deletion' });
+    expect(provider.revokedSubscriptionIds).toEqual(['sub_late']);
+    const [account] = await db
+      .select()
+      .from(teamBillingAccounts)
+      .where(eq(teamBillingAccounts.teamId, TEAM_ID));
+    expect(account?.polarSubscriptionId).toBeNull();
+    input.payload.data.customer.id = 'another_customer';
+    await expect(handlePolarWebhookEvent(input)).rejects.toThrow('verified billing identity');
+    expect(provider.revokedSubscriptionIds).toEqual(['sub_late']);
+    await expect(assertActivePrincipal(db, TEAM_ID)).rejects.toThrow();
+  });
   it('acknowledges unknown Timeline teams so Polar stops retrying', async () => {
     const unknownTeam = 'bbbbbbbb-cccc-4ddd-8eee-ffffffffffff';
     await expect(

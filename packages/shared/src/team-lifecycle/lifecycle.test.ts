@@ -276,10 +276,11 @@ describe('team lifecycle', () => {
     const [stillWaiting] = await db.select().from(teams).where(eq(teams.id, TEAM));
     expect(stillWaiting?.deletedAt).toBeNull();
     expect(stillWaiting?.lifecycleWork.retryAt).toBe(verifying?.lifecycleWork.retryAt);
+    if (!stillWaiting) throw new Error('Missing deletion fixture');
     await db
       .update(teams)
       .set({
-        lifecycleWork: { ...stillWaiting!.lifecycleWork, retryAt: new Date(0).toISOString() },
+        lifecycleWork: { ...stillWaiting.lifecycleWork, retryAt: new Date(0).toISOString() },
       })
       .where(eq(teams.id, TEAM));
     await processTeamLifecycle(db, io);
