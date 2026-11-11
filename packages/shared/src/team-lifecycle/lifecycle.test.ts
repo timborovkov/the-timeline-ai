@@ -139,6 +139,20 @@ describe('team lifecycle', () => {
     expect(team?.disabledPeriods[0]?.end).toBeDefined();
     expect(team?.lifecycleWork.billingPending).toBe(true);
   });
+  it('preserves preexisting security restrictions when restoring a deletion request', async () => {
+    await db.insert(teamBillingAccounts).values({ teamId: TEAM, securityState: 'restricted' });
+    await withTeam(db, TEAM, OWNER).lifecycle.requestDeletion('First');
+    await setPlatformSuspension(db, actor, 'team', TEAM, false, 'Owner withdrew request');
+    const [account] = await db
+      .select()
+      .from(teamBillingAccounts)
+      .where(eq(teamBillingAccounts.teamId, TEAM));
+    const [team] = await db.select().from(teams).where(eq(teams.id, TEAM));
+    expect(account?.securityState).toBe('restricted');
+    expect(team?.disabledAt).toBeNull();
+    expect(team?.deletionRequestedAt).toBeNull();
+    expect(team?.lifecycleWork.billingPending).toBe(true);
+  });
   it('permanently deletes operational rows, retains the other team, and reserves old routes', async () => {
     await beginTeamDeletion(db, actor, {
       teamId: TEAM,
@@ -224,6 +238,77 @@ describe('team lifecycle', () => {
     await expect(withTeam(db, TEAM, OWNER).lifecycle.purgeRows()).rejects.toThrow(
       'internal system scope',
     );
+  });
+  it('waits for bounded object batches and the upload expiry window before verifying late writes', async () => {
+    await beginTeamDeletion(db, actor, {
+      teamId: TEAM,
+      confirmation: 'First',
+      reason: 'Verify late uploads',
+    });
+    const objects = new Set(['initial upload']);
+    let objectPasses = 0;
+    let batchComplete = false;
+    const io = {
+      objects: () => {
+        objectPasses++;
+        if (!batchComplete) return Promise.resolve(false);
+        objects.clear();
+        return Promise.resolve(true);
+      },
+      vectors: () => Promise.resolve(),
+      queues: () => Promise.resolve(true),
+    };
+    for (let tick = 0; tick < 4; tick++) await processTeamLifecycle(db, io);
+    const [waiting] = await db.select().from(teams).where(eq(teams.id, TEAM));
+    expect(waiting?.lifecycleWork.stage).toBe('purge');
+    expect(waiting?.deletedAt).toBeNull();
+    expect(objects.size).toBe(1);
+    batchComplete = true;
+    for (let tick = 0; tick < 4; tick++) await processTeamLifecycle(db, io);
+    const [verifying] = await db.select().from(teams).where(eq(teams.id, TEAM));
+    expect(verifying?.lifecycleWork.stage).toBe('verify');
+    expect(objects.size).toBe(0);
+    objects.add('upload completed after the first purge');
+    const passesBeforeRetry = objectPasses;
+    await retryTeamLifecycle(db, actor, TEAM);
+    await processTeamLifecycle(db, io);
+    expect(objectPasses).toBe(passesBeforeRetry);
+    const [stillWaiting] = await db.select().from(teams).where(eq(teams.id, TEAM));
+    expect(stillWaiting?.deletedAt).toBeNull();
+    expect(stillWaiting?.lifecycleWork.retryAt).toBe(verifying?.lifecycleWork.retryAt);
+    await db
+      .update(teams)
+      .set({
+        lifecycleWork: { ...stillWaiting!.lifecycleWork, retryAt: new Date(0).toISOString() },
+      })
+      .where(eq(teams.id, TEAM));
+    await processTeamLifecycle(db, io);
+    expect(objects.size).toBe(0);
+    const [complete] = await db.select().from(teams).where(eq(teams.id, TEAM));
+    expect(complete?.deletedAt).not.toBeNull();
+    await assertActivePrincipal(db, OTHER);
+  });
+  it('rejects forged administrative authority and team-admin deletion requests', async () => {
+    await expect(
+      beginTeamDeletion(
+        db,
+        { userId: OWNER, email: actor.email },
+        {
+          teamId: TEAM,
+          confirmation: 'First',
+          reason: 'Forged administrator',
+        },
+      ),
+    ).rejects.toThrow();
+    await db.update(teamMembers).set({ role: 'admin' }).where(eq(teamMembers.teamId, TEAM));
+    await expect(withTeam(db, TEAM, OWNER).lifecycle.requestDeletion('First')).rejects.toThrow(
+      'Only team owners',
+    );
+    await db.delete(teamMembers).where(eq(teamMembers.teamId, OTHER));
+    await expect(withTeam(db, OTHER, OWNER).lifecycle.requestDeletion('Other')).rejects.toThrow();
+    const [unchanged] = await db.select().from(teams).where(eq(teams.id, TEAM));
+    expect(unchanged?.disabledAt).toBeNull();
+    expect(unchanged?.deletionStartedAt).toBeNull();
   });
   it('filters and sorts teams before counting and paginating', async () => {
     await setPlatformSuspension(db, actor, 'team', TEAM, true, 'Paused');
