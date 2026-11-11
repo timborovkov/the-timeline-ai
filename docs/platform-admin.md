@@ -160,7 +160,7 @@ cleanup or apply production migrations.
 
 ## Team deletion lifecycle
 
-Owners request permanent deletion under Team settings → Advanced after typing the team name and acknowledging loss of access for every member. Export first using normal visibility permissions. The request immediately disables the team and persists notifications for platform admins and the requester. Only platform admins can withdraw the request and restore access. The admin Teams directory has a deletion-request filter.
+Owners request permanent deletion under Team settings → Advanced after typing the team name and acknowledging loss of access for every member. Export first using normal visibility permissions. The request immediately disables the team and persists notifications for platform admins and the requester. After submission, the requester lands on `/team-deletion-requested`, outside the active-workspace shell, with confirmation, the configured support email, and instructions to request restoration before permanent deletion begins. Only platform admins can withdraw the request and restore access. The admin Teams directory has a deletion-request filter.
 
 Platform admins may start permanent deletion with or without an owner request. Confirmation requires the team name and a reason. Once started, deletion cannot be reversed or impersonated. The detail page exposes cleanup status and retries, not workspace content. A one-minute dedicated lifecycle worker polls durable database state, so missing queue publication cannot lose a request.
 
