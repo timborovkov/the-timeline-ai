@@ -61,7 +61,9 @@ describe('billing catalog', () => {
     expect(PLAN_CATALOG.business.platformFeeCents).toBe(19_900);
     expect(PLAN_CATALOG.team.includedUsageDiscountCents).toBe(6_000);
     expect(PLAN_CATALOG.business.includedUsageDiscountCents).toBe(25_000);
-    expect(FREE_ALLOWANCES.aiChargeCents).toBe(500);
+    expect(FREE_ALLOWANCES.aiChargeCents).toBe(200);
+    expect(FREE_ALLOWANCES.agentTurns).toBe(50);
+    expect(CAPACITY_BY_PLAN.free.agentTurnsPerMonth).toBe(50);
     expect(FREE_ALLOWANCES.recallMinutes).toBe(60);
     expect(FREE_ALLOWANCES.storageGb).toBe(FREE_STORAGE_GB);
     expect(FREE_STORAGE_MIB).toBe(100);
@@ -74,7 +76,7 @@ describe('billing catalog', () => {
     expect(CAPACITY_BY_PLAN.team.documents).toBeGreaterThanOrEqual(
       CAPACITY_BY_PLAN.payg.documents ?? 0,
     );
-    expect(ASK_AI_RESERVE_CUSTOMER_CHARGE_CENTS).toBe(250);
+    expect(ASK_AI_RESERVE_CUSTOMER_CHARGE_CENTS).toBe(100);
     expect(MEETING_MAX_DURATION_MINUTES_BY_PLAN.free).toBe(120);
     expect(MEETING_MAX_DURATION_MINUTES_BY_PLAN.payg).toBe(240);
   });

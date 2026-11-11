@@ -52,12 +52,12 @@ export const FREE_STORAGE_GB = FREE_STORAGE_MIB / 1024;
 
 /** Free-plan native allowances (also the PAYG included floor before overage). */
 export const FREE_ALLOWANCES = {
-  aiChargeCents: 500,
+  aiChargeCents: 200,
   recallMinutes: 60,
   emailUnits: 500,
   storageGb: FREE_STORAGE_GB,
   acceptedSources: 1_000,
-  agentTurns: 100,
+  agentTurns: 50,
   activeMembers: 3,
 } as const;
 
@@ -188,7 +188,7 @@ export interface CapacityEntitlements {
 
 export const CAPACITY_BY_PLAN: Record<BillingPlanId, CapacityEntitlements> = {
   free: {
-    agentTurnsPerMonth: 100,
+    agentTurnsPerMonth: FREE_ALLOWANCES.agentTurns,
     acceptedSourcesPerMonth: 1_000,
     webhookRequestsPerMonth: 10_000,
     inboundEmailPerMonth: 100,
@@ -320,8 +320,8 @@ export const MEETING_MAX_DURATION_MINUTES_BY_PLAN: Record<BillingPlanId, number>
   enterprise: 360,
 };
 
-/** Worst-case customer AI charge reserved before an Ask / web chat turn (€2.50). */
-export const ASK_AI_RESERVE_CUSTOMER_CHARGE_CENTS = 250;
+/** Customer AI charge reserved before an Ask / web chat turn (€1). */
+export const ASK_AI_RESERVE_CUSTOMER_CHARGE_CENTS = 100;
 
 /** Worst-case reservation for background LLM (extract, embed, digest, vision). */
 export const BACKGROUND_AI_RESERVE_CUSTOMER_CHARGE_CENTS = 100;

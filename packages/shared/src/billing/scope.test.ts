@@ -327,8 +327,8 @@ describe('billing scope', () => {
     await scope.settle({
       operationId: 'op-ai-fill',
       meterId: 'ai',
-      nativeUnits: 500,
-      customerChargeCents: 500,
+      nativeUnits: 200,
+      customerChargeCents: 200,
     });
     const blocked = await scope.reserve({
       operationId: 'op-ai-over',
@@ -1262,21 +1262,21 @@ describe('billing scope', () => {
     const settled = await scope.settle({
       operationId: 'ai:free-allowance',
       meterId: 'ai',
-      nativeUnits: 500,
-      customerChargeCents: 500,
+      nativeUnits: 200,
+      customerChargeCents: 200,
     });
     expect(settled.ok).toBe(true);
     const [freeCounter] = await db
       .select()
       .from(billingUsageCounters)
       .where(and(eq(billingUsageCounters.teamId, TEAM_ID), eq(billingUsageCounters.meterId, 'ai')));
-    expect(Number(freeCounter?.nativeUnits)).toBe(500);
-    expect(freeCounter?.customerChargeCents).toBe(500);
+    expect(Number(freeCounter?.nativeUnits)).toBe(200);
+    expect(freeCounter?.customerChargeCents).toBe(200);
     expect(freeCounter?.capEligibleChargeCents).toBe(0);
     const dashboard = await scope.getDashboard();
     expect(dashboard.meters.ai).toMatchObject({
-      nativeUnits: 500,
-      customerChargeCents: 500,
+      nativeUnits: 200,
+      customerChargeCents: 200,
       capEligibleChargeCents: 0,
     });
     expect(dashboard.meteredSpendCents).toBe(0);
