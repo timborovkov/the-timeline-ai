@@ -581,16 +581,14 @@ describe('handleMcpRequest', () => {
   });
 
   it('reports integration candidate exhaustion after deduplication', async () => {
-    await db
-      .insert(rawEvents)
-      .values({
-        id: GITHUB_SEARCH_EVENT,
-        teamId: TEAM_ID,
-        source: 'integration',
-        contentText: 'GitHub launch',
-        occurredAt: new Date('2026-06-21'),
-        sourceMetadata: { provider: 'github' },
-      });
+    await db.insert(rawEvents).values({
+      id: GITHUB_SEARCH_EVENT,
+      teamId: TEAM_ID,
+      source: 'integration',
+      contentText: 'GitHub launch',
+      occurredAt: new Date('2026-06-21'),
+      sourceMetadata: { provider: 'github' },
+    });
     semanticSearchFakes.search.mockResolvedValue(
       Array.from({ length: 200 }, () => ({
         ...integrationSearchHit(GITHUB_SEARCH_EVENT, 0.9),
