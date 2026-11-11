@@ -94,15 +94,13 @@ describe('webhook delivery persistence', () => {
     const otherTeam = '77777777-7777-4777-8777-777777777777';
     const otherIntegration = '88888888-8888-4888-8888-888888888888';
     await db.insert(teams).values({ id: otherTeam, name: 'Control', slug: 'control' });
-    await db
-      .insert(integrations)
-      .values({
-        id: otherIntegration,
-        teamId: otherTeam,
-        provider: 'linear',
-        displayName: 'Control',
-        providerConnectionId: CONNECTION_ID,
-      });
+    await db.insert(integrations).values({
+      id: otherIntegration,
+      teamId: otherTeam,
+      provider: 'linear',
+      displayName: 'Control',
+      providerConnectionId: CONNECTION_ID,
+    });
     const recorded = await recordWebhookDeliveryTargets(db as never, {
       provider: 'linear',
       eventType: 'Issue',
