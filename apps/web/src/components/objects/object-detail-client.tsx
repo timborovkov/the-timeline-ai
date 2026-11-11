@@ -91,7 +91,6 @@ import { ShowMoreList } from '@/components/ui/show-more-list';
 import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
 import { readJson } from '@/lib/api-response';
 import { displayText, formatDisplayDateTime } from '@/lib/display-dates';
-import { isInternalIdentifier } from '@/lib/display-labels';
 import { isSchedulableObjectType } from '@/lib/due-dates';
 import { notifyAction } from '@/lib/notify';
 import { formatTaskCategoryChangeValue } from '@/lib/object-change-format';
@@ -1115,7 +1114,7 @@ function ObjectDetailView(props: Props) {
   const boardContext = props.boardContext ?? EMPTY_BOARD_CONTEXT;
   const hiddenBoardItemIds = new Set(boardContext.map((row) => row.itemId));
   return (
-    <div className="space-y-2">
+    <div className="space-y-8">
       <ObjectDetailHeader
         detail={view.viewDetail}
         nameDraft={view.nameDraft}
@@ -1133,8 +1132,8 @@ function ObjectDetailView(props: Props) {
         onRepairMemory={view.repairMemory}
       />
 
-      <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_20rem]">
-        <main className="min-w-0 space-y-3 max-md:pb-24">
+      <div className="grid items-start gap-8 lg:grid-cols-[minmax(0,1fr)_22rem] lg:gap-10">
+        <div className="min-w-0 space-y-8">
           {view.suggestions.length > 0 ? (
             <ApprovalsClient
               suggestions={view.suggestions}
@@ -1156,9 +1155,8 @@ function ObjectDetailView(props: Props) {
             />
           ) : null}
 
-          <ObjectOrigin provenance={view.viewDetail.provenance} />
           <ObjectSummaryPanel detail={view.viewDetail} />
-          <ObjectProvenanceGroups provenance={view.viewDetail.provenance} />
+          <ObjectSourceContext detail={view.viewDetail} />
           <ObjectConnectedWorkSection
             objectId={view.viewDetail.id}
             archivedAt={view.viewDetail.archivedAt}
@@ -1189,19 +1187,14 @@ function ObjectDetailView(props: Props) {
             onSaveNote={view.saveNote}
             onDeleteNote={view.deleteNote}
           />
-        </main>
+        </div>
 
-        <DetailRail className="min-w-0 divide-y divide-border xl:sticky xl:top-2 [&>footer]:px-2 [&>footer]:py-2 [&>section]:py-2">
-          <ObjectBoardContextSection
-            rows={props.boardContext ?? EMPTY_BOARD_CONTEXT}
-            entityId={view.viewDetail.id}
-            objectType={view.viewDetail.type}
-            members={props.members ?? EMPTY_MEMBER_OPTIONS}
-            disabled={view.pending}
-          />
-          <ObjectContactFields detail={view.viewDetail} disabled={view.pending} />
-          <ObjectMetadataFields detail={view.viewDetail} disabled={view.pending} />
-
+        <DetailRail
+          id="object-properties"
+          tabIndex={-1}
+          aria-label="Object properties"
+          className="min-w-0 scroll-mt-4 space-y-5 border-0 p-4 [&>footer]:px-2"
+        >
           <ObjectEditableFields
             detail={view.localDetail}
             aliasesDraft={view.aliasesDraft}
@@ -1217,6 +1210,16 @@ function ObjectDetailView(props: Props) {
             primaryCompany={props.primaryCompany}
             taskCategoriesEnabled={props.taskCategoriesEnabled}
           />
+
+          <ObjectBoardContextSection
+            rows={props.boardContext ?? EMPTY_BOARD_CONTEXT}
+            entityId={view.viewDetail.id}
+            objectType={view.viewDetail.type}
+            members={props.members ?? EMPTY_MEMBER_OPTIONS}
+            disabled={view.pending}
+          />
+          <ObjectContactFields detail={view.viewDetail} disabled={view.pending} />
+          <ObjectMetadataFields detail={view.viewDetail} disabled={view.pending} />
 
           <ObjectRelationshipsSection
             sourceType={view.viewDetail.type}
@@ -1237,21 +1240,59 @@ function ObjectDetailView(props: Props) {
             onRemoveRelationship={view.removeRelationship}
           />
 
-          <ObjectRecentChangesSection
-            changes={view.viewDetail.recentChanges}
-            pending={view.pending}
-            onAcceptChange={view.acceptChange}
-            onRejectChange={view.rejectChange}
-          />
+          {view.viewDetail.recentChanges.length > 0 ? (
+            <details
+              open={view.viewDetail.recentChanges.some((change) => change.status === 'suggested')}
+            >
+              <summary className="cursor-pointer px-2 text-sm font-medium">Change history</summary>
+              <div className="mt-3">
+                <ObjectRecentChangesSection
+                  changes={view.viewDetail.recentChanges}
+                  pending={view.pending}
+                  onAcceptChange={view.acceptChange}
+                  onRejectChange={view.rejectChange}
+                />
+              </div>
+            </details>
+          ) : null}
 
           <ObjectArchiveFooter
             archivedAt={view.viewDetail.archivedAt}
             pending={view.pending}
             onArchiveObject={view.archiveObject}
           />
+          <TechnicalDetails
+            compact
+            className="px-2"
+            items={[{ label: 'Object ID', value: view.detail.id, copyValue: view.detail.id }]}
+          />
         </DetailRail>
       </div>
     </div>
+  );
+}
+
+function ObjectSourceContext({ detail }: { detail: ObjectDetail }) {
+  if (detail.provenance.whyThisExists.length === 0 && detail.provenance.whatChangedIt.length === 0)
+    return null;
+  if (!detail.summary?.summary) {
+    return (
+      <div className="space-y-4">
+        <ObjectOrigin provenance={detail.provenance} />
+        <ObjectProvenanceGroups provenance={detail.provenance} />
+      </div>
+    );
+  }
+  return (
+    <details className="text-sm">
+      <summary className="cursor-pointer font-medium text-fg-muted">
+        Origin and source context
+      </summary>
+      <div className="mt-4 space-y-4">
+        <ObjectOrigin provenance={detail.provenance} />
+        <ObjectProvenanceGroups provenance={detail.provenance} />
+      </div>
+    </details>
   );
 }
 
@@ -1286,7 +1327,8 @@ function ObjectSummaryPanel({ detail }: { detail: ObjectDetail }) {
   }
 
   return (
-    <section aria-label="Summary">
+    <section aria-label="Summary" className="space-y-4">
+      {generated ? <h2 className="text-sm font-semibold">Summary</h2> : null}
       {generated ? <GeneratedObjectSummary generated={generated} /> : null}
 
       {
@@ -1332,7 +1374,7 @@ function ObjectSummaryActions({
       {generated && summary.generatedAt ? (
         <p className={DETAIL_META_CLASS}>
           Updated {formatDisplayDateTime(summary.generatedAt, { timezone })} ·{' '}
-          {summary.sourceRefs.length} sources
+          {summary.sourceRefs.length} {summary.sourceRefs.length === 1 ? 'source' : 'sources'}
         </p>
       ) : summary.status === 'pending' ? (
         <p className={DETAIL_META_CLASS}>Generating</p>
@@ -1387,23 +1429,26 @@ function GeneratedObjectSummary({
     [generated],
   );
   return (
-    <div className="space-y-1.5">
-      <p className={`max-w-4xl ${DETAIL_BODY_CLASS}`}>
+    <div className="space-y-5">
+      <p className="max-w-prose text-sm leading-7 text-fg">
         {generated.overview}
         <SourceMarkers numbers={numbers} refs={generated.overviewSourceRefs} />
       </p>
       {generated.currentState.length > 0 ? (
-        <ul className="space-y-1">
-          {generated.currentState.map((item) => (
-            <li key={`${item.label}:${item.text}`} className="text-sm leading-5 text-fg-muted">
-              <span className="text-fg">{item.label}:</span> {item.text}
-              <SourceMarkers numbers={numbers} refs={item.sourceRefs} />
-            </li>
-          ))}
-        </ul>
+        <details className="rounded-md bg-surface p-3">
+          <summary className="cursor-pointer text-sm font-medium">Current state</summary>
+          <ul className="mt-3 space-y-3">
+            {generated.currentState.map((item) => (
+              <li key={`${item.label}:${item.text}`} className="text-sm leading-5 text-fg-muted">
+                <span className="text-fg">{item.label}:</span> {item.text}
+                <SourceMarkers numbers={numbers} refs={item.sourceRefs} />
+              </li>
+            ))}
+          </ul>
+        </details>
       ) : null}
       {laterClaims.length > 0 ? (
-        <div className="space-y-1">
+        <div className="space-y-3">
           {laterClaims.map((item) => (
             <p key={`${item.label}:${item.text}`} className="text-sm leading-5 text-fg-muted">
               <span className="text-fg">{item.label}:</span> {item.text}
@@ -1490,7 +1535,6 @@ function ObjectDetailHeader({
   onRepairMemory: () => void;
 }) {
   const pendingCount = detail.recentChanges.filter((c) => c.status === 'suggested').length;
-  const visibleAliases = detail.aliases.filter((alias) => !isInternalIdentifier(alias));
   const hasAlerts = detail.newSinceLastVisit > 0 || pendingCount > 0;
   const addTaskHref =
     detail.type === 'project' && detail.archivedAt === null
@@ -1506,7 +1550,6 @@ function ObjectDetailHeader({
             focusedDraftsRef={focusedDraftsRef}
             onNameDraftChange={onNameDraftChange}
             onNameCommit={onNameCommit}
-            visibleAliases={visibleAliases}
             boardContext={boardContext}
           />
         }
@@ -1530,6 +1573,12 @@ function ObjectDetailHeader({
           }
         </div>
       </div>
+      <a
+        href="#object-properties"
+        className="mt-3 inline-flex min-h-9 items-center rounded-sm border border-border px-3 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring lg:hidden"
+      >
+        Edit properties
+      </a>
       {hasAlerts ? (
         <div className="mt-1 flex flex-col gap-0.5">
           {detail.newSinceLastVisit > 0 ? (
@@ -1545,11 +1594,6 @@ function ObjectDetailHeader({
           ) : null}
         </div>
       ) : null}
-      <TechnicalDetails
-        compact
-        className="mt-1"
-        items={[{ label: 'Object ID', value: detail.id, copyValue: detail.id }]}
-      />
     </header>
   );
 }
@@ -1589,7 +1633,6 @@ function ObjectHeaderIdentity({
   focusedDraftsRef,
   onNameDraftChange,
   onNameCommit,
-  visibleAliases,
   boardContext,
 }: {
   detail: objects.ObjectDetail;
@@ -1597,7 +1640,6 @@ function ObjectHeaderIdentity({
   focusedDraftsRef: RefObject<Record<DraftField, boolean>>;
   onNameDraftChange: (value: string) => void;
   onNameCommit: (value: string) => void;
-  visibleAliases: string[];
   boardContext: boards.ObjectBoardContextRow[];
 }) {
   return (
@@ -1614,14 +1656,21 @@ function ObjectHeaderIdentity({
         ) : null}
       </div>
       <h1 className="sr-only">{displayText(displayObjectTitle(detail))}</h1>
-      <input
+      <textarea
+        rows={1}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter' && !event.nativeEvent.isComposing) {
+            event.preventDefault();
+            event.currentTarget.blur();
+          }
+        }}
         aria-label="Name"
         value={nameDraft}
         onFocus={() => {
           focusedDraftsRef.current.canonicalName = true;
         }}
         onChange={(event) => {
-          onNameDraftChange(event.target.value);
+          onNameDraftChange(event.target.value.replace(/\n/g, ' '));
         }}
         onBlur={(event) => {
           focusedDraftsRef.current.canonicalName = false;
@@ -1636,14 +1685,9 @@ function ObjectHeaderIdentity({
         }}
         className={cn(
           OBJECT_TITLE_CLASS,
-          'mt-0.5 w-full bg-transparent outline-none focus-visible:ring-2 focus-visible:ring-signal/50',
+          'mt-2 w-full resize-none bg-transparent text-xl leading-snug [field-sizing:content] sm:text-2xl outline-none focus-visible:ring-2 focus-visible:ring-signal/50',
         )}
       />
-      {visibleAliases.length > 0 ? (
-        <p className={`mt-0.5 ${DETAIL_META_CLASS}`}>
-          aka {visibleAliases.map((alias) => displayText(alias)).join(' · ')}
-        </p>
-      ) : null}
       <ObjectBoardContext rows={boardContext} />
     </div>
   );
@@ -1811,7 +1855,8 @@ function ObjectEditableFields({
         />
       </ObjectRailRow>
       <ObjectRailRow label="Aliases">
-        <input
+        <textarea
+          rows={1}
           aria-label="Aliases"
           value={aliasesDraft}
           onFocus={() => {
@@ -1827,7 +1872,7 @@ function ObjectEditableFields({
             patch('aliases', aliases);
           }}
           placeholder="No aliases"
-          className={RAIL_FIELD_VALUE}
+          className={cn(RAIL_FIELD_VALUE, 'resize-none [field-sizing:content]')}
         />
       </ObjectRailRow>
     </ObjectRailSection>
@@ -1967,17 +2012,19 @@ function ObjectConnectedWorkSection({
     <section aria-label="Connected work">
       <h2 className={DETAIL_SECTION_LABEL_CLASS}>Connected work</h2>
       <div className="mt-1 divide-y divide-border">
-        <ConnectedTaskList
-          objectId={objectId}
-          objectType={sourceType}
-          canAdd={addTask}
-          pending={pending}
-          members={members}
-          openTasks={connectedWork.openTasks}
-          recentTasks={connectedWork.recentTasks}
-          openTaskCount={connectedWork.openTaskCount}
-          doneTaskCount={connectedWork.doneTaskCount}
-        />
+        {addTask || connectedWork.openTasks.length > 0 || connectedWork.recentTasks.length > 0 ? (
+          <ConnectedTaskList
+            objectId={objectId}
+            objectType={sourceType}
+            canAdd={addTask}
+            pending={pending}
+            members={members}
+            openTasks={connectedWork.openTasks}
+            recentTasks={connectedWork.recentTasks}
+            openTaskCount={connectedWork.openTaskCount}
+            doneTaskCount={connectedWork.doneTaskCount}
+          />
+        ) : null}
         <ConnectedCalendarList events={connectedWork.calendarEvents} />
         <ConnectedObjectList
           objects={connectedWork.objects}
@@ -2877,6 +2924,8 @@ function formatValue(v: unknown, timezone: string, field = ''): string {
 
 function changeFieldLabel(field: string): string {
   const labels: Record<string, string> = {
+    __create__: 'Created',
+    __archive__: 'Archived',
     __merge__: 'Merge',
     __merged_from__: 'Merged from',
     canonicalName: 'Name',

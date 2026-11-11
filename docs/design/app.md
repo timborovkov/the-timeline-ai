@@ -411,14 +411,15 @@ comment can start from the peek. Empty memory and empty related context stay
 out of the peek.
 
 The full object page is a Linear-style issue view, not a work-index. It has no
-`WorkSubnav`. The type (and task category) sit as quiet metadata above an 18px
-editable title. Board placement is a muted header line, not a standalone
+`WorkSubnav`. The type (and task category) sit as quiet metadata above a wrapping 20px title (24px on desktop)
+that remains editable and saves on blur or Enter. Board placement is a muted header line, not a standalone
 section, and those same boards are not repeated under Connected work. Pin is the shared Home-destination icon; Ask uses the
 shared floating binder. Repair memory lives in the overflow menu; project pages
-also keep overflow Add task. The main column uses a dense section stack and 14px body at 1.35
-line-height: why this exists, a generated summary only when it has content or
-an actionable generate/retry state, then provenance / connected-work /
-evidence / facts. Connected work keeps a Tasks group on generic objects even
+also keep overflow Add task. The main column uses separated sections with readable 14px summary prose.
+A generated Summary leads when available; its current-state claims remain in a
+closed disclosure with citations intact. Origin and source context is folded
+below a generated summary to avoid competing lead paragraphs, and stays visible
+when no summary exists. Connected work, evidence, facts, and discussion follow. Connected work omits empty child-task groups on leaf tasks, but keeps a Tasks group on generic objects even
 when empty, with `Open N · Done M` totals (not the truncated preview lengths),
 always-visible Recent history (quiet
 `No completed tasks yet` when Done is 0), assignee
@@ -441,17 +442,21 @@ preview three rows, then fold the rest behind a quiet `Show N more` disclosure
 (with hairline row dividers and two-line evidence clamps) so the main column
 does not become a wall of text. Discussion keeps
 a borderless composer with @mentions. The right column is one Properties rail at
-`20rem` on xl breakpoints: a 6px-radius `--surface` panel with a hairline
-`--border`, not raw page canvas. Board context, editable contact facets (people and
+`22rem` from the lg breakpoint, with a quiet `--surface` background and internal
+spacing instead of stacked dividing rules. Editable Properties come first,
+followed by board context, editable contact facets (people and
 companies), type-aware Details fields (same 32px property rows as Stage/Aliases:
 `6.75rem` medium `--fg-dim` labels, 14px `--fg` values, blur-to-save inputs, `No …` placeholders;
 arbitrary Add field with human labels stored as camelCase; hover-only ghost × to clear
-custom fields; `fixture_version` and other internal keys stay hidden), Properties,
-Company (person objects), Related, recent changes, and Archive share that one panel
-and divide with hairlines. Status and Priority keep a toned icon with quiet `--fg`
+custom fields; `fixture_version` and other internal keys stay hidden),
+Company (person objects), Related, change history, and Archive share that panel.
+On mobile, Edit properties beneath the title jumps to the property controls.
+Change history starts closed unless suggested changes need review. Technical
+details live at the bottom of the rail. Aliases appear in their editable property
+without repeating a long alternate-name line beneath the title. Status and Priority keep a toned icon with quiet `--fg`
 value text so they match Stage/Aliases. Do not nest a card per
-field. The task peek and board card peek use the same rail pattern so they lift
-off the list in light and dark; both include Discussion below command fields and
+field. The task peek and board card peek retain their compact bordered rail treatment
+to lift off the list in light and dark; both include Discussion below command fields and
 before related context. An empty summary is a single Generate summary control, not a “ready to generate” block. Evidence uses a
 quiet text control, not a signal chip. Supporting copy stays 12px `--fg-dim`.
 Quiet fold/actions use 12px medium `--fg-muted`. `--signal` is reserved for
