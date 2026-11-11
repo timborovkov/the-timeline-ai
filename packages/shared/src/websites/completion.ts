@@ -145,7 +145,10 @@ export async function completeWebsiteChunk(
       if (!unfinished)
         await tx
           .update(websiteRuns)
-          .set({ status: 'completed', finishedAt: new Date() })
+          .set({
+            status: sql`CASE WHEN ${websiteRuns.failureReason} IN ('provider_failed', 'provider_cancelled', 'provider_page_errors') THEN 'partial' ELSE 'completed' END`,
+            finishedAt: new Date(),
+          })
           .where(
             and(
               eq(websiteRuns.teamId, teamId),

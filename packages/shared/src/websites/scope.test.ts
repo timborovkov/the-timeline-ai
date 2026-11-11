@@ -114,125 +114,133 @@ describe('persistent website scope', () => {
 });
 
 // Versions remain historical evidence while current answers wait for all new chunks.
-it('promotes only fully embedded versions and excludes obsolete events before retrieval', async () => {
-  const website = await source();
-  const scope = withTeam(db, TEAM, MEMBER).websites;
-  const run = await scope.admit({
-    websiteId: website.id,
-    idempotencyKey: 'version-run',
-    trigger: 'manual',
-  });
-  const [oldEvent] = await db
-    .insert(rawEvents)
-    .values({
-      teamId: TEAM,
-      authorUserId: MEMBER,
-      source: 'web',
-      sourceMetadata: {
-        websiteId: website.id,
-        websiteScanId: run.id,
-        pageUrl: website.url,
-        websiteContentHash: 'old',
-      },
-    })
-    .returning();
-  const [newEvent] = await db
-    .insert(rawEvents)
-    .values({
-      teamId: TEAM,
-      authorUserId: MEMBER,
-      source: 'web',
-      sourceMetadata: {
-        websiteId: website.id,
-        websiteScanId: run.id,
-        pageUrl: website.url,
-        websiteContentHash: 'new',
-      },
-    })
-    .returning();
-  const [document] = await db
-    .insert(documents)
-    .values({
-      teamId: TEAM,
-      name: 'Page.md',
-      fileKind: 'captured',
-      ownerUserId: MEMBER,
-      sourceRawEventId: must(oldEvent).id,
-    })
-    .returning();
-  const [oldVersion] = await db
-    .insert(documentVersions)
-    .values({
-      teamId: TEAM,
-      documentId: must(document).id,
-      version: 1,
-      objectKey: 'old',
-      sourceEventId: must(oldEvent).id,
-      processingStatus: 'embedded',
-    })
-    .returning();
-  const [newVersion] = await db
-    .insert(documentVersions)
-    .values({
-      teamId: TEAM,
-      documentId: must(document).id,
-      version: 2,
-      objectKey: 'new',
-      sourceEventId: must(newEvent).id,
-      processingStatus: 'chunked',
-    })
-    .returning();
-  await db.insert(websitePages).values({
-    teamId: TEAM,
-    websiteId: website.id,
-    url: website.url,
-    documentId: must(document).id,
-    currentEventId: must(oldEvent).id,
-    currentVersionId: must(oldVersion).id,
-    contentHash: 'old',
-  });
-  const chunks = await db
-    .insert(documentChunks)
-    .values(
-      [0, 1].map((index) => ({
+it.each([null, 'provider_failed'])(
+  'promotes ready versions without discarding provider failure %s',
+  async (failureReason) => {
+    const website = await source();
+    const scope = withTeam(db, TEAM, MEMBER).websites;
+    const run = await scope.admit({
+      websiteId: website.id,
+      idempotencyKey: 'version-run',
+      trigger: 'manual',
+    });
+    const [oldEvent] = await db
+      .insert(rawEvents)
+      .values({
+        teamId: TEAM,
+        authorUserId: MEMBER,
+        source: 'web',
+        sourceMetadata: {
+          websiteId: website.id,
+          websiteScanId: run.id,
+          pageUrl: website.url,
+          websiteContentHash: 'old',
+        },
+      })
+      .returning();
+    const [newEvent] = await db
+      .insert(rawEvents)
+      .values({
+        teamId: TEAM,
+        authorUserId: MEMBER,
+        source: 'web',
+        sourceMetadata: {
+          websiteId: website.id,
+          websiteScanId: run.id,
+          pageUrl: website.url,
+          websiteContentHash: 'new',
+        },
+      })
+      .returning();
+    const [document] = await db
+      .insert(documents)
+      .values({
+        teamId: TEAM,
+        name: 'Page.md',
+        fileKind: 'captured',
+        ownerUserId: MEMBER,
+        sourceRawEventId: must(oldEvent).id,
+      })
+      .returning();
+    const [oldVersion] = await db
+      .insert(documentVersions)
+      .values({
         teamId: TEAM,
         documentId: must(document).id,
-        documentVersionId: must(newVersion).id,
-        chunkIndex: index,
-        text: 'Page content',
-        tokenCount: 3,
-      })),
-    )
-    .returning();
-  await scope.updateRun(run.id, { status: 'processing', changedCount: 1 });
-  await completeWebsiteChunk(db, TEAM, must(chunks[0]).id, 'test-model');
-  expect((await scope.page(website.id, website.url))?.currentEventId).toBe(must(oldEvent).id);
-  expect(await obsoleteWebsiteEventIds(db, TEAM)).toContain(must(newEvent).id);
-  await completeWebsiteChunk(db, TEAM, must(chunks[1]).id, 'test-model');
-  expect((await scope.page(website.id, website.url))?.currentEventId).toBe(must(newEvent).id);
-  expect((await scope.getRun(run.id)).status).toBe('processing'); // No handoff checkpoint yet.
-  expect(await obsoleteWebsiteEventIds(db, TEAM)).toContain(must(oldEvent).id);
-  expect(await obsoleteWebsiteEventIds(db, OTHER)).toEqual([]);
-  await scope.updateRun(run.id, { handoffAt: new Date() });
-  await completeWebsiteChunk(db, TEAM, must(chunks[1]).id, 'test-model');
-  // A duplicate embedding callback must preserve the current version and immutable old event.
-  expect(
-    (
-      await db
-        .select()
-        .from(rawEvents)
-        .where(eq(rawEvents.id, must(oldEvent).id))
-    )[0]?.sourceMetadata,
-  ).toEqual({
-    websiteId: website.id,
-    websiteScanId: run.id,
-    pageUrl: website.url,
-    websiteContentHash: 'old',
-  });
-  expect(
-    (await db.select().from(websiteRuns).where(eq(websiteRuns.id, run.id)))[0]?.changedCount,
-  ).toBe(1);
-});
+        version: 1,
+        objectKey: 'old',
+        sourceEventId: must(oldEvent).id,
+        processingStatus: 'embedded',
+      })
+      .returning();
+    const [newVersion] = await db
+      .insert(documentVersions)
+      .values({
+        teamId: TEAM,
+        documentId: must(document).id,
+        version: 2,
+        objectKey: 'new',
+        sourceEventId: must(newEvent).id,
+        processingStatus: 'chunked',
+      })
+      .returning();
+    await db.insert(websitePages).values({
+      teamId: TEAM,
+      websiteId: website.id,
+      url: website.url,
+      documentId: must(document).id,
+      currentEventId: must(oldEvent).id,
+      currentVersionId: must(oldVersion).id,
+      contentHash: 'old',
+    });
+    const chunks = await db
+      .insert(documentChunks)
+      .values(
+        [0, 1].map((index) => ({
+          teamId: TEAM,
+          documentId: must(document).id,
+          documentVersionId: must(newVersion).id,
+          chunkIndex: index,
+          text: 'Page content',
+          tokenCount: 3,
+        })),
+      )
+      .returning();
+    await scope.updateRun(run.id, { status: 'processing', changedCount: 1, failureReason });
+    await completeWebsiteChunk(db, TEAM, must(chunks[0]).id, 'test-model');
+    expect((await scope.page(website.id, website.url))?.currentEventId).toBe(must(oldEvent).id);
+    expect(await obsoleteWebsiteEventIds(db, TEAM)).toContain(must(newEvent).id);
+    if (failureReason) await scope.updateRun(run.id, { handoffAt: new Date() });
+    await completeWebsiteChunk(db, TEAM, must(chunks[1]).id, 'test-model');
+    expect((await scope.page(website.id, website.url))?.currentEventId).toBe(must(newEvent).id);
+    expect((await scope.getRun(run.id)).status).toBe(failureReason ? 'partial' : 'processing');
+    expect(await obsoleteWebsiteEventIds(db, TEAM)).toContain(must(oldEvent).id);
+    expect(await obsoleteWebsiteEventIds(db, OTHER)).toEqual([]);
+    await scope.updateRun(run.id, { handoffAt: new Date() });
+    await completeWebsiteChunk(db, TEAM, must(chunks[1]).id, 'test-model');
+    const { tickWebsiteSchedules } = await import('#src/websites/scheduler.js');
+    await tickWebsiteSchedules(db);
+    expect((await scope.getRun(run.id)).status).toBe(failureReason ? 'partial' : 'completed');
+    expect((await scope.getRun(run.id)).failureReason).toBe(failureReason);
+    // A duplicate embedding callback must preserve the current version and immutable old event.
+    expect(
+      (
+        await db
+          .select()
+          .from(rawEvents)
+          .where(eq(rawEvents.id, must(oldEvent).id))
+      )[0]?.sourceMetadata,
+    ).toEqual({
+      websiteId: website.id,
+      websiteScanId: run.id,
+      pageUrl: website.url,
+      websiteContentHash: 'old',
+    });
+    expect(
+      (await db.select().from(websiteRuns).where(eq(websiteRuns.id, run.id)))[0]?.changedCount,
+    ).toBe(1);
+  },
+);
 
 it('keeps global hostname occupancy after a worker lease expires', async () => {
   const website = await source();
@@ -462,9 +470,13 @@ it('adopts a pending legacy job after populated migration without changing snaps
   expect((await scope.page(must(source).id, url))?.currentEventId).toBe(latest.event.id);
 });
 
-it.each(['manual', 'onboarding'] as const)(
-  'settles cached unchanged %s pages without new evidence',
-  async (trigger) => {
+it.each([
+  ['manual', null],
+  ['onboarding', null],
+  ['manual', 'provider_failed'],
+] as const)(
+  'settles cached unchanged %s pages while preserving failure %s',
+  async (trigger, failureReason) => {
     const { websiteSources, teamBillingAccounts, billingUsageLedger } =
       await import('@timeline/db');
     const { processPersistentWebsiteScan, websiteContentHash } =
@@ -503,6 +515,7 @@ it.each(['manual', 'onboarding'] as const)(
       idempotencyKey: 'cached-unchanged',
       trigger,
     });
+    await scope.websites.updateRun(run.id, { failureReason });
     if (trigger === 'onboarding')
       await scope.onboarding.selectStarterPath('website', {
         websiteUrl: website.url,
@@ -525,7 +538,8 @@ it.each(['manual', 'onboarding'] as const)(
     expect(await processPersistentWebsiteScan(db, TEAM, MEMBER, run.id)).toBe(true);
     expect(await processPersistentWebsiteScan(db, TEAM, MEMBER, run.id)).toBe(true);
     const result = await scope.websites.getRun(run.id);
-    expect(result.status).toBe('completed');
+    expect(result.status).toBe(failureReason ? 'partial' : 'completed');
+    expect(result.failureReason).toBe(failureReason);
     if (trigger === 'onboarding') {
       const onboarding = await scope.onboarding.getFirstRun();
       expect(onboarding?.phase).toBe('record');

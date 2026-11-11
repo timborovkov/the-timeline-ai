@@ -1679,23 +1679,19 @@ describe('Slack dispatcher routing', () => {
   it('uses the channel-bound team for website crawl confirmation instead of the active DM team', async () => {
     const fetchMock = installFetchMock();
     await seedBoundSlackUser(db, 'C_DOCS');
-    await db
-      .insert(slackWorkspaceTeams)
-      .values({
-        workspaceId: WORKSPACE_ID,
-        teamId: TEAM_B,
-        installedByUserId: USER_B,
-        enabled: true,
-      });
-    await db
-      .insert(slackUserTeams)
-      .values({
-        slackUserId: SLACK_USER_ROW_ID,
-        teamId: TEAM_B,
-        userId: USER_B,
-        linkedByUserId: USER_B,
-        isActive: false,
-      });
+    await db.insert(slackWorkspaceTeams).values({
+      workspaceId: WORKSPACE_ID,
+      teamId: TEAM_B,
+      installedByUserId: USER_B,
+      enabled: true,
+    });
+    await db.insert(slackUserTeams).values({
+      slackUserId: SLACK_USER_ROW_ID,
+      teamId: TEAM_B,
+      userId: USER_B,
+      linkedByUserId: USER_B,
+      isActive: false,
+    });
     await db
       .update(slackConversationBindings)
       .set({ teamId: TEAM_B, boundByUserId: USER_B })

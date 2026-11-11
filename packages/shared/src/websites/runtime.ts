@@ -99,6 +99,7 @@ export async function processPersistentWebsiteScan(
     if (run.principal) await authorizeWebsitePrincipal(db, run.principal, 'websites:manage');
     else await scope.requireMembership('admin');
   }
+  let failureReason = run.failureReason;
   let pages = await scope.onboarding.getWebsiteScanPages(scanId);
   if (!pages) {
     const units = websiteSourceUnits(WEBSITE_PAGE_LIMIT, run.unitsPerPage);
@@ -175,6 +176,8 @@ export async function processPersistentWebsiteScan(
       await scope.billing.release(operationId);
       return true;
     }
+    failureReason = result.partialFailureReason ?? null;
+    await scope.websites.updateRun(scanId, { failureReason });
     pages = await scope.onboarding.saveWebsiteScanPages({
       scanId,
       url: source.url,
@@ -254,7 +257,9 @@ export async function processPersistentWebsiteScan(
   await scope.websites.updateRun(scanId, {
     changedCount: changed,
     handoffAt: new Date(),
-    ...(changed === 0 ? { status: 'completed', finishedAt: new Date() } : {}),
+    ...(changed === 0
+      ? { status: failureReason ? 'partial' : 'completed', finishedAt: new Date() }
+      : {}),
   });
   return true;
 }

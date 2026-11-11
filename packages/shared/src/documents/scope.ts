@@ -969,7 +969,7 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
         documentName: documents.name,
         documentMetadata: documents.metadata,
         folderId: documents.folderId,
-        sourceRawEventId: documents.sourceRawEventId,
+        sourceRawEventId: documentVersions.sourceEventId,
         createdAt: documentVersions.createdAt,
       })
       .from(documentChunks)

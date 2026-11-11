@@ -2,6 +2,7 @@ import { validateMcpUrl } from '#src/mcp/auth.js';
 import {
   crawlPublicWebsiteWithFirecrawl,
   type FirecrawlFetch,
+  type FirecrawlPartialFailureReason,
 } from '#src/onboarding/firecrawl-website-scan.js';
 import {
   parsePublicWebsiteUrl,
@@ -14,7 +15,13 @@ export interface WebsiteScanPage {
   text: string;
 }
 export type WebsiteScanResult =
-  | { ok: true; host: string; pages: WebsiteScanPage[]; providerCredits?: number }
+  | {
+      ok: true;
+      host: string;
+      pages: WebsiteScanPage[];
+      providerCredits?: number;
+      partialFailureReason?: FirecrawlPartialFailureReason;
+    }
   | { ok: false; reason: FirstRunScanFailureReason; providerCredits?: number };
 export interface WebsiteScanDeps {
   crawlId?: string;
@@ -60,6 +67,9 @@ export async function scanPublicWebsite(
       ok: true,
       host: origin.hostname,
       pages: firecrawl.pages,
+      ...(firecrawl.partialFailureReason
+        ? { partialFailureReason: firecrawl.partialFailureReason }
+        : {}),
       ...(firecrawl.providerCredits === undefined
         ? {}
         : { providerCredits: firecrawl.providerCredits }),

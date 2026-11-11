@@ -33,8 +33,16 @@ interface FirecrawlPage {
   text: string;
 }
 
+export type FirecrawlPartialFailureReason =
+  'provider_failed' | 'provider_cancelled' | 'provider_page_errors';
+
 export type FirecrawlCrawlOutcome =
-  | { kind: 'pages'; pages: FirecrawlPage[]; providerCredits?: number }
+  | {
+      kind: 'pages';
+      pages: FirecrawlPage[];
+      providerCredits?: number;
+      partialFailureReason?: FirecrawlPartialFailureReason;
+    }
   | { kind: 'failure'; reason: FirstRunScanFailureReason; providerCredits?: number }
   | { kind: 'retryable'; retryAfterMs?: number; providerRejected?: boolean };
 
@@ -295,6 +303,7 @@ async function collectStatusPages(
       data: record.data,
       error: record.error,
       next: record.next,
+      creditsUsed: record.creditsUsed ?? status.creditsUsed,
     };
     documents.push(...collectDocuments(record.data));
     const following = asString(record.next);
@@ -369,16 +378,23 @@ export async function crawlPublicWebsiteWithFirecrawl(
           page.status.creditsUsed >= 0
             ? { providerCredits: page.status.creditsUsed }
             : {};
-        if (pages.length > 0)
+        if (pages.length > 0) {
+          const partialFailureReason =
+            status === 'failed'
+              ? 'provider_failed'
+              : status === 'cancelled'
+                ? 'provider_cancelled'
+                : (Array.isArray(errors.errors) && errors.errors.length > 0) ||
+                    (Array.isArray(errors.robotsBlocked) && errors.robotsBlocked.length > 0)
+                  ? 'provider_page_errors'
+                  : undefined;
           return {
             kind: 'pages',
             pages,
-            ...(typeof page.status.creditsUsed === 'number' &&
-            Number.isSafeInteger(page.status.creditsUsed) &&
-            page.status.creditsUsed >= 0
-              ? { providerCredits: page.status.creditsUsed }
-              : {}),
+            ...usage,
+            ...(partialFailureReason ? { partialFailureReason } : {}),
           };
+        }
         if (robotsError) return { kind: 'failure', reason: 'robots', ...usage };
         if (status === 'failed' || status === 'cancelled') {
           return { kind: 'failure', reason: 'unreachable', ...usage };

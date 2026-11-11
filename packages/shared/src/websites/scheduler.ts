@@ -107,7 +107,10 @@ export async function tickWebsiteSchedules(db: Db): Promise<void> {
           )
           .limit(1);
         if (!unfinished)
-          await scope.websites.updateRun(run.id, { status: 'completed', finishedAt: new Date() });
+          await scope.websites.updateRun(run.id, {
+            status: run.failureReason ? 'partial' : 'completed',
+            finishedAt: new Date(),
+          });
         else if (run.handoffAt.getTime() < Date.now() - 86_400_000)
           await scope.websites.updateRun(run.id, {
             status: 'partial',

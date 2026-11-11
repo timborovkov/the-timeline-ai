@@ -350,6 +350,7 @@ async function finalizeSourceEmbedding(input: {
   sourceId: string;
   model: string;
   chunkCount: number;
+  publishWebsiteVersion: boolean;
 }): Promise<void> {
   await input.client.deletePointsForSourceFromChunk({
     teamId: input.data.teamId,
@@ -359,7 +360,8 @@ async function finalizeSourceEmbedding(input: {
     minChunkIndex: input.chunkCount,
   });
 
-  if (input.scope === 'doc_chunk' && 'documentChunkId' in input.data)
+  // Shadow-collection rebuilds must not change readiness in the live retrieval index.
+  if (input.publishWebsiteVersion && input.scope === 'doc_chunk' && 'documentChunkId' in input.data)
     await completeWebsiteChunk(
       input.db,
       input.data.teamId,
@@ -487,6 +489,8 @@ export async function processEmbedJob(
       sourceId: plan.sourceId,
       model,
       chunkCount: chunks.length,
+      publishWebsiteVersion:
+        !data.targetCollection || data.targetCollection === env.QDRANT_COLLECTION,
     });
     return {
       skipped: true,
@@ -545,6 +549,8 @@ export async function processEmbedJob(
       sourceId: plan.sourceId,
       model,
       chunkCount: chunks.length,
+      publishWebsiteVersion:
+        !data.targetCollection || data.targetCollection === env.QDRANT_COLLECTION,
     });
   }
 

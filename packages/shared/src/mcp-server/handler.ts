@@ -2478,6 +2478,19 @@ export function createTimelineMcpServer(input: {
   if (principal.scopes.includes('read')) {
     for (const definition of TOOLS) {
       registerTimelineTool(server, definition, async (args) => {
+        if (definition.name === 'timeline.crawl' && !principal.scopes.includes('websites:scan')) {
+          const challenge = [
+            'Bearer error="insufficient_scope"',
+            'error_description="Grant the websites:scan scope to use timeline.crawl"',
+            'scope="read websites:scan"',
+            `resource_metadata="${timelineMcpResourceMetadataUrl(expectedResource)}"`,
+          ].join(', ');
+          return toolResult(
+            { ok: false, error: 'forbidden' },
+            true,
+            principal.authType === 'oauth' ? { 'mcp/www_authenticate': [challenge] } : undefined,
+          );
+        }
         const output = structuredOutput(
           await callTool(input.db, principal, definition.name, args, input.deps),
         );

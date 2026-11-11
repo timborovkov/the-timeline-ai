@@ -85,9 +85,34 @@ export function WebsiteManager({
     setWebsites(data.websites);
     setLoading(false);
     setError('');
-    if (selected && data.websites.some((website) => website.id === selected))
-      setRuns((await request<{ runs: Run[] }>(`/${selected}`)).runs);
-  }, [selected]);
+  }, []);
+  const selectedWebsiteExists = websites.some((website) => website.id === selected);
+  useEffect(() => {
+    if (!selected || !selectedWebsiteExists) return;
+    let active = true;
+    let inFlight = false;
+    const load = async () => {
+      if (inFlight) return;
+      inFlight = true;
+      try {
+        const data = await request<{ runs: Run[] }>(`/${selected}`);
+        if (active) setRuns(data.runs);
+      } catch {
+        if (active) setError('Could not refresh scan history. Try again.');
+      } finally {
+        inFlight = false;
+      }
+    };
+    void load();
+    const timer = setInterval(() => {
+      void load();
+    }, 10_000);
+    return () => {
+      active = false;
+      clearInterval(timer);
+    };
+  }, [selected, selectedWebsiteExists]);
+
   useEffect(() => {
     let active = true;
     const load = () => {
