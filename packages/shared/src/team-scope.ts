@@ -86,6 +86,16 @@ import {
   sourcePayloadRefFromMetadata,
 } from '#src/reconciliation/source-snapshot.js';
 import {
+  eventEvidenceDate,
+  rankingSummary,
+  balancedRanking,
+  compareEvidence,
+  evidenceRanking,
+  FRESHNESS_CANDIDATE_LIMIT,
+  type RankingInput,
+  type RankingMetadata,
+} from '#src/retrieval/ranking.js';
+import {
   createSuggestionAcceptanceUnitOfWork,
   type SuggestionAcceptanceTransaction,
 } from '#src/suggestions/acceptance-transaction.js';
@@ -262,7 +272,7 @@ export interface CreateEmailEventResult {
   deduplicated: boolean;
 }
 
-export interface SearchEventsInput {
+export interface SearchEventsInput extends RankingInput {
   operation?: QdrantOperationContext;
   query: string;
   /** Reuse a previously embedded query when scanning multiple semantic pages. */
@@ -311,6 +321,7 @@ export type {
 } from '#src/timeline/types.js';
 
 export interface SearchEventResult {
+  ranking?: RankingMetadata;
   eventId: string;
   factIds: string[];
   score: number;
@@ -911,6 +922,40 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
       accessibleEvents.map((event) => event.id),
     );
     return Object.fromEntries(clusterByEventId);
+  }
+
+  async function resolveEvidenceObjectIds(
+    rawEventIds: string[],
+  ): Promise<{ objectIds: string[]; truncated: boolean }> {
+    await ensureMember();
+    const result = await listEvidencePackArtifactClusters(rawEventIds.slice(0, 20), 200);
+    const clusterIds = Object.keys(result.clusters);
+    if (!clusterIds.length) return { objectIds: [], truncated: result.truncatedCandidateCount > 0 };
+    const rows = await db
+      .select({ id: artifactClusters.canonicalEntityId })
+      .from(artifactClusters)
+      .innerJoin(
+        entities,
+        and(
+          eq(entities.id, artifactClusters.canonicalEntityId),
+          eq(entities.teamId, teamId),
+          isNull(entities.mergedIntoId),
+        ),
+      )
+      .where(
+        and(
+          eq(artifactClusters.teamId, teamId),
+          inArray(artifactClusters.id, clusterIds),
+          isNull(artifactClusters.archivedAt),
+        ),
+      )
+      .groupBy(artifactClusters.canonicalEntityId)
+      .orderBy(asc(artifactClusters.canonicalEntityId))
+      .limit(6);
+    return {
+      objectIds: rows.flatMap((row) => (row.id ? [row.id] : [])),
+      truncated: result.truncatedCandidateCount > 0 || rawEventIds.length > 20 || rows.length > 5,
+    };
   }
 
   async function listEvidencePackArtifactClusters(
@@ -2334,6 +2379,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
       listArtifactClusters: listTimelineArtifactClusters,
 
       listEvidencePackArtifactClusters,
+      resolveEvidenceObjectIds,
 
       async rankEvidencePackSupportByStoredVectors(
         anchorRawEventIds: string[],
@@ -3071,6 +3117,8 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
 
       async searchEvents(input: SearchEventsInput): Promise<SearchEventResult[]> {
         await ensureMember();
+        const balanced = balancedRanking(input, input.eventIds !== undefined);
+        const rankingNow = input.rankingNow ?? new Date();
         const embedFn = deps.embed ?? defaultEmbed;
         const searchFn =
           deps.qdrantSearch ??
@@ -3089,11 +3137,11 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
 
         const searchOpts: SearchOpts = {
           operation: input.operation ?? {},
-          limit: input.limit ?? 20,
+          limit: balanced ? FRESHNESS_CANDIDATE_LIMIT : (input.limit ?? 20),
         };
         if (!input.from && !input.to && !input.eventIds)
           searchOpts.obsoleteWebsiteEventIds = await obsoleteWebsiteEventIds(db, teamId);
-        if (input.offset) searchOpts.offset = input.offset;
+        if (input.offset && !balanced) searchOpts.offset = input.offset;
         if (input.from) searchOpts.from = input.from;
         if (input.to) searchOpts.to = input.to;
         const sourceFilter = input.source ?? input.senderSource;
@@ -3109,13 +3157,19 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
           searchOpts.fileKinds = ['captured'];
         }
 
-        const { hits, usedSqlSenderFilter } = await searchSenderFilteredHits({
+        const { hits: candidateHits, usedSqlSenderFilter } = await searchSenderFilteredHits({
           searchInput: input,
           vector,
           searchOpts,
           searchFn,
         });
+        const hits = balanced
+          ? candidateHits
+              .sort((a, b) => b.score - a.score || a.id.localeCompare(b.id))
+              .slice(0, FRESHNESS_CANDIDATE_LIMIT)
+          : candidateHits;
         input.onCandidateCount?.(hits.length);
+        input.onRanking?.(rankingSummary(balanced, candidateHits.length));
 
         // Dedupe by event_id. Keep highest score; collect fact_ids; merge
         // entity_ids across event-level + fact-level points on the same event.
@@ -3302,10 +3356,19 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
             (meetingSnippet ? meetingSnippet.slice(0, 240) : '') ||
             (docSnippet ? docSnippet.slice(0, 240) : '') ||
             (ev.contentText ? ev.contentText.slice(0, 240) : '[audio event — no transcript]');
+          const evidenceDate = eventEvidenceDate(ev.source, ev.occurredAt, ev.sourceMetadata);
           results.push({
             eventId: ev.id,
             factIds: verifiedFactIds,
             score: row.score,
+            ranking: evidenceRanking(
+              row.score,
+              evidenceDate.date,
+              evidenceDate.basis,
+              rankingNow,
+              balanced,
+              balanced && hits.length >= FRESHNESS_CANDIDATE_LIMIT,
+            ),
             occurredAt: ev.occurredAt.toISOString(),
             source: ev.source,
             authorUserId: ev.authorUserId,
@@ -3316,7 +3379,16 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
             snippet,
             artifactCluster: clusterByEventId.get(ev.id) ?? null,
           });
-          if (results.length >= (input.limit ?? 20)) break;
+          if (!balanced && results.length >= (input.limit ?? 20)) break;
+        }
+        if (balanced) {
+          results.sort((a, b) =>
+            compareEvidence(
+              { ...a, id: a.eventId, ranking: a.ranking },
+              { ...b, id: b.eventId, ranking: b.ranking },
+            ),
+          );
+          return results.slice(input.offset ?? 0, (input.offset ?? 0) + (input.limit ?? 20));
         }
         return results;
       },

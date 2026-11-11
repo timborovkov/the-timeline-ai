@@ -31,6 +31,16 @@ import {
   sourcePayloadRefFromMetadata,
 } from '#src/reconciliation/source-snapshot.js';
 import { stableSha256Digest } from '#src/reconciliation/stable-digest.js';
+import {
+  eventEvidenceDate,
+  rankingSummary,
+  balancedRanking,
+  compareEvidence,
+  evidenceRanking,
+  FRESHNESS_CANDIDATE_LIMIT,
+  type RankingInput,
+  type RankingMetadata,
+} from '#src/retrieval/ranking.js';
 import { getDocumentsBucket, getS3Client } from '#src/s3/client.js';
 import { deleteObject } from '#src/s3/objects.js';
 import { rawEventVisibleToUser, validateVisibilityUserIds } from '#src/visibility.js';
@@ -234,7 +244,7 @@ export interface PromoteCapturedFileResult {
   reprocessVersionId: string | null;
 }
 
-export interface SearchDocumentChunksInput {
+export interface SearchDocumentChunksInput extends RankingInput {
   operation?: QdrantOperationContext;
   query: string;
   documentId?: string;
@@ -250,6 +260,8 @@ export interface SearchDocumentChunksInput {
 }
 
 export interface DocumentChunkSearchHit {
+  sourceEvidenceEventId?: string | null;
+  ranking?: RankingMetadata;
   documentId: string;
   documentVersionId: string;
   documentChunkId: string;
@@ -269,6 +281,7 @@ export interface DocumentChunkSearchHit {
 }
 
 export interface DocumentChunkSearchPage {
+  retrieval?: ReturnType<typeof rankingSummary>;
   items: DocumentChunkSearchHit[];
   nextOffset: number | null;
 }
@@ -912,6 +925,8 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
       return mergeRankedSearchHits(pages, take);
     }
 
+    const balanced = balancedRanking(input, Boolean(input.documentId));
+    const rankingNow = input.rankingNow ?? new Date();
     const limit = input.limit ?? 12;
     const offset = input.offset ?? 0;
     const namedIds = input.name ? await matchingDocumentIds(input) : null;
@@ -919,7 +934,7 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
     const { vector } = await withSearchEmbeddingBilling(() => embedFn({ text: input.query }));
     const searchOpts: SearchOpts = {
       operation: input.operation ?? {},
-      limit: offset + limit + 1,
+      limit: balanced ? FRESHNESS_CANDIDATE_LIMIT : offset + limit + 1,
       sourceKind: 'doc_chunk',
     };
     if (!input.from && !input.to && input.fileKinds?.includes('captured'))
@@ -938,14 +953,25 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
           vector,
           input.documentId ? { ...searchOpts, documentId: input.documentId } : searchOpts,
         );
-    if (hits.length === 0) return { items: [], nextOffset: null };
+    input.onRanking?.(rankingSummary(balanced, hits.length));
+    if (hits.length === 0)
+      return { items: [], nextOffset: null, retrieval: rankingSummary(balanced, 0) };
     const uncappedNextOffset = offset + limit;
-    const nextOffset =
+    let nextOffset =
       hits.length > uncappedNextOffset &&
       (input.maxOffset === undefined || uncappedNextOffset <= input.maxOffset)
         ? uncappedNextOffset
         : null;
-    const pageHits = hits.slice(offset, offset + limit);
+    const pageHits = balanced
+      ? [
+          ...new Map(
+            [...hits]
+              .filter((hit) => hit.payload.team_id === teamId)
+              .sort((a, b) => a.score - b.score)
+              .map((hit) => [hit.payload.document_chunk_id, hit]),
+          ).values(),
+        ]
+      : hits.slice(offset, offset + limit);
 
     const chunkIds = pageHits
       .map((h) => h.payload.document_chunk_id)
@@ -972,6 +998,9 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
         folderId: documents.folderId,
         sourceRawEventId: documentVersions.sourceEventId,
         createdAt: documentVersions.createdAt,
+        sourceOccurredAt: rawEvents.occurredAt,
+        sourceType: rawEvents.source,
+        sourceMetadata: rawEvents.sourceMetadata,
       })
       .from(documentChunks)
       .innerJoin(documents, eq(documents.id, documentChunks.documentId))
@@ -999,6 +1028,39 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
           input.to ? lt(documentVersions.createdAt, input.to) : undefined,
         ),
       );
+    const parentIdFor = (row: (typeof rows)[number]): string | null => {
+      const candidate =
+        stringMetadata(metadataRecord(row.sourceMetadata), 'parent_raw_event_id') ??
+        stringMetadata(metadataRecord(row.documentMetadata), 'parent_raw_event_id');
+      return candidate && UUID_RE.test(candidate) ? candidate : null;
+    };
+    const parentIds = [
+      ...new Set(
+        rows.flatMap((row) => {
+          const id = parentIdFor(row);
+          return id ? [id] : [];
+        }),
+      ),
+    ];
+    const parents = parentIds.length
+      ? await db
+          .select({
+            id: rawEvents.id,
+            source: rawEvents.source,
+            occurredAt: rawEvents.occurredAt,
+            metadata: rawEvents.sourceMetadata,
+          })
+          .from(rawEvents)
+          .where(
+            and(
+              inArray(rawEvents.id, parentIds),
+              eq(rawEvents.teamId, teamId),
+              rawEventVisibleToUser(userId),
+              activeRawEventFilter,
+            ),
+          )
+      : [];
+    const parentById = new Map(parents.map((parent) => [parent.id, parent]));
     const byId = new Map(rows.map((r) => [r.chunkId, r]));
 
     const items: DocumentChunkSearchHit[] = [];
@@ -1008,6 +1070,16 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
       if (!cid) continue;
       const row = byId.get(cid);
       if (!row) continue;
+      const parent = parentById.get(parentIdFor(row) ?? '');
+      const evidenceDate = parent
+        ? eventEvidenceDate(parent.source, parent.occurredAt, parent.metadata)
+        : row.sourceOccurredAt
+          ? eventEvidenceDate(
+              row.sourceType ?? 'document',
+              row.sourceOccurredAt,
+              row.sourceMetadata,
+            )
+          : { date: row.createdAt, basis: 'uploaded' as const };
       items.push({
         documentId: row.documentId,
         documentVersionId: row.documentVersionId,
@@ -1028,13 +1100,36 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
         documentName: row.documentName,
         folderId: row.folderId,
         sourceRawEventId: row.sourceRawEventId,
+        sourceEvidenceEventId: parent?.id ?? (row.sourceOccurredAt ? row.sourceRawEventId : null),
         createdAt: row.createdAt,
         score: hit.score,
+        ranking: evidenceRanking(
+          hit.score,
+          evidenceDate.date,
+          evidenceDate.basis,
+          rankingNow,
+          balanced,
+          balanced && hits.length >= FRESHNESS_CANDIDATE_LIMIT,
+        ),
       });
     }
 
+    if (balanced) {
+      items.sort((a, b) =>
+        compareEvidence(
+          { ...a, id: a.documentChunkId, ranking: a.ranking },
+          { ...b, id: b.documentChunkId, ranking: b.ranking },
+        ),
+      );
+      nextOffset =
+        items.length > offset + limit &&
+        (input.maxOffset === undefined || offset + limit <= input.maxOffset)
+          ? offset + limit
+          : null;
+    }
     return {
-      items,
+      retrieval: rankingSummary(balanced, hits.length),
+      items: balanced ? items.slice(offset, offset + limit) : items,
       nextOffset,
     };
   }
