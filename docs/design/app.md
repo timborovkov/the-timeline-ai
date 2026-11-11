@@ -265,8 +265,12 @@ logos always sit on a white padded rounded tile. Fragment links such as
 `/app/sources` (including hashes), `/app/team/integrations`, and
 `/app/team/telegram` redirect to the matching Connections route and sheet.
 
-Meetings keep the collection header and rows. Capture and saved-meeting setup
-forms sit in a closed disclosure so the list is the default view. The Saved tab
+Meetings keep the collection header and rows. One primary header action opens
+a focus-managed dialog: **Invite notetaker** on Captures, **Save a meeting** on
+Saved. Creation forms close on success and remain open on errors. Empty
+collections omit search/filter controls and redundant section headings; active
+filters always keep their controls and clear-filter recovery. The empty state
+explains the next step without duplicating the header action. The Saved tab
 lists saved meeting links only; captures stay on Captures. Saved meeting edit
 is one closed **Edit details** disclosure that opens the editor, never a nested
 second “Edit saved meeting” control. Join, archive, and skip are tooltiped icon

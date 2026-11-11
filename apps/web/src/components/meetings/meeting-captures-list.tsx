@@ -51,7 +51,6 @@ export function MeetingCapturesList({
   query,
   filter,
   hasActiveFilters,
-  tab,
   clearHref,
 }: {
   initialMeetings: MeetingCaptureItem[];
@@ -59,7 +58,6 @@ export function MeetingCapturesList({
   query: string;
   filter: CaptureFilter;
   hasActiveFilters: boolean;
-  tab: 'captures' | 'saved';
   clearHref: string;
 }) {
   const [extraMeetings, setExtraMeetings] = useState<MeetingCaptureItem[]>([]);
@@ -117,13 +115,7 @@ export function MeetingCapturesList({
     return (
       <div className="space-y-3">
         {countLabel ? <p className="text-xs tabular-nums text-fg-muted">{countLabel}</p> : null}
-        {
-          <MeetingCapturesEmptyState
-            hasActiveFilters={hasActiveFilters}
-            clearHref={clearHref}
-            tab={tab}
-          />
-        }
+        {<MeetingCapturesEmptyState hasActiveFilters={hasActiveFilters} clearHref={clearHref} />}
       </div>
     );
   }
@@ -187,11 +179,9 @@ export function MeetingCapturesList({
 function MeetingCapturesEmptyState({
   hasActiveFilters,
   clearHref,
-  tab,
 }: {
   hasActiveFilters: boolean;
   clearHref: string;
-  tab: string;
 }) {
   return (
     <EmptyState
@@ -202,10 +192,8 @@ function MeetingCapturesEmptyState({
           ? 'Try a different search or clear the filters to see every capture.'
           : 'Invite the notetaker for a meeting to capture its transcript and follow-up context here.'
       }
-      href={
-        hasActiveFilters ? clearHref : tab === 'captures' ? '#invite-notetaker' : '/app/meetings'
-      }
-      action={hasActiveFilters ? 'Clear filters' : 'Invite notetaker'}
+      href={hasActiveFilters ? clearHref : undefined}
+      action={hasActiveFilters ? 'Clear filters' : undefined}
     />
   );
 }
