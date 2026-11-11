@@ -282,6 +282,31 @@ describe('SourcesPageView', () => {
     expect(screen.getByText('Syncing for team')).toBeTruthy();
   });
 
+  it('places searchable website sources directly after email', async () => {
+    const user = userEvent.setup();
+    renderPage(
+      <SourcesPageView
+        params={{}}
+        active={{ teamName: 'Acme Labs' }}
+        isAdmin
+        summary={summary()}
+        model={model()}
+      />,
+    );
+    const website = screen.getByRole('link', { name: 'Websites' });
+    expect(website.getAttribute('href')).toBe('/app/connections/websites');
+    const rows = [...document.querySelectorAll('[data-slot="collection-row"]')];
+    const emailIndex = rows.findIndex((row) => row.textContent.includes('Email'));
+    expect(rows[emailIndex + 1]?.contains(website)).toBe(true);
+    expect(screen.queryByText('Website sources — add, scan, and schedule')).toBeNull();
+    await user.type(screen.getByLabelText('Search sources'), 'website');
+    expect(screen.getByRole('link', { name: 'Websites' })).toBeTruthy();
+    expect(screen.queryByText('Email', { exact: true })).toBeNull();
+    await user.clear(screen.getByLabelText('Search sources'));
+    await user.type(screen.getByLabelText('Search sources'), 'drive');
+    expect(screen.queryByRole('link', { name: 'Websites' })).toBeNull();
+  });
+
   it('writes Agent tools onto its own Connections route', async () => {
     window.history.replaceState({ next: true }, '', '/app/connections/sources');
     renderPage(

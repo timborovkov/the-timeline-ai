@@ -60,7 +60,7 @@ export default async function CalendarPage({ searchParams }: PageProps) {
         title="Calendar"
         subtitle="Track deadlines, meetings, and follow-ups."
       />
-      <WorkSubnav current="/app/calendar" />
+      <WorkSubnav current="/app/calendar" spacing="comfortable" />
 
       <CalendarView
         events={serialized}

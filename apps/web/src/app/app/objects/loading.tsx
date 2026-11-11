@@ -13,18 +13,19 @@ export default function ObjectsLoading() {
       </output>
       <div
         data-app-width="collection"
-        className="space-y-6 motion-reduce:[&_.animate-pulse]:animate-none"
+        data-app-layout="full-bleed"
+        className="-mx-4 -my-6 flex h-[calc(100dvh-3rem)] min-w-0 flex-col md:-mx-8 md:-my-8 motion-reduce:[&_.animate-pulse]:animate-none"
         aria-busy="true"
         aria-label="Loading objects"
       >
         <h1 className="sr-only">Objects</h1>
-        <div aria-hidden="true" inert>
+        <div aria-hidden="true" inert className="px-4 md:px-8">
           <PageHeaderSkeleton variant="collection" />
         </div>
-        <WorkSubnav current="/app/objects" />
+        <WorkSubnav current="/app/objects" className="px-4 md:px-8" />
         <div aria-hidden="true" inert className="space-y-0">
-          <CollectionToolbarSkeleton action />
-          <CollectionGroupSkeleton groups={2} rows={4} />
+          <CollectionToolbarSkeleton action secondaryAction />
+          <CollectionGroupSkeleton groups={2} rows={4} leading={false} />
         </div>
       </div>
     </>

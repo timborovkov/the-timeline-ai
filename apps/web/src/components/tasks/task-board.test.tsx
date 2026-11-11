@@ -10,7 +10,7 @@ const fakes = vi.hoisted(() => {
   const refresh = vi.fn();
   return {
     refresh,
-    router: { refresh },
+    router: { refresh, push: vi.fn() },
     createNoteAction: vi.fn(),
     deleteNoteAction: vi.fn(),
     updateNoteAction: vi.fn(),
@@ -327,6 +327,17 @@ async function clickLoadMore(
 describe('TaskBoard', () => {
   beforeEach(() => {
     cleanup();
+    vi.spyOn(window, 'matchMedia').mockImplementation(
+      (query) =>
+        ({
+          matches: true,
+          media: query,
+          onchange: null,
+          addEventListener: vi.fn(),
+          removeEventListener: vi.fn(),
+          dispatchEvent: vi.fn(() => true),
+        }) as unknown as MediaQueryList,
+    );
     vi.stubGlobal('IntersectionObserver', FakeIntersectionObserver);
     delete document.body.dataset.taskCategoriesEnabled;
     fakes.refresh.mockReset();
@@ -912,6 +923,29 @@ describe('TaskBoard', () => {
     expect(screen.getByRole('link', { name: 'Open object' }).getAttribute('href')).toBe(
       '/app/objects/task-1?returnTo=%2Fapp%2Ftasks%3Ftask%3Dtask-1',
     );
+  });
+
+  it('uses a dismissible focus-managed preview sheet on narrow screens', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(window, 'matchMedia').mockImplementation(
+      (query) =>
+        ({
+          matches: false,
+          media: query,
+          onchange: null,
+          addEventListener: vi.fn(),
+          removeEventListener: vi.fn(),
+          dispatchEvent: vi.fn(() => true),
+        }) as unknown as MediaQueryList,
+    );
+    renderBoard('task-1');
+    expect(screen.getByRole('dialog')).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Open object' })).toBeTruthy();
+    await waitFor(() => {
+      expect(screen.getByRole('dialog').contains(document.activeElement)).toBe(true);
+    });
+    await user.keyboard('{Escape}');
+    expect(fakes.router.push).toHaveBeenCalledWith('/app/tasks', { scroll: false });
   });
 
   it('edits task assignee, due date, priority, and status from the panel', async () => {

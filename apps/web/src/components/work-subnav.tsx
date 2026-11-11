@@ -13,9 +13,24 @@ const WORK_LINKS = [
   { label: 'Approvals', href: '/app/approvals' },
 ] as const;
 
-export function WorkSubnav({ current, className }: { current: string; className?: string }) {
+export function WorkSubnav({
+  current,
+  className,
+  spacing = 'flush',
+}: {
+  current: string;
+  className?: string;
+  spacing?: 'flush' | 'comfortable';
+}) {
   return (
-    <div data-slot="collection-tabs" className="min-w-0 shrink-0">
+    <div
+      data-slot="collection-tabs"
+      className={cn(
+        'min-w-0 shrink-0',
+        spacing === 'flush' && !current.includes('/new') && !current.includes('/merge') && 'mb-0!',
+        spacing === 'comfortable' && 'mb-6!',
+      )}
+    >
       <nav aria-label="Work" className={cn('overflow-x-auto border-b border-border', className)}>
         <div className="flex min-w-max gap-1">
           {WORK_LINKS.map((item) => {

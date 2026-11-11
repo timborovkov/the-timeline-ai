@@ -1,7 +1,7 @@
 'use client';
 
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { useEffect, useRef, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 
 import { getAppMainScrollElement } from '@/lib/app-scroll';
 import { useCommittedRef } from '@/lib/use-committed-ref';
@@ -15,6 +15,7 @@ interface VirtualListProps<T> {
   overscan?: number;
   gap?: number;
   getScrollElement?: () => HTMLElement | null;
+  offsetWithinScrollElement?: boolean;
   className?: string;
   itemClassName?: string;
   ariaLabel?: string;
@@ -30,6 +31,7 @@ export function VirtualList<T>({
   overscan = 8,
   gap = 0,
   getScrollElement,
+  offsetWithinScrollElement = false,
   className,
   itemClassName,
   ariaLabel,
@@ -37,13 +39,46 @@ export function VirtualList<T>({
   onEndReached,
 }: VirtualListProps<T>) {
   const fallbackParentRef = useRef<HTMLDivElement | null>(null);
+  const [scrollMargin, setScrollMargin] = useState(0);
+  useLayoutEffect(() => {
+    if (!offsetWithinScrollElement) return;
+    const list = fallbackParentRef.current;
+    const scrollElement = getScrollElement?.() ?? null;
+    if (!list || !scrollElement) return;
+    const measureOffset = () => {
+      setScrollMargin(
+        list.getBoundingClientRect().top -
+          scrollElement.getBoundingClientRect().top +
+          scrollElement.scrollTop -
+          scrollElement.clientTop,
+      );
+    };
+    const observer = new ResizeObserver(measureOffset);
+    // Changes in preceding groups or dialog controls move this list without
+    // resizing the scrollport. Observe their layout boxes as well.
+    for (let ancestor: Element | null = list; ancestor; ancestor = ancestor.parentElement) {
+      observer.observe(ancestor);
+      if (ancestor.parentElement) {
+        for (const sibling of ancestor.parentElement.children) observer.observe(sibling);
+      }
+      if (ancestor === scrollElement) break;
+    }
+    measureOffset();
+    return () => {
+      observer.disconnect();
+    };
+  }, [getScrollElement, offsetWithinScrollElement]);
   const onEndReachedRef = useCommittedRef(onEndReached);
   const requestedCountRef = useRef(0);
 
   const virtualizer = useVirtualizer({
     count: items.length,
+    scrollMargin: offsetWithinScrollElement ? scrollMargin : 0,
     getScrollElement: () => {
-      if (getScrollElement) return getScrollElement() ?? fallbackParentRef.current;
+      if (getScrollElement) {
+        const element = getScrollElement();
+        return element ?? (offsetWithinScrollElement ? null : fallbackParentRef.current);
+      }
       return getAppMainScrollElement() ?? fallbackParentRef.current;
     },
     estimateSize: (index) => {
@@ -96,7 +131,9 @@ export function VirtualList<T>({
               data-index={virtualRow.index}
               ref={virtualizer.measureElement}
               className={cn('absolute top-0 left-0 w-full', itemClassName)}
-              style={{ transform: `translateY(${String(virtualRow.start)}px)` }}
+              style={{
+                transform: `translateY(${String(virtualRow.start - (offsetWithinScrollElement ? scrollMargin : 0))}px)`,
+              }}
             >
               {/* Virtualizer windows rows through a callback; the item component
                   owns its own state. */}
