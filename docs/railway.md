@@ -50,6 +50,8 @@ This repository does not change the Railway project. After merging, an operator 
 
 ## Environment variables
 
+Website scanning requires `FIRECRAWL_API_KEY` on web and full worker services, but not the document-extract-only service. See the [scan lifecycle](relational-memory.md#website-scans).
+
 Shared variables for `web` and `worker` (not the credential-thin `document-extract-orchestrator` service). Railway's service-to-service references (`${{ Postgres.DATABASE_URL }}`) keep things DRY.
 
     DATABASE_URL=${{ Postgres.DATABASE_URL }}
@@ -347,5 +349,3 @@ If first-request recovery fails or exceeds the budget, disable Serverless and re
 ### Qdrant memory
 
 Use on-disk vectors/payloads with the configured quantization and monitor cache growth. Preserve snapshots and rollback coverage during collection migration. Follow [vector maintenance](runbooks/reindex.md).
-
-Website scanning requires `FIRECRAWL_API_KEY` on both web and worker services. Firecrawl is the public-page crawl provider.
