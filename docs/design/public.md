@@ -22,11 +22,11 @@ Its signature example project, Acme rollout, shows five cited work sources
 converging into one work record, with a linked Telegram group as the first source.
 Captured work settles onto a chronological rail, connects to project, person,
 task, and calendar context, and resolves into an answer with tangible source
-links. The cited-answer source list is always visible beside the example answer, with
-a static header rather than an outer disclosure. Individual evidence cards keep “Inspect example source” as a native
-`<details>` disclosure aligned to the padded titles: a custom chevron beside the
-summary, padded expanded text, and the landing lime `:focus-visible` ring around
-the summary rather than an unstyled full-width browser outline. Homepage screenshots use the real captures with theme-matched variants.
+links. The cited-answer source list stays visible beside the answer. Numbered citations
+and source rows open the matching source in a native modal preview, without hash
+navigation or scrolling to another section. Escape or Close source dismisses it
+and restores focus to the trigger. Source rows are compact and have no nested
+inspect disclosures. Homepage screenshots use the real captures with theme-matched variants.
 Mobile retains the complete landscape frame rather than cropping out source
 inspectors. Screenshots are display-only: no links, zoom actions, or instructions
 to click them. Each frame reserves its aspect box and shows a loading label until

@@ -1,9 +1,6 @@
-import { readFileSync } from 'node:fs';
-
 import { expect } from '@timeline/test-support';
 import { afterEach, describe, it } from 'bun:test';
 
-import styles from '@/app/(landing)/home.module.css';
 // Test environment: happy-dom
 
 const { cleanup, render, screen } = await import('@testing-library/react');
@@ -14,15 +11,6 @@ const { resetPublicSessionCache, setPublicSessionCache } = await import('@/lib/p
 const { getSiteUrl } = await import('@/lib/site-url');
 const { PUBLIC_DEMO_STORY } = await import('@/components/marketing/public-demo-story');
 const { default: LandingPage, metadata } = await import('@/app/(landing)/page');
-
-const HOME_STYLESHEET = readFileSync(new URL('./home.module.css', import.meta.url), 'utf8');
-const LEDGER_INSPECT_CLASS = requiredClassName(styles.ledgerInspect, 'ledgerInspect');
-const LEDGER_INSPECT_BODY_CLASS = requiredClassName(styles.ledgerInspectBody, 'ledgerInspectBody');
-
-function requiredClassName(value: string | undefined, name: string): string {
-  if (!value) throw new Error(`The home stylesheet is missing ${name}`);
-  return value;
-}
 
 describe('LandingPage', () => {
   afterEach(() => {
@@ -76,7 +64,7 @@ describe('LandingPage', () => {
     expect(html).not.toContain('How scattered work becomes useful context.');
     expect(html).not.toContain('Connected, not used in this answer');
     expect(html).not.toContain('Sentry is connected, but unused in this answer.');
-    expect(html).toContain('Every claim inspectable');
+    expect(html).toContain('Select a reference to read its source.');
     expect(html).not.toContain('5 of 6 sources used');
     expect(html).toContain('Telegram');
     expect(html).toContain('Linear');
@@ -109,9 +97,9 @@ describe('LandingPage', () => {
     expect(html).toContain('data-chat-to-answer');
     expect(html).toContain('aria-label="Public navigation menu"');
     expect(html).toContain('SSO blocks launch. Friday’s customer update is still due.');
-    expect(html).toContain('The original messages, with links');
+    expect(html).toContain('Sources behind this answer');
     expect(html).not.toContain('Evidence behind this answer');
-    expect(html).toContain('href="#acme-source-01"');
+    expect(html).not.toContain('href="#acme-source-01"');
     expect(html).toContain('Source 01: Telegram group message');
     expect(html).toContain('Built for teams that run their work through <em>chat.</em>');
     expect(html).toContain('href="/use-cases/work-record"');
@@ -332,89 +320,18 @@ describe('LandingPage', () => {
     expect(skipLink.className).toContain('focus:z-[90]');
   });
 
-  it('keeps cited-answer evidence inspect disclosures padded, keyboard-togglable, and lime-focused', async () => {
-    expect(HOME_STYLESHEET).toMatch(/\.ledgerInspect\s*\{[^}]*padding:\s*0 1rem 0\.85rem;/s);
-    expect(HOME_STYLESHEET).toMatch(
-      /\.ledgerInspect summary\s*\{[^}]*width:\s*fit-content;[^}]*list-style:\s*none;/s,
-    );
-    expect(HOME_STYLESHEET).toContain('.ledgerInspect summary::-webkit-details-marker');
-    expect(HOME_STYLESHEET).toContain('.ledgerInspect summary::marker');
-    expect(HOME_STYLESHEET).toContain('display: none');
-    expect(HOME_STYLESHEET).toContain('content: none');
-    expect(HOME_STYLESHEET).toMatch(
-      /\.ledgerInspect summary::before\s*\{[^}]*transform:\s*rotate\(-45deg\);/s,
-    );
-    expect(HOME_STYLESHEET).toMatch(
-      /\.ledgerInspect\[open\]\s*>\s*summary::before\s*\{[^}]*transform:\s*rotate\(45deg\);/s,
-    );
-    expect(HOME_STYLESHEET).toContain('.ledgerInspect summary:focus-visible');
-    expect(HOME_STYLESHEET).toContain('outline: 2px solid var(--home-signal)');
-    expect(HOME_STYLESHEET).toMatch(/\.ledgerInspectBody\s*\{[^}]*margin-top:\s*0\.55rem;/s);
-    expect(HOME_STYLESHEET).not.toMatch(/\.ledgerInspect summary:focus\s*\{[^}]*outline:\s*none;/s);
-
+  it('opens the matching source locally instead of navigating to the earlier timeline', async () => {
     const user = userEvent.setup();
     const { container } = render(<LandingPage />);
-    const citedAnswer = container.querySelector('[data-scene="04-ask"]');
-    const disclosures = [
-      ...container.querySelectorAll<HTMLDetailsElement>(`.${LEDGER_INSPECT_CLASS}`),
-    ];
-    const acmeEvents = PUBLIC_DEMO_STORY.landing.events;
-
-    expect(citedAnswer).toBeTruthy();
-    expect(citedAnswer?.querySelectorAll(`.${LEDGER_INSPECT_CLASS}`)).toHaveLength(
-      acmeEvents.length,
-    );
-    expect(citedAnswer?.querySelector('[data-home-proof="32-ask-handoff-dark.png"]')).toBeTruthy();
-    expect(disclosures).toHaveLength(acmeEvents.length);
-    const ledger = screen.getByRole('complementary', { name: 'The original messages, with links' });
-    expect(ledger.tagName).toBe('ASIDE');
-    expect(ledger.querySelector(':scope > summary')).toBeNull();
-    expect(ledger.querySelectorAll(':scope > ol > li')).toHaveLength(acmeEvents.length);
-    expect(screen.getAllByText('Inspect example source')).toHaveLength(acmeEvents.length);
-
-    for (const [index, disclosure] of disclosures.entries()) {
-      const event = acmeEvents[index];
-      expect(disclosure.open).toBe(false);
-      expect(disclosure.querySelector('summary')?.tagName).toBe('SUMMARY');
-      expect(disclosure.querySelector(`.${LEDGER_INSPECT_BODY_CLASS}`)?.textContent).toContain(
-        event?.detail ?? '',
-      );
-      expect(disclosure.textContent).not.toContain('Fictional Acme example, not customer data.');
-      expect(disclosure.previousElementSibling?.getAttribute('href')).toBe(
-        `#acme-source-${event?.id}`,
-      );
+    const block = container.querySelector('[data-scene="04-ask"]');
+    expect(block?.querySelector('a[href^="#acme-source-"]')).toBeNull();
+    expect(block?.querySelector('details')).toBeNull();
+    for (const event of PUBLIC_DEMO_STORY.landing.events) {
+      const trigger = screen.getByRole('button', { name: new RegExp(`Source ${event.id}:`) });
+      await user.click(trigger);
+      const dialog = screen.getByRole('dialog', { name: event.title });
+      expect(dialog.textContent).toContain(event.detail);
+      (dialog as HTMLDialogElement).close();
     }
-
-    const firstSummary = disclosures[0]?.querySelector('summary');
-    expect(firstSummary).toBeTruthy();
-    if (!firstSummary || !disclosures[0]) {
-      throw new Error('Expected the first evidence inspect disclosure');
-    }
-
-    await user.click(firstSummary);
-    expect(disclosures[0].open).toBe(true);
-    expect(disclosures[0].textContent).toContain(acmeEvents[0].detail);
-    expect(disclosures[1]?.open).toBe(false);
-
-    firstSummary.focus();
-    expect(document.activeElement).toBe(firstSummary);
-    await user.click(firstSummary);
-    expect(disclosures[0].open).toBe(false);
-
-    const secondSummary = disclosures[1]?.querySelector('summary');
-    expect(secondSummary).toBeTruthy();
-    if (!secondSummary || !disclosures[1]) {
-      throw new Error('Expected the second evidence inspect disclosure');
-    }
-
-    secondSummary.focus();
-    expect(document.activeElement).toBe(secondSummary);
-    await user.click(secondSummary);
-    expect(disclosures[1].open).toBe(true);
-    expect(disclosures[0].open).toBe(false);
-    expect(container.querySelector('a[href="#acme-source-01"]')).toBeTruthy();
-    expect(
-      screen.getByRole('link', { name: /Source 01: Telegram group message/u }).getAttribute('href'),
-    ).toBe('#acme-source-01');
   });
 });
