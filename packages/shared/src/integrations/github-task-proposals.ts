@@ -718,6 +718,11 @@ async function proposeCompletedGithubTask(
           aliases: work.aliases,
           parentObjectId: project.id,
           projectName: project.name,
+          metadata: {
+            integration_provider: work.provider,
+            integration_external_id: work.externalId,
+            repository: work.github.repo,
+          },
           ...(assigneeUserId ? { assigneeUserId } : {}),
         },
       },

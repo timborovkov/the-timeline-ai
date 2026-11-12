@@ -3442,6 +3442,83 @@ describe('processSuggestionJobForTests', () => {
     ).toHaveLength(2);
   });
 
+  it('accepts scoped projects with names longer than the alias limit', async () => {
+    const longName = 'Client Portal '.repeat(12).trim();
+    const scope = withTeam(db as never, TEAM_ID, OWNER_ID);
+    const firstCompany = await scope.objects.createObject({
+      actor: { kind: 'user', userId: OWNER_ID },
+      type: 'company',
+      canonicalName: 'Northstar Audit',
+    });
+    const secondCompany = await scope.objects.createObject({
+      actor: { kind: 'user', userId: OWNER_ID },
+      type: 'company',
+      canonicalName: 'Southstar Audit',
+    });
+    const existing = await scope.objects.createObject({
+      actor: { kind: 'user', userId: OWNER_ID },
+      type: 'project',
+      canonicalName: longName,
+      metadata: { companyId: firstCompany.id },
+    });
+    const rawEventId = crypto.randomUUID();
+    await seedRawEvent(db as never, {
+      id: rawEventId,
+      text: `Create a new ${longName} project for Southstar Audit. It has separate deliverables from the ${longName} for Northstar Audit.`,
+      sourceMetadata: {
+        extracted_at: REFERENCE_DATE.toISOString(),
+        extraction_model_version: 'fixture',
+      },
+    });
+    const chat = vi.fn().mockResolvedValue({
+      model: MODEL_ID,
+      object: {
+        bundles: [
+          {
+            title: 'Track Southstar portal',
+            confidence: 'high',
+            items: [
+              {
+                operation: 'create',
+                targetKind: 'object',
+                title: longName,
+                proposedPayload: {
+                  type: 'project',
+                  canonicalName: longName,
+                  metadata: { companyId: secondCompany.id },
+                },
+              },
+            ],
+          },
+        ],
+      },
+    });
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { teamId: TEAM_ID, rawEventId },
+      { getEnv: env, chatStructured: chat, modelId: MODEL_ID },
+    );
+    const proposals = await db.select().from(agentSuggestionItems);
+    const project = proposals.find(
+      (item) => item.targetKind === 'object' && item.operation === 'create',
+    );
+    expect(project?.proposedPayload).toMatchObject({
+      canonicalName: `${longName} (Southstar Audit)`,
+      aliases: [],
+      metadata: { companyId: secondCompany.id },
+    });
+    if (!project) throw new Error('missing project proposal');
+    expect(await scope.suggestions.acceptSuggestionItem(project.id)).toBe(true);
+    const objects = await scope.objects.listObjects();
+    expect(objects.filter((object) => object.type === 'project')).toHaveLength(2);
+    expect(objects.find((object) => object.id === existing.id)?.canonicalName).toBe(longName);
+    const created = objects.find(
+      (object) => object.canonicalName === `${longName} (Southstar Audit)`,
+    );
+    expect(created?.id).not.toBe(existing.id);
+    expect(created?.metadata).toMatchObject({ companyId: secondCompany.id });
+  });
+
   it('accepts a distinct same-name project with an evidenced company qualifier', async () => {
     const scope = withTeam(db as never, TEAM_ID, OWNER_ID);
     const firstCompany = await scope.objects.createObject({

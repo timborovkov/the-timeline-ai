@@ -2513,7 +2513,9 @@ function normalizeBundleAgainstExistingObjects(
                 canonicalName: scopedName,
                 aliases: [
                   ...new Set([...aliasesForRow({ aliases: item.proposedPayload.aliases }), name]),
-                ],
+                ]
+                  .filter((alias) => alias.length <= 120)
+                  .slice(0, 50),
               },
             };
           }

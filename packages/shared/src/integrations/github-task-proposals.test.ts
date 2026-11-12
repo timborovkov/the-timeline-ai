@@ -536,6 +536,67 @@ describe('GitHub task proposal persistence', () => {
     expect((await db.select().from(entities)).filter((row) => row.type === 'task')).toHaveLength(2);
   });
 
+  it('preserves distinct same-title PR approvals within one repository project', async () => {
+    const repo = 'alpha';
+    await db.insert(entities).values({
+      teamId: TEAM_ID,
+      type: 'project',
+      canonicalName: repo,
+      aliases: [`example/${repo}`],
+      status: 'active',
+    });
+    for (const number of [42, 43]) {
+      const [event] = await db
+        .insert(rawEvents)
+        .values({
+          teamId: TEAM_ID,
+          authorUserId: USER_ID,
+          source: 'integration',
+          visibility: 'team',
+          occurredAt: new Date(),
+          contentText: 'Merged: Improve navigation',
+          sourceMetadata: {
+            provider: 'github',
+            signal_class: 'captured_work',
+            event_type: 'pr.merged',
+            external_object_id: `example/${repo}#${number}`,
+            github: {
+              type: 'pull_request',
+              repo: `example/${repo}`,
+              number,
+              merged_at: new Date().toISOString(),
+              state: 'closed',
+            },
+            object_map: {
+              type: 'task',
+              canonicalName: 'Improve navigation',
+              externalId: `example/${repo}#${number}`,
+              status: 'done',
+            },
+          },
+        })
+        .returning();
+      if (!event) throw new Error('missing event');
+      await proposeGithubTaskUpdatesFromRawEvent({
+        db: db as never,
+        teamId: TEAM_ID,
+        rawEvent: event,
+      });
+    }
+    const items = await db.select().from(agentSuggestionItems);
+    expect(items).toHaveLength(2);
+    expect(items.every((item) => item.status === 'pending')).toBe(true);
+    expect(
+      new Set(items.map((item) => (item.proposedPayload as Record<string, unknown>).canonicalName))
+        .size,
+    ).toBe(2);
+    for (const item of items)
+      expect(
+        await withTeam(db as never, TEAM_ID, USER_ID).suggestions.acceptSuggestionItem(item.id),
+      ).toBe(true);
+    expect((await db.select().from(entities)).filter((row) => row.type === 'task')).toHaveLength(2);
+  });
+
   it('proposes a completed task under the uniquely named repository project', async () => {
     const [project] = await db
       .insert(entities)
