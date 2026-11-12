@@ -333,8 +333,8 @@ describe('buildAgentTools — team isolation', () => {
       {
         userId: '11111111-1111-4111-8111-111111111111',
         role: 'member',
-        name: 'Mikael Rintala',
-        email: 'mikael@example.test',
+        name: 'Cameron Vale',
+        email: 'cameron@example.test',
         createdAt: new Date('2026-01-01T00:00:00.000Z'),
       },
     ]);
@@ -353,8 +353,8 @@ describe('buildAgentTools — team isolation', () => {
         {
           user_id: '11111111-1111-4111-8111-111111111111',
           role: 'member',
-          name: 'Mikael Rintala',
-          email: 'mikael@example.test',
+          name: 'Cameron Vale',
+          email: 'cameron@example.test',
         },
       ],
     });
@@ -1934,8 +1934,8 @@ describe('buildAgentTools — team isolation', () => {
         sourceMetadata: {
           tg_chat_id: 'chat-a',
           tg_chat_title: 'AuditAI',
-          tg_sender_name: 'Miku',
-          tg_username: 'miku',
+          tg_sender_name: 'Casey',
+          tg_username: 'casey',
         },
       },
     ]);
@@ -1965,15 +1965,15 @@ describe('buildAgentTools — team isolation', () => {
           {
             sender: {
               source: 'telegram',
-              displayName: 'Miku',
-              handle: '@miku',
+              displayName: 'Casey',
+              handle: '@casey',
               externalId: null,
               provider: 'telegram',
             },
             resolvedSenderObject: {
               id: '00000000-0000-4000-8000-0000000000bb',
-              canonicalName: 'Mikael',
-              aliases: ['Miku'],
+              canonicalName: 'Cameron',
+              aliases: ['Casey'],
               linkedUserId: null,
             },
             senderResolutionStatus: 'resolved',
@@ -2019,8 +2019,8 @@ describe('buildAgentTools — team isolation', () => {
     expect(result.moment.anchor_id).toMatch(/^tm-moment_3Atelegram_3Achat-a/);
     expect(result.moment.evidence[0]).toMatchObject({
       event_id: eventB,
-      sender: { displayName: 'Miku', handle: '@miku' },
-      resolved_sender_object: { canonicalName: 'Mikael' },
+      sender: { displayName: 'Casey', handle: '@casey' },
+      resolved_sender_object: { canonicalName: 'Cameron' },
       sender_resolution_status: 'resolved',
     });
     expect(result.moment.evidence[0]?.snippet).toContain('oon italiassa 9.8.-14.8.');
@@ -2165,7 +2165,7 @@ describe('buildAgentTools — team isolation', () => {
         sourceMetadata: {
           thread_root_id: 'thread-a',
           subject: 'Contract review',
-          from: 'tim@example.test',
+          from: 'taylor@example.test',
         },
       },
     ]);
@@ -2333,8 +2333,8 @@ describe('buildAgentTools — team isolation', () => {
         id: 'suggestion-1',
         source: 'chat',
         status: 'pending',
-        title: 'Remember Mikael Telegram identity',
-        summary: 'Miku is @mikaelrintala',
+        title: 'Remember Cameron Telegram identity',
+        summary: 'Casey is @cameronvale',
         reason: 'User said so',
         confidence: 'high',
         visibility: 'team',
@@ -2346,12 +2346,12 @@ describe('buildAgentTools — team isolation', () => {
           {
             id: 'evidence-1',
             rawEventId: TEAM_B_EVENT_ID,
-            quote: 'Miku is Mikael',
+            quote: 'Casey is Cameron',
             occurredAt: new Date('2026-06-02T11:59:00Z'),
             source: 'telegram',
-            senderName: 'Mikael',
-            senderHandle: '@miku',
-            senderTimelineName: 'Mikael Rintala',
+            senderName: 'Cameron',
+            senderHandle: '@casey',
+            senderTimelineName: 'Cameron Vale',
             conversationName: 'AuditAI founders',
           },
         ],
@@ -2368,7 +2368,7 @@ describe('buildAgentTools — team isolation', () => {
             proposedPayload: {
               entityId: TEAM_B_ENTITY_ID,
               kind: 'telegram',
-              value: '@mikaelrintala',
+              value: '@cameronvale',
             },
             failureReason: null,
           },
@@ -2384,7 +2384,7 @@ describe('buildAgentTools — team isolation', () => {
             proposedPayload: {
               entityId: TEAM_B_ENTITY_ID,
               kind: 'telegram',
-              value: '@mikael-secondary',
+              value: '@cameron-secondary',
             },
             failureReason: null,
           },
@@ -2429,9 +2429,9 @@ describe('buildAgentTools — team isolation', () => {
           evidence: [
             {
               raw_event_id: TEAM_B_EVENT_ID,
-              sender_name: 'Mikael',
-              sender_handle: '@miku',
-              sender_timeline_name: 'Mikael Rintala',
+              sender_name: 'Cameron',
+              sender_handle: '@casey',
+              sender_timeline_name: 'Cameron Vale',
               conversation_name: 'AuditAI founders',
             },
           ],
@@ -2440,14 +2440,14 @@ describe('buildAgentTools — team isolation', () => {
               item_id: 'item-1',
               target_kind: 'identity_facet',
               proposed_payload: {
-                value: '@mikaelrintala',
+                value: '@cameronvale',
               },
             },
             {
               item_id: 'item-2',
               target_kind: 'identity_facet',
               proposed_payload: {
-                value: '@mikael-secondary',
+                value: '@cameron-secondary',
               },
             },
           ],
@@ -2488,7 +2488,7 @@ describe('buildAgentTools — team isolation', () => {
       exec(
         {
           itemId: '11111111-1111-4111-8111-111111111111',
-          feedback: 'Miku made this promise, not Tim.',
+          feedback: 'Casey made this promise, not Taylor.',
         },
         {},
       ),
@@ -2500,7 +2500,7 @@ describe('buildAgentTools — team isolation', () => {
     });
     expect(scope.suggestions.reviseSuggestionItem).toHaveBeenCalledWith({
       itemId: '11111111-1111-4111-8111-111111111111',
-      feedback: 'Miku made this promise, not Tim.',
+      feedback: 'Casey made this promise, not Taylor.',
     });
     expect(onApprovalDecision).toHaveBeenCalledWith({
       decision: 'revised',
@@ -2523,7 +2523,7 @@ describe('buildAgentTools — team isolation', () => {
       exec(
         {
           itemId: '11111111-1111-4111-8111-111111111111',
-          feedback: 'Miku made this promise, not Tim.',
+          feedback: 'Casey made this promise, not Taylor.',
         },
         {},
       ),
@@ -2603,15 +2603,15 @@ describe('buildAgentTools — team isolation', () => {
 
     const result = await exec(
       {
-        title: 'Remember Mikael Telegram identity',
-        reason: 'User said Miku is @mikaelrintala',
+        title: 'Remember Cameron Telegram identity',
+        reason: 'User said Casey is @cameronvale',
         confidence: 'high',
         items: [
           {
             kind: 'add_identity_facet',
             entityId: TEAM_B_ENTITY_ID,
             facetKind: 'telegram',
-            value: '@mikaelrintala',
+            value: '@cameronvale',
           },
         ],
       },
@@ -2635,7 +2635,7 @@ describe('buildAgentTools — team isolation', () => {
       proposedPayload: {
         entityId: TEAM_B_ENTITY_ID,
         kind: 'telegram',
-        value: '@mikaelrintala',
+        value: '@cameronvale',
       },
     });
   });
@@ -2656,7 +2656,7 @@ describe('buildAgentTools — team isolation', () => {
           {
             kind: 'create_object',
             type: 'follow_up',
-            canonicalName: 'Call Mikael back',
+            canonicalName: 'Call Cameron back',
           },
         ],
       },
@@ -2673,7 +2673,7 @@ describe('buildAgentTools — team isolation', () => {
       targetKind: 'object',
       proposedPayload: {
         type: 'follow_up',
-        canonicalName: 'Call Mikael back',
+        canonicalName: 'Call Cameron back',
       },
     });
   });
@@ -3023,7 +3023,7 @@ describe('buildAgentTools — team isolation', () => {
         items: [
           {
             kind: 'add_relationship',
-            fromName: 'Mikael Rintala',
+            fromName: 'Cameron Vale',
             toName: 'AuditAI',
             relationshipKind: 'related',
           },
@@ -3043,7 +3043,7 @@ describe('buildAgentTools — team isolation', () => {
       targetKind: 'object_relationship',
       targetId: null,
       proposedPayload: {
-        fromName: 'Mikael Rintala',
+        fromName: 'Cameron Vale',
         toName: 'AuditAI',
         kind: 'related',
       },

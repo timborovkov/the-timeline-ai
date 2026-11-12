@@ -699,7 +699,7 @@ describe('withTeam timeline semantic search', () => {
         (id, team_id, author_user_id, visibility_owner_user_id, source, content_text, occurred_at, visibility, visibility_user_ids, source_metadata)
       VALUES
         ('${CHAT_EVENT_A}', '${TEAM_A}', '${OWNER}', '${OWNER}', 'telegram', 'Can we meet at 16:20 to review the launch checklist?', '2026-06-27T18:00:00Z', 'team', NULL, '{"tg_chat_id":"chat-a","tg_sender_name":"Ada"}'::jsonb),
-        ('${CHAT_EVENT_B}', '${TEAM_A}', '${OWNER}', '${OWNER}', 'telegram', '16:20 works for me.', '2026-06-27T18:01:00Z', 'team', NULL, '{"tg_chat_id":"chat-a","tg_sender_name":"Tim"}'::jsonb),
+        ('${CHAT_EVENT_B}', '${TEAM_A}', '${OWNER}', '${OWNER}', 'telegram', '16:20 works for me.', '2026-06-27T18:01:00Z', 'team', NULL, '{"tg_chat_id":"chat-a","tg_sender_name":"Taylor"}'::jsonb),
         ('${CHAT_EVENT_C}', '${TEAM_A}', '${OWNER}', '${OWNER}', 'telegram', 'Booked. Use the daily call link.', '2026-06-27T18:02:00Z', 'team', NULL, '{"tg_chat_id":"chat-a","tg_sender_name":"Ada"}'::jsonb);
     `);
     const scope = scopeFor(OWNER);

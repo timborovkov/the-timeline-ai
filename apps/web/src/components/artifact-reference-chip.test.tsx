@@ -27,7 +27,7 @@ describe('ArtifactReferenceChip', () => {
               ref: { kind: 'timeline_event', id: EVENT_ID },
               title: 'Meeting event',
               subtitle: 'Jul 17, 2026, 8:01 AM',
-              body: '[0s] Mikael: Next up.',
+              body: '[0s] Cameron: Next up.',
               badges: ['Meeting'],
               href: `/app/meetings/${MEETING_ID}`,
               actions: [

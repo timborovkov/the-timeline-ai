@@ -112,7 +112,7 @@ describe('connection directory helpers', () => {
           {
             id: 'conn-1',
             provider: 'github',
-            displayName: 'GitHub — Tim',
+            displayName: 'GitHub — Taylor',
             lastError: null,
             lastConnectedAt: '2026-06-01T00:00:00.000Z',
           },

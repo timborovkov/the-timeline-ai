@@ -550,14 +550,14 @@ describe('GET /api/timeline', () => {
         source: 'telegram',
         contentText: 'First focused message',
         occurredAt: new Date('2026-06-27T15:08:00.000Z'),
-        sourceMetadata: { tg_chat_id: 'chat-a', tg_sender_name: 'Tim' },
+        sourceMetadata: { tg_chat_id: 'chat-a', tg_sender_name: 'Taylor' },
       }),
       event({
         id: 'message-b',
         source: 'telegram',
         contentText: 'Second focused message',
         occurredAt: new Date('2026-06-27T15:03:00.000Z'),
-        sourceMetadata: { tg_chat_id: 'chat-a', tg_sender_name: 'Mikael' },
+        sourceMetadata: { tg_chat_id: 'chat-a', tg_sender_name: 'Cameron' },
       }),
       event({
         id: 'message-other-bucket',

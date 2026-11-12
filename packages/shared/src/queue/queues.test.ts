@@ -1595,14 +1595,14 @@ describe('queue wrappers', () => {
       kind: 'recipient',
       teamId: '22222222-2222-4222-8222-222222222222',
       userId: '55555555-5555-4555-8555-555555555555',
-      email: 'tim@example.test',
+      email: 'taylor@example.test',
       windowStart: '2026-06-15T12:00:00.000Z',
       windowEnd: '2026-06-16T12:00:00.000Z',
     });
     await queues.enqueueDailyDigestSendJob({
       kind: 'send',
       digestId: '33333333-3333-4333-8333-333333333333',
-      email: 'tim@example.test',
+      email: 'taylor@example.test',
     });
     await queues.enqueueDailyDigestWorkspaceSendJob({
       kind: 'workspace-send',

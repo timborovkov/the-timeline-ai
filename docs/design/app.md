@@ -541,7 +541,7 @@ Visible overdue tasks are eligible for the queue regardless of teammate assignme
 Queue rows do not repeat the object type: status, assignee, due date, and priority
 are inline-editable on object and board items, matching the task list. Approval
 rows stay review-only. Due state keeps a consistent right-aligned position and
-follows the shared due-date vocabulary above.
+follows the shared [due-date vocabulary](components.md#due-dates).
 
 
 
@@ -565,7 +565,7 @@ jobs as status/label/time rows with queue names in the hover title.
 
 
 
-Foundations and shared components: [design system](../../design.md).
+Foundations: [design system](../../design.md). Shared behavior: [component contracts](components.md).
 
 
 ### Billing benefits and recorded charges
@@ -642,7 +642,6 @@ and an outlined connect action. Empty custom-server lists use a concise hint so
 the available catalog remains visible. Task and object detail rails retain their
 workspace-specific split layout.
 
-
 ### Board membership setup and review
 
 Board creation and settings use the same **Board membership** field group. Type
@@ -659,3 +658,31 @@ Approvals surface filtered to this board. Removal proposals name the object and
 board and say that the object is retained. Hide qualification hashes, revisions and
 internal concurrency fields from ordinary approval previews. The
 [object contract](../objects.md#automatic-membership-suggestions) owns the behavior.
+
+## Installed app launch
+
+Home-screen Timeline uses the existing mark on `#0a0e0d`. Android Chrome
+composes the splash from the web app manifest `name`, `background_color`,
+`theme_color`, and 512px icon. iOS ignores that manifest splash and needs a
+startup image per device size and orientation. Those images are the same dark
+field with the centered mark — no wordmark, no extra chrome, no light-mode
+variant. Keep them in lockstep with
+[`apps/web/src/app/icon.svg`](../../apps/web/src/app/icon.svg); regenerate with
+`bun apps/web/scripts/generate-pwa-splash.ts`.
+
+## Remembered sign-in method
+
+Sign-in and sign-up show a compact neutral “Last used” badge beside the last
+successfully used Google or GitHub button, or beside the Email label for
+password authentication. Both routes use the same browser preference; a failed
+or cancelled attempt does not change it. New browsers show no badge. Keep the
+badge readable in both themes. Place OAuth badges on the top-right button edge,
+outside the centered icon-and-label flow, with enough spacing between buttons
+to prevent overlap. Preserve the existing primary action and provider order. Cookie lifetime
+and contents are disclosed in the [cookie notice](../../apps/web/src/app/cookies/page.tsx).
+
+## Administrative lifecycle controls
+
+Platform directories expose copyable identifiers, lifecycle status, disabled timestamps, and URL-persisted sorting/filtering. Use “Disabled” for reversible team access suspension, “Deletion requested” for owner requests, and “Active-system data removed” only after verification. Owner deletion requests lead to a standalone confirmation with restoration contact details, reachable without an active team. It confirms the request, not completed deletion, and explains that only platform admins can restore access before permanent deletion begins. Permanent actions live in a danger disclosure with exact team-name confirmation and explicit consequences for every member. Admin deletion details show retries and external retention follow-up separately. UUIDs remain an administrative/support detail rather than ordinary workspace navigation.
+
+Website source management follows [the application patterns](../../docs/design/app.md); its public directory entry and pricing calculator share the 20-source-unit per-page usage contract.

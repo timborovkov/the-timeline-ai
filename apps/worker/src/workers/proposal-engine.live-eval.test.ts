@@ -40,7 +40,7 @@ const maybeDescribe = process.env.PROPOSAL_ENGINE_LIVE_EVAL === '1' ? describe :
 
 const TEAM_ID = '15151515-1515-4151-8151-151515151515';
 const USER_ID = 'a1a1a1a1-a1a1-41a1-81a1-a1a1a1a1a1a1';
-const MIKAEL_ID = 'b2b2b2b2-b2b2-42b2-82b2-b2b2b2b2b2b2';
+const CAMERON_ID = 'b2b2b2b2-b2b2-42b2-82b2-b2b2b2b2b2b2';
 const FABA_COMPANY_ID = 'faba0001-0000-4000-8000-000000000001';
 const FABA_PROJECT_ID = 'faba0001-0000-4000-8000-000000000002';
 const ACME_COMPANY_ID = 'a0ce0001-0000-4000-8000-000000000001';
@@ -749,7 +749,7 @@ maybeDescribe('live messy proposal-engine eval', () => {
       reviewId: assignReviewId,
       channelId: 'C_WORKSHEET',
       channelName: 'acme-project-development',
-      text: 'yeah <@U0ABC> can Mikael just take the worksheet preview fix tomorrow lol, also book padel with Mikael Friday 18:00-19:00',
+      text: 'yeah <@U0ABC> can Cameron just take the worksheet preview fix tomorrow lol, also book padel with Cameron Friday 18:00-19:00',
     });
     await runConversationReview(db, assignReviewId);
 
@@ -758,10 +758,10 @@ maybeDescribe('live messy proposal-engine eval', () => {
     expect(
       tasks.some(
         (item) =>
-          item.proposedPayload.assigneeUserId === MIKAEL_ID ||
-          item.proposedPayload.ownerUserId === MIKAEL_ID ||
-          item.proposedPayload.assigneeName === 'Mikael' ||
-          item.proposedPayload.ownerName === 'Mikael',
+          item.proposedPayload.assigneeUserId === CAMERON_ID ||
+          item.proposedPayload.ownerUserId === CAMERON_ID ||
+          item.proposedPayload.assigneeName === 'Cameron' ||
+          item.proposedPayload.ownerName === 'Cameron',
       ),
     ).toBe(true);
 
@@ -810,9 +810,9 @@ async function seedAgencyWorkspace(db: Db): Promise<void> {
       name: 'Eval Owner',
     },
     {
-      id: MIKAEL_ID,
-      email: 'mikael@example.test',
-      name: 'Mikael',
+      id: CAMERON_ID,
+      email: 'cameron@example.test',
+      name: 'Cameron',
     },
   ]);
   await db.insert(teamMembers).values([
@@ -823,7 +823,7 @@ async function seedAgencyWorkspace(db: Db): Promise<void> {
     },
     {
       teamId: TEAM_ID,
-      userId: MIKAEL_ID,
+      userId: CAMERON_ID,
       role: 'member',
     },
   ]);
