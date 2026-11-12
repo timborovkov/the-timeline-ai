@@ -457,6 +457,15 @@ export function createEngineMaintenanceScope(db: Db, scope: TeamScopeCore) {
         ),
       ];
       if (!domains.length) return { emails: [], companies: [] };
+      // Match the resolver's domain-before-website precedence and hostname normalization.
+      // This only retrieves candidates; URL validity is still checked by the resolver.
+      const companyHostname = sql<string>`substring(
+        lower(btrim(COALESCE(
+          CASE WHEN jsonb_typeof(${entities.metadata}->'domain') = 'string'
+            THEN NULLIF(btrim(${entities.metadata}->>'domain'), '') END,
+          ${entities.metadata}->>'website'
+        ))) FROM '^(?:https?://)?(?:www[.])?([^/:?#]+)'
+      )`;
       const companies = await db
         .select()
         .from(entities)
@@ -466,12 +475,7 @@ export function createEngineMaintenanceScope(db: Db, scope: TeamScopeCore) {
             eq(entities.type, 'company'),
             isNull(entities.mergedIntoId),
             isNull(entities.archivedAt),
-            or(
-              ...domains.map(
-                (domain) =>
-                  sql`lower(${entities.metadata}->>'domain') = ${domain} OR lower(${entities.metadata}->>'website') IN (${`https://${domain}`},${`https://${domain}/`},${`https://www.${domain}`})`,
-              ),
-            ),
+            inArray(companyHostname, domains),
           ),
         )
         .limit(100);

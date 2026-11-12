@@ -105,6 +105,81 @@ const model: typeof llm.chatStructured = <T extends z.ZodType>(input: llm.ChatSt
     model: 'fixture',
   });
 describe('engine persistence contracts', () => {
+  it('retrieves company affiliations by supported website hostnames without trusting lookalike or invalid URLs', async () => {
+    const websites = [
+      'http://acme0.test',
+      'https://www.acme1.test/',
+      'https://www.acme2.test/clients?ref=home#team',
+      ' HTTPS://Acme3.TEST:8443/about ',
+      'acme4.test/contact',
+      'www.acme5.test/clients',
+    ];
+    const companies = await db
+      .insert(entities)
+      .values(
+        websites.map((website, index) => ({
+          teamId,
+          type: 'company' as const,
+          canonicalName: `Acme ${index}`,
+          metadata: { website },
+        })),
+      )
+      .returning();
+    for (const [index, company] of companies.entries()) {
+      const email = `Alex@ACME${index}.TEST`;
+      const candidates = await scope().engineMaintenance.affiliationCandidates(userId, [email]);
+      expect(candidates.companies.map((row) => row.id)).toEqual([company.id]);
+      expect(suggestions.resolveCompanyAffiliation([email], candidates.companies)).toMatchObject({
+        kind: 'existing',
+        objectId: company.id,
+      });
+    }
+    const [normalizedDomain] = await db
+      .insert(entities)
+      .values({
+        teamId,
+        type: 'company',
+        canonicalName: 'Domain Formatting',
+        metadata: { domain: ' WWW.acme6.test ' },
+      })
+      .returning();
+    expect(
+      (
+        await scope().engineMaintenance.affiliationCandidates(userId, ['alex@acme6.test'])
+      ).companies.map((row) => row.id),
+    ).toEqual([required(normalizedDomain).id]);
+    await db.insert(entities).values([
+      {
+        teamId,
+        type: 'company',
+        canonicalName: 'Lookalike',
+        metadata: { website: 'https://acme7.test.evil.test/path' },
+      },
+      {
+        teamId,
+        type: 'company',
+        canonicalName: 'Conflicting Domain',
+        metadata: { domain: 'unrelated.test', website: 'https://acme7.test/path' },
+      },
+      {
+        teamId,
+        type: 'company',
+        canonicalName: 'Invalid Port',
+        metadata: { website: 'https://acme8.test:invalid/path' },
+      },
+    ]);
+    expect(
+      (await scope().engineMaintenance.affiliationCandidates(userId, ['alex@acme7.test']))
+        .companies,
+    ).toHaveLength(0);
+    const invalid = await scope().engineMaintenance.affiliationCandidates(userId, [
+      'alex@acme8.test',
+    ]);
+    expect(suggestions.resolveCompanyAffiliation(['alex@acme8.test'], invalid.companies).kind).toBe(
+      'new',
+    );
+  });
+
   it('keeps a deterministic merge survivor throughout daily pagination but honors explicit object repair', async () => {
     const preferredId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1';
     const otherId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2';
