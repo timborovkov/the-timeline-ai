@@ -31,7 +31,7 @@ export function HomeMotion() {
 
     const setFlowMotion = (diagram: HTMLElement, isActive: boolean, restart = false) => {
       for (const svg of diagram.querySelectorAll<SVGSVGElement>('[data-flow-motion]')) {
-        if (isActive) {
+        if (isActive && diagram.dataset.motionPaused !== 'true') {
           if (restart && typeof svg.setCurrentTime === 'function') svg.setCurrentTime(0);
           if (typeof svg.unpauseAnimations === 'function') svg.unpauseAnimations();
         } else if (typeof svg.pauseAnimations === 'function') {
@@ -63,12 +63,21 @@ export function HomeMotion() {
       { rootMargin: '-4% 0px -4% 0px', threshold: 0.06 },
     );
 
+    const onMotionChange = (event: Event) => {
+      const diagram = event.target;
+      if (diagram instanceof HTMLElement && activeNodes.includes(diagram)) {
+        setFlowMotion(diagram, diagram.classList.contains(visibleClass));
+      }
+    };
+    root.addEventListener('flow-motion-change', onMotionChange);
+    const progress = root.querySelector<HTMLElement>(`.${styles.progress} span`);
+
     let frame = 0;
     const updateProgress = () => {
       frame = 0;
       const distance = document.documentElement.scrollHeight - window.innerHeight;
       const ratio = distance > 0 ? Math.min(1, Math.max(0, window.scrollY / distance)) : 0;
-      root.style.setProperty('--home-progress', String(ratio));
+      if (progress) progress.style.transform = `scaleX(${ratio})`;
     };
     const requestProgress = () => {
       if (frame) return;
@@ -84,6 +93,7 @@ export function HomeMotion() {
 
     return () => {
       activeObserver.disconnect();
+      root.removeEventListener('flow-motion-change', onMotionChange);
       window.removeEventListener('scroll', requestProgress);
       window.removeEventListener('resize', requestProgress);
       if (frame) window.cancelAnimationFrame(frame);
@@ -92,7 +102,7 @@ export function HomeMotion() {
         setFlowMotion(node, false);
       }
       root.classList.remove(motionReadyClass);
-      root.style.removeProperty('--home-progress');
+      progress?.style.removeProperty('transform');
     };
   }, [reducedMotion]);
 

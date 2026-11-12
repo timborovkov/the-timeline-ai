@@ -3,6 +3,7 @@ import { ArrowRight, Link2 } from 'lucide-react';
 import type { ConnectorContent } from '@/components/marketing/integrations/connector-content';
 
 import styles from '@/components/marketing/integrations/records-to-answer.module.css';
+import { MotionFigure } from '@/components/marketing/motion-figure';
 
 export function RecordsToAnswer({
   connector,
@@ -12,7 +13,7 @@ export function RecordsToAnswer({
   compact?: boolean;
 }) {
   return (
-    <figure
+    <MotionFigure
       className={`${styles.figure} ${compact ? styles.compact : ''}`}
       aria-labelledby={`diagram-${connector.slug}`}
     >
@@ -64,6 +65,6 @@ export function RecordsToAnswer({
           </div>
         </article>
       </div>
-    </figure>
+    </MotionFigure>
   );
 }

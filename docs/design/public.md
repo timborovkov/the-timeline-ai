@@ -1,8 +1,8 @@
 # Public-site design patterns
 
-The public landing page is an editorial, six-scene acquisition narrative:
-claim, evidence and chronology, cited answer, chat-and-agent answers with a shared
-example, audience fit with trust, and a Start free CTA. The claim scene also
+The public landing page is an editorial, seven-scene acquisition narrative:
+claim, what goes in, one timeline, ask, connected records, audience fit with
+trust, and a Start free CTA. The claim scene also
 includes a compact For agents card: title and body that agents read the work
 record and write notes back like teammates, official Claude, ChatGPT, Cursor,
 Grok, OpenClaw, and Hermes marks on white tiles in a single row, and the copyable
@@ -10,10 +10,9 @@ Grok, OpenClaw, and Hermes marks on white tiles in a single row, and the copyabl
 landing `--home-*` tokens in both themes and does not use letter discs. The claim defines The Timeline as an auto-updating work record:
 what is said in Slack, Telegram, email and calls becomes current client, deal,
 task and decision records, with the source for every line. Captured evidence
-lands automatically; lasting record changes wait for human approval. Closing
-signup entry points (home, product tour, team daily log, and the Free pricing
-card) show the first-run path: team created, one capture source, then the first
-source-linked record or a question. Audience copy describes how teams work (chat-run teams
+lands automatically; lasting record changes wait for human approval. The product tour and Free pricing card show the first-run path: team created, one capture source,
+then the first source-linked record or a question. Homepage and use-case closing
+CTAs stay compact and omit that repeated walkthrough. Audience copy describes how teams work (chat-run teams
 on Slack or Telegram, with the rest of the work spread across email, calls and
 documents), not team size or role. Updates are daily, with no weekly framing.
 The chronology scene names the cost of rebuilding status, promises and decisions
@@ -26,8 +25,8 @@ links. The cited-answer source list stays visible beside the answer, with each s
 details written directly in its card. Numbered references are static labels that
 match those cards. No modal, folding, navigation or scrolling is needed to read
 the evidence. Homepage screenshots use the real captures with theme-matched variants.
-Mobile retains the complete landscape frame rather than cropping out source
-inspectors. Screenshots are display-only: no links, zoom actions, or instructions
+Small-screen homepage screenshots retain the landscape 16×10 frame; dedicated
+portrait captures retain their full frame. Screenshots are display-only: no links, zoom actions, or instructions
 to click them. Each frame reserves its aspect box and shows a loading label until
 it paints. Homepage screenshots pair with one feature-specific heading and a
 short paragraph, rather than repeating generic ownership and citation checklists.
@@ -65,7 +64,11 @@ one quiet rail then resolves into **Daily update** and **Linked answers**. It
 does not reproduce the expanded
 timeline, record cards, or assistant exchange. Every moving packet reuses the exact path drawn behind it,
 the animation restarts only when the diagram enters view, and reduced motion
-hides the packets while preserving the complete static explanation. Mobile
+hides the packets while preserving the complete static explanation. A visible Pause/Play
+control stops the entire illustration and preserves a manual pause across viewport
+re-entry. Reduced-motion preference keeps motion off and cannot be overridden by
+Play. Source and output paths, halo, and orbit stay still; packets carry the
+direction without a competing dash or pulse animation. Mobile
 retains the same topology and removes secondary metadata so cards and labels do
 not overlap.
 
@@ -89,7 +92,14 @@ briefly acknowledge their arrival. Each stage activates independently as it
 enters view. Wide layouts use one four-stage row, medium containers use a 2 × 2
 grid without decorative connectors, and narrow containers stack stages with
 vertical packet tracks. Reduced-motion mode hides packets and preserves the
-complete static story.
+complete static story. The expanded region has its own Pause/Play control; a
+manual pause covers every stage and remains set when stages re-enter view.
+
+One-shot source-to-answer, external-agent, and inbound-MCP diagrams start their
+decorative traces once on first meaningful visibility. Their text, cards, and
+complete static paths remain visible without JavaScript and under reduced motion.
+Scroll progress updates only its own indicator, never an inherited property on
+the landing root.
 
 The public header stays uncluttered: Product, Use cases, Integrations, Agents,
 and Pricing. Use cases and Integrations are `details` dropdowns on desktop and
@@ -144,7 +154,7 @@ portrait slots keep the full capture so Ask citations stay in frame. The
 homepage shows proof shots in alternating split rows (screenshot beside the
 copy, stacked on small screens): voice notes, work record, stored cited Ask
 answer, client record, and daily update. On small screens those landscape
-frames use a taller 3×4 crop so the product UI stays readable. `/agents` pairs the current Agent
+frames retain the same 16×10 aspect ratio. `/agents` pairs the current Agent
 tools screen with a read-out / write-in diagram for external agents.
 `/integrations/mcp` has a
 separate inbound live-lookup diagram for The Timeline Agent calling third-party

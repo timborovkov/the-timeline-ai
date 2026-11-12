@@ -223,17 +223,17 @@
 }
 
 @media (prefers-reduced-motion: no-preference) {
-  .transfer span::after {
+  .figure[data-motion-entered='true'] .transfer span::after {
     animation: agent-trace 900ms cubic-bezier(0.22, 1, 0.36, 1) 180ms both;
   }
 
-  .core {
+  .figure[data-motion-entered='true'] .core::after {
     animation: agent-core 640ms cubic-bezier(0.22, 1, 0.36, 1) 720ms both;
   }
 }
 
 @media (max-width: 63.99rem) and (prefers-reduced-motion: no-preference) {
-  .transfer span::after {
+  .figure[data-motion-entered='true'] .transfer span::after {
     animation-name: agent-trace-vertical;
   }
 }
@@ -257,12 +257,25 @@
 }
 
 @keyframes agent-core {
-  from {
-    opacity: 0.72;
-    transform: scale(0.98);
+  0%,
+  100% {
+    opacity: 0;
   }
-  to {
+  50% {
     opacity: 1;
-    transform: scale(1);
   }
+}
+
+.core {
+  position: relative;
+}
+
+.core::after {
+  position: absolute;
+  inset: -1px;
+  border: 1px solid var(--signal);
+  border-radius: inherit;
+  opacity: 0;
+  pointer-events: none;
+  content: '';
 }
