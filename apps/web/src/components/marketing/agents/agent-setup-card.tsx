@@ -46,6 +46,7 @@ export function AgentSetupCard({ className }: { className?: string }) {
       <div className={styles.commandRow}>
         <code className={styles.command}>{TIMELINE_AGENT_SETUP_COMMAND}</code>
         <CopyButton
+          publicFeedback
           value={TIMELINE_AGENT_SETUP_COMMAND}
           label="Copy setup command"
           appearance="icon"

@@ -38,7 +38,12 @@ function CopyPanel({
       </pre>
       <div className="flex min-h-12 flex-wrap items-center justify-between gap-2 border-t border-border bg-surface-2 px-2 pl-4">
         <span className="text-xs text-fg-muted">{context}</span>
-        <CopyButton value={value} label={copyLabel} className="h-10 px-3" />
+        <CopyButton
+          value={value}
+          label={copyLabel}
+          publicFeedback
+          className="h-auto min-h-10 max-w-full whitespace-normal px-3 py-2"
+        />
       </div>
     </div>
   );
@@ -77,8 +82,8 @@ export function AgentInstallGuide() {
       </p>
       <div className="divide-y divide-border border-y border-border">
         <ConnectAgentDisclosure title="Client-specific setup">
-          <div className="grid gap-4 xl:grid-cols-2 xl:items-start">
-            <article className="space-y-4 rounded-sm border border-border p-4 sm:p-5">
+          <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-4 xl:grid-cols-2 xl:items-start">
+            <article className="min-w-0 space-y-4 rounded-sm border border-border p-4 sm:p-5">
               <div className="space-y-1">
                 <h3 className="font-semibold text-fg">Codex</h3>
                 <p className="text-sm leading-5 text-fg-muted">
@@ -89,8 +94,15 @@ export function AgentInstallGuide() {
               <CopyButton
                 value={TIMELINE_PLUGIN_INSTALL_PROMPT}
                 label="Copy Codex install prompt"
+                publicFeedback
+                className="h-auto min-h-9 max-w-full whitespace-normal py-2"
               />
-              <Button asChild size="sm" variant="outline">
+              <Button
+                asChild
+                size="sm"
+                variant="outline"
+                className="h-auto min-h-9 max-w-full whitespace-normal py-2"
+              >
                 <a href={TIMELINE_CODEX_PLUGIN_INSTALL_URL} target="_blank" rel="noreferrer">
                   Read the Codex install guide
                   <ExternalLink aria-hidden="true" />
@@ -98,7 +110,7 @@ export function AgentInstallGuide() {
               </Button>
             </article>
 
-            <article className="space-y-4 rounded-sm border border-border p-4 sm:p-5">
+            <article className="min-w-0 space-y-4 rounded-sm border border-border p-4 sm:p-5">
               <div className="space-y-1">
                 <h3 className="font-semibold text-fg">Claude Code</h3>
                 <p className="text-sm leading-5 text-fg-muted">
@@ -111,7 +123,12 @@ export function AgentInstallGuide() {
                 copyLabel="Copy Claude Code install commands"
                 context="Run in a terminal"
               />
-              <Button asChild size="sm" variant="outline">
+              <Button
+                asChild
+                size="sm"
+                variant="outline"
+                className="h-auto min-h-9 max-w-full whitespace-normal py-2"
+              >
                 <a href={TIMELINE_CLAUDE_PLUGIN_INSTALL_URL} target="_blank" rel="noreferrer">
                   Read the Claude Code install guide
                   <ExternalLink aria-hidden="true" />
@@ -137,8 +154,8 @@ export function AgentInstallGuide() {
                 Install only the skill, or connect the MCP endpoint without the plugin.
               </p>
             </div>
-            <div className="grid gap-4 xl:grid-cols-2 xl:items-start">
-              <article className="space-y-4 rounded-sm border border-border p-5">
+            <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-4 xl:grid-cols-2 xl:items-start">
+              <article className="min-w-0 space-y-4 rounded-sm border border-border p-5">
                 <div className="flex items-start gap-3">
                   <div className="grid size-9 shrink-0 place-items-center rounded-sm border border-border bg-surface-2">
                     <Bot aria-hidden="true" className="size-4 text-signal" />
@@ -157,7 +174,7 @@ export function AgentInstallGuide() {
                 />
               </article>
 
-              <article className="space-y-4 rounded-sm border border-border p-5">
+              <article className="min-w-0 space-y-4 rounded-sm border border-border p-5">
                 <div className="flex items-start gap-3">
                   <div className="grid size-9 shrink-0 place-items-center rounded-sm border border-border bg-surface-2">
                     <TerminalSquare aria-hidden="true" className="size-4 text-signal" />

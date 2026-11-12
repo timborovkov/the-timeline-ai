@@ -56,7 +56,7 @@ export function HelpGuideDirectory() {
               setQuery(event.target.value);
             }}
             placeholder="Search guides"
-            className="h-10 w-full rounded-sm border border-input bg-surface-2 pl-9 pr-10 text-sm text-fg outline-none placeholder:text-fg-dim focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-bg [&::-webkit-search-cancel-button]:appearance-none"
+            className="h-10 w-full rounded-sm border border-input bg-surface-2 pl-9 pr-10 text-base sm:text-sm text-fg outline-none placeholder:text-fg-dim focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-bg [&::-webkit-search-cancel-button]:appearance-none"
           />
           {query ? (
             <button
@@ -83,7 +83,7 @@ export function HelpGuideDirectory() {
             <Link
               key={page.slug}
               href={`/help/${page.slug}`}
-              className="group grid gap-3 border-b border-border px-1 py-5 text-fg transition-[background-color,color,transform] last:border-b-0 hover:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-fg focus-visible:ring-offset-2 focus-visible:ring-offset-bg active:translate-y-px forced-colors:focus-visible:outline forced-colors:focus-visible:outline-2 sm:grid-cols-[2.5rem_minmax(0,1fr)_auto] sm:items-center sm:px-3"
+              className="group grid gap-3 border-b border-border px-1 py-5 text-fg transition-colors motion-safe:transition-[background-color,color,translate] last:border-b-0 hover:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-fg focus-visible:ring-offset-2 focus-visible:ring-offset-bg motion-safe:active:translate-y-px forced-colors:focus-visible:outline forced-colors:focus-visible:outline-2 sm:grid-cols-[2.5rem_minmax(0,1fr)_auto] sm:items-center sm:px-3"
             >
               <span className="flex items-center gap-3 sm:block">
                 <span className="font-mono text-xs tabular-nums text-fg-dim">
@@ -99,7 +99,7 @@ export function HelpGuideDirectory() {
                   {page.description}
                 </span>
               </span>
-              <span className="hidden size-9 place-items-center text-fg-dim transition-transform group-hover:translate-x-1 group-hover:text-fg sm:grid">
+              <span className="hidden size-9 place-items-center text-fg-dim motion-safe:transition-transform motion-safe:group-hover:translate-x-1 group-hover:text-fg sm:grid">
                 <ArrowRight aria-hidden="true" className="size-4" />
               </span>
             </Link>

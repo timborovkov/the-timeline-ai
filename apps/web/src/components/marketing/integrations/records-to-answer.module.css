@@ -23,7 +23,7 @@
 }
 
 .index {
-  color: var(--fg-dim);
+  color: var(--fg);
   font-size: 0.72rem;
   font-weight: 600;
 }
