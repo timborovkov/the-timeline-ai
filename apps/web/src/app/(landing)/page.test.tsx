@@ -50,17 +50,17 @@ describe('LandingPage', () => {
       previousIndex = sceneIndex;
     }
 
-    expect(html).toContain('Acme rollout / Last 7 days');
+    expect(html).toContain('Acme rollout · Illustrative example / Last 7 days');
     expect(html).toContain(
-      'aria-label="Work events stream from six sources into The Timeline, where the work record becomes a daily update and linked answers."',
+      'aria-label="Work events stream from six sources into The Timeline, where the work record keeps decisions, promises and next steps connected to their sources."',
     );
     expect(html).toContain('one timeline');
     expect(html).not.toContain('Fictional Acme example, not customer data.');
     expect(html).toContain('<details');
     expect(html).toContain('The Timeline');
     expect(html).toContain('Work record');
-    expect(html).toContain('Daily update');
-    expect(html).toContain('Linked answers');
+    expect(html).toContain('Decisions, promises');
+    expect(html).toContain('Sources attached');
     expect(html).not.toContain('How scattered work becomes useful context.');
     expect(html).not.toContain('Connected, not used in this answer');
     expect(html).not.toContain('Sentry is connected, but unused in this answer.');
@@ -171,37 +171,33 @@ describe('LandingPage', () => {
     });
   });
 
-  it('leads with sourced operating context before the use-case chooser', () => {
+  it('introduces the product and use cases before the illustrative walkthrough', () => {
     const { container } = render(<LandingPage />);
     const hero = container.querySelector('[data-scene="01-claim"]');
-    const proof = hero?.querySelector('[data-hero-evidence]');
-    expect(proof?.querySelectorAll('ol > li')).toHaveLength(3);
-    expect(proof?.textContent).toContain(
-      'SSO blocks launch. Friday’s customer update is still due.',
-    );
-    expect(proof?.textContent).toContain('Lasting record changes wait for your approval.');
-    expect(proof?.querySelector('a')?.getAttribute('href')).toBe('#answer');
-    for (const id of ['01', '03', '05']) {
-      const source = PUBLIC_DEMO_STORY.landing.events.find((event) => event.id === id);
-      expect(proof?.textContent).toContain(source?.source);
-      expect(proof?.textContent).toContain(source?.title);
-    }
     expect(hero?.querySelectorAll('[data-hero-flow-path="ingest"]')).toHaveLength(6);
+    expect(container.querySelector('[data-hero-evidence]')).toBeNull();
+    const overview = container.querySelector('[data-use-case-overview]');
+    expect(overview?.textContent).toContain('Your team’s work, in one shared record.');
+    expect(overview?.textContent).toContain('selected conversations, calls and documents');
+    expect(overview?.querySelectorAll('a')).toHaveLength(6);
     const html = container.innerHTML;
-    expect(html.indexOf('data-hero-evidence')).toBeLessThan(html.indexOf('data-use-case-overview'));
-    expect(container.querySelectorAll('[data-use-case-overview] a')).toHaveLength(6);
+    expect(html.indexOf('data-use-case-overview')).toBeLessThan(
+      html.indexOf('data-scene="02-intake"'),
+    );
+    expect(html.indexOf('data-scene="02-intake"')).toBeLessThan(
+      html.indexOf('Acme rollout · Illustrative example'),
+    );
+    expect(container.querySelector('#answer')).not.toBeNull();
   });
 
-  it('keeps optional agent setup in a native closed disclosure', async () => {
-    const user = userEvent.setup();
-    render(<LandingPage />);
-    const summary = screen.getByText('Connect your agent');
-    const details = summary.closest('details');
-    expect(details?.open).toBe(false);
-    expect(details?.querySelector('[data-agent-setup]')).not.toBeNull();
-    await user.click(summary);
-    expect(details?.open).toBe(true);
-    expect(details?.textContent).toContain('llms.txt');
+  it('keeps compact agent setup visible in the hero without a disclosure', () => {
+    const { container } = render(<LandingPage />);
+    const setup = container.querySelector('[data-scene="01-claim"] [data-agent-setup]');
+    expect(setup).not.toBeNull();
+    expect(setup?.closest('details')).toBeNull();
+    expect(setup?.textContent).toContain('Get started with your agent');
+    expect(setup?.textContent).toContain('Set up The Timeline - https://thetimeline.cc/llms.txt');
+    expect(setup?.querySelector('button')?.getAttribute('aria-label')).toBe('Copy setup command');
   });
 
   it('pairs ingest and answers with the right headings and removes screenshot interactions', () => {
@@ -242,7 +238,8 @@ describe('LandingPage', () => {
 
     expect(html).toContain('Status should not require an investigation.');
     expect(html).toContain('forward email, upload documents, or scan a public website');
-    expect(html).toContain('Its transcript sits beside the original audio');
+    expect(html).toContain('Turn conversations into shared context.');
+    expect(html).toContain('ready to find and use in answers, with its source attached');
     expect(html).toContain('Telegram');
     expect(html).toContain('Email forwarding');
     expect(html).not.toContain('Connected tools');

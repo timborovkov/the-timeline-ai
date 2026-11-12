@@ -9,13 +9,13 @@ plain, theme-matched surfaces, without a grain overlay.
 
 ## Landing narrative
 
-The homepage leads with “Know where the work stands” and a concrete
-source-to-answer example. Selected Acme rollout events sit beside the question
-“What needs our attention?” and its answer: the launch blocker, promised customer
-update, owner and review date. Citation labels identify the same sources used in
-the complete answer later on the page. A link takes readers directly to that
-answer and all five sources. The approval boundary sits beside the result:
-answers use captured evidence; lasting record changes wait for human approval.
+The homepage leads with “Know where the work stands” and the animated source
+flow. Explain the shared work record in plain language before presenting use
+cases and capture options. Introduce the illustrative Acme rollout only in the
+chronology walkthrough, after visitors understand the product. The cited answer
+then demonstrates how that history helps answer a question. Do not place a
+standalone Acme answer panel directly after the hero; it assumes context a new
+visitor has not yet acquired.
 
 The opening claim describes selected conversations, calls and documents, not
 universal capture. Work continues through the use-case chooser, intake,
@@ -27,15 +27,21 @@ remain meaningful metadata.
 The six-use-case overview appears once, immediately after the hero. It presents
 linked job rows before the detailed walkthrough. The intake section brings
 supported capture surfaces, document uploads and native connectors together as
-compact links. Live MCP lookup and coming-soon connectors are not ingest options.
-The six-source animation sits beside the hero copy, with the concrete cited
-example directly below. Use quiet curved paths and a plain work-record node;
-source logos, selected-source boundaries and linked outcomes carry the meaning.
+compact links. Frame the voice-note example around capturing updates, decisions
+and commitments for later retrieval and cited answers, rather than transcription
+as the primary benefit. Live MCP lookup and coming-soon connectors are not ingest options.
+The six-source animation sits beside the hero copy, with the plain-language product
+introduction directly below. Use quiet curved paths and a plain work-record node;
+source logos and selected-source boundaries carry the meaning. The output is a
+compact record summary (“Decisions, promises & next steps” with “Sources attached”),
+not a pair of button-like feature labels.
 Keep one diagram instance, a keyboard-accessible pause control, offscreen and
 hidden-tab suspension, and a static reduced-motion alternative. Mobile stacks
 the diagram after the primary action without removing its source labels.
 
-“Connect your agent” is a closed hero disclosure containing AgentSetupCard.
+AgentSetupCard is always visible beneath the hero actions in its compact variant.
+Use a short setup instruction, small official marks and the copyable command; do
+not put this signup/setup path behind a disclosure.
 The card explains agents reading the cited work record and writing notes back,
 shows official Claude, ChatGPT, Cursor, Grok, OpenClaw and Hermes marks, and keeps
 the copyable `Set up The Timeline - https://thetimeline.cc/llms.txt` command.
@@ -67,12 +73,16 @@ summary have a clear gap. The trust summary presents capture, immutability,
 visibility and approval as flat evidence steps, with a direct Trust & Security
 link; it does not imply certification.
 
-Closing CTAs are open, compact copy-and-action rows, side by side on desktop and
+Secondary-page closing CTAs are open, compact copy-and-action rows, side by side on desktop and
 stacked on phones. Keep the action near the headline without repeated nested
 panels, decorative labels or first-run walkthroughs. The product tour and Free
 pricing card own the first-run path: create a team, connect one capture source,
 then inspect a source-linked record or ask a question. Pricing leads with Start
 free and no card; its estimator is optional planning.
+The homepage closing action follows its heading and supporting paragraph in one
+left-aligned column. Keep the signed-in “Open your Timeline” button and the
+signed-out “Start free” button in the same position, with account and pricing
+notes below. Do not float the action in a separate right-hand column.
 
 ## Evidence and motion
 

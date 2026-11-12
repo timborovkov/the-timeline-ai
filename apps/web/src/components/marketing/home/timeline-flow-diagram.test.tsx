@@ -15,13 +15,13 @@ describe('TimelineFlowDiagram', () => {
 
     const figure = screen.getByRole('figure');
     expect(figure.getAttribute('aria-label')).toBe(
-      'Work events stream from six sources into The Timeline, where the work record becomes a daily update and linked answers.',
+      'Work events stream from six sources into The Timeline, where the work record keeps decisions, promises and next steps connected to their sources.',
     );
     expect(within(figure).getByText('The Timeline')).toBeTruthy();
     expect(within(figure).getByText('Work record')).toBeTruthy();
     expect(within(figure).getByText('one timeline')).toBeTruthy();
-    expect(within(figure).getByText('Daily update')).toBeTruthy();
-    expect(within(figure).getByText('Linked answers')).toBeTruthy();
+    expect(within(figure).getByText('Decisions, promises & next steps')).toBeTruthy();
+    expect(within(figure).getByText('Sources attached')).toBeTruthy();
     expect(within(figure).queryByText(/Fictional Acme example/i)).toBeNull();
     expect(within(figure).queryByText(/not used in this answer/i)).toBeNull();
 

@@ -19,25 +19,23 @@ are outside the redesign. The registry inventory is saved with this critique.
 
 ## Direction contract
 
-THESIS: Show an actual source-to-answer result before explaining the machinery.
-Directories help choose; reference pages help verify. Avoid interchangeable
-numbered sections, repeated diagrams and boxes around ordinary prose.
+THESIS: Explain what Timeline is before asking visitors to interpret an example.
+Introduce the shared work record, useful jobs and capture paths, then demonstrate
+chronology and cited answers. Directories help choose; reference pages help verify.
 
 OWN-WORLD: Official Timeline mark, Switzer hierarchy, lime for action and evidence,
 warm neutral light/dark surfaces. Upright headings, flat linked rows, readable
 source metadata and restrained boundaries. No paper-noise overlay or decorative
 orbital field outside an explanatory diagram.
 
-STORY: Recognise a work promise, see the cited answer, then choose a use case or
-source and start free. Trust makes retention, access, providers and assurance
-independently addressable without a full linear read.
+STORY: Understand the shared work record, find a relevant use, see how selected
+sources enter, then follow an illustrative chronology into a cited answer.
+Trust makes retention, access, providers and assurance independently addressable.
 
-FIRST VIEWPORT: A homepage claim and action area sits beside the six-source animated flow,
-restored at the user’s request. The diagram has pause/resume, hidden-tab and
-offscreen suspension, and a static reduced-motion alternative. Below it, three Acme fixture
-source facts and their concrete cited answer. Agent setup is a secondary native
-disclosure. Trust pairs its introduction with topic navigation; hubs put useful
-choices before demonstrations. Mobile preserves that order with stacked rows.
+FIRST VIEWPORT: Claim, primary action and the six-source animated flow. The next
+section explains the shared work record and its uses. The Acme fixture appears
+later in the chronology and answer walkthrough, not as an unexplained hero panel.
+Compact agent setup remains always visible below the hero actions. Mobile preserves this reading order.
 
 FORM: Source-to-answer transformation, grounded candidate 4; seed:a34d603fb662675a.
 Other explored structures were answer-first proof, a chronological workday,

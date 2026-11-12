@@ -259,10 +259,7 @@ function ClaimScene() {
                   </div>
                 }
               />
-              <details className={styles.heroAgentSetup}>
-                <summary>Connect your agent</summary>
-                <AgentSetupCard />
-              </details>
+              <AgentSetupCard compact className={styles.heroAgentSetup} />
             </div>
           </div>
         </div>
@@ -272,50 +269,7 @@ function ClaimScene() {
           disclosure="Illustrative flow · Only sources your team selects or sends enter."
         />
       </div>
-      <HeroEvidence />
     </section>
-  );
-}
-
-function HeroEvidence() {
-  const sources = ACME_EVENTS.filter((event) => ['01', '03', '05'].includes(event.id));
-  return (
-    <div className={styles.heroEvidence} data-hero-evidence>
-      <div className={styles.heroEvidenceSources}>
-        <p className={styles.heroEvidenceLabel}>Acme rollout · Illustrative example</p>
-        <ol>
-          {sources.map((event) => (
-            <li key={event.id}>
-              <span className={styles.sourceId}>[{event.id}]</span>
-              <div>
-                <p className={styles.heroSourceMeta}>
-                  {event.source} ·{' '}
-                  <time dateTime={event.dateTime}>
-                    {event.day} {event.time}
-                  </time>
-                </p>
-                <p>{event.title}</p>
-              </div>
-            </li>
-          ))}
-        </ol>
-      </div>
-      <div className={styles.heroEvidenceAnswer}>
-        <p className={styles.heroEvidenceLabel}>What needs our attention?</p>
-        <h2>SSO blocks launch. Friday’s customer update is still due.</h2>
-        <p className={styles.heroAnswerCitations}>Launch review [03] · Telegram [01]</p>
-        <p>
-          Priya Shah owns the migration checklist. The next review is Friday.{' '}
-          <span className={styles.sourceId}>[05]</span>
-        </p>
-        <Link href="#answer" className={styles.textLink}>
-          Read the answer and all five sources <span aria-hidden="true"> →</span>
-        </Link>
-        <p className={styles.heroApproval}>
-          Answers use captured evidence. Lasting record changes wait for your approval.
-        </p>
-      </div>
-    </div>
   );
 }
 
@@ -327,8 +281,13 @@ function UseCaseOverview() {
       data-use-case-overview
     >
       <h2 id="use-case-overview-title" className={styles.chooserHeading}>
-        What do you need to keep track of?
+        Your team’s work, in one shared record.
       </h2>
+      <p className={styles.overviewIntro}>
+        The Timeline brings selected conversations, calls and documents into a shared work record.
+        Your team can find what was decided, follow up on promises and ask questions with sources to
+        check. Use that record to keep track of the work that matters to you.
+      </p>
       <div className={styles.audienceRail} aria-label="Ways teams use The Timeline">
         {AUDIENCES.map((audience) => (
           <Link href={audience.href} key={audience.name}>
@@ -412,7 +371,7 @@ function TimelineScene() {
       />
       <div className={styles.timelineStage} data-home-diagram>
         <div className={styles.timelineHeader}>
-          <span>Acme rollout / Last 7 days</span>
+          <span>Acme rollout · Illustrative example / Last 7 days</span>
           <span>5 items</span>
         </div>
         <ol className={styles.timelineList}>

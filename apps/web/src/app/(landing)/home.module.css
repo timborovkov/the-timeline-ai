@@ -361,29 +361,33 @@
   left: 50%;
   z-index: 4;
   display: grid;
-  width: min(44%, 15rem);
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  border: 1px solid color-mix(in oklch, var(--home-signal) 46%, var(--home-line));
-  background: color-mix(in oklch, var(--home-panel) 97%, transparent);
+  width: 44%;
+  gap: 0.4rem;
+  padding: 0.75rem;
+  border: 1px solid var(--home-line-strong);
+  border-radius: 6px;
+  background: var(--home-panel);
   transform: translateX(-50%);
-}
-
-.heroOutcome span {
-  display: grid;
-  min-height: 2rem;
-  place-items: center;
-  padding: 0.3rem 0.4rem;
-  color: var(--home-muted);
-  font-family: var(--font-mono);
-  font-size: var(--home-meta-size);
-  line-height: 1.2;
-  letter-spacing: 0.045em;
   text-align: center;
-  text-transform: uppercase;
 }
-
-.heroOutcome span + span {
-  border-left: 1px solid var(--home-line);
+.heroOutcome strong {
+  color: var(--home-paper);
+  font-size: 0.875rem;
+  font-weight: 500;
+  line-height: 1.35;
+  text-wrap: balance;
+}
+.heroOutcome small {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 0.3rem;
+  color: var(--home-muted);
+  font-size: 0.75rem;
+  line-height: 1.3;
+}
+.heroOutcome small svg {
+  flex-shrink: 0;
   color: var(--home-signal);
 }
 
@@ -2033,7 +2037,7 @@
 .ctaInner {
   display: grid;
   width: 100%;
-  grid-template-columns: minmax(0, 1fr) minmax(16rem, 0.55fr);
+  grid-template-columns: minmax(0, 1fr);
   align-items: center;
   gap: 1.5rem 3rem;
   padding: clamp(1.5rem, 3vw, 3rem);
@@ -2748,11 +2752,6 @@
     width: 42%;
   }
 
-  .heroOutcome span {
-    min-height: 2.35rem;
-    padding: 0.2rem;
-  }
-
   .orbitSource {
     min-width: 4.8rem;
     padding: 0.35rem 0.4rem;
@@ -3157,67 +3156,6 @@
 .heroSupporting .heroActions {
   margin-top: 0;
 }
-.heroEvidence {
-  display: grid;
-  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
-  background: var(--home-panel);
-  border: 1px solid var(--home-line);
-  border-radius: 6px;
-}
-.heroEvidenceSources,
-.heroEvidenceAnswer {
-  min-width: 0;
-  padding: clamp(1.25rem, 3vw, 3rem);
-}
-.heroEvidenceLabel {
-  margin: 0 0 1.5rem;
-  color: var(--home-muted);
-  font-size: 0.85rem;
-}
-.heroEvidenceSources ol {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-.heroEvidenceSources li {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  gap: 0.75rem;
-  padding-block: 1rem;
-  border-top: 1px solid var(--home-line);
-  line-height: 1.5;
-}
-.heroSourceMeta {
-  margin-bottom: 0.35rem;
-  color: var(--home-muted);
-  font-size: 0.75rem;
-}
-.heroEvidenceAnswer {
-  border-left: 1px solid var(--home-line);
-}
-.heroEvidenceAnswer h2 {
-  max-width: 24ch;
-  font-size: clamp(1.8rem, 3.1vw, 3rem);
-  font-weight: 600;
-  line-height: 1.15;
-  letter-spacing: -0.03em;
-}
-.heroEvidenceAnswer > p:not(.heroEvidenceLabel) {
-  margin-top: 1rem;
-  line-height: 1.6;
-}
-.heroAnswerCitations {
-  color: var(--home-muted);
-  font-family: var(--font-mono);
-  font-size: 0.75rem;
-}
-.heroEvidenceAnswer .textLink {
-  margin-top: 1rem;
-}
-.heroApproval {
-  color: var(--home-muted);
-  font-size: 0.85rem;
-}
 .heroAgentSetup > summary,
 .captureExplainer > summary {
   width: fit-content;
@@ -3241,20 +3179,15 @@
 }
 
 @media (max-width: 48rem) {
-  .heroSupporting,
-  .heroEvidence {
+  .heroSupporting {
     grid-template-columns: minmax(0, 1fr);
-  }
-  .heroEvidenceAnswer {
-    border-left: 0;
-    border-top: 1px solid var(--home-line);
   }
   .heroTitle {
     font-size: clamp(2.6rem, 10vw, 4.5rem);
   }
 }
 
-/* One focal source-to-record flow; the concrete cited result follows below. */
+/* One focal source-to-record flow introduces the product. */
 .heroOpening {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
@@ -3309,12 +3242,6 @@
 }
 .heroOpening .heroOutcome {
   border-radius: 6px;
-}
-.heroOpening .heroOutcome span {
-  font-family: inherit;
-  font-size: 0.75rem;
-  letter-spacing: 0;
-  text-transform: none;
 }
 .heroOpening .observatoryCaption {
   bottom: 0;
@@ -3393,9 +3320,6 @@
     width: 42%;
     top: 77%;
   }
-  .heroOpening .heroOutcome span {
-    font-size: 0.625rem;
-  }
 }
 @media (prefers-reduced-motion: reduce) {
   .heroFlowControl {
@@ -3409,5 +3333,27 @@
   }
   .heroOpening .observatoryCaption {
     bottom: -2.5rem;
+  }
+}
+
+.overviewIntro {
+  max-width: 65ch;
+  margin: 1.25rem 0 2.5rem;
+  font-size: clamp(1rem, 1.5vw, 1.25rem);
+  line-height: 1.6;
+  color: var(--home-muted);
+}
+
+@media (max-width: 30rem) {
+  .heroOpening .heroOutcome {
+    padding: 0.45rem 0.3rem;
+    gap: 0.3rem;
+  }
+  .heroOpening .heroOutcome strong {
+    font-size: 0.6875rem;
+  }
+  .heroOpening .heroOutcome small {
+    font-size: 0.625rem;
+    gap: 0.2rem;
   }
 }

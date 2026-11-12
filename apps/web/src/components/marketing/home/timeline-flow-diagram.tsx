@@ -1,4 +1,4 @@
-import { FileText, Mail } from 'lucide-react';
+import { FileText, Link2, Mail } from 'lucide-react';
 import Image from 'next/image';
 
 import type { CSSProperties } from 'react';
@@ -64,7 +64,7 @@ const HERO_SOURCES = [
   },
   {
     id: 'github',
-    x: 490,
+    x: 510,
     y: 510,
     name: 'GitHub',
     icon: 'GitHub',
@@ -127,7 +127,7 @@ function HeroTimelineFlow({ disclosure }: { readonly disclosure?: string }) {
       id="hero-work-flow"
       className={styles.observatory}
       data-home-diagram
-      aria-label="Work events stream from six sources into The Timeline, where the work record becomes a daily update and linked answers."
+      aria-label="Work events stream from six sources into The Timeline, where the work record keeps decisions, promises and next steps connected to their sources."
     >
       <HeroFlowControls />
 
@@ -170,10 +170,12 @@ function HeroTimelineFlow({ disclosure }: { readonly disclosure?: string }) {
 
       <div
         className={styles.heroOutcome}
-        aria-label="Work record becomes a daily update and linked answers"
+        aria-label="Decisions, promises and next steps with sources attached"
       >
-        <span>Daily update</span>
-        <span>Linked answers</span>
+        <strong>Decisions, promises &amp; next steps</strong>
+        <small>
+          <Link2 size={12} aria-hidden="true" /> Sources attached
+        </small>
       </div>
 
       <ul className={styles.orbitSources} aria-label="Example sources entering The Timeline">
