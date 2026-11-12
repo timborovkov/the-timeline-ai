@@ -6,6 +6,7 @@ import {
   Globe,
   Handshake,
   Mail,
+  ShieldCheck,
   UserRound,
   Video,
   Webhook,
@@ -615,18 +616,30 @@ function AudienceScene() {
         <header>
           <span className={styles.monoLabel}>How one answer stays trustworthy</span>
           <h3 id="trust-flow-title">Every answer carries its evidence chain.</h3>
-          <p>
-            Access is checked when a source is retrieved. The answer only uses evidence you can see.
-          </p>
+          <div className={styles.trustIntro}>
+            <p>
+              Access is checked when a source is retrieved. The answer only uses evidence you can
+              see.
+            </p>
+            <Link href="/trust" className={styles.trustCta}>
+              Explore trust &amp; security <span aria-hidden="true">↗</span>
+            </Link>
+          </div>
         </header>
         <ol className={styles.trustFlow}>
-          {TRUST_FLOW_STEPS.map((step) => (
-            <li key={step.index}>
-              <span>{step.index}</span>
-              <strong>{step.title}</strong>
-              <small>{step.detail}</small>
-            </li>
-          ))}
+          {TRUST_FLOW_STEPS.map((step, index) => {
+            const Icon = [Mail, FileText, ShieldCheck, CheckSquare][index] ?? FileText;
+            return (
+              <li key={step.index}>
+                <div className={styles.trustCardTop}>
+                  <Icon size={24} aria-hidden="true" />
+                  <span>{step.index}</span>
+                </div>
+                <strong>{step.title}</strong>
+                <small>{step.detail}</small>
+              </li>
+            );
+          })}
         </ol>
         <div className={styles.trustFlowProof} aria-label="Timeline evidence safeguards">
           {TRUST_FLOW_CHIPS.map((chip) => (

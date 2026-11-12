@@ -1827,113 +1827,105 @@
 
 .trustFlowPanel {
   margin-top: clamp(2rem, 4vw, 4rem);
-  padding: clamp(1.5rem, 4vw, 4rem);
-  border: 1px solid var(--home-line);
+  padding: clamp(1.25rem, 3vw, 3rem);
+  border: 1px solid var(--home-line-strong);
+  border-top: 3px solid var(--home-signal);
+  background:
+    radial-gradient(ellipse at top left, var(--home-signal-soft), transparent 65%),
+    var(--home-panel);
 }
-
 .trustFlowPanel > header {
   display: grid;
-  grid-template-columns: minmax(15rem, 0.72fr) minmax(0, 1fr);
-  gap: clamp(2rem, 6vw, 7rem);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 0.8fr);
+  gap: 1rem 3rem;
   align-items: end;
 }
-
 .trustFlowPanel > header .monoLabel {
   grid-column: 1 / -1;
 }
-
 .trustFlowPanel > header h3 {
-  max-width: 15ch;
-  font-size: clamp(2.1rem, 4.2vw, 4.6rem);
-  font-weight: 600;
-  line-height: 1.1;
-  letter-spacing: -0.03em;
+  max-width: 20ch;
+  font-size: clamp(2rem, 3.5vw, 3.5rem);
+  font-weight: 500;
+  line-height: 1.12;
+  letter-spacing: -0.025em;
   text-wrap: balance;
 }
-
-.trustFlowPanel > header p {
+.trustIntro p {
   max-width: 38rem;
   color: var(--home-muted);
   line-height: 1.65;
 }
-
+.trustCta {
+  display: inline-flex;
+  align-items: center;
+  gap: 1.5rem;
+  padding: 0.8rem 1rem;
+  margin-top: 1.25rem;
+  background: var(--home-signal);
+  color: var(--home-ink);
+  font-size: 0.9rem;
+  font-weight: 600;
+  border: 1px solid var(--home-signal);
+}
+.trustCta:hover {
+  filter: brightness(0.94);
+}
+.trustCta:focus-visible {
+  outline: 2px solid var(--home-signal);
+  outline-offset: 4px;
+}
 .trustFlow {
-  position: relative;
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  margin: clamp(3rem, 6vw, 5.5rem) 0 0;
+  gap: 0.75rem;
+  margin: 2rem 0 0;
   padding: 0;
   list-style: none;
 }
-
-.trustFlow::before {
-  position: absolute;
-  top: 1rem;
-  right: 12.5%;
-  left: 12.5%;
-  z-index: 0;
-  height: 1px;
-  background: var(--home-signal);
-  content: '';
-  transform: scaleX(1);
-  transform-origin: left;
-}
-
 .trustFlow li {
-  position: relative;
-  z-index: 1;
-  display: grid;
-  justify-items: center;
-  padding-inline: 0.75rem;
-  text-align: center;
+  min-width: 0;
+  padding: 1.25rem;
+  border: 1px solid var(--home-line);
+  background: var(--home-ink);
 }
-
-.trustFlow li > span {
-  display: grid;
-  width: 2rem;
-  height: 2rem;
-  place-items: center;
-  border: 1px solid var(--home-signal);
-  background: var(--home-panel);
+.trustCardTop {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   color: var(--home-signal);
+}
+.trustCardTop span {
   font-family: var(--font-mono);
-  font-size: var(--home-meta-size);
-  border-radius: 50%;
-}
-
-.trustFlow strong {
-  margin-top: 1.1rem;
-  font-size: clamp(0.95rem, 1.3vw, 1.15rem);
-  font-weight: 600;
-}
-
-.trustFlow small {
-  margin-top: 0.4rem;
+  font-size: 0.75rem;
   color: var(--home-dim);
-  font-family: var(--font-mono);
-  font-size: var(--home-meta-size);
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
 }
-
+.trustFlow strong {
+  display: block;
+  margin-top: 1.5rem;
+  font-size: 1.05rem;
+  font-weight: 500;
+  line-height: 1.4;
+}
+.trustFlow small {
+  display: block;
+  margin-top: 0.5rem;
+  color: var(--home-muted);
+  font-size: 0.85rem;
+  line-height: 1.6;
+}
 .trustFlowProof {
   display: flex;
   flex-wrap: wrap;
-  justify-content: center;
-  gap: 0.55rem;
-  margin-top: clamp(2.5rem, 5vw, 4.5rem);
-  padding-top: 1.5rem;
+  gap: 0.5rem 1.25rem;
+  margin-top: 1.5rem;
+  padding-top: 1rem;
   border-top: 1px solid var(--home-line);
 }
-
 .trustFlowProof span {
-  padding: 0.45rem 0.6rem;
-  border: 1px solid var(--home-line-strong);
   color: var(--home-muted);
-  font-family: var(--font-mono);
-  font-size: var(--home-meta-size);
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
+  font-size: 0.75rem;
+  line-height: 1.5;
 }
 
 .connectorPanel {
@@ -2865,38 +2857,7 @@
   }
 
   .trustFlow {
-    grid-template-columns: 1fr;
-    gap: 0;
-  }
-
-  .trustFlow::before {
-    top: 1rem;
-    right: auto;
-    bottom: 2.25rem;
-    left: 1rem;
-    width: 1px;
-    height: auto;
-    transform: scaleY(1);
-    transform-origin: top;
-  }
-
-  .trustFlow li {
-    grid-template-columns: 2rem minmax(0, 1fr);
-    gap: 0.25rem 1rem;
-    justify-items: start;
-    min-height: 6rem;
-    padding: 0;
-    text-align: left;
-  }
-
-  .trustFlow strong,
-  .trustFlow small {
-    grid-column: 2;
-    margin-top: 0;
-  }
-
-  .trustFlow li > span {
-    grid-row: 1 / 3;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .trustFlowProof {
@@ -3320,5 +3281,33 @@
   }
   .recordCard h3 {
     margin-top: 0.75rem;
+  }
+}
+
+@media (max-width: 36rem) {
+  .trustFlow {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .trustFlowPanel > header {
+    gap: 1rem;
+  }
+  .trustFlow li {
+    display: grid;
+    grid-template-columns: 2rem minmax(0, 1fr);
+    gap: 0.25rem 0.75rem;
+    padding: 1rem;
+  }
+  .trustCardTop {
+    grid-row: 1 / 3;
+    flex-direction: column;
+    justify-content: start;
+    gap: 0.5rem;
+  }
+  .trustFlow strong {
+    margin-top: 0;
+  }
+  .trustFlow small {
+    grid-column: 2;
+    margin-top: 0;
   }
 }

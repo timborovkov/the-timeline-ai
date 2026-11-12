@@ -390,3 +390,8 @@ Use-case CTAs stay compact and omit the repeated first-run walkthrough; setup
 detail remains on the product tour and onboarding surfaces. When a walkthrough
 has a screenshot, its example sits in the adjacent column rather than stacking
 both in one column and leaving the other empty.
+
+The homepage trust panel uses a signal-accented header, a clear link to Trust &
+Security, and four bordered evidence cards. Keep the heading and explanation
+close, with no oversized empty grid row. The cards retain the existing capture,
+immutability, visibility and approval claims; this is not a certification claim.
