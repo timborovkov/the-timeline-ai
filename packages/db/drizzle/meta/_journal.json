@@ -785,6 +785,13 @@
       "when": 1795657000000,
       "tag": "0105_board_qualification",
       "breakpoints": true
+    },
+    {
+      "idx": 112,
+      "version": "7",
+      "when": 1795658000000,
+      "tag": "0106_engine_maintenance",
+      "breakpoints": true
     }
   ]
 }

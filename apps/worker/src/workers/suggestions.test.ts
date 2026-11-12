@@ -396,7 +396,7 @@ describe('processSuggestionJobForTests', () => {
       .limit(1);
     expect(row?.sourceMetadata).toMatchObject({
       suggestions_skipped_reason: 'integration_structured_source',
-      suggestion_model_version: `${MODEL_ID}@2026-08-a`,
+      suggestion_model_version: `${MODEL_ID}@2026-11-engine-v3-recall`,
     });
     expect(row?.sourceMetadata).toHaveProperty('suggestions_skipped_at');
   });
@@ -713,7 +713,7 @@ describe('processSuggestionJobForTests', () => {
       .limit(1);
     expect(row?.sourceMetadata).toMatchObject({
       suggestions_skipped_reason: 'ingest_webhook_proposals_disabled',
-      suggestion_model_version: `${MODEL_ID}@2026-08-a`,
+      suggestion_model_version: `${MODEL_ID}@2026-11-engine-v3-recall`,
     });
     expect(row?.sourceMetadata).toHaveProperty('suggestions_skipped_at');
   });
@@ -756,7 +756,7 @@ describe('processSuggestionJobForTests', () => {
       .limit(1);
     expect(row?.sourceMetadata).toMatchObject({
       suggestions_skipped_reason: 'ingest_webhook_proposals_disabled',
-      suggestion_model_version: `${MODEL_ID}@2026-08-a`,
+      suggestion_model_version: `${MODEL_ID}@2026-11-engine-v3-recall`,
     });
   });
 
@@ -2480,11 +2480,11 @@ describe('processSuggestionJobForTests', () => {
     ).resolves.toEqual([]);
   });
 
-  it('suggests approval-backed person merges for full-name and short-name variants', async () => {
+  it('suggests approval-backed person merges for approved full-name and short-name aliases', async () => {
     const inserted = await db
       .insert(entities)
       .values([
-        { teamId: TEAM_ID, type: 'person', canonicalName: 'Taylor Bennett' },
+        { teamId: TEAM_ID, type: 'person', canonicalName: 'Taylor Bennett', aliases: ['Taylor'] },
         { teamId: TEAM_ID, type: 'person', canonicalName: 'Taylor' },
       ])
       .returning({ id: entities.id });
@@ -2969,7 +2969,7 @@ describe('processSuggestionJobForTests', () => {
 
     const event = (await db.select().from(rawEvents).where(eq(rawEvents.id, rawEventId)))[0];
     expect(event?.sourceMetadata).toMatchObject({
-      suggestion_pre_extract_model_version: `${MODEL_ID}@2026-08-a`,
+      suggestion_pre_extract_model_version: `${MODEL_ID}@2026-11-engine-v3-recall`,
     });
     expect(event?.sourceMetadata).toHaveProperty('suggestions_pre_extracted_at');
   });
@@ -3838,6 +3838,7 @@ describe('processSuggestionJobForTests', () => {
         teamId: TEAM_ID,
         type: 'person',
         canonicalName: 'Taylor Bennett',
+        aliases: ['Taylor'],
       })
       .returning({ id: entities.id });
     if (!person) throw new Error('expected person fixture');
@@ -5448,7 +5449,7 @@ describe('processSuggestionJobForTests', () => {
     });
   });
 
-  it('keeps duplicate creates when non-person matching is ambiguous', async () => {
+  it('surfaces an explicit review interpretation when non-person matching is ambiguous', async () => {
     const rawEventId = '10000000-0000-0000-0000-000000000032';
     await db.insert(entities).values([
       { teamId: TEAM_ID, type: 'company', canonicalName: 'KPMG' },
@@ -5500,17 +5501,123 @@ describe('processSuggestionJobForTests', () => {
       TEAM_ID,
       OWNER_ID,
     ).suggestions.listPendingSuggestions();
-    expect(bundle?.items[0]).toMatchObject({
-      operation: 'create',
-      targetKind: 'object',
-      targetId: null,
-      title: 'KPMG',
-      proposedPayload: {
+    expect(bundle?.confidence).toBe('low');
+    expect(bundle?.reason).toContain('Identity needs review');
+    const item = bundle?.items[0];
+    expect(item?.operation).toBe('update');
+    expect(item?.description).toContain('KPMG (company)');
+    expect(item?.description).toContain('KPMG (vendor)');
+    const [company] = await db.select().from(entities).where(eq(entities.type, 'company'));
+    expect(item?.targetId).toBe(company?.id);
+    expect(item?.proposedPayload.aliases).toBeUndefined();
+    expect(await db.select().from(entities)).toHaveLength(2);
+    if (!item) throw new Error('expected reviewable proposal');
+    const scope = withTeam(db as never, TEAM_ID, OWNER_ID);
+    await scope.suggestions.rejectSuggestionItem(item.id);
+    const [rejected] = await db
+      .select()
+      .from(agentSuggestionItems)
+      .where(eq(agentSuggestionItems.id, item.id));
+    expect(rejected?.status).toBe('rejected');
+    expect(rejected?.resolvedByUserId).toBe(OWNER_ID);
+    // Force inference again on the unchanged source, not merely a stamped no-op.
+    await db
+      .update(rawEvents)
+      .set({
+        sourceMetadata: {
+          extracted_at: REFERENCE_DATE.toISOString(),
+          extraction_model_version: 'test-extract@1',
+        },
+      })
+      .where(eq(rawEvents.id, rawEventId));
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { rawEventId, teamId: TEAM_ID },
+      { getEnv: env, chatStructured: chat, modelId: MODEL_ID },
+    );
+    expect(chat).toHaveBeenCalledTimes(2);
+    expect(await scope.suggestions.listPendingSuggestions()).toHaveLength(0);
+  });
+
+  it('keeps a distinct-object proposal and its relationship when aliases match multiple objects', async () => {
+    await db.insert(entities).values([
+      {
+        teamId: TEAM_ID,
         type: 'company',
-        canonicalName: 'KPMG',
-        status: 'shortlisted',
+        canonicalName: 'Northstar Audit',
+        aliases: ['Northstar'],
+      },
+      { teamId: TEAM_ID, type: 'company', canonicalName: 'Northstar Labs', aliases: ['Northstar'] },
+    ]);
+    const rawEventId = '10000000-0000-0000-0000-000000000042';
+    await seedRawEvent(db as never, {
+      id: rawEventId,
+      text: 'Track Northstar as a client and prepare the access checklist for Northstar.',
+      sourceMetadata: {
+        extracted_at: REFERENCE_DATE.toISOString(),
+        extraction_model_version: 'test-extract@1',
       },
     });
+    const chat = vi.fn().mockResolvedValue({
+      model: MODEL_ID,
+      object: {
+        bundles: [
+          {
+            title: 'Prepare Northstar access',
+            reason: 'Client request needs tracking.',
+            confidence: 'medium',
+            quote: 'Track Northstar as a client',
+            items: [
+              {
+                operation: 'create',
+                targetKind: 'object',
+                title: 'Northstar',
+                proposedPayload: {
+                  type: 'company',
+                  canonicalName: 'Northstar',
+                  localRef: 'client',
+                },
+              },
+              {
+                operation: 'create',
+                targetKind: 'task',
+                title: 'Prepare access checklist',
+                proposedPayload: {
+                  canonicalName: 'Prepare access checklist',
+                  localRef: 'checklist',
+                },
+              },
+              {
+                operation: 'create',
+                targetKind: 'object_relationship',
+                title: 'Checklist for Northstar',
+                proposedPayload: { fromRef: 'checklist', toRef: 'client', kind: 'related' },
+              },
+            ],
+          },
+        ],
+      },
+    });
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { rawEventId, teamId: TEAM_ID },
+      { getEnv: env, chatStructured: chat, modelId: MODEL_ID },
+    );
+    const [bundle] = await withTeam(
+      db as never,
+      TEAM_ID,
+      OWNER_ID,
+    ).suggestions.listPendingSuggestions();
+    expect(bundle?.confidence).toBe('low');
+    expect(bundle?.items).toHaveLength(3);
+    expect(bundle?.reason).toContain('Proposes a separate company');
+    const company = bundle?.items.find((item) => item.targetKind === 'object');
+    expect(company?.operation).toBe('create');
+    expect(company?.targetId).toBeNull();
+    expect(
+      bundle?.items.find((item) => item.targetKind === 'object_relationship')?.proposedPayload,
+    ).toMatchObject({ fromRef: 'checklist', toRef: 'client' });
+    expect(await db.select().from(entities)).toHaveLength(2);
   });
 
   it('does not rewrite numbered non-person objects as duplicate updates', async () => {
@@ -5919,7 +6026,7 @@ describe('processSuggestionJobForTests', () => {
     const [event] = await db.select().from(rawEvents).where(eq(rawEvents.id, rawEventId));
     expect(event?.sourceMetadata).toMatchObject({
       suggestions_skipped_reason: 'visibility=private',
-      suggestion_model_version: `${MODEL_ID}@2026-08-a`,
+      suggestion_model_version: `${MODEL_ID}@2026-11-engine-v3-recall`,
     });
   });
 
@@ -8427,11 +8534,11 @@ describe('processSuggestionJobForTests', () => {
       .from(rawEvents);
     expect(skipped.find((row) => row.id === privateEventId)?.sourceMetadata).toMatchObject({
       suggestions_skipped_reason: 'visibility=private',
-      suggestion_model_version: `${MODEL_ID}@2026-08-a`,
+      suggestion_model_version: `${MODEL_ID}@2026-11-engine-v3-recall`,
     });
     expect(skipped.find((row) => row.id === specificEventId)?.sourceMetadata).toMatchObject({
       suggestions_skipped_reason: 'visibility=specific_users',
-      suggestion_model_version: `${MODEL_ID}@2026-08-a`,
+      suggestion_model_version: `${MODEL_ID}@2026-11-engine-v3-recall`,
     });
   });
 
@@ -8467,11 +8574,11 @@ describe('processSuggestionJobForTests', () => {
       .from(rawEvents);
     expect(skipped.find((row) => row.id === inactivePrivateId)?.sourceMetadata).toMatchObject({
       suggestions_skipped_reason: 'visibility=private',
-      suggestion_model_version: `${MODEL_ID}@2026-08-a`,
+      suggestion_model_version: `${MODEL_ID}@2026-11-engine-v3-recall`,
     });
     expect(skipped.find((row) => row.id === emptySpecificId)?.sourceMetadata).toMatchObject({
       suggestions_skipped_reason: 'visibility=specific_users',
-      suggestion_model_version: `${MODEL_ID}@2026-08-a`,
+      suggestion_model_version: `${MODEL_ID}@2026-11-engine-v3-recall`,
     });
     expect(await suggestionCounts(pg)).toEqual({ suggestions: 0, items: 0 });
   });
@@ -8500,7 +8607,7 @@ describe('processSuggestionJobForTests', () => {
       .update(rawEvents)
       .set({
         sourceMetadata: {
-          suggestion_pre_extract_model_version: `${MODEL_ID}@2026-08-a`,
+          suggestion_pre_extract_model_version: `${MODEL_ID}@2026-11-engine-v3-recall`,
           suggestions_pre_extracted_at: '2026-05-27T10:00:00.000Z',
           extracted_at: '2026-05-27T10:01:00.000Z',
           extraction_model_version: 'test-extract@1',
@@ -8520,8 +8627,8 @@ describe('processSuggestionJobForTests', () => {
     );
     const event = (await db.select().from(rawEvents).where(eq(rawEvents.id, rawEventId)))[0];
     expect(event?.sourceMetadata).toMatchObject({
-      suggestion_pre_extract_model_version: `${MODEL_ID}@2026-08-a`,
-      suggestion_model_version: `${MODEL_ID}@2026-08-a`,
+      suggestion_pre_extract_model_version: `${MODEL_ID}@2026-11-engine-v3-recall`,
+      suggestion_model_version: `${MODEL_ID}@2026-11-engine-v3-recall`,
     });
     expect(await suggestionCounts(pg)).toEqual({ suggestions: 1, items: 2 });
   });

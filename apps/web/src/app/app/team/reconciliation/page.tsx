@@ -82,6 +82,7 @@ export default async function ReconciliationDashboardPage({
   const timezone = calendarSettings.defaultTimezone;
 
   const coverage = dashboard.evidenceCoverage;
+  const cleanupRuns = await scope.engineMaintenance.latestRuns();
 
   return (
     <div className="space-y-8">
@@ -97,6 +98,38 @@ export default async function ReconciliationDashboardPage({
         />
       ) : null}
 
+      <section aria-label="Object engine maintenance" className="space-y-2">
+        <h2 className="text-lg font-medium">Object cleanup and document review</h2>
+        <p className="text-sm text-fg-dim">
+          Cleanup is configured for daily runs at 03:00 UTC. Runs resume from their last checkpoint.
+        </p>
+        {cleanupRuns.length ? (
+          cleanupRuns.map((run) => (
+            <p key={run.id} className="text-sm">
+              {run.kind.startsWith('document:')
+                ? 'Document review'
+                : run.kind === 'development_reset'
+                  ? 'Development replay'
+                  : 'Object cleanup'}
+              : {run.status} · {run.examined}
+              {typeof (run.metadata as Record<string, unknown>).totalObjects === 'number'
+                ? ` / ${(run.metadata as Record<string, unknown>).totalObjects as number}`
+                : ''}{' '}
+              examined · {Number((run.metadata as Record<string, unknown>).proposalCount ?? 0)}{' '}
+              proposals · updated {run.updatedAt.toISOString()}
+              {run.completedAt ? ` · completed ${run.completedAt.toISOString()}` : ''}
+              {typeof (run.metadata as Record<string, unknown>).reason === 'string'
+                ? ` · ${(run.metadata as Record<string, unknown>).reason as string}`
+                : ''}
+            </p>
+          ))
+        ) : (
+          <p className="text-sm text-fg-dim">No maintenance run recorded yet.</p>
+        )}
+        <Link href="/app/approvals" className="text-sm underline">
+          Review suggestions
+        </Link>
+      </section>
       <CoverageSection
         failures={coverage.releaseGate.failures}
         coverageLimit={dashboard.coverageLimit}

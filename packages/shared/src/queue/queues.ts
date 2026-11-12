@@ -1,10 +1,11 @@
 import { Queue, type JobsOptions } from 'bullmq';
 
 import { getEnv } from '#src/env.js';
+import { getRedisConnection } from '#src/queue/connection.js';
+
 import { driveExtractResumeJobIdentity } from '#src/integrations/google-drive-scheduling.js';
 import { defaultDigestWindow } from '#src/messaging/digest-window.js';
 import { tagOperatorJob } from '#src/platform-admin/runtime.js';
-import { getRedisConnection } from '#src/queue/connection.js';
 
 type TimelineQueue<TData> = Queue<TData, unknown, string, TData, unknown, string>;
 
@@ -213,6 +214,7 @@ export async function closeExtractQueue(): Promise<void> {
 export type SuggestionJobData =
   | SuggestionRawEventJobData
   | SuggestionConversationReviewJobData
+  | SuggestionDocumentJobData
   | SuggestionObjectCleanupJobData
   | SuggestionGithubTaskProposalJobData;
 
@@ -225,6 +227,13 @@ export interface SuggestionConversationReviewJobData {
   scope: 'conversation_review';
   conversationReviewId: string;
   teamId: string;
+}
+
+export interface SuggestionDocumentJobData {
+  scope: 'document';
+  explicitRequest?: boolean;
+  teamId: string;
+  documentVersionId: string;
 }
 
 export interface SuggestionObjectCleanupJobData {
@@ -249,6 +258,13 @@ function bullmqCustomJobId(parts: string[]): string {
 
 function suggestionJobId(data: SuggestionJobData, jobIdSuffix?: string): string | undefined {
   if ('scope' in data) {
+    if (data.scope === 'document')
+      return bullmqCustomJobId([
+        'document-suggestions',
+        data.teamId,
+        data.documentVersionId,
+        ...(jobIdSuffix ? [jobIdSuffix] : []),
+      ]);
     if (data.scope === 'conversation_review') {
       return bullmqCustomJobId([
         'conversation-review',

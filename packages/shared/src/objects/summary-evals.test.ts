@@ -68,6 +68,109 @@ afterEach(async () => {
 });
 
 describe('object summary evals', () => {
+  // Structured integrations skip fact extraction; their associated evidence
+  // must still enable the same summary action shown on the object detail page.
+  it('offers summary generation for a project supported only by artifact evidence', async () => {
+    const scope = withTeam(db, TEAM_ID, USER_ID);
+    const [object] = await db
+      .insert(entities)
+      .values({
+        teamId: TEAM_ID,
+        type: 'project',
+        canonicalName: 'Northstar rollout',
+        status: 'active',
+        stage: 'renewal',
+      })
+      .returning({ id: entities.id });
+    if (!object) throw new Error('failed to insert object');
+
+    const [cluster] = await db
+      .insert(artifactClusters)
+      .values({
+        teamId: TEAM_ID,
+        artifactClusterKind: 'customer_project',
+        artifactType: 'project',
+        canonicalName: 'Northstar rollout',
+        canonicalEntityId: object.id,
+      })
+      .returning({ id: artifactClusters.id });
+    if (!cluster) throw new Error('failed to insert artifact cluster');
+
+    const [visibleRaw] = await db
+      .insert(rawEvents)
+      .values({
+        teamId: TEAM_ID,
+        authorUserId: USER_ID,
+        source: 'integration',
+        contentText: 'Monday item: Northstar approved the rollout renewal packet.',
+        occurredAt: new Date('2026-07-02T10:00:00.000Z'),
+        visibility: 'team',
+        sourceMetadata: {
+          provider: 'monday',
+          source_payload_ref: 'monday://board/rollouts/item/northstar-approval',
+        },
+      })
+      .returning({ id: rawEvents.id });
+    if (!visibleRaw) throw new Error('failed to insert visible raw event');
+
+    const [visibleEvidence] = await db
+      .insert(reconciliationEvidence)
+      .values({
+        teamId: TEAM_ID,
+        rawEventId: visibleRaw.id,
+        sourcePayloadRef: 'monday://board/rollouts/item/northstar-approval',
+        payloadDigest: 'sha256:northstar-visible-payload',
+        source: 'integration',
+        provider: 'monday',
+        externalObjectId: 'northstar-approval',
+        externalEventId: 'northstar-approval:update',
+        eventType: 'monday.item_update',
+        occurredAt: new Date('2026-07-02T10:00:00.000Z'),
+        visibility: 'team',
+        actor: { kind: 'customer' },
+        contentDigest: 'sha256:northstar-visible-content',
+        title: 'Northstar approved renewal rollout',
+        summary: 'Visible renewal packet signed by Northstar procurement.',
+        metadata: {},
+        normalizerVersion: 'summary-eval',
+        replayState: 'full',
+        dedupeKey: 'summary-eval-visible-evidence',
+      })
+      .returning({ id: reconciliationEvidence.id });
+    if (!visibleEvidence) throw new Error('failed to insert visible evidence');
+    await db.insert(artifactEvidenceAssociations).values({
+      teamId: TEAM_ID,
+      clusterId: cluster.id,
+      evidenceId: visibleEvidence.id,
+      rawEventId: visibleRaw.id,
+      role: 'decision',
+      strength: 'hard',
+      associationSource: 'hard_anchor',
+      sourceRefs: [
+        { source: 'integration', rawEventId: visibleRaw.id, evidenceId: visibleEvidence.id },
+      ],
+      visibility: 'team',
+      visibilityFloor: 'team',
+      dedupeKey: 'summary-eval-visible-association',
+    });
+
+    const detail = await scope.objects.getObject(object.id);
+    expect(detail?.summary?.canGenerate).toBe(true);
+    expect(detail?.summary?.cannotGenerateReason).toBeNull();
+    await db
+      .update(artifactEvidenceAssociations)
+      .set({
+        visibility: 'private',
+        visibilityOwnerUserId: USER_ID,
+        visibilityFloor: 'private',
+        visibilityFloorOwnerUserId: USER_ID,
+      })
+      .where(eq(artifactEvidenceAssociations.clusterId, cluster.id));
+    // Team-visible summaries cannot incorporate a private association even for
+    // the owner who can read that source elsewhere.
+    expect((await scope.objects.getObject(object.id))?.summary?.canGenerate).toBe(false);
+  });
+
   it('grounds summaries in visible reconciliation evidence without leaking private sources', async () => {
     const scope = withTeam(db, TEAM_ID, USER_ID);
     const [object] = await db

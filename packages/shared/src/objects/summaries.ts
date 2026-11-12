@@ -811,6 +811,10 @@ export async function getObjectSummaryFromSnapshot(
     .limit(1);
   const row = rows[0];
   const enough = sufficiency(snapshot.sourceCounts, snapshot.meaningfulFields);
+  // The detail-page snapshot does not include artifact associations or curated
+  // document evidence. Use the generator's visibility-checked packet before
+  // declaring that an object has insufficient memory.
+  if (!enough.canGenerate) return getObjectSummary(db, scope, entityId);
   return {
     status: row?.status ?? 'missing',
     summary: row ? objectSummaryFromJson(row.summary) : null,
