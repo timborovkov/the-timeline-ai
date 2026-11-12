@@ -142,6 +142,7 @@ export default function LandingPage() {
       <PublicHeader currentSection="product" />
       <main id="main" tabIndex={-1}>
         <ClaimScene />
+        <UseCaseOverview />
         <IntakeScene />
         <TimelineScene />
         <AnswerScene />
@@ -264,6 +265,37 @@ function ClaimScene() {
       </div>
 
       <TimelineFlowDiagram variant="hero" />
+    </section>
+  );
+}
+
+function UseCaseOverview() {
+  return (
+    <section
+      className={styles.scene}
+      aria-labelledby="use-case-overview-title"
+      data-use-case-overview
+    >
+      <div className={styles.fitPanel} data-home-diagram>
+        <div className={styles.fitPanelIntro}>
+          <span className={styles.monoLabel}>Six ways teams use it</span>
+          <h2 id="use-case-overview-title">One record, kept current from your conversations.</h2>
+          <p>Choose the job you need below.</p>
+        </div>
+        <div className={styles.audienceRail} aria-label="Ways teams use The Timeline">
+          {AUDIENCES.map((audience) => (
+            <Link href={audience.href} key={audience.name}>
+              <span>{audience.index}</span>
+              <h3>{audience.name}</h3>
+              <p>{audience.outcome}</p>
+              <small>
+                {audience.result}
+                <span aria-hidden="true"> ↗</span>
+              </small>
+            </Link>
+          ))}
+        </div>
+      </div>
     </section>
   );
 }
@@ -580,27 +612,6 @@ function AudienceScene() {
         copy="For client delivery, product and operations work that happens in conversation."
       />
       <HomeProof shot={HOME_DIGEST_SHOT} align="copy-first" />
-      <div className={styles.fitPanel} data-home-diagram>
-        <div className={styles.fitPanelIntro}>
-          <span className={styles.monoLabel}>Six ways teams use it</span>
-          <h3>One record, kept current from your conversations.</h3>
-          <p>Choose the job you need below.</p>
-        </div>
-        <div className={styles.audienceRail} aria-label="Ways teams use The Timeline">
-          {AUDIENCES.map((audience) => (
-            <Link href={audience.href} key={audience.name}>
-              <span>{audience.index}</span>
-              <h4>{audience.name}</h4>
-              <p>{audience.outcome}</p>
-              <small>
-                {audience.result}
-                <span aria-hidden="true"> ↗</span>
-              </small>
-            </Link>
-          ))}
-        </div>
-      </div>
-
       <div className={styles.trustFlowPanel} data-home-diagram aria-labelledby="trust-flow-title">
         <header>
           <span className={styles.monoLabel}>How one answer stays trustworthy</span>

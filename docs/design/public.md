@@ -356,3 +356,9 @@ and Deals equal prominence. Show each record’s purpose and named relationships
 then the actual company-record screenshot as concrete product evidence. The
 conversation → suggestion → approval → record sequence keeps durable changes
 explicitly approval-backed. This section describes records, not customer proof.
+
+The six-use-case overview sits immediately after the homepage hero and before
+“What goes in”, so visitors can choose a relevant job before the detailed product
+walkthrough. It appears once; the later audience section retains the daily-update
+screenshot and trust flow. The overview is unnumbered navigation within the
+existing seven-scene narrative.

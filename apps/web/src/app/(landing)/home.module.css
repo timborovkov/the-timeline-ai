@@ -1753,7 +1753,6 @@
   display: grid;
   grid-template-columns: minmax(18rem, 0.62fr) minmax(0, 1.38fr);
   gap: 1px;
-  margin-bottom: clamp(2.5rem, 4vw, 4rem);
   border: 1px solid var(--home-line);
   background: var(--home-line);
 }
@@ -1769,7 +1768,7 @@
   padding: clamp(1.5rem, 3vw, 3rem);
 }
 
-.fitPanelIntro h3 {
+.fitPanelIntro h2 {
   max-width: 12ch;
   margin-top: 1rem;
   font-size: clamp(2rem, 3.4vw, 3.6rem);
@@ -1821,7 +1820,7 @@
   outline-offset: 2px;
 }
 
-.audienceRail h4 {
+.audienceRail h3 {
   font-size: clamp(1rem, 1.45vw, 1.3rem);
   font-weight: 600;
   letter-spacing: -0.035em;
@@ -2852,13 +2851,14 @@
     align-items: start;
   }
 
-  .audienceRail h4,
+  .audienceRail h3,
   .audienceRail p,
   .audienceRail small {
     grid-column: 2;
   }
 
   .audienceRail small {
+    white-space: normal;
     text-align: left;
   }
 

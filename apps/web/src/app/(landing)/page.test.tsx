@@ -94,6 +94,10 @@ describe('LandingPage', () => {
     expect(html).toContain('aria-label="Agent conversation"');
     expect(html).not.toContain('timeline.retrieve_workspace_context');
     expect(html).not.toContain('timeline.get_event');
+    const overviewIndex = html.indexOf('data-use-case-overview');
+    expect(overviewIndex).toBeGreaterThan(html.indexOf('data-scene="01-claim"'));
+    expect(overviewIndex).toBeLessThan(html.indexOf('data-scene="02-intake"'));
+    expect(html.match(/data-use-case-overview/g)).toHaveLength(1);
     expect(html).toContain('data-chat-to-answer');
     expect(html).toContain('aria-label="Public navigation menu"');
     expect(html).toContain('SSO blocks launch. Friday’s customer update is still due.');
@@ -105,11 +109,11 @@ describe('LandingPage', () => {
     expect(html).toContain('href="/use-cases/work-record"');
     expect(html).toContain('href="/use-cases/team-daily-log"');
     expect(html).toContain('href="/use-cases/crm"');
-    expect(html).toContain('<a href="/use-cases/work-record"><span>01</span><h4>Work record</h4>');
+    expect(html).toContain('<a href="/use-cases/work-record"><span>01</span><h3>Work record</h3>');
     expect(html).toContain(
-      '<a href="/use-cases/team-daily-log"><span>02</span><h4>Team daily log</h4>',
+      '<a href="/use-cases/team-daily-log"><span>02</span><h3>Team daily log</h3>',
     );
-    expect(html).toContain('<a href="/use-cases/crm"><span>04</span><h4>CRM</h4>');
+    expect(html).toContain('<a href="/use-cases/crm"><span>04</span><h3>CRM</h3>');
     expect(html).toContain('on one timeline, with where it was said.');
     expect(html).toContain('Every answer carries its evidence chain.');
     expect(html).toContain('Suggested changes wait');
