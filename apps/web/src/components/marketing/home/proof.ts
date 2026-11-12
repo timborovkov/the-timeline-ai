@@ -26,10 +26,10 @@ export const HOME_ASK_SHOT = {
 
 export const HOME_CLIENT_SHOT = {
   file: '22-client-northstar-dark.png',
-  kicker: 'Clients and to-dos',
+  kicker: 'Inside a company record',
   alt: 'Client record gathering open tasks, pending approvals, documents and related messages.',
-  caption: 'One place for the client’s work.',
-  body: 'See open tasks, documents and proposed changes alongside the conversations behind them.',
+  caption: 'Open a record. See the connected work.',
+  body: 'A company brings together its open tasks, documents, related messages and proposed changes. Follow the connections without rebuilding the context.',
 } as const satisfies MarketingScreenshotSlot & { kicker: string; body: string };
 
 export const HOME_DIGEST_SHOT = {

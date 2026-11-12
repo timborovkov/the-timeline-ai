@@ -252,9 +252,12 @@ describe('LandingPage', () => {
       'Give me the current status, handoff, blockers, and customer commitments.',
     );
     expect(html).toContain(
-      'Replace manual CRM and task-board entry with suggested updates from your conversations.',
+      'Tasks, people, projects, companies and deals—with their history, relationships and next steps in one place.',
     );
-    expect(html).toContain('ready for your <em>review.</em>');
+    expect(html).toContain('Conversations become connected <em>records.</em>');
+    for (const record of ['Tasks', 'People', 'Projects', 'Companies', 'Deals']) {
+      expect(html).toContain(`${record}</h3>`);
+    }
     expect(html).not.toContain('update themselves');
     expect(html).toContain('Ingest webhooks');
     expect(html).not.toContain('A direct chat asks the agent');

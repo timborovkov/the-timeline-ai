@@ -1,4 +1,15 @@
-import { FileText, Globe, Mail, Video, Webhook } from 'lucide-react';
+import {
+  Building2,
+  CheckSquare,
+  FileText,
+  Folder,
+  Globe,
+  Handshake,
+  Mail,
+  UserRound,
+  Video,
+  Webhook,
+} from 'lucide-react';
 import Image from 'next/image';
 import Link from 'next/link';
 
@@ -471,15 +482,75 @@ function OrganisedScene() {
     <section className={styles.scene} aria-labelledby="organised-title" data-scene="05-organised">
       <SceneHeading
         number="05"
-        label="Clients and to-dos"
+        label="Connected records"
         id="organised-title"
         title={
           <>
-            Clients and to-dos, ready for your <em>review.</em>
+            Conversations become connected <em>records.</em>
           </>
         }
-        copy="Replace manual CRM and task-board entry with suggested updates from your conversations."
+        copy="Tasks, people, projects, companies and deals—with their history, relationships and next steps in one place."
       />
+      <div className={styles.recordShowcase} aria-label="Connected work records">
+        <div className={styles.recordFlow}>
+          <span>Conversations</span>
+          <span aria-hidden="true">→</span>
+          <span>Suggested changes</span>
+          <span aria-hidden="true">→</span>
+          <span>Your approval</span>
+          <span aria-hidden="true">→</span>
+          <strong>Connected records</strong>
+        </div>
+        <ul className={styles.recordGrid}>
+          {[
+            {
+              type: 'Tasks',
+              icon: CheckSquare,
+              description: 'What needs doing, who owns it and when it’s due.',
+              links: ['Owner → Person', 'Work → Project'],
+            },
+            {
+              type: 'People',
+              icon: UserRound,
+              description: 'The people involved, with their conversations and commitments.',
+              links: ['Works with → Company', 'Owns → Tasks'],
+            },
+            {
+              type: 'Projects',
+              icon: Folder,
+              description: 'The work in progress, its decisions, blockers and next steps.',
+              links: ['Includes → Tasks', 'Involves → People'],
+            },
+            {
+              type: 'Companies',
+              icon: Building2,
+              description:
+                'The relationship in one place, from first conversation to ongoing work.',
+              links: ['Contacts → People', 'Work → Projects'],
+            },
+            {
+              type: 'Deals',
+              icon: Handshake,
+              description: 'The opportunity, its stage and the next follow-up.',
+              links: ['Customer → Company', 'Follow-up → Task'],
+            },
+          ].map(({ type, icon: Icon, description, links }) => (
+            <li key={type} className={styles.recordCard}>
+              <Icon size={24} aria-hidden="true" />
+              <h3>{type}</h3>
+              <p>{description}</p>
+              <ul aria-label={`${type} relationships`}>
+                {links.map((link) => (
+                  <li key={link}>{link}</li>
+                ))}
+              </ul>
+            </li>
+          ))}
+        </ul>
+        <p className={styles.recordNote}>
+          Each record keeps the evidence behind it. Related work stays connected.
+        </p>
+      </div>
       <HomeProof shot={HOME_CLIENT_SHOT} align="shot-first">
         <p className={styles.approvalLine}>
           <strong>Suggested changes wait.</strong> A person approves each one.

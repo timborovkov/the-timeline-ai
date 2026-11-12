@@ -71,7 +71,7 @@ retains the same topology and removes secondary metadata so cards and labels do
 not overlap.
 
 The landing page moves from the compact observatory into what goes in, one
-timeline, ask, clients and to-dos, who it is for, and start. The copyable agent
+timeline, ask, connected records, who it is for, and start. The copyable agent
 setup card is in the homepage hero and on `/agents`. The full trust flow is on
 the homepage and on `/trust`. “What Timeline preserves” lives on `/trust`; the
 preserves strip is also on `/how-it-works`. The complete
@@ -350,3 +350,9 @@ cards labeled Chat and Agent. Both show the same question, concise answer and
 local source legend. Citation markers in this comparison are static labels, not
 links to another card. Keep raw MCP tool calls and provider-specific branding out
 of this overview; integration pages own setup details.
+
+The connected-records homepage section gives Tasks, People, Projects, Companies
+and Deals equal prominence. Show each record’s purpose and named relationships,
+then the actual company-record screenshot as concrete product evidence. The
+conversation → suggestion → approval → record sequence keeps durable changes
+explicitly approval-backed. This section describes records, not customer proof.

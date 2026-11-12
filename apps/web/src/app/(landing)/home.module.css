@@ -3251,3 +3251,103 @@
   outline: 2px solid var(--home-signal);
   outline-offset: 3px;
 }
+
+.recordShowcase {
+  border: 1px solid var(--home-line);
+  background: var(--home-panel);
+}
+.recordFlow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 1.25rem;
+  border-bottom: 1px solid var(--home-line);
+  color: var(--home-muted);
+  font-size: 0.9rem;
+}
+.recordFlow strong {
+  color: var(--home-signal);
+  font-weight: 500;
+}
+.recordGrid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.recordCard {
+  min-width: 0;
+  padding: clamp(1rem, 2vw, 1.75rem);
+}
+.recordCard + .recordCard {
+  border-left: 1px solid var(--home-line);
+}
+.recordCard > svg {
+  color: var(--home-signal);
+}
+.recordCard h3 {
+  margin: 1.25rem 0 0.75rem;
+  font-size: 1.4rem;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+}
+.recordCard p {
+  min-height: 6.5rem;
+  margin: 0;
+  color: var(--home-muted);
+  font-size: 0.95rem;
+  line-height: 1.6;
+}
+.recordCard ul {
+  list-style: none;
+  padding: 1rem 0 0;
+  margin: 1rem 0 0;
+  border-top: 1px solid var(--home-line);
+  color: var(--home-dim);
+  font-size: 0.8rem;
+  line-height: 1.9;
+}
+.recordNote {
+  border-top: 1px solid var(--home-line);
+  margin: 0;
+  padding: 1.25rem;
+  color: var(--home-muted);
+  font-size: 0.9rem;
+  line-height: 1.6;
+}
+@media (max-width: 64rem) {
+  .recordGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .recordCard + .recordCard {
+    border-left: 0;
+  }
+  .recordCard:nth-child(even) {
+    border-left: 1px solid var(--home-line);
+  }
+  .recordCard:nth-child(n + 3) {
+    border-top: 1px solid var(--home-line);
+  }
+  .recordCard:last-child {
+    grid-column: 1 / -1;
+  }
+  .recordCard p {
+    min-height: 0;
+  }
+}
+@media (max-width: 36rem) {
+  .recordGrid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .recordCard:nth-child(even) {
+    border-left: 0;
+  }
+  .recordCard + .recordCard {
+    border-top: 1px solid var(--home-line);
+  }
+  .recordCard h3 {
+    margin-top: 0.75rem;
+  }
+}
