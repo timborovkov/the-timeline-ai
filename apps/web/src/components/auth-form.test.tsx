@@ -141,4 +141,16 @@ describe('auth forms', () => {
       PRIVACY_VERSION,
     );
   });
+  it('keeps signup protected while offering a working recovery route', () => {
+    render(<SignUpForm requiresTurnstile />);
+    expect(screen.getByRole('alert').textContent).toContain(
+      'Account creation is temporarily unavailable',
+    );
+    expect(screen.getByRole('link', { name: 'contact@thetimeline.cc' }).getAttribute('href')).toBe(
+      'mailto:contact@thetimeline.cc',
+    );
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Create account' }).disabled).toBe(
+      true,
+    );
+  });
 });

@@ -260,6 +260,14 @@ Privacy versions for that person, and protected product access does not continue
 until it succeeds. While production publication is withheld, existing signed-in
 users retain product access and `/legal/accept` returns them to the product.
 
+Account-entry forms keep input text at 16px on phones and may use the existing
+14px desktop density. Inline legal and recovery links stay underlined. A wrong-account
+invitation offers an explicit account switch that signs out, clears local session
+state, and preserves a validated same-origin invitation destination. Leaving an
+invitation is labelled “Not now”; it does not revoke the invite. Suspended-workspace
+pages retain public support and sign-out actions. Missing required signup protection
+keeps submission disabled and offers the configured support email as a recovery route.
+
 `/cookies` uses the same legal-page reading surface for the exact cookie and
 browser-storage inventory. It separates necessary storage, always-on personless
 surface-request counts, optional public browser analytics, pseudonymous product
@@ -283,10 +291,14 @@ server-resolved account/team identifiers and role, a normalized app surface,
 release, optional error reference, and bounded browser diagnostics. Never put
 that context or workspace content in a GitHub issue. Dashboard desktop and
 mobile footers use the same “Help & support” label; shared error states pair
-Retry with a contextual Get support action.
+Retry with a contextual Get support action. Saved support requests move focus to
+an announced confirmation and expose the reference and any delivery warning immediately.
+Pointer-submitted confirmations may fade their heading and instruction together over
+160ms with `cubic-bezier(0.22, 1, 0.36, 1)`; references and warnings remain static.
+Keyboard and reduced-motion confirmations are instant. Support inputs use 16px text
+at phone widths without changing shared private-app input density.
 
 Foundations and shared components: [design system](../../design.md).
-
 
 ### Public pricing calculator
 
