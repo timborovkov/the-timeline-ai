@@ -72,8 +72,7 @@ describe('public integration routes', () => {
     expect(text).not.toMatch(/captures? (?:all|every) (?:chat|conversation|message)/iu);
     expect(html).toContain('compact');
     expect(html).toContain('bg-white');
-    expect(html).toContain('text-[3rem]');
-    expect(html).toContain('sm:text-[clamp(3.5rem,5vw,5.5rem)]');
+    expect(html).toContain('connectorTitle');
     expect(html).not.toContain('7.5vw');
     expect(text).toContain('Send work in');
     expect(text).toContain('02/Connect your tools');
@@ -143,9 +142,8 @@ describe('public integration routes', () => {
 
     expect(html).toContain('bg-white');
     expect(html).not.toContain('Fictional Acme example, not customer data.');
-    expect(html).toContain('scroll-mt-12');
-    expect(html).toContain('text-[3rem]');
-    expect(html).toContain('sm:text-[clamp(3.5rem,5vw,5.5rem)]');
+    expect(html).toContain('scroll-mt-24');
+    expect(html).toContain('connectorTitle');
     expect(html).not.toContain('7.5vw');
     expect(html).not.toContain('--record-index');
     expect(html).not.toContain('--marker-index');

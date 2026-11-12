@@ -10,6 +10,7 @@ import { EditorialStructuredData } from '@/components/marketing/editorial/editor
 import styles from '@/components/marketing/editorial/editorial.module.css';
 import { MarketingContainer, MarketingSectionGrid } from '@/components/marketing/marketing-layout';
 import { MarketingProductScreenshot } from '@/components/marketing/product-screenshot';
+import publicStyles from '@/components/marketing/public-page.module.css';
 import { MarketingSectionIndex } from '@/components/marketing/section-index';
 import { MarketingCtaBand } from '@/components/marketing/start-free-cta';
 import { TIMELINE_MCP_COMMAND } from '@/lib/agent-install-content';
@@ -23,38 +24,42 @@ export function AgentsHubPage() {
         data={buildPublicStructuredData(AGENTS_HUB_DOCUMENT, getSiteUrl())}
       />
       <header className="border-b border-border">
-        <MarketingContainer className="py-16 sm:py-24 lg:py-28">
-          <EditorialKicker>{AGENTS_HUB.kicker}</EditorialKicker>
-          <h1 className={`${styles.displayTitle} mt-6`}>{AGENTS_HUB.title}</h1>
-          <p className="mt-7 max-w-2xl text-lg leading-8 text-fg-muted sm:text-xl">
-            {AGENTS_HUB.summary}
-          </p>
-          <div className="mt-10">
-            <AgentSetupCard />
-            <div className="mt-5 max-w-2xl" data-agent-setup-prerequisites>
-              <p className="font-mono text-[0.68rem] tracking-[0.14em] text-signal uppercase">
-                {AGENTS_HUB.setupPrerequisite.title}
-              </p>
-              <p className="mt-3 text-sm leading-7 text-fg-muted sm:text-base">
-                {AGENTS_HUB.setupPrerequisite.body}
-              </p>
-              <p className="mt-3 text-sm leading-7 text-fg-muted sm:text-base">
-                {AGENTS_HUB.setupPrerequisite.distinction}{' '}
-                <Link
-                  href={AGENTS_HUB.setupPrerequisite.mcpHref}
-                  className="rounded-sm font-medium text-fg underline decoration-border-strong underline-offset-4 outline-none hover:decoration-fg focus-visible:ring-2 focus-visible:ring-ring"
-                >
-                  {AGENTS_HUB.setupPrerequisite.mcpLabel}
-                </Link>
-                .
+        <MarketingContainer className="py-10 sm:py-14">
+          <div className={publicStyles.heroGrid}>
+            <div>
+              <EditorialKicker>{AGENTS_HUB.kicker}</EditorialKicker>
+              <h1 className={`${styles.displayTitle} mt-6`}>{AGENTS_HUB.title}</h1>
+              <p className="mt-7 max-w-2xl text-lg leading-8 text-fg-muted sm:text-xl">
+                {AGENTS_HUB.summary}
               </p>
             </div>
+            <div className={publicStyles.agentSetup}>
+              <AgentSetupCard />
+              <div className="mt-5 max-w-2xl" data-agent-setup-prerequisites>
+                <p className="font-mono text-[0.68rem] tracking-[0.14em] text-signal uppercase">
+                  {AGENTS_HUB.setupPrerequisite.title}
+                </p>
+                <p className="mt-3 text-sm leading-7 text-fg-muted sm:text-base">
+                  {AGENTS_HUB.setupPrerequisite.body}
+                </p>
+                <p className="mt-3 text-sm leading-7 text-fg-muted sm:text-base">
+                  {AGENTS_HUB.setupPrerequisite.distinction}{' '}
+                  <Link
+                    href={AGENTS_HUB.setupPrerequisite.mcpHref}
+                    className="rounded-sm font-medium text-fg underline decoration-border-strong underline-offset-4 outline-none hover:decoration-fg focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    {AGENTS_HUB.setupPrerequisite.mcpLabel}
+                  </Link>
+                  .
+                </p>
+              </div>
+            </div>
           </div>
-          <div className="mt-12">
+          <div className="mt-8">
             <AgentLoopDiagram />
           </div>
-          <div className="mt-12 max-w-xl">
-            <p className="mb-4 text-sm leading-7 text-fg-muted">
+          <div className={publicStyles.agentExample}>
+            <p className="text-base leading-7 text-fg-muted">
               Claude can ask the same record. The answer keeps the original message, with a link to
               it.
             </p>
@@ -64,7 +69,7 @@ export function AgentsHubPage() {
       </header>
 
       <section className="border-b border-border" aria-labelledby="report-in-title">
-        <MarketingContainer className="py-16 sm:py-20">
+        <MarketingContainer className="py-10 sm:py-14">
           <MarketingSectionGrid>
             <MarketingSectionIndex
               index={AGENTS_HUB.reportIn.index}
@@ -117,48 +122,53 @@ export function AgentsHubPage() {
       </section>
 
       <section className="border-b border-border" aria-labelledby="read-out-title">
-        <MarketingContainer className="py-16 sm:py-20">
-          <MarketingSectionGrid>
-            <MarketingSectionIndex
-              index={AGENTS_HUB.readOut.index}
-              label={AGENTS_HUB.readOut.label}
-            />
-            <div className="min-w-0">
-              <h2 id="read-out-title" className="text-3xl font-semibold tracking-tight sm:text-4xl">
-                {AGENTS_HUB.readOut.title}
-              </h2>
-              <p className="mt-4 max-w-[70ch] text-base leading-7 text-fg-muted">
-                Compatible clients open{' '}
-                <code className="break-all font-mono text-sm text-fg">
-                  {AGENTS_HUB.readOut.endpoint}
-                </code>
-                . {AGENTS_HUB.readOut.body}
-              </p>
-              <pre className="mt-6 overflow-x-auto rounded-md border border-border bg-surface p-4 font-mono text-xs leading-6">
-                {TIMELINE_MCP_COMMAND}
-              </pre>
-              <ul className="mt-6 list-disc space-y-3 pl-5 text-base leading-7 text-fg-muted">
-                <li>{AGENTS_HUB.readOut.toolsIntro}</li>
-                {AGENTS_HUB.readOut.facts.map((fact) => (
-                  <li key={fact}>{fact}</li>
-                ))}
-              </ul>
-              <p className="mt-6">
-                <Link
-                  href={AGENTS_HUB.installGuide.href}
-                  className="rounded-sm font-medium text-fg underline decoration-border-strong underline-offset-4 outline-none hover:decoration-fg focus-visible:ring-2 focus-visible:ring-ring"
+        <MarketingContainer className="py-10 sm:py-14">
+          <div className={publicStyles.detailGrid}>
+            <MarketingSectionGrid>
+              <MarketingSectionIndex
+                index={AGENTS_HUB.readOut.index}
+                label={AGENTS_HUB.readOut.label}
+              />
+              <div className="min-w-0">
+                <h2
+                  id="read-out-title"
+                  className="text-3xl font-semibold tracking-tight sm:text-4xl"
                 >
-                  {AGENTS_HUB.installGuide.label}
-                </Link>
-              </p>
+                  {AGENTS_HUB.readOut.title}
+                </h2>
+                <p className="mt-4 max-w-[70ch] text-base leading-7 text-fg-muted">
+                  Compatible clients open{' '}
+                  <code className="break-all font-mono text-sm text-fg">
+                    {AGENTS_HUB.readOut.endpoint}
+                  </code>
+                  . {AGENTS_HUB.readOut.body}
+                </p>
+                <pre className="mt-6 overflow-x-auto rounded-md border border-border bg-surface p-4 font-mono text-xs leading-6">
+                  {TIMELINE_MCP_COMMAND}
+                </pre>
+                <ul className="mt-6 list-disc space-y-3 pl-5 text-base leading-7 text-fg-muted">
+                  <li>{AGENTS_HUB.readOut.toolsIntro}</li>
+                  {AGENTS_HUB.readOut.facts.map((fact) => (
+                    <li key={fact}>{fact}</li>
+                  ))}
+                </ul>
+                <p className="mt-6">
+                  <Link
+                    href={AGENTS_HUB.installGuide.href}
+                    className="rounded-sm font-medium text-fg underline decoration-border-strong underline-offset-4 outline-none hover:decoration-fg focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    {AGENTS_HUB.installGuide.label}
+                  </Link>
+                </p>
+              </div>
+            </MarketingSectionGrid>
+            <div>
+              <MarketingProductScreenshot
+                file={AGENTS_HUB.screenshot.file}
+                alt={AGENTS_HUB.screenshot.alt}
+                caption={AGENTS_HUB.screenshot.caption}
+              />
             </div>
-          </MarketingSectionGrid>
-          <div className="mt-12">
-            <MarketingProductScreenshot
-              file={AGENTS_HUB.screenshot.file}
-              alt={AGENTS_HUB.screenshot.alt}
-              caption={AGENTS_HUB.screenshot.caption}
-            />
           </div>
         </MarketingContainer>
       </section>

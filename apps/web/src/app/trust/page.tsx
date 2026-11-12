@@ -88,7 +88,7 @@ const PROVIDERS = [
 function TrustProvidersSection() {
   return (
     <section className="border-b border-border">
-      <MarketingContainer className="py-16 sm:py-20">
+      <MarketingContainer className="py-10 sm:py-14">
         <MarketingSectionGrid>
           <MarketingSectionIndex index="04" label="Processors and retention" />
           <div>
@@ -147,7 +147,7 @@ function TrustProvidersSection() {
 function TrustAssuranceSection() {
   return (
     <section className="border-b border-border bg-surface/45">
-      <MarketingContainer className="py-16 sm:py-20">
+      <MarketingContainer className="py-10 sm:py-14">
         <MarketingSectionGrid>
           <MarketingSectionIndex index="05" label="Assurance status" />
           <div>
@@ -213,7 +213,7 @@ function TrustAssuranceSection() {
 function TrustDeploymentSection() {
   return (
     <section className="bg-surface">
-      <MarketingContainer className="grid gap-10 py-16 sm:py-20 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
+      <MarketingContainer className="grid gap-10 py-10 sm:py-14 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
         <div>
           <p className="text-sm font-medium text-fg-muted">Trust but verify</p>
           <h2 className="mt-5 max-w-4xl text-balance text-3xl font-semibold tracking-[-0.04em] sm:text-4xl">
@@ -254,10 +254,10 @@ export default function TrustPage() {
         <EditorialStructuredData data={structuredData} />
 
         <section className="border-b border-border">
-          <MarketingContainer className="py-16 sm:py-24 lg:py-28">
+          <MarketingContainer className="py-10 sm:py-14">
             <p className="text-sm font-medium text-fg-muted">Trust / Security / Data privacy</p>
             <div className="mt-6 grid items-end gap-10 grid-cols-[minmax(0,1fr)]">
-              <h1 className="max-w-[14ch] text-balance text-[3rem] font-semibold leading-[1.1] tracking-[-0.03em] text-fg sm:text-[clamp(3.5rem,5vw,5.5rem)]">
+              <h1 className="max-w-[20ch] text-balance text-[clamp(2.25rem,4vw,4rem)] font-medium leading-[1.15] tracking-[-0.025em] text-fg">
                 Your work should not become someone else&apos;s training set.
               </h1>
               <div className="max-w-[46ch] space-y-5 text-base leading-8 text-fg-muted sm:text-lg">
@@ -290,7 +290,7 @@ export default function TrustPage() {
         </section>
 
         <section className="border-b border-border bg-surface/45">
-          <MarketingContainer className="py-16 sm:py-20">
+          <MarketingContainer className="py-10 sm:py-14">
             <MarketingSectionGrid>
               <MarketingSectionIndex index="01" label="Data path" />
               <div>
@@ -317,7 +317,7 @@ export default function TrustPage() {
         </section>
 
         <section className="border-b border-border">
-          <MarketingContainer className="py-16 sm:py-20">
+          <MarketingContainer className="py-10 sm:py-14">
             <MarketingSectionGrid>
               <MarketingSectionIndex index="02" label="AI and training" />
               <div>
@@ -384,7 +384,7 @@ export default function TrustPage() {
         </section>
 
         <section className="border-b border-border bg-surface/45">
-          <MarketingContainer className="py-16 sm:py-20">
+          <MarketingContainer className="py-10 sm:py-14">
             <MarketingSectionGrid>
               <MarketingSectionIndex index="03" label="Storage and access" />
               <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-10">
@@ -472,7 +472,7 @@ export default function TrustPage() {
         </section>
 
         <section className="border-b border-border">
-          <MarketingContainer className="py-16 sm:py-20">
+          <MarketingContainer className="py-10 sm:py-14">
             <div className="grid gap-12">
               <PreservesStrip />
               <TrustFlowPanel />

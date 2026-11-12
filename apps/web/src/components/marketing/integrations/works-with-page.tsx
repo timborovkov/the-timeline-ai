@@ -27,7 +27,7 @@ export function WorksWithPage({ tool }: { tool: WorksWithTool }) {
       <main id="main" tabIndex={-1} data-works-with-route={tool.route}>
         <article>
           <header className="border-b border-border">
-            <MarketingContainer className="py-16 sm:py-24 lg:py-28">
+            <MarketingContainer className="py-10 sm:py-14">
               <Link
                 href="/integrations"
                 className="mb-10 inline-flex min-h-10 items-center rounded-sm text-sm font-medium text-fg-muted transition-colors hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
@@ -47,7 +47,7 @@ export function WorksWithPage({ tool }: { tool: WorksWithTool }) {
 
           <MarketingContainer>
             <section
-              className="border-b border-border py-16 sm:py-20"
+              className="border-b border-border py-10 sm:py-14"
               aria-labelledby="how-it-plugs-in"
             >
               <MarketingSectionGrid>
@@ -80,7 +80,7 @@ export function WorksWithPage({ tool }: { tool: WorksWithTool }) {
             </section>
 
             <section
-              className="border-b border-border py-16 sm:py-20"
+              className="border-b border-border py-10 sm:py-14"
               aria-labelledby="status-today"
             >
               <MarketingSectionGrid>
@@ -107,7 +107,7 @@ export function WorksWithPage({ tool }: { tool: WorksWithTool }) {
             <WorksWithGuidance tool={tool} />
 
             <section
-              className="border-b border-border py-16 sm:py-20"
+              className="border-b border-border py-10 sm:py-14"
               aria-labelledby="related-tools"
             >
               <MarketingSectionGrid>

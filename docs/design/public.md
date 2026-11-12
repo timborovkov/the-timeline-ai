@@ -395,3 +395,12 @@ The homepage trust panel uses a signal-accented header, a clear link to Trust &
 Security, and four bordered evidence cards. Keep the heading and explanation
 close, with no oversized empty grid row. The cards retain the existing capture,
 immutability, visibility and approval claims; this is not a certification claim.
+
+Secondary marketing pages share the homepage’s medium-weight sans-serif headings,
+moderate tracking, signal accents and compact bordered CTA panels. Shared
+MarketingContainer headings use this treatment; legal documents and private app
+screens are outside its scope. Agents pairs its introduction with setup, and MCP
+reading instructions with the product screenshot. Native connector pages use a
+split introductory header and tighter section spacing; setup, permissions and
+provider limitations remain intact. Integration directory, Telegram, MCP guides,
+works-with pages and Trust use the same reduced vertical rhythm.

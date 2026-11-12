@@ -192,11 +192,7 @@
 .exampleBelow {
   margin-top: 1.5rem;
 }
-.page [aria-labelledby='cta-title'] > div {
-  padding-block: 2rem;
-  gap: 1.5rem;
-  align-items: center;
-}
+
 .page [aria-labelledby='cta-title'] h2 {
   font-size: clamp(1.5rem, 2.5vw, 2rem);
 }

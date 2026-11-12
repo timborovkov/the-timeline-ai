@@ -30,7 +30,7 @@ export function McpGuidePage() {
       <EditorialStructuredData data={buildPublicStructuredData(MCP_GUIDE_DOCUMENT, getSiteUrl())} />
       <main id="main" tabIndex={-1} data-mcp-guide>
         <section className="border-b border-border">
-          <MarketingContainer className="py-16 sm:py-24 lg:py-28">
+          <MarketingContainer className="py-10 sm:py-14">
             <Link
               href="/integrations"
               className="mb-10 inline-flex min-h-10 items-center rounded-sm text-sm font-medium text-fg-muted transition-colors hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
@@ -65,7 +65,7 @@ export function McpGuidePage() {
         </section>
 
         <section className="border-b border-border" aria-labelledby="mcp-directions">
-          <MarketingContainer className="py-16 sm:py-20">
+          <MarketingContainer className="py-10 sm:py-14">
             <MarketingSectionGrid>
               <MarketingSectionIndex index="01" label="Directions" />
               <div>
@@ -115,7 +115,7 @@ export function McpGuidePage() {
         </section>
 
         <section className="border-b border-border bg-surface/45" aria-labelledby="mcp-setup">
-          <MarketingContainer className="py-16 sm:py-20">
+          <MarketingContainer className="py-10 sm:py-14">
             <MarketingSectionGrid>
               <MarketingSectionIndex index="02" label="In the product" />
               <div>
@@ -169,7 +169,7 @@ export function McpGuidePage() {
         </section>
 
         <section className="border-b border-border" aria-labelledby="mcp-catalog">
-          <MarketingContainer className="py-16 sm:py-20">
+          <MarketingContainer className="py-10 sm:py-14">
             <MarketingSectionGrid>
               <MarketingSectionIndex index="03" label="Catalog" />
               <div>
@@ -198,7 +198,7 @@ export function McpGuidePage() {
         </section>
 
         <section className="border-b border-border" aria-labelledby="mcp-limits">
-          <MarketingContainer className="py-16 sm:py-20">
+          <MarketingContainer className="py-10 sm:py-14">
             <MarketingSectionGrid>
               <MarketingSectionIndex index="04" label="Limits" />
               <div>

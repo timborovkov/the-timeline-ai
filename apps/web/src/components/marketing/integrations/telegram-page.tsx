@@ -24,7 +24,7 @@ export function TelegramIntegrationPage() {
       />
       <main id="main" tabIndex={-1} data-telegram-integration>
         <section className="border-b border-border">
-          <MarketingContainer className="py-16 sm:py-24 lg:py-28">
+          <MarketingContainer className="py-10 sm:py-14">
             <div className="flex items-center gap-4">
               <span className="grid size-12 place-items-center rounded-md border border-border bg-white">
                 <Image src="/connectors/telegram.svg" alt="" width={28} height={28} />
@@ -58,7 +58,7 @@ export function TelegramIntegrationPage() {
         </section>
 
         <section className="border-b border-border bg-surface/45">
-          <MarketingContainer className="py-16 sm:py-20">
+          <MarketingContainer className="py-10 sm:py-14">
             <MarketingSectionGrid>
               <MarketingSectionIndex index="01" label="What it captures" />
               <div>
@@ -81,7 +81,7 @@ export function TelegramIntegrationPage() {
         </section>
 
         <section className="border-b border-border">
-          <MarketingContainer className="py-16 sm:py-20">
+          <MarketingContainer className="py-10 sm:py-14">
             <MarketingSectionGrid>
               <MarketingSectionIndex index="02" label="What to know" />
               <div>
@@ -97,7 +97,7 @@ export function TelegramIntegrationPage() {
         </section>
 
         <section>
-          <MarketingContainer className="py-16 sm:py-20">
+          <MarketingContainer className="py-10 sm:py-14">
             <MarketingSectionGrid>
               <MarketingSectionIndex index="03" label="Daily update" />
               <div>

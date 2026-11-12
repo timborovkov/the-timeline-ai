@@ -12,6 +12,7 @@ import { WorksWithGuidance } from '@/components/marketing/integrations/works-wit
 import { MarketingDisclosure } from '@/components/marketing/marketing-disclosure';
 import { MarketingContainer, MarketingSectionGrid } from '@/components/marketing/marketing-layout';
 import { MarketingProductScreenshot } from '@/components/marketing/product-screenshot';
+import publicStyles from '@/components/marketing/public-page.module.css';
 import { ProviderLogo } from '@/components/provider-logo';
 import { PublicSessionBranch } from '@/components/public-session-branch';
 import { PublicShell } from '@/components/public-shell';
@@ -50,14 +51,14 @@ function ConnectorWorksWithGuidance({ slug }: { slug: string }) {
 function ConnectorHero({ connector }: { connector: ConnectorContent }) {
   return (
     <section className="overflow-hidden border-b border-border bg-bg">
-      <MarketingContainer className="py-16 sm:py-24 lg:py-28">
+      <MarketingContainer className="py-10 sm:py-14">
         <Link
           href="/integrations"
-          className="mb-10 inline-flex min-h-10 items-center rounded-sm text-sm font-medium text-fg-muted transition-colors hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
+          className="mb-6 inline-flex min-h-10 items-center rounded-sm text-sm font-medium text-fg-muted transition-colors hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
         >
           All integrations
         </Link>
-        <div className="grid items-end gap-10 grid-cols-[minmax(0,1fr)]">
+        <div className={publicStyles.heroGrid}>
           <div>
             <div className="mb-7 flex items-center gap-4">
               <ProviderLogo src={connector.logo} size="lg" />
@@ -66,9 +67,7 @@ function ConnectorHero({ connector }: { connector: ConnectorContent }) {
                 <p className="mt-1 text-sm font-semibold text-fg">{connector.name}</p>
               </div>
             </div>
-            <h1 className="max-w-[15ch] break-words text-balance text-[3rem] font-semibold leading-[1.1] tracking-[-0.03em] text-fg sm:text-[clamp(3.5rem,5vw,5.5rem)]">
-              {connector.hero}
-            </h1>
+            <h1 className={publicStyles.connectorTitle}>{connector.hero}</h1>
           </div>
           <div className="max-w-[70ch]">
             <p className="max-w-[46ch] text-base leading-relaxed text-fg-muted sm:text-lg">
@@ -99,8 +98,8 @@ function ConnectorHero({ connector }: { connector: ConnectorContent }) {
             </div>
           </div>
         </div>
-        <div className="mt-14 scroll-mt-12 sm:mt-20" id="how-it-works">
-          <RecordsToAnswer connector={connector} />
+        <div className="mt-8 scroll-mt-24" id="how-it-works">
+          <RecordsToAnswer connector={connector} compact />
           {connector.screenshot ? (
             <div className="mt-10">
               <MarketingProductScreenshot
@@ -118,7 +117,7 @@ function ConnectorHero({ connector }: { connector: ConnectorContent }) {
 
 function TruthBoundary({ connector }: { connector: ConnectorContent }) {
   return (
-    <section className="border-b border-border py-16 sm:py-20" aria-labelledby="truth-boundary">
+    <section className="border-b border-border py-10 sm:py-14" aria-labelledby="truth-boundary">
       <MarketingSectionGrid>
         <SectionIndex index="01" label="What gets captured" />
         <div>
@@ -147,7 +146,7 @@ function TruthBoundary({ connector }: { connector: ConnectorContent }) {
 
 function Questions({ connector }: { connector: ConnectorContent }) {
   return (
-    <section className="border-b border-border py-16 sm:py-20" aria-labelledby="questions">
+    <section className="border-b border-border py-10 sm:py-14" aria-labelledby="questions">
       <MarketingSectionGrid>
         <SectionLabel label="Questions" />
         <div>
@@ -176,7 +175,7 @@ function Questions({ connector }: { connector: ConnectorContent }) {
 
 function WorkedScenario({ connector }: { connector: ConnectorContent }) {
   return (
-    <section className="border-b border-border py-16 sm:py-20" aria-labelledby="scenario">
+    <section className="border-b border-border py-10 sm:py-14" aria-labelledby="scenario">
       <MarketingSectionGrid>
         <SectionLabel label="Example" />
         <div className="grid gap-8 grid-cols-[minmax(0,1fr)]">
@@ -212,14 +211,14 @@ function WorkedScenario({ connector }: { connector: ConnectorContent }) {
 
 function CapturedRecords({ connector }: { connector: ConnectorContent }) {
   return (
-    <section className="border-b border-border py-16 sm:py-20" aria-labelledby="records">
+    <section className="border-b border-border py-10 sm:py-14" aria-labelledby="records">
       <MarketingSectionGrid>
         <SectionLabel label="What Timeline saves" />
         <div>
           <h2 id="records" className="text-3xl font-semibold tracking-tight sm:text-4xl">
             What enters the Timeline
           </h2>
-          <div className="mt-10 grid gap-px border border-border bg-border sm:grid-cols-2">
+          <div className="mt-6 grid gap-px border border-border bg-border sm:grid-cols-2">
             {connector.capturedRecords.map((record, index) => (
               <div key={record} className="flex min-h-24 gap-4 bg-bg p-5">
                 <span className="font-mono text-xs text-fg-dim">
@@ -237,14 +236,14 @@ function CapturedRecords({ connector }: { connector: ConnectorContent }) {
 
 function Recipes({ connector }: { connector: ConnectorContent }) {
   return (
-    <section className="border-b border-border py-16 sm:py-20" aria-labelledby="recipes">
+    <section className="border-b border-border py-10 sm:py-14" aria-labelledby="recipes">
       <MarketingSectionGrid>
         <SectionLabel label="Use it with" />
         <div>
           <h2 id="recipes" className="text-3xl font-semibold tracking-tight sm:text-4xl">
             Better when the silos meet
           </h2>
-          <div className="mt-10 grid gap-4 md:grid-cols-3">
+          <div className="mt-6 grid gap-4 md:grid-cols-3">
             {connector.recipes.map((recipe) => (
               <article
                 key={recipe.title}
@@ -275,7 +274,7 @@ function Recipes({ connector }: { connector: ConnectorContent }) {
 
 function SetupAndPrivacy({ connector }: { connector: ConnectorContent }) {
   return (
-    <section className="border-b border-border py-16 sm:py-20" aria-labelledby="setup">
+    <section className="border-b border-border py-10 sm:py-14" aria-labelledby="setup">
       <MarketingSectionGrid>
         <SectionLabel label="Setup and privacy" />
         <div className="grid gap-px border border-border bg-border lg:grid-cols-2">
@@ -317,7 +316,7 @@ function SetupAndPrivacy({ connector }: { connector: ConnectorContent }) {
 
 function Limitations({ connector }: { connector: ConnectorContent }) {
   return (
-    <section className="border-b border-border py-16 sm:py-20" aria-labelledby="limitations">
+    <section className="border-b border-border py-10 sm:py-14" aria-labelledby="limitations">
       <MarketingSectionGrid>
         <SectionLabel label="Limits" />
         <div>
@@ -351,7 +350,7 @@ function Limitations({ connector }: { connector: ConnectorContent }) {
 
 function Faq({ connector }: { connector: ConnectorContent }) {
   return (
-    <section className="border-b border-border py-16 sm:py-20" aria-labelledby="faq">
+    <section className="border-b border-border py-10 sm:py-14" aria-labelledby="faq">
       <MarketingSectionGrid>
         <SectionLabel label="FAQ" />
         <div>
@@ -385,7 +384,7 @@ function Faq({ connector }: { connector: ConnectorContent }) {
 function Related({ connector }: { connector: ConnectorContent }) {
   const related = connector.related.map(findConnector).filter((item) => item !== undefined);
   return (
-    <section className="border-b border-border py-16 sm:py-20" aria-labelledby="related">
+    <section className="border-b border-border py-10 sm:py-14" aria-labelledby="related">
       <MarketingSectionGrid>
         <SectionLabel label="Related" />
         <div>
@@ -414,23 +413,22 @@ function Related({ connector }: { connector: ConnectorContent }) {
 
 function FinalCta({ connector }: { connector: ConnectorContent }) {
   return (
-    <section className="py-20 sm:py-28" aria-labelledby="cta">
-      <MarketingSectionGrid>
-        <SectionIndex index="10" label="Start" />
+    <section className={publicStyles.cta} aria-labelledby="cta">
+      <div className={publicStyles.ctaPanel}>
         <div>
-          <h2
-            id="cta"
-            className="max-w-[14ch] text-4xl font-semibold leading-tight tracking-[-0.04em] sm:text-6xl"
-          >
+          <SectionIndex index="10" label="Start" />
+          <h2 id="cta" className="max-w-[24ch]">
             Try one real {connector.name} question.
           </h2>
           <p className="mt-6 max-w-[54ch] text-base leading-relaxed text-fg-muted sm:text-lg">
             Choose the sources your team trusts. Let the work form a chronology. Inspect the
             evidence behind every answer.
           </p>
+        </div>
+        <div className={publicStyles.ctaAction}>
           <PublicSessionBranch
             signedOut={
-              <Button asChild size="lg" className="mt-8">
+              <Button asChild size="lg" className="mt-0">
                 <Link href="/sign-up">
                   Start free
                   <ArrowRight aria-hidden="true" />
@@ -438,7 +436,7 @@ function FinalCta({ connector }: { connector: ConnectorContent }) {
               </Button>
             }
             signedIn={
-              <Button asChild size="lg" className="mt-8">
+              <Button asChild size="lg" className="mt-0">
                 <Link href="/app/connections">
                   {`Connect ${connector.name}`}
                   <ArrowRight aria-hidden="true" />
@@ -447,7 +445,7 @@ function FinalCta({ connector }: { connector: ConnectorContent }) {
             }
           />
         </div>
-      </MarketingSectionGrid>
+      </div>
     </section>
   );
 }

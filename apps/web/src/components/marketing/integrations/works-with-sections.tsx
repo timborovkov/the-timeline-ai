@@ -37,7 +37,7 @@ function WorksWithCopyBlock({
   body: string;
 }) {
   return (
-    <section className="border-b border-border py-16 sm:py-20" aria-labelledby={labelledBy}>
+    <section className="border-b border-border py-10 sm:py-14" aria-labelledby={labelledBy}>
       <MarketingSectionGrid>
         <p className="flex items-baseline gap-1.5 text-sm font-medium text-fg-muted">
           <span className="font-mono text-[11px] text-fg-dim">{index}</span>

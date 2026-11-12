@@ -5,6 +5,7 @@ import type { ReactNode } from 'react';
 
 import { CTA_MICROCOPY_LEAD, START_FREE_HREF, START_FREE_LABEL } from '@/components/marketing/copy';
 import { FirstRunPath } from '@/components/marketing/first-run-path';
+import styles from '@/components/marketing/public-page.module.css';
 import { PublicSessionBranch } from '@/components/public-session-branch';
 import { cn } from '@/lib/utils';
 
@@ -80,24 +81,26 @@ export function MarketingCtaBand({
   firstRun?: boolean;
 }) {
   return (
-    <section className="border-t border-border bg-surface" aria-labelledby="cta-title">
-      <div className="mx-auto flex max-w-6xl flex-col gap-8 px-4 py-14 sm:px-6 sm:py-20 lg:flex-row lg:items-end lg:justify-between">
-        <div className="max-w-2xl">
-          <p className="font-mono text-[0.68rem] tracking-[0.14em] text-signal uppercase">
-            {kicker}
-          </p>
-          <h2
-            id="cta-title"
-            className="mt-5 text-balance text-3xl font-semibold tracking-[-0.04em] sm:text-4xl"
-          >
-            {title}
-          </h2>
-          <p className="mt-5 text-base leading-7 text-fg-muted">{body}</p>
-          {firstRun ? <FirstRunPath /> : null}
-        </div>
-        <div className="flex flex-col items-start gap-3 lg:items-end">
-          <StartFreeLink className="inline-flex min-h-12 items-center justify-center gap-2 rounded-sm bg-signal px-6 text-sm font-semibold text-signal-fg outline-none hover:brightness-95 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface" />
-          <CtaMicrocopy align="end" />
+    <section className={styles.cta} aria-labelledby="cta-title">
+      <div className="mx-auto max-w-6xl px-4 sm:px-6">
+        <div className={styles.ctaPanel}>
+          <div className="max-w-2xl">
+            <p className="font-mono text-[0.68rem] tracking-[0.14em] text-signal uppercase">
+              {kicker}
+            </p>
+            <h2
+              id="cta-title"
+              className="mt-5 text-balance text-3xl font-semibold tracking-[-0.04em] sm:text-4xl"
+            >
+              {title}
+            </h2>
+            <p className="mt-5 text-base leading-7 text-fg-muted">{body}</p>
+            {firstRun ? <FirstRunPath compact showNote={false} /> : null}
+          </div>
+          <div className={styles.ctaAction}>
+            <StartFreeLink className="inline-flex min-h-12 items-center justify-center gap-2 rounded-sm bg-signal px-6 text-sm font-semibold text-signal-fg outline-none hover:brightness-95 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface" />
+            <CtaMicrocopy />
+          </div>
         </div>
       </div>
     </section>
