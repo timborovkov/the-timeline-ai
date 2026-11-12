@@ -29,6 +29,12 @@ After the separate provider-side check, generate the non-secret token with `bun 
 
 ## 2. Model pins
 
+Embedding workers leave provider timeouts (including “timed out” responses) to the
+queue retry policy. They do not split batches on a timeout, even on the final
+attempt; splitting is reserved for batch-size failures and eligible ambiguous
+API failures. Exhausted embedding timeouts remain visible as terminal failures
+in [worker monitoring](sentry.md).
+
 Model selection is code-owned in `packages/shared/src/llm/models.ts`. Keep extraction, agent, summarization, vision, embedding, and transcription model ids there together with their privacy class, context windows, capabilities, and embedding dimensions. The environment supplies the OpenRouter key, official base URL, guardrail id, and generated key/guardrail/catalog/policy attestation; model choice remains code-owned.
 
 Structured extraction calls use DeepSeek V4.1 Flash 1017 as the primary route. If the provider accepts the request but returns no schema-valid object, the wrapper retries the same model in JSON object mode before falling back to the `structuredFallback` model (DeepSeek V4 Pro 0813). Retryable OpenRouter/provider failures such as 429s, 5xx responses, and structured no-object outputs can use the fallback model. Structured calls default to `maxOutputTokens=8000` so routine extraction and meeting-summary jobs keep quality headroom without over-reserving OpenRouter credits against unused completion tokens. Bulk callers may pass a higher per-call `maxOutputTokens` or batch their prompts. Authentication and request-shape failures still fail fast so misconfiguration is not hidden.

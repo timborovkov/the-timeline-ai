@@ -219,6 +219,7 @@ function isRetryableProviderOutageMessage(message: string): boolean {
     /\b5\d\d\b/.test(message) ||
     message.includes('rate limit') ||
     message.includes('timeout') ||
+    message.includes('timed out') ||
     message.includes('temporar') ||
     message.includes('unavailable') ||
     message.includes('overloaded') ||
