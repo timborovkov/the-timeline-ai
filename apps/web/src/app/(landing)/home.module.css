@@ -388,7 +388,7 @@
 .memoryCoreTimeline {
   color: var(--home-dim);
   font-family: var(--font-mono);
-  font-size: 0.62rem;
+  font-size: var(--home-meta-size);
   font-style: normal;
   font-weight: 450;
   letter-spacing: 0.01em;
