@@ -3985,6 +3985,8 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     }
 
     if (item.targetKind === 'board_membership') {
+      // Settings lock board before lanes/items; manual edits lock items first.
+      // A busy target must abort this approval for retry rather than form a lock cycle.
       const parsed = boardMembershipPayload.safeParse(item.proposedPayload);
       if (!parsed.success) return;
       if (item.operation === 'archive_or_cancel' && parsed.data.boardItemId) {
@@ -3992,18 +3994,18 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
           .select({ id: boardItems.id })
           .from(boardItems)
           .where(and(eq(boardItems.id, parsed.data.boardItemId), eq(boardItems.teamId, teamId)))
-          .for('update');
+          .for('update', { noWait: true });
       }
       await db
         .select({ id: entities.id })
         .from(entities)
         .where(and(eq(entities.id, parsed.data.entityId), eq(entities.teamId, teamId)))
-        .for('update');
+        .for('update', { noWait: true });
       await db
         .select({ id: boardsTable.id })
         .from(boardsTable)
         .where(and(eq(boardsTable.id, parsed.data.boardId), eq(boardsTable.teamId, teamId)))
-        .for('update');
+        .for('update', { noWait: true });
       return;
     }
 

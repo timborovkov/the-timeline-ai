@@ -147,7 +147,9 @@ membership, preserving the object and board history. Removal proposal identities
 include the membership version and source dependency, so an explicit source-free
 rescan can replace a proposal whose source became unavailable or one made
 stale by a board-item edit. Approval locks the membership before its entity and board,
-matching manual item edits. Transactional qualification checks also hold shared
+matching manual item edits. Membership approval target locks fail fast when busy,
+so board-first lane removal and item-first manual edits cannot form a blocking
+cycle with approval; the user can retry once the other edit completes. Transactional qualification checks also hold shared
 locks on supplied note/identity/relationship rows and all referenced objects through
 application, including currently inactive neighbors. Busy dependencies fail fast
 for retry rather than introducing a reversed lock-order wait. Addition identities also include the latest manual
