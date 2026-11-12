@@ -20,10 +20,11 @@ CREATE INDEX board_qualification_request_due ON board_qualification_requests(ava
 --> statement-breakpoint
 CREATE TABLE board_qualification_evaluations (
  team_id uuid NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+ user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
  board_id uuid NOT NULL REFERENCES boards(id) ON DELETE CASCADE,
  entity_id uuid NOT NULL REFERENCES entities(id) ON DELETE CASCADE,
  input_hash text NOT NULL, decision text NOT NULL, evaluated_at timestamptz NOT NULL DEFAULT now(),
  FOREIGN KEY (team_id, board_id) REFERENCES boards(team_id,id) ON DELETE CASCADE,
  FOREIGN KEY (team_id, entity_id) REFERENCES entities(team_id,id) ON DELETE CASCADE
 );
-CREATE UNIQUE INDEX board_qualification_evaluation_identity ON board_qualification_evaluations(team_id,board_id,entity_id);
+CREATE UNIQUE INDEX board_qualification_evaluation_identity ON board_qualification_evaluations(team_id,user_id,board_id,entity_id);

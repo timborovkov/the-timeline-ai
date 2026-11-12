@@ -379,6 +379,7 @@ async function emitObjectDirectWriteOutput(input: {
     userId: input.userId,
     entityId: input.entityId,
     sourceEventId: input.sourceEventId,
+    includeRelationshipNeighbors: input.operation !== 'create',
   });
   const sourceContext = await buildObjectDirectWriteSourceContext({
     db: input.db,

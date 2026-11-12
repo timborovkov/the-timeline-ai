@@ -2594,4 +2594,67 @@ describe('automatic board membership', () => {
     const [renewed] = await db.select().from(boardQualificationRequests);
     expect(required(renewed).platformOperatorSessionId).toBeNull();
   });
+  it('requalifies relationship neighbors after a related object changes', async () => {
+    const { scope, board, object } = await setup();
+    const { boardQualificationRequests } = await import('@timeline/db');
+    const company = await scope.objects.createObject({
+      type: 'company',
+      canonicalName: 'Client',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    await scope.objects.setPersonCompany(object.id, company.id, {
+      kind: 'user',
+      userId: USER_OWNER,
+    });
+    const member = await scope.boards.addBoardItem(board.id, {
+      entityId: object.id,
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    await db.delete(boardQualificationRequests);
+    await scope.objects.updateObject(
+      company.id,
+      { status: 'inactive' },
+      { kind: 'user', userId: USER_OWNER },
+    );
+    const requests = await db.select().from(boardQualificationRequests);
+    expect(requests.map((request) => request.entityId).sort()).toEqual(
+      [company.id, object.id].sort(),
+    );
+    await process(scope, 'remove');
+    const [bundle] = await scope.suggestions.listPendingSuggestions();
+    expect(required(required(bundle).items[0]).operation).toBe('archive_or_cancel');
+    await scope.suggestions.acceptSuggestionItem(required(required(bundle).items[0]).id);
+    expect(await scope.boards.getBoardItem(member.id)).toBeNull();
+  });
+
+  it('keeps private scan proposals and user edits isolated between members', async () => {
+    const { scope, board } = await setup();
+    const { boardQualificationRequests, boardQualificationEvaluations, agentSuggestionItems } =
+      await import('@timeline/db');
+    await db.delete(boardQualificationRequests);
+    await scope.boardQualification.scan(board.id);
+    await process(scope);
+    const first = required((await scope.suggestions.listPendingSuggestions())[0]);
+    const firstItem = required(first.items[0]);
+    await db
+      .update(agentSuggestionItems)
+      .set({
+        proposedPayload: { ...firstItem.proposedPayload, note: 'Private reviewer note from A' },
+        metadata: { proposal_edited_by_user_id: USER_OWNER },
+      })
+      .where(eq(agentSuggestionItems.id, firstItem.id));
+    const other = withTeam(db, TEAM_A, USER_MEMBER);
+    await other.boardQualification.scan(board.id);
+    await process(other);
+    const second = required((await other.suggestions.listPendingSuggestions())[0]);
+    expect(second.id).not.toBe(first.id);
+    expect(JSON.stringify(second)).not.toContain('Private reviewer note from A');
+    const retained = required((await scope.suggestions.listPendingSuggestions())[0]);
+    expect(retained.id).toBe(first.id);
+    expect(JSON.stringify(retained)).toContain('Private reviewer note from A');
+    const evaluations = await db.select().from(boardQualificationEvaluations);
+    expect(evaluations.map((evaluation) => evaluation.userId).sort()).toEqual(
+      [USER_OWNER, USER_MEMBER].sort(),
+    );
+  });
 });

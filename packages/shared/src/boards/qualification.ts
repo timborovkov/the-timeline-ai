@@ -311,6 +311,7 @@ export function createBoardQualificationScope(
           .where(
             and(
               eq(boardQualificationEvaluations.teamId, scope.teamId),
+              eq(boardQualificationEvaluations.userId, scope.userId),
               eq(boardQualificationEvaluations.boardId, boardId),
               eq(boardQualificationEvaluations.entityId, object.id),
             ),
@@ -405,6 +406,7 @@ export function createBoardQualificationScope(
           .where(
             and(
               eq(boardQualificationEvaluations.teamId, scope.teamId),
+              eq(boardQualificationEvaluations.userId, scope.userId),
               eq(boardQualificationEvaluations.boardId, candidate.id),
               eq(boardQualificationEvaluations.entityId, request.entityId),
             ),
@@ -452,6 +454,7 @@ export function createBoardQualificationScope(
           (result.decision === 'remove' && input.member);
         if (proposed) {
           const key = stableSha256Digest({
+            userId: scope.userId,
             boardId: candidate.id,
             entityId: request.entityId,
             inputHash: input.inputHash,
@@ -506,6 +509,7 @@ export function createBoardQualificationScope(
         }
         if (!proposed) {
           const key = stableSha256Digest({
+            userId: scope.userId,
             boardId: candidate.id,
             entityId: request.entityId,
             inputHash: input.inputHash,
@@ -565,6 +569,7 @@ export function createBoardQualificationScope(
           .insert(boardQualificationEvaluations)
           .values({
             teamId: scope.teamId,
+            userId: scope.userId,
             boardId: candidate.id,
             entityId: request.entityId,
             inputHash: input.inputHash,
@@ -573,6 +578,7 @@ export function createBoardQualificationScope(
           .onConflictDoUpdate({
             target: [
               boardQualificationEvaluations.teamId,
+              boardQualificationEvaluations.userId,
               boardQualificationEvaluations.boardId,
               boardQualificationEvaluations.entityId,
             ],

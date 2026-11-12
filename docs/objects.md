@@ -147,7 +147,9 @@ membership, preserving the object and board history.
 
 Committed object creates/updates, notes, identity facets and relationship changes
 persist qualification requests in the canonical write transaction. Relationship
-changes request both endpoints. Pending or rejected object proposals do not trigger
+changes request both endpoints. Object updates also enqueue active relationship
+neighbors with a set-based durable write, so supplied related names/statuses are
+reevaluated when their source object changes. Pending or rejected object proposals do not trigger
 qualification. The durable inbox coalesces per member/object, uses leases and
 version-checked completion, and retries failures with bounded backoff. Queue outages
 cannot lose committed requests. The worker discovers routing metadata globally and
@@ -168,7 +170,9 @@ Accepting a proposal rechecks current criteria, object facts, membership and typ
 restrictions within the same transaction as the membership mutation. Source-backed
 items retain explicit evidence dependencies and lock available sources during acceptance. Newer manual membership decisions take precedence. A removal for a
 previous membership cannot remove a later re-added membership. Evaluated fact/policy
-fingerprints suppress repeated decisions, including declined proposals. Relevant
+fingerprints suppress repeated decisions, including declined proposals. Evaluation
+caches and private proposal identities include the originating member, preserving
+private edits and review history when another member scans the same board. Relevant
 fact or criteria changes allow reevaluation. Disabling suggestions invalidates pending
 automatic proposals during review, stops new qualification and retains current members.
 

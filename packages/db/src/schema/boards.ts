@@ -302,6 +302,9 @@ export const boardQualificationEvaluations = pgTable(
     teamId: uuid('team_id')
       .notNull()
       .references(() => teams.id, { onDelete: 'cascade' }),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
     boardId: uuid('board_id')
       .notNull()
       .references(() => boards.id, { onDelete: 'cascade' }),
@@ -315,6 +318,7 @@ export const boardQualificationEvaluations = pgTable(
   (table) => [
     uniqueIndex('board_qualification_evaluation_identity').on(
       table.teamId,
+      table.userId,
       table.boardId,
       table.entityId,
     ),
