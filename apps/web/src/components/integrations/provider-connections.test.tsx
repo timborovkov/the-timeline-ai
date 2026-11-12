@@ -533,7 +533,7 @@ describe('PersonalConnectionsUi', () => {
           {
             id: 'conn-drive',
             provider: 'google_drive',
-            displayName: 'Google Drive — Tim',
+            displayName: 'Google Drive — Taylor',
             lastError: null,
             lastConnectedAt: '2026-06-01T00:00:00.000Z',
           },
@@ -542,7 +542,7 @@ describe('PersonalConnectionsUi', () => {
     );
 
     const region = await screen.findByRole('region', {
-      name: 'Google Drive account Google Drive — Tim',
+      name: 'Google Drive account Google Drive — Taylor',
     });
     expect(await screen.findByRole('checkbox', { name: /My Drive \(root\)/i })).toBeTruthy();
     expect(screen.getByText('0 sources shared')).toBeTruthy();
@@ -575,7 +575,7 @@ describe('PersonalConnectionsUi', () => {
           {
             id: 'conn-drive',
             provider: 'google_drive',
-            displayName: 'Google Drive — Tim',
+            displayName: 'Google Drive — Taylor',
             lastError: null,
             lastConnectedAt: '2026-06-01T00:00:00.000Z',
           },
@@ -616,7 +616,7 @@ describe('PersonalConnectionsUi', () => {
           {
             id: 'conn-drive',
             provider: 'google_drive',
-            displayName: 'Google Drive — Tim',
+            displayName: 'Google Drive — Taylor',
             lastError: null,
             lastConnectedAt: '2026-06-01T00:00:00.000Z',
           },
@@ -660,7 +660,7 @@ describe('PersonalConnectionsUi', () => {
           {
             id: 'conn-drive',
             provider: 'google_drive',
-            displayName: 'Google Drive — Tim',
+            displayName: 'Google Drive — Taylor',
             lastError: null,
             lastConnectedAt: '2026-06-01T00:00:00.000Z',
           },
@@ -719,7 +719,7 @@ describe('PersonalConnectionsUi', () => {
           {
             id: 'conn-drive',
             provider: 'google_drive',
-            displayName: 'Google Drive — Tim',
+            displayName: 'Google Drive — Taylor',
             lastError: null,
             lastConnectedAt: '2026-06-01T00:00:00.000Z',
           },
@@ -1006,7 +1006,7 @@ describe('PersonalConnectionsUi', () => {
           {
             id: 'conn-drive',
             provider: 'google_drive',
-            displayName: 'Google Drive — Tim',
+            displayName: 'Google Drive — Taylor',
             lastError: 'token_revoked',
             lastConnectedAt: '2026-06-01T00:00:00.000Z',
           },
@@ -1064,7 +1064,7 @@ describe('PersonalConnectionsUi', () => {
           row({
             id: 'share-drive',
             connectionId: 'conn-drive',
-            ownerLabel: 'Tim',
+            ownerLabel: 'Taylor',
             provider: 'google_drive',
             resourceKind: 'drive.file',
             sourceExternalId: 'file-1',

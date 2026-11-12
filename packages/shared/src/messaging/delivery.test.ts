@@ -293,7 +293,7 @@ describe('Resend messaging adapter', () => {
     process.env.RESEND_API_KEY = 're_test';
     process.env.TRANSACTIONAL_EMAIL_FROM = 'hello@example.test';
     const original = {
-      to: 'tim@example.test',
+      to: 'taylor@example.test',
       resetUrl: 'https://timeline.test/reset-password?token=secret-token',
       expiresAt: new Date('2026-11-01T10:00:00Z'),
     };
@@ -847,7 +847,7 @@ describe('Resend messaging adapter', () => {
       sendDailyDigest({
         db: db as never,
         digestId: 'digest-1',
-        to: 'tim@example.test',
+        to: 'taylor@example.test',
         digestUrl: 'https://timeline.test/app',
         fetch: fetchMock,
       }),

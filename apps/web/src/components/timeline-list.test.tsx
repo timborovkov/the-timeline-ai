@@ -712,7 +712,7 @@ describe('TimelineList evidence-owned actions', () => {
     fireEvent.click(screen.getByRole('button', { name: /^Telegram message 4 ·/i }));
     renderLastInspectorContent();
     expect(
-      screen.getAllByRole('group', { name: /Actions for Telegram evidence .* from Mikael/ }),
+      screen.getAllByRole('group', { name: /Actions for Telegram evidence .* from Cameron/ }),
     ).toHaveLength(3);
     fireEvent.click(screen.getByRole('button', { name: 'Show 2 older evidence items' }));
 

@@ -325,7 +325,7 @@ describe('POST /api/artifacts/preview', () => {
     expect(body).toContain('Original message');
     expect(body).toContain('"sourceKey":"telegram"');
     expect(body).toContain('"logoSrc":"/connectors/telegram.svg"');
-    expect(body).toContain('"author":"Mikael (Miku, @miku)"');
+    expect(body).toContain('"author":"Cameron (Casey, @casey)"');
     expect(body).toContain('"quote":"Otto mentioned the pilot."');
   });
 
