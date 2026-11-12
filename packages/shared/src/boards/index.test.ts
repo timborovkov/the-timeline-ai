@@ -2790,6 +2790,39 @@ describe('automatic board membership', () => {
     expect(retained.version).toBe(original.version + 1);
     expect(retained.pendingEntityIds).toEqual([object.id]);
   });
+  it('does not let an obsolete worker repopulate cache after a newer explicit scan', async () => {
+    const { scope, board } = await setup();
+    const { boardQualificationRequests, boardQualificationEvaluations } =
+      await import('@timeline/db');
+    const { createBoardQualificationScope } = await import('#src/boards/qualification.js');
+    const original = required((await db.select().from(boardQualificationRequests))[0]);
+    const overlapping = createBoardQualificationScope(db, scope, {
+      createOrMergeSuggestionBundle: async (input) => {
+        const result = await scope.suggestions.createOrMergeSuggestionBundle(input);
+        await scope.boardQualification.scan(board.id);
+        return result;
+      },
+    });
+    await overlapping.processRequest(original.id, () =>
+      Promise.resolve({ decision: 'add', reason: 'Match', evidenceKeys: ['object'] }),
+    );
+    expect(await db.select().from(boardQualificationEvaluations)).toHaveLength(0);
+    const newer = required((await db.select().from(boardQualificationRequests))[0]);
+    expect(newer.version).toBeGreaterThan(original.version);
+    expect(newer.sourceEventId).toBeNull();
+    await db
+      .update(rawEvents)
+      .set({ sourceMetadata: { deleted: true } })
+      .where(eq(rawEvents.id, required(original.sourceEventId)));
+    const classify = vi
+      .fn()
+      .mockResolvedValue({ decision: 'add', reason: 'Fresh scan', evidenceKeys: ['object'] });
+    await scope.boardQualification.processRequest(newer.id, classify);
+    expect(classify).toHaveBeenCalledTimes(1);
+    const item = required(required((await scope.suggestions.listPendingSuggestions())[0]).items[0]);
+    await scope.suggestions.acceptSuggestionItem(item.id);
+    expect(required(await scope.boards.getBoard(board.id)).items).toHaveLength(1);
+  });
   it('keeps private scan proposals and user edits isolated between members', async () => {
     const { scope, board } = await setup();
     const { boardQualificationRequests, boardQualificationEvaluations, agentSuggestionItems } =

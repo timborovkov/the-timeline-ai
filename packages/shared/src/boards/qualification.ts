@@ -328,22 +328,25 @@ export function createBoardQualificationScope(
         .orderBy(asc(entities.id))
         .limit(50);
       for (const object of objects) {
-        await db
-          .delete(boardQualificationEvaluations)
-          .where(
-            and(
-              eq(boardQualificationEvaluations.teamId, scope.teamId),
-              eq(boardQualificationEvaluations.userId, scope.userId),
-              eq(boardQualificationEvaluations.boardId, boardId),
-              eq(boardQualificationEvaluations.entityId, object.id),
-            ),
-          );
-        await requestBoardQualification(db, {
-          teamId: scope.teamId,
-          userId: scope.userId,
-          entityId: object.id,
-          sourceEventId: null,
-          requestedBoardId: boardId,
+        await db.transaction(async (tx) => {
+          // Serialize the new request and cache invalidation against older cache publishers.
+          await requestBoardQualification(tx, {
+            teamId: scope.teamId,
+            userId: scope.userId,
+            entityId: object.id,
+            sourceEventId: null,
+            requestedBoardId: boardId,
+          });
+          await tx
+            .delete(boardQualificationEvaluations)
+            .where(
+              and(
+                eq(boardQualificationEvaluations.teamId, scope.teamId),
+                eq(boardQualificationEvaluations.userId, scope.userId),
+                eq(boardQualificationEvaluations.boardId, boardId),
+                eq(boardQualificationEvaluations.entityId, object.id),
+              ),
+            );
         });
       }
       return {
@@ -691,25 +694,37 @@ export function createBoardQualificationScope(
               })
               .onConflictDoNothing();
         }
-        await db
-          .insert(boardQualificationEvaluations)
-          .values({
-            teamId: scope.teamId,
-            userId: scope.userId,
-            boardId: candidate.id,
-            entityId: request.entityId,
-            inputHash: input.inputHash,
-            decision: result.decision,
-          })
-          .onConflictDoUpdate({
-            target: [
-              boardQualificationEvaluations.teamId,
-              boardQualificationEvaluations.userId,
-              boardQualificationEvaluations.boardId,
-              boardQualificationEvaluations.entityId,
-            ],
-            set: { inputHash: input.inputHash, decision: result.decision, evaluatedAt: new Date() },
-          });
+        await db.transaction(async (tx) => {
+          const [currentRequest] = await tx
+            .select({ id: boardQualificationRequests.id })
+            .from(boardQualificationRequests)
+            .where(requestWhere)
+            .for('update');
+          if (!currentRequest) return;
+          await tx
+            .insert(boardQualificationEvaluations)
+            .values({
+              teamId: scope.teamId,
+              userId: scope.userId,
+              boardId: candidate.id,
+              entityId: request.entityId,
+              inputHash: input.inputHash,
+              decision: result.decision,
+            })
+            .onConflictDoUpdate({
+              target: [
+                boardQualificationEvaluations.teamId,
+                boardQualificationEvaluations.userId,
+                boardQualificationEvaluations.boardId,
+                boardQualificationEvaluations.entityId,
+              ],
+              set: {
+                inputHash: input.inputHash,
+                decision: result.decision,
+                evaluatedAt: new Date(),
+              },
+            });
+        });
       }
       if (candidates.length === 5)
         await db

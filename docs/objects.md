@@ -172,7 +172,9 @@ time; coalescing preserves newer requests and their source/operator attribution,
 a delayed expansion cannot override a newer manual membership decision. An explicit
 scan replaces an older pending source dependency and uses the scanning actor's
 operator attribution, so unavailable sources or expired earlier sessions cannot
-swallow the requested recheck. Generic
+swallow the requested recheck. Scan enqueueing and cache invalidation share one
+transaction; evaluation publication locks and rechecks the request version, so
+an older worker cannot repopulate a newer scan's cleared cache. Generic
 relationship endpoints enqueue in entity-ID order, matching worker inbox locks. The worker excludes suspended users before selecting each workspace's next request. It discovers routing metadata globally and
 uses the originating member's `withTeam` scope for workspace reads and proposals;
 service-principal writes do not borrow a member's authority. Impersonated requests
