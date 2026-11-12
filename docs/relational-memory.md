@@ -359,6 +359,10 @@ and queues a document suggestion job. The upload UI enables this by default and
 supports an opt-out stored with the upload event. Existing team-visible documents
 have a **Find objects** action. Explicit review can override the upload opt-out.
 Pending, failed or empty extraction cannot be marked as successfully reviewed.
+For an upload later shared with the team, review uses its team-visible sharing
+event as the timeline anchor and the immutable version/chunks as content evidence.
+The original private upload remains private. Missing sharing authority is retryable;
+restricting a document during review pauses the run rather than completing it.
 
 Document review uses the same proposal normalization, identity resolver, company
 affiliation and acceptance pipeline as incoming events. Client-list rows may originate

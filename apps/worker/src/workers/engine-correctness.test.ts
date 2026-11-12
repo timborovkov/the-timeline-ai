@@ -497,6 +497,78 @@ describe('engine persistence contracts', () => {
     await scope().suggestions.acceptSuggestionItem(required(item).id);
     expect(await db.select().from(entities)).toHaveLength(0);
   });
+  it('retries shared document extraction using sharing evidence without exposing its private upload', async () => {
+    const fixture = await documentFixture();
+    const memberId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+    await pg.exec(
+      `INSERT INTO users(id,email,name) VALUES ('${memberId}','member@example.test','Member'); INSERT INTO team_members(team_id,user_id,role) VALUES ('${teamId}','${memberId}','member');`,
+    );
+    await db
+      .update(rawEvents)
+      .set({
+        visibility: 'private',
+        visibilityOwnerUserId: userId,
+        contentText: 'Private upload note must stay private',
+        sourceMetadata: { private_note: 'Private upload metadata must stay private' },
+      })
+      .where(eq(rawEvents.id, fixture.event.id));
+    await db.insert(documentChunks).values({
+      teamId,
+      documentId: fixture.doc.id,
+      documentVersionId: fixture.version.id,
+      chunkIndex: 0,
+      text: 'Acme is a client. Its business domain is acme.test.',
+      tokenCount: 14,
+    });
+    const data = {
+      scope: 'document' as const,
+      teamId,
+      documentVersionId: fixture.version.id,
+      explicitRequest: true,
+    };
+    let modelCalls = 0;
+    const checkedModel: typeof llm.chatStructured = async (input) => {
+      modelCalls++;
+      expect(input.prompt).not.toContain('Private upload note');
+      expect(input.prompt).not.toContain('Private upload metadata');
+      return model(input);
+    };
+    const io = { chatStructured: checkedModel, getEnv: () => getEnv(), modelId: 'fixture' };
+    // No public sharing evidence yet: do not permanently complete a skipped run.
+    const failure = await processSuggestionJobForTests({ db }, data, io).then(
+      () => null,
+      (error: unknown) => error,
+    );
+    expect(failure).toBeInstanceOf(Error);
+    expect(String(failure)).toContain('Document sharing evidence unavailable');
+    expect(modelCalls).toBe(0);
+    expect(required((await scope().engineMaintenance.latestRuns())[0]).status).toBe('failed');
+    await scope().documents.setDocumentVisibility({ id: fixture.doc.id, visibility: 'team' });
+    await processSuggestionJobForTests({ db }, data, io);
+    await processSuggestionJobForTests({ db }, data, io);
+    expect(modelCalls).toBe(1);
+    const bundles = await db.select().from(agentSuggestions);
+    expect(bundles).toHaveLength(1);
+    const memberScope = withTeam(db, teamId, memberId);
+    const bundle = required(await memberScope.suggestions.getSuggestion(required(bundles[0]).id));
+    expect(bundle.evidence).toHaveLength(1);
+    expect(required(bundle.evidence[0]).rawEventId).not.toBe(fixture.event.id);
+    expect(required(bundle.evidence[0]).quote).toContain('Acme is a client');
+    expect(JSON.stringify(bundle)).not.toContain('Private upload');
+    const item = required((await db.select().from(agentSuggestionItems))[0]);
+    expect(await memberScope.suggestions.acceptSuggestionItem(item.id)).toBe(true);
+    expect(await db.select().from(entities)).toHaveLength(1);
+    const original = required(
+      (await db.select().from(rawEvents).where(eq(rawEvents.id, fixture.event.id)))[0],
+    );
+    expect(original.visibility).toBe('private');
+    expect(original.contentText).toBe('Private upload note must stay private');
+    expect(original.sourceMetadata).toEqual({
+      private_note: 'Private upload metadata must stay private',
+    });
+    await scope().documents.setDocumentVisibility({ id: fixture.doc.id, visibility: 'private' });
+    expect(await memberScope.suggestions.getSuggestion(required(bundles[0]).id)).toBeNull();
+  });
   it('fences a stale run owner before it can persist document approvals', async () => {
     const fixture = await documentFixture();
     await db.insert(documentChunks).values({

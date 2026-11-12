@@ -3153,13 +3153,14 @@ async function processDocumentSuggestions(
     return;
   const document = await scope.documents.getDocument(version.documentId);
   if (document?.visibility !== 'team' || document.currentVersionId !== version.id) return;
-  const [source] = await deps.db
+  const [uploadSource] = await deps.db
     .select()
     .from(rawEvents)
     .where(and(eq(rawEvents.teamId, data.teamId), eq(rawEvents.id, version.sourceEventId)))
     .limit(1);
-  const sourceMeta = (source?.sourceMetadata ?? {}) as Record<string, unknown>;
-  if (!source || (sourceMeta.object_suggestions_enabled === false && !data.explicitRequest)) return;
+  const sourceMeta = (uploadSource?.sourceMetadata ?? {}) as Record<string, unknown>;
+  if (!uploadSource || (sourceMeta.object_suggestions_enabled === false && !data.explicitRequest))
+    return;
   const chunks = await scope.documents.listDocumentVersionChunks(version.id);
   if (!chunks.length) return;
   const modelId = io.modelId ?? llm.TIMELINE_MODELS.extraction.id;
@@ -3180,10 +3181,37 @@ async function processDocumentSuggestions(
   const start = run.cursor ? chunks.findIndex((chunk) => chunk.id === run.cursor) + 1 : 0;
   let examined = run.examined;
   try {
+    let source = uploadSource;
+    if (source.visibility !== 'team') {
+      // Sharing the document leaves its historical private upload untouched.
+      // Reuse the real sharing event as the public lifecycle anchor; citations
+      // still point to the immutable chunk under current document authority.
+      const [authority] = await deps.db
+        .select()
+        .from(rawEvents)
+        .where(
+          and(
+            eq(rawEvents.teamId, data.teamId),
+            eq(rawEvents.source, 'document'),
+            eq(rawEvents.visibility, 'team'),
+            sql`${rawEvents.sourceMetadata}->>'document_id' = ${document.id}`,
+            sql`${rawEvents.sourceMetadata}->>'action' = 'visibility_change'`,
+            sql`COALESCE(${rawEvents.sourceMetadata}->>'deleted', 'false') <> 'true'`,
+          ),
+        )
+        .orderBy(desc(rawEvents.occurredAt), desc(rawEvents.id))
+        .limit(1);
+      if (!authority)
+        throw new Error('Document sharing evidence unavailable; retry after sharing the document');
+      source = authority;
+    }
     for (const chunk of chunks.slice(start)) {
       const current = await scope.documents.getDocument(document.id);
       if (current?.currentVersionId !== version.id || current.visibility !== 'team') {
-        await checkpoint({ status: 'completed', metadata: { reason: 'source_superseded' } });
+        await checkpoint({
+          status: 'paused',
+          metadata: { reason: 'source_superseded_or_restricted' },
+        });
         return;
       }
       await runSuggestionExtraction(deps, {
@@ -3242,6 +3270,8 @@ async function runSuggestionExtraction(
       ? (row.sourceMetadata as Record<string, unknown>)
       : {};
   if (row.visibility !== 'team') {
+    if (args.document)
+      throw new Error('Document extraction requires a team-visible lifecycle anchor');
     await stampSuggestionMetadata(deps.db, rawEventId, {
       suggestions_skipped_at: new Date().toISOString(),
       suggestions_skipped_reason: `visibility=${row.visibility}`,
@@ -3250,6 +3280,7 @@ async function runSuggestionExtraction(
     return 0;
   }
   if (row.source === 'integration') {
+    if (args.document) throw new Error('Document extraction requires a document lifecycle anchor');
     await stampSuggestionMetadata(deps.db, rawEventId, {
       suggestions_skipped_at: new Date().toISOString(),
       suggestions_skipped_reason:
