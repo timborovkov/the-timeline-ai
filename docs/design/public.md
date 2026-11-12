@@ -105,6 +105,8 @@ The public header stays uncluttered: Product, Use cases, Integrations, Agents,
 and Pricing. Use cases and Integrations are `details` dropdowns on desktop and
 in the mobile menu. Expandable rows show a down chevron when collapsed and an up
 chevron when expanded; the mobile Menu overlay must not invert those icons.
+Escape closes the focused dropdown and returns focus to its own summary. In the
+mobile menu, dismiss a nested dropdown before dismissing the outer menu.
 Second-level nav popups use a hairline border, compact padding, and a short
 black-based shadow in light and dark mode rather than a large foreground glow.
 The Integrations dropdown is the hub, then Slack · Native sync and Telegram ·
@@ -239,7 +241,15 @@ Agent setup guides may use a bespoke copy-ready pattern: one recommended install
 prompt first, narrower skill-only and MCP-only fallbacks, then numbered setup,
 usage guidance, and an explicit access FAQ. Copy controls stay adjacent to
 their complete prompt or command, secrets never appear in those payloads, and
-the guide remains searchable from the Help directory.
+the guide remains searchable from the Help directory. Expanded setup grids allow
+children to shrink; long install controls wrap at phone widths without truncating
+commands. Public setup copy controls reserve the larger idle/success label width.
+Pointer success may fade the icon and label together for 120ms with
+`cubic-bezier(0.22, 1, 0.36, 1)`; keyboard and reduced-motion feedback is immediate.
+The existing status announcement, error recovery, and 1600ms reset remain.
+Help search and pricing controls use 16px text on phones and retain the existing
+desktop density. Help hover/press movement respects reduced motion; homepage
+hover lift additionally requires a fine pointer with hover capability.
 
 `/how-it-works` is the plain-language explanation of how Timeline works. It uses
 the shared marketing container and aligned section labels, with the same hero
@@ -426,3 +436,10 @@ reading instructions with the product screenshot. Native connector pages use a
 split introductory header and tighter section spacing; setup, permissions and
 provider limitations remain intact. Integration directory, Telegram, MCP guides,
 works-with pages and Trust use the same reduced vertical rhythm.
+
+Inline legal and closing-signup prose links remain underlined without hover.
+Long inline technical values wrap without changing their bytes or hiding content.
+Small callout labels use a foreground that meets 4.5:1 contrast on their actual
+tinted surface in both themes. Cookie preferences inherit the dialog viewport
+height cap and scrolling, with overscroll contained inside the dialog; all
+controls and disclosures remain reachable on short screens.
