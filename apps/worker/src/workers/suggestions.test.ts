@@ -3295,27 +3295,25 @@ describe('processSuggestionJobForTests', () => {
       .update(documents)
       .set({ currentVersionId: version.id })
       .where(eq(documents.id, document.id));
-    const chat = vi
-      .fn()
-      .mockResolvedValue({
-        model: MODEL_ID,
-        object: {
-          bundles: [
-            {
-              title: 'Remember Acme',
-              confidence: 'high',
-              items: [
-                {
-                  operation: 'create',
-                  targetKind: 'object',
-                  title: 'Acme',
-                  proposedPayload: { type: 'company', canonicalName: 'Acme' },
-                },
-              ],
-            },
-          ],
-        },
-      });
+    const chat = vi.fn().mockResolvedValue({
+      model: MODEL_ID,
+      object: {
+        bundles: [
+          {
+            title: 'Remember Acme',
+            confidence: 'high',
+            items: [
+              {
+                operation: 'create',
+                targetKind: 'object',
+                title: 'Acme',
+                proposedPayload: { type: 'company', canonicalName: 'Acme' },
+              },
+            ],
+          },
+        ],
+      },
+    });
     const data = {
       scope: 'document' as const,
       teamId: TEAM_ID,
