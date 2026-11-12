@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'bun:test';
 
 import { chatStructured } from '#src/llm/chat.js';
-
 import { resolveObjectIdentity } from '#src/suggestions/identity-resolution.js';
 import { resolveSemanticIdentity } from '#src/suggestions/semantic-identity.js';
 

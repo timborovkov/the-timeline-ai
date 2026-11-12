@@ -67,6 +67,7 @@ import {
 } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 
+import { requestBoardQualification } from '#src/boards/qualification-request.js';
 import {
   dispatchDueDateCalendarEffects,
   mergeDueDateCalendarSyncResults,
@@ -86,8 +87,10 @@ import {
 } from '#src/chat-context.js';
 import { resetSurfaceSessionByIdInTransaction } from '#src/conversation-surfaces/scope.js';
 import { reconcileLinkArtifactsForRawEvent } from '#src/conversational/link-artifacts.js';
+import { documentSummarySourcesAreCurrent } from '#src/documents/visibility.js';
 import { dueDateRangeConditions } from '#src/due-date-filter.js';
 import { getEnv } from '#src/env.js';
+import { remapIntegrationSelectionObjectLinks } from '#src/integrations/selection-links.js';
 import { TIMELINE_MODELS } from '#src/llm/models.js';
 import { childLogger } from '#src/logger.js';
 import {
@@ -104,6 +107,7 @@ import {
   pingObjectDiscussionAgent,
 } from '#src/objects/mention-fanout.js';
 import { mergeObjectMetadata } from '#src/objects/metadata-schemas.js';
+import { recordFromUnknown, stringArrayFromUnknown, toObjectRow } from '#src/objects/row.js';
 import { suggestedProjectIsUnusedCondition } from '#src/objects/suggested-projects.js';
 import {
   enqueueObjectSummaryRefresh,
@@ -128,32 +132,17 @@ import { getQdrantClient } from '#src/qdrant/client.js';
 import { buildPointId } from '#src/qdrant/point-id.js';
 import * as embedQueue from '#src/queue/queues.js';
 import { AUTHORITY_POLICY_VERSION } from '#src/reconciliation/authority.js';
+import { buildOutputDedupeKey, reconciliationDedupeKey } from '#src/reconciliation/core.js';
+import {
+  buildDirectWriteSourceContext as buildObjectDirectWriteSourceContext,
+  directWriteSourceEnvelope,
+} from '#src/reconciliation/direct-write-source.js';
 import { normalizeRawEventsToEvidence } from '#src/reconciliation/normalization.js';
 import { likeMentionCondition, likePattern, textMentionsAnyValue } from '#src/sql-like.js';
 import {
   readTaskCategoryFilterRefreshState,
   type TaskCategoryFilterRefreshState,
 } from '#src/task-categories/filter-refresh.js';
-import {
-  TASK_CATEGORY_TAXONOMY_VERSION,
-  taskCategorySchema,
-  type TaskCategory,
-} from '#src/task-categories/types.js';
-import { rawEventVisibleToUser } from '#src/visibility.js';
-
-import type { UpdateActor } from '#src/objects/types.js';
-import type { TaskCategoryFilterKey } from '#src/task-categories/types.js';
-import type { TeamScopeCore } from '#src/team-scope.js';
-
-import { requestBoardQualification } from '#src/boards/qualification-request.js';
-import { documentSummarySourcesAreCurrent } from '#src/documents/visibility.js';
-import { remapIntegrationSelectionObjectLinks } from '#src/integrations/selection-links.js';
-import { recordFromUnknown, stringArrayFromUnknown, toObjectRow } from '#src/objects/row.js';
-import { buildOutputDedupeKey, reconciliationDedupeKey } from '#src/reconciliation/core.js';
-import {
-  buildDirectWriteSourceContext as buildObjectDirectWriteSourceContext,
-  directWriteSourceEnvelope,
-} from '#src/reconciliation/direct-write-source.js';
 import {
   buildTaskCategoryPacket,
   TASK_CATEGORY_PROMPT_VERSION,
@@ -175,6 +164,16 @@ import {
   applyTaskCategoryClassification,
   failTaskCategoryClassification,
 } from '#src/task-categories/state.js';
+import {
+  TASK_CATEGORY_TAXONOMY_VERSION,
+  taskCategorySchema,
+  type TaskCategory,
+} from '#src/task-categories/types.js';
+import { rawEventVisibleToUser } from '#src/visibility.js';
+
+import type { UpdateActor } from '#src/objects/types.js';
+import type { TaskCategoryFilterKey } from '#src/task-categories/types.js';
+import type { TeamScopeCore } from '#src/team-scope.js';
 
 export type { UpdateActor } from '#src/objects/types.js';
 export {

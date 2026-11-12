@@ -159,8 +159,14 @@ live('prelaunch engine end-to-end', () => {
       ).toHaveLength(items.length);
     }, 240000);
   it('recalls an unsummarized project from an entity-only vector with team filtering', async () => {
-    const teamId = required(createdTeams[0]);
-    const [owner] = await db.select().from(teamMembers).where(eq(teamMembers.teamId, teamId));
+    const teamId = crypto.randomUUID();
+    const userId = crypto.randomUUID();
+    createdTeams.push(teamId);
+    await db
+      .insert(teams)
+      .values({ id: teamId, slug: `vector-${teamId}`, name: 'Synthetic vector evaluation' });
+    await db.insert(users).values({ id: userId, email: `${userId}@example.test`, name: 'Owner' });
+    await db.insert(teamMembers).values({ teamId, userId, role: 'owner' });
     const [project] = await db
       .insert(entities)
       .values({
@@ -210,13 +216,24 @@ live('prelaunch engine end-to-end', () => {
         vector.vector,
         payload,
       );
-    const recalled = await withTeam(
-      db,
-      teamId,
-      required(owner).userId,
-    ).engineMaintenance.semanticCandidates('client audit evidence portal');
+    const recalled = await withTeam(db, teamId, userId).engineMaintenance.semanticCandidates(
+      'client audit evidence portal',
+    );
     expect(recalled.some((row) => row.id === required(project).id)).toBe(true);
     expect(recalled.every((row) => row.teamId === teamId)).toBe(true);
+    await db
+      .update(entities)
+      .set({ archivedAt: new Date() })
+      .where(eq(entities.id, required(project).id));
+    const incoming = await withTeam(db, teamId, userId).engineMaintenance.semanticCandidates(
+      'client audit evidence portal',
+      { includeArchived: false },
+    );
+    expect(incoming.some((row) => row.id === required(project).id)).toBe(false);
+    const cleanup = await withTeam(db, teamId, userId).engineMaintenance.semanticCandidates(
+      'client audit evidence portal',
+    );
+    expect(cleanup.some((row) => row.id === required(project).id)).toBe(true);
   }, 120000);
 });
 

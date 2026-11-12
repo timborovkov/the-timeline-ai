@@ -298,7 +298,9 @@ calls use each team's billing admission and usage ledger. Each run scans unmerge
 objects by stable ID with a source cutoff and durable checkpoint; changes to
 `updatedAt` do not skip older objects. Work is bounded to 25 objects per invocation,
 with queued continuations and daily recovery. Archived objects are scanned as
-identity candidates and are never automatically reactivated.
+identity candidates and are never automatically reactivated. Incoming source and
+document proposals exclude archived targets, so a new actionable proposal cannot
+be converted into an unusable update to an archived object.
 
 `engine_maintenance_runs` stores run kind, engine version, cursor, examined count,
 status, timestamps, proposal counts, billing-operation references and diagnostic metadata.
@@ -364,7 +366,8 @@ company/person profiles and relationships without implying a task commitment.
 Document content is untrusted data. Each bundle cites the upload event plus immutable
 document-version and chunk IDs, with a source quote; accepting proposals remains
 separate from extraction. Document-backed acceptance validates inside the canonical-write
-transaction. Proposal, reconciliation-output and summary reads revalidate current
+transaction. Proposal reads (including pending context admitted to worker prompts),
+reconciliation-output and summary reads revalidate current
 document visibility; cached summaries retain all admitted source references for
 that check even when the model cites only a subset. Bulk acceptance orders object creates before dependent
 email identities and relationships.

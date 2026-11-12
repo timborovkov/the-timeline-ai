@@ -1,11 +1,10 @@
 import { Queue, type JobsOptions } from 'bullmq';
 
 import { getEnv } from '#src/env.js';
-import { getRedisConnection } from '#src/queue/connection.js';
-
 import { driveExtractResumeJobIdentity } from '#src/integrations/google-drive-scheduling.js';
 import { defaultDigestWindow } from '#src/messaging/digest-window.js';
 import { tagOperatorJob } from '#src/platform-admin/runtime.js';
+import { getRedisConnection } from '#src/queue/connection.js';
 
 type TimelineQueue<TData> = Queue<TData, unknown, string, TData, unknown, string>;
 

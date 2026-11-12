@@ -1,7 +1,6 @@
 import { z } from 'zod';
 
 import { chatStructured } from '#src/llm/chat.js';
-
 import {
   identitiesConflict,
   type IdentityObject,

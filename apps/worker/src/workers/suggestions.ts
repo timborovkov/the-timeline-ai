@@ -35,6 +35,7 @@ import {
   withTeam,
 } from '@timeline/shared';
 import { isBillingAdmissionError } from '@timeline/shared/billing';
+import { documentProposalEvidenceIsCurrent } from '@timeline/shared/documents';
 import {
   activeWorkspaceCondition,
   isInactiveWorkspaceError,
@@ -3436,6 +3437,8 @@ async function runSuggestionExtraction(
         eq(agentSuggestionItems.teamId, teamId),
         eq(agentSuggestionItems.targetKind, 'calendar_event'),
         eq(agentSuggestions.visibility, 'team'),
+        eq(agentSuggestions.teamId, teamId),
+        documentProposalEvidenceIsCurrent(teamId, agentSuggestions.metadata),
         inArray(agentSuggestionItems.status, ['pending', 'failed']),
         inArray(agentSuggestions.status, ['pending', 'partially_resolved']),
       ),
@@ -3459,6 +3462,8 @@ async function runSuggestionExtraction(
         inArray(agentSuggestionItems.targetKind, ['task', 'object']),
         eq(agentSuggestionItems.operation, 'create'),
         eq(agentSuggestions.visibility, 'team'),
+        eq(agentSuggestions.teamId, teamId),
+        documentProposalEvidenceIsCurrent(teamId, agentSuggestions.metadata),
         inArray(agentSuggestionItems.status, ['pending', 'failed']),
         inArray(agentSuggestions.status, ['pending', 'partially_resolved']),
       ),
@@ -3773,7 +3778,9 @@ async function runSuggestionExtraction(
       };
       if (suggestions.resolveObjectIdentity(subject, matchingRowsForCreates).kind !== 'new')
         continue;
-      const candidates = await scope.engineMaintenance.identityCandidates(subject);
+      const candidates = await scope.engineMaintenance.identityCandidates(subject, {
+        includeArchived: false,
+      });
       if (
         getEnv().IDENTITY_SEMANTIC_ENABLED &&
         getEnv().QDRANT_URL &&
@@ -3781,6 +3788,7 @@ async function runSuggestionExtraction(
       ) {
         for (const candidate of await scope.engineMaintenance.semanticCandidates(
           `${subject.canonicalName} ${text.slice(0, 2000)}`,
+          { includeArchived: false },
         ))
           if (!candidates.some((row) => row.id === candidate.id)) candidates.push(candidate);
       }

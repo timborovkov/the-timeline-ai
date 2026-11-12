@@ -105,6 +105,140 @@ const model: typeof llm.chatStructured = <T extends z.ZodType>(input: llm.ChatSt
     model: 'fixture',
   });
 describe('engine persistence contracts', () => {
+  it('keeps archived lexical and contextual identities for cleanup but excludes them from incoming proposals', async () => {
+    process.env.IDENTITY_SEMANTIC_ENABLED = 'true';
+    resetEnvForTests();
+    const [archived] = await db
+      .insert(entities)
+      .values({
+        teamId,
+        type: 'project',
+        canonicalName: 'Client Portal',
+        aliases: ['PBC-portaali'],
+        archivedAt: new Date(),
+        metadata: { companyId: 'northstar' },
+      })
+      .returning();
+    const subject = {
+      id: 'candidate',
+      type: 'project',
+      canonicalName: 'PBC-portaali',
+      metadata: { companyId: 'northstar' },
+    };
+    expect(
+      (await scope().engineMaintenance.identityCandidates(subject)).map((row) => row.id),
+    ).toContain(required(archived).id);
+    expect(
+      await scope().engineMaintenance.identityCandidates(subject, { includeArchived: false }),
+    ).toHaveLength(0);
+    const contextualSubject = { ...subject, canonicalName: 'Audit uploads' };
+    expect(
+      (await scope().engineMaintenance.identityCandidates(contextualSubject)).map((row) => row.id),
+    ).toContain(required(archived).id);
+    expect(
+      await scope().engineMaintenance.identityCandidates(contextualSubject, {
+        includeArchived: false,
+      }),
+    ).toHaveLength(0);
+    const text =
+      'PBC-portaali is the Client Portal project. We need to track PBC-portaali for Northstar.';
+    const [event] = await db
+      .insert(rawEvents)
+      .values({
+        teamId,
+        source: 'email',
+        contentText: text,
+        visibility: 'team',
+        authorUserId: userId,
+        occurredAt: new Date(),
+        sourceMetadata: {
+          extracted_at: new Date().toISOString(),
+          extraction_model_version: 'fixture',
+          source_payload_ref: 'inline://archived-identity-fixture',
+        },
+      })
+      .returning();
+    const [fact] = await db
+      .insert(facts)
+      .values({
+        teamId,
+        rawEventId: required(event).id,
+        statement: text,
+        confidence: 1,
+        modelVersion: 'fixture',
+      })
+      .returning();
+    await db
+      .insert(factEntities)
+      .values({ factId: required(fact).id, entityId: required(archived).id, role: 'subject' });
+    let semanticCalls = 0;
+    const chat: typeof llm.chatStructured = (input) => {
+      if (input.instructions?.startsWith('Resolve object identity')) {
+        semanticCalls++;
+        return Promise.resolve({
+          model: 'fixture',
+          object: input.schema.parse({
+            matches: [
+              {
+                candidateId: required(archived).id,
+                sameScope: true,
+                reason: 'Same captured project name.',
+                citations: [{ rawEventId: required(event).id, quote: text }],
+              },
+            ],
+          }),
+        });
+      }
+      return Promise.resolve({
+        model: 'fixture',
+        object: input.schema.parse({
+          bundles: [
+            {
+              title: 'Track PBC-portaali',
+              confidence: 'high',
+              reason: 'Explicit request to track the project.',
+              items: [
+                {
+                  operation: 'create',
+                  targetKind: 'object',
+                  title: 'PBC-portaali',
+                  proposedPayload: {
+                    type: 'project',
+                    canonicalName: 'PBC-portaali',
+                    metadata: { companyId: 'northstar' },
+                  },
+                },
+              ],
+            },
+          ],
+        }),
+      });
+    };
+    await processSuggestionJobForTests(
+      { db },
+      { teamId, rawEventId: required(event).id },
+      { chatStructured: chat, modelId: 'fixture' },
+    );
+    const proposals = (await scope().suggestions.listPendingSuggestions()).flatMap(
+      (bundle) => bundle.items,
+    );
+    expect(
+      proposals.some((item) => item.operation === 'create' && item.title === 'PBC-portaali'),
+    ).toBe(true);
+    expect(proposals.some((item) => item.targetId === required(archived).id)).toBe(false);
+    expect(semanticCalls).toBe(0);
+    expect(
+      required(
+        (
+          await db
+            .select()
+            .from(entities)
+            .where(eq(entities.id, required(archived).id))
+        )[0],
+      ).archivedAt,
+    ).not.toBeNull();
+  });
+
   it('uses captured source text instead of paraphrased facts for identity citations', async () => {
     const [object] = await db
       .insert(entities)

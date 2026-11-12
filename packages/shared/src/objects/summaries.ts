@@ -26,16 +26,15 @@ import { z } from 'zod';
 import { rethrowBillingAdmission } from '#src/billing/errors.js';
 import { artifactRefCitation } from '#src/citation.js';
 import { listRelatedCuratedDocumentChunks } from '#src/documents/related-chunks.js';
+import {
+  documentProposalEvidenceIsCurrent,
+  documentSummarySourcesAreCurrent,
+} from '#src/documents/visibility.js';
 import { chatStructured } from '#src/llm/chat.js';
 import { TIMELINE_MODELS, truncateTextToTokenBudget } from '#src/llm/models.js';
 import * as queue from '#src/queue/queues.js';
 
 import type { TeamScopeCore } from '#src/team-scope.js';
-
-import {
-  documentProposalEvidenceIsCurrent,
-  documentSummarySourcesAreCurrent,
-} from '#src/documents/visibility.js';
 
 const OBJECT_SUMMARY_PROMPT_VERSION = 'object-summary-v1';
 const OBJECT_SUMMARY_AUTO_DELAY_MS = 2 * 60 * 1000;

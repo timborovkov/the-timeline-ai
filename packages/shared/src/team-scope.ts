@@ -46,6 +46,12 @@ import { sourceMetadataWithConversationArtifacts } from '#src/conversational/con
 import { reconcileLinkArtifactsForRawEvent } from '#src/conversational/link-artifacts.js';
 import { documentPresentation } from '#src/documents/presentation.js';
 import { createDocumentScope } from '#src/documents/scope.js';
+import {
+  acceptIngestWebhookEvidence,
+  type AcceptIngestWebhookEvidenceInput,
+  type AcceptIngestWebhookEvidenceResult,
+} from '#src/ingest-webhooks/accept.js';
+import { createIngestWebhookScope } from '#src/ingest-webhooks/scope.js';
 import { createIntegrationScope } from '#src/integrations/scope.js';
 import { createJobRecoveryScope } from '#src/job-recovery/index.js';
 import { embed as defaultEmbed, type EmbedResult } from '#src/llm/embed.js';
@@ -53,11 +59,20 @@ import { TIMELINE_MODELS } from '#src/llm/models.js';
 import { childLogger } from '#src/logger.js';
 import { createMcpScope } from '#src/mcp/scope.js';
 import { createMcpOAuthScope } from '#src/mcp-server/oauth-scope.js';
+import { createMcpOutboundScope } from '#src/mcp-server/outbound.js';
+import { createAgentReportingScope } from '#src/mcp-server/reporting.js';
 import { createMeetingScope } from '#src/meetings/scope.js';
 import { createObjectScope, normalizeIdentityFacet } from '#src/objects/index.js';
 import { invalidateObjectSummariesForRawEvent } from '#src/objects/summaries.js';
 import { createOnboardingScope } from '#src/onboarding/index.js';
 import { createPinScope } from '#src/pins/scope.js';
+import {
+  guardTeamAccess,
+  guardOperatorScope,
+  operatorDatabase,
+  recordScopedReadAudit,
+} from '#src/platform-admin/runtime.js';
+import { WORKSPACE_OPERATOR_POLICY } from '#src/platform-admin/workspace-policy.js';
 import {
   getQdrantClient,
   type SearchHit,
@@ -71,32 +86,6 @@ import {
   inlineSourceSnapshotMetadata,
   sourcePayloadRefFromMetadata,
 } from '#src/reconciliation/source-snapshot.js';
-import { createSuggestionScope } from '#src/suggestions/index.js';
-import {
-  normalizeVisibilityUserIds,
-  rawEventIsActive,
-  rawEventVisibleToUser,
-} from '#src/visibility.js';
-
-import type { chatStructured } from '#src/llm/chat.js';
-import type { McpAuthPrincipal } from '#src/mcp-server/oauth-core.js';
-import type { QdrantOperationContext } from '#src/qdrant/operation.js';
-
-import {
-  acceptIngestWebhookEvidence,
-  type AcceptIngestWebhookEvidenceInput,
-  type AcceptIngestWebhookEvidenceResult,
-} from '#src/ingest-webhooks/accept.js';
-import { createIngestWebhookScope } from '#src/ingest-webhooks/scope.js';
-import { createMcpOutboundScope } from '#src/mcp-server/outbound.js';
-import { createAgentReportingScope } from '#src/mcp-server/reporting.js';
-import {
-  guardTeamAccess,
-  guardOperatorScope,
-  operatorDatabase,
-  recordScopedReadAudit,
-} from '#src/platform-admin/runtime.js';
-import { WORKSPACE_OPERATOR_POLICY } from '#src/platform-admin/workspace-policy.js';
 import {
   eventEvidenceDate,
   rankingSummary,
@@ -111,13 +100,23 @@ import {
   createSuggestionAcceptanceUnitOfWork,
   type SuggestionAcceptanceTransaction,
 } from '#src/suggestions/acceptance-transaction.js';
+import { createSuggestionScope } from '#src/suggestions/index.js';
 import { createEngineMaintenanceScope } from '#src/suggestions/maintenance-scope.js';
 import { createTeamLifecycleScope } from '#src/team-lifecycle/scope.js';
 import { createTelegramScope } from '#src/telegram/scope.js';
 import { createTimelineReadScope } from '#src/timeline/read-scope.js';
 import { createTimelineMomentPresentationCache } from '#src/timeline-moments/presentation-cache.js';
+import {
+  normalizeVisibilityUserIds,
+  rawEventIsActive,
+  rawEventVisibleToUser,
+} from '#src/visibility.js';
 import { obsoleteWebsiteEventIds } from '#src/websites/retrieval.js';
 import { createWebsiteScope } from '#src/websites/scope.js';
+
+import type { chatStructured } from '#src/llm/chat.js';
+import type { McpAuthPrincipal } from '#src/mcp-server/oauth-core.js';
+import type { QdrantOperationContext } from '#src/qdrant/operation.js';
 
 // Note: `teamRole` value is referenced at runtime by drizzle elsewhere; keeping
 // the value import lets us derive the union type from the enum definition.

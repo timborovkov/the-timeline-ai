@@ -14,12 +14,11 @@ import {
 import { and, count, desc, eq, inArray, isNull, or, sql, type SQL } from 'drizzle-orm';
 
 import { listArtifactClusterEvidence } from '#src/artifacts/index.js';
+import { documentProposalEvidenceIsCurrent } from '#src/documents/visibility.js';
 import {
   auditReconciliationEvidenceCoverage,
   type ReconciliationEvidenceCoverageReport,
 } from '#src/reconciliation/backfill.js';
-
-import { documentProposalEvidenceIsCurrent } from '#src/documents/visibility.js';
 
 type DbTx = Parameters<Parameters<Db['transaction']>[0]>[0];
 type DbOrTx = Db | DbTx;

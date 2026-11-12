@@ -3350,6 +3350,116 @@ describe('processSuggestionJobForTests', () => {
     expect(prompt).not.toContain('Private Acme medical hold');
   });
 
+  it('excludes restricted document-backed pending task and calendar context from model prompts', async () => {
+    const rawEventId = '10000000-0000-0000-0000-0000000000ca';
+    await seedRawEvent(db as never, { id: rawEventId, text: 'Please review the release plan.' });
+    for (const state of ['current', 'private', 'deleted', 'superseded', 'cross-team'] as const) {
+      const day = 19 + ['current', 'private', 'deleted', 'superseded', 'cross-team'].indexOf(state);
+      const documentTeam = state === 'cross-team' ? OTHER_TEAM_ID : TEAM_ID;
+      const scope = withTeam(
+        db as never,
+        documentTeam,
+        state === 'cross-team' ? INACTIVE_ID : OWNER_ID,
+      );
+      const [document] = await db
+        .insert(documents)
+        .values({
+          teamId: documentTeam,
+          ownerUserId: OWNER_ID,
+          name: `${state}.txt`,
+          visibility: 'team',
+        })
+        .returning();
+      if (!document) throw new Error('missing document');
+      const [version] = await db
+        .insert(documentVersions)
+        .values({
+          teamId: documentTeam,
+          documentId: document.id,
+          version: 1,
+          objectKey: `${state}.txt`,
+          contentType: 'text/plain',
+        })
+        .returning();
+      if (!version) throw new Error('missing version');
+      const [chunk] = await db
+        .insert(documentChunks)
+        .values({
+          teamId: documentTeam,
+          documentId: document.id,
+          documentVersionId: version.id,
+          chunkIndex: 0,
+          text: 'Reference data',
+          tokenCount: 2,
+        })
+        .returning();
+      if (!chunk) throw new Error('missing chunk');
+      await db
+        .update(documents)
+        .set({ currentVersionId: version.id })
+        .where(eq(documents.id, document.id));
+      for (const targetKind of ['task', 'calendar_event'] as const) {
+        const title = `${state} confidential ${targetKind} proposal`;
+        await scope.suggestions.createOrMergeSuggestionBundle({
+          source: 'background',
+          title,
+          dedupeKey: `${state}:${targetKind}`,
+          metadata: {
+            document_id: document.id,
+            document_version_id: version.id,
+            document_chunk_id: chunk.id,
+          },
+          items: [
+            {
+              operation: 'create',
+              targetKind,
+              title,
+              dedupeKey: `${state}:${targetKind}:item`,
+              proposedPayload:
+                targetKind === 'task'
+                  ? { title }
+                  : {
+                      title,
+                      startAt: `2026-06-${String(day)}T14:00:00.000Z`,
+                      endAt: `2026-06-${String(day)}T15:00:00.000Z`,
+                      timezone: 'UTC',
+                    },
+            },
+          ],
+        });
+      }
+      if (state === 'private')
+        await db
+          .update(documents)
+          .set({ visibility: 'private' })
+          .where(eq(documents.id, document.id));
+      if (state === 'deleted')
+        await db
+          .update(documents)
+          .set({ deletedAt: new Date() })
+          .where(eq(documents.id, document.id));
+      if (state === 'superseded')
+        await db
+          .update(documents)
+          .set({ currentVersionId: null })
+          .where(eq(documents.id, document.id));
+    }
+    const chat = emptyModel();
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { rawEventId, teamId: TEAM_ID },
+      { getEnv: env, chatStructured: chat, modelId: MODEL_ID },
+    );
+    expect(chat).toHaveBeenCalled();
+    const prompt = (chat.mock.calls[0]?.[0] as { prompt: string }).prompt;
+    for (const targetKind of ['task', 'calendar_event']) {
+      expect(prompt).toContain(`current confidential ${targetKind} proposal`);
+      for (const state of ['private', 'deleted', 'superseded', 'cross-team']) {
+        expect(prompt).not.toContain(`${state} confidential ${targetKind} proposal`);
+      }
+    }
+  });
+
   it('stores grouped tentative slot suggestions from model output', async () => {
     const rawEventId = '10000000-0000-0000-0000-0000000000f2';
     await seedRawEvent(db as never, {

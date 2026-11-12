@@ -24,12 +24,11 @@ import {
 } from '#src/calendar/due-dates.js';
 import { embed } from '#src/llm/embed.js';
 import { getQdrantClient } from '#src/qdrant/client.js';
+import { assertDevelopmentResetEnvironment } from '#src/suggestions/development-reset.js';
+import { IDENTITY_POLICY_VERSION } from '#src/suggestions/identity-resolution.js';
 
 import type { IdentityObject } from '#src/suggestions/identity-resolution.js';
 import type { TeamScopeCore } from '#src/team-scope.js';
-
-import { assertDevelopmentResetEnvironment } from '#src/suggestions/development-reset.js';
-import { IDENTITY_POLICY_VERSION } from '#src/suggestions/identity-resolution.js';
 
 export function createEngineMaintenanceScope(db: Db, scope: TeamScopeCore) {
   const team = eq(entities.teamId, scope.teamId);
@@ -311,8 +310,14 @@ export function createEngineMaintenanceScope(db: Db, scope: TeamScopeCore) {
         .orderBy(asc(entities.id))
         .limit(Math.min(limit, 100));
     },
-    async identityCandidates(subject: IdentityObject, limit = 40) {
+    async identityCandidates(
+      subject: IdentityObject,
+      options: { includeArchived?: boolean; limit?: number } = {},
+    ) {
       await scope.requireMembership();
+      const limit = options.limit ?? 40;
+      const archiveFilter =
+        options.includeArchived === false ? isNull(entities.archivedAt) : undefined;
       const names = [
         subject.canonicalName,
         ...(Array.isArray(subject.aliases)
@@ -333,6 +338,7 @@ export function createEngineMaintenanceScope(db: Db, scope: TeamScopeCore) {
           and(
             team,
             isNull(entities.mergedIntoId),
+            archiveFilter,
             eq(entities.type, subject.type as typeof entities.$inferSelect.type),
             or(...conditions),
           ),
@@ -345,6 +351,7 @@ export function createEngineMaintenanceScope(db: Db, scope: TeamScopeCore) {
           and(
             team,
             isNull(entities.mergedIntoId),
+            archiveFilter,
             eq(entities.type, subject.type as typeof entities.$inferSelect.type),
             sql`${entities.id} <> ${subject.id === 'candidate' ? '00000000-0000-0000-0000-000000000000' : subject.id}::uuid`,
             or(
@@ -360,7 +367,7 @@ export function createEngineMaintenanceScope(db: Db, scope: TeamScopeCore) {
         limit,
       );
     },
-    async semanticCandidates(query: string) {
+    async semanticCandidates(query: string, options: { includeArchived?: boolean } = {}) {
       await scope.requireMembership();
       const vector = await embed({ text: query.slice(0, 6000) });
       const hits = await getQdrantClient().search(scope.teamId, scope.userId, vector.vector, {
@@ -374,7 +381,14 @@ export function createEngineMaintenanceScope(db: Db, scope: TeamScopeCore) {
       return db
         .select()
         .from(entities)
-        .where(and(team, isNull(entities.mergedIntoId), inArray(entities.id, ids)));
+        .where(
+          and(
+            team,
+            isNull(entities.mergedIntoId),
+            options.includeArchived === false ? isNull(entities.archivedAt) : undefined,
+            inArray(entities.id, ids),
+          ),
+        );
     },
     async humanEditedFields(objectId: string) {
       await scope.requireMembership();

@@ -59,12 +59,18 @@ import {
   calendarEventMutationTargetId,
   type CalendarRecurrenceEditMode,
 } from '#src/calendar/locking.js';
-import { chatStructured as defaultChatStructured } from '#src/llm/chat.js';
 import { documentProposalEvidenceIsCurrent } from '#src/documents/visibility.js';
+import { chatStructured as defaultChatStructured } from '#src/llm/chat.js';
 import { childLogger } from '#src/logger.js';
 import { suggestedProjectIsUnusedCondition } from '#src/objects/suggested-projects.js';
 import { OBJECT_TYPES } from '#src/objects/types.js';
 import { decodeCursor } from '#src/pagination.js';
+import {
+  buildOutputDedupeKey,
+  reconciliationDedupeKey,
+  validateSourceRefs,
+  type SourceRef,
+} from '#src/reconciliation/core.js';
 import { sourcePayloadRefFromMetadata } from '#src/reconciliation/source-snapshot.js';
 import { likePattern } from '#src/sql-like.js';
 import { stableStringify, suggestionDedupeKey } from '#src/suggestions/dedupe-key.js';
@@ -102,13 +108,6 @@ import type {
 } from '#src/objects/index.js';
 import type { SuggestionAcceptanceUnitOfWork } from '#src/suggestions/acceptance-transaction.js';
 import type { TeamRole } from '#src/team-scope.js';
-
-import {
-  buildOutputDedupeKey,
-  reconciliationDedupeKey,
-  validateSourceRefs,
-  type SourceRef,
-} from '#src/reconciliation/core.js';
 
 export { suggestionDedupeKey } from '#src/suggestions/dedupe-key.js';
 export {
