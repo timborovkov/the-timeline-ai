@@ -445,13 +445,13 @@ describe('BoardAddItemForm', () => {
     );
     fakes.quickCreateBoardItemAction.mockResolvedValue({ error: 'test response' });
     await user.click(screen.getByRole('button', { name: 'Add to board' }));
-    await waitFor(() =>
+    await waitFor(() => {
       expect(fakes.quickCreateBoardItemAction).toHaveBeenCalledWith({
         boardId: 'board-1',
         type: 'person',
         canonicalName: 'Alex',
         laneId: null,
-      }),
-    );
+      });
+    });
   });
 });
