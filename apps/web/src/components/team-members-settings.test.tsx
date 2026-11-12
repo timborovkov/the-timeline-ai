@@ -38,7 +38,6 @@ const { TeamMembersSettings } = await import('@/components/team-members-settings
 const { TeamListPagination } = await import('@/components/team-list-pagination');
 const { PendingInvitesCard } = await import('@/components/pending-invites-card');
 const { RemovedMembersCard } = await import('@/components/removed-members-card');
-const { relatedMemberFixtures } = await import('@/app/dev/break-ui/fixtures');
 
 afterEach(() => {
   cleanup();
@@ -208,8 +207,36 @@ describe('member identity and pagination', () => {
 });
 
 describe('adjacent team lists', () => {
+  function relatedMemberFixtures(count: number) {
+    const profiles = Array.from({ length: count }, (_, index) => ({
+      id: `member-${index}`,
+      name: '   ',
+      email:
+        index === 11 ? 'ops@sub.department.region.example.co.uk' : `member.${index}@example.com`,
+    }));
+    return {
+      userMap: new Map(profiles.map((profile) => [profile.id, profile])),
+      invites: profiles.map((profile, index) => ({
+        id: `invite-${index}`,
+        email: profile.email,
+        role: 'member',
+        token: `test-token-${index}`,
+        expiresAt: new Date('2026-11-24T12:00:00Z'),
+        lastSentAt: null,
+        sendStatus: 'pending',
+        sendError: null,
+        invitedByUserId: profile.id,
+      })),
+      removedMembers: profiles.map((profile) => ({
+        userId: profile.id,
+        role: 'member',
+        removedAt: null,
+      })),
+    };
+  }
+
   it('falls back from blank inviter names and omits duplicate removed-member emails', () => {
-    const fixture = relatedMemberFixtures('worst');
+    const fixture = relatedMemberFixtures(12);
     render(
       <>
         <PendingInvitesCard
@@ -230,7 +257,7 @@ describe('adjacent team lists', () => {
       pending.getByText('member · invited by ops@sub.department.region.example.co.uk'),
     ).toBeTruthy();
     expect(
-      pending.getByText('https://preview.example.com/accept-invite/synthetic-preview-token-11'),
+      pending.getByText('https://preview.example.com/accept-invite/test-token-11'),
     ).toBeTruthy();
     const removed = within(
       screen.getByRole('heading', { name: 'Removed members' }).closest('section') ?? document.body,
@@ -239,7 +266,7 @@ describe('adjacent team lists', () => {
   });
 
   it('paginates invitations and removed members independently and clamps after removal', () => {
-    const fixture = relatedMemberFixtures('huge');
+    const fixture = relatedMemberFixtures(51);
     function view(count: number) {
       return (
         <>

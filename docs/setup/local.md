@@ -73,9 +73,6 @@ Run the app:
 
 Open <http://localhost:3000>.
 
-For synthetic member-list edge cases without seeding a database, use the
-[development-only UI stress preview](../testing/ui-stress-preview.md).
-
 <span id="phase-1-walkthrough"></span>
 
 ## Verify a capture

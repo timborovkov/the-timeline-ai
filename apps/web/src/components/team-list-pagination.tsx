@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 
 import { Button } from '@/components/ui/button';
 
@@ -62,8 +62,8 @@ export function TeamListPagination({
   noun: string;
 }) {
   const locale = useSyncExternalStore(subscribeLocale, browserLocale, serverLocale);
+  const format = useMemo(() => new Intl.NumberFormat(locale), [locale]);
   if (total <= PAGE_SIZE) return null;
-  const format = new Intl.NumberFormat(locale);
   return (
     <nav aria-label={label} className="flex flex-wrap items-center gap-3 pt-3">
       <p aria-live="polite" className="text-sm text-fg-muted tabular-nums">
