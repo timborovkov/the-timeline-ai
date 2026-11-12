@@ -261,6 +261,11 @@
   text-underline-offset: 0.25rem;
 }
 
+.heroAgentSetup {
+  margin-top: 1.75rem;
+  max-width: 36rem;
+}
+
 .observatory {
   position: relative;
   min-width: 0;
@@ -299,6 +304,7 @@
 }
 
 .evidencePaths path,
+.returnPaths path,
 .outcomePath {
   fill: none;
   stroke: var(--home-signal);
@@ -311,12 +317,14 @@
   stroke-dasharray: 7 12;
 }
 
+.returnPaths path,
 .outcomePath {
   opacity: 0.52;
   stroke-dasharray: 3 7;
 }
 
 .ingestPackets circle,
+.returnPackets circle,
 .outcomePacket circle {
   fill: var(--home-signal);
   opacity: 0;
@@ -489,13 +497,13 @@
 }
 
 .orbitSource3 {
-  bottom: 17%;
-  left: 4%;
+  bottom: 3%;
+  left: 2%;
 }
 
 .orbitSource4 {
-  right: 7%;
-  bottom: 9%;
+  right: 2%;
+  bottom: 3%;
 }
 
 .orbitSource5 {
@@ -504,8 +512,36 @@
 }
 
 .orbitSource6 {
-  top: 48%;
+  top: 58%;
   right: 2%;
+}
+
+.orbitPerson {
+  top: 0.5%;
+  left: 50%;
+  min-width: 6.4rem;
+  transform: translateX(-50%);
+}
+
+.orbitAgent {
+  bottom: 1%;
+  left: 50%;
+  min-width: 8.6rem;
+  transform: translateX(-50%);
+}
+
+.orbitAgent strong {
+  font-size: 0.72rem;
+  line-height: 1.15;
+  white-space: normal;
+}
+
+.orbitAgentMeta {
+  color: var(--home-dim);
+  font-family: var(--font-mono);
+  font-size: var(--home-meta-size);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
 }
 
 .observatoryCaption {
@@ -1158,8 +1194,76 @@
 
 .proofStage {
   display: grid;
-  gap: 0.8rem;
-  margin-top: 2.75rem;
+  grid-template-columns: minmax(0, 0.82fr) minmax(0, 1.18fr);
+  gap: clamp(1.25rem, 3vw, 2.75rem);
+  align-items: center;
+  margin-top: 2.25rem;
+}
+
+.proofShotFirst {
+  grid-template-columns: minmax(0, 1.18fr) minmax(0, 0.82fr);
+}
+
+.proofShotFirst .proofCopy {
+  order: 2;
+}
+
+.proofCaption {
+  margin: 0.85rem 0 0;
+  color: var(--home-muted);
+  line-height: 1.6;
+}
+
+.proofCallouts {
+  display: grid;
+  gap: 0.9rem;
+  margin: 1.15rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.proofCallouts span {
+  color: var(--home-signal);
+  font-family: var(--font-mono);
+  font-size: var(--home-meta-size);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.proofCallouts p {
+  margin: 0.35rem 0 0;
+  color: var(--home-paper);
+  font-size: 0.92rem;
+  line-height: 1.5;
+}
+
+.proofDisclosure {
+  margin-top: 1rem;
+  color: var(--home-dim);
+  font-family: var(--font-mono);
+  font-size: var(--home-meta-size);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.threadBlock {
+  margin-top: clamp(2.5rem, 5vw, 4.5rem);
+}
+
+.threadHeading {
+  max-width: 16ch;
+  font-size: clamp(2.4rem, 5vw, 4.4rem);
+  font-weight: 600;
+  letter-spacing: -0.06em;
+  line-height: 0.96;
+  text-wrap: balance;
+}
+
+.threadLead {
+  max-width: 42rem;
+  margin: 1.25rem 0 1.75rem;
+  color: var(--home-muted);
+  line-height: 1.65;
 }
 
 .timelineStage {
@@ -2034,25 +2138,6 @@
   color: var(--home-paper);
   font-size: 1.05rem;
   line-height: 1.6;
-}
-
-.slackStrip {
-  margin-top: clamp(2rem, 4vw, 3.5rem);
-}
-
-.slackStripHeader {
-  margin: 0 0 0.85rem;
-  color: var(--home-muted);
-  font-size: 1rem;
-}
-
-.slackStrip .slackThread {
-  max-width: 42rem;
-  border: 1px solid var(--home-line);
-}
-
-.agentLinkLine {
-  margin: 1.25rem 0 0;
 }
 
 .approvalCard {
@@ -3303,13 +3388,13 @@
   }
 
   .orbitSource3 {
-    bottom: 15%;
-    left: 3%;
+    bottom: 2%;
+    left: 1%;
   }
 
   .orbitSource4 {
-    right: 3%;
-    bottom: 9%;
+    right: 1%;
+    bottom: 2%;
   }
 
   .orbitSource5 {
@@ -3318,8 +3403,35 @@
   }
 
   .orbitSource6 {
-    top: 46%;
+    top: 52%;
     right: 1%;
+  }
+
+  .orbitPerson,
+  .orbitAgent {
+    min-width: 5.4rem;
+    padding: 0.35rem 0.4rem;
+  }
+
+  .orbitPerson {
+    top: 0;
+  }
+
+  .orbitAgent {
+    bottom: 0;
+  }
+
+  .orbitAgent strong {
+    font-size: var(--home-meta-size);
+  }
+
+  .proofStage,
+  .proofShotFirst {
+    grid-template-columns: 1fr;
+  }
+
+  .proofShotFirst .proofCopy {
+    order: 0;
   }
 
   .observatoryCaption {
@@ -3445,6 +3557,7 @@
   }
 
   .evidencePaths path,
+  .returnPaths path,
   .outcomePath,
   .orbitInner,
   .orbitSource,
@@ -3481,6 +3594,7 @@
   }
 
   .ingestPackets,
+  .returnPackets,
   .outcomePacket {
     display: none;
   }
@@ -3490,6 +3604,7 @@
   .timelineNode span,
   .trustFlow li > span,
   .ingestPackets circle,
+  .returnPackets circle,
   .outcomePacket circle {
     forced-color-adjust: auto;
   }

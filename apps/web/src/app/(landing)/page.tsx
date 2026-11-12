@@ -9,6 +9,7 @@ import { LandingSkipLink } from '@/app/(landing)/_landing-skip-link';
 import styles from '@/app/(landing)/home.module.css';
 import { Logo } from '@/components/brand/logo';
 import { GitHubSourceLink } from '@/components/github-source-link';
+import { AgentSetupCard } from '@/components/marketing/agents/agent-setup-card';
 import {
   CTA_MICROCOPY_LEAD,
   FICTIONAL_EXAMPLE_LABEL,
@@ -30,7 +31,7 @@ import { TimelineFlowDiagram } from '@/components/marketing/home/timeline-flow-d
 import { CAPTURE_SURFACES } from '@/components/marketing/integrations/capture-surface-content';
 import { MarketingProductScreenshot } from '@/components/marketing/product-screenshot';
 import { PUBLIC_DEMO_STORY } from '@/components/marketing/public-demo-story';
-import { TRUST_FLOW_STEPS } from '@/components/marketing/trust-flow-content';
+import { TRUST_FLOW_CHIPS, TRUST_FLOW_STEPS } from '@/components/marketing/trust-flow-content';
 import { USE_CASES } from '@/components/marketing/use-cases/content';
 import { CookieSettingsButton } from '@/components/public-analytics';
 import { PublicHeader } from '@/components/public-header';
@@ -52,7 +53,6 @@ const HERO_INTRO =
   "Your work record, as one timeline. Forward or cc an email, talk in Slack or Telegram, send a voice note. It all lands in order, you can search it and ask it, and your clients and to-dos stay up to date. It's the CRM and task board you never have to update.";
 const HOME_INTAKE_IDS = new Set<string>(['telegram', 'slack-chat', 'email', 'meetings']);
 const HOME_INTAKE_SURFACES = CAPTURE_SURFACES.filter((surface) => HOME_INTAKE_IDS.has(surface.id));
-const APPROVAL_STEP = approvalStep();
 const HOME_DOCUMENT = getHomeDocument();
 
 export const metadata: Metadata = {
@@ -72,12 +72,6 @@ export const metadata: Metadata = {
     googleBot: { index: true, follow: true, 'max-snippet': -1, 'max-image-preview': 'large' },
   },
 };
-
-function approvalStep() {
-  const step = TRUST_FLOW_STEPS.find((item) => item.index === '04');
-  if (!step) throw new Error('The trust flow is missing the approval step');
-  return step;
-}
 
 function getHomeDocument() {
   const document = PUBLIC_DOCUMENT_REGISTRY.get('/');
@@ -224,6 +218,9 @@ function ClaimScene() {
           />
           <GitHubSourceLink appearance="inline" className={styles.heroGithubLink} />
         </div>
+        <div className={styles.heroAgentSetup}>
+          <AgentSetupCard />
+        </div>
       </div>
 
       <TimelineFlowDiagram variant="hero" />
@@ -245,10 +242,10 @@ function IntakeScene() {
         id="intake-title"
         title={
           <>
-            Forward it, cc it, <em>say it.</em>
+            Status should not require an <em>investigation.</em>
           </>
         }
-        copy="Forward or cc an email, talk in Slack or Telegram, or send a voice note. CC or BCC the team address. Telegram voice notes arrive transcribed."
+        copy="Forward or cc an email, talk in Slack or Telegram, or send a voice note. CC or BCC the team address. Telegram voice notes arrive transcribed. Search it by person, client or source."
       />
       <aside className={styles.connectorPanel} data-home-diagram aria-labelledby="messages-title">
         <div className={cn(styles.connectorPaths, styles.connectorPathsSingle)}>
@@ -269,7 +266,7 @@ function IntakeScene() {
           </article>
         </div>
       </aside>
-      <HomeProof shot={HOME_VOICE_SHOT} />
+      <HomeProof shot={HOME_VOICE_SHOT} align="copy-first" />
     </section>
   );
 }
@@ -332,7 +329,7 @@ function TimelineScene() {
         </ol>
       </div>
       <p className={styles.timelineSearchLine}>Search it by person, client or source.</p>
-      <HomeProof shot={HOME_TIMELINE_SHOT} />
+      <HomeProof shot={HOME_TIMELINE_SHOT} align="shot-first" />
     </section>
   );
 }
@@ -413,68 +410,95 @@ function AnswerScene() {
           </ol>
         </details>
       </div>
-      <HomeProof shot={HOME_ASK_SHOT} />
-      <div className={styles.slackStrip} data-home-diagram data-chat-to-answer>
-        <p className={styles.slackStripHeader}>or ask @Timeline in Slack</p>
-        <article className={styles.slackThread} aria-label="Slack example">
-          <header className={styles.slackBar}>
-            <span>#northstar-pilot</span>
-            <span>Slack</span>
-          </header>
-          <div className={styles.slackMessage}>
-            <span className={styles.slackAvatar} aria-hidden="true">
-              M
-            </span>
-            <div>
-              <p className={styles.slackMeta}>
-                <strong>Casey Novak</strong>
-                <time dateTime="2026-07-08T16:12:00.000Z">16:12</time>
-              </p>
-              <p>
-                <span className={styles.slackMention}>@Timeline</span> what did we promise Northstar
-                on Tuesday's call?
-              </p>
+      <HomeProof shot={HOME_ASK_SHOT} align="copy-first" />
+      <div className={styles.threadBlock} id="chat-to-answer">
+        <h2 className={styles.threadHeading}>
+          Ask in Slack. An agent can ask <em>the same record.</em>
+        </h2>
+        <p className={styles.threadLead}>
+          Someone asks @Timeline in Slack. The bot answers with numbered citations back to the call
+          and the email. Claude can retrieve the same Northstar evidence over MCP.
+        </p>
+        <div className={styles.threadLayout} data-home-diagram data-chat-to-answer>
+          <article className={styles.slackThread} aria-label="Slack example">
+            <header className={styles.slackBar}>
+              <span>#northstar-pilot</span>
+              <span>Slack</span>
+            </header>
+            <div className={styles.slackMessage}>
+              <span className={styles.slackAvatar} aria-hidden="true">
+                M
+              </span>
+              <div>
+                <p className={styles.slackMeta}>
+                  <strong>Casey Novak</strong>
+                  <time dateTime="2026-07-08T16:12:00.000Z">16:12</time>
+                </p>
+                <p>
+                  <span className={styles.slackMention}>@Timeline</span> what did we promise
+                  Northstar on Tuesday's call?
+                </p>
+              </div>
             </div>
-          </div>
-          <div className={styles.slackMessage}>
-            <span className={styles.slackBotAvatar} aria-hidden="true">
-              T
-            </span>
-            <div>
-              <p className={styles.slackMeta}>
-                <strong>Timeline</strong>
-                <span>APP</span>
-                <time dateTime="2026-07-08T16:12:08.000Z">16:12</time>
-              </p>
-              <p>
-                Northstar Works committed to send the final sample export by July 8
-                <ThreadCitation n={1} label="Email from Elena Park" />. On the Northstar pilot
-                handoff review, Avery handed export validation to Mika and the team decided to use
-                the CSV fallback
-                <ThreadCitation n={2} label="Call transcript" />.
-              </p>
-              <ol className={styles.threadSources}>
-                <li id="thread-source-1">
-                  <span>[1]</span>
-                  <strong>Email from Elena Park</strong>
-                  <small>Northstar pilot export commitment</small>
-                </li>
-                <li id="thread-source-2">
-                  <span>[2]</span>
-                  <strong>Call transcript</strong>
-                  <small>Northstar pilot handoff review</small>
-                </li>
-              </ol>
+            <div className={styles.slackMessage}>
+              <span className={styles.slackBotAvatar} aria-hidden="true">
+                T
+              </span>
+              <div>
+                <p className={styles.slackMeta}>
+                  <strong>Timeline</strong>
+                  <span>APP</span>
+                  <time dateTime="2026-07-08T16:12:08.000Z">16:12</time>
+                </p>
+                <p>
+                  Northstar Works committed to send the final sample export by July 8
+                  <ThreadCitation n={1} label="Email from Elena Park" />. On the Northstar pilot
+                  handoff review, Avery handed export validation to Mika and the team decided to use
+                  the CSV fallback
+                  <ThreadCitation n={2} label="Call transcript" />.
+                </p>
+                <ol className={styles.threadSources}>
+                  <li id="thread-source-1">
+                    <span>[1]</span>
+                    <strong>Email from Elena Park</strong>
+                    <small>Northstar pilot export commitment</small>
+                  </li>
+                  <li id="thread-source-2">
+                    <span>[2]</span>
+                    <strong>Call transcript</strong>
+                    <small>Northstar pilot handoff review</small>
+                  </li>
+                </ol>
+              </div>
             </div>
-          </div>
-        </article>
-        <p className={styles.threadDisclosure}>{FICTIONAL_EXAMPLE_LABEL}</p>
+          </article>
+
+          <article className={styles.mcpThread} aria-label="Claude MCP example">
+            <header className={styles.mcpBar}>
+              <span>Claude</span>
+              <span>MCP</span>
+            </header>
+            <p className={styles.mcpPrompt}>What did we promise Northstar?</p>
+            <ol className={styles.mcpCalls}>
+              <li>
+                <code>timeline.subject</code>
+                <span>subject: Northstar</span>
+              </li>
+              <li>
+                <code>timeline.get</code>
+                <span>name: Northstar pilot handoff review</span>
+              </li>
+            </ol>
+            <p className={styles.mcpAnswer}>
+              Northstar Works committed to send the final sample export by July 8
+              <ThreadCitation n={1} label="Email from Elena Park" />. Avery handed export validation
+              to Mika, and the team decided to use the CSV fallback
+              <ThreadCitation n={2} label="Call transcript" />.
+            </p>
+          </article>
+          <p className={styles.threadDisclosure}>{FICTIONAL_EXAMPLE_LABEL}</p>
+        </div>
       </div>
-      <p className={styles.agentLinkLine}>
-        <Link href="/agents" className={styles.textLink}>
-          AI assistants
-        </Link>
-      </p>
     </section>
   );
 }
@@ -502,14 +526,12 @@ function OrganisedScene() {
             Clients and to-dos that <em>update themselves.</em>
           </>
         }
-        copy="It replaces the CRM and task board nobody updates. You approve every change."
+        copy="It replaces the CRM and task board you never have to update. You approve every change."
       />
-      <HomeProof shot={HOME_CLIENT_SHOT} />
+      <HomeProof shot={HOME_CLIENT_SHOT} align="shot-first" />
       <article className={styles.approvalCard} data-home-diagram>
-        <span>{APPROVAL_STEP.index}</span>
-        <strong>{APPROVAL_STEP.title}</strong>
-        <small>{APPROVAL_STEP.detail}</small>
-        <p>Suggested changes wait — human approval required.</p>
+        <strong>Suggested changes wait</strong>
+        <p>A person approves each one.</p>
       </article>
     </section>
   );
@@ -534,7 +556,7 @@ function AudienceScene() {
         }
         copy="If your team runs its day in Slack or Telegram and the rest of the work lives in email, calls and documents, The Timeline keeps one current record of it. That includes consultancies, agencies, client delivery, product and operations teams, at any size. Keep working where you already work."
       />
-      <HomeProof shot={HOME_DIGEST_SHOT} />
+      <HomeProof shot={HOME_DIGEST_SHOT} align="copy-first" />
       <div className={styles.fitPanel} data-home-diagram>
         <div className={styles.fitPanelIntro}>
           <span className={styles.monoLabel}>Six ways teams use it</span>
@@ -555,6 +577,32 @@ function AudienceScene() {
           ))}
         </div>
       </div>
+
+      <div className={styles.trustFlowPanel} data-home-diagram aria-labelledby="trust-flow-title">
+        <header>
+          <span className={styles.monoLabel}>How one answer stays trustworthy</span>
+          <h3 id="trust-flow-title">Every answer carries its evidence chain.</h3>
+          <p>
+            Timeline preserves source content, checks access at retrieval, and keeps citations
+            attached to the answer. If evidence suggests a lasting workspace change, Timeline
+            proposes it for human review instead of applying it on its own.
+          </p>
+        </header>
+        <ol className={styles.trustFlow}>
+          {TRUST_FLOW_STEPS.map((step) => (
+            <li key={step.index}>
+              <span>{step.index}</span>
+              <strong>{step.title}</strong>
+              <small>{step.detail}</small>
+            </li>
+          ))}
+        </ol>
+        <div className={styles.trustFlowProof} aria-label="Timeline evidence safeguards">
+          {TRUST_FLOW_CHIPS.map((chip) => (
+            <span key={chip}>{chip}</span>
+          ))}
+        </div>
+      </div>
     </section>
   );
 }
@@ -572,9 +620,10 @@ function CtaScene() {
           Link one channel. <em>Watch the record fill in.</em>
         </h2>
         <p>
-          Link one Slack channel or Telegram group, forward a few emails and add a call. Read the
-          daily update, approve the suggested updates, and ask what was decided. Every line keeps
-          the original message, with a link to it.
+          Scan a website, upload a document, or forward an email. Connect Slack or Telegram when you
+          want those conversations in the record too. Read the daily update, approve the suggested
+          updates, and ask what was decided. Every line keeps the original message, with a link to
+          it.
         </p>
         <FirstRunPath showNote={false} />
         <PublicSessionBranch
@@ -633,15 +682,30 @@ function SceneIndex({ number, label }: { number: string; label: string }) {
   );
 }
 
-function HomeProof({ shot }: { shot: HomeProofShot }) {
+function HomeProof({ shot, align }: { shot: HomeProofShot; align: 'copy-first' | 'shot-first' }) {
   return (
-    <div className={styles.proofStage} data-home-proof={shot.file}>
-      <span className={styles.monoLabel}>{shot.kicker}</span>
+    <div
+      className={cn(styles.proofStage, align === 'shot-first' && styles.proofShotFirst)}
+      data-home-proof={shot.file}
+    >
+      <div className={styles.proofCopy}>
+        <span className={styles.monoLabel}>{shot.kicker}</span>
+        <p className={styles.proofCaption}>{shot.caption}</p>
+        <ol className={styles.proofCallouts} data-screenshot-callouts>
+          {shot.callouts.map((callout) => (
+            <li key={callout.label}>
+              <span>{callout.label}</span>
+              <p>{callout.detail}</p>
+            </li>
+          ))}
+        </ol>
+        <p className={styles.proofDisclosure}>{FICTIONAL_EXAMPLE_LABEL}</p>
+      </div>
       <MarketingProductScreenshot
         file={shot.file}
         alt={shot.alt}
         caption={shot.caption}
-        callouts={shot.callouts}
+        chrome="media"
       />
     </div>
   );

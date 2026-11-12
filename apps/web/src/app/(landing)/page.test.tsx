@@ -63,7 +63,7 @@ describe('LandingPage', () => {
 
     expect(html).toContain('Acme rollout / Last 7 days');
     expect(html).toContain(
-      'aria-label="Work events stream from six sources into The Timeline, where the work record becomes a daily update and linked answers."',
+      'aria-label="A person and an agent write into the work record and read context back. Six sources stream in. The record becomes a daily update and linked answers."',
     );
     expect(html).toContain('one timeline');
     expect(html).toContain('Fictional Acme example, not customer data.');
@@ -86,20 +86,24 @@ describe('LandingPage', () => {
     expect(html.match(/data-hero-flow-path="outcome"/g)).toHaveLength(1);
     expect(html.match(/data-hero-flow-packet="ingest"/g)).toHaveLength(6);
     expect(html.match(/data-hero-flow-packet="outcome"/g)).toHaveLength(1);
+    expect(html.match(/data-hero-flow-path="write"/g)).toHaveLength(2);
+    expect(html.match(/data-hero-flow-path="read"/g)).toHaveLength(2);
+    expect(html).toContain('Claude / Codex');
+    expect(html).toContain('>Person<');
     expect(html).toContain('data-flow-motion');
-    expect(html.match(/<animateMotion/g)).toHaveLength(7);
+    expect(html.match(/<animateMotion/g)).toHaveLength(11);
     expect(html).toContain('aria-label="Public navigation"');
     expect(html).toContain('href="/integrations"');
     expect(html).toContain('href="/how-it-works"');
     expect(html).toContain('href="/compare"');
     expect(html).toContain('href="/agents"');
-    expect(html).toContain('AI assistants');
-    expect(html).not.toContain('llms.txt');
-    expect(html).not.toContain('data-agent-setup');
+    expect(html).toContain('data-agent-setup');
+    expect(html).toContain('llms.txt');
+    expect(html).not.toContain('>AI assistants<');
     expect(html).toContain('what did we promise Northstar');
-    expect(html).toContain('or ask @Timeline in Slack');
-    expect(html).not.toContain('timeline.subject');
-    expect(html).not.toContain('timeline.get');
+    expect(html).toContain('Ask in Slack. An agent can ask <em>the same record.</em>');
+    expect(html).toContain('timeline.subject');
+    expect(html).toContain('<code>timeline.get</code>');
     expect(html).not.toContain('timeline.retrieve_workspace_context');
     expect(html).not.toContain('timeline.get_event');
     expect(html).toContain('data-chat-to-answer');
@@ -119,10 +123,12 @@ describe('LandingPage', () => {
     );
     expect(html).toContain('<a href="/use-cases/crm"><span>04</span><h4>CRM</h4>');
     expect(html).toContain('on one timeline, with where it was said.');
-    expect(html).not.toContain('Every answer carries its evidence chain.');
-    expect(html).toContain('Suggested changes wait — human approval required.');
+    expect(html).toContain('Every answer carries its evidence chain.');
+    expect(html).toContain('Suggested changes wait');
+    expect(html).toContain('A person approves each one.');
+    expect(html).not.toContain('Suggested changes wait — human approval required.');
     expect(html).not.toContain('Northline');
-    expect(html.match(/data-home-diagram/g)).toHaveLength(7);
+    expect(html.match(/data-home-diagram/g)).toHaveLength(8);
     expect(html.match(/data-home-proof=/g)).toHaveLength(5);
     expect(html).toContain('data-home-proof="11-timeline-dark.png"');
     expect(html).toContain('data-home-proof="17-timeline-voice-dark.png"');
@@ -187,7 +193,7 @@ describe('LandingPage', () => {
       expect(html).toContain(connector);
     }
 
-    expect(html).toContain('Forward it, cc it, <em>say it.</em>');
+    expect(html).toContain('Status should not require an <em>investigation.</em>');
     expect(html).toContain('CC or BCC the team address');
     expect(html).toContain('Telegram voice notes arrive transcribed');
     expect(html).toContain('Messages and files');
@@ -233,8 +239,8 @@ describe('LandingPage', () => {
     expect(html).toContain(
       'Give me the current status, handoff, blockers, and customer commitments.',
     );
-    expect(html).toContain('It replaces the CRM and task board nobody updates.');
-    expect(html).not.toContain('proposes it for human review');
+    expect(html).toContain('It replaces the CRM and task board you never have to update.');
+    expect(html).toContain('proposes it for human review');
     expect(html).not.toContain('Ingest webhooks');
     expect(html).not.toContain('A direct chat asks the agent');
     expect(html).not.toContain('Connected, not used in this answer');

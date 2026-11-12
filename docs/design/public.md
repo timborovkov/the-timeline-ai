@@ -52,11 +52,14 @@ to the evidence diagram and must explain provenance or hierarchy. The shared pub
 the same subtle fixed grain in both themes, with theme-specific blending so
 cream reads like paper and near-black retains its tactile texture.
 
-The landing hero keeps the observatory composition: six compact source cards sit
-around a square grid and stream packets along visible curved paths into the
-official Timeline mark. The centered diamond is labelled **The Timeline**,
-**Work record**, and a small **one timeline** line; one quiet rail then resolves
-into **Daily update** and **Linked answers**. It does not reproduce the expanded
+The landing hero keeps the observatory composition: six compact source cards, a
+person card, and an agent card (Claude / Codex via MCP) sit around a square
+grid. Source packets stream along visible curved paths into the official
+Timeline mark. The person and the agent both write into the record and read
+context back; the agent has a packet in each direction. The centered diamond is
+labelled **The Timeline**, **Work record**, and a small **one timeline** line;
+one quiet rail then resolves into **Daily update** and **Linked answers**. It
+does not reproduce the expanded
 timeline, record cards, or assistant exchange. Every moving packet reuses the exact path drawn behind it,
 the animation restarts only when the diagram enters view, and reduced motion
 hides the packets while preserving the complete static explanation. Mobile
@@ -65,8 +68,9 @@ not overlap.
 
 The landing page moves from the compact observatory into what goes in, one
 timeline, ask, clients and to-dos, who it is for, and start. The copyable agent
-setup card lives on `/agents`. The full trust flow and “What Timeline preserves”
-live on `/trust`; the preserves strip is also on `/how-it-works`. The complete
+setup card is in the homepage hero and on `/agents`. The full trust flow is on
+the homepage and on `/trust`. “What Timeline preserves” lives on `/trust`; the
+preserves strip is also on `/how-it-works`. The complete
 four-stage product loop lives on `/how-it-works`, where it has enough room to
 explain the platform without turning the home page into a second hero. The reusable expanded diagram groups
 inputs into conversations, meetings and documents, and delivery and incidents;
@@ -117,8 +121,8 @@ team daily log, communication trail, CRM, task board, and onboarding and repeat
 questions. They live under `/use-cases`, appear in the public Use cases menu,
 and are registered for sitemap and LLM discovery. `/compare` remains an
 indexable vs-only hub reachable from the footer. `/agents` leads with agents as
-teammates who report work into the record and read cited context back over MCP,
-plus the copyable AgentSetupCard. Retired solution URLs
+teammates who read the team’s cited context and write updates back, plus the
+copyable AgentSetupCard. Retired solution URLs
 `/solutions/weekly-project-updates` and `/solutions/crm-context-from-team-activity`
 permanent-redirect to the matching use-case pages. Client project handoffs remain
 at `/solutions/client-project-handoffs` with related use-case links. `/product-tour`
@@ -134,9 +138,11 @@ Inventory tests require both twins, including legacy unthemed mobile slots.
 See the [recapture guide](../../apps/web/public/marketing/screenshots/README.md).
 Landscape slots use a 16×10 top crop; mobile
 portrait slots keep the full capture so Ask citations stay in frame. The
-homepage shows three full-width proof shots (work record, stored cited Ask
-answer, daily update). `/agents` pairs the current Agent tools screen with a
-write-in / read-out diagram for external agents. `/integrations/mcp` has a
+homepage shows proof shots in alternating split rows (screenshot beside the
+copy, stacked on small screens): voice notes, work record, stored cited Ask
+answer, client record, and daily update. `/agents` pairs the current Agent
+tools screen with a read-out / write-in diagram for external agents.
+`/integrations/mcp` has a
 separate inbound live-lookup diagram for The Timeline Agent calling third-party
 MCP tools. `/use-cases` opens with a conversations → work record → six jobs
 diagram rather than a screenshot wall. Referenced screenshot files are
@@ -294,7 +300,7 @@ collects telemetry.
 
 Website scanning is an optional, closed disclosure in the pricing calculator. Expanded controls use a two-column grid and show one monthly page/unit subtotal; calculation assumptions are a secondary disclosure. The website feature page leads with the benefit and a concrete five-page price example, followed by three short benefits and expandable setup, limits, billing, and retention details.
 
-The `/agents` page, agent help page, and authenticated Connect your agent screen
-share AgentSetupCard and its generic llms.txt setup command. Client-specific setup starts
+The homepage hero, `/agents` page, agent help page, and authenticated Connect
+your agent screen share AgentSetupCard and its generic llms.txt setup command. Client-specific setup starts
 closed. Long agent instructions remain copyable payloads, never a visible Codex
 text wall; advanced setup and access explanations are optional disclosures.

@@ -15,7 +15,7 @@ describe('TimelineFlowDiagram', () => {
 
     const figure = screen.getByRole('figure');
     expect(figure.getAttribute('aria-label')).toBe(
-      'Work events stream from six sources into The Timeline, where the work record becomes a daily update and linked answers.',
+      'A person and an agent write into the work record and read context back. Six sources stream in. The record becomes a daily update and linked answers.',
     );
     expect(within(figure).getByText('The Timeline')).toBeTruthy();
     expect(within(figure).getByText('Work record')).toBeTruthy();
@@ -45,6 +45,26 @@ describe('TimelineFlowDiagram', () => {
     ].map((motion) => motion.getAttribute('path'));
     expect(ingestPaths).toHaveLength(6);
     expect(ingestMotions).toEqual(ingestPaths);
+    expect(within(figure).getByText('Person')).toBeTruthy();
+    expect(within(figure).getByText('Claude / Codex')).toBeTruthy();
+    expect(within(figure).getByText('via MCP')).toBeTruthy();
+
+    const writePaths = [...container.querySelectorAll('[data-hero-flow-path="write"]')].map(
+      (path) => path.getAttribute('d'),
+    );
+    const writeMotions = [
+      ...container.querySelectorAll('[data-hero-flow-packet="write"] animateMotion'),
+    ].map((motion) => motion.getAttribute('path'));
+    const readPaths = [...container.querySelectorAll('[data-hero-flow-path="read"]')].map((path) =>
+      path.getAttribute('d'),
+    );
+    const readMotions = [
+      ...container.querySelectorAll('[data-hero-flow-packet="read"] animateMotion'),
+    ].map((motion) => motion.getAttribute('path'));
+    expect(writePaths).toHaveLength(2);
+    expect(readPaths).toHaveLength(2);
+    expect(writeMotions).toEqual(writePaths);
+    expect(readMotions).toEqual(readPaths);
 
     const outcomePath = container
       .querySelector('[data-hero-flow-path="outcome"]')
@@ -53,7 +73,7 @@ describe('TimelineFlowDiagram', () => {
       .querySelector('[data-hero-flow-packet="outcome"] animateMotion')
       ?.getAttribute('path');
     expect(outcomeMotion).toBe(outcomePath);
-    expect(container.querySelectorAll('animateMotion')).toHaveLength(7);
+    expect(container.querySelectorAll('animateMotion')).toHaveLength(11);
     expect(container.querySelector('[data-flow-motion]')).not.toBeNull();
   });
 

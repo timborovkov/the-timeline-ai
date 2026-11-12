@@ -5,17 +5,17 @@ export const AGENTS_HUB = {
   kicker: 'Agents',
   title: 'Agents are teammates.',
   summary:
-    'They report on what they do. The Timeline cites and organizes that work like any other source.',
+    'They read decisions, owners and history, with citations, and they write updates back. They do not need a standup or a re-brief, and they can read what people and other agents already did.',
   seoTitle: 'Agents are teammates',
   seoDescription:
-    'Agents report into The Timeline like teammates. They write notes through remember, email or a webhook, and read cited context over MCP. One setup line connects them.',
+    'Agents read cited team context and write updates back into The Timeline. They get decisions, owners and history without a standup or a re-brief, and they add notes through remember, email or a webhook.',
   llmsSummary:
-    'Agents are teammates who report into the cited work record and read it back. Write paths: timeline.remember, ingest email, authenticated ingest webhooks. Read path: hosted MCP tools timeline.search, timeline.get, timeline.subject, timeline.ask, timeline.remember. One copyable setup command for Claude, ChatGPT, Cursor, Grok, OpenClaw and Hermes.',
+    'Agents are teammates who read the cited work record and write updates into it. They get decisions, owners and history with citations, without a standup or a re-brief, and they read what people and other agents did. Write paths: timeline.remember, ingest email, authenticated ingest webhooks. Read path: hosted MCP tools timeline.search, timeline.get, timeline.subject, timeline.ask, timeline.remember. One copyable setup command for Claude, ChatGPT, Cursor, Grok, OpenClaw and Hermes.',
   reportIn: {
     index: '01',
-    label: 'Report in',
-    title: 'Agents write into the work record.',
-    body: 'A note from an agent is cited ingest evidence, the same way a forwarded email or a webhook payload is. It counts toward the accepted-sources meter. It does not change canonical records.',
+    label: 'Read and write',
+    title: 'Agents read the context, and they write updates.',
+    body: 'They get decisions, owners and history, with citations. They do not need a standup or a re-brief, and they can read what people and other agents already did. When they write, a note is cited evidence, the same way a forwarded email or a webhook payload is. It counts toward the accepted-sources meter. It does not change canonical records.',
     paths: [
       {
         name: 'timeline.remember',
@@ -63,8 +63,8 @@ export const AGENTS_HUB = {
     label: 'Full agent install guide',
   },
   cta: {
-    title: 'Start free, then let an agent write back.',
-    body: 'Create a workspace. Agents read the cited record over MCP, and they add notes through remember, email or a webhook.',
+    title: 'Start free. Agents read the record and write back.',
+    body: 'Create a workspace. Agents read decisions, owners and history, with citations, and they add notes through remember, email or a webhook.',
   },
   screenshot: {
     file: '19-agent-tools-dark.png',

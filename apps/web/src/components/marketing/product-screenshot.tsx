@@ -29,6 +29,7 @@ export function MarketingProductScreenshot({
   priority = false,
   frame = 'landscape',
   callouts,
+  chrome = 'full',
 }: {
   file: string;
   alt: string;
@@ -37,6 +38,7 @@ export function MarketingProductScreenshot({
   priority?: boolean;
   frame?: MarketingScreenshotFrame;
   callouts?: readonly MarketingScreenshotCallout[];
+  chrome?: 'full' | 'media';
 }) {
   const present = Object.values(marketingScreenshotVariants(file)).every(
     marketingScreenshotFileExists,
@@ -88,7 +90,7 @@ export function MarketingProductScreenshot({
           </div>
         )}
       </div>
-      {callouts && callouts.length > 0 ? (
+      {chrome === 'full' && callouts && callouts.length > 0 ? (
         <ol
           className="grid gap-4 border-t border-border px-5 py-4 sm:grid-cols-3 sm:px-6"
           data-screenshot-callouts
@@ -103,12 +105,14 @@ export function MarketingProductScreenshot({
           ))}
         </ol>
       ) : null}
-      <figcaption className="space-y-2 border-t border-border px-5 py-4 sm:px-6">
-        <p className="text-sm leading-6 text-fg-muted">{caption}</p>
-        <p className="font-mono text-[0.62rem] tracking-[0.12em] text-fg-dim uppercase">
-          {FICTIONAL_EXAMPLE_LABEL}
-        </p>
-      </figcaption>
+      {chrome === 'full' ? (
+        <figcaption className="space-y-2 border-t border-border px-5 py-4 sm:px-6">
+          <p className="text-sm leading-6 text-fg-muted">{caption}</p>
+          <p className="font-mono text-[0.62rem] tracking-[0.12em] text-fg-dim uppercase">
+            {FICTIONAL_EXAMPLE_LABEL}
+          </p>
+        </figcaption>
+      ) : null}
     </figure>
   );
 }
