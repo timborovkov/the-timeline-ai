@@ -1,11 +1,10 @@
 import { randomUUID } from 'node:crypto';
 
 import { PGlite } from '@electric-sql/pglite';
+import type { Db } from '@timeline/db';
 import { expect } from '@timeline/test-support';
 import { it } from 'bun:test';
 import { drizzle } from 'drizzle-orm/pglite';
-
-import type { Db } from '@timeline/db';
 
 import { discoverBoardQualificationRequests } from '#src/workers/boardQualification-discovery.js';
 
