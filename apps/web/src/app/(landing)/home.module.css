@@ -118,9 +118,7 @@
 .primaryCta,
 .footer a,
 .citation,
-.superCitation,
-.receiptLedger a,
-.ledgerInspect summary {
+.superCitation {
   border-radius: 2px;
   outline-offset: 4px;
 }
@@ -129,9 +127,7 @@
 .primaryCta:focus-visible,
 .footer a:focus-visible,
 .citation:focus-visible,
-.superCitation:focus-visible,
-.receiptLedger a:focus-visible,
-.ledgerInspect summary:focus-visible {
+.superCitation:focus-visible {
   outline: 2px solid var(--home-signal);
 }
 
@@ -139,7 +135,7 @@
   position: relative;
   width: min(94%, 94rem);
   margin-inline: auto;
-  padding-block: clamp(4rem, 5.5vw, 5.75rem);
+  padding-block: clamp(2.5rem, 4vw, 4.25rem);
   overflow: clip;
   scroll-margin-top: 5rem;
   isolation: isolate;
@@ -160,7 +156,7 @@
   gap: clamp(3rem, 7vw, 8rem);
   align-items: center;
   min-height: calc(100svh - 4rem);
-  padding-block: clamp(4rem, 8vw, 8rem);
+  padding-block: clamp(2.75rem, 5vw, 4.5rem);
 }
 
 .sceneIndex {
@@ -180,16 +176,16 @@
 .heroTitle,
 .sceneHeading h2,
 .ctaInner h2 {
-  font-weight: 600;
-  letter-spacing: -0.075em;
+  font-weight: 500;
+  letter-spacing: -0.035em;
   text-wrap: balance;
 }
 
 .heroTitle {
   max-width: 18ch;
-  margin-block: 1.5rem 2rem;
-  font-size: clamp(3.1rem, 6.6vw, 6.4rem);
-  line-height: 0.9;
+  margin-block: 0.85rem 1rem;
+  font-size: clamp(3rem, 5.5vw, 5.5rem);
+  line-height: 1.08;
 }
 
 .heroTitle em,
@@ -214,9 +210,9 @@
 .heroActions {
   display: flex;
   flex-wrap: wrap;
-  gap: 1.25rem;
+  gap: 1rem;
   align-items: center;
-  margin-top: 2.25rem;
+  margin-top: 1.25rem;
 }
 
 .primaryCta {
@@ -245,19 +241,25 @@
   text-underline-offset: 0.35rem;
 }
 
-.heroSourceLink {
-  margin-top: 1.5rem;
+.heroMeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 1rem;
+  align-items: baseline;
+  margin-top: 0.85rem;
+}
+
+.heroGithubLink {
+  color: var(--home-dim);
+  font-size: 0.78rem;
+  line-height: 1.5;
+  text-decoration-line: underline;
+  text-underline-offset: 0.25rem;
 }
 
 .heroAgentSetup {
-  margin-top: 1.75rem;
+  margin-top: 1.25rem;
   max-width: 36rem;
-}
-
-.heroSourceLink > a {
-  border-color: var(--home-line-strong);
-  background: transparent;
-  color: var(--home-muted);
 }
 
 .observatory {
@@ -383,6 +385,17 @@
   text-transform: uppercase;
 }
 
+.memoryCoreTimeline {
+  color: var(--home-dim);
+  font-family: var(--font-mono);
+  font-size: var(--home-meta-size);
+  font-style: normal;
+  font-weight: 450;
+  letter-spacing: 0.01em;
+  line-height: 1.15;
+  text-transform: none;
+}
+
 .heroOutcome {
   position: absolute;
   top: 75.5%;
@@ -417,6 +430,7 @@
 
 .orbitSource {
   position: absolute;
+  transform: translate(-50%, -50%);
   z-index: 5;
   display: grid;
   min-width: 7.3rem;
@@ -464,36 +478,6 @@
   font-weight: 550;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.orbitSource1 {
-  top: 10%;
-  left: 7%;
-}
-
-.orbitSource2 {
-  top: 18%;
-  right: 4%;
-}
-
-.orbitSource3 {
-  bottom: 17%;
-  left: 4%;
-}
-
-.orbitSource4 {
-  right: 7%;
-  bottom: 9%;
-}
-
-.orbitSource5 {
-  top: 45%;
-  left: 2%;
-}
-
-.orbitSource6 {
-  top: 48%;
-  right: 2%;
 }
 
 .observatoryCaption {
@@ -1117,22 +1101,22 @@
 .sceneHeading {
   display: grid;
   grid-template-columns: minmax(10rem, 0.32fr) minmax(0, 1fr);
-  gap: 2rem;
-  margin-bottom: clamp(3rem, 5vw, 5rem);
+  gap: 1.25rem;
+  margin-bottom: clamp(1.5rem, 2.5vw, 2.5rem);
 }
 
 .sceneHeading h2 {
-  max-width: 14ch;
+  max-width: 20ch;
   margin: 0;
-  font-size: clamp(3.1rem, 6.9vw, 7.2rem);
-  line-height: 0.88;
+  font-size: clamp(2.75rem, 5vw, 5rem);
+  line-height: 1.08;
 }
 
 .sceneHeading > div > p {
   max-width: 35rem;
-  margin-top: 1.5rem;
+  margin-top: 0.85rem;
   color: var(--home-muted);
-  font-size: 1rem;
+  font-size: 1.05rem;
   line-height: 1.65;
 }
 
@@ -1146,8 +1130,103 @@
 
 .proofStage {
   display: grid;
-  gap: 0.8rem;
-  margin-top: 2.75rem;
+  grid-template-columns: minmax(0, 0.82fr) minmax(0, 1.18fr);
+  gap: clamp(1.25rem, 3vw, 2.75rem);
+  align-items: center;
+  margin-top: 2.25rem;
+}
+
+.proofShotFirst {
+  grid-template-columns: minmax(0, 1.18fr) minmax(0, 0.82fr);
+}
+
+.proofShotFirst .proofCopy {
+  order: 2;
+}
+
+.proofCaption {
+  max-width: 22ch;
+  margin: 0.85rem 0 0;
+  color: var(--home-paper);
+  font-size: clamp(1.5rem, 2.5vw, 2.25rem);
+  font-weight: 600;
+  letter-spacing: -0.035em;
+  line-height: 1.15;
+}
+
+.proofBody {
+  max-width: 42ch;
+  margin-top: 1rem;
+  color: var(--home-muted);
+  font-size: 1.05rem;
+  line-height: 1.7;
+}
+
+.intakeRow {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.intakeRow li {
+  min-width: 0;
+}
+
+.intakeRow a > span:last-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.intakeRow a {
+  height: 100%;
+  text-decoration: none;
+  display: flex;
+  min-width: 0;
+  min-height: 3.25rem;
+  gap: 0.5rem;
+  align-items: center;
+  padding: 0.75rem 0.65rem;
+  border: 1px solid var(--home-line);
+  background: var(--home-panel);
+  color: var(--home-paper);
+  font-size: 0.95rem;
+  line-height: 1.35;
+}
+
+.approvalLine {
+  max-width: 42rem;
+  margin: 1.25rem 0 0;
+  color: var(--home-muted);
+  font-size: 1.05rem;
+  line-height: 1.6;
+}
+
+.approvalLine strong {
+  color: var(--home-paper);
+  font-weight: 600;
+}
+
+.threadBlock {
+  margin-top: clamp(1.75rem, 3vw, 2.75rem);
+}
+
+.threadHeading {
+  max-width: 30ch;
+  font-size: clamp(1.75rem, 3vw, 3rem);
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+  text-wrap: balance;
+}
+
+.threadLead {
+  max-width: 42rem;
+  margin: 1.25rem 0 1.75rem;
+  color: var(--home-muted);
+  line-height: 1.65;
 }
 
 .timelineStage {
@@ -1385,8 +1464,8 @@
   margin-top: 0.8rem;
   font-size: clamp(1.8rem, 3.1vw, 3.4rem);
   font-weight: 600;
-  line-height: 1;
-  letter-spacing: -0.055em;
+  line-height: 1.08;
+  letter-spacing: -0.03em;
   text-wrap: balance;
 }
 
@@ -1413,14 +1492,9 @@
   vertical-align: 0.05em;
 }
 
-.citation:hover {
-  background: var(--home-signal);
-  color: var(--home-ink);
-}
-
 .threadLayout {
   display: grid;
-  grid-template-columns: minmax(0, 1.15fr) minmax(18rem, 0.72fr);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 1px;
   border: 1px solid var(--home-line);
   background: var(--home-line);
@@ -1521,8 +1595,9 @@
   vertical-align: super;
 }
 
-.superCitation:hover {
-  text-decoration: underline;
+.threadHeading em {
+  color: var(--home-signal);
+  font: inherit;
 }
 
 .threadSources {
@@ -1602,18 +1677,6 @@
   line-height: 1.65;
 }
 
-.threadDisclosure {
-  grid-column: 1 / -1;
-  margin: 0;
-  padding: 0.7rem 1rem;
-  background: var(--home-ink);
-  color: var(--home-dim);
-  font-family: var(--font-mono);
-  font-size: var(--home-meta-size);
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
 .answerFooter {
   flex-wrap: wrap;
   justify-content: flex-start;
@@ -1636,22 +1699,20 @@
   border-top: 1px solid var(--home-line);
 }
 
-.receiptLedger a {
+.sourceCard {
+  width: 100%;
+  text-align: left;
   display: grid;
   grid-template-columns: 2rem 1fr;
   gap: 0.2rem 0.75rem;
-  min-height: 7.25rem;
+  min-height: 5.25rem;
   align-content: center;
   padding: 1rem;
   color: var(--home-paper);
   text-decoration: none;
 }
 
-.receiptLedger a:hover {
-  background: var(--home-signal-soft);
-}
-
-.receiptLedger a > span {
+.sourceCard > span {
   grid-row: 1 / 3;
   color: var(--home-signal);
   font-family: var(--font-mono);
@@ -1671,81 +1732,10 @@
   text-transform: uppercase;
 }
 
-.ledgerInspect {
-  padding: 0 1rem 0.85rem;
-}
-
-.ledgerInspect summary {
-  display: inline-flex;
-  width: fit-content;
-  max-width: 100%;
-  align-items: center;
-  gap: 0.45rem;
-  margin: 0;
-  padding: 0.2rem 0.15rem;
-  border: 0;
-  background: transparent;
-  color: var(--home-dim);
-  font-family: var(--font-mono);
-  font-size: var(--home-meta-size);
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  cursor: pointer;
-  list-style: none;
-  user-select: none;
-}
-
-.ledgerInspect summary::-webkit-details-marker,
-.ledgerInspect summary::marker {
-  display: none;
-  content: none;
-}
-
-.ledgerInspect summary::before {
-  display: block;
-  width: 0.4rem;
-  height: 0.4rem;
-  flex-shrink: 0;
-  box-sizing: border-box;
-  border-right: 1.5px solid currentColor;
-  border-bottom: 1.5px solid currentColor;
-  transform: rotate(-45deg);
-  transform-origin: 50% 55%;
-  content: '';
-}
-
-.ledgerInspect[open] > summary::before {
-  transform: rotate(45deg);
-}
-
-.ledgerInspect summary:hover {
-  color: var(--home-paper);
-}
-
-.ledgerInspect summary:focus:not(:focus-visible) {
-  outline: none;
-}
-
-.ledgerInspectBody {
-  margin-top: 0.55rem;
-}
-
-.ledgerInspectBody p {
-  margin: 0;
-  color: var(--home-muted);
-  font-size: 0.86rem;
-  line-height: 1.55;
-}
-
-.ledgerInspectBody p + p {
-  margin-top: 0.4rem;
-}
-
 .fitPanel {
   display: grid;
   grid-template-columns: minmax(18rem, 0.62fr) minmax(0, 1.38fr);
   gap: 1px;
-  margin-bottom: clamp(2.5rem, 4vw, 4rem);
   border: 1px solid var(--home-line);
   background: var(--home-line);
 }
@@ -1761,13 +1751,13 @@
   padding: clamp(1.5rem, 3vw, 3rem);
 }
 
-.fitPanelIntro h3 {
+.fitPanelIntro h2 {
   max-width: 12ch;
   margin-top: 1rem;
   font-size: clamp(2rem, 3.4vw, 3.6rem);
   font-weight: 600;
-  line-height: 0.98;
-  letter-spacing: -0.055em;
+  line-height: 1.08;
+  letter-spacing: -0.03em;
   text-wrap: balance;
 }
 
@@ -1813,7 +1803,7 @@
   outline-offset: 2px;
 }
 
-.audienceRail h4 {
+.audienceRail h3 {
   font-size: clamp(1rem, 1.45vw, 1.3rem);
   font-weight: 600;
   letter-spacing: -0.035em;
@@ -1836,113 +1826,106 @@
 }
 
 .trustFlowPanel {
-  padding: clamp(1.5rem, 4vw, 4rem);
-  border: 1px solid var(--home-line);
+  margin-top: clamp(2rem, 4vw, 4rem);
+  padding: clamp(1.25rem, 3vw, 3rem);
+  border: 1px solid var(--home-line-strong);
+  border-top: 3px solid var(--home-signal);
+  background:
+    radial-gradient(ellipse at top left, var(--home-signal-soft), transparent 65%),
+    var(--home-panel);
 }
-
 .trustFlowPanel > header {
   display: grid;
-  grid-template-columns: minmax(15rem, 0.72fr) minmax(0, 1fr);
-  gap: clamp(2rem, 6vw, 7rem);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 0.8fr);
+  gap: 1rem 3rem;
   align-items: end;
 }
-
 .trustFlowPanel > header .monoLabel {
   grid-column: 1 / -1;
 }
-
 .trustFlowPanel > header h3 {
-  max-width: 15ch;
-  font-size: clamp(2.1rem, 4.2vw, 4.6rem);
-  font-weight: 600;
-  line-height: 0.96;
-  letter-spacing: -0.06em;
+  max-width: 20ch;
+  font-size: clamp(2rem, 3.5vw, 3.5rem);
+  font-weight: 500;
+  line-height: 1.12;
+  letter-spacing: -0.025em;
   text-wrap: balance;
 }
-
-.trustFlowPanel > header p {
+.trustIntro p {
   max-width: 38rem;
   color: var(--home-muted);
   line-height: 1.65;
 }
-
+.trustCta {
+  display: inline-flex;
+  align-items: center;
+  gap: 1.5rem;
+  padding: 0.8rem 1rem;
+  margin-top: 1.25rem;
+  background: var(--home-signal);
+  color: var(--home-ink);
+  font-size: 0.9rem;
+  font-weight: 600;
+  border: 1px solid var(--home-signal);
+}
+.trustCta:hover {
+  filter: brightness(0.94);
+}
+.trustCta:focus-visible {
+  outline: 2px solid var(--home-signal);
+  outline-offset: 4px;
+}
 .trustFlow {
-  position: relative;
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  margin: clamp(3rem, 6vw, 5.5rem) 0 0;
+  gap: 0.75rem;
+  margin: 2rem 0 0;
   padding: 0;
   list-style: none;
 }
-
-.trustFlow::before {
-  position: absolute;
-  top: 1rem;
-  right: 12.5%;
-  left: 12.5%;
-  z-index: 0;
-  height: 1px;
-  background: var(--home-signal);
-  content: '';
-  transform: scaleX(1);
-  transform-origin: left;
-}
-
 .trustFlow li {
-  position: relative;
-  z-index: 1;
-  display: grid;
-  justify-items: center;
-  padding-inline: 0.75rem;
-  text-align: center;
+  min-width: 0;
+  padding: 1.25rem;
+  border: 1px solid var(--home-line);
+  background: var(--home-ink);
 }
-
-.trustFlow li > span {
-  display: grid;
-  width: 2rem;
-  height: 2rem;
-  place-items: center;
-  border: 1px solid var(--home-signal);
-  background: var(--home-panel);
+.trustCardTop {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   color: var(--home-signal);
+}
+.trustCardTop span {
   font-family: var(--font-mono);
-  font-size: var(--home-meta-size);
-  border-radius: 50%;
-}
-
-.trustFlow strong {
-  margin-top: 1.1rem;
-  font-size: clamp(0.95rem, 1.3vw, 1.15rem);
-  font-weight: 600;
-}
-
-.trustFlow small {
-  margin-top: 0.4rem;
+  font-size: 0.75rem;
   color: var(--home-dim);
-  font-family: var(--font-mono);
-  font-size: var(--home-meta-size);
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
 }
-
+.trustFlow strong {
+  display: block;
+  margin-top: 1.5rem;
+  font-size: 1.05rem;
+  font-weight: 500;
+  line-height: 1.4;
+}
+.trustFlow small {
+  display: block;
+  margin-top: 0.5rem;
+  color: var(--home-muted);
+  font-size: 0.85rem;
+  line-height: 1.6;
+}
 .trustFlowProof {
   display: flex;
   flex-wrap: wrap;
-  justify-content: center;
-  gap: 0.55rem;
-  margin-top: clamp(2.5rem, 5vw, 4.5rem);
-  padding-top: 1.5rem;
+  gap: 0.5rem 1.25rem;
+  margin-top: 1.5rem;
+  padding-top: 1rem;
   border-top: 1px solid var(--home-line);
 }
-
 .trustFlowProof span {
-  padding: 0.45rem 0.6rem;
-  border: 1px solid var(--home-line-strong);
   color: var(--home-muted);
-  font-family: var(--font-mono);
-  font-size: var(--home-meta-size);
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
+  font-size: 0.75rem;
+  line-height: 1.5;
 }
 
 .connectorPanel {
@@ -1963,8 +1946,8 @@
   max-width: 18ch;
   font-size: clamp(2rem, 3vw, 3.25rem);
   font-weight: 600;
-  line-height: 0.97;
-  letter-spacing: -0.055em;
+  line-height: 1.08;
+  letter-spacing: -0.03em;
 }
 
 .connectorPanel > header p {
@@ -1979,6 +1962,53 @@
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 1px;
   background: var(--home-line);
+}
+
+.connectorPathsSingle {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.approvalCard {
+  display: grid;
+  justify-items: start;
+  max-width: 28rem;
+  margin-top: 1.5rem;
+  padding: clamp(1.25rem, 3vw, 2rem);
+  border: 1px solid var(--home-line);
+  background: var(--home-panel);
+}
+
+.approvalCard > span {
+  display: grid;
+  width: 2rem;
+  height: 2rem;
+  place-items: center;
+  border: 1px solid var(--home-signal);
+  border-radius: 50%;
+  color: var(--home-signal);
+  font-family: var(--font-mono);
+  font-size: var(--home-meta-size);
+}
+
+.approvalCard strong {
+  margin-top: 1rem;
+  font-size: 1.15rem;
+  font-weight: 600;
+}
+
+.approvalCard small {
+  margin-top: 0.35rem;
+  color: var(--home-dim);
+  font-family: var(--font-mono);
+  font-size: var(--home-meta-size);
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.approvalCard p {
+  margin: 0.85rem 0 0;
+  color: var(--home-muted);
+  line-height: 1.6;
 }
 
 .connectorPath {
@@ -2109,34 +2139,39 @@
   flex: 0 0 auto;
 }
 
-.ctaScene {
-  display: grid;
-  min-height: 90svh;
-  place-items: center;
-  text-align: center;
+.scene.ctaScene {
+  padding-block: 2rem;
+  text-align: left;
 }
-
 .ctaInner {
   display: grid;
-  justify-items: center;
+  width: 100%;
+  grid-template-columns: minmax(0, 1fr) minmax(16rem, 0.55fr);
+  align-items: center;
+  gap: 1.5rem 3rem;
+  padding: clamp(1.5rem, 3vw, 3rem);
+  border: 1px solid var(--home-line);
+  background: var(--home-panel);
 }
-
 .ctaInner h2 {
-  max-width: 11ch;
-  margin-block: 1.2rem 2rem;
-  font-size: clamp(4rem, 9vw, 9rem);
-  line-height: 0.82;
+  max-width: 25ch;
+  margin-block: 0.75rem;
+  font-size: clamp(2rem, 3.2vw, 3rem);
+  line-height: 1.12;
 }
-
-.ctaInner > p {
+.ctaCopy > p {
   max-width: 39rem;
   color: var(--home-muted);
-  font-size: 1.05rem;
-  line-height: 1.65;
+  font-size: 1rem;
+  line-height: 1.6;
 }
-
+.ctaActions {
+  display: grid;
+  gap: 0.5rem;
+  justify-items: start;
+}
 .ctaInner .primaryCta {
-  margin-top: 2.25rem;
+  margin-top: 0;
 }
 
 .ctaSignIn {
@@ -2165,9 +2200,10 @@
 .ctaProof {
   display: flex;
   flex-wrap: wrap;
-  justify-content: center;
+  grid-column: 1 / -1;
+  justify-content: flex-start;
   gap: 0.45rem;
-  margin-top: 3rem;
+  margin-top: 0;
 }
 
 .ctaProof span {
@@ -2245,12 +2281,22 @@
   color: var(--home-signal);
 }
 
-.footerGithub {
-  min-height: 2rem !important;
-  width: 2rem !important;
-  border: 0 !important;
-  background: transparent !important;
-  color: var(--home-paper) !important;
+.footerSettings {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--home-paper);
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  cursor: pointer;
+}
+.footerSettings:hover {
+  color: var(--home-signal);
+}
+.footerSettings:focus-visible {
+  outline: 2px solid var(--home-signal);
+  outline-offset: 4px;
 }
 
 .recoveryScene {
@@ -2271,8 +2317,8 @@
   margin-block: 1.5rem 2rem;
   font-size: clamp(3.8rem, 7.5vw, 7.5rem);
   font-weight: 600;
-  line-height: 0.84;
-  letter-spacing: -0.075em;
+  line-height: 1.08;
+  letter-spacing: -0.035em;
   text-wrap: balance;
 }
 
@@ -2380,14 +2426,6 @@
     transition: transform 220ms cubic-bezier(0.22, 1, 0.36, 1);
   }
 
-  .receiptLedger a {
-    transition: background-color 120ms ease-out;
-  }
-
-  .ledgerInspect summary::before {
-    transition: transform 160ms ease-out;
-  }
-
   .primaryCta:hover {
     transform: translateY(-2px);
   }
@@ -2425,175 +2463,16 @@
     animation: evidencePulse 3.6s 1.1s ease-in-out infinite;
   }
 
-  .motionReady .timelineStage.visible .timelineHeader,
-  .motionReady .timelineStage.visible .timelineList li,
-  .motionReady .timelineStage.visible .chronologyContract,
-  .motionReady .connectorPanel.visible > header,
-  .motionReady .connectorPanel.visible .connectorPath,
-  .motionReady .connectorPanel.visible .connectorFooter,
-  .motionReady .fitPanel.visible .fitPanelIntro,
-  .motionReady .fitPanel.visible .audienceRail a,
-  .motionReady .trustFlowPanel.visible > header,
-  .motionReady .trustFlowPanel.visible .trustFlow li,
-  .motionReady .trustFlowPanel.visible .trustFlowProof {
-    animation: diagramItemIn 620ms cubic-bezier(0.22, 1, 0.36, 1) both;
-  }
-
-  .motionReady .timelineStage.visible .timelineList::after {
+  .motionReady .timelineStage[data-home-entered] .timelineList::after {
     animation: chronologyDraw 1.25s 180ms cubic-bezier(0.22, 1, 0.36, 1) both;
   }
 
-  .motionReady .timelineStage.visible .timelineList li:nth-child(1) {
-    animation-delay: 180ms;
-  }
-
-  .motionReady .timelineStage.visible .timelineList li:nth-child(2) {
-    animation-delay: 340ms;
-  }
-
-  .motionReady .timelineStage.visible .timelineList li:nth-child(3) {
-    animation-delay: 500ms;
-  }
-
-  .motionReady .timelineStage.visible .timelineList li:nth-child(4) {
-    animation-delay: 660ms;
-  }
-
-  .motionReady .timelineStage.visible .timelineList li:nth-child(5) {
-    animation-delay: 820ms;
-  }
-
-  .motionReady .timelineStage.visible .timelineNode span {
+  .motionReady .timelineStage[data-home-entered] .timelineNode span {
     animation: evidenceNode 720ms 920ms ease-out both;
   }
 
-  .motionReady .timelineStage.visible .chronologyContract {
-    animation-delay: 1060ms;
-  }
-
-  .motionReady .connectorPanel.visible .connectorPath:nth-child(1) {
-    animation-delay: 120ms;
-  }
-
-  .motionReady .connectorPanel.visible .connectorPath:nth-child(2) {
-    animation-delay: 240ms;
-  }
-
-  .motionReady .connectorPanel.visible .connectorFooter {
-    animation-delay: 360ms;
-  }
-
-  .motionReady .answerLayout.visible .answerWindow,
-  .motionReady .answerLayout.visible .receiptLedger {
-    animation: answerPanelIn 680ms cubic-bezier(0.22, 1, 0.36, 1) both;
-  }
-
-  .motionReady .answerLayout.visible .receiptLedger {
-    animation-name: answerPanelInReverse;
-    animation-delay: 160ms;
-  }
-
-  .motionReady .answerLayout.visible .question,
-  .motionReady .answerLayout.visible .answerBody,
-  .motionReady .answerLayout.visible .answerFooter,
-  .motionReady .answerLayout.visible .receiptLedger li {
-    animation: diagramItemIn 560ms cubic-bezier(0.22, 1, 0.36, 1) both;
-  }
-
-  .motionReady .answerLayout.visible .question {
-    animation-delay: 180ms;
-  }
-
-  .motionReady .answerLayout.visible .answerBody {
-    animation-delay: 340ms;
-  }
-
-  .motionReady .answerLayout.visible .answerFooter {
-    animation-delay: 780ms;
-  }
-
-  .motionReady .answerLayout.visible .citation {
-    animation: citationResolve 620ms 700ms cubic-bezier(0.22, 1, 0.36, 1) both;
-  }
-
-  .motionReady .answerLayout.visible .citation:nth-of-type(2) {
-    animation-delay: 780ms;
-  }
-
-  .motionReady .answerLayout.visible .citation:nth-of-type(3) {
-    animation-delay: 860ms;
-  }
-
-  .motionReady .answerLayout.visible .citation:nth-of-type(4) {
-    animation-delay: 940ms;
-  }
-
-  .motionReady .answerLayout.visible .receiptLedger li:nth-child(1) {
-    animation-delay: 380ms;
-  }
-
-  .motionReady .answerLayout.visible .receiptLedger li:nth-child(2) {
-    animation-delay: 500ms;
-  }
-
-  .motionReady .answerLayout.visible .receiptLedger li:nth-child(3) {
-    animation-delay: 620ms;
-  }
-
-  .motionReady .answerLayout.visible .receiptLedger li:nth-child(4) {
-    animation-delay: 740ms;
-  }
-
-  .motionReady .fitPanel.visible .audienceRail a:nth-child(1) {
-    animation-delay: 140ms;
-  }
-
-  .motionReady .fitPanel.visible .audienceRail a:nth-child(2) {
-    animation-delay: 260ms;
-  }
-
-  .motionReady .fitPanel.visible .audienceRail a:nth-child(3) {
-    animation-delay: 380ms;
-  }
-
-  .motionReady .fitPanel.visible .audienceRail a:nth-child(4) {
-    animation-delay: 500ms;
-  }
-
-  .motionReady .fitPanel.visible .audienceRail a:nth-child(5) {
-    animation-delay: 620ms;
-  }
-
-  .motionReady .fitPanel.visible .audienceRail a:nth-child(6) {
-    animation-delay: 740ms;
-  }
-
-  .motionReady .trustFlowPanel.visible .trustFlow::before {
+  .motionReady .trustFlowPanel[data-home-entered] .trustFlow::before {
     animation: trustPathDraw 1.15s 300ms cubic-bezier(0.22, 1, 0.36, 1) both;
-  }
-
-  .motionReady .trustFlowPanel.visible .trustFlow li:nth-child(1) {
-    animation-delay: 260ms;
-  }
-
-  .motionReady .trustFlowPanel.visible .trustFlow li:nth-child(2) {
-    animation-delay: 440ms;
-  }
-
-  .motionReady .trustFlowPanel.visible .trustFlow li:nth-child(3) {
-    animation-delay: 620ms;
-  }
-
-  .motionReady .trustFlowPanel.visible .trustFlow li:nth-child(4) {
-    animation-delay: 800ms;
-  }
-
-  .motionReady .trustFlowPanel.visible .trustFlow li > span {
-    animation: evidenceNode 620ms 900ms ease-out both;
-  }
-
-  .motionReady .trustFlowPanel.visible .trustFlowProof {
-    animation-delay: 980ms;
   }
 
   .motionReady [data-flow-step].visible .flowPacketTrackHorizontal .flowPacketRunner {
@@ -2710,10 +2589,6 @@
     .motionReady [data-flow-step='timeline'].visible .flowMiniTimeline li:nth-child(5)::before {
       animation-delay: 0.8s;
     }
-  }
-
-  .motionReady [data-home-reveal].visible {
-    animation: diagramItemIn 700ms cubic-bezier(0.22, 1, 0.36, 1) both;
   }
 
   .loadingSignals span {
@@ -2889,54 +2764,6 @@
   }
 }
 
-@keyframes diagramItemIn {
-  from {
-    opacity: 0;
-    transform: translateY(1rem);
-  }
-
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-@keyframes answerPanelIn {
-  from {
-    opacity: 0;
-    transform: translateX(-1.25rem);
-  }
-
-  to {
-    opacity: 1;
-    transform: translateX(0);
-  }
-}
-
-@keyframes answerPanelInReverse {
-  from {
-    opacity: 0;
-    transform: translateX(1.25rem);
-  }
-
-  to {
-    opacity: 1;
-    transform: translateX(0);
-  }
-}
-
-@keyframes citationResolve {
-  from {
-    opacity: 0;
-    transform: scale(0.65);
-  }
-
-  to {
-    opacity: 1;
-    transform: scale(1);
-  }
-}
-
 @keyframes evidenceNode {
   0% {
     opacity: 0;
@@ -3013,13 +2840,14 @@
     align-items: start;
   }
 
-  .audienceRail h4,
+  .audienceRail h3,
   .audienceRail p,
   .audienceRail small {
     grid-column: 2;
   }
 
   .audienceRail small {
+    white-space: normal;
     text-align: left;
   }
 
@@ -3029,38 +2857,7 @@
   }
 
   .trustFlow {
-    grid-template-columns: 1fr;
-    gap: 0;
-  }
-
-  .trustFlow::before {
-    top: 1rem;
-    right: auto;
-    bottom: 2.25rem;
-    left: 1rem;
-    width: 1px;
-    height: auto;
-    transform: scaleY(1);
-    transform-origin: top;
-  }
-
-  .trustFlow li {
-    grid-template-columns: 2rem minmax(0, 1fr);
-    gap: 0.25rem 1rem;
-    justify-items: start;
-    min-height: 6rem;
-    padding: 0;
-    text-align: left;
-  }
-
-  .trustFlow strong,
-  .trustFlow small {
-    grid-column: 2;
-    margin-top: 0;
-  }
-
-  .trustFlow li > span {
-    grid-row: 1 / 3;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .trustFlowProof {
@@ -3104,8 +2901,9 @@
     width: 100%;
   }
 
-  .heroSourceLink > a {
-    width: 100%;
+  .heroMeta {
+    align-items: flex-start;
+    flex-direction: column;
   }
 
   .sceneHeading {
@@ -3113,7 +2911,7 @@
   }
 
   .sceneHeading h2 {
-    font-size: clamp(3rem, 16.5vw, 5rem);
+    font-size: clamp(2rem, 9vw, 3.25rem);
   }
 
   .memoryCore {
@@ -3174,34 +2972,17 @@
     font-size: var(--home-meta-size);
   }
 
-  .orbitSource1 {
-    top: 6%;
-    left: 3%;
+  .intakeRow {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .orbitSource2 {
-    top: 10%;
-    right: 3%;
+  .proofStage,
+  .proofShotFirst {
+    grid-template-columns: 1fr;
   }
 
-  .orbitSource3 {
-    bottom: 15%;
-    left: 3%;
-  }
-
-  .orbitSource4 {
-    right: 3%;
-    bottom: 9%;
-  }
-
-  .orbitSource5 {
-    top: 43%;
-    left: 1%;
-  }
-
-  .orbitSource6 {
-    top: 46%;
-    right: 1%;
+  .proofShotFirst .proofCopy {
+    order: 0;
   }
 
   .observatoryCaption {
@@ -3293,8 +3074,13 @@
     padding: 1rem 1.25rem;
   }
 
+  .ctaInner {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 1.25rem;
+  }
+
   .ctaInner h2 {
-    font-size: clamp(3.7rem, 18vw, 6rem);
+    font-size: clamp(1.75rem, 7vw, 2.5rem);
   }
 
   .footer {
@@ -3379,5 +3165,149 @@
   .primaryCta,
   .citation {
     border-color: ButtonText;
+  }
+}
+
+.intakeRow a:hover {
+  border-color: var(--home-signal);
+}
+.intakeRow a:focus-visible {
+  outline: 2px solid var(--home-signal);
+  outline-offset: 3px;
+}
+
+.sourceCard p {
+  grid-column: 2;
+  margin: 0.5rem 0 0;
+  color: var(--home-muted);
+  font-size: 0.875rem;
+  line-height: 1.6;
+}
+
+.recordShowcase {
+  border: 1px solid var(--home-line);
+  background: var(--home-panel);
+}
+.recordFlow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 1.25rem;
+  border-bottom: 1px solid var(--home-line);
+  color: var(--home-muted);
+  font-size: 0.9rem;
+}
+.recordFlow strong {
+  color: var(--home-signal);
+  font-weight: 500;
+}
+.recordGrid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.recordCard {
+  min-width: 0;
+  padding: clamp(1rem, 2vw, 1.75rem);
+}
+.recordCard + .recordCard {
+  border-left: 1px solid var(--home-line);
+}
+.recordCard > svg {
+  color: var(--home-signal);
+}
+.recordCard h3 {
+  margin: 1.25rem 0 0.75rem;
+  font-size: 1.4rem;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+}
+.recordCard p {
+  min-height: 6.5rem;
+  margin: 0;
+  color: var(--home-muted);
+  font-size: 0.95rem;
+  line-height: 1.6;
+}
+.recordCard ul {
+  list-style: none;
+  padding: 1rem 0 0;
+  margin: 1rem 0 0;
+  border-top: 1px solid var(--home-line);
+  color: var(--home-dim);
+  font-size: 0.8rem;
+  line-height: 1.9;
+}
+.recordNote {
+  border-top: 1px solid var(--home-line);
+  margin: 0;
+  padding: 1.25rem;
+  color: var(--home-muted);
+  font-size: 0.9rem;
+  line-height: 1.6;
+}
+@media (max-width: 64rem) {
+  .recordGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .recordCard + .recordCard {
+    border-left: 0;
+  }
+  .recordCard:nth-child(even) {
+    border-left: 1px solid var(--home-line);
+  }
+  .recordCard:nth-child(n + 3) {
+    border-top: 1px solid var(--home-line);
+  }
+  .recordCard:last-child {
+    grid-column: 1 / -1;
+  }
+  .recordCard p {
+    min-height: 0;
+  }
+}
+@media (max-width: 36rem) {
+  .recordGrid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .recordCard:nth-child(even) {
+    border-left: 0;
+  }
+  .recordCard + .recordCard {
+    border-top: 1px solid var(--home-line);
+  }
+  .recordCard h3 {
+    margin-top: 0.75rem;
+  }
+}
+
+@media (max-width: 36rem) {
+  .trustFlow {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .trustFlowPanel > header {
+    gap: 1rem;
+  }
+  .trustFlow li {
+    display: grid;
+    grid-template-columns: 2rem minmax(0, 1fr);
+    gap: 0.25rem 0.75rem;
+    padding: 1rem;
+  }
+  .trustCardTop {
+    grid-row: 1 / 3;
+    flex-direction: column;
+    justify-content: start;
+    gap: 0.5rem;
+  }
+  .trustFlow strong {
+    margin-top: 0;
+  }
+  .trustFlow small {
+    grid-column: 2;
+    margin-top: 0;
   }
 }

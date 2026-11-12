@@ -43,13 +43,12 @@ describe('use-case routes', () => {
     },
   );
 
-  it('shows the first-run path and digest callouts on the team daily log page', async () => {
+  it('keeps the daily log CTA compact and preserves digest callouts', async () => {
     const html = renderToStaticMarkup(
       await UseCaseRoutePage({ params: Promise.resolve({ slug: 'team-daily-log' }) }),
     );
 
-    expect(html).toContain('data-first-run="full"');
-    expect(html).toContain('Connect one capture source');
+    expect(html).not.toContain('data-first-run="full"');
     expect(html).toContain('data-screenshot-callouts');
     expect(html).toContain('What changed');
     expect(html).toContain('Who owns the next step');

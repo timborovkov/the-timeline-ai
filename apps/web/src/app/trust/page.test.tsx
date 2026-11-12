@@ -49,6 +49,23 @@ describe('Trust page', () => {
     expect(html).toContain('href="https://github.com/timborovkov/the-timeline-ai"');
     expect(html).toContain('Firecrawl');
     expect(html).toContain('public pages of a website URL submitted during first-run onboarding');
+    expect(html).toContain('What Timeline preserves');
+    expect(html).toContain('Kept as received');
+    expect(html).toContain('Placed on one chronology');
+    expect(html).toContain('Every answer carries its evidence chain.');
+    expect(html).toContain('Suggested changes wait');
+    expect(html).toContain('Human approval required');
+    expect(html).toContain('Approval-backed suggestions');
+  });
+
+  it('keeps policy details in the DOM and collapsed by default', () => {
+    render(<TrustPage />);
+    const disclosure = screen
+      .getByText('Read the staff access and deletion policy')
+      .closest('details');
+    expect(disclosure).not.toBeNull();
+    expect(disclosure?.hasAttribute('open')).toBe(false);
+    expect(disclosure?.textContent).toContain('30 minutes');
   });
 
   it('routes signed-in readers back to their dashboard', () => {

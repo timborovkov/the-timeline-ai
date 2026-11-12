@@ -1,4 +1,3 @@
-import { FICTIONAL_EXAMPLE_LABEL } from '@/components/marketing/copy';
 import { EditorialKicker } from '@/components/marketing/editorial/editorial-kicker';
 import { EditorialStructuredData } from '@/components/marketing/editorial/editorial-structured-data';
 import styles from '@/components/marketing/editorial/editorial.module.css';
@@ -22,9 +21,6 @@ export function ProductTourPage() {
           <h1 className={`${styles.displayTitle} mt-6`}>{PRODUCT_TOUR.title}</h1>
           <p className="mt-7 max-w-2xl text-lg leading-8 text-fg-muted sm:text-xl">
             {PRODUCT_TOUR.summary}
-          </p>
-          <p className="mt-6 font-mono text-[0.65rem] tracking-[0.12em] text-fg-dim uppercase">
-            {FICTIONAL_EXAMPLE_LABEL}
           </p>
         </MarketingContainer>
       </header>

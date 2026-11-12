@@ -9,8 +9,10 @@ import { ConnectorStructuredData } from '@/components/marketing/integrations/con
 import { RecordsToAnswer } from '@/components/marketing/integrations/records-to-answer';
 import { findWorksWithTool } from '@/components/marketing/integrations/works-with-content';
 import { WorksWithGuidance } from '@/components/marketing/integrations/works-with-sections';
+import { MarketingDisclosure } from '@/components/marketing/marketing-disclosure';
+import { MarketingContainer, MarketingSectionGrid } from '@/components/marketing/marketing-layout';
 import { MarketingProductScreenshot } from '@/components/marketing/product-screenshot';
-import { PUBLIC_DEMO_DISCLOSURE } from '@/components/marketing/public-demo-story';
+import publicStyles from '@/components/marketing/public-page.module.css';
 import { ProviderLogo } from '@/components/provider-logo';
 import { PublicSessionBranch } from '@/components/public-session-branch';
 import { PublicShell } from '@/components/public-shell';
@@ -22,7 +24,7 @@ export function ConnectorPage({ connector }: { connector: ConnectorContent }) {
       <ConnectorStructuredData connector={connector} />
       <main id="main" tabIndex={-1}>
         <ConnectorHero connector={connector} />
-        <div className="mx-auto max-w-6xl px-4 sm:px-6">
+        <MarketingContainer>
           <TruthBoundary connector={connector} />
           <ConnectorWorksWithGuidance slug={connector.slug} />
           <Questions connector={connector} />
@@ -34,7 +36,7 @@ export function ConnectorPage({ connector }: { connector: ConnectorContent }) {
           <Faq connector={connector} />
           <Related connector={connector} />
           <FinalCta connector={connector} />
-        </div>
+        </MarketingContainer>
       </main>
     </PublicShell>
   );
@@ -49,14 +51,14 @@ function ConnectorWorksWithGuidance({ slug }: { slug: string }) {
 function ConnectorHero({ connector }: { connector: ConnectorContent }) {
   return (
     <section className="overflow-hidden border-b border-border bg-bg">
-      <div className="mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-24 lg:py-28">
+      <MarketingContainer className="py-10 sm:py-14">
         <Link
           href="/integrations"
-          className="mb-10 inline-flex min-h-10 items-center rounded-sm text-sm font-medium text-fg-muted transition-colors hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
+          className="mb-6 inline-flex min-h-10 items-center rounded-sm text-sm font-medium text-fg-muted transition-colors hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
         >
           All integrations
         </Link>
-        <div className="grid items-end gap-10 lg:grid-cols-[1.3fr_0.7fr]">
+        <div className={publicStyles.heroGrid}>
           <div>
             <div className="mb-7 flex items-center gap-4">
               <ProviderLogo src={connector.logo} size="lg" />
@@ -65,11 +67,9 @@ function ConnectorHero({ connector }: { connector: ConnectorContent }) {
                 <p className="mt-1 text-sm font-semibold text-fg">{connector.name}</p>
               </div>
             </div>
-            <h1 className="max-w-[15ch] break-words text-balance text-[3rem] font-semibold leading-[0.95] tracking-[-0.05em] text-fg sm:text-[clamp(3.5rem,5vw,5.5rem)]">
-              {connector.hero}
-            </h1>
+            <h1 className={publicStyles.connectorTitle}>{connector.hero}</h1>
           </div>
-          <div className="border-t border-border pt-6 lg:border-t-0 lg:border-l lg:pt-0 lg:pl-8">
+          <div className="max-w-[70ch]">
             <p className="max-w-[46ch] text-base leading-relaxed text-fg-muted sm:text-lg">
               {connector.intro}
             </p>
@@ -98,8 +98,8 @@ function ConnectorHero({ connector }: { connector: ConnectorContent }) {
             </div>
           </div>
         </div>
-        <div className="mt-14 scroll-mt-12 sm:mt-20" id="how-it-works">
-          <RecordsToAnswer connector={connector} />
+        <div className="mt-8 scroll-mt-24" id="how-it-works">
+          <RecordsToAnswer connector={connector} compact />
           {connector.screenshot ? (
             <div className="mt-10">
               <MarketingProductScreenshot
@@ -110,15 +110,15 @@ function ConnectorHero({ connector }: { connector: ConnectorContent }) {
             </div>
           ) : null}
         </div>
-      </div>
+      </MarketingContainer>
     </section>
   );
 }
 
 function TruthBoundary({ connector }: { connector: ConnectorContent }) {
   return (
-    <section className="border-b border-border py-16 sm:py-20" aria-labelledby="truth-boundary">
-      <div className="grid gap-8 lg:grid-cols-[0.45fr_1fr]">
+    <section className="border-b border-border py-10 sm:py-14" aria-labelledby="truth-boundary">
+      <MarketingSectionGrid>
         <SectionIndex index="01" label="What gets captured" />
         <div>
           <div className="border-b border-border pb-6">
@@ -139,15 +139,15 @@ function TruthBoundary({ connector }: { connector: ConnectorContent }) {
             </article>
           </div>
         </div>
-      </div>
+      </MarketingSectionGrid>
     </section>
   );
 }
 
 function Questions({ connector }: { connector: ConnectorContent }) {
   return (
-    <section className="border-b border-border py-16 sm:py-20" aria-labelledby="questions">
-      <div className="grid gap-8 lg:grid-cols-[0.45fr_1fr]">
+    <section className="border-b border-border py-10 sm:py-14" aria-labelledby="questions">
+      <MarketingSectionGrid>
         <SectionLabel label="Questions" />
         <div>
           <h2
@@ -168,19 +168,18 @@ function Questions({ connector }: { connector: ConnectorContent }) {
             ))}
           </ol>
         </div>
-      </div>
+      </MarketingSectionGrid>
     </section>
   );
 }
 
 function WorkedScenario({ connector }: { connector: ConnectorContent }) {
   return (
-    <section className="border-b border-border py-16 sm:py-20" aria-labelledby="scenario">
-      <div className="grid gap-8 lg:grid-cols-[0.45fr_1fr]">
+    <section className="border-b border-border py-10 sm:py-14" aria-labelledby="scenario">
+      <MarketingSectionGrid>
         <SectionLabel label="Example" />
-        <div className="grid gap-8 lg:grid-cols-[0.82fr_1.18fr]">
+        <div className="grid gap-8 grid-cols-[minmax(0,1fr)]">
           <div>
-            <p className="mb-4 text-xs text-fg-dim">{PUBLIC_DEMO_DISCLOSURE}</p>
             <h2 id="scenario" className="text-3xl font-semibold tracking-tight sm:text-4xl">
               {connector.scenario.title}
             </h2>
@@ -205,21 +204,21 @@ function WorkedScenario({ connector }: { connector: ConnectorContent }) {
             </div>
           </div>
         </div>
-      </div>
+      </MarketingSectionGrid>
     </section>
   );
 }
 
 function CapturedRecords({ connector }: { connector: ConnectorContent }) {
   return (
-    <section className="border-b border-border py-16 sm:py-20" aria-labelledby="records">
-      <div className="grid gap-8 lg:grid-cols-[0.45fr_1fr]">
+    <section className="border-b border-border py-10 sm:py-14" aria-labelledby="records">
+      <MarketingSectionGrid>
         <SectionLabel label="What Timeline saves" />
         <div>
           <h2 id="records" className="text-3xl font-semibold tracking-tight sm:text-4xl">
             What enters the Timeline
           </h2>
-          <div className="mt-10 grid gap-px border border-border bg-border sm:grid-cols-2">
+          <div className="mt-6 grid gap-px border border-border bg-border sm:grid-cols-2">
             {connector.capturedRecords.map((record, index) => (
               <div key={record} className="flex min-h-24 gap-4 bg-bg p-5">
                 <span className="font-mono text-xs text-fg-dim">
@@ -230,21 +229,21 @@ function CapturedRecords({ connector }: { connector: ConnectorContent }) {
             ))}
           </div>
         </div>
-      </div>
+      </MarketingSectionGrid>
     </section>
   );
 }
 
 function Recipes({ connector }: { connector: ConnectorContent }) {
   return (
-    <section className="border-b border-border py-16 sm:py-20" aria-labelledby="recipes">
-      <div className="grid gap-8 lg:grid-cols-[0.45fr_1fr]">
+    <section className="border-b border-border py-10 sm:py-14" aria-labelledby="recipes">
+      <MarketingSectionGrid>
         <SectionLabel label="Use it with" />
         <div>
           <h2 id="recipes" className="text-3xl font-semibold tracking-tight sm:text-4xl">
             Better when the silos meet
           </h2>
-          <div className="mt-10 grid gap-4 md:grid-cols-3">
+          <div className="mt-6 grid gap-4 md:grid-cols-3">
             {connector.recipes.map((recipe) => (
               <article
                 key={recipe.title}
@@ -268,15 +267,15 @@ function Recipes({ connector }: { connector: ConnectorContent }) {
             ))}
           </div>
         </div>
-      </div>
+      </MarketingSectionGrid>
     </section>
   );
 }
 
 function SetupAndPrivacy({ connector }: { connector: ConnectorContent }) {
   return (
-    <section className="border-b border-border py-16 sm:py-20" aria-labelledby="setup">
-      <div className="grid gap-8 lg:grid-cols-[0.45fr_1fr]">
+    <section className="border-b border-border py-10 sm:py-14" aria-labelledby="setup">
+      <MarketingSectionGrid>
         <SectionLabel label="Setup and privacy" />
         <div className="grid gap-px border border-border bg-border lg:grid-cols-2">
           <article className="bg-bg p-6 sm:p-8">
@@ -286,7 +285,7 @@ function SetupAndPrivacy({ connector }: { connector: ConnectorContent }) {
             </h2>
             <ol className="mt-6 space-y-5">
               {connector.setup.map((step, index) => (
-                <li key={step} className="grid grid-cols-[1.8rem_1fr] gap-3">
+                <li key={step} className="grid grid-cols-[1.8rem_minmax(0,1fr)] gap-3">
                   <span className="font-mono text-xs text-fg-dim">0{index + 1}</span>
                   <span className="text-sm leading-relaxed text-fg">{step}</span>
                 </li>
@@ -296,25 +295,29 @@ function SetupAndPrivacy({ connector }: { connector: ConnectorContent }) {
           <article className="bg-surface p-6 sm:p-8">
             <LockKeyhole aria-hidden="true" className="size-5 text-signal" />
             <h2 className="mt-5 text-2xl font-semibold tracking-tight">Permissions and privacy</h2>
-            <ul className="mt-6 space-y-5">
-              {connector.permissions.map((item) => (
-                <li key={item} className="grid grid-cols-[1.25rem_1fr] gap-3">
-                  <Check aria-hidden="true" className="mt-0.5 size-4 text-signal" />
-                  <span className="text-sm leading-relaxed text-fg-muted">{item}</span>
-                </li>
-              ))}
-            </ul>
+            <MarketingDisclosure summary="Read permissions and privacy details">
+              <ul className="mt-6 space-y-5">
+                {connector.permissions.map((item) => (
+                  <li key={item} className="grid grid-cols-[1.25rem_minmax(0,1fr)] gap-3">
+                    <Check aria-hidden="true" className="mt-0.5 size-4 text-signal" />
+                    <span className="min-w-0 [overflow-wrap:anywhere] text-sm leading-relaxed text-fg-muted">
+                      {item}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </MarketingDisclosure>
           </article>
         </div>
-      </div>
+      </MarketingSectionGrid>
     </section>
   );
 }
 
 function Limitations({ connector }: { connector: ConnectorContent }) {
   return (
-    <section className="border-b border-border py-16 sm:py-20" aria-labelledby="limitations">
-      <div className="grid gap-8 lg:grid-cols-[0.45fr_1fr]">
+    <section className="border-b border-border py-10 sm:py-14" aria-labelledby="limitations">
+      <MarketingSectionGrid>
         <SectionLabel label="Limits" />
         <div>
           <h2 id="limitations" className="text-3xl font-semibold tracking-tight sm:text-4xl">
@@ -340,15 +343,15 @@ function Limitations({ connector }: { connector: ConnectorContent }) {
             </ul>
           </details>
         </div>
-      </div>
+      </MarketingSectionGrid>
     </section>
   );
 }
 
 function Faq({ connector }: { connector: ConnectorContent }) {
   return (
-    <section className="border-b border-border py-16 sm:py-20" aria-labelledby="faq">
-      <div className="grid gap-8 lg:grid-cols-[0.45fr_1fr]">
+    <section className="border-b border-border py-10 sm:py-14" aria-labelledby="faq">
+      <MarketingSectionGrid>
         <SectionLabel label="FAQ" />
         <div>
           <h2 id="faq" className="text-3xl font-semibold tracking-tight sm:text-4xl">
@@ -373,7 +376,7 @@ function Faq({ connector }: { connector: ConnectorContent }) {
             ))}
           </div>
         </div>
-      </div>
+      </MarketingSectionGrid>
     </section>
   );
 }
@@ -381,8 +384,8 @@ function Faq({ connector }: { connector: ConnectorContent }) {
 function Related({ connector }: { connector: ConnectorContent }) {
   const related = connector.related.map(findConnector).filter((item) => item !== undefined);
   return (
-    <section className="border-b border-border py-16 sm:py-20" aria-labelledby="related">
-      <div className="grid gap-8 lg:grid-cols-[0.45fr_1fr]">
+    <section className="border-b border-border py-10 sm:py-14" aria-labelledby="related">
+      <MarketingSectionGrid>
         <SectionLabel label="Related" />
         <div>
           <h2 id="related" className="text-2xl font-semibold tracking-tight">
@@ -403,30 +406,29 @@ function Related({ connector }: { connector: ConnectorContent }) {
             ))}
           </div>
         </div>
-      </div>
+      </MarketingSectionGrid>
     </section>
   );
 }
 
 function FinalCta({ connector }: { connector: ConnectorContent }) {
   return (
-    <section className="py-20 sm:py-28" aria-labelledby="cta">
-      <div className="grid gap-10 lg:grid-cols-[0.45fr_1fr]">
-        <SectionIndex index="10" label="Start" />
+    <section className={publicStyles.cta} aria-labelledby="cta">
+      <div className={publicStyles.ctaPanel}>
         <div>
-          <h2
-            id="cta"
-            className="max-w-[14ch] text-4xl font-semibold leading-tight tracking-[-0.04em] sm:text-6xl"
-          >
+          <SectionIndex index="10" label="Start" />
+          <h2 id="cta" className="max-w-[24ch]">
             Try one real {connector.name} question.
           </h2>
           <p className="mt-6 max-w-[54ch] text-base leading-relaxed text-fg-muted sm:text-lg">
             Choose the sources your team trusts. Let the work form a chronology. Inspect the
             evidence behind every answer.
           </p>
+        </div>
+        <div className={publicStyles.ctaAction}>
           <PublicSessionBranch
             signedOut={
-              <Button asChild size="lg" className="mt-8">
+              <Button asChild size="lg" className="mt-0">
                 <Link href="/sign-up">
                   Start free
                   <ArrowRight aria-hidden="true" />
@@ -434,7 +436,7 @@ function FinalCta({ connector }: { connector: ConnectorContent }) {
               </Button>
             }
             signedIn={
-              <Button asChild size="lg" className="mt-8">
+              <Button asChild size="lg" className="mt-0">
                 <Link href="/app/connections">
                   {`Connect ${connector.name}`}
                   <ArrowRight aria-hidden="true" />

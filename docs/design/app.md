@@ -286,7 +286,7 @@ tools holds compact rows for Agent MCP servers and Connect your agent;
 local-only and unroutable catalog entries such as Figma sit in Coming soon with
 no Connect action. Developer holds ingest webhooks, integration audit, and job
 recovery.
-Connect your agent leads with the shared homepage AgentSetupCard and generic
+Connect your agent leads with the shared AgentSetupCard and generic
 llms.txt setup prompt. A closed Client-specific setup disclosure contains the client picker: official vendor
 marks on white tiles, a CollectionRow list, and a single selected setup. Long installation prompts stay in copy actions, with a closed Show setup text fallback for manual copying. On wide screens, the picker sits beside the selected setup on a quiet surface; narrow screens stack them. Add
 memory, Timeline skill, connected grants, and static keys stay in one closed

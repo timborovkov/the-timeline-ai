@@ -95,6 +95,13 @@ describe('MarketingProductScreenshot', () => {
 });
 
 describe('resolved screenshot theme', () => {
+  it('renders screenshots without navigation or enlargement controls', () => {
+    const view = render(<MarketingProductScreenshot {...BASE} file="32-ask-handoff-dark.png" />);
+    expect(view.container.querySelector('a')).toBeNull();
+    expect(view.container.querySelector('button')).toBeNull();
+    expect(view.container.textContent).not.toContain('view full size');
+  });
+
   it('keeps SSR on the reserved placeholder without preloading either variant', () => {
     const html = renderToStaticMarkup(
       <MarketingProductScreenshot {...BASE} file="11-timeline-dark.png" priority />,
@@ -127,7 +134,9 @@ describe('resolved screenshot theme', () => {
       );
       expect(images[0]?.getAttribute('srcset')).toBeNull();
       expect(images[0]?.getAttribute('loading')).toBe('eager');
-      expect(view.container.textContent).toContain('Fictional example · Acme Labs demo workspace');
+      expect(view.container.textContent).not.toContain(
+        'Fictional example · Acme Labs demo workspace',
+      );
     }
   });
 });

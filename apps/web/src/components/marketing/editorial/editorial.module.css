@@ -5,19 +5,19 @@
 .displayTitle {
   max-width: 18ch;
   text-wrap: balance;
-  font-size: clamp(3rem, 5vw, 4.75rem);
-  font-weight: 600;
-  line-height: 0.92;
-  letter-spacing: -0.055em;
+  font-size: clamp(2.25rem, 4vw, 4rem);
+  font-weight: 500;
+  line-height: 1.1;
+  letter-spacing: -0.03em;
 }
 
 .guideTitle {
   max-width: 20ch;
   text-wrap: balance;
-  font-size: clamp(2.5rem, 4.5vw, 4.25rem);
-  font-weight: 600;
-  line-height: 0.95;
-  letter-spacing: -0.055em;
+  font-size: clamp(2rem, 3.4vw, 3.25rem);
+  font-weight: 500;
+  line-height: 1.1;
+  letter-spacing: -0.03em;
 }
 
 .heroGrid {

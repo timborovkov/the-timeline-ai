@@ -74,7 +74,7 @@ export default async function HelpTopicPage({ params }: HelpPageProps) {
       <div className="space-y-8">
         {page.sections.map((section) => (
           <section key={section.title} className="border-t border-border pt-8">
-            <div className="grid gap-6 lg:grid-cols-[1fr_14rem]">
+            <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-6 lg:grid-cols-[minmax(0,1fr)_14rem]">
               <div className="space-y-4">
                 <h2 className="text-2xl font-semibold text-fg">{section.title}</h2>
                 <p className="text-base text-fg-muted">{section.body}</p>
@@ -95,7 +95,13 @@ export default async function HelpTopicPage({ params }: HelpPageProps) {
                     <HelpAppLink href={section.appLink.href} label={section.appLink.label} />
                   ) : null}
                   {section.resourceLinks?.map((link) => (
-                    <Button key={link.href} asChild size="sm" variant="outline">
+                    <Button
+                      key={link.href}
+                      asChild
+                      size="sm"
+                      variant="outline"
+                      className="h-auto min-h-8 max-w-full whitespace-normal py-2 text-left"
+                    >
                       <a href={link.href} target="_blank" rel="noreferrer">
                         {link.label}
                         <ExternalLink aria-hidden="true" className="size-3.5" />

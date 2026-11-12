@@ -1,6 +1,7 @@
 import { ArrowRight } from 'lucide-react';
 import Link from 'next/link';
 
+import { ClaudeMcpExample } from '@/components/marketing/claude-mcp-example';
 import { EditorialKicker } from '@/components/marketing/editorial/editorial-kicker';
 import { EditorialStructuredData } from '@/components/marketing/editorial/editorial-structured-data';
 import styles from '@/components/marketing/editorial/editorial.module.css';
@@ -11,6 +12,7 @@ import {
   getMcpGuideCatalog,
 } from '@/components/marketing/integrations/mcp-guide-content';
 import { MCP_GUIDE_DOCUMENT } from '@/components/marketing/integrations/mcp-guide-public-documents';
+import { MarketingDisclosure } from '@/components/marketing/marketing-disclosure';
 import { MarketingContainer, MarketingSectionGrid } from '@/components/marketing/marketing-layout';
 import { MarketingProductScreenshot } from '@/components/marketing/product-screenshot';
 import { MarketingSectionIndex } from '@/components/marketing/section-index';
@@ -28,7 +30,7 @@ export function McpGuidePage() {
       <EditorialStructuredData data={buildPublicStructuredData(MCP_GUIDE_DOCUMENT, getSiteUrl())} />
       <main id="main" tabIndex={-1} data-mcp-guide>
         <section className="border-b border-border">
-          <MarketingContainer className="py-16 sm:py-24 lg:py-28">
+          <MarketingContainer className="py-10 sm:py-14">
             <Link
               href="/integrations"
               className="mb-10 inline-flex min-h-10 items-center rounded-sm text-sm font-medium text-fg-muted transition-colors hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
@@ -36,7 +38,7 @@ export function McpGuidePage() {
               All integrations
             </Link>
             <EditorialKicker>{MCP_GUIDE_PAGE.kicker}</EditorialKicker>
-            <div className="mt-8 grid items-end gap-10 lg:grid-cols-[1.25fr_0.75fr]">
+            <div className="mt-8 grid items-end gap-10 grid-cols-[minmax(0,1fr)]">
               <h1 className={`${styles.displayTitle} max-w-[16ch]`}>{MCP_GUIDE_PAGE.title}</h1>
               <div>
                 <p className="max-w-[44ch] text-base leading-relaxed text-fg-muted sm:text-lg">
@@ -63,7 +65,7 @@ export function McpGuidePage() {
         </section>
 
         <section className="border-b border-border" aria-labelledby="mcp-directions">
-          <MarketingContainer className="py-16 sm:py-20">
+          <MarketingContainer className="py-10 sm:py-14">
             <MarketingSectionGrid>
               <MarketingSectionIndex index="01" label="Directions" />
               <div>
@@ -104,13 +106,16 @@ export function McpGuidePage() {
                 <div className="mt-10">
                   <InboundMcpDiagram />
                 </div>
+                <div className="mt-10 max-w-xl">
+                  <ClaudeMcpExample />
+                </div>
               </div>
             </MarketingSectionGrid>
           </MarketingContainer>
         </section>
 
         <section className="border-b border-border bg-surface/45" aria-labelledby="mcp-setup">
-          <MarketingContainer className="py-16 sm:py-20">
+          <MarketingContainer className="py-10 sm:py-14">
             <MarketingSectionGrid>
               <MarketingSectionIndex index="02" label="In the product" />
               <div>
@@ -164,7 +169,7 @@ export function McpGuidePage() {
         </section>
 
         <section className="border-b border-border" aria-labelledby="mcp-catalog">
-          <MarketingContainer className="py-16 sm:py-20">
+          <MarketingContainer className="py-10 sm:py-14">
             <MarketingSectionGrid>
               <MarketingSectionIndex index="03" label="Catalog" />
               <div>
@@ -193,7 +198,7 @@ export function McpGuidePage() {
         </section>
 
         <section className="border-b border-border" aria-labelledby="mcp-limits">
-          <MarketingContainer className="py-16 sm:py-20">
+          <MarketingContainer className="py-10 sm:py-14">
             <MarketingSectionGrid>
               <MarketingSectionIndex index="04" label="Limits" />
               <div>
@@ -203,11 +208,13 @@ export function McpGuidePage() {
                 >
                   {MCP_GUIDE_PAGE.limits.title}
                 </h2>
-                <ul className="mt-6 list-disc space-y-3 pl-5 text-base leading-7 text-fg-muted">
-                  {MCP_GUIDE_PAGE.limits.items.map((item) => (
-                    <li key={item}>{item}</li>
-                  ))}
-                </ul>
+                <MarketingDisclosure summary="Read MCP access and capture limits">
+                  <ul className="mt-6 list-disc space-y-3 pl-5 text-base leading-7 text-fg-muted">
+                    {MCP_GUIDE_PAGE.limits.items.map((item) => (
+                      <li key={item}>{item}</li>
+                    ))}
+                  </ul>
+                </MarketingDisclosure>
                 <div className="mt-10 grid gap-px border border-border bg-border sm:grid-cols-2">
                   {MCP_GUIDE_RELATED.map((item) => (
                     <Link

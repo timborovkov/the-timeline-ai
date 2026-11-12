@@ -86,7 +86,7 @@ export const PLAN_CATALOG: Record<BillingPlanId, PlanCommercial> = {
   free: {
     id: 'free',
     name: 'Free',
-    tagline: 'Useful for a real 1–3 person team. No card.',
+    tagline: 'Enough to try it with one channel.',
     platformFeeCents: 0,
     includedActiveMembers: 3,
     additionalMemberCents: null,

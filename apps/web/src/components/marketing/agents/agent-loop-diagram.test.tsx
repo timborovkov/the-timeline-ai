@@ -5,7 +5,6 @@ import { describe, it } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 import { AgentLoopDiagram } from '@/components/marketing/agents/agent-loop-diagram';
-import { FICTIONAL_EXAMPLE_LABEL } from '@/components/marketing/copy';
 
 const styles = readFileSync(new URL('./agent-loop-diagram.module.css', import.meta.url), 'utf8');
 
@@ -23,7 +22,7 @@ describe('AgentLoopDiagram', () => {
     expect(html).toContain('Cursor');
     expect(html).toContain('Grok');
     expect(html).toContain('Connect MCP tools');
-    expect(html).toContain(FICTIONAL_EXAMPLE_LABEL);
+    expect(html).not.toContain('Fictional example');
     expect(html).not.toContain('data-inbound-mcp');
     expect(html).not.toMatch(/tli_|tla_|timeline\.remember|POST \/api/u);
     expect(html).not.toMatch(/Notion|Jira|Confluence|Stripe/u);

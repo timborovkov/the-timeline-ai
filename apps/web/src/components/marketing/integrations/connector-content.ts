@@ -97,8 +97,7 @@ export const CONNECTORS: readonly ConnectorContent[] = [
     name: 'Slack',
     eyebrow: 'Conversation becomes chronology',
     hero: 'Turn selected Slack channels into an up-to-date work record.',
-    intro:
-      'Timeline preserves the messages, threads, file-share metadata, reactions, and edits you choose, then places them beside work from other systems. Ask what was decided and inspect the conversation behind the answer.',
+    intro: 'Bring selected Slack conversations into the work record alongside your other sources.',
     seoTitle: 'Slack integration for cited team answers',
     seoDescription:
       'Sync selected Slack channels, threads, file-share metadata, reactions, and edits into The Timeline, then ask questions with citations back to the conversation.',
@@ -202,7 +201,7 @@ export const CONNECTORS: readonly ConnectorContent[] = [
     eyebrow: 'Code activity becomes release history',
     hero: 'Connect the plan, review, merge, release, and CI evidence.',
     intro:
-      'Timeline turns selected repository activity into a chronological, citable record. Follow work from issue through review and release without treating a pull request title as the whole story.',
+      'Follow work from issue through review and release, alongside the conversations behind it.',
     seoTitle: 'GitHub integration for cited release history',
     seoDescription:
       'Sync GitHub pull requests, issues, reviews, comments, commits, releases, and workflow runs into a cited chronology with The Timeline.',
@@ -307,8 +306,7 @@ export const CONNECTORS: readonly ConnectorContent[] = [
     name: 'Linear',
     eyebrow: 'Issue movement becomes a work narrative',
     hero: 'See why work moved, not only which status changed.',
-    intro:
-      'Timeline captures selected Linear teams as cited history, including issue context, comments, priority, ownership, status, and project changes. Connect plans to the conversations and code that made them real.',
+    intro: 'Connect selected Linear activity to the conversations and code that explain it.',
     seoTitle: 'Linear integration for cited project history',
     seoDescription:
       'Sync Linear issues, comments, status, assignee, priority, and project changes into The Timeline for cited project updates and answers.',
@@ -508,7 +506,7 @@ export const CONNECTORS: readonly ConnectorContent[] = [
     eyebrow: 'Board activity becomes an evidence trail',
     hero: 'Follow records, subitems, updates, columns, and WorkDocs as one chronology.',
     intro:
-      'Timeline captures selected Monday.com boards and WorkDocs without reducing them to status snapshots. See the updates, replies, owners, columns, and nested work that explain how an operational record changed.',
+      'See how selected boards and WorkDocs changed, with the conversations behind each update.',
     seoTitle: 'Monday.com integration for cited board history',
     seoDescription:
       'Sync Monday.com boards, records, subitems, updates, columns, replies, and WorkDocs into The Timeline as cited operational evidence.',

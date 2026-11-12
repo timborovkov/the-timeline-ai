@@ -62,6 +62,16 @@ describe('PublicNavigationDisclosure', () => {
     expect(disclosure?.open).toBe(false);
   });
 
+  it('closes with Escape and returns focus to the menu trigger', async () => {
+    const user = userEvent.setup();
+    const { container } = render(<PublicNavigationDisclosure currentSection="help" />);
+    await user.click(screen.getByText('Menu'));
+    screen.getByRole('link', { name: 'Pricing' }).focus();
+    await user.keyboard('{Escape}');
+    expect(container.querySelector('details')?.open).toBe(false);
+    expect(document.activeElement).toBe(container.querySelector('summary'));
+  });
+
   it('closes when a persistent layout observes a pathname change', async () => {
     const user = userEvent.setup();
     const { container, rerender } = render(<PublicNavigationDisclosure currentSection="help" />);

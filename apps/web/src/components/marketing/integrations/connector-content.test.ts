@@ -9,10 +9,7 @@ import {
   getConnectorCapabilityTiers,
   INDEXABLE_CONNECTOR_ROUTES,
 } from '@/components/marketing/integrations/connector-content';
-import {
-  PUBLIC_DEMO_DISCLOSURE,
-  PUBLIC_DEMO_STORY,
-} from '@/components/marketing/public-demo-story';
+import { PUBLIC_DEMO_STORY } from '@/components/marketing/public-demo-story';
 describe('connector content manifest', () => {
   it('exports exactly the six implemented native connector routes for public indexing', () => {
     expect(CONNECTORS.map((connector) => connector.slug)).toEqual(CONNECTOR_SLUGS);
@@ -54,7 +51,6 @@ describe('connector content manifest', () => {
   });
 
   it('uses one explicitly fictional Acme corpus across every provider example', () => {
-    expect(PUBLIC_DEMO_DISCLOSURE).toBe('Fictional Acme example, not customer data.');
     expect(PUBLIC_DEMO_STORY.organization).toBe('Acme');
 
     for (const connector of CONNECTORS) {

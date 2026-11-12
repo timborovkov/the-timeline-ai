@@ -161,7 +161,7 @@ export const SOLUTIONS: readonly SolutionContent[] = [
       'Prepare a handoff for the incoming owner, separating fact, conflict, and inference.',
     ],
     example: {
-      label: 'Illustrative handoff',
+      label: 'Handoff example',
       title: 'Northstar rollout is ready for transfer, with two open edges.',
       body: 'The handoff can lead with the current state, then keep each consequential statement tied to its evidence instead of hiding the source trail in an appendix.',
       claims: [
@@ -170,7 +170,7 @@ export const SOLUTIONS: readonly SolutionContent[] = [
         'Open edge: production access still has no confirmed owner [Slack thread, 19 Aug]',
         'Implementation: the import fix was merged; release evidence is still missing [GitHub PR #418]',
       ],
-      note: 'Fictional example. Citations show what captured sources support; they do not replace delivery review.',
+      note: 'Citations show what captured sources support; they do not replace delivery review.',
     },
     limitations: [
       'Timeline cannot cite work that was never selected, sent, or successfully captured.',
@@ -217,7 +217,7 @@ export const SOLUTIONS: readonly SolutionContent[] = [
         file: '32-ask-handoff-dark.png',
         alt: 'A stored Ask handoff brief citing Northstar sources from Drive, GitHub, Linear, and Slack.',
         caption:
-          'A cited answer for a client handoff names Drive, GitHub, Linear and Slack sources instead of blending them. Stored example from the fictional Acme Labs demo.',
+          'A cited answer for a client handoff names Drive, GitHub, Linear and Slack sources instead of blending them.',
       },
     ],
     cta: {

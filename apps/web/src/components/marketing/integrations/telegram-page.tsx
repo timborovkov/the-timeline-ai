@@ -24,14 +24,14 @@ export function TelegramIntegrationPage() {
       />
       <main id="main" tabIndex={-1} data-telegram-integration>
         <section className="border-b border-border">
-          <MarketingContainer className="py-16 sm:py-24 lg:py-28">
+          <MarketingContainer className="py-10 sm:py-14">
             <div className="flex items-center gap-4">
               <span className="grid size-12 place-items-center rounded-md border border-border bg-white">
                 <Image src="/connectors/telegram.svg" alt="" width={28} height={28} />
               </span>
               <EditorialKicker>Integrations · Telegram</EditorialKicker>
             </div>
-            <div className="mt-8 grid items-end gap-10 lg:grid-cols-[1.25fr_0.75fr]">
+            <div className="mt-8 grid items-end gap-10 grid-cols-[minmax(0,1fr)]">
               <h1 className={`${styles.displayTitle} max-w-[16ch]`}>{TELEGRAM_PAGE.title}</h1>
               <div>
                 <p className="max-w-[44ch] text-base leading-relaxed text-fg-muted sm:text-lg">
@@ -58,7 +58,7 @@ export function TelegramIntegrationPage() {
         </section>
 
         <section className="border-b border-border bg-surface/45">
-          <MarketingContainer className="py-16 sm:py-20">
+          <MarketingContainer className="py-10 sm:py-14">
             <MarketingSectionGrid>
               <MarketingSectionIndex index="01" label="What it captures" />
               <div>
@@ -81,7 +81,7 @@ export function TelegramIntegrationPage() {
         </section>
 
         <section className="border-b border-border">
-          <MarketingContainer className="py-16 sm:py-20">
+          <MarketingContainer className="py-10 sm:py-14">
             <MarketingSectionGrid>
               <MarketingSectionIndex index="02" label="What to know" />
               <div>
@@ -97,7 +97,7 @@ export function TelegramIntegrationPage() {
         </section>
 
         <section>
-          <MarketingContainer className="py-16 sm:py-20">
+          <MarketingContainer className="py-10 sm:py-14">
             <MarketingSectionGrid>
               <MarketingSectionIndex index="03" label="Daily update" />
               <div>

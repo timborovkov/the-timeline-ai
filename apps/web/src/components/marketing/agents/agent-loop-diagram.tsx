@@ -4,7 +4,6 @@ import Link from 'next/link';
 
 import { Logo } from '@/components/brand/logo';
 import styles from '@/components/marketing/agents/agent-loop-diagram.module.css';
-import { FICTIONAL_EXAMPLE_LABEL } from '@/components/marketing/copy';
 
 const WRITE_PATHS = [
   { name: 'Remember a note', body: 'An agent adds a cited note to the record.' },
@@ -30,13 +29,13 @@ export function AgentLoopDiagram() {
     <figure className={styles.figure} data-agent-loop aria-labelledby="agent-loop-title">
       <figcaption className={styles.caption}>
         <span id="agent-loop-title" className={styles.kicker}>
-          Write in · read out
+          Read out · write in
         </span>
-        <span className={styles.disclosure}>{FICTIONAL_EXAMPLE_LABEL}</span>
       </figcaption>
       <p className={styles.lede}>
-        External agents add notes like teammates, then read the same cited record. Connecting
-        third-party tools so The Timeline Agent can look them up live is a different path, on{' '}
+        Agents read decisions, owners and history, with citations, then write updates into the same
+        record. They do not need a standup or a re-brief. Connecting third-party tools so The
+        Timeline Agent can look them up live is a different path, on{' '}
         <Link href="/integrations/mcp">Connect MCP tools</Link>.
       </p>
       <div className={styles.clients} aria-label="Compatible agents">

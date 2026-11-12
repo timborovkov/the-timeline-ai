@@ -9,6 +9,7 @@ import {
 } from '@/components/marketing/integrations/works-with-content';
 import { findWorksWithPublicDocument } from '@/components/marketing/integrations/works-with-public-documents';
 import { WorksWithGuidance } from '@/components/marketing/integrations/works-with-sections';
+import { MarketingContainer, MarketingSectionGrid } from '@/components/marketing/marketing-layout';
 import { MarketingCtaBand } from '@/components/marketing/start-free-cta';
 import { ProviderLogo } from '@/components/provider-logo';
 import { PublicShell } from '@/components/public-shell';
@@ -26,7 +27,7 @@ export function WorksWithPage({ tool }: { tool: WorksWithTool }) {
       <main id="main" tabIndex={-1} data-works-with-route={tool.route}>
         <article>
           <header className="border-b border-border">
-            <div className="mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-24 lg:py-28">
+            <MarketingContainer className="py-10 sm:py-14">
               <Link
                 href="/integrations"
                 className="mb-10 inline-flex min-h-10 items-center rounded-sm text-sm font-medium text-fg-muted transition-colors hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
@@ -41,15 +42,15 @@ export function WorksWithPage({ tool }: { tool: WorksWithTool }) {
               <p className="mt-7 max-w-2xl text-lg leading-8 text-fg-muted sm:text-xl">
                 {tool.summary}
               </p>
-            </div>
+            </MarketingContainer>
           </header>
 
-          <div className="mx-auto max-w-6xl px-4 sm:px-6">
+          <MarketingContainer>
             <section
-              className="border-b border-border py-16 sm:py-20"
+              className="border-b border-border py-10 sm:py-14"
               aria-labelledby="how-it-plugs-in"
             >
-              <div className="grid gap-8 lg:grid-cols-[0.45fr_1fr]">
+              <MarketingSectionGrid>
                 <SectionIndex index="How" label="How it plugs in" />
                 <div>
                   <h2
@@ -75,14 +76,14 @@ export function WorksWithPage({ tool }: { tool: WorksWithTool }) {
                     </p>
                   ) : null}
                 </div>
-              </div>
+              </MarketingSectionGrid>
             </section>
 
             <section
-              className="border-b border-border py-16 sm:py-20"
+              className="border-b border-border py-10 sm:py-14"
               aria-labelledby="status-today"
             >
-              <div className="grid gap-8 lg:grid-cols-[0.45fr_1fr]">
+              <MarketingSectionGrid>
                 <SectionIndex index="Now" label="Status" />
                 <div className="grid gap-8">
                   <div>
@@ -100,16 +101,16 @@ export function WorksWithPage({ tool }: { tool: WorksWithTool }) {
                     </p>
                   </div>
                 </div>
-              </div>
+              </MarketingSectionGrid>
             </section>
 
             <WorksWithGuidance tool={tool} />
 
             <section
-              className="border-b border-border py-16 sm:py-20"
+              className="border-b border-border py-10 sm:py-14"
               aria-labelledby="related-tools"
             >
-              <div className="grid gap-8 lg:grid-cols-[0.45fr_1fr]">
+              <MarketingSectionGrid>
                 <SectionIndex index="Also" label="Other tools" />
                 <div>
                   <h2 id="related-tools" className="text-2xl font-semibold tracking-tight">
@@ -133,9 +134,9 @@ export function WorksWithPage({ tool }: { tool: WorksWithTool }) {
                     ))}
                   </div>
                 </div>
-              </div>
+              </MarketingSectionGrid>
             </section>
-          </div>
+          </MarketingContainer>
 
           <MarketingCtaBand
             title="Start free with the conversation record."
