@@ -657,15 +657,15 @@
     "test": "bun ../../scripts/testing/run.ts packages/shared"
   },
   "dependencies": {
-    "@ai-sdk/openai-compatible": "3.0.84",
-    "@aws-sdk/client-s3": "^3.1161.0",
-    "@aws-sdk/s3-request-presigner": "^3.1161.0",
+    "@ai-sdk/openai-compatible": "3.0.87",
+    "@aws-sdk/client-s3": "^3.1164.0",
+    "@aws-sdk/s3-request-presigner": "^3.1164.0",
     "@js-temporal/polyfill": "^0.5.1",
     "@modelcontextprotocol/server": "2.4.0",
     "@timeline/db": "workspace:*",
     "ai": "^7.0.166",
     "bcryptjs": "^3.0.3",
-    "bullmq": "6.6.0",
+    "bullmq": "6.7.2",
     "drizzle-orm": "^0.45.4",
     "gpt-tokenizer": "^4.1.0",
     "ioredis": "6.0.0",
@@ -678,7 +678,7 @@
     "posthog-node": "^5.63.2",
     "rrule": "^2.8.1",
     "svix": "2.9.1",
-    "undici": "8.12.3",
+    "undici": "8.12.4",
     "zod": "^4.6.7"
   },
   "devDependencies": {
