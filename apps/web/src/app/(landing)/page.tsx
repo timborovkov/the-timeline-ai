@@ -391,89 +391,64 @@ function AnswerScene() {
       <HomeProof shot={HOME_ASK_SHOT} align="copy-first" />
       <div className={styles.threadBlock} id="chat-to-answer">
         <h2 className={styles.threadHeading}>
-          Ask in Slack. An agent can ask the same <em>record.</em>
+          Your chat. Your agent. One <em>record.</em>
         </h2>
         <p className={styles.threadLead}>
-          Someone asks @Timeline in Slack. The bot answers with numbered citations back to the call
-          and the email. Claude can retrieve the same Northstar evidence over MCP.
+          Ask in a connected chat or through your agent. Both can find the answer and the sources
+          behind it.
         </p>
-        <div className={styles.threadLayout} data-home-diagram data-chat-to-answer>
-          <article className={styles.slackThread} aria-label="Slack example">
-            <header className={styles.slackBar}>
-              <span>#northstar-pilot</span>
-              <span>Slack</span>
-            </header>
-            <div className={styles.slackMessage}>
-              <span className={styles.slackAvatar} aria-hidden="true">
-                M
-              </span>
-              <div>
-                <p className={styles.slackMeta}>
-                  <strong>Casey Novak</strong>
-                  <time dateTime="2026-07-08T16:12:00.000Z">16:12</time>
-                </p>
-                <p>
-                  <span className={styles.slackMention}>@Timeline</span> what did we promise
-                  Northstar on Tuesday's call?
-                </p>
+        <div className={styles.threadLayout} data-chat-to-answer>
+          {(['Chat', 'Agent'] as const).map((surface) => (
+            <article
+              key={surface}
+              className={styles.slackThread}
+              aria-label={`${surface} conversation`}
+            >
+              <header className={styles.slackBar}>
+                <strong>{surface}</strong>
+                <span>{surface === 'Chat' ? 'With your team' : 'With your assistant'}</span>
+              </header>
+              <div className={styles.slackMessage}>
+                <span className={styles.slackAvatar} aria-hidden="true">
+                  Y
+                </span>
+                <div>
+                  <p className={styles.slackMeta}>
+                    <strong>You</strong>
+                  </p>
+                  <p>What did we promise Northstar?</p>
+                </div>
               </div>
-            </div>
-            <div className={styles.slackMessage}>
-              <span className={styles.slackBotAvatar} aria-hidden="true">
-                T
-              </span>
-              <div>
-                <p className={styles.slackMeta}>
-                  <strong>Timeline</strong>
-                  <span>APP</span>
-                  <time dateTime="2026-07-08T16:12:08.000Z">16:12</time>
-                </p>
-                <p>
-                  Northstar Works committed to send the final sample export by July 8
-                  <ThreadCitation n={1} label="Email from Elena Park" />. On the Northstar pilot
-                  handoff review, Avery handed export validation to Mika and the team decided to use
-                  the CSV fallback
-                  <ThreadCitation n={2} label="Call transcript" />.
-                </p>
-                <ol className={styles.threadSources}>
-                  <li id="thread-source-1">
-                    <span>[1]</span>
-                    <strong>Email from Elena Park</strong>
-                    <small>Northstar pilot export commitment</small>
-                  </li>
-                  <li id="thread-source-2">
-                    <span>[2]</span>
-                    <strong>Call transcript</strong>
-                    <small>Northstar pilot handoff review</small>
-                  </li>
-                </ol>
+              <div className={styles.slackMessage}>
+                <span className={styles.slackBotAvatar} aria-hidden="true">
+                  {surface === 'Chat' ? 'T' : 'A'}
+                </span>
+                <div>
+                  <p className={styles.slackMeta}>
+                    <strong>{surface === 'Chat' ? 'The Timeline' : 'Your agent'}</strong>
+                  </p>
+                  <p>
+                    The final sample export is due July 8
+                    <ThreadCitation n={1} label="Email from Elena Park" />. Mika owns export
+                    validation, using the CSV fallback
+                    <ThreadCitation n={2} label="Call transcript" />.
+                  </p>
+                  <ol className={styles.threadSources} aria-label="Answer sources">
+                    <li>
+                      <span>[1]</span>
+                      <strong>Email from Elena Park</strong>
+                      <small>Export commitment</small>
+                    </li>
+                    <li>
+                      <span>[2]</span>
+                      <strong>Call transcript</strong>
+                      <small>Handoff and next steps</small>
+                    </li>
+                  </ol>
+                </div>
               </div>
-            </div>
-          </article>
-
-          <article className={styles.mcpThread} aria-label="Claude MCP example">
-            <header className={styles.mcpBar}>
-              <span>Claude</span>
-              <span>MCP</span>
-            </header>
-            <p className={styles.mcpPrompt}>What did we promise Northstar?</p>
-            <ol className={styles.mcpCalls}>
-              <li>
-                <code>timeline.subject</code>
-                <span>subject: Northstar</span>
-              </li>
-              <li>
-                <code>timeline.get</code>
-                <span>name: Northstar pilot handoff review</span>
-              </li>
-            </ol>
-            <p className={styles.mcpAnswer}>
-              Northstar Works committed to send the final sample export by July 8
-              <ThreadCitation n={1} label="Email from Elena Park" />. Avery handed export validation
-              to Mika, and the team decided to use the CSV fallback
-              <ThreadCitation n={2} label="Call transcript" />.
-            </p>
-          </article>
+            </article>
+          ))}
         </div>
       </div>
     </section>
@@ -482,12 +457,12 @@ function AnswerScene() {
 
 function ThreadCitation({ n, label }: { n: number; label: string }) {
   return (
-    <a href={`#thread-source-${n}`} className={styles.superCitation}>
+    <span className={styles.superCitation}>
       <sup aria-hidden="true">[{n}]</sup>
       <span className="sr-only">
         Source {n}: {label}
       </span>
-    </a>
+    </span>
   );
 }
 

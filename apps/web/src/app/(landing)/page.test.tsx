@@ -88,10 +88,10 @@ describe('LandingPage', () => {
     expect(html).toContain('data-agent-setup');
     expect(html).toContain('llms.txt');
     expect(html).not.toContain('>AI assistants<');
-    expect(html).toContain('what did we promise Northstar');
-    expect(html).toContain('Ask in Slack. An agent can ask the same <em>record.</em>');
-    expect(html).toContain('timeline.subject');
-    expect(html).toContain('<code>timeline.get</code>');
+    expect(html).toContain('What did we promise Northstar?');
+    expect(html).toContain('Your chat. Your agent. One <em>record.</em>');
+    expect(html).toContain('aria-label="Chat conversation"');
+    expect(html).toContain('aria-label="Agent conversation"');
     expect(html).not.toContain('timeline.retrieve_workspace_context');
     expect(html).not.toContain('timeline.get_event');
     expect(html).toContain('data-chat-to-answer');
@@ -116,7 +116,7 @@ describe('LandingPage', () => {
     expect(html).toContain('A person approves each one.');
     expect(html).not.toContain('Suggested changes wait — human approval required.');
     expect(html).not.toContain('Northline');
-    expect(html.match(/data-home-diagram/g)).toHaveLength(6);
+    expect(html.match(/data-home-diagram/g)).toHaveLength(5);
     expect(html.match(/data-home-proof=/g)).toHaveLength(5);
     expect(html).toContain('data-home-proof="11-timeline-dark.png"');
     expect(html).toContain('data-home-proof="17-timeline-voice-dark.png"');

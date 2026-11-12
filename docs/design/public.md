@@ -1,7 +1,7 @@
 # Public-site design patterns
 
 The public landing page is an editorial, six-scene acquisition narrative:
-claim, evidence and chronology, cited answer, Slack-to-cited-answer with an MCP
+claim, evidence and chronology, cited answer, chat-and-agent answers with a shared
 example, audience fit with trust, and a Start free CTA. The claim scene also
 includes a compact For agents card: title and body that agents read the work
 record and write notes back like teammates, official Claude, ChatGPT, Cursor,
@@ -344,3 +344,9 @@ tracking (no tighter than -0.035em). Homepage scene titles are smaller than the
 hero and use medium weight, with mobile sizes scaled independently. Green italic
 emphasis in a heading is limited to one meaningful word; surrounding words stay
 in the normal heading face and color.
+
+The homepage chat-and-agent comparison uses two equally sized, provider-neutral
+cards labeled Chat and Agent. Both show the same question, concise answer and
+local source legend. Citation markers in this comparison are static labels, not
+links to another card. Keep raw MCP tool calls and provider-specific branding out
+of this overview; integration pages own setup details.
