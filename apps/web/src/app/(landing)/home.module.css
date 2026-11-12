@@ -288,73 +288,6 @@
   list-style: none;
 }
 
-.memoryCore {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  z-index: 4;
-  display: grid;
-  width: 28%;
-  aspect-ratio: 1;
-  place-items: center;
-  border: 1px solid var(--home-signal);
-  background: color-mix(in oklch, var(--home-panel) 94%, transparent);
-  transform: translate(-50%, -50%) rotate(45deg);
-}
-
-.memoryCore::after {
-  position: absolute;
-  inset: -14%;
-  z-index: -1;
-  border: 1px solid color-mix(in oklch, var(--home-signal) 45%, transparent);
-  content: '';
-}
-
-.memoryCoreInner {
-  display: grid;
-  width: 76%;
-  justify-items: center;
-  gap: 0.34rem;
-  text-align: center;
-  transform: rotate(-45deg);
-}
-
-.memoryCoreMark {
-  width: 2rem;
-  height: 2rem;
-  color: var(--home-paper);
-  --signal: var(--home-signal);
-}
-
-.memoryCore strong {
-  color: var(--home-paper);
-  font-size: clamp(0.78rem, 1.3vw, 0.92rem);
-  font-weight: 650;
-  line-height: 1.1;
-  letter-spacing: -0.025em;
-  white-space: nowrap;
-}
-
-.memoryCore span {
-  color: var(--home-dim);
-  font-family: var(--font-mono);
-  font-size: var(--home-meta-size);
-  line-height: 1.25;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-
-.memoryCoreTimeline {
-  color: var(--home-dim);
-  font-family: var(--font-mono);
-  font-size: var(--home-meta-size);
-  font-style: normal;
-  font-weight: 450;
-  letter-spacing: 0.01em;
-  line-height: 1.15;
-  text-transform: none;
-}
-
 .heroOutcome {
   position: absolute;
   top: 75.5%;
@@ -2728,25 +2661,6 @@
     font-size: clamp(2rem, 9vw, 3.25rem);
   }
 
-  .memoryCore {
-    width: 30%;
-  }
-
-  .memoryCoreInner {
-    width: 82%;
-    gap: 0.2rem;
-  }
-
-  .memoryCoreMark {
-    width: 1.45rem;
-    height: 1.45rem;
-  }
-
-  .memoryCore strong,
-  .memoryCore span {
-    font-size: var(--home-meta-size);
-  }
-
   .heroOutcome {
     top: 72%;
     width: 42%;
@@ -2924,10 +2838,6 @@
     font-size: 2.05rem;
   }
 
-  .memoryCore span {
-    display: none;
-  }
-
   .heroOutcome {
     top: 73.5%;
   }
@@ -2942,8 +2852,6 @@
   .outcomePath,
   .orbitInner,
   .orbitSource,
-  .memoryCore,
-  .memoryCore::after,
   .heroOutcome,
   .observatoryCaption,
   .timelineList::after,
@@ -3209,27 +3117,7 @@
   overflow: visible;
   contain: layout;
 }
-.heroOpening .memoryCore {
-  border-radius: 16px;
-  transform: translate(-50%, -50%);
-  background: var(--home-panel);
-}
-.heroOpening .memoryCore::after {
-  display: none;
-}
-.heroOpening .memoryCoreInner {
-  transform: none;
-  width: 92%;
-}
-.heroOpening .memoryCoreTimeline {
-  display: none;
-}
-.heroOpening .memoryCore span {
-  font-family: inherit;
-  font-size: 0.75rem;
-  letter-spacing: 0;
-  text-transform: none;
-}
+
 .heroOpening .orbitSource {
   width: max-content;
   border: 0;
@@ -3302,20 +3190,7 @@
   .heroOpening .orbitSource strong {
     font-size: 0.625rem;
   }
-  .heroOpening .memoryCore {
-    width: 31%;
-  }
-  .heroOpening .memoryCoreMark {
-    width: 1.5rem;
-    height: 1.5rem;
-  }
-  .heroOpening .memoryCore strong {
-    font-size: 0.7rem;
-  }
-  .heroOpening .memoryCore span {
-    display: block;
-    font-size: 0.65rem;
-  }
+
   .heroOpening .heroOutcome {
     width: 42%;
     top: 77%;
@@ -3356,4 +3231,115 @@
     font-size: 0.625rem;
     gap: 0.2rem;
   }
+}
+
+/* The hero's source routes extend into the page; copy stays above the field. */
+.heroOpening .heroCopy {
+  position: relative;
+  z-index: 2;
+}
+.heroOpening .orbitLines {
+  overflow: visible;
+}
+.heroSignalField {
+  pointer-events: none;
+}
+.heroFieldRoute,
+.heroFieldSignal {
+  fill: none;
+  stroke: var(--home-signal);
+  vector-effect: non-scaling-stroke;
+}
+.heroFieldRoute {
+  stroke-width: 1;
+  opacity: 0.3;
+}
+.heroFieldSignal {
+  stroke-width: 2;
+  opacity: 0;
+  stroke-linecap: round;
+}
+.heroArrival {
+  fill: none;
+  stroke: var(--home-signal);
+  stroke-width: 1;
+}
+.heroArrival > * {
+  opacity: 0;
+}
+.heroFieldSignal,
+.heroArrival {
+  visibility: hidden;
+}
+.motionReady .observatory.visible .heroFieldSignal,
+.motionReady .observatory.visible .heroArrival {
+  visibility: visible;
+}
+@media (max-width: 64rem) {
+  .heroSignalField {
+    clip-path: inset(-12% -8% -12% -8%);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .heroFieldSignal,
+  .heroArrival {
+    display: none;
+  }
+  .heroFieldRoute {
+    opacity: 0.1;
+  }
+}
+
+.heroIngestTraces {
+  fill: none;
+  stroke: var(--home-signal);
+  stroke-width: 2;
+  stroke-linecap: round;
+  visibility: hidden;
+}
+.heroIngestTraces path {
+  opacity: 0;
+}
+.motionReady .observatory.visible .heroIngestTraces {
+  visibility: visible;
+}
+@media (prefers-reduced-motion: reduce) {
+  .heroIngestTraces {
+    display: none;
+  }
+}
+
+/* A rotating geometric record, with a stationary brand label for readability. */
+.heroRecordMesh {
+  fill: none;
+  stroke: var(--home-signal);
+  stroke-width: 0.85;
+  stroke-linejoin: round;
+}
+
+@media (max-width: 30rem) {
+}
+
+.heroMeshMotion {
+  display: none;
+}
+.motionReady .heroMeshStatic {
+  display: none;
+}
+.motionReady .heroMeshMotion {
+  display: inline;
+}
+@media (prefers-reduced-motion: reduce) {
+  .motionReady .heroMeshStatic {
+    display: inline;
+  }
+  .motionReady .heroMeshMotion {
+    display: none;
+  }
+}
+
+.heroMeshNodes {
+  stroke-width: 2.8;
+  stroke-linecap: round;
+  opacity: 0.7;
 }

@@ -62,7 +62,7 @@ import { cn } from '@/lib/utils';
 const SITE_NAME = 'The Timeline';
 const CONTACT_HREF = '/help/support';
 const HERO_INTRO =
-  'Bring selected conversations, calls and documents into one work record. Ask what changed, what is blocked and what you promised—with sources to check.';
+  'Your team’s work record: conversations, decisions and commitments on one searchable timeline, kept current from Slack, Telegram, email and calls.';
 const HOME_INTAKE_SURFACES = [
   ...CAPTURE_SURFACES.map((surface) => ({
     id: surface.id,

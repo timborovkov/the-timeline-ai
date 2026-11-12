@@ -31,7 +31,7 @@ describe('LandingPage', () => {
     expect(html.match(/<h1\b/g)).toHaveLength(1);
     expect(html).toContain('Know where the work stands.');
     expect(html).toContain(
-      'Bring selected conversations, calls and documents into one work record. Ask what changed, what is blocked and what you promised—with sources to check.',
+      'Your team’s work record: conversations, decisions and commitments on one searchable timeline, kept current from Slack, Telegram, email and calls.',
     );
 
     const scenes = [
@@ -52,7 +52,7 @@ describe('LandingPage', () => {
 
     expect(html).toContain('Acme rollout · Illustrative example / Last 7 days');
     expect(html).toContain(
-      'aria-label="Work events stream from six sources into The Timeline, where the work record keeps decisions, promises and next steps connected to their sources."',
+      'aria-label="Work events stream from nine sources into The Timeline, where the work record keeps decisions, promises and next steps connected to their sources."',
     );
     expect(html).toContain('one timeline');
     expect(html).not.toContain('Fictional Acme example, not customer data.');
@@ -71,15 +71,15 @@ describe('LandingPage', () => {
     expect(html).toContain('Sentry');
     expect(html).toContain('/connectors/telegram.svg');
     expect(html).toContain('/connectors/google-meet.svg');
-    expect(html.match(/data-hero-flow-path="ingest"/g)).toHaveLength(6);
+    expect(html.match(/data-hero-flow-path="ingest"/g)).toHaveLength(9);
     expect(html.match(/data-hero-flow-path="outcome"/g)).toHaveLength(1);
-    expect(html.match(/data-hero-flow-packet="ingest"/g)).toHaveLength(6);
+    expect(html.match(/data-hero-flow-packet="ingest"/g)).toHaveLength(9);
     expect(html.match(/data-hero-flow-packet="outcome"/g)).toHaveLength(1);
     expect(html).not.toContain('data-hero-flow-path="write"');
     expect(html).not.toContain('data-hero-flow-path="read"');
     expect(html).not.toContain('>Person<');
     expect(html).toContain('data-flow-motion');
-    expect(html.match(/<animateMotion/g)).toHaveLength(7);
+    expect(html.match(/<animateMotion/g)).toHaveLength(10);
     expect(html).toContain('aria-label="Public navigation"');
     expect(html).toContain('href="/integrations"');
     expect(html).toContain('href="/how-it-works"');
@@ -174,7 +174,7 @@ describe('LandingPage', () => {
   it('introduces the product and use cases before the illustrative walkthrough', () => {
     const { container } = render(<LandingPage />);
     const hero = container.querySelector('[data-scene="01-claim"]');
-    expect(hero?.querySelectorAll('[data-hero-flow-path="ingest"]')).toHaveLength(6);
+    expect(hero?.querySelectorAll('[data-hero-flow-path="ingest"]')).toHaveLength(9);
     expect(container.querySelector('[data-hero-evidence]')).toBeNull();
     const overview = container.querySelector('[data-use-case-overview]');
     expect(overview?.textContent).toContain('Your team’s work, in one shared record.');
@@ -265,7 +265,7 @@ describe('LandingPage', () => {
     const html = renderToStaticMarkup(<LandingPage />);
 
     expect(html).toContain(
-      'Bring selected conversations, calls and documents into one work record. Ask what changed, what is blocked and what you promised—with sources to check.',
+      'Your team’s work record: conversations, decisions and commitments on one searchable timeline, kept current from Slack, Telegram, email and calls.',
     );
     expect(html).toContain('Link one channel. Watch the record fill in.');
     expect(html).toContain('approve the suggested updates');

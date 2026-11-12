@@ -30,13 +30,22 @@ supported capture surfaces, document uploads and native connectors together as
 compact links. Frame the voice-note example around capturing updates, decisions
 and commitments for later retrieval and cited answers, rather than transcription
 as the primary benefit. Live MCP lookup and coming-soon connectors are not ingest options.
-The six-source animation sits beside the hero copy, with the plain-language product
-introduction directly below. Use quiet curved paths and a plain work-record node;
+The nine-source animation sits beside the hero copy, with the plain-language product
+introduction directly below. Use quiet curved paths and a slowly rotating wireframe record mesh;
 source logos and selected-source boundaries carry the meaning. The output is a
 compact record summary (“Decisions, promises & next steps” with “Sources attached”),
 not a pair of button-like feature labels.
 Keep one diagram instance, a keyboard-accessible pause control, offscreen and
-hidden-tab suspension, and a static reduced-motion alternative. Mobile stacks
+hidden-tab suspension, and a static reduced-motion alternative. Extend source
+paths into the hero background, faded behind copy. A coordinated twelve-second
+sequence feeds source tiles, carries evidence into the record, then sends the
+result onward. Leave the mesh unobstructed: no center badge, logo or work-record label.
+Use visible junction nodes on the mesh; show Email, Google Drive and Linear
+alongside Telegram, Slack, meetings, GitHub, documents and Sentry as surrounding sources. Precompute
+the mesh projection without a canvas render loop or 3D dependency. Keep every
+moving trace and mesh edge in the same pausable SVG timeline; use
+only quiet static routes for reduced motion. Avoid continuous canvas rendering,
+blur filters and unrelated particles. Mobile stacks
 the diagram after the primary action without removing its source labels.
 
 AgentSetupCard is always visible beneath the hero actions in its compact variant.

@@ -32,7 +32,10 @@ STORY: Understand the shared work record, find a relevant use, see how selected
 sources enter, then follow an illustrative chronology into a cited answer.
 Trust makes retention, access, providers and assurance independently addressable.
 
-FIRST VIEWPORT: Claim, primary action and the six-source animated flow. The next
+FIRST VIEWPORT: Claim, primary action and the nine-source animated flow. Source
+paths extend across the background, subdued behind text. A twelve-second sequence
+connects source arrivals, record assembly and the output; all motion shares the
+existing pause, visibility and reduced-motion controls. The next
 section explains the shared work record and its uses. The Acme fixture appears
 later in the chronology and answer walkthrough, not as an unexplained hero panel.
 Compact agent setup remains always visible below the hero actions. Mobile preserves this reading order.

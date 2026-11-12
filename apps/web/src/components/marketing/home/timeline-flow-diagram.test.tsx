@@ -15,11 +15,11 @@ describe('TimelineFlowDiagram', () => {
 
     const figure = screen.getByRole('figure');
     expect(figure.getAttribute('aria-label')).toBe(
-      'Work events stream from six sources into The Timeline, where the work record keeps decisions, promises and next steps connected to their sources.',
+      'Work events stream from nine sources into The Timeline, where the work record keeps decisions, promises and next steps connected to their sources.',
     );
-    expect(within(figure).getByText('The Timeline')).toBeTruthy();
-    expect(within(figure).getByText('Work record')).toBeTruthy();
-    expect(within(figure).getByText('one timeline')).toBeTruthy();
+    expect(within(figure).queryByText('The Timeline')).toBeNull();
+    expect(within(figure).queryByText('Work record')).toBeNull();
+    expect(within(figure).queryByText('one timeline')).toBeNull();
     expect(within(figure).getByText('Decisions, promises & next steps')).toBeTruthy();
     expect(within(figure).getByText('Sources attached')).toBeTruthy();
     expect(within(figure).queryByText(/Fictional Acme example/i)).toBeNull();
@@ -28,14 +28,22 @@ describe('TimelineFlowDiagram', () => {
     const sourceList = within(figure).getByRole('list', {
       name: 'Example sources entering The Timeline',
     });
-    expect(within(sourceList).getAllByRole('listitem')).toHaveLength(6);
-    for (const source of ['Telegram', 'Slack', 'Meeting', 'GitHub', 'Documents', 'Sentry']) {
+    expect(within(sourceList).getAllByRole('listitem')).toHaveLength(9);
+    for (const source of [
+      'Telegram',
+      'Slack',
+      'Meeting',
+      'GitHub',
+      'Documents',
+      'Sentry',
+      'Email',
+      'Google Drive',
+      'Linear',
+    ]) {
       expect(within(sourceList).getByText(source)).toBeTruthy();
     }
 
-    const mark = figure.querySelector('svg[viewBox="0 0 48 48"]');
-    expect(mark).not.toBeNull();
-    expect(mark?.getAttribute('aria-hidden')).toBe('true');
+    expect(figure.querySelector('[data-hero-record-mesh]')).not.toBeNull();
 
     const ingestPaths = [...container.querySelectorAll('[data-hero-flow-path="ingest"]')].map(
       (path) => path.getAttribute('d'),
@@ -43,7 +51,7 @@ describe('TimelineFlowDiagram', () => {
     const ingestMotions = [
       ...container.querySelectorAll('[data-hero-flow-packet="ingest"] animateMotion'),
     ].map((motion) => motion.getAttribute('path'));
-    expect(ingestPaths).toHaveLength(6);
+    expect(ingestPaths).toHaveLength(9);
     expect(ingestMotions).toEqual(ingestPaths);
     expect(within(figure).queryByText('Person')).toBeNull();
     expect(within(figure).queryByText('Claude / Codex')).toBeNull();
@@ -58,7 +66,7 @@ describe('TimelineFlowDiagram', () => {
       .querySelector('[data-hero-flow-packet="outcome"] animateMotion')
       ?.getAttribute('path');
     expect(outcomeMotion).toBe(outcomePath);
-    expect(container.querySelectorAll('animateMotion')).toHaveLength(7);
+    expect(container.querySelectorAll('animateMotion')).toHaveLength(10);
     expect(container.querySelector('[data-flow-motion]')).not.toBeNull();
   });
 
