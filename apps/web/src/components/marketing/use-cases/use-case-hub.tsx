@@ -42,31 +42,33 @@ export function UseCaseHubPage() {
         </MarketingContainer>
       </section>
 
-      <section className="mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-24">
-        <div className="grid gap-px bg-border sm:grid-cols-2">
-          {USE_CASES.map((useCase, index) => (
-            <Link
-              key={useCase.route}
-              href={useCase.route}
-              className="group flex flex-col bg-bg p-6 outline-none hover:bg-surface focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:p-8"
-            >
-              <span className="font-mono text-[0.65rem] tracking-[0.14em] text-signal uppercase">
-                {String(index + 1).padStart(2, '0')}
-              </span>
-              <h2 className="mt-5 text-2xl font-semibold tracking-[-0.035em]">
-                {useCase.cardTitle}
-              </h2>
-              <p className="mt-3 grow text-sm leading-7 text-fg-muted">{useCase.cardBody}</p>
-              <span className="mt-6 inline-flex items-center gap-2 text-sm font-medium">
-                Open use case
-                <ArrowRight
-                  aria-hidden="true"
-                  className="size-4 motion-safe:transition-transform motion-safe:group-hover:translate-x-1"
-                />
-              </span>
-            </Link>
-          ))}
-        </div>
+      <section>
+        <MarketingContainer className="py-16 sm:py-24">
+          <div className="grid gap-px bg-border sm:grid-cols-2">
+            {USE_CASES.map((useCase, index) => (
+              <Link
+                key={useCase.route}
+                href={useCase.route}
+                className="group flex flex-col bg-bg p-6 outline-none hover:bg-surface focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:p-8"
+              >
+                <span className="font-mono text-[0.65rem] tracking-[0.14em] text-signal uppercase">
+                  {String(index + 1).padStart(2, '0')}
+                </span>
+                <h2 className="mt-5 text-2xl font-semibold tracking-[-0.035em]">
+                  {useCase.cardTitle}
+                </h2>
+                <p className="mt-3 grow text-sm leading-7 text-fg-muted">{useCase.cardBody}</p>
+                <span className="mt-6 inline-flex items-center gap-2 text-sm font-medium">
+                  Open use case
+                  <ArrowRight
+                    aria-hidden="true"
+                    className="size-4 motion-safe:transition-transform motion-safe:group-hover:translate-x-1"
+                  />
+                </span>
+              </Link>
+            ))}
+          </div>
+        </MarketingContainer>
       </section>
 
       <MarketingCtaBand

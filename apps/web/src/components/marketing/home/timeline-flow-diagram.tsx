@@ -1,6 +1,8 @@
 import { FileText, Mail } from 'lucide-react';
 import Image from 'next/image';
 
+import type { CSSProperties } from 'react';
+
 import styles from '@/app/(landing)/home.module.css';
 import { Logo } from '@/components/brand/logo';
 import { TimelineFlowMotion } from '@/components/marketing/home/timeline-flow-motion';
@@ -31,50 +33,62 @@ type SourceIcon = BrandedSource | 'Documents' | 'Email';
 const HERO_SOURCES = [
   {
     id: 'telegram',
+    x: 110,
+    y: 110,
     name: 'Telegram',
     icon: 'Telegram',
     time: '08:46',
-    path: 'M118 116 C205 150 226 242 300 300',
+    path: 'C205 150 226 242 300 300',
     delay: '0s',
   },
   {
     id: 'slack',
+    x: 490,
+    y: 140,
     name: 'Slack',
     icon: 'Slack',
     time: '09:14',
-    path: 'M486 142 C414 174 390 244 300 300',
+    path: 'C414 174 390 244 300 300',
     delay: '0.72s',
   },
   {
     id: 'meeting',
+    x: 90,
+    y: 470,
     name: 'Meeting',
     icon: 'Meeting',
     time: '11:40',
-    path: 'M112 462 C188 412 226 354 300 300',
+    path: 'C188 412 226 354 300 300',
     delay: '1.44s',
   },
   {
     id: 'github',
+    x: 510,
+    y: 510,
     name: 'GitHub',
     icon: 'GitHub',
     time: '15:22',
-    path: 'M490 470 C420 420 388 354 300 300',
+    path: 'C420 420 388 354 300 300',
     delay: '2.16s',
   },
   {
     id: 'documents',
+    x: 105,
+    y: 250,
     name: 'Documents',
     icon: 'Documents',
     time: '17:08',
-    path: 'M70 300 C170 300 220 300 300 300',
+    path: 'C170 300 220 300 300 300',
     delay: '2.88s',
   },
   {
     id: 'sentry',
+    x: 495,
+    y: 345,
     name: 'Sentry',
     icon: 'Sentry',
     time: '18:21',
-    path: 'M530 310 C430 310 380 304 300 300',
+    path: 'C430 310 380 304 300 300',
     delay: '3.6s',
   },
 ] as const satisfies readonly {
@@ -83,6 +97,8 @@ const HERO_SOURCES = [
   icon: SourceIcon;
   time: string;
   path: string;
+  x: number;
+  y: number;
   delay: string;
 }[];
 
@@ -96,12 +112,20 @@ export function TimelineFlowDiagram(props: TimelineFlowDiagramProps) {
   return <HeroTimelineFlow disclosure={props.disclosure} />;
 }
 
+function heroCardPosition(point: { x: number; y: number }): CSSProperties {
+  return { left: `${point.x / 6}%`, top: `${point.y / 6}%` };
+}
+
+function heroSourcePath(source: (typeof HERO_SOURCES)[number]): string {
+  return `M${source.x} ${source.y} ${source.path}`;
+}
+
 function HeroTimelineFlow({ disclosure }: { readonly disclosure?: string }) {
   return (
     <figure
       className={styles.observatory}
       data-home-diagram
-      aria-label="Work events stream from six sources into The Timeline, where the work record becomes a daily update and cited answers."
+      aria-label="Work events stream from six sources into The Timeline, where the work record becomes a daily update and linked answers."
     >
       <div className={styles.orbitOuter} aria-hidden="true" />
       <div className={styles.orbitInner} aria-hidden="true" />
@@ -115,13 +139,18 @@ function HeroTimelineFlow({ disclosure }: { readonly disclosure?: string }) {
       >
         <g className={styles.evidencePaths}>
           {HERO_SOURCES.map((source) => (
-            <path key={source.id} d={source.path} data-hero-flow-path="ingest" />
+            <path key={source.id} d={heroSourcePath(source)} data-hero-flow-path="ingest" />
           ))}
         </g>
         <path className={styles.outcomePath} d={HERO_OUTCOME_PATH} data-hero-flow-path="outcome" />
         <g className={styles.ingestPackets}>
           {HERO_SOURCES.map((source) => (
-            <FlowPacket key={source.id} path={source.path} begin={source.delay} dataType="ingest" />
+            <FlowPacket
+              key={source.id}
+              path={heroSourcePath(source)}
+              begin={source.delay}
+              dataType="ingest"
+            />
           ))}
         </g>
         <g className={styles.outcomePacket}>
@@ -134,23 +163,21 @@ function HeroTimelineFlow({ disclosure }: { readonly disclosure?: string }) {
           <Logo ariaHidden className={styles.memoryCoreMark} />
           <strong>The Timeline</strong>
           <span>Work record</span>
+          <small className={styles.memoryCoreTimeline}>one timeline</small>
         </div>
       </div>
 
       <div
         className={styles.heroOutcome}
-        aria-label="Work record becomes a daily update and cited answers"
+        aria-label="Work record becomes a daily update and linked answers"
       >
         <span>Daily update</span>
-        <span>Cited answers</span>
+        <span>Linked answers</span>
       </div>
 
       <ul className={styles.orbitSources} aria-label="Example sources entering The Timeline">
-        {HERO_SOURCES.map((source, index) => (
-          <li
-            key={source.id}
-            className={cn(styles.orbitSource, styles[`orbitSource${String(index + 1)}`])}
-          >
+        {HERO_SOURCES.map((source) => (
+          <li key={source.id} className={styles.orbitSource} style={heroCardPosition(source)}>
             <time className={styles.orbitSourceTime}>{source.time}</time>
             <span className={styles.orbitSourceIdentity}>
               <SourceLogo source={source.icon} className={styles.orbitSourceLogo} />
@@ -159,7 +186,6 @@ function HeroTimelineFlow({ disclosure }: { readonly disclosure?: string }) {
           </li>
         ))}
       </ul>
-
       {disclosure ? (
         <figcaption className={styles.observatoryCaption}>{disclosure}</figcaption>
       ) : null}

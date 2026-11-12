@@ -49,23 +49,13 @@ export function HomeMotion() {
       return;
     }
 
-    const revealNodes = [...root.querySelectorAll<HTMLElement>('[data-home-reveal]')];
     const activeNodes = [...root.querySelectorAll<HTMLElement>('[data-home-diagram]')];
-    const revealObserver = new IntersectionObserver(
-      (entries) => {
-        for (const entry of entries) {
-          if (!entry.isIntersecting) continue;
-          entry.target.classList.add(visibleClass);
-          revealObserver.unobserve(entry.target);
-        }
-      },
-      { rootMargin: '0px 0px -12% 0px', threshold: 0.08 },
-    );
     const activeObserver = new IntersectionObserver(
       (entries) => {
         for (const entry of entries) {
           const diagram = entry.target as HTMLElement;
           const wasVisible = diagram.classList.contains(visibleClass);
+          if (entry.isIntersecting) diagram.dataset.homeEntered = '';
           diagram.classList.toggle(visibleClass, entry.isIntersecting);
           setFlowMotion(diagram, entry.isIntersecting, entry.isIntersecting && !wasVisible);
         }
@@ -87,14 +77,12 @@ export function HomeMotion() {
 
     root.classList.add(motionReadyClass);
     for (const node of activeNodes) setFlowMotion(node, false);
-    for (const node of revealNodes) revealObserver.observe(node);
     for (const node of activeNodes) activeObserver.observe(node);
     window.addEventListener('scroll', requestProgress, { passive: true });
     window.addEventListener('resize', requestProgress);
     updateProgress();
 
     return () => {
-      revealObserver.disconnect();
       activeObserver.disconnect();
       window.removeEventListener('scroll', requestProgress);
       window.removeEventListener('resize', requestProgress);

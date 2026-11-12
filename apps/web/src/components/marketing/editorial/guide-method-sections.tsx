@@ -54,7 +54,7 @@ export function GuideMethodSections({ guide }: { guide: EditorialGuide }) {
           <EditorialSectionHeading
             index="Evidence example"
             title="See the evidence path"
-            intro="The example is illustrative. Its purpose is to make the provenance pattern visible, not to imply customer data or a guaranteed conclusion."
+            intro="Follow the source records through to the answer."
           />
           <div className="mt-10">
             <ProvenanceDiagram diagram={guide.diagram} />

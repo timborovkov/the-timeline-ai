@@ -10,7 +10,7 @@ import { PublicSessionBranch } from '@/components/public-session-branch';
 import { cn } from '@/lib/utils';
 
 function signedOutCtaLabel(planId: (typeof SELF_SERVE_PLAN_ORDER)[number], catalogLabel: string) {
-  if (planId === 'payg') return 'Create an account to add payment';
+  if (planId === 'payg') return 'Add payment';
   return catalogLabel;
 }
 
@@ -65,10 +65,17 @@ export function PricingPlanGrid({ className }: { className?: string }) {
                 </Link>
               }
             />
-            {entryPlan ? <FirstRunPath compact /> : null}
+            <p className="mt-5 text-sm leading-6 text-fg-muted">
+              {plan.includedActiveMembers === null
+                ? 'Custom member allowance'
+                : `${plan.includedActiveMembers} included members`}
+            </p>
           </article>
         );
       })}
+      <div className="bg-bg p-5 sm:p-6 lg:col-span-4">
+        <FirstRunPath compact />
+      </div>
     </div>
   );
 }

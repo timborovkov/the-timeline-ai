@@ -209,11 +209,18 @@ describe('HomeMotion cleanup', () => {
     const fixture = createFlowFixture();
     fixture.root.dataset.homeRoot = '';
     fixture.steps[0].dataset.homeDiagram = '';
-    fixture.steps[1].dataset.homeReveal = '';
     const { unmount } = render(<HomeMotion />);
     const firstObservers = [...FakeIntersectionObserver.instances];
-    expect(firstObservers).toHaveLength(2);
+    expect(firstObservers).toHaveLength(1);
     expect(fixture.root.classList.contains(MOTION_READY_CLASS)).toBe(true);
+    const activeObserver = firstObservers[0];
+    activeObserver?.trigger(fixture.steps[0], true);
+    expect(fixture.steps[0].hasAttribute('data-home-entered')).toBe(true);
+    activeObserver?.trigger(fixture.steps[0], false);
+    expect(fixture.steps[0].classList.contains(VISIBLE_CLASS)).toBe(false);
+    expect(fixture.steps[0].hasAttribute('data-home-entered')).toBe(true);
+    activeObserver?.trigger(fixture.steps[0], true);
+    expect(fixture.steps[0].hasAttribute('data-home-entered')).toBe(true);
     act(() => {
       preference.setMatches(true);
     });
@@ -223,7 +230,7 @@ describe('HomeMotion cleanup', () => {
     act(() => {
       preference.setMatches(false);
     });
-    expect(FakeIntersectionObserver.instances).toHaveLength(4);
+    expect(FakeIntersectionObserver.instances).toHaveLength(2);
     unmount();
     for (const observer of FakeIntersectionObserver.instances)
       expect(observer.disconnect).toHaveBeenCalledOnce();

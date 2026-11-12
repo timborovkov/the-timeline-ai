@@ -44,7 +44,7 @@ describe('public integration routes', () => {
     expect(html).not.toContain('Noindex');
     expect(html).not.toContain('Shared structure keeps the experience coherent');
     expect(html).toContain('Slack example shows that journey from conversation to chronology');
-    expect(html.match(/Fictional Acme example, not customer data\./g)).toHaveLength(1);
+    expect(html).not.toContain('Fictional Acme example, not customer data.');
     expect(html).toContain('href="/integrations/slack"');
     expect(html).toContain('href="/integrations/telegram"');
     expect(text).toContain('Telegram');
@@ -72,8 +72,7 @@ describe('public integration routes', () => {
     expect(text).not.toMatch(/captures? (?:all|every) (?:chat|conversation|message)/iu);
     expect(html).toContain('compact');
     expect(html).toContain('bg-white');
-    expect(html).toContain('text-[3rem]');
-    expect(html).toContain('sm:text-[clamp(3.5rem,5vw,5.5rem)]');
+    expect(html).toContain('connectorTitle');
     expect(html).not.toContain('7.5vw');
     expect(text).toContain('Send work in');
     expect(text).toContain('02/Connect your tools');
@@ -82,9 +81,9 @@ describe('public integration routes', () => {
     expect(html).not.toMatch(/font-mono[^>]*>Integrations \/ capability directory/u);
     expect(html).not.toContain('Available now');
     expect(html).toContain('motion-safe:group-hover:translate-x-1');
-    expect(html).toContain('max-w-[82rem]');
-    expect(html).toContain('lg:grid-cols-[13rem_minmax(0,1fr)]');
-    expect(html).toContain('xl:grid-cols-[15rem_minmax(0,1fr)]');
+    expect(html).toContain('max-w-6xl');
+    expect(html).toContain('data-marketing-container');
+    expect(html).toContain('data-marketing-section');
     expect(html).not.toContain('01 / Native');
     expect(html).not.toContain('03 / Tiers');
     expect(html.match(/bg-white/g)?.length).toBeGreaterThanOrEqual(6);
@@ -142,25 +141,27 @@ describe('public integration routes', () => {
     );
 
     expect(html).toContain('bg-white');
-    expect(html.match(/Fictional Acme example, not customer data\./g)).toHaveLength(2);
-    expect(html).toContain('scroll-mt-12');
-    expect(html).toContain('text-[3rem]');
-    expect(html).toContain('sm:text-[clamp(3.5rem,5vw,5.5rem)]');
+    expect(html).not.toContain('Fictional Acme example, not customer data.');
+    expect(html).toContain('scroll-mt-24');
+    expect(html).toContain('connectorTitle');
     expect(html).not.toContain('7.5vw');
     expect(html).not.toContain('--record-index');
     expect(html).not.toContain('--marker-index');
   });
 
-  it.each(CONNECTOR_SLUGS)('discloses the canonical fictional example on %s', async (slug) => {
-    const html = renderToStaticMarkup(
-      await connectorRoute.default({ params: Promise.resolve({ slug }) }),
-    );
+  it.each(CONNECTOR_SLUGS)(
+    'keeps the example coherent without repeated disclaimers on %s',
+    async (slug) => {
+      const html = renderToStaticMarkup(
+        await connectorRoute.default({ params: Promise.resolve({ slug }) }),
+      );
 
-    expect(html.match(/<h1\b/g)).toHaveLength(1);
-    expect(html.match(/Fictional Acme example, not customer data\./g)).toHaveLength(2);
-    expect(html).toContain('Acme');
-    expect(html).not.toMatch(/Northline|Project Atlas|API-91|WEB-913/u);
-  });
+      expect(html.match(/<h1\b/g)).toHaveLength(1);
+      expect(html).not.toContain('Fictional Acme example, not customer data.');
+      expect(html).toContain('Acme');
+      expect(html).not.toMatch(/Northline|Project Atlas|API-91|WEB-913/u);
+    },
+  );
 
   it('renders provider-specific truth, evidence, limitations, FAQs, and a single h1', async () => {
     const html = renderToStaticMarkup(

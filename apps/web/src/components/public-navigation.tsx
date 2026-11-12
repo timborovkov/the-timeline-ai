@@ -396,6 +396,19 @@ export function PublicNavigationDisclosure({
   };
 
   useEffect(() => {
+    const closeOnEscape = (event: KeyboardEvent) => {
+      const disclosure = disclosureRef.current;
+      if (event.key !== 'Escape' || !disclosure?.open) return;
+      disclosure.open = false;
+      disclosure.querySelector('summary')?.focus();
+    };
+    document.addEventListener('keydown', closeOnEscape);
+    return () => {
+      document.removeEventListener('keydown', closeOnEscape);
+    };
+  }, []);
+
+  useEffect(() => {
     if (disclosureRef.current) disclosureRef.current.open = false;
   }, [pathname]);
 

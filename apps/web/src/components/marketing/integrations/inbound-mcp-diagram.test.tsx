@@ -4,7 +4,6 @@ import { expect } from '@timeline/test-support';
 import { describe, it } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 
-import { FICTIONAL_EXAMPLE_LABEL } from '@/components/marketing/copy';
 import { InboundMcpDiagram } from '@/components/marketing/integrations/inbound-mcp-diagram';
 import { MCP_GUIDE_HOSTED_TOOL_NAMES } from '@/components/marketing/integrations/mcp-guide-content';
 
@@ -18,7 +17,7 @@ describe('InboundMcpDiagram', () => {
     expect(html).toContain('The Timeline Agent');
     expect(html).toContain('Live lookup');
     expect(html).toContain('Connected MCP tools');
-    expect(html).toContain(FICTIONAL_EXAMPLE_LABEL);
+    expect(html).not.toContain('Fictional example');
     for (const name of MCP_GUIDE_HOSTED_TOOL_NAMES) {
       expect(html).toContain(name);
     }

@@ -15,12 +15,13 @@ describe('TimelineFlowDiagram', () => {
 
     const figure = screen.getByRole('figure');
     expect(figure.getAttribute('aria-label')).toBe(
-      'Work events stream from six sources into The Timeline, where the work record becomes a daily update and cited answers.',
+      'Work events stream from six sources into The Timeline, where the work record becomes a daily update and linked answers.',
     );
     expect(within(figure).getByText('The Timeline')).toBeTruthy();
     expect(within(figure).getByText('Work record')).toBeTruthy();
+    expect(within(figure).getByText('one timeline')).toBeTruthy();
     expect(within(figure).getByText('Daily update')).toBeTruthy();
-    expect(within(figure).getByText('Cited answers')).toBeTruthy();
+    expect(within(figure).getByText('Linked answers')).toBeTruthy();
     expect(within(figure).queryByText(/Fictional Acme example/i)).toBeNull();
     expect(within(figure).queryByText(/not used in this answer/i)).toBeNull();
 
@@ -44,6 +45,11 @@ describe('TimelineFlowDiagram', () => {
     ].map((motion) => motion.getAttribute('path'));
     expect(ingestPaths).toHaveLength(6);
     expect(ingestMotions).toEqual(ingestPaths);
+    expect(within(figure).queryByText('Person')).toBeNull();
+    expect(within(figure).queryByText('Claude / Codex')).toBeNull();
+    expect(within(figure).queryByText('via MCP')).toBeNull();
+    expect(container.querySelector('[data-hero-flow-path="write"]')).toBeNull();
+    expect(container.querySelector('[data-hero-flow-path="read"]')).toBeNull();
 
     const outcomePath = container
       .querySelector('[data-hero-flow-path="outcome"]')

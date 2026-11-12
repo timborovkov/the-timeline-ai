@@ -22,6 +22,7 @@ import { DirectoryStructuredData } from '@/components/marketing/integrations/con
 import { RecordsToAnswer } from '@/components/marketing/integrations/records-to-answer';
 import { WORKS_WITH_TOOLS } from '@/components/marketing/integrations/works-with-content';
 import { MarketingContainer, MarketingSectionGrid } from '@/components/marketing/marketing-layout';
+import publicStyles from '@/components/marketing/public-page.module.css';
 import { MarketingSectionIndex } from '@/components/marketing/section-index';
 import { ProviderLogo } from '@/components/provider-logo';
 import { PublicSessionBranch } from '@/components/public-session-branch';
@@ -37,18 +38,14 @@ export function IntegrationDirectory() {
   const capabilityTiers = getConnectorCapabilityTiers();
 
   return (
-    <PublicShell
-      width="expanded"
-      footerLabel="The Timeline integrations"
-      currentSection="integrations"
-    >
+    <PublicShell width="wide" footerLabel="The Timeline integrations" currentSection="integrations">
       <DirectoryStructuredData />
       <main id="main" tabIndex={-1}>
         <section className="border-b border-border">
-          <MarketingContainer className="py-16 sm:py-24 lg:py-28">
+          <MarketingContainer className="py-10 sm:py-14">
             <p className="text-sm font-medium text-fg-muted">Integrations</p>
-            <div className="mt-6 grid items-end gap-10 lg:grid-cols-[1.25fr_0.75fr]">
-              <h1 className="max-w-[13ch] break-words text-balance text-[3rem] font-semibold leading-[0.95] tracking-[-0.05em] text-fg sm:text-[clamp(3.5rem,5vw,5.5rem)]">
+            <div className="mt-6 grid items-end gap-10 grid-cols-[minmax(0,1fr)]">
+              <h1 className={publicStyles.connectorTitle}>
                 Connect the places where the work already happens.
               </h1>
               <div>
@@ -82,7 +79,7 @@ export function IntegrationDirectory() {
         </section>
 
         <section aria-labelledby="capture-surfaces">
-          <MarketingContainer className="py-16 sm:py-20">
+          <MarketingContainer className="py-10 sm:py-14">
             <MarketingSectionGrid>
               <MarketingSectionIndex label="Send work in" />
               <div>
@@ -118,7 +115,7 @@ export function IntegrationDirectory() {
         </section>
 
         <section className="border-t border-border" aria-labelledby="native">
-          <MarketingContainer className="py-16 sm:py-20">
+          <MarketingContainer className="py-10 sm:py-14">
             <MarketingSectionGrid>
               <MarketingSectionIndex index="02" label="Connect your tools" />
               <div>
@@ -167,7 +164,7 @@ export function IntegrationDirectory() {
         </section>
 
         <section className="border-y border-border bg-surface">
-          <MarketingContainer className="py-16 sm:py-20">
+          <MarketingContainer className="py-10 sm:py-14">
             <MarketingSectionGrid>
               <MarketingSectionIndex index="03" label="Proof" />
               <div>
@@ -188,7 +185,7 @@ export function IntegrationDirectory() {
         </section>
 
         <section aria-labelledby="tiers">
-          <MarketingContainer className="py-16 sm:py-20">
+          <MarketingContainer className="py-10 sm:py-14">
             <MarketingSectionGrid>
               <MarketingSectionIndex index="04" label="More connections" />
               <div>

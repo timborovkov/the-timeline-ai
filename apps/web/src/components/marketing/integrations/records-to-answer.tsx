@@ -3,7 +3,6 @@ import { ArrowRight, Link2 } from 'lucide-react';
 import type { ConnectorContent } from '@/components/marketing/integrations/connector-content';
 
 import styles from '@/components/marketing/integrations/records-to-answer.module.css';
-import { PUBLIC_DEMO_DISCLOSURE } from '@/components/marketing/public-demo-story';
 
 export function RecordsToAnswer({
   connector,
@@ -20,7 +19,6 @@ export function RecordsToAnswer({
       <figcaption id={`diagram-${connector.slug}`} className="sr-only">
         {connector.name} records enter a chronological Timeline and resolve into a cited answer.
       </figcaption>
-      <p className="mb-4 text-xs text-fg-dim">{PUBLIC_DEMO_DISCLOSURE}</p>
       <div className={styles.question}>
         <span className={styles.index}>Question</span>
         <p>{connector.diagram.question}</p>
