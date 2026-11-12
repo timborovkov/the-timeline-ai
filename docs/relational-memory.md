@@ -202,6 +202,10 @@ merging identities. Otherwise it explicitly proposes a separate object. Dependen
 relationships and identity facets retain their local references. Reviewers can
 accept the stated interpretation, reject it, or revise the separate-object proposal;
 this is not an automatic identity choice or a candidate-selection UI.
+Distinct scoped objects that share a canonical name receive a reviewable name
+qualifier from evidenced company or repository context. If no readable qualifier
+is available, a stable neutral scope tag avoids the storage name collision;
+the captured name remains an alias rather than merging the distinct identities.
 
 Candidate retrieval combines exact/alias lookup, shared source/company context and
 team-filtered semantic search over both object summaries and entity vectors. Missing
@@ -301,6 +305,8 @@ with queued continuations and daily recovery. Archived objects are scanned as
 identity candidates and are never automatically reactivated. Incoming source and
 document proposals exclude archived targets, so a new actionable proposal cannot
 be converted into an unusable update to an archived object.
+Cleanup retains archived identities as context but excludes them from merge
+proposals because merge approval requires active endpoints.
 Daily scans choose merge survivors deterministically for each pair; only an explicit
 object repair may prefer its selected object as the survivor.
 
@@ -342,7 +348,7 @@ and insufficient-evidence states must be distinguishable during diagnosis.
 
 The summary packet admits visible facts, source events, notes, relationships,
 linked tasks, changes, approved proposal evidence, artifact evidence and related
-curated chunks under its policy. Structured integrations may have artifact evidence
+curated chunks from current document versions under its policy. Structured integrations may have artifact evidence
 without extracted facts. The object detail's lightweight snapshot is therefore
 not allowed to conclude “insufficient memory” until the full summary packet checks
 the evidence it omitted. Private associations remain excluded from team summaries,
@@ -380,6 +386,10 @@ reconciliation-output and summary reads revalidate current
 document visibility; cached summaries retain all admitted source references for
 that check even when the model cites only a subset. Bulk acceptance orders object creates before dependent
 email identities and relationships.
+New summaries bind accepted document evidence to its exact chunk, not every proposal
+sharing the upload event. Legacy event-only provenance remains conservatively gated.
+Pending relationship deduplication also checks current document evidence, so a
+superseded chunk cannot suppress a replacement proposal.
 
 Runs are idempotent by document version, extracted chunk generation and engine/model policy, checkpoint each
 chunk and resume after failure. Only current team-visible documents originate team

@@ -582,6 +582,30 @@ describe('GitHub task proposal persistence', () => {
         rawEvent: { ...event, visibility: 'private' },
       }),
     ).toBe(0);
+    // Neither an unrelated title nor an archived task may collide on approval.
+    const longTitle = 'Add keyboard navigation for the client portal '.repeat(6).trim();
+    const clip = (value: string, length: number) =>
+      value.length <= length ? value : `${value.slice(0, length - 1).trimEnd()}…`;
+    const suffix = ' (example/northstar-frontend#42)';
+    const baseName = clip(longTitle, 200);
+    const qualifiedName = `${clip(longTitle, 200 - suffix.length)}${suffix}`;
+    await db.insert(entities).values([
+      {
+        teamId: TEAM_ID,
+        type: 'task',
+        canonicalName: baseName,
+        status: 'done',
+        aliases: ['unrelated/work#98'],
+      },
+      {
+        teamId: TEAM_ID,
+        type: 'task',
+        canonicalName: qualifiedName,
+        status: 'done',
+        archivedAt: new Date(),
+        aliases: ['unrelated/work#99'],
+      },
+    ]);
     await proposeGithubTaskUpdatesFromRawEvent({
       db: db as never,
       teamId: TEAM_ID,
@@ -607,7 +631,7 @@ describe('GitHub task proposal persistence', () => {
     });
     expect(await db.select().from(agentSuggestionItems)).toHaveLength(1);
     expect((await db.select().from(entities)).filter((row) => row.type === 'task')).toHaveLength(
-      501,
+      503,
     );
     await withTeam(db as never, TEAM_ID, USER_ID).suggestions.acceptSuggestionItem(item.id);
     expect(
@@ -618,7 +642,7 @@ describe('GitHub task proposal persistence', () => {
       }),
     ).toBe(0);
     expect((await db.select().from(entities)).filter((row) => row.type === 'task')).toHaveLength(
-      502,
+      504,
     );
     const [acceptedTask] = (await db.select().from(entities)).filter(
       (row) =>
@@ -626,6 +650,9 @@ describe('GitHub task proposal persistence', () => {
         row.aliases &&
         JSON.stringify(row.aliases).includes('example/northstar-frontend#42'),
     );
+    expect(acceptedTask?.canonicalName).not.toBe(baseName);
+    expect(acceptedTask?.canonicalName).not.toBe(qualifiedName);
+    expect(acceptedTask?.canonicalName).toContain('example/northstar-frontend#42; 2');
     expect(acceptedTask?.canonicalName.length).toBeLessThanOrEqual(200);
     if (!acceptedTask) throw new Error('missing accepted task');
     await withTeam(db as never, TEAM_ID, USER_ID).objects.archiveObject(acceptedTask.id, {

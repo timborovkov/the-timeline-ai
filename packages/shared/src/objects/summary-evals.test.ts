@@ -24,6 +24,8 @@ const {
   documents,
   documentVersions,
   documentChunks,
+  agentSuggestions,
+  agentSuggestionEvidence,
   agentSuggestionItems,
   artifactClusters,
   artifactEvidenceAssociations,
@@ -74,7 +76,7 @@ afterEach(async () => {
 });
 
 describe('object summary evals', () => {
-  it('hides document-derived packets and cached summaries after source restriction', async () => {
+  it('keeps current document summaries readable and hides them after source restriction', async () => {
     const scope = withTeam(db, TEAM_ID, USER_ID);
     const [object] = await db
       .insert(entities)
@@ -101,7 +103,7 @@ describe('object summary evals', () => {
       .values({
         teamId: TEAM_ID,
         documentId: doc.id,
-        version: 1,
+        version: 2,
         objectKey: 'synthetic/source.txt',
         sourceEventId: event.id,
         processingStatus: 'chunked',
@@ -115,11 +117,30 @@ describe('object summary evals', () => {
         documentId: doc.id,
         documentVersionId: version.id,
         chunkIndex: 0,
-        text: 'Confidential client detail',
+        text: 'Source-bound project: Confidential client detail',
         tokenCount: 4,
       })
       .returning();
     if (!chunk) throw new Error('missing chunk');
+    const [olderVersion] = await db
+      .insert(documentVersions)
+      .values({
+        teamId: TEAM_ID,
+        documentId: doc.id,
+        version: 1,
+        objectKey: 'synthetic/old-source.txt',
+        processingStatus: 'chunked',
+      })
+      .returning();
+    if (!olderVersion) throw new Error('missing older version');
+    await db.insert(documentChunks).values({
+      teamId: TEAM_ID,
+      documentId: doc.id,
+      documentVersionId: olderVersion.id,
+      chunkIndex: 5,
+      text: 'Source-bound project: superseded document details',
+      tokenCount: 8,
+    });
     await db
       .update(documents)
       .set({ currentVersionId: version.id })
@@ -146,6 +167,28 @@ describe('object summary evals', () => {
     });
     const item = bundle.items[0];
     if (!item) throw new Error('missing item');
+    // A prior chunk generation can leave inaccessible proposals sharing this
+    // lifecycle event. They must not invalidate a fresh chunk-backed summary.
+    const [staleProposal] = await db
+      .insert(agentSuggestions)
+      .values({
+        teamId: TEAM_ID,
+        source: 'background',
+        title: 'Prior document chunk proposal',
+        dedupeKey: 'prior-document-chunk',
+        metadata: {
+          document_id: doc.id,
+          document_version_id: version.id,
+          document_chunk_id: crypto.randomUUID(),
+        },
+      })
+      .returning();
+    if (!staleProposal) throw new Error('missing stale proposal');
+    await db.insert(agentSuggestionEvidence).values({
+      teamId: TEAM_ID,
+      suggestionId: staleProposal.id,
+      rawEventId: event.id,
+    });
     await db
       .update(agentSuggestionItems)
       .set({ status: 'accepted', resultId: object.id })
@@ -180,17 +223,24 @@ describe('object summary evals', () => {
     ).toMatchObject({ status: 'ready' });
     expect(documentPrompt).toContain(chunk.text);
     expect(documentPrompt).not.toContain('Uploaded restricted source');
+    expect(documentPrompt).not.toContain('superseded document details');
     const [cached] = await db
       .select()
       .from(objectSummaries)
       .where(eq(objectSummaries.entityId, object.id));
-    expect(cached?.sourceRefs).toContainEqual({ kind: 'timeline_event', id: event.id });
+    expect(cached?.sourceRefs).toContainEqual({
+      kind: 'document_chunk',
+      id: chunk.id,
+      documentId: doc.id,
+      version: 2,
+    });
+    expect(cached?.sourceRefs).not.toContainEqual({ kind: 'timeline_event', id: event.id });
     expect((await scope.objects.getObjectSummary(object.id))?.plainText).toContain('Confidential');
     expect(await listReadyObjectSummaries(db, scope, [object.id])).toHaveLength(1);
     expect(await searchObjectsBySummary(db, scope, { query: 'Confidential' })).toHaveLength(1);
     for (const refs of [
       [{ kind: 'timeline_event', id: event.id }],
-      [{ kind: 'document_chunk', id: chunk.id, documentId: doc.id, version: 1 }],
+      [{ kind: 'document_chunk', id: chunk.id, documentId: doc.id, version: 2 }],
     ]) {
       await db
         .update(objectSummaries)

@@ -601,7 +601,17 @@ async function proposeCompletedGithubTask(
   const known = await loadOpenTaskCandidates(db, teamId, [source], null, true);
   if (
     known.length >= TASK_CANDIDATE_LIMIT ||
-    known.some((task) => matchOpenTasksToCapturedWorkItem(work, [task]).length > 0)
+    known.some((task) => {
+      const matches = matchOpenTasksToCapturedWorkItem(work, [task]);
+      if (matches.some((match) => match.match !== 'title')) return true;
+      // A qualified display-name collision does not override another PR identity.
+      const otherPr = stringArray(task.aliases).some(
+        (alias) =>
+          /^[^/\s]+\/[^#\s]+#(?:issue:)?\d+$/i.test(alias) &&
+          !work.aliases.some((value) => value.toLowerCase() === alias.toLowerCase()),
+      );
+      return matches.length > 0 && !otherPr;
+    })
   )
     return false;
   const projects = await scope.objects.listObjects({
@@ -624,6 +634,31 @@ async function proposeCompletedGithubTask(
   });
   const project = qualified.uniqueProject;
   if (!project || ['shipped', 'cancelled'].includes(project.status)) return false;
+  // Canonical uniqueness covers every unmerged task, including archived tasks
+  // outside the provider-identity recall set. Reserve room for the distinguishing
+  // repository/PR suffix before truncating long display titles.
+  const names = [truncate(work.title, 200)];
+  for (let attempt = 1; attempt <= 32; attempt++) {
+    const suffix = ` (${truncate(work.github.repo, 140)}#${work.github.number}${attempt > 1 ? `; ${attempt}` : ''})`;
+    names.push(`${truncate(work.title, 200 - suffix.length)}${suffix}`);
+  }
+  const occupied = await db
+    .select({ name: entities.canonicalName })
+    .from(entities)
+    .where(
+      and(
+        eq(entities.teamId, teamId),
+        eq(entities.type, 'task'),
+        isNull(entities.mergedIntoId),
+        inArray(
+          sql`lower(${entities.canonicalName})`,
+          names.map((name) => name.toLowerCase()),
+        ),
+      ),
+    );
+  const occupiedNames = new Set(occupied.map((row) => row.name.toLowerCase()));
+  const canonicalName = names.find((name) => !occupiedNames.has(name.toLowerCase()));
+  if (!canonicalName) return false;
   const dedupeKey = suggestionDedupeKey({
     kind: 'github_completed_task',
     externalId: work.externalId,
@@ -644,12 +679,12 @@ async function proposeCompletedGithubTask(
         operation: 'create',
         targetKind: 'task',
         targetId: null,
-        title: truncate(work.title, 200),
+        title: canonicalName,
         description: truncate(source.contentText, 500),
         dedupeKey: `${dedupeKey}:item`,
         evidenceRawEventIds: [source.rawEventId],
         proposedPayload: {
-          canonicalName: truncate(work.title, 200),
+          canonicalName,
           status: 'done',
           aliases: work.aliases,
           parentObjectId: project.id,

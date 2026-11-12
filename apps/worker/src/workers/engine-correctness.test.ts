@@ -180,6 +180,118 @@ describe('engine persistence contracts', () => {
     );
   });
 
+  it('retains archived cleanup identity context without proposing unusable merges', async () => {
+    const [active, archived] = await db
+      .insert(entities)
+      .values([
+        { teamId, type: 'company', canonicalName: 'Acme Audit', aliases: ['AcmeAudit'] },
+        { teamId, type: 'company', canonicalName: 'AcmeAudit', archivedAt: new Date() },
+      ])
+      .returning();
+    expect(
+      (await scope().engineMaintenance.identityCandidates(required(active))).map((row) => row.id),
+    ).toContain(required(archived).id);
+    await processSuggestionJobForTests(
+      { db },
+      {
+        scope: 'object_cleanup',
+        teamId,
+        objectId: required(active).id,
+        triggeredBy: 'memory_repair',
+      },
+    );
+    expect(
+      (await db.select().from(agentSuggestionItems)).filter(
+        (row) => row.targetKind === 'object_merge',
+      ),
+    ).toHaveLength(0);
+    expect(
+      required(
+        (
+          await db
+            .select()
+            .from(entities)
+            .where(eq(entities.id, required(archived).id))
+        )[0],
+      ).archivedAt,
+    ).not.toBeNull();
+  });
+
+  it('replaces stale document relationship proposals after chunk re-extraction', async () => {
+    const fixture = await documentFixture();
+    const [person, company] = await db
+      .insert(entities)
+      .values([
+        { teamId, type: 'person', canonicalName: 'Alex Example' },
+        { teamId, type: 'company', canonicalName: 'Acme' },
+      ])
+      .returning();
+    const insertChunk = () =>
+      db
+        .insert(documentChunks)
+        .values({
+          teamId,
+          documentId: fixture.doc.id,
+          documentVersionId: fixture.version.id,
+          chunkIndex: 0,
+          text: 'Alex Example works at Acme.',
+          tokenCount: 8,
+        })
+        .returning();
+    await insertChunk();
+    const chat: typeof llm.chatStructured = (input) =>
+      Promise.resolve({
+        model: 'fixture',
+        object: input.schema.parse({
+          bundles: [
+            {
+              title: 'Alex affiliation',
+              reason: 'Explicit client list affiliation.',
+              confidence: 'high',
+              items: [
+                {
+                  operation: 'create',
+                  targetKind: 'object_relationship',
+                  title: 'Alex works at Acme',
+                  proposedPayload: {
+                    fromEntityId: required(person).id,
+                    toEntityId: required(company).id,
+                    kind: 'related',
+                  },
+                },
+              ],
+            },
+          ],
+        }),
+      });
+    const data = { scope: 'document' as const, teamId, documentVersionId: fixture.version.id };
+    const io = { chatStructured: chat, getEnv: () => getEnv(), modelId: 'fixture' };
+    await processSuggestionJobForTests({ db }, data, io);
+    expect(
+      (await db.select().from(agentSuggestionItems)).filter(
+        (row) => row.targetKind === 'object_relationship',
+      ),
+    ).toHaveLength(1);
+    await db.delete(documentChunks).where(eq(documentChunks.documentVersionId, fixture.version.id));
+    const [replacementChunk] = await insertChunk();
+    await processSuggestionJobForTests({ db }, data, io);
+    const replacementBundle = required(
+      (await db.select().from(agentSuggestions)).find(
+        (row) =>
+          (row.metadata as Record<string, unknown>).document_chunk_id ===
+          required(replacementChunk).id,
+      ),
+    );
+    const replacement = required(
+      (await db.select().from(agentSuggestionItems)).find(
+        (row) =>
+          row.suggestionId === replacementBundle.id && row.targetKind === 'object_relationship',
+      ),
+    );
+    expect(replacement.status).toBe('pending');
+    expect(await scope().suggestions.acceptSuggestionItem(replacement.id)).toBe(true);
+  });
+
   it('keeps a deterministic merge survivor throughout daily pagination but honors explicit object repair', async () => {
     const preferredId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1';
     const otherId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2';

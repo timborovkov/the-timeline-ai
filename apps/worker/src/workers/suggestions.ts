@@ -1147,7 +1147,7 @@ export async function processSuggestionJobForTests(
 type CleanupObjectRow = Pick<
   typeof entities.$inferSelect,
   'id' | 'teamId' | 'type' | 'canonicalName' | 'aliases' | 'metadata' | 'status' | 'updatedAt'
->;
+> & { archivedAt?: Date | null };
 
 type CleanupMatch = 'exact' | 'near' | 'short';
 
@@ -2002,8 +2002,12 @@ export function preserveDocumentPersonEmails(
           conflictingRecord = true;
           continue;
         }
+        // The optional field must be a recognized job title, never arbitrary
+        // person/contact text (for example "assistant: Joe Smith").
+        const role =
+          '(?:(?:Head|Director|Manager|VP|Vice President) of (?:Audit|Engineering|Sales|Finance|Operations|Marketing|Product|Design|Legal|Security|People|Support|Technology|Research)|CEO|CFO|CTO|COO|(?:Senior |Lead |Principal )?(?:Auditor|Engineer|Designer|Accountant|Partner|Manager|Director))';
         const directContact = new RegExp(
-          `^\\s*(?:<|[,|:\\t]\\s*(?:[^,|;@<>\\n]{1,80}[,|]\\s*)?(?:e-?mail\\s*:?\\s*)?|e-?mail\\s*:?\\s*)${escape(email)}(?:>|\\b)`,
+          `^\\s*(?:<|[,|:\\t]\\s*(?:(?:(?:title|role)\\s*:\\s*)?${role}\\s*[,|]\\s*)?(?:e-?mail\\s*:?\\s*)?|e-?mail\\s*:?\\s*)${escape(email)}(?:>|\\b)\\s*[.!?]?\\s*$`,
           'iu',
         );
         if (directContact.test(suffix)) emails.add(email.toLowerCase());
@@ -2062,6 +2066,24 @@ async function rowsMatchingProposedCreates(
     ),
   ];
   if (names.length === 0) return existing;
+  const scopeIds = [
+    ...new Set(
+      bundles.flatMap((bundle) =>
+        bundle.items.flatMap((item) => {
+          const metadata = suggestions.identityMetadata({
+            id: 'candidate',
+            type: itemCreateType(item),
+            canonicalName: itemCanonicalName(item),
+            metadata: item.proposedPayload.metadata,
+          });
+          return ['companyId', 'company_id', 'parentObjectId'].flatMap((key) => {
+            const id = metadata[key];
+            return typeof id === 'string' && z.uuid().safeParse(id).success ? [id] : [];
+          });
+        }),
+      ),
+    ),
+  ];
   const extraRows = await db
     .select({
       id: entities.id,
@@ -2081,6 +2103,10 @@ async function rowsMatchingProposedCreates(
         isNull(entities.archivedAt),
         or(
           ...names.map((name) => sql`lower(${entities.canonicalName}) = ${name}`),
+          ...names.map(
+            (name) => sql`starts_with(lower(${entities.canonicalName}), ${`${name} (`})`,
+          ),
+          ...(scopeIds.length ? [inArray(entities.id, scopeIds)] : []),
           ...names.map(
             (name) =>
               sql`EXISTS (
@@ -2229,6 +2255,7 @@ function updatePayloadFromCreate(
 function normalizeBundleAgainstExistingObjects(
   bundle: SuggestionBundleOutput,
   rows: CleanupObjectRow[],
+  evidenceText: string,
 ): SuggestionBundleOutput {
   const normalizedBundle = {
     ...bundle,
@@ -2269,7 +2296,120 @@ function normalizeBundleAgainstExistingObjects(
           description: [note, item.description].filter(Boolean).join(' ').slice(0, 500),
         };
       }
-      if (!match) return item;
+      if (!match) {
+        // Distinct scoped identities still need a unique display name in storage.
+        // Preserve the captured name as an alias; never consume the conflicting object.
+        const name = itemCanonicalName(item);
+        const subject = {
+          id: 'candidate',
+          type: itemCreateType(item),
+          canonicalName: name,
+          metadata: item.proposedPayload.metadata,
+        };
+        if (
+          resolution?.kind === 'new' &&
+          rows.some(
+            (candidate) =>
+              candidate.type === subject.type &&
+              candidate.canonicalName.toLowerCase() === name.toLowerCase() &&
+              suggestions.identitiesConflict(subject, candidate),
+          )
+        ) {
+          const metadata = suggestions.identityMetadata(subject);
+          const labels: string[] = [];
+          for (const key of ['companyId', 'company_id', 'parentObjectId']) {
+            const related = rows.find((candidate) => candidate.id === metadata[key]);
+            if (
+              related &&
+              textMentionsAnyValue(evidenceText, [related.canonicalName, ...aliasesForRow(related)])
+            )
+              labels.push(related.canonicalName);
+          }
+          for (const key of ['repository', 'repository_full_name', 'domain']) {
+            const value = metadata[key];
+            if (typeof value === 'string' && textMentionsAnyValue(evidenceText, [value]))
+              labels.push(value);
+          }
+          const scopedDisplayName = (label: string) => {
+            const boundedLabel = label.slice(0, 140);
+            return `${name.slice(0, 197 - boundedLabel.length)} (${boundedLabel})`;
+          };
+          let qualifier = '';
+          const qualifiedNames = [...new Set(labels)].map((label) => {
+            qualifier = qualifier ? `${qualifier}, ${label}` : label;
+            return scopedDisplayName(qualifier);
+          });
+          const scopeKeys = [
+            'companyId',
+            'company_id',
+            'parentObjectId',
+            'repository',
+            'repository_full_name',
+            'domain',
+            'integration_provider',
+            'integration_external_id',
+          ];
+          const scopeMetadata = Object.fromEntries(
+            scopeKeys
+              .filter((key) => typeof metadata[key] === 'string')
+              .map((key) => [key, metadata[key]]),
+          );
+          const neutralQualifier = `distinct scope ${suggestions.suggestionDedupeKey(scopeMetadata).slice(0, 12)}`;
+          const neutralName = scopedDisplayName(neutralQualifier);
+          qualifiedNames.push(neutralName);
+          // A deterministic neutral scope tag preserves reviewability when the
+          // source supplies no readable label, without inventing a company name.
+          for (let index = 0; ; index++) {
+            const scopedName =
+              qualifiedNames[index] ??
+              scopedDisplayName(`${neutralQualifier} ${index - qualifiedNames.length + 2}`);
+            const collisions = rows.filter(
+              (candidate) =>
+                candidate.type === subject.type &&
+                candidate.canonicalName.toLowerCase() === scopedName.toLowerCase(),
+            );
+            const sameScope = collisions.find((candidate) => {
+              const other = suggestions.identityMetadata(candidate);
+              return (
+                !suggestions.identitiesConflict(subject, candidate) &&
+                scopeKeys.some(
+                  (key) =>
+                    key !== 'integration_provider' &&
+                    typeof metadata[key] === 'string' &&
+                    metadata[key].trim().length > 0,
+                ) &&
+                scopeKeys
+                  .filter(
+                    (key) => typeof metadata[key] === 'string' && metadata[key].trim().length > 0,
+                  )
+                  .every(
+                    (key) =>
+                      typeof other[key] === 'string' &&
+                      String(metadata[key]).trim().toLowerCase() ===
+                        other[key].trim().toLowerCase(),
+                  )
+              );
+            });
+            if (sameScope) {
+              match = sameScope;
+              break;
+            }
+            if (collisions.length) continue;
+            return {
+              ...item,
+              title: scopedName,
+              proposedPayload: {
+                ...item.proposedPayload,
+                canonicalName: scopedName,
+                aliases: [
+                  ...new Set([...aliasesForRow({ aliases: item.proposedPayload.aliases }), name]),
+                ],
+              },
+            };
+          }
+        }
+        if (!match) return item;
+      }
       const localRef =
         typeof item.proposedPayload.localRef === 'string' ? item.proposedPayload.localRef : null;
       const localRefKey = keyText(localRef);
@@ -2513,6 +2653,8 @@ async function relationshipDedupeContextForTeam(
     .where(
       and(
         eq(agentSuggestionItems.teamId, teamId),
+        eq(agentSuggestions.teamId, teamId),
+        documentProposalEvidenceIsCurrent(teamId, agentSuggestions.metadata),
         inArray(agentSuggestionItems.status, ['pending', 'failed', 'accepted', 'rejected']),
         inArray(agentSuggestions.status, ['pending', 'partially_resolved', 'rejected']),
       ),
@@ -2861,6 +3003,8 @@ async function createObjectCleanupSuggestionsForTeam(
 
   for (const [i, left] of mergeCandidates.entries()) {
     for (const right of mergeCandidates.slice(i + 1)) {
+      // Archived matches remain identity context, but approval cannot modify archived objects.
+      if (left.archivedAt || right.archivedAt) continue;
       if (repairObjectId && left.id !== repairObjectId && right.id !== repairObjectId) continue;
       const semanticPair =
         semanticMatch &&
@@ -3885,9 +4029,11 @@ async function runSuggestionExtraction(
     for (const bundle of modelBundles)
       for (const item of bundle.items) {
         item.proposedPayload = Object.fromEntries(
-          Object.entries(item.proposedPayload).filter(
-            ([key]) => !humanFields.some(({ field }) => field === key),
-          ),
+          Object.entries(item.proposedPayload).filter(([key]) => {
+            const canonicalField =
+              key === 'ownerName' ? 'ownerUserId' : key === 'assigneeName' ? 'assigneeUserId' : key;
+            return !humanFields.some(({ field }) => field === canonicalField);
+          }),
         );
       }
   }
@@ -3977,7 +4123,7 @@ async function runSuggestionExtraction(
   const extractedBundles =
     modelBundles.length > 0
       ? modelBundles.map((bundle) =>
-          normalizeBundleAgainstExistingObjects(bundle, matchingRowsForCreates),
+          normalizeBundleAgainstExistingObjects(bundle, matchingRowsForCreates, text),
         )
       : !args.repairObjectId &&
           !args.document &&

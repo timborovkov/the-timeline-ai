@@ -385,6 +385,12 @@ describe('document contact identity preservation', () => {
       'Contact: Mara Linden, on behalf of Joe Smith, email joe@acme.test.',
       'Contact: Mara Linden, working with Joe Smith, email joe@acme.test.',
       'Contact: Mara Linden, assistant to Joe Smith, email joe@acme.test.',
+      'Contact: Mara Linden, assistant: Joe Smith, email joe@acme.test.',
+      'Contact: Mara Linden, email joe@acme.test (owned by Joe Smith).',
+      'Contact: Mara Linden, email joe@acme.test, assistant: Joe Smith.',
+      'Contact: Mara Linden, contact: Joe Smith, email joe@acme.test.',
+      'Contact: Mara Linden, person: Joe Smith, email joe@acme.test.',
+      'Contact: Mara Linden, role: Joe Smith, email joe@acme.test.',
       'Former contact: Mara Linden, email mara@northstar-audit.test.',
       'Not Mara Linden, email mara@northstar-audit.test.',
       'This is not a contact identity. Contact: Mara Linden, email mara@northstar-audit.test.',
@@ -3434,6 +3440,275 @@ describe('processSuggestionJobForTests', () => {
     expect(
       (await scope.engineMaintenance.latestRuns()).filter((run) => run.status === 'completed'),
     ).toHaveLength(2);
+  });
+
+  it('accepts a distinct same-name project with an evidenced company qualifier', async () => {
+    const scope = withTeam(db as never, TEAM_ID, OWNER_ID);
+    const firstCompany = await scope.objects.createObject({
+      actor: { kind: 'user', userId: OWNER_ID },
+      type: 'company',
+      canonicalName: 'Northstar Audit',
+    });
+    const secondCompany = await scope.objects.createObject({
+      actor: { kind: 'user', userId: OWNER_ID },
+      type: 'company',
+      canonicalName: 'Southstar Audit',
+    });
+    const existing = await scope.objects.createObject({
+      actor: { kind: 'user', userId: OWNER_ID },
+      type: 'project',
+      canonicalName: 'Client Portal',
+      metadata: { companyId: firstCompany.id },
+    });
+    const rawEventId = crypto.randomUUID();
+    await seedRawEvent(db as never, {
+      id: rawEventId,
+      text: 'Create a new Client Portal project for Southstar Audit. It has separate deliverables from the Client Portal for Northstar Audit.',
+      sourceMetadata: {
+        extracted_at: REFERENCE_DATE.toISOString(),
+        extraction_model_version: 'fixture',
+      },
+    });
+    const chat = vi.fn().mockResolvedValue({
+      model: MODEL_ID,
+      object: {
+        bundles: [
+          {
+            title: 'Track Southstar portal',
+            confidence: 'high',
+            items: [
+              {
+                operation: 'create',
+                targetKind: 'object',
+                title: 'Client Portal',
+                proposedPayload: {
+                  type: 'project',
+                  canonicalName: 'Client Portal',
+                  metadata: { companyId: secondCompany.id },
+                },
+              },
+            ],
+          },
+        ],
+      },
+    });
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { teamId: TEAM_ID, rawEventId },
+      { getEnv: env, chatStructured: chat, modelId: MODEL_ID },
+    );
+    const proposals = await db.select().from(agentSuggestionItems);
+    const project = proposals.find(
+      (item) => item.targetKind === 'object' && item.operation === 'create',
+    );
+    expect(project?.proposedPayload).toMatchObject({
+      canonicalName: 'Client Portal (Southstar Audit)',
+      aliases: ['Client Portal'],
+      metadata: { companyId: secondCompany.id },
+    });
+    if (!project) throw new Error('missing project proposal');
+    expect(await scope.suggestions.acceptSuggestionItem(project.id)).toBe(true);
+    const objects = await scope.objects.listObjects();
+    expect(objects.filter((object) => object.type === 'project')).toHaveLength(2);
+    expect(objects.find((object) => object.id === existing.id)?.canonicalName).toBe(
+      'Client Portal',
+    );
+    const created = objects.find(
+      (object) => object.canonicalName === 'Client Portal (Southstar Audit)',
+    );
+    expect(created?.id).not.toBe(existing.id);
+    expect(created?.metadata).toMatchObject({ companyId: secondCompany.id });
+    // A later extraction using the original captured name must resolve the
+    // qualified object's alias instead of creating another colliding project.
+    if (!created) throw new Error('missing scoped project');
+    // Also support a pre-existing qualified name whose original alias was absent.
+    await db.update(entities).set({ aliases: [] }).where(eq(entities.id, created.id));
+    const nextEventId = crypto.randomUUID();
+    await seedRawEvent(db as never, {
+      id: nextEventId,
+      text: 'Track Client Portal for Southstar Audit, separate from Northstar Audit.',
+      sourceMetadata: {
+        extracted_at: REFERENCE_DATE.toISOString(),
+        extraction_model_version: 'fixture',
+      },
+    });
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { teamId: TEAM_ID, rawEventId: nextEventId },
+      { getEnv: env, chatStructured: chat, modelId: MODEL_ID },
+    );
+    const followups = (await db.select().from(agentSuggestionItems)).filter(
+      (item) => item.status === 'pending' && item.targetKind === 'object',
+    );
+    expect(
+      followups.some((item) => item.operation === 'update' && item.targetId === created.id),
+    ).toBe(true);
+    expect(followups.some((item) => item.operation === 'create')).toBe(false);
+  });
+
+  it('accepts a distinct same-name project when no readable scope label is available', async () => {
+    await db.insert(entities).values({
+      teamId: TEAM_ID,
+      type: 'project',
+      canonicalName: 'Client Portal',
+      metadata: { companyId: 'customer-a' },
+    });
+    const incomingScope = { companyId: 'customer-b', integration_provider: 'github' };
+    const neutralName = `Client Portal (distinct scope ${suggestions.suggestionDedupeKey(incomingScope).slice(0, 12)})`;
+    // Matching provider alone must never consume a qualified project whose
+    // company identity is missing, even when its display name collides.
+    await db.insert(entities).values({
+      teamId: TEAM_ID,
+      type: 'project',
+      canonicalName: neutralName,
+      metadata: { integration_provider: 'github' },
+    });
+    const rawEventId = crypto.randomUUID();
+    await seedRawEvent(db as never, {
+      id: rawEventId,
+      text: 'Create a separate Client Portal for customer-b with different deliverables.',
+      sourceMetadata: {
+        extracted_at: REFERENCE_DATE.toISOString(),
+        extraction_model_version: 'fixture',
+      },
+    });
+    const chat = vi.fn().mockResolvedValue({
+      model: MODEL_ID,
+      object: {
+        bundles: [
+          {
+            title: 'Track separate portal',
+            confidence: 'high',
+            items: [
+              {
+                operation: 'create',
+                targetKind: 'object',
+                title: 'Client Portal',
+                proposedPayload: {
+                  type: 'project',
+                  canonicalName: 'Client Portal',
+                  metadata: incomingScope,
+                },
+              },
+            ],
+          },
+        ],
+      },
+    });
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { teamId: TEAM_ID, rawEventId },
+      { getEnv: env, chatStructured: chat, modelId: MODEL_ID },
+    );
+    const proposal = (await db.select().from(agentSuggestionItems)).find(
+      (item) => item.operation === 'create' && item.targetKind === 'object',
+    );
+    if (!proposal) throw new Error('missing distinct proposal');
+    expect(proposal.proposedPayload).toMatchObject({
+      canonicalName: `${neutralName.slice(0, -1)} 2)`,
+    });
+    expect(proposal.proposedPayload).toMatchObject({
+      aliases: ['Client Portal'],
+      metadata: incomingScope,
+    });
+    const scope = withTeam(db as never, TEAM_ID, OWNER_ID);
+    expect(await scope.suggestions.acceptSuggestionItem(proposal.id)).toBe(true);
+    expect(
+      (await scope.objects.listObjects()).filter((object) => object.type === 'project'),
+    ).toHaveLength(3);
+  });
+
+  it('preserves human owner and assignee overrides when historical repair proposes names', async () => {
+    process.env.IDENTITY_SEMANTIC_ENABLED = 'true';
+    resetEnvForTests();
+    try {
+      const scope = withTeam(db as never, TEAM_ID, OWNER_ID);
+      const [task] = await db
+        .insert(entities)
+        .values({
+          teamId: TEAM_ID,
+          type: 'task',
+          canonicalName: 'Prepare audit outline',
+          status: 'todo',
+        })
+        .returning();
+      if (!task) throw new Error('missing task');
+      await scope.objects.updateObject(
+        task.id,
+        { ownerUserId: OWNER_ID, assigneeUserId: OWNER_ID },
+        { kind: 'user', userId: OWNER_ID },
+      );
+      const rawEventId = crypto.randomUUID();
+      await seedRawEvent(db as never, {
+        id: rawEventId,
+        text: 'Member owns and is assigned the audit outline. The audit outline is complete.',
+        sourceMetadata: {
+          extracted_at: REFERENCE_DATE.toISOString(),
+          extraction_model_version: 'fixture',
+        },
+      });
+      const [fact] = await db
+        .insert(facts)
+        .values({
+          teamId: TEAM_ID,
+          rawEventId,
+          statement: 'Member completed the audit outline.',
+          confidence: 1,
+          modelVersion: 'fixture',
+        })
+        .returning();
+      if (!fact) throw new Error('missing fact');
+      await db.insert(factEntities).values({ factId: fact.id, entityId: task.id, role: 'subject' });
+      const chat = vi.fn().mockResolvedValue({
+        model: MODEL_ID,
+        object: {
+          bundles: [
+            {
+              title: 'Complete audit outline',
+              confidence: 'high',
+              items: [
+                {
+                  operation: 'update',
+                  targetKind: 'task',
+                  targetId: task.id,
+                  title: 'Complete audit outline',
+                  proposedPayload: {
+                    status: 'done',
+                    ownerName: 'Member',
+                    assigneeName: 'Member',
+                  },
+                },
+              ],
+            },
+          ],
+        },
+      });
+      await processSuggestionJobForTests(
+        { db: db as never },
+        { scope: 'object_cleanup', teamId: TEAM_ID, objectId: task.id },
+        { chatStructured: chat, modelId: MODEL_ID, taskCategoryClassificationEnabled: false },
+      );
+      expect(chat).toHaveBeenCalled();
+      const proposal = (await db.select().from(agentSuggestionItems)).find(
+        (item) => item.targetId === task.id && item.operation === 'update',
+      );
+      if (!proposal) throw new Error('missing repair proposal');
+      expect(proposal.proposedPayload).toMatchObject({ status: 'done' });
+      expect(proposal.proposedPayload).not.toHaveProperty('ownerName');
+      expect(proposal.proposedPayload).not.toHaveProperty('assigneeName');
+      expect(proposal.proposedPayload).not.toHaveProperty('ownerUserId');
+      expect(proposal.proposedPayload).not.toHaveProperty('assigneeUserId');
+      expect(await scope.suggestions.acceptSuggestionItem(proposal.id)).toBe(true);
+      const [updated] = await db.select().from(entities).where(eq(entities.id, task.id));
+      expect(updated).toMatchObject({
+        status: 'done',
+        ownerUserId: OWNER_ID,
+        assigneeUserId: OWNER_ID,
+      });
+    } finally {
+      process.env.IDENTITY_SEMANTIC_ENABLED = 'false';
+      resetEnvForTests();
+    }
   });
 
   it('normalizes canonical and translated creates to one existing semantic identity', async () => {

@@ -8,6 +8,7 @@ import {
   artifactClusters,
   artifactEvidenceAssociations,
   documentChunks,
+  documentVersions,
   entities,
   entityRelationships,
   factEntities,
@@ -498,6 +499,9 @@ async function buildObjectSummaryPacket(
         occurredAt: rawEvents.occurredAt,
         source: rawEvents.source,
         quote: agentSuggestionEvidence.quote,
+        documentChunkId: documentChunks.id,
+        documentId: documentChunks.documentId,
+        documentVersion: documentVersions.version,
       })
       .from(agentSuggestionItems)
       .innerJoin(agentSuggestions, eq(agentSuggestions.id, agentSuggestionItems.suggestionId))
@@ -513,6 +517,14 @@ async function buildObjectSummaryPacket(
           sql`${documentChunks.id}::text = ${agentSuggestions.metadata}->>'document_chunk_id'`,
           sql`${documentChunks.documentId}::text = ${agentSuggestions.metadata}->>'document_id'`,
           sql`${documentChunks.documentVersionId}::text = ${agentSuggestions.metadata}->>'document_version_id'`,
+        ),
+      )
+      .leftJoin(
+        documentVersions,
+        and(
+          eq(documentVersions.id, documentChunks.documentVersionId),
+          eq(documentVersions.documentId, documentChunks.documentId),
+          eq(documentVersions.teamId, scope.teamId),
         ),
       )
       .where(
@@ -550,14 +562,28 @@ async function buildObjectSummaryPacket(
       kind: 'timeline_event' as const,
       id: association.rawEventId,
     })),
-    ...createEvidenceRows.map((row) => ({
-      kind: 'timeline_event' as const,
-      id: row.rawEventId,
-    })),
+    ...createEvidenceRows.map((row) =>
+      row.documentChunkId && row.documentId && row.documentVersion
+        ? {
+            kind: 'document_chunk' as const,
+            id: row.documentChunkId,
+            documentId: row.documentId,
+            version: row.documentVersion,
+          }
+        : { kind: 'timeline_event' as const, id: row.rawEventId },
+    ),
   ]).map((ref) => {
-    const fact = factRows.find((row) => row.rawEventId === ref.id);
-    const association = associationRows.find((row) => row.rawEventId === ref.id);
-    const created = createEvidenceRows.find((row) => row.rawEventId === ref.id);
+    const fact =
+      ref.kind === 'timeline_event' ? factRows.find((row) => row.rawEventId === ref.id) : undefined;
+    const association =
+      ref.kind === 'timeline_event'
+        ? associationRows.find((row) => row.rawEventId === ref.id)
+        : undefined;
+    const created = createEvidenceRows.find((row) =>
+      ref.kind === 'document_chunk'
+        ? row.documentChunkId === ref.id
+        : !row.documentChunkId && row.rawEventId === ref.id,
+    );
     return {
       ref,
       label: association
