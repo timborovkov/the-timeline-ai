@@ -5,7 +5,6 @@ export const START_FREE_HREF = '/sign-up' as const;
 export const SEE_IT_FIRST_LABEL = 'See it first';
 export const SEE_IT_FIRST_HREF = '/product-tour' as const;
 export const CTA_MICROCOPY_LEAD = 'Free for up to 3 members · no card required ·';
-export const FICTIONAL_EXAMPLE_LABEL = 'Fictional example · Acme Labs demo workspace';
 export const PRODUCT_SCREENSHOT_DIR = '/marketing/screenshots';
 
 export const FIRST_RUN_STEPS = [

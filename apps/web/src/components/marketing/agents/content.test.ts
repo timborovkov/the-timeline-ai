@@ -49,7 +49,7 @@ describe('agents marketing copy', () => {
   });
 
   it('labels the Grok Bot progress note as an illustration, not a shipped product', () => {
-    expect(AGENTS_HUB.example.label).toBe('Illustrative example');
+    expect(AGENTS_HUB.example.label).toBe('Example');
     expect(AGENTS_HUB.example.title).toContain('Grok Bot');
     expect(AGENTS_HUB.example.boundary).toContain('not a dedicated Grok Bot product');
     expect(AGENT_SETUP_CARD.title).not.toContain('Grok');

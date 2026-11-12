@@ -7,7 +7,6 @@ import type {
   MarketingScreenshotSlot,
 } from '@/components/marketing/screenshot-slot';
 
-import { FICTIONAL_EXAMPLE_LABEL } from '@/components/marketing/copy';
 import { marketingScreenshotVariants } from '@/components/marketing/screenshot-slot';
 import { ThemedScreenshotImage } from '@/components/marketing/themed-screenshot-image';
 import { cn } from '@/lib/utils';
@@ -30,7 +29,6 @@ export function MarketingProductScreenshot({
   frame = 'landscape',
   callouts,
   chrome = 'full',
-  expandable = false,
 }: {
   file: string;
   alt: string;
@@ -40,7 +38,6 @@ export function MarketingProductScreenshot({
   frame?: MarketingScreenshotFrame;
   callouts?: readonly MarketingScreenshotCallout[];
   chrome?: 'full' | 'media';
-  expandable?: boolean;
 }) {
   const present = Object.values(marketingScreenshotVariants(file)).every(
     marketingScreenshotFileExists,
@@ -71,13 +68,7 @@ export function MarketingProductScreenshot({
                 Loading screenshot
               </p>
             </div>
-            <ThemedScreenshotImage
-              file={file}
-              alt={alt}
-              portrait={portrait}
-              priority={priority}
-              expandable={expandable}
-            />
+            <ThemedScreenshotImage file={file} alt={alt} portrait={portrait} priority={priority} />
           </>
         ) : (
           <div
@@ -116,9 +107,6 @@ export function MarketingProductScreenshot({
       {chrome === 'full' ? (
         <figcaption className="space-y-2 border-t border-border px-5 py-4 sm:px-6">
           <p className="text-sm leading-6 text-fg-muted">{caption}</p>
-          <p className="font-mono text-[0.62rem] tracking-[0.12em] text-fg-dim uppercase">
-            {FICTIONAL_EXAMPLE_LABEL}
-          </p>
         </figcaption>
       ) : null}
     </figure>

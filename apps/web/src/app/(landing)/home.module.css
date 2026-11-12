@@ -1149,32 +1149,21 @@
 }
 
 .proofCaption {
+  max-width: 22ch;
   margin: 0.85rem 0 0;
-  color: var(--home-muted);
-  line-height: 1.6;
-}
-
-.proofCallouts {
-  display: grid;
-  gap: 0.9rem;
-  margin: 1.15rem 0 0;
-  padding: 0;
-  list-style: none;
-}
-
-.proofCallouts span {
-  color: var(--home-signal);
-  font-family: var(--font-mono);
-  font-size: var(--home-meta-size);
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-}
-
-.proofCallouts p {
-  margin: 0.35rem 0 0;
   color: var(--home-paper);
+  font-size: clamp(1.5rem, 2.5vw, 2.25rem);
+  font-weight: 600;
+  letter-spacing: -0.035em;
+  line-height: 1.15;
+}
+
+.proofBody {
+  max-width: 42ch;
+  margin-top: 1rem;
+  color: var(--home-muted);
   font-size: 1.05rem;
-  line-height: 1.5;
+  line-height: 1.7;
 }
 
 .intakeRow {
@@ -1187,16 +1176,27 @@
 }
 
 .intakeRow li {
+  min-width: 0;
+}
+
+.intakeRow a > span:last-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.intakeRow a {
+  height: 100%;
+  text-decoration: none;
   display: flex;
   min-width: 0;
   min-height: 3.25rem;
-  gap: 0.65rem;
+  gap: 0.5rem;
   align-items: center;
-  padding: 0.75rem 0.9rem;
+  padding: 0.75rem 0.65rem;
   border: 1px solid var(--home-line);
   background: var(--home-panel);
   color: var(--home-paper);
-  font-size: 1rem;
+  font-size: 0.95rem;
   line-height: 1.35;
 }
 
@@ -1211,15 +1211,6 @@
 .approvalLine strong {
   color: var(--home-paper);
   font-weight: 600;
-}
-
-.proofDisclosure {
-  margin-top: 1rem;
-  color: var(--home-dim);
-  font-family: var(--font-mono);
-  font-size: var(--home-meta-size);
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
 }
 
 .threadBlock {
@@ -1692,18 +1683,6 @@
   color: var(--home-muted);
   font-size: 0.92rem;
   line-height: 1.65;
-}
-
-.threadDisclosure {
-  grid-column: 1 / -1;
-  margin: 0;
-  padding: 0.7rem 1rem;
-  background: var(--home-ink);
-  color: var(--home-dim);
-  font-family: var(--font-mono);
-  font-size: var(--home-meta-size);
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
 }
 
 .answerFooter {
@@ -3103,7 +3082,7 @@
   }
 
   .intakeRow {
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .proofStage,
@@ -3291,4 +3270,12 @@
   .citation {
     border-color: ButtonText;
   }
+}
+
+.intakeRow a:hover {
+  border-color: var(--home-signal);
+}
+.intakeRow a:focus-visible {
+  outline: 2px solid var(--home-signal);
+  outline-offset: 3px;
 }

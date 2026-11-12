@@ -1,4 +1,4 @@
-import { Mail, Video, Webhook } from 'lucide-react';
+import { FileText, Globe, Mail, Video, Webhook } from 'lucide-react';
 import Image from 'next/image';
 import Link from 'next/link';
 
@@ -12,7 +12,6 @@ import { GitHubSourceLink } from '@/components/github-source-link';
 import { AgentSetupCard } from '@/components/marketing/agents/agent-setup-card';
 import {
   CTA_MICROCOPY_LEAD,
-  FICTIONAL_EXAMPLE_LABEL,
   SEE_IT_FIRST_HREF,
   SEE_IT_FIRST_LABEL,
   START_FREE_LABEL,
@@ -29,6 +28,7 @@ import {
 } from '@/components/marketing/home/proof';
 import { TimelineFlowDiagram } from '@/components/marketing/home/timeline-flow-diagram';
 import { CAPTURE_SURFACES } from '@/components/marketing/integrations/capture-surface-content';
+import { CONNECTORS } from '@/components/marketing/integrations/connector-content';
 import { MarketingProductScreenshot } from '@/components/marketing/product-screenshot';
 import { PUBLIC_DEMO_STORY } from '@/components/marketing/public-demo-story';
 import { TRUST_FLOW_CHIPS, TRUST_FLOW_STEPS } from '@/components/marketing/trust-flow-content';
@@ -51,8 +51,32 @@ const SITE_NAME = 'The Timeline';
 const CONTACT_HREF = '/help/support';
 const HERO_INTRO =
   "Your team's work record: everything your team does, on one searchable timeline, kept current from Slack, Telegram, email and calls.";
-const HOME_INTAKE_IDS = new Set<string>(['telegram', 'slack-chat', 'email', 'meetings']);
-const HOME_INTAKE_SURFACES = CAPTURE_SURFACES.filter((surface) => HOME_INTAKE_IDS.has(surface.id));
+const HOME_INTAKE_SURFACES = [
+  ...CAPTURE_SURFACES.map((surface) => ({
+    id: surface.id,
+    name: surface.id === 'slack-chat' ? 'Slack' : surface.name,
+    icon: surface.icon,
+    logo:
+      surface.icon === 'telegram' || surface.icon === 'slack'
+        ? `/connectors/${surface.icon}.svg`
+        : undefined,
+    href: 'publicHref' in surface ? surface.publicHref : '/integrations#capture-surfaces',
+  })),
+  {
+    id: 'documents',
+    name: 'Documents',
+    icon: 'file' as const,
+    logo: undefined,
+    href: '/help/documents',
+  },
+  ...CONNECTORS.filter((connector) => connector.slug !== 'slack').map((connector) => ({
+    id: connector.slug,
+    name: connector.name,
+    icon: 'file' as const,
+    logo: connector.logo,
+    href: `/integrations/${connector.slug}`,
+  })),
+];
 const HOME_DOCUMENT = getHomeDocument();
 
 export const metadata: Metadata = {
@@ -246,16 +270,18 @@ function IntakeScene() {
         id="intake-title"
         title={
           <>
-            Status should not require an <em>investigation.</em>
+            Bring the work in. <em>Keep the context.</em>
           </>
         }
-        copy="Link a Slack channel or Telegram group, forward email to the team address, or add a call."
+        copy="Connect the tools you use, forward email, upload documents, or scan a public website."
       />
       <ul className={styles.intakeRow} aria-label="Ways to send work to Timeline">
         {HOME_INTAKE_SURFACES.map((surface) => (
           <li key={surface.id}>
-            <HomeCaptureSurfaceIcon icon={surface.icon} />
-            <span>{surface.name}</span>
+            <Link href={surface.href}>
+              <HomeCaptureSurfaceIcon icon={surface.icon} logo={surface.logo} />
+              <span>{surface.name}</span>
+            </Link>
           </li>
         ))}
       </ul>
@@ -264,15 +290,30 @@ function IntakeScene() {
   );
 }
 
-function HomeCaptureSurfaceIcon({ icon }: { icon: (typeof CAPTURE_SURFACES)[number]['icon'] }) {
-  if (icon === 'telegram' || icon === 'slack') {
+function HomeCaptureSurfaceIcon({
+  icon,
+  logo,
+}: {
+  icon: (typeof HOME_INTAKE_SURFACES)[number]['icon'];
+  logo?: string;
+}) {
+  if (logo) {
     return (
       <span className={cn(styles.captureSurfaceIcon, styles.captureSurfaceIconBrand)}>
-        <Image src={`/connectors/${icon}.svg`} alt="" width={18} height={18} />
+        <Image src={logo} alt="" width={18} height={18} />
       </span>
     );
   }
-  const Icon = icon === 'mail' ? Mail : icon === 'video' ? Video : Webhook;
+  const Icon =
+    icon === 'mail'
+      ? Mail
+      : icon === 'video'
+        ? Video
+        : icon === 'globe'
+          ? Globe
+          : icon === 'file'
+            ? FileText
+            : Webhook;
   return (
     <span className={styles.captureSurfaceIcon}>
       <Icon aria-hidden="true" size={16} strokeWidth={1.6} />
@@ -340,7 +381,7 @@ function AnswerScene() {
         id="answer-title"
         title={
           <>
-            Ask the record. The receipts <em>come with the answer.</em>
+            Status should not require an <em>investigation.</em>
           </>
         }
         copy="Get a status or handoff brief without retracing every conversation."
@@ -394,7 +435,6 @@ function AnswerScene() {
                   <summary>Inspect example source</summary>
                   <div className={styles.ledgerInspectBody}>
                     <p>{event.detail}</p>
-                    <p>Fictional Acme example, not customer data.</p>
                   </div>
                 </details>
               </li>
@@ -488,7 +528,6 @@ function AnswerScene() {
               <ThreadCitation n={2} label="Call transcript" />.
             </p>
           </article>
-          <p className={styles.threadDisclosure}>{FICTIONAL_EXAMPLE_LABEL}</p>
         </div>
       </div>
     </section>
@@ -685,17 +724,9 @@ function HomeProof({
     >
       <div className={styles.proofCopy}>
         <span className={styles.monoLabel}>{shot.kicker}</span>
-        <p className={styles.proofCaption}>{shot.caption}</p>
-        <ol className={styles.proofCallouts} data-screenshot-callouts>
-          {shot.callouts.map((callout) => (
-            <li key={callout.label}>
-              <span>{callout.label}</span>
-              <p>{callout.detail}</p>
-            </li>
-          ))}
-        </ol>
+        <h3 className={styles.proofCaption}>{shot.caption}</h3>
+        <p className={styles.proofBody}>{shot.body}</p>
         {children}
-        <p className={styles.proofDisclosure}>{FICTIONAL_EXAMPLE_LABEL}</p>
       </div>
       <div className={styles.proofMedia}>
         <MarketingProductScreenshot
@@ -703,9 +734,7 @@ function HomeProof({
           alt={shot.alt}
           caption={shot.caption}
           chrome="media"
-          expandable
         />
-        <p className={styles.proofDisclosure}>Select the screenshot to view full size.</p>
       </div>
     </div>
   );

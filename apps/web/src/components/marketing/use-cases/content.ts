@@ -80,7 +80,7 @@ export const USE_CASES: readonly UseCaseContent[] = [
       'Lasting record changes are proposed for your approval. Captured evidence stays unchanged.',
     ],
     example: {
-      label: 'Fictional example',
+      label: 'Example',
       lines: [
         'Mon 08:46 Telegram · Acme launch group: “Customer update promised”.',
         'Mon 09:14 Slack · #acme-rollout: “Onboarding copy approved”.',
@@ -137,7 +137,7 @@ export const USE_CASES: readonly UseCaseContent[] = [
       'For a specific client, project or time window, ask for a focused update.',
     ],
     example: {
-      label: 'Fictional example',
+      label: 'Example',
       lines: [
         'SHIPPED: Migration callback merged (GitHub · PR #482).',
         'DECIDED: Onboarding copy approved (Slack · #acme-rollout).',
@@ -205,7 +205,7 @@ export const USE_CASES: readonly UseCaseContent[] = [
       'Each answer links to the original message, email or call. Access follows the source’s visibility.',
     ],
     example: {
-      label: 'Fictional example',
+      label: 'Example',
       title: 'What did we promise Acme, and where?',
       lines: [
         'You: “What did we promise Acme, and where?”',
@@ -234,8 +234,7 @@ export const USE_CASES: readonly UseCaseContent[] = [
       {
         file: '31-ask-status-dark.png',
         alt: 'Ask answer about what was agreed, with each claim linked to its source.',
-        caption:
-          'A stored example from the fictional Acme Labs demo: what was agreed, with each claim linked to its source.',
+        caption: 'What was agreed, with each claim linked to its source.',
         reshoot: RESHOOT_CITATION_SEED,
         placement: 'after-how-it-works',
       },
@@ -273,7 +272,7 @@ export const USE_CASES: readonly UseCaseContent[] = [
     boundary:
       'The Timeline keeps its own people, company and deal records. It doesn’t sync to Pipedrive, HubSpot or Salesforce today (listed as coming later).',
     example: {
-      label: 'Fictional example',
+      label: 'Example',
       lines: [
         'Stakeholder: Maya Chen owns the technical evaluation [meeting].',
         'Interest: the customer requested a two-region expansion option [email].',
@@ -329,7 +328,7 @@ export const USE_CASES: readonly UseCaseContent[] = [
       'Kanban and list views use the same records. GitHub, Linear and Monday.com activity can sync in alongside them.',
     ],
     example: {
-      label: 'Fictional example',
+      label: 'Example',
       lines: [
         'Slack · #acme-rollout: “Priya will own the migration checklist. Review on the 14th.”',
         'Proposed change, waiting for approval: Migration checklist, owner Priya Shah, due 14th.',
@@ -386,7 +385,7 @@ export const USE_CASES: readonly UseCaseContent[] = [
     whoItsFor:
       'Frontline staff on Telegram, client teams at agencies and consultancies, and anyone joining a project mid-flight.',
     example: {
-      label: 'Fictional example',
+      label: 'Example',
       lines: [
         'New teammate: “How do we handle a refund request?”',
         'The Timeline: “Use the process the team agreed in the support channel [01].”',
@@ -402,8 +401,7 @@ export const USE_CASES: readonly UseCaseContent[] = [
       {
         file: '32-ask-handoff-dark.png',
         alt: 'A handoff brief in Ask, with account, current state, commitments and open gaps cited.',
-        caption:
-          'A stored example from the fictional Acme Labs demo: account, current state, commitments and open gaps, each with its source.',
+        caption: 'Account, current state, commitments and open gaps, each with its source.',
         reshoot: RESHOOT_CITATION_SEED,
         placement: 'after-subhead',
       },

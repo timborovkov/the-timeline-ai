@@ -4,7 +4,6 @@ import Link from 'next/link';
 
 import { Logo } from '@/components/brand/logo';
 import styles from '@/components/marketing/agents/agent-loop-diagram.module.css';
-import { FICTIONAL_EXAMPLE_LABEL } from '@/components/marketing/copy';
 
 const WRITE_PATHS = [
   { name: 'Remember a note', body: 'An agent adds a cited note to the record.' },
@@ -32,7 +31,6 @@ export function AgentLoopDiagram() {
         <span id="agent-loop-title" className={styles.kicker}>
           Read out · write in
         </span>
-        <span className={styles.disclosure}>{FICTIONAL_EXAMPLE_LABEL}</span>
       </figcaption>
       <p className={styles.lede}>
         Agents read decisions, owners and history, with citations, then write updates into the same

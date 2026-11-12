@@ -44,9 +44,9 @@ describe('how-it-works and guide routes', () => {
     expect(html.indexOf('data-how-it-works-flow="true"')).toBeLessThan(
       html.indexOf('data-how-it-works-evidence="true"'),
     );
-    expect(html).toContain('max-w-[82rem]');
-    expect(html).toContain('lg:grid-cols-[13rem_minmax(0,1fr)]');
-    expect(html).toContain('xl:grid-cols-[15rem_minmax(0,1fr)]');
+    expect(html).toContain('max-w-6xl');
+    expect(html).toContain('data-marketing-container');
+    expect(html).toContain('data-marketing-section');
     expect(html).not.toContain('lg:grid-cols-[0.45fr_1fr]');
     expect(html).toContain('How Timeline works');
     expect(html).not.toContain('Last reviewed');
@@ -112,7 +112,7 @@ describe('how-it-works and guide routes', () => {
       expect(html).toContain(`>${guide.diagram.answerTitle}</h3>`);
       expect(html).toContain('What each source contributes');
       expect(html).toContain('What this cannot prove');
-      expect(html).toContain('Fictional Acme example, not customer data.');
+      expect(html).not.toContain('Fictional Acme example, not customer data.');
       for (const shot of guide.screenshots ?? []) {
         expect(html).toContain(`data-screenshot-file="${shot.file}"`);
         expect(html).toContain('data-screenshot-present="true"');

@@ -31,7 +31,7 @@ export const AGENTS_HUB = {
     ],
   },
   example: {
-    label: 'Illustrative example',
+    label: 'Example',
     title: 'A progress note from Grok Bot.',
     body: 'Send a progress note through one of the write paths above. It joins the work record as cited evidence.',
     boundary:

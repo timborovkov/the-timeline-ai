@@ -17,13 +17,11 @@ export function ThemedScreenshotImage({
   alt,
   portrait,
   priority,
-  expandable = false,
 }: {
   file: string;
   alt: string;
   portrait: boolean;
   priority: boolean;
-  expandable?: boolean;
 }) {
   const { resolvedTheme } = useTheme();
   const mounted = useSyncExternalStore(subscribe, clientSnapshot, serverSnapshot);
@@ -32,7 +30,7 @@ export function ThemedScreenshotImage({
   if (!mounted || (resolvedTheme !== 'light' && resolvedTheme !== 'dark')) return null;
   const src = `${PRODUCT_SCREENSHOT_DIR}/${marketingScreenshotVariants(file)[resolvedTheme]}`;
 
-  const image = (
+  return (
     <Image
       key={src}
       src={src}
@@ -44,18 +42,5 @@ export function ThemedScreenshotImage({
       sizes={portrait ? '(max-width: 767px) 24rem, 100vw' : '(min-width: 1024px) 72rem, 100vw'}
       className={cn('z-[1]', portrait ? 'object-contain object-top' : 'object-cover object-top')}
     />
-  );
-  return expandable ? (
-    <a
-      href={src}
-      target="_blank"
-      rel="noopener noreferrer"
-      aria-label={`Open full-size screenshot in a new tab: ${alt}`}
-      className="absolute inset-0 z-[1] cursor-zoom-in focus-visible:outline-2 focus-visible:outline-offset-[-3px] focus-visible:outline-signal"
-    >
-      {image}
-    </a>
-  ) : (
-    image
   );
 }

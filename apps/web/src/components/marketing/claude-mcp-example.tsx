@@ -1,5 +1,3 @@
-import { FICTIONAL_EXAMPLE_LABEL } from '@/components/marketing/copy';
-
 const SOURCES = [
   {
     id: 'claude-mcp-source-1',
@@ -54,9 +52,6 @@ export function ClaudeMcpExample() {
           </li>
         ))}
       </ol>
-      <p className="border-t border-border px-4 py-3 font-mono text-[0.65rem] tracking-[0.08em] text-fg-dim uppercase">
-        {FICTIONAL_EXAMPLE_LABEL}
-      </p>
     </article>
   );
 }

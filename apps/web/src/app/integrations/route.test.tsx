@@ -44,7 +44,7 @@ describe('public integration routes', () => {
     expect(html).not.toContain('Noindex');
     expect(html).not.toContain('Shared structure keeps the experience coherent');
     expect(html).toContain('Slack example shows that journey from conversation to chronology');
-    expect(html.match(/Fictional Acme example, not customer data\./g)).toHaveLength(1);
+    expect(html).not.toContain('Fictional Acme example, not customer data.');
     expect(html).toContain('href="/integrations/slack"');
     expect(html).toContain('href="/integrations/telegram"');
     expect(text).toContain('Telegram');
@@ -142,7 +142,7 @@ describe('public integration routes', () => {
     );
 
     expect(html).toContain('bg-white');
-    expect(html.match(/Fictional Acme example, not customer data\./g)).toHaveLength(2);
+    expect(html).not.toContain('Fictional Acme example, not customer data.');
     expect(html).toContain('scroll-mt-12');
     expect(html).toContain('text-[3rem]');
     expect(html).toContain('sm:text-[clamp(3.5rem,5vw,5.5rem)]');
@@ -151,16 +151,19 @@ describe('public integration routes', () => {
     expect(html).not.toContain('--marker-index');
   });
 
-  it.each(CONNECTOR_SLUGS)('discloses the canonical fictional example on %s', async (slug) => {
-    const html = renderToStaticMarkup(
-      await connectorRoute.default({ params: Promise.resolve({ slug }) }),
-    );
+  it.each(CONNECTOR_SLUGS)(
+    'keeps the example coherent without repeated disclaimers on %s',
+    async (slug) => {
+      const html = renderToStaticMarkup(
+        await connectorRoute.default({ params: Promise.resolve({ slug }) }),
+      );
 
-    expect(html.match(/<h1\b/g)).toHaveLength(1);
-    expect(html.match(/Fictional Acme example, not customer data\./g)).toHaveLength(2);
-    expect(html).toContain('Acme');
-    expect(html).not.toMatch(/Northline|Project Atlas|API-91|WEB-913/u);
-  });
+      expect(html.match(/<h1\b/g)).toHaveLength(1);
+      expect(html).not.toContain('Fictional Acme example, not customer data.');
+      expect(html).toContain('Acme');
+      expect(html).not.toMatch(/Northline|Project Atlas|API-91|WEB-913/u);
+    },
+  );
 
   it('renders provider-specific truth, evidence, limitations, FAQs, and a single h1', async () => {
     const html = renderToStaticMarkup(

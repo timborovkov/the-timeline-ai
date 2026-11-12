@@ -19,7 +19,7 @@ function useCaseLlmsSections(useCase: UseCaseContent): readonly PublicLlmsConten
     },
     ...(useCase.howItWorks ? [{ title: 'How it works', body: useCase.howItWorks.join(' ') }] : []),
     {
-      title: 'Fictional example',
+      title: 'Example',
       body: useCase.example.title ?? useCase.example.label,
       items: [...useCase.example.lines],
     },

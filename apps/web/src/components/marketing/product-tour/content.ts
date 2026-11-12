@@ -8,7 +8,7 @@ export const PRODUCT_TOUR = {
   eyebrow: 'Product tour',
   title: 'See it first.',
   summary:
-    'Real screens from a demo workspace. Scroll through how The Timeline turns what your team says in Slack, Telegram, email and calls into a work record that keeps itself current.',
+    'Scroll through how The Timeline turns what your team says in Slack, Telegram, email and calls into a work record that keeps itself current.',
   closingTitle: 'Link one channel. Watch the record fill in.',
   closingBody:
     'Start with one Slack channel or Telegram group. Read the daily update, approve lasting record changes that The Timeline proposes, and ask what was decided, with the source for every line.',
@@ -88,8 +88,7 @@ export const PRODUCT_TOUR = {
     {
       index: '08',
       headline: 'Ask, and get the receipts.',
-      caption:
-        'A stored example from the fictional Acme Labs demo. Every line cites where it came from.',
+      caption: 'Every line cites where it came from.',
       file: '32-ask-handoff-dark.png',
       alt: 'Ask handoff brief with every line cited to its source.',
       reshoot:

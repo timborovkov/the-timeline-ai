@@ -12,7 +12,6 @@ import { WorksWithGuidance } from '@/components/marketing/integrations/works-wit
 import { MarketingDisclosure } from '@/components/marketing/marketing-disclosure';
 import { MarketingContainer, MarketingSectionGrid } from '@/components/marketing/marketing-layout';
 import { MarketingProductScreenshot } from '@/components/marketing/product-screenshot';
-import { PUBLIC_DEMO_DISCLOSURE } from '@/components/marketing/public-demo-story';
 import { ProviderLogo } from '@/components/provider-logo';
 import { PublicSessionBranch } from '@/components/public-session-branch';
 import { PublicShell } from '@/components/public-shell';
@@ -182,7 +181,6 @@ function WorkedScenario({ connector }: { connector: ConnectorContent }) {
         <SectionLabel label="Example" />
         <div className="grid gap-8 grid-cols-[minmax(0,1fr)]">
           <div>
-            <p className="mb-4 text-xs text-fg-dim">{PUBLIC_DEMO_DISCLOSURE}</p>
             <h2 id="scenario" className="text-3xl font-semibold tracking-tight sm:text-4xl">
               {connector.scenario.title}
             </h2>

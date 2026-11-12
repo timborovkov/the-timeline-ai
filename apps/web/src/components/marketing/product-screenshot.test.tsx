@@ -95,19 +95,11 @@ describe('MarketingProductScreenshot', () => {
 });
 
 describe('resolved screenshot theme', () => {
-  it('opens the displayed theme variant at full size', () => {
-    const element = () => (
-      <MarketingProductScreenshot {...BASE} file="32-ask-handoff-dark.png" expandable />
-    );
-    const view = render(element());
-    for (const value of ['light', 'dark']) {
-      theme.resolvedTheme = value;
-      view.rerender(element());
-      const link = view.getByRole('link', { name: /Open full-size screenshot in a new tab/ });
-      expect(link.getAttribute('href')).toBe(`/marketing/screenshots/32-ask-handoff-${value}.png`);
-      expect(link.getAttribute('target')).toBe('_blank');
-      expect(link.querySelector('img')?.getAttribute('src')).toBe(link.getAttribute('href'));
-    }
+  it('renders screenshots without navigation or enlargement controls', () => {
+    const view = render(<MarketingProductScreenshot {...BASE} file="32-ask-handoff-dark.png" />);
+    expect(view.container.querySelector('a')).toBeNull();
+    expect(view.container.querySelector('button')).toBeNull();
+    expect(view.container.textContent).not.toContain('view full size');
   });
 
   it('keeps SSR on the reserved placeholder without preloading either variant', () => {
@@ -142,7 +134,9 @@ describe('resolved screenshot theme', () => {
       );
       expect(images[0]?.getAttribute('srcset')).toBeNull();
       expect(images[0]?.getAttribute('loading')).toBe('eager');
-      expect(view.container.textContent).toContain('Fictional example · Acme Labs demo workspace');
+      expect(view.container.textContent).not.toContain(
+        'Fictional example · Acme Labs demo workspace',
+      );
     }
   });
 });

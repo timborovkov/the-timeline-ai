@@ -131,7 +131,7 @@ export function UseCasePage({ useCase }: { useCase: UseCaseContent }) {
         <section className="border-y border-border bg-surface/45">
           <MarketingContainer className="grid gap-12 py-16 sm:py-24">
             <div>
-              <EditorialSectionHeading index="Example" title="A fictional walk-through." />
+              <EditorialSectionHeading index="Example" title="A walk-through." />
               {useCase.needs ? (
                 <div className="mt-10">
                   <h3 className="text-lg font-semibold tracking-[-0.02em]">What it needs</h3>
@@ -183,9 +183,6 @@ export function UseCasePage({ useCase }: { useCase: UseCaseContent }) {
                     </li>
                   ))}
                 </ol>
-                <p className="mt-8 border-t border-border pt-5 font-mono text-[0.65rem] leading-5 text-fg-muted">
-                  Fictional Acme Labs example, not customer data.
-                </p>
               </div>
             </aside>
           </MarketingContainer>

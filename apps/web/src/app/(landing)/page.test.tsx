@@ -67,7 +67,7 @@ describe('LandingPage', () => {
       'aria-label="Work events stream from six sources into The Timeline, where the work record becomes a daily update and linked answers."',
     );
     expect(html).toContain('one timeline');
-    expect(html).toContain('Fictional Acme example, not customer data.');
+    expect(html).not.toContain('Fictional Acme example, not customer data.');
     expect(html).toContain('<details');
     expect(html).toContain('The Timeline');
     expect(html).toContain('Work record');
@@ -138,10 +138,10 @@ describe('LandingPage', () => {
     expect(html).toContain('data-screenshot-present="true"');
     expect(html).toContain('data-screenshot-pending');
     expect(html).toContain('Loading screenshot');
-    expect(html).toContain('data-screenshot-callouts');
-    expect(html).toContain('What changed');
-    expect(html).toContain('Who owns the next step');
-    expect(html).toContain('Link to the source');
+    expect(html).not.toContain('data-screenshot-callouts');
+    expect(html).not.toContain('What changed');
+    expect(html).not.toContain('Who owns the next step');
+    expect(html).not.toContain('Link to the source');
     expect(html).toContain('data-first-run="full"');
     expect(html).toContain('Your first team is created');
     expect(html).toContain('Bring something in');
@@ -186,6 +186,35 @@ describe('LandingPage', () => {
     });
   });
 
+  it('pairs ingest and answers with the right headings and removes screenshot interactions', () => {
+    const { container } = render(<LandingPage />);
+    const intake = container.querySelector('[data-scene="02-intake"]');
+    const answer = container.querySelector('[data-scene="04-ask"]');
+    expect(intake?.querySelector('h2')?.textContent).toBe('Bring the work in. Keep the context.');
+    expect(answer?.querySelector('h2')?.textContent).toBe(
+      'Status should not require an investigation.',
+    );
+    expect(
+      intake?.querySelectorAll('ul[aria-label="Ways to send work to Timeline"] > li'),
+    ).toHaveLength(12);
+    for (const name of [
+      'Websites',
+      'Documents',
+      'GitHub',
+      'Google Drive',
+      'Linear',
+      'Monday.com',
+      'Sentry',
+      'Ingest webhooks',
+    ]) {
+      expect(intake?.textContent).toContain(name);
+    }
+    expect(container.querySelector('[data-home-proof] ol')).toBeNull();
+    expect(container.querySelector('[data-screenshot-file] a')).toBeNull();
+    expect(container.textContent).not.toContain('Select the screenshot');
+    expect(container.textContent).not.toContain('Fictional example');
+  });
+
   it('states connector capabilities without inventing a connector destination', () => {
     const html = renderToStaticMarkup(<LandingPage />);
 
@@ -194,25 +223,20 @@ describe('LandingPage', () => {
     }
 
     expect(html).toContain('Status should not require an <em>investigation.</em>');
-    expect(html).toContain('forward email to the team address');
-    expect(html).toContain('The transcript appears beside the original audio.');
+    expect(html).toContain('forward email, upload documents, or scan a public website');
+    expect(html).toContain('Its transcript sits beside the original audio');
     expect(html).toContain('Telegram');
     expect(html).toContain('Email forwarding');
     expect(html).not.toContain('Connected tools');
     expect(html).not.toContain('Sync selected records.');
     expect(html).not.toContain('Two ways in');
-    expect(html).not.toContain('Ingest webhooks');
+    expect(html).toContain('Ingest webhooks');
     expect(html).not.toContain('Admin setup needed');
     expect(html).not.toContain('use enabled custom MCP tools when you ask a question');
     expect(html).not.toMatch(
       /Capture contract|Deliberate capture|Provider record sync|Available here|MCP is live approved access/u,
     );
-    for (const surface of [
-      'Telegram',
-      'Slack conversations',
-      'Email forwarding',
-      'Meeting transcripts',
-    ]) {
+    for (const surface of ['Telegram', 'Slack', 'Email forwarding', 'Meeting transcripts']) {
       expect(html).toContain(surface);
     }
     expect(html).not.toContain('Future connector pages remain unindexed');
@@ -244,7 +268,7 @@ describe('LandingPage', () => {
     );
     expect(html).toContain('ready for your review.');
     expect(html).not.toContain('update themselves');
-    expect(html).not.toContain('Ingest webhooks');
+    expect(html).toContain('Ingest webhooks');
     expect(html).not.toContain('A direct chat asks the agent');
     expect(html).not.toContain('Connected, not used in this answer');
     expect(html).not.toContain('Sentry is connected, but unused in this answer.');
@@ -355,7 +379,7 @@ describe('LandingPage', () => {
       expect(disclosure.querySelector(`.${LEDGER_INSPECT_BODY_CLASS}`)?.textContent).toContain(
         event?.detail ?? '',
       );
-      expect(disclosure.textContent).toContain('Fictional Acme example, not customer data.');
+      expect(disclosure.textContent).not.toContain('Fictional Acme example, not customer data.');
       expect(disclosure.previousElementSibling?.getAttribute('href')).toBe(
         `#acme-source-${event?.id}`,
       );

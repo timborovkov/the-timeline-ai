@@ -26,13 +26,13 @@ links. The cited-answer source list is always visible beside the example answer,
 a static header rather than an outer disclosure. Individual evidence cards keep “Inspect example source” as a native
 `<details>` disclosure aligned to the padded titles: a custom chevron beside the
 summary, padded expanded text, and the landing lime `:focus-visible` ring around
-the summary rather than an unstyled full-width browser outline. Homepage proof screenshots keep the real captures and fictional Acme Labs
-labels. Mobile retains the complete landscape frame rather than cropping out
-source inspectors. Homepage screenshots open the displayed theme variant at full
-size in a new tab, with a keyboard-accessible link. Each frame reserves its aspect box, shows a “Loading screenshot” label
-until the image paints, and uses always-visible callouts for what changed, who
-owns the next step, and the link to the source. Callouts stack on small screens
-and do not rely on hover or motion. Suggested
+the summary rather than an unstyled full-width browser outline. Homepage screenshots use the real captures with theme-matched variants.
+Mobile retains the complete landscape frame rather than cropping out source
+inspectors. Screenshots are display-only: no links, zoom actions, or instructions
+to click them. Each frame reserves its aspect box and shows a loading label until
+it paints. Homepage screenshots pair with one feature-specific heading and a
+short paragraph, rather than repeating generic ownership and citation checklists.
+Suggested
 durable workspace changes remain approval-backed; the diagram never implies that
 evidence silently rewrites canonical objects. The product-tour approvals step
 uses the same narrower promise: lasting record changes wait for approval.
@@ -41,8 +41,8 @@ planning, not the first decision. The optional analytics banner sits as a compac
 bottom-right card on desktop so proof captions stay readable; Reject and Accept
 stay equally prominent, and nothing is sent before a choice. Acme rollout is
 the canonical fictional public demo corpus across landing, connector, and guide
-examples; every rendered example states that it is illustrative and not
-customer data. Provider pages may show distinct slices, but people, identifiers,
+examples. Public pages omit repeated fictional/demo-workspace disclaimers; they
+must not recast the examples as customer testimonials or measured proof. Provider pages may show distinct slices, but people, identifiers,
 records, and outcomes stay coherent across the journey. Connector capability belongs with the
 evidence-entry scene; audience fit and the evidence chain remain a separate,
 stacked explanation rather than an equal-height split. Substantive copy and
@@ -154,8 +154,8 @@ diagram rather than a screenshot wall. Referenced screenshot files are
 inventory-tested so a missing asset fails CI instead of shipping as a silent
 placeholder. Public screenshot slots serve the committed PNG bytes (unoptimized)
 so a recapture cannot stay hidden behind a stale image-optimizer cache. Ask
-captures are stored fictional examples; captions say that plainly without
-install or implementation noise.
+captures are stored examples; captions explain the pictured workflow without
+repeated demo disclaimers or implementation noise.
 Visible copy must stay consistent with deliberate capture, source-linked claims,
 daily (not weekly) updates, and human review before inferred durable workspace
 changes. Do not claim WhatsApp, Teams chat, or Slack Connect.
@@ -332,3 +332,9 @@ still reserve their shared height to avoid shifting the agent setup card.
 Homepage screenshot captions own their supporting copy. Search guidance belongs
 with the timeline screenshot, and the approval note belongs with the client
 screenshot; neither appears as an isolated line between blocks.
+
+The homepage intake section presents the supported capture surfaces, document
+uploads, and native connectors together as compact linked cards. Live MCP lookup
+and coming-soon connectors are not presented as ingest options. The intake heading
+explains bringing work in; “Status should not require an investigation” belongs
+with the cited-answer section.

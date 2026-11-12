@@ -2,7 +2,6 @@ import { ArrowDown, ArrowRight } from 'lucide-react';
 import Image from 'next/image';
 
 import { Logo } from '@/components/brand/logo';
-import { FICTIONAL_EXAMPLE_LABEL } from '@/components/marketing/copy';
 import styles from '@/components/marketing/integrations/inbound-mcp-diagram.module.css';
 import { MCP_GUIDE_HOSTED_TOOL_NAMES } from '@/components/marketing/integrations/mcp-guide-content';
 
@@ -20,7 +19,6 @@ export function InboundMcpDiagram() {
         <span id="inbound-mcp-title" className={styles.kicker}>
           Live lookup
         </span>
-        <span className={styles.disclosure}>{FICTIONAL_EXAMPLE_LABEL}</span>
       </figcaption>
       <p className={styles.lede}>
         The Timeline Agent can call connected MCP tools during a question. That is a live lookup,
