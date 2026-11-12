@@ -1214,11 +1214,11 @@
 }
 
 .threadHeading {
-  max-width: 24ch;
-  font-size: clamp(2.25rem, 4vw, 3.75rem);
-  font-weight: 600;
-  letter-spacing: -0.03em;
-  line-height: 1.1;
+  max-width: 30ch;
+  font-size: clamp(1.75rem, 3vw, 3rem);
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
   text-wrap: balance;
 }
 
@@ -1597,12 +1597,7 @@
 
 .threadHeading em {
   color: var(--home-signal);
-  font-family:
-    Iowan Old Style,
-    Baskerville,
-    'Times New Roman',
-    serif;
-  font-weight: 400;
+  font: inherit;
 }
 
 .threadSources {

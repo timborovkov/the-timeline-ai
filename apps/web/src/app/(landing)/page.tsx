@@ -433,7 +433,7 @@ function AnswerScene() {
       <HomeProof shot={HOME_ASK_SHOT} align="copy-first" />
       <div className={styles.threadBlock} id="chat-to-answer">
         <h2 className={styles.threadHeading}>
-          Your chat. Your agent. One <em>record.</em>
+          One <em>record</em> for chat and agents.
         </h2>
         <p className={styles.threadLead}>
           Ask in a connected chat or through your agent. Both can find the answer and the sources

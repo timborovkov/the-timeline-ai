@@ -370,3 +370,7 @@ signed-in visitors. Trust labels sit directly below, without a large spacer.
 The homepage footer shows the source repository as a text link labeled GitHub.
 Cookie settings remains a button that opens consent preferences, but shares the
 footer links’ typography, casing, color and hover treatment.
+
+The chat-and-agent comparison uses a shorter, medium-weight sans-serif heading.
+Its single green word stays in the same upright typeface and weight, rather than
+mixing a heavy heading with a thin italic serif.

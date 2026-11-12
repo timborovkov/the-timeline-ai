@@ -89,7 +89,7 @@ describe('LandingPage', () => {
     expect(html).toContain('llms.txt');
     expect(html).not.toContain('>AI assistants<');
     expect(html).toContain('What did we promise Northstar?');
-    expect(html).toContain('Your chat. Your agent. One <em>record.</em>');
+    expect(html).toContain('One <em>record</em> for chat and agents.');
     expect(html).toContain('aria-label="Chat conversation"');
     expect(html).toContain('aria-label="Agent conversation"');
     expect(html).not.toContain('timeline.retrieve_workspace_context');
