@@ -19,7 +19,7 @@ export function SolutionPageRelated({
     <section className="border-t border-border">
       <div className="mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-20">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-          <EditorialSectionHeading index="06 · Explore" title="Related use cases." />
+          <EditorialSectionHeading title="Related use cases." />
           {furtherReading ? (
             <Link
               href={furtherReading.href}

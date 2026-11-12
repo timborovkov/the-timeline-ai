@@ -136,10 +136,9 @@ details[open] > summary .dropdownChevron {
 .footerColumnTitle {
   margin: 0 0 0.85rem;
   color: var(--fg);
-  font-size: 0.68rem;
+  font-size: 0.875rem;
   font-weight: 650;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
+  letter-spacing: normal;
 }
 
 .footerColumnList {
@@ -152,12 +151,20 @@ details[open] > summary .dropdownChevron {
 
 @media (max-width: 64rem) {
   .footerColumns {
-    grid-template-columns: repeat(2, minmax(10rem, 1fr));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 2rem 1.25rem;
   }
-}
 
-@media (max-width: 30rem) {
-  .footerColumns {
-    grid-template-columns: 1fr;
+  .footerColumnList {
+    gap: 0.25rem;
+  }
+
+  .footerColumnList a,
+  .footerColumnList button {
+    display: inline-flex;
+    min-height: 2.75rem;
+    align-items: center;
+    overflow-wrap: anywhere;
+    text-align: left;
   }
 }

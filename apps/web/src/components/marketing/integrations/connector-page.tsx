@@ -63,7 +63,6 @@ function ConnectorHero({ connector }: { connector: ConnectorContent }) {
             <div className="mb-7 flex items-center gap-4">
               <ProviderLogo src={connector.logo} size="lg" />
               <div>
-                <p className="text-sm font-medium text-fg-muted">Integration</p>
                 <p className="mt-1 text-sm font-semibold text-fg">{connector.name}</p>
               </div>
             </div>
@@ -96,8 +95,36 @@ function ConnectorHero({ connector }: { connector: ConnectorContent }) {
                 <Link href="#how-it-works">See the evidence flow</Link>
               </Button>
             </div>
+            <div className="mt-6 max-w-[65ch] text-sm leading-relaxed">
+              <h2 className="font-semibold">Before you connect</h2>
+              <p className="mt-2 text-fg-muted">{connector.setup[1]}</p>
+              <p className="mt-2 text-fg-muted">{connector.setup[2]}</p>
+              <Link href="#setup" className="mt-3 inline-block underline underline-offset-4">
+                Review setup and permissions
+              </Link>
+              <Link href="#limitations" className="ml-4 inline-block underline underline-offset-4">
+                Check capture limits
+              </Link>
+            </div>
           </div>
         </div>
+        <nav
+          aria-label="On this integration page"
+          className="mt-8 flex flex-wrap gap-x-6 gap-y-2 border-y border-border py-3 text-sm"
+        >
+          <a href="#truth-boundary" className="py-2 underline underline-offset-4">
+            Capture
+          </a>
+          <a href="#how-it-works" className="py-2 underline underline-offset-4">
+            Evidence
+          </a>
+          <a href="#setup" className="py-2 underline underline-offset-4">
+            Setup
+          </a>
+          <a href="#limitations" className="py-2 underline underline-offset-4">
+            Limits
+          </a>
+        </nav>
         <div className="mt-8 scroll-mt-24" id="how-it-works">
           <RecordsToAnswer connector={connector} compact />
           {connector.screenshot ? (
@@ -119,10 +146,12 @@ function TruthBoundary({ connector }: { connector: ConnectorContent }) {
   return (
     <section className="border-b border-border py-10 sm:py-14" aria-labelledby="truth-boundary">
       <MarketingSectionGrid>
-        <SectionIndex index="01" label="What gets captured" />
         <div>
           <div className="border-b border-border pb-6">
-            <h2 id="truth-boundary" className="text-3xl font-semibold tracking-tight sm:text-4xl">
+            <h2
+              id="truth-boundary"
+              className="scroll-mt-24 text-3xl font-semibold tracking-tight sm:text-4xl"
+            >
               What Timeline keeps, and what stays in {connector.name}.
             </h2>
           </div>
@@ -148,7 +177,6 @@ function Questions({ connector }: { connector: ConnectorContent }) {
   return (
     <section className="border-b border-border py-10 sm:py-14" aria-labelledby="questions">
       <MarketingSectionGrid>
-        <SectionLabel label="Questions" />
         <div>
           <h2
             id="questions"
@@ -157,12 +185,8 @@ function Questions({ connector }: { connector: ConnectorContent }) {
             Ask the operating question, not a search query.
           </h2>
           <ol className="mt-10 border-t border-border">
-            {connector.exampleQuestions.map((question, index) => (
-              <li
-                key={question}
-                className="grid grid-cols-[2.4rem_1fr] gap-4 border-b border-border py-5 sm:grid-cols-[4rem_1fr]"
-              >
-                <span className="font-mono text-xs text-fg-dim">0{index + 1}</span>
+            {connector.exampleQuestions.map((question) => (
+              <li key={question} className="border-b border-border py-5">
                 <span className="text-lg font-medium text-fg sm:text-xl">{question}</span>
               </li>
             ))}
@@ -177,7 +201,6 @@ function WorkedScenario({ connector }: { connector: ConnectorContent }) {
   return (
     <section className="border-b border-border py-10 sm:py-14" aria-labelledby="scenario">
       <MarketingSectionGrid>
-        <SectionLabel label="Example" />
         <div className="grid gap-8 grid-cols-[minmax(0,1fr)]">
           <div>
             <h2 id="scenario" className="text-3xl font-semibold tracking-tight sm:text-4xl">
@@ -191,14 +214,14 @@ function WorkedScenario({ connector }: { connector: ConnectorContent }) {
             <ol className="space-y-8">
               {connector.scenario.chronology.map((step, index) => (
                 <li key={step} className="relative">
-                  <span className="absolute -left-[2.36rem] top-1 grid size-5 place-items-center rounded-full border border-signal bg-bg font-mono text-[9px] text-fg">
+                  <span className="absolute -left-[2.36rem] top-1 grid size-5 place-items-center rounded-full border border-signal bg-bg font-mono text-xs text-fg">
                     {index + 1}
                   </span>
                   <p className="text-base leading-relaxed text-fg">{step}</p>
                 </li>
               ))}
             </ol>
-            <div className="mt-10 border-l-2 border-signal bg-signal-soft p-5">
+            <div className="mt-10 border-l border-signal bg-signal-soft p-5">
               <span className="text-sm font-medium text-fg">Result</span>
               <p className="mt-2 font-semibold text-fg">{connector.scenario.result}</p>
             </div>
@@ -213,17 +236,13 @@ function CapturedRecords({ connector }: { connector: ConnectorContent }) {
   return (
     <section className="border-b border-border py-10 sm:py-14" aria-labelledby="records">
       <MarketingSectionGrid>
-        <SectionLabel label="What Timeline saves" />
         <div>
           <h2 id="records" className="text-3xl font-semibold tracking-tight sm:text-4xl">
             What enters the Timeline
           </h2>
           <div className="mt-6 grid gap-px border border-border bg-border sm:grid-cols-2">
-            {connector.capturedRecords.map((record, index) => (
+            {connector.capturedRecords.map((record) => (
               <div key={record} className="flex min-h-24 gap-4 bg-bg p-5">
-                <span className="font-mono text-xs text-fg-dim">
-                  {String(index + 1).padStart(2, '0')}
-                </span>
                 <p className="font-medium text-fg">{record}</p>
               </div>
             ))}
@@ -238,7 +257,6 @@ function Recipes({ connector }: { connector: ConnectorContent }) {
   return (
     <section className="border-b border-border py-10 sm:py-14" aria-labelledby="recipes">
       <MarketingSectionGrid>
-        <SectionLabel label="Use it with" />
         <div>
           <h2 id="recipes" className="text-3xl font-semibold tracking-tight sm:text-4xl">
             Better when the silos meet
@@ -276,17 +294,16 @@ function SetupAndPrivacy({ connector }: { connector: ConnectorContent }) {
   return (
     <section className="border-b border-border py-10 sm:py-14" aria-labelledby="setup">
       <MarketingSectionGrid>
-        <SectionLabel label="Setup and privacy" />
         <div className="grid gap-px border border-border bg-border lg:grid-cols-2">
           <article className="bg-bg p-6 sm:p-8">
             <Sparkles aria-hidden="true" className="size-5 text-signal" />
-            <h2 id="setup" className="mt-5 text-2xl font-semibold tracking-tight">
+            <h2 id="setup" className="scroll-mt-24 mt-5 text-2xl font-semibold tracking-tight">
               Setup overview
             </h2>
             <ol className="mt-6 space-y-5">
               {connector.setup.map((step, index) => (
                 <li key={step} className="grid grid-cols-[1.8rem_minmax(0,1fr)] gap-3">
-                  <span className="font-mono text-xs text-fg-dim">0{index + 1}</span>
+                  <span className="font-mono text-xs text-fg-muted">{index + 1}</span>
                   <span className="text-sm leading-relaxed text-fg">{step}</span>
                 </li>
               ))}
@@ -318,9 +335,11 @@ function Limitations({ connector }: { connector: ConnectorContent }) {
   return (
     <section className="border-b border-border py-10 sm:py-14" aria-labelledby="limitations">
       <MarketingSectionGrid>
-        <SectionLabel label="Limits" />
         <div>
-          <h2 id="limitations" className="text-3xl font-semibold tracking-tight sm:text-4xl">
+          <h2
+            id="limitations"
+            className="scroll-mt-24 text-3xl font-semibold tracking-tight sm:text-4xl"
+          >
             Capture limits and recovery
           </h2>
           <p className="mt-4 max-w-[62ch] text-base leading-relaxed text-fg-muted">
@@ -352,7 +371,6 @@ function Faq({ connector }: { connector: ConnectorContent }) {
   return (
     <section className="border-b border-border py-10 sm:py-14" aria-labelledby="faq">
       <MarketingSectionGrid>
-        <SectionLabel label="FAQ" />
         <div>
           <h2 id="faq" className="text-3xl font-semibold tracking-tight sm:text-4xl">
             Questions, answered
@@ -386,7 +404,6 @@ function Related({ connector }: { connector: ConnectorContent }) {
   return (
     <section className="border-b border-border py-10 sm:py-14" aria-labelledby="related">
       <MarketingSectionGrid>
-        <SectionLabel label="Related" />
         <div>
           <h2 id="related" className="text-2xl font-semibold tracking-tight">
             Continue across the work
@@ -416,7 +433,6 @@ function FinalCta({ connector }: { connector: ConnectorContent }) {
     <section className={publicStyles.cta} aria-labelledby="cta">
       <div className={publicStyles.ctaPanel}>
         <div>
-          <SectionIndex index="10" label="Start" />
           <h2 id="cta" className="max-w-[24ch]">
             Try one real {connector.name} question.
           </h2>
@@ -448,18 +464,4 @@ function FinalCta({ connector }: { connector: ConnectorContent }) {
       </div>
     </section>
   );
-}
-
-function SectionIndex({ index, label }: { index: string; label: string }) {
-  return (
-    <p className="flex items-baseline gap-1.5 text-sm font-medium text-fg-muted">
-      <span className="font-mono text-[11px] text-fg-dim">{index}</span>
-      <span aria-hidden="true">/</span>
-      <span>{label}</span>
-    </p>
-  );
-}
-
-function SectionLabel({ label }: { label: string }) {
-  return <p className="text-sm font-medium text-fg-muted">{label}</p>;
 }

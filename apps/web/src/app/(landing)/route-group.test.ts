@@ -128,12 +128,8 @@ describe('landing route group', () => {
     expect(motion).toContain('unpauseAnimations()');
     expect(motion).toContain("'[data-flow-motion]'");
     expect(styles).not.toContain('.ambientTrace');
-    expect(styles).toMatch(
-      /\.page::before\s*\{[^}]*opacity:\s*0\.055;[^}]*mix-blend-mode:\s*multiply;/s,
-    );
-    expect(styles).toMatch(
-      /:global\(\.dark\) \.page::before\s*\{[^}]*opacity:\s*0\.035;[^}]*mix-blend-mode:\s*normal;/s,
-    );
+    expect(styles).not.toContain('fractalNoise');
+    expect(styles).not.toContain('mix-blend-mode');
     expect(styles).toContain('.footer a');
     expect(styles).toContain('color: var(--home-paper)');
     expect(styles).toMatch(/\.footerSettings\s*\{[^}]*border: 0;[^}]*background: none;/s);

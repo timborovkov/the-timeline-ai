@@ -17,7 +17,7 @@ describe('Trust page', () => {
     const html = renderToStaticMarkup(<TrustPage />);
 
     expect(html.match(/<h1\b/g)).toHaveLength(1);
-    expect(html).toContain('Your work should not become someone else');
+    expect(html).toContain('Trust, security &amp; data privacy.');
     expect(html).toContain('ZDR by role');
     expect(html).toContain('Prohibited by policy');
     expect(html).not.toContain('evidence remains pending');
@@ -28,7 +28,6 @@ describe('Trust page', () => {
     expect(html).toContain('openai/gpt-4o-transcribe');
     expect(html).toContain('Retained transcription; no training');
     expect(html).toContain('up to 30 days');
-    expect(html).toContain('Not claimed today');
     expect(html).toContain('SOC 2 report, ISO 27001 certification');
     expect(html).toContain('Browser analytics is confined to');
     expect(html).toContain('protected workspace');
@@ -50,12 +49,25 @@ describe('Trust page', () => {
     expect(html).toContain('Firecrawl');
     expect(html).toContain('public pages of a website URL submitted during first-run onboarding');
     expect(html).toContain('What Timeline preserves');
+    expect(html).toContain('human review instead of applying it on its own');
     expect(html).toContain('Kept as received');
     expect(html).toContain('Placed on one chronology');
-    expect(html).toContain('Every answer carries its evidence chain.');
-    expect(html).toContain('Suggested changes wait');
-    expect(html).toContain('Human approval required');
-    expect(html).toContain('Approval-backed suggestions');
+  });
+
+  it('provides direct topic links to focusable sections and keeps assurance upfront', () => {
+    render(<TrustPage />);
+    const navigation = screen.getByRole('navigation', { name: 'Trust topics' });
+    const links = navigation.querySelectorAll('a');
+    expect(links).toHaveLength(6);
+    for (const link of links) {
+      const href = link.getAttribute('href');
+      expect(href).toBeTruthy();
+      const section = href ? document.querySelector(href) : null;
+      expect(section?.tagName).toBe('SECTION');
+      expect(section?.getAttribute('tabindex')).toBe('-1');
+    }
+    const intro = screen.getByRole('heading', { level: 1 }).closest('section');
+    expect(intro?.textContent).toContain('does not currently claim a SOC 2 report');
   });
 
   it('keeps policy details in the DOM and collapsed by default', () => {

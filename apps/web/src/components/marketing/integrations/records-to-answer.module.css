@@ -1,4 +1,5 @@
 .figure {
+  container-type: inline-size;
   overflow: hidden;
   border: 1px solid var(--border);
   border-radius: 6px;
@@ -24,7 +25,7 @@
 
 .index {
   color: var(--fg);
-  font-size: 0.72rem;
+  font-size: 0.75rem;
   font-weight: 600;
 }
 
@@ -40,6 +41,8 @@
 .records,
 .chronology,
 .answer {
+  min-width: 0;
+  overflow-wrap: anywhere;
   padding: clamp(1rem, 2.5vw, 1.75rem);
 }
 
@@ -51,7 +54,7 @@
 
 .record {
   display: grid;
-  grid-template-columns: auto 1fr;
+  grid-template-columns: auto minmax(0, 1fr);
   gap: 0.15rem 0.75rem;
   padding: 0.85rem;
   border: 1px solid var(--border);
@@ -66,13 +69,13 @@
 }
 
 .record strong {
-  font-size: 0.78rem;
+  font-size: 0.875rem;
 }
 
 .record p {
   margin: 0;
   color: var(--fg-muted);
-  font-size: 0.72rem;
+  font-size: 0.875rem;
   line-height: 1.4;
 }
 
@@ -124,7 +127,7 @@
 .chronology p {
   margin: 1rem 0 0;
   color: var(--fg-muted);
-  font-size: 0.72rem;
+  font-size: 0.875rem;
   line-height: 1.45;
 }
 
@@ -220,7 +223,7 @@
   font-size: 0.9rem;
 }
 
-@media (max-width: 63.99rem) {
+@container (max-width: 58rem) {
   .flow {
     grid-template-columns: 1fr;
   }
@@ -292,9 +295,11 @@
   }
 }
 
-@media (max-width: 63.99rem) and (prefers-reduced-motion: no-preference) {
-  .figure[data-motion-entered='true'] .transfer span::after {
-    animation-name: trace-pass-vertical;
+@media (prefers-reduced-motion: no-preference) {
+  @container (max-width: 58rem) {
+    .figure[data-motion-entered='true'] .transfer span::after {
+      animation-name: trace-pass-vertical;
+    }
   }
 }
 

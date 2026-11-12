@@ -2,7 +2,6 @@ import { ArrowRight } from 'lucide-react';
 import Link from 'next/link';
 
 import { ClaudeMcpExample } from '@/components/marketing/claude-mcp-example';
-import { EditorialKicker } from '@/components/marketing/editorial/editorial-kicker';
 import { EditorialStructuredData } from '@/components/marketing/editorial/editorial-structured-data';
 import styles from '@/components/marketing/editorial/editorial.module.css';
 import { InboundMcpDiagram } from '@/components/marketing/integrations/inbound-mcp-diagram';
@@ -15,7 +14,6 @@ import { MCP_GUIDE_DOCUMENT } from '@/components/marketing/integrations/mcp-guid
 import { MarketingDisclosure } from '@/components/marketing/marketing-disclosure';
 import { MarketingContainer, MarketingSectionGrid } from '@/components/marketing/marketing-layout';
 import { MarketingProductScreenshot } from '@/components/marketing/product-screenshot';
-import { MarketingSectionIndex } from '@/components/marketing/section-index';
 import { MarketingCtaBand, StartFreeLink } from '@/components/marketing/start-free-cta';
 import { PublicSessionBranch } from '@/components/public-session-branch';
 import { PublicShell } from '@/components/public-shell';
@@ -37,8 +35,7 @@ export function McpGuidePage() {
             >
               All integrations
             </Link>
-            <EditorialKicker>{MCP_GUIDE_PAGE.kicker}</EditorialKicker>
-            <div className="mt-8 grid items-end gap-10 grid-cols-[minmax(0,1fr)]">
+            <div className="grid items-end gap-10 grid-cols-[minmax(0,1fr)]">
               <h1 className={`${styles.displayTitle} max-w-[16ch]`}>{MCP_GUIDE_PAGE.title}</h1>
               <div>
                 <p className="max-w-[44ch] text-base leading-relaxed text-fg-muted sm:text-lg">
@@ -67,7 +64,6 @@ export function McpGuidePage() {
         <section className="border-b border-border" aria-labelledby="mcp-directions">
           <MarketingContainer className="py-10 sm:py-14">
             <MarketingSectionGrid>
-              <MarketingSectionIndex index="01" label="Directions" />
               <div>
                 <h2
                   id="mcp-directions"
@@ -117,7 +113,6 @@ export function McpGuidePage() {
         <section className="border-b border-border bg-surface/45" aria-labelledby="mcp-setup">
           <MarketingContainer className="py-10 sm:py-14">
             <MarketingSectionGrid>
-              <MarketingSectionIndex index="02" label="In the product" />
               <div>
                 <h2
                   id="mcp-setup"
@@ -171,7 +166,6 @@ export function McpGuidePage() {
         <section className="border-b border-border" aria-labelledby="mcp-catalog">
           <MarketingContainer className="py-10 sm:py-14">
             <MarketingSectionGrid>
-              <MarketingSectionIndex index="03" label="Catalog" />
               <div>
                 <h2
                   id="mcp-catalog"
@@ -200,7 +194,6 @@ export function McpGuidePage() {
         <section className="border-b border-border" aria-labelledby="mcp-limits">
           <MarketingContainer className="py-10 sm:py-14">
             <MarketingSectionGrid>
-              <MarketingSectionIndex index="04" label="Limits" />
               <div>
                 <h2
                   id="mcp-limits"

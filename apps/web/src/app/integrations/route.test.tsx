@@ -75,15 +75,18 @@ describe('public integration routes', () => {
     expect(html).toContain('connectorTitle');
     expect(html).not.toContain('7.5vw');
     expect(text).toContain('Send work in');
-    expect(text).toContain('02/Connect your tools');
-    expect(text).toContain('04/More connections');
-    expect(text).toContain('03/Proof');
+    for (const id of ['capture-surfaces', 'native', 'live-lookup', 'planned']) {
+      expect(html).toContain(`href="#${id}"`);
+      expect(html).toContain(`id="${id}"`);
+    }
+    expect(html.indexOf('<h3>Telegram')).toBeLessThan(html.indexOf('<h3>Websites'));
+    expect(html.indexOf('id="planned"')).toBeLessThan(html.indexOf('id="evidence"'));
+    expect(html.match(/<h3>Linear<\/h3>/g)).toHaveLength(1);
+    expect(text).toContain('They do not import or sync tool history into Timeline');
     expect(html).not.toMatch(/font-mono[^>]*>Integrations \/ capability directory/u);
     expect(html).not.toContain('Available now');
-    expect(html).toContain('motion-safe:group-hover:translate-x-1');
     expect(html).toContain('max-w-6xl');
     expect(html).toContain('data-marketing-container');
-    expect(html).toContain('data-marketing-section');
     expect(html).not.toContain('01 / Native');
     expect(html).not.toContain('03 / Tiers');
     expect(html.match(/bg-white/g)?.length).toBeGreaterThanOrEqual(6);
@@ -171,7 +174,7 @@ describe('public integration routes', () => {
 
     expect(html.match(/<h1\b/g)).toHaveLength(1);
     expect(text).toContain('All integrations');
-    expect(text).toContain('What gets captured');
+    expect(text).toContain('Before you connect');
     expect(text).toContain('What Timeline keeps, and what stays in GitHub');
     expect(text).not.toMatch(/Last reviewed|Native integration|Capability truth/u);
     expect(html).not.toContain('<time');
@@ -184,7 +187,12 @@ describe('public integration routes', () => {
     expect(html).toContain('Questions, answered');
     expect(html).not.toContain('02 / Questions');
     expect(html).not.toContain('09 / Related');
-    expect(text).toContain('10/Start');
+    for (const id of ['truth-boundary', 'how-it-works', 'setup', 'limitations']) {
+      expect(html).toContain(`href="#${id}"`);
+      expect(html).toContain(`id="${id}"`);
+    }
+    expect(html.indexOf('Before you connect')).toBeLessThan(html.indexOf('id="how-it-works"'));
+    expect(text).toContain('Have a team admin activate the shared sources.');
     expect(html).toContain('bg-white');
     expect(html).toContain('PR #482');
     expect(html).toContain('application/ld+json');

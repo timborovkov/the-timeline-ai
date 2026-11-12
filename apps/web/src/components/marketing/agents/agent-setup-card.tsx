@@ -31,7 +31,6 @@ export function AgentSetupCard({ className }: { className?: string }) {
   return (
     <aside className={cn(styles.card, className)} data-agent-setup>
       <div className={styles.copy}>
-        <p className={styles.kicker}>{AGENT_SETUP_CARD.kicker}</p>
         <p className={styles.title}>{AGENT_SETUP_CARD.title}</p>
         <p className={styles.lede}>{AGENT_SETUP_CARD.body}</p>
       </div>

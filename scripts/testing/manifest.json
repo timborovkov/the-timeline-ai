@@ -976,9 +976,6 @@
   "apps/web/src/components/marketing/use-cases/public-documents.test.ts": {
     "group": "unit"
   },
-  "apps/web/src/components/marketing/use-cases/record-jobs-diagram.test.tsx": {
-    "group": "unit"
-  },
   "apps/web/src/components/mcp-oauth-grants.test.tsx": {
     "group": "dom"
   },

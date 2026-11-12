@@ -15,8 +15,8 @@ describe('agents hub', () => {
     expect(html.match(/<h1\b/g)).toHaveLength(1);
     expect(html).toContain(AGENTS_HUB.title);
     expect(html).toContain(AGENTS_HUB.summary);
-    expect(html).toContain(AGENTS_HUB.reportIn.label);
-    expect(html).toContain(AGENTS_HUB.readOut.label);
+    expect(html).toContain(AGENTS_HUB.reportIn.title);
+    expect(html).toContain(AGENTS_HUB.readOut.title);
     expect(html).toContain('data-agents-hub');
     expect(html).toContain('data-agent-setup');
     expect(html).toContain('data-claude-mcp-example');

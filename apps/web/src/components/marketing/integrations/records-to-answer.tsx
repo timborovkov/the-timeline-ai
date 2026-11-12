@@ -17,8 +17,8 @@ export function RecordsToAnswer({
       className={`${styles.figure} ${compact ? styles.compact : ''}`}
       aria-labelledby={`diagram-${connector.slug}`}
     >
-      <figcaption id={`diagram-${connector.slug}`} className="sr-only">
-        {connector.name} records enter a chronological Timeline and resolve into a cited answer.
+      <figcaption id={`diagram-${connector.slug}`} className="px-5 pt-5 text-sm text-fg-muted">
+        Illustrative example: {connector.name} records become a cited answer.
       </figcaption>
       <div className={styles.question}>
         <span className={styles.index}>Question</span>

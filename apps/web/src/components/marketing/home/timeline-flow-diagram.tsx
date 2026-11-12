@@ -5,6 +5,7 @@ import type { CSSProperties } from 'react';
 
 import styles from '@/app/(landing)/home.module.css';
 import { Logo } from '@/components/brand/logo';
+import { HeroFlowControls } from '@/components/marketing/home/hero-flow-controls';
 import { TimelineFlowMotion } from '@/components/marketing/home/timeline-flow-motion';
 import { PUBLIC_DEMO_STORY } from '@/components/marketing/public-demo-story';
 import { cn } from '@/lib/utils';
@@ -63,7 +64,7 @@ const HERO_SOURCES = [
   },
   {
     id: 'github',
-    x: 510,
+    x: 490,
     y: 510,
     name: 'GitHub',
     icon: 'GitHub',
@@ -102,7 +103,7 @@ const HERO_SOURCES = [
   delay: string;
 }[];
 
-const HERO_OUTCOME_PATH = 'M300 418 C300 431 300 443 300 456';
+const HERO_OUTCOME_PATH = 'M300 384 C300 410 300 434 300 456';
 
 const FLOW_STORY = PUBLIC_DEMO_STORY.landing.flow;
 
@@ -128,8 +129,7 @@ function HeroTimelineFlow({ disclosure }: { readonly disclosure?: string }) {
       data-home-diagram
       aria-label="Work events stream from six sources into The Timeline, where the work record becomes a daily update and linked answers."
     >
-      <div className={styles.orbitOuter} aria-hidden="true" />
-      <div className={styles.orbitInner} aria-hidden="true" />
+      <HeroFlowControls />
 
       <svg
         className={styles.orbitLines}

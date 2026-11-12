@@ -5,13 +5,11 @@ import { AgentSetupCard } from '@/components/marketing/agents/agent-setup-card';
 import { AGENTS_HUB } from '@/components/marketing/agents/content';
 import { AGENTS_HUB_DOCUMENT } from '@/components/marketing/agents/public-documents';
 import { ClaudeMcpExample } from '@/components/marketing/claude-mcp-example';
-import { EditorialKicker } from '@/components/marketing/editorial/editorial-kicker';
 import { EditorialStructuredData } from '@/components/marketing/editorial/editorial-structured-data';
 import styles from '@/components/marketing/editorial/editorial.module.css';
 import { MarketingContainer, MarketingSectionGrid } from '@/components/marketing/marketing-layout';
 import { MarketingProductScreenshot } from '@/components/marketing/product-screenshot';
 import publicStyles from '@/components/marketing/public-page.module.css';
-import { MarketingSectionIndex } from '@/components/marketing/section-index';
 import { MarketingCtaBand } from '@/components/marketing/start-free-cta';
 import { TIMELINE_MCP_COMMAND } from '@/lib/agent-install-content';
 import { buildPublicStructuredData } from '@/lib/public-site';
@@ -27,8 +25,7 @@ export function AgentsHubPage() {
         <MarketingContainer className="py-10 sm:py-14">
           <div className={publicStyles.heroGrid}>
             <div>
-              <EditorialKicker>{AGENTS_HUB.kicker}</EditorialKicker>
-              <h1 className={`${styles.displayTitle} mt-6`}>{AGENTS_HUB.title}</h1>
+              <h1 className={styles.displayTitle}>{AGENTS_HUB.title}</h1>
               <p className="mt-7 max-w-2xl text-lg leading-8 text-fg-muted sm:text-xl">
                 {AGENTS_HUB.summary}
               </p>
@@ -71,10 +68,6 @@ export function AgentsHubPage() {
       <section className="border-b border-border" aria-labelledby="report-in-title">
         <MarketingContainer className="py-10 sm:py-14">
           <MarketingSectionGrid>
-            <MarketingSectionIndex
-              index={AGENTS_HUB.reportIn.index}
-              label={AGENTS_HUB.reportIn.label}
-            />
             <div className="min-w-0">
               <h2
                 id="report-in-title"
@@ -102,10 +95,7 @@ export function AgentsHubPage() {
                 aria-label={AGENTS_HUB.example.label}
               >
                 <div className="relative z-10">
-                  <p className="font-mono text-[0.68rem] tracking-[0.14em] text-signal uppercase">
-                    {AGENTS_HUB.example.label}
-                  </p>
-                  <h3 className="mt-4 text-xl font-semibold tracking-[-0.025em] sm:text-2xl">
+                  <h3 className="text-xl font-semibold tracking-[-0.025em] sm:text-2xl">
                     {AGENTS_HUB.example.title}
                   </h3>
                   <p className="mt-4 text-sm leading-7 text-fg-muted sm:text-base">
@@ -125,10 +115,6 @@ export function AgentsHubPage() {
         <MarketingContainer className="py-10 sm:py-14">
           <div className={publicStyles.detailGrid}>
             <MarketingSectionGrid>
-              <MarketingSectionIndex
-                index={AGENTS_HUB.readOut.index}
-                label={AGENTS_HUB.readOut.label}
-              />
               <div className="min-w-0">
                 <h2
                   id="read-out-title"

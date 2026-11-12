@@ -2,14 +2,12 @@ import { ArrowRight } from 'lucide-react';
 import Image from 'next/image';
 import Link from 'next/link';
 
-import { EditorialKicker } from '@/components/marketing/editorial/editorial-kicker';
 import { EditorialStructuredData } from '@/components/marketing/editorial/editorial-structured-data';
 import styles from '@/components/marketing/editorial/editorial.module.css';
 import { TELEGRAM_PUBLIC_DOCUMENT } from '@/components/marketing/integrations/connector-public-documents';
 import { TELEGRAM_PAGE } from '@/components/marketing/integrations/telegram-content';
 import { MarketingContainer, MarketingSectionGrid } from '@/components/marketing/marketing-layout';
 import { MarketingProductScreenshot } from '@/components/marketing/product-screenshot';
-import { MarketingSectionIndex } from '@/components/marketing/section-index';
 import { MarketingCtaBand, StartFreeLink } from '@/components/marketing/start-free-cta';
 import { PublicSessionBranch } from '@/components/public-session-branch';
 import { PublicShell } from '@/components/public-shell';
@@ -29,7 +27,6 @@ export function TelegramIntegrationPage() {
               <span className="grid size-12 place-items-center rounded-md border border-border bg-white">
                 <Image src="/connectors/telegram.svg" alt="" width={28} height={28} />
               </span>
-              <EditorialKicker>Integrations · Telegram</EditorialKicker>
             </div>
             <div className="mt-8 grid items-end gap-10 grid-cols-[minmax(0,1fr)]">
               <h1 className={`${styles.displayTitle} max-w-[16ch]`}>{TELEGRAM_PAGE.title}</h1>
@@ -60,7 +57,6 @@ export function TelegramIntegrationPage() {
         <section className="border-b border-border bg-surface/45">
           <MarketingContainer className="py-10 sm:py-14">
             <MarketingSectionGrid>
-              <MarketingSectionIndex index="01" label="What it captures" />
               <div>
                 <h2 className="max-w-[18ch] text-3xl font-semibold tracking-tight sm:text-4xl">
                   Messages, files and voice memos join the record.
@@ -83,7 +79,6 @@ export function TelegramIntegrationPage() {
         <section className="border-b border-border">
           <MarketingContainer className="py-10 sm:py-14">
             <MarketingSectionGrid>
-              <MarketingSectionIndex index="02" label="What to know" />
               <div>
                 <h2 className="max-w-[18ch] text-3xl font-semibold tracking-tight sm:text-4xl">
                   Capture is deliberate, not a silent account sync.
@@ -99,7 +94,6 @@ export function TelegramIntegrationPage() {
         <section>
           <MarketingContainer className="py-10 sm:py-14">
             <MarketingSectionGrid>
-              <MarketingSectionIndex index="03" label="Daily update" />
               <div>
                 <h2 className="max-w-[18ch] text-3xl font-semibold tracking-tight sm:text-4xl">
                   Get the workspace update in Telegram.

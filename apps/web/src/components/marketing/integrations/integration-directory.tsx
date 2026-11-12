@@ -1,13 +1,4 @@
-import {
-  ArrowRight,
-  Globe,
-  Check,
-  CircleDotDashed,
-  Mail,
-  Video,
-  Webhook,
-  Wrench,
-} from 'lucide-react';
+import { ArrowRight, Globe, Mail, Video, Webhook } from 'lucide-react';
 import Link from 'next/link';
 
 import {
@@ -19,367 +10,203 @@ import {
   getConnectorCapabilityTiers,
 } from '@/components/marketing/integrations/connector-content';
 import { DirectoryStructuredData } from '@/components/marketing/integrations/connector-seo';
+import styles from '@/components/marketing/integrations/integration-directory.module.css';
 import { RecordsToAnswer } from '@/components/marketing/integrations/records-to-answer';
 import { WORKS_WITH_TOOLS } from '@/components/marketing/integrations/works-with-content';
-import { MarketingContainer, MarketingSectionGrid } from '@/components/marketing/marketing-layout';
+import { MarketingContainer } from '@/components/marketing/marketing-layout';
 import publicStyles from '@/components/marketing/public-page.module.css';
-import { MarketingSectionIndex } from '@/components/marketing/section-index';
 import { ProviderLogo } from '@/components/provider-logo';
 import { PublicSessionBranch } from '@/components/public-session-branch';
 import { PublicShell } from '@/components/public-shell';
 import { Button } from '@/components/ui/button';
 
-const FEATURED_CAPTURE_SURFACES = CAPTURE_SURFACES.filter((surface) => surface.featured);
-const SUPPORTING_CAPTURE_SURFACES = CAPTURE_SURFACES.filter((surface) => !surface.featured);
+const CAPTURE_ORDER = ['telegram', 'slack-chat', 'email', 'meetings', 'webhooks', 'websites'];
+const surfaces = [...CAPTURE_SURFACES].sort(
+  (a, b) => CAPTURE_ORDER.indexOf(a.id) - CAPTURE_ORDER.indexOf(b.id),
+);
 
 export function IntegrationDirectory() {
   const featuredConnector = CONNECTORS.find((connector) => connector.slug === 'slack');
   if (!featuredConnector) throw new Error('Native Slack connector content is required');
-  const capabilityTiers = getConnectorCapabilityTiers();
-
+  const tiers = getConnectorCapabilityTiers();
   return (
     <PublicShell width="wide" footerLabel="The Timeline integrations" currentSection="integrations">
       <DirectoryStructuredData />
       <main id="main" tabIndex={-1}>
-        <section className="border-b border-border">
-          <MarketingContainer className="py-10 sm:py-14">
-            <p className="text-sm font-medium text-fg-muted">Integrations</p>
-            <div className="mt-6 grid items-end gap-10 grid-cols-[minmax(0,1fr)]">
-              <h1 className={publicStyles.connectorTitle}>
-                Connect the places where the work already happens.
-              </h1>
-              <div>
-                <p className="max-w-[44ch] text-base leading-relaxed text-fg-muted sm:text-lg">
-                  Deliberately route conversations, forwarded email, meeting transcripts, and
-                  webhook payloads or public website pages into Timeline, or select records from
-                  connected tools. Timeline keeps the origin clear while it turns that work into
-                  chronology and cited answers.
-                </p>
-                <PublicSessionBranch
-                  signedOut={
-                    <Button asChild size="lg" className="mt-7">
-                      <Link href="/sign-up">
-                        Start free
-                        <ArrowRight aria-hidden="true" />
-                      </Link>
-                    </Button>
-                  }
-                  signedIn={
-                    <Button asChild size="lg" className="mt-7">
-                      <Link href="/app/connections">
-                        Open connections
-                        <ArrowRight aria-hidden="true" />
-                      </Link>
-                    </Button>
-                  }
-                />
-              </div>
+        <MarketingContainer className={styles.directory}>
+          <header className={styles.header}>
+            <h1 className={publicStyles.connectorTitle}>
+              Connect the places where the work already happens.
+            </h1>
+            <p>
+              Start with a Slack conversation or Telegram group. Add selected tool history or live
+              lookup when you need it.
+            </p>
+            <PublicSessionBranch
+              signedOut={
+                <Button asChild size="lg">
+                  <Link href="/sign-up">
+                    Start free
+                    <ArrowRight aria-hidden="true" />
+                  </Link>
+                </Button>
+              }
+              signedIn={
+                <Button asChild size="lg">
+                  <Link href="/app/connections">
+                    Open connections
+                    <ArrowRight aria-hidden="true" />
+                  </Link>
+                </Button>
+              }
+            />
+          </header>
+          <nav className={styles.jumpLinks} aria-label="Integration categories">
+            <a href="#capture-surfaces">Conversations & capture</a>
+            <a href="#native">Native sync</a>
+            <a href="#live-lookup">Live lookup</a>
+            <a href="#planned">Coming later</a>
+          </nav>
+          <section className={styles.section} aria-labelledby="capture-surfaces">
+            <h2 id="capture-surfaces">Start where the conversation already happens.</h2>
+            <p>Send work in deliberately. Each route explains what is saved and who can see it.</p>
+            <div className={styles.rows}>
+              {surfaces.map((surface) => (
+                <CaptureSurfaceRow key={surface.id} surface={surface} />
+              ))}
             </div>
-          </MarketingContainer>
-        </section>
-
-        <section aria-labelledby="capture-surfaces">
-          <MarketingContainer className="py-10 sm:py-14">
-            <MarketingSectionGrid>
-              <MarketingSectionIndex label="Send work in" />
-              <div>
-                <div className="flex flex-wrap items-end justify-between gap-4">
-                  <div>
-                    <h2
-                      id="capture-surfaces"
-                      className="max-w-[18ch] text-3xl font-semibold tracking-tight sm:text-4xl"
-                    >
-                      Start where the conversation already happens.
-                    </h2>
-                    <p className="mt-4 max-w-[64ch] text-base leading-relaxed text-fg-muted">
-                      Send messages, files, forwarded email, meeting transcripts, or webhook
-                      payloads to Timeline. Each route makes it clear what is saved and who can see
-                      it.
-                    </p>
-                  </div>
-                </div>
-
-                <div className="mt-10 grid gap-px border border-border bg-border md:grid-cols-2">
-                  {FEATURED_CAPTURE_SURFACES.map((surface) => (
-                    <FeaturedCaptureSurface key={surface.id} surface={surface} />
-                  ))}
-                </div>
-                <div className="grid gap-px border-x border-b border-border bg-border">
-                  {SUPPORTING_CAPTURE_SURFACES.map((surface) => (
-                    <CaptureSurfaceRow key={surface.id} surface={surface} />
-                  ))}
-                </div>
-              </div>
-            </MarketingSectionGrid>
-          </MarketingContainer>
-        </section>
-
-        <section className="border-t border-border" aria-labelledby="native">
-          <MarketingContainer className="py-10 sm:py-14">
-            <MarketingSectionGrid>
-              <MarketingSectionIndex index="02" label="Connect your tools" />
-              <div>
-                <div className="flex flex-wrap items-end justify-between gap-4">
-                  <div>
-                    <h2 id="native" className="text-3xl font-semibold tracking-tight sm:text-4xl">
-                      Bring selected tool history into Timeline.
-                    </h2>
-                    <p className="mt-4 max-w-[62ch] text-base leading-relaxed text-fg-muted">
-                      Choose the repositories, teams, drives, boards, channels, and projects that
-                      belong in the record. Each integration page explains exactly what Timeline
-                      keeps, what stays in the original tool, and which permissions it needs.
-                    </p>
-                  </div>
-                </div>
-                <div className="mt-10 grid gap-px border border-border bg-border md:grid-cols-2">
-                  {CONNECTORS.map((connector, index) => (
-                    <Link
-                      key={connector.slug}
-                      href={`/integrations/${connector.slug}`}
-                      className="group flex min-h-64 flex-col bg-bg p-6 outline-none transition-colors hover:bg-surface focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:p-8"
-                    >
-                      <div className="flex items-start justify-between gap-4">
-                        <ProviderLogo src={connector.logo} size="md" />
-                        <span className="font-mono text-[11px] text-fg-dim">0{index + 1}</span>
-                      </div>
-                      <h3 className="mt-8 text-2xl font-semibold tracking-tight text-fg">
-                        {connector.name}
-                      </h3>
-                      <p className="mt-3 grow text-sm leading-relaxed text-fg-muted">
-                        {connector.intro}
-                      </p>
-                      <span className="mt-7 flex items-center gap-2 text-sm font-semibold text-fg">
-                        See records become answers
-                        <ArrowRight
-                          aria-hidden="true"
-                          className="size-4 motion-safe:transition-transform motion-safe:group-hover:translate-x-1"
-                        />
-                      </span>
-                    </Link>
-                  ))}
-                </div>
-              </div>
-            </MarketingSectionGrid>
-          </MarketingContainer>
-        </section>
-
-        <section className="border-y border-border bg-surface">
-          <MarketingContainer className="py-10 sm:py-14">
-            <MarketingSectionGrid>
-              <MarketingSectionIndex index="03" label="Proof" />
-              <div>
-                <h2 className="text-3xl font-semibold tracking-tight sm:text-4xl">
-                  Every connector has a specific evidence story.
-                </h2>
-                <p className="mt-4 max-w-[64ch] text-base leading-relaxed text-fg-muted">
-                  Start with one operating question. Timeline orders selected records by time, keeps
-                  their source attached, and cites the evidence used in the answer. This Slack
-                  example shows that journey from conversation to chronology.
-                </p>
-                <div className="mt-10">
-                  <RecordsToAnswer connector={featuredConnector} compact />
-                </div>
-              </div>
-            </MarketingSectionGrid>
-          </MarketingContainer>
-        </section>
-
-        <section aria-labelledby="tiers">
-          <MarketingContainer className="py-10 sm:py-14">
-            <MarketingSectionGrid>
-              <MarketingSectionIndex index="04" label="More connections" />
-              <div>
-                <h2 id="tiers" className="text-3xl font-semibold tracking-tight sm:text-4xl">
-                  Know what each connection can do.
-                </h2>
-                <p className="mt-4 max-w-[64ch] text-base leading-relaxed text-fg-muted">
-                  Some connections add selected records to your Timeline. Others look up approved
-                  tools only when you ask a question. Local connections require Timeline on the same
-                  computer, and integrations listed as coming later cannot be connected yet.
-                </p>
-                <div className="mt-10 border-t border-border">
-                  <CapabilityRow
-                    icon={Check}
-                    title="Send work to Timeline"
-                    body="Telegram, Slack conversations, email forwarding, meeting transcripts, ingest webhooks"
-                    live
-                  />
-                  <CapabilityRow
-                    icon={Check}
-                    title="Keep selected tool history"
-                    body={capabilityTiers.nativeProviders.join(', ')}
-                  />
-                  <CapabilityRow
-                    icon={Wrench}
-                    title="Look up live tools"
-                    body={capabilityTiers.mcpAccess.join(', ')}
-                  />
-                  <CapabilityRow
-                    icon={Wrench}
-                    title="Use a local desktop connection"
-                    body={`${capabilityTiers.localDesktopAccess.join(', ')}. Available only when Timeline runs on the same machine; not connectable from hosted Timeline.`}
-                  />
-                  <CapabilityRow
-                    icon={CircleDotDashed}
-                    title="Coming later"
-                    body={capabilityTiers.plannedProviders.join(', ')}
-                  />
-                </div>
+          </section>
+          <section className={styles.section} aria-labelledby="native">
+            <h2 id="native">Bring selected tool history into Timeline.</h2>
+            <p>
+              Connect your tools, choose the sources to share, and have a team admin activate them.
+            </p>
+            <div className={styles.rows}>
+              {CONNECTORS.map((connector) => (
                 <Link
-                  href="/integrations/mcp"
-                  className="group mt-10 flex flex-col border border-border bg-bg p-6 outline-none hover:bg-surface focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:p-8"
+                  key={connector.slug}
+                  href={`/integrations/${connector.slug}`}
+                  className={styles.providerRow}
                 >
-                  <span className="font-mono text-[0.65rem] tracking-[0.14em] text-signal uppercase">
-                    Agent tools
-                  </span>
-                  <h3 className="mt-5 text-xl font-semibold tracking-tight text-fg">
-                    Connect MCP tools
-                  </h3>
-                  <p className="mt-3 max-w-[64ch] text-sm leading-relaxed text-fg-muted">
-                    Third-party MCP servers add live tools The Timeline Agent can call. They are not
-                    native ongoing sync, and they are not the same as connecting an external agent
-                    to Timeline.
-                  </p>
-                  <span className="mt-5 inline-flex items-center gap-2 text-sm font-semibold text-fg">
-                    How MCP tools plug in
-                    <ArrowRight
-                      aria-hidden="true"
-                      className="size-4 motion-safe:transition-transform motion-safe:group-hover:translate-x-1"
-                    />
+                  <ProviderLogo src={connector.logo} size="md" />
+                  <div>
+                    <h3>{connector.name === 'Slack' ? 'Slack history' : connector.name}</h3>
+                    <p>{connector.intro}</p>
+                  </div>
+                  <span className={styles.status}>
+                    Native sync
+                    <ArrowRight aria-hidden="true" className="size-4" />
                   </span>
                 </Link>
-                <div className="grid gap-px border-x border-b border-border bg-border sm:grid-cols-2 lg:grid-cols-3">
-                  {WORKS_WITH_TOOLS.map((tool) => (
-                    <Link
-                      key={tool.route}
-                      href={tool.route}
-                      className="group flex flex-col bg-bg p-6 outline-none hover:bg-surface focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
-                    >
-                      <span className="flex items-center gap-3">
-                        <ProviderLogo src={tool.logo} size="sm" />
-                        <span className="font-mono text-[0.65rem] tracking-[0.14em] text-signal uppercase">
-                          {tool.statusLabel}
-                        </span>
-                      </span>
-                      <h3 className="mt-5 text-xl font-semibold tracking-tight text-fg">
-                        {tool.name}
-                      </h3>
-                      <p className="mt-3 grow text-sm leading-relaxed text-fg-muted">
-                        {tool.summary}
-                      </p>
-                      <span className="mt-5 inline-flex items-center gap-2 text-sm font-semibold text-fg">
-                        How {tool.name} plugs in
-                        <ArrowRight
-                          aria-hidden="true"
-                          className="size-4 motion-safe:transition-transform motion-safe:group-hover:translate-x-1"
-                        />
-                      </span>
-                    </Link>
-                  ))}
-                </div>
-              </div>
-            </MarketingSectionGrid>
-          </MarketingContainer>
-        </section>
+              ))}
+            </div>
+          </section>
+          <section className={styles.section} aria-labelledby="live-lookup">
+            <h2 id="live-lookup">Look up live tools</h2>
+            <p>
+              Enabled MCP tools answer questions from the source. They do not import or sync tool
+              history into Timeline.
+            </p>
+            <Link href="/integrations/mcp" className={styles.textLink}>
+              Connect MCP tools
+              <ArrowRight aria-hidden="true" className="size-4" />
+            </Link>
+            <div className={styles.rows}>
+              {WORKS_WITH_TOOLS.filter((tool) => tool.status === 'mcp-lookup').map((tool) => (
+                <ToolRow key={tool.slug} tool={tool} />
+              ))}
+            </div>
+            <details className={styles.context}>
+              <summary>All live and local tool connections</summary>
+              <p>{tiers.mcpAccess.join(', ')}</p>
+              <h3>Use a local desktop connection</h3>
+              <p>
+                {tiers.localDesktopAccess.join(', ')}. Available only when Timeline runs on the same
+                machine; not connectable from hosted Timeline.
+              </p>
+            </details>
+          </section>
+          <section className={styles.section} aria-labelledby="planned">
+            <h2 id="planned">Coming later</h2>
+            <p>
+              These planned native integrations cannot be connected yet. Where live lookup is
+              available, it is listed separately above.
+            </p>
+            <div className={styles.rows}>
+              {WORKS_WITH_TOOLS.filter((tool) => tool.status === 'coming-soon').map((tool) => (
+                <ToolRow key={tool.slug} tool={tool} />
+              ))}
+            </div>
+            <details className={styles.context}>
+              <summary>All planned native integrations</summary>
+              <p>{tiers.plannedProviders.join(', ')}</p>
+            </details>
+          </section>
+          <section className={styles.section} aria-labelledby="evidence">
+            <h2 id="evidence">Every connector has a specific evidence story.</h2>
+            <p>
+              Timeline orders selected records by time, keeps their source attached, and cites the
+              evidence used in the answer. This Slack example shows that journey from conversation
+              to chronology.
+            </p>
+            <div className="mt-6">
+              <RecordsToAnswer connector={featuredConnector} compact />
+            </div>
+          </section>
+        </MarketingContainer>
       </main>
     </PublicShell>
   );
 }
 
-function FeaturedCaptureSurface({ surface }: { surface: CaptureSurfaceContent }) {
+function ToolRow({ tool }: { tool: (typeof WORKS_WITH_TOOLS)[number] }) {
   return (
-    <article className="flex min-h-96 flex-col bg-bg p-6 sm:p-8">
+    <Link href={tool.route} className={styles.providerRow}>
+      <ProviderLogo src={tool.logo} size="md" />
       <div>
-        <CaptureSurfaceIcon surface={surface} />
+        <h3>{tool.name}</h3>
+        <p>{tool.summary}</p>
       </div>
-      <p className="mt-8 text-sm font-medium text-fg-muted">{surface.category}</p>
-      <h3 className="mt-2 text-3xl font-semibold tracking-tight text-fg">{surface.name}</h3>
-      <p className="mt-4 text-sm leading-relaxed text-fg-muted">{surface.summary}</p>
-      <dl className="mt-6 grow space-y-4 border-t border-border pt-5 text-sm leading-relaxed">
-        <div>
-          <dt className="font-medium text-fg">Timeline captures</dt>
-          <dd className="mt-1 text-fg-muted">{surface.captured}</dd>
-        </div>
-        <div>
-          <dt className="font-medium text-fg">What to know</dt>
-          <dd className="mt-1 text-fg-muted">{surface.boundary}</dd>
-        </div>
-      </dl>
-      <PublicSessionBranch
-        signedOut={
-          <Link
-            href={surface.publicHref ?? '/sign-up'}
-            className="group mt-7 inline-flex w-fit items-center gap-2 text-sm font-semibold text-fg outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            {`Start with ${surface.name}`}
-            <ArrowRight
-              aria-hidden="true"
-              className="size-4 motion-safe:transition-transform motion-safe:group-hover:translate-x-1"
-            />
-          </Link>
-        }
-        signedIn={
-          <Link
-            href={surface.setupHref}
-            className="group mt-7 inline-flex w-fit items-center gap-2 text-sm font-semibold text-fg outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            {surface.setupLabel}
-            <ArrowRight
-              aria-hidden="true"
-              className="size-4 motion-safe:transition-transform motion-safe:group-hover:translate-x-1"
-            />
-          </Link>
-        }
-      />
-    </article>
+      <span className={styles.status}>
+        {tool.statusLabel}
+        <ArrowRight aria-hidden="true" className="size-4" />
+      </span>
+    </Link>
   );
 }
 
 function CaptureSurfaceRow({ surface }: { surface: CaptureSurfaceContent }) {
   return (
-    <article className="grid gap-6 bg-bg p-6 sm:p-8 lg:grid-cols-[1.1fr_1fr_1fr] lg:gap-10">
+    <article className={styles.captureRow}>
+      <CaptureSurfaceIcon surface={surface} />
       <div>
-        <div>
-          <CaptureSurfaceIcon surface={surface} />
-        </div>
-        <p className="mt-5 text-sm font-medium text-fg-muted">{surface.category}</p>
-        <h3 className="mt-2 text-2xl font-semibold tracking-tight text-fg">{surface.name}</h3>
-        <p className="mt-3 text-sm leading-relaxed text-fg-muted">{surface.summary}</p>
-        <PublicSessionBranch
-          signedOut={
-            <Link
-              href={surface.publicHref ?? '/sign-up'}
-              className="group mt-5 inline-flex w-fit items-center gap-2 text-sm font-semibold text-fg outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            >
-              {`Start with ${surface.name}`}
-              <ArrowRight
-                aria-hidden="true"
-                className="size-4 motion-safe:transition-transform motion-safe:group-hover:translate-x-1"
-              />
-            </Link>
-          }
-          signedIn={
-            <Link
-              href={surface.setupHref}
-              className="group mt-5 inline-flex w-fit items-center gap-2 text-sm font-semibold text-fg outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            >
-              {surface.setupLabel}
-              <ArrowRight
-                aria-hidden="true"
-                className="size-4 motion-safe:transition-transform motion-safe:group-hover:translate-x-1"
-              />
-            </Link>
-          }
-        />
+        <h3>{surface.name}</h3>
+        <p>{surface.summary}</p>
+        <details className={styles.captureDetails}>
+          <summary>Capture details and limits</summary>
+          <p>{surface.category}</p>
+          <dl>
+            <dt>Timeline captures</dt>
+            <dd>{surface.captured}</dd>
+            <dt>What to know</dt>
+            <dd>{surface.boundary}</dd>
+          </dl>
+        </details>
       </div>
-      <div className="border-t border-border pt-5 lg:border-t-0 lg:pt-0">
-        <p className="font-medium text-fg">Timeline captures</p>
-        <p className="mt-2 text-sm leading-relaxed text-fg-muted">{surface.captured}</p>
-      </div>
-      <div className="border-t border-border pt-5 lg:border-t-0 lg:pt-0">
-        <p className="font-medium text-fg">What to know</p>
-        <p className="mt-2 text-sm leading-relaxed text-fg-muted">{surface.boundary}</p>
-      </div>
+      <PublicSessionBranch
+        signedOut={
+          <Link className={styles.captureAction} href={surface.publicHref ?? '/sign-up'}>
+            {`Start with ${surface.name}`}
+            <ArrowRight aria-hidden="true" className="size-4" />
+          </Link>
+        }
+        signedIn={
+          <Link className={styles.captureAction} href={surface.setupHref}>
+            {surface.setupLabel}
+            <ArrowRight aria-hidden="true" className="size-4" />
+          </Link>
+        }
+      />
     </article>
   );
 }
@@ -406,25 +233,5 @@ function CaptureSurfaceIcon({ surface }: { surface: CaptureSurfaceContent }) {
     <div className="grid size-12 place-items-center rounded-md border border-border bg-surface">
       <Icon aria-hidden="true" className="size-6 text-fg" strokeWidth={1.5} />
     </div>
-  );
-}
-
-function CapabilityRow({
-  icon: Icon,
-  title,
-  body,
-  live = false,
-}: {
-  icon: typeof Check;
-  title: string;
-  body: string;
-  live?: boolean;
-}) {
-  return (
-    <article className="grid gap-4 border-b border-border py-6 sm:grid-cols-[2rem_13rem_1fr] sm:items-center">
-      <Icon aria-hidden="true" className={live ? 'size-4 text-signal' : 'size-4 text-fg-dim'} />
-      <h3 className="font-semibold text-fg">{title}</h3>
-      <p className="text-sm leading-relaxed text-fg-muted">{body}</p>
-    </article>
   );
 }

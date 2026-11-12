@@ -13,7 +13,6 @@ import {
 } from '@/components/marketing/pricing-blocks';
 import { PricingCalculator } from '@/components/marketing/pricing-calculator';
 import { PricingFaq } from '@/components/marketing/pricing-faq';
-import { MarketingSectionIndex } from '@/components/marketing/section-index';
 import { StartFreeLink } from '@/components/marketing/start-free-cta';
 import {
   PUBLIC_DOCUMENT_REGISTRY,
@@ -38,8 +37,7 @@ export default function PricingPage() {
       <EditorialStructuredData data={buildPublicStructuredData(PRICING_DOCUMENT, getSiteUrl())} />
       <section className="border-b border-border">
         <MarketingContainer className="py-16 sm:py-24 lg:py-28">
-          <p className="text-sm font-medium text-fg-muted">Pricing</p>
-          <div className="mt-6 grid items-end gap-10 lg:grid-cols-[1.25fr_0.75fr]">
+          <div className="grid items-end gap-10 lg:grid-cols-[1.25fr_0.75fr]">
             <h1 className="max-w-[14ch] break-words text-balance text-[3rem] font-semibold leading-[0.95] tracking-[-0.05em] text-fg sm:text-[clamp(3.5rem,5vw,5.5rem)]">
               Start Free, no card.
             </h1>
@@ -75,7 +73,6 @@ export default function PricingPage() {
       <section className="border-b border-border">
         <MarketingContainer className="py-16 sm:py-20">
           <MarketingSectionGrid>
-            <MarketingSectionIndex index="01" label="Plans" />
             <div>
               <h2 className="max-w-[18ch] text-3xl font-semibold tracking-tight sm:text-4xl">
                 Start Free. Paid plans are optional.
@@ -94,7 +91,6 @@ export default function PricingPage() {
       <section id="estimate-usage" className="scroll-mt-24 border-b border-border bg-surface/45">
         <MarketingContainer className="py-16 sm:py-20">
           <MarketingSectionGrid>
-            <MarketingSectionIndex index="02" label="Optional" />
             <div>
               <h2 className="max-w-[20ch] text-3xl font-semibold tracking-tight sm:text-4xl">
                 Estimate paid usage when you need it.
@@ -114,7 +110,6 @@ export default function PricingPage() {
       <section className="border-b border-border">
         <MarketingContainer className="py-16 sm:py-20">
           <MarketingSectionGrid>
-            <MarketingSectionIndex index="03" label="Compare" />
             <div>
               <h2 className="max-w-[16ch] text-3xl font-semibold tracking-tight sm:text-4xl">
                 Compare plans.
@@ -128,7 +123,6 @@ export default function PricingPage() {
       <section>
         <MarketingContainer className="py-16 sm:py-20">
           <MarketingSectionGrid>
-            <MarketingSectionIndex index="04" label="Billing" />
             <div>
               <h2 className="max-w-[18ch] text-3xl font-semibold tracking-tight sm:text-4xl">
                 How billing works.
@@ -156,7 +150,6 @@ export default function PricingPage() {
       <section className="border-t border-border bg-surface/45">
         <MarketingContainer className="py-16 sm:py-20">
           <MarketingSectionGrid>
-            <MarketingSectionIndex index="05" label="FAQ" />
             <div>
               <h2 className="max-w-[16ch] text-3xl font-semibold tracking-tight sm:text-4xl">
                 Common questions.

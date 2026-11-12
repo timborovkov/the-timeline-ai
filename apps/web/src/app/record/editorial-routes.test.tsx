@@ -85,17 +85,14 @@ describe('how-it-works and guide routes', () => {
     expect(legacyRoute).not.toContain('<main');
   });
 
-  it('uses the shared tactile public canvas without decorative background motion', () => {
+  it('uses the shared public canvas without decorative texture or background motion', () => {
     const styles = readFileSync(
       new URL('../../components/public-site.module.css', import.meta.url),
       'utf8',
     );
 
-    expect(styles).toMatch(/\.canvas::before\s*\{[^}]*fractalNoise/s);
-    expect(styles).toMatch(/\.canvas::before\s*\{[^}]*mix-blend-mode:\s*multiply;/s);
-    expect(styles).toMatch(
-      /:global\(\.dark\) \.canvas::before\s*\{[^}]*mix-blend-mode:\s*normal;/s,
-    );
+    expect(styles).not.toContain('fractalNoise');
+    expect(styles).not.toContain('mix-blend-mode');
     expect(styles).not.toMatch(/animation:/);
   });
 
@@ -118,7 +115,10 @@ describe('how-it-works and guide routes', () => {
         expect(html).toContain('data-screenshot-present="true"');
       }
       expect(html).toContain('Try this question');
-      expect(html).toContain('Source roles');
+      for (const boundary of guide.boundaries) {
+        expect(html).toContain(renderToStaticMarkup(<>{boundary.role}</>));
+        expect(html).toContain(renderToStaticMarkup(<>{boundary.boundary}</>));
+      }
       expect(html).not.toMatch(/Native \/|Prompt pattern|Source boundaries/u);
       expect(html).toContain('application/ld+json');
       expect(html).toContain('href="/sign-up"');
