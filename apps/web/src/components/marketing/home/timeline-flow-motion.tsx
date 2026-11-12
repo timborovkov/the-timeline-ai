@@ -3,7 +3,6 @@
 import { useEffect } from 'react';
 
 import styles from '@/app/(landing)/home.module.css';
-import { MotionToggle } from '@/components/marketing/home/motion-toggle';
 
 interface TimelineFlowMotionProps {
   readonly targetId: string;
@@ -22,7 +21,7 @@ export function TimelineFlowMotion({ targetId }: TimelineFlowMotionProps) {
 
     const setSvgMotion = (step: HTMLElement, isActive: boolean, restart = false) => {
       for (const svg of step.querySelectorAll<SVGSVGElement>('[data-flow-motion]')) {
-        if (isActive && root.dataset.motionPaused !== 'true' && !reduceMotion.matches) {
+        if (isActive && !reduceMotion.matches) {
           if (restart && typeof svg.setCurrentTime === 'function') svg.setCurrentTime(0);
           if (typeof svg.unpauseAnimations === 'function') svg.unpauseAnimations();
         } else if (typeof svg.pauseAnimations === 'function') {
@@ -77,20 +76,15 @@ export function TimelineFlowMotion({ targetId }: TimelineFlowMotionProps) {
       }
     };
 
-    const onMotionChange = () => {
-      for (const step of steps) setSvgMotion(step, step.classList.contains(visibleClass));
-    };
-    root.addEventListener('flow-motion-change', onMotionChange);
     reduceMotion.addEventListener('change', startMotion);
     startMotion();
 
     return () => {
       observer?.disconnect();
-      root.removeEventListener('flow-motion-change', onMotionChange);
       reduceMotion.removeEventListener('change', startMotion);
       resetMotionState();
     };
   }, [targetId]);
 
-  return <MotionToggle targetId={targetId} />;
+  return null;
 }

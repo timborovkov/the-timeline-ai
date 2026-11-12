@@ -5,7 +5,6 @@ import type { CSSProperties } from 'react';
 
 import styles from '@/app/(landing)/home.module.css';
 import { Logo } from '@/components/brand/logo';
-import { MotionToggle } from '@/components/marketing/home/motion-toggle';
 import { TimelineFlowMotion } from '@/components/marketing/home/timeline-flow-motion';
 import { PUBLIC_DEMO_STORY } from '@/components/marketing/public-demo-story';
 import { cn } from '@/lib/utils';
@@ -123,82 +122,75 @@ function heroSourcePath(source: (typeof HERO_SOURCES)[number]): string {
 
 function HeroTimelineFlow({ disclosure }: { readonly disclosure?: string }) {
   return (
-    <div className={styles.observatoryGroup}>
-      <figure
-        id="hero-work-flow"
-        className={styles.observatory}
-        data-home-diagram
-        aria-label="Work events stream from six sources into The Timeline, where the work record becomes a daily update and linked answers."
+    <figure
+      id="hero-work-flow"
+      className={styles.observatory}
+      data-home-diagram
+      aria-label="Work events stream from six sources into The Timeline, where the work record becomes a daily update and linked answers."
+    >
+      <div className={styles.orbitOuter} aria-hidden="true" />
+      <div className={styles.orbitInner} aria-hidden="true" />
+
+      <svg
+        className={styles.orbitLines}
+        viewBox="0 0 600 600"
+        preserveAspectRatio="xMidYMid meet"
+        aria-hidden="true"
+        data-flow-motion
       >
-        <div className={styles.orbitOuter} aria-hidden="true" />
-        <div className={styles.orbitInner} aria-hidden="true" />
-
-        <svg
-          className={styles.orbitLines}
-          viewBox="0 0 600 600"
-          preserveAspectRatio="xMidYMid meet"
-          aria-hidden="true"
-          data-flow-motion
-        >
-          <g className={styles.evidencePaths}>
-            {HERO_SOURCES.map((source) => (
-              <path key={source.id} d={heroSourcePath(source)} data-hero-flow-path="ingest" />
-            ))}
-          </g>
-          <path
-            className={styles.outcomePath}
-            d={HERO_OUTCOME_PATH}
-            data-hero-flow-path="outcome"
-          />
-          <g className={styles.ingestPackets}>
-            {HERO_SOURCES.map((source) => (
-              <FlowPacket
-                key={source.id}
-                path={heroSourcePath(source)}
-                begin={source.delay}
-                dataType="ingest"
-              />
-            ))}
-          </g>
-          <g className={styles.outcomePacket}>
-            <FlowPacket path={HERO_OUTCOME_PATH} begin="1.9s" dataType="outcome" />
-          </g>
-        </svg>
-
-        <div className={styles.memoryCore}>
-          <div className={styles.memoryCoreInner}>
-            <Logo ariaHidden className={styles.memoryCoreMark} />
-            <strong>The Timeline</strong>
-            <span>Work record</span>
-            <small className={styles.memoryCoreTimeline}>one timeline</small>
-          </div>
-        </div>
-
-        <div
-          className={styles.heroOutcome}
-          aria-label="Work record becomes a daily update and linked answers"
-        >
-          <span>Daily update</span>
-          <span>Linked answers</span>
-        </div>
-
-        <ul className={styles.orbitSources} aria-label="Example sources entering The Timeline">
+        <g className={styles.evidencePaths}>
           {HERO_SOURCES.map((source) => (
-            <li key={source.id} className={styles.orbitSource} style={heroCardPosition(source)}>
-              <time className={styles.orbitSourceTime}>{source.time}</time>
-              <span className={styles.orbitSourceIdentity}>
-                <SourceLogo source={source.icon} className={styles.orbitSourceLogo} />
-                <strong>{source.name}</strong>
-              </span>
-            </li>
+            <path key={source.id} d={heroSourcePath(source)} data-hero-flow-path="ingest" />
           ))}
-        </ul>
-        {disclosure ? (
-          <figcaption className={styles.observatoryCaption}>{disclosure}</figcaption>
-        ) : null}
-      </figure>
-      <MotionToggle targetId="hero-work-flow" />
-    </div>
+        </g>
+        <path className={styles.outcomePath} d={HERO_OUTCOME_PATH} data-hero-flow-path="outcome" />
+        <g className={styles.ingestPackets}>
+          {HERO_SOURCES.map((source) => (
+            <FlowPacket
+              key={source.id}
+              path={heroSourcePath(source)}
+              begin={source.delay}
+              dataType="ingest"
+            />
+          ))}
+        </g>
+        <g className={styles.outcomePacket}>
+          <FlowPacket path={HERO_OUTCOME_PATH} begin="1.9s" dataType="outcome" />
+        </g>
+      </svg>
+
+      <div className={styles.memoryCore}>
+        <div className={styles.memoryCoreInner}>
+          <Logo ariaHidden className={styles.memoryCoreMark} />
+          <strong>The Timeline</strong>
+          <span>Work record</span>
+          <small className={styles.memoryCoreTimeline}>one timeline</small>
+        </div>
+      </div>
+
+      <div
+        className={styles.heroOutcome}
+        aria-label="Work record becomes a daily update and linked answers"
+      >
+        <span>Daily update</span>
+        <span>Linked answers</span>
+      </div>
+
+      <ul className={styles.orbitSources} aria-label="Example sources entering The Timeline">
+        {HERO_SOURCES.map((source) => (
+          <li key={source.id} className={styles.orbitSource} style={heroCardPosition(source)}>
+            <time className={styles.orbitSourceTime}>{source.time}</time>
+            <span className={styles.orbitSourceIdentity}>
+              <SourceLogo source={source.icon} className={styles.orbitSourceLogo} />
+              <strong>{source.name}</strong>
+            </span>
+          </li>
+        ))}
+      </ul>
+      {disclosure ? (
+        <figcaption className={styles.observatoryCaption}>{disclosure}</figcaption>
+      ) : null}
+    </figure>
   );
 }
 

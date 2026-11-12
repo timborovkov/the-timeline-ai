@@ -3236,45 +3236,6 @@
   }
 }
 
-.observatoryGroup {
-  min-width: 0;
-}
-
-.motionToggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  min-height: 2rem;
-  margin-top: 0.75rem;
-  padding: 0.35rem 0.6rem;
-  border: 1px solid var(--border-strong);
-  border-radius: 4px;
-  background: var(--bg);
-  color: var(--fg);
-  font-size: 0.8125rem;
-  line-height: 1.25;
-  cursor: pointer;
-}
-
-.motionToggle:focus-visible {
-  outline: 2px solid var(--signal);
-  outline-offset: 3px;
-}
-
-.motionToggle:disabled {
-  cursor: default;
-  color: var(--fg-muted);
-}
-
-.flowExplainer[data-motion-paused='true'] *,
-.flowExplainer[data-motion-paused='true'] *::before,
-.flowExplainer[data-motion-paused='true'] *::after,
-.observatory[data-motion-paused='true'] *,
-.observatory[data-motion-paused='true'] *::before,
-.observatory[data-motion-paused='true'] *::after {
-  animation-play-state: paused !important;
-}
-
 .ingestPackets,
 .outcomePacket {
   visibility: hidden;

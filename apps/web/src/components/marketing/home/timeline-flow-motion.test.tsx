@@ -1,11 +1,10 @@
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, render } from '@testing-library/react';
 import { expect } from '@timeline/test-support';
 import { vi } from '@timeline/test-support';
 import { afterEach, beforeEach, describe, it } from 'bun:test';
 
 import styles from '@/app/(landing)/home.module.css';
 import { HomeMotion } from '@/components/marketing/home/home-motion';
-import { MotionToggle } from '@/components/marketing/home/motion-toggle';
 import { TimelineFlowMotion } from '@/components/marketing/home/timeline-flow-motion';
 import { MotionFigure } from '@/components/marketing/motion-figure';
 // Test environment: happy-dom
@@ -184,33 +183,6 @@ describe('TimelineFlowMotion', () => {
     expect(fixture.root.classList.contains(MOTION_READY_CLASS)).toBe(false);
   });
 
-  it('keeps a manual pause across viewport re-entry and reduced-motion changes', () => {
-    const fixture = createFlowFixture();
-    render(<TimelineFlowMotion targetId={fixture.root.id} />);
-    const observer = FakeIntersectionObserver.instances[0];
-    observer?.trigger(fixture.steps[0], true);
-    fixture.unpauseAnimations.mockClear();
-
-    fireEvent.click(screen.getByRole('button', { name: 'Pause animation' }));
-    expect(fixture.root.dataset.motionPaused).toBe('true');
-    observer?.trigger(fixture.steps[0], false);
-    observer?.trigger(fixture.steps[0], true);
-    expect(fixture.unpauseAnimations).not.toHaveBeenCalled();
-
-    act(() => {
-      reducedMotion.setMatches(true);
-    });
-    expect(screen.getByRole('button', { name: 'Motion off' }).hasAttribute('disabled')).toBe(true);
-    act(() => {
-      reducedMotion.setMatches(false);
-    });
-    FakeIntersectionObserver.instances[1]?.trigger(fixture.steps[0], true);
-    expect(fixture.unpauseAnimations).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole('button', { name: 'Play animation' }));
-    expect(fixture.root.dataset.motionPaused).toBe('false');
-    expect(fixture.unpauseAnimations).toHaveBeenCalledOnce();
-  });
-
   it('waits to start one-shot decoration until visible and then stops observing', () => {
     const { container } = render(
       <MotionFigure>
@@ -249,7 +221,7 @@ describe('HomeMotion cleanup', () => {
     vi.unstubAllGlobals();
   });
 
-  it('pauses the hero until explicitly resumed and scopes progress to its indicator', () => {
+  it('pauses the hero offscreen, resumes on re-entry, and scopes progress to its indicator', () => {
     FakeIntersectionObserver.instances = [];
     const preference = new FakeReducedMotion();
     vi.stubGlobal('IntersectionObserver', FakeIntersectionObserver);
@@ -266,20 +238,13 @@ describe('HomeMotion cleanup', () => {
     const indicator = document.createElement('span');
     progress.append(indicator);
     fixture.root.append(progress);
-    render(
-      <>
-        <HomeMotion />
-        <MotionToggle targetId="test-hero" />
-      </>,
-    );
+    render(<HomeMotion />);
     const observer = FakeIntersectionObserver.instances[0];
     observer?.trigger(fixture.steps[0], true);
     fixture.unpauseAnimations.mockClear();
-    fireEvent.click(screen.getByRole('button', { name: 'Pause animation' }));
     observer?.trigger(fixture.steps[0], false);
-    observer?.trigger(fixture.steps[0], true);
     expect(fixture.unpauseAnimations).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole('button', { name: 'Play animation' }));
+    observer?.trigger(fixture.steps[0], true);
     expect(fixture.unpauseAnimations).toHaveBeenCalledOnce();
     expect(indicator.style.transform).toBe('scaleX(0)');
     expect(fixture.root.style.getPropertyValue('--home-progress')).toBe('');

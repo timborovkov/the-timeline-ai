@@ -64,10 +64,8 @@ one quiet rail then resolves into **Daily update** and **Linked answers**. It
 does not reproduce the expanded
 timeline, record cards, or assistant exchange. Every moving packet reuses the exact path drawn behind it,
 the animation restarts only when the diagram enters view, and reduced motion
-hides the packets while preserving the complete static explanation. A visible Pause/Play
-control stops the entire illustration and preserves a manual pause across viewport
-re-entry. Reduced-motion preference keeps motion off and cannot be overridden by
-Play. Source and output paths, halo, and orbit stay still; packets carry the
+hides the packets while preserving the complete static explanation. Motion follows viewport visibility and the reduced-motion preference; there are
+no playback controls in public diagrams. Source and output paths, halo, and orbit stay still; packets carry the
 direction without a competing dash or pulse animation. Mobile
 retains the same topology and removes secondary metadata so cards and labels do
 not overlap.
@@ -92,8 +90,7 @@ briefly acknowledge their arrival. Each stage activates independently as it
 enters view. Wide layouts use one four-stage row, medium containers use a 2 × 2
 grid without decorative connectors, and narrow containers stack stages with
 vertical packet tracks. Reduced-motion mode hides packets and preserves the
-complete static story. The expanded region has its own Pause/Play control; a
-manual pause covers every stage and remains set when stages re-enter view.
+complete static story. Each stage pauses automatically offscreen; no playback controls are shown.
 
 One-shot source-to-answer, external-agent, and inbound-MCP diagrams start their
 decorative traces once on first meaningful visibility. Their text, cards, and
