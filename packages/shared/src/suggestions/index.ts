@@ -4185,7 +4185,12 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
         );
       if (!board || (!board.isShared && board.createdBy !== userId))
         return 'Board is no longer available.';
-      const facts = await boardQualificationFacts(db, teamId, value.entityId);
+      const facts = await boardQualificationFacts(
+        db,
+        teamId,
+        value.entityId,
+        Boolean(value.qualification) && deps.acceptance.kind === 'transaction',
+      );
       if (!facts) return 'Object is no longer active.';
       const [membership] = await db
         .select()

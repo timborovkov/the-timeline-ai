@@ -147,7 +147,10 @@ membership, preserving the object and board history. Removal proposal identities
 include the membership version and source dependency, so an explicit source-free
 rescan can replace a proposal whose source became unavailable or one made
 stale by a board-item edit. Approval locks the membership before its entity and board,
-matching manual item edits. Addition identities also include the latest manual
+matching manual item edits. Transactional qualification checks also hold shared
+locks on supplied note/identity/relationship rows and all referenced objects through
+application, including currently inactive neighbors. Busy dependencies fail fast
+for retry rather than introducing a reversed lock-order wait. Addition identities also include the latest manual
 membership decision, allowing a later explicit scan to replace a superseded
 proposal after a manual add/remove cycle.
 

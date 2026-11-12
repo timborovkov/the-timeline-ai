@@ -2593,10 +2593,19 @@ describe('automatic board membership', () => {
     await scope.suggestions.acceptSuggestionItem(fresh.id);
     expect(required(await scope.boards.getBoard(board.id)).items).toHaveLength(1);
   });
-  for (const change of ['policy', 'facts'] as const) {
+  for (const change of ['policy', 'facts', 'related facts'] as const) {
     it(`revalidates ${change} inside acceptance for source-free scans`, async () => {
       const { scope, board, object } = await setup();
       const { boardQualificationRequests } = await import('@timeline/db');
+      const company = await scope.objects.createObject({
+        type: 'company',
+        canonicalName: 'Linked client',
+        actor: { kind: 'user', userId: USER_OWNER },
+      });
+      await scope.objects.setPersonCompany(object.id, company.id, {
+        kind: 'user',
+        userId: USER_OWNER,
+      });
       await db.delete(boardQualificationRequests);
       await scope.boardQualification.scan(board.id);
       await process(scope);
@@ -2607,7 +2616,7 @@ describe('automatic board membership', () => {
             await scope.boards.updateBoardSettings({ id: board.id, qualificationEnabled: false });
           else
             await scope.objects.updateObject(
-              object.id,
+              change === 'related facts' ? company.id : object.id,
               { status: 'declined' },
               { kind: 'user', userId: USER_OWNER },
             );

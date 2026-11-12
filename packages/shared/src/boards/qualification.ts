@@ -34,7 +34,12 @@ const qualificationResultSchema = z.object({
 });
 export type QualificationResult = z.infer<typeof qualificationResultSchema>;
 
-export async function boardQualificationFacts(db: Db, teamId: string, entityId: string) {
+export async function boardQualificationFacts(
+  db: Db,
+  teamId: string,
+  entityId: string,
+  lockDependencies = false,
+) {
   const [object] = await db
     .select()
     .from(entities)
@@ -47,7 +52,7 @@ export async function boardQualificationFacts(db: Db, teamId: string, entityId: 
       ),
     );
   if (!object) return null;
-  const notes = await db
+  const notesQuery = db
     .select({ id: objectNotes.id, body: objectNotes.body })
     .from(objectNotes)
     .where(
@@ -59,7 +64,8 @@ export async function boardQualificationFacts(db: Db, teamId: string, entityId: 
     )
     .orderBy(desc(objectNotes.updatedAt), asc(objectNotes.id))
     .limit(20);
-  const facets = await db
+  const notes = await (lockDependencies ? notesQuery.for('share', { noWait: true }) : notesQuery);
+  const facetsQuery = db
     .select({
       id: objectIdentityFacets.id,
       kind: objectIdentityFacets.kind,
@@ -75,7 +81,10 @@ export async function boardQualificationFacts(db: Db, teamId: string, entityId: 
     )
     .orderBy(asc(objectIdentityFacets.id))
     .limit(30);
-  const relationships = await db
+  const facets = await (lockDependencies
+    ? facetsQuery.for('share', { noWait: true })
+    : facetsQuery);
+  const relationshipsQuery = db
     .select({
       id: entityRelationships.id,
       from: entityRelationships.fromEntityId,
@@ -94,9 +103,22 @@ export async function boardQualificationFacts(db: Db, teamId: string, entityId: 
     )
     .orderBy(asc(entityRelationships.id))
     .limit(30);
+  const relationships = await (lockDependencies
+    ? relationshipsQuery.for('share', { noWait: true })
+    : relationshipsQuery);
   const relatedIds = [
     ...new Set(relationships.flatMap((r) => [r.from, r.to]).filter((id) => id !== entityId)),
   ];
+  if (lockDependencies && relatedIds.length) {
+    // Include currently archived/merged neighbors: they could become visible during approval.
+    // NOWAIT avoids inverting the canonical parent/child and note/identity mutation lock order.
+    await db
+      .select({ id: entities.id })
+      .from(entities)
+      .where(and(eq(entities.teamId, teamId), inArray(entities.id, relatedIds)))
+      .orderBy(asc(entities.id))
+      .for('share', { noWait: true });
+  }
   const related = relatedIds.length
     ? await db
         .select({
