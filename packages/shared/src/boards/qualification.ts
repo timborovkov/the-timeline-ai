@@ -525,7 +525,7 @@ export function createBoardQualificationScope(
               or(eq(boardItemChanges.field, '__add__'), eq(boardItemChanges.field, '__remove__')),
             ),
           )
-          .orderBy(desc(boardItemChanges.changedAt))
+          .orderBy(desc(boardItemChanges.changedAt), desc(boardItemChanges.id))
           .limit(1);
         const result: QualificationResult =
           manual && manual.changedAt >= request.requestedAt
@@ -559,6 +559,7 @@ export function createBoardQualificationScope(
             entityId: request.entityId,
             inputHash: input.inputHash,
             sourceEventId: request.sourceEventId,
+            manualDecisionId: manual?.id ?? null,
             memberId: input.member?.id ?? null,
             memberUpdatedAt: input.member?.updatedAt.toISOString() ?? null,
             decision: result.decision,

@@ -2547,6 +2547,52 @@ describe('automatic board membership', () => {
       expect(required(await scope.boards.getBoard(board.id)).items).toHaveLength(1);
     });
   }
+  for (const unavailable of ['restricted', 'inactive'] as const) {
+    it(`allows an explicit scan while an ${unavailable} source request is still pending`, async () => {
+      const { scope, board } = await setup();
+      const { boardQualificationRequests } = await import('@timeline/db');
+      const original = required((await db.select().from(boardQualificationRequests))[0]);
+      await db
+        .update(rawEvents)
+        .set(
+          unavailable === 'restricted'
+            ? {
+                visibility: 'specific_users',
+                visibilityUserIds: [USER_MEMBER],
+                visibilityOwnerUserId: null,
+              }
+            : { sourceMetadata: { deleted: true } },
+        )
+        .where(eq(rawEvents.id, required(original.sourceEventId)));
+      await scope.boardQualification.scan(board.id);
+      const scanned = required((await db.select().from(boardQualificationRequests))[0]);
+      expect(scanned.sourceEventId).toBeNull();
+      await process(scope);
+      const item = required(
+        required((await scope.suggestions.listPendingSuggestions())[0]).items[0],
+      );
+      await scope.suggestions.acceptSuggestionItem(item.id);
+      expect(required(await scope.boards.getBoard(board.id)).items).toHaveLength(1);
+    });
+  }
+  it('regenerates a scanned addition after a manual add/remove cycle', async () => {
+    const { scope, board, object } = await setup();
+    const actor = { kind: 'user' as const, userId: USER_OWNER };
+    await scope.boardQualification.scan(board.id);
+    await process(scope);
+    const old = required(required((await scope.suggestions.listPendingSuggestions())[0]).items[0]);
+    const member = await scope.boards.addBoardItem(board.id, { entityId: object.id, actor });
+    await scope.boards.removeBoardItem(member.id, actor);
+    expect(await scope.suggestions.acceptSuggestionItemWithOutcome(old.id)).toBe('superseded');
+    await scope.boardQualification.scan(board.id);
+    await process(scope);
+    const fresh = required(
+      required((await scope.suggestions.listPendingSuggestions())[0]).items[0],
+    );
+    expect(fresh.id).not.toBe(old.id);
+    await scope.suggestions.acceptSuggestionItem(fresh.id);
+    expect(required(await scope.boards.getBoard(board.id)).items).toHaveLength(1);
+  });
   for (const change of ['policy', 'facts'] as const) {
     it(`revalidates ${change} inside acceptance for source-free scans`, async () => {
       const { scope, board, object } = await setup();
@@ -2625,7 +2671,6 @@ describe('automatic board membership', () => {
     } finally {
       registerOperatorContextResolver(() => Promise.resolve(null));
     }
-    await scope.boardQualification.scan(board.id);
     const [request] = await db.select().from(boardQualificationRequests);
     expect(required(request).platformOperatorSessionId).toBe(sessionId);
     const classify = vi
@@ -2646,6 +2691,10 @@ describe('automatic board membership', () => {
       'authorization expired',
     );
     expect(execute).not.toHaveBeenCalled();
+    await scope.boardQualification.scan(board.id);
+    const scanned = required((await db.select().from(boardQualificationRequests))[0]);
+    expect(scanned.platformOperatorSessionId).toBeNull();
+    expect(scanned.sourceEventId).toBeNull();
     await scope.objects.updateObject(
       object.id,
       { status: 'considering' },

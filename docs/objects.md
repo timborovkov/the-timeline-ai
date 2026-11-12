@@ -147,7 +147,9 @@ membership, preserving the object and board history. Removal proposal identities
 include the membership version and source dependency, so an explicit source-free
 rescan can replace a proposal whose source became unavailable or one made
 stale by a board-item edit. Approval locks the membership before its entity and board,
-matching manual item edits.
+matching manual item edits. Addition identities also include the latest manual
+membership decision, allowing a later explicit scan to replace a superseded
+proposal after a manual add/remove cycle.
 
 Committed object creates/updates, notes, identity facets and relationship changes
 persist qualification requests in the canonical write transaction. Relationship
@@ -162,7 +164,10 @@ qualification. The durable inbox coalesces per member/object, uses leases and
 version-checked completion, and retries failures with bounded backoff. Queue outages
 cannot lose committed requests. Derived endpoint work retains the originating request
 time; coalescing preserves newer requests and their source/operator attribution, so
-a delayed expansion cannot override a newer manual membership decision. Generic
+a delayed expansion cannot override a newer manual membership decision. An explicit
+scan replaces an older pending source dependency and uses the scanning actor's
+operator attribution, so unavailable sources or expired earlier sessions cannot
+swallow the requested recheck. Generic
 relationship endpoints enqueue in entity-ID order, matching worker inbox locks. The worker excludes suspended users before selecting each workspace's next request. It discovers routing metadata globally and
 uses the originating member's `withTeam` scope for workspace reads and proposals;
 service-principal writes do not borrow a member's authority. Impersonated requests

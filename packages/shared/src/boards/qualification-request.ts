@@ -72,9 +72,9 @@ export async function requestBoardQualification(
           relationshipCursor: input.includeRelationshipNeighbors
             ? null
             : sql`${boardQualificationRequests.relationshipCursor}`,
-          platformOperatorSessionId: sql`CASE WHEN ${boardQualificationRequests.requestedAt} > excluded.requested_at THEN ${boardQualificationRequests.platformOperatorSessionId} ELSE COALESCE(excluded.platform_operator_session_id, CASE WHEN excluded.source_event_id IS NULL THEN ${boardQualificationRequests.platformOperatorSessionId} ELSE NULL END) END`,
+          platformOperatorSessionId: sql`CASE WHEN ${boardQualificationRequests.requestedAt} > excluded.requested_at THEN ${boardQualificationRequests.platformOperatorSessionId} WHEN excluded.requested_board_id IS NOT NULL AND excluded.source_event_id IS NULL THEN excluded.platform_operator_session_id ELSE COALESCE(excluded.platform_operator_session_id, CASE WHEN excluded.source_event_id IS NULL THEN ${boardQualificationRequests.platformOperatorSessionId} ELSE NULL END) END`,
           requestedBoardId: sql`CASE WHEN ${boardQualificationRequests.requestedBoardId} = ${input.requestedBoardId ?? null} THEN ${input.requestedBoardId ?? null}::uuid ELSE NULL END`,
-          sourceEventId: sql`CASE WHEN ${boardQualificationRequests.requestedAt} > excluded.requested_at THEN ${boardQualificationRequests.sourceEventId} ELSE COALESCE(excluded.source_event_id, ${boardQualificationRequests.sourceEventId}) END`,
+          sourceEventId: sql`CASE WHEN ${boardQualificationRequests.requestedAt} > excluded.requested_at THEN ${boardQualificationRequests.sourceEventId} WHEN excluded.requested_board_id IS NOT NULL AND excluded.source_event_id IS NULL THEN NULL ELSE COALESCE(excluded.source_event_id, ${boardQualificationRequests.sourceEventId}) END`,
           version: sql`${boardQualificationRequests.version} + 1`,
           boardCursor: null,
           requestedAt: sql`GREATEST(${boardQualificationRequests.requestedAt}, excluded.requested_at)`,
