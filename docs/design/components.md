@@ -38,7 +38,8 @@ table.
 - `CollectionRow` is at least 44px on desktop. Human titles wrap in full,
   including unbroken strings; never ellipsize or line-clamp the identifying title.
   Titles occupy their own line; context and metadata sit below at every width.
-  Row actions keep a stable trailing position rather than dropping below the row.
+  Row actions keep a stable trailing position by default. Team member and invitation
+  rows use the [narrow-container stacking contract](app.md) to preserve identity width.
   Previews overlay the workspace; opening one never changes the row width.
   Virtualized windows keep rendered rows in normal flow with spacers for unseen
   rows, so wrapping content cannot overlap before measurement.
@@ -340,3 +341,22 @@ the control with recovery copy. Do not invent a second clipboard helper.
 Copy the New York variant into `apps/web/src/components/ui/`, then retune it to
 this contract: 4px controls, 6px panels, no content shadow, lime only for the
 primary action, and imports through `@/components/ui/<name>`.
+
+
+## Confirmation dialogs
+
+Dialog content uses a constrained grid column and wraps unbroken identifiers.
+Long titles and descriptions must not push actions outside the viewport. Dialogs
+stay within the dynamic viewport height, with internal scrolling when needed;
+footer buttons wrap their text and remain reachable at 200% text size. Titles
+reserve space for the close icon. Shared application confirmations and alerts
+initially focus the heading so long content starts in view; input dialogs keep
+initial focus on the input. Enter used to commit IME composition does not submit
+the dialog; submission requires a subsequent non-composing Enter or the action
+button. Closing restores focus to the launcher, including
+Escape and Cancel.
+
+Clipboard failure messages wrap below their action group without pushing adjacent
+controls off-screen. Copy feedback belongs to the current value and latest copy
+attempt; value changes clear it, and late responses from older attempts cannot
+overwrite the current result.

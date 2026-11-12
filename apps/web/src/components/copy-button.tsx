@@ -1,7 +1,7 @@
 'use client';
 
 import { Check, Copy } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { copyAnnouncement } from '@/lib/copy-announcement';
@@ -20,19 +20,28 @@ export function CopyButton({
   appearance?: 'button' | 'icon';
   className?: string;
 }) {
-  const [copied, setCopied] = useState(false);
-  const [copyError, setCopyError] = useState(false);
+  const nextRequest = useRef(0);
+  const [feedback, setFeedback] = useState<{
+    value: string;
+    request: number;
+    status: 'idle' | 'copied' | 'error';
+  }>({ value, request: 0, status: 'idle' });
+  if (feedback.value !== value) {
+    setFeedback({ value, request: 0, status: 'idle' });
+  }
+  const copied = feedback.status === 'copied';
+  const copyError = feedback.status === 'error';
   const accessibleLabel = label.toLowerCase().startsWith('copy') ? label : `Copy ${label}`;
 
   useEffect(() => {
-    if (!copied) return;
+    if (feedback.status !== 'copied') return;
     const timer = window.setTimeout(() => {
-      setCopied(false);
+      setFeedback((current) => (current === feedback ? { ...current, status: 'idle' } : current));
     }, COPIED_MS);
     return () => {
       window.clearTimeout(timer);
     };
-  }, [copied]);
+  }, [feedback]);
 
   return (
     <>
@@ -43,21 +52,27 @@ export function CopyButton({
         aria-label={accessibleLabel}
         className={cn(appearance === 'icon' && 'h-7 shrink-0 px-2', className)}
         onClick={() => {
+          const request = ++nextRequest.current;
+          setFeedback({ value, request, status: 'idle' });
+          const finish = (status: 'copied' | 'error') => {
+            setFeedback((current) =>
+              current.request === request && current.value === value
+                ? { ...current, status }
+                : current,
+            );
+          };
           const clipboard = Reflect.get(navigator, 'clipboard') as Clipboard | undefined;
           if (!clipboard?.writeText) {
-            setCopied(false);
-            setCopyError(true);
+            finish('error');
             return;
           }
-          setCopyError(false);
           void clipboard
             .writeText(value)
             .then(() => {
-              setCopied(true);
+              finish('copied');
             })
             .catch(() => {
-              setCopied(false);
-              setCopyError(true);
+              finish('error');
             });
         }}
       >
@@ -65,7 +80,10 @@ export function CopyButton({
         {appearance === 'icon' ? (copied ? 'Copied' : 'Copy') : copied ? 'Copied' : label}
       </Button>
       {copyError ? (
-        <output className="text-xs text-danger" aria-live="polite">
+        <output
+          className="order-last min-w-0 max-w-full basis-full text-xs text-danger [overflow-wrap:anywhere]"
+          aria-live="polite"
+        >
           Could not copy. Try again or select the text and copy it manually.
         </output>
       ) : (

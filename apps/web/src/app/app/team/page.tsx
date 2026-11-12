@@ -122,7 +122,7 @@ export default async function TeamSettingsPage({
         variant="collection"
         title="Team"
         subtitle="Manage members, defaults, and access."
-        srLabel={`Team ${active.teamName} · your role: ${role} · ${memberRows.length} members`}
+        srLabel={`Team ${active.teamName} · your role: ${role} · ${memberRows.length} ${memberRows.length === 1 ? 'member' : 'members'}`}
         metadata={[
           { label: 'Team', value: active.teamName },
           { label: 'Role', value: role },

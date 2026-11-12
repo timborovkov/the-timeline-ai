@@ -243,7 +243,18 @@ copyable support fields — team id and slug — with spacing between sections
 and no nested cards.
 
 Team → Members is a collection: compact header, `CollectionRow` members with
-visible role and quiet actions, not a padded card list. Role changes save on
+visible role and quiet actions, not a padded card list. Member and invitation actions stack below
+identity in containers narrower than 32rem, preserving readable text at 200% size.
+An email used as a member or removed-member title is not repeated as secondary
+context. Inviter labels use the trimmed name, then email, then an unknown-member
+fallback. Member, invitation, and removed-member lists independently render 50
+rows per page with Previous/Next controls and a formatted range. Ranges use a
+stable English server/hydration format, then adopt the browser language and follow
+language changes; these controls
+disappear for 50 or fewer rows. Deliberate Previous/Next navigation scrolls the
+new page into view below the shell header and focuses its named list, so the
+next Tab reaches the new rows. Automatic membership updates do not move focus. The Team accessible summary uses singular
+“member” for a single-member workspace. Role changes save on
 select. Remove, resend, and revoke are tooltiped icon buttons. Invite, pending,
 removed, and export lists use the same rows. Other settings sections stay
 forms, with spacing between sections, 12px muted labels, compact `sm`

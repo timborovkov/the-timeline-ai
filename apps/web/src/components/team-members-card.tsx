@@ -1,9 +1,12 @@
+'use client';
+
 import { Users } from 'lucide-react';
 
 import type { TeamMemberMap, TeamMemberRow } from '@/components/team-member-types';
 
 import { EmptyState } from '@/components/empty-state';
 import { SectionHeading } from '@/components/section-heading';
+import { TeamListPagination, useTeamListPage } from '@/components/team-list-pagination';
 import { TeamMemberListItem } from '@/components/team-member-list-item';
 
 export function MembersCard({
@@ -19,6 +22,8 @@ export function MembersCard({
   isOwner: boolean;
   currentUserId: string;
 }) {
+  const { visibleItems: visibleMembers, pagination, listRef } = useTeamListPage(members);
+
   return (
     <section className="space-y-2">
       <SectionHeading>Members</SectionHeading>
@@ -32,8 +37,13 @@ export function MembersCard({
           action="Refresh members"
         />
       ) : (
-        <ul>
-          {members.map((member) => (
+        <ul
+          ref={listRef}
+          tabIndex={-1}
+          aria-label="Members"
+          className="scroll-mt-16 focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          {visibleMembers.map((member) => (
             <TeamMemberListItem
               key={member.userId}
               member={member}
@@ -45,6 +55,7 @@ export function MembersCard({
           ))}
         </ul>
       )}
+      <TeamListPagination {...pagination} label="Member pages" noun="members" />
     </section>
   );
 }
