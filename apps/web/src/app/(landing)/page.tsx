@@ -50,7 +50,7 @@ import { cn } from '@/lib/utils';
 const SITE_NAME = 'The Timeline';
 const CONTACT_HREF = '/help/support';
 const HERO_INTRO =
-  "Your work record, as one timeline. Forward or cc an email, talk in Slack or Telegram, send a voice note. It all lands in order, you can search it and ask it, and your clients and to-dos stay up to date. It's the CRM and task board you never have to update.";
+  "Your team's work record: everything your team does, on one searchable timeline, kept current from Slack, Telegram, email and calls.";
 const HOME_INTAKE_IDS = new Set<string>(['telegram', 'slack-chat', 'email', 'meetings']);
 const HOME_INTAKE_SURFACES = CAPTURE_SURFACES.filter((surface) => HOME_INTAKE_IDS.has(surface.id));
 const HOME_DOCUMENT = getHomeDocument();
@@ -247,25 +247,14 @@ function IntakeScene() {
         }
         copy="Forward or cc an email, talk in Slack or Telegram, or send a voice note. CC or BCC the team address. Telegram voice notes arrive transcribed. Search it by person, client or source."
       />
-      <aside className={styles.connectorPanel} data-home-diagram aria-labelledby="messages-title">
-        <div className={cn(styles.connectorPaths, styles.connectorPathsSingle)}>
-          <article className={styles.connectorPath}>
-            <span className={styles.monoLabel}>Messages and files</span>
-            <h3 id="messages-title">Send the work to Timeline.</h3>
-            <p>Talk in Slack or Telegram, forward an email, or add a meeting transcript.</p>
-            <p>CC or BCC the team address.</p>
-            <p>Telegram voice notes arrive transcribed.</p>
-            <ul className={styles.captureSurfaceList} aria-label="Ways to send work to Timeline">
-              {HOME_INTAKE_SURFACES.map((surface) => (
-                <li key={surface.id}>
-                  <HomeCaptureSurfaceIcon icon={surface.icon} />
-                  <span>{surface.name}</span>
-                </li>
-              ))}
-            </ul>
-          </article>
-        </div>
-      </aside>
+      <ul className={styles.intakeRow} aria-label="Ways to send work to Timeline">
+        {HOME_INTAKE_SURFACES.map((surface) => (
+          <li key={surface.id}>
+            <HomeCaptureSurfaceIcon icon={surface.icon} />
+            <span>{surface.name}</span>
+          </li>
+        ))}
+      </ul>
       <HomeProof shot={HOME_VOICE_SHOT} align="copy-first" />
     </section>
   );
@@ -526,13 +515,12 @@ function OrganisedScene() {
             Clients and to-dos that <em>update themselves.</em>
           </>
         }
-        copy="It replaces the CRM and task board you never have to update. You approve every change."
+        copy="It replaces the CRM and task board you never have to update."
       />
       <HomeProof shot={HOME_CLIENT_SHOT} align="shot-first" />
-      <article className={styles.approvalCard} data-home-diagram>
-        <strong>Suggested changes wait</strong>
-        <p>A person approves each one.</p>
-      </article>
+      <p className={styles.approvalLine}>
+        <strong>Suggested changes wait.</strong> A person approves each one.
+      </p>
     </section>
   );
 }
@@ -701,12 +689,14 @@ function HomeProof({ shot, align }: { shot: HomeProofShot; align: 'copy-first' |
         </ol>
         <p className={styles.proofDisclosure}>{FICTIONAL_EXAMPLE_LABEL}</p>
       </div>
-      <MarketingProductScreenshot
-        file={shot.file}
-        alt={shot.alt}
-        caption={shot.caption}
-        chrome="media"
-      />
+      <div className={styles.proofMedia}>
+        <MarketingProductScreenshot
+          file={shot.file}
+          alt={shot.alt}
+          caption={shot.caption}
+          chrome="media"
+        />
+      </div>
     </div>
   );
 }

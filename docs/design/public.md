@@ -52,12 +52,10 @@ to the evidence diagram and must explain provenance or hierarchy. The shared pub
 the same subtle fixed grain in both themes, with theme-specific blending so
 cream reads like paper and near-black retains its tactile texture.
 
-The landing hero keeps the observatory composition: six compact source cards, a
-person card, and an agent card (Claude / Codex via MCP) sit around a square
-grid. Source packets stream along visible curved paths into the official
-Timeline mark. The person and the agent both write into the record and read
-context back; the agent has a packet in each direction. The centered diamond is
-labelled **The Timeline**, **Work record**, and a small **one timeline** line;
+The landing hero keeps the observatory composition: six compact source cards sit
+around a square grid and stream packets along visible curved paths into the
+official Timeline mark. The centered diamond is labelled **The Timeline**,
+**Work record**, and a small **one timeline** line;
 one quiet rail then resolves into **Daily update** and **Linked answers**. It
 does not reproduce the expanded
 timeline, record cards, or assistant exchange. Every moving packet reuses the exact path drawn behind it,
@@ -140,7 +138,8 @@ Landscape slots use a 16×10 top crop; mobile
 portrait slots keep the full capture so Ask citations stay in frame. The
 homepage shows proof shots in alternating split rows (screenshot beside the
 copy, stacked on small screens): voice notes, work record, stored cited Ask
-answer, client record, and daily update. `/agents` pairs the current Agent
+answer, client record, and daily update. On small screens those landscape
+frames use a taller 3×4 crop so the product UI stays readable. `/agents` pairs the current Agent
 tools screen with a read-out / write-in diagram for external agents.
 `/integrations/mcp` has a
 separate inbound live-lookup diagram for The Timeline Agent calling third-party

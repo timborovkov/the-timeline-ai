@@ -139,7 +139,7 @@
   position: relative;
   width: min(94%, 94rem);
   margin-inline: auto;
-  padding-block: clamp(4rem, 5.5vw, 5.75rem);
+  padding-block: clamp(2.5rem, 4vw, 4.25rem);
   overflow: clip;
   scroll-margin-top: 5rem;
   isolation: isolate;
@@ -160,7 +160,7 @@
   gap: clamp(3rem, 7vw, 8rem);
   align-items: center;
   min-height: calc(100svh - 4rem);
-  padding-block: clamp(4rem, 8vw, 8rem);
+  padding-block: clamp(2.75rem, 5vw, 4.5rem);
 }
 
 .sceneIndex {
@@ -187,7 +187,7 @@
 
 .heroTitle {
   max-width: 18ch;
-  margin-block: 1.5rem 2rem;
+  margin-block: 0.85rem 1rem;
   font-size: clamp(3.1rem, 6.6vw, 6.4rem);
   line-height: 0.9;
 }
@@ -214,9 +214,9 @@
 .heroActions {
   display: flex;
   flex-wrap: wrap;
-  gap: 1.25rem;
+  gap: 1rem;
   align-items: center;
-  margin-top: 2.25rem;
+  margin-top: 1.25rem;
 }
 
 .primaryCta {
@@ -262,7 +262,7 @@
 }
 
 .heroAgentSetup {
-  margin-top: 1.75rem;
+  margin-top: 1.25rem;
   max-width: 36rem;
 }
 
@@ -497,13 +497,13 @@
 }
 
 .orbitSource3 {
-  bottom: 3%;
-  left: 2%;
+  bottom: 17%;
+  left: 4%;
 }
 
 .orbitSource4 {
-  right: 2%;
-  bottom: 3%;
+  right: 7%;
+  bottom: 9%;
 }
 
 .orbitSource5 {
@@ -512,36 +512,8 @@
 }
 
 .orbitSource6 {
-  top: 58%;
+  top: 48%;
   right: 2%;
-}
-
-.orbitPerson {
-  top: 0.5%;
-  left: 50%;
-  min-width: 6.4rem;
-  transform: translateX(-50%);
-}
-
-.orbitAgent {
-  bottom: 1%;
-  left: 50%;
-  min-width: 8.6rem;
-  transform: translateX(-50%);
-}
-
-.orbitAgent strong {
-  font-size: 0.72rem;
-  line-height: 1.15;
-  white-space: normal;
-}
-
-.orbitAgentMeta {
-  color: var(--home-dim);
-  font-family: var(--font-mono);
-  font-size: var(--home-meta-size);
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
 }
 
 .observatoryCaption {
@@ -1165,8 +1137,8 @@
 .sceneHeading {
   display: grid;
   grid-template-columns: minmax(10rem, 0.32fr) minmax(0, 1fr);
-  gap: 2rem;
-  margin-bottom: clamp(3rem, 5vw, 5rem);
+  gap: 1.25rem;
+  margin-bottom: clamp(1.5rem, 2.5vw, 2.5rem);
 }
 
 .sceneHeading h2 {
@@ -1178,9 +1150,9 @@
 
 .sceneHeading > div > p {
   max-width: 35rem;
-  margin-top: 1.5rem;
+  margin-top: 0.85rem;
   color: var(--home-muted);
-  font-size: 1rem;
+  font-size: 1.05rem;
   line-height: 1.65;
 }
 
@@ -1233,8 +1205,44 @@
 .proofCallouts p {
   margin: 0.35rem 0 0;
   color: var(--home-paper);
-  font-size: 0.92rem;
+  font-size: 1.05rem;
   line-height: 1.5;
+}
+
+.intakeRow {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.intakeRow li {
+  display: flex;
+  min-width: 0;
+  min-height: 3.25rem;
+  gap: 0.65rem;
+  align-items: center;
+  padding: 0.75rem 0.9rem;
+  border: 1px solid var(--home-line);
+  background: var(--home-panel);
+  color: var(--home-paper);
+  font-size: 1rem;
+  line-height: 1.35;
+}
+
+.approvalLine {
+  max-width: 42rem;
+  margin: 1.25rem 0 0;
+  color: var(--home-muted);
+  font-size: 1.05rem;
+  line-height: 1.6;
+}
+
+.approvalLine strong {
+  color: var(--home-paper);
+  font-weight: 600;
 }
 
 .proofDisclosure {
@@ -1247,7 +1255,7 @@
 }
 
 .threadBlock {
-  margin-top: clamp(2.5rem, 5vw, 4.5rem);
+  margin-top: clamp(1.75rem, 3vw, 2.75rem);
 }
 
 .threadHeading {
@@ -2313,7 +2321,6 @@
 
 .ctaScene {
   display: grid;
-  min-height: 90svh;
   place-items: center;
   text-align: center;
 }
@@ -2325,7 +2332,7 @@
 
 .ctaInner h2 {
   max-width: 11ch;
-  margin-block: 1.2rem 2rem;
+  margin-block: 0.6rem 1rem;
   font-size: clamp(4rem, 9vw, 9rem);
   line-height: 0.82;
 }
@@ -2338,7 +2345,7 @@
 }
 
 .ctaInner .primaryCta {
-  margin-top: 2.25rem;
+  margin-top: 1.25rem;
 }
 
 .ctaSignIn {
@@ -3388,13 +3395,13 @@
   }
 
   .orbitSource3 {
-    bottom: 2%;
-    left: 1%;
+    bottom: 15%;
+    left: 3%;
   }
 
   .orbitSource4 {
-    right: 1%;
-    bottom: 2%;
+    right: 3%;
+    bottom: 9%;
   }
 
   .orbitSource5 {
@@ -3403,26 +3410,20 @@
   }
 
   .orbitSource6 {
-    top: 52%;
+    top: 46%;
     right: 1%;
   }
 
-  .orbitPerson,
-  .orbitAgent {
-    min-width: 5.4rem;
-    padding: 0.35rem 0.4rem;
+  .proofMedia figure[data-screenshot-frame='landscape'] > div {
+    aspect-ratio: 3 / 4;
   }
 
-  .orbitPerson {
-    top: 0;
+  .proofMedia img {
+    object-position: center 12%;
   }
 
-  .orbitAgent {
-    bottom: 0;
-  }
-
-  .orbitAgent strong {
-    font-size: var(--home-meta-size);
+  .intakeRow {
+    grid-template-columns: 1fr 1fr;
   }
 
   .proofStage,
