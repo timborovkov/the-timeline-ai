@@ -505,6 +505,10 @@ export function BoardAddItemForm({
     type: recommendedTypes[0] ?? 'task',
     canonicalName: '',
   });
+  const newObjectType =
+    strictObjectTypes && !recommendedTypes.includes(state.type)
+      ? (recommendedTypes[0] ?? state.type)
+      : state.type;
   const existingTypeOptions = useMemo(
     () => (strictObjectTypes ? recommendedTypes : boardAddItemTypeOptions(recommendedTypes)),
     [recommendedTypes, strictObjectTypes],
@@ -542,7 +546,7 @@ export function BoardAddItemForm({
     const object =
       state.mode === 'existing'
         ? selectedCandidate
-        : optimisticObject(state.type, state.canonicalName.trim());
+        : optimisticObject(newObjectType, state.canonicalName.trim());
     if (!object) return;
     const optimisticItem = optimisticBoardItem({
       boardId,
@@ -566,7 +570,7 @@ export function BoardAddItemForm({
                 })
               : await quickCreateBoardItemAction({
                   boardId,
-                  type: state.type,
+                  type: newObjectType,
                   canonicalName: state.canonicalName,
                   laneId: defaultLaneId,
                 });
@@ -597,7 +601,9 @@ export function BoardAddItemForm({
 
   const disabled =
     pending ||
-    (state.mode === 'existing' ? !selectedCandidate : !state.canonicalName.trim() || !state.type);
+    (state.mode === 'existing'
+      ? !selectedCandidate
+      : !state.canonicalName.trim() || (strictObjectTypes && recommendedTypes.length === 0));
 
   return (
     <Popover open={expanded} onOpenChange={setExpanded}>
@@ -638,7 +644,7 @@ export function BoardAddItemForm({
         ) : (
           <NewObjectFields
             allowedTypes={strictObjectTypes ? recommendedTypes : undefined}
-            type={state.type}
+            type={newObjectType}
             canonicalName={state.canonicalName}
             dispatch={dispatch}
           />

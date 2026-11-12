@@ -1973,7 +1973,9 @@ export function createBoardScope({
               eq(boardItems.id, itemId),
               eq(boardItems.teamId, scope.teamId),
               isNull(boardItems.archivedAt),
-              approval ? eq(boardItems.updatedAt, new Date(approval.expectedUpdatedAt)) : undefined,
+              approval
+                ? sql`date_trunc('milliseconds', ${boardItems.updatedAt}) = ${approval.expectedUpdatedAt}::timestamptz`
+                : undefined,
             ),
           )
           .returning({ id: boardItems.id });

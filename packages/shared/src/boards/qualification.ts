@@ -27,7 +27,7 @@ import { rawEventIsActive, rawEventVisibleToUser } from '#src/visibility.js';
 import type { CreateSuggestionInput } from '#src/suggestions/index.js';
 import type { TeamScopeCore } from '#src/team-scope.js';
 
-export const qualificationResultSchema = z.object({
+const qualificationResultSchema = z.object({
   decision: z.enum(['add', 'remove', 'no_change', 'insufficient_evidence']),
   reason: z.string().trim().min(1).max(800),
   evidenceKeys: z.array(z.string().max(120)).max(12),
@@ -328,7 +328,11 @@ export function createBoardQualificationScope(
         nextCursor: objects.length === 50 ? (objects.at(-1)?.id ?? null) : null,
       };
     },
-    async processRequest(requestId: string, classify = qualifyBoardPacket) {
+    async processRequest(
+      requestId: string,
+      classify = qualifyBoardPacket,
+      expectedVersion?: number,
+    ) {
       await scope.requireMembership();
       const [request] = await db
         .select()
@@ -340,7 +344,8 @@ export function createBoardQualificationScope(
             eq(boardQualificationRequests.userId, scope.userId),
           ),
         );
-      if (!request) return;
+      if (!request || (expectedVersion !== undefined && request.version !== expectedVersion))
+        return;
       const [claimed] = await db
         .update(boardQualificationRequests)
         .set({ availableAt: new Date(Date.now() + 300000) })

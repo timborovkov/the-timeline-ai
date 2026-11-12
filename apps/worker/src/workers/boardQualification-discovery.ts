@@ -9,6 +9,7 @@ export function discoverBoardQualificationRequests(db: Db, now = new Date()) {
       teamId: boardQualificationRequests.teamId,
       userId: boardQualificationRequests.userId,
       version: boardQualificationRequests.version,
+      platformOperatorSessionId: boardQualificationRequests.platformOperatorSessionId,
       availableAt: boardQualificationRequests.availableAt,
     })
     .from(boardQualificationRequests)

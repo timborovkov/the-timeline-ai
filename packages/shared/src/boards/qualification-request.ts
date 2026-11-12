@@ -1,6 +1,8 @@
 import { boardQualificationRequests, boards, teamMembers, type Db } from '@timeline/db';
 import { and, eq, isNull, sql } from 'drizzle-orm';
 
+import { tagOperatorJob } from '#src/platform-admin/runtime.js';
+
 type DbTx = Parameters<Parameters<Db['transaction']>[0]>[0];
 
 /** Called inside the canonical mutation transaction, never best-effort. */
@@ -40,10 +42,14 @@ export async function requestBoardQualification(
     )
     .limit(1);
   if (!enabled) return;
+  const tagged = await tagOperatorJob({
+    ...input,
+    platformOperatorSessionId: null as string | null,
+  });
   const now = new Date();
   await db
     .insert(boardQualificationRequests)
-    .values({ ...input, requestedAt: now, availableAt: now })
+    .values({ ...tagged, requestedAt: now, availableAt: now })
     .onConflictDoUpdate({
       target: [
         boardQualificationRequests.teamId,
@@ -51,6 +57,11 @@ export async function requestBoardQualification(
         boardQualificationRequests.entityId,
       ],
       set: {
+        platformOperatorSessionId:
+          tagged.platformOperatorSessionId ??
+          (input.sourceEventId
+            ? null
+            : sql`${boardQualificationRequests.platformOperatorSessionId}`),
         requestedBoardId: sql`CASE WHEN ${boardQualificationRequests.requestedBoardId} = ${input.requestedBoardId ?? null} THEN ${input.requestedBoardId ?? null}::uuid ELSE NULL END`,
         sourceEventId: input.sourceEventId ?? sql`${boardQualificationRequests.sourceEventId}`,
         version: sql`${boardQualificationRequests.version} + 1`,

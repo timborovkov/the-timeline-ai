@@ -152,7 +152,9 @@ qualification. The durable inbox coalesces per member/object, uses leases and
 version-checked completion, and retries failures with bounded backoff. Queue outages
 cannot lose committed requests. The worker discovers routing metadata globally and
 uses the originating member's `withTeam` scope for workspace reads and proposals;
-service-principal writes do not borrow a member's authority.
+service-principal writes do not borrow a member's authority. Impersonated requests
+retain their operator session through coalescing and discovery; the worker restores
+real-actor attribution and rejects expired or revoked sessions before qualification.
 
 Qualification applies deterministic type eligibility before shared-model inference.
 It reads bounded committed object facts, notes, identities and relationships. Explicit

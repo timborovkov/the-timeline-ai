@@ -48,7 +48,7 @@ const {
   reconciliationEvidence,
   reconciliationOutputs,
 } = await import('@timeline/db');
-const { eq } = await import('drizzle-orm');
+const { eq, sql } = await import('drizzle-orm');
 const { drizzle } = await import('drizzle-orm/pglite');
 const { buildBoardDirectWriteSourceContext, defaultBoardLanes, defaultBoardRecommendedTypes } =
   await import('#src/boards/index.js');
@@ -2289,6 +2289,9 @@ describe('automatic board membership', () => {
       entityId: object.id,
       actor: { kind: 'user', userId: USER_OWNER },
     });
+    await db.execute(
+      sql`UPDATE board_items SET updated_at = '2026-01-01T00:00:00.123456Z'::timestamptz WHERE id = ${member.id}`,
+    );
     await scope.objects.updateObject(
       object.id,
       { status: 'declined' },
@@ -2512,4 +2515,83 @@ describe('automatic board membership', () => {
       expect(required(await scope.boards.getBoard(board.id)).items).toHaveLength(0);
     });
   }
+  it('preserves operator attribution through coalescing and refuses revoked or stale work', async () => {
+    const { scope, board, object } = await setup();
+    const { boardQualificationRequests, platformImpersonationSessions } =
+      await import('@timeline/db');
+    const { requestBoardQualification } = await import('#src/boards/qualification-request.js');
+    const { registerOperatorContextResolver, runGuardedJob } =
+      await import('#src/platform-admin/runtime.js');
+    const [initial] = await db.select().from(boardQualificationRequests);
+    const [session] = await db
+      .insert(platformImpersonationSessions)
+      .values({
+        actorUserId: USER_MEMBER,
+        effectiveUserId: USER_OWNER,
+        teamId: TEAM_A,
+        tokenHash: 'board-test-operator',
+        authorizationEpoch: TEAM_A,
+        purpose: 'Synthetic board test',
+        reference: 'TEST',
+        authorization: 'Test fixture',
+        expiresAt: new Date(Date.now() + 60000),
+      })
+      .returning();
+    const sessionId = required(session).id;
+    registerOperatorContextResolver(() =>
+      Promise.resolve({
+        actorUserId: USER_MEMBER,
+        actorEmail: 'member@test.local',
+        effectiveUserId: USER_OWNER,
+        teamId: TEAM_A,
+        sessionId,
+        readOnly: false,
+      }),
+    );
+    try {
+      await requestBoardQualification(db, {
+        teamId: TEAM_A,
+        userId: USER_OWNER,
+        entityId: object.id,
+        sourceEventId: required(initial).sourceEventId,
+      });
+      await requestBoardQualification(db, {
+        teamId: TEAM_A,
+        userId: USER_OWNER,
+        entityId: object.id,
+        sourceEventId: null,
+        requestedBoardId: board.id,
+      });
+    } finally {
+      registerOperatorContextResolver(() => Promise.resolve(null));
+    }
+    await scope.boardQualification.scan(board.id);
+    const [request] = await db.select().from(boardQualificationRequests);
+    expect(required(request).platformOperatorSessionId).toBe(sessionId);
+    const classify = vi
+      .fn()
+      .mockResolvedValue({ decision: 'add', reason: 'Match', evidenceKeys: ['object'] });
+    await scope.boardQualification.processRequest(
+      required(request).id,
+      classify,
+      required(initial).version,
+    );
+    expect(classify).not.toHaveBeenCalled();
+    await db
+      .update(platformImpersonationSessions)
+      .set({ endedAt: new Date() })
+      .where(eq(platformImpersonationSessions.id, sessionId));
+    const execute = vi.fn().mockResolvedValue(undefined);
+    await expect(runGuardedJob(required(request), execute, db)).rejects.toThrow(
+      'authorization expired',
+    );
+    expect(execute).not.toHaveBeenCalled();
+    await scope.objects.updateObject(
+      object.id,
+      { status: 'considering' },
+      { kind: 'user', userId: USER_OWNER },
+    );
+    const [renewed] = await db.select().from(boardQualificationRequests);
+    expect(required(renewed).platformOperatorSessionId).toBeNull();
+  });
 });

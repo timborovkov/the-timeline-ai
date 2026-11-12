@@ -33,7 +33,7 @@ export function startBoardQualificationWorker({ db }: { db: Db }) {
             request,
             () =>
               withWorkerAiBilling(db, request.teamId, 'suggestion', () =>
-                scope.boardQualification.processRequest(request.id),
+                scope.boardQualification.processRequest(request.id, undefined, request.version),
               ),
             db,
           );

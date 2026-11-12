@@ -270,6 +270,7 @@ export const boardQualificationRequests = pgTable(
       .notNull()
       .references(() => entities.id, { onDelete: 'cascade' }),
     sourceEventId: uuid('source_event_id').references(() => rawEvents.id, { onDelete: 'cascade' }),
+    platformOperatorSessionId: uuid('platform_operator_session_id'),
     version: integer('version').notNull().default(1),
     boardCursor: uuid('board_cursor'),
     requestedBoardId: uuid('requested_board_id').references(() => boards.id, {
