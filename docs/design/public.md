@@ -54,19 +54,21 @@ cream reads like paper and near-black retains its tactile texture.
 
 The landing hero keeps the observatory composition: six compact source cards sit
 around a square grid and stream packets along visible curved paths into the
-official Timeline mark. The centered diamond is labelled **The Timeline** and
-**Work record**; one quiet rail then resolves into **Daily update** and
-**Cited answers**. It does not reproduce the expanded timeline, record cards, or
-assistant exchange. Every moving packet reuses the exact path drawn behind it,
+official Timeline mark. The centered diamond is labelled **The Timeline**,
+**Work record**, and a small **one timeline** line; one quiet rail then resolves
+into **Daily update** and **Linked answers**. It does not reproduce the expanded
+timeline, record cards, or assistant exchange. Every moving packet reuses the exact path drawn behind it,
 the animation restarts only when the diagram enters view, and reduced motion
 hides the packets while preserving the complete static explanation. Mobile
 retains the same topology and removes secondary metadata so cards and labels do
 not overlap.
 
-The landing page moves directly from the compact observatory into its chronology,
-connector, cited-answer, and trust scenes. The complete four-stage product loop
-lives on `/how-it-works`, where it has enough room to explain the platform without
-turning the home page into a second hero. The reusable expanded diagram groups
+The landing page moves from the compact observatory into what goes in, one
+timeline, ask, clients and to-dos, who it is for, and start. The copyable agent
+setup card lives on `/agents`. The full trust flow and “What Timeline preserves”
+live on `/trust`; the preserves strip is also on `/how-it-works`. The complete
+four-stage product loop lives on `/how-it-works`, where it has enough room to
+explain the platform without turning the home page into a second hero. The reusable expanded diagram groups
 inputs into conversations, meetings and documents, and delivery and incidents;
 keeps five representative source-linked events; shows four useful record types;
 and closes with one compact assistant exchange across Web, Slack, Telegram, and
@@ -116,7 +118,7 @@ questions. They live under `/use-cases`, appear in the public Use cases menu,
 and are registered for sitemap and LLM discovery. `/compare` remains an
 indexable vs-only hub reachable from the footer. `/agents` leads with agents as
 teammates who report work into the record and read cited context back over MCP,
-plus the same copyable setup card as the landing page. Retired solution URLs
+plus the copyable AgentSetupCard. Retired solution URLs
 `/solutions/weekly-project-updates` and `/solutions/crm-context-from-team-activity`
 permanent-redirect to the matching use-case pages. Client project handoffs remain
 at `/solutions/client-project-handoffs` with related use-case links. `/product-tour`
@@ -292,7 +294,7 @@ collects telemetry.
 
 Website scanning is an optional, closed disclosure in the pricing calculator. Expanded controls use a two-column grid and show one monthly page/unit subtotal; calculation assumptions are a secondary disclosure. The website feature page leads with the benefit and a concrete five-page price example, followed by three short benefits and expandable setup, limits, billing, and retention details.
 
-The agent help page and authenticated Connect your agent screen reuse the homepage
-AgentSetupCard and its generic llms.txt setup command. Client-specific setup starts
+The `/agents` page, agent help page, and authenticated Connect your agent screen
+share AgentSetupCard and its generic llms.txt setup command. Client-specific setup starts
 closed. Long agent instructions remain copyable payloads, never a visible Codex
 text wall; advanced setup and access explanations are optional disclosures.

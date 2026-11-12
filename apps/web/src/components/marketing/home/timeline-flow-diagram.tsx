@@ -101,7 +101,7 @@ function HeroTimelineFlow({ disclosure }: { readonly disclosure?: string }) {
     <figure
       className={styles.observatory}
       data-home-diagram
-      aria-label="Work events stream from six sources into The Timeline, where the work record becomes a daily update and cited answers."
+      aria-label="Work events stream from six sources into The Timeline, where the work record becomes a daily update and linked answers."
     >
       <div className={styles.orbitOuter} aria-hidden="true" />
       <div className={styles.orbitInner} aria-hidden="true" />
@@ -134,15 +134,16 @@ function HeroTimelineFlow({ disclosure }: { readonly disclosure?: string }) {
           <Logo ariaHidden className={styles.memoryCoreMark} />
           <strong>The Timeline</strong>
           <span>Work record</span>
+          <small className={styles.memoryCoreTimeline}>one timeline</small>
         </div>
       </div>
 
       <div
         className={styles.heroOutcome}
-        aria-label="Work record becomes a daily update and cited answers"
+        aria-label="Work record becomes a daily update and linked answers"
       >
         <span>Daily update</span>
-        <span>Cited answers</span>
+        <span>Linked answers</span>
       </div>
 
       <ul className={styles.orbitSources} aria-label="Example sources entering The Timeline">

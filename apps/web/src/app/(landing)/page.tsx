@@ -1,4 +1,3 @@
-import * as integrationsLib from '@timeline/shared/integrations/registry';
 import { Mail, Video, Webhook } from 'lucide-react';
 import Image from 'next/image';
 import Link from 'next/link';
@@ -10,7 +9,6 @@ import { LandingSkipLink } from '@/app/(landing)/_landing-skip-link';
 import styles from '@/app/(landing)/home.module.css';
 import { Logo } from '@/components/brand/logo';
 import { GitHubSourceLink } from '@/components/github-source-link';
-import { AgentSetupCard } from '@/components/marketing/agents/agent-setup-card';
 import {
   CTA_MICROCOPY_LEAD,
   FICTIONAL_EXAMPLE_LABEL,
@@ -20,12 +18,19 @@ import {
 } from '@/components/marketing/copy';
 import { FirstRunPath } from '@/components/marketing/first-run-path';
 import { HomeMotion } from '@/components/marketing/home/home-motion';
-import { HOME_PROOF_SHOTS } from '@/components/marketing/home/proof';
+import {
+  HOME_ASK_SHOT,
+  HOME_CLIENT_SHOT,
+  HOME_DIGEST_SHOT,
+  HOME_TIMELINE_SHOT,
+  HOME_VOICE_SHOT,
+  type HomeProofShot,
+} from '@/components/marketing/home/proof';
 import { TimelineFlowDiagram } from '@/components/marketing/home/timeline-flow-diagram';
 import { CAPTURE_SURFACES } from '@/components/marketing/integrations/capture-surface-content';
-import { findConnectorByName } from '@/components/marketing/integrations/connector-content';
 import { MarketingProductScreenshot } from '@/components/marketing/product-screenshot';
 import { PUBLIC_DEMO_STORY } from '@/components/marketing/public-demo-story';
+import { TRUST_FLOW_STEPS } from '@/components/marketing/trust-flow-content';
 import { USE_CASES } from '@/components/marketing/use-cases/content';
 import { CookieSettingsButton } from '@/components/public-analytics';
 import { PublicHeader } from '@/components/public-header';
@@ -44,7 +49,10 @@ import { cn } from '@/lib/utils';
 const SITE_NAME = 'The Timeline';
 const CONTACT_HREF = '/help/support';
 const HERO_INTRO =
-  "The Timeline updates itself from your team's Slack or Telegram, email, calls, docs and wherever else work happens. Who did what, what was promised, and what's next, always current.";
+  "Your work record, as one timeline. Forward or cc an email, talk in Slack or Telegram, send a voice note. It all lands in order, you can search it and ask it, and your clients and to-dos stay up to date. It's the CRM and task board you never have to update.";
+const HOME_INTAKE_IDS = new Set<string>(['telegram', 'slack-chat', 'email', 'meetings']);
+const HOME_INTAKE_SURFACES = CAPTURE_SURFACES.filter((surface) => HOME_INTAKE_IDS.has(surface.id));
+const APPROVAL_STEP = approvalStep();
 const HOME_DOCUMENT = getHomeDocument();
 
 export const metadata: Metadata = {
@@ -53,7 +61,7 @@ export const metadata: Metadata = {
     'work record',
     'auto-updating work record',
     'team daily log',
-    'cited answers',
+    'linked answers',
     'Slack and Telegram work record',
     'meeting transcript search',
     'project status AI',
@@ -64,6 +72,12 @@ export const metadata: Metadata = {
     googleBot: { index: true, follow: true, 'max-snippet': -1, 'max-image-preview': 'large' },
   },
 };
+
+function approvalStep() {
+  const step = TRUST_FLOW_STEPS.find((item) => item.index === '04');
+  if (!step) throw new Error('The trust flow is missing the approval step');
+  return step;
+}
 
 function getHomeDocument() {
   const document = PUBLIC_DOCUMENT_REGISTRY.get('/');
@@ -76,66 +90,15 @@ const ACME_EVENTS = PUBLIC_DEMO_STORY.landing.events;
 const AUDIENCES = USE_CASES.map((useCase, index) => ({
   index: String(index + 1).padStart(2, '0'),
   name: useCase.cardTitle,
-  outcome: useCase.cardBody,
+  outcome:
+    useCase.slug === 'work-record'
+      ? 'Every decision, promise and handoff on one timeline, with where it was said.'
+      : useCase.cardBody,
   result: useCase.navLabel,
   href: useCase.route,
 }));
 
-const TRUST_STEPS = [
-  {
-    index: '01',
-    title: 'Evidence arrives',
-    detail: 'Telegram / linked launch group',
-  },
-  {
-    index: '02',
-    title: 'Original stays intact',
-    detail: 'Captured source / immutable',
-  },
-  {
-    index: '03',
-    title: 'Access is checked',
-    detail: 'Team + event visibility',
-  },
-  {
-    index: '04',
-    title: 'Suggested changes wait',
-    detail: 'Human approval required',
-  },
-] as const;
-
-interface NativeConnector {
-  label: string;
-  logo: string;
-  state: 'available' | 'setup-required';
-  href?: `/integrations/${string}`;
-}
-
 export default function LandingPage() {
-  const nativeConnectors: NativeConnector[] = [];
-  for (const connector of integrationsLib.listCatalog()) {
-    if (connector.kind !== 'native' || connector.ingestStatus !== 'implemented') continue;
-    const publicConnector = findConnectorByName(connector.label);
-    const href = publicConnector ? (`/integrations/${publicConnector.slug}` as const) : undefined;
-    if (!publicConnector) continue;
-    if (connector.status === 'native_available') {
-      nativeConnectors.push({
-        label: connector.label,
-        logo: publicConnector.logo,
-        state: 'available',
-        href,
-      });
-    }
-    if (connector.status === 'native_unconfigured') {
-      nativeConnectors.push({
-        label: connector.label,
-        logo: publicConnector.logo,
-        state: 'setup-required',
-        href,
-      });
-    }
-  }
-
   return (
     <div className={styles.page} data-home-root>
       <StructuredData />
@@ -149,10 +112,11 @@ export default function LandingPage() {
       <PublicHeader currentSection="product" />
       <main id="main" tabIndex={-1}>
         <ClaimScene />
-        <ChronologyScene nativeConnectors={nativeConnectors} />
+        <IntakeScene />
+        <TimelineScene />
         <AnswerScene />
-        <ThreadScene />
-        <TrustScene />
+        <OrganisedScene />
+        <AudienceScene />
         <CtaScene />
       </main>
       <Footer />
@@ -246,22 +210,19 @@ function ClaimScene() {
             {SEE_IT_FIRST_LABEL}
           </Link>
         </div>
-        <PublicSessionBranch
-          signedOut={
-            <p className={styles.ctaFinePrint}>
-              {CTA_MICROCOPY_LEAD}{' '}
-              <Link href="/pricing" className={styles.textLink}>
-                See pricing
-              </Link>
-            </p>
-          }
-          signedIn={null}
-        />
-        <div className={styles.heroSourceLink}>
-          <GitHubSourceLink />
-        </div>
-        <div className={styles.heroAgentSetup}>
-          <AgentSetupCard />
+        <div className={styles.heroMeta}>
+          <PublicSessionBranch
+            signedOut={
+              <p className={styles.ctaFinePrint}>
+                {CTA_MICROCOPY_LEAD}{' '}
+                <Link href="/pricing" className={styles.textLink}>
+                  See pricing
+                </Link>
+              </p>
+            }
+            signedIn={null}
+          />
+          <GitHubSourceLink appearance="inline" className={styles.heroGithubLink} />
         </div>
       </div>
 
@@ -270,29 +231,83 @@ function ClaimScene() {
   );
 }
 
-function ChronologyScene({ nativeConnectors }: { nativeConnectors: NativeConnector[] }) {
+function IntakeScene() {
   return (
     <section
       id="sources"
       className={styles.scene}
-      aria-labelledby="chronology-title"
-      data-scene="02-chronology"
+      aria-labelledby="intake-title"
+      data-scene="02-intake"
     >
       <SceneHeading
         number="02"
-        label="Evidence → chronology"
-        id="chronology-title"
+        label="What goes in"
+        id="intake-title"
         title={
           <>
-            Status should not require an <em>investigation.</em>
+            Forward it, cc it, <em>say it.</em>
           </>
         }
-        copy="Your team runs its work in Slack or Telegram, then spreads it across email, calls and documents. Even well-kept tools like Jira or Pipedrive miss what was said in conversation, so status, promises and decisions get rebuilt by hand, and often wrong. The Timeline keeps the record current from those conversations, with the source, time and visibility of every line."
+        copy="Forward or cc an email, talk in Slack or Telegram, or send a voice note. CC or BCC the team address. Telegram voice notes arrive transcribed."
+      />
+      <aside className={styles.connectorPanel} data-home-diagram aria-labelledby="messages-title">
+        <div className={cn(styles.connectorPaths, styles.connectorPathsSingle)}>
+          <article className={styles.connectorPath}>
+            <span className={styles.monoLabel}>Messages and files</span>
+            <h3 id="messages-title">Send the work to Timeline.</h3>
+            <p>Talk in Slack or Telegram, forward an email, or add a meeting transcript.</p>
+            <p>CC or BCC the team address.</p>
+            <p>Telegram voice notes arrive transcribed.</p>
+            <ul className={styles.captureSurfaceList} aria-label="Ways to send work to Timeline">
+              {HOME_INTAKE_SURFACES.map((surface) => (
+                <li key={surface.id}>
+                  <HomeCaptureSurfaceIcon icon={surface.icon} />
+                  <span>{surface.name}</span>
+                </li>
+              ))}
+            </ul>
+          </article>
+        </div>
+      </aside>
+      <HomeProof shot={HOME_VOICE_SHOT} />
+    </section>
+  );
+}
+
+function HomeCaptureSurfaceIcon({ icon }: { icon: (typeof CAPTURE_SURFACES)[number]['icon'] }) {
+  if (icon === 'telegram' || icon === 'slack') {
+    return (
+      <span className={cn(styles.captureSurfaceIcon, styles.captureSurfaceIconBrand)}>
+        <Image src={`/connectors/${icon}.svg`} alt="" width={18} height={18} />
+      </span>
+    );
+  }
+  const Icon = icon === 'mail' ? Mail : icon === 'video' ? Video : Webhook;
+  return (
+    <span className={styles.captureSurfaceIcon}>
+      <Icon aria-hidden="true" size={16} strokeWidth={1.6} />
+    </span>
+  );
+}
+
+function TimelineScene() {
+  return (
+    <section className={styles.scene} aria-labelledby="timeline-title" data-scene="03-timeline">
+      <SceneHeading
+        number="03"
+        label="One timeline"
+        id="timeline-title"
+        title={
+          <>
+            Everything lands on <em>one timeline.</em>
+          </>
+        }
+        copy="Your team runs its work in Slack or Telegram, then spreads it across email, calls and documents. Even well-kept tools like Jira or Pipedrive miss what was said in conversation, so status, promises and decisions get rebuilt by hand, and often wrong."
       />
       <div className={styles.timelineStage} data-home-diagram>
         <div className={styles.timelineHeader}>
           <span>Acme rollout / Last 7 days</span>
-          <span>5 evidence items</span>
+          <span>5 items</span>
         </div>
         <ol className={styles.timelineList}>
           {ACME_EVENTS.map((event) => (
@@ -315,114 +330,10 @@ function ChronologyScene({ nativeConnectors }: { nativeConnectors: NativeConnect
             </li>
           ))}
         </ol>
-        <aside className={styles.chronologyContract} aria-label="Source handling">
-          <span className={styles.monoLabel}>What Timeline preserves</span>
-          <dl>
-            <div>
-              <dt>Content</dt>
-              <dd>Kept as received</dd>
-            </div>
-            <div>
-              <dt>Time</dt>
-              <dd>Placed on one chronology</dd>
-            </div>
-            <div>
-              <dt>Visibility</dt>
-              <dd>Carried into every answer</dd>
-            </div>
-          </dl>
-        </aside>
       </div>
-      <ConnectorRail nativeConnectors={nativeConnectors} />
-      <HomeProof shot={HOME_PROOF_SHOTS[0]} />
+      <p className={styles.timelineSearchLine}>Search it by person, client or source.</p>
+      <HomeProof shot={HOME_TIMELINE_SHOT} />
     </section>
-  );
-}
-
-function ConnectorRail({ nativeConnectors }: { nativeConnectors: NativeConnector[] }) {
-  return (
-    <aside className={styles.connectorPanel} data-home-diagram aria-labelledby="connector-title">
-      <header>
-        <span className={styles.monoLabel}>Where evidence enters</span>
-        <div>
-          <h3 id="connector-title">Two ways in. One cited record.</h3>
-          <p>
-            Link a Slack channel or Telegram group, forward email, and add calls, or sync selected
-            records from the tools that already hold them. Either way, the source stays attached.
-          </p>
-        </div>
-      </header>
-      <div className={styles.connectorPaths}>
-        <article className={styles.connectorPath}>
-          <span className={styles.monoLabel}>Messages and files</span>
-          <h4>Send the work to Timeline.</h4>
-          <p>
-            Link a Telegram group or Slack channel, forward mail, add a meeting transcript or file,
-            or post an authenticated webhook event. A direct chat asks the agent; it is not passive
-            history capture.
-          </p>
-          <ul className={styles.captureSurfaceList} aria-label="Ways to send work to Timeline">
-            {CAPTURE_SURFACES.map((surface) => (
-              <li key={surface.id}>
-                <HomeCaptureSurfaceIcon icon={surface.icon} />
-                <span>{surface.name}</span>
-              </li>
-            ))}
-          </ul>
-        </article>
-        <article className={styles.connectorPath}>
-          <span className={styles.monoLabel}>Connected tools</span>
-          <h4>Sync selected records.</h4>
-          <p>
-            Choose which provider records belong in Timeline. The original tool remains the source,
-            and every captured event links back to it.
-          </p>
-          {nativeConnectors.length > 0 ? (
-            <ul className={styles.nativeConnectorList} aria-label="Native provider connectors">
-              {nativeConnectors.map((connector) => (
-                <li key={connector.label}>
-                  <Link href={connector.href ?? '/integrations'}>
-                    <span className={cn(styles.connectorLogoTile, styles.connectorLogoTileLight)}>
-                      <Image src={connector.logo} alt="" width={20} height={20} />
-                    </span>
-                    <span>{connector.label}</span>
-                    <small>Setup and supported data</small>
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className={styles.connectorEmpty}>No native OAuth connectors are configured.</p>
-          )}
-        </article>
-      </div>
-      <div className={styles.connectorFooter}>
-        <p>
-          Timeline can also use enabled custom MCP tools when you ask a question without adding
-          their history to the record. Some local and upcoming connections are not available in the
-          hosted app yet.
-        </p>
-        <Link href="/integrations" className={styles.textLink}>
-          Explore integrations <span aria-hidden="true">→</span>
-        </Link>
-      </div>
-    </aside>
-  );
-}
-
-function HomeCaptureSurfaceIcon({ icon }: { icon: (typeof CAPTURE_SURFACES)[number]['icon'] }) {
-  if (icon === 'telegram' || icon === 'slack') {
-    return (
-      <span className={cn(styles.captureSurfaceIcon, styles.captureSurfaceIconBrand)}>
-        <Image src={`/connectors/${icon}.svg`} alt="" width={18} height={18} />
-      </span>
-    );
-  }
-  const Icon = icon === 'mail' ? Mail : icon === 'video' ? Video : Webhook;
-  return (
-    <span className={styles.captureSurfaceIcon}>
-      <Icon aria-hidden="true" size={16} strokeWidth={1.6} />
-    </span>
   );
 }
 
@@ -432,11 +343,11 @@ function AnswerScene() {
       id="answer"
       className={styles.scene}
       aria-labelledby="answer-title"
-      data-scene="03-answer"
+      data-scene="04-ask"
     >
       <SceneHeading
-        number="03"
-        label="Cited answer"
+        number="04"
+        label="Ask it"
         id="answer-title"
         title={
           <>
@@ -469,17 +380,17 @@ function AnswerScene() {
             </p>
           </div>
           <div className={styles.answerFooter}>
-            <span>Draft answer / cited</span>
+            <span>Draft answer / linked</span>
             <span>Visibility checked</span>
             <span>Every claim inspectable</span>
           </div>
         </article>
 
-        <aside className={styles.receiptLedger} aria-labelledby="receipt-ledger-title">
-          <div className={styles.ledgerTitle}>
-            <span id="receipt-ledger-title">Evidence behind this answer</span>
+        <details className={styles.receiptLedger}>
+          <summary className={styles.ledgerTitle}>
+            <span id="receipt-ledger-title">The original messages, with links</span>
             <span>5 / 5</span>
-          </div>
+          </summary>
           <ol>
             {ACME_EVENTS.map((event) => (
               <li key={event.id}>
@@ -500,33 +411,11 @@ function AnswerScene() {
               </li>
             ))}
           </ol>
-        </aside>
+        </details>
       </div>
-      <HomeProof shot={HOME_PROOF_SHOTS[1]} />
-    </section>
-  );
-}
-
-function ThreadScene() {
-  return (
-    <section
-      id="chat-to-answer"
-      className={styles.scene}
-      aria-labelledby="thread-title"
-      data-scene="04-thread"
-    >
-      <SceneHeading
-        number="04"
-        label="Chat to cited answer"
-        id="thread-title"
-        title={
-          <>
-            Ask in Slack. An agent can ask <em>the same record.</em>
-          </>
-        }
-        copy="Someone asks @Timeline in Slack. The bot answers with numbered citations back to the call and the email. Claude can retrieve the same Northstar evidence over MCP."
-      />
-      <div className={styles.threadLayout} data-home-diagram data-chat-to-answer>
+      <HomeProof shot={HOME_ASK_SHOT} />
+      <div className={styles.slackStrip} data-home-diagram data-chat-to-answer>
+        <p className={styles.slackStripHeader}>or ask @Timeline in Slack</p>
         <article className={styles.slackThread} aria-label="Slack example">
           <header className={styles.slackBar}>
             <span>#northstar-pilot</span>
@@ -579,32 +468,13 @@ function ThreadScene() {
             </div>
           </div>
         </article>
-
-        <article className={styles.mcpThread} aria-label="Claude MCP example">
-          <header className={styles.mcpBar}>
-            <span>Claude</span>
-            <span>MCP</span>
-          </header>
-          <p className={styles.mcpPrompt}>What did we promise Northstar?</p>
-          <ol className={styles.mcpCalls}>
-            <li>
-              <code>timeline.subject</code>
-              <span>subject: Northstar</span>
-            </li>
-            <li>
-              <code>timeline.get</code>
-              <span>name: Northstar pilot handoff review</span>
-            </li>
-          </ol>
-          <p className={styles.mcpAnswer}>
-            Northstar Works committed to send the final sample export by July 8
-            <ThreadCitation n={1} label="Email from Elena Park" />. Avery handed export validation
-            to Mika, and the team decided to use the CSV fallback
-            <ThreadCitation n={2} label="Call transcript" />.
-          </p>
-        </article>
         <p className={styles.threadDisclosure}>{FICTIONAL_EXAMPLE_LABEL}</p>
       </div>
+      <p className={styles.agentLinkLine}>
+        <Link href="/agents" className={styles.textLink}>
+          AI assistants
+        </Link>
+      </p>
     </section>
   );
 }
@@ -620,16 +490,41 @@ function ThreadCitation({ n, label }: { n: number; label: string }) {
   );
 }
 
-function TrustScene() {
+function OrganisedScene() {
+  return (
+    <section className={styles.scene} aria-labelledby="organised-title" data-scene="05-organised">
+      <SceneHeading
+        number="05"
+        label="Clients and to-dos"
+        id="organised-title"
+        title={
+          <>
+            Clients and to-dos that <em>update themselves.</em>
+          </>
+        }
+        copy="It replaces the CRM and task board nobody updates. You approve every change."
+      />
+      <HomeProof shot={HOME_CLIENT_SHOT} />
+      <article className={styles.approvalCard} data-home-diagram>
+        <span>{APPROVAL_STEP.index}</span>
+        <strong>{APPROVAL_STEP.title}</strong>
+        <small>{APPROVAL_STEP.detail}</small>
+        <p>Suggested changes wait — human approval required.</p>
+      </article>
+    </section>
+  );
+}
+
+function AudienceScene() {
   return (
     <section
       id="trust"
       className={styles.scene}
       aria-labelledby="trust-title"
-      data-scene="05-trust"
+      data-scene="06-audience"
     >
       <SceneHeading
-        number="05"
+        number="06"
         label="For teams"
         id="trust-title"
         title={
@@ -639,7 +534,7 @@ function TrustScene() {
         }
         copy="If your team runs its day in Slack or Telegram and the rest of the work lives in email, calls and documents, The Timeline keeps one current record of it. That includes consultancies, agencies, client delivery, product and operations teams, at any size. Keep working where you already work."
       />
-      <HomeProof shot={HOME_PROOF_SHOTS[2]} />
+      <HomeProof shot={HOME_DIGEST_SHOT} />
       <div className={styles.fitPanel} data-home-diagram>
         <div className={styles.fitPanelIntro}>
           <span className={styles.monoLabel}>Six ways teams use it</span>
@@ -660,34 +555,6 @@ function TrustScene() {
           ))}
         </div>
       </div>
-
-      <div className={styles.trustFlowPanel} data-home-diagram aria-labelledby="trust-flow-title">
-        <header>
-          <span className={styles.monoLabel}>How one answer stays trustworthy</span>
-          <h3 id="trust-flow-title">Every answer carries its evidence chain.</h3>
-          <p>
-            Timeline preserves source content, checks access at retrieval, and keeps citations
-            attached to the answer. If evidence suggests a lasting workspace change, Timeline
-            proposes it for human review instead of applying it on its own.
-          </p>
-        </header>
-        <ol className={styles.trustFlow}>
-          {TRUST_STEPS.map((step) => (
-            <li key={step.index}>
-              <span>{step.index}</span>
-              <strong>{step.title}</strong>
-              <small>{step.detail}</small>
-            </li>
-          ))}
-        </ol>
-        <div className={styles.trustFlowProof} aria-label="Timeline evidence safeguards">
-          <span>Immutable raw evidence</span>
-          <span>Team isolation</span>
-          <span>Per-event privacy</span>
-          <span>Inspectable citations</span>
-          <span>Approval-backed suggestions</span>
-        </div>
-      </div>
     </section>
   );
 }
@@ -697,19 +564,19 @@ function CtaScene() {
     <section
       className={cn(styles.scene, styles.ctaScene)}
       aria-labelledby="cta-title"
-      data-scene="06-cta"
+      data-scene="07-start"
     >
       <div className={styles.ctaInner} data-home-reveal>
-        <SceneIndex number="06" label="Start free" />
+        <SceneIndex number="07" label="Start free" />
         <h2 id="cta-title">
           Link one channel. <em>Watch the record fill in.</em>
         </h2>
         <p>
           Link one Slack channel or Telegram group, forward a few emails and add a call. Read the
-          daily update, approve lasting record changes that The Timeline proposes, and ask what was
-          decided, with the source for every line.
+          daily update, approve the suggested updates, and ask what was decided. Every line keeps
+          the original message, with a link to it.
         </p>
-        <FirstRunPath />
+        <FirstRunPath showNote={false} />
         <PublicSessionBranch
           signedOut={
             <Link
@@ -760,13 +627,13 @@ function CtaScene() {
 function SceneIndex({ number, label }: { number: string; label: string }) {
   return (
     <div className={styles.sceneIndex}>
-      <span>{number} / 06</span>
+      <span>{number} / 07</span>
       <span>{label}</span>
     </div>
   );
 }
 
-function HomeProof({ shot }: { shot: (typeof HOME_PROOF_SHOTS)[number] }) {
+function HomeProof({ shot }: { shot: HomeProofShot }) {
   return (
     <div className={styles.proofStage} data-home-proof={shot.file}>
       <span className={styles.monoLabel}>{shot.kicker}</span>

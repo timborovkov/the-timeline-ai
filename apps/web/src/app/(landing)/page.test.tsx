@@ -1,22 +1,10 @@
 import { readFileSync } from 'node:fs';
 
 import { expect } from '@timeline/test-support';
-import { vi } from '@timeline/test-support';
-import { afterEach, beforeEach, describe, it } from 'bun:test';
+import { afterEach, describe, it } from 'bun:test';
 
 import styles from '@/app/(landing)/home.module.css';
 // Test environment: happy-dom
-
-const fakes = vi.hoisted(() => ({ listCatalog: vi.fn() }));
-
-await vi.mock(
-  import.meta.resolve('@timeline/shared/integrations/registry'),
-  async () => ({
-    ...(await import('@timeline/shared/integrations/registry')),
-    listCatalog: fakes.listCatalog,
-  }),
-  () => import('@timeline/shared/integrations/registry'),
-);
 
 const { cleanup, render, screen } = await import('@testing-library/react');
 const { default: userEvent } = await import('@testing-library/user-event');
@@ -42,19 +30,7 @@ describe('LandingPage', () => {
     resetPublicSessionCache();
   });
 
-  beforeEach(() => {
-    vi.clearAllMocks();
-    fakes.listCatalog.mockReturnValue(
-      ['GitHub', 'Linear', 'Google Drive', 'Monday.com', 'Slack', 'Sentry'].map((label, index) => ({
-        kind: 'native',
-        ingestStatus: 'implemented',
-        label,
-        status: index < 2 ? 'native_available' : 'native_unconfigured',
-      })),
-    );
-  });
-
-  it('server-renders the six-scene evidence narrative in order', () => {
+  it('server-renders the seven-section homepage in order', () => {
     const html = renderToStaticMarkup(<LandingPage />);
 
     expect(html.match(/<footer\b/g)).toHaveLength(1);
@@ -66,10 +42,18 @@ describe('LandingPage', () => {
     expect(html.match(/<h1\b/g)).toHaveLength(1);
     expect(html).toContain('Your team&#x27;s work, <em>written down for you</em>');
     expect(html).toContain(
-      'The Timeline updates itself from your team&#x27;s Slack or Telegram, email, calls, docs and wherever else work happens. Who did what, what was promised, and what&#x27;s next, always current.',
+      'Your work record, as one timeline. Forward or cc an email, talk in Slack or Telegram, send a voice note. It all lands in order, you can search it and ask it, and your clients and to-dos stay up to date. It&#x27;s the CRM and task board you never have to update.',
     );
 
-    const scenes = ['01-claim', '02-chronology', '03-answer', '04-thread', '05-trust', '06-cta'];
+    const scenes = [
+      '01-claim',
+      '02-intake',
+      '03-timeline',
+      '04-ask',
+      '05-organised',
+      '06-audience',
+      '07-start',
+    ];
     let previousIndex = -1;
     for (const scene of scenes) {
       const sceneIndex = html.indexOf(`data-scene="${scene}"`);
@@ -79,14 +63,15 @@ describe('LandingPage', () => {
 
     expect(html).toContain('Acme rollout / Last 7 days');
     expect(html).toContain(
-      'aria-label="Work events stream from six sources into The Timeline, where the work record becomes a daily update and cited answers."',
+      'aria-label="Work events stream from six sources into The Timeline, where the work record becomes a daily update and linked answers."',
     );
+    expect(html).toContain('one timeline');
     expect(html).toContain('Fictional Acme example, not customer data.');
     expect(html).toContain('<details');
     expect(html).toContain('The Timeline');
     expect(html).toContain('Work record');
     expect(html).toContain('Daily update');
-    expect(html).toContain('Cited answers');
+    expect(html).toContain('Linked answers');
     expect(html).not.toContain('How scattered work becomes useful context.');
     expect(html).not.toContain('Connected, not used in this answer');
     expect(html).not.toContain('Sentry is connected, but unused in this answer.');
@@ -108,23 +93,20 @@ describe('LandingPage', () => {
     expect(html).toContain('href="/how-it-works"');
     expect(html).toContain('href="/compare"');
     expect(html).toContain('href="/agents"');
-    expect(html).toContain(
-      'Give your agents the work record — and let them write back like teammates.',
-    );
-    expect(html).toContain(
-      'They read what the team said in Slack, email, calls and docs, then add their own notes to the same cited log.',
-    );
-    expect(html).toContain('Set up The Timeline - https://thetimeline.cc/llms.txt');
+    expect(html).toContain('AI assistants');
+    expect(html).not.toContain('llms.txt');
+    expect(html).not.toContain('data-agent-setup');
     expect(html).toContain('what did we promise Northstar');
-    expect(html).toContain('timeline.subject');
-    expect(html).toContain('timeline.get');
+    expect(html).toContain('or ask @Timeline in Slack');
+    expect(html).not.toContain('timeline.subject');
+    expect(html).not.toContain('timeline.get');
     expect(html).not.toContain('timeline.retrieve_workspace_context');
     expect(html).not.toContain('timeline.get_event');
     expect(html).toContain('data-chat-to-answer');
-    expect(html).toContain('data-agent-setup');
     expect(html).toContain('aria-label="Public navigation menu"');
     expect(html).toContain('SSO blocks launch. Friday’s customer update is still due.');
-    expect(html).toContain('Evidence behind this answer');
+    expect(html).toContain('The original messages, with links');
+    expect(html).not.toContain('Evidence behind this answer');
     expect(html).toContain('href="#acme-source-01"');
     expect(html).toContain('Source 01: Telegram group message');
     expect(html).toContain('Built for teams that run their work <em>through chat.</em>');
@@ -136,11 +118,15 @@ describe('LandingPage', () => {
       '<a href="/use-cases/team-daily-log"><span>02</span><h4>Team daily log</h4>',
     );
     expect(html).toContain('<a href="/use-cases/crm"><span>04</span><h4>CRM</h4>');
-    expect(html).toContain('Every answer carries its evidence chain.');
+    expect(html).toContain('on one timeline, with where it was said.');
+    expect(html).not.toContain('Every answer carries its evidence chain.');
+    expect(html).toContain('Suggested changes wait — human approval required.');
     expect(html).not.toContain('Northline');
     expect(html.match(/data-home-diagram/g)).toHaveLength(7);
-    expect(html.match(/data-home-proof=/g)).toHaveLength(3);
+    expect(html.match(/data-home-proof=/g)).toHaveLength(5);
     expect(html).toContain('data-home-proof="11-timeline-dark.png"');
+    expect(html).toContain('data-home-proof="17-timeline-voice-dark.png"');
+    expect(html).toContain('data-home-proof="22-client-northstar-dark.png"');
     expect(html).toContain('data-home-proof="32-ask-handoff-dark.png"');
     expect(html).toContain('data-home-proof="33-digest-dark.png"');
     expect(html).toContain('data-screenshot-present="true"');
@@ -152,8 +138,11 @@ describe('LandingPage', () => {
     expect(html).toContain('Link to the source');
     expect(html).toContain('data-first-run="full"');
     expect(html).toContain('Your first team is created');
-    expect(html).toContain('Connect one capture source');
-    expect(html).toContain('A linked Slack channel or Telegram group captures the conversation.');
+    expect(html).toContain('Bring something in');
+    expect(html).toContain(
+      'Scan a website, upload a document, forward an email, or connect Slack or Telegram.',
+    );
+    expect(html).not.toContain('direct chat');
     expect(html).not.toContain('Screenshot placeholder');
     expect(html).not.toContain('data-home-ambient');
     expect(html).not.toContain('↘');
@@ -198,15 +187,17 @@ describe('LandingPage', () => {
       expect(html).toContain(connector);
     }
 
-    expect(html).toContain('Where evidence enters');
-    expect(html).toContain('Two ways in. One cited record.');
+    expect(html).toContain('Forward it, cc it, <em>say it.</em>');
+    expect(html).toContain('CC or BCC the team address');
+    expect(html).toContain('Telegram voice notes arrive transcribed');
     expect(html).toContain('Messages and files');
     expect(html).toContain('Send the work to Timeline.');
-    expect(html).toContain('Connected tools');
-    expect(html).toContain('Sync selected records.');
-    expect(html).toContain('Setup and supported data');
+    expect(html).not.toContain('Connected tools');
+    expect(html).not.toContain('Sync selected records.');
+    expect(html).not.toContain('Two ways in');
+    expect(html).not.toContain('Ingest webhooks');
     expect(html).not.toContain('Admin setup needed');
-    expect(html).toContain('use enabled custom MCP tools when you ask a question');
+    expect(html).not.toContain('use enabled custom MCP tools when you ask a question');
     expect(html).not.toMatch(
       /Capture contract|Deliberate capture|Provider record sync|Available here|MCP is live approved access/u,
     );
@@ -215,7 +206,6 @@ describe('LandingPage', () => {
       'Slack conversations',
       'Email forwarding',
       'Meeting transcripts',
-      'Ingest webhooks',
     ]) {
       expect(html).toContain(surface);
     }
@@ -230,27 +220,23 @@ describe('LandingPage', () => {
     const html = renderToStaticMarkup(<LandingPage />);
 
     expect(html).toContain(
-      'The Timeline updates itself from your team&#x27;s Slack or Telegram, email, calls, docs and wherever else work happens. Who did what, what was promised, and what&#x27;s next, always current.',
+      'Your work record, as one timeline. Forward or cc an email, talk in Slack or Telegram, send a voice note.',
     );
     expect(html).toContain('Link one channel. <em>Watch the record fill in.</em>');
-    expect(html).toContain('approve lasting record changes that The Timeline proposes');
+    expect(html).toContain('approve the suggested updates');
     expect(html).toContain(
-      'Your team runs its work in Slack or Telegram, then spreads it across email, calls and documents.',
+      'Even well-kept tools like Jira or Pipedrive miss what was said in conversation, so status, promises and decisions get rebuilt by hand, and often wrong.',
     );
-    expect(html).toContain(
-      'The Timeline keeps the record current from those conversations, with the source, time and visibility of every line.',
-    );
+    expect(html).toContain('Everything lands on <em>one timeline.</em>');
+    expect(html).toContain('Search it by person, client or source.');
     expect(html).toContain('Ask the question you normally answer by searching four tools');
     expect(html).toContain(
       'Give me the current status, handoff, blockers, and customer commitments.',
     );
-    expect(html).toContain('proposes it for human review instead of applying it on its own');
-    expect(html).toContain('Approval-backed suggestions');
-    expect(html).toContain('Telegram / linked launch group');
-    expect(html).toContain(
-      'Link a Telegram group or Slack channel, forward mail, add a meeting transcript or file, or post an authenticated webhook event.',
-    );
-    expect(html).toContain('A direct chat asks the agent; it is not passive history capture.');
+    expect(html).toContain('It replaces the CRM and task board nobody updates.');
+    expect(html).not.toContain('proposes it for human review');
+    expect(html).not.toContain('Ingest webhooks');
+    expect(html).not.toContain('A direct chat asks the agent');
     expect(html).not.toContain('Connected, not used in this answer');
     expect(html).not.toContain('Sentry is connected, but unused in this answer.');
     expect(html).not.toContain('Timeline watches the tools');
@@ -335,7 +321,7 @@ describe('LandingPage', () => {
 
     const user = userEvent.setup();
     const { container } = render(<LandingPage />);
-    const citedAnswer = container.querySelector('[data-scene="03-answer"]');
+    const citedAnswer = container.querySelector('[data-scene="04-ask"]');
     const disclosures = [
       ...container.querySelectorAll<HTMLDetailsElement>(`.${LEDGER_INSPECT_CLASS}`),
     ];
@@ -347,6 +333,14 @@ describe('LandingPage', () => {
     );
     expect(citedAnswer?.querySelector('[data-home-proof="32-ask-handoff-dark.png"]')).toBeTruthy();
     expect(disclosures).toHaveLength(acmeEvents.length);
+    const ledger = citedAnswer?.querySelector('details');
+    expect(ledger).toBeTruthy();
+    expect(ledger?.open).toBe(false);
+    const ledgerSummary = ledger?.querySelector('summary');
+    expect(ledgerSummary).toBeTruthy();
+    if (!ledger || !ledgerSummary) throw new Error('Expected the collapsed message ledger');
+    await user.click(ledgerSummary);
+    expect(ledger.open).toBe(true);
     expect(screen.getAllByText('Inspect example source')).toHaveLength(acmeEvents.length);
 
     for (const [index, disclosure] of disclosures.entries()) {

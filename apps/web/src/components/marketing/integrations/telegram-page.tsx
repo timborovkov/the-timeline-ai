@@ -2,6 +2,7 @@ import { ArrowRight } from 'lucide-react';
 import Image from 'next/image';
 import Link from 'next/link';
 
+import { FIRST_RUN_NOTE } from '@/components/marketing/copy';
 import { EditorialKicker } from '@/components/marketing/editorial/editorial-kicker';
 import { EditorialStructuredData } from '@/components/marketing/editorial/editorial-structured-data';
 import styles from '@/components/marketing/editorial/editorial.module.css';
@@ -90,6 +91,9 @@ export function TelegramIntegrationPage() {
                 </h2>
                 <p className="mt-4 max-w-[64ch] text-base leading-relaxed text-fg-muted">
                   {TELEGRAM_PAGE.boundary}
+                </p>
+                <p className="mt-4 max-w-[64ch] text-base leading-relaxed text-fg-muted">
+                  {FIRST_RUN_NOTE}
                 </p>
               </div>
             </MarketingSectionGrid>

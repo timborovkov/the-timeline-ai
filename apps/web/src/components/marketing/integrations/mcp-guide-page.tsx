@@ -1,6 +1,7 @@
 import { ArrowRight } from 'lucide-react';
 import Link from 'next/link';
 
+import { ClaudeMcpExample } from '@/components/marketing/claude-mcp-example';
 import { EditorialKicker } from '@/components/marketing/editorial/editorial-kicker';
 import { EditorialStructuredData } from '@/components/marketing/editorial/editorial-structured-data';
 import styles from '@/components/marketing/editorial/editorial.module.css';
@@ -103,6 +104,9 @@ export function McpGuidePage() {
                 </div>
                 <div className="mt-10">
                   <InboundMcpDiagram />
+                </div>
+                <div className="mt-10 max-w-xl">
+                  <ClaudeMcpExample />
                 </div>
               </div>
             </MarketingSectionGrid>

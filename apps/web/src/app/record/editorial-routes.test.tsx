@@ -54,6 +54,8 @@ describe('how-it-works and guide routes', () => {
     expect(html).toContain('You don’t have to replace the tools your team already uses.');
     expect(html).toContain('How scattered work becomes useful context.');
     expect(html).toContain('Trace one answer to its evidence.');
+    expect(html).toContain('What Timeline preserves');
+    expect(html).toContain('Placed on one chronology');
     expect(html).toContain('Three source records become one answer you can verify.');
     expect(html).toMatch(
       /<h2[^>]*>The review date and owner are set; pricing is still unresolved\.<\/h2>/,

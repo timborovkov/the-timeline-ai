@@ -19,6 +19,8 @@ describe('agents hub', () => {
     expect(html).toContain(AGENTS_HUB.readOut.label);
     expect(html).toContain('data-agents-hub');
     expect(html).toContain('data-agent-setup');
+    expect(html).toContain('data-claude-mcp-example');
+    expect(html).toContain('What did we promise Northstar?');
     expect(html).toContain('data-agent-loop');
     expect(html).not.toContain('data-inbound-mcp');
     expect(html).toContain('href="/integrations/mcp"');

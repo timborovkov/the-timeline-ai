@@ -18,6 +18,8 @@ describe('Telegram integration route', () => {
     expect(html).toContain(TELEGRAM_PAGE.dailyUpdate);
     expect(html).not.toMatch(/WhatsApp|Slack Connect|passive account-history sync is/iu);
     expect(html).toContain('Telegram is not a passive account-history sync');
+    expect(html).toContain('Plain-text questions in a direct chat ask the agent');
+    expect(html).toContain('explicit notes and supported media can still be captured');
     expect(html).toContain('data-screenshot-file="17-timeline-voice-dark.png"');
     expect(html).toContain('data-screenshot-present="true"');
     expect(html).not.toContain('Screenshot placeholder');

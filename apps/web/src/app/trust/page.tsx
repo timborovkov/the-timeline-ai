@@ -3,7 +3,9 @@ import Link from 'next/link';
 
 import { EditorialStructuredData } from '@/components/marketing/editorial/editorial-structured-data';
 import { MarketingContainer, MarketingSectionGrid } from '@/components/marketing/marketing-layout';
+import { PreservesStrip } from '@/components/marketing/preserves-strip';
 import { MarketingSectionIndex } from '@/components/marketing/section-index';
+import { TrustFlowPanel } from '@/components/marketing/trust-flow-panel';
 import { PublicShell } from '@/components/public-shell';
 import { SupportMailto } from '@/components/support-email-provider';
 import { buildPublicStructuredData, metadataForPublicDocument } from '@/lib/public-site';
@@ -417,6 +419,15 @@ export default function TrustPage() {
                 </div>
               </div>
             </MarketingSectionGrid>
+          </MarketingContainer>
+        </section>
+
+        <section className="border-b border-border">
+          <MarketingContainer className="py-16 sm:py-20">
+            <div className="grid gap-12">
+              <PreservesStrip />
+              <TrustFlowPanel />
+            </div>
           </MarketingContainer>
         </section>
 

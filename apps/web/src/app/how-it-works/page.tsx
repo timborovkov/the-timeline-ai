@@ -19,6 +19,7 @@ import {
 import { ProvenanceDiagram } from '@/components/marketing/editorial/provenance-diagram';
 import { TimelineFlowDiagram } from '@/components/marketing/home/timeline-flow-diagram';
 import { MarketingContainer, MarketingSectionGrid } from '@/components/marketing/marketing-layout';
+import { PreservesStrip } from '@/components/marketing/preserves-strip';
 import { MarketingProductScreenshot } from '@/components/marketing/product-screenshot';
 import { MarketingSectionIndex } from '@/components/marketing/section-index';
 
@@ -55,6 +56,9 @@ export default function HowItWorksPage() {
               alt={HOW_IT_WORKS_FLOW_SHOT.alt}
               caption={HOW_IT_WORKS_FLOW_SHOT.caption}
             />
+          </div>
+          <div className="mt-12">
+            <PreservesStrip />
           </div>
         </MarketingContainer>
       </div>

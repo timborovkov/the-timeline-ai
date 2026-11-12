@@ -245,19 +245,20 @@
   text-underline-offset: 0.35rem;
 }
 
-.heroSourceLink {
-  margin-top: 1.5rem;
+.heroMeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 1rem;
+  align-items: baseline;
+  margin-top: 0.85rem;
 }
 
-.heroAgentSetup {
-  margin-top: 1.75rem;
-  max-width: 36rem;
-}
-
-.heroSourceLink > a {
-  border-color: var(--home-line-strong);
-  background: transparent;
-  color: var(--home-muted);
+.heroGithubLink {
+  color: var(--home-dim);
+  font-size: 0.78rem;
+  line-height: 1.5;
+  text-decoration-line: underline;
+  text-underline-offset: 0.25rem;
 }
 
 .observatory {
@@ -381,6 +382,17 @@
   line-height: 1.25;
   letter-spacing: 0.06em;
   text-transform: uppercase;
+}
+
+.memoryCoreTimeline {
+  color: var(--home-dim);
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+  font-style: normal;
+  font-weight: 450;
+  letter-spacing: 0.01em;
+  line-height: 1.15;
+  text-transform: none;
 }
 
 .heroOutcome {
@@ -1626,6 +1638,37 @@
   align-content: start;
 }
 
+.receiptLedger > summary {
+  cursor: pointer;
+  list-style: none;
+}
+
+.receiptLedger > summary::-webkit-details-marker,
+.receiptLedger > summary::marker {
+  display: none;
+  content: none;
+}
+
+.receiptLedger > summary::after {
+  width: 0.4rem;
+  height: 0.4rem;
+  flex-shrink: 0;
+  box-sizing: border-box;
+  margin-left: 0.75rem;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(-45deg);
+  content: '';
+}
+
+.receiptLedger[open] > summary::after {
+  transform: rotate(45deg);
+}
+
+.receiptLedger:not([open]) > :not(summary) {
+  display: none;
+}
+
 .receiptLedger ol {
   margin: 0;
   padding: 0;
@@ -1979,6 +2022,80 @@
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 1px;
   background: var(--home-line);
+}
+
+.connectorPathsSingle {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.timelineSearchLine {
+  max-width: 40rem;
+  margin: 1.5rem 0 0;
+  color: var(--home-paper);
+  font-size: 1.05rem;
+  line-height: 1.6;
+}
+
+.slackStrip {
+  margin-top: clamp(2rem, 4vw, 3.5rem);
+}
+
+.slackStripHeader {
+  margin: 0 0 0.85rem;
+  color: var(--home-muted);
+  font-size: 1rem;
+}
+
+.slackStrip .slackThread {
+  max-width: 42rem;
+  border: 1px solid var(--home-line);
+}
+
+.agentLinkLine {
+  margin: 1.25rem 0 0;
+}
+
+.approvalCard {
+  display: grid;
+  justify-items: start;
+  max-width: 28rem;
+  margin-top: 1.5rem;
+  padding: clamp(1.25rem, 3vw, 2rem);
+  border: 1px solid var(--home-line);
+  background: var(--home-panel);
+}
+
+.approvalCard > span {
+  display: grid;
+  width: 2rem;
+  height: 2rem;
+  place-items: center;
+  border: 1px solid var(--home-signal);
+  border-radius: 50%;
+  color: var(--home-signal);
+  font-family: var(--font-mono);
+  font-size: var(--home-meta-size);
+}
+
+.approvalCard strong {
+  margin-top: 1rem;
+  font-size: 1.15rem;
+  font-weight: 600;
+}
+
+.approvalCard small {
+  margin-top: 0.35rem;
+  color: var(--home-dim);
+  font-family: var(--font-mono);
+  font-size: var(--home-meta-size);
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.approvalCard p {
+  margin: 0.85rem 0 0;
+  color: var(--home-muted);
+  line-height: 1.6;
 }
 
 .connectorPath {
@@ -3104,8 +3221,9 @@
     width: 100%;
   }
 
-  .heroSourceLink > a {
-    width: 100%;
+  .heroMeta {
+    align-items: flex-start;
+    flex-direction: column;
   }
 
   .sceneHeading {

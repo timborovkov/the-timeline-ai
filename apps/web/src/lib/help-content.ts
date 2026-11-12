@@ -109,6 +109,7 @@ export const HELP_PAGES: HelpPage[] = [
         items: [
           'Text notes and audio uploads from the web app.',
           'Slack and Telegram messages, files, and voice memos from linked spaces.',
+          'A linked Slack channel or Telegram group keeps the conversation. Plain-text questions in a direct chat ask the agent; explicit notes and supported media can still be captured.',
           'Forwarded, CCed, or BCCed email sent to your team address.',
           'Meeting transcripts from consent-gated bots that join calls.',
           'Document uploads that become searchable chunks after extraction.',

@@ -16,9 +16,8 @@ export const FIRST_RUN_STEPS = [
   },
   {
     index: '02',
-    title: 'Connect one capture source',
-    detail:
-      'A Slack channel, a Telegram group, or forwarded email is enough. You do not need every connector.',
+    title: 'Bring something in',
+    detail: 'Scan a website, upload a document, forward an email, or connect Slack or Telegram.',
   },
   {
     index: '03',

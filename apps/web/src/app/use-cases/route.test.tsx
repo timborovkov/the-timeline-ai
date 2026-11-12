@@ -49,7 +49,7 @@ describe('use-case routes', () => {
     );
 
     expect(html).toContain('data-first-run="full"');
-    expect(html).toContain('Connect one capture source');
+    expect(html).toContain('Bring something in');
     expect(html).toContain('data-screenshot-callouts');
     expect(html).toContain('What changed');
     expect(html).toContain('Who owns the next step');

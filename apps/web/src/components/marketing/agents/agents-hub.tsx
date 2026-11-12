@@ -4,6 +4,7 @@ import { AgentLoopDiagram } from '@/components/marketing/agents/agent-loop-diagr
 import { AgentSetupCard } from '@/components/marketing/agents/agent-setup-card';
 import { AGENTS_HUB } from '@/components/marketing/agents/content';
 import { AGENTS_HUB_DOCUMENT } from '@/components/marketing/agents/public-documents';
+import { ClaudeMcpExample } from '@/components/marketing/claude-mcp-example';
 import { EditorialKicker } from '@/components/marketing/editorial/editorial-kicker';
 import { EditorialStructuredData } from '@/components/marketing/editorial/editorial-structured-data';
 import styles from '@/components/marketing/editorial/editorial.module.css';
@@ -51,6 +52,13 @@ export function AgentsHubPage() {
           </div>
           <div className="mt-12">
             <AgentLoopDiagram />
+          </div>
+          <div className="mt-12 max-w-xl">
+            <p className="mb-4 text-sm leading-7 text-fg-muted">
+              Claude can ask the same record. The answer keeps the original message, with a link to
+              it.
+            </p>
+            <ClaudeMcpExample />
           </div>
         </MarketingContainer>
       </header>
