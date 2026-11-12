@@ -226,7 +226,7 @@ metadata share the same left edge: compact 28px controls, no extra type/metadata
 padding, and no wrapping priority row. The drag handle sits with the card
 actions on the right. Cards have no Move control; the drag handle is the
 on-card move path (Space or Enter, then arrow keys), and opening the card is
-the keyboard alternative. Task kanban paging uses card skeletons in columns
+an alternative to dragging. Task and curated board handles support Space/Enter pickup and drop, Left/Right lane movement, Escape cancellation, and contextual announcements. Touch gesture capture stays on the handle. Reduced motion disables overlay travel and drop settling. Task kanban paging uses card skeletons in columns
 that already have cards; empty lanes stay empty instead of flashing
 Loading more labels.
 Grouped board list does not repeat the current lane name or add a Move row. Next
@@ -697,3 +697,5 @@ and contents are disclosed in the [cookie notice](../../apps/web/src/app/cookies
 Platform directories expose copyable identifiers, lifecycle status, disabled timestamps, and URL-persisted sorting/filtering. Use “Disabled” for reversible team access suspension, “Deletion requested” for owner requests, and “Active-system data removed” only after verification. Owner deletion requests lead to a standalone confirmation with restoration contact details, reachable without an active team. It confirms the request, not completed deletion, and explains that only platform admins can restore access before permanent deletion begins. Permanent actions live in a danger disclosure with exact team-name confirmation and explicit consequences for every member. Admin deletion details show retries and external retention follow-up separately. UUIDs remain an administrative/support detail rather than ordinary workspace navigation.
 
 Website source management follows [the application patterns](../../docs/design/app.md); its public directory entry and pricing calculator share the 20-source-unit per-page usage contract.
+
+Team trust and integration audit views are admin-only and show up to 200 entries per page, newest first, with Newer/Older navigation. Trust audit redaction remains in force on every page.

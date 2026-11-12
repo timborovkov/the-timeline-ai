@@ -36,9 +36,11 @@ import { LiveTaskCategoryBadge } from '@/components/tasks/task-category-badge';
 import { boardViewHref } from '@/lib/board-links';
 import { displayText } from '@/lib/display-dates';
 import { kanbanCollisionDetection } from '@/lib/kanban-collision';
+import { kanbanKeyboardCoordinates } from '@/lib/kanban-keyboard';
 import { notifyAction } from '@/lib/notify';
 import { displayObjectTitle } from '@/lib/object-title';
 import { statusLabel } from '@/lib/status-labels';
+import { useReducedMotion } from '@/lib/use-reduced-motion';
 import { cn } from '@/lib/utils';
 
 interface Props {
@@ -64,11 +66,15 @@ export function CuratedKanbanBoard({
   members,
   filterParams = EMPTY_FILTER_PARAMS,
 }: Props) {
+  const reducedMotion = useReducedMotion();
   const dndContextId = useId();
   const router = useRouter();
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
-    useSensor(KeyboardSensor),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: kanbanKeyboardCoordinates,
+      scrollBehavior: 'auto',
+    }),
   );
   const [optimisticItems, moveOptimistic] = useOptimistic(
     items,
@@ -270,7 +276,17 @@ export function CuratedKanbanBoard({
           ))}
         </section>
       </div>
-      <DragOverlay>
+      <DragOverlay
+        dropAnimation={reducedMotion ? null : undefined}
+        transition={
+          reducedMotion
+            ? () => undefined
+            : (event) =>
+                event instanceof KeyboardEvent
+                  ? 'transform 120ms cubic-bezier(0.23, 1, 0.32, 1)'
+                  : undefined
+        }
+      >
         {activeDragItem ? (
           <div className="rounded-sm border border-signal bg-bg px-2.5 py-2 text-sm shadow-md">
             {displayText(displayObjectTitle(activeDragItem.object))}

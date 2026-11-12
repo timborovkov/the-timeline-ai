@@ -4,6 +4,7 @@ import { WORK_STYLE_OPTIONS, type TeamWorkStyle } from '@timeline/shared/onboard
 import { useState, useTransition } from 'react';
 
 import { updateWorkStylePreferenceAction } from '@/app/actions/first-run';
+import { notifyAction } from '@/lib/notify';
 import { cn } from '@/lib/utils';
 
 export function WorkStylePreference({
@@ -16,12 +17,21 @@ export function WorkStylePreference({
   const [pending, startTransition] = useTransition();
 
   function save(next: TeamWorkStyle | null) {
+    const previous = workStyle;
     setWorkStyle(next);
     setError(null);
-    startTransition(() => {
-      void updateWorkStylePreferenceAction({ workStyle: next }).then((result) => {
-        if (!result.ok) setError(result.error ?? 'Could not save work style.');
+    startTransition(async () => {
+      const result = await notifyAction({
+        id: 'work-style:save',
+        loading: 'Saving work style…',
+        success: 'Work style saved',
+        error: 'Could not save work style.',
+        run: () => updateWorkStylePreferenceAction({ workStyle: next }),
       });
+      if (result.error) {
+        setWorkStyle(previous);
+        setError(result.error);
+      }
     });
   }
 
@@ -38,6 +48,7 @@ export function WorkStylePreference({
             <button
               key={option.id}
               type="button"
+              aria-pressed={selected}
               disabled={pending}
               onClick={() => {
                 save(selected ? null : option.id);
@@ -49,6 +60,7 @@ export function WorkStylePreference({
                   : 'border-border bg-transparent text-fg hover:border-border-strong',
               )}
             >
+              {selected ? <span aria-hidden="true">✓ </span> : null}
               {option.label}
             </button>
           );

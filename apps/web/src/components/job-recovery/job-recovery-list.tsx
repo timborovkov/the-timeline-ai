@@ -441,7 +441,10 @@ export function JobRecoveryList({
               }}
             >
               {busy === 'dismiss-older' ? (
-                <LoaderCircle aria-hidden="true" className="mr-1 size-3.5 animate-spin" />
+                <LoaderCircle
+                  aria-hidden="true"
+                  className="mr-1 size-3.5 animate-spin motion-reduce:animate-none"
+                />
               ) : (
                 <X aria-hidden="true" className="mr-1 size-3.5" />
               )}
@@ -553,7 +556,10 @@ function JobRecoveryToolbar({
           }}
         >
           {busy === 'retry-failed' ? (
-            <LoaderCircle aria-hidden="true" className="mr-1 size-3.5 animate-spin" />
+            <LoaderCircle
+              aria-hidden="true"
+              className="mr-1 size-3.5 animate-spin motion-reduce:animate-none"
+            />
           ) : (
             <RotateCcw aria-hidden="true" className="mr-1 size-3.5" />
           )}
@@ -571,7 +577,10 @@ function JobRecoveryToolbar({
           }}
         >
           {busy === 'dismiss-visible' ? (
-            <LoaderCircle aria-hidden="true" className="mr-1 size-3.5 animate-spin" />
+            <LoaderCircle
+              aria-hidden="true"
+              className="mr-1 size-3.5 animate-spin motion-reduce:animate-none"
+            />
           ) : (
             <X aria-hidden="true" className="mr-1 size-3.5" />
           )}
@@ -829,7 +838,10 @@ function ConversationSuggestionRecovery({ onQueued }: { onQueued: () => void }) 
               }}
             >
               {queueing ? (
-                <LoaderCircle aria-hidden="true" className="mr-1 size-3.5 animate-spin" />
+                <LoaderCircle
+                  aria-hidden="true"
+                  className="mr-1 size-3.5 animate-spin motion-reduce:animate-none"
+                />
               ) : (
                 <RotateCcw aria-hidden="true" className="mr-1 size-3.5" />
               )}
@@ -879,7 +891,10 @@ function RetryStatus({ snapshot }: { snapshot: RetrySnapshot }) {
   }
   return (
     <span className="flex items-center gap-1 text-xs text-fg-muted">
-      <LoaderCircle aria-hidden="true" className="size-3.5 animate-spin" />
+      <LoaderCircle
+        aria-hidden="true"
+        className="size-3.5 animate-spin motion-reduce:animate-none"
+      />
       Retry queued.
     </span>
   );

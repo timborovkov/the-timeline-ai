@@ -1,4 +1,7 @@
+'use client';
+
 import Link from 'next/link';
+import { useEffect, useRef } from 'react';
 
 import { cn } from '@/lib/utils';
 
@@ -22,6 +25,14 @@ export function WorkSubnav({
   className?: string;
   spacing?: 'flush' | 'comfortable';
 }) {
+  const navRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const nav = navRef.current;
+    const active = nav?.querySelector<HTMLElement>('[aria-current="page"]');
+    if (!nav || !active) return;
+    const offset = active.getBoundingClientRect().left - nav.getBoundingClientRect().left;
+    nav.scrollLeft += offset - (nav.clientWidth - active.offsetWidth) / 2;
+  }, [current]);
   return (
     <div
       data-slot="collection-tabs"
@@ -31,7 +42,11 @@ export function WorkSubnav({
         spacing === 'comfortable' && 'mb-6!',
       )}
     >
-      <nav aria-label="Work" className={cn('overflow-x-auto border-b border-border', className)}>
+      <nav
+        ref={navRef}
+        aria-label="Work"
+        className={cn('overflow-x-auto border-b border-border', className)}
+      >
         <div className="flex min-w-max gap-1">
           {WORK_LINKS.map((item) => {
             const active = item.href.includes('?')

@@ -4,6 +4,7 @@ import {
   DndContext,
   DragOverlay,
   PointerSensor,
+  KeyboardSensor,
   useDraggable,
   useDroppable,
   useSensor,
@@ -67,12 +68,14 @@ import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
 import { chatViewLabel } from '@/lib/chat-view';
 import { displayText } from '@/lib/display-dates';
 import { kanbanCollisionDetection } from '@/lib/kanban-collision';
+import { kanbanKeyboardCoordinates } from '@/lib/kanban-keyboard';
 import { notifyAction, notifyError } from '@/lib/notify';
 import { objectDetailHref } from '@/lib/object-links';
 import { displayObjectTitle } from '@/lib/object-title';
 import { recoverFromStaleServerAction } from '@/lib/stale-server-action';
 import { statusLabel } from '@/lib/status-labels';
 import { taskDisplayStatus } from '@/lib/task-statuses';
+import { useReducedMotion } from '@/lib/use-reduced-motion';
 import { cn } from '@/lib/utils';
 
 interface TaskMemberOption {
@@ -514,7 +517,13 @@ function useTaskBoardController({
 }: Props) {
   const dndContextId = useId();
   const router = useRouter();
-  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: kanbanKeyboardCoordinates,
+      scrollBehavior: 'auto',
+    }),
+  );
   const filterKey = `${filterParamsKey(filterParams)}\u0000${categoryFilterRefreshToken ?? ''}`;
   const [boardState, dispatchBoard] = useReducer(taskBoardReducer, INITIAL_TASK_BOARD_STATE);
   const [loadingMore, startLoadMore] = useTransition();
@@ -967,6 +976,7 @@ function TaskBoardView({
   hydratedPrimaryProjects,
   pinnedObjectIdSet,
 }: Props & ReturnType<typeof useTaskBoardController>) {
+  const reducedMotion = useReducedMotion();
   const [activeDragId, setActiveDragId] = useState<string | null>(null);
   const activeDragRow = activeDragId
     ? (effectiveRows.find((row) => row.id === activeDragId) ?? null)
@@ -986,6 +996,26 @@ function TaskBoardView({
       <DndContext
         id={dndContextId}
         sensors={sensors}
+        onDragCancel={() => {
+          setActiveDragId(null);
+        }}
+        accessibility={{
+          screenReaderInstructions: {
+            draggable:
+              'Press Space or Enter to pick up a task. Use Left and Right to move between lanes. Press Space or Enter to drop, or Escape to cancel.',
+          },
+          announcements: {
+            onDragStart: ({ active }) => {
+              const row = effectiveRows.find((candidate) => candidate.id === active.id);
+              return `Picked up ${row ? displayText(displayObjectTitle(row)) : 'task'}.`;
+            },
+            onDragOver: ({ over }) =>
+              over ? `Over ${statusLabel(String(over.id))}.` : 'Not over a lane.',
+            onDragEnd: ({ over }) =>
+              over ? `Dropped in ${statusLabel(String(over.id))}.` : 'Task was not moved.',
+            onDragCancel: () => 'Move cancelled. Task unchanged.',
+          },
+        }}
         collisionDetection={kanbanCollisionDetection}
         onDragStart={handleDragStart}
         onDragEnd={handleDragEnd}
@@ -1045,7 +1075,17 @@ function TaskBoardView({
             <CollectionBound label="No more matching tasks" className="shrink-0 px-4 md:px-8" />
           ) : null}
         </div>
-        <DragOverlay>
+        <DragOverlay
+          dropAnimation={reducedMotion ? null : undefined}
+          transition={
+            reducedMotion
+              ? () => undefined
+              : (event) =>
+                  event instanceof KeyboardEvent
+                    ? 'transform 120ms cubic-bezier(0.23, 1, 0.32, 1)'
+                    : undefined
+          }
+        >
           {activeDragRow ? (
             <div className="rounded-sm border border-signal bg-bg px-2.5 py-2 text-sm shadow-md">
               {displayObjectTitle(activeDragRow)}
@@ -2054,10 +2094,11 @@ function TaskCard({
   onProjectChangeReverted: (taskId: string) => void;
   pinned: boolean;
 }) {
-  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
-    id: row.id,
-    disabled: saving,
-  });
+  const { attributes, listeners, setActivatorNodeRef, setNodeRef, transform, isDragging } =
+    useDraggable({
+      id: row.id,
+      disabled: saving,
+    });
   const style = transform
     ? { transform: `translate3d(${String(transform.x)}px,${String(transform.y)}px,0)` }
     : undefined;
@@ -2090,10 +2131,11 @@ function TaskCard({
         </Link>
         <button
           type="button"
+          ref={setActivatorNodeRef}
           {...attributes}
           {...listeners}
           disabled={saving}
-          className="inline-flex size-6 shrink-0 cursor-grab items-center justify-center rounded-sm text-fg-dim hover:bg-surface-2 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/50 active:cursor-grabbing disabled:cursor-progress"
+          className="inline-flex size-8 shrink-0 touch-none cursor-grab items-center justify-center rounded-sm text-fg-dim hover:bg-surface-2 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:cursor-grabbing disabled:cursor-progress"
           aria-label={`Drag ${displayText(title)}`}
         >
           <GripVertical aria-hidden="true" className="size-3.5" />

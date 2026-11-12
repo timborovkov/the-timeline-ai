@@ -61,7 +61,7 @@ describe('authenticated route states', () => {
       <AppError error={new Error('route failed')} reset={vi.fn()} />,
     );
 
-    expect(html).toContain('Unable to load Home');
+    expect(html).toContain('Unable to load this page');
     expect(html).toContain(
       'Your captured history and saved work are unchanged. Check your connection, then try again.',
     );

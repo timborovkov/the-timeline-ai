@@ -663,7 +663,7 @@ function SearchResultsPanel({
         {loading ? (
           <Loader2
             aria-hidden="true"
-            className="size-4 animate-spin text-fg-dim motion-reduce:animate-none"
+            className="size-4 animate-spin motion-reduce:animate-none text-fg-dim motion-reduce:animate-none"
           />
         ) : null}
       </div>

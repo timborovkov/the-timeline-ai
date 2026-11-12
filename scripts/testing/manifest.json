@@ -1,4 +1,5 @@
 {
+  "apps/web/src/lib/kanban-keyboard.test.ts": { "group": "unit" },
   "apps/worker/src/workers/boardQualification-discovery.test.ts": { "group": "integration" },
   "apps/web/src/components/agent-reporting-settings.test.tsx": { "group": "dom" },
   "packages/shared/src/boards/qualification.live-eval.test.ts": { "group": "live" },

@@ -217,15 +217,21 @@ function HeaderMetadata({
           seg.danger && 'text-danger',
         )}
       >
-        {seg.value}
+        {seg.href ? (
+          <Link
+            href={seg.href}
+            aria-label={seg.ariaLabel}
+            className={cn(
+              'inline-flex items-center rounded-sm underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+              compact ? 'min-h-8' : 'min-h-10 min-w-10',
+            )}
+          >
+            {seg.value}
+          </Link>
+        ) : (
+          seg.value
+        )}
       </dd>
-      {seg.href ? (
-        <Link
-          href={seg.href}
-          aria-label={seg.ariaLabel}
-          className="absolute inset-0 rounded-sm outline-none hover:bg-surface/50 focus-visible:ring-2 focus-visible:ring-signal focus-visible:ring-offset-2"
-        />
-      ) : null}
     </div>
   );
 }

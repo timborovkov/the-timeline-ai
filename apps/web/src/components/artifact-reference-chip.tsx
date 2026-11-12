@@ -124,13 +124,13 @@ function ArtifactPreviewDialog({
               <PreviewActionLink
                 key={`${refLabel}:action:${action.label}:${action.href}`}
                 action={action}
-                className="inline-flex h-10 items-center justify-center gap-2 rounded-sm border border-border bg-background px-3.5 text-sm font-medium transition-[background-color,color,scale] duration-150 ease-out hover:bg-accent hover:text-accent-foreground active:scale-[0.96]"
+                className="inline-flex h-10 items-center justify-center gap-2 rounded-sm border border-border bg-background px-3.5 text-sm font-medium transition-[background-color,color,scale] duration-150 ease-out hover:bg-accent hover:text-accent-foreground active:scale-[0.96] motion-reduce:active:scale-100 motion-reduce:transition-none"
               />
             ))}
             {primaryAction ? (
               <PreviewActionLink
                 action={primaryAction}
-                className="inline-flex h-10 items-center justify-center gap-2 rounded-sm border border-border bg-background pl-4 pr-3.5 text-sm font-medium transition-[background-color,color,scale] duration-150 ease-out hover:bg-accent hover:text-accent-foreground active:scale-[0.96]"
+                className="inline-flex h-10 items-center justify-center gap-2 rounded-sm border border-border bg-background pl-4 pr-3.5 text-sm font-medium transition-[background-color,color,scale] duration-150 ease-out hover:bg-accent hover:text-accent-foreground active:scale-[0.96] motion-reduce:active:scale-100 motion-reduce:transition-none"
               />
             ) : null}
           </DialogFooter>
