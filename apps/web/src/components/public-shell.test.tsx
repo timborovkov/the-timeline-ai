@@ -155,12 +155,13 @@ describe('public dropdown keyboard dismissal', () => {
       (node) => node.textContent === 'Integrations',
     );
     const details = summary?.closest('details');
-    expect(details).toBeTruthy();
-    details!.open = true;
-    const link = details!.querySelector('a')!;
+    if (!details) throw new Error('Missing desktop dropdown');
+    details.open = true;
+    const link = details.querySelector('a');
+    if (!link) throw new Error('Missing dropdown link');
     link.focus();
     fireEvent.keyDown(link, { key: 'Escape' });
-    expect(details!.open).toBe(false);
+    expect(details.open).toBe(false);
     expect(document.activeElement).toBe(summary);
   });
 
@@ -171,18 +172,22 @@ describe('public dropdown keyboard dismissal', () => {
       </PublicShell>,
     );
     const menu = container
-      .querySelector('nav[aria-label="Public navigation menu"]')!
-      .closest('details')!;
-    const nested = menu.querySelector('details')!;
+      .querySelector('nav[aria-label="Public navigation menu"]')
+      ?.closest('details');
+    const nested = menu?.querySelector('details');
+    if (!menu || !nested) throw new Error('Missing mobile menu');
     menu.open = true;
     nested.open = true;
-    const link = nested.querySelector('a')!;
+    const link = nested.querySelector('a');
+    if (!link) throw new Error('Missing nested link');
     link.focus();
     fireEvent.keyDown(link, { key: 'Escape' });
     expect(nested.open).toBe(false);
     expect(menu.open).toBe(true);
     expect(document.activeElement).toBe(nested.querySelector('summary'));
-    fireEvent.keyDown(document.activeElement!, { key: 'Escape' });
+    const focused = document.activeElement;
+    if (!focused) throw new Error('Missing focus');
+    fireEvent.keyDown(focused, { key: 'Escape' });
     expect(menu.open).toBe(false);
     expect(document.activeElement).toBe(menu.querySelector('summary'));
   });
