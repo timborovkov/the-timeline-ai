@@ -8,14 +8,17 @@ import { drizzle } from 'drizzle-orm/pglite';
 
 import { discoverBoardQualificationRequests } from '#src/workers/boardQualification-discovery.js';
 
-it('keeps a large workspace backlog from hiding another workspace and skips inactive workspaces and removed members', async () => {
+it('keeps a large workspace backlog from hiding another workspace and skips inactive workspaces and unavailable members', async () => {
   const pg = new PGlite();
   const busyTeam = randomUUID();
   const otherTeam = randomUUID();
   const removedTeam = randomUUID();
   const user = randomUUID();
+  const suspendedUser = randomUUID();
   try {
     await pg.exec(`
+      CREATE TABLE users (id uuid, suspended_at timestamptz);
+      INSERT INTO users VALUES ('${user}', NULL), ('${suspendedUser}', now());
       CREATE TABLE teams (id uuid, disabled_at timestamptz, deletion_started_at timestamptz, deleted_at timestamptz);
       CREATE TABLE team_billing_accounts (team_id uuid, security_state text);
       INSERT INTO teams (id) VALUES ('${busyTeam}'), ('${otherTeam}'), ('${removedTeam}');
@@ -24,12 +27,13 @@ it('keeps a large workspace backlog from hiding another workspace and skips inac
         id uuid, team_id uuid, user_id uuid, version integer, available_at timestamptz, platform_operator_session_id uuid
       );
       INSERT INTO team_members VALUES
-        ('${busyTeam}', '${user}', NULL), ('${otherTeam}', '${user}', NULL),
+        ('${busyTeam}', '${suspendedUser}', NULL), ('${busyTeam}', '${user}', NULL), ('${otherTeam}', '${user}', NULL),
         ('${removedTeam}', '${user}', now());
       INSERT INTO board_qualification_requests
         SELECT gen_random_uuid(), '${busyTeam}'::uuid, '${user}'::uuid, 1, '2020-01-01'::timestamptz, '${user}'::uuid
         FROM generate_series(1, 50);
       INSERT INTO board_qualification_requests VALUES
+        (gen_random_uuid(), '${busyTeam}', '${suspendedUser}', 1, '2018-01-01', NULL),
         (gen_random_uuid(), '${otherTeam}', '${user}', 1, '2020-01-02', NULL),
         (gen_random_uuid(), '${removedTeam}', '${user}', 1, '2020-01-01', NULL),
         (gen_random_uuid(), '${otherTeam}', '${user}', 1, '2100-01-01', NULL);
@@ -47,6 +51,7 @@ it('keeps a large workspace backlog from hiding another workspace and skips inac
       drizzle(pg) as unknown as Db,
       new Date('2026-11-12'),
     );
+    expect(requests.every((request) => request.userId === user)).toBe(true);
     expect(requests[0]?.platformOperatorSessionId).toBe(user);
     expect(requests.map((request) => request.teamId)).toEqual([busyTeam, otherTeam]);
   } finally {

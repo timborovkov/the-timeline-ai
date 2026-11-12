@@ -159,7 +159,10 @@ of waiting against canonical relationship lock order, so related names/statuses 
 neighboring entities during the originating object edit. Pending or rejected object proposals do not trigger
 qualification. The durable inbox coalesces per member/object, uses leases and
 version-checked completion, and retries failures with bounded backoff. Queue outages
-cannot lose committed requests. The worker discovers routing metadata globally and
+cannot lose committed requests. Derived endpoint work retains the originating request
+time; coalescing preserves newer requests and their source/operator attribution, so
+a delayed expansion cannot override a newer manual membership decision. Generic
+relationship endpoints enqueue in entity-ID order, matching worker inbox locks. The worker excludes suspended users before selecting each workspace's next request. It discovers routing metadata globally and
 uses the originating member's `withTeam` scope for workspace reads and proposals;
 service-principal writes do not borrow a member's authority. Impersonated requests
 retain their operator session through coalescing and discovery; the worker restores

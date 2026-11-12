@@ -2681,6 +2681,49 @@ describe('automatic board membership', () => {
     expect(await scope.boards.getBoardItem(member.id)).toBeNull();
   });
 
+  it('preserves a manual removal newer than the originating neighbor change', async () => {
+    const { scope, board, object } = await setup();
+    const { boardQualificationRequests } = await import('@timeline/db');
+    const actor = { kind: 'user' as const, userId: USER_OWNER };
+    const company = await scope.objects.createObject({
+      type: 'company',
+      canonicalName: 'Client',
+      actor,
+    });
+    await scope.objects.setPersonCompany(object.id, company.id, actor);
+    const member = await scope.boards.addBoardItem(board.id, { entityId: object.id, actor });
+    await db.delete(boardQualificationRequests);
+    await scope.objects.updateObject(company.id, { status: 'active' }, actor);
+    const originalTime = new Date('2020-01-01');
+    await db.update(boardQualificationRequests).set({ requestedAt: originalTime });
+    await scope.boards.removeBoardItem(member.id, actor);
+    await process(scope);
+    const neighbor = required((await db.select().from(boardQualificationRequests))[0]);
+    expect(neighbor.entityId).toBe(object.id);
+    expect(neighbor.requestedAt).toEqual(originalTime);
+    await process(scope);
+    expect(await scope.suggestions.listPendingSuggestions()).toHaveLength(0);
+    expect(await scope.boards.getBoardItem(member.id)).toBeNull();
+  });
+  it('keeps newer source authority when older derived endpoint work is coalesced', async () => {
+    const { object } = await setup();
+    const { boardQualificationRequests } = await import('@timeline/db');
+    const { requestBoardQualification } = await import('#src/boards/qualification-request.js');
+    const original = required((await db.select().from(boardQualificationRequests))[0]);
+    await requestBoardQualification(db, {
+      teamId: TEAM_A,
+      userId: USER_OWNER,
+      entityId: object.id,
+      sourceEventId: null,
+      requestedAt: new Date('2020-01-01'),
+      pendingEntityIds: [object.id],
+    });
+    const retained = required((await db.select().from(boardQualificationRequests))[0]);
+    expect(retained.requestedAt).toEqual(original.requestedAt);
+    expect(retained.sourceEventId).toBe(original.sourceEventId);
+    expect(retained.version).toBe(original.version + 1);
+    expect(retained.pendingEntityIds).toEqual([object.id]);
+  });
   it('keeps private scan proposals and user edits isolated between members', async () => {
     const { scope, board } = await setup();
     const { boardQualificationRequests, boardQualificationEvaluations, agentSuggestionItems } =

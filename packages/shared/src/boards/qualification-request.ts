@@ -16,6 +16,7 @@ export async function requestBoardQualification(
     requestedBoardId?: string;
     includeRelationshipNeighbors?: boolean;
     pendingEntityIds?: string[];
+    requestedAt?: Date;
   },
 ) {
   // Service principals cannot inherit a member's authority for background inference.
@@ -58,7 +59,7 @@ export async function requestBoardQualification(
       .for('key share');
     await tx
       .insert(boardQualificationRequests)
-      .values({ ...tagged, requestedAt: now, availableAt: now })
+      .values({ ...tagged, requestedAt: input.requestedAt ?? now, availableAt: now })
       .onConflictDoUpdate({
         target: [
           boardQualificationRequests.teamId,
@@ -66,24 +67,17 @@ export async function requestBoardQualification(
           boardQualificationRequests.entityId,
         ],
         set: {
-          pendingEntityIds: sql`ARRAY(SELECT DISTINCT unnest(${boardQualificationRequests.pendingEntityIds} || ${sql`ARRAY[${sql.join(
-            (input.pendingEntityIds ?? []).map((id) => sql`${id}::uuid`),
-            sql`, `,
-          )}]::uuid[]`}))`,
+          pendingEntityIds: sql`ARRAY(SELECT DISTINCT unnest(${boardQualificationRequests.pendingEntityIds} || excluded.pending_entity_ids))`,
           includeRelationshipNeighbors: sql`${boardQualificationRequests.includeRelationshipNeighbors} OR ${input.includeRelationshipNeighbors ?? false}`,
           relationshipCursor: input.includeRelationshipNeighbors
             ? null
             : sql`${boardQualificationRequests.relationshipCursor}`,
-          platformOperatorSessionId:
-            tagged.platformOperatorSessionId ??
-            (input.sourceEventId
-              ? null
-              : sql`${boardQualificationRequests.platformOperatorSessionId}`),
+          platformOperatorSessionId: sql`CASE WHEN ${boardQualificationRequests.requestedAt} > excluded.requested_at THEN ${boardQualificationRequests.platformOperatorSessionId} ELSE COALESCE(excluded.platform_operator_session_id, CASE WHEN excluded.source_event_id IS NULL THEN ${boardQualificationRequests.platformOperatorSessionId} ELSE NULL END) END`,
           requestedBoardId: sql`CASE WHEN ${boardQualificationRequests.requestedBoardId} = ${input.requestedBoardId ?? null} THEN ${input.requestedBoardId ?? null}::uuid ELSE NULL END`,
-          sourceEventId: input.sourceEventId ?? sql`${boardQualificationRequests.sourceEventId}`,
+          sourceEventId: sql`CASE WHEN ${boardQualificationRequests.requestedAt} > excluded.requested_at THEN ${boardQualificationRequests.sourceEventId} ELSE COALESCE(excluded.source_event_id, ${boardQualificationRequests.sourceEventId}) END`,
           version: sql`${boardQualificationRequests.version} + 1`,
           boardCursor: null,
-          requestedAt: now,
+          requestedAt: sql`GREATEST(${boardQualificationRequests.requestedAt}, excluded.requested_at)`,
           availableAt: now,
           attempts: 0,
           failureCode: null,

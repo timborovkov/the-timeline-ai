@@ -1,4 +1,4 @@
-import { boardQualificationRequests, teamMembers, type Db } from '@timeline/db';
+import { boardQualificationRequests, teamMembers, users, type Db } from '@timeline/db';
 import { activeWorkspaceCondition } from '@timeline/shared/platform-admin/runtime';
 import { and, asc, eq, isNull, lte } from 'drizzle-orm';
 
@@ -21,6 +21,10 @@ export function discoverBoardQualificationRequests(db: Db, now = new Date()) {
         eq(teamMembers.userId, boardQualificationRequests.userId),
         isNull(teamMembers.removedAt),
       ),
+    )
+    .innerJoin(
+      users,
+      and(eq(users.id, boardQualificationRequests.userId), isNull(users.suspendedAt)),
     )
     .where(
       and(

@@ -523,18 +523,14 @@ async function emitRelationshipDirectWriteOutput(input: {
       ),
     });
   } else {
-    await requestBoardQualification(input.db, {
-      teamId: input.teamId,
-      userId: input.userId,
-      entityId: input.fromEntityId,
-      sourceEventId: input.sourceEventId,
-    });
-    await requestBoardQualification(input.db, {
-      teamId: input.teamId,
-      userId: input.userId,
-      entityId: input.toEntityId,
-      sourceEventId: input.sourceEventId,
-    });
+    for (const entityId of [input.fromEntityId, input.toEntityId].sort()) {
+      await requestBoardQualification(input.db, {
+        teamId: input.teamId,
+        userId: input.userId,
+        entityId,
+        sourceEventId: input.sourceEventId,
+      });
+    }
   }
   const sourceContext = await buildObjectDirectWriteSourceContext({
     db: input.db,

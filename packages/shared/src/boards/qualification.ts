@@ -462,6 +462,7 @@ export function createBoardQualificationScope(
               userId: scope.userId,
               entityId: parent.id,
               sourceEventId: request.sourceEventId,
+              requestedAt: request.requestedAt,
             });
           }
           await tx
