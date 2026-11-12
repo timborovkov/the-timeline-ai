@@ -368,6 +368,7 @@ const baseSchema = z.object({
    * default-off so a deploy cannot enqueue the backlog.
    */
   TASK_CATEGORY_DISABLED: z.preprocess(booleanString, z.boolean().default(false)),
+  IDENTITY_SEMANTIC_ENABLED: z.preprocess(booleanString, z.boolean().default(true)),
   TASK_CATEGORY_CLASSIFICATION_ENABLED: z.preprocess(booleanString, z.boolean().default(true)),
   TASK_CATEGORY_AUTO_ENQUEUE_ENABLED: z.preprocess(booleanString, z.boolean().default(true)),
   TASK_CATEGORY_WORKER_ENABLED: z.preprocess(booleanString, z.boolean().default(true)),

@@ -1,6 +1,10 @@
+export * from '#src/suggestions/identity-resolution.js';
 import { randomUUID } from 'node:crypto';
 
 import {
+  documents,
+  documentChunks,
+  engineMaintenanceRuns,
   agentSuggestionEvidence,
   agentSuggestionItems,
   agentSuggestions,
@@ -55,6 +59,7 @@ import {
   calendarEventMutationTargetId,
   type CalendarRecurrenceEditMode,
 } from '#src/calendar/locking.js';
+import { documentProposalEvidenceIsCurrent } from '#src/documents/visibility.js';
 import { chatStructured as defaultChatStructured } from '#src/llm/chat.js';
 import { childLogger } from '#src/logger.js';
 import { suggestedProjectIsUnusedCondition } from '#src/objects/suggested-projects.js';
@@ -69,6 +74,7 @@ import {
 import { sourcePayloadRefFromMetadata } from '#src/reconciliation/source-snapshot.js';
 import { likePattern } from '#src/sql-like.js';
 import { stableStringify, suggestionDedupeKey } from '#src/suggestions/dedupe-key.js';
+import { identitiesConflict } from '#src/suggestions/identity-resolution.js';
 import {
   canonicalProposalPayloadIssues,
   coerceMemberIdFields,
@@ -437,6 +443,7 @@ export interface SuggestionEvidenceInput {
 }
 
 export interface CreateSuggestionInput {
+  maintenanceLease?: { id: string; token: string } | undefined;
   source: 'chat' | 'background';
   title: string;
   summary?: string | null;
@@ -635,7 +642,8 @@ const objectUpdatePayload = z.object({
 });
 
 const identityFacetPayload = z.object({
-  entityId: uuid,
+  entityId: uuid.optional(),
+  entityRef: z.string().trim().min(1).max(120).optional(),
   kind: z.enum(['email', 'phone', 'telegram', 'slack', 'github', 'timeline_user', 'other']),
   value: z.string().trim().min(1).max(300),
   normalizedValue: z.string().trim().min(1).max(300).optional(),
@@ -877,6 +885,7 @@ function nonFailedItemExistsPredicate() {
 
 function suggestionVisibilityPredicate(teamId: string, userId: string) {
   return and(
+    documentProposalEvidenceIsCurrent(teamId, agentSuggestions.metadata),
     eq(agentSuggestions.teamId, teamId),
     or(
       eq(agentSuggestions.visibility, 'team'),
@@ -1428,10 +1437,27 @@ function normalizedCreateConflictValue(value: unknown): string | null {
   return normalizedApprovalText(stableStringify(value));
 }
 
+function pendingCreateIdentitiesConflict(
+  olderItem: typeof agentSuggestionItems.$inferSelect,
+  newerItem: typeof agentSuggestionItems.$inferSelect,
+): boolean {
+  const identity = (item: typeof agentSuggestionItems.$inferSelect) => {
+    const payload = normalizeLifecyclePayload(item);
+    return {
+      id: item.id,
+      type: normalizedObjectCreateType(item),
+      canonicalName: typeof payload.canonicalName === 'string' ? payload.canonicalName : item.title,
+      metadata: payload.metadata,
+    };
+  };
+  return identitiesConflict(identity(olderItem), identity(newerItem));
+}
+
 function pendingCreatePayloadsCompatible(
   olderItem: typeof agentSuggestionItems.$inferSelect,
   newerItem: typeof agentSuggestionItems.$inferSelect,
 ): boolean {
+  if (pendingCreateIdentitiesConflict(olderItem, newerItem)) return false;
   const olderPayload = normalizeLifecyclePayload(olderItem);
   const newerPayload = normalizeLifecyclePayload(newerItem);
   return CREATE_CONFLICT_KEYS.every((key) => {
@@ -1678,6 +1704,7 @@ function sameSemanticPendingItem(args: {
     if (!older.success || !newer.success) return false;
     return (
       older.data.entityId === newer.data.entityId &&
+      older.data.entityRef === newer.data.entityRef &&
       older.data.kind === newer.data.kind &&
       normalizedApprovalText(older.data.normalizedValue ?? older.data.value) ===
         normalizedApprovalText(newer.data.normalizedValue ?? newer.data.value)
@@ -1762,6 +1789,7 @@ function shouldSupersedePendingItem(args: {
     olderItem.operation === 'create' &&
     newerItem.operation === 'create';
   if (olderItem.targetKind !== newerItem.targetKind && !isObjectTaskCreatePair) return false;
+  if (isObjectTaskCreatePair && pendingCreateIdentitiesConflict(olderItem, newerItem)) return false;
 
   if (olderItem.targetKind === 'board_membership' && newerItem.targetKind === 'board_membership')
     return sameSemanticPendingItem(args);
@@ -2732,7 +2760,9 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     }
     if (item.targetKind === 'identity_facet') {
       if (item.operation !== 'create') throw new Error('Identity facets only support create');
-      identityFacetPayload.parse(payload);
+      const facet = identityFacetPayload.parse(payload);
+      if (Boolean(facet.entityId) === Boolean(facet.entityRef))
+        throw new Error('Identity facet requires exactly one object endpoint');
       return;
     }
     if (item.targetKind === 'object_note') {
@@ -3182,7 +3212,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     revisedPayload: Record<string, unknown>,
   ): Record<string, unknown> {
     const targetKeys: Partial<Record<TargetKind, readonly string[]>> = {
-      identity_facet: ['entityId'],
+      identity_facet: ['entityId', 'entityRef'],
       object_note: ['entityId', 'entityName', 'entityType', 'noteId'],
       object_relationship: ['fromEntityId', 'fromRef', 'fromName', 'toEntityId', 'toRef', 'toName'],
       board_membership: [
@@ -3375,7 +3405,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       return updated;
     });
     if (!row) return false;
-    await supersedeRelationshipDependents(row);
+    await supersedeObjectDependents(row);
     await refreshBundleStatus(row.suggestionId);
     return true;
   }
@@ -4040,6 +4070,27 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       .from(agentSuggestions)
       .where(and(eq(agentSuggestions.id, item.suggestionId), eq(agentSuggestions.teamId, teamId)))
       .limit(1);
+    const documentMeta = recordFromUnknown(parentSuggestion?.metadata);
+    if (typeof documentMeta.document_version_id === 'string') {
+      const [current] = await db
+        .select({ id: documents.id })
+        .from(documents)
+        .innerJoin(documentChunks, eq(documentChunks.documentId, documents.id))
+        .where(
+          and(
+            eq(documents.teamId, teamId),
+            eq(documents.id, String(documentMeta.document_id)),
+            eq(documents.currentVersionId, documentMeta.document_version_id),
+            eq(documentChunks.id, String(documentMeta.document_chunk_id)),
+            eq(documentChunks.documentVersionId, documentMeta.document_version_id),
+            eq(documents.visibility, 'team'),
+            isNull(documents.deletedAt),
+          ),
+        )
+        .limit(1)
+        .for('share');
+      if (!current) return 'Document evidence is no longer current or accessible';
+    }
     if (
       parentSuggestion &&
       typeof recordFromUnknown(parentSuggestion.metadata).evidence_pack_fingerprint === 'string'
@@ -4248,7 +4299,29 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     }
     if (item.targetKind === 'identity_facet') {
       const parsed = identityFacetPayload.safeParse(payload);
-      return parsed.success ? staleObjectTargetReason(parsed.data.entityId) : null;
+      if (!parsed.success) return null;
+      if (parsed.data.entityId) return staleObjectTargetReason(parsed.data.entityId);
+      if (parsed.data.entityRef) {
+        // Preflight must not auto-accept a pending sibling; only validate an
+        // already accepted reference, just as an explicit entityId is validated.
+        const siblings = await db
+          .select({ resultId: agentSuggestionItems.resultId })
+          .from(agentSuggestionItems)
+          .where(
+            and(
+              eq(agentSuggestionItems.teamId, teamId),
+              eq(agentSuggestionItems.suggestionId, item.suggestionId),
+              eq(agentSuggestionItems.operation, 'create'),
+              inArray(agentSuggestionItems.targetKind, ['object', 'task']),
+              eq(agentSuggestionItems.status, 'accepted'),
+              sql`lower(${agentSuggestionItems.proposedPayload}->>'localRef') = ${normalizedLocalRef(parsed.data.entityRef)}`,
+            ),
+          )
+          .limit(2);
+        if (siblings.length === 1 && siblings[0]?.resultId)
+          return staleObjectTargetReason(siblings[0].resultId);
+      }
+      return null;
     }
     if (item.targetKind === 'object_note') {
       const parsed = objectNotePayload.safeParse(payload);
@@ -5485,7 +5558,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     });
   }
 
-  async function supersedeRelationshipDependents(
+  async function supersedeObjectDependents(
     item: typeof agentSuggestionItems.$inferSelect,
   ): Promise<void> {
     const payload =
@@ -5498,16 +5571,24 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     const normalizedRef = normalizedLocalRef(ref);
     if (!normalizedRef || (item.targetKind !== 'object' && item.targetKind !== 'task')) return;
     const dependents = await db
-      .select({ id: agentSuggestionItems.id })
+      .select({ id: agentSuggestionItems.id, targetKind: agentSuggestionItems.targetKind })
       .from(agentSuggestionItems)
       .where(
         and(
           eq(agentSuggestionItems.suggestionId, item.suggestionId),
-          eq(agentSuggestionItems.targetKind, 'object_relationship'),
           inArray(agentSuggestionItems.status, ACTIONABLE_ITEM_STATUSES),
           or(
-            sql`lower(${agentSuggestionItems.proposedPayload} ->> 'fromRef') = ${normalizedRef}`,
-            sql`lower(${agentSuggestionItems.proposedPayload} ->> 'toRef') = ${normalizedRef}`,
+            and(
+              eq(agentSuggestionItems.targetKind, 'object_relationship'),
+              or(
+                sql`lower(${agentSuggestionItems.proposedPayload} ->> 'fromRef') = ${normalizedRef}`,
+                sql`lower(${agentSuggestionItems.proposedPayload} ->> 'toRef') = ${normalizedRef}`,
+              ),
+            ),
+            and(
+              eq(agentSuggestionItems.targetKind, 'identity_facet'),
+              sql`lower(${agentSuggestionItems.proposedPayload} ->> 'entityRef') = ${normalizedRef}`,
+            ),
           ),
         ),
       );
@@ -5515,7 +5596,9 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       await supersedeItem(
         dependent.id,
         null,
-        `Relationship endpoint "${ref}" was rejected or superseded.`,
+        dependent.targetKind === 'object_relationship'
+          ? `Relationship endpoint "${ref}" was rejected or superseded.`
+          : `Referenced object "${ref}" was rejected or superseded.`,
       );
     }
   }
@@ -5605,7 +5688,12 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       if (item.operation !== 'create') throw new Error('Identity facets only support create');
       const parsed = identityFacetPayload.parse(payload);
       const identityFacetInput: IdentityFacetInput = {
-        entityId: parsed.entityId,
+        entityId:
+          parsed.entityId ??
+          (parsed.entityRef ? await resolveLocalRef(item, parsed.entityRef) : null) ??
+          (() => {
+            throw new Error('Identity facet requires an accepted object');
+          })(),
         kind: parsed.kind,
         value: parsed.value,
         provider: parsed.provider ?? null,
@@ -5863,7 +5951,9 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     const isPackBacked =
       typeof recordFromUnknown(row.suggestion.metadata).evidence_pack_fingerprint === 'string';
     const requiresTransactionalAcceptance =
-      isPackBacked || row.item.targetKind === 'board_membership';
+      isPackBacked ||
+      typeof recordFromUnknown(row.suggestion.metadata).document_version_id === 'string' ||
+      row.item.targetKind === 'board_membership';
     if (requiresTransactionalAcceptance && deps.acceptance.kind === 'root') {
       await deps.beforeApplyItem?.(itemId);
       try {
@@ -6916,6 +7006,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
           : null;
       const metadata = {
         ...(input.metadata ?? {}),
+        ...(input.maintenanceLease ? { maintenance_run_id: input.maintenanceLease.id } : {}),
         ...(incomingEvidencePackFingerprint
           ? { evidence_pack_base_dedupe_key: input.dedupeKey }
           : {}),
@@ -6937,6 +7028,44 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
           : {}),
       };
       const result = await db.transaction(async (tx) => {
+        if (input.maintenanceLease) {
+          const [owned] = await tx
+            .select({ id: engineMaintenanceRuns.id })
+            .from(engineMaintenanceRuns)
+            .where(
+              and(
+                eq(engineMaintenanceRuns.teamId, teamId),
+                eq(engineMaintenanceRuns.id, input.maintenanceLease.id),
+                eq(engineMaintenanceRuns.leaseOwner, input.maintenanceLease.token),
+                sql`${engineMaintenanceRuns.leaseExpiresAt} > now()`,
+              ),
+            )
+            .limit(1)
+            .for('share');
+          if (!owned) throw new Error('Maintenance lease lost before proposal persistence');
+        }
+        const documentMeta = recordFromUnknown(input.metadata);
+        if (typeof documentMeta.document_version_id === 'string') {
+          const [current] = await tx
+            .select({ id: documents.id })
+            .from(documents)
+            .innerJoin(documentChunks, eq(documentChunks.documentId, documents.id))
+            .where(
+              and(
+                eq(documents.teamId, teamId),
+                eq(documents.id, String(documentMeta.document_id)),
+                eq(documents.currentVersionId, documentMeta.document_version_id),
+                eq(documentChunks.id, String(documentMeta.document_chunk_id)),
+                eq(documentChunks.documentVersionId, documentMeta.document_version_id),
+                eq(documents.visibility, 'team'),
+                isNull(documents.deletedAt),
+              ),
+            )
+            .limit(1)
+            .for('share');
+          if (!current) throw new Error('Document evidence changed before proposal persistence');
+        }
+
         if (incomingEvidencePackFingerprint) {
           const revisionLockKey = `suggestion-pack-revision:${teamId}:${input.dedupeKey}`;
           await tx.execute(
@@ -7289,6 +7418,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
           metadata: projectionMetadata,
         };
         if (activeItems.length === 0 && suppressedOutputRows.length > 0) {
+          // Suppression replays an existing review outcome; it is not a new user decision.
           const now = new Date();
           const suppressedStatus = suggestionStatusForSuppressedProjection(suppressedOutputRows);
           const suppressedMetadata = {
@@ -7318,7 +7448,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
                   visibilityOwnerUserId: suggestionValues.visibilityOwnerUserId,
                   visibilityUserIds: suggestionValues.visibilityUserIds,
                   resolvedAt: existingSuppressedSuggestion.resolvedAt ?? now,
-                  resolvedByUserId: existingSuppressedSuggestion.resolvedByUserId ?? userId,
+                  resolvedByUserId: existingSuppressedSuggestion.resolvedByUserId,
                   metadata: sql`${agentSuggestions.metadata} || ${JSON.stringify(suppressedMetadata)}::jsonb`,
                   updatedAt: now,
                 })
@@ -7330,7 +7460,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
                   ...suggestionValues,
                   status: suppressedStatus,
                   resolvedAt: now,
-                  resolvedByUserId: userId,
+                  resolvedByUserId: null,
                   metadata: suppressedMetadata,
                 })
                 .onConflictDoNothing()
@@ -7386,7 +7516,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
                   dedupeKey: item.dedupeKey,
                   proposedPayload: item.proposedPayload,
                   resolvedAt: now,
-                  resolvedByUserId: userId,
+                  resolvedByUserId: null,
                   metadata: {
                     ...(item.evidenceRawEventIds
                       ? {
@@ -7703,7 +7833,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
         return { row: inserted, changed: true, supersededItems };
       });
       for (const supersededItem of result.supersededItems) {
-        await supersedeRelationshipDependents(supersededItem);
+        await supersedeObjectDependents(supersededItem);
       }
       if (result.changed) {
         await reconcileNewSuggestionItems(result.row.id);
@@ -7939,7 +8069,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       });
       if (!rejected) return false;
       for (const effect of postCommitEffects) effect();
-      await supersedeRelationshipDependents(row.item);
+      await supersedeObjectDependents(row.item);
       await refreshBundleStatus(row.suggestion.id, userId);
       await reconcileStaleActionableItemsBestEffort({
         suggestionItemId: itemId,
@@ -8326,3 +8456,5 @@ ${JSON.stringify(evidence)}`,
 }
 
 export type SuggestionScope = ReturnType<typeof createSuggestionScope>;
+export { resolveSemanticIdentity } from '#src/suggestions/semantic-identity.js';
+export { assertDevelopmentResetEnvironment } from '#src/suggestions/development-reset.js';

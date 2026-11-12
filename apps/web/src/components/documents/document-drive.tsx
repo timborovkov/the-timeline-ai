@@ -27,6 +27,7 @@ import {
   type RefObject,
   type SetStateAction,
   useId,
+  useState,
   useMemo,
   useReducer,
   useRef,
@@ -40,6 +41,7 @@ import {
   deleteFolderAction,
   finalizeDocumentVersionAction,
   requestDocumentUploadAction,
+  suggestDocumentObjectsAction,
 } from '@/app/actions/documents';
 import { CollectionGroup } from '@/components/collections/collection-group';
 import { CollectionRow } from '@/components/collections/collection-row';
@@ -238,6 +240,7 @@ function mergeVisibleFolders(
 }
 
 function useDocumentDriveFileActions({
+  suggestObjects,
   currentFolderId,
   visibility,
   visibilityUserIds,
@@ -245,6 +248,7 @@ function useDocumentDriveFileActions({
   router,
   dispatchDriveUi,
 }: {
+  suggestObjects: boolean;
   currentFolderId: string | null;
   visibility: Props['defaultVisibility'];
   visibilityUserIds: string[];
@@ -372,7 +376,10 @@ function useDocumentDriveFileActions({
             return { error: message };
           }
           updateUpload(uploadId, { phase: 'finalizing' });
-          const fin = await finalizeDocumentVersionAction({ versionId: req.versionId });
+          const fin = await finalizeDocumentVersionAction({
+            versionId: req.versionId,
+            suggestObjects,
+          });
           if (!fin.ok) {
             if (optimisticDocumentId) removeOptimisticDocument(optimisticDocumentId);
             const message = fin.error ?? 'Couldn’t finish upload';
@@ -415,6 +422,7 @@ export function DocumentDrive({
   const dialog = useAppDialog();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [pending, startTransition] = useTransition();
+  const [suggestObjects, setSuggestObjects] = useState(true);
   const [
     { uploads, visibility, visibilityUserIds, optimisticFolders, deletedFolderIds },
     dispatchDriveUi,
@@ -438,6 +446,7 @@ export function DocumentDrive({
   const activeUploads = uploads.filter((upload) => upload.phase !== 'failed');
   const uploadButtonLabel = driveUploadButtonLabel(activeUploads);
   const driveActions = useDocumentDriveFileActions({
+    suggestObjects,
     currentFolderId,
     visibility,
     visibilityUserIds,
@@ -546,6 +555,8 @@ export function DocumentDrive({
 
   return (
     <DocumentDriveChrome
+      suggestObjects={suggestObjects}
+      onSuggestObjectsChange={setSuggestObjects}
       breadcrumbs={breadcrumbs}
       pending={pending}
       uploadButtonLabel={uploadButtonLabel}
@@ -574,6 +585,8 @@ export function DocumentDrive({
 }
 
 function DocumentDriveChrome({
+  suggestObjects,
+  onSuggestObjectsChange,
   breadcrumbs,
   pending,
   uploadButtonLabel,
@@ -594,6 +607,8 @@ function DocumentDriveChrome({
   onDrop,
   onDeleteFolder,
 }: {
+  suggestObjects: boolean;
+  onSuggestObjectsChange: (enabled: boolean) => void;
   breadcrumbs: Crumb[];
   pending: boolean;
   uploadButtonLabel: string;
@@ -626,6 +641,16 @@ function DocumentDriveChrome({
         onFileChange={onFileChange}
       />
       <UploadStatusList uploads={uploads} />
+      <label className="flex items-center gap-2 text-sm text-fg-dim">
+        <input
+          type="checkbox"
+          checked={suggestObjects}
+          onChange={(event) => {
+            onSuggestObjectsChange(event.target.checked);
+          }}
+        />
+        Suggest objects and relationships from new uploads for approval
+      </label>
       <NewItemVisibilityPicker
         visibility={visibility}
         visibilityUserIds={visibilityUserIds}
@@ -1008,6 +1033,28 @@ function DocumentListItem({ document }: { document: DocumentItem }) {
         </CollectionRow.Metadata>
         <CollectionRow.Actions>
           <ItemActionGroup label={`Actions for ${title}`}>
+            {document.currentVersion && document.visibility === 'team' && !document.optimistic ? (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  void notifyAction({
+                    id: `document:suggestions:${document.id}`,
+                    loading: 'Reviewing document…',
+                    success: 'Document queued for suggestions',
+                    error: 'Couldn’t queue document',
+                    run: async () => {
+                      if (!document.currentVersion)
+                        return { error: 'Document version unavailable' };
+                      const result = await suggestDocumentObjectsAction(document.currentVersion.id);
+                      return result.ok ? {} : { error: result.error ?? 'Couldn’t queue document' };
+                    },
+                  });
+                }}
+              >
+                Find objects
+              </Button>
+            ) : null}
             {sourceEventId ? (
               <EvidenceLink
                 eventId={sourceEventId}

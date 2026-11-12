@@ -87,6 +87,7 @@ import {
 } from '#src/chat-context.js';
 import { resetSurfaceSessionByIdInTransaction } from '#src/conversation-surfaces/scope.js';
 import { reconcileLinkArtifactsForRawEvent } from '#src/conversational/link-artifacts.js';
+import { documentSummarySourcesAreCurrent } from '#src/documents/visibility.js';
 import { dueDateRangeConditions } from '#src/due-date-filter.js';
 import { getEnv } from '#src/env.js';
 import { remapIntegrationSelectionObjectLinks } from '#src/integrations/selection-links.js';
@@ -3755,6 +3756,7 @@ export async function listReadyObjectSummaries(
         eq(objectSummaries.teamId, scope.teamId),
         inArray(objectSummaries.status, ['ready', 'stale']),
         inArray(objectSummaries.entityId, ids),
+        documentSummarySourcesAreCurrent(scope.teamId, objectSummaries.sourceRefs),
       ),
     );
 }
@@ -3770,6 +3772,7 @@ export async function searchObjectsBySummary(
   const conds = [
     eq(objectSummaries.teamId, scope.teamId),
     inArray(objectSummaries.status, ['ready', 'stale']),
+    documentSummarySourcesAreCurrent(scope.teamId, objectSummaries.sourceRefs),
     eq(entities.teamId, scope.teamId),
     isNull(entities.mergedIntoId),
   ];

@@ -229,9 +229,50 @@ export function qualifyWorkspaceHubs(args: {
   const mentioned = args.hubs.filter(
     (hub) => isWorkspaceHubType(hub.type) && hubMentionedInText(hub, args.text),
   );
+  // Broad token matches recall siblings (e.g. two projects for one client).
+  // Prefer explicit names/aliases for identity; a shared alias remains ambiguous.
+  const explicitlyNamed = mentioned.filter((hub) =>
+    textMentionsAnyValue(
+      args.text,
+      [hub.name, ...hub.aliases].filter(
+        (name) =>
+          name.trim().length >= MIN_FULL_NAME_LENGTH &&
+          !(
+            hub.type === 'project' &&
+            name !== hub.name &&
+            mentioned.some(
+              (other) =>
+                ACCOUNT_HUB_TYPES.has(other.type) &&
+                [other.name, ...other.aliases].some(
+                  (label) => label.toLowerCase() === name.toLowerCase(),
+                ),
+            )
+          ) &&
+          textMentionsAnyValue(
+            mentioned.reduce((text, other) => {
+              if (other.id === hub.id || other.type !== hub.type) return text;
+              for (const label of [other.name, ...other.aliases]) {
+                if (label.length <= name.length || !textMentionsAnyValue(label, [name])) continue;
+                const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                text = text.replace(
+                  new RegExp(`(^|[^a-z0-9])${escaped}(?=$|[^a-z0-9])`, 'gi'),
+                  '$1 ',
+                );
+              }
+              return text;
+            }, args.text),
+            [name],
+          ),
+      ),
+    ),
+  );
+  const explicitProjects = explicitlyNamed.filter((hub) => hub.type === 'project');
   return {
     mentioned,
-    uniqueProject: uniqueHubOfType(mentioned, 'project'),
+    uniqueProject: uniqueHubOfType(
+      explicitProjects.length ? explicitProjects : mentioned,
+      'project',
+    ),
     uniqueCompany: uniqueAccountHub(mentioned),
   };
 }

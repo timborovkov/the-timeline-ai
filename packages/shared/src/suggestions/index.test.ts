@@ -32,6 +32,9 @@ await vi.mock(
 );
 
 const {
+  documents,
+  documentVersions,
+  documentChunks,
   artifactClusterAnchors,
   artifactClusters,
   artifactEvidenceAssociations,
@@ -138,6 +141,147 @@ describe('suggestion scope', () => {
   let pg: PGlite;
   let db: ReturnType<typeof drizzle>;
   let testDb: ResettablePGliteTestDb;
+
+  async function documentProposalFixture() {
+    const documentId = crypto.randomUUID(),
+      versionId = crypto.randomUUID(),
+      chunkId = crypto.randomUUID();
+    await db.insert(rawEvents).values({
+      id: TEAM_RAW_EVENT_ID,
+      teamId: TEAM_ID,
+      source: 'document',
+      contentText: 'Uploaded synthetic clients',
+      visibility: 'team',
+      authorUserId: USER_ID,
+      occurredAt: new Date(),
+    });
+    await db.insert(documents).values({
+      id: documentId,
+      teamId: TEAM_ID,
+      name: 'Synthetic clients',
+      ownerUserId: USER_ID,
+      visibility: 'team',
+    });
+    await db.insert(documentVersions).values({
+      id: versionId,
+      teamId: TEAM_ID,
+      documentId,
+      version: 1,
+      objectKey: 'synthetic/clients',
+      sourceEventId: TEAM_RAW_EVENT_ID,
+      processingStatus: 'chunked',
+    });
+    await db.insert(documentChunks).values({
+      id: chunkId,
+      teamId: TEAM_ID,
+      documentId,
+      documentVersionId: versionId,
+      chunkIndex: 0,
+      text: 'Northwind is a confidential client.',
+      tokenCount: 8,
+    });
+    await db
+      .update(documents)
+      .set({ currentVersionId: versionId })
+      .where(eq(documents.id, documentId));
+    const bundle = await withTeam(
+      db as never,
+      TEAM_ID,
+      USER_ID,
+    ).suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Track Northwind',
+      dedupeKey: 'document-privacy',
+      metadata: {
+        document_id: documentId,
+        document_version_id: versionId,
+        document_chunk_id: chunkId,
+      },
+      evidence: [{ rawEventId: TEAM_RAW_EVENT_ID, quote: 'Northwind is a confidential client.' }],
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'object',
+          title: 'Northwind',
+          dedupeKey: 'document-privacy:item',
+          proposedPayload: { type: 'company', canonicalName: 'Northwind' },
+        },
+      ],
+    });
+    return { documentId, bundle };
+  }
+
+  for (const change of ['private', 'deleted', 'superseded'] as const) {
+    it(`hides document-derived proposal reads after the document becomes ${change}`, async () => {
+      const { documentId, bundle } = await documentProposalFixture();
+      const reader = withTeam(db as never, TEAM_ID, REVIEWER_ID);
+      expect(await reader.suggestions.getSuggestion(bundle.id)).not.toBeNull();
+      await db
+        .update(documents)
+        .set(
+          change === 'private'
+            ? { visibility: 'private' }
+            : change === 'deleted'
+              ? { deletedAt: new Date() }
+              : { currentVersionId: null },
+        )
+        .where(eq(documents.id, documentId));
+      expect(await reader.suggestions.listPendingSuggestions()).toHaveLength(0);
+      expect(await reader.suggestions.getSuggestion(bundle.id)).toBeNull();
+      expect(await reader.suggestions.acceptSuggestionItem(bundle.items[0]?.id ?? '')).toBe(false);
+      expect(await db.select().from(entities)).toHaveLength(0);
+    });
+  }
+
+  it('revalidates document evidence inside the acceptance transaction after a visibility race', async () => {
+    const { documentId, bundle } = await documentProposalFixture();
+    const reader = withTeam(db as never, TEAM_ID, REVIEWER_ID, {
+      beforeSuggestionApply: async () => {
+        await db
+          .update(documents)
+          .set({ visibility: 'private' })
+          .where(eq(documents.id, documentId));
+      },
+    });
+    expect(await reader.suggestions.acceptSuggestionItem(bundle.items[0]?.id ?? '')).toBe(false);
+    expect(await db.select().from(entities)).toHaveLength(0);
+  });
+
+  it('supersedes dependent email identities when their proposed person is rejected', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'chat',
+      title: 'Track a contact',
+      dedupeKey: 'person-with-email',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'object',
+          title: 'Mara Linden',
+          dedupeKey: 'person-with-email:person',
+          proposedPayload: { type: 'person', canonicalName: 'Mara Linden', localRef: 'mara' },
+        },
+        {
+          operation: 'create',
+          targetKind: 'identity_facet',
+          title: 'Mara email',
+          dedupeKey: 'person-with-email:email',
+          proposedPayload: { entityRef: 'mara', kind: 'email', value: 'mara@example.test' },
+        },
+      ],
+    });
+    const person = bundle.items.find((item) => item.targetKind === 'object');
+    const email = bundle.items.find((item) => item.targetKind === 'identity_facet');
+    if (!person || !email) throw new Error('Missing fixture items');
+    expect(await scope.suggestions.rejectSuggestionItem(person.id)).toBe(true);
+    const [stored] = await db
+      .select()
+      .from(agentSuggestionItems)
+      .where(eq(agentSuggestionItems.id, email.id));
+    expect(stored?.status).toBe('superseded');
+    expect(await scope.suggestions.acceptSuggestionItem(email.id)).toBe(false);
+    expect(await db.select().from(entities)).toHaveLength(0);
+  });
 
   beforeAll(async () => {
     testDb = await createResettablePGliteTestDb(seed);
@@ -7829,6 +7973,54 @@ describe('suggestion scope', () => {
     expect(rows.rows[0]?.aliases).toEqual(['Digital Audit follow-up']);
     expect(rows.rows[0]?.due_at).toBeNull();
     expect(rows.rows[0]?.metadata).toEqual({ existing: true });
+  });
+
+  it('supersedes a referenced identity facet when its accepted person was archived', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'chat',
+      title: 'Remember Alex',
+      dedupeKey: 'archived-reference-facet',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'object',
+          title: 'Alex Example',
+          dedupeKey: 'archived-reference-person',
+          proposedPayload: { type: 'person', canonicalName: 'Alex Example', localRef: 'alex' },
+        },
+        {
+          operation: 'create',
+          targetKind: 'identity_facet',
+          title: 'Alex email',
+          dedupeKey: 'archived-reference-email',
+          proposedPayload: { entityRef: 'alex', kind: 'email', value: 'alex@example.test' },
+        },
+      ],
+    });
+    const personItem = bundle.items.find((item) => item.targetKind === 'object');
+    const facet = bundle.items.find((item) => item.targetKind === 'identity_facet');
+    if (!personItem || !facet) throw new Error('missing items');
+    expect(await scope.suggestions.acceptSuggestionItem(personItem.id)).toBe(true);
+    const [accepted] = await db
+      .select()
+      .from(agentSuggestionItems)
+      .where(eq(agentSuggestionItems.id, personItem.id));
+    if (!accepted?.resultId) throw new Error('missing accepted person');
+    await scope.objects.archiveObject(accepted.resultId, { kind: 'user', userId: USER_ID });
+    expect(await scope.suggestions.acceptSuggestionItem(facet.id)).toBe(true);
+    const [stale] = await db
+      .select()
+      .from(agentSuggestionItems)
+      .where(eq(agentSuggestionItems.id, facet.id));
+    expect(stale?.status).toBe('superseded');
+    expect(
+      (
+        await pg.query<{ count: string }>(
+          `SELECT count(*)::text FROM object_identity_facets WHERE team_id = '${TEAM_ID}'`,
+        )
+      ).rows[0]?.count,
+    ).toBe('0');
   });
 
   it('applies identity facet suggestions only after approval', async () => {

@@ -6,8 +6,12 @@
   "apps/web/src/app/team-deletion-requested/page.test.tsx": {
     "group": "dom"
   },
-  "packages/shared/src/agent/freshness.live-eval.test.ts": { "group": "live" },
-  "packages/shared/src/retrieval/ranking.test.ts": { "group": "unit" },
+  "packages/shared/src/agent/freshness.live-eval.test.ts": {
+    "group": "live"
+  },
+  "packages/shared/src/retrieval/ranking.test.ts": {
+    "group": "unit"
+  },
   "apps/web/src/app/(landing)/page.test.tsx": {
     "group": "dom"
   },
@@ -2452,5 +2456,20 @@
   "packages/shared/src/team-lifecycle/lifecycle.test.ts": {
     "group": "integration",
     "isolation": "registration"
+  },
+  "packages/shared/src/suggestions/identity-resolution.test.ts": {
+    "group": "unit"
+  },
+  "apps/worker/src/workers/engine-correctness.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/suggestions/identity-resolution.live-eval.test.ts": {
+    "group": "live"
+  },
+  "apps/worker/src/scripts/reset-objects.integration.test.ts": {
+    "group": "live"
+  },
+  "apps/worker/src/workers/engine.live-eval.test.ts": {
+    "group": "live"
   }
 }
