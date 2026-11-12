@@ -25,7 +25,10 @@ import {
 import { embed } from '#src/llm/embed.js';
 import { getQdrantClient } from '#src/qdrant/client.js';
 import { assertDevelopmentResetEnvironment } from '#src/suggestions/development-reset.js';
-import { IDENTITY_POLICY_VERSION } from '#src/suggestions/identity-resolution.js';
+import {
+  businessEmailDomain,
+  IDENTITY_POLICY_VERSION,
+} from '#src/suggestions/identity-resolution.js';
 
 import type { IdentityObject } from '#src/suggestions/identity-resolution.js';
 import type { TeamScopeCore } from '#src/team-scope.js';
@@ -448,9 +451,11 @@ export function createEngineMaintenanceScope(db: Db, scope: TeamScopeCore) {
           ),
         );
       const values = [...emails.map((row) => row.value), ...proposedEmails];
-      const domains = values
-        .map((value) => value.split('@')[1])
-        .filter((v): v is string => Boolean(v));
+      const domains = [
+        ...new Set(
+          values.map(businessEmailDomain).filter((domain): domain is string => domain !== null),
+        ),
+      ];
       if (!domains.length) return { emails: [], companies: [] };
       const companies = await db
         .select()

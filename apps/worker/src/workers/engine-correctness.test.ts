@@ -105,6 +105,146 @@ const model: typeof llm.chatStructured = <T extends z.ZodType>(input: llm.ChatSt
     model: 'fixture',
   });
 describe('engine persistence contracts', () => {
+  it('keeps a deterministic merge survivor throughout daily pagination but honors explicit object repair', async () => {
+    const preferredId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1';
+    const otherId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2';
+    await db.insert(entities).values([
+      {
+        id: preferredId,
+        teamId,
+        type: 'company',
+        canonicalName: 'Acme Audit',
+        aliases: ['AcmeAudit'],
+      },
+      { id: otherId, teamId, type: 'company', canonicalName: 'AcmeAudit' },
+    ]);
+    await processSuggestionJobForTests(
+      { db },
+      { scope: 'object_cleanup', teamId, triggeredBy: 'daily' },
+    );
+    const daily = (await scope().suggestions.listPendingSuggestions())
+      .flatMap((bundle) => bundle.items)
+      .filter((item) => item.targetKind === 'object_merge');
+    expect(daily).toHaveLength(1);
+    expect(required(daily[0]).targetId).toBe(preferredId);
+    expect(required(daily[0]).proposedPayload).toMatchObject({ survivorId: preferredId });
+    await processSuggestionJobForTests(
+      { db },
+      { scope: 'object_cleanup', teamId, triggeredBy: 'manual' },
+    );
+    const teamManual = (await scope().suggestions.listPendingSuggestions())
+      .flatMap((bundle) => bundle.items)
+      .filter((item) => item.targetKind === 'object_merge');
+    expect(teamManual).toHaveLength(1);
+    expect(required(teamManual[0]).targetId).toBe(preferredId);
+    await processSuggestionJobForTests(
+      { db },
+      { scope: 'object_cleanup', teamId, objectId: otherId, triggeredBy: 'continuation' },
+    );
+    const continued = (await scope().suggestions.listPendingSuggestions())
+      .flatMap((bundle) => bundle.items)
+      .filter((item) => item.targetKind === 'object_merge');
+    expect(continued).toHaveLength(1);
+    expect(required(continued[0]).targetId).toBe(preferredId);
+    await processSuggestionJobForTests(
+      { db },
+      { scope: 'object_cleanup', teamId, objectId: otherId, triggeredBy: 'memory_repair' },
+    );
+    const manual = (await scope().suggestions.listPendingSuggestions())
+      .flatMap((bundle) => bundle.items)
+      .filter((item) => item.targetKind === 'object_merge');
+    expect(manual).toHaveLength(1);
+    expect(required(manual[0]).proposedPayload).toMatchObject({ survivorId: otherId });
+  });
+
+  it('normalizes proposed email domains before retrieving affiliation candidates', async () => {
+    const [person, company] = await db
+      .insert(entities)
+      .values([
+        { teamId, type: 'person', canonicalName: 'Alex Example' },
+        { teamId, type: 'company', canonicalName: 'Acme', metadata: { domain: 'acme.test' } },
+        {
+          teamId,
+          type: 'company',
+          canonicalName: 'Public Provider',
+          metadata: { domain: 'gmail.com' },
+        },
+      ])
+      .returning();
+    const candidates = await scope().engineMaintenance.affiliationCandidates(required(person).id, [
+      ' Alex@ACME.TEST ',
+    ]);
+    expect(candidates.companies.map((row) => row.id)).toEqual([required(company).id]);
+    expect(
+      (
+        await scope().engineMaintenance.affiliationCandidates(required(person).id, [
+          'Alex@GMAIL.COM',
+        ])
+      ).companies,
+    ).toHaveLength(0);
+    const [event] = await db
+      .insert(rawEvents)
+      .values({
+        teamId,
+        source: 'email',
+        contentText: 'Alex Example works at Acme. Alex uses business email Alex@ACME.TEST.',
+        visibility: 'team',
+        authorUserId: userId,
+        occurredAt: new Date(),
+        sourceMetadata: {
+          extracted_at: new Date().toISOString(),
+          extraction_model_version: 'fixture',
+          source_payload_ref: 'inline://mixed-case-email-fixture',
+        },
+      })
+      .returning();
+    const chat: typeof llm.chatStructured = (input) =>
+      Promise.resolve({
+        model: 'fixture',
+        object: input.schema.parse({
+          bundles: [
+            {
+              title: 'Alex business identity',
+              confidence: 'high',
+              reason: 'Explicit business contact email.',
+              items: [
+                {
+                  operation: 'create',
+                  targetKind: 'identity_facet',
+                  title: 'Alex email',
+                  proposedPayload: {
+                    entityId: required(person).id,
+                    kind: 'email',
+                    value: 'Alex@ACME.TEST',
+                  },
+                },
+              ],
+            },
+          ],
+        }),
+      });
+    await processSuggestionJobForTests(
+      { db },
+      { teamId, rawEventId: required(event).id },
+      { chatStructured: chat, modelId: 'fixture' },
+    );
+    const items = (await scope().suggestions.listPendingSuggestions()).flatMap(
+      (bundle) => bundle.items,
+    );
+    expect(
+      items.some(
+        (item) =>
+          item.targetKind === 'object_relationship' &&
+          [item.proposedPayload.fromEntityId, item.proposedPayload.toEntityId].includes(
+            required(person).id,
+          ) &&
+          [item.proposedPayload.fromEntityId, item.proposedPayload.toEntityId].includes(
+            required(company).id,
+          ),
+      ),
+    ).toBe(true);
+  });
+
   it('keeps archived lexical and contextual identities for cleanup but excludes them from incoming proposals', async () => {
     process.env.IDENTITY_SEMANTIC_ENABLED = 'true';
     resetEnvForTests();

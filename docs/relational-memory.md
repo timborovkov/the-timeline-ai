@@ -301,6 +301,8 @@ with queued continuations and daily recovery. Archived objects are scanned as
 identity candidates and are never automatically reactivated. Incoming source and
 document proposals exclude archived targets, so a new actionable proposal cannot
 be converted into an unusable update to an archived object.
+Daily scans choose merge survivors deterministically for each pair; only an explicit
+object repair may prefer its selected object as the survivor.
 
 `engine_maintenance_runs` stores run kind, engine version, cursor, examined count,
 status, timestamps, proposal counts, billing-operation references and diagnostic metadata.
@@ -376,7 +378,7 @@ document visibility; cached summaries retain all admitted source references for
 that check even when the model cites only a subset. Bulk acceptance orders object creates before dependent
 email identities and relationships.
 
-Runs are idempotent by document version and engine/model policy, checkpoint each
+Runs are idempotent by document version, extracted chunk generation and engine/model policy, checkpoint each
 chunk and resume after failure. Only current team-visible documents originate team
 proposals. Acceptance revalidates and locks document evidence, so replacement,
 deletion or restricted visibility invalidates pending authority. Document extraction

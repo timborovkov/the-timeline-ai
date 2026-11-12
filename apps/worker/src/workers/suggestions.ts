@@ -2548,7 +2548,11 @@ async function processObjectCleanupJob(
         await createObjectCleanupSuggestionsForTeam(
           deps.db,
           teamId,
-          { triggeredBy: data.triggeredBy ?? 'manual', objectId: data.objectId },
+          {
+            triggeredBy: data.triggeredBy ?? 'manual',
+            objectId: data.objectId,
+            preferRepairSubject: ['manual', 'memory_repair'].includes(data.triggeredBy ?? 'manual'),
+          },
           io,
         );
         continue;
@@ -2618,7 +2622,7 @@ async function processObjectCleanupJob(
 async function createObjectCleanupSuggestionsForTeam(
   db: Db,
   teamId: string,
-  opts: { triggeredBy: string; objectId?: string },
+  opts: { triggeredBy: string; objectId?: string; preferRepairSubject?: boolean },
   io: SuggestionWorkerIO = {},
 ): Promise<void> {
   if (opts.objectId) {
@@ -2831,7 +2835,10 @@ async function createObjectCleanupSuggestionsForTeam(
       const objectIds = [left.id, right.id].sort();
       if (proposedMergeKeys.has(groupKey)) continue;
       proposedMergeKeys.add(groupKey);
-      const survivor = repairSubject ?? pickCleanupSurvivor([left, right]);
+      const survivor =
+        opts.preferRepairSubject && repairSubject
+          ? repairSubject
+          : pickCleanupSurvivor([left, right]);
       const reason = semanticPair
         ? (semanticMatch?.reason ?? 'Source evidence supports shared scope')
         : match === 'exact'
@@ -3164,7 +3171,10 @@ async function processDocumentSuggestions(
   const chunks = await scope.documents.listDocumentVersionChunks(version.id);
   if (!chunks.length) return;
   const modelId = io.modelId ?? llm.TIMELINE_MODELS.extraction.id;
-  const policy = `document:${version.id}:${makeModelVersion(modelId)}`;
+  // Re-extraction replaces immutable chunk rows even when the uploaded version
+  // stays the same. A completed run only covers that exact chunk generation.
+  const chunkGeneration = suggestions.suggestionDedupeKey(chunks.map((chunk) => chunk.id).sort());
+  const policy = `document:${version.id}:${makeModelVersion(modelId)}:${chunkGeneration}`;
   const previous = await scope.engineMaintenance.latestRuns();
   if (previous.some((run) => run.kind === policy && run.status === 'completed')) return;
   const run = await scope.engineMaintenance.beginCleanup(policy);
@@ -3789,6 +3799,22 @@ async function runSuggestionExtraction(
     modelBundles.length > 0
       ? await rowsMatchingProposedCreates(deps.db, teamId, modelBundles, objectRowsForMatching)
       : objectRowsForMatching;
+  const mergeSemanticCandidate = (candidate: CleanupObjectRow, name: string) => {
+    const index = matchingRowsForCreates.findIndex((row) => row.id === candidate.id);
+    const existing = index >= 0 ? matchingRowsForCreates[index] : undefined;
+    const merged = {
+      ...(existing ?? candidate),
+      aliases: [
+        ...new Set([
+          ...(existing ? aliasesForRow(existing) : []),
+          ...aliasesForRow(candidate),
+          name,
+        ]),
+      ],
+    };
+    if (index >= 0) matchingRowsForCreates[index] = merged;
+    else matchingRowsForCreates.push(merged);
+  };
   const semanticEvidenceByTitle = new Map<string, { rawEventId: string; quote: string }[]>();
   // Resolve translated creates against contextual evidence before create/update normalization.
   for (const bundle of modelBundles)
@@ -3837,10 +3863,7 @@ async function runSuggestionExtraction(
         for (const candidate of candidates.filter((row) =>
           resolution.candidateIds.includes(row.id),
         )) {
-          matchingRowsForCreates.push({
-            ...candidate,
-            aliases: [...aliasesForRow(candidate), subject.canonicalName],
-          });
+          mergeSemanticCandidate(candidate, subject.canonicalName);
         }
       }
       if (resolution.kind === 'existing') {
@@ -3851,10 +3874,7 @@ async function runSuggestionExtraction(
         const candidate = candidates.find((row) => row.id === resolution.objectId);
         if (!candidate) continue;
         // The proposal still requires approval; this alias only normalizes this extraction.
-        matchingRowsForCreates.push({
-          ...candidate,
-          aliases: [...aliasesForRow(candidate), subject.canonicalName],
-        });
+        mergeSemanticCandidate(candidate, subject.canonicalName);
       }
     }
   const extractedBundles =

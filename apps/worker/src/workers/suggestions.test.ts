@@ -3267,6 +3267,195 @@ describe('processSuggestionJobForTests', () => {
     });
   });
 
+  it('reprocesses a replaced document chunk generation without replay duplicates', async () => {
+    const rawEventId = crypto.randomUUID();
+    await seedRawEvent(db as never, {
+      id: rawEventId,
+      source: 'document',
+      text: 'Uploaded client list',
+    });
+    const [document] = await db
+      .insert(documents)
+      .values({ teamId: TEAM_ID, ownerUserId: OWNER_ID, name: 'clients.txt', visibility: 'team' })
+      .returning();
+    if (!document) throw new Error('missing document');
+    const [version] = await db
+      .insert(documentVersions)
+      .values({
+        teamId: TEAM_ID,
+        documentId: document.id,
+        version: 1,
+        objectKey: 'clients.txt',
+        sourceEventId: rawEventId,
+        processingStatus: 'chunked',
+      })
+      .returning();
+    if (!version) throw new Error('missing version');
+    await db
+      .update(documents)
+      .set({ currentVersionId: version.id })
+      .where(eq(documents.id, document.id));
+    const chat = vi
+      .fn()
+      .mockResolvedValue({
+        model: MODEL_ID,
+        object: {
+          bundles: [
+            {
+              title: 'Remember Acme',
+              confidence: 'high',
+              items: [
+                {
+                  operation: 'create',
+                  targetKind: 'object',
+                  title: 'Acme',
+                  proposedPayload: { type: 'company', canonicalName: 'Acme' },
+                },
+              ],
+            },
+          ],
+        },
+      });
+    const data = {
+      scope: 'document' as const,
+      teamId: TEAM_ID,
+      documentVersionId: version.id,
+      explicitRequest: true,
+    };
+    const scope = withTeam(db as never, TEAM_ID, OWNER_ID);
+    for (let generation = 0; generation < 2; generation++) {
+      await db.delete(documentChunks).where(eq(documentChunks.documentVersionId, version.id));
+      const [chunk] = await db
+        .insert(documentChunks)
+        .values({
+          teamId: TEAM_ID,
+          documentId: document.id,
+          documentVersionId: version.id,
+          chunkIndex: 0,
+          text: 'Acme is a client.',
+          tokenCount: 5,
+        })
+        .returning();
+      if (!chunk) throw new Error('missing chunk');
+      await processSuggestionJobForTests({ db: db as never }, data, {
+        getEnv: env,
+        chatStructured: chat,
+        modelId: MODEL_ID,
+      });
+      await processSuggestionJobForTests({ db: db as never }, data, {
+        getEnv: env,
+        chatStructured: chat,
+        modelId: MODEL_ID,
+      });
+      expect(chat).toHaveBeenCalledTimes(generation + 1);
+      const pending = await scope.suggestions.listPendingSuggestions();
+      expect(pending).toHaveLength(1);
+      expect(pending[0]?.metadata).toMatchObject({ document_chunk_id: chunk.id });
+    }
+    expect(await db.select().from(agentSuggestions)).toHaveLength(2);
+    expect(
+      (await scope.engineMaintenance.latestRuns()).filter((run) => run.status === 'completed'),
+    ).toHaveLength(2);
+  });
+
+  it('normalizes canonical and translated creates to one existing semantic identity', async () => {
+    process.env.IDENTITY_SEMANTIC_ENABLED = 'true';
+    resetEnvForTests();
+    try {
+      const rawEventId = crypto.randomUUID();
+      const text =
+        'PBC-portaali is the Client Portal project. Track both names for the same client material portal.';
+      const [project] = await db
+        .insert(entities)
+        .values({
+          teamId: TEAM_ID,
+          type: 'project',
+          canonicalName: 'Client Portal',
+          metadata: { companyId: 'northstar' },
+        })
+        .returning();
+      if (!project) throw new Error('missing project');
+      await seedRawEvent(db as never, {
+        id: rawEventId,
+        text,
+        sourceMetadata: {
+          extracted_at: REFERENCE_DATE.toISOString(),
+          extraction_model_version: 'fixture',
+        },
+      });
+      const [fact] = await db
+        .insert(facts)
+        .values({
+          teamId: TEAM_ID,
+          rawEventId,
+          statement: text,
+          confidence: 1,
+          modelVersion: 'fixture',
+        })
+        .returning();
+      if (!fact) throw new Error('missing fact');
+      await db
+        .insert(factEntities)
+        .values({ factId: fact.id, entityId: project.id, role: 'subject' });
+      let semanticCalls = 0;
+      const chat: typeof llm.chatStructured = (input) => {
+        const semantic = input.instructions?.startsWith('Resolve object identity');
+        if (semantic) semanticCalls++;
+        return Promise.resolve({
+          model: MODEL_ID,
+          object: input.schema.parse(
+            semantic
+              ? {
+                  matches: [
+                    {
+                      candidateId: project.id,
+                      sameScope: true,
+                      reason: 'Explicit equivalence',
+                      citations: [{ rawEventId, quote: text }],
+                    },
+                  ],
+                }
+              : {
+                  bundles: [
+                    {
+                      title: 'Track portal names',
+                      confidence: 'high',
+                      items: ['Client Portal', 'PBC-portaali'].map((name) => ({
+                        operation: 'create',
+                        targetKind: 'object',
+                        title: name,
+                        proposedPayload: {
+                          type: 'project',
+                          canonicalName: name,
+                          metadata: { companyId: 'northstar' },
+                        },
+                      })),
+                    },
+                  ],
+                },
+          ),
+        });
+      };
+      await processSuggestionJobForTests(
+        { db: db as never },
+        { teamId: TEAM_ID, rawEventId },
+        { getEnv: env, chatStructured: chat, modelId: MODEL_ID },
+      );
+      expect(semanticCalls).toBe(1);
+      const proposals = await db.select().from(agentSuggestionItems);
+      expect(proposals.length).toBeGreaterThan(0);
+      expect(
+        proposals.every((item) => item.operation === 'update' && item.targetId === project.id),
+      ).toBe(true);
+      expect(
+        proposals.some((item) => JSON.stringify(item.proposedPayload).includes('PBC-portaali')),
+      ).toBe(true);
+    } finally {
+      process.env.IDENTITY_SEMANTIC_ENABLED = 'false';
+      resetEnvForTests();
+    }
+  });
+
   it('includes rich existing and pending calendar context in extraction prompts', async () => {
     const rawEventId = '10000000-0000-0000-0000-0000000000c9';
     await seedRawEvent(db as never, {
