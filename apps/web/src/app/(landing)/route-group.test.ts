@@ -136,17 +136,8 @@ describe('landing route group', () => {
     );
     expect(styles).toContain('.footer a');
     expect(styles).toContain('color: var(--home-paper)');
-    expect(styles).toMatch(/\.footerGithub\s*\{[^}]*border: 0 !important;/s);
-    expect(styles).toMatch(/\.proofStage\s*\{[^}]*margin-top:\s*2\.75rem;/s);
-    expect(styles).toMatch(/\.ledgerInspect\s*\{[^}]*padding:\s*0 1rem 0\.85rem;/s);
-    expect(styles).toMatch(
-      /\.ledgerInspect summary\s*\{[^}]*width:\s*fit-content;[^}]*list-style:\s*none;/s,
-    );
-    expect(styles).toContain('.ledgerInspect summary::-webkit-details-marker');
-    expect(styles).toContain('.ledgerInspect summary:focus-visible');
-    expect(styles).toMatch(
-      /\.ledgerInspect\[open\]\s*>\s*summary::before\s*\{[^}]*transform:\s*rotate\(45deg\);/s,
-    );
-    expect(styles).toMatch(/\.ledgerInspectBody p\s*\{[^}]*font-size:\s*0\.86rem;/s);
+    expect(styles).toMatch(/\.footerSettings\s*\{[^}]*border: 0;[^}]*background: none;/s);
+    expect(styles).toMatch(/\.proofStage\s*\{[^}]*margin-top:\s*2\.25rem;/s);
+    expect(styles).toMatch(/\.sourceCard p\s*\{[^}]*font-size:\s*0\.875rem;/s);
   });
 });
