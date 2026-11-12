@@ -108,7 +108,7 @@ describe('ToolStep', () => {
                 id: itemId,
                 status: 'pending',
                 targetKind: 'task',
-                title: 'Tim to register with PRH',
+                title: 'Taylor to register with PRH',
               },
             ],
           },
@@ -116,13 +116,13 @@ describe('ToolStep', () => {
       />,
     );
 
-    const accept = screen.getByRole('button', { name: 'Accept Tim to register with PRH' });
+    const accept = screen.getByRole('button', { name: 'Accept Taylor to register with PRH' });
     expect(accept).toBeTruthy();
     expect(accept.getAttribute('class')).toContain('focus-visible:ring-fg-muted');
-    expect(screen.getByRole('button', { name: 'Change Tim to register with PRH' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Reject Tim to register with PRH' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Change Taylor to register with PRH' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Reject Taylor to register with PRH' })).toBeTruthy();
 
-    await user.click(screen.getByRole('button', { name: 'Accept Tim to register with PRH' }));
+    await user.click(screen.getByRole('button', { name: 'Accept Taylor to register with PRH' }));
 
     await waitFor(() => {
       expect(screen.getByText('Accepted')).toBeTruthy();
@@ -138,9 +138,9 @@ describe('ToolStep', () => {
       revisedItem: {
         id: itemId,
         status: 'pending',
-        title: 'Miku to register with PRH',
-        description: 'Miku made the promise.',
-        proposedPayload: { ownerName: 'Miku' },
+        title: 'Casey to register with PRH',
+        description: 'Casey made the promise.',
+        proposedPayload: { ownerName: 'Casey' },
       },
     });
     render(
@@ -154,11 +154,11 @@ describe('ToolStep', () => {
             evidence: [
               {
                 rawEventId: '33333333-3333-4333-8333-333333333333',
-                quote: '@timbo0 I will register the company with PRH.',
+                quote: '@taylo0 I will register the company with PRH.',
                 source: 'telegram',
-                senderName: 'Miku',
-                senderHandle: '@mikael',
-                senderTimelineName: 'Mikael Rintala',
+                senderName: 'Casey',
+                senderHandle: '@cameron',
+                senderTimelineName: 'Cameron Vale',
                 conversationName: 'AuditAI founders',
               },
             ],
@@ -167,8 +167,8 @@ describe('ToolStep', () => {
                 id: itemId,
                 status: 'pending',
                 targetKind: 'task',
-                title: 'Tim to register with PRH',
-                description: 'Tim made the promise.',
+                title: 'Taylor to register with PRH',
+                description: 'Taylor made the promise.',
               },
             ],
           },
@@ -177,21 +177,21 @@ describe('ToolStep', () => {
     );
 
     expect(
-      screen.getByText('Mikael Rintala (Miku, @mikael) in AuditAI founders on Telegram'),
+      screen.getByText('Cameron Vale (Casey, @cameron) in AuditAI founders on Telegram'),
     ).toBeTruthy();
     expect(screen.getByText('Pending')).toBeTruthy();
-    await user.click(screen.getByRole('button', { name: 'Change Tim to register with PRH' }));
+    await user.click(screen.getByRole('button', { name: 'Change Taylor to register with PRH' }));
     const dialog = screen.getByRole('dialog');
     await user.type(
       within(dialog).getByLabelText('What should change?'),
-      'Miku made this promise, not Tim.',
+      'Casey made this promise, not Taylor.',
     );
     await user.click(within(dialog).getByRole('button', { name: 'Update proposal' }));
 
     await waitFor(() => {
-      expect(screen.getByText('Miku to register with PRH')).toBeTruthy();
+      expect(screen.getByText('Casey to register with PRH')).toBeTruthy();
     });
-    expect(screen.queryByText('Tim to register with PRH')).toBeNull();
+    expect(screen.queryByText('Taylor to register with PRH')).toBeNull();
   });
 
   it('renders in-chat approval controls for approval-requested tools', () => {

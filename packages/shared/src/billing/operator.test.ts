@@ -82,9 +82,9 @@ describe('historical plan on a UTC day', () => {
 
 describe('platform admin allowlist', () => {
   it('matches emails and ignores team role', () => {
-    expect(isPlatformAdminEmail(' Tim@Example.com ', 'a@x.com, tim@example.com')).toBe(true);
-    expect(isPlatformAdminEmail('owner@timeline.dev', 'tim@example.com')).toBe(false);
-    expect(isPlatformAdminEmail('tim@example.com', '')).toBe(false);
+    expect(isPlatformAdminEmail(' Taylor@Example.com ', 'a@x.com, taylor@example.com')).toBe(true);
+    expect(isPlatformAdminEmail('owner@timeline.dev', 'taylor@example.com')).toBe(false);
+    expect(isPlatformAdminEmail('taylor@example.com', '')).toBe(false);
   });
 });
 

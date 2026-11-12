@@ -413,7 +413,7 @@ describe('TimelineList document attachments', () => {
             source: 'telegram',
             contentText:
               'Attached image AgACAgQAAyEFAATcv6dYAAIBuWo4jeyMZiYwKT1k92NCNuPTCoTcAALpDWsbBCfJUUAcqaMvf4JYAQADAgADdwADPAQ.jpg',
-            sourceMetadata: { tg_chat_title: 'AuditAI', tg_sender_name: 'Tim' },
+            sourceMetadata: { tg_chat_title: 'AuditAI', tg_sender_name: 'Taylor' },
           }),
         ],
         authorMap: new Map(),
@@ -567,7 +567,7 @@ describe('TimelineList moment presentation', () => {
             sourceMetadata: {
               tg_chat_id: 'chat-1',
               tg_chat_title: 'Operations',
-              tg_sender_name: 'Tim',
+              tg_sender_name: 'Taylor',
               tg_user_id: 1,
             },
           }),
@@ -578,7 +578,7 @@ describe('TimelineList moment presentation', () => {
       }),
     );
 
-    expect(screen.getByText('Tim', { selector: 'span' })).toBeTruthy();
+    expect(screen.getByText('Taylor', { selector: 'span' })).toBeTruthy();
   });
 
   it('opens the inspector automatically for focused moment links', async () => {
@@ -619,7 +619,7 @@ describe('TimelineList moment presentation', () => {
             occurredAt: '2026-06-03T13:04:00.000Z',
             source: 'telegram',
             contentText: 'Done / 16.20-16.30 asti vapaa täs about',
-            sourceMetadata: { tg_chat_title: 'AuditAI', tg_sender_name: 'Tim' },
+            sourceMetadata: { tg_chat_title: 'AuditAI', tg_sender_name: 'Taylor' },
           }),
         ],
         authorMap: new Map(),
@@ -688,7 +688,7 @@ describe('TimelineList evidence-owned actions', () => {
           tg_chat_id: 'audit-ai',
           tg_message_id: 100 + index,
           tg_chat_title: 'AuditAI',
-          tg_sender_name: 'Mikael',
+          tg_sender_name: 'Cameron',
         },
       }),
     );
@@ -717,7 +717,7 @@ describe('TimelineList evidence-owned actions', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Show 2 older evidence items' }));
 
     expect(
-      screen.getAllByRole('group', { name: /Actions for Telegram evidence .* from Mikael/ }),
+      screen.getAllByRole('group', { name: /Actions for Telegram evidence .* from Cameron/ }),
     ).toHaveLength(5);
     expect(screen.queryByRole('heading', { name: 'Controls' })).toBeNull();
     expect(screen.getAllByText('Team visibility')).toHaveLength(3);
@@ -731,7 +731,7 @@ describe('TimelineList evidence-owned actions', () => {
     expect(screen.getByText('Audio unavailable for this evidence item.')).toBeTruthy();
 
     const firstFooter = screen.getAllByRole('group', {
-      name: /Actions for Telegram evidence .* from Mikael/,
+      name: /Actions for Telegram evidence .* from Cameron/,
     })[0];
     if (!firstFooter) throw new Error('Expected the first evidence footer.');
     await user.click(within(firstFooter).getByText('Team visibility'));
@@ -754,7 +754,7 @@ describe('TimelineList evidence-owned actions', () => {
           slack_workspace_id: 'workspace-1',
           slack_channel_id: 'channel-1',
           slack_message_ts: '123.456',
-          slack_sender_name: 'Mikael',
+          slack_sender_name: 'Cameron',
         },
       });
 
@@ -876,7 +876,7 @@ describe('TimelineList inspector source caps', () => {
             occurredAt: '2026-06-03T13:04:00.000Z',
             source: 'telegram',
             contentText: longBody,
-            sourceMetadata: { tg_chat_title: 'AuditAI', tg_sender_name: 'Tim' },
+            sourceMetadata: { tg_chat_title: 'AuditAI', tg_sender_name: 'Taylor' },
           }),
         ],
         authorMap: new Map(),
@@ -906,7 +906,7 @@ describe('TimelineList inspector source caps', () => {
             occurredAt: '2026-06-03T13:04:00.000Z',
             source: 'telegram',
             contentText: 'Short source note.',
-            sourceMetadata: { tg_chat_title: 'AuditAI', tg_sender_name: 'Tim' },
+            sourceMetadata: { tg_chat_title: 'AuditAI', tg_sender_name: 'Taylor' },
           }),
         ],
         authorMap: new Map(),

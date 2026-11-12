@@ -17,7 +17,7 @@ describe('isNoisyExtractedFact', () => {
   it('drops message transmission mechanics', () => {
     expect(isNoisyExtractedFact(fact('Otto shared a link to an X post.'))).toBe(true);
     expect(isNoisyExtractedFact(fact('Mia forwarded the screenshot in Telegram.'))).toBe(true);
-    expect(isNoisyExtractedFact(fact('Tim reacted to the LinkedIn post.'))).toBe(true);
+    expect(isNoisyExtractedFact(fact('Taylor reacted to the LinkedIn post.'))).toBe(true);
   });
 
   it('keeps durable facts that mention tools or platforms', () => {
