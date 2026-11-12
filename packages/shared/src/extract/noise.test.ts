@@ -105,6 +105,9 @@ describe('isLowSignalEntityMention', () => {
     expect(isLowSignalObjectName({ name: 'browser-based', type: 'company' })).toBe(true);
     expect(isLowSignalObjectName({ name: 'PE firms', type: 'company' })).toBe(true);
     expect(isLowSignalObjectName({ name: 'healthcare providers', type: 'vendor' })).toBe(true);
+    expect(isLowSignalObjectName({ name: 'software platform', type: 'project' })).toBe(true);
+    expect(isLowSignalObjectName({ name: 'partner portal', type: 'project' })).toBe(false);
+    expect(isLowSignalObjectName({ name: 'client material portal', type: 'project' })).toBe(false);
     expect(isLowSignalObjectName({ name: 'GitHub', type: 'project' })).toBe(true);
     expect(isLowSignalObjectName({ name: 'Excel', type: 'project' })).toBe(true);
     expect(isLowSignalObjectName({ name: 'Verottaja', type: 'project' })).toBe(true);

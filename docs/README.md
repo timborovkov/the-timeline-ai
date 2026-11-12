@@ -22,7 +22,7 @@ Read the document for the task at hand. Current behavior, future work and histor
 
 ## Rollout and evidence
 
-- [Evidence-pack promotion](cross-source-evidence.md), [marketplace publication](marketplace-submissions.md), [Google OAuth verification](research/google-oauth-readiness.md).
+- [Evidence-pack promotion](relational-memory.md#cross-source-evidence-rollout), [marketplace publication](marketplace-submissions.md), [Google OAuth verification](research/google-oauth-readiness.md).
 - [Security/privacy requirements](security-privacy-trust.md), [provider register](providers.md), [open security gaps](security-gaps.md).
 - [Dated evidence](evidence/README.md); old observations do not certify current deployment/account state.
 - [WhatsApp proposal](whatsapp-groups-implementation-plan.md): conditional, not implemented product behavior.

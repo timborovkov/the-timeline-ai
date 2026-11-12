@@ -101,6 +101,7 @@ import {
   type SuggestionAcceptanceTransaction,
 } from '#src/suggestions/acceptance-transaction.js';
 import { createSuggestionScope } from '#src/suggestions/index.js';
+import { createEngineMaintenanceScope } from '#src/suggestions/maintenance-scope.js';
 import { createTeamLifecycleScope } from '#src/team-lifecycle/scope.js';
 import { createTelegramScope } from '#src/telegram/scope.js';
 import { createTimelineReadScope } from '#src/timeline/read-scope.js';
@@ -3580,6 +3581,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
     ),
     pins: pinScope,
     suggestions: suggestionScope,
+    engineMaintenance: createEngineMaintenanceScope(db, core),
     reconciliation: createReconciliationScope({ db, scope: core }),
     integrations: integrationScope,
     mcp: mcpScope,

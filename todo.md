@@ -8,7 +8,7 @@ This is the prioritised index of unresolved outcomes. Detailed acceptance criter
 | --- | --- | --- |
 | R1 | Verify release configuration and migration lineage for each deployment. | Confirm deployed revision/branch and migrations using [Railway](docs/railway.md) and [migration lineage](docs/migrations/coworker-drive-order.md); do not assume historical branch observations are current. |
 | R2 | Complete task-category production readiness. | [ADR 0011](docs/adr/0011-task-category-is-reversible-derived-state.md): live classifier/eval, staging backfill/query plans, and pilot latency/correction/project-link thresholds. |
-| R3 | Promote evidence packs per adapter. | [Rollout gates](docs/cross-source-evidence.md): remaining adapters, shadow sample, safety/quality/cost/latency evidence, monitoring and explicit enforcement. |
+| R3 | Promote evidence packs per adapter. | [Rollout gates](docs/relational-memory.md#cross-source-evidence-rollout): remaining adapters, shadow sample, safety/quality/cost/latency evidence, monitoring and explicit enforcement. |
 | R4 | Verify hosted MCP and publish the intended directories. | [Publication runbook](docs/marketplace-submissions.md): real-host OAuth/tool smoke tests, reviewer/support readiness, approval and visible listing; coworker client acceptance remains separately evidenced. |
 | R5 | Close security/privacy and legal evidence gaps. | The sole gap register is [security gaps](docs/security-gaps.md), including license/DPA/legal review, exact-text acceptance, analytics/legacy Convex, provider controls, staff access, backups and deletion. Do not duplicate individual gaps here. |
 | R6 | Complete billing production acceptance before enabling charges. | [Polar setup](docs/setup/polar.md): real webhook, shadow reconciliation period and invoice/member-access verification. Resolve or explicitly retain the provider's legacy customer-email limitation. No wallet/auto-reload flow is planned. |
@@ -33,6 +33,8 @@ This is the prioritised index of unresolved outcomes. Detailed acceptance criter
 | P10 | Add targeted file inspection and correction. | Second-pass original-file inspection, audited representation corrections, and captured-file sender/bulk triage; preserve [file semantics](docs/captured-files.md). |
 | P11 | Extend captured-work and supporting evidence coverage. | Parent IDs for pulses, GitHub review discussion, document-chunk pack admission and summary refresh, Linear/Monday actor mapping, and later Jira/CRM adapters. Follow [engine authority](docs/relational-memory.md); no semantic-only canonical writes. |
 | P12 | Improve residual behavioral test coverage. | Restore/deeper permission/session-isolation paths, real queue/storage/DB contracts and end-to-end first-value/payment/provider flows. Use existing suites; [testing](docs/testing/README.md) owns execution policy. |
+
+| P13 | Verify pre-launch engine against restricted representative Railway events. | Confirm deployed scheduler/worker health and measure labeled identity/relationship precision and recall on real events; synthetic evidence does not close this operational gate. See [engine evaluation](docs/relational-memory.md#evaluation-and-operational-diagnosis). |
 
 ## Conditional work
 

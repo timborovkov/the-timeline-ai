@@ -262,6 +262,7 @@ export async function requestDocumentUploadAction(
 
 const finalizeSchema = z.object({
   versionId: versionIdSchema,
+  suggestObjects: z.boolean().default(true),
 });
 
 export async function finalizeDocumentVersionAction(
@@ -301,6 +302,7 @@ export async function finalizeDocumentVersionAction(
         got.scope.documents.finalizeDocumentVersion({
           versionId: parsed.data.versionId,
           byteSize: head.contentLength,
+          sourceMetadata: { object_suggestions_enabled: parsed.data.suggestObjects },
           contentType: head.contentType ?? version.contentType ?? 'application/octet-stream',
         }),
         requireRedisQueue(),
@@ -606,4 +608,30 @@ export async function getDocumentPreviewUrlAction(input: {
       mediaKind,
     };
   });
+}
+
+/** Explicitly review an existing current document through the same approval pipeline. */
+export async function suggestDocumentObjectsAction(
+  versionId: string,
+): Promise<{ ok: boolean; error?: string }> {
+  const got = await withScopeOrError();
+  if ('error' in got) return { ok: false, error: got.error };
+  if (!versionIdSchema.safeParse(versionId).success)
+    return { ok: false, error: 'Invalid document version' };
+  const version = await got.scope.documents.getDocumentVersion(versionId);
+  if (!version) return { ok: false, error: 'Document version not found' };
+  if (!['chunked', 'embedded'].includes(version.processingStatus))
+    return {
+      ok: false,
+      error: 'Wait for document extraction to finish, or retry failed extraction first',
+    };
+  const document = await got.scope.documents.getDocument(version.documentId);
+  if (document?.currentVersionId !== versionId || document.visibility !== 'team')
+    return { ok: false, error: 'Choose a current team-visible document' };
+  const queue = await requireRedisQueue();
+  await queue.enqueueSuggestionJob(
+    { scope: 'document', teamId: got.teamId, documentVersionId: versionId, explicitRequest: true },
+    { jobIdSuffix: crypto.randomUUID() },
+  );
+  return { ok: true };
 }

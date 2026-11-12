@@ -48,6 +48,7 @@ for (const key of ['PATH', 'HOME', 'TMPDIR', 'CI', 'LANG', 'TZ', 'SYSTEMROOT'])
 Object.assign(env, {
   NODE_ENV: 'test',
   LOG_LEVEL: 'silent',
+  IDENTITY_SEMANTIC_ENABLED: 'false',
   DATABASE_URL: 'postgres://test:test@127.0.0.1:5432/test',
   AUTH_SECRET: 'test-secret-at-least-sixteen-characters',
   S3_BUCKET_DOCUMENTS: 'test-documents',

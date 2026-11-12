@@ -14,6 +14,7 @@ import {
 import { and, count, desc, eq, inArray, isNull, or, sql, type SQL } from 'drizzle-orm';
 
 import { listArtifactClusterEvidence } from '#src/artifacts/index.js';
+import { documentProposalEvidenceIsCurrent } from '#src/documents/visibility.js';
 import {
   auditReconciliationEvidenceCoverage,
   type ReconciliationEvidenceCoverageReport,
@@ -535,6 +536,10 @@ export async function getReconciliationClusterDetail(input: {
         eq(reconciliationOutputs.clusterId, input.clusterId),
         outputVisibility,
         outputVisibilityFloor,
+        documentProposalEvidenceIsCurrent(
+          input.teamId,
+          sql`${reconciliationOutputs.payload}->'projection_metadata'`,
+        ),
       ),
     )
     .orderBy(desc(reconciliationOutputs.createdAt), desc(reconciliationOutputs.id));
@@ -709,6 +714,10 @@ async function loadVisibleReconciliationClusterIds(
 
 function reconciliationOutputVisibleToUser(userId: string): SQL {
   const predicate = and(
+    documentProposalEvidenceIsCurrent(
+      reconciliationOutputs.teamId,
+      sql`${reconciliationOutputs.payload}->'projection_metadata'`,
+    ),
     visibilityEnvelopeVisibleToUser(
       {
         visibility: reconciliationOutputs.visibility,
