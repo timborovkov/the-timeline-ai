@@ -213,7 +213,7 @@ function ClaimScene() {
       <div className={styles.heroCopy}>
         <SceneIndex number="01" label="The auto-updating work record" />
         <h1 id="claim-title" className={styles.heroTitle}>
-          Your team's work, <em>written</em> down for you
+          Your team's work, <em>written down</em> for you
         </h1>
         <p className={styles.heroIntro}>{HERO_INTRO}</p>
         <div className={styles.heroActions}>

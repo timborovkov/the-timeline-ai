@@ -341,7 +341,7 @@ with the cited-answer section.
 Public display headings use open line spacing (at least 1.08) and moderate negative
 tracking (no tighter than -0.035em). Homepage scene titles are smaller than the
 hero and use medium weight, with mobile sizes scaled independently. Green italic
-emphasis in a heading is limited to one meaningful word; surrounding words stay
+emphasis in a heading uses one meaningful word, except the hero’s “written down” phrase; surrounding words stay
 in the normal heading face and color.
 
 The homepage chat-and-agent comparison uses two equally sized, provider-neutral

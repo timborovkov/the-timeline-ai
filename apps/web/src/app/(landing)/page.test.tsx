@@ -29,7 +29,7 @@ describe('LandingPage', () => {
     expect(html.match(/>Source on GitHub</g)).toHaveLength(2);
     expect(html).toContain('href="/cookies"');
     expect(html.match(/<h1\b/g)).toHaveLength(1);
-    expect(html).toContain('Your team&#x27;s work, <em>written</em> down for you');
+    expect(html).toContain('Your team&#x27;s work, <em>written down</em> for you');
     expect(html).toContain(
       'Your team&#x27;s work record: everything your team does, on one searchable timeline, kept current from Slack, Telegram, email and calls.',
     );
