@@ -1826,6 +1826,7 @@
 }
 
 .trustFlowPanel {
+  margin-top: clamp(2rem, 4vw, 4rem);
   padding: clamp(1.5rem, 4vw, 4rem);
   border: 1px solid var(--home-line);
 }

@@ -374,3 +374,6 @@ footer links’ typography, casing, color and hover treatment.
 The chat-and-agent comparison uses a shorter, medium-weight sans-serif heading.
 Its single green word stays in the same upright typeface and weight, rather than
 mixing a heavy heading with a thin italic serif.
+
+Leave a responsive 2–4rem gap between the daily-update screenshot and the trust
+panel; their borders must not touch.
