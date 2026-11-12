@@ -57,10 +57,10 @@ import { createJobRecoveryScope } from '#src/job-recovery/index.js';
 import { embed as defaultEmbed, type EmbedResult } from '#src/llm/embed.js';
 import { TIMELINE_MODELS } from '#src/llm/models.js';
 import { childLogger } from '#src/logger.js';
+import { createMcpScope } from '#src/mcp/scope.js';
 import { createMcpOAuthScope } from '#src/mcp-server/oauth-scope.js';
 import { createMcpOutboundScope } from '#src/mcp-server/outbound.js';
 import { createAgentReportingScope } from '#src/mcp-server/reporting.js';
-import { createMcpScope } from '#src/mcp/scope.js';
 import { createMeetingScope } from '#src/meetings/scope.js';
 import { createObjectScope, normalizeIdentityFacet } from '#src/objects/index.js';
 import { invalidateObjectSummariesForRawEvent } from '#src/objects/summaries.js';
@@ -103,8 +103,8 @@ import {
 import { createSuggestionScope } from '#src/suggestions/index.js';
 import { createTeamLifecycleScope } from '#src/team-lifecycle/scope.js';
 import { createTelegramScope } from '#src/telegram/scope.js';
-import { createTimelineMomentPresentationCache } from '#src/timeline-moments/presentation-cache.js';
 import { createTimelineReadScope } from '#src/timeline/read-scope.js';
+import { createTimelineMomentPresentationCache } from '#src/timeline-moments/presentation-cache.js';
 import {
   normalizeVisibilityUserIds,
   rawEventIsActive,
