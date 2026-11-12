@@ -447,12 +447,12 @@ describe('CuratedKanbanBoard', () => {
     expect(metadataRow?.contains(priority)).toBe(true);
     expect(metadataRow?.className).toContain('items-center');
     expect(metadataRow?.className).not.toContain('flex-wrap');
-    expect(owner.className).toContain('h-5');
-    expect(due.className).toContain('h-5');
-    expect(priority.className).toContain('h-5');
+    expect(owner.className).toContain('min-h-7');
+    expect(due.className).toContain('min-h-7');
+    expect(priority.className).toContain('min-h-7');
     expect(priority.textContent).toContain('No priority');
     expect(priority.querySelector('svg')).toBeNull();
-    expect(card.querySelector('.px-1\\.5')).toBeNull();
+    expect(metadataRow?.className).not.toContain('px-1.5');
 
     const newColumn = screen.getByRole('region', { name: 'New, board column 1' });
     expect(newColumn.className).toContain('border-r');
