@@ -724,13 +724,14 @@ function useCalendarViewModel({
 
   async function remove() {
     if (!editing) return;
+    const recurrenceEditMode = editing.recurringParentId ? draft.recurrenceEditMode : 'series';
     const scopeLabel =
       editing.rrule || editing.recurringParentId
         ? {
             single: 'Only this occurrence',
             this_and_future: 'This and all future occurrences',
             series: 'The entire series',
-          }[draft.recurrenceEditMode]
+          }[recurrenceEditMode]
         : 'This event';
     const confirmed = await dialog.confirm({
       title: `Delete ${editing.title}?`,
@@ -747,7 +748,7 @@ function useCalendarViewModel({
         error: 'Couldn’t delete event',
         run: async () => {
           const deleted = await deleteCalendarEventAction(editing.id, {
-            recurrenceEditMode: draft.recurrenceEditMode,
+            recurrenceEditMode,
           });
           return deleted.ok ? deleted : { error: deleted.error ?? 'Couldn’t delete event' };
         },

@@ -772,6 +772,29 @@ describe('calendar review regressions', () => {
     expect(screen.getByRole('dialog', { name: 'Edit event' })).toBeTruthy();
   });
 
+  it('warns that deleting a recurring parent deletes the entire series', async () => {
+    const user = userEvent.setup();
+    render(
+      createElement(CalendarView, {
+        events: [{ ...event('parent-1', 'Weekly planning'), rrule: 'FREQ=WEEKLY' }],
+        eventListEvents: [],
+        timezone: 'UTC',
+      }),
+    );
+    await user.click(screen.getByRole('button', { name: /Weekly planning/ }));
+    await user.selectOptions(screen.getByLabelText('Edit scope'), 'single');
+    await user.click(screen.getByRole('button', { name: /^Delete$/ }));
+    expect(
+      screen.getByText('The entire series will be permanently deleted. This cannot be undone.'),
+    ).toBeTruthy();
+    await user.click(screen.getByRole('button', { name: 'Delete event' }));
+    await waitFor(() => {
+      expect(fakes.deleteCalendarEventAction).toHaveBeenCalledWith('parent-1', {
+        recurrenceEditMode: 'series',
+      });
+    });
+  });
+
   it('displays an inclusive last day and saves an exclusive boundary', async () => {
     const user = userEvent.setup();
     render(

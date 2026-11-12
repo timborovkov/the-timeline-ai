@@ -28,28 +28,6 @@ import { and, desc, eq, inArray, isNotNull, isNull, lte, ne, or, sql } from 'dri
 import { decryptJson, encryptJson } from '#src/crypto/secrets.js';
 import { getEnv } from '#src/env.js';
 import {
-  formatHealthPauseNotice,
-  healthPauseNotificationDedupeKey,
-  INTEGRATION_HEALTH_PAUSE_MIN_FAILURES,
-  integrationHealthPauseAfterMs,
-  isIntegrationHealthPauseKind,
-  type IntegrationHealthPauseKind,
-} from '#src/integrations/health.js';
-import { getProvider } from '#src/integrations/registry.js';
-import {
-  ProviderAuthorizationError,
-  type IntegrationRow,
-  type ProviderConnectionRow,
-  type SyncContinuation,
-  type WebhookSubscription,
-} from '#src/integrations/types.js';
-import { childLogger } from '#src/logger.js';
-import { sendMessage } from '#src/messaging/delivery.js';
-import { getDocumentsBucket, getS3Client } from '#src/s3/client.js';
-import { deleteObject } from '#src/s3/objects.js';
-import { rawEventVisibleToUser, validateVisibilityUserIds } from '#src/visibility.js';
-
-import {
   cleanupUncoveredDriveTrackedFiles,
   deleteDriveSnapshotsForFile as deleteDriveFileSnapshots,
   deleteDriveSnapshotsForIntegration,
@@ -72,12 +50,33 @@ import {
 } from '#src/integrations/google-drive-oauth-revoke.js';
 import { DRIVE_FILE_KIND } from '#src/integrations/google-drive-scope.js';
 import {
+  formatHealthPauseNotice,
+  healthPauseNotificationDedupeKey,
+  INTEGRATION_HEALTH_PAUSE_MIN_FAILURES,
+  integrationHealthPauseAfterMs,
+  isIntegrationHealthPauseKind,
+  type IntegrationHealthPauseKind,
+} from '#src/integrations/health.js';
+import { getProvider } from '#src/integrations/registry.js';
+import {
   loadIntegrationSelectionLinks,
   reconcileDriveSelectionLinkChanges,
   setIntegrationSelectionObjectLink,
   type IntegrationSelectionLinkRow,
 } from '#src/integrations/selection-links.js';
+import {
+  ProviderAuthorizationError,
+  type IntegrationRow,
+  type ProviderConnectionRow,
+  type SyncContinuation,
+  type WebhookSubscription,
+} from '#src/integrations/types.js';
+import { childLogger } from '#src/logger.js';
+import { sendMessage } from '#src/messaging/delivery.js';
 import { activeWorkspaceCondition } from '#src/platform-admin/runtime.js';
+import { getDocumentsBucket, getS3Client } from '#src/s3/client.js';
+import { deleteObject } from '#src/s3/objects.js';
+import { rawEventVisibleToUser, validateVisibilityUserIds } from '#src/visibility.js';
 
 // Phase 11 — Team-scoped integration helpers. Every read/write goes
 // through `withTeam`-style membership enforcement so a forged team_id
