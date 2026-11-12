@@ -144,12 +144,12 @@ for long-form prose. Article text is limited to 65–70ch.
 
 ## Layout and navigation
 
-The authenticated product keeps eight primary destinations: Home, Timeline,
+The authenticated product keeps nine primary destinations: Home, Timeline,
 Ask, Work, Documents, Meetings, Connections, Usage, and Team.
 
 - Desktop and mobile primary navigation keep that destination order in three
   labeled groups: Overview (Home, Timeline, Ask), Workspace (Work, Documents,
-  Meetings), and Manage (Connections, Usage, Team). Collapsed rails retain the same
+  Meetings, Connections), and Manage (Usage, Team). Collapsed rails retain the same
   order and expose every destination through its icon label and tooltip.
 - Expanded sidebar: 240px. Collapsed rail: 56px. The product mark uses the
   same 12px inset as primary destinations and links to Home (`/app`). Fold and
@@ -166,7 +166,10 @@ Ask, Work, Documents, Meetings, Connections, Usage, and Team.
   to the main pane edges while labels, controls, and row content retain the
   bounded inner width. Empty and loading states retain the same content width.
   Forms, settings, and reading views keep the default cap without decorative bleed.
-- Full-canvas chat and boards may opt into full bleed. Timeline opts into
+- Full-canvas chat and boards may opt into full bleed. The shell supplies their
+  available height, including banners; routes do not subtract a fixed header
+  height from the viewport or cancel shell gutters with negative margins.
+  Tasks keep the same canvas in loading, populated, and filtered-empty states. Timeline opts into
   flush-top so its sticky `CollectionToolbar` can sit under the 48px header;
   date bands follow its measured height when controls wrap;
   do not hide main padding with a negative sticky `top`.
@@ -176,7 +179,7 @@ Ask, Work, Documents, Meetings, Connections, Usage, and Team.
   row shows last-activity age; archive stays hidden until hover or focus on
   desktop. A search field under New chat filters history. The Ask heading keeps
   the selected title on the same row and does not show a session count.
-- Inspectors and Connections drawers share the modal `Sheet` reading surface:
+- Task, object, and board previews, inspectors, and Connections drawers share the modal `Sheet` reading surface:
   fixed to the viewport, up to 48rem (768px), full-width on smaller screens.
   Opening or closing an overlay must preserve the underlying page width and
   scroll position. Use history updates for panel URLs, not native hash scrolling.
@@ -264,9 +267,11 @@ table.
   the mounted session and is never saved as a preference.
 - `CollectionRow` is at least 44px on desktop. Human titles wrap in full,
   including unbroken strings; never ellipsize or line-clamp the identifying title.
-  Titles get a preferred 20rem reading width before context and metadata share
-  their line. Metadata wraps below when it cannot fit. Actions move below the
-  content in rows narrower than 40rem, including beside an open inspector.
+  Titles occupy their own line; context and metadata sit below at every width.
+  Row actions keep a stable trailing position rather than dropping below the row.
+  Previews overlay the workspace; opening one never changes the row width.
+  Virtualized windows keep rendered rows in normal flow with spacers for unseen
+  rows, so wrapping content cannot overlap before measurement.
   Task board cards and collection group headings follow the same full-title rule.
   Secondary summaries may truncate when the detail view exposes their full text. Domain content uses
   named children (`CollectionRow.Leading`, `.Title`, `.Subtitle`, `.Context`,
@@ -297,7 +302,7 @@ table.
   keep a Select-all checkbox visible so bulk selection does not require
   per-row clicks.
 - `EditableMetadata` is a quiet, borderless trigger with a minimum 40px hit
-  target. Pass the displayed value and editor through `EditableMetadata.Value`
+  target (28px in compact collection metadata). Pass the displayed value and editor through `EditableMetadata.Value`
   and `EditableMetadata.Editor` children. Select-like changes save immediately
   and optimistically. Text and date changes commit with Apply or Enter and
   cancel with Escape. Failed saves roll back, return focus, and report through

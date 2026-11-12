@@ -67,14 +67,7 @@ export default async function ChatPage({
     guidedAsk,
   } = await loadChatPage({ searchParams });
   return (
-    // Escape main's px/py with negative margins so the chat fills the
-    // entire viewport minus the AppShell header (h-12 = 3rem). The chat
-    // pane has its own internal scroll, so a fixed outer height keeps the
-    // layout stable regardless of message count.
-    <div
-      data-app-layout="full-bleed"
-      className="-mx-4 -my-6 flex h-[calc(100dvh-3rem)] md:-mx-8 md:-my-8"
-    >
+    <div data-app-layout="full-bleed" className="flex h-full">
       <SessionSidebar
         activeSessionId={activeSessionId}
         nextCursor={sessionPage.nextCursor}

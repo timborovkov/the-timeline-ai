@@ -214,15 +214,15 @@ list/kanban each have a matching skeleton. Timeline loading uses the same
 toolbar row without a page header or inventory chip, then Linear feed rows.
 Collection pages load as flat rows, not boxed card grids. Objects New object and
 Boards Create board use the same compact toolbar/header action as Add item, not a
-filled primary chip. Kanban cards stay compact: a clamped title plus one
+filled primary chip. Kanban cards stay compact: a wrapping title plus one
 metadata row, with no redundant type label. Curated boards use the same
 full-bleed work canvas in kanban and grouped list — no boxed inner
-container around the collection. Board kanban cards stay compact: a clamped
+container around the collection. Board kanban cards stay compact: a wrapping
 title, optional next-step line directly under the title, and one metadata row.
 Kanban lanes use a hairline divider, not boxed column chrome. Pipeline boards
 keep a readable lane min-width and scroll horizontally when the columns do not
 fit, including 1280 and 1440 canvases; they do not clip the last lanes. Card title and
-metadata share the same left edge: compact 20px chips, no extra type/metadata
+metadata share the same left edge: compact 28px controls, no extra type/metadata
 padding, and no wrapping priority row. The drag handle sits with the card
 actions on the right. Cards have no Move control; the drag handle is the
 on-card move path (Space or Enter, then arrow keys), and opening the card is
@@ -275,8 +275,9 @@ tools holds compact rows for Agent MCP servers and Connect your agent;
 local-only and unroutable catalog entries such as Figma sit in Coming soon with
 no Connect action. Developer holds ingest webhooks, integration audit, and job
 recovery.
-Connect your agent is a client picker plus one install path: official vendor
-marks on white tiles, a CollectionRow list, and a single selected setup. Add
+Connect your agent leads with the shared homepage AgentSetupCard and generic
+llms.txt setup prompt. A closed Client-specific setup disclosure contains the client picker: official vendor
+marks on white tiles, a CollectionRow list, and a single selected setup. Long installation prompts stay in copy actions, with a closed Show setup text fallback for manual copying. On wide screens, the picker sits beside the selected setup on a quiet surface; narrow screens stack them. Add
 memory, Timeline skill, connected grants, and static keys stay in one closed
 hairline disclosure stack. Admin grant rows show the consenting member next to
 the client so Revoke is unambiguous. Do not nest cards, stack `border-y`
@@ -413,17 +414,19 @@ instruction to unarchive the task first.
 ### Object and task detail
 
 Task list selection opens a right-hand peek on the same route (`?task=`); Objects
-rows use `?object=` and preserve list filters. Both use the shared preview with
-discussion and type-appropriate editable properties. The full-width, quiet outlined “Open object”
+rows use `?object=` and preserve list filters. All task, object, and board previews use the same fixed modal Sheet at every viewport, with focus containment, Escape dismissal, scroll preservation, and focus restoration. They never shrink the underlying list. Both task and object previews retain
+discussion and type-appropriate editable properties. The quiet Open task / Open object
 link at the top goes to `/app/objects/[id]` with `returnTo`
 so Back restores the originating list. In-list selection links use
 `scroll={false}` so opening a peek does not jump the page.
 
-The peek is a dense inspector on the shared detail rail, not a form card:
-14px title, ghost icon pin (tooltip Pin to Home) and Close, then the same status / priority / assignee /
-due / project / category triggers used in the list. Project and category pickers on this
-surface are borderless. Do not duplicate those values in a second “current”
-grid. Do not label the peek “side panel.” If accepted creation evidence exists,
+The preview uses a wrapping 18px title, quiet Pin and Close controls, and a small
+Open task / Open object link. Properties use aligned, visible labels for Status,
+Priority, Assignee, Due date, Project, and Category. The fields remain editable
+when empty; task collection rows omit unset project, assignee, date, priority, and
+category placeholders. Categories use sentence case at 12px, and priority uses a
+flag rather than the failure icon. Terminal work never shows an overdue warning.
+If accepted creation evidence exists,
 lead with that “why this exists” excerpt. Discussion (activity and comments)
 always follows as unboxed rows, including the borderless composer so a
 comment can start from the peek. Empty memory and empty related context stay
@@ -474,8 +477,7 @@ Change history starts closed unless suggested changes need review. Technical
 details live at the bottom of the rail. Aliases appear in their editable property
 without repeating a long alternate-name line beneath the title. Status and Priority keep a toned icon with quiet `--fg`
 value text so they match Stage/Aliases. Do not nest a card per
-field. The task peek and board card peek retain their compact bordered rail treatment
-to lift off the list in light and dark; both include Discussion below command fields and
+field. Task and board previews share the modal reading surface described above; both include Discussion below command fields and
 before related context. An empty summary is a single Generate summary control, not a “ready to generate” block. Evidence uses a
 quiet text control, not a signal chip. Supporting copy stays 12px `--fg-dim`.
 Quiet fold/actions use 12px medium `--fg-muted`. `--signal` is reserved for
@@ -622,7 +624,7 @@ for that user/team in the current browser. The CTA opens plan selection only.
 
 ### Coworker account and reporting controls
 
-Connect your agent includes workspace reporting defaults and connection-specific overrides, with explicit on-request/meaningful-handoffs modes and a required ongoing work scope. Account → Agent provisioning shows grant expiry, allowance, capture permission, usage and audit history. Credentials appear once; revocation clearly leaves created workspaces and their independently managed connections intact.
+Connect your agent leads with client setup. Workspace reporting defaults and connection-specific overrides live in a closed “Reporting preferences” disclosure below setup. Use compact, labeled forms with the shared controls; show the required work-scope field only for meaningful-work-and-handoff reporting. Connection overrides expand individually and use client names and consenting member labels, never raw client IDs. Saves announce progress and outcome through the shared toast channel. Account → Agent provisioning shows grant expiry, allowance, capture permission, usage and audit history. Credentials appear once; revocation clearly leaves created workspaces and their independently managed connections intact.
 
 OAuth consent includes reporting directly beneath workspace selection and capture permission. New connections visibly inherit the workspace agreement; owners/admins can set a connection override. Members see their effective agreement. Work scope is required only for an explicit ongoing override; read-only connections clearly identify inactive reporting. No additional wizard or forced first note is introduced.
 

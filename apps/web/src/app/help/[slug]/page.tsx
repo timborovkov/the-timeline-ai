@@ -45,7 +45,7 @@ export default async function HelpTopicPage({ params }: HelpPageProps) {
 
   if (page.slug === 'agents') {
     return (
-      <article className="space-y-14">
+      <article className="space-y-8">
         <AgentInstallGuide />
         <RelatedGuides related={page.related} />
       </article>

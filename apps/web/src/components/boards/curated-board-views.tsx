@@ -452,6 +452,7 @@ export function CuratedBoardList({
                             <EditableMetadata.Value>
                               <DueDateDisplay
                                 value={item.dueAt}
+                                workStatus={item.object.status}
                                 timezone={timezone}
                                 variant="compact"
                               />

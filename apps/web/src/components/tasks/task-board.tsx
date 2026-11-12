@@ -982,13 +982,7 @@ function TaskBoardView({
   }
 
   return (
-    <div
-      className={
-        selectedTask
-          ? 'grid h-full min-h-0 min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(36rem,55%)]'
-          : 'flex h-full min-h-0 min-w-0 flex-col'
-      }
-    >
+    <div className="flex h-full min-h-0 min-w-0 flex-col">
       <DndContext
         id={dndContextId}
         sensors={sensors}
@@ -1408,7 +1402,8 @@ function TaskListView({
               <VirtualList
                 items={group.rows}
                 getItemKey={(row) => row.id}
-                estimateSize={48}
+                estimateSize={80}
+                offsetWithinScrollElement
                 getScrollElement={() => scrollEl}
                 renderItem={(row) => (
                   <TaskListRow
@@ -1520,7 +1515,7 @@ function TaskListRow({
           <Link
             href={taskViewHref('list', row.id, filterParams)}
             scroll={false}
-            className="block whitespace-normal [overflow-wrap:anywhere] hover:underline"
+            className="whitespace-normal [overflow-wrap:anywhere] hover:text-signal focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             {displayText(title)}
           </Link>
@@ -1529,6 +1524,7 @@ function TaskListRow({
         <CollectionRow.Metadata>
           <>
             <EditableMetadata
+              density="compact"
               label={`Status for ${displayText(title)}`}
               pending={saving === 'status'}
             >
@@ -1558,8 +1554,11 @@ function TaskListRow({
                 </select>
               </EditableMetadata.Editor>
             </EditableMetadata>
-            {taskCategoriesEnabled ? (
-              <EditableMetadata label={`Category for ${displayText(title)}`}>
+            {taskCategoriesEnabled &&
+            (row.taskCategory ||
+              row.taskCategoryStatus === 'pending' ||
+              row.taskCategoryStatus === 'failed') ? (
+              <EditableMetadata density="compact" label={`Category for ${displayText(title)}`}>
                 <EditableMetadata.Value>
                   <TaskCategoryBadge category={row.taskCategory} status={row.taskCategoryStatus} />
                 </EditableMetadata.Value>
@@ -1574,103 +1573,112 @@ function TaskListRow({
                 </EditableMetadata.Editor>
               </EditableMetadata>
             ) : null}
-            <EditableMetadata label={`Project for ${displayText(title)}`}>
-              <EditableMetadata.Value>
-                {primaryProject?.projectName ?? 'No project'}
-              </EditableMetadata.Value>
-              <EditableMetadata.Editor>
-                <TaskProjectSelect
-                  taskId={row.id}
-                  projectId={primaryProject?.projectId ?? null}
-                  currentProjectLabel={primaryProject?.projectName}
-                  projectArchived={Boolean(primaryProject?.archivedAt)}
-                  projects={projects}
-                  onProjectChange={(project) => {
-                    onProjectChange(row.id, project);
-                  }}
-                  onProjectChangeCommitted={() => {
-                    onProjectChangeCommitted(row.id);
-                  }}
-                  onProjectChangeReverted={() => {
-                    onProjectChangeReverted(row.id);
-                  }}
-                />
-              </EditableMetadata.Editor>
-            </EditableMetadata>
-            <EditableMetadata
-              label={`Assignee for ${displayText(title)}`}
-              pending={saving === 'assignee'}
-            >
-              <EditableMetadata.Value>{assignee?.label ?? 'Unassigned'}</EditableMetadata.Value>
-              <EditableMetadata.Editor>
-                <select
-                  value={row.assigneeUserId ?? ''}
-                  onChange={(event) => {
-                    save('assignee', { assigneeUserId: event.currentTarget.value || null });
-                  }}
-                  className="h-10 w-full rounded-sm border border-border bg-bg px-2 text-xs"
-                  aria-label="Assignee"
-                >
-                  <option value="">Unassigned</option>
-                  {members.map((member) => (
-                    <option key={member.id} value={member.id}>
-                      {member.label}
-                    </option>
-                  ))}
-                </select>
-              </EditableMetadata.Editor>
-            </EditableMetadata>
-            <EditableMetadata
-              label={`Due date for ${displayText(title)}`}
-              pending={saving === 'due date'}
-            >
-              <EditableMetadata.Value>
-                <DueDateDisplay value={row.dueAt} variant="field-hint" />
-              </EditableMetadata.Value>
-              <EditableMetadata.Editor>
-                <MetadataDateEditor
-                  defaultValue={row.dueAt ? dateInputValue(row.dueAt, timezone) : ''}
-                  onApply={(value) => {
-                    save('due date', {
-                      dueAt: value ? new Date(`${value}T00:00:00.000Z`) : null,
-                    });
-                  }}
-                />
-              </EditableMetadata.Editor>
-            </EditableMetadata>
-            <EditableMetadata
-              label={`Priority for ${displayText(title)}`}
-              pending={saving === 'priority'}
-            >
-              <EditableMetadata.Value>
-                <CollectionStatus
-                  value={row.priority ? `p${row.priority}` : 'none'}
-                  tone={priorityTone(row.priority)}
-                  label={row.priority ? `P${row.priority}` : 'No priority'}
-                />
-              </EditableMetadata.Value>
-              <EditableMetadata.Editor>
-                <select
-                  value={row.priority ?? ''}
-                  onChange={(event) => {
-                    save('priority', {
-                      priority: event.currentTarget.value
-                        ? Number(event.currentTarget.value)
-                        : null,
-                    });
-                  }}
-                  className="h-10 w-full rounded-sm border border-border bg-bg px-2 text-xs"
-                  aria-label="Priority"
-                >
-                  <option value="">None</option>
-                  {[1, 2, 3, 4].map((priority) => (
-                    <option key={priority} value={priority}>
-                      P{priority}
-                    </option>
-                  ))}
-                </select>
-              </EditableMetadata.Editor>
-            </EditableMetadata>
+            {primaryProject ? (
+              <EditableMetadata density="compact" label={`Project for ${displayText(title)}`}>
+                <EditableMetadata.Value>{primaryProject.projectName}</EditableMetadata.Value>
+                <EditableMetadata.Editor>
+                  <TaskProjectSelect
+                    taskId={row.id}
+                    projectId={primaryProject.projectId}
+                    currentProjectLabel={primaryProject.projectName}
+                    projectArchived={Boolean(primaryProject.archivedAt)}
+                    projects={projects}
+                    onProjectChange={(project) => {
+                      onProjectChange(row.id, project);
+                    }}
+                    onProjectChangeCommitted={() => {
+                      onProjectChangeCommitted(row.id);
+                    }}
+                    onProjectChangeReverted={() => {
+                      onProjectChangeReverted(row.id);
+                    }}
+                  />
+                </EditableMetadata.Editor>
+              </EditableMetadata>
+            ) : null}
+            {assignee ? (
+              <EditableMetadata
+                density="compact"
+                label={`Assignee for ${displayText(title)}`}
+                pending={saving === 'assignee'}
+              >
+                <EditableMetadata.Value>{assignee.label}</EditableMetadata.Value>
+                <EditableMetadata.Editor>
+                  <select
+                    value={row.assigneeUserId ?? ''}
+                    onChange={(event) => {
+                      save('assignee', { assigneeUserId: event.currentTarget.value || null });
+                    }}
+                    className="h-10 w-full rounded-sm border border-border bg-bg px-2 text-xs"
+                    aria-label="Assignee"
+                  >
+                    <option value="">Unassigned</option>
+                    {members.map((member) => (
+                      <option key={member.id} value={member.id}>
+                        {member.label}
+                      </option>
+                    ))}
+                  </select>
+                </EditableMetadata.Editor>
+              </EditableMetadata>
+            ) : null}
+            {row.dueAt ? (
+              <EditableMetadata
+                density="compact"
+                label={`Due date for ${displayText(title)}`}
+                pending={saving === 'due date'}
+              >
+                <EditableMetadata.Value>
+                  <DueDateDisplay workStatus={row.status} value={row.dueAt} variant="field-hint" />
+                </EditableMetadata.Value>
+                <EditableMetadata.Editor>
+                  <MetadataDateEditor
+                    defaultValue={dateInputValue(row.dueAt, timezone)}
+                    onApply={(value) => {
+                      save('due date', {
+                        dueAt: value ? new Date(`${value}T00:00:00.000Z`) : null,
+                      });
+                    }}
+                  />
+                </EditableMetadata.Editor>
+              </EditableMetadata>
+            ) : null}
+            {row.priority ? (
+              <EditableMetadata
+                density="compact"
+                label={`Priority for ${displayText(title)}`}
+                pending={saving === 'priority'}
+              >
+                <EditableMetadata.Value>
+                  <CollectionStatus
+                    value={row.priority ? `p${row.priority}` : 'none'}
+                    tone={priorityTone(row.priority)}
+                    label={row.priority ? `P${row.priority}` : 'No priority'}
+                  />
+                </EditableMetadata.Value>
+                <EditableMetadata.Editor>
+                  <select
+                    value={row.priority}
+                    onChange={(event) => {
+                      save('priority', {
+                        priority: event.currentTarget.value
+                          ? Number(event.currentTarget.value)
+                          : null,
+                      });
+                    }}
+                    className="h-10 w-full rounded-sm border border-border bg-bg px-2 text-xs"
+                    aria-label="Priority"
+                  >
+                    <option value="">None</option>
+                    {[1, 2, 3, 4].map((priority) => (
+                      <option key={priority} value={priority}>
+                        P{priority}
+                      </option>
+                    ))}
+                  </select>
+                </EditableMetadata.Editor>
+              </EditableMetadata>
+            ) : null}
           </>
         </CollectionRow.Metadata>
         <CollectionRow.Actions>
@@ -2169,7 +2177,7 @@ function TaskCard({
           density="compact"
         >
           <EditableMetadata.Value>
-            <DueDateDisplay value={row.dueAt} variant="compact" />
+            <DueDateDisplay workStatus={row.status} value={row.dueAt} variant="compact" />
           </EditableMetadata.Value>
           <EditableMetadata.Editor>
             <MetadataDateEditor

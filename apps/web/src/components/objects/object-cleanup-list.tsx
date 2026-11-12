@@ -639,7 +639,12 @@ function ObjectCollectionItem({
                 pending={saving === 'dueAt'}
               >
                 <EditableMetadata.Value>
-                  <DueDateDisplay value={dueAt} timezone={timezone} variant="compact" />
+                  <DueDateDisplay
+                    workStatus={status}
+                    value={dueAt}
+                    timezone={timezone}
+                    variant="compact"
+                  />
                 </EditableMetadata.Value>
                 <EditableMetadata.Editor>
                   <ObjectDueDateEditor

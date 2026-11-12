@@ -154,6 +154,23 @@ describe('CuratedKanbanBoard', () => {
     fakes.updateBoardItemAction.mockResolvedValue({ ok: true, id: 'item-1' });
   });
 
+  it('keeps past due dates neutral for completed tasks', () => {
+    const item = boardItem('Finished task');
+    item.object.status = 'done';
+    item.dueAt = new Date('2000-01-01');
+    const { container } = render(
+      <CuratedKanbanBoard
+        boardId="board-1"
+        lanes={[lane()]}
+        items={[item]}
+        selectedItemId={null}
+        members={[]}
+      />,
+    );
+    expect(container.textContent).toContain('2000');
+    expect(container.textContent).not.toContain('Overdue');
+  });
+
   it('groups the scrollable board columns with uniquely named duplicate lane regions', () => {
     render(
       <CuratedKanbanBoard

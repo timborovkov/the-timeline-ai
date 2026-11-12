@@ -89,7 +89,7 @@ describe('collection primitives', () => {
         <CollectionRow.Subtitle>Call the buyer</CollectionRow.Subtitle>
       </CollectionRow>,
     );
-    expect(screen.getByText('Call the buyer').className).toContain('text-[11px]');
+    expect(screen.getByText('Call the buyer').className).toContain('text-xs');
   });
 
   it('exposes an optional title hover hint without replacing the subtitle', () => {

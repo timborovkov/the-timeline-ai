@@ -3,7 +3,6 @@ import { redirect } from 'next/navigation';
 
 import type { Metadata } from 'next';
 
-import { AgentReportingSettings } from '@/components/agent-reporting-settings';
 import { Breadcrumb } from '@/components/breadcrumb';
 import { ConnectAgentScreen } from '@/components/connect-agent/connect-agent-screen';
 import { PageHeader } from '@/components/page-header';
@@ -72,11 +71,34 @@ export default async function ConnectAgentPage({
       />
       <PageHeader
         title="Connect your agent"
-        subtitle="Pick a client, then sign in with OAuth. Answers appear once work is captured; remember works now."
+        subtitle="Connect a client to ask questions, save work, and pick up where you left off."
       />
-      {reporting ? <AgentReportingSettings teamId={active.teamId} {...reporting} /> : null}
       <ConnectAgentScreen
         teamId={active.teamId}
+        reporting={
+          reporting
+            ? {
+                ...reporting,
+                connections: reporting.connections.map((connection) => {
+                  const grant = grants.find((item) => item.id === connection.id);
+                  return {
+                    ...connection,
+                    name:
+                      connection.type === 'oauth'
+                        ? grant?.clientName && grant.clientName !== connection.name
+                          ? grant.clientName
+                          : 'Connected agent'
+                        : connection.name,
+                    description: grant
+                      ? (grant.ownerName ?? grant.ownerEmail)
+                      : connection.type === 'api_key'
+                        ? 'API key'
+                        : 'OAuth connection',
+                  };
+                }),
+              }
+            : null
+        }
         mcpUrl={mcpUrl || mcpServerUrl(getSiteUrl())}
         origin={getSiteUrl()}
         isAdmin={isAdmin}

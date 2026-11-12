@@ -1777,7 +1777,11 @@ function ObjectEditableFields({
             className="min-h-8 min-w-0 flex-1 justify-start px-0 text-sm text-fg"
           >
             <EditableMetadata.Value>
-              <DueDateDisplay value={detail.dueAt} variant="field-hint" />
+              <DueDateDisplay
+                workStatus={detail.status}
+                value={detail.dueAt}
+                variant="field-hint"
+              />
             </EditableMetadata.Value>
             <EditableMetadata.Editor>
               <MetadataDateEditor

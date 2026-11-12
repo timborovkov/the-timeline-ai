@@ -22,7 +22,7 @@ export default function TasksLoading() {
       <div
         data-app-width="collection"
         data-app-layout="full-bleed"
-        className="-mx-4 -my-6 flex h-[calc(100dvh-3rem)] min-w-0 flex-col md:-mx-8 md:-my-8"
+        className="flex h-full min-w-0 flex-col"
         aria-busy="true"
         aria-label="Loading tasks"
       >

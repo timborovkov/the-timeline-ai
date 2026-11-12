@@ -266,28 +266,24 @@ describe('Help route states', () => {
     expect(
       screen.getByRole('heading', {
         level: 1,
-        name: 'Connect your agent to what actually happened.',
+        name: 'Connect your agent',
       }),
     ).toBeTruthy();
-    expect(
-      screen.getByRole('heading', { level: 2, name: 'From install to first answer' }),
-    ).toBeTruthy();
-    expect(
-      screen.getByRole('heading', { level: 2, name: 'Access, without surprises' }),
-    ).toBeTruthy();
-    expect(screen.getByRole('heading', { level: 3, name: 'Timeline' })).toBeTruthy();
-    expect(screen.getByRole('heading', { level: 3, name: 'Codex' })).toBeTruthy();
-    expect(screen.getByRole('heading', { level: 3, name: 'Claude Code' })).toBeTruthy();
-    expect(screen.getByText('timeline')).toBeTruthy();
-    expect(
-      screen.getByText(/workspace evidence visible to you as the authorizing member/i),
-    ).toBeTruthy();
-    expect(screen.getByRole('heading', { level: 3, name: 'Give this to your agent' })).toBeTruthy();
-
-    fireEvent.click(screen.getByRole('button', { name: 'Copy agent setup prompt' }));
+    expect(screen.queryByText(TIMELINE_PLUGIN_INSTALL_PROMPT)).toBeNull();
+    for (const label of [
+      'Client-specific setup',
+      'Advanced setup',
+      'What happens after setup',
+      'Access and permissions',
+    ]) {
+      const summary = screen.getByText(label);
+      expect(summary.closest('details')?.open).toBe(false);
+      fireEvent.click(summary);
+    }
+    fireEvent.click(screen.getByRole('button', { name: 'Copy setup command' }));
     await waitFor(() => {
       expect(writeText).toHaveBeenCalledWith(
-        'Set up The Timeline: https://thetimeline.cc/agents/setup.md',
+        'Set up The Timeline - https://thetimeline.cc/llms.txt',
       );
     });
 

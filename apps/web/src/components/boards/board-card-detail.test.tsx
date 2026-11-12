@@ -296,6 +296,23 @@ describe('BoardCardDetail', () => {
     fakes.removeBoardItemAction.mockResolvedValue({ ok: true });
   });
 
+  it('keeps past board and object dates neutral for completed tasks', () => {
+    const item = boardItem({
+      id: 'item-1',
+      entityId: 'object-1',
+      canonicalName: 'Finished task',
+      dueAt: new Date('2000-01-01'),
+    });
+    item.object.type = 'task';
+    item.object.status = 'done';
+    item.object.dueAt = new Date('2000-01-01');
+    const html = renderToStaticMarkup(
+      <BoardCardDetail boardId="board-1" view="list" item={item} history={[]} lanes={lanes} />,
+    );
+    expect(html).toContain('2000');
+    expect(html).not.toContain('Overdue');
+  });
+
   it('surfaces a remove-from-board action without implying object deletion', () => {
     const item = boardItem({
       id: 'item-1',

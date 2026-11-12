@@ -4,6 +4,7 @@ import { afterEach, describe, it } from 'bun:test';
 // Test environment: happy-dom
 
 const virtualizerOptions = vi.hoisted(() => ({
+  window: null as null | [number, number],
   current: null as null | { getScrollElement: () => HTMLElement | null; scrollMargin: number },
 }));
 
@@ -26,7 +27,7 @@ await vi.mock(
             start: index * 40 + scrollMargin,
             size: 40,
             end: (index + 1) * 40,
-          })),
+          })).slice(...(virtualizerOptions.window ?? [0, count])),
         measureElement: vi.fn(),
       };
     },
@@ -41,6 +42,7 @@ const { VirtualList } = await import('./virtual-list.js');
 describe('VirtualList', () => {
   afterEach(() => {
     cleanup();
+    virtualizerOptions.window = null;
     vi.restoreAllMocks();
   });
 
@@ -107,21 +109,40 @@ describe('VirtualList', () => {
     );
     expect(virtualizerOptions.current?.getScrollElement()).toBe(root);
     expect(virtualizerOptions.current?.scrollMargin).toBe(280);
-    expect(container.querySelector<HTMLElement>('[data-index="0"]')?.style.transform).toBe(
-      'translateY(0px)',
-    );
+    expect(
+      container.querySelector<HTMLElement>('[data-index="0"]')?.parentElement?.style.paddingTop,
+    ).toBe('0px');
     listTop = 240;
     act(() => {
       resize?.([], {} as ResizeObserver);
     });
     expect(virtualizerOptions.current?.scrollMargin).toBe(340);
-    expect(container.querySelector<HTMLElement>('[data-index="1"]')?.style.transform).toBe(
-      'translateY(40px)',
-    );
+    expect(
+      container.querySelector<HTMLElement>('[data-index="1"]')?.parentElement?.style.paddingTop,
+    ).toBe('0px');
     unmount();
     expect(disconnect).toHaveBeenCalled();
     root.remove();
     vi.unstubAllGlobals();
+  });
+
+  it('reserves space outside the rendered window without fixing row heights', () => {
+    virtualizerOptions.window = [2, 5];
+    const { container } = render(
+      <VirtualList
+        items={Array.from({ length: 10 }, (_, index) => String(index))}
+        getItemKey={(item) => item}
+        estimateSize={40}
+        renderItem={(item) => <p>{item}</p>}
+      />,
+    );
+    const row = container.querySelector<HTMLElement>('[data-index="2"]');
+    expect(row?.parentElement?.style.paddingTop).toBe('80px');
+    expect(row?.parentElement?.style.paddingBottom).toBe('200px');
+    expect(row?.style.height).toBe('');
+    expect(row?.className).not.toContain('absolute');
+    expect(container.querySelector('[data-index="1"]')).toBeNull();
+    expect(container.querySelector('[data-index="5"]')).toBeNull();
   });
 
   it('waits for an explicit nested scrollport instead of binding to a fallback', () => {

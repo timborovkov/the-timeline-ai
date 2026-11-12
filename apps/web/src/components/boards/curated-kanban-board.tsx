@@ -500,7 +500,7 @@ function KanbanCardMetadata({
         density="compact"
       >
         <EditableMetadata.Value>
-          <DueDateDisplay value={item.dueAt} variant="compact" />
+          <DueDateDisplay workStatus={item.object.status} value={item.dueAt} variant="compact" />
         </EditableMetadata.Value>
         <EditableMetadata.Editor>
           <MetadataDateEditor
