@@ -21,7 +21,7 @@ import {
 import { cn } from '@/lib/utils';
 
 const CONTROL =
-  'h-9 rounded-sm border border-border bg-surface-2 px-2.5 text-sm text-fg tabular-nums outline-none focus-visible:ring-2 focus-visible:ring-ring';
+  'h-9 rounded-sm border border-border bg-surface-2 px-2.5 text-base sm:text-sm text-fg tabular-nums outline-none focus-visible:ring-2 focus-visible:ring-ring';
 const SLIDER =
   'block h-6 w-full cursor-pointer appearance-none bg-transparent outline-none focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-slider-runnable-track]:h-0.5 [&::-webkit-slider-runnable-track]:rounded-full [&::-webkit-slider-runnable-track]:bg-border-strong [&::-webkit-slider-thumb]:-mt-1.5 [&::-webkit-slider-thumb]:size-3.5 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-signal [&::-moz-range-track]:h-0.5 [&::-moz-range-track]:rounded-full [&::-moz-range-track]:bg-border-strong [&::-moz-range-thumb]:size-3.5 [&::-moz-range-thumb]:appearance-none [&::-moz-range-thumb]:border-0 [&::-moz-range-thumb]:bg-signal';
 
@@ -131,7 +131,7 @@ function PlanResults({
                 </span>
                 <span className="text-xs leading-4 text-fg-muted">/month, excl. VAT</span>
                 {estimate.cheapest === id && (
-                  <span className="mt-2 block text-xs font-medium leading-4 text-signal">
+                  <span className="mt-2 block text-xs font-medium leading-4 text-fg">
                     Lowest estimated cost
                   </span>
                 )}

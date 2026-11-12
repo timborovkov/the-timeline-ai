@@ -6,7 +6,7 @@ import { PublicShell } from '@/components/public-shell';
 import { resetPublicSessionCache, setPublicSessionCache } from '@/lib/public-session';
 // Test environment: happy-dom
 
-const { cleanup, render, screen } = await import('@testing-library/react');
+const { cleanup, fireEvent, render, screen } = await import('@testing-library/react');
 
 afterEach(() => {
   cleanup();
@@ -141,5 +141,54 @@ describe('PublicShell', () => {
     expect(html).toContain('data-public-header="true"');
     expect(html).toContain('aria-label="The Timeline source code on GitHub"');
     expect(html.match(/aria-label="Toggle theme"/g)).toHaveLength(2);
+  });
+});
+
+describe('public dropdown keyboard dismissal', () => {
+  it('returns desktop focus to the dropdown summary', () => {
+    const { container } = render(
+      <PublicShell>
+        <main id="main">Content</main>
+      </PublicShell>,
+    );
+    const summary = Array.from(container.querySelectorAll('summary')).find(
+      (node) => node.textContent === 'Integrations',
+    );
+    const details = summary?.closest('details');
+    if (!details) throw new Error('Missing desktop dropdown');
+    details.open = true;
+    const link = details.querySelector('a');
+    if (!link) throw new Error('Missing dropdown link');
+    link.focus();
+    fireEvent.keyDown(link, { key: 'Escape' });
+    expect(details.open).toBe(false);
+    expect(document.activeElement).toBe(summary);
+  });
+
+  it('dismisses a nested dropdown before closing the mobile menu', () => {
+    const { container } = render(
+      <PublicShell>
+        <main id="main">Content</main>
+      </PublicShell>,
+    );
+    const menu = container
+      .querySelector('nav[aria-label="Public navigation menu"]')
+      ?.closest('details');
+    const nested = menu?.querySelector('details');
+    if (!menu || !nested) throw new Error('Missing mobile menu');
+    menu.open = true;
+    nested.open = true;
+    const link = nested.querySelector('a');
+    if (!link) throw new Error('Missing nested link');
+    link.focus();
+    fireEvent.keyDown(link, { key: 'Escape' });
+    expect(nested.open).toBe(false);
+    expect(menu.open).toBe(true);
+    expect(document.activeElement).toBe(nested.querySelector('summary'));
+    const focused = document.activeElement;
+    if (!focused) throw new Error('Missing focus');
+    fireEvent.keyDown(focused, { key: 'Escape' });
+    expect(menu.open).toBe(false);
+    expect(document.activeElement).toBe(menu.querySelector('summary'));
   });
 });

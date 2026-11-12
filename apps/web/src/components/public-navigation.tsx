@@ -170,14 +170,17 @@ function NavDropdown({
     };
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key !== 'Escape' || !node.open) return;
+      event.preventDefault();
+      event.stopPropagation();
       node.open = false;
+      node.querySelector('summary')?.focus();
     };
 
     document.addEventListener('pointerdown', closeIfOutside);
-    document.addEventListener('keydown', closeOnEscape);
+    node.addEventListener('keydown', closeOnEscape);
     return () => {
       document.removeEventListener('pointerdown', closeIfOutside);
-      document.removeEventListener('keydown', closeOnEscape);
+      node.removeEventListener('keydown', closeOnEscape);
     };
   }, []);
 

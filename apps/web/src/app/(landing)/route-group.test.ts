@@ -44,7 +44,7 @@ describe('landing route group', () => {
       expect(styles).not.toContain(entrance);
     }
     expect(motion).not.toContain('revealObserver');
-    expect(styles).toContain('animation: evidencePath');
+    expect(styles).not.toContain('animation: evidencePath');
     expect(motion).toContain('pauseAnimations()');
   });
 
@@ -84,7 +84,7 @@ describe('landing route group', () => {
     expect(styles).toMatch(/\.slackMeta span\s*\{[^}]*font-size:\s*var\(--home-meta-size\);/s);
     expect(styles).toMatch(/\.mcpCalls code\s*\{[^}]*font-size:\s*var\(--home-meta-size\);/s);
     expect(styles).not.toContain('translateX(0.35rem)');
-    expect(styles).toContain('animation: evidencePath 4.8s linear infinite both');
+    expect(styles).not.toContain('animation: evidencePath 4.8s linear infinite both');
     expect(styles).toContain('.observatory');
     expect(styles).not.toContain('--diagram-size');
     expect(styles).toContain('animation: flowPacketAcross 8s linear infinite');
@@ -113,7 +113,7 @@ describe('landing route group', () => {
     expect(styles).toMatch(
       /@media \(max-width: 44rem\)[\s\S]*\.orbitSourceTime\s*\{\s*display:\s*none;/u,
     );
-    expect(styles).toContain('stroke-dashoffset');
+    expect(styles).not.toContain('stroke-dashoffset');
     expect(styles).not.toContain(':not(.visible)');
     expect(styles).not.toContain('.motionReady [data-home-diagram] {');
     expect(styles).not.toContain('[data-home-reveal]');

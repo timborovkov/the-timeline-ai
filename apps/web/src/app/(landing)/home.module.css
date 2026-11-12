@@ -10,7 +10,6 @@
   --home-signal: oklch(0.5 0.19 130);
   --home-signal-soft: oklch(0.5 0.19 130 / 0.12);
   --home-meta-size: 0.75rem;
-  --home-progress: 0;
   min-width: 0;
   overflow: clip;
   background: var(--home-ink);
@@ -110,7 +109,7 @@
   width: 100%;
   height: 100%;
   background: var(--home-signal);
-  transform: scaleX(var(--home-progress));
+  transform: scaleX(0);
   transform-origin: left;
 }
 
@@ -2194,6 +2193,7 @@
 
 .ctaSignIn a {
   color: var(--home-paper);
+  text-decoration: underline;
   text-underline-offset: 0.25rem;
 }
 
@@ -2426,41 +2426,10 @@
     transition: transform 220ms cubic-bezier(0.22, 1, 0.36, 1);
   }
 
-  .primaryCta:hover {
-    transform: translateY(-2px);
-  }
-
-  .motionReady .observatory.visible .evidencePaths path {
-    animation: evidencePath 4.8s linear infinite both;
-  }
-
-  .motionReady .observatory.visible .evidencePaths path:nth-child(2) {
-    animation-delay: -0.8s;
-  }
-
-  .motionReady .observatory.visible .evidencePaths path:nth-child(3) {
-    animation-delay: -1.6s;
-  }
-
-  .motionReady .observatory.visible .evidencePaths path:nth-child(4) {
-    animation-delay: -2.4s;
-  }
-
-  .motionReady .observatory.visible .evidencePaths path:nth-child(5) {
-    animation-delay: -3.2s;
-  }
-
-  .motionReady .observatory.visible .evidencePaths path:nth-child(6) {
-    animation-delay: -4s;
-  }
-
-  .motionReady .observatory.visible .outcomePath {
-    animation: outcomePath 3.2s 1.1s ease-in-out infinite both;
-  }
-
-  .motionReady .observatory.visible .memoryCore::after,
-  .motionReady .observatory.visible .orbitInner {
-    animation: evidencePulse 3.6s 1.1s ease-in-out infinite;
+  @media (hover: hover) and (pointer: fine) {
+    .primaryCta:hover {
+      transform: translateY(-2px);
+    }
   }
 
   .motionReady .timelineStage[data-home-entered] .timelineList::after {
@@ -2631,51 +2600,6 @@
   70%,
   100% {
     transform: scaleX(1);
-  }
-}
-
-@keyframes evidencePath {
-  0% {
-    opacity: 0.34;
-    stroke-dashoffset: 0;
-  }
-
-  50% {
-    opacity: 0.72;
-  }
-
-  100% {
-    opacity: 0.34;
-    stroke-dashoffset: -38;
-  }
-}
-
-@keyframes outcomePath {
-  0% {
-    opacity: 0.28;
-    stroke-dashoffset: 0;
-  }
-
-  50% {
-    opacity: 0.72;
-  }
-
-  100% {
-    opacity: 0.28;
-    stroke-dashoffset: -20;
-  }
-}
-
-@keyframes evidencePulse {
-  0%,
-  100% {
-    opacity: 0.55;
-    transform: scale(1);
-  }
-
-  50% {
-    opacity: 0.26;
-    transform: scale(1.045);
   }
 }
 
@@ -3310,4 +3234,14 @@
     grid-column: 2;
     margin-top: 0;
   }
+}
+
+.ingestPackets,
+.outcomePacket {
+  visibility: hidden;
+}
+
+.motionReady .observatory.visible .ingestPackets,
+.motionReady .observatory.visible .outcomePacket {
+  visibility: visible;
 }
