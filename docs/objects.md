@@ -163,7 +163,8 @@ the originating member. Source visibility is checked again by the approval engin
 No-action outcomes also appear in reconciliation diagnostics.
 
 Accepting a proposal rechecks current criteria, object facts, membership and type
-restrictions. Newer manual membership decisions take precedence. A removal for a
+restrictions within the same transaction as the membership mutation. Source-backed
+items retain explicit evidence dependencies and lock available sources during acceptance. Newer manual membership decisions take precedence. A removal for a
 previous membership cannot remove a later re-added membership. Evaluated fact/policy
 fingerprints suppress repeated decisions, including declined proposals. Relevant
 fact or criteria changes allow reevaluation. Disabling suggestions invalidates pending
@@ -175,6 +176,9 @@ objects are queued in batches of 50, with continuation shown to the user. This a
 provides an explicit recheck of previously evaluated objects. Matching proposals are
 reviewed through the board-filtered Approvals page; there is no second approval store.
 Saving criteria alone does not scan historical objects.
+
+Discovery selects at most one due request per workspace before applying its global
+batch limit, so a bulk scan cannot occupy every discovery slot.
 
 Operational bounds: at most five boards per request pass, one pass per team per 30
 seconds, 30-second model timeout, 1,000 output tokens and a 48,000-character facts

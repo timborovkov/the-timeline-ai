@@ -2458,4 +2458,58 @@ describe('automatic board membership', () => {
     expect(required(await scope.boards.getBoard(board.id)).items).toHaveLength(0);
     expect(await scope.suggestions.listPendingSuggestions()).toHaveLength(1);
   });
+  for (const unavailable of ['restricted', 'inactive'] as const) {
+    it(`hides and rejects qualification whose source becomes ${unavailable}`, async () => {
+      const { scope, board } = await setup();
+      const { boardQualificationRequests } = await import('@timeline/db');
+      const [request] = await db.select().from(boardQualificationRequests);
+      const sourceId = required(required(request).sourceEventId);
+      await process(scope);
+      const [bundle] = await scope.suggestions.listPendingSuggestions();
+      const itemId = required(required(bundle).items[0]).id;
+      await db
+        .update(rawEvents)
+        .set(
+          unavailable === 'restricted'
+            ? {
+                visibility: 'specific_users',
+                visibilityUserIds: [USER_MEMBER],
+                visibilityOwnerUserId: null,
+              }
+            : { sourceMetadata: { deleted: true } },
+        )
+        .where(eq(rawEvents.id, sourceId));
+      expect(await scope.suggestions.listPendingSuggestions()).toHaveLength(0);
+      expect(await scope.suggestions.acceptSuggestionItemWithOutcome(itemId)).toBe('superseded');
+      expect(required(await scope.boards.getBoard(board.id)).items).toHaveLength(0);
+    });
+  }
+  for (const change of ['policy', 'facts'] as const) {
+    it(`revalidates ${change} inside acceptance for source-free scans`, async () => {
+      const { scope, board, object } = await setup();
+      const { boardQualificationRequests } = await import('@timeline/db');
+      await db.delete(boardQualificationRequests);
+      await scope.boardQualification.scan(board.id);
+      await process(scope);
+      const [bundle] = await scope.suggestions.listPendingSuggestions();
+      const accepting = withTeam(db, TEAM_A, USER_OWNER, {
+        beforeSuggestionApply: async () => {
+          if (change === 'policy')
+            await scope.boards.updateBoardSettings({ id: board.id, qualificationEnabled: false });
+          else
+            await scope.objects.updateObject(
+              object.id,
+              { status: 'declined' },
+              { kind: 'user', userId: USER_OWNER },
+            );
+        },
+      });
+      expect(
+        await accepting.suggestions.acceptSuggestionItemWithOutcome(
+          required(required(bundle).items[0]).id,
+        ),
+      ).toBe('superseded');
+      expect(required(await scope.boards.getBoard(board.id)).items).toHaveLength(0);
+    });
+  }
 });

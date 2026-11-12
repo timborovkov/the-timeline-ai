@@ -17,6 +17,8 @@ import { and, asc, desc, eq, gt, isNull, or, lte, inArray } from 'drizzle-orm';
 import { z } from 'zod';
 
 import { runWithBillingContext } from '#src/billing/context.js';
+import { assertBoardObjectType } from '#src/boards/qualification-policy.js';
+import { requestBoardQualification } from '#src/boards/qualification-request.js';
 import { chatStructured } from '#src/llm/chat.js';
 import { TIMELINE_MODELS } from '#src/llm/models.js';
 import { stableSha256Digest } from '#src/reconciliation/stable-digest.js';
@@ -24,9 +26,6 @@ import { rawEventIsActive, rawEventVisibleToUser } from '#src/visibility.js';
 
 import type { CreateSuggestionInput } from '#src/suggestions/index.js';
 import type { TeamScopeCore } from '#src/team-scope.js';
-
-import { assertBoardObjectType } from '#src/boards/qualification-policy.js';
-import { requestBoardQualification } from '#src/boards/qualification-request.js';
 
 export const qualificationResultSchema = z.object({
   decision: z.enum(['add', 'remove', 'no_change', 'insufficient_evidence']),
@@ -472,6 +471,7 @@ export function createBoardQualificationScope(
             items: [
               {
                 targetKind: 'board_membership',
+                evidenceRawEventIds: request.sourceEventId ? [request.sourceEventId] : [],
                 operation: result.decision === 'add' ? 'create' : 'archive_or_cancel',
                 targetId: input.member?.id ?? null,
                 title,

@@ -48,6 +48,8 @@ import {
   type EvidenceStrength,
 } from '#src/artifacts/index.js';
 import { isBillingAdmissionError } from '#src/billing/errors.js';
+import { assertBoardObjectType } from '#src/boards/qualification-policy.js';
+import { boardQualificationFacts } from '#src/boards/qualification.js';
 import {
   calendarEventMutationLockKey,
   calendarEventMutationTargetId,
@@ -58,6 +60,12 @@ import { childLogger } from '#src/logger.js';
 import { suggestedProjectIsUnusedCondition } from '#src/objects/suggested-projects.js';
 import { OBJECT_TYPES } from '#src/objects/types.js';
 import { decodeCursor } from '#src/pagination.js';
+import {
+  buildOutputDedupeKey,
+  reconciliationDedupeKey,
+  validateSourceRefs,
+  type SourceRef,
+} from '#src/reconciliation/core.js';
 import { sourcePayloadRefFromMetadata } from '#src/reconciliation/source-snapshot.js';
 import { likePattern } from '#src/sql-like.js';
 import { stableStringify, suggestionDedupeKey } from '#src/suggestions/dedupe-key.js';
@@ -95,15 +103,6 @@ import type {
 } from '#src/objects/index.js';
 import type { SuggestionAcceptanceUnitOfWork } from '#src/suggestions/acceptance-transaction.js';
 import type { TeamRole } from '#src/team-scope.js';
-
-import { assertBoardObjectType } from '#src/boards/qualification-policy.js';
-import { boardQualificationFacts } from '#src/boards/qualification.js';
-import {
-  buildOutputDedupeKey,
-  reconciliationDedupeKey,
-  validateSourceRefs,
-  type SourceRef,
-} from '#src/reconciliation/core.js';
 
 export { suggestionDedupeKey } from '#src/suggestions/dedupe-key.js';
 export {
@@ -4108,7 +4107,8 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     const requiredEvidenceIds = itemEvidenceRawEventIds(item.metadata);
     if (requiredEvidenceIds.length > 0) {
       const expectedFingerprints = evidenceContentFingerprints(item.metadata);
-      const visibleEvidence = await db
+      await lockAcceptanceMutationTarget(item);
+      const evidenceQuery = db
         .select({
           id: rawEvents.id,
           contentText: rawEvents.contentText,
@@ -4122,6 +4122,10 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
             rawEventIsActive(),
           ),
         );
+      const visibleEvidence =
+        deps.acceptance.kind === 'transaction'
+          ? await evidenceQuery.for('update')
+          : await evidenceQuery;
       if (visibleEvidence.length !== requiredEvidenceIds.length) {
         return 'Required source evidence is no longer available to approve.';
       }
@@ -5838,7 +5842,9 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     if (!row) return null;
     const isPackBacked =
       typeof recordFromUnknown(row.suggestion.metadata).evidence_pack_fingerprint === 'string';
-    if (isPackBacked && deps.acceptance.kind === 'root') {
+    const requiresTransactionalAcceptance =
+      isPackBacked || row.item.targetKind === 'board_membership';
+    if (requiresTransactionalAcceptance && deps.acceptance.kind === 'root') {
       await deps.beforeApplyItem?.(itemId);
       try {
         return await deps.acceptance.run(itemId);

@@ -1,11 +1,11 @@
-import { boardQualificationRequests, teamMembers, type Db } from '@timeline/db';
+import type { Db } from '@timeline/db';
 import { queue } from '@timeline/shared';
 import { runGuardedJob } from '@timeline/shared/platform-admin/runtime';
 import { withTeam } from '@timeline/shared/team-scope';
 import { Queue, Worker } from 'bullmq';
-import { and, asc, eq, isNull, lte } from 'drizzle-orm';
 
 import { withWorkerAiBilling } from '#src/billing-context.js';
+import { discoverBoardQualificationRequests } from '#src/workers/boardQualification-discovery.js';
 
 export const BOARD_QUALIFICATION_QUEUE = 'board-qualification';
 let scheduler: Queue | undefined;
@@ -16,25 +16,7 @@ export function startBoardQualificationWorker({ db }: { db: Db }) {
     BOARD_QUALIFICATION_QUEUE,
     async () => {
       // Global discovery reads routing metadata only; all tenant work uses the real member scope.
-      const requests = await db
-        .select({
-          id: boardQualificationRequests.id,
-          teamId: boardQualificationRequests.teamId,
-          userId: boardQualificationRequests.userId,
-          version: boardQualificationRequests.version,
-        })
-        .from(boardQualificationRequests)
-        .innerJoin(
-          teamMembers,
-          and(
-            eq(teamMembers.teamId, boardQualificationRequests.teamId),
-            eq(teamMembers.userId, boardQualificationRequests.userId),
-            isNull(teamMembers.removedAt),
-          ),
-        )
-        .where(lte(boardQualificationRequests.availableAt, new Date()))
-        .orderBy(asc(boardQualificationRequests.availableAt))
-        .limit(10);
+      const requests = await discoverBoardQualificationRequests(db);
       for (const request of requests) {
         const redis = queue.getRedisConnection();
         const permit = await redis.set(
