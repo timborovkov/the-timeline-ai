@@ -89,6 +89,12 @@ export default async function BoardDetailPage({
         boardId={board.id}
         boardName={board.name}
         purpose={board.purpose}
+        qualification={{
+          qualificationEnabled: board.qualificationEnabled ?? false,
+          qualificationInstructions: board.qualificationInstructions ?? '',
+          strictObjectTypes: board.strictObjectTypes,
+          recommendedObjectTypes: board.recommendedObjectTypes,
+        }}
         pinned={board.pinned}
         itemCount={board.itemCount}
         view={view}

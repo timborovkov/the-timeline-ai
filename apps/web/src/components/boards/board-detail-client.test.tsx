@@ -18,6 +18,8 @@ await vi.mock(
 await vi.mock(
   import.meta.resolve('@/app/actions/boards'),
   () => ({
+    previewBoardMatchesAction: vi.fn(() => Promise.resolve({ matches: [] })),
+    scanBoardMatchesAction: vi.fn(() => Promise.resolve({ count: 0, nextCursor: null })),
     updateBoardItemAction: vi.fn(() => Promise.resolve({ ok: true })),
   }),
   () => import('@/app/actions/boards'),

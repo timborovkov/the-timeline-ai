@@ -126,3 +126,97 @@ Persistence failures are warn-logged, not surfaced to the user — the assistant
 
 
 Current access and mutation boundaries are owned by `scope.objects`, `scope.boards` and the approval services. Use [domain ownership](architecture/ownership.md); do not infer current tools/routes from old migration inventories.
+
+
+## Automatic membership suggestions
+
+Boards remain curated work surfaces. **Suggest board changes** is opt-in in board
+creation and settings; existing boards default to off. Board purpose explains why
+the board exists, membership criteria explain what belongs and when it should
+leave, and stages describe progress after joining. Guided examples help users write
+inclusion and exclusion criteria. Every suggested addition or removal requires its
+own approval, separate from the object change that triggered evaluation. Direct
+manual membership edits are themselves the human decision.
+
+**Restrict allowed object types** is independent of qualification. When enabled it
+requires at least one type and applies to manual add, quick create, agent proposals
+and approval acceptance. Recommended types without strict mode only rank discovery.
+Changing restrictions does not evict existing items; an existing member that fails
+the restriction can receive a removal proposal. Removal archives the specific board
+membership, preserving the object and board history. Removal proposal identities
+include the membership version and source dependency, so an explicit source-free
+rescan can replace a proposal whose source became unavailable or one made
+stale by a board-item edit. Approval locks the membership before its entity and board,
+matching manual item edits. Membership approval target locks fail fast when busy,
+so board-first lane removal and item-first manual edits cannot form a blocking
+cycle with approval; the user can retry once the other edit completes. Transactional qualification checks also hold shared
+locks on supplied note/identity/relationship rows and all referenced objects through
+application, including currently inactive neighbors. Busy dependencies fail fast
+for retry rather than introducing a reversed lock-order wait. Addition identities also include the latest manual
+membership decision, allowing a later explicit scan to replace a superseded
+proposal after a manual add/remove cycle.
+
+Committed object creates/updates, notes, identity facets and relationship changes
+persist qualification requests in the canonical write transaction. Relationship
+changes request both endpoints. Company/project replacement stores old and new
+endpoint IDs on the already-locked child request; workers enqueue those endpoints
+after commit, without making the edit acquire old-parent locks. Object updates persist a neighbor-expansion flag in the same transaction. The
+worker expands relationships in durable batches of 50, acquiring entity key locks
+before inbox locks. Busy entity keys abort the expansion for durable retry instead
+of waiting against canonical relationship lock order, so related names/statuses are reevaluated without locking
+neighboring entities during the originating object edit. Pending or rejected object proposals do not trigger
+qualification. The durable inbox coalesces per member/object, uses leases and
+version-checked completion, and retries failures with bounded backoff. Queue outages
+cannot lose committed requests. Derived endpoint work retains the originating request
+time; coalescing preserves newer requests and their source/operator attribution, so
+a delayed expansion cannot override a newer manual membership decision. An explicit
+scan replaces an older pending source dependency and uses the scanning actor's
+operator attribution, so unavailable sources or expired earlier sessions cannot
+swallow the requested recheck. Scan enqueueing and cache invalidation share one
+transaction. Proposal publication, semantic supersession, no-action records and
+evaluation cache writes share a transaction that locks parent entity/board keys
+before rechecking the inbox version. An older worker cannot supersede a newer
+scan's proposal or repopulate its cleared cache. Busy parent keys fail fast to
+avoid blocking canonical writes in reverse lock order. Generic
+relationship endpoints enqueue in entity-ID order, matching worker inbox locks. The worker excludes suspended users before selecting each workspace's next request. It discovers routing metadata globally and
+uses the originating member's `withTeam` scope for workspace reads and proposals;
+service-principal writes do not borrow a member's authority. Impersonated requests
+retain their operator session through coalescing and discovery; the worker restores
+real-actor attribution and rejects expired or revoked sessions before qualification.
+
+Qualification applies deterministic type eligibility before shared-model inference.
+It reads bounded committed object facts, notes, identities and relationships. Explicit
+exclusion can support removal; missing information cannot. Model evidence keys must
+refer to supplied facts. Proposals retain the criteria revision and fact snapshot,
+use the existing reconciliation-backed suggestion lifecycle, and remain private to
+the originating member. Source visibility is checked again by the approval engine.
+No-action outcomes also appear in reconciliation diagnostics.
+
+Accepting a proposal rechecks current criteria, object facts, membership and type
+restrictions within the same transaction as the membership mutation. Source-backed
+items retain explicit evidence dependencies and lock available sources during acceptance.
+Revising proposal wording preserves the original qualification and membership-version guards. Newer manual membership decisions take precedence. A removal for a
+previous membership cannot remove a later re-added membership. Evaluated fact/policy
+fingerprints suppress repeated decisions, including declined proposals. Evaluation
+caches and private proposal identities include the originating member, preserving
+private edits and review history when another member scans the same board. Relevant
+fact or criteria changes allow reevaluation. Disabling suggestions invalidates pending
+automatic proposals during review, stops new qualification and retains current members.
+
+The board's **Membership suggestions** disclosure offers a read-only preview of up
+to three recent objects and an explicit **Check existing objects** action. Existing
+objects are queued in batches of 50, with continuation shown to the user. This also
+provides an explicit recheck of previously evaluated objects. Matching proposals are
+reviewed through the board-filtered Approvals page; there is no second approval store.
+Saving criteria alone does not scan historical objects.
+
+Discovery excludes inactive workspaces and selects at most one due request per workspace before applying its global
+batch limit, so a bulk scan cannot occupy every discovery slot.
+
+Operational bounds: at most five boards per request pass, one pass per team per 30
+seconds, 30-second model timeout, 1,000 output tokens and a 48,000-character facts
+budget. Oversized or incomplete facts require manual review. Failed requests retain
+a safe failure code and retry time in `board_qualification_requests`; no model or
+customer content is logged. New object writes reset failed work for their current
+version. Apply the board qualification migration before running the updated app or
+worker. Deployment is a separate operation.

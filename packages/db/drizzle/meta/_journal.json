@@ -778,6 +778,13 @@
       "when": 1795656940000,
       "tag": "0104_team_lifecycle",
       "breakpoints": true
+    },
+    {
+      "idx": 111,
+      "version": "7",
+      "when": 1795657000000,
+      "tag": "0105_board_qualification",
+      "breakpoints": true
     }
   ]
 }

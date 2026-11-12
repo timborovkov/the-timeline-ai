@@ -218,6 +218,7 @@ const INITIAL_APPROVALS_QUEUE: ApprovalsQueueState = {
 };
 
 interface Props {
+  boardId?: string;
   guided?: boolean;
   suggestions: SuggestionBundle[];
   nextCursor?: string | null;
@@ -666,6 +667,7 @@ function foldedSummaryText(
 }
 
 export function ApprovalsClient({
+  boardId,
   guided = false,
   suggestions,
   nextCursor = null,
@@ -796,7 +798,7 @@ export function ApprovalsClient({
   function loadMore(): void {
     if (!pageCursor || loadingMore) return;
     startLoadingMore(async () => {
-      const page = await loadSuggestionsPageAction({ cursor: pageCursor, status, guided });
+      const page = await loadSuggestionsPageAction({ cursor: pageCursor, status, guided, boardId });
       if (page.error) {
         setPageState((current) => ({
           ...current,

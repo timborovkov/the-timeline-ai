@@ -39,6 +39,7 @@ import { createBillingOperatorScope } from '#src/billing/operator-store.js';
 import { createPolarBillingProvider } from '#src/billing/polar.js';
 import { createBillingScope } from '#src/billing/scope.js';
 import { createBoardScope } from '#src/boards/index.js';
+import { createBoardQualificationScope } from '#src/boards/qualification.js';
 import { createCalendarScope } from '#src/calendar/scope.js';
 import { createConversationSurfaceScope } from '#src/conversation-surfaces/scope.js';
 import { sourceMetadataWithConversationArtifacts } from '#src/conversational/contact-artifacts.js';
@@ -3571,6 +3572,12 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
     objects: objectScope,
     conversations: conversationSurfaceScope,
     boards: boardScope,
+    boardQualification: createBoardQualificationScope(
+      db,
+      core,
+      (transactionDb): ReturnType<typeof createSuggestionScope> =>
+        withTeam(transactionDb, teamId, userId, deps).suggestions,
+    ),
     pins: pinScope,
     suggestions: suggestionScope,
     reconciliation: createReconciliationScope({ db, scope: core }),
