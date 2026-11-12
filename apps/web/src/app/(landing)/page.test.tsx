@@ -37,7 +37,8 @@ describe('LandingPage', () => {
     expect(html).toContain('aria-label="The Timeline home"');
     expect(html).toContain('https://github.com/timborovkov/the-timeline-ai');
     expect(html).toContain('aria-label="The Timeline source code on GitHub"');
-    expect(html.match(/>Source on GitHub</g)).toHaveLength(1);
+    // The complete metadata row reserves both session variants; only one is visible.
+    expect(html.match(/>Source on GitHub</g)).toHaveLength(2);
     expect(html).toContain('href="/cookies"');
     expect(html.match(/<h1\b/g)).toHaveLength(1);
     expect(html).toContain('Your team&#x27;s work, <em>written down for you</em>');
@@ -63,7 +64,7 @@ describe('LandingPage', () => {
 
     expect(html).toContain('Acme rollout / Last 7 days');
     expect(html).toContain(
-      'aria-label="A person and an agent write into the work record and read context back. Six sources stream in. The record becomes a daily update and linked answers."',
+      'aria-label="Work events stream from six sources into The Timeline, where the work record becomes a daily update and linked answers."',
     );
     expect(html).toContain('one timeline');
     expect(html).toContain('Fictional Acme example, not customer data.');
@@ -86,13 +87,11 @@ describe('LandingPage', () => {
     expect(html.match(/data-hero-flow-path="outcome"/g)).toHaveLength(1);
     expect(html.match(/data-hero-flow-packet="ingest"/g)).toHaveLength(6);
     expect(html.match(/data-hero-flow-packet="outcome"/g)).toHaveLength(1);
-    expect(html.match(/data-hero-flow-path="write"/g)).toHaveLength(2);
-    expect(html.match(/data-hero-flow-path="read"/g)).toHaveLength(2);
-    expect(html).toContain('>Person<');
-    expect(html).toContain('Claude / Codex');
-    expect(html).toContain('via MCP');
+    expect(html).not.toContain('data-hero-flow-path="write"');
+    expect(html).not.toContain('data-hero-flow-path="read"');
+    expect(html).not.toContain('>Person<');
     expect(html).toContain('data-flow-motion');
-    expect(html.match(/<animateMotion/g)).toHaveLength(11);
+    expect(html.match(/<animateMotion/g)).toHaveLength(7);
     expect(html).toContain('aria-label="Public navigation"');
     expect(html).toContain('href="/integrations"');
     expect(html).toContain('href="/how-it-works"');
@@ -195,8 +194,8 @@ describe('LandingPage', () => {
     }
 
     expect(html).toContain('Status should not require an <em>investigation.</em>');
-    expect(html).toContain('CC or BCC the team address');
-    expect(html).toContain('Telegram voice notes arrive transcribed');
+    expect(html).toContain('forward email to the team address');
+    expect(html).toContain('The transcript appears beside the original audio.');
     expect(html).toContain('Telegram');
     expect(html).toContain('Email forwarding');
     expect(html).not.toContain('Connected tools');
@@ -232,16 +231,19 @@ describe('LandingPage', () => {
     expect(html).toContain('Link one channel. <em>Watch the record fill in.</em>');
     expect(html).toContain('approve the suggested updates');
     expect(html).toContain(
-      'Even well-kept tools like Jira or Pipedrive miss what was said in conversation, so status, promises and decisions get rebuilt by hand, and often wrong.',
+      'Jira and Pipedrive can miss what was said in conversation. Bring those decisions and promises into the same chronology.',
     );
     expect(html).toContain('Everything lands on <em>one timeline.</em>');
     expect(html).toContain('Search it by person, client or source.');
-    expect(html).toContain('Ask the question you normally answer by searching four tools');
+    expect(html).toContain('Get a status or handoff brief without retracing every conversation.');
     expect(html).toContain(
       'Give me the current status, handoff, blockers, and customer commitments.',
     );
-    expect(html).toContain('It replaces the CRM and task board you never have to update.');
-    expect(html).toContain('proposes it for human review');
+    expect(html).toContain(
+      'Replace manual CRM and task-board entry with suggested updates from your conversations.',
+    );
+    expect(html).toContain('ready for your review.');
+    expect(html).not.toContain('update themselves');
     expect(html).not.toContain('Ingest webhooks');
     expect(html).not.toContain('A direct chat asks the agent');
     expect(html).not.toContain('Connected, not used in this answer');

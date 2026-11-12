@@ -214,6 +214,14 @@ describe('HomeMotion cleanup', () => {
     const firstObservers = [...FakeIntersectionObserver.instances];
     expect(firstObservers).toHaveLength(2);
     expect(fixture.root.classList.contains(MOTION_READY_CLASS)).toBe(true);
+    const activeObserver = firstObservers[1];
+    activeObserver?.trigger(fixture.steps[0], true);
+    expect(fixture.steps[0].hasAttribute('data-home-entered')).toBe(true);
+    activeObserver?.trigger(fixture.steps[0], false);
+    expect(fixture.steps[0].classList.contains(VISIBLE_CLASS)).toBe(false);
+    expect(fixture.steps[0].hasAttribute('data-home-entered')).toBe(true);
+    activeObserver?.trigger(fixture.steps[0], true);
+    expect(fixture.steps[0].hasAttribute('data-home-entered')).toBe(true);
     act(() => {
       preference.setMatches(true);
     });

@@ -30,6 +30,7 @@ export function MarketingProductScreenshot({
   frame = 'landscape',
   callouts,
   chrome = 'full',
+  expandable = false,
 }: {
   file: string;
   alt: string;
@@ -39,6 +40,7 @@ export function MarketingProductScreenshot({
   frame?: MarketingScreenshotFrame;
   callouts?: readonly MarketingScreenshotCallout[];
   chrome?: 'full' | 'media';
+  expandable?: boolean;
 }) {
   const present = Object.values(marketingScreenshotVariants(file)).every(
     marketingScreenshotFileExists,
@@ -69,7 +71,13 @@ export function MarketingProductScreenshot({
                 Loading screenshot
               </p>
             </div>
-            <ThemedScreenshotImage file={file} alt={alt} portrait={portrait} priority={priority} />
+            <ThemedScreenshotImage
+              file={file}
+              alt={alt}
+              portrait={portrait}
+              priority={priority}
+              expandable={expandable}
+            />
           </>
         ) : (
           <div

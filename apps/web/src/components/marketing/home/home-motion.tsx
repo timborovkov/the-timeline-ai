@@ -66,6 +66,7 @@ export function HomeMotion() {
         for (const entry of entries) {
           const diagram = entry.target as HTMLElement;
           const wasVisible = diagram.classList.contains(visibleClass);
+          if (entry.isIntersecting) diagram.dataset.homeEntered = '';
           diagram.classList.toggle(visibleClass, entry.isIntersecting);
           setFlowMotion(diagram, entry.isIntersecting, entry.isIntersecting && !wasVisible);
         }

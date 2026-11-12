@@ -1,5 +1,7 @@
-import { FileText, Mail, User } from 'lucide-react';
+import { FileText, Mail } from 'lucide-react';
 import Image from 'next/image';
+
+import type { CSSProperties } from 'react';
 
 import styles from '@/app/(landing)/home.module.css';
 import { Logo } from '@/components/brand/logo';
@@ -31,50 +33,62 @@ type SourceIcon = BrandedSource | 'Documents' | 'Email';
 const HERO_SOURCES = [
   {
     id: 'telegram',
+    x: 110,
+    y: 110,
     name: 'Telegram',
     icon: 'Telegram',
     time: '08:46',
-    path: 'M118 116 C205 150 226 242 300 300',
+    path: 'C205 150 226 242 300 300',
     delay: '0s',
   },
   {
     id: 'slack',
+    x: 490,
+    y: 140,
     name: 'Slack',
     icon: 'Slack',
     time: '09:14',
-    path: 'M486 142 C414 174 390 244 300 300',
+    path: 'C414 174 390 244 300 300',
     delay: '0.72s',
   },
   {
     id: 'meeting',
+    x: 90,
+    y: 470,
     name: 'Meeting',
     icon: 'Meeting',
     time: '11:40',
-    path: 'M112 462 C188 412 226 354 300 300',
+    path: 'C188 412 226 354 300 300',
     delay: '1.44s',
   },
   {
     id: 'github',
+    x: 510,
+    y: 510,
     name: 'GitHub',
     icon: 'GitHub',
     time: '15:22',
-    path: 'M490 470 C420 420 388 354 300 300',
+    path: 'C420 420 388 354 300 300',
     delay: '2.16s',
   },
   {
     id: 'documents',
+    x: 105,
+    y: 250,
     name: 'Documents',
     icon: 'Documents',
     time: '17:08',
-    path: 'M70 300 C170 300 220 300 300 300',
+    path: 'C170 300 220 300 300 300',
     delay: '2.88s',
   },
   {
     id: 'sentry',
+    x: 495,
+    y: 345,
     name: 'Sentry',
     icon: 'Sentry',
     time: '18:21',
-    path: 'M530 310 C430 310 380 304 300 300',
+    path: 'C430 310 380 304 300 300',
     delay: '3.6s',
   },
 ] as const satisfies readonly {
@@ -83,29 +97,12 @@ const HERO_SOURCES = [
   icon: SourceIcon;
   time: string;
   path: string;
+  x: number;
+  y: number;
   delay: string;
 }[];
 
 const HERO_OUTCOME_PATH = 'M300 418 C300 431 300 443 300 456';
-
-const HERO_PARTICIPANTS = [
-  {
-    id: 'person',
-    name: 'Person',
-    writePath: 'M300 78 C250 150 250 230 300 300',
-    readPath: 'M300 300 C350 230 350 150 300 78',
-    writeDelay: '0.35s',
-    readDelay: '2.8s',
-  },
-  {
-    id: 'agent',
-    name: 'Claude / Codex',
-    writePath: 'M300 520 C190 470 190 360 300 300',
-    readPath: 'M300 300 C410 360 410 470 300 520',
-    writeDelay: '1.2s',
-    readDelay: '3.55s',
-  },
-] as const;
 
 const FLOW_STORY = PUBLIC_DEMO_STORY.landing.flow;
 
@@ -115,12 +112,20 @@ export function TimelineFlowDiagram(props: TimelineFlowDiagramProps) {
   return <HeroTimelineFlow disclosure={props.disclosure} />;
 }
 
+function heroCardPosition(point: { x: number; y: number }): CSSProperties {
+  return { left: `${point.x / 6}%`, top: `${point.y / 6}%` };
+}
+
+function heroSourcePath(source: (typeof HERO_SOURCES)[number]): string {
+  return `M${source.x} ${source.y} ${source.path}`;
+}
+
 function HeroTimelineFlow({ disclosure }: { readonly disclosure?: string }) {
   return (
     <figure
       className={styles.observatory}
       data-home-diagram
-      aria-label="A person and an agent write into the work record and read context back. Six sources stream in. The record becomes a daily update and linked answers."
+      aria-label="Work events stream from six sources into The Timeline, where the work record becomes a daily update and linked answers."
     >
       <div className={styles.orbitOuter} aria-hidden="true" />
       <div className={styles.orbitInner} aria-hidden="true" />
@@ -134,38 +139,17 @@ function HeroTimelineFlow({ disclosure }: { readonly disclosure?: string }) {
       >
         <g className={styles.evidencePaths}>
           {HERO_SOURCES.map((source) => (
-            <path key={source.id} d={source.path} data-hero-flow-path="ingest" />
-          ))}
-          {HERO_PARTICIPANTS.map((participant) => (
-            <path key={participant.id} d={participant.writePath} data-hero-flow-path="write" />
-          ))}
-        </g>
-        <g className={styles.returnPaths}>
-          {HERO_PARTICIPANTS.map((participant) => (
-            <path key={participant.id} d={participant.readPath} data-hero-flow-path="read" />
+            <path key={source.id} d={heroSourcePath(source)} data-hero-flow-path="ingest" />
           ))}
         </g>
         <path className={styles.outcomePath} d={HERO_OUTCOME_PATH} data-hero-flow-path="outcome" />
         <g className={styles.ingestPackets}>
           {HERO_SOURCES.map((source) => (
-            <FlowPacket key={source.id} path={source.path} begin={source.delay} dataType="ingest" />
-          ))}
-          {HERO_PARTICIPANTS.map((participant) => (
             <FlowPacket
-              key={`${participant.id}-write`}
-              path={participant.writePath}
-              begin={participant.writeDelay}
-              dataType="write"
-            />
-          ))}
-        </g>
-        <g className={styles.returnPackets}>
-          {HERO_PARTICIPANTS.map((participant) => (
-            <FlowPacket
-              key={`${participant.id}-read`}
-              path={participant.readPath}
-              begin={participant.readDelay}
-              dataType="read"
+              key={source.id}
+              path={heroSourcePath(source)}
+              begin={source.delay}
+              dataType="ingest"
             />
           ))}
         </g>
@@ -192,11 +176,8 @@ function HeroTimelineFlow({ disclosure }: { readonly disclosure?: string }) {
       </div>
 
       <ul className={styles.orbitSources} aria-label="Example sources entering The Timeline">
-        {HERO_SOURCES.map((source, index) => (
-          <li
-            key={source.id}
-            className={cn(styles.orbitSource, styles[`orbitSource${String(index + 1)}`])}
-          >
+        {HERO_SOURCES.map((source) => (
+          <li key={source.id} className={styles.orbitSource} style={heroCardPosition(source)}>
             <time className={styles.orbitSourceTime}>{source.time}</time>
             <span className={styles.orbitSourceIdentity}>
               <SourceLogo source={source.icon} className={styles.orbitSourceLogo} />
@@ -205,26 +186,6 @@ function HeroTimelineFlow({ disclosure }: { readonly disclosure?: string }) {
           </li>
         ))}
       </ul>
-      <ul className={styles.orbitSources} aria-label="People and agents using the work record">
-        <li className={cn(styles.orbitSource, styles.orbitPerson)}>
-          <span className={styles.orbitSourceIdentity}>
-            <span className={styles.orbitSourceLogo}>
-              <User aria-hidden="true" />
-            </span>
-            <strong>Person</strong>
-          </span>
-        </li>
-        <li className={cn(styles.orbitSource, styles.orbitAgent)}>
-          <span className={styles.orbitAgentMeta}>via MCP</span>
-          <span className={styles.orbitSourceIdentity}>
-            <span className={styles.orbitSourceLogo}>
-              <Image src="/connectors/claude.svg" alt="" width={18} height={18} />
-            </span>
-            <strong>Claude / Codex</strong>
-          </span>
-        </li>
-      </ul>
-
       {disclosure ? (
         <figcaption className={styles.observatoryCaption}>{disclosure}</figcaption>
       ) : null}
@@ -239,13 +200,10 @@ function FlowPacket({
 }: {
   readonly path: string;
   readonly begin: string;
-  readonly dataType: 'ingest' | 'outcome' | 'write' | 'read';
+  readonly dataType: 'ingest' | 'outcome';
 }) {
   return (
-    <circle
-      r={dataType === 'outcome' || dataType === 'read' ? 4 : 5}
-      data-hero-flow-packet={dataType}
-    >
+    <circle r={dataType === 'outcome' ? 4 : 5} data-hero-flow-packet={dataType}>
       <animateMotion path={path} begin={begin} dur="5.4s" repeatCount="indefinite" />
       <animate
         attributeName="opacity"

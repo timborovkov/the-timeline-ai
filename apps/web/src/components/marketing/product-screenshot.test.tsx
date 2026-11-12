@@ -95,6 +95,21 @@ describe('MarketingProductScreenshot', () => {
 });
 
 describe('resolved screenshot theme', () => {
+  it('opens the displayed theme variant at full size', () => {
+    const element = () => (
+      <MarketingProductScreenshot {...BASE} file="32-ask-handoff-dark.png" expandable />
+    );
+    const view = render(element());
+    for (const value of ['light', 'dark']) {
+      theme.resolvedTheme = value;
+      view.rerender(element());
+      const link = view.getByRole('link', { name: /Open full-size screenshot in a new tab/ });
+      expect(link.getAttribute('href')).toBe(`/marketing/screenshots/32-ask-handoff-${value}.png`);
+      expect(link.getAttribute('target')).toBe('_blank');
+      expect(link.querySelector('img')?.getAttribute('src')).toBe(link.getAttribute('href'));
+    }
+  });
+
   it('keeps SSR on the reserved placeholder without preloading either variant', () => {
     const html = renderToStaticMarkup(
       <MarketingProductScreenshot {...BASE} file="11-timeline-dark.png" priority />,

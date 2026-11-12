@@ -204,20 +204,24 @@ function ClaimScene() {
             {SEE_IT_FIRST_LABEL}
           </Link>
         </div>
-        <div className={styles.heroMeta}>
-          <PublicSessionBranch
-            signedOut={
+        <PublicSessionBranch
+          signedOut={
+            <div className={styles.heroMeta}>
               <p className={styles.ctaFinePrint}>
                 {CTA_MICROCOPY_LEAD}{' '}
                 <Link href="/pricing" className={styles.textLink}>
                   See pricing
                 </Link>
               </p>
-            }
-            signedIn={null}
-          />
-          <GitHubSourceLink appearance="inline" className={styles.heroGithubLink} />
-        </div>
+              <GitHubSourceLink appearance="inline" className={styles.heroGithubLink} />
+            </div>
+          }
+          signedIn={
+            <div className={styles.heroMeta}>
+              <GitHubSourceLink appearance="inline" className={styles.heroGithubLink} />
+            </div>
+          }
+        />
         <div className={styles.heroAgentSetup}>
           <AgentSetupCard />
         </div>
@@ -245,7 +249,7 @@ function IntakeScene() {
             Status should not require an <em>investigation.</em>
           </>
         }
-        copy="Forward or cc an email, talk in Slack or Telegram, or send a voice note. CC or BCC the team address. Telegram voice notes arrive transcribed. Search it by person, client or source."
+        copy="Link a Slack channel or Telegram group, forward email to the team address, or add a call."
       />
       <ul className={styles.intakeRow} aria-label="Ways to send work to Timeline">
         {HOME_INTAKE_SURFACES.map((surface) => (
@@ -288,7 +292,7 @@ function TimelineScene() {
             Everything lands on <em>one timeline.</em>
           </>
         }
-        copy="Your team runs its work in Slack or Telegram, then spreads it across email, calls and documents. Even well-kept tools like Jira or Pipedrive miss what was said in conversation, so status, promises and decisions get rebuilt by hand, and often wrong."
+        copy="Jira and Pipedrive can miss what was said in conversation. Bring those decisions and promises into the same chronology."
       />
       <div className={styles.timelineStage} data-home-diagram>
         <div className={styles.timelineHeader}>
@@ -340,7 +344,7 @@ function AnswerScene() {
             Ask the record. The receipts <em>come with the answer.</em>
           </>
         }
-        copy="Ask the question you normally answer by searching four tools and messaging three people."
+        copy="Get a status or handoff brief without retracing every conversation."
       />
       <div className={styles.answerLayout} data-home-diagram>
         <article className={styles.answerWindow}>
@@ -512,10 +516,10 @@ function OrganisedScene() {
         id="organised-title"
         title={
           <>
-            Clients and to-dos that <em>update themselves.</em>
+            Clients and to-dos, <em>ready for your review.</em>
           </>
         }
-        copy="It replaces the CRM and task board you never have to update."
+        copy="Replace manual CRM and task-board entry with suggested updates from your conversations."
       />
       <HomeProof shot={HOME_CLIENT_SHOT} align="shot-first" />
       <p className={styles.approvalLine}>
@@ -542,14 +546,14 @@ function AudienceScene() {
             Built for teams that run their work <em>through chat.</em>
           </>
         }
-        copy="If your team runs its day in Slack or Telegram and the rest of the work lives in email, calls and documents, The Timeline keeps one current record of it. That includes consultancies, agencies, client delivery, product and operations teams, at any size. Keep working where you already work."
+        copy="For client delivery, product and operations work that happens in conversation."
       />
       <HomeProof shot={HOME_DIGEST_SHOT} align="copy-first" />
       <div className={styles.fitPanel} data-home-diagram>
         <div className={styles.fitPanelIntro}>
           <span className={styles.monoLabel}>Six ways teams use it</span>
           <h3>One record, kept current from your conversations.</h3>
-          <p>One record, kept current from your conversations, used for six jobs.</p>
+          <p>Choose the job you need below.</p>
         </div>
         <div className={styles.audienceRail} aria-label="Ways teams use The Timeline">
           {AUDIENCES.map((audience) => (
@@ -571,9 +575,7 @@ function AudienceScene() {
           <span className={styles.monoLabel}>How one answer stays trustworthy</span>
           <h3 id="trust-flow-title">Every answer carries its evidence chain.</h3>
           <p>
-            Timeline preserves source content, checks access at retrieval, and keeps citations
-            attached to the answer. If evidence suggests a lasting workspace change, Timeline
-            proposes it for human review instead of applying it on its own.
+            Access is checked when a source is retrieved. The answer only uses evidence you can see.
           </p>
         </header>
         <ol className={styles.trustFlow}>
@@ -608,10 +610,7 @@ function CtaScene() {
           Link one channel. <em>Watch the record fill in.</em>
         </h2>
         <p>
-          Scan a website, upload a document, or forward an email. Connect Slack or Telegram when you
-          want those conversations in the record too. Read the daily update, approve the suggested
-          updates, and ask what was decided. Every line keeps the original message, with a link to
-          it.
+          Bring in your first source, then read the daily update or approve the suggested updates.
         </p>
         <FirstRunPath showNote={false} />
         <PublicSessionBranch
@@ -695,7 +694,9 @@ function HomeProof({ shot, align }: { shot: HomeProofShot; align: 'copy-first' |
           alt={shot.alt}
           caption={shot.caption}
           chrome="media"
+          expandable
         />
+        <p className={styles.proofDisclosure}>Select the screenshot to view full size.</p>
       </div>
     </div>
   );

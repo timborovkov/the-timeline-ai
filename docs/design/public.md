@@ -26,7 +26,9 @@ links. The cited-answer evidence cards keep “Inspect example source” as a na
 `<details>` disclosure aligned to the padded titles: a custom chevron beside the
 summary, padded expanded text, and the landing lime `:focus-visible` ring around
 the summary rather than an unstyled full-width browser outline. Homepage proof screenshots keep the real captures and fictional Acme Labs
-labels. Each frame reserves its aspect box, shows a “Loading screenshot” label
+labels. Mobile retains the complete landscape frame rather than cropping out
+source inspectors. Homepage screenshots open the displayed theme variant at full
+size in a new tab, with a keyboard-accessible link. Each frame reserves its aspect box, shows a “Loading screenshot” label
 until the image paints, and uses always-visible callouts for what changed, who
 owns the next step, and the link to the source. Callouts stack on small screens
 and do not rely on hover or motion. Suggested
@@ -44,19 +46,19 @@ records, and outcomes stay coherent across the journey. Connector capability bel
 evidence-entry scene; audience fit and the evidence chain remain a separate,
 stacked explanation rather than an equal-height split. Substantive copy and
 diagrams are server-rendered; a small client motion controller may progressively
-reveal below-the-fold scenes, replay evidence flow while it is in view, and show
-scroll progress. The hero copy, source cards, central mark, and outcome labels
+reveal below-the-fold scenes once, replay evidence flow while it is in view, and show
+scroll progress. Returning to a scene never restarts content entrances or hides
+previously revealed text. Looping diagram motion pauses offscreen independently. The hero copy, source cards, central mark, and outcome labels
 are complete and in their final positions on first paint; hydration must not
 hide or slide them into place. Background motion is prohibited: movement belongs
 to the evidence diagram and must explain provenance or hierarchy. The shared public canvas uses
 the same subtle fixed grain in both themes, with theme-specific blending so
 cream reads like paper and near-black retains its tactile texture.
 
-The landing hero keeps the observatory composition: six compact source cards, a
-person card, and an agent card (Claude / Codex via MCP) sit around a square
-grid. Source packets stream along visible curved paths into the official
-Timeline mark. The person and the agent both write into the record and read
-context back; the agent has a packet in each direction. The centered diamond is
+The landing hero keeps the observatory composition: six compact source cards sit around a square grid. Cards and path endpoints share normalized coordinates at every viewport
+width. Source packets stream along visible curved paths into the official
+Timeline mark. The hero shows source capture only; person and external-agent setup belong in
+their dedicated sections. The centered diamond is
 labelled **The Timeline**, **Work record**, and a small **one timeline** line;
 one quiet rail then resolves into **Daily update** and **Linked answers**. It
 does not reproduce the expanded
@@ -319,3 +321,8 @@ explanations within a page. Preserve headings and content blocks. Policy detail
 uses native, closed-by-default `MarketingDisclosure` elements: summaries remain
 keyboard accessible and all details remain in the DOM. Short summaries must not
 strengthen the policy promises; Privacy and Terms retain their legal text.
+
+Homepage session-dependent metadata switches as one row. In signed-in mode the
+GitHub source link stays at the content’s left edge; a hidden signed-out pricing
+note must not reserve horizontal space ahead of it. Both complete row variants
+still reserve their shared height to avoid shifting the agent setup card.
