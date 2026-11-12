@@ -2790,38 +2790,62 @@ describe('automatic board membership', () => {
     expect(retained.version).toBe(original.version + 1);
     expect(retained.pendingEntityIds).toEqual([object.id]);
   });
-  it('does not let an obsolete worker repopulate cache after a newer explicit scan', async () => {
+  it('does not let an obsolete worker publish over a newer completed scan', async () => {
     const { scope, board } = await setup();
     const { boardQualificationRequests, boardQualificationEvaluations } =
       await import('@timeline/db');
-    const { createBoardQualificationScope } = await import('#src/boards/qualification.js');
     const original = required((await db.select().from(boardQualificationRequests))[0]);
-    const overlapping = createBoardQualificationScope(db, scope, {
-      createOrMergeSuggestionBundle: async (input) => {
-        const result = await scope.suggestions.createOrMergeSuggestionBundle(input);
+    const transaction = db.transaction.bind(db);
+    const createProposal = vi
+      .fn()
+      .mockResolvedValue({ decision: 'add', reason: 'Match', evidenceKeys: ['object'] });
+    let newerItemId = '';
+    const racingTransaction = vi
+      .spyOn(db, 'transaction')
+      .mockImplementationOnce(async (callback) => {
         await scope.boardQualification.scan(board.id);
-        return result;
-      },
-    });
-    await overlapping.processRequest(original.id, () =>
-      Promise.resolve({ decision: 'add', reason: 'Match', evidenceKeys: ['object'] }),
-    );
-    expect(await db.select().from(boardQualificationEvaluations)).toHaveLength(0);
-    const newer = required((await db.select().from(boardQualificationRequests))[0]);
-    expect(newer.version).toBeGreaterThan(original.version);
-    expect(newer.sourceEventId).toBeNull();
+        await process(scope);
+        newerItemId = required(
+          required((await scope.suggestions.listPendingSuggestions())[0]).items[0],
+        ).id;
+        return transaction(callback);
+      });
+    try {
+      await scope.boardQualification.processRequest(original.id, createProposal);
+    } finally {
+      racingTransaction.mockRestore();
+    }
+    expect(await db.select().from(boardQualificationEvaluations)).toHaveLength(1);
+    expect(await db.select().from(boardQualificationRequests)).toHaveLength(0);
     await db
       .update(rawEvents)
       .set({ sourceMetadata: { deleted: true } })
       .where(eq(rawEvents.id, required(original.sourceEventId)));
-    const classify = vi
-      .fn()
-      .mockResolvedValue({ decision: 'add', reason: 'Fresh scan', evidenceKeys: ['object'] });
-    await scope.boardQualification.processRequest(newer.id, classify);
-    expect(classify).toHaveBeenCalledTimes(1);
-    const item = required(required((await scope.suggestions.listPendingSuggestions())[0]).items[0]);
+    const pending = await scope.suggestions.listPendingSuggestions();
+    expect(pending).toHaveLength(1);
+    const item = required(required(pending[0]).items[0]);
+    expect(item.id).toBe(newerItemId);
     await scope.suggestions.acceptSuggestionItem(item.id);
     expect(required(await scope.boards.getBoard(board.id)).items).toHaveLength(1);
+  });
+  it('rolls proposal publication back when its evaluation cache cannot publish', async () => {
+    const { scope } = await setup();
+    const { boardQualificationRequests } = await import('@timeline/db');
+    const { createBoardQualificationScope } = await import('#src/boards/qualification.js');
+    const original = required((await db.select().from(boardQualificationRequests))[0]);
+    const failing = createBoardQualificationScope(db, scope, (tx) => ({
+      createOrMergeSuggestionBundle: async (input) => {
+        await withTeam(tx, TEAM_A, USER_OWNER).suggestions.createOrMergeSuggestionBundle(input);
+        throw new Error('Synthetic publication failure');
+      },
+    }));
+    await expect(
+      failing.processRequest(original.id, () =>
+        Promise.resolve({ decision: 'add', reason: 'Match', evidenceKeys: ['object'] }),
+      ),
+    ).rejects.toThrow('Synthetic publication failure');
+    expect(await scope.suggestions.listPendingSuggestions()).toHaveLength(0);
+    expect(await db.select().from(boardQualificationRequests)).toHaveLength(1);
   });
   it('keeps private scan proposals and user edits isolated between members', async () => {
     const { scope, board } = await setup();

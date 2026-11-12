@@ -173,8 +173,11 @@ a delayed expansion cannot override a newer manual membership decision. An expli
 scan replaces an older pending source dependency and uses the scanning actor's
 operator attribution, so unavailable sources or expired earlier sessions cannot
 swallow the requested recheck. Scan enqueueing and cache invalidation share one
-transaction; evaluation publication locks and rechecks the request version, so
-an older worker cannot repopulate a newer scan's cleared cache. Generic
+transaction. Proposal publication, semantic supersession, no-action records and
+evaluation cache writes share a transaction that locks parent entity/board keys
+before rechecking the inbox version. An older worker cannot supersede a newer
+scan's proposal or repopulate its cleared cache. Busy parent keys fail fast to
+avoid blocking canonical writes in reverse lock order. Generic
 relationship endpoints enqueue in entity-ID order, matching worker inbox locks. The worker excludes suspended users before selecting each workspace's next request. It discovers routing metadata globally and
 uses the originating member's `withTeam` scope for workspace reads and proposals;
 service-principal writes do not borrow a member's authority. Impersonated requests

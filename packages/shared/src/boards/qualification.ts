@@ -189,7 +189,7 @@ export async function qualifyBoardPacket(packet: {
 export function createBoardQualificationScope(
   db: Db,
   scope: TeamScopeCore,
-  suggestions: {
+  suggestionsForTransaction: (db: Db) => {
     createOrMergeSuggestionBundle(input: CreateSuggestionInput): Promise<unknown>;
   },
 ) {
@@ -574,133 +574,145 @@ export function createBoardQualificationScope(
           current.member?.updatedAt.toISOString() !== input.member?.updatedAt.toISOString()
         )
           continue;
-        const proposed =
-          (result.decision === 'add' && !input.member) ||
-          (result.decision === 'remove' && input.member);
-        if (proposed) {
-          const key = stableSha256Digest({
-            userId: scope.userId,
-            boardId: candidate.id,
-            entityId: request.entityId,
-            inputHash: input.inputHash,
-            sourceEventId: request.sourceEventId,
-            manualDecisionId: manual?.id ?? null,
-            memberId: input.member?.id ?? null,
-            memberUpdatedAt: input.member?.updatedAt.toISOString() ?? null,
-            decision: result.decision,
-          });
-          const title = `${result.decision === 'add' ? 'Add' : 'Remove'} ${input.object.canonicalName} ${result.decision === 'add' ? 'to' : 'from'} ${input.board.name}`;
-          await suggestions.createOrMergeSuggestionBundle({
-            source: 'background',
-            title,
-            summary: result.reason,
-            reason: result.reason,
-            confidence: 'high',
-            dedupeKey: `board-qualification:${key}`,
-            visibility: 'private',
-            visibilityOwnerUserId: scope.userId,
-            evidence: request.sourceEventId ? [{ rawEventId: request.sourceEventId }] : [],
-            metadata: {
-              board_qualification: true,
-              policy_revision: input.board.qualificationRevision,
-            },
-            items: [
-              {
-                targetKind: 'board_membership',
-                evidenceRawEventIds: request.sourceEventId ? [request.sourceEventId] : [],
-                operation: result.decision === 'add' ? 'create' : 'archive_or_cancel',
-                targetId: input.member?.id ?? null,
-                title,
-                description: `${result.reason}${result.decision === 'remove' ? ' The object is retained.' : ''}`,
-                dedupeKey: key,
-                proposedPayload: {
-                  boardId: candidate.id,
-                  boardName: input.board.name,
-                  entityId: request.entityId,
-                  entityName: input.object.canonicalName,
-                  boardItemId: input.member?.id,
-                  expectedUpdatedAt: input.member?.updatedAt.toISOString(),
-                  note: result.reason,
-                  qualification: {
-                    revision: input.board.qualificationRevision,
-                    factsHash: input.hash,
-                    inputHash: input.inputHash,
-                    evidenceKeys: result.evidenceKeys,
-                    factsSnapshot: input.facts,
-                    criteriaSnapshot: input.board.qualificationInstructions,
-                    requestedAt: request.requestedAt.toISOString(),
-                  },
-                },
-              },
-            ],
-          });
-        }
-        if (!proposed) {
-          const key = stableSha256Digest({
-            userId: scope.userId,
-            boardId: candidate.id,
-            entityId: request.entityId,
-            inputHash: input.inputHash,
-            sourceEventId: request.sourceEventId,
-            decision: result.decision,
-          });
-          const [run] = await db
-            .insert(reconciliationRuns)
-            .values({
-              teamId: scope.teamId,
-              trigger: 'manual_repair',
-              scope: 'board_qualification',
-              status: 'completed',
-              inputFingerprint: key,
-              engineVersion: 'board-qualification-v1',
-              completedAt: new Date(),
-              metrics: { decision: result.decision },
-            })
-            .onConflictDoUpdate({
-              target: [
-                reconciliationRuns.teamId,
-                reconciliationRuns.inputFingerprint,
-                reconciliationRuns.engineVersion,
-              ],
-              set: { completedAt: new Date() },
-            })
-            .returning({ id: reconciliationRuns.id });
-          if (run)
-            await db
-              .insert(reconciliationOutputs)
-              .values({
-                teamId: scope.teamId,
-                runId: run.id,
-                outputKind: 'no_action',
-                targetKind: 'board_membership',
-                operation: 'update',
-                targetId: request.entityId,
-                payload: {
-                  boardId: candidate.id,
-                  inputHash: input.inputHash,
-                  reason: result.reason,
-                },
-                authorityDecision: { decision: 'no_action', reason: result.decision },
-                status: 'applied',
-                dedupeKey: key,
-                visibility: 'private',
-                visibilityOwnerUserId: scope.userId,
-                visibilityUserIds: null,
-                visibilityFloorUserIds: null,
-                sourceRefs: [],
-                sourcePayloadRefs: [],
-                visibilityFloor: 'private',
-                visibilityFloorOwnerUserId: scope.userId,
-              })
-              .onConflictDoNothing();
-        }
         await db.transaction(async (tx) => {
+          // Parent keys precede the inbox, matching canonical mutation enqueueing.
+          await tx
+            .select({ id: entities.id })
+            .from(entities)
+            .where(and(eq(entities.teamId, scope.teamId), eq(entities.id, request.entityId)))
+            .for('key share', { noWait: true });
+          await tx
+            .select({ id: boards.id })
+            .from(boards)
+            .where(and(eq(boards.teamId, scope.teamId), eq(boards.id, candidate.id)))
+            .for('key share', { noWait: true });
           const [currentRequest] = await tx
             .select({ id: boardQualificationRequests.id })
             .from(boardQualificationRequests)
             .where(requestWhere)
             .for('update');
           if (!currentRequest) return;
+          const proposed =
+            (result.decision === 'add' && !input.member) ||
+            (result.decision === 'remove' && input.member);
+          if (proposed) {
+            const key = stableSha256Digest({
+              userId: scope.userId,
+              boardId: candidate.id,
+              entityId: request.entityId,
+              inputHash: input.inputHash,
+              sourceEventId: request.sourceEventId,
+              manualDecisionId: manual?.id ?? null,
+              memberId: input.member?.id ?? null,
+              memberUpdatedAt: input.member?.updatedAt.toISOString() ?? null,
+              decision: result.decision,
+            });
+            const title = `${result.decision === 'add' ? 'Add' : 'Remove'} ${input.object.canonicalName} ${result.decision === 'add' ? 'to' : 'from'} ${input.board.name}`;
+            await suggestionsForTransaction(tx as unknown as Db).createOrMergeSuggestionBundle({
+              source: 'background',
+              title,
+              summary: result.reason,
+              reason: result.reason,
+              confidence: 'high',
+              dedupeKey: `board-qualification:${key}`,
+              visibility: 'private',
+              visibilityOwnerUserId: scope.userId,
+              evidence: request.sourceEventId ? [{ rawEventId: request.sourceEventId }] : [],
+              metadata: {
+                board_qualification: true,
+                policy_revision: input.board.qualificationRevision,
+              },
+              items: [
+                {
+                  targetKind: 'board_membership',
+                  evidenceRawEventIds: request.sourceEventId ? [request.sourceEventId] : [],
+                  operation: result.decision === 'add' ? 'create' : 'archive_or_cancel',
+                  targetId: input.member?.id ?? null,
+                  title,
+                  description: `${result.reason}${result.decision === 'remove' ? ' The object is retained.' : ''}`,
+                  dedupeKey: key,
+                  proposedPayload: {
+                    boardId: candidate.id,
+                    boardName: input.board.name,
+                    entityId: request.entityId,
+                    entityName: input.object.canonicalName,
+                    boardItemId: input.member?.id,
+                    expectedUpdatedAt: input.member?.updatedAt.toISOString(),
+                    note: result.reason,
+                    qualification: {
+                      revision: input.board.qualificationRevision,
+                      factsHash: input.hash,
+                      inputHash: input.inputHash,
+                      evidenceKeys: result.evidenceKeys,
+                      factsSnapshot: input.facts,
+                      criteriaSnapshot: input.board.qualificationInstructions,
+                      requestedAt: request.requestedAt.toISOString(),
+                    },
+                  },
+                },
+              ],
+            });
+          }
+          if (!proposed) {
+            const key = stableSha256Digest({
+              userId: scope.userId,
+              boardId: candidate.id,
+              entityId: request.entityId,
+              inputHash: input.inputHash,
+              sourceEventId: request.sourceEventId,
+              decision: result.decision,
+            });
+            const [run] = await tx
+              .insert(reconciliationRuns)
+              .values({
+                teamId: scope.teamId,
+                trigger: 'manual_repair',
+                scope: 'board_qualification',
+                status: 'completed',
+                inputFingerprint: key,
+                engineVersion: 'board-qualification-v1',
+                completedAt: new Date(),
+                metrics: { decision: result.decision },
+              })
+              .onConflictDoUpdate({
+                target: [
+                  reconciliationRuns.teamId,
+                  reconciliationRuns.inputFingerprint,
+                  reconciliationRuns.engineVersion,
+                ],
+                set: { completedAt: new Date() },
+              })
+              .returning({ id: reconciliationRuns.id });
+            if (run)
+              await tx
+                .insert(reconciliationOutputs)
+                .values({
+                  teamId: scope.teamId,
+                  runId: run.id,
+                  outputKind: 'no_action',
+                  targetKind: 'board_membership',
+                  operation: 'update',
+                  targetId: request.entityId,
+                  payload: {
+                    boardId: candidate.id,
+                    inputHash: input.inputHash,
+                    reason: result.reason,
+                  },
+                  authorityDecision: { decision: 'no_action', reason: result.decision },
+                  status: 'applied',
+                  dedupeKey: key,
+                  visibility: 'private',
+                  visibilityOwnerUserId: scope.userId,
+                  visibilityUserIds: null,
+                  visibilityFloorUserIds: null,
+                  sourceRefs: [],
+                  sourcePayloadRefs: [],
+                  visibilityFloor: 'private',
+                  visibilityFloorOwnerUserId: scope.userId,
+                })
+                .onConflictDoNothing();
+          }
+
           await tx
             .insert(boardQualificationEvaluations)
             .values({

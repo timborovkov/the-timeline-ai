@@ -3572,7 +3572,12 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
     objects: objectScope,
     conversations: conversationSurfaceScope,
     boards: boardScope,
-    boardQualification: createBoardQualificationScope(db, core, suggestionScope),
+    boardQualification: createBoardQualificationScope(
+      db,
+      core,
+      (transactionDb): ReturnType<typeof createSuggestionScope> =>
+        withTeam(transactionDb, teamId, userId, deps).suggestions,
+    ),
     pins: pinScope,
     suggestions: suggestionScope,
     reconciliation: createReconciliationScope({ db, scope: core }),
