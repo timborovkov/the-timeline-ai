@@ -31,7 +31,7 @@ export function TelegramIntegrationPage() {
               </span>
               <EditorialKicker>Integrations · Telegram</EditorialKicker>
             </div>
-            <div className="mt-8 grid items-end gap-10 lg:grid-cols-[1.25fr_0.75fr]">
+            <div className="mt-8 grid items-end gap-10 grid-cols-[minmax(0,1fr)]">
               <h1 className={`${styles.displayTitle} max-w-[16ch]`}>{TELEGRAM_PAGE.title}</h1>
               <div>
                 <p className="max-w-[44ch] text-base leading-relaxed text-fg-muted sm:text-lg">

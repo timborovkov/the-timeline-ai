@@ -29,7 +29,7 @@ export function AgentsHubPage() {
           <p className="mt-7 max-w-2xl text-lg leading-8 text-fg-muted sm:text-xl">
             {AGENTS_HUB.summary}
           </p>
-          <div className="mt-10 max-w-3xl">
+          <div className="mt-10">
             <AgentSetupCard />
             <div className="mt-5 max-w-2xl" data-agent-setup-prerequisites>
               <p className="font-mono text-[0.68rem] tracking-[0.14em] text-signal uppercase">
@@ -70,14 +70,16 @@ export function AgentsHubPage() {
               index={AGENTS_HUB.reportIn.index}
               label={AGENTS_HUB.reportIn.label}
             />
-            <div className="max-w-3xl">
+            <div className="min-w-0">
               <h2
                 id="report-in-title"
                 className="text-3xl font-semibold tracking-tight sm:text-4xl"
               >
                 {AGENTS_HUB.reportIn.title}
               </h2>
-              <p className="mt-4 text-base leading-7 text-fg-muted">{AGENTS_HUB.reportIn.body}</p>
+              <p className="mt-4 max-w-[70ch] text-base leading-7 text-fg-muted">
+                {AGENTS_HUB.reportIn.body}
+              </p>
               <ul className="mt-6 list-disc space-y-3 pl-5 text-base leading-7 text-fg-muted">
                 {AGENTS_HUB.reportIn.paths.map((path) => (
                   <li key={path.name}>
@@ -121,14 +123,16 @@ export function AgentsHubPage() {
               index={AGENTS_HUB.readOut.index}
               label={AGENTS_HUB.readOut.label}
             />
-            <div className="max-w-3xl">
+            <div className="min-w-0">
               <h2 id="read-out-title" className="text-3xl font-semibold tracking-tight sm:text-4xl">
                 {AGENTS_HUB.readOut.title}
               </h2>
-              <p className="mt-4 text-base leading-7 text-fg-muted">
+              <p className="mt-4 max-w-[70ch] text-base leading-7 text-fg-muted">
                 Compatible clients open{' '}
-                <code className="font-mono text-sm text-fg">{AGENTS_HUB.readOut.endpoint}</code>.{' '}
-                {AGENTS_HUB.readOut.body}
+                <code className="break-all font-mono text-sm text-fg">
+                  {AGENTS_HUB.readOut.endpoint}
+                </code>
+                . {AGENTS_HUB.readOut.body}
               </p>
               <pre className="mt-6 overflow-x-auto rounded-md border border-border bg-surface p-4 font-mono text-xs leading-6">
                 {TIMELINE_MCP_COMMAND}

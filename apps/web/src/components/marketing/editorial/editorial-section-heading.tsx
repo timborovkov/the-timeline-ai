@@ -8,7 +8,7 @@ export function EditorialSectionHeading({
   intro?: string;
 }) {
   return (
-    <div className="max-w-3xl border-t border-border pt-5">
+    <div className="min-w-0">
       {index ? (
         <p className="mb-5 font-mono text-[0.68rem] tracking-[0.14em] text-signal uppercase">
           {index}

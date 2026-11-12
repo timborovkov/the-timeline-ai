@@ -37,17 +37,13 @@ export function IntegrationDirectory() {
   const capabilityTiers = getConnectorCapabilityTiers();
 
   return (
-    <PublicShell
-      width="expanded"
-      footerLabel="The Timeline integrations"
-      currentSection="integrations"
-    >
+    <PublicShell width="wide" footerLabel="The Timeline integrations" currentSection="integrations">
       <DirectoryStructuredData />
       <main id="main" tabIndex={-1}>
         <section className="border-b border-border">
           <MarketingContainer className="py-16 sm:py-24 lg:py-28">
             <p className="text-sm font-medium text-fg-muted">Integrations</p>
-            <div className="mt-6 grid items-end gap-10 lg:grid-cols-[1.25fr_0.75fr]">
+            <div className="mt-6 grid items-end gap-10 grid-cols-[minmax(0,1fr)]">
               <h1 className="max-w-[13ch] break-words text-balance text-[3rem] font-semibold leading-[0.95] tracking-[-0.05em] text-fg sm:text-[clamp(3.5rem,5vw,5.5rem)]">
                 Connect the places where the work already happens.
               </h1>

@@ -10,7 +10,12 @@ export function MarketingContainer({
   className?: string;
 }) {
   return (
-    <div className={cn('mx-auto w-full max-w-[82rem] px-4 sm:px-6', className)}>{children}</div>
+    <div
+      data-marketing-container
+      className={cn('mx-auto w-full min-w-0 max-w-6xl px-4 sm:px-6', className)}
+    >
+      {children}
+    </div>
   );
 }
 
@@ -23,10 +28,8 @@ export function MarketingSectionGrid({
 }) {
   return (
     <div
-      className={cn(
-        'grid gap-8 lg:grid-cols-[13rem_minmax(0,1fr)] xl:grid-cols-[15rem_minmax(0,1fr)]',
-        className,
-      )}
+      data-marketing-section
+      className={cn('grid min-w-0 grid-cols-[minmax(0,1fr)] gap-6 [&>*]:min-w-0', className)}
     >
       {children}
     </div>

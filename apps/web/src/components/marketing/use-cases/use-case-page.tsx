@@ -6,6 +6,7 @@ import { EditorialKicker } from '@/components/marketing/editorial/editorial-kick
 import { EditorialSectionHeading } from '@/components/marketing/editorial/editorial-section-heading';
 import { EditorialStructuredData } from '@/components/marketing/editorial/editorial-structured-data';
 import styles from '@/components/marketing/editorial/editorial.module.css';
+import { MarketingContainer } from '@/components/marketing/marketing-layout';
 import { MarketingProductScreenshot } from '@/components/marketing/product-screenshot';
 import { MarketingCtaBand } from '@/components/marketing/start-free-cta';
 import {
@@ -30,39 +31,41 @@ export function UseCasePage({ useCase }: { useCase: UseCaseContent }) {
         data={buildPublicStructuredData(findUseCasePublicDocument(useCase), getSiteUrl())}
       />
       <article>
-        <header className="mx-auto max-w-6xl px-4 py-14 sm:px-6 sm:py-20">
-          <EditorialBreadcrumb
-            items={[
-              { href: '/', label: 'The Timeline' },
-              { href: USE_CASE_HUB.route, label: 'Use cases' },
-              { label: useCase.navLabel },
-            ]}
-          />
+        <header>
+          <MarketingContainer className="py-14 sm:py-20">
+            <EditorialBreadcrumb
+              items={[
+                { href: '/', label: 'The Timeline' },
+                { href: USE_CASE_HUB.route, label: 'Use cases' },
+                { label: useCase.navLabel },
+              ]}
+            />
 
-          <EditorialKicker>{useCase.eyebrow}</EditorialKicker>
-          <h1 className={`${styles.guideTitle} mt-6`}>{useCase.title}</h1>
-          <p className="mt-7 max-w-2xl text-lg leading-8 text-fg-muted sm:text-xl">
-            {useCase.summary}
-          </p>
-          {useCase.problemLine ? (
-            <p className="mt-6 max-w-2xl text-base leading-7 text-fg-muted">
-              {useCase.problemLine}
+            <EditorialKicker>{useCase.eyebrow}</EditorialKicker>
+            <h1 className={`${styles.guideTitle} mt-6`}>{useCase.title}</h1>
+            <p className="mt-7 max-w-2xl text-lg leading-8 text-fg-muted sm:text-xl">
+              {useCase.summary}
             </p>
-          ) : null}
+            {useCase.problemLine ? (
+              <p className="mt-6 max-w-2xl text-base leading-7 text-fg-muted">
+                {useCase.problemLine}
+              </p>
+            ) : null}
 
-          <div className="mt-10 grid gap-6">
-            {afterSubhead.map((shot) => (
-              <MarketingProductScreenshot
-                key={shot.file}
-                file={shot.file}
-                alt={shot.alt}
-                caption={shot.caption}
-                reshoot={shot.reshoot}
-                callouts={shot.callouts}
-                priority
-              />
-            ))}
-          </div>
+            <div className="mt-10 grid gap-6">
+              {afterSubhead.map((shot) => (
+                <MarketingProductScreenshot
+                  key={shot.file}
+                  file={shot.file}
+                  alt={shot.alt}
+                  caption={shot.caption}
+                  reshoot={shot.reshoot}
+                  callouts={shot.callouts}
+                  priority
+                />
+              ))}
+            </div>
+          </MarketingContainer>
         </header>
 
         {useCase.howItWorks ? (
@@ -70,7 +73,7 @@ export function UseCasePage({ useCase }: { useCase: UseCaseContent }) {
             className="border-y border-border bg-surface/45"
             aria-labelledby="how-it-works-title"
           >
-            <div className="mx-auto grid max-w-6xl gap-10 px-4 py-14 sm:px-6 sm:py-20 lg:grid-cols-[0.42fr_1fr]">
+            <MarketingContainer className="grid gap-10 py-14 sm:py-20">
               <div>
                 <EditorialKicker>How it works</EditorialKicker>
                 <h2
@@ -80,45 +83,53 @@ export function UseCasePage({ useCase }: { useCase: UseCaseContent }) {
                   From conversation to current record.
                 </h2>
               </div>
-              <p className={`${styles.readingMeasure} text-base leading-8 text-fg-muted`}>
-                {useCase.howItWorks}
-              </p>
-            </div>
+              <div className="space-y-4">
+                {useCase.howItWorks.map((paragraph) => (
+                  <p key={paragraph} className="max-w-[70ch] text-base leading-7 text-fg-muted">
+                    {paragraph}
+                  </p>
+                ))}
+              </div>
+            </MarketingContainer>
           </section>
         ) : null}
 
         {useCase.blocks ? (
-          <section className="mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-24">
-            <div className="grid gap-px bg-border sm:grid-cols-2">
-              {useCase.blocks.map((block) => (
-                <article key={block.title} className="bg-bg p-6 sm:p-8">
-                  <h2 className="text-xl font-semibold tracking-[-0.025em]">{block.title}</h2>
-                  <p className="mt-4 text-sm leading-7 text-fg-muted">{block.body}</p>
-                </article>
-              ))}
-            </div>
+          <section>
+            <MarketingContainer className="py-16 sm:py-24">
+              <div className="grid gap-px bg-border sm:grid-cols-2">
+                {useCase.blocks.map((block) => (
+                  <article key={block.title} className="bg-bg py-6 sm:pr-8 sm:even:pl-8">
+                    <h2 className="text-xl font-semibold tracking-[-0.025em]">{block.title}</h2>
+                    <p className="mt-4 text-sm leading-7 text-fg-muted">{block.body}</p>
+                  </article>
+                ))}
+              </div>
+            </MarketingContainer>
           </section>
         ) : null}
 
         {afterHowItWorks.length > 0 ? (
-          <section className="mx-auto max-w-6xl px-4 pb-16 sm:px-6 sm:pb-24">
-            <div className="grid gap-6">
-              {afterHowItWorks.map((shot) => (
-                <MarketingProductScreenshot
-                  key={shot.file}
-                  file={shot.file}
-                  alt={shot.alt}
-                  caption={shot.caption}
-                  reshoot={shot.reshoot}
-                  callouts={shot.callouts}
-                />
-              ))}
-            </div>
+          <section>
+            <MarketingContainer className="pb-16 sm:pb-24">
+              <div className="grid gap-6">
+                {afterHowItWorks.map((shot) => (
+                  <MarketingProductScreenshot
+                    key={shot.file}
+                    file={shot.file}
+                    alt={shot.alt}
+                    caption={shot.caption}
+                    reshoot={shot.reshoot}
+                    callouts={shot.callouts}
+                  />
+                ))}
+              </div>
+            </MarketingContainer>
           </section>
         ) : null}
 
         <section className="border-y border-border bg-surface/45">
-          <div className="mx-auto grid max-w-6xl gap-12 px-4 py-16 sm:px-6 sm:py-24 lg:grid-cols-[0.78fr_1.22fr]">
+          <MarketingContainer className="grid gap-12 py-16 sm:py-24">
             <div>
               <EditorialSectionHeading index="Example" title="A fictional walk-through." />
               {useCase.needs ? (
@@ -147,7 +158,7 @@ export function UseCasePage({ useCase }: { useCase: UseCaseContent }) {
               ) : null}
             </div>
             <aside
-              className={`${styles.promptBlock} p-7 sm:p-9`}
+              className="border-y border-border py-7 sm:py-9"
               aria-label={useCase.example.label}
             >
               <div className="relative z-10">
@@ -161,7 +172,10 @@ export function UseCasePage({ useCase }: { useCase: UseCaseContent }) {
                 ) : null}
                 <ol className="mt-8 grid gap-3">
                   {useCase.example.lines.map((line, index) => (
-                    <li key={line} className="grid grid-cols-[1.6rem_1fr] gap-3 text-sm leading-6">
+                    <li
+                      key={line}
+                      className="grid grid-cols-[1.6rem_minmax(0,1fr)] gap-3 text-sm leading-6"
+                    >
                       <span className="grid size-6 place-items-center rounded-full border border-signal font-mono text-[0.62rem] text-signal">
                         {index + 1}
                       </span>
@@ -174,37 +188,39 @@ export function UseCasePage({ useCase }: { useCase: UseCaseContent }) {
                 </p>
               </div>
             </aside>
-          </div>
+          </MarketingContainer>
         </section>
 
-        <section className="mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-24">
-          <EditorialSectionHeading index="Questions" title="Common questions." />
-          <div className="mt-10 divide-y divide-border border-y border-border">
-            {useCase.faqs.map((faq) => (
-              <details key={faq.question} className="group py-1">
-                <summary className="flex cursor-pointer list-none items-center justify-between gap-6 rounded-sm py-5 text-left font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 [&::-webkit-details-marker]:hidden">
-                  {faq.question}
-                  <span aria-hidden="true" className="font-mono text-signal group-open:rotate-45">
-                    +
-                  </span>
-                </summary>
-                <p className="max-w-3xl pb-6 text-sm leading-7 text-fg-muted sm:text-base">
-                  {faq.answer}
-                </p>
-              </details>
-            ))}
-          </div>
+        <section>
+          <MarketingContainer className="py-16 sm:py-24">
+            <EditorialSectionHeading index="Questions" title="Common questions." />
+            <div className="mt-10 divide-y divide-border border-y border-border">
+              {useCase.faqs.map((faq) => (
+                <details key={faq.question} className="group py-1">
+                  <summary className="flex cursor-pointer list-none items-center justify-between gap-6 rounded-sm py-5 text-left font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 [&::-webkit-details-marker]:hidden">
+                    {faq.question}
+                    <span aria-hidden="true" className="font-mono text-signal group-open:rotate-45">
+                      +
+                    </span>
+                  </summary>
+                  <p className="max-w-3xl pb-6 text-sm leading-7 text-fg-muted sm:text-base">
+                    {faq.answer}
+                  </p>
+                </details>
+              ))}
+            </div>
+          </MarketingContainer>
         </section>
 
         <section className="border-t border-border">
-          <div className="mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-20">
+          <MarketingContainer className="py-16 sm:py-20">
             <EditorialSectionHeading index="Explore" title="Related use cases." />
             <div className="mt-10 grid gap-px bg-border sm:grid-cols-2">
               {related.map((item) => (
                 <Link
                   key={item.route}
                   href={item.route}
-                  className="group bg-bg p-6 outline-none hover:bg-surface focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:p-8"
+                  className="group bg-bg py-6 outline-none hover:bg-surface focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:pr-8 sm:even:pl-8"
                 >
                   <p className="font-mono text-[0.65rem] tracking-[0.12em] text-signal uppercase">
                     {item.eyebrow}
@@ -223,12 +239,12 @@ export function UseCasePage({ useCase }: { useCase: UseCaseContent }) {
                 </Link>
               ))}
             </div>
-          </div>
+          </MarketingContainer>
         </section>
 
         <MarketingCtaBand
           title="Link one channel. Watch the record fill in."
-          body="Start with one Slack channel or Telegram group. Read the daily update, approve lasting record changes that The Timeline proposes, and ask what was decided, with the source for every line."
+          body="Start with one Slack channel or Telegram group."
           firstRun={useCase.slug === 'team-daily-log'}
         />
       </article>

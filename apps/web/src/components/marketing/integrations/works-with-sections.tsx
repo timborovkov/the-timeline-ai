@@ -1,5 +1,7 @@
 import type { WorksWithTool } from '@/components/marketing/integrations/works-with-content';
 
+import { MarketingSectionGrid } from '@/components/marketing/marketing-layout';
+
 export function WorksWithGuidance({ tool }: { tool: WorksWithTool }) {
   return (
     <>
@@ -36,7 +38,7 @@ function WorksWithCopyBlock({
 }) {
   return (
     <section className="border-b border-border py-16 sm:py-20" aria-labelledby={labelledBy}>
-      <div className="grid gap-8 lg:grid-cols-[0.45fr_1fr]">
+      <MarketingSectionGrid>
         <p className="flex items-baseline gap-1.5 text-sm font-medium text-fg-muted">
           <span className="font-mono text-[11px] text-fg-dim">{index}</span>
           <span aria-hidden="true">/</span>
@@ -48,7 +50,7 @@ function WorksWithCopyBlock({
           </h2>
           <p className="mt-4 max-w-[66ch] text-base leading-relaxed text-fg-muted">{body}</p>
         </div>
-      </div>
+      </MarketingSectionGrid>
     </section>
   );
 }

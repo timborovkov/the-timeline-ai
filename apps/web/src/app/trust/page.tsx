@@ -2,6 +2,7 @@ import { ArrowRight, Check, Minus } from 'lucide-react';
 import Link from 'next/link';
 
 import { EditorialStructuredData } from '@/components/marketing/editorial/editorial-structured-data';
+import { MarketingDisclosure } from '@/components/marketing/marketing-disclosure';
 import { MarketingContainer, MarketingSectionGrid } from '@/components/marketing/marketing-layout';
 import { PreservesStrip } from '@/components/marketing/preserves-strip';
 import { MarketingSectionIndex } from '@/components/marketing/section-index';
@@ -95,21 +96,22 @@ function TrustProvidersSection() {
               The services that can touch hosted data.
             </h2>
             <p className="mt-5 max-w-3xl text-base leading-8 text-fg-muted">
-              Core processors operate the hosted service. Services a customer deliberately
-              connects—such as Slack, Google Drive, GitHub, or a custom MCP server—receive only the
-              data and permissions needed for that connection.
+              Services you connect receive only the data and permissions needed for that connection.
+              The register below lists the hosted service’s core processors.
             </p>
-            <div className="mt-10 overflow-hidden border-y border-border">
-              {PROVIDERS.map(([provider, purpose]) => (
-                <div
-                  key={provider}
-                  className="grid gap-2 border-b border-border py-5 last:border-b-0 sm:grid-cols-[11rem_minmax(0,1fr)] sm:gap-8"
-                >
-                  <h3 className="font-semibold text-fg">{provider}</h3>
-                  <p className="text-sm leading-7 text-fg-muted">{purpose}</p>
-                </div>
-              ))}
-            </div>
+            <MarketingDisclosure summary="View processors and their roles">
+              <div className="mt-10 overflow-hidden border-y border-border">
+                {PROVIDERS.map(([provider, purpose]) => (
+                  <div
+                    key={provider}
+                    className="grid gap-2 border-b border-border py-5 last:border-b-0 sm:grid-cols-[11rem_minmax(0,1fr)] sm:gap-8"
+                  >
+                    <h3 className="font-semibold text-fg">{provider}</h3>
+                    <p className="text-sm leading-7 text-fg-muted">{purpose}</p>
+                  </div>
+                ))}
+              </div>
+            </MarketingDisclosure>
             <nav aria-labelledby="trust-legal-heading" className="mt-10">
               <h3 id="trust-legal-heading" className="text-xl font-semibold">
                 Legal documents
@@ -160,14 +162,24 @@ function TrustAssuranceSection() {
                 <h3 className="mt-5 text-2xl font-semibold tracking-[-0.035em]">
                   Controls in the application
                 </h3>
-                <p className="mt-4 text-sm leading-7 text-fg-muted">
+                <p className="mt-4 text-base leading-7 text-fg-muted">
                   Public source, team and visibility boundaries, encrypted secrets, meeting consent
-                  controls, and a maintained provider register. Browser analytics is confined to
-                  reviewed public pages and waits for affirmative consent; protected workspace
-                  routes do not load it. Personless surface streams and pseudonymous product events
-                  use separate server paths. These application controls are not an independent
-                  security audit of the hosted service.
+                  controls, and a maintained provider register.
                 </p>
+                <p className="mt-4 text-base leading-7 text-fg-muted">
+                  These application controls are not an independent security audit of the hosted
+                  service.
+                </p>
+                <MarketingDisclosure summary="Analytics boundaries">
+                  <p>
+                    Browser analytics is confined to reviewed public pages and waits for affirmative
+                    consent; protected workspace routes do not load it.
+                  </p>
+                  <p>
+                    Personless surface streams and pseudonymous product events use separate server
+                    paths.
+                  </p>
+                </MarketingDisclosure>
               </article>
               <article className="bg-bg p-7 sm:p-8">
                 <p className="flex items-center gap-2 font-mono text-[0.65rem] tracking-[0.1em] text-fg-dim uppercase">
@@ -237,22 +249,21 @@ export default function TrustPage() {
   const structuredData = buildPublicStructuredData(TRUST_DOCUMENT, getSiteUrl());
 
   return (
-    <PublicShell width="expanded" currentSection="trust" footerLabel="The Timeline trust center">
+    <PublicShell width="wide" currentSection="trust" footerLabel="The Timeline trust center">
       <main id="main" tabIndex={-1}>
         <EditorialStructuredData data={structuredData} />
 
         <section className="border-b border-border">
           <MarketingContainer className="py-16 sm:py-24 lg:py-28">
             <p className="text-sm font-medium text-fg-muted">Trust / Security / Data privacy</p>
-            <div className="mt-6 grid items-end gap-10 lg:grid-cols-[1.25fr_0.75fr]">
+            <div className="mt-6 grid items-end gap-10 grid-cols-[minmax(0,1fr)]">
               <h1 className="max-w-[14ch] text-balance text-[3rem] font-semibold leading-[0.95] tracking-[-0.05em] text-fg sm:text-[clamp(3.5rem,5vw,5.5rem)]">
                 Your work should not become someone else&apos;s training set.
               </h1>
               <div className="max-w-[46ch] space-y-5 text-base leading-8 text-fg-muted sm:text-lg">
                 <p>
-                  Timeline brings together your team&apos;s messages, meetings, files, and
-                  decisions. This page explains how the application handles that data, which
-                  providers process it, and the policies that govern its use.
+                  How Timeline handles your work, which providers process it, and the policies that
+                  govern its use.
                 </p>
                 <p>
                   Relevant content is sent to service providers to deliver requested features.
@@ -310,23 +321,30 @@ export default function TrustPage() {
             <MarketingSectionGrid>
               <MarketingSectionIndex index="02" label="AI and training" />
               <div>
-                <div className="grid gap-8 lg:grid-cols-[minmax(0,0.72fr)_minmax(0,1.28fr)] lg:gap-14">
+                <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-8">
                   <div>
                     <h2 className="max-w-[15ch] text-balance text-3xl font-semibold tracking-[-0.04em] sm:text-4xl">
                       AI models, routing, and retention.
                     </h2>
-                    <p className="mt-5 text-base leading-8 text-fg-muted">
-                      OpenRouter and an upstream endpoint process the input needed for each AI
-                      feature. Text, multimodal, and embedding roles require eligible ZDR endpoints
-                      and fail closed instead of using weaker retention. Supported calls send{' '}
-                      <code>data_collection: deny</code>, <code>zdr: true</code>, and an explicit
-                      cache-disable control. OpenRouter may select among eligible ZDR upstreams.
-                      These request controls do not independently verify provider-account settings
-                      or provider deletion.
+                    <p className="mt-5 max-w-[70ch] text-base leading-7 text-fg-muted">
+                      Text, multimodal and embedding roles require eligible ZDR endpoints and fail
+                      closed rather than accept weaker retention.
                     </p>
-                    <p className="mt-5 text-sm leading-7 text-fg-muted">
-                      {PUBLIC_TRANSCRIPTION_PRIVACY_CLAIMS.trustDetail}
-                    </p>
+                    <MarketingDisclosure summary="AI request controls and transcription retention">
+                      <p>
+                        OpenRouter and an upstream endpoint process the input needed for each AI
+                        feature. OpenRouter may select among eligible ZDR upstreams.
+                      </p>
+                      <p>
+                        Supported calls send <code>data_collection: deny</code>,{' '}
+                        <code>zdr: true</code>, and an explicit cache-disable control.
+                      </p>
+                      <p>
+                        These request controls do not independently verify provider-account settings
+                        or provider deletion.
+                      </p>
+                      <p>{PUBLIC_TRANSCRIPTION_PRIVACY_CLAIMS.trustDetail}</p>
+                    </MarketingDisclosure>
                   </div>
                   <div className="border-t border-border">
                     {TRUST_AI_ROUTES.map((route) => (
@@ -369,53 +387,84 @@ export default function TrustPage() {
           <MarketingContainer className="py-16 sm:py-20">
             <MarketingSectionGrid>
               <MarketingSectionIndex index="03" label="Storage and access" />
-              <div className="grid gap-10 lg:grid-cols-2 lg:gap-16">
+              <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-10">
                 <div>
                   <h2 className="text-3xl font-semibold tracking-[-0.04em] sm:text-4xl">
                     Storage and application controls.
                   </h2>
                   <p className="mt-5 text-base leading-8 text-fg-muted">
                     The hosted architecture uses Railway for the web app, workers, PostgreSQL,
-                    Redis, Qdrant vector search, and RustFS object storage. Application file
-                    transfers use team authorization and short-lived signed URLs. OAuth, API, and
-                    MCP secrets use AES-256-GCM authenticated encryption at rest.
+                    Redis, Qdrant vector search, and RustFS object storage.
+                  </p>
+                  <p className="mt-4 max-w-[70ch] text-base leading-7 text-fg-muted">
+                    Application file transfers use team authorization and short-lived signed URLs.
+                    OAuth, API, and MCP secrets use AES-256-GCM authenticated encryption at rest.
                   </p>
                 </div>
                 <div>
                   <h2 className="text-3xl font-semibold tracking-[-0.04em] sm:text-4xl">
                     Staff access policy.
                   </h2>
-                  <p className="mt-5 text-base leading-8 text-fg-muted">
-                    Timeline&apos;s staff access policy prohibits routine browsing of customer
-                    workspaces. It permits access only for user-requested support, service
-                    reliability, security response, legal compliance, or another documented
-                    operational need. The policy requires access to be limited to what the task
-                    needs.
+                  <p className="mt-5 max-w-[70ch] text-base leading-7 text-fg-muted">
+                    Staff policy prohibits routine workspace browsing. Access must serve a permitted
+                    purpose and be limited to what the task needs.
                   </p>
-                  <p className="mt-5 text-sm leading-7 text-fg-muted">
-                    Customer team owners and administrators do not receive general access to another
-                    member&apos;s private content. Separately authorized Timeline staff may use a
-                    temporary support session as a selected member for a permitted purpose. That
-                    session can read the member&apos;s private content and make changes within the
-                    member&apos;s permissions. It does not grant access to other members&apos;
-                    private content that the selected member cannot see.
-                  </p>
-                  <p className="mt-5 text-sm leading-7 text-fg-muted">
-                    These support sessions expire after 30 minutes and require a recorded purpose,
-                    ticket or incident reference, and authorization or emergency context. We record
-                    the staff identity separately from the member identity. Inspection of suspended
-                    accounts or teams is read-only. Team owners can request permanent deletion in
-                    Team settings, immediately disabling access for all members. Disabling preserves
-                    data while pausing processing and new usage accrual, and requests cancellation
-                    of subscription renewal. Platform administrators can restore access before
-                    permanent deletion starts. Deletion removes operational team content, files,
-                    search vectors and team connections through a tracked cleanup process. User
-                    accounts, other teams and original external files remain. Limited financial and
-                    security records, backups and provider copies have separate retention or
-                    deletion requirements; active-system cleanup is not a claim of immediate erasure
-                    everywhere. Ordinary support requires customer authorization; emergency access
-                    remains subject to subsequent review under our staff policy.
-                  </p>
+                  <MarketingDisclosure summary="Read the staff access and deletion policy">
+                    <p>
+                      Timeline&apos;s staff access policy prohibits routine browsing of customer
+                      workspaces. It permits access only for user-requested support, service
+                      reliability, security response, legal compliance, or another documented
+                      operational need. The policy requires access to be limited to what the task
+                      needs.
+                    </p>
+                    <p>
+                      Customer team owners and administrators do not receive general access to
+                      another member&apos;s private content.
+                    </p>
+                    <p>
+                      Separately authorized Timeline staff may use a temporary support session as a
+                      selected member for a permitted purpose.
+                    </p>
+                    <p>
+                      That session can read the member&apos;s private content and make changes
+                      within the member&apos;s permissions.
+                    </p>
+                    <p>
+                      It does not grant access to other members&apos; private content that the
+                      selected member cannot see.
+                    </p>
+                    <p>
+                      These support sessions expire after 30 minutes and require a recorded purpose,
+                      ticket or incident reference, and authorization or emergency context.
+                    </p>
+                    <p>We record the staff identity separately from the member identity.</p>
+                    <p>Inspection of suspended accounts or teams is read-only.</p>
+                    <p>
+                      Team owners can request permanent deletion in Team settings, immediately
+                      disabling access for all members.
+                    </p>
+                    <p>
+                      Disabling preserves data while pausing processing and new usage accrual, and
+                      requests cancellation of subscription renewal.
+                    </p>
+                    <p>
+                      Platform administrators can restore access before permanent deletion starts.
+                    </p>
+                    <p>
+                      Deletion removes operational team content, files, search vectors and team
+                      connections through a tracked cleanup process.
+                    </p>
+                    <p>User accounts, other teams and original external files remain.</p>
+                    <p>
+                      Limited financial and security records, backups and provider copies have
+                      separate retention or deletion requirements; active-system cleanup is not a
+                      claim of immediate erasure everywhere.
+                    </p>
+                    <p>
+                      Ordinary support requires customer authorization; emergency access remains
+                      subject to subsequent review under our staff policy.
+                    </p>
+                  </MarketingDisclosure>
                 </div>
               </div>
             </MarketingSectionGrid>

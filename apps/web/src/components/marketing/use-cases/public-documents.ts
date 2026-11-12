@@ -17,7 +17,7 @@ function useCaseLlmsSections(useCase: UseCaseContent): readonly PublicLlmsConten
       title: 'Direct answer',
       body: `${useCase.title} ${useCase.summary}`,
     },
-    ...(useCase.howItWorks ? [{ title: 'How it works', body: useCase.howItWorks }] : []),
+    ...(useCase.howItWorks ? [{ title: 'How it works', body: useCase.howItWorks.join(' ') }] : []),
     {
       title: 'Fictional example',
       body: useCase.example.title ?? useCase.example.label,

@@ -58,6 +58,16 @@ describe('Trust page', () => {
     expect(html).toContain('Approval-backed suggestions');
   });
 
+  it('keeps policy details in the DOM and collapsed by default', () => {
+    render(<TrustPage />);
+    const disclosure = screen
+      .getByText('Read the staff access and deletion policy')
+      .closest('details');
+    expect(disclosure).not.toBeNull();
+    expect(disclosure?.hasAttribute('open')).toBe(false);
+    expect(disclosure?.textContent).toContain('30 minutes');
+  });
+
   it('routes signed-in readers back to their dashboard', () => {
     setPublicSessionCache({ status: 'signed-in' });
     render(<TrustPage />);

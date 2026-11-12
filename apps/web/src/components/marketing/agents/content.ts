@@ -4,8 +4,7 @@ export const AGENTS_HUB = {
   route: '/agents',
   kicker: 'Agents',
   title: 'Agents are teammates.',
-  summary:
-    'They read decisions, owners and history, with citations, and they write updates back. They do not need a standup or a re-brief, and they can read what people and other agents already did.',
+  summary: 'Give agents the team’s cited context and a way to contribute their own notes.',
   seoTitle: 'Agents are teammates',
   seoDescription:
     'Agents read cited team context and write updates back into The Timeline. They get decisions, owners and history without a standup or a re-brief, and they add notes through remember, email or a webhook.',
@@ -15,7 +14,7 @@ export const AGENTS_HUB = {
     index: '01',
     label: 'Read and write',
     title: 'Agents read the context, and they write updates.',
-    body: 'They get decisions, owners and history, with citations. They do not need a standup or a re-brief, and they can read what people and other agents already did. When they write, a note is cited evidence, the same way a forwarded email or a webhook payload is. It counts toward the accepted-sources meter. It does not change canonical records.',
+    body: 'An agent’s note becomes cited evidence. It does not change canonical records. Notes count toward the accepted-sources meter.',
     paths: [
       {
         name: 'timeline.remember',
@@ -34,7 +33,7 @@ export const AGENTS_HUB = {
   example: {
     label: 'Illustrative example',
     title: 'A progress note from Grok Bot.',
-    body: 'Grok Bot, or any compatible agent, can send a short progress note through timeline.remember, team ingest email, or an authenticated ingest webhook. That note lands as cited evidence in the work record.',
+    body: 'Send a progress note through one of the write paths above. It joins the work record as cited evidence.',
     boundary:
       'This illustrates those write paths. It is not a dedicated Grok Bot product or a separate Timeline feature.',
   },
@@ -52,9 +51,9 @@ export const AGENTS_HUB = {
   },
   setupPrerequisite: {
     title: 'Account and team first',
-    body: 'Paste the line into a compatible agent. If you already have a Timeline team, sign in and choose it. If you are new, create an account first — we create your first team automatically — then approve access. Connecting does not import Slack, Telegram or email history.',
+    body: 'Paste the command into a compatible agent, sign in or create an account, choose your team and approve access. New accounts get their first team automatically.',
     distinction:
-      'This lets an external agent read Timeline and write cited notes. It does not add third-party tools to The Timeline Agent.',
+      'Connecting an external agent does not import chat or email history and does not add third-party tools to The Timeline Agent. For those tools, use',
     mcpHref: '/integrations/mcp' as const,
     mcpLabel: 'Connect MCP tools for live lookups',
   },
@@ -64,12 +63,12 @@ export const AGENTS_HUB = {
   },
   cta: {
     title: 'Start free. Agents read the record and write back.',
-    body: 'Create a workspace. Agents read decisions, owners and history, with citations, and they add notes through remember, email or a webhook.',
+    body: 'Create your workspace, then connect your agent.',
   },
   screenshot: {
     file: '19-agent-tools-dark.png',
     alt: 'Connections Agent tools showing the Timeline MCP endpoint other agents use to read this team.',
     caption:
-      'The Timeline MCP endpoint other agents use to read this team. Agent MCP servers on the same screen are inbound live lookup for The Timeline Agent, covered on Connect MCP tools.',
+      'Connect external agents through the Timeline MCP endpoint. The separate Agent MCP servers section adds live tools to The Timeline Agent.',
   },
 } as const;

@@ -229,8 +229,8 @@ their complete prompt or command, secrets never appear in those payloads, and
 the guide remains searchable from the Help directory.
 
 `/how-it-works` is the plain-language explanation of how Timeline works. It uses
-the same 82rem acquisition grid, 13–15rem indexed section rail, hero scale,
-footer, and section rhythm as the integration directory. A short hero leads
+the shared marketing container and aligned section labels, with the same hero
+scale, footer, and section rhythm as the integration directory. A short hero leads
 directly into the full-width animated platform flow; separate introductory step
 cards and trust cards do not repeat that story. The diagram states the capture,
 approval, citation, and enabled-MCP boundaries in context, then the next section
@@ -242,7 +242,7 @@ The legacy `/record` URL permanently redirects to `/how-it-works`; it is not a
 second indexable destination.
 
 `/trust` is the public technical security and privacy reference. It follows the
-expanded editorial grid, leads with the training-data boundary, then shows the data path,
+shared secondary marketing grid, leads with the training-data boundary, then shows the data path,
 AI routing, storage and access, processor roles, permissions, current assurance
 status, and private vulnerability-reporting route. It must distinguish controls
 enforced in code from production-account, contract, and certification evidence;
@@ -305,3 +305,17 @@ The homepage hero, `/agents` page, agent help page, and authenticated Connect
 your agent screen share AgentSetupCard and its generic llms.txt setup command. Client-specific setup starts
 closed. Long agent instructions remain copyable payloads, never a visible Codex
 text wall; advanced setup and access explanations are optional disclosures.
+
+### Secondary marketing layout and policy disclosures
+
+Use-case, integration, trust, and agents pages use `MarketingContainer` with a
+shared `max-w-6xl` width and responsive gutters. Section labels, headings, prose,
+screenshots, walkthroughs, and related links share the same left edge. Prose may
+have a shorter reading measure without narrowing the surrounding section or rule.
+The homepage keeps its independent layout.
+
+Keep one idea per paragraph and avoid repeating capture, approval, and citation
+explanations within a page. Preserve headings and content blocks. Policy detail
+uses native, closed-by-default `MarketingDisclosure` elements: summaries remain
+keyboard accessible and all details remain in the DOM. Short summaries must not
+strengthen the policy promises; Privacy and Terms retain their legal text.
