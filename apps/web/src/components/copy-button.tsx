@@ -51,7 +51,7 @@ export function CopyButton({
     <>
       <Button
         type="button"
-        size={appearance === 'icon' ? 'sm' : 'sm'}
+        size="sm"
         variant="ghost"
         aria-label={accessibleLabel}
         className={cn(appearance === 'icon' && 'h-7 shrink-0 px-2', className)}
@@ -80,25 +80,13 @@ export function CopyButton({
             });
         }}
       >
-        {publicFeedback ? (
-          <span
-            key={`${feedback.request}-${copied}`}
-            className={cn(styles.content, copied && feedback.pointer && styles.confirmed)}
-            aria-hidden="true"
-          >
-            {copied ? <Check /> : <Copy />}
-            <span className={styles.label}>
-              <span className={styles.reserve}>{appearance === 'icon' ? 'Copy' : label}</span>
-              <span className={styles.reserve}>Copied</span>
-              <span>{copied ? 'Copied' : appearance === 'icon' ? 'Copy' : label}</span>
-            </span>
-          </span>
-        ) : (
-          <>
-            {copied ? <Check aria-hidden="true" /> : <Copy aria-hidden="true" />}
-            {appearance === 'icon' ? (copied ? 'Copied' : 'Copy') : copied ? 'Copied' : label}
-          </>
-        )}
+        <CopyButtonContent
+          label={appearance === 'icon' ? 'Copy' : label}
+          copied={copied}
+          publicFeedback={publicFeedback}
+          pointer={Boolean(feedback.pointer)}
+          request={feedback.request}
+        />
       </Button>
       {copyError ? (
         <output
@@ -113,5 +101,44 @@ export function CopyButton({
         </output>
       )}
     </>
+  );
+}
+
+function CopyButtonContent({
+  label,
+  copied,
+  publicFeedback,
+  pointer,
+  request,
+}: {
+  label: string;
+  copied: boolean;
+  publicFeedback: boolean;
+  pointer: boolean;
+  request: number;
+}) {
+  const Icon = copied ? Check : Copy;
+  const visibleLabel = copied ? 'Copied' : label;
+  if (!publicFeedback) {
+    return (
+      <>
+        <Icon aria-hidden="true" />
+        {visibleLabel}
+      </>
+    );
+  }
+  return (
+    <span
+      key={`${request}-${copied}`}
+      className={cn(styles.content, copied && pointer && styles.confirmed)}
+      aria-hidden="true"
+    >
+      <Icon />
+      <span className={styles.label}>
+        <span className={styles.reserve}>{label}</span>
+        <span className={styles.reserve}>Copied</span>
+        <span>{visibleLabel}</span>
+      </span>
+    </span>
   );
 }
