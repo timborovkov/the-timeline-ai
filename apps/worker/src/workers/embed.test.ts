@@ -1037,6 +1037,61 @@ describe('processEmbedJobForTests', () => {
     expect(enqueueEmbedJob).not.toHaveBeenCalled();
   });
 
+  it('does not split upstream timed out failures on the final queue attempt', async () => {
+    const rawEventId = '18181818-2222-4333-8444-555555555555';
+    const longText = Array.from(
+      { length: 10_000 },
+      (_, i) => `Final outage sentence ${String(i)} with detail.`,
+    ).join(' ');
+    await db.insert(rawEvents).values({
+      id: rawEventId,
+      teamId: TEAM_ID,
+      authorUserId: USER_ID,
+      source: 'web',
+      contentText: longText,
+      occurredAt: new Date('2026-05-27T12:00:00Z'),
+      visibility: 'team',
+      visibilityOwnerUserId: USER_ID,
+      sourceMetadata: {},
+    });
+    const providerOutage = Object.assign(new Error('llm.embedMany failed'), {
+      timelineAi: true,
+      causeName: 'AI_APICallError',
+      causeMessage: 'Worker upstream fetch timed out after 60000ms',
+    });
+    const embedMany = vi
+      .fn<(input: { texts: string[] }) => Promise<{ vectors: number[][]; model: string }>>()
+      .mockRejectedValue(providerOutage);
+    const upsertVector = vi.fn().mockResolvedValue(undefined);
+    const deletePointsForSource = vi.fn().mockResolvedValue(undefined);
+    const deletePointsForSourceFromChunk = vi
+      .fn<DeletePointsForSourceFromChunk>()
+      .mockResolvedValue(undefined);
+    const enqueueEmbedJob = vi.fn<EnqueueEmbed>().mockResolvedValue(undefined);
+
+    await expect(
+      processEmbedJobForTests(
+        { db: db as never },
+        { scope: 'raw_event', teamId: TEAM_ID, rawEventId },
+        {
+          getEnv: () =>
+            ({ OPENROUTER_API_KEY: 'test-key', QDRANT_URL: 'http://qdrant.test' }) as never,
+          embedMany,
+          enqueueEmbedJob,
+          getQdrantClient: vi.fn(
+            () =>
+              ({ deletePointsForSource, deletePointsForSourceFromChunk, upsertVector }) as never,
+          ),
+        },
+        { attemptsMade: 5, maxAttempts: 6 },
+      ),
+    ).rejects.toThrow('llm.embedMany failed');
+
+    expect(embedMany).toHaveBeenCalledOnce();
+    expect(upsertVector).not.toHaveBeenCalled();
+    expect(enqueueEmbedJob).not.toHaveBeenCalled();
+  });
+
   it('does not split retryable provider status failures on the final queue attempt', async () => {
     const rawEventId = '18181818-3333-4333-8444-555555555555';
     const longText = Array.from(
