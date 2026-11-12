@@ -119,7 +119,8 @@ describe('notifyAction', () => {
       { id?: string; duration?: number; action?: { onClick?: () => void } } | undefined;
     expect(successOptions).toMatchObject({
       id: 'object:1',
-      duration: 2_000,
+      duration: Infinity,
+      closeButton: true,
     });
     expect(isValidElement(successOptions?.action)).toBe(true);
     expect(isValidElement(successOptions?.action) && successOptions.action.type).toBe(

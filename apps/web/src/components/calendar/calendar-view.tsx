@@ -48,6 +48,7 @@ import { VirtualList } from '@/components/collections/virtual-list';
 import { EmptyState } from '@/components/empty-state';
 import { PinButton } from '@/components/pins/pin-button';
 import { PinOverflowMenu } from '@/components/pins/pin-overflow-menu';
+import { useAppDialog } from '@/components/ui/app-dialog';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -208,7 +209,11 @@ function dateSpan(
   endDate: string,
   timezone: string,
 ): { start: string; end: string } {
-  const range = localDateSpanToUtcRange(startDate, endDate, timezone);
+  const range = localDateSpanToUtcRange(
+    startDate,
+    Temporal.PlainDate.from(endDate).add({ days: 1 }).toString(),
+    timezone,
+  );
   return { start: range.from.toISOString(), end: range.to.toISOString() };
 }
 
@@ -295,7 +300,6 @@ function blankDraft(
   visibility: Draft['visibility'] = 'team',
   visibilityUserIds: string[] | null = null,
 ): Draft {
-  const next = anchor.add({ days: 1 });
   return {
     title: '',
     description: '',
@@ -308,7 +312,7 @@ function blankDraft(
     allDay: true,
     timezone: assertValidTimezone(timezone),
     startDate: isoDate(anchor),
-    endDate: isoDate(next),
+    endDate: isoDate(anchor),
     startDateTime: `${isoDate(anchor)}T09:00`,
     endDateTime: `${isoDate(anchor)}T10:00`,
   };
@@ -333,7 +337,10 @@ function draftFromEvent(event: CalendarEvent, timezone: string): Draft {
     allDay: event.allDay,
     timezone: displayTimezone,
     startDate: start.toPlainDate().toString(),
-    endDate: end.toPlainDate().toString(),
+    endDate: (event.allDay
+      ? end.toPlainDate().subtract({ days: 1 })
+      : end.toPlainDate()
+    ).toString(),
     startDateTime: start.toString({ smallestUnit: 'minute' }),
     endDateTime: end.toString({ smallestUnit: 'minute' }),
   };
@@ -366,6 +373,7 @@ function useCalendarViewModel({
   focusEventId = null,
 }: CalendarViewProps) {
   const router = useRouter();
+  const dialog = useAppDialog();
   const searchParams = useSearchParams();
   const searchParamsKey = searchParams.toString();
   const mode = (searchParams.get('view') as CalendarViewMode | null) ?? 'month';
@@ -576,7 +584,7 @@ function useCalendarViewModel({
     } catch {
       dispatchCalendarUi({
         error: draft.allDay
-          ? 'Enter valid start and exclusive end dates.'
+          ? 'Enter valid first and last days.'
           : 'Enter valid start and end times.',
       });
       return;
@@ -589,7 +597,7 @@ function useCalendarViewModel({
     ) {
       dispatchCalendarUi({
         error: draft.allDay
-          ? 'Exclusive end date must be after start date.'
+          ? 'Last day must be on or after the start date.'
           : 'End must be after start.',
       });
       return;
@@ -714,8 +722,24 @@ function useCalendarViewModel({
     });
   }
 
-  function remove() {
+  async function remove() {
     if (!editing) return;
+    const recurrenceEditMode = editing.recurringParentId ? draft.recurrenceEditMode : 'series';
+    const scopeLabel =
+      editing.rrule || editing.recurringParentId
+        ? {
+            single: 'Only this occurrence',
+            this_and_future: 'This and all future occurrences',
+            series: 'The entire series',
+          }[recurrenceEditMode]
+        : 'This event';
+    const confirmed = await dialog.confirm({
+      title: `Delete ${editing.title}?`,
+      description: `${scopeLabel} will be permanently deleted. This cannot be undone.`,
+      confirmLabel: 'Delete event',
+      destructive: true,
+    });
+    if (!confirmed) return;
     startTransition(async () => {
       const result = await notifyAction({
         id: `calendar:${editing.id}:delete`,
@@ -724,7 +748,7 @@ function useCalendarViewModel({
         error: 'Couldn’t delete event',
         run: async () => {
           const deleted = await deleteCalendarEventAction(editing.id, {
-            recurrenceEditMode: draft.recurrenceEditMode,
+            recurrenceEditMode,
           });
           return deleted.ok ? deleted : { error: deleted.error ?? 'Couldn’t delete event' };
         },
@@ -740,6 +764,7 @@ function useCalendarViewModel({
     safeMode === 'day' ? 'grid-cols-1' : 'grid-cols-7 sm:grid-cols-[3rem_repeat(7,minmax(0,1fr))]';
 
   return {
+    confirmation: dialog.node,
     anchor,
     currentToday,
     displayEventListEvents,
@@ -791,6 +816,7 @@ function CalendarViewLayout({ model }: { model: ReturnType<typeof useCalendarVie
 
   return (
     <div className="space-y-4">
+      {model.confirmation}
       {focusedEvent ? (
         <ChatViewContextBinder
           viewKey={`calendar-event:${focusedEvent.id}`}
@@ -1408,7 +1434,8 @@ function CalendarEventDialog({
           <div className="min-w-0 space-y-2">
             <DialogTitle>{editing ? 'Edit event' : 'New event'}</DialogTitle>
             <DialogDescription>
-              Times are saved in {timezone}. All-day events use an exclusive end date.
+              Times are saved in {timezone}. For all-day events, choose the first and last included
+              days.
             </DialogDescription>
           </div>
           {editing && !editing.redacted ? (
@@ -1607,6 +1634,7 @@ function CalendarDraftRecurrence({
   draft: Draft;
   onDraftChange: Dispatch<SetStateAction<Draft>>;
 }) {
+  const [advancedOpen, setAdvancedOpen] = useState(recurrencePresetValue(draft.rrule) === 'custom');
   return (
     <div className="grid gap-4 sm:grid-cols-[12rem_1fr_12rem]">
       <div className="space-y-2">
@@ -1615,6 +1643,10 @@ function CalendarDraftRecurrence({
           id="calendar-recurrence-preset"
           value={recurrencePresetValue(draft.rrule)}
           onChange={(e) => {
+            if (e.target.value === 'custom') {
+              setAdvancedOpen(true);
+              return;
+            }
             const preset = RECURRENCE_PRESETS.find((item) => item.value === e.target.value);
             if (!preset) return;
             onDraftChange((d) => ({ ...d, rrule: preset.rrule }));
@@ -1628,8 +1660,15 @@ function CalendarDraftRecurrence({
           <option value="custom">Custom</option>
         </NativeSelect>
       </div>
-      <div className="space-y-2">
-        <Label htmlFor="calendar-rrule">RRULE</Label>
+      <details
+        className="space-y-2"
+        open={advancedOpen}
+        onToggle={(event) => {
+          setAdvancedOpen(event.currentTarget.open);
+        }}
+      >
+        <summary className="min-h-9 cursor-pointer text-sm">Advanced repeat rule</summary>
+        <Label htmlFor="calendar-rrule">Recurrence rule (RRULE)</Label>
         <Input
           id="calendar-rrule"
           placeholder="FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR"
@@ -1639,7 +1678,7 @@ function CalendarDraftRecurrence({
           }}
           maxLength={2000}
         />
-      </div>
+      </details>
       <div className="space-y-2">
         <Label htmlFor="calendar-recurrence-edit">Edit scope</Label>
         <NativeSelect
@@ -1683,7 +1722,7 @@ function CalendarDraftTimes({
           />
         </div>
         <div className="space-y-2">
-          <Label htmlFor="calendar-end-date">End date (exclusive)</Label>
+          <Label htmlFor="calendar-end-date">Last day (included)</Label>
           <Input
             id="calendar-end-date"
             type="date"
@@ -1770,7 +1809,7 @@ function DayCell({
           onClick={() => {
             onCreate(day);
           }}
-          className={`rounded-sm px-1 text-xs font-medium hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 ${muted ? 'text-muted-foreground' : ''} ${
+          className={`min-h-6 min-w-6 rounded-sm px-1 text-xs font-medium hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 ${muted ? 'text-muted-foreground' : ''} ${
             isToday ? 'text-signal' : ''
           }`}
         >
@@ -1789,7 +1828,7 @@ function DayCell({
               onClick={() => {
                 onEdit(event);
               }}
-              className={`block w-full min-w-0 overflow-hidden rounded-sm px-1 py-0.5 text-left text-[11px] leading-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+              className={`block min-h-6 w-full min-w-0 overflow-hidden rounded-sm px-1 py-0.5 text-left text-[11px] leading-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
                 event.redacted
                   ? 'bg-muted text-muted-foreground italic'
                   : event.showAs === 'tentative'

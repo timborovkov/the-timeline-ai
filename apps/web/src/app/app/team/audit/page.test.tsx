@@ -85,7 +85,7 @@ describe('TrustAuditPage', () => {
     );
 
     expect(html.match(/<h1/g)).toHaveLength(1);
-    expect(fakes.auditList).toHaveBeenCalledWith(200);
+    expect(fakes.auditList).toHaveBeenCalledWith(201, 0);
     expect(fakes.getCalendarSettings).toHaveBeenCalledOnce();
     expect(html).toContain(
       new Intl.DateTimeFormat('en-US', {
@@ -288,4 +288,15 @@ describe('TrustAuditPage', () => {
     expect(html.match(/ada@example\.com/g)).toHaveLength(1);
     expect(html).not.toContain('<dt class="sr-only">Email</dt>');
   });
+});
+
+it('loads the next audit page without changing the access gate', async () => {
+  fakes.auditList.mockResolvedValue([]);
+  const html = renderToStaticMarkup(
+    await TrustAuditPage({ searchParams: Promise.resolve({ page: '2' }) }),
+  );
+  expect(fakes.requireMembership).toHaveBeenCalledWith('admin');
+  expect(fakes.auditList).toHaveBeenCalledWith(201, 200);
+  expect(html).toContain('Newer entries');
+  expect(html).not.toContain('Older entries');
 });

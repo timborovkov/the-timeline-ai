@@ -49,7 +49,7 @@ function SheetContent({
       <DialogPrimitive.Content
         data-slot="sheet-content"
         className={cn(
-          'fixed inset-y-0 right-0 z-50 flex h-dvh min-w-0 w-full max-w-3xl flex-col overflow-hidden border-l border-border bg-surface shadow-lg duration-200 outline-none motion-reduce:animate-none data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:slide-out-to-right data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:slide-in-from-right',
+          'fixed inset-y-0 right-0 z-50 flex h-dvh min-w-0 w-full max-w-3xl flex-col overflow-hidden border-l border-border bg-surface shadow-lg duration-120 outline-none motion-reduce:animate-none data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:slide-out-to-right data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:slide-in-from-right',
           className,
         )}
         {...props}

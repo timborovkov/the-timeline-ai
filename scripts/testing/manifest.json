@@ -1,4 +1,5 @@
 {
+  "apps/web/src/lib/kanban-keyboard.test.ts": { "group": "unit" },
   "apps/worker/src/workers/boardQualification-discovery.test.ts": { "group": "integration" },
   "apps/web/src/app/workspace-suspended/page.test.tsx": {
     "group": "dom"

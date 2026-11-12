@@ -8,14 +8,11 @@ import {
 import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
 
-import {
-  completeFirstRunAction,
-  goToOnboardingHomeAction,
-  recordAgentDeployedAction,
-} from '@/app/actions/first-run';
+import { completeFirstRunAction, recordAgentDeployedAction } from '@/app/actions/first-run';
 import { updateDigestPreferenceAction } from '@/app/actions/teams';
 import { CopyableTextField } from '@/components/copyable-text-field';
 import { Button } from '@/components/ui/button';
+import { notifyAction, notifyError } from '@/lib/notify';
 import { cn } from '@/lib/utils';
 
 const CHANNELS: {
@@ -81,12 +78,22 @@ export function GoLiveScreen({
   function openChannel(channel: GoLiveChannel, href?: string) {
     if (channel === 'email') {
       setShowEmailHow(true);
-      startTransition(() => {
-        void recordAgentDeployedAction('email');
-      });
       return;
     }
     if (href) router.push(href);
+  }
+
+  function finish() {
+    startTransition(async () => {
+      const result = await notifyAction({
+        id: 'onboarding:finish',
+        loading: 'Saving progress…',
+        success: 'Progress saved',
+        error: 'Could not finish setup.',
+        run: completeFirstRunAction,
+      });
+      if (!result.error && 'ok' in result && result.ok) router.push('/app');
+    });
   }
 
   return (
@@ -140,22 +147,41 @@ export function GoLiveScreen({
             onClick={() => {
               const next = !digest;
               setDigest(next);
-              startTransition(() => {
+              startTransition(async () => {
                 const form = new FormData();
                 if (next) form.set('dailyDigestEnabled', 'on');
-                void updateDigestPreferenceAction({}, form);
-                if (next) void recordAgentDeployedAction('digest');
+                const result = await notifyAction({
+                  id: 'onboarding:digest',
+                  loading: 'Saving digest preference…',
+                  success: 'Digest preference saved',
+                  error: 'Could not save digest preference.',
+                  run: () => updateDigestPreferenceAction({}, form),
+                });
+                if (result.error) {
+                  setDigest(!next);
+                  return;
+                }
+                if (next) {
+                  try {
+                    await recordAgentDeployedAction('digest');
+                  } catch {
+                    notifyError(
+                      'onboarding:digest-record',
+                      'Digest is enabled, but setup progress could not be recorded.',
+                    );
+                  }
+                }
               });
             }}
             className={cn(
-              'relative h-5 w-9 rounded-full transition-colors',
+              'relative h-6 w-10 rounded-full transition-colors',
               digest ? 'bg-signal' : 'bg-surface-2',
             )}
           >
             <span
               className={cn(
-                'absolute top-0.5 size-4 rounded-full transition-[left] ',
-                digest ? 'left-[18px] bg-signal-fg' : 'left-0.5 bg-fg-dim',
+                'absolute left-1 top-1 size-4 rounded-full transition-transform duration-150 ease-out motion-reduce:transition-none ',
+                digest ? 'translate-x-4 bg-signal-fg' : 'translate-x-0 bg-fg-dim',
               )}
             />
           </button>
@@ -183,21 +209,10 @@ export function GoLiveScreen({
         Invite teammates once there&apos;s something worth sharing. It stays on your checklist.
       </p>
       <div className="mt-5 flex flex-col gap-2 sm:flex-row">
-        <Button type="button" disabled={pending} onClick={() => void goToOnboardingHomeAction()}>
+        <Button type="button" disabled={pending} onClick={finish}>
           Go to Home
         </Button>
-        <Button
-          type="button"
-          variant="ghost"
-          disabled={pending}
-          onClick={() => {
-            startTransition(() => {
-              void completeFirstRunAction().then(() => {
-                router.push('/app');
-              });
-            });
-          }}
-        >
+        <Button type="button" variant="ghost" disabled={pending} onClick={finish}>
           Skip for now
         </Button>
       </div>

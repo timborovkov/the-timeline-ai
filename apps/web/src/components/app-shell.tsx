@@ -79,7 +79,7 @@ export function AppShell({
         <InspectorProvider>
           <AppDocumentScrollLock />
           <SkipLink />
-          <div className="flex h-dvh w-full overflow-hidden bg-bg">
+          <div className="dashboard-shell flex h-dvh w-full overflow-hidden bg-bg">
             {/* ── Left rail (desktop) ─────────────────────────────────── */}
             <TooltipProvider>
               <DesktopSidebar
@@ -130,7 +130,7 @@ export function AppShell({
                   <Link
                     href="/app/search"
                     aria-label="Open search"
-                    className="grid size-9 place-items-center rounded-sm text-fg-muted transition-colors hover:bg-surface-2 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong focus-visible:ring-offset-1 focus-visible:ring-offset-bg md:hidden"
+                    className="grid size-9 place-items-center rounded-sm text-fg-muted transition-colors hover:bg-surface-2 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-bg md:hidden"
                   >
                     <Search aria-hidden="true" className="size-4" />
                   </Link>
@@ -139,11 +139,18 @@ export function AppShell({
                   <InspectorToggle />
                   <ThemeToggle />
                   {platformAdmin && (
-                    <Link href="/app/admin" className="px-2 py-3 text-sm hover:underline">
+                    <Link
+                      href="/app/admin"
+                      className="hidden px-2 py-3 text-sm hover:underline md:block"
+                    >
                       Platform admin
                     </Link>
                   )}
-                  <UserMenu user={user} impersonating={Boolean(impersonation)} />
+                  <UserMenu
+                    platformAdmin={platformAdmin}
+                    user={user}
+                    impersonating={Boolean(impersonation)}
+                  />
                 </div>
               </header>
               {gettingStarted ? (

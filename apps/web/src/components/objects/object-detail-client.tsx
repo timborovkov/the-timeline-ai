@@ -2728,7 +2728,7 @@ function ObjectRelationshipsSection({
             <li key={`${relationship.direction}-${relationship.id}`} className="grid gap-0.5">
               <a
                 href={`/app/objects/${relationship.otherId}`}
-                className={`min-w-0 truncate ${DETAIL_LINK_CLASS}`}
+                className={`inline-flex min-h-6 items-center min-w-0 truncate ${DETAIL_LINK_CLASS}`}
               >
                 {displayText(relationship.otherName)}
               </a>
@@ -2758,7 +2758,7 @@ function ObjectRelationshipsSection({
                       onClick={() => {
                         onRemoveRelationship(relationship.id, relationship.otherId);
                       }}
-                      className="text-xs text-danger hover:underline disabled:opacity-50"
+                      className="inline-flex min-h-8 min-w-8 items-center text-xs text-danger hover:underline disabled:opacity-50"
                     >
                       Unlink
                     </button>
@@ -2878,7 +2878,7 @@ function ObjectArchiveFooter({
         type="button"
         disabled={pending || archivedAt !== null}
         onClick={onArchiveObject}
-        className="text-xs text-danger hover:underline disabled:opacity-50"
+        className="inline-flex min-h-8 min-w-8 items-center text-xs text-danger hover:underline disabled:opacity-50"
       >
         {archivedAt ? 'Archived' : 'Archive object'}
       </button>

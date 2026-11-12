@@ -1,6 +1,6 @@
 'use client';
 
-import { useActionState, useState } from 'react';
+import { useActionState, useId, useState } from 'react';
 
 import { setVisibilityDefaultAction } from '@/app/actions/visibility';
 import { FormActionToast } from '@/components/form-action-toast';
@@ -55,6 +55,9 @@ export function VisibilityDefaultSettings({
 }) {
   return (
     <div>
+      <p className="text-xs text-fg-muted">
+        Changes save automatically. For specific users, choose people and select Save.
+      </p>
       {defaults.map((row) => {
         const userKey = (row.visibilityUserIds ?? []).join(',');
         return (
@@ -70,12 +73,17 @@ export function VisibilityDefaultSettings({
 }
 
 function VisibilityDefaultForm({ row, members }: { row: DefaultRow; members: Member[] }) {
+  const fieldId = useId();
   const [state, action, pending] = useActionState(setVisibilityDefaultAction, {});
   const specificAllowed = SPECIFIC_OK.has(row.source);
   const [selectedVisibility, setSelectedVisibility] = useState(row.visibility);
   const selectedMemberIds = new Set(row.visibilityUserIds ?? []);
   return (
-    <form action={action} className="border-b border-border/80 py-2 last:border-b-0">
+    <form
+      aria-label={`${SOURCE_LABEL[row.source]} defaults`}
+      action={action}
+      className="border-b border-border/80 py-2 last:border-b-0"
+    >
       <input type="hidden" name="source" value={row.source} />
       <div className="flex min-h-11 flex-wrap items-center gap-2">
         <div className="min-w-40 flex-1">
@@ -84,7 +92,12 @@ function VisibilityDefaultForm({ row, members }: { row: DefaultRow; members: Mem
             {row.inherited ? 'Inherits fallback' : 'Explicit default'}
           </p>
         </div>
+        <label className="sr-only" htmlFor={`${fieldId}-visibility`}>
+          {SOURCE_LABEL[row.source]} visibility
+        </label>
         <NativeSelect
+          id={`${fieldId}-visibility`}
+          disabled={pending}
           name="visibility"
           value={selectedVisibility}
           onChange={(e) => {
@@ -99,7 +112,12 @@ function VisibilityDefaultForm({ row, members }: { row: DefaultRow; members: Mem
           <option value="private">Private</option>
           {specificAllowed ? <option value="specific_users">Specific users</option> : null}
         </NativeSelect>
+        <label className="sr-only" htmlFor={`${fieldId}-owner`}>
+          {SOURCE_LABEL[row.source]} source owner
+        </label>
         <NativeSelect
+          id={`${fieldId}-owner`}
+          disabled={pending}
           name="sourceOwnerUserId"
           defaultValue={row.sourceOwnerUserId ?? ''}
           className="h-8 w-auto min-w-36"
@@ -122,6 +140,7 @@ function VisibilityDefaultForm({ row, members }: { row: DefaultRow; members: Mem
         <FormActionToast
           id={`visibility-default:${row.source}`}
           error={state.error}
+          loading="Saving visibility default…"
           success={state.ok ? 'Visibility default saved' : undefined}
         />
       </div>

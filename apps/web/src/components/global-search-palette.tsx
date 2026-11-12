@@ -195,6 +195,13 @@ export function GlobalSearchPalette({ hint, className }: Props) {
     router.push(searchHref);
   }
 
+  useEffect(() => {
+    if (open && view.activeIndex >= 0)
+      document
+        .getElementById(`global-search-result-${view.activeIndex}`)
+        ?.scrollIntoView({ block: 'nearest' });
+  }, [open, view.activeIndex]);
+
   return (
     <div ref={rootRef} className={cn('relative flex-1', className)}>
       <div
@@ -215,6 +222,16 @@ export function GlobalSearchPalette({ hint, className }: Props) {
           id="global-search-input"
           ref={inputRef}
           type="search"
+          role="combobox"
+          aria-autocomplete="list"
+          aria-haspopup="grid"
+          aria-expanded={open}
+          aria-controls={open ? 'global-search-results' : undefined}
+          aria-activedescendant={
+            open && view.activeIndex >= 0 && view.activeIndex < selectableCount
+              ? `global-search-result-${view.activeIndex}`
+              : undefined
+          }
           value={query}
           placeholder="Ask, jump, capture, or search…"
           autoComplete="off"
@@ -259,7 +276,10 @@ export function GlobalSearchPalette({ hint, className }: Props) {
           }}
         />
         {view.loading ? (
-          <Loader2 aria-hidden="true" className="size-3.5 animate-spin text-fg-dim" />
+          <Loader2
+            aria-hidden="true"
+            className="size-3.5 animate-spin motion-reduce:animate-none text-fg-dim"
+          />
         ) : null}
         {hint ? (
           <span aria-hidden="true" className="hidden text-xs text-fg-dim lg:inline">
@@ -304,19 +324,47 @@ function SearchPaletteResults({
   submitSearch: () => void;
 }) {
   return (
-    <div className="absolute left-0 right-0 top-12 z-50 max-h-[min(34rem,calc(100vh-5rem))] overflow-y-auto rounded-sm border border-border bg-bg shadow-xl">
+    <div
+      role="grid"
+      id="global-search-results"
+      aria-label="Search results"
+      aria-busy={view.loading}
+      className="absolute left-0 right-0 top-12 z-50 max-h-[min(34rem,calc(100vh-5rem))] overflow-y-auto rounded-sm border border-border bg-bg shadow-xl"
+    >
       {view.error ? (
-        <p className="p-3 text-sm text-destructive">{view.error}</p>
+        <div role="row">
+          <div role="gridcell">
+            <p role="status" className="p-3 text-sm text-destructive">
+              {view.error}
+            </p>
+          </div>
+        </div>
       ) : grouped.length === 0 && !view.loading && view.warnings.length === 0 ? (
-        <p className="p-3 text-sm text-fg-muted">No matches.</p>
+        <div role="row">
+          <div role="gridcell">
+            <p role="status" className="p-3 text-sm text-fg-muted">
+              No matches.
+            </p>
+          </div>
+        </div>
       ) : (
         <div className="py-2">
           {view.warnings.length > 0 ? (
-            <p className="px-3 py-2 text-xs text-fg-muted">{view.warnings.join(' ')}</p>
+            <div role="row">
+              <div role="gridcell">
+                <p role="status" className="px-3 py-2 text-xs text-fg-muted">
+                  {view.warnings.join(' ')}
+                </p>
+              </div>
+            </div>
           ) : null}
           {grouped.map(([group, items]) => (
-            <div key={group} className="py-1">
-              <p className="px-3 py-1 text-xs text-fg-dim">{group}</p>
+            <div role="rowgroup" aria-label={group} key={group} className="py-1">
+              <div role="row">
+                <div role="columnheader" className="px-3 py-1 text-xs text-fg-dim">
+                  {group}
+                </div>
+              </div>
               {items.map((result) => {
                 const index = selectableResults.indexOf(result);
                 const IconComponent = resultIcon(result.kind);
@@ -326,6 +374,9 @@ function SearchPaletteResults({
                   typeof result.metadata?.dueAt === 'string' ? result.metadata.dueAt : null;
                 return (
                   <div
+                    role="row"
+                    aria-selected={view.activeIndex === index}
+                    id={`global-search-result-${index}`}
                     key={result.id}
                     className={cn(
                       'flex items-center transition-colors',
@@ -335,34 +386,39 @@ function SearchPaletteResults({
                       dispatchView({ type: 'active', value: index });
                     }}
                   >
-                    <button
-                      type="button"
-                      className="flex min-w-0 flex-1 items-center gap-3 px-3 py-2 text-left"
-                      onClick={() => {
-                        setOpen(false);
-                        openResult(result, router);
-                      }}
-                    >
-                      <IconComponent aria-hidden="true" className="size-4 shrink-0 text-fg-muted" />
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate text-sm font-medium">{result.title}</span>
-                        <span className="block truncate text-xs text-fg-muted">
-                          {result.snippet}
+                    <div role="gridcell" className="min-w-0 flex-1">
+                      <button
+                        type="button"
+                        className="flex w-full min-w-0 items-center gap-3 px-3 py-2 text-left"
+                        onClick={() => {
+                          setOpen(false);
+                          openResult(result, router);
+                        }}
+                      >
+                        <IconComponent
+                          aria-hidden="true"
+                          className="size-4 shrink-0 text-fg-muted"
+                        />
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-sm font-medium">{result.title}</span>
+                          <span className="block truncate text-xs text-fg-muted">
+                            {result.snippet}
+                          </span>
+                          {isSchedulableObjectType(objectType) ? (
+                            <DueDateDisplay
+                              value={dueAt}
+                              variant="compact"
+                              className="mt-0.5 block truncate"
+                            />
+                          ) : null}
                         </span>
-                        {isSchedulableObjectType(objectType) ? (
-                          <DueDateDisplay
-                            value={dueAt}
-                            variant="compact"
-                            className="mt-0.5 block truncate"
-                          />
-                        ) : null}
-                      </span>
-                      <span className="shrink-0 text-xs text-fg-dim">
-                        {result.externalHref ? 'new tab' : resultKindLabel(result.kind)}
-                      </span>
-                    </button>
+                        <span className="shrink-0 text-xs text-fg-dim">
+                          {result.externalHref ? 'new tab' : resultKindLabel(result.kind)}
+                        </span>
+                      </button>
+                    </div>
                     {result.pinTarget ? (
-                      <div className="mr-2 shrink-0">
+                      <div role="gridcell" className="mr-2 shrink-0">
                         <PinOverflowMenu
                           target={result.pinTarget}
                           title={result.title}
@@ -375,7 +431,15 @@ function SearchPaletteResults({
               })}
             </div>
           ))}
-          {query.trim() ? (
+        </div>
+      )}
+      {query.trim() ? (
+        <div
+          role="row"
+          id={`global-search-result-${selectableResults.length}`}
+          aria-selected={view.activeIndex === selectableResults.length}
+        >
+          <div role="gridcell">
             <button
               type="button"
               className={cn(
@@ -392,9 +456,9 @@ function SearchPaletteResults({
                 Search all results for <span className="font-medium">"{query.trim()}"</span>
               </span>
             </button>
-          ) : null}
+          </div>
         </div>
-      )}
+      ) : null}
     </div>
   );
 }

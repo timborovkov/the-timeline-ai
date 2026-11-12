@@ -71,7 +71,7 @@ Subscription feeds include team events, the subscriber's private event details, 
 
 ## Manual editing
 
-The calendar UI accepts raw RRULE input and common recurrence presets. Event details show recurrence and tentative status, and editing a recurring occurrence asks whether the change applies to this event, this and all future events, or the whole series.
+The calendar UI offers common recurrence presets, with raw RRULE input inside Advanced repeat rule. All-day forms ask for the first and last included days; the UI converts the last day to an exclusive end boundary when saving. Event deletion requires confirmation naming the event and selected recurrence scope; cancellation leaves it unchanged. Event details show recurrence and tentative status, and editing a recurring occurrence asks whether the change applies to this event, this and all future events, or the whole series.
 
 The page leads with the calendar grid, then shows an infinite-scrolling event list. The list starts on upcoming events from today, supports past and all-event scopes, and searches event title, description, location, or redacted busy blocks through the team-scoped calendar query. These scopes cover the rolling list window of two years before and after today, so `eventScope=all` means all events in that window rather than the full historical archive. Past and future buckets are separated by event start time, while the all-event scope includes any event intersecting the rolling window. The list state is shareable through `eventScope=past|all` and `eventQ` URL parameters.
 

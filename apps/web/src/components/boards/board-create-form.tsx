@@ -1,6 +1,6 @@
 'use client';
 
-import { Boxes, ClipboardList, KanbanSquare, PackageOpen, Plus } from 'lucide-react';
+import { Boxes, Check, ClipboardList, KanbanSquare, PackageOpen, Plus } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useReducer, useState, useTransition } from 'react';
 
@@ -201,38 +201,48 @@ function BoardCreateForm({ showHeading = true }: BoardCreateFormProps) {
   return (
     <div>
       {showHeading ? <h2 className="mb-3 text-xs text-fg-dim">New board</h2> : null}
-      <div className="grid grid-cols-1 gap-2 md:grid-cols-4">
+      <fieldset className="grid min-w-0 grid-cols-1 gap-2 md:grid-cols-4">
+        <legend className="sr-only">Board preset</legend>
         {PRESETS.map((preset) => {
           const Icon = preset.icon;
           const active = preset.kind === templateKind;
           return (
-            <button
+            <label
               key={preset.kind}
-              type="button"
-              onClick={() => {
-                dispatch({
-                  type: 'preset',
-                  templateKind: preset.kind,
-                  name: preset.placeholder,
-                  stages: preset.stages.map((stage) => ({
-                    ...stage,
-                    draftKey: `preset:${stage.name}`,
-                  })),
-                });
-              }}
               className={cn(
-                'min-h-[9.5rem] rounded-sm border border-border bg-bg p-3 text-left transition-colors hover:border-border-strong',
+                'relative min-h-[9.5rem] cursor-pointer rounded-sm border border-border bg-bg p-3 text-left transition-colors hover:border-border-strong has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring',
                 active && 'border-signal bg-signal-soft',
               )}
             >
+              <input
+                type="radio"
+                name="board-preset"
+                value={preset.kind}
+                checked={active}
+                className="sr-only"
+                onChange={() => {
+                  dispatch({
+                    type: 'preset',
+                    templateKind: preset.kind,
+                    name: preset.placeholder,
+                    stages: preset.stages.map((stage) => ({
+                      ...stage,
+                      draftKey: `preset:${stage.name}`,
+                    })),
+                  });
+                }}
+              />
               <Icon className="mb-3 size-4 text-fg" aria-hidden="true" />
+              {active ? (
+                <Check aria-label="Selected" className="absolute right-3 top-3 size-4" />
+              ) : null}
               <span className="block text-sm font-medium text-fg">{preset.label}</span>
               <span className="mt-1 block text-xs text-fg-muted">{preset.description}</span>
               <span className="mt-3 block text-[11px] text-fg-dim">{preset.example}</span>
-            </button>
+            </label>
           );
         })}
-      </div>
+      </fieldset>
       <div className="mt-4 grid gap-3 sm:grid-cols-2">
         <label className="block">
           <span className="mb-1 block text-xs text-fg-dim">Name</span>

@@ -159,7 +159,7 @@ Do not recreate route-local uppercase eyebrow headings.
 
 Controls are 36px high by default, with 40px allowed for mobile-critical
 actions. They use a 4px radius, explicit hover states, and a visible focus
-ring. Secondary buttons do not need a persistent filled background. Native
+ring. Editable controls use at least 16px text on mobile and retain compact desktop text. Secondary buttons do not need a persistent filled background. Native
 `<select>` controls use the shared `NativeSelect` (same height, radius, hover,
 and focus as `Input`). Do not restyle selects with one-off `h-10`,
 `rounded-md`, or unhovered gray boxes.
@@ -302,7 +302,7 @@ failures keep `InlineError` with a specific retry.
    with a spinner (`Updating status…`).
 3. The same toast morphs to success or error. Do not spawn a second toast.
 4. On error, roll back the optimistic state and restore focus to the control.
-5. Success lasts 2s. Error lasts 6s and is dismissible.
+5. Passive success lasts 2s. Success with Undo remains until dismissed or acted on, so keyboard users do not race a timer. Error lasts 6s and is dismissible.
 
 Native form actions must dismiss their loading toast when the form unmounts
 for a redirect, revalidation, or error boundary. Completed success/error toasts

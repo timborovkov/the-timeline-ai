@@ -1,5 +1,6 @@
 import { withTeam } from '@timeline/shared/team-scope';
 import { ClipboardList } from 'lucide-react';
+import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
 import type { Metadata } from 'next';
@@ -110,7 +111,16 @@ function auditMetadataDetails(metadata: Record<string, unknown>) {
   });
 }
 
-export default async function TrustAuditPage() {
+export default async function TrustAuditPage({
+  searchParams,
+}: { searchParams?: Promise<{ page?: string }> } = {}) {
+  const params = (await searchParams) ?? {};
+  const requestedPage = Number(params.page ?? 1);
+  const page =
+    Number.isSafeInteger(requestedPage) && requestedPage > 0 && requestedPage <= 1_000_000
+      ? requestedPage
+      : 1;
+  const offset = (page - 1) * 200;
   const session = await auth();
   if (!session?.user) redirect('/sign-in');
   const { active } = await resolveActiveTeam(session.user.id);
@@ -125,10 +135,12 @@ export default async function TrustAuditPage() {
   }
   if (!canViewAudit) redirect('/app/team');
 
-  const [rows, calendarSettings] = await Promise.all([
-    scope.audit.list(200),
+  const [pageRows, calendarSettings] = await Promise.all([
+    scope.audit.list(201, offset),
     scope.calendar.getCalendarSettings(),
   ]);
+  const rows = pageRows.slice(0, 200);
+  const hasMore = pageRows.length > 200;
   const timezone = calendarSettings.defaultTimezone;
 
   return (
@@ -146,6 +158,31 @@ export default async function TrustAuditPage() {
           },
         ]}
       />
+      <div className="flex flex-wrap items-center justify-between gap-3 text-sm">
+        <p className="text-fg-muted">
+          Page {page} ·{' '}
+          {rows.length ? `Entries ${offset + 1}–${offset + rows.length}` : 'No entries'} · Up to 200
+          per page, newest first
+        </p>
+        <nav aria-label="Audit pagination" className="flex gap-4">
+          {page > 1 ? (
+            <Link
+              className="inline-flex min-h-11 items-center underline"
+              href={`/app/team/audit?page=${page - 1}`}
+            >
+              Newer entries
+            </Link>
+          ) : null}
+          {hasMore ? (
+            <Link
+              className="inline-flex min-h-11 items-center underline"
+              href={`/app/team/audit?page=${page + 1}`}
+            >
+              Older entries
+            </Link>
+          ) : null}
+        </nav>
+      </div>
       <section aria-labelledby="trust-audit-entries">
         <h2 id="trust-audit-entries" className="sr-only">
           Audit entries
