@@ -113,7 +113,7 @@ export function MemberRoleForm({
         aria-label={`Role for ${memberLabel}`}
         name="role"
         defaultValue={memberRole}
-        className="h-8 w-[7.5rem]"
+        className="h-8 w-[7.5rem] max-w-full"
         onChange={(event) => {
           event.currentTarget.form?.requestSubmit();
         }}

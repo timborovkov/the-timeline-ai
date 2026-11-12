@@ -147,7 +147,10 @@ export function CollectionRow({
         ) : null}
       </div>
       {actions ? (
-        <div className={cn(SLOT_LAYER, 'flex min-h-10 min-w-0 items-center self-start pt-1')}>
+        <div
+          data-slot="collection-row-actions"
+          className={cn(SLOT_LAYER, 'flex min-h-10 min-w-0 items-center self-start pt-1')}
+        >
           {actions}
         </div>
       ) : null}
