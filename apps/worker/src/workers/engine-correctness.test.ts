@@ -613,14 +613,29 @@ describe('engine persistence contracts', () => {
     ]);
   });
 
-  it('keeps ordinary source extraction eligible after an object-only cleanup repair', async () => {
+  it('repairs a target beyond recent-context limits and keeps ordinary extraction eligible', async () => {
     process.env.IDENTITY_SEMANTIC_ENABLED = 'true';
     resetEnvForTests();
     // A task avoids the separate project/company semantic-resolution model call.
     const [task] = await db
       .insert(entities)
-      .values({ teamId, type: 'task', canonicalName: 'Prepare audit outline', status: 'todo' })
+      .values({
+        teamId,
+        type: 'task',
+        canonicalName: 'Prepare audit outline',
+        status: 'todo',
+        updatedAt: new Date('2000-01-01'),
+      })
       .returning();
+    await db.insert(entities).values(
+      Array.from({ length: 501 }, (_, index) => ({
+        teamId,
+        type: 'decision' as const,
+        canonicalName: `Recent decision ${index}`,
+        status: 'accepted',
+        updatedAt: new Date('2026-11-12'),
+      })),
+    );
     const [event] = await db
       .insert(rawEvents)
       .values({
@@ -654,6 +669,10 @@ describe('engine persistence contracts', () => {
     let calls = 0;
     const chat: typeof llm.chatStructured = (input) => {
       calls++;
+      if (calls === 1) {
+        expect(input.prompt).toContain(required(task).id);
+        expect(input.prompt).toContain(required(task).canonicalName);
+      }
       return Promise.resolve({
         model: 'fixture',
         object: input.schema.parse({
@@ -697,6 +716,21 @@ describe('engine persistence contracts', () => {
       .from(rawEvents)
       .where(eq(rawEvents.id, required(event).id));
     expect(required(afterRepair).sourceMetadata).not.toHaveProperty('suggestion_model_version');
+    const repairItem = (await db.select().from(agentSuggestionItems)).find(
+      (item) => item.operation === 'update' && item.targetId === required(task).id,
+    );
+    expect(repairItem).toBeDefined();
+    expect(await scope().suggestions.acceptSuggestionItem(required(repairItem).id)).toBe(true);
+    expect(
+      required(
+        (
+          await db
+            .select()
+            .from(entities)
+            .where(eq(entities.id, required(task).id))
+        )[0],
+      ).status,
+    ).toBe('done');
     expect(
       (await db.select().from(agentSuggestionItems)).some(
         (item) => item.operation === 'create' && item.targetKind === 'task',

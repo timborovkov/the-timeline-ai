@@ -3711,6 +3711,278 @@ describe('processSuggestionJobForTests', () => {
     }
   });
 
+  it('allocates a distinct project name around archived canonical occupancy', async () => {
+    const [company] = await db
+      .insert(entities)
+      .values({ teamId: TEAM_ID, type: 'company', canonicalName: 'Southstar Audit' })
+      .returning();
+    if (!company) throw new Error('missing company');
+    const [archived] = await db
+      .insert(entities)
+      .values({
+        teamId: TEAM_ID,
+        type: 'project',
+        canonicalName: 'Client Portal (Southstar Audit)',
+        metadata: { companyId: company.id },
+        archivedAt: new Date(),
+      })
+      .returning();
+    if (!archived) throw new Error('missing archive');
+    await db.insert(entities).values({
+      teamId: TEAM_ID,
+      type: 'project',
+      canonicalName: 'Client Portal',
+      metadata: { companyId: crypto.randomUUID() },
+    });
+    const rawEventId = crypto.randomUUID();
+    await seedRawEvent(db as never, {
+      id: rawEventId,
+      text: 'Start a distinct new Client Portal project for Southstar Audit.',
+      sourceMetadata: {
+        extracted_at: REFERENCE_DATE.toISOString(),
+        extraction_model_version: 'fixture',
+      },
+    });
+    const chat = vi.fn().mockResolvedValue({
+      model: MODEL_ID,
+      object: {
+        bundles: [
+          {
+            title: 'Track Southstar portal',
+            confidence: 'high',
+            items: [
+              {
+                operation: 'create',
+                targetKind: 'object',
+                title: 'Client Portal',
+                proposedPayload: {
+                  type: 'project',
+                  canonicalName: 'Client Portal',
+                  metadata: { companyId: company.id },
+                },
+              },
+            ],
+          },
+        ],
+      },
+    });
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { teamId: TEAM_ID, rawEventId },
+      { getEnv: env, chatStructured: chat, modelId: MODEL_ID },
+    );
+    const proposals = await db.select().from(agentSuggestionItems);
+    expect(proposals.some((item) => item.targetId === archived.id)).toBe(false);
+    const project = proposals.find(
+      (item) => item.operation === 'create' && item.targetKind === 'object',
+    );
+    if (!project) throw new Error('missing project');
+    expect(project.proposedPayload).not.toHaveProperty('canonicalName', archived.canonicalName);
+    expect(
+      await withTeam(db as never, TEAM_ID, OWNER_ID).suggestions.acceptSuggestionItem(project.id),
+    ).toBe(true);
+    const [unchanged] = await db.select().from(entities).where(eq(entities.id, archived.id));
+    expect(unchanged?.archivedAt).not.toBeNull();
+    expect(unchanged?.mergedIntoId).toBeNull();
+    expect((await db.select().from(entities)).filter((row) => row.type === 'project')).toHaveLength(
+      3,
+    );
+  });
+
+  it('reserves pending project names across different company scopes before acceptance', async () => {
+    const companies = await db
+      .insert(entities)
+      .values([
+        { teamId: TEAM_ID, type: 'company' as const, canonicalName: 'Northstar Audit' },
+        { teamId: TEAM_ID, type: 'company' as const, canonicalName: 'Southstar Audit' },
+      ])
+      .returning();
+    const first = companies[0],
+      second = companies[1];
+    if (!first || !second) throw new Error('missing companies');
+    const scope = withTeam(db as never, TEAM_ID, OWNER_ID);
+    const firstEventId = crypto.randomUUID();
+    await seedRawEvent(db as never, {
+      id: firstEventId,
+      text: 'Create Client Portal for Northstar Audit.',
+    });
+    const pending = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Track Northstar portal',
+      dedupeKey: 'pending-northstar',
+      evidence: [{ rawEventId: firstEventId, quote: 'Create Client Portal for Northstar Audit.' }],
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'object',
+          title: 'Client Portal',
+          dedupeKey: 'pending-northstar:item',
+          proposedPayload: {
+            type: 'project',
+            canonicalName: 'Client Portal',
+            metadata: { companyId: first.id },
+          },
+        },
+      ],
+    });
+    const rawEventId = crypto.randomUUID();
+    await seedRawEvent(db as never, {
+      id: rawEventId,
+      text: 'Create a separate Client Portal for Southstar Audit, distinct from Northstar Audit.',
+      sourceMetadata: {
+        extracted_at: REFERENCE_DATE.toISOString(),
+        extraction_model_version: 'fixture',
+      },
+    });
+    const chat = vi.fn().mockResolvedValue({
+      model: MODEL_ID,
+      object: {
+        bundles: [
+          {
+            title: 'Track Southstar portal',
+            confidence: 'high',
+            items: [
+              {
+                operation: 'create',
+                targetKind: 'object',
+                title: 'Client Portal',
+                proposedPayload: {
+                  type: 'project',
+                  canonicalName: 'Client Portal',
+                  metadata: { companyId: second.id },
+                },
+              },
+            ],
+          },
+        ],
+      },
+    });
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { teamId: TEAM_ID, rawEventId },
+      { getEnv: env, chatStructured: chat, modelId: MODEL_ID },
+    );
+    const newProposal = (await db.select().from(agentSuggestionItems)).find(
+      (item) =>
+        item.suggestionId !== pending.id &&
+        item.targetKind === 'object' &&
+        item.operation === 'create',
+    );
+    if (!newProposal || !pending.items[0]) throw new Error('missing proposals');
+    expect(newProposal.proposedPayload).toMatchObject({
+      canonicalName: 'Client Portal (Southstar Audit)',
+    });
+    const [firstPending] = await db
+      .select()
+      .from(agentSuggestionItems)
+      .where(eq(agentSuggestionItems.id, pending.items[0].id));
+    expect(firstPending).toMatchObject({
+      status: 'pending',
+      proposedPayload: { metadata: { companyId: first.id } },
+    });
+    expect(await scope.suggestions.acceptSuggestionItem(pending.items[0].id)).toBe(true);
+    expect(await scope.suggestions.acceptSuggestionItem(newProposal.id)).toBe(true);
+    expect((await db.select().from(entities)).filter((row) => row.type === 'project')).toHaveLength(
+      2,
+    );
+  });
+
+  it('reserves private pending project names without exposing their content', async () => {
+    const companies = await db
+      .insert(entities)
+      .values([
+        { teamId: TEAM_ID, type: 'company' as const, canonicalName: 'Northstar Audit' },
+        { teamId: TEAM_ID, type: 'company' as const, canonicalName: 'Southstar Audit' },
+      ])
+      .returning();
+    const first = companies[0],
+      second = companies[1];
+    if (!first || !second) throw new Error('missing companies');
+    const scope = withTeam(db as never, TEAM_ID, OWNER_ID);
+    const firstEventId = crypto.randomUUID();
+    await seedRawEvent(db as never, {
+      id: firstEventId,
+      text: 'Create Client Portal for Northstar Audit.',
+      visibility: 'private',
+    });
+    const pending = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Private Northstar portal draft',
+      visibility: 'private',
+      visibilityOwnerUserId: OWNER_ID,
+      dedupeKey: 'pending-northstar',
+      evidence: [{ rawEventId: firstEventId, quote: 'Create Client Portal for Northstar Audit.' }],
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'object',
+          title: 'Client Portal',
+          dedupeKey: 'pending-northstar:item',
+          proposedPayload: {
+            type: 'project',
+            canonicalName: 'Client Portal',
+            metadata: { companyId: first.id },
+          },
+        },
+      ],
+    });
+    const rawEventId = crypto.randomUUID();
+    await seedRawEvent(db as never, {
+      id: rawEventId,
+      text: 'Create a separate Client Portal for Southstar Audit, distinct from Northstar Audit.',
+      sourceMetadata: {
+        extracted_at: REFERENCE_DATE.toISOString(),
+        extraction_model_version: 'fixture',
+      },
+    });
+    const chat = vi.fn().mockResolvedValue({
+      model: MODEL_ID,
+      object: {
+        bundles: [
+          {
+            title: 'Track Southstar portal',
+            confidence: 'high',
+            items: [
+              {
+                operation: 'create',
+                targetKind: 'object',
+                title: 'Client Portal',
+                proposedPayload: {
+                  type: 'project',
+                  canonicalName: 'Client Portal',
+                  metadata: { companyId: second.id },
+                },
+              },
+            ],
+          },
+        ],
+      },
+    });
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { teamId: TEAM_ID, rawEventId },
+      { getEnv: env, chatStructured: chat, modelId: MODEL_ID },
+    );
+    const newProposal = (await db.select().from(agentSuggestionItems)).find(
+      (item) =>
+        item.suggestionId !== pending.id &&
+        item.targetKind === 'object' &&
+        item.operation === 'create',
+    );
+    if (!newProposal || !pending.items[0]) throw new Error('missing proposals');
+    expect((chat.mock.calls[0]?.[0] as { prompt: string }).prompt).not.toContain(
+      'Private Northstar portal draft',
+    );
+    expect(newProposal.proposedPayload).toMatchObject({
+      canonicalName: 'Client Portal (Southstar Audit)',
+    });
+    expect(await scope.suggestions.acceptSuggestionItem(pending.items[0].id)).toBe(true);
+    expect(await scope.suggestions.acceptSuggestionItem(newProposal.id)).toBe(true);
+    expect((await db.select().from(entities)).filter((row) => row.type === 'project')).toHaveLength(
+      2,
+    );
+  });
+
   it('normalizes canonical and translated creates to one existing semantic identity', async () => {
     process.env.IDENTITY_SEMANTIC_ENABLED = 'true';
     resetEnvForTests();

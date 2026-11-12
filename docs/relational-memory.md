@@ -167,6 +167,8 @@ company UUID as `parentObjectId` is invalid.
 
 The proposal path recalls at most 500 active, unmerged objects and supplies a
 smaller prompt selection. Recency is a recall heuristic, not evidence of identity.
+An explicit historical-repair target is fetched independently and included in model
+context even when it is older than those retrieval limits.
 Explicit full names and aliases take precedence over broad shared-word matches.
 An alias shared by sibling projects cannot disambiguate them; a company-only alias
 cannot resolve a mixed-client context. If two full project identities are named,
@@ -206,6 +208,11 @@ Distinct scoped objects that share a canonical name receive a reviewable name
 qualifier from evidenced company or repository context. If no readable qualifier
 is available, a stable neutral scope tag avoids the storage name collision;
 the captured name remains an alias rather than merging the distinct identities.
+Name occupancy includes archived objects and actionable pending creates, separately
+from the active identities eligible for updates. Completed PR task names use the
+same principle, retaining repository/PR qualifiers when titles collide.
+Pending-create deduplication uses the shared scope-conflict rules too; a matching
+name or alias cannot supersede a proposal for a different company or repository.
 
 Candidate retrieval combines exact/alias lookup, shared source/company context and
 team-filtered semantic search over both object summaries and entity vectors. Missing

@@ -7975,6 +7975,54 @@ describe('suggestion scope', () => {
     expect(rows.rows[0]?.metadata).toEqual({ existing: true });
   });
 
+  it('supersedes a referenced identity facet when its accepted person was archived', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'chat',
+      title: 'Remember Alex',
+      dedupeKey: 'archived-reference-facet',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'object',
+          title: 'Alex Example',
+          dedupeKey: 'archived-reference-person',
+          proposedPayload: { type: 'person', canonicalName: 'Alex Example', localRef: 'alex' },
+        },
+        {
+          operation: 'create',
+          targetKind: 'identity_facet',
+          title: 'Alex email',
+          dedupeKey: 'archived-reference-email',
+          proposedPayload: { entityRef: 'alex', kind: 'email', value: 'alex@example.test' },
+        },
+      ],
+    });
+    const personItem = bundle.items.find((item) => item.targetKind === 'object');
+    const facet = bundle.items.find((item) => item.targetKind === 'identity_facet');
+    if (!personItem || !facet) throw new Error('missing items');
+    expect(await scope.suggestions.acceptSuggestionItem(personItem.id)).toBe(true);
+    const [accepted] = await db
+      .select()
+      .from(agentSuggestionItems)
+      .where(eq(agentSuggestionItems.id, personItem.id));
+    if (!accepted?.resultId) throw new Error('missing accepted person');
+    await scope.objects.archiveObject(accepted.resultId, { kind: 'user', userId: USER_ID });
+    expect(await scope.suggestions.acceptSuggestionItem(facet.id)).toBe(true);
+    const [stale] = await db
+      .select()
+      .from(agentSuggestionItems)
+      .where(eq(agentSuggestionItems.id, facet.id));
+    expect(stale?.status).toBe('superseded');
+    expect(
+      (
+        await pg.query<{ count: string }>(
+          `SELECT count(*)::text FROM object_identity_facets WHERE team_id = '${TEAM_ID}'`,
+        )
+      ).rows[0]?.count,
+    ).toBe('0');
+  });
+
   it('applies identity facet suggestions only after approval', async () => {
     const creator = withTeam(db as never, TEAM_ID, USER_ID);
     const reviewer = withTeam(db as never, TEAM_ID, REVIEWER_ID);

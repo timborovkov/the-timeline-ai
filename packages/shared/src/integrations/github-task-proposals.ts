@@ -13,6 +13,7 @@ import {
 } from '@timeline/db';
 import { and, desc, eq, inArray, isNull, or, sql } from 'drizzle-orm';
 
+import { documentProposalEvidenceIsCurrent } from '#src/documents/visibility.js';
 import { GITHUB_TASK_PROPOSAL_COALESCE_MS } from '#src/integrations/ingest-processing.js';
 import {
   isSignalClass,
@@ -656,7 +657,35 @@ async function proposeCompletedGithubTask(
         ),
       ),
     );
-  const occupiedNames = new Set(occupied.map((row) => row.name.toLowerCase()));
+  const pendingName = sql<string>`coalesce(nullif(btrim(${agentSuggestionItems.proposedPayload}->>'canonicalName'), ''), ${agentSuggestionItems.title})`;
+  const pending = await db
+    .select({ name: pendingName })
+    .from(agentSuggestionItems)
+    .innerJoin(agentSuggestions, eq(agentSuggestions.id, agentSuggestionItems.suggestionId))
+    .where(
+      and(
+        eq(agentSuggestionItems.teamId, teamId),
+        eq(agentSuggestions.teamId, teamId),
+        documentProposalEvidenceIsCurrent(teamId, agentSuggestions.metadata),
+        inArray(agentSuggestions.status, ['pending', 'partially_resolved']),
+        inArray(agentSuggestionItems.status, ['pending', 'failed']),
+        eq(agentSuggestionItems.operation, 'create'),
+        or(
+          eq(agentSuggestionItems.targetKind, 'task'),
+          and(
+            eq(agentSuggestionItems.targetKind, 'object'),
+            sql`${agentSuggestionItems.proposedPayload}->>'type' = 'task'`,
+          ),
+        ),
+        // A replay must keep its own reserved name.
+        sql`coalesce(${agentSuggestions.metadata}->>'github_external_id', '') <> ${work.externalId}`,
+        inArray(
+          sql`lower(${pendingName})`,
+          names.map((name) => name.toLowerCase()),
+        ),
+      ),
+    );
+  const occupiedNames = new Set([...occupied, ...pending].map((row) => row.name.toLowerCase()));
   const canonicalName = names.find((name) => !occupiedNames.has(name.toLowerCase()));
   if (!canonicalName) return false;
   const dedupeKey = suggestionDedupeKey({

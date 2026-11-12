@@ -74,6 +74,7 @@ import {
 import { sourcePayloadRefFromMetadata } from '#src/reconciliation/source-snapshot.js';
 import { likePattern } from '#src/sql-like.js';
 import { stableStringify, suggestionDedupeKey } from '#src/suggestions/dedupe-key.js';
+import { identitiesConflict } from '#src/suggestions/identity-resolution.js';
 import {
   canonicalProposalPayloadIssues,
   coerceMemberIdFields,
@@ -1436,10 +1437,27 @@ function normalizedCreateConflictValue(value: unknown): string | null {
   return normalizedApprovalText(stableStringify(value));
 }
 
+function pendingCreateIdentitiesConflict(
+  olderItem: typeof agentSuggestionItems.$inferSelect,
+  newerItem: typeof agentSuggestionItems.$inferSelect,
+): boolean {
+  const identity = (item: typeof agentSuggestionItems.$inferSelect) => {
+    const payload = normalizeLifecyclePayload(item);
+    return {
+      id: item.id,
+      type: normalizedObjectCreateType(item),
+      canonicalName: typeof payload.canonicalName === 'string' ? payload.canonicalName : item.title,
+      metadata: payload.metadata,
+    };
+  };
+  return identitiesConflict(identity(olderItem), identity(newerItem));
+}
+
 function pendingCreatePayloadsCompatible(
   olderItem: typeof agentSuggestionItems.$inferSelect,
   newerItem: typeof agentSuggestionItems.$inferSelect,
 ): boolean {
+  if (pendingCreateIdentitiesConflict(olderItem, newerItem)) return false;
   const olderPayload = normalizeLifecyclePayload(olderItem);
   const newerPayload = normalizeLifecyclePayload(newerItem);
   return CREATE_CONFLICT_KEYS.every((key) => {
@@ -1771,6 +1789,7 @@ function shouldSupersedePendingItem(args: {
     olderItem.operation === 'create' &&
     newerItem.operation === 'create';
   if (olderItem.targetKind !== newerItem.targetKind && !isObjectTaskCreatePair) return false;
+  if (isObjectTaskCreatePair && pendingCreateIdentitiesConflict(olderItem, newerItem)) return false;
 
   if (olderItem.targetKind === 'board_membership' && newerItem.targetKind === 'board_membership')
     return sameSemanticPendingItem(args);
@@ -4280,9 +4299,29 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     }
     if (item.targetKind === 'identity_facet') {
       const parsed = identityFacetPayload.safeParse(payload);
-      return parsed.success && parsed.data.entityId
-        ? staleObjectTargetReason(parsed.data.entityId)
-        : null;
+      if (!parsed.success) return null;
+      if (parsed.data.entityId) return staleObjectTargetReason(parsed.data.entityId);
+      if (parsed.data.entityRef) {
+        // Preflight must not auto-accept a pending sibling; only validate an
+        // already accepted reference, just as an explicit entityId is validated.
+        const siblings = await db
+          .select({ resultId: agentSuggestionItems.resultId })
+          .from(agentSuggestionItems)
+          .where(
+            and(
+              eq(agentSuggestionItems.teamId, teamId),
+              eq(agentSuggestionItems.suggestionId, item.suggestionId),
+              eq(agentSuggestionItems.operation, 'create'),
+              inArray(agentSuggestionItems.targetKind, ['object', 'task']),
+              eq(agentSuggestionItems.status, 'accepted'),
+              sql`lower(${agentSuggestionItems.proposedPayload}->>'localRef') = ${normalizedLocalRef(parsed.data.entityRef)}`,
+            ),
+          )
+          .limit(2);
+        if (siblings.length === 1 && siblings[0]?.resultId)
+          return staleObjectTargetReason(siblings[0].resultId);
+      }
+      return null;
     }
     if (item.targetKind === 'object_note') {
       const parsed = objectNotePayload.safeParse(payload);
