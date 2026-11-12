@@ -7,6 +7,7 @@ import {
   agentSuggestions,
   artifactClusters,
   artifactEvidenceAssociations,
+  documentChunks,
   entities,
   entityRelationships,
   factEntities,
@@ -30,6 +31,11 @@ import { TIMELINE_MODELS, truncateTextToTokenBudget } from '#src/llm/models.js';
 import * as queue from '#src/queue/queues.js';
 
 import type { TeamScopeCore } from '#src/team-scope.js';
+
+import {
+  documentProposalEvidenceIsCurrent,
+  documentSummarySourcesAreCurrent,
+} from '#src/documents/visibility.js';
 
 const OBJECT_SUMMARY_PROMPT_VERSION = 'object-summary-v1';
 const OBJECT_SUMMARY_AUTO_DELAY_MS = 2 * 60 * 1000;
@@ -487,7 +493,9 @@ async function buildObjectSummaryPacket(
     db
       .select({
         rawEventId: rawEvents.id,
-        contentText: rawEvents.contentText,
+        contentText: sql<
+          string | null
+        >`CASE WHEN ${agentSuggestions.metadata} ? 'document_version_id' THEN ${documentChunks.text} ELSE ${rawEvents.contentText} END`,
         occurredAt: rawEvents.occurredAt,
         source: rawEvents.source,
         quote: agentSuggestionEvidence.quote,
@@ -499,6 +507,15 @@ async function buildObjectSummaryPacket(
         eq(agentSuggestionEvidence.suggestionId, agentSuggestions.id),
       )
       .innerJoin(rawEvents, eq(rawEvents.id, agentSuggestionEvidence.rawEventId))
+      .leftJoin(
+        documentChunks,
+        and(
+          eq(documentChunks.teamId, scope.teamId),
+          sql`${documentChunks.id}::text = ${agentSuggestions.metadata}->>'document_chunk_id'`,
+          sql`${documentChunks.documentId}::text = ${agentSuggestions.metadata}->>'document_id'`,
+          sql`${documentChunks.documentVersionId}::text = ${agentSuggestions.metadata}->>'document_version_id'`,
+        ),
+      )
       .where(
         and(
           eq(agentSuggestions.teamId, scope.teamId),
@@ -508,6 +525,7 @@ async function buildObjectSummaryPacket(
           eq(agentSuggestionItems.status, 'accepted'),
           eq(agentSuggestionItems.operation, 'create'),
           eq(agentSuggestions.visibility, 'team'),
+          documentProposalEvidenceIsCurrent(scope.teamId, agentSuggestions.metadata),
           eq(rawEvents.visibility, 'team'),
           sql`COALESCE(${rawEvents.sourceMetadata} ->> 'deleted', 'false') <> 'true'`,
           or(
@@ -776,7 +794,13 @@ export async function getObjectSummary(
     db
       .select()
       .from(objectSummaries)
-      .where(and(eq(objectSummaries.teamId, scope.teamId), eq(objectSummaries.entityId, entityId)))
+      .where(
+        and(
+          eq(objectSummaries.teamId, scope.teamId),
+          eq(objectSummaries.entityId, entityId),
+          documentSummarySourcesAreCurrent(scope.teamId, objectSummaries.sourceRefs),
+        ),
+      )
       .limit(1),
   ]);
   if (!packet) return null;
@@ -807,7 +831,13 @@ export async function getObjectSummaryFromSnapshot(
   const rows = await db
     .select()
     .from(objectSummaries)
-    .where(and(eq(objectSummaries.teamId, scope.teamId), eq(objectSummaries.entityId, entityId)))
+    .where(
+      and(
+        eq(objectSummaries.teamId, scope.teamId),
+        eq(objectSummaries.entityId, entityId),
+        documentSummarySourcesAreCurrent(scope.teamId, objectSummaries.sourceRefs),
+      ),
+    )
     .limit(1);
   const row = rows[0];
   const enough = sufficiency(snapshot.sourceCounts, snapshot.meaningfulFields);
@@ -1095,7 +1125,14 @@ export async function generateAndStoreObjectSummary(
       return { status: 'skipped', reason: 'stale_during_generation' };
     }
     const plainText = summaryPlainText(result.object);
-    const refs = allSummaryRefs(result.object);
+    // Retain all admitted document/event provenance, even when the model cites
+    // only a field: unquoted source content may still influence generated prose.
+    const refs = uniqueRefs([
+      ...allSummaryRefs(result.object),
+      ...packet.sources
+        .map((source) => source.ref)
+        .filter((ref) => ref.kind === 'document_chunk' || ref.kind === 'timeline_event'),
+    ]);
     await db
       .insert(objectSummaries)
       .values({

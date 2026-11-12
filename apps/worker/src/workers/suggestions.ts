@@ -4062,6 +4062,10 @@ async function runSuggestionExtraction(
       evidenceText,
     });
 
+  // Scoped repairs and document chunks do not consume the full source event.
+  // Their maintenance checkpoints own completion; leave ordinary extraction eligible.
+  if (args.repairObjectId || args.document) return proposalsCreated;
+
   await stampSuggestionMetadata(
     deps.db,
     rawEventId,

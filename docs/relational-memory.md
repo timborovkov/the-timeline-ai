@@ -211,7 +211,9 @@ comparison. Without configured vectors, lexical and source-context recall remain
 available, with lower multilingual recall.
 
 `semantic-identity.ts` adjudicates translated names against team-visible source
-statements. It requires supported scope for both objects and exact source quotations;
+statements. It validates quotations against captured source text, not extracted fact paraphrases.
+Source context is bounded to 48,000 characters overall and 6,000 per entry, with
+the incoming subject first. It requires supported scope for both objects and exact source quotations;
 shared customers, meetings or repository context alone do not establish identity.
 Validated citations accompany merge/update approvals. `IDENTITY_SEMANTIC_ENABLED`
 controls paid semantic adjudication and historical factual repair; it defaults on.
@@ -313,7 +315,9 @@ Person email facets support company affiliation; project/company semantic matche
 require source support. Equal project names alone never authorize a cleanup merge;
 source-backed semantic equivalence or a stable provider identity is required. Historical factual repair considers up to three recent
 associated source events, proposes updates only to the selected object and excludes
-fields previously edited by a human. Structured GitHub completion repair remains in
+fields previously edited by a human. Object-only repair and document chunk review
+do not mark an ordinary source event consumed; their maintenance checkpoints are separate.
+Structured GitHub completion repair remains in
 its dedicated provider path. Summary refresh is requested through the existing
 eligibility/billing-aware summary queue.
 
@@ -359,7 +363,10 @@ affiliation and acceptance pipeline as incoming events. Client-list rows may ori
 company/person profiles and relationships without implying a task commitment.
 Document content is untrusted data. Each bundle cites the upload event plus immutable
 document-version and chunk IDs, with a source quote; accepting proposals remains
-separate from extraction. Bulk acceptance orders object creates before dependent
+separate from extraction. Document-backed acceptance validates inside the canonical-write
+transaction. Proposal, reconciliation-output and summary reads revalidate current
+document visibility; cached summaries retain all admitted source references for
+that check even when the model cites only a subset. Bulk acceptance orders object creates before dependent
 email identities and relationships.
 
 Runs are idempotent by document version and engine/model policy, checkpoint each

@@ -47,7 +47,7 @@ const cases = [
     expected: 'new',
     text: 'PBC-portaali is a standalone pilot with a separate delivery contract. Client material portal is a later platform build with a different deliverable and owner. Do not merge the two projects.',
   },
-];
+] as const;
 live('live identity acceptance gate', () => {
   for (const sample of cases)
     it(

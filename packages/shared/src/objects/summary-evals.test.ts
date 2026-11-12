@@ -21,6 +21,10 @@ await vi.mock(
 const { PGlite } = await import('@electric-sql/pglite');
 
 const {
+  documents,
+  documentVersions,
+  documentChunks,
+  agentSuggestionItems,
   artifactClusters,
   artifactEvidenceAssociations,
   entities,
@@ -32,7 +36,9 @@ const {
 } = await import('@timeline/db');
 const { eq } = await import('drizzle-orm');
 const { drizzle } = await import('drizzle-orm/pglite');
-const { generateAndStoreObjectSummary } = await import('#src/objects/summaries.js');
+const { generateAndStoreObjectSummary, getObjectSummaryFromSnapshot } =
+  await import('#src/objects/summaries.js');
+const { listReadyObjectSummaries, searchObjectsBySummary } = await import('#src/objects/index.js');
 const { withTeam } = await import('#src/team-scope.js');
 const { applyDbMigrations } = await import('#src/test/pglite.js');
 
@@ -68,6 +74,150 @@ afterEach(async () => {
 });
 
 describe('object summary evals', () => {
+  it('hides document-derived packets and cached summaries after source restriction', async () => {
+    const scope = withTeam(db, TEAM_ID, USER_ID);
+    const [object] = await db
+      .insert(entities)
+      .values({ teamId: TEAM_ID, type: 'project', canonicalName: 'Source-bound project' })
+      .returning();
+    const [event] = await db
+      .insert(rawEvents)
+      .values({
+        teamId: TEAM_ID,
+        source: 'document',
+        contentText: 'Uploaded restricted source',
+        occurredAt: new Date(),
+        visibility: 'team',
+        authorUserId: USER_ID,
+      })
+      .returning();
+    const [doc] = await db
+      .insert(documents)
+      .values({ teamId: TEAM_ID, name: 'source.txt', ownerUserId: USER_ID, visibility: 'team' })
+      .returning();
+    if (!object || !event || !doc) throw new Error('missing fixtures');
+    const [version] = await db
+      .insert(documentVersions)
+      .values({
+        teamId: TEAM_ID,
+        documentId: doc.id,
+        version: 1,
+        objectKey: 'synthetic/source.txt',
+        sourceEventId: event.id,
+        processingStatus: 'chunked',
+      })
+      .returning();
+    if (!version) throw new Error('missing version');
+    const [chunk] = await db
+      .insert(documentChunks)
+      .values({
+        teamId: TEAM_ID,
+        documentId: doc.id,
+        documentVersionId: version.id,
+        chunkIndex: 0,
+        text: 'Confidential client detail',
+        tokenCount: 4,
+      })
+      .returning();
+    if (!chunk) throw new Error('missing chunk');
+    await db
+      .update(documents)
+      .set({ currentVersionId: version.id })
+      .where(eq(documents.id, doc.id));
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Create source-bound project',
+      dedupeKey: 'document-summary-visibility',
+      metadata: {
+        document_id: doc.id,
+        document_version_id: version.id,
+        document_chunk_id: chunk.id,
+      },
+      evidence: [{ rawEventId: event.id, quote: chunk.text }],
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'object',
+          title: object.canonicalName,
+          dedupeKey: 'source-bound-create',
+          proposedPayload: { type: 'project', canonicalName: object.canonicalName },
+        },
+      ],
+    });
+    const item = bundle.items[0];
+    if (!item) throw new Error('missing item');
+    await db
+      .update(agentSuggestionItems)
+      .set({ status: 'accepted', resultId: object.id })
+      .where(eq(agentSuggestionItems.id, item.id));
+    let documentPrompt = '';
+    const sourceOmittingModel = <TSchema extends z.ZodType>(
+      input: ChatStructuredInput<TSchema>,
+    ): Promise<ChatStructuredResult<TSchema>> => {
+      documentPrompt = input.prompt;
+      return Promise.resolve({
+        model: 'summary-eval-model',
+        object: input.schema.parse({
+          overview: 'Confidential client detail',
+          overviewSourceRefs: [{ kind: 'field', id: 'type' }],
+          currentState: [],
+          openQuestions: [],
+          conflicts: [],
+        }),
+      });
+    };
+    expect(
+      await generateAndStoreObjectSummary(
+        db,
+        scope,
+        object.id,
+        { trigger: 'manual' },
+        {
+          chatStructured: sourceOmittingModel,
+          enqueueObjectEmbedJob: vi.fn().mockResolvedValue(undefined),
+        },
+      ),
+    ).toMatchObject({ status: 'ready' });
+    expect(documentPrompt).toContain(chunk.text);
+    expect(documentPrompt).not.toContain('Uploaded restricted source');
+    const [cached] = await db
+      .select()
+      .from(objectSummaries)
+      .where(eq(objectSummaries.entityId, object.id));
+    expect(cached?.sourceRefs).toContainEqual({ kind: 'timeline_event', id: event.id });
+    expect((await scope.objects.getObjectSummary(object.id))?.plainText).toContain('Confidential');
+    expect(await listReadyObjectSummaries(db, scope, [object.id])).toHaveLength(1);
+    expect(await searchObjectsBySummary(db, scope, { query: 'Confidential' })).toHaveLength(1);
+    for (const refs of [
+      [{ kind: 'timeline_event', id: event.id }],
+      [{ kind: 'document_chunk', id: chunk.id, documentId: doc.id, version: 1 }],
+    ]) {
+      await db
+        .update(objectSummaries)
+        .set({ sourceRefs: refs })
+        .where(eq(objectSummaries.entityId, object.id));
+      await db.update(documents).set({ visibility: 'private' }).where(eq(documents.id, doc.id));
+      const summary = await scope.objects.getObjectSummary(object.id);
+      expect(summary?.plainText).toBe('');
+      expect(summary?.sourceCounts.events).toBe(0);
+      expect(await listReadyObjectSummaries(db, scope, [object.id])).toHaveLength(0);
+      expect(await searchObjectsBySummary(db, scope, { query: 'Confidential' })).toHaveLength(0);
+      const fast = await getObjectSummaryFromSnapshot(db, scope, object.id, {
+        meaningfulFields: 3,
+        sourceCounts: {
+          fields: 3,
+          facts: 3,
+          events: 1,
+          notes: 0,
+          relationships: 0,
+          tasks: 0,
+          changes: 0,
+        },
+      });
+      expect(fast?.plainText).toBe('');
+    }
+  });
+
   // Structured integrations skip fact extraction; their associated evidence
   // must still enable the same summary action shown on the object detail page.
   it('offers summary generation for a project supported only by artifact evidence', async () => {

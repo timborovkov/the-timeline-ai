@@ -393,11 +393,12 @@ export function createEngineMaintenanceScope(db: Db, scope: TeamScopeCore) {
     async identityEvidence(objectIds: string[]) {
       await scope.requireMembership();
       if (!objectIds.length) return [];
-      return db
-        .select({
+      const evidence = await db
+        .selectDistinct({
           objectId: factEntities.entityId,
           rawEventId: rawEvents.id,
-          text: facts.statement,
+          text: rawEvents.contentText,
+          occurredAt: rawEvents.occurredAt,
         })
         .from(factEntities)
         .innerJoin(facts, eq(facts.id, factEntities.factId))
@@ -412,6 +413,11 @@ export function createEngineMaintenanceScope(db: Db, scope: TeamScopeCore) {
         )
         .orderBy(desc(rawEvents.occurredAt))
         .limit(80);
+      return evidence.flatMap((row) =>
+        row.text?.trim()
+          ? [{ objectId: row.objectId, rawEventId: row.rawEventId, text: row.text }]
+          : [],
+      );
     },
     async affiliationCandidates(objectId: string, proposedEmails: string[] = []) {
       await scope.requireMembership();

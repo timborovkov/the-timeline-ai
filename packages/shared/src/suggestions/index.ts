@@ -60,6 +60,7 @@ import {
   type CalendarRecurrenceEditMode,
 } from '#src/calendar/locking.js';
 import { chatStructured as defaultChatStructured } from '#src/llm/chat.js';
+import { documentProposalEvidenceIsCurrent } from '#src/documents/visibility.js';
 import { childLogger } from '#src/logger.js';
 import { suggestedProjectIsUnusedCondition } from '#src/objects/suggested-projects.js';
 import { OBJECT_TYPES } from '#src/objects/types.js';
@@ -884,6 +885,7 @@ function nonFailedItemExistsPredicate() {
 
 function suggestionVisibilityPredicate(teamId: string, userId: string) {
   return and(
+    documentProposalEvidenceIsCurrent(teamId, agentSuggestions.metadata),
     eq(agentSuggestions.teamId, teamId),
     or(
       eq(agentSuggestions.visibility, 'team'),
@@ -3385,7 +3387,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       return updated;
     });
     if (!row) return false;
-    await supersedeRelationshipDependents(row);
+    await supersedeObjectDependents(row);
     await refreshBundleStatus(row.suggestionId);
     return true;
   }
@@ -5518,7 +5520,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     });
   }
 
-  async function supersedeRelationshipDependents(
+  async function supersedeObjectDependents(
     item: typeof agentSuggestionItems.$inferSelect,
   ): Promise<void> {
     const payload =
@@ -5531,16 +5533,24 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     const normalizedRef = normalizedLocalRef(ref);
     if (!normalizedRef || (item.targetKind !== 'object' && item.targetKind !== 'task')) return;
     const dependents = await db
-      .select({ id: agentSuggestionItems.id })
+      .select({ id: agentSuggestionItems.id, targetKind: agentSuggestionItems.targetKind })
       .from(agentSuggestionItems)
       .where(
         and(
           eq(agentSuggestionItems.suggestionId, item.suggestionId),
-          eq(agentSuggestionItems.targetKind, 'object_relationship'),
           inArray(agentSuggestionItems.status, ACTIONABLE_ITEM_STATUSES),
           or(
-            sql`lower(${agentSuggestionItems.proposedPayload} ->> 'fromRef') = ${normalizedRef}`,
-            sql`lower(${agentSuggestionItems.proposedPayload} ->> 'toRef') = ${normalizedRef}`,
+            and(
+              eq(agentSuggestionItems.targetKind, 'object_relationship'),
+              or(
+                sql`lower(${agentSuggestionItems.proposedPayload} ->> 'fromRef') = ${normalizedRef}`,
+                sql`lower(${agentSuggestionItems.proposedPayload} ->> 'toRef') = ${normalizedRef}`,
+              ),
+            ),
+            and(
+              eq(agentSuggestionItems.targetKind, 'identity_facet'),
+              sql`lower(${agentSuggestionItems.proposedPayload} ->> 'entityRef') = ${normalizedRef}`,
+            ),
           ),
         ),
       );
@@ -5548,7 +5558,9 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       await supersedeItem(
         dependent.id,
         null,
-        `Relationship endpoint "${ref}" was rejected or superseded.`,
+        dependent.targetKind === 'object_relationship'
+          ? `Relationship endpoint "${ref}" was rejected or superseded.`
+          : `Referenced object "${ref}" was rejected or superseded.`,
       );
     }
   }
@@ -5901,7 +5913,9 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     const isPackBacked =
       typeof recordFromUnknown(row.suggestion.metadata).evidence_pack_fingerprint === 'string';
     const requiresTransactionalAcceptance =
-      isPackBacked || row.item.targetKind === 'board_membership';
+      isPackBacked ||
+      typeof recordFromUnknown(row.suggestion.metadata).document_version_id === 'string' ||
+      row.item.targetKind === 'board_membership';
     if (requiresTransactionalAcceptance && deps.acceptance.kind === 'root') {
       await deps.beforeApplyItem?.(itemId);
       try {
@@ -7781,7 +7795,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
         return { row: inserted, changed: true, supersededItems };
       });
       for (const supersededItem of result.supersededItems) {
-        await supersedeRelationshipDependents(supersededItem);
+        await supersedeObjectDependents(supersededItem);
       }
       if (result.changed) {
         await reconcileNewSuggestionItems(result.row.id);
@@ -8017,7 +8031,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       });
       if (!rejected) return false;
       for (const effect of postCommitEffects) effect();
-      await supersedeRelationshipDependents(row.item);
+      await supersedeObjectDependents(row.item);
       await refreshBundleStatus(row.suggestion.id, userId);
       await reconcileStaleActionableItemsBestEffort({
         suggestionItemId: itemId,

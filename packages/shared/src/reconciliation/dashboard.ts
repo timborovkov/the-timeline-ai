@@ -19,6 +19,8 @@ import {
   type ReconciliationEvidenceCoverageReport,
 } from '#src/reconciliation/backfill.js';
 
+import { documentProposalEvidenceIsCurrent } from '#src/documents/visibility.js';
+
 type DbTx = Parameters<Parameters<Db['transaction']>[0]>[0];
 type DbOrTx = Db | DbTx;
 
@@ -535,6 +537,10 @@ export async function getReconciliationClusterDetail(input: {
         eq(reconciliationOutputs.clusterId, input.clusterId),
         outputVisibility,
         outputVisibilityFloor,
+        documentProposalEvidenceIsCurrent(
+          input.teamId,
+          sql`${reconciliationOutputs.payload}->'projection_metadata'`,
+        ),
       ),
     )
     .orderBy(desc(reconciliationOutputs.createdAt), desc(reconciliationOutputs.id));
@@ -709,6 +715,10 @@ async function loadVisibleReconciliationClusterIds(
 
 function reconciliationOutputVisibleToUser(userId: string): SQL {
   const predicate = and(
+    documentProposalEvidenceIsCurrent(
+      reconciliationOutputs.teamId,
+      sql`${reconciliationOutputs.payload}->'projection_metadata'`,
+    ),
     visibilityEnvelopeVisibleToUser(
       {
         visibility: reconciliationOutputs.visibility,

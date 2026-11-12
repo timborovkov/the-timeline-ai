@@ -10,6 +10,8 @@ import {
   agentSuggestionItems,
   engineMaintenanceRuns,
   objectIdentityFacets,
+  facts,
+  factEntities,
 } from '@timeline/db';
 import type { llm } from '@timeline/shared';
 import { withTeam, getEnv, suggestions } from '@timeline/shared';
@@ -103,6 +105,151 @@ const model: typeof llm.chatStructured = <T extends z.ZodType>(input: llm.ChatSt
     model: 'fixture',
   });
 describe('engine persistence contracts', () => {
+  it('uses captured source text instead of paraphrased facts for identity citations', async () => {
+    const [object] = await db
+      .insert(entities)
+      .values({ teamId, type: 'project', canonicalName: 'Client Portal' })
+      .returning();
+    const text = 'PBC-portaali and Client Portal are the same audit document upload project.';
+    const [event] = await db
+      .insert(rawEvents)
+      .values({
+        teamId,
+        source: 'email',
+        contentText: text,
+        visibility: 'team',
+        occurredAt: new Date(),
+      })
+      .returning();
+    const rows = await db
+      .insert(facts)
+      .values([
+        {
+          teamId,
+          rawEventId: required(event).id,
+          statement: 'The client portal has a Finnish alias.',
+          confidence: 0.9,
+          modelVersion: 'fixture',
+        },
+        {
+          teamId,
+          rawEventId: required(event).id,
+          statement: 'Both names refer to an audit upload service.',
+          confidence: 0.9,
+          modelVersion: 'fixture',
+        },
+      ])
+      .returning();
+    await db.insert(factEntities).values(
+      rows.map((fact) => ({
+        factId: fact.id,
+        entityId: required(object).id,
+        role: 'subject' as const,
+      })),
+    );
+    expect(await scope().engineMaintenance.identityEvidence([required(object).id])).toEqual([
+      { objectId: required(object).id, rawEventId: required(event).id, text },
+    ]);
+  });
+
+  it('keeps ordinary source extraction eligible after an object-only cleanup repair', async () => {
+    process.env.IDENTITY_SEMANTIC_ENABLED = 'true';
+    resetEnvForTests();
+    // A task avoids the separate project/company semantic-resolution model call.
+    const [task] = await db
+      .insert(entities)
+      .values({ teamId, type: 'task', canonicalName: 'Prepare audit outline', status: 'todo' })
+      .returning();
+    const [event] = await db
+      .insert(rawEvents)
+      .values({
+        teamId,
+        source: 'email',
+        contentText:
+          'The audit outline is complete. We also need to prepare a separate client checklist.',
+        visibility: 'team',
+        authorUserId: userId,
+        occurredAt: new Date(),
+        sourceMetadata: {
+          extracted_at: new Date().toISOString(),
+          extraction_model_version: 'fixture',
+          source_payload_ref: 'inline://engine-repair-fixture',
+        },
+      })
+      .returning();
+    const [fact] = await db
+      .insert(facts)
+      .values({
+        teamId,
+        rawEventId: required(event).id,
+        statement: 'The audit outline was completed.',
+        confidence: 1,
+        modelVersion: 'fixture',
+      })
+      .returning();
+    await db
+      .insert(factEntities)
+      .values({ factId: required(fact).id, entityId: required(task).id, role: 'subject' });
+    let calls = 0;
+    const chat: typeof llm.chatStructured = (input) => {
+      calls++;
+      return Promise.resolve({
+        model: 'fixture',
+        object: input.schema.parse({
+          bundles: [
+            {
+              title: 'Audit follow-through',
+              confidence: 'high',
+              reason: 'Completed outline and new checklist request.',
+              items: [
+                {
+                  operation: 'update',
+                  targetKind: 'task',
+                  targetId: required(task).id,
+                  title: 'Complete audit outline',
+                  proposedPayload: { status: 'done' },
+                },
+                {
+                  operation: 'create',
+                  targetKind: 'task',
+                  title: 'Prepare client checklist',
+                  proposedPayload: { canonicalName: 'Prepare client checklist', status: 'todo' },
+                },
+              ],
+            },
+          ],
+        }),
+      });
+    };
+    const io = {
+      chatStructured: chat,
+      modelId: 'fixture',
+      taskCategoryClassificationEnabled: false,
+    };
+    await processSuggestionJobForTests(
+      { db },
+      { scope: 'object_cleanup', teamId, objectId: required(task).id },
+      io,
+    );
+    const [afterRepair] = await db
+      .select()
+      .from(rawEvents)
+      .where(eq(rawEvents.id, required(event).id));
+    expect(required(afterRepair).sourceMetadata).not.toHaveProperty('suggestion_model_version');
+    expect(
+      (await db.select().from(agentSuggestionItems)).some(
+        (item) => item.operation === 'create' && item.targetKind === 'task',
+      ),
+    ).toBe(false);
+    await processSuggestionJobForTests({ db }, { teamId, rawEventId: required(event).id }, io);
+    expect(calls).toBe(2);
+    expect(
+      (await scope().suggestions.listPendingSuggestions())
+        .flatMap((bundle) => bundle.items)
+        .some((item) => item.operation === 'create' && item.title === 'Prepare client checklist'),
+    ).toBe(true);
+  });
+
   it('does not propose merging same-name projects based only on a shared company', async () => {
     await db.insert(entities).values([
       {
