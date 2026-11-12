@@ -55,7 +55,7 @@ const EMPTY_STATES: Record<
 };
 
 interface PageProps {
-  searchParams: Promise<{ status?: string }>;
+  searchParams: Promise<{ status?: string; boardId?: string }>;
 }
 
 const GUIDED_APPROVAL_PHASES = new Set(['ask', 'approve', 'record']);
@@ -108,6 +108,7 @@ export default async function ApprovalsPage({ searchParams }: PageProps) {
     scope.suggestions.withCalendarResolutionHints(
       await scope.suggestions.listSuggestions({
         status,
+        boardId: params.boardId,
         itemIds,
         limit: SUGGESTIONS_PAGE_SIZE + 1,
         cursor: null,
@@ -122,6 +123,7 @@ export default async function ApprovalsPage({ searchParams }: PageProps) {
   }));
   const visibleSuggestions = page.items.flatMap((bundle) => {
     const items = bundle.items.filter((item) => {
+      if (params.boardId && item.proposedPayload.boardId !== params.boardId) return false;
       if (status === 'pending') return item.status === 'pending';
       if (status === 'failed') return item.status === 'failed';
       if (status === 'resolved') return !isActionableSuggestionStatus(item.status);
@@ -130,14 +132,20 @@ export default async function ApprovalsPage({ searchParams }: PageProps) {
     return items.length > 0 ? [serializeSuggestionBundle({ ...bundle, items })] : [];
   });
   const inventoryCount =
-    status === 'pending' || status === 'failed' ? approvalCounts[status] : null;
+    !params.boardId && (status === 'pending' || status === 'failed')
+      ? approvalCounts[status]
+      : null;
 
   return (
     <div data-app-width="collection" className="space-y-6">
       <PageHeader
         variant="collection"
         title="Approvals"
-        subtitle={approvalsSubtitle(guidedApprovals)}
+        subtitle={
+          params.boardId
+            ? 'Membership changes for this board. Each decision is separate from object approval.'
+            : approvalsSubtitle(guidedApprovals)
+        }
         metadata={[
           ...(inventoryCount !== null
             ? [
@@ -158,7 +166,7 @@ export default async function ApprovalsPage({ searchParams }: PageProps) {
               {STATUS_FILTERS.map((filter) => (
                 <Link
                   key={filter}
-                  href={`/app/approvals?status=${filter}`}
+                  href={`/app/approvals?status=${filter}${params.boardId ? `&boardId=${encodeURIComponent(params.boardId)}` : ''}`}
                   aria-current={status === filter ? 'page' : undefined}
                   className={`inline-flex min-h-9 items-center rounded-sm px-2.5 text-xs capitalize transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong ${
                     status === filter
@@ -167,7 +175,9 @@ export default async function ApprovalsPage({ searchParams }: PageProps) {
                   }`}
                 >
                   {filter}
-                  {filter === 'pending' || filter === 'failed' ? ` ${approvalCounts[filter]}` : ''}
+                  {!params.boardId && (filter === 'pending' || filter === 'failed')
+                    ? ` ${approvalCounts[filter]}`
+                    : ''}
                 </Link>
               ))}
             </nav>
@@ -175,7 +185,8 @@ export default async function ApprovalsPage({ searchParams }: PageProps) {
         </CollectionToolbar>
         <GuidedApprovalsChrome enabled={guidedApprovals} />
         <ApprovalsClient
-          key={status}
+          key={`${status}:${params.boardId ?? 'all'}`}
+          boardId={params.boardId}
           suggestions={visibleSuggestions}
           nextCursor={page.nextCursor}
           status={status}

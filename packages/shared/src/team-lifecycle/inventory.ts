@@ -45,6 +45,8 @@ export const PURGED_TEAM_TABLES = [
   'billing_unbilled_alerts',
   'billing_usage_counters',
   'billing_usage_reservations',
+  'board_qualification_evaluations',
+  'board_qualification_requests',
   'board_item_changes',
   'board_items',
   'board_lanes',

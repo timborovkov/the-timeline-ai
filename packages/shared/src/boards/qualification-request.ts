@@ -1,0 +1,64 @@
+import { boardQualificationRequests, boards, teamMembers, type Db } from '@timeline/db';
+import { and, eq, isNull, sql } from 'drizzle-orm';
+
+type DbTx = Parameters<Parameters<Db['transaction']>[0]>[0];
+
+/** Called inside the canonical mutation transaction, never best-effort. */
+export async function requestBoardQualification(
+  db: Db | DbTx,
+  input: {
+    teamId: string;
+    userId: string;
+    entityId: string;
+    sourceEventId: string | null;
+    requestedBoardId?: string;
+  },
+) {
+  // Service principals cannot inherit a member's authority for background inference.
+  if (input.userId === '00000000-0000-0000-0000-000000000000') return;
+  const [member] = await db
+    .select({ id: teamMembers.userId })
+    .from(teamMembers)
+    .where(
+      and(
+        eq(teamMembers.teamId, input.teamId),
+        eq(teamMembers.userId, input.userId),
+        isNull(teamMembers.removedAt),
+      ),
+    )
+    .limit(1);
+  if (!member) return;
+  const [enabled] = await db
+    .select({ id: boards.id })
+    .from(boards)
+    .where(
+      and(
+        eq(boards.teamId, input.teamId),
+        eq(boards.qualificationEnabled, true),
+        isNull(boards.archivedAt),
+      ),
+    )
+    .limit(1);
+  if (!enabled) return;
+  const now = new Date();
+  await db
+    .insert(boardQualificationRequests)
+    .values({ ...input, requestedAt: now, availableAt: now })
+    .onConflictDoUpdate({
+      target: [
+        boardQualificationRequests.teamId,
+        boardQualificationRequests.userId,
+        boardQualificationRequests.entityId,
+      ],
+      set: {
+        requestedBoardId: sql`CASE WHEN ${boardQualificationRequests.requestedBoardId} = ${input.requestedBoardId ?? null} THEN ${input.requestedBoardId ?? null}::uuid ELSE NULL END`,
+        sourceEventId: input.sourceEventId ?? sql`${boardQualificationRequests.sourceEventId}`,
+        version: sql`${boardQualificationRequests.version} + 1`,
+        boardCursor: null,
+        requestedAt: now,
+        availableAt: now,
+        attempts: 0,
+        failureCode: null,
+      },
+    });
+}

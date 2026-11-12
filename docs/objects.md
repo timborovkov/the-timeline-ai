@@ -126,3 +126,60 @@ Persistence failures are warn-logged, not surfaced to the user — the assistant
 
 
 Current access and mutation boundaries are owned by `scope.objects`, `scope.boards` and the approval services. Use [domain ownership](architecture/ownership.md); do not infer current tools/routes from old migration inventories.
+
+
+## Automatic membership suggestions
+
+Boards remain curated work surfaces. **Suggest board changes** is opt-in in board
+creation and settings; existing boards default to off. Board purpose explains why
+the board exists, membership criteria explain what belongs and when it should
+leave, and stages describe progress after joining. Guided examples help users write
+inclusion and exclusion criteria. Every suggested addition or removal requires its
+own approval, separate from the object change that triggered evaluation. Direct
+manual membership edits are themselves the human decision.
+
+**Restrict allowed object types** is independent of qualification. When enabled it
+requires at least one type and applies to manual add, quick create, agent proposals
+and approval acceptance. Recommended types without strict mode only rank discovery.
+Changing restrictions does not evict existing items; an existing member that fails
+the restriction can receive a removal proposal. Removal archives the specific board
+membership, preserving the object and board history.
+
+Committed object creates/updates, notes, identity facets and relationship changes
+persist qualification requests in the canonical write transaction. Relationship
+changes request both endpoints. Pending or rejected object proposals do not trigger
+qualification. The durable inbox coalesces per member/object, uses leases and
+version-checked completion, and retries failures with bounded backoff. Queue outages
+cannot lose committed requests. The worker discovers routing metadata globally and
+uses the originating member's `withTeam` scope for workspace reads and proposals;
+service-principal writes do not borrow a member's authority.
+
+Qualification applies deterministic type eligibility before shared-model inference.
+It reads bounded committed object facts, notes, identities and relationships. Explicit
+exclusion can support removal; missing information cannot. Model evidence keys must
+refer to supplied facts. Proposals retain the criteria revision and fact snapshot,
+use the existing reconciliation-backed suggestion lifecycle, and remain private to
+the originating member. Source visibility is checked again by the approval engine.
+No-action outcomes also appear in reconciliation diagnostics.
+
+Accepting a proposal rechecks current criteria, object facts, membership and type
+restrictions. Newer manual membership decisions take precedence. A removal for a
+previous membership cannot remove a later re-added membership. Evaluated fact/policy
+fingerprints suppress repeated decisions, including declined proposals. Relevant
+fact or criteria changes allow reevaluation. Disabling suggestions invalidates pending
+automatic proposals during review, stops new qualification and retains current members.
+
+The board's **Membership suggestions** disclosure offers a read-only preview of up
+to three recent objects and an explicit **Check existing objects** action. Existing
+objects are queued in batches of 50, with continuation shown to the user. This also
+provides an explicit recheck of previously evaluated objects. Matching proposals are
+reviewed through the board-filtered Approvals page; there is no second approval store.
+Saving criteria alone does not scan historical objects.
+
+Operational bounds: at most five boards per request pass, one pass per team per 30
+seconds, 30-second model timeout, 1,000 output tokens and a 48,000-character facts
+budget. Oversized or incomplete facts require manual review. Failed requests retain
+a safe failure code and retry time in `board_qualification_requests`; no model or
+customer content is logged. New object writes reset failed work for their current
+version. Apply the board qualification migration before running the updated app or
+worker. Deployment is a separate operation.

@@ -3,14 +3,7 @@ import { jsonSchema, tool, type ToolSet } from 'ai';
 import { z } from 'zod';
 
 import { fenceExternalContent } from '#src/agent/external-content.js';
-import { retrieveWorkspaceContextInput } from '#src/agent/retrieval-contract.js';
 import { retrieveWorkspaceContext } from '#src/agent/retrieval.js';
-import {
-  capabilityTool,
-  capabilityAllowed,
-  type CapabilityTool,
-  type AgentToolMode,
-} from '#src/agent/tool-policy.js';
 import { getAppGuideRoute, searchAppGuide } from '#src/app-guide.js';
 import { artifactRefCitation } from '#src/citation.js';
 import { childLogger } from '#src/logger.js';
@@ -22,9 +15,7 @@ import {
 } from '#src/objects/tool-serialization.js';
 import { OBJECT_TYPES } from '#src/objects/types.js';
 import { PIN_TARGET_KINDS } from '#src/pins/index.js';
-import { withQdrantOperation, QdrantUnavailableError } from '#src/qdrant/operation.js';
 import { recordMcpToolResultEvidence } from '#src/reconciliation/mcp-capture.js';
-import { enrichEvidenceContext } from '#src/retrieval/context.js';
 import { suggestionDedupeKey, type CreateSuggestionInput } from '#src/suggestions/index.js';
 import {
   enrichTaskProposalCategories,
@@ -46,14 +37,24 @@ import {
   type TimelineMoment,
   type TimelineMomentEvent,
 } from '#src/timeline-moments/index.js';
+
+import type * as boards from '#src/boards/index.js';
+import type { SearchRankingSummary } from '#src/retrieval/ranking.js';
+
+import { retrieveWorkspaceContextInput } from '#src/agent/retrieval-contract.js';
+import {
+  capabilityTool,
+  capabilityAllowed,
+  type CapabilityTool,
+  type AgentToolMode,
+} from '#src/agent/tool-policy.js';
+import { withQdrantOperation, QdrantUnavailableError } from '#src/qdrant/operation.js';
+import { enrichEvidenceContext } from '#src/retrieval/context.js';
 import {
   applyTimelineMomentPresentationCache,
   buildTimelineMomentPresentationCacheFingerprint,
   buildTimelineMomentPresentationCacheKey,
 } from '#src/timeline-moments/presentation-contract.js';
-
-import type * as boards from '#src/boards/index.js';
-import type { SearchRankingSummary } from '#src/retrieval/ranking.js';
 
 const log = childLogger('agent:tools');
 
@@ -796,6 +797,9 @@ function serializeBoardRow(row: boards.BoardRow): Record<string, unknown> {
     purpose: row.purpose,
     template_kind: row.templateKind,
     recommended_object_types: row.recommendedObjectTypes,
+    strict_object_types: row.strictObjectTypes,
+    qualification_enabled: row.qualificationEnabled ?? false,
+    qualification_instructions: row.qualificationInstructions ?? '',
     item_count: row.itemCount,
     due_soon_count: row.dueSoonCount,
     overdue_count: row.overdueCount,

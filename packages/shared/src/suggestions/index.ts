@@ -5,6 +5,7 @@ import {
   agentSuggestionItems,
   agentSuggestions,
   boardItems,
+  boardItemChanges,
   boardLanes,
   boards as boardsTable,
   calendarEvents,
@@ -57,12 +58,6 @@ import { childLogger } from '#src/logger.js';
 import { suggestedProjectIsUnusedCondition } from '#src/objects/suggested-projects.js';
 import { OBJECT_TYPES } from '#src/objects/types.js';
 import { decodeCursor } from '#src/pagination.js';
-import {
-  buildOutputDedupeKey,
-  reconciliationDedupeKey,
-  validateSourceRefs,
-  type SourceRef,
-} from '#src/reconciliation/core.js';
 import { sourcePayloadRefFromMetadata } from '#src/reconciliation/source-snapshot.js';
 import { likePattern } from '#src/sql-like.js';
 import { stableStringify, suggestionDedupeKey } from '#src/suggestions/dedupe-key.js';
@@ -100,6 +95,15 @@ import type {
 } from '#src/objects/index.js';
 import type { SuggestionAcceptanceUnitOfWork } from '#src/suggestions/acceptance-transaction.js';
 import type { TeamRole } from '#src/team-scope.js';
+
+import { assertBoardObjectType } from '#src/boards/qualification-policy.js';
+import { boardQualificationFacts } from '#src/boards/qualification.js';
+import {
+  buildOutputDedupeKey,
+  reconciliationDedupeKey,
+  validateSourceRefs,
+  type SourceRef,
+} from '#src/reconciliation/core.js';
 
 export { suggestionDedupeKey } from '#src/suggestions/dedupe-key.js';
 export {
@@ -687,6 +691,19 @@ const objectMergePayload = z.object({
 });
 
 const boardMembershipPayload = z.object({
+  boardItemId: uuid.optional(),
+  expectedUpdatedAt: z.iso.datetime().optional(),
+  qualification: z
+    .object({
+      revision: z.number().int().positive(),
+      factsHash: z.string(),
+      factsSnapshot: z.record(z.string(), z.unknown()).optional(),
+      criteriaSnapshot: z.string().max(2000).optional(),
+      inputHash: z.string(),
+      evidenceKeys: z.array(z.string()),
+      requestedAt: z.iso.datetime(),
+    })
+    .optional(),
   boardId: uuid,
   boardName: z.string().trim().min(1).max(200).optional(),
   entityId: uuid,
@@ -1626,7 +1643,11 @@ function sameSemanticPendingItem(args: {
   newerItem: typeof agentSuggestionItems.$inferSelect;
 }): boolean {
   const { olderItem, newerItem } = args;
-  if (olderItem.operation !== newerItem.operation) return false;
+  if (
+    olderItem.operation !== newerItem.operation &&
+    !(olderItem.targetKind === 'board_membership' && newerItem.targetKind === 'board_membership')
+  )
+    return false;
 
   if (
     (olderItem.targetKind === 'object' || olderItem.targetKind === 'task') &&
@@ -1742,6 +1763,9 @@ function shouldSupersedePendingItem(args: {
     olderItem.operation === 'create' &&
     newerItem.operation === 'create';
   if (olderItem.targetKind !== newerItem.targetKind && !isObjectTaskCreatePair) return false;
+
+  if (olderItem.targetKind === 'board_membership' && newerItem.targetKind === 'board_membership')
+    return sameSemanticPendingItem(args);
 
   if (olderItem.targetKind === 'identity_facet' && newerItem.targetKind === 'identity_facet') {
     return sameSemanticPendingItem(args);
@@ -2730,8 +2754,8 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       throw new Error('Merge proposals must be changed from the merge review');
     }
     if (item.targetKind === 'board_membership') {
-      if (item.operation !== 'create') {
-        throw new Error('Board membership suggestions only support create');
+      if (item.operation !== 'create' && item.operation !== 'archive_or_cancel') {
+        throw new Error('Board membership suggestions only support add/remove');
       }
       boardMembershipPayload.parse(payload);
       return;
@@ -4127,6 +4151,77 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       !Array.isArray(item.proposedPayload)
         ? (item.proposedPayload as Record<string, unknown>)
         : {};
+    if (item.targetKind === 'board_membership') {
+      const parsed = boardMembershipPayload.safeParse(payload);
+      if (!parsed.success) return 'Invalid board membership proposal.';
+      const value = parsed.data;
+      await lockAcceptanceMutationTarget(item);
+      const [board] = await db
+        .select()
+        .from(boardsTable)
+        .where(
+          and(
+            eq(boardsTable.teamId, teamId),
+            eq(boardsTable.id, value.boardId),
+            isNull(boardsTable.archivedAt),
+          ),
+        );
+      if (!board || (!board.isShared && board.createdBy !== userId))
+        return 'Board is no longer available.';
+      const facts = await boardQualificationFacts(db, teamId, value.entityId);
+      if (!facts) return 'Object is no longer active.';
+      const [membership] = await db
+        .select()
+        .from(boardItems)
+        .where(
+          and(
+            eq(boardItems.teamId, teamId),
+            eq(boardItems.boardId, value.boardId),
+            eq(boardItems.entityId, value.entityId),
+            isNull(boardItems.archivedAt),
+          ),
+        );
+      if (item.operation === 'create') {
+        try {
+          assertBoardObjectType(board, facts.object.type);
+        } catch {
+          return 'This object type is no longer allowed on this board.';
+        }
+        if (membership) return 'Object is already on this board.';
+      } else if (item.operation === 'archive_or_cancel') {
+        if (
+          !membership ||
+          membership.id !== value.boardItemId ||
+          membership.updatedAt.toISOString() !== value.expectedUpdatedAt
+        )
+          return 'Board membership changed; review a fresh suggestion.';
+      } else return 'Unsupported board membership operation.';
+      if (value.qualification) {
+        if (
+          !board.qualificationEnabled ||
+          board.qualificationRevision !== value.qualification.revision ||
+          facts.hash !== value.qualification.factsHash
+        )
+          return 'Board criteria or object facts changed; a new evaluation is required.';
+        const [manual] = await db
+          .select({ id: boardItemChanges.id })
+          .from(boardItemChanges)
+          .where(
+            and(
+              eq(boardItemChanges.teamId, teamId),
+              eq(boardItemChanges.boardId, value.boardId),
+              eq(boardItemChanges.entityId, value.entityId),
+              eq(boardItemChanges.actorKind, 'user'),
+              eq(boardItemChanges.status, 'applied'),
+              gt(boardItemChanges.changedAt, new Date(value.qualification.requestedAt)),
+              inArray(boardItemChanges.field, ['__add__', '__remove__']),
+            ),
+          )
+          .limit(1);
+        if (manual) return 'A newer manual membership decision takes precedence.';
+      }
+      return null;
+    }
     if (item.targetKind === 'identity_facet') {
       const parsed = identityFacetPayload.safeParse(payload);
       return parsed.success ? staleObjectTargetReason(parsed.data.entityId) : null;
@@ -5595,9 +5690,20 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     }
 
     if (item.targetKind === 'board_membership') {
-      if (item.operation !== 'create')
-        throw new Error('Board membership suggestions only support create');
       const parsed = boardMembershipPayload.parse(payload);
+      if (item.operation === 'archive_or_cancel') {
+        if (!parsed.boardItemId || !parsed.expectedUpdatedAt)
+          throw new Error('Membership removal requires the current board item version');
+        return boards.acceptMembershipRemoval({
+          boardId: parsed.boardId,
+          entityId: parsed.entityId,
+          boardItemId: parsed.boardItemId,
+          expectedUpdatedAt: parsed.expectedUpdatedAt,
+          suggestionItemId: item.id,
+        });
+      }
+      if (item.operation !== 'create')
+        throw new Error('Board membership suggestions only support add/remove');
       const change = await boards.proposeBoardMembership({
         boardId: parsed.boardId,
         entityId: parsed.entityId,
@@ -6101,6 +6207,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
   async function listSuggestions(
     opts: {
       status?: SuggestionListStatus;
+      boardId?: string;
       limit?: number;
       cursor?: string | null;
       itemIds?: string[];
@@ -6111,6 +6218,22 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     const status = opts.status ?? 'pending';
     const conditions = [suggestionVisibilityPredicate(teamId, userId)];
     if (opts.itemIds) conditions.push(captureItemsPredicate(opts.itemIds));
+    if (opts.boardId)
+      conditions.push(
+        exists(
+          db
+            .select({ id: agentSuggestionItems.id })
+            .from(agentSuggestionItems)
+            .where(
+              and(
+                eq(agentSuggestionItems.teamId, teamId),
+                eq(agentSuggestionItems.suggestionId, agentSuggestions.id),
+                eq(agentSuggestionItems.targetKind, 'board_membership'),
+                sql`${agentSuggestionItems.proposedPayload}->>'boardId' = ${opts.boardId}`,
+              ),
+            ),
+        ),
+      );
     if (status === 'pending') {
       conditions.push(
         inArray(agentSuggestions.status, ['pending', 'partially_resolved']),

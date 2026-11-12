@@ -88,7 +88,6 @@ import { resetSurfaceSessionByIdInTransaction } from '#src/conversation-surfaces
 import { reconcileLinkArtifactsForRawEvent } from '#src/conversational/link-artifacts.js';
 import { dueDateRangeConditions } from '#src/due-date-filter.js';
 import { getEnv } from '#src/env.js';
-import { remapIntegrationSelectionObjectLinks } from '#src/integrations/selection-links.js';
 import { TIMELINE_MODELS } from '#src/llm/models.js';
 import { childLogger } from '#src/logger.js';
 import {
@@ -105,7 +104,6 @@ import {
   pingObjectDiscussionAgent,
 } from '#src/objects/mention-fanout.js';
 import { mergeObjectMetadata } from '#src/objects/metadata-schemas.js';
-import { recordFromUnknown, stringArrayFromUnknown, toObjectRow } from '#src/objects/row.js';
 import { suggestedProjectIsUnusedCondition } from '#src/objects/suggested-projects.js';
 import {
   enqueueObjectSummaryRefresh,
@@ -130,17 +128,31 @@ import { getQdrantClient } from '#src/qdrant/client.js';
 import { buildPointId } from '#src/qdrant/point-id.js';
 import * as embedQueue from '#src/queue/queues.js';
 import { AUTHORITY_POLICY_VERSION } from '#src/reconciliation/authority.js';
-import { buildOutputDedupeKey, reconciliationDedupeKey } from '#src/reconciliation/core.js';
-import {
-  buildDirectWriteSourceContext as buildObjectDirectWriteSourceContext,
-  directWriteSourceEnvelope,
-} from '#src/reconciliation/direct-write-source.js';
 import { normalizeRawEventsToEvidence } from '#src/reconciliation/normalization.js';
 import { likeMentionCondition, likePattern, textMentionsAnyValue } from '#src/sql-like.js';
 import {
   readTaskCategoryFilterRefreshState,
   type TaskCategoryFilterRefreshState,
 } from '#src/task-categories/filter-refresh.js';
+import {
+  TASK_CATEGORY_TAXONOMY_VERSION,
+  taskCategorySchema,
+  type TaskCategory,
+} from '#src/task-categories/types.js';
+import { rawEventVisibleToUser } from '#src/visibility.js';
+
+import type { UpdateActor } from '#src/objects/types.js';
+import type { TaskCategoryFilterKey } from '#src/task-categories/types.js';
+import type { TeamScopeCore } from '#src/team-scope.js';
+
+import { requestBoardQualification } from '#src/boards/qualification-request.js';
+import { remapIntegrationSelectionObjectLinks } from '#src/integrations/selection-links.js';
+import { recordFromUnknown, stringArrayFromUnknown, toObjectRow } from '#src/objects/row.js';
+import { buildOutputDedupeKey, reconciliationDedupeKey } from '#src/reconciliation/core.js';
+import {
+  buildDirectWriteSourceContext as buildObjectDirectWriteSourceContext,
+  directWriteSourceEnvelope,
+} from '#src/reconciliation/direct-write-source.js';
 import {
   buildTaskCategoryPacket,
   TASK_CATEGORY_PROMPT_VERSION,
@@ -162,16 +174,6 @@ import {
   applyTaskCategoryClassification,
   failTaskCategoryClassification,
 } from '#src/task-categories/state.js';
-import {
-  TASK_CATEGORY_TAXONOMY_VERSION,
-  taskCategorySchema,
-  type TaskCategory,
-} from '#src/task-categories/types.js';
-import { rawEventVisibleToUser } from '#src/visibility.js';
-
-import type { UpdateActor } from '#src/objects/types.js';
-import type { TaskCategoryFilterKey } from '#src/task-categories/types.js';
-import type { TeamScopeCore } from '#src/team-scope.js';
 
 export type { UpdateActor } from '#src/objects/types.js';
 export {
@@ -356,6 +358,7 @@ async function normalizeSystemRawEventEvidence(input: {
 async function emitObjectDirectWriteOutput(input: {
   db: DbTx;
   teamId: string;
+  userId: string;
   entityId: string;
   objectType: ObjectType;
   canonicalName: string;
@@ -372,6 +375,12 @@ async function emitObjectDirectWriteOutput(input: {
   };
 }): Promise<void> {
   if (!input.sourceEventId) return;
+  await requestBoardQualification(input.db, {
+    teamId: input.teamId,
+    userId: input.userId,
+    entityId: input.entityId,
+    sourceEventId: input.sourceEventId,
+  });
   const sourceContext = await buildObjectDirectWriteSourceContext({
     db: input.db,
     teamId: input.teamId,
@@ -490,6 +499,7 @@ async function emitObjectDirectWriteOutput(input: {
 async function emitRelationshipDirectWriteOutput(input: {
   db: DbTx;
   teamId: string;
+  userId: string;
   relationshipId: string;
   fromEntityId: string;
   toEntityId: string;
@@ -500,6 +510,18 @@ async function emitRelationshipDirectWriteOutput(input: {
   systemEventKind: 'relationship_create' | 'relationship_delete';
 }): Promise<void> {
   if (!input.sourceEventId) return;
+  await requestBoardQualification(input.db, {
+    teamId: input.teamId,
+    userId: input.userId,
+    entityId: input.fromEntityId,
+    sourceEventId: input.sourceEventId,
+  });
+  await requestBoardQualification(input.db, {
+    teamId: input.teamId,
+    userId: input.userId,
+    entityId: input.toEntityId,
+    sourceEventId: input.sourceEventId,
+  });
   const sourceContext = await buildObjectDirectWriteSourceContext({
     db: input.db,
     teamId: input.teamId,
@@ -602,6 +624,7 @@ async function emitRelationshipDirectWriteOutput(input: {
 async function emitNoteDirectWriteOutput(input: {
   db: DbTx;
   teamId: string;
+  userId: string;
   entityId: string;
   noteId: string;
   actor: { kind: ActorKind; userId?: string | null };
@@ -612,6 +635,12 @@ async function emitNoteDirectWriteOutput(input: {
   previousBody?: string | null;
 }): Promise<void> {
   if (!input.sourceEventId) return;
+  await requestBoardQualification(input.db, {
+    teamId: input.teamId,
+    userId: input.userId,
+    entityId: input.entityId,
+    sourceEventId: input.sourceEventId,
+  });
   const sourceContext = await buildObjectDirectWriteSourceContext({
     db: input.db,
     teamId: input.teamId,
@@ -719,6 +748,7 @@ async function emitNoteDirectWriteOutput(input: {
 async function emitIdentityFacetDirectWriteOutput(input: {
   db: DbTx;
   teamId: string;
+  userId: string;
   entityId: string;
   identityFacetId: string;
   identityFacetKind: IdentityFacetKind;
@@ -740,6 +770,12 @@ async function emitIdentityFacetDirectWriteOutput(input: {
   };
 }): Promise<void> {
   if (!input.sourceEventId) return;
+  await requestBoardQualification(input.db, {
+    teamId: input.teamId,
+    userId: input.userId,
+    entityId: input.entityId,
+    sourceEventId: input.sourceEventId,
+  });
   const sourceContext = await buildObjectDirectWriteSourceContext({
     db: input.db,
     teamId: input.teamId,
@@ -4225,6 +4261,7 @@ export async function createObject(
     await emitObjectDirectWriteOutput({
       db: tx,
       teamId: scope.teamId,
+      userId: scope.userId,
       entityId: row.id,
       objectType: input.type,
       canonicalName: name,
@@ -4306,6 +4343,7 @@ export async function createObject(
         await emitRelationshipDirectWriteOutput({
           db: tx,
           teamId: scope.teamId,
+          userId: scope.userId,
           relationshipId: relationship.id,
           fromEntityId: row.id,
           toEntityId: primaryProject.id,
@@ -4728,6 +4766,7 @@ export async function updateObject(
     await emitObjectDirectWriteOutput({
       db: tx,
       teamId: scope.teamId,
+      userId: scope.userId,
       entityId,
       objectType: updated.type,
       canonicalName: updated.canonicalName,
@@ -5547,6 +5586,7 @@ export async function mergeObjects(
     await emitObjectDirectWriteOutput({
       db: tx,
       teamId: scope.teamId,
+      userId: scope.userId,
       entityId: survivor.id,
       objectType: survivor.type,
       canonicalName: survivor.canonicalName,
@@ -5819,6 +5859,7 @@ export async function addRelationship(
     await emitRelationshipDirectWriteOutput({
       db: tx,
       teamId: scope.teamId,
+      userId: scope.userId,
       relationshipId: row.id,
       fromEntityId: endpoints.fromEntityId,
       toEntityId: endpoints.toEntityId,
@@ -6149,6 +6190,7 @@ export async function setTaskProject(
       await emitRelationshipDirectWriteOutput({
         db: tx,
         teamId: scope.teamId,
+        userId: scope.userId,
         relationshipId: old.id,
         fromEntityId: taskId,
         toEntityId: old.projectId,
@@ -6163,6 +6205,7 @@ export async function setTaskProject(
       await emitRelationshipDirectWriteOutput({
         db: tx,
         teamId: scope.teamId,
+        userId: scope.userId,
         relationshipId: created.id,
         fromEntityId: taskId,
         toEntityId: project.id,
@@ -6506,6 +6549,7 @@ export async function setPersonCompany(
       await emitRelationshipDirectWriteOutput({
         db: tx,
         teamId: scope.teamId,
+        userId: scope.userId,
         relationshipId: old.id,
         fromEntityId: oldEndpoints.fromEntityId,
         toEntityId: oldEndpoints.toEntityId,
@@ -6520,6 +6564,7 @@ export async function setPersonCompany(
       await emitRelationshipDirectWriteOutput({
         db: tx,
         teamId: scope.teamId,
+        userId: scope.userId,
         relationshipId: created.id,
         fromEntityId: endpoints.fromEntityId,
         toEntityId: endpoints.toEntityId,
@@ -6732,6 +6777,7 @@ export async function removeRelationship(
     await emitRelationshipDirectWriteOutput({
       db: tx,
       teamId: scope.teamId,
+      userId: scope.userId,
       relationshipId: rel.id,
       fromEntityId: rel.fromEntityId,
       toEntityId: rel.toEntityId,
@@ -6868,6 +6914,7 @@ export async function createNote(
     await emitNoteDirectWriteOutput({
       db: tx,
       teamId: scope.teamId,
+      userId: scope.userId,
       entityId: input.entityId,
       noteId,
       actor: {
@@ -7183,6 +7230,7 @@ export async function createIdentityFacet(
       await emitIdentityFacetDirectWriteOutput({
         db: tx,
         teamId: scope.teamId,
+        userId: scope.userId,
         entityId: input.entityId,
         identityFacetId: existing[0].id,
         identityFacetKind: input.kind,
@@ -7295,6 +7343,7 @@ export async function createIdentityFacet(
     await emitIdentityFacetDirectWriteOutput({
       db: tx,
       teamId: scope.teamId,
+      userId: scope.userId,
       entityId: input.entityId,
       identityFacetId: row.id,
       identityFacetKind: input.kind,
@@ -7446,6 +7495,7 @@ export async function archiveIdentityFacet(
     await emitIdentityFacetDirectWriteOutput({
       db: tx,
       teamId: scope.teamId,
+      userId: scope.userId,
       entityId: facet.entityId,
       identityFacetId: facet.id,
       identityFacetKind: facet.kind,
@@ -7585,6 +7635,7 @@ export async function updateNote(
     await emitNoteDirectWriteOutput({
       db: tx,
       teamId: scope.teamId,
+      userId: scope.userId,
       entityId: note.entityId,
       noteId: note.id,
       actor,
@@ -7755,6 +7806,7 @@ export async function deleteNote(
     await emitNoteDirectWriteOutput({
       db: tx,
       teamId: scope.teamId,
+      userId: scope.userId,
       entityId: note.entityId,
       noteId: note.id,
       actor: { kind: 'user', userId: input.actorUserId },

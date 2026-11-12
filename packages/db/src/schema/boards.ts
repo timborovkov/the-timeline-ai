@@ -60,6 +60,9 @@ export const boards = pgTable(
     recommendedObjectTypes: jsonb('recommended_object_types').notNull().default([]),
     strictObjectTypes: boolean('strict_object_types').notNull().default(false),
     candidateFilter: jsonb('candidate_filter').notNull().default({}),
+    qualificationEnabled: boolean('qualification_enabled').notNull().default(false),
+    qualificationInstructions: text('qualification_instructions').notNull().default(''),
+    qualificationRevision: integer('qualification_revision').notNull().default(1),
     isShared: boolean('is_shared').notNull().default(true),
     archivedAt: timestamp('archived_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
@@ -249,5 +252,78 @@ export const boardPins = pgTable(
     }).onDelete('cascade'),
     uniqueIndex('board_pins_team_user_board_unq').on(table.teamId, table.userId, table.boardId),
     index('board_pins_team_user_position_idx').on(table.teamId, table.userId, table.position),
+  ],
+);
+
+/** Durable object-change inbox. Coalescing never publishes uncommitted work. */
+export const boardQualificationRequests = pgTable(
+  'board_qualification_requests',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    teamId: uuid('team_id')
+      .notNull()
+      .references(() => teams.id, { onDelete: 'cascade' }),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    entityId: uuid('entity_id')
+      .notNull()
+      .references(() => entities.id, { onDelete: 'cascade' }),
+    sourceEventId: uuid('source_event_id').references(() => rawEvents.id, { onDelete: 'cascade' }),
+    version: integer('version').notNull().default(1),
+    boardCursor: uuid('board_cursor'),
+    requestedBoardId: uuid('requested_board_id').references(() => boards.id, {
+      onDelete: 'cascade',
+    }),
+    requestedAt: timestamp('requested_at', { withTimezone: true }).notNull().defaultNow(),
+    availableAt: timestamp('available_at', { withTimezone: true }).notNull().defaultNow(),
+    attempts: integer('attempts').notNull().default(0),
+    failureCode: text('failure_code'),
+  },
+  (table) => [
+    uniqueIndex('board_qualification_request_identity').on(
+      table.teamId,
+      table.userId,
+      table.entityId,
+    ),
+    index('board_qualification_request_due').on(table.availableAt),
+    foreignKey({
+      columns: [table.teamId, table.entityId],
+      foreignColumns: [entities.teamId, entities.id],
+    }).onDelete('cascade'),
+  ],
+);
+
+/** Last evaluated facts suppress repeated proposals, including declined decisions. */
+export const boardQualificationEvaluations = pgTable(
+  'board_qualification_evaluations',
+  {
+    teamId: uuid('team_id')
+      .notNull()
+      .references(() => teams.id, { onDelete: 'cascade' }),
+    boardId: uuid('board_id')
+      .notNull()
+      .references(() => boards.id, { onDelete: 'cascade' }),
+    entityId: uuid('entity_id')
+      .notNull()
+      .references(() => entities.id, { onDelete: 'cascade' }),
+    inputHash: text('input_hash').notNull(),
+    decision: text('decision').notNull(),
+    evaluatedAt: timestamp('evaluated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex('board_qualification_evaluation_identity').on(
+      table.teamId,
+      table.boardId,
+      table.entityId,
+    ),
+    foreignKey({
+      columns: [table.teamId, table.boardId],
+      foreignColumns: [boards.teamId, boards.id],
+    }).onDelete('cascade'),
+    foreignKey({
+      columns: [table.teamId, table.entityId],
+      foreignColumns: [entities.teamId, entities.id],
+    }).onDelete('cascade'),
   ],
 );

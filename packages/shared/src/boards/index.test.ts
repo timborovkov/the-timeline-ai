@@ -2178,3 +2178,284 @@ describe('board scope', () => {
     expect(responsibleItemRow?.responsibleUserId).toBe(USER_OWNER);
   });
 });
+
+// Qualification must preserve curated membership and separate object approval from placement.
+describe('automatic board membership', () => {
+  async function setup() {
+    const scope = withTeam(db, TEAM_A, USER_OWNER);
+    const board = await scope.boards.createBoard({
+      name: 'People',
+      templateKind: 'custom',
+      lanes: [{ name: 'New' }],
+      qualificationEnabled: true,
+      qualificationInstructions: 'People considering our product. Remove only when they decline.',
+      strictObjectTypes: true,
+      recommendedObjectTypes: ['person'],
+    });
+    const object = await scope.objects.createObject({
+      type: 'person',
+      canonicalName: 'Alex',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    return { scope, board, object };
+  }
+  function required<T>(value: T | null | undefined): T {
+    if (value === null || value === undefined) throw new Error('Expected test fixture');
+    return value;
+  }
+  async function process(
+    scope: ReturnType<typeof withTeam>,
+    decision: 'add' | 'remove' | 'insufficient_evidence' = 'add',
+  ) {
+    const { boardQualificationRequests } = await import('@timeline/db');
+    const requests = await db.select().from(boardQualificationRequests);
+    for (const request of requests)
+      await scope.boardQualification.processRequest(request.id, () =>
+        Promise.resolve({
+          decision,
+          reason: 'The committed object matches the board criteria.',
+          evidenceKeys: ['object'],
+        }),
+      );
+  }
+  it('creates a separate approval without adding the newly created object', async () => {
+    const { scope, board, object } = await setup();
+    await process(scope);
+    expect((await scope.boards.getBoard(board.id))?.items).toHaveLength(0);
+    const bundles = await scope.suggestions.listPendingSuggestions();
+    expect(bundles).toHaveLength(1);
+    expect(bundles[0]?.items[0]?.targetKind).toBe('board_membership');
+    await scope.suggestions.acceptSuggestionItem(required(required(bundles[0]).items[0]).id);
+    expect((await scope.boards.getBoard(board.id))?.items.map((item) => item.entityId)).toEqual([
+      object.id,
+    ]);
+  });
+  it('rejects wrong types through manual add, quick create and proposals', async () => {
+    const { scope, board } = await setup();
+    const company = await scope.objects.createObject({
+      type: 'company',
+      canonicalName: 'Acme',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    await expect(
+      scope.boards.addBoardItem(board.id, {
+        entityId: company.id,
+        actor: { kind: 'user', userId: USER_OWNER },
+      }),
+    ).rejects.toThrow('not allowed');
+    await expect(
+      scope.boards.createObjectAndAddBoardItem(
+        board.id,
+        { type: 'company', canonicalName: 'Never created' },
+        { actor: { kind: 'user', userId: USER_OWNER } },
+      ),
+    ).rejects.toThrow('not allowed');
+    expect(await scope.objects.listObjects({ query: 'Never created' })).toHaveLength(0);
+    await expect(
+      scope.boards.proposeBoardMembership({ boardId: board.id, entityId: company.id }),
+    ).rejects.toThrow('not allowed');
+  });
+  it('does not reoffer a declined decision when the same request is replayed', async () => {
+    const { scope, object } = await setup();
+    await process(scope);
+    const [bundle] = await scope.suggestions.listPendingSuggestions();
+    await scope.suggestions.rejectSuggestionItem(required(required(bundle).items[0]).id);
+    const { requestBoardQualification } = await import('#src/boards/qualification-request.js');
+    await requestBoardQualification(db, {
+      teamId: TEAM_A,
+      userId: USER_OWNER,
+      entityId: object.id,
+      sourceEventId: null,
+    });
+    await process(scope);
+    expect(await scope.suggestions.listPendingSuggestions()).toHaveLength(0);
+    expect(await scope.objects.listObjects({ id: object.id })).toHaveLength(1);
+  });
+  it('supersedes pending automatic placement after qualification is disabled', async () => {
+    const { scope, board } = await setup();
+    await process(scope);
+    const [bundle] = await scope.suggestions.listPendingSuggestions();
+    await scope.boards.updateBoardSettings({ id: board.id, qualificationEnabled: false });
+    expect(
+      await scope.suggestions.acceptSuggestionItemWithOutcome(
+        required(required(bundle).items[0]).id,
+      ),
+    ).toBe('superseded');
+    expect((await scope.boards.getBoard(board.id))?.items).toHaveLength(0);
+  });
+  it('removes only the approved membership, preserving the object and linked history', async () => {
+    const { scope, board, object } = await setup();
+    const member = await scope.boards.addBoardItem(board.id, {
+      entityId: object.id,
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    await scope.objects.updateObject(
+      object.id,
+      { status: 'declined' },
+      { kind: 'user', userId: USER_OWNER },
+    );
+    await process(scope, 'remove');
+    const [bundle] = await scope.suggestions.listPendingSuggestions();
+    expect(bundle?.items[0]?.operation).toBe('archive_or_cancel');
+    await scope.suggestions.acceptSuggestionItem(required(required(bundle).items[0]).id);
+    expect((await scope.boards.getBoard(board.id))?.items).toHaveLength(0);
+    expect(await scope.objects.listObjects({ id: object.id })).toHaveLength(1);
+    const history = await db
+      .select()
+      .from(boardItemChanges)
+      .where(eq(boardItemChanges.boardItemId, member.id));
+    expect(
+      history.some(
+        (change) =>
+          change.field === '__remove__' &&
+          change.suggestionItemId === required(required(bundle).items[0]).id,
+      ),
+    ).toBe(true);
+  });
+  it('preserves newer manual add/remove decisions and uncertain cases', async () => {
+    const { scope, board, object } = await setup();
+    const member = await scope.boards.addBoardItem(board.id, {
+      entityId: object.id,
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    await process(scope, 'remove');
+    expect(await scope.suggestions.listPendingSuggestions()).toHaveLength(0);
+    expect(await scope.boards.getBoardItem(member.id)).not.toBeNull();
+    await scope.objects.updateObject(
+      object.id,
+      { status: 'unknown' },
+      { kind: 'user', userId: USER_OWNER },
+    );
+    await process(scope, 'insufficient_evidence');
+    expect(await scope.suggestions.listPendingSuggestions()).toHaveLength(0);
+  });
+  it('keeps qualification requests inside the outer object transaction', async () => {
+    const { scope } = await setup();
+    const { boardQualificationRequests } = await import('@timeline/db');
+    await db.delete(boardQualificationRequests);
+    await expect(
+      db.transaction(async (tx) => {
+        const scoped = withTeam(tx as unknown as Db, TEAM_A, USER_OWNER);
+        await scoped.objects.createObject({
+          type: 'person',
+          canonicalName: 'Rolled back',
+          actor: { kind: 'user', userId: USER_OWNER },
+        });
+        throw new Error('rollback');
+      }),
+    ).rejects.toThrow('rollback');
+    expect(await db.select().from(boardQualificationRequests)).toHaveLength(0);
+    expect(await scope.objects.listObjects({ query: 'Rolled back' })).toHaveLength(0);
+  });
+  it('revalidates facts and rejects another team accessing the qualification request', async () => {
+    const { scope, board, object } = await setup();
+    const { boardQualificationRequests } = await import('@timeline/db');
+    const [request] = await db.select().from(boardQualificationRequests);
+    const other = withTeam(db, TEAM_B, USER_OTHER_TEAM);
+    await other.boardQualification.processRequest(required(request).id, () =>
+      Promise.reject(new Error('must not run')),
+    );
+    await process(scope);
+    const [bundle] = await scope.suggestions.listPendingSuggestions();
+    await scope.objects.updateObject(
+      object.id,
+      { status: 'declined' },
+      { kind: 'user', userId: USER_OWNER },
+    );
+    expect(
+      await scope.suggestions.acceptSuggestionItemWithOutcome(
+        required(required(bundle).items[0]).id,
+      ),
+    ).toBe('superseded');
+    expect((await scope.boards.getBoard(board.id))?.items).toHaveLength(0);
+  });
+  it('queues qualification only after an object approval is accepted', async () => {
+    const { scope } = await setup();
+    const { boardQualificationRequests } = await import('@timeline/db');
+    await db.delete(boardQualificationRequests);
+    const proposal = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'chat',
+      title: 'Create Morgan',
+      dedupeKey: 'create-morgan',
+      items: [
+        {
+          targetKind: 'object',
+          operation: 'create',
+          title: 'Create Morgan',
+          dedupeKey: 'create-morgan-object',
+          proposedPayload: { type: 'person', canonicalName: 'Morgan' },
+        },
+      ],
+    });
+    expect(await db.select().from(boardQualificationRequests)).toHaveLength(0);
+    await scope.suggestions.acceptSuggestionItem(required(proposal.items[0]).id);
+    expect(await db.select().from(boardQualificationRequests)).toHaveLength(1);
+    await process(scope);
+    const pending = await scope.suggestions.listPendingSuggestions();
+    expect(pending).toHaveLength(1);
+    expect(required(pending[0]).id).not.toBe(proposal.id);
+    expect(required(required(pending[0]).items[0]).targetKind).toBe('board_membership');
+  });
+  it('cannot apply an old removal to a later re-added membership', async () => {
+    const { scope, board, object } = await setup();
+    const first = await scope.boards.addBoardItem(board.id, {
+      entityId: object.id,
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    await scope.objects.updateObject(
+      object.id,
+      { status: 'declined' },
+      { kind: 'user', userId: USER_OWNER },
+    );
+    await process(scope, 'remove');
+    const [bundle] = await scope.suggestions.listPendingSuggestions();
+    await scope.boards.removeBoardItem(first.id, { kind: 'user', userId: USER_OWNER });
+    const second = await scope.boards.addBoardItem(board.id, {
+      entityId: object.id,
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    expect(
+      await scope.suggestions.acceptSuggestionItemWithOutcome(
+        required(required(bundle).items[0]).id,
+      ),
+    ).toBe('superseded');
+    expect(await scope.boards.getBoardItem(second.id)).not.toBeNull();
+  });
+  it('retains failed work for retry and does not discard a newer request', async () => {
+    const { scope, object } = await setup();
+    const { boardQualificationRequests } = await import('@timeline/db');
+    const [request] = await db.select().from(boardQualificationRequests);
+    await expect(
+      scope.boardQualification.processRequest(required(request).id, () =>
+        Promise.reject(new Error('provider unavailable')),
+      ),
+    ).rejects.toThrow('provider unavailable');
+    await scope.boardQualification.failRequest(required(request).id, required(request).version);
+    const [failed] = await db.select().from(boardQualificationRequests);
+    expect(required(failed).attempts).toBe(1);
+    expect(required(failed).failureCode).toBe('qualification_failed');
+    await scope.objects.updateObject(
+      object.id,
+      { status: 'considering' },
+      { kind: 'user', userId: USER_OWNER },
+    );
+    await scope.boardQualification.failRequest(required(request).id, required(request).version);
+    const [newer] = await db.select().from(boardQualificationRequests);
+    expect(required(newer).version).toBeGreaterThan(required(request).version);
+    expect(required(newer).attempts).toBe(0);
+    await process(scope);
+    expect(await scope.suggestions.listPendingSuggestions()).toHaveLength(1);
+  });
+  it('keeps source visibility at review time and makes scan proposals approval-backed', async () => {
+    const { scope, board } = await setup();
+    await process(scope);
+    expect(
+      await withTeam(db, TEAM_A, USER_MEMBER).suggestions.listPendingSuggestions(),
+    ).toHaveLength(0);
+    const scanned = await scope.boardQualification.scan(board.id);
+    expect(scanned.count).toBe(1);
+    await process(scope);
+    expect(required(await scope.boards.getBoard(board.id)).items).toHaveLength(0);
+    expect(await scope.suggestions.listPendingSuggestions()).toHaveLength(1);
+  });
+});

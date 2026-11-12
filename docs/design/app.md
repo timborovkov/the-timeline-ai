@@ -641,3 +641,21 @@ Catalog entries show a readable title, wrapping description, subordinate metadat
 and an outlined connect action. Empty custom-server lists use a concise hint so
 the available catalog remains visible. Task and object detail rails retain their
 workspace-specific split layout.
+
+
+### Board membership setup and review
+
+Board creation and settings use the same **Board membership** field group. Type
+restrictions and **Suggest board changes** are independent controls. Explain that
+type restrictions also apply to manual additions, while suggested additions and
+removals always require separate review. When suggestions are enabled, show
+**What belongs here?**, a short inclusion/exclusion prompt and editable examples.
+Keep these criteria distinct from purpose and stages.
+
+The board header area offers a collapsed **Membership suggestions** disclosure.
+Preview is explicitly read-only; checking existing objects is an explicit batched
+action with queued/continuation or failure feedback. Review links to the existing
+Approvals surface filtered to this board. Removal proposals name the object and
+board and say that the object is retained. Hide qualification hashes, revisions and
+internal concurrency fields from ordinary approval previews. The
+[object contract](../objects.md#automatic-membership-suggestions) owns the behavior.

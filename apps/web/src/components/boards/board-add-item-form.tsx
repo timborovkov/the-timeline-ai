@@ -23,6 +23,7 @@ interface Props {
   defaultLaneId: string | null;
   candidates: objects.ObjectRow[];
   recommendedTypes: objects.ObjectType[];
+  strictObjectTypes?: boolean;
   onOptimisticItem?: (item: boards.BoardItemRow) => void;
   onItemAdded?: (item: boards.BoardItemRow, optimisticId: string) => void;
   onItemAddFailed?: (item: boards.BoardItemRow) => void;
@@ -438,12 +439,14 @@ function CandidateList({
 }
 
 function NewObjectFields({
+  allowedTypes,
   type,
   canonicalName,
   dispatch,
 }: {
   type: objects.ObjectType;
   canonicalName: string;
+  allowedTypes?: objects.ObjectType[];
   dispatch: Dispatch<Action>;
 }) {
   return (
@@ -459,7 +462,7 @@ function NewObjectFields({
         }}
         className="rounded-sm border border-border bg-bg px-3 py-2 text-sm focus-visible:border-border-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/40 focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
       >
-        {OBJECT_TYPES.map((option) => (
+        {(allowedTypes ?? OBJECT_TYPES).map((option) => (
           <option key={option} value={option}>
             {option}
           </option>
@@ -486,6 +489,7 @@ export function BoardAddItemForm({
   defaultLaneId,
   candidates,
   recommendedTypes,
+  strictObjectTypes = false,
   onOptimisticItem,
   onItemAdded,
   onItemAddFailed,
@@ -502,8 +506,8 @@ export function BoardAddItemForm({
     canonicalName: '',
   });
   const existingTypeOptions = useMemo(
-    () => boardAddItemTypeOptions(recommendedTypes),
-    [recommendedTypes],
+    () => (strictObjectTypes ? recommendedTypes : boardAddItemTypeOptions(recommendedTypes)),
+    [recommendedTypes, strictObjectTypes],
   );
   const {
     results: remoteCandidates,
@@ -521,10 +525,17 @@ export function BoardAddItemForm({
         ? candidates
         : candidates.filter((row) => row.type === state.existingType);
     const localMatches = filterObjectsByText(typedLocal, state.query);
-    return uniqueCandidates([...localMatches, ...remoteCandidates]).sort(
-      (a, b) => Number(typeRank.has(b.type)) - Number(typeRank.has(a.type)),
-    );
-  }, [candidates, recommendedTypes, remoteCandidates, state.existingType, state.query]);
+    return uniqueCandidates([...localMatches, ...remoteCandidates])
+      .filter((row) => !strictObjectTypes || typeRank.has(row.type))
+      .sort((a, b) => Number(typeRank.has(b.type)) - Number(typeRank.has(a.type)));
+  }, [
+    candidates,
+    recommendedTypes,
+    remoteCandidates,
+    state.existingType,
+    state.query,
+    strictObjectTypes,
+  ]);
   const selectedCandidate = state.selectedObject;
 
   function submit(): void {
@@ -626,6 +637,7 @@ export function BoardAddItemForm({
           />
         ) : (
           <NewObjectFields
+            allowedTypes={strictObjectTypes ? recommendedTypes : undefined}
             type={state.type}
             canonicalName={state.canonicalName}
             dispatch={dispatch}

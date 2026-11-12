@@ -10,6 +10,12 @@ import {
 } from '#src/document-ingestion/full-worker-extract-gate.js';
 import { captureWorkerException, flushWorkerSentry, initWorkerSentry } from '#src/monitoring.js';
 import { startWorkerGroup } from '#src/worker-lifecycle.js';
+import {
+  BOARD_QUALIFICATION_QUEUE,
+  startBoardQualificationWorker,
+  closeBoardQualificationQueue,
+  scheduleBoardQualification,
+} from '#src/workers/boardQualification.js';
 import { startCalendarRecurrenceWorker } from '#src/workers/calendarRecurrence.js';
 import { startChatDeliveryWorker } from '#src/workers/chatDelivery.js';
 import { startConversationAgentWorker } from '#src/workers/conversationAgent.js';
@@ -80,6 +86,12 @@ async function main(): Promise<void> {
     );
   }
   const workers = await startWorkerGroup([
+    {
+      name: BOARD_QUALIFICATION_QUEUE,
+      start: () => startBoardQualificationWorker({ db }),
+      closeQueue: closeBoardQualificationQueue,
+      schedule: scheduleBoardQualification,
+    },
     {
       name: TEAM_LIFECYCLE_QUEUE,
       start: () => startTeamLifecycleWorker({ db }),
