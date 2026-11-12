@@ -411,7 +411,8 @@ export function createBoardQualificationScope(
         ];
         const hasMore = edges.length === 50;
         const expanded = await db.transaction(async (tx) => {
-          // Acquire parent keys before inbox rows. Canonical edits already hold their own entity lock.
+          // Parent-first locks protect inbox foreign keys. Fail fast on busy parents because
+          // canonical relationship edits can lock their entities in a different order.
           const parents = await tx
             .select({
               id: entities.id,
@@ -426,7 +427,7 @@ export function createBoardQualificationScope(
               ),
             )
             .orderBy(asc(entities.id))
-            .for('key share');
+            .for('key share', { noWait: true });
           const inbox = await tx
             .select({
               id: boardQualificationRequests.id,

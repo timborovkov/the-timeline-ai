@@ -149,7 +149,8 @@ Committed object creates/updates, notes, identity facets and relationship change
 persist qualification requests in the canonical write transaction. Relationship
 changes request both endpoints. Object updates persist a neighbor-expansion flag in the same transaction. The
 worker expands relationships in durable batches of 50, acquiring entity key locks
-before inbox locks, so related names/statuses are reevaluated without locking
+before inbox locks. Busy entity keys abort the expansion for durable retry instead
+of waiting against canonical relationship lock order, so related names/statuses are reevaluated without locking
 neighboring entities during the originating object edit. Pending or rejected object proposals do not trigger
 qualification. The durable inbox coalesces per member/object, uses leases and
 version-checked completion, and retries failures with bounded backoff. Queue outages
